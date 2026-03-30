@@ -1,0 +1,78 @@
+import { globalPRNG } from '../../utils/PRNG';
+export interface RhythmCell {
+    durations: number[]; // e.g., [0.5, 0.5] for two 8th notes
+    weight: number;      // Probability weight
+    tags: string[];      // e.g., 'syncopated', 'straight', 'triplet'
+}
+
+export const PopRhythmCells: RhythmCell[] = [
+    // Straight 8ths
+    { durations: [0.5, 0.5], weight: 10, tags: ['straight', 'basic'] },
+    { durations: [1.0], weight: 8, tags: ['straight', 'basic', 'long'] },
+    
+    // Syncopated (前八后十六, 附点等)
+    { durations: [0.75, 0.25], weight: 7, tags: ['syncopated', 'dotted'] }, // Dotted 8th + 16th
+    { durations: [0.25, 0.75], weight: 5, tags: ['syncopated', 'push'] },   // 16th + Dotted 8th
+    { durations: [0.5, 0.25, 0.25], weight: 8, tags: ['straight', 'subdivided'] }, // 8th + two 16ths (前八后十六)
+    { durations: [0.25, 0.25, 0.5], weight: 8, tags: ['straight', 'subdivided'] }, // Two 16ths + 8th (前十六后八)
+    
+    // 16th note runs
+    { durations: [0.25, 0.25, 0.25, 0.25], weight: 6, tags: ['straight', 'fast'] },
+    
+    // Triplets
+    { durations: [0.333, 0.333, 0.333], weight: 3, tags: ['triplet'] },
+    
+    // Rests (represented by negative durations or handled separately, but let's stick to positive for now and handle rests in generator)
+];
+
+export const FunkRhythmCells: RhythmCell[] = [
+    { durations: [0.25, 0.25, 0.5], weight: 10, tags: ['syncopated', 'funk'] },
+    { durations: [0.75, 0.25], weight: 8, tags: ['syncopated', 'funk'] },
+    { durations: [0.25, 0.5, 0.25], weight: 9, tags: ['syncopated', 'funk'] }, // 16th, 8th, 16th (syncopated)
+    { durations: [0.5, 0.25, 0.25], weight: 5, tags: ['straight', 'funk'] },
+];
+
+export const JazzRhythmCells: RhythmCell[] = [
+    { durations: [0.666, 0.334], weight: 10, tags: ['swing', 'jazz'] }, // Swing 8ths
+    { durations: [1.0], weight: 8, tags: ['straight', 'jazz'] },
+    { durations: [0.333, 0.333, 0.333], weight: 6, tags: ['triplet', 'jazz'] },
+    { durations: [0.5, 0.5], weight: 2, tags: ['straight', 'jazz'] }, // Less common in heavy swing
+];
+
+export function getRandomRhythmCell(styleId: string, energyLevel: number, isVocal: boolean = false): number[] {
+    let cells = PopRhythmCells;
+    if (styleId.includes('funk')) cells = FunkRhythmCells;
+    else if (styleId.includes('jazz') || styleId.includes('bossa')) cells = JazzRhythmCells;
+
+    // Filter by energy level (e.g., higher energy = more fast/subdivided cells)
+    let filteredCells = cells;
+    if (energyLevel < 4 || isVocal) {
+        // Vocals should generally avoid very fast 16th note runs unless it's rap, but we assume melodic singing here
+        filteredCells = cells.filter(c => !c.tags.includes('fast') && !(isVocal && c.durations.length > 2 && c.durations.every(d => d <= 0.25)));
+        
+        // Boost longer notes for vocals
+        if (isVocal) {
+            filteredCells = filteredCells.map(c => ({
+                ...c,
+                weight: c.tags.includes('long') || c.durations.includes(1.0) ? c.weight * 3 : c.weight
+            }));
+        }
+    } else if (energyLevel > 7) {
+        // Boost weight of fast/syncopated cells
+        filteredCells = cells.map(c => ({
+            ...c,
+            weight: c.tags.includes('fast') || c.tags.includes('syncopated') ? c.weight * 2 : c.weight
+        }));
+    }
+
+    // Weighted random selection
+    const totalWeight = filteredCells.reduce((sum, cell) => sum + cell.weight, 0);
+    let randomVal = globalPRNG.next() * totalWeight;
+    for (const cell of filteredCells) {
+        randomVal -= cell.weight;
+        if (randomVal <= 0) {
+            return cell.durations;
+        }
+    }
+    return [1.0]; // Fallback
+}

@@ -1,0 +1,5 @@
+{
+  "name": "AuraFlow Tap! Ver.7.6",
+  "description": "AuraFlow Tap! 是一款运行于 Web 端的高精度硬件音乐工作站模拟器，旨在将“直观的物理触觉交互”与“硬核程序化音乐生成（Procedural Music Generation）”完美融合。它不仅是一个支持多点触控的 5x3 阵列控制器，更是一个内嵌了高级音乐算法逻辑（如欧几里得律动、马尔可夫旋律链、和声专家系统）的生成式音乐底层载体。无需依赖黑盒 AI，每一次指尖的敲击，都是在实时调用严谨的乐理与数学规则，演算出充满灵感与律动的音乐动机。",
+  "requestFramePermissions": []
+}
