@@ -151,90 +151,88 @@ JavaScript 使用垃圾回收。如果在音频循环中动态分配对象，ESP
 ### 7.1 总览管道
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         AuraRadio 无限电台                               │
-│                                                                         │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐               │
-│  │  参数决定     │    │  生成引擎     │    │  编配引擎     │               │
-│  │              │    │              │    │              │               │
-│  │ globalPRNG ──┼──► │ MelodyEngine ├──► │ Orchestrator │               │
-│  │ StyleConfig  │    │ (实例调用)    │    │ (静态调用)    │               │
-│  └──────┬───────┘    └──────────────┘    └──────┬───────┘               │
-│         │                                       │                       │
-│         │ styleId                               │ ArrangedTrack         │
-│         ▼                                       ▼                       │
-│  ┌──────────────┐                        ┌──────────────┐               │
-│  │ StyleRegistry │                        │  播放引擎     │               │
-│  │ (14 个风格)   │                        │              │               │
-│  └──────────────┘                        │ PlaybackEng. │               │
-│                                          │ MidiScheduler│               │
-│                                          │ SpessaSynth  │               │
-│                                          └──────┬───────┘               │
-│                                                 │                       │
-│                                                 │ onTrackEnd            │
-│                                                 ▼                       │
-│  ┌──────────────────────────────────────────────────────────┐           │
-│  │                      历史栈                               │           │
-│  │  [(Track,Style)₀][(Track,Style)₁] ... [(Track,Style)ₙ]   │           │
-│  │                                          ▲ historyIndex  │           │
-│  │                                                          │           │
-│  │  下一首: index+1 存在 → 取历史 → 编配管道（跳过生成）      │           │
-│  │          index+1 不存在 → triggerGeneration()（重新生成）  │           │
-│  │  上一首: index-1 ≥ 0 → 取历史 → 编配管道                  │           │
-│  └──────────────────────────────────────────────────────────┘           │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          AuraRadio 无限电台                                │
+│                                                                          │
+│  ┌────────────────┐   ┌──────────────────┐                               │
+│  │  PRNGManager   │   │ StyleId (enum)   │                               │
+│  │ getStream(stg) │   │ ┌──────────────┐ │                               │
+│  └──┬─────────┬───┘   │ │StyleFlagTable│ │                               │
+│     │         │        │ │StyleConfig[] │ │                               │
+│     │         │        │ │StyleIdName[] │ │                               │
+│     ▼         ▼        │ └──────────────┘ │                               │
+│  ┌──────────┐  ┌───────┴──┐  ┌────────────┐                              │
+│  │ 生成引擎  │  │ 编配引擎  │  │  播放引擎   │                              │
+│  │ Melody   │  │ Orches-  │  │ Playback   │                              │
+│  │ Engine   ├─►│ trator   ├─►│ Engine     │                              │
+│  │(styleId) │  │(styleId) │  │(styleId)   │                              │
+│  └──────────┘  └──────────┘  └─────┬──────┘                              │
+│       │ GeneratedTrack  │ ArrangedTrack   │                              │
+│       │                 │                 │ onTrackEnd                    │
+│       │                 │                 ▼                               │
+│  ┌──────────────────────────────────────────────────────────┐            │
+│  │                       历史栈                               │            │
+│  │  [(Track,StyleId)₀][(Track,StyleId)₁]...[(Track,StyleId)ₙ]│            │
+│  │                                          ▲ historyIndex  │            │
+│  │                                                          │            │
+│  │  下一首: index+1 存在 → 取历史 → 编配管道（跳过生成）      │            │
+│  │          index+1 不存在 → triggerGeneration()（重新生成）  │            │
+│  │  上一首: index-1 ≥ 0 → 取历史 → 编配管道                  │            │
+│  └──────────────────────────────────────────────────────────┘            │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 7.2 黑盒接口输入输出图
 
 ```
-                          显式输入                 隐式输入
-                       ┌───────────┐          ┌──────────────┐
-                       │  styleId  │          │  globalPRNG  │
-                       │ (string)  │          │  (LCG 状态)  │
-                       └─────┬─────┘          └──────┬───────┘
-                             │                       │
-                             │    ┌──────────────┐   │
-                             │    │ options?      │   │  每次调用消耗 N 次
-                             │    │ ·userMotif    │   │  PRNG.next()
-                             │    │ ·motifRole    │   │  状态不可逆前进
-                             │    │ ·tonality     │   │
-                             │    │ ·timeSignature│   │
-                             │    └──────┬───────┘   │
-                             │           │           │
-                             ▼           ▼           ▼
+                    显式输入                     隐式输入
+                 ┌───────────┐    ┌────────┐   ┌──────────────┐
+                 │  styleId  │    │options? │   │ PRNGManager  │
+                 │(StyleId   │    │·motif   │   │ .getStream() │
+                 │  enum)    │    │·tonality│   │              │
+                 └─────┬─────┘    │·timeSig │   │ 每阶段独立   │
+                       │          └────┬────┘   │ 状态可快照   │
+                       │               │        └──────┬───────┘
+                       │               │               │
+                       ▼               ▼               ▼
                     ┌────────────────────────────────────────┐
                     │                                        │
-                    │ new MelodyEngine().generateFullSong()  │
+                    │ MelodyEngine.generateFullSong(styleId) │
                     │          【生成引擎黑盒】                │
+                    │                                        │
+                    │ 内部查表: StyleConfigTable[styleId]     │
+                    │         StyleFlagTable[styleId]        │
                     │                                        │
                     │   同步 · 纯数据 · 确定性                │
                     │                                        │
-                    └──────────────┬─────────────────────────┘
-                                  │
-                                  ▼
-                    ┌────────────────────────────┐
-                    │      GeneratedTrack        │
-                    │  ·vocal     : NoteData[]?  │
-                    │  ·melody    : NoteData[]   │
-                    │  ·chords    : GenChord[]   │
-                    │  ·sections  : SectionMeta[]│
-                    │  ·bpm, key, keyOffset      │
-                    │  ·tonality, timeSignature  │
-                    │  ·preSelectedPalette       │
-                    │  ·globalRiff, userMotif    │
-                    │  ·absStartBeat, blockIndex │
-                    └──────────────┬─────────────┘
-                                  │
-                    ┌─────────────┴─────────────┐
-                    │      StyleConfig           │
-                    └─────────────┬─────────────┘
-                                  │
-                                  ▼
+                    └───────┬────────────────┬───────────────┘
+                            │                │
+                            ▼                ▼
+                    ┌──────────────┐  ┌──────────────┐
+                    │GeneratedTrack│  │ MusicContext  │
+                    │ ·vocal       │  │ ·keyOffset   │
+                    │ ·melody      │  │ ·tonality    │
+                    │ ·chords      │  │ ·bpm         │
+                    │ ·sections    │  │ ·timeSignature│
+                    │ ·bpm, key    │  │ ·grooveDNA   │
+                    │ ·tonality    │  │ ·singerPersona│
+                    │ ·timeSignature│  └──────┬───────┘
+                    │ ·palette     │         │
+                    │ ·globalRiff  │         │
+                    │ ·userMotif   │         │
+                    └──────┬───────┘         │
+                           │                 │
+                           │  styleId        │
+                           ▼  (透传)         ▼
                     ┌────────────────────────────────────────┐
                     │                                        │
-                    │     Orchestrator.arrange()             │
+                    │ Orchestrator.arrange(track, styleId,   │
+                    │                      context)          │
                     │          【编配引擎黑盒】                │
+                    │                                        │
+                    │ 内部查表: StyleConfigTable[styleId]     │
+                    │         StyleFlagTable[styleId]        │
+                    │ 读取 context: keyOffset, tonality, ... │
                     │                                        │
                     │   单旋律 → 7 轨 · Idiom 渲染           │
                     │   人性化处理 · 消耗 PRNG                │
@@ -258,43 +256,143 @@ JavaScript 使用垃圾回收。如果在音频循环中动态分配对象，ESP
                     │  ·globalRiff, userMotif            │
                     └──────────────┬─────────────────────┘
                                   │
+                                  │  styleId (透传)
+                                  │
                                   ▼
                     ┌────────────────────────────────────────┐
                     │                                        │
-                    │   PlaybackEngine + MidiScheduler       │
-                    │          【播放引擎黑盒】                │
+                    │  PlaybackEngine.convert(arranged)      │
+                    │          【MIDI 转换层】                 │
                     │                                        │
-                    │   NoteData → MidiEvent → 合成输出       │
-                    │   5ms 轮询 · MIDI CC 混音               │
+                    │ 内部查表: StyleFlagTable[styleId]       │
+                    │          （混音风格 → MIDI CC）          │
+                    │                                        │
+                    │   NoteData → MidiEvent[]               │
+                    │   (noteOn/noteOff/CC + channel + time) │
                     │                                        │
                     └──────────────┬─────────────────────────┘
                                   │
-                          ┌───────┴───────┐
-                          ▼               ▼
-                    ┌───────────┐   ┌───────────┐
-                    │ 音频输出   │   │ onTrackEnd│
-                    │ (扬声器)  │   │  (回调)    │
-                    └───────────┘   └─────┬─────┘
-                                         │
-                                         ▼
-                                    playNext()
-                                    → 循环回到顶部
+                                  │  MidiEvent[] ← 生成管道终点（测试断言点）
+                                  │
+                    ╔═════════════╧═══════════════════════════╗
+                    ║          【平台层 — 不属于生成管道】       ║
+                    ║                                         ║
+                    ║  MidiScheduler（5ms 轮询）               ║
+                    ║       ↓                                 ║
+                    ║  合成器（SpessaSynth / FluidSynth）      ║
+                    ║       ↓                                 ║
+                    ║  音频输出（扬声器）                       ║
+                    ║       ↓                                 ║
+                    ║  onTrackEnd → playNext() → 循环回顶部    ║
+                    ╚═════════════════════════════════════════╝
 ```
 
-### 7.3 生成引擎黑盒接口
+### 7.3 PRNGManager 接口
 
-生成引擎对外暴露一个入口（实例方法）：
+贯穿全管道的随机数供给模块。内部维护一个 LCG（线性同余生成器），所有需要随机数的模块统一从这里取数。
+
+> **名词解释**
+> - **PRNG**（Pseudo-Random Number Generator）：伪随机数生成器，给定相同种子必定产生相同序列。
+> - **LCG**（Linear Congruential Generator）：线性同余生成器，PRNG 的一种具体算法。本项目参数：`a=1664525, c=1013904223, m=2³²`（源码 `PRNG.ts:17`）。
+
+**工作原理**:
+
+PRNGManager 内部只有一个整数 `state`，这就是它的全部状态。
+
+```
+setSeed(42)  → state = 42                                     （初始化）
+
+第 1 次 next() → state = (1664525 × 42 + 1013904223) % 2³²   → 返回 state / 2³²
+第 2 次 next() → state = (1664525 × state + 1013904223) % 2³²  → 返回 state / 2³²
+第 3 次 next() → 同上，永远用上一次的 state 算下一个
+...
+```
+
+seed 决定起点，之后每次 `next()` 不可逆地往前走一步。整条序列是一条**单向链**，完全由 seed 唯一确定。不管谁调用 `next()`，只要调用顺序一样，出来的数就一样。
+
+**实际消费顺序**（单次生成周期）:
+
+```
+setSeed(seed)
+  │
+  ├─ AuraRadio 选风格      → next() ×1        ← 从 14 个 StyleId 中选一个
+  │
+  ├─ 生成引擎内部           → next() ×N 次     ← BPM/调性/拍号/和弦/旋律/编制...
+  │   ├─ StructureEngine   → next() ×若干
+  │   ├─ HarmonyEngine     → next() ×若干
+  │   ├─ EnsembleDrafter   → next() ×若干
+  │   ├─ ToplineEngine     → next() ×若干
+  │   └─ reharmonize       → next() ×若干
+  │
+  ├─ 编配引擎内部           → next() ×M 次     ← Idiom 渲染 + 人性化
+  │   ├─ InstrumentIdiom   → next() ×若干
+  │   └─ humanize          → next() ×若干
+  │
+  └─ MIDI 转换层            → next() ×0        ← 纯数据转换，不消耗随机数
+```
+
+所有模块共享同一条链，按上述固定顺序依次消费。相同 seed → 相同调用顺序 → 相同输出。
+
+**接口**:
+
+```typescript
+PRNGManager.setSeed(seed: number): void       // 设置 state = seed，序列从头开始
+PRNGManager.next(): number                    // 算下一个 state，返回 0~1
+PRNGManager.nextInt(min, max): number         // next() 基础上映射到整数范围
+PRNGManager.nextFloat(min, max): number       // next() 基础上映射到浮点范围
+PRNGManager.getState(): number                // 读取当前 state（用于快照）
+PRNGManager.setState(state: number): void     // 恢复到指定 state（用于复现）
+```
+
+**测试钩子** — `getState()` / `setState()` 的用法:
+
+正常运行时，在每个模块入口自动快照当前 state：
+
+```
+setSeed(12345)
+                          stateA = getState()  → 42          ← 选风格前
+AuraRadio 选风格           next() ×1
+                          stateB = getState()  → 98371052    ← 生成引擎入口
+生成引擎                   next() ×N
+                          stateC = getState()  → 2748193604  ← 编配引擎入口
+编配引擎                   next() ×M
+                          stateD = getState()  → 817432956   ← MIDI 转换前
+MIDI 转换层                （不消耗）
+                          → 最终输出 MidiEvent[]
+```
+
+单独测试某个模块时，不需要从 seed 重跑整条链：
+
+```
+// 只测编配引擎
+setState(2748193604)                              ← 恢复到编配引擎入口的 state
+Orchestrator.arrange(track, styleId, context)     ← 喂入之前记录的输入
+→ 对比输出是否与完整运行时一致                       ← 一致则该模块正确
+```
+
+意义：**把单向链切断成片段，任意一段都能独立重放和验证**。用于定位哪个模块产生了偏差（Web 与 C++ 对比时尤其关键）。
+
+**行为约束**:
+- v1 实现与当前 `globalPRNG` 行为完全一致，黄金种子测试零差异
+- `getState()`/`setState()` 是新增能力，当前代码不存在
+- 当前源码中 `globalPRNG = new PRNG(Date.now())`，`setSeed()` 虽已实现但项目中从未被调用，每次运行种子不同（不可复现）。黄金种子测试需在入口处显式调用 `setSeed(固定值)`
+- 纯确定性，不依赖任何外部状态
+- C++ 侧对应 `struct PRNGManager { uint32_t state; }` + `uint8_t protocolVersion`
+- v2 分流种子派生（每个模块独立子链）见第 8 章
+
+### 7.4 生成引擎黑盒接口
 
 ```typescript
 const engine = new MelodyEngine();
-engine.generateFullSong(styleId: string, options?: GenerationOptions): GeneratedTrack
+engine.generateFullSong(styleId: StyleId, options?: GenerationOptions)
+  : { track: GeneratedTrack, context: MusicContext }
 ```
 
 **显式输入**:
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `styleId` | `string` | 是 | 风格 ID，从 `StyleRegistry` 的 14 个已注册风格中选取 |
+| `styleId` | `StyleId`（enum） | 是 | 风格枚举值，索引 `StyleConfigTable` 和 `StyleFlagTable` |
 | `options.userMotifRoot` | `number` | 否 | 用户动机根音，传入则锁定调号 |
 | `options.processedUserMotif` | `NoteData[]` | 否 | 用户动机音符序列 |
 | `options.motifRole` | `'Foreground' \| 'Middleground' \| 'Background'` | 否 | 动机角色，默认 `'Foreground'` |
@@ -306,65 +404,91 @@ engine.generateFullSong(styleId: string, options?: GenerationOptions): Generated
 
 | 名称 | 说明 |
 |------|------|
-| `globalPRNG` 内部状态 | 所有随机决策的唯一随机源。不同状态产生不同曲目。 |
-| `StyleConfig` | 由 `styleId` 查表得到，定义 BPM 范围、和弦池、旋律约束、乐器候选等规则边界。 |
+| `PRNGManager` | 通过 `getStream("gen")` 获取本阶段 PRNG 实例，入口自动记录状态快照。 |
+| `StyleConfigTable[styleId]` | 内部查表得到，定义 BPM 范围、和弦池、旋律约束、乐器候选等规则边界。 |
+| `StyleFlagTable[styleId]` | 内部查表得到，风格分类标签位掩码（25 flag）。 |
 
 **输出**:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `vocal` | `NoteData[]?` | 人声旋律序列（若 `EnsembleDraft.vocalSound` 存在） |
-| `melody` | `NoteData[]` | 器乐主旋律（有 vocal 时为较稀疏的伴奏旋律） |
-| `chords` | `GeneratedChord[]` | 全曲和弦时间轴 |
-| `sections` | `SectionMetadata[]` | 段落结构（类型、起止拍、能量等级） |
+| `track` | `GeneratedTrack` | 生成的曲目数据（字段同 7.2 图中所列） |
+| `context` | `MusicContext` | 生成过程中产生的音乐上下文状态，显式传递给编配引擎 |
+
+`MusicContext` 包含生成引擎在生成过程中确定的全局音乐状态：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `keyOffset` | `number` | 调号偏移量（0~11） |
+| `tonality` | `string` | 调式（Major/Minor） |
 | `bpm` | `number` | 速度 |
-| `key` | `string` | 调号（`"C"` ~ `"B"`） |
-| `keyOffset` | `number` | 调号偏移量（0~11），用于后续移调 |
-| `tonality` | `string` | 调式 |
 | `timeSignature` | `[number, number]` | 拍号 |
-| `preSelectedPalette` | `EnsembleDraft?` | 乐器编制 + 混音参数（含 `vocalSound?`） |
-| `absoluteStartBeat` | `number` | 绝对起始拍（播放引擎对齐时间轴） |
-| `blockIndex` | `number` | 块索引（通常为 0） |
-| `hasIntro` | `boolean` | 是否包含前奏 |
-| `globalRiff` | `NoteData[]?` | 全局核心 Riff（Riff-Driven 风格用） |
-| `processedUserMotif` | `NoteData[]?` | 透传处理后的用户动机 |
-| `motifRole` | `string?` | 动机角色标记（透传） |
-| `motifExpertise` | `string?` | 动机专业度标记（透传） |
+| `grooveDNA` | `number[]` | 节奏指纹 |
+| `singerPersona` | `SingerPersonaConfig?` | 歌手人格配置 |
 
 **行为约束**:
 - 同步调用，返回纯数据，不触发音频
 - 相同 PRNG 状态 + 相同输入 = 相同输出（确定性）
-- 每次调用消耗若干 `globalPRNG.next()`，PRNG 状态不可逆前进
+- 每次调用消耗若干 PRNG，状态不可逆前进
+- **不修改任何全局状态**：音乐上下文通过返回值 `context` 显式输出，不写入全局单例
 
-### 7.4 编配引擎黑盒接口
+### 7.5 编配引擎黑盒接口
 
 ```typescript
-Orchestrator.arrange(track: GeneratedTrack, style: StyleConfig): ArrangedTrack
+Orchestrator.arrange(
+  track: GeneratedTrack,
+  styleId: StyleId,
+  context: MusicContext
+): ArrangedTrack
 ```
 
-**输入**: `GeneratedTrack` + `StyleConfig`
+**输入**:
 
-**输出**: 七轨分离的 `ArrangedTrack`（vocal / melody / secondaryMelody / pianoLH / pianoRH / drums / counterMelody），含乐器编制、混音参数，以及透传的元数据（`bpm`、`key`、`absoluteStartBeat`、`timeSignature`、`styleId`、`sections`、`userMotif`、`globalRiff`）供 PlaybackEngine 和 UI 层使用。
+| 参数 | 说明 |
+|------|------|
+| `track` | 生成引擎输出的 `GeneratedTrack` |
+| `styleId` | 风格枚举值，内部查 `StyleConfigTable` 和 `StyleFlagTable` |
+| `context` | 生成引擎输出的 `MusicContext`（keyOffset、tonality、bpm、grooveDNA 等） |
+
+**输出**: 七轨分离的 `ArrangedTrack`（vocal / melody / secondaryMelody / pianoLH / pianoRH / drums / counterMelody），含乐器编制、混音参数，以及透传的元数据。
 
 **行为约束**:
 - 同步调用，返回纯数据
-- 内部消耗 `globalPRNG`（乐器选择、人性化偏移）
-- 同一 `GeneratedTrack` 多次编配，若 PRNG 状态不同则结果不同
+- 通过 `PRNGManager.getStream("arr")` 获取本阶段 PRNG 实例，入口自动记录状态快照
+- 同一 `GeneratedTrack` + 同一 `MusicContext` + 同一 PRNG 状态 = 同一输出
+- **不读写任何全局状态**：所有音乐上下文从 `context` 参数读取，不访问全局单例
 
-### 7.5 播放引擎黑盒接口
+### 7.6 MIDI 转换层接口
+
+生成管道的末端。将编配引擎输出的 `ArrangedTrack` 转换为 `MidiEvent[]` 序列，这是整个生成管道的最终确定性输出。
 
 ```typescript
-AudioEngine.playSong(
-  track: GeneratedTrack,
-  style: StyleConfig,
-  generator: MelodyEngine,
-  options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }
-): Promise<void>
+PlaybackEngine.convert(arranged: ArrangedTrack, styleId: StyleId): MidiEvent[]
 ```
 
-内部串联 `Orchestrator.arrange()` → `PlaybackEngine.loadSong()` → `PlaybackEngine.play()`。将 `ArrangedTrack` 转为 MIDI 事件流，通过 `MidiScheduler`（5ms 轮询）驱动 SpessaSynth 实时合成。播放结束触发 `onTrackEnd` 回调。
+**输入**: `ArrangedTrack`（七轨音符数据 + 音色 + 混音参数）+ `StyleId`（查 `StyleFlagTable` 确定混音风格 → MIDI CC 指令）
 
-### 7.6 AuraRadio 如何实现无限不重复播放
+**输出**: `MidiEvent[]`——时间排序的 MIDI 指令序列（noteOn/noteOff/CC + 通道 + 时间戳）
+
+**行为约束**:
+- 同步调用，纯数据转换，不涉及音频硬件
+- 同一 `ArrangedTrack` + 同一 `StyleId` = 同一 `MidiEvent[]`（确定性）
+- 不消耗 PRNG，不读写 MusicContext
+
+**平台层播放**（不属于生成管道）：
+
+`MidiEvent[]` 之后的调度和合成由平台层负责，不在生成管道测试范围内：
+
+```
+MidiEvent[] → MidiScheduler（5ms 轮询）→ 合成器 → 音频输出
+              │                          │
+              │ Web: setTimeout           │ Web: SpessaSynth + GM128_3MB.sf2
+              │ ESP32: vTaskDelay         │ ESP32: FluidSynth / TinySoundFont
+              └──────────────────────────┘
+              因平台/合成器/音色库差异，音频波形允许不同
+```
+
+### 7.7 AuraRadio 如何实现无限不重复播放
 
 **不重复的保证**: 每次调用 `generateFullSong()` 消耗 PRNG 状态使其不可逆前进。AuraRadio 不重置种子，后续调用的随机决策序列必然不同，加上从 14 种风格中随机选取，每首曲目在旋律、和声、编制、速度、调性上均不相同。
 
@@ -372,19 +496,20 @@ AudioEngine.playSong(
 
 ```
 triggerGeneration()
-  ├─ styleId ← globalPRNG.next() → 14 个风格之一
-  ├─ GeneratedTrack ← new MelodyEngine().generateFullSong(styleId)  ← 无 options
-  ├─ 存入历史栈
+  ├─ styleId ← PRNGManager.getStream("style").next() → 14 个 StyleId 之一
+  ├─ { track, context } ← engine.generateFullSong(styleId)  ← 无 options
+  ├─ 存入历史栈 (track, styleId, context)
   └─ playTrack()
-       ├─ AudioEngine.playSong(track, style, ...)
+       ├─ AudioEngine.playSong(track, styleId, context, ...)
+       │    └─ 内部调用 Orchestrator.arrange(track, styleId, context)
        └─ onTrackEnd ──► playNext()
                            ├─ 历史有下一首 → playTrack()（跳过生成，重新编配）
                            └─ 历史末尾 → triggerGeneration()  ← 循环回到顶部
 ```
 
-**历史导航**: 已生成的 `GeneratedTrack` 缓存在内存栈中。回放时直接进入编配 + 播放，跳过生成。新生成时截断当前位置之后的历史。
+**历史导航**: 已生成的 `GeneratedTrack` + `StyleId` + `MusicContext` 缓存在内存栈中。回放时直接进入编配 + 播放，跳过生成。新生成时截断当前位置之后的历史。
 
-### 7.7 接口扩展性风险与重构建议
+### 7.8 接口扩展性风险与重构建议
 
 以下接口在未来扩展时需要联动修改多处代码。针对每项风险，给出结合 ESP32-S3 (C/C++) 嵌入式环境约束的重构方案。
 
@@ -424,3 +549,137 @@ triggerGeneration()
 
 - **重构方案 — 开放式枚举与静态映射（Open Enums & Static Pointers）**：将频繁变动的联合类型在 TS 侧改为开放式类型（`string`）配合常量字典，符合开闭原则。
 - **C++ 映射**：在 C++ 侧**严禁使用 String 字典**（避免堆分配和慢速比较）。必须映射为 `enum : uint8_t`，新增值追加到 enum 末尾；TS 侧的 `Map<string, Generator>` 注册表，在 C++ 侧必须实现为**静态函数指针数组**，通过 enum ID 直接寻址调用。
+
+### 7.9 接口设计约束
+
+> 以下约束已融入 7.1~7.7 的接口设计中，所有改动不改变生成输出，黄金种子测试结果零差异。
+
+1. **PRNG 由 `PRNGManager` 统一管理**：废弃裸 `globalPRNG` 单例，通过 `PRNGManager.getStream(stage)` 按阶段获取 PRNG 实例。模块统一管理种子派生策略、状态快照（`getState()`/`setState()`）、协议版本。当前仅实现 v1 串联流，行为与原 `globalPRNG` 一致。C++ 侧对应管理结构体 + `uint8_t` 协议版本。
+2. **`StyleId` 为 enum 类型**：废弃 `style.id` 字符串。所有接口统一只传 `StyleId`（enum 数值），各组件内部按需查 `StyleConfigTable[styleId]`（生成规则）和 `StyleFlagTable[styleId]`（分类标签）。C++ 侧 `enum StyleId : uint8_t`，静态数组直接寻址。
+3. **风格分类走 `StyleFlagTable` 位掩码**：废弃所有 `style.id.includes()` 子串匹配（8 个文件、80+ 处）。每个风格的 flag 分配按**代码中实际的分支命中路径**确定（不是按字符串包含关系），确保每个风格在替换后命中的 if 分支与替换前完全一致。`uint32_t` 容纳，不做乐理归约合并。新增风格时必须在 `StyleFlagTable` 中声明 flags。**StyleId enum 迁移与 StyleFlag 替换必须同步执行，不可拆分。** EnsembleDrafter 中的 `style.id.split('_')` 双向模糊匹配逻辑需重构为乐器侧 flag 匹配（`instrumentFlags & styleFlags`）。
+4. **接口参数统一**：`MelodyEngine.generateFullSong(styleId)`、`Orchestrator.arrange(track, styleId, context)`、`AudioEngine.playSong(track, styleId, context, ...)` 全部只收 `StyleId`，消除 StyleConfig 对象的冗余传递和重复查表。
+5. **`MusicContext` 显式传递**：废弃 `GlobalContext` 全局可变单例。生成引擎将曲目级音乐上下文（keyOffset、tonality、bpm、timeSignature、grooveDNA、singerPersona）作为返回值 `MusicContext` 显式输出，编配引擎通过参数 `context` 显式接收。各黑盒不读写任何全局状态，所有输入均在函数签名上可见，支持完全独立测试。C++ 侧对应值传递的结构体。编配引擎内部逐段落遍历时的段落级状态（activeSection、activeChord、energyLevel）属于编配引擎的内部实现，通过局部变量管理并显式传参给 TextureMapper / Idiom，不纳入 MusicContext，不经过全局单例。
+6. **阶段入口自动快照**：`MelodyEngine.generateFullSong()` 和 `Orchestrator.arrange()` 入口处自动记录 `PRNGManager.getState()`，支持独立复现任一阶段的输出。
+7. **`StyleId`、`StyleFlagTable`、`StyleIdName` 集中定义**：统一在一处（如 `StyleFlags.ts`），禁止散落。`StyleFlagTable` 每条记录必须在风格注册时一并声明。
+8. **生成管道终点为 `MidiEvent[]`**：整个生成管道（生成引擎 → 编配引擎 → MIDI 转换层）的最终确定性输出为 `MidiEvent[]` 序列，不涉及音频。同一输入必须产生相同的 `MidiEvent[]`。MIDI 之后的调度与合成属于平台层（MidiScheduler + 合成器 + 音色库），因平台差异允许不同波形，不纳入生成管道测试范围。
+
+**待验证边界项**（flag 分配需按代码实际分支命中路径逐个确认）：
+
+- `post_rock`：字符串无 `cinematic`，但 `Orchestrator.ts:18` 代码逻辑中 `includes('post_rock')` 被显式归入 cinematic 分支，flag 应为 `ROCK | CINEMATIC`
+- `synthwave`：`Orchestrator.ts:16` 有 `includes('synthwave')` 归入 electronic 分支，需确认是否需要新增 `SYNTHWAVE` flag 或分配已有 flag 组合
+- `lofi_hip_hop`：需全文搜索确认是否有 `includes('lofi')` 或 `includes('hip_hop')` 的专属匹配，如果确实无命中则 flag 为 0
+- `ghibli_orchestral`：`includes('ghibli')` 有专属逻辑，需搜索确认是否总是与 `cinematic` 成对出现，若有独立使用则需第 26 个 `GHIBLI` flag
+- `SectionMetadata.localStyleOverride`：当前为 `string`，需确认取值范围和迁移方式
+- `EnsembleDrafter.ts:32`：`style.id.split('_')` 双向模糊匹配无法用 flag 直接复制，需重构为乐器侧 flag 匹配，并逐个确认重构后的匹配结果与当前一致
+
+### 7.10 与当前代码的差异明细
+
+> 7.1~7.7 描述的是目标接口设计，以下列出与当前代码实现的具体差异。
+
+| 项 | 当前代码 | 目标设计 | 涉及文件 |
+|---|---|---|---|
+| styleId 类型 | `string`（如 `'modern_pop'`） | `StyleId`（enum 数值） | `types.ts`、所有接口签名 |
+| 风格分类方式 | `style.id.includes('house')` 子串匹配（80+ 处） | `StyleFlagTable[styleId]` 位掩码查表 | `Orchestrator.ts`、`TextureMapper.ts`、`HarmonyCore.ts`、`StructureEngine.ts`、`EnsembleDrafter.ts`、`PlaybackEngine.ts`、`LiveLoopingEngine.ts`、`RhythmCells.ts` |
+| 风格配置查询 | `getStyleConfig(id: string)` 哈希表查找 | `StyleConfigTable[styleId]` 静态数组直接寻址 | `StyleRegistry.ts` |
+| PRNG 管理 | 裸 `globalPRNG` 单例，无状态快照 | `PRNGManager` 模块，支持 `getStream(stage)`、`getState()`/`setState()` | `PRNG.ts` → 新增 `PRNGManager.ts` |
+| 音乐上下文传递 | `GlobalContext` 全局可变单例，生成引擎写入、编配引擎隐式读取 | `MusicContext` 结构体，生成引擎显式返回、编配引擎显式接收 | `GlobalContext.ts` → 新增 `MusicContext` 类型、`MelodyEngine.ts`、`Orchestrator.ts` |
+| 生成引擎返回值 | `GeneratedTrack` | `{ track: GeneratedTrack, context: MusicContext }` | `MelodyEngine.ts` |
+| 生成引擎参数 | `generateFullSong(styleId: string)` | `generateFullSong(styleId: StyleId)` | `MelodyEngine.ts` |
+| 编配引擎参数 | `arrange(track, style: StyleConfig)` | `arrange(track, styleId: StyleId, context: MusicContext)` | `Orchestrator.ts` |
+| 生成管道终点 | `AudioEngine.playSong()` 内含编配+MIDI转换+音频合成，输出为音频 | MIDI 转换层 `PlaybackEngine.convert()` 输出 `MidiEvent[]`，音频合成剥离到平台层 | `PlaybackEngine.ts`、`AudioEngine.ts` |
+| 播放引擎参数 | `playSong(track, style: StyleConfig, ...)` | `playSong(track, styleId: StyleId, context: MusicContext, ...)` | `AudioEngine.ts` |
+| StyleConfig 查表次数 | EndlessRadioManager 查一次 + MelodyEngine 内部再查一次（冗余） | 各组件内部按需查一次，无冗余 | `EndlessRadioManager.ts`、`AudioEngine.ts` |
+| 历史栈存储 | `{ track: GeneratedTrack, style: StyleConfig }` | `{ track: GeneratedTrack, styleId: StyleId, context: MusicContext }` | `EndlessRadioManager.ts` |
+| 风格显示名称 | `style.name` 从 StyleConfig 对象读取 | `StyleIdName[styleId]` 独立数组 | UI 层 |
+
+---
+
+## 8. 版本升级方向建议
+
+> 以下改进会改变生成输出。同一种子在改进前后产生不同曲目。实施时需要版本标识区分，并重新建立黄金种子基线。
+
+### 8.1 PRNG 阶段隔离（分流种子派生 v2）
+
+**现状**：全系统共用单一 `globalPRNG` 实例，生成引擎与编配引擎的 PRNG 调用严格串联（管道内共计 314+ 处调用点）。生成引擎内部任何改动（增减一次 `next()` 调用）会改变编配引擎的起始 PRNG 状态，导致七轨编配结果全部变化。
+
+**升级方式**：在 PRNGManager（7.8.2）中新增 v2 分流派生协议——由主种子 hash 派生各阶段独立的 PRNG 实例：
+
+```
+masterSeed
+  ├─ hash(masterSeed, "style")  → styleSelectionPRNG   （风格选择）
+  ├─ hash(masterSeed, "gen")    → generationPRNG       （生成引擎）
+  ├─ hash(masterSeed, "arr")    → arrangementPRNG      （编配引擎）
+  └─ hash(masterSeed, "perf")   → performancePRNG      （Idiom 人性化）
+```
+
+| 协议 | 派生方式 | 阶段间耦合 | 种子兼容性 |
+|------|---------|-----------|-----------|
+| `v1`（当前） | 串联流——全局共用单一 PRNG，顺序消耗 | 强 | 基线 |
+| `v2`（新增） | 分流派生——主种子 hash 派生独立实例 | 无 | 与 v1 不兼容，同种子产生不同曲目 |
+
+**影响**：
+- 同一 masterSeed 在 v1 和 v2 下输出不同曲目（两种协议各自确定性、可复现）
+- 314+ 调用点需逐个确认归属哪个阶段实例
+- 若需回放旧种子收藏，按版本标识走 v1 路径
+- C++ 侧每个模块持有独立 `LCG` 实例，内存增量仅为每实例一个 `uint32_t`
+
+### 8.2 风格标签乐理归约与分层
+
+**前置依赖**：7.8.3（25 flag 机械替换）已安全落地。
+
+**现状**：第一步保留了 25 个与原始子串 1:1 对应的 Flag，未做合并。部分 Flag 在代码中总是成对出现（如 `electronic` 和 `electro`），存在归约空间；同时缺少乐理维度的正交分层。
+
+**升级方式**：在 25 flag 基础上分三步进行：
+
+**步骤 1 — 逐对验证合并**
+
+检查以下候选合并对在代码中是否**总是成对出现于同一 if 条件**。总是成对 → 可安全合并；存在独立使用 → 不能合并。
+
+| 候选合并 | 风险点 |
+|---|---|
+| `JAZZ` + `SWING` | 是否存在只匹配 swing 不匹配 jazz 的分支？ |
+| `ELECTRONIC` + `ELECTRO` | 是否完全等价？ |
+| `RNB` + `SOUL` | 是否存在只匹配 soul 不匹配 rnb 的分支？ |
+| `JPOP` + `ANIME` | 是否完全等价？ |
+| `FUNK` + `DISCO` | 是否存在独立使用？ |
+| `BALLAD` + `ACOUSTIC` | 是否存在独立使用？ |
+| `HOUSE` + `EDM` + `ELECTRONIC` + `ELECTRO` + `DANCE` | 是否能统一为 ELECTRONIC？需逐处确认 |
+| `NEO_SOUL` → `RNB` | neo_soul 有独立 voicingStyle 逻辑，强行合并会丢失专属和弦排列 |
+| `CINEMATIC` + `AMBIENT` | 电影配乐和 ambient 编配策略差异大 |
+
+**高风险合并**（极可能导致输出变化）：
+- `NEO_SOUL` 归入 `RNB`：Neo Soul 失去专属和弦排列，变成普通 R&B
+- `HOUSE`+`EDM` 合并为 `ELECTRONIC`：`progressive_house` 会意外命中原本只属于 edm 的分支
+- 给 `lofi_hip_hop`（当前 flag=0）分配任何标签：会突然命中某些 if 分支，原本安静的 Lofi 可能加入激烈的电子鼓点
+
+**步骤 2 — 引入正交维度**
+
+将验证安全后的合并标签按乐理维度拆分为独立字段：
+
+```typescript
+interface StyleFlags {
+    genre: GenreFlag;     // 基因：POP | ROCK | JAZZ | ELECTRONIC | FOLK | RNB ...
+    groove: GrooveFlag;   // 律动：SWING | SHUFFLE | STRAIGHT | SYNCOPATED | LATIN_CLAVE ...
+    mood: MoodFlag;       // 情绪：BALLAD | UPBEAT | DARK | CINEMATIC | AMBIENT ...
+}
+```
+
+C++ 映射：每个维度一个 `uint8_t`，整体结构体 3 字节。
+
+**步骤 3 — 补充缺失标签**
+
+以下常见乐理分类在当前代码中不存在，但后续新增风格可能需要：
+
+| 候选标签 | 维度 | 说明 |
+|---|---|---|
+| BLUES | genre | 12 小节蓝调结构、蓝调音阶、shuffle 节奏 |
+| CLASSICAL | genre | 对位法、奏鸣曲式 |
+| COUNTRY | genre | Nashville 和弦套路、Pedal Steel |
+| METAL | genre | Power chord、双踩、失真 |
+| HIP_HOP | genre | 808 鼓机、Loop 结构（区别于 TRAP） |
+| LATIN | genre | Salsa/Cumbia/Reggaeton（区别于 BOSSA） |
+
+**影响**：
+- 合并 Flag 会改变部分风格的分支命中路径，导致 PRNG 消耗顺序变化，生成结果不同
+- 需要逐个风格验证合并后的输出是"修复了 Bug"还是"破坏了设计"
+- 合并完成后需重新建立黄金种子基线
