@@ -20,34 +20,38 @@ export class Orchestrator {
 
         const pick = (arr: string[]) => arr[Math.floor(globalPRNG.next() * arr.length)];
 
-        // 1. Lead
+        // 1. Vocal
+        let hasVocal = globalPRNG.next() < (style.orchestration?.vocalProbability ?? 0.5);
+        let vocalSound = hasVocal ? 'Marimba' : undefined;
+
+        // 2. Lead
         let melodySound = 'Acoustic_Grand';
         if (isElectronic) melodySound = pick(['Lead_2_Sawtooth', 'Electric_Piano_1']);
         else if (isCinematic) melodySound = pick(['Violin', 'Flute', 'Acoustic_Grand']);
         else if (isAcoustic) melodySound = pick(['Alto_Sax', 'Electric_Piano_1', 'Acoustic_Grand']);
         else melodySound = pick(['Acoustic_Grand', 'Electric_Piano_1', 'Violin', 'Flute', 'Alto_Sax', 'Lead_2_Sawtooth']);
 
-        // 2. Chord / Accompaniment
+        // 3. Chord / Accompaniment
         let chordSound = 'Acoustic_Grand';
         if (isElectronic) chordSound = pick(['Synth_Strings_1', 'Electric_Guitar_Clean']);
         else if (isCinematic) chordSound = pick(['String_Ensemble_1', 'Acoustic_Grand']);
         else if (isAcoustic) chordSound = pick(['Acoustic_Guitar_Steel', 'Acoustic_Grand']);
         else if (isRock) chordSound = pick(['Electric_Guitar_Clean', 'Acoustic_Guitar_Steel']);
-        else chordSound = pick(['Acoustic_Grand', 'Acoustic_Guitar_Steel', 'Electric_Guitar_Clean', 'String_Ensemble_1', 'Synth_Strings_1']);
+        else chordSound = pick(['Acoustic_Grand', 'Acoustic_Guitar_Steel', 'Electric_Guitar_Clean', 'String_Ensemble_1', 'Synth_Strings_1', 'Choir_Aahs', 'Voice_Oohs']);
 
-        // 3. Bass
+        // 4. Bass
         let bassSound = 'Electric_Bass_Finger';
         if (isElectronic) bassSound = pick(['Synth_Bass_1', 'Synth_Bass_2']);
         else if (isCinematic || style.id.includes('folk')) bassSound = 'Acoustic_Bass';
         else if (isRock) bassSound = pick(['Electric_Bass_Finger', 'Synth_Bass_2']);
         else bassSound = pick(['Acoustic_Bass', 'Electric_Bass_Finger']);
 
-        // 4. Drums
+        // 5. Drums
         let drumSound = 'Standard_DrumKit';
         if (isElectronic) drumSound = pick(['TR808_DrumKit', 'Electronic_DrumKit']);
         else drumSound = 'Standard_DrumKit';
 
-        // 5. Counter Melody / Pad / Arp / Choir
+        // 6. Counter Melody / Pad / Arp / Choir
         let counterMelodySound: string | null = null;
         if (globalPRNG.next() > 0.3) {
             if (isElectronic) counterMelodySound = pick(['Pad_2_Warm', 'Marimba', 'Voice_Oohs']);
@@ -57,6 +61,7 @@ export class Orchestrator {
         }
 
         const palette = track.preSelectedPalette || {
+            vocalSound,
             melodySound,
             chordSound,
             bassSound,
@@ -75,12 +80,18 @@ export class Orchestrator {
                 counterMelody: { pan: 0.6, reverb: 0.5, volume: -6 }, // Move counter melody wider to right
             };
             
-            // If melody is vocal, make it louder and more reverberant
-            if (palette.melodySound === 'Solo_Vox') {
-                palette.mixing.melody.volume = 10; // Much louder for Solo_Vox
+            // Dynamic Foreground / Midground based on Vocal presence
+            if (palette.vocalSound) {
+                palette.mixing.vocal = { pan: 0, reverb: 0.7, volume: 10 }; // Vocal takes absolute C-position
+                palette.mixing.melody.pan = 0.3; // Melody moves to Midground
+                palette.mixing.melody.volume = 2; // Melody gets quieter
+            } else {
+                palette.mixing.melody.pan = 0; // Melody takes C-position
+                palette.mixing.melody.volume = 8;
                 palette.mixing.melody.reverb = 0.7;
-                palette.mixing.melody.pan = 0; // Center
-            } else if (palette.melodySound === 'Violin') {
+            }
+
+            if (palette.melodySound === 'Violin') {
                 palette.mixing.melody.volume -= 6; // Lower violin volume
             } else if (palette.melodySound === 'Acoustic_Grand') {
                 palette.mixing.melody.volume += 6; // Increase acoustic grand volume
@@ -397,8 +408,55 @@ export class Orchestrator {
             let playCounterMelody = state.playCounterMelody;
             let texture = state.texture;
 
+            const isNeoSoulOrRnB = activeSection.localStyleOverride?.includes('neo_soul') || style.id.includes('neo_soul') || style.id.includes('rnb');
+
+            // 🌟 旋律引导的和声替换 (Melody-Driven Reharmonization)
+            if (isNeoSoulOrRnB && globalPRNG.next() < 0.6) {
+                const overlappingMelody = idiomaticMelody.filter(n => n.onset >= chord.startBeat && n.onset < chord.endBeat && n.duration >= 0.5);
+                if (overlappingMelody.length > 0) {
+                    const rootPc = chord.root % 12;
+                    let has9th = false, has11th = false, has13th = false;
+                    for (const note of overlappingMelody) {
+                        const interval = (note.pitch % 12 - rootPc + 12) % 12;
+                        if (interval === 2) has9th = true;
+                        if (interval === 5 && chord.quality.includes('Minor')) has11th = true;
+                        if (interval === 9 && chord.quality.includes('Dominant')) has13th = true;
+                    }
+
+                    if (has13th && chord.quality === 'Dominant7') {
+                        chord.quality = 'Dominant13';
+                    } else if (has11th && (chord.quality === 'Minor7' || chord.quality === 'Minor9')) {
+                        chord.quality = 'Minor11';
+                    } else if (has9th) {
+                        if (chord.quality === 'Major7') chord.quality = 'Major9';
+                        else if (chord.quality === 'Minor7') chord.quality = 'Minor9';
+                        else if (chord.quality === 'Dominant7') chord.quality = 'Dominant9';
+                    }
+                }
+            }
+
+            // 🌟 动态织体切换 (Dynamic Texture Shifting)
+            if (isNeoSoulOrRnB) {
+                const sectionLength = activeSection.endBeat - activeSection.startBeat;
+                const progress = (chord.startBeat - activeSection.startBeat) / sectionLength;
+                if (progress >= 0.5) {
+                    if (texture === 'Block' || texture === 'Pad') {
+                        texture = globalPRNG.next() > 0.5 ? 'Rhythmic' : 'Arpeggio';
+                    }
+                }
+            }
+
+            // 🌟 乐器化 Call and Response (Fills)
+            if (isNeoSoulOrRnB && globalPRNG.next() < 0.5) {
+                const chordMidpoint = chord.startBeat + (chord.endBeat - chord.startBeat) / 2;
+                const melodyInSecondHalf = idiomaticMelody.some(n => n.onset >= chordMidpoint && n.onset < chord.endBeat);
+                if (!melodyInSecondHalf) {
+                    texture = 'Riff'; // Fill in the gap
+                }
+            }
+
             // 🌟 Vocal Accompaniment Logic: Simplify accompaniment when vocal is present
-            if (palette.melodySound === 'Solo_Vox') {
+            if (palette.vocalSound) {
                 if (texture === 'Arpeggio' || texture === 'Rhythmic') {
                     texture = 'Block'; // Use simpler chords to leave room for the vocal
                 }
@@ -656,12 +714,14 @@ export class Orchestrator {
         const humanizedDrums = InstrumentIdiom.humanize(idiomaticDrums, 'Drums', swingRatio, swingSubdivision, false, style.orchestration?.idiomPreferences);
         const humanizedCounterMelody = InstrumentIdiom.humanize(idiomaticCounterMelody, palette.counterMelodySound || 'Piano', swingRatio, swingSubdivision, true, style.orchestration?.idiomPreferences);
         const humanizedMelody = InstrumentIdiom.humanize(idiomaticMelody, palette.melodySound || 'Piano', swingRatio, swingSubdivision, true, style.orchestration?.idiomPreferences);
+        const humanizedVocal = hasVocal && track.vocal ? InstrumentIdiom.humanize(track.vocal, palette.vocalSound || 'Marimba', swingRatio, swingSubdivision, true, style.orchestration?.idiomPreferences) : undefined;
         const humanizedSecondaryMelody = InstrumentIdiom.humanize(idiomaticSecondaryMelody, secondarySound || 'Piano', swingRatio, swingSubdivision, true, style.orchestration?.idiomPreferences);
 
         const finalKeyOffset = track.keyOffset || 0;
         const applyOffset = (notes: NoteData[]) => { notes.forEach(n => { n.pitch += finalKeyOffset; }); };
 
         applyOffset(humanizedMelody);
+        if (humanizedVocal) applyOffset(humanizedVocal);
         applyOffset(humanizedSecondaryMelody);
         applyOffset(humanizedLH);
         applyOffset(humanizedRH);
@@ -687,7 +747,7 @@ export class Orchestrator {
         return {
             bpm: track.bpm, key: track.key, absoluteStartBeat: track.absoluteStartBeat,
             styleId: style.id,
-            melody: humanizedMelody, secondaryMelody: isDuet ? humanizedSecondaryMelody : undefined, pianoLH: humanizedLH, pianoRH: humanizedRH, drums: hasDrums ? humanizedDrums : undefined,
+            vocal: humanizedVocal, melody: humanizedMelody, secondaryMelody: isDuet ? humanizedSecondaryMelody : undefined, pianoLH: humanizedLH, pianoRH: humanizedRH, drums: hasDrums ? humanizedDrums : undefined,
             counterMelody: hasCounterMelody ? humanizedCounterMelody : undefined,
             palette, sections: track.sections
         };

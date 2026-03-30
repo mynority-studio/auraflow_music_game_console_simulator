@@ -41,9 +41,9 @@ export class EnsembleDrafter {
 
         let melodySound = getInstrumentFromPool(melodyPool);
         
-        // 🌟 80% 的概率让人声 (Solo_Vox) 作为主旋律
+        // 🌟 80% 的概率让人声 (Marimba) 作为主旋律
         if (globalPRNG.next() < 0.8) {
-            melodySound = 'Solo_Vox';
+            melodySound = 'Marimba';
         }
 
         let secondaryMelodySound: string | null = null;

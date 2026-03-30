@@ -5,7 +5,7 @@ export type ChordFunction = 'Tonic' | 'Subdominant' | 'Dominant';
 export class MusicTheoryRules {
     // 1. 和弦功能映射 (Chord Function Mapping)
     public static getChordFunction(numeral: string): ChordFunction {
-        const base = numeral.replace(/maj7|m7b5|dim7|dim|°|aug|sus4|m7|7|b5/g, '').replace(/b|#/g, '').toLowerCase();
+        const base = numeral.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '').replace(/b|#/g, '').toLowerCase();
         if (['i', 'iii', 'vi'].includes(base)) return 'Tonic';
         if (['iv', 'ii'].includes(base)) return 'Subdominant';
         if (['v', 'vii'].includes(base)) return 'Dominant';
@@ -14,7 +14,7 @@ export class MusicTheoryRules {
 
     // 2. 严密的经过和弦推导 (Strict Passing Chord Derivation)
     public static getPassingChord(targetNumeral: string, type: 'SecondaryDominant' | 'Diminished7' | 'TritoneSub' | 'Chromatic' | 'DescendingDiminished'): string | null {
-        const base = targetNumeral.replace(/maj7|m7b5|dim7|dim|°|aug|sus4|m7|7|b5/g, '');
+        const base = targetNumeral.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '');
         
         if (type === 'SecondaryDominant') {
             const map: Record<string, string> = {
@@ -81,7 +81,7 @@ export class MusicTheoryRules {
     public static getSubstitution(numeral: string, allowedBorrowed: string[] = []): string[] {
         const subs: string[] = [];
         const func = this.getChordFunction(numeral);
-        const base = numeral.replace(/maj7|m7b5|dim7|dim|°|aug|sus4|m7|7|b5/g, '');
+        const base = numeral.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '');
 
         if (func === 'Tonic') {
             if (base === 'I' || base === 'i') subs.push('vi', 'iii');
@@ -97,7 +97,11 @@ export class MusicTheoryRules {
                 if (allowedBorrowed.includes('Neapolitan')) subs.push('bII');
             }
         } else if (func === 'Dominant') {
-            if (base === 'V' || base === 'v') subs.push('vii°');
+            if (base === 'V' || base === 'v') {
+                subs.push('vii°');
+                if (allowedBorrowed.includes('TritoneSub')) subs.push('bII7');
+                if (allowedBorrowed.includes('ModalMixture')) subs.push('v'); // minor v
+            }
         }
 
         return subs;

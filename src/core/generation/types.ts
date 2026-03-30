@@ -12,7 +12,7 @@ export type ChordProgression = string[];
  * };
  */
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9'; startBeat: number; endBeat: number; }
+export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface HarmonyState {
@@ -69,6 +69,7 @@ export interface StyleConfig {
         allowTritoneSub?: boolean;
         reharmProbability?: number;
         borrowedChords?: Array<'ModalMixture' | 'Neapolitan' | 'SecondaryDominant' | 'TritoneSubstitution'>;
+        voicingStyle?: 'standard' | 'neo-soul' | 'jazz';
     };
     rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; };
     melody: { 
@@ -81,6 +82,8 @@ export interface StyleConfig {
         extensionPreference?: number;
         chromaticPassingProbability?: number;
         syncopationResolution?: 'strict' | 'loose';
+        inflectionProbability?: number;
+        pentatonicShiftProbability?: number;
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
@@ -90,9 +93,10 @@ export interface StyleConfig {
         bassInstruments?: string[];
         drumInstruments?: string[];
         counterMelodyInstruments?: string[];
-        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff'>;
+        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass'>;
         drumProbability?: number; // 🌟 新增：鼓组出场率，彻底解耦
         counterMelodyProbability?: number; // 副旋律出场率
+        vocalProbability?: number; // 🌟 新增：主唱出场率
         idiomPreferences?: {
             stringStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm';
             pianoStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm';
@@ -138,6 +142,7 @@ export interface MixingConfig {
 }
 
 export interface EnsembleDraft {
+    vocalSound?: string;
     melodySound: string;
     secondaryMelodySound?: string;
     chordSound: string | null;
@@ -146,9 +151,9 @@ export interface EnsembleDraft {
     counterMelodySound: string | null;
     filterSweep?: string;
     mixing?: {
+        vocal?: MixingConfig;
         melody?: MixingConfig;
         secondaryMelody?: MixingConfig;
-        vocal?: MixingConfig;
         chord?: MixingConfig;
         bass?: MixingConfig;
         drums?: MixingConfig;
@@ -157,7 +162,7 @@ export interface EnsembleDraft {
 }
 
 export interface GeneratedTrack { 
-    chords: GeneratedChord[]; melody: NoteData[]; bpm: number; key: string; 
+    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; bpm: number; key: string; 
     keyOffset: number; tonality: string; timeSignature: [number, number]; sections: SectionMetadata[]; 
     blockIndex: number; absoluteStartBeat: number; hasIntro: boolean; 
     preSelectedPalette?: EnsembleDraft;
@@ -169,7 +174,7 @@ export interface GeneratedTrack {
 export interface ArrangedTrack { 
     bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
     styleId?: string;
-    melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
+    vocal?: NoteData[]; melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
     palette?: EnsembleDraft; 
     sections?: SectionMetadata[];
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)

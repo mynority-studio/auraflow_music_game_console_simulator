@@ -39,10 +39,21 @@ export const JazzRhythmCells: RhythmCell[] = [
     { durations: [0.5, 0.5], weight: 2, tags: ['straight', 'jazz'] }, // Less common in heavy swing
 ];
 
+export const RnBRhythmCells: RhythmCell[] = [
+    // 🌟 Phonetic Rhythm (语音化节奏): 连续短促的 16 分音符后接长音，模拟 R&B 的碎嘴和转音
+    { durations: [0.25, 0.25, 0.25, 0.25, 1.0], weight: 10, tags: ['phonetic', 'rnb', 'burst'] },
+    { durations: [0.25, 0.25, 0.5, 1.0], weight: 8, tags: ['phonetic', 'rnb'] },
+    { durations: [0.25, 0.25, 0.25, 0.75], weight: 7, tags: ['phonetic', 'rnb', 'syncopated'] },
+    { durations: [0.5, 0.25, 0.25, 1.0], weight: 6, tags: ['phonetic', 'rnb'] },
+    { durations: [0.75, 0.25, 1.0], weight: 8, tags: ['syncopated', 'rnb'] },
+    { durations: [0.25, 0.75, 1.0], weight: 6, tags: ['syncopated', 'rnb', 'push'] }
+];
+
 export function getRandomRhythmCell(styleId: string, energyLevel: number, isVocal: boolean = false): number[] {
     let cells = PopRhythmCells;
     if (styleId.includes('funk')) cells = FunkRhythmCells;
     else if (styleId.includes('jazz') || styleId.includes('bossa')) cells = JazzRhythmCells;
+    else if (styleId.includes('rnb') || styleId.includes('soul')) cells = RnBRhythmCells;
 
     // Filter by energy level (e.g., higher energy = more fast/subdivided cells)
     let filteredCells = cells;

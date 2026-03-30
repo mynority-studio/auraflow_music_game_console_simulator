@@ -91,15 +91,28 @@ export class MelodyEngine {
     // 4. 生成旋律（此时会将各段落独有的 GrooveDNA 写入 Sections）
     const toplineMotif = motifRole === 'Foreground' ? processedUserMotif : undefined;
     const leadInstrument = instrumentPalette.melodySound;
-    const melody = ToplineEngine.generateTrackMelody(
-      sections, chords, style, tonality, persona, leadInstrument, toplineMotif
-    );
+    let vocal: any[] | undefined = undefined;
+    let melody: any[] = [];
+
+    if (instrumentPalette.vocalSound) {
+        vocal = ToplineEngine.generateTrackMelody(
+            sections, chords, style, tonality, persona, instrumentPalette.vocalSound, toplineMotif
+        );
+        // Generate a sparser instrumental melody as accompaniment
+        melody = ToplineEngine.generateTrackMelody(
+            sections, chords, style, tonality, persona, leadInstrument, undefined, true
+        );
+    } else {
+        melody = ToplineEngine.generateTrackMelody(
+            sections, chords, style, tonality, persona, leadInstrument, toplineMotif
+        );
+    }
 
     // 5. 基于旋律进行重配和弦 (Re-harmonization)
     const finalChords = HarmonyEngine.reharmonize(chords, melody, style);
 
     return {
-      chords: finalChords, melody, bpm, key: actualKey, keyOffset, tonality,
+      chords: finalChords, melody, vocal, bpm, key: actualKey, keyOffset, tonality,
       timeSignature: timeSig, sections,
       blockIndex: 0, absoluteStartBeat: 0, hasIntro: true,
       preSelectedPalette: instrumentPalette,

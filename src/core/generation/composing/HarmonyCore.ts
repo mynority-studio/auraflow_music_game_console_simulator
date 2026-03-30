@@ -13,7 +13,9 @@ export class HarmonyCore {
         let isMinor = false;
         let isDim = false;
         let isAug = false;
+        let isMaj9 = false;
         let isMaj7 = false;
+        let isDom9 = false;
         let isDom7 = false;
         let isMin7 = false;
         let isHalfDim = false;
@@ -23,7 +25,8 @@ export class HarmonyCore {
 
         let base = cleanNumeral;
         
-        if (base.includes('maj7')) { isMaj7 = true; base = base.replace('maj7', ''); }
+        if (base.includes('maj9')) { isMaj9 = true; base = base.replace('maj9', ''); }
+        else if (base.includes('maj7')) { isMaj7 = true; base = base.replace('maj7', ''); }
         else if (base.includes('add9')) { isAdd9 = true; base = base.replace('add9', ''); }
         else if (base.includes('m9')) { isMin9 = true; base = base.replace('m9', ''); }
         else if (base.includes('m7b5')) { isHalfDim = true; base = base.replace('m7b5', ''); }
@@ -33,6 +36,7 @@ export class HarmonyCore {
         else if (base.includes('aug')) { isAug = true; base = base.replace('aug', ''); }
         else if (base.includes('sus4')) { isSus4 = true; base = base.replace('sus4', ''); }
         else if (base.includes('m7')) { isMin7 = true; base = base.replace('m7', ''); }
+        else if (base.includes('9')) { isDom9 = true; base = base.replace('9', ''); }
         else if (base.includes('7')) { isDom7 = true; base = base.replace('7', ''); }
         else if (base.includes('b5')) { isDim = true; base = base.replace('b5', ''); }
         
@@ -55,8 +59,10 @@ export class HarmonyCore {
         
         if (isAdd9) quality = 'Add9';
         else if (isMin9) quality = 'Minor9';
+        else if (isMaj9) quality = 'Major9';
         else if (isMaj7) quality = 'Major7';
         else if (isMin7) quality = 'Minor7';
+        else if (isDom9) quality = 'Dominant9';
         else if (isDom7) {
             if (isSus4) quality = 'Dominant7Sus4';
             else if (quality === 'Minor') quality = 'Minor7';
@@ -81,6 +87,10 @@ export class HarmonyCore {
         if (chord.quality === 'HalfDiminished') intervals =[0, 3, 6, 10];
         if (chord.quality === 'Sus4') intervals =[0, 5, 7];
         if (chord.quality === 'Dominant7Sus4') intervals =[0, 5, 7, 10];
+        if (chord.quality === 'Major9') intervals = [0, 4, 7, 11, 14];
+        if (chord.quality === 'Dominant9') intervals = [0, 4, 7, 10, 14];
+        if (chord.quality === 'Minor11') intervals = [0, 3, 7, 10, 14, 17];
+        if (chord.quality === 'Dominant13') intervals = [0, 4, 7, 10, 14, 21];
         
         // 🌟 修复：只将根音对齐到 targetCenter 附近，然后按音程叠加，保留和弦的原始排列（Voicing）
         let baseRoot = root;
@@ -92,11 +102,14 @@ export class HarmonyCore {
 
     // 🌟 平滑声部连接 (Voice Leading) & 现代 Voicing 理论
     // 根据上一个和弦的排列，计算当前和弦的最平滑排列（总移动距离最小）
-    public static getSmoothVoicing(currentChord: GeneratedChord, prevVoicing: number[], targetCenter: number = 60, isJazz: boolean = false): number[] {
+    public static getSmoothVoicing(currentChord: GeneratedChord, prevVoicing: number[], targetCenter: number = 60, voicingStyle: string = 'standard'): number[] {
         // 获取当前和弦的所有基础音级 (Pitch Classes)
         const root = currentChord.root;
         let intervals = [0, 4, 7];
         let omit5th = false; // 是否允许省略五音
+        
+        const isJazz = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
+        const isNeoSoul = voicingStyle === 'neo-soul';
 
         if (currentChord.quality === 'Minor') intervals = [0, 3, 7];
         else if (currentChord.quality === 'Diminished') intervals = [0, 3, 6];
@@ -110,17 +123,42 @@ export class HarmonyCore {
         else if (currentChord.quality === 'Sus4') intervals = [0, 5, 7];
         else if (currentChord.quality === 'Dominant7Sus4') { intervals = [0, 5, 7, 10]; omit5th = true; }
 
+        // Neo-Soul Voicing Enhancements (5 over 1, 4 over 2, etc.)
+        if (isNeoSoul) {
+            if (currentChord.quality === 'Major7' || currentChord.quality === 'Add9') {
+                // 5 over 1 for Maj9: Root, then V triad (7, 11, 14)
+                intervals = [0, 7, 11, 14]; 
+                omit5th = false; // We are using the 5th as the base of the upper structure
+            } else if (currentChord.quality === 'Minor7' || currentChord.quality === 'Minor9') {
+                // m11 voicing: Root, b3, b7, 9, 11 (0, 3, 10, 14, 17)
+                intervals = [0, 3, 10, 14, 17];
+                omit5th = true;
+            } else if (currentChord.quality === 'Dominant7') {
+                // Altered dominant or 13th for Neo-Soul
+                if (globalPRNG.next() > 0.5) {
+                    // 13th: Root, 3, b7, 9, 13 (0, 4, 10, 14, 21)
+                    intervals = [0, 4, 10, 14, 21];
+                } else {
+                    // Altered (e.g., 7#9): Root, 3, b7, #9 (0, 4, 10, 15)
+                    intervals = [0, 4, 10, 15];
+                }
+                omit5th = true;
+            }
+        }
+
         // 🌟 核心优化 1：省略五音 (Omit the 5th / Drop 5)
         // 如果是七和弦及以上，且五音是纯五度 (7)，高概率省略它，让声音更干净，避免 "Tanked" 浑浊感
-        if (omit5th && globalPRNG.next() < 0.75) {
+        if (omit5th && globalPRNG.next() < 0.75 && !isNeoSoul) {
             intervals = intervals.filter(i => i !== 7);
         }
 
         // 爵士乐/高级和声：无根音排列 (Rootless Voicings)
-        if (isJazz && intervals.length >= 3) {
+        if (isJazz && intervals.length >= 3 && globalPRNG.next() > 0.3) {
             intervals = intervals.filter(i => i !== 0); // 移除根音，交由贝斯
-            if (currentChord.quality === 'Dominant7' || currentChord.quality === 'Major7') {
-                if (!intervals.includes(14)) intervals.push(14); // Add 9th
+            if (!isNeoSoul) {
+                if (currentChord.quality === 'Dominant7' || currentChord.quality === 'Major7') {
+                    if (!intervals.includes(14)) intervals.push(14); // Add 9th
+                }
             }
         }
 
@@ -309,29 +347,46 @@ export class HarmonyEngine {
         const rand = globalPRNG.next();
         
         // 决定变异概率 (Mutation Rate)
-        // 爵士/R&B 变异率高，流行/EDM 变异率适中
         let mutationRate = 0.3; 
-        if (styleId.toLowerCase().includes('jazz') || styleId.toLowerCase().includes('rnb') || styleId.toLowerCase().includes('bossa')) mutationRate = 0.6;
-        if (styleId.toLowerCase().includes('edm') || styleId.toLowerCase().includes('house')) mutationRate = 0.2; // EDM 更倾向于标准进行
-        if (styleId.toLowerCase().includes('jpop') || styleId.toLowerCase().includes('anime')) mutationRate = 0.5;
+        if (styleId.toLowerCase().includes('jazz') || styleId.toLowerCase().includes('rnb') || styleId.toLowerCase().includes('bossa') || styleId.toLowerCase().includes('neo_soul')) mutationRate = 0.75;
+        if (styleId.toLowerCase().includes('edm') || styleId.toLowerCase().includes('house')) mutationRate = 0.25; 
+        if (styleId.toLowerCase().includes('jpop') || styleId.toLowerCase().includes('anime')) mutationRate = 0.6;
+        if (styleId.toLowerCase().includes('pop') || styleId.toLowerCase().includes('cinematic')) mutationRate = 0.4;
 
-        // 如果没有命中变异概率，保留原汁原味的“金曲和弦”
         if (rand > mutationRate) return originalChord;
+
+        const isMinorKey = GlobalContext.currentTonality === 'Minor';
+        const roll = globalPRNG.next();
 
         // 命中变异概率，在同等和声功能 (T/S/D) 下进行概率游走
         if (func === 'Tonic') {
-            if (isFirstChord) return globalPRNG.next() > 0.5 ? 'I' : 'vi'; // 乐句开头求稳
-            const roll = globalPRNG.next();
-            if (roll < 0.4) return 'I';
-            if (roll < 0.8) return 'vi';
-            return 'iii';
+            if (isFirstChord) return globalPRNG.next() > 0.5 ? 'I' : 'vi'; 
+            if (roll < 0.3) return 'I';
+            if (roll < 0.55) return 'vi';
+            if (roll < 0.75) return 'iii';
+            // 🌟 调式互换 (Modal Interchange): 借用同主音小调的 bIII 或 bVI
+            if (!isMinorKey) {
+                return globalPRNG.next() > 0.5 ? 'bVI' : 'bIII';
+            }
+            return 'I';
         } else if (func === 'Subdominant') {
-            return globalPRNG.next() > 0.6 ? 'IV' : 'ii';
+            if (roll < 0.4) return 'IV';
+            if (roll < 0.65) return 'ii';
+            // 🌟 调式互换 (Modal Interchange): 借用同主音小调的 iv 或 ii°
+            if (!isMinorKey) {
+                return globalPRNG.next() > 0.6 ? 'iv' : 'ii°';
+            }
+            return 'IV';
         } else if (func === 'Dominant') {
-            const roll = globalPRNG.next();
-            if (roll < 0.6) return 'V';
-            if (roll < 0.85) return 'III'; // 次属和弦 (V/vi)，极大地增加色彩
-            return 'vii°';
+            if (roll < 0.4) return 'V';
+            if (roll < 0.6) return 'III'; // 次属和弦 V/vi
+            if (roll < 0.75) return 'II'; // 次属和弦 V/V
+            if (roll < 0.85) return 'vii°';
+            // 🌟 调式互换 (Modal Interchange): 借用同主音小调的 bVII (Backdoor dominant)
+            if (!isMinorKey) {
+                return 'bVII';
+            }
+            return 'V';
         }
         return originalChord;
     }
@@ -340,38 +395,46 @@ export class HarmonyEngine {
     private static applyStyleSpices(progression: string[], styleId: string): string[] {
         return progression.map((chord) => {
             const isJPop = styleId.toLowerCase().includes('jpop') || styleId.toLowerCase().includes('anime');
-            const isJazz = styleId.toLowerCase().includes('jazz') || styleId.toLowerCase().includes('bossa') || styleId.toLowerCase().includes('rnb');
+            const isJazz = styleId.toLowerCase().includes('jazz') || styleId.toLowerCase().includes('bossa') || styleId.toLowerCase().includes('rnb') || styleId.toLowerCase().includes('neo_soul');
             const isEDM = styleId.toLowerCase().includes('edm') || styleId.toLowerCase().includes('house') || styleId.toLowerCase().includes('electronic');
             
             // 提取纯净的罗马数字基底
-            const base = chord.replace(/maj7|m7b5|dim7|dim|°|aug|sus4|m7|7|b5|add9|m9/g, '');
+            const base = chord.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '');
             const isMinor = base === base.toLowerCase();
+            const isDiminished = chord.includes('°') || chord.includes('dim');
             
             const rand = globalPRNG.next();
 
             if (isJazz || isJPop) {
-                if (rand < 0.7) { // 70% 概率加上浓郁的色彩音
-                    if (!isMinor && (base === 'I' || base === 'IV')) return base + 'maj7';
-                    if (isMinor && (base === 'ii' || base === 'iii' || base === 'vi')) return rand > 0.5 ? base + 'm7' : base + 'm9';
-                    if (base === 'V' || base === 'III' || base === 'VI') return rand > 0.5 ? base + '7' : base + 'sus4';
+                if (rand < 0.8) { // 80% 概率加上浓郁的色彩音
+                    if (isDiminished) return base + 'm7b5'; // 半减七和弦 (Half-diminished) 是爵士常用
+                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI' || base === 'bIII')) return rand > 0.5 ? base + 'maj7' : base + 'maj9';
+                    if (!isMinor && base === 'bVII') return rand > 0.5 ? base + '7' : base + '9'; // Backdoor dominant
+                    if (isMinor && (base === 'ii' || base === 'iii' || base === 'vi' || base === 'iv')) return rand > 0.5 ? base + 'm7' : base + 'm9';
+                    if (base === 'V' || base === 'III' || base === 'VI' || base === 'II') {
+                        // 属和弦或次属和弦
+                        if (rand < 0.3) return base + 'sus4';
+                        if (rand < 0.6) return base + '7';
+                        return base + '9'; // 增加 9 音
+                    }
                     if (base === 'vii') return base + 'm7b5';
                 }
             } else if (isEDM) {
-                if (rand < 0.5) { // EDM 喜欢挂留和加九
-                    if (!isMinor && (base === 'I' || base === 'IV')) return base + 'add9';
-                    if (isMinor && (base === 'vi' || base === 'ii')) return base + 'm7';
-                    if (base === 'V') return 'Vsus4';
+                if (rand < 0.6) { 
+                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI')) return base + 'add9';
+                    if (isMinor && (base === 'vi' || base === 'ii' || base === 'iv')) return base + 'm7';
+                    if (base === 'V' || base === 'bVII') return base + 'sus4';
                 }
             } else {
                 // Standard Pop/Rock
-                if (rand < 0.3) {
-                    if (!isMinor && (base === 'I' || base === 'IV')) return base + 'add9';
-                    if (isMinor && base === 'vi') return base + 'm7';
+                if (rand < 0.4) {
+                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI')) return base + 'add9';
+                    if (isMinor && (base === 'vi' || base === 'iv')) return base + 'm7';
                     if (base === 'V') return 'Vsus4';
                 }
             }
 
-            // 如果没有附加色彩，返回传入时的和弦（可能是原汁原味的复杂和弦，也可能是纯净的基底）
+            // 如果没有附加色彩，返回传入时的和弦
             return chord;
         });
     }

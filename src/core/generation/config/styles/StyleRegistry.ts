@@ -1,16 +1,26 @@
 import { StyleConfig } from '../../types';
-import { RussianFolkBalladStyle } from './RussianFolkBallad';
-import { ModernPopStyle } from './ModernPop';
-import { PowerBalladStyle } from './PowerBallad';
-import { PopRockStyle } from './PopRock';
-import { GhibliOrchestralStyle } from './GhibliOrchestral';
+import { ModernPopStyle, ClassicJPopStyle, ModernJPopStyle, DarkPopStyle } from './PopStyles';
+import { PopRockStyle, IndieRockStyle, PostRockStyle } from './RockStyles';
+import { LofiHipHopStyle, ProgressiveHouseStyle, SynthwaveStyle } from './ElectronicStyles';
+import { PowerBalladStyle, RussianFolkBalladStyle } from './BalladStyles';
+import { GhibliOrchestralStyle } from './CinematicStyles';
+import { NeoSoulStyle } from './RnBStyles';
 
 export const StyleRegistry: Record<string, StyleConfig> = {
     [ModernPopStyle.id]: ModernPopStyle,
-    [PowerBalladStyle.id]: PowerBalladStyle,
+    [ClassicJPopStyle.id]: ClassicJPopStyle,
+    [ModernJPopStyle.id]: ModernJPopStyle,
+    [DarkPopStyle.id]: DarkPopStyle,
     [PopRockStyle.id]: PopRockStyle,
+    [IndieRockStyle.id]: IndieRockStyle,
+    [PostRockStyle.id]: PostRockStyle,
+    [LofiHipHopStyle.id]: LofiHipHopStyle,
+    [ProgressiveHouseStyle.id]: ProgressiveHouseStyle,
+    [SynthwaveStyle.id]: SynthwaveStyle,
+    [PowerBalladStyle.id]: PowerBalladStyle,
     [RussianFolkBalladStyle.id]: RussianFolkBalladStyle,
     [GhibliOrchestralStyle.id]: GhibliOrchestralStyle,
+    [NeoSoulStyle.id]: NeoSoulStyle,
 };
 
 export const getAllAvailableStyles = () => {

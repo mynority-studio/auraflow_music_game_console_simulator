@@ -49,10 +49,45 @@ export class TextureMapper {
     const isElectronic = styleId.toLowerCase().includes('electronic') || styleId.toLowerCase().includes('dance') || styleId.toLowerCase().includes('edm') || styleId.toLowerCase().includes('house');
     const isLatin = styleId.toLowerCase().includes('latin') || styleId.toLowerCase().includes('bossa');
     const isReggae = styleId.toLowerCase().includes('reggae');
+    const isNeoSoul = styleId.toLowerCase().includes('neo_soul') || styleId.toLowerCase().includes('rnb') || styleId.toLowerCase().includes('soul');
 
     const activeSection = GlobalContext.getActiveSection();
     const grooveDensity = activeSection?.groove?.density ?? 0.5;
     const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
+
+    // 🌟 Neo-Soul / R&B 专属织体: Octave Melody Bass
+    if (isNeoSoul && energyLevel >= 5 && globalPRNG.next() < 0.4) {
+        // Generate a melodic bassline using octaves and pentatonic fills
+        let currentBeat = chord.startBeat;
+        while (currentBeat < chord.endBeat) {
+            // Root on downbeat
+            notes.push({ pitch: rootMidi, onset: currentBeat, duration: 0.5, velocity: 0.9 });
+            
+            // Syncopated octave or 5th
+            if (globalPRNG.next() < 0.7) {
+                const syncOnset = currentBeat + 0.75; // 16th note before beat 2
+                if (syncOnset < chord.endBeat) {
+                    const upperPitch = globalPRNG.next() > 0.5 ? rootMidi + 12 : fifthMidi;
+                    notes.push({ pitch: upperPitch, onset: syncOnset, duration: 0.25, velocity: 0.75 });
+                }
+            }
+            
+            // Pentatonic fill at the end of the measure
+            if (chord.endBeat - currentBeat >= 2 && globalPRNG.next() < 0.5) {
+                const fillOnset = currentBeat + 1.5;
+                if (fillOnset + 0.5 <= chord.endBeat) {
+                    const fillPitches = HarmonyCore.getScalePitches('Minor_Pentatonic').map(p => (chord.root + p) % 12 + 24);
+                    const p1 = fillPitches[Math.floor(globalPRNG.next() * fillPitches.length)];
+                    const p2 = fillPitches[Math.floor(globalPRNG.next() * fillPitches.length)];
+                    notes.push({ pitch: p1, onset: fillOnset, duration: 0.25, velocity: 0.7 });
+                    notes.push({ pitch: p2, onset: fillOnset + 0.25, duration: 0.25, velocity: 0.7 });
+                }
+            }
+            
+            currentBeat += 2; // Move by half measure
+        }
+        return notes;
+    }
 
     // --- Phase 3 & 4: Riff-Driven Bassline Logic (Option A) ---
     if (activeSection?.isRiffDriven) {
@@ -1076,7 +1111,10 @@ export class TextureMapper {
     
     // 🌟 平滑声部连接 (Voice Leading) & 现代 Voicing 理论
     if (prevVoicing && prevVoicing.length > 0) {
-        voicedTones = HarmonyCore.getSmoothVoicing(chord, prevVoicing, 55, isJazz);
+        let voicingStyle = 'standard';
+        if (isJazz) voicingStyle = 'jazz';
+        if (styleId === 'Neo_Soul') voicingStyle = 'neo-soul';
+        voicedTones = HarmonyCore.getSmoothVoicing(chord, prevVoicing, 55, voicingStyle);
     } else {
         const rawTones = HarmonyCore.getChordTones(chord, 55);
         // 🌟 核心优化 3：底部发散，顶部密集 (Open Bottom, Dense Top)
@@ -1172,6 +1210,13 @@ export class TextureMapper {
       // 用户要求：伴奏钢琴声音稍微小一点点，突出主奏
       let baseVelocity = melodySinging ? 0.45 : 0.6; // 整体提高基础力度，之前 0.35 太小了
       if (isSparseSection) baseVelocity -= 0.1;
+
+      // 🌟 Neo-Soul / R&B 专属：强拍留白 (Space & Syncopation)
+      const isNeoSoulOrRnB = styleId.toLowerCase().includes('neo_soul') || styleId.toLowerCase().includes('rnb');
+      if (isNeoSoulOrRnB && melodySinging && (beatInBar === 0 || beatInBar === 2) && globalPRNG.next() < 0.4) {
+          // 强拍主旋律在唱时，伴奏有 40% 概率完全让位（不弹）
+          continue;
+      }
 
       // 🌟 合成器专属简单脉冲织体 (Synth Pulse) - 避免古典钢琴的复杂加花
       if (textureType === "Synth_Pulse") {

@@ -79,7 +79,8 @@ export class PlaybackEngine {
         // 🌟 2. 获取采样器 (100% Soundfont)
         const mixing = song.palette?.mixing || {};
         
-        const melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', 'Foreground', 'melody', mixing.melody);
+        const vocalSynth = song.palette?.vocalSound ? this.instruments.getInstrument(song.palette.vocalSound, 'Foreground', 'vocal', mixing.vocal) : null;
+        const melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', song.palette?.vocalSound ? 'Midground' : 'Foreground', 'melody', mixing.melody);
         const chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground', 'chord', mixing.chord);
         
         // 🌟 3. 独立 Bass 采样器：根据流派选择电贝斯或原声贝斯
@@ -103,6 +104,7 @@ export class PlaybackEngine {
             }
         };
         
+        updateMaxOnset(song.vocal);
         updateMaxOnset(song.melody);
         updateMaxOnset(song.secondaryMelody);
         updateMaxOnset(song.pianoLH);
@@ -190,11 +192,15 @@ export class PlaybackEngine {
             };
         };
 
+        const vocalSynthFn = vocalSynth ? getSynthForRole(vocalSynth, lofiMelodySynth) : null;
         const melodySynthFn = getSynthForRole(melodySynth, lofiMelodySynth);
         const chordSynthFn = getSynthForRole(chordSynth, lofiChordSynth);
         const drumSynthFn = getSynthForRole(drumSynth, lofiDrumSynth);
         const bassSynthFn = getSynthForRole(bassSynth, lofiBassSynth);
 
+        if (song.vocal && vocalSynthFn) {
+            addPartEvents(song.vocal, vocalSynthFn, 'melody'); // Use 'melody' visual type for now
+        }
         addPartEvents(song.melody, melodySynthFn, 'melody');
         if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
             const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);

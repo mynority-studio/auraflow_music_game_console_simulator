@@ -163,7 +163,7 @@ export class SingerPersona {
             const graceProb = isPianoOrGuitar ? 0 : persona.traits.graceNoteProbability;
             
             if ((isPhraseStart || isLongNote) && globalPRNG.next() < graceProb) {
-                const graceDur = 0.12; 
+                const isRiff = globalPRNG.next() < (persona.traits.graceNoteProbability * 0.5); if (isRiff && isLongNote) { const riffCount = globalPRNG.next() > 0.5 ? 2 : 3; const riffDur = 0.08; let currentGracePitch = current.pitch; for (let r = riffCount; r > 0; r--) { currentGracePitch = HarmonyCore.shiftDiatonic(currentGracePitch, safeTones, -1); result.push({ pitch: currentGracePitch, onset: current.onset - (r * riffDur), duration: riffDur, velocity: current.velocity * 0.5, isGraceNote: true }); } current.duration -= (riffCount * riffDur); } else { const graceDur = 0.12; 
                 // 🌟 使用 Diatonic Shift：严格从当前音阶的“下方一阶”滑上来！绝对和谐！
                 const gracePitch = HarmonyCore.shiftDiatonic(current.pitch, safeTones, -1);
                 
@@ -175,6 +175,7 @@ export class SingerPersona {
                     isGraceNote: true
                 });
                 current.duration -= graceDur; 
+            }
             }
 
             // 4. 句末叹息尾音 (Trailing Fade) - 🌟 修复点：钢琴/吉他完全关闭
