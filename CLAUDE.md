@@ -1,98 +1,98 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code (claude.ai/code) 在本仓库中工作时提供指引。
 
-## Project Overview
+## 项目概述
 
-**AuraFlow Tap! Ver.7.6** — A web-based hardware music workstation simulator that combines tactile touch interaction with procedural music generation. It simulates a 5×3 pad controller with a full algorithmic music engine (Euclidean rhythms, Markov melody chains, harmony expert system). Designed for 1:1 porting to ESP32-S3 firmware.
+**AuraFlow Tap! Ver.7.6** — 基于 Web 的硬件音乐工作站模拟器，将触觉交互与程序化音乐生成相结合。模拟 5×3 打击垫控制器，内嵌完整的算法音乐引擎（欧几里得律动、马尔可夫旋律链、和声专家系统）。架构目标是 1:1 移植到 ESP32-S3 固件。
 
-Research/analysis documents go in `./docs`.
+研究/分析文档统一放在 `./docs`。
 
-## Commands
+## 常用命令
 
 ```bash
-npm install          # Install dependencies
-npm run dev          # Dev server on port 3000 (Vite)
-npm run build        # Production build
-npm run lint         # Type-check only (tsc --noEmit)
-npm run clean        # Remove dist/
+npm install          # 安装依赖
+npm run dev          # 开发服务器，端口 3000（Vite）
+npm run build        # 生产构建
+npm run lint         # 仅类型检查（tsc --noEmit）
+npm run clean        # 清除 dist/
 ```
 
-Requires `GEMINI_API_KEY` in `.env.local` (see `.env.example`).
+需要在 `.env.local` 中配置 `GEMINI_API_KEY`（参考 `.env.example`）。
 
-## Architecture
+## 架构
 
-### Dual-Platform Design
+### 双平台设计
 
-The codebase enforces strict separation between **Core Logic** (portable to ESP32 C++) and **Platform Layer** (Web-specific):
+代码库严格分离 **核心逻辑**（可移植到 ESP32 C++）与 **平台层**（Web 专用）：
 
-- `/src/core/generation/` — Pure music theory & generation algorithms. **Must remain 100% platform-agnostic** (no React, no Web APIs). Direct 1:1 translation target for C++ on ESP32-S3.
-- `/src/core/hal/` — Hardware Abstraction Layer interfaces (`ILedMatrix`, `ITouchPad`, `IAudioOut`, `ISystemTimer`). Web implementations in `WebSimulatorHAL.ts`; ESP32 would provide C++ implementations.
-- `/src/core/audio/` — Web-specific audio (SpessaSynth + MidiScheduler). **Replaced by I2S/FluidSynth on ESP32.**
-- `/src/apps/` — Application state machines (pure TS classes, not React hooks).
-- `/src/components/`, `/src/core/hardware/`, `/src/system/` — React UI for the web simulator. **Ignored in ESP32 port.**
+- `/src/core/generation/` — 纯音乐理论与生成算法。**必须保持 100% 平台无关**（禁止 React、Web API）。C++ 移植的直接翻译目标。
+- `/src/core/hal/` — 硬件抽象层接口（`ILedMatrix`、`ITouchPad`、`IAudioOut`、`ISystemTimer`）。Web 实现在 `WebSimulatorHAL.ts`；ESP32 需提供 C++ 实现。
+- `/src/core/audio/` — Web 专用音频（SpessaSynth + MidiScheduler）。**ESP32 上由 I2S/FluidSynth 替代。**
+- `/src/apps/` — 应用状态机（纯 TS 类，非 React hooks）。
+- `/src/components/`、`/src/core/hardware/`、`/src/system/` — Web 模拟器的 React UI。**ESP32 移植时忽略。**
 
-### Music Generation Pipeline (strictly sequential)
+### 音乐生成流水线（严格顺序执行）
 
 ```
 MelodyEngine.generateFullSong(styleId, options)
-  → StructureEngine     → SectionMetadata[] (Intro/Verse/Chorus/Bridge/Outro)
-  → HarmonyCore         → GeneratedChord[] (chord progressions with voice leading)
-  → EnsembleDrafter     → EnsembleDraft (instrument palette selection)
-  → ToplineEngine       → NoteData[] (melody with GrooveDNA rhythm fingerprints)
-  → Orchestrator        → ArrangedTrack (piano LH/RH, bass, drums, counter melody)
-  → InstrumentIdiom     → Humanized per-instrument performance
-  → SingerPersona       → Vocal expression (grace notes, pitch bends, breath breaks)
+  → StructureEngine     → SectionMetadata[]（Intro/Verse/Chorus/Bridge/Outro）
+  → HarmonyCore         → GeneratedChord[]（和弦进行 + 声部进行）
+  → EnsembleDrafter     → EnsembleDraft（乐器编制选择）
+  → ToplineEngine       → NoteData[]（旋律 + GrooveDNA 节奏指纹）
+  → Orchestrator        → ArrangedTrack（钢琴左右手、贝斯、鼓、副旋律）
+  → InstrumentIdiom     → 人性化的乐器演奏处理
+  → SingerPersona       → 声乐表情（装饰音、弯音、气口）
 ```
 
-Output is pure data (`ArrangedTrack`) — no audio playback happens during generation.
+生成输出为纯数据（`ArrangedTrack`）— 生成阶段不涉及音频播放。
 
-### Audio Playback Pipeline
+### 音频播放流水线
 
 ```
-ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler (5ms tick loop)
-  → SpessaSynth (SF2 synthesis) → AudioMixer (compressor + makeup gain) → speakers
-  → VisualEvent → LedMatrix (LED visualization)
+ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询）
+  → SpessaSynth（SF2 合成）→ AudioMixer（压缩器 + 补偿增益）→ 扬声器
+  → VisualEvent → LedMatrix（LED 可视化）
 ```
 
-All mixing uses MIDI CC messages (CC7=Volume, CC10=Pan, CC91=Reverb). No Web Audio GainNodes for per-track mixing.
+所有混音使用 MIDI CC 消息（CC7=音量、CC10=声像、CC91=混响），不使用 Web Audio GainNode 做分轨混音。
 
-### Key Singletons
+### 关键单例
 
-| Singleton | File | Purpose |
+| 单例 | 文件 | 用途 |
 |---|---|---|
-| `globalPRNG` | `core/utils/PRNG.ts` | Deterministic LCG random — never use `Math.random()` |
-| `globalMidiScheduler` | `core/audio/MidiScheduler.ts` | MIDI event dispatch (5ms tick, mimics FreeRTOS timer) |
-| `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth lifecycle & playback orchestration |
-| `GlobalContext` | `core/generation/GlobalContext.ts` | Shared musical state (BPM, key, tonality, time sig) |
+| `globalPRNG` | `core/utils/PRNG.ts` | 确定性 LCG 随机数 — 禁止使用 `Math.random()` |
+| `globalMidiScheduler` | `core/audio/MidiScheduler.ts` | MIDI 事件调度（5ms 轮询，模拟 FreeRTOS 定时器） |
+| `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排 |
+| `GlobalContext` | `core/generation/GlobalContext.ts` | 共享音乐状态（BPM、调性、拍号） |
 
-### Style System
+### 风格系统
 
-13 style configs in `/src/core/generation/config/styles/` (ClassicJPop, LofiHipHop, Synthwave, GhibliOrchestral, etc.). Each defines harmonic pools, rhythm params, melodic constraints, orchestration, and allowed vocalist personas. Adding a new style = add one file, no core changes.
+13 个风格配置位于 `/src/core/generation/config/styles/`（ClassicJPop、LofiHipHop、Synthwave、GhibliOrchestral 等）。每个风格定义和弦池、节奏参数、旋律约束、编配方案和允许的歌手人格。新增风格只需添加一个文件，无需修改核心代码。
 
-### Idiom System
+### 乐器惯用法系统（Idiom）
 
-Instrument-specific renderers in `/src/core/generation/performance/idioms/` (Piano, Guitar, String, Drum, Bass, Wind, SynthVoice). Each takes shared `HarmonyState` and outputs instrument-appropriate `NoteData`. The `InstrumentIdiom` dispatcher routes by instrument name.
+乐器专用渲染器位于 `/src/core/generation/performance/idioms/`（Piano、Guitar、String、Drum、Bass、Wind、SynthVoice）。每个 Idiom 接收共享的 `HarmonyState`，输出符合该乐器特性的 `NoteData`。`InstrumentIdiom` 调度器按乐器名称路由。
 
-## Critical Development Rules
+## 关键开发规则
 
-1. **No React in `/src/core/`** — Core generation must be pure TS classes/functions. No `useState`, `useEffect`, JSX.
-2. **No `Math.random()`** — Always use `globalPRNG.next()`. Same seed must produce identical output on Web and ESP32.
-3. **No Tone.js** — All audio via `MidiScheduler` + SpessaSynth. Mixing via MIDI CC only.
-4. **Memory-conscious in core** — Avoid object creation in tight loops. Prefer pre-allocated arrays / TypedArrays. `TrackSerializer` demonstrates the flat-memory pattern for C++ interop.
-5. **Pure data output** — `ArrangedTrack` must be JSON-serializable. No functions or class instances in generation output.
-6. **All instruments share harmony** — Every instrument reads from the same `HarmonyState` produced by `HarmonyCore`. Instruments never generate their own chord progressions.
+1. **`/src/core/` 禁止 React** — 核心生成必须是纯 TS 类/函数，禁止 `useState`、`useEffect`、JSX。
+2. **禁止 `Math.random()`** — 必须使用 `globalPRNG.next()`。相同种子在 Web 和 ESP32 上必须产生完全相同的输出。
+3. **禁止 Tone.js** — 所有音频通过 `MidiScheduler` + SpessaSynth 处理，混音仅用 MIDI CC。
+4. **核心代码注意内存** — 避免在紧密循环中创建对象，优先使用预分配数组 / TypedArray。`TrackSerializer` 展示了适配 C++ 的扁平内存模式。
+5. **纯数据输出** — `ArrangedTrack` 必须可 JSON 序列化，生成输出中禁止函数或类实例。
+6. **所有乐器共享和声** — 每个乐器读取 `HarmonyCore` 生成的同一份 `HarmonyState`，乐器不得自行生成和弦进行。
 
-## Verification: Golden Seed Test
+## 验证：黄金种子测试
 
-To verify C++ port parity: fix seed via `globalPRNG.setSeed(12345)`, generate, serialize output, then compare byte-for-byte with C++ output. Any divergence indicates a logic error (float precision, sort order, or missed PRNG call).
+验证 C++ 移植一致性：通过 `globalPRNG.setSeed(12345)` 固定种子，生成并序列化输出，与 C++ 输出逐字节比对。任何偏差都表示逻辑错误（浮点精度、排序算法或遗漏的 PRNG 调用）。
 
-## Tech Stack
+## 技术栈
 
-- **Framework**: React 19 + TypeScript 5.8 + Vite 6
-- **Styling**: Tailwind CSS 4 (via `@tailwindcss/vite`)
-- **Audio**: SpessaSynth (SF2 web synthesizer) + Web Audio API
-- **Soundfont**: `public/GM128_3MB.sf2` (General MIDI 128 instruments)
-- **Animation**: Motion (Framer Motion successor)
-- **AI**: Google Gemini API (`@google/genai`)
-- **Path alias**: `@/` maps to project root
+- **框架**: React 19 + TypeScript 5.8 + Vite 6
+- **样式**: Tailwind CSS 4（通过 `@tailwindcss/vite`）
+- **音频**: SpessaSynth（SF2 Web 合成器）+ Web Audio API
+- **音色库**: `public/GM128_3MB.sf2`（General MIDI 128 种乐器）
+- **动画**: Motion（Framer Motion 后继）
+- **AI**: Google Gemini API（`@google/genai`）
+- **路径别名**: `@/` 映射到项目根目录
