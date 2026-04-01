@@ -44,6 +44,7 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
   const particlesRef = useRef<Particle[]>([]);
   const ripplesRef = useRef<Ripple[]>([]);
   const hitColorsRef = useRef<Map<string, number>>(new Map());
+  const isFnKeyActiveRef = useRef(false);
 
   useEffect(() => {
     activeKeysRef.current = activeKeys;
@@ -73,6 +74,11 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
           x: cx, y: cy, hue, energy: event.energy ?? 2.0, spread: event.spread ?? 3.0, targetX: -1, targetY: -1, speed: 0,
           active: true
         });
+        return;
+      }
+
+      if (type === 'fn_key_active') {
+        isFnKeyActiveRef.current = !!event.active;
         return;
       }
 
@@ -391,9 +397,21 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
       }
       ripplesRef.current = activeRipples;
 
+      // 4. Render Function Key (Top Right: c=4, r=0 -> x:12-14, y:0-2)
+      if (isFnKeyActiveRef.current) {
+        const breathe = 0.5 + 0.5 * Math.sin(time * 4); // Fast breathing
+        const hue = (time * 60) % 360; // Rainbow cycle
+        for (let dy = 0; dy < 3; dy++) {
+          for (let dx = 0; dx < 3; dx++) {
+            const idx = dy * 15 + (12 + dx);
+            nextIntensities[idx] = Math.max(nextIntensities[idx], 0.3 + breathe * 0.7);
+            nextHues[idx] = hue;
+          }
+        }
+        needsUpdate = true;
+      }
 
-
-      // 4. Apply to DOM
+      // 5. Apply to DOM
       if (needsUpdate) {
         for (let i = 0; i < 135; i++) {
           const el = ledRefs.current[i];

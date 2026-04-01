@@ -1,8 +1,8 @@
 import { StyleConfig } from '../../types';
-
+import { StyleId } from '../StyleFlags';
 
 export const GhibliOrchestralStyle: StyleConfig = {
-    id: 'ghibli_orchestral',
+    id: StyleId.GhibliOrchestral,
     name: '久石让/吉卜力 (Ghibli Orchestral)',
     global: {
         bpmRange: [70, 110], // 速度适中，充满呼吸感
@@ -35,7 +35,8 @@ export const GhibliOrchestralStyle: StyleConfig = {
     harmonyRules: {
         maxDissonanceTolerance: 0.4, 
         reharmProbability: 0.4, // 经常使用离调和弦
-        borrowedChords: ['SecondaryDominant', 'ModalMixture'] // 次属和弦和同主音调借用是久石让精髓
+        borrowedChords: ['SecondaryDominant', 'ModalMixture'], // 次属和弦和同主音调借用是久石让精髓
+        voicingStyle: 'standard'
     },
     rhythm: {
         densityBase: [0.4, 0.7], 
@@ -55,16 +56,24 @@ export const GhibliOrchestralStyle: StyleConfig = {
     orchestration: {
         melodyInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Flute', 'Oboe', 'Violin'], // 钢琴或木管/弦乐主奏
         chordInstruments: ['String_Ensemble', 'String_Ensemble', 'Acoustic_Grand', 'Tremolo_Strings'], // 弦乐群铺底
-        bassInstruments: ['Acoustic_Bass', 'Cello'], // 真实原声贝斯或大提琴
+        bassInstruments: ['Acoustic_Bass', 'Cello', 'Contrabass', 'String_Ensemble_2'], // 真实原声贝斯或大提琴
         drumInstruments: ['Orchestral_DrumKit'], // 使用交响打击乐组，避免使用竖琴导致通道错误
         counterMelodyInstruments: ['Glockenspiel', 'Pizzicato_Strings', 'Clarinet', 'Flute', 'Orchestral_Harp'], // 竖琴移至副旋律
         texturePool: ['Arpeggio', 'Arpeggio', 'Pad', 'Block'], // 大量使用琶音和阿尔贝蒂低音
         drumProbability: 0.2, // 极少使用常规流行鼓
         counterMelodyProbability: 0.7, // 丰富的复调色彩
+        grooveRatio: { foundation: 0.4, comping: 0.5, color: 0.9 },
         idiomPreferences: {
             stringStyle: 'cinematic',
             bassStyle: 'pop',
             drumStyle: 'jazz' // 即使有鼓，也是非常轻柔的刷子或点缀
+        },
+        mixingPreferences: {
+            melody: { reverb: 0.8, delay: 0.4 },
+            chord: { pan: -0.25, reverb: 0.9, volume: -4.0 },
+            drums: { reverb: 0.2, volume: -2.0 },
+            bass: { reverb: 0.35, volume: -3.0 },
+            counterMelody: { pan: -0.6, delay: 0.3, volume: -4.0 }
         }
     },
     performance: {

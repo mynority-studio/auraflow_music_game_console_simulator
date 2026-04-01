@@ -1,5 +1,5 @@
 import { AudioMixer } from "./AudioMixer";
-import { spessaSynth } from "./AudioEngine";
+import { spessaSynth } from "./SynthManager";
 
 // ==========================================
 // 📄 文件路径: /src/core/audio/Instruments.ts
@@ -14,8 +14,11 @@ const GM_MAPPING: Record<string, number> = {
   Violin: 40,
   Flute: 73,
   Alto_Sax: 65,
+  Tenor_Sax: 66,
+  Harmonica: 22,
   
   // Chord
+  Acoustic_Guitar_Nylon: 24,
   Acoustic_Guitar_Steel: 25,
   Electric_Guitar_Clean: 27,
   String_Ensemble_1: 48,
@@ -32,6 +35,7 @@ const GM_MAPPING: Record<string, number> = {
   Vibraphone: 11,
   Marimba: 12,
   Pizzicato_Strings: 45,
+  Reverse_Cymbal: 119, // 🌟 P2: Reverse Cymbal
   
   // Bass
   Acoustic_Bass: 32,
@@ -165,7 +169,7 @@ export class InstrumentRegistry {
     this.mixer = mixer;
   }
 
-  public getInstrument(id: string, role: "Foreground" | "Midground" | "Background" | "Rhythm", trackId: string = "default", mixingConfig?: { pan: number, reverb: number, volume: number, delay?: number }): any {
+  public getInstrument(id: string, role: "Foreground" | "Midground" | "Background" | "Rhythm", trackId: string = "default", mixingConfig?: { pan?: number, reverb?: number, volume?: number, delay?: number }): any {
     let configId = GM_MAPPING[id] !== undefined ? id : "Acoustic_Grand";
     if (id === "System_Aura") {
       configId = "System_Aura";
@@ -178,6 +182,7 @@ export class InstrumentRegistry {
       else if (id.includes("Pad")) configId = "Pad_1_NewAge";
       else if (id.includes("Synth") || id.includes("Lead")) configId = "Lead_2_Sawtooth";
       else if (id.includes("Guitar") && id.includes("Clean")) configId = "Electric_Guitar_Clean";
+      else if (id.includes("Guitar") && id.includes("Nylon")) configId = "Acoustic_Guitar_Nylon";
       else if (id.includes("Guitar")) configId = "Acoustic_Guitar_Steel";
       else if (id.includes("String")) configId = "String_Ensemble_1";
       else if (id.includes("Piano") && id.includes("Electric")) configId = "Electric_Piano_1";

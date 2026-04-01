@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../utils/PRNG';
+import { PRNGManager } from '../../utils/PRNG';
 import { StyleConfig } from '../types';
 
 export class GrooveEngine {
@@ -32,7 +32,7 @@ export class GrooveEngine {
                 const targetCount = Math.max(2, Math.floor(result.length * (density * 2)));
                 // 保留 0 拍，随机移除其他拍子
                 while (result.length > targetCount) {
-                    const removeIdx = 1 + Math.floor(globalPRNG.next() * (result.length - 1));
+                    const removeIdx = 1 + Math.floor(PRNGManager.next() * (result.length - 1));
                     result.splice(removeIdx, 1);
                 }
             }
@@ -66,12 +66,21 @@ export class GrooveEngine {
         }
         
         // 引入随机性并按权重排序，确保音符分布在整个乐句中，而不是集中在开头
-        possibleSteps.forEach(s => s.weight = s.weight * (0.5 + globalPRNG.next() * 0.5)); // 降低完全随机的影响
-        possibleSteps.sort((a, b) => b.weight - a.weight);
-        
         let fingerprint: number[] = [0]; // 第0拍永远有锚点
-        for (let i = 0; i < targetNotesCount - 1 && i < possibleSteps.length; i++) {
-            fingerprint.push(possibleSteps[i].offset);
+        let availableSteps = [...possibleSteps];
+        for (let i = 0; i < targetNotesCount - 1 && availableSteps.length > 0; i++) {
+            let totalWeight = availableSteps.reduce((sum, step) => sum + step.weight, 0);
+            let randomVal = PRNGManager.next() * totalWeight;
+            let selectedIdx = 0;
+            for (let j = 0; j < availableSteps.length; j++) {
+                randomVal -= availableSteps[j].weight;
+                if (randomVal <= 0) {
+                    selectedIdx = j;
+                    break;
+                }
+            }
+            fingerprint.push(availableSteps[selectedIdx].offset);
+            availableSteps.splice(selectedIdx, 1);
         }
         
         return Array.from(new Set(fingerprint)).sort((a, b) => a - b);
@@ -115,12 +124,21 @@ export class GrooveEngine {
         }
         
         // 引入随机性并按权重排序
-        possibleSteps.forEach(s => s.weight *= (0.5 + globalPRNG.next() * 0.5));
-        possibleSteps.sort((a, b) => b.weight - a.weight);
-        
         let inverseFingerprint: number[] = [0]; // 强拍锚点
-        for (let i = 0; i < targetNotesCount - 1 && i < possibleSteps.length; i++) {
-            inverseFingerprint.push(possibleSteps[i].offset);
+        let availableSteps = [...possibleSteps];
+        for (let i = 0; i < targetNotesCount - 1 && availableSteps.length > 0; i++) {
+            let totalWeight = availableSteps.reduce((sum, step) => sum + step.weight, 0);
+            let randomVal = PRNGManager.next() * totalWeight;
+            let selectedIdx = 0;
+            for (let j = 0; j < availableSteps.length; j++) {
+                randomVal -= availableSteps[j].weight;
+                if (randomVal <= 0) {
+                    selectedIdx = j;
+                    break;
+                }
+            }
+            inverseFingerprint.push(availableSteps[selectedIdx].offset);
+            availableSteps.splice(selectedIdx, 1);
         }
         
         return Array.from(new Set(inverseFingerprint)).sort((a, b) => a - b);

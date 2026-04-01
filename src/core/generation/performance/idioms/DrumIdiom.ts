@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../../utils/PRNG';
+import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 import { GlobalContext } from '../../GlobalContext';
@@ -29,13 +29,13 @@ export class DrumIdiom extends BaseIdiom {
             
             // 避开正拍和 8 分音符反拍 (0, 0.5, 1.0...)，只在 16 分音符弱拍 (0.25, 0.75) 尝试添加
             if (beatPos % 0.5 !== 0) {
-                if (!existingOnsets.has(beat) && globalPRNG.next() < ghostNoteProb) {
+                if (!existingOnsets.has(beat) && PRNGManager.next() < ghostNoteProb) {
                     // 添加幽灵音
                     result.push({
                         pitch: SNARE,
                         onset: beat,
                         duration: 0.1,
-                        velocity: 0.3 + globalPRNG.next() * 0.15 // 极低的力度 30-45
+                        velocity: 0.3 + PRNGManager.next() * 0.15 // 极低的力度 30-45
                     });
                 }
             }
@@ -53,7 +53,7 @@ export class DrumIdiom extends BaseIdiom {
 
             if (current.pitch === CHH) {
                 // 如果在反拍 (0.5)，有概率变成开镲
-                if (beatPos % 1 === 0.5 && globalPRNG.next() < openHihatProb) {
+                if (beatPos % 1 === 0.5 && PRNGManager.next() < openHihatProb) {
                     current.pitch = OHH;
                     current.velocity = Math.min(1.0, current.velocity * 1.2); // 开镲更响
                     current.duration = 0.4; // 开镲延音长一点
@@ -83,15 +83,24 @@ export class DrumIdiom extends BaseIdiom {
             newNote.duration = newDuration;
 
             // 2. 微小时值偏移 (Humanized Timing)
-            // 暂时移除，因为当前数值让人感觉鼓手打得不稳
-            const timingOffset = 0; // (globalPRNG.next() - 0.5) * 0.03;
+            let timingOffset = 0;
+            const drumStyle = idiomPreferences?.drumStyle || 'pop';
+            
+            if (drumStyle === 'lofi') {
+                // Dilla Groove: 军鼓拖拽，踩镲随机，底鼓准时
+                if (newNote.pitch === SNARE) {
+                    timingOffset = 0.05; // 军鼓强制延迟约 15-30ms (以 120BPM 为例，一拍 500ms，0.05 拍 = 25ms)
+                } else if (newNote.pitch === CHH || newNote.pitch === OHH) {
+                    timingOffset = (PRNGManager.next() - 0.5) * 0.06; // 踩镲随机偏移
+                }
+            }
             newNote.onset += timingOffset;
 
             // 3. 真实力度起伏 (Humanized Velocity)
-            let velFluctuation = (globalPRNG.next() - 0.5) * 0.1; // 默认 +/- 0.05 的微小起伏
+            let velFluctuation = (PRNGManager.next() - 0.5) * 0.1; // 默认 +/- 0.05 的微小起伏
             
             // 针对踩镲和 Ride 的左右手发力逻辑 (Hi-hat/Ride Right/Left hand simulation)
-            if (newNote.pitch === CHH || newNote.pitch === RIDE) {
+            if (newNote.pitch === CHH || newNote.pitch === RIDE || newNote.pitch === OHH) {
                 // 假设正拍 (0, 0.5) 是右手，反拍 (0.25, 0.75) 是左手
                 const beatFraction = (note.onset) % 0.5; // 使用原始 onset 判断
                 const isRightHand = beatFraction < 0.1 || beatFraction > 0.4; 
@@ -100,24 +109,30 @@ export class DrumIdiom extends BaseIdiom {
                     // 左手打的次重音/幽灵音力度更轻 (模拟真实发力)
                     newNote.velocity *= 0.7; 
                 }
-                // 踩镲/Ride的力度起伏可以稍微大一点，模拟手腕的自然抖动
-                velFluctuation = (globalPRNG.next() - 0.5) * 0.15; 
+                
+                if (drumStyle === 'lofi') {
+                    // Lo-Fi 踩镲力度极端随机化 (大幅波动)
+                    velFluctuation = (PRNGManager.next() - 0.5) * 0.5;
+                } else {
+                    // 踩镲/Ride的力度起伏可以稍微大一点，模拟手腕的自然抖动
+                    velFluctuation = (PRNGManager.next() - 0.5) * 0.15; 
+                }
             } else if (newNote.pitch === SNARE || newNote.pitch === KICK || newNote.pitch === TOM_HI || newNote.pitch === TOM_MID || newNote.pitch === TOM_LOW) {
                 // 区分主重音和幽灵音
                 if (newNote.velocity < 0.5) {
                     // 幽灵音 (Ghost Notes)：加入微小随机起伏，模拟轻触鼓面的细腻感
-                    velFluctuation = (globalPRNG.next() - 0.5) * 0.15;
+                    velFluctuation = (PRNGManager.next() - 0.5) * 0.15;
                 } else {
                     // 主重音：力度控制在 0.75-0.9 之间浮动 (如果原本 velocity 很高的话)
                     if (newNote.velocity >= 0.7) {
-                        velFluctuation = (globalPRNG.next() - 0.5) * 0.1;
+                        velFluctuation = (PRNGManager.next() - 0.5) * 0.1;
                         newNote.velocity = Math.max(0.75, Math.min(0.9, newNote.velocity + velFluctuation));
                         velFluctuation = 0; // 已经处理过了
                     }
                 }
             } else if (newNote.pitch === CRASH || newNote.pitch === CRASH2 || newNote.pitch === CHINA || newNote.pitch === SPLASH) {
                 // 镲片重击力度起伏
-                velFluctuation = (globalPRNG.next() - 0.5) * 0.1;
+                velFluctuation = (PRNGManager.next() - 0.5) * 0.1;
             }
 
             newNote.velocity = Math.max(0.1, Math.min(1.0, newNote.velocity + velFluctuation));
@@ -127,7 +142,7 @@ export class DrumIdiom extends BaseIdiom {
             // 4. Flams and Drags (Rudiments)
             // Only apply to Snare and Toms, and only if velocity is high enough
             if ((newNote.pitch === SNARE || newNote.pitch === TOM_HI || newNote.pitch === TOM_MID || newNote.pitch === TOM_LOW) && newNote.velocity > 0.7) {
-                const rand = globalPRNG.next();
+                const rand = PRNGManager.next();
                 if (rand < 0.05) {
                     // Flam: One grace note 30ms before
                     result.push({

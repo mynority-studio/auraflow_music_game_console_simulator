@@ -5,17 +5,17 @@
  * musical output on both the Web Simulator and the ESP32-S3 hardware.
  * Replaces Math.random() in core generation logic.
  */
-export class PRNG {
-    private seed: number;
+class PRNG {
+    private state: number;
 
     constructor(seed: number) {
-        this.seed = seed;
+        this.state = seed;
     }
 
     // LCG (Linear Congruential Generator) - Fast and C-friendly
     public next(): number {
-        this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
-        return this.seed / 4294967296;
+        this.state = (this.state * 1664525 + 1013904223) % 4294967296;
+        return this.state / 4294967296;
     }
 
     public nextInt(min: number, max: number): number {
@@ -27,9 +27,18 @@ export class PRNG {
     }
 
     public setSeed(seed: number): void {
-        this.seed = seed;
+        this.state = seed;
+    }
+
+    public getState(): number {
+        return this.state;
+    }
+
+    public setState(state: number): void {
+        this.state = state;
     }
 }
 
-// Global instance for convenience, though passing instances is preferred for thread-safety in C++
-export const globalPRNG = new PRNG(Date.now());
+// Export as a unified manager
+export const PRNGManager = new PRNG(Date.now());
+

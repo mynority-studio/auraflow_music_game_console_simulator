@@ -6,6 +6,7 @@ import { DrumIdiom } from './idioms/DrumIdiom';
 import { WindIdiom } from './idioms/WindIdiom';
 import { BassIdiom } from './idioms/BassIdiom';
 import { SynthVoiceIdiom } from './idioms/SynthVoiceIdiom';
+import { SynthIdiom } from './idioms/SynthIdiom';
 
 export class InstrumentIdiom {
     // 静态实例化策略类（单例模式节省内存）
@@ -16,6 +17,7 @@ export class InstrumentIdiom {
     private static windEngine = new WindIdiom();
     private static bassEngine = new BassIdiom();
     private static synthVoiceEngine = new SynthVoiceIdiom();
+    private static synthEngine = new SynthIdiom();
 
     public static apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
         
@@ -35,7 +37,10 @@ export class InstrumentIdiom {
         else if (instrumentName.includes('Bass')) {
             return this.bassEngine.apply(notes, instrumentName, chords, idiomPreferences);
         }
-        else if (instrumentName.includes('Piano') || instrumentName.includes('EP') || instrumentName.includes('Clavinet') || instrumentName.includes('Harpsichord') || instrumentName.includes('Synth') || instrumentName.includes('Pad') || instrumentName.includes('Lead')) {
+        else if (instrumentName.includes('Synth') || instrumentName.includes('Pad') || instrumentName.includes('Lead') || instrumentName.includes('Arp')) {
+            return this.synthEngine.apply(notes, instrumentName, chords, idiomPreferences);
+        }
+        else if (instrumentName.includes('Piano') || instrumentName.includes('EP') || instrumentName.includes('Clavinet') || instrumentName.includes('Harpsichord')) {
             return this.pianoEngine.apply(notes, instrumentName, chords, idiomPreferences);
         }
         else if (instrumentName.includes('Voice') || instrumentName.includes('Choir') || instrumentName.includes('Vocal')) {
@@ -62,7 +67,10 @@ export class InstrumentIdiom {
         else if (instrumentName.includes('Bass')) {
             return this.bassEngine.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
         }
-        else if (instrumentName.includes('Piano') || instrumentName.includes('EP') || instrumentName.includes('Clavinet') || instrumentName.includes('Harpsichord') || instrumentName.includes('Synth') || instrumentName.includes('Pad') || instrumentName.includes('Lead')) {
+        else if (instrumentName.includes('Synth') || instrumentName.includes('Pad') || instrumentName.includes('Lead') || instrumentName.includes('Arp')) {
+            return this.synthEngine.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
+        }
+        else if (instrumentName.includes('Piano') || instrumentName.includes('EP') || instrumentName.includes('Clavinet') || instrumentName.includes('Harpsichord')) {
             return this.pianoEngine.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
         }
         else if (instrumentName.includes('Voice') || instrumentName.includes('Choir') || instrumentName.includes('Vocal')) {

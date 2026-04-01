@@ -1,22 +1,12 @@
 import { PlaybackEngine, VisualEvent } from './PlaybackEngine';
-import { GeneratedTrack, StyleConfig } from '../generation/types';
+import { GeneratedTrack, MusicContext } from '../generation/types';
+import { StyleId } from '../generation/config/StyleFlags';
 import { Orchestrator } from '../generation/arrangement/Orchestrator'; 
-import { getAllAvailableStyles, getStyleConfig } from '../generation/config/styles/StyleRegistry';
 import { MelodyEngine } from '../generation/MelodyEngine'; // 引入新的流水线总管
-import { WorkletSynthesizer } from 'spessasynth_lib';
-import processorUrl from 'spessasynth_lib/dist/spessasynth_processor.min.js?url';
 import { globalMidiScheduler } from './MidiScheduler';
+import { spessaSynth, isSpessaSynthReady, getAudioContext, startAudioContext } from './SynthManager';
 
-export let spessaSynth: WorkletSynthesizer | null = null;
-export let isSpessaSynthReady = false;
-
-// Global AudioContext singleton
-export const getAudioContext = (): AudioContext => {
-    if (!(window as any).globalAudioContext) {
-        (window as any).globalAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    return (window as any).globalAudioContext as AudioContext;
-};
+export { spessaSynth, isSpessaSynthReady, getAudioContext, startAudioContext };
 
 class AudioEngineSystem {
     private playback: PlaybackEngine | null = null;
@@ -39,12 +29,12 @@ class AudioEngineSystem {
         }
     }
 
-    public async playSong(initialTrack: GeneratedTrack, style: StyleConfig, generator: MelodyEngine, options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }) {
+    public async playSong(initialTrack: GeneratedTrack, styleId: StyleId, context: MusicContext, generator: MelodyEngine, options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }) {
         if (!this.playback) this.init();
         this.generator = generator;
         
         // 调用 V2 编曲大脑
-        const arrangedSong = Orchestrator.arrange(initialTrack, style);
+        const arrangedSong = Orchestrator.arrange(initialTrack, styleId, context);
         
         await this.playback!.loadSong(arrangedSong, options);
         this.playback!.play();
@@ -96,60 +86,47 @@ class AudioEngineSystem {
         if (!this.playback) this.init();
         this.playback!.setFocusTrack(trackType);
     }
+
+    // --- Jam Mode Methods ---
+    public muteChannel(channel: number, mute: boolean) {
+        globalMidiScheduler.muteChannel(channel, mute);
+    }
+
+    public isChannelMuted(channel: number): boolean {
+        return globalMidiScheduler.isChannelMuted(channel);
+    }
+
+    public injectMidiEvent(ev: any) {
+        globalMidiScheduler.injectEvent(ev);
+    }
+
+    public getChannelEvents(channel: number) {
+        return globalMidiScheduler.getChannelEvents(channel);
+    }
+
+    public replaceChannelEvents(channel: number, startTick: number, newEvents: any[]) {
+        globalMidiScheduler.replaceChannelEvents(channel, startTick, newEvents);
+    }
+
+    public playNote(channel: number, note: number, velocity: number = 100, durationMs: number = 200) {
+        if (!spessaSynth) return;
+        spessaSynth.noteOn(channel, note, velocity);
+        setTimeout(() => {
+            if (spessaSynth) spessaSynth.noteOff(channel, note);
+        }, durationMs);
+    }
+
+    public getCurrentTick() {
+        return globalMidiScheduler.getCurrentTick();
+    }
+
+    public getBpm() {
+        return globalMidiScheduler.getBpm();
+    }
+
+    public getPpq() {
+        return globalMidiScheduler.ppq;
+    }
 }
 
 export const AudioEngine = new AudioEngineSystem();
-
-let initPromise: Promise<void> | null = null;
-let gm128Buffer: ArrayBuffer | null = null;
-
-// Pre-fetch soundfonts immediately
-fetch('/GM128_3MB.sf2')
-    .then(r => r.arrayBuffer())
-    .then(b => gm128Buffer = b)
-    .catch(e => console.warn("Failed to prefetch GM128", e));
-
-export const startAudioContext = async () => {
-  const ctx = getAudioContext();
-  if (ctx.state !== 'running') await ctx.resume();
-  
-  if (isSpessaSynthReady) return initPromise;
-  
-  if (!initPromise) {
-      initPromise = (async () => {
-          try {
-              // console.log("[AudioEngine] Initializing SpessaSynth with native context");
-              await ctx.audioWorklet.addModule(processorUrl);
-              spessaSynth = new WorkletSynthesizer(ctx);
-              
-              // Note: AudioMixer will connect spessaSynth to its master bus later.
-              // For now, connect directly to destination as a fallback if mixer isn't ready.
-              try {
-                  spessaSynth.connect(ctx.destination);
-              } catch (e) {
-                  console.warn("[AudioEngine] Could not connect spessaSynth to ctx.destination directly:", e);
-              }
-              
-              // Initialize MidiScheduler
-              globalMidiScheduler.init(spessaSynth);
-              
-              // Fetch and load GM128 soundfont
-              if (!gm128Buffer) {
-                  const response = await fetch('/GM128_3MB.sf2');
-                  gm128Buffer = await response.arrayBuffer();
-              }
-              await spessaSynth.soundBankManager.addSoundBank(gm128Buffer, "main");
-              
-              await spessaSynth.isReady;
-              
-              isSpessaSynthReady = true;
-              // console.log("[AudioEngine] SpessaSynth initialized and GM128 loaded.");
-          } catch (e) {
-              console.error("[AudioEngine] Failed to initialize SpessaSynth:", e);
-              initPromise = null; // Allow retrying on failure
-          }
-      })();
-  }
-  
-  return initPromise;
-};

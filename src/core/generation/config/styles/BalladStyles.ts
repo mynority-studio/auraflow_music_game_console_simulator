@@ -1,8 +1,8 @@
 import { StyleConfig } from '../../types';
-
+import { StyleId } from '../StyleFlags';
 
 export const PowerBalladStyle: StyleConfig = {
-    id: 'power_ballad',
+    id: StyleId.PowerBallad,
     name: '欧美力量大歌 (Power Ballad)',
     global: {
         bpmRange: [60, 95], // 极慢到中慢，给巨肺留出空间
@@ -35,7 +35,8 @@ export const PowerBalladStyle: StyleConfig = {
         maxDissonanceTolerance: 0.3, // 欧美流行大歌和声相对简单直接
         reharmProbability: 0.1, 
         passingChords: ['SecondaryDominant'],
-        borrowedChords: ['ModalMixture']
+        borrowedChords: ['ModalMixture'],
+        voicingStyle: 'standard'
     },
     rhythm: {
         densityBase: [0.3, 0.6], // 极度留白，靠长音支撑
@@ -55,16 +56,24 @@ export const PowerBalladStyle: StyleConfig = {
     orchestration: {
         melodyInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Warm_EP', 'String_Ensemble'],
         chordInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Warm_EP', 'Acoustic_Guitar_Chord'],
-        bassInstruments: ['Electric_Bass', 'Acoustic_Bass'],
+        bassInstruments: ['Electric_Bass_Finger', 'Acoustic_Bass', 'Fretless_Bass', 'Cello'],
         drumInstruments: ['Standard_DrumKit'],
         counterMelodyInstruments: ['String_Ensemble', 'String_Ensemble', 'Pad_3_Polysynth'],
         texturePool: ['Block', 'Block', 'Arpeggio', 'Pad'], // 柱式和弦砸下去的力量感
         drumProbability: 0.9, // 主歌经常没有鼓
         counterMelodyProbability: 0.9, // 弦乐铺底是灵魂
+        grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
             stringStyle: 'pop',
             bassStyle: 'pop',
             drumStyle: 'pop'
+        },
+        mixingPreferences: {
+            melody: { pan: 0.1, reverb: 0.4 },
+            chord: { pan: -0.25, reverb: 0.5, volume: -3.0 },
+            counterMelody: { pan: -0.6, volume: -4.0 },
+            drums: { reverb: 0.2, volume: -1.0 },
+            bass: { reverb: 0.2, volume: -3.0 }
         }
     },
     performance: {
@@ -84,7 +93,7 @@ export const PowerBalladStyle: StyleConfig = {
 
 
 export const RussianFolkBalladStyle: StyleConfig = {
-    id: 'russian_folk',
+    id: StyleId.RussianFolkBallad,
     name: '俄式民谣/贝加尔湖畔 (Russian Acoustic Ballad)',
     global: {
         bpmRange: [62, 72], 
@@ -101,7 +110,8 @@ export const RussianFolkBalladStyle: StyleConfig = {
         passingChords: ['SecondaryDominant', 'Diminished7'],
         allowTritoneSub: false,
         reharmProbability: 0.2,
-        borrowedChords: ['ModalMixture']
+        borrowedChords: ['ModalMixture'],
+        voicingStyle: 'standard'
     },
     rhythm: { densityBase:[0.25, 0.45], syncopationWeight: 0.05, restProbability: 0.40, disruptionProbability: 0.0, humanize: 0.04, swingRatio: 0.5 },
     melody: { 
@@ -122,17 +132,25 @@ export const RussianFolkBalladStyle: StyleConfig = {
     orchestration: {
         melodyInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Warm_EP', 'Lofi_Piano'], // 目前主奏只用钢琴
         chordInstruments: ['Acoustic_Guitar_Chord', 'Acoustic_Guitar_Chord', 'Acoustic_Grand'], // 木吉他扫弦或原声钢琴
-        bassInstruments: ['Acoustic_Bass'],
+        bassInstruments: ['Acoustic_Bass', 'Cello', 'Contrabass'],
         drumInstruments: ['Standard_DrumKit'],
         counterMelodyInstruments: ['Voice_Oohs', 'String_Ensemble', 'String_Ensemble', 'Pad_3_Polysynth'],
         texturePool: ['Arpeggio', 'Arpeggio', 'Pad'], // 民谣的灵魂：吉他分解和弦 (Arpeggio) 和铺底 (Pad)
         drumProbability: 0.2, // 民谣很少用鼓
         counterMelodyProbability: 0.6, // 增加弦乐或人声铺垫的概率
+        grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
             stringStyle: 'folk',
             pianoStyle: 'pop',
             drumStyle: 'folk',
             bassStyle: 'folk'
+        },
+        mixingPreferences: {
+            melody: { pan: 0.1, reverb: 0.4 },
+            chord: { pan: -0.25, reverb: 0.5, volume: -3.0 },
+            counterMelody: { pan: -0.6, volume: -4.0 },
+            drums: { reverb: 0.2, volume: -1.0 },
+            bass: { reverb: 0.2, volume: -3.0 }
         }
     },
     performance: {

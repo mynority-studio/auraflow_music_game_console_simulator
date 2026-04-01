@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../utils/PRNG';
+import { PRNGManager } from '../../utils/PRNG';
 // ==========================================
 // 📄 文件路径: /src/core/generation/performance/SingerPersona.ts
 // 🎭 V2.2 歌手性格渲染器 (接入顺阶偏移计算，转音丝滑不跑调)
@@ -112,7 +112,7 @@ export class SingerPersona {
                     const interval = Math.abs(current.pitch - prev.pitch);
                     
                     // 连音重叠 (Legato Overlap) 10-50ms，禁止 0 间隔硬切
-                    const overlapMs = 10 + globalPRNG.next() * 40;
+                    const overlapMs = 10 + PRNGManager.next() * 40;
                     const overlapBeats = (overlapMs / 1000) * (GlobalContext.currentBPM / 60);
                     
                     if (gap < 0.5) { // 如果是连续的乐句
@@ -121,7 +121,7 @@ export class SingerPersona {
                         // 滑音 (Glissando) - 萨克斯灵魂
                         if (interval > 0 && interval <= 2) {
                             // 2度以内：加 15-80ms 滑音
-                            const slideMs = 15 + globalPRNG.next() * 65;
+                            const slideMs = 15 + PRNGManager.next() * 65;
                             const slideBeats = (slideMs / 1000) * (GlobalContext.currentBPM / 60);
                             result.push({
                                 pitch: prev.pitch,
@@ -139,13 +139,13 @@ export class SingerPersona {
             }
 
             // 1. 断奏癖好 (钢琴可以保留一点点断奏，但不要太短)
-            if (current.duration > 0.5 && globalPRNG.next() < persona.traits.staccatoTendency) {
+            if (current.duration > 0.5 && PRNGManager.next() < persona.traits.staccatoTendency) {
                 current.duration *= isPianoOrGuitar ? 0.8 : 0.5; 
             }
 
             // 2. 提前抢拍 (防重叠)
-            if (current.onset % 1 === 0 && globalPRNG.next() < persona.traits.syncopationPush) {
-                const pushAmount = globalPRNG.next() > 0.5 ? 0.5 : 0.25; 
+            if (current.onset % 1 === 0 && PRNGManager.next() < persona.traits.syncopationPush) {
+                const pushAmount = PRNGManager.next() > 0.5 ? 0.5 : 0.25; 
                 current.onset -= pushAmount;
                 current.duration += pushAmount; 
                 
@@ -162,8 +162,8 @@ export class SingerPersona {
             // 钢琴的倚音应该非常克制，否则会显得很烦人。ToplineEngine 已经处理了钢琴的倚音，这里完全关闭。
             const graceProb = isPianoOrGuitar ? 0 : persona.traits.graceNoteProbability;
             
-            if ((isPhraseStart || isLongNote) && globalPRNG.next() < graceProb) {
-                const isRiff = globalPRNG.next() < (persona.traits.graceNoteProbability * 0.5); if (isRiff && isLongNote) { const riffCount = globalPRNG.next() > 0.5 ? 2 : 3; const riffDur = 0.08; let currentGracePitch = current.pitch; for (let r = riffCount; r > 0; r--) { currentGracePitch = HarmonyCore.shiftDiatonic(currentGracePitch, safeTones, -1); result.push({ pitch: currentGracePitch, onset: current.onset - (r * riffDur), duration: riffDur, velocity: current.velocity * 0.5, isGraceNote: true }); } current.duration -= (riffCount * riffDur); } else { const graceDur = 0.12; 
+            if ((isPhraseStart || isLongNote) && PRNGManager.next() < graceProb) {
+                const graceDur = 0.25;
                 // 🌟 使用 Diatonic Shift：严格从当前音阶的“下方一阶”滑上来！绝对和谐！
                 const gracePitch = HarmonyCore.shiftDiatonic(current.pitch, safeTones, -1);
                 
@@ -176,11 +176,10 @@ export class SingerPersona {
                 });
                 current.duration -= graceDur; 
             }
-            }
 
             // 4. 句末叹息尾音 (Trailing Fade) - 🌟 修复点：钢琴/吉他完全关闭
             const fadeProb = isPianoOrGuitar ? 0 : persona.traits.trailingFade;
-            if (isPhraseEnd && isLongNote && globalPRNG.next() < fadeProb) {
+            if (isPhraseEnd && isLongNote && PRNGManager.next() < fadeProb) {
                 current.duration -= 0.25;
                 result.push({...current}); 
                 
@@ -208,7 +207,7 @@ export class SingerPersona {
         return result;
     }
 
-    public static readonly PERSONAS: Record<string, SingerPersonaConfig> = {
+        public static readonly PERSONAS: Record<string, SingerPersonaConfig> = {
         'RnB_Diva': { id: 'rnb_diva', name: 'R&B 碎嘴天后', traits: { staccatoTendency: 0.8, trailingFade: 0.2, graceNoteProbability: 0.7, syncopationPush: 0.75 } },
         'Jazz_Crooner': { id: 'jazz_crooner', name: '慵懒爵士男嗓', traits: { staccatoTendency: 0.2, trailingFade: 0.9, graceNoteProbability: 0.4, syncopationPush: 0.6 } },
         'Folk_Storyteller': { id: 'folk_storyteller', name: '民谣述说者', traits: { staccatoTendency: 0.05, trailingFade: 0.1, graceNoteProbability: 0.1, syncopationPush: 0.05 } },
@@ -221,6 +220,8 @@ export class SingerPersona {
         'Rhythm_Master': { id: 'rhythm_master', name: '节奏大师', traits: { staccatoTendency: 0.9, trailingFade: 0.1, graceNoteProbability: 0.2, syncopationPush: 0.95 } },
         'Classical_Virtuoso': { id: 'classical_virtuoso', name: '古典大师', traits: { staccatoTendency: 0.1, trailingFade: 0.4, graceNoteProbability: 0.8, syncopationPush: 0.05 } },
         'Cinematic_Composer': { id: 'cinematic_composer', name: '配乐大师', traits: { staccatoTendency: 0.05, trailingFade: 0.9, graceNoteProbability: 0.1, syncopationPush: 0.1 } },
-        'Indie_Rocker': { id: 'indie_rocker', name: '独立摇滚', traits: { staccatoTendency: 0.5, trailingFade: 0.3, graceNoteProbability: 0.3, syncopationPush: 0.7 } }
+        'Indie_Rocker': { id: 'indie_rocker', name: '独立摇滚', traits: { staccatoTendency: 0.5, trailingFade: 0.3, graceNoteProbability: 0.3, syncopationPush: 0.7 } },
+        'Jazz_Singer': { id: 'jazz_singer', name: '爵士歌手', traits: { staccatoTendency: 0.3, trailingFade: 0.8, graceNoteProbability: 0.6, syncopationPush: 0.9 } },
+        'Bossa_Nova_Singer': { id: 'bossa_nova_singer', name: 'Bossa Nova 歌手', traits: { staccatoTendency: 0.1, trailingFade: 0.9, graceNoteProbability: 0.4, syncopationPush: 0.8 } }
     };
 }

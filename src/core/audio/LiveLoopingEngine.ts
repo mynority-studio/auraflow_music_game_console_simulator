@@ -2,8 +2,11 @@ import { ArrangedTrack, SectionMetadata } from '../generation/types';
 import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
 import { VisualEvent, VisualEventListener } from './PlaybackEngine';
-import { AudioEngine, spessaSynth, startAudioContext } from './AudioEngine';
+import { AudioEngine } from './AudioEngine';
+import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
+
+import { StyleRegistry } from '../generation/config/styles/StyleRegistry';
 
 export class LiveLoopingEngine {
     private mixer: AudioMixer;
@@ -67,12 +70,14 @@ export class LiveLoopingEngine {
         }
         
         // 🌟 0. Set Mix Style based on song styleId
-        if (song.styleId) {
-            if (song.styleId.includes('jazz') || song.styleId.includes('bossa')) {
+        if (song.styleId !== undefined) {
+            const style = StyleRegistry[song.styleId];
+            const drumStyle = style?.orchestration?.idiomPreferences?.drumStyle || 'pop';
+            if (drumStyle === 'jazz' || drumStyle === 'bossa') {
                 this.mixer.setMixStyle('jazz');
-            } else if (song.styleId.includes('house') || song.styleId.includes('electro')) {
+            } else if (drumStyle === 'electronic' || drumStyle === 'edm' || drumStyle === 'eurodance' || drumStyle === 'synthwave') {
                 this.mixer.setMixStyle('electro');
-            } else if (song.styleId.includes('folk') || song.styleId.includes('ballad')) {
+            } else if (drumStyle === 'folk' || drumStyle === 'ballad') {
                 this.mixer.setMixStyle('folk');
             } else {
                 this.mixer.setMixStyle('default');
@@ -188,7 +193,7 @@ export class LiveLoopingEngine {
         if (song.counterMelody) addEventsForTrack(song.counterMelody, this.counterMelodySynth, 'counterMelody');
         if (song.userMotif) addEventsForTrack(song.userMotif, this.userMotifSynth, 'melody');
 
-        globalMidiScheduler.loadTrack(allEvents, song.bpm);
+        globalMidiScheduler.loadTrack(allEvents, song.bpm, song.tempoCurves);
     }
 
     public setEnergy(energy: number) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AuraRadio } from './AuraRadio'; 
+import { AuraBar } from './AuraBar'; 
 import { PixelIcon } from '../components/PixelIcon';
 import { GRIDS } from '../components/PixelGrids';
 
@@ -12,9 +12,9 @@ export interface AppManifest {
 
 export const APPS: AppManifest[] = [
   {
-    id: 'app-aura-radio',
-    name: 'Aura Radio',
+    id: 'app-aura-bar',
+    name: 'Aura Bar',
     icon: <PixelIcon grid={GRIDS.radio} color="currentColor" />,
-    component: AuraRadio, 
+    component: AuraBar, 
   }
 ];

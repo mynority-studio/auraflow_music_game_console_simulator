@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../../utils/PRNG';
+import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord } from "../../types";
 import { BaseIdiom } from "./BaseIdiom";
 import { GlobalContext } from "../../GlobalContext";
@@ -45,11 +45,11 @@ export class BassIdiom extends BaseIdiom {
       let baseVel = 0.75;
       if (current.velocity < 0.4) {
           // 已经是鬼音
-          baseVel = 0.35 + globalPRNG.next() * 0.15; // 35-50
+          baseVel = 0.35 + PRNGManager.next() * 0.15; // 35-50
       } else if (isRoot) {
-          baseVel = 0.65 + globalPRNG.next() * 0.15; // 65-80
+          baseVel = 0.65 + PRNGManager.next() * 0.15; // 65-80
       } else {
-          baseVel = 0.55 + globalPRNG.next() * 0.13; // 55-68
+          baseVel = 0.55 + PRNGManager.next() * 0.13; // 55-68
       }
 
       // 风格化力度调整
@@ -80,16 +80,16 @@ export class BassIdiom extends BaseIdiom {
       // 正拍：略微靠前 0-3ms
       // 反拍/切分：略微滞后 2-6ms
       if (beatPos % 1 === 0) {
-          timingWobble = -globalPRNG.next() * 0.003; // 提前 0-3ms
+          timingWobble = -PRNGManager.next() * 0.003; // 提前 0-3ms
       } else {
-          timingWobble = globalPRNG.next() * 0.004 + 0.002; // 滞后 2-6ms
+          timingWobble = PRNGManager.next() * 0.004 + 0.002; // 滞后 2-6ms
       }
 
       // 风格化时间感
       if (bassStyle === 'lofi') {
-          timingWobble += globalPRNG.next() * 0.01; // 稍微不稳，拖一点点
+          timingWobble += PRNGManager.next() * 0.01; // 稍微不稳，拖一点点
       } else if (bassStyle === 'funk') {
-          timingWobble -= globalPRNG.next() * 0.002; // 稍微靠前，更弹
+          timingWobble -= PRNGManager.next() * 0.002; // 稍微靠前，更弹
       }
 
       const velocityWobble = this.randomGaussian(0, 0.03); // 微小力度波动

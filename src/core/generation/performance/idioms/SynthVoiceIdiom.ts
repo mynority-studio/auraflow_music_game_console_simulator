@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../../utils/PRNG';
+import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 
@@ -17,7 +17,7 @@ export class SynthVoiceIdiom extends BaseIdiom {
             if (nextNote && nextNote.onset > current.onset && nextNote.onset - current.onset <= 1.0) {
                 const gap = nextNote.onset - current.onset;
                 // Overlap by 10%~15% of the gap
-                const overlap = gap * (0.1 + globalPRNG.next() * 0.05);
+                const overlap = gap * (0.1 + PRNGManager.next() * 0.05);
                 current.duration = Math.max(current.duration, gap + overlap);
                 
                 // 2. Pitch Bend 滑音: 若两个相邻音符距离 <= 大三度 (4个半音)
@@ -50,7 +50,7 @@ export class SynthVoiceIdiom extends BaseIdiom {
                     }
                     
                     current.pitchBend = bendIntensity;
-                    current.pitchBendDuration = current.duration * (0.2 + globalPRNG.next() * 0.1);
+                    current.pitchBendDuration = current.duration * (0.2 + PRNGManager.next() * 0.1);
                 }
             } else {
                 // 3. 长音一律: 唱满长度，尾端自然渐弱 Release，不中途切断

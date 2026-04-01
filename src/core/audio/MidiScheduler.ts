@@ -1,8 +1,9 @@
 import { WorkletSynthesizer } from 'spessasynth_lib';
+import { TempoCurve } from '../generation/types';
 
 export interface MidiEvent {
     ticks: number; // Time in ticks (e.g., 480 PPQ)
-    type: 'noteOn' | 'noteOff' | 'cc' | 'programChange' | 'visual';
+    type: 'noteOn' | 'noteOff' | 'cc' | 'programChange' | 'pitchBend' | 'visual';
     channel: number;
     data1: number;
     data2: number;
@@ -14,7 +15,7 @@ export interface MidiEvent {
  * 
  * This scheduler mimics the behavior of a FreeRTOS hardware timer on the ESP32.
  * Instead of relying on Web Audio's sample-accurate look-ahead,
- * it wakes up periodically (e.g., every 5ms) and dispatches MIDI events that are due.
+ * it wakes up periodically and dispatches MIDI events that are due.
  * 
  * This guarantees that the timing logic and event dispatching in the Web Simulator
  * is architecturally identical to how the C++ firmware will push bytes to the I2S/Synth task.
@@ -28,12 +29,12 @@ export class MidiScheduler {
     private currentTick: number = 0;
     private lastTimeMs: number = 0;
     
-    private bpm: number = 120;
+    private baseBpm: number = 120;
+    private currentBpm: number = 120;
     public readonly ppq: number = 480; // Pulses Per Quarter note (Standard MIDI resolution)
     
     private timerId: number | null = null;
-    // Wake up every 5ms (mimics FreeRTOS 5ms tick / vTaskDelay)
-    private tickIntervalMs: number = 5; 
+    private tempoCurves: TempoCurve[] = [];
 
     // Looping
     public loop: boolean = false;
@@ -44,8 +45,62 @@ export class MidiScheduler {
     private visualListeners: ((data: any) => void)[] = [];
     private endListeners: (() => void)[] = [];
 
+    // Muted channels
+    private mutedChannels: Set<number> = new Set();
+
     public init(synth: WorkletSynthesizer) {
         this.synth = synth;
+    }
+
+    public muteChannel(channel: number, mute: boolean) {
+        if (mute) {
+            this.mutedChannels.add(channel);
+            if (this.synth) {
+                this.synth.controllerChange(channel, 123, 0); // All Notes Off
+                this.synth.controllerChange(channel, 120, 0); // All Sound Off
+            }
+        } else {
+            this.mutedChannels.delete(channel);
+        }
+    }
+
+    public isChannelMuted(channel: number): boolean {
+        return this.mutedChannels.has(channel);
+    }
+
+    public injectEvent(ev: MidiEvent) {
+        // Insert event into the sorted events array
+        const index = this.events.findIndex(e => e.ticks > ev.ticks);
+        if (index === -1) {
+            this.events.push(ev);
+        } else {
+            this.events.splice(index, 0, ev);
+            // If the injected event is before the current eventIndex, increment eventIndex
+            if (index <= this.eventIndex) {
+                this.eventIndex++;
+            }
+        }
+    }
+
+    public getChannelEvents(channel: number): MidiEvent[] {
+        return this.events.filter(e => e.channel === channel);
+    }
+
+    public replaceChannelEvents(channel: number, startTick: number, newEvents: MidiEvent[]) {
+        // Remove all events for this channel from startTick onwards
+        this.events = this.events.filter(e => !(e.channel === channel && e.ticks >= startTick));
+        
+        // Add new events
+        this.events.push(...newEvents);
+        
+        // Re-sort events
+        this.events.sort((a, b) => a.ticks - b.ticks);
+        
+        // Recalculate eventIndex
+        this.eventIndex = 0;
+        while (this.eventIndex < this.events.length && this.events[this.eventIndex].ticks < this.currentTick) {
+            this.eventIndex++;
+        }
     }
 
     public addVisualListener(listener: (data: any) => void) {
@@ -63,20 +118,24 @@ export class MidiScheduler {
     /**
      * Loads a sequence of MIDI events and resets the playhead.
      */
-    public loadTrack(events: MidiEvent[], bpm: number) {
+    public loadTrack(events: MidiEvent[], bpm: number, tempoCurves?: TempoCurve[]) {
         // Ensure events are strictly sorted by time
         this.events = events.sort((a, b) => a.ticks - b.ticks);
-        this.bpm = bpm;
+        this.baseBpm = bpm;
+        this.currentBpm = bpm;
+        this.tempoCurves = tempoCurves || [];
         this.eventIndex = 0;
         this.currentTick = 0;
+        this.mutedChannels.clear();
     }
 
     public setBpm(bpm: number) {
-        this.bpm = bpm;
+        this.baseBpm = bpm;
+        this.currentBpm = bpm;
     }
 
     public getBpm(): number {
-        return this.bpm;
+        return this.currentBpm;
     }
 
     public setPosition(ticks: number) {
@@ -96,13 +155,13 @@ export class MidiScheduler {
         if (!this.synth || this.isPlaying) return;
         this.isPlaying = true;
         this.lastTimeMs = performance.now();
-        this.tickLoop();
+        this.timerId = requestAnimationFrame(this.tickLoop);
     }
 
     public stop() {
         this.isPlaying = false;
         if (this.timerId !== null) {
-            clearTimeout(this.timerId);
+            cancelAnimationFrame(this.timerId);
             this.timerId = null;
         }
         this.currentTick = 0;
@@ -113,7 +172,7 @@ export class MidiScheduler {
     public pause() {
         this.isPlaying = false;
         if (this.timerId !== null) {
-            clearTimeout(this.timerId);
+            cancelAnimationFrame(this.timerId);
             this.timerId = null;
         }
         // Silence all currently playing notes, but keep the playhead position
@@ -123,8 +182,10 @@ export class MidiScheduler {
     public clear() {
         this.stop();
         this.events = [];
+        this.tempoCurves = [];
         this.visualListeners = [];
         this.endListeners = [];
+        this.mutedChannels.clear();
     }
 
     /**
@@ -138,20 +199,42 @@ export class MidiScheduler {
         }
     }
 
+    private updateBpm() {
+        let newBpm = this.baseBpm;
+        for (const curve of this.tempoCurves) {
+            if (this.currentTick >= curve.startTick && this.currentTick <= curve.endTick) {
+                const progress = (this.currentTick - curve.startTick) / (curve.endTick - curve.startTick);
+                if (curve.curveType === 'linear') {
+                    newBpm = curve.startBpm + (curve.endBpm - curve.startBpm) * progress;
+                } else if (curve.curveType === 'exponential') {
+                    // Exponential interpolation
+                    newBpm = curve.startBpm * Math.pow(curve.endBpm / curve.startBpm, progress);
+                }
+                break; // Apply the first matching curve
+            } else if (this.currentTick > curve.endTick) {
+                // If we passed the curve, hold the endBpm (assuming curves are sequential)
+                newBpm = curve.endBpm;
+            }
+        }
+        this.currentBpm = newBpm;
+    }
+
     /**
      * The core timing loop. Mimics a hardware timer interrupt.
      */
-    private tickLoop = () => {
+    private tickLoop = (now: number) => {
         if (!this.isPlaying) return;
 
-        const now = performance.now();
         const deltaMs = now - this.lastTimeMs;
         this.lastTimeMs = now;
+
+        // Update BPM based on tempo curves
+        this.updateBpm();
 
         // Calculate how many ticks passed based on current BPM
         // 1 beat = 60000 / BPM ms
         // 1 tick = (60000 / BPM) / PPQ ms
-        const msPerTick = (60000 / this.bpm) / this.ppq;
+        const msPerTick = (60000 / this.currentBpm) / this.ppq;
         const deltaTicks = deltaMs / msPerTick;
         
         this.currentTick += deltaTicks;
@@ -180,7 +263,7 @@ export class MidiScheduler {
 
         // Schedule next wake-up if there are more events, or if looping
         if (this.eventIndex < this.events.length || this.loop) {
-            this.timerId = window.setTimeout(this.tickLoop, this.tickIntervalMs);
+            this.timerId = requestAnimationFrame(this.tickLoop);
         } else {
             this.isPlaying = false; // Track finished
             this.endListeners.forEach(l => l());
@@ -190,6 +273,11 @@ export class MidiScheduler {
     private dispatchEvent(ev: MidiEvent) {
         if (!this.synth) return;
         
+        // Skip note events for muted channels
+        if (this.mutedChannels.has(ev.channel) && (ev.type === 'noteOn' || ev.type === 'noteOff')) {
+            return;
+        }
+
         switch (ev.type) {
             case 'noteOn':
                 this.synth.noteOn(ev.channel, ev.data1, ev.data2);
@@ -202,6 +290,9 @@ export class MidiScheduler {
                 break;
             case 'programChange':
                 this.synth.programChange(ev.channel, ev.data1);
+                break;
+            case 'pitchBend':
+                this.synth.pitchWheel(ev.channel, ev.data1);
                 break;
             case 'visual':
                 this.visualListeners.forEach(l => l(ev.visualData));

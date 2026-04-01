@@ -1,4 +1,4 @@
-import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from './types';
+import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig, FusionProfile, GrooveMask, TextureAllocation } from './types';
 
 class GlobalContextManager {
     public currentStyle: StyleConfig | null = null;
@@ -28,12 +28,48 @@ class GlobalContextManager {
         this.currentGrooveDNA = grooveDNA;
     }
 
+    public getFusionProfile(): FusionProfile | undefined {
+        return this.activeSection?.fusionProfile;
+    }
+
+    public getGrooveMask(): GrooveMask | undefined {
+        return this.activeSection?.grooveMask;
+    }
+
+    public getTextureAllocation(): TextureAllocation | undefined {
+        return this.activeSection?.textureAllocation;
+    }
+
     public isGrooveHit(absoluteBeat: number): boolean {
         if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return absoluteBeat % 1 === 0;
         const beatsPerBar = this.currentTimeSignature[0];
         const loopLength = 2 * beatsPerBar; 
         const localBeat = absoluteBeat % loopLength;
         return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05);
+    }
+
+    /**
+     * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
+     */
+    public isLayeringHit(absoluteBeat: number): boolean {
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return absoluteBeat % 1 === 0;
+        const beatsPerBar = this.currentTimeSignature[0];
+        const loopLength = 2 * beatsPerBar; 
+        const localBeat = absoluteBeat % loopLength;
+        // 叠加点：GrooveDNA 中的正拍 (0, 1, 2, 3...)
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && hit % 1 === 0);
+    }
+
+    /**
+     * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
+     */
+    public isInterleavingHit(absoluteBeat: number): boolean {
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return false;
+        const beatsPerBar = this.currentTimeSignature[0];
+        const loopLength = 2 * beatsPerBar; 
+        const localBeat = absoluteBeat % loopLength;
+        // 穿插点：GrooveDNA 中的反拍或切分音
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && hit % 1 !== 0);
     }
 
     public getCurrentEnergyLevel(): number { return this.activeSection ? this.activeSection.energyLevel : 5; }

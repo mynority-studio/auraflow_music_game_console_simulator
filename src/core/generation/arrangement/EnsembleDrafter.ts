@@ -1,5 +1,6 @@
-import { globalPRNG } from '../../utils/PRNG';
+import { PRNGManager } from '../../utils/PRNG';
 import { EnsembleDraft, StyleConfig } from '../types';
+import { StyleId } from '../config/StyleFlags';
 
 export class EnsembleDrafter {
     public static draft(style: StyleConfig): EnsembleDraft {
@@ -29,27 +30,28 @@ export class EnsembleDrafter {
             { id: 'Voice_Oohs', tags: ['pop', 'rnb', 'chill', 'acoustic', 'ballad'] }
         ];
 
-        const styleTags = style.id.toLowerCase().split('_');
+        const styleName = StyleId[style.id] || "";
+        const styleTags = styleName.toLowerCase().split('_');
         
         const getInstrumentFromPool = (pool: any[]) => {
             const matches = pool.filter(item => 
                 item.tags.includes('all') || item.tags.some((tag: string) => styleTags.some(st => st.includes(tag) || tag.includes(st)))
             );
             const selectedPool = matches.length > 0 ? matches : pool;
-            return selectedPool[Math.floor(globalPRNG.next() * selectedPool.length)].id;
+            return selectedPool[Math.floor(PRNGManager.next() * selectedPool.length)].id;
         };
 
         let melodySound = getInstrumentFromPool(melodyPool);
         
-        // 🌟 80% 的概率让人声 (Marimba) 作为主旋律
-        if (globalPRNG.next() < 0.8) {
-            melodySound = 'Marimba';
-        }
+        // 🌟 全局强制取消掉vocal (Marimba)
+        // if (PRNGManager.next() < 0.8) {
+        //     melodySound = 'Marimba';
+        // }
 
         let secondaryMelodySound: string | null = null;
         
         // 只有 30% 的概率出现双主奏交替 (Duet)
-        if (globalPRNG.next() < 0.3) {
+        if (PRNGManager.next() < 0.3) {
             let attempts = 0;
             do {
                 secondaryMelodySound = getInstrumentFromPool(melodyPool);
@@ -62,13 +64,14 @@ export class EnsembleDrafter {
         
         // 2. 决定乐队编制 (Ensemble Template)
         // 任何风格都可以有不同的编制，让编曲更丰富
-        const rand = globalPRNG.next();
-        let bassSound: string | null = 'Electric_Bass';
+        const rand = PRNGManager.next();
+        let bassSound: string | null = 'Electric_Bass_Finger';
         let drumSound: string | null = 'Standard_DrumKit';
         let counterMelodySound: string | null = null;
 
-        const isJazz = ['chill_jazzy', 'neo_funk'].includes(style.id);
-        const isCinematic = style.id.includes('cinematic');
+        const stringStyle = style.orchestration?.idiomPreferences?.stringStyle || 'pop';
+        const isJazz = stringStyle === 'jazz';
+        const isCinematic = stringStyle === 'cinematic';
 
         if (rand < 0.10 && !isCinematic) {
             // 🌟 Acoustic Duo (原声双重奏): 只有主奏 + 钢琴/吉他伴奏，无鼓无贝斯 (降低出现概率)
@@ -87,18 +90,18 @@ export class EnsembleDrafter {
         } else if (rand < 0.40 && !isCinematic && !isJazz) {
             // 🌟 Rhythmic (律动型): 只有贝斯和鼓，无和弦乐器 (留白极多，降低概率，避免太干)
             // 修复：对于抒情歌等风格，不能完全没有和弦乐器，否则会变成只有贝斯和弦乐的空洞编曲
-            const isAcousticBallad = style.id.includes('acoustic') || style.id.includes('ballad') || style.id.includes('folk');
+            const isAcousticBallad = stringStyle === 'ballad' || stringStyle === 'folk';
             if (!isAcousticBallad) {
                 chordSound = null;
             }
-            bassSound = 'Electric_Bass';
+            bassSound = 'Electric_Bass_Finger';
             drumSound = 'Standard_DrumKit';
         } else {
             // 🌟 Full Band (全乐队): 标准配置 (提高出现概率，保证整体性)
-            bassSound = isJazz ? 'Acoustic_Bass' : 'Electric_Bass';
+            bassSound = isJazz ? 'Acoustic_Bass' : 'Electric_Bass_Finger';
             
             drumSound = 'Standard_DrumKit';
-            if (globalPRNG.next() < 0.4) {
+            if (PRNGManager.next() < 0.4) {
                 counterMelodySound = getInstrumentFromPool(padPool);
             }
         }
@@ -107,12 +110,12 @@ export class EnsembleDrafter {
         if (style.orchestration.bassInstruments && style.orchestration.bassInstruments.length > 0) {
             // 如果曲风指定了贝斯库，即使前面随机到了 null，也有可能被覆盖（这里我们尊重前面的 null，除非强制需要）
             if (bassSound) {
-                bassSound = style.orchestration.bassInstruments[Math.floor(globalPRNG.next() * style.orchestration.bassInstruments.length)];
+                bassSound = style.orchestration.bassInstruments[Math.floor(PRNGManager.next() * style.orchestration.bassInstruments.length)];
             }
         }
 
         const counterProb = style.orchestration.counterMelodyProbability !== undefined ? style.orchestration.counterMelodyProbability : (counterMelodySound ? 1.0 : 0.0);
-        if (globalPRNG.next() < counterProb || melodySound === 'Solo_Vox') {
+        if (PRNGManager.next() < counterProb || melodySound === 'Solo_Vox') {
             if (!counterMelodySound) {
                 counterMelodySound = getInstrumentFromPool(padPool);
             }
@@ -122,7 +125,7 @@ export class EnsembleDrafter {
 
         // 结合曲风的 drumProbability 进一步限制
         const drumProb = style.orchestration.drumProbability !== undefined ? style.orchestration.drumProbability : 1.0;
-        if (globalPRNG.next() > drumProb) {
+        if (PRNGManager.next() > drumProb) {
             drumSound = null;
         } else if (!drumSound) {
             // 如果通过了概率测试但之前没分配鼓组，则分配默认鼓组
@@ -130,7 +133,7 @@ export class EnsembleDrafter {
         }
 
         if (style.orchestration.drumInstruments && style.orchestration.drumInstruments.length > 0 && drumSound) {
-            drumSound = style.orchestration.drumInstruments[Math.floor(globalPRNG.next() * style.orchestration.drumInstruments.length)];
+            drumSound = style.orchestration.drumInstruments[Math.floor(PRNGManager.next() * style.orchestration.drumInstruments.length)];
         }
 
         // 🌟 钢琴主奏的特殊绑定 (Piano Lead Binding)

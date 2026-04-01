@@ -2,8 +2,10 @@ import { ArrangedTrack } from '../generation/types';
 import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
 import { VisualEvent, VisualEventListener } from './PlaybackEngine';
-import { spessaSynth, startAudioContext } from './AudioEngine';
+import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
+
+import { StyleRegistry } from '../generation/config/styles/StyleRegistry';
 
 export class InteractivePlaybackEngine {
     private mixer: AudioMixer;
@@ -43,12 +45,14 @@ export class InteractivePlaybackEngine {
         }
         
         // 🌟 0. Set Mix Style based on song styleId
-        if (song.styleId) {
-            if (song.styleId.includes('jazz') || song.styleId.includes('bossa')) {
+        if (song.styleId !== undefined) {
+            const style = StyleRegistry[song.styleId];
+            const drumStyle = style?.orchestration?.idiomPreferences?.drumStyle || 'pop';
+            if (drumStyle === 'jazz' || drumStyle === 'bossa') {
                 this.mixer.setMixStyle('jazz');
-            } else if (song.styleId.includes('house') || song.styleId.includes('electro')) {
+            } else if (drumStyle === 'electronic' || drumStyle === 'edm' || drumStyle === 'eurodance' || drumStyle === 'synthwave') {
                 this.mixer.setMixStyle('electro');
-            } else if (song.styleId.includes('folk') || song.styleId.includes('ballad')) {
+            } else if (drumStyle === 'folk' || drumStyle === 'ballad') {
                 this.mixer.setMixStyle('folk');
             } else {
                 this.mixer.setMixStyle('default');
@@ -131,7 +135,7 @@ export class InteractivePlaybackEngine {
             addEventsForTrack(autoDrums, this.drumSynth, 'drums');
         }
 
-        globalMidiScheduler.loadTrack(allEvents, song.bpm);
+        globalMidiScheduler.loadTrack(allEvents, song.bpm, song.tempoCurves);
     }
 
     // 🌟 法则一：输入量子化反馈音效

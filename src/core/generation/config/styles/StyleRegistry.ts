@@ -1,26 +1,24 @@
 import { StyleConfig } from '../../types';
-import { ModernPopStyle, ClassicJPopStyle, ModernJPopStyle, DarkPopStyle } from './PopStyles';
-import { PopRockStyle, IndieRockStyle, PostRockStyle } from './RockStyles';
-import { LofiHipHopStyle, ProgressiveHouseStyle, SynthwaveStyle } from './ElectronicStyles';
+import { StyleId } from '../StyleFlags';
+import { ModernPopStyle, ClassicJPopStyle, ModernJPopStyle } from './PopStyles';
+import { PopRockStyle } from './RockStyles';
+import { EurodanceStyle, TranceStyle, SynthwaveStyle } from './ElectronicStyles';
 import { PowerBalladStyle, RussianFolkBalladStyle } from './BalladStyles';
 import { GhibliOrchestralStyle } from './CinematicStyles';
-import { NeoSoulStyle } from './RnBStyles';
+import { LofiHipHopStyle } from './LofiStyles';
 
-export const StyleRegistry: Record<string, StyleConfig> = {
-    [ModernPopStyle.id]: ModernPopStyle,
-    [ClassicJPopStyle.id]: ClassicJPopStyle,
-    [ModernJPopStyle.id]: ModernJPopStyle,
-    [DarkPopStyle.id]: DarkPopStyle,
-    [PopRockStyle.id]: PopRockStyle,
-    [IndieRockStyle.id]: IndieRockStyle,
-    [PostRockStyle.id]: PostRockStyle,
-    [LofiHipHopStyle.id]: LofiHipHopStyle,
-    [ProgressiveHouseStyle.id]: ProgressiveHouseStyle,
-    [SynthwaveStyle.id]: SynthwaveStyle,
-    [PowerBalladStyle.id]: PowerBalladStyle,
-    [RussianFolkBalladStyle.id]: RussianFolkBalladStyle,
-    [GhibliOrchestralStyle.id]: GhibliOrchestralStyle,
-    [NeoSoulStyle.id]: NeoSoulStyle,
+export const StyleRegistry: Record<StyleId, StyleConfig> = {
+    [StyleId.ModernPop]: ModernPopStyle,
+    [StyleId.ClassicJPop]: ClassicJPopStyle,
+    [StyleId.ModernJPop]: ModernJPopStyle,
+    [StyleId.PopRock]: PopRockStyle,
+    [StyleId.Eurodance]: EurodanceStyle,
+    [StyleId.Trance]: TranceStyle,
+    [StyleId.Synthwave]: SynthwaveStyle,
+    [StyleId.PowerBallad]: PowerBalladStyle,
+    [StyleId.RussianFolkBallad]: RussianFolkBalladStyle,
+    [StyleId.GhibliOrchestral]: GhibliOrchestralStyle,
+    [StyleId.Lofi]: LofiHipHopStyle,
 };
 
 export const getAllAvailableStyles = () => {
@@ -30,7 +28,7 @@ export const getAllAvailableStyles = () => {
     }));
 };
 
-export const getStyleConfig = (id: string): StyleConfig => {
+export const getStyleConfig = (id: StyleId): StyleConfig => {
     const style = StyleRegistry[id];
     if (!style) throw new Error(`Style with ID ${id} not found.`);
     return style;

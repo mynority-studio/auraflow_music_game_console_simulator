@@ -5,11 +5,14 @@
 import { ArrangedTrack } from '../generation/types';
 import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
-import { spessaSynth, startAudioContext } from './AudioEngine';
+import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
 
-export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; }
+export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
 export type VisualEventListener = (event: VisualEvent) => void;
+
+import { StyleRegistry } from '../generation/config/styles/StyleRegistry';
+import { StyleId } from '../generation/config/StyleFlags';
 
 export class PlaybackEngine {
     private mixer: AudioMixer;
@@ -53,17 +56,90 @@ export class PlaybackEngine {
         this.isStopped = false;
         await startAudioContext();
         
+        // --- 打印歌曲元数据 ---
+        console.log("========================================");
+        console.log("🎵 歌曲生成完毕，开始播放 🎵");
+        console.log(`Style: ${song.styleId || 'Unknown'}`);
+        console.log(`BPM: ${song.bpm}`);
+        console.log(`Key: ${song.key}`);
+        console.log(`Time Signature: ${song.timeSignature ? song.timeSignature.join('/') : '4/4'}`);
+        
+        console.log("--- 使用的乐器 ---");
+        const mixing = song.palette?.mixing || {};
+        const printInstrument = (role: string, sound?: string | null, mix?: any) => {
+            if (sound) {
+                const pan = mix?.pan !== undefined ? mix.pan : 0;
+                const panStr = pan === 0 ? 'Center' : (pan < 0 ? `Left ${Math.abs(pan)}` : `Right ${pan}`);
+                console.log(`- ${role}: ${sound} (Pan: ${panStr})`);
+            }
+        };
+        printInstrument('Vocal', song.palette?.vocalSound, mixing.vocal);
+        printInstrument('Melody', song.palette?.melodySound, mixing.melody);
+        printInstrument('Secondary Melody', song.palette?.secondaryMelodySound, mixing.secondaryMelody);
+        printInstrument('Chord', song.palette?.chordSound, mixing.chord);
+        printInstrument('Bass', song.palette?.bassSound, mixing.bass);
+        printInstrument('Drums', song.palette?.drumSound, mixing.drums);
+        printInstrument('Counter Melody', song.palette?.counterMelodySound, mixing.counterMelody);
+
+        console.log("--- 全曲和弦与旋律进行 ---");
+        if (song.sections && song.chords) {
+            const noteToMidiStr = (midi: number): string => {
+                const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                const octave = Math.floor(midi / 12) - 1;
+                const note = notes[midi % 12];
+                return `${note}${octave}`;
+            };
+
+            song.sections.forEach(sec => {
+                const sectionChords = song.chords?.filter(c => c.startBeat >= sec.startBeat && c.startBeat < sec.endBeat);
+                if (!sectionChords || sectionChords.length === 0) return;
+
+                let chordStr = `[${sec.name}]: | `;
+                for (const chord of sectionChords) {
+                    chordStr += `${chord.numeral} --- | `;
+                }
+                console.log(chordStr);
+
+                const printTrackNotes = (trackNotes: any[] | undefined, prefix: string) => {
+                    if (!trackNotes || trackNotes.length === 0) return;
+                    
+                    const secNotes = trackNotes.filter(n => n.onset >= sec.startBeat && n.onset < sec.endBeat);
+                    if (secNotes.length === 0) return;
+
+                    let noteStr = `${prefix}_${sec.name}: | `;
+                    for (const chord of sectionChords) {
+                        const chordNotes = secNotes.filter(n => n.onset >= chord.startBeat && n.onset < chord.endBeat);
+                        if (chordNotes.length > 0) {
+                            noteStr += chordNotes.map(n => `${noteToMidiStr(n.pitch)}(${Number(n.duration.toFixed(2))})`).join('-') + ' | ';
+                        } else {
+                            noteStr += '--- | ';
+                        }
+                    }
+                    console.log(noteStr);
+                };
+
+                printTrackNotes(song.melody, 'melody');
+                printTrackNotes(song.secondaryMelody, 'secondaryMelody');
+                printTrackNotes(song.counterMelody, 'counterMelody');
+                printTrackNotes(song.pianoLH, 'bass');
+            });
+        }
+        console.log("========================================");
+        // ----------------------
+
         if (spessaSynth) {
             this.mixer.connectSpessaSynth(spessaSynth);
         }
         
         // 🌟 0. Set Mix Style based on song styleId
-        if (song.styleId) {
-            if (song.styleId.includes('jazz') || song.styleId.includes('bossa')) {
+        if (song.styleId !== undefined) {
+            const style = StyleRegistry[song.styleId];
+            const drumStyle = style?.orchestration?.idiomPreferences?.drumStyle || 'pop';
+            if (drumStyle === 'jazz' || drumStyle === 'bossa') {
                 this.mixer.setMixStyle('jazz');
-            } else if (song.styleId.includes('house') || song.styleId.includes('electro')) {
+            } else if (drumStyle === 'electronic' || drumStyle === 'edm' || drumStyle === 'eurodance' || drumStyle === 'synthwave') {
                 this.mixer.setMixStyle('electro');
-            } else if (song.styleId.includes('folk') || song.styleId.includes('ballad')) {
+            } else if (drumStyle === 'folk' || drumStyle === 'ballad') {
                 this.mixer.setMixStyle('folk');
             } else {
                 this.mixer.setMixStyle('default');
@@ -77,7 +153,6 @@ export class PlaybackEngine {
         await this.mixer.applyMasteringProfile(selectedProfile);
 
         // 🌟 2. 获取采样器 (100% Soundfont)
-        const mixing = song.palette?.mixing || {};
         
         const vocalSynth = song.palette?.vocalSound ? this.instruments.getInstrument(song.palette.vocalSound, 'Foreground', 'vocal', mixing.vocal) : null;
         const melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', song.palette?.vocalSound ? 'Midground' : 'Foreground', 'melody', mixing.melody);
@@ -138,9 +213,10 @@ export class PlaybackEngine {
                 }
 
                 const activeSynth = typeof synth === 'function' ? synth(n.onset) : synth;
-                const channel = activeSynth.channel; // Assuming SpessaSynthWrapper exposes channel
+                let channel = activeSynth.channel; // Assuming SpessaSynthWrapper exposes channel
+                let pitch = n.pitch;
                 
-                if (n.pitch !== undefined && !isNaN(n.pitch)) {
+                if (pitch !== undefined && !isNaN(pitch)) {
                     const startTick = globalMidiScheduler.beatsToTicks(n.onset + countInBeats);
                     const durationTicks = globalMidiScheduler.beatsToTicks(dur);
                     const vel = Math.max(0, Math.min(127, Math.round((n.velocity || 1) * 127)));
@@ -150,7 +226,7 @@ export class PlaybackEngine {
                         ticks: startTick,
                         type: 'noteOn',
                         channel: channel,
-                        data1: n.pitch,
+                        data1: pitch,
                         data2: vel
                     });
 
@@ -161,7 +237,7 @@ export class PlaybackEngine {
                         channel: channel,
                         data1: 0,
                         data2: 0,
-                        visualData: { type: eventType, midiNote: n.pitch, velocity: vel, source: 'playback', onset: n.onset, isUserMotif: n.isUserMotif }
+                        visualData: { type: eventType, midiNote: pitch, velocity: vel, source: 'playback', onset: n.onset, isUserMotif: n.isUserMotif }
                     });
 
                     // Note Off
@@ -169,34 +245,56 @@ export class PlaybackEngine {
                         ticks: startTick + durationTicks,
                         type: 'noteOff',
                         channel: channel,
-                        data1: n.pitch,
+                        data1: pitch,
                         data2: 0
                     });
                 }
             });
         };
 
-        const lofiMelodySynth = this.instruments.getInstrument('Lofi_Piano', 'Foreground', 'lofi_melody', mixing.melody);
-        const lofiChordSynth = this.instruments.getInstrument('Lofi_Piano', 'Midground', 'lofi_chord', mixing.chord);
-        const lofiDrumSynth = this.instruments.getInstrument('Lofi_DrumKit', 'Rhythm', 'lofi_drums', mixing.drums);
-        const lofiBassSynth = this.instruments.getInstrument('Lofi_Piano', 'Background', 'lofi_bass', mixing.bass);
+        const vocalSynthFn = vocalSynth ? () => vocalSynth : null;
+        const melodySynthFn = () => melodySynth;
+        const chordSynthFn = () => chordSynth;
+        const drumSynthFn = () => drumSynth;
+        const bassSynthFn = () => bassSynth;
 
-        const getSynthForRole = (defaultSynth: any, lofiSynth: any) => {
-            return (onset: number) => {
-                if (!song.sections) return defaultSynth;
-                const section = song.sections.find(s => onset >= s.startBeat && onset < s.endBeat);
-                if (section && section.lofiEffect) {
-                    return lofiSynth;
+        // 🌟 Luis's Dynamic Panning & Reverb + Gain Staging
+        if (song.sections) {
+            song.sections.forEach((sec, index) => {
+                const startTick = globalMidiScheduler.beatsToTicks(sec.startBeat + countInBeats);
+                const energyLevel = sec.energyLevel || 4; // 1-8
+                const spread = (energyLevel - 1) / 7.0;
+
+                const applyCC = (synthFn: any, vol: number, targetPan: number, reverb: number) => {
+                    if (!synthFn) return;
+                    const channel = synthFn(sec.startBeat).channel;
+                    const pan = Math.round(64 + (targetPan - 64) * spread);
+                    
+                    allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 7, data2: vol });
+                    allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 10, data2: pan });
+                    allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 91, data2: Math.min(127, reverb) });
+                };
+
+                applyCC(vocalSynthFn, 118, 64, 40 + energyLevel * 5);
+                applyCC(melodySynthFn, 118, 64, 40 + energyLevel * 5);
+                applyCC(drumSynthFn, 108, 64, 10 + energyLevel * 3);
+                applyCC(bassSynthFn, 98, 64, 0);
+                applyCC(chordSynthFn, 85, 40, 60 + energyLevel * 8);
+
+                if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
+                    const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
+                    const secondaryMelodySynthFn = () => secondaryMelodySynth;
+                    applyCC(secondaryMelodySynthFn, 75, 88, 60 + energyLevel * 8);
                 }
-                return defaultSynth;
-            };
-        };
 
-        const vocalSynthFn = vocalSynth ? getSynthForRole(vocalSynth, lofiMelodySynth) : null;
-        const melodySynthFn = getSynthForRole(melodySynth, lofiMelodySynth);
-        const chordSynthFn = getSynthForRole(chordSynth, lofiChordSynth);
-        const drumSynthFn = getSynthForRole(drumSynth, lofiDrumSynth);
-        const bassSynthFn = getSynthForRole(bassSynth, lofiBassSynth);
+                if (song.counterMelody && song.palette?.counterMelodySound) {
+                    const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
+                    const counterMelodySynthFn = () => counterMelodySynth;
+                    const isLeft = index % 2 === 0;
+                    applyCC(counterMelodySynthFn, 60, isLeft ? 24 : 104, 60 + energyLevel * 8);
+                }
+            });
+        }
 
         if (song.vocal && vocalSynthFn) {
             addPartEvents(song.vocal, vocalSynthFn, 'melody'); // Use 'melody' visual type for now
@@ -204,25 +302,94 @@ export class PlaybackEngine {
         addPartEvents(song.melody, melodySynthFn, 'melody');
         if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
             const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
-            const secondaryMelodySynthFn = getSynthForRole(secondaryMelodySynth, lofiMelodySynth);
+            const secondaryMelodySynthFn = () => secondaryMelodySynth;
             addPartEvents(song.secondaryMelody, secondaryMelodySynthFn, 'melody');
         }
         addPartEvents(song.pianoLH, bassSynthFn, 'pianoLH'); 
         addPartEvents(song.pianoRH, chordSynthFn, 'pianoRH');
         if (song.counterMelody && song.palette?.counterMelodySound) {
             const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
-            const counterMelodySynthFn = getSynthForRole(counterMelodySynth, lofiChordSynth);
+            const counterMelodySynthFn = () => counterMelodySynth;
             addPartEvents(song.counterMelody, counterMelodySynthFn, 'pianoRH'); 
         }
         if (song.drums) {
             addPartEvents(song.drums, drumSynthFn, 'drums');
         }
 
+        // 🌟 提案三：标志性结尾 (Jazz/R&B Signature Ending - CC64 Sustain)
+        if (song.chords) {
+            song.chords.forEach(chord => {
+                if (chord.isSignatureEnding) {
+                    const startTick = globalMidiScheduler.beatsToTicks(chord.startBeat + countInBeats);
+                    const endTick = globalMidiScheduler.beatsToTicks(chord.endBeat + countInBeats);
+                    
+                    // 为所有和声乐器 (PianoRH, PianoLH, CounterMelody) 发送 CC64 延音踏板踩下
+                    const sustainChannels = new Set<number>();
+                    if (chordSynthFn) sustainChannels.add(chordSynthFn().channel);
+                    if (bassSynthFn) sustainChannels.add(bassSynthFn().channel);
+                    if (song.counterMelody && song.palette?.counterMelodySound) {
+                        const cmSynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody');
+                        sustainChannels.add(cmSynth.channel);
+                    }
+
+                    sustainChannels.forEach(channel => {
+                        // 踩下踏板 (127)
+                        allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 64, data2: 127 });
+                        // 松开踏板 (0)
+                        allEvents.push({ ticks: endTick, type: 'cc', channel, data1: 64, data2: 0 });
+                    });
+                    
+                    console.log(`[PlaybackEngine] Applied CC64 Sustain for Signature Ending at beat ${chord.startBeat}`);
+                }
+            });
+        }
+
+        // 🌟 Luis's Fake Sidechain (CC 11)
+        if (song.styleId !== undefined) {
+            const style = StyleRegistry[song.styleId];
+            const needsSidechain = style?.orchestration?.mixingPreferences?.requireSidechain || false;
+            
+            if (needsSidechain && song.drums) {
+                song.drums.forEach(n => {
+                    const isKick = n.pitch === 35 || n.pitch === 36;
+                    if (isKick && n.velocity > 0.7) {
+                        const startTick = globalMidiScheduler.beatsToTicks(n.onset + countInBeats);
+                        
+                        const injectSidechain = (channel: number) => {
+                            // T: 40
+                            allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: 40 });
+                            // T + 30ms
+                            const tick30 = startTick + globalMidiScheduler.beatsToTicks(0.03 * (song.bpm / 60));
+                            allEvents.push({ ticks: tick30, type: 'cc', channel, data1: 11, data2: 65 });
+                            // T + 80ms
+                            const tick80 = startTick + globalMidiScheduler.beatsToTicks(0.08 * (song.bpm / 60));
+                            allEvents.push({ ticks: tick80, type: 'cc', channel, data1: 11, data2: 100 });
+                            // T + 150ms
+                            const tick150 = startTick + globalMidiScheduler.beatsToTicks(0.15 * (song.bpm / 60));
+                            allEvents.push({ ticks: tick150, type: 'cc', channel, data1: 11, data2: 127 });
+                        };
+
+                        const bassChannel = bassSynthFn().channel;
+                        injectSidechain(bassChannel);
+
+                        const chordChannel = chordSynthFn().channel;
+                        injectSidechain(chordChannel);
+
+                        if (song.counterMelody && song.palette?.counterMelodySound) {
+                            const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
+                            const cmChannel = counterMelodySynth.channel;
+                            injectSidechain(cmChannel);
+                        }
+                    }
+                });
+            }
+        }
+
         if (options?.withCountIn) {
             const totalBeats = countInBeats + Math.ceil(maxOnset);
             for (let i = 0; i < totalBeats; i++) {
                 const startTick = globalMidiScheduler.beatsToTicks(i);
-                const activeSynth: any = drumSynthFn(i - countInBeats);
+                const activeSynth: any = drumSynthFn();
                 const channel = activeSynth.channel;
                 const vel = i < countInBeats ? 127 : 76;
                 
@@ -243,7 +410,7 @@ export class PlaybackEngine {
             }
         }
 
-        globalMidiScheduler.loadTrack(allEvents, song.bpm);
+        globalMidiScheduler.loadTrack(allEvents, song.bpm, song.tempoCurves);
     }
 
     public async appendSongChunk(song: ArrangedTrack) {

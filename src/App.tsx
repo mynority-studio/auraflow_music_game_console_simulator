@@ -3,7 +3,8 @@ import { LedMatrix } from './core/hardware/LedMatrix';
 import { TapArea } from './core/hardware/TapArea';
 import { AuraSystem } from './system/AuraSystem';
 import { APPS } from './apps/AppRegistry';
-import { AudioEngine, startAudioContext } from './core/audio/AudioEngine';
+import { AudioEngine } from './core/audio/AudioEngine';
+import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
 
 export default function App() {

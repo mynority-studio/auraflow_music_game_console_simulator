@@ -1,9 +1,12 @@
-import { globalPRNG } from '../../utils/PRNG';
+import { PRNGManager } from '../../utils/PRNG';
 // ==========================================
 // 📄 文件路径: /src/core/generation/arrangement/TransitionEngine.ts
 // 🎬 V2.3 边界导演引擎 (加入 Drum Fills, The Drop, Cymbal Swells)
 // ==========================================
 import { NoteData, SectionMetadata } from '../types';
+
+import { StyleId } from '../config/StyleFlags';
+import { StyleConfig } from '../types';
 
 export class TransitionEngine {
     private static muteRegion(notes: NoteData[], startBeat: number, endBeat: number) {
@@ -15,12 +18,13 @@ export class TransitionEngine {
     }
 
     // 🌟 1. Drum Fills (多种类型的鼓加花)
-    private static injectDrumFill(drums: NoteData[], startBeat: number, endBeat: number, energyDelta: number, currentEnergy: number, styleId: string = 'pop') {
+    private static injectDrumFill(drums: NoteData[], startBeat: number, endBeat: number, energyDelta: number, currentEnergy: number, style: StyleConfig) {
         this.muteRegion(drums, startBeat, endBeat);
         const KICK = 36, SNARE = 38, CRASH = 49, TOM_HI = 50, TOM_MID = 47, TOM_LOW = 43, HIHAT_CLOSED = 42, HIHAT_OPEN = 46;
         
         const fillLength = endBeat - startBeat;
-        const isAcousticBallad = styleId === 'acoustic_ballad';
+        const fillStyle = style.orchestration?.fillStyle || 'standard';
+        const isAcousticBallad = fillStyle === 'micro';
 
         // 🌟 能量感知：低能量段落或能量下降时，使用极简加花 (Micro-Fill / Drop Fill)
         if (currentEnergy <= 4 || energyDelta < 0 || isAcousticBallad) {
@@ -28,7 +32,7 @@ export class TransitionEngine {
             // 抒情歌即使能量高，也倾向于使用微加花
             const fillStart = endBeat - (isAcousticBallad ? 1.0 : 0.5);
             
-            if (globalPRNG.next() > 0.5) {
+            if (PRNGManager.next() > 0.5) {
                 // 简单的底鼓+开镲
                 drums.push({ pitch: KICK, onset: fillStart, duration: 0.1, velocity: 0.7 });
                 drums.push({ pitch: HIHAT_OPEN, onset: fillStart, duration: 0.1, velocity: 0.6 });
@@ -36,14 +40,14 @@ export class TransitionEngine {
                 // 军鼓轻敲或边击 (Cross Stick)
                 const snareVel = isAcousticBallad ? 0.4 : 0.6;
                 drums.push({ pitch: SNARE, onset: fillStart, duration: 0.1, velocity: snareVel });
-                if (globalPRNG.next() > 0.5) {
+                if (PRNGManager.next() > 0.5) {
                     drums.push({ pitch: SNARE, onset: fillStart + 0.25, duration: 0.1, velocity: snareVel * 0.6 }); // Ghost note
                 }
             }
             return;
         }
 
-        const fillType = globalPRNG.next();
+        const fillType = PRNGManager.next();
 
         if (fillType < 0.25) {
             // Type A: 线性加花 (Linear Fill - RLKK or similar) - 绝不重叠
@@ -57,7 +61,7 @@ export class TransitionEngine {
                 [SNARE, SNARE, TOM_HI, TOM_MID], // S S T1 T2
                 [SNARE, KICK, TOM_HI, KICK] // S K T1 K
             ];
-            const pattern = patterns[Math.floor(globalPRNG.next() * patterns.length)];
+            const pattern = patterns[Math.floor(PRNGManager.next() * patterns.length)];
             let pIdx = 0;
             
             // 决定加花的密度 (16分音符或8分音符)
@@ -69,7 +73,7 @@ export class TransitionEngine {
                 
                 // 动态力度：极大拉开重音和弱音的差距
                 let vel = pitch === KICK ? 0.9 : (isAccent ? 0.95 : 0.35);
-                vel += (globalPRNG.next() - 0.5) * 0.1; // Humanize
+                vel += (PRNGManager.next() - 0.5) * 0.1; // Humanize
                 
                 drums.push({ pitch, onset: beat, duration: 0.1, velocity: Math.max(0.1, Math.min(1.0, vel)) });
                 pIdx++;
@@ -81,17 +85,17 @@ export class TransitionEngine {
                 const beatInFill = beat - startBeat;
                 
                 // 重音移位逻辑：随机决定重音位置，打破常规的强拍
-                const isAccent = globalPRNG.next() > 0.7 || (beatInFill % 1 === 0.75); 
+                const isAccent = PRNGManager.next() > 0.7 || (beatInFill % 1 === 0.75); 
                 
                 // 🌟 极大地拉开重音和弱音的力度差距，突出双跳和移位感
-                const vel = isAccent ? (0.9 + globalPRNG.next() * 0.1) : (0.2 + globalPRNG.next() * 0.15); 
+                const vel = isAccent ? (0.9 + PRNGManager.next() * 0.1) : (0.2 + PRNGManager.next() * 0.15); 
                 
                 // 🌟 动态分配鼓组：重音多在 Snare 或 High Tom，弱音（幽灵音）多在 Snare 边缘或 Mid/Low Tom
                 let pitch;
                 if (isAccent) {
-                    pitch = globalPRNG.next() > 0.4 ? SNARE : TOM_HI;
+                    pitch = PRNGManager.next() > 0.4 ? SNARE : TOM_HI;
                 } else {
-                    const rand = globalPRNG.next();
+                    const rand = PRNGManager.next();
                     if (rand > 0.6) pitch = SNARE; // Ghost snare
                     else if (rand > 0.3) pitch = TOM_MID;
                     else pitch = TOM_LOW;
@@ -100,7 +104,7 @@ export class TransitionEngine {
                 drums.push({ pitch, onset: beat, duration: 0.1, velocity: vel });
                 
                 // 偶尔在重音处加入底鼓支撑
-                if (isAccent && globalPRNG.next() > 0.5) {
+                if (isAccent && PRNGManager.next() > 0.5) {
                     drums.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.9 });
                 }
             }
@@ -108,7 +112,7 @@ export class TransitionEngine {
             // Type C: 节奏型组合加花 (Rhythmic Groupings - e.g., 前八后十六)
             // 允许一拍内分配到不同的鼓上
             for (let beat = startBeat; beat < endBeat; beat += 1.0) {
-                const patternType = globalPRNG.next();
+                const patternType = PRNGManager.next();
                 
                 if (patternType < 0.33) {
                     // 前八后十六 (1 Eighth + 2 Sixteenths)
@@ -132,7 +136,7 @@ export class TransitionEngine {
                 }
                 
                 // 每拍正拍加个底鼓支撑
-                if (globalPRNG.next() > 0.3) {
+                if (PRNGManager.next() > 0.3) {
                     drums.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.85 });
                 }
             }
@@ -145,10 +149,10 @@ export class TransitionEngine {
                 const beatInFill = beat - startBeat;
                 
                 // 检查当前拍子是否在预设的打击点中，并且根据概率决定是否真的打击
-                if (hits.includes(beatInFill % 2) && globalPRNG.next() > 0.3) {
-                    const isTom = globalPRNG.next() > 0.4;
-                    const pitch = isTom ? (globalPRNG.next() > 0.5 ? TOM_HI : TOM_MID) : SNARE;
-                    const vel = 0.7 + globalPRNG.next() * 0.2;
+                if (hits.includes(beatInFill % 2) && PRNGManager.next() > 0.3) {
+                    const isTom = PRNGManager.next() > 0.4;
+                    const pitch = isTom ? (PRNGManager.next() > 0.5 ? TOM_HI : TOM_MID) : SNARE;
+                    const vel = 0.7 + PRNGManager.next() * 0.2;
                     
                     drums.push({ pitch, onset: beat, duration: 0.1, velocity: vel });
                     
@@ -172,7 +176,7 @@ export class TransitionEngine {
         
         // 可以在 Drop 的瞬间加一个重击，然后彻底安静
         const KICK = 36, CRASH = 49, CHINA = 52, CRASH2 = 57;
-        const crashPitch = globalPRNG.next() > 0.7 ? CHINA : (globalPRNG.next() > 0.5 ? CRASH2 : CRASH);
+        const crashPitch = PRNGManager.next() > 0.7 ? CHINA : (PRNGManager.next() > 0.5 ? CRASH2 : CRASH);
         drums.push({ pitch: KICK, onset: dropStart, duration: 0.1, velocity: 1.0 }); // Kick
         drums.push({ pitch: crashPitch, onset: dropStart, duration: 1.0, velocity: 0.8 }); // Crash/China
     }
@@ -242,6 +246,32 @@ export class TransitionEngine {
     /**
      * 🌟 乐器进场前的“弱起助跑 (Bass Slide / Glissando)”
      */
+    // 🌟 5. Sub Drop (低频下潜)
+    private static injectSubDrop(lh: NoteData[], boundaryBeat: number) {
+        // 在能量骤降的瞬间（如 Drop 或 Breakdown），加入一个极低的 Bass 扫频
+        const dropStart = boundaryBeat;
+        lh.push({
+            pitch: 24, // C1
+            onset: dropStart,
+            duration: 4.0, // 持续 4 拍
+            velocity: 1.0,
+            pitchBend: -12, // 向下弯音一个八度
+            pitchBendDuration: 4.0
+        });
+    }
+
+    // 🌟 6. Reverse Cymbal (反向镲片 / Riser)
+    private static injectReverseCymbal(drums: NoteData[], boundaryBeat: number, length: number = 2.0) {
+        // 使用特殊的 pitch (119) 标记 Reverse Cymbal
+        const startBeat = boundaryBeat - length;
+        drums.push({
+            pitch: 119, // 特殊标记：Reverse Cymbal
+            onset: startBeat,
+            duration: length,
+            velocity: 0.9
+        });
+    }
+
     private static injectBassSlide(lh: NoteData[], boundaryBeat: number) {
         // Find the target pitch in the next section
         const targetNote = lh.find(n => n.onset >= boundaryBeat);
@@ -251,7 +281,7 @@ export class TransitionEngine {
         this.muteRegion(lh, slideStart, boundaryBeat); // 腾出空间
 
         // Chromatic slide from 3 semitones below or above
-        const direction = globalPRNG.next() > 0.5 ? 1 : -1;
+        const direction = PRNGManager.next() > 0.5 ? 1 : -1;
         const startPitch = targetPitch - (3 * direction);
 
         // 16th note triplets for a fast slide effect
@@ -266,7 +296,7 @@ export class TransitionEngine {
     }
 
     public static applyBoundaries(
-        sections: SectionMetadata[], lh: NoteData[], rh: NoteData[], drums: NoteData[], beatsPerBar: number, styleId: string = 'pop'
+        sections: SectionMetadata[], lh: NoteData[], rh: NoteData[], drums: NoteData[], beatsPerBar: number, style: StyleConfig
     ) {
         const CRASH = 49, CHINA = 52, SPLASH = 55, CRASH2 = 57;
 
@@ -283,9 +313,11 @@ export class TransitionEngine {
                 this.injectEpicBuildUp(drums, sec.startBeat, boundaryBeat);
                 // 强制 Drop 前悬空 1 拍
                 this.injectDrop(lh, rh, drums, boundaryBeat, 1.0);
+                // 🌟 P2: 添加 Reverse Cymbal (Riser)
+                this.injectReverseCymbal(drums, boundaryBeat, 4.0);
             } else if (delta > 0 && nextEnergy >= 6) {
                 // 进入高潮段落
-                const crashPitch = globalPRNG.next() > 0.8 ? CHINA : (globalPRNG.next() > 0.5 ? CRASH2 : CRASH);
+                const crashPitch = PRNGManager.next() > 0.8 ? CHINA : (PRNGManager.next() > 0.5 ? CRASH2 : CRASH);
                 drums.push({ pitch: crashPitch, onset: boundaryBeat, duration: 1.0, velocity: 0.9 });
                 
                 if (currentEnergy <= 5) {
@@ -293,26 +325,29 @@ export class TransitionEngine {
                 }
 
                 // 🌟 随机选择一种高级过渡特效
-                const transitionRoll = globalPRNG.next();
+                const transitionRoll = PRNGManager.next();
                 if (transitionRoll < 0.3) {
-                    // 30% 概率：The Drop (情绪悬空 1 拍)
+                    // 25% 概率：The Drop (情绪悬空 1 拍)
                     this.injectDrop(lh, rh, drums, boundaryBeat, 1.0);
-                } else if (transitionRoll < 0.6) {
-                    // 30% 概率：Massive Build-up (Snare Roll + Cymbal Swell)
+                } else if (transitionRoll < 0.5) {
+                    // 25% 概率：Massive Build-up (Snare Roll + Cymbal Swell)
                     this.injectBuildUp(drums, boundaryBeat, 2.0);
+                } else if (transitionRoll < 0.65) {
+                    // 15% 概率：Reverse Cymbal (Riser)
+                    this.injectReverseCymbal(drums, boundaryBeat, 2.0);
                 } else {
-                    // 40% 概率：完整的 Drum Fill (1 小节)
-                    this.injectDrumFill(drums, lastBarStart, boundaryBeat, delta, currentEnergy, styleId);
+                    // 35% 概率：完整的 Drum Fill (1 小节)
+                    this.injectDrumFill(drums, lastBarStart, boundaryBeat, delta, currentEnergy, style);
                 }
             } else if (delta >= 3) {
                 // 中等能量跃升
-                if (globalPRNG.next() < 0.5) {
-                    this.injectDrumFill(drums, boundaryBeat - 2.0, boundaryBeat, delta, currentEnergy, styleId);
+                if (PRNGManager.next() < 0.5) {
+                    this.injectDrumFill(drums, boundaryBeat - 2.0, boundaryBeat, delta, currentEnergy, style);
                 } else {
                     this.injectDrop(lh, rh, drums, boundaryBeat, 0.5); // 半拍的 Drop
                 }
                 // 偶尔加个 Splash
-                if (globalPRNG.next() > 0.5) {
+                if (PRNGManager.next() > 0.5) {
                     drums.push({ pitch: SPLASH, onset: boundaryBeat, duration: 0.5, velocity: 0.7 });
                 }
             } else if (delta <= -3) {
@@ -324,6 +359,11 @@ export class TransitionEngine {
                 drums.push({ pitch: 36, onset: dropStart, duration: 0.5, velocity: 0.7 });
                 drums.push({ pitch: CHINA, onset: dropStart, duration: 1.0, velocity: 0.6 }); // Use China for a sharp drop
                 drums.push({ pitch: 36, onset: dropStart + 1.0, duration: 0.5, velocity: 0.7 });
+                
+                // 🌟 P2: 添加 Sub Drop (低频下潜)，增强失重感
+                if (PRNGManager.next() > 0.3) {
+                    this.injectSubDrop(lh, boundaryBeat);
+                }
             }
         });
     }

@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../../utils/PRNG';
+import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord } from '../../types';
 import { GlobalContext } from '../../GlobalContext';
 
@@ -12,8 +12,8 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
 
     // 采用高斯分布生成更自然的随机数
     protected randomGaussian(mean: number, stdDev: number): number {
-        let u = 1 - globalPRNG.next(); 
-        let v = globalPRNG.next();
+        let u = 1 - PRNGManager.next(); 
+        let v = PRNGManager.next();
         let z = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
         return z * stdDev + mean;
     }
@@ -57,13 +57,14 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
             if (chordNotes.length === 0) return;
             
             chordNotes.sort((a, b) => a.pitch - b.pitch);
-            const isHighFirst = globalPRNG.next() > 0.5;
+            const isHighFirst = PRNGManager.next() > 0.5;
             
             chordNotes.forEach((note, index) => {
                 let { strumDelay, timingWobble, velocityWobble, velocityMultiplier } = this.getHumanizeParams(note, index, chordNotes.length, isHighFirst, isRightHand, idiomPreferences);
                 
                 // 暂时禁用 timingWobble，避免听起来不稳
-                timingWobble = 0;
+                timingWobble = timingWobble * (idiomPreferences?.humanizeAmount ?? 0.5) * 0.5;
+                velocityWobble = velocityWobble * (idiomPreferences?.humanizeAmount ?? 0.5);
 
                 const { swingDelay, newDuration } = this.applySwing(note.onset, note.duration, swingRatio, swingSubdivision);
 

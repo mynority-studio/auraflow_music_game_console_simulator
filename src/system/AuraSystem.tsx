@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { startAudioContext, AudioEngine } from '../core/audio/AudioEngine';
+import { AudioEngine } from '../core/audio/AudioEngine';
+import { startAudioContext } from '../core/audio/SynthManager';
 import { systemLeadSynth, systemAudio } from './SystemAudio';
 import { APPS } from '../apps/AppRegistry';
 

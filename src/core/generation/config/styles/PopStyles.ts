@@ -1,8 +1,8 @@
 import { StyleConfig } from '../../types';
-
+import { StyleId } from '../StyleFlags';
 
 export const ModernPopStyle: StyleConfig = {
-    id: 'modern_pop',
+    id: StyleId.ModernPop,
     name: '现代华语流行 (Modern C-Pop)',
     global: {
         bpmRange: [75, 115], // 抒情到中板
@@ -34,7 +34,8 @@ export const ModernPopStyle: StyleConfig = {
     harmonyRules: {
         maxDissonanceTolerance: 0.4, // 华语流行旋律通常比较和谐、入耳
         reharmProbability: 0.2, 
-        borrowedChords: ['ModalMixture'] // 偶尔借用小四和弦等离调和弦 (流行歌常见催泪点)
+        borrowedChords: ['ModalMixture'], // 偶尔借用小四和弦等离调和弦 (流行歌常见催泪点)
+        voicingStyle: 'standard'
     },
     rhythm: {
         densityBase: [0.4, 0.7], // 主歌抒情留白，副歌密集
@@ -54,16 +55,24 @@ export const ModernPopStyle: StyleConfig = {
     orchestration: {
         melodyInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'String_Ensemble', 'Warm_EP'],
         chordInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Acoustic_Guitar_Chord', 'Warm_EP'],
-        bassInstruments: ['Electric_Bass', 'Fretless_Bass'],
+        bassInstruments: ['Electric_Bass_Finger', 'Electric_Bass_Pick', 'Fretless_Bass', 'Acoustic_Bass'],
         drumInstruments: ['Standard_DrumKit'],
         counterMelodyInstruments: ['String_Ensemble', 'String_Ensemble', 'Pad_1_New_age', 'Pad_3_Polysynth'],
         texturePool: ['Arpeggio', 'Arpeggio', 'Block', 'Pad'], // 钢琴琶音和柱式和弦为主
         drumProbability: 1.0,
         counterMelodyProbability: 0.9, // 弦乐铺底非常重要
+        grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
             stringStyle: 'pop',
             bassStyle: 'pop',
             drumStyle: 'pop'
+        },
+        mixingPreferences: {
+            melody: { pan: 0, reverb: 0.5, delay: 0.2 },
+            chord: { pan: -0.25, reverb: 0.6, volume: -4.0 },
+            counterMelody: { pan: -0.6, volume: -5.0 },
+            drums: { reverb: 0.15, volume: -1.0 },
+            bass: { reverb: 0.25, volume: -4.0 }
         }
     },
     performance: {
@@ -83,7 +92,7 @@ export const ModernPopStyle: StyleConfig = {
 
 
 export const ClassicJPopStyle: StyleConfig = {
-    id: 'classic_jpop',
+    id: StyleId.ClassicJPop,
     name: '昭和经典流行 (Classic J-Pop)',
     global: {
         bpmRange: [70, 105], // 抒情中慢板
@@ -116,7 +125,8 @@ export const ClassicJPopStyle: StyleConfig = {
         maxDissonanceTolerance: 0.5,
         reharmProbability: 0.3, 
         passingChords: ['SecondaryDominant', 'Diminished7'], // 昭和流行非常喜欢用副属和弦和减七和弦做过渡
-        borrowedChords: ['ModalMixture']
+        borrowedChords: ['ModalMixture'],
+        voicingStyle: 'jpop'
     },
     rhythm: {
         densityBase: [0.5, 0.8],
@@ -136,16 +146,24 @@ export const ClassicJPopStyle: StyleConfig = {
     orchestration: {
         melodyInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Warm_EP', 'Warm_EP', 'Alto_Sax'],
         chordInstruments: ['Acoustic_Grand', 'Acoustic_Grand', 'Acoustic_Guitar_Chord', 'Warm_EP'],
-        bassInstruments: ['Electric_Bass', 'Electric_Bass', 'Acoustic_Bass'],
+        bassInstruments: ['Electric_Bass_Finger', 'Electric_Bass_Pick', 'Acoustic_Bass', 'Fretless_Bass'],
         drumInstruments: ['Standard_DrumKit'],
         counterMelodyInstruments: ['String_Ensemble', 'String_Ensemble', 'Alto_Sax'],
         texturePool: ['Arpeggio', 'Arpeggio', 'Block', 'Pad'],
         drumProbability: 1.0,
         counterMelodyProbability: 0.9, // 弦乐或萨克斯副旋律很常见
+        grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
             stringStyle: 'pop',
             bassStyle: 'pop',
             drumStyle: 'pop'
+        },
+        mixingPreferences: {
+            melody: { pan: 0, reverb: 0.5, delay: 0.2 },
+            chord: { pan: -0.25, reverb: 0.6, volume: -4.0 },
+            counterMelody: { pan: -0.6, volume: -5.0 },
+            drums: { reverb: 0.15, volume: -1.0 },
+            bass: { reverb: 0.25, volume: -4.0 }
         }
     },
     performance: {
@@ -165,7 +183,7 @@ export const ClassicJPopStyle: StyleConfig = {
 
 
 export const ModernJPopStyle: StyleConfig = {
-    id: 'modern_jpop',
+    id: StyleId.ModernJPop,
     name: '现代日系流行 (Modern J-Pop)',
     global: {
         bpmRange: [120, 175], // 极快，米津玄师/YOASOBI 风格
@@ -198,7 +216,8 @@ export const ModernJPopStyle: StyleConfig = {
         maxDissonanceTolerance: 0.6, // 允许更多和弦外音和色彩和弦
         reharmProbability: 0.4, 
         passingChords: ['SecondaryDominant', 'Diminished7'], // 频繁使用副属和弦
-        borrowedChords: ['ModalMixture'] 
+        borrowedChords: ['ModalMixture'],
+        voicingStyle: 'jpop'
     },
     rhythm: {
         densityBase: [0.7, 0.95], // 极高密度的音符
@@ -218,16 +237,24 @@ export const ModernJPopStyle: StyleConfig = {
     orchestration: {
         melodyInstruments: ['Synth_Lead', 'Synth_Lead', 'Acoustic_Grand', 'Clean_Guitar'],
         chordInstruments: ['Clean_Guitar', 'Clean_Guitar', 'Acoustic_Grand', 'Synth_Lead'],
-        bassInstruments: ['Electric_Bass', 'Synth_Bass_1'], // 经常使用Slap Bass或合成贝斯
+        bassInstruments: ['Electric_Bass_Finger', 'Synth_Bass_1', 'Slap_Bass_1'], // 经常使用Slap Bass或合成贝斯
         drumInstruments: ['Standard_DrumKit'],
         counterMelodyInstruments: ['Synth_Lead', 'Pad_3_Polysynth', 'String_Ensemble'],
         texturePool: ['Rhythmic', 'Arpeggio', 'Block'], // 强烈的节奏型织体
         drumProbability: 1.0,
         counterMelodyProbability: 0.8,
+        grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
             stringStyle: 'pop',
             bassStyle: 'funk', // 偏向Funk的贝斯律动
             drumStyle: 'pop'
+        },
+        mixingPreferences: {
+            melody: { pan: 0, reverb: 0.5, delay: 0.2 },
+            chord: { pan: -0.25, reverb: 0.6, volume: -4.0 },
+            counterMelody: { pan: -0.6, volume: -5.0 },
+            drums: { reverb: 0.15, volume: -1.0 },
+            bass: { reverb: 0.25, volume: -4.0 }
         }
     },
     performance: {
@@ -245,85 +272,4 @@ export const ModernJPopStyle: StyleConfig = {
     }
 };
 
-
-export const DarkPopStyle: StyleConfig = {
-    id: 'dark_pop',
-    name: '暗黑流行 (Dark Pop)',
-    global: {
-        bpmRange: [90, 125], // 中板，强调律动和低频
-        timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
-        tonalityPool: [
-            { tonality: 'Minor', weight: 0.9 },
-            { tonality: 'Dorian', weight: 0.1 }
-        ]
-    },
-    harmony: {
-        chorusPool: [
-            ['i', 'iv', 'v', 'i'], // 极简小调
-            ['i', 'VI', 'III', 'VII'], // 欧美暗黑经典
-            ['i', 'i', 'iv', 'v'], // 极度静态
-            ['i', 'VII', 'VI', 'V'] // 安达卢西亚进行 (Billie Eilish 爱用)
-        ], 
-        versePool: [
-            ['i', 'i', 'i', 'i'], // 主歌几乎不换和弦，靠Bassline驱动
-            ['i', 'i', 'iv', 'i'],
-            ['i', 'VI', 'i', 'VI'],
-            ['i', 'v', 'i', 'v']
-        ],
-        preChorusPool: [
-            ['VI', 'VII', 'i', 'i'],
-            ['iv', 'v', 'i', 'i'],
-            ['VI', 'iv', 'V', 'V']
-        ]
-    },
-    harmonyRules: {
-        maxDissonanceTolerance: 0.8, // 允许极度不和谐音 (如小二度摩擦)
-        reharmProbability: 0.05, // 和声极简
-        passingChords: ['Diminished7'], // 偶尔用减七制造诡异感
-        borrowedChords: ['Neapolitan'] // 降二级和弦，极度黑暗
-    },
-    rhythm: {
-        densityBase: [0.3, 0.6], // 极度稀疏，大量留白
-        syncopationWeight: 0.7,  // 诡异的切分
-        restProbability: 0.4, // 经常突然停顿 (Drop)
-        disruptionProbability: 0.2, // 节奏错位
-        humanize: 0.05, // 冰冷的机器感
-        swingRatio: 0.3 // 偶尔带点怪异的Swing
-    },
-    melody: {
-        stepwiseRatio: 0.8, // 旋律多为级进或同音反复 (呢喃感)
-        maxJumpInterval: 7, // 很少大跳
-        tensionTolerance: 0.6, // 允许停留在不和谐音上
-        mutationProbability: 0.1,
-        mutationPool: ['truncation'] // 旋律经常被突然切断
-    },
-    orchestration: {
-        melodyInstruments: ['Warm_EP', 'Warm_EP', 'Synth_Lead', 'Acoustic_Grand'], // 经常是闷闷的电钢琴或诡异的合成器
-        chordInstruments: ['Pad_3_Polysynth', 'Pad_3_Polysynth', 'Warm_EP', 'Clean_Guitar'],
-        bassInstruments: ['Synth_Bass_1', 'Synth_Bass_1', 'Electric_Bass'], // 灵魂：极低极重的 Sub Bass
-        drumInstruments: ['Standard_DrumKit'], // 最好是 Lofi 或电子鼓，这里用 Standard 替代
-        counterMelodyInstruments: ['Synth_Lead', 'Pad_3_Polysynth'],
-        texturePool: ['Rhythmic', 'Pad', 'Block'], // 极简织体
-        drumProbability: 0.8, // 经常有无鼓的段落
-        counterMelodyProbability: 0.3, // 极少副旋律，保持空旷
-        idiomPreferences: {
-            stringStyle: 'pop',
-            bassStyle: 'funk', // 贝斯是主角
-            drumStyle: 'pop'
-        }
-    },
-    performance: {
-        allowedPersonas: ['Folk_Storyteller', 'RnB_Diva'] // 呢喃式唱腔，气声为主
-    },
-    contrast: {
-        chorusPitchOffset: 2, // 副歌音高几乎不提升，靠低频和鼓组爆发 (Drop)
-        verseDensityMultiplier: 0.6, // 主歌极度空旷
-        versePitchOffset: -2 // 主歌极低
-    },
-    modulation: {
-        probability: 0.0, // 暗黑流行几乎不转调
-        targetSection: 'Final_Chorus',
-        intervalPool: []
-    }
-};
 

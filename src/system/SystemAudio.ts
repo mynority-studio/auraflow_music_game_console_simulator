@@ -1,4 +1,4 @@
-import { spessaSynth } from '../core/audio/AudioEngine';
+import { spessaSynth } from '../core/audio/SynthManager';
 
 // ==========================================
 // SYSTEM MENU EXCLUSIVE AUDIO ENGINE

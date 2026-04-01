@@ -1,8 +1,12 @@
 import { WorkletSynthesizer } from 'spessasynth_lib';
-import { getAudioContext } from './AudioEngine';
+import { getAudioContext } from './SynthManager';
+import { StyleId } from '../generation/config/StyleFlags';
 
 export class AudioMixer {
     public masterBus: GainNode;
+    public hpf: BiquadFilterNode;
+    public peakingEq: BiquadFilterNode;
+    public highShelf: BiquadFilterNode;
     public masterCompressor: DynamicsCompressorNode;
     public makeupGain: GainNode;
     public currentStyle: string = 'default';
@@ -19,20 +23,55 @@ export class AudioMixer {
         this.makeupGain = nativeCtx.createGain();
         this.makeupGain.gain.value = 4.0; // +12dB approx
         
+        // 🌟 Luis's Master DSP Settings
+        // 1. BiquadFilter (Master EQ)
+        this.hpf = nativeCtx.createBiquadFilter();
+        this.hpf.type = 'highpass';
+        this.hpf.frequency.value = 35;
+        this.hpf.Q.value = 0.7;
+
+        this.peakingEq = nativeCtx.createBiquadFilter();
+        this.peakingEq.type = 'peaking';
+        this.peakingEq.frequency.value = 300;
+        this.peakingEq.Q.value = 1.5;
+        this.peakingEq.gain.value = -3.0;
+
+        this.highShelf = nativeCtx.createBiquadFilter();
+        this.highShelf.type = 'highshelf';
+        this.highShelf.frequency.value = 6500;
+        this.highShelf.gain.value = 2.5;
+
+        // 2. DynamicsCompressorNode (Master Glue 胶水压缩)
         this.masterCompressor = nativeCtx.createDynamicsCompressor();
-        this.masterCompressor.threshold.value = -24;
-        this.masterCompressor.ratio.value = 4;
-        this.masterCompressor.attack.value = 0.005;
-        this.masterCompressor.release.value = 0.1;
+        this.masterCompressor.threshold.value = -24; // -18 to -24
+        this.masterCompressor.knee.value = 12;
+        this.masterCompressor.ratio.value = 2.5;
+        this.masterCompressor.attack.value = 0.03; // 30ms
+        this.masterCompressor.release.value = 0.15; // 150ms
         
         this.masterBus = nativeCtx.createGain();
         this.masterBus.gain.value = 0.316; // -10dB approx
         
         this.spessaSynthBridge = nativeCtx.createGain();
-        
-        // Connect the chain
+
+        // Default Connection (Clean)
+        this.connectCleanChain(nativeCtx);
+    }
+
+    private connectCleanChain(nativeCtx: AudioContext) {
+        this.spessaSynthBridge.disconnect();
+        this.masterBus.disconnect();
+        this.hpf.disconnect();
+        this.peakingEq.disconnect();
+        this.highShelf.disconnect();
+        this.masterCompressor.disconnect();
+        this.makeupGain.disconnect();
+
         this.spessaSynthBridge.connect(this.masterBus);
-        this.masterBus.connect(this.masterCompressor);
+        this.masterBus.connect(this.hpf);
+        this.hpf.connect(this.peakingEq);
+        this.peakingEq.connect(this.highShelf);
+        this.highShelf.connect(this.masterCompressor);
         this.masterCompressor.connect(this.makeupGain);
         this.makeupGain.connect(nativeCtx.destination);
     }

@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
 
 const KEYBOARD_MAP: Record<string, {c: number, r: number}> = {
-  'w': { c: 1, r: 1 }, // Up
-  's': { c: 1, r: 2 }, // Down
-  'a': { c: 0, r: 2 }, // Left
-  'd': { c: 2, r: 2 }, // Right
-  'e': { c: 4, r: 2 }, // Confirm
-  'q': { c: 3, r: 2 }, // Cancel
+  // Bottom Row (r=2)
+  'z': { c: 0, r: 2 }, 'x': { c: 1, r: 2 }, 'c': { c: 2, r: 2 }, 'v': { c: 3, r: 2 }, 'b': { c: 4, r: 2 },
+  // Middle Row (r=1)
+  'a': { c: 0, r: 1 }, 's': { c: 1, r: 1 }, 'd': { c: 2, r: 1 }, 'f': { c: 3, r: 1 }, 'g': { c: 4, r: 1 },
+  // Top Row (r=0)
+  'q': { c: 0, r: 0 }, 'w': { c: 1, r: 0 }, 'e': { c: 2, r: 0 }, 'r': { c: 3, r: 0 }, 't': { c: 4, r: 0 },
 };
 
 interface TapAreaProps {

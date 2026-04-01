@@ -1,9 +1,6 @@
-import { globalPRNG } from '../../utils/PRNG';
-export interface RhythmCell {
-    durations: number[]; // e.g., [0.5, 0.5] for two 8th notes
-    weight: number;      // Probability weight
-    tags: string[];      // e.g., 'syncopated', 'straight', 'triplet'
-}
+import { PRNGManager } from '../../utils/PRNG';
+import { StyleId } from '../config/StyleFlags';
+import { RhythmCell } from '../types';
 
 export const PopRhythmCells: RhythmCell[] = [
     // Straight 8ths
@@ -39,6 +36,16 @@ export const JazzRhythmCells: RhythmCell[] = [
     { durations: [0.5, 0.5], weight: 2, tags: ['straight', 'jazz'] }, // Less common in heavy swing
 ];
 
+export const BossaNovaRhythmCells: RhythmCell[] = [
+    // 🌟 Bossa Nova 专属节奏细胞 (Straight 8ths, Syncopated)
+    { durations: [1.5, 0.5], weight: 10, tags: ['syncopated', 'bossa'] }, // 附点四分 + 八分 (经典切分)
+    { durations: [0.5, 1.5], weight: 10, tags: ['syncopated', 'bossa'] }, // 八分 + 附点四分 (反向切分)
+    { durations: [0.5, 0.5, 1.0], weight: 8, tags: ['straight', 'bossa'] }, // 两个八分 + 四分
+    { durations: [1.0, 0.5, 0.5], weight: 8, tags: ['straight', 'bossa'] }, // 四分 + 两个八分
+    { durations: [2.0], weight: 6, tags: ['long', 'bossa'] }, // 二分音符 (长音停留)
+    { durations: [0.75, 0.25, 1.0], weight: 4, tags: ['syncopated', 'bossa'] }, // 偶尔的十六分音符切分
+];
+
 export const RnBRhythmCells: RhythmCell[] = [
     // 🌟 Phonetic Rhythm (语音化节奏): 连续短促的 16 分音符后接长音，模拟 R&B 的碎嘴和转音
     { durations: [0.25, 0.25, 0.25, 0.25, 1.0], weight: 10, tags: ['phonetic', 'rnb', 'burst'] },
@@ -49,11 +56,11 @@ export const RnBRhythmCells: RhythmCell[] = [
     { durations: [0.25, 0.75, 1.0], weight: 6, tags: ['syncopated', 'rnb', 'push'] }
 ];
 
-export function getRandomRhythmCell(styleId: string, energyLevel: number, isVocal: boolean = false): number[] {
-    let cells = PopRhythmCells;
-    if (styleId.includes('funk')) cells = FunkRhythmCells;
-    else if (styleId.includes('jazz') || styleId.includes('bossa')) cells = JazzRhythmCells;
-    else if (styleId.includes('rnb') || styleId.includes('soul')) cells = RnBRhythmCells;
+import { StyleRegistry } from '../config/styles/StyleRegistry';
+
+export function getRandomRhythmCell(styleId: StyleId, energyLevel: number, isVocal: boolean = false): number[] {
+    const style = StyleRegistry[styleId];
+    let cells = style?.rhythm?.grooveTemplate || PopRhythmCells;
 
     // Filter by energy level (e.g., higher energy = more fast/subdivided cells)
     let filteredCells = cells;
@@ -78,7 +85,7 @@ export function getRandomRhythmCell(styleId: string, energyLevel: number, isVoca
 
     // Weighted random selection
     const totalWeight = filteredCells.reduce((sum, cell) => sum + cell.weight, 0);
-    let randomVal = globalPRNG.next() * totalWeight;
+    let randomVal = PRNGManager.next() * totalWeight;
     for (const cell of filteredCells) {
         randomVal -= cell.weight;
         if (randomVal <= 0) {

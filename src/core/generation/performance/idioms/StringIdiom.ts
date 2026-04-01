@@ -1,4 +1,4 @@
-import { globalPRNG } from '../../../utils/PRNG';
+import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 import { GlobalContext } from '../../GlobalContext';
@@ -32,12 +32,31 @@ export class StringIdiom extends BaseIdiom {
             // Sort by pitch descending
             uniqueNotes.sort((a, b) => b.pitch - a.pitch);
             
-            // Limit to max 2 notes (double stop)
-            if (uniqueNotes.length > 2) {
-                filteredNotes.push(uniqueNotes[0]); // Top note
-                filteredNotes.push(uniqueNotes[uniqueNotes.length - 1]); // Bottom note
+            // Assign to parts: Violin I, Violin II, Viola, Cello
+            if (uniqueNotes.length === 0) continue;
+
+            if (uniqueNotes.length === 1) {
+                filteredNotes.push(uniqueNotes[0]);
+            } else if (uniqueNotes.length === 2) {
+                filteredNotes.push(uniqueNotes[0]); // Top
+                filteredNotes.push(uniqueNotes[1]); // Bottom
+            } else if (uniqueNotes.length === 3) {
+                filteredNotes.push(uniqueNotes[0]); // Vln I
+                filteredNotes.push(uniqueNotes[1]); // Viola
+                filteredNotes.push(uniqueNotes[2]); // Cello
             } else {
-                filteredNotes.push(...uniqueNotes);
+                filteredNotes.push(uniqueNotes[0]); // Vln I
+                filteredNotes.push(uniqueNotes[1]); // Vln II
+                
+                // Take a middle note for Viola
+                const violaIndex = Math.floor((uniqueNotes.length - 2) / 2) + 1;
+                if (violaIndex !== 1 && violaIndex !== uniqueNotes.length - 1) {
+                    filteredNotes.push(uniqueNotes[violaIndex]); // Viola
+                } else {
+                    filteredNotes.push(uniqueNotes[uniqueNotes.length - 2]);
+                }
+                
+                filteredNotes.push(uniqueNotes[uniqueNotes.length - 1]); // Cello
             }
         }
 
@@ -112,7 +131,7 @@ export class StringIdiom extends BaseIdiom {
 
             // 铁律 4: 力度绝对不能平
             // 添加微小的随机波动
-            adjustedVel *= (1.0 + (globalPRNG.next() * 0.1 - 0.05));
+            adjustedVel *= (1.0 + (PRNGManager.next() * 0.1 - 0.05));
 
             if (stringStyle === 'cinematic') {
                 // 电影弦乐：长音更长且连绵，短音更短促有力 (Spiccato/Marcato)
@@ -128,7 +147,7 @@ export class StringIdiom extends BaseIdiom {
                 if (n.duration < 1.0) {
                     overlapDur *= 0.7; // 偏断奏
                 }
-                adjustedVel *= (1.0 + (globalPRNG.next() * 0.2 - 0.1)); // 更大的力度波动
+                adjustedVel *= (1.0 + (PRNGManager.next() * 0.2 - 0.1)); // 更大的力度波动
             } else {
                 // Pop/Folk: 平稳的连奏
                 overlapDur *= 1.05; // 稍微重叠
@@ -161,7 +180,7 @@ export class StringIdiom extends BaseIdiom {
         const stringStyle = idiomPreferences?.stringStyle || 'pop';
         
         // 弦乐群奏时，各声部进入会有微小的时间差
-        let strumDelay = index * (globalPRNG.next() * 0.015 + 0.01); // 10-25ms
+        let strumDelay = index * (PRNGManager.next() * 0.015 + 0.01); // 10-25ms
         
         // 铁律 5: 音头不能太硬、也不能太软
         // 弦乐的起音(Attack)较慢，整体时间感会稍微滞后一点点
