@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-本文件为 Claude Code (claude.ai/code) 在本仓库中工作时提供指引。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+本文件为 Claude Code 在本仓库中工作时提供指引。
 
 ## 项目概述
 
@@ -18,7 +20,7 @@ npm run lint         # 仅类型检查（tsc --noEmit）
 npm run clean        # 清除 dist/
 ```
 
-需要在 `.env.local` 中配置 `GEMINI_API_KEY`（参考 `.env.example`）。
+需要在 `.env.local` 中配置 `GEMINI_API_KEY`（参考 `.env.example`）。目前无测试框架（无 vitest/jest），`npm run lint` 仅执行 TypeScript 类型检查。
 
 ## 架构
 
@@ -68,7 +70,7 @@ ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询�
 
 ### 风格系统
 
-13 个风格配置位于 `/src/core/generation/config/styles/`（ClassicJPop、LofiHipHop、Synthwave、GhibliOrchestral 等）。每个风格定义和弦池、节奏参数、旋律约束、编配方案和允许的歌手人格。新增风格只需添加一个文件，无需修改核心代码。
+14 个已注册风格配置位于 `/src/core/generation/config/styles/`（ClassicJPop、LofiHipHop、Synthwave、GhibliOrchestral、NeoSoul 等）。风格按类别分组在文件中（PopStyles、RockStyles、ElectronicStyles、BalladStyles、CinematicStyles、RnBStyles），通过 `StyleRegistry.ts` 统一注册。每个风格定义和弦池、节奏参数、旋律约束、编配方案和允许的歌手人格。新增风格只需添加一个文件并在 StyleRegistry 中注册。
 
 ### 乐器惯用法系统（Idiom）
 
@@ -95,4 +97,5 @@ ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询�
 - **音色库**: `public/GM128_3MB.sf2`（General MIDI 128 种乐器）
 - **动画**: Motion（Framer Motion 后继）
 - **AI**: Google Gemini API（`@google/genai`）
-- **路径别名**: `@/` 映射到项目根目录
+- **路径别名**: `@/` 映射到项目根目录（非 `/src/`，因此引用如 `@/src/core/...`）
+- **TypeScript**: `experimentalDecorators: true`、`target: ES2022`
