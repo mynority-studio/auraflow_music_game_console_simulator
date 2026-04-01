@@ -146,13 +146,13 @@ JavaScript 使用垃圾回收。如果在音频循环中动态分配对象，ESP
 
 ---
 
-## 7. AuraRadio 与生成引擎的接口关系
+## 7. AuraBar 与生成引擎的接口关系
 
 ### 7.1 总览管道
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                          AuraRadio 无限电台                                │
+│                          AuraBar 无限电台                                │
 │                                                                          │
 │  ┌────────────────┐   ┌──────────────────┐                               │
 │  │  PRNGManager   │   │ StyleId (enum)   │                               │
@@ -317,7 +317,7 @@ seed 决定起点，之后每次 `next()` 不可逆地往前走一步。整条�
 ```
 setSeed(seed)
   │
-  ├─ AuraRadio 选风格            → next() ×1      ← 从 14 个 StyleId 中选一个
+  ├─ AuraBar 选风格            → next() ×1      ← 从 14 个 StyleId 中选一个
   │
   ├─ 生成引擎内部                 → next() ×N 次
   │   ├─ StructureEngine         → next() ×若干
@@ -359,7 +359,7 @@ PRNGManager.setState(state: number): void     // 恢复到指定 state（用于�
 ```
 setSeed(12345)
                           stateA = getState()  → 42          ← 选风格前
-AuraRadio 选风格           next() ×1
+AuraBar 选风格           next() ×1
                           stateB = getState()  → 98371052    ← 生成引擎入口
 生成引擎                   next() ×N
                           stateC = getState()  → 2748193604  ← 编配引擎入口
@@ -501,9 +501,9 @@ MidiEvent[] → MidiScheduler（5ms 轮询）→ 合成器 → 音频输出
               因平台/合成器/音色库差异，音频波形允许不同
 ```
 
-### 7.7 AuraRadio 如何实现无限不重复播放
+### 7.7 AuraBar 如何实现无限不重复播放
 
-**不重复的保证**: 每次调用 `generateFullSong()` 消耗 PRNG 状态使其不可逆前进。AuraRadio 不重置种子，后续调用的随机决策序列必然不同，加上从 14 种风格中随机选取，每首曲目在旋律、和声、编制、速度、调性上均不相同。
+**不重复的保证**: 每次调用 `generateFullSong()` 消耗 PRNG 状态使其不可逆前进。AuraBar 不重置种子，后续调用的随机决策序列必然不同，加上从 14 种风格中随机选取，每首曲目在旋律、和声、编制、速度、调性上均不相同。
 
 **无限的保证**: 曲目播放结束时 `onTrackEnd` 自动触发下一首，形成闭环：
 
