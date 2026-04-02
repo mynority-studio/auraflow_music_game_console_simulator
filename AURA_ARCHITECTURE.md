@@ -1,9 +1,49 @@
 # AuraFlow Core Architecture & ESP32-S3 Porting Guide
 
 ## Version Info
-- **Current Version:** 1.30.0
-- **Last Updated:** 2026-04-01
+- **Current Version:** 1.33.0
+- **Last Updated:** 2026-04-02
 - **Update Log:**
+  - `v1.33.0`: **Global Sprint Retrospective & Next-Gen Polish.**
+    1. **Motif Development (Plan A)**: Added advanced motif transformations (`_split`, `_merge`, `_shift`) to `ToplineEngine.ts` to make melodies more human-like and memorable.
+    2. **Passing Chords & Voice Avoidance (Plan B)**: Added `truncateToChordEnd` in `TextureMapper.ts` to strictly prevent Bass, CounterMelody, and ChordTexture notes from bleeding into passing chords, eliminating vertical clashes.
+    3. **Dynamic Drum Fills (Plan C)**: Upgraded `TransitionEngine.ts` to use `energyDelta` to dynamically scale fill complexity and density (e.g., 32nd note linear fills for huge energy jumps).
+  - `v1.32.3`: **Critical Bug Fix: Inverted Relative Minor Logic & Double Flattening.**
+    1. **Inverted Relative Minor Logic**: Fixed a bug in `HarmonyCore.generateHarmonyTimeline` where `isRelativeMinor` was calculated backwards (true for minor progressions, false for major progressions). This caused major progressions in minor keys to NOT be shifted to the relative major, and minor progressions to be incorrectly shifted. Renamed variables to `isMinorProgression` and `isRelativeMajorProgression` to clarify intent and fixed the boolean logic.
+    2. **Double Flattening of Accidentals**: Fixed a bug in `HarmonyCore.parseRomanNumeral` where explicit accidentals like `bVI` in minor keys were double-flattened (e.g., `bVI` in C minor became G major instead of Ab major). The natural flattening of III, VI, and VII in minor keys is now only applied if there is no explicit accidental (`rootOffset === 0`).
+  - `v1.32.2`: **Critical Bug Fix: Double Key Offset & Minor Tonality Root Calculation.**
+    1. **Double Key Offset Fix**: Reverted the changes from `v1.32.1` that passed `GlobalContext.currentKeyOffset` to `HarmonyCore.getSafeScalePitches`. The generation engines (`ToplineEngine`, `TextureMapper`, etc.) are designed to generate pitches relative to C, and `Orchestrator` applies the `keyOffset` globally at the end of the pipeline. Passing `keyOffset` to `getSafeScalePitches` caused the scale to be shifted twice, resulting in severe out-of-tune melodies (e.g., generating in D Major instead of Db Major).
+    2. **Minor Tonality Root Fix**: Fixed a critical bug in `HarmonyCore.parseRomanNumeral` where `root += 3` was incorrectly applied to all chords when `tonality === 'Minor'`. This caused chords in minor keys to be generated relative to the relative major (e.g., `i` in C Minor became Eb Minor). Corrected the logic to naturally flatten `III`, `VI`, and `VII` in minor keys, ensuring `i` correctly maps to root 0.
+  - `v1.32.1`: **Bug Fixes: Scale Clash, Grid Collapse, and Chord Pad Leak.**
+    1. **Major/Minor Scale Clash Fix**: Fixed a critical bug where `HarmonyCore.getSafeScalePitches` was not receiving the `GlobalContext.currentKeyOffset`, causing the melody engine to default to C Major/Minor scales regardless of the actual song key. Passed `GlobalContext.currentKeyOffset` to all `getSafeScalePitches` calls across `ToplineEngine`, `Orchestrator`, `TextureMapper`, `GlobalReviewer`, and various Idioms.
+    2. **Grid Collapse Fix**: Fixed an issue where unquantized floating-point durations and onsets were causing rhythmic instability ("drunk robot" effect). Added mandatory grid snap (`Math.round(val / 0.25) * 0.25`) to both `onset` and `duration` in `PlaybackEngine.ts` before generating MIDI events.
+    3. **Verse_2 Chord Pad Leak Fix**: Removed the "Dynamic F-M-B Role Swapping" logic in `Orchestrator.ts` that was incorrectly swapping chord notes into the melody track during `Verse_2` and `Break` sections, causing the melody instrument to play block chords instead of a monophonic line.
+  - `v1.32.0`: **Dynamic Phrase Structure Generation (Mood-Driven).**
+    1. **Mood Integration**: Added `phraseActionBias` to `MoodConfig` in `MoodFlags.ts` to define the probabilities of [Repeat, Vary, Contrast] for phrase generation based on the selected mood (e.g., Euphoric is highly repetitive, Melancholic has more contrast).
+    2. **ToplineEngine Update**: Replaced hardcoded phrase `FORMS` with a dynamic generation system in `ToplineEngine.ts`. Phrase labels (A, B, A_prime, C, etc.) are now generated probabilistically using the mood's `phraseActionBias`.
+    3. **Resolution Logic**: Updated `isAnswer` logic to handle dynamically generated phrase labels and implemented a smart resolution mechanism that forces a strong resolution if there are consecutive unresolved phrases.
+  - `v1.31.0`: **Affective-Biased Adaptive Engine (Mood + Style).**
+    1. **Mood Integration**: Introduced `MoodId` and `MoodConfig` to decouple BPM, density, and energy caps from rigid `StyleConfig`s.
+    2. **MelodyEngine Update**: `MelodyEngine` now applies `Mood` multipliers to dynamically calculate the final BPM and biases tonality selection (e.g., Melancholic favors Minor).
+    3. **StructureEngine Update**: `StructureEngine` now applies `Mood` energy caps and density multipliers to the generated sections.
+    4. **Dynamic Idiom Routing**: `TextureMapper` now selects Idioms (Bass, Drums, Piano, CounterMelody) based on the *actual* generated BPM and Energy Level, rather than strictly following the style's default preferences. This allows for "slow/sad EDM" or "fast/aggressive Ballads" without creating contradictory idiom selections.
+  - `v1.30.5`: **Fix Undefined Variables & Linter Errors.**
+    1. **TextureMapper Fix**: Defined missing `isCinematic` and `isBallad` variables using `StyleId` before passing them to the `BassIdiomContext`.
+    2. **VocalHarmony Fix**: Added `vocalStyle` to `idiomPreferences` in `types.ts` and updated `generateVocalHarmony` in `TextureMapper.ts` to use it instead of the removed `stringStyle`.
+    3. **PlaybackEngine Fix**: Updated `InteractivePlaybackEngine`, `LiveLoopingEngine`, and `PlaybackEngine` to use `styleId` directly for determining the mix style, replacing the outdated `drumStyle` string comparisons and removing references to non-existent `StyleId`s.
+  - `v1.30.4`: **Idiom Refactoring (Characteristic-Based Naming).**
+    1. **Renaming**: Renamed genre-based idioms to characteristic-based idioms (e.g., `PopBassIdiom` -> `SteadyBassIdiom`, `FunkDrumIdiom` -> `SyncopatedDrumIdiom`, `PopCounterMelodyIdiom` -> `SustainedCounterMelodyIdiom`, `JazzCounterMelodyIdiom` -> `MelodicCounterMelodyIdiom`).
+    2. **Registry Updates**: Updated `CounterMelodyIdiomRegistry`, `BassIdiomRegistry`, `DrumIdiomRegistry`, and `PianoIdiomRegistry` to use the new characteristic-based names and removed hardcoded fallback logic, relying on dynamic registration.
+    3. **Style Configuration**: Updated all style configuration files (`PopStyles.ts`, `CinematicStyles.ts`, `ElectronicStyles.ts`, `BalladStyles.ts`, `RockStyles.ts`, `LofiStyles.ts`) to use characteristic-based idiom preferences (e.g., `counterMelodyStyle: 'sustained'`).
+    4. **Logic Updates**: Updated `TextureMapper.ts`, `EnsembleDrafter.ts`, `GrammarRegistry.ts`, and `HarmonyCore.ts` to use `StyleId` instead of idiom names for determining style-specific logic (e.g., `isEDM`, `isCinematic`).
+  - `v1.30.3`: **Fix Build Errors & Clean Up Unused Styles.**
+    1. **DynamicChoirIdiom**: Created missing `DynamicChoirIdiom.ts` to resolve Vite build error in `VocalHarmonyIdiomRegistry.ts`.
+    2. **StyleId Cleanup**: Removed references to undefined `StyleId`s (`SmoothJazz`, `NeoSoul`, `BossaNova`, `IndieRock`, `PostRock`) from `Orchestrator.ts` and `StructureEngine.ts`.
+    3. **Config Cleanup**: Removed invalid `humanizeAmount` property from `ElectronicStyles.ts` and `LofiStyles.ts`.
+    4. **Context Cleanup**: Removed unused `melodyNotes` property from `BassIdiomContext` usage in `PopBassIdiom.ts`.
+  - `v1.30.2`: **Revert Melody & Crossover Features.**
+    1. **Reverted Melody Contour & Resolution**: Removed the `range` enhancement, `Global Resolution Logic`, and `Linearity Rule for Complex Chords` from `ToplineEngine.ts`.
+    2. **Reverted Texture Allocation & Fusion Cohesion**: Removed `TextureAllocation`, `GrooveMask`, and `FusionProfile` from `types.ts`, `GlobalContext.ts`, `StructureEngine.ts`, `TextureMapper.ts`, and all idiom files.
   - `v1.30.1`: **Melody Generation Refinement (Contour & Resolution).**
     1. **Contour Enhancement**: Increased the `range` parameter in `ToplineEngine.ts` to allow for more distinct and expressive melodic shapes (Ascending, Descending, Arch, Bowl, etc.). Improved the logic for `Static` and `Wandering` contours to be more mathematically sound and musically pleasing.
     2. **Global Resolution Logic**: Implemented a global resolution check in `ToplineEngine.ts` for phrase endings (`isAnswer`). If the current chord is tense or non-diatonic (e.g., in Dark Pop), the melody now prioritizes resolving to the global tonic's stable tones (1, 3, 5) if they are compatible with the current chord, rather than blindly resolving to the local chord's root.
@@ -70,10 +110,10 @@
 
 ---
 
-## AuraBar Core Development System Instructions
+## AuraRadio Core Development System Instructions
 
 ### 🎯 Role Definition
-You are a top-tier C++/TypeScript embedded firmware engineer and an expert in generative music algorithms. Your core mission is to develop and maintain the music generation engine for AuraBar.
+You are a top-tier C++/TypeScript embedded firmware engineer and an expert in generative music algorithms. Your core mission is to develop and maintain the music generation engine for AuraRadio.
 
 You must deeply understand: The current TypeScript/Web-based code is merely a high-fidelity simulation and pre-research environment for the physical hardware (ESP32-S3). All code under the `/src/core/generation/` directory must ultimately be 1:1 seamlessly and losslessly translatable to C/C++ code to run on resource-constrained microcontrollers.
 
@@ -260,9 +300,9 @@ These interfaces define the boundary between the OS logic and the physical hardw
 
 ---
 
-## 7. AuraBar 核心接口约束框架
+## 7. AuraRadio 核心接口约束框架
 
-> 本文档定义 AuraBar 生成管道的四模块接口边界、数据结构与行为约束。
+> 本文档定义 AuraRadio 生成管道的四模块接口边界、数据结构与行为约束。
 > 用途：指导需求改动评审、C++ 移植设计、测试用例编写。
 > 数据类型与当前源码（`types.ts`、`GlobalContext.ts`、`PRNG.ts`、`MidiScheduler.ts`）一致。
 
@@ -272,7 +312,7 @@ These interfaces define the boundary between the OS logic and the physical hardw
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        AuraBar 无限电台                              │
+│                        AuraRadio 无限电台                              │
 │                                                                      │
 │  ┌────────────────┐   ┌──────────────────────┐                       │
 │  │  PRNGManager   │   │ 风格查表（静态只读）    │                       │
@@ -419,18 +459,18 @@ These interfaces define the boundary between the OS logic and the physical hardw
 #### 7.1.4 完整执行周期
 
 **第 0 步 — 初始化**
-- AuraBar 调用 `PRNGManager.setSeed(seed)`，LCG 状态归零，序列从此确定
+- AuraRadio 调用 `PRNGManager.setSeed(seed)`，LCG 状态归零，序列从此确定
 
 **第 1 步 — 选风格**
-- AuraBar 调用 `PRNGManager.next()` → 从 14 个 StyleId 中选一个
+- AuraRadio 调用 `PRNGManager.next()` → 从 14 个 StyleId 中选一个
 
 **第 2 步 — 生成曲目**
-- AuraBar 调用 `MelodyEngine.generateFullSong(styleId, options)`
+- AuraRadio 调用 `MelodyEngine.generateFullSong(styleId, options)`
 - 内部按固定顺序执行：决策 BPM/调性/拍号 → StructureEngine → HarmonyEngine → EnsembleDrafter → SingerPersona → ToplineEngine → reharmonize
 - 返回 `{ track: GeneratedTrack, context: MusicContext }`
 
 **第 3 步 — 存历史**
-- AuraBar 将 `(track, styleId, context)` 存入历史栈
+- AuraRadio 将 `(track, styleId, context)` 存入历史栈
 
 **第 4 步 — 编配**
 - 调用 `Orchestrator.arrange(track, styleId, context)`
@@ -463,7 +503,7 @@ seed 决定起点，之后每次 `next()` 不可逆地往前走一步。整条�
 ```text
 setSeed(seed)
   │
-  ├─ AuraBar 选风格            → next() ×1      ← 从 14 个 StyleId 中选一个
+  ├─ AuraRadio 选风格            → next() ×1      ← 从 14 个 StyleId 中选一个
   │
   ├─ 生成引擎内部                 → next() ×N 次
   │   ├─ StructureEngine         → next() ×若干

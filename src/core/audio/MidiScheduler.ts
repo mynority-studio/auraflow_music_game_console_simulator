@@ -75,8 +75,11 @@ export class MidiScheduler {
             this.events.push(ev);
         } else {
             this.events.splice(index, 0, ev);
-            // If the injected event is before the current eventIndex, increment eventIndex
-            if (index <= this.eventIndex) {
+            // If the injected event is in the past (before currentTick), increment eventIndex
+            // so we don't play it. If it's in the future, we want to play it, so don't increment
+            // if it was inserted at or after eventIndex.
+            // Actually, if ev.ticks < this.currentTick, it's in the past.
+            if (ev.ticks < this.currentTick) {
                 this.eventIndex++;
             }
         }
@@ -86,9 +89,14 @@ export class MidiScheduler {
         return this.events.filter(e => e.channel === channel);
     }
 
-    public replaceChannelEvents(channel: number, startTick: number, newEvents: MidiEvent[]) {
-        // Remove all events for this channel from startTick onwards
-        this.events = this.events.filter(e => !(e.channel === channel && e.ticks >= startTick));
+    public replaceChannelEvents(channel: number, startTick: number, newEvents: MidiEvent[], endTick?: number) {
+        // Remove all events for this channel from startTick onwards (or up to endTick)
+        this.events = this.events.filter(e => {
+            if (e.channel !== channel) return true;
+            if (e.ticks < startTick) return true;
+            if (endTick !== undefined && e.ticks >= endTick) return true;
+            return false;
+        });
         
         // Add new events
         this.events.push(...newEvents);

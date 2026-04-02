@@ -35,7 +35,14 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
   const prevActiveKeysRef = useRef<Set<string>>(new Set());
 
   // Jam Mode State
-  const [jamNotes, setJamNotes] = useState<number[]>([]);
+  const arpStateRef = useRef({
+    intervalId: null as NodeJS.Timeout | null,
+    heldIndices: new Map<string, number>(),
+    lastPlayedNote: -1,
+    step: 0,
+    centerIdx: -1,
+    patternIdx: 0
+  });
 
   // Initialize Bars
   useEffect(() => {
@@ -96,14 +103,59 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
     '0-0': 39, '1-0': 37, '2-0': 54, '3-0': 56,            // Top row: Clap, Rimshot, Tambourine, Cowbell (4-0 is Function)
   };
 
-  const getPentatonicNotes = (keyOffset: number, tonality: string) => {
-    const intervals = tonality === 'minor' ? [0, 3, 5, 7, 10] : [0, 2, 4, 7, 9];
+  const getJamMelodyNotes = (chord: any, tonality: string, keyOffset: number) => {
+    // We need 14 notes. To ensure it always sounds good (safe jamming),
+    // we use the Pentatonic scale of the current chord or key.
+    // Major Pentatonic: 1, 2, 3, 5, 6 (intervals: 0, 2, 4, 7, 9)
+    // Minor Pentatonic: 1, b3, 4, 5, b7 (intervals: 0, 3, 5, 7, 10)
+    
+    let scalePcs = [0, 2, 4, 7, 9]; // Default C Major Pentatonic
+    let rootPc = 0;
+    
+    if (chord) {
+        const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : keyOffset;
+        rootPc = ((chord.root + chordKeyOffset) % 12 + 12) % 12;
+        const q = chord.quality;
+        if (q.includes('Minor') || q.includes('Diminished')) {
+            scalePcs = [0, 3, 5, 7, 10].map(i => (rootPc + i) % 12); // Minor Pentatonic
+        } else {
+            scalePcs = [0, 2, 4, 7, 9].map(i => (rootPc + i) % 12); // Major Pentatonic
+        }
+    } else {
+        rootPc = (keyOffset % 12 + 12) % 12;
+        if (tonality === 'minor') {
+            scalePcs = [0, 3, 5, 7, 10].map(i => (rootPc + i) % 12); // Minor Pentatonic
+        } else {
+            scalePcs = [0, 2, 4, 7, 9].map(i => (rootPc + i) % 12); // Major Pentatonic
+        }
+    }
+
+    scalePcs.sort((a, b) => a - b);
+    
+    // Find the root in the sorted scale
+    let rootIdx = scalePcs.indexOf(rootPc);
+    if (rootIdx === -1) rootIdx = 0;
+
+    // Build 14 notes starting from rootPc around MIDI 60
     const notes = [];
-    const baseNote = 48 + keyOffset; // Start around C3
-    for (let octave = 0; octave < 3; octave++) {
-      for (let i = 0; i < 5; i++) {
-        notes.push(baseNote + (octave * 12) + intervals[i]);
-      }
+    let currentOctave = 5; // Start around C4 (60)
+    let currentIdx = rootIdx;
+    
+    // We want the lowest note to be the root.
+    let baseNote = rootPc + 12 * currentOctave;
+    if (baseNote < 55) baseNote += 12;
+    if (baseNote > 67) baseNote -= 12;
+    
+    // Re-calculate octave based on baseNote
+    currentOctave = Math.floor(baseNote / 12);
+
+    for (let i = 0; i < 14; i++) {
+        notes.push(scalePcs[currentIdx] + 12 * currentOctave);
+        currentIdx++;
+        if (currentIdx >= scalePcs.length) {
+            currentIdx = 0;
+            currentOctave++;
+        }
     }
     return notes;
   };
@@ -133,13 +185,24 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                 }
             }
 
-            const idx = r * 5 + c;
-            
-            if (appState === 'JAMMING_DRUMS') {
-                // Drum notes usually don't need explicit note off, but good practice
-            } else if (appState === 'JAMMING_MELODY') {
-                // Note off handled by fixed duration in AudioEngine.playNote for now, 
-                // or we can implement real noteOff if we expose it.
+            if (appState === 'JAMMING_MELODY') {
+                arpStateRef.current.heldIndices.delete(keyId);
+                if (arpStateRef.current.heldIndices.size === 0) {
+                    if (arpStateRef.current.intervalId) {
+                        clearInterval(arpStateRef.current.intervalId);
+                        arpStateRef.current.intervalId = null;
+                    }
+                    if (arpStateRef.current.lastPlayedNote !== -1) {
+                        AudioEngine.noteOff(0, arpStateRef.current.lastPlayedNote);
+                        arpStateRef.current.lastPlayedNote = -1;
+                    }
+                } else {
+                    // Update centerIdx to the last held key
+                    const lastKey = Array.from(arpStateRef.current.heldIndices.keys()).pop();
+                    if (lastKey) {
+                        arpStateRef.current.centerIdx = arpStateRef.current.heldIndices.get(lastKey)!;
+                    }
+                }
             }
         }
     });
@@ -198,25 +261,81 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                 AudioEngine.playNote(9, note, 127, 100); // Max velocity for louder drums
                 AudioEngine.emitVisualEvent({ type: 'drums', midiNote: note, velocity: 127, source: 'gameplay' });
                 managerRef.current?.recordUserDrum(note, 127);
-                setJamNotes(prev => [...prev, note]);
-                setTimeout(() => {
-                    setJamNotes(prev => prev.filter(n => n !== note));
-                }, 100);
             }
             return; // Skip other interactions unconditionally
         } else if (appState === 'JAMMING_MELODY') {
             const track = managerRef.current?.currentTrack;
             if (track) {
-                const notes = getPentatonicNotes(track.keyOffset, track.tonality);
-                const idx = (2 - r) * 5 + c; // Bottom row (r=2) is lowest octave
-                const note = notes[idx];
-                if (note) {
-                    AudioEngine.playNote(0, note, 100, 200); // Channel 0 for melody
-                    AudioEngine.emitVisualEvent({ type: 'melody', midiNote: note, velocity: 100, source: 'gameplay' });
-                    setJamNotes(prev => [...prev, note]);
-                    setTimeout(() => {
-                        setJamNotes(prev => prev.filter(n => n !== note));
-                    }, 200);
+                let idx = -1;
+                if (r === 2) idx = c;
+                else if (r === 1) idx = 5 + c;
+                else if (r === 0 && c < 4) idx = 10 + c;
+
+                if (idx !== -1) {
+                    arpStateRef.current.heldIndices.set(keyId, idx);
+                    arpStateRef.current.centerIdx = idx;
+
+                    const chord = managerRef.current?.getCurrentChord();
+                    const notes = getJamMelodyNotes(chord, track.tonality, track.keyOffset);
+                    const note = notes[idx];
+
+                    if (arpStateRef.current.lastPlayedNote !== -1) {
+                        AudioEngine.noteOff(0, arpStateRef.current.lastPlayedNote);
+                    }
+                    if (note) {
+                        AudioEngine.noteOn(0, note, 100);
+                        AudioEngine.emitVisualEvent({ type: 'melody', midiNote: note, velocity: 100, source: 'gameplay' });
+                        arpStateRef.current.lastPlayedNote = note;
+                        arpStateRef.current.step = 1;
+                    }
+
+                    if (!arpStateRef.current.intervalId) {
+                        arpStateRef.current.intervalId = setInterval(() => {
+                            const state = arpStateRef.current;
+                            if (state.heldIndices.size === 0) return;
+
+                            const track = managerRef.current?.currentTrack;
+                            if (!track) return;
+
+                            const chord = managerRef.current?.getCurrentChord();
+                            const notes = getJamMelodyNotes(chord, track.tonality, track.keyOffset);
+
+                            // Dynamic Arpeggio Patterns
+                            const patterns = [
+                                [0, 1, 2, 3, 2, 1, 0, -1, -2, -1], // Smooth up and down
+                                [0, 2, 1, 3, 2, 0, -1, -2, -1, 1], // Broken chord
+                                [0, -1, -2, -3, -2, -1, 0, 1, 2, 1], // Down and up
+                                [0, 1, 0, 2, 0, -1, 0, -2]         // Pedal point
+                            ];
+                            
+                            // Randomly switch pattern every few steps to make it "dynamic"
+                            if (state.step % 8 === 0) {
+                                state.patternIdx = Math.floor(Math.random() * patterns.length);
+                            }
+                            const activePattern = patterns[state.patternIdx || 0];
+                            const offset = activePattern[state.step % activePattern.length];
+                            
+                            let targetIdx = state.centerIdx + offset;
+                            
+                            // Clamp to available notes
+                            targetIdx = Math.max(0, Math.min(13, targetIdx));
+                            
+                            const arpNote = notes[targetIdx];
+
+                            if (state.lastPlayedNote !== -1) {
+                                AudioEngine.noteOff(0, state.lastPlayedNote);
+                            }
+                            
+                            if (arpNote) {
+                                const vel = 80 + Math.floor(Math.random() * 30);
+                                AudioEngine.noteOn(0, arpNote, vel);
+                                AudioEngine.emitVisualEvent({ type: 'melody', midiNote: arpNote, velocity: vel, source: 'gameplay' });
+                                state.lastPlayedNote = arpNote;
+                            }
+                            
+                            state.step++;
+                        }, 180); // 180ms per note (slower)
+                    }
                 }
             }
             return; // Skip other interactions unconditionally
@@ -353,6 +472,23 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
   const IMG_W = SCREEN_W * (200 / 811);
   const IMG_H = SCREEN_H * (174 / 269);
 
+  const tapAreaContainer = document.getElementById('tap-area-container');
+
+  // Cleanup arp interval when appState changes
+  useEffect(() => {
+    if (appState !== 'JAMMING_MELODY') {
+      if (arpStateRef.current.intervalId) {
+        clearInterval(arpStateRef.current.intervalId);
+        arpStateRef.current.intervalId = null;
+      }
+      if (arpStateRef.current.lastPlayedNote !== -1) {
+        AudioEngine.noteOff(0, arpStateRef.current.lastPlayedNote);
+        arpStateRef.current.lastPlayedNote = -1;
+      }
+      arpStateRef.current.heldIndices.clear();
+    }
+  }, [appState]);
+
   return (
     <div ref={containerRef} className="w-full h-full relative overflow-hidden bg-[#0A0A0A] text-white select-none font-sans">
       {/* Scanlines Effect */}
@@ -377,117 +513,123 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
       </AnimatePresence>
 
       {/* Carousel Container */}
-      <motion.div 
-        className="absolute top-0 left-0 h-full flex items-center w-max"
-        animate={{ x: -selectedIndex * (CARD_W + SPACING) }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        style={{ paddingLeft: LEFT_MARGIN }}
-      >
-        {bars.map((bar, index) => {
-          const isActive = index === selectedIndex;
-          const isPlaying = isActive && appState !== 'IDLE';
+      <AnimatePresence>
+        {appState !== 'JAMMING_DRUMS' && appState !== 'JAMMING_MELODY' && appState !== 'PREPARING_JAM' && (
+          <motion.div 
+            className="absolute top-0 left-0 h-full flex items-center w-max"
+            initial={{ opacity: 1 }}
+            animate={{ x: -selectedIndex * (CARD_W + SPACING), opacity: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            style={{ paddingLeft: LEFT_MARGIN }}
+          >
+            {bars.map((bar, index) => {
+              const isActive = index === selectedIndex;
+              const isPlaying = isActive && appState !== 'IDLE';
 
-          return (
-            <motion.div
-              key={bar.id}
-              className="relative flex items-center overflow-hidden shrink-0"
-              style={{ 
-                width: CARD_W, 
-                height: CARD_H, 
-                marginRight: SPACING,
-                backgroundColor: isActive ? 'rgba(20, 20, 20, 0.8)' : 'transparent',
-                border: isActive ? '1px solid rgba(255,255,255,0.1)' : 'none',
-                borderRadius: SCREEN_H * (16 / 269)
-              }}
-              animate={{ 
-                opacity: isActive ? 1 : 0.6,
-                scale: isActive ? 1 : 0.95,
-                filter: isActive ? 'brightness(1)' : 'brightness(0.75)'
-              }}
-              transition={{ duration: 0.3 }}
-            >
-              {/* Left Image */}
-              <div 
-                className="absolute left-0 flex items-center justify-start"
-                style={{ width: IMG_W, height: CARD_H, paddingLeft: SCREEN_W * (16 / 811) }}
-              >
-                <img 
-                  src={bar.imagePath} 
-                  alt={bar.name}
-                  style={{ width: IMG_W - (SCREEN_W * (16 / 811)), height: IMG_H, objectFit: 'contain', objectPosition: 'left center' }}
-                  className="drop-shadow-2xl"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-
-              {/* Right Content */}
-              <div 
-                className="absolute flex flex-col justify-center"
-                style={{ 
-                  left: IMG_W, 
-                  width: CARD_W - IMG_W, 
-                  height: CARD_H, 
-                  paddingLeft: SCREEN_W * (16 / 811), 
-                  paddingRight: SCREEN_W * (16 / 811) 
-                }}
-              >
-                <div 
-                  className="uppercase tracking-widest text-yellow-400 mb-1 font-bold bg-yellow-400/20 w-max rounded-sm"
+              return (
+                <motion.div
+                  key={bar.id}
+                  className="relative flex items-center overflow-hidden shrink-0"
                   style={{ 
-                    fontSize: SCREEN_H * (10 / 269),
-                    padding: `${SCREEN_H * (2 / 269)}px ${SCREEN_W * (8 / 811)}px`
+                    width: CARD_W, 
+                    height: CARD_H, 
+                    marginRight: SPACING,
+                    backgroundColor: isActive ? 'rgba(20, 20, 20, 0.8)' : 'transparent',
+                    border: isActive ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                    borderRadius: SCREEN_H * (16 / 269)
                   }}
+                  animate={{ 
+                    opacity: isActive ? 1 : 0.6,
+                    scale: isActive ? 1 : 0.95,
+                    filter: isActive ? 'brightness(1)' : 'brightness(0.75)'
+                  }}
+                  transition={{ duration: 0.3 }}
                 >
-                  {isPlaying ? 'Live Now' : 'Just Opened'}
-                </div>
-                <h2 
-                  className="font-black tracking-wider uppercase leading-tight mb-2 whitespace-nowrap"
-                  style={{ fontSize: SCREEN_H * (24 / 269) }}
-                >
-                  {bar.name}
-                </h2>
-                
-                <div className="flex flex-col gap-1">
-                  <span 
-                    className="text-gray-400 uppercase tracking-widest whitespace-nowrap"
-                    style={{ fontSize: SCREEN_H * (12 / 269) }}
-                  >
-                    Now Live:
-                  </span>
-                  <span 
-                    className={`font-bold uppercase tracking-wider whitespace-nowrap truncate ${isPlaying ? 'text-red-500 animate-pulse' : 'text-gray-600'}`}
-                    style={{ fontSize: SCREEN_H * (14 / 269) }}
-                  >
-                    {isPlaying ? currentStyleName : '---'}
-                  </span>
-                </div>
-
-                {/* Equalizer Animation when playing */}
-                {isPlaying && (
+                  {/* Left Image */}
                   <div 
-                    className="absolute flex items-end gap-1"
+                    className="absolute left-0 flex items-center justify-start"
+                    style={{ width: IMG_W, height: CARD_H, paddingLeft: SCREEN_W * (16 / 811) }}
+                  >
+                    <img 
+                      src={bar.imagePath} 
+                      alt={bar.name}
+                      style={{ width: IMG_W - (SCREEN_W * (16 / 811)), height: IMG_H, objectFit: 'contain', objectPosition: 'left center' }}
+                      className="drop-shadow-2xl"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+
+                  {/* Right Content */}
+                  <div 
+                    className="absolute flex flex-col justify-center"
                     style={{ 
-                      bottom: SCREEN_H * (16 / 269), 
-                      right: SCREEN_W * (16 / 811),
-                      height: SCREEN_H * (16 / 269)
+                      left: IMG_W, 
+                      width: CARD_W - IMG_W, 
+                      height: CARD_H, 
+                      paddingLeft: SCREEN_W * (16 / 811), 
+                      paddingRight: SCREEN_W * (16 / 811) 
                     }}
                   >
-                    {[1, 2, 3, 4].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="bg-red-500 rounded-t-sm"
-                        style={{ width: SCREEN_W * (4 / 811) }}
-                        animate={{ height: ['20%', '100%', '40%', '80%', '20%'] }}
-                        transition={{ duration: 0.5 + i * 0.1, repeat: Infinity, ease: 'linear' }}
-                      />
-                    ))}
+                    <div 
+                      className="uppercase tracking-widest text-yellow-400 mb-1 font-bold bg-yellow-400/20 w-max rounded-sm"
+                      style={{ 
+                        fontSize: SCREEN_H * (10 / 269),
+                        padding: `${SCREEN_H * (2 / 269)}px ${SCREEN_W * (8 / 811)}px`
+                      }}
+                    >
+                      {isPlaying ? 'Live Now' : 'Just Opened'}
+                    </div>
+                    <h2 
+                      className="font-black tracking-wider uppercase leading-tight mb-2 whitespace-nowrap"
+                      style={{ fontSize: SCREEN_H * (24 / 269) }}
+                    >
+                      {bar.name}
+                    </h2>
+                    
+                    <div className="flex flex-col gap-1">
+                      <span 
+                        className="text-gray-400 uppercase tracking-widest whitespace-nowrap"
+                        style={{ fontSize: SCREEN_H * (12 / 269) }}
+                      >
+                        Now Live:
+                      </span>
+                      <span 
+                        className={`font-bold uppercase tracking-wider whitespace-nowrap truncate ${isPlaying ? 'text-red-500 animate-pulse' : 'text-gray-600'}`}
+                        style={{ fontSize: SCREEN_H * (14 / 269) }}
+                      >
+                        {isPlaying ? currentStyleName : '---'}
+                      </span>
+                    </div>
+
+                    {/* Equalizer Animation when playing */}
+                    {isPlaying && (
+                      <div 
+                        className="absolute flex items-end gap-1"
+                        style={{ 
+                          bottom: SCREEN_H * (16 / 269), 
+                          right: SCREEN_W * (16 / 811),
+                          height: SCREEN_H * (16 / 269)
+                        }}
+                      >
+                        {[1, 2, 3, 4].map((i) => (
+                          <motion.div
+                            key={i}
+                            className="bg-red-500 rounded-t-sm"
+                            style={{ width: SCREEN_W * (4 / 811) }}
+                            animate={{ height: ['20%', '100%', '40%', '80%', '20%'] }}
+                            transition={{ duration: 0.5 + i * 0.1, repeat: Infinity, ease: 'linear' }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
-      </motion.div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Generating Overlay */}
       <AnimatePresence>
@@ -504,6 +646,33 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
             >
               ENTERING BAR...
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Light Show Overlay */}
+      <AnimatePresence>
+        {(appState === 'JAMMING_DRUMS' || appState === 'JAMMING_MELODY') && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 pointer-events-none z-40 flex items-center justify-center"
+          >
+            <div className="absolute inset-0 bg-gradient-to-t from-cyan-900/40 to-transparent mix-blend-screen" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.3)_0%,transparent_70%)]" />
+            
+            {/* Dynamic Light Beams */}
+            <motion.div 
+              className="absolute inset-0"
+              animate={{ 
+                background: [
+                  'conic-gradient(from 0deg at 50% 50%, rgba(6,182,212,0) 0%, rgba(6,182,212,0.2) 10%, rgba(6,182,212,0) 20%)',
+                  'conic-gradient(from 360deg at 50% 50%, rgba(6,182,212,0) 0%, rgba(6,182,212,0.2) 10%, rgba(6,182,212,0) 20%)'
+                ]
+              }}
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            />
           </motion.div>
         )}
       </AnimatePresence>

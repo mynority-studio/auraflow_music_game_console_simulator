@@ -17,11 +17,13 @@
     "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "framer-motion": "^12.38.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "spessasynth_lib": "^4.2.5",
+    "spessasynth_core": "^4.2.5",
+    "spessasynth_lib": "^4.2.7",
     "vite": "^6.2.0"
   },
   "devDependencies": {

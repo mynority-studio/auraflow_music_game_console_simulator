@@ -8,6 +8,8 @@ import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
 
 import { StyleRegistry } from '../generation/config/styles/StyleRegistry';
 
+import { StyleId } from "../generation/config/StyleFlags";
+
 export class LiveLoopingEngine {
     private mixer: AudioMixer;
     private instruments: InstrumentRegistry;
@@ -71,13 +73,10 @@ export class LiveLoopingEngine {
         
         // 🌟 0. Set Mix Style based on song styleId
         if (song.styleId !== undefined) {
-            const style = StyleRegistry[song.styleId];
-            const drumStyle = style?.orchestration?.idiomPreferences?.drumStyle || 'pop';
-            if (drumStyle === 'jazz' || drumStyle === 'bossa') {
-                this.mixer.setMixStyle('jazz');
-            } else if (drumStyle === 'electronic' || drumStyle === 'edm' || drumStyle === 'eurodance' || drumStyle === 'synthwave') {
+            const styleId = song.styleId;
+            if (styleId === StyleId.Eurodance || styleId === StyleId.Trance || styleId === StyleId.Synthwave) {
                 this.mixer.setMixStyle('electro');
-            } else if (drumStyle === 'folk' || drumStyle === 'ballad') {
+            } else if (styleId === StyleId.RussianFolkBallad || styleId === StyleId.PowerBallad) {
                 this.mixer.setMixStyle('folk');
             } else {
                 this.mixer.setMixStyle('default');

@@ -62,6 +62,19 @@ export class EndlessRadioManager {
 
   private jamCheckInterval: any = null;
 
+  public getCurrentChord(): any {
+    if (!this.currentTrack || !this.currentTrack.chords) return null;
+    const currentTick = AudioEngine.getCurrentTick();
+    const ppq = AudioEngine.getPpq();
+    const currentBeat = currentTick / ppq;
+    for (const chord of this.currentTrack.chords) {
+        if (currentBeat >= chord.startBeat && currentBeat < chord.endBeat) {
+            return chord;
+        }
+    }
+    return null;
+  }
+
   public stopPlayback = () => {
     this.generationId += 1;
     if (this.jamCheckInterval) {
@@ -94,7 +107,7 @@ export class EndlessRadioManager {
     const ppq = AudioEngine.getPpq();
     const timeSignature = GlobalContext.currentTimeSignature || [4, 4];
     const beatsPerMeasure = timeSignature[0];
-    const ticksPerMeasure = beatsPerMeasure * ppq;
+    const ticksPerMeasure = timeSignature[0] * (ppq * 4 / timeSignature[1]);
 
     // Calculate the start of the NEXT measure
     const currentMeasure = Math.floor(currentTick / ticksPerMeasure);
@@ -104,38 +117,60 @@ export class EndlessRadioManager {
     const countInMeasureStartTick = nextMeasureStartTick;
     const jamStartTick = countInMeasureStartTick + ticksPerMeasure;
 
-    if (type === 'drums') {
+    if (type === 'drums' || type === 'melody') {
         this.jamStartTick = jamStartTick;
         
-        // 1. Inject Count-in events (Cowbell 56 or Side Stick 37)
-        for (let i = 0; i < beatsPerMeasure; i++) {
-            const tick = countInMeasureStartTick + i * ppq;
-            const note = 56; // Cowbell
-            const velocity = i === 0 ? 127 : 100; // Accent the first beat
-            AudioEngine.injectMidiEvent({ ticks: tick, type: 'noteOn', channel: 9, data1: note, data2: velocity });
-            AudioEngine.injectMidiEvent({ ticks: tick + ppq/4, type: 'noteOff', channel: 9, data1: note, data2: 0 });
-        }
-
-        // 2. Generate Closed Hi-Hat (42) events from jamStartTick to the end of the song
-        const lastSection = this.currentTrack.sections[this.currentTrack.sections.length - 1];
-        const totalTicks = lastSection ? lastSection.endBeat * ppq : 0;
-        const hihatEvents: any[] = [];
+        // Increase drum channel volume to max
+        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'controlChange', channel: 9, data1: 7, data2: 127 });
         
-        for (let tick = jamStartTick; tick < totalTicks; tick += ppq / 2) { // 8th notes
-            hihatEvents.push({ ticks: tick, type: 'noteOn', channel: 9, data1: 42, data2: 70 });
-            hihatEvents.push({ ticks: tick + ppq/4, type: 'noteOff', channel: 9, data1: 42, data2: 0 });
-            hihatEvents.push({ 
-                ticks: tick, 
-                type: 'visual', 
-                channel: 9, 
-                data1: 42, 
-                data2: 70,
-                visualData: { type: 'drums', midiNote: 42, velocity: 70, source: 'system' }
-            });
+        // 1. Inject Count-in events (4 Crashes + Drum Fill)
+        const ticksPerBeat = ppq * 4 / timeSignature[1];
+        const fillEvents: any[] = [];
+        
+        for (let i = 0; i < beatsPerMeasure; i++) {
+            const tick = countInMeasureStartTick + i * ticksPerBeat;
+            // 4 Crashes on the beat
+            fillEvents.push({ ticks: tick, type: 'noteOn', channel: 9, data1: 49, data2: 127 }); // Crash
+            fillEvents.push({ ticks: tick + ppq/2, type: 'noteOff', channel: 9, data1: 49, data2: 0 });
+            fillEvents.push({ ticks: tick, type: 'noteOn', channel: 9, data1: 36, data2: 100 }); // Kick
+            fillEvents.push({ ticks: tick + ppq/2, type: 'noteOff', channel: 9, data1: 36, data2: 0 });
+            
+            // Drum fill on the last beat (e.g., 4th beat)
+            if (i === beatsPerMeasure - 1) {
+                // 16th note snare roll
+                for (let j = 0; j < 4; j++) {
+                    const subTick = tick + j * (ticksPerBeat / 4);
+                    fillEvents.push({ ticks: subTick, type: 'noteOn', channel: 9, data1: 38, data2: 100 + j * 8 }); // Crescendo snare
+                    fillEvents.push({ ticks: subTick + (ticksPerBeat / 8), type: 'noteOff', channel: 9, data1: 38, data2: 0 });
+                }
+            }
         }
+        
+        // Replace system drums during the count-in measure
+        AudioEngine.replaceChannelEvents(9, countInMeasureStartTick, fillEvents, jamStartTick);
 
-        // Replace system drums with hi-hats from jamStartTick
-        AudioEngine.replaceChannelEvents(9, jamStartTick, hihatEvents);
+        if (type === 'drums') {
+            // 2. Generate Closed Hi-Hat (42) events from jamStartTick to the end of the song
+            const lastSection = this.currentTrack.sections[this.currentTrack.sections.length - 1];
+            const totalTicks = lastSection ? lastSection.endBeat * ppq : 0;
+            const hihatEvents: any[] = [];
+            
+            for (let tick = jamStartTick; tick < totalTicks; tick += ppq / 2) { // 8th notes
+                hihatEvents.push({ ticks: tick, type: 'noteOn', channel: 9, data1: 42, data2: 70 });
+                hihatEvents.push({ ticks: tick + ppq/4, type: 'noteOff', channel: 9, data1: 42, data2: 0 });
+                hihatEvents.push({ 
+                    ticks: tick, 
+                    type: 'visual', 
+                    channel: 9, 
+                    data1: 42, 
+                    data2: 70,
+                    visualData: { type: 'drums', midiNote: 42, velocity: 70, source: 'system' }
+                });
+            }
+
+            // Replace system drums with hi-hats from jamStartTick
+            AudioEngine.replaceChannelEvents(9, jamStartTick, hihatEvents);
+        }
     }
 
     if (this.jamCheckInterval) {
@@ -176,13 +211,22 @@ export class EndlessRadioManager {
         AudioEngine.muteChannel(9, false);
         AudioEngine.muteChannel(0, false);
         
+        // Restore drum channel volume to normal
+        AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'controlChange', channel: 9, data1: 7, data2: 100 });
+        
+        if (this.state === 'PREPARING_JAM' && this.originalDrumEvents) {
+            console.log(`[Jam Mode] Exited during preparation. Resuming original drums.`);
+            const originalEventsToRestore = this.originalDrumEvents.filter(e => e.ticks >= this.jamStartTick);
+            AudioEngine.replaceChannelEvents(9, this.jamStartTick, originalEventsToRestore);
+        }
+        
         // Calculate jam length based on current tick
         if (this.state === 'JAMMING_DRUMS' && this.jamStartTick > 0) {
             try {
                 const currentTick = AudioEngine.getCurrentTick();
                 const ppq = AudioEngine.getPpq();
                 const timeSignature = GlobalContext.currentTimeSignature || [4, 4];
-                const ticksPerMeasure = timeSignature[0] * ppq;
+                const ticksPerMeasure = timeSignature[0] * (ppq * 4 / timeSignature[1]);
                 
                 // Round to the nearest measure to avoid empty measures if user is slightly late
                 const elapsedTicks = currentTick - this.jamStartTick;
@@ -209,8 +253,8 @@ export class EndlessRadioManager {
 
       if (this.userDrumPattern.length === 0) {
           console.log(`[Jam Mode] No drum notes recorded. Resuming original drums.`);
-          const originalEventsToRestore = this.originalDrumEvents.filter(e => e.ticks >= currentTick);
-          AudioEngine.replaceChannelEvents(9, currentTick, originalEventsToRestore);
+          const originalEventsToRestore = this.originalDrumEvents.filter(e => e.ticks >= this.jamStartTick);
+          AudioEngine.replaceChannelEvents(9, this.jamStartTick, originalEventsToRestore);
           return;
       }
 
@@ -218,8 +262,8 @@ export class EndlessRadioManager {
       const validPattern = this.userDrumPattern.filter(hit => hit.tick < this.jamLengthTicks);
       if (validPattern.length === 0) {
           console.log(`[Jam Mode] No valid drum notes within the loop length. Resuming original drums.`);
-          const originalEventsToRestore = this.originalDrumEvents.filter(e => e.ticks >= currentTick);
-          AudioEngine.replaceChannelEvents(9, currentTick, originalEventsToRestore);
+          const originalEventsToRestore = this.originalDrumEvents.filter(e => e.ticks >= this.jamStartTick);
+          AudioEngine.replaceChannelEvents(9, this.jamStartTick, originalEventsToRestore);
           return;
       }
 
@@ -231,10 +275,9 @@ export class EndlessRadioManager {
 
       // Align loop start to the nearest measure boundary to ensure it stays in sync
       const timeSignature = GlobalContext.currentTimeSignature || [4, 4];
-      const ticksPerMeasure = timeSignature[0] * ppq;
       
       // We start generating the loop from jamStartTick to ensure the pattern aligns perfectly
-      // with the musical grid, but we only push events that occur after currentTick.
+      // with the musical grid.
       const loopStartTick = this.jamStartTick;
 
       const newDrumEvents: any[] = [];
@@ -246,45 +289,55 @@ export class EndlessRadioManager {
           // Find the current section to apply dynamic adaptation
           const section = this.currentTrack.sections.find(s => currentBeat >= s.startBeat && currentBeat < s.endBeat) || this.currentTrack.sections[0];
           
-          const isBreakdown = section.energyLevel < 0.5;
-          const isChorus = section.energyLevel >= 0.8 || section.name.toLowerCase().includes('chorus');
           const isBuild = section.name.toLowerCase().includes('build');
 
           // 1. Add crash at the start of high energy sections
-          if (isChorus && tick === section.startBeat * ppq && tick >= currentTick) {
-              newDrumEvents.push({ ticks: tick, type: 'noteOn', channel: 9, data1: 49, data2: 120 });
-              newDrumEvents.push({ ticks: tick + ppq/2, type: 'noteOff', channel: 9, data1: 49, data2: 0 });
-              newDrumEvents.push({ 
-                  ticks: tick, 
-                  type: 'visual', 
-                  channel: 9, 
-                  data1: 49, 
-                  data2: 120,
-                  visualData: { type: 'drums', midiNote: 49, velocity: 120, source: 'system' }
-              });
+          for (const s of this.currentTrack.sections) {
+              const isChorusSection = s.energyLevel >= 0.8 || s.name.toLowerCase().includes('chorus');
+              if (isChorusSection) {
+                  const sectionStartTick = s.startBeat * ppq;
+                  if (sectionStartTick >= tick && sectionStartTick < tick + this.jamLengthTicks) {
+                      newDrumEvents.push({ ticks: sectionStartTick, type: 'noteOn', channel: 9, data1: 49, data2: 120 });
+                      newDrumEvents.push({ ticks: sectionStartTick + ppq/2, type: 'noteOff', channel: 9, data1: 49, data2: 0 });
+                      newDrumEvents.push({ 
+                          ticks: sectionStartTick, 
+                          type: 'visual', 
+                          channel: 9, 
+                          data1: 49, 
+                          data2: 120,
+                          visualData: { type: 'drums', midiNote: 49, velocity: 120, source: 'system' }
+                      });
+                  }
+              }
           }
 
           // 2. Loop the user's recorded pattern
           for (const hit of validPattern) {
               const hitTick = tick + hit.tick;
-              if (hitTick >= totalTicks || hitTick < currentTick) continue;
+              if (hitTick >= totalTicks) continue;
+
+              const hitBeat = hitTick / ppq;
+              const hitSection = this.currentTrack.sections.find(s => hitBeat >= s.startBeat && hitBeat < s.endBeat) || this.currentTrack.sections[0];
+              const hitIsBreakdown = hitSection.energyLevel < 0.5;
+              const hitIsChorus = hitSection.energyLevel >= 0.8 || hitSection.name.toLowerCase().includes('chorus');
+              const hitIsBuild = hitSection.name.toLowerCase().includes('build');
 
               let note = hit.note;
               let velocity = hit.velocity;
               let shouldPlay = true;
 
               // --- Algorithmic Dynamic Adaptation ---
-              if (isBreakdown) {
+              if (hitIsBreakdown) {
                   // Breakdown: Soften kicks and snares, keep hi-hats
                   if (note === 36) velocity = Math.floor(velocity * 0.6); // Softer kick instead of removing
                   if (note === 38) { 
                       note = 37; // Snare -> Side stick
                       velocity = Math.floor(velocity * 0.7); 
                   } 
-              } else if (isBuild) {
+              } else if (hitIsBuild) {
                   // Build-up: Increase velocity
                   velocity = Math.min(127, velocity + 20);
-              } else if (isChorus) {
+              } else if (hitIsChorus) {
                   // Chorus: Maximize velocity for impact
                   velocity = Math.min(127, velocity + 10);
               }
@@ -309,7 +362,7 @@ export class EndlessRadioManager {
               const lastBeatTick = tick + this.jamLengthTicks - ppq;
               for (let i = 0; i < 4; i++) {
                   const rollTick = lastBeatTick + (i * ppq / 4);
-                  if (rollTick >= currentTick) {
+                  if (rollTick < totalTicks) {
                       const rollVel = 80 + i * 10;
                       newDrumEvents.push({ ticks: rollTick, type: 'noteOn', channel: 9, data1: 38, data2: rollVel });
                       newDrumEvents.push({ ticks: rollTick + ppq/8, type: 'noteOff', channel: 9, data1: 38, data2: 0 });
@@ -327,9 +380,8 @@ export class EndlessRadioManager {
       }
 
       // Replace all future drum events with the adapted user loop
-      // We clear from currentTick so system drums don't suddenly play before the loop starts
-      console.log(`[Jam Mode] Generated ${newDrumEvents.length} new drum events. Calling replaceChannelEvents...`);
-      AudioEngine.replaceChannelEvents(9, currentTick, newDrumEvents);
+      console.log(`[Jam Mode] Generated ${newDrumEvents.length} new drum events. First few:`, newDrumEvents.slice(0, 5));
+      AudioEngine.replaceChannelEvents(9, this.jamStartTick, newDrumEvents);
       console.log(`[Jam Mode] Applied user drum loop from tick ${loopStartTick} to end of track with dynamic adaptation.`);
   }
 

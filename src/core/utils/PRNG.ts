@@ -40,5 +40,5 @@ class PRNG {
 }
 
 // Export as a unified manager
-export const PRNGManager = new PRNG(0);
+export const PRNGManager = new PRNG(Date.now());
 

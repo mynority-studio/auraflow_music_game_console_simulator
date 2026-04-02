@@ -113,6 +113,7 @@ export default function App() {
 
         {/* Interactive Grid Overlay (Z-index: 4) */}
         <div 
+          id="tap-area-container"
           className="absolute z-40"
           style={{
             left: 'calc(90 / 1537 * 100%)',

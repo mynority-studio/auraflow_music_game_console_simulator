@@ -104,8 +104,8 @@ class AudioEngineSystem {
         return globalMidiScheduler.getChannelEvents(channel);
     }
 
-    public replaceChannelEvents(channel: number, startTick: number, newEvents: any[]) {
-        globalMidiScheduler.replaceChannelEvents(channel, startTick, newEvents);
+    public replaceChannelEvents(channel: number, startTick: number, newEvents: any[], endTick?: number) {
+        globalMidiScheduler.replaceChannelEvents(channel, startTick, newEvents, endTick);
     }
 
     public playNote(channel: number, note: number, velocity: number = 100, durationMs: number = 200) {
@@ -114,6 +114,21 @@ class AudioEngineSystem {
         setTimeout(() => {
             if (spessaSynth) spessaSynth.noteOff(channel, note);
         }, durationMs);
+    }
+
+    public noteOn(channel: number, note: number, velocity: number = 100) {
+        if (!spessaSynth) return;
+        spessaSynth.noteOn(channel, note, velocity);
+    }
+
+    public noteOff(channel: number, note: number) {
+        if (!spessaSynth) return;
+        spessaSynth.noteOff(channel, note);
+    }
+
+    public pitchBend(channel: number, value: number) {
+        if (!spessaSynth) return;
+        spessaSynth.pitchWheel(channel, value);
     }
 
     public getCurrentTick() {

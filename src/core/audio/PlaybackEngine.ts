@@ -2,7 +2,7 @@
 // 📄 文件路径: /src/core/audio/PlaybackEngine.ts
 // 🌟 V3.0 纯 MIDI 调度版
 // ==========================================
-import { ArrangedTrack, NoteData } from '../generation/types';
+import { ArrangedTrack } from '../generation/types';
 import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
 import { spessaSynth, startAudioContext } from './SynthManager';
@@ -50,74 +50,6 @@ export class PlaybackEngine {
 
     public setFocusTrack(trackType: 'RHYTHM' | 'MELODY' | 'ATMOSPHERE' | 'NONE') {
         this.mixer.setFocusTrack(trackType);
-    }
-
-    /**
-     * 纯数据转换：ArrangedTrack → MidiEvent[]
-     * 管道终点方法，同步、确定性、不消耗 PRNG。
-     * 通道映射由调用方（loadSong）在平台层完成后传入。
-     */
-    public convert(
-        song: ArrangedTrack,
-        channelMap: { vocal?: number; melody: number; chord: number; bass: number; drums: number; secondaryMelody?: number; counterMelody?: number },
-        options?: { countInBeats?: number; drumDucking?: boolean }
-    ): MidiEvent[] {
-        const countInBeats = options?.countInBeats ?? 0;
-        const ducking = options?.drumDucking ?? false;
-        const ppq = 480;
-        const beatsToTicks = (beats: number) => Math.round(beats * ppq);
-        const events: MidiEvent[] = [];
-
-        const addPart = (notes: NoteData[] | undefined, channel: number, eventType: VisualEvent['type']) => {
-            if (!notes) return;
-            for (const n of notes) {
-                let dur = Number(n.duration);
-                if (isNaN(dur) || dur <= 0) dur = 0.5;
-
-                if (eventType === 'drums' && ducking) {
-                    const duckedPitches = [35, 36, 38, 40, 41, 43, 45, 47, 48, 49, 50, 52, 53, 55, 57];
-                    if (duckedPitches.includes(n.pitch)) continue;
-                }
-
-                const pitch = n.pitch;
-                if (pitch === undefined || isNaN(pitch)) continue;
-
-                const startTick = beatsToTicks(n.onset + countInBeats);
-                const durationTicks = beatsToTicks(dur);
-                const vel = Math.max(0, Math.min(127, Math.round((n.velocity || 1) * 127)));
-
-                events.push({ ticks: startTick, type: 'noteOn', channel, data1: pitch, data2: vel });
-                events.push({ ticks: startTick, type: 'visual', channel, data1: 0, data2: 0, visualData: { type: eventType, midiNote: pitch, velocity: vel, source: 'playback', onset: n.onset, isUserMotif: n.isUserMotif } });
-                events.push({ ticks: startTick + durationTicks, type: 'noteOff', channel, data1: pitch, data2: 0 });
-            }
-        };
-
-        // 各轨 note 事件
-        if (song.vocal && channelMap.vocal !== undefined) addPart(song.vocal, channelMap.vocal, 'melody');
-        addPart(song.melody, channelMap.melody, 'melody');
-        if (song.secondaryMelody && channelMap.secondaryMelody !== undefined) addPart(song.secondaryMelody, channelMap.secondaryMelody, 'melody');
-        addPart(song.pianoLH, channelMap.bass, 'pianoLH');
-        addPart(song.pianoRH, channelMap.chord, 'pianoRH');
-        if (song.counterMelody && channelMap.counterMelody !== undefined) addPart(song.counterMelody, channelMap.counterMelody, 'pianoRH');
-        if (song.drums) addPart(song.drums, channelMap.drums, 'drums');
-
-        // Count-in hi-hat
-        if (countInBeats > 0) {
-            let maxOnset = 0;
-            const allNotes = [song.vocal, song.melody, song.secondaryMelody, song.pianoLH, song.pianoRH, song.drums, song.counterMelody, song.userMotif];
-            for (const ns of allNotes) {
-                if (ns) for (const n of ns) { const end = n.onset + (n.duration || 0.5); if (end > maxOnset) maxOnset = end; }
-            }
-            const totalBeats = countInBeats + Math.ceil(maxOnset);
-            for (let i = 0; i < totalBeats; i++) {
-                const startTick = beatsToTicks(i);
-                const vel = i < countInBeats ? 127 : 76;
-                events.push({ ticks: startTick, type: 'noteOn', channel: channelMap.drums, data1: 42, data2: vel });
-                events.push({ ticks: startTick + beatsToTicks(0.1), type: 'noteOff', channel: channelMap.drums, data1: 42, data2: 0 });
-            }
-        }
-
-        return events;
     }
 
     public async loadSong(song: ArrangedTrack, options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }) {
@@ -201,13 +133,10 @@ export class PlaybackEngine {
         
         // 🌟 0. Set Mix Style based on song styleId
         if (song.styleId !== undefined) {
-            const style = StyleRegistry[song.styleId];
-            const drumStyle = style?.orchestration?.idiomPreferences?.drumStyle || 'pop';
-            if (drumStyle === 'jazz' || drumStyle === 'bossa') {
-                this.mixer.setMixStyle('jazz');
-            } else if (drumStyle === 'electronic' || drumStyle === 'edm' || drumStyle === 'eurodance' || drumStyle === 'synthwave') {
+            const styleId = song.styleId;
+            if (styleId === StyleId.Eurodance || styleId === StyleId.Trance || styleId === StyleId.Synthwave) {
                 this.mixer.setMixStyle('electro');
-            } else if (drumStyle === 'folk' || drumStyle === 'ballad') {
+            } else if (styleId === StyleId.RussianFolkBallad || styleId === StyleId.PowerBallad) {
                 this.mixer.setMixStyle('folk');
             } else {
                 this.mixer.setMixStyle('default');
@@ -272,7 +201,12 @@ export class PlaybackEngine {
         const addPartEvents = (notes: any[], synth: any, eventType: VisualEvent['type']) => {
             if (!notes) return;
             notes.forEach(n => {
-                let dur = Number(n.duration);
+                // 🌟 强制吸附网格算法 (Grid Snap)
+                let rawOnset = Number(n.onset);
+                let rawDuration = Number(n.duration);
+                let onset = Math.round(rawOnset / 0.25) * 0.25;
+                let dur = Math.round(rawDuration / 0.25) * 0.25;
+                
                 if (isNaN(dur) || dur <= 0) dur = 0.5; 
                 
                 if (eventType === 'drums' && this.drumDucking) {
@@ -280,12 +214,12 @@ export class PlaybackEngine {
                     if (duckedPitches.includes(n.pitch)) return; 
                 }
 
-                const activeSynth = typeof synth === 'function' ? synth(n.onset) : synth;
+                const activeSynth = typeof synth === 'function' ? synth(onset) : synth;
                 let channel = activeSynth.channel; // Assuming SpessaSynthWrapper exposes channel
                 let pitch = n.pitch;
                 
                 if (pitch !== undefined && !isNaN(pitch)) {
-                    const startTick = globalMidiScheduler.beatsToTicks(n.onset + countInBeats);
+                    const startTick = globalMidiScheduler.beatsToTicks(onset + countInBeats);
                     const durationTicks = globalMidiScheduler.beatsToTicks(dur);
                     const vel = Math.max(0, Math.min(127, Math.round((n.velocity || 1) * 127)));
 
@@ -305,7 +239,7 @@ export class PlaybackEngine {
                         channel: channel,
                         data1: 0,
                         data2: 0,
-                        visualData: { type: eventType, midiNote: pitch, velocity: vel, source: 'playback', onset: n.onset, isUserMotif: n.isUserMotif }
+                        visualData: { type: eventType, midiNote: pitch, velocity: vel, source: 'playback', onset: onset, isUserMotif: n.isUserMotif }
                     });
 
                     // Note Off
