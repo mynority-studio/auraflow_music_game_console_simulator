@@ -1,14 +1,9 @@
 import { WorkletSynthesizer } from 'spessasynth_lib';
 import { TempoCurve } from '../generation/types';
 
-export interface MidiEvent {
-    ticks: number; // Time in ticks (e.g., 480 PPQ)
-    type: 'noteOn' | 'noteOff' | 'cc' | 'programChange' | 'pitchBend' | 'visual';
-    channel: number;
-    data1: number;
-    data2: number;
-    visualData?: any; // For visual events
-}
+// MidiEvent 类型定义已提升到生成管道层
+import type { MidiEvent } from '../generation/MidiConverter';
+export type { MidiEvent };
 
 /**
  * Custom MIDI Scheduler
