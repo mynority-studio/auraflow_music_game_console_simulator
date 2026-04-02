@@ -1,5 +1,5 @@
 import { PRNGManager } from '../utils/PRNG';
-import { GeneratedTrack, StyleConfig, MusicContext } from "./types";
+import { GeneratedTrack, StyleConfig, MusicContext, Tonality, MotifRole, NoteData } from "./types";
 import { getStyleConfig } from "./config/styles/StyleRegistry";
 import { StyleId } from "./config/StyleFlags";
 import { StructureEngine } from "./composing/StructureEngine";
@@ -11,10 +11,10 @@ import { EnsembleDrafter } from "./arrangement/EnsembleDrafter";
 
 export interface GenerationOptions {
     userMotifRoot?: number;
-    processedUserMotif?: any[];
-    motifRole?: 'Foreground' | 'Middleground' | 'Background';
+    processedUserMotif?: NoteData[];
+    motifRole?: MotifRole;
     detectedTimeSignature?: [number, number];
-    detectedTonality?: 'Major' | 'Minor';
+    detectedTonality?: Tonality;
 }
 
 import { GlobalReviewer } from "./review/GlobalReviewer";
@@ -95,8 +95,8 @@ export class MelodyEngine {
     // 4. 生成旋律（此时会将各段落独有的 GrooveDNA 写入 Sections）
     const toplineMotif = motifRole === 'Foreground' ? processedUserMotif : undefined;
     const leadInstrument = instrumentPalette.melodySound;
-    let vocal: any[] | undefined = undefined;
-    let melody: any[] = [];
+    let vocal: NoteData[] | undefined = undefined;
+    let melody: NoteData[] = [];
 
     if (instrumentPalette.vocalSound) {
         vocal = ToplineEngine.generateTrackMelody(

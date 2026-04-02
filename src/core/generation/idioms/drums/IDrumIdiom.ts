@@ -1,4 +1,4 @@
-import { NoteData } from "../../types";
+import { NoteData, IdiomPreferences } from "../../types";
 import { StyleId } from "../../config/StyleFlags";
 
 export interface DrumIdiomContext {
@@ -12,10 +12,7 @@ export interface DrumIdiomContext {
   nextEnergyLevel: number;
   hasFullGrooveStarted: boolean;
   grooveRatio?: { foundation: number; comping: number; color: number };
-  idiomPreferences?: {
-    drumStyle?: string;
-    [key: string]: any;
-  };
+  idiomPreferences?: IdiomPreferences;
   
   // Pre-calculated helpers
   beatsPerBar: number;

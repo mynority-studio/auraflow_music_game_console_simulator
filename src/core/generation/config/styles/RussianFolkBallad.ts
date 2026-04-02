@@ -1,12 +1,13 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const RussianFolkBalladStyle: StyleConfig = {
-    id: 'russian_folk',
+    id: StyleId.RussianFolkBallad,
     name: '俄式民谣/贝加尔湖畔 (Russian Acoustic Ballad)',
     global: {
         bpmRange: [62, 72], 
         timeSignaturePool:[{ signature: [4, 4], weight: 0.7 }, { signature: [3, 4], weight: 0.3 }],
-        tonalityPool:[{ tonality: 'Minor', weight: 1.0 }] // 100% 纯小调
+        tonalityPool:[{ tonality: Tonality.Minor, weight: 1.0 }] // 100% 纯小调
     },
     harmony: {
         chorusPool: [['i', 'iv', 'bVII', 'bIII'],['bVI', 'ii7', 'V7', 'i'],['iv', 'bVII', 'bIII', 'bVI', 'ii7', 'V7', 'i', 'i']], 

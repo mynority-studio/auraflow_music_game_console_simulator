@@ -1,5 +1,27 @@
 export type ChordProgression = string[];
 
+// ★ ChordQuality — 数值枚举，替代 chord.quality 字符串比较
+export enum ChordQuality {
+  Major = 0, Minor, Diminished, Diminished7, Augmented,
+  Dominant7, Minor7, Major7, HalfDiminished,
+  Sus4, Dominant7Sus4, Add9, Minor9, Major9,
+  Dominant9, Minor11, Dominant13                         // 共 17 种
+}
+
+// ★ SectionType — 数值枚举，替代 section.type / section.name 字符串比较
+export enum SectionType {
+  Intro = 0, Verse, PreChorus, Chorus, Bridge, Outro,
+  Break, Breakdown, BuildUp, Drop, PreOutro, Solo_Bridge  // 共 12 种
+}
+
+// ★ Tonality — 数值枚举，替代 tonality 字符串比较
+export enum Tonality {
+  Major = 0, Minor, Major_Pentatonic, Minor_Pentatonic,
+  Blues, Dorian, Mixolydian, Melodic_Minor               // 共 8 种
+}
+
+export type MotifRole = 'Foreground' | 'Middleground' | 'Background';
+
 /**
  * C++ Porting Guide:
  * This interface maps directly to a C struct to avoid heap fragmentation:
@@ -12,7 +34,7 @@ export type ChordProgression = string[];
  * };
  */
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
+export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {
@@ -67,9 +89,23 @@ export interface MacroStructure {
 
 import { StyleId } from './config/StyleFlags';
 
+export interface IdiomPreferences {
+    stringStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
+    pianoStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'latin' | 'house';
+    drumStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'house';
+    bassStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
+    riffStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'default';
+    guitarStyle?: string;
+    synthStyle?: string;
+    humanizeAmount?: number;
+    sections?: SectionMetadata[];
+    arpPattern?: 'up' | 'down' | 'updown' | 'random';
+    arpRate?: number;
+}
+
 export interface StyleConfig {
     id: StyleId; name: string; description?: string;
-    global: { bpmRange: [number, number]; timeSignaturePool: Array<{ signature:[number, number], weight: number }>; tonalityPool: Array<{ tonality: 'Major' | 'Minor' | 'Major_Pentatonic' | 'Minor_Pentatonic' | 'Blues' | 'Dorian' | 'Mixolydian' | 'Melodic_Minor', weight: number }>; };
+    global: { bpmRange: [number, number]; timeSignaturePool: Array<{ signature:[number, number], weight: number }>; tonalityPool: Array<{ tonality: Tonality, weight: number }>; };
     harmony: { chorusPool: ChordProgression[]; versePool: ChordProgression[]; preChorusPool: ChordProgression[]; };
     harmonyRules?: {
         maxDissonanceTolerance?: number;
@@ -101,9 +137,9 @@ export interface StyleConfig {
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
-    orchestration: { 
-        melodyInstruments: string[]; 
-        chordInstruments: string[]; 
+    orchestration: {
+        melodyInstruments: string[];
+        chordInstruments: string[];
         bassInstruments: string[];
         drumInstruments: string[];
         counterMelodyInstruments: string[];
@@ -114,13 +150,7 @@ export interface StyleConfig {
         vocalProbability?: number; // 🌟 新增：主唱出场率
         outroRingOutProbability?: number; // 🌟 新增：尾奏使用 BigRingOut 的概率
         grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
-        idiomPreferences?: {
-            stringStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
-            pianoStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
-            drumStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
-            bassStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
-            riffStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'default';
-        };
+        idiomPreferences?: IdiomPreferences;
         mixingPreferences?: {
             requireSidechain?: boolean;
             melody?: MixingConfig;
@@ -178,7 +208,7 @@ export interface SectionMetadata {
     };
 
     // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
-    type?: string;
+    type?: SectionType;
     lengthBars?: number;
     phraseTemplate?: string; // e.g., "A-A-B-A'"
     harmony?: HarmonyState;
@@ -220,19 +250,19 @@ export interface EnsembleDraft {
     };
 }
 
-export interface GeneratedTrack { 
-    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; bpm: number; key: string; 
-    keyOffset: number; tonality: string; timeSignature: [number, number]; sections: SectionMetadata[]; 
-    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean; 
+export interface GeneratedTrack {
+    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; bpm: number; key: string;
+    keyOffset: number; tonality: Tonality; timeSignature: [number, number]; sections: SectionMetadata[];
+    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean;
     preSelectedPalette?: EnsembleDraft;
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     processedUserMotif?: NoteData[];
-    motifRole?: 'Foreground' | 'Middleground' | 'Background';
+    motifRole?: MotifRole;
 }
 
 export interface MusicContext {
     keyOffset: number;
-    tonality: string;
+    tonality: Tonality;
     bpm: number;
     timeSignature: [number, number];
     grooveDNA: number[];

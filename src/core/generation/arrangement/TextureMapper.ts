@@ -1,5 +1,5 @@
 import { PRNGManager } from "../../utils/PRNG";
-import { NoteData, GeneratedChord } from "../types";
+import { NoteData, GeneratedChord, Tonality, IdiomPreferences } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
 import { GlobalContext } from "../GlobalContext";
 import { StyleId } from "../config/StyleFlags";
@@ -34,7 +34,7 @@ export class TextureMapper {
     styleId: StyleId = StyleId.ModernPop,
     melodyNotes: NoteData[] = [],
     isBassSolo: boolean = false,
-    idiomPreferences?: any,
+    idiomPreferences?: IdiomPreferences,
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
   ): NoteData[] {
@@ -84,7 +84,7 @@ export class TextureMapper {
       bassStyle = StyleRegistry[fusionProfile.fusionStyle]?.orchestration?.idiomPreferences?.bassStyle || bassStyle;
     }
 
-    let idiomName = bassStyle;
+    let idiomName: string = bassStyle;
     
     if (isBassSolo && bassStyle !== "eurodance" && bassStyle !== "trance" && bassStyle !== "synthwave") {
       idiomName = "solo";
@@ -258,7 +258,7 @@ export class TextureMapper {
       grooveDensity,
       grooveSyncopation,
       laybackOffset,
-      idiomPreferences: { drumStyle },
+      idiomPreferences: { drumStyle: drumStyle as IdiomPreferences['drumStyle'] },
       KICK: 36,
       SNARE: 38,
       CHH: 42,
@@ -378,7 +378,7 @@ export class TextureMapper {
     chords: GeneratedChord[],
     styleId: StyleId,
     energyLevel: number,
-    tonality: string
+    tonality: Tonality
   ): NoteData[] {
     const style = StyleRegistry[styleId];
     const stringStyle = style?.orchestration?.idiomPreferences?.stringStyle || "pop";

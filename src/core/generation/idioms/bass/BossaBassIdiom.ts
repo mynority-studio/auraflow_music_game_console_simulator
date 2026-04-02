@@ -64,14 +64,14 @@ export class BossaBassIdiom extends BaseBassIdiom {
       const latinBassVel = Math.min(1.0, baseVel * 1.3);
 
       // Basic pattern: 1, 2.5, 3, 4.5 (in 4/4)
-      if (beatInBar === 0 || (maskAccent === 1 && beatInBar < 1)) {
+      if (Math.abs(beatInBar) < 1e-6 || (maskAccent === 1 && beatInBar < 1)) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,
           duration: 1.5,
           velocity: latinBassVel * (maskAccent === 1 ? 1.1 : 1.0),
         });
-      } else if (beatInBar === 1.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 1.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
         // Often drops to the fifth below
         const fifthBelow =
           fifthMidi < targetBassPitch ? fifthMidi : fifthMidi - 12;
@@ -81,7 +81,7 @@ export class BossaBassIdiom extends BaseBassIdiom {
           duration: 0.5,
           velocity: latinBassVel * 0.9 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (beatInBar === 2 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 2) < 1e-6 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) {
         // Sometimes plays root again, sometimes fifth
         const pitch = PRNGManager.next() > 0.5 ? targetBassPitch : fifthMidi;
         notes.push({
@@ -90,7 +90,7 @@ export class BossaBassIdiom extends BaseBassIdiom {
           duration: 1.5,
           velocity: latinBassVel * (maskAccent === 1 ? 1.1 : 1.0),
         });
-      } else if (beatInBar === 3.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 3.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
         // Approach note to next chord or fifth
         let pitch = fifthMidi;
         if (nextChord && (PRNGManager.next() < grooveDensity || maskAccent === 1)) {

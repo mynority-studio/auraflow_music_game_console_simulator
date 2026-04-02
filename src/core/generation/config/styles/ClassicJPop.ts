@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const ClassicJPopStyle: StyleConfig = {
-    id: 'classic_jpop',
+    id: StyleId.ClassicJPop,
     name: '昭和经典流行 (Classic J-Pop)',
     global: {
         bpmRange: [70, 105], // 抒情中慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.6 },
-            { tonality: 'Major', weight: 0.4 }
+            { tonality: Tonality.Minor, weight: 0.6 },
+            { tonality: Tonality.Major, weight: 0.4 }
         ]
     },
     harmony: {

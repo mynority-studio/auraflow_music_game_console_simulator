@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { SectionMetadata, StyleConfig } from "../types";
+import { SectionMetadata, StyleConfig, SectionType } from "../types";
 import { StyleId } from '../config/StyleFlags';
 
 export class StructureEngine {
@@ -16,7 +16,14 @@ export class StructureEngine {
       }
 
       // 🌟 Phase 1 & 2: Initialize decoupled state for each section
-      const type = name.split('_')[0]; // e.g. "Verse", "Chorus"
+      const sectionNameMap: Record<string, SectionType> = {
+        'Intro': SectionType.Intro, 'Verse': SectionType.Verse, 'PreChorus': SectionType.PreChorus,
+        'Chorus': SectionType.Chorus, 'Bridge': SectionType.Bridge, 'Outro': SectionType.Outro,
+        'Break': SectionType.Break, 'Breakdown': SectionType.Breakdown, 'BuildUp': SectionType.BuildUp,
+        'Drop': SectionType.Drop, 'PreOutro': SectionType.PreOutro, 'Solo': SectionType.Solo_Bridge,
+      };
+      const rawType = name.split('_')[0]; // e.g. "Verse", "Chorus"
+      const type = sectionNameMap[rawType] ?? SectionType.Verse;
       
       // Determine phrase template based on length
       let phraseTemplate = "A-B";
@@ -42,7 +49,7 @@ export class StructureEngine {
       // 2. Genre-Bending Logic (Option B)
       // Occasionally inject a different style into PreChorus or Bridge
       const genreBendingProb = style.harmonyRules?.genreBendingProbability ?? 0;
-      if ((type === 'PreChorus' || type === 'Bridge' || type === 'Break') && PRNGManager.next() < genreBendingProb) {
+      if ((type === SectionType.PreChorus || type === SectionType.Bridge || type === SectionType.Break) && PRNGManager.next() < genreBendingProb) {
           const possibleOverrides = [StyleId.BossaNova, StyleId.NeoSoul, StyleId.SmoothJazz, StyleId.Synthwave];
           // Pick an override that is DIFFERENT from the current style
           const filteredOverrides = possibleOverrides.filter(s => s !== styleId);

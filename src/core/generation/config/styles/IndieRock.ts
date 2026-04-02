@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const IndieRockStyle: StyleConfig = {
-    id: 'indie_rock',
+    id: StyleId.IndieRock,
     name: '独立摇滚 (Indie Rock)',
     global: {
         bpmRange: [120, 160], // 速度偏快，有跳跃感
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Major', weight: 0.4 },
-            { tonality: 'Minor', weight: 0.6 } // 偏向小调或混合调式
+            { tonality: Tonality.Major, weight: 0.4 },
+            { tonality: Tonality.Minor, weight: 0.6 } // 偏向小调或混合调式
         ]
     },
     harmony: {

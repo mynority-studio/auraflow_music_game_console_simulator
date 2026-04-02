@@ -1,7 +1,8 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const GhibliOrchestralStyle: StyleConfig = {
-    id: 'ghibli_orchestral',
+    id: StyleId.GhibliOrchestral,
     name: '久石让/吉卜力 (Ghibli Orchestral)',
     global: {
         bpmRange: [70, 110], // 速度适中，充满呼吸感
@@ -11,8 +12,8 @@ export const GhibliOrchestralStyle: StyleConfig = {
             { signature: [6, 8], weight: 0.2 }
         ],
         tonalityPool: [
-            { tonality: 'Major', weight: 0.6 }, // 温暖、治愈
-            { tonality: 'Minor', weight: 0.4 }  // 忧伤、史诗
+            { tonality: Tonality.Major, weight: 0.6 }, // 温暖、治愈
+            { tonality: Tonality.Minor, weight: 0.4 }  // 忧伤、史诗
         ]
     },
     harmony: {

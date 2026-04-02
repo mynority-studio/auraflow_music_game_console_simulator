@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const NeoSoulStyle: StyleConfig = {
-    id: 'neo_soul',
+    id: StyleId.NeoSoul,
     name: '新灵魂乐 (Neo-Soul)',
     global: {
         bpmRange: [70, 85], // 慵懒、律动感强的中慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 },
-            { tonality: 'Dorian', weight: 0.2 }
+            { tonality: Tonality.Minor, weight: 0.8 },
+            { tonality: Tonality.Dorian, weight: 0.2 }
         ]
     },
     harmony: {

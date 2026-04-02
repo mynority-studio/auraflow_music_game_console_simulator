@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const DarkPopStyle: StyleConfig = {
-    id: 'dark_pop',
+    id: StyleId.DarkPop,
     name: '暗黑流行 (Dark Pop)',
     global: {
         bpmRange: [90, 125], // 中板，强调律动和低频
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.9 },
-            { tonality: 'Dorian', weight: 0.1 }
+            { tonality: Tonality.Minor, weight: 0.9 },
+            { tonality: Tonality.Dorian, weight: 0.1 }
         ]
     },
     harmony: {

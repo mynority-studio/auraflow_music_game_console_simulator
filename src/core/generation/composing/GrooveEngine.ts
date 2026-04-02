@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { StyleConfig } from '../types';
+import { StyleConfig, NoteData } from '../types';
 
 export class GrooveEngine {
     private static GRID_STEP = 0.25; 
@@ -8,7 +8,7 @@ export class GrooveEngine {
         density: number,
         syncopationProb: number,
         beatsPerBar: number, 
-        userMotif?: any[]
+        userMotif?: NoteData[]
     ): number[] {
         const loopLength = 2 * beatsPerBar; 
         
@@ -52,7 +52,7 @@ export class GrooveEngine {
             let baseWeight = 0;
             if (Number.isInteger(stepPos)) {
                 baseWeight = 1.0; // 正拍 (0, 1, 2, 3)
-            } else if (stepPos % 1 === 0.5) {
+            } else if (Math.abs(stepPos % 1 - 0.5) < 1e-6) {
                 baseWeight = 0.6 + syncopationProb * 0.4; // 8分音符反拍 (0.5, 1.5...)
             } else {
                 if (syncopationProb >= 0.7) {
@@ -114,7 +114,7 @@ export class GrooveEngine {
             // 🌟 修复：加上节拍权重，防止在 inverse 时大量选中 16分音符
             if (Number.isInteger(stepPos)) {
                 weight *= 1.0;
-            } else if (stepPos % 1 === 0.5) {
+            } else if (Math.abs(stepPos % 1 - 0.5) < 1e-6) {
                 weight *= 0.8;
             } else {
                 weight *= 0.1; // 极大地压制 16分音符

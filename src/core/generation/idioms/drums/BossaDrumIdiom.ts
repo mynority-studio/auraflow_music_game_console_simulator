@@ -23,9 +23,9 @@ export class BossaDrumIdiom implements IDrumIdiom {
       }
 
       // Bossa Nova: Kick on 1 and 3, often with a pickup on the "and" of 2 and 4
-      if (beatInBar === 0 || beatInBar === 2 || (maskAccent === 1 && beatInBar % 1 === 0)) {
+      if (beatInBar === 0 || beatInBar === 2 || (maskAccent === 1 && Math.abs(beatInBar % 1) < 1e-6)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.8 * (maskAccent === 1 ? 1.2 : 1.0) });
-      } else if (beatInBar === 1.5 || beatInBar === 3.5 || (maskAccent === 1 && beatInBar % 1 !== 0)) {
+      } else if (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
         if (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.6 * (maskAccent === 1 ? 1.3 : 1.0) });
         }
@@ -33,17 +33,17 @@ export class BossaDrumIdiom implements IDrumIdiom {
 
       // Bossa Nova: Cross-stick clave pattern (3-2 or 2-3)
       // Here we use a simplified 3-2 clave approximation
-      if (beatInBar === 0 || beatInBar === 1.5 || beatInBar === 2.5 || (maskAccent === 1 && beatInBar % 1 !== 0.5)) {
+      if (beatInBar === 0 || Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6 || (maskAccent === 1 && Math.abs(beatInBar % 1 - 0.5) >= 1e-6)) {
         notes.push({ pitch: CROSS_STICK, onset: beat, duration: 0.1, velocity: 0.9 * (maskAccent === 1 ? 1.1 : 1.0) });
       }
 
       // Bossa Nova: Continuous 8th note hi-hats
-      if (beat % 0.5 === 0 || maskAccent === 1) {
+      if (Math.abs(beat % 0.5) < 1e-6 || maskAccent === 1) {
         let cymbalPitch = CHH;
-        let cymbalVel = beat % 1 === 0 ? 0.7 : 0.5;
+        let cymbalVel = Math.abs(beat % 1) < 1e-6 ? 0.7 : 0.5;
 
         // Occasional open hi-hat on the "and"
-        if ((beat % 1 === 0.5 && PRNGManager.next() < grooveDensity * 0.5) || (maskAccent === 1 && beat % 1 !== 0)) {
+        if ((Math.abs(beat % 1 - 0.5) < 1e-6 && PRNGManager.next() < grooveDensity * 0.5) || (maskAccent === 1 && Math.abs(beat % 1) >= 1e-6)) {
           cymbalPitch = OHH;
           cymbalVel = 0.75;
         }

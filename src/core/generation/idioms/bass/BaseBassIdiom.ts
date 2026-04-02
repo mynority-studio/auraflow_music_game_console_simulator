@@ -1,4 +1,4 @@
-import { NoteData } from "../../types";
+import { NoteData, SectionType } from "../../types";
 import { BassIdiomContext, IBassIdiom } from "./IBassIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
 import { GlobalContext } from "../../GlobalContext";
@@ -27,7 +27,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
     const isFillZone = (beat: number) => beat >= chord.endBeat - 1.0;
     const activeSection = GlobalContext.getActiveSection();
     const isBuildUp =
-      activeSection?.type === "BuildUp" ||
+      activeSection?.type === SectionType.BuildUp ||
       (ctx.nextEnergyLevel > energyLevel + 1);
     
     const bassStyle = ctx.idiomPreferences?.bassStyle || "pop";
@@ -44,7 +44,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
         let buildUpStep = 0.5; // 8th notes
         if (barsLeft <= 1.0) buildUpStep = 0.25; // 16th notes
 
-        if (beat % buildUpStep === 0) {
+        if (Math.abs(beat % buildUpStep) < 1e-6) {
           const buildVel = baseVel * (0.6 + (1 - barsLeft / 2) * 0.6); // 渐强
           buildUpNotes.push({
             pitch: ctx.targetBassPitch,
@@ -59,7 +59,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
       // Rhythmic mutation (Fills)
       const mutationChance = energyLevel / 10;
       for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
-        const isValidTriggerPoint = beat % 1 === 0 || GlobalContext.isGrooveHit(beat);
+        const isValidTriggerPoint = Math.abs(beat % 1) < 1e-6 || GlobalContext.isGrooveHit(beat);
         // Remove melodyActive logic
         const melodyActive = false;
         if (

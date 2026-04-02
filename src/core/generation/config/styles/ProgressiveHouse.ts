@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const ProgressiveHouseStyle: StyleConfig = {
-    id: 'progressive_house',
+    id: StyleId.ProgressiveHouse,
     name: '前卫浩室 (Progressive House)',
     global: {
         bpmRange: [120, 128], // 经典 House 速度
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 }, // 80% 小调，忧郁深邃
-            { tonality: 'Dorian', weight: 0.2 } // 20% 多利亚调式，带点神秘感
+            { tonality: Tonality.Minor, weight: 0.8 }, // 80% 小调，忧郁深邃
+            { tonality: Tonality.Dorian, weight: 0.2 } // 20% 多利亚调式，带点神秘感
         ]
     },
     harmony: {

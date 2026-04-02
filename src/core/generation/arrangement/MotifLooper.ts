@@ -1,11 +1,11 @@
-import { NoteData, GeneratedChord } from '../types';
+import { NoteData, GeneratedChord, Tonality } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
 
 export class MotifLooper {
     public static loopMotif(
         motif: NoteData[], 
         chord: GeneratedChord, 
-        tonality: string, 
+        tonality: Tonality,
         targetOctave: number = 60,
         role: 'Foreground' | 'Middleground' | 'Background' = 'Middleground'
     ): NoteData[] {

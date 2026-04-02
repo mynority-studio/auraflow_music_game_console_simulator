@@ -1,4 +1,5 @@
 import { BaseCounterMelodyIdiom } from "./BaseCounterMelodyIdiom";
+import { Tonality } from "../../types";
 import { GlobalContext } from "../../GlobalContext";
 
 export class JazzCounterMelodyIdiom extends BaseCounterMelodyIdiom {
@@ -8,7 +9,7 @@ export class JazzCounterMelodyIdiom extends BaseCounterMelodyIdiom {
     } else {
       const root = 0;
       const pentatonicPcs = (
-        GlobalContext.currentTonality === "Minor"
+        GlobalContext.currentTonality === Tonality.Minor
           ? [0, 3, 5, 7, 10]
           : [0, 2, 4, 7, 9]
       ).map((i) => (root + i) % 12);

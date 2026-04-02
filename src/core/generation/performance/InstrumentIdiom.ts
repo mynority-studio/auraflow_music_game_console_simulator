@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord } from '../types';
+import { NoteData, GeneratedChord, IdiomPreferences } from '../types';
 import { PianoIdiom } from './idioms/PianoIdiom';
 import { GuitarIdiom } from './idioms/GuitarIdiom';
 import { StringIdiom } from './idioms/StringIdiom';
@@ -19,7 +19,7 @@ export class InstrumentIdiom {
     private static synthVoiceEngine = new SynthVoiceIdiom();
     private static synthEngine = new SynthIdiom();
 
-    public static apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public static apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
         
         // 智能路由分发 (Router)
         if (instrumentName.includes('Drum') || instrumentName === 'Drums') {
@@ -51,7 +51,7 @@ export class InstrumentIdiom {
         return notes; 
     }
 
-    public static humanize(notes: NoteData[], instrumentName: string, swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+    public static humanize(notes: NoteData[], instrumentName: string, swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: IdiomPreferences): NoteData[] {
         if (instrumentName.includes('Drum') || instrumentName === 'Drums') {
             return this.drumEngine.humanize(notes, swingRatio, swingSubdivision, false, idiomPreferences);
         }

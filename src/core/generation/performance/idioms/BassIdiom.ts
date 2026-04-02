@@ -1,10 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from "../../types";
+import { NoteData, GeneratedChord, IdiomPreferences } from "../../types";
 import { BaseIdiom } from "./BaseIdiom";
 import { GlobalContext } from "../../GlobalContext";
 
 export class BassIdiom extends BaseIdiom {
-  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
     const bassStyle = idiomPreferences?.bassStyle || 'pop';
     const result: NoteData[] = [];
     if (notes.length === 0) return result;
@@ -57,7 +57,7 @@ export class BassIdiom extends BaseIdiom {
           baseVel *= 0.85; // 抒情/氛围类曲风再轻一点
       } else if (bassStyle === 'funk') {
           // 强弱对比极大
-          if (current.onset % 1 === 0) baseVel = Math.min(1.0, baseVel * 1.1);
+          if (Math.abs(current.onset % 1) < 1e-6) baseVel = Math.min(1.0, baseVel * 1.1);
           else baseVel *= 0.8;
       }
 
@@ -69,7 +69,7 @@ export class BassIdiom extends BaseIdiom {
     return result;
   }
 
-  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
       const bassStyle = idiomPreferences?.bassStyle || 'pop';
       
       let timingWobble = 0;
@@ -79,7 +79,7 @@ export class BassIdiom extends BaseIdiom {
       // 节奏微人类化
       // 正拍：略微靠前 0-3ms
       // 反拍/切分：略微滞后 2-6ms
-      if (beatPos % 1 === 0) {
+      if (Math.abs(beatPos % 1) < 1e-6) {
           timingWobble = -PRNGManager.next() * 0.003; // 提前 0-3ms
       } else {
           timingWobble = PRNGManager.next() * 0.004 + 0.002; // 滞后 2-6ms
@@ -97,7 +97,7 @@ export class BassIdiom extends BaseIdiom {
       return { strumDelay: 0, timingWobble, velocityWobble, velocityMultiplier: 1.0 };
   }
 
-  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: IdiomPreferences): NoteData[] {
       const humanized = super.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
       
       // 长音轻微渐弱 (模拟 CC11 掉 5-10)

@@ -31,7 +31,7 @@ export class BalladDrumIdiom implements IDrumIdiom {
         let buildUpStep = 0.5;
         if (barsLeft <= 1.0) buildUpStep = 0.25;
 
-        if (beat % buildUpStep === 0) {
+        if (Math.abs(beat % buildUpStep) < 1e-6) {
           const buildVel = 0.5 + (1 - barsLeft / 2) * 0.4;
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: buildVel });
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: buildVel * 0.8 });
@@ -42,7 +42,7 @@ export class BalladDrumIdiom implements IDrumIdiom {
       // Ballad: Soft, sparse kick
       if (isDownbeat) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.75 });
-      } else if (beatInBar === 2.5 && PRNGManager.next() < grooveDensity) {
+      } else if (Math.abs(beatInBar - 2.5) < 1e-6 && PRNGManager.next() < grooveDensity) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.6 });
       }
 
@@ -52,9 +52,9 @@ export class BalladDrumIdiom implements IDrumIdiom {
       }
 
       // Ballad: Ride or hi-hats, often 8th notes, very gentle
-      if (beat % 0.5 === 0) {
+      if (Math.abs(beat % 0.5) < 1e-6) {
         let cymbalPitch = energyLevel > 6 ? RIDE : CHH;
-        let cymbalVel = beat % 1 === 0 ? 0.6 : 0.4;
+        let cymbalVel = Math.abs(beat % 1) < 1e-6 ? 0.6 : 0.4;
 
         if (PRNGManager.next() > 0.2) {
           notes.push({ pitch: cymbalPitch, onset: beat, duration: 0.1, velocity: cymbalVel });

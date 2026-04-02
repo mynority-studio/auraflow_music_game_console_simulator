@@ -1,4 +1,4 @@
-import { NoteData } from "../../types";
+import { NoteData, Tonality } from "../../types";
 import { PRNGManager } from "../../../utils/PRNG";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { BassIdiomContext } from "./IBassIdiom";
@@ -42,7 +42,7 @@ export class NeoSoulBassIdiom extends BaseBassIdiom {
           const fillOnset = currentBeat + 1.5;
           if (fillOnset + 0.5 <= chord.endBeat) {
             const fillPitches = HarmonyCore.getScalePitches(
-              "Minor_Pentatonic",
+              Tonality.Minor_Pentatonic,
             ).map((p) => ((chord.root + p) % 12) + 24);
             const p1 =
               fillPitches[Math.floor(PRNGManager.next() * fillPitches.length)];

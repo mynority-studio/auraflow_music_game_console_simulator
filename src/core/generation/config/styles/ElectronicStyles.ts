@@ -1,4 +1,4 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const EurodanceStyle: StyleConfig = {
@@ -9,8 +9,8 @@ export const EurodanceStyle: StyleConfig = {
         bpmRange: [130, 140],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 },
-            { tonality: 'Dorian', weight: 0.2 }
+            { tonality: Tonality.Minor, weight: 0.8 },
+            { tonality: Tonality.Dorian, weight: 0.2 }
         ]
     },
     harmony: {
@@ -101,8 +101,8 @@ export const TranceStyle: StyleConfig = {
         bpmRange: [135, 140],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.9 },
-            { tonality: 'Dorian', weight: 0.1 }
+            { tonality: Tonality.Minor, weight: 0.9 },
+            { tonality: Tonality.Dorian, weight: 0.1 }
         ]
     },
     harmony: {
@@ -192,8 +192,8 @@ export const SynthwaveStyle: StyleConfig = {
         bpmRange: [100, 115],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 },
-            { tonality: 'Dorian', weight: 0.2 }
+            { tonality: Tonality.Minor, weight: 0.8 },
+            { tonality: Tonality.Dorian, weight: 0.2 }
         ]
     },
     harmony: {

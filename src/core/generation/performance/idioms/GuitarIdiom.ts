@@ -1,10 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
+import { NoteData, GeneratedChord, IdiomPreferences, SectionMetadata } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 import { GlobalContext } from '../../GlobalContext';
 
 export class GuitarIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
         const guitarStyle = idiomPreferences?.guitarStyle || 'pop';
         const result: NoteData[] = [];
         if (notes.length === 0) return result;
@@ -15,7 +15,7 @@ export class GuitarIdiom extends BaseIdiom {
 
         const getEnergyLevelAt = (onset: number): number => {
             if (!sections || sections.length === 0) return GlobalContext.getActiveSection()?.energyLevel || 5;
-            const section = sections.find((s: any) => onset >= s.startBeat && onset < s.endBeat);
+            const section = sections.find((s: SectionMetadata) => onset >= s.startBeat && onset < s.endBeat);
             return section ? section.energyLevel : 5;
         };
 
@@ -164,7 +164,7 @@ export class GuitarIdiom extends BaseIdiom {
             let isMuted = false;
             if (guitarStyle === 'funk') {
                 // Funk: 16分音符的弱拍极大概率是闷音 (Ghost strums)
-                if (beatPos % 0.5 !== 0 && current.duration <= 0.25) {
+                if (Math.abs(beatPos % 0.5) >= 1e-6 && current.duration <= 0.25) {
                     isMuted = PRNGManager.next() < 0.8;
                 }
             } else if (guitarStyle === 'rock') {
@@ -195,7 +195,7 @@ export class GuitarIdiom extends BaseIdiom {
         return result;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
         const guitarStyle = idiomPreferences?.guitarStyle || 'pop';
         const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
         const is68 = beatsPerBar === 6;
@@ -204,7 +204,7 @@ export class GuitarIdiom extends BaseIdiom {
         // 扫弦方向 (Strum Direction)
         // 下拨 (Downstroke): 正拍 (0, 1, 2, 3) 或 8分音符正拍 (0, 0.5, 1.0...)
         // 上拨 (Upstroke): 反拍 (0.25, 0.75...)
-        const isDownstroke = (beatPos % 0.5 === 0);
+        const isDownstroke = (Math.abs(beatPos % 0.5) < 1e-6);
         
         // 如果是下拨，从低音到高音 (index 0 -> chordSize - 1)
         // 如果是上拨，从高音到低音 (index chordSize - 1 -> 0)
@@ -220,7 +220,7 @@ export class GuitarIdiom extends BaseIdiom {
         let timingWobble = this.randomGaussian(0, 0.015);
         
         // 节奏微调：正拍稍微晚一点点（慵懒），弱拍稍微提前一点点（推动感）
-        if (beatPos % 1 === 0) {
+        if (Math.abs(beatPos % 1) < 1e-6) {
             timingWobble += PRNGManager.next() * 0.02;
         } else {
             timingWobble -= PRNGManager.next() * 0.02;
@@ -231,7 +231,7 @@ export class GuitarIdiom extends BaseIdiom {
         if (beatPos === 0) velocityMultiplier *= 1.1;       // 第一拍强拍
         else if (is68 && beatPos === 3) velocityMultiplier *= 0.95; // 6/8 次强拍
         else if (!is68 && beatPos === 2) velocityMultiplier *= 0.9;  // 4/4 第三拍次强拍
-        else if (beatPos % 1 !== 0) velocityMultiplier *= 0.85; // 反拍或切分音略弱
+        else if (Math.abs(beatPos % 1) >= 1e-6) velocityMultiplier *= 0.85; // 反拍或切分音略弱
 
         // 上拨通常比下拨力度轻
         if (!isDownstroke) velocityMultiplier *= 0.8;

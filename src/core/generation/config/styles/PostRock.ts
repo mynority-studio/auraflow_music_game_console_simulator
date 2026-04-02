@@ -1,7 +1,8 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const PostRockStyle: StyleConfig = {
-    id: 'post_rock',
+    id: StyleId.PostRock,
     name: '后摇滚 (Post-Rock)',
     global: {
         bpmRange: [60, 100], // 速度偏慢，氛围感强
@@ -10,8 +11,8 @@ export const PostRockStyle: StyleConfig = {
             { signature: [6, 8], weight: 0.3 } // 6/8 拍在后摇中很常见
         ],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 },
-            { tonality: 'Major', weight: 0.2 } // 忧郁、史诗感
+            { tonality: Tonality.Minor, weight: 0.8 },
+            { tonality: Tonality.Major, weight: 0.2 } // 忧郁、史诗感
         ]
     },
     harmony: {

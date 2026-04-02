@@ -24,14 +24,14 @@ export class ReggaeBassIdiom extends BaseBassIdiom {
       }
 
       // Reggae Bass: Syncopated, rests on beat 1 often, emphasizes beat 3 and off-beats
-      if ((beatInBar === 0.5 || beatInBar === 1.5 || maskAccent === 1) && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
+      if ((Math.abs(beatInBar - 0.5) < 1e-6 || Math.abs(beatInBar - 1.5) < 1e-6 || maskAccent === 1) && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,
           duration: 0.5,
           velocity: baseVel * 1.1 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (beatInBar === 2 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 2) < 1e-6 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) {
         // Beat 3 (0-indexed 2)
         notes.push({
           pitch: fifthMidi,
@@ -39,7 +39,7 @@ export class ReggaeBassIdiom extends BaseBassIdiom {
           duration: 1.0,
           velocity: baseVel * 1.2 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (beatInBar === 3.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 3.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
         notes.push({
           pitch: octaveMidi,
           onset: beat,

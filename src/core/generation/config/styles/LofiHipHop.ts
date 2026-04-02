@@ -1,7 +1,8 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const LofiHipHopStyle: StyleConfig = {
-    id: 'lofi_hiphop',
+    id: StyleId.LofiHipHop,
     name: '低保真嘻哈 (Lo-Fi Hip Hop)',
     global: {
         bpmRange: [65, 85], // 慵懒、放松的节奏
@@ -9,8 +10,8 @@ export const LofiHipHopStyle: StyleConfig = {
             { signature: [4, 4], weight: 1.0 } // 几乎全是 4/4 拍
         ],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.7 }, // 忧郁、怀旧
-            { tonality: 'Major', weight: 0.3 }
+            { tonality: Tonality.Minor, weight: 0.7 }, // 忧郁、怀旧
+            { tonality: Tonality.Major, weight: 0.3 }
         ]
     },
     harmony: {

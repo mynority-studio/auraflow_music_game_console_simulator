@@ -1,17 +1,17 @@
 import { IBassIdiom } from "./IBassIdiom";
 
 export class BassIdiomRegistry {
-  private static idioms: Map<string, IBassIdiom> = new Map();
+  private static idioms: Record<string, IBassIdiom> = {};
 
   public static register(name: string, idiom: IBassIdiom) {
-    this.idioms.set(name, idiom);
+    this.idioms[name] = idiom;
   }
 
   public static getIdiom(name: string): IBassIdiom | undefined {
-    return this.idioms.get(name);
+    return this.idioms[name];
   }
 
   public static getAllIdiomNames(): string[] {
-    return Array.from(this.idioms.keys());
+    return Object.keys(this.idioms);
   }
 }

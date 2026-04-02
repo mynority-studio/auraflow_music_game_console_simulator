@@ -1,4 +1,4 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const ModernPopStyle: StyleConfig = {
@@ -8,8 +8,8 @@ export const ModernPopStyle: StyleConfig = {
         bpmRange: [75, 115], // 抒情到中板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Major', weight: 0.7 },
-            { tonality: 'Minor', weight: 0.3 }
+            { tonality: Tonality.Major, weight: 0.7 },
+            { tonality: Tonality.Minor, weight: 0.3 }
         ]
     },
     harmony: {
@@ -98,8 +98,8 @@ export const ClassicJPopStyle: StyleConfig = {
         bpmRange: [70, 105], // 抒情中慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.6 },
-            { tonality: 'Major', weight: 0.4 }
+            { tonality: Tonality.Minor, weight: 0.6 },
+            { tonality: Tonality.Major, weight: 0.4 }
         ]
     },
     harmony: {
@@ -189,8 +189,8 @@ export const ModernJPopStyle: StyleConfig = {
         bpmRange: [120, 175], // 极快，米津玄师/YOASOBI 风格
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.7 },
-            { tonality: 'Major', weight: 0.3 }
+            { tonality: Tonality.Minor, weight: 0.7 },
+            { tonality: Tonality.Major, weight: 0.3 }
         ]
     },
     harmony: {

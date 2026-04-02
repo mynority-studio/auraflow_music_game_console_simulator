@@ -1,4 +1,5 @@
 import { BaseCounterMelodyIdiom } from "./BaseCounterMelodyIdiom";
+import { Tonality } from "../../types";
 import { PRNGManager } from "../../../utils/PRNG";
 import { GlobalContext } from "../../GlobalContext";
 
@@ -9,7 +10,7 @@ export class PopCounterMelodyIdiom extends BaseCounterMelodyIdiom {
     } else {
       const root = 0;
       const pentatonicPcs = (
-        GlobalContext.currentTonality === "Minor"
+        GlobalContext.currentTonality === Tonality.Minor
           ? [0, 3, 5, 7, 10]
           : [0, 2, 4, 7, 9]
       ).map((i) => (root + i) % 12);

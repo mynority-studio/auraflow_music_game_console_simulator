@@ -187,7 +187,7 @@ export abstract class BaseCounterMelodyIdiom implements ICounterMelodyIdiom {
       }
 
       if (isActive && beat < phraseEndBeat) {
-        const isDownbeat = beat % 1 === 0;
+        const isDownbeat = Math.abs(beat % 1) < 1e-6;
         
         const pitchOptions = this.getPitchOptions(isDownbeat, chordTones, scalePcs);
 

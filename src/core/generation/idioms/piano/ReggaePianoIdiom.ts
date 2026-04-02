@@ -28,7 +28,7 @@ export class ReggaePianoIdiom extends BasePianoIdiom {
       }
 
       // Skank chords: Short, staccato hits on beats 2 and 4 (or off-beats)
-      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && beatInBar % 1 !== 0)) {
+      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
         // Beats 2 and 4 (0-indexed 1 and 3)
         const duration = 0.15; // Very short
         const compVel = baseVelocity * 1.3 * (maskAccent === 1 ? 1.2 : 1.0); // Accent the skank
@@ -39,7 +39,7 @@ export class ReggaePianoIdiom extends BasePianoIdiom {
 
       // Occasional double skank (e.g., 2 and 2.5)
       if (
-        (beatInBar === 1.5 || beatInBar === 3.5 || maskAccent === 1) &&
+        (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6 || maskAccent === 1) &&
         (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)
       ) {
         this.addBlockChord(notes, beat, 0.15, baseVelocity * 0.9 * (maskAccent === 1 ? 1.3 : 1.0), voicedTones.slice(1));

@@ -43,7 +43,7 @@ export class DefaultRiffIdiom implements IRiffIdiom {
         if (currentPitch < 48) currentPitch += 12;
         if (currentPitch > 72) currentPitch -= 12;
 
-        const velocity = currentBeat % 1 === 0 ? baseVel * 1.1 : baseVel * 0.8;
+        const velocity = Math.abs(currentBeat % 1) < 1e-6 ? baseVel * 1.1 : baseVel * 0.8;
 
         notes.push({
           pitch: currentPitch,

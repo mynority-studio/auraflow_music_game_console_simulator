@@ -144,7 +144,7 @@ export class SingerPersona {
             }
 
             // 2. 提前抢拍 (防重叠)
-            if (current.onset % 1 === 0 && PRNGManager.next() < persona.traits.syncopationPush) {
+            if (Math.abs(current.onset % 1) < 1e-6 && PRNGManager.next() < persona.traits.syncopationPush) {
                 const pushAmount = PRNGManager.next() > 0.5 ? 0.5 : 0.25; 
                 current.onset -= pushAmount;
                 current.duration += pushAmount; 

@@ -31,20 +31,20 @@ export class JazzDrumIdiom implements IDrumIdiom {
       }
 
       // Jazz: Cross-stick or light snare comping
-      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && beatInBar % 1 !== 0)) {
+      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
         if (PRNGManager.next() < grooveDensity || maskAccent === 1) {
           notes.push({ pitch: energyLevel > 5 ? SNARE : CROSS_STICK, onset: beat, duration: 0.1, velocity: 0.5 * (maskAccent === 1 ? 1.3 : 1.0) });
         }
-      } else if (beatInBar === 2.5 || beatInBar === 3.5 || maskAccent === 1) { // Syncopated comping
+      } else if (Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6 || maskAccent === 1) { // Syncopated comping
         if (PRNGManager.next() < grooveSyncopation * 0.5 || maskAccent === 1) {
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.4 * (maskAccent === 1 ? 1.3 : 1.0) });
         }
       }
 
       // Jazz: Ride cymbal pattern (ding-ding-da-ding)
-      if (beat % 1 === 0 || maskAccent === 1) {
+      if (Math.abs(beat % 1) < 1e-6 || maskAccent === 1) {
         notes.push({ pitch: RIDE, onset: beat, duration: 0.1, velocity: 0.7 * (maskAccent === 1 ? 1.2 : 1.0) });
-      } else if (beat % 1 === 0.66 || beat % 1 === 0.75) { // Swing feel approximation
+      } else if (Math.abs(beat % 1 - 0.66) < 1e-6 || Math.abs(beat % 1 - 0.75) < 1e-6) { // Swing feel approximation
         if (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1) {
           notes.push({ pitch: RIDE, onset: beat, duration: 0.1, velocity: 0.5 * (maskAccent === 1 ? 1.2 : 1.0) });
         }

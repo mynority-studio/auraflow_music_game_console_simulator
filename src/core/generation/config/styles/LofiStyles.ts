@@ -1,4 +1,4 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
 import { StyleId } from '../StyleFlags';
 import { RnBRhythmCells } from '../../melody/RhythmCells';
 
@@ -9,8 +9,8 @@ export const LofiHipHopStyle: StyleConfig = {
         bpmRange: [65, 85], // 慵懒的慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.7 },
-            { tonality: 'Dorian', weight: 0.3 }
+            { tonality: Tonality.Minor, weight: 0.7 },
+            { tonality: Tonality.Dorian, weight: 0.3 }
         ]
     },
     harmony: {

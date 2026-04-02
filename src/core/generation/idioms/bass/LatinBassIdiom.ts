@@ -16,14 +16,14 @@ export class LatinBassIdiom extends BaseBassIdiom {
 
       // Latin (Non-Bossa): 经典的 1, 2.5, 3, 4.5 节奏 (Tresillo 变体)
       const latinBassVel = Math.min(1.0, baseVel * 1.3);
-      if ((beatInBar === 0 || beatInBar === 2) && PRNGManager.next() < grooveDensity * 1.5) {
+      if ((Math.abs(beatInBar) < 1e-6 || Math.abs(beatInBar - 2) < 1e-6) && PRNGManager.next() < grooveDensity * 1.5) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,
           duration: 1.5,
           velocity: latinBassVel,
         });
-      } else if ((beatInBar === 1.5 || beatInBar === 3.5) && PRNGManager.next() < grooveSyncopation * 1.5) {
+      } else if ((Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && PRNGManager.next() < grooveSyncopation * 1.5) {
         notes.push({
           pitch: fifthMidi,
           onset: beat,

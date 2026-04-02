@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const ModernPopStyle: StyleConfig = {
-    id: 'modern_pop',
+    id: StyleId.ModernPop,
     name: '现代华语流行 (Modern C-Pop)',
     global: {
         bpmRange: [75, 115], // 抒情到中板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Major', weight: 0.7 },
-            { tonality: 'Minor', weight: 0.3 }
+            { tonality: Tonality.Major, weight: 0.7 },
+            { tonality: Tonality.Minor, weight: 0.3 }
         ]
     },
     harmony: {

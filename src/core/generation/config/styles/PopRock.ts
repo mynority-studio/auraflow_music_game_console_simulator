@@ -1,7 +1,8 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const PopRockStyle: StyleConfig = {
-    id: 'pop_rock',
+    id: StyleId.PopRock,
     name: '流行摇滚 (Pop Rock)',
     global: {
         bpmRange: [110, 140],
@@ -10,8 +11,8 @@ export const PopRockStyle: StyleConfig = {
             { signature: [8, 8], weight: 0.2 }
         ],
         tonalityPool: [
-            { tonality: 'Major', weight: 0.8 },
-            { tonality: 'Minor', weight: 0.2 }
+            { tonality: Tonality.Major, weight: 0.8 },
+            { tonality: Tonality.Minor, weight: 0.2 }
         ]
     },
     harmony: {

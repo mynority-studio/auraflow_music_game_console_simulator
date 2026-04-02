@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const PowerBalladStyle: StyleConfig = {
-    id: 'power_ballad',
+    id: StyleId.PowerBallad,
     name: '欧美力量大歌 (Power Ballad)',
     global: {
         bpmRange: [60, 95], // 极慢到中慢，给巨肺留出空间
         timeSignaturePool: [{ signature: [4, 4], weight: 0.8 }, { signature: [6, 8], weight: 0.2 }], // 偶尔有 6/8 拍大歌
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.6 },
-            { tonality: 'Major', weight: 0.4 }
+            { tonality: Tonality.Minor, weight: 0.6 },
+            { tonality: Tonality.Major, weight: 0.4 }
         ]
     },
     harmony: {

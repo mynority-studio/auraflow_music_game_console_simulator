@@ -1,14 +1,15 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const ModernJPopStyle: StyleConfig = {
-    id: 'modern_jpop',
+    id: StyleId.ModernJPop,
     name: '现代日系流行 (Modern J-Pop)',
     global: {
         bpmRange: [120, 175], // 极快，米津玄师/YOASOBI 风格
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.7 },
-            { tonality: 'Major', weight: 0.3 }
+            { tonality: Tonality.Minor, weight: 0.7 },
+            { tonality: Tonality.Major, weight: 0.3 }
         ]
     },
     harmony: {

@@ -82,14 +82,14 @@ export class PopBassIdiom extends BaseBassIdiom {
       if (isEDM && energyLevel >= 5) {
         // EDM Bass Logic: Off-beat or Syncopated, NOT 16th note spam
         const subBeat = beatInBar % 1;
-        if (subBeat === 0.5 || maskAccent === 1) {
+        if (Math.abs(subBeat - 0.5) < 1e-6 || maskAccent === 1) {
           notes.push({
             pitch: targetBassPitch,
             onset: beat,
             duration: 0.25,
             velocity: baseVel * 1.2 * (maskAccent === 1 ? 1.1 : 1.0),
           });
-        } else if (energyLevel >= 7 && (beatInBar === 1.25 || beatInBar === 3.25) && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
+        } else if (energyLevel >= 7 && (Math.abs(beatInBar - 1.25) < 1e-6 || Math.abs(beatInBar - 3.25) < 1e-6) && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
            notes.push({
             pitch: targetBassPitch,
             onset: beat,
@@ -140,14 +140,14 @@ export class PopBassIdiom extends BaseBassIdiom {
           duration: 0.25,
           velocity: baseVel * 0.9 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if ((beatInBar === 1.5 || beatInBar === 3.5) && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
+      } else if ((Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,
           duration: 0.25,
           velocity: baseVel * 0.7 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (beat % 0.5 === 0.25 && (PRNGManager.next() < (grooveDensity - 0.5) * 0.4 || maskAccent === 1)) { // Significantly reduced 16th note spam
+      } else if (Math.abs(beat % 0.5 - 0.25) < 1e-6 && (PRNGManager.next() < (grooveDensity - 0.5) * 0.4 || maskAccent === 1)) { // Significantly reduced 16th note spam
         notes.push({
           pitch: targetBassPitch,
           onset: beat,

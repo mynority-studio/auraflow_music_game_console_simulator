@@ -1,10 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
+import { NoteData, GeneratedChord, IdiomPreferences } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 import { GlobalContext } from '../../GlobalContext';
 
 export class SynthIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
         if (notes.length === 0) return [];
 
         const synthStyle = idiomPreferences?.synthStyle || 'pad'; // 'pad', 'lead', 'arp'
@@ -144,7 +144,7 @@ export class SynthIdiom extends BaseIdiom {
         return result.sort((a, b) => a.onset - b.onset);
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
         const synthStyle = idiomPreferences?.synthStyle || 'pad';
         
         if (synthStyle === 'arp') {

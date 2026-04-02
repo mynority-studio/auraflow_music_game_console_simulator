@@ -1,11 +1,11 @@
-import { NoteData, GeneratedChord } from "../../types";
+import { NoteData, GeneratedChord, Tonality } from "../../types";
 import { StyleId } from "../../config/StyleFlags";
 
 export interface VocalHarmonyContext {
   melodyNotes: NoteData[];
   chords: GeneratedChord[];
   energyLevel: number;
-  tonality: string;
+  tonality: Tonality;
 }
 
 export interface IVocalHarmonyIdiom {

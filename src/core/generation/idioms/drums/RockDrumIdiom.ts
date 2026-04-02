@@ -42,7 +42,7 @@ export class RockDrumIdiom implements IDrumIdiom {
         let buildUpStep = 0.5;
         if (barsLeft <= 1.0) buildUpStep = 0.25;
 
-        if (beat % buildUpStep === 0) {
+        if (Math.abs(beat % buildUpStep) < 1e-6) {
           const buildVel = 0.6 + (1 - barsLeft / 2) * 0.4;
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: buildVel * (maskAccent === 1 ? 1.2 : 1.0) });
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: buildVel * 0.9 * (maskAccent === 1 ? 1.2 : 1.0) });
@@ -56,25 +56,25 @@ export class RockDrumIdiom implements IDrumIdiom {
         if (PRNGManager.next() > 0.05 || maskAccent === 1) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.9 * (maskAccent === 1 ? 1.1 : 1.0) });
         }
-      } else if (beatInBar === 2.5) {
+      } else if (Math.abs(beatInBar - 2.5) < 1e-6) {
         if (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.8 * (maskAccent === 1 ? 1.2 : 1.0) });
         }
-      } else if (beatInBar === 1.5 && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 1.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.7 * (maskAccent === 1 ? 1.2 : 1.0) });
-      } else if (beatInBar === 3.5 && (PRNGManager.next() < grooveSyncopation * 1.2 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 3.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.2 || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.75 * (maskAccent === 1 ? 1.2 : 1.0) });
       }
 
       // Heavy Snare on 2 and 4 - STRICT
-      if (isSnareBeat || (maskAccent === 1 && !isDownbeat && beatInBar % 1 !== 0.5)) {
+      if (isSnareBeat || (maskAccent === 1 && !isDownbeat && Math.abs(beatInBar % 1 - 0.5) >= 1e-6)) {
         notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.95 * (maskAccent === 1 ? 1.1 : 1.0) });
       }
 
       // Hi-hats / Ride / Crash riding
-      if (beat % 0.5 === 0 || maskAccent === 1) {
+      if (Math.abs(beat % 0.5) < 1e-6 || maskAccent === 1) {
         let cymbalPitch = CHH;
-        let cymbalVel = beat % 1 === 0 ? 0.8 : 0.6;
+        let cymbalVel = Math.abs(beat % 1) < 1e-6 ? 0.8 : 0.6;
 
         if (energyLevel >= 8) {
           cymbalPitch = PRNGManager.next() > 0.5 ? CRASH : RIDE;
@@ -91,7 +91,7 @@ export class RockDrumIdiom implements IDrumIdiom {
       }
 
       // Occasional 16th kick before snare
-      if (beatInBar === 1.75 || beatInBar === 3.75) {
+      if (Math.abs(beatInBar - 1.75) < 1e-6 || Math.abs(beatInBar - 3.75) < 1e-6) {
         if (PRNGManager.next() < grooveDensity * 0.5 || maskAccent === 1) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.6 * (maskAccent === 1 ? 1.3 : 1.0) });
         }

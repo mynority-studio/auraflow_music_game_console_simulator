@@ -23,17 +23,17 @@ export class ReggaeDrumIdiom implements IDrumIdiom {
       }
 
       // Reggae: One drop (kick and snare/cross-stick on 3)
-      if (beatInBar === 2 || (maskAccent === 1 && beatInBar % 1 === 0)) { // Assuming 4/4, beat 3 is index 2
+      if (beatInBar === 2 || (maskAccent === 1 && Math.abs(beatInBar % 1) < 1e-6)) { // Assuming 4/4, beat 3 is index 2
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.9 * (maskAccent === 1 ? 1.1 : 1.0) });
         notes.push({ pitch: CROSS_STICK, onset: beat, duration: 0.1, velocity: 0.95 * (maskAccent === 1 ? 1.1 : 1.0) });
       }
 
       // Reggae: Hi-hats on 8th notes, open on off-beats
-      if ((beat % 0.5 === 0 && PRNGManager.next() < grooveDensity * 1.5) || maskAccent === 1) {
+      if ((Math.abs(beat % 0.5) < 1e-6 && PRNGManager.next() < grooveDensity * 1.5) || maskAccent === 1) {
         let cymbalPitch = CHH;
         let cymbalVel = 0.7 * (maskAccent === 1 ? 1.2 : 1.0);
 
-        if ((beat % 1 === 0.5 && PRNGManager.next() < grooveSyncopation * 1.5) || (maskAccent === 1 && beat % 1 !== 0)) {
+        if ((Math.abs(beat % 1 - 0.5) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5) || (maskAccent === 1 && Math.abs(beat % 1) >= 1e-6)) {
           cymbalPitch = OHH;
           cymbalVel = 0.85 * (maskAccent === 1 ? 1.2 : 1.0);
         }

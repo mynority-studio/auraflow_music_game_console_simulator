@@ -26,9 +26,9 @@ export class FolkDrumIdiom implements IDrumIdiom {
       }
 
       // Folk: Light hi-hats or shaker feel
-      if (beat % 0.5 === 0) {
+      if (Math.abs(beat % 0.5) < 1e-6) {
         let cymbalPitch = CHH;
-        let cymbalVel = beat % 1 === 0 ? 0.6 : 0.4;
+        let cymbalVel = Math.abs(beat % 1) < 1e-6 ? 0.6 : 0.4;
 
         if (PRNGManager.next() < grooveDensity * 1.5) {
           notes.push({ pitch: cymbalPitch, onset: beat, duration: 0.1, velocity: cymbalVel });

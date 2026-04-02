@@ -1,7 +1,8 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId } from '../StyleFlags';
 
 export const SynthwaveStyle: StyleConfig = {
-    id: 'synthwave',
+    id: StyleId.Synthwave,
     name: '合成器波 (Synthwave / Cyberpunk)',
     global: {
         bpmRange: [100, 130], // 80年代复古电子舞曲速度
@@ -9,8 +10,8 @@ export const SynthwaveStyle: StyleConfig = {
             { signature: [4, 4], weight: 1.0 } // 绝对的 4/4 拍，强烈的四四拍律动
         ],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.9 }, // 赛博朋克、霓虹灯的暗黑感
-            { tonality: 'Major', weight: 0.1 }
+            { tonality: Tonality.Minor, weight: 0.9 }, // 赛博朋克、霓虹灯的暗黑感
+            { tonality: Tonality.Major, weight: 0.1 }
         ]
     },
     harmony: {

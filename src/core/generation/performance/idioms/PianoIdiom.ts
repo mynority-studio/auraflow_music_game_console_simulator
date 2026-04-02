@@ -1,10 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from "../../types";
+import { NoteData, GeneratedChord, IdiomPreferences } from "../../types";
 import { BaseIdiom } from "./BaseIdiom";
 import { GlobalContext } from "../../GlobalContext";
 
 export class PianoIdiom extends BaseIdiom {
-  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
     const pianoStyle = idiomPreferences?.pianoStyle || 'pop';
     const result: NoteData[] =[];
     if (notes.length === 0) return result;
@@ -188,7 +188,7 @@ export class PianoIdiom extends BaseIdiom {
     return finalResult.sort((a, b) => a.onset - b.onset);
   }
 
-  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
       const pianoStyle = idiomPreferences?.pianoStyle || 'pop';
       const effectiveIndex = isHighFirst ? (chordSize - 1 - index) : index;
       
@@ -205,7 +205,7 @@ export class PianoIdiom extends BaseIdiom {
       const beatPos = note.onset % beatsPerBar;
 
       // 节奏微调：正拍稍微晚一点点（慵懒），弱拍稍微提前一点点（推动感）
-      if (beatPos % 1 === 0) {
+      if (Math.abs(beatPos % 1) < 1e-6) {
           timingWobble += PRNGManager.next() * 0.03;
       } else {
           timingWobble -= PRNGManager.next() * 0.03;
@@ -216,7 +216,7 @@ export class PianoIdiom extends BaseIdiom {
       if (beatPos === 0) velocityMultiplier *= 1.1;       // 第一拍强拍
       else if (is68 && beatPos === 3) velocityMultiplier *= 0.95; // 6/8 次强拍
       else if (!is68 && beatPos === 2) velocityMultiplier *= 0.9;  // 4/4 第三拍次强拍
-      else if (beatPos % 1 !== 0) {
+      else if (Math.abs(beatPos % 1) >= 1e-6) {
           velocityMultiplier *= 0.8; // 反拍或切分音略弱
           if (pianoStyle === 'jazz') velocityMultiplier *= 1.15; // 爵士强调反拍 (Syncopation)
       }
@@ -236,7 +236,7 @@ export class PianoIdiom extends BaseIdiom {
       return { strumDelay, timingWobble, velocityWobble, velocityMultiplier };
   }
 
-  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: IdiomPreferences): NoteData[] {
       // 先调用父类的通用人性化处理（包含 strumDelay, timingWobble, velocityWobble, swing）
       const humanized = super.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
       

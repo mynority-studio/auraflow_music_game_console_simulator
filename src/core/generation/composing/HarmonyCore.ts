@@ -1,12 +1,12 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData } from '../types';
+import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData, ChordQuality, Tonality, SectionType } from '../types';
 import { MusicTheoryRules, ChordFunction } from './MusicTheoryRules';
 import { GlobalContext } from '../GlobalContext';
 
 import { StyleId } from '../config/StyleFlags';
 
 export class HarmonyCore {
-    public static parseRomanNumeral(numeral: string, tonality: string = 'Major', isRelativeMinor: boolean = false) { 
+    public static parseRomanNumeral(numeral: string, tonality: Tonality = Tonality.Major, isRelativeMinor: boolean = false) {
         let rootOffset = 0;
         let cleanNumeral = numeral;
         if (cleanNumeral.startsWith('b')) { rootOffset = -1; cleanNumeral = cleanNumeral.substring(1); }
@@ -49,55 +49,55 @@ export class HarmonyCore {
         const rootMap: {[key: string]: number } = { 'I':0,'i':0,'II':2,'ii':2,'III':4,'iii':4,'IV':5,'iv':5,'V':7,'v':7,'VI':9,'vi':9,'VII':11,'vii':11 };
         let root = (rootMap[base] !== undefined ? rootMap[base] : 0) + rootOffset;
         
-        if (tonality === 'Minor' && !isRelativeMinor) {
+        if (tonality === Tonality.Minor && !isRelativeMinor) {
             root += 3;
         }
         
         while(root < 0) root += 12; root %= 12;
 
-        let quality: any = 'Major';
-        if (isMinor) quality = 'Minor';
+        let quality: ChordQuality = ChordQuality.Major;
+        if (isMinor) quality = ChordQuality.Minor;
         if (isDim) {
-            if (cleanNumeral.includes('dim7') || cleanNumeral.includes('°7')) quality = 'Diminished7';
-            else quality = 'Diminished';
+            if (cleanNumeral.includes('dim7') || cleanNumeral.includes('°7')) quality = ChordQuality.Diminished7;
+            else quality = ChordQuality.Diminished;
         }
-        if (isAug) quality = 'Augmented';
-        
-        if (isAdd9) quality = 'Add9';
-        else if (isMin9) quality = 'Minor9';
-        else if (isMaj9) quality = 'Major9';
-        else if (isMaj7) quality = 'Major7';
-        else if (isMin7) quality = 'Minor7';
-        else if (isDom9) quality = 'Dominant9';
+        if (isAug) quality = ChordQuality.Augmented;
+
+        if (isAdd9) quality = ChordQuality.Add9;
+        else if (isMin9) quality = ChordQuality.Minor9;
+        else if (isMaj9) quality = ChordQuality.Major9;
+        else if (isMaj7) quality = ChordQuality.Major7;
+        else if (isMin7) quality = ChordQuality.Minor7;
+        else if (isDom9) quality = ChordQuality.Dominant9;
         else if (isDom7) {
-            if (isSus4) quality = 'Dominant7Sus4';
-            else if (quality === 'Minor') quality = 'Minor7';
-            else quality = 'Dominant7';
+            if (isSus4) quality = ChordQuality.Dominant7Sus4;
+            else if (quality === ChordQuality.Minor) quality = ChordQuality.Minor7;
+            else quality = ChordQuality.Dominant7;
         }
-        else if (isHalfDim) quality = 'HalfDiminished';
-        else if (isSus4) quality = 'Sus4';
+        else if (isHalfDim) quality = ChordQuality.HalfDiminished;
+        else if (isSus4) quality = ChordQuality.Sus4;
 
         return { root, quality };
     }
     public static getChordTones(chord: GeneratedChord, targetCenter: number): number[] { 
         const root = chord.root;
         let intervals =[0, 4, 7];
-        if (chord.quality === 'Minor') intervals =[0, 3, 7];
-        if (chord.quality === 'Diminished') intervals =[0, 3, 6];
-        if (chord.quality === 'Diminished7') intervals =[0, 3, 6, 9];
-        if (chord.quality === 'Augmented') intervals = [0, 4, 8];
-        if (chord.quality === 'Add9') intervals = [0, 4, 7, 14];
-        if (chord.quality === 'Minor9') intervals = [0, 3, 7, 10, 14];
-        if (chord.quality === 'Dominant7') intervals =[0, 4, 7, 10];
-        if (chord.quality === 'Minor7') intervals =[0, 3, 7, 10];
-        if (chord.quality === 'Major7') intervals =[0, 4, 7, 11];
-        if (chord.quality === 'HalfDiminished') intervals =[0, 3, 6, 10];
-        if (chord.quality === 'Sus4') intervals =[0, 5, 7];
-        if (chord.quality === 'Dominant7Sus4') intervals =[0, 5, 7, 10];
-        if (chord.quality === 'Major9') intervals = [0, 4, 7, 11, 14];
-        if (chord.quality === 'Dominant9') intervals = [0, 4, 7, 10, 14];
-        if (chord.quality === 'Minor11') intervals = [0, 3, 7, 10, 14, 17];
-        if (chord.quality === 'Dominant13') intervals = [0, 4, 7, 10, 14, 21];
+        if (chord.quality === ChordQuality.Minor) intervals =[0, 3, 7];
+        if (chord.quality === ChordQuality.Diminished) intervals =[0, 3, 6];
+        if (chord.quality === ChordQuality.Diminished7) intervals =[0, 3, 6, 9];
+        if (chord.quality === ChordQuality.Augmented) intervals = [0, 4, 8];
+        if (chord.quality === ChordQuality.Add9) intervals = [0, 4, 7, 14];
+        if (chord.quality === ChordQuality.Minor9) intervals = [0, 3, 7, 10, 14];
+        if (chord.quality === ChordQuality.Dominant7) intervals =[0, 4, 7, 10];
+        if (chord.quality === ChordQuality.Minor7) intervals =[0, 3, 7, 10];
+        if (chord.quality === ChordQuality.Major7) intervals =[0, 4, 7, 11];
+        if (chord.quality === ChordQuality.HalfDiminished) intervals =[0, 3, 6, 10];
+        if (chord.quality === ChordQuality.Sus4) intervals =[0, 5, 7];
+        if (chord.quality === ChordQuality.Dominant7Sus4) intervals =[0, 5, 7, 10];
+        if (chord.quality === ChordQuality.Major9) intervals = [0, 4, 7, 11, 14];
+        if (chord.quality === ChordQuality.Dominant9) intervals = [0, 4, 7, 10, 14];
+        if (chord.quality === ChordQuality.Minor11) intervals = [0, 3, 7, 10, 14, 17];
+        if (chord.quality === ChordQuality.Dominant13) intervals = [0, 4, 7, 10, 14, 21];
         
         // 🌟 修复：只将根音对齐到 targetCenter 附近，然后按音程叠加，保留和弦的原始排列（Voicing）
         let baseRoot = root;
@@ -120,22 +120,22 @@ export class HarmonyCore {
         // 🌟 Pop/Rock Voicings (Power Chords & Simple Triads)
         if (isPopRock) {
             let intervals = [0, 4, 7];
-            if (currentChord.quality === 'Minor') intervals =[0, 3, 7];
-            if (currentChord.quality === 'Diminished') intervals =[0, 3, 6];
-            if (currentChord.quality === 'Diminished7') intervals =[0, 3, 6, 9];
-            if (currentChord.quality === 'Augmented') intervals = [0, 4, 8];
-            if (currentChord.quality === 'Add9') intervals = [0, 4, 7, 14];
-            if (currentChord.quality === 'Minor9') intervals = [0, 3, 7, 10, 14];
-            if (currentChord.quality === 'Dominant7') intervals =[0, 4, 7, 10];
-            if (currentChord.quality === 'Minor7') intervals =[0, 3, 7, 10];
-            if (currentChord.quality === 'Major7') intervals =[0, 4, 7, 11];
-            if (currentChord.quality === 'HalfDiminished') intervals =[0, 3, 6, 10];
-            if (currentChord.quality === 'Sus4') intervals =[0, 5, 7];
-            if (currentChord.quality === 'Dominant7Sus4') intervals =[0, 5, 7, 10];
-            if (currentChord.quality === 'Major9') intervals = [0, 4, 7, 11, 14];
-            if (currentChord.quality === 'Dominant9') intervals = [0, 4, 7, 10, 14];
-            if (currentChord.quality === 'Minor11') intervals = [0, 3, 7, 10, 14, 17];
-            if (currentChord.quality === 'Dominant13') intervals = [0, 4, 7, 10, 14, 21];
+            if (currentChord.quality === ChordQuality.Minor) intervals =[0, 3, 7];
+            if (currentChord.quality === ChordQuality.Diminished) intervals =[0, 3, 6];
+            if (currentChord.quality === ChordQuality.Diminished7) intervals =[0, 3, 6, 9];
+            if (currentChord.quality === ChordQuality.Augmented) intervals = [0, 4, 8];
+            if (currentChord.quality === ChordQuality.Add9) intervals = [0, 4, 7, 14];
+            if (currentChord.quality === ChordQuality.Minor9) intervals = [0, 3, 7, 10, 14];
+            if (currentChord.quality === ChordQuality.Dominant7) intervals =[0, 4, 7, 10];
+            if (currentChord.quality === ChordQuality.Minor7) intervals =[0, 3, 7, 10];
+            if (currentChord.quality === ChordQuality.Major7) intervals =[0, 4, 7, 11];
+            if (currentChord.quality === ChordQuality.HalfDiminished) intervals =[0, 3, 6, 10];
+            if (currentChord.quality === ChordQuality.Sus4) intervals =[0, 5, 7];
+            if (currentChord.quality === ChordQuality.Dominant7Sus4) intervals =[0, 5, 7, 10];
+            if (currentChord.quality === ChordQuality.Major9) intervals = [0, 4, 7, 11, 14];
+            if (currentChord.quality === ChordQuality.Dominant9) intervals = [0, 4, 7, 10, 14];
+            if (currentChord.quality === ChordQuality.Minor11) intervals = [0, 3, 7, 10, 14, 17];
+            if (currentChord.quality === ChordQuality.Dominant13) intervals = [0, 4, 7, 10, 14, 21];
             
             // For heavy rock, often just root, 5th, octave (Power Chord)
             if (isRock && PRNGManager.next() > 0.5) {
@@ -188,16 +188,16 @@ export class HarmonyCore {
         }
 
         // 🌟 Jazz Rootless Voicings (A and B types)
-        if (isJazz && currentChord.quality !== 'Sus4') {
+        if (isJazz && currentChord.quality !== ChordQuality.Sus4) {
             // A Voicing: 3rd at the bottom
             // B Voicing: 7th at the bottom
             let intervalsA: number[] = [];
             let intervalsB: number[] = [];
 
-            if (currentChord.quality === 'Minor7' || currentChord.quality === 'Minor9' || currentChord.quality === 'Minor11') {
+            if (currentChord.quality === ChordQuality.Minor7 || currentChord.quality === ChordQuality.Minor9 || currentChord.quality === ChordQuality.Minor11) {
                 intervalsA = [3, 7, 10, 14]; // 3, 5, b7, 9
                 intervalsB = [10, 14, 15, 19]; // b7, 9, 3, 5 (15 is 3+12, 19 is 7+12)
-            } else if (currentChord.quality === 'Dominant7' || currentChord.quality === 'Dominant7Sus4' || currentChord.quality === 'Dominant9' || currentChord.quality === 'Dominant13') {
+            } else if (currentChord.quality === ChordQuality.Dominant7 || currentChord.quality === ChordQuality.Dominant7Sus4 || currentChord.quality === ChordQuality.Dominant9 || currentChord.quality === ChordQuality.Dominant13) {
                 intervalsA = [4, 9, 10, 14]; // 3, 13, b7, 9
                 intervalsB = [10, 14, 16, 21]; // b7, 9, 3, 13
                 
@@ -206,13 +206,13 @@ export class HarmonyCore {
                     intervalsA = [4, 8, 10, 15]; // 3, #5, b7, #9
                     intervalsB = [10, 15, 16, 20]; // b7, #9, 3, #5
                 }
-            } else if (currentChord.quality === 'Major7' || currentChord.quality === 'Add9' || currentChord.quality === 'Major9') {
+            } else if (currentChord.quality === ChordQuality.Major7 || currentChord.quality === ChordQuality.Add9 || currentChord.quality === ChordQuality.Major9) {
                 intervalsA = [4, 7, 11, 14]; // 3, 5, 7, 9
                 intervalsB = [11, 14, 16, 19]; // 7, 9, 3, 5
-            } else if (currentChord.quality === 'HalfDiminished') {
+            } else if (currentChord.quality === ChordQuality.HalfDiminished) {
                 intervalsA = [3, 6, 10, 13]; // 3, b5, b7, b9 (or 11)
                 intervalsB = [10, 13, 15, 18]; // b7, b9, 3, b5
-            } else if (currentChord.quality === 'Diminished7' || currentChord.quality === 'Diminished') {
+            } else if (currentChord.quality === ChordQuality.Diminished7 || currentChord.quality === ChordQuality.Diminished) {
                 intervalsA = [3, 6, 9, 12]; // 3, b5, bb7, 8
                 intervalsB = [9, 12, 15, 18]; // bb7, 8, 3, b5
             } else {
@@ -270,21 +270,21 @@ export class HarmonyCore {
         let intervals = [0, 4, 7];
         let omit5th = false;
 
-        if (currentChord.quality === 'Minor') intervals = [0, 3, 7];
-        else if (currentChord.quality === 'Diminished') intervals = [0, 3, 6];
-        else if (currentChord.quality === 'Augmented') intervals = [0, 4, 8];
-        else if (currentChord.quality === 'Add9') intervals = [0, 4, 7, 14];
-        else if (currentChord.quality === 'Minor9') { intervals = [0, 3, 7, 10, 14]; omit5th = true; }
-        else if (currentChord.quality === 'Major9') { intervals = [0, 4, 7, 11, 14]; omit5th = true; }
-        else if (currentChord.quality === 'Dominant9') { intervals = [0, 4, 7, 10, 14]; omit5th = true; }
-        else if (currentChord.quality === 'Minor11') { intervals = [0, 3, 7, 10, 14, 17]; omit5th = true; }
-        else if (currentChord.quality === 'Dominant13') { intervals = [0, 4, 7, 10, 14, 21]; omit5th = true; }
-        else if (currentChord.quality === 'Dominant7') { intervals = [0, 4, 7, 10]; omit5th = true; }
-        else if (currentChord.quality === 'Minor7') { intervals = [0, 3, 7, 10]; omit5th = true; }
-        else if (currentChord.quality === 'Major7') { intervals = [0, 4, 7, 11]; omit5th = true; }
-        else if (currentChord.quality === 'HalfDiminished') intervals = [0, 3, 6, 10];
-        else if (currentChord.quality === 'Sus4') intervals = [0, 5, 7];
-        else if (currentChord.quality === 'Dominant7Sus4') { intervals = [0, 5, 7, 10]; omit5th = true; }
+        if (currentChord.quality === ChordQuality.Minor) intervals = [0, 3, 7];
+        else if (currentChord.quality === ChordQuality.Diminished) intervals = [0, 3, 6];
+        else if (currentChord.quality === ChordQuality.Augmented) intervals = [0, 4, 8];
+        else if (currentChord.quality === ChordQuality.Add9) intervals = [0, 4, 7, 14];
+        else if (currentChord.quality === ChordQuality.Minor9) { intervals = [0, 3, 7, 10, 14]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Major9) { intervals = [0, 4, 7, 11, 14]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Dominant9) { intervals = [0, 4, 7, 10, 14]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Minor11) { intervals = [0, 3, 7, 10, 14, 17]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Dominant13) { intervals = [0, 4, 7, 10, 14, 21]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Dominant7) { intervals = [0, 4, 7, 10]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Minor7) { intervals = [0, 3, 7, 10]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.Major7) { intervals = [0, 4, 7, 11]; omit5th = true; }
+        else if (currentChord.quality === ChordQuality.HalfDiminished) intervals = [0, 3, 6, 10];
+        else if (currentChord.quality === ChordQuality.Sus4) intervals = [0, 5, 7];
+        else if (currentChord.quality === ChordQuality.Dominant7Sus4) { intervals = [0, 5, 7, 10]; omit5th = true; }
 
         if (omit5th && PRNGManager.next() < 0.85) { // 提高省略5音的概率，特别是对于复杂和弦
             intervals = intervals.filter(i => i !== 7);
@@ -390,27 +390,27 @@ export class HarmonyCore {
 
         return Array.from(new Set(bestCandidate)).sort((a, b) => a - b);
     }
-    public static getScalePitches(tonality: string): number[] {
+    public static getScalePitches(tonality: Tonality): number[] {
         let intervals = [0, 2, 4, 5, 7, 9, 11]; 
-        if (tonality === 'Minor') intervals = [0, 2, 3, 5, 7, 8, 10]; 
-        if (tonality === 'Melodic_Minor') intervals = [0, 2, 3, 5, 7, 9, 11]; // 🌟 Phase 3: Melodic Minor for Jazz
-        if (tonality === 'Major_Pentatonic') intervals = [0, 2, 4, 7, 9];
-        if (tonality === 'Minor_Pentatonic') intervals = [0, 3, 5, 7, 10];
-        if (tonality === 'Blues') intervals = [0, 3, 5, 6, 7, 10];
-        if (tonality === 'Dorian') intervals = [0, 2, 3, 5, 7, 9, 10];
-        if (tonality === 'Mixolydian') intervals = [0, 2, 4, 5, 7, 9, 10];
+        if (tonality === Tonality.Minor) intervals = [0, 2, 3, 5, 7, 8, 10]; 
+        if (tonality === Tonality.Melodic_Minor) intervals = [0, 2, 3, 5, 7, 9, 11]; // 🌟 Phase 3: Melodic Minor for Jazz
+        if (tonality === Tonality.Major_Pentatonic) intervals = [0, 2, 4, 7, 9];
+        if (tonality === Tonality.Minor_Pentatonic) intervals = [0, 3, 5, 7, 10];
+        if (tonality === Tonality.Blues) intervals = [0, 3, 5, 6, 7, 10];
+        if (tonality === Tonality.Dorian) intervals = [0, 2, 3, 5, 7, 9, 10];
+        if (tonality === Tonality.Mixolydian) intervals = [0, 2, 4, 5, 7, 9, 10];
         return intervals;
     }
 
-    public static getSafeScalePitches(chord: GeneratedChord, tonality: string, globalRoot: number = 0): number[] {
+    public static getSafeScalePitches(chord: GeneratedChord, tonality: Tonality, globalRoot: number = 0): number[] {
         let intervals =[0, 2, 4, 5, 7, 9, 11]; 
-        if (tonality === 'Minor') intervals =[0, 2, 3, 5, 7, 8, 10]; 
-        if (tonality === 'Melodic_Minor') intervals = [0, 2, 3, 5, 7, 9, 11]; // 🌟 Phase 3: Melodic Minor for Jazz
-        if (tonality === 'Major_Pentatonic') intervals =[0, 2, 4, 7, 9];
-        if (tonality === 'Minor_Pentatonic') intervals =[0, 3, 5, 7, 10];
-        if (tonality === 'Blues') intervals =[0, 3, 5, 6, 7, 10];
-        if (tonality === 'Dorian') intervals = [0, 2, 3, 5, 7, 9, 10];
-        if (tonality === 'Mixolydian') intervals = [0, 2, 4, 5, 7, 9, 10];
+        if (tonality === Tonality.Minor) intervals =[0, 2, 3, 5, 7, 8, 10]; 
+        if (tonality === Tonality.Melodic_Minor) intervals = [0, 2, 3, 5, 7, 9, 11]; // 🌟 Phase 3: Melodic Minor for Jazz
+        if (tonality === Tonality.Major_Pentatonic) intervals =[0, 2, 4, 7, 9];
+        if (tonality === Tonality.Minor_Pentatonic) intervals =[0, 3, 5, 7, 10];
+        if (tonality === Tonality.Blues) intervals =[0, 3, 5, 6, 7, 10];
+        if (tonality === Tonality.Dorian) intervals = [0, 2, 3, 5, 7, 9, 10];
+        if (tonality === Tonality.Mixolydian) intervals = [0, 2, 4, 5, 7, 9, 10];
         let scalePcs = intervals.map(i => (globalRoot + i) % 12);
         const chordTones = this.getChordTones(chord, 60).map(p => p % 12);
         
@@ -545,7 +545,7 @@ export class HarmonyEngine {
 
         if (rand > mutationRate) return originalChord;
 
-        const isMinorKey = GlobalContext.currentTonality === 'Minor';
+        const isMinorKey = GlobalContext.currentTonality === Tonality.Minor;
         const roll = PRNGManager.next();
 
         // 命中变异概率，在同等和声功能 (T/S/D) 下进行概率游走
@@ -610,7 +610,7 @@ export class HarmonyEngine {
             const rand = PRNGManager.next();
 
             // 🚨 核心修复：严禁在 Minor 调性下将小调主和弦 i 错误地变成大调的 Iadd9
-            if (tonality === 'Minor' && base === 'i') {
+            if (tonality === Tonality.Minor && base === 'i') {
                 if (rand < 0.4) {
                     if (PRNGManager.next() < 0.5) return 'im9';
                     if (PRNGManager.next() < 0.8) return 'iadd9';
@@ -643,7 +643,7 @@ export class HarmonyEngine {
                             if (rand < 0.6) return base + '7';
                             return base + '9';
                         } else {
-                            return tonality === 'Minor' ? 'VImaj7' : 'VIm7'; // 根据调性返回自然和弦
+                            return tonality === Tonality.Minor ? 'VImaj7' : 'VIm7'; // 根据调性返回自然和弦
                         }
                     }
 
@@ -652,7 +652,7 @@ export class HarmonyEngine {
                         if (nextChord === 'III' || nextChord === 'iii') return base + 'm7b5';
                         return base + 'dim7';
                     }
-                    if (base === 'ii' && tonality === 'Minor') {
+                    if (base === 'ii' && tonality === Tonality.Minor) {
                         if (nextChord === 'V' || nextChord === 'v') return base + 'm7b5';
                     }
 
@@ -665,7 +665,7 @@ export class HarmonyEngine {
                 }
             } else if (isEDM) {
                 if (rand < 0.6) { 
-                    if (tonality === 'Minor') {
+                    if (tonality === Tonality.Minor) {
                         if (base === 'iv' || base === 'v') return PRNGManager.next() > 0.5 ? base + 'm7' : base + 'm9';
                         if (base === 'VI' || base === 'III' || base === 'VII') return PRNGManager.next() > 0.5 ? base + 'add9' : base + 'maj7';
                     } else {
@@ -689,7 +689,7 @@ export class HarmonyEngine {
     }
 
     // 🌟 核心算法 3：动态生成进行 (Dynamic Progression Generator)
-    private static generateDynamicProgression(pool: string[][], fallback: string[], style: StyleConfig, sectionType: string = 'Verse'): string[] {
+    private static generateDynamicProgression(pool: string[][], fallback: string[], style: StyleConfig, sectionType: SectionType = SectionType.Verse): string[] {
         const baseProgression = pool && pool.length > 0 ? pool[Math.floor(PRNGManager.next() * pool.length)] : fallback;
         
         // 1. 提取功能骨架 (Extract Functional Flow)
@@ -699,7 +699,7 @@ export class HarmonyEngine {
         }));
 
         // 2. 概率替换 (Probabilistic Substitution)
-        const isEmotionalCore = sectionType === 'Intro' || sectionType === 'Outro';
+        const isEmotionalCore = sectionType === SectionType.Intro || sectionType === SectionType.Outro;
         let newProgression = functionalFlow.map((item, index) => {
             if (isEmotionalCore) return item.original; // 🚨 核心修复：Intro 和 Outro 严禁功能性变异，保持原汁原味
             const nextChord = index < functionalFlow.length - 1 ? functionalFlow[index + 1].original : null;
@@ -708,7 +708,7 @@ export class HarmonyEngine {
 
         // 🌟 方案 A：情感化调式互换 (Emotional Modal Interchange)
         // 在大调中，对于 Bridge 或 Chorus，有一定概率借用同主音小调的和弦，制造“红杏出墙”的色彩突变
-        if (GlobalContext.currentTonality === 'Major' && (sectionType === 'Bridge' || sectionType === 'Chorus' || sectionType === 'PreChorus')) {
+        if (GlobalContext.currentTonality === Tonality.Major && (sectionType === SectionType.Bridge || sectionType === SectionType.Chorus || sectionType === SectionType.PreChorus)) {
             const modalInterchangeProb = 0.35; // 35% 概率触发调式互换
             if (PRNGManager.next() < modalInterchangeProb) {
                 newProgression = newProgression.map(chord => {
@@ -766,7 +766,7 @@ export class HarmonyEngine {
             if (isEDM) poolToUse = edmProgressionPool;
             else if (isJPop) poolToUse = jpopProgressionPool;
             
-            const masterProgression = this.generateDynamicProgression(poolToUse, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
+            const masterProgression = this.generateDynamicProgression(poolToUse, ['I', 'V', 'vi', 'IV'], style, SectionType.Chorus);
             globalPlan['Chorus'] = masterProgression;
             globalPlan['Verse'] = masterProgression;
             globalPlan['PreChorus'] = masterProgression;
@@ -794,23 +794,23 @@ export class HarmonyEngine {
                 preChorusPool = [['IV', 'V', 'iii', 'vi'], ['ii', 'V', 'I', 'vi'], ['IV', 'iv', 'I', 'I7']]; // PreChorus 增加张力
             }
             
-            globalPlan['Chorus'] = this.generateDynamicProgression(chorusPool, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
-            globalPlan['Verse'] = this.generateDynamicProgression(versePool, ['I', 'vi', 'IV', 'V'], style, 'Verse');
-            globalPlan['PreChorus'] = this.generateDynamicProgression(preChorusPool, ['ii', 'V', 'I', 'vi'], style, 'PreChorus');
-            globalPlan['Break'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'vi', 'IV', 'I']], ['vi', 'IV', 'I', 'V'], style, 'Break');
-            globalPlan['Bridge'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'V', 'vi', 'IV'], ['IV', 'V', 'iii', 'vi']], ['vi', 'IV', 'I', 'V'], style, 'Bridge');
+            globalPlan['Chorus'] = this.generateDynamicProgression(chorusPool, ['I', 'V', 'vi', 'IV'], style, SectionType.Chorus);
+            globalPlan['Verse'] = this.generateDynamicProgression(versePool, ['I', 'vi', 'IV', 'V'], style, SectionType.Verse);
+            globalPlan['PreChorus'] = this.generateDynamicProgression(preChorusPool, ['ii', 'V', 'I', 'vi'], style, SectionType.PreChorus);
+            globalPlan['Break'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'vi', 'IV', 'I']], ['vi', 'IV', 'I', 'V'], style, SectionType.Break);
+            globalPlan['Bridge'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'V', 'vi', 'IV'], ['IV', 'V', 'iii', 'vi']], ['vi', 'IV', 'I', 'V'], style, SectionType.Bridge);
             
             // 🚨 核心修复：Outro 必须根据调性严格收尾，不能无脑 I - I
             const tonality = GlobalContext.currentTonality;
             const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
             
-            let outroFallback = tonality === 'Minor' ? ['i', 'bVI', 'iv', 'i'] : ['I', 'vi', 'IV', 'I'];
-            let outroPool = tonality === 'Minor' ? [['i', 'bVI', 'iv', 'i'], ['i', 'iv', 'V', 'i'], ['i', 'i', 'i', 'i'], ['V', 'i']] : [['I', 'vi', 'IV', 'I'], ['I', 'IV', 'V', 'I'], ['I', 'I', 'I', 'I'], ['V', 'I']];
+            let outroFallback = tonality === Tonality.Minor ? ['i', 'bVI', 'iv', 'i'] : ['I', 'vi', 'IV', 'I'];
+            let outroPool = tonality === Tonality.Minor ? [['i', 'bVI', 'iv', 'i'], ['i', 'iv', 'V', 'i'], ['i', 'i', 'i', 'i'], ['V', 'i']] : [['I', 'vi', 'IV', 'I'], ['I', 'IV', 'V', 'I'], ['I', 'I', 'I', 'I'], ['V', 'I']];
             
             if (isJazzOrSoul) {
                 // 🚨 核心修复：Jazz/Neo-Soul 的 Outro 使用固定的下行进行或 ii-V-I 延长
-                outroFallback = tonality === 'Minor' ? ['iim7b5', 'V7', 'im9', 'im9'] : ['IIm9', 'V13', 'IMaj9', 'IMaj9'];
-                outroPool = tonality === 'Minor' ? [
+                outroFallback = tonality === Tonality.Minor ? ['iim7b5', 'V7', 'im9', 'im9'] : ['IIm9', 'V13', 'IMaj9', 'IMaj9'];
+                outroPool = tonality === Tonality.Minor ? [
                     ['iim7b5', 'V7', 'im9', 'im9'], // ii-V-i in minor
                     ['ivm9', 'bVII13', 'im9', 'im9'] // Backdoor ii-V-i in minor
                 ] : [
@@ -819,7 +819,7 @@ export class HarmonyEngine {
                 ];
             }
             
-            globalPlan['Outro'] = this.generateDynamicProgression(outroPool, outroFallback, style, 'Outro');
+            globalPlan['Outro'] = this.generateDynamicProgression(outroPool, outroFallback, style, SectionType.Outro);
             
             globalPlan['Intro'] = globalPlan['Verse']; // Intro 通常使用 Verse 的和弦
         }
@@ -830,12 +830,12 @@ export class HarmonyEngine {
         sections.forEach((section, sectionIndex) => {
             let baseProgression: string[];
             let sectionType = 'Verse';
-            if (section.name.includes('Chorus')) sectionType = 'Chorus';
-            else if (section.name.includes('Pre')) sectionType = 'PreChorus';
-            else if (section.name.includes('Break')) sectionType = 'Break';
-            else if (section.name.includes('Bridge')) sectionType = 'Bridge';
-            else if (section.name.includes('Outro')) sectionType = 'Outro';
-            else if (section.name.includes('Intro')) sectionType = 'Intro';
+            if (section.type === SectionType.Chorus) sectionType = 'Chorus';
+            else if (section.type === SectionType.PreChorus) sectionType = 'PreChorus';
+            else if (section.type === SectionType.Break || section.type === SectionType.Breakdown) sectionType = 'Break';
+            else if (section.type === SectionType.Bridge) sectionType = 'Bridge';
+            else if (section.type === SectionType.Outro) sectionType = 'Outro';
+            else if (section.type === SectionType.Intro) sectionType = 'Intro';
 
             baseProgression = globalPlan[sectionType];
             
@@ -905,13 +905,13 @@ export class HarmonyEngine {
                 let numeral = currentPhraseProgression[bar % currentPhraseProgression.length];
                 const isEndOfSection = (bar === totalBars - 1);
                 const tonality = GlobalContext.currentTonality;
-                const tonic = tonality === 'Minor' ? 'i' : 'I';
-                const subdominant = tonality === 'Minor' ? 'iv' : 'IV';
-                const dominant = tonality === 'Minor' ? 'V' : 'V';
+                const tonic = tonality === Tonality.Minor ? 'i' : 'I';
+                const subdominant = tonality === Tonality.Minor ? 'iv' : 'IV';
+                const dominant = tonality === Tonality.Minor ? 'V' : 'V';
 
                 if (section.endingType === 'hard_stop') {
                     numeral = tonic;
-                } else if (section.name.includes('Outro') && bar >= totalBars - 2) {
+                } else if (section.type === SectionType.Outro && bar >= totalBars - 2) {
                     const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
                     const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
                     if (!isJazzOrSoul) {
@@ -921,20 +921,20 @@ export class HarmonyEngine {
                             numeral = tonic;
                         }
                     }
-                } else if (section.name.includes('Chorus') && isEndOfSection) {
+                } else if (section.type === SectionType.Chorus && isEndOfSection) {
                     const nextSection = sectionIndex + 1 < sections.length ? sections[sectionIndex + 1] : null;
-                    if (nextSection && !nextSection.name.includes('Chorus') && !nextSection.name.includes('Outro')) {
+                    if (nextSection && nextSection.type !== SectionType.Chorus && nextSection.type !== SectionType.Outro) {
                         numeral = PRNGManager.next() > 0.5 ? 'V7' : 'Vsus4';
                     }
-                } else if ((section.name.includes('Verse') || section.name.includes('Chorus')) && !isEndOfSection && (bar + 1) % 4 === 0) {
+                } else if ((section.type === SectionType.Verse || section.type === SectionType.Chorus) && !isEndOfSection && (bar + 1) % 4 === 0) {
                     const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
                     const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
                     const isGospel = voicingStyle === 'neo-soul';
                     
                     if (isJazzOrSoul) {
-                        numeral = tonality === 'Minor' ? 'V7' : 'V13';
+                        numeral = tonality === Tonality.Minor ? 'V7' : 'V13';
                     } else if (isGospel) {
-                        numeral = tonality === 'Minor' ? 'iv' : 'IV';
+                        numeral = tonality === Tonality.Minor ? 'iv' : 'IV';
                     } else if (!isEDMStyle && PRNGManager.next() < 0.3) {
                         numeral = 'V';
                     }
@@ -948,7 +948,7 @@ export class HarmonyEngine {
                 const isEndOfSection = (barsGenerated === totalBars - 1);
 
                 // 🌟 核心：经过和弦变异 (Passing Chord Mutation) & 段落过渡 (Section Transition)
-                const isEmotionalCore = section.name.includes('Intro') || section.name.includes('Outro');
+                const isEmotionalCore = section.type === SectionType.Intro || section.type === SectionType.Outro;
                 const allowMutation = !isEmotionalCore; // 允许在 Verse, PreChorus, Chorus 中变异，增加和声推动力
 
                 // 决定下一个目标和弦，用于计算经过和弦
@@ -959,14 +959,14 @@ export class HarmonyEngine {
                     // 段落交界处，寻找下一个段落的第一个和弦
                     const nextSection = sections[sectionIndex + 1];
                     if (nextSection.endingType === 'hard_stop') {
-                        nextNumeral = GlobalContext.currentTonality === 'Minor' ? (isRelativeMinor ? 'i' : 'vi') : 'I';
+                        nextNumeral = GlobalContext.currentTonality === Tonality.Minor ? (isRelativeMinor ? 'i' : 'vi') : 'I';
                     } else {
                         let nextSecProg: string[];
-                        if (nextSection.name.includes('Chorus')) nextSecProg = globalPlan['Chorus'];
-                        else if (nextSection.name.includes('Pre')) nextSecProg = globalPlan['PreChorus'];
-                        else if (nextSection.name.includes('Break')) nextSecProg = globalPlan['Break'];
-                        else if (nextSection.name.includes('Outro')) nextSecProg = globalPlan['Outro'];
-                        else if (nextSection.name.includes('Intro')) nextSecProg = globalPlan['Intro'];
+                        if (nextSection.type === SectionType.Chorus) nextSecProg = globalPlan['Chorus'];
+                        else if (nextSection.type === SectionType.PreChorus) nextSecProg = globalPlan['PreChorus'];
+                        else if (nextSection.type === SectionType.Break || nextSection.type === SectionType.Breakdown) nextSecProg = globalPlan['Break'];
+                        else if (nextSection.type === SectionType.Outro) nextSecProg = globalPlan['Outro'];
+                        else if (nextSection.type === SectionType.Intro) nextSecProg = globalPlan['Intro'];
                         else nextSecProg = globalPlan['Verse'];
                         
                         nextNumeral = nextSecProg[0];
@@ -979,7 +979,7 @@ export class HarmonyEngine {
                                 return base === 'i' || base === 'iv' || base === 'v';
                             });
                             
-                            if (GlobalContext.currentTonality === 'Minor' && isRelativeMinor !== nextSectionIsRelativeMinor) {
+                            if (GlobalContext.currentTonality === Tonality.Minor && isRelativeMinor !== nextSectionIsRelativeMinor) {
                                 const translationMapToRelativeMajor: Record<string, string> = {
                                     'i': 'vi', 'iv': 'ii', 'v': 'iii', 'bVI': 'IV', 'bVII': 'V', 'bIII': 'I',
                                     'im7': 'vim7', 'im9': 'vim9', 'ivm7': 'iim7', 'ivm9': 'iim9', 'vm7': 'iiim7',
@@ -1035,7 +1035,7 @@ export class HarmonyEngine {
                         let isValidPassing = false;
 
                         if (passingType === 'SecondaryDominant' || passingType === 'Diminished7' || passingType === 'DescendingDiminished' || passingType === 'SharpFourHalfDim' || (passingType === 'TritoneSub' && allowTritoneSub)) {
-                            const calculatedPassing = MusicTheoryRules.getPassingChord(nextNumeral, passingType as any);
+                            const calculatedPassing = MusicTheoryRules.getPassingChord(nextNumeral, passingType);
                             if (calculatedPassing) {
                                 passingNumeral = calculatedPassing;
                                 // Apply style spices to the passing chord to get the correct extensions
