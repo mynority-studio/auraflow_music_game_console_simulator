@@ -3,7 +3,7 @@
 > **依据** — Music Generation Pipeline Rule（最高约束文档，32 条硬约束 + 3 条 guideline）
 > **生成时间** — 2026-04-02
 > **最后更新** — 2026-04-02
-> **状态** — S-2 GlobalContext 解耦 **全部完成**，生成管道内零 GlobalContext 引用
+> **状态** — **全部完成**（S-2/T-3/D-4/T-4 违规清零），生成管道内零 GlobalContext 引用
 
 ---
 
@@ -65,19 +65,41 @@
 - `Orchestrator.ts`：移除 2 处 `GlobalContext.updateCurrentSlice()`
 - 移除 MelodyEngine/ToplineEngine/Orchestrator/GlobalReviewer/PopVocalHarmonyIdiom 的 GlobalContext import
 
+### 7. ✅ T-3: `any` 类型消除（~30 处）
+- `types.ts`：新增 `IdiomPreferences` / `RuntimeIdiomPreferences` 接口
+- `BaseIdiom.ts` / 全 Performance Idiom（10 文件）：`idiomPreferences?: any` → `RuntimeIdiomPreferences`
+- `InstrumentIdiom.ts`：`Record<string, unknown>` → `RuntimeIdiomPreferences`
+- `IBassIdiom.ts` / `IDrumIdiom.ts`：`any` → `RuntimeIdiomPreferences`
+- `EnsembleDrafter.ts`：`pool: any[]` → `{ id: string; tags: string[] }[]`
+- `Orchestrator.ts`：`tempoCurves: any[]` → `TempoCurve[]`
+
+### 8. ✅ D-4: 浮点 `===` 比较 → epsilon 容差（~22 处）
+- 涵盖 drum/bass/piano/vocal/transition idiom 中的 beat 位置比较
+- `beat % X === Y` → `Math.abs(beat % X - Y) < 1e-6`
+- 文件：HighEnergyDrumIdiom、SyncopatedDrumIdiom、AcousticSwingDrumIdiom、SteadyBassIdiom、SyncopatedBassIdiom、BlockChordPianoIdiom、ArpeggiatedPianoIdiom、RhythmicPianoIdiom、PopVocalHarmonyIdiom、RnBVocalHarmonyIdiom、GospelVocalHarmonyIdiom、DynamicChoirIdiom、TransitionEngine、DrumIdiom（performance）
+
+### 9. ✅ T-4: `as` 强转安全注释 + 冗余 cast 移除（~10 处）
+- 移除 Performance Idiom 中已类型化 idiomPreferences 上的冗余 `as` 断言
+- TextureMapper `bassStyle as string` → 直接访问（已类型化）
+- ToplineEngine `as any` → 移除（`isGraceNote` 已在 NoteData 接口中）
+- HarmonyCore `passingType as any` → 缩窄为具体联合类型 + 安全注释
+- TextureMapper 字面量元组 `[4, 4] as [number, number]` 添加安全注释
+
 ---
 
-## 验证结果
+## 验证结果（最终）
 
 - `npm run lint`（tsc --noEmit）：**零错误**
 - `/src/core/generation/` 目录内 `import.*GlobalContext`：**零匹配**
 - `/src/core/generation/` 目录内 `GlobalContext\.`（非注释）：**零匹配**
+- `/src/core/generation/` 目录内 `: any`：**零匹配**
+- `/src/core/generation/` 目录内浮点 `===`（非整数）：**零匹配**
 
 ---
 
 ## 剩余状态
 
-生成管道（`/src/core/generation/`）内 **S-2 合规已 100% 完成**。
+生成管道（`/src/core/generation/`）内 **Pipeline Rule 合规已 100% 完成**（S-2/T-3/D-4/T-4 全部清零）。
 
 `GlobalContext.ts` 本身仍存在于项目中，被以下非生成管道代码引用：
 - `/src/core/audio/` — 播放层（不属于生成管道规范范围）
