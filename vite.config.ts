@@ -23,7 +23,7 @@ export default defineConfig(({mode}) => {
       // SharedArrayBuffer（SpessaSynth AudioWorklet 依赖）在非 localhost 源需要跨域隔离头
       headers: {
         'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
+        'Cross-Origin-Embedder-Policy': 'credentialless',
       },
     },
   };
