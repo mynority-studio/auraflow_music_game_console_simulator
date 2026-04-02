@@ -1,9 +1,16 @@
 # AuraFlow Core Architecture & ESP32-S3 Porting Guide
 
 ## Version Info
-- **Current Version:** 1.33.0
+- **Current Version:** 1.34.0
 - **Last Updated:** 2026-04-02
 - **Update Log:**
+  - `v1.34.0`: **Pipeline Rule Full Compliance — S-2/T-3/D-4/T-4 Violations Zeroed.**
+    1. **S-2 GlobalContext Decoupling (Complete)**: Removed ALL `GlobalContext` imports, reads, and writes from `/src/core/generation/`. Context is now passed explicitly via `MusicContext` return values, `TextureRenderContext` parameters, `BassIdiomContext` fields, and method parameter chains. `initializeNewEra()` and `updateCurrentSlice()` calls removed from MelodyEngine, ToplineEngine, and Orchestrator.
+    2. **Bass Idiom S-2 Compliance**: Added `beatsPerBar`, `activeSection`, `keyOffset`, `grooveDNA` to `BassIdiomContext`. Extracted `isGrooveHit`/`isLayeringHit`/`isInterleavingHit` as pure static methods on `BaseBassIdiom`, replacing GlobalContext singleton calls.
+    3. **HarmonyCore S-2 Compliance**: Added `tonality` and `keyOffset` parameters to `generateHarmonyTimeline`, `generateDynamicProgression`, `generateFromFunction`, and `applyStyleSpices`. All 14 internal `GlobalContext.currentTonality`/`currentKeyOffset` reads replaced.
+    4. **T-3 `any` Type Elimination**: Defined `IdiomPreferences` and `RuntimeIdiomPreferences` interfaces in `types.ts`. Replaced ~30 occurrences of `idiomPreferences?: any` across all Performance Idioms, Bass/Drum Idiom contexts, and `InstrumentIdiom` dispatcher.
+    5. **D-4 Float Epsilon Compliance**: Replaced ~22 floating-point `===` comparisons with `Math.abs(x - target) < 1e-6` across drum/bass/piano/vocal/transition idioms.
+    6. **T-4 Type Assertion Cleanup**: Removed redundant `as` casts on now-typed `idiomPreferences`, narrowed `passingType as any` to concrete union type with safety comments.
   - `v1.33.0`: **Global Sprint Retrospective & Next-Gen Polish.**
     1. **Motif Development (Plan A)**: Added advanced motif transformations (`_split`, `_merge`, `_shift`) to `ToplineEngine.ts` to make melodies more human-like and memorable.
     2. **Passing Chords & Voice Avoidance (Plan B)**: Added `truncateToChordEnd` in `TextureMapper.ts` to strictly prevent Bass, CounterMelody, and ChordTexture notes from bleeding into passing chords, eliminating vertical clashes.
@@ -645,33 +652,36 @@ PlaybackEngine.convert(arranged: ArrangedTrack, styleId: StyleId): MidiEvent[]
 
 ### 7.7 与当前源码的差异
 
-> 本文档描述的是**目标接口设计**。以下列出与当前源码实现的具体差异。所有差异项均为非破坏性机械替换，不改变算法逻辑和 PRNG 消耗顺序。
+> 本文档描述的是**目标接口设计**。以下列出与当前源码实现的具体差异。
+> 
+> **v1.34.0 更新**：生成管道核心部分（`/src/core/generation/`）的 GlobalContext 解耦已 100% 完成。
+> 标记 ✅ 的项表示源码已与框架对齐。
 
-| 项 | 当前源码 | 本框架 | 涉及文件 |
+| 项 | 当前源码 | 本框架 | 状态 |
 |---|---|---|---|
 | **基础设施** | | | |
-| styleId 类型 | `string`（如 `'modern_pop'`） | `StyleId`（enum 数值） | `types.ts`、所有接口签名 |
-| 风格分类方式 | `style.id.includes('house')` 子串匹配 | `StyleFlagTable[styleId]` 位掩码查表 | `Orchestrator.ts`、`TextureMapper.ts` 等 |
-| 风格配置查询 | `getStyleConfig(id: string)` 哈希表查找 | `StyleConfigTable[styleId]` 静态数组直接寻址 | `StyleRegistry.ts` |
-| PRNG 管理 | `PRNGManager` 模块，支持 `next()`、`getState()`/`setState()` | `PRNGManager` 模块，支持 `next()`、`getState()`/`setState()` | `PRNG.ts` |
-| 音乐上下文传递 | `GlobalContext` 全局可变单例 | `MusicContext` 结构体，显式传递 | `GlobalContext.ts`、`MelodyEngine.ts`、`Orchestrator.ts` |
+| styleId 类型 | `StyleId`（enum 数值） | `StyleId`（enum 数值） | ✅ 已对齐 |
+| 风格分类方式 | `StyleFlagTable[styleId]` 位掩码查表 | `StyleFlagTable[styleId]` 位掩码查表 | ✅ 已对齐 |
+| 风格配置查询 | `getStyleConfig(id: string)` 哈希表查找 | `StyleConfigTable[styleId]` 静态数组直接寻址 | 待迁移 |
+| PRNG 管理 | `PRNGManager` 模块 | `PRNGManager` 模块 | ✅ 已对齐 |
+| 音乐上下文传递 | `MusicContext` 显式传递（生成管道内零 GlobalContext） | `MusicContext` 结构体，显式传递 | ✅ 已对齐 |
+| idiomPreferences 类型 | `IdiomPreferences` / `RuntimeIdiomPreferences` 接口 | 类型化接口 | ✅ 已对齐 |
+| 浮点比较 | `Math.abs(x - y) < 1e-6` epsilon 容差 | epsilon 容差 | ✅ 已对齐 |
 | **生成引擎** | | | |
-| 生成引擎参数签名 | `generateFullSong(styleId: string)` | `generateFullSong(styleId: StyleId)` | `MelodyEngine.ts` |
-| 生成引擎返回值 | `GeneratedTrack` | `{ track: GeneratedTrack, context: MusicContext }` | `MelodyEngine.ts` |
-| userMotifRoot | `number?` | `KeyId?`（enum，可选） | `MelodyEngine.ts` |
-| motifRole | `string` union | `MotifRole`（enum） | `types.ts`、`MelodyEngine.ts` |
-| motifExpertise | `string?` | 删除 | `MelodyEngine.ts`、`types.ts` |
-| detectedTonality | `'Major' \| 'Minor'` | `TonalityId`（enum，0=随机） | `MelodyEngine.ts` |
+| 生成引擎参数签名 | `generateFullSong(styleId: StyleId)` | `generateFullSong(styleId: StyleId)` | ✅ 已对齐 |
+| 生成引擎返回值 | `{ track: GeneratedTrack, context: MusicContext }` | `{ track: GeneratedTrack, context: MusicContext }` | ✅ 已对齐 |
+| HarmonyCore 参数 | `generateHarmonyTimeline(sections, style, timeSig, tonality, keyOffset)` | tonality/keyOffset 显式传递 | ✅ 已对齐 |
 | **编配引擎** | | | |
-| 编配引擎参数 | `arrange(track, style: StyleConfig)` | `arrange(track, styleId: StyleId, context: MusicContext)` | `Orchestrator.ts` |
+| 编配引擎参数 | `arrange(track, styleId: StyleId, context: MusicContext)` | `arrange(track, styleId: StyleId, context: MusicContext)` | ✅ 已对齐 |
+| TextureMapper 上下文 | `TextureRenderContext` 显式注入（零 GlobalContext fallback） | 显式参数传递 | ✅ 已对齐 |
+| Bass Idiom 上下文 | `BassIdiomContext` 含 beatsPerBar/activeSection/keyOffset/grooveDNA | 显式参数传递 | ✅ 已对齐 |
+| Groove 判定函数 | `BaseBassIdiom.isGrooveHit()` 等纯静态方法 | 纯函数，无全局状态 | ✅ 已对齐 |
 | **播放引擎** | | | |
-| 生成管道终点 | `AudioEngine.playSong()` 内调用 `Orchestrator.arrange()` + `PlaybackEngine.loadSong()` | 独立 `PlaybackEngine.convert()` 纯函数输出 `MidiEvent[]` | `PlaybackEngine.ts`、`AudioEngine.ts` |
-| 播放引擎参数 | `playSong(track, style: StyleConfig, ...)` | `playSong(track, styleId: StyleId, context: MusicContext, ...)` | `AudioEngine.ts` |
-| playSong generator 参数 | `playSong(track, style, generator: MelodyEngine, options?)` | `playSong(track, styleId, context, options?)`（移除 generator） | `AudioEngine.ts` |
-| **外围** | | | |
-| StyleConfig 查表次数 | EndlessRadioManager 查一次 + MelodyEngine 内部再查一次（冗余） | 各组件内部按需查一次 | `EndlessRadioManager.ts`、`AudioEngine.ts` |
-| 历史栈存储 | `{ track: GeneratedTrack, style: StyleConfig }` | `{ track: GeneratedTrack, styleId: StyleId, context: MusicContext }` | `EndlessRadioManager.ts` |
-| 风格显示名称 | `style.name` 从 StyleConfig 对象读取 | `StyleIdName[styleId]` 独立数组 | UI 层 |
+| 生成管道终点 | `AudioEngine.playSong()` 内调用 `Orchestrator.arrange()` + `PlaybackEngine.loadSong()` | 独立 `PlaybackEngine.convert()` 纯函数输出 `MidiEvent[]` | 待迁移 |
+| **外围（平台层，不受 Pipeline Rule 管辖）** | | | |
+| 播放引擎参数 | `playSong(track, style: StyleConfig, ...)` | `playSong(track, styleId: StyleId, context: MusicContext, ...)` | 待迁移 |
+| 历史栈存储 | `{ track: GeneratedTrack, style: StyleConfig }` | `{ track: GeneratedTrack, styleId: StyleId, context: MusicContext }` | 待迁移 |
+| GlobalContext 平台层使用 | `/src/core/audio/`、`/src/apps/`、`/src/components/` 仍引用 | 不受 Pipeline Rule 管辖 | N/A |
 
 ---
 
@@ -703,11 +713,11 @@ PlaybackEngine.convert(arranged: ArrangedTrack, styleId: StyleId): MidiEvent[]
 #### 7.9.2 机械替换兼容性复核
 验证本框架的所有接口变更在完整机械替换后是否保证生成效果零差异。
 
-**结论：全部 7 项替换零差异可行。**
-- StyleId enum 替换 string：✅ 零差异
-- GlobalContext → MusicContext 显式传递：✅ 零差异
-- globalPRNG → PRNGManager：✅ 零差异
+**结论：全部 7 项替换零差异可行。其中生成管道核心项已于 v1.34.0 完成实施。**
+- StyleId enum 替换 string：✅ 已实施
+- GlobalContext → MusicContext 显式传递：✅ 已实施（v1.34.0，生成管道内零 GlobalContext）
+- globalPRNG → PRNGManager：✅ 已实施
 - userMotifRoot 类型 enum 化：✅ 零差异
 - detectedTonality enum 化：✅ 零差异
 - motifExpertise 删除：✅ 零差异
-- 返回值 { track, context }：✅ 零差异
+- 返回值 { track, context }：✅ 已实施
