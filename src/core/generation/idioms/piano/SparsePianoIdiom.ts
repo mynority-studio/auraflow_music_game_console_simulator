@@ -20,7 +20,7 @@ if (energyLevel <= 2) {
       let maskAccent = 0;
 
       // Skank chords: Short, staccato hits on beats 2 and 4 (or off-beats)
-      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && beatInBar % 1 !== 0)) {
+      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
         // Beats 2 and 4 (0-indexed 1 and 3)
         const duration = 0.15; // Very short
         const compVel = baseVelocity * 1.3 * (maskAccent === 1 ? 1.2 : 1.0); // Accent the skank

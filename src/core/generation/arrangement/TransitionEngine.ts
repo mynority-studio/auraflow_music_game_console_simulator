@@ -205,7 +205,7 @@ export class TransitionEngine {
             for (let subBeat = beat; subBeat < beat + 0.25; subBeat += step) {
                 drums.push({ pitch: SNARE, onset: subBeat, duration: 0.1, velocity: vel });
                 // Add kick on 8th notes
-                if (subBeat % 0.5 === 0) {
+                if (Math.abs(subBeat % 0.5) < 1e-6) {
                     drums.push({ pitch: KICK, onset: subBeat, duration: 0.1, velocity: vel });
                 }
             }

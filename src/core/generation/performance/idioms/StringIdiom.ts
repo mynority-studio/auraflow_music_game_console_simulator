@@ -8,22 +8,24 @@ export class StringIdiom extends BaseIdiom {
         
         // 铁律 1: 同一声部，不要写超过 2 个音同时响
         // 我们需要按 onset 分组，保留最高和最低的两个音，或者只保留旋律音
-        const groupedByOnset = new Map<number, NoteData[]>();
-        for (const note of notes) {
-            if (!groupedByOnset.has(note.onset)) {
-                groupedByOnset.set(note.onset, []);
-            }
-            groupedByOnset.get(note.onset)!.push(note);
-        }
+        // P-1 合规：排序数组 + 线性扫描替代 Map<number, NoteData[]>
+        const sortedNotes = [...notes].sort((a, b) => a.onset - b.onset || a.pitch - b.pitch);
 
         let filteredNotes: NoteData[] = [];
-        for (const [onset, chordNotes] of groupedByOnset.entries()) {
-            // Remove exact duplicates (same pitch at same onset)
-            const uniquePitches = new Set<number>();
+        let gi = 0;
+        while (gi < sortedNotes.length) {
+            const onset = sortedNotes[gi].onset;
+            const chordNotes: NoteData[] = [];
+            while (gi < sortedNotes.length && Math.abs(sortedNotes[gi].onset - onset) < 1e-6) {
+                chordNotes.push(sortedNotes[gi]);
+                gi++;
+            }
+            // P-1 合规：数组 + includes() 替代 Set<number> 去重
+            const uniquePitches: number[] = [];
             const uniqueNotes: NoteData[] = [];
             for (const n of chordNotes) {
-                if (!uniquePitches.has(n.pitch)) {
-                    uniquePitches.add(n.pitch);
+                if (!uniquePitches.includes(n.pitch)) {
+                    uniquePitches.push(n.pitch);
                     uniqueNotes.push(n);
                 }
             }
@@ -204,7 +206,7 @@ export class StringIdiom extends BaseIdiom {
         if (beatPos === 0) velocityMultiplier *= 1.1;       // 第一拍强拍，运弓更重
         else if (is68 && beatPos === 3) velocityMultiplier *= 1.05; // 6/8 次强拍
         else if (!is68 && beatPos === 2) velocityMultiplier *= 1.05;  // 4/4 第三拍次强拍
-        else if (beatPos % 1 !== 0) {
+        else if (Math.abs(beatPos % 1) >= 1e-6) {
             velocityMultiplier *= 0.85; // 反拍或切分音略弱
             if (stringStyle === 'funk') {
                 velocityMultiplier *= 1.2; // Funk 强调反拍

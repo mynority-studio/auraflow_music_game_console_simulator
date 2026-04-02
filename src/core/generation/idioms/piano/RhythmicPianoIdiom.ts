@@ -52,7 +52,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       // 16th note muted strums (ghost notes)
       if (
         !isFunkHit &&
-        beat % 0.25 === 0 &&
+        Math.abs(beat % 0.25) < 1e-6 &&
         (PRNGManager.next() < grooveSyncopation * 0.5 || maskAccent === 1) && // grooveSyncopation
         !melodySinging
       ) {

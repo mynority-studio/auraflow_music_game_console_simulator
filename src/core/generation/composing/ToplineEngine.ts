@@ -40,7 +40,7 @@ export class ToplineEngine {
             const relativeBeat = note.onset - referenceBeat;
             if (relativeBeat < 0) continue; // Prevent pickup notes from playing over wrong chords
             
-            const isOnBeat = (relativeBeat % 0.5 === 0);
+            const isOnBeat = (Math.abs(relativeBeat % 0.5) < 1e-6);
             
             if (isOnBeat) {
                 introMelody.push({
@@ -70,7 +70,7 @@ export class ToplineEngine {
         coreMotif.forEach((note, index) => {
             const relativeBeat = note.onset - chorusStartBeat;
             // 规则 A：随机“遗忘”某些音符（概率随时间递增），保留强拍音符
-            const isOnBeat = relativeBeat % 1.0 === 0; 
+            const isOnBeat = Math.abs(relativeBeat % 1.0) < 1e-6;
             const forgetProbability = isOnBeat ? 0.1 : 0.6; // 弱拍更容易被“遗忘”
             
             if (PRNGManager.next() > forgetProbability) {
@@ -307,7 +307,7 @@ export class ToplineEngine {
         if (sectionName.includes('Verse')) {
             // Sparser rhythm: drop some off-beats
             newRhythm = newRhythm.filter(r => {
-                if (r % 1 === 0) return true; // keep downbeats
+                if (Math.abs(r % 1) < 1e-6) return true; // keep downbeats
                 return PRNGManager.next() < density; // drop some off-beats based on density
             });
             if (newRhythm.length === 0) newRhythm.push(0);
@@ -421,8 +421,8 @@ export class ToplineEngine {
                 return { notes: [], motifs: {}, lastPitch: null, unresolvedCount: incomingUnresolvedCount };
             }
 
-            let maxMotifOnset = 0;
-            userMotif.forEach(n => { if (n.onset > maxMotifOnset) maxMotifOnset = n.onset; });
+            // S-6 合规：reduce 替代闭包捕获可变变量
+            const maxMotifOnset = userMotif.reduce((max, n) => n.onset > max ? n.onset : max, 0);
             const motifLengthBeats = Math.ceil((maxMotifOnset + 1) / beatsPerBar) * beatsPerBar;
             let currentBeat = secStart;
             
@@ -671,8 +671,8 @@ export class ToplineEngine {
             const maxNotes = sectionMelody.filter(n => n.pitch === maxPitch);
             if (maxNotes.length > 1) {
                 maxNotes.sort((a, b) => {
-                    const aStrong = a.onset % 1 === 0 ? 1 : 0;
-                    const bStrong = b.onset % 1 === 0 ? 1 : 0;
+                    const aStrong = Math.abs(a.onset % 1) < 1e-6 ? 1 : 0;
+                    const bStrong = Math.abs(b.onset % 1) < 1e-6 ? 1 : 0;
                     if (aStrong !== bStrong) return bStrong - aStrong;
                     return b.duration - a.duration;
                 });
@@ -964,7 +964,7 @@ export class ToplineEngine {
             }
 
             // 🌟 Dynamic Melody Simplification: Give complex chords space
-            const isStrongBeat = (onset % 1 === 0);
+            const isStrongBeat = (Math.abs(onset % 1) < 1e-6);
             const isLongNote = duration >= 1.0;
             const isComplexChord = ['Minor9', 'Add9', 'Dominant7Sus4', 'HalfDiminished'].includes(activeChord.quality);
             if (isComplexChord && !isStrongBeat && !isLongNote && PRNGManager.next() < 0.3) {
@@ -1269,7 +1269,7 @@ export class ToplineEngine {
                     if (PRNGManager.next() < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
                         const lastNote = notes[notes.length - 1];
                         // 只有当上一个音足够长，且当前音在强拍或次强拍时，才加倚音，增加“高级感”
-                        const isTargetStrongBeat = (onset % 1 === 0) || (onset % 0.5 === 0 && PRNGManager.next() < 0.3);
+                        const isTargetStrongBeat = (Math.abs(onset % 1) < 1e-6) || (Math.abs(onset % 0.5) < 1e-6 && PRNGManager.next() < 0.3);
                         
                         if (onset - lastNote.onset >= 0.5 && isTargetStrongBeat) {
                             // 倚音 (Grace Note) - 极短的音符，紧贴在当前音符之前
@@ -1361,8 +1361,8 @@ export class ToplineEngine {
             }
             else if (is68 && beatInBar === 3) metricAccent = 0.85; // 6/8 次强拍
             else if (!is68 && beatInBar === 2 && beatsPerBar === 4) metricAccent = 0.8; // 4/4 次强拍
-            else if (beatInBar % 1 === 0) metricAccent = 0.75; // 正拍
-            else if (beatInBar % 0.5 === 0) metricAccent = 0.6; // 8分音符反拍
+            else if (Math.abs(beatInBar % 1) < 1e-6) metricAccent = 0.75; // 正拍
+            else if (Math.abs(beatInBar % 0.5) < 1e-6) metricAccent = 0.6; // 8分音符反拍
             else metricAccent = 0.5; // 16分音符反拍
             
             // 引入一点力度随机性，结合音高起伏
@@ -1492,7 +1492,7 @@ export class ToplineEngine {
             let climaxNote = notes[0];
             let maxScore = -1;
             for (const note of notes) {
-                const isStrong = note.onset % 1 === 0;
+                const isStrong = Math.abs(note.onset % 1) < 1e-6;
                 const score = (isStrong ? 10 : 0) + note.duration;
                 if (score > maxScore) {
                     maxScore = score;

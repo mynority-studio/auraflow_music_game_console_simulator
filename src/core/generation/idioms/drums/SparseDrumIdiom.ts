@@ -28,7 +28,7 @@ export class SparseDrumIdiom implements IDrumIdiom {
       }
 
       // Cinematic: Sparse cymbals, mostly crashes or swells
-      if (beat % 1 === 0) {
+      if (Math.abs(beat % 1) < 1e-6) {
         if (PRNGManager.next() < grooveDensity * 0.3) {
           notes.push({ pitch: CRASH, onset: beat, duration: 0.1, velocity: 0.7 });
         }

@@ -39,6 +39,6 @@ class PRNG {
     }
 }
 
-// Export as a unified manager
-export const PRNGManager = new PRNG(Date.now());
+// D-2 合规：使用固定初始种子，播放入口处由调用方显式 setSeed() 覆盖
+export const PRNGManager = new PRNG(0);
 

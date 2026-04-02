@@ -91,7 +91,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
       // Rhythmic mutation (Fills)
       const mutationChance = energyLevel / 10;
       for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
-        const isValidTriggerPoint = beat % 1 === 0 || BaseBassIdiom.isGrooveHit(beat, grooveDNA, beatsPerBar);
+        const isValidTriggerPoint = Math.abs(beat % 1) < 1e-6 || BaseBassIdiom.isGrooveHit(beat, grooveDNA, beatsPerBar);
         // Remove melodyActive logic
         const melodyActive = false;
         if (
@@ -125,13 +125,12 @@ export abstract class BaseBassIdiom implements IBassIdiom {
     return this.deduplicateNotes(notes);
   }
 
+  // P-1 合规：数组 + some() 替代 Set<string> 去重，同时避免字符串拼接 (M-2)
   private deduplicateNotes(notes: NoteData[]): NoteData[] {
     const uniqueNotes: NoteData[] = [];
-    const seen = new Set<string>();
     for (const note of notes) {
-      const key = `${note.pitch}-${note.onset}`;
-      if (!seen.has(key)) {
-        seen.add(key);
+      const isDuplicate = uniqueNotes.some(r => r.pitch === note.pitch && Math.abs(r.onset - note.onset) < 1e-6);
+      if (!isDuplicate) {
         uniqueNotes.push(note);
       }
     }

@@ -48,7 +48,7 @@ export class BlockChordPianoIdiom extends BasePianoIdiom {
       let arpDirection = 1; // 1: 向上, -1: 向下
 
       for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
-        if (beat % 0.5 !== 0) continue;
+        if (Math.abs(beat % 0.5) >= 1e-6) continue;
         const isChordStart = beat === chord.startBeat;
         const beatInBar = beat % beatsPerBar;
         const melodySinging = melodyNotes.some(
@@ -66,7 +66,7 @@ let maskAccent = 0;
         if (isChordStart) {
           currentArpPitch = voicedTones[0];
         } else {
-          const isStrongBeat = beat % 1 === 0;
+          const isStrongBeat = Math.abs(beat % 1) < 1e-6;
           const stepSize = PRNGManager.next() < 0.8 ? 1 : 2;
 
           if (currentArpPitch > 70) arpDirection = -1;
@@ -97,7 +97,7 @@ let maskAccent = 0;
           }
         }
 
-        let vel = baseVelocity * (beat % 1 === 0 ? 1.0 : 0.8);
+        let vel = baseVelocity * (Math.abs(beat % 1) < 1e-6 ? 1.0 : 0.8);
         if (melodySinging) vel *= 0.8;
         if (maskAccent === 1) vel *= 1.2; // 🌟 强调 GrooveMask 的重音
 
@@ -168,7 +168,7 @@ let maskAccent = 0;
       }
 
       const mutationChance = energyLevel / 10;
-      if (energyLevel > 5 && !melodySinging && chord.endBeat - beat >= 2.0 && beat % 1 === 0 && PRNGManager.next() < mutationChance * 0.05) {
+      if (energyLevel > 5 && !melodySinging && chord.endBeat - beat >= 2.0 && Math.abs(beat % 1) < 1e-6 && PRNGManager.next() < mutationChance * 0.05) {
         this.addBlockChord(notes, beat, 0.5, baseVelocity * 1.1, voicedTones);
         this.addBlockChord(notes, beat + 0.5, 0.5, baseVelocity * 1.0, voicedTones);
         this.addBlockChord(notes, beat + 1.5, 0.5, baseVelocity * 0.9, voicedTones);
@@ -294,7 +294,7 @@ let maskAccent = 0;
           } else {
             this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.8, rightHandTones.slice(0, 2));
           }
-        } else if (!melodySinging && beat % 1 === 0 && beatInBar !== 0 && PRNGManager.next() > 0.7) {
+        } else if (!melodySinging && Math.abs(beat % 1) < 1e-6 && beatInBar !== 0 && PRNGManager.next() > 0.7) {
           this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.9, rightHandTones);
         }
       }

@@ -187,7 +187,7 @@ export abstract class BaseCounterMelodyIdiom implements ICounterMelodyIdiom {
       }
 
       if (isActive && beat < phraseEndBeat) {
-        const isDownbeat = beat % 1 === 0;
+        const isDownbeat = Math.abs(beat % 1) < 1e-6;
         
         const pitchOptions = this.getPitchOptions(isDownbeat, chordTones, scalePcs, ctx.tonality ?? 'Major');
 
@@ -246,13 +246,15 @@ export abstract class BaseCounterMelodyIdiom implements ICounterMelodyIdiom {
     return this.deduplicateNotes(notes);
   }
 
+  // P-1 合规：数组 + some() 替代 Set 去重，同时避免字符串拼接 (M-2)
   private deduplicateNotes(notes: NoteData[]): NoteData[] {
-    const seen = new Set();
-    return notes.filter((n) => {
-      const key = `${n.pitch}-${n.onset}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    const result: NoteData[] = [];
+    for (const note of notes) {
+      const isDuplicate = result.some(r => r.pitch === note.pitch && Math.abs(r.onset - note.onset) < 1e-6);
+      if (!isDuplicate) {
+        result.push(note);
+      }
+    }
+    return result;
   }
 }

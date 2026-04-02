@@ -90,7 +90,7 @@ export class GlobalReviewer {
             const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
 
             const isLongNote = note.duration >= 1.0;
-            const isStrongBeat = (note.onset % 1 === 0);
+            const isStrongBeat = (Math.abs(note.onset % 1) < 1e-6);
             const nextNote = i < notes.length - 1 ? notes[i + 1] : null;
             // 判断是否为乐句结尾：后面没有音，或者与下一个音的间隔大于等于1拍
             const isPhraseEnd = !nextNote || (nextNote.onset - (note.onset + note.duration) >= 1.0);

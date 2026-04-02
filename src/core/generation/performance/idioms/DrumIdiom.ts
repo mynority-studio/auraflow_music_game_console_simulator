@@ -13,8 +13,13 @@ export class DrumIdiom extends BaseIdiom {
         const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
         
         // 1. 收集现有的音符位置，避免在已有音符的位置添加幽灵音
-        const existingOnsets = new Set<number>();
-        notes.forEach(n => existingOnsets.add(n.onset));
+        // P-1 合规：排序数组 + includes() 替代 Set<number>
+        const existingOnsets: number[] = [];
+        for (const n of notes) {
+            if (!existingOnsets.includes(n.onset)) {
+                existingOnsets.push(n.onset);
+            }
+        }
 
         // 2. 注入幽灵音 (Ghost Notes)
         // 幽灵音通常在军鼓上，位于 16 分音符的弱拍
@@ -28,8 +33,8 @@ export class DrumIdiom extends BaseIdiom {
             const beatPos = beat % beatsPerBar;
             
             // 避开正拍和 8 分音符反拍 (0, 0.5, 1.0...)，只在 16 分音符弱拍 (0.25, 0.75) 尝试添加
-            if (beatPos % 0.5 !== 0) {
-                if (!existingOnsets.has(beat) && PRNGManager.next() < ghostNoteProb) {
+            if (Math.abs(beatPos % 0.5) >= 1e-6) {
+                if (!existingOnsets.includes(beat) && PRNGManager.next() < ghostNoteProb) {
                     // 添加幽灵音
                     result.push({
                         pitch: SNARE,

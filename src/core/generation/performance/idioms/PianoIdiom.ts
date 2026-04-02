@@ -76,19 +76,28 @@ export class PianoIdiom extends BaseIdiom {
     // 🎹 核心技法 3：风格化伴奏织体 (Stylistic Comping)
     // ==========================================
     const finalResult: NoteData[] = [];
-    const groupedByOnset = new Map<number, NoteData[]>();
-    for (const note of result) {
-        if (!groupedByOnset.has(note.onset)) {
-            groupedByOnset.set(note.onset, []);
+    // P-1 合规：排序数组 + 线性扫描替代 Map<number, NoteData[]>
+    const sortedResult = [...result].sort((a, b) => a.onset - b.onset || a.pitch - b.pitch);
+    // Build onset groups and onsets array via linear scan
+    const onsetGroups: NoteData[][] = [];
+    const onsets: number[] = [];
+    {
+      let gi = 0;
+      while (gi < sortedResult.length) {
+        const onset = sortedResult[gi].onset;
+        onsets.push(onset);
+        const group: NoteData[] = [];
+        while (gi < sortedResult.length && Math.abs(sortedResult[gi].onset - onset) < 1e-6) {
+          group.push(sortedResult[gi]);
+          gi++;
         }
-        groupedByOnset.get(note.onset)!.push(note);
+        onsetGroups.push(group);
+      }
     }
 
-    const onsets = Array.from(groupedByOnset.keys()).sort((a, b) => a - b);
-    
     for (let i = 0; i < onsets.length; i++) {
         const onset = onsets[i];
-        const chordNotes = groupedByOnset.get(onset)!;
+        const chordNotes = onsetGroups[i];
         const isChord = chordNotes.length >= 3; // 至少三个音才算和弦
         
         // 爵士钢琴：加入 Grace Notes (装饰音) 或 Ghost Chords (幽灵和弦)
@@ -212,7 +221,7 @@ export class PianoIdiom extends BaseIdiom {
       const beatPos = note.onset % beatsPerBar;
 
       // 节奏微调：正拍稍微晚一点点（慵懒），弱拍稍微提前一点点（推动感）
-      if (beatPos % 1 === 0) {
+      if (Math.abs(beatPos % 1) < 1e-6) {
           timingWobble += PRNGManager.next() * 0.03;
       } else {
           timingWobble -= PRNGManager.next() * 0.03;
@@ -223,7 +232,7 @@ export class PianoIdiom extends BaseIdiom {
       if (beatPos === 0) velocityMultiplier *= 1.1;       // 第一拍强拍
       else if (is68 && beatPos === 3) velocityMultiplier *= 0.95; // 6/8 次强拍
       else if (!is68 && beatPos === 2) velocityMultiplier *= 0.9;  // 4/4 第三拍次强拍
-      else if (beatPos % 1 !== 0) {
+      else if (Math.abs(beatPos % 1) >= 1e-6) {
           velocityMultiplier *= 0.8; // 反拍或切分音略弱
           if (pianoStyle === 'jazz') velocityMultiplier *= 1.15; // 爵士强调反拍 (Syncopation)
       }

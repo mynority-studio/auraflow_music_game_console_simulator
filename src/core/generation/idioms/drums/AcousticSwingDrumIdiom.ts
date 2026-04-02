@@ -23,7 +23,7 @@ if (energyLevel <= 2) return notes;
       }
 
       // Jazz: Cross-stick or light snare comping
-      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && beatInBar % 1 !== 0)) {
+      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
         if (PRNGManager.next() < grooveDensity || maskAccent === 1) {
           notes.push({ pitch: energyLevel > 5 ? SNARE : CROSS_STICK, onset: beat, duration: 0.1, velocity: 0.5 * (maskAccent === 1 ? 1.3 : 1.0) });
         }

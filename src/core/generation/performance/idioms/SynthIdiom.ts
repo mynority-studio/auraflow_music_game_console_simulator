@@ -24,21 +24,20 @@ export class SynthIdiom extends BaseIdiom {
             // ==========================================
             // 将长和弦转换为琶音
             const arpResult: NoteData[] = [];
-            const groupedByOnset = new Map<number, NoteData[]>();
-            for (const note of result) {
-                if (!groupedByOnset.has(note.onset)) {
-                    groupedByOnset.set(note.onset, []);
-                }
-                groupedByOnset.get(note.onset)!.push(note);
-            }
-
-            const onsets = Array.from(groupedByOnset.keys()).sort((a, b) => a - b);
+            // P-1 合规：排序数组 + 线性扫描替代 Map<number, NoteData[]>
+            const sorted = [...result].sort((a, b) => a.onset - b.onset || a.pitch - b.pitch);
             const arpPattern = idiomPreferences?.arpPattern || 'up'; // 'up', 'down', 'updown', 'random'
             const arpRate = idiomPreferences?.arpRate || 0.25; // 16th notes by default
 
-            for (let i = 0; i < onsets.length; i++) {
-                const onset = onsets[i];
-                const chordNotes = groupedByOnset.get(onset)!.sort((a, b) => a.pitch - b.pitch);
+            let gi = 0;
+            while (gi < sorted.length) {
+                const onset = sorted[gi].onset;
+                const chordNotes: NoteData[] = [];
+                while (gi < sorted.length && Math.abs(sorted[gi].onset - onset) < 1e-6) {
+                    chordNotes.push(sorted[gi]);
+                    gi++;
+                }
+                chordNotes.sort((a, b) => a.pitch - b.pitch);
                 
                 if (chordNotes.length >= 2) {
                     const duration = chordNotes[0].duration;

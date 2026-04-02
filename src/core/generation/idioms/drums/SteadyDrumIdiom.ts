@@ -61,7 +61,7 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.7 * (maskAccent === 1 ? 1.2 : 1.0) });
       } else if (beatInBar === 3.5 && (PRNGManager.next() < grooveSyncopation * 1.2 || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.75 * (maskAccent === 1 ? 1.2 : 1.0) });
-      } else if (maskAccent === 1 && beatInBar % 0.5 !== 0) {
+      } else if (maskAccent === 1 && Math.abs(beatInBar % 0.5) >= 1e-6) {
         // 🌟 旋律在 16 分音符反拍上有重音，底鼓强制跟随贴合
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.85 });
       }
@@ -75,9 +75,9 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       }
 
       // Hi-hats / Ride / Crash riding
-      if (beat % 0.5 === 0) {
+      if (Math.abs(beat % 0.5) < 1e-6) {
         let cymbalPitch = CHH;
-        let cymbalVel = beat % 1 === 0 ? 0.8 : 0.6;
+        let cymbalVel = Math.abs(beat % 1) < 1e-6 ? 0.8 : 0.6;
 
         if (energyLevel >= 8) {
           cymbalPitch = PRNGManager.next() > 0.5 ? CRASH : RIDE;

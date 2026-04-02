@@ -91,12 +91,13 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
     }
 
     // Melodic Key-Tone Collision Avoidance (Removed as melodyNotes is no longer available)
-    const melodyPcsInChord = new Set<number>();
-    
+    // P-1 合规：数组 + includes() 替代 Set<number>
+    const melodyPcsInChord: number[] = [];
+
     voicedTones = voicedTones.filter(p => {
         const pc = p % 12;
         if (pc === rootPc || pc === fifthPc) return true;
-        if (melodyPcsInChord.has(pc) && voicedTones.length > 2) {
+        if (melodyPcsInChord.includes(pc) && voicedTones.length > 2) {
             return false;
         }
         return true;

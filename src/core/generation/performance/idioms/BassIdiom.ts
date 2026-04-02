@@ -56,7 +56,7 @@ export class BassIdiom extends BaseIdiom {
           baseVel *= 0.85; // 抒情/氛围类曲风再轻一点
       } else if (bassStyle === 'funk') {
           // 强弱对比极大
-          if (current.onset % 1 === 0) baseVel = Math.min(1.0, baseVel * 1.1);
+          if (Math.abs(current.onset % 1) < 1e-6) baseVel = Math.min(1.0, baseVel * 1.1);
           else baseVel *= 0.8;
       }
 
@@ -79,7 +79,7 @@ export class BassIdiom extends BaseIdiom {
       // 节奏微人类化
       // 正拍：略微靠前 0-3ms
       // 反拍/切分：略微滞后 2-6ms
-      if (beatPos % 1 === 0) {
+      if (Math.abs(beatPos % 1) < 1e-6) {
           timingWobble = -PRNGManager.next() * 0.003; // 提前 0-3ms
       } else {
           timingWobble = PRNGManager.next() * 0.004 + 0.002; // 滞后 2-6ms
