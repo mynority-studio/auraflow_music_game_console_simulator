@@ -4,7 +4,7 @@ import { BaseBassIdiom } from "./BaseBassIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
 import { GlobalContext } from "../../GlobalContext";
 
-export class CinematicBassIdiom extends BaseBassIdiom {
+export class SparseBassIdiom extends BaseBassIdiom {
   generateBassPattern(ctx: BassIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, targetBassPitch, fifthMidi, energyLevel, grooveDensity, grooveSyncopation } = ctx;
@@ -24,7 +24,7 @@ export class CinematicBassIdiom extends BaseBassIdiom {
           velocity: baseVel,
         });
       } else if (
-        Math.abs(beatInBar - 2) < 1e-6 &&
+        beatInBar === 2 &&
         energyLevel > 2 &&
         PRNGManager.next() < grooveDensity * 1.5
       ) {

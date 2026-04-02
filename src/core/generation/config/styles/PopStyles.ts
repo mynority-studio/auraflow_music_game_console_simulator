@@ -1,4 +1,4 @@
-import { StyleConfig, Tonality } from '../../types';
+import { StyleConfig } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const ModernPopStyle: StyleConfig = {
@@ -8,8 +8,8 @@ export const ModernPopStyle: StyleConfig = {
         bpmRange: [75, 115], // 抒情到中板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Major, weight: 0.7 },
-            { tonality: Tonality.Minor, weight: 0.3 }
+            { tonality: 'Major', weight: 0.7 },
+            { tonality: 'Minor', weight: 0.3 }
         ]
     },
     harmony: {
@@ -63,9 +63,9 @@ export const ModernPopStyle: StyleConfig = {
         counterMelodyProbability: 0.9, // 弦乐铺底非常重要
         grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
-            stringStyle: 'pop',
-            bassStyle: 'pop',
-            drumStyle: 'pop'
+            counterMelodyStyle: 'sustained',
+            bassStyle: 'steady',
+            drumStyle: 'steady'
         },
         mixingPreferences: {
             melody: { pan: 0, reverb: 0.5, delay: 0.2 },
@@ -98,8 +98,8 @@ export const ClassicJPopStyle: StyleConfig = {
         bpmRange: [70, 105], // 抒情中慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.6 },
-            { tonality: Tonality.Major, weight: 0.4 }
+            { tonality: 'Minor', weight: 0.6 },
+            { tonality: 'Major', weight: 0.4 }
         ]
     },
     harmony: {
@@ -154,9 +154,9 @@ export const ClassicJPopStyle: StyleConfig = {
         counterMelodyProbability: 0.9, // 弦乐或萨克斯副旋律很常见
         grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
-            stringStyle: 'pop',
-            bassStyle: 'pop',
-            drumStyle: 'pop'
+            counterMelodyStyle: 'sustained',
+            bassStyle: 'steady',
+            drumStyle: 'steady'
         },
         mixingPreferences: {
             melody: { pan: 0, reverb: 0.5, delay: 0.2 },
@@ -189,8 +189,8 @@ export const ModernJPopStyle: StyleConfig = {
         bpmRange: [120, 175], // 极快，米津玄师/YOASOBI 风格
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.7 },
-            { tonality: Tonality.Major, weight: 0.3 }
+            { tonality: 'Minor', weight: 0.7 },
+            { tonality: 'Major', weight: 0.3 }
         ]
     },
     harmony: {
@@ -245,9 +245,9 @@ export const ModernJPopStyle: StyleConfig = {
         counterMelodyProbability: 0.8,
         grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
-            stringStyle: 'pop',
-            bassStyle: 'funk', // 偏向Funk的贝斯律动
-            drumStyle: 'pop'
+            counterMelodyStyle: 'sustained',
+            bassStyle: 'syncopated', // 偏向Funk的贝斯律动
+            drumStyle: 'steady'
         },
         mixingPreferences: {
             melody: { pan: 0, reverb: 0.5, delay: 0.2 },

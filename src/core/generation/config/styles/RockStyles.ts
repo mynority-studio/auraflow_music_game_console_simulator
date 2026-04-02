@@ -1,4 +1,4 @@
-import { StyleConfig, Tonality } from '../../types';
+import { StyleConfig } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const PopRockStyle: StyleConfig = {
@@ -11,8 +11,8 @@ export const PopRockStyle: StyleConfig = {
             { signature: [8, 8], weight: 0.2 }
         ],
         tonalityPool: [
-            { tonality: Tonality.Major, weight: 0.8 },
-            { tonality: Tonality.Minor, weight: 0.2 }
+            { tonality: 'Major', weight: 0.8 },
+            { tonality: 'Minor', weight: 0.2 }
         ]
     },
     harmony: {
@@ -64,9 +64,9 @@ export const PopRockStyle: StyleConfig = {
         outroRingOutProbability: 0.5,
         grooveRatio: { foundation: 0.8, comping: 0.7, color: 0.4 },
         idiomPreferences: {
-            stringStyle: 'pop',
-            bassStyle: 'rock',
-            drumStyle: 'rock'
+            counterMelodyStyle: 'sustained',
+            bassStyle: 'steady',
+            drumStyle: 'steady'
         },
         mixingPreferences: {
             melody: { pan: 0.1, reverb: 0.4 },

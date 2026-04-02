@@ -1,5 +1,15 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { StyleConfig, NoteData } from '../types';
+import { NoteData, StyleConfig } from '../types';
+
+const EPSILON = 1e-6;
+
+/** 将 n 加入数组（若已存在则跳过），保持唯一性 */
+function addUnique(arr: number[], n: number): void {
+    for (let i = 0; i < arr.length; i++) {
+        if (Math.abs(arr[i] - n) < EPSILON) return;
+    }
+    arr.push(n);
+}
 
 export class GrooveEngine {
     private static GRID_STEP = 0.25; 
@@ -7,25 +17,25 @@ export class GrooveEngine {
     public static generateRhythmFingerprint(
         density: number,
         syncopationProb: number,
-        beatsPerBar: number, 
+        beatsPerBar: number,
         userMotif?: NoteData[]
     ): number[] {
-        const loopLength = 2 * beatsPerBar; 
-        
+        const loopLength = 2 * beatsPerBar;
+
         // 🌟 核心修复：如果用户提供了 Motif，提取其节奏指纹作为全曲律动基准
         if (userMotif && userMotif.length > 0) {
-            const fingerprint = new Set<number>();
+            const fingerprint: number[] = [];
             userMotif.forEach(n => {
                 const offset = n.onset % loopLength;
                 // 量化到 GRID_STEP
                 const quantized = Math.round(offset / this.GRID_STEP) * this.GRID_STEP;
-                fingerprint.add(quantized);
+                addUnique(fingerprint, quantized);
             });
-            
+
             // 确保强拍有锚点，避免律动散架
-            fingerprint.add(0);
-            
-            let result = Array.from(fingerprint).sort((a, b) => a - b);
+            addUnique(fingerprint, 0);
+
+            let result = fingerprint.slice().sort((a, b) => a - b);
             
             // 根据 density 动态删减音符 (例如在 Verse 中让律动更稀疏)
             if (density < 0.5 && result.length > 2) {
@@ -52,7 +62,7 @@ export class GrooveEngine {
             let baseWeight = 0;
             if (Number.isInteger(stepPos)) {
                 baseWeight = 1.0; // 正拍 (0, 1, 2, 3)
-            } else if (Math.abs(stepPos % 1 - 0.5) < 1e-6) {
+            } else if (Math.abs(stepPos % 1 - 0.5) < EPSILON) {
                 baseWeight = 0.6 + syncopationProb * 0.4; // 8分音符反拍 (0.5, 1.5...)
             } else {
                 if (syncopationProb >= 0.7) {
@@ -66,7 +76,7 @@ export class GrooveEngine {
         }
         
         // 引入随机性并按权重排序，确保音符分布在整个乐句中，而不是集中在开头
-        let fingerprint: number[] = [0]; // 第0拍永远有锚点
+        const fingerprint: number[] = [0]; // 第0拍永远有锚点
         let availableSteps = [...possibleSteps];
         for (let i = 0; i < targetNotesCount - 1 && availableSteps.length > 0; i++) {
             let totalWeight = availableSteps.reduce((sum, step) => sum + step.weight, 0);
@@ -83,7 +93,8 @@ export class GrooveEngine {
             availableSteps.splice(selectedIdx, 1);
         }
         
-        return Array.from(new Set(fingerprint)).sort((a, b) => a - b);
+        // sort 后元素唯一（fingerprint 通过 addUnique 构建），tie 不会出现
+        return fingerprint.slice().sort((a, b) => a - b);
     }
 
     // ⚖️ 旋律与伴奏的互补对抗 (Inverse Density)
@@ -114,7 +125,7 @@ export class GrooveEngine {
             // 🌟 修复：加上节拍权重，防止在 inverse 时大量选中 16分音符
             if (Number.isInteger(stepPos)) {
                 weight *= 1.0;
-            } else if (Math.abs(stepPos % 1 - 0.5) < 1e-6) {
+            } else if (Math.abs(stepPos % 1 - 0.5) < EPSILON) {
                 weight *= 0.8;
             } else {
                 weight *= 0.1; // 极大地压制 16分音符
@@ -124,7 +135,7 @@ export class GrooveEngine {
         }
         
         // 引入随机性并按权重排序
-        let inverseFingerprint: number[] = [0]; // 强拍锚点
+        const inverseFingerprint: number[] = [0]; // 强拍锚点
         let availableSteps = [...possibleSteps];
         for (let i = 0; i < targetNotesCount - 1 && availableSteps.length > 0; i++) {
             let totalWeight = availableSteps.reduce((sum, step) => sum + step.weight, 0);
@@ -141,6 +152,7 @@ export class GrooveEngine {
             availableSteps.splice(selectedIdx, 1);
         }
         
-        return Array.from(new Set(inverseFingerprint)).sort((a, b) => a - b);
+        // sort 后元素唯一（inverseFingerprint[0]=0，后续通过 availableSteps 选取不重复的 offset）
+        return inverseFingerprint.slice().sort((a, b) => a - b);
     }
 }

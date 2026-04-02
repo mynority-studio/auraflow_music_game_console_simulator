@@ -1,7 +1,8 @@
-import { NoteData, SectionType } from "../../types";
+import { NoteData } from "../../types";
 import { BassIdiomContext, IBassIdiom } from "./IBassIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
 import { GlobalContext } from "../../GlobalContext";
+import { StyleId } from "../../config/StyleFlags";
 
 export abstract class BaseBassIdiom implements IBassIdiom {
   abstract generateBassPattern(ctx: BassIdiomContext): NoteData[];
@@ -27,12 +28,12 @@ export abstract class BaseBassIdiom implements IBassIdiom {
     const isFillZone = (beat: number) => beat >= chord.endBeat - 1.0;
     const activeSection = GlobalContext.getActiveSection();
     const isBuildUp =
-      activeSection?.type === SectionType.BuildUp ||
+      activeSection?.type === "BuildUp" ||
       (ctx.nextEnergyLevel > energyLevel + 1);
     
-    const bassStyle = ctx.idiomPreferences?.bassStyle || "pop";
-    const isEurodance = bassStyle === "eurodance";
-    const isWalkingBass = bassStyle === "jazz";
+    const bassStyle = ctx.idiomPreferences?.bassStyle || "steady";
+    const isEurodance = ctx.style?.id === StyleId.Eurodance;
+    const isWalkingBass = bassStyle === "melodic";
 
     if (isBuildUp && !isEurodance && !isWalkingBass) {
       // Build-up 贝斯逻辑：通常是连续的 8 分或 16 分音符根音连击，力度渐强
@@ -44,7 +45,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
         let buildUpStep = 0.5; // 8th notes
         if (barsLeft <= 1.0) buildUpStep = 0.25; // 16th notes
 
-        if (Math.abs(beat % buildUpStep) < 1e-6) {
+        if (beat % buildUpStep === 0) {
           const buildVel = baseVel * (0.6 + (1 - barsLeft / 2) * 0.6); // 渐强
           buildUpNotes.push({
             pitch: ctx.targetBassPitch,
@@ -59,7 +60,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
       // Rhythmic mutation (Fills)
       const mutationChance = energyLevel / 10;
       for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
-        const isValidTriggerPoint = Math.abs(beat % 1) < 1e-6 || GlobalContext.isGrooveHit(beat);
+        const isValidTriggerPoint = beat % 1 === 0 || GlobalContext.isGrooveHit(beat);
         // Remove melodyActive logic
         const melodyActive = false;
         if (

@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord, StyleConfig, Tonality } from '../types';
+import { NoteData, GeneratedChord, StyleConfig } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
 import { GlobalContext } from '../GlobalContext';
 
@@ -12,10 +12,9 @@ export class GlobalReviewer {
         melody: NoteData[],
         chords: GeneratedChord[],
         style: StyleConfig,
-        tonality: Tonality
+        tonality: string
     ): { vocal: NoteData[] | undefined, melody: NoteData[], chords: GeneratedChord[] } {
-        console.log("🔍 [GlobalReviewer] Starting Phase 1: Vertical Check & Fix...");
-
+        
         // 1. 修复悬挂的高张力经过和弦 (Fix Unresolved Dominant/Diminished Chords)
         this.fixHangingTensionChords(chords, tonality);
 
@@ -29,7 +28,6 @@ export class GlobalReviewer {
             this.fixMelodyHorizontalLogic(melody, tonality, chords, style);
         }
 
-        console.log("✅ [GlobalReviewer] Fixes applied successfully.");
         return { vocal, melody, chords };
     }
 
@@ -37,7 +35,7 @@ export class GlobalReviewer {
      * 修复悬挂的高张力经过和弦
      * 检查段落末尾或乐句末尾的 V7, vii° 等是否得到了妥善解决。如果没有，则将其降级。
      */
-    private static fixHangingTensionChords(chords: GeneratedChord[], tonality: Tonality) {
+    private static fixHangingTensionChords(chords: GeneratedChord[], tonality: string) {
         for (let i = 0; i < chords.length; i++) {
             const chord = chords[i];
             const nextChord = i < chords.length - 1 ? chords[i + 1] : null;
@@ -61,11 +59,10 @@ export class GlobalReviewer {
 
                 // 如果是整首歌的最后一个和弦，或者是一个没有解决且持续时间较长的紧张和弦
                 if (!nextChord || (!resolves && chord.endBeat - chord.startBeat >= 2)) {
-                    console.log(`🔧 [GlobalReviewer] Fixing hanging tension chord: ${chord.numeral} at beat ${chord.startBeat}`);
                     
                     // 最小改动：和弦降级 (Chord Downgrading)
                     if (chord.numeral.includes('°') || chord.numeral.includes('dim')) {
-                        chord.numeral = tonality === Tonality.Minor ? 'ii' : 'V';
+                        chord.numeral = tonality === 'Minor' ? 'ii' : 'V';
                     } else if (chord.numeral.includes('7')) {
                         chord.numeral = chord.numeral.replace('7', '');
                         if (chord.numeral === 'V') chord.numeral = 'Vsus4';
@@ -84,7 +81,7 @@ export class GlobalReviewer {
      * 修复旋律冲突与乐句落点
      * 采用 MelodyFixScore 与 ChordFixScore 的理念，进行最小改动 (Nudging)。
      */
-    private static fixMelodyClashesAndResolutions(notes: NoteData[], chords: GeneratedChord[], tonality: Tonality, style: StyleConfig, isVocal: boolean) {
+    private static fixMelodyClashesAndResolutions(notes: NoteData[], chords: GeneratedChord[], tonality: string, style: StyleConfig, isVocal: boolean) {
         const maxDissonance = style.harmonyRules?.maxDissonanceTolerance ?? 0.5;
 
         for (let i = 0; i < notes.length; i++) {
@@ -94,7 +91,7 @@ export class GlobalReviewer {
             const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
 
             const isLongNote = note.duration >= 1.0;
-            const isStrongBeat = (Math.abs(note.onset % 1) < 1e-6);
+            const isStrongBeat = (note.onset % 1 === 0);
             const nextNote = i < notes.length - 1 ? notes[i + 1] : null;
             // 判断是否为乐句结尾：后面没有音，或者与下一个音的间隔大于等于1拍
             const isPhraseEnd = !nextNote || (nextNote.onset - (note.onset + note.duration) >= 1.0);
@@ -105,7 +102,6 @@ export class GlobalReviewer {
             // 1. 乐句结尾不落地 (Phrase Ending Resolution Fix)
             if (isPhraseEnd && isLongNote && !isChordTone) {
                 // 评分逻辑：由于是乐句结尾的长音，MelodyFixScore 较高（必须改旋律以保证落地）
-                console.log(`🔧 [GlobalReviewer] Fixing unresolved phrase end note: Pitch ${note.pitch} over ${activeChord.numeral}`);
                 
                 // 强制拉到 1, 3, 5
                 const stableTones = [chordTones[0]];
@@ -139,7 +135,6 @@ export class GlobalReviewer {
 
                 if (hasClash && maxDissonance < 0.6) {
                     // 评分逻辑：强拍长音的 b9 冲突，MelodyFixScore > ChordFixScore
-                    console.log(`🔧 [GlobalReviewer] Fixing Avoid Note clash: Pitch ${note.pitch} over ${activeChord.numeral}`);
                     
                     // 最小改动：向下微移半音或全音，直到变成安全的顺阶音
                     note.pitch -= 1;
@@ -155,7 +150,7 @@ export class GlobalReviewer {
      * 修复旋律横向逻辑 (Horizontal Voice Leading Fix)
      * 检查大跳后是否反向解决，如果没有，则微调第三个音。
      */
-    private static fixMelodyHorizontalLogic(notes: NoteData[], tonality: Tonality, chords: GeneratedChord[], style: StyleConfig) {
+    private static fixMelodyHorizontalLogic(notes: NoteData[], tonality: string, chords: GeneratedChord[], style: StyleConfig) {
         const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5;
         
         for (let i = 0; i < notes.length - 2; i++) {
@@ -170,7 +165,6 @@ export class GlobalReviewer {
                 
                 // 如果大跳向上，下一个音也向上，或者大跳向下，下一个音也向下，这就是没有反向解决
                 if ((interval > 0 && nextInterval > 0) || (interval < 0 && nextInterval < 0)) {
-                    console.log(`🔧 [GlobalReviewer] Fixing unresolved large leap: ${note1.pitch} -> ${note2.pitch} -> ${note3.pitch}`);
                     
                     const activeChord = chords.find(c => note3.onset >= c.startBeat && note3.onset < c.endBeat) || chords[0];
                     const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
@@ -194,9 +188,8 @@ export class GlobalReviewer {
         melody: NoteData[] | undefined,
         counterMelody: NoteData[] | undefined,
         chords: GeneratedChord[],
-        tonality: Tonality
+        tonality: string
     ): void {
-        console.log("🔍 [GlobalReviewer] Starting Phase 2: Counterpoint Check & Fix...");
 
         const mainMelody = (vocal && vocal.length > 0) ? vocal : (melody || []);
         if (mainMelody.length === 0) return;
@@ -214,7 +207,6 @@ export class GlobalReviewer {
                     
                     // 检查小二度 (1) 或大七度 (11) 碰撞
                     if (interval === 1 || interval === 11) {
-                        console.log(`🔧 [GlobalReviewer] Fixing Counterpoint clash: ${label} ${secNote.pitch} vs Main ${mNote.pitch} at beat ${secNote.onset}`);
                         
                         const activeChord = chords.find(c => secNote.onset >= c.startBeat && secNote.onset < c.endBeat) || chords[0];
                         const chordTones = HarmonyCore.getChordTones(activeChord, secNote.pitch);
@@ -261,7 +253,6 @@ export class GlobalReviewer {
             fixClashes(melody, vocal, 'Melody');
         }
 
-        console.log("✅ [GlobalReviewer] Counterpoint fixes applied successfully.");
     }
 
     /**

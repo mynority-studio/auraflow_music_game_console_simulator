@@ -1,5 +1,4 @@
-import { NoteData, GeneratedChord } from "../../types";
-import { StyleId } from "../../config/StyleFlags";
+import { NoteData, GeneratedChord, StyleConfig, SectionMetadata } from "../../types";
 
 export interface PianoIdiomContext {
   chord: GeneratedChord;
@@ -9,7 +8,7 @@ export interface PianoIdiomContext {
   isSectionEnd: boolean;
   melodyNotes: NoteData[];
   nextChord?: GeneratedChord;
-  styleId: StyleId;
+  style?: StyleConfig;
   prevVoicing?: number[];
   nextEnergyLevel?: number;
   pianoStyle: string;
@@ -17,6 +16,10 @@ export interface PianoIdiomContext {
   beatsPerBar: number;
   grooveDensity: number;
   grooveSyncopation: number;
+  /** S-2 合规：由 TextureMapper 从 renderCtx 注入，替代 GlobalContext 读取 */
+  keyOffset?: number;
+  tonality?: string;
+  activeSection?: SectionMetadata | null;
 }
 
 export interface IPianoIdiom {

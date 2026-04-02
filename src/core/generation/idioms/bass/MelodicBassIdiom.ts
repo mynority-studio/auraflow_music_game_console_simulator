@@ -5,7 +5,7 @@ import { GlobalContext } from "../../GlobalContext";
 import { PRNGManager } from "../../../utils/PRNG";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 
-export class JazzBassIdiom extends BaseBassIdiom {
+export class MelodicBassIdiom extends BaseBassIdiom {
   generateBassPattern(ctx: BassIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, rootMidi, nextChord, nextTargetCenter, safeScalePcs, bassTones, grooveDensity, grooveSyncopation } = ctx;
@@ -13,9 +13,7 @@ export class JazzBassIdiom extends BaseBassIdiom {
     const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
 
     const activeSection = GlobalContext.getActiveSection();
-    const grooveMask = activeSection?.grooveMask;
-
-    // Helper for walking bass chromatic approach
+// Helper for walking bass chromatic approach
     const getApproachNote = (
       targetPitch: number,
       currentBeat: number,
@@ -55,10 +53,6 @@ export class JazzBassIdiom extends BaseBassIdiom {
       const beatInBar = beat % beatsPerBar;
       
       let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
 
       // On every quarter note
       let pitch = rootMidi;

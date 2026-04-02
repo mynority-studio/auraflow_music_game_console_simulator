@@ -1,38 +1,31 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { SectionMetadata, StyleConfig, SectionType } from "../types";
+import { SectionMetadata, StyleConfig } from "../types";
 import { StyleId } from '../config/StyleFlags';
+import { MoodId, MoodRegistry } from "../config/MoodFlags";
 
 export class StructureEngine {
-  public static generateFullSongStructure(timeSignature: [number, number], bpm: number, style: StyleConfig): SectionMetadata[] {
+  public static generateFullSongStructure(timeSignature: [number, number], bpm: number, style: StyleConfig, moodId: MoodId = MoodId.Neutral): SectionMetadata[] {
     const sections: SectionMetadata[] =[];
     let currentBeat = 0;
     const beatsPerBar = timeSignature[0];
     const styleId = style.id;
+    const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
-    const addSection = (name: string, bars: number, energy: number) => {
+    const addSection = (name: string, bars: number, rawEnergy: number) => {
       // 🌟 临时屏蔽所有前奏，方便调试 (Temporarily disable all intros for debugging)
       if (name.startsWith("Intro")) {
         return;
       }
 
-      // 🌟 Phase 1 & 2: Initialize decoupled state for each section
-      const sectionNameMap: Record<string, SectionType> = {
-        'Intro': SectionType.Intro, 'Verse': SectionType.Verse, 'PreChorus': SectionType.PreChorus,
-        'Chorus': SectionType.Chorus, 'Bridge': SectionType.Bridge, 'Outro': SectionType.Outro,
-        'Break': SectionType.Break, 'Breakdown': SectionType.Breakdown, 'BuildUp': SectionType.BuildUp,
-        'Drop': SectionType.Drop, 'PreOutro': SectionType.PreOutro, 'Solo': SectionType.Solo_Bridge,
-      };
-      const rawType = name.split('_')[0]; // e.g. "Verse", "Chorus"
-      const type = sectionNameMap[rawType] ?? SectionType.Verse;
-      
-      // Determine phrase template based on length
-      let phraseTemplate = "A-B";
-      if (bars === 8) phraseTemplate = "A-A-B-A'";
-      else if (bars === 16) phraseTemplate = "A-A-B-A'-C-C-D-C'";
-      else if (bars === 4) phraseTemplate = "A-B";
+      // Apply Mood Energy Cap
+      const energy = Math.max(mood.energyCap[0], Math.min(mood.energyCap[1], rawEnergy));
 
-      // Base groove density scales with energy
-      const density = Math.min(1.0, Math.max(0.1, (energy / 10) * 0.8 + 0.2));
+      // 🌟 Phase 1 & 2: Initialize decoupled state for each section
+      const type = name.split('_')[0]; // e.g. "Verse", "Chorus"
+      
+      // Base groove density scales with energy, then modified by Mood
+      let density = Math.min(1.0, Math.max(0.1, (energy / 10) * 0.8 + 0.2));
+      density = Math.min(1.0, density * mood.densityMultiplier);
       const syncopationProb = style.rhythm.syncopationWeight || 0.5;
 
       // --- Phase 3 & 4: Genre-Bending & Riff-Driven Logic ---
@@ -49,8 +42,8 @@ export class StructureEngine {
       // 2. Genre-Bending Logic (Option B)
       // Occasionally inject a different style into PreChorus or Bridge
       const genreBendingProb = style.harmonyRules?.genreBendingProbability ?? 0;
-      if ((type === SectionType.PreChorus || type === SectionType.Bridge || type === SectionType.Break) && PRNGManager.next() < genreBendingProb) {
-          const possibleOverrides = [StyleId.BossaNova, StyleId.NeoSoul, StyleId.SmoothJazz, StyleId.Synthwave];
+      if ((type === 'PreChorus' || type === 'Bridge' || type === 'Break') && PRNGManager.next() < genreBendingProb) {
+          const possibleOverrides = style.harmonyRules?.genreBendingOverrides ?? [];
           // Pick an override that is DIFFERENT from the current style
           const filteredOverrides = possibleOverrides.filter(s => s !== styleId);
           if (filteredOverrides.length > 0) {
@@ -59,49 +52,6 @@ export class StructureEngine {
           }
       }
 
-      // 3. Fusion Profile (Music Fusion Refinement)
-      let fusionProfile = undefined;
-      // 40% chance to apply a fusion profile if not already overridden
-      if (!localStyleOverride && PRNGManager.next() < 0.4) {
-          const possibleFusions = [StyleId.SmoothJazz, StyleId.BossaNova, StyleId.PopRock, StyleId.Eurodance, StyleId.NeoSoul];
-          const filteredFusions = possibleFusions.filter(s => s !== styleId);
-          if (filteredFusions.length > 0) {
-              const fusionStyle = filteredFusions[Math.floor(PRNGManager.next() * filteredFusions.length)];
-              // Decide which roles get the fusion style (e.g., Rhythm Section vs Harmonic Section)
-              const isRhythmFusion = PRNGManager.next() < 0.5;
-              fusionProfile = {
-                  primaryStyle: styleId,
-                  fusionStyle: fusionStyle,
-                  applyToDrums: isRhythmFusion,
-                  applyToBass: isRhythmFusion,
-                  applyToChords: !isRhythmFusion,
-                  applyToMelody: !isRhythmFusion
-              };
-          }
-      }
-
-      // 4. Groove Mask (Rhythmic Skeleton)
-      // Generate a 16-step mask for 4/4 time (16th notes)
-      const grooveMask = {
-          accents: Array.from({ length: 16 }, (_, i) => {
-              // Strong beats (1, 2, 3, 4) have high probability
-              if (i % 4 === 0) return PRNGManager.next() < 0.9 ? 1 : 0;
-              // Upbeats (1 &, 2 &, 3 &, 4 &) have medium probability
-              if (i % 2 === 0) return PRNGManager.next() < (syncopationProb * 0.8) ? 1 : 0;
-              // 16th offbeats have lower probability, scaling with syncopation
-              return PRNGManager.next() < (syncopationProb * 0.5) ? 1 : 0;
-          }),
-          resolution: 0.25
-      };
-
-      // 5. Texture Allocation
-      const textureAllocation = {
-          bassDensity: density * (isRiffDriven ? 1.2 : 1.0),
-          chordDensity: density * (fusionProfile?.applyToChords ? 0.8 : 1.0),
-          drumDensity: density * (fusionProfile?.applyToDrums ? 1.2 : 1.0),
-          melodyDensity: density
-      };
-
       sections.push({ 
         name, 
         startBeat: currentBeat, 
@@ -109,12 +59,9 @@ export class StructureEngine {
         energyLevel: energy,
         type,
         lengthBars: bars,
-        phraseTemplate,
+        phraseTemplate: "", // Deprecated
         localStyleOverride,
         isRiffDriven,
-        fusionProfile,
-        grooveMask,
-        textureAllocation,
         harmony: {
             baseProgression: [], // Will be filled by HarmonyEngine
             complexityProb: style.harmonyRules?.reharmProbability || 0.3,
@@ -153,8 +100,7 @@ export class StructureEngine {
     };
 
     const introBars = bpm < 90 ? 8 : 4;
-    const jazzStyles = [StyleId.SmoothJazz, StyleId.NeoSoul];
-    const outroBars = jazzStyles.includes(styleId) ? 8 : 4; // Lo-Fi / 放松：8 小节，流行/电子：4 小节
+    const outroBars = 4; // Lo-Fi / 放松：8 小节，流行/电子：4 小节
 
     const addIntro = (bars: number, baseEnergy: number) => {
       if (bars >= 8) {
@@ -211,7 +157,7 @@ export class StructureEngine {
     ];
 
     // 🌟 针对特定曲风的专属结构模板
-    if (styleId === StyleId.BossaNova) {
+    if (style.global.structureTemplate === 'bossa') {
       templates.push(
         // 模板E：Bossa Nova 专属 (开局即摇摆，无需漫长铺垫)
         () => {
@@ -223,7 +169,7 @@ export class StructureEngine {
           addSection("Chorus_Main", 16, 8);
         }
       );
-    } else if (styleId === StyleId.SmoothJazz) {
+    } else if (style.global.structureTemplate === 'jazz') {
       templates.push(
         // 模板F：Chill Jazzy 专属 (持续律动，不追求大起大落)
         () => {
@@ -235,7 +181,7 @@ export class StructureEngine {
           addSection("Chorus_Main", 16, 6);
         }
       );
-    } else if (styleId === StyleId.Trance) {
+    } else if (style.global.structureTemplate === 'edm') {
       templates.push(
         // 模板G：Progressive House / EDM 专属 (The Journey)
         () => {

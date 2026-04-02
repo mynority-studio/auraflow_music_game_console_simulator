@@ -1,14 +1,21 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord, IdiomPreferences } from '../../types';
+import { NoteData, GeneratedChord } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 import { GlobalContext } from '../../GlobalContext';
 
 export class SynthIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
         if (notes.length === 0) return [];
 
         const synthStyle = idiomPreferences?.synthStyle || 'pad'; // 'pad', 'lead', 'arp'
-        const energy = GlobalContext.getCurrentEnergyLevel();
+        // S-2 合规：从 sections 查询拍段能量值，回退到 GlobalContext
+        const _synthSects = idiomPreferences?.sections as Array<{startBeat:number, endBeat:number, energyLevel:number}> | undefined;
+        const getEnergyAt = (onset: number): number => {
+            if (_synthSects && _synthSects.length > 0) {
+                return _synthSects.find(s => onset >= s.startBeat && onset < s.endBeat)?.energyLevel ?? 5;
+            }
+            return GlobalContext.getCurrentEnergyLevel();
+        };
         
         let result = [...notes].sort((a, b) => a.onset - b.onset);
 
@@ -129,7 +136,7 @@ export class SynthIdiom extends BaseIdiom {
                 pluckResult.push(current);
                 
                 // Simulate a built-in delay effect (Echo)
-                if (energy > 4 && PRNGManager.next() < 0.5) {
+                if (getEnergyAt(current.onset) > 4 && PRNGManager.next() < 0.5) {
                     pluckResult.push({
                         pitch: current.pitch,
                         onset: current.onset + 0.375, // Dotted 8th delay
@@ -144,7 +151,7 @@ export class SynthIdiom extends BaseIdiom {
         return result.sort((a, b) => a.onset - b.onset);
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
         const synthStyle = idiomPreferences?.synthStyle || 'pad';
         
         if (synthStyle === 'arp') {

@@ -33,7 +33,7 @@ export class EnsembleDrafter {
         const styleName = StyleId[style.id] || "";
         const styleTags = styleName.toLowerCase().split('_');
         
-        const getInstrumentFromPool = (pool: Array<{ id: string; tags: string[] }>) => {
+        const getInstrumentFromPool = (pool: any[]) => {
             const matches = pool.filter(item => 
                 item.tags.includes('all') || item.tags.some((tag: string) => styleTags.some(st => st.includes(tag) || tag.includes(st)))
             );
@@ -69,9 +69,9 @@ export class EnsembleDrafter {
         let drumSound: string | null = 'Standard_DrumKit';
         let counterMelodySound: string | null = null;
 
-        const stringStyle = style.orchestration?.idiomPreferences?.stringStyle || 'pop';
-        const isJazz = stringStyle === 'jazz';
-        const isCinematic = stringStyle === 'cinematic';
+        const counterMelodyStyle = style.orchestration?.idiomPreferences?.counterMelodyStyle || 'sustained';
+        const isJazz = false; // TODO: Add Jazz StyleId if needed
+        const isCinematic = style.id === StyleId.GhibliOrchestral;
 
         if (rand < 0.10 && !isCinematic) {
             // 🌟 Acoustic Duo (原声双重奏): 只有主奏 + 钢琴/吉他伴奏，无鼓无贝斯 (降低出现概率)
@@ -90,7 +90,7 @@ export class EnsembleDrafter {
         } else if (rand < 0.40 && !isCinematic && !isJazz) {
             // 🌟 Rhythmic (律动型): 只有贝斯和鼓，无和弦乐器 (留白极多，降低概率，避免太干)
             // 修复：对于抒情歌等风格，不能完全没有和弦乐器，否则会变成只有贝斯和弦乐的空洞编曲
-            const isAcousticBallad = stringStyle === 'ballad' || stringStyle === 'folk';
+            const isAcousticBallad = style.id === StyleId.PowerBallad || style.id === StyleId.RussianFolkBallad;
             if (!isAcousticBallad) {
                 chordSound = null;
             }

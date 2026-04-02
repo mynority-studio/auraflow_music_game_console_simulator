@@ -1,5 +1,5 @@
-import { NoteData, IdiomPreferences } from "../../types";
-import { StyleId } from "../../config/StyleFlags";
+import { NoteData, SectionMetadata } from "../../types";
+import { StyleConfig } from "../../types";
 
 export interface DrumIdiomContext {
   startBeat: number;
@@ -7,12 +7,15 @@ export interface DrumIdiomContext {
   energyLevel: number;
   isIntro: boolean;
   isOutro: boolean;
-  styleId: StyleId;
+  style?: StyleConfig;
   swingRatio: number;
   nextEnergyLevel: number;
   hasFullGrooveStarted: boolean;
   grooveRatio?: { foundation: number; comping: number; color: number };
-  idiomPreferences?: IdiomPreferences;
+  idiomPreferences?: {
+    drumStyle?: string;
+    [key: string]: any;
+  };
   
   // Pre-calculated helpers
   beatsPerBar: number;
@@ -22,6 +25,9 @@ export interface DrumIdiomContext {
   grooveDensity: number;
   grooveSyncopation: number;
   laybackOffset: number;
+  melodyNotes?: NoteData[];
+  /** S-2 合规：由 TextureMapper 从 renderCtx 注入，替代 GlobalContext.getActiveSection() */
+  activeSection?: SectionMetadata | null;
   
   // Drum MIDI Constants
   KICK: number;

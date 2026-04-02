@@ -1,8 +1,8 @@
-import { NoteData, GeneratedChord, IdiomPreferences } from '../../types';
+import { NoteData, GeneratedChord } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 
 export class WindIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
         if (notes.length === 0) return [];
 
         // 1. Sort by onset, then by pitch (descending) so we can pick the highest note if there's a chord
@@ -70,7 +70,7 @@ export class WindIdiom extends BaseIdiom {
         return monophonicNotes;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
         // Wind instruments are monophonic, so chordSize should be 1.
         // We add a very slight timing wobble and velocity wobble.
         return {

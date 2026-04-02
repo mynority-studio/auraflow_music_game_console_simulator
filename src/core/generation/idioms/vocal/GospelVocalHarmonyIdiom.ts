@@ -2,7 +2,6 @@ import { NoteData } from "../../types";
 import { IVocalHarmonyIdiom, VocalHarmonyContext } from "./IVocalHarmonyIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
 export class GospelVocalHarmonyIdiom implements IVocalHarmonyIdiom {
   generate(ctx: VocalHarmonyContext): NoteData[] {
@@ -14,7 +13,7 @@ export class GospelVocalHarmonyIdiom implements IVocalHarmonyIdiom {
 
     melodyNotes.forEach(note => {
       const isLongNote = note.duration >= 0.5;
-      const isStrongBeat = Math.abs(note.onset % 1) < 1e-6 || Math.abs(note.onset % 1 - 0.5) < 1e-6;
+      const isStrongBeat = note.onset % 1 === 0 || note.onset % 1 === 0.5;
       const shouldHarmonize = energyLevel < 5 ? isLongNote : (isLongNote || isStrongBeat);
 
       if (!shouldHarmonize) return;
@@ -22,7 +21,8 @@ export class GospelVocalHarmonyIdiom implements IVocalHarmonyIdiom {
       const currentChord = chords.find(c => note.onset >= c.startBeat && note.onset < c.endBeat) || chords[0];
       if (!currentChord) return;
 
-      const keyOffset = currentChord.keyOffset !== undefined ? currentChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+      // S-2 合规：从 ctx.keyOffset 读取（由 TextureMapper 注入），回退到 chord.keyOffset
+      const keyOffset = ctx.keyOffset ?? currentChord.keyOffset ?? 0;
       const chordTones = HarmonyCore.getChordTones(currentChord, 60 - keyOffset).map(p => p % 12);
       const scalePcs = HarmonyCore.getSafeScalePitches(currentChord, tonality);
 

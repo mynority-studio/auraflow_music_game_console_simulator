@@ -2,9 +2,8 @@ import { NoteData } from "../../types";
 import { PianoIdiomContext } from "./IPianoIdiom";
 import { BasePianoIdiom } from "./BasePianoIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
-export class FunkPianoIdiom extends BasePianoIdiom {
+export class RhythmicPianoIdiom extends BasePianoIdiom {
   generate(ctx: PianoIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, energyLevel, melodyNotes, baseVelocity, beatsPerBar, grooveDensity, grooveSyncopation } = ctx;
@@ -15,17 +14,10 @@ export class FunkPianoIdiom extends BasePianoIdiom {
       return notes;
     }
 
-    const activeSection = GlobalContext.getActiveSection();
-    const grooveMask = activeSection?.grooveMask;
-
-    for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
+for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
 
       let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
 
       const melodySinging = melodyNotes.some(
         (m) =>
@@ -37,11 +29,11 @@ export class FunkPianoIdiom extends BasePianoIdiom {
       // Often hits on 1.75, 2.5, 3.75, 4.0
       const isFunkHit =
         maskAccent === 1 ||
-        (Math.abs(beatInBar) < 1e-6 && PRNGManager.next() < grooveDensity) ||
-        (Math.abs(beatInBar - 0.75) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5) ||
-        (Math.abs(beatInBar - 1.5) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.2) ||
-        (Math.abs(beatInBar - 2.5) < 1e-6 && PRNGManager.next() < grooveDensity) ||
-        (Math.abs(beatInBar - 3.75) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5);
+        (beatInBar === 0 && PRNGManager.next() < grooveDensity) ||
+        (beatInBar === 0.75 && PRNGManager.next() < grooveSyncopation * 1.5) ||
+        (beatInBar === 1.5 && PRNGManager.next() < grooveSyncopation * 1.2) ||
+        (beatInBar === 2.5 && PRNGManager.next() < grooveDensity) ||
+        (beatInBar === 3.75 && PRNGManager.next() < grooveSyncopation * 1.5);
 
       if (isFunkHit) {
         // Very short duration for staccato feel (0.15 to 0.25)
@@ -60,7 +52,7 @@ export class FunkPianoIdiom extends BasePianoIdiom {
       // 16th note muted strums (ghost notes)
       if (
         !isFunkHit &&
-        Math.abs(beat % 0.25) < 1e-6 &&
+        beat % 0.25 === 0 &&
         (PRNGManager.next() < grooveSyncopation * 0.5 || maskAccent === 1) && // grooveSyncopation
         !melodySinging
       ) {

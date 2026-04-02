@@ -1,15 +1,14 @@
-import { GeneratedChord, NoteData, IdiomPreferences } from "../../types";
-import { StyleId } from "../../config/StyleFlags";
+import { GeneratedChord, NoteData, StyleConfig } from "../../types";
 
 export interface BassIdiomContext {
   chord: GeneratedChord;
   energyLevel: number;
   isSparseSection: boolean;
   isSectionEnd: boolean;
-  styleId: StyleId;
-  melodyNotes: NoteData[];
+  style?: StyleConfig;
+  melodyNotes?: NoteData[];
   isBassSolo: boolean;
-  idiomPreferences?: IdiomPreferences;
+  idiomPreferences?: any;
   nextChord?: GeneratedChord;
   nextEnergyLevel: number;
   

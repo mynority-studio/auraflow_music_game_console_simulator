@@ -1,5 +1,5 @@
 import { PRNGManager } from '../utils/PRNG';
-import { GeneratedTrack, StyleConfig, MusicContext, Tonality, MotifRole, NoteData } from "./types";
+import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from "./types";
 import { getStyleConfig } from "./config/styles/StyleRegistry";
 import { StyleId } from "./config/StyleFlags";
 import { StructureEngine } from "./composing/StructureEngine";
@@ -8,16 +8,11 @@ import { ToplineEngine } from "./composing/ToplineEngine";
 import { SingerPersona } from "./performance/SingerPersona";
 import { GlobalContext } from "./GlobalContext";
 import { EnsembleDrafter } from "./arrangement/EnsembleDrafter";
-
-export interface GenerationOptions {
-    userMotifRoot?: number;
-    processedUserMotif?: NoteData[];
-    motifRole?: MotifRole;
-    detectedTimeSignature?: [number, number];
-    detectedTonality?: Tonality;
-}
+import { GenerationOptions } from "./types";
 
 import { GlobalReviewer } from "./review/GlobalReviewer";
+
+import { MoodId, MoodRegistry } from "./config/MoodFlags";
 
 export class MelodyEngine {
 
@@ -31,18 +26,25 @@ export class MelodyEngine {
         processedUserMotif,
         motifRole = 'Foreground',
         detectedTimeSignature,
-        detectedTonality
+        detectedTonality,
+        moodId
     } = options;
     
     if (!style.global) {
-      console.error("Style is missing global config:", style);
       throw new Error(`Style ${styleId} is missing global config`);
     }
+
+    // 🌟 决定 Mood
+    const finalMoodId = moodId !== undefined ? moodId : (PRNGManager.next() > 0.5 ? Math.floor(PRNGManager.next() * 5) + 1 : MoodId.Neutral);
+    // safe: finalMoodId is either an explicit MoodId or a Math.floor result in [1,5] which are valid MoodId values
+    const mood = MoodRegistry[finalMoodId as MoodId] || MoodRegistry[MoodId.Neutral];
 
     // 🌟 真正的随机 BPM (区间内取值)
     const minBpm = style.global.bpmRange[0];
     const maxBpm = style.global.bpmRange[1];
-    const bpm = Math.floor(PRNGManager.next() * (maxBpm - minBpm + 1)) + minBpm;
+    const baseBpm = Math.floor(PRNGManager.next() * (maxBpm - minBpm + 1)) + minBpm;
+    let bpm = Math.round(baseBpm * (mood.bpmMultiplier[0] + PRNGManager.next() * (mood.bpmMultiplier[1] - mood.bpmMultiplier[0])));
+    bpm = Math.max(60, Math.min(190, bpm)); // Clamp to reasonable extremes
 
     // 🌟 真正的随机真实调号与 UI 映射
     // 如果外部传入了 Motif Root，则强制使用该 Root 作为歌曲的 Key
@@ -58,9 +60,10 @@ export class MelodyEngine {
     if (detectedTonality) {
         tonality = detectedTonality;
     } else {
+        const tonalityPool = mood.tonalityBias || style.global.tonalityPool;
         const tRoll = PRNGManager.next();
         let tSum = 0;
-        for (const t of style.global.tonalityPool) {
+        for (const t of tonalityPool) {
             tSum += t.weight;
             if (tRoll < tSum) { tonality = t.tonality; break; }
         }
@@ -78,10 +81,10 @@ export class MelodyEngine {
         }
     }
     
-    GlobalContext.initializeNewEra(style, bpm, keyOffset, tonality, timeSig);
+    GlobalContext.initializeNewEra(style, bpm, keyOffset, tonality, timeSig, finalMoodId);
 
     // 1. 生成宏观结构
-    const sections = StructureEngine.generateFullSongStructure(timeSig, bpm, style);
+    const sections = StructureEngine.generateFullSongStructure(timeSig, bpm, style, finalMoodId);
     
     // 2. 生成全曲和声轨道 (带过渡和弦引擎)
     const chords = HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig);
@@ -100,15 +103,15 @@ export class MelodyEngine {
 
     if (instrumentPalette.vocalSound) {
         vocal = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, persona, instrumentPalette.vocalSound, toplineMotif
+            sections, chords, style, tonality, persona, instrumentPalette.vocalSound, toplineMotif, false, timeSig, bpm, finalMoodId
         );
         // Generate a sparser instrumental melody as accompaniment
         melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, persona, leadInstrument, undefined, true
+            sections, chords, style, tonality, persona, leadInstrument, undefined, true, timeSig, bpm, finalMoodId
         );
     } else {
         melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, persona, leadInstrument, toplineMotif
+            sections, chords, style, tonality, persona, leadInstrument, toplineMotif, false, timeSig, bpm, finalMoodId
         );
     }
 
@@ -135,7 +138,8 @@ export class MelodyEngine {
         bpm,
         timeSignature: timeSig,
         grooveDNA: [], // This will be populated per section, but keeping it here for global context if needed
-        singerPersona: persona
+        singerPersona: persona,
+        moodId: finalMoodId
     };
 
     return { track, context };

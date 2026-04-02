@@ -1,17 +1,17 @@
-import { NoteData, SectionType } from "../../types";
+import { NoteData } from "../../types";
 import { PianoIdiomContext } from "./IPianoIdiom";
 import { BasePianoIdiom } from "./BasePianoIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 
-export class PopPianoIdiom extends BasePianoIdiom {
+export class BlockChordPianoIdiom extends BasePianoIdiom {
   generate(ctx: PianoIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, energyLevel, melodyNotes, beatsPerBar, isSparseSection, isSectionEnd, nextEnergyLevel, nextChord, pianoStyle, textureType, grooveDensity, grooveSyncopation } = ctx;
     const voicedTones = this.getVoicedTones(ctx);
 
-    const activeSection = GlobalContext.getActiveSection();
+    // S-2 合规：从 ctx.activeSection 读取（由 TextureMapper 注入）
+    const activeSection = ctx.activeSection ?? null;
     const isJazz = pianoStyle === 'jazz';
     const isNeoSoulOrRnB = pianoStyle === 'neosoul';
 
@@ -39,7 +39,8 @@ export class PopPianoIdiom extends BasePianoIdiom {
     if (effectiveTexture === "Arpeggio") {
       const scalePcs = HarmonyCore.getSafeScalePitches(
         chord,
-        GlobalContext.currentTonality,
+        // S-2 合规：从 ctx.tonality 读取（由 TextureMapper 注入），回退为 'Major'
+        ctx.tonality ?? 'Major'
       );
       // 🌟 打破根音起手：随机从三音、五音或七音开始
       const startIdx = PRNGManager.next() > 0.6 && voicedTones.length > 1 ? (PRNGManager.next() > 0.5 ? 1 : voicedTones.length - 1) : 0;
@@ -47,7 +48,7 @@ export class PopPianoIdiom extends BasePianoIdiom {
       let arpDirection = 1; // 1: 向上, -1: 向下
 
       for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
-        if (Math.abs(beat % 0.5) >= 1e-6) continue;
+        if (beat % 0.5 !== 0) continue;
         const isChordStart = beat === chord.startBeat;
         const beatInBar = beat % beatsPerBar;
         const melodySinging = melodyNotes.some(
@@ -60,17 +61,12 @@ export class PopPianoIdiom extends BasePianoIdiom {
         if (isSparseSection) baseVelocity -= 0.1;
 
         // 🌟 跨界融合 (Cross-genre Fusion): 应用 GrooveMask
-        const grooveMask = activeSection?.grooveMask;
-        let maskAccent = 0;
-        if (grooveMask) {
-            const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-            maskAccent = grooveMask.accents[stepIndex];
-        }
+let maskAccent = 0;
 
         if (isChordStart) {
           currentArpPitch = voicedTones[0];
         } else {
-          const isStrongBeat = Math.abs(beat % 1) < 1e-6;
+          const isStrongBeat = beat % 1 === 0;
           const stepSize = PRNGManager.next() < 0.8 ? 1 : 2;
 
           if (currentArpPitch > 70) arpDirection = -1;
@@ -101,7 +97,7 @@ export class PopPianoIdiom extends BasePianoIdiom {
           }
         }
 
-        let vel = baseVelocity * (Math.abs(beat % 1) < 1e-6 ? 1.0 : 0.8);
+        let vel = baseVelocity * (beat % 1 === 0 ? 1.0 : 0.8);
         if (melodySinging) vel *= 0.8;
         if (maskAccent === 1) vel *= 1.2; // 🌟 强调 GrooveMask 的重音
 
@@ -139,37 +135,32 @@ export class PopPianoIdiom extends BasePianoIdiom {
       if (isSparseSection) baseVelocity -= 0.1;
 
       // 🌟 跨界融合 (Cross-genre Fusion): 应用 GrooveMask
-      const grooveMask = activeSection?.grooveMask;
-      let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
+let maskAccent = 0;
 
-      if (isNeoSoulOrRnB && melodySinging && (Math.abs(beatInBar) < 1e-6 || Math.abs(beatInBar - 2) < 1e-6) && PRNGManager.next() < 0.4) {
+      if (isNeoSoulOrRnB && melodySinging && (beatInBar === 0 || beatInBar === 2) && PRNGManager.next() < 0.4) {
         continue;
       }
 
       if (effectiveTexture === "Synth_Pulse") {
         const step = energyLevel >= 8 ? 0.5 : 1.0;
-        if (Math.abs(beat % step) < 1e-6) {
-          const pulseVel = baseVelocity * (Math.abs(beat % 1) < 1e-6 ? 1.0 : 0.8);
+        if (beat % step === 0) {
+          const pulseVel = baseVelocity * (beat % 1 === 0 ? 1.0 : 0.8);
           this.addBlockChord(notes, beat, step * 0.9, pulseVel, voicedTones);
-        } else if (energyLevel >= 7 && Math.abs(beat % 1 - 0.5) < 1e-6 && PRNGManager.next() > 0.5) {
+        } else if (energyLevel >= 7 && beat % 1 === 0.5 && PRNGManager.next() > 0.5) {
           this.addBlockChord(notes, beat, 0.5, baseVelocity * 0.9, voicedTones);
         }
         continue;
       }
 
       const isFillZone = beat >= chord.endBeat - 1.0;
-      const isBuildUp = activeSection?.type === SectionType.BuildUp || (isFillZone && nextEnergyLevel && nextEnergyLevel > energyLevel + 1);
+      const isBuildUp = activeSection?.type === "BuildUp" || (isFillZone && nextEnergyLevel && nextEnergyLevel > energyLevel + 1);
 
       if (isBuildUp) {
         const barsLeft = (chord.endBeat - beat) / beatsPerBar;
         let buildUpStep = 0.5;
         if (barsLeft <= 1.0) buildUpStep = 0.25;
 
-        if (Math.abs(beat % buildUpStep) < 1e-6) {
+        if (beat % buildUpStep === 0) {
           const buildVel = baseVelocity * (0.6 + (1 - barsLeft / 2) * 0.6);
           this.addBlockChord(notes, beat, buildUpStep * 0.8, buildVel, voicedTones);
         }
@@ -177,7 +168,7 @@ export class PopPianoIdiom extends BasePianoIdiom {
       }
 
       const mutationChance = energyLevel / 10;
-      if (energyLevel > 5 && !melodySinging && chord.endBeat - beat >= 2.0 && Math.abs(beat % 1) < 1e-6 && PRNGManager.next() < mutationChance * 0.05) {
+      if (energyLevel > 5 && !melodySinging && chord.endBeat - beat >= 2.0 && beat % 1 === 0 && PRNGManager.next() < mutationChance * 0.05) {
         this.addBlockChord(notes, beat, 0.5, baseVelocity * 1.1, voicedTones);
         this.addBlockChord(notes, beat + 0.5, 0.5, baseVelocity * 1.0, voicedTones);
         this.addBlockChord(notes, beat + 1.5, 0.5, baseVelocity * 0.9, voicedTones);
@@ -205,7 +196,7 @@ export class PopPianoIdiom extends BasePianoIdiom {
 
             this.addBlockChord(notes, beat + rightHandDelay, 2.0, baseVelocity * 0.85, tonesToPlay);
           }
-        } else if (!melodySinging && Math.abs(beatInBar - 2.5) < 1e-6) {
+        } else if (!melodySinging && beatInBar === 2.5) {
           let tonesToPlay = voicedTones.filter(p => p >= 60);
           if (tonesToPlay.length === 0) tonesToPlay = voicedTones.slice(1);
           this.addBlockChord(notes, beat, 1.5, baseVelocity * 0.9, tonesToPlay);
@@ -222,7 +213,7 @@ export class PopPianoIdiom extends BasePianoIdiom {
           notes.push({ pitch: voicedTones[0], onset: beat, duration: 2.0, velocity: baseVelocity });
         }
 
-        const isSyncopatedHit = (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && PRNGManager.next() < grooveSyncopation * 1.5;
+        const isSyncopatedHit = (beatInBar === 1.5 || beatInBar === 2.5 || beatInBar === 3.5) && PRNGManager.next() < grooveSyncopation * 1.5;
 
         if (isSyncopatedHit || maskAccent === 1) {
           if (melodySinging) {
@@ -253,7 +244,7 @@ export class PopPianoIdiom extends BasePianoIdiom {
 
         // 🌟 方案 C: 动态加花 (Dynamic Fills) - 侦测主旋律气口
         let isMelodyGap = false;
-        if (!melodySinging && Math.abs(beatInBar - 2.0) < 1e-6) {
+        if (!melodySinging && beatInBar === 2.0) {
             const hasMelodySoon = melodyNotes.some(m => m.onset >= beat && m.onset < beat + 1.5);
             if (!hasMelodySoon) isMelodyGap = true;
         }
@@ -282,11 +273,11 @@ export class PopPianoIdiom extends BasePianoIdiom {
           }
         }
 
-        const isSyncopatedHit = (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && PRNGManager.next() < grooveSyncopation * 1.5;
-        const is16thPush = (Math.abs(beatInBar - 0.75) < 1e-6 || Math.abs(beatInBar - 1.75) < 1e-6 || Math.abs(beatInBar - 2.75) < 1e-6 || Math.abs(beatInBar - 3.75) < 1e-6) && PRNGManager.next() < grooveDensity;
+        const isSyncopatedHit = (beatInBar === 1.5 || beatInBar === 2.5 || beatInBar === 3.5) && PRNGManager.next() < grooveSyncopation * 1.5;
+        const is16thPush = (beatInBar === 0.75 || beatInBar === 1.75 || beatInBar === 2.75 || beatInBar === 3.75) && PRNGManager.next() < grooveDensity;
 
         // 🌟 左手幽灵音 (Ghost Note) - 在弱拍加入极轻的五度音，增强律动滚动感
-        if ((Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6) && PRNGManager.next() > 0.5) {
+        if ((beatInBar === 1.5 || beatInBar === 2.5) && PRNGManager.next() > 0.5) {
             notes.push({ pitch: leftHandGhostPitch, onset: beat, duration: 0.25, velocity: baseVelocity * 0.4 }); 
         }
 
@@ -297,13 +288,13 @@ export class PopPianoIdiom extends BasePianoIdiom {
             this.addBlockChord(notes, beat, 0.5, baseVelocity * (maskAccent === 1 ? 1.15 : 1.05), rightHandTones);
           }
         } else if (!melodySinging && is16thPush && PRNGManager.next() > 0.6) {
-          if (Math.abs(beatInBar - 3.75) < 1e-6 && nextChord) {
+          if (beatInBar === 3.75 && nextChord) {
             const nextTones = HarmonyCore.getChordTones(nextChord, 55);
             this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.9, nextTones.slice(1));
           } else {
             this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.8, rightHandTones.slice(0, 2));
           }
-        } else if (!melodySinging && Math.abs(beat % 1) < 1e-6 && Math.abs(beatInBar) >= 1e-6 && PRNGManager.next() > 0.7) {
+        } else if (!melodySinging && beat % 1 === 0 && beatInBar !== 0 && PRNGManager.next() > 0.7) {
           this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.9, rightHandTones);
         }
       }

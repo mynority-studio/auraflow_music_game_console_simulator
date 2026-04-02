@@ -1,16 +1,10 @@
 import { ICounterMelodyIdiom } from "./ICounterMelodyIdiom";
-import { PopCounterMelodyIdiom } from "./PopCounterMelodyIdiom";
-import { JazzCounterMelodyIdiom } from "./JazzCounterMelodyIdiom";
 
 export class CounterMelodyIdiomRegistry {
-  private static idioms: Record<string, ICounterMelodyIdiom> = {
-    pop: new PopCounterMelodyIdiom(),
-    ballad: new PopCounterMelodyIdiom(),
-    jazz: new JazzCounterMelodyIdiom(),
-  };
+  private static idioms: Record<string, ICounterMelodyIdiom> = {};
 
-  public static getIdiom(name: string): ICounterMelodyIdiom {
-    return this.idioms[name] || this.idioms["pop"];
+  public static getIdiom(name: string): ICounterMelodyIdiom | undefined {
+    return this.idioms[name];
   }
 
   public static register(name: string, idiom: ICounterMelodyIdiom) {

@@ -1,4 +1,4 @@
-import { StyleConfig, Tonality } from '../../types';
+import { StyleConfig } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const PowerBalladStyle: StyleConfig = {
@@ -8,8 +8,8 @@ export const PowerBalladStyle: StyleConfig = {
         bpmRange: [60, 95], // 极慢到中慢，给巨肺留出空间
         timeSignaturePool: [{ signature: [4, 4], weight: 0.8 }, { signature: [6, 8], weight: 0.2 }], // 偶尔有 6/8 拍大歌
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.6 },
-            { tonality: Tonality.Major, weight: 0.4 }
+            { tonality: 'Minor', weight: 0.6 },
+            { tonality: 'Major', weight: 0.4 }
         ]
     },
     harmony: {
@@ -64,9 +64,9 @@ export const PowerBalladStyle: StyleConfig = {
         counterMelodyProbability: 0.9, // 弦乐铺底是灵魂
         grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
-            stringStyle: 'pop',
-            bassStyle: 'pop',
-            drumStyle: 'pop'
+            counterMelodyStyle: 'sustained',
+            bassStyle: 'steady',
+            drumStyle: 'steady'
         },
         mixingPreferences: {
             melody: { pan: 0.1, reverb: 0.4 },
@@ -98,7 +98,7 @@ export const RussianFolkBalladStyle: StyleConfig = {
     global: {
         bpmRange: [62, 72], 
         timeSignaturePool:[{ signature: [4, 4], weight: 0.7 }, { signature: [3, 4], weight: 0.3 }],
-        tonalityPool:[{ tonality: Tonality.Minor, weight: 1.0 }] // 100% 纯小调
+        tonalityPool:[{ tonality: 'Minor', weight: 1.0 }] // 100% 纯小调
     },
     harmony: {
         chorusPool: [['i', 'iv', 'bVII', 'bIII'],['bVI', 'ii7', 'V7', 'i'],['iv', 'bVII', 'bIII', 'bVI', 'ii7', 'V7', 'i', 'i']], 
@@ -140,10 +140,10 @@ export const RussianFolkBalladStyle: StyleConfig = {
         counterMelodyProbability: 0.6, // 增加弦乐或人声铺垫的概率
         grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
         idiomPreferences: {
-            stringStyle: 'folk',
-            pianoStyle: 'pop',
-            drumStyle: 'folk',
-            bassStyle: 'folk'
+            counterMelodyStyle: 'sustained',
+            pianoStyle: 'arpeggiated',
+            drumStyle: 'sparse',
+            bassStyle: 'sparse'
         },
         mixingPreferences: {
             melody: { pan: 0.1, reverb: 0.4 },

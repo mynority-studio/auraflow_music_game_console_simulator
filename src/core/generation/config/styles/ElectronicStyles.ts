@@ -1,4 +1,4 @@
-import { StyleConfig, Tonality } from '../../types';
+import { StyleConfig } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const EurodanceStyle: StyleConfig = {
@@ -9,8 +9,8 @@ export const EurodanceStyle: StyleConfig = {
         bpmRange: [130, 140],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.8 },
-            { tonality: Tonality.Dorian, weight: 0.2 }
+            { tonality: 'Minor', weight: 0.8 },
+            { tonality: 'Dorian', weight: 0.2 }
         ]
     },
     harmony: {
@@ -75,10 +75,9 @@ export const EurodanceStyle: StyleConfig = {
         outroRingOutProbability: 0.5,
         grooveRatio: { foundation: 0.9, comping: 0.2, color: 0.8 },
         idiomPreferences: {
-            bassStyle: 'eurodance',
-            drumStyle: 'eurodance',
-            pianoStyle: 'electronic',
-            humanizeAmount: 0.1 // 🌟 电子乐需要极高的量化精度
+            bassStyle: 'steady',
+            drumStyle: 'high-energy',
+            pianoStyle: 'block-chord'
         },
         mixingPreferences: {
             melody: { pan: 0, reverb: 0.8, delay: 0.5 },
@@ -101,8 +100,8 @@ export const TranceStyle: StyleConfig = {
         bpmRange: [135, 140],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.9 },
-            { tonality: Tonality.Dorian, weight: 0.1 }
+            { tonality: 'Minor', weight: 0.9 },
+            { tonality: 'Dorian', weight: 0.1 }
         ]
     },
     harmony: {
@@ -165,11 +164,10 @@ export const TranceStyle: StyleConfig = {
         outroRingOutProbability: 0.5,
         grooveRatio: { foundation: 0.9, comping: 0.2, color: 0.8 },
         idiomPreferences: {
-            bassStyle: 'trance',
-            drumStyle: 'trance',
-            stringStyle: 'electronic',
-            pianoStyle: 'trance',
-            humanizeAmount: 0.1 // 🌟 电子乐需要极高的量化精度
+            bassStyle: 'steady',
+            drumStyle: 'high-energy',
+            counterMelodyStyle: 'rhythmic',
+            pianoStyle: 'block-chord'
         },
         mixingPreferences: {
             melody: { pan: 0, reverb: 0.8, delay: 0.5 },
@@ -192,8 +190,8 @@ export const SynthwaveStyle: StyleConfig = {
         bpmRange: [100, 115],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.8 },
-            { tonality: Tonality.Dorian, weight: 0.2 }
+            { tonality: 'Minor', weight: 0.8 },
+            { tonality: 'Dorian', weight: 0.2 }
         ]
     },
     harmony: {
@@ -256,10 +254,9 @@ export const SynthwaveStyle: StyleConfig = {
         outroRingOutProbability: 0.5,
         grooveRatio: { foundation: 0.9, comping: 0.2, color: 0.8 },
         idiomPreferences: {
-            bassStyle: 'synthwave',
-            drumStyle: 'synthwave',
-            pianoStyle: 'electronic',
-            humanizeAmount: 0.1 // 🌟 电子乐需要极高的量化精度
+            bassStyle: 'steady',
+            drumStyle: 'high-energy',
+            pianoStyle: 'block-chord'
         },
         mixingPreferences: {
             melody: { pan: 0, reverb: 0.8, delay: 0.5 },

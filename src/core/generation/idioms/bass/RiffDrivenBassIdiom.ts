@@ -7,14 +7,14 @@ import { getRandomRhythmCell } from "../../melody/RhythmCells";
 export class RiffDrivenBassIdiom extends BaseBassIdiom {
   generateBassPattern(ctx: BassIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
-    const { chord, energyLevel, styleId, rootMidi, fifthMidi, grooveDensity, grooveSyncopation } = ctx;
+    const { chord, energyLevel, style, rootMidi, fifthMidi, grooveDensity, grooveSyncopation } = ctx;
     
     const isFunk = ctx.idiomPreferences?.bassStyle === "funk";
     const isElectronic = ctx.idiomPreferences?.bassStyle === "electronic" || ctx.idiomPreferences?.bassStyle === "edm";
 
     let currentBeat = chord.startBeat;
     while (currentBeat < chord.endBeat) {
-      const cell = getRandomRhythmCell(styleId, energyLevel);
+      const cell = getRandomRhythmCell(style?.rhythm?.grooveTemplate, energyLevel);
 
       let advanced = false;
       for (const duration of cell) {

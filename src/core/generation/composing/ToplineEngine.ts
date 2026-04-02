@@ -1,16 +1,19 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig, ChordQuality, Tonality, SectionType } from '../types';
+import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from '../types';
 import { HarmonyCore } from './HarmonyCore';
 import { GrooveEngine } from './GrooveEngine';
 import { SingerPersona } from '../performance/SingerPersona';
-import { GlobalContext } from '../GlobalContext'; 
-// Removed unused import
+import { GlobalContext } from '../GlobalContext';
+import { resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
 import { getStyleGrammar } from '../styles/GrammarRegistry';
 
 type Contour = 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
 type PhraseForm = string[]; // e.g., ['A', 'A', 'B', 'A']
 
 interface MotifTemplate {
+    rhythm?: { pickup: number[]; body: number[]; tail: number[]; };
+    anchors?: { bodyStartPitch?: number; bodyEndPitch?: number; };
+    isMutated?: boolean;
     rhythmOffsets: number[];
     contour: Contour;
     noteCount: number;
@@ -18,6 +21,7 @@ interface MotifTemplate {
 }
 
 import { StyleId } from '../config/StyleFlags';
+import { MoodId, MoodRegistry } from '../config/MoodFlags';
 
 export class ToplineEngine {
     
@@ -37,7 +41,7 @@ export class ToplineEngine {
             const relativeBeat = note.onset - referenceBeat;
             if (relativeBeat < 0) continue; // Prevent pickup notes from playing over wrong chords
             
-            const isOnBeat = (Math.abs(relativeBeat % 0.5) < 1e-6);
+            const isOnBeat = (relativeBeat % 0.5 === 0);
             
             if (isOnBeat) {
                 introMelody.push({
@@ -67,7 +71,7 @@ export class ToplineEngine {
         coreMotif.forEach((note, index) => {
             const relativeBeat = note.onset - chorusStartBeat;
             // 规则 A：随机“遗忘”某些音符（概率随时间递增），保留强拍音符
-            const isOnBeat = Math.abs(relativeBeat % 1.0) < 1e-6;
+            const isOnBeat = relativeBeat % 1.0 === 0; 
             const forgetProbability = isOnBeat ? 0.1 : 0.6; // 弱拍更容易被“遗忘”
             
             if (PRNGManager.next() > forgetProbability) {
@@ -87,12 +91,13 @@ export class ToplineEngine {
     }
 
     public static generateTrackMelody(
-        sections: SectionMetadata[], chords: GeneratedChord[], style: StyleConfig, 
-        tonality: Tonality, persona: SingerPersonaConfig, instrumentName: string = 'Acoustic_Grand',
-        userMotif?: NoteData[], isSecondary: boolean = false
+        sections: SectionMetadata[], chords: GeneratedChord[], style: StyleConfig,
+        tonality: string, persona: SingerPersonaConfig, instrumentName: string = 'Acoustic_Grand',
+        userMotif?: NoteData[], isSecondary: boolean = false,
+        timeSignature: [number, number] = [4, 4], bpm: number = 120, moodId: MoodId = MoodId.Neutral
     ): NoteData[] {
         const fullMelody: NoteData[] = [];
-        const beatsPerBar = GlobalContext.currentTimeSignature[0];
+        const beatsPerBar = timeSignature[0]; // S-2 合规：从参数读取，不依赖 GlobalContext
 
         // 🌟 Phase 1: Global Groove Strategy (Now decoupled per section)
         const verseDensityMult = style.contrast.verseDensityMultiplier || 1.0;
@@ -111,38 +116,38 @@ export class ToplineEngine {
         });
 
         // 🌟 Phase 2: Chorus Motif Extraction
-        const chorusMotifs = new Map<string, MotifTemplate>();
-        const firstChorus = sections.find(s => s.type === SectionType.Chorus);
+        const chorusMotifs: Record<string, MotifTemplate> = {};
+        const firstChorus = sections.find(s => s.name.includes('Chorus'));
         if (firstChorus) {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
             if (chorusChords.length === 0) chorusChords.push(chords[0]);
             // Generate motifs only, don't realize notes yet
-            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary);
-            result.motifs.forEach((val, key) => chorusMotifs.set(key, val));
+            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, bpm, moodId);
+            Object.assign(chorusMotifs, result.motifs);
         }
 
         // 🌟 Phase 3: Chronological Generation with Pitch Continuity
-        const sectionMelodies = new Map<number, NoteData[]>();
+        const sectionMelodies: Record<number, NoteData[]> = {};
         let currentPreviousPitch: number | null = null;
         let globalUnresolvedCount = 0; // 🌟 新增：跨段落追踪未解决的乐句数量
         let maxPitchBeforeChorus = 0; // 🌟 新增：追踪副歌前的最高音，用于制造 Detonator 爆发
 
         sections.forEach((section, index) => {
-            let providedMotifs: Map<string, MotifTemplate> | undefined = undefined;
-            
-            if (section.type === SectionType.Chorus) {
+            let providedMotifs: Record<string, MotifTemplate> | undefined = undefined;
+
+            if (section.name.includes('Chorus')) {
                 // Reuse the motifs we extracted
                 providedMotifs = chorusMotifs;
-            } else if (chorusMotifs.size > 0 && (section.type === SectionType.Verse || section.type === SectionType.PreChorus)) {
+            } else if (Object.keys(chorusMotifs).length > 0 && (section.name.includes('Verse') || section.name.includes('PreChorus'))) {
                 // 🌟 修复：不再强制让主歌复用副歌的全部动机，恢复旋律的多样性
                 // 只在有概率的情况下，让主歌的 A 动机复用副歌的 A 动机（降级版），其余动机重新生成
                 // 增加复用概率，增强连贯性 (从 0.3 提升到 0.5)
-                if (PRNGManager.next() < 0.5) { 
-                    providedMotifs = new Map<string, MotifTemplate>();
-                    const motifA = chorusMotifs.get('A');
+                if (PRNGManager.next() < 0.5) {
+                    providedMotifs = {};
+                    const motifA = chorusMotifs['A'];
                     if (motifA) {
                         const sectionDensity = isSecondary ? (section.groove?.density ?? 0.5) * 0.5 : (section.groove?.density ?? 0.5);
-                        providedMotifs.set('A', this.downgradeMotif(motifA, section.name, sectionDensity));
+                        providedMotifs['A'] = this.downgradeMotif(motifA, section.name, sectionDensity);
                     }
                 }
             }
@@ -152,15 +157,15 @@ export class ToplineEngine {
 
             // 🌟 提案一：主题回响 (Motif Fragmentation)
             // 如果是 Outro，且不是 hard_stop，尝试使用副歌动机进行碎裂化处理
-            if (section.type === SectionType.Outro && section.endingType !== 'hard_stop' && !isSecondary) {
-                const chorusIndex = sections.findIndex(s => s.type === SectionType.Chorus);
-                if (chorusIndex !== -1 && sectionMelodies.has(chorusIndex)) {
-                    const chorusNotes = sectionMelodies.get(chorusIndex)!;
+            if (section.name.includes('Outro') && section.endingType !== 'hard_stop' && !isSecondary) {
+                const chorusIndex = sections.findIndex(s => s.name.includes('Chorus'));
+                if (chorusIndex !== -1 && chorusIndex in sectionMelodies) {
+                    const chorusNotes = sectionMelodies[chorusIndex];
                     if (chorusNotes.length > 0) {
                         const outroBars = (section.endBeat - section.startBeat) / beatsPerBar;
                         const outroNotes = this.generateFadingEchoOutro(chorusNotes, section.startBeat, outroBars, beatsPerBar);
                         
-                        sectionMelodies.set(index, outroNotes);
+                        sectionMelodies[index] = outroNotes;
                         if (outroNotes.length > 0) {
                             currentPreviousPitch = outroNotes[outroNotes.length - 1].pitch;
                         }
@@ -170,14 +175,14 @@ export class ToplineEngine {
                 }
             }
 
-            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus);
+            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, bpm, moodId);
             
-            sectionMelodies.set(index, result.notes);
+            sectionMelodies[index] = result.notes;
             currentPreviousPitch = result.lastPitch; // Pass the last pitch to the next section!
             globalUnresolvedCount = result.unresolvedCount; // 更新未解决计数
             
             // 🌟 记录副歌前的最高音
-            if (section.type !== SectionType.Chorus && result.notes.length > 0) {
+            if (!section.name.includes('Chorus') && result.notes.length > 0) {
                 const sectionMax = Math.max(...result.notes.map(n => n.pitch));
                 if (sectionMax > maxPitchBeforeChorus) {
                     maxPitchBeforeChorus = sectionMax;
@@ -187,7 +192,7 @@ export class ToplineEngine {
 
         // Assemble full melody in order
         sections.forEach((section, index) => {
-            const notes = sectionMelodies.get(index);
+            const notes = sectionMelodies[index];
             if (notes) {
                 fullMelody.push(...notes);
             }
@@ -293,7 +298,7 @@ export class ToplineEngine {
             noteCount = rhythmOffsets.length;
         }
 
-        return { rhythmOffsets, contour, noteCount, phraseLengthBeats };
+        return { rhythm: motif.rhythm, anchors: motif.anchors, isMutated: true, rhythmOffsets, contour, noteCount, phraseLengthBeats };
     }
 
     private static downgradeMotif(motif: MotifTemplate, sectionName: string, density: number): MotifTemplate {
@@ -303,7 +308,7 @@ export class ToplineEngine {
         if (sectionName.includes('Verse')) {
             // Sparser rhythm: drop some off-beats
             newRhythm = newRhythm.filter(r => {
-                if (Math.abs(r % 1) < 1e-6) return true; // keep downbeats
+                if (r % 1 === 0) return true; // keep downbeats
                 return PRNGManager.next() < density; // drop some off-beats based on density
             });
             if (newRhythm.length === 0) newRhythm.push(0);
@@ -316,6 +321,7 @@ export class ToplineEngine {
         }
 
         return {
+            rhythm: motif.rhythm, anchors: motif.anchors, isMutated: true,
             rhythmOffsets: newRhythm,
             contour: newContour,
             noteCount: newRhythm.length,
@@ -324,21 +330,25 @@ export class ToplineEngine {
     }
 
     private static generateSectionMelody(
-        section: SectionMetadata, chords: GeneratedChord[], style: StyleConfig, 
-        tonality: Tonality, persona: SingerPersonaConfig, instrumentName: string,
+        section: SectionMetadata, chords: GeneratedChord[], style: StyleConfig,
+        tonality: string, persona: SingerPersonaConfig, instrumentName: string,
         beatsPerBar: number, userMotif?: NoteData[],
-        providedMotifs?: Map<string, MotifTemplate>,
+        providedMotifs?: Record<string, MotifTemplate>,
         incomingPreviousPitch: number | null = null,
         generateMotifsOnly: boolean = false,
         incomingUnresolvedCount: number = 0,
         isSecondary: boolean = false,
-        maxPitchBeforeChorus: number = 0
-    ): { notes: NoteData[], motifs: Map<string, MotifTemplate>, lastPitch: number | null, unresolvedCount: number } {
+        maxPitchBeforeChorus: number = 0,
+        bpm: number = 120,
+        moodId: MoodId = MoodId.Neutral
+    ): { notes: NoteData[], motifs: Record<string, MotifTemplate>, lastPitch: number | null, unresolvedCount: number } {
         const sectionDensity = section.groove?.density ?? 0.5;
         const sectionSyncopation = section.groove?.syncopationProb ?? 0.2;
-        
+
+        // T-1 合规：用 InstrumentFamily 枚举替换字符串子串匹配
+        const instrFam = resolveInstrumentFamily(instrumentName);
         // 🌟 修复：如果主奏乐器不是人声，说明这是一首纯器乐曲，主旋律应该具有 Solo 的表现力
-        const isVocal = instrumentName.includes('Voice') || instrumentName.includes('Choir') || instrumentName.includes('Vocal') || instrumentName.includes('Synth_Voice') || instrumentName.includes('Marimba');
+        const isVocal = instrFam === InstrumentFamily.Voice;
         const isInstrumental = !isVocal;
         const isLead = !isSecondary;
         let isSolo = false; 
@@ -348,25 +358,25 @@ export class ToplineEngine {
         
         let pitchOffset = style.contrast.versePitchOffset;
 
-        if (section.type === SectionType.Chorus) {
+        if (section.name.includes('Chorus')) {
             pitchOffset = style.contrast.chorusPitchOffset || 5;
-        } else if (section.type === SectionType.Solo_Bridge) {
-            pitchOffset = 12;
-            isSolo = true;
-        } else if (section.type === SectionType.Intro) {
+        } else if (section.name.includes('Solo')) {
+            pitchOffset = 12;  
+            isSolo = true; 
+        } else if (section.name.includes('Intro')) {
             pitchOffset = 12;
             isIntro = true;
             // 🌟 如果是人声（非器乐），则在前奏期间不唱歌
             if (!isInstrumental) {
-                return { notes: [], motifs: new Map(), lastPitch: null, unresolvedCount: incomingUnresolvedCount };
+                return { notes: [], motifs: {}, lastPitch: null, unresolvedCount: incomingUnresolvedCount };
             }
-        } else if (section.type === SectionType.Outro) {
+        } else if (section.name.includes('Outro')) {
             pitchOffset = 12;
             isOutro = true;
             if (!isInstrumental && PRNGManager.next() > 0.5) {
-                return { notes: [], motifs: new Map(), lastPitch: null, unresolvedCount: incomingUnresolvedCount };
+                return { notes: [], motifs: {}, lastPitch: null, unresolvedCount: incomingUnresolvedCount };
             }
-        } else if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
+        } else if (section.name.includes('Break')) {
             pitchOffset = 0;
         }
 
@@ -392,16 +402,16 @@ export class ToplineEngine {
                 duration: beatsPerBar * 2, // 延音两小节
                 velocity: 1.0 // 强力度
             });
-            return { notes: sectionMelody, motifs: new Map(), lastPitch: pitch, unresolvedCount: 0 };
+            return { notes: sectionMelody, motifs: {}, lastPitch: pitch, unresolvedCount: 0 };
         }
 
         let motifUsage: 'None' | 'LiteralRiff' | 'RhythmOnly' | 'BrokenDown' = 'None';
         if (userMotif && userMotif.length > 0) {
-            if (section.type === SectionType.Intro) {
+            if (section.name.includes('Intro')) {
                 motifUsage = 'LiteralRiff';
-            } else if (section.type === SectionType.Chorus) {
+            } else if (section.name.includes('Chorus')) {
                 motifUsage = 'LiteralRiff';
-            } else if (section.type === SectionType.Verse) {
+            } else if (section.name.includes('Verse')) {
                 motifUsage = PRNGManager.next() > 0.5 ? 'BrokenDown' : 'RhythmOnly';
             } else {
                 motifUsage = 'None';
@@ -410,7 +420,7 @@ export class ToplineEngine {
 
         if (motifUsage === 'LiteralRiff' && userMotif) {
             if (generateMotifsOnly) {
-                return { notes: [], motifs: new Map(), lastPitch: null, unresolvedCount: incomingUnresolvedCount };
+                return { notes: [], motifs: {}, lastPitch: null, unresolvedCount: incomingUnresolvedCount };
             }
 
             let maxMotifOnset = 0;
@@ -443,14 +453,15 @@ export class ToplineEngine {
                 });
                 currentBeat += motifLengthBeats;
             }
-            const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentName);
+            // S-2 合规：显式传递 tonality 和 bpm，不依赖 GlobalContext
+            const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentName, tonality, bpm);
             
             let lastPitch = currentPreviousPitch;
             if (humanizedMelody.length > 0) {
                 lastPitch = humanizedMelody[humanizedMelody.length - 1].pitch;
             }
             
-            return { notes: humanizedMelody, motifs: new Map(), lastPitch, unresolvedCount: 0 };
+            return { notes: humanizedMelody, motifs: {}, lastPitch, unresolvedCount: 0 };
         }
 
         const FORMS: PhraseForm[] = [
@@ -466,8 +477,12 @@ export class ToplineEngine {
             ['A', 'A_prime', 'B', 'B_aug']
         ];
         // 只有真正的 Solo 段落才使用完全不重复的自由发展形式，器乐主歌/副歌依然需要结构感
-        const isActualSoloSection = section.type === SectionType.Solo_Bridge;
-        const form = isActualSoloSection ? ['A','A_seq','B','B_seq','C','C_inv','D','D_aug'] : FORMS[Math.floor(PRNGManager.next() * FORMS.length)];
+        const isActualSoloSection = section.name.includes('Solo');
+        // 🌟 Bottom-Up Generative Grammar: Dynamic Phrase State Machine
+        // Replace hardcoded FORMS with dynamic state machine based on Mood
+        // S-2 合规：moodId 从参数读取，替代 GlobalContext.currentMoodId
+        const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
+        const actionBias = mood.phraseActionBias || [0.4, 0.3, 0.3]; // Repeat, Vary, Contrast
         
         // 🌟 修复：倾向于使用更长的乐句（2小节），减少短乐句的频繁重复
         const possibleLengths = [beatsPerBar * 2];
@@ -477,15 +492,54 @@ export class ToplineEngine {
         const phraseLength = possibleLengths[Math.floor(PRNGManager.next() * possibleLengths.length)];
         const totalPhrases = Math.floor((section.endBeat - section.startBeat) / phraseLength);
 
-        const motifs = new Map<string, MotifTemplate>();
+        const motifs: Record<string, MotifTemplate> = {};
         if (providedMotifs) {
-            providedMotifs.forEach((val, key) => motifs.set(key, val));
+            Object.assign(motifs, providedMotifs);
         }
 
         let consecutiveUnresolved = incomingUnresolvedCount; // 🌟 新增：追踪连续未解决的乐句数量
+        let currentLabelCode = 65; // 'A'
+        let lastBaseLabel = 'A';
+        const generatedForm: string[] = [];
+
+        // 🌟 Schenkerian Macro-Targets
+        let macroTargetDegree: number | undefined;
+        if (section.name.includes('Chorus')) {
+            macroTargetDegree = PRNGManager.next() > 0.5 ? 1 : 3;
+        } else if (section.name.includes('Verse')) {
+            macroTargetDegree = PRNGManager.next() > 0.5 ? 5 : 3;
+        } else if (section.name.includes('PreChorus')) {
+            macroTargetDegree = PRNGManager.next() > 0.5 ? 5 : 2;
+        }
 
         for (let phraseIdx = 0; phraseIdx < totalPhrases; phraseIdx++) {
-            const phraseLabel = form[phraseIdx % form.length];
+            let phraseLabel = '';
+            
+            if (phraseIdx === 0) {
+                phraseLabel = 'A';
+                lastBaseLabel = 'A';
+            } else if (isActualSoloSection) {
+                // Solos wander freely
+                phraseLabel = String.fromCharCode(currentLabelCode++);
+                lastBaseLabel = phraseLabel;
+            } else {
+                // Roll for action
+                const roll = PRNGManager.next();
+                if (roll < actionBias[0]) {
+                    // Repeat
+                    phraseLabel = lastBaseLabel;
+                } else if (roll < actionBias[0] + actionBias[1]) {
+                    // Vary
+                    const variations = ['_prime', '_seq', '_inv', '_switch', '_split', '_merge', '_shift'];
+                    phraseLabel = lastBaseLabel + variations[Math.floor(PRNGManager.next() * variations.length)];
+                } else {
+                    // Contrast
+                    currentLabelCode++;
+                    phraseLabel = String.fromCharCode(currentLabelCode);
+                    lastBaseLabel = phraseLabel;
+                }
+            }
+            generatedForm.push(phraseLabel);
             const baseLabel = phraseLabel.split('_')[0]; 
             let isAnswer = phraseLabel.includes('prime') || phraseLabel === 'C' || phraseIdx === totalPhrases - 1;
             
@@ -509,8 +563,11 @@ export class ToplineEngine {
             const isRet = phraseLabel.includes('ret');
             const isAug = phraseLabel.includes('aug');
             const isSwitcheroo = phraseLabel.includes('switch');
+            const isSplit = phraseLabel.includes('split');
+            const isMerge = phraseLabel.includes('merge');
+            const isShift = phraseLabel.includes('shift');
 
-            if (!motifs.has(baseLabel)) {
+            if (!(baseLabel in motifs)) {
                 // 🌟 Vocal/Lead Adjustment: Lower note density for vocals and leads, high for solos
                 const densityMultiplier = isSolo ? 1.8 : (isInstrumental && isLead ? 1.2 : 1.0); 
                 const avgNotesPerBeat = densityMultiplier * sectionDensity; 
@@ -537,7 +594,8 @@ export class ToplineEngine {
 
                 const contour = contours[Math.floor(PRNGManager.next() * contours.length)];
 
-                let rhythmOffsets = this.generateMotifRhythm(melodyGroove, noteCount, phraseLength, sectionDensity, (isIntro || isOutro) && phraseIdx === 0, !isSolo && !isLead, style.id);
+                let rhythm3D = this.generateMotifRhythm(melodyGroove, noteCount, phraseLength, sectionDensity, (isIntro || isOutro) && phraseIdx === 0, !isSolo && !isLead, style, section.energyLevel);
+                let rhythmOffsets = [...rhythm3D.pickup, ...rhythm3D.body, ...rhythm3D.tail];
                 
                 if (userMotif && (motifUsage === 'RhythmOnly' || motifUsage === 'BrokenDown') && baseLabel === 'A') {
                     let motifRhythm = userMotif.map(n => n.onset);
@@ -551,16 +609,16 @@ export class ToplineEngine {
                     }
                 }
 
-                motifs.set(baseLabel, { rhythmOffsets, contour, noteCount: rhythmOffsets.length, phraseLengthBeats: phraseLength });
+                motifs[baseLabel] = { rhythm: rhythm3D, rhythmOffsets, contour, noteCount: rhythmOffsets.length, phraseLengthBeats: phraseLength, isMutated: false };
             }
 
             if (generateMotifsOnly) continue;
 
-            let template = motifs.get(baseLabel)!;
+            let template = motifs[baseLabel];
             
             // 🌟 Apply Advanced Motif Transformations
-            if (isInv || isRet || isAug) {
-                template = this.transformMotif(template, { isInv, isRet, isAug });
+            if (isInv || isRet || isAug || isSwitcheroo || isSplit || isMerge || isShift) {
+                template = this.transformMotif(template, { isInv, isRet, isAug, isSwitcheroo, isSplit, isMerge, isShift });
             }
 
             // 🌟 提出-解决 (Call and Response) Contour Logic
@@ -589,7 +647,7 @@ export class ToplineEngine {
             }
 
             const isLastPhraseOfIntro = isIntro && phraseIdx === totalPhrases - 1;
-            const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentName, isLastPhraseOfIntro, section.name, style, currentPreviousPitch, forceStrongResolution);
+            const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentName, isLastPhraseOfIntro, section.name, style, currentPreviousPitch, forceStrongResolution, false, 0, false, macroTargetDegree, beatsPerBar);
             
             currentPreviousPitch = phraseResult.lastPitch;
             const phraseNotes = phraseResult.notes;
@@ -606,7 +664,7 @@ export class ToplineEngine {
             return { notes: [], motifs, lastPitch: null, unresolvedCount: consecutiveUnresolved };
         }
 
-        if (section.type === SectionType.Chorus && sectionMelody.length > 0) {
+        if (section.name.includes('Chorus') && sectionMelody.length > 0) {
             let maxPitch = -1;
             sectionMelody.forEach(n => {
                 if (n.pitch > maxPitch) maxPitch = n.pitch;
@@ -615,8 +673,8 @@ export class ToplineEngine {
             const maxNotes = sectionMelody.filter(n => n.pitch === maxPitch);
             if (maxNotes.length > 1) {
                 maxNotes.sort((a, b) => {
-                    const aStrong = Math.abs(a.onset % 1) < 1e-6 ? 1 : 0;
-                    const bStrong = Math.abs(b.onset % 1) < 1e-6 ? 1 : 0;
+                    const aStrong = a.onset % 1 === 0 ? 1 : 0;
+                    const bStrong = b.onset % 1 === 0 ? 1 : 0;
                     if (aStrong !== bStrong) return bStrong - aStrong;
                     return b.duration - a.duration;
                 });
@@ -641,117 +699,165 @@ export class ToplineEngine {
     }
 
 
-    // 🌟 核心升级 2 实现：基于 Grammar 骨架生成具体节奏点 (Pick-up + Body + Tail)
-    private static generateMotifRhythm(baseGroove: number[], targetNoteCount: number, phraseLength: number, density: number, isIntroFirstPhrase: boolean = false, isVocal: boolean = false, fallbackStyleId: StyleId = StyleId.ModernPop): number[] {
-        // 1. 获取当前 Style ID 和 Energy Level
-        const activeSection = GlobalContext.getActiveSection();
-        const styleId = activeSection?.localStyleOverride || fallbackStyleId;
-        const energyLevel = activeSection?.energyLevel || 5;
+    // 🌟 核心升级 2 实现：基于 Schillinger 干涉理论生成具体节奏点 (Pick-up + Body + Tail)
+    // S-2 合规：energyLevel 从参数传入，不读 GlobalContext.getActiveSection()
+    private static generateMotifRhythm(baseGroove: number[], targetNoteCount: number, phraseLength: number, density: number, isIntroFirstPhrase: boolean = false, isVocal: boolean = false, style?: StyleConfig, energyLevel: number = 5): { pickup: number[], body: number[], tail: number[] } {
+        
+        let interference: number[] = [];
 
-        const grammar = getStyleGrammar(styleId as StyleId);
-        const pool = energyLevel >= 6 ? grammar.rhythmPool.highEnergy : grammar.rhythmPool.lowEnergy;
+        if (isVocal) {
+            // 🌟 虚拟歌词节奏引擎 (Virtual Lyrics Rhythm Engine)
+            // 模拟人类说话的音节组合 (Syllable Grouping)
+            let currentBeat = 0;
+            const maxBeats = phraseLength;
+            
+            // 决定起拍位置 (Pickup or Downbeat)
+            if (PRNGManager.next() > 0.5 && !isIntroFirstPhrase) {
+                currentBeat = PRNGManager.next() > 0.5 ? 0.5 : 0.75; // 弱起
+            } else if (isIntroFirstPhrase) {
+                currentBeat = 1.0; // 前奏第一句通常正拍或晚进
+            }
 
-        let offsets: number[] = [];
-        
-        // 2. 词法拼接 (Lexical Splicing)
-        // 2.1 Pickup
-        const pickup = pool.pickups[Math.floor(PRNGManager.next() * pool.pickups.length)];
-        offsets.push(...pickup);
+            while (currentBeat < maxBeats - 0.5) {
+                const rand = PRNGManager.next();
+                let syllables = 1;
+                if (rand < 0.2) syllables = 1;
+                else if (rand < 0.6) syllables = 2;
+                else if (rand < 0.9) syllables = 3;
+                else syllables = 4;
 
-        // 2.2 Body (1-2 bodies depending on phraseLength and targetNoteCount)
-        let currentBeat = pickup.length > 0 ? pickup[pickup.length - 1] + 0.5 : 0.0;
-        if (currentBeat < 0) currentBeat = 0; // Ensure it starts non-negative for body
-        
-        // Ensure body starts on a reasonable beat
-        currentBeat = Math.ceil(currentBeat);
-        
-        let bodyCount = phraseLength > 4 ? 2 : 1;
-        if (PRNGManager.next() < 0.3) bodyCount++; // Sometimes add an extra body
-        
-        for (let i = 0; i < bodyCount; i++) {
-            // 🌟 修复同质化：50% 概率使用动态生成的 baseGroove (GrooveDNA)，50% 概率使用 Grammar 预设
-            if (PRNGManager.next() > 0.5 && baseGroove && baseGroove.length > 0) {
-                // 使用动态 baseGroove
-                const grooveSubset = baseGroove.filter(b => PRNGManager.next() < Math.min(1.0, density * 1.5));
-                let maxB = 0;
-                // 随机选择一个起始小节，增加变化
-                const measureOffset = (Math.floor(PRNGManager.next() * 2) * 4); 
-                for (const b of grooveSubset) {
-                    // 只取当前随机选择的小节内的音符
-                    if (b >= measureOffset && b < measureOffset + 4) {
-                        const localB = b - measureOffset;
-                        const onset = currentBeat + localB;
-                        if (onset < phraseLength - 1.0) {
-                            offsets.push(onset);
-                            if (localB > maxB) maxB = localB;
-                        }
-                    }
-                }
-                currentBeat += Math.ceil(maxB + 0.5);
-                if (currentBeat === 0) currentBeat += 2.0; // 防止死循环
-            } else {
-                // 使用 Grammar 预设
-                const body = pool.bodies[Math.floor(PRNGManager.next() * pool.bodies.length)];
-                for (const b of body) {
-                    const onset = currentBeat + b;
-                    if (onset < phraseLength - 1.0) { // Leave room for tail
-                        offsets.push(onset);
-                    }
-                }
-                // Advance currentBeat by the length of the body
-                if (body.length > 0) {
-                    currentBeat += Math.ceil(body[body.length - 1] + 0.5);
+                let wordOffsets: number[] = [];
+                let wordDuration = 1.0;
+
+                if (syllables === 1) {
+                    wordOffsets = [0];
+                    wordDuration = PRNGManager.next() > 0.5 ? 1.0 : 0.5;
+                } else if (syllables === 2) {
+                    const patternRand = PRNGManager.next();
+                    if (patternRand < 0.5) { wordOffsets = [0, 0.5]; wordDuration = 1.0; }
+                    else if (patternRand < 0.8) { wordOffsets = [0, 0.75]; wordDuration = 1.0; } // 附点
+                    else { wordOffsets = [0, 0.25]; wordDuration = 0.5; } // 紧凑的两个十六分
+                } else if (syllables === 3) {
+                    const patternRand = PRNGManager.next();
+                    if (patternRand < 0.4) { wordOffsets = [0, 0.5, 0.75]; wordDuration = 1.0; } // 前八后十六
+                    else if (patternRand < 0.8) { wordOffsets = [0, 0.25, 0.5]; wordDuration = 1.0; } // 前十六后八
+                    else { wordOffsets = [0, 0.33, 0.66]; wordDuration = 1.0; } // 三连音近似
                 } else {
-                    currentBeat += 2.0;
+                    wordOffsets = [0, 0.25, 0.5, 0.75];
+                    wordDuration = 1.0;
+                }
+
+                for (const offset of wordOffsets) {
+                    const onset = currentBeat + offset;
+                    if (onset < maxBeats) {
+                        interference.push(onset);
+                    }
+                }
+
+                currentBeat += wordDuration;
+
+                // 词与词之间的停顿 (Breathing / Phrasing)
+                if (PRNGManager.next() < 0.4) {
+                    currentBeat += PRNGManager.next() > 0.5 ? 0.5 : 1.0; // 停顿半拍或一拍
+                }
+            }
+            
+            // 强制量化到 16 分音符网格 (0.25)
+            interference = interference.map(b => Math.round(b * 4) / 4);
+            // 去重：interference 已量化到 0.25 网格，整数比较可靠，sort 后无 tie
+            const uniq: number[] = [];
+            interference.forEach(v => { if (!uniq.includes(v)) uniq.push(v); });
+            interference = uniq.sort((a, b) => a - b);
+            
+            // 如果密度太低，强制加几个音
+            if (interference.length < 3 && phraseLength >= 2) {
+                interference.push(Math.round(((interference[interference.length-1] || 0) + 0.5)*4)/4);
+            }
+
+        } else {
+            // Schillinger Interference Generators based on energy
+            const gen1 = energyLevel >= 6 ? 3 : 4;
+            const gen2 = energyLevel >= 6 ? 2 : 3;
+            
+            // Generate interference pattern (in 16th notes, so step = 0.25)
+            const maxTicks = phraseLength * 4;
+            for (let i = 0; i < maxTicks; i++) {
+                if (i % gen1 === 0 || i % gen2 === 0) {
+                    // Apply density filter
+                    if (PRNGManager.next() < Math.min(1.0, density * 1.5)) {
+                        interference.push(i * 0.25);
+                    }
                 }
             }
         }
-
-        // 2.3 Tail
-        const tail = pool.tails[Math.floor(PRNGManager.next() * pool.tails.length)];
-        const tailOnset = currentBeat + tail.note;
-        if (tailOnset < phraseLength) {
-            offsets.push(tailOnset);
-        }
-
-        // 🌟 前奏第一句：可能晚一拍或弱起
-        if (isIntroFirstPhrase && offsets.length > 0) {
-            if (PRNGManager.next() > 0.5) {
-                offsets = offsets.filter(r => r > 0.5);
-                if (offsets.length === 0) offsets.push(1.0);
+        
+        // Split into pickup, body, tail
+        const pickup: number[] = [];
+        const body: number[] = [];
+        const tail: number[] = [];
+        
+        // Determine pickup (negative offsets or late previous bar, here we just use early beats)
+        // Let's say pickup is anything before beat 1.0 if phrase starts at 0
+        // Or we can just use the first 1-2 notes as pickup if they are short
+        
+        let bodyStartIdx = 0;
+        if (interference.length > 2 && interference[0] < 1.0 && PRNGManager.next() > 0.5) {
+            pickup.push(interference[0]);
+            if (interference[1] < 1.0 && PRNGManager.next() > 0.5) {
+                pickup.push(interference[1]);
+                bodyStartIdx = 2;
+            } else {
+                bodyStartIdx = 1;
             }
         }
-
-        // 去重并排序
-        offsets = Array.from(new Set(offsets)).sort((a, b) => a - b);
-
-        // 确保至少有一个音符
-        if (offsets.length === 0) {
-            offsets.push(0);
+        
+        // Tail is the last note if it's long enough or isolated
+        let bodyEndIdx = interference.length - 1;
+        if (interference.length > bodyStartIdx + 1 && PRNGManager.next() > 0.3) {
+            tail.push(interference[interference.length - 1]);
+            bodyEndIdx = interference.length - 2;
         }
-
-        return offsets;
+        
+        for (let i = bodyStartIdx; i <= bodyEndIdx; i++) {
+            body.push(interference[i]);
+        }
+        
+        // 🌟 前奏第一句：可能晚一拍或弱起
+        if (isIntroFirstPhrase) {
+            if (pickup.length > 0) pickup.length = 0; // Clear pickup
+            if (body.length > 0 && body[0] < 1.0) {
+                body.shift();
+            }
+            if (body.length === 0) body.push(1.0);
+        }
+        
+        return { pickup, body, tail };
     }
 
     // 🌟 核心升级 4 & 5 实现：结合和弦、线型、起承转合生成音高
     private static realizeMotif(
         template: MotifTemplate, phraseStart: number, chords: GeneratedChord[], 
-        tonality: Tonality, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentName: string, isLastPhraseOfIntro: boolean = false, sectionName: string = '', style?: StyleConfig,
+        tonality: string, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentName: string, isLastPhraseOfIntro: boolean = false, sectionName: string = '', style?: StyleConfig,
         incomingPreviousPitch: number | null = null,
         forceStrongResolution: boolean = false,
         isClimax: boolean = false,
         maxPitchBeforeChorus: number = 0,
-        isUserMotif: boolean = false
+        isUserMotif: boolean = false,
+        macroTargetDegree?: number,
+        beatsPerBar: number = 4
     ): { notes: NoteData[], lastPitch: number | null } {
         const notes: NoteData[] = [];
         const targetCenter = 60 + pitchShift;
-        const activeSection = GlobalContext.getActiveSection();
-        const styleId = activeSection?.localStyleOverride || style?.id || StyleId.ModernPop;
-        const grammar = getStyleGrammar(styleId as StyleId);
+        // S-2 合规：activeSection 已通过 sectionName 参数传入，不读 GlobalContext
+        // safe: style 在唯一调用处 generateSectionMelody 中始终为必填参数
+        const grammar = getStyleGrammar(style!);
         const melodyRules = grammar.melodyRules;
         let currentTension = 0;
 
-        const { rhythmOffsets, contour } = template;
+        const { rhythmOffsets, contour, rhythm, anchors } = template;
+        const pickupLen = rhythm?.pickup?.length || 0;
+        const bodyLen = rhythm?.body?.length || rhythmOffsets.length;
+        const tailLen = rhythm?.tail?.length || 0;
         
         // 记录上一个音高，用于迈尔跳进定律 (Meyer's Leap Rule)
         let previousPitch: number | null = incomingPreviousPitch;
@@ -825,7 +931,7 @@ export class ToplineEngine {
             // 偶尔制造断奏感，但必须是干净的网格
             if (duration >= 1.0 && PRNGManager.next() > 0.8) {
                 duration -= 0.25; // 缩短一个十六分音符，留出干净的休止
-            } else if (Math.abs(duration - 0.5) < 1e-6 && PRNGManager.next() > 0.8) {
+            } else if (duration === 0.5 && PRNGManager.next() > 0.8) {
                 duration = 0.25; // 八分音符变十六分音符
             }
 
@@ -837,8 +943,9 @@ export class ToplineEngine {
             // 强制跳过音阶中的 4 音和 7 音（大调），直接跳到下一个五声音阶内的音
             const pentatonicGapProb = melodyRules.pentatonicGapProbability ?? 0.3;
             if (PRNGManager.next() < pentatonicGapProb) {
-                const isMajor = (tonality === Tonality.Major || tonality === Tonality.Major_Pentatonic);
-                const rootPc = GlobalContext.currentKeyOffset || 0;
+                const isMajor = tonality.includes('Major');
+                // S-2 合规：chord.keyOffset 已由 HarmonyCore 注入，默认 0
+                const rootPc = activeChord.keyOffset ?? 0;
                 const avoidPcs = isMajor ? [(rootPc + 5) % 12, (rootPc + 11) % 12] : [(rootPc + 2) % 12, (rootPc + 8) % 12];
                 safeScalePcs = safeScalePcs.filter(pc => !avoidPcs.includes(pc));
             }
@@ -846,22 +953,22 @@ export class ToplineEngine {
             // 🌟 Neo-Soul / Advanced: Pentatonic Shifts
             const pentatonicShiftProb = style?.melody?.pentatonicShiftProbability ?? 0;
             if (pentatonicShiftProb > 0 && PRNGManager.next() < pentatonicShiftProb) {
-                if (activeChord.quality === ChordQuality.Minor7 || activeChord.quality === ChordQuality.Minor9) {
+                if (activeChord.quality === 'Minor7' || activeChord.quality === 'Minor9') {
                     // Minor pentatonic built on the 5th
-                    safeScalePcs = HarmonyCore.getScalePitches(Tonality.Minor_Pentatonic).map(p => (activeChord.root + 7 + p) % 12);
-                } else if (activeChord.quality === ChordQuality.Major7 || activeChord.quality === ChordQuality.Add9) {
+                    safeScalePcs = HarmonyCore.getScalePitches('Minor_Pentatonic').map(p => (activeChord.root + 7 + p) % 12);
+                } else if (activeChord.quality === 'Major7' || activeChord.quality === 'Add9') {
                     // Major pentatonic built on the 5th
-                    safeScalePcs = HarmonyCore.getScalePitches(Tonality.Major_Pentatonic).map(p => (activeChord.root + 7 + p) % 12);
-                } else if (activeChord.quality === ChordQuality.Dominant7) {
+                    safeScalePcs = HarmonyCore.getScalePitches('Major_Pentatonic').map(p => (activeChord.root + 7 + p) % 12);
+                } else if (activeChord.quality === 'Dominant7') {
                     // Minor pentatonic built on b3 (Altered sound)
-                    safeScalePcs = HarmonyCore.getScalePitches(Tonality.Minor_Pentatonic).map(p => (activeChord.root + 3 + p) % 12);
+                    safeScalePcs = HarmonyCore.getScalePitches('Minor_Pentatonic').map(p => (activeChord.root + 3 + p) % 12);
                 }
             }
 
             // 🌟 Dynamic Melody Simplification: Give complex chords space
-            const isStrongBeat = (Math.abs(onset % 1) < 1e-6);
+            const isStrongBeat = (onset % 1 === 0);
             const isLongNote = duration >= 1.0;
-            const isComplexChord = activeChord.quality === ChordQuality.Minor9 || activeChord.quality === ChordQuality.Add9 || activeChord.quality === ChordQuality.Dominant7Sus4 || activeChord.quality === ChordQuality.HalfDiminished;
+            const isComplexChord = ['Minor9', 'Add9', 'Dominant7Sus4', 'HalfDiminished'].includes(activeChord.quality);
             if (isComplexChord && !isStrongBeat && !isLongNote && PRNGManager.next() < 0.3) {
                 continue; // Skip weak beats over complex chords
             }
@@ -877,44 +984,31 @@ export class ToplineEngine {
             const progressJitter = progress + (PRNGManager.next() * 0.1 - 0.05);
             const safeProgress = Math.max(0, Math.min(1, progressJitter));
 
-            switch (contour) {
+            const isPickup = i < pickupLen; const isBody = i >= pickupLen && i < pickupLen + bodyLen; const isTail = i >= pickupLen + bodyLen; if (isTail || i === adjustedOffsets.length - 1) { if (macroTargetDegree !== undefined) { // S-2 合规：chord.keyOffset 已由 HarmonyCore 注入，默认 0
+ const rootPc = activeChord.keyOffset ?? 0; const scalePcs = HarmonyCore.getScalePitches(tonality); const degreeIdx = (macroTargetDegree - 1) % scalePcs.length; const targetPc = (rootPc + scalePcs[degreeIdx]) % 12; let minDiff = 100; for (let oct = -1; oct <= 1; oct++) { const p = targetPc + (Math.floor(targetCenter / 12) + oct) * 12; const diff = Math.abs(p - targetCenter); if (diff < minDiff) { minDiff = diff; idealPitch = p; } } } else { idealPitch = targetCenter; } } else if (isBody && i === pickupLen && anchors?.bodyStartPitch !== undefined) { idealPitch = anchors.bodyStartPitch; } else { switch (contour) {
                 case 'Ascending': 
                     idealPitch = targetCenter - range/2 + safeProgress * range; 
-                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch += (PRNGManager.next() * 4 - 2);
+                    // 增加局部起伏
+                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch -= (PRNGManager.next() * 3);
                     break;
                 case 'Descending': 
                     idealPitch = targetCenter + range/2 - safeProgress * range; 
-                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch += (PRNGManager.next() * 4 - 2);
+                    // 增加局部起伏
+                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch += (PRNGManager.next() * 3);
                     break;
                 case 'Arch': 
                     idealPitch = targetCenter - range/2 + Math.sin(safeProgress * Math.PI) * range; 
-                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch += (PRNGManager.next() * 4 - 2);
                     break;
                 case 'Bowl': 
                     idealPitch = targetCenter + range/2 - Math.sin(safeProgress * Math.PI) * range; 
-                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch += (PRNGManager.next() * 4 - 2);
                     break;
                 case 'Static': 
-                    // 静态也允许微小波动，使用马尔可夫链思想，倾向于保持在中心附近，偶尔偏离
-                    const staticDeviation = previousPitch !== null ? (previousPitch - targetCenter) : 0;
-                    const returnToCenterProb = 0.8;
-                    if (PRNGManager.next() < returnToCenterProb) {
-                        idealPitch = targetCenter + (PRNGManager.next() * 2 - 1); // 靠近中心
-                    } else {
-                        idealPitch = targetCenter + staticDeviation + (PRNGManager.next() * 4 - 2); // 稍微偏离
-                    }
+                    idealPitch = targetCenter; 
                     break;
                 case 'Wandering': 
-                    // 漫游线型：基于上一个音高进行随机游走
-                    if (previousPitch !== null) {
-                        const maxWanderStep = 4;
-                        idealPitch = previousPitch + (PRNGManager.next() * maxWanderStep * 2 - maxWanderStep);
-                        // 限制在 range 范围内
-                        idealPitch = Math.max(targetCenter - range/2, Math.min(targetCenter + range/2, idealPitch));
-                    } else {
-                        idealPitch = targetCenter + (PRNGManager.next() * range - range/2);
-                    }
-                    break;
+                        idealPitch = targetCenter + (PRNGManager.next() * range - range/2); 
+                        break;
+                }
             }
 
             // 🌟 锚定音高 (Pitch Anchoring) & 不和谐音控制
@@ -948,23 +1042,7 @@ export class ToplineEngine {
                     }
 
                     let targetTones: number[] = [];
-                    
-                    // 🌟 Global Resolution Logic (for Dark Pop / weird chords)
-                    // 如果当前和弦是紧张的经过和弦，或者我们处于强解决状态，
-                    // 优先尝试解决到全局调性的主音、三音或五音（如果它们不与当前和弦冲突）
-                    const globalRootPc = GlobalContext.currentKeyOffset || 0;
-                    const globalTonicTones = [globalRootPc, (globalRootPc + 4) % 12, (globalRootPc + 7) % 12]; // Major 1, 3, 5
-                    if (tonality === Tonality.Minor || tonality === Tonality.Minor_Pentatonic) {
-                        globalTonicTones[1] = (globalRootPc + 3) % 12; // Minor 3
-                    }
-                    
-                    // 检查全局稳定音是否在当前和弦内
-                    const stableGlobalTonesInChord = targetChordTones.filter(ct => globalTonicTones.includes(ct % 12));
-                    
-                    if (stableGlobalTonesInChord.length > 0 && (forceStrongResolution || melodyRules.tailResolution || PRNGManager.next() > 0.4)) {
-                        // 优先解决到既是全局稳定音，又是当前和弦内音的音高
-                        targetTones = stableGlobalTonesInChord;
-                    } else if (forceStrongResolution || melodyRules.tailResolution) {
+                    if (forceStrongResolution || melodyRules.tailResolution) {
                         // 🌟 强制强解决：回到和弦根音(1)或三音(3)
                         targetTones = [targetChordTones[0]]; 
                         if (targetChordTones[1] !== undefined) targetTones.push(targetChordTones[1]); // 三音
@@ -983,18 +1061,6 @@ export class ToplineEngine {
                     
                     const selectedTarget = targetTones[Math.floor(PRNGManager.next() * targetTones.length)];
                     currentPitch = this.getNearestOctave(selectedTarget, idealPitch); 
-                    
-                    // 🌟 尾音强制降落法则 (Tail Resolution Rule)
-                    // 确保解决的音高比前一个音低（如果可能），形成下行解决的语感
-                    if (previousPitch !== null && currentPitch > previousPitch && (forceStrongResolution || melodyRules.tailResolution || PRNGManager.next() > 0.3)) {
-                        currentPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, -1);
-                        // 如果下移后不是和弦内音，继续下移直到是和弦内音
-                        let attempts = 0;
-                        while (!targetChordTones.map(ct => ct % 12).includes(currentPitch % 12) && attempts < 3) {
-                            currentPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, -1);
-                            attempts++;
-                        }
-                    }
                 } else {
                     // 倒数第二个音：导音或经过音，引导向解决
                     currentPitch = safeScalePcs.reduce((prev, curr) => {
@@ -1042,9 +1108,24 @@ export class ToplineEngine {
                     return currDist < prevDist ? curr : prev;
                 });
                 currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+
+                // 🌟 倚音法则 (Appoggiatura / Tension & Release)
+                // 在强拍上故意唱一个非和弦音（如上方大二度），制造紧张感
+                const useAppoggiatura = PRNGManager.next() < 0.15; // 15% 概率触发
+                if (useAppoggiatura && i < adjustedOffsets.length - 1) {
+                    // 向上偏移一个音阶级数（Diatonic Step）
+                    currentPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, 1);
+                    // 标记我们需要在下一个音符解决它
+                    currentTension = -1; // 负数表示下一个音需要向下级进解决
+                }
             } else {
                 // 弱拍或短音：吸附到最近的音阶安全音 (Scale Tones)
-                // 🌟 不和谐音控制 (Dissonance Control)
+                if (currentTension !== 0 && previousPitch !== null) {
+                    // 🌟 解决倚音 (Resolve Appoggiatura)
+                    currentPitch = HarmonyCore.shiftDiatonic(previousPitch, safeScalePcs, currentTension);
+                    currentTension = 0;
+                } else {
+                    // 🌟 不和谐音控制 (Dissonance Control)
                 const isEmotionalCore = sectionName.includes('Intro') || sectionName.includes('Chorus') || sectionName.includes('Outro');
                 const maxDissonance = style.harmonyRules?.maxDissonanceTolerance ?? 0.6;
                 
@@ -1071,19 +1152,11 @@ export class ToplineEngine {
                     });
                 }
                 currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+                }
             }
             
             // 🎷 物理限制：乐器绝对音域与“困难音”避让
-            // 🌟 Linearity Rule for Complex Chords (Dark Pop fix)
-            // 如果是复杂和弦，且有前一个音，优先选择级进（平滑过渡）而不是跳跃到和弦内音
-            if (isComplexChord && previousPitch !== null && Math.abs(currentPitch - previousPitch) > 4 && PRNGManager.next() > 0.3) {
-                // 强制级进，向 idealPitch 靠拢
-                if (idealPitch > previousPitch) {
-                    currentPitch = HarmonyCore.shiftDiatonic(previousPitch, safeScalePcs, 1);
-                } else {
-                    currentPitch = HarmonyCore.shiftDiatonic(previousPitch, safeScalePcs, -1);
-                }
-            }
+            
             
             let maxPitch = isSolo ? 96 : 88; // E6
             let minPitch = isSolo ? 48 : 52; // E3
@@ -1097,7 +1170,8 @@ export class ToplineEngine {
                 }
             }
             
-            const chordKeyOffset = activeChord.keyOffset !== undefined ? activeChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+            // S-2 合规：chord.keyOffset 已由 HarmonyCore 注入，默认 0 而非 GlobalContext
+            const chordKeyOffset = activeChord.keyOffset ?? 0;
             maxPitch -= chordKeyOffset;
             minPitch -= chordKeyOffset;
             if (currentPitch > maxPitch) currentPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, -2);
@@ -1191,13 +1265,13 @@ export class ToplineEngine {
                     // 🌟 级进时，有概率加入倚音 (Grace Note) / 幽灵音过度
                     // 大幅降低倚音频率，避免过于密集和烦人。使用方法论：一小节最多出现一次，或者只在长音前出现
                     const maxGraceNotesPerPhrase = isSolo ? 2 : 1;
-                    let graceNotesInPhrase = notes.filter(n => n.isGraceNote).length;
+                    let graceNotesInPhrase = notes.filter(n => (n as any).isGraceNote).length;
                     
                     const graceChance = style?.melody?.inflectionProbability ?? (isSolo ? 0.08 : (isInstrumental ? 0.04 : 0.02)); // 大幅降低倚音频率
                     if (PRNGManager.next() < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
                         const lastNote = notes[notes.length - 1];
                         // 只有当上一个音足够长，且当前音在强拍或次强拍时，才加倚音，增加“高级感”
-                        const isTargetStrongBeat = (Math.abs(onset % 1) < 1e-6) || (Math.abs(onset % 0.5) < 1e-6 && PRNGManager.next() < 0.3);
+                        const isTargetStrongBeat = (onset % 1 === 0) || (onset % 0.5 === 0 && PRNGManager.next() < 0.3);
                         
                         if (onset - lastNote.onset >= 0.5 && isTargetStrongBeat) {
                             // 倚音 (Grace Note) - 极短的音符，紧贴在当前音符之前
@@ -1237,7 +1311,7 @@ export class ToplineEngine {
                                     // 倚音力度极弱
                                     velocity: Math.max(0.1, lastNote.velocity * (0.2 + PRNGManager.next() * 0.15)),
                                     isGraceNote: true
-                                });
+                                } as any);
                             }
                         }
                     }
@@ -1277,8 +1351,8 @@ export class ToplineEngine {
             while (currentPitch < minPitch) currentPitch += 12;
 
             // 🌟 真实人类演奏的轻重音 (Humanized Accents & Dynamics)
-            const beatsPerBar = GlobalContext.currentTimeSignature[0];
-            const beatInBar = onset % beatsPerBar; 
+            // S-2 合规：使用外层 generateTrackMelody 的 beatsPerBar（来自 timeSignature 参数）
+            const beatInBar = onset % beatsPerBar;
             const is68 = beatsPerBar === 6;
             
             let metricAccent = 0.6; // 默认弱拍
@@ -1289,8 +1363,8 @@ export class ToplineEngine {
             }
             else if (is68 && beatInBar === 3) metricAccent = 0.85; // 6/8 次强拍
             else if (!is68 && beatInBar === 2 && beatsPerBar === 4) metricAccent = 0.8; // 4/4 次强拍
-            else if (Math.abs(beatInBar % 1) < 1e-6) metricAccent = 0.75; // 正拍
-            else if (Math.abs(beatInBar % 0.5) < 1e-6) metricAccent = 0.6; // 8分音符反拍
+            else if (beatInBar % 1 === 0) metricAccent = 0.75; // 正拍
+            else if (beatInBar % 0.5 === 0) metricAccent = 0.6; // 8分音符反拍
             else metricAccent = 0.5; // 16分音符反拍
             
             // 引入一点力度随机性，结合音高起伏
@@ -1420,7 +1494,7 @@ export class ToplineEngine {
             let climaxNote = notes[0];
             let maxScore = -1;
             for (const note of notes) {
-                const isStrong = Math.abs(note.onset % 1) < 1e-6;
+                const isStrong = note.onset % 1 === 0;
                 const score = (isStrong ? 10 : 0) + note.duration;
                 if (score > maxScore) {
                     maxScore = score;

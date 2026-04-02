@@ -1,10 +1,10 @@
 import { NoteData, GeneratedChord } from "../../types";
-import { StyleId } from "../../config/StyleFlags";
+import { StyleConfig } from "../../types";
 
 export interface RiffContext {
   chord: GeneratedChord;
   energyLevel: number;
-  styleId: StyleId;
+  style?: StyleConfig;
 }
 
 export interface IRiffIdiom {

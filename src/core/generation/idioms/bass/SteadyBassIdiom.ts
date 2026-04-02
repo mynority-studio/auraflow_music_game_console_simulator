@@ -4,8 +4,9 @@ import { GlobalContext } from "../../GlobalContext";
 import { BassIdiomContext } from "./IBassIdiom";
 import { BaseBassIdiom } from "./BaseBassIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
+import { StyleId } from "../../config/StyleFlags";
 
-export class PopBassIdiom extends BaseBassIdiom {
+export class SteadyBassIdiom extends BaseBassIdiom {
   generateBassPattern(ctx: BassIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const {
@@ -20,8 +21,7 @@ export class PopBassIdiom extends BaseBassIdiom {
       nextTargetCenter,
       safeScalePcs,
       grooveDensity,
-      grooveSyncopation,
-      melodyNotes
+      grooveSyncopation
     } = ctx;
 
     const baseVel = 0.8;
@@ -64,32 +64,33 @@ export class PopBassIdiom extends BaseBassIdiom {
     };
 
     const activeSection = GlobalContext.getActiveSection();
-    const grooveMask = activeSection?.grooveMask;
-
-    for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
+for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const isChordStart = beat === chord.startBeat;
       const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
       const beatInBar = beat % beatsPerBar;
 
       let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
 
-      const isEDM = ctx.idiomPreferences?.bassStyle === 'eurodance' || ctx.idiomPreferences?.bassStyle === 'trance' || ctx.idiomPreferences?.bassStyle === 'synthwave' || ctx.idiomPreferences?.bassStyle === 'edm' || ctx.idiomPreferences?.bassStyle === 'electronic';
+      const isEDM = ctx.style?.id === StyleId.Eurodance || ctx.style?.id === StyleId.Trance || ctx.style?.id === StyleId.Synthwave;
+
+      // 🌟 倾听机制 (The Listening Mechanism): Check if melody has an onset here
+      const hasMelodyAccent = ctx.melodyNotes.some(n => Math.abs(n.onset - beat) < 0.05);
+      // 🌟 如果主旋律在这里有发声，贝斯有更高概率去“贴合 (Lock)” 这个重音
+      if (hasMelodyAccent) {
+          maskAccent = 1;
+      }
 
       if (isEDM && energyLevel >= 5) {
         // EDM Bass Logic: Off-beat or Syncopated, NOT 16th note spam
         const subBeat = beatInBar % 1;
-        if (Math.abs(subBeat - 0.5) < 1e-6 || maskAccent === 1) {
+        if (subBeat === 0.5 || maskAccent === 1) {
           notes.push({
             pitch: targetBassPitch,
             onset: beat,
             duration: 0.25,
             velocity: baseVel * 1.2 * (maskAccent === 1 ? 1.1 : 1.0),
           });
-        } else if (energyLevel >= 7 && (Math.abs(beatInBar - 1.25) < 1e-6 || Math.abs(beatInBar - 3.25) < 1e-6) && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
+        } else if (energyLevel >= 7 && (beatInBar === 1.25 || beatInBar === 3.25) && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
            notes.push({
             pitch: targetBassPitch,
             onset: beat,
@@ -116,11 +117,12 @@ export class PopBassIdiom extends BaseBassIdiom {
         actualBassPitch = ctx.bassTones[1] - 12; // 1st inversion
       }
 
+      // 🌟 律动咬合 (Groove Lock): 如果主旋律有切分音，贝斯强制跟随
       if (isChordStart || isGrooveHit || maskAccent === 1) {
         notes.push({
           pitch: actualBassPitch,
           onset: beat,
-          duration: 0.5,
+          duration: hasMelodyAccent ? 0.25 : 0.5, // 贴合主旋律时，贝斯更短促有力
           velocity: baseVel * 1.1 * (maskAccent === 1 ? 1.1 : 1.0),
         });
       } else if (nextChord && beat === chord.endBeat - 0.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
@@ -140,14 +142,14 @@ export class PopBassIdiom extends BaseBassIdiom {
           duration: 0.25,
           velocity: baseVel * 0.9 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if ((Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
+      } else if ((beatInBar === 1.5 || beatInBar === 3.5) && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,
           duration: 0.25,
           velocity: baseVel * 0.7 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (Math.abs(beat % 0.5 - 0.25) < 1e-6 && (PRNGManager.next() < (grooveDensity - 0.5) * 0.4 || maskAccent === 1)) { // Significantly reduced 16th note spam
+      } else if (beat % 0.5 === 0.25 && (PRNGManager.next() < (grooveDensity - 0.5) * 0.4 || maskAccent === 1)) { // Significantly reduced 16th note spam
         notes.push({
           pitch: targetBassPitch,
           onset: beat,

@@ -1,14 +1,14 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord, IdiomPreferences } from '../../types';
+import { NoteData, GeneratedChord } from '../../types';
 import { GlobalContext } from '../../GlobalContext';
 
 export interface IInstrumentIdiom {
-    apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[];
-    humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand?: boolean, idiomPreferences?: IdiomPreferences): NoteData[];
+    apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[];
+    humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand?: boolean, idiomPreferences?: any): NoteData[];
 }
 
 export abstract class BaseIdiom implements IInstrumentIdiom {
-    abstract apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[];
+    abstract apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[];
 
     // 采用高斯分布生成更自然的随机数
     protected randomGaussian(mean: number, stdDev: number): number {
@@ -46,7 +46,7 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
     }
 
     // 默认的人性化实现（可被子类重写）
-    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: IdiomPreferences): NoteData[] {
+    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
         const sorted = [...notes].sort((a, b) => a.onset - b.onset);
         const result: NoteData[] = [];
         
@@ -91,7 +91,7 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
     }
 
     // 获取具体乐器的人性化参数（子类实现）
-    protected abstract getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences): {
+    protected abstract getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any): {
         strumDelay: number;
         timingWobble: number;
         velocityWobble: number;

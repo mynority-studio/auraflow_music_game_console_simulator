@@ -3,7 +3,7 @@ import { PRNGManager } from '../../utils/PRNG';
 // 📄 文件路径: /src/core/generation/arrangement/TransitionEngine.ts
 // 🎬 V2.3 边界导演引擎 (加入 Drum Fills, The Drop, Cymbal Swells)
 // ==========================================
-import { NoteData, SectionMetadata, SectionType } from '../types';
+import { NoteData, SectionMetadata } from '../types';
 
 import { StyleId } from '../config/StyleFlags';
 import { StyleConfig } from '../types';
@@ -47,7 +47,10 @@ export class TransitionEngine {
             return;
         }
 
-        const fillType = PRNGManager.next();
+        let fillType = PRNGManager.next();
+        if (energyDelta >= 3) {
+            fillType = PRNGManager.next() > 0.5 ? 0.6 : 0.1;
+        }
 
         if (fillType < 0.25) {
             // Type A: 线性加花 (Linear Fill - RLKK or similar) - 绝不重叠
@@ -65,7 +68,9 @@ export class TransitionEngine {
             let pIdx = 0;
             
             // 决定加花的密度 (16分音符或8分音符)
-            const step = (fillLength <= 1.0 || currentEnergy > 7) ? 0.25 : 0.5;
+            let step = 0.5;
+            if (energyDelta >= 3 || currentEnergy > 7) step = 0.25;
+            if (energyDelta >= 5 && fillLength <= 1.0) step = 0.125;
             
             for (let beat = startBeat; beat < endBeat; beat += step) {
                 const pitch = pattern[pIdx % pattern.length];
@@ -85,7 +90,7 @@ export class TransitionEngine {
                 const beatInFill = beat - startBeat;
                 
                 // 重音移位逻辑：随机决定重音位置，打破常规的强拍
-                const isAccent = PRNGManager.next() > 0.7 || (Math.abs(beatInFill % 1 - 0.75) < 1e-6);
+                const isAccent = PRNGManager.next() > 0.7 || (beatInFill % 1 === 0.75); 
                 
                 // 🌟 极大地拉开重音和弱音的力度差距，突出双跳和移位感
                 const vel = isAccent ? (0.9 + PRNGManager.next() * 0.1) : (0.2 + PRNGManager.next() * 0.15); 
@@ -157,7 +162,7 @@ export class TransitionEngine {
                     drums.push({ pitch, onset: beat, duration: 0.1, velocity: vel });
                     
                     // 强拍或切分点加底鼓
-                    if (Math.abs(beatInFill % 1) < 1e-6 || Math.abs(beatInFill % 1 - 0.75) < 1e-6) {
+                    if (beatInFill % 1 === 0 || beatInFill % 1 === 0.75) {
                         drums.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.9 });
                     }
                 }
@@ -200,7 +205,7 @@ export class TransitionEngine {
             for (let subBeat = beat; subBeat < beat + 0.25; subBeat += step) {
                 drums.push({ pitch: SNARE, onset: subBeat, duration: 0.1, velocity: vel });
                 // Add kick on 8th notes
-                if (Math.abs(subBeat % 0.5) < 1e-6) {
+                if (subBeat % 0.5 === 0) {
                     drums.push({ pitch: KICK, onset: subBeat, duration: 0.1, velocity: vel });
                 }
             }
@@ -231,7 +236,7 @@ export class TransitionEngine {
             else if (progress > 0.3) step = 0.5; // 30%-60%：8分音符
             
             // 只有在当前 beat 匹配 step 时才打
-            if (Math.abs(beat % step) < 1e-6) {
+            if (beat % step === 0) {
                 for (let subBeat = beat; subBeat < beat + 0.25; subBeat += step) {
                     // 越往后，军鼓和底鼓一起砸
                     drums.push({ pitch: SNARE, onset: subBeat, duration: 0.1, velocity: vel });
@@ -308,7 +313,7 @@ export class TransitionEngine {
             const boundaryBeat = sec.endBeat;
             const lastBarStart = boundaryBeat - beatsPerBar;
 
-            if (sec.type === SectionType.BuildUp && nextEnergy >= 8) {
+            if (sec.name.includes('BuildUp') && nextEnergy >= 8) {
                 // EDM 专属超长 BuildUp
                 this.injectEpicBuildUp(drums, sec.startBeat, boundaryBeat);
                 // 强制 Drop 前悬空 1 拍

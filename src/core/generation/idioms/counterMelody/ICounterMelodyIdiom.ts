@@ -1,11 +1,14 @@
-import { NoteData, GeneratedChord } from "../../types";
-import { StyleId } from "../../config/StyleFlags";
+import { NoteData, GeneratedChord, StyleConfig, SectionMetadata } from "../../types";
 
 export interface CounterMelodyContext {
   chord: GeneratedChord;
   energyLevel: number;
   melodyNotes: NoteData[];
-  styleId: StyleId;
+  style?: StyleConfig;
+  /** S-2 合规：由 TextureMapper 从 renderCtx 注入，替代 GlobalContext 读取 */
+  keyOffset?: number;
+  tonality?: string;
+  activeSection?: SectionMetadata | null;
 }
 
 export interface ICounterMelodyIdiom {

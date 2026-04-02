@@ -58,9 +58,8 @@ export const RnBRhythmCells: RhythmCell[] = [
 
 import { StyleRegistry } from '../config/styles/StyleRegistry';
 
-export function getRandomRhythmCell(styleId: StyleId, energyLevel: number, isVocal: boolean = false): number[] {
-    const style = StyleRegistry[styleId];
-    let cells = style?.rhythm?.grooveTemplate || PopRhythmCells;
+export function getRandomRhythmCell(grooveTemplate: RhythmCell[] | undefined, energyLevel: number, isVocal: boolean = false): number[] {
+    let cells = grooveTemplate || PopRhythmCells;
 
     // Filter by energy level (e.g., higher energy = more fast/subdivided cells)
     let filteredCells = cells;

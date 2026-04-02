@@ -2,21 +2,21 @@ import { NoteData } from "../../types";
 import { ICounterMelodyIdiom, CounterMelodyContext } from "./ICounterMelodyIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
 export abstract class BaseCounterMelodyIdiom implements ICounterMelodyIdiom {
-  protected abstract getPitchOptions(isDownbeat: boolean, chordTones: number[], scalePcs: number[]): number[];
+  protected abstract getPitchOptions(isDownbeat: boolean, chordTones: number[], scalePcs: number[], tonality?: string): number[];
 
   generate(ctx: CounterMelodyContext): NoteData[] {
     const { chord, energyLevel, melodyNotes } = ctx;
     const notes: NoteData[] = [];
-    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+    // S-2 合规：从 ctx 参数读取，替代 GlobalContext 读取
+    const keyOffset = ctx.keyOffset ?? chord.keyOffset ?? 0;
     const chordTones = HarmonyCore.getChordTones(chord, 72 - keyOffset);
-    const scalePcs = HarmonyCore.getSafeScalePitches(chord, GlobalContext.currentTonality);
+    const scalePcs = HarmonyCore.getSafeScalePitches(chord, ctx.tonality ?? 'Major');
 
     // 🌟 Determine Interplay Mode based on Section ID and Type for methodology
-    const sectionId = GlobalContext.getActiveSection()?.name || "default";
-    const sectionName = GlobalContext.getActiveSection()?.name || "Verse";
+    const sectionId = ctx.activeSection?.name || "default";
+    const sectionName = ctx.activeSection?.name || "Verse";
     let hash = 0;
     for (let i = 0; i < sectionId.length; i++) {
       hash = (hash << 5) - hash + sectionId.charCodeAt(i);
@@ -187,9 +187,9 @@ export abstract class BaseCounterMelodyIdiom implements ICounterMelodyIdiom {
       }
 
       if (isActive && beat < phraseEndBeat) {
-        const isDownbeat = Math.abs(beat % 1) < 1e-6;
+        const isDownbeat = beat % 1 === 0;
         
-        const pitchOptions = this.getPitchOptions(isDownbeat, chordTones, scalePcs);
+        const pitchOptions = this.getPitchOptions(isDownbeat, chordTones, scalePcs, ctx.tonality ?? 'Major');
 
         let duration = 0.5;
         if (PRNGManager.next() > 0.6) {

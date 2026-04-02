@@ -1,10 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord, IdiomPreferences } from '../../types';
+import { NoteData, GeneratedChord } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 import { GlobalContext } from '../../GlobalContext';
 
 export class StringIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: IdiomPreferences): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
         const stringStyle = idiomPreferences?.stringStyle || 'pop';
         
         // 铁律 1: 同一声部，不要写超过 2 个音同时响
@@ -176,7 +176,7 @@ export class StringIdiom extends BaseIdiom {
         return finalNotes;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: IdiomPreferences) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
         const stringStyle = idiomPreferences?.stringStyle || 'pop';
         
         // 弦乐群奏时，各声部进入会有微小的时间差
@@ -195,7 +195,8 @@ export class StringIdiom extends BaseIdiom {
             timingWobble = this.randomGaussian(0.02, 0.03);
         }
 
-        const beatsPerBar = GlobalContext.currentTimeSignature[0];
+        // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
+        const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
         const is68 = beatsPerBar === 6;
         const beatPos = note.onset % beatsPerBar;
 
@@ -204,7 +205,7 @@ export class StringIdiom extends BaseIdiom {
         if (beatPos === 0) velocityMultiplier *= 1.1;       // 第一拍强拍，运弓更重
         else if (is68 && beatPos === 3) velocityMultiplier *= 1.05; // 6/8 次强拍
         else if (!is68 && beatPos === 2) velocityMultiplier *= 1.05;  // 4/4 第三拍次强拍
-        else if (Math.abs(beatPos % 1) >= 1e-6) {
+        else if (beatPos % 1 !== 0) {
             velocityMultiplier *= 0.85; // 反拍或切分音略弱
             if (stringStyle === 'funk') {
                 velocityMultiplier *= 1.2; // Funk 强调反拍

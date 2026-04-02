@@ -1,4 +1,4 @@
-import { StyleConfig, Tonality } from '../../types';
+import { StyleConfig } from '../../types';
 import { StyleId } from '../StyleFlags';
 import { RnBRhythmCells } from '../../melody/RhythmCells';
 
@@ -9,8 +9,8 @@ export const LofiHipHopStyle: StyleConfig = {
         bpmRange: [65, 85], // 慵懒的慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Minor, weight: 0.7 },
-            { tonality: Tonality.Dorian, weight: 0.3 }
+            { tonality: 'Minor', weight: 0.7 },
+            { tonality: 'Dorian', weight: 0.3 }
         ]
     },
     harmony: {
@@ -68,11 +68,10 @@ export const LofiHipHopStyle: StyleConfig = {
         counterMelodyProbability: 0.4, 
         grooveRatio: { foundation: 0.7, comping: 0.6, color: 0.2 },
         idiomPreferences: {
-            stringStyle: 'lofi',
-            bassStyle: 'lofi',
-            drumStyle: 'lofi',
-            pianoStyle: 'electronic',
-            humanizeAmount: 1.0 // 🌟 Lo-Fi 需要极高的人性化/微小的时间偏差
+            counterMelodyStyle: 'melodic',
+            bassStyle: 'syncopated',
+            drumStyle: 'sparse',
+            pianoStyle: 'block-chord'
         },
         mixingPreferences: {
             melody: { reverb: 0.8 },

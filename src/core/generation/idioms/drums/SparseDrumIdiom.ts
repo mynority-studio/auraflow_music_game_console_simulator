@@ -2,7 +2,7 @@ import { NoteData } from "../../types";
 import { DrumIdiomContext, IDrumIdiom } from "./IDrumIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
 
-export class CinematicDrumIdiom implements IDrumIdiom {
+export class SparseDrumIdiom implements IDrumIdiom {
   generate(ctx: DrumIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { startBeat, endBeat, energyLevel, isIntro, isOutro, nextEnergyLevel, beatsPerBar, is68, isHalfTime, KICK, SNARE, CHH, OHH, CRASH, CROSS_STICK, TOM_LOW, RIDE, grooveDensity, grooveSyncopation } = ctx;
@@ -28,7 +28,7 @@ export class CinematicDrumIdiom implements IDrumIdiom {
       }
 
       // Cinematic: Sparse cymbals, mostly crashes or swells
-      if (Math.abs(beat % 1) < 1e-6) {
+      if (beat % 1 === 0) {
         if (PRNGManager.next() < grooveDensity * 0.3) {
           notes.push({ pitch: CRASH, onset: beat, duration: 0.1, velocity: 0.7 });
         }

@@ -7,8 +7,8 @@ export class DrumIdiomRegistry {
     this.idioms[name] = idiom;
   }
 
-  public static getIdiom(name: string): IDrumIdiom {
-    return this.idioms[name] || this.idioms["pop"];
+  public static getIdiom(name: string): IDrumIdiom | undefined {
+    return this.idioms[name];
   }
 
   public static getAllIdiomNames(): string[] {

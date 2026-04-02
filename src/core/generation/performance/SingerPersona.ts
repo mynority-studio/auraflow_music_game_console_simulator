@@ -6,20 +6,26 @@ import { PRNGManager } from '../../utils/PRNG';
 import { NoteData, SingerPersonaConfig, GeneratedChord } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
 import { GlobalContext } from '../GlobalContext';
+import { resolveInstrumentFamily, InstrumentFamily } from './InstrumentIdiom';
 
 export class SingerPersona {
-    public static apply(notes: NoteData[], persona: SingerPersonaConfig, chords: GeneratedChord[], instrumentName: string = 'Acoustic_Grand'): NoteData[] {
+    public static apply(notes: NoteData[], persona: SingerPersonaConfig, chords: GeneratedChord[], instrumentName: string = 'Acoustic_Grand', tonality: string = 'Major', bpm: number = 120): NoteData[] {
         if (!persona || !persona.traits) {
-            console.warn("SingerPersona.apply received undefined persona or traits. Falling back to Folk_Storyteller.");
             persona = SingerPersona.PERSONAS['Folk_Storyteller'];
         }
 
-        // 🌟 判断是否为键盘/吉他等非人声乐器。如果是，大幅削弱或关闭人声特有的“转音”和“叹息尾音”
+        // 🌟 判断是否为键盘/吉他等非人声乐器。如果是，大幅削弱或关闭人声特有的”转音”和”叹息尾音”
         // 因为这些在钢琴上听起来像弹错的装饰音，显得匆忙、杂乱、不够优雅。
-        const isPianoOrGuitar = instrumentName.includes('Piano') || instrumentName.includes('EP') || instrumentName.includes('Guitar') || instrumentName.includes('Grand');
+        // T-1 合规：用 InstrumentFamily 枚举替换字符串子串匹配
+        const instrFamily = resolveInstrumentFamily(instrumentName);
+        const isPianoOrGuitar = instrFamily === InstrumentFamily.Piano || instrFamily === InstrumentFamily.Guitar;
 
-        const result: NoteData[] =[];
-        const sorted = [...notes].sort((a, b) => a.onset - b.onset);
+        const EPSILON = 1e-6;
+        const result: NoteData[] = [];
+        const sorted = [...notes].sort((a, b) => {
+            const d = a.onset - b.onset;
+            return Math.abs(d) < EPSILON ? a.pitch - b.pitch : d;
+        });
 
         let continuousPlayBeats = 0; // 🎷 追踪连续吹奏时长，用于强制换气
 
@@ -27,7 +33,7 @@ export class SingerPersona {
             let current = { ...sorted[i] };
             const next = i < sorted.length - 1 ? sorted[i + 1] : null;
             
-            const isSax = instrumentName.includes('Sax');
+            const isSax = instrFamily === InstrumentFamily.Wind && (instrumentName === 'Alto_Sax' || instrumentName === 'Tenor_Sax');
             
             // 萨克斯的换气阈值更短，0.5拍就算换气了
             const breathGap = isSax ? 0.5 : 1.0;
@@ -36,7 +42,7 @@ export class SingerPersona {
             const isLongNote = current.duration >= 1.0;
             
             const activeChord = chords.find(c => current.onset >= c.startBeat && current.onset < c.endBeat) || chords[0];
-            const safeTones = HarmonyCore.getSafeScalePitches(activeChord, GlobalContext.currentTonality);
+            const safeTones = HarmonyCore.getSafeScalePitches(activeChord, tonality); // S-2 合规：从参数读取
 
             if (isSax) {
                 // 🎷 萨克斯专属 Idiom 处理
@@ -113,7 +119,7 @@ export class SingerPersona {
                     
                     // 连音重叠 (Legato Overlap) 10-50ms，禁止 0 间隔硬切
                     const overlapMs = 10 + PRNGManager.next() * 40;
-                    const overlapBeats = (overlapMs / 1000) * (GlobalContext.currentBPM / 60);
+                    const overlapBeats = (overlapMs / 1000) * (bpm / 60); // S-2 合规：从参数读取
                     
                     if (gap < 0.5) { // 如果是连续的乐句
                         prev.duration = Math.max(prev.duration, (current.onset - prev.onset) + overlapBeats); 
@@ -122,7 +128,7 @@ export class SingerPersona {
                         if (interval > 0 && interval <= 2) {
                             // 2度以内：加 15-80ms 滑音
                             const slideMs = 15 + PRNGManager.next() * 65;
-                            const slideBeats = (slideMs / 1000) * (GlobalContext.currentBPM / 60);
+                            const slideBeats = (slideMs / 1000) * (bpm / 60); // S-2 合规：从参数读取
                             result.push({
                                 pitch: prev.pitch,
                                 onset: current.onset - slideBeats,
@@ -144,7 +150,7 @@ export class SingerPersona {
             }
 
             // 2. 提前抢拍 (防重叠)
-            if (Math.abs(current.onset % 1) < 1e-6 && PRNGManager.next() < persona.traits.syncopationPush) {
+            if (Math.abs(current.onset - Math.round(current.onset)) < EPSILON && PRNGManager.next() < persona.traits.syncopationPush) {
                 const pushAmount = PRNGManager.next() > 0.5 ? 0.5 : 0.25; 
                 current.onset -= pushAmount;
                 current.duration += pushAmount; 

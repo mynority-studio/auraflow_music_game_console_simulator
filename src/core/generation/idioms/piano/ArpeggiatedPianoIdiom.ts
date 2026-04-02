@@ -2,18 +2,14 @@ import { NoteData } from "../../types";
 import { PianoIdiomContext } from "./IPianoIdiom";
 import { BasePianoIdiom } from "./BasePianoIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
-export class BossaPianoIdiom extends BasePianoIdiom {
+export class ArpeggiatedPianoIdiom extends BasePianoIdiom {
   generate(ctx: PianoIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, energyLevel, melodyNotes, baseVelocity, beatsPerBar, grooveDensity, grooveSyncopation } = ctx;
     const voicedTones = this.getVoicedTones(ctx);
 
-    const activeSection = GlobalContext.getActiveSection();
-    const grooveMask = activeSection?.grooveMask;
-
-    if (energyLevel <= 2) {
+if (energyLevel <= 2) {
       // Very low energy, just block chord
       this.addBlockChord(notes, chord.startBeat, chord.endBeat - chord.startBeat, baseVelocity * 0.8, voicedTones);
       return notes;
@@ -24,10 +20,6 @@ export class BossaPianoIdiom extends BasePianoIdiom {
       const twoBarBeat = beat % (beatsPerBar * 2);
       
       let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
 
       const melodySinging = melodyNotes.some(
         (m) =>
@@ -39,12 +31,12 @@ export class BossaPianoIdiom extends BasePianoIdiom {
       // Bar 1: 1, 2.5, 4
       // Bar 2: 1.5, 3, 4
       const isCompHit =
-        (Math.abs(twoBarBeat) < 1e-6 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) ||
-        (Math.abs(twoBarBeat - 1.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
-        (Math.abs(twoBarBeat - 3) < 1e-6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) || // Bar 1
-        (Math.abs(twoBarBeat - 5.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
-        (Math.abs(twoBarBeat - 6) < 1e-6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) ||
-        (Math.abs(twoBarBeat - 7) < 1e-6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)); // Bar 2
+        (twoBarBeat === 0 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) ||
+        (twoBarBeat === 1.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
+        (twoBarBeat === 3 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) || // Bar 1
+        (twoBarBeat === 5.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
+        (twoBarBeat === 6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) ||
+        (twoBarBeat === 7 && (PRNGManager.next() < grooveDensity || maskAccent === 1)); // Bar 2
 
       if (isCompHit) {
         // 🌟 Cooperative Comping:
@@ -64,7 +56,7 @@ export class BossaPianoIdiom extends BasePianoIdiom {
         }
 
         // Slightly softer on beat 1 to let the bass root ring clear
-        if (Math.abs(beatInBar) < 1e-6) {
+        if (beatInBar === 0) {
           compVel *= 0.8;
         }
 
@@ -78,7 +70,7 @@ export class BossaPianoIdiom extends BasePianoIdiom {
       }
 
       // Add occasional ghost strums on offbeats for groove
-      if (!melodySinging && Math.abs(beat % 0.5 - 0.25) < 1e-6 && (PRNGManager.next() > 0.7 || maskAccent === 1)) {
+      if (!melodySinging && beat % 0.5 === 0.25 && (PRNGManager.next() > 0.7 || maskAccent === 1)) {
         this.addBlockChord(notes, beat, 0.15, baseVelocity * 0.4 * (maskAccent === 1 ? 1.5 : 1.0), [
           voicedTones[1] || voicedTones[0],
         ]);

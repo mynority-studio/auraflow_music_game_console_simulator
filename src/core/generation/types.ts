@@ -1,27 +1,5 @@
 export type ChordProgression = string[];
 
-// ★ ChordQuality — 数值枚举，替代 chord.quality 字符串比较
-export enum ChordQuality {
-  Major = 0, Minor, Diminished, Diminished7, Augmented,
-  Dominant7, Minor7, Major7, HalfDiminished,
-  Sus4, Dominant7Sus4, Add9, Minor9, Major9,
-  Dominant9, Minor11, Dominant13                         // 共 17 种
-}
-
-// ★ SectionType — 数值枚举，替代 section.type / section.name 字符串比较
-export enum SectionType {
-  Intro = 0, Verse, PreChorus, Chorus, Bridge, Outro,
-  Break, Breakdown, BuildUp, Drop, PreOutro, Solo_Bridge  // 共 12 种
-}
-
-// ★ Tonality — 数值枚举，替代 tonality 字符串比较
-export enum Tonality {
-  Major = 0, Minor, Major_Pentatonic, Minor_Pentatonic,
-  Blues, Dorian, Mixolydian, Melodic_Minor               // 共 8 种
-}
-
-export type MotifRole = 'Foreground' | 'Middleground' | 'Background';
-
 /**
  * C++ Porting Guide:
  * This interface maps directly to a C struct to avoid heap fragmentation:
@@ -33,8 +11,11 @@ export type MotifRole = 'Foreground' | 'Middleground' | 'Background';
  *   // Optional flags can be packed into a bitfield (uint8_t flags)
  * };
  */
+import { MoodId } from './config/MoodFlags';
+import { StyleId } from './config/StyleFlags';
+
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
+export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {
@@ -72,7 +53,8 @@ export interface SectionState {
     id: string;
     type: string;
     lengthBars: number;
-    phraseTemplate: string; // e.g., "A-A-B-A'"
+    phraseTemplate: string; // Deprecated, use phraseActions instead
+    phraseActions?: PhraseAction[]; // e.g., [Repeat, Vary, Contrast]
     energyLevel: number;
     harmony: HarmonyState;
     groove: GrooveState;
@@ -81,31 +63,36 @@ export interface SectionState {
     endBeat: number;
 }
 
+export enum PhraseAction {
+    Repeat = 0,
+    Vary = 1,
+    Contrast = 2
+}
+
+export interface MotifTemplate {
+    pickupType: number; // 0: none, 1: 8th note, 2: quarter note
+    bodyDensity: number; // 0.0 to 1.0
+    tailLength: number; // in beats, e.g., 1.0, 2.0
+    rhythmOffsets: number[]; // the actual generated rhythm
+    contour: 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
+    noteCount: number;
+    phraseLengthBeats: number;
+}
+
 export interface MacroStructure {
     structure: string[]; 
     energyCurve: number[]; 
 }
 // -------------------------------------------------------
 
-import { StyleId } from './config/StyleFlags';
-
-export interface IdiomPreferences {
-    stringStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
-    pianoStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'latin' | 'house';
-    drumStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'house';
-    bassStyle?: 'cinematic' | 'lofi' | 'jazz' | 'funk' | 'folk' | 'pop' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad';
-    riffStyle?: 'pop' | 'jazz' | 'cinematic' | 'classical' | 'electronic' | 'rock' | 'bossa' | 'edm' | 'reggae' | 'neosoul' | 'eurodance' | 'synthwave' | 'trance' | 'ballad' | 'default';
-    guitarStyle?: string;
-    synthStyle?: string;
-    humanizeAmount?: number;
-    sections?: SectionMetadata[];
-    arpPattern?: 'up' | 'down' | 'updown' | 'random';
-    arpRate?: number;
-}
-
 export interface StyleConfig {
     id: StyleId; name: string; description?: string;
-    global: { bpmRange: [number, number]; timeSignaturePool: Array<{ signature:[number, number], weight: number }>; tonalityPool: Array<{ tonality: Tonality, weight: number }>; };
+    global: { 
+        bpmRange: [number, number]; 
+        timeSignaturePool: Array<{ signature:[number, number], weight: number }>; 
+        tonalityPool: Array<{ tonality: 'Major' | 'Minor' | 'Major_Pentatonic' | 'Minor_Pentatonic' | 'Blues' | 'Dorian' | 'Mixolydian' | 'Melodic_Minor', weight: number }>; 
+        structureTemplate?: 'pop' | 'edm' | 'jazz' | 'bossa' | 'cinematic'; // 🌟 新增：结构模板
+    };
     harmony: { chorusPool: ChordProgression[]; versePool: ChordProgression[]; preChorusPool: ChordProgression[]; };
     harmonyRules?: {
         maxDissonanceTolerance?: number;
@@ -117,6 +104,8 @@ export interface StyleConfig {
         voicingStyle?: 'standard' | 'neo-soul' | 'jazz' | 'jpop' | 'edm' | 'pop-rock';
         globalProgressionProbability?: number; // 🌟 新增：全曲共用一套和弦的概率
         genreBendingProbability?: number; // 🌟 新增：段落发生风格突变的概率
+        genreBendingOverrides?: StyleId[]; // 🌟 新增：段落发生风格突变时的备选曲风
+        preferJPopProgressions?: boolean; // 🌟 新增：是否偏好 J-Pop 和声进行
     };
     rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; };
     melody: { 
@@ -137,9 +126,9 @@ export interface StyleConfig {
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
-    orchestration: {
-        melodyInstruments: string[];
-        chordInstruments: string[];
+    orchestration: { 
+        melodyInstruments: string[]; 
+        chordInstruments: string[]; 
         bassInstruments: string[];
         drumInstruments: string[];
         counterMelodyInstruments: string[];
@@ -149,8 +138,18 @@ export interface StyleConfig {
         fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic'; // 🌟 新增：加花风格
         vocalProbability?: number; // 🌟 新增：主唱出场率
         outroRingOutProbability?: number; // 🌟 新增：尾奏使用 BigRingOut 的概率
+        allowTradingFours?: boolean; // 🌟 新增：是否允许乐器对话 (Trading Fours)
+        allowIntroRiffs?: boolean; // 🌟 新增：是否允许前奏 Riff
+        allowRitardando?: boolean; // 🌟 新增：是否允许结尾渐慢
         grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
-        idiomPreferences?: IdiomPreferences;
+        idiomPreferences?: {
+            counterMelodyStyle?: 'sustained' | 'melodic' | 'rhythmic' | 'arpeggiated';
+            pianoStyle?: 'block-chord' | 'arpeggiated' | 'rhythmic' | 'sparse';
+            drumStyle?: 'steady' | 'syncopated' | 'sparse' | 'high-energy' | 'acoustic-swing';
+            bassStyle?: 'steady' | 'syncopated' | 'melodic' | 'sparse' | 'riff-driven';
+            riffStyle?: 'melodic' | 'rhythmic' | 'arpeggiated' | 'chordal' | 'default';
+            vocalStyle?: 'pop' | 'ballad' | 'neosoul' | 'rnb' | 'gospel' | 'choir';
+        };
         mixingPreferences?: {
             requireSidechain?: boolean;
             melody?: MixingConfig;
@@ -170,26 +169,8 @@ export interface SingerPersonaConfig {
     traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
 }
 
-export interface FusionProfile {
-    primaryStyle: StyleId;
-    fusionStyle?: StyleId;
-    applyToDrums: boolean;
-    applyToBass: boolean;
-    applyToChords: boolean;
-    applyToMelody: boolean;
-}
 
-export interface GrooveMask {
-    accents: number[]; // Array of 1s and 0s representing 16th note accents (e.g., [1, 0, 0, 1, 0, 0, 1, 0, ...])
-    resolution: number; // e.g., 0.25 for 16th notes
-}
 
-export interface TextureAllocation {
-    bassDensity: number;
-    chordDensity: number;
-    drumDensity: number;
-    melodyDensity: number;
-}
 
 export interface SectionMetadata {
     name: string;      
@@ -208,7 +189,7 @@ export interface SectionMetadata {
     };
 
     // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
-    type?: SectionType;
+    type?: string;
     lengthBars?: number;
     phraseTemplate?: string; // e.g., "A-A-B-A'"
     harmony?: HarmonyState;
@@ -218,9 +199,6 @@ export interface SectionMetadata {
     // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
     localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
     isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)
-    fusionProfile?: FusionProfile; // 🌟 融合配置
-    grooveMask?: GrooveMask;       // 🌟 律动骨架
-    textureAllocation?: TextureAllocation; // 🌟 织体密度分配
 }
 
 export interface MixingConfig {
@@ -250,25 +228,37 @@ export interface EnsembleDraft {
     };
 }
 
-export interface GeneratedTrack {
-    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; bpm: number; key: string;
-    keyOffset: number; tonality: Tonality; timeSignature: [number, number]; sections: SectionMetadata[];
-    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean;
+export interface GeneratedTrack { 
+    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; bpm: number; key: string; 
+    keyOffset: number; tonality: string; timeSignature: [number, number]; sections: SectionMetadata[]; 
+    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean; 
     preSelectedPalette?: EnsembleDraft;
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     processedUserMotif?: NoteData[];
-    motifRole?: MotifRole;
+    motifRole?: 'Foreground' | 'Middleground' | 'Background';
 }
 
 export interface MusicContext {
     keyOffset: number;
-    tonality: Tonality;
+    tonality: string;
     bpm: number;
     timeSignature: [number, number];
     grooveDNA: number[];
     singerPersona: SingerPersonaConfig | null;
+    moodId?: MoodId;
 }
 
+export interface GenerationOptions {
+    styleId?: StyleId;
+    moodId?: MoodId;
+    seed?: number;
+    length?: 'short' | 'medium' | 'long';
+    userMotifRoot?: number;
+    processedUserMotif?: NoteData[];
+    motifRole?: 'Foreground' | 'Middleground' | 'Background';
+    detectedTimeSignature?: [number, number];
+    detectedTonality?: 'Major' | 'Minor';
+}
 export interface TempoCurve {
     startTick: number;
     endTick: number;

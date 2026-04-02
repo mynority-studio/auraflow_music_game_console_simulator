@@ -1,25 +1,29 @@
-import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig, FusionProfile, GrooveMask, TextureAllocation, Tonality } from './types';
+import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from './types';
+import { MoodId } from './config/MoodFlags';
+
+const EPSILON = 1e-6;
 
 class GlobalContextManager {
     public currentStyle: StyleConfig | null = null;
     public currentBPM: number = 120;
     public currentTimeSignature:[number, number] =[4, 4];
-    public currentTonality: Tonality = Tonality.Major;
+    public currentTonality: string = 'Major'; 
     public currentKeyOffset: number = 0;      
     public globalAbsoluteBeat: number = 0;    
     public currentSingerPersona: SingerPersonaConfig | null = null;
+    public currentMoodId?: MoodId;
     
     private currentGrooveDNA: number[] =[];   
     private activeSection: SectionMetadata | null = null;
     private activeChord: GeneratedChord | null = null;
 
-    public initializeNewEra(style: StyleConfig, bpm: number, keyOffset: number, tonality: Tonality, timeSignature: [number, number]) {
+    public initializeNewEra(style: StyleConfig, bpm: number, keyOffset: number, tonality: string, timeSignature: [number, number], moodId?: MoodId) {
         this.currentStyle = style;
         this.currentBPM = bpm;
         this.currentKeyOffset = keyOffset;
         this.currentTonality = tonality;
         this.currentTimeSignature = timeSignature;
-        // console.log(`[GlobalContext] 🪐 宇宙法则已重写: ${style.name} | BPM: ${bpm} | Key: ${keyOffset} | TimeSig: ${timeSignature[0]}/${timeSignature[1]}`);
+        this.currentMoodId = moodId;
     }
 
     public updateCurrentSlice(section: SectionMetadata, chord: GeneratedChord, grooveDNA: number[]) {
@@ -28,20 +32,10 @@ class GlobalContextManager {
         this.currentGrooveDNA = grooveDNA;
     }
 
-    public getFusionProfile(): FusionProfile | undefined {
-        return this.activeSection?.fusionProfile;
-    }
-
-    public getGrooveMask(): GrooveMask | undefined {
-        return this.activeSection?.grooveMask;
-    }
-
-    public getTextureAllocation(): TextureAllocation | undefined {
-        return this.activeSection?.textureAllocation;
-    }
-
     public isGrooveHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return Math.abs(absoluteBeat % 1) < 1e-6;
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) {
+            return Math.abs(absoluteBeat - Math.round(absoluteBeat)) < EPSILON;
+        }
         const beatsPerBar = this.currentTimeSignature[0];
         const loopLength = 2 * beatsPerBar;
         const localBeat = absoluteBeat % loopLength;
@@ -52,12 +46,14 @@ class GlobalContextManager {
      * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
      */
     public isLayeringHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return Math.abs(absoluteBeat % 1) < 1e-6;
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) {
+            return Math.abs(absoluteBeat - Math.round(absoluteBeat)) < EPSILON;
+        }
         const beatsPerBar = this.currentTimeSignature[0];
         const loopLength = 2 * beatsPerBar;
         const localBeat = absoluteBeat % loopLength;
         // 叠加点：GrooveDNA 中的正拍 (0, 1, 2, 3...)
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit % 1) < 1e-6);
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit - Math.round(hit)) < EPSILON);
     }
 
     /**
@@ -69,7 +65,7 @@ class GlobalContextManager {
         const loopLength = 2 * beatsPerBar;
         const localBeat = absoluteBeat % loopLength;
         // 穿插点：GrooveDNA 中的反拍或切分音
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit % 1) >= 1e-6);
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit - Math.round(hit)) >= EPSILON);
     }
 
     public getCurrentEnergyLevel(): number { return this.activeSection ? this.activeSection.energyLevel : 5; }
@@ -80,7 +76,7 @@ class GlobalContextManager {
         this.currentStyle = null;
         this.currentBPM = 120;
         this.currentTimeSignature = [4, 4];
-        this.currentTonality = Tonality.Major;
+        this.currentTonality = 'Major';
         this.currentKeyOffset = 0;
         this.globalAbsoluteBeat = 0;
         this.currentSingerPersona = null;

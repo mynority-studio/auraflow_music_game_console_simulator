@@ -4,7 +4,7 @@ import { BaseBassIdiom } from "./BaseBassIdiom";
 import { GlobalContext } from "../../GlobalContext";
 import { PRNGManager } from "../../../utils/PRNG";
 
-export class FunkBassIdiom extends BaseBassIdiom {
+export class SyncopatedBassIdiom extends BaseBassIdiom {
   generateBassPattern(ctx: BassIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, energyLevel, targetBassPitch, octaveMidi, grooveDensity, grooveSyncopation } = ctx;
@@ -12,17 +12,11 @@ export class FunkBassIdiom extends BaseBassIdiom {
     const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
 
     const activeSection = GlobalContext.getActiveSection();
-    const grooveMask = activeSection?.grooveMask;
-
-    for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
+for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
       const isChordStart = beat === chord.startBeat;
 
       let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
 
       // Funk / 其他电子：高度贴合 GrooveDNA，带有八度跳跃和切分
       // 🌟 P1: 乐器惯用语引擎 (Instrument Idiom Engine) - Bass 演奏法 (Slap vs. Finger)
@@ -57,7 +51,7 @@ export class FunkBassIdiom extends BaseBassIdiom {
           velocity: vel,
         });
       } else if (
-        (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) &&
+        (beatInBar === 1.5 || beatInBar === 3.5) &&
         (PRNGManager.next() < grooveSyncopation || maskAccent === 1)
       ) {
         // 经典的 16 分音符反拍（Ghost notes），受 syncopationProb 控制
@@ -68,7 +62,7 @@ export class FunkBassIdiom extends BaseBassIdiom {
           velocity: baseVel * 0.5 * (maskAccent === 1 ? 1.5 : 1.0),
         });
       } else if (
-        Math.abs(beat % 0.5 - 0.25) < 1e-6 &&
+        beat % 0.5 === 0.25 &&
         (PRNGManager.next() < (grooveDensity - 0.5) * 0.8 || maskAccent === 1)
       ) {
         // 额外的 16 分音符，受 density 控制

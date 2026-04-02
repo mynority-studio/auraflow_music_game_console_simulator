@@ -2,18 +2,14 @@ import { NoteData } from "../../types";
 import { PianoIdiomContext } from "./IPianoIdiom";
 import { BasePianoIdiom } from "./BasePianoIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
-export class ReggaePianoIdiom extends BasePianoIdiom {
+export class SparsePianoIdiom extends BasePianoIdiom {
   generate(ctx: PianoIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, energyLevel, baseVelocity, beatsPerBar, grooveDensity, grooveSyncopation } = ctx;
     const voicedTones = this.getVoicedTones(ctx);
 
-    const activeSection = GlobalContext.getActiveSection();
-    const grooveMask = activeSection?.grooveMask;
-
-    if (energyLevel <= 2) {
+if (energyLevel <= 2) {
       this.addBlockChord(notes, chord.startBeat, chord.endBeat - chord.startBeat, baseVelocity * 0.8, voicedTones);
       return notes;
     }
@@ -22,13 +18,9 @@ export class ReggaePianoIdiom extends BasePianoIdiom {
       const beatInBar = beat % beatsPerBar;
       
       let maskAccent = 0;
-      if (grooveMask) {
-          const stepIndex = Math.floor((beatInBar / grooveMask.resolution) % grooveMask.accents.length);
-          maskAccent = grooveMask.accents[stepIndex];
-      }
 
       // Skank chords: Short, staccato hits on beats 2 and 4 (or off-beats)
-      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
+      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && beatInBar % 1 !== 0)) {
         // Beats 2 and 4 (0-indexed 1 and 3)
         const duration = 0.15; // Very short
         const compVel = baseVelocity * 1.3 * (maskAccent === 1 ? 1.2 : 1.0); // Accent the skank
@@ -39,7 +31,7 @@ export class ReggaePianoIdiom extends BasePianoIdiom {
 
       // Occasional double skank (e.g., 2 and 2.5)
       if (
-        (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6 || maskAccent === 1) &&
+        (beatInBar === 1.5 || beatInBar === 3.5 || maskAccent === 1) &&
         (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)
       ) {
         this.addBlockChord(notes, beat, 0.15, baseVelocity * 0.9 * (maskAccent === 1 ? 1.3 : 1.0), voicedTones.slice(1));

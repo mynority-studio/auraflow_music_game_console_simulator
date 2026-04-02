@@ -1,4 +1,4 @@
-import { StyleConfig, Tonality } from '../../types';
+import { StyleConfig } from '../../types';
 import { StyleId } from '../StyleFlags';
 
 export const GhibliOrchestralStyle: StyleConfig = {
@@ -12,8 +12,8 @@ export const GhibliOrchestralStyle: StyleConfig = {
             { signature: [6, 8], weight: 0.2 }
         ],
         tonalityPool: [
-            { tonality: Tonality.Major, weight: 0.6 }, // 温暖、治愈
-            { tonality: Tonality.Minor, weight: 0.4 }  // 忧伤、史诗
+            { tonality: 'Major', weight: 0.6 }, // 温暖、治愈
+            { tonality: 'Minor', weight: 0.4 }  // 忧伤、史诗
         ]
     },
     harmony: {
@@ -64,9 +64,9 @@ export const GhibliOrchestralStyle: StyleConfig = {
         counterMelodyProbability: 0.7, // 丰富的复调色彩
         grooveRatio: { foundation: 0.4, comping: 0.5, color: 0.9 },
         idiomPreferences: {
-            stringStyle: 'cinematic',
-            bassStyle: 'pop',
-            drumStyle: 'jazz' // 即使有鼓，也是非常轻柔的刷子或点缀
+            counterMelodyStyle: 'sustained',
+            bassStyle: 'sparse',
+            drumStyle: 'acoustic-swing' // 即使有鼓，也是非常轻柔的刷子或点缀
         },
         mixingPreferences: {
             melody: { reverb: 0.8, delay: 0.4 },

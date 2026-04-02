@@ -1,7 +1,16 @@
 import { PRNGManager } from "../../utils/PRNG";
-import { NoteData, GeneratedChord, Tonality, IdiomPreferences } from "../types";
+import { NoteData, GeneratedChord, StyleConfig, SectionMetadata } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
 import { GlobalContext } from "../GlobalContext";
+
+/** S-2 合规：替代 GlobalContext 读取，由 Orchestrator 显式传入 */
+export interface TextureRenderContext {
+    bpm: number;
+    keyOffset: number;
+    tonality: string;
+    timeSignature: [number, number];
+    activeSection: SectionMetadata | null;
+}
 import { StyleId } from "../config/StyleFlags";
 import { StyleRegistry } from "../config/styles/StyleRegistry";
 
@@ -19,11 +28,14 @@ registerAllDrumIdioms();
 registerAllPianoIdioms();
 
 import { CounterMelodyIdiomRegistry } from "../idioms/counterMelody/CounterMelodyIdiomRegistry";
+import { registerAllCounterMelodyIdioms } from "../idioms/counterMelody";
 import { RiffIdiomRegistry } from "../idioms/riff/RiffIdiomRegistry";
 import { VocalHarmonyIdiomRegistry } from "../idioms/vocal/VocalHarmonyIdiomRegistry";
 import { CounterMelodyContext } from "../idioms/counterMelody/ICounterMelodyIdiom";
 import { RiffContext } from "../idioms/riff/IRiffIdiom";
 import { VocalHarmonyContext } from "../idioms/vocal/IVocalHarmonyIdiom";
+
+registerAllCounterMelodyIdioms();
 
 export class TextureMapper {
   public static generateBassLine(
@@ -31,15 +43,21 @@ export class TextureMapper {
     energyLevel: number,
     isSparseSection: boolean = false,
     isSectionEnd: boolean = false,
-    styleId: StyleId = StyleId.ModernPop,
+    style?: StyleConfig,
     melodyNotes: NoteData[] = [],
     isBassSolo: boolean = false,
-    idiomPreferences?: IdiomPreferences,
+    idiomPreferences?: Record<string, unknown>,
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
+    renderCtx?: TextureRenderContext,
   ): NoteData[] {
+    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
+    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? GlobalContext.currentKeyOffset ?? 0);
+    const tonality = renderCtx?.tonality ?? GlobalContext.currentTonality;
+    const activeSection = renderCtx?.activeSection ?? GlobalContext.getActiveSection();
+    const bpm = renderCtx?.bpm ?? GlobalContext.currentBPM ?? 120;
+
     // 🌟 Fix Bass Range: Ensure final bass root (after keyOffset) is strictly between E1 (28) and Eb2 (39)
-    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (GlobalContext.currentKeyOffset || 0);
     let finalRoot = (chord.root + keyOffset) % 12;
     finalRoot += 24; // C1 to B1 (24 to 35)
     if (finalRoot < 28) finalRoot += 12; // E1 to Eb2 (28 to 39)
@@ -49,50 +67,49 @@ export class TextureMapper {
 
     let nextTargetCenter = 36;
     if (nextChord) {
-      const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+      const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : keyOffset;
       let nextFinalRoot = (nextChord.root + nextKeyOffset) % 12;
       nextFinalRoot += 24;
       if (nextFinalRoot < 28) nextFinalRoot += 12;
       nextTargetCenter = nextFinalRoot - nextKeyOffset;
     }
 
-    const bassTones = HarmonyCore.getChordTones(
-      chord,
-      targetCenterForChordTones,
-    );
+    const bassTones = HarmonyCore.getChordTones(chord, targetCenterForChordTones);
     const rootMidi = bassTones[0];
     const thirdMidi = bassTones[1];
     const fifthMidi = bassTones[2];
     const seventhMidi = bassTones.length > 3 ? bassTones[3] : rootMidi + 12; // Default to octave if no 7th present to avoid dissonance
 
-    const safeScalePcs = HarmonyCore.getSafeScalePitches(
-      chord,
-      GlobalContext.currentTonality,
-    );
+    const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
 
-    const activeSection = GlobalContext.getActiveSection();
-    const textureAllocation = GlobalContext.getTextureAllocation();
-    const grooveDensity = textureAllocation?.bassDensity ?? activeSection?.groove?.density ?? 0.5;
+    const grooveDensity = activeSection?.groove?.density ?? 0.5;
     const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
 
-    let bassStyle = idiomPreferences?.bassStyle || "pop";
+    // safe: bassStyle is a string idiom name stored in idiomPreferences; unknown cast is safe here
+    let bassStyle = (idiomPreferences?.bassStyle as string) || "steady";
     
-    // 🌟 跨界融合 (Cross-genre Fusion)
-    const fusionProfile = activeSection?.fusionProfile;
-    
-    if (fusionProfile && fusionProfile.applyToBass) {
-      bassStyle = StyleRegistry[fusionProfile.fusionStyle]?.orchestration?.idiomPreferences?.bassStyle || bassStyle;
+    // 🌟 跨界融合与情绪自适应 (Cross-genre Fusion & Mood Adaptation)
+    // 根据实际的 BPM 和 Energy 动态决定 Idiom，打破刻板印象
+    if (bpm > 130 && energyLevel >= 6) {
+        bassStyle = "syncopated"; // 高能量快歌倾向于切分或高密度
+    } else if (bpm < 90 || energyLevel <= 3) {
+        bassStyle = "sparse"; // 慢歌或低能量倾向于稀疏
     }
 
-    let idiomName: string = bassStyle;
+    let idiomName = bassStyle;
     
-    if (isBassSolo && bassStyle !== "eurodance" && bassStyle !== "trance" && bassStyle !== "synthwave") {
+    const isEurodance = style?.id === StyleId.Eurodance;
+    const isTrance = style?.id === StyleId.Trance;
+    const isSynthwave = style?.id === StyleId.Synthwave;
+    const isElectronic = isEurodance || isTrance || isSynthwave;
+
+    if (isBassSolo && !isElectronic) {
       idiomName = "solo";
-    } else if (activeSection?.isRiffDriven && bassStyle !== "eurodance" && bassStyle !== "synthwave" && bassStyle !== "trance") {
-      idiomName = "riff";
+    } else if (activeSection?.isRiffDriven && !isElectronic) {
+      idiomName = "riff-driven";
     }
 
-    const idiom = BassIdiomRegistry.getIdiom(idiomName) || BassIdiomRegistry.getIdiom("pop")!;
+    const idiom = BassIdiomRegistry.getIdiom(idiomName) || BassIdiomRegistry.getIdiom("steady")!;
 
     // 🌟 爵士/现代流行技巧：平滑的贝斯线条 (Stepwise Bassline / Inversions)
     // 如果知道下一个和弦，尝试使用转位让贝斯线条更平滑 (例如 4级->5级->1级 变成 4->5->7(转位)->1)
@@ -103,10 +120,7 @@ export class TextureMapper {
     // 在 Build-Up 或 Drop 中，有概率让贝斯一直保持在主音 (Key Root) 上，制造巨大张力
     // 修复：随机的 Pedal Point 会导致贝斯在和弦根音和主音之间乱跳，破坏律动。
     // 对于 Eurodance 等需要极强根音稳定性的曲风，禁用此功能。
-    const isElectronic = bassStyle === "electronic" || bassStyle === "edm" || bassStyle === "eurodance" || bassStyle === "trance" || bassStyle === "synthwave";
-    const isEDM = isElectronic;
-    const isEurodance = bassStyle === "eurodance";
-    if (isEDM && !isEurodance && energyLevel >= 5 && PRNGManager.next() < 0.1) {
+    if (isElectronic && !isEurodance && energyLevel >= 5 && PRNGManager.next() < 0.1) {
       // 使用当前调的主音作为持续低音，并确保在 28-39 的安全贝斯音域内
       let finalKeyRoot = keyOffset % 12;
       finalKeyRoot += 24;
@@ -117,10 +131,7 @@ export class TextureMapper {
     }
 
     // 只有在非律动型曲风（抒情、电影、爵士）中，才允许使用和弦转位作为贝斯根音
-    const isBallad = bassStyle === "ballad" || bassStyle === "folk";
-    const isCinematic = bassStyle === "cinematic";
-    const isWalkingBass = bassStyle === "jazz";
-    const allowInversion = isBallad || isCinematic || isWalkingBass;
+    const allowInversion = bassStyle === "sparse" || bassStyle === "melodic";
 
     if (allowInversion && nextChord && PRNGManager.next() < 0.2) {
       // 降低概率到 20%，避免过度使用转位导致根音缺失
@@ -145,12 +156,15 @@ export class TextureMapper {
       }
     }
 
+    const isCinematic = style?.id === StyleId.GhibliOrchestral;
+    const isBallad = style?.id === StyleId.PowerBallad || style?.id === StyleId.RussianFolkBallad;
+
     const context = {
       chord,
       energyLevel,
       isSparseSection,
       isSectionEnd,
-      styleId,
+      style,
       melodyNotes,
       isBassSolo,
       idiomPreferences,
@@ -178,6 +192,7 @@ export class TextureMapper {
       notes = BassIdiomRegistry.getIdiom("pop")!.generate(context);
     }
 
+    notes = this.truncateToChordEnd(notes, chord.endBeat);
     return this.deduplicateNotes(notes);
   }
 
@@ -218,27 +233,37 @@ export class TextureMapper {
     energyLevel: number,
     isIntro: boolean = false,
     isOutro: boolean = false,
-    styleId: StyleId = StyleId.ModernPop,
+    style?: StyleConfig,
     swingRatio: number = 0.5,
     nextEnergyLevel: number = 3,
     hasFullGrooveStarted: boolean = false,
     grooveRatio?: { foundation: number; comping: number; color: number },
-    drumStyle: string = "pop"
+    drumStyle: string = "steady",
+    melodyNotes: NoteData[] = [],
+    renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    // 🌟 跨界融合 (Cross-genre Fusion)
-    const activeSection = GlobalContext.getActiveSection();
-    const fusionProfile = activeSection?.fusionProfile;
-    
-    if (fusionProfile && fusionProfile.applyToDrums) {
-        drumStyle = StyleRegistry[fusionProfile.fusionStyle]?.orchestration?.idiomPreferences?.drumStyle || drumStyle;
-    }
-    const is68 = GlobalContext.currentTimeSignature[0] === 6 && GlobalContext.currentTimeSignature[1] === 8;
+    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
+    const timeSignature = renderCtx?.timeSignature ?? GlobalContext.currentTimeSignature;
+    const activeSection = renderCtx?.activeSection ?? GlobalContext.getActiveSection();
+    const bpm = renderCtx?.bpm ?? GlobalContext.currentBPM ?? 120;
+
+    // 🌟 跨界融合与情绪自适应 (Cross-genre Fusion & Mood Adaptation)
+    const is68 = timeSignature[0] === 6 && timeSignature[1] === 8;
     const isSwing = swingRatio > 0.5;
     const isHalfTime = activeSection?.groove?.feel === "half-time";
-    const textureAllocation = GlobalContext.getTextureAllocation();
-    const grooveDensity = textureAllocation?.drumDensity ?? activeSection?.groove?.density ?? 0.5;
+    const grooveDensity = activeSection?.groove?.density ?? 0.5;
     const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
     const laybackOffset = isSwing ? 0.05 : 0;
+
+    // 动态调整 Drum Style
+    let finalDrumStyle = drumStyle;
+    if (bpm > 130 && energyLevel >= 6) {
+        finalDrumStyle = "high-energy";
+    } else if (bpm < 90 || energyLevel <= 3) {
+        finalDrumStyle = "sparse";
+    } else if (bpm >= 90 && bpm <= 110 && energyLevel >= 5 && style?.id === StyleId.Lofi) {
+        finalDrumStyle = "syncopated";
+    }
 
     const context: DrumIdiomContext = {
       startBeat,
@@ -246,19 +271,21 @@ export class TextureMapper {
       energyLevel,
       isIntro,
       isOutro,
-      styleId,
+      style,
       swingRatio,
       nextEnergyLevel,
       hasFullGrooveStarted,
       grooveRatio,
-      beatsPerBar: GlobalContext.currentTimeSignature[0] || 4,
+      beatsPerBar: timeSignature[0] || 4,
       is68,
       isSwing,
       isHalfTime,
       grooveDensity,
       grooveSyncopation,
       laybackOffset,
-      idiomPreferences: { drumStyle: drumStyle as IdiomPreferences['drumStyle'] },
+      melodyNotes,
+      activeSection,  // S-2 合规：注入 activeSection，替代 GlobalContext.getActiveSection()
+      idiomPreferences: { drumStyle: finalDrumStyle },
       KICK: 36,
       SNARE: 38,
       CHH: 42,
@@ -276,7 +303,7 @@ export class TextureMapper {
       CRASH2: 57,
     };
 
-    const idiom = DrumIdiomRegistry.getIdiom(drumStyle);
+    const idiom = DrumIdiomRegistry.getIdiom(finalDrumStyle) || DrumIdiomRegistry.getIdiom("steady")!;
     return idiom.generate(context);
   }
 
@@ -284,12 +311,29 @@ export class TextureMapper {
     chord: GeneratedChord,
     energyLevel: number,
     melodyNotes: NoteData[],
-    styleId: StyleId = StyleId.ModernPop,
+    style?: StyleConfig,
+    renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    const style = StyleRegistry[styleId];
-    const stringStyle = style?.orchestration?.idiomPreferences?.stringStyle || "pop";
-    const context: CounterMelodyContext = { chord, energyLevel, melodyNotes, styleId };
-    return CounterMelodyIdiomRegistry.getIdiom(stringStyle).generate(context);
+    let counterMelodyStyle = style?.orchestration?.idiomPreferences?.counterMelodyStyle || "sustained";
+    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
+    const bpm = renderCtx?.bpm ?? GlobalContext.currentBPM ?? 120;
+
+    // 动态调整 CounterMelody Style
+    if (bpm > 130 && energyLevel >= 6) {
+        counterMelodyStyle = "rhythmic";
+    } else if (bpm < 90 || energyLevel <= 3) {
+        counterMelodyStyle = "sustained";
+    }
+
+    // S-2 合规：注入 keyOffset/tonality/activeSection，替代 GlobalContext 读取
+    const cmKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? GlobalContext.currentKeyOffset ?? 0);
+    const cmTonality = renderCtx?.tonality ?? GlobalContext.currentTonality;
+    const cmActiveSection = renderCtx?.activeSection ?? GlobalContext.getActiveSection();
+    const context: CounterMelodyContext = { chord, energyLevel, melodyNotes, style, keyOffset: cmKeyOffset, tonality: cmTonality, activeSection: cmActiveSection };
+    const idiom = CounterMelodyIdiomRegistry.getIdiom(counterMelodyStyle) || CounterMelodyIdiomRegistry.getIdiom("sustained")!;
+    let notes = idiom.generate(context);
+    notes = this.truncateToChordEnd(notes, chord.endBeat);
+    return notes;
   }
 
   public static generateChordTexture(
@@ -300,24 +344,28 @@ export class TextureMapper {
     isSectionEnd: boolean = false,
     melodyNotes: NoteData[] = [],
     nextChord?: GeneratedChord,
-    styleId: StyleId = StyleId.ModernPop,
+    style?: StyleConfig,
     prevVoicing?: number[],
     nextEnergyLevel?: number,
-    pianoStyle: string = "pop"
+    pianoStyle: string = "block-chord",
+    renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    // 🌟 跨界融合 (Cross-genre Fusion)
-    const activeSection = GlobalContext.getActiveSection();
-    const fusionProfile = activeSection?.fusionProfile;
-
-    if (fusionProfile && fusionProfile.applyToChords) {
-        pianoStyle = StyleRegistry[fusionProfile.fusionStyle]?.orchestration?.idiomPreferences?.pianoStyle || pianoStyle;
-    }
+    // 🌟 跨界融合与情绪自适应 (Cross-genre Fusion & Mood Adaptation)
+    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
+    const activeSection = renderCtx?.activeSection ?? GlobalContext.getActiveSection();
     const notes: NoteData[] = [];
-
-    const textureAllocation = GlobalContext.getTextureAllocation();
-    const grooveDensity = textureAllocation?.chordDensity ?? activeSection?.groove?.density ?? 0.5;
+    const grooveDensity = activeSection?.groove?.density ?? 0.5;
     const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
-    const isJazz = pianoStyle === 'jazz' || pianoStyle === 'bossa';
+    const bpm = renderCtx?.bpm ?? GlobalContext.currentBPM ?? 120;
+
+    let finalPianoStyle = pianoStyle;
+    if (bpm > 130 && energyLevel >= 6) {
+        finalPianoStyle = "rhythmic";
+    } else if (bpm < 90 || energyLevel <= 3) {
+        finalPianoStyle = "sparse";
+    }
+
+    const isJazz = finalPianoStyle === 'jazz' || finalPianoStyle === 'bossa';
 
     const context: PianoIdiomContext = {
       chord,
@@ -327,17 +375,21 @@ export class TextureMapper {
       isSectionEnd,
       melodyNotes,
       nextChord,
-      styleId,
+      style,
       prevVoicing,
       nextEnergyLevel,
-      pianoStyle,
+      pianoStyle: finalPianoStyle,
       baseVelocity: 0.6,
-      beatsPerBar: GlobalContext.currentTimeSignature[0] || 4,
+      beatsPerBar: (renderCtx?.timeSignature ?? GlobalContext.currentTimeSignature)[0] || 4,
       grooveDensity,
       grooveSyncopation,
+      // S-2 合规：注入 keyOffset/tonality/activeSection，替代 GlobalContext 读取
+      keyOffset: chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? GlobalContext.currentKeyOffset ?? 0),
+      tonality: renderCtx?.tonality ?? GlobalContext.currentTonality,
+      activeSection: renderCtx?.activeSection ?? GlobalContext.getActiveSection(),
     };
 
-    const idiom = PianoIdiomRegistry.getIdiom(pianoStyle);
+    const idiom = PianoIdiomRegistry.getIdiom(finalPianoStyle) || PianoIdiomRegistry.getIdiom("block-chord")!;
     let generatedNotes = idiom.generate(context);
 
     // 移除导致尾音短促的逻辑，改为让最后一个和弦自然延音
@@ -346,8 +398,21 @@ export class TextureMapper {
       generatedNotes.forEach((n) => {
         n.duration = Math.min(Math.max(n.duration, 2.0), 3.0);
       });
+    } else {
+      generatedNotes = this.truncateToChordEnd(generatedNotes, chord.endBeat);
     }
     return this.deduplicateNotes(generatedNotes);
+  }
+
+  private static truncateToChordEnd(notes: NoteData[], chordEndBeat: number): NoteData[] {
+    return notes.map(n => {
+      if (n.onset >= chordEndBeat) return null; // Note starts after chord ends (shouldn't happen, but just in case)
+      if (n.onset + n.duration > chordEndBeat) {
+        return { ...n, duration: chordEndBeat - n.onset };
+      }
+      return n;
+    // safe: map returns NoteData | null; filter(n => n !== null) guarantees all elements are NoteData
+    }).filter(n => n !== null) as NoteData[];
   }
 
   private static deduplicateNotes(notes: NoteData[]): NoteData[] {
@@ -364,11 +429,10 @@ export class TextureMapper {
   public static generateRiff(
     chord: GeneratedChord,
     energyLevel: number,
-    styleId: StyleId,
+    style?: StyleConfig,
   ): NoteData[] {
-    const style = StyleRegistry[styleId];
     const riffStyle = style?.orchestration?.idiomPreferences?.riffStyle || "default";
-    const context: RiffContext = { chord, energyLevel, styleId };
+    const context: RiffContext = { chord, energyLevel, style };
     return RiffIdiomRegistry.getIdiom(riffStyle).generate(context);
   }
 
@@ -376,13 +440,15 @@ export class TextureMapper {
   public static generateVocalHarmony(
     melodyNotes: NoteData[],
     chords: GeneratedChord[],
-    styleId: StyleId,
+    style: StyleConfig | undefined,
     energyLevel: number,
-    tonality: Tonality
+    tonality: string,
+    keyOffset?: number,
   ): NoteData[] {
-    const style = StyleRegistry[styleId];
-    const stringStyle = style?.orchestration?.idiomPreferences?.stringStyle || "pop";
-    const context: VocalHarmonyContext = { melodyNotes, chords, energyLevel, tonality };
-    return VocalHarmonyIdiomRegistry.getIdiom(stringStyle).generate(context);
+    const vocalStyle = style?.orchestration?.idiomPreferences?.vocalStyle || "pop";
+    // S-2 合规：keyOffset 显式传入，替代 GlobalContext.currentKeyOffset
+    const resolvedKeyOffset = keyOffset ?? GlobalContext.currentKeyOffset ?? 0;
+    const context: VocalHarmonyContext = { melodyNotes, chords, energyLevel, tonality, keyOffset: resolvedKeyOffset };
+    return VocalHarmonyIdiomRegistry.getIdiom(vocalStyle).generate(context);
   }
 }

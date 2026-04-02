@@ -1,9 +1,8 @@
-import { NoteData, GeneratedChord, ChordQuality } from "../../types";
+import { NoteData, GeneratedChord } from "../../types";
 import { StyleId } from "../../config/StyleFlags";
 import { IPianoIdiom, PianoIdiomContext } from "./IPianoIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
 export abstract class BasePianoIdiom implements IPianoIdiom {
   abstract generate(ctx: PianoIdiomContext): NoteData[];
@@ -21,7 +20,8 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
     if (isRock) voicingStyle = "rock";
     if (isJazz) voicingStyle = "jazz";
     
-    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+    // S-2 合规：从 ctx.keyOffset 读取（由 TextureMapper 注入），回退到 chord.keyOffset
+    const keyOffset = ctx.keyOffset ?? chord.keyOffset ?? 0;
 
     let targetCenter = 55 - keyOffset;
     
@@ -29,7 +29,8 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
     // Remove melodyNotes logic as it's no longer available in the context
     // The piano should generate its texture independently of the lead melody
 
-    const activeSection = GlobalContext.getActiveSection();
+    // S-2 合规：从 ctx.activeSection 读取（由 TextureMapper 注入）
+    const activeSection = ctx.activeSection ?? null;
     if (activeSection) {
         if (activeSection.name === 'Intro_A' || activeSection.name === 'Intro') {
             // 🌟 二段式前奏：从高音区开始，慢慢落下来
@@ -102,7 +103,7 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
     });
 
     // Sakamoto's Subtraction
-    const isHighTension = chord.quality === ChordQuality.Major7 || chord.quality === ChordQuality.Minor7 || chord.quality === ChordQuality.Dominant7 || chord.quality === ChordQuality.Add9 || chord.quality === ChordQuality.Minor9 || chord.quality === ChordQuality.Major9 || chord.quality === ChordQuality.Dominant9 || chord.quality === ChordQuality.Minor11 || chord.quality === ChordQuality.Dominant13;
+    const isHighTension = ['Major7', 'Minor7', 'Dominant7', 'Add9', 'Minor9', 'Major9', 'Dominant9', 'Minor11', 'Dominant13'].includes(chord.quality);
     if (isHighTension && voicedTones.length > 3 && PRNGManager.next() < 0.7) {
       voicedTones = voicedTones.filter((p) => p % 12 !== fifthPc);
     }
@@ -119,9 +120,9 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
             // 如果剔除根音后和弦太单薄，尝试向上叠加色彩音 (9th, 11th, 13th)
             if (voicedTones.length < 3) {
                 const highestNote = Math.max(...(voicedTones.length > 0 ? voicedTones : [60]));
-                if (chord.quality === ChordQuality.Major || chord.quality === ChordQuality.Major7 || chord.quality === ChordQuality.Major9 || chord.quality === ChordQuality.Dominant7 || chord.quality === ChordQuality.Dominant7Sus4 || chord.quality === ChordQuality.Dominant9 || chord.quality === ChordQuality.Dominant13) {
+                if (chord.quality.includes('Major') || chord.quality.includes('Dominant')) {
                     voicedTones.push(highestNote + 14); // Add 9th
-                } else if (chord.quality === ChordQuality.Minor || chord.quality === ChordQuality.Minor7 || chord.quality === ChordQuality.Minor9 || chord.quality === ChordQuality.Minor11) {
+                } else if (chord.quality.includes('Minor')) {
                     voicedTones.push(highestNote + 14); // Add 9th
                     if (PRNGManager.next() < 0.5) voicedTones.push(highestNote + 17); // Add 11th
                 }

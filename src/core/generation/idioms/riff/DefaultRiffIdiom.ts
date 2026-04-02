@@ -7,13 +7,13 @@ import { getRandomRhythmCell } from "../../melody/RhythmCells";
 
 export class DefaultRiffIdiom implements IRiffIdiom {
   generate(ctx: RiffContext): NoteData[] {
-    const { chord, energyLevel, styleId } = ctx;
+    const { chord, energyLevel, style } = ctx;
     const notes: NoteData[] = [];
     const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (GlobalContext.currentKeyOffset || 0);
     const chordTones = HarmonyCore.getChordTones(chord, 60 - keyOffset); // C4 range
     const scalePcs = HarmonyCore.getSafeScalePitches(
       chord,
-      GlobalContext.currentTonality,
+      GlobalContext.currentTonality
     );
     const rootMidi = chordTones[0];
     const baseVel = 0.6 + (energyLevel / 10) * 0.3;
@@ -22,7 +22,7 @@ export class DefaultRiffIdiom implements IRiffIdiom {
     let currentPitch = rootMidi;
 
     while (currentBeat < chord.endBeat) {
-      const cell = getRandomRhythmCell(styleId, energyLevel);
+      const cell = getRandomRhythmCell(style?.rhythm?.grooveTemplate, energyLevel);
 
       let advanced = false;
       for (const duration of cell) {
@@ -43,7 +43,7 @@ export class DefaultRiffIdiom implements IRiffIdiom {
         if (currentPitch < 48) currentPitch += 12;
         if (currentPitch > 72) currentPitch -= 12;
 
-        const velocity = Math.abs(currentBeat % 1) < 1e-6 ? baseVel * 1.1 : baseVel * 0.8;
+        const velocity = currentBeat % 1 === 0 ? baseVel * 1.1 : baseVel * 0.8;
 
         notes.push({
           pitch: currentPitch,
