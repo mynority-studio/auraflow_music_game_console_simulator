@@ -1,7 +1,6 @@
 import { NoteData } from "../../types";
 import { BassIdiomContext } from "./IBassIdiom";
 import { BaseBassIdiom } from "./BaseBassIdiom";
-import { GlobalContext } from "../../GlobalContext";
 import { PRNGManager } from "../../../utils/PRNG";
 
 export class SyncopatedBassIdiom extends BaseBassIdiom {
@@ -9,10 +8,10 @@ export class SyncopatedBassIdiom extends BaseBassIdiom {
     const notes: NoteData[] = [];
     const { chord, energyLevel, targetBassPitch, octaveMidi, grooveDensity, grooveSyncopation } = ctx;
     const baseVel = 0.8;
-    const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
+    const beatsPerBar = ctx.beatsPerBar;
+    const grooveDNA = ctx.grooveDNA || [];
 
-    const activeSection = GlobalContext.getActiveSection();
-for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
+    for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
       const isChordStart = beat === chord.startBeat;
 
@@ -22,14 +21,14 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       // 🌟 P1: 乐器惯用语引擎 (Instrument Idiom Engine) - Bass 演奏法 (Slap vs. Finger)
       const isSlap = energyLevel >= 7; // 高能量 Funk 引入 Slap
 
-      if (isChordStart || GlobalContext.isLayeringHit(beat) || maskAccent === 1) {
+      if (isChordStart || BaseBassIdiom.isLayeringHit(beat, grooveDNA, beatsPerBar) || maskAccent === 1) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,
           duration: isSlap ? 0.25 : 0.5, // Slap 更短促
           velocity: baseVel * 1.1 * (maskAccent === 1 ? 1.1 : 1.0),
         });
-      } else if (GlobalContext.isInterleavingHit(beat) || (maskAccent === 1 && PRNGManager.next() > 0.5)) {
+      } else if (BaseBassIdiom.isInterleavingHit(beat, grooveDNA, beatsPerBar) || (maskAccent === 1 && PRNGManager.next() > 0.5)) {
         // 贴合 GrooveDNA
         // Slap 经常使用八度 Pop (高音) 和低音 Slap
         const useOctavePop = isSlap && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1);
@@ -62,7 +61,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
           velocity: baseVel * 0.5 * (maskAccent === 1 ? 1.5 : 1.0),
         });
       } else if (
-        beat % 0.5 === 0.25 &&
+        Math.abs(beat % 0.5 - 0.25) < 1e-6 &&
         (PRNGManager.next() < (grooveDensity - 0.5) * 0.8 || maskAccent === 1)
       ) {
         // 额外的 16 分音符，受 density 控制

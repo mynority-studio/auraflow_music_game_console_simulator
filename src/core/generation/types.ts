@@ -142,14 +142,7 @@ export interface StyleConfig {
         allowIntroRiffs?: boolean; // 🌟 新增：是否允许前奏 Riff
         allowRitardando?: boolean; // 🌟 新增：是否允许结尾渐慢
         grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
-        idiomPreferences?: {
-            counterMelodyStyle?: 'sustained' | 'melodic' | 'rhythmic' | 'arpeggiated';
-            pianoStyle?: 'block-chord' | 'arpeggiated' | 'rhythmic' | 'sparse';
-            drumStyle?: 'steady' | 'syncopated' | 'sparse' | 'high-energy' | 'acoustic-swing';
-            bassStyle?: 'steady' | 'syncopated' | 'melodic' | 'sparse' | 'riff-driven';
-            riffStyle?: 'melodic' | 'rhythmic' | 'arpeggiated' | 'chordal' | 'default';
-            vocalStyle?: 'pop' | 'ballad' | 'neosoul' | 'rnb' | 'gospel' | 'choir';
-        };
+        idiomPreferences?: IdiomPreferences;
         mixingPreferences?: {
             requireSidechain?: boolean;
             melody?: MixingConfig;
@@ -199,6 +192,28 @@ export interface SectionMetadata {
     // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
     localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
     isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)
+}
+
+/** 风格级乐器惯用法偏好（静态配置，存储在 StyleConfig 中） */
+export interface IdiomPreferences {
+    counterMelodyStyle?: string;
+    pianoStyle?: string;
+    drumStyle?: string;
+    bassStyle?: string;
+    riffStyle?: string;
+    vocalStyle?: string;
+}
+
+/** 运行时扩展的乐器惯用法偏好（由 Orchestrator 注入 sections/timeSignature 等运行时数据） */
+export interface RuntimeIdiomPreferences extends IdiomPreferences {
+    sections?: SectionMetadata[];
+    timeSignature?: [number, number];
+    synthStyle?: string;
+    arpPattern?: string;
+    arpRate?: number;
+    guitarStyle?: string;
+    stringStyle?: string;
+    humanizeAmount?: number;
 }
 
 export interface MixingConfig {

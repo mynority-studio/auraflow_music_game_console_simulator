@@ -1,18 +1,17 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
-import { GlobalContext } from '../../GlobalContext';
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
 
 export interface IInstrumentIdiom {
-    apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[];
-    humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand?: boolean, idiomPreferences?: any): NoteData[];
+    apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
+    humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand?: boolean, idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
 }
 
 export abstract class BaseIdiom implements IInstrumentIdiom {
-    abstract apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[];
+    abstract apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
 
     // 采用高斯分布生成更自然的随机数
     protected randomGaussian(mean: number, stdDev: number): number {
-        let u = 1 - PRNGManager.next(); 
+        let u = 1 - PRNGManager.next();
         let v = PRNGManager.next();
         let z = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
         return z * stdDev + mean;
@@ -25,7 +24,7 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
         const getSwungTime = (time: number) => {
             const subdivisionPos = time % (swingSubdivision * 2);
             const beatStart = time - subdivisionPos;
-            
+
             if (subdivisionPos < swingSubdivision) {
                 return beatStart + (subdivisionPos / swingSubdivision) * (swingRatio * swingSubdivision * 2);
             } else {
@@ -38,7 +37,7 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
 
         const swungOnset = getSwungTime(onset);
         const swungEnd = getSwungTime(onset + duration);
-        
+
         return {
             swingDelay: swungOnset - onset,
             newDuration: swungEnd - swungOnset
@@ -46,22 +45,22 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
     }
 
     // 默认的人性化实现（可被子类重写）
-    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const sorted = [...notes].sort((a, b) => a.onset - b.onset);
         const result: NoteData[] = [];
-        
+
         let currentOnset = -1;
         let chordNotes: NoteData[] = [];
 
         const processChord = () => {
             if (chordNotes.length === 0) return;
-            
+
             chordNotes.sort((a, b) => a.pitch - b.pitch);
             const isHighFirst = PRNGManager.next() > 0.5;
-            
+
             chordNotes.forEach((note, index) => {
                 let { strumDelay, timingWobble, velocityWobble, velocityMultiplier } = this.getHumanizeParams(note, index, chordNotes.length, isHighFirst, isRightHand, idiomPreferences);
-                
+
                 // 暂时禁用 timingWobble，避免听起来不稳
                 timingWobble = timingWobble * (idiomPreferences?.humanizeAmount ?? 0.5) * 0.5;
                 velocityWobble = velocityWobble * (idiomPreferences?.humanizeAmount ?? 0.5);
@@ -91,7 +90,7 @@ export abstract class BaseIdiom implements IInstrumentIdiom {
     }
 
     // 获取具体乐器的人性化参数（子类实现）
-    protected abstract getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any): {
+    protected abstract getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences): {
         strumDelay: number;
         timingWobble: number;
         velocityWobble: number;

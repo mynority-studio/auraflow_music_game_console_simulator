@@ -1,10 +1,9 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from "../../types";
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from "../../types";
 import { BaseIdiom } from "./BaseIdiom";
-import { GlobalContext } from "../../GlobalContext";
 
 export class BassIdiom extends BaseIdiom {
-  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
     const bassStyle = idiomPreferences?.bassStyle || 'pop';
     const result: NoteData[] = [];
     if (notes.length === 0) return result;
@@ -69,12 +68,12 @@ export class BassIdiom extends BaseIdiom {
     return result;
   }
 
-  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences) {
       const bassStyle = idiomPreferences?.bassStyle || 'pop';
       
       let timingWobble = 0;
       // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
-      const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
+      const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
       const beatPos = note.onset % beatsPerBar;
 
       // 节奏微人类化
@@ -98,7 +97,7 @@ export class BassIdiom extends BaseIdiom {
       return { strumDelay: 0, timingWobble, velocityWobble, velocityMultiplier: 1.0 };
   }
 
-  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
       const humanized = super.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
       
       // 长音轻微渐弱 (模拟 CC11 掉 5-10)

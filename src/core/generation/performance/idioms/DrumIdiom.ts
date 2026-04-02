@@ -1,17 +1,16 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
-import { GlobalContext } from '../../GlobalContext';
 
 export class DrumIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const drumStyle = idiomPreferences?.drumStyle || 'pop';
         const result: NoteData[] = [];
         if (notes.length === 0) return result;
 
         const KICK = 36, SNARE = 38, CHH = 42, OHH = 46;
         // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
-        const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
+        const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
         
         // 1. 收集现有的音符位置，避免在已有音符的位置添加幽灵音
         const existingOnsets = new Set<number>();
@@ -54,7 +53,7 @@ export class DrumIdiom extends BaseIdiom {
 
             if (current.pitch === CHH) {
                 // 如果在反拍 (0.5)，有概率变成开镲
-                if (beatPos % 1 === 0.5 && PRNGManager.next() < openHihatProb) {
+                if (Math.abs(beatPos % 1 - 0.5) < 1e-6 && PRNGManager.next() < openHihatProb) {
                     current.pitch = OHH;
                     current.velocity = Math.min(1.0, current.velocity * 1.2); // 开镲更响
                     current.duration = 0.4; // 开镲延音长一点
@@ -70,7 +69,7 @@ export class DrumIdiom extends BaseIdiom {
         return result;
     }
 
-    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const result: NoteData[] = [];
         const KICK = 36, SNARE = 38, CHH = 42, OHH = 46, TOM_HI = 50, TOM_MID = 47, TOM_LOW = 43;
         const CRASH = 49, RIDE = 51, CHINA = 52, RIDE_BELL = 53, SPLASH = 55, CRASH2 = 57;
@@ -175,7 +174,7 @@ export class DrumIdiom extends BaseIdiom {
         return result;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences) {
         // 鼓不需要通用的和弦处理参数
         return { strumDelay: 0, timingWobble: 0, velocityWobble: 0, velocityMultiplier: 1.0 };
     }

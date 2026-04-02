@@ -1,9 +1,8 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft } from '../types';
+import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, TempoCurve } from '../types';
 import { TextureMapper, TextureRenderContext } from './TextureMapper';
 import { TransitionEngine } from './TransitionEngine';
 import { InstrumentIdiom, resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
-import { GlobalContext } from '../GlobalContext'; // 新增引用
 import { HarmonyCore } from '../composing/HarmonyCore';
 import { ToplineEngine } from '../composing/ToplineEngine';
 import { MotifLooper } from './MotifLooper';
@@ -387,6 +386,7 @@ export class Orchestrator {
                 }
                 if (keysTrack && hasChords) {
                     playChords = energy >= keysTrack.activeEnergyThreshold;
+                    // safe: arpeggiateProb is guarded by truthiness check; it's number | undefined on the type
                     if (keysTrack.behavior.arpeggiateProb && PRNGManager.next() < (keysTrack.behavior.arpeggiateProb as number)) {
                         texture = "Arpeggio";
                     } else if (PRNGManager.next() < 0.15) { // 15% chance to use Riff texture
@@ -497,10 +497,6 @@ export class Orchestrator {
                 timeSignature: context.timeSignature,
                 activeSection,
             };
-
-            // 🌟 核心修复 2：伴奏组生成前，将黑板同步为当前段落专属的 GrooveDNA！
-            // 这样贝斯和钢琴就会死死咬住当前主歌或副歌的律动，彻底解决“从头到尾一个样”的问题。
-            GlobalContext.updateCurrentSlice(activeSection, chord, activeSection.grooveDNA ||[0, 1, 2, 3]);
 
             const secName = activeSection.name;
             const energy = activeSection.energyLevel;
@@ -661,7 +657,7 @@ export class Orchestrator {
                     const rootNote = HarmonyCore.getChordTones(chord, 48)[0]; // C3 range
                     chordNotes = TextureMapper.generateSignatureRiff(scale, rootNote, chord.endBeat - chord.startBeat, chord.startBeat);
                 } else if (texture === "Riff") {
-                    chordNotes = TextureMapper.generateRiff(chord, energy, currentStyleConfig);
+                    chordNotes = TextureMapper.generateRiff(chord, energy, currentStyleConfig, renderCtx);
                 } else {
                     const pianoStyle = style.orchestration.idiomPreferences?.pianoStyle || 'block-chord';
                     chordNotes = TextureMapper.generateChordTexture(
@@ -711,7 +707,6 @@ export class Orchestrator {
 
                 if (playDrums && startBeat < sec.endBeat) {
                     // 确保鼓组也吃当前的 GrooveDNA
-                    GlobalContext.updateCurrentSlice(sec, track.chords[0], sec.grooveDNA ||[0,1,2,3]);
                     const swingRatio = style.rhythm.swingRatio || 0.5;
                     const effectiveEnergy = sec.energyLevel;
                     const nextSec = track.sections[index + 1];
@@ -896,7 +891,7 @@ export class Orchestrator {
         }
 
         // 🌟 提案二：Ritardando 渐慢算法 (Non-linear tempo deceleration)
-        const tempoCurves: any[] = [];
+        const tempoCurves: TempoCurve[] = [];
         if (track.sections && track.sections.length > 0) {
             const lastSection = track.sections[track.sections.length - 1];
             if (lastSection.name.includes('Outro') && lastSection.endingType !== 'hard_stop') {

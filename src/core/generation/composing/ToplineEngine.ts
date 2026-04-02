@@ -3,7 +3,6 @@ import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaCo
 import { HarmonyCore } from './HarmonyCore';
 import { GrooveEngine } from './GrooveEngine';
 import { SingerPersona } from '../performance/SingerPersona';
-import { GlobalContext } from '../GlobalContext';
 import { resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
 import { getStyleGrammar } from '../styles/GrammarRegistry';
 
@@ -383,7 +382,6 @@ export class ToplineEngine {
         const sectionGroove = section.grooveDNA || GrooveEngine.generateRhythmFingerprint(sectionDensity, sectionSyncopation, beatsPerBar, userMotif);
         // 🌟 修复：将生成的 groove 保存回 section，确保 Orchestrator 生成伴奏时使用完全相同的律动骨架！
         section.grooveDNA = sectionGroove;
-        GlobalContext.updateCurrentSlice(section, chords[0], sectionGroove);
 
         const melodyGroove = GrooveEngine.generateInverseGroove(sectionGroove, beatsPerBar, sectionDensity);
 
@@ -1265,7 +1263,7 @@ export class ToplineEngine {
                     // 🌟 级进时，有概率加入倚音 (Grace Note) / 幽灵音过度
                     // 大幅降低倚音频率，避免过于密集和烦人。使用方法论：一小节最多出现一次，或者只在长音前出现
                     const maxGraceNotesPerPhrase = isSolo ? 2 : 1;
-                    let graceNotesInPhrase = notes.filter(n => (n as any).isGraceNote).length;
+                    let graceNotesInPhrase = notes.filter(n => n.isGraceNote).length;
                     
                     const graceChance = style?.melody?.inflectionProbability ?? (isSolo ? 0.08 : (isInstrumental ? 0.04 : 0.02)); // 大幅降低倚音频率
                     if (PRNGManager.next() < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
@@ -1311,7 +1309,7 @@ export class ToplineEngine {
                                     // 倚音力度极弱
                                     velocity: Math.max(0.1, lastNote.velocity * (0.2 + PRNGManager.next() * 0.15)),
                                     isGraceNote: true
-                                } as any);
+                                });
                             }
                         }
                     }

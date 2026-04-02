@@ -2,18 +2,17 @@ import { NoteData } from "../../types";
 import { IRiffIdiom, RiffContext } from "./IRiffIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 import { getRandomRhythmCell } from "../../melody/RhythmCells";
 
 export class DefaultRiffIdiom implements IRiffIdiom {
   generate(ctx: RiffContext): NoteData[] {
     const { chord, energyLevel, style } = ctx;
     const notes: NoteData[] = [];
-    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+    const keyOffset = ctx.keyOffset ?? chord.keyOffset ?? 0;
     const chordTones = HarmonyCore.getChordTones(chord, 60 - keyOffset); // C4 range
     const scalePcs = HarmonyCore.getSafeScalePitches(
       chord,
-      GlobalContext.currentTonality
+      ctx.tonality ?? 'Major'
     );
     const rootMidi = chordTones[0];
     const baseVel = 0.6 + (energyLevel / 10) * 0.3;

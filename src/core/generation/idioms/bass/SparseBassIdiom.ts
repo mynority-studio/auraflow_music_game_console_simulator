@@ -2,14 +2,13 @@ import { NoteData } from "../../types";
 import { BassIdiomContext } from "./IBassIdiom";
 import { BaseBassIdiom } from "./BaseBassIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
 export class SparseBassIdiom extends BaseBassIdiom {
   generateBassPattern(ctx: BassIdiomContext): NoteData[] {
     const notes: NoteData[] = [];
     const { chord, targetBassPitch, fifthMidi, energyLevel, grooveDensity, grooveSyncopation } = ctx;
     const baseVel = 0.8;
-    const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
+    const beatsPerBar = ctx.beatsPerBar;
 
     for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;

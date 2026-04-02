@@ -1,6 +1,5 @@
 import { NoteData } from "../../types";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 import { BassIdiomContext } from "./IBassIdiom";
 import { BaseBassIdiom } from "./BaseBassIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
@@ -44,7 +43,7 @@ export class SteadyBassIdiom extends BaseBassIdiom {
 
       let targetChordTones = ctx.bassTones;
       if (nextChord) {
-        const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+        const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : (ctx.keyOffset ?? 0);
         let nextFinalRoot = (nextChord.root + nextKeyOffset) % 12;
         nextFinalRoot += 24;
         if (nextFinalRoot < 28) nextFinalRoot += 12;
@@ -63,10 +62,10 @@ export class SteadyBassIdiom extends BaseBassIdiom {
       return approachPitch;
     };
 
-    const activeSection = GlobalContext.getActiveSection();
-for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
+    const beatsPerBar = ctx.beatsPerBar;
+    const grooveDNA = ctx.grooveDNA || [];
+    for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const isChordStart = beat === chord.startBeat;
-      const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
       const beatInBar = beat % beatsPerBar;
 
       let maskAccent = 0;
@@ -83,7 +82,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       if (isEDM && energyLevel >= 5) {
         // EDM Bass Logic: Off-beat or Syncopated, NOT 16th note spam
         const subBeat = beatInBar % 1;
-        if (subBeat === 0.5 || maskAccent === 1) {
+        if (Math.abs(subBeat - 0.5) < 1e-6 || maskAccent === 1) {
           notes.push({
             pitch: targetBassPitch,
             onset: beat,
@@ -109,7 +108,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       }
 
       // Pop/Rock logic
-      const isGrooveHit = GlobalContext.isGrooveHit(beat);
+      const isGrooveHit = BaseBassIdiom.isGrooveHit(beat, grooveDNA, beatsPerBar);
       
       // 🌟 贝斯转位 (Bass Inversion) - 偶尔使用三音作为低音，使线条更平滑
       let actualBassPitch = targetBassPitch;
@@ -134,7 +133,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
           duration: 0.5,
           velocity: baseVel * 0.9 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (GlobalContext.isInterleavingHit(beat) && (PRNGManager.next() < 0.6 || maskAccent === 1)) { // Reduced probability to prevent spam
+      } else if (BaseBassIdiom.isInterleavingHit(beat, grooveDNA, beatsPerBar) && (PRNGManager.next() < 0.6 || maskAccent === 1)) { // Reduced probability to prevent spam
         const pitch = PRNGManager.next() > 0.7 ? octaveMidi : targetBassPitch;
         notes.push({
           pitch: pitch,
@@ -149,7 +148,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
           duration: 0.25,
           velocity: baseVel * 0.7 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if (beat % 0.5 === 0.25 && (PRNGManager.next() < (grooveDensity - 0.5) * 0.4 || maskAccent === 1)) { // Significantly reduced 16th note spam
+      } else if (Math.abs(beat % 0.5 - 0.25) < 1e-6 && (PRNGManager.next() < (grooveDensity - 0.5) * 0.4 || maskAccent === 1)) { // Significantly reduced 16th note spam
         notes.push({
           pitch: targetBassPitch,
           onset: beat,

@@ -1,6 +1,5 @@
 import { NoteData, GeneratedChord, StyleConfig } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
-import { GlobalContext } from '../GlobalContext';
 
 export class GlobalReviewer {
     /**

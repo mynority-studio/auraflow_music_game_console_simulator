@@ -90,7 +90,7 @@ export class TransitionEngine {
                 const beatInFill = beat - startBeat;
                 
                 // 重音移位逻辑：随机决定重音位置，打破常规的强拍
-                const isAccent = PRNGManager.next() > 0.7 || (beatInFill % 1 === 0.75); 
+                const isAccent = PRNGManager.next() > 0.7 || (Math.abs(beatInFill % 1 - 0.75) < 1e-6);
                 
                 // 🌟 极大地拉开重音和弱音的力度差距，突出双跳和移位感
                 const vel = isAccent ? (0.9 + PRNGManager.next() * 0.1) : (0.2 + PRNGManager.next() * 0.15); 
@@ -162,7 +162,7 @@ export class TransitionEngine {
                     drums.push({ pitch, onset: beat, duration: 0.1, velocity: vel });
                     
                     // 强拍或切分点加底鼓
-                    if (beatInFill % 1 === 0 || beatInFill % 1 === 0.75) {
+                    if (Math.abs(beatInFill % 1) < 1e-6 || Math.abs(beatInFill % 1 - 0.75) < 1e-6) {
                         drums.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.9 });
                     }
                 }

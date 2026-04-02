@@ -1,22 +1,21 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences, SectionMetadata } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
-import { GlobalContext } from '../../GlobalContext';
 
 export class GuitarIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const guitarStyle = idiomPreferences?.guitarStyle || 'pop';
         const result: NoteData[] = [];
         if (notes.length === 0) return result;
 
         const sorted = [...notes].sort((a, b) => a.onset - b.onset);
         // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
-        const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
+        const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
         const sections = idiomPreferences?.sections || [];
 
         const getEnergyLevelAt = (onset: number): number => {
             if (!sections || sections.length === 0) return 5; // S-2: removed GlobalContext fallback
-            const section = sections.find((s: any) => onset >= s.startBeat && onset < s.endBeat);
+            const section = sections.find((s: SectionMetadata) => onset >= s.startBeat && onset < s.endBeat);
             return section ? section.energyLevel : 5;
         };
 
@@ -196,10 +195,10 @@ export class GuitarIdiom extends BaseIdiom {
         return result;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences) {
         const guitarStyle = idiomPreferences?.guitarStyle || 'pop';
         // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
-        const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
+        const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
         const is68 = beatsPerBar === 6;
         const beatPos = note.onset % beatsPerBar;
 

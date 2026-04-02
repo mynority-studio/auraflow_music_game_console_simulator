@@ -1,10 +1,9 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
-import { GlobalContext } from '../../GlobalContext';
 
 export class StringIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const stringStyle = idiomPreferences?.stringStyle || 'pop';
         
         // 铁律 1: 同一声部，不要写超过 2 个音同时响
@@ -176,7 +175,7 @@ export class StringIdiom extends BaseIdiom {
         return finalNotes;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences) {
         const stringStyle = idiomPreferences?.stringStyle || 'pop';
         
         // 弦乐群奏时，各声部进入会有微小的时间差
@@ -196,7 +195,7 @@ export class StringIdiom extends BaseIdiom {
         }
 
         // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
-        const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
+        const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
         const is68 = beatsPerBar === 6;
         const beatPos = note.onset % beatsPerBar;
 

@@ -6,7 +6,6 @@ import { StructureEngine } from "./composing/StructureEngine";
 import { HarmonyEngine, HarmonyCore } from "./composing/HarmonyCore";
 import { ToplineEngine } from "./composing/ToplineEngine";
 import { SingerPersona } from "./performance/SingerPersona";
-import { GlobalContext } from "./GlobalContext";
 import { EnsembleDrafter } from "./arrangement/EnsembleDrafter";
 import { GenerationOptions } from "./types";
 
@@ -81,13 +80,11 @@ export class MelodyEngine {
         }
     }
     
-    GlobalContext.initializeNewEra(style, bpm, keyOffset, tonality, timeSig, finalMoodId);
-
     // 1. 生成宏观结构
     const sections = StructureEngine.generateFullSongStructure(timeSig, bpm, style, finalMoodId);
     
     // 2. 生成全曲和声轨道 (带过渡和弦引擎)
-    const chords = HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig);
+    const chords = HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig, tonality, keyOffset);
 
     // 3. 抽卡决定乐器编制与主唱性格
     const instrumentPalette = EnsembleDrafter.draft(style);

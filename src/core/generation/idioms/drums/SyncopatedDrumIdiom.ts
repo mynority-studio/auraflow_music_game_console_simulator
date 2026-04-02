@@ -39,12 +39,12 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       }
 
       // Funk: 16th note hi-hats with accents
-      if (beat % 0.25 === 0) {
+      if (Math.abs(beat % 0.25) < 1e-6) {
         let cymbalPitch = CHH;
-        let cymbalVel = beat % 0.5 === 0 ? 0.8 : 0.5;
+        let cymbalVel = Math.abs(beat % 0.5) < 1e-6 ? 0.8 : 0.5;
 
         // Open hi-hat on the "and"
-        if (beat % 1 === 0.5 && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
+        if (Math.abs(beat % 1 - 0.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
           cymbalPitch = OHH;
           cymbalVel = 0.85;
         }

@@ -2,21 +2,23 @@
 
 ---
 
-## TODO：GlobalContext 全局单例消除（TS 侧架构重构）
+## ✅ DONE：GlobalContext 全局单例消除（TS 侧架构重构）
 
 > **依据** — Music Generation Pipeline Rule 条款 S-2 / L-1 / L-3
+> **完成时间** — 2026-04-02
 
-### 背景
+### 结果
 
-对照 Music Generation Pipeline Rule 对源码进行合规审查，共发现 7 类违规。其中 6 类（浮点 `===` → epsilon 容差、ChordQuality / Tonality / SectionType 字符串 → 数值枚举、StyleFlag 位掩码、Map → Record、PRNG 初始种子、PlaybackEngine.convert 抽取、any 类型消除）已全部通过机械替换完成，tsc 零错误通过。
+生成管道（`/src/core/generation/`）内 GlobalContext **全部消除**：
+- 零 `import { GlobalContext }` 
+- 零 `GlobalContext.` 方法/属性调用
+- 3 处写操作（`initializeNewEra` / `updateCurrentSlice`）已移除
+- ~51 处读操作全部替换为显式参数传递
+- 采用**显式参数传递**方案（通过 renderCtx / BassIdiomContext / 方法参数链）
+- `updateCurrentSlice()` 由 renderCtx + idiomPreferences 注入替代
+- tsc 零错误通过
 
-唯一剩余的违规项是 **GlobalContext 全局单例**。`GlobalContext` 是一个拥有 11 个可变属性的全局单例（违反 S-1 / L-3），被生成管道内 42 个文件 import、99+ 处隐式读写（违反 S-2 / L-1），无法通过 find-replace 机械消除——需要重新设计 context 在管道内部子模块间的传递机制，属于架构级重构。
-
-### 待讨论
-
-- 重构方案选型（显式参数传递 vs immutable context 对象 vs 其他）
-- `updateCurrentSlice()` 替代方案（循环内隐式状态 → 显式参数）
-- 分批策略与回归验证方式
+详见 `docs/code_review_pending.md`。
 
 ---
 

@@ -1,7 +1,6 @@
 import { NoteData } from "../../types";
 import { BassIdiomContext } from "./IBassIdiom";
 import { BaseBassIdiom } from "./BaseBassIdiom";
-import { GlobalContext } from "../../GlobalContext";
 import { PRNGManager } from "../../../utils/PRNG";
 
 export class BassSoloIdiom extends BaseBassIdiom {
@@ -9,15 +8,16 @@ export class BassSoloIdiom extends BaseBassIdiom {
     const notes: NoteData[] = [];
     const { chord, rootMidi, octaveMidi, thirdMidi, fifthMidi, grooveDensity, grooveSyncopation } = ctx;
     const baseVel = 0.8;
-    const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
+    const beatsPerBar = ctx.beatsPerBar;
+    const grooveDNA = ctx.grooveDNA || [];
 
     for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
       const isChordStart = beat === chord.startBeat;
 
       // 🌟 贝斯 Solo 模式：更具律动感和旋律性
-      const isLayeringHit = GlobalContext.isLayeringHit(beat);
-      const isInterleavingHit = GlobalContext.isInterleavingHit(beat);
+      const isLayeringHit = BaseBassIdiom.isLayeringHit(beat, grooveDNA, beatsPerBar);
+      const isInterleavingHit = BaseBassIdiom.isInterleavingHit(beat, grooveDNA, beatsPerBar);
       
       if (isChordStart || isLayeringHit) {
         notes.push({

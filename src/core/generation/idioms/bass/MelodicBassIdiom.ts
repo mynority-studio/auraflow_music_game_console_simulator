@@ -1,7 +1,6 @@
 import { NoteData } from "../../types";
 import { BassIdiomContext } from "./IBassIdiom";
 import { BaseBassIdiom } from "./BaseBassIdiom";
-import { GlobalContext } from "../../GlobalContext";
 import { PRNGManager } from "../../../utils/PRNG";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 
@@ -10,10 +9,9 @@ export class MelodicBassIdiom extends BaseBassIdiom {
     const notes: NoteData[] = [];
     const { chord, rootMidi, nextChord, nextTargetCenter, safeScalePcs, bassTones, grooveDensity, grooveSyncopation } = ctx;
     const baseVel = 0.8;
-    const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
+    const beatsPerBar = ctx.beatsPerBar;
 
-    const activeSection = GlobalContext.getActiveSection();
-// Helper for walking bass chromatic approach
+    // Helper for walking bass chromatic approach
     const getApproachNote = (
       targetPitch: number,
       currentBeat: number,
@@ -30,7 +28,7 @@ export class MelodicBassIdiom extends BaseBassIdiom {
 
       let targetChordTones = bassTones;
       if (nextChord) {
-        const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+        const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : (ctx.keyOffset ?? 0);
         let nextFinalRoot = (nextChord.root + nextKeyOffset) % 12;
         nextFinalRoot += 24;
         if (nextFinalRoot < 28) nextFinalRoot += 12;

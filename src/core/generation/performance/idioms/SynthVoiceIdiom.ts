@@ -1,9 +1,9 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from '../../types';
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
 import { BaseIdiom } from './BaseIdiom';
 
 export class SynthVoiceIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         if (notes.length === 0) return [];
 
         const sorted = [...notes].sort((a, b) => a.onset - b.onset);
@@ -89,7 +89,7 @@ export class SynthVoiceIdiom extends BaseIdiom {
         return result;
     }
 
-    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+    protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences) {
         return {
             strumDelay: 0,
             timingWobble: this.randomGaussian(0, 0.005), // Very tight timing
@@ -98,7 +98,7 @@ export class SynthVoiceIdiom extends BaseIdiom {
         };
     }
 
-    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+    public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         // Use base humanize but do NOT shorten durations like PianoIdiom does
         return super.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
     }

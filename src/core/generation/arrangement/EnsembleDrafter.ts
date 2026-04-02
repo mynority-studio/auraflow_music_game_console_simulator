@@ -33,7 +33,7 @@ export class EnsembleDrafter {
         const styleName = StyleId[style.id] || "";
         const styleTags = styleName.toLowerCase().split('_');
         
-        const getInstrumentFromPool = (pool: any[]) => {
+        const getInstrumentFromPool = (pool: { id: string; tags: string[] }[]) => {
             const matches = pool.filter(item => 
                 item.tags.includes('all') || item.tags.some((tag: string) => styleTags.some(st => st.includes(tag) || tag.includes(st)))
             );

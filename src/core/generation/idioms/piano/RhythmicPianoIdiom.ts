@@ -30,7 +30,7 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const isFunkHit =
         maskAccent === 1 ||
         (beatInBar === 0 && PRNGManager.next() < grooveDensity) ||
-        (beatInBar === 0.75 && PRNGManager.next() < grooveSyncopation * 1.5) ||
+        (Math.abs(beatInBar - 0.75) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5) ||
         (beatInBar === 1.5 && PRNGManager.next() < grooveSyncopation * 1.2) ||
         (beatInBar === 2.5 && PRNGManager.next() < grooveDensity) ||
         (beatInBar === 3.75 && PRNGManager.next() < grooveSyncopation * 1.5);

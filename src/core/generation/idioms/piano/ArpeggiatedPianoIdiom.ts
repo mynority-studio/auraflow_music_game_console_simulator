@@ -70,7 +70,7 @@ if (energyLevel <= 2) {
       }
 
       // Add occasional ghost strums on offbeats for groove
-      if (!melodySinging && beat % 0.5 === 0.25 && (PRNGManager.next() > 0.7 || maskAccent === 1)) {
+      if (!melodySinging && Math.abs(beat % 0.5 - 0.25) < 1e-6 && (PRNGManager.next() > 0.7 || maskAccent === 1)) {
         this.addBlockChord(notes, beat, 0.15, baseVelocity * 0.4 * (maskAccent === 1 ? 1.5 : 1.0), [
           voicedTones[1] || voicedTones[0],
         ]);

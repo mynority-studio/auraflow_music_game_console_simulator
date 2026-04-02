@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord } from '../types';
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../types';
 import { PianoIdiom } from './idioms/PianoIdiom';
 import { GuitarIdiom } from './idioms/GuitarIdiom';
 import { StringIdiom } from './idioms/StringIdiom';
@@ -102,7 +102,7 @@ export class InstrumentIdiom {
     private static synthVoiceEngine = new SynthVoiceIdiom();
     private static synthEngine    = new SynthIdiom();
 
-    public static apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: Record<string, unknown>): NoteData[] {
+    public static apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const family = resolveInstrumentFamily(instrumentName);
 
         // T-1 合规：枚举分发，无字符串子串匹配
@@ -119,7 +119,7 @@ export class InstrumentIdiom {
         }
     }
 
-    public static humanize(notes: NoteData[], instrumentName: string, swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: Record<string, unknown>): NoteData[] {
+    public static humanize(notes: NoteData[], instrumentName: string, swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const family = resolveInstrumentFamily(instrumentName);
 
         switch (family) {

@@ -1,22 +1,21 @@
 import { PRNGManager } from '../../../utils/PRNG';
-import { NoteData, GeneratedChord } from "../../types";
+import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from "../../types";
 import { BaseIdiom } from "./BaseIdiom";
-import { GlobalContext } from "../../GlobalContext";
 
 export class PianoIdiom extends BaseIdiom {
-  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: any): NoteData[] {
+  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
     const pianoStyle = idiomPreferences?.pianoStyle || 'pop';
     const result: NoteData[] =[];
     if (notes.length === 0) return result;
 
     const sorted = [...notes].sort((a, b) => a.onset - b.onset);
     // S-2 合规：从 sections 查询各拍段的能量值，回退到 GlobalContext
-    const _pianoSects = idiomPreferences?.sections as Array<{startBeat:number, endBeat:number, energyLevel:number}> | undefined;
+    const _pianoSects = idiomPreferences?.sections;
     const getEnergyAt = (onset: number): number => {
         if (_pianoSects && _pianoSects.length > 0) {
             return _pianoSects.find(s => onset >= s.startBeat && onset < s.endBeat)?.energyLevel ?? 5;
         }
-        return GlobalContext.getCurrentEnergyLevel();
+        return 5;
     };
 
     for (let i = 0; i < sorted.length; i++) {
@@ -195,7 +194,7 @@ export class PianoIdiom extends BaseIdiom {
     return finalResult.sort((a, b) => a.onset - b.onset);
   }
 
-  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: any) {
+  protected getHumanizeParams(note: NoteData, index: number, chordSize: number, isHighFirst: boolean, isRightHand: boolean, idiomPreferences?: RuntimeIdiomPreferences) {
       const pianoStyle = idiomPreferences?.pianoStyle || 'pop';
       const effectiveIndex = isHighFirst ? (chordSize - 1 - index) : index;
       
@@ -208,7 +207,7 @@ export class PianoIdiom extends BaseIdiom {
       if (pianoStyle === 'jazz') timingWobble = this.randomGaussian(0.01, 0.025); // 爵士整体偏晚且更不稳
       
       // safe: timeSignature is [number,number] injected by Orchestrator via idiomPrefsWithSections
-      const beatsPerBar = (idiomPreferences?.timeSignature as [number,number])?.[0] ?? GlobalContext.currentTimeSignature[0] ?? 4;
+      const beatsPerBar = idiomPreferences?.timeSignature?.[0] ?? 4;
       const is68 = beatsPerBar === 6;
       const beatPos = note.onset % beatsPerBar;
 
@@ -244,7 +243,7 @@ export class PianoIdiom extends BaseIdiom {
       return { strumDelay, timingWobble, velocityWobble, velocityMultiplier };
   }
 
-  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: any): NoteData[] {
+  public humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand: boolean = false, idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
       // 先调用父类的通用人性化处理（包含 strumDelay, timingWobble, velocityWobble, swing）
       const humanized = super.humanize(notes, swingRatio, swingSubdivision, isRightHand, idiomPreferences);
       

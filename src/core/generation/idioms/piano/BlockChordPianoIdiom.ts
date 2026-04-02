@@ -143,10 +143,10 @@ let maskAccent = 0;
 
       if (effectiveTexture === "Synth_Pulse") {
         const step = energyLevel >= 8 ? 0.5 : 1.0;
-        if (beat % step === 0) {
-          const pulseVel = baseVelocity * (beat % 1 === 0 ? 1.0 : 0.8);
+        if (Math.abs(beat % step) < 1e-6) {
+          const pulseVel = baseVelocity * (Math.abs(beat % 1) < 1e-6 ? 1.0 : 0.8);
           this.addBlockChord(notes, beat, step * 0.9, pulseVel, voicedTones);
-        } else if (energyLevel >= 7 && beat % 1 === 0.5 && PRNGManager.next() > 0.5) {
+        } else if (energyLevel >= 7 && Math.abs(beat % 1 - 0.5) < 1e-6 && PRNGManager.next() > 0.5) {
           this.addBlockChord(notes, beat, 0.5, baseVelocity * 0.9, voicedTones);
         }
         continue;
@@ -273,11 +273,11 @@ let maskAccent = 0;
           }
         }
 
-        const isSyncopatedHit = (beatInBar === 1.5 || beatInBar === 2.5 || beatInBar === 3.5) && PRNGManager.next() < grooveSyncopation * 1.5;
-        const is16thPush = (beatInBar === 0.75 || beatInBar === 1.75 || beatInBar === 2.75 || beatInBar === 3.75) && PRNGManager.next() < grooveDensity;
+        const isSyncopatedHit = (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && PRNGManager.next() < grooveSyncopation * 1.5;
+        const is16thPush = (Math.abs(beatInBar - 0.75) < 1e-6 || Math.abs(beatInBar - 1.75) < 1e-6 || Math.abs(beatInBar - 2.75) < 1e-6 || Math.abs(beatInBar - 3.75) < 1e-6) && PRNGManager.next() < grooveDensity;
 
         // 🌟 左手幽灵音 (Ghost Note) - 在弱拍加入极轻的五度音，增强律动滚动感
-        if ((beatInBar === 1.5 || beatInBar === 2.5) && PRNGManager.next() > 0.5) {
+        if ((Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6) && PRNGManager.next() > 0.5) {
             notes.push({ pitch: leftHandGhostPitch, onset: beat, duration: 0.25, velocity: baseVelocity * 0.4 }); 
         }
 

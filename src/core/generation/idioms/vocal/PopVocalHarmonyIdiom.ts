@@ -2,7 +2,6 @@ import { NoteData } from "../../types";
 import { IVocalHarmonyIdiom, VocalHarmonyContext } from "./IVocalHarmonyIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { PRNGManager } from "../../../utils/PRNG";
-import { GlobalContext } from "../../GlobalContext";
 
 export class PopVocalHarmonyIdiom implements IVocalHarmonyIdiom {
   generate(ctx: VocalHarmonyContext): NoteData[] {
@@ -14,7 +13,7 @@ export class PopVocalHarmonyIdiom implements IVocalHarmonyIdiom {
 
     melodyNotes.forEach(note => {
       const isLongNote = note.duration >= 0.5;
-      const isStrongBeat = note.onset % 1 === 0 || note.onset % 1 === 0.5;
+      const isStrongBeat = Math.abs(note.onset % 1) < 1e-6 || Math.abs(note.onset % 1 - 0.5) < 1e-6;
       const shouldHarmonize = energyLevel < 5 ? isLongNote : (isLongNote || isStrongBeat);
 
       if (!shouldHarmonize) return;

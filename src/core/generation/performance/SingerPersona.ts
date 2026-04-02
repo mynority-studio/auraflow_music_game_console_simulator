@@ -5,7 +5,6 @@ import { PRNGManager } from '../../utils/PRNG';
 // ==========================================
 import { NoteData, SingerPersonaConfig, GeneratedChord } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
-import { GlobalContext } from '../GlobalContext';
 import { resolveInstrumentFamily, InstrumentFamily } from './InstrumentIdiom';
 
 export class SingerPersona {
