@@ -1,6 +1,6 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
-import { GlobalContext } from '../../core/generation/GlobalContext';
+import { GlobalContext } from '../../core/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 import { getAllAvailableStyles, getStyleConfig } from "../../core/generation/config/styles/StyleRegistry";
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';

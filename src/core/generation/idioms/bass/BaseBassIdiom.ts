@@ -1,4 +1,4 @@
-import { NoteData } from "../../types";
+import { NoteData, SectionType } from "../../types";
 import { BassIdiomContext, IBassIdiom } from "./IBassIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
 import { StyleId } from "../../config/StyleFlags";
@@ -60,7 +60,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
     const isFillZone = (beat: number) => beat >= chord.endBeat - 1.0;
     const activeSection = ctx.activeSection ?? null;
     const isBuildUp =
-      activeSection?.type === "BuildUp" ||
+      activeSection?.type === SectionType.BuildUp ||
       (ctx.nextEnergyLevel > energyLevel + 1);
 
     const bassStyle = ctx.idiomPreferences?.bassStyle || "steady";

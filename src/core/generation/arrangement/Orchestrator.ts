@@ -1,10 +1,9 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, TempoCurve } from '../types';
+import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, SectionType, MusicContext, EnsembleDraft, TempoCurve } from '../types';
 import { TextureMapper, TextureRenderContext } from './TextureMapper';
 import { TransitionEngine } from './TransitionEngine';
 import { InstrumentIdiom, resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
 import { HarmonyCore } from '../composing/HarmonyCore';
-import { ToplineEngine } from '../composing/ToplineEngine';
 import { MotifLooper } from './MotifLooper';
 
 import { GlobalReviewer } from '../review/GlobalReviewer';
@@ -12,6 +11,27 @@ import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/styles/StyleRegistry';
 
 export class Orchestrator {
+    /** L-2 合规：从 ToplineEngine 移入编配层，纯数据变换不消耗 PRNG */
+    private static extractForeshadowingIntro(chorusMotif: NoteData[], targetInstrument: number, introStartBeat: number, chorusStartBeat: number): NoteData[] {
+        const introMelody: NoteData[] = [];
+        if (chorusMotif.length === 0) return introMelody;
+        const referenceBeat = chorusStartBeat > 0 ? chorusStartBeat : chorusMotif[0].onset;
+        for (const note of chorusMotif) {
+            if (note.duration < 0.5) continue;
+            const relativeBeat = note.onset - referenceBeat;
+            if (relativeBeat < 0) continue;
+            if (Math.abs(relativeBeat % 0.5) < 1e-6) {
+                introMelody.push({
+                    pitch: note.pitch,
+                    onset: introStartBeat + relativeBeat,
+                    duration: note.duration * 1.5,
+                    velocity: 60
+                });
+            }
+        }
+        return introMelody;
+    }
+
     private static applyMixerState(palette: EnsembleDraft, style: StyleConfig) {
         if (!palette.mixing) {
             // Fallback to default mixing
@@ -154,7 +174,7 @@ export class Orchestrator {
         
         // 🌟 提案四：Trading Fours (乐器对话/四小节轮奏)
         // 检查是否有 Solo_Bridge 段落且曲风适合 (Jazz/Blues)
-        const hasTradingFours = !!style.orchestration?.allowTradingFours && track.sections.some(s => s.name.includes('Solo'));
+        const hasTradingFours = !!style.orchestration?.allowTradingFours && track.sections.some(s => s.type === SectionType.Solo_Bridge);
         
         // 如果需要 Trading Fours，但没有副旋律乐器，则从配置中随机选一个
         if (hasTradingFours && !palette.secondaryMelodySound) {
@@ -198,7 +218,7 @@ export class Orchestrator {
                 
                 let assignToPrimary = isPrimary;
                 
-                if (hasTradingFours && activeSection.name.includes('Solo')) {
+                if (hasTradingFours && activeSection.type === SectionType.Solo_Bridge) {
                     // Trading Fours: 每 4 小节切换一次乐器
                     const beatsPerBar = track.timeSignature[0];
                     const barsSinceSectionStart = Math.floor((firstNoteOnset - activeSection.startBeat) / beatsPerBar);
@@ -243,7 +263,7 @@ export class Orchestrator {
         let melodyEntryBeat = 0;
         let introEndBeat = 0;
 
-        const introSection = track.sections.find(s => s.name.includes('Intro'));
+        const introSection = track.sections.find(s => s.type === SectionType.Intro);
         if (introSection) {
             introEndBeat = introSection.endBeat;
             const introLength = introSection.endBeat - introSection.startBeat;
@@ -311,12 +331,12 @@ export class Orchestrator {
 
         // 🌟 提取并简化副歌 Hook 作为前奏旋律 (Thematic Foreshadowing)
         if (introSection && PRNGManager.next() < 0.6) { // 60% chance to use foreshadowing intro
-            const firstChorus = track.sections.find(s => s.name.includes('Chorus'));
+            const firstChorus = track.sections.find(s => s.type === SectionType.Chorus);
             if (firstChorus) {
                 // Get the full chorus melody (both primary and secondary) to extract a complete hook
                 const fullChorusMelody = track.melody.filter(n => n.onset >= firstChorus.startBeat && n.onset < firstChorus.endBeat);
                 const targetInstrument = 10; // Music Box
-                const foreshadowingIntro = ToplineEngine.extractForeshadowingIntro(fullChorusMelody, targetInstrument, introSection.startBeat, firstChorus.startBeat);
+                const foreshadowingIntro = this.extractForeshadowingIntro(fullChorusMelody, targetInstrument, introSection.startBeat, firstChorus.startBeat);
                 
                 if (foreshadowingIntro.length > 0) {
                     // Remove existing intro melody if any
@@ -413,12 +433,12 @@ export class Orchestrator {
             }
 
             // Special overrides based on section type
-            if (section.type === 'Break' || section.type === 'Breakdown') {
+            if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
                 playBass = false;
                 playChords = true;
                 playCounterMelody = true;
                 texture = "Pad";
-            } else if (section.type === 'BuildUp') {
+            } else if (section.type === SectionType.BuildUp) {
                 playBass = true;
                 playChords = true;
                 playCounterMelody = true;
@@ -447,11 +467,11 @@ export class Orchestrator {
             const isFunk = drumStyle === 'syncopated';
 
             if (isEDM) {
-                if (section.type === 'BuildUp') {
+                if (section.type === SectionType.BuildUp) {
                     playBass = true; playChords = true; playCounterMelody = true; texture = "Arpeggio";
-                } else if (section.type === 'Chorus' || section.type === 'Drop' || energy >= 7) {
+                } else if (section.type === SectionType.Chorus || section.type === SectionType.Drop || energy >= 7) {
                     playBass = true; playChords = true; playCounterMelody = true; texture = "Block";
-                } else if (section.type === 'Break' || section.type === 'Breakdown') {
+                } else if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
                     playBass = false; playChords = true; playCounterMelody = true; texture = "Pad";
                 } else {
                     playBass = foundationProb > 0.4; playChords = true; texture = "Pad";
@@ -463,15 +483,15 @@ export class Orchestrator {
                 playBass = foundationProb > 0.2; playChords = compingProb > 0.2; playCounterMelody = colorProb > 0.7;
                 texture = "Rhythmic";
             } else {
-                if (section.type === 'Break' || section.type === 'Breakdown') {
+                if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
                     playBass = false; playChords = true; playCounterMelody = true; texture = "Pad";
-                } else if (section.type === 'Verse' || energy <= 4) {
+                } else if (section.type === SectionType.Verse || energy <= 4) {
                     // 🌟 方案四：曲式驱动的织体突变 - 主歌强制使用分解和弦或长音铺底，贝斯极简
                     playBass = foundationProb > 0.6; // 降低贝斯出现概率
                     playChords = true; 
                     texture = PRNGManager.next() > 0.5 ? "Arpeggio" : "Pad";
                     playCounterMelody = false; // 主歌尽量不加副旋律，保持干净
-                } else if (section.type === 'Chorus' || energy >= 7) {
+                } else if (section.type === SectionType.Chorus || energy >= 7) {
                     // 🌟 方案四：曲式驱动的织体突变 - 副歌强制切换为柱式和弦或强烈律动，贝斯全面进入
                     playBass = true; 
                     playChords = true; 
@@ -568,7 +588,7 @@ export class Orchestrator {
                 }
             }
 
-            if (secName.includes('Intro')) {
+            if (activeSection.type === SectionType.Intro) {
                 playBass = introHasBass && chord.startBeat >= bassEntryBeat;
                 playChords = introHasPiano && chord.startBeat >= pianoEntryBeat;
             }
@@ -614,7 +634,7 @@ export class Orchestrator {
 
             if (playBass) {
                 // 如果前奏有贝斯，为了避免割裂感，Verse_1 不应该变得稀疏
-                const isSparseSection = (secName.includes("Intro") && !introHasBass) || secName.includes("Outro") || (secName === 'Verse_1' && !introHasBass);
+                const isSparseSection = (activeSection.type === SectionType.Intro && !introHasBass) || activeSection.type === SectionType.Outro || (secName === 'Verse_1' && !introHasBass);
                 const isSectionEnd = chord.endBeat === activeSection.endBeat;
                 const isBassSolo = playBass && !playChords;
                 const nextChord = i < track.chords.length - 1 ? track.chords[i + 1] : undefined;
@@ -644,14 +664,14 @@ export class Orchestrator {
 
             if (playChords) {
                 const nextChord = i < track.chords.length - 1 ? track.chords[i + 1] : undefined;
-                const isSparseSection = secName.includes("Intro") || secName.includes("Outro");
+                const isSparseSection = activeSection.type === SectionType.Intro || activeSection.type === SectionType.Outro;
                 const isSectionEnd = chord.endBeat === activeSection.endBeat;
                 const nextEnergyLevel = track.sections.find(s => s.startBeat >= activeSection.endBeat)?.energyLevel || energy;
                 
                 let chordNotes: NoteData[] = [];
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0) {
                     const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); chordNotes = MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60 - chordKeyOffset, track.motifRole);
-                } else if (secName.includes("Intro") && !!style.orchestration?.allowIntroRiffs && PRNGManager.next() < 0.5) {
+                } else if (activeSection.type === SectionType.Intro && !!style.orchestration?.allowIntroRiffs && PRNGManager.next() < 0.5) {
                     // 🌟 针对特定风格的前奏 Riff
                     const scale = HarmonyCore.getSafeScalePitches(chord, track.tonality);
                     const rootNote = HarmonyCore.getChordTones(chord, 48)[0]; // C3 range
@@ -686,16 +706,16 @@ export class Orchestrator {
                 let playDrums = true;
                 let startBeat = sec.startBeat;
                 
-                if (sec.name.includes('Intro')) {
+                if (sec.type === SectionType.Intro) {
                     playDrums = introHasDrums;
                     if (playDrums) {
                         startBeat = Math.max(sec.startBeat, drumEntryBeat);
                     }
-                } else if (sec.type === 'Verse') {
+                } else if (sec.type === SectionType.Verse) {
                     // 🌟 方案四：曲式驱动的织体突变 - 主歌省去主套鼓或极简
-                    playDrums = sec.energyLevel > 3 || PRNGManager.next() > 0.5; 
-                } else if (sec.name.includes('Break')) {
-                    playDrums = !sec.name.includes('Breakdown'); // Breakdown 绝对停鼓
+                    playDrums = sec.energyLevel > 3 || PRNGManager.next() > 0.5;
+                } else if (sec.type === SectionType.Break || sec.type === SectionType.Breakdown) {
+                    playDrums = sec.type !== SectionType.Breakdown; // Breakdown 绝对停鼓
                 }
                 
                 // 🌟 戛然而止 (Hard Stop) 逻辑：只打一拍 Crash 和 Kick
@@ -713,13 +733,13 @@ export class Orchestrator {
                     const nextEnergyLevel = nextSec ? nextSec.energyLevel : 3;
                     
                     // 如果当前段落能量大于2，或者前奏且下一个段落能量大于2，说明完整的 groove 已经开始
-                    if (effectiveEnergy > 2 || (sec.name.includes('Intro') && nextEnergyLevel > 2)) {
+                    if (effectiveEnergy > 2 || (sec.type === SectionType.Intro && nextEnergyLevel > 2)) {
                         hasFullGrooveStarted = true;
                     }
                     
                     // 如果是鼓组 Solo 前奏，不应该被视为普通的 Intro（普通 Intro 只有踩镲）
                     const isDrumSoloIntro = introHasDrums && !introHasPiano && !introHasMelody;
-                    const treatAsIntro = sec.name.includes('Intro') && !isDrumSoloIntro;
+                    const treatAsIntro = sec.type === SectionType.Intro && !isDrumSoloIntro;
                     
                     const currentStyleConfig = sec.localStyleOverride ? getStyleConfig(sec.localStyleOverride) : style;
                     const drumStyle = style.orchestration.idiomPreferences?.drumStyle || 'steady';
@@ -731,7 +751,7 @@ export class Orchestrator {
                         timeSignature: context.timeSignature,
                         activeSection: sec,
                     };
-                    drumNotes.push(...TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.name.includes('Outro'), currentStyleConfig, swingRatio, nextEnergyLevel, hasFullGrooveStarted, sec.grooveRatio, drumStyle, [], drumRenderCtx));
+                    drumNotes.push(...TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.type === SectionType.Outro, currentStyleConfig, swingRatio, nextEnergyLevel, hasFullGrooveStarted, sec.grooveRatio, drumStyle, [], drumRenderCtx));
                 }
             });
         }
@@ -740,7 +760,7 @@ export class Orchestrator {
         // 移除此逻辑以防止主旋律轨道变成和弦铺底 (Monophonic Lock)
         track.sections.forEach(sec => {
             // 🌟 尾奏渐弱处理 (Outro Fade Out)
-            if (sec.name.includes('Outro')) {
+            if (sec.type === SectionType.Outro) {
                 const outroLength = sec.endBeat - sec.startBeat;
                 
                 // 决定尾奏模式 (Ending Behavior)
@@ -894,7 +914,7 @@ export class Orchestrator {
         const tempoCurves: TempoCurve[] = [];
         if (track.sections && track.sections.length > 0) {
             const lastSection = track.sections[track.sections.length - 1];
-            if (lastSection.name.includes('Outro') && lastSection.endingType !== 'hard_stop') {
+            if (lastSection.type === SectionType.Outro && lastSection.endingType !== 'hard_stop') {
                 // 仅对适合渐慢的曲风生效
                 if (!!style.orchestration?.allowRitardando) {
                     // 渐慢发生在最后 2 个小节

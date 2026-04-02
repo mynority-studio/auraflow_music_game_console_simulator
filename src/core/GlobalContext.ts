@@ -1,5 +1,5 @@
-import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from './types';
-import { MoodId } from './config/MoodFlags';
+import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from './generation/types';
+import { MoodId } from './generation/config/MoodFlags';
 
 const EPSILON = 1e-6;
 

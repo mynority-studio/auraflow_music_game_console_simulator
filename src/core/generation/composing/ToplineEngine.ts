@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from '../types';
+import { NoteData, GeneratedChord, SectionMetadata, SectionType, StyleConfig, SingerPersonaConfig } from '../types';
 import { HarmonyCore } from './HarmonyCore';
 import { GrooveEngine } from './GrooveEngine';
 import { SingerPersona } from '../performance/SingerPersona';
@@ -116,7 +116,7 @@ export class ToplineEngine {
 
         // 🌟 Phase 2: Chorus Motif Extraction
         const chorusMotifs: Record<string, MotifTemplate> = {};
-        const firstChorus = sections.find(s => s.name.includes('Chorus'));
+        const firstChorus = sections.find(s => s.type === SectionType.Chorus);
         if (firstChorus) {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
             if (chorusChords.length === 0) chorusChords.push(chords[0]);
@@ -134,10 +134,10 @@ export class ToplineEngine {
         sections.forEach((section, index) => {
             let providedMotifs: Record<string, MotifTemplate> | undefined = undefined;
 
-            if (section.name.includes('Chorus')) {
+            if (section.type === SectionType.Chorus) {
                 // Reuse the motifs we extracted
                 providedMotifs = chorusMotifs;
-            } else if (Object.keys(chorusMotifs).length > 0 && (section.name.includes('Verse') || section.name.includes('PreChorus'))) {
+            } else if (Object.keys(chorusMotifs).length > 0 && (section.type === SectionType.Verse || section.type === SectionType.PreChorus)) {
                 // 🌟 修复：不再强制让主歌复用副歌的全部动机，恢复旋律的多样性
                 // 只在有概率的情况下，让主歌的 A 动机复用副歌的 A 动机（降级版），其余动机重新生成
                 // 增加复用概率，增强连贯性 (从 0.3 提升到 0.5)
@@ -156,8 +156,8 @@ export class ToplineEngine {
 
             // 🌟 提案一：主题回响 (Motif Fragmentation)
             // 如果是 Outro，且不是 hard_stop，尝试使用副歌动机进行碎裂化处理
-            if (section.name.includes('Outro') && section.endingType !== 'hard_stop' && !isSecondary) {
-                const chorusIndex = sections.findIndex(s => s.name.includes('Chorus'));
+            if (section.type === SectionType.Outro && section.endingType !== 'hard_stop' && !isSecondary) {
+                const chorusIndex = sections.findIndex(s => s.type === SectionType.Chorus);
                 if (chorusIndex !== -1 && chorusIndex in sectionMelodies) {
                     const chorusNotes = sectionMelodies[chorusIndex];
                     if (chorusNotes.length > 0) {
@@ -181,7 +181,7 @@ export class ToplineEngine {
             globalUnresolvedCount = result.unresolvedCount; // 更新未解决计数
             
             // 🌟 记录副歌前的最高音
-            if (!section.name.includes('Chorus') && result.notes.length > 0) {
+            if (section.type !== SectionType.Chorus && result.notes.length > 0) {
                 const sectionMax = Math.max(...result.notes.map(n => n.pitch));
                 if (sectionMax > maxPitchBeforeChorus) {
                     maxPitchBeforeChorus = sectionMax;
@@ -357,25 +357,25 @@ export class ToplineEngine {
         
         let pitchOffset = style.contrast.versePitchOffset;
 
-        if (section.name.includes('Chorus')) {
+        if (section.type === SectionType.Chorus) {
             pitchOffset = style.contrast.chorusPitchOffset || 5;
-        } else if (section.name.includes('Solo')) {
-            pitchOffset = 12;  
-            isSolo = true; 
-        } else if (section.name.includes('Intro')) {
+        } else if (section.type === SectionType.Solo_Bridge) {
+            pitchOffset = 12;
+            isSolo = true;
+        } else if (section.type === SectionType.Intro) {
             pitchOffset = 12;
             isIntro = true;
             // 🌟 如果是人声（非器乐），则在前奏期间不唱歌
             if (!isInstrumental) {
                 return { notes: [], motifs: {}, lastPitch: null, unresolvedCount: incomingUnresolvedCount };
             }
-        } else if (section.name.includes('Outro')) {
+        } else if (section.type === SectionType.Outro) {
             pitchOffset = 12;
             isOutro = true;
             if (!isInstrumental && PRNGManager.next() > 0.5) {
                 return { notes: [], motifs: {}, lastPitch: null, unresolvedCount: incomingUnresolvedCount };
             }
-        } else if (section.name.includes('Break')) {
+        } else if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
             pitchOffset = 0;
         }
 
@@ -405,11 +405,11 @@ export class ToplineEngine {
 
         let motifUsage: 'None' | 'LiteralRiff' | 'RhythmOnly' | 'BrokenDown' = 'None';
         if (userMotif && userMotif.length > 0) {
-            if (section.name.includes('Intro')) {
+            if (section.type === SectionType.Intro) {
                 motifUsage = 'LiteralRiff';
-            } else if (section.name.includes('Chorus')) {
+            } else if (section.type === SectionType.Chorus) {
                 motifUsage = 'LiteralRiff';
-            } else if (section.name.includes('Verse')) {
+            } else if (section.type === SectionType.Verse) {
                 motifUsage = PRNGManager.next() > 0.5 ? 'BrokenDown' : 'RhythmOnly';
             } else {
                 motifUsage = 'None';
@@ -475,7 +475,7 @@ export class ToplineEngine {
             ['A', 'A_prime', 'B', 'B_aug']
         ];
         // 只有真正的 Solo 段落才使用完全不重复的自由发展形式，器乐主歌/副歌依然需要结构感
-        const isActualSoloSection = section.name.includes('Solo');
+        const isActualSoloSection = section.type === SectionType.Solo_Bridge;
         // 🌟 Bottom-Up Generative Grammar: Dynamic Phrase State Machine
         // Replace hardcoded FORMS with dynamic state machine based on Mood
         // S-2 合规：moodId 从参数读取，替代 GlobalContext.currentMoodId
@@ -502,11 +502,11 @@ export class ToplineEngine {
 
         // 🌟 Schenkerian Macro-Targets
         let macroTargetDegree: number | undefined;
-        if (section.name.includes('Chorus')) {
+        if (section.type === SectionType.Chorus) {
             macroTargetDegree = PRNGManager.next() > 0.5 ? 1 : 3;
-        } else if (section.name.includes('Verse')) {
+        } else if (section.type === SectionType.Verse) {
             macroTargetDegree = PRNGManager.next() > 0.5 ? 5 : 3;
-        } else if (section.name.includes('PreChorus')) {
+        } else if (section.type === SectionType.PreChorus) {
             macroTargetDegree = PRNGManager.next() > 0.5 ? 5 : 2;
         }
 
@@ -662,7 +662,7 @@ export class ToplineEngine {
             return { notes: [], motifs, lastPitch: null, unresolvedCount: consecutiveUnresolved };
         }
 
-        if (section.name.includes('Chorus') && sectionMelody.length > 0) {
+        if (section.type === SectionType.Chorus && sectionMelody.length > 0) {
             let maxPitch = -1;
             sectionMelody.forEach(n => {
                 if (n.pitch > maxPitch) maxPitch = n.pitch;
@@ -929,7 +929,7 @@ export class ToplineEngine {
             // 偶尔制造断奏感，但必须是干净的网格
             if (duration >= 1.0 && PRNGManager.next() > 0.8) {
                 duration -= 0.25; // 缩短一个十六分音符，留出干净的休止
-            } else if (duration === 0.5 && PRNGManager.next() > 0.8) {
+            } else if (Math.abs(duration - 0.5) < 1e-6 && PRNGManager.next() > 0.8) {
                 duration = 0.25; // 八分音符变十六分音符
             }
 

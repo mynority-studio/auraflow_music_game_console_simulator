@@ -1,4 +1,4 @@
-import { NoteData } from "../../types";
+import { NoteData, SectionType } from "../../types";
 import { PianoIdiomContext } from "./IPianoIdiom";
 import { BasePianoIdiom } from "./BasePianoIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
@@ -153,7 +153,7 @@ let maskAccent = 0;
       }
 
       const isFillZone = beat >= chord.endBeat - 1.0;
-      const isBuildUp = activeSection?.type === "BuildUp" || (isFillZone && nextEnergyLevel && nextEnergyLevel > energyLevel + 1);
+      const isBuildUp = activeSection?.type === SectionType.BuildUp || (isFillZone && nextEnergyLevel && nextEnergyLevel > energyLevel + 1);
 
       if (isBuildUp) {
         const barsLeft = (chord.endBeat - beat) / beatsPerBar;

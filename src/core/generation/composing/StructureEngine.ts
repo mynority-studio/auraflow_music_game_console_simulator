@@ -1,7 +1,28 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { SectionMetadata, StyleConfig } from "../types";
+import { SectionMetadata, SectionType, StyleConfig } from "../types";
 import { StyleId } from '../config/StyleFlags';
 import { MoodId, MoodRegistry } from "../config/MoodFlags";
+
+// T-1 合规：将段落名称前缀映射为 SectionType 枚举值
+const SECTION_TYPE_MAP: Record<string, SectionType> = {
+    'Intro': SectionType.Intro,
+    'Verse': SectionType.Verse,
+    'PreChorus': SectionType.PreChorus,
+    'Chorus': SectionType.Chorus,
+    'Bridge': SectionType.Bridge,
+    'Outro': SectionType.Outro,
+    'Break': SectionType.Break,
+    'Breakdown': SectionType.Breakdown,
+    'BuildUp': SectionType.BuildUp,
+    'Drop': SectionType.Drop,
+    'PreOutro': SectionType.PreOutro,
+    'Solo': SectionType.Solo_Bridge,
+};
+
+function parseSectionType(name: string): SectionType {
+    const prefix = name.split('_')[0];
+    return SECTION_TYPE_MAP[prefix] ?? SectionType.Verse;
+}
 
 export class StructureEngine {
   public static generateFullSongStructure(timeSignature: [number, number], bpm: number, style: StyleConfig, moodId: MoodId = MoodId.Neutral): SectionMetadata[] {
@@ -21,7 +42,7 @@ export class StructureEngine {
       const energy = Math.max(mood.energyCap[0], Math.min(mood.energyCap[1], rawEnergy));
 
       // 🌟 Phase 1 & 2: Initialize decoupled state for each section
-      const type = name.split('_')[0]; // e.g. "Verse", "Chorus"
+      const type = parseSectionType(name);
       
       // Base groove density scales with energy, then modified by Mood
       let density = Math.min(1.0, Math.max(0.1, (energy / 10) * 0.8 + 0.2));
@@ -42,7 +63,7 @@ export class StructureEngine {
       // 2. Genre-Bending Logic (Option B)
       // Occasionally inject a different style into PreChorus or Bridge
       const genreBendingProb = style.harmonyRules?.genreBendingProbability ?? 0;
-      if ((type === 'PreChorus' || type === 'Bridge' || type === 'Break') && PRNGManager.next() < genreBendingProb) {
+      if ((type === SectionType.PreChorus || type === SectionType.Bridge || type === SectionType.Break) && PRNGManager.next() < genreBendingProb) {
           const possibleOverrides = style.harmonyRules?.genreBendingOverrides ?? [];
           // Pick an override that is DIFFERENT from the current style
           const filteredOverrides = possibleOverrides.filter(s => s !== styleId);

@@ -1,8 +1,30 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData } from '../types';
+import { GeneratedChord, SectionMetadata, SectionType, StyleConfig, ChordProgression, NoteData } from '../types';
 import { MusicTheoryRules, ChordFunction } from './MusicTheoryRules';
 
 import { StyleId } from '../config/StyleFlags';
+
+// T-1 合规：SectionType → globalPlan 字符串键的映射（globalPlan 为局部 Record<string, string[]>）
+const SECTION_TYPE_TO_PLAN_KEY: string[] = [];
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Intro] = 'Intro';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Verse] = 'Verse';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.PreChorus] = 'PreChorus';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Chorus] = 'Chorus';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Bridge] = 'Bridge';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Outro] = 'Outro';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Break] = 'Break';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Breakdown] = 'Break';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.BuildUp] = 'Verse';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Drop] = 'Chorus';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.PreOutro] = 'Outro';
+SECTION_TYPE_TO_PLAN_KEY[SectionType.Solo_Bridge] = 'Bridge';
+
+function sectionTypeToGlobalPlanKey(type: SectionType | undefined): string {
+    if (type !== undefined && type !== null) {
+        return SECTION_TYPE_TO_PLAN_KEY[type] ?? 'Verse';
+    }
+    return 'Verse';
+}
 
 export class HarmonyCore {
     public static parseRomanNumeral(numeral: string, tonality: string = 'Major', isRelativeMajorProgression: boolean = false) { 
@@ -846,13 +868,7 @@ export class HarmonyEngine {
 
         sections.forEach((section, sectionIndex) => {
             let baseProgression: string[];
-            let sectionType = 'Verse';
-            if (section.name.includes('Chorus')) sectionType = 'Chorus';
-            else if (section.name.includes('Pre')) sectionType = 'PreChorus';
-            else if (section.name.includes('Break')) sectionType = 'Break';
-            else if (section.name.includes('Bridge')) sectionType = 'Bridge';
-            else if (section.name.includes('Outro')) sectionType = 'Outro';
-            else if (section.name.includes('Intro')) sectionType = 'Intro';
+            const sectionType = sectionTypeToGlobalPlanKey(section.type);
 
             baseProgression = globalPlan[sectionType];
             
@@ -928,7 +944,7 @@ export class HarmonyEngine {
 
                 if (section.endingType === 'hard_stop') {
                     numeral = tonic;
-                } else if (section.name.includes('Outro') && bar >= totalBars - 2) {
+                } else if (section.type === SectionType.Outro && bar >= totalBars - 2) {
                     const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
                     const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
                     if (!isJazzOrSoul) {
@@ -938,12 +954,12 @@ export class HarmonyEngine {
                             numeral = tonic;
                         }
                     }
-                } else if (section.name.includes('Chorus') && isEndOfSection) {
+                } else if (section.type === SectionType.Chorus && isEndOfSection) {
                     const nextSection = sectionIndex + 1 < sections.length ? sections[sectionIndex + 1] : null;
-                    if (nextSection && !nextSection.name.includes('Chorus') && !nextSection.name.includes('Outro')) {
+                    if (nextSection && nextSection.type !== SectionType.Chorus && nextSection.type !== SectionType.Outro) {
                         numeral = PRNGManager.next() > 0.5 ? 'V7' : 'Vsus4';
                     }
-                } else if ((section.name.includes('Verse') || section.name.includes('Chorus')) && !isEndOfSection && (bar + 1) % 4 === 0) {
+                } else if ((section.type === SectionType.Verse || section.type === SectionType.Chorus) && !isEndOfSection && (bar + 1) % 4 === 0) {
                     const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
                     const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
                     const isGospel = voicingStyle === 'neo-soul';
@@ -965,7 +981,7 @@ export class HarmonyEngine {
                 const isEndOfSection = (barsGenerated === totalBars - 1);
 
                 // 🌟 核心：经过和弦变异 (Passing Chord Mutation) & 段落过渡 (Section Transition)
-                const isEmotionalCore = section.name.includes('Intro') || section.name.includes('Outro');
+                const isEmotionalCore = section.type === SectionType.Intro || section.type === SectionType.Outro;
                 const allowMutation = !isEmotionalCore; // 允许在 Verse, PreChorus, Chorus 中变异，增加和声推动力
 
                 // 决定下一个目标和弦，用于计算经过和弦
@@ -979,12 +995,7 @@ export class HarmonyEngine {
                         nextNumeral = tonality === 'Minor' ? (isMinorProgression ? 'i' : 'vi') : 'I';
                     } else {
                         let nextSecProg: string[];
-                        if (nextSection.name.includes('Chorus')) nextSecProg = globalPlan['Chorus'];
-                        else if (nextSection.name.includes('Pre')) nextSecProg = globalPlan['PreChorus'];
-                        else if (nextSection.name.includes('Break')) nextSecProg = globalPlan['Break'];
-                        else if (nextSection.name.includes('Outro')) nextSecProg = globalPlan['Outro'];
-                        else if (nextSection.name.includes('Intro')) nextSecProg = globalPlan['Intro'];
-                        else nextSecProg = globalPlan['Verse'];
+                        nextSecProg = globalPlan[sectionTypeToGlobalPlanKey(nextSection.type)];
                         
                         nextNumeral = nextSecProg[0];
                             

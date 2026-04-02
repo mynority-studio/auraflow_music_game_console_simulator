@@ -1,4 +1,4 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, GenerationError } from '../../types';
 import { StyleId } from '../StyleFlags';
 import { ModernPopStyle, ClassicJPopStyle, ModernJPopStyle } from './PopStyles';
 import { PopRockStyle } from './RockStyles';
@@ -30,6 +30,6 @@ export const getAllAvailableStyles = () => {
 
 export const getStyleConfig = (id: StyleId): StyleConfig => {
     const style = StyleRegistry[id];
-    if (!style) throw new Error(`Style with ID ${id} not found.`);
+    if (!style) throw new GenerationError(`Style with ID ${id} not found.`, { styleId: id });
     return style;
 };

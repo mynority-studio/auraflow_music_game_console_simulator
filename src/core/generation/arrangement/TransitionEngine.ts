@@ -3,7 +3,7 @@ import { PRNGManager } from '../../utils/PRNG';
 // 📄 文件路径: /src/core/generation/arrangement/TransitionEngine.ts
 // 🎬 V2.3 边界导演引擎 (加入 Drum Fills, The Drop, Cymbal Swells)
 // ==========================================
-import { NoteData, SectionMetadata } from '../types';
+import { NoteData, SectionMetadata, SectionType } from '../types';
 
 import { StyleId } from '../config/StyleFlags';
 import { StyleConfig } from '../types';
@@ -313,7 +313,7 @@ export class TransitionEngine {
             const boundaryBeat = sec.endBeat;
             const lastBarStart = boundaryBeat - beatsPerBar;
 
-            if (sec.name.includes('BuildUp') && nextEnergy >= 8) {
+            if (sec.type === SectionType.BuildUp && nextEnergy >= 8) {
                 // EDM 专属超长 BuildUp
                 this.injectEpicBuildUp(drums, sec.startBeat, boundaryBeat);
                 // 强制 Drop 前悬空 1 拍

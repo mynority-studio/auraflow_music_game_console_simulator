@@ -1,5 +1,5 @@
 import { PRNGManager } from '../utils/PRNG';
-import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from "./types";
+import { GeneratedTrack, StyleConfig, MusicContext, NoteData, GenerationError } from "./types";
 import { getStyleConfig } from "./config/styles/StyleRegistry";
 import { StyleId } from "./config/StyleFlags";
 import { StructureEngine } from "./composing/StructureEngine";
@@ -30,7 +30,7 @@ export class MelodyEngine {
     } = options;
     
     if (!style.global) {
-      throw new Error(`Style ${styleId} is missing global config`);
+      throw new GenerationError(`Style ${styleId} is missing global config`, { styleId });
     }
 
     // 🌟 决定 Mood

@@ -1,5 +1,13 @@
 export type ChordProgression = string[];
 
+/** S-7 合规：生成管道专用 Error 子类，附带上下文信息 */
+export class GenerationError extends Error {
+  constructor(message: string, public readonly context?: Record<string, unknown>) {
+    super(message);
+    this.name = 'GenerationError';
+  }
+}
+
 /**
  * C++ Porting Guide:
  * This interface maps directly to a C struct to avoid heap fragmentation:
@@ -157,6 +165,22 @@ export interface StyleConfig {
     performance: { allowedPersonas: string[]; };
 }
 
+// T-1 合规：SectionType 数值枚举，替代 section.name.includes() 字符串子串匹配
+export enum SectionType {
+    Intro = 0,
+    Verse = 1,
+    PreChorus = 2,
+    Chorus = 3,
+    Bridge = 4,
+    Outro = 5,
+    Break = 6,
+    Breakdown = 7,
+    BuildUp = 8,
+    Drop = 9,
+    PreOutro = 10,
+    Solo_Bridge = 11,
+}
+
 export interface SingerPersonaConfig {
     id: string; name: string;
     traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
@@ -182,7 +206,7 @@ export interface SectionMetadata {
     };
 
     // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
-    type?: string;
+    type?: SectionType;
     lengthBars?: number;
     phraseTemplate?: string; // e.g., "A-A-B-A'"
     harmony?: HarmonyState;
