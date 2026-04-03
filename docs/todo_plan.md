@@ -38,10 +38,23 @@
 
 # TS→C 移植待办计划
 
-> **目标** — 将 AuraFlow 音乐生成管道从 TypeScript 移植到 ESP32-S3 纯 C 实现，对接 SF2 合成器
-> **精度目标** — 同 seed 输出 99% 一致（允许浮点降精度字段的 ε ≤ 1e-6 差异）
-> **移植边界** — 生成管道（PRNG → MelodyEngine → Orchestrator → PlaybackEngine → MidiEvent[]），平台层（MIDI 调度 + SF2 合成）另行实现
-> **依据** — Music Generation Pipeline Rule（最高约束文档）
+> **目标** — 将 AuraFlow 音乐生成管道从 TypeScript 1:1 翻译到 ESP32-S3 纯 C 实现
+> **TS 定位** — 长期维护的参考实现，算法变更先在 TS 验证再同步到 C
+> **C 侧现有 V3** — 保留但不再迭代，新翻译代码逐步替换
+> **精度目标** — PRNG state 逐位精确，pitch 逐个匹配，时间 beat×4≈tick（±1 tick）
+> **移植边界** — 生成管道（PRNG → MelodyEngine → Orchestrator → MidiConverter → MidiEvent[]），平台层复用现有 sf2_synthesizer + aura_radio 播放框架
+> **依据** — Music Generation Pipeline Rule + 卡点决策（见 `docs/esp32_porting.md`）
+
+### 移植卡点决策摘要
+
+| 卡点 | 决策 |
+|------|------|
+| PRNG | 自定义 LCG 替换 `rand()`，`prng_next()` 返回 `double` |
+| 两套实现 | 方案 A — 从 TS 1:1 翻译，丢弃 V3 算法 |
+| 时间单位 | TS `double` beat / C `uint16_t` tick，`beat×4=tick` |
+| 浮点精度 | 仅 PRNG 返回值用 `double`，其余整数/`float` |
+| 内存 | 50-80KB Flash + 100-150KB PSRAM，空间充足 |
+| NoteData | 复用 `midi_note_t`（6 字节），duration 可能需扩为 `uint16_t` |
 
 ---
 
@@ -68,15 +81,18 @@
 
 ## Phase 2：类型映射 — TS interface → C struct
 
-- [ ] **2.1** 编写 C 侧浮点精度决策表：
+- [ ] **2.1** C 侧浮点精度决策表（已确认）：
 
 | 字段 | C 类型 | 理由 |
 |------|--------|------|
 | PRNG state | `uint32_t` | 整数，无精度问题 |
-| PRNG next() 返回值 | `double` | 需要完整 53 位做条件判断 |
-| onset / duration / startBeat / endBeat | `double` | 累加可达 200+ 拍 |
-| velocity / pan / reverb / volume / delay | `float` | 0~1 范围，7 位精度足够 |
-| pitch / channel / ticks | `int` 系列 | 整数，必须精确 |
+| PRNG next() 返回值 | `double` | 避免 modulo bias，确保与 TS `Math.floor(next()*N)` 等价 |
+| onset / startBeat / endBeat | `uint16_t` tick | 16 分音符分辨率，beat×4=tick |
+| duration | `uint8_t` 或 `uint16_t` tick | 长音可能需 uint16_t（max 255 tick=63.75 拍） |
+| velocity | `uint8_t` 0-127 | TS 0.0~1.0 × 127 |
+| pitch / channel | `uint8_t` | 整数，精确 |
+| BPM | `uint8_t` | 40-200 范围足够 |
+| 轮廓 progress 等 | `float` | ESP32-S3 有 float FPU |
 
 - [ ] **2.2** 逐个翻译核心 struct：
   - [ ] `NoteData`（布尔字段用位标志打包）
