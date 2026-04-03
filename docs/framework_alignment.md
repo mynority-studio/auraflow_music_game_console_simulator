@@ -19,9 +19,9 @@
 | Bass Idiom | `BassIdiomContext` 含完整上下文 | 显式参数 | ✅ |
 | Groove 判定 | `BaseBassIdiom.isGrooveHit()` 纯函数 | 纯函数 | ✅ |
 | **平台层（不受 Pipeline Rule 管辖）** | | | |
-| 风格配置查询 | `getStyleConfig(id)` 哈希表 | `StyleConfigTable[id]` 数组 | 待迁移 |
-| 播放引擎终点 | `AudioEngine.playSong()` 内调用 | 独立 `PlaybackEngine.convert()` | 待迁移 |
-| 历史栈存储 | `{ track, style: StyleConfig }` | `{ track, styleId, context }` | 待迁移 |
+| 风格配置查询 | `StyleRegistry[id]` 数组直接寻址 | `StyleConfigTable[id]` 数组 | ✅ |
+| 播放引擎终点 | `Orchestrator.arrange()` 在 App 层调用 | 独立 `PlaybackEngine.convert()` | ✅ |
+| 历史栈存储 | `{ track, context, styleId }` | `{ track, styleId, context }` | ✅ |
 | GlobalContext 平台层 | audio/apps/components 仍引用 | 不受管辖 | N/A |
 
 ---

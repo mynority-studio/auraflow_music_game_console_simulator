@@ -25,13 +25,14 @@
 | P-1/D-2/S-6 合规修复 | ✅ | commit `0f1ced3` |
 | tsc 零错误 | ✅ | |
 
-### 平台层待迁移（不受 Pipeline Rule 管辖）
+### 平台层迁移完成（不受 Pipeline Rule 管辖）
 
-| 项目 | 状态 |
-|------|------|
-| `getStyleConfig(id)` 哈希表 → 数组直接寻址 | 待迁移 |
-| 播放引擎终点独立化 | 待迁移 |
-| 历史栈存储格式 `{ track, styleId, context }` | 待迁移 |
+| 项目 | 状态 | commit |
+|------|------|--------|
+| `StyleRegistry` 哈希表 → 数组直接寻址 | ✅ | `e3b2c37` |
+| 播放引擎终点独立化（Orchestrator 移到 App 层） | ✅ | `1ba8c71` |
+| 历史栈存储格式 `{ track, styleId, context }` | ✅ | `1ba8c71` |
+| PlaybackEngine MIDI 通道回退碰撞修复 | ✅ | `1ba8c71` |
 
 ---
 
