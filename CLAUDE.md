@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-**AuraFlow Tap! Ver.7.6** — 基于 Web 的硬件音乐工作站模拟器，将触觉交互与程序化音乐生成相结合。模拟 5×3 打击垫控制器，内嵌完整的算法音乐引擎（欧几里得律动、马尔可夫旋律链、和声专家系统）。架构目标是 1:1 移植到 ESP32-S3 固件。
+**AuraFlow Tap! Ver.7.6** — 基于 Web 的硬件音乐工作站模拟器，将触觉交互与程序化音乐生成相结合。模拟 5×3 打击垫控制器，内嵌完整的算法音乐引擎（欧几里得律动、马尔可夫旋律链、和声专家系统）。
+
+**最终目标**：将生成管道 1:1 移植到 ESP32-S3 纯 C 固件，Web 版作为开发/验证平台。移植计划详见 `docs/todo_plan.md`，HAL 映射详见 `docs/esp32_porting.md`。
 
 研究/分析文档统一放在 `./docs`。
 
@@ -26,34 +28,35 @@ npm run clean        # 清除 dist/
 
 ### 双平台设计
 
-代码库严格分离 **核心逻辑**（可移植到 ESP32 C++）与 **平台层**（Web 专用）：
+代码库严格分离 **核心逻辑**（可移植到 ESP32 C）与 **平台层**（Web 专用）：
 
-- `/src/core/generation/` — 纯音乐理论与生成算法。**必须保持 100% 平台无关**（禁止 React、Web API）。C++ 移植的直接翻译目标。
-- `/src/core/hal/` — 硬件抽象层接口（`ILedMatrix`、`ITouchPad`、`IAudioOut`、`ISystemTimer`）。Web 实现在 `WebSimulatorHAL.ts`；ESP32 需提供 C++ 实现。
+- `/src/core/generation/` — 纯音乐理论与生成算法。**必须保持 100% 平台无关**（禁止 React、Web API）。C 移植的直接翻译目标。
+- `/src/core/hal/` — 硬件抽象层接口（`ILedMatrix`、`ITouchPad`、`IAudioOut`、`ISystemTimer`）。Web 实现在 `WebSimulatorHAL.ts`；ESP32 需提供 C 实现。
 - `/src/core/audio/` — Web 专用音频（SpessaSynth + MidiScheduler）。**ESP32 上由 I2S/FluidSynth 替代。**
-- `/src/apps/` — 应用状态机（纯 TS 类，非 React hooks）。
+- `/src/apps/` — 应用状态机（纯 TS 类，非 React hooks）。负责编排生成管道（generate → arrange → playSong）。
 - `/src/components/`、`/src/core/hardware/`、`/src/system/` — Web 模拟器的 React UI。**ESP32 移植时忽略。**
 
-### 音乐生成流水线（严格顺序执行）
+### 音乐生成管道（四模块拓扑，严格线性）
 
 ```
-MelodyEngine.generateFullSong(styleId, options)
-  → StructureEngine     → SectionMetadata[]（Intro/Verse/Chorus/Bridge/Outro）
-  → HarmonyCore         → GeneratedChord[]（和弦进行 + 声部进行）
-  → EnsembleDrafter     → EnsembleDraft（乐器编制选择）
-  → ToplineEngine       → NoteData[]（旋律 + GrooveDNA 节奏指纹）
-  → Orchestrator        → ArrangedTrack（钢琴左右手、贝斯、鼓、副旋律）
-  → InstrumentIdiom     → 人性化的乐器演奏处理
-  → SingerPersona       → 声乐表情（装饰音、弯音、气口）
+PRNGManager.setSeed(seed)
+  → 选风格（PRNG ×1）
+  → MelodyEngine.generateFullSong(styleId)     → GeneratedTrack + MusicContext
+  → Orchestrator.arrange(track, styleId, ctx)   → ArrangedTrack
+  → MidiConverter.convert(arranged, channelMap)  → MidiEvent[]（管道终点）
+  → [平台层] MidiScheduler → SpessaSynth → 音频输出
 ```
 
-生成输出为纯数据（`ArrangedTrack`）— 生成阶段不涉及音频播放。
+管道约束详见 `.claude/rules/music_generation_pipeline_rule.md`（最高约束文档）。
 
 ### 音频播放流水线
 
 ```
-ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询）
-  → SpessaSynth（SF2 合成）→ AudioMixer（压缩器 + 补偿增益）→ 扬声器
+ArrangedTrack → App 层调用 Orchestrator.arrange()
+  → AudioEngine.playSong(arrangedSong)
+  → PlaybackEngine.loadSong() → MidiConverter.convert() → MidiEvent[]
+  → MidiScheduler（5ms 轮询）→ SpessaSynth（SF2 合成）
+  → AudioMixer（压缩器 + 补偿增益）→ 扬声器
   → VisualEvent → LedMatrix（LED 可视化）
 ```
 
@@ -63,14 +66,14 @@ ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询�
 
 | 单例 | 文件 | 用途 |
 |---|---|---|
-| `globalPRNG` | `core/utils/PRNG.ts` | 确定性 LCG 随机数 — 禁止使用 `Math.random()` |
+| `PRNGManager` | `core/utils/PRNG.ts` | 确定性 LCG 随机数 — 禁止使用 `Math.random()` |
 | `globalMidiScheduler` | `core/audio/MidiScheduler.ts` | MIDI 事件调度（5ms 轮询，模拟 FreeRTOS 定时器） |
-| `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排 |
-| `GlobalContext` | `core/generation/GlobalContext.ts` | 共享音乐状态（BPM、调性、拍号） |
+| `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排（接收 ArrangedTrack） |
+| `GlobalContext` | `core/GlobalContext.ts` | **仅平台层使用**（audio/apps/components），生成管道内已消除 |
 
 ### 风格系统
 
-14 个已注册风格配置位于 `/src/core/generation/config/styles/`（ClassicJPop、LofiHipHop、Synthwave、GhibliOrchestral、NeoSoul 等）。风格按类别分组在文件中（PopStyles、RockStyles、ElectronicStyles、BalladStyles、CinematicStyles、RnBStyles），通过 `StyleRegistry.ts` 统一注册。每个风格定义和弦池、节奏参数、旋律约束、编配方案和允许的歌手人格。新增风格只需添加一个文件并在 StyleRegistry 中注册。
+11 个已注册风格配置位于 `/src/core/generation/config/styles/`（ModernPop、ClassicJPop、Synthwave、GhibliOrchestral、Lofi 等）。`StyleRegistry` 为数组直接寻址表（index = `StyleId` 数值枚举），通过 `getStyleConfig(id)` 统一访问。每个风格定义和弦池、节奏参数、旋律约束、编配方案和允许的歌手人格。新增风格只需添加一个文件并在 StyleRegistry 中注册。
 
 ### 乐器惯用法系统（Idiom）
 
@@ -78,16 +81,18 @@ ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询�
 
 ## 关键开发规则
 
-1. **`/src/core/` 禁止 React** — 核心生成必须是纯 TS 类/函数，禁止 `useState`、`useEffect`、JSX。
-2. **禁止 `Math.random()`** — 必须使用 `globalPRNG.next()`。相同种子在 Web 和 ESP32 上必须产生完全相同的输出。
+1. **`/src/core/generation/` 禁止 React** — 核心生成必须是纯 TS 类/函数，禁止 `useState`、`useEffect`、JSX。
+2. **禁止 `Math.random()`** — 必须使用 `PRNGManager.next()`。相同种子在 Web 和 ESP32 上必须产生完全相同的输出。
 3. **禁止 Tone.js** — 所有音频通过 `MidiScheduler` + SpessaSynth 处理，混音仅用 MIDI CC。
-4. **核心代码注意内存** — 避免在紧密循环中创建对象，优先使用预分配数组 / TypedArray。`TrackSerializer` 展示了适配 C++ 的扁平内存模式。
+4. **核心代码注意内存** — 避免在紧密循环中创建对象，优先使用预分配数组 / TypedArray。`TrackSerializer` 展示了适配 C 的扁平内存模式。
 5. **纯数据输出** — `ArrangedTrack` 必须可 JSON 序列化，生成输出中禁止函数或类实例。
 6. **所有乐器共享和声** — 每个乐器读取 `HarmonyCore` 生成的同一份 `HarmonyState`，乐器不得自行生成和弦进行。
+7. **浮点比较用 epsilon** — 禁止 `===` 比较浮点值（beat、onset、duration 等），必须使用 `Math.abs(a - b) < 1e-6`。
+8. **MusicContext 显式传递** — 生成管道内零 GlobalContext 依赖，上下文通过函数参数链传递。
 
 ## 验证：黄金种子测试
 
-验证 C++ 移植一致性：通过 `globalPRNG.setSeed(12345)` 固定种子，生成并序列化输出，与 C++ 输出逐字节比对。任何偏差都表示逻辑错误（浮点精度、排序算法或遗漏的 PRNG 调用）。
+验证 C 移植一致性：通过 `PRNGManager.setSeed(12345)` 固定种子，生成并序列化输出，与 C 输出逐字节比对。任何偏差都表示逻辑错误（浮点精度、排序算法或遗漏的 PRNG 调用）。四个快照点（stateA/B/C/D）用于模块级隔离验证。
 
 ## 技术栈
 
@@ -99,3 +104,4 @@ ArrangedTrack → PlaybackEngine → MidiEvent[] → MidiScheduler（5ms 轮询�
 - **AI**: Google Gemini API（`@google/genai`）
 - **路径别名**: `@/` 映射到项目根目录（非 `/src/`，因此引用如 `@/src/core/...`）
 - **TypeScript**: `experimentalDecorators: true`、`target: ES2022`
+- **目标硬件**: ESP32-S3（512KB SRAM + PSRAM，I2S DAC，FreeRTOS）
