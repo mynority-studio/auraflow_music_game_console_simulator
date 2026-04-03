@@ -150,8 +150,8 @@
   - 录制 stateA/B/C/D + 各模块输出摘要 + MidiEvent SHA-256
   - 输出 `scripts/golden-seed-output.json`
 
-- [ ] **4.2** 编写 JSON → C 头文件转换工具（Python 脚本）
-  - 将 golden JSON 转为 C 可 include 的常量数组
+- [x] **4.2** JSON → C 头文件转换工具完成（`python3 scripts/json2c.py`）
+  - 输出 `scripts/golden_seed_data.h`：PRNG 快照 + Track 元数据 + Arranged 计数 + MIDI 摘要 + 前 10 事件
 
 - [ ] **4.3** 编写 C 侧验证框架
   - Level 0：PRNG state 四点精确匹配
