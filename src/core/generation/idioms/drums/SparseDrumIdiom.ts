@@ -11,17 +11,17 @@ export class SparseDrumIdiom implements IDrumIdiom {
 
     for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
-      const isDownbeat = beatInBar === 0;
+      const isDownbeat = Math.abs(beatInBar) < 1e-6;
 
       // Cinematic: Big hits, sparse
       if (isDownbeat && PRNGManager.next() < grooveDensity * 1.5) {
         notes.push({ pitch: TOM_LOW, onset: beat, duration: 0.1, velocity: 0.9 }); // Big tom instead of kick
-      } else if (beatInBar === 2 && PRNGManager.next() < grooveSyncopation * 1.5) {
+      } else if (Math.abs(beatInBar - 2) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5) {
         notes.push({ pitch: TOM_LOW, onset: beat, duration: 0.1, velocity: 0.8 });
       }
 
       // Cinematic: Orchestral snare or no snare
-      if (beatInBar === 1 || beatInBar === 3) {
+      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6) {
         if (PRNGManager.next() < grooveDensity * 0.5) {
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.85 });
         }

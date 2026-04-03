@@ -2,23 +2,36 @@
 
 ---
 
-## ✅ DONE：GlobalContext 全局单例消除（TS 侧架构重构）
+## ✅ DONE：TS 侧架构重构（Pipeline Rule 合规）
 
-> **依据** — Music Generation Pipeline Rule 条款 S-2 / L-1 / L-3
-> **完成时间** — 2026-04-02
+> **完成时间** — 2026-04-03
+> **依据** — Music Generation Pipeline Rule 全部条款
 
-### 结果
+### 已完成项
 
-生成管道（`/src/core/generation/`）内 GlobalContext **全部消除**：
-- 零 `import { GlobalContext }` 
-- 零 `GlobalContext.` 方法/属性调用
-- 3 处写操作（`initializeNewEra` / `updateCurrentSlice`）已移除
-- ~51 处读操作全部替换为显式参数传递
-- 采用**显式参数传递**方案（通过 renderCtx / BassIdiomContext / 方法参数链）
-- `updateCurrentSlice()` 由 renderCtx + idiomPreferences 注入替代
-- tsc 零错误通过
+| 项目 | 状态 | 关键文件 |
+|------|------|---------|
+| GlobalContext 消除 | ✅ 零 import/调用 | 生成管道全目录 |
+| MusicContext 显式传递 | ✅ 函数参数链 | MelodyEngine / Orchestrator |
+| MidiConverter 独立模块 | ✅ 纯转换层 | `core/generation/MidiConverter.ts` |
+| PRNG 快照（getState） | ✅ 模块入口记录 | MelodyEngine / Orchestrator / MidiConverter |
+| StyleId 数值枚举 | ✅ | `config/StyleFlags.ts` |
+| SectionType 数值枚举 | ✅ 12 种 | `types.ts` |
+| Tonality 数值枚举 | ✅ 8 种 | `types.ts` |
+| ChordQuality 数值枚举 | ✅ 17 种 | `types.ts` |
+| InstrumentId 数值枚举 | ✅ 60 值 | `config/InstrumentFlags.ts` |
+| 浮点 epsilon 比较 | ✅ ε=1e-6 | ToplineEngine / Orchestrator 等 |
+| D-4/T-1/D-3 违规修复 | ✅ | commit `7f5be87` |
+| P-1/D-2/S-6 合规修复 | ✅ | commit `0f1ced3` |
+| tsc 零错误 | ✅ | |
 
-详见 `docs/code_review_pending.md`。
+### 平台层待迁移（不受 Pipeline Rule 管辖）
+
+| 项目 | 状态 |
+|------|------|
+| `getStyleConfig(id)` 哈希表 → 数组直接寻址 | 待迁移 |
+| 播放引擎终点独立化 | 待迁移 |
+| 历史栈存储格式 `{ track, styleId, context }` | 待迁移 |
 
 ---
 

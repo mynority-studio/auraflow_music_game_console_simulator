@@ -23,7 +23,7 @@ export class SparseBassIdiom extends BaseBassIdiom {
           velocity: baseVel,
         });
       } else if (
-        beatInBar === 2 &&
+        Math.abs(beatInBar - 2) < 1e-6 &&
         energyLevel > 2 &&
         PRNGManager.next() < grooveDensity * 1.5
       ) {

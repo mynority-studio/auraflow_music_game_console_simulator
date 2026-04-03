@@ -31,12 +31,12 @@ if (energyLevel <= 2) {
       // Bar 1: 1, 2.5, 4
       // Bar 2: 1.5, 3, 4
       const isCompHit =
-        (twoBarBeat === 0 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) ||
-        (twoBarBeat === 1.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
-        (twoBarBeat === 3 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) || // Bar 1
-        (twoBarBeat === 5.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
-        (twoBarBeat === 6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) ||
-        (twoBarBeat === 7 && (PRNGManager.next() < grooveDensity || maskAccent === 1)); // Bar 2
+        (Math.abs(twoBarBeat) < 1e-6 && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) ||
+        (Math.abs(twoBarBeat - 1.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
+        (Math.abs(twoBarBeat - 3) < 1e-6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) || // Bar 1
+        (Math.abs(twoBarBeat - 5.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) ||
+        (Math.abs(twoBarBeat - 6) < 1e-6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)) ||
+        (Math.abs(twoBarBeat - 7) < 1e-6 && (PRNGManager.next() < grooveDensity || maskAccent === 1)); // Bar 2
 
       if (isCompHit) {
         // 🌟 Cooperative Comping:
@@ -56,7 +56,7 @@ if (energyLevel <= 2) {
         }
 
         // Slightly softer on beat 1 to let the bass root ring clear
-        if (beatInBar === 0) {
+        if (Math.abs(beatInBar) < 1e-6) {
           compVel *= 0.8;
         }
 

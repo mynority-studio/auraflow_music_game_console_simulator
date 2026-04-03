@@ -50,7 +50,7 @@ export class SyncopatedBassIdiom extends BaseBassIdiom {
           velocity: vel,
         });
       } else if (
-        (beatInBar === 1.5 || beatInBar === 3.5) &&
+        (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) &&
         (PRNGManager.next() < grooveSyncopation || maskAccent === 1)
       ) {
         // 经典的 16 分音符反拍（Ghost notes），受 syncopationProb 控制

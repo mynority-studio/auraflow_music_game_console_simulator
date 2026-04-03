@@ -89,7 +89,7 @@ export class SteadyBassIdiom extends BaseBassIdiom {
             duration: 0.25,
             velocity: baseVel * 1.2 * (maskAccent === 1 ? 1.1 : 1.0),
           });
-        } else if (energyLevel >= 7 && (beatInBar === 1.25 || beatInBar === 3.25) && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
+        } else if (energyLevel >= 7 && (Math.abs(beatInBar - 1.25) < 1e-6 || Math.abs(beatInBar - 3.25) < 1e-6) && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
            notes.push({
             pitch: targetBassPitch,
             onset: beat,
@@ -141,7 +141,7 @@ export class SteadyBassIdiom extends BaseBassIdiom {
           duration: 0.25,
           velocity: baseVel * 0.9 * (maskAccent === 1 ? 1.2 : 1.0),
         });
-      } else if ((beatInBar === 1.5 || beatInBar === 3.5) && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
+      } else if ((Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
         notes.push({
           pitch: targetBassPitch,
           onset: beat,

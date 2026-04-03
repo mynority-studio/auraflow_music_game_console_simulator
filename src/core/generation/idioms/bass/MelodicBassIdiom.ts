@@ -59,7 +59,7 @@ export class MelodicBassIdiom extends BaseBassIdiom {
 
       if (isChordStart) {
         pitch = rootMidi; // First beat of chord: Root
-      } else if (beatsRemaining === 1) {
+      } else if (Math.abs(beatsRemaining - 1) < 1e-6) {
         // Last beat of chord: Approach note to the next chord's root (or current if no next chord)
         const targetRoot = nextChord
           ? HarmonyCore.getChordTones(nextChord, nextTargetCenter)[0]

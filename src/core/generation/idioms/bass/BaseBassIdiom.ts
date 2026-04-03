@@ -79,7 +79,7 @@ export abstract class BaseBassIdiom implements IBassIdiom {
         let buildUpStep = 0.5; // 8th notes
         if (barsLeft <= 1.0) buildUpStep = 0.25; // 16th notes
 
-        if (beat % buildUpStep === 0) {
+        if (Math.abs(beat % buildUpStep) < 1e-6) {
           const buildVel = baseVel * (0.6 + (1 - barsLeft / 2) * 0.6);
           buildUpNotes.push({
             pitch: ctx.targetBassPitch,

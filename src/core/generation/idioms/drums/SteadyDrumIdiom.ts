@@ -13,15 +13,15 @@ export class SteadyDrumIdiom implements IDrumIdiom {
     const isBuildUp = nextEnergyLevel > energyLevel + 1;
 for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
-      const isDownbeat = beatInBar === 0;
+      const isDownbeat = Math.abs(beatInBar) < 1e-6;
       let isSnareBeat = false;
       if (is68) {
-        isSnareBeat = beatInBar === 3;
+        isSnareBeat = Math.abs(beatInBar - 3) < 1e-6;
       } else {
         if (isHalfTime) {
-          isSnareBeat = beatInBar === 2;
+          isSnareBeat = Math.abs(beatInBar - 2) < 1e-6;
         } else {
-          isSnareBeat = beatInBar === 1 || beatInBar === 3;
+          isSnareBeat = Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6;
         }
       }
 
@@ -39,7 +39,7 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
         let buildUpStep = 0.5;
         if (barsLeft <= 1.0) buildUpStep = 0.25;
 
-        if (beat % buildUpStep === 0) {
+        if (Math.abs(beat % buildUpStep) < 1e-6) {
           const buildVel = 0.6 + (1 - barsLeft / 2) * 0.4;
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: buildVel });
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: buildVel * 0.9 });
@@ -53,13 +53,13 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
         if (PRNGManager.next() > 0.05) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.9 * (maskAccent === 1 ? 1.1 : 1.0) });
         }
-      } else if (beatInBar === 2.5) {
+      } else if (Math.abs(beatInBar - 2.5) < 1e-6) {
         if (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.8 * (maskAccent === 1 ? 1.1 : 1.0) });
         }
-      } else if (beatInBar === 1.5 && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 1.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.7 * (maskAccent === 1 ? 1.2 : 1.0) });
-      } else if (beatInBar === 3.5 && (PRNGManager.next() < grooveSyncopation * 1.2 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 3.5) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.2 || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.75 * (maskAccent === 1 ? 1.2 : 1.0) });
       } else if (maskAccent === 1 && Math.abs(beatInBar % 0.5) >= 1e-6) {
         // 🌟 旋律在 16 分音符反拍上有重音，底鼓强制跟随贴合
@@ -69,7 +69,7 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       // Heavy Snare on 2 and 4 - STRICT
       if (isSnareBeat) {
         notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.95 * (maskAccent === 1 ? 1.05 : 1.0) });
-      } else if (maskAccent === 1 && !isDownbeat && beatInBar !== 2.5 && beatInBar !== 1.5 && beatInBar !== 3.5) {
+      } else if (maskAccent === 1 && !isDownbeat && Math.abs(beatInBar - 2.5) >= 1e-6 && Math.abs(beatInBar - 1.5) >= 1e-6 && Math.abs(beatInBar - 3.5) >= 1e-6) {
           // 🌟 GrooveMask 强制重音，如果不是底鼓或军鼓的常规位置，则加一个轻军鼓或 Ghost Note
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.5 });
       }
@@ -94,7 +94,7 @@ for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       }
 
       // Occasional 16th kick before snare
-      if (beatInBar === 1.75 || beatInBar === 3.75) {
+      if (Math.abs(beatInBar - 1.75) < 1e-6 || Math.abs(beatInBar - 3.75) < 1e-6) {
         if (PRNGManager.next() < grooveDensity * 0.5 || maskAccent === 1) {
           notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.6 * (maskAccent === 1 ? 1.2 : 1.0) });
         }

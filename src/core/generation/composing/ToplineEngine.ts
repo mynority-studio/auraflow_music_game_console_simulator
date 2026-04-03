@@ -1353,13 +1353,13 @@ export class ToplineEngine {
             const is68 = beatsPerBar === 6;
             
             let metricAccent = 0.6; // 默认弱拍
-            if (beatInBar === 0) {
+            if (Math.abs(beatInBar) < 1e-6) {
                 metricAccent = 1.0; // 强拍 (Downbeat)
                 // 乐句开头或结尾的强拍更重
                 if (i === 0 || i === adjustedOffsets.length - 1) metricAccent = 1.05;
             }
-            else if (is68 && beatInBar === 3) metricAccent = 0.85; // 6/8 次强拍
-            else if (!is68 && beatInBar === 2 && beatsPerBar === 4) metricAccent = 0.8; // 4/4 次强拍
+            else if (is68 && Math.abs(beatInBar - 3) < 1e-6) metricAccent = 0.85; // 6/8 次强拍
+            else if (!is68 && Math.abs(beatInBar - 2) < 1e-6 && beatsPerBar === 4) metricAccent = 0.8; // 4/4 次强拍
             else if (Math.abs(beatInBar % 1) < 1e-6) metricAccent = 0.75; // 正拍
             else if (Math.abs(beatInBar % 0.5) < 1e-6) metricAccent = 0.6; // 8分音符反拍
             else metricAccent = 0.5; // 16分音符反拍

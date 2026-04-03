@@ -29,11 +29,11 @@ for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       // Often hits on 1.75, 2.5, 3.75, 4.0
       const isFunkHit =
         maskAccent === 1 ||
-        (beatInBar === 0 && PRNGManager.next() < grooveDensity) ||
+        (Math.abs(beatInBar) < 1e-6 && PRNGManager.next() < grooveDensity) ||
         (Math.abs(beatInBar - 0.75) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5) ||
-        (beatInBar === 1.5 && PRNGManager.next() < grooveSyncopation * 1.2) ||
-        (beatInBar === 2.5 && PRNGManager.next() < grooveDensity) ||
-        (beatInBar === 3.75 && PRNGManager.next() < grooveSyncopation * 1.5);
+        (Math.abs(beatInBar - 1.5) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.2) ||
+        (Math.abs(beatInBar - 2.5) < 1e-6 && PRNGManager.next() < grooveDensity) ||
+        (Math.abs(beatInBar - 3.75) < 1e-6 && PRNGManager.next() < grooveSyncopation * 1.5);
 
       if (isFunkHit) {
         // Very short duration for staccato feel (0.15 to 0.25)

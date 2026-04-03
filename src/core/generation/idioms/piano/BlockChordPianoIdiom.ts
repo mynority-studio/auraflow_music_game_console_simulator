@@ -137,7 +137,7 @@ let maskAccent = 0;
       // 🌟 跨界融合 (Cross-genre Fusion): 应用 GrooveMask
 let maskAccent = 0;
 
-      if (isNeoSoulOrRnB && melodySinging && (beatInBar === 0 || beatInBar === 2) && PRNGManager.next() < 0.4) {
+      if (isNeoSoulOrRnB && melodySinging && (Math.abs(beatInBar) < 1e-6 || Math.abs(beatInBar - 2) < 1e-6) && PRNGManager.next() < 0.4) {
         continue;
       }
 
@@ -160,7 +160,7 @@ let maskAccent = 0;
         let buildUpStep = 0.5;
         if (barsLeft <= 1.0) buildUpStep = 0.25;
 
-        if (beat % buildUpStep === 0) {
+        if (Math.abs(beat % buildUpStep) < 1e-6) {
           const buildVel = baseVelocity * (0.6 + (1 - barsLeft / 2) * 0.6);
           this.addBlockChord(notes, beat, buildUpStep * 0.8, buildVel, voicedTones);
         }
@@ -196,7 +196,7 @@ let maskAccent = 0;
 
             this.addBlockChord(notes, beat + rightHandDelay, 2.0, baseVelocity * 0.85, tonesToPlay);
           }
-        } else if (!melodySinging && beatInBar === 2.5) {
+        } else if (!melodySinging && Math.abs(beatInBar - 2.5) < 1e-6) {
           let tonesToPlay = voicedTones.filter(p => p >= 60);
           if (tonesToPlay.length === 0) tonesToPlay = voicedTones.slice(1);
           this.addBlockChord(notes, beat, 1.5, baseVelocity * 0.9, tonesToPlay);
@@ -213,7 +213,7 @@ let maskAccent = 0;
           notes.push({ pitch: voicedTones[0], onset: beat, duration: 2.0, velocity: baseVelocity });
         }
 
-        const isSyncopatedHit = (beatInBar === 1.5 || beatInBar === 2.5 || beatInBar === 3.5) && PRNGManager.next() < grooveSyncopation * 1.5;
+        const isSyncopatedHit = (Math.abs(beatInBar - 1.5) < 1e-6 || Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && PRNGManager.next() < grooveSyncopation * 1.5;
 
         if (isSyncopatedHit || maskAccent === 1) {
           if (melodySinging) {
@@ -244,7 +244,7 @@ let maskAccent = 0;
 
         // 🌟 方案 C: 动态加花 (Dynamic Fills) - 侦测主旋律气口
         let isMelodyGap = false;
-        if (!melodySinging && beatInBar === 2.0) {
+        if (!melodySinging && Math.abs(beatInBar - 2.0) < 1e-6) {
             const hasMelodySoon = melodyNotes.some(m => m.onset >= beat && m.onset < beat + 1.5);
             if (!hasMelodySoon) isMelodyGap = true;
         }
@@ -288,13 +288,13 @@ let maskAccent = 0;
             this.addBlockChord(notes, beat, 0.5, baseVelocity * (maskAccent === 1 ? 1.15 : 1.05), rightHandTones);
           }
         } else if (!melodySinging && is16thPush && PRNGManager.next() > 0.6) {
-          if (beatInBar === 3.75 && nextChord) {
+          if (Math.abs(beatInBar - 3.75) < 1e-6 && nextChord) {
             const nextTones = HarmonyCore.getChordTones(nextChord, 55);
             this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.9, nextTones.slice(1));
           } else {
             this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.8, rightHandTones.slice(0, 2));
           }
-        } else if (!melodySinging && Math.abs(beat % 1) < 1e-6 && beatInBar !== 0 && PRNGManager.next() > 0.7) {
+        } else if (!melodySinging && Math.abs(beat % 1) < 1e-6 && Math.abs(beatInBar) >= 1e-6 && PRNGManager.next() > 0.7) {
           this.addBlockChord(notes, beat, 0.25, baseVelocity * 0.9, rightHandTones);
         }
       }

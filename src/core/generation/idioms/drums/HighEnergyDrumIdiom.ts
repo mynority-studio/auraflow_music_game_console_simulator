@@ -20,12 +20,12 @@ if (energyLevel <= 2) return notes;
       let maskAccent = 0;
 
       if (is68) {
-        isSnareBeat = beatInBar === 3;
+        isSnareBeat = Math.abs(beatInBar - 3) < 1e-6;
       } else {
         if (isHalfTime) {
-          isSnareBeat = beatInBar === 2;
+          isSnareBeat = Math.abs(beatInBar - 2) < 1e-6;
         } else {
-          isSnareBeat = beatInBar === 1 || beatInBar === 3;
+          isSnareBeat = Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6;
         }
       }
 
@@ -54,7 +54,7 @@ if (energyLevel <= 2) return notes;
       }
 
       // Claps/Snares on 2 and 4
-      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && Math.abs(beatInBar % 1 - 0.5) >= 1e-6 && !isSnareBeat)) {
+      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6 || (maskAccent === 1 && Math.abs(beatInBar % 1 - 0.5) >= 1e-6 && !isSnareBeat)) {
         notes.push({ pitch: 39, onset: beat, duration: 0.1, velocity: 0.85 * (maskAccent === 1 ? 1.1 : 1.0) }); // 39 is Clap
       }
 
@@ -86,12 +86,12 @@ if (energyLevel <= 2) return notes;
 
       // Eurodance: Syncopated snares/toms for groove
       if (ctx.style?.id === StyleId.Eurodance && energyLevel >= 6) {
-        if (beatInBar === 1.75 || beatInBar === 3.75) {
+        if (Math.abs(beatInBar - 1.75) < 1e-6 || Math.abs(beatInBar - 3.75) < 1e-6) {
           if (PRNGManager.next() < grooveSyncopation || maskAccent === 1) {
             notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.6 * (maskAccent === 1 ? 1.3 : 1.0) });
           }
         }
-        if (beatInBar === 2.5) {
+        if (Math.abs(beatInBar - 2.5) < 1e-6) {
           if (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1) {
             notes.push({ pitch: TOM_LOW, onset: beat, duration: 0.1, velocity: 0.7 * (maskAccent === 1 ? 1.3 : 1.0) });
           }

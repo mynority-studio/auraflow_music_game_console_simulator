@@ -11,23 +11,23 @@ if (energyLevel <= 2) return notes;
 
     for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
-      const isDownbeat = beatInBar === 0;
+      const isDownbeat = Math.abs(beatInBar) < 1e-6;
 
       let maskAccent = 0;
 
       // Jazz: Light kick on 1, sometimes 3
       if (isDownbeat && (PRNGManager.next() < grooveDensity * 1.5 || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.5 * (maskAccent === 1 ? 1.3 : 1.0) });
-      } else if (beatInBar === 2 && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
+      } else if (Math.abs(beatInBar - 2) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 0.8 || maskAccent === 1)) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: 0.4 * (maskAccent === 1 ? 1.3 : 1.0) });
       }
 
       // Jazz: Cross-stick or light snare comping
-      if (beatInBar === 1 || beatInBar === 3 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
+      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6 || (maskAccent === 1 && Math.abs(beatInBar % 1) >= 1e-6)) {
         if (PRNGManager.next() < grooveDensity || maskAccent === 1) {
           notes.push({ pitch: energyLevel > 5 ? SNARE : CROSS_STICK, onset: beat, duration: 0.1, velocity: 0.5 * (maskAccent === 1 ? 1.3 : 1.0) });
         }
-      } else if (beatInBar === 2.5 || beatInBar === 3.5 || maskAccent === 1) { // Syncopated comping
+      } else if (Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6 || maskAccent === 1) { // Syncopated comping
         if (PRNGManager.next() < grooveSyncopation * 0.5 || maskAccent === 1) {
           notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: 0.4 * (maskAccent === 1 ? 1.3 : 1.0) });
         }
@@ -43,7 +43,7 @@ if (energyLevel <= 2) return notes;
       }
 
       // Jazz: Hi-hat pedal on 2 and 4
-      if (beatInBar === 1 || beatInBar === 3) {
+      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6) {
         notes.push({ pitch: 44, onset: beat, duration: 0.1, velocity: 0.6 }); // 44 is Pedal Hi-Hat
       }
     }

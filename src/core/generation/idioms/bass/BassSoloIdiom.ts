@@ -34,7 +34,7 @@ export class BassSoloIdiom extends BaseBassIdiom {
           duration: 0.25,
           velocity: baseVel * 1.1,
         });
-      } else if ((beatInBar === 2.5 || beatInBar === 3.5) && PRNGManager.next() < grooveDensity * 1.5) {
+      } else if ((Math.abs(beatInBar - 2.5) < 1e-6 || Math.abs(beatInBar - 3.5) < 1e-6) && PRNGManager.next() < grooveDensity * 1.5) {
         // 经过音
         const passingPitch = PRNGManager.next() > 0.5 ? fifthMidi : thirdMidi;
         notes.push({

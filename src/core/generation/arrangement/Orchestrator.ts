@@ -603,7 +603,7 @@ export class Orchestrator {
 
             // 🌟 戛然而止 (Hard Stop) 逻辑：只在第一拍发声
             if (activeSection.endingType === 'hard_stop') {
-                if (chord.startBeat === activeSection.startBeat) {
+                if (Math.abs(chord.startBeat - activeSection.startBeat) < 1e-6) {
                     if (playBass) {
                         lhNotes.push({ pitch: HarmonyCore.getChordTones(chord, 60)[0] - 12, onset: chord.startBeat, duration: 4, velocity: 1.0 });
                     }
@@ -637,7 +637,7 @@ export class Orchestrator {
             if (playBass) {
                 // 如果前奏有贝斯，为了避免割裂感，Verse_1 不应该变得稀疏
                 const isSparseSection = (activeSection.type === SectionType.Intro && !introHasBass) || activeSection.type === SectionType.Outro || (secName === 'Verse_1' && !introHasBass);
-                const isSectionEnd = chord.endBeat === activeSection.endBeat;
+                const isSectionEnd = Math.abs(chord.endBeat - activeSection.endBeat) < 1e-6;
                 const isBassSolo = playBass && !playChords;
                 const nextChord = i < track.chords.length - 1 ? track.chords[i + 1] : undefined;
                 const nextEnergyLevel = track.sections.find(s => s.startBeat >= activeSection.endBeat)?.energyLevel || energy;
@@ -669,7 +669,7 @@ export class Orchestrator {
             if (playChords) {
                 const nextChord = i < track.chords.length - 1 ? track.chords[i + 1] : undefined;
                 const isSparseSection = activeSection.type === SectionType.Intro || activeSection.type === SectionType.Outro;
-                const isSectionEnd = chord.endBeat === activeSection.endBeat;
+                const isSectionEnd = Math.abs(chord.endBeat - activeSection.endBeat) < 1e-6;
                 const nextEnergyLevel = track.sections.find(s => s.startBeat >= activeSection.endBeat)?.energyLevel || energy;
                 
                 let chordNotes: NoteData[] = [];
@@ -794,7 +794,7 @@ export class Orchestrator {
                                 }
                             } else if (endingBehavior === 'BigRingOut') {
                                 if (isLastBar) {
-                                    if (beatInBar === 0) {
+                                    if (Math.abs(beatInBar) < 1e-6) {
                                         // 第一拍重击
                                         n.velocity = Math.min(1.0, n.velocity * 1.5);
                                         if (!isDrums) {
