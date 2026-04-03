@@ -297,7 +297,7 @@ interface MidiEvent {
 ### 3.3 枚举与位标志
 
 > **实现状态说明**：标记 ✅ 表示已在代码中实现，⏳ 表示目标设计。
-> StyleFlag 为唯一剩余的 ⏳ 项（当前用 StyleId 直接比较替代）。
+> StyleFlag 位掩码不实施 — 当前 StyleId 枚举直接比较已满足 T-1，位运算加速收益不对称。
 
 ```typescript
 // ✅ 风格标识 — 数值枚举，用于数组直接寻址（已实现于 StyleFlags.ts）
@@ -309,9 +309,8 @@ enum StyleId {
   // 值不连续，预留扩展空间
 }
 
-// ⏳ 风格分类位掩码 — 目标设计，当前代码使用 StyleId 直接比较替代
-// const StyleFlag = { IS_ELECTRONIC: 1 << 0, ... } as const;
-// 当前替代方案：style.id === StyleId.Eurodance || style.id === StyleId.Trance
+// 风格分类：不使用位掩码，StyleId 枚举直接比较已满足需求
+// style.id === StyleId.Eurodance || style.id === StyleId.Trance
 
 // ✅ Tonality — 数值枚举（已实现于 types.ts）
 enum Tonality {
