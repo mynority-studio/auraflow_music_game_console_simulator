@@ -104,4 +104,4 @@ ArrangedTrack → App 层调用 Orchestrator.arrange()
 - **AI**: Google Gemini API（`@google/genai`）
 - **路径别名**: `@/` 映射到项目根目录（非 `/src/`，因此引用如 `@/src/core/...`）
 - **TypeScript**: `experimentalDecorators: true`、`target: ES2022`
-- **目标硬件**: ESP32-S3（512KB SRAM + PSRAM，I2S DAC，FreeRTOS）
+- **目标硬件**: ESP32-S3-N8R8/N16R8（512KB SRAM + 8MB PSRAM），TinySoundFont（SF2 合成），I2S DAC，FreeRTOS

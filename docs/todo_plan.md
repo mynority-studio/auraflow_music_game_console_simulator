@@ -48,9 +48,9 @@
 ## Phase 0：前置准备
 
 - [ ] **0.1** 建立 ESP-IDF 工程骨架（CMake + 目录结构）
-- [ ] **0.2** 确认硬件规格：ESP32-S3 型号、SRAM/PSRAM 容量、I2S DAC 型号
-- [ ] **0.3** 选定 SF2 合成器方案（FluidSynth lite / TinySoundFont / 其他），确认内存占用
-- [ ] **0.4** 从 TS 侧统计各数组的实际最大长度（跑 100+ seed），确定预分配上限
+- [x] **0.2** 确认硬件规格：ESP32-S3-N8R8 或 N16R8（待最终确认），8MB PSRAM，I2S DAC 待定
+- [x] **0.3** 选定 SF2 合成器方案：**TinySoundFont**（单头文件 C 库，内存友好）
+- [x] **0.4** 数组最大长度统计完成（200 seed，`npm run array-stats`，commit `d900ca0`）
 
 ---
 
@@ -145,12 +145,10 @@
 
 ## Phase 4：全管道端到端验证
 
-- [ ] **4.1** 编写 Golden Seed 录制脚本（TS 侧，Node.js 环境）
-  - 多 seed（至少 12345, 99999, 42, 7777777）
-  - 录制四个快照点 stateA/B/C/D
-  - 录制各模块中间输出（track/context/arranged）
-  - 录制最终 MidiEvent[]
-  - 输出 JSON 文件
+- [x] **4.1** Golden Seed 录制脚本完成（`npm run golden-seed`，commit `94bbd9c`）
+  - 4 seed（12345, 99999, 42, 7777777），确定性验证 PASS
+  - 录制 stateA/B/C/D + 各模块输出摘要 + MidiEvent SHA-256
+  - 输出 `scripts/golden-seed-output.json`
 
 - [ ] **4.2** 编写 JSON → C 头文件转换工具（Python 脚本）
   - 将 golden JSON 转为 C 可 include 的常量数组
