@@ -459,8 +459,8 @@ export class TextureMapper {
     const bpm = renderCtx?.bpm ?? 120;
     const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
 
-    // Get chord tones centered around C4 (MIDI 60) for piano/chord register
-    const chordTones = HarmonyCore.getChordTones(chord, 60);
+    // Get chord tones centered around F3 (MIDI 53) — 下移避免与旋律频段重叠
+    const chordTones = HarmonyCore.getChordTones(chord, 53);
     const chordStart = chord.startBeat;
     const chordEnd = chord.endBeat;
 

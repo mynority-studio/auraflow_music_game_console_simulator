@@ -700,7 +700,7 @@ export class ToplineEngine {
                     }
                 });
 
-                goldenNote.velocity = Math.min(1.0, goldenNote.velocity * 1.2);
+                goldenNote.velocity = Math.min(0.85, goldenNote.velocity * 1.1);
                 goldenNote.duration = Math.max(goldenNote.duration, 1.0);
             }
         }
@@ -1166,8 +1166,8 @@ export class ToplineEngine {
             // 🎷 物理限制：乐器绝对音域与“困难音”避让
             
             
-            let maxPitch = isSolo ? 96 : 88; // E6
-            let minPitch = isSolo ? 48 : 52; // E3
+            let maxPitch = isSolo ? 84 : 76; // C6 / E5 — 降低音域避免刺耳
+            let minPitch = isSolo ? 48 : 55; // C3 / G3
             if (isVocal) {
                 maxPitch = 72; // C5
                 minPitch = 55; // G3
@@ -1378,7 +1378,7 @@ export class ToplineEngine {
             // 引入一点力度随机性，结合音高起伏
             // 音高越高，通常力度越大
             const pitchAccent = (currentPitch - 60) / 40; // 归一化音高影响
-            let humanVelocity = metricAccent * (0.85 + PRNGManager.next() * 0.2) + pitchAccent * 0.1;
+            let humanVelocity = metricAccent * (0.6 + PRNGManager.next() * 0.2) + pitchAccent * 0.08;
             
             if (isSolo) humanVelocity *= 1.15; 
             else if (isLead && isInstrumental) humanVelocity *= 1.05;
@@ -1531,7 +1531,7 @@ export class ToplineEngine {
                 }
             }
             climaxNote.pitch = this.getNearestOctave(bestPc, targetPitch);
-            climaxNote.velocity = Math.min(1.0, climaxNote.velocity * 1.3);
+            climaxNote.velocity = Math.min(0.9, climaxNote.velocity * 1.1);
             climaxNote.duration = Math.max(climaxNote.duration, 1.0);
         }
 

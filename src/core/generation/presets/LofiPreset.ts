@@ -62,7 +62,7 @@ export const LofiPreset: Partial<GenerationParams> = {
         intervalPool: [1],
     },
     orchestration: {
-        melodyInstruments: [InstrumentId.Electric_Piano_1, InstrumentId.Vibraphone, InstrumentId.Muted_Trumpet],
+        melodyInstruments: [InstrumentId.Electric_Piano_1, InstrumentId.Vibraphone, InstrumentId.Warm_EP],
         chordInstruments: [InstrumentId.Electric_Piano_1, InstrumentId.Electric_Piano_2],
         bassInstruments: [InstrumentId.Electric_Bass_Finger, InstrumentId.Acoustic_Bass],
         drumInstruments: [InstrumentId.Standard_DrumKit],
@@ -78,7 +78,7 @@ export const LofiPreset: Partial<GenerationParams> = {
         grooveRatio: { foundation: 0.7, comping: 0.2, color: 0.1 },
         mixingPreferences: {
             requireSidechain: true,
-            melody: { pan: 0, reverb: 0.3, delay: 0.1, volume: -2.0 },
+            melody: { pan: 0, reverb: 0.5, delay: 0.1, volume: -4.0 },
             chord: { pan: -0.2, reverb: 0.2, volume: -4.0 },
             bass: { reverb: 0.0, volume: -1.0 },
             drums: { reverb: 0.1, volume: 0.0 },

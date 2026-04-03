@@ -114,7 +114,7 @@ export class MidiConverter {
                 };
 
                 if (song.vocal) applyCC(channelMap.vocal, 118, 64, 40 + energyLevel * 5);
-                applyCC(channelMap.melody, 118, 64, 40 + energyLevel * 5);
+                applyCC(channelMap.melody, 100, 64, 40 + energyLevel * 5);
                 applyCC(channelMap.drums, 108, 64, 10 + energyLevel * 3);
                 applyCC(channelMap.bass, 98, 64, 0);
                 applyCC(channelMap.chord, 85, 40, 60 + energyLevel * 8);
