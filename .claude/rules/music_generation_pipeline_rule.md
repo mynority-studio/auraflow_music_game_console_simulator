@@ -445,6 +445,17 @@ enum ChordQuality {
 | M-2 | 生成循环内不应做字符串拼接 |
 | M-3 | 大批量数值数据应使用 `TypedArray`（Float32Array / Uint8Array） |
 
+### 4.6 C 可移植性（ESP32-S3 硬约束 — 补充 §4.2）
+
+> 以下约束是 §4.1~4.4 在 C 移植场景下的具体化。与上游条款冲突时以本节为准。
+
+| ID | 约束 |
+|----|------|
+| C-1 | **禁止两个浮点变量直接 `===` 比较**（D-4 的强化）。`beat === chord.startBeat` 必须写为 `Math.abs(beat - chord.startBeat) < 1e-6`。JS 可能侥幸通过，C 浮点累加后必定失配 |
+| C-2 | **beat 循环累加风险意识**。`for (let beat = start; beat < end; beat += 0.25)` 循环超过 100 次后浮点误差累积，循环内所有比较必须用 epsilon |
+| C-3 | **热循环内 `.push()` 可接受**（C 翻译时改为 `buf[count++]`），但**禁止**在热循环内使用 `.map()` / `.filter()` / `[...spread]` 创建临时数组 |
+| C-4 | **输出数组无上界时必须文档化最大长度**。新增 NoteData 数组的函数须在注释中标注预期最大元素数（如 `// max ~300 notes for 3-min song`） |
+
 ---
 
 ## 5. 确定性验证义务 (ACVE)
@@ -498,6 +509,7 @@ expect(PRNGManager.getState()).toBe(recorded_stateD);   // PRNG 消耗一致
 | 可移植性 | P-1 ~ P-5 | 5 |
 | 类型纪律 | T-1 ~ T-6 | 6 |
 | 纯净性 | S-1 ~ S-7 | 7 |
+| C 可移植性 | C-1 ~ C-4 | 4 |
 | 性能建议 | M-1 ~ M-3 | 3 (guideline) |
-| **合计** | | **32** (29 硬约束 + 3 guideline) |
+| **合计** | | **36** (33 硬约束 + 3 guideline) |
 
