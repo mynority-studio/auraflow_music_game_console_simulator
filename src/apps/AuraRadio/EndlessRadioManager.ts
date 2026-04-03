@@ -1,7 +1,9 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
+import { Orchestrator } from '../../core/generation/arrangement/Orchestrator';
 import { getAllAvailableStyles, getStyleConfig } from "../../core/generation/config/styles/StyleRegistry";
-import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
+import { GeneratedTrack, MusicContext } from '../../core/generation/types';
+import { StyleId } from '../../core/generation/config/StyleFlags';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 
@@ -9,10 +11,10 @@ export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING';
 
 export class EndlessRadioManager {
   private state: AppState = 'IDLE';
-  private history: { track: GeneratedTrack, context: MusicContext, style: StyleConfig }[] = [];
+  private history: { track: GeneratedTrack, context: MusicContext, styleId: StyleId }[] = [];
   private historyIndex: number = -1;
   private generationId: number = 0;
-  
+
   private stateChangeCallback?: (state: AppState) => void;
   public onStyleChange?: (styleName: string) => void;
 
@@ -52,17 +54,19 @@ export class EndlessRadioManager {
     this.stopPlayback();
   }
 
-  private async playTrack(track: GeneratedTrack, context: MusicContext, style: StyleConfig, genId: number) {
-    const melodyEngine = new MelodyEngine();
-    
+  private async playTrack(track: GeneratedTrack, context: MusicContext, styleId: StyleId, genId: number) {
+    const style = getStyleConfig(styleId);
+
     if (this.onStyleChange) {
       this.onStyleChange(style.name);
     }
 
-    await AudioEngine.playSong(track, style.id, context, melodyEngine);
-    
+    // 管道在 App 层完成：generate → arrange → playSong
+    const arrangedSong = Orchestrator.arrange(track, styleId, context);
+    await AudioEngine.playSong(arrangedSong);
+
     if (genId !== this.generationId) return;
-    
+
     this.setState('PLAYING');
 
     // Schedule next song using MidiScheduler's onTrackEnd
@@ -75,7 +79,7 @@ export class EndlessRadioManager {
 
   public triggerGeneration = async () => {
     const currentGenId = ++this.generationId;
-    
+
     AudioEngine.stop();
     this.setState('GENERATING');
 
@@ -87,17 +91,16 @@ export class EndlessRadioManager {
       const melodyEngine = new MelodyEngine();
       const allStyles = getAllAvailableStyles();
       const randomStyleObj = allStyles[Math.floor(PRNGManager.next() * allStyles.length)];
-      const randomStyle = getStyleConfig(randomStyleObj.id);
-      
-      const rawTrack = melodyEngine.generateFullSong(randomStyle.id);
-      
+
+      const rawTrack = melodyEngine.generateFullSong(randomStyleObj.id);
+
       if (currentGenId !== this.generationId) return;
 
       this.history = this.history.slice(0, this.historyIndex + 1);
-      this.history.push({ track: rawTrack.track, context: rawTrack.context, style: randomStyle });
+      this.history.push({ track: rawTrack.track, context: rawTrack.context, styleId: randomStyleObj.id });
       this.historyIndex++;
 
-      await this.playTrack(rawTrack.track, rawTrack.context, randomStyle, currentGenId);
+      await this.playTrack(rawTrack.track, rawTrack.context, randomStyleObj.id, currentGenId);
 
     } catch (error) {
       console.error("Generation failed:", error);
@@ -112,11 +115,11 @@ export class EndlessRadioManager {
       const currentGenId = ++this.generationId;
       AudioEngine.stop();
       this.setState('GENERATING');
-      
+
       this.historyIndex++;
-      const { track, context, style } = this.history[this.historyIndex];
-      
-      await this.playTrack(track, context, style, currentGenId);
+      const { track, context, styleId } = this.history[this.historyIndex];
+
+      await this.playTrack(track, context, styleId, currentGenId);
     } else {
       this.triggerGeneration();
     }
@@ -126,12 +129,12 @@ export class EndlessRadioManager {
     if (this.historyIndex > 0) {
       const currentGenId = ++this.generationId;
       AudioEngine.stop();
-      this.setState('GENERATING'); 
-      
+      this.setState('GENERATING');
+
       this.historyIndex--;
-      const { track, context, style } = this.history[this.historyIndex];
-      
-      await this.playTrack(track, context, style, currentGenId);
+      const { track, context, styleId } = this.history[this.historyIndex];
+
+      await this.playTrack(track, context, styleId, currentGenId);
     }
   }
 }

@@ -1,8 +1,5 @@
 import { PlaybackEngine, VisualEvent } from './PlaybackEngine';
-import { GeneratedTrack, MusicContext } from '../generation/types';
-import { StyleId } from '../generation/config/StyleFlags';
-import { Orchestrator } from '../generation/arrangement/Orchestrator'; 
-import { MelodyEngine } from '../generation/MelodyEngine'; // 引入新的流水线总管
+import { ArrangedTrack } from '../generation/types';
 import { globalMidiScheduler } from './MidiScheduler';
 import { spessaSynth, isSpessaSynthReady, getAudioContext, startAudioContext } from './SynthManager';
 
@@ -10,7 +7,6 @@ export { spessaSynth, isSpessaSynthReady, getAudioContext, startAudioContext };
 
 class AudioEngineSystem {
     private playback: PlaybackEngine | null = null;
-    private generator: MelodyEngine | null = null;
     private visualsMode: 'all' | 'gameplay-only' = 'all';
 
     private visualListeners: Set<any> = new Set();
@@ -29,20 +25,15 @@ class AudioEngineSystem {
         }
     }
 
-    public async playSong(initialTrack: GeneratedTrack, styleId: StyleId, context: MusicContext, generator: MelodyEngine, options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }) {
+    public async playSong(arrangedSong: ArrangedTrack, options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }) {
         if (!this.playback) this.init();
-        this.generator = generator;
-        
-        // 调用 V2 编曲大脑
-        const arrangedSong = Orchestrator.arrange(initialTrack, styleId, context);
-        
+
         await this.playback!.loadSong(arrangedSong, options);
         this.playback!.play();
     }
 
-    public stop() { 
-        if (this.playback) this.playback.stop(); 
-        this.generator = null;
+    public stop() {
+        if (this.playback) this.playback.stop();
     }
     public addVisualListener(listener: any) { this.visualListeners.add(listener); }
     public removeVisualListener(listener: any) { this.visualListeners.delete(listener); }

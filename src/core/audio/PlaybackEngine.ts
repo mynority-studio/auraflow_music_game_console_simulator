@@ -168,18 +168,19 @@ export class PlaybackEngine {
         const countInBeats = options?.withCountIn ? 4 : 0;
 
         // 构建通道映射表（平台层职责：synth channel 分配）
+        // -1 表示该轨道无乐器，MidiConverter 通过 if (song.xxx) 守卫不会向 -1 通道发送事件
         const channelMap: ChannelMap = {
-            vocal: vocalSynth ? vocalSynth.channel : 0,
+            vocal: vocalSynth ? vocalSynth.channel : -1,
             melody: melodySynth.channel,
             secondaryMelody: song.secondaryMelody && (song.palette?.secondaryMelodySound !== undefined && song.palette?.secondaryMelodySound !== null)
                 ? this.instruments.getInstrumentById(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody).channel
-                : 2,
+                : -1,
             chord: chordSynth.channel,
             bass: bassSynth.channel,
             drums: drumSynth.channel,
             counterMelody: song.counterMelody && (song.palette?.counterMelodySound !== undefined && song.palette?.counterMelodySound !== null)
                 ? this.instruments.getInstrumentById(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody).channel
-                : 5,
+                : -1,
         };
 
         // 生成管道第四模块：纯数据转换
