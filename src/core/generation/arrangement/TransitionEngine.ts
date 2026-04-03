@@ -5,8 +5,7 @@ import { PRNGManager } from '../../utils/PRNG';
 // ==========================================
 import { NoteData, SectionMetadata, SectionType } from '../types';
 
-import { StyleId } from '../config/StyleFlags';
-import { StyleConfig } from '../types';
+import { GenerationParams } from '../types';
 
 export class TransitionEngine {
     private static muteRegion(notes: NoteData[], startBeat: number, endBeat: number) {
@@ -18,12 +17,12 @@ export class TransitionEngine {
     }
 
     // 🌟 1. Drum Fills (多种类型的鼓加花)
-    private static injectDrumFill(drums: NoteData[], startBeat: number, endBeat: number, energyDelta: number, currentEnergy: number, style: StyleConfig) {
+    private static injectDrumFill(drums: NoteData[], startBeat: number, endBeat: number, energyDelta: number, currentEnergy: number, params: GenerationParams) {
         this.muteRegion(drums, startBeat, endBeat);
         const KICK = 36, SNARE = 38, CRASH = 49, TOM_HI = 50, TOM_MID = 47, TOM_LOW = 43, HIHAT_CLOSED = 42, HIHAT_OPEN = 46;
         
         const fillLength = endBeat - startBeat;
-        const fillStyle = style.orchestration?.fillStyle || 'standard';
+        const fillStyle = params.orchestration?.fillStyle || 'standard';
         const isAcousticBallad = fillStyle === 'micro';
 
         // 🌟 能量感知：低能量段落或能量下降时，使用极简加花 (Micro-Fill / Drop Fill)
@@ -301,7 +300,7 @@ export class TransitionEngine {
     }
 
     public static applyBoundaries(
-        sections: SectionMetadata[], lh: NoteData[], rh: NoteData[], drums: NoteData[], beatsPerBar: number, style: StyleConfig
+        sections: SectionMetadata[], lh: NoteData[], rh: NoteData[], drums: NoteData[], beatsPerBar: number, params: GenerationParams
     ) {
         const CRASH = 49, CHINA = 52, SPLASH = 55, CRASH2 = 57;
 
@@ -342,12 +341,12 @@ export class TransitionEngine {
                     this.injectReverseCymbal(drums, boundaryBeat, 2.0);
                 } else {
                     // 35% 概率：完整的 Drum Fill (1 小节)
-                    this.injectDrumFill(drums, lastBarStart, boundaryBeat, delta, currentEnergy, style);
+                    this.injectDrumFill(drums, lastBarStart, boundaryBeat, delta, currentEnergy, params);
                 }
             } else if (delta >= 3) {
                 // 中等能量跃升
                 if (PRNGManager.next() < 0.5) {
-                    this.injectDrumFill(drums, boundaryBeat - 2.0, boundaryBeat, delta, currentEnergy, style);
+                    this.injectDrumFill(drums, boundaryBeat - 2.0, boundaryBeat, delta, currentEnergy, params);
                 } else {
                     this.injectDrop(lh, rh, drums, boundaryBeat, 0.5); // 半拍的 Drop
                 }

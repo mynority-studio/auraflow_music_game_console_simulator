@@ -13,7 +13,6 @@ import { InstrumentId, InstrumentIdName } from '../generation/config/InstrumentF
 export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
 export type VisualEventListener = (event: VisualEvent) => void;
 
-import { StyleId } from '../generation/config/StyleFlags';
 
 export class PlaybackEngine {
     private mixer: AudioMixer;
@@ -60,7 +59,7 @@ export class PlaybackEngine {
         // --- 打印歌曲元数据 ---
         console.log("========================================");
         console.log("🎵 歌曲生成完毕，开始播放 🎵");
-        console.log(`Style: ${song.styleId || 'Unknown'}`);
+        console.log(`MixStyle: ${song.mixStyle || 'default'}`);
         console.log(`BPM: ${song.bpm}`);
         console.log(`Key: ${song.key}`);
         console.log(`Time Signature: ${song.timeSignature ? song.timeSignature.join('/') : '4/4'}`);
@@ -133,19 +132,8 @@ export class PlaybackEngine {
             this.mixer.connectSpessaSynth(spessaSynth);
         }
         
-        // 🌟 0. Set Mix Style based on song styleId
-        if (song.styleId !== undefined) {
-            const styleId = song.styleId;
-            if (styleId === StyleId.Eurodance || styleId === StyleId.Trance || styleId === StyleId.Synthwave) {
-                this.mixer.setMixStyle('electro');
-            } else if (styleId === StyleId.RussianFolkBallad || styleId === StyleId.PowerBallad) {
-                this.mixer.setMixStyle('folk');
-            } else {
-                this.mixer.setMixStyle('default');
-            }
-        } else {
-            this.mixer.setMixStyle('default');
-        }
+        // 🌟 0. Set Mix Style based on song.mixStyle
+        this.mixer.setMixStyle(song.mixStyle || 'default');
 
         // 🌟 1. 抽卡聘请总调音师 (Mastering)
         const selectedProfile = 'Recording_Studio';

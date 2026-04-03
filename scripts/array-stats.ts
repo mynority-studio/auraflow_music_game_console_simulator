@@ -11,7 +11,7 @@ import { PRNGManager } from '../src/core/utils/PRNG';
 import { MelodyEngine } from '../src/core/generation/MelodyEngine';
 import { Orchestrator } from '../src/core/generation/arrangement/Orchestrator';
 import { MidiConverter, DEFAULT_CHANNEL_MAP } from '../src/core/generation/MidiConverter';
-import { getAllAvailableStyles } from '../src/core/generation/config/styles/StyleRegistry';
+import { getDefaultParams } from '../src/core/generation/types';
 import { writeFileSync } from 'node:fs';
 
 const SEED_COUNT = 200;
@@ -45,8 +45,7 @@ function finalize(s: { min: number; max: number; sum: number; count: number }): 
 }
 
 function run() {
-    const allStyles = getAllAvailableStyles();
-    const styleCount = allStyles.length;
+    const params = getDefaultParams();
 
     // GeneratedTrack arrays
     const trackMelody = newStats();
@@ -76,7 +75,7 @@ function run() {
 
     let failCount = 0;
 
-    console.log(`Array Stats — ${SEED_COUNT} seeds, ${styleCount} styles`);
+    console.log(`Array Stats — ${SEED_COUNT} seeds, default params`);
     console.log('='.repeat(60));
 
     for (let i = 0; i < SEED_COUNT; i++) {
@@ -84,11 +83,10 @@ function run() {
         try {
             PRNGManager.setSeed(seed);
 
-            const styleIndex = Math.floor(PRNGManager.next() * styleCount);
-            const styleId = allStyles[styleIndex].id;
+            PRNGManager.next(); // 保持 PRNG 消耗对齐（原用于选风格）
 
             const engine = new MelodyEngine();
-            const { track, context } = engine.generateFullSong(styleId);
+            const { track, context } = engine.generateFullSong(params);
 
             // GeneratedTrack stats
             record(trackMelody, track.melody.length);
@@ -103,7 +101,7 @@ function run() {
                 record(trackDuration, lastSection.endBeat);
             }
 
-            const arranged = Orchestrator.arrange(track, styleId, context);
+            const arranged = Orchestrator.arrange(track, params, context);
 
             // ArrangedTrack stats
             record(arrMelody, arranged.melody.length);

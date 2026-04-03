@@ -417,7 +417,6 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                 // Enter Bar
                 const selectedBar = bars[selectedIndexRef.current];
                 if (selectedBar && managerRef.current) {
-                  managerRef.current.setAllowedStyles(selectedBar.styleIds);
                   managerRef.current.triggerGeneration();
                 }
               } else {

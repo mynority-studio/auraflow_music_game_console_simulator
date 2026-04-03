@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, StyleConfig } from '../types';
+import { NoteData } from '../types';
 
 const EPSILON = 1e-6;
 

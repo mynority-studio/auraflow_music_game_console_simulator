@@ -1,5 +1,4 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { StyleId } from '../config/StyleFlags';
 import { RhythmCell } from '../types';
 
 export const PopRhythmCells: RhythmCell[] = [

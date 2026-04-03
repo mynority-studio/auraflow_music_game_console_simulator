@@ -1,10 +1,8 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
-import { StyleId } from '../../core/generation/config/StyleFlags';
 import { GlobalContext } from '../../core/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 import { Orchestrator } from '../../core/generation/arrangement/Orchestrator';
-import { getAllAvailableStyles, getStyleConfig } from "../../core/generation/config/styles/StyleRegistry";
-import { GeneratedTrack, MusicContext } from '../../core/generation/types';
+import { GeneratedTrack, MusicContext, getDefaultParams } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 
@@ -12,17 +10,14 @@ export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING' | 'PREPARING_JAM' | 'JA
 
 export class EndlessRadioManager {
   private state: AppState = 'IDLE';
-  private history: { track: GeneratedTrack, context: MusicContext, styleId: StyleId }[] = [];
+  private history: { track: GeneratedTrack, context: MusicContext }[] = [];
   private historyIndex: number = -1;
   private generationId: number = 0;
 
   public currentTrack?: GeneratedTrack;
-  public currentStyleId?: StyleId;
 
   private stateChangeCallback?: (state: AppState) => void;
   public onStyleChange?: (styleName: string) => void;
-
-  private allowedStyleIds: StyleId[] = [];
 
   // --- Jam Mode Recording State ---
   public userDrumPattern: { note: number, velocity: number, tick: number }[] = [];
@@ -30,14 +25,7 @@ export class EndlessRadioManager {
   public jamLengthTicks: number = 0;
   private originalDrumEvents: any[] = [];
 
-  constructor(allowedStyleIds?: StyleId[]) {
-    if (allowedStyleIds && allowedStyleIds.length > 0) {
-      this.allowedStyleIds = allowedStyleIds;
-    }
-  }
-
-  public setAllowedStyles(styleIds: StyleId[]) {
-    this.allowedStyleIds = styleIds;
+  constructor() {
   }
 
   public onStateChange(callback: (state: AppState) => void) {
@@ -93,7 +81,7 @@ export class EndlessRadioManager {
   }
 
   public prepareJam(type: 'drums' | 'melody') {
-    if (this.state !== 'PLAYING' || !this.currentTrack || this.currentStyleId === undefined) return;
+    if (this.state !== 'PLAYING' || !this.currentTrack) return;
     
     this.setState('PREPARING_JAM');
 
@@ -248,7 +236,7 @@ export class EndlessRadioManager {
   }
 
   private applyUserDrumLoop() {
-      if (!this.currentTrack || this.currentStyleId === undefined) return;
+      if (!this.currentTrack) return;
 
       const currentTick = AudioEngine.getCurrentTick();
 
@@ -403,18 +391,15 @@ export class EndlessRadioManager {
       }
   }
 
-  private async playTrack(track: GeneratedTrack, context: MusicContext, styleId: StyleId, genId: number) {
-    const style = getStyleConfig(styleId);
-
+  private async playTrack(track: GeneratedTrack, context: MusicContext, genId: number) {
     this.currentTrack = track;
-    this.currentStyleId = styleId;
 
     if (this.onStyleChange) {
-      this.onStyleChange(style.name);
+      this.onStyleChange('Default');
     }
 
     // 管道在 App 层完成：generate → arrange → playSong
-    const arrangedSong = Orchestrator.arrange(track, styleId, context);
+    const arrangedSong = Orchestrator.arrange(track, getDefaultParams(), context);
     await AudioEngine.playSong(arrangedSong);
     
     if (genId !== this.generationId) return;
@@ -443,24 +428,18 @@ export class EndlessRadioManager {
       await new Promise(resolve => setTimeout(resolve, 100));
       if (currentGenId !== this.generationId) return;
 
-      let randomStyleId: StyleId;
-      
-      if (this.allowedStyleIds.length > 0) {
-        randomStyleId = this.allowedStyleIds[Math.floor(PRNGManager.next() * this.allowedStyleIds.length)];
-      } else {
-        const allStyles = getAllAvailableStyles();
-        randomStyleId = allStyles[Math.floor(PRNGManager.next() * allStyles.length)].id;
-      }
-      
-      const rawTrack = new MelodyEngine().generateFullSong(randomStyleId);
+      // 消耗一次 PRNG 以保持与原管道的 PRNG 消耗序列对齐（原来用于选风格）
+      PRNGManager.next();
+
+      const rawTrack = new MelodyEngine().generateFullSong(getDefaultParams());
 
       if (currentGenId !== this.generationId) return;
 
       this.history = this.history.slice(0, this.historyIndex + 1);
-      this.history.push({ track: rawTrack.track, context: rawTrack.context, styleId: randomStyleId });
+      this.history.push({ track: rawTrack.track, context: rawTrack.context });
       this.historyIndex++;
 
-      await this.playTrack(rawTrack.track, rawTrack.context, randomStyleId, currentGenId);
+      await this.playTrack(rawTrack.track, rawTrack.context, currentGenId);
 
     } catch (error) {
       console.error("Generation failed:", error);
@@ -477,9 +456,9 @@ export class EndlessRadioManager {
       this.setState('GENERATING');
       
       this.historyIndex++;
-      const { track, context, styleId } = this.history[this.historyIndex];
+      const { track, context } = this.history[this.historyIndex];
 
-      await this.playTrack(track, context, styleId, currentGenId);
+      await this.playTrack(track, context, currentGenId);
     } else {
       this.triggerGeneration();
     }
@@ -492,9 +471,9 @@ export class EndlessRadioManager {
       this.setState('GENERATING');
 
       this.historyIndex--;
-      const { track, context, styleId } = this.history[this.historyIndex];
+      const { track, context } = this.history[this.historyIndex];
 
-      await this.playTrack(track, context, styleId, currentGenId);
+      await this.playTrack(track, context, currentGenId);
     }
   }
 }

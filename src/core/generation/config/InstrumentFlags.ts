@@ -1,4 +1,21 @@
-import { InstrumentFamily } from '../performance/InstrumentIdiom';
+// T-1 合规：禁止字符串子串匹配做乐器路由，改用枚举查表
+export const enum InstrumentFamily {
+    Drums   = 0,
+    String  = 1,
+    Wind    = 2,
+    Guitar  = 3,
+    Bass    = 4,
+    Synth   = 5,
+    Piano   = 6,
+    Voice   = 7,
+    Unknown = 8,
+}
+
+/** T-1 合规：从 InstrumentId 枚举直接查表获取 InstrumentFamily */
+export function resolveInstrumentFamily(id: InstrumentId): InstrumentFamily {
+    const family = InstrumentIdFamily[id];
+    return family !== undefined ? family : InstrumentFamily.Unknown;
+}
 
 // T-1 合规：InstrumentId 数值枚举，替代乐器名称字符串
 export enum InstrumentId {

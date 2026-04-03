@@ -11,16 +11,13 @@ import { PRNGManager } from '../src/core/utils/PRNG';
 import { MelodyEngine } from '../src/core/generation/MelodyEngine';
 import { Orchestrator } from '../src/core/generation/arrangement/Orchestrator';
 import { MidiConverter, DEFAULT_CHANNEL_MAP, MidiEvent } from '../src/core/generation/MidiConverter';
-import { getAllAvailableStyles } from '../src/core/generation/config/styles/StyleRegistry';
-import { StyleIdName } from '../src/core/generation/config/StyleFlags';
+import { getDefaultParams } from '../src/core/generation/types';
 
 const SEEDS = [12345, 99999, 42, 7777777];
 
 interface SeedResult {
     seed: number;
     stateA: number;
-    selectedStyleId: number;
-    selectedStyleName: string;
     stateB: number;
     track: {
         bpm: number;
@@ -63,11 +60,10 @@ interface SeedResult {
 }
 
 function run() {
-    const allStyles = getAllAvailableStyles();
-    const count = allStyles.length;
+    const params = getDefaultParams();
     const results: SeedResult[] = [];
 
-    console.log(`Golden Seed Test — ${SEEDS.length} seeds, ${count} styles`);
+    console.log(`Golden Seed Test — ${SEEDS.length} seeds, default params`);
     console.log('='.repeat(60));
 
     for (const seed of SEEDS) {
@@ -76,18 +72,17 @@ function run() {
             PRNGManager.setSeed(seed);
             const stateA = PRNGManager.getState();
 
-            // step 1: 选风格
-            const styleIndex = Math.floor(PRNGManager.next() * count);
-            const styleId = allStyles[styleIndex].id;
+            // step 1: 消耗一次 PRNG（原用于选风格）
+            PRNGManager.next();
             const stateB = PRNGManager.getState();
 
             // step 2: generateFullSong
             const engine = new MelodyEngine();
-            const { track, context } = engine.generateFullSong(styleId);
+            const { track, context } = engine.generateFullSong(params);
             const stateC = PRNGManager.getState();
 
             // step 4: arrange
-            const arranged = Orchestrator.arrange(track, styleId, context);
+            const arranged = Orchestrator.arrange(track, params, context);
             const stateD = PRNGManager.getState();
 
             // step 5: MidiConverter
@@ -105,8 +100,6 @@ function run() {
             const result: SeedResult = {
                 seed,
                 stateA,
-                selectedStyleId: styleId,
-                selectedStyleName: StyleIdName[styleId] || `Unknown(${styleId})`,
                 stateB,
                 track: {
                     bpm: track.bpm,
@@ -151,7 +144,7 @@ function run() {
             results.push(result);
 
             console.log(`\nSeed ${seed}:`);
-            console.log(`  Style: ${result.selectedStyleName} (id=${styleId})`);
+            console.log(`  Style: default params`);
             console.log(`  States: A=${stateA} → B=${stateB} → C=${stateC} → D=${stateD}`);
             console.log(`  Track: ${track.bpm}bpm, ${track.key}, ${track.sections.length} sections, ${track.melody.length} melody notes`);
             console.log(`  Arranged: melody=${arranged.melody.length}, LH=${arranged.pianoLH.length}, RH=${arranged.pianoRH.length}, drums=${arranged.drums?.length ?? 0}`);
@@ -168,8 +161,7 @@ function run() {
         generatedAt: new Date().toISOString(),
         prngAlgorithm: 'LCG: state = (state * 1664525 + 1013904223) % 4294967296',
         ppq: 480,
-        styleCount: count,
-        availableStyles: allStyles.map(s => ({ id: s.id, name: s.name })),
+        styleCount: 0,
         seeds: results,
     };
 

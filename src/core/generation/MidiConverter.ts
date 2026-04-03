@@ -6,8 +6,6 @@
  * 同一输入 = 同一输出（确定性）。
  */
 import { ArrangedTrack, NoteData, GeneratedChord } from './types';
-import { StyleId } from './config/StyleFlags';
-import { getStyleConfig } from './config/styles/StyleRegistry';
 import { PRNGManager } from '../utils/PRNG';
 
 const PPQ = 480;
@@ -155,9 +153,8 @@ export class MidiConverter {
         }
 
         // --- Fake Sidechain (CC11) ---
-        if (song.styleId !== undefined) {
-            const style = getStyleConfig(song.styleId);
-            const needsSidechain = style?.orchestration?.mixingPreferences?.requireSidechain || false;
+        {
+            const needsSidechain = song.requireSidechain || false;
 
             if (needsSidechain && song.drums) {
                 for (const n of song.drums) {

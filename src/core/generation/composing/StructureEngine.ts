@@ -1,6 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { SectionMetadata, SectionType, StyleConfig } from "../types";
-import { StyleId } from '../config/StyleFlags';
+import { SectionMetadata, SectionType, GenerationParams } from "../types";
 import { MoodId, MoodRegistry } from "../config/MoodFlags";
 
 // T-1 合规：将段落名称前缀映射为 SectionType 枚举值
@@ -25,11 +24,10 @@ function parseSectionType(name: string): SectionType {
 }
 
 export class StructureEngine {
-  public static generateFullSongStructure(timeSignature: [number, number], bpm: number, style: StyleConfig, moodId: MoodId = MoodId.Neutral): SectionMetadata[] {
+  public static generateFullSongStructure(timeSignature: [number, number], bpm: number, params: GenerationParams, moodId: MoodId = MoodId.Neutral): SectionMetadata[] {
     const sections: SectionMetadata[] =[];
     let currentBeat = 0;
     const beatsPerBar = timeSignature[0];
-    const styleId = style.id;
     const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
     const addSection = (name: string, bars: number, rawEnergy: number) => {
@@ -47,30 +45,15 @@ export class StructureEngine {
       // Base groove density scales with energy, then modified by Mood
       let density = Math.min(1.0, Math.max(0.1, (energy / 10) * 0.8 + 0.2));
       density = Math.min(1.0, density * mood.densityMultiplier);
-      const syncopationProb = style.rhythm.syncopationWeight || 0.5;
+      const syncopationProb = params.rhythm.syncopationWeight || 0.5;
 
-      // --- Phase 3 & 4: Genre-Bending & Riff-Driven Logic ---
-      let localStyleOverride: StyleId | undefined = undefined;
+      // --- Riff-Driven Logic ---
       let isRiffDriven: boolean | undefined = undefined;
 
-      // 1. Riff-Driven Logic (Option A)
       // Use configured probability, default to 0 if not set
-      const riffDrivenProb = style.melody.riffDrivenProbability ?? 0;
+      const riffDrivenProb = params.melody.riffDrivenProbability ?? 0;
       if (PRNGManager.next() < riffDrivenProb) {
           isRiffDriven = true;
-      }
-
-      // 2. Genre-Bending Logic (Option B)
-      // Occasionally inject a different style into PreChorus or Bridge
-      const genreBendingProb = style.harmonyRules?.genreBendingProbability ?? 0;
-      if ((type === SectionType.PreChorus || type === SectionType.Bridge || type === SectionType.Break) && PRNGManager.next() < genreBendingProb) {
-          const possibleOverrides = style.harmonyRules?.genreBendingOverrides ?? [];
-          // Pick an override that is DIFFERENT from the current style
-          const filteredOverrides = possibleOverrides.filter(s => s !== styleId);
-          if (filteredOverrides.length > 0) {
-              localStyleOverride = filteredOverrides[Math.floor(PRNGManager.next() * filteredOverrides.length)];
-              // console.log(`[StructureEngine] 🌪️ Genre-Bending Triggered! Section ${name} overridden with ${localStyleOverride}`);
-          }
       }
 
       sections.push({ 
@@ -81,17 +64,16 @@ export class StructureEngine {
         type,
         lengthBars: bars,
         phraseTemplate: "", // Deprecated
-        localStyleOverride,
         isRiffDriven,
         harmony: {
             baseProgression: [], // Will be filled by HarmonyEngine
-            complexityProb: style.harmonyRules?.reharmProbability || 0.3,
+            complexityProb: params.harmonyRules?.reharmProbability || 0.3,
             harmonicRhythm: 0.5
         },
         groove: {
             density,
             syncopationProb,
-            swing: style.rhythm.swingRatio || 0.0
+            swing: params.rhythm.swingRatio || 0.0
         },
         tracks: [
             {
@@ -178,7 +160,7 @@ export class StructureEngine {
     ];
 
     // 🌟 针对特定曲风的专属结构模板
-    if (style.global.structureTemplate === 'bossa') {
+    if (params.global.structureTemplate === 'bossa') {
       templates.push(
         // 模板E：Bossa Nova 专属 (开局即摇摆，无需漫长铺垫)
         () => {
@@ -190,7 +172,7 @@ export class StructureEngine {
           addSection("Chorus_Main", 16, 8);
         }
       );
-    } else if (style.global.structureTemplate === 'jazz') {
+    } else if (params.global.structureTemplate === 'jazz') {
       templates.push(
         // 模板F：Chill Jazzy 专属 (持续律动，不追求大起大落)
         () => {
@@ -202,7 +184,7 @@ export class StructureEngine {
           addSection("Chorus_Main", 16, 6);
         }
       );
-    } else if (style.global.structureTemplate === 'edm') {
+    } else if (params.global.structureTemplate === 'edm') {
       templates.push(
         // 模板G：Progressive House / EDM 专属 (The Journey)
         () => {

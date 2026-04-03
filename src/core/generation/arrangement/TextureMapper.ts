@@ -1,5 +1,5 @@
 import { PRNGManager } from "../../utils/PRNG";
-import { NoteData, GeneratedChord, StyleConfig, SectionMetadata, IdiomPreferences, Tonality } from "../types";
+import { NoteData, GeneratedChord, GenerationParams, SectionMetadata, Tonality } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
 
 /** S-2 合规：替代 GlobalContext 读取，由 Orchestrator 显式传入 */
@@ -10,30 +10,16 @@ export interface TextureRenderContext {
     timeSignature: [number, number];
     activeSection: SectionMetadata | null;
 }
-import { StyleId } from "../config/StyleFlags";
 
-import { BassIdiomRegistry } from "../idioms/bass/BassIdiomRegistry";
-import { registerAllBassIdioms } from "../idioms/bass";
-import { DrumIdiomRegistry } from "../idioms/drums/DrumIdiomRegistry";
-import { registerAllDrumIdioms } from "../idioms/drums";
-import { DrumIdiomContext } from "../idioms/drums/IDrumIdiom";
-import { PianoIdiomRegistry } from "../idioms/piano/PianoIdiomRegistry";
-import { PianoIdiomContext } from "../idioms/piano/IPianoIdiom";
-import { registerAllPianoIdioms } from "../idioms/piano";
-
-registerAllBassIdioms();
-registerAllDrumIdioms();
-registerAllPianoIdioms();
-
-import { CounterMelodyIdiomRegistry } from "../idioms/counterMelody/CounterMelodyIdiomRegistry";
-import { registerAllCounterMelodyIdioms } from "../idioms/counterMelody";
-import { RiffIdiomRegistry } from "../idioms/riff/RiffIdiomRegistry";
-import { VocalHarmonyIdiomRegistry } from "../idioms/vocal/VocalHarmonyIdiomRegistry";
-import { CounterMelodyContext } from "../idioms/counterMelody/ICounterMelodyIdiom";
-import { RiffContext } from "../idioms/riff/IRiffIdiom";
-import { VocalHarmonyContext } from "../idioms/vocal/IVocalHarmonyIdiom";
-
-registerAllCounterMelodyIdioms();
+// Drum MIDI pitches
+const KICK = 36;
+const SNARE = 38;
+const CHH = 42;
+const OHH = 46;
+const CRASH = 49;
+const RIDE = 51;
+const TOM_HI = 50;
+const TOM_LOW = 43;
 
 export class TextureMapper {
   public static generateBassLine(
@@ -41,10 +27,10 @@ export class TextureMapper {
     energyLevel: number,
     isSparseSection: boolean = false,
     isSectionEnd: boolean = false,
-    style?: StyleConfig,
+    params?: GenerationParams,
     melodyNotes: NoteData[] = [],
     isBassSolo: boolean = false,
-    idiomPreferences?: IdiomPreferences,
+    _unused?: unknown,
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
     renderCtx?: TextureRenderContext,
@@ -55,7 +41,7 @@ export class TextureMapper {
     const activeSection = renderCtx?.activeSection ?? null;
     const bpm = renderCtx?.bpm ?? 120;
 
-    // 🌟 Fix Bass Range: Ensure final bass root (after keyOffset) is strictly between E1 (28) and Eb2 (39)
+    // Fix Bass Range: Ensure final bass root (after keyOffset) is strictly between E1 (28) and Eb2 (39)
     let finalRoot = (chord.root + keyOffset) % 12;
     finalRoot += 24; // C1 to B1 (24 to 35)
     if (finalRoot < 28) finalRoot += 12; // E1 to Eb2 (28 to 39)
@@ -74,137 +60,113 @@ export class TextureMapper {
 
     const bassTones = HarmonyCore.getChordTones(chord, targetCenterForChordTones);
     const rootMidi = bassTones[0];
-    const thirdMidi = bassTones[1];
-    const fifthMidi = bassTones[2];
-    const seventhMidi = bassTones.length > 3 ? bassTones[3] : rootMidi + 12; // Default to octave if no 7th present to avoid dissonance
+    const fifthMidi = bassTones.length > 2 ? bassTones[2] : rootMidi + 7;
+    const octaveMidi = rootMidi + 12;
 
     const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
 
-    const grooveDensity = activeSection?.groove?.density ?? 0.5;
-    const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
+    const isElectronic = params?.rhythm?.strictGrid === true;
 
-    // safe: bassStyle is a string idiom name stored in idiomPreferences; unknown cast is safe here
-    let bassStyle = idiomPreferences?.bassStyle || "steady";
-    
-    // 🌟 跨界融合与情绪自适应 (Cross-genre Fusion & Mood Adaptation)
-    // 根据实际的 BPM 和 Energy 动态决定 Idiom，打破刻板印象
-    if (bpm > 130 && energyLevel >= 6) {
-        bassStyle = "syncopated"; // 高能量快歌倾向于切分或高密度
-    } else if (bpm < 90 || energyLevel <= 3) {
-        bassStyle = "sparse"; // 慢歌或低能量倾向于稀疏
-    }
-
-    let idiomName = bassStyle;
-    
-    const isEurodance = style?.id === StyleId.Eurodance;
-    const isTrance = style?.id === StyleId.Trance;
-    const isSynthwave = style?.id === StyleId.Synthwave;
-    const isElectronic = isEurodance || isTrance || isSynthwave;
-
-    if (isBassSolo && !isElectronic) {
-      idiomName = "solo";
-    } else if (activeSection?.isRiffDriven && !isElectronic) {
-      idiomName = "riff-driven";
-    }
-
-    const idiom = BassIdiomRegistry.getIdiom(idiomName) || BassIdiomRegistry.getIdiom("steady")!;
-
-    // 🌟 爵士/现代流行技巧：平滑的贝斯线条 (Stepwise Bassline / Inversions)
-    // 如果知道下一个和弦，尝试使用转位让贝斯线条更平滑 (例如 4级->5级->1级 变成 4->5->7(转位)->1)
+    // EDM Pedal Point: in electronic high-energy sections, chance of sustained key root
     let targetBassPitch = rootMidi;
-    let octaveMidi = rootMidi + 12;
-
-    // 🌟 EDM 专属技巧：持续低音 (Pedal Point)
-    // 在 Build-Up 或 Drop 中，有概率让贝斯一直保持在主音 (Key Root) 上，制造巨大张力
-    // 修复：随机的 Pedal Point 会导致贝斯在和弦根音和主音之间乱跳，破坏律动。
-    // 对于 Eurodance 等需要极强根音稳定性的曲风，禁用此功能。
-    if (isElectronic && !isEurodance && energyLevel >= 5 && PRNGManager.next() < 0.1) {
-      // 使用当前调的主音作为持续低音，并确保在 28-39 的安全贝斯音域内
+    if (isElectronic && energyLevel >= 5 && PRNGManager.next() < 0.1) {
       let finalKeyRoot = keyOffset % 12;
       finalKeyRoot += 24;
       if (finalKeyRoot < 28) finalKeyRoot += 12;
-      const keyRootMidi = finalKeyRoot - keyOffset;
-      targetBassPitch = keyRootMidi;
-      octaveMidi = keyRootMidi + 12;
+      targetBassPitch = finalKeyRoot - keyOffset;
     }
 
-    // 只有在非律动型曲风（抒情、电影、爵士）中，才允许使用和弦转位作为贝斯根音
-    const allowInversion = bassStyle === "sparse" || bassStyle === "melodic";
+    // Smooth bass voice leading: allow inversions in sparse/melodic contexts
+    const allowInversion = false;
 
     if (allowInversion && nextChord && PRNGManager.next() < 0.2) {
-      // 降低概率到 20%，避免过度使用转位导致根音缺失
-      const nextBassTones = HarmonyCore.getChordTones(
-        nextChord,
-        nextTargetCenter,
-      );
+      const thirdMidi = bassTones.length > 1 ? bassTones[1] : rootMidi + 4;
+      const nextBassTones = HarmonyCore.getChordTones(nextChord, nextTargetCenter);
       const nextRoot = nextBassTones[0];
-
-      // 检查是否可以通过三音或五音平滑过渡到下一个和弦的根音
       const distRoot = Math.abs(rootMidi - nextRoot);
       const distThird = Math.abs(thirdMidi - nextRoot);
       const distFifth = Math.abs(fifthMidi - nextRoot);
-
-      // 如果转位音离下一个和弦的根音更近（半音或全音），则使用转位
       if (distThird > 0 && distThird < distRoot && distThird <= 2) {
-        targetBassPitch = thirdMidi; // 使用三音转位
-        octaveMidi = targetBassPitch + 12;
+        targetBassPitch = thirdMidi;
       } else if (distFifth > 0 && distFifth < distRoot && distFifth <= 2) {
-        targetBassPitch = fifthMidi; // 使用五音转位
-        octaveMidi = targetBassPitch + 12;
+        targetBassPitch = fifthMidi;
       }
     }
 
-    const isCinematic = style?.id === StyleId.GhibliOrchestral;
-    const isBallad = style?.id === StyleId.PowerBallad || style?.id === StyleId.RussianFolkBallad;
+    // --- Inline bass generation algorithm ---
+    const notes: NoteData[] = [];
+    const chordStart = chord.startBeat;
+    const chordEnd = chord.endBeat;
+    const chordLen = chordEnd - chordStart;
 
-    // S-2 合规：注入 beatsPerBar/activeSection/keyOffset/grooveDNA，替代 GlobalContext 读取
-    const timeSignature = renderCtx?.timeSignature ?? [4, 4] as [number, number] /* safe: literal tuple default */;
-    const beatsPerBar = timeSignature[0] || 4;
-    const grooveDNA = activeSection?.grooveDNA || [];
-
-    const context: import('../idioms/bass/IBassIdiom').BassIdiomContext = {
-      chord,
-      energyLevel,
-      isSparseSection,
-      isSectionEnd,
-      style,
-      melodyNotes,
-      isBassSolo,
-      idiomPreferences,
-      nextChord,
-      nextEnergyLevel,
-      rootMidi,
-      thirdMidi,
-      fifthMidi,
-      seventhMidi,
-      safeScalePcs,
-      grooveDensity,
-      grooveSyncopation,
-      targetBassPitch,
-      octaveMidi,
-      nextTargetCenter,
-      bassTones,
-      isCinematic,
-      isBallad,
-      // S-2 合规：由 renderCtx 注入，替代 Bass Idiom 内部的 GlobalContext 读取
-      beatsPerBar,
-      activeSection,
-      keyOffset,
-      grooveDNA,
-    };
-
-    let notes = idiom.generate(context);
-
-    // Fallback if NeoSoul returns empty (it only handles melodic bass conditionally)
-    if (notes.length === 0 && idiomName === "neosoul") {
-      notes = BassIdiomRegistry.getIdiom("pop")!.generate(context);
+    // Determine step size based on energy
+    // low energy (1-3): whole note / half note, mid (4-6): quarter, high (7-10): 8th notes
+    let stepSize: number;
+    if (energyLevel <= 3 || isSparseSection) {
+      stepSize = Math.min(chordLen, 2.0); // half notes or whole chord
+    } else if (energyLevel <= 6) {
+      stepSize = 1.0; // quarter notes
+    } else {
+      stepSize = 0.5; // 8th notes
     }
 
-    notes = this.truncateToChordEnd(notes, chord.endBeat);
-    return this.deduplicateNotes(notes);
+    // max ~200 notes for a chord span (C-4 compliance)
+    let beat = chordStart;
+    let noteIndex = 0;
+    while (beat < chordEnd - 1e-6) {
+      const remaining = chordEnd - beat;
+      const dur = Math.min(stepSize, remaining);
+
+      let pitch = targetBassPitch;
+      // Occasional 5th on off-beats for movement
+      if (noteIndex > 0 && PRNGManager.next() < 0.2) {
+        pitch = fifthMidi;
+      }
+      // At high energy, occasional octave jump
+      if (energyLevel >= 7 && PRNGManager.next() < 0.15) {
+        pitch = octaveMidi;
+      }
+
+      const baseVel = 0.5 + energyLevel * 0.04;
+      // Accent beat 1 of each bar
+      const timeSignature = renderCtx?.timeSignature ?? [4, 4] as [number, number] /* safe: literal tuple default */;
+      const beatsPerBar = timeSignature[0] || 4;
+      const beatInBar = beat % beatsPerBar;
+      const accent = Math.abs(beatInBar) < 1e-6 ? 0.1 : 0;
+      const velocity = Math.min(1.0, baseVel + accent + (PRNGManager.next() * 0.05 - 0.025));
+
+      notes.push({
+        pitch,
+        onset: beat,
+        duration: dur,
+        velocity,
+      });
+
+      beat += stepSize;
+      noteIndex++;
+    }
+
+    // Section-end: add approach note to next chord root (walking bass feel)
+    if (isSectionEnd && nextChord && notes.length > 0) {
+      const last = notes[notes.length - 1];
+      const nextBassTones2 = HarmonyCore.getChordTones(nextChord, nextTargetCenter);
+      const nextRoot = nextBassTones2[0];
+      // Chromatic approach: one semitone below next root
+      const approachPitch = nextRoot - 1;
+      if (last.onset + last.duration < chordEnd - 1e-6) {
+        notes.push({
+          pitch: approachPitch,
+          onset: chordEnd - 0.5,
+          duration: 0.5,
+          velocity: 0.7,
+        });
+      }
+    }
+
+    return this.deduplicateNotes(this.truncateToChordEnd(notes, chordEnd));
   }
 
-  // 🌟 针对 Funk / Rock / EDM 等风格的前奏 Riff 生成器
+  // Signature riff generator for Funk / Rock / EDM intros
   public static generateSignatureRiff(
     scale: number[],
     rootNote: number,
@@ -212,24 +174,23 @@ export class TextureMapper {
     startBeat: number
   ): NoteData[] {
     const riff: NoteData[] = [];
-    const rhythmMask = [1, 0, 1, 1, 0, 1, 0, 0]; // 经典的切分节奏型 (Syncopated Mask)
+    const rhythmMask = [1, 0, 1, 1, 0, 1, 0, 0]; // Syncopated mask
     let currentBeat = 0;
-    
+
     while (currentBeat < lengthBeats) {
         for (let i = 0; i < rhythmMask.length; i++) {
             if (currentBeat >= lengthBeats) break;
-            
+
             if (rhythmMask[i] === 1) {
-                // 仅使用五声音阶，确保 Riff 极度洗脑且不会跑调
                 const pitch = rootNote + scale[Math.floor(PRNGManager.next() * scale.length)];
                 riff.push({
                     pitch: pitch,
                     onset: startBeat + currentBeat,
-                    duration: 0.25, // 短促有力的音符
-                    velocity: 100   // 强调力度
+                    duration: 0.25,
+                    velocity: 100
                 });
             }
-            currentBeat += 0.5; // 1/8 音符步进
+            currentBeat += 0.5; // 1/8 note step
         }
     }
     return riff;
@@ -241,7 +202,7 @@ export class TextureMapper {
     energyLevel: number,
     isIntro: boolean = false,
     isOutro: boolean = false,
-    style?: StyleConfig,
+    params?: GenerationParams,
     swingRatio: number = 0.5,
     nextEnergyLevel: number = 3,
     hasFullGrooveStarted: boolean = false,
@@ -250,98 +211,128 @@ export class TextureMapper {
     melodyNotes: NoteData[] = [],
     renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
     const timeSignature = renderCtx?.timeSignature ?? [4, 4] as [number, number] /* safe: literal tuple default */;
-    const activeSection = renderCtx?.activeSection ?? null;
+    const beatsPerBar = timeSignature[0] || 4;
     const bpm = renderCtx?.bpm ?? 120;
-
-    // 🌟 跨界融合与情绪自适应 (Cross-genre Fusion & Mood Adaptation)
-    const is68 = timeSignature[0] === 6 && timeSignature[1] === 8;
+    const activeSection = renderCtx?.activeSection ?? null;
     const isSwing = swingRatio > 0.5;
     const isHalfTime = activeSection?.groove?.feel === "half-time";
     const grooveDensity = activeSection?.groove?.density ?? 0.5;
-    const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
-    const laybackOffset = isSwing ? 0.05 : 0;
 
-    // 动态调整 Drum Style
-    let finalDrumStyle = drumStyle;
-    if (bpm > 130 && energyLevel >= 6) {
-        finalDrumStyle = "high-energy";
-    } else if (bpm < 90 || energyLevel <= 3) {
-        finalDrumStyle = "sparse";
-    } else if (bpm >= 90 && bpm <= 110 && energyLevel >= 5 && style?.id === StyleId.Lofi) {
-        finalDrumStyle = "syncopated";
+    const notes: NoteData[] = [];
+    // max ~500 drum notes per section (C-4 compliance)
+
+    const stepSize = 0.25; // 16th note resolution
+    let beat = startBeat;
+
+    while (beat < endBeat - 1e-6) {
+      const beatInBar = ((beat - startBeat) % beatsPerBar);
+      const isDownbeat = Math.abs(beatInBar) < 1e-6;
+      const isBeat3 = Math.abs(beatInBar - 2.0) < 1e-6;
+      const isBeat2 = Math.abs(beatInBar - 1.0) < 1e-6;
+      const isBeat4 = Math.abs(beatInBar - 3.0) < 1e-6;
+      const is8thNote = Math.abs(beatInBar % 0.5) < 1e-6;
+      const is16thNote = Math.abs(beatInBar % 0.25) < 1e-6;
+
+      const baseVel = 0.45 + energyLevel * 0.05;
+
+      // --- Kick drum: beats 1 and 3 ---
+      if (isDownbeat || isBeat3) {
+        const vel = Math.min(1.0, baseVel + 0.15 + (PRNGManager.next() * 0.04 - 0.02));
+        notes.push({ pitch: KICK, onset: beat, duration: 0.25, velocity: vel });
+      }
+      // Extra kicks at high energy on certain 8th positions
+      if (energyLevel >= 7 && !isDownbeat && !isBeat3 && is8thNote && PRNGManager.next() < 0.2) {
+        notes.push({ pitch: KICK, onset: beat, duration: 0.25, velocity: baseVel * 0.8 });
+      }
+
+      // --- Snare: beats 2 and 4 ---
+      if (isBeat2 || isBeat4) {
+        const vel = Math.min(1.0, baseVel + 0.1 + (PRNGManager.next() * 0.04 - 0.02));
+        if (!isHalfTime || isBeat4) {
+          notes.push({ pitch: SNARE, onset: beat, duration: 0.25, velocity: vel });
+        }
+      }
+      // Ghost notes on 16th note positions at higher energy
+      if (energyLevel >= 5 && is16thNote && !is8thNote && PRNGManager.next() < 0.15 * grooveDensity) {
+        notes.push({ pitch: SNARE, onset: beat, duration: 0.125, velocity: baseVel * 0.4 });
+      }
+
+      // --- Hi-hat: every 8th note ---
+      if (is8thNote) {
+        // Intro: lighter hi-hat
+        if (isIntro && !hasFullGrooveStarted) {
+          if (PRNGManager.next() < 0.5) {
+            notes.push({ pitch: CHH, onset: beat, duration: 0.25, velocity: baseVel * 0.5 });
+          }
+        } else {
+          const hhVel = isDownbeat ? baseVel * 0.9 : baseVel * 0.65;
+          notes.push({ pitch: CHH, onset: beat, duration: 0.25, velocity: Math.min(1.0, hhVel + PRNGManager.next() * 0.03) });
+        }
+      }
+      // 16th hi-hats at very high energy
+      if (energyLevel >= 8 && is16thNote && !is8thNote && PRNGManager.next() < 0.4) {
+        notes.push({ pitch: CHH, onset: beat, duration: 0.125, velocity: baseVel * 0.35 });
+      }
+
+      // --- Open hi-hat: occasional on off-beats at mid-high energy ---
+      if (energyLevel >= 5 && is8thNote && !isDownbeat && !isBeat2 && !isBeat3 && !isBeat4 && PRNGManager.next() < 0.1) {
+        notes.push({ pitch: OHH, onset: beat, duration: 0.5, velocity: baseVel * 0.6 });
+      }
+
+      // --- Crash: on downbeat of first bar, or section transitions ---
+      if (isDownbeat && Math.abs(beat - startBeat) < 1e-6 && hasFullGrooveStarted) {
+        notes.push({ pitch: CRASH, onset: beat, duration: 1.0, velocity: Math.min(1.0, baseVel + 0.2) });
+      }
+
+      // --- Ride: replace hi-hat in low-energy or swing contexts ---
+      if (isSwing && is8thNote && energyLevel <= 5) {
+        notes.push({ pitch: RIDE, onset: beat, duration: 0.5, velocity: baseVel * 0.55 });
+      }
+
+      // --- Tom fills near section end (last bar) ---
+      if (isOutro && (endBeat - beat) < beatsPerBar && is8thNote && PRNGManager.next() < 0.25) {
+        const tomPitch = PRNGManager.next() < 0.5 ? TOM_HI : TOM_LOW;
+        notes.push({ pitch: tomPitch, onset: beat, duration: 0.25, velocity: baseVel * 0.7 });
+      }
+
+      beat += stepSize;
     }
 
-    const context: DrumIdiomContext = {
-      startBeat,
-      endBeat,
-      energyLevel,
-      isIntro,
-      isOutro,
-      style,
-      swingRatio,
-      nextEnergyLevel,
-      hasFullGrooveStarted,
-      grooveRatio,
-      beatsPerBar: timeSignature[0] || 4,
-      is68,
-      isSwing,
-      isHalfTime,
-      grooveDensity,
-      grooveSyncopation,
-      laybackOffset,
-      melodyNotes,
-      activeSection,  // S-2 合规：注入 activeSection，替代 null
-      idiomPreferences: { drumStyle: finalDrumStyle },
-      KICK: 36,
-      SNARE: 38,
-      CHH: 42,
-      PHH: 44,
-      OHH: 46,
-      CRASH: 49,
-      CROSS_STICK: 37,
-      TOM_HI: 50,
-      TOM_MID: 47,
-      TOM_LOW: 43,
-      RIDE: 51,
-      RIDE_BELL: 53,
-      CHINA: 52,
-      SPLASH: 55,
-      CRASH2: 57,
-    };
-
-    const idiom = DrumIdiomRegistry.getIdiom(finalDrumStyle) || DrumIdiomRegistry.getIdiom("steady")!;
-    return idiom.generate(context);
+    return notes;
   }
 
   public static generateCounterMelody(
     chord: GeneratedChord,
     energyLevel: number,
     melodyNotes: NoteData[],
-    style?: StyleConfig,
+    params?: GenerationParams,
     renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    let counterMelodyStyle = style?.orchestration?.idiomPreferences?.counterMelodyStyle || "sustained";
-    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
-    const bpm = renderCtx?.bpm ?? 120;
+    // Simple sustained chord-tone counter melody
+    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
+    const tonality = renderCtx?.tonality ?? Tonality.Major;
 
-    // 动态调整 CounterMelody Style
-    if (bpm > 130 && energyLevel >= 6) {
-        counterMelodyStyle = "rhythmic";
-    } else if (bpm < 90 || energyLevel <= 3) {
-        counterMelodyStyle = "sustained";
-    }
+    // Use chord tones centered around C4 area (MIDI 60)
+    const chordTones = HarmonyCore.getChordTones(chord, 60);
+    // Pick 3rd or 5th of chord for the counter melody voice
+    const targetPitch = chordTones.length > 2
+      ? (PRNGManager.next() < 0.6 ? chordTones[1] : chordTones[2])  // 3rd (60%) or 5th (40%)
+      : chordTones[0] + 7; // fallback to 5th interval
 
-    // S-2 合规：注入 keyOffset/tonality/activeSection，替代 GlobalContext 读取
-    const cmKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
-    const cmTonality = renderCtx?.tonality ?? Tonality.Major;
-    const cmActiveSection = renderCtx?.activeSection ?? null;
-    const context: CounterMelodyContext = { chord, energyLevel, melodyNotes, style, keyOffset: cmKeyOffset, tonality: cmTonality, activeSection: cmActiveSection };
-    const idiom = CounterMelodyIdiomRegistry.getIdiom(counterMelodyStyle) || CounterMelodyIdiomRegistry.getIdiom("sustained")!;
-    let notes = idiom.generate(context);
-    notes = this.truncateToChordEnd(notes, chord.endBeat);
-    return notes;
+    const chordDur = chord.endBeat - chord.startBeat;
+    const velocity = 0.35 + energyLevel * 0.03;
+
+    const notes: NoteData[] = [];
+    // One sustained note per chord
+    notes.push({
+      pitch: targetPitch,
+      onset: chord.startBeat,
+      duration: Math.max(chordDur - 0.125, 0.5), // slightly shorter than chord for breathing room
+      velocity: Math.min(1.0, velocity),
+    });
+
+    return this.truncateToChordEnd(notes, chord.endBeat);
   }
 
   public static generateChordTexture(
@@ -352,69 +343,93 @@ export class TextureMapper {
     isSectionEnd: boolean = false,
     melodyNotes: NoteData[] = [],
     nextChord?: GeneratedChord,
-    style?: StyleConfig,
+    params?: GenerationParams,
     prevVoicing?: number[],
     nextEnergyLevel?: number,
     pianoStyle: string = "block-chord",
     renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    // 🌟 跨界融合与情绪自适应 (Cross-genre Fusion & Mood Adaptation)
-    // S-2 合规：优先从 renderCtx 参数读取，回退到 GlobalContext（兼容旧调用方）
     const activeSection = renderCtx?.activeSection ?? null;
-    const notes: NoteData[] = [];
-    const grooveDensity = activeSection?.groove?.density ?? 0.5;
-    const grooveSyncopation = activeSection?.groove?.syncopationProb ?? 0.2;
     const bpm = renderCtx?.bpm ?? 120;
+    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
 
-    let finalPianoStyle = pianoStyle;
-    if (bpm > 130 && energyLevel >= 6) {
-        finalPianoStyle = "rhythmic";
-    } else if (bpm < 90 || energyLevel <= 3) {
-        finalPianoStyle = "sparse";
+    // Get chord tones centered around C4 (MIDI 60) for piano/chord register
+    const chordTones = HarmonyCore.getChordTones(chord, 60);
+    const chordStart = chord.startBeat;
+    const chordEnd = chord.endBeat;
+    const chordLen = chordEnd - chordStart;
+    const baseVelocity = 0.4 + energyLevel * 0.04;
+
+    const notes: NoteData[] = [];
+    // max ~100 chord notes per chord (C-4 compliance)
+
+    // Normalize texture type for matching
+    const texLower = textureType.toLowerCase ? textureType.toLowerCase() : textureType;
+    const isArpeggio = texLower === 'arpeggio' || texLower === 'broken';
+    const isPad = texLower === 'pad' || texLower === 'sustained';
+
+    if (isArpeggio) {
+      // --- Arpeggio: cycle through chord tones one at a time ---
+      const step = energyLevel >= 6 ? 0.25 : 0.5; // 16th or 8th note arpeggios
+      let beat = chordStart;
+      let idx = 0;
+      while (beat < chordEnd - 1e-6) {
+        const toneIdx = idx % chordTones.length;
+        const vel = Math.min(1.0, baseVelocity + (PRNGManager.next() * 0.06 - 0.03));
+        notes.push({
+          pitch: chordTones[toneIdx],
+          onset: beat,
+          duration: step,
+          velocity: vel,
+        });
+        beat += step;
+        idx++;
+      }
+    } else if (isPad) {
+      // --- Pad: long sustained chord tones ---
+      for (let i = 0; i < chordTones.length; i++) {
+        notes.push({
+          pitch: chordTones[i],
+          onset: chordStart,
+          duration: Math.max(chordLen - 0.0625, 0.5),
+          velocity: Math.min(1.0, baseVelocity * 0.8 + PRNGManager.next() * 0.02),
+        });
+      }
+    } else {
+      // --- Block chord (default): all chord tones at once on each beat ---
+      const step = energyLevel <= 3 ? 2.0 : (energyLevel <= 6 ? 1.0 : 0.5);
+      let beat = chordStart;
+      while (beat < chordEnd - 1e-6) {
+        const remaining = chordEnd - beat;
+        const dur = Math.min(step, remaining);
+        const vel = Math.min(1.0, baseVelocity + (PRNGManager.next() * 0.06 - 0.03));
+        for (let i = 0; i < chordTones.length; i++) {
+          notes.push({
+            pitch: chordTones[i],
+            onset: beat,
+            duration: dur,
+            velocity: vel,
+          });
+        }
+        beat += step;
+      }
     }
 
-    const isJazz = finalPianoStyle === 'jazz' || finalPianoStyle === 'bossa';
-
-    const context: PianoIdiomContext = {
-      chord,
-      energyLevel,
-      textureType,
-      isSparseSection,
-      isSectionEnd,
-      melodyNotes,
-      nextChord,
-      style,
-      prevVoicing,
-      nextEnergyLevel,
-      pianoStyle: finalPianoStyle,
-      baseVelocity: 0.6,
-      beatsPerBar: (renderCtx?.timeSignature ?? [4, 4] as [number, number] /* safe: literal tuple default */)[0] || 4,
-      grooveDensity,
-      grooveSyncopation,
-      // S-2 合规：注入 keyOffset/tonality/activeSection，替代 GlobalContext 读取
-      keyOffset: chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0),
-      tonality: renderCtx?.tonality ?? Tonality.Major,
-      activeSection: renderCtx?.activeSection ?? null,
-    };
-
-    const idiom = PianoIdiomRegistry.getIdiom(finalPianoStyle) || PianoIdiomRegistry.getIdiom("block-chord")!;
-    let generatedNotes = idiom.generate(context);
-
-    // 移除导致尾音短促的逻辑，改为让最后一个和弦自然延音
+    // Sparse section end: let the last chord ring out
+    let generatedNotes = notes;
     if (isSparseSection && isSectionEnd && generatedNotes.length > 0) {
-      // 如果是稀疏段落的最后一个和弦（比如 Outro 结尾），让它自然延长，但限制最大长度防止采样截断
       generatedNotes.forEach((n) => {
         n.duration = Math.min(Math.max(n.duration, 2.0), 3.0);
       });
     } else {
-      generatedNotes = this.truncateToChordEnd(generatedNotes, chord.endBeat);
+      generatedNotes = this.truncateToChordEnd(generatedNotes, chordEnd);
     }
     return this.deduplicateNotes(generatedNotes);
   }
 
   private static truncateToChordEnd(notes: NoteData[], chordEndBeat: number): NoteData[] {
     return notes.map(n => {
-      if (n.onset >= chordEndBeat) return null; // Note starts after chord ends (shouldn't happen, but just in case)
+      if (n.onset >= chordEndBeat) return null; // Note starts after chord ends
       if (n.onset + n.duration > chordEndBeat) {
         return { ...n, duration: chordEndBeat - n.onset };
       }
@@ -423,7 +438,7 @@ export class TextureMapper {
     }).filter(n => n !== null) as NoteData[];
   }
 
-  // P-1 合规：数组 + some() 替代 Set 去重，同时避免字符串拼接 (M-2)
+  // P-1 合規：数组 + some() 替代 Set 去重
   private static deduplicateNotes(notes: NoteData[]): NoteData[] {
     const result: NoteData[] = [];
     for (const note of notes) {
@@ -435,34 +450,105 @@ export class TextureMapper {
     return result;
   }
 
-  // 🌟 优先级5：引入固定音型 (Riff Generator)
+  // Riff generator: simple root-based rhythmic pattern
   public static generateRiff(
     chord: GeneratedChord,
     energyLevel: number,
-    style?: StyleConfig,
+    params?: GenerationParams,
     renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    const riffStyle = style?.orchestration?.idiomPreferences?.riffStyle || "default";
-    // S-2 合规：注入 keyOffset/tonality，替代 Riff Idiom 内部的 GlobalContext 读取
     const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
     const tonality = renderCtx?.tonality ?? Tonality.Major;
-    const context: RiffContext = { chord, energyLevel, style, keyOffset, tonality };
-    return RiffIdiomRegistry.getIdiom(riffStyle).generate(context);
+    const chordTones = HarmonyCore.getChordTones(chord, 60);
+    const root = chordTones[0];
+    const fifth = chordTones.length > 2 ? chordTones[2] : root + 7;
+
+    const notes: NoteData[] = [];
+    const chordStart = chord.startBeat;
+    const chordEnd = chord.endBeat;
+    // max ~50 riff notes per chord (C-4 compliance)
+
+    // Simple rhythmic riff pattern: root-root-5th-root with syncopation
+    const pattern = [0, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
+    const pitchPattern = [root, root, fifth, root, fifth, root, root, fifth];
+
+    for (let i = 0; i < pattern.length; i++) {
+      const onset = chordStart + pattern[i];
+      if (onset >= chordEnd - 1e-6) break;
+      // Skip some notes randomly for variation
+      if (i > 0 && PRNGManager.next() < 0.2) continue;
+
+      const vel = 0.6 + energyLevel * 0.03 + (PRNGManager.next() * 0.06 - 0.03);
+      notes.push({
+        pitch: pitchPattern[i],
+        onset,
+        duration: 0.25,
+        velocity: Math.min(1.0, vel),
+      });
+    }
+
+    return this.truncateToChordEnd(notes, chordEnd);
   }
 
-  // 🌟 P2: 智能人声和声生成模块 (Vocal Harmony Module)
+  // Vocal harmony: add harmony a 3rd above melody notes (scale-aware)
   public static generateVocalHarmony(
     melodyNotes: NoteData[],
     chords: GeneratedChord[],
-    style: StyleConfig | undefined,
+    params: GenerationParams | undefined,
     energyLevel: number,
     tonality: Tonality,
     keyOffset?: number,
   ): NoteData[] {
-    const vocalStyle = style?.orchestration?.idiomPreferences?.vocalStyle || "pop";
-    // S-2 合规：keyOffset 显式传入，替代 GlobalContext.currentKeyOffset
     const resolvedKeyOffset = keyOffset ?? 0;
-    const context: VocalHarmonyContext = { melodyNotes, chords, energyLevel, tonality, keyOffset: resolvedKeyOffset };
-    return VocalHarmonyIdiomRegistry.getIdiom(vocalStyle).generate(context);
+    const notes: NoteData[] = [];
+    // max ~300 harmony notes for a full song (C-4 compliance)
+
+    for (let ni = 0; ni < melodyNotes.length; ni++) {
+      const mel = melodyNotes[ni];
+      // Only harmonize a portion of notes (more at higher energy)
+      const harmonyProb = 0.3 + energyLevel * 0.06;
+      if (PRNGManager.next() > harmonyProb) continue;
+
+      // Find the chord active at this melody note's onset
+      let activeChord: GeneratedChord | null = null;
+      for (let ci = 0; ci < chords.length; ci++) {
+        if (chords[ci].startBeat <= mel.onset + 1e-6 && chords[ci].endBeat > mel.onset + 1e-6) {
+          activeChord = chords[ci];
+          break;
+        }
+      }
+
+      if (activeChord === null) continue;
+
+      // Get scale pitches for the active chord
+      const scalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
+      const melPc = mel.pitch % 12;
+
+      // Find the melody note's position in the scale, then go up 2 scale steps (a 3rd)
+      // Build ascending scale from melody pitch
+      let harmonyPitch = mel.pitch + 4; // default: major 3rd up
+      // Try to find a scale-aware 3rd
+      let foundInScale = false;
+      for (let s = 0; s < scalePcs.length; s++) {
+        if (Math.abs(scalePcs[s] - melPc) < 1e-6) {
+          // Go up 2 scale degrees
+          const targetPc = scalePcs[(s + 2) % scalePcs.length];
+          let interval = targetPc - melPc;
+          if (interval <= 0) interval += 12;
+          harmonyPitch = mel.pitch + interval;
+          foundInScale = true;
+          break;
+        }
+      }
+
+      notes.push({
+        pitch: harmonyPitch,
+        onset: mel.onset,
+        duration: mel.duration,
+        velocity: mel.velocity * 0.7, // softer than lead
+      });
+    }
+
+    return notes;
   }
 }

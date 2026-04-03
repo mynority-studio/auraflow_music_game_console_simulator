@@ -1,6 +1,5 @@
 import { WorkletSynthesizer } from 'spessasynth_lib';
 import { getAudioContext } from './SynthManager';
-import { StyleId } from '../generation/config/StyleFlags';
 
 export class AudioMixer {
     public masterBus: GainNode;

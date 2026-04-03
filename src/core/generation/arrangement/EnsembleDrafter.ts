@@ -1,11 +1,9 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { EnsembleDraft, StyleConfig } from '../types';
-import { StyleId } from '../config/StyleFlags';
-import { InstrumentId, InstrumentIdFamily, isPianoFamily } from '../config/InstrumentFlags';
-import { InstrumentFamily } from '../performance/InstrumentIdiom';
+import { EnsembleDraft, GenerationParams } from '../types';
+import { InstrumentId, isPianoFamily } from '../config/InstrumentFlags';
 
 export class EnsembleDrafter {
-    public static draft(style: StyleConfig): EnsembleDraft {
+    public static draft(params: GenerationParams): EnsembleDraft {
         // 1. 决定核心乐器
         const melodyPool = [
             { id: InstrumentId.Acoustic_Grand, tags: ['all'] },
@@ -31,33 +29,25 @@ export class EnsembleDrafter {
             { id: InstrumentId.Voice_Oohs, tags: ['pop', 'rnb', 'chill', 'acoustic', 'ballad'] }
         ];
 
-        const styleName = StyleId[style.id] || "";
-        const styleTags = styleName.toLowerCase().split('_');
+        // Simple random picker from full pool (style tag matching removed)
+        const pick = (pool: {id: InstrumentId; tags: string[]}[]) => pool[Math.floor(PRNGManager.next() * pool.length)].id;
 
-        const getInstrumentFromPool = (pool: { id: InstrumentId; tags: string[] }[]): InstrumentId => {
-            const matches = pool.filter(item =>
-                item.tags.includes('all') || item.tags.some((tag: string) => styleTags.some(st => st.includes(tag) || tag.includes(st)))
-            );
-            const selectedPool = matches.length > 0 ? matches : pool;
-            return selectedPool[Math.floor(PRNGManager.next() * selectedPool.length)].id;
-        };
-
-        let melodySound = getInstrumentFromPool(melodyPool);
+        let melodySound = pick(melodyPool);
 
         let secondaryMelodySound: InstrumentId | undefined = undefined;
 
         // 只有 30% 的概率出现双主奏交替 (Duet)
         if (PRNGManager.next() < 0.3) {
             let attempts = 0;
-            let candidate = getInstrumentFromPool(melodyPool);
+            let candidate = pick(melodyPool);
             while (candidate === melodySound && attempts < 5) {
-                candidate = getInstrumentFromPool(melodyPool);
+                candidate = pick(melodyPool);
                 attempts++;
             }
             if (candidate !== melodySound) secondaryMelodySound = candidate;
         }
 
-        let chordSound: InstrumentId | null = getInstrumentFromPool(chordPool);
+        let chordSound: InstrumentId | null = pick(chordPool);
 
         // 2. 决定乐队编制 (Ensemble Template)
         const rand = PRNGManager.next();
@@ -65,28 +55,16 @@ export class EnsembleDrafter {
         let drumSound: InstrumentId | null = InstrumentId.Standard_DrumKit;
         let counterMelodySound: InstrumentId | null = null;
 
-        const isCinematic = style.id === StyleId.GhibliOrchestral;
-
-        if (rand < 0.10 && !isCinematic) {
+        if (rand < 0.10) {
             // Acoustic Duo
             bassSound = null;
             drumSound = null;
         } else if (rand < 0.20) {
-            // Jazz Trio (placeholder, no jazz StyleId yet)
+            // Jazz Trio
             bassSound = InstrumentId.Acoustic_Bass;
             drumSound = null;
-        } else if (rand < 0.30 && isCinematic) {
-            // Chamber/Orchestral
-            chordSound = InstrumentId.String_Ensemble;
-            bassSound = InstrumentId.Acoustic_Bass;
-            drumSound = null;
-            counterMelodySound = getInstrumentFromPool(padPool);
-        } else if (rand < 0.40 && !isCinematic) {
+        } else if (rand < 0.40) {
             // Rhythmic
-            const isAcousticBallad = style.id === StyleId.PowerBallad || style.id === StyleId.RussianFolkBallad;
-            if (!isAcousticBallad) {
-                chordSound = null;
-            }
             bassSound = InstrumentId.Electric_Bass_Finger;
             drumSound = InstrumentId.Standard_DrumKit;
         } else {
@@ -94,36 +72,36 @@ export class EnsembleDrafter {
             bassSound = InstrumentId.Electric_Bass_Finger;
             drumSound = InstrumentId.Standard_DrumKit;
             if (PRNGManager.next() < 0.4) {
-                counterMelodySound = getInstrumentFromPool(padPool);
+                counterMelodySound = pick(padPool);
             }
         }
 
-        // 3. 结合曲风的配置进行覆盖或限制
-        if (style.orchestration.bassInstruments && style.orchestration.bassInstruments.length > 0) {
+        // 3. 结合配置进行覆盖或限制
+        if (params.orchestration.bassInstruments && params.orchestration.bassInstruments.length > 0) {
             if (bassSound !== null) {
-                bassSound = style.orchestration.bassInstruments[Math.floor(PRNGManager.next() * style.orchestration.bassInstruments.length)];
+                bassSound = params.orchestration.bassInstruments[Math.floor(PRNGManager.next() * params.orchestration.bassInstruments.length)];
             }
         }
 
-        const counterProb = style.orchestration.counterMelodyProbability !== undefined ? style.orchestration.counterMelodyProbability : (counterMelodySound !== null ? 1.0 : 0.0);
+        const counterProb = params.orchestration.counterMelodyProbability !== undefined ? params.orchestration.counterMelodyProbability : (counterMelodySound !== null ? 1.0 : 0.0);
         if (PRNGManager.next() < counterProb || melodySound === InstrumentId.Solo_Vox) {
             if (counterMelodySound === null) {
-                counterMelodySound = getInstrumentFromPool(padPool);
+                counterMelodySound = pick(padPool);
             }
         } else {
             counterMelodySound = null;
         }
 
-        // 结合曲风的 drumProbability 进一步限制
-        const drumProb = style.orchestration.drumProbability !== undefined ? style.orchestration.drumProbability : 1.0;
+        // 结合配置的 drumProbability 进一步限制
+        const drumProb = params.orchestration.drumProbability !== undefined ? params.orchestration.drumProbability : 1.0;
         if (PRNGManager.next() > drumProb) {
             drumSound = null;
         } else if (drumSound === null) {
             drumSound = InstrumentId.Standard_DrumKit;
         }
 
-        if (style.orchestration.drumInstruments && style.orchestration.drumInstruments.length > 0 && drumSound !== null) {
-            drumSound = style.orchestration.drumInstruments[Math.floor(PRNGManager.next() * style.orchestration.drumInstruments.length)];
+        if (params.orchestration.drumInstruments && params.orchestration.drumInstruments.length > 0 && drumSound !== null) {
+            drumSound = params.orchestration.drumInstruments[Math.floor(PRNGManager.next() * params.orchestration.drumInstruments.length)];
         }
 
         // T-1 合规：使用 InstrumentFamily 枚举替换字符串子串匹配 (.includes('Grand') 等)

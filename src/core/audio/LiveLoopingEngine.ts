@@ -6,9 +6,6 @@ import { AudioEngine } from './AudioEngine';
 import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
 
-import { StyleRegistry } from '../generation/config/styles/StyleRegistry';
-
-import { StyleId } from "../generation/config/StyleFlags";
 import { InstrumentId, InstrumentIdName } from "../generation/config/InstrumentFlags";
 
 export class LiveLoopingEngine {
@@ -72,19 +69,8 @@ export class LiveLoopingEngine {
             this.mixer.connectSpessaSynth(spessaSynth);
         }
         
-        // 🌟 0. Set Mix Style based on song styleId
-        if (song.styleId !== undefined) {
-            const styleId = song.styleId;
-            if (styleId === StyleId.Eurodance || styleId === StyleId.Trance || styleId === StyleId.Synthwave) {
-                this.mixer.setMixStyle('electro');
-            } else if (styleId === StyleId.RussianFolkBallad || styleId === StyleId.PowerBallad) {
-                this.mixer.setMixStyle('folk');
-            } else {
-                this.mixer.setMixStyle('default');
-            }
-        } else {
-            this.mixer.setMixStyle('default');
-        }
+        // 🌟 0. Set Mix Style based on song.mixStyle
+        this.mixer.setMixStyle(song.mixStyle || 'default');
 
         const selectedProfile = 'Recording_Studio';
         await this.mixer.applyMasteringProfile(selectedProfile);

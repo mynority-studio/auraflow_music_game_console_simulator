@@ -1,11 +1,8 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, GeneratedChord, SectionMetadata, SectionType, StyleConfig, SingerPersonaConfig, ChordQuality, CQ_IS_DIM, CQ_IS_DOM, Tonality } from '../types';
+import { NoteData, GeneratedChord, SectionMetadata, SectionType, GenerationParams, ChordQuality, CQ_IS_DIM, CQ_IS_DOM, Tonality } from '../types';
 import { HarmonyCore } from './HarmonyCore';
 import { GrooveEngine } from './GrooveEngine';
-import { SingerPersona } from '../performance/SingerPersona';
-import { resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
-import { getStyleGrammar } from '../styles/GrammarRegistry';
-import { InstrumentId } from '../config/InstrumentFlags';
+import { InstrumentId, resolveInstrumentFamily, InstrumentFamily } from '../config/InstrumentFlags';
 
 type Contour = 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
 type PhraseForm = string[]; // e.g., ['A', 'A', 'B', 'A']
@@ -20,7 +17,6 @@ interface MotifTemplate {
     phraseLengthBeats: number;
 }
 
-import { StyleId } from '../config/StyleFlags';
 import { MoodId, MoodRegistry } from '../config/MoodFlags';
 
 export class ToplineEngine {
@@ -91,8 +87,8 @@ export class ToplineEngine {
     }
 
     public static generateTrackMelody(
-        sections: SectionMetadata[], chords: GeneratedChord[], style: StyleConfig,
-        tonality: Tonality, persona: SingerPersonaConfig, instrumentId: InstrumentId = InstrumentId.Acoustic_Grand,
+        sections: SectionMetadata[], chords: GeneratedChord[], params: GenerationParams,
+        tonality: Tonality, instrumentId: InstrumentId = InstrumentId.Acoustic_Grand,
         userMotif?: NoteData[], isSecondary: boolean = false,
         timeSignature: [number, number] = [4, 4], bpm: number = 120, moodId: MoodId = MoodId.Neutral
     ): NoteData[] {
@@ -100,7 +96,7 @@ export class ToplineEngine {
         const beatsPerBar = timeSignature[0]; // S-2 合规：从参数读取，不依赖 GlobalContext
 
         // 🌟 Phase 1: Global Groove Strategy (Now decoupled per section)
-        const verseDensityMult = style.contrast.verseDensityMultiplier || 1.0;
+        const verseDensityMult = params.contrast.verseDensityMultiplier || 1.0;
         
         sections.forEach(section => {
             // Use decoupled groove parameters from section
@@ -122,7 +118,7 @@ export class ToplineEngine {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
             if (chorusChords.length === 0) chorusChords.push(chords[0]);
             // Generate motifs only, don't realize notes yet
-            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentId, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, bpm, moodId);
+            const result = this.generateSectionMelody(firstChorus, chorusChords, params, tonality, instrumentId, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, bpm, moodId);
             Object.assign(chorusMotifs, result.motifs);
         }
 
@@ -175,7 +171,7 @@ export class ToplineEngine {
                 }
             }
 
-            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentId, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, bpm, moodId);
+            const result = this.generateSectionMelody(section, sectionChords, params, tonality, instrumentId, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, bpm, moodId);
             
             sectionMelodies[index] = result.notes;
             currentPreviousPitch = result.lastPitch; // Pass the last pitch to the next section!
@@ -330,8 +326,8 @@ export class ToplineEngine {
     }
 
     private static generateSectionMelody(
-        section: SectionMetadata, chords: GeneratedChord[], style: StyleConfig,
-        tonality: Tonality, persona: SingerPersonaConfig, instrumentId: InstrumentId,
+        section: SectionMetadata, chords: GeneratedChord[], params: GenerationParams,
+        tonality: Tonality, instrumentId: InstrumentId,
         beatsPerBar: number, userMotif?: NoteData[],
         providedMotifs?: Record<string, MotifTemplate>,
         incomingPreviousPitch: number | null = null,
@@ -356,10 +352,10 @@ export class ToplineEngine {
         let isIntro = false;
         let isOutro = false;
         
-        let pitchOffset = style.contrast.versePitchOffset;
+        let pitchOffset = params.contrast.versePitchOffset;
 
         if (section.type === SectionType.Chorus) {
-            pitchOffset = style.contrast.chorusPitchOffset || 5;
+            pitchOffset = params.contrast.chorusPitchOffset || 5;
         } else if (section.type === SectionType.Solo_Bridge) {
             pitchOffset = 12;
             isSolo = true;
@@ -453,7 +449,7 @@ export class ToplineEngine {
                 currentBeat += motifLengthBeats;
             }
             // S-2 合规：显式传递 tonality 和 bpm，不依赖 GlobalContext
-            const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentId, tonality, bpm);
+            const humanizedMelody = sectionMelody;
             
             let lastPitch = currentPreviousPitch;
             if (humanizedMelody.length > 0) {
@@ -593,7 +589,7 @@ export class ToplineEngine {
 
                 const contour = contours[Math.floor(PRNGManager.next() * contours.length)];
 
-                let rhythm3D = this.generateMotifRhythm(melodyGroove, noteCount, phraseLength, sectionDensity, (isIntro || isOutro) && phraseIdx === 0, !isSolo && !isLead, style, section.energyLevel);
+                let rhythm3D = this.generateMotifRhythm(melodyGroove, noteCount, phraseLength, sectionDensity, (isIntro || isOutro) && phraseIdx === 0, !isSolo && !isLead, params, section.energyLevel);
                 let rhythmOffsets = [...rhythm3D.pickup, ...rhythm3D.body, ...rhythm3D.tail];
                 
                 if (userMotif && (motifUsage === 'RhythmOnly' || motifUsage === 'BrokenDown') && baseLabel === 'A') {
@@ -646,7 +642,7 @@ export class ToplineEngine {
             }
 
             const isLastPhraseOfIntro = isIntro && phraseIdx === totalPhrases - 1;
-            const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentId, isLastPhraseOfIntro, section.name, style, currentPreviousPitch, forceStrongResolution, false, 0, false, macroTargetDegree, beatsPerBar);
+            const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentId, isLastPhraseOfIntro, section.name, params, currentPreviousPitch, forceStrongResolution, false, 0, false, macroTargetDegree, beatsPerBar);
             
             currentPreviousPitch = phraseResult.lastPitch;
             const phraseNotes = phraseResult.notes;
@@ -693,14 +689,14 @@ export class ToplineEngine {
             }
         }
 
-        const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentId);
+        const humanizedMelody = sectionMelody;
         return { notes: humanizedMelody, motifs, lastPitch: currentPreviousPitch, unresolvedCount: consecutiveUnresolved };
     }
 
 
     // 🌟 核心升级 2 实现：基于 Schillinger 干涉理论生成具体节奏点 (Pick-up + Body + Tail)
     // S-2 合规：energyLevel 从参数传入，不读 GlobalContext.getActiveSection()
-    private static generateMotifRhythm(baseGroove: number[], targetNoteCount: number, phraseLength: number, density: number, isIntroFirstPhrase: boolean = false, isVocal: boolean = false, style?: StyleConfig, energyLevel: number = 5): { pickup: number[], body: number[], tail: number[] } {
+    private static generateMotifRhythm(baseGroove: number[], targetNoteCount: number, phraseLength: number, density: number, isIntroFirstPhrase: boolean = false, isVocal: boolean = false, params?: GenerationParams, energyLevel: number = 5): { pickup: number[], body: number[], tail: number[] } {
         
         let interference: number[] = [];
 
@@ -836,7 +832,7 @@ export class ToplineEngine {
     // 🌟 核心升级 4 & 5 实现：结合和弦、线型、起承转合生成音高
     private static realizeMotif(
         template: MotifTemplate, phraseStart: number, chords: GeneratedChord[], 
-        tonality: Tonality, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentId: InstrumentId, isLastPhraseOfIntro: boolean = false, sectionName: string = '', style?: StyleConfig,
+        tonality: Tonality, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentId: InstrumentId, isLastPhraseOfIntro: boolean = false, sectionName: string = '', params?: GenerationParams,
         incomingPreviousPitch: number | null = null,
         forceStrongResolution: boolean = false,
         isClimax: boolean = false,
@@ -848,9 +844,8 @@ export class ToplineEngine {
         const notes: NoteData[] = [];
         const targetCenter = 60 + pitchShift;
         // S-2 合规：activeSection 已通过 sectionName 参数传入，不读 GlobalContext
-        // safe: style 在唯一调用处 generateSectionMelody 中始终为必填参数
-        const grammar = getStyleGrammar(style!);
-        const melodyRules = grammar.melodyRules;
+        // safe: params 在唯一调用处 generateSectionMelody 中始终为必填参数
+        const melodyRules = { anticipationProbability: 0.2, pentatonicGapProbability: 0.3, tailResolution: false };
         let currentTension = 0;
 
         const { rhythmOffsets, contour, rhythm, anchors } = template;
@@ -950,7 +945,7 @@ export class ToplineEngine {
             }
 
             // 🌟 Neo-Soul / Advanced: Pentatonic Shifts
-            const pentatonicShiftProb = style?.melody?.pentatonicShiftProbability ?? 0;
+            const pentatonicShiftProb = params?.melody?.pentatonicShiftProbability ?? 0;
             if (pentatonicShiftProb > 0 && PRNGManager.next() < pentatonicShiftProb) {
                 if (activeChord.quality === ChordQuality.Minor7 || activeChord.quality === ChordQuality.Minor9) {
                     // Minor pentatonic built on the 5th
@@ -1050,7 +1045,7 @@ export class ToplineEngine {
                         if (targetChordTones[2] !== undefined) targetTones.push(targetChordTones[2]); // 五音
                         
                         // 只有在极少数情况（如爵士或 Neo-Soul）且容忍度高时，才允许七音作为半解决
-                        const maxDissonance = style?.harmonyRules?.maxDissonanceTolerance ?? 0.6;
+                        const maxDissonance = params?.harmonyRules?.maxDissonanceTolerance ?? 0.6;
                         if (maxDissonance > 0.6 && targetChordTones.length > 3 && PRNGManager.next() > 0.8) {
                             targetTones.push(targetChordTones[3]); // 七音
                         }
@@ -1124,7 +1119,7 @@ export class ToplineEngine {
                 } else {
                     // 🌟 不和谐音控制 (Dissonance Control)
                 const isEmotionalCore = sectionName.includes('Intro') || sectionName.includes('Chorus') || sectionName.includes('Outro');
-                const maxDissonance = style.harmonyRules?.maxDissonanceTolerance ?? 0.6;
+                const maxDissonance = params.harmonyRules?.maxDissonanceTolerance ?? 0.6;
                 
                 // 根据 maxDissonanceTolerance 动态计算使用和弦内音的概率
                 // 容忍度越高，使用和弦内音的概率越低（允许更多音阶音/延伸音）
@@ -1180,7 +1175,7 @@ export class ToplineEngine {
             if (previousPitch !== null) {
                 // 现代流行乐 (R&B/Rap影响) 喜欢同音反复，制造“念白感”或“律动感”
                 // 🌟 数据驱动的旋律锚定 (Melody Anchoring)
-                const anchorProb = style?.melody?.anchorProbability ?? (isVocal ? 0.35 : 0.15);
+                const anchorProb = params?.melody?.anchorProbability ?? (isVocal ? 0.35 : 0.15);
                 const isConversational = !isSolo && PRNGManager.next() < anchorProb;
                 if (isConversational && duration < 1.0) {
                     currentPitch = previousPitch;
@@ -1196,7 +1191,7 @@ export class ToplineEngine {
                 if (notes.length >= 2) {
                     const prevPrevPitch = notes[notes.length - 2].pitch;
                     const prevInterval = previousPitch - prevPrevPitch;
-                    const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5; // 默认纯四度及以上视为大跳
+                    const leapThreshold = params?.melody?.leapResolutionThreshold ?? 5; // 默认纯四度及以上视为大跳
                     if (Math.abs(prevInterval) >= leapThreshold) { 
                         shouldFillGap = true;
                         gapDirection = prevInterval > 0 ? -1 : 1; // 反向
@@ -1224,7 +1219,7 @@ export class ToplineEngine {
                     const r = PRNGManager.next();
                     let allowedMaxInterval = 2; // 默认级进 (m2, M2)
                     
-                    const maxJump = style?.melody?.maxJumpInterval ?? 12;
+                    const maxJump = params?.melody?.maxJumpInterval ?? 12;
                     
                     if (r < 0.70) {
                         allowedMaxInterval = 2; // 70% 概率 1-2 半音
@@ -1264,7 +1259,7 @@ export class ToplineEngine {
                     const maxGraceNotesPerPhrase = isSolo ? 2 : 1;
                     let graceNotesInPhrase = notes.filter(n => n.isGraceNote).length;
                     
-                    const graceChance = style?.melody?.inflectionProbability ?? (isSolo ? 0.08 : (isInstrumental ? 0.04 : 0.02)); // 大幅降低倚音频率
+                    const graceChance = params?.melody?.inflectionProbability ?? (isSolo ? 0.08 : (isInstrumental ? 0.04 : 0.02)); // 大幅降低倚音频率
                     if (PRNGManager.next() < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
                         const lastNote = notes[notes.length - 1];
                         // 只有当上一个音足够长，且当前音在强拍或次强拍时，才加倚音，增加“高级感”
@@ -1282,11 +1277,11 @@ export class ToplineEngine {
                             // 🌟 爵士/R&B 技巧：4度到3度，或者2度到3度的滑音 (Pentatonic Slides)
                             // 如果目标音是和弦的三音，有概率使用 4->3 或 2->3 的倚音
                             const isThird = (currentPitch % 12) === ((chordTones[1] || chordTones[0]+4) % 12);
-                            const shiftProb = style?.melody?.pentatonicShiftProbability ?? 0.4;
+                            const shiftProb = params?.melody?.pentatonicShiftProbability ?? 0.4;
                             if (isThird && PRNGManager.next() < shiftProb) {
                                 const slideFrom4 = PRNGManager.next() > 0.5;
                                 gracePitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, slideFrom4 ? 1 : -1);
-                            } else if (isSolo && PRNGManager.next() < (style?.melody?.chromaticPassingProbability ?? 0.2)) {
+                            } else if (isSolo && PRNGManager.next() < (params?.melody?.chromaticPassingProbability ?? 0.2)) {
                                 // 🌟 Bebop 技巧：半音包围 (Chromatic Enclosure)
                                 // 在目标音之前加入上方半音或下方半音的经过音
                                 const encloseFromAbove = PRNGManager.next() > 0.5;

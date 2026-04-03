@@ -20,7 +20,6 @@ export class GenerationError extends Error {
  * };
  */
 import { MoodId } from './config/MoodFlags';
-import { StyleId } from './config/StyleFlags';
 import { InstrumentId } from './config/InstrumentFlags';
 
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
@@ -199,13 +198,13 @@ export interface MacroStructure {
 }
 // -------------------------------------------------------
 
-export interface StyleConfig {
-    id: StyleId; name: string; description?: string;
-    global: { 
-        bpmRange: [number, number]; 
-        timeSignaturePool: Array<{ signature:[number, number], weight: number }>; 
+/** 通用音乐生成参数 — 纯音乐计算，零风格意识 */
+export interface GenerationParams {
+    global: {
+        bpmRange: [number, number];
+        timeSignaturePool: Array<{ signature:[number, number], weight: number }>;
         tonalityPool: Array<{ tonality: Tonality, weight: number }>;
-        structureTemplate?: 'pop' | 'edm' | 'jazz' | 'bossa' | 'cinematic'; // 🌟 新增：结构模板
+        structureTemplate?: 'pop' | 'edm' | 'jazz' | 'bossa' | 'cinematic';
     };
     harmony: { chorusPool: ChordProgression[]; versePool: ChordProgression[]; preChorusPool: ChordProgression[]; };
     harmonyRules?: {
@@ -213,30 +212,28 @@ export interface StyleConfig {
         passingChords?: Array<'SecondaryDominant' | 'Diminished7' | 'TritoneSub' | 'Chromatic' | 'DescendingDiminished' | 'SharpFourHalfDim'>;
         allowTritoneSub?: boolean;
         reharmProbability?: number;
-        melodyDrivenReharmProbability?: number; // 🌟 新增：旋律引导的和声替换概率
+        melodyDrivenReharmProbability?: number;
         borrowedChords?: Array<'ModalMixture' | 'Neapolitan' | 'SecondaryDominant' | 'TritoneSubstitution'>;
         voicingStyle?: 'standard' | 'neo-soul' | 'jazz' | 'jpop' | 'edm' | 'pop-rock';
-        globalProgressionProbability?: number; // 🌟 新增：全曲共用一套和弦的概率
-        genreBendingProbability?: number; // 🌟 新增：段落发生风格突变的概率
-        genreBendingOverrides?: StyleId[]; // 🌟 新增：段落发生风格突变时的备选曲风
-        preferJPopProgressions?: boolean; // 🌟 新增：是否偏好 J-Pop 和声进行
+        globalProgressionProbability?: number;
+        preferJPopProgressions?: boolean;
     };
     rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; };
-    melody: { 
-        stepwiseRatio: number; 
-        maxJumpInterval: number; 
-        tensionTolerance: number; 
-        mutationProbability: number; 
-        mutationPool: Array<'inversion' | 'augmentation' | 'truncation' | 'retrograde' | 'diminution'>; 
+    melody: {
+        stepwiseRatio: number;
+        maxJumpInterval: number;
+        tensionTolerance: number;
+        mutationProbability: number;
+        mutationPool: Array<'inversion' | 'augmentation' | 'truncation' | 'retrograde' | 'diminution'>;
         pentatonicPreference?: number;
         extensionPreference?: number;
         chromaticPassingProbability?: number;
-        leapResolutionThreshold?: number; // 🌟 新增：多大的音程被视为大跳并需要反向解决
+        leapResolutionThreshold?: number;
         syncopationResolution?: 'strict' | 'loose';
         inflectionProbability?: number;
         pentatonicShiftProbability?: number;
-        anchorProbability?: number; // 🌟 新增：同音反复的概率
-        riffDrivenProbability?: number; // 🌟 新增：段落由 Riff 驱动的概率
+        anchorProbability?: number;
+        riffDrivenProbability?: number;
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
@@ -247,16 +244,15 @@ export interface StyleConfig {
         drumInstruments: InstrumentId[];
         counterMelodyInstruments: InstrumentId[];
         texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass'>;
-        drumProbability?: number; // 🌟 新增：鼓组出场率，彻底解耦
-        counterMelodyProbability?: number; // 副旋律出场率
-        fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic'; // 🌟 新增：加花风格
-        vocalProbability?: number; // 🌟 新增：主唱出场率
-        outroRingOutProbability?: number; // 🌟 新增：尾奏使用 BigRingOut 的概率
-        allowTradingFours?: boolean; // 🌟 新增：是否允许乐器对话 (Trading Fours)
-        allowIntroRiffs?: boolean; // 🌟 新增：是否允许前奏 Riff
-        allowRitardando?: boolean; // 🌟 新增：是否允许结尾渐慢
-        grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
-        idiomPreferences?: IdiomPreferences;
+        drumProbability?: number;
+        counterMelodyProbability?: number;
+        fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic';
+        vocalProbability?: number;
+        outroRingOutProbability?: number;
+        allowTradingFours?: boolean;
+        allowIntroRiffs?: boolean;
+        allowRitardando?: boolean;
+        grooveRatio?: { foundation: number; comping: number; color: number; };
         mixingPreferences?: {
             requireSidechain?: boolean;
             melody?: MixingConfig;
@@ -268,7 +264,6 @@ export interface StyleConfig {
             counterMelody?: MixingConfig;
         };
     };
-    performance: { allowedPersonas: string[]; };
 }
 
 // T-1 合规：SectionType 数值枚举，替代 section.name.includes() 字符串子串匹配
@@ -286,13 +281,6 @@ export enum SectionType {
     PreOutro = 10,
     Solo_Bridge = 11,
 }
-
-export interface SingerPersonaConfig {
-    id: string; name: string;
-    traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
-}
-
-
 
 
 export interface SectionMetadata {
@@ -319,32 +307,10 @@ export interface SectionMetadata {
     groove?: GrooveState;
     tracks?: TrackState[];
 
-    // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
-    localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
-    isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)
+    // --- Riff-Driven ---
+    isRiffDriven?: boolean;      // 是否由 Riff 驱动
 }
 
-/** 风格级乐器惯用法偏好（静态配置，存储在 StyleConfig 中） */
-export interface IdiomPreferences {
-    counterMelodyStyle?: string;
-    pianoStyle?: string;
-    drumStyle?: string;
-    bassStyle?: string;
-    riffStyle?: string;
-    vocalStyle?: string;
-}
-
-/** 运行时扩展的乐器惯用法偏好（由 Orchestrator 注入 sections/timeSignature 等运行时数据） */
-export interface RuntimeIdiomPreferences extends IdiomPreferences {
-    sections?: SectionMetadata[];
-    timeSignature?: [number, number];
-    synthStyle?: string;
-    arpPattern?: string;
-    arpRate?: number;
-    guitarStyle?: string;
-    stringStyle?: string;
-    humanizeAmount?: number;
-}
 
 export interface MixingConfig {
     pan?: number; // -1 (left) to 1 (right)
@@ -389,12 +355,10 @@ export interface MusicContext {
     bpm: number;
     timeSignature: [number, number];
     grooveDNA: number[];
-    singerPersona: SingerPersonaConfig | null;
     moodId?: MoodId;
 }
 
 export interface GenerationOptions {
-    styleId?: StyleId;
     moodId?: MoodId;
     seed?: number;
     length?: 'short' | 'medium' | 'long';
@@ -412,13 +376,96 @@ export interface TempoCurve {
     curveType: 'linear' | 'exponential';
 }
 
-export interface ArrangedTrack { 
+export interface ArrangedTrack {
     bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
-    styleId?: StyleId;
+    mixStyle?: string;
+    requireSidechain?: boolean;
     vocal?: NoteData[]; melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
-    palette?: EnsembleDraft; 
+    palette?: EnsembleDraft;
     sections?: SectionMetadata[];
-    globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
-    chords?: GeneratedChord[]; // 全曲和弦进行
-    tempoCurves?: TempoCurve[]; // 渐慢/渐快曲线
+    globalRiff?: NoteData[];
+    chords?: GeneratedChord[];
+    tempoCurves?: TempoCurve[];
+}
+
+/** 通用默认生成参数（基于中性流行风格） */
+export function getDefaultParams(): GenerationParams {
+    return {
+        global: {
+            bpmRange: [75, 115] as [number, number],
+            timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],
+            tonalityPool: [
+                { tonality: Tonality.Major, weight: 0.7 },
+                { tonality: Tonality.Minor, weight: 0.3 }
+            ]
+        },
+        harmony: {
+            chorusPool: [
+                ['IV', 'V', 'iii', 'vi'],
+                ['vi', 'IV', 'I', 'V'],
+                ['I', 'V', 'vi', 'iii'],
+                ['I', 'vi', 'IV', 'V']
+            ],
+            versePool: [
+                ['I', 'V', 'vi', 'iii'],
+                ['I', 'vi', 'IV', 'V'],
+                ['vi', 'iii', 'IV', 'I'],
+                ['ii', 'V', 'I', 'vi']
+            ],
+            preChorusPool: [
+                ['ii', 'V', 'iii', 'vi'],
+                ['IV', 'V', 'vi', 'vi'],
+                ['IV', 'V', 'I', 'I']
+            ]
+        },
+        harmonyRules: {
+            maxDissonanceTolerance: 0.4,
+            reharmProbability: 0.2,
+            borrowedChords: ['ModalMixture'],
+            voicingStyle: 'standard'
+        },
+        rhythm: {
+            densityBase: [0.4, 0.7] as [number, number],
+            syncopationWeight: 0.4,
+            restProbability: 0.15,
+            disruptionProbability: 0.05,
+            humanize: 0.1,
+            swingRatio: 0
+        },
+        melody: {
+            stepwiseRatio: 0.7,
+            maxJumpInterval: 12,
+            tensionTolerance: 0.1,
+            mutationProbability: 0.2,
+            mutationPool: ['inversion', 'augmentation']
+        },
+        contrast: {
+            chorusPitchOffset: 7,
+            verseDensityMultiplier: 0.6,
+            versePitchOffset: -2
+        },
+        modulation: {
+            probability: 0.4,
+            targetSection: 'Final_Chorus',
+            intervalPool: [1, 2]
+        },
+        orchestration: {
+            melodyInstruments: [InstrumentId.Acoustic_Grand, InstrumentId.Acoustic_Grand, InstrumentId.String_Ensemble, InstrumentId.Warm_EP],
+            chordInstruments: [InstrumentId.Acoustic_Grand, InstrumentId.Acoustic_Grand, InstrumentId.Acoustic_Guitar_Chord, InstrumentId.Warm_EP],
+            bassInstruments: [InstrumentId.Electric_Bass_Finger, InstrumentId.Electric_Bass_Pick, InstrumentId.Fretless_Bass, InstrumentId.Acoustic_Bass],
+            drumInstruments: [InstrumentId.Standard_DrumKit],
+            counterMelodyInstruments: [InstrumentId.String_Ensemble, InstrumentId.String_Ensemble, InstrumentId.Pad_1_NewAge, InstrumentId.Pad_3_Polysynth],
+            texturePool: ['Arpeggio', 'Arpeggio', 'Block', 'Pad'],
+            drumProbability: 1.0,
+            counterMelodyProbability: 0.9,
+            grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
+            mixingPreferences: {
+                melody: { pan: 0, reverb: 0.5, delay: 0.2 },
+                chord: { pan: -0.25, reverb: 0.6, volume: -4.0 },
+                counterMelody: { pan: -0.6, volume: -5.0 },
+                drums: { reverb: 0.15, volume: -1.0 },
+                bass: { reverb: 0.25, volume: -4.0 }
+            }
+        }
+    };
 }
