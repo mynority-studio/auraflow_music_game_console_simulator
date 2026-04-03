@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "golden-seed": "tsx scripts/golden-seed.ts"
+    "golden-seed": "tsx scripts/golden-seed.ts",
+    "array-stats": "tsx scripts/array-stats.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

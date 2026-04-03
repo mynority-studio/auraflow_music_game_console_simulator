@@ -6,4 +6,4 @@ coverage/
 *.log
 .env*
 !.env.example
-scripts/golden-seed-output*.json
+scripts/*-output*.json
