@@ -32,7 +32,7 @@
 
 `MidiConverter.convert()` 由平台层（PlaybackEngine）内部调用，因为 `channelMap`（MIDI 通道分配）是平台层职责，App 层不应感知具体通道编号。
 
-**禁止**：管道外部代码调用 `PRNGManager.next()`。外部消耗 PRNG 会破坏管道内的确定性消耗序列。唯一例外是 step 1（选风格），该调用必须紧邻 `generateFullSong()` 之前。
+**禁止**：管道外部代码调用 `PRNGManager.next()`。外部消耗 PRNG 会破坏管道内的确定性消耗序列。唯一例外是 step 1（PRNG 消耗 ×1 保持序列对齐），该调用必须紧邻 `generateFullSong()` 之前。
 
 **禁止**：管道外部代码直接 import 内部子模块（如 `HarmonyEngine`、`ToplineEngine`、`TextureMapper`、`GrooveEngine`）。内部子模块仅限管道内部互相调用。
 
@@ -40,8 +40,8 @@
 
 | 场景 | 做法 | 不需改动 |
 |------|------|---------|
-| 新增风格 | StyleRegistry 注册 + StyleFlagTable 声明 flags | 管道接口 |
-| 新增乐器 Idiom | `/src/core/generation/performance/idioms/` 下新增文件 | 管道接口 |
+| 新增风格预设 | `/src/core/generation/presets/` 下新增 `Partial<GenerationParams>` 文件，通过 `mergeParams()` 合并 | 管道接口 |
+| 新增演奏 Idiom | `/src/core/generation/idioms/` 下新增文件，TextureMapper 按 `drumMode`/`bassMode`/`pianoMode` 分派 | 管道接口 |
 | 新增生成子模块 | 放入对应模块目录，自动继承本 Rule 全部约束 | 管道拓扑 |
 | 新增管道阶段 | **禁止** — 四模块拓扑不可变，需先修订本 Rule | — |
 
@@ -59,7 +59,7 @@
                   │ next() ×N        │ next() ×M        │ ×0
                   ▼                  ▼                  ▼
               ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
- StyleId ────►│ MelodyEngine │  │ Orchestrator │  │ Midi         │
+ Params ─────►│ MelodyEngine │  │ Orchestrator │  │ Midi         │
  Options? ───►│              ├─►│              ├─►│ Converter    ├──► MidiEvent[]
               └──────────────┘  └──────────────┘  └──────────────┘
                      │                 │                  │
@@ -79,7 +79,7 @@
 | # | 模块 | 职责 | PRNG |
 |---|------|------|------|
 | 0 | PRNGManager | 确定性伪随机序列，支持状态快照/恢复 | 供给方 |
-| 1 | MelodyEngine | 从风格配置生成完整曲目（结构/和声/旋律/编制） | ×N |
+| 1 | MelodyEngine | 从 GenerationParams 生成完整曲目（结构/和声/旋律/编制） | ×N |
 | 2 | Orchestrator | 单旋律展开为多轨编配 | ×M |
 | 3 | MidiConverter | 多轨 NoteData → MidiEvent[] | ×0 |
 
@@ -90,7 +90,7 @@
 | L-1 | 严格线性：PRNG → Melody → Orchestrate → Playback，禁止跨层调用 |
 | L-2 | 模块间仅通过函数参数与返回值传递数据，禁止访问对方内部状态 |
 | L-3 | PRNGManager 为唯一允许的全局可变单例 |
-| L-4 | 风格查表（StyleRegistry / StyleFlagTable）为静态只读数据层，非独立模块 |
+| L-4 | 风格预设（`presets/`）为静态只读数据层，通过 `mergeParams()` 注入，非独立模块 |
 | L-5 | 管道终点为 `MidiEvent[]`，之后的调度/合成属于平台层 |
 | L-6 | **确定性**：同一 PRNG 状态 + 同一输入 = 同一输出（具体实现规则见 §4.1） |
 
@@ -98,10 +98,11 @@
 
 ```
 step 0  PRNGManager.setSeed(seed)
-step 1  styleId = allStyles[Math.floor(PRNGManager.next() * count)] // ×1
-step 2  { track, context } = engine.generateFullSong(styleId, options?)
-step 3  history.push({ track, styleId, context })
-step 4  arranged = Orchestrator.arrange(track, styleId, context)
+step 1  params = createParams(preset?)  // 合并风格预设（或使用默认参数）
+        PRNGManager.next() // ×1，保持 PRNG 序列对齐
+step 2  { track, context } = engine.generateFullSong(params, options?)
+step 3  history.push({ track, context })
+step 4  arranged = Orchestrator.arrange(track, params, context)
         ──── 以下为平台层（PlaybackEngine 内部）────
 step 5  events = MidiConverter.convert(arranged, channelMap)  // ← 管道终点
 step 6  midiScheduler.load(events) → play
@@ -132,7 +133,7 @@ class PRNG {
 ```typescript
 class MelodyEngine {
   generateFullSong(
-    styleId: StyleId,
+    params: GenerationParams,
     options?: GenerationOptions
   ): { track: GeneratedTrack; context: MusicContext };
 }
@@ -150,7 +151,7 @@ class MelodyEngine {
 class Orchestrator {
   static arrange(
     track: GeneratedTrack,
-    styleId: StyleId,
+    params: GenerationParams,
     context: MusicContext
   ): ArrangedTrack;
 }
@@ -254,7 +255,7 @@ interface MusicContext {
   bpm: number;
   timeSignature: [number, number];
   grooveDNA: number[];
-  singerPersona: SingerPersonaConfig | null;
+  moodId?: MoodId;
 }
 
 interface GenerationOptions {
@@ -271,7 +272,8 @@ interface ArrangedTrack {
   key: string;
   absoluteStartBeat: number;
   timeSignature?: [number, number];
-  styleId?: StyleId;
+  mixStyle?: string;
+  requireSidechain?: boolean;
   vocal?: NoteData[];
   melody: NoteData[];
   secondaryMelody?: NoteData[];
@@ -307,22 +309,11 @@ interface MidiEvent {
 
 ### 3.3 枚举与位标志
 
-> **实现状态说明**：标记 ✅ 表示已在代码中实现，⏳ 表示目标设计。
-> StyleFlag 位掩码不实施 — 当前 StyleId 枚举直接比较已满足 T-1，位运算加速收益不对称。
+> **实现状态说明**：标记 ✅ 表示已在代码中实现。
+> 风格系统已重构为 `GenerationParams` + 预设文件（`presets/`），不再使用 StyleId 枚举。
+> 演奏模式通过 `drumMode`/`bassMode`/`pianoMode` 字符串字段选择，Idiom 独立文件在 `idioms/`。
 
 ```typescript
-// ✅ 风格标识 — 数值枚举，用于数组直接寻址（已实现于 StyleFlags.ts）
-enum StyleId {
-  ModernPop = 0, ClassicJPop = 1, ModernJPop = 2,
-  PopRock = 4, Eurodance = 7, Trance = 8,
-  Synthwave = 9, PowerBallad = 10, RussianFolkBallad = 11,
-  GhibliOrchestral = 12, Lofi = 16
-  // 值不连续，预留扩展空间
-}
-
-// 风格分类：不使用位掩码，StyleId 枚举直接比较已满足需求
-// style.id === StyleId.Eurodance || style.id === StyleId.Trance
-
 // ✅ Tonality — 数值枚举（已实现于 types.ts）
 enum Tonality {
   Major = 0, Minor, Major_Pentatonic, Minor_Pentatonic,
@@ -370,16 +361,7 @@ interface MixingConfig {
   delay?: number;                     // 0.0 ~ 1.0
 }
 
-interface SingerPersonaConfig {
-  id: string;                         // 仅日志/调试显示，不参与生成逻辑
-  name: string;                       // 仅日志/调试显示，不参与生成逻辑
-  traits: {
-    staccatoTendency: number;         // 0~1 断奏倾向
-    trailingFade: number;             // 0~1 叹息尾音概率
-    graceNoteProbability: number;     // 0~1 装饰音概率
-    syncopationPush: number;          // 0~1 抢拍强度
-  };
-}
+// SingerPersonaConfig 已移除 — 人声特征由 GenerationParams.melody 参数控制
 
 interface TempoCurve {
   startTick: number;
@@ -430,7 +412,7 @@ enum ChordQuality {
 | ID | 约束 |
 |----|------|
 | T-1 | 禁止 string 做**风格/段落分类**的查表键或子串匹配（如 `style.id.includes('house')`、`section.name.includes('Chorus')`），改用 enum 比较。和弦罗马数字（`chord.numeral`）作为音乐理论内部表示允许使用字符串 |
-| T-2 | 标识/分类用 enum，多状态组合用位掩码（见 §3.3 StyleId / StyleFlag） |
+| T-2 | 标识/分类用 enum，多状态组合用位掩码（见 §3.3 ChordQuality / Tonality） |
 | T-3 | 生成管道代码禁止 `any` 类型 |
 | T-4 | 禁止无注释的 `as` 强转 — 每处 `as` 必须附注释说明安全性理由 |
 | T-5 | 可选字段使用 `null` 或哨兵值（如 `0xFF`），禁止依赖 `undefined` 语义做逻辑分支 |

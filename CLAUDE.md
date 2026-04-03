@@ -73,11 +73,11 @@ ArrangedTrack → App 层调用 Orchestrator.arrange()
 
 ### 风格系统
 
-11 个已注册风格配置位于 `/src/core/generation/config/styles/`（ModernPop、ClassicJPop、Synthwave、GhibliOrchestral、Lofi 等）。`StyleRegistry` 为数组直接寻址表（index = `StyleId` 数值枚举），通过 `getStyleConfig(id)` 统一访问。每个风格定义和弦池、节奏参数、旋律约束、编配方案和允许的歌手人格。新增风格只需添加一个文件并在 StyleRegistry 中注册。
+风格系统采用**预设插槽架构**：核心引擎通过 `GenerationParams` 接口完全参数化，风格预设文件位于 `/src/core/generation/presets/`（如 `LofiPreset.ts`），导出 `Partial<GenerationParams>`。通过 `mergeParams(getDefaultParams(), preset)` 合并默认参数与风格覆盖。演奏模式 Idiom 独立于风格，按演奏特征命名（如 `SyncopatedCompingIdiom`），位于 `/src/core/generation/idioms/`，通过 `drumMode`/`bassMode`/`pianoMode` 参数分派。新增风格只需添加一个预设文件并在 BarData 中绑定。
 
 ### 乐器惯用法系统（Idiom）
 
-乐器专用渲染器位于 `/src/core/generation/performance/idioms/`（Piano、Guitar、String、Drum、Bass、Wind、SynthVoice）。每个 Idiom 接收共享的 `HarmonyState`，输出符合该乐器特性的 `NoteData`。`InstrumentIdiom` 调度器按乐器名称路由。
+演奏模式 Idiom 位于 `/src/core/generation/idioms/`（如 `piano/SyncopatedCompingIdiom`、`piano/StandardBlockIdiom`）。每个 Idiom 是纯函数，接收标准化 `PianoIdiomContext`，输出 `NoteData[]`。`TextureMapper` 根据 `GenerationParams.orchestration.pianoMode`/`drumMode`/`bassMode` 字段路由到对应 Idiom。Idiom 按**演奏特征**命名（非风格绑定），支持 Fusion 复用。
 
 ## 关键开发规则
 
