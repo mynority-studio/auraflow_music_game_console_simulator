@@ -65,7 +65,7 @@ export class SteadyBassIdiom extends BaseBassIdiom {
     const beatsPerBar = ctx.beatsPerBar;
     const grooveDNA = ctx.grooveDNA || [];
     for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
-      const isChordStart = beat === chord.startBeat;
+      const isChordStart = Math.abs(beat - chord.startBeat) < 1e-6;
       const beatInBar = beat % beatsPerBar;
 
       let maskAccent = 0;
@@ -124,7 +124,7 @@ export class SteadyBassIdiom extends BaseBassIdiom {
           duration: hasMelodyAccent ? 0.25 : 0.5, // 贴合主旋律时，贝斯更短促有力
           velocity: baseVel * 1.1 * (maskAccent === 1 ? 1.1 : 1.0),
         });
-      } else if (nextChord && beat === chord.endBeat - 0.5 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
+      } else if (nextChord && Math.abs(beat - (chord.endBeat - 0.5)) < 1e-6 && (PRNGManager.next() < grooveSyncopation * 1.5 || maskAccent === 1)) {
         // 🌟 线性连接 (Walkdown/Walkup) - 趋近下一个和弦的根音
         const approachPitch = getApproachNote(nextTargetCenter || targetBassPitch, beat, PRNGManager.next() > 0.5);
         notes.push({

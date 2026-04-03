@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, GeneratedChord, SectionMetadata, SectionType, StyleConfig, SingerPersonaConfig, ChordQuality, Tonality } from '../types';
+import { NoteData, GeneratedChord, SectionMetadata, SectionType, StyleConfig, SingerPersonaConfig, ChordQuality, CQ_IS_DIM, CQ_IS_DOM, Tonality } from '../types';
 import { HarmonyCore } from './HarmonyCore';
 import { GrooveEngine } from './GrooveEngine';
 import { SingerPersona } from '../performance/SingerPersona';
@@ -1022,14 +1022,12 @@ export class ToplineEngine {
                     let targetChord = activeChord;
                     let targetChordTones = chordTones;
                     
+                    const qBit = 1 << activeChord.quality;
                     const isTensePassingChord = (
-                        activeChord.numeral.includes('°') || 
-                        activeChord.numeral.includes('dim') || 
-                        activeChord.numeral.includes('aug') || 
-                        activeChord.numeral.includes('/') || 
-                        activeChord.numeral === 'VII7' || 
-                        activeChord.numeral === 'III7' ||
-                        activeChord.numeral.includes('sus')
+                        !!(qBit & (CQ_IS_DIM | CQ_IS_DOM)) ||
+                        activeChord.quality === ChordQuality.Augmented ||
+                        activeChord.quality === ChordQuality.Sus4 ||
+                        activeChord.quality === ChordQuality.Dominant7Sus4
                     ) && (activeChord.endBeat - activeChord.startBeat <= 2);
 
                     if (isTensePassingChord) {

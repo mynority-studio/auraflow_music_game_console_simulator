@@ -55,7 +55,7 @@ export class MelodicBassIdiom extends BaseBassIdiom {
       // On every quarter note
       let pitch = rootMidi;
       const beatsRemaining = chord.endBeat - beat;
-      const isChordStart = beat === chord.startBeat;
+      const isChordStart = Math.abs(beat - chord.startBeat) < 1e-6;
 
       if (isChordStart) {
         pitch = rootMidi; // First beat of chord: Root

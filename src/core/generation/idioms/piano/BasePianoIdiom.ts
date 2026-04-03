@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord, ChordQuality, CQ_IS_HIGH_TENSION, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR } from "../../types";
+import { NoteData, GeneratedChord, ChordQuality, CQ_IS_HIGH_TENSION, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, SectionType } from "../../types";
 import { StyleId } from "../../config/StyleFlags";
 import { IPianoIdiom, PianoIdiomContext } from "./IPianoIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
@@ -32,7 +32,7 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
     // S-2 合规：从 ctx.activeSection 读取（由 TextureMapper 注入）
     const activeSection = ctx.activeSection ?? null;
     if (activeSection) {
-        if (activeSection.name === 'Intro_A' || activeSection.name === 'Intro') {
+        if (activeSection.type === SectionType.Intro) {
             // 🌟 二段式前奏：从高音区开始，慢慢落下来
             const progress = (chord.startBeat - activeSection.startBeat) / (activeSection.endBeat - activeSection.startBeat);
             targetCenter += 12 * (1 - progress); 

@@ -31,7 +31,7 @@ export class RiffDrivenBassIdiom extends BaseBassIdiom {
 
         // Velocity: accent the first note of the cell
         const velocity =
-          currentBeat === chord.startBeat || PRNGManager.next() < grooveSyncopation
+          Math.abs(currentBeat - chord.startBeat) < 1e-6 || PRNGManager.next() < grooveSyncopation
             ? 0.9
             : 0.7;
 

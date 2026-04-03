@@ -16,10 +16,10 @@ export class BlockChordPianoIdiom extends BasePianoIdiom {
     const isNeoSoulOrRnB = pianoStyle === 'neosoul';
 
     let effectiveTexture = textureType;
-    if (activeSection?.name === 'Intro_A') {
-        effectiveTexture = "Arpeggio"; // 🌟 前奏前半段强制使用分解和弦
-    } else if (activeSection?.name === 'Intro_B') {
-        effectiveTexture = "Block"; // 🌟 前奏后半段强制使用柱式和弦或混合织体
+    if (activeSection?.type === SectionType.Intro) {
+        // 前奏前半段使用分解和弦，后半段使用柱式和弦
+        const midpoint = (activeSection.startBeat + activeSection.endBeat) / 2;
+        effectiveTexture = chord.startBeat < midpoint ? "Arpeggio" : "Block";
     }
 
     // 🌟 解决“听感太赶”：长音铺底 (Pad/Sustained) 或低能量段落，强制使用全音符
@@ -49,7 +49,7 @@ export class BlockChordPianoIdiom extends BasePianoIdiom {
 
       for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
         if (Math.abs(beat % 0.5) >= 1e-6) continue;
-        const isChordStart = beat === chord.startBeat;
+        const isChordStart = Math.abs(beat - chord.startBeat) < 1e-6;
         const beatInBar = beat % beatsPerBar;
         const melodySinging = melodyNotes.some(
           (m) =>
@@ -123,7 +123,7 @@ let maskAccent = 0;
         break; // 伴奏提前半小节停止，制造真空期
       }
 
-      const isChordStart = beat === chord.startBeat;
+      const isChordStart = Math.abs(beat - chord.startBeat) < 1e-6;
       const beatInBar = beat % beatsPerBar;
       const melodySinging = melodyNotes.some(
         (m) =>

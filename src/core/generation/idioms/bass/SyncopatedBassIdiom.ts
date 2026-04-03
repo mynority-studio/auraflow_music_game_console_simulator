@@ -13,7 +13,7 @@ export class SyncopatedBassIdiom extends BaseBassIdiom {
 
     for (let beat = chord.startBeat; beat < chord.endBeat; beat += 0.25) {
       const beatInBar = beat % beatsPerBar;
-      const isChordStart = beat === chord.startBeat;
+      const isChordStart = Math.abs(beat - chord.startBeat) < 1e-6;
 
       let maskAccent = 0;
 

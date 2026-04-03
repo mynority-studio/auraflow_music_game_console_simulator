@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord, StyleConfig, Tonality } from '../types';
+import { NoteData, GeneratedChord, StyleConfig, Tonality, ChordQuality, CQ_IS_DIM, CQ_IS_DOM } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
 
 export class GlobalReviewer {
@@ -39,12 +39,9 @@ export class GlobalReviewer {
             const chord = chords[i];
             const nextChord = i < chords.length - 1 ? chords[i + 1] : null;
 
-            const isTension = chord.numeral.includes('°') || 
-                              chord.numeral.includes('dim') || 
-                              chord.numeral.includes('aug') || 
-                              chord.numeral === 'VII7' || 
-                              chord.numeral === 'III7' || 
-                              chord.numeral === 'V7';
+            const qBit = 1 << chord.quality;
+            const isTension = !!(qBit & (CQ_IS_DIM | CQ_IS_DOM)) ||
+                              chord.quality === ChordQuality.Augmented;
 
             if (isTension) {
                 let resolves = false;
@@ -60,9 +57,10 @@ export class GlobalReviewer {
                 if (!nextChord || (!resolves && chord.endBeat - chord.startBeat >= 2)) {
                     
                     // 最小改动：和弦降级 (Chord Downgrading)
-                    if (chord.numeral.includes('°') || chord.numeral.includes('dim')) {
+                    if (qBit & CQ_IS_DIM) {
                         chord.numeral = tonality === Tonality.Minor ? 'ii' : 'V';
-                    } else if (chord.numeral.includes('7')) {
+                        chord.quality = tonality === Tonality.Minor ? ChordQuality.Minor : ChordQuality.Major;
+                    } else if (qBit & CQ_IS_DOM) {
                         chord.numeral = chord.numeral.replace('7', '');
                         if (chord.numeral === 'V') chord.numeral = 'Vsus4';
                     }

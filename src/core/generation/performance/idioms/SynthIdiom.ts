@@ -17,7 +17,8 @@ export class SynthIdiom extends BaseIdiom {
             return 5;
         };
         
-        let result = [...notes].sort((a, b) => a.onset - b.onset);
+        // D-3 合规：完全确定的比较函数，消除 tie（C qsort 不保证稳定性）
+        let result = [...notes].sort((a, b) => a.onset - b.onset || a.pitch - b.pitch);
 
         if (synthStyle === 'arp') {
             // ==========================================
