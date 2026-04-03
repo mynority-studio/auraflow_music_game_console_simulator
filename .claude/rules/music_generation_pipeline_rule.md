@@ -296,7 +296,8 @@ interface MidiEvent {
 
 ### 3.3 枚举与位标志
 
-> **实现状态说明**：标记 ✅ 表示已在代码中实现，⏳ 表示目标设计（代码中仍为字符串）。
+> **实现状态说明**：标记 ✅ 表示已在代码中实现，⏳ 表示目标设计。
+> StyleFlag 为唯一剩余的 ⏳ 项（当前用 StyleId 直接比较替代）。
 
 ```typescript
 // ✅ 风格标识 — 数值枚举，用于数组直接寻址（已实现于 StyleFlags.ts）
@@ -310,34 +311,37 @@ enum StyleId {
 
 // ⏳ 风格分类位掩码 — 目标设计，当前代码使用 StyleId 直接比较替代
 // const StyleFlag = { IS_ELECTRONIC: 1 << 0, ... } as const;
-// StyleFlagTable[StyleId.Lofi] → number
 // 当前替代方案：style.id === StyleId.Eurodance || style.id === StyleId.Trance
 
-// ⏳ Tonality — 目标为数值枚举，当前代码使用字符串 'Major' / 'Minor' / ...
-// enum Tonality { Major = 0, Minor, Major_Pentatonic, Minor_Pentatonic, ... }
-// 当前实际类型：string（如 'Major'、'Minor'、'Dorian'）
-type Tonality = string;
+// ✅ Tonality — 数值枚举（已实现于 types.ts）
+enum Tonality {
+  Major = 0, Minor, Major_Pentatonic, Minor_Pentatonic,
+  Blues, Dorian, Mixolydian, Melodic_Minor               // 共 8 种
+}
+// 翻译表：TonalityName[Tonality.Major] → 'Major'
+// 查表：SCALE_INTERVALS[tonality] → number[]
 
 type MotifRole = 'Foreground' | 'Middleground' | 'Background';
 
-// ⏳ 乐器标识 — 目标为 GM Program Number，当前代码使用字符串名称
-// type InstrumentId = number;  // GM Program Number 0~127
-// 当前实际类型：string（如 'Acoustic_Grand'、'Violin'、'Standard_DrumKit'）
-type InstrumentId = string;
+// ✅ 乐器标识 — 数值枚举（已实现于 config/InstrumentFlags.ts，60 值）
+// 翻译表：InstrumentIdName[id] → 显示名
+// GM 桥接：InstrumentGMProgram[id] → MIDI Program Number
+// 族分类：InstrumentIdFamily[id] → InstrumentFamily
+type InstrumentId = number;           // enum InstrumentId { Acoustic_Grand=0, ... }
 ```
 
 ### 3.4 辅助类型
 
 ```typescript
 interface EnsembleDraft {
-  melodySound: string;                // 当前为乐器名称字符串（⏳ 目标 InstrumentId）
-  vocalSound?: string;
-  secondaryMelodySound?: string;
-  chordSound: string | null;          // null = 无此乐器
-  bassSound: string | null;
-  drumSound: string | null;
-  counterMelodySound: string | null;
-  filterSweep?: string;               // 音效名称，非乐器
+  melodySound: InstrumentId;
+  vocalSound?: InstrumentId;
+  secondaryMelodySound?: InstrumentId;
+  chordSound: InstrumentId | null;    // null = 无此乐器
+  bassSound: InstrumentId | null;
+  drumSound: InstrumentId | null;
+  counterMelodySound: InstrumentId | null;
+  filterSweep?: string;               // 音效名称，非乐器，允许 string
   mixing?: {
     vocal?: MixingConfig;
     melody?: MixingConfig;
@@ -375,13 +379,16 @@ interface TempoCurve {
   curveType: 'linear' | 'exponential';
 }
 
-// ⏳ ChordQuality — 目标为数值枚举，当前代码使用字符串联合类型
-// enum ChordQuality { Major = 0, Minor, Diminished, ... }
-// 当前实际类型：'Major' | 'Minor' | 'Diminished' | ... (17 种字符串联合)
-type ChordQuality = 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' |
-  'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' |
-  'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' |
-  'Dominant9' | 'Minor11' | 'Dominant13';
+// ✅ ChordQuality — 数值枚举（已实现于 types.ts）
+enum ChordQuality {
+  Major = 0, Minor, Diminished, Diminished7, Augmented,
+  Dominant7, Minor7, Major7, HalfDiminished,
+  Sus4, Dominant7Sus4, Add9, Minor9, Major9,
+  Dominant9, Minor11, Dominant13                         // 共 17 种
+}
+// 翻译表：ChordQualityName[ChordQuality.Major] → 'Major'
+// 查表：CHORD_INTERVALS[quality] → number[]（和弦音程）
+// 位掩码：CQ_IS_MINOR, CQ_IS_MAJOR, CQ_IS_DOM 等分类检查
 ```
 
 ---
