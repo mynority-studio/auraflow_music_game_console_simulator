@@ -429,13 +429,16 @@ export class EndlessRadioManager {
     });
   }
 
-  public triggerGeneration = async () => {
+  public triggerGeneration = async (seed?: number) => {
     const currentGenId = ++this.generationId;
-    
+
     AudioEngine.stop();
     this.setState('GENERATING');
 
     try {
+      // §1.4 step 0: 种子初始化（默认 Date.now()，传入固定值可复现）
+      PRNGManager.setSeed(seed !== undefined ? seed : Date.now());
+
       // Simulate slight delay for UI to catch up
       await new Promise(resolve => setTimeout(resolve, 100));
       if (currentGenId !== this.generationId) return;
