@@ -1,12 +1,12 @@
 import { PRNGManager } from "../../utils/PRNG";
-import { NoteData, GeneratedChord, StyleConfig, SectionMetadata, IdiomPreferences } from "../types";
+import { NoteData, GeneratedChord, StyleConfig, SectionMetadata, IdiomPreferences, Tonality } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
 
 /** S-2 合规：替代 GlobalContext 读取，由 Orchestrator 显式传入 */
 export interface TextureRenderContext {
     bpm: number;
     keyOffset: number;
-    tonality: string;
+    tonality: Tonality;
     timeSignature: [number, number];
     activeSection: SectionMetadata | null;
 }
@@ -52,7 +52,7 @@ export class TextureMapper {
   ): NoteData[] {
     // S-2 合规：从 renderCtx 参数读取（Orchestrator 始终提供 renderCtx）
     const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
-    const tonality = renderCtx?.tonality ?? 'Major';
+    const tonality = renderCtx?.tonality ?? Tonality.Major;
     const activeSection = renderCtx?.activeSection ?? null;
     const bpm = renderCtx?.bpm ?? 120;
 
@@ -336,7 +336,7 @@ export class TextureMapper {
 
     // S-2 合规：注入 keyOffset/tonality/activeSection，替代 GlobalContext 读取
     const cmKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
-    const cmTonality = renderCtx?.tonality ?? 'Major';
+    const cmTonality = renderCtx?.tonality ?? Tonality.Major;
     const cmActiveSection = renderCtx?.activeSection ?? null;
     const context: CounterMelodyContext = { chord, energyLevel, melodyNotes, style, keyOffset: cmKeyOffset, tonality: cmTonality, activeSection: cmActiveSection };
     const idiom = CounterMelodyIdiomRegistry.getIdiom(counterMelodyStyle) || CounterMelodyIdiomRegistry.getIdiom("sustained")!;
@@ -394,7 +394,7 @@ export class TextureMapper {
       grooveSyncopation,
       // S-2 合规：注入 keyOffset/tonality/activeSection，替代 GlobalContext 读取
       keyOffset: chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0),
-      tonality: renderCtx?.tonality ?? 'Major',
+      tonality: renderCtx?.tonality ?? Tonality.Major,
       activeSection: renderCtx?.activeSection ?? null,
     };
 
@@ -446,7 +446,7 @@ export class TextureMapper {
     const riffStyle = style?.orchestration?.idiomPreferences?.riffStyle || "default";
     // S-2 合规：注入 keyOffset/tonality，替代 Riff Idiom 内部的 GlobalContext 读取
     const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
-    const tonality = renderCtx?.tonality ?? 'Major';
+    const tonality = renderCtx?.tonality ?? Tonality.Major;
     const context: RiffContext = { chord, energyLevel, style, keyOffset, tonality };
     return RiffIdiomRegistry.getIdiom(riffStyle).generate(context);
   }
@@ -457,7 +457,7 @@ export class TextureMapper {
     chords: GeneratedChord[],
     style: StyleConfig | undefined,
     energyLevel: number,
-    tonality: string,
+    tonality: Tonality,
     keyOffset?: number,
   ): NoteData[] {
     const vocalStyle = style?.orchestration?.idiomPreferences?.vocalStyle || "pop";

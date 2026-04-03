@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord, StyleConfig } from '../types';
+import { NoteData, GeneratedChord, StyleConfig, Tonality } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
 
 export class GlobalReviewer {
@@ -11,7 +11,7 @@ export class GlobalReviewer {
         melody: NoteData[],
         chords: GeneratedChord[],
         style: StyleConfig,
-        tonality: string
+        tonality: Tonality
     ): { vocal: NoteData[] | undefined, melody: NoteData[], chords: GeneratedChord[] } {
         
         // 1. 修复悬挂的高张力经过和弦 (Fix Unresolved Dominant/Diminished Chords)
@@ -34,7 +34,7 @@ export class GlobalReviewer {
      * 修复悬挂的高张力经过和弦
      * 检查段落末尾或乐句末尾的 V7, vii° 等是否得到了妥善解决。如果没有，则将其降级。
      */
-    private static fixHangingTensionChords(chords: GeneratedChord[], tonality: string) {
+    private static fixHangingTensionChords(chords: GeneratedChord[], tonality: Tonality) {
         for (let i = 0; i < chords.length; i++) {
             const chord = chords[i];
             const nextChord = i < chords.length - 1 ? chords[i + 1] : null;
@@ -61,7 +61,7 @@ export class GlobalReviewer {
                     
                     // 最小改动：和弦降级 (Chord Downgrading)
                     if (chord.numeral.includes('°') || chord.numeral.includes('dim')) {
-                        chord.numeral = tonality === 'Minor' ? 'ii' : 'V';
+                        chord.numeral = tonality === Tonality.Minor ? 'ii' : 'V';
                     } else if (chord.numeral.includes('7')) {
                         chord.numeral = chord.numeral.replace('7', '');
                         if (chord.numeral === 'V') chord.numeral = 'Vsus4';
@@ -80,7 +80,7 @@ export class GlobalReviewer {
      * 修复旋律冲突与乐句落点
      * 采用 MelodyFixScore 与 ChordFixScore 的理念，进行最小改动 (Nudging)。
      */
-    private static fixMelodyClashesAndResolutions(notes: NoteData[], chords: GeneratedChord[], tonality: string, style: StyleConfig, isVocal: boolean) {
+    private static fixMelodyClashesAndResolutions(notes: NoteData[], chords: GeneratedChord[], tonality: Tonality, style: StyleConfig, isVocal: boolean) {
         const maxDissonance = style.harmonyRules?.maxDissonanceTolerance ?? 0.5;
 
         for (let i = 0; i < notes.length; i++) {
@@ -149,7 +149,7 @@ export class GlobalReviewer {
      * 修复旋律横向逻辑 (Horizontal Voice Leading Fix)
      * 检查大跳后是否反向解决，如果没有，则微调第三个音。
      */
-    private static fixMelodyHorizontalLogic(notes: NoteData[], tonality: string, chords: GeneratedChord[], style: StyleConfig) {
+    private static fixMelodyHorizontalLogic(notes: NoteData[], tonality: Tonality, chords: GeneratedChord[], style: StyleConfig) {
         const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5;
         
         for (let i = 0; i < notes.length - 2; i++) {
@@ -187,7 +187,7 @@ export class GlobalReviewer {
         melody: NoteData[] | undefined,
         counterMelody: NoteData[] | undefined,
         chords: GeneratedChord[],
-        tonality: string
+        tonality: Tonality
     ): void {
 
         const mainMelody = (vocal && vocal.length > 0) ? vocal : (melody || []);

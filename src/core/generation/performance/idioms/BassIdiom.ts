@@ -1,9 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from "../../types";
+import { InstrumentId } from '../../config/InstrumentFlags';
 import { BaseIdiom } from "./BaseIdiom";
 
 export class BassIdiom extends BaseIdiom {
-  public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
+  public apply(notes: NoteData[], instrumentId: InstrumentId, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
     const bassStyle = idiomPreferences?.bassStyle || 'pop';
     const result: NoteData[] = [];
     if (notes.length === 0) return result;

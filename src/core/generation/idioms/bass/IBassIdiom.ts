@@ -1,4 +1,5 @@
 import { GeneratedChord, NoteData, RuntimeIdiomPreferences, SectionMetadata, StyleConfig } from "../../types";
+import { InstrumentId } from "../../config/InstrumentFlags";
 
 export interface BassIdiomContext {
   chord: GeneratedChord;
@@ -28,7 +29,7 @@ export interface BassIdiomContext {
   bassTones: number[];
   isCinematic: boolean;
   isBallad: boolean;
-  bassSound?: string | null;
+  bassSound?: InstrumentId | null;
 
   /** S-2 合规：由 TextureMapper 从 renderCtx 注入，替代 GlobalContext 读取 */
   beatsPerBar: number;

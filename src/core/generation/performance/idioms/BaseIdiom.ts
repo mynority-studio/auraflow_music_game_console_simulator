@@ -1,13 +1,14 @@
 import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
+import { InstrumentId } from '../../config/InstrumentFlags';
 
 export interface IInstrumentIdiom {
-    apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
+    apply(notes: NoteData[], instrumentId: InstrumentId, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
     humanize(notes: NoteData[], swingRatio: number, swingSubdivision: number, isRightHand?: boolean, idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
 }
 
 export abstract class BaseIdiom implements IInstrumentIdiom {
-    abstract apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
+    abstract apply(notes: NoteData[], instrumentId: InstrumentId, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[];
 
     // 采用高斯分布生成更自然的随机数
     protected randomGaussian(mean: number, stdDev: number): number {

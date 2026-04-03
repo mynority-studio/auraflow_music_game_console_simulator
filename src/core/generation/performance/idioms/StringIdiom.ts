@@ -1,9 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
+import { InstrumentId } from '../../config/InstrumentFlags';
 import { BaseIdiom } from './BaseIdiom';
 
 export class StringIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
+    public apply(notes: NoteData[], instrumentId: InstrumentId, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const stringStyle = idiomPreferences?.stringStyle || 'pop';
         
         // 铁律 1: 同一声部，不要写超过 2 个音同时响

@@ -1,4 +1,4 @@
-import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig } from './generation/types';
+import { GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig, Tonality } from './generation/types';
 import { MoodId } from './generation/config/MoodFlags';
 
 const EPSILON = 1e-6;
@@ -7,7 +7,7 @@ class GlobalContextManager {
     public currentStyle: StyleConfig | null = null;
     public currentBPM: number = 120;
     public currentTimeSignature:[number, number] =[4, 4];
-    public currentTonality: string = 'Major'; 
+    public currentTonality: Tonality = Tonality.Major;
     public currentKeyOffset: number = 0;      
     public globalAbsoluteBeat: number = 0;    
     public currentSingerPersona: SingerPersonaConfig | null = null;
@@ -17,7 +17,7 @@ class GlobalContextManager {
     private activeSection: SectionMetadata | null = null;
     private activeChord: GeneratedChord | null = null;
 
-    public initializeNewEra(style: StyleConfig, bpm: number, keyOffset: number, tonality: string, timeSignature: [number, number], moodId?: MoodId) {
+    public initializeNewEra(style: StyleConfig, bpm: number, keyOffset: number, tonality: Tonality, timeSignature: [number, number], moodId?: MoodId) {
         this.currentStyle = style;
         this.currentBPM = bpm;
         this.currentKeyOffset = keyOffset;
@@ -76,7 +76,7 @@ class GlobalContextManager {
         this.currentStyle = null;
         this.currentBPM = 120;
         this.currentTimeSignature = [4, 4];
-        this.currentTonality = 'Major';
+        this.currentTonality = Tonality.Major;
         this.currentKeyOffset = 0;
         this.globalAbsoluteBeat = 0;
         this.currentSingerPersona = null;

@@ -1,11 +1,13 @@
 import { AudioMixer } from "./AudioMixer";
 import { spessaSynth } from "./SynthManager";
+import { InstrumentId, InstrumentIdName, InstrumentGMProgram, isDrumInstrument } from "../generation/config/InstrumentFlags";
 
 // ==========================================
 // 📄 文件路径: /src/core/audio/Instruments.ts
-// 🌟 V3.0 SpessaSynth GM128 Integration
+// 🌟 V4.0 InstrumentId Enum Integration
 // ==========================================
 
+// Legacy string -> GM mapping for backward compatibility with string-based callers
 const GM_MAPPING: Record<string, number> = {
   // Lead
   Acoustic_Grand: 0,
@@ -16,39 +18,39 @@ const GM_MAPPING: Record<string, number> = {
   Alto_Sax: 65,
   Tenor_Sax: 66,
   Harmonica: 22,
-  
+
   // Chord
   Acoustic_Guitar_Nylon: 24,
   Acoustic_Guitar_Steel: 25,
   Electric_Guitar_Clean: 27,
   String_Ensemble_1: 48,
   Synth_Strings_1: 50,
-  
+
   // Pad & Choir
   Pad_1_NewAge: 88,
   Pad_2_Warm: 89,
   Choir_Aahs: 52,
   Voice_Oohs: 53,
-  Solo_Vox: 85, // GM128 Solo Vox
-  
+  Solo_Vox: 85,
+
   // Arp / Decoration
   Vibraphone: 11,
   Marimba: 12,
   Pizzicato_Strings: 45,
-  Reverse_Cymbal: 119, // 🌟 P2: Reverse Cymbal
-  
+  Reverse_Cymbal: 119,
+
   // Bass
   Acoustic_Bass: 32,
   Electric_Bass_Finger: 33,
   Synth_Bass_1: 38,
   Synth_Bass_2: 39,
-  
+
   // Drums
   Standard_DrumKit: 0,
   Electronic_DrumKit: 24,
   TR808_DrumKit: 25,
   Orchestral_DrumKit: 48,
-  
+
   System_Aura: 81,
 };
 
@@ -82,7 +84,7 @@ class SpessaSynthWrapper {
             console.warn(`[SpessaSynthWrapper] spessaSynth is null during constructor for ch=${this.channel}`);
         }
     }
-    
+
     public loaded = true;
 
     public triggerAttackRelease(freq: number | string, duration: number, time: number, velocity: number = 1, pitchBend?: number, pitchBendDuration?: number, fadeOutDuration?: number) {
@@ -90,62 +92,56 @@ class SpessaSynthWrapper {
             console.warn("[SpessaSynthWrapper] spessaSynth is null");
             return;
         }
-        
+
         let midiNote = 60;
         if (typeof freq === 'number') {
             midiNote = Math.round(freq);
         } else {
             midiNote = noteToMidi(freq);
         }
-        
+
         let vel = Math.max(0, Math.min(127, Math.round(velocity * 127)));
-        
+
         // Reduce velocity for Lead Sawtooth (program 81) to make it less harsh
         if (this.program === 81) {
             vel = Math.round(vel * 0.6);
         }
-        
+
         // Reset expression (CC 11) to max before playing
         spessaSynth.controllerChange(this.channel, 11, 127, { time });
-        
+
         // If there's a pitch bend, set the range and start value
         if (pitchBend !== undefined && pitchBendDuration !== undefined) {
-            // Set pitch bend range to max of 12 or abs(pitchBend)
             const range = Math.max(12, Math.ceil(Math.abs(pitchBend)));
             spessaSynth.pitchWheelRange(this.channel, range, { time });
-            
-            // Start at center (8192)
+
             spessaSynth.pitchWheel(this.channel, 8192, { time });
             spessaSynth.noteOn(this.channel, midiNote, vel, { time });
-            
-            // Animate pitch wheel at the end of the note
+
             const steps = 20;
             const stepTime = pitchBendDuration / steps;
             const targetValue = 8192 + Math.round((pitchBend / range) * 8192);
-            
-            // Delay the start of the pitch bend so it finishes right as the note ends
+
             const bendDelay = Math.max(0, duration - pitchBendDuration);
-            
+
             for (let i = 1; i <= steps; i++) {
                 const currentValue = 8192 + Math.round(((targetValue - 8192) * i) / steps);
                 spessaSynth.pitchWheel(this.channel, currentValue, { time: time + bendDelay + (stepTime * i) });
             }
-            
-            // Reset pitch wheel after note off
+
             spessaSynth.pitchWheel(this.channel, 8192, { time: time + duration + 0.05 });
         } else {
             spessaSynth.pitchWheel(this.channel, 8192, { time });
             spessaSynth.noteOn(this.channel, midiNote, vel, { time });
         }
-        
+
         // Fade out using Expression (CC 11) if requested
         if (fadeOutDuration !== undefined && fadeOutDuration > 0) {
             const fadeSteps = 20;
             const fadeStepTime = fadeOutDuration / fadeSteps;
             const fadeDelay = Math.max(0, duration - fadeOutDuration);
-            
+
             for (let i = 1; i <= fadeSteps; i++) {
-                // Fade from 127 down to 0
                 const currentValue = Math.max(0, Math.round(127 * (1 - (i / fadeSteps))));
                 spessaSynth.controllerChange(this.channel, 11, currentValue, { time: time + fadeDelay + (fadeStepTime * i) });
             }
@@ -154,10 +150,18 @@ class SpessaSynthWrapper {
         // Note off
         spessaSynth.noteOff(this.channel, midiNote, { time: time + duration });
     }
-    
+
     public dispose() {
         // No-op for SpessaSynth wrapper
     }
+}
+
+/** Resolve InstrumentId to GM program and isDrum flag */
+function resolveInstrumentGM(id: InstrumentId): { program: number; isDrum: boolean } {
+    return {
+        program: InstrumentGMProgram[id] ?? 0,
+        isDrum: isDrumInstrument(id),
+    };
 }
 
 export class InstrumentRegistry {
@@ -169,6 +173,14 @@ export class InstrumentRegistry {
     this.mixer = mixer;
   }
 
+  /** Get instrument by InstrumentId enum (preferred path) */
+  public getInstrumentById(id: InstrumentId, role: "Foreground" | "Midground" | "Background" | "Rhythm", trackId: string = "default", mixingConfig?: { pan?: number, reverb?: number, volume?: number, delay?: number }): any {
+    const displayName = InstrumentIdName[id] || 'Acoustic_Grand';
+    const { program, isDrum } = resolveInstrumentGM(id);
+    return this._createOrGetSynth(displayName, program, isDrum, role, trackId, mixingConfig);
+  }
+
+  /** Legacy: get instrument by string name (for backward compatibility with audio layer callers) */
   public getInstrument(id: string, role: "Foreground" | "Midground" | "Background" | "Rhythm", trackId: string = "default", mixingConfig?: { pan?: number, reverb?: number, volume?: number, delay?: number }): any {
     let configId = GM_MAPPING[id] !== undefined ? id : "Acoustic_Grand";
     if (id === "System_Aura") {
@@ -189,12 +201,17 @@ export class InstrumentRegistry {
       else configId = "Acoustic_Grand";
     }
 
+    const isDrum = configId.includes("Drum") || configId.includes("Kit");
+    const program = GM_MAPPING[configId] || 0;
+    return this._createOrGetSynth(configId, program, isDrum, role, trackId, mixingConfig);
+  }
+
+  private _createOrGetSynth(configId: string, program: number, isDrum: boolean, role: string, trackId: string, mixingConfig?: { pan?: number, reverb?: number, volume?: number, delay?: number }): any {
     const instanceId = `${configId}_${role}_${trackId}`;
 
     if (!this.synths.has(instanceId)) {
-      const isDrum = configId.includes("Drum") || configId.includes("Kit");
       let channel = 0;
-      
+
       if (isDrum) {
           channel = 9;
       } else {
@@ -206,34 +223,28 @@ export class InstrumentRegistry {
           this.nextChannel++;
       }
 
-      let program = GM_MAPPING[configId] || 0;
       let bank = 0;
 
       const synth = new SpessaSynthWrapper(channel, program, isDrum, bank);
-      
+
       if (spessaSynth) {
           // Apply mixing config via MIDI CC
           let vol = 100;
           let pan = 64;
           let reverb = 0;
-          
+
           if (mixingConfig) {
-              // Convert volume (dB) to MIDI CC 7 (0-127)
-              // Map 0 dB to 80 to allow headroom for positive dB values
               vol = Math.max(0, Math.min(127, Math.round(80 * Math.pow(10, mixingConfig.volume / 20))));
-              
-              // Convert pan (-1 to 1) to MIDI CC 10 (0-127)
               if (mixingConfig.pan !== 0 || role === 'Foreground') {
                   pan = Math.max(0, Math.min(127, Math.round((mixingConfig.pan + 1) * 63.5)));
               }
-              
               reverb = Math.max(0, Math.min(127, Math.round(mixingConfig.reverb * 127)));
           }
-          
+
           if (configId === "Lead_2_Sawtooth") {
-              vol = Math.round(vol * 0.25); // Reduce volume significantly for Lead Sawtooth (was 0.5, now 0.25)
+              vol = Math.round(vol * 0.25);
           }
-          
+
           spessaSynth.controllerChange(channel, 7, vol); // Volume
           spessaSynth.controllerChange(channel, 10, pan); // Pan
           spessaSynth.controllerChange(channel, 91, reverb); // Reverb

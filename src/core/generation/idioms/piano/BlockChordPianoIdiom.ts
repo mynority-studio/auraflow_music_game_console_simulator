@@ -1,4 +1,4 @@
-import { NoteData, SectionType } from "../../types";
+import { NoteData, SectionType, Tonality } from "../../types";
 import { PianoIdiomContext } from "./IPianoIdiom";
 import { BasePianoIdiom } from "./BasePianoIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
@@ -40,7 +40,7 @@ export class BlockChordPianoIdiom extends BasePianoIdiom {
       const scalePcs = HarmonyCore.getSafeScalePitches(
         chord,
         // S-2 合规：从 ctx.tonality 读取（由 TextureMapper 注入），回退为 'Major'
-        ctx.tonality ?? 'Major'
+        ctx.tonality ?? Tonality.Major
       );
       // 🌟 打破根音起手：随机从三音、五音或七音开始
       const startIdx = PRNGManager.next() > 0.6 && voicedTones.length > 1 ? (PRNGManager.next() > 0.5 ? 1 : voicedTones.length - 1) : 0;

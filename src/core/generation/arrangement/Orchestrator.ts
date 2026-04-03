@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, SectionType, MusicContext, EnsembleDraft, TempoCurve } from '../types';
+import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, SectionType, MusicContext, EnsembleDraft, TempoCurve, ChordQuality } from '../types';
 import { TextureMapper, TextureRenderContext } from './TextureMapper';
 import { TransitionEngine } from './TransitionEngine';
 import { InstrumentIdiom, resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
@@ -9,6 +9,7 @@ import { MotifLooper } from './MotifLooper';
 import { GlobalReviewer } from '../review/GlobalReviewer';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/styles/StyleRegistry';
+import { InstrumentId, InstrumentIdFamily, isPadLikeInstrument, isGuitarFamily } from '../config/InstrumentFlags';
 
 export class Orchestrator {
     /** L-2 合规：从 ToplineEngine 移入编配层，纯数据变换不消耗 PRNG */
@@ -56,38 +57,38 @@ export class Orchestrator {
                 palette.mixing.melody.reverb = 0.7;
             }
 
-            if (palette.melodySound === 'Violin') {
+            if (palette.melodySound === InstrumentId.Violin) {
                 palette.mixing.melody.volume -= 6;
-            } else if (palette.melodySound === 'Acoustic_Grand') {
+            } else if (palette.melodySound === InstrumentId.Acoustic_Grand) {
                 palette.mixing.melody.volume += 6;
             }
 
             // T-1 合规：使用 InstrumentFamily 枚举替换字符串子串匹配
-            const cmFamily = palette.counterMelodySound ? resolveInstrumentFamily(palette.counterMelodySound) : InstrumentFamily.Unknown;
+            const cmFamily = palette.counterMelodySound !== null ? resolveInstrumentFamily(palette.counterMelodySound) : InstrumentFamily.Unknown;
             const isCounterMelodyPad = cmFamily === InstrumentFamily.Synth || cmFamily === InstrumentFamily.String || cmFamily === InstrumentFamily.Voice;
             if (isCounterMelodyPad) {
                 palette.mixing.counterMelody.volume = -2;
             } else {
                 palette.mixing.counterMelody.volume = -6;
             }
-            if (palette.counterMelodySound === 'Violin') {
+            if (palette.counterMelodySound === InstrumentId.Violin) {
                 palette.mixing.counterMelody.volume -= 6;
-            } else if (palette.counterMelodySound === 'Acoustic_Grand') {
+            } else if (palette.counterMelodySound === InstrumentId.Acoustic_Grand) {
                 palette.mixing.counterMelody.volume += 6;
             }
 
-            const chordFamily = palette.chordSound ? resolveInstrumentFamily(palette.chordSound) : InstrumentFamily.Unknown;
+            const chordFamily = palette.chordSound !== null ? resolveInstrumentFamily(palette.chordSound) : InstrumentFamily.Unknown;
             const isChordPad = chordFamily === InstrumentFamily.Synth || chordFamily === InstrumentFamily.String || chordFamily === InstrumentFamily.Voice;
             if (isChordPad) {
                 palette.mixing.chord.volume = 2;
             }
-            if (palette.chordSound === 'Violin') {
+            if (palette.chordSound === InstrumentId.Violin) {
                 palette.mixing.chord.volume -= 3;
-            } else if (palette.chordSound === 'Acoustic_Grand') {
+            } else if (palette.chordSound === InstrumentId.Acoustic_Grand) {
                 palette.mixing.chord.volume += 8;
             }
 
-            if (palette.bassSound === 'Acoustic_Grand') {
+            if (palette.bassSound === InstrumentId.Acoustic_Grand) {
                 palette.mixing.bass!.volume += 6;
             }
         }
@@ -119,12 +120,12 @@ export class Orchestrator {
         let rhNotes: NoteData[] = []; 
         const drumNotes: NoteData[] =[]; 
 
-        const pick = (arr: string[]) => arr[Math.floor(PRNGManager.next() * arr.length)];
+        const pick = (arr: InstrumentId[]) => arr[Math.floor(PRNGManager.next() * arr.length)];
 
         // 1. Vocal
         // 🌟 全局强制取消掉vocal
         let hasVocal = false; // PRNGManager.next() < (style.orchestration?.vocalProbability ?? 0.5);
-        let vocalSound = hasVocal ? 'Marimba' : undefined;
+        let vocalSound: InstrumentId | undefined = hasVocal ? InstrumentId.Marimba : undefined;
 
         // 2. Lead
         let melodySound = pick(style.orchestration.melodyInstruments);
@@ -139,7 +140,7 @@ export class Orchestrator {
         let drumSound = pick(style.orchestration.drumInstruments);
 
         // 6. Counter Melody / Pad / Arp / Choir
-        let counterMelodySound: string | null = null;
+        let counterMelodySound: InstrumentId | null = null;
         let hasCounterMelody = PRNGManager.next() > 0.3;
         if (style.orchestration?.counterMelodyProbability !== undefined) {
             hasCounterMelody = PRNGManager.next() < style.orchestration.counterMelodyProbability;
@@ -182,7 +183,7 @@ export class Orchestrator {
             if (available.length > 0) {
                 palette.secondaryMelodySound = available[Math.floor(PRNGManager.next() * available.length)];
             } else {
-                palette.secondaryMelodySound = 'Saxophone'; // Fallback
+                palette.secondaryMelodySound = InstrumentId.Alto_Sax; // Fallback
             }
         }
 
@@ -420,7 +421,7 @@ export class Orchestrator {
                 if (PRNGManager.next() < 0.15) texture = "Riff";
             }
 
-            const cmFam = palette.counterMelodySound ? resolveInstrumentFamily(palette.counterMelodySound) : InstrumentFamily.Unknown;
+            const cmFam = palette.counterMelodySound !== null ? resolveInstrumentFamily(palette.counterMelodySound) : InstrumentFamily.Unknown;
             const isPad = cmFam === InstrumentFamily.Synth || cmFam === InstrumentFamily.String || cmFam === InstrumentFamily.Voice;
             
             if (hasCounterMelody) {
@@ -542,18 +543,18 @@ export class Orchestrator {
                         const interval = (note.pitch % 12 - rootPc + 12) % 12;
                         if (interval === 2) has9th = true;
                         // T-1 合规：使用精确等值比较代替子串匹配
-                        if (interval === 5 && (chord.quality === 'Minor' || chord.quality === 'Minor7' || chord.quality === 'Minor9')) has11th = true;
-                        if (interval === 9 && (chord.quality === 'Dominant7' || chord.quality === 'Dominant9' || chord.quality === 'Dominant7Sus4')) has13th = true;
+                        if (interval === 5 && (chord.quality === ChordQuality.Minor || chord.quality === ChordQuality.Minor7 || chord.quality === ChordQuality.Minor9)) has11th = true;
+                        if (interval === 9 && (chord.quality === ChordQuality.Dominant7 || chord.quality === ChordQuality.Dominant9 || chord.quality === ChordQuality.Dominant7Sus4)) has13th = true;
                     }
 
-                    if (has13th && chord.quality === 'Dominant7') {
-                        chord.quality = 'Dominant13';
-                    } else if (has11th && (chord.quality === 'Minor7' || chord.quality === 'Minor9')) {
-                        chord.quality = 'Minor11';
+                    if (has13th && chord.quality === ChordQuality.Dominant7) {
+                        chord.quality = ChordQuality.Dominant13;
+                    } else if (has11th && (chord.quality === ChordQuality.Minor7 || chord.quality === ChordQuality.Minor9)) {
+                        chord.quality = ChordQuality.Minor11;
                     } else if (has9th) {
-                        if (chord.quality === 'Major7') chord.quality = 'Major9';
-                        else if (chord.quality === 'Minor7') chord.quality = 'Minor9';
-                        else if (chord.quality === 'Dominant7') chord.quality = 'Dominant9';
+                        if (chord.quality === ChordQuality.Major7) chord.quality = ChordQuality.Major9;
+                        else if (chord.quality === ChordQuality.Minor7) chord.quality = ChordQuality.Minor9;
+                        else if (chord.quality === ChordQuality.Dominant7) chord.quality = ChordQuality.Dominant9;
                     }
                 }
             }
@@ -616,17 +617,18 @@ export class Orchestrator {
                 return; // 跳过常规生成
             }
 
-            if (palette.chordSound && palette.chordSound.includes("Guitar")) {
+            // T-1 合规：使用 InstrumentFamily 枚举替代 .includes() 字符串子串匹配
+            if (palette.chordSound !== null && isGuitarFamily(palette.chordSound)) {
                 texture = "Guitar_Strum";
             }
 
-            if (palette.chordSound && (palette.chordSound.includes("Synth") || palette.chordSound.includes("Pad") || palette.chordSound.includes("String") || palette.chordSound.includes("Voice"))) {
-                // 流行电子合成器不需要古典钢琴的复杂加花和切分，保持简洁
-                const isVoiceOrString = palette.chordSound.includes("Voice") || palette.chordSound.includes("String");
+            if (palette.chordSound !== null && isPadLikeInstrument(palette.chordSound)) {
+                const chordFam = resolveInstrumentFamily(palette.chordSound);
+                const isVoiceOrString = chordFam === InstrumentFamily.Voice || chordFam === InstrumentFamily.String;
                 if (energy >= 7 && !isVoiceOrString) {
-                    texture = "Synth_Pulse"; // 连续八分音符或简单的切分
+                    texture = "Synth_Pulse";
                 } else {
-                    texture = "Pad"; // 长音铺底
+                    texture = "Pad";
                 }
             }
 
@@ -652,8 +654,10 @@ export class Orchestrator {
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0 && !playChords) {
                     // If Middleground motif is present and chords are not playing, put it here
                     const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); counterMelodyNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60 - chordKeyOffset, track.motifRole));
-                } else if (palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir')) {
-                    const isVoiceOrString = palette.counterMelodySound.includes('Voice') || palette.counterMelodySound.includes('String') || palette.counterMelodySound.includes('Choir');
+                // T-1 合规：使用 InstrumentFamily 枚举替代 .includes() 字符串子串匹配
+                } else if (palette.counterMelodySound !== null && isPadLikeInstrument(palette.counterMelodySound)) {
+                    const cmCounterFam = resolveInstrumentFamily(palette.counterMelodySound);
+                    const isVoiceOrString = cmCounterFam === InstrumentFamily.Voice || cmCounterFam === InstrumentFamily.String;
                     const counterTexture = (energy >= 7 && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
                     const pianoStyle = style.orchestration.idiomPreferences?.pianoStyle || 'block-chord';
                     counterMelodyNotes.push(...TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody, undefined, currentStyleConfig, undefined, undefined, pianoStyle, renderCtx));
@@ -839,21 +843,22 @@ export class Orchestrator {
         TransitionEngine.applyBoundaries(track.sections, lhNotes, rhNotes, drumNotes, track.timeSignature[0], style);
         if (!hasDrums) drumNotes.length = 0; 
 
-        const isGuitar = !!(palette.chordSound && palette.chordSound.includes('Guitar'));
+        // T-1 合规：使用 InstrumentFamily 枚举替代 .includes('Guitar') 字符串子串匹配
+        const isGuitar = palette.chordSound !== null && isGuitarFamily(palette.chordSound);
         const swingRatio = style.rhythm.swingRatio || 0.5;
         const swingSubdivision = style.rhythm.swingSubdivision || 0.5;
 
         // 🌟 Phase 3: Apply InstrumentIdiom to all parts for articulation and polish
-        const idiomaticLH = InstrumentIdiom.apply(lhNotes, 'Bass', track.chords, idiomPrefsWithSections);
-        const idiomaticRH = InstrumentIdiom.apply(rhNotes, palette.chordSound || 'Piano', track.chords, idiomPrefsWithSections);
-        const idiomaticDrums = InstrumentIdiom.apply(drumNotes, 'Drums', track.chords, idiomPrefsWithSections);
-        const idiomaticCounterMelody = InstrumentIdiom.apply(counterMelodyNotes, palette.counterMelodySound || 'Piano', track.chords, idiomPrefsWithSections);
+        const idiomaticLH = InstrumentIdiom.apply(lhNotes, palette.bassSound ?? InstrumentId.Electric_Bass_Finger, track.chords, idiomPrefsWithSections);
+        const idiomaticRH = InstrumentIdiom.apply(rhNotes, palette.chordSound ?? InstrumentId.Acoustic_Grand, track.chords, idiomPrefsWithSections);
+        const idiomaticDrums = InstrumentIdiom.apply(drumNotes, palette.drumSound ?? InstrumentId.Standard_DrumKit, track.chords, idiomPrefsWithSections);
+        const idiomaticCounterMelody = InstrumentIdiom.apply(counterMelodyNotes, palette.counterMelodySound ?? InstrumentId.Acoustic_Grand, track.chords, idiomPrefsWithSections);
 
-        const humanizedLH = InstrumentIdiom.humanize(idiomaticLH, 'Bass', swingRatio, swingSubdivision, false, idiomPrefsWithSections);
-        const humanizedRH = InstrumentIdiom.humanize(idiomaticRH, palette.chordSound || 'Piano', swingRatio, swingSubdivision, true, idiomPrefsWithSections);
-        const humanizedDrums = InstrumentIdiom.humanize(idiomaticDrums, 'Drums', swingRatio, swingSubdivision, false, idiomPrefsWithSections);
-        const humanizedCounterMelody = InstrumentIdiom.humanize(idiomaticCounterMelody, palette.counterMelodySound || 'Piano', swingRatio, swingSubdivision, true, idiomPrefsWithSections);
-        const humanizedMelody = InstrumentIdiom.humanize(idiomaticMelody, palette.melodySound || 'Piano', swingRatio, swingSubdivision, true, idiomPrefsWithSections);
+        const humanizedLH = InstrumentIdiom.humanize(idiomaticLH, palette.bassSound ?? InstrumentId.Electric_Bass_Finger, swingRatio, swingSubdivision, false, idiomPrefsWithSections);
+        const humanizedRH = InstrumentIdiom.humanize(idiomaticRH, palette.chordSound ?? InstrumentId.Acoustic_Grand, swingRatio, swingSubdivision, true, idiomPrefsWithSections);
+        const humanizedDrums = InstrumentIdiom.humanize(idiomaticDrums, palette.drumSound ?? InstrumentId.Standard_DrumKit, swingRatio, swingSubdivision, false, idiomPrefsWithSections);
+        const humanizedCounterMelody = InstrumentIdiom.humanize(idiomaticCounterMelody, palette.counterMelodySound ?? InstrumentId.Acoustic_Grand, swingRatio, swingSubdivision, true, idiomPrefsWithSections);
+        const humanizedMelody = InstrumentIdiom.humanize(idiomaticMelody, palette.melodySound, swingRatio, swingSubdivision, true, idiomPrefsWithSections);
         
         let finalVocalNotes = track.vocal ? [...track.vocal] : undefined;
         if (hasVocal && finalVocalNotes && finalVocalNotes.length > 0) {
@@ -866,9 +871,9 @@ export class Orchestrator {
                 finalVocalNotes!.push(...harmonyNotes);
             });
         }
-        const humanizedVocal = hasVocal && finalVocalNotes ? InstrumentIdiom.humanize(finalVocalNotes, palette.vocalSound || 'Marimba', swingRatio, swingSubdivision, true, style.orchestration?.idiomPreferences) : undefined;
-        
-        const humanizedSecondaryMelody = InstrumentIdiom.humanize(idiomaticSecondaryMelody, secondarySound || 'Piano', swingRatio, swingSubdivision, true, idiomPrefsWithSections);
+        const humanizedVocal = hasVocal && finalVocalNotes ? InstrumentIdiom.humanize(finalVocalNotes, palette.vocalSound ?? InstrumentId.Marimba, swingRatio, swingSubdivision, true, style.orchestration?.idiomPreferences) : undefined;
+
+        const humanizedSecondaryMelody = InstrumentIdiom.humanize(idiomaticSecondaryMelody, secondarySound ?? InstrumentId.Acoustic_Grand, swingRatio, swingSubdivision, true, idiomPrefsWithSections);
 
         // 7. 全局对位检查与修复 (Global Counterpoint Review)
         GlobalReviewer.reviewCounterpoint(

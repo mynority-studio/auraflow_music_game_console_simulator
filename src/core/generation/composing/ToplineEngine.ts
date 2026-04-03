@@ -1,10 +1,11 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, GeneratedChord, SectionMetadata, SectionType, StyleConfig, SingerPersonaConfig } from '../types';
+import { NoteData, GeneratedChord, SectionMetadata, SectionType, StyleConfig, SingerPersonaConfig, ChordQuality, Tonality } from '../types';
 import { HarmonyCore } from './HarmonyCore';
 import { GrooveEngine } from './GrooveEngine';
 import { SingerPersona } from '../performance/SingerPersona';
 import { resolveInstrumentFamily, InstrumentFamily } from '../performance/InstrumentIdiom';
 import { getStyleGrammar } from '../styles/GrammarRegistry';
+import { InstrumentId } from '../config/InstrumentFlags';
 
 type Contour = 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
 type PhraseForm = string[]; // e.g., ['A', 'A', 'B', 'A']
@@ -91,7 +92,7 @@ export class ToplineEngine {
 
     public static generateTrackMelody(
         sections: SectionMetadata[], chords: GeneratedChord[], style: StyleConfig,
-        tonality: string, persona: SingerPersonaConfig, instrumentName: string = 'Acoustic_Grand',
+        tonality: Tonality, persona: SingerPersonaConfig, instrumentId: InstrumentId = InstrumentId.Acoustic_Grand,
         userMotif?: NoteData[], isSecondary: boolean = false,
         timeSignature: [number, number] = [4, 4], bpm: number = 120, moodId: MoodId = MoodId.Neutral
     ): NoteData[] {
@@ -121,7 +122,7 @@ export class ToplineEngine {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
             if (chorusChords.length === 0) chorusChords.push(chords[0]);
             // Generate motifs only, don't realize notes yet
-            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, bpm, moodId);
+            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentId, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, bpm, moodId);
             Object.assign(chorusMotifs, result.motifs);
         }
 
@@ -174,7 +175,7 @@ export class ToplineEngine {
                 }
             }
 
-            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, bpm, moodId);
+            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentId, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, bpm, moodId);
             
             sectionMelodies[index] = result.notes;
             currentPreviousPitch = result.lastPitch; // Pass the last pitch to the next section!
@@ -330,7 +331,7 @@ export class ToplineEngine {
 
     private static generateSectionMelody(
         section: SectionMetadata, chords: GeneratedChord[], style: StyleConfig,
-        tonality: string, persona: SingerPersonaConfig, instrumentName: string,
+        tonality: Tonality, persona: SingerPersonaConfig, instrumentId: InstrumentId,
         beatsPerBar: number, userMotif?: NoteData[],
         providedMotifs?: Record<string, MotifTemplate>,
         incomingPreviousPitch: number | null = null,
@@ -345,7 +346,7 @@ export class ToplineEngine {
         const sectionSyncopation = section.groove?.syncopationProb ?? 0.2;
 
         // T-1 合规：用 InstrumentFamily 枚举替换字符串子串匹配
-        const instrFam = resolveInstrumentFamily(instrumentName);
+        const instrFam = resolveInstrumentFamily(instrumentId);
         // 🌟 修复：如果主奏乐器不是人声，说明这是一首纯器乐曲，主旋律应该具有 Solo 的表现力
         const isVocal = instrFam === InstrumentFamily.Voice;
         const isInstrumental = !isVocal;
@@ -452,7 +453,7 @@ export class ToplineEngine {
                 currentBeat += motifLengthBeats;
             }
             // S-2 合规：显式传递 tonality 和 bpm，不依赖 GlobalContext
-            const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentName, tonality, bpm);
+            const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentId, tonality, bpm);
             
             let lastPitch = currentPreviousPitch;
             if (humanizedMelody.length > 0) {
@@ -645,7 +646,7 @@ export class ToplineEngine {
             }
 
             const isLastPhraseOfIntro = isIntro && phraseIdx === totalPhrases - 1;
-            const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentName, isLastPhraseOfIntro, section.name, style, currentPreviousPitch, forceStrongResolution, false, 0, false, macroTargetDegree, beatsPerBar);
+            const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentId, isLastPhraseOfIntro, section.name, style, currentPreviousPitch, forceStrongResolution, false, 0, false, macroTargetDegree, beatsPerBar);
             
             currentPreviousPitch = phraseResult.lastPitch;
             const phraseNotes = phraseResult.notes;
@@ -692,7 +693,7 @@ export class ToplineEngine {
             }
         }
 
-        const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentName);
+        const humanizedMelody = SingerPersona.apply(sectionMelody, persona, chords, instrumentId);
         return { notes: humanizedMelody, motifs, lastPitch: currentPreviousPitch, unresolvedCount: consecutiveUnresolved };
     }
 
@@ -835,7 +836,7 @@ export class ToplineEngine {
     // 🌟 核心升级 4 & 5 实现：结合和弦、线型、起承转合生成音高
     private static realizeMotif(
         template: MotifTemplate, phraseStart: number, chords: GeneratedChord[], 
-        tonality: string, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentName: string, isLastPhraseOfIntro: boolean = false, sectionName: string = '', style?: StyleConfig,
+        tonality: Tonality, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentId: InstrumentId, isLastPhraseOfIntro: boolean = false, sectionName: string = '', style?: StyleConfig,
         incomingPreviousPitch: number | null = null,
         forceStrongResolution: boolean = false,
         isClimax: boolean = false,
@@ -941,7 +942,7 @@ export class ToplineEngine {
             // 强制跳过音阶中的 4 音和 7 音（大调），直接跳到下一个五声音阶内的音
             const pentatonicGapProb = melodyRules.pentatonicGapProbability ?? 0.3;
             if (PRNGManager.next() < pentatonicGapProb) {
-                const isMajor = tonality.includes('Major');
+                const isMajor = tonality === Tonality.Major || tonality === Tonality.Major_Pentatonic;
                 // S-2 合规：chord.keyOffset 已由 HarmonyCore 注入，默认 0
                 const rootPc = activeChord.keyOffset ?? 0;
                 const avoidPcs = isMajor ? [(rootPc + 5) % 12, (rootPc + 11) % 12] : [(rootPc + 2) % 12, (rootPc + 8) % 12];
@@ -951,22 +952,22 @@ export class ToplineEngine {
             // 🌟 Neo-Soul / Advanced: Pentatonic Shifts
             const pentatonicShiftProb = style?.melody?.pentatonicShiftProbability ?? 0;
             if (pentatonicShiftProb > 0 && PRNGManager.next() < pentatonicShiftProb) {
-                if (activeChord.quality === 'Minor7' || activeChord.quality === 'Minor9') {
+                if (activeChord.quality === ChordQuality.Minor7 || activeChord.quality === ChordQuality.Minor9) {
                     // Minor pentatonic built on the 5th
-                    safeScalePcs = HarmonyCore.getScalePitches('Minor_Pentatonic').map(p => (activeChord.root + 7 + p) % 12);
-                } else if (activeChord.quality === 'Major7' || activeChord.quality === 'Add9') {
+                    safeScalePcs = HarmonyCore.getScalePitches(Tonality.Minor_Pentatonic).map(p => (activeChord.root + 7 + p) % 12);
+                } else if (activeChord.quality === ChordQuality.Major7 || activeChord.quality === ChordQuality.Add9) {
                     // Major pentatonic built on the 5th
-                    safeScalePcs = HarmonyCore.getScalePitches('Major_Pentatonic').map(p => (activeChord.root + 7 + p) % 12);
-                } else if (activeChord.quality === 'Dominant7') {
+                    safeScalePcs = HarmonyCore.getScalePitches(Tonality.Major_Pentatonic).map(p => (activeChord.root + 7 + p) % 12);
+                } else if (activeChord.quality === ChordQuality.Dominant7) {
                     // Minor pentatonic built on b3 (Altered sound)
-                    safeScalePcs = HarmonyCore.getScalePitches('Minor_Pentatonic').map(p => (activeChord.root + 3 + p) % 12);
+                    safeScalePcs = HarmonyCore.getScalePitches(Tonality.Minor_Pentatonic).map(p => (activeChord.root + 3 + p) % 12);
                 }
             }
 
             // 🌟 Dynamic Melody Simplification: Give complex chords space
             const isStrongBeat = (Math.abs(onset % 1) < 1e-6);
             const isLongNote = duration >= 1.0;
-            const isComplexChord = ['Minor9', 'Add9', 'Dominant7Sus4', 'HalfDiminished'].includes(activeChord.quality);
+            const isComplexChord = activeChord.quality === ChordQuality.Minor9 || activeChord.quality === ChordQuality.Add9 || activeChord.quality === ChordQuality.Dominant7Sus4 || activeChord.quality === ChordQuality.HalfDiminished;
             if (isComplexChord && !isStrongBeat && !isLongNote && PRNGManager.next() < 0.3) {
                 continue; // Skip weak beats over complex chords
             }
@@ -1374,7 +1375,8 @@ export class ToplineEngine {
             else if (isLead && isInstrumental) humanVelocity *= 1.05;
             
             // 🌟 针对特定乐器的力度调整：Lo-Fi 钢琴和 EP 需要更轻柔的触键，避免触发高力度采样（太亮）
-            if (instrumentName.includes('Lofi_Piano') || instrumentName.includes('Warm_EP')) {
+            // T-1 合规：使用 InstrumentId 枚举精确比较替代字符串子串匹配
+            if (instrumentId === InstrumentId.Lofi_Piano || instrumentId === InstrumentId.Warm_EP) {
                 humanVelocity *= 0.7; // 整体降低力度，保持温暖、慵懒的音色
             }
 
@@ -1394,7 +1396,7 @@ export class ToplineEngine {
             const finalOnset = Math.max(0, onset + timingJitter);
             
             let legatoDuration = duration;
-            if (instrumentName === 'Marimba') {
+            if (instrumentId === InstrumentId.Marimba) {
                 // Vocal synths might need a tiny bit of overlap to trigger legato, but keep it minimal
                 legatoDuration = duration * 1.05;
             }
@@ -1525,7 +1527,8 @@ export class ToplineEngine {
         }
 
         // 🌟 Enforce monophonic behavior for vocals (prevent overlap)
-        if (instrumentName.includes('Vocal') || instrumentName.includes('Voice') || instrumentName.includes('Choir')) {
+        // T-1 合规：使用 InstrumentFamily 枚举替代字符串子串匹配
+        if (resolveInstrumentFamily(instrumentId) === InstrumentFamily.Voice) {
             notes.sort((a, b) => {
                 if (Math.abs(a.onset - b.onset) < 0.01) return b.pitch - a.pitch;
                 return a.onset - b.onset;

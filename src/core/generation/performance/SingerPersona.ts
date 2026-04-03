@@ -3,12 +3,13 @@ import { PRNGManager } from '../../utils/PRNG';
 // 📄 文件路径: /src/core/generation/performance/SingerPersona.ts
 // 🎭 V2.2 歌手性格渲染器 (接入顺阶偏移计算，转音丝滑不跑调)
 // ==========================================
-import { NoteData, SingerPersonaConfig, GeneratedChord } from '../types';
+import { NoteData, SingerPersonaConfig, GeneratedChord, Tonality } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
 import { resolveInstrumentFamily, InstrumentFamily } from './InstrumentIdiom';
+import { InstrumentId } from '../config/InstrumentFlags';
 
 export class SingerPersona {
-    public static apply(notes: NoteData[], persona: SingerPersonaConfig, chords: GeneratedChord[], instrumentName: string = 'Acoustic_Grand', tonality: string = 'Major', bpm: number = 120): NoteData[] {
+    public static apply(notes: NoteData[], persona: SingerPersonaConfig, chords: GeneratedChord[], instrumentId: InstrumentId = InstrumentId.Acoustic_Grand, tonality: Tonality = Tonality.Major, bpm: number = 120): NoteData[] {
         if (!persona || !persona.traits) {
             persona = SingerPersona.PERSONAS['Folk_Storyteller'];
         }
@@ -16,7 +17,7 @@ export class SingerPersona {
         // 🌟 判断是否为键盘/吉他等非人声乐器。如果是，大幅削弱或关闭人声特有的”转音”和”叹息尾音”
         // 因为这些在钢琴上听起来像弹错的装饰音，显得匆忙、杂乱、不够优雅。
         // T-1 合规：用 InstrumentFamily 枚举替换字符串子串匹配
-        const instrFamily = resolveInstrumentFamily(instrumentName);
+        const instrFamily = resolveInstrumentFamily(instrumentId);
         const isPianoOrGuitar = instrFamily === InstrumentFamily.Piano || instrFamily === InstrumentFamily.Guitar;
 
         const EPSILON = 1e-6;
@@ -32,7 +33,7 @@ export class SingerPersona {
             let current = { ...sorted[i] };
             const next = i < sorted.length - 1 ? sorted[i + 1] : null;
             
-            const isSax = instrFamily === InstrumentFamily.Wind && (instrumentName === 'Alto_Sax' || instrumentName === 'Tenor_Sax');
+            const isSax = instrFamily === InstrumentFamily.Wind && (instrumentId === InstrumentId.Alto_Sax || instrumentId === InstrumentId.Tenor_Sax);
             
             // 萨克斯的换气阈值更短，0.5拍就算换气了
             const breathGap = isSax ? 0.5 : 1.0;

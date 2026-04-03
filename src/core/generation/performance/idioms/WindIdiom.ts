@@ -1,8 +1,9 @@
 import { NoteData, GeneratedChord, RuntimeIdiomPreferences } from '../../types';
+import { InstrumentId } from '../../config/InstrumentFlags';
 import { BaseIdiom } from './BaseIdiom';
 
 export class WindIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
+    public apply(notes: NoteData[], instrumentId: InstrumentId, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         if (notes.length === 0) return [];
 
         // 1. Sort by onset, then by pitch (descending) so we can pick the highest note if there's a chord

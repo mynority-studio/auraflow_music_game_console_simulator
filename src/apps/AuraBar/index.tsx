@@ -6,6 +6,7 @@ import { systemAudio } from '../../system/SystemAudio';
 import { EndlessRadioManager, AppState } from './EndlessRadioManager';
 import { ALL_BARS, BarConfig } from './BarData';
 import { PRNGManager } from '../../core/utils/PRNG';
+import { Tonality } from '../../core/generation/types';
 
 interface AuraBarProps {
   activeKeys: Set<string>;
@@ -103,7 +104,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
     '0-0': 39, '1-0': 37, '2-0': 54, '3-0': 56,            // Top row: Clap, Rimshot, Tambourine, Cowbell (4-0 is Function)
   };
 
-  const getJamMelodyNotes = (chord: any, tonality: string, keyOffset: number) => {
+  const getJamMelodyNotes = (chord: any, tonality: number, keyOffset: number) => {
     // We need 14 notes. To ensure it always sounds good (safe jamming),
     // we use the Pentatonic scale of the current chord or key.
     // Major Pentatonic: 1, 2, 3, 5, 6 (intervals: 0, 2, 4, 7, 9)
@@ -123,7 +124,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
         }
     } else {
         rootPc = (keyOffset % 12 + 12) % 12;
-        if (tonality === 'minor') {
+        if (tonality === Tonality.Minor) {
             scalePcs = [0, 3, 5, 7, 10].map(i => (rootPc + i) % 12); // Minor Pentatonic
         } else {
             scalePcs = [0, 2, 4, 7, 9].map(i => (rootPc + i) % 12); // Major Pentatonic

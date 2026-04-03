@@ -1,9 +1,10 @@
 import { PRNGManager } from '../../../utils/PRNG';
 import { NoteData, GeneratedChord, RuntimeIdiomPreferences, SectionMetadata } from '../../types';
+import { InstrumentId } from '../../config/InstrumentFlags';
 import { BaseIdiom } from './BaseIdiom';
 
 export class GuitarIdiom extends BaseIdiom {
-    public apply(notes: NoteData[], instrumentName: string, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
+    public apply(notes: NoteData[], instrumentId: InstrumentId, chords: GeneratedChord[], idiomPreferences?: RuntimeIdiomPreferences): NoteData[] {
         const guitarStyle = idiomPreferences?.guitarStyle || 'pop';
         const result: NoteData[] = [];
         if (notes.length === 0) return result;
@@ -37,7 +38,8 @@ export class GuitarIdiom extends BaseIdiom {
 
         const ghostNotes: NoteData[] = [];
         // 只有当乐器是扫弦吉他，且能量不极低时，才添加呼吸感（避免破坏安静段落的留白）
-        const isAcousticStrum = instrumentName.includes('Acoustic_Guitar') || instrumentName.includes('Guitar_Chord');
+        // T-1 合规：使用枚举精确比较替代字符串子串匹配
+        const isAcousticStrum = instrumentId === InstrumentId.Acoustic_Guitar_Nylon || instrumentId === InstrumentId.Acoustic_Guitar_Steel || instrumentId === InstrumentId.Acoustic_Guitar_Chord;
         
         const arpeggiatedNotes: NoteData[] = [];
         if (guitarStyle === 'arpeggio' || (guitarStyle === 'pop' && getEnergyLevelAt(strums[0]?.onset || 0) <= 4)) {

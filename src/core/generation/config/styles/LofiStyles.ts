@@ -1,6 +1,7 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
 import { StyleId } from '../StyleFlags';
 import { RnBRhythmCells } from '../../melody/RhythmCells';
+import { InstrumentId } from '../InstrumentFlags';
 
 export const LofiHipHopStyle: StyleConfig = {
     id: StyleId.Lofi,
@@ -9,25 +10,25 @@ export const LofiHipHopStyle: StyleConfig = {
         bpmRange: [65, 85], // 慵懒的慢板
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.7 },
-            { tonality: 'Dorian', weight: 0.3 }
+            { tonality: Tonality.Minor, weight: 0.7 },
+            { tonality: Tonality.Dorian, weight: 0.3 }
         ]
     },
     harmony: {
         chorusPool: [
-            ['ii', 'V', 'I', 'vi'], // iv - bVII - bIII - i
-            ['IV', 'iii', 'ii', 'I'], // bVI - v - iv - bIII
-            ['vi', 'IV', 'I', 'V'], // i - bVI - bIII - bVII
-            ['vii°', 'III7', 'vi', 'vi'], // ii° - V7 - i - i
-        ], 
+            ['ii', 'V', 'I', 'vi'],
+            ['IV', 'iii', 'ii', 'I'],
+            ['vi', 'IV', 'I', 'V'],
+            ['vii°', 'III7', 'vi', 'vi'],
+        ],
         versePool: [
-            ['vi', 'ii', 'V', 'I'], // i - iv - bVII - bIII
-            ['IV', 'V', 'iii', 'vi'], // bVI - bVII - v - i
-            ['vi', 'vi', 'ii', 'iii'] // i - i - iv - v
+            ['vi', 'ii', 'V', 'I'],
+            ['IV', 'V', 'iii', 'vi'],
+            ['vi', 'vi', 'ii', 'iii']
         ],
         preChorusPool: [
-            ['ii', 'V', 'I', 'vi'], // iv - bVII - bIII - i
-            ['IV', 'V', 'vi', 'vi'], // bVI - bVII - i - i
+            ['ii', 'V', 'I', 'vi'],
+            ['IV', 'V', 'vi', 'vi'],
         ]
     },
     harmonyRules: {
@@ -36,20 +37,20 @@ export const LofiHipHopStyle: StyleConfig = {
         melodyDrivenReharmProbability: 0.3,
         borrowedChords: ['SecondaryDominant'],
         passingChords: ['Diminished7'],
-        voicingStyle: 'neo-soul' // 爵士和弦排列
+        voicingStyle: 'neo-soul'
     },
     rhythm: {
-        densityBase: [0.3, 0.6], 
+        densityBase: [0.3, 0.6],
         syncopationWeight: 0.7,
         restProbability: 0.3,
         disruptionProbability: 0.1,
-        humanize: 0.9, // 极高的人性化，Dilla Feel
-        swingRatio: 0.5, // 明显的 Swing
+        humanize: 0.9,
+        swingRatio: 0.5,
         grooveTemplate: RnBRhythmCells
     },
     melody: {
-        stepwiseRatio: 0.7, 
-        maxJumpInterval: 8, 
+        stepwiseRatio: 0.7,
+        maxJumpInterval: 8,
         tensionTolerance: 0.4,
         mutationProbability: 0.2,
         mutationPool: ['inversion'],
@@ -57,15 +58,14 @@ export const LofiHipHopStyle: StyleConfig = {
         pentatonicShiftProbability: 0.8
     },
     orchestration: {
-        // 极端的音色替代策略 (SoundFont Hacking)
-        melodyInstruments: ['Vibraphone', 'Music_Box', 'Ocarina', 'Recorder'],
-        chordInstruments: ['Electric_Piano_1', 'Electric_Piano_2', 'Pad_2_warm'],
-        bassInstruments: ['Synth_Bass_1', 'Acoustic_Bass', 'Electric_Bass_Finger'],
-        drumInstruments: ['Standard_DrumKit', 'Electronic_Drum'],
-        counterMelodyInstruments: ['Muted_Trumpet', 'Vibraphone', 'Electric_Piano_1'],
-        texturePool: ['Block', 'Rhythmic'], 
+        melodyInstruments: [InstrumentId.Vibraphone, InstrumentId.Music_Box, InstrumentId.Ocarina, InstrumentId.Recorder],
+        chordInstruments: [InstrumentId.Electric_Piano_1, InstrumentId.Electric_Piano_2, InstrumentId.Pad_2_Warm],
+        bassInstruments: [InstrumentId.Synth_Bass_1, InstrumentId.Acoustic_Bass, InstrumentId.Electric_Bass_Finger],
+        drumInstruments: [InstrumentId.Standard_DrumKit, InstrumentId.Electronic_DrumKit],
+        counterMelodyInstruments: [InstrumentId.Muted_Trumpet, InstrumentId.Vibraphone, InstrumentId.Electric_Piano_1],
+        texturePool: ['Block', 'Rhythmic'],
         drumProbability: 1.0,
-        counterMelodyProbability: 0.4, 
+        counterMelodyProbability: 0.4,
         grooveRatio: { foundation: 0.7, comping: 0.6, color: 0.2 },
         idiomPreferences: {
             counterMelodyStyle: 'melodic',
@@ -85,12 +85,12 @@ export const LofiHipHopStyle: StyleConfig = {
         allowedPersonas: ['RnB_Diva', 'Soul_Singer', 'Jazz_Cat']
     },
     contrast: {
-        chorusPitchOffset: 2, 
-        verseDensityMultiplier: 0.8, 
+        chorusPitchOffset: 2,
+        verseDensityMultiplier: 0.8,
         versePitchOffset: -2
     },
     modulation: {
-        probability: 0.0, // Lofi 通常不转调
+        probability: 0.0,
         targetSection: 'Final_Chorus',
         intervalPool: [1]
     }

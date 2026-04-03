@@ -1,4 +1,4 @@
-import { NoteData } from "../../types";
+import { NoteData, Tonality } from "../../types";
 import { IRiffIdiom, RiffContext } from "./IRiffIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
 import { PRNGManager } from "../../../utils/PRNG";
@@ -12,7 +12,7 @@ export class DefaultRiffIdiom implements IRiffIdiom {
     const chordTones = HarmonyCore.getChordTones(chord, 60 - keyOffset); // C4 range
     const scalePcs = HarmonyCore.getSafeScalePitches(
       chord,
-      ctx.tonality ?? 'Major'
+      ctx.tonality ?? Tonality.Major
     );
     const rootMidi = chordTones[0];
     const baseVel = 0.6 + (energyLevel / 10) * 0.3;

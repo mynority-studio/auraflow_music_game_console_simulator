@@ -1,5 +1,6 @@
-import { StyleConfig } from '../../types';
+import { StyleConfig, Tonality } from '../../types';
 import { StyleId } from '../StyleFlags';
+import { InstrumentId } from '../InstrumentFlags';
 
 export const EurodanceStyle: StyleConfig = {
     id: StyleId.Eurodance,
@@ -9,8 +10,8 @@ export const EurodanceStyle: StyleConfig = {
         bpmRange: [130, 140],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 },
-            { tonality: 'Dorian', weight: 0.2 }
+            { tonality: Tonality.Minor, weight: 0.8 },
+            { tonality: Tonality.Dorian, weight: 0.2 }
         ]
     },
     harmony: {
@@ -30,25 +31,25 @@ export const EurodanceStyle: StyleConfig = {
         ]
     },
     harmonyRules: {
-        maxDissonanceTolerance: 0.1, // 极低的不和谐容忍度，确保旋律高度协和
+        maxDissonanceTolerance: 0.1,
         passingChords: [],
         reharmProbability: 0.0,
         voicingStyle: 'edm'
     },
     rhythm: {
-        densityBase: [0.8, 1.0], // Very dense, lots of 16th notes
-        syncopationWeight: 0.2, // Low syncopation, very straight and quantized
+        densityBase: [0.8, 1.0],
+        syncopationWeight: 0.2,
         restProbability: 0.05,
         disruptionProbability: 0.05,
-        humanize: 0.0, // Machine-like precision
-        swingRatio: 0.5, // Straight
+        humanize: 0.0,
+        swingRatio: 0.5,
         strictGrid: true
     },
     melody: {
-        stepwiseRatio: 0.3, // More jumps and arpeggios
-        maxJumpInterval: 12, // Octave jumps are common
-        tensionTolerance: 0.1, // 极低的张力容忍度，确保旋律高度协和，解决紧张感
-        mutationProbability: 0.1, // Highly repetitive motifs
+        stepwiseRatio: 0.3,
+        maxJumpInterval: 12,
+        tensionTolerance: 0.1,
+        mutationProbability: 0.1,
         mutationPool: ['truncation', 'inversion'],
         syncopationResolution: 'strict',
         pentatonicPreference: 0.2
@@ -61,14 +62,14 @@ export const EurodanceStyle: StyleConfig = {
     modulation: {
         probability: 0.1,
         targetSection: 'Final_Chorus',
-        intervalPool: [1, 2] // Up a half or whole step
+        intervalPool: [1, 2]
     },
     orchestration: {
-        melodyInstruments: ['Lead_1_square', 'Lead_2_sawtooth', 'Synth_Calliope'],
-        chordInstruments: ['Pad_1_new_age', 'Synth_Brass_1', 'Lead_2_sawtooth'],
-        bassInstruments: ['Synth_Bass_1', 'Synth_Bass_2'],
-        drumInstruments: ['Standard_DrumKit'], // Or Electronic Kit if available
-        counterMelodyInstruments: ['Lead_1_square', 'Pad_3_polysynth'],
+        melodyInstruments: [InstrumentId.Lead_1_Square, InstrumentId.Lead_2_Sawtooth, InstrumentId.Synth_Calliope],
+        chordInstruments: [InstrumentId.Pad_1_NewAge, InstrumentId.Synth_Brass_1, InstrumentId.Lead_2_Sawtooth],
+        bassInstruments: [InstrumentId.Synth_Bass_1, InstrumentId.Synth_Bass_2],
+        drumInstruments: [InstrumentId.Standard_DrumKit],
+        counterMelodyInstruments: [InstrumentId.Lead_1_Square, InstrumentId.Pad_3_Polysynth],
         texturePool: ['Rhythmic', 'Arpeggio', 'Block'],
         drumProbability: 1.0,
         counterMelodyProbability: 0.7,
@@ -88,7 +89,7 @@ export const EurodanceStyle: StyleConfig = {
         }
     },
     performance: {
-        allowedPersonas: ['RnB_Diva', 'C_Pop_Balladeer'] // Powerful vocals
+        allowedPersonas: ['RnB_Diva', 'C_Pop_Balladeer']
     }
 };
 
@@ -100,8 +101,8 @@ export const TranceStyle: StyleConfig = {
         bpmRange: [135, 140],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.9 },
-            { tonality: 'Dorian', weight: 0.1 }
+            { tonality: Tonality.Minor, weight: 0.9 },
+            { tonality: Tonality.Dorian, weight: 0.1 }
         ]
     },
     harmony: {
@@ -111,7 +112,7 @@ export const TranceStyle: StyleConfig = {
             ['VI', 'VII', 'i', 'i']
         ],
         versePool: [
-            ['i', 'i', 'i', 'i'], // Static harmony for build-ups
+            ['i', 'i', 'i', 'i'],
             ['i', 'VI', 'i', 'VI']
         ],
         preChorusPool: [
@@ -119,7 +120,7 @@ export const TranceStyle: StyleConfig = {
         ]
     },
     harmonyRules: {
-        maxDissonanceTolerance: 0.2, // 较低的不和谐容忍度
+        maxDissonanceTolerance: 0.2,
         passingChords: [],
         reharmProbability: 0.0,
         voicingStyle: 'edm'
@@ -136,7 +137,7 @@ export const TranceStyle: StyleConfig = {
     melody: {
         stepwiseRatio: 0.5,
         maxJumpInterval: 8,
-        tensionTolerance: 0.2, // 降低张力容忍度，确保旋律协和
+        tensionTolerance: 0.2,
         mutationProbability: 0.2,
         mutationPool: ['augmentation', 'diminution'],
         syncopationResolution: 'strict',
@@ -144,8 +145,8 @@ export const TranceStyle: StyleConfig = {
     },
     contrast: {
         versePitchOffset: -7,
-        verseDensityMultiplier: 0.5, // Very sparse verses (build-ups)
-        chorusPitchOffset: 12 // Huge drop
+        verseDensityMultiplier: 0.5,
+        chorusPitchOffset: 12
     },
     modulation: {
         probability: 0.0,
@@ -153,11 +154,11 @@ export const TranceStyle: StyleConfig = {
         intervalPool: []
     },
     orchestration: {
-        melodyInstruments: ['Lead_2_sawtooth', 'Pad_1_new_age', 'Lead_1_square'],
-        chordInstruments: ['Pad_1_new_age', 'Pad_3_polysynth', 'String_Ensemble'],
-        bassInstruments: ['Synth_Bass_1', 'Synth_Bass_2'],
-        drumInstruments: ['Standard_DrumKit'],
-        counterMelodyInstruments: ['Pad_1_new_age', 'Lead_2_sawtooth'],
+        melodyInstruments: [InstrumentId.Lead_2_Sawtooth, InstrumentId.Pad_1_NewAge, InstrumentId.Lead_1_Square],
+        chordInstruments: [InstrumentId.Pad_1_NewAge, InstrumentId.Pad_3_Polysynth, InstrumentId.String_Ensemble],
+        bassInstruments: [InstrumentId.Synth_Bass_1, InstrumentId.Synth_Bass_2],
+        drumInstruments: [InstrumentId.Standard_DrumKit],
+        counterMelodyInstruments: [InstrumentId.Pad_1_NewAge, InstrumentId.Lead_2_Sawtooth],
         texturePool: ['Pad', 'Arpeggio', 'Rhythmic'],
         drumProbability: 1.0,
         counterMelodyProbability: 0.9,
@@ -178,7 +179,7 @@ export const TranceStyle: StyleConfig = {
         }
     },
     performance: {
-        allowedPersonas: ['Folk_Storyteller', 'RnB_Diva'] // Ethereal or powerful
+        allowedPersonas: ['Folk_Storyteller', 'RnB_Diva']
     }
 };
 
@@ -190,8 +191,8 @@ export const SynthwaveStyle: StyleConfig = {
         bpmRange: [100, 115],
         timeSignaturePool: [{ signature: [4, 4], weight: 1.0 }],
         tonalityPool: [
-            { tonality: 'Minor', weight: 0.8 },
-            { tonality: 'Dorian', weight: 0.2 }
+            { tonality: Tonality.Minor, weight: 0.8 },
+            { tonality: Tonality.Dorian, weight: 0.2 }
         ]
     },
     harmony: {
@@ -209,7 +210,7 @@ export const SynthwaveStyle: StyleConfig = {
         ]
     },
     harmonyRules: {
-        maxDissonanceTolerance: 0.1, // 极低的不和谐容忍度
+        maxDissonanceTolerance: 0.1,
         passingChords: [],
         reharmProbability: 0.0,
         voicingStyle: 'edm'
@@ -219,14 +220,14 @@ export const SynthwaveStyle: StyleConfig = {
         syncopationWeight: 0.3,
         restProbability: 0.1,
         disruptionProbability: 0.1,
-        humanize: 0.05, // Slight humanization for the 80s feel
+        humanize: 0.05,
         swingRatio: 0.5,
         strictGrid: true
     },
     melody: {
         stepwiseRatio: 0.6,
         maxJumpInterval: 7,
-        tensionTolerance: 0.1, // 降低张力容忍度，确保旋律协和
+        tensionTolerance: 0.1,
         mutationProbability: 0.2,
         mutationPool: ['truncation', 'inversion'],
         syncopationResolution: 'strict',
@@ -243,11 +244,11 @@ export const SynthwaveStyle: StyleConfig = {
         intervalPool: [1, 2]
     },
     orchestration: {
-        melodyInstruments: ['Synth_Brass_1', 'Lead_1_square', 'Lead_2_sawtooth'],
-        chordInstruments: ['Synth_Brass_1', 'Pad_3_polysynth', 'Warm_EP'],
-        bassInstruments: ['Synth_Bass_1', 'Synth_Bass_2', 'Electric_Bass_Finger'],
-        drumInstruments: ['Standard_DrumKit'],
-        counterMelodyInstruments: ['Lead_1_square', 'Synth_Brass_1'],
+        melodyInstruments: [InstrumentId.Synth_Brass_1, InstrumentId.Lead_1_Square, InstrumentId.Lead_2_Sawtooth],
+        chordInstruments: [InstrumentId.Synth_Brass_1, InstrumentId.Pad_3_Polysynth, InstrumentId.Warm_EP],
+        bassInstruments: [InstrumentId.Synth_Bass_1, InstrumentId.Synth_Bass_2, InstrumentId.Electric_Bass_Finger],
+        drumInstruments: [InstrumentId.Standard_DrumKit],
+        counterMelodyInstruments: [InstrumentId.Lead_1_Square, InstrumentId.Synth_Brass_1],
         texturePool: ['Rhythmic', 'Block', 'Arpeggio'],
         drumProbability: 1.0,
         counterMelodyProbability: 0.6,
@@ -270,4 +271,3 @@ export const SynthwaveStyle: StyleConfig = {
         allowedPersonas: ['C_Pop_Balladeer', 'RnB_Diva']
     }
 };
-

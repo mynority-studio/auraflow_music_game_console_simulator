@@ -8,6 +8,7 @@ import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
 import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler } from './MidiScheduler';
+import { InstrumentId, InstrumentIdName } from '../generation/config/InstrumentFlags';
 
 export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
 export type VisualEventListener = (event: VisualEvent) => void;
@@ -66,11 +67,12 @@ export class PlaybackEngine {
         
         console.log("--- 使用的乐器 ---");
         const mixing = song.palette?.mixing || {};
-        const printInstrument = (role: string, sound?: string | null, mix?: any) => {
-            if (sound) {
+        const printInstrument = (role: string, sound?: InstrumentId | null, mix?: any) => {
+            if (sound !== undefined && sound !== null) {
+                const name = InstrumentIdName[sound] || `Unknown(${sound})`;
                 const pan = mix?.pan !== undefined ? mix.pan : 0;
                 const panStr = pan === 0 ? 'Center' : (pan < 0 ? `Left ${Math.abs(pan)}` : `Right ${pan}`);
-                console.log(`- ${role}: ${sound} (Pan: ${panStr})`);
+                console.log(`- ${role}: ${name} (Pan: ${panStr})`);
             }
         };
         printInstrument('Vocal', song.palette?.vocalSound, mixing.vocal);
@@ -151,14 +153,13 @@ export class PlaybackEngine {
 
         // 🌟 2. 获取采样器 (100% Soundfont)
         
-        const vocalSynth = song.palette?.vocalSound ? this.instruments.getInstrument(song.palette.vocalSound, 'Foreground', 'vocal', mixing.vocal) : null;
-        const melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', song.palette?.vocalSound ? 'Midground' : 'Foreground', 'melody', mixing.melody);
-        const chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground', 'chord', mixing.chord);
-        
-        // 🌟 3. 独立 Bass 采样器：根据流派选择电贝斯或原声贝斯
-        const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
-        const bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm', 'bass', mixing.bass);
-        const drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm', 'drums', mixing.drums); 
+        const vocalSynth = (song.palette?.vocalSound !== undefined && song.palette?.vocalSound !== null) ? this.instruments.getInstrumentById(song.palette.vocalSound, 'Foreground', 'vocal', mixing.vocal) : null;
+        const melodySynth = this.instruments.getInstrumentById(song.palette?.melodySound ?? InstrumentId.Acoustic_Grand, (song.palette?.vocalSound !== undefined && song.palette?.vocalSound !== null) ? 'Midground' : 'Foreground', 'melody', mixing.melody);
+        const chordSynth = this.instruments.getInstrumentById(song.palette?.chordSound ?? InstrumentId.Warm_EP, 'Midground', 'chord', mixing.chord);
+
+        // 🌟 3. 独立 Bass 采样器：根据乐器家族选择电贝斯或原声贝斯
+        const bassSynth = this.instruments.getInstrumentById(song.palette?.bassSound ?? InstrumentId.Electric_Bass_Finger, 'Rhythm', 'bass', mixing.bass);
+        const drumSynth = this.instruments.getInstrumentById(song.palette?.drumSound ?? InstrumentId.Standard_DrumKit, 'Rhythm', 'drums', mixing.drums); 
 
         if (this.isStopped) return;
 
@@ -170,14 +171,14 @@ export class PlaybackEngine {
         const channelMap: ChannelMap = {
             vocal: vocalSynth ? vocalSynth.channel : 0,
             melody: melodySynth.channel,
-            secondaryMelody: song.secondaryMelody && song.palette?.secondaryMelodySound
-                ? this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody).channel
+            secondaryMelody: song.secondaryMelody && (song.palette?.secondaryMelodySound !== undefined && song.palette?.secondaryMelodySound !== null)
+                ? this.instruments.getInstrumentById(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody).channel
                 : 2,
             chord: chordSynth.channel,
             bass: bassSynth.channel,
             drums: drumSynth.channel,
-            counterMelody: song.counterMelody && song.palette?.counterMelodySound
-                ? this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody).channel
+            counterMelody: song.counterMelody && (song.palette?.counterMelodySound !== undefined && song.palette?.counterMelodySound !== null)
+                ? this.instruments.getInstrumentById(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody).channel
                 : 5,
         };
 

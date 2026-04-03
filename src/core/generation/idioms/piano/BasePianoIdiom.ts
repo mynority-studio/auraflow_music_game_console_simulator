@@ -1,4 +1,4 @@
-import { NoteData, GeneratedChord } from "../../types";
+import { NoteData, GeneratedChord, ChordQuality, CQ_IS_HIGH_TENSION, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR } from "../../types";
 import { StyleId } from "../../config/StyleFlags";
 import { IPianoIdiom, PianoIdiomContext } from "./IPianoIdiom";
 import { HarmonyCore } from "../../composing/HarmonyCore";
@@ -104,7 +104,7 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
     });
 
     // Sakamoto's Subtraction
-    const isHighTension = ['Major7', 'Minor7', 'Dominant7', 'Add9', 'Minor9', 'Major9', 'Dominant9', 'Minor11', 'Dominant13'].includes(chord.quality);
+    const isHighTension = (CQ_IS_HIGH_TENSION & (1 << chord.quality)) !== 0;
     if (isHighTension && voicedTones.length > 3 && PRNGManager.next() < 0.7) {
       voicedTones = voicedTones.filter((p) => p % 12 !== fifthPc);
     }
@@ -121,9 +121,9 @@ export abstract class BasePianoIdiom implements IPianoIdiom {
             // 如果剔除根音后和弦太单薄，尝试向上叠加色彩音 (9th, 11th, 13th)
             if (voicedTones.length < 3) {
                 const highestNote = Math.max(...(voicedTones.length > 0 ? voicedTones : [60]));
-                if (chord.quality.includes('Major') || chord.quality.includes('Dominant')) {
+                if ((CQ_IS_MAJOR | CQ_IS_DOM) & (1 << chord.quality)) {
                     voicedTones.push(highestNote + 14); // Add 9th
-                } else if (chord.quality.includes('Minor')) {
+                } else if (CQ_IS_MINOR & (1 << chord.quality)) {
                     voicedTones.push(highestNote + 14); // Add 9th
                     if (PRNGManager.next() < 0.5) voicedTones.push(highestNote + 17); // Add 11th
                 }

@@ -2,6 +2,8 @@ import { NoteData, SectionType } from "../../types";
 import { BassIdiomContext, IBassIdiom } from "./IBassIdiom";
 import { PRNGManager } from "../../../utils/PRNG";
 import { StyleId } from "../../config/StyleFlags";
+import { InstrumentId, InstrumentIdFamily } from "../../config/InstrumentFlags";
+import { InstrumentFamily } from "../../performance/InstrumentIdiom";
 
 const GROOVE_EPSILON = 0.05;
 const BEAT_EPSILON = 1e-6;
@@ -42,7 +44,8 @@ export abstract class BaseBassIdiom implements IBassIdiom {
     const beatsPerBar = ctx.beatsPerBar;
     const grooveDNA = ctx.grooveDNA || [];
 
-    const isBowedString = bassSound === 'Cello' || bassSound === 'Contrabass' || bassSound?.includes('String');
+    // T-1 合规：使用 InstrumentId 枚举精确比较替代字符串子串匹配
+    const isBowedString = bassSound === InstrumentId.Cello || bassSound === InstrumentId.Contrabass || (bassSound !== undefined && bassSound !== null && InstrumentIdFamily[bassSound] === InstrumentFamily.String);
 
     // 解决"听感太赶"：低能量段落、弓弦乐器强制全音符贝斯
     if (energyLevel <= 3 || isCinematic || isBallad || isBowedString) {
