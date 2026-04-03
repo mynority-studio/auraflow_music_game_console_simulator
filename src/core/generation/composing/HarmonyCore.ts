@@ -1025,7 +1025,50 @@ export class HarmonyEngine {
                     currentBeat += beatsPerBar;
                 }
             });
-            return timeline;
+
+            // 🌟 概率化和声加速/减速 (Harmonic Rhythm Variation)
+            // 后处理：根据能量和位置动态调整和弦时值
+            const variedTimeline: GeneratedChord[] = [];
+            for (let ci = 0; ci < timeline.length; ci++) {
+                const chord = timeline[ci];
+                const chordDuration = chord.endBeat - chord.startBeat;
+                const chordSection = sections.find(s => chord.startBeat >= s.startBeat && chord.startBeat < s.endBeat);
+                const sectionEnergy = chordSection ? chordSection.energyLevel : 5;
+                const sectionEnd = chordSection ? chordSection.endBeat : chord.endBeat;
+                const barsToSectionEnd = (sectionEnd - chord.startBeat) / beatsPerBar;
+
+                // 段落最后 2 小节：和声加速（一拆二）
+                if (barsToSectionEnd <= 2 && Math.abs(chordDuration - beatsPerBar) < 1e-6 && sectionEnergy >= 5 && PRNGManager.next() < 0.5) {
+                    const halfDur = chordDuration / 2;
+                    variedTimeline.push({ ...chord, endBeat: chord.startBeat + halfDur });
+                    // 后半重复同一和弦（拆分后保持和声一致）
+                    variedTimeline.push({ ...chord, startBeat: chord.startBeat + halfDur, endBeat: chord.endBeat });
+                    continue;
+                }
+
+                // 高能量段落：30% 概率一拆二（加速感）
+                if (sectionEnergy >= 7 && Math.abs(chordDuration - beatsPerBar) < 1e-6 && beatsPerBar >= 4 && PRNGManager.next() < 0.3) {
+                    const halfDur = chordDuration / 2;
+                    variedTimeline.push({ ...chord, endBeat: chord.startBeat + halfDur });
+                    variedTimeline.push({ ...chord, startBeat: chord.startBeat + halfDur, endBeat: chord.endBeat });
+                    continue;
+                }
+
+                // 低能量段落：25% 概率合并下一个和弦（减速感，2 小节 1 和弦）
+                if (sectionEnergy <= 3 && ci + 1 < timeline.length && PRNGManager.next() < 0.25) {
+                    const nextChord = timeline[ci + 1];
+                    // 只有当两个和弦紧邻且在同一段落时才合并
+                    if (Math.abs(chord.endBeat - nextChord.startBeat) < 1e-6 && chordSection && nextChord.startBeat < sectionEnd) {
+                        variedTimeline.push({ ...chord, endBeat: nextChord.endBeat });
+                        ci++; // 跳过下一个和弦
+                        continue;
+                    }
+                }
+
+                variedTimeline.push(chord);
+            }
+
+            return variedTimeline;
     }
 
     public static reharmonize(chords: GeneratedChord[], melody: NoteData[], params: GenerationParams): GeneratedChord[] {

@@ -31,11 +31,6 @@ export class StructureEngine {
     const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
     const addSection = (name: string, bars: number, rawEnergy: number) => {
-      // 🌟 临时屏蔽所有前奏，方便调试 (Temporarily disable all intros for debugging)
-      if (name.startsWith("Intro")) {
-        return;
-      }
-
       // Apply Mood Energy Cap
       const energy = Math.max(mood.energyCap[0], Math.min(mood.energyCap[1], rawEnergy));
 
@@ -102,107 +97,136 @@ export class StructureEngine {
       currentBeat += bars * beatsPerBar;
     };
 
-    const introBars = bpm < 90 ? 8 : 4;
-    const outroBars = 4; // Lo-Fi / 放松：8 小节，流行/电子：4 小节
+    const outroBars = 4;
 
-    const addIntro = (bars: number, baseEnergy: number) => {
-      if (bars >= 8) {
-        addSection("Intro_A", bars / 2, Math.max(1, baseEnergy - 2));
-        addSection("Intro_B", bars / 2, baseEnergy);
-      } else {
-        addSection("Intro", bars, baseEnergy);
-      }
+    // 🌟 马尔可夫曲式状态机 (Markov Song Structure State Machine)
+    // 动态段落长度（概率加权）
+    const getDynamicLength = (state: string): number => {
+      const roll = PRNGManager.next();
+      if (state === 'Intro') return roll > 0.7 ? 8 : 4;
+      if (state === 'Verse') return roll > 0.8 ? 8 : 16;
+      if (state === 'PreChorus') return roll > 0.6 ? 4 : 8;
+      if (state === 'Chorus') return roll > 0.7 ? 32 : 16;
+      if (state === 'Bridge') return roll > 0.5 ? 4 : 8;
+      if (state === 'Break') return roll > 0.5 ? 4 : 8;
+      if (state === 'Solo') return roll > 0.5 ? 8 : 16;
+      return 8;
     };
 
-    // 🌟 修复：结构模板池 (Structure Template Pool)
-    const templates =[
-      // 模板A：标准流行 (循序渐进)
-      () => {
-        addIntro(introBars * 2, 4);
-        addSection("Verse_1", 16, 4);
-        addSection("PreChorus_1", 8, 6);
-        addSection("Chorus_1", 16, 8);
-        addSection("Break", 8, 3);
-        addSection("Verse_2", 16, 5);
-        addSection("PreChorus_2", 8, 7);
-        addSection("Chorus_Main", 16, 9);
-        addSection("Bridge", 8, 7);
-        addSection("Chorus_Epic", 16, 10);
-      },
-      // 模板B：副歌前置 (抓耳开局型)
-      () => {
-        addIntro(8, 6);
-        addSection("Chorus_1", 16, 8); // 开局直接副歌！
-        addSection("Verse_1", 16, 4);
-        addSection("PreChorus_1", 8, 6);
-        addSection("Chorus_Main", 16, 9);
-        addSection("Solo_Bridge", 16, 10);
-        addSection("Chorus_Epic", 16, 10);
-      },
-      // 模板C：短平快电音/舞曲结构
-      () => {
-        addIntro(introBars * 2, 4);
-        addSection("Verse_1", 16, 5);
-        addSection("Verse_2", 16, 6); // 连续主歌堆叠情绪
-        addSection("Chorus_Main", 32, 9); // 超长副歌爽点
-        addSection("Break", 8, 2); // 突然跌落
-        addSection("Chorus_Epic", 16, 10);
-      },
-      // 模板D：连续副歌轰炸，干脆利落结尾
-      () => {
-        addIntro(introBars * 2, 4);
-        addSection("Verse_1", 16, 5);
-        addSection("PreChorus_1", 8, 7);
-        addSection("Chorus_1", 16, 9);
-        addSection("Chorus_Main", 16, 10);
-        addSection("Chorus_Epic", 16, 10); // 连续3个Chorus
-      }
-    ];
+    // 宏观能量弧线：根据全曲进度映射基础能量（低→中→高→跌→最高）
+    const getBaseEnergy = (progress: number): number => {
+      // 0~0.15: 低能量起步 (2-4)
+      if (progress < 0.15) return 2 + Math.floor(PRNGManager.next() * 3);
+      // 0.15~0.4: 中等能量 (4-6)
+      if (progress < 0.4) return 4 + Math.floor(PRNGManager.next() * 3);
+      // 0.4~0.6: 高能量 (7-9)
+      if (progress < 0.6) return 7 + Math.floor(PRNGManager.next() * 3);
+      // 0.6~0.75: 跌落 (3-5)
+      if (progress < 0.75) return 3 + Math.floor(PRNGManager.next() * 3);
+      // 0.75~1.0: 最终高潮 (8-10)
+      return 8 + Math.floor(PRNGManager.next() * 3);
+    };
 
-    // 🌟 针对特定曲风的专属结构模板
-    if (params.global.structureTemplate === 'bossa') {
-      templates.push(
-        // 模板E：Bossa Nova 专属 (开局即摇摆，无需漫长铺垫)
-        () => {
-          addIntro(8, 5); // 能量直接给到5，鼓组和Bass直接进
-          addSection("Verse_1", 16, 6); // 主歌直接起飞
-          addSection("Chorus_1", 16, 7);
-          addSection("Solo_Bridge", 16, 8); // Bossa 必备的器乐 Solo 段落
-          addSection("Verse_2", 16, 6);
-          addSection("Chorus_Main", 16, 8);
+    // 段落计数器（用于全局约束 + 命名）
+    const counts: Record<string, number> = { Intro: 0, Verse: 0, PreChorus: 0, Chorus: 0, Bridge: 0, Break: 0, Solo: 0 };
+
+    // 全局约束上限
+    const maxCounts: Record<string, number> = { Verse: 3, PreChorus: 2, Chorus: 4, Bridge: 1, Break: 1, Solo: 1 };
+
+    const targetTotalBars = 64 + Math.floor(PRNGManager.next() * 33); // 64~96 小节
+    let totalBars = 0;
+
+    // 状态机初始状态
+    let currentState = 'Intro';
+
+    while (totalBars < targetTotalBars) {
+      // 段落长度
+      const length = getDynamicLength(currentState);
+
+      // 能量：基于宏观弧线 + 段落类型修正
+      const progress = totalBars / targetTotalBars;
+      let energy = getBaseEnergy(progress);
+      // Break/Bridge 强制低能量
+      if (currentState === 'Break' || currentState === 'Bridge') {
+        energy = Math.min(energy, 2 + Math.floor(PRNGManager.next() * 3));
+      }
+      // Chorus 保底高能量
+      if (currentState === 'Chorus') {
+        energy = Math.max(energy, 7);
+      }
+
+      // 生成段落名称（带编号）
+      counts[currentState] = (counts[currentState] || 0) + 1;
+      const sectionName = counts[currentState] > 1 ? `${currentState}_${counts[currentState]}` : `${currentState}_1`;
+
+      if (currentState === 'Intro') {
+        // Intro 特殊处理：可能拆分为 A/B
+        if (length >= 8) {
+          addSection("Intro_A", length / 2, Math.max(1, energy - 2));
+          addSection("Intro_B", length / 2, energy);
+        } else {
+          addSection("Intro", length, energy);
         }
-      );
-    } else if (params.global.structureTemplate === 'jazz') {
-      templates.push(
-        // 模板F：Chill Jazzy 专属 (持续律动，不追求大起大落)
-        () => {
-          addSection("Intro", 8, 4); // 能量4，带鼓点进场
-          addSection("Verse_1", 16, 5);
-          addSection("Chorus_1", 16, 6);
-          addSection("Verse_2", 16, 5);
-          addSection("Solo_Bridge", 16, 7); // 爵士必备 Solo
-          addSection("Chorus_Main", 16, 6);
-        }
-      );
-    } else if (params.global.structureTemplate === 'edm') {
-      templates.push(
-        // 模板G：Progressive House / EDM 专属 (The Journey)
-        () => {
-          addSection("Intro", 8, 2); // DJ Mix-in: 极简底鼓和踩镲
-          addSection("Verse_1", 16, 4); // 加入Bass和简单琶音
-          addSection("Breakdown", 16, 2); // 灵魂段落：突然抽走鼓点，只留空灵Pad和旋律
-          addSection("BuildUp_1", 16, 7); // 情绪爬升：军鼓滚奏，能量线性递增
-          addSection("Drop_1", 16, 10); // 高潮爆发：所有乐器火力全开，Four-on-the-floor
-          addSection("Breakdown_2", 8, 3); // 再次跌落，给听众喘息
-          addSection("BuildUp_2", 16, 8); // 第二次更猛烈的爬升
-          addSection("Drop_2", 32, 10); // 终极高潮：超长32小节的狂欢
-        }
-      );
+      } else {
+        addSection(sectionName, length, energy);
+      }
+      totalBars += length;
+
+      // 马尔可夫状态转移（带全局约束守卫）
+      const roll = PRNGManager.next();
+      const canVerse = (counts['Verse'] || 0) < maxCounts['Verse'];
+      const canChorus = (counts['Chorus'] || 0) < maxCounts['Chorus'];
+      const canBridge = (counts['Bridge'] || 0) < maxCounts['Bridge'];
+      const canBreak = (counts['Break'] || 0) < maxCounts['Break'];
+      const canPreChorus = (counts['PreChorus'] || 0) < maxCounts['PreChorus'];
+      const canSolo = (counts['Solo'] || 0) < maxCounts['Solo'];
+      const chorusCount = counts['Chorus'] || 0;
+      const nearEnd = totalBars >= targetTotalBars - 20;
+
+      switch (currentState) {
+        case 'Intro':
+          // 20% 概率抓耳开局直接进副歌
+          currentState = (roll < 0.2 && canChorus) ? 'Chorus' : 'Verse';
+          break;
+        case 'Verse':
+          if (roll < 0.5 && canPreChorus) currentState = 'PreChorus';
+          else if (roll < 0.85 && canChorus) currentState = 'Chorus';
+          else if (canVerse) currentState = 'Verse'; // 连续 Verse（堆叠情绪）
+          else currentState = canChorus ? 'Chorus' : 'PreChorus';
+          break;
+        case 'PreChorus':
+          currentState = 'Chorus'; // PreChorus 必接 Chorus
+          break;
+        case 'Chorus':
+          if (nearEnd && chorusCount >= 2) {
+            break; // 跳出 while，进入 Outro 逻辑
+          } else if (roll < 0.4 && canVerse) currentState = 'Verse';
+          else if (roll < 0.6 && canBridge) currentState = 'Bridge';
+          else if (roll < 0.75 && canBreak) currentState = 'Break';
+          else if (roll < 0.85 && canSolo) currentState = 'Solo';
+          else if (canVerse) currentState = 'Verse';
+          else break; // 结束
+          break;
+        case 'Bridge':
+        case 'Break':
+        case 'Solo':
+          // 跌落/Solo 后必然爆发
+          currentState = (roll < 0.3 && canPreChorus) ? 'PreChorus' : 'Chorus';
+          break;
+        default:
+          break;
+      }
+
+      // 如果 Chorus 已达上限且接近结尾，强制结束
+      if (nearEnd && chorusCount >= 2 && currentState === 'Chorus' && !canChorus) {
+        break;
+      }
     }
 
-    // 随机抽选一种曲式模板
-    const selectedTemplate = templates[Math.floor(PRNGManager.next() * templates.length)];
-    selectedTemplate();
+    // 确保至少有 2 个 Chorus（全局约束）
+    if ((counts['Chorus'] || 0) < 2) {
+      addSection("Chorus_Epic", 16, 10);
+    }
 
     // 🌟 根据最后一个段落的能量，决定收尾方式 (Hard Stop vs Fade Out)
     const lastSection = sections[sections.length - 1];

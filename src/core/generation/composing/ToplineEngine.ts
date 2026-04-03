@@ -138,12 +138,17 @@ export class ToplineEngine {
                 // 🌟 修复：不再强制让主歌复用副歌的全部动机，恢复旋律的多样性
                 // 只在有概率的情况下，让主歌的 A 动机复用副歌的 A 动机（降级版），其余动机重新生成
                 // 增加复用概率，增强连贯性 (从 0.3 提升到 0.5)
-                if (PRNGManager.next() < 0.5) {
+                // 🌟 增强传承：80% 概率传承 Chorus Motif A 的节奏骨架，contour 独立生成
+                if (PRNGManager.next() < 0.8) {
                     providedMotifs = {};
                     const motifA = chorusMotifs['A'];
                     if (motifA) {
                         const sectionDensity = isSecondary ? (section.groove?.density ?? 0.5) * 0.5 : (section.groove?.density ?? 0.5);
-                        providedMotifs['A'] = this.downgradeMotif(motifA, section.name, sectionDensity);
+                        const inherited: MotifTemplate = { ...motifA };
+                        // 保留节奏骨架，重置 contour 增加多样性
+                        const contours: Contour[] = ['Ascending', 'Descending', 'Bowl', 'Wandering'];
+                        inherited.contour = contours[Math.floor(PRNGManager.next() * contours.length)];
+                        providedMotifs['A'] = this.downgradeMotif(inherited, section.name, sectionDensity);
                     }
                 }
             }
@@ -479,13 +484,17 @@ export class ToplineEngine {
         const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
         const actionBias = mood.phraseActionBias || [0.4, 0.3, 0.3]; // Repeat, Vary, Contrast
         
-        // 🌟 修复：倾向于使用更长的乐句（2小节），减少短乐句的频繁重复
-        const possibleLengths = [beatsPerBar * 2];
-        if (PRNGManager.next() < 0.3) {
-            possibleLengths.push(beatsPerBar); // 只有 30% 的概率允许 1 小节的短乐句
-        }
-        const phraseLength = possibleLengths[Math.floor(PRNGManager.next() * possibleLengths.length)];
-        const totalPhrases = Math.floor((section.endBeat - section.startBeat) / phraseLength);
+        // 🌟 叙事性乐句长度：支持 1/2/4/8 小节，让旋律有长线呼吸空间
+        const sectionBeats = section.endBeat - section.startBeat;
+        const phraseLenRoll = PRNGManager.next();
+        let phraseLength: number;
+        if (phraseLenRoll < 0.10) phraseLength = beatsPerBar;           // 10%: 1 小节短句
+        else if (phraseLenRoll < 0.50) phraseLength = beatsPerBar * 2;  // 40%: 2 小节（默认）
+        else if (phraseLenRoll < 0.85) phraseLength = beatsPerBar * 4;  // 35%: 4 小节长句
+        else phraseLength = beatsPerBar * 8;                             // 15%: 8 小节超长句
+        // 不超过段落长度
+        if (phraseLength > sectionBeats) phraseLength = Math.max(beatsPerBar, sectionBeats);
+        const totalPhrases = Math.max(1, Math.floor(sectionBeats / phraseLength));
 
         const motifs: Record<string, MotifTemplate> = {};
         if (providedMotifs) {
@@ -642,6 +651,13 @@ export class ToplineEngine {
             }
 
             const isLastPhraseOfIntro = isIntro && phraseIdx === totalPhrases - 1;
+
+            // 🌟 PreChorus 末尾强制上行：为进入 Chorus 制造推力
+            if (section.type === SectionType.PreChorus && phraseIdx >= totalPhrases - 2) {
+                template = { ...template, contour: 'Ascending' as Contour };
+                currentPitchShift += 3; // 提升 target pitch，向高音域攀升
+            }
+
             const phraseResult = this.realizeMotif(template, phraseStart, chords, tonality, isAnswer, currentPitchShift, isSolo, isInstrumental, isLead, instrumentId, isLastPhraseOfIntro, section.name, params, currentPreviousPitch, forceStrongResolution, false, 0, false, macroTargetDegree, beatsPerBar);
             
             currentPreviousPitch = phraseResult.lastPitch;

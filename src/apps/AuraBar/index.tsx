@@ -6,7 +6,7 @@ import { systemAudio } from '../../system/SystemAudio';
 import { EndlessRadioManager, AppState } from './EndlessRadioManager';
 import { ALL_BARS, BarConfig } from './BarData';
 import { PRNGManager } from '../../core/utils/PRNG';
-import { Tonality } from '../../core/generation/types';
+import { Tonality, CQ_IS_MINOR, CQ_IS_DIM } from '../../core/generation/types';
 
 interface AuraBarProps {
   activeKeys: Set<string>;
@@ -117,7 +117,9 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
         const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : keyOffset;
         rootPc = ((chord.root + chordKeyOffset) % 12 + 12) % 12;
         const q = chord.quality;
-        if (q.includes('Minor') || q.includes('Diminished')) {
+        // T-1 合规：ChordQuality 是数值枚举，用位掩码检查
+        const qBit = 1 << q;
+        if (qBit & (CQ_IS_MINOR | CQ_IS_DIM)) {
             scalePcs = [0, 3, 5, 7, 10].map(i => (rootPc + i) % 12); // Minor Pentatonic
         } else {
             scalePcs = [0, 2, 4, 7, 9].map(i => (rootPc + i) % 12); // Major Pentatonic

@@ -379,9 +379,10 @@ export class Orchestrator {
         }
 
         // 🌟 Phase 1 & 2: Use decoupled TrackState to determine instrument entry and texture
-        type SectionPlayState = { playBass: boolean, playChords: boolean, playCounterMelody: boolean, texture: string };
+        type SectionPlayState = { playBass: boolean, playChords: boolean, playCounterMelody: boolean, texture: string, bassEntryBeat: number, drumsEntryBeat: number, counterMelodyEntryBeat: number, bassExitBeat: number };
         const sectionPlayStates: Record<number, SectionPlayState> = {};
 
+        const beatsPerBar = track.timeSignature[0];
         track.sections.forEach((section, sectionIdx) => {
             const energy = section.energyLevel;
 
@@ -472,7 +473,44 @@ export class Orchestrator {
                 playBass = foundationProb > 0.4; playChords = compingProb > 0.4; texture = colorProb > compingProb ? "Pad" : "Arpeggio";
             }
 
-            sectionPlayStates[sectionIdx] = { playBass, playChords, playCounterMelody, texture };
+            // 🌟 Additive Arrangement: Entry Delay + Exit Early
+            let bassEntryBeat = section.startBeat;
+            let drumsEntryBeat = section.startBeat;
+            let counterMelodyEntryBeat = section.startBeat;
+            let bassExitBeat = section.endBeat;
+
+            const sectionBars = (section.endBeat - section.startBeat) / beatsPerBar;
+            const halfBeat = section.startBeat + Math.floor(sectionBars / 2) * beatsPerBar;
+
+            if (sectionBars >= 16 && (section.type === SectionType.Verse || energy <= 5)) {
+                const roll = PRNGManager.next();
+                if (roll < 0.3) {
+                    // 前半段空拍，后半段进鼓和贝斯
+                    drumsEntryBeat = halfBeat;
+                    bassEntryBeat = halfBeat;
+                } else if (roll < 0.55) {
+                    // 前半段只有鼓，后半段才进贝斯
+                    bassEntryBeat = halfBeat;
+                } else {
+                    // 正常：全段都有（消耗 0 次额外 PRNG）
+                }
+            }
+
+            if (sectionBars >= 16 && (section.type === SectionType.Chorus || energy >= 7)) {
+                // 副歌后半段突然加入副旋律推高潮
+                if (PRNGManager.next() < 0.6) {
+                    counterMelodyEntryBeat = halfBeat;
+                }
+            }
+
+            // Exit Early: 段落末尾提前撤出贝斯/副旋律，制造呼吸空间
+            if (sectionBars >= 12 && section.type !== SectionType.Outro) {
+                if (PRNGManager.next() < 0.25) {
+                    bassExitBeat = section.endBeat - 2 * beatsPerBar; // 最后 2 小节贝斯退出
+                }
+            }
+
+            sectionPlayStates[sectionIdx] = { playBass, playChords, playCounterMelody, texture, bassEntryBeat, drumsEntryBeat, counterMelodyEntryBeat, bassExitBeat };
         });
 
         let prevVoicing: number[] = [];
@@ -498,8 +536,6 @@ export class Orchestrator {
             let playChords = state.playChords;
             let playCounterMelody = state.playCounterMelody;
             let texture = state.texture;
-            const isNeoSoulOrRnB = false;
-
             // 🌟 旋律引导的和声替换 (Melody-Driven Reharmonization)
             const reharmProb = params.harmonyRules?.melodyDrivenReharmProbability ?? 0;
             if (reharmProb > 0 && PRNGManager.next() < reharmProb) {
@@ -528,10 +564,11 @@ export class Orchestrator {
             }
 
             // 🌟 动态织体切换 (Dynamic Texture Shifting)
-            if (isNeoSoulOrRnB) {
+            // 段落后半段有概率切换织体，增加推进感
+            {
                 const sectionLength = activeSection.endBeat - activeSection.startBeat;
                 const progress = (chord.startBeat - activeSection.startBeat) / sectionLength;
-                if (progress >= 0.5) {
+                if (progress >= 0.5 && PRNGManager.next() < 0.3) {
                     if (texture === 'Block' || texture === 'Pad') {
                         texture = PRNGManager.next() > 0.5 ? 'Rhythmic' : 'Arpeggio';
                     }
@@ -539,11 +576,12 @@ export class Orchestrator {
             }
 
             // 🌟 乐器化 Call and Response (Fills)
-            if (isNeoSoulOrRnB && PRNGManager.next() < 0.5) {
+            // 旋律空白处有概率用 Riff 填充
+            if (PRNGManager.next() < 0.25) {
                 const chordMidpoint = chord.startBeat + (chord.endBeat - chord.startBeat) / 2;
                 const melodyInSecondHalf = melodyNotes.some(n => n.onset >= chordMidpoint && n.onset < chord.endBeat);
                 if (!melodyInSecondHalf) {
-                    texture = 'Riff'; // Fill in the gap
+                    texture = 'Riff';
                 }
             }
 
@@ -600,6 +638,14 @@ export class Orchestrator {
                 }
             }
 
+
+            // 🌟 Additive Arrangement: 应用 Entry Delay + Exit Early
+            if (playBass && (chord.startBeat < state.bassEntryBeat || chord.startBeat >= state.bassExitBeat)) {
+                playBass = false;
+            }
+            if (playCounterMelody && chord.startBeat < state.counterMelodyEntryBeat) {
+                playCounterMelody = false;
+            }
 
             if (playBass) {
                 // 如果前奏有贝斯，为了避免割裂感，Verse_1 不应该变得稀疏
