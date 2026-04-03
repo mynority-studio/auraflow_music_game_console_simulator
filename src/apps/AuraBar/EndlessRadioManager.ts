@@ -2,7 +2,8 @@ import { AudioEngine } from '../../core/audio/AudioEngine';
 import { GlobalContext } from '../../core/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 import { Orchestrator } from '../../core/generation/arrangement/Orchestrator';
-import { GeneratedTrack, MusicContext, getDefaultParams } from '../../core/generation/types';
+import { GeneratedTrack, MusicContext, GenerationParams, getDefaultParams } from '../../core/generation/types';
+import { createParams } from '../../core/generation/presets/PresetLoader';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 
@@ -19,6 +20,10 @@ export class EndlessRadioManager {
   private stateChangeCallback?: (state: AppState) => void;
   public onStyleChange?: (styleName: string) => void;
 
+  /** 当前活跃的风格预设（null = 使用默认参数） */
+  private activePreset: Partial<GenerationParams> | null = null;
+  private activePresetName: string = 'Default';
+
   // --- Jam Mode Recording State ---
   public userDrumPattern: { note: number, velocity: number, tick: number }[] = [];
   public jamStartTick: number = 0;
@@ -26,6 +31,12 @@ export class EndlessRadioManager {
   private originalDrumEvents: any[] = [];
 
   constructor() {
+  }
+
+  /** 设置风格预设（传 null 恢复默认） */
+  public setPreset(preset: Partial<GenerationParams> | null, name: string = 'Default') {
+    this.activePreset = preset;
+    this.activePresetName = name;
   }
 
   public onStateChange(callback: (state: AppState) => void) {
@@ -395,11 +406,11 @@ export class EndlessRadioManager {
     this.currentTrack = track;
 
     if (this.onStyleChange) {
-      this.onStyleChange('Default');
+      this.onStyleChange(this.activePresetName);
     }
 
     // 管道在 App 层完成：generate → arrange → playSong
-    const arrangedSong = Orchestrator.arrange(track, getDefaultParams(), context);
+    const arrangedSong = Orchestrator.arrange(track, createParams(this.activePreset ?? undefined), context);
     await AudioEngine.playSong(arrangedSong);
     
     if (genId !== this.generationId) return;
@@ -431,7 +442,7 @@ export class EndlessRadioManager {
       // 消耗一次 PRNG 以保持与原管道的 PRNG 消耗序列对齐（原来用于选风格）
       PRNGManager.next();
 
-      const rawTrack = new MelodyEngine().generateFullSong(getDefaultParams());
+      const rawTrack = new MelodyEngine().generateFullSong(createParams(this.activePreset ?? undefined));
 
       if (currentGenId !== this.generationId) return;
 

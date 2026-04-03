@@ -419,6 +419,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                 // Enter Bar
                 const selectedBar = bars[selectedIndexRef.current];
                 if (selectedBar && managerRef.current) {
+                  managerRef.current.setPreset(selectedBar.preset ?? null, selectedBar.name);
                   managerRef.current.triggerGeneration();
                 }
               } else {

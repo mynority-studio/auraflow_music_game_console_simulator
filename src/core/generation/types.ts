@@ -247,6 +247,9 @@ export interface GenerationParams {
         drumProbability?: number;
         counterMelodyProbability?: number;
         fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic';
+        drumMode?: 'standard' | 'laid-back' | 'four-on-floor';
+        bassMode?: 'root-based' | 'groove-lock' | 'walking';
+        pianoMode?: 'standard' | 'syncopated-comping';
         vocalProbability?: number;
         outroRingOutProbability?: number;
         allowTradingFours?: boolean;
