@@ -22,14 +22,15 @@
 
 ### 0.2 接口边界（管道对外暴露的公开 API）
 
-管道外部代码**仅允许**调用以下入口：
+管道外部代码（App 层）**仅允许**调用以下入口：
 
 | 公开 API | 说明 |
 |----------|------|
+| `PRNGManager.setSeed()` | 种子初始化（仅限播放入口处调用） |
 | `MelodyEngine.generateFullSong()` | 生成曲目 |
 | `Orchestrator.arrange()` | 编配 |
-| `MidiConverter.convert()` | MIDI 转换 |
-| `PRNGManager.setSeed()` | 种子初始化（仅限播放入口处调用） |
+
+`MidiConverter.convert()` 由平台层（PlaybackEngine）内部调用，因为 `channelMap`（MIDI 通道分配）是平台层职责，App 层不应感知具体通道编号。
 
 **禁止**：管道外部代码调用 `PRNGManager.next()`。外部消耗 PRNG 会破坏管道内的确定性消耗序列。唯一例外是 step 1（选风格），该调用必须紧邻 `generateFullSong()` 之前。
 
@@ -101,8 +102,9 @@ step 1  styleId = allStyles[Math.floor(PRNGManager.next() * count)] // ×1
 step 2  { track, context } = engine.generateFullSong(styleId, options?)
 step 3  history.push({ track, styleId, context })
 step 4  arranged = Orchestrator.arrange(track, styleId, context)
+        ──── 以下为平台层（PlaybackEngine 内部）────
 step 5  events = MidiConverter.convert(arranged, channelMap)  // ← 管道终点
-step 6  [平台层] midiScheduler.load(events) → play
+step 6  midiScheduler.load(events) → play
 step 7  onTrackEnd → 有下一首 → goto 4 | 末尾 → goto 1
 ```
 
@@ -166,7 +168,7 @@ class Orchestrator {
 class MidiConverter {
   static convert(
     song: ArrangedTrack,
-    channelMap: ChannelMap,          // 由平台层提供的 MIDI 通道分配表
+    channelMap: ChannelMap = DEFAULT_CHANNEL_MAP,  // 由平台层构建，默认值供测试用
     options?: { countInBeats?: number; drumDucking?: boolean }
   ): MidiEvent[];
 }
@@ -177,6 +179,7 @@ class MidiConverter {
 | 同步 | 是 |
 | PRNG | 不消耗（入口记录 stateD 快照仅用于验证） |
 | 确定性 | 同一输入 = 同一输出 |
+| 调用方 | 平台层（PlaybackEngine），非 App 层直接调用 |
 
 ---
 
@@ -291,6 +294,14 @@ interface MidiEvent {
   channel: number;                // 0~15
   data1: number;
   data2: number;
+  visualData?: {                  // 仅 type='visual' 时存在，驱动 LED 可视化
+    type: string;
+    midiNote?: number;
+    velocity?: number;
+    source?: string;
+    onset?: number;
+    isUserMotif?: boolean;
+  };
 }
 ```
 
