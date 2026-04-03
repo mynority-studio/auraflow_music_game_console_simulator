@@ -7,7 +7,7 @@
  */
 import { ArrangedTrack, NoteData, GeneratedChord } from './types';
 import { StyleId } from './config/StyleFlags';
-import { StyleRegistry } from './config/styles/StyleRegistry';
+import { getStyleConfig } from './config/styles/StyleRegistry';
 import { PRNGManager } from '../utils/PRNG';
 
 const PPQ = 480;
@@ -156,7 +156,7 @@ export class MidiConverter {
 
         // --- Fake Sidechain (CC11) ---
         if (song.styleId !== undefined) {
-            const style = StyleRegistry[song.styleId];
+            const style = getStyleConfig(song.styleId);
             const needsSidechain = style?.orchestration?.mixingPreferences?.requireSidechain || false;
 
             if (needsSidechain && song.drums) {

@@ -11,7 +11,6 @@ export interface TextureRenderContext {
     activeSection: SectionMetadata | null;
 }
 import { StyleId } from "../config/StyleFlags";
-import { StyleRegistry } from "../config/styles/StyleRegistry";
 
 import { BassIdiomRegistry } from "../idioms/bass/BassIdiomRegistry";
 import { registerAllBassIdioms } from "../idioms/bass";
