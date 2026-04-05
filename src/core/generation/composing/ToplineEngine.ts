@@ -803,11 +803,13 @@ export class ToplineEngine {
         }
 
         if (motifs[baseLabel] === undefined) {
-          const densityMultiplier = isActualSoloSection
+          // Mood 调制旋律密度
+          const moodDensity = mood.densityMultiplier;
+          const densityMultiplier = (isActualSoloSection
             ? 1.8
             : section.name.includes("Chorus")
               ? 1.2
-              : 1.0;
+              : 1.0) * moodDensity;
           const avgNotesPerBeat = densityMultiplier * sectionDensity;
           let minNotes = Math.max(
             isOutro ? 1 : 3,
@@ -1108,6 +1110,9 @@ export class ToplineEngine {
           phraseNotes.forEach((n) => (n.velocity *= fadeOutFactor));
         }
 
+        // Mood 调制：力度 + 时值 + 叹息感后处理
+        this.applyMoodArticulation(phraseNotes, moodId);
+
         sectionMelody.push(...phraseNotes);
         currentPhraseStart += sub.lengthBeats;
       }
@@ -1178,6 +1183,8 @@ export class ToplineEngine {
     section?: SectionMetadata,
   ): { pickup: number[]; body: number[]; tail: number[] } {
     const energyLevel = section?.energyLevel || 5;
+    const moodId = context?.moodId || MoodId.Neutral;
+    const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
     let sparsityScore = 0;
     if (context?.ensemble) {
@@ -1185,8 +1192,14 @@ export class ToplineEngine {
         (context.ensemble.drumSound ? 0 : 0.5) +
         (context.ensemble.bassSound ? 0 : 0.5);
     }
-    const finalDensity = sectionDensity * (1.0 - 0.5 * sparsityScore);
-    const syncopation = energyLevel >= 7 ? 0.4 : 0.2;
+    // Mood 调制：Chill/Melancholic 降低密度，Energetic/Aggressive 增加
+    const finalDensity = sectionDensity * (1.0 - 0.5 * sparsityScore) * mood.densityMultiplier;
+    // Mood 调制切分概率：Melancholic 更少切分（更平稳），Energetic 更多
+    const baseSyncopation = energyLevel >= 7 ? 0.4 : 0.2;
+    const syncopation = moodId === MoodId.Melancholic ? baseSyncopation * 0.5
+      : moodId === MoodId.Chill ? baseSyncopation * 0.7
+      : moodId === MoodId.Aggressive ? baseSyncopation * 1.5
+      : baseSyncopation;
 
     // 1. 分形细分 (Fractal Subdivision)
     let currentGrid = [phraseLengthBeats];
@@ -1231,10 +1244,16 @@ export class ToplineEngine {
       }
     }
     
-    // 3. 呼吸空间 (Breathing Room)
-    // 根据风格配置决定是否强制休止
-    const breathingProb = context?.style?.melody?.breathingRoomProbability ?? 0.2;
-    const breathingRoom = PRNGManager.next() < breathingProb ? (energyLevel >= 7 ? 0.5 : 1.0) : 0;
+    // 3. 呼吸空间 (Breathing Room) — Mood 调制
+    // Melancholic/Chill：更多呼吸（叹息感），Energetic/Aggressive：更紧密
+    const baseBreathingProb = context?.style?.melody?.breathingRoomProbability ?? 0.2;
+    const moodBreathingBoost = moodId === MoodId.Melancholic ? 0.4
+      : moodId === MoodId.Chill ? 0.3
+      : moodId === MoodId.Aggressive ? -0.1
+      : moodId === MoodId.Energetic ? -0.05
+      : 0;
+    const breathingProb = Math.max(0, Math.min(0.9, baseBreathingProb + moodBreathingBoost));
+    const breathingRoom = PRNGManager.next() < breathingProb ? (energyLevel >= 7 ? 0.5 : 1.5) : 0;
     const maxBeats = Math.max(1.0, phraseLengthBeats - breathingRoom);
     
     // 4. 映射到时间轴 (Onset Mapping)
@@ -1577,5 +1596,70 @@ export class ToplineEngine {
     if (Math.abs(pitch + 12 - target) < Math.abs(pitch - target)) pitch += 12;
     if (Math.abs(pitch - 12 - target) < Math.abs(pitch - target)) pitch -= 12;
     return pitch;
+  }
+
+  /**
+   * Mood 驱动的旋律演绎调制 (Mood-Driven Articulation)
+   *
+   * 同一条旋律线在不同 Mood 下听起来完全不同：
+   * - Melancholic: 长音 + 弱力度 + 淡出尾音（叹息感）
+   * - Chill: 中等延长 + 柔和力度
+   * - Energetic: 短促 + 强力度
+   * - Aggressive: 更短 + 更强 + 重音加倍
+   * - Euphoric: 稍长 + 明亮力度
+   *
+   * max ~50 notes 输入 (C-4 compliance)
+   */
+  private static applyMoodArticulation(notes: NoteData[], moodId: MoodId): void {
+    if (notes.length === 0 || moodId === MoodId.Neutral) return;
+
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      const isLast = i === notes.length - 1;
+      const isLongNote = n.duration >= 1.0;
+
+      switch (moodId) {
+        case MoodId.Melancholic: {
+          // 力度整体降低，长音更柔
+          n.velocity *= isLongNote ? 0.75 : 0.85;
+          // 时值延长（叹息/延音感）
+          n.duration *= 1.3;
+          // 乐句末尾加 fadeOut 标记（如果支持）
+          if (isLast && n.duration >= 0.5) {
+            n.fadeOutDuration = n.duration * 0.4;
+          }
+          break;
+        }
+        case MoodId.Chill: {
+          n.velocity *= 0.88;
+          n.duration *= 1.15;
+          break;
+        }
+        case MoodId.Energetic: {
+          // 力度增加，短音更弹跳
+          n.velocity *= isLongNote ? 1.05 : 1.15;
+          // 时值略微缩短（紧凑感）
+          n.duration *= 0.9;
+          break;
+        }
+        case MoodId.Aggressive: {
+          // 力度大幅增加
+          n.velocity *= 1.2;
+          // 时值缩短（断奏/攻击感）
+          n.duration *= 0.8;
+          break;
+        }
+        case MoodId.Euphoric: {
+          // 明亮但不刺耳
+          n.velocity *= 1.08;
+          n.duration *= 1.05;
+          break;
+        }
+      }
+
+      // Clamp
+      n.velocity = Math.max(1, Math.min(127, n.velocity));
+      n.duration = Math.max(0.1, n.duration);
+    }
   }
 }

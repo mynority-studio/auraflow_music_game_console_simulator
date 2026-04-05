@@ -13,7 +13,7 @@ export const DefaultStyleConfig: StyleConfig = {
     name: 'Default',
     masteringProfileId: 'Retro_Gadget', // 🌟 Apply Retro Gadget mastering profile by default
     global: {
-        bpmRange: [100, 120],
+        bpmRange: [80, 110], // 降低基础 BPM 范围，给 mood 调制留空间
         timeSignaturePool: [{ signature: [4, 4], weight: 1 }],
         tonalityPool: [{ tonality: Tonality.Major, weight: 1 }]
     },
@@ -54,7 +54,7 @@ export const DefaultStyleConfig: StyleConfig = {
         intervalPool: [1, 2]
     },
     orchestration: {
-        melodyInstruments: ['Piano', 'Violin', 'Flute', 'Saxophone'],
+        melodyInstruments: ['Piano', 'Flute', 'Marimba', 'Violin', 'Flute', 'Piano'], // Piano/Flute 权重更高
         chordInstruments: ['Piano', 'Electric_Piano_1', 'String_Ensemble_1', 'Synth_Pad_1'],
         bassInstruments: ['Bass', 'Acoustic_Bass', 'Electric_Bass_Finger'],
         drumInstruments: ['Drums'],

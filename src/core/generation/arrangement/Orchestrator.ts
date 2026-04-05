@@ -98,6 +98,62 @@ export class Orchestrator {
         });
     }
 
+    /**
+     * Velocity Curve — 段落级力度曲线
+     *
+     * 每个段落内部的音符力度按位置乘以一个弧形曲线：
+     * - 段落开头 10%：弱起（×0.75→1.0 渐入）
+     * - 段落中段 70%：正常（×1.0，小幅正弦波动 ±5%）
+     * - 段落结尾 20%：渐弱或渐强取决于下一段能量
+     *
+     * 不消耗 PRNG（纯确定性数学函数），不影响管道确定性。
+     */
+    private static applyVelocityCurves(notes: NoteData[], sections: SectionMetadata[]): void {
+        if (notes.length === 0 || sections.length === 0) return;
+
+        for (const n of notes) {
+            // 找到音符所在段落
+            let sec: SectionMetadata | null = null;
+            let secIdx = 0;
+            for (let s = 0; s < sections.length; s++) {
+                if (n.onset >= sections[s].startBeat && n.onset < sections[s].endBeat) {
+                    sec = sections[s]; secIdx = s; break;
+                }
+            }
+            if (!sec) continue;
+
+            const secLen = sec.endBeat - sec.startBeat;
+            if (secLen < 1) continue;
+            const progress = (n.onset - sec.startBeat) / secLen; // 0.0 → 1.0
+
+            let curve = 1.0;
+
+            // 弱起区 (0~10%)：渐入
+            if (progress < 0.1) {
+                curve = 0.75 + (progress / 0.1) * 0.25; // 0.75 → 1.0
+            }
+            // 中段 (10~80%)：微小正弦波动
+            else if (progress < 0.8) {
+                const midProgress = (progress - 0.1) / 0.7;
+                curve = 1.0 + Math.sin(midProgress * Math.PI * 2) * 0.05; // ±5%
+            }
+            // 结尾区 (80~100%)：看下一段能量
+            else {
+                const tailProgress = (progress - 0.8) / 0.2; // 0→1
+                const nextSec = sections[secIdx + 1];
+                if (nextSec && nextSec.energyLevel > sec.energyLevel) {
+                    // 下一段更高能 → 渐强冲刺
+                    curve = 1.0 + tailProgress * 0.15; // 1.0 → 1.15
+                } else {
+                    // 下一段更低能或结尾 → 渐弱
+                    curve = 1.0 - tailProgress * 0.2; // 1.0 → 0.8
+                }
+            }
+
+            n.velocity = Math.max(1, Math.min(127, n.velocity * curve));
+        }
+    }
+
     private static enforceInstrumentLimits(notes: NoteData[], behavior?: InstrumentBehavior) {
         if (!behavior) return;
         const [minPitch, maxPitch] = behavior.pitchRange;
@@ -434,7 +490,7 @@ export class Orchestrator {
         const trackThresholds = {
             bass: 3 + PRNGManager.next() * 2,          // 3~5 之间进场
             drums: 4 + PRNGManager.next() * 2,         // 4~6 之间进场
-            counterMelody: 6 + PRNGManager.next() * 2, // 6~8 之间进场
+            counterMelody: 3 + PRNGManager.next() * 2, // 3~5 之间进场（降低门槛，让 pad 铺底更早出现）
         };
 
         let prevSectionPlayBass = false;
@@ -458,9 +514,10 @@ export class Orchestrator {
                 playDrums = true;
             }
 
-            const isPad = palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir');
-            if (isPad && energy <= 3) {
-                playCounterMelody = true; // Pad 可以在极低能量时作为铺底
+            const cmSound = (palette.counterMelodySound || '').toLowerCase();
+            const isPadLike = cmSound.includes('pad') || cmSound.includes('string') || cmSound.includes('voice') || cmSound.includes('synth') || cmSound.includes('choir') || cmSound.includes('cello') || cmSound.includes('oboe');
+            if (isPadLike) {
+                playCounterMelody = true; // Pad/弦乐类乐器在任何能量级别都可以作为铺底
             }
 
             // 纯数据驱动的织体分配 (Pure Data-Driven Texture Allocation)
@@ -758,7 +815,7 @@ export class Orchestrator {
                     const pianoStyle = 'block-chord';
                     counterMelodyNotes.push(...TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody, undefined, currentStyleConfig, undefined, undefined, pianoStyle, 1.0, playBass));
                 } else {
-                    counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, currentStyleConfig, track.tonality));
+                    counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, currentStyleConfig, track.tonality, secName));
                 }
             }
 
@@ -858,7 +915,7 @@ export class Orchestrator {
                     
                     const currentStyleConfig = style;
                     const drumStyle = 'steady';
-                    const rawDrumNotes = TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.name.includes('Outro'), currentStyleConfig, swingRatio, nextEnergyLevel, hasFullGrooveStarted, sec.grooveRatio, drumStyle);
+                    const rawDrumNotes = TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.name.includes('Outro'), currentStyleConfig, swingRatio, nextEnergyLevel, hasFullGrooveStarted, sec.grooveRatio, drumStyle, [], context.moodId || 0);
                     
                     // 🌟 极低算力下的史诗级听感黑客技巧：真空效应 (Vacuum Effect / Dropout)
                     // 如果下一个段落是超级爆发 (能量差 >= 3)，拦截最后 1~2 拍的鼓点
@@ -1090,6 +1147,16 @@ export class Orchestrator {
             Orchestrator.enforceInstrumentLimits(humanizedRH, behaviors.chord);
             if (hasCounterMelody) Orchestrator.enforceInstrumentLimits(humanizedCounterMelody, behaviors.counterMelody);
         }
+
+        // 🌟 Velocity Curve — 段落级力度曲线（弱起→渐强→收尾渐弱）
+        // 对所有乐器统一应用，让整首曲子有"呼吸感"
+        Orchestrator.applyVelocityCurves(humanizedMelody, track.sections);
+        if (humanizedVocal) Orchestrator.applyVelocityCurves(humanizedVocal, track.sections);
+        Orchestrator.applyVelocityCurves(humanizedSecondaryMelody, track.sections);
+        Orchestrator.applyVelocityCurves(humanizedLH, track.sections);
+        Orchestrator.applyVelocityCurves(humanizedRH, track.sections);
+        Orchestrator.applyVelocityCurves(humanizedCounterMelody, track.sections);
+        Orchestrator.applyVelocityCurves(humanizedDrums, track.sections);
 
         return {
             bpm: track.bpm, key: track.key, absoluteStartBeat: track.absoluteStartBeat,

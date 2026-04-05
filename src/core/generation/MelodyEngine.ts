@@ -35,8 +35,20 @@ export class MelodyEngine {
       throw new Error(`Style ${styleId} is missing global config`);
     }
 
-    // 🌟 决定 Mood
-    const finalMoodId = moodId !== undefined ? moodId : (PRNGManager.next() > 0.5 ? Math.floor(PRNGManager.next() * 5) + 1 : MoodId.Neutral);
+    // 🌟 决定 Mood — 加权选择，偏向中性/温和情绪
+    // Neutral:35%, Chill:20%, Melancholic:15%, Energetic:15%, Aggressive:5%, Euphoric:10%
+    let finalMoodId: MoodId = MoodId.Neutral;
+    if (moodId !== undefined) {
+      finalMoodId = moodId;
+    } else {
+      const moodRoll = PRNGManager.next();
+      if (moodRoll < 0.35)      finalMoodId = MoodId.Neutral;
+      else if (moodRoll < 0.55) finalMoodId = MoodId.Chill;
+      else if (moodRoll < 0.70) finalMoodId = MoodId.Melancholic;
+      else if (moodRoll < 0.85) finalMoodId = MoodId.Energetic;
+      else if (moodRoll < 0.90) finalMoodId = MoodId.Aggressive;
+      else                      finalMoodId = MoodId.Euphoric;
+    }
     const mood = MoodRegistry[finalMoodId as MoodId] || MoodRegistry[MoodId.Neutral];
 
     // 🌟 真正的随机 BPM (区间内取值)

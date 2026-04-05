@@ -437,6 +437,9 @@ export class EndlessRadioManager {
       await new Promise(resolve => setTimeout(resolve, 100));
       if (currentGenId !== this.generationId) return;
 
+      // §1.4 step 0: 每次生成前用当前时间戳重新播种，确保每次不同
+      PRNGManager.setSeed(Date.now());
+
       const melodyEngine = new MelodyEngine();
       let randomStyleId: StyleId = StyleId.Default;
       if (this.allowedStyleIds && this.allowedStyleIds.length > 0) {
