@@ -437,15 +437,17 @@ export class EndlessRadioManager {
       await new Promise(resolve => setTimeout(resolve, 100));
       if (currentGenId !== this.generationId) return;
 
-      // §1.4 step 0: 每次生成前用当前时间戳重新播种，确保每次不同
-      PRNGManager.setSeed(Date.now());
+      // §1.4 step 0: 每次生成前重新播种
+      // Date.now() 提供毫秒级种子，Math.random()*1e6 补充额外熵（防止浏览器降低 Date 精度）
+      const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
+      PRNGManager.setSeed(seed);
+      console.log(`[Radio] New seed: ${seed}`);
 
       const melodyEngine = new MelodyEngine();
-      let randomStyleId: StyleId = StyleId.Default;
-      if (this.allowedStyleIds && this.allowedStyleIds.length > 0) {
-        const randomIndex = Math.floor(Math.random() * this.allowedStyleIds.length);
-        randomStyleId = this.allowedStyleIds[randomIndex];
-      }
+      // 从所有已注册的风格中随机选择（PRNG 驱动，确定性）
+      const allStyleIds = [StyleId.Default, StyleId.PowerBallad, StyleId.RussianFolkBallad];
+      const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
+      const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
       
       const rawTrack = melodyEngine.generateFullSong(randomStyleId);
       

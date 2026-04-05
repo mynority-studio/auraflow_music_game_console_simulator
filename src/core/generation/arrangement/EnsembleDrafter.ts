@@ -27,7 +27,13 @@ export class EnsembleDrafter {
             { id: 'Pad_1_NewAge', tags: ['cinematic', 'ghibli', 'post_rock', 'chill', 'acoustic'] },
             { id: 'Pad_2_Warm', tags: ['pop', 'dark_pop', 'electronic', 'lofi', 'rnb'] },
             { id: 'Choir_Aahs', tags: ['cinematic', 'ghibli', 'post_rock', 'ballad'] },
-            { id: 'Voice_Oohs', tags: ['pop', 'rnb', 'chill', 'acoustic', 'ballad'] }
+            { id: 'Voice_Oohs', tags: ['pop', 'rnb', 'chill', 'acoustic', 'ballad'] },
+            // 弦乐独奏/合奏 — 用作 counterMelody 铺底或旋律对话
+            { id: 'Violin', tags: ['cinematic', 'ghibli', 'post_rock', 'ballad', 'acoustic'] },
+            { id: 'Cello', tags: ['cinematic', 'ghibli', 'post_rock', 'ballad', 'acoustic'] },
+            { id: 'String_Ensemble_1', tags: ['cinematic', 'ghibli', 'ballad', 'pop'] },
+            { id: 'Contrabass', tags: ['jazz', 'cinematic', 'acoustic'] },
+            { id: 'Viola', tags: ['cinematic', 'ghibli', 'acoustic'] }
         ];
 
         const styleName = StyleId[style.id] || "";

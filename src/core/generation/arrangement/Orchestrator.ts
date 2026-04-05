@@ -8,6 +8,7 @@ import { ToplineEngine } from '../composing/ToplineEngine';
 import { MotifLooper } from './MotifLooper';
 
 import { GlobalReviewer } from '../review/GlobalReviewer';
+import { MoodId, MoodRegistry } from '../config/MoodFlags';
 import { StyleId, DefaultStyleConfig } from '../config/StyleFlags';
 
 import { PianoIdiom } from '../idioms/PianoIdiom';
@@ -151,6 +152,102 @@ export class Orchestrator {
             }
 
             n.velocity = Math.max(1, Math.min(127, n.velocity * curve));
+        }
+    }
+
+    /**
+     * 强制单声部（管乐/笛类）— 从 WindIdiom 移植
+     * 管乐器一次只能发一个音，重叠音符必须截断
+     */
+    private static enforceMonophonic(notes: NoteData[]): void {
+        if (notes.length <= 1) return;
+        notes.sort((a, b) => a.onset - b.onset || b.pitch - a.pitch);
+
+        // 去除同 onset 的低音（保留最高音）
+        for (let i = notes.length - 1; i > 0; i--) {
+            if (Math.abs(notes[i].onset - notes[i - 1].onset) < 0.01) {
+                notes.splice(i, 1);
+            }
+        }
+        // 截断重叠
+        for (let i = 0; i < notes.length - 1; i++) {
+            const end = notes[i].onset + notes[i].duration;
+            if (end > notes[i + 1].onset) {
+                notes[i].duration = Math.max(0.01, notes[i + 1].onset - notes[i].onset - 0.02);
+            }
+        }
+    }
+
+    /**
+     * 气息力度平滑（管乐）— 从 WindIdiom 移植
+     * 相邻音符力度差不超过 ±5%，模拟连续气息
+     */
+    private static smoothBreathVelocity(notes: NoteData[]): void {
+        for (let i = 1; i < notes.length; i++) {
+            const prev = notes[i - 1];
+            const curr = notes[i];
+            const gap = curr.onset - (prev.onset + prev.duration);
+            if (gap > 0.5) continue; // 有呼吸间隙则不平滑
+
+            const diff = curr.velocity - prev.velocity;
+            const maxDiff = Math.abs(curr.pitch - prev.pitch) >= 7 ? 3 : 6; // 大跳更严格
+            if (Math.abs(diff) > maxDiff) {
+                curr.velocity = prev.velocity + Math.sign(diff) * maxDiff;
+                curr.velocity = Math.max(1, Math.min(127, curr.velocity));
+            }
+        }
+    }
+
+    /**
+     * 换弓处理（弦乐）— 从 StringIdiom 移植
+     * 超过 4 拍的长音切分为两弓，换弓处留微小间隙且力度稍降
+     */
+    private static applyBowChanges(notes: NoteData[]): void {
+        const MAX_BOW = 4.0;
+        const added: NoteData[] = [];
+        for (let i = notes.length - 1; i >= 0; i--) {
+            if (notes[i].duration > MAX_BOW) {
+                const n = notes[i];
+                let remaining = n.duration;
+                let onset = n.onset;
+                const pieces: NoteData[] = [];
+                let isFirst = true;
+                while (remaining > 0) {
+                    const bowLen = Math.min(remaining, MAX_BOW);
+                    pieces.push({
+                        pitch: n.pitch, onset,
+                        duration: bowLen * 0.95, // 换弓间隙
+                        velocity: isFirst ? n.velocity : n.velocity * 0.85, // 换弓后稍弱
+                    });
+                    onset += bowLen;
+                    remaining -= bowLen;
+                    isFirst = false;
+                }
+                notes.splice(i, 1);
+                added.push(...pieces);
+            }
+        }
+        for (const a of added) notes.push(a);
+        notes.sort((a, b) => a.onset - b.onset);
+    }
+
+    /**
+     * 同音高重叠防护 — 从 StringIdiom 移植（SpessaSynth 兼容性）
+     * 同音高重叠会导致前一个 noteOff 切断后一个音
+     */
+    private static preventSamePitchOverlap(notes: NoteData[]): void {
+        if (notes.length <= 1) return;
+        notes.sort((a, b) => a.onset - b.onset);
+        for (let i = 0; i < notes.length; i++) {
+            for (let j = i + 1; j < notes.length; j++) {
+                if (notes[j].onset - notes[i].onset > 4.0) break; // 性能优化
+                if (notes[i].pitch === notes[j].pitch) {
+                    const end = notes[i].onset + notes[i].duration;
+                    if (end > notes[j].onset) {
+                        notes[i].duration = Math.max(0.01, notes[j].onset - notes[i].onset - 0.02);
+                    }
+                }
+            }
         }
     }
 
@@ -537,8 +634,10 @@ export class Orchestrator {
             }
 
             // 🌟 织体补偿法则 (Texture Compensation)
-            // 如果鼓没进场，和声乐器必须承担打拍子的责任！
-            let densityMultiplier = 1.0;
+            // 伴奏密度受 mood 独立控制
+            const moodCfg = MoodRegistry[context.moodId as MoodId] || MoodRegistry[MoodId.Neutral];
+            const accDensity = moodCfg.accompanimentDensityMultiplier ?? moodCfg.densityMultiplier;
+            let densityMultiplier = accDensity;
             if (!playDrums && !playBass && energy >= 5) {
                 // 🌟 极简高能状态下的织体暴走 (Texture Overdrive)
                 texture = PRNGManager.next() > 0.5 ? "Arpeggio" : "Pulsing";
@@ -1147,6 +1246,27 @@ export class Orchestrator {
             Orchestrator.enforceInstrumentLimits(humanizedRH, behaviors.chord);
             if (hasCounterMelody) Orchestrator.enforceInstrumentLimits(humanizedCounterMelody, behaviors.counterMelody);
         }
+
+        // 🌟 Instrument Articulation — 乐器特征后处理
+        // 根据乐器类型应用不同的演奏技法（连弓/断奏/滑音/单声部等）
+        const melodyInstr = (palette.melodySound || '').toLowerCase();
+        const isWindMelody = melodyInstr.includes('flute') || melodyInstr.includes('oboe') || melodyInstr.includes('clarinet') || melodyInstr.includes('sax');
+        const isStringMelody = melodyInstr.includes('violin') || melodyInstr.includes('cello') || melodyInstr.includes('string');
+
+        // 管乐/笛类旋律：强制单声部 + 力度平滑（模拟气息）
+        if (isWindMelody) {
+            Orchestrator.enforceMonophonic(humanizedMelody);
+            Orchestrator.smoothBreathVelocity(humanizedMelody);
+        }
+        // 弦乐旋律：换弓处理 + 同音高重叠防护
+        if (isStringMelody) {
+            Orchestrator.applyBowChanges(humanizedMelody);
+        }
+        // 所有旋律类轨道：同音高重叠防护（SpessaSynth 兼容）
+        Orchestrator.preventSamePitchOverlap(humanizedMelody);
+        Orchestrator.preventSamePitchOverlap(humanizedSecondaryMelody);
+        if (humanizedVocal) Orchestrator.preventSamePitchOverlap(humanizedVocal);
+        Orchestrator.preventSamePitchOverlap(humanizedCounterMelody);
 
         // 🌟 Velocity Curve — 段落级力度曲线（弱起→渐强→收尾渐弱）
         // 对所有乐器统一应用，让整首曲子有"呼吸感"

@@ -56,7 +56,7 @@ export class MelodyEngine {
     const maxBpm = style.global.bpmRange[1];
     const baseBpm = Math.floor(PRNGManager.next() * (maxBpm - minBpm + 1)) + minBpm;
     let bpm = Math.round(baseBpm * (mood.bpmMultiplier[0] + PRNGManager.next() * (mood.bpmMultiplier[1] - mood.bpmMultiplier[0])));
-    bpm = Math.max(60, Math.min(190, bpm)); // Clamp to reasonable extremes
+    bpm = Math.max(55, Math.min(125, bpm)); // 安全阀：硬上限 125 BPM
 
     // 🌟 真正的随机真实调号与 UI 映射
     // 如果外部传入了 Motif Root，则强制使用该 Root 作为歌曲的 Key

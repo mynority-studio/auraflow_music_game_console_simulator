@@ -4,8 +4,10 @@ import { getAudioContext } from './SynthManager';
 export class AudioMixer {
     public masterBus: GainNode;
     public hpf: BiquadFilterNode;
+    public lowShelf: BiquadFilterNode;
     public peakingEq: BiquadFilterNode;
     public highShelf: BiquadFilterNode;
+    public lpf: BiquadFilterNode;
     public masterCompressor: DynamicsCompressorNode;
     public makeupGain: GainNode;
     public currentStyle: string = 'default';
@@ -22,23 +24,37 @@ export class AudioMixer {
         this.makeupGain = nativeCtx.createGain();
         this.makeupGain.gain.value = 4.0; // +12dB approx
         
-        // 🌟 Luis's Master DSP Settings
-        // 1. BiquadFilter (Master EQ)
+        // 🌟 Master DSP — Warm Lo-Fi Tone
+        // 1. HPF: 清除超低频隆隆声
         this.hpf = nativeCtx.createBiquadFilter();
         this.hpf.type = 'highpass';
         this.hpf.frequency.value = 35;
         this.hpf.Q.value = 0.7;
 
+        // 2. Low Shelf: 增加低频温暖感 (+1.5dB @ 200Hz)
+        this.lowShelf = nativeCtx.createBiquadFilter();
+        this.lowShelf.type = 'lowshelf';
+        this.lowShelf.frequency.value = 200;
+        this.lowShelf.gain.value = 1.5;
+
+        // 3. Peaking EQ: 削减 300Hz 浑浊
         this.peakingEq = nativeCtx.createBiquadFilter();
         this.peakingEq.type = 'peaking';
         this.peakingEq.frequency.value = 300;
         this.peakingEq.Q.value = 1.5;
         this.peakingEq.gain.value = -3.0;
 
+        // 4. High Shelf: 削减高频亮度（温暖化，原 +2.5 改为 -1.5）
         this.highShelf = nativeCtx.createBiquadFilter();
         this.highShelf.type = 'highshelf';
         this.highShelf.frequency.value = 6500;
-        this.highShelf.gain.value = 2.5;
+        this.highShelf.gain.value = -1.5;
+
+        // 5. LPF: 切掉 12kHz 以上的刺耳空气感
+        this.lpf = nativeCtx.createBiquadFilter();
+        this.lpf.type = 'lowpass';
+        this.lpf.frequency.value = 12000;
+        this.lpf.Q.value = 0.7;
 
         // 2. DynamicsCompressorNode (Master Glue 胶水压缩)
         this.masterCompressor = nativeCtx.createDynamicsCompressor();
@@ -61,16 +77,21 @@ export class AudioMixer {
         this.spessaSynthBridge.disconnect();
         this.masterBus.disconnect();
         this.hpf.disconnect();
+        this.lowShelf.disconnect();
         this.peakingEq.disconnect();
         this.highShelf.disconnect();
+        this.lpf.disconnect();
         this.masterCompressor.disconnect();
         this.makeupGain.disconnect();
 
+        // Chain: SpessaSynth → MasterBus → HPF → LowShelf → PeakingEQ → HighShelf → LPF → Compressor → MakeupGain → Output
         this.spessaSynthBridge.connect(this.masterBus);
         this.masterBus.connect(this.hpf);
-        this.hpf.connect(this.peakingEq);
+        this.hpf.connect(this.lowShelf);
+        this.lowShelf.connect(this.peakingEq);
         this.peakingEq.connect(this.highShelf);
-        this.highShelf.connect(this.masterCompressor);
+        this.highShelf.connect(this.lpf);
+        this.lpf.connect(this.masterCompressor);
         this.masterCompressor.connect(this.makeupGain);
         this.makeupGain.connect(nativeCtx.destination);
     }

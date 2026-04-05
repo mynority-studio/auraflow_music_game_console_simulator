@@ -73,17 +73,31 @@ GeneratedTrack + StyleId + MusicContext
 
 ### 风格系统
 
-当前使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`）单一风格配置。`StyleRegistry`（`config/StyleRegistry.ts`）映射 StyleId → StyleConfig。`DefaultStyleConfig` 包含完整的全局/和声/节奏/旋律/编配/混音参数。
+使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/StyleRegistry.ts`）映射 StyleId → StyleConfig。当前已注册 3 种风格：
 
-### 已完成的架构 cherry-pick（从新版移植）
+| StyleId | 名称 | BPM | 特征 |
+|---------|------|-----|------|
+| Default (0) | 通用流行 | 80-110 | 中等密度，Major 偏好 |
+| PowerBallad (1) | 欧美力量大歌 | 60-90 | 极留白，副歌爆发，弦乐铺底 |
+| RussianFolkBallad (2) | 俄式民谣 | 62-72 | 100% Minor，五声音阶，木吉他琶音 |
 
-- `Tonality` / `ChordQuality` / `SectionType` 数值枚举 + `CHORD_INTERVALS` / `SCALE_INTERVALS` 查找表（types.ts）
-- `InstrumentFlags.ts` 乐器枚举（纯定义，当前未接入音频层）
-- 全管道浮点 epsilon 比较（D-4/C-1 合规）
-- `Map`/`Set` → 数组（P-1 合规）
-- `tonality: string` → `Tonality` 枚举（全管道）
-- `SectionMetadata.sectionType` 字段（StructureEngine 填充）
-- 生成管道内部零 `GlobalContext` 读取（HarmonyCore、ToplineEngine、GlobalReviewer 已脱钩）
+EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格。
+
+### Mood 系统
+
+6 种情绪通过 `MoodRegistry`（`config/MoodFlags.ts`）定义，影响 BPM 乘数、能量上限、旋律/伴奏独立密度、切分概率、呼吸空间、力度/时值后处理。旋律和伴奏密度已解耦（`melodyDensityMultiplier` / `accompanimentDensityMultiplier`）。
+
+### 已完成的架构改进
+
+- 数值枚举 + 查找表（Tonality、ChordQuality、SectionType、InstrumentFlags）
+- 全管道浮点 epsilon 比较、Map/Set → 数组、tonality string → 枚举
+- 生成管道内部零 GlobalContext 读取（S-2 合规）
+- 总混音温暖化（LPF 12kHz、Low Shelf +1.5dB、High Shelf -1.5dB）
+- 段落级力度曲线（弱起→正弦波动→渐强/弱收尾）
+- 乐器特征后处理（管乐单声部、弦乐换弓、同音高重叠防护）
+- 鼓组 Mood 驱动技巧预算 + 鼓声调色板
+- 贝斯能量分层 + 趋近音
+- 副旋律三模式交互（Parallel Harmony / Call-and-Response / Pad）
 
 ## 关键开发规则
 

@@ -61,7 +61,9 @@ export class PlaybackEngine {
         // --- 打印歌曲元数据 ---
         console.log("========================================");
         console.log("🎵 歌曲生成完毕，开始播放 🎵");
-        console.log(`Style: ${song.styleId || 'Unknown'}`);
+        // 从 StyleIdName 查风格名（延迟导入避免循环依赖）
+        const styleNames: Record<number, string> = { 0: 'Default', 1: 'Power Ballad', 2: 'Russian Folk Ballad' };
+        console.log(`Style: ${styleNames[song.styleId as number] || `Unknown(${song.styleId})`}`);
         console.log(`BPM: ${song.bpm}`);
         console.log(`Key: ${song.key}`);
         console.log(`Time Signature: ${song.timeSignature ? song.timeSignature.join('/') : '4/4'}`);

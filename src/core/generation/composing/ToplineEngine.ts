@@ -803,13 +803,13 @@ export class ToplineEngine {
         }
 
         if (motifs[baseLabel] === undefined) {
-          // Mood 调制旋律密度
-          const moodDensity = mood.densityMultiplier;
+          // Mood 调制旋律密度（使用独立的旋律密度乘数，不再重复乘通用密度）
+          const melodyDensity = mood.melodyDensityMultiplier ?? mood.densityMultiplier;
           const densityMultiplier = (isActualSoloSection
             ? 1.8
             : section.name.includes("Chorus")
               ? 1.2
-              : 1.0) * moodDensity;
+              : 1.0) * melodyDensity;
           const avgNotesPerBeat = densityMultiplier * sectionDensity;
           let minNotes = Math.max(
             isOutro ? 1 : 3,
@@ -1192,8 +1192,9 @@ export class ToplineEngine {
         (context.ensemble.drumSound ? 0 : 0.5) +
         (context.ensemble.bassSound ? 0 : 0.5);
     }
-    // Mood 调制：Chill/Melancholic 降低密度，Energetic/Aggressive 增加
-    const finalDensity = sectionDensity * (1.0 - 0.5 * sparsityScore) * mood.densityMultiplier;
+    // sectionDensity 已在 StructureEngine 中乘过 mood.densityMultiplier，这里不再重复
+    // 仅应用乐器稀疏度惩罚
+    const finalDensity = sectionDensity * (1.0 - 0.5 * sparsityScore);
     // Mood 调制切分概率：Melancholic 更少切分（更平稳），Energetic 更多
     const baseSyncopation = energyLevel >= 7 ? 0.4 : 0.2;
     const syncopation = moodId === MoodId.Melancholic ? baseSyncopation * 0.5
