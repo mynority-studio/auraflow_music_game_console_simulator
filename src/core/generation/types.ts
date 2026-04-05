@@ -103,6 +103,7 @@ export enum Tonality {
     Dorian = 5,
     Mixolydian = 6,
     Melodic_Minor = 7,
+    Lydian = 8,
 }
 
 // 翻译枚举：Tonality → 显示名
@@ -115,6 +116,7 @@ TonalityName[Tonality.Blues] = 'Blues';
 TonalityName[Tonality.Dorian] = 'Dorian';
 TonalityName[Tonality.Mixolydian] = 'Mixolydian';
 TonalityName[Tonality.Melodic_Minor] = 'Melodic_Minor';
+TonalityName[Tonality.Lydian] = 'Lydian';
 
 // 音阶音程查表（替代 HarmonyCore.getScalePitches 中的 if-chain）
 export const SCALE_INTERVALS: readonly (readonly number[])[] = [
@@ -126,6 +128,7 @@ export const SCALE_INTERVALS: readonly (readonly number[])[] = [
     [0, 2, 3, 5, 7, 9, 10],     // Dorian
     [0, 2, 4, 5, 7, 9, 10],     // Mixolydian
     [0, 2, 3, 5, 7, 9, 11],     // Melodic_Minor
+    [0, 2, 4, 6, 7, 9, 11],     // Lydian（升四度，空灵感核心）
 ];
 
 export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
@@ -217,6 +220,10 @@ export interface GenerationParams {
         voicingStyle?: 'standard' | 'neo-soul' | 'jazz' | 'jpop' | 'edm' | 'pop-rock';
         globalProgressionProbability?: number;
         preferJPopProgressions?: boolean;
+        /** 和弦色彩扩展概率 — 覆盖 voicingStyle 的默认值 (Jazz=1.0, JPop=0.8, EDM=0.6, Pop=0.65) */
+        spiceProbability?: number;
+        /** 乐句边界插入属和弦概率 (default 0.3, 设 0 可禁用) */
+        dominantInsertionProbability?: number;
     };
     rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; };
     melody: {
@@ -234,6 +241,14 @@ export interface GenerationParams {
         pentatonicShiftProbability?: number;
         anchorProbability?: number;
         riffDrivenProbability?: number;
+        /** Chorus motif A 节奏骨架复用到 Verse/PreChorus 的概率 (0.0~1.0, 默认 0.4) */
+        chorusMotifReuseProbability?: number;
+        /** 复用时对每个节奏偏移的变异概率 (0.0~1.0, 默认 0.3) */
+        motifRhythmMutationOnReuse?: number;
+        /** 强拍偏好三音/七音的概率 (0.0~1.0, 默认 0.8) */
+        strongBeatExtensionBias?: number;
+        /** 强拍候选中包含根音的概率 (0.0~1.0, 默认 0.15) */
+        strongBeatRootProbability?: number;
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
@@ -250,11 +265,18 @@ export interface GenerationParams {
         drumMode?: 'standard' | 'laid-back' | 'four-on-floor';
         bassMode?: 'root-based' | 'groove-lock' | 'walking';
         pianoMode?: 'standard' | 'syncopated-comping';
+        counterMelodyMode?: 'sustained' | 'melodic-response';
         vocalProbability?: number;
         outroRingOutProbability?: number;
         allowTradingFours?: boolean;
         allowIntroRiffs?: boolean;
         allowRitardando?: boolean;
+        /** 段落过渡 tempo curve 概率 (0.0~1.0)，0=从不，1=总是，默认 1.0 */
+        tempoTransitionProbability?: number;
+        /** accelerando 幅度 (0.15 = +15%)，默认 0.15 */
+        accelIntensity?: number;
+        /** ritardando 幅度 (0.10 = -10%)，默认 0.10 */
+        ritIntensity?: number;
         grooveRatio?: { foundation: number; comping: number; color: number; };
         mixingPreferences?: {
             requireSidechain?: boolean;
@@ -398,8 +420,11 @@ export function getDefaultParams(): GenerationParams {
             bpmRange: [75, 115] as [number, number],
             timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],
             tonalityPool: [
-                { tonality: Tonality.Major, weight: 0.7 },
-                { tonality: Tonality.Minor, weight: 0.3 }
+                { tonality: Tonality.Major, weight: 0.45 },
+                { tonality: Tonality.Minor, weight: 0.25 },
+                { tonality: Tonality.Dorian, weight: 0.1 },
+                { tonality: Tonality.Mixolydian, weight: 0.1 },
+                { tonality: Tonality.Lydian, weight: 0.1 },
             ]
         },
         harmony: {
@@ -425,7 +450,10 @@ export function getDefaultParams(): GenerationParams {
             maxDissonanceTolerance: 0.4,
             reharmProbability: 0.2,
             borrowedChords: ['ModalMixture'],
-            voicingStyle: 'standard'
+            voicingStyle: 'standard',
+            passingChords: ['SecondaryDominant', 'Diminished7'],
+            allowTritoneSub: false,
+            dominantInsertionProbability: 0.3,
         },
         rhythm: {
             densityBase: [0.4, 0.7] as [number, number],
@@ -438,13 +466,17 @@ export function getDefaultParams(): GenerationParams {
         melody: {
             stepwiseRatio: 0.7,
             maxJumpInterval: 12,
-            tensionTolerance: 0.1,
-            mutationProbability: 0.2,
-            mutationPool: ['inversion', 'augmentation']
+            tensionTolerance: 0.15,
+            mutationProbability: 0.25,
+            mutationPool: ['inversion', 'augmentation', 'retrograde'],
+            chorusMotifReuseProbability: 0.4,
+            motifRhythmMutationOnReuse: 0.3,
+            strongBeatExtensionBias: 0.8,
+            strongBeatRootProbability: 0.15,
         },
         contrast: {
             chorusPitchOffset: 7,
-            verseDensityMultiplier: 0.6,
+            verseDensityMultiplier: 0.65,
             versePitchOffset: -2
         },
         modulation: {
@@ -463,6 +495,7 @@ export function getDefaultParams(): GenerationParams {
             counterMelodyProbability: 0.9,
             grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
             mixingPreferences: {
+                requireSidechain: true,
                 melody: { pan: 0, reverb: 0.5, delay: 0.2 },
                 chord: { pan: -0.25, reverb: 0.6, volume: -4.0 },
                 counterMelody: { pan: -0.6, volume: -5.0 },

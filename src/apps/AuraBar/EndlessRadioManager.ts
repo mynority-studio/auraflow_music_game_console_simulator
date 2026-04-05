@@ -3,7 +3,7 @@ import { GlobalContext } from '../../core/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 import { Orchestrator } from '../../core/generation/arrangement/Orchestrator';
 import { GeneratedTrack, MusicContext, GenerationParams, getDefaultParams } from '../../core/generation/types';
-import { createParams } from '../../core/generation/presets/PresetLoader';
+
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 
@@ -410,7 +410,7 @@ export class EndlessRadioManager {
     }
 
     // 管道在 App 层完成：generate → arrange → playSong
-    const arrangedSong = Orchestrator.arrange(track, createParams(this.activePreset ?? undefined), context);
+    const arrangedSong = Orchestrator.arrange(track, getDefaultParams(), context);
     await AudioEngine.playSong(arrangedSong);
     
     if (genId !== this.generationId) return;
@@ -442,7 +442,7 @@ export class EndlessRadioManager {
       // 消耗一次 PRNG 以保持与原管道的 PRNG 消耗序列对齐（原来用于选风格）
       PRNGManager.next();
 
-      const rawTrack = new MelodyEngine().generateFullSong(createParams(this.activePreset ?? undefined));
+      const rawTrack = new MelodyEngine().generateFullSong(getDefaultParams());
 
       if (currentGenId !== this.generationId) return;
 

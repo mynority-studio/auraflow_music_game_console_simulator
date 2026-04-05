@@ -138,14 +138,31 @@ export class ToplineEngine {
                 // 🌟 修复：不再强制让主歌复用副歌的全部动机，恢复旋律的多样性
                 // 只在有概率的情况下，让主歌的 A 动机复用副歌的 A 动机（降级版），其余动机重新生成
                 // 增加复用概率，增强连贯性 (从 0.3 提升到 0.5)
-                // 🌟 增强传承：80% 概率传承 Chorus Motif A 的节奏骨架，contour 独立生成
-                if (PRNGManager.next() < 0.8) {
+                // 🌟 传承 Chorus Motif A 的节奏骨架（概率可配），contour 独立生成
+                const reuseProbability = params?.melody?.chorusMotifReuseProbability ?? 0.4;
+                if (PRNGManager.next() < reuseProbability) {
                     providedMotifs = {};
                     const motifA = chorusMotifs['A'];
                     if (motifA) {
                         const sectionDensity = isSecondary ? (section.groove?.density ?? 0.5) * 0.5 : (section.groove?.density ?? 0.5);
                         const inherited: MotifTemplate = { ...motifA };
-                        // 保留节奏骨架，重置 contour 增加多样性
+                        // 复用时变异节奏偏移，打破同质化
+                        const rhythmMutProb = params?.melody?.motifRhythmMutationOnReuse ?? 0.3;
+                        const mutatedOffsets: number[] = [];
+                        for (let mi = 0; mi < inherited.rhythmOffsets.length; mi++) {
+                            const offset = inherited.rhythmOffsets[mi];
+                            if (PRNGManager.next() < rhythmMutProb) {
+                                const shift = (PRNGManager.next() < 0.5 ? 0.25 : 0.5) * (PRNGManager.next() < 0.5 ? -1 : 1);
+                                mutatedOffsets.push(Math.max(0, offset + shift));
+                            } else {
+                                mutatedOffsets.push(offset);
+                            }
+                        }
+                        // 去重排序（P-1 合规：不用 Set）
+                        mutatedOffsets.sort((a, b) => a - b);
+                        inherited.rhythmOffsets = mutatedOffsets.filter((v, idx, arr) => idx === 0 || Math.abs(v - arr[idx - 1]) > 0.01);
+                        inherited.noteCount = inherited.rhythmOffsets.length;
+                        // 重置 contour 增加多样性
                         const contours: Contour[] = ['Ascending', 'Descending', 'Bowl', 'Wandering'];
                         inherited.contour = contours[Math.floor(PRNGManager.next() * contours.length)];
                         providedMotifs['A'] = this.downgradeMotif(inherited, section.name, sectionDensity);
@@ -156,24 +173,44 @@ export class ToplineEngine {
             const sectionChords = chords.filter(c => c.startBeat >= section.startBeat && c.startBeat < section.endBeat);
             if (sectionChords.length === 0) sectionChords.push(chords[0]);
 
-            // 🌟 提案一：主题回响 (Motif Fragmentation)
-            // 如果是 Outro，且不是 hard_stop，尝试使用副歌动机进行碎裂化处理
+            // 🌟 Outro 旋律策略（多样化，避免总是 Fading Echo）
             if (section.type === SectionType.Outro && section.endingType !== 'hard_stop' && !isSecondary) {
-                const chorusIndex = sections.findIndex(s => s.type === SectionType.Chorus);
-                if (chorusIndex !== -1 && chorusIndex in sectionMelodies) {
-                    const chorusNotes = sectionMelodies[chorusIndex];
-                    if (chorusNotes.length > 0) {
-                        const outroBars = (section.endBeat - section.startBeat) / beatsPerBar;
-                        const outroNotes = this.generateFadingEchoOutro(chorusNotes, section.startBeat, outroBars, beatsPerBar);
-                        
-                        sectionMelodies[index] = outroNotes;
-                        if (outroNotes.length > 0) {
-                            currentPreviousPitch = outroNotes[outroNotes.length - 1].pitch;
+                const outroStrategyRoll = PRNGManager.next();
+                let outroApplied = false;
+
+                if (outroStrategyRoll < 0.4) {
+                    // 策略 A (40%)：Fading Echo — 副歌动机碎裂消散（现有逻辑）
+                    const chorusIndex = sections.findIndex(s => s.type === SectionType.Chorus);
+                    if (chorusIndex !== -1 && chorusIndex in sectionMelodies) {
+                        const chorusNotes = sectionMelodies[chorusIndex];
+                        if (chorusNotes.length > 0) {
+                            const outroBars = (section.endBeat - section.startBeat) / beatsPerBar;
+                            const outroNotes = this.generateFadingEchoOutro(chorusNotes, section.startBeat, outroBars, beatsPerBar);
+                            sectionMelodies[index] = outroNotes;
+                            if (outroNotes.length > 0) { currentPreviousPitch = outroNotes[outroNotes.length - 1].pitch; }
+                            globalUnresolvedCount = 0;
+                            outroApplied = true;
                         }
-                        globalUnresolvedCount = 0;
-                        return; // 跳过常规的 generateSectionMelody
+                    }
+                } else if (outroStrategyRoll < 0.65) {
+                    // 策略 B (25%)：Verse Reprise — 从主歌提取碎片化旋律（回忆主歌而非副歌）
+                    const verseIndex = sections.findIndex(s => s.type === SectionType.Verse);
+                    if (verseIndex !== -1 && verseIndex in sectionMelodies) {
+                        const verseNotes = sectionMelodies[verseIndex];
+                        if (verseNotes.length > 0) {
+                            const outroBars = (section.endBeat - section.startBeat) / beatsPerBar;
+                            const outroNotes = this.generateFadingEchoOutro(verseNotes, section.startBeat, outroBars, beatsPerBar);
+                            sectionMelodies[index] = outroNotes;
+                            if (outroNotes.length > 0) { currentPreviousPitch = outroNotes[outroNotes.length - 1].pitch; }
+                            globalUnresolvedCount = 0;
+                            outroApplied = true;
+                        }
                     }
                 }
+                // 策略 C (35%)：Natural Outro — 让常规旋律生成器处理，产生独立的尾声旋律
+                // outroApplied 为 false 时走此路径，或 A/B 提取失败时自然降级
+
+                if (outroApplied) return;
             }
 
             const result = this.generateSectionMelody(section, sectionChords, params, tonality, instrumentId, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, bpm, moodId);
@@ -625,19 +662,35 @@ export class ToplineEngine {
                 template = this.transformMotif(template, { isInv, isRet, isAug, isSwitcheroo, isSplit, isMerge, isShift });
             }
 
-            // 🌟 提出-解决 (Call and Response) Contour Logic
+            // 🌟 提出-解决 (Call and Response) Contour Logic（概率化，避免确定性映射）
             let currentContour = template.contour;
             if (isAnswer && !isInv && !isRet) {
-                // 解决 (Response): 倾向于下行或平稳解决
-                if (currentContour === 'Ascending') currentContour = 'Arch'; // 上行后下行解决
-                else if (currentContour === 'Arch') currentContour = 'Descending';
-                else if (currentContour === 'Wandering') currentContour = 'Descending';
+                const roll = PRNGManager.next();
+                if (roll < 0.6) {
+                    // 60%: 经典解决映射
+                    if (currentContour === 'Ascending') currentContour = 'Arch';
+                    else if (currentContour === 'Arch') currentContour = 'Descending';
+                    else if (currentContour === 'Wandering') currentContour = 'Descending';
+                } else if (roll < 0.85) {
+                    // 25%: 从解决型池中随机选
+                    const resolving: Contour[] = ['Descending', 'Arch', 'Bowl', 'Static'];
+                    currentContour = resolving[Math.floor(PRNGManager.next() * resolving.length)];
+                }
+                // 15%: 保留原 contour（回声效果）
                 template = { ...template, contour: currentContour };
             } else if (!isAnswer && !isInv && !isRet) {
-                // 提出 (Call): 倾向于上扬或悬念
-                if (currentContour === 'Descending') currentContour = 'Bowl'; // 下行后上扬提问
-                else if (currentContour === 'Static') currentContour = 'Ascending';
-                else if (currentContour === 'Bowl') currentContour = 'Ascending';
+                const roll = PRNGManager.next();
+                if (roll < 0.6) {
+                    // 60%: 经典提出映射
+                    if (currentContour === 'Descending') currentContour = 'Bowl';
+                    else if (currentContour === 'Static') currentContour = 'Ascending';
+                    else if (currentContour === 'Bowl') currentContour = 'Ascending';
+                } else if (roll < 0.85) {
+                    // 25%: 从提出型池中随机选
+                    const calling: Contour[] = ['Ascending', 'Arch', 'Bowl', 'Wandering'];
+                    currentContour = calling[Math.floor(PRNGManager.next() * calling.length)];
+                }
+                // 15%: 保留原 contour
                 template = { ...template, contour: currentContour };
             }
 
@@ -861,7 +914,7 @@ export class ToplineEngine {
         const targetCenter = 60 + pitchShift;
         // S-2 合规：activeSection 已通过 sectionName 参数传入，不读 GlobalContext
         // safe: params 在唯一调用处 generateSectionMelody 中始终为必填参数
-        const melodyRules = { anticipationProbability: 0.2, pentatonicGapProbability: 0.3, tailResolution: false };
+        const melodyRules = { anticipationProbability: 0.4, pentatonicGapProbability: 0.3, tailResolution: false };
         let currentTension = 0;
 
         const { rhythmOffsets, contour, rhythm, anchors } = template;
@@ -1103,12 +1156,16 @@ export class ToplineEngine {
             } else if (isStrongBeat || isLongNote) {
                 // 强拍或长音：吸附到最近的和弦内音 (Chord Tones)
                 // 现代流行偏爱三音和七音
-                let preferredChordTones = [...chordTones];
-                if (PRNGManager.next() > 0.3 && chordTones.length >= 2) {
-                    // 提升三音和七音的权重，降低根音的权重
-                    preferredChordTones = [chordTones[1]];
-                    if (chordTones.length > 3) preferredChordTones.push(chordTones[3]);
-                    if (PRNGManager.next() > 0.5 && chordTones[2] !== undefined) preferredChordTones.push(chordTones[2]); // 五音
+                // 强拍偏爱扩展音(7th/3rd)，压制根音（概率可配）
+                let preferredChordTones: number[];
+                const extensionBias = params?.melody?.strongBeatExtensionBias ?? 0.8;
+                const rootProb = params?.melody?.strongBeatRootProbability ?? 0.15;
+                if (PRNGManager.next() < extensionBias && chordTones.length >= 2) {
+                    preferredChordTones = [chordTones[1]]; // 3rd
+                    if (chordTones.length > 3) preferredChordTones.push(chordTones[3]); // 7th
+                    if (PRNGManager.next() < rootProb) preferredChordTones.push(chordTones[0]);
+                } else {
+                    preferredChordTones = [...chordTones];
                 }
                 currentPitch = preferredChordTones.reduce((prev, curr) => {
                     const prevDist = Math.abs(this.getNearestOctave(prev, idealPitch) - idealPitch);
@@ -1237,12 +1294,15 @@ export class ToplineEngine {
                     
                     const maxJump = params?.melody?.maxJumpInterval ?? 12;
                     
-                    if (r < 0.70) {
-                        allowedMaxInterval = 2; // 70% 概率 1-2 半音
-                    } else if (r < 0.90) {
-                        allowedMaxInterval = 4; // 20% 概率 3-4 半音 (m3, M3)
+                    const stepwise = params?.melody?.stepwiseRatio ?? 0.7;
+                    // 小跳和大跳按剩余概率 6:4 分配
+                    const smallJumpThreshold = stepwise + (1 - stepwise) * 0.6;
+                    if (r < stepwise) {
+                        allowedMaxInterval = 2; // 级进 (m2, M2)
+                    } else if (r < smallJumpThreshold) {
+                        allowedMaxInterval = 4; // 小跳 (m3, M3)
                     } else {
-                        allowedMaxInterval = maxJump; // 10% 概率允许大跳
+                        allowedMaxInterval = maxJump; // 大跳
                     }
                     
                     if (absInterval > allowedMaxInterval) {

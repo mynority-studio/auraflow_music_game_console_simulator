@@ -1,9 +1,6 @@
 import { PRNGManager } from "../../utils/PRNG";
 import { NoteData, GeneratedChord, GenerationParams, SectionMetadata, Tonality } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
-import { PianoIdiomContext } from "../idioms/types";
-import { SyncopatedCompingIdiom } from "../idioms/piano/SyncopatedCompingIdiom";
-import { StandardBlockIdiom } from "../idioms/piano/StandardBlockIdiom";
 
 /** S-2 合规：替代 GlobalContext 读取，由 Orchestrator 显式传入 */
 export interface TextureRenderContext {
@@ -61,8 +58,9 @@ export class TextureMapper {
       nextTargetCenter = nextFinalRoot - nextKeyOffset;
     }
 
-    const bassTones = HarmonyCore.getChordTones(chord, targetCenterForChordTones);
+    const bassTones = HarmonyCore.getChordTones(chord, targetCenterForChordTones, false);
     const rootMidi = bassTones[0];
+    const thirdMidi = bassTones.length > 1 ? bassTones[1] : rootMidi + 4;
     const fifthMidi = bassTones.length > 2 ? bassTones[2] : rootMidi + 7;
     const octaveMidi = rootMidi + 12;
 
@@ -122,9 +120,16 @@ export class TextureMapper {
         if (idx > 0 && PRNGManager.next() < bassRestProb * 0.5) return;
 
         let pitch = targetBassPitch;
-        // 第二下底鼓：40% 概率弹五度或八度
+        // 第二下底鼓：40% 概率弹非根音（五度/三音/八度）
         if (idx > 0 && PRNGManager.next() < 0.4) {
-          pitch = PRNGManager.next() > 0.5 ? fifthMidi : octaveMidi;
+          const altRoll = PRNGManager.next();
+          if (altRoll < 0.45) {
+            pitch = fifthMidi;
+          } else if (altRoll < 0.75) {
+            pitch = thirdMidi;
+          } else {
+            pitch = octaveMidi;
+          }
         }
 
         // 时值动态：长音 vs 顿音
@@ -174,8 +179,13 @@ export class TextureMapper {
       const dur = Math.min(stepSize, remaining);
 
       let pitch = targetBassPitch;
-      if (noteIndex > 0 && PRNGManager.next() < 0.2) {
-        pitch = fifthMidi;
+      if (noteIndex > 0) {
+        const bassAltRoll = PRNGManager.next();
+        if (bassAltRoll < 0.15) {
+          pitch = fifthMidi;
+        } else if (bassAltRoll < 0.25) {
+          pitch = thirdMidi;
+        }
       }
       if (energyLevel >= 7 && PRNGManager.next() < 0.15) {
         pitch = octaveMidi;
@@ -338,7 +348,48 @@ export class TextureMapper {
       return notes;
     }
 
-    // ========== Standard 模式（原有逻辑） ==========
+    // ========== 6/8 复合拍（Compound Meter）==========
+    if (beatsPerBar === 6) {
+      // 6/8 拍：强-弱-弱-次强-弱-弱，三连音分组
+      const totalBars = Math.floor((endBeat - startBeat) / beatsPerBar);
+      for (let bar = 0; bar < totalBars; bar++) {
+        const barStart = startBeat + bar * beatsPerBar;
+        const baseVel = 0.45 + energyLevel * 0.04;
+
+        // Kick: 拍 1（强拍）
+        notes.push({ pitch: KICK, onset: barStart, duration: 0.25, velocity: Math.min(1.0, baseVel + 0.15) });
+        // Kick: 拍 4（次强拍），80% 概率
+        if (PRNGManager.next() < 0.8) {
+          notes.push({ pitch: KICK, onset: barStart + 3, duration: 0.25, velocity: baseVel + 0.08 });
+        }
+
+        // Snare/Cross-stick: 拍 4（次强拍），或 6/8 可选拍 3 & 6
+        if (energyLevel >= 5) {
+          notes.push({ pitch: SNARE, onset: barStart + 3, duration: 0.25, velocity: baseVel + 0.05 });
+        } else {
+          // 低能量用 cross-stick
+          notes.push({ pitch: 37, onset: barStart + 3, duration: 0.25, velocity: baseVel * 0.6 });
+        }
+
+        // Hi-hat: 每个八分音符位置（6 个），模拟 1-2-3-4-5-6
+        for (let sub = 0; sub < 6; sub++) {
+          const onset = barStart + sub;
+          const isGroupStart = sub === 0 || sub === 3; // 三连音组头
+          const hhVel = isGroupStart ? baseVel * 0.85 : baseVel * 0.5;
+          if (PRNGManager.next() > restProb * 0.5) {
+            notes.push({ pitch: CHH, onset: onset, duration: 0.5, velocity: Math.min(1.0, hhVel + PRNGManager.next() * 0.03) });
+          }
+        }
+
+        // Crash on first bar
+        if (bar === 0 && hasFullGrooveStarted) {
+          notes.push({ pitch: CRASH, onset: barStart, duration: 1.0, velocity: Math.min(1.0, baseVel + 0.15) });
+        }
+      }
+      return notes;
+    }
+
+    // ========== Standard 4/4 模式 ==========
     const stepSize = 0.25;
     let beat = startBeat;
 
@@ -353,24 +404,32 @@ export class TextureMapper {
 
       const baseVel = 0.45 + energyLevel * 0.05;
 
-      if (isDownbeat || isBeat3) {
+      // --- Kick: 1 拍必有，3 拍 80% 概率，弱拍切分根据 syncopation ---
+      if (isDownbeat) {
         const vel = Math.min(1.0, baseVel + 0.15 + (PRNGManager.next() * 0.04 - 0.02));
         notes.push({ pitch: KICK, onset: beat, duration: 0.25, velocity: vel });
+      } else if (isBeat3 && PRNGManager.next() < 0.8) {
+        notes.push({ pitch: KICK, onset: beat, duration: 0.25, velocity: baseVel + 0.1 });
       }
-      if (energyLevel >= 7 && !isDownbeat && !isBeat3 && is8thNote && PRNGManager.next() < 0.2) {
+      // 弱拍切分底鼓（现代感核心）
+      if (!isDownbeat && !isBeat3 && is8thNote && PRNGManager.next() < syncopation * 0.35) {
         notes.push({ pitch: KICK, onset: beat, duration: 0.25, velocity: baseVel * 0.8 });
       }
 
+      // --- Snare: 支持 half-time（25% 概率段落级触发 via useHalfTime）---
+      const useHalfTime = isHalfTime || (!isIntro && !isOutro && PRNGManager.next() < 0.02);
       if (isBeat2 || isBeat4) {
         const vel = Math.min(1.0, baseVel + 0.1 + (PRNGManager.next() * 0.04 - 0.02));
-        if (!isHalfTime || isBeat4) {
+        if (!useHalfTime || isBeat4) {
           notes.push({ pitch: SNARE, onset: beat, duration: 0.25, velocity: vel });
         }
       }
+      // Ghost notes
       if (energyLevel >= 5 && is16thNote && !is8thNote && PRNGManager.next() < 0.15 * grooveDensity) {
         notes.push({ pitch: SNARE, onset: beat, duration: 0.125, velocity: baseVel * 0.4 });
       }
 
+      // --- Hi-hat: 8 分基底 + 16 分 + 32 分滚奏 ---
       if (is8thNote) {
         if (isIntro && !hasFullGrooveStarted) {
           if (PRNGManager.next() < 0.5) {
@@ -381,8 +440,13 @@ export class TextureMapper {
           notes.push({ pitch: CHH, onset: beat, duration: 0.25, velocity: Math.min(1.0, hhVel + PRNGManager.next() * 0.03) });
         }
       }
-      if (energyLevel >= 8 && is16thNote && !is8thNote && PRNGManager.next() < 0.4) {
+      // 16 分 hi-hat
+      if (energyLevel >= 6 && is16thNote && !is8thNote && PRNGManager.next() < 0.35) {
         notes.push({ pitch: CHH, onset: beat, duration: 0.125, velocity: baseVel * 0.35 });
+      }
+      // 32 分滚奏（现代 hip-hop 灵动感）
+      if (energyLevel >= 7 && is16thNote && !is8thNote && PRNGManager.next() < 0.15) {
+        notes.push({ pitch: CHH, onset: beat + 0.125, duration: 0.0625, velocity: baseVel * 0.25 });
       }
 
       if (energyLevel >= 5 && is8thNote && !isDownbeat && !isBeat2 && !isBeat3 && !isBeat4 && PRNGManager.next() < 0.1) {
@@ -415,28 +479,66 @@ export class TextureMapper {
     params?: GenerationParams,
     renderCtx?: TextureRenderContext,
   ): NoteData[] {
-    // Simple sustained chord-tone counter melody
-    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
     const tonality = renderCtx?.tonality ?? Tonality.Major;
-
-    // Use chord tones centered around C4 area (MIDI 60)
     const chordTones = HarmonyCore.getChordTones(chord, 60);
-    // Pick 3rd or 5th of chord for the counter melody voice
-    const targetPitch = chordTones.length > 2
-      ? (PRNGManager.next() < 0.6 ? chordTones[1] : chordTones[2])  // 3rd (60%) or 5th (40%)
-      : chordTones[0] + 7; // fallback to 5th interval
-
     const chordDur = chord.endBeat - chord.startBeat;
-    const velocity = 0.35 + energyLevel * 0.03;
-
+    const baseVel = 0.35 + energyLevel * 0.03;
     const notes: NoteData[] = [];
-    // One sustained note per chord
-    notes.push({
-      pitch: targetPitch,
-      onset: chord.startBeat,
-      duration: Math.max(chordDur - 0.125, 0.5), // slightly shorter than chord for breathing room
-      velocity: Math.min(1.0, velocity),
-    });
+    const mode = params?.orchestration?.counterMelodyMode || 'sustained';
+
+    if (mode === 'melodic-response') {
+      // 🌟 melodic-response: 基于主旋律的简化/倒影生成独立副旋律线
+      // 找出与当前和弦时间重叠的主旋律音
+      const overlapping = melodyNotes.filter(n => n.onset >= chord.startBeat && n.onset < chord.endBeat);
+
+      if (overlapping.length >= 2) {
+        // 策略：取主旋律的逆行（倒放），降八度或移到 3rd/5th
+        const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
+        const melodyEnd = overlapping[overlapping.length - 1];
+        const melodyStart = overlapping[0];
+
+        // 副旋律从主旋律结束的地方"回应"——延迟半小节进入
+        const responseDelay = Math.min(chordDur * 0.3, 1.0);
+        const responseStart = chord.startBeat + responseDelay;
+        const available = chordDur - responseDelay;
+        if (available < 0.5) {
+          // 太短，退回 sustained
+          notes.push({ pitch: chordTones.length > 1 ? chordTones[1] : chordTones[0], onset: chord.startBeat, duration: Math.max(chordDur - 0.125, 0.5), velocity: Math.min(1.0, baseVel) });
+        } else {
+          // 取 2-4 个主旋律音做简化倒影
+          const sourceNotes = overlapping.slice(0, Math.min(4, overlapping.length));
+          const count = sourceNotes.length;
+          const step = available / count;
+
+          for (let i = 0; i < count; i++) {
+            // 倒影：主旋律上行副旋律下行，反之亦然
+            const srcPitch = sourceNotes[count - 1 - i].pitch; // 逆序
+            // 移到和弦音附近，向下一个八度
+            let cmPitch = HarmonyCore.snapToScale(srcPitch - 12, safeScalePcs);
+            // 确保在合理范围 (MIDI 48-72)
+            while (cmPitch < 48) cmPitch += 12;
+            while (cmPitch > 72) cmPitch -= 12;
+
+            notes.push({
+              pitch: cmPitch,
+              onset: responseStart + i * step,
+              duration: Math.max(step * 0.85, 0.25),
+              velocity: Math.min(1.0, baseVel + (PRNGManager.next() * 0.05)),
+            });
+          }
+        }
+      } else {
+        // 主旋律太少，退回 sustained — 从全部和弦音中随机选
+        const toneIdx = Math.floor(PRNGManager.next() * chordTones.length);
+        const targetPitch = chordTones[toneIdx];
+        notes.push({ pitch: targetPitch, onset: chord.startBeat, duration: Math.max(chordDur - 0.125, 0.5), velocity: Math.min(1.0, baseVel) });
+      }
+    } else {
+      // sustained: 从全部和弦音中随机选（不只是 3rd/5th）
+      const toneIdx = Math.floor(PRNGManager.next() * chordTones.length);
+      const targetPitch = chordTones[toneIdx];
+      notes.push({ pitch: targetPitch, onset: chord.startBeat, duration: Math.max(chordDur - 0.125, 0.5), velocity: Math.min(1.0, baseVel) });
+    }
 
     return this.truncateToChordEnd(notes, chord.endBeat);
   }
@@ -459,28 +561,84 @@ export class TextureMapper {
     const bpm = renderCtx?.bpm ?? 120;
     const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (renderCtx?.keyOffset ?? 0);
 
-    // Get chord tones centered around F3 (MIDI 53) — 下移避免与旋律频段重叠
-    const chordTones = HarmonyCore.getChordTones(chord, 53);
+    // Get chord tones — 音域随机微调避免固定在同一八度
+    const centerOffset = Math.floor(PRNGManager.next() * 7) - 3; // ±3 半音
+    const chordTones = HarmonyCore.getChordTones(chord, 53 + centerOffset);
     const chordStart = chord.startBeat;
     const chordEnd = chord.endBeat;
 
-    // 构建 Idiom 上下文
-    const idiomCtx: PianoIdiomContext = {
-      chord, chordTones, energyLevel, textureType,
-      chordStart, chordEnd,
-      humanize: params?.rhythm?.humanize ?? 0.1,
-      syncopationWeight: params?.rhythm?.syncopationWeight ?? 0.4,
-      swingRatio: params?.rhythm?.swingRatio ?? 0,
-      isSparseSection, isSectionEnd,
-    };
+    // 内联 StandardBlock 逻辑（Block / Arpeggio / Pad）
+    const chordLen = chordEnd - chordStart;
+    const baseVelocity = 0.4 + energyLevel * 0.04;
+    let generatedNotes: NoteData[] = [];
 
-    // 根据 pianoMode 分派到不同 Idiom
-    const pianoMode = params?.orchestration?.pianoMode || 'standard';
-    let generatedNotes: NoteData[];
-    if (pianoMode === 'syncopated-comping') {
-      generatedNotes = SyncopatedCompingIdiom.generate(idiomCtx);
+    const texLower = textureType.toLowerCase();
+    const isArpeggio = texLower === 'arpeggio' || texLower === 'broken';
+    const isPad = texLower === 'pad' || texLower === 'sustained';
+
+    if (isArpeggio) {
+      const step = energyLevel >= 6 ? 0.25 : 0.5;
+      let beat = chordStart;
+      let idx = 0;
+      // 琶音方向随机化：上行/下行/来回
+      const dirRoll = PRNGManager.next();
+      const isDescending = dirRoll < 0.3;
+      const isPingPong = dirRoll < 0.6 && dirRoll >= 0.3;
+      const toneCount = chordTones.length;
+      while (beat < chordEnd - 1e-6) {
+        let toneIdx: number;
+        if (isPingPong) {
+          const cycle = toneCount > 1 ? (toneCount - 1) * 2 : 1;
+          const pos = idx % cycle;
+          toneIdx = pos < toneCount ? pos : cycle - pos;
+        } else if (isDescending) {
+          toneIdx = (toneCount - 1) - (idx % toneCount);
+        } else {
+          toneIdx = idx % toneCount;
+        }
+        // 偶尔跳过一个音（15%），制造呼吸感
+        if (idx > 0 && PRNGManager.next() < 0.15) {
+          beat += step;
+          idx++;
+          continue;
+        }
+        const vel = Math.min(1.0, baseVelocity + (PRNGManager.next() * 0.06 - 0.03));
+        generatedNotes.push({ pitch: chordTones[toneIdx], onset: beat, duration: step, velocity: vel });
+        beat += step;
+        idx++;
+      }
+    } else if (isPad) {
+      for (let i = 0; i < chordTones.length; i++) {
+        generatedNotes.push({
+          pitch: chordTones[i],
+          onset: chordStart,
+          duration: Math.max(chordLen - 0.0625, 0.5),
+          velocity: Math.min(1.0, baseVelocity * 0.8 + PRNGManager.next() * 0.02),
+        });
+      }
     } else {
-      generatedNotes = StandardBlockIdiom.generate(idiomCtx);
+      // Block chord — 加入节奏变化和声部错开
+      const baseStep = energyLevel <= 3 ? 2.0 : (energyLevel <= 6 ? 1.0 : 0.5);
+      let beat = chordStart;
+      while (beat < chordEnd - 1e-6) {
+        // 微调 step 大小（±15%），打破严格网格
+        const stepJitter = 1.0 + (PRNGManager.next() * 0.3 - 0.15);
+        const step = baseStep * stepJitter;
+        const remaining = chordEnd - beat;
+        const dur = Math.min(step, remaining);
+        const vel = Math.min(1.0, baseVelocity + (PRNGManager.next() * 0.06 - 0.03));
+        // 20% 概率省略一个非根音（让声音更透气）
+        const omitIdx = PRNGManager.next() < 0.2 && chordTones.length > 2
+          ? 1 + Math.floor(PRNGManager.next() * (chordTones.length - 1)) // 跳过索引 0（低音）
+          : -1;
+        for (let i = 0; i < chordTones.length; i++) {
+          if (i === omitIdx) continue;
+          // 30% 概率错开 onset（模拟人手弹奏）
+          const stagger = PRNGManager.next() < 0.3 ? PRNGManager.next() * 0.08 : 0;
+          generatedNotes.push({ pitch: chordTones[i], onset: beat + stagger, duration: dur, velocity: vel });
+        }
+        beat += step;
+      }
     }
 
     // Sparse section end: let the last chord ring out
@@ -530,20 +688,35 @@ export class TextureMapper {
     const root = chordTones[0];
     const fifth = chordTones.length > 2 ? chordTones[2] : root + 7;
 
+    const third = chordTones.length > 1 ? chordTones[1] : root + 4;
+    const octave = root + 12;
+
     const notes: NoteData[] = [];
     const chordStart = chord.startBeat;
     const chordEnd = chord.endBeat;
     // max ~50 riff notes per chord (C-4 compliance)
 
-    // Simple rhythmic riff pattern: root-root-5th-root with syncopation
-    const pattern = [0, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
-    const pitchPattern = [root, root, fifth, root, fifth, root, root, fifth];
+    // 多种节奏模板随机选择
+    const rhythmTemplates = [
+      [0, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0],
+      [0, 0.25, 0.75, 1.0, 1.75, 2.0, 2.75, 3.5],
+      [0, 0.5, 1.0, 1.5, 2.0, 3.0],
+      [0, 0.75, 1.0, 1.5, 2.25, 3.0, 3.5],
+    ];
+    const pattern = rhythmTemplates[Math.floor(PRNGManager.next() * rhythmTemplates.length)];
+
+    // 动态生成音高模式（不再固定 root-5th）
+    const pitchPool = [root, root, third, fifth, octave];
+    const pitchPattern: number[] = [];
+    for (let p = 0; p < pattern.length; p++) {
+      pitchPattern.push(pitchPool[Math.floor(PRNGManager.next() * pitchPool.length)]);
+    }
 
     for (let i = 0; i < pattern.length; i++) {
       const onset = chordStart + pattern[i];
       if (onset >= chordEnd - 1e-6) break;
-      // Skip some notes randomly for variation
-      if (i > 0 && PRNGManager.next() < 0.2) continue;
+      // 25% 概率跳过
+      if (i > 0 && PRNGManager.next() < 0.25) continue;
 
       const vel = 0.6 + energyLevel * 0.03 + (PRNGManager.next() * 0.06 - 0.03);
       notes.push({

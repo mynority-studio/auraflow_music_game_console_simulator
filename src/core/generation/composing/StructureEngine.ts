@@ -113,18 +113,32 @@ export class StructureEngine {
       return 8;
     };
 
-    // 宏观能量弧线：根据全曲进度映射基础能量（低→中→高→跌→最高）
+    // 宏观能量弧线模板（PRNG 选择，避免所有歌曲同一弧形）
+    // 每个模板定义 [阈值, 最小能量, 能量跨度] 的分段
+    // 格式：{ threshold: number, min: number, range: number }[]
+    const energyCurveTemplates: Array<{ threshold: number, min: number, range: number }[]> = [
+      // 模板 0：经典弧线 (Low→Mid→High→Drop→Peak) — 流行/摇滚标准叙事
+      [{ threshold: 0.15, min: 2, range: 3 }, { threshold: 0.4, min: 4, range: 3 }, { threshold: 0.6, min: 7, range: 3 }, { threshold: 0.75, min: 3, range: 3 }, { threshold: 1.0, min: 8, range: 3 }],
+      // 模板 1：持续攀升 (Low→Mid→High→Higher→Peak) — 史诗/电影感，无中间跌落
+      [{ threshold: 0.2, min: 2, range: 2 }, { threshold: 0.4, min: 4, range: 2 }, { threshold: 0.6, min: 6, range: 2 }, { threshold: 0.8, min: 7, range: 2 }, { threshold: 1.0, min: 9, range: 2 }],
+      // 模板 2：开头高能 (Mid→High→Mid→Low→High) — 抓耳开局，中段回落再爆发
+      [{ threshold: 0.15, min: 5, range: 3 }, { threshold: 0.35, min: 7, range: 3 }, { threshold: 0.55, min: 4, range: 3 }, { threshold: 0.75, min: 2, range: 3 }, { threshold: 1.0, min: 8, range: 3 }],
+      // 模板 3：平坦型 (Mid→Mid→Mid→Mid→High) — Chill/Lo-Fi，晚期爆发
+      [{ threshold: 0.2, min: 3, range: 2 }, { threshold: 0.4, min: 4, range: 2 }, { threshold: 0.6, min: 4, range: 2 }, { threshold: 0.8, min: 5, range: 2 }, { threshold: 1.0, min: 7, range: 3 }],
+    ];
+
+    const curveIndex = Math.floor(PRNGManager.next() * energyCurveTemplates.length);
+    const selectedCurve = energyCurveTemplates[curveIndex];
+
     const getBaseEnergy = (progress: number): number => {
-      // 0~0.15: 低能量起步 (2-4)
-      if (progress < 0.15) return 2 + Math.floor(PRNGManager.next() * 3);
-      // 0.15~0.4: 中等能量 (4-6)
-      if (progress < 0.4) return 4 + Math.floor(PRNGManager.next() * 3);
-      // 0.4~0.6: 高能量 (7-9)
-      if (progress < 0.6) return 7 + Math.floor(PRNGManager.next() * 3);
-      // 0.6~0.75: 跌落 (3-5)
-      if (progress < 0.75) return 3 + Math.floor(PRNGManager.next() * 3);
-      // 0.75~1.0: 最终高潮 (8-10)
-      return 8 + Math.floor(PRNGManager.next() * 3);
+      for (let z = 0; z < selectedCurve.length; z++) {
+        if (progress < selectedCurve[z].threshold) {
+          return selectedCurve[z].min + Math.floor(PRNGManager.next() * selectedCurve[z].range);
+        }
+      }
+      // 最后一段兜底
+      const last = selectedCurve[selectedCurve.length - 1];
+      return last.min + Math.floor(PRNGManager.next() * last.range);
     };
 
     // 段落计数器（用于全局约束 + 命名）

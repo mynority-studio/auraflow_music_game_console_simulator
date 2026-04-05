@@ -122,7 +122,9 @@ export class PlaybackEngine {
                 printTrackNotes(song.melody, 'melody');
                 printTrackNotes(song.secondaryMelody, 'secondaryMelody');
                 printTrackNotes(song.counterMelody, 'counterMelody');
+                printTrackNotes(song.pianoRH, 'chord');
                 printTrackNotes(song.pianoLH, 'bass');
+                printTrackNotes(song.drums, 'drums');
             });
         }
         console.log("========================================");

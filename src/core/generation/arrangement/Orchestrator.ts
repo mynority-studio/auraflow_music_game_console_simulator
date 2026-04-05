@@ -323,58 +323,64 @@ export class Orchestrator {
             }
         }
 
-        // 🌟 提取并简化副歌 Hook 作为前奏旋律 (Thematic Foreshadowing)
-        if (introSection && PRNGManager.next() < 0.6) { // 60% chance to use foreshadowing intro
-            const firstChorus = track.sections.find(s => s.type === SectionType.Chorus);
-            if (firstChorus) {
-                // Get the full chorus melody (both primary and secondary) to extract a complete hook
-                const fullChorusMelody = track.melody.filter(n => n.onset >= firstChorus.startBeat && n.onset < firstChorus.endBeat);
-                const targetInstrument = 10; // Music Box
-                const foreshadowingIntro = this.extractForeshadowingIntro(fullChorusMelody, targetInstrument, introSection.startBeat, firstChorus.startBeat);
-                
-                if (foreshadowingIntro.length > 0) {
-                    // Remove existing intro melody if any
-                    melodyNotes = melodyNotes.filter(n => n.onset >= introSection.endBeat);
-                    secondaryMelodyNotes = secondaryMelodyNotes.filter(n => n.onset >= introSection.endBeat);
-                    if (track.vocal) {
-                        track.vocal = track.vocal.filter(n => n.onset >= introSection.endBeat);
-                    }
-                    
-                    // Add foreshadowing intro
-                    melodyNotes.push(...foreshadowingIntro);
-                    melodyNotes.sort((a, b) => a.onset - b.onset);
+        // 🌟 Intro 旋律策略（多样化，避免总是 Chorus hook foreshadowing）
+        if (introSection) {
+            const introStrategyRoll = PRNGManager.next();
+            let introApplied = false;
 
-                    // Replace intro chords with chorus chords to match the foreshadowing melody
-                    const chorusChords = track.chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
-                    if (chorusChords.length > 0) {
-                        // Remove intro chords
-                        track.chords = track.chords.filter(c => c.startBeat < introSection.startBeat || c.startBeat >= introSection.endBeat);
-                        
-                        // Generate new intro chords by looping chorus chords
-                        let currentBeat = introSection.startBeat;
-                        let chorusIndex = 0;
-                        while (currentBeat < introSection.endBeat) {
-                            const sourceChord = chorusChords[chorusIndex % chorusChords.length];
-                            const duration = sourceChord.endBeat - sourceChord.startBeat;
-                            const nextBeat = Math.min(currentBeat + duration, introSection.endBeat);
-                            
-                            track.chords.push({
-                                ...sourceChord,
-                                startBeat: currentBeat,
-                                endBeat: nextBeat
-                            });
-                            
-                            currentBeat = nextBeat;
-                            chorusIndex++;
+            if (introStrategyRoll < 0.35) {
+                // 策略 A (35%)：Chorus Hook Foreshadowing — 从副歌提取简化旋律作为前奏
+                const firstChorus = track.sections.find(s => s.type === SectionType.Chorus);
+                if (firstChorus) {
+                    const fullChorusMelody = track.melody.filter(n => n.onset >= firstChorus.startBeat && n.onset < firstChorus.endBeat);
+                    const foreshadowingIntro = this.extractForeshadowingIntro(fullChorusMelody, 10, introSection.startBeat, firstChorus.startBeat);
+                    if (foreshadowingIntro.length > 0) {
+                        melodyNotes = melodyNotes.filter(n => n.onset >= introSection.endBeat);
+                        secondaryMelodyNotes = secondaryMelodyNotes.filter(n => n.onset >= introSection.endBeat);
+                        if (track.vocal) { track.vocal = track.vocal.filter(n => n.onset >= introSection.endBeat); }
+                        melodyNotes.push(...foreshadowingIntro);
+                        melodyNotes.sort((a, b) => a.onset - b.onset);
+
+                        // 替换 Intro 和弦为 Chorus 和弦循环
+                        const chorusChords = track.chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
+                        if (chorusChords.length > 0) {
+                            track.chords = track.chords.filter(c => c.startBeat < introSection.startBeat || c.startBeat >= introSection.endBeat);
+                            let currentBeat = introSection.startBeat;
+                            let chorusIndex = 0;
+                            while (currentBeat < introSection.endBeat) {
+                                const sourceChord = chorusChords[chorusIndex % chorusChords.length];
+                                const duration = sourceChord.endBeat - sourceChord.startBeat;
+                                const nextBeat = Math.min(currentBeat + duration, introSection.endBeat);
+                                track.chords.push({ ...sourceChord, startBeat: currentBeat, endBeat: nextBeat });
+                                currentBeat = nextBeat;
+                                chorusIndex++;
+                            }
+                            // D-3 合规：同 startBeat 时按 root 二次排序
+                            track.chords.sort((a, b) => { const d = a.startBeat - b.startBeat; return d !== 0 ? d : a.root - b.root; });
                         }
-                        
-                        // D-3 合规：同 startBeat 时按 root 二次排序，消除 tie
-                        track.chords.sort((a, b) => {
-                            const d = a.startBeat - b.startBeat;
-                            return d !== 0 ? d : a.root - b.root;
-                        });
+                        introApplied = true;
                     }
                 }
+            } else if (introStrategyRoll < 0.6) {
+                // 策略 B (25%)：Verse Theme Preview — 从主歌提取简化旋律，制造"似曾相识"感
+                const firstVerse = track.sections.find(s => s.type === SectionType.Verse);
+                if (firstVerse) {
+                    const verseMelody = track.melody.filter(n => n.onset >= firstVerse.startBeat && n.onset < firstVerse.endBeat);
+                    const versePreview = this.extractForeshadowingIntro(verseMelody, 10, introSection.startBeat, firstVerse.startBeat);
+                    if (versePreview.length > 0) {
+                        melodyNotes = melodyNotes.filter(n => n.onset >= introSection.endBeat);
+                        secondaryMelodyNotes = secondaryMelodyNotes.filter(n => n.onset >= introSection.endBeat);
+                        if (track.vocal) { track.vocal = track.vocal.filter(n => n.onset >= introSection.endBeat); }
+                        melodyNotes.push(...versePreview);
+                        melodyNotes.sort((a, b) => a.onset - b.onset);
+                        introApplied = true;
+                    }
+                }
+            }
+            // 策略 C (40%)：保持原始生成的 Intro 旋律（不替换）
+            // introApplied 为 false 时走此路径，或 A/B 策略提取失败时自然降级
+            if (!introApplied) {
+                // 无需额外操作 — 使用 ToplineEngine 已生成的 Intro 旋律
             }
         }
 
@@ -427,38 +433,27 @@ export class Orchestrator {
                 }
             }
 
-            // Special overrides based on section type
-            if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
-                playBass = false;
-                playChords = true;
-                playCounterMelody = true;
-                texture = "Pad";
-            } else if (section.type === SectionType.BuildUp) {
-                playBass = true;
-                playChords = true;
-                playCounterMelody = true;
-                texture = "Arpeggio";
-            }
-
-            // Removed old Role Subordination logic
-
             // 🌟 P2: 律动比例控制器 (Groove Ratio Controller) & Texture Allocation
-            // 根据风格分配不同的 Groove Ratio
             if (!section.grooveRatio) {
-                section.grooveRatio = params.orchestration?.grooveRatio ?? { foundation: 0.6, comping: 0.6, color: 0.5 }; // Default
+                section.grooveRatio = params.orchestration?.grooveRatio ?? { foundation: 0.6, comping: 0.6, color: 0.5 };
             }
 
-            // 使用 Groove Ratio 和 Texture Allocation 动态决定乐器开关和织体
             const ratio = section.grooveRatio;
-            
-            // 基础概率判断 (结合能量等级)
             const foundationProb = ratio.foundation * (energy / 10);
             const compingProb = ratio.comping * (energy / 10);
             const colorProb = ratio.color * (energy / 10);
 
             // 核心编排逻辑：纯曲式驱动
             if (section.type === SectionType.Break || section.type === SectionType.Breakdown) {
-                playBass = false; playChords = true; playCounterMelody = true; texture = "Pad";
+                // Break/Breakdown: 贝斯退出，以织体和副旋律为主；70% Pad / 30% 其他
+                playBass = false; playChords = true; playCounterMelody = true;
+                const breakRoll = PRNGManager.next();
+                texture = breakRoll < 0.7 ? "Pad" : (breakRoll < 0.85 ? "Arpeggio" : "Block");
+            } else if (section.type === SectionType.BuildUp) {
+                // BuildUp: 全乐器推进；70% Arpeggio / 20% Pulsing / 10% Block
+                playBass = true; playChords = true; playCounterMelody = true;
+                const buildRoll = PRNGManager.next();
+                texture = buildRoll < 0.7 ? "Arpeggio" : (buildRoll < 0.9 ? "Pulsing" : "Block");
             } else if (section.type === SectionType.Verse || energy <= 4) {
                 playBass = foundationProb > 0.6;
                 playChords = true;
@@ -927,29 +922,69 @@ export class Orchestrator {
             applyQuantization(humanizedDrums);
         }
 
-        // 🌟 提案二：Ritardando 渐慢算法 (Non-linear tempo deceleration)
+        // 🌟 Tempo Curves：段落过渡渐快/渐慢 + Outro ritardando
         const tempoCurves: TempoCurve[] = [];
-        if (track.sections && track.sections.length > 0) {
-            const lastSection = track.sections[track.sections.length - 1];
-            if (lastSection.type === SectionType.Outro && lastSection.endingType !== 'hard_stop') {
-                // 仅对适合渐慢的曲风生效
-                if (!!params.orchestration?.allowRitardando) {
-                    // 渐慢发生在最后 2 个小节
-                    const beatsPerBar = track.timeSignature[0];
-                    const ritardandoBeats = beatsPerBar * 2;
-                    const endBeat = lastSection.endBeat;
-                    const startBeat = Math.max(lastSection.startBeat, endBeat - ritardandoBeats);
-                    
-                    if (endBeat > startBeat) {
-                        const ppq = 480; // MidiScheduler.ppq
-                        tempoCurves.push({
-                            startTick: startBeat * ppq,
-                            endTick: endBeat * ppq,
-                            startBpm: track.bpm,
-                            endBpm: track.bpm * 0.6, // 降速 40%
-                            curveType: 'exponential' // 指数级平滑降速
-                        });
+        const ppq = 480;
+        const tcBeatsPerBar = track.timeSignature[0];
+        const tempoProbability = params.orchestration?.tempoTransitionProbability ?? 1.0;
+        const accelIntensity = params.orchestration?.accelIntensity ?? 0.15;
+        const ritIntensity = params.orchestration?.ritIntensity ?? 0.10;
+
+        if (track.sections && track.sections.length > 1) {
+            for (let si = 0; si < track.sections.length - 1; si++) {
+                const sec = track.sections[si];
+                const nextSec = track.sections[si + 1];
+
+                // Bridge/Break → Chorus: 最后 2 小节 accelerando
+                if ((sec.type === SectionType.Bridge || sec.type === SectionType.Break || sec.type === SectionType.PreChorus)
+                    && (nextSec.type === SectionType.Chorus || nextSec.type === SectionType.Drop)) {
+                    if (PRNGManager.next() < tempoProbability) {
+                        const accelBeats = tcBeatsPerBar * 2;
+                        const accelStart = Math.max(sec.startBeat, sec.endBeat - accelBeats);
+                        if (sec.endBeat > accelStart) {
+                            tempoCurves.push({
+                                startTick: accelStart * ppq,
+                                endTick: sec.endBeat * ppq,
+                                startBpm: track.bpm,
+                                endBpm: track.bpm * (1 + accelIntensity),
+                                curveType: 'linear'
+                            });
+                        }
                     }
+                }
+
+                // Chorus → Bridge/Break: 最后 1 小节微 ritardando
+                if ((sec.type === SectionType.Chorus) && (nextSec.type === SectionType.Bridge || nextSec.type === SectionType.Break)) {
+                    if (PRNGManager.next() < tempoProbability) {
+                        const ritBeats = tcBeatsPerBar;
+                        const ritStart = Math.max(sec.startBeat, sec.endBeat - ritBeats);
+                        if (sec.endBeat > ritStart) {
+                            tempoCurves.push({
+                                startTick: ritStart * ppq,
+                                endTick: sec.endBeat * ppq,
+                                startBpm: track.bpm,
+                                endBpm: track.bpm * (1 - ritIntensity),
+                                curveType: 'linear'
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Outro ritardando（原有逻辑保留）
+            const lastSection = track.sections[track.sections.length - 1];
+            if (lastSection.type === SectionType.Outro && lastSection.endingType !== 'hard_stop' && !!params.orchestration?.allowRitardando) {
+                const ritardandoBeats = tcBeatsPerBar * 2;
+                const endBeat = lastSection.endBeat;
+                const startBeat = Math.max(lastSection.startBeat, endBeat - ritardandoBeats);
+                if (endBeat > startBeat) {
+                    tempoCurves.push({
+                        startTick: startBeat * ppq,
+                        endTick: endBeat * ppq,
+                        startBpm: track.bpm,
+                        endBpm: track.bpm * 0.6,
+                        curveType: 'exponential'
+                    });
                 }
             }
         }
