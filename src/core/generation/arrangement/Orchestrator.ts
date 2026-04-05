@@ -635,7 +635,9 @@ export class Orchestrator {
 
             // 🌟 织体补偿法则 (Texture Compensation)
             // 伴奏密度受 mood 独立控制
-            const moodCfg = MoodRegistry[context.moodId as MoodId] || MoodRegistry[MoodId.Neutral];
+            // 段落级 mood 优先（叙事弧线），回退全曲 mood
+            const sectionMoodId = section.moodOverride ?? context.moodId ?? MoodId.Neutral;
+            const moodCfg = MoodRegistry[sectionMoodId as MoodId] || MoodRegistry[MoodId.Neutral];
             const accDensity = moodCfg.accompanimentDensityMultiplier ?? moodCfg.densityMultiplier;
             let densityMultiplier = accDensity;
             if (!playDrums && !playBass && energy >= 5) {
@@ -1014,7 +1016,9 @@ export class Orchestrator {
                     
                     const currentStyleConfig = style;
                     const drumStyle = 'steady';
-                    const rawDrumNotes = TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.name.includes('Outro'), currentStyleConfig, swingRatio, nextEnergyLevel, hasFullGrooveStarted, sec.grooveRatio, drumStyle, [], context.moodId || 0);
+                    // 段落级 mood 优先（叙事弧线）
+                    const drumMoodId = sec.moodOverride ?? context.moodId ?? 0;
+                    const rawDrumNotes = TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.name.includes('Outro'), currentStyleConfig, swingRatio, nextEnergyLevel, hasFullGrooveStarted, sec.grooveRatio, drumStyle, [], drumMoodId);
                     
                     // 🌟 极低算力下的史诗级听感黑客技巧：真空效应 (Vacuum Effect / Dropout)
                     // 如果下一个段落是超级爆发 (能量差 >= 3)，拦截最后 1~2 拍的鼓点

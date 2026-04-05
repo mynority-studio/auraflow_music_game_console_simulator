@@ -682,8 +682,8 @@ export class ToplineEngine {
     // 只有真正的 Solo 段落才使用完全不重复的自由发展形式，器乐主歌/副歌依然需要结构感
     const isActualSoloSection = section.name.includes("Solo");
     // 🌟 Bottom-Up Generative Grammar: Dynamic Phrase State Machine
-    // Replace hardcoded FORMS with dynamic state machine based on Mood
-    const moodId = context?.moodId || MoodId.Neutral;
+    // 优先使用段落级 moodOverride（叙事弧线），回退到全曲 mood
+    const moodId = section.moodOverride ?? context?.moodId ?? MoodId.Neutral;
     const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
     const actionBias = mood.phraseActionBias || [0.4, 0.3, 0.3]; // Repeat, Vary, Contrast
 
@@ -1183,7 +1183,8 @@ export class ToplineEngine {
     section?: SectionMetadata,
   ): { pickup: number[]; body: number[]; tail: number[] } {
     const energyLevel = section?.energyLevel || 5;
-    const moodId = context?.moodId || MoodId.Neutral;
+    // 优先段落级 mood（叙事弧线），回退全曲 mood
+    const moodId = section?.moodOverride ?? context?.moodId ?? MoodId.Neutral;
     const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
     let sparsityScore = 0;

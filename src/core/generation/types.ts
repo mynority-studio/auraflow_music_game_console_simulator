@@ -227,6 +227,9 @@ export interface SectionMetadata {
     groove?: GrooveState;
     tracks?: TrackState[];
 
+    // --- Narrative Mood Arc: 段落级情绪覆盖 ---
+    moodOverride?: MoodId; // 不设时使用全曲 mood，设置后本段落独立调制密度/力度/鼓色彩等
+
     // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
     localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
     isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)

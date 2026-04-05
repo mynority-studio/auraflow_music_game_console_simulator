@@ -252,6 +252,106 @@ export class StructureEngine {
       sections[sections.length - 1].endingType = 'fade_out';
     }
 
+    // ============================================================
+    // 叙事情绪弧线 (Narrative Mood Arc)
+    // 在段落结构确定后，为特定段落分配 moodOverride，
+    // 让一首歌内部有情绪转折，而非全程同一情绪。
+    // ============================================================
+    this.assignNarrativeMoodArc(sections, moodId);
+
     return sections;
+  }
+
+  /**
+   * 叙事弧线分配器
+   *
+   * 3 套模板（PRNG 选择）+ 对比 mood 自动匹配。
+   * 只修改 section.moodOverride 和 section.energyLevel（按新 mood 重约束）。
+   * 不消耗额外 PRNG 超过 ~5 次。
+   */
+  private static assignNarrativeMoodArc(sections: SectionMetadata[], songMood: MoodId): void {
+    if (sections.length < 3) return; // 太短不需要弧线
+
+    // 对比 mood 映射
+    const contrastMood = (m: MoodId): MoodId => {
+      switch (m) {
+        case MoodId.Melancholic: return PRNGManager.next() > 0.5 ? MoodId.Euphoric : MoodId.Neutral;
+        case MoodId.Energetic:   return PRNGManager.next() > 0.5 ? MoodId.Chill : MoodId.Melancholic;
+        case MoodId.Neutral:     return PRNGManager.next() > 0.5 ? MoodId.Melancholic : MoodId.Euphoric;
+        case MoodId.Chill:       return MoodId.Neutral;
+        case MoodId.Aggressive:  return MoodId.Melancholic;
+        case MoodId.Euphoric:    return PRNGManager.next() > 0.5 ? MoodId.Melancholic : MoodId.Chill;
+        default: return MoodId.Neutral;
+      }
+    };
+
+    // 略升 mood（比全曲 mood 更明亮/激昂一点）
+    const liftMood = (m: MoodId): MoodId => {
+      switch (m) {
+        case MoodId.Melancholic: return MoodId.Neutral;
+        case MoodId.Chill:       return MoodId.Neutral;
+        case MoodId.Neutral:     return MoodId.Euphoric;
+        case MoodId.Energetic:   return MoodId.Euphoric;
+        case MoodId.Aggressive:  return MoodId.Energetic;
+        case MoodId.Euphoric:    return MoodId.Euphoric;
+        default: return m;
+      }
+    };
+
+    const contrast = contrastMood(songMood);
+    const lifted = liftMood(songMood);
+
+    // 选择叙事模板
+    const templateRoll = PRNGManager.next();
+    // 模板 0: 经典弧（Bridge 对比，Chorus 升）
+    // 模板 1: 反转弧（Verse 2 对比，Final Chorus 爆发）
+    // 模板 2: 渐进弧（Intro Chill，逐步升温）
+    const template = templateRoll < 0.4 ? 0 : (templateRoll < 0.75 ? 1 : 2);
+
+    for (let i = 0; i < sections.length; i++) {
+      const sec = sections[i];
+      const name = sec.name.toLowerCase();
+      const isVerse2 = name.includes('verse') && name.includes('2');
+      const isVerse3 = name.includes('verse') && name.includes('3');
+      const isBridge = name.includes('bridge');
+      const isChorus = name.includes('chorus');
+      const isOutro = name.includes('outro');
+      const isIntro = name.includes('intro');
+      const isBreak = name.includes('break');
+      const isEpicChorus = name.includes('epic');
+
+      let override: MoodId | undefined = undefined;
+
+      if (template === 0) {
+        // 经典弧：Bridge 对比，Chorus 略升，Outro Chill
+        if (isBridge || isBreak) override = contrast;
+        else if (isChorus) override = lifted;
+        else if (isOutro) override = MoodId.Chill;
+      } else if (template === 1) {
+        // 反转弧：Verse 2/3 对比（回忆/转折），Epic Chorus 爆发
+        if (isVerse2 || isVerse3) override = contrast;
+        else if (isEpicChorus) override = MoodId.Euphoric;
+        else if (isBridge) override = contrast;
+        else if (isOutro) override = MoodId.Melancholic;
+      } else {
+        // 渐进弧：Intro Chill，逐步升温
+        if (isIntro) override = MoodId.Chill;
+        else if (isBridge) override = contrast;
+        else if (isEpicChorus) override = MoodId.Euphoric;
+        else if (isChorus) override = lifted;
+      }
+
+      if (override !== undefined && override !== songMood) {
+        sec.moodOverride = override;
+        // 按新 mood 的 energyCap 重约束能量
+        const overrideMood = MoodRegistry[override] || MoodRegistry[MoodId.Neutral];
+        sec.energyLevel = Math.max(overrideMood.energyCap[0], Math.min(overrideMood.energyCap[1], sec.energyLevel));
+        // 按新 mood 重算密度
+        if (sec.groove) {
+          const baseDensity = Math.min(1.0, Math.max(0.1, (sec.energyLevel / 10) * 0.8 + 0.2));
+          sec.groove.density = Math.min(1.0, baseDensity * overrideMood.densityMultiplier);
+        }
+      }
+    }
   }
 }
