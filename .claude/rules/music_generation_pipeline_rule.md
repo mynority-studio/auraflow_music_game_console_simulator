@@ -40,8 +40,7 @@
 
 | 场景 | 做法 | 不需改动 |
 |------|------|---------|
-| 新增风格预设 | `/src/core/generation/presets/` 下新增 `Partial<GenerationParams>` 文件，通过 `mergeParams()` 合并 | 管道接口 |
-| 新增演奏 Idiom | `/src/core/generation/idioms/` 下新增文件，TextureMapper 按 `drumMode`/`bassMode`/`pianoMode` 分派 | 管道接口 |
+| 新增风格预设 | `/src/core/generation/presets/` 下新增 `Partial<GenerationParams>` 文件，通过 `mergeParams()` 合并（当前已移除，如需恢复参见 CLAUDE.md） | 管道接口 |
 | 新增生成子模块 | 放入对应模块目录，自动继承本 Rule 全部约束 | 管道拓扑 |
 | 新增管道阶段 | **禁止** — 四模块拓扑不可变，需先修订本 Rule | — |
 
@@ -90,7 +89,7 @@
 | L-1 | 严格线性：PRNG → Melody → Orchestrate → Playback，禁止跨层调用 |
 | L-2 | 模块间仅通过函数参数与返回值传递数据，禁止访问对方内部状态 |
 | L-3 | PRNGManager 为唯一允许的全局可变单例 |
-| L-4 | 风格预设（`presets/`）为静态只读数据层，通过 `mergeParams()` 注入，非独立模块 |
+| L-4 | 风格预设为可选的静态只读数据层（当前已移除），参数统一由 `getDefaultParams()` 提供 |
 | L-5 | 管道终点为 `MidiEvent[]`，之后的调度/合成属于平台层 |
 | L-6 | **确定性**：同一 PRNG 状态 + 同一输入 = 同一输出（具体实现规则见 §4.1） |
 
@@ -98,7 +97,7 @@
 
 ```
 step 0  PRNGManager.setSeed(seed)
-step 1  params = createParams(preset?)  // 合并风格预设（或使用默认参数）
+step 1  params = getDefaultParams()      // 获取默认参数（如有预设可通过 mergeParams 合并）
         PRNGManager.next() // ×1，保持 PRNG 序列对齐
 step 2  { track, context } = engine.generateFullSong(params, options?)
 step 3  history.push({ track, context })
@@ -310,8 +309,8 @@ interface MidiEvent {
 ### 3.3 枚举与位标志
 
 > **实现状态说明**：标记 ✅ 表示已在代码中实现。
-> 风格系统已重构为 `GenerationParams` + 预设文件（`presets/`），不再使用 StyleId 枚举。
-> 演奏模式通过 `drumMode`/`bassMode`/`pianoMode` 字符串字段选择，Idiom 独立文件在 `idioms/`。
+> 风格系统已重构为 `GenerationParams` + `getDefaultParams()`。预设文件和 Idiom 系统已移除（排查同质化），
+> 伴奏织体逻辑直接内联在 `TextureMapper.generateChordTexture()` 中。
 
 ```typescript
 // ✅ Tonality — 数值枚举（已实现于 types.ts）

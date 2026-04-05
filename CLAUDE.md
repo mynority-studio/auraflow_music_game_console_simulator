@@ -40,9 +40,9 @@ npm run clean        # 清除 dist/
 
 ```
 PRNGManager.setSeed(seed)
-  → 选风格（PRNG ×1）
-  → MelodyEngine.generateFullSong(styleId)     → GeneratedTrack + MusicContext
-  → Orchestrator.arrange(track, styleId, ctx)   → ArrangedTrack
+  → PRNGManager.next() ×1（保持 PRNG 序列对齐）
+  → MelodyEngine.generateFullSong(params)       → GeneratedTrack + MusicContext
+  → Orchestrator.arrange(track, params, ctx)     → ArrangedTrack
   → MidiConverter.convert(arranged, channelMap)  → MidiEvent[]（管道终点）
   → [平台层] MidiScheduler → SpessaSynth → 音频输出
 ```
@@ -71,13 +71,9 @@ ArrangedTrack → App 层调用 Orchestrator.arrange()
 | `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排（接收 ArrangedTrack） |
 | `GlobalContext` | `core/GlobalContext.ts` | **仅平台层使用**（audio/apps/components），生成管道内已消除 |
 
-### 风格系统
+### 参数系统
 
-风格系统采用**预设插槽架构**：核心引擎通过 `GenerationParams` 接口完全参数化，风格预设文件位于 `/src/core/generation/presets/`（如 `LofiPreset.ts`），导出 `Partial<GenerationParams>`。通过 `mergeParams(getDefaultParams(), preset)` 合并默认参数与风格覆盖。演奏模式 Idiom 独立于风格，按演奏特征命名（如 `SyncopatedCompingIdiom`），位于 `/src/core/generation/idioms/`，通过 `drumMode`/`bassMode`/`pianoMode` 参数分派。新增风格只需添加一个预设文件并在 BarData 中绑定。
-
-### 乐器惯用法系统（Idiom）
-
-演奏模式 Idiom 位于 `/src/core/generation/idioms/`（如 `piano/SyncopatedCompingIdiom`、`piano/StandardBlockIdiom`）。每个 Idiom 是纯函数，接收标准化 `PianoIdiomContext`，输出 `NoteData[]`。`TextureMapper` 根据 `GenerationParams.orchestration.pianoMode`/`drumMode`/`bassMode` 字段路由到对应 Idiom。Idiom 按**演奏特征**命名（非风格绑定），支持 Fusion 复用。
+核心引擎通过 `GenerationParams` 接口完全参数化，所有参数均有默认值（`getDefaultParams()`）。当前无风格预设文件（preset/idiom 系统已移除以排查同质化问题）。伴奏织体（Block/Arpeggio/Pad）直接内联在 `TextureMapper.generateChordTexture()` 中。如需恢复风格系统，在 `/src/core/generation/presets/` 下新增 `Partial<GenerationParams>` 文件并通过 `mergeParams()` 合并。
 
 ## 关键开发规则
 
