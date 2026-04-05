@@ -6,7 +6,7 @@ import { systemAudio } from '../../system/SystemAudio';
 import { EndlessRadioManager, AppState } from './EndlessRadioManager';
 import { ALL_BARS, BarConfig } from './BarData';
 import { PRNGManager } from '../../core/utils/PRNG';
-import { Tonality, CQ_IS_MINOR, CQ_IS_DIM } from '../../core/generation/types';
+// Old types: chord.quality is a string ('Minor', 'Diminished', etc.), tonality is a string
 
 interface AuraBarProps {
   activeKeys: Set<string>;
@@ -104,7 +104,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
     '0-0': 39, '1-0': 37, '2-0': 54, '3-0': 56,            // Top row: Clap, Rimshot, Tambourine, Cowbell (4-0 is Function)
   };
 
-  const getJamMelodyNotes = (chord: any, tonality: number, keyOffset: number) => {
+  const getJamMelodyNotes = (chord: any, tonality: string, keyOffset: number) => {
     // We need 14 notes. To ensure it always sounds good (safe jamming),
     // we use the Pentatonic scale of the current chord or key.
     // Major Pentatonic: 1, 2, 3, 5, 6 (intervals: 0, 2, 4, 7, 9)
@@ -116,17 +116,15 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
     if (chord) {
         const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : keyOffset;
         rootPc = ((chord.root + chordKeyOffset) % 12 + 12) % 12;
-        const q = chord.quality;
-        // T-1 合规：ChordQuality 是数值枚举，用位掩码检查
-        const qBit = 1 << q;
-        if (qBit & (CQ_IS_MINOR | CQ_IS_DIM)) {
+        const q = chord.quality as string;
+        if (q === 'Minor' || q === 'Diminished' || q === 'Minor7' || q === 'HalfDiminished' || q === 'Diminished7' || q === 'Minor9' || q === 'Minor11') {
             scalePcs = [0, 3, 5, 7, 10].map(i => (rootPc + i) % 12); // Minor Pentatonic
         } else {
             scalePcs = [0, 2, 4, 7, 9].map(i => (rootPc + i) % 12); // Major Pentatonic
         }
     } else {
         rootPc = (keyOffset % 12 + 12) % 12;
-        if (tonality === Tonality.Minor) {
+        if (tonality === 'Minor') {
             scalePcs = [0, 3, 5, 7, 10].map(i => (rootPc + i) % 12); // Minor Pentatonic
         } else {
             scalePcs = [0, 2, 4, 7, 9].map(i => (rootPc + i) % 12); // Major Pentatonic
@@ -419,7 +417,6 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                 // Enter Bar
                 const selectedBar = bars[selectedIndexRef.current];
                 if (selectedBar && managerRef.current) {
-                  managerRef.current.setPreset(selectedBar.preset ?? null, selectedBar.name);
                   managerRef.current.triggerGeneration();
                 }
               } else {

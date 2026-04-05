@@ -1,10 +1,10 @@
-import { GenerationParams } from '../../core/generation/types';
+import { StyleId } from '../../core/generation/config/StyleFlags';
 
 export interface BarConfig {
   id: string;
   name: string;
   imagePath: string;
-  preset?: Partial<GenerationParams>;
+  styleIds: StyleId[];
 }
 
 export const ALL_BARS: BarConfig[] = [
@@ -12,35 +12,42 @@ export const ALL_BARS: BarConfig[] = [
     id: 'edm-bar',
     name: 'EDM CLUB',
     imagePath: '/assets/barImg/EDMBar.png',
+    styleIds: [StyleId.Default],
   },
   {
     id: 'jazz-bar',
     name: 'JAZZ CAFE',
     imagePath: '/assets/barImg/JazzBar.png',
+    styleIds: [StyleId.Default],
   },
   {
     id: 'lounge-bar',
     name: 'LOUNGE BAR',
     imagePath: '/assets/barImg/LoungeBar.png',
+    styleIds: [StyleId.Default],
   },
   {
     id: 'pop-bar',
     name: 'POP STAGE',
     imagePath: '/assets/barImg/PopBar.png',
+    styleIds: [StyleId.Default],
   },
   {
     id: 'rap-bar',
     name: 'HIPHOP CLUB',
     imagePath: '/assets/barImg/RapBar.png',
+    styleIds: [StyleId.Default],
   },
   {
     id: 'retro-bar',
     name: 'RETRO ARCADE',
     imagePath: '/assets/barImg/RetroBar.png',
+    styleIds: [StyleId.Default],
   },
   {
     id: 'rock-bar',
     name: 'ROCK TAVERN',
     imagePath: '/assets/barImg/RockBar.png',
+    styleIds: [StyleId.Default],
   }
 ];

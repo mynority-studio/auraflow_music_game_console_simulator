@@ -1,0 +1,82 @@
+import { GeneratedChord, SectionMetadata, StyleConfig, Tonality } from './types';
+import { MoodId } from './config/MoodFlags';
+
+class GlobalContextManager {
+    public currentStyle: StyleConfig | null = null;
+    public currentBPM: number = 120;
+    public currentTimeSignature:[number, number] =[4, 4];
+    public currentTonality: Tonality = Tonality.Major;
+    public currentKeyOffset: number = 0;      
+    public globalAbsoluteBeat: number = 0;    
+    public currentMoodId?: MoodId;
+    
+    private currentGrooveDNA: number[] =[];   
+    private activeSection: SectionMetadata | null = null;
+    private activeChord: GeneratedChord | null = null;
+
+    public initializeNewEra(style: StyleConfig, bpm: number, keyOffset: number, tonality: Tonality, timeSignature: [number, number], moodId?: MoodId) {
+        this.currentStyle = style;
+        this.currentBPM = bpm;
+        this.currentKeyOffset = keyOffset;
+        this.currentTonality = tonality;
+        this.currentTimeSignature = timeSignature;
+        this.currentMoodId = moodId;
+        // console.log(`[GlobalContext] 🪐 宇宙法则已重写: ${style.name} | BPM: ${bpm} | Key: ${keyOffset} | TimeSig: ${timeSignature[0]}/${timeSignature[1]}`);
+    }
+
+    public updateCurrentSlice(section: SectionMetadata, chord: GeneratedChord, grooveDNA: number[]) {
+        this.activeSection = section;
+        this.activeChord = chord;
+        this.currentGrooveDNA = grooveDNA;
+    }
+
+    public isGrooveHit(absoluteBeat: number): boolean {
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return Math.abs(absoluteBeat % 1) < 1e-6;
+        const beatsPerBar = this.currentTimeSignature[0];
+        const loopLength = 2 * beatsPerBar;
+        const localBeat = absoluteBeat % loopLength;
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05);
+    }
+
+    /**
+     * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
+     */
+    public isLayeringHit(absoluteBeat: number): boolean {
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return Math.abs(absoluteBeat % 1) < 1e-6;
+        const beatsPerBar = this.currentTimeSignature[0];
+        const loopLength = 2 * beatsPerBar;
+        const localBeat = absoluteBeat % loopLength;
+        // 叠加点：GrooveDNA 中的正拍 (0, 1, 2, 3...)
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit % 1) < 1e-6);
+    }
+
+    /**
+     * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
+     */
+    public isInterleavingHit(absoluteBeat: number): boolean {
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return false;
+        const beatsPerBar = this.currentTimeSignature[0];
+        const loopLength = 2 * beatsPerBar; 
+        const localBeat = absoluteBeat % loopLength;
+        // 穿插点：GrooveDNA 中的反拍或切分音
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit % 1) >= 1e-6);
+    }
+
+    public getCurrentEnergyLevel(): number { return this.activeSection ? this.activeSection.energyLevel : 5; }
+    public getCurrentChord(): GeneratedChord | null { return this.activeChord; }
+    public getActiveSection(): SectionMetadata | null { return this.activeSection; }
+
+    public reset() {
+        this.currentStyle = null;
+        this.currentBPM = 120;
+        this.currentTimeSignature = [4, 4];
+        this.currentTonality = Tonality.Major;
+        this.currentKeyOffset = 0;
+        this.globalAbsoluteBeat = 0;
+        this.currentGrooveDNA = [];
+        this.activeSection = null;
+        this.activeChord = null;
+    }
+}
+
+export const GlobalContext = new GlobalContextManager();

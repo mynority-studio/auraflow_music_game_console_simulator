@@ -1,13 +1,5 @@
 export type ChordProgression = string[];
 
-/** S-7 合规：生成管道专用 Error 子类，附带上下文信息 */
-export class GenerationError extends Error {
-  constructor(message: string, public readonly context?: Record<string, unknown>) {
-    super(message);
-    this.name = 'GenerationError';
-  }
-}
-
 /**
  * C++ Porting Guide:
  * This interface maps directly to a C struct to avoid heap fragmentation:
@@ -20,118 +12,10 @@ export class GenerationError extends Error {
  * };
  */
 import { MoodId } from './config/MoodFlags';
-import { InstrumentId } from './config/InstrumentFlags';
+import { StyleId } from './config/StyleFlags';
 
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-// T-1 合规：ChordQuality 数值枚举，替代字符串联合
-export enum ChordQuality {
-    Major = 0,
-    Minor = 1,
-    Diminished = 2,
-    Diminished7 = 3,
-    Augmented = 4,
-    Dominant7 = 5,
-    Minor7 = 6,
-    Major7 = 7,
-    HalfDiminished = 8,
-    Sus4 = 9,
-    Dominant7Sus4 = 10,
-    Add9 = 11,
-    Minor9 = 12,
-    Major9 = 13,
-    Dominant9 = 14,
-    Minor11 = 15,
-    Dominant13 = 16,
-}
-
-// 翻译枚举：ChordQuality → 显示名
-export const ChordQualityName: string[] = [];
-ChordQualityName[ChordQuality.Major] = 'Major';
-ChordQualityName[ChordQuality.Minor] = 'Minor';
-ChordQualityName[ChordQuality.Diminished] = 'Diminished';
-ChordQualityName[ChordQuality.Diminished7] = 'Diminished7';
-ChordQualityName[ChordQuality.Augmented] = 'Augmented';
-ChordQualityName[ChordQuality.Dominant7] = 'Dominant7';
-ChordQualityName[ChordQuality.Minor7] = 'Minor7';
-ChordQualityName[ChordQuality.Major7] = 'Major7';
-ChordQualityName[ChordQuality.HalfDiminished] = 'HalfDiminished';
-ChordQualityName[ChordQuality.Sus4] = 'Sus4';
-ChordQualityName[ChordQuality.Dominant7Sus4] = 'Dominant7Sus4';
-ChordQualityName[ChordQuality.Add9] = 'Add9';
-ChordQualityName[ChordQuality.Minor9] = 'Minor9';
-ChordQualityName[ChordQuality.Major9] = 'Major9';
-ChordQualityName[ChordQuality.Dominant9] = 'Dominant9';
-ChordQualityName[ChordQuality.Minor11] = 'Minor11';
-ChordQualityName[ChordQuality.Dominant13] = 'Dominant13';
-
-// 和弦音程查表（替代 HarmonyCore 中的 17 行 if-chain）
-export const CHORD_INTERVALS: readonly (readonly number[])[] = [
-    [0, 4, 7],           // Major
-    [0, 3, 7],           // Minor
-    [0, 3, 6],           // Diminished
-    [0, 3, 6, 9],        // Diminished7
-    [0, 4, 8],           // Augmented
-    [0, 4, 7, 10],       // Dominant7
-    [0, 3, 7, 10],       // Minor7
-    [0, 4, 7, 11],       // Major7
-    [0, 3, 6, 10],       // HalfDiminished
-    [0, 5, 7],           // Sus4
-    [0, 5, 7, 10],       // Dominant7Sus4
-    [0, 4, 7, 14],       // Add9 (root, 3rd, 5th, 9th)
-    [0, 3, 7, 10, 14],   // Minor9
-    [0, 4, 7, 11, 14],   // Major9
-    [0, 4, 7, 10, 14],   // Dominant9
-    [0, 3, 7, 10, 14, 17], // Minor11
-    [0, 4, 7, 10, 14, 17, 21], // Dominant13
-];
-
-// T-1 合规：ChordQuality 位掩码，用于分类检查（替代 .includes() 子串匹配）
-export const CQ_IS_MINOR  = (1 << ChordQuality.Minor) | (1 << ChordQuality.Minor7) | (1 << ChordQuality.Minor9) | (1 << ChordQuality.Minor11);
-export const CQ_IS_MAJOR  = (1 << ChordQuality.Major) | (1 << ChordQuality.Major7) | (1 << ChordQuality.Major9) | (1 << ChordQuality.Add9);
-export const CQ_IS_DOM    = (1 << ChordQuality.Dominant7) | (1 << ChordQuality.Dominant9) | (1 << ChordQuality.Dominant13) | (1 << ChordQuality.Dominant7Sus4);
-export const CQ_IS_DIM    = (1 << ChordQuality.Diminished) | (1 << ChordQuality.Diminished7);
-export const CQ_IS_MINOR_OR_DIM = CQ_IS_MINOR | CQ_IS_DIM;
-export const CQ_IS_HIGH_TENSION = (1 << ChordQuality.Major7) | (1 << ChordQuality.Minor7) | (1 << ChordQuality.Dominant7) | (1 << ChordQuality.Add9) | (1 << ChordQuality.Minor9) | (1 << ChordQuality.Major9) | (1 << ChordQuality.Dominant9) | (1 << ChordQuality.Minor11) | (1 << ChordQuality.Dominant13);
-
-// T-1 合规：Tonality 数值枚举，替代 tonality 字符串比较
-export enum Tonality {
-    Major = 0,
-    Minor = 1,
-    Major_Pentatonic = 2,
-    Minor_Pentatonic = 3,
-    Blues = 4,
-    Dorian = 5,
-    Mixolydian = 6,
-    Melodic_Minor = 7,
-    Lydian = 8,
-}
-
-// 翻译枚举：Tonality → 显示名
-export const TonalityName: string[] = [];
-TonalityName[Tonality.Major] = 'Major';
-TonalityName[Tonality.Minor] = 'Minor';
-TonalityName[Tonality.Major_Pentatonic] = 'Major_Pentatonic';
-TonalityName[Tonality.Minor_Pentatonic] = 'Minor_Pentatonic';
-TonalityName[Tonality.Blues] = 'Blues';
-TonalityName[Tonality.Dorian] = 'Dorian';
-TonalityName[Tonality.Mixolydian] = 'Mixolydian';
-TonalityName[Tonality.Melodic_Minor] = 'Melodic_Minor';
-TonalityName[Tonality.Lydian] = 'Lydian';
-
-// 音阶音程查表（替代 HarmonyCore.getScalePitches 中的 if-chain）
-export const SCALE_INTERVALS: readonly (readonly number[])[] = [
-    [0, 2, 4, 5, 7, 9, 11],     // Major
-    [0, 2, 3, 5, 7, 8, 10],     // Minor
-    [0, 2, 4, 7, 9],             // Major_Pentatonic
-    [0, 3, 5, 7, 10],            // Minor_Pentatonic
-    [0, 3, 5, 6, 7, 10],         // Blues
-    [0, 2, 3, 5, 7, 9, 10],     // Dorian
-    [0, 2, 4, 5, 7, 9, 10],     // Mixolydian
-    [0, 2, 3, 5, 7, 9, 11],     // Melodic_Minor
-    [0, 2, 4, 6, 7, 9, 11],     // Lydian（升四度，空灵感核心）
-];
-
-export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
+export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {
@@ -201,13 +85,32 @@ export interface MacroStructure {
 }
 // -------------------------------------------------------
 
-/** 通用音乐生成参数 — 纯音乐计算，零风格意识 */
-export interface GenerationParams {
-    global: {
-        bpmRange: [number, number];
-        timeSignaturePool: Array<{ signature:[number, number], weight: number }>;
-        tonalityPool: Array<{ tonality: Tonality, weight: number }>;
-        structureTemplate?: 'pop' | 'edm' | 'jazz' | 'bossa' | 'cinematic';
+export interface DSPNodeConfig {
+    type: BiquadFilterType; // 'highpass', 'lowpass', 'peaking', 'highshelf'
+    frequency: number;
+    Q: number;
+    gain?: number;
+}
+
+export interface MasteringProfile {
+    id: string;
+    nodes: DSPNodeConfig[];
+    masterCompressor: { threshold: number, ratio: number, attack: number, release: number };
+    makeupGain: number;
+}
+
+export interface InstrumentBehavior {
+    pitchRange: [number, number]; // e.g., [60, 84] (C4 to C6)
+    velocityRange: [number, number]; // e.g., [90, 115] (明亮) vs [40, 70] (暗淡)
+}
+
+export interface StyleConfig {
+    id: StyleId; name: string; description?: string;
+    global: { 
+        bpmRange: [number, number]; 
+        timeSignaturePool: Array<{ signature:[number, number], weight: number }>; 
+        tonalityPool: Array<{ tonality: Tonality, weight: number }>; 
+        structureTemplate?: 'pop' | 'edm' | 'jazz' | 'bossa' | 'cinematic'; // 🌟 新增：结构模板
     };
     harmony: { chorusPool: ChordProgression[]; versePool: ChordProgression[]; preChorusPool: ChordProgression[]; };
     harmonyRules?: {
@@ -215,69 +118,64 @@ export interface GenerationParams {
         passingChords?: Array<'SecondaryDominant' | 'Diminished7' | 'TritoneSub' | 'Chromatic' | 'DescendingDiminished' | 'SharpFourHalfDim'>;
         allowTritoneSub?: boolean;
         reharmProbability?: number;
-        melodyDrivenReharmProbability?: number;
+        melodyDrivenReharmProbability?: number; // 🌟 新增：旋律引导的和声替换概率
         borrowedChords?: Array<'ModalMixture' | 'Neapolitan' | 'SecondaryDominant' | 'TritoneSubstitution'>;
         voicingStyle?: 'standard' | 'neo-soul' | 'jazz' | 'jpop' | 'edm' | 'pop-rock';
-        globalProgressionProbability?: number;
-        preferJPopProgressions?: boolean;
-        /** 和弦色彩扩展概率 — 覆盖 voicingStyle 的默认值 (Jazz=1.0, JPop=0.8, EDM=0.6, Pop=0.65) */
-        spiceProbability?: number;
-        /** 乐句边界插入属和弦概率 (default 0.3, 设 0 可禁用) */
-        dominantInsertionProbability?: number;
+        globalProgressionProbability?: number; // 🌟 新增：全曲共用一套和弦的概率
+        genreBendingProbability?: number; // 🌟 新增：段落发生风格突变的概率
+        genreBendingOverrides?: StyleId[]; // 🌟 新增：段落发生风格突变时的备选曲风
+        preferJPopProgressions?: boolean; // 🌟 新增：是否偏好 J-Pop 和声进行
     };
     rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; };
-    melody: {
-        stepwiseRatio: number;
-        maxJumpInterval: number;
-        tensionTolerance: number;
-        mutationProbability: number;
-        mutationPool: Array<'inversion' | 'augmentation' | 'truncation' | 'retrograde' | 'diminution'>;
+    melody: { 
+        stepwiseRatio: number; 
+        maxJumpInterval: number; 
+        tensionTolerance: number; 
+        mutationProbability: number; 
+        mutationPool: Array<'inversion' | 'augmentation' | 'truncation' | 'retrograde' | 'diminution'>; 
         pentatonicPreference?: number;
         extensionPreference?: number;
         chromaticPassingProbability?: number;
-        leapResolutionThreshold?: number;
+        leapResolutionThreshold?: number; // 🌟 新增：多大的音程被视为大跳并需要反向解决
         syncopationResolution?: 'strict' | 'loose';
         inflectionProbability?: number;
         pentatonicShiftProbability?: number;
-        anchorProbability?: number;
-        riffDrivenProbability?: number;
-        /** Chorus motif A 节奏骨架复用到 Verse/PreChorus 的概率 (0.0~1.0, 默认 0.4) */
-        chorusMotifReuseProbability?: number;
-        /** 复用时对每个节奏偏移的变异概率 (0.0~1.0, 默认 0.3) */
-        motifRhythmMutationOnReuse?: number;
-        /** 强拍偏好三音/七音的概率 (0.0~1.0, 默认 0.8) */
-        strongBeatExtensionBias?: number;
-        /** 强拍候选中包含根音的概率 (0.0~1.0, 默认 0.15) */
-        strongBeatRootProbability?: number;
+        anchorProbability?: number; // 🌟 新增：同音反复的概率
+        riffDrivenProbability?: number; // 🌟 新增：段落由 Riff 驱动的概率
+        sectionalRegisterProfile?: {
+            verse: [number, number]; // e.g., [60, 72] (C4 to C5)
+            preChorus: [number, number];
+            chorus: [number, number];
+            solo: [number, number];
+        };
+        breathingRoomProbability?: number; // 🌟 新增：强制休止符/呼吸空间的概率
+        callAndResponseProbability?: number; // 🌟 新增：使用呼应手法的概率
+        motifRecipes?: {
+            pickup: number[][];
+            body: number[][];
+            tail: number[][];
+        };
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
-    orchestration: {
-        melodyInstruments: InstrumentId[];
-        chordInstruments: InstrumentId[];
-        bassInstruments: InstrumentId[];
-        drumInstruments: InstrumentId[];
-        counterMelodyInstruments: InstrumentId[];
-        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass'>;
-        drumProbability?: number;
-        counterMelodyProbability?: number;
-        fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic';
-        drumMode?: 'standard' | 'laid-back' | 'four-on-floor';
-        bassMode?: 'root-based' | 'groove-lock' | 'walking';
-        pianoMode?: 'standard' | 'syncopated-comping';
-        counterMelodyMode?: 'sustained' | 'melodic-response';
-        vocalProbability?: number;
-        outroRingOutProbability?: number;
-        allowTradingFours?: boolean;
-        allowIntroRiffs?: boolean;
-        allowRitardando?: boolean;
-        /** 段落过渡 tempo curve 概率 (0.0~1.0)，0=从不，1=总是，默认 1.0 */
-        tempoTransitionProbability?: number;
-        /** accelerando 幅度 (0.15 = +15%)，默认 0.15 */
-        accelIntensity?: number;
-        /** ritardando 幅度 (0.10 = -10%)，默认 0.10 */
-        ritIntensity?: number;
-        grooveRatio?: { foundation: number; comping: number; color: number; };
+    orchestration: { 
+        melodyInstruments: string[]; 
+        chordInstruments: string[]; 
+        bassInstruments: string[];
+        drumInstruments: string[];
+        counterMelodyInstruments: string[];
+        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass' | 'String_Ostinato' | 'Water_Arpeggio'>;
+        drumProbability?: number; // 🌟 新增：鼓组出场率，彻底解耦
+        counterMelodyProbability?: number; // 副旋律出场率
+        fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic'; // 🌟 新增：加花风格
+        vocalProbability?: number; // 🌟 新增：主唱出场率
+        outroRingOutProbability?: number; // 🌟 新增：尾奏使用 BigRingOut 的概率
+        allowTradingFours?: boolean; // 🌟 新增：是否允许乐器对话 (Trading Fours)
+        allowIntroRiffs?: boolean; // 🌟 新增：是否允许前奏 Riff
+        allowRitardando?: boolean; // 🌟 新增：是否允许结尾渐慢
+        allowDrumless?: boolean; // 🌟 新增：是否允许无鼓编制
+        allowBassless?: boolean; // 🌟 新增：是否允许无贝斯编制
+        grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
         mixingPreferences?: {
             requireSidechain?: boolean;
             melody?: MixingConfig;
@@ -287,25 +185,21 @@ export interface GenerationParams {
             bass?: MixingConfig;
             drums?: MixingConfig;
             counterMelody?: MixingConfig;
+            chorusDepth?: number;
+        };
+        instrumentBehaviors?: {
+            melody?: InstrumentBehavior;
+            chord?: InstrumentBehavior;
+            bass?: InstrumentBehavior;
+            counterMelody?: InstrumentBehavior;
+            secondaryMelody?: InstrumentBehavior;
         };
     };
+    performance: { allowedPersonas: string[]; };
+    masteringProfileId?: string;
 }
 
-// T-1 合规：SectionType 数值枚举，替代 section.name.includes() 字符串子串匹配
-export enum SectionType {
-    Intro = 0,
-    Verse = 1,
-    PreChorus = 2,
-    Chorus = 3,
-    Bridge = 4,
-    Outro = 5,
-    Break = 6,
-    Breakdown = 7,
-    BuildUp = 8,
-    Drop = 9,
-    PreOutro = 10,
-    Solo_Bridge = 11,
-}
+
 
 
 export interface SectionMetadata {
@@ -325,33 +219,35 @@ export interface SectionMetadata {
     };
 
     // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
-    type?: SectionType;
+    sectionType?: SectionType; // 🌟 数值枚举，逐步替代 name.includes() 字符串匹配
+    type?: string;
     lengthBars?: number;
     phraseTemplate?: string; // e.g., "A-A-B-A'"
     harmony?: HarmonyState;
     groove?: GrooveState;
     tracks?: TrackState[];
 
-    // --- Riff-Driven ---
-    isRiffDriven?: boolean;      // 是否由 Riff 驱动
+    // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
+    localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
+    isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)
 }
-
 
 export interface MixingConfig {
     pan?: number; // -1 (left) to 1 (right)
     reverb?: number; // 0 to 1 (send level)
     volume?: number; // dB offset (e.g., -6 to +6)
     delay?: number; // 0 to 1 (send level)
+    chorus?: number; // 0 to 127 (MIDI CC 93)
 }
 
 export interface EnsembleDraft {
-    vocalSound?: InstrumentId;
-    melodySound: InstrumentId;
-    secondaryMelodySound?: InstrumentId;
-    chordSound: InstrumentId | null;
-    bassSound: InstrumentId | null;
-    drumSound: InstrumentId | null;
-    counterMelodySound: InstrumentId | null;
+    vocalSound?: string;
+    melodySound: string;
+    secondaryMelodySound?: string;
+    chordSound: string | null;
+    bassSound: string | null;
+    drumSound: string | null;
+    counterMelodySound: string | null;
     filterSweep?: string;
     mixing?: {
         vocal?: MixingConfig;
@@ -381,14 +277,17 @@ export interface MusicContext {
     timeSignature: [number, number];
     grooveDNA: number[];
     moodId?: MoodId;
+    ensemble?: EnsembleDraft;
+    style?: StyleConfig;
 }
 
 export interface GenerationOptions {
+    styleId?: StyleId;
     moodId?: MoodId;
     seed?: number;
     length?: 'short' | 'medium' | 'long';
     userMotifRoot?: number;
-    processedUserMotif?: NoteData[];
+    processedUserMotif?: any[];
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
     detectedTimeSignature?: [number, number];
     detectedTonality?: Tonality;
@@ -401,107 +300,108 @@ export interface TempoCurve {
     curveType: 'linear' | 'exponential';
 }
 
-export interface ArrangedTrack {
+export interface ArrangedTrack { 
     bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
-    mixStyle?: string;
-    requireSidechain?: boolean;
+    styleId?: StyleId;
     vocal?: NoteData[]; melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
-    palette?: EnsembleDraft;
+    palette?: EnsembleDraft; 
     sections?: SectionMetadata[];
-    globalRiff?: NoteData[];
-    chords?: GeneratedChord[];
-    tempoCurves?: TempoCurve[];
+    globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
+    chords?: GeneratedChord[]; // 全曲和弦进行
+    tempoCurves?: TempoCurve[]; // 渐慢/渐快曲线
 }
 
-/** 通用默认生成参数（基于中性流行风格） */
-export function getDefaultParams(): GenerationParams {
-    return {
-        global: {
-            bpmRange: [75, 115] as [number, number],
-            timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],
-            tonalityPool: [
-                { tonality: Tonality.Major, weight: 0.45 },
-                { tonality: Tonality.Minor, weight: 0.25 },
-                { tonality: Tonality.Dorian, weight: 0.1 },
-                { tonality: Tonality.Mixolydian, weight: 0.1 },
-                { tonality: Tonality.Lydian, weight: 0.1 },
-            ]
-        },
-        harmony: {
-            chorusPool: [
-                ['IV', 'V', 'iii', 'vi'],
-                ['vi', 'IV', 'I', 'V'],
-                ['I', 'V', 'vi', 'iii'],
-                ['I', 'vi', 'IV', 'V']
-            ],
-            versePool: [
-                ['I', 'V', 'vi', 'iii'],
-                ['I', 'vi', 'IV', 'V'],
-                ['vi', 'iii', 'IV', 'I'],
-                ['ii', 'V', 'I', 'vi']
-            ],
-            preChorusPool: [
-                ['ii', 'V', 'iii', 'vi'],
-                ['IV', 'V', 'vi', 'vi'],
-                ['IV', 'V', 'I', 'I']
-            ]
-        },
-        harmonyRules: {
-            maxDissonanceTolerance: 0.4,
-            reharmProbability: 0.2,
-            borrowedChords: ['ModalMixture'],
-            voicingStyle: 'standard',
-            passingChords: ['SecondaryDominant', 'Diminished7'],
-            allowTritoneSub: false,
-            dominantInsertionProbability: 0.3,
-        },
-        rhythm: {
-            densityBase: [0.4, 0.7] as [number, number],
-            syncopationWeight: 0.4,
-            restProbability: 0.15,
-            disruptionProbability: 0.05,
-            humanize: 0.1,
-            swingRatio: 0
-        },
-        melody: {
-            stepwiseRatio: 0.7,
-            maxJumpInterval: 12,
-            tensionTolerance: 0.15,
-            mutationProbability: 0.25,
-            mutationPool: ['inversion', 'augmentation', 'retrograde'],
-            chorusMotifReuseProbability: 0.4,
-            motifRhythmMutationOnReuse: 0.3,
-            strongBeatExtensionBias: 0.8,
-            strongBeatRootProbability: 0.15,
-        },
-        contrast: {
-            chorusPitchOffset: 7,
-            verseDensityMultiplier: 0.65,
-            versePitchOffset: -2
-        },
-        modulation: {
-            probability: 0.4,
-            targetSection: 'Final_Chorus',
-            intervalPool: [1, 2]
-        },
-        orchestration: {
-            melodyInstruments: [InstrumentId.Acoustic_Grand, InstrumentId.Acoustic_Grand, InstrumentId.String_Ensemble, InstrumentId.Warm_EP],
-            chordInstruments: [InstrumentId.Acoustic_Grand, InstrumentId.Acoustic_Grand, InstrumentId.Acoustic_Guitar_Chord, InstrumentId.Warm_EP],
-            bassInstruments: [InstrumentId.Electric_Bass_Finger, InstrumentId.Electric_Bass_Pick, InstrumentId.Fretless_Bass, InstrumentId.Acoustic_Bass],
-            drumInstruments: [InstrumentId.Standard_DrumKit],
-            counterMelodyInstruments: [InstrumentId.String_Ensemble, InstrumentId.String_Ensemble, InstrumentId.Pad_1_NewAge, InstrumentId.Pad_3_Polysynth],
-            texturePool: ['Arpeggio', 'Arpeggio', 'Block', 'Pad'],
-            drumProbability: 1.0,
-            counterMelodyProbability: 0.9,
-            grooveRatio: { foundation: 0.5, comping: 0.6, color: 0.7 },
-            mixingPreferences: {
-                requireSidechain: true,
-                melody: { pan: 0, reverb: 0.5, delay: 0.2 },
-                chord: { pan: -0.25, reverb: 0.6, volume: -4.0 },
-                counterMelody: { pan: -0.6, volume: -5.0 },
-                drums: { reverb: 0.15, volume: -1.0 },
-                bass: { reverb: 0.25, volume: -4.0 }
-            }
-        }
-    };
+// ============================================================
+// 数值枚举 & 查找表（Phase 1 cherry-pick：类型安全基础设施）
+// 当前阶段仅添加定义，不修改现有代码的类型签名。
+// Phase 4 将逐步把 string 类型迁移到这些枚举。
+// ============================================================
+
+// --- Tonality 数值枚举 ---
+export enum Tonality {
+    Major = 0, Minor = 1, Major_Pentatonic = 2, Minor_Pentatonic = 3,
+    Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8
+}
+
+export const TonalityName: string[] = [];
+TonalityName[Tonality.Major] = 'Major';
+TonalityName[Tonality.Minor] = 'Minor';
+TonalityName[Tonality.Major_Pentatonic] = 'Major_Pentatonic';
+TonalityName[Tonality.Minor_Pentatonic] = 'Minor_Pentatonic';
+TonalityName[Tonality.Blues] = 'Blues';
+TonalityName[Tonality.Dorian] = 'Dorian';
+TonalityName[Tonality.Mixolydian] = 'Mixolydian';
+TonalityName[Tonality.Melodic_Minor] = 'Melodic_Minor';
+TonalityName[Tonality.Lydian] = 'Lydian';
+
+/** 音阶音程查找表：SCALE_INTERVALS[tonality] → number[] (半音间隔) */
+export const SCALE_INTERVALS: number[][] = [];
+SCALE_INTERVALS[Tonality.Major]            = [0, 2, 4, 5, 7, 9, 11];
+SCALE_INTERVALS[Tonality.Minor]            = [0, 2, 3, 5, 7, 8, 10];
+SCALE_INTERVALS[Tonality.Major_Pentatonic] = [0, 2, 4, 7, 9];
+SCALE_INTERVALS[Tonality.Minor_Pentatonic] = [0, 3, 5, 7, 10];
+SCALE_INTERVALS[Tonality.Blues]            = [0, 3, 5, 6, 7, 10];
+SCALE_INTERVALS[Tonality.Dorian]           = [0, 2, 3, 5, 7, 9, 10];
+SCALE_INTERVALS[Tonality.Mixolydian]       = [0, 2, 4, 5, 7, 9, 10];
+SCALE_INTERVALS[Tonality.Melodic_Minor]    = [0, 2, 3, 5, 7, 9, 11];
+SCALE_INTERVALS[Tonality.Lydian]           = [0, 2, 4, 6, 7, 9, 11];
+
+// --- ChordQuality 数值枚举 ---
+export enum ChordQuality {
+    Major = 0, Minor = 1, Diminished = 2, Diminished7 = 3, Augmented = 4,
+    Dominant7 = 5, Minor7 = 6, Major7 = 7, HalfDiminished = 8,
+    Sus4 = 9, Dominant7Sus4 = 10, Add9 = 11, Minor9 = 12, Major9 = 13,
+    Dominant9 = 14, Minor11 = 15, Dominant13 = 16
+}
+
+export const ChordQualityName: string[] = [];
+ChordQualityName[ChordQuality.Major] = 'Major';
+ChordQualityName[ChordQuality.Minor] = 'Minor';
+ChordQualityName[ChordQuality.Diminished] = 'Diminished';
+ChordQualityName[ChordQuality.Diminished7] = 'Diminished7';
+ChordQualityName[ChordQuality.Augmented] = 'Augmented';
+ChordQualityName[ChordQuality.Dominant7] = 'Dominant7';
+ChordQualityName[ChordQuality.Minor7] = 'Minor7';
+ChordQualityName[ChordQuality.Major7] = 'Major7';
+ChordQualityName[ChordQuality.HalfDiminished] = 'HalfDiminished';
+ChordQualityName[ChordQuality.Sus4] = 'Sus4';
+ChordQualityName[ChordQuality.Dominant7Sus4] = 'Dominant7Sus4';
+ChordQualityName[ChordQuality.Add9] = 'Add9';
+ChordQualityName[ChordQuality.Minor9] = 'Minor9';
+ChordQualityName[ChordQuality.Major9] = 'Major9';
+ChordQualityName[ChordQuality.Dominant9] = 'Dominant9';
+ChordQualityName[ChordQuality.Minor11] = 'Minor11';
+ChordQualityName[ChordQuality.Dominant13] = 'Dominant13';
+
+/** 和弦音程查找表：CHORD_INTERVALS[quality] → number[] */
+export const CHORD_INTERVALS: number[][] = [];
+CHORD_INTERVALS[ChordQuality.Major]          = [0, 4, 7];
+CHORD_INTERVALS[ChordQuality.Minor]          = [0, 3, 7];
+CHORD_INTERVALS[ChordQuality.Diminished]     = [0, 3, 6];
+CHORD_INTERVALS[ChordQuality.Diminished7]    = [0, 3, 6, 9];
+CHORD_INTERVALS[ChordQuality.Augmented]      = [0, 4, 8];
+CHORD_INTERVALS[ChordQuality.Dominant7]      = [0, 4, 7, 10];
+CHORD_INTERVALS[ChordQuality.Minor7]         = [0, 3, 7, 10];
+CHORD_INTERVALS[ChordQuality.Major7]         = [0, 4, 7, 11];
+CHORD_INTERVALS[ChordQuality.HalfDiminished] = [0, 3, 6, 10];
+CHORD_INTERVALS[ChordQuality.Sus4]           = [0, 5, 7];
+CHORD_INTERVALS[ChordQuality.Dominant7Sus4]  = [0, 5, 7, 10];
+CHORD_INTERVALS[ChordQuality.Add9]           = [0, 2, 4, 7];
+CHORD_INTERVALS[ChordQuality.Minor9]         = [0, 3, 7, 10, 14];
+CHORD_INTERVALS[ChordQuality.Major9]         = [0, 4, 7, 11, 14];
+CHORD_INTERVALS[ChordQuality.Dominant9]      = [0, 4, 7, 10, 14];
+CHORD_INTERVALS[ChordQuality.Minor11]        = [0, 3, 7, 10, 14, 17];
+CHORD_INTERVALS[ChordQuality.Dominant13]     = [0, 4, 7, 10, 14, 21];
+
+/** 位掩码：快速分类检查 */
+export const CQ_IS_MINOR = (1 << ChordQuality.Minor) | (1 << ChordQuality.Minor7) | (1 << ChordQuality.Minor9) | (1 << ChordQuality.Minor11);
+export const CQ_IS_MAJOR = (1 << ChordQuality.Major) | (1 << ChordQuality.Major7) | (1 << ChordQuality.Major9);
+export const CQ_IS_DOM   = (1 << ChordQuality.Dominant7) | (1 << ChordQuality.Dominant7Sus4) | (1 << ChordQuality.Dominant9) | (1 << ChordQuality.Dominant13);
+export const CQ_IS_DIM   = (1 << ChordQuality.Diminished) | (1 << ChordQuality.Diminished7) | (1 << ChordQuality.HalfDiminished);
+
+// --- SectionType 数值枚举 ---
+export enum SectionType {
+    Intro = 0, Verse = 1, PreChorus = 2, Chorus = 3, Bridge = 4,
+    Outro = 5, Break = 6, Breakdown = 7, BuildUp = 8, Drop = 9,
+    PreOutro = 10, Solo_Bridge = 11
 }

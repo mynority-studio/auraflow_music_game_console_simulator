@@ -3,9 +3,10 @@ import { PRNGManager } from '../../utils/PRNG';
 // 📄 文件路径: /src/core/generation/arrangement/TransitionEngine.ts
 // 🎬 V2.3 边界导演引擎 (加入 Drum Fills, The Drop, Cymbal Swells)
 // ==========================================
-import { NoteData, SectionMetadata, SectionType } from '../types';
+import { NoteData, SectionMetadata } from '../types';
 
-import { GenerationParams } from '../types';
+import { StyleId } from '../config/StyleFlags';
+import { StyleConfig } from '../types';
 
 export class TransitionEngine {
     private static muteRegion(notes: NoteData[], startBeat: number, endBeat: number) {
@@ -17,12 +18,12 @@ export class TransitionEngine {
     }
 
     // 🌟 1. Drum Fills (多种类型的鼓加花)
-    private static injectDrumFill(drums: NoteData[], startBeat: number, endBeat: number, energyDelta: number, currentEnergy: number, params: GenerationParams) {
+    private static injectDrumFill(drums: NoteData[], startBeat: number, endBeat: number, energyDelta: number, currentEnergy: number, style: StyleConfig) {
         this.muteRegion(drums, startBeat, endBeat);
         const KICK = 36, SNARE = 38, CRASH = 49, TOM_HI = 50, TOM_MID = 47, TOM_LOW = 43, HIHAT_CLOSED = 42, HIHAT_OPEN = 46;
         
         const fillLength = endBeat - startBeat;
-        const fillStyle = params.orchestration?.fillStyle || 'standard';
+        const fillStyle = style.orchestration?.fillStyle || 'standard';
         const isAcousticBallad = fillStyle === 'micro';
 
         // 🌟 能量感知：低能量段落或能量下降时，使用极简加花 (Micro-Fill / Drop Fill)
@@ -191,27 +192,40 @@ export class TransitionEngine {
         const CRASH = 49;
         const SNARE = 38;
         const KICK = 36;
+        const TOM_HI = 50;
+        const TOM_MID = 47;
+        const TOM_LOW = 43;
         
         for (let beat = startBeat; beat < boundaryBeat; beat += 0.25) {
             const progress = (beat - startBeat) / length;
-            // Exponential crescendo
-            const vel = Math.pow(progress, 2) * 0.7 + 0.3; 
+            // Exponential crescendo, starting a bit softer and ending not at 100% to leave room for the drop
+            const vel = Math.pow(progress, 2) * 0.5 + 0.35; 
             
             // Snare roll (16th notes, becoming 32nd notes at the very end)
             const isEnd = beat >= boundaryBeat - 0.5;
             const step = isEnd ? 0.125 : 0.25;
             
             for (let subBeat = beat; subBeat < beat + 0.25; subBeat += step) {
-                drums.push({ pitch: SNARE, onset: subBeat, duration: 0.1, velocity: vel });
-                // Add kick on 8th notes
-                if (Math.abs(subBeat % 0.5) < 1e-6) {
-                    drums.push({ pitch: KICK, onset: subBeat, duration: 0.1, velocity: vel });
+                // Mix in Toms for a more massive sound as it builds up
+                let pitch = SNARE;
+                if (progress > 0.5 && PRNGManager.next() > 0.6) {
+                    if (progress > 0.8) pitch = TOM_HI;
+                    else if (progress > 0.65) pitch = TOM_MID;
+                    else pitch = TOM_LOW;
+                }
+                
+                drums.push({ pitch: pitch, onset: subBeat, duration: 0.1, velocity: vel });
+                // Add kick on 8th notes, or 16th notes at the very end
+                if (subBeat % (isEnd ? 0.25 : 0.5) === 0) {
+                    drums.push({ pitch: KICK, onset: subBeat, duration: 0.1, velocity: Math.min(1.0, vel * 1.1) });
                 }
             }
             
-            // Cymbal swell (rapid 32nd notes)
-            for (let subBeat = beat; subBeat < beat + 0.25; subBeat += 0.125) {
-                drums.push({ pitch: CRASH, onset: subBeat, duration: 0.1, velocity: vel * 0.8 });
+            // Cymbal swell (rapid 32nd notes) - only in the second half
+            if (progress > 0.5) {
+                for (let subBeat = beat; subBeat < beat + 0.25; subBeat += 0.125) {
+                    drums.push({ pitch: CRASH, onset: subBeat, duration: 0.1, velocity: vel * 0.6 });
+                }
             }
         }
     }
@@ -300,7 +314,7 @@ export class TransitionEngine {
     }
 
     public static applyBoundaries(
-        sections: SectionMetadata[], lh: NoteData[], rh: NoteData[], drums: NoteData[], beatsPerBar: number, params: GenerationParams
+        sections: SectionMetadata[], lh: NoteData[], rh: NoteData[], drums: NoteData[], beatsPerBar: number, style: StyleConfig
     ) {
         const CRASH = 49, CHINA = 52, SPLASH = 55, CRASH2 = 57;
 
@@ -312,7 +326,7 @@ export class TransitionEngine {
             const boundaryBeat = sec.endBeat;
             const lastBarStart = boundaryBeat - beatsPerBar;
 
-            if (sec.type === SectionType.BuildUp && nextEnergy >= 8) {
+            if (sec.name.includes('BuildUp') && nextEnergy >= 8) {
                 // EDM 专属超长 BuildUp
                 this.injectEpicBuildUp(drums, sec.startBeat, boundaryBeat);
                 // 强制 Drop 前悬空 1 拍
@@ -341,12 +355,12 @@ export class TransitionEngine {
                     this.injectReverseCymbal(drums, boundaryBeat, 2.0);
                 } else {
                     // 35% 概率：完整的 Drum Fill (1 小节)
-                    this.injectDrumFill(drums, lastBarStart, boundaryBeat, delta, currentEnergy, params);
+                    this.injectDrumFill(drums, lastBarStart, boundaryBeat, delta, currentEnergy, style);
                 }
             } else if (delta >= 3) {
                 // 中等能量跃升
                 if (PRNGManager.next() < 0.5) {
-                    this.injectDrumFill(drums, boundaryBeat - 2.0, boundaryBeat, delta, currentEnergy, params);
+                    this.injectDrumFill(drums, boundaryBeat - 2.0, boundaryBeat, delta, currentEnergy, style);
                 } else {
                     this.injectDrop(lh, rh, drums, boundaryBeat, 0.5); // 半拍的 Drop
                 }

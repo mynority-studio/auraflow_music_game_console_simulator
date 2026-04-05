@@ -40,11 +40,11 @@ npm run clean        # 清除 dist/
 
 ```
 PRNGManager.setSeed(seed)
-  → PRNGManager.next() ×1（保持 PRNG 序列对齐）
-  → MelodyEngine.generateFullSong(params)       → GeneratedTrack + MusicContext
-  → Orchestrator.arrange(track, params, ctx)     → ArrangedTrack
-  → MidiConverter.convert(arranged, channelMap)  → MidiEvent[]（管道终点）
-  → [平台层] MidiScheduler → SpessaSynth → 音频输出
+  → 选风格（PRNG ×1）
+  → MelodyEngine.generateFullSong(styleId)       → GeneratedTrack + MusicContext
+  → Orchestrator.arrange(track, styleId, ctx)     → ArrangedTrack
+  → [平台层] PlaybackEngine.loadSong() 内部转 MidiEvent[]
+  → MidiScheduler → SpessaSynth → 音频输出
 ```
 
 管道约束详见 `.claude/rules/music_generation_pipeline_rule.md`（最高约束文档）。
@@ -52,9 +52,9 @@ PRNGManager.setSeed(seed)
 ### 音频播放流水线
 
 ```
-ArrangedTrack → App 层调用 Orchestrator.arrange()
-  → AudioEngine.playSong(arrangedSong)
-  → PlaybackEngine.loadSong() → MidiConverter.convert() → MidiEvent[]
+GeneratedTrack + StyleId + MusicContext
+  → AudioEngine.playSong() 内部调用 Orchestrator.arrange() → ArrangedTrack
+  → PlaybackEngine.loadSong() 内联转 MidiEvent[]
   → MidiScheduler（5ms 轮询）→ SpessaSynth（SF2 合成）
   → AudioMixer（压缩器 + 补偿增益）→ 扬声器
   → VisualEvent → LedMatrix（LED 可视化）
@@ -68,12 +68,22 @@ ArrangedTrack → App 层调用 Orchestrator.arrange()
 |---|---|---|
 | `PRNGManager` | `core/utils/PRNG.ts` | 确定性 LCG 随机数 — 禁止使用 `Math.random()` |
 | `globalMidiScheduler` | `core/audio/MidiScheduler.ts` | MIDI 事件调度（5ms 轮询，模拟 FreeRTOS 定时器） |
-| `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排（接收 ArrangedTrack） |
-| `GlobalContext` | `core/GlobalContext.ts` | **仅平台层使用**（audio/apps/components），生成管道内已消除 |
+| `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排（接收 GeneratedTrack + StyleId） |
+| `GlobalContext` | `core/generation/GlobalContext.ts` | 平台层使用（audio/apps）；生成管道内部已脱钩（S-2），仅 MelodyEngine 入口写入 |
 
-### 参数系统
+### 风格系统
 
-核心引擎通过 `GenerationParams` 接口完全参数化，所有参数均有默认值（`getDefaultParams()`）。当前无风格预设文件（preset/idiom 系统已移除以排查同质化问题）。伴奏织体（Block/Arpeggio/Pad）直接内联在 `TextureMapper.generateChordTexture()` 中。如需恢复风格系统，在 `/src/core/generation/presets/` 下新增 `Partial<GenerationParams>` 文件并通过 `mergeParams()` 合并。
+当前使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`）单一风格配置。`StyleRegistry`（`config/StyleRegistry.ts`）映射 StyleId → StyleConfig。`DefaultStyleConfig` 包含完整的全局/和声/节奏/旋律/编配/混音参数。
+
+### 已完成的架构 cherry-pick（从新版移植）
+
+- `Tonality` / `ChordQuality` / `SectionType` 数值枚举 + `CHORD_INTERVALS` / `SCALE_INTERVALS` 查找表（types.ts）
+- `InstrumentFlags.ts` 乐器枚举（纯定义，当前未接入音频层）
+- 全管道浮点 epsilon 比较（D-4/C-1 合规）
+- `Map`/`Set` → 数组（P-1 合规）
+- `tonality: string` → `Tonality` 枚举（全管道）
+- `SectionMetadata.sectionType` 字段（StructureEngine 填充）
+- 生成管道内部零 `GlobalContext` 读取（HarmonyCore、ToplineEngine、GlobalReviewer 已脱钩）
 
 ## 关键开发规则
 

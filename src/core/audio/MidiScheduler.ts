@@ -1,9 +1,14 @@
 import { WorkletSynthesizer } from 'spessasynth_lib';
 import { TempoCurve } from '../generation/types';
 
-// MidiEvent 类型定义已提升到生成管道层
-import type { MidiEvent } from '../generation/MidiConverter';
-export type { MidiEvent };
+export interface MidiEvent {
+    ticks: number; // Time in ticks (e.g., 480 PPQ)
+    type: 'noteOn' | 'noteOff' | 'cc' | 'programChange' | 'pitchBend' | 'visual';
+    channel: number;
+    data1: number;
+    data2: number;
+    visualData?: any; // For visual events
+}
 
 /**
  * Custom MIDI Scheduler
@@ -29,7 +34,45 @@ export class MidiScheduler {
     public readonly ppq: number = 480; // Pulses Per Quarter note (Standard MIDI resolution)
     
     private timerId: number | null = null;
+    private timerWorker: Worker | null = null;
     private tempoCurves: TempoCurve[] = [];
+
+    constructor() {
+        // Initialize Web Worker for background tab playback
+        const workerCode = `
+            let timerId = null;
+            let interval = 16; // ~60fps
+            
+            self.onmessage = function(e) {
+                if (e.data === 'start') {
+                    if (timerId !== null) clearInterval(timerId);
+                    timerId = setInterval(function() {
+                        postMessage('tick');
+                    }, interval);
+                } else if (e.data === 'stop') {
+                    if (timerId !== null) {
+                        clearInterval(timerId);
+                        timerId = null;
+                    }
+                } else if (e.data.interval) {
+                    interval = e.data.interval;
+                    if (timerId !== null) {
+                        clearInterval(timerId);
+                        timerId = setInterval(function() {
+                            postMessage('tick');
+                        }, interval);
+                    }
+                }
+            };
+        `;
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        this.timerWorker = new Worker(URL.createObjectURL(blob));
+        this.timerWorker.onmessage = (e) => {
+            if (e.data === 'tick' && this.isPlaying) {
+                this.tickLoop(performance.now());
+            }
+        };
+    }
 
     // Looping
     public loop: boolean = false;
@@ -158,12 +201,18 @@ export class MidiScheduler {
         if (!this.synth || this.isPlaying) return;
         this.isPlaying = true;
         this.lastTimeMs = performance.now();
-        this.timerId = requestAnimationFrame(this.tickLoop);
+        if (this.timerWorker) {
+            this.timerWorker.postMessage('start');
+        } else {
+            this.timerId = requestAnimationFrame(this.tickLoop);
+        }
     }
 
     public stop() {
         this.isPlaying = false;
-        if (this.timerId !== null) {
+        if (this.timerWorker) {
+            this.timerWorker.postMessage('stop');
+        } else if (this.timerId !== null) {
             cancelAnimationFrame(this.timerId);
             this.timerId = null;
         }
@@ -174,7 +223,9 @@ export class MidiScheduler {
 
     public pause() {
         this.isPlaying = false;
-        if (this.timerId !== null) {
+        if (this.timerWorker) {
+            this.timerWorker.postMessage('stop');
+        } else if (this.timerId !== null) {
             cancelAnimationFrame(this.timerId);
             this.timerId = null;
         }
@@ -266,9 +317,14 @@ export class MidiScheduler {
 
         // Schedule next wake-up if there are more events, or if looping
         if (this.eventIndex < this.events.length || this.loop) {
-            this.timerId = requestAnimationFrame(this.tickLoop);
+            if (!this.timerWorker) {
+                this.timerId = requestAnimationFrame(this.tickLoop);
+            }
         } else {
             this.isPlaying = false; // Track finished
+            if (this.timerWorker) {
+                this.timerWorker.postMessage('stop');
+            }
             this.endListeners.forEach(l => l());
         }
     }
@@ -289,9 +345,13 @@ export class MidiScheduler {
                 this.synth.noteOff(ev.channel, ev.data1);
                 break;
             case 'cc':
+                if (ev.data1 === 0 || ev.data1 === 32) {
+                    console.log(`[MidiScheduler] CC ${ev.data1} (Bank) on ch ${ev.channel} = ${ev.data2}`);
+                }
                 this.synth.controllerChange(ev.channel, ev.data1 as any, ev.data2);
                 break;
             case 'programChange':
+                console.log(`[MidiScheduler] Program Change on ch ${ev.channel} = ${ev.data1}`);
                 this.synth.programChange(ev.channel, ev.data1);
                 break;
             case 'pitchBend':

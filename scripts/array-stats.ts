@@ -10,8 +10,7 @@
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { MelodyEngine } from '../src/core/generation/MelodyEngine';
 import { Orchestrator } from '../src/core/generation/arrangement/Orchestrator';
-import { MidiConverter, DEFAULT_CHANNEL_MAP } from '../src/core/generation/MidiConverter';
-import { getDefaultParams } from '../src/core/generation/types';
+import { StyleId } from '../src/core/generation/config/StyleFlags';
 import { writeFileSync } from 'node:fs';
 
 const SEED_COUNT = 200;
@@ -45,8 +44,6 @@ function finalize(s: { min: number; max: number; sum: number; count: number }): 
 }
 
 function run() {
-    const params = getDefaultParams();
-
     // GeneratedTrack arrays
     const trackMelody = newStats();
     const trackVocal = newStats();
@@ -64,9 +61,6 @@ function run() {
     const arrVocal = newStats();
     const arrUserMotif = newStats();
 
-    // MidiEvent array
-    const midiEvents = newStats();
-
     // Per-section note density (notes per beat)
     const notesPerBeat = newStats();
 
@@ -75,7 +69,7 @@ function run() {
 
     let failCount = 0;
 
-    console.log(`Array Stats — ${SEED_COUNT} seeds, default params`);
+    console.log(`Array Stats — ${SEED_COUNT} seeds, StyleId.Default`);
     console.log('='.repeat(60));
 
     for (let i = 0; i < SEED_COUNT; i++) {
@@ -86,7 +80,7 @@ function run() {
             PRNGManager.next(); // 保持 PRNG 消耗对齐（原用于选风格）
 
             const engine = new MelodyEngine();
-            const { track, context } = engine.generateFullSong(params);
+            const { track, context } = engine.generateFullSong(StyleId.Default);
 
             // GeneratedTrack stats
             record(trackMelody, track.melody.length);
@@ -101,7 +95,7 @@ function run() {
                 record(trackDuration, lastSection.endBeat);
             }
 
-            const arranged = Orchestrator.arrange(track, params, context);
+            const arranged = Orchestrator.arrange(track, StyleId.Default, context);
 
             // ArrangedTrack stats
             record(arrMelody, arranged.melody.length);
@@ -124,9 +118,6 @@ function run() {
             if (lastSection && lastSection.endBeat > 0) {
                 record(notesPerBeat, Math.round(totalNotes / lastSection.endBeat * 100) / 100);
             }
-
-            const events = MidiConverter.convert(arranged, DEFAULT_CHANNEL_MAP);
-            record(midiEvents, events.length);
 
             if ((i + 1) % 50 === 0) {
                 console.log(`  ... ${i + 1}/${SEED_COUNT} seeds processed`);
@@ -163,7 +154,6 @@ function run() {
             userMotif: finalize(arrUserMotif),
             notesPerBeat: finalize(notesPerBeat),
         },
-        midiEvents: finalize(midiEvents),
         recommended_c_buffer_sizes: {} as Record<string, number>,
     };
 
@@ -181,7 +171,6 @@ function run() {
         MAX_VOCAL_NOTES: recommend(results.arrangedTrack.vocal),
         MAX_CHORDS: recommend(results.generatedTrack.chords),
         MAX_SECTIONS: recommend(results.generatedTrack.sections),
-        MAX_MIDI_EVENTS: recommend(results.midiEvents),
     };
 
     // Print summary table
@@ -209,9 +198,6 @@ function run() {
     printRow('counterMelody', results.arrangedTrack.counterMelody, results.recommended_c_buffer_sizes.MAX_COUNTER_MELODY_NOTES);
     printRow('vocal', results.arrangedTrack.vocal, results.recommended_c_buffer_sizes.MAX_VOCAL_NOTES);
     printRow('notesPerBeat', results.arrangedTrack.notesPerBeat);
-
-    console.log('\nMidiEvents:');
-    printRow('total', results.midiEvents, results.recommended_c_buffer_sizes.MAX_MIDI_EVENTS);
 
     console.log('\nRecommended C buffer sizes (max×1.5, ceil to 64):');
     for (const [key, val] of Object.entries(results.recommended_c_buffer_sizes)) {

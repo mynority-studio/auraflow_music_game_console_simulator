@@ -6,7 +6,9 @@ import { AudioEngine } from './AudioEngine';
 import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
 
-import { InstrumentId, InstrumentIdName } from "../generation/config/InstrumentFlags";
+// removed
+
+import { StyleId } from "../generation/config/StyleFlags";
 
 export class LiveLoopingEngine {
     private mixer: AudioMixer;
@@ -69,24 +71,29 @@ export class LiveLoopingEngine {
             this.mixer.connectSpessaSynth(spessaSynth);
         }
         
-        // 🌟 0. Set Mix Style based on song.mixStyle
-        this.mixer.setMixStyle(song.mixStyle || 'default');
+        // 🌟 0. Set Mix Style based on song styleId
+        if (song.styleId !== undefined) {
+            this.mixer.setMixStyle('default');
+        } else {
+            this.mixer.setMixStyle('default');
+        }
 
         const selectedProfile = 'Recording_Studio';
         await this.mixer.applyMasteringProfile(selectedProfile);
 
         this.melodySynth = this.instruments.getInstrument('System_Aura', 'Foreground');
-        this.chordSynth = this.instruments.getInstrumentById(song.palette?.chordSound ?? InstrumentId.Warm_EP, 'Midground');
-        this.bassSynth = this.instruments.getInstrumentById(song.palette?.bassSound ?? InstrumentId.Electric_Bass_Finger, 'Rhythm');
-
-        const drumSoundId = song.palette?.drumSound ?? InstrumentId.Standard_DrumKit;
-        this.kickSynth = this.instruments.getInstrumentById(drumSoundId, 'Rhythm', 'kick');
-        this.snareSynth = this.instruments.getInstrumentById(drumSoundId, 'Rhythm', 'snare');
-        this.hihatSynth = this.instruments.getInstrumentById(drumSoundId, 'Rhythm', 'hihats');
-        this.extraDrumSynth = this.instruments.getInstrumentById(drumSoundId, 'Rhythm', 'extraDrums'); 
+        this.chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground');
+        const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
+        this.bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm');
         
-        if (song.palette?.counterMelodySound !== undefined && song.palette?.counterMelodySound !== null) {
-            this.counterMelodySynth = this.instruments.getInstrumentById(song.palette.counterMelodySound, 'Midground');
+        const drumSound = song.palette?.drumSound || 'Standard_DrumKit';
+        this.kickSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'kick'); 
+        this.snareSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'snare'); 
+        this.hihatSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'hihats'); 
+        this.extraDrumSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'extraDrums'); 
+        
+        if (song.palette?.counterMelodySound) {
+            this.counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground');
         }
 
         this.userMotifSynth = this.instruments.getInstrument('System_Aura', 'Foreground');

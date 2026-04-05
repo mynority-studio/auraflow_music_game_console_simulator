@@ -11,7 +11,8 @@ export class MotifLooper {
     ): NoteData[] {
         if (!motif || motif.length === 0) return [];
         
-        const maxMotifOnset = motif.reduce((max, n) => n.onset > max ? n.onset : max, 0);
+        let maxMotifOnset = 0;
+        motif.forEach(n => { if (n.onset > maxMotifOnset) maxMotifOnset = n.onset; });
         
         // Find motif length in beats (round up to nearest bar, assuming 4/4 for simplicity, or just use 4)
         const motifLengthBeats = Math.max(4, Math.ceil((maxMotifOnset + 1) / 4) * 4);

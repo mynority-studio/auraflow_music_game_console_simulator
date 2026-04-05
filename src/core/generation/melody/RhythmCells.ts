@@ -1,4 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
+import { StyleId } from '../config/StyleFlags';
 import { RhythmCell } from '../types';
 
 export const PopRhythmCells: RhythmCell[] = [
@@ -54,6 +55,8 @@ export const RnBRhythmCells: RhythmCell[] = [
     { durations: [0.75, 0.25, 1.0], weight: 8, tags: ['syncopated', 'rnb'] },
     { durations: [0.25, 0.75, 1.0], weight: 6, tags: ['syncopated', 'rnb', 'push'] }
 ];
+
+// removed
 
 export function getRandomRhythmCell(grooveTemplate: RhythmCell[] | undefined, energyLevel: number, isVocal: boolean = false): number[] {
     let cells = grooveTemplate || PopRhythmCells;

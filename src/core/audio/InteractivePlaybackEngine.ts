@@ -5,7 +5,9 @@ import { VisualEvent, VisualEventListener } from './PlaybackEngine';
 import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
 
-import { InstrumentId, InstrumentIdName } from "../generation/config/InstrumentFlags";
+// removed
+
+import { StyleId } from "../generation/config/StyleFlags";
 
 export class InteractivePlaybackEngine {
     private mixer: AudioMixer;
@@ -44,16 +46,21 @@ export class InteractivePlaybackEngine {
             console.warn("[InteractivePlaybackEngine] spessaSynth is null during loadSong!");
         }
         
-        // 🌟 0. Set Mix Style based on song.mixStyle
-        this.mixer.setMixStyle(song.mixStyle || 'default');
+        // 🌟 0. Set Mix Style based on song styleId
+        if (song.styleId !== undefined) {
+            this.mixer.setMixStyle('default');
+        } else {
+            this.mixer.setMixStyle('default');
+        }
 
         const selectedProfile = 'Recording_Studio';
         await this.mixer.applyMasteringProfile(selectedProfile);
 
-        this.melodySynth = this.instruments.getInstrumentById(song.palette?.melodySound ?? InstrumentId.Acoustic_Grand, 'Foreground');
-        const chordSynth = this.instruments.getInstrumentById(song.palette?.chordSound ?? InstrumentId.Warm_EP, 'Midground');
-        const bassSynth = this.instruments.getInstrumentById(song.palette?.bassSound ?? InstrumentId.Electric_Bass_Finger, 'Rhythm');
-        this.drumSynth = this.instruments.getInstrumentById(song.palette?.drumSound ?? InstrumentId.Standard_DrumKit, 'Rhythm'); 
+        this.melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', 'Foreground');
+        const chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground');
+        const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
+        const bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm');
+        this.drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm'); 
 
         if (this.isStopped) return;
 
@@ -106,14 +113,14 @@ export class InteractivePlaybackEngine {
         const autoDrums = song.drums || [];
 
         addEventsForTrack(song.melody, this.melodySynth, 'melody');
-        if (song.secondaryMelody && (song.palette?.secondaryMelodySound !== undefined && song.palette?.secondaryMelodySound !== null)) {
-            const secondaryMelodySynth = this.instruments.getInstrumentById(song.palette.secondaryMelodySound, 'Foreground');
+        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
+            const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground');
             addEventsForTrack(song.secondaryMelody, secondaryMelodySynth, 'melody');
         }
         addEventsForTrack(song.pianoLH, bassSynth, 'pianoLH');
         addEventsForTrack(song.pianoRH, chordSynth, 'pianoRH');
-        if (song.counterMelody && (song.palette?.counterMelodySound !== undefined && song.palette?.counterMelodySound !== null)) {
-            const counterMelodySynth = this.instruments.getInstrumentById(song.palette.counterMelodySound, 'Midground');
+        if (song.counterMelody && song.palette?.counterMelodySound) {
+            const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground');
             addEventsForTrack(song.counterMelody, counterMelodySynth, 'pianoRH');
         }
         if (autoDrums.length > 0) {
