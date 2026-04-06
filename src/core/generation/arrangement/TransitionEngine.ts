@@ -186,80 +186,7 @@ export class TransitionEngine {
         drums.push({ pitch: crashPitch, onset: dropStart, duration: 1.0, velocity: 0.8 }); // Crash/China
     }
 
-    // 🌟 3. Build-up (Snare Roll + Cymbal Swell)
-    private static injectBuildUp(drums: NoteData[], boundaryBeat: number, length: number = 2.0) {
-        const startBeat = boundaryBeat - length;
-        const CRASH = 49;
-        const SNARE = 38;
-        const KICK = 36;
-        const TOM_HI = 50;
-        const TOM_MID = 47;
-        const TOM_LOW = 43;
-        
-        for (let beat = startBeat; beat < boundaryBeat; beat += 0.25) {
-            const progress = (beat - startBeat) / length;
-            // Exponential crescendo, starting a bit softer and ending not at 100% to leave room for the drop
-            const vel = Math.pow(progress, 2) * 0.5 + 0.35; 
-            
-            // Snare roll (16th notes, becoming 32nd notes at the very end)
-            const isEnd = beat >= boundaryBeat - 0.5;
-            const step = isEnd ? 0.125 : 0.25;
-            
-            for (let subBeat = beat; subBeat < beat + 0.25; subBeat += step) {
-                // Mix in Toms for a more massive sound as it builds up
-                let pitch = SNARE;
-                if (progress > 0.5 && PRNGManager.next() > 0.6) {
-                    if (progress > 0.8) pitch = TOM_HI;
-                    else if (progress > 0.65) pitch = TOM_MID;
-                    else pitch = TOM_LOW;
-                }
-                
-                drums.push({ pitch: pitch, onset: subBeat, duration: 0.1, velocity: vel });
-                // Add kick on 8th notes, or 16th notes at the very end
-                if (subBeat % (isEnd ? 0.25 : 0.5) === 0) {
-                    drums.push({ pitch: KICK, onset: subBeat, duration: 0.1, velocity: Math.min(1.0, vel * 1.1) });
-                }
-            }
-            
-            // Cymbal swell (rapid 32nd notes) - only in the second half
-            if (progress > 0.5) {
-                for (let subBeat = beat; subBeat < beat + 0.25; subBeat += 0.125) {
-                    drums.push({ pitch: CRASH, onset: subBeat, duration: 0.1, velocity: vel * 0.6 });
-                }
-            }
-        }
-    }
-
-    // 🌟 4. Epic Build-up (EDM 专属，长达 4-8 小节的推歌)
-    private static injectEpicBuildUp(drums: NoteData[], startBeat: number, boundaryBeat: number) {
-        const length = boundaryBeat - startBeat;
-        const CRASH = 49;
-        const SNARE = 38;
-        const KICK = 36;
-        
-        for (let beat = startBeat; beat < boundaryBeat; beat += 0.25) {
-            const progress = (beat - startBeat) / length;
-            // 能量指数级递增
-            const vel = Math.pow(progress, 1.5) * 0.6 + 0.4; 
-            
-            // 决定当前拍子的打击密度 (四分 -> 八分 -> 十六分 -> 三十二分)
-            let step = 1.0;
-            if (progress > 0.85) step = 0.125; // 最后 15%：32分音符狂轰滥炸
-            else if (progress > 0.6) step = 0.25; // 60%-85%：16分音符
-            else if (progress > 0.3) step = 0.5; // 30%-60%：8分音符
-            
-            // 只有在当前 beat 匹配 step 时才打
-            if (beat % step === 0) {
-                for (let subBeat = beat; subBeat < beat + 0.25; subBeat += step) {
-                    // 越往后，军鼓和底鼓一起砸
-                    drums.push({ pitch: SNARE, onset: subBeat, duration: 0.1, velocity: vel });
-                    if (progress > 0.5) {
-                        drums.push({ pitch: KICK, onset: subBeat, duration: 0.1, velocity: vel * 0.9 });
-                    }
-                }
-            }
-        }
-    }
+    // Build-up 方法已移除（injectBuildUp + injectEpicBuildUp）
 
     /**
      * 🌟 乐器进场前的“弱起助跑 (Bass Slide / Glissando)”
@@ -327,11 +254,8 @@ export class TransitionEngine {
             const lastBarStart = boundaryBeat - beatsPerBar;
 
             if (sec.name.includes('BuildUp') && nextEnergy >= 8) {
-                // EDM 专属超长 BuildUp
-                this.injectEpicBuildUp(drums, sec.startBeat, boundaryBeat);
-                // 强制 Drop 前悬空 1 拍
+                // Drop 前悬空 + Reverse Cymbal（Build-up roll 已移除）
                 this.injectDrop(lh, rh, drums, boundaryBeat, 1.0);
-                // 🌟 P2: 添加 Reverse Cymbal (Riser)
                 this.injectReverseCymbal(drums, boundaryBeat, 4.0);
             } else if (delta > 0 && nextEnergy >= 6) {
                 // 进入高潮段落
@@ -347,9 +271,6 @@ export class TransitionEngine {
                 if (transitionRoll < 0.3) {
                     // 25% 概率：The Drop (情绪悬空 1 拍)
                     this.injectDrop(lh, rh, drums, boundaryBeat, 1.0);
-                } else if (transitionRoll < 0.5) {
-                    // 25% 概率：Massive Build-up (Snare Roll + Cymbal Swell)
-                    this.injectBuildUp(drums, boundaryBeat, 2.0);
                 } else if (transitionRoll < 0.65) {
                     // 15% 概率：Reverse Cymbal (Riser)
                     this.injectReverseCymbal(drums, boundaryBeat, 2.0);

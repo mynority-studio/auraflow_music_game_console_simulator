@@ -62,7 +62,7 @@ export class PlaybackEngine {
         console.log("========================================");
         console.log("🎵 歌曲生成完毕，开始播放 🎵");
         // 从 StyleIdName 查风格名（延迟导入避免循环依赖）
-        const styleNames: Record<number, string> = { 0: 'Default' };
+        const styleNames: Record<number, string> = { 0: 'Default', 1: 'Dark Synth Pop' };
         console.log(`Style: ${styleNames[song.styleId as number] || `Unknown(${song.styleId})`}`);
         console.log(`BPM: ${song.bpm}`);
         console.log(`Key: ${song.key}`);

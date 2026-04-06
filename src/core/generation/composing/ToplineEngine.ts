@@ -142,8 +142,10 @@ export class ToplineEngine {
       );
     });
 
-    // 🌟 Phase 2: Chorus Motif Extraction
+    // 🌟 Phase 2: Chorus Skeleton + Motif Extraction
     const chorusMotifs: Record<string, MotifTemplate> = {};
+    let chorusSkeleton: number[] = [];
+    let chorusSkeletonIntervals: number[] = [];
     const firstChorus = sections.find((s) => s.name.includes("Chorus"));
     if (firstChorus) {
       const chorusChords = chords.filter(
@@ -171,6 +173,21 @@ export class ToplineEngine {
       for (const key in resultMotifs) {
         chorusMotifs[key] = resultMotifs[key];
       }
+
+      // 🌟 骨架音生成：为 Chorus 规划每个 Sentence 的目标落音
+      const chorusBeats = firstChorus.endBeat - firstChorus.startBeat;
+      const chorusSentences = Math.max(1, Math.floor(chorusBeats / (beatsPerBar * 4)));
+      const chorusChords2 = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
+      // 张力弧线模板（PRNG 选择）
+      const arcRoll = PRNGManager.next();
+      const tensionArc: 'frontLoose' | 'frontTight' | 'symmetric' = arcRoll < 0.5 ? 'frontLoose' : (arcRoll < 0.8 ? 'symmetric' : 'frontTight');
+      chorusSkeleton = this.generateChorusSkeleton(
+        chorusChords2.length > 0 ? chorusChords2 : [chords[0]],
+        chorusSentences,
+        55, // Chorus basePitch
+        tensionArc
+      );
+      chorusSkeletonIntervals = this.extractSkeletonIntervals(chorusSkeleton);
     }
 
     // 🌟 Phase 3: Chronological Generation with Pitch Continuity
@@ -250,15 +267,19 @@ export class ToplineEngine {
         Object.keys(chorusMotifs).length > 0 &&
         (section.name.includes("Verse") || section.name.includes("PreChorus"))
       ) {
-        // 🌟 修复：不再强制让主歌复用副歌的全部动机，恢复旋律的多样性
-        // 只在有概率的情况下，让主歌的 A 动机复用副歌的 A 动机（降级版），其余动机重新生成
-        // 增加复用概率，增强连贯性 (从 0.3 提升到 0.5)
-        if (PRNGManager.next() < 0.5) {
+        // 🌟 动机预示 (Motivic Prediction)：80% 继承 Chorus A 动机
+        // + 骨架音程注入（让 Verse 旋律走向有 Chorus 的"味道"）
+        if (PRNGManager.next() < 0.8) {
           providedMotifs = {};
           const motifA = chorusMotifs["A"];
           if (motifA) {
             const sectionDensity = section.groove?.density ?? 0.5;
-            providedMotifs["A"] = this.downgradeMotif(motifA, section.name, sectionDensity);
+            const inherited = this.downgradeMotif(motifA, section.name, sectionDensity);
+            // 注入骨架音程作为 recipe body（如果有骨架）
+            if (chorusSkeletonIntervals.length > 0 && inherited.recipe) {
+              inherited.recipe.body = chorusSkeletonIntervals;
+            }
+            providedMotifs["A"] = inherited;
           }
         }
       }
@@ -300,6 +321,9 @@ export class ToplineEngine {
         }
       }
 
+      // 为 Chorus 传入骨架音，为 Verse/PreChorus 传入骨架音程（动机预示）
+      const sectionSkeleton = section.name.includes('Chorus') ? chorusSkeleton : undefined;
+
       const result = this.generateSectionMelody(
         section,
         sectionChords,
@@ -313,7 +337,8 @@ export class ToplineEngine {
         maxPitchBeforeChorus,
         context,
         currentBasePitch,
-        isOctaveShiftTriggered
+        isOctaveShiftTriggered,
+        sectionSkeleton
       );
 
       sectionMelodies[index] = result.notes;
@@ -516,7 +541,8 @@ export class ToplineEngine {
     maxPitchBeforeChorus: number = 0,
     context?: MusicContext,
     basePitch: number = 60,
-    isOctaveShiftTriggered: boolean = false
+    isOctaveShiftTriggered: boolean = false,
+    skeleton?: number[] // 骨架音数组（每个 sentence 一个目标音）
   ): {
     notes: NoteData[];
     motifs: Record<string, MotifTemplate>;
@@ -803,13 +829,22 @@ export class ToplineEngine {
         }
 
         if (motifs[baseLabel] === undefined) {
-          // Mood 调制旋律密度（使用独立的旋律密度乘数，不再重复乘通用密度）
+          // Mood 调制旋律密度
           const melodyDensity = mood.melodyDensityMultiplier ?? mood.densityMultiplier;
-          const densityMultiplier = (isActualSoloSection
-            ? 1.8
-            : section.name.includes("Chorus")
-              ? 1.2
-              : 1.0) * melodyDensity;
+          let sectionTypeFactor = isActualSoloSection ? 1.8 : section.name.includes("Chorus") ? 1.2 : 1.0;
+
+          // 🌟 Chorus 内部张力弧线：不同 sentence 密度不同
+          // frontLoose: [0.75, 0.9, 1.1, 1.25] → 前松后紧
+          // symmetric:  [0.8, 1.15, 1.15, 0.8] → 拱形
+          // frontTight: [1.25, 1.1, 0.9, 0.75] → 前紧后松
+          if (skeleton && skeleton.length > 0 && section.name.includes("Chorus")) {
+            const sentProgress = totalSentences > 1 ? sentenceIdx / (totalSentences - 1) : 0.5;
+            // 生成弧线因子（前松后紧为最常见）
+            const arcFactor = 0.75 + sentProgress * 0.5; // 0.75 → 1.25
+            sectionTypeFactor *= arcFactor;
+          }
+
+          const densityMultiplier = sectionTypeFactor * melodyDensity;
           const avgNotesPerBeat = densityMultiplier * sectionDensity;
           let minNotes = Math.max(
             isOutro ? 1 : 3,
@@ -1039,6 +1074,10 @@ export class ToplineEngine {
         const isClimax =
           section.name.includes("Chorus") && sentenceIdx === 0 && i === 0;
 
+        // 骨架音：Chorus 的每个 sentence 的最后一个子乐句（answer/Z）用骨架音
+        const useSkeletonForThisPhrase = skeleton && skeleton[sentenceIdx] !== undefined && sub.isAnswer;
+        const phraseSkeletonPitch = useSkeletonForThisPhrase ? skeleton[sentenceIdx] : undefined;
+
         const phraseResult = this.realizeMotif(
           template,
           currentPhraseStart,
@@ -1054,7 +1093,8 @@ export class ToplineEngine {
           maxPitchBeforeChorus,
           false,
           currentMacroTarget,
-          isOctaveShiftTriggered && sentenceIdx === 0 && i === 0
+          isOctaveShiftTriggered && sentenceIdx === 0 && i === 0,
+          phraseSkeletonPitch
         );
 
         // 🌟 Voice Leading (平滑过渡与经过音)
@@ -1330,7 +1370,8 @@ export class ToplineEngine {
     maxPitchBeforeChorus: number = 0,
     isUserMotif: boolean = false,
     macroTargetDegree?: number,
-    isOctaveShiftTriggered: boolean = false
+    isOctaveShiftTriggered: boolean = false,
+    skeletonPitch?: number // 骨架音：如果提供，用作该乐句的引力锚点
   ): { notes: NoteData[]; lastPitch: number | null } {
     const notes: NoteData[] = [];
     let targetCenter = basePitch;
@@ -1363,13 +1404,18 @@ export class ToplineEngine {
         envelopeCurve.push(val);
     }
 
-    // 2. Determine Target Anchor
+    // 2. Determine Target Anchor（骨架音优先）
     const lastOnset = phraseStart + rhythmOffsets[totalNotes - 1];
     const lastChord = chords.find((c) => lastOnset >= c.startBeat && lastOnset < c.endBeat) || chords[chords.length - 1];
     const lastChordTones = HarmonyCore.getChordTones(lastChord, targetCenter);
-    
+
     let targetAnchor = targetCenter;
-    if (isAnswer || forceStrongResolution) {
+    if (skeletonPitch !== undefined) {
+        // 🌟 骨架优先：有骨架音时直接用它做锚点（不再随机选和弦音）
+        targetAnchor = this.getNearestOctave(skeletonPitch, targetCenter);
+        // 消耗 PRNG 保持序列对齐（原来这里有 2 次 next()）
+        PRNGManager.next(); PRNGManager.next();
+    } else if (isAnswer || forceStrongResolution) {
         targetAnchor = lastChordTones[0]; // Root
         if (PRNGManager.next() > 0.5 && lastChordTones.length > 1) {
             targetAnchor = lastChordTones[1]; // Third
@@ -1380,7 +1426,9 @@ export class ToplineEngine {
             targetAnchor = lastChordTones[3]; // Seventh
         }
     }
-    targetAnchor = this.getNearestOctave(targetAnchor, targetCenter);
+    if (skeletonPitch === undefined) {
+        targetAnchor = this.getNearestOctave(targetAnchor, targetCenter);
+    }
 
     // 3. Gravity Pitch Engine
     let currentPitch = incomingPreviousPitch !== null ? incomingPreviousPitch : targetCenter;
@@ -1586,6 +1634,97 @@ export class ToplineEngine {
     }
 
     return { notes, lastPitch: safeMelody[safeMelody.length - 1] };
+  }
+
+  /**
+   * 骨架音生成 (Chorus Skeleton)
+   *
+   * 在 Chorus 生成前，先规划每个 Sentence 的"目标落音"。
+   * 骨架音从和弦音中选取，形成有方向感的弧线。
+   * 最后一个骨架音必须是主和弦 root（解决感）。
+   *
+   * @returns MIDI pitch 数组，每个 sentence 一个骨架音
+   */
+  private static generateChorusSkeleton(
+    chords: GeneratedChord[],
+    totalSentences: number,
+    basePitch: number,
+    tensionArc: 'frontLoose' | 'frontTight' | 'symmetric'
+  ): number[] {
+    if (totalSentences <= 0) return [];
+
+    const skeleton: number[] = [];
+    let prevPitch = basePitch;
+
+    for (let s = 0; s < totalSentences; s++) {
+      // 从和弦中选取骨架音
+      const progress = totalSentences > 1 ? s / (totalSentences - 1) : 0;
+      // 找到当前 sentence 对应的和弦（按比例分配）
+      const chordIdx = Math.min(Math.floor(progress * chords.length), chords.length - 1);
+      const chord = chords[chordIdx];
+      const chordTones = HarmonyCore.getChordTones(chord, basePitch);
+
+      let targetPitch: number;
+
+      if (s === totalSentences - 1) {
+        // 最后一个骨架音：必须是根音（解决感）
+        targetPitch = chordTones[0];
+      } else {
+        // 根据张力弧线选择音：
+        // frontLoose: 前半选低/稳定音，后半选高/张力音
+        // frontTight: 前半选高音，后半选低/稳定音
+        // symmetric: 中间选高音，两端选稳定音
+        let tensionLevel: number;
+        if (tensionArc === 'frontLoose') {
+          tensionLevel = progress; // 0→1 递增
+        } else if (tensionArc === 'frontTight') {
+          tensionLevel = 1 - progress; // 1→0 递减
+        } else {
+          tensionLevel = Math.sin(progress * Math.PI); // 拱形
+        }
+
+        // 低张力→root/5th，高张力→3rd/7th
+        if (tensionLevel < 0.3) {
+          targetPitch = chordTones[0]; // Root
+        } else if (tensionLevel < 0.6) {
+          targetPitch = chordTones.length > 2 ? chordTones[2] : chordTones[0]; // 5th
+        } else {
+          targetPitch = chordTones.length > 1 ? chordTones[1] : chordTones[0]; // 3rd
+          if (chordTones.length > 3 && PRNGManager.next() < 0.3) {
+            targetPitch = chordTones[3]; // 7th（偶尔，增加色彩）
+          }
+        }
+      }
+
+      // 保持在合理音域，且与前一个骨架音级进（≤7 半音）
+      targetPitch = this.getNearestOctave(targetPitch, prevPitch);
+      while (targetPitch > 76) targetPitch -= 12;
+      while (targetPitch < 48) targetPitch += 12;
+      // 如果跳太远，折叠八度靠近
+      if (Math.abs(targetPitch - prevPitch) > 7 && s > 0) {
+        if (targetPitch > prevPitch) targetPitch -= 12;
+        else targetPitch += 12;
+        while (targetPitch > 76) targetPitch -= 12;
+        while (targetPitch < 48) targetPitch += 12;
+      }
+
+      skeleton.push(targetPitch);
+      prevPitch = targetPitch;
+    }
+
+    return skeleton;
+  }
+
+  /**
+   * 从骨架音提取音程序列（用于 Verse 动机继承）
+   * @returns 相邻骨架音的半音差数组（如 [+3, -2, +5]）
+   */
+  private static extractSkeletonIntervals(skeleton: number[]): number[] {
+    const intervals: number[] = [];
+    for (let i = 1; i < skeleton.length; i++) {
+      intervals.push(skeleton[i] - skeleton[i - 1]);
+    }
+    return intervals;
   }
 
   private static getNearestOctave(pc: number, target: number): number {

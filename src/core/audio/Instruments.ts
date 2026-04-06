@@ -44,6 +44,8 @@ const GM_MAPPING: Record<string, number> = {
   // Bass
   Acoustic_Bass: 32,
   Electric_Bass_Finger: 33,
+  Electric_Bass_Pick: 34,
+  Fretless_Bass: 35,
   Synth_Bass_1: 38,
   Synth_Bass_2: 39,
   

@@ -115,7 +115,7 @@ export class StructureEngine {
       currentBeat += bars * beatsPerBar;
     };
 
-    const introBars = bpm < 90 ? 8 : 4;
+    const introBars = bpm < 90 ? 4 : 4; // 统一 4 小节前奏，避免过长
     const outroBars = 4; // Lo-Fi / 放松：8 小节，流行/电子：4 小节
 
     const addIntro = (bars: number, baseEnergy: number) => {
@@ -176,15 +176,15 @@ export class StructureEngine {
         return 'Outro'; // Fallback
     };
 
-    // 辅助函数：生成段落长度 (8, 16, 32 小节)
+    // 辅助函数：生成段落长度（缩短版，目标 3-4 分钟）
     const getSectionLength = (type: SectionType): number => {
         const rand = PRNGManager.next();
         if (type === 'Intro' || type === 'Outro' || type === 'Break' || type === 'PreChorus') {
-            return rand > 0.7 ? 16 : 8; // 通常 8 小节，偶尔 16
+            return rand > 0.7 ? 8 : 4; // 通常 4 小节，偶尔 8
         } else if (type === 'Chorus' || type === 'Drop') {
-            return rand > 0.8 ? 32 : 16; // 通常 16 小节，偶尔 32 (Epic)
+            return rand > 0.7 ? 16 : 8; // 通常 8 小节，偶尔 16
         } else {
-            return 16; // Verse, Bridge 通常 16 小节
+            return rand > 0.6 ? 16 : 8; // Verse/Bridge: 通常 8，偶尔 16
         }
     };
 
@@ -203,7 +203,7 @@ export class StructureEngine {
     let currentState: SectionType = 'Intro';
     const sectionCounts: Record<string, number> = {};
     let totalSections = 0;
-    const MAX_SECTIONS = 10; // 防止无限循环
+    const MAX_SECTIONS = 7; // 控制歌曲长度（目标 3-4 分钟）
 
     while (currentState !== 'Outro' && totalSections < MAX_SECTIONS) {
         sectionCounts[currentState] = (sectionCounts[currentState] || 0) + 1;

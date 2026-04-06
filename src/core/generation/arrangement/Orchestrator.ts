@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, InstrumentBehavior, GeneratedChord } from '../types';
+import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, InstrumentBehavior, GeneratedChord, SectionType as SectionTypeEnum } from '../types';
 import { TextureMapper } from './TextureMapper';
 import { TransitionEngine } from './TransitionEngine';
 import { GlobalContext } from '../GlobalContext'; // 新增引用
@@ -686,12 +686,19 @@ export class Orchestrator {
                 playBass = true; playChords = true; playCounterMelody = true; texture = "Arpeggio";
             } else if (section.type === 'Break' || section.type === 'Breakdown') {
                 playBass = false; playChords = true; playCounterMelody = true; texture = "Pad";
+            } else if (section.sectionType === SectionTypeEnum.Solo_Bridge) {
+                // 🌟 Solo/Bridge 必须有完整编制支撑（不能空洞独奏）
+                playBass = true;
+                playDrums = true;
+                playChords = true;
+                playCounterMelody = true;
+                texture = energy >= 7 ? "Block" : "Arpeggio";
             } else if (section.type === 'Verse' || energy <= 4) {
                 texture = PRNGManager.next() > 0.5 ? "Arpeggio" : "Pad";
             } else if (section.type === 'Chorus' || section.type === 'Drop' || energy >= 7) {
-                playBass = true; 
-                playChords = true; 
-                texture = "Block"; 
+                playBass = true;
+                playChords = true;
+                texture = "Block";
                 playCounterMelody = true;
             } else {
                 texture = PRNGManager.next() > 0.5 ? "Arpeggio" : "Block";

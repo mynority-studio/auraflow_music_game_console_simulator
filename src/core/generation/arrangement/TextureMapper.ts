@@ -193,10 +193,14 @@ export class TextureMapper {
     const RIDE_BELL = 53;
     const TAMBOURINE = 54;
     const TOM_LOW = 43;
+    const TOM_MID = 47;
+    const TOM_HI = 50;
 
-    // Chill/Melancholic 底鼓力度上限（更柔和）
-    const kickVelCap = (isChill || isMelancholic) ? 65 : (isAggressive ? 100 : 85);
-    const snareVelCap = (isChill || isMelancholic) ? 60 : (isAggressive ? 100 : 85);
+    // 底鼓/军鼓力度上限 — mood + grooveDensity 双重控制
+    // grooveDensity ≤ 0.5 时整体压低（Synthwave/电子 鼓要轻柔）
+    const densityVelScale = grooveDensity <= 0.5 ? 0.75 : 1.0;
+    const kickVelCap = Math.round(((isChill || isMelancholic) ? 65 : (isAggressive ? 100 : 85)) * densityVelScale);
+    const snareVelCap = Math.round(((isChill || isMelancholic) ? 60 : (isAggressive ? 100 : 85)) * densityVelScale);
 
     // 技巧预算系数（0.0=纯基础, 1.0=全技巧）
     let techniqueBudget = 0.3; // 默认：30% 技巧，70% 基础
@@ -224,15 +228,12 @@ export class TextureMapper {
       return notes;
     }
 
-    // Build-up 检测（只在过渡段使用高级技巧）
-    const isBuildUp = nextEnergyLevel > energyLevel + 1;
-    const isFillZone = (beat: number) => beat >= endBeat - 2.0;
-
     // 踩镲网格步长：Chill/Melancholic 用 8 分音符(0.5)，高能量用 16 分(0.25)
-    const hihatStep = (isChill || isMelancholic || energyLevel <= 4) ? 0.5 : 0.25;
+    // 踩镲网格：低密度基底(foundation≤0.5)也用 8 分音符，避免过密
+    const hihatStep = (isChill || isMelancholic || energyLevel <= 4 || grooveDensity <= 0.5) ? 0.5 : 0.25;
 
     // ============================================================
-    // 主循环：16 分音符网格
+    // 主循环：16 分音符网格（Build-up 已移除，鼓组正常生成到段落结尾）
     // ============================================================
     for (let beat = startBeat; beat < endBeat; beat += 0.25) {
       const beatInBar = (beat - startBeat) % beatsPerBar;
@@ -240,21 +241,6 @@ export class TextureMapper {
       const isBackbeat = Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6;
       const isEighth = Math.abs(beatInBar % 0.5) < 1e-6;
       const isSixteenth = !isEighth;
-
-      // --- Build-up 区域（仅在过渡段激活）---
-      if (isBuildUp && isFillZone(beat)) {
-        const barsLeft = (endBeat - beat) / beatsPerBar;
-        let buildUpStep = 0.5;
-        if (barsLeft <= 1.0) buildUpStep = 0.25;
-        if (barsLeft <= 0.5 && techniqueBudget > 0.3) buildUpStep = 0.125; // 只有高预算才上 32 分
-
-        if (Math.abs(beat % buildUpStep) < 1e-6) {
-          const buildVel = 60 + (1 - Math.min(barsLeft, 2) / 2) * 50;
-          notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: buildVel });
-          notes.push({ pitch: KICK, onset: beat, duration: 0.1, velocity: buildVel * 0.85 });
-        }
-        continue;
-      }
 
       // === 旋律贴合（仅中高能量 + 中高技巧预算）===
       let maskAccent = 0;
@@ -289,16 +275,19 @@ export class TextureMapper {
         // Mood 驱动军鼓音色：Chill/Melancholic 自动使用调色板中的 SNARE（已在上方设为 SideStick/标准）
         notes.push({ pitch: SNARE, onset: beat, duration: 0.1, velocity: Math.min(snareVelCap, SNARE === SIDE_STICK ? 60 : 85) });
       }
-      // Ghost Notes — 技巧预算门控
+      // Ghost Notes — 技巧预算门控（偶尔用 Tom 替代 Snare 增加色彩）
       else if (isSixteenth && !isDownbeat && PRNGManager.next() < techniqueBudget * 0.25) {
-        // Ghost note 始终用标准 Snare（即使 palette 里 SNARE=SideStick，ghost 还是轻拍鼓面）
-        notes.push({ pitch: 38, onset: beat, duration: 0.1, velocity: 22 + PRNGManager.next() * 12 });
+        // 高能量段 20% 概率用 TomLow/TomMid 替代 Snare ghost
+        const ghostPitch = (energyLevel >= 6 && PRNGManager.next() < 0.2)
+          ? (PRNGManager.next() > 0.5 ? TOM_LOW : TOM_MID)
+          : 38; // Snare
+        notes.push({ pitch: ghostPitch, onset: beat, duration: 0.1, velocity: 22 + PRNGManager.next() * 12 });
       }
 
       // ============ HI-HAT / CYMBAL ============
       if (Math.abs(beat % hihatStep) < 1e-6) {
         let cymbalPitch = CHH; // 已按 mood 设为 Pedal HH(44) 或 Closed HH(42)
-        let cymbalVel = Math.abs(beatInBar % 1) < 1e-6 ? 70 : 50;
+        let cymbalVel = (Math.abs(beatInBar % 1) < 1e-6 ? 70 : 50) * densityVelScale; // 低密度鼓组整体压低
 
         // Chill/Euphoric: 偶尔换成 Ride Bell 或 Tambourine 增加色彩
         if ((isChill || isEuphoric) && PRNGManager.next() < 0.12) {
@@ -329,6 +318,46 @@ export class TextureMapper {
         if (isOffbeatEighth) cymbalVel *= 0.78;
 
         notes.push({ pitch: cymbalPitch, onset: beat, duration: cymbalPitch === OHH ? 0.3 : 0.1, velocity: cymbalVel });
+      }
+    }
+
+    // ============================================================
+    // Tom 鼓微加花 (Tom Fill) — 每 4 小节末尾 1-2 拍
+    // ============================================================
+    if (techniqueBudget > 0.2) {
+      const sectionBars = Math.floor((endBeat - startBeat) / beatsPerBar);
+      for (let bar = 3; bar < sectionBars; bar += 4) { // 每 4 小节（第 4、8、12...小节末）
+        if (PRNGManager.next() > techniqueBudget * 1.2) continue; // 低预算跳过
+
+        const fillStart = startBeat + bar * beatsPerBar + (beatsPerBar - 1); // 最后 1 拍
+        if (fillStart >= endBeat - 0.5) continue;
+
+        const fillRoll = PRNGManager.next();
+        const fillVel = Math.min(snareVelCap, 70);
+
+        // 低密度鼓组（电子/Synthwave）：只用 TomLow 做简单加花
+        const useFullToms = grooveDensity > 0.5;
+
+        if (fillRoll < 0.3 && useFullToms) {
+          // 前8后16 经典 Tom 下行：Snare → TomHi → TomMid → TomLow
+          notes.push({ pitch: 38, onset: fillStart, duration: 0.1, velocity: fillVel });
+          notes.push({ pitch: TOM_HI, onset: fillStart + 0.25, duration: 0.1, velocity: fillVel * 0.9 });
+          notes.push({ pitch: TOM_MID, onset: fillStart + 0.5, duration: 0.1, velocity: fillVel * 0.85 });
+          notes.push({ pitch: TOM_LOW, onset: fillStart + 0.75, duration: 0.1, velocity: fillVel * 0.8 });
+        } else if (fillRoll < 0.6) {
+          // 两个 8 分加花：Snare + TomLow（电子鼓只用 Low Tom）
+          notes.push({ pitch: 38, onset: fillStart, duration: 0.1, velocity: fillVel });
+          notes.push({ pitch: TOM_LOW, onset: fillStart + 0.5, duration: 0.1, velocity: fillVel * 0.85 });
+        } else if (useFullToms) {
+          // Tom 连击 16 分：TomHi-TomHi-TomMid-TomLow
+          notes.push({ pitch: TOM_HI, onset: fillStart, duration: 0.1, velocity: fillVel * 0.85 });
+          notes.push({ pitch: TOM_HI, onset: fillStart + 0.25, duration: 0.1, velocity: fillVel * 0.9 });
+          notes.push({ pitch: TOM_MID, onset: fillStart + 0.5, duration: 0.1, velocity: fillVel * 0.85 });
+          notes.push({ pitch: TOM_LOW, onset: fillStart + 0.75, duration: 0.1, velocity: fillVel * 0.8 });
+        } else {
+          // 简化：只一个 TomLow 点缀
+          notes.push({ pitch: TOM_LOW, onset: fillStart + 0.5, duration: 0.1, velocity: fillVel * 0.7 });
+        }
       }
     }
 
@@ -513,18 +542,25 @@ export class TextureMapper {
 
   // 🌟 Luis 的核心算法：平稳声部连接与 Top Note 寻路 (Smooth Voice Leading & Top Note Pathing)
   private static calculateSmoothVoicing(
-    chordTones: number[], // Raw pitch classes (0-11) or relative intervals
+    chordTones: number[],
     prevVoicing: number[] | undefined,
-    playBass: boolean = false
+    playBass: boolean = false,
+    voicingStyle: string = 'standard' // standard(温暖) / edm(冷冽) / jazz(中性)
   ): number[] {
     // 1. Normalize chord tones to pitch classes (0-11)
     const pcs = chordTones.map(p => p % 12);
-    
-    // 2. Generate candidate voicings (Closed position inversions)
+
+    // 2. Generate candidate voicings
     const candidates: number[][] = [];
-    // 🌟 动态频段避让 (Dynamic Register Avoidance)
-    // 如果有贝斯，钢琴底线整体上移，让出低频空间 (C3 -> G3/C4)
-    const baseOctave = playBass ? 55 : 45; 
+    // 和弦音区按 voicingStyle 分级（冷冽 = 高音区，温暖 = 中低音区）
+    let baseOctave: number;
+    if (voicingStyle === 'edm') {
+      baseOctave = playBass ? 62 : 52; // 偏冷冽（C4-D4 起步）
+    } else if (voicingStyle === 'jazz' || voicingStyle === 'neo-soul') {
+      baseOctave = playBass ? 58 : 48; // 中性
+    } else {
+      baseOctave = playBass ? 55 : 45; // 标准温暖（G3 起步）
+    }
     
     for (let inversion = 0; inversion < pcs.length; inversion++) {
       const voicing: number[] = [];
@@ -555,7 +591,10 @@ export class TextureMapper {
     if (!prevVoicing || prevVoicing.length === 0) {
       let bestCandidate = candidates[0];
       let minDist = Infinity;
-      const targetCenter = playBass ? 65 : 55; // 目标中心音高
+      // 目标中心音高（voicingStyle 驱动）
+      const targetCenter = voicingStyle === 'edm' ? (playBass ? 72 : 62)
+        : voicingStyle === 'jazz' || voicingStyle === 'neo-soul' ? (playBass ? 68 : 58)
+        : (playBass ? 65 : 55);
       for (const c of candidates) {
         const avg = c.reduce((a, b) => a + b, 0) / c.length;
         const dist = Math.abs(avg - targetCenter); // Closest to targetCenter
@@ -654,8 +693,9 @@ export class TextureMapper {
     const targetCenter = chord.root; 
     const rawChordTones = HarmonyCore.getChordTones(chord, targetCenter);
     
-    // 🌟 应用平稳声部连接算法
-    const chordTones = this.calculateSmoothVoicing(rawChordTones, prevVoicing, playBass);
+    // 🌟 应用平稳声部连接算法（voicingStyle 驱动冷暖音区）
+    const voicingStyle = style?.harmonyRules?.voicingStyle || 'standard';
+    const chordTones = this.calculateSmoothVoicing(rawChordTones, prevVoicing, playBass, voicingStyle);
     
     const notes: NoteData[] = [];
     const duration = chord.endBeat - chord.startBeat;
@@ -898,7 +938,7 @@ export class TextureMapper {
     }
 
     // P2: Smart Pedal — 按能量控制延音
-    this.applySmartPedal(notes, energyLevel, chord.endBeat);
+    this.applySmartPedal(notes, energyLevel, chord.endBeat, voicingStyle);
 
     return this.truncateToChordEnd(notes, chord.endBeat);
   }
@@ -1047,9 +1087,11 @@ export class TextureMapper {
   }
 
   // --- P2: Smart Pedal (延音控制) ---
-  private static applySmartPedal(notes: NoteData[], energyLevel: number, chordEndBeat: number): void {
-    // 高能量段：音符略短（干脆）；低能量段：音符延长（延音）
-    const durationScale = energyLevel <= 4 ? 1.25 : (energyLevel <= 6 ? 1.05 : 0.92);
+  private static applySmartPedal(notes: NoteData[], energyLevel: number, chordEndBeat: number, voicingStyle: string = 'standard'): void {
+    // 高能量段：音符略短；低能量段：延长
+    let durationScale = energyLevel <= 4 ? 1.25 : (energyLevel <= 6 ? 1.05 : 0.92);
+    // EDM 风格：整体偏短（冷冽断奏感）
+    if (voicingStyle === 'edm') durationScale *= 0.85;
 
     for (const n of notes) {
       const maxDur = chordEndBeat - n.onset - 0.02; // 留 0.02 拍缝隙（从 0.05 缩小）
