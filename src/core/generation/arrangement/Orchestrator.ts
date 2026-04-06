@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, InstrumentBehavior } from '../types';
+import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, InstrumentBehavior, GeneratedChord } from '../types';
 import { TextureMapper } from './TextureMapper';
 import { TransitionEngine } from './TransitionEngine';
 import { GlobalContext } from '../GlobalContext'; // 新增引用
@@ -153,6 +153,62 @@ export class Orchestrator {
 
             n.velocity = Math.max(1, Math.min(127, n.velocity * curve));
         }
+    }
+
+    /**
+     * 弱起衔接 (Pickup Injection)
+     *
+     * 检测每个段落的第一个音符。如果前一段落在该时间点之前有空白（>0.5 拍），
+     * 在前一段落末尾插入一个弱起音，用该段落第一个音的音高但更弱的力度。
+     * 这让乐器的进入不会突然闯入。
+     */
+    private static injectPickupNotes(notes: NoteData[], sections: SectionMetadata[], chords: GeneratedChord[]): void {
+        if (notes.length === 0 || sections.length < 2) return;
+        notes.sort((a, b) => a.onset - b.onset);
+
+        for (let s = 1; s < sections.length; s++) {
+            const sec = sections[s];
+            const prevSec = sections[s - 1];
+
+            // 找到这个段落的第一个音符
+            let firstNoteInSection: NoteData | null = null;
+            for (const n of notes) {
+                if (n.onset >= sec.startBeat && n.onset < sec.endBeat) {
+                    firstNoteInSection = n; break;
+                }
+            }
+            if (!firstNoteInSection) continue;
+
+            // 检查前一段落末尾是否有空白（最后一个音到段落结束的距离）
+            let lastNoteInPrevSection: NoteData | null = null;
+            for (let i = notes.length - 1; i >= 0; i--) {
+                if (notes[i].onset >= prevSec.startBeat && notes[i].onset < prevSec.endBeat) {
+                    lastNoteInPrevSection = notes[i]; break;
+                }
+            }
+
+            // 计算前段末尾的空白
+            const prevEnd = lastNoteInPrevSection
+                ? lastNoteInPrevSection.onset + lastNoteInPrevSection.duration
+                : prevSec.startBeat;
+            const gapBeforeSectionStart = sec.startBeat - prevEnd;
+
+            // 如果有 >0.5 拍的空白，且第一个音不是在段落开头（已经有弱起了则不重复）
+            if (gapBeforeSectionStart >= 0.5 && Math.abs(firstNoteInSection.onset - sec.startBeat) < 0.3) {
+                // 在前一段最后 0.5 拍插入弱起
+                const pickupOnset = sec.startBeat - 0.5;
+                if (pickupOnset >= prevSec.startBeat) {
+                    notes.push({
+                        pitch: firstNoteInSection.pitch,
+                        onset: pickupOnset,
+                        duration: 0.5,
+                        velocity: firstNoteInSection.velocity * 0.6, // 弱起：60% 力度
+                    });
+                }
+            }
+        }
+
+        notes.sort((a, b) => a.onset - b.onset);
     }
 
     /**
@@ -439,6 +495,28 @@ export class Orchestrator {
 
         const secondarySound = palette.secondaryMelodySound || null;
 
+        // 🌟 主旋律空白保护 (Primary Melody Gap Protection)
+        // 如果 Duet 交替导致主旋律在某段落内完全空白，把 secondary 的内容复制回来
+        // 原则：有提出就要有解决 — 听众不能等太久没有旋律
+        if (isDuet && secondaryMelodyRaw.length > 0) {
+            for (const sec of track.sections) {
+                // 跳过 Intro/Outro（允许空白）
+                if (sec.name.includes('Intro') || sec.name.includes('Outro')) continue;
+
+                const primaryInSection = primaryMelodyRaw.filter(n => n.onset >= sec.startBeat && n.onset < sec.endBeat);
+                const secondaryInSection = secondaryMelodyRaw.filter(n => n.onset >= sec.startBeat && n.onset < sec.endBeat);
+
+                // 如果主旋律在这个段落内少于 3 个音，但 secondary 有内容
+                if (primaryInSection.length < 3 && secondaryInSection.length >= 3) {
+                    // 把 secondary 的内容复制到 primary（让两个乐器一起演奏）
+                    for (const n of secondaryInSection) {
+                        primaryMelodyRaw.push({ ...n });
+                    }
+                }
+            }
+            primaryMelodyRaw.sort((a, b) => a.onset - b.onset);
+        }
+
         let idiomaticMelody: NoteData[] = primaryMelodyRaw;
         const idiomPrefsWithSections = { sections: track.sections };
 
@@ -461,51 +539,37 @@ export class Orchestrator {
             const introLength = introSection.endBeat - introSection.startBeat;
             const rand = PRNGManager.next();
             
-            if (rand < 0.1) {
-                // 只有钢琴 (默认)
-            } else if (rand < 0.2) {
-                // 🌟 旋律主角 (Melody Solo Intro)
-                introHasPiano = false;
-                introHasBass = false;
-                introHasDrums = false;
-                introHasMelody = true;
-                pianoEntryBeat = introSection.endBeat;
-                bassEntryBeat = introSection.endBeat;
-                drumEntryBeat = introSection.endBeat;
-            } else if (rand < 0.35) {
-                // 钢琴 + 贝斯 (贝斯在一半时进入)
+            // 🌟 前奏编排原则：
+            // 1. 永远至少有一个伴奏声部（钢琴/吉他），避免纯旋律空洞
+            // 2. 超过 4 小节的前奏，后半段必须有额外乐器进入（发展感）
+            // 3. 前奏结尾要能自然衔接 Verse（不能突然全断或全起）
+            const halfBeat = introSection.startBeat + introLength / 2;
+
+            if (rand < 0.2) {
+                // 钢琴独奏前奏（后半段加贝斯）
                 introHasBass = true;
-                bassEntryBeat = introSection.startBeat + introLength / 2;
-            } else if (rand < 0.5) {
-                // 钢琴 + 贝斯 + 鼓 (都在一半时进入)
+                bassEntryBeat = halfBeat;
+            } else if (rand < 0.4) {
+                // 钢琴 + 贝斯 + 后半段鼓（渐进式）
                 introHasBass = true;
                 introHasDrums = true;
-                bassEntryBeat = introSection.startBeat + introLength / 2;
-                drumEntryBeat = introSection.startBeat + introLength / 2;
-            } else if (rand < 0.65) {
-                // 钢琴 + 鼓 (鼓一开始就进，打节奏)
-                introHasDrums = true;
-                drumEntryBeat = introSection.startBeat;
-            } else if (rand < 0.8) {
-                // 🌟 鼓组主角 (Drum Solo Intro)
-                introHasDrums = true;
-                introHasPiano = false;
-                introHasMelody = false;
-                drumEntryBeat = introSection.startBeat;
-                pianoEntryBeat = introSection.endBeat;
-                melodyEntryBeat = introSection.endBeat;
-            } else if (rand < 0.9) {
-                // 🌟 贝斯主角 (Bass Riff Intro)
-                introHasBass = true;
-                introHasDrums = true;
-                introHasPiano = false;
-                introHasMelody = false;
                 bassEntryBeat = introSection.startBeat;
-                drumEntryBeat = introSection.startBeat + introLength / 2;
-                pianoEntryBeat = introSection.endBeat;
-                melodyEntryBeat = introSection.endBeat;
+                drumEntryBeat = halfBeat;
+            } else if (rand < 0.6) {
+                // 钢琴 + 鼓（一开始就有节奏）
+                introHasDrums = true;
+                drumEntryBeat = introSection.startBeat;
+                // 后半段加贝斯
+                introHasBass = true;
+                bassEntryBeat = halfBeat;
+            } else if (rand < 0.8) {
+                // 旋律 + 钢琴伴奏 + 后半段全编制
+                introHasBass = true;
+                introHasDrums = true;
+                bassEntryBeat = halfBeat;
+                drumEntryBeat = halfBeat;
             } else {
-                // 全进
+                // 全编制（前奏从一开始就完整）
                 introHasBass = true;
                 introHasDrums = true;
                 bassEntryBeat = introSection.startBeat;
@@ -973,21 +1037,34 @@ export class Orchestrator {
 
         if (hasDrums) {
             let hasFullGrooveStarted = false;
+            let prevSecHadDrums = false;
             track.sections.forEach((sec, index) => {
                 const state = sectionPlayStates[index];
                 let playDrums = state ? state.playDrums : true;
                 let startBeat = state ? state.drumsEntryBeat : sec.startBeat;
-                
+
                 if (sec.name.includes('Intro')) {
                     playDrums = introHasDrums;
                     if (playDrums) {
                         startBeat = Math.max(sec.startBeat, drumEntryBeat);
                     }
                 } else if (sec.type === 'Verse') {
-                    // 🌟 方案四：曲式驱动的织体突变 - 主歌省去主套鼓或极简
-                    playDrums = sec.energyLevel > 3 || PRNGManager.next() > 0.5; 
+                    playDrums = sec.energyLevel > 3 || PRNGManager.next() > 0.5;
                 } else if (sec.name.includes('Break')) {
-                    playDrums = !sec.name.includes('Breakdown'); // Breakdown 绝对停鼓
+                    playDrums = !sec.name.includes('Breakdown');
+                }
+
+                // 🌟 鼓组渐退衔接 (Drum Carryover)
+                // 前段有鼓 → 当前段无鼓：在当前段开头保留 2 拍极简踩镲，渐弱消失
+                // 防止节奏期待突然断裂
+                if (prevSecHadDrums && !playDrums) {
+                    const CHH = 42;
+                    const carryBeats = 2; // 保留 2 拍
+                    for (let b = sec.startBeat; b < Math.min(sec.startBeat + carryBeats, sec.endBeat); b += 0.5) {
+                        const progress = (b - sec.startBeat) / carryBeats; // 0→1
+                        const vel = Math.max(15, 50 * (1 - progress)); // 50→15 渐弱
+                        drumNotes.push({ pitch: CHH, onset: b, duration: 0.1, velocity: vel });
+                    }
                 }
                 
                 // 🌟 戛然而止 (Hard Stop) 逻辑：只打一拍 Crash 和 Kick
@@ -1030,8 +1107,16 @@ export class Orchestrator {
                         drumNotes.push(...rawDrumNotes);
                     }
                 }
+                prevSecHadDrums = playDrums;
             });
         }
+
+        // 🌟 弱起衔接 (Pickup / Anacrusis)
+        // 当乐器在某段落从无到有时，在前一段落最后 0.5-1 拍插入一个弱起音
+        // 让过渡更自然，避免突然闯入
+        this.injectPickupNotes(idiomaticMelody, track.sections, track.chords);
+        this.injectPickupNotes(lhNotes, track.sections, track.chords);
+        this.injectPickupNotes(counterMelodyNotes, track.sections, track.chords);
 
         // 🔄 动态角色互换 (Dynamic F-M-B Role Swapping) - REMOVED
         // 移除此逻辑以防止主旋律轨道变成和弦铺底 (Monophonic Lock)

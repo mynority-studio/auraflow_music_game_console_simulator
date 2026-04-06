@@ -99,7 +99,7 @@ export class EndlessRadioManager {
       PRNGManager.setSeed(seed);
 
       const melodyEngine = new MelodyEngine();
-      const allStyleIds = [StyleId.Default, StyleId.PowerBallad, StyleId.RussianFolkBallad];
+      const allStyleIds = [StyleId.Default];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
       

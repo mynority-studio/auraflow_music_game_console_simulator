@@ -62,7 +62,7 @@ export class PlaybackEngine {
         console.log("========================================");
         console.log("🎵 歌曲生成完毕，开始播放 🎵");
         // 从 StyleIdName 查风格名（延迟导入避免循环依赖）
-        const styleNames: Record<number, string> = { 0: 'Default', 1: 'Power Ballad', 2: 'Russian Folk Ballad' };
+        const styleNames: Record<number, string> = { 0: 'Default' };
         console.log(`Style: ${styleNames[song.styleId as number] || `Unknown(${song.styleId})`}`);
         console.log(`BPM: ${song.bpm}`);
         console.log(`Key: ${song.key}`);
@@ -227,13 +227,13 @@ export class PlaybackEngine {
         const addPartEvents = (notes: any[], synth: any, eventType: VisualEvent['type']) => {
             if (!notes) return;
             notes.forEach(n => {
-                // 🌟 强制吸附网格算法 (Grid Snap)
+                // Onset 吸附 16 分音符网格，Duration 保留原始精度（避免截断尾音）
                 let rawOnset = Number(n.onset);
                 let rawDuration = Number(n.duration);
                 let onset = Math.round(rawOnset / 0.25) * 0.25;
-                let dur = Math.round(rawDuration / 0.25) * 0.25;
-                
-                if (isNaN(dur) || dur <= 0) dur = 0.5; 
+                let dur = Math.max(0.1, rawDuration); // 不量化时值，保留连贯感
+
+                if (isNaN(dur) || dur <= 0) dur = 0.5;
                 
                 if (eventType === 'drums' && this.drumDucking) {
                     const duckedPitches = [35, 36, 38, 40, 41, 43, 45, 47, 48, 49, 50, 52, 53, 55, 57];

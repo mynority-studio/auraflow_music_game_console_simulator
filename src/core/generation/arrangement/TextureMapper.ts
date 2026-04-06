@@ -47,13 +47,13 @@ export class TextureMapper {
         const beatInChord = beat - chord.startBeat;
         const isFirst = Math.abs(beatInChord) < 1e-6;
 
-        // 正拍根音
-        notes.push({ pitch: rootMidi, onset: beat, duration: 0.75, velocity: isFirst ? baseVel : baseVel * 0.9 });
+        // 正拍根音（延音到下一拍前，保持低频饱满）
+        notes.push({ pitch: rootMidi, onset: beat, duration: 0.9, velocity: isFirst ? baseVel : baseVel * 0.9 });
 
         // 切分底音（"and of" 位置，用五度或八度）
         if (beat + 0.5 < chord.endBeat && PRNGManager.next() < syncopation * 0.8) {
           const syncPitch = PRNGManager.next() > 0.6 ? fifthMidi : octaveMidi;
-          notes.push({ pitch: syncPitch, onset: beat + 0.5, duration: 0.25, velocity: baseVel * 0.7 });
+          notes.push({ pitch: syncPitch, onset: beat + 0.5, duration: 0.4, velocity: baseVel * 0.7 });
         }
       }
       // 和弦末尾趋近音（Approach Note）
@@ -73,18 +73,18 @@ export class TextureMapper {
         const isQuarter = Math.abs(beat % 1) < 1e-6;
 
         if (isFirst) {
-          // 和弦起始：根音强奏
-          notes.push({ pitch: rootMidi, onset: beat, duration: 0.5, velocity: baseVel * 1.1 });
+          // 和弦起始：根音强奏（让低音延续，不急着断）
+          notes.push({ pitch: rootMidi, onset: beat, duration: 0.9, velocity: baseVel * 1.1 });
         } else if (isQuarter) {
           // 正拍：根音或五度
           const pitch = PRNGManager.next() < 0.7 ? rootMidi : fifthMidi;
-          notes.push({ pitch: pitch, onset: beat, duration: 0.4, velocity: baseVel * 0.95 });
+          notes.push({ pitch: pitch, onset: beat, duration: 0.75, velocity: baseVel * 0.95 });
         } else {
           // 反拍：切分选择
           const roll = PRNGManager.next();
           if (roll < syncopation * 1.2) {
             // 八度跳跃（Pop）
-            notes.push({ pitch: octaveMidi, onset: beat, duration: 0.25, velocity: baseVel * 0.85 });
+            notes.push({ pitch: octaveMidi, onset: beat, duration: 0.4, velocity: baseVel * 0.85 });
           } else if (roll < syncopation * 1.8) {
             // 五度经过
             notes.push({ pitch: fifthMidi, onset: beat, duration: 0.25, velocity: baseVel * 0.75 });
@@ -415,11 +415,19 @@ export class TextureMapper {
       mode = roll < 0.4 ? 'callResponse' : (roll < 0.7 ? 'parallelHarmony' : 'pad');
     }
 
+    // chordTones 已经是绝对 MIDI 音高（如 60,64,67），不需要再加偏移！
+    // 将和弦音移到 Pad 适合的音域 (C3-C5, MIDI 48-72)
+    const padRange = (pitch: number): number => {
+      while (pitch > 72) pitch -= 12;
+      while (pitch < 48) pitch += 12;
+      return pitch;
+    };
+
     if (mode === 'parallelHarmony' && localMelody.length > 0) {
       // --- Parallel Harmony：三度/六度下方跟随旋律 ---
+      let prevHarmonyPitch = 0;
       for (const mNote of localMelody) {
         const mPc = mNote.pitch % 12;
-        // 找到音阶中下方第 3 或第 5 个音阶音
         const interval = PRNGManager.next() > 0.5 ? 3 : 5;
         let scaleIdx = -1;
         let minDiff = 99;
@@ -431,22 +439,25 @@ export class TextureMapper {
         const targetIdx = (scaleIdx - interval + scalePcs.length * 2) % scalePcs.length;
         const targetPc = scalePcs[targetIdx];
         let diff = targetPc - mPc;
-        if (diff > 0) diff -= 12; // 确保在下方
+        if (diff > 0) diff -= 12;
         let targetPitch = mNote.pitch + diff;
-        // 钳制音域
-        while (targetPitch < 48) targetPitch += 12;
-        while (targetPitch > 72) targetPitch -= 12;
+        targetPitch = padRange(targetPitch);
+
+        // 平滑：与前一个和声音的跳跃不超过 7 半音
+        if (prevHarmonyPitch > 0 && Math.abs(targetPitch - prevHarmonyPitch) > 7) {
+          if (targetPitch > prevHarmonyPitch) targetPitch -= 12;
+          else targetPitch += 12;
+          targetPitch = padRange(targetPitch);
+        }
 
         notes.push({
-          pitch: targetPitch,
-          onset: mNote.onset,
-          duration: mNote.duration,
-          velocity: mNote.velocity * 0.65, // 比旋律弱
+          pitch: targetPitch, onset: mNote.onset, duration: mNote.duration,
+          velocity: mNote.velocity * 0.6,
         });
+        prevHarmonyPitch = targetPitch;
       }
     } else if (mode === 'callResponse') {
       // --- Call and Response：旋律留白时填入应答 ---
-      // 找到旋律的”真空期”
       let gapStart = chord.startBeat;
       if (localMelody.length > 0) {
         const lastNote = localMelody[localMelody.length - 1];
@@ -455,53 +466,44 @@ export class TextureMapper {
       const gapDuration = chord.endBeat - gapStart;
 
       if (gapDuration >= 1.0) {
-        // 有足够的真空期：填入应答乐句
         const fillCount = gapDuration >= 2.0 ? 3 : 2;
         const step = gapDuration / fillCount;
-        let lastPitch = chordTones[0] + 60;
+        // 起始音高：取和弦三音在 Pad 音域内
+        let lastPitch = padRange(chordTones.length > 1 ? chordTones[1] : chordTones[0]);
 
         for (let i = 0; i < fillCount; i++) {
-          // 音阶级进 + 和弦音吸引
           const useChordTone = PRNGManager.next() > 0.4;
           const pool = useChordTone ? chordTones : scalePcs;
-          const pc = pool[Math.floor(PRNGManager.next() * pool.length)];
-          let pitch = pc + 60; // C4 附近
-          // 靠近上一个音（级进）
-          while (Math.abs(pitch - lastPitch) > 7) {
+          let pitch = padRange(pool[Math.floor(PRNGManager.next() * pool.length)]);
+          // 级进平滑：与前一音不超过 5 半音
+          while (Math.abs(pitch - lastPitch) > 5) {
             if (pitch > lastPitch) pitch -= 12;
             else pitch += 12;
+            pitch = padRange(pitch);
+            // 防死循环
+            if (pitch === padRange(pitch)) break;
           }
-          while (pitch < 55) pitch += 12;
-          while (pitch > 76) pitch -= 12;
 
           notes.push({
-            pitch,
-            onset: gapStart + i * step,
-            duration: step * 0.8,
-            velocity: 50 + energyLevel * 3,
+            pitch, onset: gapStart + i * step, duration: step * 0.9,
+            velocity: 45 + energyLevel * 3,
           });
           lastPitch = pitch;
         }
       } else if (localMelody.length >= 3) {
         // 旋律密集时：只放一个长音衬托
+        const sustPitch = padRange(chordTones.length > 1 ? chordTones[1] : chordTones[0]);
         notes.push({
-          pitch: chordTones[1] !== undefined ? chordTones[1] + 60 : chordTones[0] + 60,
-          onset: chord.startBeat,
-          duration: Math.min(duration, 3.0),
-          velocity: 40,
+          pitch: sustPitch, onset: chord.startBeat,
+          duration: Math.min(duration, 3.0), velocity: 40,
         });
       }
     } else {
-      // --- Pad：长音铺底 ---
-      // 开放排列（根-五-三高八度）增加空间感
-      const padTones = chordTones.length >= 3
-        ? [chordTones[0] + 48, chordTones[2] + 48, chordTones[1] + 60]
-        : chordTones.map(t => t + 48);
+      // --- Pad：长音铺底（平滑声部连接）---
+      // 取和弦音直接在 Pad 音域内，不做开放排列（避免大跳）
       const padVel = 35 + energyLevel * 2;
-      for (const p of padTones) {
-        let pitch = p;
-        while (pitch < 48) pitch += 12;
-        while (pitch > 72) pitch -= 12;
+      for (let t = 0; t < chordTones.length && t < 3; t++) {
+        const pitch = padRange(chordTones[t]);
         notes.push({ pitch, onset: chord.startBeat, duration: Math.min(duration, 6.0), velocity: padVel });
       }
     }
@@ -741,7 +743,7 @@ export class TextureMapper {
 
         const mVel = melodyVelFactor(beat);
         const vel = (Math.abs(beat % 1) < 1e-6 ? 70 : 55) * mVel;
-        const gateTime = densityMultiplier > 1.5 ? step * 0.8 : step * 0.95;
+        const gateTime = densityMultiplier > 1.5 ? step * 0.9 : step * 1.0; // 不截短，让音符自然延续
 
         // 旋律在唱时偶尔跳过（让出空间）
         if (isMelodySinging(beat) && PRNGManager.next() < 0.25) continue;
@@ -1046,11 +1048,11 @@ export class TextureMapper {
 
   // --- P2: Smart Pedal (延音控制) ---
   private static applySmartPedal(notes: NoteData[], energyLevel: number, chordEndBeat: number): void {
-    // 高能量段：音符较短（干脆）；低能量段：音符较长（延音）
-    const durationScale = energyLevel <= 4 ? 1.2 : (energyLevel <= 6 ? 1.0 : 0.8);
+    // 高能量段：音符略短（干脆）；低能量段：音符延长（延音）
+    const durationScale = energyLevel <= 4 ? 1.25 : (energyLevel <= 6 ? 1.05 : 0.92);
 
     for (const n of notes) {
-      const maxDur = chordEndBeat - n.onset - 0.05; // 留 0.05 拍缝隙防糊
+      const maxDur = chordEndBeat - n.onset - 0.02; // 留 0.02 拍缝隙（从 0.05 缩小）
       if (maxDur <= 0) continue;
       n.duration = Math.min(n.duration * durationScale, maxDur);
       n.duration = Math.max(n.duration, 0.05); // 最短 0.05 拍

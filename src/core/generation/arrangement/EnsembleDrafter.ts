@@ -6,11 +6,11 @@ export class EnsembleDrafter {
     public static draft(style: StyleConfig): EnsembleDraft {
         // 1. 决定核心乐器
         // 🌟 按照用户标准选择音色
+        // 主旋律约束：只允许 Marimba/Piano/EPiano/Flute/Sax
         const melodyPool = [
             { id: 'Acoustic_Grand', tags: ['all'] },
             { id: 'Electric_Piano_1', tags: ['lofi', 'pop', 'chill', 'jazz', 'rnb'] },
-            { id: 'Lead_2_Sawtooth', tags: ['house', 'edm', 'pop', 'synthwave', 'electronic'] },
-            { id: 'Violin', tags: ['cinematic', 'ghibli', 'post_rock', 'ballad', 'acoustic'] },
+            { id: 'Marimba', tags: ['all'] },
             { id: 'Flute', tags: ['cinematic', 'ghibli', 'acoustic', 'folk', 'chill'] },
             { id: 'Alto_Sax', tags: ['jazz', 'funk', 'rnb', 'pop', 'retro'] }
         ];

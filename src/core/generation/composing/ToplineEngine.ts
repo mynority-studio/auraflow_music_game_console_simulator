@@ -1390,16 +1390,12 @@ export class ToplineEngine {
         const onset = phraseStart + rhythmOffsets[i];
         let duration = i < totalNotes - 1 ? rhythmOffsets[i + 1] - rhythmOffsets[i] : (isAnswer ? 2.0 : 1.0);
         
-        // Quantize duration
+        // Quantize duration — 偏向较长值（避免截断尾音）
         const validDurations = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0];
         let closestDuration = validDurations[0];
-        let minDiff = Math.abs(duration - validDurations[0]);
         for (const vd of validDurations) {
-            const diff = Math.abs(duration - vd);
-            if (diff < minDiff) {
-                minDiff = diff;
-                closestDuration = vd;
-            }
+            if (vd >= duration * 0.85) { closestDuration = vd; break; } // 选 ≥ 85% 的最小合法值
+            closestDuration = vd;
         }
         duration = closestDuration;
 
