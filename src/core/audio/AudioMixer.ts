@@ -11,7 +11,8 @@ export class AudioMixer {
     public masterCompressor: DynamicsCompressorNode;
     public makeupGain: GainNode;
     public currentStyle: string = 'default';
-    
+    public waveshaper: WaveShaperNode; // 磁带饱和模拟
+
     // Intermediate node for native Web Audio API
     private spessaSynthBridge: GainNode;
 
@@ -22,44 +23,49 @@ export class AudioMixer {
         
         // 增加总增益并加入压缩器和限制器，防止爆音，平滑动态
         this.makeupGain = nativeCtx.createGain();
-        this.makeupGain.gain.value = 4.0; // +12dB approx
+        this.makeupGain.gain.value = 2.5; // +8dB approx
         
-        // 🌟 Master DSP — Warm Lo-Fi Tone
-        // 1. HPF: 清除超低频隆隆声
+        // 🌟 Master DSP — 3D Panoramic Clean Tone
+        // 1. HPF: 清除次声波
         this.hpf = nativeCtx.createBiquadFilter();
         this.hpf.type = 'highpass';
         this.hpf.frequency.value = 35;
         this.hpf.Q.value = 0.7;
 
-        // 2. Low Shelf: 增加低频温暖感 (+1.5dB @ 200Hz)
+        // 2. Low Shelf: bypass（不再提升低频，避免浑浊）
         this.lowShelf = nativeCtx.createBiquadFilter();
         this.lowShelf.type = 'lowshelf';
         this.lowShelf.frequency.value = 200;
-        this.lowShelf.gain.value = 1.5;
+        this.lowShelf.gain.value = 0; // 原 +1.5dB 是浑浊元凶，归零
 
-        // 3. Peaking EQ: 削减 300Hz 浑浊
+        // 3. Peaking EQ: 铲除 250Hz 浑浊区（给旋律让空间）
         this.peakingEq = nativeCtx.createBiquadFilter();
         this.peakingEq.type = 'peaking';
-        this.peakingEq.frequency.value = 300;
-        this.peakingEq.Q.value = 1.5;
-        this.peakingEq.gain.value = -3.0;
+        this.peakingEq.frequency.value = 250;
+        this.peakingEq.Q.value = 1.2;
+        this.peakingEq.gain.value = -4.0;
 
-        // 4. High Shelf: 削减高频亮度（温暖化，原 +2.5 改为 -1.5）
+        // 4. High Shelf: 温柔高频
         this.highShelf = nativeCtx.createBiquadFilter();
         this.highShelf.type = 'highshelf';
-        this.highShelf.frequency.value = 6500;
+        this.highShelf.frequency.value = 6000;
         this.highShelf.gain.value = -1.5;
 
-        // 5. LPF: 切掉 12kHz 以上的刺耳空气感
+        // 5. LPF: 切掉 11kHz 以上数码感
         this.lpf = nativeCtx.createBiquadFilter();
         this.lpf.type = 'lowpass';
-        this.lpf.frequency.value = 12000;
+        this.lpf.frequency.value = 11000;
         this.lpf.Q.value = 0.7;
+
+        // 6. WaveShaper: 磁带饱和模拟（默认 bypass = 线性曲线）
+        this.waveshaper = nativeCtx.createWaveShaper();
+        this.waveshaper.curve = this.makeLinearCurve();
+        this.waveshaper.oversample = '2x';
 
         // 2. DynamicsCompressorNode (Master Glue 胶水压缩)
         this.masterCompressor = nativeCtx.createDynamicsCompressor();
-        this.masterCompressor.threshold.value = -24; // -18 to -24
-        this.masterCompressor.knee.value = 12;
+        this.masterCompressor.threshold.value = -22;
+        this.masterCompressor.knee.value = 10;
         this.masterCompressor.ratio.value = 2.5;
         this.masterCompressor.attack.value = 0.03; // 30ms
         this.masterCompressor.release.value = 0.15; // 150ms
@@ -81,17 +87,19 @@ export class AudioMixer {
         this.peakingEq.disconnect();
         this.highShelf.disconnect();
         this.lpf.disconnect();
+        this.waveshaper.disconnect();
         this.masterCompressor.disconnect();
         this.makeupGain.disconnect();
 
-        // Chain: SpessaSynth → MasterBus → HPF → LowShelf → PeakingEQ → HighShelf → LPF → Compressor → MakeupGain → Output
+        // Chain: SpessaSynth → MasterBus → HPF → LowShelf → PeakingEQ → HighShelf → LPF → WaveShaper → Compressor → MakeupGain → Output
         this.spessaSynthBridge.connect(this.masterBus);
         this.masterBus.connect(this.hpf);
         this.hpf.connect(this.lowShelf);
         this.lowShelf.connect(this.peakingEq);
         this.peakingEq.connect(this.highShelf);
         this.highShelf.connect(this.lpf);
-        this.lpf.connect(this.masterCompressor);
+        this.lpf.connect(this.waveshaper);
+        this.waveshaper.connect(this.masterCompressor);
         this.masterCompressor.connect(this.makeupGain);
         this.makeupGain.connect(nativeCtx.destination);
     }
@@ -111,7 +119,81 @@ export class AudioMixer {
     }
 
     public async applyMasteringProfile(profileId: string) {
-        // No-op
+        const nativeCtx = getAudioContext();
+
+        if (profileId === 'Vinyl_Warmth') {
+            // 🌟 Lo-Fi Vinyl 质感：模拟老式磁带/收音机
+            this.lpf.frequency.value = 6500;          // 激进低通（磁带高频衰减）
+            this.lpf.Q.value = 0.5;                   // 平缓滚降
+            this.highShelf.frequency.value = 4000;     // 更低频率开始衰减
+            this.highShelf.gain.value = -4.0;          // 强力削高频
+            this.lowShelf.gain.value = 3.0;            // 加厚低频温暖感
+            this.peakingEq.frequency.value = 800;      // 提升中低频（收音机特征）
+            this.peakingEq.gain.value = 1.5;           // 轻微 boost
+            this.peakingEq.Q.value = 0.8;
+            this.hpf.frequency.value = 80;             // 提高 HPF（模拟小喇叭无极低频）
+            this.waveshaper.curve = this.makeTapeSaturationCurve(0.4); // 轻微磁带饱和
+            this.masterCompressor.threshold.value = -20;
+            this.masterCompressor.ratio.value = 3.0;   // 更重压缩（磁带压缩感）
+            this.makeupGain.gain.value = 3.5;          // 稍降增益（Lo-fi 不需要太响）
+        } else if (profileId === 'Retro_Gadget') {
+            // 🌟 Retro Gadget：温暖复古但清晰
+            this.lpf.frequency.value = 10000;
+            this.lpf.Q.value = 0.7;
+            this.highShelf.frequency.value = 6000;
+            this.highShelf.gain.value = -2.0;
+            this.lowShelf.gain.value = 0;
+            this.peakingEq.frequency.value = 250;
+            this.peakingEq.gain.value = -4.0;
+            this.peakingEq.Q.value = 1.2;
+            this.hpf.frequency.value = 35;
+            this.waveshaper.curve = this.makeLinearCurve();
+            this.masterCompressor.threshold.value = -22;
+            this.masterCompressor.knee.value = 10;
+            this.masterCompressor.ratio.value = 2.5;
+            this.makeupGain.gain.value = 2.5;
+        } else {
+            // Modern_HiFi / Default
+            this.lpf.frequency.value = 11000;
+            this.lpf.Q.value = 0.7;
+            this.highShelf.frequency.value = 6000;
+            this.highShelf.gain.value = -1.5;
+            this.lowShelf.gain.value = 0;
+            this.peakingEq.frequency.value = 250;
+            this.peakingEq.gain.value = -4.0;
+            this.peakingEq.Q.value = 1.2;
+            this.hpf.frequency.value = 35;
+            this.waveshaper.curve = this.makeLinearCurve();
+            this.masterCompressor.threshold.value = -22;
+            this.masterCompressor.knee.value = 10;
+            this.masterCompressor.ratio.value = 2.5;
+            this.makeupGain.gain.value = 2.5;
+        }
+
+        // 重新连接信号链
+        this.connectCleanChain(nativeCtx);
+    }
+
+    /** 线性曲线（bypass，无失真） */
+    private makeLinearCurve(): Float32Array {
+        const samples = 256;
+        const curve = new Float32Array(samples);
+        for (let i = 0; i < samples; i++) {
+            curve[i] = (i * 2) / samples - 1;
+        }
+        return curve;
+    }
+
+    /** 磁带饱和曲线（soft clipping）— amount: 0=无, 1=强 */
+    private makeTapeSaturationCurve(amount: number): Float32Array {
+        const samples = 256;
+        const curve = new Float32Array(samples);
+        for (let i = 0; i < samples; i++) {
+            const x = (i * 2) / samples - 1;
+            // 双曲正切软削波：amount 控制饱和程度
+            curve[i] = Math.tanh(x * (1 + amount * 3));
+        }
+        return curve;
     }
 
     public routeInstrument(id: string, instrument: any, role: 'Foreground'|'Midground'|'Background'|'Rhythm', mixingConfig?: { pan: number, reverb: number, volume: number, delay?: number }) {

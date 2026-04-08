@@ -1,10 +1,12 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData, Tonality } from '../types';
+import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData, Tonality, SCALE_INTERVALS } from '../types';
 import { MusicTheoryRules, ChordFunction } from './MusicTheoryRules';
+import { GlobalContext } from '../GlobalContext';
+
 import { StyleId } from '../config/StyleFlags';
 
 export class HarmonyCore {
-    public static parseRomanNumeral(numeral: string, tonality: Tonality = Tonality.Major, isRelativeMajorProgression: boolean = false) {
+    public static parseRomanNumeral(numeral: string, tonality: Tonality = Tonality.Major, isRelativeMajorProgression: boolean = false) { 
         let rootOffset = 0;
         let cleanNumeral = numeral;
         if (cleanNumeral.startsWith('b')) { rootOffset = -1; cleanNumeral = cleanNumeral.substring(1); }
@@ -317,13 +319,7 @@ export class HarmonyCore {
                     newVoicing.push(targetPcs[i] + oct * 12);
                 }
             }
-            // P-1: dedup sorted array without Set
-            newVoicing.sort((a, b) => a - b);
-            const dedupedVoicing: number[] = [];
-            for (let i = 0; i < newVoicing.length; i++) {
-                if (i === 0 || newVoicing[i] !== newVoicing[i - 1]) dedupedVoicing.push(newVoicing[i]);
-            }
-            return dedupedVoicing;
+            return Array.from(new Set(newVoicing)).sort((a, b) => a - b);
         }
 
         // Generate all possible inversions/voicings within a reasonable range (C3 to C6)
@@ -402,13 +398,7 @@ export class HarmonyCore {
             }
         }
 
-        // P-1: dedup sorted array without Set
-        bestCandidate.sort((a, b) => a - b);
-        const dedupedBest: number[] = [];
-        for (let i = 0; i < bestCandidate.length; i++) {
-            if (i === 0 || bestCandidate[i] !== bestCandidate[i - 1]) dedupedBest.push(bestCandidate[i]);
-        }
-        return dedupedBest;
+        return Array.from(new Set(bestCandidate)).sort((a, b) => a - b);
     }
     public static getScalePitches(tonality: Tonality): number[] {
         let intervals = [0, 2, 4, 5, 7, 9, 11]; 
@@ -422,6 +412,49 @@ export class HarmonyCore {
         return intervals;
     }
 
+    public static getDynamicChordScale(chord: GeneratedChord): number[] {
+        const rootPc = chord.root % 12;
+        let intervals: number[] = [];
+
+        switch (chord.quality) {
+            case 'Major7':
+            case 'Major9':
+            case 'Add9':
+                intervals = [0, 2, 4, 6, 7, 9, 11]; // Lydian (has #11 for color)
+                break;
+            case 'Minor7':
+            case 'Minor9':
+            case 'Minor11':
+                intervals = [0, 2, 3, 5, 7, 9, 10]; // Dorian (has natural 13/6 for color)
+                break;
+            case 'Dominant7':
+            case 'Dominant9':
+            case 'Dominant13':
+                intervals = [0, 2, 4, 5, 7, 9, 10]; // Mixolydian
+                break;
+            case 'HalfDiminished':
+                intervals = [0, 1, 3, 5, 6, 8, 10]; // Locrian
+                break;
+            case 'Diminished7':
+            case 'Diminished':
+                intervals = [0, 2, 3, 5, 6, 8, 9, 11]; // Whole-Half Diminished
+                break;
+            case 'Sus4':
+            case 'Dominant7Sus4':
+                intervals = [0, 2, 5, 7, 9, 10]; // Mixolydian without 3rd
+                break;
+            case 'Minor':
+                intervals = [0, 2, 3, 5, 7, 8, 10]; // Aeolian
+                break;
+            case 'Major':
+            default:
+                intervals = [0, 2, 4, 5, 7, 9, 11]; // Ionian
+                break;
+        }
+
+        return intervals.map(i => (rootPc + i) % 12);
+    }
+
     public static getSafeScalePitches(chord: GeneratedChord, tonality: Tonality): number[] {
         let intervals =[0, 2, 4, 5, 7, 9, 11]; 
         if (tonality === Tonality.Minor) intervals =[0, 2, 3, 5, 7, 8, 10]; 
@@ -433,34 +466,6 @@ export class HarmonyCore {
         if (tonality === Tonality.Mixolydian) intervals = [0, 2, 4, 5, 7, 9, 10];
         let scalePcs = intervals.map(i => i % 12);
         const chordTones = this.getChordTones(chord, 60).map(p => p % 12);
-        
-        // Check if chord is non-diatonic
-        const isNonDiatonic = chordTones.some(ct => !scalePcs.includes(ct));
-        
-        if (isNonDiatonic) {
-            // Rule 1: Use compatible scale for non-diatonic chords to avoid Phrygian Dominant clashes
-            const rootPc = chord.root % 12;
-            let compIntervals = [0, 2, 4, 5, 7, 9, 10]; // Default to Mixolydian for Major/Dom
-            
-            if (chord.quality.includes('Minor')) {
-                compIntervals = [0, 2, 3, 5, 7, 9, 10]; // Dorian for Minor
-            } else if (chord.quality.includes('Diminished') || chord.quality === 'HalfDiminished') {
-                compIntervals = [0, 2, 3, 5, 6, 8, 10]; // Locrian natural 2 (or just Locrian)
-            } else if (chord.quality === 'Augmented') {
-                compIntervals = [0, 2, 4, 6, 8, 10]; // Whole tone
-            }
-            
-            scalePcs = compIntervals.map(i => (rootPc + i) % 12);
-            // P-1: merge + dedup sorted array without Set
-            const merged444: number[] = [];
-            for (let i = 0; i < scalePcs.length; i++) {
-                if (merged444.indexOf(scalePcs[i]) === -1) merged444.push(scalePcs[i]);
-            }
-            for (let i = 0; i < chordTones.length; i++) {
-                if (merged444.indexOf(chordTones[i]) === -1) merged444.push(chordTones[i]);
-            }
-            return merged444.sort((a, b) => a - b);
-        }
         
         // 移除与和弦外音冲突的自然音阶音 (Remove clashing diatonic tones)
         const rootPc = chord.root % 12;
@@ -491,15 +496,7 @@ export class HarmonyCore {
             }
         });
 
-        // P-1: merge + dedup sorted array without Set
-        const merged476: number[] = [];
-        for (let i = 0; i < scalePcs.length; i++) {
-            if (merged476.indexOf(scalePcs[i]) === -1) merged476.push(scalePcs[i]);
-        }
-        for (let i = 0; i < chordTones.length; i++) {
-            if (merged476.indexOf(chordTones[i]) === -1) merged476.push(chordTones[i]);
-        }
-        return merged476.sort((a, b) => a - b);
+        return Array.from(new Set([...scalePcs, ...chordTones])).sort((a,b)=>a-b);
     }
     public static snapToScale(pitch: number, scalePcs: number[]): number {
         let closestPitch = pitch;
@@ -592,8 +589,8 @@ export class HarmonyCore {
 }
 
 export class HarmonyEngine {
-    // 🌟 核心算法 1：基于功能和声的概率替换 (Macro-Constrained Micro-Probability) & 拓扑平滑代价函数 (Topology & Smooth Cost Function)
-    private static generateFromFunction(func: ChordFunction, originalChord: string, prevChord: string | null, style: StyleConfig, nextChord: string | null, tonality: Tonality): string {
+    // 🌟 核心算法 1：基于功能和声的概率替换 (Macro-Constrained Micro-Probability)
+    private static generateFromFunction(func: ChordFunction, originalChord: string, isFirstChord: boolean, style: StyleConfig, nextChord: string | null): string {
         const rand = PRNGManager.next();
         
         // 决定变异概率 (Mutation Rate)
@@ -601,83 +598,47 @@ export class HarmonyEngine {
 
         if (rand > mutationRate) return originalChord;
 
-        const isMinorKey = tonality === Tonality.Minor;
-        
-        let candidates: string[] = [originalChord];
+        const isMinorKey = GlobalContext.currentTonality === Tonality.Minor;
+        const roll = PRNGManager.next();
+
+        // 命中变异概率，在同等和声功能 (T/S/D) 下进行概率游走
         if (func === 'Tonic') {
-            candidates = ['I', 'vi', 'iii'];
-            if (!isMinorKey) candidates.push('bVI', 'bIII');
+            if (roll < 0.5) return 'I';
+            if (roll < 0.8) return 'vi';
+            if (roll < 0.9) return 'iii';
+            // 🌟 调式互换 (Modal Interchange): 借用同主音小调的 bIII 或 bVI (概率极低，防止突兀)
+            if (!isMinorKey && roll > 0.95) {
+                return PRNGManager.next() > 0.5 ? 'bVI' : 'bIII';
+            }
+            return 'I';
         } else if (func === 'Subdominant') {
-            candidates = ['IV', 'ii'];
-            if (!isMinorKey) {
-                const allowDiminished = style.harmonyRules?.passingChords?.includes('Diminished7');
-                candidates.push('iv');
-                if (allowDiminished) candidates.push('ii°');
+            if (roll < 0.5) return 'IV';
+            if (roll < 0.8) return 'ii';
+            // 🌟 调式互换 (Modal Interchange): 借用同主音小调的 iv 或 ii°
+            if (!isMinorKey && roll > 0.9) {
+                return PRNGManager.next() > 0.6 ? 'iv' : 'ii°';
             }
+            return 'IV';
         } else if (func === 'Dominant') {
-            candidates = ['V', 'vii°'];
-            if (nextChord && (nextChord === 'vi' || nextChord === 'VI')) candidates.push('III');
-            if (nextChord && (nextChord === 'V' || nextChord === 'v')) candidates.push('II');
-            if (!isMinorKey) candidates.push('bVII');
-        }
-
-        // 🌟 Chord Topology & Smooth Cost Function
-        let bestChord = originalChord;
-        let minCost = Infinity;
-
-        for (const cand of candidates) {
-            let cost = 0;
+            if (roll < 0.5) return 'V';
             
-            // 1. Functional Pole Cost (Distance from original intended function)
-            if (cand !== originalChord) cost += 1.0;
+            // 🚨 目标导向修复：如果要插入副属和弦或减七和弦，必须检查下一个和弦是否匹配
+            if (roll < 0.7 && nextChord && (nextChord === 'vi' || nextChord === 'VI')) return 'III'; // 次属和弦 V/vi 必须接 vi
+            if (roll < 0.85 && nextChord && (nextChord === 'V' || nextChord === 'v')) return 'II'; // 次属和弦 V/V 必须接 V
+            if (roll < 0.95 && nextChord && (nextChord === 'I' || nextChord === 'i')) return 'vii°'; // 导和弦必须接主和弦
             
-            // 2. Voice Leading Cost (Root movement)
-            if (prevChord) {
-                const prevRoot = HarmonyCore.parseRomanNumeral(prevChord, tonality).root;
-                const candRoot = HarmonyCore.parseRomanNumeral(cand, tonality).root;
-                
-                const diff = Math.abs(candRoot - prevRoot);
-                const shortestDiff = Math.min(diff, 12 - diff);
-                
-                if (shortestDiff === 6) cost += 2.0; // Tritone jump (harsh)
-                else if (shortestDiff === 1) cost += 0.5; // Chromatic step (smooth tension)
-                else if (shortestDiff === 5 || shortestDiff === 7) cost += 0.2; // Perfect 4th/5th (strong root motion)
-                else if (shortestDiff === 3 || shortestDiff === 4) cost += 0.3; // Thirds (mediant relationship)
-                else if (shortestDiff === 2) cost += 0.8; // Whole step
+            // 🌟 调式互换 (Modal Interchange): 借用同主音小调的 bVII (Backdoor dominant)
+            if (!isMinorKey && roll > 0.95) {
+                return 'bVII';
             }
-
-            // 3. Target Resolution Cost
-            if (nextChord) {
-                const candRoot = HarmonyCore.parseRomanNumeral(cand, tonality).root;
-                const nextRoot = HarmonyCore.parseRomanNumeral(nextChord, tonality).root;
-                const diff = Math.abs(nextRoot - candRoot);
-                const shortestDiff = Math.min(diff, 12 - diff);
-                
-                if (func === 'Dominant') {
-                    if (shortestDiff === 5 || shortestDiff === 7 || shortestDiff === 1) {
-                        cost -= 1.0; // Reward strong resolution
-                    } else {
-                        cost += 1.5; // Penalize weak resolution for dominant
-                    }
-                }
-            }
-
-            // Add PRNG noise to prevent deterministic loops
-            cost += PRNGManager.next() * 0.5;
-
-            if (cost < minCost) {
-                minCost = cost;
-                bestChord = cand;
-            }
+            return 'V';
         }
-
-        return bestChord;
+        return originalChord;
     }
 
-    // 🌟 核心算法 2：风格化和弦色彩附加 (Style-Specific Spices) & 张力-释放波形 (Tension-Release Waveform)
-    private static applyStyleSpices(progression: string[], style: StyleConfig, energyLevel: number = 5, tonality: Tonality = Tonality.Major): string[] {
-        const tensionLevel = energyLevel / 10.0; // 0.0 to 1.0
-
+    // 🌟 核心算法 2：风格化和弦色彩附加 (Style-Specific Spices)
+    private static applyStyleSpices(progression: string[], style: StyleConfig): string[] {
+        const tonality = GlobalContext.currentTonality; // 获取当前调性
         return progression.map((chord, index, arr) => {
             const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
             const isJPop = voicingStyle === 'jpop';
@@ -715,34 +676,31 @@ export class HarmonyEngine {
             const nextChord = index + 1 < arr.length ? arr[index + 1].replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '') : null;
 
             if (isJazz || isJPop) {
-                const spiceProb = isJazz ? 1.0 : 0.6 + tensionLevel * 0.4; // Higher tension -> more spices
+                const spiceProb = isJazz ? 1.0 : 0.8; // Jazz/Neo-Soul 100% 附加色彩，J-Pop 80%
                 if (rand < spiceProb) { // 加上浓郁的色彩音
                     if (isDiminished) {
+                        // 🚨 核心修复：只有自然音阶的 vii 级或 ii 级可以变成 m7b5，作为 ii-V-I 的前置。
+                        // 其他的经过减和弦（如 #idim, #iidim, #ivdim, #vdim）必须保持 fully diminished (dim7) 才能起导和弦作用！
                         if (base === 'ii') return base + 'm7b5';
                         if (base === 'vii' && (nextChord === 'III' || nextChord === 'iii')) return base + 'm7b5';
                         return base + 'dim7';
                     }
-                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI' || base === 'bIII')) {
-                        if (tensionLevel > 0.7 && rand < 0.3) return base + 'maj13';
-                        return rand > 0.5 ? base + 'maj7' : base + 'maj9';
-                    }
+                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI' || base === 'bIII')) return rand > 0.5 ? base + 'maj7' : base + 'maj9';
                     if (!isMinor && base === 'bVII') return rand > 0.5 ? base + '7' : base + '9'; // Backdoor dominant
-                    if (isMinor && (base === 'ii' || base === 'iii' || base === 'vi' || base === 'iv')) {
-                        if (tensionLevel > 0.8 && rand < 0.3) return base + 'm11';
-                        return rand > 0.5 ? base + 'm7' : base + 'm9';
-                    }
+                    if (isMinor && (base === 'ii' || base === 'iii' || base === 'vi' || base === 'iv')) return rand > 0.5 ? base + 'm7' : base + 'm9';
                     
+                    // 🚨 核心修复：不能无脑把 VI 变成 VI7。只有当 VI 后面跟着 ii 时，才允许把它变成 VI7（作为 V/ii）。
                     if (base === 'VI') {
                         if (nextChord === 'ii' || nextChord === 'iiø7') {
-                            if (tensionLevel > 0.6 && rand < 0.3) return base + '13';
                             if (rand < 0.3) return base + 'sus4';
                             if (rand < 0.6) return base + '7';
                             return base + '9';
                         } else {
-                            return tonality === Tonality.Minor ? 'VImaj7' : 'VIm7'; 
+                            return tonality === Tonality.Minor ? 'VImaj7' : 'VIm7'; // 根据调性返回自然和弦
                         }
                     }
 
+                    // 🚨 核心修复：半减七（m7b5）只能用在 ii 级（小调的 iiø7）或 vii 级（大调的 viiø7，但通常作为 ii/vi 接 III）。
                     if (base === 'vii') {
                         if (nextChord === 'III' || nextChord === 'iii') return base + 'm7b5';
                         return base + 'dim7';
@@ -753,15 +711,13 @@ export class HarmonyEngine {
 
                     if (base === 'V' || base === 'III' || base === 'II') {
                         // 属和弦或次属和弦
-                        if (tensionLevel > 0.7 && rand < 0.2) return base + '13'; // High tension
-                        if (tensionLevel > 0.5 && rand < 0.4) return base + '9';
                         if (rand < 0.3) return base + 'sus4';
                         if (rand < 0.6) return base + '7';
-                        return base + '9';
+                        return base + '9'; // 增加 9 音
                     }
                 }
             } else if (isEDM) {
-                if (rand < 0.4 + tensionLevel * 0.4) { 
+                if (rand < 0.6) { 
                     if (tonality === Tonality.Minor) {
                         if (base === 'iv' || base === 'v') return PRNGManager.next() > 0.5 ? base + 'm7' : base + 'm9';
                         if (base === 'VI' || base === 'III' || base === 'VII') return PRNGManager.next() > 0.5 ? base + 'add9' : base + 'maj7';
@@ -773,7 +729,7 @@ export class HarmonyEngine {
                 }
             } else {
                 // Standard Pop/Rock
-                if (rand < 0.2 + tensionLevel * 0.4) {
+                if (rand < 0.4) {
                     if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI')) return base + 'add9';
                     if (isMinor && (base === 'vi' || base === 'iv')) return base + 'm7';
                     if (base === 'V') return 'Vsus4';
@@ -786,7 +742,7 @@ export class HarmonyEngine {
     }
 
     // 🌟 核心算法 3：动态生成进行 (Dynamic Progression Generator)
-    private static generateDynamicProgression(pool: string[][], fallback: string[], style: StyleConfig, sectionType: string = 'Verse', tonality: Tonality = Tonality.Major): string[] {
+    private static generateDynamicProgression(pool: string[][], fallback: string[], style: StyleConfig, sectionType: string = 'Verse'): string[] {
         const baseProgression = pool && pool.length > 0 ? pool[Math.floor(PRNGManager.next() * pool.length)] : fallback;
         
         // 1. 提取功能骨架 (Extract Functional Flow)
@@ -797,22 +753,15 @@ export class HarmonyEngine {
 
         // 2. 概率替换 (Probabilistic Substitution)
         const isEmotionalCore = sectionType === 'Intro' || sectionType === 'Outro';
-        let newProgression: string[] = [];
-        
-        for (let index = 0; index < functionalFlow.length; index++) {
-            const item = functionalFlow[index];
-            if (isEmotionalCore) {
-                newProgression.push(item.original);
-                continue;
-            }
+        let newProgression = functionalFlow.map((item, index) => {
+            if (isEmotionalCore) return item.original; // 🚨 核心修复：Intro 和 Outro 严禁功能性变异，保持原汁原味
             const nextChord = index < functionalFlow.length - 1 ? functionalFlow[index + 1].original : null;
-            const prevChord = index > 0 ? newProgression[index - 1] : null;
-            newProgression.push(this.generateFromFunction(item.func, item.original, prevChord, style, nextChord, tonality));
-        }
+            return this.generateFromFunction(item.func, item.original, index === 0, style, nextChord);
+        });
 
         // 🌟 方案 A：情感化调式互换 (Emotional Modal Interchange)
         // 在大调中，对于 Bridge 或 Chorus，有一定概率借用同主音小调的和弦，制造“红杏出墙”的色彩突变
-        if (tonality === Tonality.Major && (sectionType === 'Bridge' || sectionType === 'Chorus' || sectionType === 'PreChorus')) {
+        if (GlobalContext.currentTonality === Tonality.Major && (sectionType === 'Bridge' || sectionType === 'Chorus' || sectionType === 'PreChorus')) {
             const modalInterchangeProb = 0.35; // 35% 概率触发调式互换
             if (PRNGManager.next() < modalInterchangeProb) {
                 newProgression = newProgression.map(chord => {
@@ -822,19 +771,17 @@ export class HarmonyEngine {
                     // vi -> bVI (大调的六级变成降六级大和弦，史诗感/流行朋克感)
                     if (base === 'vi' && PRNGManager.next() < 0.4) return chord.replace('vi', 'bVI');
                     // ii -> ii° (二级变减和弦)
-                    const allowDiminished = style.harmonyRules?.passingChords?.includes('Diminished7');
-                    if (base === 'ii' && allowDiminished && PRNGManager.next() < 0.3) return chord.replace('ii', 'ii°');
+                    if (base === 'ii' && PRNGManager.next() < 0.3) return chord.replace('ii', 'ii°');
                     return chord;
                 });
             }
         }
 
         // 3. 附加风格色彩 (Apply Style Spices)
-        // 🌟 延迟到 generateHarmonyTimeline 中根据 energyLevel 动态应用 Tension-Release Waveform
-        return newProgression;
+        return this.applyStyleSpices(newProgression, style);
     }
 
-    public static generateHarmonyTimeline(sections: SectionMetadata[], style: StyleConfig, timeSignature:[number, number], tonality: Tonality, keyOffset: number): GeneratedChord[] {
+    public static generateHarmonyTimeline(sections: SectionMetadata[], style: StyleConfig, timeSignature:[number, number]): GeneratedChord[] {
         const timeline: GeneratedChord[] = [];
         const beatsPerBar = timeSignature[0];
 
@@ -872,7 +819,7 @@ export class HarmonyEngine {
             if (isEDM) poolToUse = edmProgressionPool;
             else if (isJPop) poolToUse = jpopProgressionPool;
             
-            const masterProgression = this.generateDynamicProgression(poolToUse, ['I', 'V', 'vi', 'IV'], style, 'Chorus', tonality);
+            const masterProgression = this.generateDynamicProgression(poolToUse, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
             globalPlan['Chorus'] = masterProgression;
             globalPlan['Verse'] = masterProgression;
             globalPlan['PreChorus'] = masterProgression;
@@ -900,13 +847,14 @@ export class HarmonyEngine {
                 preChorusPool = [['IV', 'V', 'iii', 'vi'], ['ii', 'V', 'I', 'vi'], ['IV', 'iv', 'I', 'I7']]; // PreChorus 增加张力
             }
             
-            globalPlan['Chorus'] = this.generateDynamicProgression(chorusPool, ['I', 'V', 'vi', 'IV'], style, 'Chorus', tonality);
-            globalPlan['Verse'] = this.generateDynamicProgression(versePool, ['I', 'vi', 'IV', 'V'], style, 'Verse', tonality);
-            globalPlan['PreChorus'] = this.generateDynamicProgression(preChorusPool, ['ii', 'V', 'I', 'vi'], style, 'PreChorus', tonality);
-            globalPlan['Break'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'vi', 'IV', 'I']], ['vi', 'IV', 'I', 'V'], style, 'Break', tonality);
-            globalPlan['Bridge'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'V', 'vi', 'IV'], ['IV', 'V', 'iii', 'vi']], ['vi', 'IV', 'I', 'V'], style, 'Bridge', tonality);
+            globalPlan['Chorus'] = this.generateDynamicProgression(chorusPool, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
+            globalPlan['Verse'] = this.generateDynamicProgression(versePool, ['I', 'vi', 'IV', 'V'], style, 'Verse');
+            globalPlan['PreChorus'] = this.generateDynamicProgression(preChorusPool, ['ii', 'V', 'I', 'vi'], style, 'PreChorus');
+            globalPlan['Break'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'vi', 'IV', 'I']], ['vi', 'IV', 'I', 'V'], style, 'Break');
+            globalPlan['Bridge'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'V', 'vi', 'IV'], ['IV', 'V', 'iii', 'vi']], ['vi', 'IV', 'I', 'V'], style, 'Bridge');
             
             // 🚨 核心修复：Outro 必须根据调性严格收尾，不能无脑 I - I
+            const tonality = GlobalContext.currentTonality;
             const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
             
             let outroFallback = tonality === Tonality.Minor ? ['i', 'bVI', 'iv', 'i'] : ['I', 'vi', 'IV', 'I'];
@@ -924,7 +872,7 @@ export class HarmonyEngine {
                 ];
             }
             
-            globalPlan['Outro'] = this.generateDynamicProgression(outroPool, outroFallback, style, 'Outro', tonality);
+            globalPlan['Outro'] = this.generateDynamicProgression(outroPool, outroFallback, style, 'Outro');
             
             globalPlan['Intro'] = globalPlan['Verse']; // Intro 通常使用 Verse 的和弦
         }
@@ -963,19 +911,22 @@ export class HarmonyEngine {
             const reharmProb = isEDMStyle ? 0.0 : (style.harmonyRules?.reharmProbability ?? 0.3);
             const borrowedChords = isEDMStyle ? [] : (style.harmonyRules?.borrowedChords ?? []);
             if (appearanceCount > 1 && !isGlobalProgression) {
+                let hasMutation = false;
                 progression = progression.map(numeral => {
                     if (PRNGManager.next() < reharmProb) { 
                         const subs = MusicTheoryRules.getSubstitution(numeral, borrowedChords);
                         if (subs.length > 0) {
+                            hasMutation = true;
                             return subs[Math.floor(PRNGManager.next() * subs.length)];
                         }
                     }
                     return numeral;
                 });
+                
+                if (hasMutation) {
+                    progression = this.applyStyleSpices(progression, style);
+                }
             }
-            
-            // 🌟 Tension-Release Waveform: Apply spices based on section energy level
-            progression = this.applyStyleSpices(progression, style, section.energyLevel, tonality);
             
             const isMinorProgression = progression.some(numeral => {
                 let clean = numeral;
@@ -983,7 +934,7 @@ export class HarmonyEngine {
                 const base = clean.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '');
                 return base === 'i' || base === 'iv' || base === 'v';
             });
-            const isRelativeMajorProgression = tonality === Tonality.Minor && !isMinorProgression;
+            const isRelativeMajorProgression = GlobalContext.currentTonality === Tonality.Minor && !isMinorProgression;
 
             let currentBeat = section.startBeat;
             const totalBars = (section.endBeat - section.startBeat) / beatsPerBar;
@@ -1002,11 +953,12 @@ export class HarmonyEngine {
                         }
                         return numeral;
                     });
-                    currentPhraseProgression = this.applyStyleSpices(currentPhraseProgression, style, section.energyLevel, tonality);
+                    currentPhraseProgression = this.applyStyleSpices(currentPhraseProgression, style);
                 }
                 
                 let numeral = currentPhraseProgression[bar % currentPhraseProgression.length];
                 const isEndOfSection = (bar === totalBars - 1);
+                const tonality = GlobalContext.currentTonality;
                 const tonic = tonality === Tonality.Minor ? 'i' : 'I';
                 const subdominant = tonality === Tonality.Minor ? 'iv' : 'IV';
                 const dominant = tonality === Tonality.Minor ? 'V' : 'V';
@@ -1044,36 +996,10 @@ export class HarmonyEngine {
                 actualProgression.push(numeral);
             }
 
-            // 🌟 动态和声节奏 (Dynamic Harmonic Rhythm)
-            // 定义 4 个和弦的时长分配比例 (总和为 4)
-            const harmonicRhythmPatterns = [
-                [1, 1, 1, 1],       // 最平稳：均分
-                [2, 1, 0.5, 0.5],   // 节奏加速：前稳后急
-                [0.5, 0.5, 2, 1],   // 切分感：开头紧凑
-                [1.5, 0.5, 1, 1]    // 弱拍换和弦：极具流动性
-            ];
-            let currentRhythmPattern = harmonicRhythmPatterns[0];
-
             for (let barsGenerated = 0; barsGenerated < totalBars; barsGenerated++) {
-                // 每 4 小节换一次口味，只在非 EDM 风格中启用
-                if (barsGenerated % 4 === 0 && !isEDMStyle && PRNGManager.next() < 0.3) {
-                    currentRhythmPattern = harmonicRhythmPatterns[Math.floor(PRNGManager.next() * harmonicRhythmPatterns.length)];
-                } else if (barsGenerated % 4 === 0) {
-                    currentRhythmPattern = harmonicRhythmPatterns[0]; // 恢复平稳
-                }
-
                 let numeral = actualProgression[barsGenerated];
                 const isEndOfPhrase = ((barsGenerated + 1) % progression.length === 0); 
                 const isEndOfSection = (barsGenerated === totalBars - 1);
-
-                // 获取当前和弦应该占用的拍数
-                let currentDuration = currentRhythmPattern[barsGenerated % 4] * beatsPerBar;
-                
-                // 确保最后一个和弦填满剩余时间，防止因为浮点数或切分导致的总时长不匹配
-                if (isEndOfSection) {
-                    const expectedEndBeat = section.endBeat;
-                    currentDuration = expectedEndBeat - currentBeat;
-                }
 
                 // 🌟 核心：经过和弦变异 (Passing Chord Mutation) & 段落过渡 (Section Transition)
                 const isEmotionalCore = section.name.includes('Intro') || section.name.includes('Outro');
@@ -1087,7 +1013,7 @@ export class HarmonyEngine {
                     // 段落交界处，寻找下一个段落的第一个和弦
                     const nextSection = sections[sectionIndex + 1];
                     if (nextSection.endingType === 'hard_stop') {
-                        nextNumeral = tonality === Tonality.Minor ? (isMinorProgression ? 'i' : 'vi') : 'I';
+                        nextNumeral = GlobalContext.currentTonality === Tonality.Minor ? (isMinorProgression ? 'i' : 'vi') : 'I';
                     } else {
                         let nextSecProg: string[];
                         if (nextSection.name.includes('Chorus')) nextSecProg = globalPlan['Chorus'];
@@ -1107,7 +1033,7 @@ export class HarmonyEngine {
                                 return base === 'i' || base === 'iv' || base === 'v';
                             });
                             
-                            if (tonality === Tonality.Minor && isMinorProgression !== nextSectionIsMinorProgression) {
+                            if (GlobalContext.currentTonality === Tonality.Minor && isMinorProgression !== nextSectionIsMinorProgression) {
                                 const translationMapToRelativeMajor: Record<string, string> = {
                                     'i': 'vi', 'iv': 'ii', 'v': 'iii', 'bVI': 'IV', 'bVII': 'V', 'bIII': 'I',
                                     'im7': 'vim7', 'im9': 'vim9', 'ivm7': 'iim7', 'ivm9': 'iim9', 'vm7': 'iiim7',
@@ -1131,7 +1057,7 @@ export class HarmonyEngine {
                         }
                     }
 
-                    const isEDM = isEDMStyle;
+                    const isEDM = style.id === StyleId.Eurodance || style.id === StyleId.Trance || style.id === StyleId.Synthwave;
 
                     // 如果允许变异，且在句尾或段落尾，有概率插入经过和弦
                     const passingChordsAllowed = isEDM ? [] : [...(style.harmonyRules?.passingChords ?? ['SecondaryDominant', 'Diminished7'])];
@@ -1145,14 +1071,14 @@ export class HarmonyEngine {
 
                     // 🌟 核心修复：降低经过和弦频率，并在段落交界处极力避免，以确保稳定解决
                     const passingProb = isEndOfSection ? 0.1 : 0.3;
-                    if (allowMutation && (isEndOfPhrase || isEndOfSection) && PRNGManager.next() < passingProb && currentDuration >= 3 && passingChordsAllowed.length > 0) {
+                    if (allowMutation && (isEndOfPhrase || isEndOfSection) && PRNGManager.next() < passingProb && beatsPerBar >= 3 && passingChordsAllowed.length > 0) {
                         
                         let passingBeats = 1; 
-                        if (currentDuration >= 4) passingBeats = 2; 
-                        else if (currentDuration >= 6) passingBeats = 2; 
-                        else if (currentDuration >= 8) passingBeats = 4; 
+                        if (beatsPerBar === 4) passingBeats = 2; 
+                        else if (beatsPerBar === 6) passingBeats = 2; 
+                        else if (beatsPerBar === 8) passingBeats = 4; 
                         
-                        const mainBeats = currentDuration - passingBeats;
+                        const mainBeats = beatsPerBar - passingBeats;
                         
                         // 计算经过和弦 (Secondary Dominant or Leading Tone)
                         let passingNumeral = 'V'; 
@@ -1166,7 +1092,7 @@ export class HarmonyEngine {
                             if (calculatedPassing) {
                                 passingNumeral = calculatedPassing;
                                 // Apply style spices to the passing chord to get the correct extensions
-                                passingNumeral = this.applyStyleSpices([passingNumeral], style, 5, tonality)[0];
+                                passingNumeral = this.applyStyleSpices([passingNumeral], style)[0];
                                 isValidPassing = true;
                             }
                         }
@@ -1174,40 +1100,47 @@ export class HarmonyEngine {
                         // 如果无法生成合理的经过和弦，或者随机决定不生成，则撤销经过和弦
                         if (!isValidPassing) {
                             // 撤销经过和弦，恢复主和弦占据整个小节
-                            const parsedMain = HarmonyCore.parseRomanNumeral(numeral, tonality, isRelativeMajorProgression);
+                            const parsedMain = HarmonyCore.parseRomanNumeral(numeral, GlobalContext.currentTonality, isRelativeMajorProgression);
                             timeline.push({ 
                                 numeral, root: parsedMain.root, quality: parsedMain.quality, 
-                                startBeat: currentBeat, endBeat: currentBeat + currentDuration,
-                                keyOffset: keyOffset + (section.localKeyOffset || 0)
+                                startBeat: currentBeat, endBeat: currentBeat + beatsPerBar,
+                                keyOffset: GlobalContext.currentKeyOffset + (section.localKeyOffset || 0)
                             });
                         } else {
                             // 成功生成合理的经过和弦
-                            const parsedMain = HarmonyCore.parseRomanNumeral(numeral, tonality, isRelativeMajorProgression);
+                            const parsedMain = HarmonyCore.parseRomanNumeral(numeral, GlobalContext.currentTonality, isRelativeMajorProgression);
                             
+                            let passingBeats = 1; 
+                            if (beatsPerBar === 4) passingBeats = 2; 
+                            else if (beatsPerBar === 6) passingBeats = 2; 
+                            else if (beatsPerBar === 8) passingBeats = 4; 
+                            
+                            const mainBeats = beatsPerBar - passingBeats;
+
                             timeline.push({ 
                                 numeral, root: parsedMain.root, quality: parsedMain.quality, 
                                 startBeat: currentBeat, endBeat: currentBeat + mainBeats,
-                                keyOffset: keyOffset + (section.localKeyOffset || 0)
+                                keyOffset: GlobalContext.currentKeyOffset + (section.localKeyOffset || 0)
                             });
 
-                            const parsedPassing = HarmonyCore.parseRomanNumeral(passingNumeral, tonality, isRelativeMajorProgression);
+                            const parsedPassing = HarmonyCore.parseRomanNumeral(passingNumeral, GlobalContext.currentTonality, isRelativeMajorProgression);
                             timeline.push({ 
                                 numeral: passingNumeral, root: parsedPassing.root, quality: parsedPassing.quality, 
-                                startBeat: currentBeat + mainBeats, endBeat: currentBeat + currentDuration,
-                                keyOffset: keyOffset + (section.localKeyOffset || 0)
+                                startBeat: currentBeat + mainBeats, endBeat: currentBeat + beatsPerBar,
+                                keyOffset: GlobalContext.currentKeyOffset + (section.localKeyOffset || 0)
                             });
                         }
                     } else {
                         // 常规不发生变异
-                        const parsed = HarmonyCore.parseRomanNumeral(numeral, tonality, isRelativeMajorProgression);
+                        const parsed = HarmonyCore.parseRomanNumeral(numeral, GlobalContext.currentTonality, isRelativeMajorProgression);
                         timeline.push({ 
                             numeral, root: parsed.root, quality: parsed.quality, 
-                            startBeat: currentBeat, endBeat: currentBeat + currentDuration,
-                            keyOffset: keyOffset + (section.localKeyOffset || 0)
+                            startBeat: currentBeat, endBeat: currentBeat + beatsPerBar,
+                            keyOffset: GlobalContext.currentKeyOffset + (section.localKeyOffset || 0)
                         });
                     }
                     
-                    currentBeat += currentDuration;
+                    currentBeat += beatsPerBar;
                 }
             });
             return timeline;

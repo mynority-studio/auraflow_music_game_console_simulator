@@ -56,7 +56,7 @@ export const RnBRhythmCells: RhythmCell[] = [
     { durations: [0.25, 0.75, 1.0], weight: 6, tags: ['syncopated', 'rnb', 'push'] }
 ];
 
-// removed
+import { StyleRegistry } from '../config/styles/StyleRegistry';
 
 export function getRandomRhythmCell(grooveTemplate: RhythmCell[] | undefined, energyLevel: number, isVocal: boolean = false): number[] {
     let cells = grooveTemplate || PopRhythmCells;

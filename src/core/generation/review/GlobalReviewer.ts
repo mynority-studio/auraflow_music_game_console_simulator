@@ -1,6 +1,6 @@
 import { NoteData, GeneratedChord, StyleConfig, Tonality } from '../types';
 import { HarmonyCore } from '../composing/HarmonyCore';
-// S-2: GlobalContext removed — not used in review pipeline
+import { GlobalContext } from '../GlobalContext';
 
 export class GlobalReviewer {
     /**
@@ -94,7 +94,7 @@ export class GlobalReviewer {
             const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
 
             const isLongNote = note.duration >= 1.0;
-            const isStrongBeat = (Math.abs(note.onset % 1) < 1e-6);
+            const isStrongBeat = (note.onset % 1 === 0);
             const nextNote = i < notes.length - 1 ? notes[i + 1] : null;
             // 判断是否为乐句结尾：后面没有音，或者与下一个音的间隔大于等于1拍
             const isPhraseEnd = !nextNote || (nextNote.onset - (note.onset + note.duration) >= 1.0);
@@ -126,23 +126,26 @@ export class GlobalReviewer {
                 continue; // 修复完毕，跳过后续检查
             }
 
-            // 2. 刺耳冲突 (Avoid Note Clash Fix) - Global Minor 9th Ban
-            // 检查小九度 (b9) 冲突：旋律音比某个和弦音高半音
-            let hasClash = false;
-            for (const ct of chordTones) {
-                if ((notePc - (ct % 12) + 12) % 12 === 1) {
-                    hasClash = true;
-                    break;
+            // 2. 刺耳冲突 (Avoid Note Clash Fix)
+            if (isStrongBeat && isLongNote && !isChordTone) {
+                // 检查小九度 (b9) 冲突：旋律音比某个和弦音高半音
+                let hasClash = false;
+                for (const ct of chordTones) {
+                    if ((notePc - (ct % 12) + 12) % 12 === 1) {
+                        hasClash = true;
+                        break;
+                    }
                 }
-            }
 
-            if (hasClash) {
-                console.log(`🔧 [GlobalReviewer] Fixing Avoid Note clash (Minor 9th): Pitch ${note.pitch} over ${activeChord.numeral}`);
-                
-                // 强制把旋律音向下吸附（Snap down）一个半音，或者直到变成安全的顺阶音
-                note.pitch -= 1;
-                if (!safeScalePcs.includes(note.pitch % 12)) {
-                    note.pitch -= 1; 
+                if (hasClash && maxDissonance < 0.6) {
+                    // 评分逻辑：强拍长音的 b9 冲突，MelodyFixScore > ChordFixScore
+                    console.log(`🔧 [GlobalReviewer] Fixing Avoid Note clash: Pitch ${note.pitch} over ${activeChord.numeral}`);
+                    
+                    // 最小改动：向下微移半音或全音，直到变成安全的顺阶音
+                    note.pitch -= 1;
+                    if (!safeScalePcs.includes(note.pitch % 12)) {
+                        note.pitch -= 1; 
+                    }
                 }
             }
         }

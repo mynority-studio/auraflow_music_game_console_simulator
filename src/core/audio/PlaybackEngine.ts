@@ -13,8 +13,7 @@ export type VisualEventListener = (event: VisualEvent) => void;
 
 // removed
 import { StyleId } from '../generation/config/StyleFlags';
-
-import { DefaultStyleConfig } from '../generation/config/StyleFlags';
+import { StyleRegistry, DefaultStyleConfig } from '../generation/config/StyleRegistry';
 
 export class PlaybackEngine {
     private mixer: AudioMixer;
@@ -143,8 +142,8 @@ export class PlaybackEngine {
         }
 
         // 🌟 1. 抽卡聘请总调音师 (Mastering)
-        const styleConfig = song.styleId ? DefaultStyleConfig[song.styleId] : undefined;
-        const selectedProfile = styleConfig?.masteringProfileId || 'Modern_HiFi';
+        const styleConfig = song.styleId !== undefined ? (StyleRegistry[song.styleId as StyleId] || DefaultStyleConfig) : DefaultStyleConfig;
+        const selectedProfile = styleConfig.masteringProfileId || 'Retro_Gadget';
         await this.mixer.applyMasteringProfile(selectedProfile);
 
         // 🌟 2. 获取采样器 (100% Soundfont)

@@ -5,7 +5,7 @@ export class MotifLooper {
     public static loopMotif(
         motif: NoteData[], 
         chord: GeneratedChord, 
-        tonality: Tonality,
+        tonality: Tonality, 
         targetOctave: number = 60,
         role: 'Foreground' | 'Middleground' | 'Background' = 'Middleground'
     ): NoteData[] {

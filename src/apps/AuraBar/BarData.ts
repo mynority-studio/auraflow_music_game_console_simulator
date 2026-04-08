@@ -18,13 +18,13 @@ export const ALL_BARS: BarConfig[] = [
     id: 'jazz-bar',
     name: 'JAZZ CAFE',
     imagePath: '/assets/barImg/JazzBar.png',
-    styleIds: [StyleId.Default, StyleId.DarkSynthPop],
+    styleIds: [StyleId.Default, StyleId.LoFiChill],
   },
   {
     id: 'lounge-bar',
     name: 'LOUNGE BAR',
     imagePath: '/assets/barImg/LoungeBar.png',
-    styleIds: [StyleId.Default, StyleId.DarkSynthPop],
+    styleIds: [StyleId.Default, StyleId.LoFiChill],
   },
   {
     id: 'pop-bar',
@@ -36,7 +36,7 @@ export const ALL_BARS: BarConfig[] = [
     id: 'rap-bar',
     name: 'HIPHOP CLUB',
     imagePath: '/assets/barImg/RapBar.png',
-    styleIds: [StyleId.Default, StyleId.DarkSynthPop],
+    styleIds: [StyleId.Default, StyleId.DarkSynthPop, StyleId.LoFiChill],
   },
   {
     id: 'retro-bar',

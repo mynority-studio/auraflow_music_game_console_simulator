@@ -1,27 +1,7 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { SectionMetadata, StyleConfig, SectionType as SectionTypeEnum } from "../types";
+import { SectionMetadata, StyleConfig } from "../types";
 import { StyleId } from '../config/StyleFlags';
 import { MoodId, MoodRegistry } from "../config/MoodFlags";
-
-/**
- * 从段落名称解析出 SectionType 数值枚举。
- * 注意：检查顺序很重要 — PreChorus 必须在 Chorus 之前，Breakdown 必须在 Break 之前，
- * PreOutro 必须在 Outro 之前，Solo_Bridge 中的 Solo 必须在 Bridge 之前。
- */
-function parseSectionType(name: string): SectionTypeEnum {
-    if (name.includes('Intro')) return SectionTypeEnum.Intro;
-    if (name.includes('PreChorus') || name.includes('Pre-Chorus') || name.includes('Pre_Chorus')) return SectionTypeEnum.PreChorus;
-    if (name.includes('Chorus') || name.includes('Drop')) return SectionTypeEnum.Chorus;
-    if (name.includes('Verse')) return SectionTypeEnum.Verse;
-    if (name.includes('Solo')) return SectionTypeEnum.Solo_Bridge;
-    if (name.includes('Breakdown')) return SectionTypeEnum.Breakdown;
-    if (name.includes('BuildUp') || name.includes('Build')) return SectionTypeEnum.BuildUp;
-    if (name.includes('Bridge')) return SectionTypeEnum.Bridge;
-    if (name.includes('PreOutro')) return SectionTypeEnum.PreOutro;
-    if (name.includes('Outro')) return SectionTypeEnum.Outro;
-    if (name.includes('Break')) return SectionTypeEnum.Break;
-    return SectionTypeEnum.Verse; // fallback
-}
 
 export class StructureEngine {
   public static generateFullSongStructure(timeSignature: [number, number], bpm: number, style: StyleConfig, moodId: MoodId = MoodId.Neutral): SectionMetadata[] {
@@ -32,6 +12,11 @@ export class StructureEngine {
     const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
     const addSection = (name: string, bars: number, rawEnergy: number) => {
+      // 🌟 临时屏蔽所有前奏，方便调试 (Temporarily disable all intros for debugging)
+      if (name.startsWith("Intro")) {
+        return;
+      }
+
       // Apply Mood Energy Cap
       const energy = Math.max(mood.energyCap[0], Math.min(mood.energyCap[1], rawEnergy));
 
@@ -67,12 +52,11 @@ export class StructureEngine {
           }
       }
 
-      sections.push({
-        name,
-        startBeat: currentBeat,
-        endBeat: currentBeat + (bars * beatsPerBar),
+      sections.push({ 
+        name, 
+        startBeat: currentBeat, 
+        endBeat: currentBeat + (bars * beatsPerBar), 
         energyLevel: energy,
-        sectionType: parseSectionType(name),
         type,
         lengthBars: bars,
         phraseTemplate: "", // Deprecated
@@ -115,7 +99,7 @@ export class StructureEngine {
       currentBeat += bars * beatsPerBar;
     };
 
-    const introBars = bpm < 90 ? 4 : 4; // 统一 4 小节前奏，避免过长
+    const introBars = bpm < 90 ? 8 : 4;
     const outroBars = 4; // Lo-Fi / 放松：8 小节，流行/电子：4 小节
 
     const addIntro = (bars: number, baseEnergy: number) => {
@@ -127,104 +111,95 @@ export class StructureEngine {
       }
     };
 
-    // 🌟 动态马尔可夫曲式状态机 (Markov Chain Structure State Machine)
-    // 定义可能的状态
-    type SectionType = 'Intro' | 'Verse' | 'PreChorus' | 'Chorus' | 'Bridge' | 'Break' | 'BuildUp' | 'Drop' | 'Outro';
-    
-    // 状态转移矩阵 (State Transition Matrix)
-    // 格式: { 当前状态: { 下一个状态: 概率权重 } }
-    const transitionMatrix: Record<SectionType, Partial<Record<SectionType, number>>> = {
-        'Intro': { 'Verse': 0.7, 'Chorus': 0.3 }, // 70% 进主歌，30% 副歌前置
-        'Verse': { 'Verse': 0.2, 'PreChorus': 0.5, 'Chorus': 0.3 }, // 主歌后可能接主歌、预副歌或直接副歌
-        'PreChorus': { 'Chorus': 0.8, 'Drop': 0.2 }, // 预副歌绝大部分接副歌，少数接 Drop
-        'Chorus': { 'Verse': 0.4, 'Break': 0.2, 'Bridge': 0.2, 'Chorus': 0.1, 'Outro': 0.1 }, // 副歌后的走向最丰富
-        'Bridge': { 'Chorus': 0.7, 'BuildUp': 0.3 }, // 桥段后通常回副歌推向高潮
-        'Break': { 'Verse': 0.5, 'BuildUp': 0.5 }, // 间奏后回主歌或开始爬升
-        'BuildUp': { 'Drop': 0.9, 'Chorus': 0.1 }, // BuildUp 后几乎总是接 Drop
-        'Drop': { 'Break': 0.4, 'Verse': 0.3, 'Outro': 0.3 }, // Drop 后的能量释放
-        'Outro': {} // 终点状态
-    };
+    // 🌟 修复：结构模板池 (Structure Template Pool)
+    const templates =[
+      // 模板A：标准流行 (循序渐进)
+      () => {
+        addIntro(introBars * 2, 4);
+        addSection("Verse_1", 16, 4);
+        addSection("PreChorus_1", 8, 6);
+        addSection("Chorus_1", 16, 8);
+        addSection("Break", 8, 3);
+        addSection("Verse_2", 16, 5);
+        addSection("PreChorus_2", 8, 7);
+        addSection("Chorus_Main", 16, 9);
+        addSection("Bridge", 8, 7);
+        addSection("Chorus_Epic", 16, 10);
+      },
+      // 模板B：副歌前置 (抓耳开局型)
+      () => {
+        addIntro(8, 6);
+        addSection("Chorus_1", 16, 8); // 开局直接副歌！
+        addSection("Verse_1", 16, 4);
+        addSection("PreChorus_1", 8, 6);
+        addSection("Chorus_Main", 16, 9);
+        addSection("Solo_Bridge", 16, 10);
+        addSection("Chorus_Epic", 16, 10);
+      },
+      // 模板C：短平快电音/舞曲结构
+      () => {
+        addIntro(introBars * 2, 4);
+        addSection("Verse_1", 16, 5);
+        addSection("Verse_2", 16, 6); // 连续主歌堆叠情绪
+        addSection("Chorus_Main", 32, 9); // 超长副歌爽点
+        addSection("Break", 8, 2); // 突然跌落
+        addSection("Chorus_Epic", 16, 10);
+      },
+      // 模板D：连续副歌轰炸，干脆利落结尾
+      () => {
+        addIntro(introBars * 2, 4);
+        addSection("Verse_1", 16, 5);
+        addSection("PreChorus_1", 8, 7);
+        addSection("Chorus_1", 16, 9);
+        addSection("Chorus_Main", 16, 10);
+        addSection("Chorus_Epic", 16, 10); // 连续3个Chorus
+      }
+    ];
 
-    // 针对特定风格调整转移矩阵
-    if (style.global.structureTemplate === 'edm') {
-        transitionMatrix['Intro'] = { 'Verse': 0.5, 'BuildUp': 0.5 };
-        transitionMatrix['Verse'] = { 'BuildUp': 0.8, 'Break': 0.2 };
-        transitionMatrix['Chorus'] = { 'Drop': 1.0 }; // EDM 中 Chorus 往往直接引出 Drop
-        transitionMatrix['Break'] = { 'BuildUp': 1.0 };
-    } else if (style.global.structureTemplate === 'jazz' || style.global.structureTemplate === 'bossa') {
-        transitionMatrix['Chorus'] = { 'Verse': 0.4, 'Bridge': 0.4, 'Outro': 0.2 }; // 爵士更倾向于器乐 Solo (Bridge)
-        transitionMatrix['Bridge'] = { 'Verse': 0.5, 'Chorus': 0.5 };
+    // 🌟 针对特定曲风的专属结构模板
+    if (style.global.structureTemplate === 'bossa') {
+      templates.push(
+        // 模板E：Bossa Nova 专属 (开局即摇摆，无需漫长铺垫)
+        () => {
+          addIntro(8, 5); // 能量直接给到5，鼓组和Bass直接进
+          addSection("Verse_1", 16, 6); // 主歌直接起飞
+          addSection("Chorus_1", 16, 7);
+          addSection("Solo_Bridge", 16, 8); // Bossa 必备的器乐 Solo 段落
+          addSection("Verse_2", 16, 6);
+          addSection("Chorus_Main", 16, 8);
+        }
+      );
+    } else if (style.global.structureTemplate === 'jazz') {
+      templates.push(
+        // 模板F：Chill Jazzy 专属 (持续律动，不追求大起大落)
+        () => {
+          addSection("Intro", 8, 4); // 能量4，带鼓点进场
+          addSection("Verse_1", 16, 5);
+          addSection("Chorus_1", 16, 6);
+          addSection("Verse_2", 16, 5);
+          addSection("Solo_Bridge", 16, 7); // 爵士必备 Solo
+          addSection("Chorus_Main", 16, 6);
+        }
+      );
+    } else if (style.global.structureTemplate === 'edm') {
+      templates.push(
+        // 模板G：Progressive House / EDM 专属 (The Journey)
+        () => {
+          addSection("Intro", 8, 2); // DJ Mix-in: 极简底鼓和踩镲
+          addSection("Verse_1", 16, 4); // 加入Bass和简单琶音
+          addSection("Breakdown", 16, 2); // 灵魂段落：突然抽走鼓点，只留空灵Pad和旋律
+          addSection("BuildUp_1", 16, 7); // 情绪爬升：军鼓滚奏，能量线性递增
+          addSection("Drop_1", 16, 10); // 高潮爆发：所有乐器火力全开，Four-on-the-floor
+          addSection("Breakdown_2", 8, 3); // 再次跌落，给听众喘息
+          addSection("BuildUp_2", 16, 8); // 第二次更猛烈的爬升
+          addSection("Drop_2", 32, 10); // 终极高潮：超长32小节的狂欢
+        }
+      );
     }
 
-    // 辅助函数：根据权重随机选择下一个状态
-    const getNextState = (currentState: SectionType): SectionType => {
-        const transitions = transitionMatrix[currentState];
-        if (!transitions || Object.keys(transitions).length === 0) return 'Outro';
-
-        let totalWeight = 0;
-        for (const weight of Object.values(transitions)) {
-            totalWeight += weight as number;
-        }
-
-        let randomValue = PRNGManager.next() * totalWeight;
-        for (const [nextState, weight] of Object.entries(transitions)) {
-            randomValue -= weight as number;
-            if (randomValue <= 0) {
-                return nextState as SectionType;
-            }
-        }
-        return 'Outro'; // Fallback
-    };
-
-    // 辅助函数：生成段落长度（缩短版，目标 3-4 分钟）
-    const getSectionLength = (type: SectionType): number => {
-        const rand = PRNGManager.next();
-        if (type === 'Intro' || type === 'Outro' || type === 'Break' || type === 'PreChorus') {
-            return rand > 0.7 ? 8 : 4; // 通常 4 小节，偶尔 8
-        } else if (type === 'Chorus' || type === 'Drop') {
-            return rand > 0.7 ? 16 : 8; // 通常 8 小节，偶尔 16
-        } else {
-            return rand > 0.6 ? 16 : 8; // Verse/Bridge: 通常 8，偶尔 16
-        }
-    };
-
-    // 辅助函数：获取段落能量等级
-    const getSectionEnergy = (type: SectionType, occurrence: number): number => {
-        const baseEnergies: Record<SectionType, number> = {
-            'Intro': 3, 'Verse': 4, 'PreChorus': 6, 'Chorus': 8, 
-            'Bridge': 7, 'Break': 3, 'BuildUp': 7, 'Drop': 10, 'Outro': 2
-        };
-        // 随着出现次数增加，能量略微提升 (情绪递进)
-        let energy = baseEnergies[type] + (occurrence * 0.5);
-        return Math.min(10, Math.max(1, Math.round(energy)));
-    };
-
-    // 状态机执行
-    let currentState: SectionType = 'Intro';
-    const sectionCounts: Record<string, number> = {};
-    let totalSections = 0;
-    const MAX_SECTIONS = 7; // 控制歌曲长度（目标 3-4 分钟）
-
-    while (currentState !== 'Outro' && totalSections < MAX_SECTIONS) {
-        sectionCounts[currentState] = (sectionCounts[currentState] || 0) + 1;
-        const occurrence = sectionCounts[currentState];
-        
-        const length = getSectionLength(currentState);
-        const energy = getSectionEnergy(currentState, occurrence);
-        
-        // 构造唯一的段落名称，例如 "Verse_1", "Chorus_Main", "Chorus_Epic"
-        let sectionName = `${currentState}_${occurrence}`;
-        if (currentState === 'Chorus') {
-            if (occurrence === 1) sectionName = "Chorus_1";
-            else if (occurrence === 2) sectionName = "Chorus_Main";
-            else sectionName = "Chorus_Epic";
-        }
-
-        addSection(sectionName, length, energy);
-        
-        currentState = getNextState(currentState);
-        totalSections++;
-    }
+    // 随机抽选一种曲式模板
+    const selectedTemplate = templates[Math.floor(PRNGManager.next() * templates.length)];
+    selectedTemplate();
 
     // 🌟 根据最后一个段落的能量，决定收尾方式 (Hard Stop vs Fade Out)
     const lastSection = sections[sections.length - 1];
@@ -252,106 +227,6 @@ export class StructureEngine {
       sections[sections.length - 1].endingType = 'fade_out';
     }
 
-    // ============================================================
-    // 叙事情绪弧线 (Narrative Mood Arc)
-    // 在段落结构确定后，为特定段落分配 moodOverride，
-    // 让一首歌内部有情绪转折，而非全程同一情绪。
-    // ============================================================
-    this.assignNarrativeMoodArc(sections, moodId);
-
     return sections;
-  }
-
-  /**
-   * 叙事弧线分配器
-   *
-   * 3 套模板（PRNG 选择）+ 对比 mood 自动匹配。
-   * 只修改 section.moodOverride 和 section.energyLevel（按新 mood 重约束）。
-   * 不消耗额外 PRNG 超过 ~5 次。
-   */
-  private static assignNarrativeMoodArc(sections: SectionMetadata[], songMood: MoodId): void {
-    if (sections.length < 3) return; // 太短不需要弧线
-
-    // 对比 mood 映射
-    const contrastMood = (m: MoodId): MoodId => {
-      switch (m) {
-        case MoodId.Melancholic: return PRNGManager.next() > 0.5 ? MoodId.Euphoric : MoodId.Neutral;
-        case MoodId.Energetic:   return PRNGManager.next() > 0.5 ? MoodId.Chill : MoodId.Melancholic;
-        case MoodId.Neutral:     return PRNGManager.next() > 0.5 ? MoodId.Melancholic : MoodId.Euphoric;
-        case MoodId.Chill:       return MoodId.Neutral;
-        case MoodId.Aggressive:  return MoodId.Melancholic;
-        case MoodId.Euphoric:    return PRNGManager.next() > 0.5 ? MoodId.Melancholic : MoodId.Chill;
-        default: return MoodId.Neutral;
-      }
-    };
-
-    // 略升 mood（比全曲 mood 更明亮/激昂一点）
-    const liftMood = (m: MoodId): MoodId => {
-      switch (m) {
-        case MoodId.Melancholic: return MoodId.Neutral;
-        case MoodId.Chill:       return MoodId.Neutral;
-        case MoodId.Neutral:     return MoodId.Euphoric;
-        case MoodId.Energetic:   return MoodId.Euphoric;
-        case MoodId.Aggressive:  return MoodId.Energetic;
-        case MoodId.Euphoric:    return MoodId.Euphoric;
-        default: return m;
-      }
-    };
-
-    const contrast = contrastMood(songMood);
-    const lifted = liftMood(songMood);
-
-    // 选择叙事模板
-    const templateRoll = PRNGManager.next();
-    // 模板 0: 经典弧（Bridge 对比，Chorus 升）
-    // 模板 1: 反转弧（Verse 2 对比，Final Chorus 爆发）
-    // 模板 2: 渐进弧（Intro Chill，逐步升温）
-    const template = templateRoll < 0.4 ? 0 : (templateRoll < 0.75 ? 1 : 2);
-
-    for (let i = 0; i < sections.length; i++) {
-      const sec = sections[i];
-      const name = sec.name.toLowerCase();
-      const isVerse2 = name.includes('verse') && name.includes('2');
-      const isVerse3 = name.includes('verse') && name.includes('3');
-      const isBridge = name.includes('bridge');
-      const isChorus = name.includes('chorus');
-      const isOutro = name.includes('outro');
-      const isIntro = name.includes('intro');
-      const isBreak = name.includes('break');
-      const isEpicChorus = name.includes('epic');
-
-      let override: MoodId | undefined = undefined;
-
-      if (template === 0) {
-        // 经典弧：Bridge 对比，Chorus 略升，Outro Chill
-        if (isBridge || isBreak) override = contrast;
-        else if (isChorus) override = lifted;
-        else if (isOutro) override = MoodId.Chill;
-      } else if (template === 1) {
-        // 反转弧：Verse 2/3 对比（回忆/转折），Epic Chorus 爆发
-        if (isVerse2 || isVerse3) override = contrast;
-        else if (isEpicChorus) override = MoodId.Euphoric;
-        else if (isBridge) override = contrast;
-        else if (isOutro) override = MoodId.Melancholic;
-      } else {
-        // 渐进弧：Intro Chill，逐步升温
-        if (isIntro) override = MoodId.Chill;
-        else if (isBridge) override = contrast;
-        else if (isEpicChorus) override = MoodId.Euphoric;
-        else if (isChorus) override = lifted;
-      }
-
-      if (override !== undefined && override !== songMood) {
-        sec.moodOverride = override;
-        // 按新 mood 的 energyCap 重约束能量
-        const overrideMood = MoodRegistry[override] || MoodRegistry[MoodId.Neutral];
-        sec.energyLevel = Math.max(overrideMood.energyCap[0], Math.min(overrideMood.energyCap[1], sec.energyLevel));
-        // 按新 mood 重算密度
-        if (sec.groove) {
-          const baseDensity = Math.min(1.0, Math.max(0.1, (sec.energyLevel / 10) * 0.8 + 0.2));
-          sec.groove.density = Math.min(1.0, baseDensity * overrideMood.densityMultiplier);
-        }
-      }
-    }
   }
 }

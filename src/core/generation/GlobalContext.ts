@@ -1,4 +1,4 @@
-import { GeneratedChord, SectionMetadata, StyleConfig, Tonality } from './types';
+import { GeneratedChord, SectionMetadata, StyleConfig, Tonality, TonalityName } from './types';
 import { MoodId } from './config/MoodFlags';
 
 class GlobalContextManager {
@@ -31,9 +31,9 @@ class GlobalContextManager {
     }
 
     public isGrooveHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return Math.abs(absoluteBeat % 1) < 1e-6;
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return absoluteBeat % 1 === 0;
         const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar;
+        const loopLength = 2 * beatsPerBar; 
         const localBeat = absoluteBeat % loopLength;
         return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05);
     }
@@ -42,12 +42,12 @@ class GlobalContextManager {
      * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
      */
     public isLayeringHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return Math.abs(absoluteBeat % 1) < 1e-6;
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return absoluteBeat % 1 === 0;
         const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar;
+        const loopLength = 2 * beatsPerBar; 
         const localBeat = absoluteBeat % loopLength;
         // 叠加点：GrooveDNA 中的正拍 (0, 1, 2, 3...)
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit % 1) < 1e-6);
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && hit % 1 === 0);
     }
 
     /**
@@ -59,7 +59,7 @@ class GlobalContextManager {
         const loopLength = 2 * beatsPerBar; 
         const localBeat = absoluteBeat % loopLength;
         // 穿插点：GrooveDNA 中的反拍或切分音
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && Math.abs(hit % 1) >= 1e-6);
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && hit % 1 !== 0);
     }
 
     public getCurrentEnergyLevel(): number { return this.activeSection ? this.activeSection.energyLevel : 5; }

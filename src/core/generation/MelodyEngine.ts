@@ -1,11 +1,10 @@
 import { PRNGManager } from '../utils/PRNG';
 import { GeneratedTrack, StyleConfig, MusicContext } from "./types";
-import { StyleId, DefaultStyleConfig } from "./config/StyleFlags";
-import { StyleRegistry } from "./config/StyleRegistry";
+import { getStyleConfig } from "./config/styles/StyleRegistry";
+import { StyleId } from "./config/StyleFlags";
 import { StructureEngine } from "./composing/StructureEngine";
 import { HarmonyEngine, HarmonyCore } from "./composing/HarmonyCore";
 import { ToplineEngine } from "./composing/ToplineEngine";
-// removed
 import { GlobalContext } from "./GlobalContext";
 import { EnsembleDrafter } from "./arrangement/EnsembleDrafter";
 import { GenerationOptions } from "./types";
@@ -20,7 +19,7 @@ export class MelodyEngine {
     // 自动记录快照
     const startState = PRNGManager.getState();
     
-    const style = StyleRegistry[styleId] || DefaultStyleConfig;
+    const style = getStyleConfig(styleId);
     const {
         userMotifRoot,
         processedUserMotif,
@@ -35,20 +34,8 @@ export class MelodyEngine {
       throw new Error(`Style ${styleId} is missing global config`);
     }
 
-    // 🌟 决定 Mood — 加权选择，偏向中性/温和情绪
-    // Neutral:35%, Chill:20%, Melancholic:15%, Energetic:15%, Aggressive:5%, Euphoric:10%
-    let finalMoodId: MoodId = MoodId.Neutral;
-    if (moodId !== undefined) {
-      finalMoodId = moodId;
-    } else {
-      const moodRoll = PRNGManager.next();
-      if (moodRoll < 0.35)      finalMoodId = MoodId.Neutral;
-      else if (moodRoll < 0.55) finalMoodId = MoodId.Chill;
-      else if (moodRoll < 0.70) finalMoodId = MoodId.Melancholic;
-      else if (moodRoll < 0.85) finalMoodId = MoodId.Energetic;
-      else if (moodRoll < 0.90) finalMoodId = MoodId.Aggressive;
-      else                      finalMoodId = MoodId.Euphoric;
-    }
+    // 🌟 决定 Mood
+    const finalMoodId = moodId !== undefined ? moodId : (PRNGManager.next() > 0.5 ? Math.floor(PRNGManager.next() * 5) + 1 : MoodId.Neutral);
     const mood = MoodRegistry[finalMoodId as MoodId] || MoodRegistry[MoodId.Neutral];
 
     // 🌟 真正的随机 BPM (区间内取值)
@@ -56,7 +43,7 @@ export class MelodyEngine {
     const maxBpm = style.global.bpmRange[1];
     const baseBpm = Math.floor(PRNGManager.next() * (maxBpm - minBpm + 1)) + minBpm;
     let bpm = Math.round(baseBpm * (mood.bpmMultiplier[0] + PRNGManager.next() * (mood.bpmMultiplier[1] - mood.bpmMultiplier[0])));
-    bpm = Math.max(55, Math.min(125, bpm)); // 安全阀：硬上限 125 BPM
+    bpm = Math.max(60, Math.min(190, bpm)); // Clamp to reasonable extremes
 
     // 🌟 真正的随机真实调号与 UI 映射
     // 如果外部传入了 Motif Root，则强制使用该 Root 作为歌曲的 Key
@@ -93,27 +80,29 @@ export class MelodyEngine {
         }
     }
     
-    // S-2: 平台层仍需 GlobalContext，生成管道内部已不依赖
     GlobalContext.initializeNewEra(style, bpm, keyOffset, tonality, timeSig, finalMoodId);
 
     // 1. 生成宏观结构
     const sections = StructureEngine.generateFullSongStructure(timeSig, bpm, style, finalMoodId);
-
+    
     // 2. 生成全曲和声轨道 (带过渡和弦引擎)
-    const chords = HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig, tonality, keyOffset);
+    const chords = HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig);
 
     // 3. 抽卡决定乐器编制与主唱性格
     const instrumentPalette = EnsembleDrafter.draft(style);
+    
+    // Consume PRNG slot for persona selection alignment
+    PRNGManager.next();
 
     const context: MusicContext = {
         keyOffset,
         tonality,
         bpm,
         timeSignature: timeSig,
-        grooveDNA: [], // This will be populated per section, but keeping it here for global context if needed
+        grooveDNA: [],
         moodId: finalMoodId,
         ensemble: instrumentPalette,
-        style
+        style: style
     };
 
     // 4. 生成旋律（此时会将各段落独有的 GrooveDNA 写入 Sections）
@@ -123,11 +112,17 @@ export class MelodyEngine {
     let melody: any[] = [];
 
     if (instrumentPalette.vocalSound) {
-        vocal = ToplineEngine.generateTrackMelody(sections, chords, tonality, toplineMotif, context);
+        vocal = ToplineEngine.generateTrackMelody(
+            sections, chords, style, tonality, null, instrumentPalette.vocalSound, toplineMotif, false, context
+        );
         // Generate a sparser instrumental melody as accompaniment
-        melody = ToplineEngine.generateTrackMelody(sections, chords, tonality, toplineMotif, context);
+        melody = ToplineEngine.generateTrackMelody(
+            sections, chords, style, tonality, null, leadInstrument, undefined, true, context
+        );
     } else {
-        melody = ToplineEngine.generateTrackMelody(sections, chords, tonality, toplineMotif, context);
+        melody = ToplineEngine.generateTrackMelody(
+            sections, chords, style, tonality, null, leadInstrument, toplineMotif, false, context
+        );
     }
 
     // 5. 基于旋律进行重配和弦 (Re-harmonization)

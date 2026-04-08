@@ -24,6 +24,12 @@ export interface RhythmCell {
     tags: string[];      // e.g., 'syncopated', 'straight', 'triplet'
 }
 
+export interface GrooveBankDef {
+    name: string;               // 律动库名称（仅用于调试）
+    cells: RhythmCell[];        // 节奏单元池
+    syncopationWeight: number;  // 该律动库的特征切分率（影响全曲切分倾向）
+}
+
 export interface HarmonyState {
     baseProgression: string[];
     complexityProb: number;
@@ -126,7 +132,7 @@ export interface StyleConfig {
         genreBendingOverrides?: StyleId[]; // 🌟 新增：段落发生风格突变时的备选曲风
         preferJPopProgressions?: boolean; // 🌟 新增：是否偏好 J-Pop 和声进行
     };
-    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; };
+    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; };
     melody: { 
         stepwiseRatio: number; 
         maxJumpInterval: number; 
@@ -176,6 +182,14 @@ export interface StyleConfig {
         allowDrumless?: boolean; // 🌟 新增：是否允许无鼓编制
         allowBassless?: boolean; // 🌟 新增：是否允许无贝斯编制
         grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
+        idiomPreferences?: {
+            counterMelodyStyle?: 'sustained' | 'melodic' | 'rhythmic' | 'arpeggiated';
+            pianoStyle?: 'block-chord' | 'arpeggiated' | 'rhythmic' | 'sparse';
+            drumStyle?: 'steady' | 'syncopated' | 'sparse' | 'high-energy' | 'acoustic-swing';
+            bassStyle?: 'steady' | 'syncopated' | 'melodic' | 'sparse' | 'riff-driven';
+            riffStyle?: 'melodic' | 'rhythmic' | 'arpeggiated' | 'chordal' | 'default';
+            vocalStyle?: 'pop' | 'ballad' | 'neosoul' | 'rnb' | 'gospel' | 'choir';
+        };
         mixingPreferences?: {
             requireSidechain?: boolean;
             melody?: MixingConfig;
@@ -199,6 +213,10 @@ export interface StyleConfig {
     masteringProfileId?: string;
 }
 
+export interface SingerPersonaConfig {
+    id: string; name: string;
+    traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
+}
 
 
 

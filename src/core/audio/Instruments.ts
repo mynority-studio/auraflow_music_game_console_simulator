@@ -196,7 +196,9 @@ export class InstrumentRegistry {
       else configId = "Acoustic_Grand";
     }
 
-    const instanceId = `${configId}_${role}_${trackId}`;
+    // 🌟 同一 InstrumentId 共用 MIDI 通道（小乐队编制原则）
+    // melody + chord 都是 Acoustic_Grand → 同一通道 → 一把钢琴，无音量叠加
+    const instanceId = configId;
 
     if (!this.synths.has(instanceId)) {
       const isDrum = configId.includes("Drum") || configId.includes("Kit");

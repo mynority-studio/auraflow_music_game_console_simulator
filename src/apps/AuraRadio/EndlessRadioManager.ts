@@ -1,6 +1,7 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
-import { StyleId, DefaultStyleConfig } from '../../core/generation/config/StyleFlags';
+import { StyleId } from '../../core/generation/config/StyleFlags';
+import { DefaultStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
@@ -97,6 +98,7 @@ export class EndlessRadioManager {
       // §1.4 step 0: 每次生成前重新播种
       const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
       PRNGManager.setSeed(seed);
+      console.log(`[Radio] New seed: ${seed}`);
 
       const melodyEngine = new MelodyEngine();
       const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop];

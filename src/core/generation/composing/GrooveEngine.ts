@@ -14,19 +14,18 @@ export class GrooveEngine {
         
         // 🌟 核心修复：如果用户提供了 Motif，提取其节奏指纹作为全曲律动基准
         if (userMotif && userMotif.length > 0) {
-            const fingerprint: number[] = [];
+            const fingerprint = new Set<number>();
             userMotif.forEach(n => {
                 const offset = n.onset % loopLength;
                 // 量化到 GRID_STEP
                 const quantized = Math.round(offset / this.GRID_STEP) * this.GRID_STEP;
-                // P-1: dedup via linear scan instead of Set
-                if (fingerprint.indexOf(quantized) === -1) fingerprint.push(quantized);
+                fingerprint.add(quantized);
             });
-
+            
             // 确保强拍有锚点，避免律动散架
-            if (fingerprint.indexOf(0) === -1) fingerprint.push(0);
-
-            let result = fingerprint.sort((a, b) => a - b);
+            fingerprint.add(0);
+            
+            let result = Array.from(fingerprint).sort((a, b) => a - b);
             
             // 根据 density 动态删减音符 (例如在 Verse 中让律动更稀疏)
             if (density < 0.5 && result.length > 2) {
@@ -53,7 +52,7 @@ export class GrooveEngine {
             let baseWeight = 0;
             if (Number.isInteger(stepPos)) {
                 baseWeight = 1.0; // 正拍 (0, 1, 2, 3)
-            } else if (Math.abs(stepPos % 1 - 0.5) < 1e-6) {
+            } else if (stepPos % 1 === 0.5) {
                 baseWeight = 0.6 + syncopationProb * 0.4; // 8分音符反拍 (0.5, 1.5...)
             } else {
                 if (syncopationProb >= 0.7) {
@@ -84,13 +83,7 @@ export class GrooveEngine {
             availableSteps.splice(selectedIdx, 1);
         }
         
-        // P-1: dedup sorted array without Set
-        fingerprint.sort((a, b) => a - b);
-        const dedupedFp: number[] = [];
-        for (let i = 0; i < fingerprint.length; i++) {
-            if (i === 0 || fingerprint[i] !== fingerprint[i - 1]) dedupedFp.push(fingerprint[i]);
-        }
-        return dedupedFp;
+        return Array.from(new Set(fingerprint)).sort((a, b) => a - b);
     }
 
     // ⚖️ 旋律与伴奏的互补对抗 (Inverse Density)
@@ -121,7 +114,7 @@ export class GrooveEngine {
             // 🌟 修复：加上节拍权重，防止在 inverse 时大量选中 16分音符
             if (Number.isInteger(stepPos)) {
                 weight *= 1.0;
-            } else if (Math.abs(stepPos % 1 - 0.5) < 1e-6) {
+            } else if (stepPos % 1 === 0.5) {
                 weight *= 0.8;
             } else {
                 weight *= 0.1; // 极大地压制 16分音符
@@ -148,12 +141,6 @@ export class GrooveEngine {
             availableSteps.splice(selectedIdx, 1);
         }
         
-        // P-1: dedup sorted array without Set
-        inverseFingerprint.sort((a, b) => a - b);
-        const dedupedInverse: number[] = [];
-        for (let i = 0; i < inverseFingerprint.length; i++) {
-            if (i === 0 || inverseFingerprint[i] !== inverseFingerprint[i - 1]) dedupedInverse.push(inverseFingerprint[i]);
-        }
-        return dedupedInverse;
+        return Array.from(new Set(inverseFingerprint)).sort((a, b) => a - b);
     }
 }
