@@ -1,0 +1,56 @@
+name: Self Docker Build Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# 这允许随后排队的工作流运行中断之前的运行
+concurrency:
+  group: '${{ github.workflow }} @ ${{  github.head_ref || github.ref || github.event }}'
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.CLOUD_SSH_HOST }} # 云主机 host
+      SSH_USERNAME: ${{ secrets.CLOUD_SSH_USERNAME }} # 云主机 登录名
+      SSH_PASSWORD: ${{ secrets.CLOUD_SSH_PASSWORD }} # 云主机 密码
+      REPO_OWNER: hsycc # 仓库 owner
+      REPOSITORY_NAME: auraflow_music_game_console_simulator # 镜像名称，同仓库名
+      DEPLOY_WORKDIR: /app/auraflow_music_game_console_simulator # 服务端部署目录
+      DEPLOY_BRANCH: main # 部署分支
+
+    steps:
+      # 登录服务器执行
+      - name: SSH Docker Login and Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: $SSH_HOST
+          username: $SSH_USERNAME
+          password: $SSH_PASSWORD
+          ## 需要传入环境变量 到 shell, 直接输出为空
+          envs: REPO_OWNER,REPOSITORY_NAME,DEPLOY_WORKDIR,DEPLOY_BRANCH
+          command_timeout: '30m'
+          script: |
+            set -e
+
+            if [ ! -d "$DEPLOY_WORKDIR" ]; then
+              echo "clone  git@github.com:${REPO_OWNER}/${REPOSITORY_NAME}.git"
+              cd  /app
+              pwd
+              git clone git@github.com:${REPO_OWNER}/${REPOSITORY_NAME}.git
+            fi
+
+            cd $DEPLOY_WORKDIR
+            git fetch origin $DEPLOY_BRANCH
+            git reset --hard origin/$DEPLOY_BRANCH
+            git clean -fd
+
+            docker compose -f docker-compose.yaml up -d --build

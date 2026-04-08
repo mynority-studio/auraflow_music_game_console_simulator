@@ -1,0 +1,33 @@
+services:
+  app:
+    image: auraflow_music_game_console_simulator:latest
+    container_name: auraflow_music_game_console_simulator
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - docker_network
+    env_file:
+      - .env
+    # ports:
+    #   - "3000:80"
+    expose:
+      - "80"
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.auraflow-simulator.middlewares=base-auth@file'
+      - 'traefik.http.routers.auraflow-simulator.service=auraflow-simulator'
+      - 'traefik.http.routers.auraflow-simulator.rule=Host(`$DOMAIN`)'
+      - 'traefik.http.services.auraflow-simulator.loadbalancer.server.scheme=http'
+      - 'traefik.http.services.auraflow-simulator.loadbalancer.server.port=80'
+      
+networks:
+  docker_network:
+    external: true
