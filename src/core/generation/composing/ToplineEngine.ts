@@ -348,33 +348,46 @@ export class ToplineEngine {
     public static generateFadingEchoOutro(chorusHook: NoteData[], outroStartBeat: number, outroBars: number, beatsPerBar: number): NoteData[] {
         const fragmentedNotes: NoteData[] = [];
         if (chorusHook.length === 0) return fragmentedNotes;
-        
+
         const chorusStartBeat = chorusHook[0].onset;
-        
-        // 1. 只截取 Hook 的前 2 小节（最核心的动机），丢弃后面的复杂发展
-        const coreMotif = chorusHook.filter(note => (note.onset - chorusStartBeat) < (beatsPerBar * 2));
-        
-        // 2. 碎裂化处理 (Fragmentation Loop)
-        let currentVelocity = 70; // 初始偏弱
-        
-        coreMotif.forEach((note, index) => {
+        const outroLengthBeats = outroBars * beatsPerBar;
+
+        // 只截取 Hook 前 2 小节
+        const coreMotif: NoteData[] = [];
+        for (let ni = 0; ni < chorusHook.length; ni++) {
+            if ((chorusHook[ni].onset - chorusStartBeat) < (beatsPerBar * 2)) {
+                coreMotif.push(chorusHook[ni]);
+            }
+        }
+
+        // 🌟 基于音乐重要度的细胞消散
+        // 强拍和弦音高存活率，弱拍经过音低存活率，随时间递减
+        for (let ni = 0; ni < coreMotif.length; ni++) {
+            const note = coreMotif[ni];
             const relativeBeat = note.onset - chorusStartBeat;
-            // 规则 A：随机“遗忘”某些音符（概率随时间递增），保留强拍音符
-            const isOnBeat = relativeBeat % 1.0 === 0; 
-            const forgetProbability = isOnBeat ? 0.1 : 0.6; // 弱拍更容易被“遗忘”
-            
-            if (PRNGManager.next() > forgetProbability) {
+            const progress = relativeBeat / (beatsPerBar * 2); // 0→1
+
+            // epsilon 浮点安全的强拍判断
+            const isOnBeat = Math.abs(relativeBeat - Math.round(relativeBeat)) < 1e-6;
+
+            // 存活概率：强拍高（0.9→0.5），弱拍低（0.4→0.1）
+            const survivalProb = isOnBeat
+                ? 0.9 - progress * 0.4
+                : 0.4 - progress * 0.3;
+
+            if (PRNGManager.next() < survivalProb) {
+                const noteOnset = outroStartBeat + relativeBeat;
+                // 防止超出 Outro 范围
+                if (noteOnset >= outroStartBeat + outroLengthBeats - 1e-6) continue;
+
                 fragmentedNotes.push({
                     pitch: note.pitch,
-                    // 规则 B：时间拉伸（Rubato 错觉），让音符稍微滞后，制造慵懒/留恋感
-                    onset: outroStartBeat + relativeBeat + (PRNGManager.next() * 0.1), 
-                    // 规则 C：时值延长（Fermata），配合更大的 Reverb 显得空灵
-                    duration: note.duration * 1.5, 
-                    // 规则 D：力度线性衰减（越来越轻）
-                    velocity: Math.max(10, currentVelocity - (index * 5))
+                    onset: noteOnset, // 精确网格对齐，不加随机偏移
+                    duration: note.duration * 2.0, // 延长制造空灵感
+                    velocity: Math.max(0.08, 0.4 * (1.0 - progress * 0.7)) // 从 0.4 渐弱到 0.12
                 });
             }
-        });
+        }
 
         return fragmentedNotes;
     }
@@ -760,7 +773,7 @@ export class ToplineEngine {
                 pitch: pitch,
                 onset: secStart,
                 duration: beatsPerBar * 2, // 延音两小节
-                velocity: 1.0 // 强力度
+                velocity: 0.7 // 适中力度（不爆音）
             });
             return { notes: sectionMelody, motifs: new MotifMap(), lastPitch: pitch, unresolvedCount: 0 };
         }

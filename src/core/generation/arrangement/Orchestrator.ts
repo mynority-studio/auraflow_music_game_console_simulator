@@ -751,38 +751,20 @@ export class Orchestrator {
         }
 
         track.sections.forEach(sec => {
-            // 🌟 尾奏处理 (Outro Behavior)
+            // 🌟 尾奏处理 (Outro Behavior) — 简化为 2 种干净策略
             if (sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro) {
                 const outroLength = sec.endBeat - sec.startBeat;
                 const beatsPerBar = track.timeSignature[0];
 
-                // 决定尾奏模式 (Ending Behavior) — 4 种策略
-                // 1. FadeOut:         线性渐弱（流行/R&B）
-                // 2. BigRingOut:      最后一小节重击主和弦延音（摇滚/电子）
-                // 3. StopEnding:      高能量直接切断
-                // 4. TextureCollapse: 乐器逐件退出（鼓→贝斯→和弦→只留旋律消散）
-                let endingBehavior = 'FadeOut';
-                if (sec.energyLevel >= ENERGY.PEAK_MIN) {
-                    endingBehavior = 'StopEnding';
-                } else {
-                    const roll = PRNGManager.next();
-                    if (roll < 0.15) endingBehavior = 'BigRingOut';
-                    else if (roll < 0.35) endingBehavior = 'TextureCollapse';
-                    else endingBehavior = 'FadeOut';
-                }
+                // 50% TextureCollapse（乐器逐件退出）/ 50% FadeOut（全体渐弱）
+                const useCollapse = PRNGManager.next() < 0.5;
 
-                if (endingBehavior === 'TextureCollapse') {
-                    // 🌟 ST-1: 结构塌缩 — 乐器按时序逐件退出
-                    // 将 Outro 分为 4 个 zone（按小节均分），每个 zone 一个乐器退出
-                    // 退出顺序：鼓（最先）→ 贝斯 → 和弦/副旋律 → 只留主旋律消散
+                if (useCollapse) {
+                    // 乐器逐件退出：鼓→贝斯→和弦→只留旋律
                     const outroBars = Math.max(1, outroLength / beatsPerBar);
                     const zoneBars = outroBars / 4;
-                    const drumMuteBeat    = sec.startBeat;                              // 鼓立即退出
-                    const bassMuteBeat    = sec.startBeat + zoneBars * 1 * beatsPerBar; // zone 1 后退出
-                    const chordMuteBeat   = sec.startBeat + zoneBars * 2 * beatsPerBar; // zone 2 后退出
 
-                    // 删除指定 muteBeat 之后的所有音符
-                    const collapseTrack = (notes: NoteData[], muteBeat: number) => {
+                    const muteAfter = (notes: NoteData[], muteBeat: number) => {
                         for (let i = notes.length - 1; i >= 0; i--) {
                             if (notes[i].onset >= muteBeat - 1e-6 && notes[i].onset < sec.endBeat) {
                                 notes.splice(i, 1);
@@ -790,63 +772,27 @@ export class Orchestrator {
                         }
                     };
 
-                    collapseTrack(drumNotes, drumMuteBeat);
-                    collapseTrack(lhNotes, bassMuteBeat);
-                    collapseTrack(rhNotes, chordMuteBeat);
-                    collapseTrack(counterMelodyNotes, chordMuteBeat);
-
-                    // 主旋律保留到最后，但做力度渐弱
-                    const fadeMelody = (notes: NoteData[]) => {
-                        for (let i = 0; i < notes.length; i++) {
-                            if (notes[i].onset >= sec.startBeat && notes[i].onset < sec.endBeat) {
-                                const progress = (notes[i].onset - sec.startBeat) / outroLength;
-                                notes[i].velocity *= (1.0 - progress * 0.7);
-                            }
-                        }
-                    };
-                    fadeMelody(idiomaticMelody);
-                    fadeMelody(idiomaticSecondaryMelody);
-                } else {
-                    // 其他 3 种 ending 共用的 per-note 处理函数
-                    const applyOutroBehavior = (notes: NoteData[], isDrums: boolean = false) => {
-                        for (let i = notes.length - 1; i >= 0; i--) {
-                            const n = notes[i];
-                            if (n.onset >= sec.startBeat && n.onset < sec.endBeat) {
-                                const barsLeft = (sec.endBeat - n.onset) / beatsPerBar;
-                                const beatInBar = n.onset % beatsPerBar;
-                                const isLastBar = barsLeft <= 1;
-
-                                if (endingBehavior === 'StopEnding') {
-                                    if (isLastBar && beatInBar >= 1) {
-                                        notes.splice(i, 1);
-                                    }
-                                } else if (endingBehavior === 'BigRingOut') {
-                                    if (isLastBar) {
-                                        if (beatInBar === 0) {
-                                            n.velocity = Math.min(1.0, n.velocity * 1.5);
-                                            if (!isDrums) {
-                                                n.duration = beatsPerBar;
-                                            }
-                                        } else {
-                                            notes.splice(i, 1);
-                                        }
-                                    }
-                                } else {
-                                    // FadeOut
-                                    const progress = (n.onset - sec.startBeat) / outroLength;
-                                    n.velocity *= (1.0 - progress * 0.9);
-                                }
-                            }
-                        }
-                    };
-
-                    applyOutroBehavior(lhNotes);
-                    applyOutroBehavior(rhNotes);
-                    applyOutroBehavior(counterMelodyNotes);
-                    applyOutroBehavior(idiomaticMelody);
-                    applyOutroBehavior(idiomaticSecondaryMelody);
-                    applyOutroBehavior(drumNotes, true);
+                    muteAfter(drumNotes, sec.startBeat);                                 // 鼓立即退出
+                    muteAfter(lhNotes, sec.startBeat + zoneBars * beatsPerBar);          // 贝斯 zone 1
+                    muteAfter(rhNotes, sec.startBeat + zoneBars * 2 * beatsPerBar);      // 和弦 zone 2
+                    muteAfter(counterMelodyNotes, sec.startBeat + zoneBars * 2 * beatsPerBar);
                 }
+
+                // 全体力度渐弱（两种策略都应用）
+                const fadeAll = (notes: NoteData[]) => {
+                    for (let i = 0; i < notes.length; i++) {
+                        if (notes[i].onset >= sec.startBeat && notes[i].onset < sec.endBeat) {
+                            const progress = (notes[i].onset - sec.startBeat) / outroLength;
+                            notes[i].velocity *= (1.0 - progress * 0.85);
+                        }
+                    }
+                };
+                fadeAll(idiomaticMelody);
+                fadeAll(idiomaticSecondaryMelody);
+                fadeAll(lhNotes);
+                fadeAll(rhNotes);
+                fadeAll(counterMelodyNotes);
+                fadeAll(drumNotes);
             }
         });
 
