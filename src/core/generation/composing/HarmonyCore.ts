@@ -4,7 +4,7 @@ import { MusicTheoryRules, ChordFunction } from './MusicTheoryRules';
 import { GlobalContext } from '../GlobalContext';
 import { sortAndDedupNumbers } from '../utils/Dedup';
 
-import { StyleId } from '../config/StyleFlags';
+
 
 export class HarmonyCore {
     public static parseRomanNumeral(numeral: string, tonality: Tonality = Tonality.Major, isRelativeMajorProgression: boolean = false) { 
@@ -371,6 +371,18 @@ export class HarmonyCore {
             }
         });
 
+        // 🌟 Avoid Note 过滤：大和弦完全四度 + sus4 大三度
+        const quality = chord.quality;
+        const chordRootPc = chord.root % 12;
+        if (quality === 'Major' || quality === 'Major7' || quality === 'Major9' || quality === 'Add9') {
+            const perfectFourth = (chordRootPc + 5) % 12;
+            scalePcs = scalePcs.filter(spc => spc !== perfectFourth);
+        }
+        if (quality === 'Sus4' || quality === 'Dominant7Sus4') {
+            const majorThird = (chordRootPc + 4) % 12;
+            scalePcs = scalePcs.filter(spc => spc !== majorThird);
+        }
+
         return sortAndDedupNumbers([...scalePcs, ...chordTones]);
     }
     public static snapToScale(pitch: number, scalePcs: number[]): number {
@@ -513,31 +525,17 @@ export class HarmonyEngine {
 
     // 🌟 核心算法 2：风格化和弦色彩附加 (Style-Specific Spices)
     private static applyStyleSpices(progression: string[], style: StyleConfig): string[] {
-        const tonality = GlobalContext.currentTonality; // 获取当前调性
+        const tonality = GlobalContext.currentTonality;
+        const extensionProb = style.harmonyRules?.extensionProbability ?? 0.4;
+
         return progression.map((chord, index, arr) => {
-            const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
-            const isJPop = voicingStyle === 'jpop';
-            const isJazz = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
-            const isEDM = voicingStyle === 'edm';
-            
-            // 提取纯净的罗马数字基底
             let base = chord.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '');
-            
-            // 🌟 核心修复：将所有小调属和弦 v 强制转换为大调属和弦 V，以提供更强的导向性
-            if (base === 'v') {
-                base = 'V';
-                chord = chord.replace('v', 'V');
-            }
-            
-            // 🌟 核心修复：正确判断是否为小调和弦。如果原始和弦包含 'm' 且不包含 'maj'，或者是小写罗马数字，则为小调和弦
+            if (base === 'v') { base = 'V'; chord = chord.replace('v', 'V'); }
+
             const isMinor = (chord.includes('m') && !chord.includes('maj')) || base === base.toLowerCase();
-            const isHalfDim = chord.includes('m7b5');
             const isDiminished = chord.includes('dim') || chord.includes('°');
-            const isAug = chord.includes('aug');
-            
             const rand = PRNGManager.next();
 
-            // 🚨 核心修复：严禁在 Minor 调性下将小调主和弦 i 错误地变成大调的 Iadd9
             if (tonality === Tonality.Minor && base === 'i') {
                 if (rand < 0.4) {
                     if (PRNGManager.next() < 0.5) return 'im9';
@@ -547,71 +545,41 @@ export class HarmonyEngine {
                 return 'i';
             }
 
-            // 获取下一个和弦，用于上下文校验
             const nextChord = index + 1 < arr.length ? arr[index + 1].replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '') : null;
 
-            if (isJazz || isJPop) {
-                const spiceProb = isJazz ? 1.0 : 0.8; // Jazz/Neo-Soul 100% 附加色彩，J-Pop 80%
-                if (rand < spiceProb) { // 加上浓郁的色彩音
-                    if (isDiminished) {
-                        // 🚨 核心修复：只有自然音阶的 vii 级或 ii 级可以变成 m7b5，作为 ii-V-I 的前置。
-                        // 其他的经过减和弦（如 #idim, #iidim, #ivdim, #vdim）必须保持 fully diminished (dim7) 才能起导和弦作用！
-                        if (base === 'ii') return base + 'm7b5';
-                        if (base === 'vii' && (nextChord === 'III' || nextChord === 'iii')) return base + 'm7b5';
-                        return base + 'dim7';
-                    }
-                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI' || base === 'bIII')) return rand > 0.5 ? base + 'maj7' : base + 'maj9';
-                    if (!isMinor && base === 'bVII') return rand > 0.5 ? base + '7' : base + '9'; // Backdoor dominant
-                    if (isMinor && (base === 'ii' || base === 'iii' || base === 'vi' || base === 'iv')) return rand > 0.5 ? base + 'm7' : base + 'm9';
-                    
-                    // 🚨 核心修复：不能无脑把 VI 变成 VI7。只有当 VI 后面跟着 ii 时，才允许把它变成 VI7（作为 V/ii）。
-                    if (base === 'VI') {
-                        if (nextChord === 'ii' || nextChord === 'iiø7') {
-                            if (rand < 0.3) return base + 'sus4';
-                            if (rand < 0.6) return base + '7';
-                            return base + '9';
-                        } else {
-                            return tonality === Tonality.Minor ? 'VImaj7' : 'VIm7'; // 根据调性返回自然和弦
-                        }
-                    }
-
-                    // 🚨 核心修复：半减七（m7b5）只能用在 ii 级（小调的 iiø7）或 vii 级（大调的 viiø7，但通常作为 ii/vi 接 III）。
-                    if (base === 'vii') {
-                        if (nextChord === 'III' || nextChord === 'iii') return base + 'm7b5';
-                        return base + 'dim7';
-                    }
-                    if (base === 'ii' && tonality === Tonality.Minor) {
-                        if (nextChord === 'V' || nextChord === 'v') return base + 'm7b5';
-                    }
-
-                    if (base === 'V' || base === 'III' || base === 'II') {
-                        // 属和弦或次属和弦
+            // 通用和弦着色（概率由 extensionProbability 控制）
+            if (rand < extensionProb) {
+                if (isDiminished) {
+                    if (base === 'ii') return base + 'm7b5';
+                    if (base === 'vii' && (nextChord === 'III' || nextChord === 'iii')) return base + 'm7b5';
+                    return base + 'dim7';
+                }
+                if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI' || base === 'bIII')) return rand > 0.5 ? base + 'maj7' : base + 'maj9';
+                if (!isMinor && base === 'bVII') return rand > 0.5 ? base + '7' : base + '9';
+                if (isMinor && (base === 'ii' || base === 'iii' || base === 'vi' || base === 'iv')) return rand > 0.5 ? base + 'm7' : base + 'm9';
+                if (base === 'VI') {
+                    if (nextChord === 'ii' || nextChord === 'iiø7') {
                         if (rand < 0.3) return base + 'sus4';
                         if (rand < 0.6) return base + '7';
-                        return base + '9'; // 增加 9 音
-                    }
-                }
-            } else if (isEDM) {
-                if (rand < 0.6) { 
-                    if (tonality === Tonality.Minor) {
-                        if (base === 'iv' || base === 'v') return PRNGManager.next() > 0.5 ? base + 'm7' : base + 'm9';
-                        if (base === 'VI' || base === 'III' || base === 'VII') return PRNGManager.next() > 0.5 ? base + 'add9' : base + 'maj7';
+                        return base + '9';
                     } else {
-                        if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI')) return base + 'add9';
-                        if (isMinor && (base === 'vi' || base === 'ii' || base === 'iv')) return base + 'm7';
+                        return tonality === Tonality.Minor ? 'VImaj7' : 'VIm7';
                     }
-                    if (base === 'V' || base === 'bVII') return base + 'sus4';
                 }
-            } else {
-                // Standard Pop/Rock
-                if (rand < 0.4) {
-                    if (!isMinor && (base === 'I' || base === 'IV' || base === 'bVI')) return base + 'add9';
-                    if (isMinor && (base === 'vi' || base === 'iv')) return base + 'm7';
-                    if (base === 'V') return 'Vsus4';
+                if (base === 'vii') {
+                    if (nextChord === 'III' || nextChord === 'iii') return base + 'm7b5';
+                    return base + 'dim7';
+                }
+                if (base === 'ii' && tonality === Tonality.Minor) {
+                    if (nextChord === 'V' || nextChord === 'v') return base + 'm7b5';
+                }
+                if (base === 'V' || base === 'III' || base === 'II') {
+                    if (rand < 0.3) return base + 'sus4';
+                    if (rand < 0.6) return base + '7';
+                    return base + '9';
                 }
             }
 
-            // 如果没有附加色彩，返回传入时的和弦
             return chord;
         });
     }
@@ -637,7 +605,8 @@ export class HarmonyEngine {
         // 🌟 方案 A：情感化调式互换 (Emotional Modal Interchange)
         // 在大调中，对于 Bridge 或 Chorus，有一定概率借用同主音小调的和弦，制造“红杏出墙”的色彩突变
         if (GlobalContext.currentTonality === Tonality.Major && (sectionType === 'Bridge' || sectionType === 'Chorus' || sectionType === 'PreChorus')) {
-            const modalInterchangeProb = 0.35; // 35% 概率触发调式互换
+            // 🌟 调式互换概率由 StyleConfig 驱动（Pop 默认 0.35，EDM 可设 0，Jazz 可设 0.5）
+            const modalInterchangeProb = style.harmonyRules?.genreBendingProbability ?? 0.35;
             if (PRNGManager.next() < modalInterchangeProb) {
                 newProgression = newProgression.map(chord => {
                     const base = chord.replace(/maj9|maj7|m7b5|dim7|dim|°|aug|sus4|m9|m7|9|7|b5|add9/g, '');
@@ -667,34 +636,9 @@ export class HarmonyEngine {
         const globalProgressionProbability = style.harmonyRules?.globalProgressionProbability ?? 0.2;
         const isGlobalProgression = PRNGManager.next() < globalProgressionProbability;
 
-        // EDM 神级和弦进行池
-        const edmProgressionPool = [
-            ['vi', 'IV', 'I', 'V'], // 神级经典
-            ['I', 'V', 'vi', 'IV'], // uplifting 标配
-            ['I', 'vi', 'ii', 'IV'], // 柔和空灵
-            ['i', 'v', 'bVI', 'IV'], // 偏暗黑深邃 (使用 bVI 适配小调)
-            ['I', 'IV', 'vi', 'V'], // 极简催眠
-            ['vi', 'ii', 'V', 'I']  // 高级感
-        ];
-
-        // J-Pop/ACG 经典和弦进行池
-        const jpopProgressionPool = [
-            ['IV', 'V', 'iii', 'vi'], // 王道进行 (Royal Road)
-            ['IV', 'V', 'vi', 'I'],   // 常见变体
-            ['vi', 'IV', 'V', 'I'],   // 小调色彩起手 (Tetsuya Komuro)
-            ['ii', 'V', 'I', 'vi'],   // 爵士 2-5-1 变体
-            ['IV', 'iii', 'ii', 'I']  // 下行级进
-        ];
-
+        // 🌟 去风格化：和弦进行池完全由 StyleConfig 驱动，无内置 fallback pool
         if (isGlobalProgression) {
-            let poolToUse = style.harmony.chorusPool;
-            const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
-            const isEDM = voicingStyle === 'edm';
-            const isJPop = voicingStyle === 'jpop';
-            if (isEDM) poolToUse = edmProgressionPool;
-            else if (isJPop) poolToUse = jpopProgressionPool;
-            
-            const masterProgression = this.generateDynamicProgression(poolToUse, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
+            const masterProgression = this.generateDynamicProgression(style.harmony.chorusPool, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
             globalPlan['Chorus'] = masterProgression;
             globalPlan['Verse'] = masterProgression;
             globalPlan['PreChorus'] = masterProgression;
@@ -703,53 +647,20 @@ export class HarmonyEngine {
             globalPlan['Outro'] = masterProgression;
             globalPlan['Intro'] = masterProgression;
         } else {
-            // 为每种段落类型抽取唯一的和弦进行，确保全曲一致性 (例如 Verse 1 和 Verse 2 使用相同的和弦)
-            let chorusPool = style.harmony.chorusPool;
-            let versePool = style.harmony.versePool;
-            let preChorusPool = style.harmony.preChorusPool;
-
-            const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
-            const isEDM = voicingStyle === 'edm';
-            const isJPop = voicingStyle === 'jpop';
-
-            if (isEDM) {
-                chorusPool = edmProgressionPool;
-                versePool = edmProgressionPool;
-                preChorusPool = edmProgressionPool;
-            } else if (isJPop) {
-                chorusPool = jpopProgressionPool;
-                versePool = [['I', 'vi', 'IV', 'V'], ['vi', 'IV', 'I', 'V'], ['I', 'V', 'vi', 'iii']]; // J-Pop Verse 通常比较平稳
-                preChorusPool = [['IV', 'V', 'iii', 'vi'], ['ii', 'V', 'I', 'vi'], ['IV', 'iv', 'I', 'I7']]; // PreChorus 增加张力
-            }
-            
-            globalPlan['Chorus'] = this.generateDynamicProgression(chorusPool, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
-            globalPlan['Verse'] = this.generateDynamicProgression(versePool, ['I', 'vi', 'IV', 'V'], style, 'Verse');
-            globalPlan['PreChorus'] = this.generateDynamicProgression(preChorusPool, ['ii', 'V', 'I', 'vi'], style, 'PreChorus');
+            globalPlan['Chorus'] = this.generateDynamicProgression(style.harmony.chorusPool, ['I', 'V', 'vi', 'IV'], style, 'Chorus');
+            globalPlan['Verse'] = this.generateDynamicProgression(style.harmony.versePool, ['I', 'vi', 'IV', 'V'], style, 'Verse');
+            globalPlan['PreChorus'] = this.generateDynamicProgression(style.harmony.preChorusPool, ['ii', 'V', 'I', 'vi'], style, 'PreChorus');
             globalPlan['Break'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'vi', 'IV', 'I']], ['vi', 'IV', 'I', 'V'], style, 'Break');
             globalPlan['Bridge'] = this.generateDynamicProgression([['vi', 'IV', 'I', 'V'], ['ii', 'V', 'vi', 'IV'], ['IV', 'V', 'iii', 'vi']], ['vi', 'IV', 'I', 'V'], style, 'Bridge');
-            
-            // 🚨 核心修复：Outro 必须根据调性严格收尾，不能无脑 I - I
+
             const tonality = GlobalContext.currentTonality;
-            const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
-            
-            let outroFallback = tonality === Tonality.Minor ? ['i', 'bVI', 'iv', 'i'] : ['I', 'vi', 'IV', 'I'];
-            let outroPool = tonality === Tonality.Minor ? [['i', 'bVI', 'iv', 'i'], ['i', 'iv', 'V', 'i'], ['i', 'i', 'i', 'i'], ['V', 'i']] : [['I', 'vi', 'IV', 'I'], ['I', 'IV', 'V', 'I'], ['I', 'I', 'I', 'I'], ['V', 'I']];
-            
-            if (isJazzOrSoul) {
-                // 🚨 核心修复：Jazz/Neo-Soul 的 Outro 使用固定的下行进行或 ii-V-I 延长
-                outroFallback = tonality === Tonality.Minor ? ['iim7b5', 'V7', 'im9', 'im9'] : ['IIm9', 'V13', 'IMaj9', 'IMaj9'];
-                outroPool = tonality === Tonality.Minor ? [
-                    ['iim7b5', 'V7', 'im9', 'im9'], // ii-V-i in minor
-                    ['ivm9', 'bVII13', 'im9', 'im9'] // Backdoor ii-V-i in minor
-                ] : [
-                    ['IIm9', 'V13', 'IMaj9', 'IMaj9'],
-                    ['IVmaj9', 'ivm9', 'Imaj9', 'Imaj9'] // Minor Plagal Cadence (Very Neo-Soul)
-                ];
-            }
-            
+            const outroFallback = tonality === Tonality.Minor ? ['i', 'bVI', 'iv', 'i'] : ['I', 'vi', 'IV', 'I'];
+            const outroPool = tonality === Tonality.Minor
+                ? [['i', 'bVI', 'iv', 'i'], ['i', 'iv', 'V', 'i'], ['i', 'i', 'i', 'i'], ['V', 'i']]
+                : [['I', 'vi', 'IV', 'I'], ['I', 'IV', 'V', 'I'], ['I', 'I', 'I', 'I'], ['V', 'I']];
             globalPlan['Outro'] = this.generateDynamicProgression(outroPool, outroFallback, style, 'Outro');
-            
-            globalPlan['Intro'] = globalPlan['Verse']; // Intro 通常使用 Verse 的和弦
+
+            globalPlan['Intro'] = globalPlan['Chorus'];
         }
 
         // 2. Generate Timeline
@@ -926,11 +837,9 @@ export class HarmonyEngine {
                         }
                     }
 
-                    const isEDM = style.id === StyleId.Eurodance || style.id === StyleId.Trance || style.id === StyleId.Synthwave;
-
-                    // 如果允许变异，且在句尾或段落尾，有概率插入经过和弦
-                    const passingChordsAllowed = isEDM ? [] : [...(style.harmonyRules?.passingChords ?? ['SecondaryDominant', 'Diminished7'])];
-                    const allowTritoneSub = isEDM ? false : (style.harmonyRules?.allowTritoneSub ?? false);
+                    // 经过和弦完全由 StyleConfig 驱动（EDM 风格配 passingChords: [] 即可禁用）
+                    const passingChordsAllowed = [...(style.harmonyRules?.passingChords ?? ['SecondaryDominant', 'Diminished7'])];
+                    const allowTritoneSub = style.harmonyRules?.allowTritoneSub ?? false;
                     
                     // 🌟 核心优化 7：J-Pop/ACG 专属经过和弦 (#IVm7b5)
                     const isJPop = !!style.harmonyRules?.preferJPopProgressions;

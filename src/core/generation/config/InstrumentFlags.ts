@@ -317,3 +317,90 @@ export function isPadLikeInstrument(id: InstrumentId): boolean {
 export function isDrumInstrument(id: InstrumentId): boolean {
     return InstrumentIdFamily[id] === InstrumentFamily.Drums;
 }
+
+// ============================================================
+// 🌟 声学包络分类 (Acoustic Envelope) — 配器规划系统
+// ============================================================
+export const enum AcousticEnvelope {
+    Plucked   = 0, // 衰减打击类：钢琴/吉他/马林巴
+    Sustained = 1, // 持续呼吸类：弦乐/管乐
+    Pad       = 2, // 合成氛围类：Pad/Choir
+    Bass      = 3, // 低频独占类：贝斯
+}
+
+export interface InstrumentProfile {
+    envelope: AcousticEnvelope;
+    safeRange: [number, number];
+    maxVelocity: number;
+    needsCC11: boolean;
+}
+
+export const InstrumentProfiles: InstrumentProfile[] = [
+    /* 0  Acoustic_Grand    */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 84], maxVelocity: 100, needsCC11: false },
+    /* 1  Electric_Piano_1  */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 79], maxVelocity: 90,  needsCC11: false },
+    /* 2  Electric_Piano_2  */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 79], maxVelocity: 90,  needsCC11: false },
+    /* 3  Warm_EP           */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 79], maxVelocity: 85,  needsCC11: false },
+    /* 4  Lofi_Piano        */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 79], maxVelocity: 80,  needsCC11: false },
+    /* 5  Rock_Organ        */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 84], maxVelocity: 95,  needsCC11: false },
+    /* 6  Violin            */ { envelope: AcousticEnvelope.Sustained, safeRange: [55, 84], maxVelocity: 80, needsCC11: true },
+    /* 7  Cello             */ { envelope: AcousticEnvelope.Sustained, safeRange: [36, 65], maxVelocity: 85, needsCC11: true },
+    /* 8  Contrabass        */ { envelope: AcousticEnvelope.Sustained, safeRange: [28, 55], maxVelocity: 85, needsCC11: true },
+    /* 9  String_Ensemble   */ { envelope: AcousticEnvelope.Pad,       safeRange: [48, 72], maxVelocity: 75, needsCC11: true },
+    /* 10 String_Ensemble_2 */ { envelope: AcousticEnvelope.Pad,       safeRange: [48, 72], maxVelocity: 75, needsCC11: true },
+    /* 11 Tremolo_Strings   */ { envelope: AcousticEnvelope.Sustained, safeRange: [48, 79], maxVelocity: 80, needsCC11: true },
+    /* 12 Pizzicato_Strings */ { envelope: AcousticEnvelope.Plucked,   safeRange: [48, 79], maxVelocity: 95, needsCC11: false },
+    /* 13 Flute             */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 85, needsCC11: true },
+    /* 14 Oboe              */ { envelope: AcousticEnvelope.Sustained, safeRange: [58, 79], maxVelocity: 80, needsCC11: true },
+    /* 15 Clarinet          */ { envelope: AcousticEnvelope.Sustained, safeRange: [50, 79], maxVelocity: 85, needsCC11: true },
+    /* 16 Alto_Sax          */ { envelope: AcousticEnvelope.Sustained, safeRange: [55, 76], maxVelocity: 90, needsCC11: true },
+    /* 17 Tenor_Sax         */ { envelope: AcousticEnvelope.Sustained, safeRange: [44, 72], maxVelocity: 90, needsCC11: true },
+    /* 18 Muted_Trumpet     */ { envelope: AcousticEnvelope.Sustained, safeRange: [52, 79], maxVelocity: 85, needsCC11: true },
+    /* 19 Recorder          */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 80, needsCC11: true },
+    /* 20 Ocarina           */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 80, needsCC11: true },
+    /* 21 Acoustic_Guitar_Nylon */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 76], maxVelocity: 95,  needsCC11: false },
+    /* 22 Acoustic_Guitar_Steel */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 76], maxVelocity: 100, needsCC11: false },
+    /* 23 Acoustic_Guitar_Chord */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 76], maxVelocity: 100, needsCC11: false },
+    /* 24 Clean_Guitar          */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 95,  needsCC11: false },
+    /* 25 Electric_Guitar_Clean */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 100, needsCC11: false },
+    /* 26 Overdriven_Guitar     */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 110, needsCC11: false },
+    /* 27 Distortion_Guitar     */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 115, needsCC11: false },
+    /* 28 Harmonica              */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 79], maxVelocity: 85, needsCC11: true },
+    /* 29 Acoustic_Bass      */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 110, needsCC11: false },
+    /* 30 Electric_Bass_Finger */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 115, needsCC11: false },
+    /* 31 Electric_Bass_Pick */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 115, needsCC11: false },
+    /* 32 Fretless_Bass      */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 100, needsCC11: false },
+    /* 33 Synth_Bass_1       */ { envelope: AcousticEnvelope.Bass, safeRange: [24, 43], maxVelocity: 100, needsCC11: false },
+    /* 34 Synth_Bass_2       */ { envelope: AcousticEnvelope.Bass, safeRange: [24, 43], maxVelocity: 100, needsCC11: false },
+    /* 35 Slap_Bass_1        */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 110, needsCC11: false },
+    /* 36 Lead_1_Square      */ { envelope: AcousticEnvelope.Plucked,   safeRange: [48, 84], maxVelocity: 100, needsCC11: false },
+    /* 37 Lead_2_Sawtooth    */ { envelope: AcousticEnvelope.Plucked,   safeRange: [48, 84], maxVelocity: 100, needsCC11: false },
+    /* 38 Synth_Calliope     */ { envelope: AcousticEnvelope.Sustained, safeRange: [48, 79], maxVelocity: 85,  needsCC11: true },
+    /* 39 Synth_Brass_1      */ { envelope: AcousticEnvelope.Sustained, safeRange: [36, 79], maxVelocity: 90,  needsCC11: false },
+    /* 40 Synth_Lead         */ { envelope: AcousticEnvelope.Plucked,   safeRange: [48, 84], maxVelocity: 100, needsCC11: false },
+    /* 41 Pad_1_NewAge       */ { envelope: AcousticEnvelope.Pad, safeRange: [48, 72], maxVelocity: 70, needsCC11: true },
+    /* 42 Pad_2_Warm         */ { envelope: AcousticEnvelope.Pad, safeRange: [48, 72], maxVelocity: 70, needsCC11: true },
+    /* 43 Pad_3_Polysynth    */ { envelope: AcousticEnvelope.Pad, safeRange: [48, 72], maxVelocity: 75, needsCC11: true },
+    /* 44 Synth_Strings_1    */ { envelope: AcousticEnvelope.Pad, safeRange: [48, 72], maxVelocity: 70, needsCC11: true },
+    /* 45 Choir_Aahs   */ { envelope: AcousticEnvelope.Pad,     safeRange: [48, 72], maxVelocity: 75, needsCC11: true },
+    /* 46 Voice_Oohs   */ { envelope: AcousticEnvelope.Pad,     safeRange: [48, 72], maxVelocity: 70, needsCC11: true },
+    /* 47 Solo_Vox     */ { envelope: AcousticEnvelope.Pad,     safeRange: [48, 72], maxVelocity: 75, needsCC11: true },
+    /* 48 Marimba      */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 76], maxVelocity: 105, needsCC11: false },
+    /* 49 Vibraphone   */ { envelope: AcousticEnvelope.Plucked, safeRange: [60, 84], maxVelocity: 95,  needsCC11: false },
+    /* 50-54 Drums     */ { envelope: AcousticEnvelope.Plucked, safeRange: [35, 81], maxVelocity: 127, needsCC11: false },
+    { envelope: AcousticEnvelope.Plucked, safeRange: [35, 81], maxVelocity: 127, needsCC11: false },
+    { envelope: AcousticEnvelope.Plucked, safeRange: [35, 81], maxVelocity: 127, needsCC11: false },
+    { envelope: AcousticEnvelope.Plucked, safeRange: [35, 81], maxVelocity: 127, needsCC11: false },
+    { envelope: AcousticEnvelope.Plucked, safeRange: [35, 81], maxVelocity: 127, needsCC11: false },
+    /* 55 Reverse_Cymbal  */ { envelope: AcousticEnvelope.Plucked, safeRange: [48, 84], maxVelocity: 100, needsCC11: false },
+    /* 56 Music_Box       */ { envelope: AcousticEnvelope.Plucked, safeRange: [72, 96], maxVelocity: 85,  needsCC11: false },
+    /* 57 Glockenspiel    */ { envelope: AcousticEnvelope.Plucked, safeRange: [72, 96], maxVelocity: 90,  needsCC11: false },
+    /* 58 Orchestral_Harp */ { envelope: AcousticEnvelope.Plucked, safeRange: [36, 84], maxVelocity: 95,  needsCC11: false },
+    /* 59 System_Aura     */ { envelope: AcousticEnvelope.Pad,     safeRange: [48, 72], maxVelocity: 70,  needsCC11: false },
+];
+
+export function getInstrumentIdByName(name: string): InstrumentId {
+    for (let id = 0; id < 60; id++) {
+        if (InstrumentId[id] === name) return id as InstrumentId;
+    }
+    return InstrumentId.Acoustic_Grand;
+}

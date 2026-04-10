@@ -234,8 +234,9 @@ export interface StyleConfig {
         preferJPopProgressions?: boolean; // 🌟 新增：是否偏好 J-Pop 和声进行
         sectionTransitionPassingProb?: number; // 🌟 HC-2：段落交界经过和弦概率（默认 0.45）
         maxBorrowedChords?: number;            // 🌟 HC-5：全曲借调和弦上限（默认 2，作为"高光时刻"不滥用）
+        extensionProbability?: number;         // 和弦扩展着色概率。0.4=Pop, 0.6=EDM, 0.8=JPop, 1.0=Jazz/Neo-Soul
     };
-    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; };
+    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; chordAnticipation?: number; };
     melody: { 
         stepwiseRatio: number; 
         maxJumpInterval: number; 
@@ -266,6 +267,12 @@ export interface StyleConfig {
             body: number[][];
             tail: number[][];
         };
+        // --- 旋律技法插槽 (Vocal Techniques Slot) ---
+        laidBackTimingMax?: number;       // 拖拍最大偏移量（拍）。0=精准，0.12=重度拖拍(R&B)，负值=抢拍(Punk)
+        extensionTargeting?: boolean;     // 靶向延伸音(9/11)。true=R&B/Neo-Soul，false=流行/摇滚
+        melismaProbability?: number;      // 转音瀑布触发概率。0=禁止，0.35=R&B高频
+        sequenceFreezeRhythm?: boolean;   // vary/resolve 变奏时冻结节奏DNA仅做音程模进
+        chordMelodyProbability?: number;  // ChordMelody 织体触发概率。0=不使用，0.7=Lo-fi/Neo-Soul
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
@@ -275,7 +282,7 @@ export interface StyleConfig {
         bassInstruments: string[];
         drumInstruments: string[];
         counterMelodyInstruments: string[];
-        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass' | 'String_Ostinato' | 'Water_Arpeggio'>;
+        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass' | 'String_Ostinato' | 'Water_Arpeggio' | 'ChordMelody'>;
         drumProbability?: number; // 🌟 新增：鼓组出场率，彻底解耦
         counterMelodyProbability?: number; // 副旋律出场率
         fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic'; // 🌟 新增：加花风格

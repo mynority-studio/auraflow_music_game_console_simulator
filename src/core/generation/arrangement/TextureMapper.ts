@@ -26,126 +26,35 @@ export class TextureMapper {
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
   ): NoteData[] {
-    // Bass Range: Ensure final bass root (after keyOffset) is strictly between E1 (28) and Eb2 (39)
-    const keyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (GlobalContext.currentKeyOffset || 0);
-    let finalRoot = (chord.root + keyOffset) % 12;
-    finalRoot += 24; // C1 to B1 (24 to 35)
-    if (finalRoot < 28) finalRoot += 12; // E1 to Eb2 (28 to 39)
-
-    // Calculate the target center relative to C (before keyOffset is added in Orchestrator)
-    const targetCenterForChordTones = finalRoot - keyOffset;
-
-    let nextTargetCenter = 36;
-    if (nextChord) {
-      const nextKeyOffset = nextChord.keyOffset !== undefined ? nextChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
-      let nextFinalRoot = (nextChord.root + nextKeyOffset) % 12;
-      nextFinalRoot += 24;
-      if (nextFinalRoot < 28) nextFinalRoot += 12;
-      nextTargetCenter = nextFinalRoot - nextKeyOffset;
-    }
-
-    const bassTones = HarmonyCore.getChordTones(
-      chord,
-      targetCenterForChordTones,
-    );
+    // 🌟 极简贝斯：只弹根音，跟随和弦节奏
+    const bassTones = HarmonyCore.getChordTones(chord, 36);
     const rootMidi = bassTones[0];
-    const fifthMidi = bassTones.length > 2 ? bassTones[2] : rootMidi + 7;
-
-    const safeScalePcs = HarmonyCore.getSafeScalePitches(
-      chord,
-      GlobalContext.currentTonality
-    );
-
     const chordLen = chord.endBeat - chord.startBeat;
     const notes: NoteData[] = [];
 
-    // Smooth bass line: check if inversion closer to next chord root
-    let targetBassPitch = rootMidi;
-    if (nextChord && PRNGManager.next() < 0.2 && (energyLevel <= ENERGY.LOW_MAX)) {
-      const nextBassTones = HarmonyCore.getChordTones(nextChord, nextTargetCenter);
-      const nextRoot = nextBassTones[0];
-      const thirdMidi = bassTones.length > 1 ? bassTones[1] : rootMidi + 4;
-      const distRoot = Math.abs(rootMidi - nextRoot);
-      const distThird = Math.abs(thirdMidi - nextRoot);
-      const distFifth = Math.abs(fifthMidi - nextRoot);
-
-      if (distThird > 0 && distThird < distRoot && distThird <= 2) {
-        targetBassPitch = thirdMidi;
-      } else if (distFifth > 0 && distFifth < distRoot && distFifth <= 2) {
-        targetBassPitch = fifthMidi;
-      }
-    } else {
-      // consume PRNG to keep sequence aligned regardless of branch
-      PRNGManager.next();
-    }
+    // 消耗 1 次 PRNG 保持序列对齐（原有分支消耗）
+    PRNGManager.next();
 
     if (isSparseSection || energyLevel <= ENERGY.SILENT_MAX) {
-      // Sparse: just root on downbeat, half-note duration
-      notes.push({
-        pitch: targetBassPitch,
-        onset: chord.startBeat,
-        duration: Math.min(chordLen, 2),
-        velocity: 0.7,
-      });
-    } else if (energyLevel <= ENERGY.MEDIUM_MIN) {
-      // Medium: root on beat 1, fifth on beat 3 (or halfway)
-      const halfLen = chordLen / 2;
-      notes.push({
-        pitch: targetBassPitch,
-        onset: chord.startBeat,
-        duration: Math.min(halfLen, 1),
-        velocity: 0.8,
-      });
-      if (chordLen >= 2) {
-        notes.push({
-          pitch: fifthMidi,
-          onset: chord.startBeat + halfLen,
-          duration: Math.min(halfLen, 1),
-          velocity: 0.65,
-        });
-      }
+      // 稀疏段落：半音符根音
+      notes.push({ pitch: rootMidi, onset: chord.startBeat, duration: Math.min(chordLen, 2), velocity: 0.7 });
     } else {
-      // High energy: root-fifth-root(octave)-fifth pattern, quarter notes
-      const step = 1; // quarter note
+      // 正常段落：每拍弹根音（跟随鼓组 groove）
+      const step = energyLevel >= ENERGY.HIGH_MIN ? 1 : 2; // 高能每拍，低能每两拍
       let beat = chord.startBeat;
-      const pattern = [targetBassPitch, fifthMidi, targetBassPitch + 12, fifthMidi];
-      let pi = 0;
       while (beat < chord.endBeat - 1e-6) {
-        const pitch = pattern[pi % pattern.length];
-        // Clamp to bass range
-        const clampedPitch = pitch > 47 ? pitch - 12 : pitch;
         notes.push({
-          pitch: clampedPitch,
+          pitch: rootMidi,
           onset: beat,
           duration: Math.min(step, chord.endBeat - beat),
-          velocity: 0.75 + (pi % 2 === 0 ? 0.1 : 0),
+          velocity: Math.abs(beat % 2) < 1e-6 ? 0.75 : 0.6, // 强拍重、弱拍轻
         });
         beat += step;
-        pi++;
-      }
-    }
-
-    // Approach note to next chord on section end
-    if (isSectionEnd && nextChord && notes.length > 0) {
-      const lastNote = notes[notes.length - 1];
-      const approachBeat = chord.endBeat - 0.5;
-      if (approachBeat > lastNote.onset + lastNote.duration - 1e-6) {
-        const nextBassTones = HarmonyCore.getChordTones(nextChord, nextTargetCenter);
-        const nextRoot = nextBassTones[0];
-        // chromatic approach from below or above
-        const approach = nextRoot - 1;
-        const snapped = HarmonyCore.snapToScale(approach, safeScalePcs);
-        notes.push({
-          pitch: snapped,
-          onset: approachBeat,
-          duration: 0.5,
-          velocity: 0.6,
-        });
       }
     }
 
     const truncated = this.truncateToChordEnd(notes, chord.endBeat);
-    this.clampToRange(truncated, 28, 47); // Bass: E1 ~ B2
+    this.clampToRange(truncated, 28, 43); // Bass: E1 ~ G2
     return this.deduplicateNotes(truncated);
   }
 
@@ -578,9 +487,9 @@ export class TextureMapper {
   ): NoteData[] {
     const notes: NoteData[] = [];
     const chordLen = chord.endBeat - chord.startBeat;
-    const baseVelocity = 0.6;
+    // 🌟 energy 缩放 baseVelocity：各声部力度随 energy 呼吸
+    const baseVelocity = 0.35 + Math.min(energyLevel, 10) * 0.045;
 
-    // Get chord tones centered around C4 (MIDI 60)
     let voicing: number[];
     if (prevVoicing && prevVoicing.length > 0) {
       voicing = HarmonyCore.getSmoothVoicing(chord, prevVoicing, 60);
@@ -588,8 +497,14 @@ export class TextureMapper {
       voicing = HarmonyCore.getChordTones(chord, 60);
     }
 
-    // Ensure all chord tones are >= C3 (48) to avoid clashing with bass
     voicing = voicing.map(p => p < 48 ? p + 12 : p);
+
+    // 🌟 Pad 和弦降维：复杂和弦（4+ 音）只保留根音+三音+七音
+    if ((textureType === 'Pad' || isSparseSection) && voicing.length >= 4) {
+      const simplified: number[] = [voicing[0], voicing[1]];
+      if (voicing.length > 3) simplified.push(voicing[3]);
+      voicing = simplified;
+    }
 
     if (textureType === 'Pad' || isSparseSection) {
       // Pad: long sustained chord

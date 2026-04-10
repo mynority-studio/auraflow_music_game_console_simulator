@@ -10,6 +10,7 @@ import { MotifLooper } from './MotifLooper';
 import { GlobalReviewer } from '../review/GlobalReviewer';
 import { getStyleConfig } from '../config/styles/StyleRegistry';
 import { ENERGY } from '../config/EnergyThresholds';
+import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../config/InstrumentFlags';
 import { sortAndDedupNumbers } from '../utils/Dedup';
 
 // 兜底默认混音参数（当 StyleConfig.orchestration.mixingPreferences 字段缺失时使用）
@@ -648,6 +649,17 @@ export class Orchestrator {
             }
         });
 
+        // 🌟 和弦切分抢拍 — 由 StyleConfig.rhythm.chordAnticipation 驱动
+        const chordAnticipation = style.rhythm?.chordAnticipation ?? 0;
+        if (chordAnticipation > 1e-6 && rhNotes.length > 0) {
+            const firstOnset = rhNotes[0].onset;
+            for (let ni = 0; ni < rhNotes.length; ni++) {
+                if (Math.abs(rhNotes[ni].onset - firstOnset) > 1e-6) {
+                    rhNotes[ni].onset = Math.max(0, rhNotes[ni].onset - chordAnticipation);
+                }
+            }
+        }
+
         if (hasDrums) {
             let hasFullGrooveStarted = false;
             track.sections.forEach((sec, index) => {
@@ -713,6 +725,27 @@ export class Orchestrator {
             for (let i = 0; i < lhNotes.length; i++) {
                 if (lhNotes[i].onset >= introSection.startBeat - 1e-6 && lhNotes[i].onset < introSection.endBeat - 1e-6) {
                     lhNotes[i].pitch = pedalPitch;
+                }
+            }
+        }
+
+        // Rule 3.2: Bass-Kick 强拍对齐——贝斯高力度音吸附到最近 kick onset（±0.1 拍容差）
+        const KICK_PITCH = 36;
+        if (drumNotes.length > 0 && lhNotes.length > 0) {
+            const kickOnsets: number[] = [];
+            for (let di = 0; di < drumNotes.length; di++) {
+                if (drumNotes[di].pitch === KICK_PITCH) kickOnsets.push(drumNotes[di].onset);
+            }
+            if (kickOnsets.length > 0) {
+                for (let bi = 0; bi < lhNotes.length; bi++) {
+                    if (lhNotes[bi].velocity >= 0.7) {
+                        let nearestDist = 999, nearestKick = lhNotes[bi].onset;
+                        for (let ki = 0; ki < kickOnsets.length; ki++) {
+                            const d = Math.abs(kickOnsets[ki] - lhNotes[bi].onset);
+                            if (d < nearestDist) { nearestDist = d; nearestKick = kickOnsets[ki]; }
+                        }
+                        if (nearestDist <= 0.1 && nearestDist > 1e-6) lhNotes[bi].onset = nearestKick;
+                    }
                 }
             }
         }
@@ -948,6 +981,121 @@ export class Orchestrator {
         // console.log(`[Orchestrator] 🎹 Chords:`, track.chords);
         // console.log(`[Orchestrator] 🎼 Melody Notes:`, track.melody);
                 // --- END LOGGING ---
+
+        // ============================================================
+        // 🌟 乐器物理约束后处理 (Instrument Idiom Post-Processing)
+        // ============================================================
+
+        // --- Sustained 乐器 Idiom：短音过滤 + 单声部 + 精确衔接 + 力度平滑 ---
+        const applySustainedIdiom = (notes: NoteData[], sound: string | null | undefined) => {
+            if (!sound || notes.length === 0) return;
+            const profile = InstrumentProfiles[getInstrumentIdByName(sound)];
+            const velCap = profile.maxVelocity / 127;
+            for (let ni = 0; ni < notes.length; ni++) {
+                if (notes[ni].velocity > velCap) notes[ni].velocity = velCap;
+            }
+            if (profile.envelope !== AcousticEnvelope.Sustained) return;
+            // 过滤短音
+            for (let ni = notes.length - 1; ni >= 0; ni--) {
+                if (notes[ni].duration < 0.5) notes.splice(ni, 1);
+            }
+            // 单声部强制
+            notes.sort((a, b) => Math.abs(a.onset - b.onset) < 0.01 ? b.pitch - a.pitch : a.onset - b.onset);
+            for (let ni = notes.length - 1; ni >= 1; ni--) {
+                if (Math.abs(notes[ni].onset - notes[ni - 1].onset) < 0.01) notes.splice(ni, 1);
+            }
+            // 精确衔接（0.02 拍间隙）
+            for (let ni = 0; ni < notes.length - 1; ni++) {
+                const idealEnd = notes[ni + 1].onset - 0.02;
+                if (notes[ni].onset + notes[ni].duration > idealEnd) {
+                    notes[ni].duration = Math.max(0.1, idealEnd - notes[ni].onset);
+                }
+            }
+            // 力度平滑
+            for (let ni = 1; ni < notes.length; ni++) {
+                const maxDiff = Math.abs(notes[ni].pitch - notes[ni - 1].pitch) >= 7 ? 0.024 : 0.05;
+                const diff = notes[ni].velocity - notes[ni - 1].velocity;
+                if (Math.abs(diff) > maxDiff) {
+                    notes[ni].velocity = notes[ni - 1].velocity + (diff > 0 ? maxDiff : -maxDiff);
+                }
+            }
+        };
+        applySustainedIdiom(counterMelodyNotes, palette.counterMelodySound);
+        applySustainedIdiom(humanizedMelody, palette.melodySound);
+        if (humanizedSecondaryMelody) applySustainedIdiom(humanizedSecondaryMelody, palette.secondaryMelodySound);
+
+        // --- Plucked 乐器 Idiom：和弦滚奏 + 智能踏板 + 旋律避让力度 ---
+        const applyPluckedIdiom = (notes: NoteData[], sound: string | null | undefined, melodyRef: NoteData[]) => {
+            if (!sound || notes.length === 0) return;
+            const profile = InstrumentProfiles[getInstrumentIdByName(sound)];
+            if (profile.envelope !== AcousticEnvelope.Plucked) return;
+            const velCap = profile.maxVelocity / 127;
+            // 和弦滚奏
+            notes.sort((a, b) => Math.abs(a.onset - b.onset) < 0.01 ? a.pitch - b.pitch : a.onset - b.onset);
+            let groupStart = 0;
+            for (let ni = 0; ni <= notes.length; ni++) {
+                const isNew = ni === notes.length || Math.abs(notes[ni].onset - notes[groupStart].onset) > 0.01;
+                if (isNew && ni - groupStart >= 2) {
+                    const roll = 0.015 + PRNGManager.next() * 0.015;
+                    for (let gi = groupStart; gi < ni; gi++) notes[gi].onset += (gi - groupStart) * roll;
+                }
+                if (ni < notes.length && isNew) groupStart = ni;
+            }
+            // 力度限制 + 旋律避让
+            for (let ni = 0; ni < notes.length; ni++) {
+                if (notes[ni].velocity > velCap) notes[ni].velocity = velCap;
+                let melDensity = 0;
+                for (let mi = 0; mi < melodyRef.length; mi++) {
+                    if (melodyRef[mi].onset >= notes[ni].onset - 0.5 && melodyRef[mi].onset < notes[ni].onset + 1.0) melDensity++;
+                }
+                if (melDensity >= 2) notes[ni].velocity *= 0.7;
+            }
+        };
+        applyPluckedIdiom(rhNotes, palette.chordSound, humanizedMelody);
+
+        // --- Intro/Outro secondary 压制 ---
+        if (humanizedSecondaryMelody && humanizedSecondaryMelody.length > 0) {
+            for (let si = 0; si < track.sections.length; si++) {
+                const sec = track.sections[si];
+                if (sec.sectionType === SectionType.Intro || sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro) {
+                    for (let ni = humanizedSecondaryMelody.length - 1; ni >= 0; ni--) {
+                        if (humanizedSecondaryMelody[ni].onset >= sec.startBeat - 1e-6 && humanizedSecondaryMelody[ni].onset < sec.endBeat - 1e-6) {
+                            humanizedSecondaryMelody.splice(ni, 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Rule 4.1: 并发声部密度限制器——超过 MAX_CONCURRENT 时削掉低优先级声部的短音
+        const MAX_CONCURRENT = 8;
+        if (track.sections.length > 0) {
+            const songEnd = track.sections[track.sections.length - 1].endBeat;
+            const lowPri: NoteData[][] = [];
+            if (humanizedSecondaryMelody) lowPri.push(humanizedSecondaryMelody);
+            if (humanizedCounterMelody.length > 0) lowPri.push(humanizedCounterMelody);
+            for (let beat = 0; beat < songEnd; beat += 0.5) {
+                const beatEnd = beat + 0.5;
+                let total = 0;
+                const all = [humanizedMelody, humanizedLH, rhNotes, humanizedDrums, humanizedCounterMelody];
+                if (humanizedSecondaryMelody) all.push(humanizedSecondaryMelody);
+                if (humanizedVocal) all.push(humanizedVocal);
+                for (let ti = 0; ti < all.length; ti++) {
+                    for (let ni = 0; ni < all[ti].length; ni++) {
+                        if (all[ti][ni].onset < beatEnd && all[ti][ni].onset + all[ti][ni].duration > beat) total++;
+                    }
+                }
+                if (total > MAX_CONCURRENT) {
+                    for (let ti = 0; ti < lowPri.length && total > MAX_CONCURRENT; ti++) {
+                        for (let ni = lowPri[ti].length - 1; ni >= 0 && total > MAX_CONCURRENT; ni--) {
+                            if (lowPri[ti][ni].onset >= beat && lowPri[ti][ni].onset < beatEnd && lowPri[ti][ni].duration < 0.5) {
+                                lowPri[ti].splice(ni, 1); total--;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // 🌟 ST-3: Filter Build-up 决策
         // 25% 概率让 Intro 启用低通涌动（CC74 从闷到亮），但不适用于鼓 Solo Intro

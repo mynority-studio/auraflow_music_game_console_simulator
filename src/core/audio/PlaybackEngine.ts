@@ -12,9 +12,10 @@ import { PRNGManager } from '../utils/PRNG';
 export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
 export type VisualEventListener = (event: VisualEvent) => void;
 
-// removed
 import { StyleId } from '../generation/config/StyleFlags';
 import { StyleRegistry, DefaultStyleConfig } from '../generation/config/StyleRegistry';
+import { getStyleConfig } from '../generation/config/styles/StyleRegistry';
+import { InstrumentProfiles, getInstrumentIdByName } from '../generation/config/InstrumentFlags';
 
 export class PlaybackEngine {
     private mixer: AudioMixer;
@@ -63,9 +64,8 @@ export class PlaybackEngine {
         // --- 打印歌曲元数据 ---
         console.log("========================================");
         console.log("🎵 歌曲生成完毕，开始播放 🎵");
-        // 从 StyleIdName 查风格名（延迟导入避免循环依赖）
-        const styleNames: Record<number, string> = { 0: 'Default', 1: 'Dark Synth Pop' };
-        console.log(`Style: ${styleNames[song.styleId as number] || `Unknown(${song.styleId})`}`);
+        const actualStyle = getStyleConfig(song.styleId as any);
+        console.log(`Style: ${actualStyle.name} (ID: ${song.styleId})`);
         console.log(`BPM: ${song.bpm}`);
         console.log(`Key: ${song.key}`);
         console.log(`Time Signature: ${song.timeSignature ? song.timeSignature.join('/') : '4/4'}`);
@@ -223,8 +223,24 @@ export class PlaybackEngine {
                     data1: activeSynth.program || 0,
                     data2: 0
                 });
+
+                // 🌟 CC74 亮度控制：高频刺耳乐器降低 Brightness（免费 LPF）
+                // GM Program: 40=Violin, 48=StringEnsemble, 56=Trumpet, 61=Brass, 71=Clarinet, 73=Flute
+                const prog = activeSynth.program || 0;
+                const isHarshTimbre = prog === 40 || prog === 48 || prog === 49 || prog === 56 || prog === 61 || prog === 71 || prog === 73;
+                allEvents.push({
+                    ticks: 0,
+                    type: 'cc',
+                    channel: activeSynth.channel,
+                    data1: 74, // Brightness / Filter Cutoff
+                    data2: isHarshTimbre ? 50 : 64 // 刺耳音色压低到 50，其他保持默认 64
+                });
             }
         };
+
+        // 全局调性移调偏移量（生成管道在 C 大调相对空间工作）
+        const transposeOffset = (song.chords && song.chords.length > 0 && song.chords[0].keyOffset !== undefined)
+            ? song.chords[0].keyOffset : 0;
 
         const addPartEvents = (notes: any[], synth: any, eventType: VisualEvent['type']) => {
             if (!notes) return;
@@ -243,8 +259,21 @@ export class PlaybackEngine {
                 }
 
                 const activeSynth = typeof synth === 'function' ? synth(onset) : synth;
-                let channel = activeSynth.channel; // Assuming SpessaSynthWrapper exposes channel
+                let channel = activeSynth.channel;
+                // 全局调性移调 + 声部专属八度折叠
                 let pitch = n.pitch;
+                if (eventType !== 'drums' && transposeOffset !== 0) {
+                    pitch += transposeOffset;
+                    if (eventType === 'pianoLH') {
+                        // 贝斯专属：折叠到 E1(28) ~ G2(43)，保持低频地基
+                        while (pitch > 43) pitch -= 12;
+                        while (pitch < 28) pitch += 12;
+                    } else {
+                        // 其他声部：折叠到 C2(36) ~ C6(84)
+                        while (pitch > 84) pitch -= 12;
+                        while (pitch < 36) pitch += 12;
+                    }
+                }
                 
                 if (pitch !== undefined && !isNaN(pitch)) {
                     const startTick = globalMidiScheduler.beatsToTicks(onset + countInBeats);
@@ -307,24 +336,32 @@ export class PlaybackEngine {
                 const energyLevel = sec.energyLevel || 4; // 1-8
                 const spread = (energyLevel - 1) / 7.0;
 
-                const applyCC = (synthFn: any, mixConfig: any, energyLevel: number) => {
+                const applyCC = (synthFn: any, mixConfig: any, energyLevel: number, isDrums: boolean = false) => {
                     if (!synthFn || !mixConfig) return;
                     const channel = synthFn(sec.startBeat).channel;
-                    
-                    // Base values from mixConfig
+
                     const basePan = mixConfig.pan !== undefined ? Math.max(0, Math.min(127, Math.round((mixConfig.pan + 1) * 63.5))) : 64;
                     const baseReverb = mixConfig.reverb !== undefined ? Math.max(0, Math.min(127, Math.round(mixConfig.reverb * 127))) : 0;
-                    const baseVol = mixConfig.volume !== undefined ? Math.max(0, Math.min(127, Math.round(80 * Math.pow(10, mixConfig.volume / 20)))) : 100;
-                    
-                    // Dynamic spread based on energy
-                    const pan = Math.round(64 + (basePan - 64) * spread);
-                    const reverb = Math.min(127, Math.round(baseReverb * (0.5 + 0.5 * spread))); // Reverb increases with energy
-                    const vol = Math.min(127, Math.round(baseVol * (0.8 + 0.2 * spread))); // Volume slightly increases with energy
+                    const baseVol = mixConfig.volume !== undefined ? Math.max(0, Math.min(115, Math.round(80 * Math.pow(10, mixConfig.volume / 20)))) : 80;
 
-                    allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 7, data2: vol });
+                    const pan = Math.round(64 + (basePan - 64) * spread);
+                    const reverb = Math.min(127, Math.round(baseReverb * (0.5 + 0.5 * spread)));
+                    const vol = Math.min(115, Math.round(baseVol * (0.8 + 0.2 * spread)));
+
+                    // 🌟 CC7 渐入曲线：非鼓组段落开头 1 拍从 60%→100% 渐变
+                    if (!isDrums && index > 0) {
+                        for (let step = 0; step < 4; step++) {
+                            const progress = (step + 1) / 4;
+                            const fadeVol = Math.round(vol * (0.6 + 0.4 * progress));
+                            allEvents.push({ ticks: startTick + Math.round(step * globalMidiScheduler.beatsToTicks(0.25)), type: 'cc', channel, data1: 7, data2: fadeVol });
+                        }
+                    } else {
+                        allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 7, data2: vol });
+                    }
+
                     allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 10, data2: pan });
                     allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 91, data2: reverb });
-                    
+
                     if (mixConfig.chorus !== undefined) {
                         allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 93, data2: mixConfig.chorus });
                     }
@@ -332,7 +369,7 @@ export class PlaybackEngine {
 
                 applyCC(vocalSynthFn, mixing.vocal, energyLevel);
                 applyCC(melodySynthFn, mixing.melody, energyLevel);
-                applyCC(drumSynthFn, mixing.drums, energyLevel);
+                applyCC(drumSynthFn, mixing.drums, energyLevel, true);
                 applyCC(bassSynthFn, mixing.bass, energyLevel);
                 applyCC(chordSynthFn, mixing.chord, energyLevel);
 
@@ -368,6 +405,36 @@ export class PlaybackEngine {
         }
         if (song.drums) {
             addPartEvents(song.drums, drumSynthFn, 'drums');
+        }
+
+        // 🌟 CC11 表情呼吸曲线：Sustained/Pad 乐器的背景长音自动生成呼吸包络
+        // 仅对 counterMelody 和 secondaryMelody 应用（主旋律不加，避免"断气"）
+        const addCC11Swell = (partNotes: any[] | undefined, synthFn: any, instrumentName: string | null | undefined) => {
+            if (!partNotes || !synthFn || !instrumentName) return;
+            const instId = getInstrumentIdByName(instrumentName);
+            const profile = InstrumentProfiles[instId];
+            if (!profile.needsCC11) return;
+            const activeSynth = typeof synthFn === 'function' ? synthFn(0) : synthFn;
+            const channel = activeSynth.channel;
+            for (let ni = 0; ni < partNotes.length; ni++) {
+                const note = partNotes[ni];
+                if (note.duration >= 1.0) {
+                    const startTick = globalMidiScheduler.beatsToTicks(note.onset + countInBeats);
+                    const endTick = globalMidiScheduler.beatsToTicks(note.onset + note.duration + countInBeats);
+                    const midTick = Math.round(startTick + (endTick - startTick) * 0.4);
+                    allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: 40 });
+                    allEvents.push({ ticks: midTick, type: 'cc', channel, data1: 11, data2: 90 });
+                    allEvents.push({ ticks: Math.max(startTick + 1, endTick - 120), type: 'cc', channel, data1: 11, data2: 30 });
+                }
+            }
+        };
+        if (song.counterMelody && song.palette?.counterMelodySound) {
+            const cmSynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
+            addCC11Swell(song.counterMelody, () => cmSynth, song.palette.counterMelodySound);
+        }
+        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
+            const secSynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
+            addCC11Swell(song.secondaryMelody, () => secSynth, song.palette.secondaryMelodySound);
         }
 
         // 🌟 提案三：标志性结尾 (Jazz/R&B Signature Ending - CC64 Sustain)

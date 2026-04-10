@@ -5,6 +5,7 @@ import { GrooveEngine } from './GrooveEngine';
 import { GlobalContext } from '../GlobalContext';
 import { ENERGY } from '../config/EnergyThresholds';
 import { isOnDownbeat, isOnGrid } from '../utils/BeatMath';
+import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../config/InstrumentFlags';
 
 type Contour = 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
 type PhraseForm = string[]; // e.g., ['A', 'A', 'B', 'A']
@@ -700,7 +701,16 @@ export class ToplineEngine {
         const isVocal = instrumentName.includes('Voice') || instrumentName.includes('Choir') || instrumentName.includes('Vocal') || instrumentName.includes('Synth_Voice') || instrumentName.includes('Marimba');
         const isInstrumental = !isVocal;
         const isLead = !isSecondary;
-        let isSolo = false; 
+        let isSolo = false;
+
+        // 🌟 乐器包络感知：Sustained 乐器（管乐/弦乐）旋律偏好长音、低密度
+        // 避免生成"钢琴式"的密集短音给管乐演奏
+        let instrumentDensityMult = 1.0;
+        const instId = getInstrumentIdByName(instrumentName);
+        const instEnvelope = InstrumentProfiles[instId]?.envelope;
+        if (instEnvelope === AcousticEnvelope.Sustained) {
+            instrumentDensityMult = 0.6; // 管乐/弦乐降低 40% 密度
+        }
         
         let isIntro = false;
         let isOutro = false;
@@ -902,7 +912,11 @@ export class ToplineEngine {
                 let isInv = false, isRet = false, isAug = false, isSwitcheroo = false;
                 let isSplit = false, isMerge = false, isShift = false, isSeq = false;
                 if (slot.role === 'vary' || slot.role === 'resolve') {
-                    const variations = ['_prime', '_seq', '_inv', '_switch', '_split', '_merge', '_shift'];
+                    // 🌟 sequenceFreezeRhythm: 冻结节奏DNA，只允许音程模进
+                    const freezeRhythm = style?.melody?.sequenceFreezeRhythm ?? false;
+                    const variations = freezeRhythm
+                        ? ['_prime', '_seq', '_prime', '_seq']
+                        : ['_prime', '_seq', '_inv', '_switch', '_split', '_merge', '_shift'];
                     const pick = variations[Math.floor(PRNGManager.next() * variations.length)];
                     if (pick === '_seq') isSeq = true;
                     else if (pick === '_inv') isInv = true;
@@ -919,7 +933,7 @@ export class ToplineEngine {
                 // ─── 创建 motif（若 baseLabel 首次出现）─────
                 if (!motifs.has(baseLabel)) {
                     const densityMultiplier = isSolo ? 1.8 : (isInstrumental && isLead ? 1.2 : 1.0);
-                    const avgNotesPerBeat = densityMultiplier * sectionDensity;
+                    const avgNotesPerBeat = densityMultiplier * sectionDensity * instrumentDensityMult;
                     let minNotes = Math.max(isOutro ? 1 : 3, Math.floor(slotLengthBeats * avgNotesPerBeat * 0.6));
                     let maxNotes = Math.max(minNotes + 1, Math.floor(slotLengthBeats * avgNotesPerBeat * 1.5));
 
@@ -1373,7 +1387,13 @@ export class ToplineEngine {
             const chordTones = HarmonyCore.getChordTones(activeChord, targetCenter);
             let safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
 
-            // 🌟 法则四：五声音阶的“留白”艺术 (The Pentatonic Gap)
+            // 🌟 和弦边界前瞻：检测是否临近和弦切换点（≤1 拍）
+            const nextChordIdx = chords.indexOf(activeChord) + 1;
+            const nextChordLookahead = nextChordIdx < chords.length ? chords[nextChordIdx] : null;
+            const beatsToChordEnd = activeChord.endBeat - onset;
+            const isNearChordBoundary = nextChordLookahead !== null && beatsToChordEnd <= 1.0 && beatsToChordEnd > 1e-6;
+
+            // 🌟 法则四：五声音阶的”留白”艺术 (The Pentatonic Gap)
             // 强制跳过音阶中的 4 音和 7 音（大调），直接跳到下一个五声音阶内的音
             const pentatonicGapProb = melodyRules.pentatonicGapProbability ?? 0.3;
             if (PRNGManager.next() < pentatonicGapProb) {
@@ -1578,10 +1598,21 @@ export class ToplineEngine {
                 // 现代流行偏爱三音和七音
                 let preferredChordTones = [...chordTones];
                 if (PRNGManager.next() > 0.3 && chordTones.length >= 2) {
-                    // 提升三音和七音的权重，降低根音的权重
                     preferredChordTones = [chordTones[1]];
                     if (chordTones.length > 3) preferredChordTones.push(chordTones[3]);
-                    if (PRNGManager.next() > 0.5 && chordTones[2] !== undefined) preferredChordTones.push(chordTones[2]); // 五音
+                    if (PRNGManager.next() > 0.5 && chordTones[2] !== undefined) preferredChordTones.push(chordTones[2]);
+                }
+                // 🌟 延伸音靶向 (Extension Targeting) — 由 StyleConfig 驱动
+                const extPref = style?.melody?.extensionPreference ?? 0;
+                const extTarget = style?.melody?.extensionTargeting ?? false;
+                if (extPref > 0 || extTarget) {
+                    const extRoll = PRNGManager.next();
+                    if (extTarget && chordTones.length > 4) {
+                        preferredChordTones = [chordTones[1], chordTones[3]];
+                        preferredChordTones.push(chordTones[4]);
+                    } else if (extPref > 0 && chordTones.length > 4 && extRoll < extPref) {
+                        preferredChordTones.push(chordTones[4]);
+                    }
                 }
                 currentPitch = preferredChordTones.reduce((prev, curr) => {
                     const prevDist = Math.abs(this.getNearestOctave(prev, idealPitch) - idealPitch);
@@ -1589,6 +1620,29 @@ export class ToplineEngine {
                     return currDist < prevDist ? curr : prev;
                 });
                 currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+
+                // 🌟 和弦边界趋近音：临近切换时偏向共同音（移动 ≤5 半音）
+                if (isNearChordBoundary && nextChordLookahead) {
+                    const nextCT = HarmonyCore.getChordTones(nextChordLookahead, targetCenter);
+                    const curPc = currentPitch % 12;
+                    let alreadyCommon = false;
+                    for (let nci = 0; nci < nextCT.length; nci++) {
+                        if ((nextCT[nci] % 12) === curPc) { alreadyCommon = true; break; }
+                    }
+                    if (!alreadyCommon) {
+                        let bestP = currentPitch, bestD = 999;
+                        for (let nci = 0; nci < nextCT.length; nci++) {
+                            for (let ci = 0; ci < chordTones.length; ci++) {
+                                if ((nextCT[nci] % 12) === (chordTones[ci] % 12)) {
+                                    const cand = this.getNearestOctave(chordTones[ci], idealPitch);
+                                    const d = Math.abs(cand - currentPitch);
+                                    if (d < bestD && d <= 5) { bestD = d; bestP = cand; }
+                                }
+                            }
+                        }
+                        if (bestD < 999) currentPitch = bestP;
+                    }
+                }
 
                 // 🌟 倚音法则 (Appoggiatura / Tension & Release)
                 // 在强拍上故意唱一个非和弦音（如上方大二度），制造紧张感
@@ -1860,7 +1914,15 @@ export class ToplineEngine {
                 humanVelocity *= 0.7; // 整体降低力度，保持温暖、慵懒的音色
             }
 
-            humanVelocity = Math.max(0.15, Math.min(1.0, humanVelocity));
+            // 🌟 Velocity 天花板 0.85（不触发 SoundFont 高力度刺耳采样层）
+            humanVelocity = Math.max(0.15, Math.min(0.85, humanVelocity));
+
+            // 🌟 高音力度衰减（Pitch-Velocity Inverse Scaling）
+            // 真实乐手演奏高音时因穿透力强会收力。pitch>72(C5)每高一半音，力度递减 0.012
+            if (currentPitch > 72) {
+                const overPitch = currentPitch - 72;
+                humanVelocity = Math.max(0.25, humanVelocity - overPitch * 0.012);
+            }
 
             // 🌟 弹性速度 (Rubato) & Humanized Timing
             // 乐句开头稍微抢拍，乐句结尾稍微拖拍 (Ritardando)
@@ -1871,10 +1933,45 @@ export class ToplineEngine {
                 rubatoShift = 0.04; // 拖拍
             }
             
-            // 强拍通常更准，弱拍可能稍微拖沓
-            const timingJitter = (PRNGManager.next() * 0.04 - 0.02) * (1.1 - metricAccent) + rubatoShift; 
+            // 🌟 Laid-back Timing（拖拍律动）— 由 StyleConfig.melody.laidBackTimingMax 驱动
+            const laidBack = style?.melody?.laidBackTimingMax ?? 0;
+            let timingJitter: number;
+            if (laidBack > 1e-6) {
+                // 拖拍：强拍拖更狠，弱拍稍轻（R&B/Neo-Soul/Lo-fi）
+                const laidBackAmount = isStrongBeat ? laidBack : (laidBack * 0.5);
+                timingJitter = laidBackAmount + (PRNGManager.next() * 0.04) + rubatoShift;
+            } else if (laidBack < -1e-6) {
+                // 抢拍：均匀向前冲（Punk/EDM）
+                timingJitter = laidBack + (PRNGManager.next() * 0.02) + rubatoShift;
+            } else {
+                // 默认：原有微小 rubato
+                timingJitter = (PRNGManager.next() * 0.04 - 0.02) * (1.1 - metricAccent) + rubatoShift;
+            }
             const finalOnset = Math.max(0, onset + timingJitter);
-            
+
+            // Rule 1.2: 拖拍和弦重算——如果 finalOnset 跨越和弦边界，检查小九度冲突并修正
+            if (Math.abs(finalOnset - onset) > 1e-6) {
+                const realChord = chords.find(c => finalOnset >= c.startBeat && finalOnset < c.endBeat);
+                if (realChord && realChord !== activeChord) {
+                    const realCT = HarmonyCore.getChordTones(realChord, targetCenter);
+                    const curPc = currentPitch % 12;
+                    let hasClash = false;
+                    for (let ci = 0; ci < realCT.length; ci++) {
+                        if (((curPc - (realCT[ci] % 12)) + 12) % 12 === 1) { hasClash = true; break; }
+                    }
+                    if (hasClash) {
+                        const realSafe = HarmonyCore.getSafeScalePitches(realChord, tonality);
+                        let bestP = currentPitch, bestD = 999;
+                        for (let si = 0; si < realSafe.length; si++) {
+                            const c = this.getNearestOctave(realSafe[si], currentPitch);
+                            const d = Math.abs(c - currentPitch);
+                            if (d < bestD) { bestD = d; bestP = c; }
+                        }
+                        currentPitch = bestP;
+                    }
+                }
+            }
+
             let legatoDuration = duration;
             if (instrumentName === 'Marimba') {
                 // Vocal synths might need a tiny bit of overlap to trigger legato, but keep it minimal
@@ -1898,6 +1995,34 @@ export class ToplineEngine {
                         });
                     }
                 }
+            }
+
+            // 🌟 Melisma 转音瀑布 — 由 StyleConfig.melody.melismaProbability 驱动
+            const melismaProb = style?.melody?.melismaProbability ?? 0;
+            if (melismaProb > 0 && isLongNote && isPhraseEnd && PRNGManager.next() < melismaProb) {
+                const runCount = 3 + Math.floor(PRNGManager.next() * 3); // 3-5 个 32 分音符
+                const runSpeed = 0.125;
+                const pentatonicPcs = HarmonyCore.getScalePitches(
+                    tonality === Tonality.Major || tonality === Tonality.Major_Pentatonic
+                        ? Tonality.Major_Pentatonic : Tonality.Minor_Pentatonic
+                );
+                let runPitch = currentPitch;
+                let runOnset = finalOnset;
+                for (let r = 0; r < runCount; r++) {
+                    notes.push({
+                        pitch: Math.floor(runPitch), onset: runOnset,
+                        duration: runSpeed * 1.5,
+                        velocity: humanVelocity * (1.0 - r * 0.12)
+                    });
+                    runPitch = HarmonyCore.shiftDiatonic(runPitch, pentatonicPcs, -1);
+                    runOnset += runSpeed;
+                }
+                const remaining = legatoDuration - (runCount * runSpeed);
+                if (remaining > 0.1) {
+                    notes.push({ pitch: Math.floor(runPitch), onset: runOnset, duration: remaining, velocity: humanVelocity * 0.45 });
+                }
+                previousPitch = Math.floor(runPitch);
+                continue;
             }
 
             // 🌟 装饰音 (Ornaments): 颤音 (Trill)
@@ -1966,6 +2091,27 @@ export class ToplineEngine {
                 notes.push({ pitch: Math.floor(currentPitch), onset: finalOnset, duration: legatoDuration, velocity: humanVelocity });
             }
             
+            // 🌟 不谐和度张力反馈：非和弦音累积张力→下一个音级进解决
+            if (notes.length >= 2 && !isPhraseEnd) {
+                const lastNote = notes[notes.length - 1];
+                const lastPc = lastNote.pitch % 12;
+                let isLastCT = false;
+                for (let ci = 0; ci < chordTones.length; ci++) {
+                    if ((chordTones[ci] % 12) === lastPc) { isLastCT = true; break; }
+                }
+                if (!isLastCT) {
+                    let hasM9 = false;
+                    for (let ci = 0; ci < chordTones.length; ci++) {
+                        if (((lastPc - (chordTones[ci] % 12)) + 12) % 12 === 1) { hasM9 = true; break; }
+                    }
+                    if (hasM9) {
+                        currentTension = Math.max(currentTension - 2, -3);
+                    } else if (lastNote.duration >= 0.5) {
+                        currentTension = Math.max(currentTension - 1, -3);
+                    }
+                }
+            }
+
             previousPitch = currentPitch;
         }
 
