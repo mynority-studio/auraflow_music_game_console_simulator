@@ -1,6 +1,7 @@
 import { PRNGManager } from '../../utils/PRNG';
 import { StyleId } from '../config/StyleFlags';
 import { RhythmCell } from '../types';
+import { ENERGY } from '../config/EnergyThresholds';
 
 export const PopRhythmCells: RhythmCell[] = [
     // Straight 8ths
@@ -63,7 +64,7 @@ export function getRandomRhythmCell(grooveTemplate: RhythmCell[] | undefined, en
 
     // Filter by energy level (e.g., higher energy = more fast/subdivided cells)
     let filteredCells = cells;
-    if (energyLevel < 4 || isVocal) {
+    if (energyLevel < ENERGY.LOW_MAX || isVocal) {
         // Vocals should generally avoid very fast 16th note runs unless it's rap, but we assume melodic singing here
         filteredCells = cells.filter(c => !c.tags.includes('fast') && !(isVocal && c.durations.length > 2 && c.durations.every(d => d <= 0.25)));
         
@@ -74,7 +75,7 @@ export function getRandomRhythmCell(grooveTemplate: RhythmCell[] | undefined, en
                 weight: c.tags.includes('long') || c.durations.includes(1.0) ? c.weight * 3 : c.weight
             }));
         }
-    } else if (energyLevel > 7) {
+    } else if (energyLevel > ENERGY.HIGH_MIN) {
         // Boost weight of fast/syncopated cells
         filteredCells = cells.map(c => ({
             ...c,

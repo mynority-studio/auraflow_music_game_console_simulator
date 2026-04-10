@@ -110,13 +110,114 @@ export interface InstrumentBehavior {
     velocityRange: [number, number]; // e.g., [90, 115] (明亮) vs [40, 70] (暗淡)
 }
 
+// 🌟 段落模板：单个段落的纯数据描述
+export interface SectionTemplate {
+    name: string;       // 段落显示名 (e.g., "Verse_1", "Chorus_Main")
+    bars: number;       // 小节数
+    energy: number;     // 原始能量值 1-10（会被 mood.energyCap 进一步约束）
+}
+
+// ============================================================
+// 🌟 层级动机系统（Hierarchical Motif System）
+// ============================================================
+//
+// 三层结构：
+//   PhraseGroup（大乐句容器，4/8/16 小节）
+//     └── SubMotifSlot（子动机槽，1-2 小节，可重复/变奏）
+//           └── NoteData（音符）
+//
+// 这取代了原本"phrase = motif = 2 小节"的扁平模型，让旋律有"完整句子"的容器感。
+
+/**
+ * 句式终止类型 — 决定 PhraseGroup 末尾应该是问句还是答句
+ */
+export enum CadenceType {
+    Open = 0,    // 半终止：落在 V/2/7 度（导音、属音、上主音），听感"未完成"
+    Closed = 1,  // 全终止：落在 I/3 度（主音、中音），听感"完成"
+}
+
+/**
+ * SubMotif 在 PhraseGroup 内的角色，决定它与其它 sub-motif 的关系
+ */
+export type SubMotifRole = 'statement' | 'repeat' | 'vary' | 'contrast' | 'resolve' | 'climax';
+
+/**
+ * 子动机槽位 — PhraseGroup 内的一个 1-2 小节生成单元
+ *
+ * label 决定动机复用：相同 label 共享同一份 motif 模板，
+ * 不同的 role 会触发不同的变奏（vary 用 _prime/_seq/_inv，contrast 是新动机等）
+ */
+export interface SubMotifSlot {
+    label: string;          // 'M' | 'M_prime' | 'N' | 'M_resolve' 等
+    role: SubMotifRole;
+    lengthBars: number;     // 子动机长度（小节数），通常 1 或 2
+    isPeak?: boolean;       // 是否是 hook 峰值位（仅 Chorus group 设置）
+    pitchShift?: number;    // 相对 group 中心的半音偏移（用于 sequence）
+}
+
+/**
+ * Hook 主动架构计划 — 让副歌的"那个高音"被有意放置和重复轰击
+ */
+export interface HookPlan {
+    peakSlotIndex: number;     // 哪个 sub-motif 是峰值位
+    targetPitchClass?: number; // 跨副歌共享的同一峰值音 pitch class（0-11），可选
+    climbCurve: 'gradual' | 'steep' | 'plateau';  // 峰值前的爬升路径
+    reinforceCount: number;    // 峰值在 group 内被重复砸的次数（>=1）
+}
+
+/**
+ * 大乐句容器 — 4/8/16 小节，作为旋律生成的最小完整单元
+ */
+export interface PhraseGroup {
+    startBeat: number;
+    lengthBeats: number;        // 总长度（拍）= lengthBars × beatsPerBar
+    subMotifs: SubMotifSlot[];  // 子动机槽位序列
+    cadenceType: CadenceType;
+    hookPlan?: HookPlan;        // 仅 Chorus PhraseGroup 设置
+    formLabel?: string;         // 'AABA' | 'ABAB' | 'ABAC' | 'longform' 等，用于调试
+}
+
+/**
+ * 风格层乐句长度配置 — 决定每个段落使用的 PhraseGroup 长度
+ */
+export interface PhraseLengthProfile {
+    name: string;                                    // 'pop' | 'ballad' | 'dance' 等
+    /** 各段落类型偏好的 group 长度（小节数 + 权重） */
+    perSection: {
+        verse?: { bars: number, weight: number }[];
+        preChorus?: { bars: number, weight: number }[];
+        chorus?: { bars: number, weight: number }[];
+        bridge?: { bars: number, weight: number }[];
+        intro?: { bars: number, weight: number }[];
+        outro?: { bars: number, weight: number }[];
+        default?: { bars: number, weight: number }[];
+    };
+    /** 子动机长度池（一般 1 或 2 小节） */
+    subMotifBarsPool: { bars: number, weight: number }[];
+}
+
+// 🌟 结构模板：整曲段落序列的纯数据描述
+// 取代 StructureEngine 中硬编码的 () => {...} 闭包
+export interface StructureTemplate {
+    id: string;                       // 模板标识，便于调试 (e.g., "standard-pop", "chorus-first")
+    introBarsMultiplier?: number;     // 前奏小节数 = introBarsMultiplier × style.global.introBarsHighBpm（或 lowBpm）
+    introBaseEnergy?: number;         // 前奏起始能量
+    sections: SectionTemplate[];      // intro 之后的段落序列
+}
+
 export interface StyleConfig {
     id: StyleId; name: string; description?: string;
-    global: { 
-        bpmRange: [number, number]; 
-        timeSignaturePool: Array<{ signature:[number, number], weight: number }>; 
-        tonalityPool: Array<{ tonality: Tonality, weight: number }>; 
-        structureTemplate?: 'pop' | 'edm' | 'jazz' | 'bossa' | 'cinematic'; // 🌟 新增：结构模板
+    global: {
+        bpmRange: [number, number];
+        timeSignaturePool: Array<{ signature:[number, number], weight: number }>;
+        tonalityPool: Array<{ tonality: Tonality, weight: number }>;
+        // 🌟 结构模板池：StructureEngine 从中等概率选取
+        structureTemplates?: StructureTemplate[];
+        // 🌟 BPM 驱动的前奏长度配置
+        introBarsLowBpm?: number;       // 慢曲（bpm < introBarsBpmThreshold）使用的前奏小节数，默认 8
+        introBarsHighBpm?: number;      // 快曲使用的前奏小节数，默认 4
+        introBarsBpmThreshold?: number; // 慢/快曲分界 BPM，默认 90
+        outroBars?: number;             // 尾奏小节数，默认 4
     };
     harmony: { chorusPool: ChordProgression[]; versePool: ChordProgression[]; preChorusPool: ChordProgression[]; };
     harmonyRules?: {
@@ -131,6 +232,8 @@ export interface StyleConfig {
         genreBendingProbability?: number; // 🌟 新增：段落发生风格突变的概率
         genreBendingOverrides?: StyleId[]; // 🌟 新增：段落发生风格突变时的备选曲风
         preferJPopProgressions?: boolean; // 🌟 新增：是否偏好 J-Pop 和声进行
+        sectionTransitionPassingProb?: number; // 🌟 HC-2：段落交界经过和弦概率（默认 0.45）
+        maxBorrowedChords?: number;            // 🌟 HC-5：全曲借调和弦上限（默认 2，作为"高光时刻"不滥用）
     };
     rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; };
     melody: { 
@@ -156,6 +259,8 @@ export interface StyleConfig {
         };
         breathingRoomProbability?: number; // 🌟 新增：强制休止符/呼吸空间的概率
         callAndResponseProbability?: number; // 🌟 新增：使用呼应手法的概率
+        // 🌟 层级动机系统：PhraseGroup 长度配置
+        phraseLengthProfile?: PhraseLengthProfile;
         motifRecipes?: {
             pickup: number[][];
             body: number[][];
@@ -330,6 +435,7 @@ export interface ArrangedTrack {
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     chords?: GeneratedChord[]; // 全曲和弦进行
     tempoCurves?: TempoCurve[]; // 渐慢/渐快曲线
+    introFilterSweep?: boolean; // 🌟 ST-3: Intro 低通涌动标记，PlaybackEngine 读取后注入 CC74 渐变
 }
 
 // ============================================================
@@ -426,3 +532,20 @@ export enum SectionType {
     Outro = 5, Break = 6, Breakdown = 7, BuildUp = 8, Drop = 9,
     PreOutro = 10, Solo_Bridge = 11
 }
+
+// 数值枚举 → 字符串名映射，仅供需要 hashmap key 的旧代码使用
+// 新代码应直接用 SectionType.X 数值比较
+export const SectionTypeName: Record<SectionType, string> = {
+    [SectionType.Intro]: 'Intro',
+    [SectionType.Verse]: 'Verse',
+    [SectionType.PreChorus]: 'PreChorus',
+    [SectionType.Chorus]: 'Chorus',
+    [SectionType.Bridge]: 'Bridge',
+    [SectionType.Outro]: 'Outro',
+    [SectionType.Break]: 'Break',
+    [SectionType.Breakdown]: 'Breakdown',
+    [SectionType.BuildUp]: 'BuildUp',
+    [SectionType.Drop]: 'Drop',
+    [SectionType.PreOutro]: 'PreOutro',
+    [SectionType.Solo_Bridge]: 'Solo_Bridge',
+};

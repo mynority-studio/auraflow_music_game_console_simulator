@@ -7,6 +7,7 @@ import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
 import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
+import { PRNGManager } from '../utils/PRNG';
 
 export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
 export type VisualEventListener = (event: VisualEvent) => void;
@@ -54,6 +55,8 @@ export class PlaybackEngine {
     }
 
     public async loadSong(song: ArrangedTrack, options?: { withCountIn?: boolean, loopStart?: number, loopEnd?: number }) {
+        // 🌟 ACVE §5.1 — 入口快照点 D（MIDI 转换/调度入口，generation pipeline 已结束）
+        PRNGManager.recordSnapshot('D');
         this.isStopped = false;
         await startAudioContext();
         
@@ -457,6 +460,36 @@ export class PlaybackEngine {
                     data1: 42,
                     data2: 0
                 });
+            }
+        }
+
+        // 🌟 ST-3: Intro Filter Build-up — CC74 (Brightness/Cutoff) 低通涌动
+        // 在 Intro 期间注入 CC74 从 20 �� 127 的渐变曲线，让声音从"闷"逐渐变"亮"
+        if (song.introFilterSweep && song.sections) {
+            const introSec = song.sections.find(s => s.name && s.name.startsWith('Intro'));
+            if (introSec) {
+                const countInBeats = options?.withCountIn ? (song.timeSignature?.[0] || 4) : 0;
+                const introStartTick = globalMidiScheduler.beatsToTicks(introSec.startBeat + countInBeats);
+                const introEndTick = globalMidiScheduler.beatsToTicks(introSec.endBeat + countInBeats);
+                const steps = 16; // 16 步 CC 自动化，足够��滑
+                const ccStart = 20;  // 极度低通
+                const ccEnd = 127;   // 全开
+
+                for (let s = 0; s <= steps; s++) {
+                    const tick = introStartTick + Math.floor((introEndTick - introStartTick) * s / steps);
+                    const value = Math.round(ccStart + (ccEnd - ccStart) * (s / steps));
+                    // 对所有非鼓通道（0-8, 10-15）注入 CC74，跳过 GM 鼓通道 9
+                    for (let ch = 0; ch < 16; ch++) {
+                        if (ch === 9) continue;
+                        allEvents.push({ ticks: tick, type: 'cc', channel: ch, data1: 74, data2: value });
+                    }
+                }
+
+                // Intro 结束后确��� CC74 恢复到默认值 127（防止影��后续段落）
+                for (let ch = 0; ch < 16; ch++) {
+                    if (ch === 9) continue;
+                    allEvents.push({ ticks: introEndTick + 1, type: 'cc', channel: ch, data1: 74, data2: 127 });
+                }
             }
         }
 

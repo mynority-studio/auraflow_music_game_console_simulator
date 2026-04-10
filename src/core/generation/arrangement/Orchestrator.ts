@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft } from '../types';
+import { GeneratedTrack, ArrangedTrack, StyleConfig, NoteData, SectionMetadata, MusicContext, EnsembleDraft, MixingConfig, SectionType } from '../types';
 import { TextureMapper } from './TextureMapper';
 import { TransitionEngine } from './TransitionEngine';
 import { GlobalContext } from '../GlobalContext';
@@ -9,24 +9,57 @@ import { MotifLooper } from './MotifLooper';
 
 import { GlobalReviewer } from '../review/GlobalReviewer';
 import { getStyleConfig } from '../config/styles/StyleRegistry';
+import { ENERGY } from '../config/EnergyThresholds';
+import { sortAndDedupNumbers } from '../utils/Dedup';
+
+// 兜底默认混音参数（当 StyleConfig.orchestration.mixingPreferences 字段缺失时使用）
+// 仅作为安全防护，正式风格应在 StyleConfig 中配置完整的 mixingPreferences
+const FALLBACK_MIXING: Required<{
+    vocal: MixingConfig; melody: MixingConfig; secondaryMelody: MixingConfig;
+    counterMelody: MixingConfig; chord: MixingConfig; drums: MixingConfig; bass: MixingConfig;
+}> = {
+    vocal:           { pan: 0,    reverb: 0.4,  volume: 8 },
+    melody:          { pan: 0,    reverb: 0.4,  volume: 4 },
+    secondaryMelody: { pan: 0.4,  reverb: 0.5,  volume: 1 },
+    counterMelody:   { pan: -0.4, reverb: 0.5,  volume: 1 },
+    chord:           { pan: 0.6,  reverb: 0.7,  volume: 3 },
+    drums:           { pan: 0,    reverb: 0.1,  volume: 6 },
+    bass:            { pan: 0,    reverb: 0,    volume: -1 },
+};
+
+// 浅拷贝 MixingConfig，避免 palette.mixing 与 StyleConfig 共享引用
+function cloneMixing(src: MixingConfig | undefined, fallback: MixingConfig): MixingConfig {
+    const base = src || fallback;
+    return {
+        pan: base.pan,
+        reverb: base.reverb,
+        volume: base.volume,
+        delay: base.delay,
+        chorus: base.chorus,
+    };
+}
 
 export class Orchestrator {
-    private static applyMixerState(palette: EnsembleDraft) {
+    /**
+     * 从 StyleConfig.orchestration.mixingPreferences 应用混音预设到 palette。
+     * 之后再做 vocal-presence 运行时调整（vocal 不存在时 melody 居中提升）。
+     */
+    private static applyMixerState(palette: EnsembleDraft, style: StyleConfig) {
         if (!palette.mixing) {
             palette.mixing = {};
         }
 
-        // 🌟 3D 全景声增益级联 (3D Panoramic Gain Staging)
-        // Z轴深度：聚光灯(干/近) → 侧前(微湿/中距) → 天幕(极湿/宽) → 地下室(极干/底座)
-        palette.mixing.vocal = { pan: 0, reverb: 0.43, volume: 10 };           // 聚光灯中心
-        palette.mixing.melody = { pan: 0, reverb: 0.43, volume: 4 };           // 聚光灯中心
-        palette.mixing.secondaryMelody = { pan: 0.4, reverb: 0.59, volume: 1, chorus: 40 };  // 右前方
-        palette.mixing.counterMelody = { pan: -0.4, reverb: 0.59, volume: 1, chorus: 40 };   // 左前方
-        palette.mixing.chord = { pan: 0.8, reverb: 0.87, volume: 3, chorus: 90 };            // 天幕声墙
-        palette.mixing.drums = { pan: 0, reverb: 0.08, volume: 7 };            // 地下室
-        palette.mixing.bass = { pan: 0, reverb: 0, volume: -1 };               // 地下室，零混响，压低
+        const prefs = style.orchestration.mixingPreferences || {};
 
-        // Vocal 存在时 melody 稍偏右，不存在时居中提升
+        palette.mixing.vocal           = cloneMixing(prefs.vocal,           FALLBACK_MIXING.vocal);
+        palette.mixing.melody          = cloneMixing(prefs.melody,          FALLBACK_MIXING.melody);
+        palette.mixing.secondaryMelody = cloneMixing(prefs.secondaryMelody, FALLBACK_MIXING.secondaryMelody);
+        palette.mixing.counterMelody   = cloneMixing(prefs.counterMelody,   FALLBACK_MIXING.counterMelody);
+        palette.mixing.chord           = cloneMixing(prefs.chord,           FALLBACK_MIXING.chord);
+        palette.mixing.drums           = cloneMixing(prefs.drums,           FALLBACK_MIXING.drums);
+        palette.mixing.bass            = cloneMixing(prefs.bass,            FALLBACK_MIXING.bass);
+
+        // 运行时调整：Vocal 存在时 melody 稍偏右让出中心，不存在时 melody 居中并提升音量
         if (!palette.vocalSound) {
             palette.mixing.melody!.volume = 6;
             palette.mixing.melody!.pan = 0;
@@ -36,8 +69,8 @@ export class Orchestrator {
     }
 
     public static arrange(track: GeneratedTrack, styleId: number, context: MusicContext): ArrangedTrack {
-        // 自动记录快照
-        const startState = PRNGManager.getState();
+        // 🌟 ACVE §5.1 — 模块入口快照点 C（arrange 开始时的 PRNG state）
+        PRNGManager.recordSnapshot('C');
         const style = getStyleConfig(styleId);
 
         const lhNotes: NoteData[] =[];
@@ -70,7 +103,7 @@ export class Orchestrator {
             counterMelodySound
         };
 
-        Orchestrator.applyMixerState(palette);
+        Orchestrator.applyMixerState(palette, style);
 
         let hasDrums = !!palette.drumSound;
         const hasChords = !!palette.chordSound;
@@ -78,70 +111,23 @@ export class Orchestrator {
         hasCounterMelody = !!palette.counterMelodySound;
         const counterMelodyNotes: NoteData[] = [];
 
-        // 🌟 双重主音编排 (Dual Lead Orchestration)
-        let primaryMelodyRaw: NoteData[] = [];
+        // 🌟 真正的双声部编排 (True Two-Voice Counterpoint)
+        // 主旋律 = track.melody 原样输出（不再切片重分配）
+        // 副旋律 = Call-and-Response 填补线，生活在主旋律的休止窗口中，
+        //          与主旋律构成互补节奏（complementary rhythm），永不同时发声
+        // 这是与 counterMelody（平行三度/Pad，与主旋律同时发声）截然不同的对位策略
+        const isGlobalDuet = !!(palette.secondaryMelodySound && palette.secondaryMelodySound !== palette.melodySound);
+        const isDuet = isGlobalDuet;
+
+        const primaryMelodyRaw: NoteData[] = track.melody;
         let secondaryMelodyRaw: NoteData[] = [];
 
-        const isGlobalDuet = !!(palette.secondaryMelodySound && palette.secondaryMelodySound !== palette.melodySound);
-        
-        // Trading Fours disabled (no style-driven instrument pools)
-        const hasTradingFours = false;
-
-        const isDuet = isGlobalDuet || hasTradingFours;
-
         if (isDuet) {
-            const phrases: NoteData[][] = [];
-            let currentPhrase: NoteData[] = [];
-            for (let i = 0; i < track.melody.length; i++) {
-                const note = track.melody[i];
-                if (currentPhrase.length === 0) {
-                    currentPhrase.push(note);
-                } else {
-                    const lastNote = currentPhrase[currentPhrase.length - 1];
-                    const gap = note.onset - (lastNote.onset + lastNote.duration);
-                    const threshold = 2;
-                    if (gap >= threshold) {
-                        phrases.push(currentPhrase);
-                        currentPhrase = [note];
-                    } else {
-                        currentPhrase.push(note);
-                    }
-                }
-            }
-            if (currentPhrase.length > 0) phrases.push(currentPhrase);
-
-            let isPrimary = true;
-            phrases.forEach(phrase => {
-                if (phrase.length === 0) return;
-                
-                const firstNoteOnset = phrase[0].onset;
-                const activeSection = track.sections.find(s => firstNoteOnset >= s.startBeat && firstNoteOnset < s.endBeat) || track.sections[0];
-                
-                let assignToPrimary = isPrimary;
-                
-                if (hasTradingFours && activeSection.name.includes('Solo')) {
-                    // Trading Fours: 每 4 小节切换一次乐器
-                    const beatsPerBar = track.timeSignature[0];
-                    const barsSinceSectionStart = Math.floor((firstNoteOnset - activeSection.startBeat) / beatsPerBar);
-                    const fourBarChunkIndex = Math.floor(barsSinceSectionStart / 4);
-                    assignToPrimary = (fourBarChunkIndex % 2 === 0);
-                } else if (!isGlobalDuet) {
-                    // 如果不是全局 Duet，非 Solo 段落全部给主旋律
-                    assignToPrimary = true;
-                }
-
-                if (assignToPrimary) {
-                    primaryMelodyRaw.push(...phrase);
-                } else {
-                    secondaryMelodyRaw.push(...phrase);
-                }
-                
-                if (isGlobalDuet) {
-                    isPrimary = !isPrimary;
-                }
-            });
-        } else {
-            primaryMelodyRaw = track.melody;
+            secondaryMelodyRaw = TextureMapper.generateSecondaryFillLine(
+                track.melody,
+                track.chords,
+                track.tonality
+            );
         }
 
         const secondarySound = palette.secondaryMelodySound || null;
@@ -161,8 +147,9 @@ export class Orchestrator {
         let pianoEntryBeat = 0;
         let melodyEntryBeat = 0;
         let introEndBeat = 0;
+        let introPedalPoint = false; // ST-2: Pedal Point 持续音策略
 
-        const introSection = track.sections.find(s => s.name.includes('Intro'));
+        const introSection = track.sections.find(s => s.sectionType === SectionType.Intro);
         if (introSection) {
             introEndBeat = introSection.endBeat;
             const introLength = introSection.endBeat - introSection.startBeat;
@@ -201,7 +188,7 @@ export class Orchestrator {
                 drumEntryBeat = introSection.startBeat;
                 pianoEntryBeat = introSection.endBeat;
                 melodyEntryBeat = introSection.endBeat;
-            } else if (rand < 0.9) {
+            } else if (rand < 0.85) {
                 // 🌟 贝斯主角 (Bass Riff Intro)
                 introHasBass = true;
                 introHasDrums = true;
@@ -211,6 +198,14 @@ export class Orchestrator {
                 drumEntryBeat = introSection.startBeat + introLength / 2;
                 pianoEntryBeat = introSection.endBeat;
                 melodyEntryBeat = introSection.endBeat;
+            } else if (rand < 0.93) {
+                // 🌟 ST-2: 持续音悬念 (Pedal Point Intro)
+                // 贝斯锁定在主音或属音不动，上方和弦正常变化，制造和声张力 + 期待感
+                introHasBass = true;
+                introHasPiano = true;
+                introHasMelody = true;
+                introPedalPoint = true;
+                bassEntryBeat = introSection.startBeat;
             } else {
                 // 全进
                 introHasBass = true;
@@ -230,7 +225,7 @@ export class Orchestrator {
 
         // 🌟 提取并简化副歌 Hook 作为前奏旋律 (Thematic Foreshadowing)
         if (introSection && PRNGManager.next() < 0.6) { // 60% chance to use foreshadowing intro
-            const firstChorus = track.sections.find(s => s.name.includes('Chorus'));
+            const firstChorus = track.sections.find(s => s.sectionType === SectionType.Chorus);
             if (firstChorus) {
                 // Get the full chorus melody (both primary and secondary) to extract a complete hook
                 const fullChorusMelody = track.melody.filter(n => n.onset >= firstChorus.startBeat && n.onset < firstChorus.endBeat);
@@ -280,14 +275,16 @@ export class Orchestrator {
         }
 
         // 🌟 Phase 1 & 2: Use decoupled TrackState to determine instrument entry and texture
-        const sectionPlayStates = new Map<SectionMetadata, { 
+        // C 可移植：用 index-aligned 数组取代 Map<SectionMetadata, ...>，section 索引即数组索引
+        type SectionPlayState = {
             playBass: boolean, bassEntryBeat: number,
             playChords: boolean, chordsEntryBeat: number,
             playCounterMelody: boolean, counterMelodyEntryBeat: number,
             playDrums: boolean, drumsEntryBeat: number,
             texture: string,
             densityMultiplier: number
-        }>();
+        };
+        const sectionPlayStates: SectionPlayState[] = [];
 
         // 🌟 Luis 的工程加码：生成全局乐器阈值 (Global Thresholds)
         const trackThresholds = {
@@ -318,7 +315,7 @@ export class Orchestrator {
             }
 
             const isPad = palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir');
-            if (isPad && energy <= 3) {
+            if (isPad && energy <= ENERGY.AMBIENT_MAX) {
                 playCounterMelody = true; // Pad 可以在极低能量时作为铺底
             }
 
@@ -327,9 +324,9 @@ export class Orchestrator {
                 playBass = true; playChords = true; playCounterMelody = true; texture = "Arpeggio";
             } else if (section.type === 'Break' || section.type === 'Breakdown') {
                 playBass = false; playChords = true; playCounterMelody = true; texture = "Pad";
-            } else if (section.type === 'Verse' || energy <= 4) {
+            } else if (section.type === 'Verse' || energy <= ENERGY.LOW_MAX) {
                 texture = PRNGManager.next() > 0.5 ? "Arpeggio" : "Pad";
-            } else if (section.type === 'Chorus' || section.type === 'Drop' || energy >= 7) {
+            } else if (section.type === 'Chorus' || section.type === 'Drop' || energy >= ENERGY.HIGH_MIN) {
                 playBass = true; 
                 playChords = true; 
                 texture = "Block"; 
@@ -341,11 +338,11 @@ export class Orchestrator {
             // 🌟 织体补偿法则 (Texture Compensation)
             // 如果鼓没进场，和声乐器必须承担打拍子的责任！
             let densityMultiplier = 1.0;
-            if (!playDrums && !playBass && energy >= 5) {
+            if (!playDrums && !playBass && energy >= ENERGY.MEDIUM_MIN) {
                 // 🌟 极简高能状态下的织体暴走 (Texture Overdrive)
                 texture = PRNGManager.next() > 0.5 ? "Arpeggio" : "Pulsing";
                 densityMultiplier = 2.0; // 触发 16 分音符狂飙
-            } else if (!playDrums && energy >= 4) {
+            } else if (!playDrums && energy >= ENERGY.LOW_MAX) {
                 texture = "Rhythmic";
             }
 
@@ -380,10 +377,10 @@ export class Orchestrator {
                 }
             }
 
-            sectionPlayStates.set(section, { 
-                playBass, bassEntryBeat, 
-                playChords, chordsEntryBeat, 
-                playCounterMelody, counterMelodyEntryBeat, 
+            sectionPlayStates.push({
+                playBass, bassEntryBeat,
+                playChords, chordsEntryBeat,
+                playCounterMelody, counterMelodyEntryBeat,
                 playDrums, drumsEntryBeat,
                 texture, densityMultiplier
             });
@@ -395,15 +392,18 @@ export class Orchestrator {
         let prevVoicing: number[] = [];
 
         track.chords.forEach((chord, i) => {
-            const activeSection = track.sections.find(s => chord.startBeat >= s.startBeat && chord.startBeat < s.endBeat) || track.sections[0];
-            
+            // 一次 findIndex 同时拿到 section 和它在数组中的索引（C 可移植路径）
+            let activeSectionIdx = track.sections.findIndex(s => chord.startBeat >= s.startBeat && chord.startBeat < s.endBeat);
+            if (activeSectionIdx < 0) activeSectionIdx = 0;
+            const activeSection = track.sections[activeSectionIdx];
+
             // 🌟 核心修复 2：伴奏组生成前，将黑板同步为当前段落专属的 GrooveDNA！
-            // 这样贝斯和钢琴就会死死咬住当前主歌或副歌的律动，彻底解决“从头到尾一个样”的问题。
+            // 这样贝斯和钢琴就会死死咬住当前主歌或副歌的律动，彻底解决"从头到尾一个样"的问题。
             GlobalContext.updateCurrentSlice(activeSection, chord, activeSection.grooveDNA ||[0, 1, 2, 3]);
 
             const secName = activeSection.name;
             const energy = activeSection.energyLevel;
-            const state = sectionPlayStates.get(activeSection)!;
+            const state = sectionPlayStates[activeSectionIdx];
             
             // 🌟 智能编排逻辑 (Smart Arrangement Logic)
             let playBass = state.playBass && chord.startBeat >= state.bassEntryBeat;
@@ -414,7 +414,7 @@ export class Orchestrator {
             let densityMultiplier = state.densityMultiplier || 1.0;
 
             // 🌟 极低算力下的史诗级听感黑客技巧：真空效应 (Vacuum Effect / Dropout)
-            const sectionIndex = track.sections.findIndex(s => chord.startBeat >= s.startBeat && chord.startBeat < s.endBeat);
+            const sectionIndex = activeSectionIdx; // 复用上面已计算的索引，避免重复 findIndex
             const beatsUntilNextSection = activeSection.endBeat - chord.startBeat;
             const nextSection = sectionIndex + 1 < track.sections.length ? track.sections[sectionIndex + 1] : null;
             const energyDelta = nextSection ? (nextSection.energyLevel - activeSection.energyLevel) : 0;
@@ -528,12 +528,12 @@ export class Orchestrator {
                 if (texture === 'Arpeggio' || texture === 'Rhythmic') {
                     texture = 'Block'; // Use simpler chords to leave room for the vocal
                 }
-                if (playCounterMelody && energy < 8) {
+                if (playCounterMelody && energy < ENERGY.PEAK_MIN) {
                     playCounterMelody = false; // Reduce counter melody clutter unless high energy
                 }
             }
 
-            if (secName.includes('Intro')) {
+            if (activeSection.sectionType === SectionType.Intro) {
                 playBass = introHasBass && chord.startBeat >= bassEntryBeat;
                 playChords = introHasPiano && chord.startBeat >= pianoEntryBeat;
             }
@@ -568,7 +568,7 @@ export class Orchestrator {
             if (palette.chordSound && (palette.chordSound.includes("Synth") || palette.chordSound.includes("Pad") || palette.chordSound.includes("String") || palette.chordSound.includes("Voice"))) {
                 // 流行电子合成器不需要古典钢琴的复杂加花和切分，保持简洁
                 const isVoiceOrString = palette.chordSound.includes("Voice") || palette.chordSound.includes("String");
-                if (energy >= 7 && !isVoiceOrString) {
+                if (energy >= ENERGY.HIGH_MIN && !isVoiceOrString) {
                     texture = "Synth_Pulse"; // 连续八分音符或简单的切分
                 } else {
                     texture = "Pad"; // 长音铺底
@@ -579,7 +579,13 @@ export class Orchestrator {
 
             if (playBass) {
                 // 如果前奏有贝斯，为了避免割裂感，Verse_1 不应该变得稀疏
-                const isSparseSection = (secName.includes("Intro") && !introHasBass) || secName.includes("Outro") || (secName === 'Verse_1' && !introHasBass);
+                const bassSecType = activeSection.sectionType;
+                const isFirstVerse = bassSecType === SectionType.Verse && activeSection.name === 'Verse_1';
+                const isSparseSection =
+                    (bassSecType === SectionType.Intro && !introHasBass) ||
+                    bassSecType === SectionType.Outro ||
+                    bassSecType === SectionType.PreOutro ||
+                    (isFirstVerse && !introHasBass);
                 const isSectionEnd = chord.endBeat === activeSection.endBeat;
                 const isBassSolo = playBass && !playChords;
                 const nextChord = i < track.chords.length - 1 ? track.chords[i + 1] : undefined;
@@ -599,7 +605,7 @@ export class Orchestrator {
                     const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); counterMelodyNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60 - chordKeyOffset, track.motifRole));
                 } else if (palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir')) {
                     const isVoiceOrString = palette.counterMelodySound.includes('Voice') || palette.counterMelodySound.includes('String') || palette.counterMelodySound.includes('Choir');
-                    const counterTexture = (energy >= 7 && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
+                    const counterTexture = (energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
                     counterMelodyNotes.push(...TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody));
                 } else {
                     counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody));
@@ -608,14 +614,15 @@ export class Orchestrator {
 
             if (playChords) {
                 const nextChord = i < track.chords.length - 1 ? track.chords[i + 1] : undefined;
-                const isSparseSection = secName.includes("Intro") || secName.includes("Outro");
+                const activeSecType = activeSection.sectionType;
+                const isSparseSection = activeSecType === SectionType.Intro || activeSecType === SectionType.Outro || activeSecType === SectionType.PreOutro;
                 const isSectionEnd = chord.endBeat === activeSection.endBeat;
                 const nextEnergyLevel = track.sections.find(s => s.startBeat >= activeSection.endBeat)?.energyLevel || energy;
-                
+
                 let chordNotes: NoteData[] = [];
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0) {
                     const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); chordNotes = MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60 - chordKeyOffset, track.motifRole);
-                } else if (secName.includes("Intro") && PRNGManager.next() < 0.5) {
+                } else if (activeSecType === SectionType.Intro && PRNGManager.next() < 0.5) {
                     // 🌟 针对特定风格的前奏 Riff
                     const scale = HarmonyCore.getSafeScalePitches(chord, track.tonality);
                     const rootNote = HarmonyCore.getChordTones(chord, 48)[0]; // C3 range
@@ -634,7 +641,8 @@ export class Orchestrator {
                     // Extract unique pitches from ALL chord notes generated for this chord, ignoring bass notes
                     const highNotes = chordNotes.filter(n => n.pitch >= 53);
                     if (highNotes.length > 0) {
-                        prevVoicing = Array.from(new Set(highNotes.map(n => n.pitch))).sort((a,b) => a - b);
+                        // C 可移植：用专用 dedup 工具取代 Set
+                        prevVoicing = sortAndDedupNumbers(highNotes.map(n => n.pitch));
                     }
                 }
             }
@@ -646,16 +654,18 @@ export class Orchestrator {
                 let playDrums = true;
                 let startBeat = sec.startBeat;
                 
-                if (sec.name.includes('Intro')) {
+                if (sec.sectionType === SectionType.Intro) {
                     playDrums = introHasDrums;
                     if (playDrums) {
                         startBeat = Math.max(sec.startBeat, drumEntryBeat);
                     }
-                } else if (sec.type === 'Verse') {
+                } else if (sec.sectionType === SectionType.Verse) {
                     // 🌟 方案四：曲式驱动的织体突变 - 主歌省去主套鼓或极简
-                    playDrums = sec.energyLevel > 3 || PRNGManager.next() > 0.5; 
-                } else if (sec.name.includes('Break')) {
-                    playDrums = !sec.name.includes('Breakdown'); // Breakdown 绝对停鼓
+                    playDrums = sec.energyLevel > ENERGY.AMBIENT_MAX || PRNGManager.next() > 0.5;
+                } else if (sec.sectionType === SectionType.Break) {
+                    playDrums = true; // Break 仍可有鼓
+                } else if (sec.sectionType === SectionType.Breakdown) {
+                    playDrums = false; // Breakdown 绝对停鼓
                 }
                 
                 // 🌟 戛然而止 (Hard Stop) 逻辑：只打一拍 Crash 和 Kick
@@ -674,80 +684,136 @@ export class Orchestrator {
                     const nextEnergyLevel = nextSec ? nextSec.energyLevel : 3;
                     
                     // 如果当前段落能量大于2，或者前奏且下一个段落能量大于2，说明完整的 groove 已经开始
-                    if (effectiveEnergy > 2 || (sec.name.includes('Intro') && nextEnergyLevel > 2)) {
+                    if (effectiveEnergy > 2 || (sec.sectionType === SectionType.Intro && nextEnergyLevel > 2)) {
                         hasFullGrooveStarted = true;
                     }
-                    
+
                     // 如果是鼓组 Solo 前奏，不应该被视为普通的 Intro（普通 Intro 只有踩镲）
                     const isDrumSoloIntro = introHasDrums && !introHasPiano && !introHasMelody;
-                    const treatAsIntro = sec.name.includes('Intro') && !isDrumSoloIntro;
-                    
-                    drumNotes.push(...TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, sec.name.includes('Outro'), swingRatio, nextEnergyLevel, hasFullGrooveStarted));
+                    const treatAsIntro = sec.sectionType === SectionType.Intro && !isDrumSoloIntro;
+                    const isOutroSec = sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro;
+
+                    drumNotes.push(...TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, isOutroSec, swingRatio, nextEnergyLevel, hasFullGrooveStarted));
                 }
             });
         }
 
-        // 🔄 动态角色互换 (Dynamic F-M-B Role Swapping) - REMOVED
-        // 移除此逻辑以防止主旋律轨道变成和弦铺底 (Monophonic Lock)
+        // �� ST-2: Pedal Point 后处理
+        // 当 Intro 选中持续音策略时，将所有 Intro 区间内的 Bass 音符音高
+        // 锁定到主音(I, 70%)或属音(V, 30%)。上方和弦正常变化，底部纹丝不动。
+        if (introPedalPoint && introSection) {
+            const keyOffset = track.keyOffset || 0;
+            const isPedalOnDominant = PRNGManager.next() < 0.3;
+            const pedalPc = isPedalOnDominant ? (keyOffset + 7) % 12 : keyOffset % 12;
+            // 找到 bass 音域 (E1=28 ~ B2=47) 内该 pitch class 的最佳音高
+            let pedalPitch = pedalPc + 24; // C1 octave
+            if (pedalPitch < 28) pedalPitch += 12; // 确保 >= E1
+            if (pedalPitch > 47) pedalPitch -= 12; // 确保 <= B2
+
+            for (let i = 0; i < lhNotes.length; i++) {
+                if (lhNotes[i].onset >= introSection.startBeat - 1e-6 && lhNotes[i].onset < introSection.endBeat - 1e-6) {
+                    lhNotes[i].pitch = pedalPitch;
+                }
+            }
+        }
+
         track.sections.forEach(sec => {
-            // 🌟 尾奏渐弱处理 (Outro Fade Out)
-            if (sec.name.includes('Outro')) {
+            // 🌟 尾奏处理 (Outro Behavior)
+            if (sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro) {
                 const outroLength = sec.endBeat - sec.startBeat;
-                
-                // 决定尾奏模式 (Ending Behavior)
-                // 1. Fade Out: 线性渐弱 (适合流行、R&B)
-                // 2. Big Ring Out: 最后一小节重击主和弦并延音 (适合摇滚、电子)
-                // 3. Stop Ending: 高能量直接切断
+                const beatsPerBar = track.timeSignature[0];
+
+                // 决定尾奏模式 (Ending Behavior) — 4 种策略
+                // 1. FadeOut:         线性渐弱（流行/R&B）
+                // 2. BigRingOut:      最后一小节重击主和弦延音（摇滚/电子）
+                // 3. StopEnding:      高能量直接切断
+                // 4. TextureCollapse: 乐器逐件退出（鼓→贝斯→和弦→只留旋律消散）
                 let endingBehavior = 'FadeOut';
-                if (sec.energyLevel >= 8) {
+                if (sec.energyLevel >= ENERGY.PEAK_MIN) {
                     endingBehavior = 'StopEnding';
                 } else {
-                    const ringOutProb = 0.2;
-                    endingBehavior = PRNGManager.next() < ringOutProb ? 'BigRingOut' : 'FadeOut';
+                    const roll = PRNGManager.next();
+                    if (roll < 0.15) endingBehavior = 'BigRingOut';
+                    else if (roll < 0.35) endingBehavior = 'TextureCollapse';
+                    else endingBehavior = 'FadeOut';
                 }
 
-                const applyOutroBehavior = (notes: NoteData[], isDrums: boolean = false) => {
-                    for (let i = notes.length - 1; i >= 0; i--) {
-                        const n = notes[i];
-                        if (n.onset >= sec.startBeat && n.onset < sec.endBeat) {
-                            const barsLeft = (sec.endBeat - n.onset) / track.timeSignature[0];
-                            const beatInBar = n.onset % track.timeSignature[0];
-                            const isLastBar = barsLeft <= 1;
+                if (endingBehavior === 'TextureCollapse') {
+                    // 🌟 ST-1: 结构塌缩 — 乐器按时序逐件退出
+                    // 将 Outro 分为 4 个 zone（按小节均分），每个 zone 一个乐器退出
+                    // 退出顺序：鼓（最先）→ 贝斯 → 和弦/副旋律 → 只留主旋律消散
+                    const outroBars = Math.max(1, outroLength / beatsPerBar);
+                    const zoneBars = outroBars / 4;
+                    const drumMuteBeat    = sec.startBeat;                              // 鼓立即退出
+                    const bassMuteBeat    = sec.startBeat + zoneBars * 1 * beatsPerBar; // zone 1 后退出
+                    const chordMuteBeat   = sec.startBeat + zoneBars * 2 * beatsPerBar; // zone 2 后退出
 
-                            if (endingBehavior === 'StopEnding') {
-                                if (isLastBar && beatInBar >= 1) {
-                                    // 最后一小节第2拍开始全停
-                                    notes.splice(i, 1);
-                                }
-                            } else if (endingBehavior === 'BigRingOut') {
-                                if (isLastBar) {
-                                    if (beatInBar === 0) {
-                                        // 第一拍重击
-                                        n.velocity = Math.min(1.0, n.velocity * 1.5);
-                                        if (!isDrums) {
-                                            n.duration = track.timeSignature[0]; // 延音一整小节
-                                        }
-                                    } else {
-                                        // 最后一小节的其他拍子全部静音
-                                        notes.splice(i, 1);
-                                    }
-                                }
-                            } else {
-                                // FadeOut
-                                const progress = (n.onset - sec.startBeat) / outroLength;
-                                const fadeOutFactor = 1.0 - progress * 0.9; // 逐渐减弱到 10%
-                                n.velocity *= fadeOutFactor;
+                    // 删除指定 muteBeat 之后的所有音符
+                    const collapseTrack = (notes: NoteData[], muteBeat: number) => {
+                        for (let i = notes.length - 1; i >= 0; i--) {
+                            if (notes[i].onset >= muteBeat - 1e-6 && notes[i].onset < sec.endBeat) {
+                                notes.splice(i, 1);
                             }
                         }
-                    }
-                };
+                    };
 
-                applyOutroBehavior(lhNotes);
-                applyOutroBehavior(rhNotes);
-                applyOutroBehavior(counterMelodyNotes);
-                applyOutroBehavior(idiomaticMelody);
-                applyOutroBehavior(idiomaticSecondaryMelody);
-                applyOutroBehavior(drumNotes, true);
+                    collapseTrack(drumNotes, drumMuteBeat);
+                    collapseTrack(lhNotes, bassMuteBeat);
+                    collapseTrack(rhNotes, chordMuteBeat);
+                    collapseTrack(counterMelodyNotes, chordMuteBeat);
+
+                    // 主旋律保留到最后，但做力度渐弱
+                    const fadeMelody = (notes: NoteData[]) => {
+                        for (let i = 0; i < notes.length; i++) {
+                            if (notes[i].onset >= sec.startBeat && notes[i].onset < sec.endBeat) {
+                                const progress = (notes[i].onset - sec.startBeat) / outroLength;
+                                notes[i].velocity *= (1.0 - progress * 0.7);
+                            }
+                        }
+                    };
+                    fadeMelody(idiomaticMelody);
+                    fadeMelody(idiomaticSecondaryMelody);
+                } else {
+                    // 其他 3 种 ending 共用的 per-note 处理函数
+                    const applyOutroBehavior = (notes: NoteData[], isDrums: boolean = false) => {
+                        for (let i = notes.length - 1; i >= 0; i--) {
+                            const n = notes[i];
+                            if (n.onset >= sec.startBeat && n.onset < sec.endBeat) {
+                                const barsLeft = (sec.endBeat - n.onset) / beatsPerBar;
+                                const beatInBar = n.onset % beatsPerBar;
+                                const isLastBar = barsLeft <= 1;
+
+                                if (endingBehavior === 'StopEnding') {
+                                    if (isLastBar && beatInBar >= 1) {
+                                        notes.splice(i, 1);
+                                    }
+                                } else if (endingBehavior === 'BigRingOut') {
+                                    if (isLastBar) {
+                                        if (beatInBar === 0) {
+                                            n.velocity = Math.min(1.0, n.velocity * 1.5);
+                                            if (!isDrums) {
+                                                n.duration = beatsPerBar;
+                                            }
+                                        } else {
+                                            notes.splice(i, 1);
+                                        }
+                                    }
+                                } else {
+                                    // FadeOut
+                                    const progress = (n.onset - sec.startBeat) / outroLength;
+                                    n.velocity *= (1.0 - progress * 0.9);
+                                }
+                            }
+                        }
+                    };
+
+                    applyOutroBehavior(lhNotes);
+                    applyOutroBehavior(rhNotes);
+                    applyOutroBehavior(counterMelodyNotes);
+                    applyOutroBehavior(idiomaticMelody);
+                    applyOutroBehavior(idiomaticSecondaryMelody);
+                    applyOutroBehavior(drumNotes, true);
+                }
             }
         });
 
@@ -843,7 +909,7 @@ export class Orchestrator {
         const tempoCurves: any[] = [];
         if (track.sections && track.sections.length > 0) {
             const lastSection = track.sections[track.sections.length - 1];
-            if (lastSection.name.includes('Outro') && lastSection.endingType !== 'hard_stop') {
+            if ((lastSection.sectionType === SectionType.Outro || lastSection.sectionType === SectionType.PreOutro) && lastSection.endingType !== 'hard_stop') {
                 // 仅对适合渐慢的曲风生效
                 if (PRNGManager.next() < 0.3) { // 30% chance of ritardando
                     // 渐慢发生在最后 2 个小节
@@ -883,12 +949,18 @@ export class Orchestrator {
         // console.log(`[Orchestrator] 🎼 Melody Notes:`, track.melody);
                 // --- END LOGGING ---
 
+        // 🌟 ST-3: Filter Build-up 决策
+        // 25% 概率让 Intro 启用低通涌动（CC74 从闷到亮），但不适用于鼓 Solo Intro
+        const isDrumSoloIntroFinal = introHasDrums && !introHasPiano && !introHasMelody;
+        const useFilterSweep = introSection && !isDrumSoloIntroFinal && PRNGManager.next() < 0.25;
+
         return {
             bpm: track.bpm, key: track.key, absoluteStartBeat: track.absoluteStartBeat,
             styleId,
             vocal: humanizedVocal, melody: humanizedMelody, secondaryMelody: isDuet ? humanizedSecondaryMelody : undefined, pianoLH: humanizedLH, pianoRH: humanizedRH, drums: hasDrums ? humanizedDrums : undefined,
             counterMelody: hasCounterMelody ? humanizedCounterMelody : undefined,
-            palette, sections: track.sections, chords: track.chords, tempoCurves
+            palette, sections: track.sections, chords: track.chords, tempoCurves,
+            introFilterSweep: useFilterSweep,
         };
     }
 

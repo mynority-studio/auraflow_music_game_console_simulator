@@ -442,6 +442,8 @@ export class EndlessRadioManager {
       // Date.now() 提供毫秒级种子，Math.random()*1e6 补充额外熵（防止浏览器降低 Date 精度）
       const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
       PRNGManager.setSeed(seed);
+      // ACVE §5.1 — 入口快照点 A
+      PRNGManager.recordSnapshot('A');
       console.log(`[Radio] New seed: ${seed}`);
 
       const melodyEngine = new MelodyEngine();

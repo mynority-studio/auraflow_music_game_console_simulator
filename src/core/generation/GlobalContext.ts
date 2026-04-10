@@ -1,5 +1,6 @@
 import { GeneratedChord, SectionMetadata, StyleConfig, Tonality, TonalityName } from './types';
 import { MoodId } from './config/MoodFlags';
+import { isOnDownbeat } from './utils/BeatMath';
 
 class GlobalContextManager {
     public currentStyle: StyleConfig | null = null;
@@ -31,9 +32,9 @@ class GlobalContextManager {
     }
 
     public isGrooveHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return absoluteBeat % 1 === 0;
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return isOnDownbeat(absoluteBeat);
         const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar; 
+        const loopLength = 2 * beatsPerBar;
         const localBeat = absoluteBeat % loopLength;
         return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05);
     }
@@ -42,12 +43,12 @@ class GlobalContextManager {
      * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
      */
     public isLayeringHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return absoluteBeat % 1 === 0;
+        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return isOnDownbeat(absoluteBeat);
         const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar; 
+        const loopLength = 2 * beatsPerBar;
         const localBeat = absoluteBeat % loopLength;
         // 叠加点：GrooveDNA 中的正拍 (0, 1, 2, 3...)
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && hit % 1 === 0);
+        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && isOnDownbeat(hit));
     }
 
     /**

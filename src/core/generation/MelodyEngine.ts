@@ -16,9 +16,9 @@ import { MoodId, MoodRegistry } from "./config/MoodFlags";
 export class MelodyEngine {
 
   public generateFullSong(styleId: StyleId, options: GenerationOptions = {}): { track: GeneratedTrack, context: MusicContext } {
-    // 自动记录快照
-    const startState = PRNGManager.getState();
-    
+    // 🌟 ACVE §5.1 — 模块入口快照点 B（generateFullSong 开始时的 PRNG state）
+    PRNGManager.recordSnapshot('B');
+
     const style = getStyleConfig(styleId);
     const {
         userMotifRoot,

@@ -126,6 +126,8 @@ export class JamSessionManager {
 
             const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
             PRNGManager.setSeed(seed);
+            // ACVE §5.1 — 入口快照点 A
+            PRNGManager.recordSnapshot('A');
 
             const scaleState = this.scaleEngine.getState();
             const melodyEngine = new MelodyEngine();

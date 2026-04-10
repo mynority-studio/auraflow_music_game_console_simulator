@@ -2,6 +2,7 @@ import { PRNGManager } from "../../utils/PRNG";
 import { NoteData, GeneratedChord, Tonality } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
 import { GlobalContext } from "../GlobalContext";
+import { ENERGY } from "../config/EnergyThresholds";
 
 export class TextureMapper {
   // 🌟 绝对音区隔离：强制 clamp 到安全音域
@@ -60,7 +61,7 @@ export class TextureMapper {
 
     // Smooth bass line: check if inversion closer to next chord root
     let targetBassPitch = rootMidi;
-    if (nextChord && PRNGManager.next() < 0.2 && (energyLevel <= 4)) {
+    if (nextChord && PRNGManager.next() < 0.2 && (energyLevel <= ENERGY.LOW_MAX)) {
       const nextBassTones = HarmonyCore.getChordTones(nextChord, nextTargetCenter);
       const nextRoot = nextBassTones[0];
       const thirdMidi = bassTones.length > 1 ? bassTones[1] : rootMidi + 4;
@@ -78,7 +79,7 @@ export class TextureMapper {
       PRNGManager.next();
     }
 
-    if (isSparseSection || energyLevel <= 2) {
+    if (isSparseSection || energyLevel <= ENERGY.SILENT_MAX) {
       // Sparse: just root on downbeat, half-note duration
       notes.push({
         pitch: targetBassPitch,
@@ -86,7 +87,7 @@ export class TextureMapper {
         duration: Math.min(chordLen, 2),
         velocity: 0.7,
       });
-    } else if (energyLevel <= 5) {
+    } else if (energyLevel <= ENERGY.MEDIUM_MIN) {
       // Medium: root on beat 1, fifth on beat 3 (or halfway)
       const halfLen = chordLen / 2;
       notes.push({
@@ -256,7 +257,7 @@ export class TextureMapper {
       });
 
       // High energy: add ghost notes on 16th notes
-      if (energyLevel >= 7 && PRNGManager.next() < 0.3) {
+      if (energyLevel >= ENERGY.HIGH_MIN && PRNGManager.next() < 0.3) {
         const ghostBeat = beat + 0.25;
         if (ghostBeat < endBeat - 1e-6) {
           notes.push({
@@ -283,7 +284,7 @@ export class TextureMapper {
     }
 
     // Crash on first beat of section
-    if (notes.length > 0 && energyLevel >= 5) {
+    if (notes.length > 0 && energyLevel >= ENERGY.MEDIUM_MIN) {
       notes.push({ pitch: CRASH, onset: startBeat, duration: 1.5, velocity: 0.85 });
     }
 
@@ -291,7 +292,63 @@ export class TextureMapper {
   }
 
   /**
-   * 副旋律生成：简单的三度平行
+   * 找出在 [startBeat, endBeat) 区间内有声音的主旋律音符。
+   * 包括起始时间在区间外但仍在持续（sustain 跨过区间）的音符 —
+   * 因为这些音符的发声仍会与副旋律产生纵向冲突。
+   * max ~melodyNotes.length 元素
+   */
+  private static getOverlappingMelodyNotes(
+    melodyNotes: NoteData[],
+    startBeat: number,
+    endBeat: number
+  ): NoteData[] {
+    const result: NoteData[] = [];
+    for (let i = 0; i < melodyNotes.length; i++) {
+      const m = melodyNotes[i];
+      const mEnd = m.onset + m.duration;
+      // 区间重叠测试（半开区间，使用 epsilon 容差）
+      if (m.onset < endBeat - 1e-6 && mEnd > startBeat + 1e-6) {
+        result.push(m);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 在候选音高列表中按优先级选出第一个与所有重叠主旋律音符不冲突的音高。
+   * 冲突定义（mod 12）：
+   *   0 = 同度（两声部同音听感单薄）
+   *   1 = 小二度 / 小九度
+   *   6 = 三全音
+   *  11 = 大七度
+   * 八度（mod 12 后为 0）也会被判为同度并跳过。
+   * 返回 -1 表示无可用候选 — 调用方应跳过该副旋律事件。
+   */
+  private static pickConsonantPitch(
+    candidates: number[],
+    overlappingMelody: NoteData[]
+  ): number {
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const p = candidates[ci];
+      let ok = true;
+      for (let mi = 0; mi < overlappingMelody.length; mi++) {
+        const interval = Math.abs(p - overlappingMelody[mi].pitch) % 12;
+        if (interval === 0 || interval === 1 || interval === 6 || interval === 11) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return p;
+    }
+    return -1;
+  }
+
+  /**
+   * 副旋律生成：三度平行 / Pad 模式，全程做纵向冲突检测
+   * 关键约束：
+   *   - 副旋律 duration 强制截断在 chord.endBeat 之内
+   *   - 候选音高与所有重叠主旋律音符进行不协和音程检测（小二度/三全音/大七度/同度）
+   *   - 冲突时按候选优先级回退到下一个安全音
    * max ~50 notes per chord
    */
   public static generateCounterMelody(
@@ -301,8 +358,9 @@ export class TextureMapper {
   ): NoteData[] {
     const notes: NoteData[] = [];
     const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, GlobalContext.currentTonality);
+    const chordTones = HarmonyCore.getChordTones(chord, 72); // C5 附近
 
-    // Filter melody notes in this chord's span
+    // 节奏决策仍按"和弦区间起始的主旋律音符"判断密度（保持原行为）
     const chordMelody = melodyNotes.filter(
       n => n.onset >= chord.startBeat - 1e-6 && n.onset < chord.endBeat - 1e-6
     );
@@ -310,7 +368,7 @@ export class TextureMapper {
     if (chordMelody.length === 0) return notes;
 
     // 🌟 节奏互锁：检测主旋律密度
-    // 连续短音（<=0.5拍）超过 3 个 = 密集段，副旋律只放长音
+    // 连续短音（<=0.5拍）超过 3 个 = 密集段，副旋律只放长音 Pad
     let consecutiveShort = 0;
     let isMelodyDense = false;
     for (let i = 0; i < chordMelody.length; i++) {
@@ -323,31 +381,74 @@ export class TextureMapper {
     }
 
     if (isMelodyDense) {
-      // 密集段：副旋律只在和弦起始放一个长音（三度上方）
-      const chordTones = HarmonyCore.getChordTones(chord, 72); // C5 附近
-      let holdPitch = chordTones.length > 1 ? chordTones[1] : chordTones[0]; // 三音
-      holdPitch = HarmonyCore.snapToScale(holdPitch, safeScalePcs);
-      notes.push({
-        pitch: holdPitch,
-        onset: chord.startBeat,
-        duration: Math.min(chord.endBeat - chord.startBeat, 4),
-        velocity: 0.45,
-      });
+      // Pad 模式：长音持续整个和弦区间（最多 4 拍）
+      // 必须检查整段持续期间所有重叠主旋律音符，不能只看起始点
+      const holdStart = chord.startBeat;
+      const holdEnd = Math.min(chord.endBeat, holdStart + 4);
+      const overlapping = this.getOverlappingMelodyNotes(melodyNotes, holdStart, holdEnd);
+
+      // 候选优先级：三音 → 五音 → 根音 → 七音（snap 到调内）
+      const padCandidates: number[] = [];
+      if (chordTones.length > 1) padCandidates.push(HarmonyCore.snapToScale(chordTones[1], safeScalePcs));
+      if (chordTones.length > 2) padCandidates.push(HarmonyCore.snapToScale(chordTones[2], safeScalePcs));
+      if (chordTones.length > 0) padCandidates.push(HarmonyCore.snapToScale(chordTones[0], safeScalePcs));
+      if (chordTones.length > 3) padCandidates.push(HarmonyCore.snapToScale(chordTones[3], safeScalePcs));
+
+      const padPitch = this.pickConsonantPitch(padCandidates, overlapping);
+      if (padPitch >= 0) {
+        notes.push({
+          pitch: padPitch,
+          onset: holdStart,
+          duration: holdEnd - holdStart,
+          velocity: 0.45,
+        });
+      }
+      // padPitch < 0 时静默跳过 — Pad 找不到非冲突音高时宁可空白也不要碰撞
     } else {
-      // 稀疏段：三度上方平行（高音区 C5-C6）
+      // 稀疏段：三度上方平行
       for (let i = 0; i < chordMelody.length; i++) {
         const m = chordMelody[i];
-        // 三度上方，推到 C5-C6 音域
-        let counterPitch = m.pitch + 3;
-        counterPitch = HarmonyCore.snapToScale(counterPitch, safeScalePcs);
 
-        // 跳过同度/半音
-        if (Math.abs(counterPitch - m.pitch) < 2) continue;
+        // 防御性截断：副旋律 duration 不能跨过 chord.endBeat
+        // （truncateToChordEnd 也会处理，这里提前算便于做重叠检查）
+        const counterDuration = Math.min(m.duration, chord.endBeat - m.onset);
+        if (counterDuration <= 1e-6) continue;
+
+        // 副旋律发声区间 [m.onset, m.onset + counterDuration)
+        // 与该区间内所有重叠主旋律音符做冲突检测（不仅仅是同 onset 的 m 自身）
+        const overlapping = this.getOverlappingMelodyNotes(
+          melodyNotes,
+          m.onset,
+          m.onset + counterDuration
+        );
+
+        // 候选优先级：三度 → 六度 → 四度 → 和弦音兜底
+        const candidates: number[] = [];
+        candidates.push(HarmonyCore.snapToScale(m.pitch + 3, safeScalePcs));
+        candidates.push(HarmonyCore.snapToScale(m.pitch + 8, safeScalePcs));
+        candidates.push(HarmonyCore.snapToScale(m.pitch + 5, safeScalePcs));
+        for (let ti = 0; ti < chordTones.length; ti++) {
+          candidates.push(chordTones[ti]);
+        }
+
+        const counterPitch = this.pickConsonantPitch(candidates, overlapping);
+        if (counterPitch < 0) continue;
+
+        // 🌟 微错位 (Micro-shift)：副旋律在 ±0.05 拍内随机偏移，
+        // 打破与主旋律的完全节奏同步，制造演奏不一致的人性化听感。
+        // 0.05 拍 ≈ 50ms @ 120 BPM，足够小不会抢拍但能产生微差别。
+        const microShift = (PRNGManager.next() - 0.5) * 0.1;
+        let shiftedOnset = m.onset + microShift;
+        // 边界保护：不能突破当前和弦区间，给副旋律 duration 留出空间
+        const minOnset = chord.startBeat;
+        const maxOnset = chord.endBeat - counterDuration;
+        if (shiftedOnset < minOnset) shiftedOnset = minOnset;
+        if (shiftedOnset > maxOnset) shiftedOnset = maxOnset;
 
         notes.push({
           pitch: counterPitch,
-          onset: m.onset,
-          duration: m.duration,
+          onset: shiftedOnset,
+          duration: counterDuration,
           velocity: Math.min(m.velocity * 0.55, 0.65),
         });
       }
@@ -356,6 +457,108 @@ export class TextureMapper {
     const truncated = this.truncateToChordEnd(notes, chord.endBeat);
     this.clampToRange(truncated, 72, 84); // Counter Melody: C5 ~ C6
     return truncated;
+  }
+
+  /**
+   * 真正的副旋律：Call-and-Response 填补线
+   *
+   * 在主旋律的休止窗口（gap ≥ 1 拍）中生成填补音符，构成"呼应"对位关系。
+   * 与主旋律不会发生纵向冲突 —— 因为主旋律此时静音。这是与 generateCounterMelody
+   * （平行和声 / Pad，与主旋律同时发声）截然不同的对位策略。
+   *
+   * 算法（确定性，不消耗 PRNG）：
+   *   1. 扫描主旋律相邻音符的休止间隙
+   *   2. 当 gap ≥ MIN_GAP 时，在 gap 中点所在的和弦上生成 1~3 个和弦音填补
+   *   3. 填补方向（上行/下行）和起始音由 gap.startBeat 哈希决定，保证不同 gap 有
+   *      不同走向，但同种子下输出完全可复现
+   *
+   * 注意：本方法跨和弦扫描整曲主旋律，不能放在 chord 循环内调用，应一次性生成。
+   * max ~80 fill notes per song
+   */
+  public static generateSecondaryFillLine(
+    melodyNotes: NoteData[],
+    chords: GeneratedChord[],
+    tonality: Tonality
+  ): NoteData[] {
+    if (melodyNotes.length === 0 || chords.length === 0) return [];
+
+    // 排序确保 onset 升序，相同 onset 时按 pitch 排序消除 tie（D-3）
+    const sorted = melodyNotes.slice().sort((a, b) => {
+      const d = a.onset - b.onset;
+      if (Math.abs(d) > 1e-6) return d;
+      return a.pitch - b.pitch;
+    });
+
+    const fills: NoteData[] = [];
+    const MIN_GAP = 1.0;       // 至少 1 拍休止才填补
+    const FILL_BREATH = 0.25;  // 填补前后各预留 0.25 拍呼吸，避免抢拍
+    const MAX_FILL_LEN = 2.0;  // 单次填补最长 2 拍
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const cur = sorted[i];
+      const next = sorted[i + 1];
+      const gapStart = cur.onset + cur.duration;
+      const gapEnd = next.onset;
+      const gapLen = gapEnd - gapStart;
+
+      if (gapLen < MIN_GAP - 1e-6) continue;
+
+      // 找到 gap 中点所在的 chord
+      const fillCenter = (gapStart + gapEnd) / 2;
+      let activeChord: GeneratedChord | null = null;
+      for (let ci = 0; ci < chords.length; ci++) {
+        if (
+          fillCenter >= chords[ci].startBeat - 1e-6 &&
+          fillCenter < chords[ci].endBeat - 1e-6
+        ) {
+          activeChord = chords[ci];
+          break;
+        }
+      }
+      if (!activeChord) continue;
+
+      // 填补区间：预留呼吸 + 限制在 chord 内 + 限制最大长度
+      const fillStart = Math.max(gapStart + FILL_BREATH, activeChord.startBeat);
+      const fillEnd = Math.min(
+        gapEnd - FILL_BREATH,
+        activeChord.endBeat,
+        fillStart + MAX_FILL_LEN
+      );
+      const fillLen = fillEnd - fillStart;
+      if (fillLen < 0.5 - 1e-6) continue;
+
+      // 候选音池：以和弦音为主干，snap 到调内
+      const chordTones = HarmonyCore.getChordTones(activeChord, 67); // G4 附近，副旋律音区
+      if (chordTones.length === 0) continue;
+      const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
+
+      // 决定填补音数：长 gap 用 3 音琶音，短 gap 用 2 音呼应
+      const noteCount = fillLen >= 1.5 ? 3 : (fillLen >= 1.0 ? 2 : 1);
+      const stepDur = fillLen / noteCount;
+
+      // 确定性变化：由 gapStart 的整数化哈希决定方向和起始音
+      // 同一首歌每次生成完全相同；不同 gap 自然产生不同走向
+      const variation = (Math.floor(gapStart * 4) | 0) >>> 0;
+      const direction = (variation % 2 === 0) ? 1 : -1;
+      const startToneIdx = variation % chordTones.length;
+
+      for (let n = 0; n < noteCount; n++) {
+        const onset = fillStart + n * stepDur;
+        // 索引可能为负，加 chordTones.length * 2 后取模保证非负
+        const toneIdx = ((startToneIdx + direction * n) % chordTones.length + chordTones.length) % chordTones.length;
+        let pitch = chordTones[toneIdx];
+        pitch = HarmonyCore.snapToScale(pitch, safeScalePcs);
+
+        fills.push({
+          pitch,
+          onset,
+          duration: stepDur * 0.85, // 留一点 staccato 呼吸
+          velocity: 0.6,
+        });
+      }
+    }
+
+    return fills;
   }
 
   /**
@@ -398,7 +601,7 @@ export class TextureMapper {
           velocity: baseVelocity * 0.7,
         });
       }
-    } else if (textureType === 'Arpeggio' || energyLevel >= 7) {
+    } else if (textureType === 'Arpeggio' || energyLevel >= ENERGY.HIGH_MIN) {
       // Arpeggio: spread chord tones across beats
       const step = chordLen / Math.max(voicing.length, 1);
       for (let i = 0; i < voicing.length; i++) {
@@ -413,11 +616,11 @@ export class TextureMapper {
       // Block chord: all tones on downbeat, rhythmic re-attacks for higher energy
       const attackPoints: number[] = [chord.startBeat];
 
-      if (energyLevel >= 5 && chordLen >= 2) {
+      if (energyLevel >= ENERGY.MEDIUM_MIN && chordLen >= 2) {
         // Add re-attack on beat 3 (or halfway)
         attackPoints.push(chord.startBeat + chordLen / 2);
       }
-      if (energyLevel >= 6 && chordLen >= 4) {
+      if (energyLevel >= ENERGY.BUILD_MIN && chordLen >= 4) {
         // Add re-attacks on weak beats
         attackPoints.push(chord.startBeat + 1);
         attackPoints.push(chord.startBeat + 3);

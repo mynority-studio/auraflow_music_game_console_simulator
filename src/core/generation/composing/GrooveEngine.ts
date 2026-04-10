@@ -1,5 +1,7 @@
 import { PRNGManager } from '../../utils/PRNG';
 import { StyleConfig } from '../types';
+import { sortAndDedupNumbers } from '../utils/Dedup';
+import { isOnDownbeat, isOnOffbeat } from '../utils/BeatMath';
 
 export class GrooveEngine {
     private static GRID_STEP = 0.25; 
@@ -14,18 +16,15 @@ export class GrooveEngine {
         
         // 🌟 核心修复：如果用户提供了 Motif，提取其节奏指纹作为全曲律动基准
         if (userMotif && userMotif.length > 0) {
-            const fingerprint = new Set<number>();
-            userMotif.forEach(n => {
-                const offset = n.onset % loopLength;
-                // 量化到 GRID_STEP
+            // C 可移植：用数组累积 + 末尾排序去重，取代 Set
+            const rawOffsets: number[] = [0]; // 强拍锚点，避免律动散架
+            for (let i = 0; i < userMotif.length; i++) {
+                const offset = userMotif[i].onset % loopLength;
                 const quantized = Math.round(offset / this.GRID_STEP) * this.GRID_STEP;
-                fingerprint.add(quantized);
-            });
-            
-            // 确保强拍有锚点，避免律动散架
-            fingerprint.add(0);
-            
-            let result = Array.from(fingerprint).sort((a, b) => a - b);
+                rawOffsets.push(quantized);
+            }
+
+            let result = sortAndDedupNumbers(rawOffsets);
             
             // 根据 density 动态删减音符 (例如在 Verse 中让律动更稀疏)
             if (density < 0.5 && result.length > 2) {
@@ -48,11 +47,11 @@ export class GrooveEngine {
         for (let i = 1; i < totalSteps; i++) {
             const stepPos = (i * this.GRID_STEP) % beatsPerBar; 
             
-            // 🌟 修复：大幅降低 16分音符的权重，避免产生“小碎音”，但 Funk 等高切分曲风除外
+            // 🌟 修复：大幅降低 16分音符的权重，避免产生"小碎音"，但 Funk 等高切分曲风除外
             let baseWeight = 0;
-            if (Number.isInteger(stepPos)) {
+            if (isOnDownbeat(stepPos)) {
                 baseWeight = 1.0; // 正拍 (0, 1, 2, 3)
-            } else if (stepPos % 1 === 0.5) {
+            } else if (isOnOffbeat(stepPos)) {
                 baseWeight = 0.6 + syncopationProb * 0.4; // 8分音符反拍 (0.5, 1.5...)
             } else {
                 if (syncopationProb >= 0.7) {
@@ -83,7 +82,7 @@ export class GrooveEngine {
             availableSteps.splice(selectedIdx, 1);
         }
         
-        return Array.from(new Set(fingerprint)).sort((a, b) => a - b);
+        return sortAndDedupNumbers(fingerprint);
     }
 
     // ⚖️ 旋律与伴奏的互补对抗 (Inverse Density)
@@ -112,9 +111,9 @@ export class GrooveEngine {
             let weight = isBaseHit ? 0.1 : 0.9; 
             
             // 🌟 修复：加上节拍权重，防止在 inverse 时大量选中 16分音符
-            if (Number.isInteger(stepPos)) {
+            if (isOnDownbeat(stepPos)) {
                 weight *= 1.0;
-            } else if (stepPos % 1 === 0.5) {
+            } else if (isOnOffbeat(stepPos)) {
                 weight *= 0.8;
             } else {
                 weight *= 0.1; // 极大地压制 16分音符
@@ -141,6 +140,6 @@ export class GrooveEngine {
             availableSteps.splice(selectedIdx, 1);
         }
         
-        return Array.from(new Set(inverseFingerprint)).sort((a, b) => a - b);
+        return sortAndDedupNumbers(inverseFingerprint);
     }
 }

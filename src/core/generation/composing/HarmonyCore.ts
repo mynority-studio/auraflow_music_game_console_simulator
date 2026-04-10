@@ -1,7 +1,8 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData, Tonality, SCALE_INTERVALS } from '../types';
+import { GeneratedChord, SectionMetadata, StyleConfig, ChordProgression, NoteData, Tonality, SCALE_INTERVALS, SectionType, SectionTypeName } from '../types';
 import { MusicTheoryRules, ChordFunction } from './MusicTheoryRules';
 import { GlobalContext } from '../GlobalContext';
+import { sortAndDedupNumbers } from '../utils/Dedup';
 
 import { StyleId } from '../config/StyleFlags';
 
@@ -117,164 +118,15 @@ export class HarmonyCore {
         return intervals.map(i => baseRoot + i);
     }
 
-    // 🌟 平滑声部连接 (Voice Leading) & 现代 Voicing 理论
-    // 根据上一个和弦的排列，计算当前和弦的最平滑排列（总移动距离最小）
-    public static getSmoothVoicing(currentChord: GeneratedChord, prevVoicing: number[], targetCenter: number = 60, voicingStyle: string = 'standard'): number[] {
+    // 🌟 平滑声部连接 (Voice Leading) — 纯通用 Voicing
+    //
+    // 已剥离风格分支：原 Jazz Rootless / Pop Power Chord / Neo-Soul Altered 等分支均已删除。
+    // 风格特定的 voicing 应在未来的 idiom 层（如 VoicingIdiom_Jazz、VoicingIdiom_Rock）实现，
+    // 由 Orchestrator 在生成 chord 时决定调用 idiom 还是核心 getSmoothVoicing。
+    //
+    // 核心引擎只负责通用的"基于音质的最小移动平滑排列 + Drop2 候选 + 平行进行惩罚"。
+    public static getSmoothVoicing(currentChord: GeneratedChord, prevVoicing: number[], targetCenter: number = 60): number[] {
         const root = currentChord.root;
-        const isJazz = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
-        const isNeoSoul = voicingStyle === 'neo-soul';
-        const isRock = voicingStyle === 'rock';
-        const isPop = voicingStyle === 'pop';
-        const isPopRock = isRock || isPop;
-
-        // 🌟 Pop/Rock Voicings (Power Chords & Simple Triads)
-        if (isPopRock) {
-            let intervals = [0, 4, 7];
-            if (currentChord.quality === 'Minor') intervals =[0, 3, 7];
-            if (currentChord.quality === 'Diminished') intervals =[0, 3, 6];
-            if (currentChord.quality === 'Diminished7') intervals =[0, 3, 6, 9];
-            if (currentChord.quality === 'Augmented') intervals = [0, 4, 8];
-            if (currentChord.quality === 'Add9') intervals = [0, 4, 7, 14];
-            if (currentChord.quality === 'Minor9') intervals = [0, 3, 7, 10, 14];
-            if (currentChord.quality === 'Dominant7') intervals =[0, 4, 7, 10];
-            if (currentChord.quality === 'Minor7') intervals =[0, 3, 7, 10];
-            if (currentChord.quality === 'Major7') intervals =[0, 4, 7, 11];
-            if (currentChord.quality === 'HalfDiminished') intervals =[0, 3, 6, 10];
-            if (currentChord.quality === 'Sus4') intervals =[0, 5, 7];
-            if (currentChord.quality === 'Dominant7Sus4') intervals =[0, 5, 7, 10];
-            if (currentChord.quality === 'Major9') intervals = [0, 4, 7, 11, 14];
-            if (currentChord.quality === 'Dominant9') intervals = [0, 4, 7, 10, 14];
-            if (currentChord.quality === 'Minor11') intervals = [0, 3, 7, 10, 14, 17];
-            if (currentChord.quality === 'Dominant13') intervals = [0, 4, 7, 10, 14, 21];
-            
-            // For heavy rock, often just root, 5th, octave (Power Chord)
-            if (isRock && PRNGManager.next() > 0.5) {
-                intervals = [0, 7, 12]; // Power chord
-            }
-
-            const targetPcs = intervals.map(i => (root + i) % 12);
-            
-            if (!prevVoicing || prevVoicing.length === 0) {
-                return targetPcs.map(pc => {
-                    let pitch = pc;
-                    while (pitch < targetCenter - 6) pitch += 12;
-                    while (pitch > targetCenter + 6) pitch -= 12;
-                    return pitch;
-                }).sort((a, b) => a - b);
-            }
-
-            // Find nearest inversion
-            const candidates: number[][] = [];
-            const baseVoicing = targetPcs.sort((a, b) => a - b);
-            for (let oct = 3; oct <= 5; oct++) {
-                for (let inv = 0; inv < baseVoicing.length; inv++) {
-                    const cand: number[] = [];
-                    for (let i = 0; i < baseVoicing.length; i++) {
-                        let pitch = baseVoicing[(i + inv) % baseVoicing.length] + oct * 12;
-                        if (i + inv >= baseVoicing.length) pitch += 12;
-                        cand.push(pitch);
-                    }
-                    candidates.push(cand.sort((a, b) => a - b));
-                }
-            }
-
-            let bestCandidate = candidates[0];
-            let minDistance = Infinity;
-            for (const cand of candidates) {
-                let dist = 0;
-                const len = Math.min(cand.length, prevVoicing.length);
-                for (let i = 0; i < len; i++) {
-                    dist += Math.abs(cand[i] - prevVoicing[i]);
-                }
-                const center = cand.reduce((a, b) => a + b, 0) / cand.length;
-                dist += Math.abs(center - targetCenter) * 0.1;
-
-                if (dist < minDistance) {
-                    minDistance = dist;
-                    bestCandidate = cand;
-                }
-            }
-            return bestCandidate;
-        }
-
-        // 🌟 Jazz Rootless Voicings (A and B types)
-        if (isJazz && currentChord.quality !== 'Sus4') {
-            // A Voicing: 3rd at the bottom
-            // B Voicing: 7th at the bottom
-            let intervalsA: number[] = [];
-            let intervalsB: number[] = [];
-
-            if (currentChord.quality === 'Minor7' || currentChord.quality === 'Minor9' || currentChord.quality === 'Minor11') {
-                intervalsA = [3, 7, 10, 14]; // 3, 5, b7, 9
-                intervalsB = [10, 14, 15, 19]; // b7, 9, 3, 5 (15 is 3+12, 19 is 7+12)
-            } else if (currentChord.quality === 'Dominant7' || currentChord.quality === 'Dominant7Sus4' || currentChord.quality === 'Dominant9' || currentChord.quality === 'Dominant13') {
-                intervalsA = [4, 9, 10, 14]; // 3, 13, b7, 9
-                intervalsB = [10, 14, 16, 21]; // b7, 9, 3, 13
-                
-                if (isNeoSoul) {
-                    // Altered dominant
-                    intervalsA = [4, 8, 10, 15]; // 3, #5, b7, #9
-                    intervalsB = [10, 15, 16, 20]; // b7, #9, 3, #5
-                }
-            } else if (currentChord.quality === 'Major7' || currentChord.quality === 'Add9' || currentChord.quality === 'Major9') {
-                intervalsA = [4, 7, 11, 14]; // 3, 5, 7, 9
-                intervalsB = [11, 14, 16, 19]; // 7, 9, 3, 5
-            } else if (currentChord.quality === 'HalfDiminished') {
-                intervalsA = [3, 6, 10, 13]; // 3, b5, b7, b9 (or 11)
-                intervalsB = [10, 13, 15, 18]; // b7, b9, 3, b5
-            } else if (currentChord.quality === 'Diminished7' || currentChord.quality === 'Diminished') {
-                intervalsA = [3, 6, 9, 12]; // 3, b5, bb7, 8
-                intervalsB = [9, 12, 15, 18]; // bb7, 8, 3, b5
-            } else {
-                // Fallback for other qualities
-                intervalsA = [3, 7, 10];
-                intervalsB = [10, 15, 19];
-            }
-
-            // Generate candidates in a few octaves
-            const candidates: number[][] = [];
-            for (let oct = 3; oct <= 5; oct++) {
-                candidates.push(intervalsA.map(i => root + i + oct * 12));
-                candidates.push(intervalsB.map(i => root + i + oct * 12));
-            }
-
-            // Find the candidate with the minimum voice leading distance to prevVoicing
-            if (prevVoicing && prevVoicing.length > 0) {
-                let bestCandidate = candidates[0];
-                let minDistance = Infinity;
-
-                for (const cand of candidates) {
-                    let dist = 0;
-                    // Calculate distance. If lengths differ, compare available voices
-                    const len = Math.min(cand.length, prevVoicing.length);
-                    for (let i = 0; i < len; i++) {
-                        dist += Math.abs(cand[i] - prevVoicing[i]);
-                    }
-                    // Penalize extreme registers
-                    const center = cand.reduce((a, b) => a + b, 0) / cand.length;
-                    dist += Math.abs(center - targetCenter) * 0.1;
-
-                    if (dist < minDistance) {
-                        minDistance = dist;
-                        bestCandidate = cand;
-                    }
-                }
-                return bestCandidate;
-            } else {
-                // No prev voicing, pick one close to targetCenter
-                let bestCandidate = candidates[0];
-                let minDistance = Infinity;
-                for (const cand of candidates) {
-                    const center = cand.reduce((a, b) => a + b, 0) / cand.length;
-                    const dist = Math.abs(center - targetCenter);
-                    if (dist < minDistance) {
-                        minDistance = dist;
-                        bestCandidate = cand;
-                    }
-                }
-                return bestCandidate;
-            }
-        }
 
         // 🌟 Standard Voicing Logic
         let intervals = [0, 4, 7];
@@ -319,7 +171,7 @@ export class HarmonyCore {
                     newVoicing.push(targetPcs[i] + oct * 12);
                 }
             }
-            return Array.from(new Set(newVoicing)).sort((a, b) => a - b);
+            return sortAndDedupNumbers(newVoicing);
         }
 
         // Generate all possible inversions/voicings within a reasonable range (C3 to C6)
@@ -398,7 +250,7 @@ export class HarmonyCore {
             }
         }
 
-        return Array.from(new Set(bestCandidate)).sort((a, b) => a - b);
+        return sortAndDedupNumbers(bestCandidate);
     }
     public static getScalePitches(tonality: Tonality): number[] {
         let intervals = [0, 2, 4, 5, 7, 9, 11]; 
@@ -410,6 +262,29 @@ export class HarmonyCore {
         if (tonality === Tonality.Dorian) intervals = [0, 2, 3, 5, 7, 9, 10];
         if (tonality === Tonality.Mixolydian) intervals = [0, 2, 4, 5, 7, 9, 10];
         return intervals;
+    }
+
+    /**
+     * 检查两个和弦是否共享至少 minCommon 个共同音（pitch class 级别）。
+     * 用于借调和弦验证、经过和弦验证、Pivot Chord 选择。
+     * 参数用 root + quality 而非完整 GeneratedChord，便于在候选生成时轻量调用。
+     */
+    public static sharesCommonTones(
+        root1: number, quality1: string,
+        root2: number, quality2: string,
+        minCommon: number = 1
+    ): boolean {
+        // 用临时 chord 获取和弦音，仅需 root + quality
+        const pcs1 = this.getChordTones({ root: root1, quality: quality1 } as GeneratedChord, 60);
+        const pcs2 = this.getChordTones({ root: root2, quality: quality2 } as GeneratedChord, 60);
+        let common = 0;
+        for (let i = 0; i < pcs1.length; i++) {
+            const pc1 = pcs1[i] % 12;
+            for (let j = 0; j < pcs2.length; j++) {
+                if (pc1 === pcs2[j] % 12) { common++; break; }
+            }
+        }
+        return common >= minCommon;
     }
 
     public static getDynamicChordScale(chord: GeneratedChord): number[] {
@@ -496,7 +371,7 @@ export class HarmonyCore {
             }
         });
 
-        return Array.from(new Set([...scalePcs, ...chordTones])).sort((a,b)=>a-b);
+        return sortAndDedupNumbers([...scalePcs, ...chordTones]);
     }
     public static snapToScale(pitch: number, scalePcs: number[]): number {
         let closestPitch = pitch;
@@ -882,34 +757,37 @@ export class HarmonyEngine {
 
         sections.forEach((section, sectionIndex) => {
             let baseProgression: string[];
-            let sectionType = 'Verse';
-            if (section.name.includes('Chorus')) sectionType = 'Chorus';
-            else if (section.name.includes('Pre')) sectionType = 'PreChorus';
-            else if (section.name.includes('Break')) sectionType = 'Break';
-            else if (section.name.includes('Bridge')) sectionType = 'Bridge';
-            else if (section.name.includes('Outro')) sectionType = 'Outro';
-            else if (section.name.includes('Intro')) sectionType = 'Intro';
+            // 从数值 sectionType 派生 globalPlan 查表 key（取代原 name.includes 子串匹配）
+            const secType = section.sectionType ?? SectionType.Verse;
+            // globalPlan 只支持 Verse/Chorus/PreChorus/Break/Bridge/Intro/Outro 这几个 key，
+            // 其他段落类型回退到 Verse
+            let progressionKey: string;
+            if (secType === SectionType.Chorus) progressionKey = 'Chorus';
+            else if (secType === SectionType.PreChorus) progressionKey = 'PreChorus';
+            else if (secType === SectionType.Break || secType === SectionType.Breakdown) progressionKey = 'Break';
+            else if (secType === SectionType.Bridge || secType === SectionType.Solo_Bridge) progressionKey = 'Bridge';
+            else if (secType === SectionType.Outro || secType === SectionType.PreOutro) progressionKey = 'Outro';
+            else if (secType === SectionType.Intro) progressionKey = 'Intro';
+            else progressionKey = 'Verse';
 
-            baseProgression = globalPlan[sectionType];
+            baseProgression = globalPlan[progressionKey];
             
             // 🌟 Phase 1: Save base progression to decoupled state
             if (section.harmony) {
                 section.harmony.baseProgression = [...baseProgression];
             }
             
-            // 记录该类型段落出现的次数
-            sectionTypeCounts[sectionType] = (sectionTypeCounts[sectionType] || 0) + 1;
-            const appearanceCount = sectionTypeCounts[sectionType];
+            // 记录该类型段落出现的次数（用 progressionKey 字符串作为 hashmap key）
+            sectionTypeCounts[progressionKey] = (sectionTypeCounts[progressionKey] || 0) + 1;
+            const appearanceCount = sectionTypeCounts[progressionKey];
 
             // 允许同类型段落的变体 (例如 Verse 2 可以是 Verse 1 的微调，这里先保持完全一致，后续可扩展 Re-harmonization)
-            let progression = [...baseProgression]; 
-            
+            let progression = [...baseProgression];
+
             // 🌟 核心：替代和弦 (Chord Substitution)
             // 如果是该类型段落的第 2 次或以上出现 (例如 Verse 2, Chorus 2)，有概率进行和弦替换，增加变化
-            const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
-            const isEDMStyle = voicingStyle === 'edm';
-            const reharmProb = isEDMStyle ? 0.0 : (style.harmonyRules?.reharmProbability ?? 0.3);
-            const borrowedChords = isEDMStyle ? [] : (style.harmonyRules?.borrowedChords ?? []);
+            const reharmProb = style.harmonyRules?.reharmProbability ?? 0.3;
+            const borrowedChords = style.harmonyRules?.borrowedChords ?? [];
             if (appearanceCount > 1 && !isGlobalProgression) {
                 let hasMutation = false;
                 progression = progression.map(numeral => {
@@ -965,31 +843,20 @@ export class HarmonyEngine {
 
                 if (section.endingType === 'hard_stop') {
                     numeral = tonic;
-                } else if (section.name.includes('Outro') && bar >= totalBars - 2) {
-                    const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
-                    const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
-                    if (!isJazzOrSoul) {
-                        if (bar === totalBars - 2) {
-                            numeral = PRNGManager.next() > 0.5 ? subdominant : dominant;
-                        } else if (bar === totalBars - 1) {
-                            numeral = tonic;
-                        }
+                } else if ((secType === SectionType.Outro || secType === SectionType.PreOutro) && bar >= totalBars - 2) {
+                    if (bar === totalBars - 2) {
+                        numeral = PRNGManager.next() > 0.5 ? subdominant : dominant;
+                    } else if (bar === totalBars - 1) {
+                        numeral = tonic;
                     }
-                } else if (section.name.includes('Chorus') && isEndOfSection) {
+                } else if (secType === SectionType.Chorus && isEndOfSection) {
                     const nextSection = sectionIndex + 1 < sections.length ? sections[sectionIndex + 1] : null;
-                    if (nextSection && !nextSection.name.includes('Chorus') && !nextSection.name.includes('Outro')) {
+                    const nextSecType = nextSection?.sectionType;
+                    if (nextSection && nextSecType !== SectionType.Chorus && nextSecType !== SectionType.Outro && nextSecType !== SectionType.PreOutro) {
                         numeral = PRNGManager.next() > 0.5 ? 'V7' : 'Vsus4';
                     }
-                } else if ((section.name.includes('Verse') || section.name.includes('Chorus')) && !isEndOfSection && (bar + 1) % 4 === 0) {
-                    const voicingStyle = style.harmonyRules?.voicingStyle || 'standard';
-                    const isJazzOrSoul = voicingStyle === 'jazz' || voicingStyle === 'neo-soul';
-                    const isGospel = voicingStyle === 'neo-soul';
-                    
-                    if (isJazzOrSoul) {
-                        numeral = tonality === Tonality.Minor ? 'V7' : 'V13';
-                    } else if (isGospel) {
-                        numeral = tonality === Tonality.Minor ? 'iv' : 'IV';
-                    } else if (!isEDMStyle && PRNGManager.next() < 0.3) {
+                } else if ((secType === SectionType.Verse || secType === SectionType.Chorus) && !isEndOfSection && (bar + 1) % 4 === 0) {
+                    if (PRNGManager.next() < 0.3) {
                         numeral = 'V';
                     }
                 }
@@ -1002,7 +869,7 @@ export class HarmonyEngine {
                 const isEndOfSection = (barsGenerated === totalBars - 1);
 
                 // 🌟 核心：经过和弦变异 (Passing Chord Mutation) & 段落过渡 (Section Transition)
-                const isEmotionalCore = section.name.includes('Intro') || section.name.includes('Outro');
+                const isEmotionalCore = secType === SectionType.Intro || secType === SectionType.Outro || secType === SectionType.PreOutro;
                 const allowMutation = !isEmotionalCore; // 允许在 Verse, PreChorus, Chorus 中变异，增加和声推动力
 
                 // 决定下一个目标和弦，用于计算经过和弦
@@ -1015,12 +882,14 @@ export class HarmonyEngine {
                     if (nextSection.endingType === 'hard_stop') {
                         nextNumeral = GlobalContext.currentTonality === Tonality.Minor ? (isMinorProgression ? 'i' : 'vi') : 'I';
                     } else {
+                        // 用 nextSection 的数值 sectionType 派生 globalPlan key
+                        const nextSecType = nextSection.sectionType ?? SectionType.Verse;
                         let nextSecProg: string[];
-                        if (nextSection.name.includes('Chorus')) nextSecProg = globalPlan['Chorus'];
-                        else if (nextSection.name.includes('Pre')) nextSecProg = globalPlan['PreChorus'];
-                        else if (nextSection.name.includes('Break')) nextSecProg = globalPlan['Break'];
-                        else if (nextSection.name.includes('Outro')) nextSecProg = globalPlan['Outro'];
-                        else if (nextSection.name.includes('Intro')) nextSecProg = globalPlan['Intro'];
+                        if (nextSecType === SectionType.Chorus) nextSecProg = globalPlan['Chorus'];
+                        else if (nextSecType === SectionType.PreChorus) nextSecProg = globalPlan['PreChorus'];
+                        else if (nextSecType === SectionType.Break || nextSecType === SectionType.Breakdown) nextSecProg = globalPlan['Break'];
+                        else if (nextSecType === SectionType.Outro || nextSecType === SectionType.PreOutro) nextSecProg = globalPlan['Outro'];
+                        else if (nextSecType === SectionType.Intro) nextSecProg = globalPlan['Intro'];
                         else nextSecProg = globalPlan['Verse'];
                         
                         nextNumeral = nextSecProg[0];
@@ -1069,8 +938,11 @@ export class HarmonyEngine {
                         passingChordsAllowed.push('SharpFourHalfDim');
                     }
 
-                    // 🌟 核心修复：降低经过和弦频率，并在段落交界处极力避免，以确保稳定解决
-                    const passingProb = isEndOfSection ? 0.1 : 0.3;
+                    // 🌟 HC-2: 段落交界经过和弦概率提升
+                    // 旧版段落尾仅 10%，导致 Verse→Chorus 经常硬切
+                    // 新版段落尾提升到 style 可配（默认 45%），中间维持 30%
+                    const sectionEndPassingProb = style.harmonyRules?.sectionTransitionPassingProb ?? 0.45;
+                    const passingProb = isEndOfSection ? sectionEndPassingProb : 0.3;
                     if (allowMutation && (isEndOfPhrase || isEndOfSection) && PRNGManager.next() < passingProb && beatsPerBar >= 3 && passingChordsAllowed.length > 0) {
                         
                         let passingBeats = 1; 
@@ -1094,6 +966,15 @@ export class HarmonyEngine {
                                 // Apply style spices to the passing chord to get the correct extensions
                                 passingNumeral = this.applyStyleSpices([passingNumeral], style)[0];
                                 isValidPassing = true;
+
+                                // 🌟 HC-3: 共同音验证
+                                // 经过和弦必须与目标和弦（nextNumeral）共享 ≥1 个 pitch class，
+                                // 否则听感会"突然跳到一个不相关的和弦"
+                                const passingParsed = HarmonyCore.parseRomanNumeral(passingNumeral, GlobalContext.currentTonality, isRelativeMajorProgression);
+                                const nextParsed = HarmonyCore.parseRomanNumeral(nextNumeral, GlobalContext.currentTonality, isRelativeMajorProgression);
+                                if (!HarmonyCore.sharesCommonTones(passingParsed.root, passingParsed.quality, nextParsed.root, nextParsed.quality)) {
+                                    isValidPassing = false; // 回退：不插入这个经过和弦
+                                }
                             }
                         }
 
@@ -1153,10 +1034,11 @@ export class HarmonyEngine {
         // State space: for each original chord, we consider a few alternatives (substitutions).
         // We want to find the sequence of chords that maximizes the score (melody fit + transition logic).
         
-        const getAlternatives = (original: GeneratedChord, next: GeneratedChord | null): GeneratedChord[] => {
+        // 🌟 HC-5: getAlternatives 返回候选列表 + borrowedStartIndex（从此索引起的候选是借调和弦）
+        const getAlternatives = (original: GeneratedChord, next: GeneratedChord | null): { alts: GeneratedChord[], borrowedStartIndex: number } => {
             const alts = [original];
             const parsed = HarmonyCore.parseRomanNumeral(original.numeral);
-            
+
             // 1. Relative Minor/Major substitution (e.g., Cmaj7 <-> Am7)
             const relativeMap: Record<string, string> = {
                 'Imaj7': 'vi7', 'vi7': 'Imaj7',
@@ -1172,7 +1054,6 @@ export class HarmonyEngine {
                 const secDom = MusicTheoryRules.getPassingChord(next.numeral, 'SecondaryDominant');
                 if (secDom) {
                     const secParsed = HarmonyCore.parseRomanNumeral(secDom);
-                    // Only use it if it's not the same as the original
                     if (secDom !== original.numeral) {
                         alts.push({ ...original, numeral: secDom, root: secParsed.root, quality: secParsed.quality });
                     }
@@ -1188,7 +1069,24 @@ export class HarmonyEngine {
                 }
             }
 
-            return alts;
+            // ── 以上为常规候选，以下为借调候选 ──
+            const borrowedStartIndex = alts.length;
+
+            // 4. HC-1: 借调和弦 (Borrowed Chords / Modal Mixture)
+            const borrowedTypes = style.harmonyRules?.borrowedChords ?? [];
+            if (borrowedTypes.length > 0) {
+                const subs = MusicTheoryRules.getSubstitution(original.numeral, borrowedTypes);
+                for (let si = 0; si < subs.length; si++) {
+                    const sub = subs[si];
+                    if (sub === original.numeral) continue;
+                    const subParsed = HarmonyCore.parseRomanNumeral(sub);
+                    if (HarmonyCore.sharesCommonTones(parsed.root, parsed.quality, subParsed.root, subParsed.quality)) {
+                        alts.push({ ...original, numeral: sub, root: subParsed.root, quality: subParsed.quality });
+                    }
+                }
+            }
+
+            return { alts, borrowedStartIndex };
         };
 
         const getMelodyFitScore = (chord: GeneratedChord, melodyNotes: NoteData[]): number => {
@@ -1237,35 +1135,41 @@ export class HarmonyEngine {
         // dp[i][j] stores the max score up to chord i, choosing alternative j
         const dp: { score: number, prevAltIndex: number }[][] = [];
         const alternatives: GeneratedChord[][] = [];
+        const borrowedStartIndices: number[] = []; // 每个 chord 位置的借调起始索引
 
         for (let i = 0; i < chords.length; i++) {
             const original = chords[i];
             const next = i < chords.length - 1 ? chords[i + 1] : null;
-            const alts = getAlternatives(original, next);
+            const { alts, borrowedStartIndex } = getAlternatives(original, next);
             alternatives.push(alts);
-            
+            borrowedStartIndices.push(borrowedStartIndex);
+
             const melodyInSlot = melody.filter(n => n.onset >= original.startBeat && n.onset < original.endBeat);
-            
+
             dp[i] = [];
             for (let j = 0; j < alts.length; j++) {
                 const alt = alts[j];
                 const emissionScore = getMelodyFitScore(alt, melodyInSlot);
-                
+
+                // 🌟 HC-5A: 借调和弦负偏差 — 只有旋律贴合度显著优��原和弦才会被选��
+                const isBorrowed = j >= borrowedStartIndex;
+                const borrowedPenalty = isBorrowed ? -3 : 0;
+
                 if (i === 0) {
                     // Bias towards original chord for the first chord to establish key
                     const bias = j === 0 ? 5 : 0;
-                    dp[i][j] = { score: emissionScore + bias, prevAltIndex: -1 };
+                    dp[i][j] = { score: emissionScore + bias + borrowedPenalty, prevAltIndex: -1 };
                 } else {
                     let maxScore = -Infinity;
                     let bestPrevIndex = -1;
-                    
+
                     for (let k = 0; k < alternatives[i - 1].length; k++) {
                         const prevAlt = alternatives[i - 1][k];
                         const transScore = getTransitionScore(prevAlt, alt);
                         // Bias towards original chord to prevent over-reharmonization
-                        const bias = j === 0 ? 2 : 0; 
-                        const score = dp[i - 1][k].score + transScore + emissionScore + bias;
-                        
+                        const bias = j === 0 ? 2 : 0;
+                        const score = dp[i - 1][k].score + transScore + emissionScore + bias + borrowedPenalty;
+
                         if (score > maxScore) {
                             maxScore = score;
                             bestPrevIndex = k;
@@ -1278,9 +1182,10 @@ export class HarmonyEngine {
 
         // Backtracking
         const result: GeneratedChord[] = [];
+        const resultIsBorrowed: boolean[] = [];
         let bestLastIndex = 0;
         let maxFinalScore = -Infinity;
-        
+
         for (let j = 0; j < dp[chords.length - 1].length; j++) {
             if (dp[chords.length - 1][j].score > maxFinalScore) {
                 maxFinalScore = dp[chords.length - 1][j].score;
@@ -1291,7 +1196,21 @@ export class HarmonyEngine {
         let currIndex = bestLastIndex;
         for (let i = chords.length - 1; i >= 0; i--) {
             result.unshift(alternatives[i][currIndex]);
+            resultIsBorrowed.unshift(currIndex >= borrowedStartIndices[i]);
             currIndex = dp[i][currIndex].prevAltIndex;
+        }
+
+        // 🌟 HC-5B: 全曲借调上限 — 超出预算的借调和弦强制回退到原和弦
+        // 默认全曲最多 2 个借调，作为"高光时刻"而非常态
+        const maxBorrowed = style.harmonyRules?.maxBorrowedChords ?? 2;
+        let borrowedCount = 0;
+        for (let i = 0; i < result.length; i++) {
+            if (resultIsBorrowed[i]) {
+                borrowedCount++;
+                if (borrowedCount > maxBorrowed) {
+                    result[i] = chords[i]; // 超出预算，回退到原和弦
+                }
+            }
         }
 
         return result;

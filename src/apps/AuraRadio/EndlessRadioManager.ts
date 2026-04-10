@@ -98,6 +98,8 @@ export class EndlessRadioManager {
       // §1.4 step 0: 每次生成前重新播种
       const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
       PRNGManager.setSeed(seed);
+      // ACVE §5.1 — 入口快照点 A（setSeed 之后、step 1 PRNG 消耗之前）
+      PRNGManager.recordSnapshot('A');
       console.log(`[Radio] New seed: ${seed}`);
 
       const melodyEngine = new MelodyEngine();

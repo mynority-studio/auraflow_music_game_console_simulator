@@ -3,65 +3,76 @@ import { HarmonyCore } from '../composing/HarmonyCore';
 
 export class MotifLooper {
     public static loopMotif(
-        motif: NoteData[], 
-        chord: GeneratedChord, 
-        tonality: Tonality, 
+        motif: NoteData[],
+        chord: GeneratedChord,
+        tonality: Tonality,
         targetOctave: number = 60,
         role: 'Foreground' | 'Middleground' | 'Background' = 'Middleground'
     ): NoteData[] {
         if (!motif || motif.length === 0) return [];
-        
+
+        // 找出 motif 最大 onset，用于计算 motif 长度（向上取整到 4 拍倍数）
         let maxMotifOnset = 0;
-        motif.forEach(n => { if (n.onset > maxMotifOnset) maxMotifOnset = n.onset; });
-        
-        // Find motif length in beats (round up to nearest bar, assuming 4/4 for simplicity, or just use 4)
+        for (let i = 0; i < motif.length; i++) {
+            if (motif[i].onset > maxMotifOnset) maxMotifOnset = motif[i].onset;
+        }
         const motifLengthBeats = Math.max(4, Math.ceil((maxMotifOnset + 1) / 4) * 4);
-        
-        const notes: NoteData[] = [];
-        let currentBeat = Math.floor(chord.startBeat / motifLengthBeats) * motifLengthBeats;
-        
-        // Calculate average pitch of the motif to preserve contour when shifting
-        const avgPitch = motif.reduce((sum, n) => sum + n.pitch, 0) / motif.length;
+
+        // 计算 motif 平均音高，移动到目标八度时保持旋律轮廓
+        let pitchSum = 0;
+        for (let i = 0; i < motif.length; i++) pitchSum += motif[i].pitch;
+        const avgPitch = pitchSum / motif.length;
         let octaveShift = 0;
         while (avgPitch + octaveShift < targetOctave - 6) octaveShift += 12;
         while (avgPitch + octaveShift > targetOctave + 6) octaveShift -= 12;
-        
-        while (currentBeat < chord.endBeat) {
+
+        // 性能优化：每个 chord 的安全音阶只算一次（hoist 到循环外）
+        const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
+        const chordStart = chord.startBeat;
+        const chordEnd = chord.endBeat;
+
+        const notes: NoteData[] = [];
+        let currentBeat = Math.floor(chordStart / motifLengthBeats) * motifLengthBeats;
+
+        while (currentBeat < chordEnd - 1e-6) {
             // 🌟 智能变奏逻辑 (AABA / Turnaround)
             const phraseIndex = Math.floor(currentBeat / motifLengthBeats) % 4;
-            const isContrast = phraseIndex === 2; // 'B' section of AABA
-            const isTurnaround = phraseIndex === 3; // Turnaround at the end of phrase
-            
-            motif.forEach((n, index) => {
+            const isContrast = phraseIndex === 2;       // 'B' 段 of AABA
+            const isTurnaround = phraseIndex === 3;     // 乐句末尾收束
+
+            for (let mi = 0; mi < motif.length; mi++) {
+                const n = motif[mi];
                 const onset = currentBeat + (n.onset % motifLengthBeats);
-                if (onset >= chord.startBeat && onset < chord.endBeat) {
-                    // Snap to chord tones or safe scale
-                    const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
-                    let pitch = n.pitch + octaveShift;
-                    
-                    // Apply variation
-                    if (isContrast) {
-                        // Shift up a 4th (5 semitones) for contrast, it will snap to scale anyway
-                        // For basslines, maybe just shift up a 3rd or 4th
-                        pitch += role === 'Background' ? 5 : 5;
-                    } else if (isTurnaround && index >= motif.length - 2) {
-                        // Change the ending notes for turnaround (drop down a 5th)
-                        pitch -= role === 'Background' ? 0 : 7; // Don't drop bass too low
-                    }
-                    
-                    pitch = HarmonyCore.snapToScale(pitch, safeScalePcs);
-                    
-                    notes.push({
-                        pitch,
-                        onset,
-                        duration: n.duration,
-                        velocity: n.velocity * 0.8 // Slightly softer for accompaniment
-                    });
+                if (onset < chordStart - 1e-6 || onset >= chordEnd - 1e-6) continue;
+
+                let pitch = n.pitch + octaveShift;
+
+                if (isContrast) {
+                    // 上行四度制造对比段，snap 后仍在调内
+                    pitch += 5;
+                } else if (isTurnaround && mi >= motif.length - 2) {
+                    // 收束：前景/中景下行五度制造解决感，背景声部保持避免过低
+                    if (role !== 'Background') pitch -= 7;
                 }
-            });
+
+                pitch = HarmonyCore.snapToScale(pitch, safeScalePcs);
+
+                // 🌟 关键修复：duration 强制截断在 chord.endBeat 之内
+                // 防止 motif 音符的 sustain 跨过和弦边界，在新和弦上仍按旧和弦的非和弦音发声
+                const maxDuration = chordEnd - onset;
+                const duration = n.duration > maxDuration ? maxDuration : n.duration;
+                if (duration <= 1e-6) continue;
+
+                notes.push({
+                    pitch,
+                    onset,
+                    duration,
+                    velocity: n.velocity * 0.8 // 伴奏稍弱
+                });
+            }
             currentBeat += motifLengthBeats;
         }
-        
+
         return notes;
     }
 }
