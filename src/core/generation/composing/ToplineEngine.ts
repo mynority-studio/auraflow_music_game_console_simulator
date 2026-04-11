@@ -1,6 +1,7 @@
 import { PRNGManager } from '../../utils/PRNG';
 import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig, MusicContext, Tonality, SectionType, PhraseGroup, SubMotifSlot, CadenceType, HookPlan, PhraseLengthProfile } from '../types';
 import { HarmonyCore } from './HarmonyCore';
+import { MusicTheoryRules } from './MusicTheoryRules';
 import { GrooveEngine } from './GrooveEngine';
 import { GlobalContext } from '../GlobalContext';
 import { ENERGY } from '../config/EnergyThresholds';
@@ -1400,11 +1401,14 @@ export class ToplineEngine {
             const chordTones = HarmonyCore.getChordTones(activeChord, targetCenter);
             let safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
 
-            // 🌟 和弦边界前瞻：检测是否临近和弦切换点（≤1 拍）
+            // 🌟 和弦边界前瞻：检测是否临近和弦切换点（≤1 拍 / ≤0.5 拍）
             const nextChordIdx = chords.indexOf(activeChord) + 1;
             const nextChordLookahead = nextChordIdx < chords.length ? chords[nextChordIdx] : null;
+            const nextNextChordLookahead = (nextChordIdx + 1) < chords.length ? chords[nextChordIdx + 1] : null;
             const beatsToChordEnd = activeChord.endBeat - onset;
             const isNearChordBoundary = nextChordLookahead !== null && beatsToChordEnd <= 1.0 && beatsToChordEnd > 1e-6;
+            const isVeryNearChordBoundary = nextChordLookahead !== null && beatsToChordEnd <= 0.5 && beatsToChordEnd > 1e-6;
+            const nextChordFunction = nextChordLookahead ? MusicTheoryRules.getChordFunction(nextChordLookahead.numeral) : null;
 
             // 🌟 法则四：五声音阶的”留白”艺术 (The Pentatonic Gap)
             // 强制跳过音阶中的 4 音和 7 音（大调），直接跳到下一个五声音阶内的音
@@ -1522,6 +1526,17 @@ export class ToplineEngine {
                 case 'Wandering': 
                         idealPitch = targetCenter + (PRNGManager.next() * range - range/2); 
                         break;
+                }
+            }
+
+            // 🌟 和声引力偏置 (Harmonic Gravity)
+            // 靠近 Dominant → 微升（蓄力），靠近 Tonic → 微降（准备解决）
+            const gravityStr = style?.melody?.harmonicGravityStrength ?? 0.3;
+            if (gravityStr > 0 && nextChordFunction !== null && previousPitch !== null && !isPhraseEnd) {
+                if (nextChordFunction === 'Dominant' && beatsToChordEnd <= 2.0) {
+                    idealPitch += gravityStr * 2;
+                } else if (nextChordFunction === 'Tonic' && beatsToChordEnd <= 2.0) {
+                    idealPitch -= gravityStr * 2;
                 }
             }
 
@@ -1654,6 +1669,34 @@ export class ToplineEngine {
                             }
                         }
                         if (bestD < 999) currentPitch = bestP;
+                    }
+                }
+
+                // 🌟 Common-tone Pivot：当前和弦与 next-next 和弦共享音时，偏向该锚点
+                if (isNearChordBoundary && nextNextChordLookahead && nextChordLookahead) {
+                    const pivotPcs = HarmonyCore.getCommonTonePcs(activeChord, nextNextChordLookahead);
+                    if (pivotPcs.length > 0) {
+                        const curPc = currentPitch % 12;
+                        let onPivot = false;
+                        for (let pi = 0; pi < pivotPcs.length; pi++) {
+                            if (pivotPcs[pi] === curPc) { onPivot = true; break; }
+                        }
+                        if (!onPivot) {
+                            let bestPivot = currentPitch, bestPivotD = 999;
+                            for (let pi = 0; pi < pivotPcs.length; pi++) {
+                                const cand = this.getNearestOctave(pivotPcs[pi], currentPitch);
+                                const d = Math.abs(cand - currentPitch);
+                                if (d < bestPivotD && d <= 4) { bestPivotD = d; bestPivot = cand; }
+                            }
+                            if (bestPivotD < 999) {
+                                // 仅当 pivot 音也是当前和弦音时才采用
+                                let inCurrentChord = false;
+                                for (let ci = 0; ci < chordTones.length; ci++) {
+                                    if ((chordTones[ci] % 12) === (bestPivot % 12)) { inCurrentChord = true; break; }
+                                }
+                                if (inCurrentChord) currentPitch = bestPivot;
+                            }
+                        }
                     }
                 }
 
@@ -1804,10 +1847,39 @@ export class ToplineEngine {
                     }
                 }
                 
+                // 🌟 和弦边界半音导入：≤0.5 拍时向下一和弦 root/3rd 半音级进
+                if (isVeryNearChordBoundary && nextChordLookahead && previousPitch !== null && !isPhraseEnd) {
+                    const nextCT = HarmonyCore.getChordTones(nextChordLookahead, targetCenter);
+                    // 目标：下一和弦的 root 或 3rd
+                    let bestTarget = this.getNearestOctave(nextCT[0] % 12, previousPitch);
+                    let bestDist = Math.abs(bestTarget - previousPitch);
+                    if (nextCT.length > 1) {
+                        const cand = this.getNearestOctave(nextCT[1] % 12, previousPitch);
+                        const d = Math.abs(cand - previousPitch);
+                        if (d < bestDist && d > 0) { bestDist = d; bestTarget = cand; }
+                    }
+                    // 半音级进趋近（一次一个半音），但须避免与当前和弦产生小九度
+                    let chromLeadPitch = previousPitch;
+                    if (bestDist > 1) {
+                        const dir = bestTarget > previousPitch ? 1 : -1;
+                        chromLeadPitch = previousPitch + dir;
+                    } else if (bestDist > 1e-6) {
+                        chromLeadPitch = bestTarget;
+                    }
+                    // 小九度安全检测：chromLeadPitch 与任一和弦音相差 1 半音 → 放弃
+                    let hasM9Clash = false;
+                    const leadPc = chromLeadPitch % 12;
+                    for (let ci = 0; ci < chordTones.length; ci++) {
+                        const diff = ((leadPc - (chordTones[ci] % 12)) + 12) % 12;
+                        if (diff === 1 || diff === 11) { hasM9Clash = true; break; }
+                    }
+                    if (!hasM9Clash) currentPitch = chromLeadPitch;
+                }
+
                 // 重新计算 interval 以供后续逻辑使用
                 interval = currentPitch - previousPitch;
                 absInterval = Math.abs(interval);
-                
+
                 if (absInterval === 1 || absInterval === 2) {
                     // 🌟 级进时，有概率加入倚音 (Grace Note) / 幽灵音过度
                     // 大幅降低倚音频率，避免过于密集和烦人。使用方法论：一小节最多出现一次，或者只在长音前出现
@@ -2068,10 +2140,50 @@ export class ToplineEngine {
                     notes.push({ pitch: Math.floor(currentPitch), onset: finalOnset, duration: legatoDuration, velocity: humanVelocity });
                 }
             } else {
-                // 🌟 强拍倚音 (Appoggiatura)
+                // 🌟 强拍半音趋近音 (Chromatic Approach from Below)
+                let didChromaticApproach = false;
+                const chromApproachProb = style?.melody?.chromaticApproachProbability ?? 0.15;
+                if (isStrongBeat && previousPitch !== null && i > 0 && notes.length > 0) {
+                    const chromRoll = PRNGManager.next(); // 始终消耗 PRNG 保持确定性
+                    let targetIsChordTone = false;
+                    const curPc = currentPitch % 12;
+                    for (let ci = 0; ci < chordTones.length; ci++) {
+                        if ((chordTones[ci] % 12) === curPc) { targetIsChordTone = true; break; }
+                    }
+                    if (targetIsChordTone && chromRoll < chromApproachProb) {
+                        const approachPitch = currentPitch - 1;
+                        // 安全检测：趋近音不能与其他和弦音产生小九度（与目标音差 1 是预期的）
+                        let approachSafe = true;
+                        const apPc = approachPitch % 12;
+                        for (let ci = 0; ci < chordTones.length; ci++) {
+                            const ctPc = chordTones[ci] % 12;
+                            if (ctPc === curPc) continue; // 跳过目标和弦音本身
+                            const diff = ((apPc - ctPc) + 12) % 12;
+                            if (diff === 1 || diff === 11) { approachSafe = false; break; }
+                        }
+                        if (approachSafe && approachPitch >= minPitch && Math.abs(approachPitch - previousPitch) < 12) {
+                            const lastNote = notes[notes.length - 1];
+                            const approachDuration = 0.25; // 16th note
+                            const approachOnset = finalOnset - approachDuration;
+                            if (approachOnset > lastNote.onset + lastNote.duration * 0.5) {
+                                // 缩短前音为趋近音腾出空间
+                                lastNote.duration = Math.min(lastNote.duration, approachOnset - lastNote.onset);
+                                notes.push({
+                                    pitch: Math.floor(approachPitch),
+                                    onset: approachOnset,
+                                    duration: approachDuration,
+                                    velocity: humanVelocity * 0.6
+                                });
+                                didChromaticApproach = true;
+                            }
+                        }
+                    }
+                }
+
+                // 🌟 强拍倚音 (Appoggiatura) — 与半音趋近互斥
                 const isEmotionalCore = sectionName.includes('Intro') || sectionName.includes('Chorus') || sectionName.includes('Outro');
                 const appoggiaturaChance = isEmotionalCore ? 0.1 : 0.05;
-                if (isStrongBeat && duration >= 0.5 && PRNGManager.next() < appoggiaturaChance) {
+                if (!didChromaticApproach && isStrongBeat && duration >= 0.5 && PRNGManager.next() < appoggiaturaChance) {
                     // 强拍上的非和弦音，随后解决到和弦音
                     const isUpper = PRNGManager.next() > 0.5;
                     const appPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, isUpper ? 1 : -1);
@@ -2102,8 +2214,54 @@ export class ToplineEngine {
 
                 // 正常添加音符
                 notes.push({ pitch: Math.floor(currentPitch), onset: finalOnset, duration: legatoDuration, velocity: humanVelocity });
+
+                // 🌟 全音阶经过音链 (Diatonic Passing Tone Chain)
+                // 当前后两音间隔 ≥3 半音时，缩短前音尾部填入经过音
+                const passingProb = style?.melody?.passingToneChainProbability ?? 0.12;
+                if (previousPitch !== null && notes.length >= 2) {
+                    const justPushed = notes[notes.length - 1];
+                    const prevNote = notes[notes.length - 2];
+                    const gap = justPushed.pitch - prevNote.pitch;
+                    const absGap = Math.abs(gap);
+                    const passingRoll = PRNGManager.next(); // 始终消耗 PRNG 保持确定性
+                    if (absGap >= 3 && absGap <= 7 && prevNote.duration >= 0.5 && passingRoll < passingProb) {
+                        const dir = gap > 0 ? 1 : -1;
+                        const stepsNeeded = Math.min(absGap - 1, 3); // max 3 passing tones
+                        const passingDur = 0.25;
+                        const totalPassingTime = stepsNeeded * passingDur;
+                        if (prevNote.duration > totalPassingTime + 0.25) {
+                            const originalDur = prevNote.duration;
+                            prevNote.duration = originalDur - totalPassingTime;
+                            let passingPitch = prevNote.pitch;
+                            let passingOnset = prevNote.onset + prevNote.duration;
+                            for (let s = 0; s < stepsNeeded; s++) {
+                                passingPitch = HarmonyCore.shiftDiatonic(passingPitch, safeScalePcs, dir);
+                                // 小九度安全检测：经过音不能与当前和弦音产生小九度
+                                let passSafe = true;
+                                const ppPc = passingPitch % 12;
+                                for (let ci = 0; ci < chordTones.length; ci++) {
+                                    const diff = ((ppPc - (chordTones[ci] % 12)) + 12) % 12;
+                                    if (diff === 1 || diff === 11) { passSafe = false; break; }
+                                }
+                                if (passSafe && passingPitch >= minPitch && passingPitch <= maxPitch) {
+                                    // 插入到最后一个音之前
+                                    notes.splice(notes.length - 1, 0, {
+                                        pitch: Math.floor(passingPitch),
+                                        onset: passingOnset,
+                                        duration: passingDur,
+                                        velocity: humanVelocity * 0.55
+                                    });
+                                }
+                                passingOnset += passingDur;
+                            }
+                            // 更新最后一个音的 onset（被经过音推迟了）
+                            justPushed.onset = passingOnset;
+                            justPushed.duration = Math.max(0.1, legatoDuration - totalPassingTime);
+                        }
+                    }
+                }
             }
-            
+
             // 🌟 不谐和度张力反馈：非和弦音累积张力→下一个音级进解决
             if (notes.length >= 2 && !isPhraseEnd) {
                 const lastNote = notes[notes.length - 1];

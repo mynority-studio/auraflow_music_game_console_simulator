@@ -287,6 +287,26 @@ export class HarmonyCore {
         return common >= minCommon;
     }
 
+    /** 返回两个和弦共享的 pitch class 数组（0-11），用于 common-tone pivot 规划 */
+    public static getCommonTonePcs(chord1: GeneratedChord, chord2: GeneratedChord): number[] {
+        const pcs1 = this.getChordTones(chord1, 60);
+        const pcs2 = this.getChordTones(chord2, 60);
+        const result: number[] = [];
+        for (let i = 0; i < pcs1.length; i++) {
+            const pc1 = pcs1[i] % 12;
+            let found = false;
+            // 去重：检查 result 中是否已存在
+            for (let r = 0; r < result.length; r++) {
+                if (result[r] === pc1) { found = true; break; }
+            }
+            if (found) continue;
+            for (let j = 0; j < pcs2.length; j++) {
+                if (pc1 === pcs2[j] % 12) { result.push(pc1); break; }
+            }
+        }
+        return result;
+    }
+
     public static getDynamicChordScale(chord: GeneratedChord): number[] {
         const rootPc = chord.root % 12;
         let intervals: number[] = [];
@@ -331,15 +351,17 @@ export class HarmonyCore {
     }
 
     public static getSafeScalePitches(chord: GeneratedChord, tonality: Tonality): number[] {
-        let intervals =[0, 2, 4, 5, 7, 9, 11]; 
-        if (tonality === Tonality.Minor) intervals =[0, 2, 3, 5, 7, 8, 10]; 
+        let intervals =[0, 2, 4, 5, 7, 9, 11];
+        if (tonality === Tonality.Minor) intervals =[0, 2, 3, 5, 7, 8, 10];
         if (tonality === Tonality.Melodic_Minor) intervals = [0, 2, 3, 5, 7, 9, 11]; // 🌟 Phase 3: Melodic Minor for Jazz
         if (tonality === Tonality.Major_Pentatonic) intervals =[0, 2, 4, 7, 9];
         if (tonality === Tonality.Minor_Pentatonic) intervals =[0, 3, 5, 7, 10];
         if (tonality === Tonality.Blues) intervals =[0, 3, 5, 6, 7, 10];
         if (tonality === Tonality.Dorian) intervals = [0, 2, 3, 5, 7, 9, 10];
         if (tonality === Tonality.Mixolydian) intervals = [0, 2, 4, 5, 7, 9, 10];
-        let scalePcs = intervals.map(i => i % 12);
+        // 用调号偏移将相对音程转为绝对 pitch class（修复：之前缺少偏移导致非 C 调时音阶错误）
+        const keyOff = chord.keyOffset !== undefined ? chord.keyOffset : 0;
+        let scalePcs = intervals.map(i => (i + keyOff) % 12);
         const chordTones = this.getChordTones(chord, 60).map(p => p % 12);
         
         // 移除与和弦外音冲突的自然音阶音 (Remove clashing diatonic tones)

@@ -246,6 +246,9 @@ export interface StyleConfig {
         pentatonicPreference?: number;
         extensionPreference?: number;
         chromaticPassingProbability?: number;
+        chromaticApproachProbability?: number;   // 强拍半音趋近概率（默认 0.15）
+        passingToneChainProbability?: number;    // 大音程经过音填充概率（默认 0.12）
+        harmonicGravityStrength?: number;        // 和弦功能引力强度 0-1（默认 0.3）
         leapResolutionThreshold?: number; // 🌟 新增：多大的音程被视为大跳并需要反向解决
         syncopationResolution?: 'strict' | 'loose';
         inflectionProbability?: number;

@@ -264,9 +264,10 @@ export class TextureMapper {
     chord: GeneratedChord,
     energyLevel: number,
     melodyNotes: NoteData[],
+    tonality: Tonality,
   ): NoteData[] {
     const notes: NoteData[] = [];
-    const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, GlobalContext.currentTonality);
+    const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
     const chordTones = HarmonyCore.getChordTones(chord, 72); // C5 附近
 
     // 节奏决策仍按"和弦区间起始的主旋律音符"判断密度（保持原行为）
@@ -583,9 +584,10 @@ export class TextureMapper {
   public static generateRiff(
     chord: GeneratedChord,
     energyLevel: number,
+    tonality: Tonality,
   ): NoteData[] {
     const chordTones = HarmonyCore.getChordTones(chord, 60);
-    const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, GlobalContext.currentTonality);
+    const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
     const notes: NoteData[] = [];
     const chordLen = chord.endBeat - chord.startBeat;
 

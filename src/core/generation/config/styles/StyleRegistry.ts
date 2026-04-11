@@ -9,37 +9,55 @@ const DefaultStyle: StyleConfig = {
         bpmRange: [80, 120],
         timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],
         tonalityPool: [
-            { tonality: Tonality.Major, weight: 0.6 },
-            { tonality: Tonality.Minor, weight: 0.4 },
+            { tonality: Tonality.Major, weight: 0.30 },
+            { tonality: Tonality.Minor, weight: 0.25 },
+            { tonality: Tonality.Dorian, weight: 0.15 },
+            { tonality: Tonality.Mixolydian, weight: 0.15 },
+            { tonality: Tonality.Major_Pentatonic, weight: 0.08 },
+            { tonality: Tonality.Minor_Pentatonic, weight: 0.07 },
         ],
     },
     harmony: {
         chorusPool: [
-            ['I', 'V', 'vi', 'IV'],
-            ['vi', 'IV', 'I', 'V'],
-            ['I', 'IV', 'vi', 'V'],
-            ['I', 'vi', 'IV', 'V'],
+            ['I', 'V', 'vi', 'IV'],           // Pop 万能进行
+            ['vi', 'IV', 'I', 'V'],            // Axis 变体（Despacito 起手）
+            ['I', 'IV', 'vi', 'V'],            // Let It Be 型
+            ['I', 'vi', 'IV', 'V'],            // 50s 经典
+            ['IV', 'V', 'iii', 'vi'],          // J-Pop 王道（小室进行）
+            ['I', 'V', 'IV', 'V'],             // Rock anthem
+            ['vi', 'V', 'IV', 'V'],            // Minor dramatic
+            ['I', 'iii', 'IV', 'iv'],          // Creep 型（大→小四级借调）
+            ['I', 'bVII', 'IV', 'I'],          // Mixolydian vamp（Hey Jude 尾段）
+            ['I', 'V', 'vi', 'iii', 'IV'],     // Pachelbel Canon 5 和弦
         ],
         versePool: [
-            ['I', 'IV', 'V', 'vi'],
-            ['I', 'vi', 'IV', 'V'],
-            ['vi', 'IV', 'I', 'V'],
+            ['I', 'IV', 'V', 'vi'],            // 标准叙事
+            ['I', 'vi', 'IV', 'V'],            // 50s doo-wop
+            ['vi', 'IV', 'I', 'V'],            // Minor 开头叙事
+            ['I', 'V', 'ii', 'IV'],            // Country/Folk
+            ['I', 'bVII', 'IV', 'I'],          // Mixolydian 放松
+            ['ii', 'IV', 'I', 'V'],            // Pre-funk groove
+            ['I', 'iii', 'vi', 'IV'],          // 下行三度链
+            ['vi', 'ii', 'V', 'I'],            // Minor-to-major 解决
         ],
         preChorusPool: [
-            ['ii', 'V', 'IV', 'I'],
-            ['IV', 'V', 'vi', 'I'],
-            ['ii', 'V', 'I', 'vi'],
+            ['ii', 'V', 'IV', 'I'],            // 经典蓄力
+            ['IV', 'V', 'vi', 'I'],            // 上行推进
+            ['ii', 'V', 'I', 'vi'],            // 2-5-1 jazz touch
+            ['IV', 'iv', 'I', 'V'],            // 大小四级切换
+            ['vi', 'V', 'IV', 'V'],            // 半音下行低音
+            ['ii', 'iii', 'IV', 'V'],          // 阶梯上行
         ],
     },
     harmonyRules: {
         maxDissonanceTolerance: 0.5,
-        reharmProbability: 0.1,
-        passingChords: ['SecondaryDominant'],
+        reharmProbability: 0.2,
+        passingChords: ['SecondaryDominant', 'Diminished7'],
         voicingStyle: 'standard',
-        allowTritoneSub: false,
-        extensionProbability: 0.4,
-        borrowedChords: ['ModalMixture'],
-        sectionTransitionPassingProb: 0.45,
+        allowTritoneSub: true,
+        extensionProbability: 0.5,
+        borrowedChords: ['ModalMixture', 'SecondaryDominant'],
+        sectionTransitionPassingProb: 0.5,
     },
     rhythm: {
         densityBase: [0.4, 0.6],
@@ -63,6 +81,9 @@ const DefaultStyle: StyleConfig = {
         pentatonicPreference: 0.3,
         pentatonicShiftProbability: 0,
         chromaticPassingProbability: 0,
+        chromaticApproachProbability: 0.15,
+        passingToneChainProbability: 0.12,
+        harmonicGravityStrength: 0.3,
         inflectionProbability: 0.15,
         laidBackTimingMax: 0,
         extensionTargeting: false,
@@ -93,7 +114,7 @@ const DefaultStyle: StyleConfig = {
     },
     orchestration: {
         melodyInstruments: [
-            'Acoustic_Grand', 'Electric_Piano_1', 'Flute',
+            'Acoustic_Grand', 'Electric_Piano_1',
             'Violin', 'Vibraphone', 'Music_Box',
         ],
         chordInstruments: [
@@ -121,8 +142,8 @@ const DefaultStyle: StyleConfig = {
             vocal:           { pan: 0,    reverb: 0.43, volume: 3 },     // 100 — 主角但不爆
             melody:          { pan: 0,    reverb: 0.43, volume: 0 },     // 80 — 适中，不抢不弱
             secondaryMelody: { pan: 0.4,  reverb: 0.59, volume: -3, chorus: 40 },  // 57
-            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -5, chorus: 40 },  // 45
-            chord:           { pan: 0.7,  reverb: 0.8,  volume: -6, chorus: 80 },  // 40 — Pad 退到幕后
+            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -4, chorus: 40 },  // 50
+            chord:           { pan: 0.7,  reverb: 0.8,  volume: -4, chorus: 80 },  // 50
             drums:           { pan: 0,    reverb: 0.08, volume: 1 },     // 89
             bass:            { pan: 0,    reverb: 0,    volume: -2 },    // 64
         },

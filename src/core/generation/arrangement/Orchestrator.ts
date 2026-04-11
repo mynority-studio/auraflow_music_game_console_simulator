@@ -609,7 +609,7 @@ export class Orchestrator {
                     const counterTexture = (energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
                     counterMelodyNotes.push(...TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody));
                 } else {
-                    counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody));
+                    counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, track.tonality));
                 }
             }
 
@@ -629,7 +629,7 @@ export class Orchestrator {
                     const rootNote = HarmonyCore.getChordTones(chord, 48)[0]; // C3 range
                     chordNotes = TextureMapper.generateSignatureRiff(scale, rootNote, chord.endBeat - chord.startBeat, chord.startBeat);
                 } else if (texture === "Riff") {
-                    chordNotes = TextureMapper.generateRiff(chord, energy);
+                    chordNotes = TextureMapper.generateRiff(chord, energy, track.tonality);
                 } else {
                     chordNotes = TextureMapper.generateChordTexture(
                         chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel
