@@ -63,6 +63,7 @@ interface MotifTemplate {
     anchors?: { bodyStartPitch?: number; bodyEndPitch?: number; };
     isMutated?: boolean;
     rhythmOffsets: number[];     // 包含 pickup(负值) + body + tail 的完整 onset 序列
+    relativePitches?: number[];  // 预计算的相对音高序列（相对于 targetCenter 的偏移量），确保同一 motif 多次实现时形状一致
     contour: Contour;
     noteCount: number;
     phraseLengthBeats: number;
@@ -570,6 +571,8 @@ export class ToplineEngine {
 
     private static transformMotif(motif: MotifTemplate, transform: { isInv?: boolean, isRet?: boolean, isAug?: boolean, isSwitcheroo?: boolean, isSplit?: boolean, isMerge?: boolean, isShift?: boolean }): MotifTemplate {
         let { rhythmOffsets, contour, noteCount, phraseLengthBeats } = motif;
+        // 🌟 同步变换 relativePitches，保持音高轮廓与节奏/contour 一致
+        let relativePitches = motif.relativePitches ? [...motif.relativePitches] : undefined;
 
         if (transform.isInv) {
             const invMap: Record<Contour, Contour> = {
@@ -581,6 +584,10 @@ export class ToplineEngine {
                 'Wandering': 'Wandering'
             };
             contour = invMap[contour];
+            // relativePitches 镜像翻转
+            if (relativePitches) {
+                relativePitches = relativePitches.map(rp => -rp);
+            }
         }
 
         if (transform.isRet) {
@@ -597,23 +604,36 @@ export class ToplineEngine {
                 'Wandering': 'Wandering'
             };
             contour = retMap[contour];
+            // relativePitches 逆行
+            if (relativePitches) {
+                relativePitches = [...relativePitches].reverse();
+            }
         }
 
         if (transform.isAug) {
             // 节奏放大 (Rhythmic Augmentation)
+            const origLen = rhythmOffsets.length;
             rhythmOffsets = rhythmOffsets.map(r => r * 2.0).filter(r => r < phraseLengthBeats);
-            
+
             // 如果放大后音符太少（比如只有一个），尝试在中间插入一个音
             if (rhythmOffsets.length === 1 && phraseLengthBeats > 2) {
                 rhythmOffsets.push(rhythmOffsets[0] + 1.0);
             }
-            
+
+            // relativePitches 截断到新长度（放大后被过滤掉的尾部音符对应的 pitch 也丢弃）
+            if (relativePitches) {
+                relativePitches = relativePitches.slice(0, rhythmOffsets.length);
+                // 如果 rhythmOffsets 因兜底插入而多了一个，补充最后一个值
+                while (relativePitches.length < rhythmOffsets.length) {
+                    relativePitches.push(relativePitches.length > 0 ? relativePitches[relativePitches.length - 1] : 0);
+                }
+            }
+
             noteCount = rhythmOffsets.length;
         }
 
         if (transform.isSwitcheroo && rhythmOffsets.length > 1) {
             // 🌟 Switcheroo (移位/镜像技巧)
-            // 保持第一个音（重拍锚点）不变，将其余音符的旋律线反向，或者把最后一个音移到最前面
             const switchMap: Record<Contour, Contour> = {
                 'Ascending': 'Arch',
                 'Descending': 'Bowl',
@@ -623,11 +643,17 @@ export class ToplineEngine {
                 'Wandering': 'Static'
             };
             contour = switchMap[contour];
-            
+
             // 节奏上，把最后一个音符提前到第一个音符之前（切分预期）
             const lastOffset = rhythmOffsets.pop()!;
             rhythmOffsets.unshift(rhythmOffsets[0] - 0.5);
-            
+
+            // relativePitches 同步：把最后一个 pitch 移到最前面
+            if (relativePitches && relativePitches.length > 1) {
+                const lastRp = relativePitches.pop()!;
+                relativePitches.unshift(lastRp);
+            }
+
             // 归一化，确保不出现负数时间
             const minOffset = Math.min(...rhythmOffsets);
             if (minOffset < 0) {
@@ -642,8 +668,13 @@ export class ToplineEngine {
             const nextOnset = splitIdx < rhythmOffsets.length - 1 ? rhythmOffsets[splitIdx + 1] : phraseLengthBeats;
             const duration = nextOnset - onset;
             if (duration >= 1.0) {
-                // 如果音符足够长，在中间插入一个音符
                 rhythmOffsets.splice(splitIdx + 1, 0, onset + duration / 2);
+                // relativePitches 同步：在 split 点插入原值与下一个值的中间值
+                if (relativePitches) {
+                    const curRp = relativePitches[splitIdx];
+                    const nextRp = splitIdx + 1 < relativePitches.length ? relativePitches[splitIdx + 1] : curRp;
+                    relativePitches.splice(splitIdx + 1, 0, (curRp + nextRp) / 2);
+                }
                 noteCount++;
             }
         }
@@ -652,44 +683,85 @@ export class ToplineEngine {
             // 🌟 Merge (合并): 随机选择两个相邻的音符，合并为一个
             const mergeIdx = Math.floor(PRNGManager.next() * (rhythmOffsets.length - 1));
             rhythmOffsets.splice(mergeIdx + 1, 1);
+            // relativePitches 同步：移除被合并的音符
+            if (relativePitches && mergeIdx + 1 < relativePitches.length) {
+                relativePitches.splice(mergeIdx + 1, 1);
+            }
             noteCount--;
         }
 
         if (transform.isShift && rhythmOffsets.length > 0) {
             // 🌟 Shift (移位): 整体平移或局部平移
             const shiftAmount = PRNGManager.next() > 0.5 ? 0.5 : -0.5;
-            rhythmOffsets = rhythmOffsets.map(r => r + shiftAmount);
-            // 确保不越界
-            rhythmOffsets = rhythmOffsets.filter(r => r >= 0 && r < phraseLengthBeats);
-            if (rhythmOffsets.length === 0) rhythmOffsets.push(0); // 兜底
+            // 记录哪些 index 会被保留（用于同步 relativePitches）
+            const keepIndices: number[] = [];
+            const shiftedOffsets: number[] = [];
+            for (let si = 0; si < rhythmOffsets.length; si++) {
+                const shifted = rhythmOffsets[si] + shiftAmount;
+                if (shifted >= 0 && shifted < phraseLengthBeats) {
+                    shiftedOffsets.push(shifted);
+                    keepIndices.push(si);
+                }
+            }
+            rhythmOffsets = shiftedOffsets;
+            if (rhythmOffsets.length === 0) {
+                rhythmOffsets.push(0);
+                keepIndices.push(0);
+            }
+            // relativePitches 同步：只保留未被过滤掉的元素
+            if (relativePitches) {
+                const newRp: number[] = [];
+                for (let ki = 0; ki < keepIndices.length; ki++) {
+                    const idx = keepIndices[ki];
+                    newRp.push(idx < relativePitches.length ? relativePitches[idx] : 0);
+                }
+                relativePitches = newRp;
+            }
             noteCount = rhythmOffsets.length;
         }
 
-        return { rhythm: motif.rhythm, anchors: motif.anchors, isMutated: true, rhythmOffsets, contour, noteCount, phraseLengthBeats };
+        return { rhythm: motif.rhythm, anchors: motif.anchors, isMutated: true, rhythmOffsets, relativePitches, contour, noteCount, phraseLengthBeats };
     }
 
     private static downgradeMotif(motif: MotifTemplate, sectionName: string, density: number): MotifTemplate {
         let newRhythm = [...motif.rhythmOffsets];
+        let newRelativePitches = motif.relativePitches ? [...motif.relativePitches] : undefined;
         let newContour = motif.contour;
 
         if (sectionName.includes('Verse')) {
-            // Sparser rhythm: drop some off-beats
-            newRhythm = newRhythm.filter(r => {
-                if (isOnDownbeat(r)) return true; // keep downbeats
-                return PRNGManager.next() < density; // drop some off-beats based on density
-            });
-            if (newRhythm.length === 0) newRhythm.push(0);
-            
-            // Keep the same contour to maintain melodic identity, 
-            // but the sparser rhythm will naturally make it feel calmer.
+            // Sparser rhythm: drop some off-beats, 同步过滤 relativePitches
+            const keepIndices: number[] = [];
+            const filteredRhythm: number[] = [];
+            for (let di = 0; di < newRhythm.length; di++) {
+                if (isOnDownbeat(newRhythm[di]) || PRNGManager.next() < density) {
+                    filteredRhythm.push(newRhythm[di]);
+                    keepIndices.push(di);
+                }
+            }
+            newRhythm = filteredRhythm;
+            if (newRhythm.length === 0) {
+                newRhythm.push(0);
+                keepIndices.push(0);
+            }
+            if (newRelativePitches) {
+                const filteredRp: number[] = [];
+                for (let ki = 0; ki < keepIndices.length; ki++) {
+                    const idx = keepIndices[ki];
+                    filteredRp.push(idx < newRelativePitches.length ? newRelativePitches[idx] : 0);
+                }
+                newRelativePitches = filteredRp;
+            }
         } else if (sectionName.includes('PreChorus')) {
-            // Build-up contour
+            // Build-up contour — relativePitches 保持不变，realizeMotif 会 fallback 到 contour 计算
             newContour = 'Ascending';
+            // PreChorus 改变 contour 后 relativePitches 已不匹配，清除让 realizeMotif fallback
+            newRelativePitches = undefined;
         }
 
         return {
             rhythm: motif.rhythm, anchors: motif.anchors, isMutated: true,
             rhythmOffsets: newRhythm,
+            relativePitches: newRelativePitches,
             contour: newContour,
             noteCount: newRhythm.length,
             phraseLengthBeats: motif.phraseLengthBeats
@@ -946,10 +1018,27 @@ export class ToplineEngine {
 
                 // ─── 创建 motif（若 baseLabel 首次出现）─────
                 if (!motifs.has(baseLabel)) {
-                    const densityMultiplier = isSolo ? 1.8 : (isInstrumental && isLead ? 1.2 : 1.0);
+                    // 🌟 段落感知的密度乘数：Solo 需要华丽跑动，Chorus 需要能量爆发
+                    const isChorus = secType === SectionType.Chorus;
+                    let densityMultiplier = 1.0;
+                    if (isSolo) {
+                        densityMultiplier = 3.0;    // Solo：快速跑动，远高于主歌
+                    } else if (isChorus) {
+                        densityMultiplier = 1.5;    // Chorus：比主歌更密集，推动力
+                    } else if (isInstrumental && isLead) {
+                        densityMultiplier = 1.2;
+                    }
                     const avgNotesPerBeat = densityMultiplier * sectionDensity * instrumentDensityMult;
                     let minNotes = Math.max(isOutro ? 1 : 3, Math.floor(slotLengthBeats * avgNotesPerBeat * 0.6));
                     let maxNotes = Math.max(minNotes + 1, Math.floor(slotLengthBeats * avgNotesPerBeat * 1.5));
+
+                    // 🌟 Solo/Chorus 最小音符地板：防止旋律过于稀疏
+                    if (isSolo) {
+                        minNotes = Math.max(minNotes, Math.floor(slotLengthBeats * 1.5)); // ≥1.5 notes/beat
+                        maxNotes = Math.max(maxNotes, Math.floor(slotLengthBeats * 3.5)); // ≤3.5 notes/beat
+                    } else if (isChorus) {
+                        minNotes = Math.max(minNotes, Math.floor(slotLengthBeats * 0.8)); // Chorus 不能太空
+                    }
 
                     if (isIntro) {
                         minNotes = Math.max(3, Math.floor(minNotes * 0.8));
@@ -989,9 +1078,28 @@ export class ToplineEngine {
                         }
                     }
 
+                    // 🌟 预计算相对音高序列：确保同一 motif 多次实现时音高轮廓一致
+                    // max ~30 notes for a 4-bar phrase at high density
+                    const rpRange = isVocal ? 12 : (isSolo ? 19 : (isLead ? 14 : 12));
+                    const relativePitches: number[] = [];
+                    for (let ri = 0; ri < rhythmOffsets.length; ri++) {
+                        const rp = rhythmOffsets.length > 1 ? ri / (rhythmOffsets.length - 1) : 0;
+                        let rpVal = 0;
+                        switch (contour) {
+                            case 'Ascending': rpVal = -rpRange / 2 + rp * rpRange; break;
+                            case 'Descending': rpVal = rpRange / 2 - rp * rpRange; break;
+                            case 'Arch': rpVal = -rpRange / 2 + Math.sin(rp * Math.PI) * rpRange; break;
+                            case 'Bowl': rpVal = rpRange / 2 - Math.sin(rp * Math.PI) * rpRange; break;
+                            case 'Static': rpVal = 0; break;
+                            case 'Wandering': rpVal = PRNGManager.next() * rpRange - rpRange / 2; break;
+                        }
+                        relativePitches.push(rpVal);
+                    }
+
                     motifs.set(baseLabel, {
                         rhythm: rhythm3D,
                         rhythmOffsets,
+                        relativePitches,
                         contour,
                         noteCount: rhythmOffsets.length,
                         phraseLengthBeats: slotLengthBeats,
@@ -1064,10 +1172,14 @@ export class ToplineEngine {
                 }
 
                 const isLastSlotOfIntro = isIntro && isLastSlotOfSection;
+                // 🌟 isClimax 扩展：除 Chorus hookPlan 外，Solo 段落的黄金分割位置也触发高潮
+                const soloClimaxSlot = isSolo && totalSlotsAcrossGroups > 2
+                    && globalSlotIdx === Math.floor(totalSlotsAcrossGroups * 0.618);
+                const isClimaxSlot = isPeakSlot || soloClimaxSlot;
                 const phraseResult = this.realizeMotif(
                     template, phraseStart, chords, tonality, isAnswer, currentPitchShift,
                     isSolo, isInstrumental, isLead, instrumentName, isLastSlotOfIntro, section.name, style,
-                    currentPreviousPitch, forceStrongResolution, isPeakSlot, 0, false, slotMacroTargetDegree
+                    currentPreviousPitch, forceStrongResolution, isClimaxSlot, maxPitchBeforeChorus, false, slotMacroTargetDegree
                 );
 
                 currentPreviousPitch = phraseResult.lastPitch;
@@ -1301,7 +1413,19 @@ export class ToplineEngine {
         macroTargetDegree?: number
     ): { notes: NoteData[], lastPitch: number | null } {
         const notes: NoteData[] = [];
-        const targetCenter = 60 + pitchShift;
+        let targetCenter = 60 + pitchShift;
+
+        // 🌟 Tessitura Catapult（音区弹射）：Chorus 整体音区动态提升
+        // 根据 Chorus 前各段落的最高音，将 Chorus 基础中心音高拉高，制造爆发感
+        if (sectionName.includes('Chorus') && maxPitchBeforeChorus > 0) {
+            if (targetCenter < maxPitchBeforeChorus + 2) {
+                targetCenter = maxPitchBeforeChorus + 2; // 至少比之前最高音高一个大二度
+            }
+            // 安全上限：器乐 C6(84)，人声 E5(76)
+            const catapultCap = isInstrumental ? 84 : 76;
+            if (targetCenter > catapultCap) targetCenter = catapultCap;
+        }
+
         const activeSection = GlobalContext.getActiveSection();
         // Default melody rules (no style grammar system)
         const melodyRules = {
@@ -1356,11 +1480,12 @@ export class ToplineEngine {
             }
             
             if (isPhraseEnd) {
-                // 强制乐句结尾：必须是长音或休止符，绝不允许出现密集的八分音符
+                // 🌟 修复：乐句末尾短音不再 100% 强制休止，降为 50%，保留旋律连贯性
+                // 原 1.0 导致 Chorus 等高密度段落的乐句尾部大量"断气"
                 if (duration < 1.0) {
-                    restChance = 1.0; // 强制休止
+                    restChance = 0.5; // 50% 概率休止（原 100%）
                 } else {
-                    restChance = isSolo ? 0.15 : (!isInstrumental ? 0.35 : 0.25);
+                    restChance = isSolo ? 0.05 : (!isInstrumental ? 0.15 : 0.10);
                 }
                 if (!isLastPhraseOfIntro && PRNGManager.next() < restChance) {
                     consecutiveNotes = 0;
@@ -1415,8 +1540,8 @@ export class ToplineEngine {
             const pentatonicGapProb = melodyRules.pentatonicGapProbability ?? 0.3;
             if (PRNGManager.next() < pentatonicGapProb) {
                 const isMajor = tonality === Tonality.Major || tonality === Tonality.Major_Pentatonic;
-                const rootPc = GlobalContext.currentKeyOffset || 0;
-                const avoidPcs = isMajor ? [(rootPc + 5) % 12, (rootPc + 11) % 12] : [(rootPc + 2) % 12, (rootPc + 8) % 12];
+                // 🌟 修复：safeScalePcs 现在是相对空间（主音=0），不需要加 keyOffset
+                const avoidPcs = isMajor ? [5, 11] : [2, 8]; // Major: 避开4音(F)和7音(B)；Minor: 避开2音和6音
                 safeScalePcs = safeScalePcs.filter(pc => !avoidPcs.includes(pc));
             }
 
@@ -1450,81 +1575,84 @@ export class ToplineEngine {
             const isVocal = !isInstrumental;
             const range = isVocal ? 12 : (isSolo ? 19 : (isLead ? 14 : 12)); // 旋律起伏跨度
 
-            // 引入一点随机性，让线型不那么死板
-            const progressJitter = progress + (PRNGManager.next() * 0.1 - 0.05);
-            const safeProgress = Math.max(0, Math.min(1, progressJitter));
-
             const isPickup = i < pickupLen;
             const isBody = i >= pickupLen && i < pickupLen + bodyLen;
             const isTail = i >= pickupLen + bodyLen;
 
             if (isTail || i === adjustedOffsets.length - 1) {
                 // Tail / phrase 末尾：macroTarget 解决
+                // 先从 relativePitches 获取基础轮廓音高，再与 macroTarget 融合
+                let contourIdeal = targetCenter;
+                if (template.relativePitches && i < template.relativePitches.length) {
+                    contourIdeal = targetCenter + template.relativePitches[i];
+                }
+
                 if (macroTargetDegree !== undefined) {
-                    const rootPc = GlobalContext.currentKeyOffset || 0;
+                    // 🌟 修复：在相对空间中计算（主音=0），与 getChordTones/getSafeScalePitches 一致
+                    const rootPc = 0;
                     const scalePcs = HarmonyCore.getScalePitches(tonality);
                     const degreeIdx = (macroTargetDegree - 1) % scalePcs.length;
                     const targetPc = (rootPc + scalePcs[degreeIdx]) % 12;
+                    // 找最接近 contourIdeal 的目标音级八度位置
                     let minDiff2 = 100;
-                    for (let oct = -1; oct <= 1; oct++) {
-                        const p = targetPc + (Math.floor(targetCenter / 12) + oct) * 12;
-                        const diff = Math.abs(p - targetCenter);
-                        if (diff < minDiff2) { minDiff2 = diff; idealPitch = p; }
+                    let macroIdeal = contourIdeal;
+                    for (let oct = -2; oct <= 2; oct++) {
+                        const p = targetPc + (Math.floor(contourIdeal / 12) + oct) * 12;
+                        const diff = Math.abs(p - contourIdeal);
+                        if (diff < minDiff2) { minDiff2 = diff; macroIdeal = p; }
                     }
+                    // 加权融合：70% macroTarget + 30% contour，平滑过渡而非粗暴跳转
+                    idealPitch = macroIdeal * 0.7 + contourIdeal * 0.3;
                 } else {
-                    idealPitch = targetCenter;
+                    idealPitch = contourIdeal;
                 }
             } else if (isPickup && template.pickupShape) {
                 // 🌟 弱起音高引导：基于 pickupShape 决定 pickup 音符走向
-                // 目标是引导（lead-in）到 body 的起始音区
                 const pickupProgress = pickupLen > 1 ? i / (pickupLen - 1) : 0;
-                // body 起始音的近似值 = targetCenter 偏低处（大多数 contour 从低点开始）
                 const bodyApproxStart = targetCenter - range * 0.25;
-                const pickupRange = 7; // 弱起跨度：约五度（7 半音），足以制造"引入"感
+                const pickupRange = 7;
 
                 switch (template.pickupShape) {
                     case 'ascending':
-                        // 从低处爬进 body 起始（do-re-mi↑）最常见
                         idealPitch = bodyApproxStart - pickupRange * (1 - pickupProgress);
                         break;
                     case 'descending':
-                        // 从高处落进 body 起始（sol-fa-mi↓）
                         idealPitch = bodyApproxStart + pickupRange * (1 - pickupProgress);
                         break;
                     case 'held':
-                        // 单音持续预备（同一个音反复或持续）
                         idealPitch = bodyApproxStart;
                         break;
                     case 'zigzag':
-                        // 折线跳进：交替上下逐渐收敛到 body 起始
                         const zigAmp = pickupRange * (1 - pickupProgress * 0.6);
                         idealPitch = bodyApproxStart + (i % 2 === 0 ? -zigAmp : zigAmp * 0.6);
                         break;
                 }
             } else if (isBody && i === pickupLen && anchors?.bodyStartPitch !== undefined) {
                 idealPitch = anchors.bodyStartPitch;
-            } else { switch (contour) {
-                case 'Ascending': 
-                    idealPitch = targetCenter - range/2 + safeProgress * range; 
-                    // 增加局部起伏
-                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch -= (PRNGManager.next() * 3);
-                    break;
-                case 'Descending': 
-                    idealPitch = targetCenter + range/2 - safeProgress * range; 
-                    // 增加局部起伏
-                    if (i > 0 && PRNGManager.next() < 0.3) idealPitch += (PRNGManager.next() * 3);
-                    break;
-                case 'Arch': 
-                    idealPitch = targetCenter - range/2 + Math.sin(safeProgress * Math.PI) * range; 
-                    break;
-                case 'Bowl': 
-                    idealPitch = targetCenter + range/2 - Math.sin(safeProgress * Math.PI) * range; 
-                    break;
-                case 'Static': 
-                    idealPitch = targetCenter; 
-                    break;
-                case 'Wandering': 
-                        idealPitch = targetCenter + (PRNGManager.next() * range - range/2); 
+            } else if (template.relativePitches && i < template.relativePitches.length) {
+                // 🌟 优先使用预计算的 relativePitches：同一 motif 多次实现时形状严格一致
+                idealPitch = targetCenter + template.relativePitches[i];
+            } else {
+                // Fallback：无 relativePitches 时按 contour 实时计算（兼容旧模板 / 变换后长度变化）
+                const safeProgress = Math.max(0, Math.min(1, progress));
+                switch (contour) {
+                    case 'Ascending':
+                        idealPitch = targetCenter - range / 2 + safeProgress * range;
+                        break;
+                    case 'Descending':
+                        idealPitch = targetCenter + range / 2 - safeProgress * range;
+                        break;
+                    case 'Arch':
+                        idealPitch = targetCenter - range / 2 + Math.sin(safeProgress * Math.PI) * range;
+                        break;
+                    case 'Bowl':
+                        idealPitch = targetCenter + range / 2 - Math.sin(safeProgress * Math.PI) * range;
+                        break;
+                    case 'Static':
+                        idealPitch = targetCenter;
+                        break;
+                    case 'Wandering':
+                        idealPitch = targetCenter + (PRNGManager.next() * range - range / 2);
                         break;
                 }
             }
@@ -1649,7 +1777,7 @@ export class ToplineEngine {
                 });
                 currentPitch = this.getNearestOctave(currentPitch, idealPitch);
 
-                // 🌟 和弦边界趋近音：临近切换时偏向共同音（移动 ≤5 半音）
+                // 🌟 和弦边界趋近音：临近切换时偏向共同音或最近的下一和弦音（移动 ≤5 半音）
                 if (isNearChordBoundary && nextChordLookahead) {
                     const nextCT = HarmonyCore.getChordTones(nextChordLookahead, targetCenter);
                     const curPc = currentPitch % 12;
@@ -1658,6 +1786,7 @@ export class ToplineEngine {
                         if ((nextCT[nci] % 12) === curPc) { alreadyCommon = true; break; }
                     }
                     if (!alreadyCommon) {
+                        // 优先：搜索当前和弦与下一和弦的共同音
                         let bestP = currentPitch, bestD = 999;
                         for (let nci = 0; nci < nextCT.length; nci++) {
                             for (let ci = 0; ci < chordTones.length; ci++) {
@@ -1666,6 +1795,14 @@ export class ToplineEngine {
                                     const d = Math.abs(cand - currentPitch);
                                     if (d < bestD && d <= 5) { bestD = d; bestP = cand; }
                                 }
+                            }
+                        }
+                        // 🌟 Fallback：无共同音时（如 vi→bVII7），移向下一和弦中距离最近的音（≤4半音）
+                        if (bestD >= 999) {
+                            for (let nci = 0; nci < nextCT.length; nci++) {
+                                const cand = this.getNearestOctave(nextCT[nci] % 12, currentPitch);
+                                const d = Math.abs(cand - currentPitch);
+                                if (d < bestD && d <= 4) { bestD = d; bestP = cand; }
                             }
                         }
                         if (bestD < 999) currentPitch = bestP;
@@ -1761,7 +1898,9 @@ export class ToplineEngine {
                 }
             }
             
-            const chordKeyOffset = activeChord.keyOffset !== undefined ? activeChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
+            // K-5 合规：用 chord.keyOffset 调整相对空间的音域边界（applyOffset 后不超出绝对音域）
+            // 禁止 fallback 到 GlobalContext.currentKeyOffset（K-5）
+            const chordKeyOffset = activeChord.keyOffset !== undefined ? activeChord.keyOffset : 0;
             maxPitch -= chordKeyOffset;
             minPitch -= chordKeyOffset;
             if (currentPitch > maxPitch) currentPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, -2);
@@ -1773,7 +1912,8 @@ export class ToplineEngine {
             if (previousPitch !== null) {
                 // 现代流行乐 (R&B/Rap影响) 喜欢同音反复，制造“念白感”或“律动感”
                 // 🌟 数据驱动的旋律锚定 (Melody Anchoring)
-                const anchorProb = style?.melody?.anchorProbability ?? (isVocal ? 0.35 : 0.15);
+                // 🌟 降低同音反复概率，避免旋律呆板无聊（原 vocal:0.35 / inst:0.15 过高）
+                const anchorProb = style?.melody?.anchorProbability ?? (isVocal ? 0.15 : 0.05);
                 const isConversational = !isSolo && PRNGManager.next() < anchorProb;
                 if (isConversational && duration < 1.0) {
                     currentPitch = previousPitch;
@@ -1782,65 +1922,44 @@ export class ToplineEngine {
                 let interval = currentPitch - previousPitch;
                 let absInterval = Math.abs(interval);
 
-                // 🌟 Rule 2: Interval Penalty & Leap Compensation
-                // 检查上一个音程是否是大跳，如果是，当前音应该反向级进或小跳来填补空隙
-                let shouldFillGap = false;
-                let gapDirection = 0;
-                if (notes.length >= 2) {
-                    const prevPrevPitch = notes[notes.length - 2].pitch;
-                    const prevInterval = previousPitch - prevPrevPitch;
-                    const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5; // 默认纯四度及以上视为大跳
-                    if (Math.abs(prevInterval) >= leapThreshold) { 
-                        shouldFillGap = true;
-                        gapDirection = prevInterval > 0 ? -1 : 1; // 反向
-                    }
-                }
+                // 🌟 Rule 2: Interval Safety — 信任 motif 形状，只拦截极端跳跃
+                // 移除了原先 70% 强制级进的惩罚逻辑，该逻辑会摧毁 motif 的轮廓形状
+                const maxJump = style?.melody?.maxJumpInterval ?? 12; // 默认一个八度
 
-                if (shouldFillGap) {
-                    // 强制反向级进或小跳 (Leap Compensation)
-                    let targetPitch = previousPitch + gapDirection * (PRNGManager.next() > 0.5 ? 1 : 2);
-                    
+                if (absInterval > maxJump) {
+                    // 极端跳跃：缩小到 maxJump 范围内
+                    const direction = interval > 0 ? 1 : -1;
+                    let targetPitch = previousPitch + direction * maxJump;
+
                     // 找最近的音阶音
                     let bestPc = safeScalePcs[0];
                     let minDistance = 999;
-                    for (const sc of safeScalePcs) {
-                        const p = this.getNearestOctave(sc, targetPitch);
+                    for (const pc of safeScalePcs) {
+                        const p = this.getNearestOctave(pc, targetPitch);
                         const dist = Math.abs(p - targetPitch);
                         if (dist < minDistance) {
                             minDistance = dist;
-                            bestPc = sc;
+                            bestPc = pc;
                         }
                     }
                     currentPitch = this.getNearestOctave(bestPc, targetPitch);
-                } else {
-                    // Interval Penalty Logic
-                    const r = PRNGManager.next();
-                    let allowedMaxInterval = 2; // 默认级进 (m2, M2)
-                    
-                    const maxJump = style?.melody?.maxJumpInterval ?? 12;
-                    
-                    if (r < 0.70) {
-                        allowedMaxInterval = 2; // 70% 概率 1-2 半音
-                    } else if (r < 0.90) {
-                        allowedMaxInterval = 4; // 20% 概率 3-4 半音 (m3, M3)
-                    } else {
-                        allowedMaxInterval = maxJump; // 10% 概率允许大跳
-                    }
-                    
-                    if (absInterval > allowedMaxInterval) {
-                        // 缩小音程到允许的范围内
-                        const direction = interval > 0 ? 1 : -1;
-                        let targetPitch = previousPitch + direction * allowedMaxInterval;
-                        
-                        // 找最近的音阶音
+                } else if (notes.length >= 2) {
+                    // 🌟 柔性 Leap Compensation：大跳后有 45% 概率反向级进（非 100% 强制）
+                    const prevPrevPitch = notes[notes.length - 2].pitch;
+                    const prevInterval = previousPitch - prevPrevPitch;
+                    const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5;
+                    if (Math.abs(prevInterval) >= leapThreshold && PRNGManager.next() < 0.45) {
+                        const gapDirection = prevInterval > 0 ? -1 : 1;
+                        let targetPitch = previousPitch + gapDirection * (PRNGManager.next() > 0.5 ? 1 : 2);
+
                         let bestPc = safeScalePcs[0];
                         let minDistance = 999;
-                        for (const pc of safeScalePcs) {
-                            const p = this.getNearestOctave(pc, targetPitch);
+                        for (const sc of safeScalePcs) {
+                            const p = this.getNearestOctave(sc, targetPitch);
                             const dist = Math.abs(p - targetPitch);
                             if (dist < minDistance) {
                                 minDistance = dist;
-                                bestPc = pc;
+                                bestPc = sc;
                             }
                         }
                         currentPitch = this.getNearestOctave(bestPc, targetPitch);

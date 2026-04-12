@@ -359,9 +359,10 @@ export class HarmonyCore {
         if (tonality === Tonality.Blues) intervals =[0, 3, 5, 6, 7, 10];
         if (tonality === Tonality.Dorian) intervals = [0, 2, 3, 5, 7, 9, 10];
         if (tonality === Tonality.Mixolydian) intervals = [0, 2, 4, 5, 7, 9, 10];
-        // 用调号偏移将相对音程转为绝对 pitch class（修复：之前缺少偏移导致非 C 调时音阶错误）
-        const keyOff = chord.keyOffset !== undefined ? chord.keyOffset : 0;
-        let scalePcs = intervals.map(i => (i + keyOff) % 12);
+        // 🌟 修复：保持相对 pitch class 空间（不加 keyOffset），与 getChordTones 一致。
+        // keyOffset 由 Orchestrator.applyOffset() 在管道末尾统一施加到所有音符。
+        // 之前这里加了 keyOff 导致弱拍音阶音被双重偏移（这里 +keyOff，applyOffset 又 +keyOff）。
+        let scalePcs = intervals.map(i => i % 12);
         const chordTones = this.getChordTones(chord, 60).map(p => p % 12);
         
         // 移除与和弦外音冲突的自然音阶音 (Remove clashing diatonic tones)

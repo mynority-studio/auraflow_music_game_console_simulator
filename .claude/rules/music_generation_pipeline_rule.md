@@ -192,7 +192,7 @@ class MidiConverter {
 
 ```typescript
 interface NoteData {
-  pitch: number;                  // MIDI 0~127
+  pitch: number;                  // MIDI 0~127 — ★ 生成管道内为相对空间（见 §4.7 K-1），applyOffset 后为绝对空间
   onset: number;                  // 起始拍位（拍）
   duration: number;               // 时长（拍）
   velocity: number;               // 力度 0.0~1.0
@@ -205,10 +205,11 @@ interface NoteData {
 
 interface GeneratedChord {
   numeral: string;                // 罗马数字 ("I", "vi", "V7")，仅内部解析
-  root: number;                   // 根音 0~11
+  root: number;                   // 根音 0~11 — ★ 相对于调式主音的偏移（I=0, ii=2），不含 keyOffset
   quality: ChordQuality;          // 17 种枚举
   startBeat: number;
   endBeat: number;
+  keyOffset?: number;             // 调号偏移（Eb=3, A=9 等），仅由 Orchestrator.applyOffset() 读取
 }
 
 // ★ SectionType — 数值枚举，替代 section.type 字符串比较和对象键查表
@@ -448,6 +449,21 @@ enum ChordQuality {
 | C-3 | **热循环内 `.push()` 可接受**（C 翻译时改为 `buf[count++]`），但**禁止**在热循环内使用 `.map()` / `.filter()` / `[...spread]` 创建临时数组 |
 | C-4 | **输出数组无上界时必须文档化最大长度**。新增 NoteData 数组的函数须在注释中标注预期最大元素数（如 `// max ~300 notes for 3-min song`） |
 
+### 4.7 Pitch Space 契约（调性统一）
+
+> 管道内所有 pitch 计算使用**相对空间**（主音 = 0），`Orchestrator.applyOffset()` 是唯一的相对→绝对转换点。
+> 此契约是调性正确性的地基。违反它会导致"双重偏移"或"空间混用"类 bug，且症状为**跨调不和谐**，极难定位。
+
+| ID | 约束 |
+|----|------|
+| K-1 | **双空间定义**：管道内有且仅有两种 pitch 空间 — **相对空间**（`chord.root` 以调式主音为 0，I=0, ii=2, V=7；`NoteData.pitch` 基于 C=60 为参考中心）和**绝对空间**（`NoteData.pitch` 已加上 `keyOffset`，可直接送入 MIDI 合成器）。不存在第三种中间状态 |
+| K-2 | **唯一转换点**：`Orchestrator.applyOffset()` 是管道中**唯一允许**将 `keyOffset` 加到 `NoteData.pitch` 的位置。其他任何函数**禁止**在返回的 pitch 中包含 `keyOffset` |
+| K-3 | **生成函数一律相对空间**：`HarmonyCore.getChordTones()`、`getSafeScalePitches()`、`getScalePitches()`、`shiftDiatonic()`、`snapToScale()` 的输入和输出均为相对空间。`TextureMapper` 和 `ToplineEngine` 生成的 `NoteData[]` 也是相对空间 |
+| K-4 | **禁止预补偿**：禁止在调用生成函数时做 `targetCenter - keyOffset` 的预减操作（"你减我加"对消模式）。如果需要调整音域，应修改生成函数的 `targetCenter` 参数本身（相对空间内的偏移），而非注入 keyOffset |
+| K-5 | **`GlobalContext.currentKeyOffset` 禁入生成逻辑**：生成管道内（MelodyEngine / Orchestrator 的生成阶段）**禁止**读取 `GlobalContext.currentKeyOffset` 用于 pitch 计算。唯一允许的用途是 `applyOffset()` 内部和音域限制（clamp to range）的边界调整 |
+| K-6 | **后处理空间声明**：`GlobalReviewer` 接收的输入已经过 `applyOffset()`，处于绝对空间。其内部调用 `HarmonyCore` 函数（返回相对 pitch class）时，必须通过 `% 12` 桥接比较，不得直接与绝对 pitch 做加减运算 |
+| K-7 | **新函数标注义务**：新增任何返回 pitch 值的函数，必须在函数签名上方注释标注其 pitch 空间（`// Pitch Space: RELATIVE` 或 `// Pitch Space: ABSOLUTE`） |
+
 ---
 
 ## 5. 确定性验证义务 (ACVE)
@@ -502,6 +518,7 @@ expect(PRNGManager.getState()).toBe(recorded_stateD);   // PRNG 消耗一致
 | 类型纪律 | T-1 ~ T-6 | 6 |
 | 纯净性 | S-1 ~ S-7 | 7 |
 | C 可移植性 | C-1 ~ C-4 | 4 |
+| Pitch Space 契约 | K-1 ~ K-7 | 7 |
 | 性能建议 | M-1 ~ M-3 | 3 (guideline) |
-| **合计** | | **36** (33 硬约束 + 3 guideline) |
+| **合计** | | **43** (40 硬约束 + 3 guideline) |
 

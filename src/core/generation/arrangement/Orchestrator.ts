@@ -593,7 +593,8 @@ export class Orchestrator {
                 const nextEnergyLevel = track.sections.find(s => s.startBeat >= activeSection.endBeat)?.energyLevel || energy;
                 
                 if (track.motifRole === 'Background' && track.processedUserMotif && track.processedUserMotif.length > 0) {
-                    const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); lhNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 36 - chordKeyOffset, track.motifRole));
+                    // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
+                    lhNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 36, track.motifRole));
                 } else {
                     lhNotes.push(...TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel));
                 }
@@ -603,7 +604,8 @@ export class Orchestrator {
                 // 如果副旋律乐器是铺底音色或合成器，则生成 Pad 或 Synth_Pulse 织体，否则生成副旋律
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0 && !playChords) {
                     // If Middleground motif is present and chords are not playing, put it here
-                    const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); counterMelodyNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60 - chordKeyOffset, track.motifRole));
+                    // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
+                    counterMelodyNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60, track.motifRole));
                 } else if (palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir')) {
                     const isVoiceOrString = palette.counterMelodySound.includes('Voice') || palette.counterMelodySound.includes('String') || palette.counterMelodySound.includes('Choir');
                     const counterTexture = (energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
@@ -622,7 +624,8 @@ export class Orchestrator {
 
                 let chordNotes: NoteData[] = [];
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0) {
-                    const chordKeyOffset = chord.keyOffset !== undefined ? chord.keyOffset : (track.keyOffset || 0); chordNotes = MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60 - chordKeyOffset, track.motifRole);
+                    // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
+                    chordNotes = MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60, track.motifRole);
                 } else if (activeSecType === SectionType.Intro && PRNGManager.next() < 0.5) {
                     // 🌟 针对特定风格的前奏 Riff
                     const scale = HarmonyCore.getSafeScalePitches(chord, track.tonality);
@@ -714,13 +717,13 @@ export class Orchestrator {
         // 当 Intro 选中持续音策略时，将所有 Intro 区间内的 Bass 音符音高
         // 锁定到主音(I, 70%)或属音(V, 30%)。上方和弦正常变化，底部纹丝不动。
         if (introPedalPoint && introSection) {
-            const keyOffset = track.keyOffset || 0;
+            // K-4 合规：在相对空间计算 pedal pitch（主音=0, 属音=7），applyOffset 统一加 keyOffset
             const isPedalOnDominant = PRNGManager.next() < 0.3;
-            const pedalPc = isPedalOnDominant ? (keyOffset + 7) % 12 : keyOffset % 12;
-            // 找到 bass 音域 (E1=28 ~ B2=47) 内该 pitch class 的最佳音高
-            let pedalPitch = pedalPc + 24; // C1 octave
-            if (pedalPitch < 28) pedalPitch += 12; // 确保 >= E1
-            if (pedalPitch > 47) pedalPitch -= 12; // 确保 <= B2
+            const pedalPc = isPedalOnDominant ? 7 : 0; // 相对空间：主音(0) 或属音(7)
+            // 找到 bass 音域内该 pitch class 的最佳音高（相对空间，applyOffset 后移到正确调号）
+            let pedalPitch = pedalPc + 24; // C1 octave in relative space
+            if (pedalPitch < 28) pedalPitch += 12;
+            if (pedalPitch > 47) pedalPitch -= 12;
 
             for (let i = 0; i < lhNotes.length; i++) {
                 if (lhNotes[i].onset >= introSection.startBeat - 1e-6 && lhNotes[i].onset < introSection.endBeat - 1e-6) {

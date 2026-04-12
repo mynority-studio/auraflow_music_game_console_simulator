@@ -154,32 +154,40 @@ export class GlobalReviewer {
 
     /**
      * 修复旋律横向逻辑 (Horizontal Voice Leading Fix)
-     * 检查大跳后是否反向解决，如果没有，则微调第三个音。
+     * 🌟 重写：只修复真正极端的未解决大跳，避免破坏 motif 形状。
+     * 原逻辑对所有 ≥5 半音的同方向步进都强制反向，会摧毁 Ascending/Arch 等连续上行的 motif 轮廓。
+     * 新逻辑：只在"极端大跳（≥8半音）+ 后续同方向也是大跳（≥5半音）"时才干预，且概率性（50%）。
      */
     private static fixMelodyHorizontalLogic(notes: NoteData[], tonality: Tonality, chords: GeneratedChord[], style: StyleConfig) {
-        const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5;
-        
+        const extremeLeapThreshold = 8; // 只处理八度级别的极端跳跃
+        const continuationThreshold = 5; // 后续同方向也 ≥ 纯四度才算"未解决"
+
         for (let i = 0; i < notes.length - 2; i++) {
             const note1 = notes[i];
             const note2 = notes[i + 1];
             const note3 = notes[i + 2];
 
-            // 检查大跳 (大跳定义：超过纯四度，即 > 5 个半音)
+            // 跳过装饰音 — 不应被当作"大跳"处理
+            if ((note1 as any).isGraceNote || (note2 as any).isGraceNote || (note3 as any).isGraceNote) continue;
+
             const interval = note2.pitch - note1.pitch;
-            if (Math.abs(interval) >= leapThreshold) {
+            const absInterval = Math.abs(interval);
+
+            // 只处理极端大跳（≥8半音，约小六度以上）
+            if (absInterval >= extremeLeapThreshold) {
                 const nextInterval = note3.pitch - note2.pitch;
-                
-                // 如果大跳向上，下一个音也向上，或者大跳向下，下一个音也向下，这就是没有反向解决
-                if ((interval > 0 && nextInterval > 0) || (interval < 0 && nextInterval < 0)) {
+                const absNextInterval = Math.abs(nextInterval);
+
+                // 后续同方向且也是大步进（≥5半音）才干预
+                const isSameDirection = (interval > 0 && nextInterval > 0) || (interval < 0 && nextInterval < 0);
+                if (isSameDirection && absNextInterval >= continuationThreshold) {
                     console.log(`🔧 [GlobalReviewer] Fixing unresolved large leap: ${note1.pitch} -> ${note2.pitch} -> ${note3.pitch}`);
-                    
+
                     const activeChord = chords.find(c => note3.onset >= c.startBeat && note3.onset < c.endBeat) || chords[0];
                     const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
-                    
-                    // 强制反向解决：将 note3 移向 note1 的方向
+
+                    // 反向解决：将 note3 向反方向移 1 个音阶音
                     const direction = interval > 0 ? -1 : 1;
-                    
-                    // 移动 1 个顺阶音
                     note3.pitch = HarmonyCore.shiftDiatonic(note2.pitch, safeScalePcs, direction);
                 }
             }

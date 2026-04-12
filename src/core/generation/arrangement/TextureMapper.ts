@@ -16,6 +16,9 @@ export class TextureMapper {
    * 生成贝斯线：每个和弦上放根音（强拍）+ 五音（弱拍）
    * max ~8 notes per chord (4/4 time)
    */
+  // 🌟 跨和弦 bass 状态：上一个和弦最后一个 bass 音高，用于跳跃限制
+  private static prevBassRootMidi: number = -1;
+
   public static generateBassLine(
     chord: GeneratedChord,
     energyLevel: number,
@@ -26,32 +29,84 @@ export class TextureMapper {
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
   ): NoteData[] {
-    // 🌟 极简贝斯：只弹根音，跟随和弦节奏
     const bassTones = HarmonyCore.getChordTones(chord, 36);
-    const rootMidi = bassTones[0];
+    let rootMidi = bassTones[0];
+    const fifthMidi = bassTones.length > 2 ? bassTones[2] : rootMidi; // 五音
     const chordLen = chord.endBeat - chord.startBeat;
     const notes: NoteData[] = [];
 
     // 消耗 1 次 PRNG 保持序列对齐（原有分支消耗）
     PRNGManager.next();
 
+    // 🌟 跳跃限制：如果与上一个 bass 音跳跃 > 5 半音，就近转位
+    if (this.prevBassRootMidi > 0) {
+      const jump = Math.abs(rootMidi - this.prevBassRootMidi);
+      if (jump > 5) {
+        // 尝试上/下八度，选择距离上一个音最近的
+        const candidates = [rootMidi, rootMidi + 12, rootMidi - 12];
+        let bestPitch = rootMidi;
+        let bestDist = jump;
+        for (let ci = 0; ci < candidates.length; ci++) {
+          const d = Math.abs(candidates[ci] - this.prevBassRootMidi);
+          if (d < bestDist && candidates[ci] >= 28 && candidates[ci] <= 43) {
+            bestDist = d;
+            bestPitch = candidates[ci];
+          }
+        }
+        rootMidi = bestPitch;
+      }
+    }
+
     if (isSparseSection || energyLevel <= ENERGY.SILENT_MAX) {
       // 稀疏段落：半音符根音
       notes.push({ pitch: rootMidi, onset: chord.startBeat, duration: Math.min(chordLen, 2), velocity: 0.7 });
     } else {
       // 正常段落：每拍弹根音（跟随鼓组 groove）
-      const step = energyLevel >= ENERGY.HIGH_MIN ? 1 : 2; // 高能每拍，低能每两拍
+      const step = energyLevel >= ENERGY.HIGH_MIN ? 1 : 2;
       let beat = chord.startBeat;
       while (beat < chord.endBeat - 1e-6) {
-        notes.push({
-          pitch: rootMidi,
-          onset: beat,
-          duration: Math.min(step, chord.endBeat - beat),
-          velocity: Math.abs(beat % 2) < 1e-6 ? 0.75 : 0.6, // 强拍重、弱拍轻
-        });
+        const isLastStep = (beat + step >= chord.endBeat - 1e-6);
+        const vel = Math.abs(beat % 2) < 1e-6 ? 0.75 : 0.6;
+
+        // 🌟 Approach note：和弦最后一拍，如果有 nextChord 且根音跳跃 > 2 半音，
+        // 注入半音趋近音（chromatic approach）指向下一和弦根音
+        if (isLastStep && nextChord && !isSectionEnd) {
+          const nextBassTones = HarmonyCore.getChordTones(nextChord, 36);
+          let nextRoot = nextBassTones[0];
+          // 就近选择八度
+          const nextCandidates = [nextRoot, nextRoot + 12, nextRoot - 12];
+          let bestNext = nextRoot;
+          let bestNextDist = 999;
+          for (let ni = 0; ni < nextCandidates.length; ni++) {
+            const d = Math.abs(nextCandidates[ni] - rootMidi);
+            if (d < bestNextDist && nextCandidates[ni] >= 28 && nextCandidates[ni] <= 43) {
+              bestNextDist = d;
+              bestNext = nextCandidates[ni];
+            }
+          }
+
+          const approachInterval = bestNext - rootMidi;
+          if (Math.abs(approachInterval) > 2) {
+            // 半音趋近：从当前根音向下一根音方向走一个半音
+            const approachPitch = bestNext + (approachInterval > 0 ? -1 : 1);
+            const approachClamp = Math.max(28, Math.min(43, approachPitch));
+            // 缩短当前音，腾出空间给 approach note
+            const mainDur = Math.min(step, chord.endBeat - beat) * 0.5;
+            const approachDur = Math.min(step, chord.endBeat - beat) - mainDur;
+            notes.push({ pitch: rootMidi, onset: beat, duration: mainDur, velocity: vel });
+            notes.push({ pitch: approachClamp, onset: beat + mainDur, duration: approachDur, velocity: vel * 0.7 });
+          } else {
+            notes.push({ pitch: rootMidi, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
+          }
+        } else {
+          notes.push({ pitch: rootMidi, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
+        }
         beat += step;
       }
     }
+
+    // 更新 prevBassRootMidi 供下一个和弦使用
+    this.prevBassRootMidi = rootMidi;
 
     const truncated = this.truncateToChordEnd(notes, chord.endBeat);
     this.clampToRange(truncated, 28, 43); // Bass: E1 ~ G2
@@ -495,7 +550,15 @@ export class TextureMapper {
     if (prevVoicing && prevVoicing.length > 0) {
       voicing = HarmonyCore.getSmoothVoicing(chord, prevVoicing, 60);
     } else {
-      voicing = HarmonyCore.getChordTones(chord, 60);
+      // 🌟 段落首个和弦：生成紧凑排列（close voicing），确保后续 voice leading 有合理起点
+      // 将所有音压缩到 C4(60) 附近的 1 个八度内，避免散乱的 block transpose
+      const raw = HarmonyCore.getChordTones(chord, 60);
+      voicing = raw.map(p => {
+        let v = p;
+        while (v < 55) v += 12;  // 不低于 G3
+        while (v > 72) v -= 12;  // 不高于 C5
+        return v;
+      });
     }
 
     voicing = voicing.map(p => p < 48 ? p + 12 : p);
