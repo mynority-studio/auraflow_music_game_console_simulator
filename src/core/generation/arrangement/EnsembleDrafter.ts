@@ -4,76 +4,98 @@ import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../
 
 export class EnsembleDrafter {
     /**
-     * 配器规划：从 StyleConfig pool 中按约束选择乐器组合。
-     * 材质互补：和弦优先选与旋律不同包络类型的乐器。
-     * Secondary 强制 Plucked（填缝线需要打击类音色）。
-     * PRNG 精确消耗 10 slot。
+     * 配器规划：从 StyleConfig 声部池中选择乐器组合。
+     *
+     * 5 声部架构：lead / vocal / accomp / bass / drums / pad
+     * 材质互补：accomp 优先选与 lead 不同包络类型的乐器。
+     *
+     * PRNG 精确消耗 10 slot — 每条路径必须消耗固定数量，保证确定性对齐。
      */
     public static draft(style: StyleConfig): EnsembleDraft {
         const orch = style.orchestration;
 
-        // 1. 主旋律
-        const melodyPool = orch.melodyInstruments;
-        const melodySound = melodyPool[Math.floor(PRNGManager.next() * melodyPool.length)]; // slot 1
-        const melodyId = getInstrumentIdByName(melodySound);
-        const melodyEnv = InstrumentProfiles[melodyId].envelope;
+        // ── Slot 1: Lead ──
+        const leadPool = orch.leadInstruments;
+        const leadSound = leadPool[Math.floor(PRNGManager.next() * leadPool.length)]; // slot 1
+        const leadId = getInstrumentIdByName(leadSound);
+        const leadEnv = InstrumentProfiles[leadId].envelope;
 
-        // 2. 副旋律：强制 Plucked（填缝线是短促音）
-        let secondarySound: string | null = null;
-        PRNGManager.next(); // slot 2
-        if (melodyPool.length > 1) {
-            const candidates: string[] = [];
-            for (let i = 0; i < melodyPool.length; i++) {
-                const cId = getInstrumentIdByName(melodyPool[i]);
-                if (InstrumentProfiles[cId].envelope === AcousticEnvelope.Plucked && melodyPool[i] !== melodySound) {
-                    candidates.push(melodyPool[i]);
+        // ── Slot 2: Vocal probability roll ──
+        const vocalProb = orch.vocalProbability ?? 0;
+        const vocalRoll = PRNGManager.next(); // slot 2
+        const wantVocal = vocalRoll < vocalProb;
+
+        // ── Slot 3: Vocal sound selection (or burn) ──
+        let vocalSound: string | undefined;
+        if (wantVocal && leadPool.length > 0) {
+            vocalSound = leadPool[Math.floor(PRNGManager.next() * leadPool.length)]; // slot 3
+        } else {
+            PRNGManager.next(); // slot 3 burn
+        }
+
+        // ── Slot 4: Accomp — prefer different AcousticEnvelope from lead ──
+        const accompPool = orch.accompInstruments;
+        let accompSound: string | null = null;
+        if (accompPool.length > 0) {
+            // 优先选与 lead 不同包络类型的乐器
+            const diffEnvCandidates: string[] = [];
+            for (let i = 0; i < accompPool.length; i++) {
+                const cId = getInstrumentIdByName(accompPool[i]);
+                if (InstrumentProfiles[cId].envelope !== leadEnv) {
+                    diffEnvCandidates.push(accompPool[i]);
                 }
             }
-            if (candidates.length > 0) {
-                secondarySound = candidates[Math.floor(PRNGManager.next() * candidates.length)]; // slot 3
-                PRNGManager.next(); // slot 4
+            if (diffEnvCandidates.length > 0) {
+                accompSound = diffEnvCandidates[Math.floor(PRNGManager.next() * diffEnvCandidates.length)]; // slot 4
             } else {
-                PRNGManager.next(); // slot 3
-                const others: string[] = [];
-                for (let i = 0; i < melodyPool.length; i++) {
-                    if (melodyPool[i] !== melodySound) others.push(melodyPool[i]);
-                }
-                if (others.length > 0) {
-                    secondarySound = others[Math.floor(PRNGManager.next() * others.length)]; // slot 4
-                } else { PRNGManager.next(); } // slot 4
+                accompSound = accompPool[Math.floor(PRNGManager.next() * accompPool.length)]; // slot 4 fallback
             }
-        } else { PRNGManager.next(); PRNGManager.next(); } // slot 3+4
+        } else {
+            PRNGManager.next(); // slot 4 burn
+        }
 
-        // 3. 和弦：优先选与旋律不同包络的乐器
-        const chordPool = orch.chordInstruments;
-        let chordSound: string | null = null;
-        if (chordPool.length > 0) {
-            const chordCandidates: string[] = [];
-            for (let ci = 0; ci < chordPool.length; ci++) {
-                const cId = getInstrumentIdByName(chordPool[ci]);
-                if (InstrumentProfiles[cId].envelope !== melodyEnv) chordCandidates.push(chordPool[ci]);
-            }
-            chordSound = chordCandidates.length > 0
-                ? chordCandidates[Math.floor(PRNGManager.next() * chordCandidates.length)] // slot 5
-                : chordPool[Math.floor(PRNGManager.next() * chordPool.length)];
-        } else { PRNGManager.next(); } // slot 5
+        // ── Slot 5: Accomp optional roll (allowAccompless) ──
+        const accompRoll = PRNGManager.next(); // slot 5
+        if (orch.allowAccompless && accompRoll > 0.5) {
+            accompSound = null;
+        }
 
-        // 4-5. 贝斯 + 鼓
+        // ── Slot 6: Bass ──
         const bassPool = orch.bassInstruments;
-        const bassSound = bassPool.length > 0 ? bassPool[Math.floor(PRNGManager.next() * bassPool.length)] : (PRNGManager.next(), null); // slot 6
+        const bassSound = bassPool.length > 0
+            ? bassPool[Math.floor(PRNGManager.next() * bassPool.length)] // slot 6
+            : (PRNGManager.next(), null); // slot 6 burn
+
+        // ── Slot 7: Drums ──
         const drumPool = orch.drumInstruments;
-        const drumSound = drumPool.length > 0 ? drumPool[Math.floor(PRNGManager.next() * drumPool.length)] : (PRNGManager.next(), null); // slot 7
+        const drumSound = drumPool.length > 0
+            ? drumPool[Math.floor(PRNGManager.next() * drumPool.length)] // slot 7
+            : (PRNGManager.next(), null); // slot 7 burn
 
-        // 6. 副旋律/对位
-        const cmPool = orch.counterMelodyInstruments || [];
-        let counterMelodySound: string | null = null;
-        const cmProb = orch.counterMelodyProbability ?? 0.3;
-        if (PRNGManager.next() < cmProb && cmPool.length > 0) { // slot 8
-            counterMelodySound = cmPool[Math.floor(PRNGManager.next() * cmPool.length)]; // slot 9
-        } else { PRNGManager.next(); } // slot 9
+        // ── Slot 8: Pad probability roll ──
+        const padProb = orch.padProbability ?? 0.3;
+        const padRoll = PRNGManager.next(); // slot 8
+        const wantPad = padRoll < padProb;
 
-        PRNGManager.next(); // slot 10
+        // ── Slot 9: Pad sound selection (or burn) ──
+        const padPool = orch.padInstruments;
+        let padSound: string | null = null;
+        if (wantPad && padPool.length > 0) {
+            padSound = padPool[Math.floor(PRNGManager.next() * padPool.length)]; // slot 9
+        } else {
+            PRNGManager.next(); // slot 9 burn
+        }
 
-        return { melodySound, secondaryMelodySound: secondarySound, chordSound, bassSound, drumSound, counterMelodySound };
+        // ── Slot 10: Guest instrument (reserved for future) ──
+        PRNGManager.next(); // slot 10 burn
+
+        return {
+            leadSound,
+            vocalSound,
+            accompSound,
+            bassSound,
+            drumSound,
+            padSound,
+        };
     }
 }

@@ -46,19 +46,16 @@ function finalize(s: { min: number; max: number; sum: number; count: number }): 
 function run() {
     // GeneratedTrack arrays
     const trackMelody = newStats();
-    const trackVocal = newStats();
     const trackChords = newStats();
     const trackSections = newStats();
     const trackGlobalRiff = newStats();
 
     // ArrangedTrack arrays
-    const arrMelody = newStats();
-    const arrPianoLH = newStats();
-    const arrPianoRH = newStats();
+    const arrLead = newStats();
+    const arrBass = newStats();
+    const arrAccomp = newStats();
     const arrDrums = newStats();
-    const arrSecondaryMelody = newStats();
-    const arrCounterMelody = newStats();
-    const arrVocal = newStats();
+    const arrPad = newStats();
     const arrUserMotif = newStats();
 
     // Per-section note density (notes per beat)
@@ -84,7 +81,6 @@ function run() {
 
             // GeneratedTrack stats
             record(trackMelody, track.melody.length);
-            record(trackVocal, track.vocal?.length ?? 0);
             record(trackChords, track.chords.length);
             record(trackSections, track.sections.length);
             record(trackGlobalRiff, track.globalRiff?.length ?? 0);
@@ -98,23 +94,19 @@ function run() {
             const arranged = Orchestrator.arrange(track, StyleId.Default, context);
 
             // ArrangedTrack stats
-            record(arrMelody, arranged.melody.length);
-            record(arrPianoLH, arranged.pianoLH.length);
-            record(arrPianoRH, arranged.pianoRH.length);
+            record(arrLead, arranged.lead.length);
+            record(arrBass, arranged.bass.length);
+            record(arrAccomp, arranged.accomp?.length ?? 0);
             record(arrDrums, arranged.drums?.length ?? 0);
-            record(arrSecondaryMelody, arranged.secondaryMelody?.length ?? 0);
-            record(arrCounterMelody, arranged.counterMelody?.length ?? 0);
-            record(arrVocal, arranged.vocal?.length ?? 0);
+            record(arrPad, arranged.pad?.length ?? 0);
             record(arrUserMotif, arranged.userMotif?.length ?? 0);
 
             // Notes per beat density
-            const totalNotes = arranged.melody.length
-                + arranged.pianoLH.length
-                + arranged.pianoRH.length
+            const totalNotes = arranged.lead.length
+                + arranged.bass.length
+                + (arranged.accomp?.length ?? 0)
                 + (arranged.drums?.length ?? 0)
-                + (arranged.secondaryMelody?.length ?? 0)
-                + (arranged.counterMelody?.length ?? 0)
-                + (arranged.vocal?.length ?? 0);
+                + (arranged.pad?.length ?? 0);
             if (lastSection && lastSection.endBeat > 0) {
                 record(notesPerBeat, Math.round(totalNotes / lastSection.endBeat * 100) / 100);
             }
@@ -137,20 +129,17 @@ function run() {
         failCount,
         generatedTrack: {
             melody: finalize(trackMelody),
-            vocal: finalize(trackVocal),
             chords: finalize(trackChords),
             sections: finalize(trackSections),
             globalRiff: finalize(trackGlobalRiff),
             durationBeats: finalize(trackDuration),
         },
         arrangedTrack: {
-            melody: finalize(arrMelody),
-            pianoLH: finalize(arrPianoLH),
-            pianoRH: finalize(arrPianoRH),
+            lead: finalize(arrLead),
+            bass: finalize(arrBass),
+            accomp: finalize(arrAccomp),
             drums: finalize(arrDrums),
-            secondaryMelody: finalize(arrSecondaryMelody),
-            counterMelody: finalize(arrCounterMelody),
-            vocal: finalize(arrVocal),
+            pad: finalize(arrPad),
             userMotif: finalize(arrUserMotif),
             notesPerBeat: finalize(notesPerBeat),
         },
@@ -162,13 +151,11 @@ function run() {
     const recommend = (s: ArrayStats) => ceilTo64(Math.ceil(s.max * 1.5));
 
     results.recommended_c_buffer_sizes = {
-        MAX_MELODY_NOTES: recommend(results.arrangedTrack.melody),
-        MAX_PIANO_LH_NOTES: recommend(results.arrangedTrack.pianoLH),
-        MAX_PIANO_RH_NOTES: recommend(results.arrangedTrack.pianoRH),
+        MAX_LEAD_NOTES: recommend(results.arrangedTrack.lead),
+        MAX_BASS_NOTES: recommend(results.arrangedTrack.bass),
+        MAX_ACCOMP_NOTES: recommend(results.arrangedTrack.accomp),
         MAX_DRUM_NOTES: recommend(results.arrangedTrack.drums),
-        MAX_SECONDARY_MELODY_NOTES: recommend(results.arrangedTrack.secondaryMelody),
-        MAX_COUNTER_MELODY_NOTES: recommend(results.arrangedTrack.counterMelody),
-        MAX_VOCAL_NOTES: recommend(results.arrangedTrack.vocal),
+        MAX_PAD_NOTES: recommend(results.arrangedTrack.pad),
         MAX_CHORDS: recommend(results.generatedTrack.chords),
         MAX_SECTIONS: recommend(results.generatedTrack.sections),
     };
@@ -184,19 +171,16 @@ function run() {
 
     console.log('GeneratedTrack:');
     printRow('melody', results.generatedTrack.melody);
-    printRow('vocal', results.generatedTrack.vocal);
     printRow('chords', results.generatedTrack.chords, results.recommended_c_buffer_sizes.MAX_CHORDS);
     printRow('sections', results.generatedTrack.sections, results.recommended_c_buffer_sizes.MAX_SECTIONS);
     printRow('durationBeats', results.generatedTrack.durationBeats);
 
     console.log('\nArrangedTrack:');
-    printRow('melody', results.arrangedTrack.melody, results.recommended_c_buffer_sizes.MAX_MELODY_NOTES);
-    printRow('pianoLH', results.arrangedTrack.pianoLH, results.recommended_c_buffer_sizes.MAX_PIANO_LH_NOTES);
-    printRow('pianoRH', results.arrangedTrack.pianoRH, results.recommended_c_buffer_sizes.MAX_PIANO_RH_NOTES);
+    printRow('lead', results.arrangedTrack.lead, results.recommended_c_buffer_sizes.MAX_LEAD_NOTES);
+    printRow('bass', results.arrangedTrack.bass, results.recommended_c_buffer_sizes.MAX_BASS_NOTES);
+    printRow('accomp', results.arrangedTrack.accomp, results.recommended_c_buffer_sizes.MAX_ACCOMP_NOTES);
     printRow('drums', results.arrangedTrack.drums, results.recommended_c_buffer_sizes.MAX_DRUM_NOTES);
-    printRow('secondaryMelody', results.arrangedTrack.secondaryMelody, results.recommended_c_buffer_sizes.MAX_SECONDARY_MELODY_NOTES);
-    printRow('counterMelody', results.arrangedTrack.counterMelody, results.recommended_c_buffer_sizes.MAX_COUNTER_MELODY_NOTES);
-    printRow('vocal', results.arrangedTrack.vocal, results.recommended_c_buffer_sizes.MAX_VOCAL_NOTES);
+    printRow('pad', results.arrangedTrack.pad, results.recommended_c_buffer_sizes.MAX_PAD_NOTES);
     printRow('notesPerBeat', results.arrangedTrack.notesPerBeat);
 
     console.log('\nRecommended C buffer sizes (max×1.5, ceil to 64):');

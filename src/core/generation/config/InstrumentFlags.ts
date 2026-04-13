@@ -88,6 +88,7 @@ export enum InstrumentId {
     Glockenspiel = 57,
     Orchestral_Harp = 58,
     System_Aura = 59,
+    Breath_Noise = 60,
 }
 
 // 翻译枚举：InstrumentId -> 显示名（用于日志和音频层桥接）
@@ -152,6 +153,7 @@ InstrumentIdName[InstrumentId.Music_Box] = 'Music_Box';
 InstrumentIdName[InstrumentId.Glockenspiel] = 'Glockenspiel';
 InstrumentIdName[InstrumentId.Orchestral_Harp] = 'Orchestral_Harp';
 InstrumentIdName[InstrumentId.System_Aura] = 'System_Aura';
+InstrumentIdName[InstrumentId.Breath_Noise] = 'Breath_Noise';
 
 // InstrumentId -> GM Program Number（音频层 MIDI 桥接）
 export const InstrumentGMProgram: number[] = [];
@@ -215,6 +217,7 @@ InstrumentGMProgram[InstrumentId.Music_Box] = 10;
 InstrumentGMProgram[InstrumentId.Glockenspiel] = 9;
 InstrumentGMProgram[InstrumentId.Orchestral_Harp] = 46;
 InstrumentGMProgram[InstrumentId.System_Aura] = 81;
+InstrumentGMProgram[InstrumentId.Breath_Noise] = 122;
 
 // InstrumentId -> InstrumentFamily（替代 INSTRUMENT_FAMILY_TABLE Record）
 export const InstrumentIdFamily: InstrumentFamily[] = [];
@@ -287,6 +290,7 @@ InstrumentIdFamily[InstrumentId.Music_Box] = InstrumentFamily.Piano;
 InstrumentIdFamily[InstrumentId.Glockenspiel] = InstrumentFamily.Piano;
 InstrumentIdFamily[InstrumentId.Orchestral_Harp] = InstrumentFamily.String;
 InstrumentIdFamily[InstrumentId.System_Aura] = InstrumentFamily.Synth;
+InstrumentIdFamily[InstrumentId.Breath_Noise] = InstrumentFamily.Wind;
 
 // InstrumentId 位掩码分类标志（用于快速批量分类检查）
 export const IF_IS_PIANO   = (1 << InstrumentId.Acoustic_Grand) | (1 << InstrumentId.Electric_Piano_1) | (1 << InstrumentId.Electric_Piano_2) | (1 << InstrumentId.Warm_EP) | (1 << InstrumentId.Lofi_Piano);
@@ -328,11 +332,101 @@ export const enum AcousticEnvelope {
     Bass      = 3, // 低频独占类：贝斯
 }
 
+export interface WindProfile {
+    type: 'sax' | 'flute' | 'brass' | 'reed';
+    intervalWeights: { step: number; third: number; fourth: number; leap: number };
+    legatoOverlap: number;
+    legatoVelocityDrop: number;
+    maxBreathBeats: number;
+    breathRestBeats: number;
+    vibratoOnsetRatio: number;
+    vibratoDepth: number;
+    vibratoRate: number;
+    allowScoop: boolean;
+    allowFall: boolean;
+    scoopBendRange: number;
+    shadowProgram: number;
+    shadowVelocityRatio: number;
+    shadowDynamicExponent: number;
+}
+
+export const WIND_PROFILES: Record<string, WindProfile> = {
+    sax: {
+        type: 'sax',
+        intervalWeights: { step: 0.60, third: 0.25, fourth: 0.10, leap: 0.05 },
+        legatoOverlap: 0.025,
+        legatoVelocityDrop: 0.65,
+        maxBreathBeats: 12,
+        breathRestBeats: 0.5,
+        vibratoOnsetRatio: 0.6,
+        vibratoDepth: 400,
+        vibratoRate: 5.5,
+        allowScoop: true,
+        allowFall: true,
+        scoopBendRange: -4096,
+        shadowProgram: 122,
+        shadowVelocityRatio: 0.15,
+        shadowDynamicExponent: 1.5,
+    },
+    flute: {
+        type: 'flute',
+        intervalWeights: { step: 0.65, third: 0.20, fourth: 0.10, leap: 0.05 },
+        legatoOverlap: 0.015,
+        legatoVelocityDrop: 0.70,
+        maxBreathBeats: 10,
+        breathRestBeats: 0.25,
+        vibratoOnsetRatio: 0.5,
+        vibratoDepth: 250,
+        vibratoRate: 5.0,
+        allowScoop: false,
+        allowFall: false,
+        scoopBendRange: 0,
+        shadowProgram: 122,
+        shadowVelocityRatio: 0.10,
+        shadowDynamicExponent: 1.2,
+    },
+    reed: {
+        type: 'reed',
+        intervalWeights: { step: 0.60, third: 0.22, fourth: 0.12, leap: 0.06 },
+        legatoOverlap: 0.020,
+        legatoVelocityDrop: 0.68,
+        maxBreathBeats: 10,
+        breathRestBeats: 0.35,
+        vibratoOnsetRatio: 0.55,
+        vibratoDepth: 300,
+        vibratoRate: 5.2,
+        allowScoop: false,
+        allowFall: false,
+        scoopBendRange: 0,
+        shadowProgram: 122,
+        shadowVelocityRatio: 0.12,
+        shadowDynamicExponent: 1.3,
+    },
+    brass: {
+        type: 'brass',
+        intervalWeights: { step: 0.55, third: 0.25, fourth: 0.12, leap: 0.08 },
+        legatoOverlap: 0.020,
+        legatoVelocityDrop: 0.70,
+        maxBreathBeats: 14,
+        breathRestBeats: 0.4,
+        vibratoOnsetRatio: 0.65,
+        vibratoDepth: 350,
+        vibratoRate: 5.0,
+        allowScoop: true,
+        allowFall: true,
+        scoopBendRange: -3000,
+        shadowProgram: 122,
+        shadowVelocityRatio: 0.12,
+        shadowDynamicExponent: 1.4,
+    },
+};
+
 export interface InstrumentProfile {
     envelope: AcousticEnvelope;
     safeRange: [number, number];
     maxVelocity: number;
     needsCC11: boolean;
+    windProfile?: WindProfile;
 }
 
 export const InstrumentProfiles: InstrumentProfile[] = [
@@ -349,14 +443,14 @@ export const InstrumentProfiles: InstrumentProfile[] = [
     /* 10 String_Ensemble_2 */ { envelope: AcousticEnvelope.Pad,       safeRange: [48, 72], maxVelocity: 75, needsCC11: true },
     /* 11 Tremolo_Strings   */ { envelope: AcousticEnvelope.Sustained, safeRange: [48, 79], maxVelocity: 80, needsCC11: true },
     /* 12 Pizzicato_Strings */ { envelope: AcousticEnvelope.Plucked,   safeRange: [48, 79], maxVelocity: 95, needsCC11: false },
-    /* 13 Flute             */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 85, needsCC11: true },
-    /* 14 Oboe              */ { envelope: AcousticEnvelope.Sustained, safeRange: [58, 79], maxVelocity: 80, needsCC11: true },
-    /* 15 Clarinet          */ { envelope: AcousticEnvelope.Sustained, safeRange: [50, 79], maxVelocity: 85, needsCC11: true },
-    /* 16 Alto_Sax          */ { envelope: AcousticEnvelope.Sustained, safeRange: [55, 76], maxVelocity: 90, needsCC11: true },
-    /* 17 Tenor_Sax         */ { envelope: AcousticEnvelope.Sustained, safeRange: [44, 72], maxVelocity: 90, needsCC11: true },
-    /* 18 Muted_Trumpet     */ { envelope: AcousticEnvelope.Sustained, safeRange: [52, 79], maxVelocity: 85, needsCC11: true },
-    /* 19 Recorder          */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 80, needsCC11: true },
-    /* 20 Ocarina           */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 80, needsCC11: true },
+    /* 13 Flute             */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 85, needsCC11: true, windProfile: WIND_PROFILES.flute },
+    /* 14 Oboe              */ { envelope: AcousticEnvelope.Sustained, safeRange: [58, 79], maxVelocity: 80, needsCC11: true, windProfile: WIND_PROFILES.reed },
+    /* 15 Clarinet          */ { envelope: AcousticEnvelope.Sustained, safeRange: [50, 79], maxVelocity: 85, needsCC11: true, windProfile: WIND_PROFILES.reed },
+    /* 16 Alto_Sax          */ { envelope: AcousticEnvelope.Sustained, safeRange: [55, 76], maxVelocity: 90, needsCC11: true, windProfile: WIND_PROFILES.sax },
+    /* 17 Tenor_Sax         */ { envelope: AcousticEnvelope.Sustained, safeRange: [44, 72], maxVelocity: 90, needsCC11: true, windProfile: WIND_PROFILES.sax },
+    /* 18 Muted_Trumpet     */ { envelope: AcousticEnvelope.Sustained, safeRange: [52, 79], maxVelocity: 85, needsCC11: true, windProfile: WIND_PROFILES.brass },
+    /* 19 Recorder          */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 80, needsCC11: true, windProfile: WIND_PROFILES.flute },
+    /* 20 Ocarina           */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 84], maxVelocity: 80, needsCC11: true, windProfile: WIND_PROFILES.flute },
     /* 21 Acoustic_Guitar_Nylon */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 76], maxVelocity: 95,  needsCC11: false },
     /* 22 Acoustic_Guitar_Steel */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 76], maxVelocity: 100, needsCC11: false },
     /* 23 Acoustic_Guitar_Chord */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 76], maxVelocity: 100, needsCC11: false },
@@ -364,7 +458,7 @@ export const InstrumentProfiles: InstrumentProfile[] = [
     /* 25 Electric_Guitar_Clean */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 100, needsCC11: false },
     /* 26 Overdriven_Guitar     */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 110, needsCC11: false },
     /* 27 Distortion_Guitar     */ { envelope: AcousticEnvelope.Plucked, safeRange: [40, 79], maxVelocity: 115, needsCC11: false },
-    /* 28 Harmonica              */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 79], maxVelocity: 85, needsCC11: true },
+    /* 28 Harmonica              */ { envelope: AcousticEnvelope.Sustained, safeRange: [60, 79], maxVelocity: 85, needsCC11: true, windProfile: WIND_PROFILES.reed },
     /* 29 Acoustic_Bass      */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 110, needsCC11: false },
     /* 30 Electric_Bass_Finger */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 115, needsCC11: false },
     /* 31 Electric_Bass_Pick */ { envelope: AcousticEnvelope.Bass, safeRange: [28, 43], maxVelocity: 115, needsCC11: false },
@@ -396,10 +490,11 @@ export const InstrumentProfiles: InstrumentProfile[] = [
     /* 57 Glockenspiel    */ { envelope: AcousticEnvelope.Plucked, safeRange: [72, 96], maxVelocity: 90,  needsCC11: false },
     /* 58 Orchestral_Harp */ { envelope: AcousticEnvelope.Plucked, safeRange: [36, 84], maxVelocity: 95,  needsCC11: false },
     /* 59 System_Aura     */ { envelope: AcousticEnvelope.Pad,     safeRange: [48, 72], maxVelocity: 70,  needsCC11: false },
+    /* 60 Breath_Noise    */ { envelope: AcousticEnvelope.Pad,     safeRange: [48, 72], maxVelocity: 80,  needsCC11: false },
 ];
 
 export function getInstrumentIdByName(name: string): InstrumentId {
-    for (let id = 0; id < 60; id++) {
+    for (let id = 0; id < 61; id++) {
         if (InstrumentId[id] === name) return id as InstrumentId;
     }
     return InstrumentId.Acoustic_Grand;

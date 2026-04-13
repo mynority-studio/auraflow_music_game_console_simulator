@@ -279,60 +279,53 @@ export interface StyleConfig {
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
-    orchestration: { 
-        melodyInstruments: string[]; 
-        chordInstruments: string[]; 
+    orchestration: {
+        leadInstruments: string[];
+        accompInstruments: string[];
         bassInstruments: string[];
         drumInstruments: string[];
-        counterMelodyInstruments: string[];
+        padInstruments: string[];
         texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass' | 'String_Ostinato' | 'Water_Arpeggio' | 'ChordMelody'>;
-        drumProbability?: number; // 🌟 新增：鼓组出场率，彻底解耦
-        counterMelodyProbability?: number; // 副旋律出场率
-        fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic'; // 🌟 新增：加花风格
-        vocalProbability?: number; // 🌟 新增：主唱出场率
-        outroRingOutProbability?: number; // 🌟 新增：尾奏使用 BigRingOut 的概率
-        allowTradingFours?: boolean; // 🌟 新增：是否允许乐器对话 (Trading Fours)
-        allowIntroRiffs?: boolean; // 🌟 新增：是否允许前奏 Riff
-        allowRitardando?: boolean; // 🌟 新增：是否允许结尾渐慢
-        allowDrumless?: boolean; // 🌟 新增：是否允许无鼓编制
-        allowBassless?: boolean; // 🌟 新增：是否允许无贝斯编制
-        grooveRatio?: { foundation: number; comping: number; color: number; }; // 🌟 新增：律动比例控制器
+        drumProbability?: number;
+        padProbability?: number;
+        fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic';
+        vocalProbability?: number;
+        outroRingOutProbability?: number;
+        allowTradingFours?: boolean;
+        allowIntroRiffs?: boolean;
+        allowRitardando?: boolean;
+        allowDrumless?: boolean;
+        allowBassless?: boolean;
+        allowAccompless?: boolean;
+        grooveRatio?: { foundation: number; comping: number; color: number; };
         idiomPreferences?: {
-            counterMelodyStyle?: 'sustained' | 'melodic' | 'rhythmic' | 'arpeggiated';
-            pianoStyle?: 'block-chord' | 'arpeggiated' | 'rhythmic' | 'sparse';
+            padStyle?: 'sustained' | 'melodic' | 'rhythmic' | 'arpeggiated';
+            pianoStyle?: 'block-chord' | 'arpeggiated' | 'rhythmic' | 'sparse' | 'neosoul' | 'jazz';
             drumStyle?: 'steady' | 'syncopated' | 'sparse' | 'high-energy' | 'acoustic-swing';
-            bassStyle?: 'steady' | 'syncopated' | 'melodic' | 'sparse' | 'riff-driven';
+            bassStyle?: 'steady' | 'syncopated' | 'melodic' | 'sparse' | 'riff-driven' | 'lofi';
             riffStyle?: 'melodic' | 'rhythmic' | 'arpeggiated' | 'chordal' | 'default';
             vocalStyle?: 'pop' | 'ballad' | 'neosoul' | 'rnb' | 'gospel' | 'choir';
         };
         mixingPreferences?: {
             requireSidechain?: boolean;
-            melody?: MixingConfig;
-            secondaryMelody?: MixingConfig;
+            lead?: MixingConfig;
             vocal?: MixingConfig;
-            chord?: MixingConfig;
+            accomp?: MixingConfig;
             bass?: MixingConfig;
             drums?: MixingConfig;
-            counterMelody?: MixingConfig;
+            pad?: MixingConfig;
             chorusDepth?: number;
         };
         instrumentBehaviors?: {
-            melody?: InstrumentBehavior;
-            chord?: InstrumentBehavior;
+            lead?: InstrumentBehavior;
+            accomp?: InstrumentBehavior;
             bass?: InstrumentBehavior;
-            counterMelody?: InstrumentBehavior;
-            secondaryMelody?: InstrumentBehavior;
+            pad?: InstrumentBehavior;
         };
     };
     performance: { allowedPersonas: string[]; };
     masteringProfileId?: string;
 }
-
-export interface SingerPersonaConfig {
-    id: string; name: string;
-    traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
-}
-
 
 
 export interface SectionMetadata {
@@ -376,23 +369,43 @@ export interface MixingConfig {
     chorus?: number; // 0 to 127 (MIDI CC 93)
 }
 
+export interface SingerPersonaConfig {
+    id: string; name: string;
+    traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
+}
+
+// ── 声部架构（5 声部）──
+export type VoicePart = 'lead' | 'accomp' | 'bass' | 'drums' | 'pad';
+
+export interface SongEnsemble {
+    baseMembers: VoicePart[];
+    guestPart?: { sound: string; slot: VoicePart; };
+}
+
+export interface SectionPlan {
+    sectionIndex: number;
+    activeParts: VoicePart[];
+    texture: string;
+    guestActive: boolean;
+    densityMultiplier: number;
+}
+
 export interface EnsembleDraft {
+    leadSound: string;
     vocalSound?: string;
-    melodySound: string;
-    secondaryMelodySound?: string;
-    chordSound: string | null;
+    accompSound: string | null;
     bassSound: string | null;
     drumSound: string | null;
-    counterMelodySound: string | null;
+    padSound: string | null;
+    guestSound?: string | null;
     filterSweep?: string;
     mixing?: {
+        lead?: MixingConfig;
         vocal?: MixingConfig;
-        melody?: MixingConfig;
-        secondaryMelody?: MixingConfig;
-        chord?: MixingConfig;
+        accomp?: MixingConfig;
         bass?: MixingConfig;
         drums?: MixingConfig;
-        counterMelody?: MixingConfig;
+        pad?: MixingConfig;
     };
 }
 
@@ -436,16 +449,21 @@ export interface TempoCurve {
     curveType: 'linear' | 'exponential';
 }
 
-export interface ArrangedTrack { 
+export interface ArrangedTrack {
     bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
     styleId?: StyleId;
-    vocal?: NoteData[]; melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
-    palette?: EnsembleDraft; 
+    lead: NoteData[];
+    accomp?: NoteData[];
+    bass: NoteData[];
+    drums?: NoteData[];
+    pad?: NoteData[];
+    userMotif?: NoteData[];
+    palette?: EnsembleDraft;
     sections?: SectionMetadata[];
-    globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
-    chords?: GeneratedChord[]; // 全曲和弦进行
-    tempoCurves?: TempoCurve[]; // 渐慢/渐快曲线
-    introFilterSweep?: boolean; // 🌟 ST-3: Intro 低通涌动标记，PlaybackEngine 读取后注入 CC74 渐变
+    globalRiff?: NoteData[];
+    chords?: GeneratedChord[];
+    tempoCurves?: TempoCurve[];
+    introFilterSweep?: boolean;
 }
 
 // ============================================================

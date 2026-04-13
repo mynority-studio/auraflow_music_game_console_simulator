@@ -10,6 +10,7 @@ import { EnsembleDrafter } from "./arrangement/EnsembleDrafter";
 import { GenerationOptions } from "./types";
 
 import { GlobalReviewer } from "./review/GlobalReviewer";
+import { SingerPersona } from "./performance/SingerPersona";
 
 import { MoodId, MoodRegistry } from "./config/MoodFlags";
 
@@ -90,9 +91,10 @@ export class MelodyEngine {
 
     // 3. 抽卡决定乐器编制与主唱性格
     const instrumentPalette = EnsembleDrafter.draft(style);
-    
-    // Consume PRNG slot for persona selection alignment
-    PRNGManager.next();
+
+    // 🌟 Persona 选择：从 style.performance.allowedPersonas 中 PRNG 抽取
+    const personaPool = style.performance?.allowedPersonas || ['neutral'];
+    const personaKey = personaPool[Math.floor(PRNGManager.next() * personaPool.length)];
 
     const context: MusicContext = {
         keyOffset,
@@ -107,21 +109,23 @@ export class MelodyEngine {
 
     // 4. 生成旋律（此时会将各段落独有的 GrooveDNA 写入 Sections）
     const toplineMotif = motifRole === 'Foreground' ? processedUserMotif : undefined;
-    const leadInstrument = instrumentPalette.melodySound;
+    const leadInstrument = instrumentPalette.leadSound;
     let vocal: any[] | undefined = undefined;
     let melody: any[] = [];
 
+    // 解析 persona：从 SingerPersona.PERSONAS 查找，'neutral' 传 null（不做后处理）
+    const persona = personaKey !== 'neutral' ? (SingerPersona.PERSONAS[personaKey] || null) : null;
+
     if (instrumentPalette.vocalSound) {
         vocal = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, null, instrumentPalette.vocalSound, toplineMotif, false, context
+            sections, chords, style, tonality, persona, instrumentPalette.vocalSound, toplineMotif, false, context
         );
-        // Generate a sparser instrumental melody as accompaniment
         melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, null, leadInstrument, undefined, true, context
+            sections, chords, style, tonality, persona, leadInstrument, undefined, true, context
         );
     } else {
         melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, null, leadInstrument, toplineMotif, false, context
+            sections, chords, style, tonality, persona, leadInstrument, toplineMotif, false, context
         );
     }
 

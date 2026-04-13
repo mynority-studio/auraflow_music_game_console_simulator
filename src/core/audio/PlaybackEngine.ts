@@ -2,14 +2,14 @@
 // 📄 文件路径: /src/core/audio/PlaybackEngine.ts
 // 🌟 V3.0 纯 MIDI 调度版
 // ==========================================
-import { ArrangedTrack } from '../generation/types';
+import { ArrangedTrack, NoteData } from '../generation/types';
 import { AudioMixer } from './AudioMixer';
 import { InstrumentRegistry } from './Instruments';
 import { spessaSynth, startAudioContext } from './SynthManager';
 import { globalMidiScheduler, MidiEvent } from './MidiScheduler';
 import { PRNGManager } from '../utils/PRNG';
 
-export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
+export interface VisualEvent { type: 'lead' | 'bass' | 'accomp' | 'drums' | 'pad' | 'confirm' | 'custom_particle' | 'fn_key_active'; midiNote?: number; velocity?: number; col?: number; row?: number; hue?: number; energy?: number; spread?: number; source?: 'playback' | 'gameplay'; time?: number; onset?: number; isUserMotif?: boolean; active?: boolean; }
 export type VisualEventListener = (event: VisualEvent) => void;
 
 import { StyleId } from '../generation/config/StyleFlags';
@@ -80,12 +80,11 @@ export class PlaybackEngine {
             }
         };
         printInstrument('Vocal', song.palette?.vocalSound, mixing.vocal);
-        printInstrument('Melody', song.palette?.melodySound, mixing.melody);
-        printInstrument('Secondary Melody', song.palette?.secondaryMelodySound, mixing.secondaryMelody);
-        printInstrument('Chord', song.palette?.chordSound, mixing.chord);
+        printInstrument('Lead', song.palette?.leadSound, mixing.lead);
+        printInstrument('Accomp', song.palette?.accompSound, mixing.accomp);
         printInstrument('Bass', song.palette?.bassSound, mixing.bass);
         printInstrument('Drums', song.palette?.drumSound, mixing.drums);
-        printInstrument('Counter Melody', song.palette?.counterMelodySound, mixing.counterMelody);
+        printInstrument('Pad', song.palette?.padSound, mixing.pad);
 
         console.log("--- 全曲和弦与旋律进行 ---");
         if (song.sections && song.chords) {
@@ -124,10 +123,9 @@ export class PlaybackEngine {
                     console.log(noteStr);
                 };
 
-                printTrackNotes(song.melody, 'melody');
-                printTrackNotes(song.secondaryMelody, 'secondaryMelody');
-                printTrackNotes(song.counterMelody, 'counterMelody');
-                printTrackNotes(song.pianoLH, 'bass');
+                printTrackNotes(song.lead, 'lead');
+                printTrackNotes(song.pad, 'pad');
+                printTrackNotes(song.bass, 'bass');
             });
         }
         console.log("========================================");
@@ -152,13 +150,12 @@ export class PlaybackEngine {
         // 🌟 2. 获取采样器 (100% Soundfont)
         
         const vocalSynth = song.palette?.vocalSound ? this.instruments.getInstrument(song.palette.vocalSound, 'Foreground', 'vocal', mixing.vocal) : null;
-        const melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', song.palette?.vocalSound ? 'Midground' : 'Foreground', 'melody', mixing.melody);
-        const chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground', 'chord', mixing.chord);
-        
-        // 🌟 3. 独立 Bass 采样器：根据流派选择电贝斯或原声贝斯
-        const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
-        const bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm', 'bass', mixing.bass);
-        const drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm', 'drums', mixing.drums); 
+        const leadSynth = this.instruments.getInstrument(song.palette?.leadSound || 'Acoustic_Grand', song.palette?.vocalSound ? 'Midground' : 'Foreground', 'lead', mixing.lead);
+        const accompSynth = this.instruments.getInstrument(song.palette?.accompSound || 'Warm_EP', 'Midground', 'accomp', mixing.accomp);
+
+        // 🌟 3. 独立 Bass 采样器：根据 palette 配置选择贝斯音色
+        const bassSynth = this.instruments.getInstrument(song.palette?.bassSound || 'Electric_Bass', 'Rhythm', 'bass', mixing.bass);
+        const drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm', 'drums', mixing.drums);
 
         if (this.isStopped) return;
 
@@ -176,13 +173,11 @@ export class PlaybackEngine {
             }
         };
         
-        updateMaxOnset(song.vocal);
-        updateMaxOnset(song.melody);
-        updateMaxOnset(song.secondaryMelody);
-        updateMaxOnset(song.pianoLH);
-        updateMaxOnset(song.pianoRH);
+        updateMaxOnset(song.lead);
+        updateMaxOnset(song.bass);
+        updateMaxOnset(song.accomp);
         updateMaxOnset(song.drums);
-        updateMaxOnset(song.counterMelody);
+        updateMaxOnset(song.pad);
         updateMaxOnset(song.userMotif);
         
         const countInBeats = options?.withCountIn ? 4 : 0;
@@ -264,7 +259,7 @@ export class PlaybackEngine {
                 let pitch = n.pitch;
                 if (eventType !== 'drums' && transposeOffset !== 0) {
                     pitch += transposeOffset;
-                    if (eventType === 'pianoLH') {
+                    if (eventType === 'bass') {
                         // 贝斯专属：折叠到 E1(28) ~ G2(43)，保持低频地基
                         while (pitch > 43) pitch -= 12;
                         while (pitch < 28) pitch += 12;
@@ -312,21 +307,18 @@ export class PlaybackEngine {
         };
 
         const vocalSynthFn = vocalSynth ? () => vocalSynth : null;
-        const melodySynthFn = () => melodySynth;
-        const chordSynthFn = () => chordSynth;
+        const leadSynthFn = () => leadSynth;
+        const accompSynthFn = () => accompSynth;
         const drumSynthFn = () => drumSynth;
         const bassSynthFn = () => bassSynth;
 
         scheduleSynthInit(vocalSynthFn);
-        scheduleSynthInit(melodySynthFn);
-        scheduleSynthInit(chordSynthFn);
+        scheduleSynthInit(leadSynthFn);
+        scheduleSynthInit(accompSynthFn);
         scheduleSynthInit(drumSynthFn);
         scheduleSynthInit(bassSynthFn);
-        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
-            scheduleSynthInit(() => this.instruments.getInstrument(song.palette!.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody));
-        }
-        if (song.counterMelody && song.palette?.counterMelodySound) {
-            scheduleSynthInit(() => this.instruments.getInstrument(song.palette!.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody));
+        if (song.pad && song.palette?.padSound) {
+            scheduleSynthInit(() => this.instruments.getInstrument(song.palette!.padSound, 'Midground', 'pad', mixing.pad));
         }
 
         // 🌟 Luis's Dynamic Panning & Reverb + Gain Staging
@@ -368,47 +360,33 @@ export class PlaybackEngine {
                 };
 
                 applyCC(vocalSynthFn, mixing.vocal, energyLevel);
-                applyCC(melodySynthFn, mixing.melody, energyLevel);
+                applyCC(leadSynthFn, mixing.lead, energyLevel);
                 applyCC(drumSynthFn, mixing.drums, energyLevel, true);
                 applyCC(bassSynthFn, mixing.bass, energyLevel);
-                applyCC(chordSynthFn, mixing.chord, energyLevel);
+                applyCC(accompSynthFn, mixing.accomp, energyLevel);
 
-                if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
-                    const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
-                    const secondaryMelodySynthFn = () => secondaryMelodySynth;
-                    applyCC(secondaryMelodySynthFn, mixing.secondaryMelody, energyLevel);
-                }
-
-                if (song.counterMelody && song.palette?.counterMelodySound) {
-                    const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
-                    const counterMelodySynthFn = () => counterMelodySynth;
-                    applyCC(counterMelodySynthFn, mixing.counterMelody, energyLevel);
+                if (song.pad && song.palette?.padSound) {
+                    const padSynth = this.instruments.getInstrument(song.palette.padSound, 'Midground', 'pad', mixing.pad);
+                    const padSynthFn = () => padSynth;
+                    applyCC(padSynthFn, mixing.pad, energyLevel);
                 }
             });
         }
 
-        if (song.vocal && vocalSynthFn) {
-            addPartEvents(song.vocal, vocalSynthFn, 'melody'); // Use 'melody' visual type for now
-        }
-        addPartEvents(song.melody, melodySynthFn, 'melody');
-        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
-            const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
-            const secondaryMelodySynthFn = () => secondaryMelodySynth;
-            addPartEvents(song.secondaryMelody, secondaryMelodySynthFn, 'melody');
-        }
-        addPartEvents(song.pianoLH, bassSynthFn, 'pianoLH'); 
-        addPartEvents(song.pianoRH, chordSynthFn, 'pianoRH');
-        if (song.counterMelody && song.palette?.counterMelodySound) {
-            const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
-            const counterMelodySynthFn = () => counterMelodySynth;
-            addPartEvents(song.counterMelody, counterMelodySynthFn, 'pianoRH'); 
+        addPartEvents(song.lead, leadSynthFn, 'lead');
+        addPartEvents(song.bass, bassSynthFn, 'bass');
+        addPartEvents(song.accomp, accompSynthFn, 'accomp');
+        if (song.pad && song.palette?.padSound) {
+            const padSynth = this.instruments.getInstrument(song.palette.padSound, 'Midground', 'pad', mixing.pad);
+            const padSynthFn = () => padSynth;
+            addPartEvents(song.pad, padSynthFn, 'pad');
         }
         if (song.drums) {
             addPartEvents(song.drums, drumSynthFn, 'drums');
         }
 
         // 🌟 CC11 表情呼吸曲线：Sustained/Pad 乐器的背景长音自动生成呼吸包络
-        // 仅对 counterMelody 和 secondaryMelody 应用（主旋律不加，避免"断气"）
+        // 仅对 pad 应用（主旋律不加，避免"断气"）
         const addCC11Swell = (partNotes: any[] | undefined, synthFn: any, instrumentName: string | null | undefined) => {
             if (!partNotes || !synthFn || !instrumentName) return;
             const instId = getInstrumentIdByName(instrumentName);
@@ -416,25 +394,159 @@ export class PlaybackEngine {
             if (!profile.needsCC11) return;
             const activeSynth = typeof synthFn === 'function' ? synthFn(0) : synthFn;
             const channel = activeSynth.channel;
+
+            // CC11 呼吸参数：管乐 vs 通用 Sustained
+            const wp = profile.windProfile;
+            const ccMin = wp ? 35 : 40;      // 起始/结尾最低值
+            const ccPeak = wp ? 110 : 90;     // 峰值
+            const peakPos = wp ? 0.35 : 0.4;  // 峰值位置（管乐更前，模拟气息冲击）
+            const STEPS = 8;                  // 插值帧数（8 帧平滑，ESP32 友好）
+
             for (let ni = 0; ni < partNotes.length; ni++) {
                 const note = partNotes[ni];
-                if (note.duration >= 1.0) {
-                    const startTick = globalMidiScheduler.beatsToTicks(note.onset + countInBeats);
-                    const endTick = globalMidiScheduler.beatsToTicks(note.onset + note.duration + countInBeats);
-                    const midTick = Math.round(startTick + (endTick - startTick) * 0.4);
-                    allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: 40 });
-                    allEvents.push({ ticks: midTick, type: 'cc', channel, data1: 11, data2: 90 });
-                    allEvents.push({ ticks: Math.max(startTick + 1, endTick - 120), type: 'cc', channel, data1: 11, data2: 30 });
+                if (note.duration < 1.0) continue;
+
+                const startTick = globalMidiScheduler.beatsToTicks(note.onset + countInBeats);
+                const endTick = globalMidiScheduler.beatsToTicks(note.onset + note.duration + countInBeats);
+                const totalTicks = endTick - startTick;
+                if (totalTicks <= 0) continue;
+
+                // 正弦曲线插值：sin(0→π) 映射到 ccMin→ccPeak→ccMin
+                // 峰值偏移：前半段压缩到 peakPos，后半段拉伸
+                for (let s = 0; s <= STEPS; s++) {
+                    const t = s / STEPS;
+                    let phase: number;
+                    if (t <= peakPos) {
+                        phase = (t / peakPos) * 0.5;
+                    } else {
+                        phase = 0.5 + ((t - peakPos) / (1.0 - peakPos)) * 0.5;
+                    }
+                    const sinVal = Math.sin(phase * Math.PI);
+                    const ccVal = Math.round(ccMin + (ccPeak - ccMin) * sinVal);
+                    const tick = Math.round(startTick + totalTicks * t);
+                    const finalTick = s === STEPS ? Math.max(startTick + 1, tick - 48) : tick;
+                    allEvents.push({ ticks: finalTick, type: 'cc', channel, data1: 11, data2: Math.min(127, Math.max(0, ccVal)) });
                 }
             }
         };
-        if (song.counterMelody && song.palette?.counterMelodySound) {
-            const cmSynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
-            addCC11Swell(song.counterMelody, () => cmSynth, song.palette.counterMelodySound);
+        if (song.pad && song.palette?.padSound) {
+            const padSynthCC11 = this.instruments.getInstrument(song.palette.padSound, 'Midground', 'pad', mixing.pad);
+            addCC11Swell(song.pad, () => padSynthCC11, song.palette.padSound);
         }
-        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
-            const secSynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
-            addCC11Swell(song.secondaryMelody, () => secSynth, song.palette.secondaryMelodySound);
+
+        // 🌟 管乐 Lead 也需要 CC11 呼吸包络
+        if (song.lead && song.palette?.leadSound) {
+            const leadInstId = getInstrumentIdByName(song.palette.leadSound);
+            const leadProfile = InstrumentProfiles[leadInstId];
+            if (leadProfile.needsCC11) {
+                const leadSynthCC11 = this.instruments.getInstrument(song.palette.leadSound, 'Foreground', 'lead', mixing.lead);
+                addCC11Swell(song.lead, () => leadSynthCC11, song.palette.leadSound);
+            }
+        }
+
+        // 🌟 管乐表情注入：Scoop (滑音起音) + Fall (掉音收尾) + Vibrato (颤音)
+        const addWindExpression = (partNotes: NoteData[] | undefined, synthFn: any, instrumentName: string | null | undefined) => {
+            if (!partNotes || !synthFn || !instrumentName) return;
+            const instId = getInstrumentIdByName(instrumentName);
+            const profileWind = InstrumentProfiles[instId];
+            const wp = profileWind?.windProfile;
+            if (!wp) return;
+
+            const activeSynth = typeof synthFn === 'function' ? synthFn(0) : synthFn;
+            const channel = activeSynth.channel;
+            const ppq = 480;
+            const beatsToTicksLocal = (beats: number) => Math.round(beats * ppq);
+            const secToBeats = (sec: number) => sec * (song.bpm / 60);
+
+            for (let ni = 0; ni < partNotes.length; ni++) {
+                const note = partNotes[ni];
+                const startTick = beatsToTicksLocal(note.onset + countInBeats);
+                const durTicks = beatsToTicksLocal(note.duration);
+
+                // Scoop: pitchBend 标记存在（由 WindIdiom 设置）
+                if (note.pitchBend && note.pitchBend < 0) {
+                    // T=0: bend down
+                    allEvents.push({ ticks: startTick, type: 'pitchBend' as const, channel, data1: (note.pitchBend + 8192), data2: 0 });
+                    // T+80ms: restore center
+                    const scoopEndTick = startTick + beatsToTicksLocal(secToBeats(0.08));
+                    allEvents.push({ ticks: Math.max(startTick + 1, scoopEndTick), type: 'pitchBend' as const, channel, data1: 8192, data2: 0 });
+                }
+
+                // Fall: fadeOutDuration 标记存在（由 WindIdiom 设置）
+                if (note.fadeOutDuration && note.fadeOutDuration > 0 && wp.allowFall) {
+                    const fallStartTick = startTick + durTicks - beatsToTicksLocal(note.fadeOutDuration);
+                    if (fallStartTick > startTick) {
+                        // PitchBend 快速下降
+                        allEvents.push({ ticks: fallStartTick, type: 'pitchBend' as const, channel, data1: 8192, data2: 0 });
+                        allEvents.push({ ticks: fallStartTick + beatsToTicksLocal(0.05), type: 'pitchBend' as const, channel, data1: 5000, data2: 0 });
+                        allEvents.push({ ticks: fallStartTick + beatsToTicksLocal(0.10), type: 'pitchBend' as const, channel, data1: 2048, data2: 0 });
+                        // CC11 音量骤降
+                        allEvents.push({ ticks: fallStartTick, type: 'cc' as const, channel, data1: 11, data2: 60 });
+                        allEvents.push({ ticks: fallStartTick + beatsToTicksLocal(0.10), type: 'cc' as const, channel, data1: 11, data2: 20 });
+                        // 恢复
+                        const noteEndTick = startTick + durTicks;
+                        allEvents.push({ ticks: noteEndTick, type: 'pitchBend' as const, channel, data1: 8192, data2: 0 });
+                        allEvents.push({ ticks: noteEndTick, type: 'cc' as const, channel, data1: 11, data2: 127 });
+                    }
+                }
+
+                // Vibrato: 长音（≥1.5 拍）后半段用 PitchBend LFO
+                if (note.duration >= 1.5) {
+                    const vibratoStartTick = startTick + Math.floor(durTicks * wp.vibratoOnsetRatio);
+                    const vibratoEndTick = startTick + durTicks - 48;
+                    if (vibratoEndTick > vibratoStartTick) {
+                        // 简化 LFO：用方波近似正弦，每半周期交替偏移
+                        const halfPeriodBeats = 1.0 / (wp.vibratoRate * 2);
+                        const halfPeriodTicks = Math.max(24, beatsToTicksLocal(halfPeriodBeats));
+                        let up = true;
+                        for (let t = vibratoStartTick; t < vibratoEndTick; t += halfPeriodTicks) {
+                            const bendVal = up ? 8192 + wp.vibratoDepth : 8192 - wp.vibratoDepth;
+                            allEvents.push({ ticks: t, type: 'pitchBend' as const, channel, data1: bendVal, data2: 0 });
+                            up = !up;
+                        }
+                        // 恢复 center
+                        allEvents.push({ ticks: vibratoEndTick, type: 'pitchBend' as const, channel, data1: 8192, data2: 0 });
+                    }
+                }
+            }
+        };
+
+        // 应用管乐表情到 lead 声部
+        if (song.lead && song.palette?.leadSound) {
+            addWindExpression(song.lead, leadSynthFn, song.palette.leadSound);
+        }
+
+        // 🌟 管乐影子通道：GM#122 Breath Noise 气流噪声
+        if (song.lead && song.palette?.leadSound) {
+            const leadInstIdShadow = getInstrumentIdByName(song.palette.leadSound);
+            const leadProfileShadow = InstrumentProfiles[leadInstIdShadow];
+            const wpShadow = leadProfileShadow?.windProfile;
+            if (wpShadow) {
+                // 分配影子通道
+                const shadowSynth = this.instruments.getInstrument('Breath_Noise', 'Background', 'wind_shadow', { volume: -20, reverb: 0.3, pan: 0 });
+                const shadowCh = shadowSynth.channel;
+
+                // Program Change to GM#122
+                allEvents.push({ ticks: 0, type: 'programChange' as const, channel: shadowCh, data1: wpShadow.shadowProgram, data2: 0 });
+                // 初始音量极低
+                allEvents.push({ ticks: 0, type: 'cc' as const, channel: shadowCh, data1: 7, data2: 30 });
+
+                // 为每个 lead 音符生成影子音符
+                for (let ni = 0; ni < song.lead.length; ni++) {
+                    const note = song.lead[ni];
+                    const startTick = Math.round((note.onset + countInBeats) * 480);
+                    const endTick = startTick + Math.round(note.duration * 480);
+                    // 非线性力度映射：强吹 → 更多气声
+                    const shadowVel = Math.min(127, Math.round(
+                        Math.pow(note.velocity, wpShadow.shadowDynamicExponent) * 127 * wpShadow.shadowVelocityRatio
+                    ));
+
+                    if (shadowVel > 0) {
+                        allEvents.push({ ticks: startTick, type: 'noteOn' as const, channel: shadowCh, data1: 60, data2: shadowVel });
+                        allEvents.push({ ticks: endTick, type: 'noteOff' as const, channel: shadowCh, data1: 60, data2: 0 });
+                    }
+                }
+            }
         }
 
         // 🌟 提案三：标志性结尾 (Jazz/R&B Signature Ending - CC64 Sustain)
@@ -444,13 +556,13 @@ export class PlaybackEngine {
                     const startTick = globalMidiScheduler.beatsToTicks(chord.startBeat + countInBeats);
                     const endTick = globalMidiScheduler.beatsToTicks(chord.endBeat + countInBeats);
                     
-                    // 为所有和声乐器 (PianoRH, PianoLH, CounterMelody) 发送 CC64 延音踏板踩下
+                    // 为所有和声乐器 (accomp, bass, pad) 发送 CC64 延音踏板踩下
                     const sustainChannels = new Set<number>();
-                    if (chordSynthFn) sustainChannels.add(chordSynthFn().channel);
+                    if (accompSynthFn) sustainChannels.add(accompSynthFn().channel);
                     if (bassSynthFn) sustainChannels.add(bassSynthFn().channel);
-                    if (song.counterMelody && song.palette?.counterMelodySound) {
-                        const cmSynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody');
-                        sustainChannels.add(cmSynth.channel);
+                    if (song.pad && song.palette?.padSound) {
+                        const padSynthSustain = this.instruments.getInstrument(song.palette.padSound, 'Midground', 'pad');
+                        sustainChannels.add(padSynthSustain.channel);
                     }
 
                     sustainChannels.forEach(channel => {
@@ -467,7 +579,7 @@ export class PlaybackEngine {
 
         // 🌟 Luis's Fake Sidechain (CC 11)
         if (song.styleId !== undefined) {
-            const needsSidechain = false;
+            const needsSidechain = styleConfig.orchestration?.mixingPreferences?.requireSidechain ?? false;
             
             if (needsSidechain && song.drums) {
                 song.drums.forEach(n => {
@@ -492,13 +604,13 @@ export class PlaybackEngine {
                         const bassChannel = bassSynthFn().channel;
                         injectSidechain(bassChannel);
 
-                        const chordChannel = chordSynthFn().channel;
-                        injectSidechain(chordChannel);
+                        const accompChannel = accompSynthFn().channel;
+                        injectSidechain(accompChannel);
 
-                        if (song.counterMelody && song.palette?.counterMelodySound) {
-                            const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
-                            const cmChannel = counterMelodySynth.channel;
-                            injectSidechain(cmChannel);
+                        if (song.pad && song.palette?.padSound) {
+                            const padSynthSC = this.instruments.getInstrument(song.palette.padSound, 'Midground', 'pad', mixing.pad);
+                            const padChannel = padSynthSC.channel;
+                            injectSidechain(padChannel);
                         }
                     }
                 });

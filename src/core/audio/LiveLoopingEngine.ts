@@ -22,9 +22,9 @@ export class LiveLoopingEngine {
     private hihatSynth: any = null;
     private extraDrumSynth: any = null;
     private bassSynth: any = null;
-    private chordSynth: any = null;
-    private melodySynth: any = null;
-    private counterMelodySynth: any = null;
+    private accompSynth: any = null;
+    private leadSynth: any = null;
+    private padSynth: any = null;
     private userMotifSynth: any = null;
     private fillSynth: any = null;
 
@@ -81,10 +81,9 @@ export class LiveLoopingEngine {
         const selectedProfile = 'Recording_Studio';
         await this.mixer.applyMasteringProfile(selectedProfile);
 
-        this.melodySynth = this.instruments.getInstrument('System_Aura', 'Foreground');
-        this.chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground');
-        const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
-        this.bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm');
+        this.leadSynth = this.instruments.getInstrument('System_Aura', 'Foreground');
+        this.accompSynth = this.instruments.getInstrument(song.palette?.accompSound || 'Warm_EP', 'Midground');
+        this.bassSynth = this.instruments.getInstrument(song.palette?.bassSound || 'Electric_Bass', 'Rhythm');
         
         const drumSound = song.palette?.drumSound || 'Standard_DrumKit';
         this.kickSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'kick'); 
@@ -92,8 +91,8 @@ export class LiveLoopingEngine {
         this.hihatSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'hihats'); 
         this.extraDrumSynth = this.instruments.getInstrument(drumSound, 'Rhythm', 'extraDrums'); 
         
-        if (song.palette?.counterMelodySound) {
-            this.counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground');
+        if (song.palette?.padSound) {
+            this.padSynth = this.instruments.getInstrument(song.palette.padSound, 'Midground');
         }
 
         this.userMotifSynth = this.instruments.getInstrument('System_Aura', 'Foreground');
@@ -177,13 +176,12 @@ export class LiveLoopingEngine {
         addEventsForTrack(hihatDrums, this.hihatSynth, 'drums');
         addEventsForTrack(extraDrums, this.extraDrumSynth, 'drums');
         
-        addEventsForTrack(song.pianoLH, this.bassSynth, 'bass');
-        addEventsForTrack(song.pianoRH, this.chordSynth, 'pianoRH');
-        addEventsForTrack(song.melody, this.melodySynth, 'melody');
-        
-        if (song.secondaryMelody) addEventsForTrack(song.secondaryMelody, this.melodySynth, 'melody');
-        if (song.counterMelody) addEventsForTrack(song.counterMelody, this.counterMelodySynth, 'counterMelody');
-        if (song.userMotif) addEventsForTrack(song.userMotif, this.userMotifSynth, 'melody');
+        addEventsForTrack(song.bass, this.bassSynth, 'bass');
+        addEventsForTrack(song.accomp, this.accompSynth, 'accomp');
+        addEventsForTrack(song.lead, this.leadSynth, 'lead');
+
+        if (song.pad) addEventsForTrack(song.pad, this.padSynth, 'pad');
+        if (song.userMotif) addEventsForTrack(song.userMotif, this.userMotifSynth, 'lead');
 
         globalMidiScheduler.loadTrack(allEvents, song.bpm, song.tempoCurves);
     }
@@ -260,7 +258,7 @@ export class LiveLoopingEngine {
             // For now, just trigger immediately or use setTimeout based on time diff.
             // Since it's a fill, immediate is usually fine for UI feedback.
             this.fillSynth.triggerAttackRelease(pitch, 0.25, 0, 0.8);
-            this.emitVisualEvent({ type: 'melody', midiNote: pitch, velocity: 100, onset: next16thTick / globalMidiScheduler.ppq, source: 'playback' });
+            this.emitVisualEvent({ type: 'lead', midiNote: pitch, velocity: 100, onset: next16thTick / globalMidiScheduler.ppq, source: 'playback' });
         }
     }
 
@@ -286,7 +284,7 @@ export class LiveLoopingEngine {
             if (synthToUse) {
                 synthToUse.triggerAttackRelease(pitch, 0.25, 0, 1.0);
             }
-        } else if (instrument === 'melody' && this.userMotifSynth) {
+        } else if (instrument === 'lead' && this.userMotifSynth) {
             this.userMotifSynth.triggerAttackRelease(pitch, 0.25, 0, 1.0);
         }
     }

@@ -448,7 +448,7 @@ export class EndlessRadioManager {
 
       const melodyEngine = new MelodyEngine();
       // 从所有已注册的风格中随机选择（PRNG 驱动，确定性）
-      const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop, StyleId.LoFiChill];
+      const allStyleIds = [StyleId.Default];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
       

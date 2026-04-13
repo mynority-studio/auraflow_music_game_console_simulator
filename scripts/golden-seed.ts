@@ -56,7 +56,6 @@ function run() {
                     timeSignature: track.timeSignature,
                     sectionCount: track.sections.length,
                     melodyNoteCount: track.melody.length,
-                    vocalNoteCount: track.vocal?.length ?? 0,
                     chordCount: track.chords.length,
                 },
                 context: {
@@ -68,13 +67,11 @@ function run() {
                 },
                 stateC,
                 arranged: {
-                    melodyNoteCount: arranged.melody.length,
-                    pianoLHNoteCount: arranged.pianoLH.length,
-                    pianoRHNoteCount: arranged.pianoRH.length,
+                    leadNoteCount: arranged.lead.length,
+                    bassNoteCount: arranged.bass.length,
+                    accompNoteCount: arranged.accomp?.length ?? 0,
                     drumsNoteCount: arranged.drums?.length ?? 0,
-                    secondaryMelodyNoteCount: arranged.secondaryMelody?.length ?? 0,
-                    counterMelodyNoteCount: arranged.counterMelody?.length ?? 0,
-                    vocalNoteCount: arranged.vocal?.length ?? 0,
+                    padNoteCount: arranged.pad?.length ?? 0,
                 },
                 stateD,
                 sha256: sha256.substring(0, 32),
@@ -85,7 +82,7 @@ function run() {
             console.log(`\nSeed ${seed}:`);
             console.log(`  States: A=${stateA} → B=${stateB} → C=${stateC} → D=${stateD}`);
             console.log(`  Track: ${track.bpm}bpm, ${track.key}, ${track.sections.length} sections, ${track.melody.length} melody notes`);
-            console.log(`  Arranged: melody=${arranged.melody.length}, LH=${arranged.pianoLH.length}, RH=${arranged.pianoRH.length}, drums=${arranged.drums?.length ?? 0}`);
+            console.log(`  Arranged: lead=${arranged.lead.length}, bass=${arranged.bass.length}, accomp=${arranged.accomp?.length ?? 0}, drums=${arranged.drums?.length ?? 0}`);
             console.log(`  SHA-256: ${sha256.substring(0, 16)}...`);
 
         } catch (error) {

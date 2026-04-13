@@ -17,7 +17,7 @@ export class InteractivePlaybackEngine {
 
     // 保存引用以便手动触发
     private drumSynth: any = null;
-    private melodySynth: any = null;
+    private leadSynth: any = null;
 
     constructor() {
         this.mixer = new AudioMixer();
@@ -56,10 +56,9 @@ export class InteractivePlaybackEngine {
         const selectedProfile = 'Recording_Studio';
         await this.mixer.applyMasteringProfile(selectedProfile);
 
-        this.melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', 'Foreground');
-        const chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground');
-        const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
-        const bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm');
+        this.leadSynth = this.instruments.getInstrument(song.palette?.leadSound || 'Acoustic_Grand', 'Foreground');
+        const accompSynth = this.instruments.getInstrument(song.palette?.accompSound || 'Warm_EP', 'Midground');
+        const bassSynth = this.instruments.getInstrument(song.palette?.bassSound || 'Electric_Bass', 'Rhythm');
         this.drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm'); 
 
         if (this.isStopped) return;
@@ -112,16 +111,12 @@ export class InteractivePlaybackEngine {
         // 🌟 法则一：绝对律动保护 - 基础鼓点自动播放，不断节拍
         const autoDrums = song.drums || [];
 
-        addEventsForTrack(song.melody, this.melodySynth, 'melody');
-        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
-            const secondaryMelodySynth = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground');
-            addEventsForTrack(song.secondaryMelody, secondaryMelodySynth, 'melody');
-        }
-        addEventsForTrack(song.pianoLH, bassSynth, 'pianoLH');
-        addEventsForTrack(song.pianoRH, chordSynth, 'pianoRH');
-        if (song.counterMelody && song.palette?.counterMelodySound) {
-            const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground');
-            addEventsForTrack(song.counterMelody, counterMelodySynth, 'pianoRH');
+        addEventsForTrack(song.lead, this.leadSynth, 'lead');
+        addEventsForTrack(song.bass, bassSynth, 'bass');
+        addEventsForTrack(song.accomp, accompSynth, 'accomp');
+        if (song.pad && song.palette?.padSound) {
+            const padSynth = this.instruments.getInstrument(song.palette.padSound, 'Midground');
+            addEventsForTrack(song.pad, padSynth, 'pad');
         }
         if (autoDrums.length > 0) {
             addEventsForTrack(autoDrums, this.drumSynth, 'drums');
@@ -139,8 +134,8 @@ export class InteractivePlaybackEngine {
     }
 
     // 手动触发交互音符
-    public triggerInteractiveNote(instrument: 'drums' | 'melody', pitch: number, duration: number, velocity: number, time?: number) {
-        const synth = instrument === 'drums' ? this.drumSynth : this.melodySynth;
+    public triggerInteractiveNote(instrument: 'drums' | 'lead', pitch: number, duration: number, velocity: number, time?: number) {
+        const synth = instrument === 'drums' ? this.drumSynth : this.leadSynth;
         if (synth && pitch !== undefined && !isNaN(pitch)) {
             synth.triggerAttackRelease(pitch, duration, 0, velocity);
             this.emitVisualEvent({ type: instrument, midiNote: pitch, velocity: velocity * 127 });

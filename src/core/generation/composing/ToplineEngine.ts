@@ -7,6 +7,7 @@ import { GlobalContext } from '../GlobalContext';
 import { ENERGY } from '../config/EnergyThresholds';
 import { isOnDownbeat, isOnGrid } from '../utils/BeatMath';
 import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../config/InstrumentFlags';
+import { SingerPersona } from '../performance/SingerPersona';
 
 type Contour = 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
 type PhraseForm = string[]; // e.g., ['A', 'A', 'B', 'A']
@@ -145,6 +146,20 @@ class PhraseGroupPlanner {
                 role: isAAprime ? 'vary' : 'resolve',
                 lengthBars: 0,
             });
+            return slots;
+        }
+
+        // 🌟 Loop 布局：EDM Drop/BuildUp/Breakdown 段落使用同一 motif 循环重复
+        if (secType === SectionType.Drop || secType === SectionType.BuildUp || secType === SectionType.Breakdown) {
+            PRNGManager.next(); // dummy：保持 PRNG 序列对齐（替代正常的 layout roll）
+            for (let li = 0; li < slotCount; li++) {
+                slots.push({
+                    label: 'M',
+                    role: li === 0 ? 'statement' : 'repeat',
+                    lengthBars: 0,
+                    isPeak: li === Math.floor(slotCount * 0.618) && secType === SectionType.Drop,
+                });
+            }
             return slots;
         }
 
@@ -899,9 +914,8 @@ export class ToplineEngine {
                 });
                 currentBeat += motifLengthBeats;
             }
-            // Use raw melody directly (no SingerPersona post-processing)
-            const humanizedMelody = sectionMelody;
-            
+            const humanizedMelody = persona ? SingerPersona.apply(sectionMelody, persona, chords, instrumentName) : sectionMelody;
+
             let lastPitch = currentPreviousPitch;
             if (humanizedMelody.length > 0) {
                 lastPitch = humanizedMelody[humanizedMelody.length - 1].pitch;
@@ -1231,8 +1245,8 @@ export class ToplineEngine {
             }
         }
 
-        // Use raw melody directly (no SingerPersona post-processing)
-        return { notes: sectionMelody, motifs, lastPitch: currentPreviousPitch, unresolvedCount: consecutiveUnresolved };
+        const humanizedMelody = persona ? SingerPersona.apply(sectionMelody, persona, chords, instrumentName) : sectionMelody;
+        return { notes: humanizedMelody, motifs, lastPitch: currentPreviousPitch, unresolvedCount: consecutiveUnresolved };
     }
 
 
@@ -1416,8 +1430,8 @@ export class ToplineEngine {
         let targetCenter = 60 + pitchShift;
 
         // 🌟 Tessitura Catapult（音区弹射）：Chorus 整体音区动态提升
-        // 根据 Chorus 前各段落的最高音，将 Chorus 基础中心音高拉高，制造爆发感
-        if (sectionName.includes('Chorus') && maxPitchBeforeChorus > 0) {
+        // 跳过条件：如果 style 定义了 sectionalRegisterProfile（Lo-fi 等），由配置控制音区，不做 catapult
+        if (sectionName.includes('Chorus') && maxPitchBeforeChorus > 0 && !style?.melody?.sectionalRegisterProfile) {
             if (targetCenter < maxPitchBeforeChorus + 2) {
                 targetCenter = maxPitchBeforeChorus + 2; // 至少比之前最高音高一个大二度
             }
@@ -1883,18 +1897,28 @@ export class ToplineEngine {
                 }
             }
             
-            // 🎷 物理限制：乐器绝对音域与“困难音”避让
-            
-            
+            // 🎷 物理限制：乐器绝对音域与”困难音”避让
             let maxPitch = isSolo ? 96 : 88; // E6
             let minPitch = isSolo ? 48 : 52; // E3
             if (isVocal) {
                 maxPitch = 72; // C5
                 minPitch = 55; // G3
-                // 🌟 法则五：Tessitura (音区) 管理
-                // 主歌的最高音，必须比副歌的最高音低至少一个纯四度（5个半音）
                 if (sectionName.includes('Verse') || sectionName.includes('PreChorus')) {
-                    maxPitch -= 5; 
+                    maxPitch -= 5;
+                }
+            }
+
+            // 🌟 StyleConfig.sectionalRegisterProfile 覆盖：Lo-fi 等风格通过配置压缩音域
+            const regProfile = style?.melody?.sectionalRegisterProfile;
+            if (regProfile) {
+                let secKey: string = 'verse';
+                if (sectionName.includes('Chorus') || sectionName.includes('Drop')) secKey = 'chorus';
+                else if (sectionName.includes('PreChorus') || sectionName.includes('BuildUp')) secKey = 'preChorus';
+                else if (sectionName.includes('Solo')) secKey = 'solo';
+                const reg = (regProfile as any)[secKey] as [number, number] | undefined;
+                if (reg && reg.length === 2) {
+                    minPitch = reg[0];
+                    maxPitch = reg[1];
                 }
             }
             
@@ -1921,6 +1945,46 @@ export class ToplineEngine {
 
                 let interval = currentPitch - previousPitch;
                 let absInterval = Math.abs(interval);
+
+                // 🌟 管乐音程概率矩阵：Sustained 乐器限制音程跳跃
+                const _windInstId = getInstrumentIdByName(instrumentName);
+                const _windEnvelope = InstrumentProfiles[_windInstId]?.envelope;
+                if (_windEnvelope === AcousticEnvelope.Sustained && previousPitch > 0) {
+                    const wp = InstrumentProfiles[_windInstId]?.windProfile;
+                    if (wp) {
+                        const roll = PRNGManager.next();
+                        const w = wp.intervalWeights;
+                        let maxInterval: number;
+                        if (roll < w.step) maxInterval = 2;
+                        else if (roll < w.step + w.third) maxInterval = 4;
+                        else if (roll < w.step + w.third + w.fourth) maxInterval = 7;
+                        else maxInterval = 12;
+
+                        if (absInterval > maxInterval) {
+                            // 收缩到距离 previousPitch 不超过 maxInterval 的最近和弦音或音阶音
+                            const direction = currentPitch > previousPitch ? 1 : -1;
+                            const candidates = chordTones.concat(safeScalePcs);
+                            let bestPitch = currentPitch;
+                            let bestDist = 999;
+                            for (let ci = 0; ci < candidates.length; ci++) {
+                                const cand = this.getNearestOctave(candidates[ci], previousPitch + direction * Math.floor(maxInterval / 2));
+                                const dist = Math.abs(cand - previousPitch);
+                                if (dist <= maxInterval && Math.abs(cand - currentPitch) < bestDist) {
+                                    bestDist = Math.abs(cand - currentPitch);
+                                    bestPitch = cand;
+                                }
+                            }
+                            currentPitch = bestPitch;
+                        }
+                    } else {
+                        PRNGManager.next(); // burn slot for PRNG alignment
+                    }
+                } else {
+                    PRNGManager.next(); // burn slot for PRNG alignment when not Sustained
+                }
+                // 重算 interval（管乐矩阵可能修改了 currentPitch）
+                interval = currentPitch - previousPitch;
+                absInterval = Math.abs(interval);
 
                 // 🌟 Rule 2: Interval Safety — 信任 motif 形状，只拦截极端跳跃
                 // 移除了原先 70% 强制级进的惩罚逻辑，该逻辑会摧毁 motif 的轮廓形状
@@ -2260,8 +2324,11 @@ export class ToplineEngine {
                 }
             } else {
                 // 🌟 强拍半音趋近音 (Chromatic Approach from Below)
+                // Plucked 乐器（Music Box, Vibraphone 等）禁用：非谐波泛音会放大半音摩擦
                 let didChromaticApproach = false;
-                const chromApproachProb = style?.melody?.chromaticApproachProbability ?? 0.15;
+                const instIdForChrom = getInstrumentIdByName(instrumentName);
+                const isPluckedInst = InstrumentProfiles[instIdForChrom]?.envelope === AcousticEnvelope.Plucked;
+                const chromApproachProb = isPluckedInst ? 0 : (style?.melody?.chromaticApproachProbability ?? 0.15);
                 if (isStrongBeat && previousPitch !== null && i > 0 && notes.length > 0) {
                     const chromRoll = PRNGManager.next(); // 始终消耗 PRNG 保持确定性
                     let targetIsChordTone = false;
@@ -2333,6 +2400,17 @@ export class ToplineEngine {
 
                 // 正常添加音符
                 notes.push({ pitch: Math.floor(currentPitch), onset: finalOnset, duration: legatoDuration, velocity: humanVelocity });
+
+                // 🌟 Chord-Melody 模式：按概率在旋律音下方叠加和弦三音（Lo-fi/Neo-Soul 厚重和声旋律）
+                const chordMelProb = style?.melody?.chordMelodyProbability ?? 0;
+                if (chordMelProb > 0 && PRNGManager.next() < chordMelProb && isLongNote) {
+                    // 在主旋律下方叠加三音（大三度或小三度取决于和弦性质）
+                    const thirdInterval = (activeChord.quality === 'Minor' || activeChord.quality === 'Minor7' || activeChord.quality === 'Minor9') ? 3 : 4;
+                    const thirdBelow = Math.floor(currentPitch) - thirdInterval;
+                    if (thirdBelow >= minPitch) {
+                        notes.push({ pitch: thirdBelow, onset: finalOnset, duration: legatoDuration, velocity: humanVelocity * 0.65 });
+                    }
+                }
 
                 // 🌟 全音阶经过音链 (Diatonic Passing Tone Chain)
                 // 当前后两音间隔 ≥3 半音时，缩短前音尾部填入经过音

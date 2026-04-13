@@ -148,7 +148,7 @@ export class JamSessionManager {
             const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality);
 
             // Style 随机选一个
-            const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop, StyleId.LoFiChill];
+            const allStyleIds = [StyleId.Default];
             const randomStyleId = allStyleIds[Math.floor(PRNGManager.next() * allStyleIds.length)];
 
             const rawTrack = melodyEngine.generateFullSong(randomStyleId, {

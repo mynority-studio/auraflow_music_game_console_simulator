@@ -99,7 +99,7 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
       let x = 0, y = 0, energy = 0, spread = 0;
       let targetX = -1, targetY = -1, speed = 0;
 
-      if (type === 'pianoLH' || type === 'pianoRH') {
+      if (type === 'bass' || type === 'accomp') {
         // Edges
         x = Math.random() > 0.5 ? Math.floor(Math.random() * 4) : 11 + Math.floor(Math.random() * 4);
         y = 1 + Math.floor(Math.random() * 7);
@@ -112,7 +112,7 @@ export function LedMatrix({ activeKeys, appMode }: LedMatrixProps) {
           targetY = y + (Math.random() * 4 - 2);
           speed = 0.02 + Math.random() * 0.03; // Slower
         }
-      } else if (type === 'melody') {
+      } else if (type === 'lead') {
         // Center
         x = 3 + Math.floor(Math.random() * 9);
         y = 1 + Math.floor(Math.random() * 7);

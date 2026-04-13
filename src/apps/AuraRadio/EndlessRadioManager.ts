@@ -103,7 +103,7 @@ export class EndlessRadioManager {
       console.log(`[Radio] New seed: ${seed}`);
 
       const melodyEngine = new MelodyEngine();
-      const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop];
+      const allStyleIds = [StyleId.Default];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
       

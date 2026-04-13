@@ -1,6 +1,9 @@
-import { StyleConfig } from '../../types';
-import { Tonality } from '../../types';
-import { StyleId } from '../StyleFlags';
+/**
+ * StyleRegistry — 风格配置注册表
+ * DefaultStyle 作为通用基线，激活所有 idiom/groove/和声色彩/旋律技法。
+ */
+import { StyleConfig, Tonality } from '../../types';
+import { StyleId, StyleIdName } from '../StyleFlags';
 
 const DefaultStyle: StyleConfig = {
     id: StyleId.Default,
@@ -17,38 +20,42 @@ const DefaultStyle: StyleConfig = {
             { tonality: Tonality.Minor_Pentatonic, weight: 0.07 },
         ],
     },
+
+    // ── 和弦进行池 ──
     harmony: {
         chorusPool: [
-            ['I', 'V', 'vi', 'IV'],           // Pop 万能进行
-            ['vi', 'IV', 'I', 'V'],            // Axis 变体（Despacito 起手）
-            ['I', 'IV', 'vi', 'V'],            // Let It Be 型
-            ['I', 'vi', 'IV', 'V'],            // 50s 经典
-            ['IV', 'V', 'iii', 'vi'],          // J-Pop 王道（小室进行）
-            ['I', 'V', 'IV', 'V'],             // Rock anthem
-            ['vi', 'V', 'IV', 'V'],            // Minor dramatic
-            ['I', 'iii', 'IV', 'iv'],          // Creep 型（大→小四级借调）
-            ['I', 'bVII', 'IV', 'I'],          // Mixolydian vamp（Hey Jude 尾段）
-            ['I', 'V', 'vi', 'iii', 'IV'],     // Pachelbel Canon 5 和弦
+            ['I', 'V', 'vi', 'IV'],
+            ['vi', 'IV', 'I', 'V'],
+            ['I', 'IV', 'vi', 'V'],
+            ['I', 'vi', 'IV', 'V'],
+            ['IV', 'V', 'iii', 'vi'],
+            ['I', 'V', 'IV', 'V'],
+            ['vi', 'V', 'IV', 'V'],
+            ['I', 'iii', 'IV', 'iv'],
+            ['I', 'bVII', 'IV', 'I'],
+            ['I', 'V', 'vi', 'iii', 'IV'],
         ],
         versePool: [
-            ['I', 'IV', 'V', 'vi'],            // 标准叙事
-            ['I', 'vi', 'IV', 'V'],            // 50s doo-wop
-            ['vi', 'IV', 'I', 'V'],            // Minor 开头叙事
-            ['I', 'V', 'ii', 'IV'],            // Country/Folk
-            ['I', 'bVII', 'IV', 'I'],          // Mixolydian 放松
-            ['ii', 'IV', 'I', 'V'],            // Pre-funk groove
-            ['I', 'iii', 'vi', 'IV'],          // 下行三度链
-            ['vi', 'ii', 'V', 'I'],            // Minor-to-major 解决
+            ['I', 'IV', 'V', 'vi'],
+            ['I', 'vi', 'IV', 'V'],
+            ['vi', 'IV', 'I', 'V'],
+            ['I', 'V', 'ii', 'IV'],
+            ['I', 'bVII', 'IV', 'I'],
+            ['ii', 'IV', 'I', 'V'],
+            ['I', 'iii', 'vi', 'IV'],
+            ['vi', 'ii', 'V', 'I'],
         ],
         preChorusPool: [
-            ['ii', 'V', 'IV', 'I'],            // 经典蓄力
-            ['IV', 'V', 'vi', 'I'],            // 上行推进
-            ['ii', 'V', 'I', 'vi'],            // 2-5-1 jazz touch
-            ['IV', 'iv', 'I', 'V'],            // 大小四级切换
-            ['vi', 'V', 'IV', 'V'],            // 半音下行低音
-            ['ii', 'iii', 'IV', 'V'],          // 阶梯上行
+            ['ii', 'V', 'IV', 'I'],
+            ['IV', 'V', 'vi', 'I'],
+            ['ii', 'V', 'I', 'vi'],
+            ['IV', 'iv', 'I', 'V'],
+            ['vi', 'V', 'IV', 'V'],
+            ['ii', 'iii', 'IV', 'V'],
         ],
     },
+
+    // ── 和声规则（解锁全部色彩） ──
     harmonyRules: {
         maxDissonanceTolerance: 0.5,
         reharmProbability: 0.2,
@@ -57,8 +64,11 @@ const DefaultStyle: StyleConfig = {
         allowTritoneSub: true,
         extensionProbability: 0.5,
         borrowedChords: ['ModalMixture', 'SecondaryDominant'],
-        sectionTransitionPassingProb: 0.5,
+        sectionTransitionPassingProb: 0.45,
+        maxBorrowedChords: 2,
     },
+
+    // ── 节奏 ──
     rhythm: {
         densityBase: [0.4, 0.6],
         syncopationWeight: 0.2,
@@ -66,9 +76,13 @@ const DefaultStyle: StyleConfig = {
         disruptionProbability: 0.05,
         humanize: 0.01,
         swingRatio: 0.5,
+        swingSubdivision: 0.5,
         strictGrid: false,
         chordAnticipation: 0,
+        approachNoteProb: 0.15,
     },
+
+    // ── 旋律（全技法解锁） ──
     melody: {
         stepwiseRatio: 0.7,
         maxJumpInterval: 7,
@@ -90,8 +104,14 @@ const DefaultStyle: StyleConfig = {
         melismaProbability: 0,
         sequenceFreezeRhythm: false,
         chordMelodyProbability: 0,
+        sectionalRegisterProfile: {
+            verse:     [58, 72] as [number, number],
+            preChorus: [60, 74] as [number, number],
+            chorus:    [62, 79] as [number, number],
+            solo:      [60, 79] as [number, number],
+        },
         phraseLengthProfile: {
-            name: 'pop',
+            name: 'default',
             perSection: {
                 verse:     [{ bars: 4, weight: 0.6 }, { bars: 8, weight: 0.4 }],
                 preChorus: [{ bars: 4, weight: 0.7 }, { bars: 8, weight: 0.3 }],
@@ -107,19 +127,23 @@ const DefaultStyle: StyleConfig = {
             ],
         },
     },
+
     contrast: {
         versePitchOffset: 0,
         verseDensityMultiplier: 1.0,
         chorusPitchOffset: 5,
     },
+
+    // ── 编配（多乐器池 + idiom 全激活） ──
     orchestration: {
-        melodyInstruments: [
+        leadInstruments: [
             'Acoustic_Grand', 'Electric_Piano_1',
             'Violin', 'Vibraphone', 'Music_Box',
+            'Flute', 'Alto_Sax', 'Tenor_Sax',
         ],
-        chordInstruments: [
+        accompInstruments: [
             'String_Ensemble', 'Pad_2_Warm', 'Acoustic_Guitar_Nylon',
-            'Electric_Piano_2', 'Synth_Strings_1',
+            'Electric_Piano_2', 'Synth_Strings_1', 'Acoustic_Grand',
         ],
         bassInstruments: [
             'Acoustic_Bass', 'Electric_Bass_Finger', 'Synth_Bass_1',
@@ -127,43 +151,59 @@ const DefaultStyle: StyleConfig = {
         drumInstruments: [
             'Standard_DrumKit', 'Electronic_DrumKit',
         ],
-        counterMelodyInstruments: [
+        padInstruments: [
             'Pad_2_Warm', 'Choir_Aahs', 'Flute', 'Violin',
-            'Vibraphone', 'Marimba',
+            'Vibraphone', 'Marimba', 'String_Ensemble',
         ],
-        texturePool: ['Block'],
-        counterMelodyProbability: 0.5,
+        texturePool: ['Block', 'Arpeggio', 'Pad'],
+        drumProbability: 0.85,
+        padProbability: 0.5,
+        fillStyle: 'standard',
         vocalProbability: 0,
+        outroRingOutProbability: 0.3,
         allowTradingFours: false,
-        // 🌟 增益级联重构：留出 headroom 防爆音
-        // CC7 天花板 115（不再 clamp 127），各声部留出动态余量
-        // 公式：baseVol = 80 × 10^(dB/20)，+3dB=100, 0dB=80, -3dB=57, -6dB=40
+        allowIntroRiffs: true,
+        allowRitardando: true,
+        allowDrumless: false,
+        allowBassless: false,
+        allowAccompless: false,
+        idiomPreferences: {
+            pianoStyle: 'block-chord',
+            drumStyle: 'steady',
+            bassStyle: 'steady',
+            padStyle: 'sustained',
+        },
         mixingPreferences: {
-            vocal:           { pan: 0,    reverb: 0.43, volume: 3 },     // 100 — 主角但不爆
-            melody:          { pan: 0,    reverb: 0.43, volume: 0 },     // 80 — 适中，不抢不弱
-            secondaryMelody: { pan: 0.4,  reverb: 0.59, volume: -3, chorus: 40 },  // 57
-            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -4, chorus: 40 },  // 50
-            chord:           { pan: 0.7,  reverb: 0.8,  volume: -4, chorus: 80 },  // 50
-            drums:           { pan: 0,    reverb: 0.08, volume: 1 },     // 89
-            bass:            { pan: 0,    reverb: 0,    volume: -2 },    // 64
+            vocal:  { pan: 0,    reverb: 0.43, volume: 3 },
+            lead:   { pan: 0,    reverb: 0.43, volume: 0 },
+            accomp: { pan: 0.7,  reverb: 0.8,  volume: -4, chorus: 80 },
+            pad:    { pan: -0.4, reverb: 0.59, volume: -4, chorus: 40 },
+            drums:  { pan: 0,    reverb: 0.08, volume: 1 },
+            bass:   { pan: 0,    reverb: 0,    volume: -2 },
         },
     },
+
     modulation: {
         probability: 0,
         targetSection: 'Chorus',
         intervalPool: [5, 7],
     },
+
     performance: {
         allowedPersonas: ['neutral'],
     },
 };
 
+// ── 注册表 ──
 export const StyleRegistry: Record<number, StyleConfig> = {
     [StyleId.Default]: DefaultStyle,
 };
 
 export function getStyleConfig(styleId: StyleId): StyleConfig {
-    return StyleRegistry[styleId] || DefaultStyle;
+    const registered = StyleRegistry[styleId];
+    if (registered) return registered;
+    const displayName = StyleIdName[styleId] || `Style_${styleId}`;
+    return { ...DefaultStyle, id: styleId, name: displayName };
 }
 
 export function getAllAvailableStyles(): StyleConfig[] {

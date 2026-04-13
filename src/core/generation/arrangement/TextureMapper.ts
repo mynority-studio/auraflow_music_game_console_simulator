@@ -150,6 +150,15 @@ export class TextureMapper {
    * 鼓组生成：Kick 在 1/3 拍，Snare 在 2/4 拍，Hi-hat 每 0.5 拍
    * max ~200 notes for 8-bar section
    */
+  // 🌟 鼓组模式预设（C 可移植：纯数组，无 Map）
+  // kick/snare: 一个 bar 内的 beat 位置（四分音符单位）；hihatSubdiv: 细分步长
+  private static readonly DRUM_PATTERNS: { kick: number[], snare: number[], hihatSubdiv: number }[] = [
+    { kick: [0, 2],       snare: [1, 3],    hihatSubdiv: 0.5  }, // 0: Standard Rock（默认）
+    { kick: [0, 1, 2, 3], snare: [1, 3],    hihatSubdiv: 0.5  }, // 1: Four-on-the-floor（EDM/House）
+    { kick: [0, 2.5],     snare: [1],       hihatSubdiv: 0.5  }, // 2: Sparse Lo-fi
+    { kick: [0],          snare: [2],       hihatSubdiv: 0.25 }, // 3: Trap（16th hi-hat）
+  ];
+
   public static generateDrumGroove(
     startBeat: number,
     endBeat: number,
@@ -159,7 +168,8 @@ export class TextureMapper {
     swingRatio: number = 0.5,
     nextEnergyLevel: number = 3,
     hasFullGrooveStarted: boolean = false,
-    melodyNotes: NoteData[] = []
+    melodyNotes: NoteData[] = [],
+    drumPatternIndex: number = 0,
   ): NoteData[] {
     const KICK = 36;
     const SNARE = 38;
@@ -169,6 +179,7 @@ export class TextureMapper {
 
     const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
     const notes: NoteData[] = [];
+    const pattern = this.DRUM_PATTERNS[drumPatternIndex] || this.DRUM_PATTERNS[0];
 
     // Intro: hi-hat only with optional crash on beat 1
     if (isIntro && !hasFullGrooveStarted) {
@@ -186,50 +197,59 @@ export class TextureMapper {
     }
 
     let beat = startBeat;
-    let barBeat = 0; // position within current bar (0-based)
+    let barBeat = 0;
 
     while (beat < endBeat - 1e-6) {
-      barBeat = Math.round((beat - startBeat) * 4) % (beatsPerBar * 4); // in 16th note units
-      const beatInBar = barBeat / 4; // in quarter note units
+      barBeat = Math.round((beat - startBeat) * 4) % (beatsPerBar * 4); // 16th note units
+      const beatInBar = barBeat / 4; // quarter note units
 
-      // Kick: beats 1 and 3 (0-indexed: 0 and 2)
-      if (Math.abs(beatInBar - 0) < 1e-6 || Math.abs(beatInBar - 2) < 1e-6) {
+      // Kick: pattern-driven positions
+      let isKickHit = false;
+      for (let ki = 0; ki < pattern.kick.length; ki++) {
+        if (Math.abs(beatInBar - pattern.kick[ki]) < 1e-6) { isKickHit = true; break; }
+      }
+      if (isKickHit) {
         notes.push({
-          pitch: KICK,
-          onset: beat,
-          duration: 0.5,
+          pitch: KICK, onset: beat, duration: 0.5,
           velocity: 0.85 + PRNGManager.next() * 0.1,
         });
       }
 
-      // Snare: beats 2 and 4 (0-indexed: 1 and 3)
-      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6) {
+      // Snare: pattern-driven positions
+      let isSnareHit = false;
+      for (let si = 0; si < pattern.snare.length; si++) {
+        if (Math.abs(beatInBar - pattern.snare[si]) < 1e-6) { isSnareHit = true; break; }
+      }
+      if (isSnareHit) {
         notes.push({
-          pitch: SNARE,
-          onset: beat,
-          duration: 0.25,
+          pitch: SNARE, onset: beat, duration: 0.25,
           velocity: 0.8 + PRNGManager.next() * 0.1,
         });
       }
 
-      // Hi-hat: every 0.5 beat (8th notes)
-      notes.push({
-        pitch: CHH,
-        onset: beat,
-        duration: 0.15,
-        velocity: 0.5 + (Math.abs(beatInBar % 1) < 1e-6 ? 0.15 : 0) + PRNGManager.next() * 0.05,
-      });
+      // 🌟 PRNG 对齐：Standard 模式（index 0）下，kick/snare PRNG 消耗次数必须与旧代码一致
+      // 旧代码：kick 在 beatInBar=0|2 消耗 1 次，snare 在 beatInBar=1|3 消耗 1 次
+      // 新代码：pattern[0].kick=[0,2] + pattern[0].snare=[1,3] → 完全一致
+      // 非 Standard 模式的 PRNG 消耗次数会不同，这是预期行为（新风格新基线）
+
+      // Hi-hat: pattern-driven subdivision — 应用 swing 到 offbeat 位置
+      if (Math.abs(beatInBar % pattern.hihatSubdiv) < 1e-6) {
+        const isOffbeat8th = Math.abs(beatInBar % 1 - 0.5) < 1e-6;
+        let hhOnset = beat;
+        if (isOffbeat8th && Math.abs(swingRatio - 0.5) > 1e-6) {
+          hhOnset = beat - 0.5 + swingRatio;
+        }
+        notes.push({
+          pitch: CHH, onset: hhOnset, duration: 0.15,
+          velocity: 0.5 + (Math.abs(beatInBar % 1) < 1e-6 ? 0.15 : 0) + PRNGManager.next() * 0.05,
+        });
+      }
 
       // High energy: add ghost notes on 16th notes
       if (energyLevel >= ENERGY.HIGH_MIN && PRNGManager.next() < 0.3) {
         const ghostBeat = beat + 0.25;
         if (ghostBeat < endBeat - 1e-6) {
-          notes.push({
-            pitch: CHH,
-            onset: ghostBeat,
-            duration: 0.1,
-            velocity: 0.35,
-          });
+          notes.push({ pitch: CHH, onset: ghostBeat, duration: 0.1, velocity: 0.35 });
         }
       }
 

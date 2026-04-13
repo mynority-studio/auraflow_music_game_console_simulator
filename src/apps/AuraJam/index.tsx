@@ -275,7 +275,7 @@ export function AuraJam({ activeKeys, onExit }: AuraJamProps) {
                         }
                         if (note) {
                             AudioEngine.noteOn(0, note, 100);
-                            AudioEngine.emitVisualEvent({ type: 'melody', midiNote: note, velocity: 100, source: 'gameplay' });
+                            AudioEngine.emitVisualEvent({ type: 'lead', midiNote: note, velocity: 100, source: 'gameplay' });
                             arpStateRef.current.lastPlayedNote = note;
                             arpStateRef.current.step = 1;
                         }
@@ -305,7 +305,7 @@ export function AuraJam({ activeKeys, onExit }: AuraJamProps) {
                                 if (arpNote) {
                                     const vel = 80 + Math.floor(Math.random() * 30);
                                     AudioEngine.noteOn(0, arpNote, vel);
-                                    AudioEngine.emitVisualEvent({ type: 'melody', midiNote: arpNote, velocity: vel, source: 'gameplay' });
+                                    AudioEngine.emitVisualEvent({ type: 'lead', midiNote: arpNote, velocity: vel, source: 'gameplay' });
                                     state.lastPlayedNote = arpNote;
                                 }
                                 state.step++;
