@@ -1,4 +1,4 @@
-import { PlaybackEngine, VisualEvent } from './PlaybackEngine';
+import { PlaybackEngine, VisualEvent, PartChannelMap } from './PlaybackEngine';
 import { GeneratedTrack, MusicContext } from '../generation/types';
 import { StyleId } from '../generation/config/StyleFlags';
 import { Orchestrator } from '../generation/arrangement/Orchestrator'; 
@@ -129,6 +129,11 @@ class AudioEngineSystem {
     public pitchBend(channel: number, value: number) {
         if (!spessaSynth) return;
         spessaSynth.pitchWheel(channel, value);
+    }
+
+    public getPartChannelMap(): PartChannelMap | null {
+        if (!this.playback) return null;
+        return this.playback.getPartChannelMap();
     }
 
     public getCurrentTick() {

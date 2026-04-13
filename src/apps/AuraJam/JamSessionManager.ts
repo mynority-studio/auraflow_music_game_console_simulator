@@ -36,6 +36,8 @@ export class JamSessionManager {
     public jamLengthTicks: number = 0;
     private originalDrumEvents: any[] = [];
     private jamCheckInterval: any = null;
+    private jamLeadChannel: number = 0;
+    private _aiAssist: boolean = false; // AI 辅助模式
 
     constructor() {
         this.scaleEngine = new ScaleEngine();
@@ -191,7 +193,7 @@ export class JamSessionManager {
             this.jamCheckInterval = null;
         }
         AudioEngine.muteChannel(9, false);
-        AudioEngine.muteChannel(0, false);
+        AudioEngine.muteChannel(this.jamLeadChannel, false);
         AudioEngine.stop();
         this.setState('SCALE_VIEW');
     }
@@ -213,8 +215,25 @@ export class JamSessionManager {
         return null;
     }
 
+    public getJamLeadChannel(): number {
+        return this.jamLeadChannel;
+    }
+
+    public get aiAssist(): boolean { return this._aiAssist; }
+
+    public toggleAiAssist(): boolean {
+        this._aiAssist = !this._aiAssist;
+        return this._aiAssist;
+    }
+
     public prepareJam(type: 'drums' | 'melody') {
         if (this.state !== 'PLAYING' || !this.currentTrack || !this.currentStyle) return;
+
+        // 获取真实 lead 通道号
+        const channelMap = AudioEngine.getPartChannelMap();
+        if (channelMap) {
+            this.jamLeadChannel = channelMap.lead;
+        }
 
         this.setState('PREPARING_JAM');
 
@@ -294,7 +313,9 @@ export class JamSessionManager {
                 if (type === 'drums') {
                     this.setState('JAMMING_DRUMS');
                 } else {
-                    AudioEngine.muteChannel(0, true);
+                    AudioEngine.muteChannel(this.jamLeadChannel, true);
+                    // 提升用户演奏通道的音量（CC7），确保突出
+                    AudioEngine.injectMidiEvent({ ticks: ct, type: 'controlChange', channel: this.jamLeadChannel, data1: 7, data2: 120 });
                     this.setState('JAMMING_MELODY');
                 }
             }
@@ -309,7 +330,7 @@ export class JamSessionManager {
             }
 
             AudioEngine.muteChannel(9, false);
-            AudioEngine.muteChannel(0, false);
+            AudioEngine.muteChannel(this.jamLeadChannel, false);
             AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'controlChange', channel: 9, data1: 7, data2: 100 });
 
             if (this.state === 'PREPARING_JAM' && this.originalDrumEvents) {

@@ -298,6 +298,7 @@ export interface StyleConfig {
         allowBassless?: boolean;
         allowAccompless?: boolean;
         grooveRatio?: { foundation: number; comping: number; color: number; };
+        energyMatrix?: ArrangementState[];  // 索引 0-9 对应 energyLevel 1-10，风格专属 energy→3D 映射
         idiomPreferences?: {
             padStyle?: 'sustained' | 'melodic' | 'rhythmic' | 'arpeggiated';
             pianoStyle?: 'block-chord' | 'arpeggiated' | 'rhythmic' | 'sparse' | 'neosoul' | 'jazz';
@@ -382,11 +383,30 @@ export interface SongEnsemble {
     guestPart?: { sound: string; slot: VoicePart; };
 }
 
+// ── 3D 动态编曲矩阵 ──
+export interface ArrangementState {
+    drive: number;      // 0-1 节奏驱动力（影响音符密度/切分）
+    intensity: number;  // 0-1 情绪张力（影响 velocity/和弦紧张度）
+    density: number;    // 0-1 织体厚度（影响同时发声的声部数）
+}
+
+export type TransitionStrategy = 'gradual' | 'cliff_build' | 'invert_focus';
+
+export interface SectionBehavior {
+    lead:   'melodic' | 'sustained' | 'rhythmic' | 'silent';
+    accomp: 'motor' | 'pad' | 'anchor' | 'block' | 'silent';
+    bass:   'root' | 'walking' | 'riff' | 'silent';
+    drums:  'full' | 'sparse' | 'brushes' | 'silent';
+    pad:    'sustained' | 'swell' | 'silent';
+}
+
 export interface SectionPlan {
     sectionIndex: number;
     activeParts: VoicePart[];
     texture: string;
-    guestActive: boolean;
+    behavior: SectionBehavior;
+    transition: TransitionStrategy;
+    state: ArrangementState;
     densityMultiplier: number;
 }
 

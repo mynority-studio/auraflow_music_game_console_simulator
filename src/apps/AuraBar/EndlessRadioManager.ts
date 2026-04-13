@@ -29,6 +29,8 @@ export class EndlessRadioManager {
   public jamStartTick: number = 0;
   public jamLengthTicks: number = 0;
   private originalDrumEvents: any[] = [];
+  private jamLeadChannel: number = 0;
+  private _aiAssist: boolean = false;
 
   constructor(allowedStyleIds?: StyleId[]) {
     if (allowedStyleIds && allowedStyleIds.length > 0) {
@@ -83,7 +85,7 @@ export class EndlessRadioManager {
         this.jamCheckInterval = null;
     }
     AudioEngine.muteChannel(9, false);
-    AudioEngine.muteChannel(0, false);
+    AudioEngine.muteChannel(this.jamLeadChannel, false);
     AudioEngine.stop();
     this.setState('IDLE');
   }
@@ -92,9 +94,26 @@ export class EndlessRadioManager {
     this.stopPlayback();
   }
 
+  public getJamLeadChannel(): number {
+    return this.jamLeadChannel;
+  }
+
+  public get aiAssist(): boolean { return this._aiAssist; }
+
+  public toggleAiAssist(): boolean {
+    this._aiAssist = !this._aiAssist;
+    return this._aiAssist;
+  }
+
   public prepareJam(type: 'drums' | 'melody') {
     if (this.state !== 'PLAYING' || !this.currentTrack || !this.currentStyle) return;
-    
+
+    // 获取真实 lead 通道号
+    const channelMap = AudioEngine.getPartChannelMap();
+    if (channelMap) {
+        this.jamLeadChannel = channelMap.lead;
+    }
+
     this.setState('PREPARING_JAM');
 
     if (type === 'drums') {
@@ -192,9 +211,9 @@ export class EndlessRadioManager {
             if (type === 'drums') {
                 this.setState('JAMMING_DRUMS');
             } else {
-                // Mute melody channels (assuming channel 0 for lead, maybe others)
-                // For now, let's mute channel 0
-                AudioEngine.muteChannel(0, true); 
+                AudioEngine.muteChannel(this.jamLeadChannel, true);
+                // 提升用户演奏通道的音量
+                AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'controlChange', channel: this.jamLeadChannel, data1: 7, data2: 120 });
                 this.setState('JAMMING_MELODY');
             }
         }
@@ -210,8 +229,8 @@ export class EndlessRadioManager {
         }
         
         AudioEngine.muteChannel(9, false);
-        AudioEngine.muteChannel(0, false);
-        
+        AudioEngine.muteChannel(this.jamLeadChannel, false);
+
         // Restore drum channel volume to normal
         AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'controlChange', channel: 9, data1: 7, data2: 100 });
         

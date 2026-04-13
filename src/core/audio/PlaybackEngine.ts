@@ -17,6 +17,16 @@ import { StyleRegistry, DefaultStyleConfig } from '../generation/config/StyleReg
 import { getStyleConfig } from '../generation/config/styles/StyleRegistry';
 import { InstrumentProfiles, getInstrumentIdByName } from '../generation/config/InstrumentFlags';
 
+// 声部→MIDI通道映射，供 Jam 模式使用
+export interface PartChannelMap {
+    lead: number;
+    vocal: number | null;
+    accomp: number;
+    bass: number;
+    drums: number;
+    pad: number | null;
+}
+
 export class PlaybackEngine {
     private mixer: AudioMixer;
     private instruments: InstrumentRegistry;
@@ -24,6 +34,7 @@ export class PlaybackEngine {
     private isStopped: boolean = false;
     private totalDurationSeconds: number = 0;
     private drumDucking: boolean = false;
+    private _partChannelMap: PartChannelMap | null = null;
 
     constructor() {
         this.mixer = new AudioMixer();
@@ -156,6 +167,16 @@ export class PlaybackEngine {
         // 🌟 3. 独立 Bass 采样器：根据 palette 配置选择贝斯音色
         const bassSynth = this.instruments.getInstrument(song.palette?.bassSound || 'Electric_Bass', 'Rhythm', 'bass', mixing.bass);
         const drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm', 'drums', mixing.drums);
+
+        // 记录声部→通道映射，供 Jam 模式精确 mute/noteOn
+        this._partChannelMap = {
+            lead: leadSynth.channel,
+            vocal: vocalSynth ? vocalSynth.channel : null,
+            accomp: accompSynth.channel,
+            bass: bassSynth.channel,
+            drums: drumSynth.channel,
+            pad: null // pad 在下方按需创建时更新
+        };
 
         if (this.isStopped) return;
 
@@ -318,7 +339,9 @@ export class PlaybackEngine {
         scheduleSynthInit(drumSynthFn);
         scheduleSynthInit(bassSynthFn);
         if (song.pad && song.palette?.padSound) {
-            scheduleSynthInit(() => this.instruments.getInstrument(song.palette!.padSound, 'Midground', 'pad', mixing.pad));
+            const padSynthInit = this.instruments.getInstrument(song.palette!.padSound, 'Midground', 'pad', mixing.pad);
+            if (this._partChannelMap) this._partChannelMap.pad = padSynthInit.channel;
+            scheduleSynthInit(() => padSynthInit);
         }
 
         // 🌟 Luis's Dynamic Panning & Reverb + Gain Staging
@@ -395,12 +418,88 @@ export class PlaybackEngine {
             const activeSynth = typeof synthFn === 'function' ? synthFn(0) : synthFn;
             const channel = activeSynth.channel;
 
-            // CC11 呼吸参数：管乐 vs 通用 Sustained
             const wp = profile.windProfile;
-            const ccMin = wp ? 35 : 40;      // 起始/结尾最低值
-            const ccPeak = wp ? 110 : 90;     // 峰值
-            const peakPos = wp ? 0.35 : 0.4;  // 峰值位置（管乐更前，模拟气息冲击）
-            const STEPS = 8;                  // 插值帧数（8 帧平滑，ESP32 友好）
+            const isWind = !!wp;
+
+            // ── 管乐：乐句级呼吸曲线（不是每个音符独立做包络） ──
+            // 策略：
+            //   - 乐句首音：从 ccCruise*0.85 快速上升到 ccCruise（模拟起吹）
+            //   - 乐句中间：维持 ccCruise 附近，随力度微波动（±8）
+            //   - 长音（≥1.5拍）：在音符内做轻微 swell（ccCruise→ccPeak→ccCruise）
+            //   - 乐句末音结尾：从 ccCruise 渐降到 ccTail（气息自然收束）
+            //   - 换气间隙：不发 CC11（让合成器自然处理 noteOff）
+            if (isWind) {
+                const ccCruise = 90;    // 巡航音量（大部分时间维持在这）
+                const ccPeak = 108;     // 长音 swell 峰值
+                const ccAttack = 72;    // 乐句起吹初始值（不会太低，避免"突然冒出来"）
+                const ccTail = 60;      // 乐句收尾值（不会太低，避免"突然消失"）
+
+                // 检测乐句边界（间隙 ≥ 0.3 拍视为换气）
+                const BREATH_GAP = 0.3;
+
+                for (let ni = 0; ni < partNotes.length; ni++) {
+                    const note = partNotes[ni];
+                    const startTick = globalMidiScheduler.beatsToTicks(note.onset + countInBeats);
+                    const endTick = globalMidiScheduler.beatsToTicks(note.onset + note.duration + countInBeats);
+                    if (endTick <= startTick) continue;
+
+                    const prevEnd = ni > 0 ? partNotes[ni - 1].onset + partNotes[ni - 1].duration : -999;
+                    const nextStart = ni < partNotes.length - 1 ? partNotes[ni + 1].onset : 999;
+                    const gapBefore = note.onset - prevEnd;
+                    const gapAfter = nextStart - (note.onset + note.duration);
+                    const isPhraseStart = gapBefore >= BREATH_GAP || ni === 0;
+                    const isPhraseEnd = gapAfter >= BREATH_GAP || ni === partNotes.length - 1;
+
+                    // 基线 CC11 = 力度映射到巡航区间
+                    const velCC = Math.round(ccCruise + (note.velocity - 0.6) * 30); // 0.6→90, 0.8→96, 1.0→102
+                    const clampedVelCC = Math.min(115, Math.max(75, velCC));
+
+                    if (isPhraseStart) {
+                        // 乐句首音：快速起吹（3 帧：attack → cruise）
+                        allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: ccAttack });
+                        const rampTick1 = startTick + Math.round((endTick - startTick) * 0.15);
+                        allEvents.push({ ticks: rampTick1, type: 'cc', channel, data1: 11, data2: Math.round((ccAttack + clampedVelCC) / 2) });
+                        const rampTick2 = startTick + Math.round((endTick - startTick) * 0.3);
+                        allEvents.push({ ticks: Math.min(rampTick2, endTick - 24), type: 'cc', channel, data1: 11, data2: clampedVelCC });
+                    } else {
+                        // 乐句中间音：直接设到巡航值（连奏不断气）
+                        allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: clampedVelCC });
+                    }
+
+                    // 长音内部 swell（≥1.5 拍才做，6 帧正弦微波动）
+                    if (note.duration >= 1.5) {
+                        const swellStart = startTick + Math.round((endTick - startTick) * 0.25);
+                        const swellPeak = startTick + Math.round((endTick - startTick) * 0.5);
+                        const swellEnd = endTick - 48;
+                        if (swellEnd > swellStart) {
+                            const swellHigh = Math.min(ccPeak, clampedVelCC + 15);
+                            allEvents.push({ ticks: swellStart, type: 'cc', channel, data1: 11, data2: clampedVelCC });
+                            allEvents.push({ ticks: Math.round((swellStart + swellPeak) / 2), type: 'cc', channel, data1: 11, data2: Math.round((clampedVelCC + swellHigh) / 2) });
+                            allEvents.push({ ticks: swellPeak, type: 'cc', channel, data1: 11, data2: swellHigh });
+                            allEvents.push({ ticks: Math.round((swellPeak + swellEnd) / 2), type: 'cc', channel, data1: 11, data2: Math.round((clampedVelCC + swellHigh) / 2) });
+                            allEvents.push({ ticks: swellEnd, type: 'cc', channel, data1: 11, data2: clampedVelCC });
+                        }
+                    }
+
+                    // 乐句末音收尾：渐降（不是骤降）
+                    if (isPhraseEnd && note.duration >= 0.5) {
+                        const tailStart = endTick - Math.round((endTick - startTick) * 0.3);
+                        const tailMid = endTick - Math.round((endTick - startTick) * 0.15);
+                        if (tailStart > startTick) {
+                            allEvents.push({ ticks: tailStart, type: 'cc', channel, data1: 11, data2: Math.round(clampedVelCC * 0.85) });
+                            allEvents.push({ ticks: tailMid, type: 'cc', channel, data1: 11, data2: Math.round(clampedVelCC * 0.7) });
+                            allEvents.push({ ticks: Math.max(tailMid + 1, endTick - 24), type: 'cc', channel, data1: 11, data2: ccTail });
+                        }
+                    }
+                }
+                return; // 管乐走专用路径，不走通用正弦
+            }
+
+            // ── 通用 Sustained（Pad/弦乐）：保留原有正弦包络 ──
+            const ccMin = 40;
+            const ccPeak = 90;
+            const peakPos = 0.4;
+            const STEPS = 8;
 
             for (let ni = 0; ni < partNotes.length; ni++) {
                 const note = partNotes[ni];
@@ -411,8 +510,6 @@ export class PlaybackEngine {
                 const totalTicks = endTick - startTick;
                 if (totalTicks <= 0) continue;
 
-                // 正弦曲线插值：sin(0→π) 映射到 ccMin→ccPeak→ccMin
-                // 峰值偏移：前半段压缩到 peakPos，后半段拉伸
                 for (let s = 0; s <= STEPS; s++) {
                     const t = s / STEPS;
                     let phase: number;
@@ -707,8 +804,12 @@ export class PlaybackEngine {
         return this.totalDurationSeconds;
     }
 
-    public stop() { 
-        this.isStopped = true; 
+    public stop() {
+        this.isStopped = true;
         globalMidiScheduler.stop();
+    }
+
+    public getPartChannelMap(): PartChannelMap | null {
+        return this._partChannelMap;
     }
 }

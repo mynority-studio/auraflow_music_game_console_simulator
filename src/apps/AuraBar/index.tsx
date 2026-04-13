@@ -6,6 +6,7 @@ import { systemAudio } from '../../system/SystemAudio';
 import { EndlessRadioManager, AppState } from './EndlessRadioManager';
 import { ALL_BARS, BarConfig } from './BarData';
 import { PRNGManager } from '../../core/utils/PRNG';
+import { SmartDrumEngine } from '../shared/SmartDrumEngine';
 // Old types: chord.quality is a string ('Minor', 'Diminished', etc.), tonality is a string
 
 interface AuraBarProps {
@@ -44,6 +45,9 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
     centerIdx: -1,
     patternIdx: 0
   });
+  const [aiAssist, setAiAssist] = useState(false);
+  const aiKeyTimeout = useRef<NodeJS.Timeout | null>(null);
+  const smartDrumRef = useRef(new SmartDrumEngine());
 
   // Initialize Bars
   useEffect(() => {
@@ -75,6 +79,33 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
       manager.stopPlayback();
     };
   }, []);
+
+  // P 键长按切换 AI 辅助模式（仅在接管模式下生效）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'p' || e.repeat) return;
+      const isJamming = appState === 'JAMMING_DRUMS' || appState === 'JAMMING_MELODY';
+      if (!isJamming) return;
+      aiKeyTimeout.current = setTimeout(() => {
+        const newVal = managerRef.current?.toggleAiAssist() ?? false;
+        setAiAssist(newVal);
+      }, 500);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'p') return;
+      if (aiKeyTimeout.current) {
+        clearTimeout(aiKeyTimeout.current);
+        aiKeyTimeout.current = null;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      if (aiKeyTimeout.current) clearTimeout(aiKeyTimeout.current);
+    };
+  }, [appState]);
 
   useEffect(() => {
     activeKeysRef.current = activeKeys;
@@ -187,21 +218,41 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
             }
 
             if (appState === 'JAMMING_MELODY') {
-                arpStateRef.current.heldIndices.delete(keyId);
-                if (arpStateRef.current.heldIndices.size === 0) {
-                    if (arpStateRef.current.intervalId) {
-                        clearInterval(arpStateRef.current.intervalId);
-                        arpStateRef.current.intervalId = null;
-                    }
-                    if (arpStateRef.current.lastPlayedNote !== -1) {
-                        AudioEngine.noteOff(0, arpStateRef.current.lastPlayedNote);
-                        arpStateRef.current.lastPlayedNote = -1;
+                const leadCh = managerRef.current?.getJamLeadChannel() ?? 0;
+                if (aiAssist) {
+                    // AI ASSIST: 琶音模式 noteOff
+                    arpStateRef.current.heldIndices.delete(keyId);
+                    if (arpStateRef.current.heldIndices.size === 0) {
+                        if (arpStateRef.current.intervalId) {
+                            clearInterval(arpStateRef.current.intervalId);
+                            arpStateRef.current.intervalId = null;
+                        }
+                        if (arpStateRef.current.lastPlayedNote !== -1) {
+                            AudioEngine.noteOff(leadCh, arpStateRef.current.lastPlayedNote);
+                            arpStateRef.current.lastPlayedNote = -1;
+                        }
+                    } else {
+                        const lastKey = Array.from(arpStateRef.current.heldIndices.keys()).pop();
+                        if (lastKey) {
+                            arpStateRef.current.centerIdx = arpStateRef.current.heldIndices.get(lastKey)!;
+                        }
                     }
                 } else {
-                    // Update centerIdx to the last held key
-                    const lastKey = Array.from(arpStateRef.current.heldIndices.keys()).pop();
-                    if (lastKey) {
-                        arpStateRef.current.centerIdx = arpStateRef.current.heldIndices.get(lastKey)!;
+                    // FREE SOLO: 直接 noteOff
+                    const track = managerRef.current?.currentTrack;
+                    if (track) {
+                        const parts = keyId.split('-');
+                        const pc = parseInt(parts[1]);
+                        const pr = parseInt(parts[2]);
+                        let idx = -1;
+                        if (pr === 2) idx = pc;
+                        else if (pr === 1) idx = 5 + pc;
+                        else if (pr === 0 && pc < 4) idx = 10 + pc;
+                        if (idx !== -1) {
+                            const chord = managerRef.current?.getCurrentChord();
+                            const notes = getJamMelodyNotes(chord, track.tonality, track.keyOffset);
+                            if (notes[idx]) AudioEngine.noteOff(leadCh, notes[idx]);
+                        }
                     }
                 }
             }
@@ -257,15 +308,22 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
 
         // --- Jam Mode Playback ---
         if (appState === 'JAMMING_DRUMS') {
-            const note = DRUM_MAP[`${c}-${r}`];
-            if (note) {
-                AudioEngine.playNote(9, note, 127, 100); // Max velocity for louder drums
-                AudioEngine.emitVisualEvent({ type: 'drums', midiNote: note, velocity: 127, source: 'gameplay' });
-                managerRef.current?.recordUserDrum(note, 127);
+            if (aiAssist) {
+                // AI GROOVE：用户随便按，SmartDrumEngine 生成合拍鼓点
+                smartDrumRef.current.onUserPress(managerRef.current?.currentTrack?.sections);
+            } else {
+                // FREE PLAY：固定鼓音色映射
+                const note = DRUM_MAP[`${c}-${r}`];
+                if (note) {
+                    AudioEngine.playNote(9, note, 127, 100);
+                    AudioEngine.emitVisualEvent({ type: 'drums', midiNote: note, velocity: 127, source: 'gameplay' });
+                    managerRef.current?.recordUserDrum(note, 127);
+                }
             }
-            return; // Skip other interactions unconditionally
+            return;
         } else if (appState === 'JAMMING_MELODY') {
             const track = managerRef.current?.currentTrack;
+            const leadCh = managerRef.current?.getJamLeadChannel() ?? 0;
             if (track) {
                 let idx = -1;
                 if (r === 2) idx = c;
@@ -273,73 +331,66 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                 else if (r === 0 && c < 4) idx = 10 + c;
 
                 if (idx !== -1) {
-                    arpStateRef.current.heldIndices.set(keyId, idx);
-                    arpStateRef.current.centerIdx = idx;
-
                     const chord = managerRef.current?.getCurrentChord();
                     const notes = getJamMelodyNotes(chord, track.tonality, track.keyOffset);
                     const note = notes[idx];
 
-                    if (arpStateRef.current.lastPlayedNote !== -1) {
-                        AudioEngine.noteOff(0, arpStateRef.current.lastPlayedNote);
-                    }
-                    if (note) {
-                        AudioEngine.noteOn(0, note, 100);
-                        AudioEngine.emitVisualEvent({ type: 'lead', midiNote: note, velocity: 100, source: 'gameplay' });
-                        arpStateRef.current.lastPlayedNote = note;
-                        arpStateRef.current.step = 1;
-                    }
+                    if (!aiAssist) {
+                        // FREE SOLO: 直接发声，不做琶音
+                        if (note) {
+                            AudioEngine.noteOn(leadCh, note, 110);
+                            AudioEngine.emitVisualEvent({ type: 'lead', midiNote: note, velocity: 110, source: 'gameplay' });
+                        }
+                    } else {
+                        // AI ASSIST: 琶音辅助模式
+                        arpStateRef.current.heldIndices.set(keyId, idx);
+                        arpStateRef.current.centerIdx = idx;
 
-                    if (!arpStateRef.current.intervalId) {
-                        arpStateRef.current.intervalId = setInterval(() => {
-                            const state = arpStateRef.current;
-                            if (state.heldIndices.size === 0) return;
+                        if (arpStateRef.current.lastPlayedNote !== -1) {
+                            AudioEngine.noteOff(leadCh, arpStateRef.current.lastPlayedNote);
+                        }
+                        if (note) {
+                            AudioEngine.noteOn(leadCh, note, 110);
+                            AudioEngine.emitVisualEvent({ type: 'lead', midiNote: note, velocity: 110, source: 'gameplay' });
+                            arpStateRef.current.lastPlayedNote = note;
+                            arpStateRef.current.step = 1;
+                        }
 
-                            const track = managerRef.current?.currentTrack;
-                            if (!track) return;
-
-                            const chord = managerRef.current?.getCurrentChord();
-                            const notes = getJamMelodyNotes(chord, track.tonality, track.keyOffset);
-
-                            // Dynamic Arpeggio Patterns
-                            const patterns = [
-                                [0, 1, 2, 3, 2, 1, 0, -1, -2, -1], // Smooth up and down
-                                [0, 2, 1, 3, 2, 0, -1, -2, -1, 1], // Broken chord
-                                [0, -1, -2, -3, -2, -1, 0, 1, 2, 1], // Down and up
-                                [0, 1, 0, 2, 0, -1, 0, -2]         // Pedal point
-                            ];
-                            
-                            // Randomly switch pattern every few steps to make it "dynamic"
-                            if (state.step % 8 === 0) {
-                                state.patternIdx = Math.floor(Math.random() * patterns.length);
-                            }
-                            const activePattern = patterns[state.patternIdx || 0];
-                            const offset = activePattern[state.step % activePattern.length];
-                            
-                            let targetIdx = state.centerIdx + offset;
-                            
-                            // Clamp to available notes
-                            targetIdx = Math.max(0, Math.min(13, targetIdx));
-                            
-                            const arpNote = notes[targetIdx];
-
-                            if (state.lastPlayedNote !== -1) {
-                                AudioEngine.noteOff(0, state.lastPlayedNote);
-                            }
-                            
-                            if (arpNote) {
-                                const vel = 80 + Math.floor(Math.random() * 30);
-                                AudioEngine.noteOn(0, arpNote, vel);
-                                AudioEngine.emitVisualEvent({ type: 'lead', midiNote: arpNote, velocity: vel, source: 'gameplay' });
-                                state.lastPlayedNote = arpNote;
-                            }
-                            
-                            state.step++;
-                        }, 180); // 180ms per note (slower)
+                        if (!arpStateRef.current.intervalId) {
+                            arpStateRef.current.intervalId = setInterval(() => {
+                                const state = arpStateRef.current;
+                                if (state.heldIndices.size === 0) return;
+                                const t = managerRef.current?.currentTrack;
+                                if (!t) return;
+                                const ch = managerRef.current?.getCurrentChord();
+                                const ns = getJamMelodyNotes(ch, t.tonality, t.keyOffset);
+                                const patterns = [
+                                    [0, 1, 2, 3, 2, 1, 0, -1, -2, -1],
+                                    [0, 2, 1, 3, 2, 0, -1, -2, -1, 1],
+                                    [0, -1, -2, -3, -2, -1, 0, 1, 2, 1],
+                                    [0, 1, 0, 2, 0, -1, 0, -2]
+                                ];
+                                if (state.step % 8 === 0) {
+                                    state.patternIdx = Math.floor(Math.random() * patterns.length);
+                                }
+                                const activePattern = patterns[state.patternIdx || 0];
+                                const offset = activePattern[state.step % activePattern.length];
+                                let targetIdx = Math.max(0, Math.min(13, state.centerIdx + offset));
+                                const arpNote = ns[targetIdx];
+                                if (state.lastPlayedNote !== -1) AudioEngine.noteOff(leadCh, state.lastPlayedNote);
+                                if (arpNote) {
+                                    const vel = 90 + Math.floor(Math.random() * 30);
+                                    AudioEngine.noteOn(leadCh, arpNote, vel);
+                                    AudioEngine.emitVisualEvent({ type: 'lead', midiNote: arpNote, velocity: vel, source: 'gameplay' });
+                                    state.lastPlayedNote = arpNote;
+                                }
+                                state.step++;
+                            }, 180);
+                        }
                     }
                 }
             }
-            return; // Skip other interactions unconditionally
+            return;
         }
 
         if (appState === 'PREPARING_JAM') {
@@ -441,7 +492,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
     });
 
     prevActiveKeysRef.current = new Set(current);
-  }, [activeKeys, appState, bars, onExit]);
+  }, [activeKeys, appState, bars, onExit, aiAssist]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 811, h: 269 });
@@ -483,7 +534,8 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
         arpStateRef.current.intervalId = null;
       }
       if (arpStateRef.current.lastPlayedNote !== -1) {
-        AudioEngine.noteOff(0, arpStateRef.current.lastPlayedNote);
+        const leadCh = managerRef.current?.getJamLeadChannel() ?? 0;
+        AudioEngine.noteOff(leadCh, arpStateRef.current.lastPlayedNote);
         arpStateRef.current.lastPlayedNote = -1;
       }
       arpStateRef.current.heldIndices.clear();
@@ -506,9 +558,17 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
           >
             <div className="absolute inset-0 border-4 border-red-500/50 rounded-lg animate-pulse" />
             <div className="absolute top-4 bg-red-500 text-white px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-              {appState === 'PREPARING_JAM' ? 'GET READY...' : 
+              {appState === 'PREPARING_JAM' ? 'GET READY...' :
                appState === 'JAMMING_DRUMS' ? 'DRUM SOLO' : 'MELODY SOLO'}
             </div>
+            {(appState === 'JAMMING_DRUMS' || appState === 'JAMMING_MELODY') && (
+              <div className={`absolute top-12 text-[10px] font-bold tracking-wider ${aiAssist ? 'text-green-400' : 'text-white/50'}`}>
+                {appState === 'JAMMING_DRUMS'
+                  ? (aiAssist ? 'AI GROOVE' : 'FREE PLAY')
+                  : (aiAssist ? 'AI ASSIST' : 'FREE SOLO')}
+                <span className="text-white/30 ml-2">P(hold):Toggle</span>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
