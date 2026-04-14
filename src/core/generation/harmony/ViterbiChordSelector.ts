@@ -50,16 +50,26 @@ export interface ChordCandidate {
     mask: ChordMask;             // 预计算，chordToMask(rootPc, quality)
     bitCount: number;            // 预计算，popcount(mask) — 热路径用作 complexity tax
     functionClass: HarmonicFunction;
+    /**
+     * 🌟 PR #3: 功能性奖励（Functional Bonus）
+     * 用于让某些"风格特征和弦"突破 Viterbi 的天然偏好（如借调/副属），
+     * 抵消它们的 complexity tax + diatonic 骨架不触发的天然劣势。
+     * 默认 0，bVII/bVI/bIII 等流行借调和弦设 +2~+3。
+     */
+    functionalBonus: number;
 }
 
 /**
  * 构造 ChordCandidate，自动预计算 mask 和 popcount。
  * 非热路径（pool 初始化时一次性调用），可以安全用。
+ *
+ * @param functionalBonus 可选，用于风格驱动的"特征和弦"加分（默认 0）
  */
 export function makeCandidate(
     rootPc: number,
     quality: ChordQuality,
     functionClass: HarmonicFunction,
+    functionalBonus: number = 0,
 ): ChordCandidate {
     const mask = chordToMask(rootPc, quality);
     return {
@@ -68,6 +78,7 @@ export function makeCandidate(
         mask,
         bitCount: popcount12(mask),
         functionClass,
+        functionalBonus,
     };
 }
 
@@ -206,6 +217,7 @@ function scoreStep(
     const complexityTax = complexity > 0 ? complexity * W_COMPLEXITY_TAX : 0;
 
     // 加权求和（量纲：score × 10，个位留给 tiebreaker）
+    // 🌟 PR #3: 加入 cand.functionalBonus —— 风格驱动的"特征和弦"补偿
     const base =
         topVoice * W_TOP_VOICE +
         lookAhead1 * W_LOOKAHEAD_1 +
@@ -213,7 +225,8 @@ function scoreStep(
         voiceLeading * W_VOICE_LEADING +
         functional * W_FUNCTIONAL +
         repeatPenalty +
-        complexityTax;
+        complexityTax +
+        cand.functionalBonus;
 
     // PRNG tiebreaker —— Luis 的决定论防坍塌机制
     const jitter = PRNGManager.nextInt(0, TIEBREAKER_RANGE);

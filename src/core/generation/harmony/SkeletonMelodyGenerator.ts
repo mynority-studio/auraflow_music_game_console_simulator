@@ -72,20 +72,37 @@ function pcDistance(a: number, b: number): number {
  * Smoothing 决策：给定候选 candidate 和上一个 anchor prev，
  * 选 candidate 中与 prev 距离最近的一个（≤ 5 半音优先）。
  *
+ * 🌟 PR #3: 反滞留惩罚（Anti-Stagnation）
+ *   当最近的候选音 == prev 时（距离=0），强制选第二近的，
+ *   避免连续多个 slot 选同一个音造成 Pedal Point 滞留 →
+ *   进一步导致 Viterbi 在 iii7 / iii / iii7 之间原地踏步。
+ *
  * 如果所有 candidate 都 > 5 半音，仍返回最近的（不强行 fall back）。
  */
 function pickClosest(candidates: number[], prev: number | null): number {
     if (prev === null || candidates.length === 0) {
         return candidates[0] ?? 0;
     }
+    // 计算每个候选音到 prev 的距离，按距离升序找最近 + 次近
     let best = candidates[0];
     let bestDist = pcDistance(best, prev);
+    let secondBest = -1;
+    let secondDist = 999;
     for (let i = 1; i < candidates.length; i++) {
         const d = pcDistance(candidates[i], prev);
         if (d < bestDist) {
+            secondBest = best;
+            secondDist = bestDist;
             best = candidates[i];
             bestDist = d;
+        } else if (d < secondDist) {
+            secondBest = candidates[i];
+            secondDist = d;
         }
+    }
+    // 反滞留：如果最近的候选音 == prev（重复），优先用第二近的
+    if (best === prev && secondBest !== -1) {
+        return secondBest;
     }
     return best;
 }

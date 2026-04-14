@@ -152,9 +152,12 @@ function _runPipeline(
         cursor = sectionEnd;
     }
 
-    // ── 后处理：合并相邻同和弦（提高 ToplineEngine 消费效率）──
-    const mergedChords = mergeAdjacentSameChords(chords);
-    return { shadow, anchors, chords: mergedChords };
+    // ── PR #3 修订：不再合并相邻同和弦 ──
+    // 旧版（PR #2）会调用 mergeAdjacentSameChords 把"连续 4 个 iii7"合成一个长和弦，
+    // 但 ToplineEngine 隐式依赖"chord 切换频率 = 旋律节奏锚点"（Hyrum's Law）。
+    // 合并后旋律失去呼吸点，开始 noodling，听感变碎。
+    // 保留每小节一个 chord 的颗粒度，让 ToplineEngine 的 slot 划分自动恢复对齐。
+    return { shadow, anchors, chords };
 }
 
 /**
@@ -173,25 +176,8 @@ export function generateHarmonyViaPipeline(
     return _runPipeline(sections, tonality, timeSignature).chords;
 }
 
-/**
- * 后处理：连续相同的和弦（rootPc + quality 完全相同）合并为一个长和弦。
- * O(N) 一次遍历，消除 Viterbi 在某些段落内反复选同一和弦造成的"碎块"。
- */
-function mergeAdjacentSameChords(chords: GeneratedChord[]): GeneratedChord[] {
-    if (chords.length === 0) return chords;
-    const merged: GeneratedChord[] = [chords[0]];
-    for (let i = 1; i < chords.length; i++) {
-        const prev = merged[merged.length - 1];
-        const cur = chords[i];
-        if (prev.root === cur.root && prev.quality === cur.quality && Math.abs(prev.endBeat - cur.startBeat) < 1e-6) {
-            // 合并：扩展前一个和弦的 endBeat
-            prev.endBeat = cur.endBeat;
-        } else {
-            merged.push(cur);
-        }
-    }
-    return merged;
-}
+// PR #3: mergeAdjacentSameChords 已被废弃（破坏 ToplineEngine 节奏锚点的隐式依赖）
+// 函数体保留为 _legacy 以备将来某种"压缩输出"场景需要，但管线不再调用它
 
 /**
  * 调试用：单次 PRNG 消耗，返回完整中间产物。

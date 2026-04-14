@@ -42,6 +42,10 @@ const ROMAN_UPPER = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
  * 返回值是"附加在根字母后面"的部分，不含大小写。
  */
 function qualityToSuffix(quality: ChordQuality): string {
+    // 注意：HarmonyCore.parseRomanNumeral 是 else-if 链，每次只匹配第一个后缀。
+    // 这意味着复合后缀（如 7sus4）会被先匹配到 sus4，base 残留 "V7" 在 rootMap 找不到。
+    // 因此对复合后缀我们要选择"能让 root 正确解析"的简化形式，
+    // quality 信息通过 GeneratedChord.quality 字段直接保留（ToplineEngine 读这个字段）。
     switch (quality) {
         case ChordQuality.Major:         return '';
         case ChordQuality.Minor:         return '';     // 大小写在外层处理
@@ -53,13 +57,13 @@ function qualityToSuffix(quality: ChordQuality): string {
         case ChordQuality.Major7:        return 'maj7';
         case ChordQuality.HalfDiminished: return 'm7b5';
         case ChordQuality.Sus4:          return 'sus4';
-        case ChordQuality.Dominant7Sus4: return '7sus4';
+        case ChordQuality.Dominant7Sus4: return 'sus4'; // 退化为 sus4（else-if 链兼容），quality 字段保 Dominant7Sus4
         case ChordQuality.Add9:          return 'add9';
         case ChordQuality.Minor9:        return 'm9';
         case ChordQuality.Major9:        return 'maj9';
         case ChordQuality.Dominant9:     return '9';
-        case ChordQuality.Minor11:       return 'm11';  // parseRomanNumeral 不识别 m11，会回退到 m9
-        case ChordQuality.Dominant13:    return '13';   // 同上，会回退到 dom7
+        case ChordQuality.Minor11:       return 'm9';   // 退化为 m9（parseRomanNumeral 不识别 m11）
+        case ChordQuality.Dominant13:    return '9';    // 退化为 9
         default:                         return '';
     }
 }

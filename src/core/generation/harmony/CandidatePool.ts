@@ -63,16 +63,20 @@ function buildMajorPool(): ChordCandidate[] {
         makeCandidate(9,  ChordQuality.Minor9,        T),  // vi9
 
         // ── 4. 副属（Secondary Dominants）──
-        makeCandidate(2,  ChordQuality.Dominant7,     D),  // V/V  = D7  (II7)
-        makeCandidate(4,  ChordQuality.Dominant7,     D),  // V/vi = E7  (III7)
-        makeCandidate(9,  ChordQuality.Dominant7,     D),  // V/ii = A7  (VI7)
-        makeCandidate(11, ChordQuality.Dominant7,     D),  // V/iii = B7 (VII7)
+        // 🌟 PR #3: 副属和弦 +2 bonus，让 Viterbi 在合适时机自然选出 ii-V-vi 这种结构
+        makeCandidate(2,  ChordQuality.Dominant7,     D, +2),  // V/V  = D7  (II7)
+        makeCandidate(4,  ChordQuality.Dominant7,     D, +2),  // V/vi = E7  (III7)
+        makeCandidate(9,  ChordQuality.Dominant7,     D, +2),  // V/ii = A7  (VI7)
+        makeCandidate(11, ChordQuality.Dominant7,     D, +2),  // V/iii = B7 (VII7)
 
         // ── 5. 借调（Modal Mixture）──
-        makeCandidate(3,  ChordQuality.Major,         S),  // bIII Eb
-        makeCandidate(8,  ChordQuality.Major,         S),  // bVI  Ab
-        makeCandidate(10, ChordQuality.Major,         S),  // bVII Bb
-        makeCandidate(5,  ChordQuality.Minor,         S),  // iv   Fm  (同主小借)
+        // 🌟 PR #3: 借调和弦的 functional bonus = +3
+        // 因为骨架严守 diatonic（+K-3 合规），借调和弦的 chord tones 永远不会成为 anchor，
+        // 自然在 topVoice 评分上吃亏。这里给它们一个补偿，让 Pop 经典借调能"自然涌现"。
+        makeCandidate(3,  ChordQuality.Major,         S, +3),  // bIII Eb
+        makeCandidate(8,  ChordQuality.Major,         S, +3),  // bVI  Ab
+        makeCandidate(10, ChordQuality.Major,         S, +3),  // bVII Bb
+        makeCandidate(5,  ChordQuality.Minor,         S, +2),  // iv   Fm  (同主小借)
 
         // ── 6. sus & 减和弦 ──
         makeCandidate(7,  ChordQuality.Sus4,          D),  // Vsus4 Gsus4

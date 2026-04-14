@@ -1251,19 +1251,23 @@ export class ToplineEngine {
         const syncopation = energyLevel >= ENERGY.HIGH_MIN ? 0.4 : 0.2;
 
         // 1. 分形细分 (Fractal Subdivision)
+        // 🌟 PR #3: MIN_NOTE_LENGTH 硬性底线 —— 防止细分到 0.11/0.15 这种琐碎短音
+        // 旧逻辑只检查 noteLen > 0.25 才细分，但附点/反附点/切分会把 1.0 拍切成 0.25/0.5/0.25，
+        // 第二轮再把 0.25 检查放过（边界含等号），最终生成 0.125 / 0.0625 的极短音
+        const MIN_NOTE_LENGTH = 0.25;
         let currentGrid = [phraseLengthBeats];
-        const maxDepth = Math.max(1, Math.floor(Math.log2(phraseLengthBeats / 0.25)));
-        
+        const maxDepth = Math.max(1, Math.floor(Math.log2(phraseLengthBeats / MIN_NOTE_LENGTH)));
+
         for (let depth = 0; depth < maxDepth; depth++) {
             let nextGrid: number[] = [];
             for (let i = 0; i < currentGrid.length; i++) {
                 let noteLen = currentGrid[i];
-                
-                // 只有当音符长度大于最小粒度，且满足密度概率时才继续细分
-                if (noteLen > 0.25 && PRNGManager.next() < finalDensity) {
+
+                // 🌟 PR #3: 严格 > 2× MIN（即 ≥ 0.5）才允许细分，保证细分后任何分支都 ≥ 0.25
+                if (noteLen > MIN_NOTE_LENGTH * 2 && PRNGManager.next() < finalDensity) {
                     const rand = PRNGManager.next();
                     if (noteLen >= 1.0 && rand < syncopation * 0.5) {
-                        // 附点细分 (Dotted: 3/4 + 1/4)
+                        // 附点细分 (Dotted: 3/4 + 1/4) — 1.0 拍 → 0.75 + 0.25 ✓
                         nextGrid.push(noteLen * 0.75, noteLen * 0.25);
                     } else if (noteLen >= 1.0 && rand < syncopation) {
                         // 反向附点细分 (Reverse Dotted: 1/4 + 3/4)
@@ -1272,7 +1276,7 @@ export class ToplineEngine {
                         // 切分细分 (Syncopated: 1/4 + 1/2 + 1/4)
                         nextGrid.push(noteLen * 0.25, noteLen * 0.5, noteLen * 0.25);
                     } else {
-                        // 均匀细分 (Even: 1/2 + 1/2)
+                        // 均匀细分 (Even: 1/2 + 1/2) — 只在 noteLen ≥ 0.5 时安全
                         nextGrid.push(noteLen / 2.0, noteLen / 2.0);
                     }
                 } else {
@@ -1281,6 +1285,10 @@ export class ToplineEngine {
             }
             currentGrid = nextGrid;
         }
+
+        // 🌟 PR #3: 兜底过滤 —— 任何 < MIN_NOTE_LENGTH 的音符（理论上不会发生，防御性）
+        // 都被合并到下一个或丢弃，绝不输出 0.11/0.15 这种短音
+        currentGrid = currentGrid.filter(d => d >= MIN_NOTE_LENGTH - 1e-6);
         
         // 2. 节奏合并 (Rhythmic Merging / Tie) 制造切分
         let finalSeed: number[] = [];
@@ -1561,11 +1569,15 @@ export class ToplineEngine {
             }
 
             // 🌟 Dynamic Melody Simplification: Give complex chords space
+            // PR #3 修订：旧版"复杂和弦弱拍 30% 概率跳过"在 PR#2 后变成高频触发
+            // （Viterbi 大量选 maj9/add9/sus4/m7），导致旋律高频出现"洞"。
+            // 新版仅在"距离当前 chord 末尾 < 0.5 拍"（复用上面的 isVeryNearChordBoundary）的
+            // 弱拍上触发，让 chord 尾音得到呼吸，而 chord 中段的弱拍照常发音。
             const isStrongBeat = isOnDownbeat(onset);
             const isLongNote = duration >= 1.0;
-            const isComplexChord = ['Minor9', 'Add9', 'Dominant7Sus4', 'HalfDiminished'].includes(activeChord.quality);
-            if (isComplexChord && !isStrongBeat && !isLongNote && PRNGManager.next() < 0.3) {
-                continue; // Skip weak beats over complex chords
+            const isComplexChord = ['Minor9', 'Add9', 'Dominant7Sus4', 'HalfDiminished', 'Major9', 'Major7', 'Minor7', 'Sus4'].includes(activeChord.quality);
+            if (isComplexChord && isVeryNearChordBoundary && !isStrongBeat && !isLongNote && PRNGManager.next() < 0.25) {
+                continue; // 仅在复杂和弦的尾部弱拍跳过，避免中段被掏空
             }
 
             const progress = adjustedOffsets.length > 1 ? i / (adjustedOffsets.length - 1) : 0; // 0.0 to 1.0
