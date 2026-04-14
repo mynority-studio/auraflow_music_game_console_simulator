@@ -356,18 +356,20 @@ export class Orchestrator {
             const sectionBars = (section.endBeat - section.startBeat) / track.timeSignature[0];
             
             // 如果段落长于等于 8 小节，打散它的乐器进入点
+            // 🌟 PR #5: 修复"Verse 前 7 小节 bass 真空"听感问题
+            //   旧版 60% 概率把 bass 推迟到段落中间，但 16 小节 Verse 的 halfBeat=8，
+            //   听感上前半段完全没有低频托底，情绪悬空。
+            //   新版降低推迟概率到 15%，且即使推迟也只让"鼓"推迟，bass 始终在场。
             if (sectionBars >= 8 && section.type === 'Verse') {
                 const halfBeat = section.startBeat + (sectionBars / 2) * track.timeSignature[0];
                 const roll = PRNGManager.next();
-                
-                if (roll < 0.3) {
-                    // 前一半空拍，后一半进鼓和贝斯
-                    bassEntryBeat = halfBeat;
+
+                if (roll < 0.15) {
+                    // 前一半只让鼓推迟，bass 仍然在场（低频托底）
                     drumsEntryBeat = halfBeat;
-                } else if (roll < 0.6) {
-                    // 前一半只有鼓，后一半进贝斯
-                    bassEntryBeat = halfBeat;
                 }
+                // 其余 85% 全部正常 — bass 和 drums 都从段落首拍进入
+                // 注：保留 PRNG 消耗以维持序列对齐（roll 已 next 一次）
             }
 
             if (sectionBars >= 8 && section.type === 'Chorus') {

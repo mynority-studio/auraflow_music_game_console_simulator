@@ -1449,8 +1449,13 @@ export class ToplineEngine {
             if (targetCenter < maxPitchBeforeChorus + 2) {
                 targetCenter = maxPitchBeforeChorus + 2; // 至少比之前最高音高一个大二度
             }
-            // 安全上限：器乐 C6(84)，人声 E5(76)
-            const catapultCap = isInstrumental ? 84 : 76;
+            // 🌟 PR #5: catapultCap 用 instrument profile 查表，并预留 6 半音的"上方挥洒空间"
+            // 旧版硬编码 84 对 Vibraphone 来说就是物理上限，导致旋律"贴着天花板跳不下来"
+            // 新版让 targetCenter 至少比物理上限低 6 半音（一个三全音），保证后续选音能往上有余量
+            const catCapInstId = getInstrumentIdByName(instrumentName);
+            const catCapProfile = InstrumentProfiles[catCapInstId];
+            const catCapProfileMax = catCapProfile?.safeRange?.[1] ?? 84;
+            const catapultCap = isInstrumental ? Math.max(60, catCapProfileMax - 6) : 76;
             if (targetCenter > catapultCap) targetCenter = catapultCap;
         }
 
@@ -1934,18 +1939,26 @@ export class ToplineEngine {
                 }
             }
             
-            // 🎷 物理限制：乐器绝对音域与“困难音”避让
-            
-            
-            let maxPitch = isSolo ? 96 : 88; // E6
-            let minPitch = isSolo ? 48 : 52; // E3
+            // 🎷 物理限制：乐器绝对音域与"困难音"避让
+            // 🌟 PR #5: 用 InstrumentProfiles.safeRange 查表替代硬编码 88
+            // 旧版固定 maxPitch=88 (E6) 对所有非人声乐器一刀切，
+            // 但 Vibraphone 的物理上限是 84 (F6)，Flute 是 84，Acoustic_Grand 是 84 等等
+            // 用 instrument profile 查实际值，硬编码作为 fallback
+            const instId = getInstrumentIdByName(instrumentName);
+            const profile = InstrumentProfiles[instId];
+            const profileMin = profile?.safeRange?.[0] ?? (isSolo ? 48 : 52);
+            const profileMax = profile?.safeRange?.[1] ?? (isSolo ? 96 : 88);
+
+            let maxPitch = profileMax;
+            let minPitch = profileMin;
             if (isVocal) {
-                maxPitch = 72; // C5
-                minPitch = 55; // G3
+                // 人声特殊规则：主歌中下区，副歌中上区
+                maxPitch = Math.min(profileMax, 72); // C5 上限
+                minPitch = Math.max(profileMin, 55); // G3 下限
                 // 🌟 法则五：Tessitura (音区) 管理
                 // 主歌的最高音，必须比副歌的最高音低至少一个纯四度（5个半音）
                 if (sectionName.includes('Verse') || sectionName.includes('PreChorus')) {
-                    maxPitch -= 5; 
+                    maxPitch -= 5;
                 }
             }
             
@@ -2270,6 +2283,9 @@ export class ToplineEngine {
                         velocity: humanVelocity * (1.0 - r * 0.12)
                     });
                     runPitch = HarmonyCore.shiftDiatonic(runPitch, pentatonicPcs, -1);
+                    // 🌟 PR #5: melisma 是递减瀑布，理论上不会超出 maxPitch，但要防止穿透 minPitch
+                    while (runPitch < minPitch) runPitch += 12;
+                    while (runPitch > maxPitch) runPitch -= 12;
                     runOnset += runSpeed;
                 }
                 const remaining = legatoDuration - (runCount * runSpeed);
@@ -2470,16 +2486,25 @@ export class ToplineEngine {
                     climaxNote = note;
                 }
             }
-            
+
             const activeChord = chords.find(c => climaxNote.onset >= c.startBeat && climaxNote.onset < c.endBeat) || chords[0];
             const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
-            
+
             let targetPitch = climaxNote.pitch + 12;
-            const absoluteMax = !isInstrumental ? 76 : (isSolo ? 100 : 92); // E5 for vocal climax
+
+            // 🌟 PR #5: 用 InstrumentProfiles.safeRange 替代硬编码 absoluteMax
+            // 旧版 absoluteMax = isInstrumental ? 92 : 76，但 Vibraphone 实际 safeRange=[60,84]
+            // climax 路径之前不查表 → climaxNote.pitch + 12 可以飙到 D7(98)
+            const climaxInstId = getInstrumentIdByName(instrumentName);
+            const climaxProfile = InstrumentProfiles[climaxInstId];
+            const profileMax = climaxProfile?.safeRange?.[1] ?? 88;
+            const absoluteMax = !isInstrumental
+                ? Math.min(76, profileMax)
+                : (isSolo ? Math.min(100, profileMax) : profileMax);
             if (targetPitch > absoluteMax) {
                 targetPitch = absoluteMax;
             }
-            
+
             let bestPc = safeScalePcs[0];
             let minDistance = 999;
             for (const pc of safeScalePcs) {
@@ -2491,6 +2516,10 @@ export class ToplineEngine {
                 }
             }
             climaxNote.pitch = this.getNearestOctave(bestPc, targetPitch);
+
+            // 🌟 PR #5: getNearestOctave 可能返回略高于 absoluteMax 的八度等价音 → 强 clamp
+            while (climaxNote.pitch > absoluteMax) climaxNote.pitch -= 12;
+
             climaxNote.velocity = Math.min(1.0, climaxNote.velocity * 1.3);
             climaxNote.duration = Math.max(climaxNote.duration, 1.0);
         }
