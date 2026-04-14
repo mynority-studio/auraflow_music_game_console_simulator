@@ -207,6 +207,13 @@ export interface StructureTemplate {
 
 export interface StyleConfig {
     id: StyleId; name: string; description?: string;
+    /**
+     * 🌟 PR #2: 启用双阶段 Viterbi 和声管线（影子骨架 → 骨架旋律 → Viterbi 选和弦）。
+     * - undefined / false: 使用旧的 HarmonyEngine.generateHarmonyTimeline + reharmonize
+     * - true: 使用新的 HarmonyPipeline，跳过 reharmonize（Viterbi 已含其功能）
+     * 默认为 undefined，仅在显式 opt-in 的风格上启用，保证未迁移风格零回归。
+     */
+    useViterbiHarmony?: boolean;
     global: {
         bpmRange: [number, number];
         timeSignaturePool: Array<{ signature:[number, number], weight: number }>;
@@ -331,6 +338,35 @@ export interface StyleConfig {
 export interface SingerPersonaConfig {
     id: string; name: string;
     traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
+}
+
+// ============================================================
+// PR #2: 双阶段和声管线 — Phase 1 影子骨架数据契约
+// ============================================================
+
+/**
+ * 影子骨架的功能枚举：T(主) / S(下属) / D(属)
+ * 对应 ViterbiChordSelector.HarmonicFunction，但放在 types.ts 让 SkeletonMelody 等模块能 import 而不用反向依赖 harmony/。
+ */
+export enum ShadowFunction {
+    Tonic = 0,
+    Subdominant = 1,
+    Dominant = 2,
+}
+
+/**
+ * 影子骨架的单个槽位 —— Phase 1 输出，Phase 2 消费。
+ * Pitch Space: RELATIVE（suggestedRootPc 是主调相对 0~11）
+ *
+ * 槽位粒度：每小节一个（PR #2 最小可听版的妥协）。
+ * 未来 PR #3 会引入动态粒度（Chorus 每拍、Verse 半小节）。
+ */
+export interface ShadowSlot {
+    function: ShadowFunction;
+    suggestedRootPc: number;     // 0~11，主调相对
+    startBeat: number;           // 全曲绝对拍位
+    endBeat: number;             // 全曲绝对拍位
+    isStrong: boolean;           // 是否落在小节强拍（Beat 1），用于 Phase 2 选音
 }
 
 

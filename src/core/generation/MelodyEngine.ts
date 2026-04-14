@@ -13,6 +13,9 @@ import { GlobalReviewer } from "./review/GlobalReviewer";
 
 import { MoodId, MoodRegistry } from "./config/MoodFlags";
 
+// 🌟 PR #2: 双阶段 Viterbi 和声管线
+import { generateHarmonyViaPipeline } from "./harmony/HarmonyPipeline";
+
 export class MelodyEngine {
 
   public generateFullSong(styleId: StyleId, options: GenerationOptions = {}): { track: GeneratedTrack, context: MusicContext } {
@@ -84,9 +87,15 @@ export class MelodyEngine {
 
     // 1. 生成宏观结构
     const sections = StructureEngine.generateFullSongStructure(timeSig, bpm, style, finalMoodId);
-    
-    // 2. 生成全曲和声轨道 (带过渡和弦引擎)
-    const chords = HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig);
+
+    // 2. 生成全曲和声轨道
+    // 🌟 PR #2: 双阶段 Viterbi 和声管线分支
+    //   - useViterbiHarmony=true: 走新管线（影子骨架 → 骨架旋律 → Viterbi）
+    //   - 否则回退到旧版 HarmonyEngine.generateHarmonyTimeline
+    const useViterbiPipeline = style.useViterbiHarmony === true;
+    const chords = useViterbiPipeline
+        ? generateHarmonyViaPipeline(sections, tonality, timeSig)
+        : HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig);
 
     // 3. 抽卡决定乐器编制与主唱性格
     const instrumentPalette = EnsembleDrafter.draft(style);
@@ -126,7 +135,11 @@ export class MelodyEngine {
     }
 
     // 5. 基于旋律进行重配和弦 (Re-harmonization)
-    const finalChords = HarmonyEngine.reharmonize(chords, melody, style);
+    // 🌟 PR #2: Viterbi 管线下跳过 reharmonize —— Viterbi 已基于骨架旋律做了
+    // 全局最优 voice leading，再跑贪心 reharmonize 会破坏长线连贯性。
+    const finalChords = useViterbiPipeline
+        ? chords
+        : HarmonyEngine.reharmonize(chords, melody, style);
 
     // 6. 全局检查与修复 (Global Review & Nudge)
     const reviewed = GlobalReviewer.reviewAndFix(

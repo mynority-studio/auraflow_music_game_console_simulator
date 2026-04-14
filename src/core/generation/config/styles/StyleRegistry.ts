@@ -5,6 +5,9 @@ import { StyleId } from '../StyleFlags';
 const DefaultStyle: StyleConfig = {
     id: StyleId.Default,
     name: 'Default',
+    // 🌟 PR #2: 启用双阶段 Viterbi 和声管线（影子骨架 → 骨架旋律 → Viterbi 选和弦）
+    // 跳过旧版 reharmonize，让 Viterbi 的 Top Voice + Common Tone 算法直接产出最终和弦。
+    useViterbiHarmony: true,
     global: {
         bpmRange: [80, 120],
         timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],
