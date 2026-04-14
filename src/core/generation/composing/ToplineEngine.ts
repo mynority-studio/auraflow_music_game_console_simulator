@@ -1251,10 +1251,17 @@ export class ToplineEngine {
         const syncopation = energyLevel >= ENERGY.HIGH_MIN ? 0.4 : 0.2;
 
         // 1. 分形细分 (Fractal Subdivision)
-        // 🌟 PR #3: MIN_NOTE_LENGTH 硬性底线 —— 防止细分到 0.11/0.15 这种琐碎短音
-        // 旧逻辑只检查 noteLen > 0.25 才细分，但附点/反附点/切分会把 1.0 拍切成 0.25/0.5/0.25，
-        // 第二轮再把 0.25 检查放过（边界含等号），最终生成 0.125 / 0.0625 的极短音
+        // 🌟 PR #4 修订：恢复 16 分音符密度 + 加三连音 + 安全检查
+        //
+        // PR#3 用 `> MIN * 2` 阈值矫枉过正，把所有 16 分音符（0.25）赶尽杀绝 →
+        // 主旋律变成"低密度伴奏"。本版恢复 `> MIN` 阈值，但加"细分前安全检查"：
+        // 候选子音必须全部 ≥ MIN 才接受，否则跳过该次细分。这样既杜绝 0.11/0.15
+        // 短音，又允许 0.5 拍正常细分到 0.25 + 0.25。
+        //
+        // 同时新增三连音分支（8 分三连音：1/3 + 1/3 + 1/3 of noteLen），
+        // 解决 PR#3 后"节奏太方正"的问题。
         const MIN_NOTE_LENGTH = 0.25;
+        const TRIPLET_MIN = 0.25 * 3; // 三连音需要至少 0.75 拍才能切到 0.25 三个
         let currentGrid = [phraseLengthBeats];
         const maxDepth = Math.max(1, Math.floor(Math.log2(phraseLengthBeats / MIN_NOTE_LENGTH)));
 
@@ -1263,21 +1270,35 @@ export class ToplineEngine {
             for (let i = 0; i < currentGrid.length; i++) {
                 let noteLen = currentGrid[i];
 
-                // 🌟 PR #3: 严格 > 2× MIN（即 ≥ 0.5）才允许细分，保证细分后任何分支都 ≥ 0.25
-                if (noteLen > MIN_NOTE_LENGTH * 2 && PRNGManager.next() < finalDensity) {
+                // 🌟 PR #4: > MIN_NOTE_LENGTH（即 > 0.25）允许细分，下方做安全检查
+                if (noteLen > MIN_NOTE_LENGTH + 1e-6 && PRNGManager.next() < finalDensity) {
                     const rand = PRNGManager.next();
-                    if (noteLen >= 1.0 && rand < syncopation * 0.5) {
-                        // 附点细分 (Dotted: 3/4 + 1/4) — 1.0 拍 → 0.75 + 0.25 ✓
-                        nextGrid.push(noteLen * 0.75, noteLen * 0.25);
-                    } else if (noteLen >= 1.0 && rand < syncopation) {
-                        // 反向附点细分 (Reverse Dotted: 1/4 + 3/4)
-                        nextGrid.push(noteLen * 0.25, noteLen * 0.75);
-                    } else if (noteLen >= 1.0 && rand < syncopation + 0.1) {
-                        // 切分细分 (Syncopated: 1/4 + 1/2 + 1/4)
-                        nextGrid.push(noteLen * 0.25, noteLen * 0.5, noteLen * 0.25);
+                    let candidate: number[];
+
+                    if (noteLen >= TRIPLET_MIN && rand < syncopation * 0.3) {
+                        // 🌟 PR #4 新增：三连音分支 (1/3 + 1/3 + 1/3) — 触发 R&B/Soul 律动
+                        const triplet = noteLen / 3.0;
+                        candidate = [triplet, triplet, triplet];
+                    } else if (noteLen >= 1.0 && rand < syncopation * 0.5 + 0.3) {
+                        // 附点 (Dotted: 3/4 + 1/4)
+                        candidate = [noteLen * 0.75, noteLen * 0.25];
+                    } else if (noteLen >= 1.0 && rand < syncopation + 0.3) {
+                        // 反向附点 (Reverse Dotted: 1/4 + 3/4)
+                        candidate = [noteLen * 0.25, noteLen * 0.75];
+                    } else if (noteLen >= 1.0 && rand < syncopation + 0.4) {
+                        // 切分 (Syncopated: 1/4 + 1/2 + 1/4)
+                        candidate = [noteLen * 0.25, noteLen * 0.5, noteLen * 0.25];
                     } else {
-                        // 均匀细分 (Even: 1/2 + 1/2) — 只在 noteLen ≥ 0.5 时安全
-                        nextGrid.push(noteLen / 2.0, noteLen / 2.0);
+                        // 均匀 (Even: 1/2 + 1/2)
+                        candidate = [noteLen / 2.0, noteLen / 2.0];
+                    }
+
+                    // 🌟 PR #4: 安全检查 —— 候选子音必须全部 ≥ MIN_NOTE_LENGTH
+                    // 例如 noteLen=0.5 走附点会产生 0.375+0.125，0.125 < 0.25，整体不接受
+                    if (candidate.every(c => c >= MIN_NOTE_LENGTH - 1e-6)) {
+                        for (const c of candidate) nextGrid.push(c);
+                    } else {
+                        nextGrid.push(noteLen); // 不安全细分，保持原样
                     }
                 } else {
                     nextGrid.push(noteLen);
@@ -1286,8 +1307,7 @@ export class ToplineEngine {
             currentGrid = nextGrid;
         }
 
-        // 🌟 PR #3: 兜底过滤 —— 任何 < MIN_NOTE_LENGTH 的音符（理论上不会发生，防御性）
-        // 都被合并到下一个或丢弃，绝不输出 0.11/0.15 这种短音
+        // 兜底过滤：理论上不会触发（安全检查已挡住），保留作为防御
         currentGrid = currentGrid.filter(d => d >= MIN_NOTE_LENGTH - 1e-6);
         
         // 2. 节奏合并 (Rhythmic Merging / Tie) 制造切分
@@ -1689,15 +1709,15 @@ export class ToplineEngine {
                     // 🌟 "Forward-Looking" Melody Logic: 
                     // 如果当前和弦是紧张的经过和弦（如 vii°, V7/vi, sus4）且持续时间短，
                     // 旋律应该“穿透”它，直接解决到下一个稳定和弦的音上。
-                    let targetChord = activeChord;
+                    // 🌟 PR #4: 移除未使用的 targetChord 变量（TS 警告清理）
                     let targetChordTones = chordTones;
-                    
+
                     const isTensePassingChord = (
-                        activeChord.numeral.includes('°') || 
-                        activeChord.numeral.includes('dim') || 
-                        activeChord.numeral.includes('aug') || 
-                        activeChord.numeral.includes('/') || 
-                        activeChord.numeral === 'VII7' || 
+                        activeChord.numeral.includes('°') ||
+                        activeChord.numeral.includes('dim') ||
+                        activeChord.numeral.includes('aug') ||
+                        activeChord.numeral.includes('/') ||
+                        activeChord.numeral === 'VII7' ||
                         activeChord.numeral === 'III7' ||
                         activeChord.numeral.includes('sus')
                     ) && (activeChord.endBeat - activeChord.startBeat <= 2);
@@ -1705,7 +1725,6 @@ export class ToplineEngine {
                     if (isTensePassingChord) {
                         const nextChord = chords.find(c => c.startBeat >= activeChord.endBeat);
                         if (nextChord) {
-                            targetChord = nextChord;
                             targetChordTones = HarmonyCore.getChordTones(nextChord, targetCenter);
                         }
                     }
@@ -1867,7 +1886,8 @@ export class ToplineEngine {
                 } else {
                     // 🌟 不和谐音控制 (Dissonance Control)
                 const isEmotionalCore = sectionName.includes('Intro') || sectionName.includes('Chorus') || sectionName.includes('Outro');
-                const maxDissonance = style.harmonyRules?.maxDissonanceTolerance ?? 0.6;
+                // 🌟 PR #4: style 是可选参数（style?: StyleConfig），加 ?. 防 undefined
+                const maxDissonance = style?.harmonyRules?.maxDissonanceTolerance ?? 0.6;
                 
                 // 根据 maxDissonanceTolerance 动态计算使用和弦内音的概率
                 // 容忍度越高，使用和弦内音的概率越低（允许更多音阶音/延伸音）
@@ -1892,6 +1912,25 @@ export class ToplineEngine {
                     });
                 }
                 currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+
+                // 🌟 PR #4: Avoid Note 过滤
+                // 弱拍即使在 safeScalePcs 内，仍可能选到当前 chord 的 avoid note（如 11 in Major）。
+                // 长音符（≥0.5 拍）的 chord-out 会产生持续摩擦感（用户报告的"压力感"），
+                // 短音符（<0.5 拍）作为 passing tone 是允许的。
+                const isLongEnoughToHurt = duration >= 0.5;
+                if (isLongEnoughToHurt) {
+                    const chordPcs = chordTones.map(p => ((p % 12) + 12) % 12);
+                    const currentPc = ((currentPitch % 12) + 12) % 12;
+                    if (!chordPcs.includes(currentPc)) {
+                        // chord-out 长音 → 降级到最近的 chord tone
+                        currentPitch = chordTones.reduce((prev, curr) => {
+                            const prevDist = Math.abs(this.getNearestOctave(prev, currentPitch) - currentPitch);
+                            const currDist = Math.abs(this.getNearestOctave(curr, currentPitch) - currentPitch);
+                            return currDist < prevDist ? curr : prev;
+                        });
+                        currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+                    }
+                }
                 }
             }
             
@@ -2245,7 +2284,9 @@ export class ToplineEngine {
             // 如果是长音，且是乐句结尾或强拍，有概率加入颤音
             const trillChance = isSolo ? 0.1 : (isInstrumental && isLead ? 0.05 : 0.01);
             if (isLongNote && (isPhraseEnd || isStrongBeat) && PRNGManager.next() < trillChance) {
-                const trillInterval = PRNGManager.next() > 0.5 ? 1 : 2; // 小二度或大二度
+                // 🌟 PR #4: 移除未使用的 trillInterval（trillPitch 用 shiftDiatonic 直接取调内邻音）
+                // 保留 PRNGManager.next() 调用以维持序列对齐
+                PRNGManager.next();
                 const trillPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, 1); // 上方邻音
                 
                 if (trillPitch <= maxPitch) {

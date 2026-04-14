@@ -70,6 +70,12 @@ export class TextureMapper {
 
         // 🌟 Approach note：和弦最后一拍，如果有 nextChord 且根音跳跃 > 2 半音，
         // 注入半音趋近音（chromatic approach）指向下一和弦根音
+        //
+        // 🌟 PR #4 修复：
+        // 1. approach note 时值固定 0.25 拍（16 分音符）—— 旧版 step=2 时
+        //    approachDur=1 拍，听起来像主音不像 leading tone，且与当前 chord 冲突
+        // 2. chord-out 检查：如果 approachPitch 不在当前 chord 内，必须保持短时值
+        //    避免在 Iadd9 上听到一个长 C# 这种调外冲突
         if (isLastStep && nextChord && !isSectionEnd) {
           const nextBassTones = HarmonyCore.getChordTones(nextChord, 36);
           let nextRoot = nextBassTones[0];
@@ -90,9 +96,21 @@ export class TextureMapper {
             // 半音趋近：从当前根音向下一根音方向走一个半音
             const approachPitch = bestNext + (approachInterval > 0 ? -1 : 1);
             const approachClamp = Math.max(28, Math.min(43, approachPitch));
-            // 缩短当前音，腾出空间给 approach note
-            const mainDur = Math.min(step, chord.endBeat - beat) * 0.5;
-            const approachDur = Math.min(step, chord.endBeat - beat) - mainDur;
+
+            // 🌟 PR #4: chord-out 检查
+            // 当前 chord 的所有 pitch class（注意 bassTones 是绝对 MIDI，要 % 12）
+            const chordPcs = bassTones.map(p => ((p % 12) + 12) % 12);
+            const approachPc = ((approachClamp % 12) + 12) % 12;
+            const isChordOut = !chordPcs.includes(approachPc);
+
+            const totalDur = Math.min(step, chord.endBeat - beat);
+            // 🌟 PR #4: chord-out 的 leading tone 必须 ≤ 0.25 拍（16 分音符）
+            // chord-in 的 approach 可以稍微长一点（≤ 0.5）但仍受限
+            const approachDur = isChordOut
+              ? Math.min(0.25, totalDur * 0.25)
+              : Math.min(0.5, totalDur * 0.5);
+            const mainDur = Math.max(0.25, totalDur - approachDur);
+
             notes.push({ pitch: rootMidi, onset: beat, duration: mainDur, velocity: vel });
             notes.push({ pitch: approachClamp, onset: beat + mainDur, duration: approachDur, velocity: vel * 0.7 });
           } else {
