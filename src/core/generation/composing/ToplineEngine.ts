@@ -418,8 +418,12 @@ export class ToplineEngine {
             );
         });
 
-        // 🌟 Phase 2: Chorus Motif Extraction
+        // 🌟 Phase 2: Chorus Motif + Layout Extraction
+        // PR #6: 同时提取 firstChorus 的 phraseGroups layout，后续 Chorus 段落直接复用
+        // 这是修复"Chorus_1 和 Chorus_Main 听起来像两首歌"的核心
         const chorusMotifs = new MotifMap();
+        let chorusPhraseGroups: PhraseGroup[] | null = null;
+        let chorusLengthBeats = 0;
         const firstChorus = sections.find(s => s.sectionType === SectionType.Chorus);
         if (firstChorus) {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
@@ -427,6 +431,9 @@ export class ToplineEngine {
             // Generate motifs only, don't realize notes yet
             const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, context);
             result.motifs.forEach((val, key) => chorusMotifs.set(key, val));
+            // 🌟 PR #6: 保存第一个 Chorus 的 phraseGroups 供后续 Chorus 复用
+            chorusPhraseGroups = result.phraseGroups ?? null;
+            chorusLengthBeats = firstChorus.endBeat - firstChorus.startBeat;
         }
 
         // 🌟 Phase 3: Chronological Generation with Pitch Continuity
@@ -438,36 +445,55 @@ export class ToplineEngine {
 
         sections.forEach((section, index) => {
             let providedMotifs: MotifMap | undefined = undefined;
-            
+            let providedPhraseGroups: PhraseGroup[] | undefined = undefined;
+
+            // 🌟 PR #6: 修复 'A' → 'M' bug
+            // PhraseGroupPlanner 生成的 slot.label 都是 'M/N/O' 开头（line 135-186），
+            // 所以 baseLabel = split('_')[0] 产生的 key 是 'M/N/O'，不是 'A'。
+            // 旧版代码用 chorusMotifs.get('A') 永远 undefined → Verse/PreChorus 传承完全失效。
+            const primaryMotifKey = 'M';
+
             if (section.sectionType === SectionType.Chorus) {
-                // Reuse the motifs we extracted
+                // 🌟 PR #6 克隆锁：Chorus 段落完全复用 firstChorus 的 motifs + layout
                 providedMotifs = chorusMotifs;
+                // 仅当段落长度与 firstChorus 相同时才复用 layout（不同长度会导致 slot 数不匹配）
+                const thisLengthBeats = section.endBeat - section.startBeat;
+                if (chorusPhraseGroups && Math.abs(thisLengthBeats - chorusLengthBeats) < 1e-6) {
+                    providedPhraseGroups = chorusPhraseGroups;
+                }
             } else if (chorusMotifs.size > 0 && section.sectionType === SectionType.PreChorus) {
                 // 🌟 PreChorus 使用动机插值器 (Motif Morpher)，平滑过渡到副歌
-                const motifA = chorusMotifs.get('A');
+                const motifA = chorusMotifs.get(primaryMotifKey);
                 if (motifA) {
                     const sectionDensity = isSecondary ? (section.groove?.density ?? 0.5) * 0.5 : (section.groove?.density ?? 0.5);
                     const morphed = this.morphMotifs(
                         this.downgradeMotif(motifA, section.name, sectionDensity),
                         motifA,
-                        2 // 生成 2 个中间过渡动机
+                        2
                     );
                     providedMotifs = new MotifMap();
-                    // 用最后一个过渡动机（最接近副歌）
                     if (morphed.length > 0) {
-                        providedMotifs.set('A', morphed[morphed.length - 1]);
+                        providedMotifs.set(primaryMotifKey, morphed[morphed.length - 1]);
                     }
                 }
             } else if (chorusMotifs.size > 0 && section.sectionType === SectionType.Verse) {
-                // 🌟 修复：不再强制让主歌复用副歌的全部动机，恢复旋律的多样性
-                // 只在有概率的情况下，让主歌的 A 动机复用副歌的 A 动机（降级版），其余动机重新生成
-                // 增加复用概率，增强连贯性 (从 0.3 提升到 0.5)
-                if (PRNGManager.next() < 0.5) {
+                // 🌟 PR #6: Verse 复用概率 0.5 → 0.8，增强主歌/副歌的"同源感"
+                if (PRNGManager.next() < 0.8) {
                     providedMotifs = new MotifMap();
-                    const motifA = chorusMotifs.get('A');
+                    const motifA = chorusMotifs.get(primaryMotifKey);
                     if (motifA) {
                         const sectionDensity = isSecondary ? (section.groove?.density ?? 0.5) * 0.5 : (section.groove?.density ?? 0.5);
-                        providedMotifs.set('A', this.downgradeMotif(motifA, section.name, sectionDensity));
+                        providedMotifs.set(primaryMotifKey, this.downgradeMotif(motifA, section.name, sectionDensity));
+                    }
+                }
+            } else if (chorusMotifs.size > 0 && (section.sectionType === SectionType.Bridge || section.sectionType === SectionType.Break)) {
+                // 🌟 PR #6: Bridge/Break 也参与传承（降级版本，避免和 Chorus 太像）
+                if (PRNGManager.next() < 0.6) {
+                    providedMotifs = new MotifMap();
+                    const motifA = chorusMotifs.get(primaryMotifKey);
+                    if (motifA) {
+                        const sectionDensity = isSecondary ? (section.groove?.density ?? 0.5) * 0.5 : (section.groove?.density ?? 0.5);
+                        providedMotifs.set(primaryMotifKey, this.downgradeMotif(motifA, section.name, sectionDensity));
                     }
                 }
             }
@@ -495,7 +521,7 @@ export class ToplineEngine {
                 }
             }
 
-            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, context);
+            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, context, providedPhraseGroups);
             
             sectionMelodies[index] = result.notes;
             currentPreviousPitch = result.lastPitch; // Pass the last pitch to the next section!
@@ -778,8 +804,9 @@ export class ToplineEngine {
         incomingUnresolvedCount: number = 0,
         isSecondary: boolean = false,
         maxPitchBeforeChorus: number = 0,
-        context?: MusicContext
-    ): { notes: NoteData[], motifs: MotifMap, lastPitch: number | null, unresolvedCount: number } {
+        context?: MusicContext,
+        providedPhraseGroups?: PhraseGroup[]  // 🌟 PR #6: 外部注入的 phrase layout，用于 Chorus 克隆
+    ): { notes: NoteData[], motifs: MotifMap, lastPitch: number | null, unresolvedCount: number, phraseGroups?: PhraseGroup[] } {
         const sectionDensity = section.groove?.density ?? 0.5;
         const sectionSyncopation = section.groove?.syncopationProb ?? 0.2;
         
@@ -920,7 +947,9 @@ export class ToplineEngine {
         const mood = MoodRegistry[moodId] || MoodRegistry[MoodId.Neutral];
 
         // 🌟 PhraseGroupPlanner 决定大乐句骨架
-        const phraseGroups = PhraseGroupPlanner.planSection(section, beatsPerBar, style);
+        // 🌟 PR #6: 如果有外部注入的 layout（Chorus_1 → Chorus_Main 克隆），直接复用，
+        // 跳过 PhraseGroupPlanner.planSection 的 PRNG 随机 layout 选择，消除根因 1。
+        const phraseGroups = providedPhraseGroups ?? PhraseGroupPlanner.planSection(section, beatsPerBar, style);
 
         // 计算总 slot 数，用于 Outro fade 进度
         let totalSlotsAcrossGroups = 0;
@@ -995,9 +1024,15 @@ export class ToplineEngine {
                 // ─── 变奏标志（来自 slot.role）───────────────
                 // statement / repeat / contrast：原型，不变奏
                 // vary / resolve：随机选一个 transform tag
+                //
+                // 🌟 PR #6: 如果当前 baseLabel 已经在 providedMotifs 里（克隆模式），
+                // 跳过 transform 随机 —— 保持和第一次实例的 motif 完全一致。
+                // 这是"根因 3: Transform 随机"的修复。
+                const isClonedMotif = providedMotifs !== undefined && providedMotifs.has(baseLabel);
+
                 let isInv = false, isRet = false, isAug = false, isSwitcheroo = false;
                 let isSplit = false, isMerge = false, isShift = false, isSeq = false;
-                if (slot.role === 'vary' || slot.role === 'resolve') {
+                if ((slot.role === 'vary' || slot.role === 'resolve') && !isClonedMotif) {
                     // 🌟 sequenceFreezeRhythm: 冻结节奏DNA，只允许音程模进
                     const freezeRhythm = style?.melody?.sequenceFreezeRhythm ?? false;
                     const variations = freezeRhythm
@@ -1179,7 +1214,8 @@ export class ToplineEngine {
                 const phraseResult = this.realizeMotif(
                     template, phraseStart, chords, tonality, isAnswer, currentPitchShift,
                     isSolo, isInstrumental, isLead, instrumentName, isLastSlotOfIntro, section.name, style,
-                    currentPreviousPitch, forceStrongResolution, isClimaxSlot, maxPitchBeforeChorus, false, slotMacroTargetDegree
+                    currentPreviousPitch, forceStrongResolution, isClimaxSlot, maxPitchBeforeChorus, false, slotMacroTargetDegree,
+                    isClonedMotif  // 🌟 PR #6: 克隆锁，传入 realizeMotif 内部关闭随机源
                 );
 
                 currentPreviousPitch = phraseResult.lastPitch;
@@ -1198,7 +1234,8 @@ export class ToplineEngine {
         }
 
         if (generateMotifsOnly) {
-            return { notes: [], motifs, lastPitch: null, unresolvedCount: consecutiveUnresolved };
+            // 🌟 PR #6: 把 phraseGroups 一起返回，Phase 2 保存给后续 Chorus 复用
+            return { notes: [], motifs, lastPitch: null, unresolvedCount: consecutiveUnresolved, phraseGroups };
         }
 
         if (secType === SectionType.Chorus && sectionMelody.length > 0) {
@@ -1431,14 +1468,15 @@ export class ToplineEngine {
 
     // 🌟 核心升级 4 & 5 实现：结合和弦、线型、起承转合生成音高
     private static realizeMotif(
-        template: MotifTemplate, phraseStart: number, chords: GeneratedChord[], 
+        template: MotifTemplate, phraseStart: number, chords: GeneratedChord[],
         tonality: Tonality, isAnswer: boolean, pitchShift: number, isSolo: boolean, isInstrumental: boolean, isLead: boolean, instrumentName: string, isLastPhraseOfIntro: boolean = false, sectionName: string = '', style?: StyleConfig,
         incomingPreviousPitch: number | null = null,
         forceStrongResolution: boolean = false,
         isClimax: boolean = false,
         maxPitchBeforeChorus: number = 0,
         isUserMotif: boolean = false,
-        macroTargetDegree?: number
+        macroTargetDegree?: number,
+        isClonedMotif: boolean = false  // 🌟 PR #6: 克隆锁，true 时关闭 anticipation / restChance 等随机源
     ): { notes: NoteData[], lastPitch: number | null } {
         const notes: NoteData[] = [];
         let targetCenter = 60 + pitchShift;
@@ -1480,15 +1518,19 @@ export class ToplineEngine {
         let consecutiveDuration = 0;
 
         // 🌟 Rhythmic Displacement & Anticipation (The "4-AND" Rule)
+        // 🌟 PR #6: 克隆模式下完全跳过 anticipation —— 保证节奏型与第一次实例 byte-for-byte 一致
+        // 这是"根因 2: Anticipation 破坏节奏"的修复
         let adjustedOffsets = [...rhythmOffsets];
-        for (let i = 0; i < adjustedOffsets.length; i++) {
-            if (PRNGManager.next() < melodyRules.anticipationProbability) {
-                // Anticipate by an 8th note (0.5 beats) or 16th note (0.25 beats)
-                const anticipationAmount = PRNGManager.next() > 0.5 ? 0.5 : 0.25;
-                const newOnset = adjustedOffsets[i] - anticipationAmount;
-                // Ensure it doesn't overlap with the previous note
-                if (i === 0 || newOnset > adjustedOffsets[i - 1]) {
-                    adjustedOffsets[i] = newOnset;
+        if (!isClonedMotif) {
+            for (let i = 0; i < adjustedOffsets.length; i++) {
+                if (PRNGManager.next() < melodyRules.anticipationProbability) {
+                    // Anticipate by an 8th note (0.5 beats) or 16th note (0.25 beats)
+                    const anticipationAmount = PRNGManager.next() > 0.5 ? 0.5 : 0.25;
+                    const newOnset = adjustedOffsets[i] - anticipationAmount;
+                    // Ensure it doesn't overlap with the previous note
+                    if (i === 0 || newOnset > adjustedOffsets[i - 1]) {
+                        adjustedOffsets[i] = newOnset;
+                    }
                 }
             }
         }
@@ -1504,18 +1546,21 @@ export class ToplineEngine {
 
             // 🌟 智能呼吸感 (Intelligent Breathing & Phrasing) - Rule 3
             const isPhraseEnd = i === adjustedOffsets.length - 1;
-            
-            // 强制插入“呼吸窗口”（Rest Window）
-            let restChance = isSolo ? 0.02 : (!isInstrumental ? 0.08 : 0.05);
-            
-            if (consecutiveDuration > 6.0 || consecutiveNotes > 8) {
+
+            // 强制插入"呼吸窗口"（Rest Window）
+            // 🌟 PR #6: 克隆模式下 restChance 全部置 0 —— 保证音符数与第一次实例一致
+            // 这是"根因 4: RestChance 随机吃音"的修复
+            let restChance = isClonedMotif ? 0 : (isSolo ? 0.02 : (!isInstrumental ? 0.08 : 0.05));
+
+            if (!isClonedMotif && (consecutiveDuration > 6.0 || consecutiveNotes > 8)) {
                 restChance = 0.90; // 90% 概率休止
             }
-            
+
             if (isPhraseEnd) {
-                // 🌟 修复：乐句末尾短音不再 100% 强制休止，降为 50%，保留旋律连贯性
-                // 原 1.0 导致 Chorus 等高密度段落的乐句尾部大量"断气"
-                if (duration < 1.0) {
+                if (isClonedMotif) {
+                    // 克隆模式：不休止，保持音符数不变
+                    restChance = 0;
+                } else if (duration < 1.0) {
                     restChance = 0.5; // 50% 概率休止（原 100%）
                 } else {
                     restChance = isSolo ? 0.05 : (!isInstrumental ? 0.15 : 0.10);
