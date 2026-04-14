@@ -677,8 +677,11 @@ export class Orchestrator {
                         startBeat = Math.max(sec.startBeat, drumEntryBeat);
                     }
                 } else if (sec.sectionType === SectionType.Verse) {
-                    // 🌟 方案四：曲式驱动的织体突变 - 主歌省去主套鼓或极简
-                    playDrums = sec.energyLevel > ENERGY.AMBIENT_MAX || PRNGManager.next() > 0.5;
+                    // 🌟 PR #7: 移除 50% 概率禁鼓（和 PR #5 的 bass 修复同套路）
+                    // 旧版 `|| PRNGManager.next() > 0.5` 会让一半的 Verse 完全失去鼓，
+                    // 破坏流行歌曲的节奏连贯感（Verse 即使稀疏也必须有鼓锚定）
+                    // 仅在 energy 低于 AMBIENT_MAX（极弱背景段）才禁鼓
+                    playDrums = sec.energyLevel > ENERGY.AMBIENT_MAX;
                 } else if (sec.sectionType === SectionType.Break) {
                     playDrums = true; // Break 仍可有鼓
                 } else if (sec.sectionType === SectionType.Breakdown) {

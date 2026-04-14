@@ -1027,17 +1027,29 @@ export class ToplineEngine {
                 //
                 // 🌟 PR #6: 如果当前 baseLabel 已经在 providedMotifs 里（克隆模式），
                 // 跳过 transform 随机 —— 保持和第一次实例的 motif 完全一致。
-                // 这是"根因 3: Transform 随机"的修复。
+                //
+                // 🌟 PR #7: 克隆模式豁免 `_seq`（音程模进）
+                // Blinding Lights 式的 "I've been tryna call" → "I've been on my own"
+                // 就是相同节奏型向下三度平移，这是流行金曲"洗脑密码"的核心之一。
+                // 克隆模式下允许 `_seq`（仅音程偏移，节奏 100% 保持），禁用其他 transform。
+                // 这让"重复感"和"发展感"共存，而不是 100% 机械复印。
                 const isClonedMotif = providedMotifs !== undefined && providedMotifs.has(baseLabel);
 
                 let isInv = false, isRet = false, isAug = false, isSwitcheroo = false;
                 let isSplit = false, isMerge = false, isShift = false, isSeq = false;
-                if ((slot.role === 'vary' || slot.role === 'resolve') && !isClonedMotif) {
+                if (slot.role === 'vary' || slot.role === 'resolve') {
                     // 🌟 sequenceFreezeRhythm: 冻结节奏DNA，只允许音程模进
                     const freezeRhythm = style?.melody?.sequenceFreezeRhythm ?? false;
-                    const variations = freezeRhythm
-                        ? ['_prime', '_seq', '_prime', '_seq']
-                        : ['_prime', '_seq', '_inv', '_switch', '_split', '_merge', '_shift'];
+                    let variations: string[];
+                    if (isClonedMotif) {
+                        // 🌟 PR #7: 克隆模式只允许 _prime (原型) 和 _seq (音程模进)
+                        // _seq 仅修改 pitchShift (line 1150)，不改 template，节奏完全保留
+                        variations = ['_prime', '_seq', '_prime', '_seq'];
+                    } else if (freezeRhythm) {
+                        variations = ['_prime', '_seq', '_prime', '_seq'];
+                    } else {
+                        variations = ['_prime', '_seq', '_inv', '_switch', '_split', '_merge', '_shift'];
+                    }
                     const pick = variations[Math.floor(PRNGManager.next() * variations.length)];
                     if (pick === '_seq') isSeq = true;
                     else if (pick === '_inv') isInv = true;
@@ -1963,22 +1975,39 @@ export class ToplineEngine {
                 }
                 currentPitch = this.getNearestOctave(currentPitch, idealPitch);
 
-                // 🌟 PR #4: Avoid Note 过滤
-                // 弱拍即使在 safeScalePcs 内，仍可能选到当前 chord 的 avoid note（如 11 in Major）。
-                // 长音符（≥0.5 拍）的 chord-out 会产生持续摩擦感（用户报告的"压力感"），
-                // 短音符（<0.5 拍）作为 passing tone 是允许的。
+                // 🌟 PR #7: Avoid Note 过滤 — 精化为"仅拦截真冲突"
+                //
+                // 旧 PR #4 版本：任何 ≥0.5 拍的 non-chord-tone 都强制降级 → 彻底消灭了
+                // 流行金曲的"和声张力脉冲"（Bruno Mars "Talking to the **moon**" 的 9 度
+                // tension / The Weeknd "Save your **tears**" 的 maj7 tension）。
+                //
+                // 新版只拦截与 chord tone **相差半音** 的音（真冲突），保留全音差距的
+                // 漂亮 tension（9/11/13）。例如：
+                //   - Iadd9 (C E G D) + F → |5-4|=1 半音相撞 → 降级
+                //   - Iadd9 (C E G D) + A → |9-7|=2 全音 → 保留（漂亮的 13 音）
+                //   - Cmaj7 (C E G B) 上的 F → |5-4|=1 → 降级
+                //   - G7 (G B D F) 上的 E → |4-5|=1 → 降级
                 const isLongEnoughToHurt = duration >= 0.5;
                 if (isLongEnoughToHurt) {
                     const chordPcs = chordTones.map(p => ((p % 12) + 12) % 12);
                     const currentPc = ((currentPitch % 12) + 12) % 12;
                     if (!chordPcs.includes(currentPc)) {
-                        // chord-out 长音 → 降级到最近的 chord tone
-                        currentPitch = chordTones.reduce((prev, curr) => {
-                            const prevDist = Math.abs(this.getNearestOctave(prev, currentPitch) - currentPitch);
-                            const currDist = Math.abs(this.getNearestOctave(curr, currentPitch) - currentPitch);
-                            return currDist < prevDist ? curr : prev;
-                        });
-                        currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+                        // 检测与任何 chord tone 的最短 pitch class 距离
+                        let minSemitoneDist = 12;
+                        for (let pci = 0; pci < chordPcs.length; pci++) {
+                            const diff = Math.abs(currentPc - chordPcs[pci]);
+                            const circular = diff > 6 ? 12 - diff : diff;
+                            if (circular < minSemitoneDist) minSemitoneDist = circular;
+                        }
+                        // 仅当存在半音相撞（距离=1）时降级，其他情况保留 tension
+                        if (minSemitoneDist === 1) {
+                            currentPitch = chordTones.reduce((prev, curr) => {
+                                const prevDist = Math.abs(this.getNearestOctave(prev, currentPitch) - currentPitch);
+                                const currDist = Math.abs(this.getNearestOctave(curr, currentPitch) - currentPitch);
+                                return currDist < prevDist ? curr : prev;
+                            });
+                            currentPitch = this.getNearestOctave(currentPitch, idealPitch);
+                        }
                     }
                 }
                 }
