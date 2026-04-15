@@ -6,6 +6,7 @@ import { APPS } from './apps/AppRegistry';
 import { AudioEngine } from './core/audio/AudioEngine';
 import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
+import { SeedController } from './components/SeedController';
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
@@ -33,6 +34,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden">
       <VolumeController />
+      <SeedController />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"

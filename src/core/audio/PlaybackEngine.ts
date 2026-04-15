@@ -17,6 +17,8 @@ import { StyleRegistry, DefaultStyleConfig } from '../generation/config/StyleReg
 import { getStyleConfig } from '../generation/config/styles/StyleRegistry';
 import { InstrumentProfiles, getInstrumentIdByName } from '../generation/config/InstrumentFlags';
 
+export type PartName = 'vocal' | 'melody' | 'chord' | 'bass' | 'drums' | 'secondaryMelody' | 'counterMelody';
+
 export class PlaybackEngine {
     private mixer: AudioMixer;
     private instruments: InstrumentRegistry;
@@ -24,6 +26,9 @@ export class PlaybackEngine {
     private isStopped: boolean = false;
     private totalDurationSeconds: number = 0;
     private drumDucking: boolean = false;
+    // 🌟 SeedController 支持：记录当前歌曲每个声部使用的 MIDI channel
+    // channel 由 InstrumentRegistry 动态分配（nextChannel++），每次 loadSong 可能变化
+    private partChannels: Partial<Record<PartName, number>> = {};
 
     constructor() {
         this.mixer = new AudioMixer();
@@ -37,6 +42,15 @@ export class PlaybackEngine {
 
     public setDrumDucking(enabled: boolean) {
         this.drumDucking = enabled;
+    }
+
+    // 🌟 SeedController 支持：返回当前歌曲各声部的 MIDI channel
+    public getPartChannels(): Partial<Record<PartName, number>> {
+        return { ...this.partChannels };
+    }
+
+    public getPartChannel(partName: PartName): number | null {
+        return this.partChannels[partName] ?? null;
     }
 
     public addVisualListener(listener: VisualEventListener) { this.visualListeners.push(listener); }
@@ -154,11 +168,28 @@ export class PlaybackEngine {
         const vocalSynth = song.palette?.vocalSound ? this.instruments.getInstrument(song.palette.vocalSound, 'Foreground', 'vocal', mixing.vocal) : null;
         const melodySynth = this.instruments.getInstrument(song.palette?.melodySound || 'Acoustic_Grand', song.palette?.vocalSound ? 'Midground' : 'Foreground', 'melody', mixing.melody);
         const chordSynth = this.instruments.getInstrument(song.palette?.chordSound || 'Warm_EP', 'Midground', 'chord', mixing.chord);
-        
+
         // 🌟 3. 独立 Bass 采样器：根据流派选择电贝斯或原声贝斯
         const isAcoustic = !!(song.palette?.chordSound && (song.palette.chordSound.includes('Acoustic') || song.palette.chordSound.includes('Jazz')));
         const bassSynth = this.instruments.getInstrument(isAcoustic ? 'Acoustic_Bass' : 'Electric_Bass', 'Rhythm', 'bass', mixing.bass);
-        const drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm', 'drums', mixing.drums); 
+        const drumSynth = this.instruments.getInstrument(song.palette?.drumSound || 'Standard_DrumKit', 'Rhythm', 'drums', mixing.drums);
+
+        // 🌟 SeedController 支持：重置 partChannels 并记录本曲分配的 channel
+        // secondaryMelody / counterMelody 在后面 addPartEvents 时按需创建，这里先置空
+        this.partChannels = {};
+        if (vocalSynth) this.partChannels.vocal = vocalSynth.channel;
+        this.partChannels.melody = melodySynth.channel;
+        this.partChannels.chord = chordSynth.channel;
+        this.partChannels.bass = bassSynth.channel;
+        this.partChannels.drums = drumSynth.channel;
+        if (song.secondaryMelody && song.palette?.secondaryMelodySound) {
+            const secSyn = this.instruments.getInstrument(song.palette.secondaryMelodySound, 'Foreground', 'secondaryMelody', mixing.secondaryMelody);
+            this.partChannels.secondaryMelody = secSyn.channel;
+        }
+        if (song.counterMelody && song.palette?.counterMelodySound) {
+            const cmSyn = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
+            this.partChannels.counterMelody = cmSyn.channel;
+        }
 
         if (this.isStopped) return;
 
@@ -465,44 +496,31 @@ export class PlaybackEngine {
             });
         }
 
-        // 🌟 Luis's Fake Sidechain (CC 11)
-        if (song.styleId !== undefined) {
-            const needsSidechain = false;
-            
-            if (needsSidechain && song.drums) {
-                song.drums.forEach(n => {
-                    const isKick = n.pitch === 35 || n.pitch === 36;
-                    if (isKick && n.velocity > 0.7) {
-                        const startTick = globalMidiScheduler.beatsToTicks(n.onset + countInBeats);
-                        
-                        const injectSidechain = (channel: number) => {
-                            // T: 40
-                            allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: 40 });
-                            // T + 30ms
-                            const tick30 = startTick + globalMidiScheduler.beatsToTicks(0.03 * (song.bpm / 60));
-                            allEvents.push({ ticks: tick30, type: 'cc', channel, data1: 11, data2: 65 });
-                            // T + 80ms
-                            const tick80 = startTick + globalMidiScheduler.beatsToTicks(0.08 * (song.bpm / 60));
-                            allEvents.push({ ticks: tick80, type: 'cc', channel, data1: 11, data2: 100 });
-                            // T + 150ms
-                            const tick150 = startTick + globalMidiScheduler.beatsToTicks(0.15 * (song.bpm / 60));
-                            allEvents.push({ ticks: tick150, type: 'cc', channel, data1: 11, data2: 127 });
-                        };
+        // 🌟 Luis's Fake Sidechain (CC 11) — PR #8 启用
+        // 仅注入 Bass + Chord;counterMelody 走 addCC11Swell 自己的呼吸包络,不被 sidechain 覆盖
+        // StyleConfig.mixing.mixingPreferences.requireSidechain === false 可关闭(Ballad/Classical 风格)
+        const sidechainEnabled = styleConfig.orchestration?.mixingPreferences?.requireSidechain !== false;
+        if (sidechainEnabled && song.drums) {
+            const beatsPerMs = song.bpm / 60 / 1000;
+            song.drums.forEach(n => {
+                const isKick = n.pitch === 35 || n.pitch === 36;
+                if (isKick && n.velocity > 0.7) {
+                    const startTick = globalMidiScheduler.beatsToTicks(n.onset + countInBeats);
 
-                        const bassChannel = bassSynthFn().channel;
-                        injectSidechain(bassChannel);
+                    const injectSidechain = (channel: number) => {
+                        allEvents.push({ ticks: startTick, type: 'cc', channel, data1: 11, data2: 40 });
+                        const tick30 = startTick + globalMidiScheduler.beatsToTicks(30 * beatsPerMs);
+                        allEvents.push({ ticks: tick30, type: 'cc', channel, data1: 11, data2: 65 });
+                        const tick80 = startTick + globalMidiScheduler.beatsToTicks(80 * beatsPerMs);
+                        allEvents.push({ ticks: tick80, type: 'cc', channel, data1: 11, data2: 100 });
+                        const tick150 = startTick + globalMidiScheduler.beatsToTicks(150 * beatsPerMs);
+                        allEvents.push({ ticks: tick150, type: 'cc', channel, data1: 11, data2: 127 });
+                    };
 
-                        const chordChannel = chordSynthFn().channel;
-                        injectSidechain(chordChannel);
-
-                        if (song.counterMelody && song.palette?.counterMelodySound) {
-                            const counterMelodySynth = this.instruments.getInstrument(song.palette.counterMelodySound, 'Midground', 'counterMelody', mixing.counterMelody);
-                            const cmChannel = counterMelodySynth.channel;
-                            injectSidechain(cmChannel);
-                        }
-                    }
-                });
-            }
+                    injectSidechain(bassSynthFn().channel);
+                    injectSidechain(chordSynthFn().channel);
+                }
+            });
         }
 
         if (options?.withCountIn) {

@@ -1,4 +1,4 @@
-import { PlaybackEngine, VisualEvent } from './PlaybackEngine';
+import { PlaybackEngine, VisualEvent, PartName } from './PlaybackEngine';
 import { GeneratedTrack, MusicContext } from '../generation/types';
 import { StyleId } from '../generation/config/StyleFlags';
 import { Orchestrator } from '../generation/arrangement/Orchestrator'; 
@@ -93,6 +93,27 @@ class AudioEngineSystem {
     }
 
     public isChannelMuted(channel: number): boolean {
+        return globalMidiScheduler.isChannelMuted(channel);
+    }
+
+    // --- SeedController 支持 ---
+    public getPartChannels(): Partial<Record<PartName, number>> {
+        if (!this.playback) return {};
+        return this.playback.getPartChannels();
+    }
+
+    public setPartMute(partName: PartName, mute: boolean) {
+        if (!this.playback) return;
+        const channel = this.playback.getPartChannel(partName);
+        if (channel !== null) {
+            globalMidiScheduler.muteChannel(channel, mute);
+        }
+    }
+
+    public isPartMuted(partName: PartName): boolean {
+        if (!this.playback) return false;
+        const channel = this.playback.getPartChannel(partName);
+        if (channel === null) return false;
         return globalMidiScheduler.isChannelMuted(channel);
     }
 

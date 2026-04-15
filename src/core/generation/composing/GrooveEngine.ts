@@ -4,7 +4,31 @@ import { sortAndDedupNumbers } from '../utils/Dedup';
 import { isOnDownbeat, isOnOffbeat } from '../utils/BeatMath';
 
 export class GrooveEngine {
-    private static GRID_STEP = 0.25; 
+    private static GRID_STEP = 0.25;
+    // PR #8 §4.2: 连续非正拍音符上限(8 分反拍 + 16 分切分),超出后强制回正拍
+    private static MAX_CONSECUTIVE_OFFBEAT = 2;
+
+    /**
+     * 切分音收敛 cap — 连续 >2 个非 downbeat 音符时丢弃后续,直到遇到下一个正拍。
+     * 后处理,不消耗 PRNG,ACVE 兼容。
+     */
+    private static capSyncopation(sortedFingerprint: number[]): number[] {
+        const result: number[] = [];
+        let consecutiveOff = 0;
+        for (let i = 0; i < sortedFingerprint.length; i++) {
+            const offset = sortedFingerprint[i];
+            if (isOnDownbeat(offset)) {
+                consecutiveOff = 0;
+                result.push(offset);
+            } else {
+                consecutiveOff++;
+                if (consecutiveOff <= this.MAX_CONSECUTIVE_OFFBEAT) {
+                    result.push(offset);
+                }
+            }
+        }
+        return result;
+    }
 
     public static generateRhythmFingerprint(
         density: number,
@@ -81,8 +105,8 @@ export class GrooveEngine {
             fingerprint.push(availableSteps[selectedIdx].offset);
             availableSteps.splice(selectedIdx, 1);
         }
-        
-        return sortAndDedupNumbers(fingerprint);
+
+        return this.capSyncopation(sortAndDedupNumbers(fingerprint));
     }
 
     // ⚖️ 旋律与伴奏的互补对抗 (Inverse Density)
@@ -139,7 +163,7 @@ export class GrooveEngine {
             inverseFingerprint.push(availableSteps[selectedIdx].offset);
             availableSteps.splice(selectedIdx, 1);
         }
-        
-        return sortAndDedupNumbers(inverseFingerprint);
+
+        return this.capSyncopation(sortAndDedupNumbers(inverseFingerprint));
     }
 }
