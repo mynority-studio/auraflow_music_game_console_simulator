@@ -122,15 +122,15 @@ export class MelodyEngine {
 
     if (instrumentPalette.vocalSound) {
         vocal = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, null, instrumentPalette.vocalSound, toplineMotif, false, context
+            sections, chords, style, tonality, instrumentPalette.vocalSound, toplineMotif, false, context
         );
         // Generate a sparser instrumental melody as accompaniment
         melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, null, leadInstrument, undefined, true, context
+            sections, chords, style, tonality, leadInstrument, undefined, true, context
         );
     } else {
         melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, null, leadInstrument, toplineMotif, false, context
+            sections, chords, style, tonality, leadInstrument, toplineMotif, false, context
         );
     }
 

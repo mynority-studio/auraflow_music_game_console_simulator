@@ -13,7 +13,7 @@
 //   - ESP32 移植目标：__builtin_popcount 或位宽 12 的 SWAR
 // ==========================================
 
-import { ChordQuality, CHORD_INTERVALS, ChordQualityName } from '../types';
+import { ChordQuality, CHORD_INTERVALS } from '../types';
 
 /**
  * 12-bit Pitch Class Mask。
@@ -65,45 +65,4 @@ export function popcount12(x: number): number {
  */
 export function commonTones(a: ChordMask, b: ChordMask): number {
     return popcount12(a & b);
-}
-
-/**
- * 某个旋律 pitch class 是否落在和弦上。
- * 纯 O(1)，用于快速"旋律音是否是 chord tone"判断。
- */
-export function containsPc(mask: ChordMask, pc: number): boolean {
-    const normalized = ((pc % 12) + 12) % 12;
-    return (mask & (1 << normalized)) !== 0;
-}
-
-/**
- * 把 mask 展开成 pitch class 数组（debug / 日志用）。
- * 热路径禁用，仅测试脚本和 console.log 使用。
- */
-export function maskToPcArray(mask: ChordMask): number[] {
-    const result: number[] = [];
-    for (let pc = 0; pc < 12; pc++) {
-        if (mask & (1 << pc)) result.push(pc);
-    }
-    return result;
-}
-
-const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-/**
- * 和弦人类可读描述（仅日志/测试）。
- * 例：formatChord(4, ChordQuality.Minor7) → "Em7"
- *     formatChord(0, ChordQuality.Major9) → "Cmaj9"
- */
-export function formatChord(rootPc: number, quality: ChordQuality): string {
-    const root = PC_NAMES[((rootPc % 12) + 12) % 12];
-    const q = ChordQualityName[quality] || `Q${quality}`;
-    const suffix: Record<string, string> = {
-        Major: '', Minor: 'm', Diminished: 'dim', Diminished7: 'dim7',
-        Augmented: 'aug', Dominant7: '7', Minor7: 'm7', Major7: 'maj7',
-        HalfDiminished: 'm7b5', Sus4: 'sus4', Dominant7Sus4: '7sus4',
-        Add9: 'add9', Minor9: 'm9', Major9: 'maj9', Dominant9: '9',
-        Minor11: 'm11', Dominant13: '13',
-    };
-    return root + (suffix[q] ?? q);
 }

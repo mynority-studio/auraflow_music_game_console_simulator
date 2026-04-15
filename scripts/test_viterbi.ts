@@ -9,8 +9,8 @@
  * 运行：`npx tsx scripts/test_viterbi.ts`
  */
 
-import { ChordQuality, CHORD_INTERVALS } from '../src/core/generation/types';
-import { chordToMask, commonTones, maskToPcArray, formatChord } from '../src/core/generation/harmony/ChordMask';
+import { ChordQuality, CHORD_INTERVALS, ChordQualityName } from '../src/core/generation/types';
+import { chordToMask, commonTones, ChordMask } from '../src/core/generation/harmony/ChordMask';
 import { topVoiceScore, SCORE_TABLE } from '../src/core/generation/harmony/ChordScoreTable';
 import {
     selectChords,
@@ -21,11 +21,32 @@ import {
 import { PRNGManager } from '../src/core/utils/PRNG';
 
 // ============================================================
-// 工具
+// 工具(test-only debug helpers,本地定义避免污染生产代码)
 // ============================================================
 
 const PC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const pcName = (pc: number) => PC[((pc % 12) + 12) % 12];
+
+function maskToPcArray(mask: ChordMask): number[] {
+    const result: number[] = [];
+    for (let pc = 0; pc < 12; pc++) {
+        if (mask & (1 << pc)) result.push(pc);
+    }
+    return result;
+}
+
+const CHORD_SUFFIX: Record<string, string> = {
+    Major: '', Minor: 'm', Diminished: 'dim', Diminished7: 'dim7',
+    Augmented: 'aug', Dominant7: '7', Minor7: 'm7', Major7: 'maj7',
+    HalfDiminished: 'm7b5', Sus4: 'sus4', Dominant7Sus4: '7sus4',
+    Add9: 'add9', Minor9: 'm9', Major9: 'maj9', Dominant9: '9',
+    Minor11: 'm11', Dominant13: '13',
+};
+function formatChord(rootPc: number, quality: ChordQuality): string {
+    const root = PC[((rootPc % 12) + 12) % 12];
+    const q = ChordQualityName[quality] || `Q${quality}`;
+    return root + (CHORD_SUFFIX[q] ?? q);
+}
 
 function section(title: string) {
     console.log('\n' + '='.repeat(72));

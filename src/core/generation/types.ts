@@ -335,11 +335,6 @@ export interface StyleConfig {
     masteringProfileId?: string;
 }
 
-export interface SingerPersonaConfig {
-    id: string; name: string;
-    traits: { staccatoTendency: number; trailingFade: number; graceNoteProbability: number; syncopationPush: number; }
-}
-
 // ============================================================
 // PR #2: 双阶段和声管线 — Phase 1 影子骨架数据契约
 // ============================================================

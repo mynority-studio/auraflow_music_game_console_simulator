@@ -1,5 +1,5 @@
 import { PRNGManager } from '../../utils/PRNG';
-import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, SingerPersonaConfig, MusicContext, Tonality, SectionType, PhraseGroup, SubMotifSlot, CadenceType, HookPlan, PhraseLengthProfile } from '../types';
+import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, MusicContext, Tonality, SectionType, PhraseGroup, SubMotifSlot, CadenceType, HookPlan, PhraseLengthProfile } from '../types';
 import { HarmonyCore } from './HarmonyCore';
 import { MusicTheoryRules } from './MusicTheoryRules';
 import { GrooveEngine } from './GrooveEngine';
@@ -396,7 +396,7 @@ export class ToplineEngine {
 
     public static generateTrackMelody(
         sections: SectionMetadata[], chords: GeneratedChord[], style: StyleConfig,
-        tonality: Tonality, persona: SingerPersonaConfig | null, instrumentName: string = 'Acoustic_Grand',
+        tonality: Tonality, instrumentName: string = 'Acoustic_Grand',
         userMotif?: NoteData[], isSecondary: boolean = false, context?: MusicContext
     ): NoteData[] {
         const fullMelody: NoteData[] = [];
@@ -429,7 +429,7 @@ export class ToplineEngine {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
             if (chorusChords.length === 0) chorusChords.push(chords[0]);
             // Generate motifs only, don't realize notes yet
-            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, context);
+            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, context);
             result.motifs.forEach((val, key) => chorusMotifs.set(key, val));
             // 🌟 PR #6: 保存第一个 Chorus 的 phraseGroups 供后续 Chorus 复用
             chorusPhraseGroups = result.phraseGroups ?? null;
@@ -521,7 +521,7 @@ export class ToplineEngine {
                 }
             }
 
-            const result = this.generateSectionMelody(section, sectionChords, style, tonality, persona, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, context, providedPhraseGroups);
+            const result = this.generateSectionMelody(section, sectionChords, style, tonality, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, context, providedPhraseGroups);
             
             sectionMelodies[index] = result.notes;
             currentPreviousPitch = result.lastPitch; // Pass the last pitch to the next section!
@@ -796,7 +796,7 @@ export class ToplineEngine {
 
     private static generateSectionMelody(
         section: SectionMetadata, chords: GeneratedChord[], style: StyleConfig,
-        tonality: Tonality, persona: SingerPersonaConfig | null, instrumentName: string,
+        tonality: Tonality, instrumentName: string,
         beatsPerBar: number, userMotif?: NoteData[],
         providedMotifs?: MotifMap,
         incomingPreviousPitch: number | null = null,

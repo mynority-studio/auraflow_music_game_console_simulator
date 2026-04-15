@@ -947,27 +947,6 @@ export class Orchestrator {
         applyOffset(humanizedRH);
         applyOffset(humanizedCounterMelody);
 
-        // 🌟 修复点：强制网格化 (Strict Quantization Mask)
-        // Eurodance 等电子舞曲需要绝对精准的网格，禁用所有 Humanize 偏移
-        if (false) { // strictGrid disabled (no style system)
-            const quantizeToGrid = (beat: number, resolution: number = 0.25): number => {
-                return Math.round(beat / resolution) * resolution;
-            };
-            const applyQuantization = (notes: NoteData[]) => {
-                notes.forEach(n => {
-                    n.onset = quantizeToGrid(n.onset);
-                    n.duration = Math.max(0.125, quantizeToGrid(n.duration)); // 保证最少有 32分音符长度
-                });
-            };
-            applyQuantization(humanizedMelody);
-            if (humanizedVocal) applyQuantization(humanizedVocal);
-            applyQuantization(humanizedSecondaryMelody);
-            applyQuantization(humanizedLH);
-            applyQuantization(humanizedRH);
-            applyQuantization(humanizedCounterMelody);
-            applyQuantization(humanizedDrums);
-        }
-
         // 🌟 提案二：Ritardando 渐慢算法 (Non-linear tempo deceleration)
         const tempoCurves: any[] = [];
         if (track.sections && track.sections.length > 0) {

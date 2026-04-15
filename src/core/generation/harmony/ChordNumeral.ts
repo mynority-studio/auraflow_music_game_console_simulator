@@ -148,38 +148,3 @@ export function pitchClassToNumeral(
     return accidental + base + cleanSuffix;
 }
 
-/**
- * 自检函数：在 dev 模式下手工调一组验证用例。
- * 不在生产代码路径调用。
- */
-export function _selfTest(): { passed: number; failed: number; cases: string[] } {
-    const cases: Array<[number, ChordQuality, string]> = [
-        [0,  ChordQuality.Major,        'I'],
-        [0,  ChordQuality.Major7,       'Imaj7'],
-        [2,  ChordQuality.Minor,        'ii'],
-        [2,  ChordQuality.Minor7,       'ii7'],     // 小写 ii + 7 → parseRomanNumeral 识别为 Minor7
-        [4,  ChordQuality.Minor7,       'iii7'],
-        [5,  ChordQuality.Major,        'IV'],
-        [5,  ChordQuality.Major7,       'IVmaj7'],
-        [7,  ChordQuality.Major,        'V'],
-        [7,  ChordQuality.Dominant7,    'V7'],
-        [9,  ChordQuality.Minor,        'vi'],
-        [9,  ChordQuality.Minor7,       'vi7'],
-        // 借调
-        [3,  ChordQuality.Major,        'bIII'],
-        [8,  ChordQuality.Major,        'bVI'],
-        [10, ChordQuality.Major,        'bVII'],
-        // 副属
-        [4,  ChordQuality.Dominant7,    'III7'],    // V/vi（不是借调，是大三+dom7）
-        [2,  ChordQuality.Dominant7,    'II7'],     // V/V
-    ];
-    const results: string[] = [];
-    let passed = 0, failed = 0;
-    for (const [pc, q, expected] of cases) {
-        const got = pitchClassToNumeral(pc, q);
-        const ok = got === expected;
-        if (ok) passed++; else failed++;
-        results.push(`${ok ? 'OK ' : 'FAIL'} pc=${pc} q=${ChordQuality[q]} → "${got}" (expected "${expected}")`);
-    }
-    return { passed, failed, cases: results };
-}
