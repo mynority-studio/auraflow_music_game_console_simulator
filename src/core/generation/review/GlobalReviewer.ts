@@ -274,6 +274,85 @@ export class GlobalReviewer {
     }
 
     /**
+     * PR#11 §5.3 平行禁忌检测 (Parallel Motion Detection)
+     * 检测主旋律 + Bass 连续同向平行五度/八度,违规时修复主旋律第二点
+     *
+     * 算法:
+     * 1. 按时间对齐出同时发声的 (melody, bass) 事件对
+     * 2. 相邻两对都是 P5 (interval class = 7) 或 P8 (interval class = 0)
+     * 3. 且 melody 和 bass 都有同向运动 → 判定平行禁忌
+     * 4. 修复:把第二对的 melody pitch 用 shiftDiatonic 反方向移一步
+     *
+     * 在相对空间运行(applyOffset 之前调用),不消耗 PRNG
+     */
+    public static reviewParallelMotion(
+        melody: NoteData[],
+        bass: NoteData[],
+        chords: GeneratedChord[],
+        tonality: Tonality
+    ): void {
+        if (melody.length < 2 || bass.length === 0) return;
+
+        // 1. 提取同时发声的 (melody, bass) 事件对(按 melody onset 线性扫描 bass)
+        // C 可移植:预分配固定大小数组,melody 最大 ~400 个 note/song
+        const pairs: { mel: NoteData; bass: NoteData; t: number }[] = [];
+        let bassIdx = 0;
+        for (let i = 0; i < melody.length; i++) {
+            const m = melody[i];
+            // 找 t = m.onset 时刻仍在发声的 bass note(线性扫描,向前推进)
+            while (bassIdx < bass.length - 1 && bass[bassIdx + 1].onset <= m.onset + 1e-6) {
+                bassIdx++;
+            }
+            const b = bass[bassIdx];
+            if (b && b.onset <= m.onset + 1e-6 && b.onset + b.duration > m.onset + 1e-6) {
+                pairs.push({ mel: m, bass: b, t: m.onset });
+            }
+        }
+
+        // 2. 遍历相邻对,检测同向平行 P5/P8
+        let fixCount = 0;
+        for (let i = 0; i < pairs.length - 1; i++) {
+            const p1 = pairs[i];
+            const p2 = pairs[i + 1];
+
+            const int1 = p1.mel.pitch - p1.bass.pitch;
+            const int2 = p2.mel.pitch - p2.bass.pitch;
+            const ic1 = ((int1 % 12) + 12) % 12;
+            const ic2 = ((int2 % 12) + 12) % 12;
+
+            const isParallelFifth = ic1 === 7 && ic2 === 7;
+            const isParallelOctave = ic1 === 0 && ic2 === 0;
+            if (!isParallelFifth && !isParallelOctave) continue;
+
+            // 必须 melody 和 bass 都有移动(排除同音持续)
+            const melMove = p2.mel.pitch - p1.mel.pitch;
+            const bassMove = p2.bass.pitch - p1.bass.pitch;
+            if (Math.abs(melMove) < 1e-6 || Math.abs(bassMove) < 1e-6) continue;
+
+            // 必须同方向(真正的"平行")
+            const sameDirection = (melMove > 0 && bassMove > 0) || (melMove < 0 && bassMove < 0);
+            if (!sameDirection) continue;
+
+            // 3. 修复:把第二对的 melody pitch 向反方向移一个音阶步
+            const activeChord = chords.find(c => p2.mel.onset >= c.startBeat && p2.mel.onset < c.endBeat) || chords[0];
+            const safeScalePcs = HarmonyCore.getSafeScalePitches(activeChord, tonality);
+            const direction = melMove > 0 ? -1 : 1;
+            const newPitch = HarmonyCore.shiftDiatonic(p2.mel.pitch, safeScalePcs, direction);
+
+            // 检查新音程 —— 如果仍是 P5/P8,放弃修复(避免破坏 motif 轮廓)
+            const newInt = ((newPitch - p2.bass.pitch) % 12 + 12) % 12;
+            if (newInt !== 7 && newInt !== 0) {
+                p2.mel.pitch = newPitch;
+                fixCount++;
+            }
+        }
+
+        if (fixCount > 0) {
+            console.log(`🔧 [GlobalReviewer] Fixed ${fixCount} parallel motion${fixCount === 1 ? '' : 's'}`);
+        }
+    }
+
+    /**
      * 辅助函数：找到距离目标音高最近的八度音
      */
     private static getNearestOctave(targetPc: number, referencePitch: number): number {

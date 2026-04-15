@@ -45,6 +45,15 @@ export class Orchestrator {
      * 从 StyleConfig.orchestration.mixingPreferences 应用混音预设到 palette。
      * 之后再做 vocal-presence 运行时调整（vocal 不存在时 melody 居中提升）。
      */
+    /**
+     * PR#11 §8.2: 零 GC 友好的批量追加
+     * 取代 `dst.push(...src)` 的 spread 展开 — 在 C 移植时直接翻译为 `for (i) dst[n++] = src[i]`
+     * JS 运行时下 `push(...arr)` 会创建临时 argv 数组,在热循环里产生 GC 压力
+     */
+    private static appendAll<T>(dst: T[], src: readonly T[]): void {
+        for (let i = 0; i < src.length; i++) dst.push(src[i]);
+    }
+
     private static applyMixerState(palette: EnsembleDraft, style: StyleConfig) {
         if (!palette.mixing) {
             palette.mixing = {};
@@ -242,7 +251,7 @@ export class Orchestrator {
                     }
                     
                     // Add foreshadowing intro
-                    idiomaticMelody.push(...foreshadowingIntro);
+                    Orchestrator.appendAll(idiomaticMelody, foreshadowingIntro);
                     idiomaticMelody.sort((a, b) => a.onset - b.onset);
 
                     // Replace intro chords with chorus chords to match the foreshadowing melody
@@ -596,7 +605,7 @@ export class Orchestrator {
                 
                 if (track.motifRole === 'Background' && track.processedUserMotif && track.processedUserMotif.length > 0) {
                     // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
-                    lhNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 36, track.motifRole));
+                    Orchestrator.appendAll(lhNotes, MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 36, track.motifRole));
                 } else {
                     // 🌟 PR#9 §4.1: Kick 锚点计算
                     // 4/4 默认 Kick 在每小节 beat 0 和 beat 2(TextureMapper.generateDrumGroove L213-221)
@@ -618,7 +627,7 @@ export class Orchestrator {
                             if (beat2 >= chord.startBeat - 1e-6 && beat2 < chord.endBeat - 1e-6) kickAnchors.push(beat2);
                         }
                     }
-                    lhNotes.push(...TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors));
+                    Orchestrator.appendAll(lhNotes, TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors));
                 }
             }
 
@@ -643,14 +652,14 @@ export class Orchestrator {
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0 && !playChords) {
                     // If Middleground motif is present and chords are not playing, put it here
                     // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
-                    counterMelodyNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60, track.motifRole));
+                    Orchestrator.appendAll(counterMelodyNotes, MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60, track.motifRole));
                 } else if (forceCounterPad || palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir')) {
                     const isVoiceOrString = palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Choir');
                     // 密度拥挤时强制 Pad(长音铺底,不添乱);乐器是 Pad 型且高能量时允许 Synth_Pulse
                     const counterTexture = (!forceCounterPad && energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
-                    counterMelodyNotes.push(...TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody));
+                    Orchestrator.appendAll(counterMelodyNotes, TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody));
                 } else {
-                    counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, track.tonality));
+                    Orchestrator.appendAll(counterMelodyNotes, TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, track.tonality));
                 }
             }
 
@@ -677,7 +686,7 @@ export class Orchestrator {
                         chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel
                     );
                 }
-                rhNotes.push(...chordNotes);
+                Orchestrator.appendAll(rhNotes, chordNotes);
                 
                 // Update prevVoicing for the next chord
                 if (chordNotes.length > 0) {
@@ -750,7 +759,7 @@ export class Orchestrator {
                     const treatAsIntro = sec.sectionType === SectionType.Intro && !isDrumSoloIntro;
                     const isOutroSec = sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro;
 
-                    drumNotes.push(...TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, isOutroSec, swingRatio, nextEnergyLevel, hasFullGrooveStarted));
+                    Orchestrator.appendAll(drumNotes, TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, isOutroSec, swingRatio, nextEnergyLevel, hasFullGrooveStarted));
                 }
             });
         }
@@ -873,7 +882,7 @@ export class Orchestrator {
                 const sectionMelody = finalVocalNotes!.filter(n => n.onset >= sec.startBeat && n.onset < sec.endBeat);
                 const sectionChords = track.chords.filter(c => c.startBeat < sec.endBeat && c.endBeat > sec.startBeat);
                 const harmonyNotes = TextureMapper.generateVocalHarmony(sectionMelody, sectionChords, sec.energyLevel, track.tonality);
-                finalVocalNotes!.push(...harmonyNotes);
+                Orchestrator.appendAll(finalVocalNotes!, harmonyNotes);
             });
         }
         const humanizedVocal = hasVocal && finalVocalNotes ? finalVocalNotes : undefined;
@@ -921,6 +930,12 @@ export class Orchestrator {
             track.chords,
             track.tonality
         );
+
+        // 🌟 PR#11 §5.3: 平行禁忌检测(主旋律 + Bass)
+        // 在相对空间运行,applyOffset 之前调用
+        // Vocal 优先于 Melody(如果 vocal 存在则只检查 vocal)
+        const primaryMelodyForParallel = (humanizedVocal && humanizedVocal.length > 0) ? humanizedVocal : humanizedMelody;
+        GlobalReviewer.reviewParallelMotion(primaryMelodyForParallel, humanizedLH, track.chords, track.tonality);
 
         const finalKeyOffset = track.keyOffset || 0;
         const applyOffset = (notes: NoteData[]) => { notes.forEach(n => { const activeChord = track.chords.find(c => n.onset >= c.startBeat && n.onset < c.endBeat) || track.chords[0]; const chordKeyOffset = activeChord.keyOffset !== undefined ? activeChord.keyOffset : finalKeyOffset; n.pitch += chordKeyOffset; }); };
@@ -1136,30 +1151,78 @@ export class Orchestrator {
      * PR#10-B: 段落 velocity 对比曲线
      * 通过段落类型乘数放大 Verse/Chorus 的戏剧落差,解决"通篇平"
      * Intro 0.90 / Verse 0.88 / PreChorus 0.95 / Chorus 1.08 / Bridge 0.92 / Outro 0.85
+     *
+     * PR#11 §6.3: 能量断崖 ramp
+     * 相邻 section 的 energyLevel 差 ≥ 4 时,在过渡点 ±1 拍内做线性插值
+     * 避免 Verse→Chorus 的硬切 step change,让段落推进更自然
+     *
      * 不消耗 PRNG,ACVE 兼容
      */
+    private static readonly SECTION_VELOCITY_MULTS: Partial<Record<SectionType, number>> = {
+        [SectionType.Intro]: 0.90,
+        [SectionType.Verse]: 0.88,
+        [SectionType.PreChorus]: 0.95,
+        [SectionType.Chorus]: 1.08,
+        [SectionType.Bridge]: 0.92,
+        [SectionType.Outro]: 0.85,
+        [SectionType.PreOutro]: 0.85,
+    };
+    private static readonly ENERGY_CLIFF_THRESHOLD = 4;
+    private static readonly ENERGY_RAMP_WINDOW = 1.0; // 拍
+
+    private static getSectionMult(secType: SectionType): number {
+        const m = this.SECTION_VELOCITY_MULTS[secType];
+        return m !== undefined ? m : 1.0;
+    }
+
     private static applySectionVelocityCurve(notes: NoteData[], sections: SectionMetadata[]): void {
+        if (sections.length === 0) return;
+        // 预计算每个 section 的 velocity multiplier
+        const secMults: number[] = new Array(sections.length);
+        for (let si = 0; si < sections.length; si++) {
+            secMults[si] = this.getSectionMult(sections[si].sectionType);
+        }
+
         for (let i = 0; i < notes.length; i++) {
             const n = notes[i];
-            let mult = 1.0;
+            // 找 note 所在的 section 索引(线性扫描,section 数量 ~10 可接受)
+            let secIdx = -1;
             for (let si = 0; si < sections.length; si++) {
-                const sec = sections[si];
-                if (n.onset >= sec.startBeat - 1e-6 && n.onset < sec.endBeat - 1e-6) {
-                    switch (sec.sectionType) {
-                        case SectionType.Intro: mult = 0.90; break;
-                        case SectionType.Verse: mult = 0.88; break;
-                        case SectionType.PreChorus: mult = 0.95; break;
-                        case SectionType.Chorus: mult = 1.08; break;
-                        case SectionType.Bridge: mult = 0.92; break;
-                        case SectionType.Outro:
-                        case SectionType.PreOutro:
-                            mult = 0.85;
-                            break;
-                        default: mult = 1.0;
-                    }
+                if (n.onset >= sections[si].startBeat - 1e-6 && n.onset < sections[si].endBeat - 1e-6) {
+                    secIdx = si;
                     break;
                 }
             }
+            if (secIdx < 0) continue;
+
+            const sec = sections[secIdx];
+            let mult = secMults[secIdx];
+
+            // PR#11 §6.3: 能量断崖 ramp(前边界优先,避免双重 ramp)
+            let rampApplied = false;
+
+            // 与上一 section 的过渡:note 处于 section 开头 1 拍内
+            if (secIdx > 0 && n.onset - sec.startBeat < this.ENERGY_RAMP_WINDOW) {
+                const prevSec = sections[secIdx - 1];
+                if (Math.abs(sec.energyLevel - prevSec.energyLevel) >= this.ENERGY_CLIFF_THRESHOLD) {
+                    const prevMult = secMults[secIdx - 1];
+                    const t = (n.onset - sec.startBeat) / this.ENERGY_RAMP_WINDOW; // 0~1
+                    mult = prevMult + (mult - prevMult) * t;
+                    rampApplied = true;
+                }
+            }
+
+            // 与下一 section 的过渡:note 处于 section 末尾 1 拍内
+            if (!rampApplied && secIdx < sections.length - 1 && sec.endBeat - n.onset < this.ENERGY_RAMP_WINDOW) {
+                const nextSec = sections[secIdx + 1];
+                if (Math.abs(nextSec.energyLevel - sec.energyLevel) >= this.ENERGY_CLIFF_THRESHOLD) {
+                    const nextMult = secMults[secIdx + 1];
+                    const t = (sec.endBeat - n.onset) / this.ENERGY_RAMP_WINDOW; // 剩余时间比例
+                    // 接近边界时 t→0,mult 接近 nextMult
+                    mult = nextMult + (mult - nextMult) * t;
+                }
+            }
+
             n.velocity = Math.max(0.3, Math.min(1.0, n.velocity * mult));
         }
     }
