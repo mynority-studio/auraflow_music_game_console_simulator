@@ -28,6 +28,7 @@ export class TextureMapper {
     isBassSolo: boolean = false,
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
+    kickAnchors: number[] = [],
   ): NoteData[] {
     const bassTones = HarmonyCore.getChordTones(chord, 36);
     let rootMidi = bassTones[0];
@@ -67,6 +68,26 @@ export class TextureMapper {
       while (beat < chord.endBeat - 1e-6) {
         const isLastStep = (beat + step >= chord.endBeat - 1e-6);
         const vel = Math.abs(beat % 2) < 1e-6 ? 0.75 : 0.6;
+
+        // 🌟 PR#10-A: Root-Fifth Bass Pattern (deterministic, 高能量段落才生效)
+        // step=1 的高能量段:弱拍(beat 1/3)按 hash 决策用 fifth 替代 root,打破单调
+        // 不消耗 PRNG,选就近八度保持音域
+        let rootPitchForThisStep = rootMidi;
+        if (step === 1 && !isLastStep && energyLevel >= ENERGY.HIGH_MIN) {
+          const beatInChord = beat - chord.startBeat;
+          const isKickBeat = Math.abs((beatInChord % 2)) < 1e-6; // 0, 2 是 Kick 拍
+          if (!isKickBeat) {
+            // 弱拍(1, 3):hash 决策 40% 用 fifth
+            const hash = Math.floor(Math.abs(beat * 7 + rootMidi)) % 5;
+            if (hash < 2) {
+              let fifth = fifthMidi;
+              while (fifth > 43) fifth -= 12;
+              while (fifth < 28) fifth += 12;
+              // 跳跃保护:如果 fifth 距离 rootMidi 过远就放弃
+              if (Math.abs(fifth - rootMidi) <= 7) rootPitchForThisStep = fifth;
+            }
+          }
+        }
 
         // 🌟 Approach note：和弦最后一拍，如果有 nextChord 且根音跳跃 > 2 半音，
         // 注入半音趋近音（chromatic approach）指向下一和弦根音
@@ -111,13 +132,13 @@ export class TextureMapper {
               : Math.min(0.5, totalDur * 0.5);
             const mainDur = Math.max(0.25, totalDur - approachDur);
 
-            notes.push({ pitch: rootMidi, onset: beat, duration: mainDur, velocity: vel });
+            notes.push({ pitch: rootPitchForThisStep, onset: beat, duration: mainDur, velocity: vel });
             notes.push({ pitch: approachClamp, onset: beat + mainDur, duration: approachDur, velocity: vel * 0.7 });
           } else {
-            notes.push({ pitch: rootMidi, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
+            notes.push({ pitch: rootPitchForThisStep, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
           }
         } else {
-          notes.push({ pitch: rootMidi, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
+          notes.push({ pitch: rootPitchForThisStep, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
         }
         beat += step;
       }
@@ -125,6 +146,27 @@ export class TextureMapper {
 
     // 更新 prevBassRootMidi 供下一个和弦使用
     this.prevBassRootMidi = rootMidi;
+
+    // 🌟 PR#9 §4.1: Kick 锚点 velocity 重心
+    // Bass 发声若对齐 Kick 触发点 → velocity +0.1(地基感)
+    // 未对齐 → velocity -0.05(弱拍感)
+    // 不消耗 PRNG,ACVE 兼容;不改变节奏,仅 velocity 加权
+    if (kickAnchors.length > 0) {
+      for (let i = 0; i < notes.length; i++) {
+        let onKick = false;
+        for (let k = 0; k < kickAnchors.length; k++) {
+          if (Math.abs(notes[i].onset - kickAnchors[k]) < 1e-6) {
+            onKick = true;
+            break;
+          }
+        }
+        if (onKick) {
+          notes[i].velocity = Math.min(1.0, notes[i].velocity + 0.1);
+        } else {
+          notes[i].velocity = Math.max(0.3, notes[i].velocity - 0.05);
+        }
+      }
+    }
 
     const truncated = this.truncateToChordEnd(notes, chord.endBeat);
     this.clampToRange(truncated, 28, 43); // Bass: E1 ~ G2

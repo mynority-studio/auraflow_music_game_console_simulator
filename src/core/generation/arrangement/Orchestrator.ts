@@ -598,19 +598,56 @@ export class Orchestrator {
                     // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
                     lhNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 36, track.motifRole));
                 } else {
-                    lhNotes.push(...TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel));
+                    // 🌟 PR#9 §4.1: Kick 锚点计算
+                    // 4/4 默认 Kick 在每小节 beat 0 和 beat 2(TextureMapper.generateDrumGroove L213-221)
+                    // Section 无鼓时 anchors 为空,Bass 退回原有逻辑
+                    const kickAnchors: number[] = [];
+                    const sectionHasDrums =
+                        hasDrums &&
+                        activeSection.sectionType !== SectionType.Breakdown &&
+                        !(activeSection.sectionType === SectionType.Intro && !introHasDrums) &&
+                        !(activeSection.sectionType === SectionType.Verse && activeSection.energyLevel <= ENERGY.AMBIENT_MAX);
+                    if (sectionHasDrums) {
+                        const beatsPerBar = track.timeSignature?.[0] || 4;
+                        const firstBar = Math.floor(chord.startBeat / beatsPerBar);
+                        const lastBar = Math.ceil(chord.endBeat / beatsPerBar);
+                        for (let b = firstBar; b <= lastBar; b++) {
+                            const beat0 = b * beatsPerBar;
+                            const beat2 = b * beatsPerBar + 2;
+                            if (beat0 >= chord.startBeat - 1e-6 && beat0 < chord.endBeat - 1e-6) kickAnchors.push(beat0);
+                            if (beat2 >= chord.startBeat - 1e-6 && beat2 < chord.endBeat - 1e-6) kickAnchors.push(beat2);
+                        }
+                    }
+                    lhNotes.push(...TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors));
                 }
             }
 
             if (playCounterMelody) {
+                // 🌟 PR#9 §1.3: 全局 DensityTracker
+                // 统计当前 chord 时间段内主旋律 + 副旋律 onset 总数
+                // 跨声部密度 > 1.5 onsets/beat 时,CounterMelody 强制 Pad 模式(避免纵向拥挤)
+                const chordDuration = chord.endBeat - chord.startBeat;
+                let concurrentOnsets = 0;
+                for (let mi = 0; mi < idiomaticMelody.length; mi++) {
+                    const m = idiomaticMelody[mi];
+                    if (m.onset >= chord.startBeat - 1e-6 && m.onset < chord.endBeat - 1e-6) concurrentOnsets++;
+                }
+                for (let mi = 0; mi < idiomaticSecondaryMelody.length; mi++) {
+                    const m = idiomaticSecondaryMelody[mi];
+                    if (m.onset >= chord.startBeat - 1e-6 && m.onset < chord.endBeat - 1e-6) concurrentOnsets++;
+                }
+                const combinedDensity = chordDuration > 1e-6 ? concurrentOnsets / chordDuration : 0;
+                const forceCounterPad = combinedDensity > 1.5;
+
                 // 如果副旋律乐器是铺底音色或合成器，则生成 Pad 或 Synth_Pulse 织体，否则生成副旋律
                 if (track.motifRole === 'Middleground' && track.processedUserMotif && track.processedUserMotif.length > 0 && !playChords) {
                     // If Middleground motif is present and chords are not playing, put it here
                     // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
                     counterMelodyNotes.push(...MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 60, track.motifRole));
-                } else if (palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir')) {
-                    const isVoiceOrString = palette.counterMelodySound.includes('Voice') || palette.counterMelodySound.includes('String') || palette.counterMelodySound.includes('Choir');
-                    const counterTexture = (energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
+                } else if (forceCounterPad || palette.counterMelodySound?.includes('Pad') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('Synth') || palette.counterMelodySound?.includes('Choir')) {
+                    const isVoiceOrString = palette.counterMelodySound?.includes('Voice') || palette.counterMelodySound?.includes('String') || palette.counterMelodySound?.includes('Choir');
+                    // 密度拥挤时强制 Pad(长音铺底,不添乱);乐器是 Pad 型且高能量时允许 Synth_Pulse
+                    const counterTexture = (!forceCounterPad && energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
                     counterMelodyNotes.push(...TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody));
                 } else {
                     counterMelodyNotes.push(...TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, track.tonality));
@@ -852,6 +889,30 @@ export class Orchestrator {
         this.applyGrooveLFO(humanizedSecondaryMelody);
         // 注意：鼓组不做 humanize，保持网格精准
 
+        // 🌟 PR#9 §2.4: per-note velocity humanization(确定性,不消耗 PRNG)
+        // Bass 已由 Kick 锚点加权,此处不重复处理
+        this.applyVelocityHumanize(humanizedMelody);
+        this.applyVelocityHumanize(humanizedRH);
+        this.applyVelocityHumanize(humanizedCounterMelody);
+        this.applyVelocityHumanize(humanizedSecondaryMelody);
+        if (humanizedVocal) this.applyVelocityHumanize(humanizedVocal);
+
+        // 🌟 PR#10-B: 段落 velocity 对比曲线(Verse 0.88 / Chorus 1.08 / Bridge 0.92 等)
+        // 所有旋律类声部 + bass + chord 都应用,drums 保持精准不动
+        this.applySectionVelocityCurve(humanizedMelody, track.sections);
+        this.applySectionVelocityCurve(humanizedLH, track.sections);
+        this.applySectionVelocityCurve(humanizedRH, track.sections);
+        this.applySectionVelocityCurve(humanizedCounterMelody, track.sections);
+        this.applySectionVelocityCurve(humanizedSecondaryMelody, track.sections);
+        if (humanizedVocal) this.applySectionVelocityCurve(humanizedVocal, track.sections);
+
+        // 🌟 PR#10-C: 二次 Chorus 高八度推进(Melody / SecondaryMelody / Vocal)
+        // Bass / Chord / CounterMelody 保持原八度(避免纵向拥挤),只提升前景旋律
+        // Melody safe max = 84 (C6), Vocal max = 79 (G5)
+        this.applyChorusOctaveBoost(humanizedMelody, track.sections, 84);
+        this.applyChorusOctaveBoost(humanizedSecondaryMelody, track.sections, 84);
+        if (humanizedVocal) this.applyChorusOctaveBoost(humanizedVocal, track.sections, 79);
+
         // 7. 全局对位检查与修复 (Global Counterpoint Review)
         GlobalReviewer.reviewCounterpoint(
             humanizedVocal,
@@ -1071,6 +1132,95 @@ export class Orchestrator {
      * 灵感来源：Magenta Groove RNN 的微时序分析
      * 不消耗 PRNG（纯确定性数学函数），不影响 PRNG 序列
      */
+    /**
+     * PR#10-B: 段落 velocity 对比曲线
+     * 通过段落类型乘数放大 Verse/Chorus 的戏剧落差,解决"通篇平"
+     * Intro 0.90 / Verse 0.88 / PreChorus 0.95 / Chorus 1.08 / Bridge 0.92 / Outro 0.85
+     * 不消耗 PRNG,ACVE 兼容
+     */
+    private static applySectionVelocityCurve(notes: NoteData[], sections: SectionMetadata[]): void {
+        for (let i = 0; i < notes.length; i++) {
+            const n = notes[i];
+            let mult = 1.0;
+            for (let si = 0; si < sections.length; si++) {
+                const sec = sections[si];
+                if (n.onset >= sec.startBeat - 1e-6 && n.onset < sec.endBeat - 1e-6) {
+                    switch (sec.sectionType) {
+                        case SectionType.Intro: mult = 0.90; break;
+                        case SectionType.Verse: mult = 0.88; break;
+                        case SectionType.PreChorus: mult = 0.95; break;
+                        case SectionType.Chorus: mult = 1.08; break;
+                        case SectionType.Bridge: mult = 0.92; break;
+                        case SectionType.Outro:
+                        case SectionType.PreOutro:
+                            mult = 0.85;
+                            break;
+                        default: mult = 1.0;
+                    }
+                    break;
+                }
+            }
+            n.velocity = Math.max(0.3, Math.min(1.0, n.velocity * mult));
+        }
+    }
+
+    /**
+     * PR#10-C: 二次 Chorus 高八度推进
+     * 第二次及以后的 Chorus,melody pitch +12(带 maxPitch clamp 保护)
+     * 不消耗 PRNG,ACVE 兼容
+     */
+    private static applyChorusOctaveBoost(notes: NoteData[], sections: SectionMetadata[], maxPitch: number): void {
+        // 先统计出哪些 chorus section 是"二次及以后"
+        let chorusSeen = 0;
+        const boostedSectionBounds: Array<{ start: number; end: number }> = [];
+        for (let si = 0; si < sections.length; si++) {
+            const sec = sections[si];
+            if (sec.sectionType === SectionType.Chorus) {
+                chorusSeen++;
+                if (chorusSeen >= 2) {
+                    boostedSectionBounds.push({ start: sec.startBeat, end: sec.endBeat });
+                }
+            }
+        }
+        if (boostedSectionBounds.length === 0) return;
+
+        for (let i = 0; i < notes.length; i++) {
+            const n = notes[i];
+            let inBoost = false;
+            for (let b = 0; b < boostedSectionBounds.length; b++) {
+                if (n.onset >= boostedSectionBounds[b].start - 1e-6 && n.onset < boostedSectionBounds[b].end - 1e-6) {
+                    inBoost = true;
+                    break;
+                }
+            }
+            if (!inBoost) continue;
+            const boosted = n.pitch + 12;
+            if (boosted <= maxPitch) {
+                n.pitch = boosted;
+            }
+            // 超出 maxPitch 则保持原样,不丢失音符
+        }
+    }
+
+    /**
+     * PR#9 §2.4: 确定性 velocity humanization(不消耗 PRNG)
+     * 基于 (onset, pitch) 做 deterministic hash,产生 ±0.06 扰动
+     * 强拍 +0.03 / 弱拍 -0.03,加强拍感
+     * 仅作用于 melody/chord/counter/secondary/vocal(bass 已由 Kick 锚点处理)
+     */
+    private static applyVelocityHumanize(notes: NoteData[]): void {
+        for (let i = 0; i < notes.length; i++) {
+            const n = notes[i];
+            // 整数 hash:基于 onset * 17 + pitch * 23,mod 13 产生 -6~+6 索引
+            const raw = Math.floor(Math.abs(n.onset * 17 + n.pitch * 23));
+            const jitter = ((raw % 13) - 6) / 100; // -0.06 ~ +0.06
+            const beatFraction = ((n.onset % 1) + 1) % 1;
+            const isDown = beatFraction < 1e-6 || beatFraction > 1 - 1e-6;
+            const bias = isDown ? 0.03 : -0.03;
+            n.velocity = Math.max(0.3, Math.min(1.0, n.velocity + jitter + bias));
+        }
+    }
+
     private static applyGrooveLFO(notes: NoteData[]): void {
         for (let i = 0; i < notes.length; i++) {
             const note = notes[i];
