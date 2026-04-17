@@ -96,6 +96,9 @@ const DefaultStyle: StyleConfig = {
         melismaProbability: 0,
         sequenceFreezeRhythm: false,
         chordMelodyProbability: 0,
+        // 🌟 V3.6 MomentumStage：物理动量与阻尼（Luis 旋律连贯性诊断 #1）
+        // 详见 docs/momentum_stage_design.md
+        useMomentum: true,
         phraseLengthProfile: {
             name: 'pop',
             perSection: {

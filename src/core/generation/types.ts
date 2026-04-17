@@ -294,6 +294,8 @@ export interface StyleConfig {
         melismaProbability?: number;      // 转音瀑布触发概率。0=禁止，0.35=R&B高频
         sequenceFreezeRhythm?: boolean;   // vary/resolve 变奏时冻结节奏DNA仅做音程模进
         chordMelodyProbability?: number;  // ChordMelody 织体触发概率。0=不使用，0.7=Lo-fi/Neo-Soul
+        // --- MomentumStage 开关（V3.6 Luis #1：物理动量与阻尼，详见 docs/momentum_stage_design.md）---
+        useMomentum?: boolean;            // 默认 true，关闭后跳过 MomentumStage（等价于 V3.5 行为）
     };
     contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
     modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };

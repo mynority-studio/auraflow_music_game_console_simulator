@@ -3,7 +3,7 @@
 > **文档等级** — 最高约束(与 `music_generation_pipeline_rule.md` 并列)
 > **用途** — 每次大型优化 / 架构调整 / PR 合并后,必须按本文档逐项复盘
 > **读者** — 算法开发者 / AI Agent / Code Reviewer
-> **版本基线** — 2026-04-15 V1.0(PR #1~#7)；2026-04-17 V1.2(PR#8/9/11 + V3.5 §14 新增 24 检查项)；2026-04-17 V1.3(分层重构 — §12 状态快照剥离至 `docs/audits/current_state.md`，rules-tier 只保留恒定约束)
+> **版本基线** — 2026-04-15 V1.0(PR #1~#7)；2026-04-17 V1.2(PR#8/9/11 + V3.5 §14 新增 24 检查项)；2026-04-17 V1.3(分层重构 — §12 状态快照剥离至 `docs/audits/current_state.md`，rules-tier 只保留恒定约束)；2026-04-17 V1.4(V3.6 MomentumStage §15 新增 8 检查项)
 
 ---
 
@@ -755,6 +755,80 @@
 - **硬约束**:至少 SteadyDrumIdiom / AcousticSwingDrumIdiom 必须真正消费 swing(后者名字含 Swing)
 - **当前状态**:❌ **审计发现** — 6 个 DrumIdiom 均**未消费** swing 参数(grep 验证零处使用)。AcousticSwingDrumIdiom 名字误导
 - **tech debt**:登记为 P2 — DrumIdiom swing 消费实装
+
+---
+
+## 15. MomentumStage 动量与阻尼系统 ⭐ 新增维度 (V3.6)
+
+> **新增日期** — 2026-04-17(V1.4 同步扩充)
+> **背景** — V3.6 引入 MomentumStage 物理动量系统(Luis 旋律连贯性诊断 #1),给非 anchor 过渡音注入运动学惯性。完整设计契约见 `docs/momentum_stage_design.md`。
+> **审计触发条件** — 任何对 `/composing/MomentumStage.ts`、MelodyEngine 中 MomentumStage 集成点、StyleConfig.melody.useMomentum 配置的改动。
+
+### 15.1 PRNG 纯洁性 (PRNG Purity)
+
+- **检查点**:MomentumStage 整个 smooth() 流程必须零 `PRNGManager.next()` 调用
+- **证据位置**:`src/core/generation/composing/MomentumStage.ts` 全文
+- **硬约束**:
+  - ACVE stateC / stateD 在 MomentumStage 开/关下必须严格相等
+  - 任何引入 PRNG 消耗的修改必须重跑全部黄金种子
+- **当前状态**:✅ 已实现
+- **审计命令**:`grep -n "PRNGManager\|Math.random" src/core/generation/composing/MomentumStage.ts` — 应为空
+
+### 15.2 Anchor 不变性 (Anchor Invariance)
+
+- **检查点**:所有 `isPreBuiltAnchor === true` 的音符 pitch 在 MomentumStage 前后严格相等;`isGraceNote === true` 的装饰音也不动
+- **证据位置**:`MomentumStage.ts:smooth()` 跳过保护(`if (curr.isPreBuiltAnchor === true) { resetMomentum; continue; }`)
+- **硬约束**:违反此约束直接破坏 AnchorBackbone 的骨架契约
+- **当前状态**:✅ 已实现
+- **审计方法**:开/关 useMomentum 跑同 seed,逐 anchor 比对 pitch 必须 === 
+
+### 15.3 调整幅度上限 (Adjustment Cap)
+
+- **检查点**:单音 pitch 修改的绝对值 ≤ `MAX_ADJUSTMENT_SEMITONES` (默认 4 半音,≈ 2 diatonic step)
+- **证据位置**:`MomentumStage.ts:smooth()` 第 7 步 — `if (adjustment > MAX_ADJUSTMENT_SEMITONES) continue;`
+- **硬约束**:超阈值必须 **skip**(保留原音),禁止 clamp 后强行写入(会破坏 melodic intent)
+- **当前状态**:✅ 已实现
+
+### 15.4 Pitch Space RELATIVE 合规 (Pitch Space Compliance)
+
+- **检查点**:MomentumStage 内部禁读 `GlobalContext.currentKeyOffset`,所有 pitch 操作必须在 RELATIVE 空间
+- **证据位置**:`MomentumStage.ts` 不 import `GlobalContext`,只调 `HarmonyCore.shiftDiatonic` / `snapToScale`(均 RELATIVE-safe)
+- **硬约束**:K-1 / K-3 / K-5 契约
+- **当前状态**:✅ 已实现
+- **审计命令**:`grep -n "keyOffset\|GlobalContext" src/core/generation/composing/MomentumStage.ts` — 应为空
+
+### 15.5 阻尼债务消耗 (Damping Debt Discharge)
+
+- **检查点**:大跳(|chromaStep| ≥ `LEAP_THRESHOLD` = 5 半音)后,必须有连续 `LEAP_DAMPING_DEBT`(默认 2)个反 mSign 方向的强制 shiftDiatonic 调整(直到 dampingDebt 归零)
+- **证据位置**:`updateMomentum()` 设 dampingDebt;`smooth()` 第 6 步分支
+- **硬约束**:dampingDebt > 0 时,目标 pitch 必须由 `shiftDiatonic` 强制反向,**不受 strength 缩放影响**(阻尼是硬性的)
+- **当前状态**:✅ 已实现
+
+### 15.6 Style 开关 (Style Toggle)
+
+- **检查点**:`StyleConfig.melody.useMomentum === false` 时,MomentumStage 必须完全跳过(等价于 V3.5 行为)
+- **证据位置**:`MelodyEngine.ts` 集成处 `if (style.melody?.useMomentum !== false ...)`
+- **硬约束**:开关 false 时,melody 输出必须**逐字段相等**于 V3.5 基线(给予回滚保险)
+- **当前状态**:✅ 已实现
+- **审计方法**:同 seed 下 `useMomentum: true/false` 的 melody pitch 数组比对(false 必须与 V3.5 黄金种子哈希匹配)
+
+### 15.7 张力耦合公式 (Tension Coupling)
+
+- **检查点**:strength 公式 = `TENSION_STRENGTH_BASE` + `TENSION_STRENGTH_GAIN × tension`,默认 `0.5 + 0.5 × tension`,所以 strength ∈ [0.5, 1.0]
+- **证据位置**:`MomentumStage.ts` 常数定义 + `smooth()` 第 5 步
+- **硬约束**:
+  - tension 必须 clamp 到 [0, 1]
+  - strength 仅影响**软推动分支**(非阻尼债务分支)
+  - 缺省 tensionEnvelope 时按 strength=1.0 处理(行为最强,适合无段落上下文测试)
+- **当前状态**:✅ 已实现
+
+### 15.8 仅主旋律应用 (Melody-Only Scope)
+
+- **检查点**:MomentumStage 不应用于 vocal、counterMelody、bass 等其它声部
+- **证据位置**:`MelodyEngine.ts` 集成处仅传 `reviewed.melody`,vocal 不调用
+- **硬约束**:vocal / counterMelody / bass 的 pitch 在 MomentumStage 前后必须**严格相等**
+- **当前状态**:✅ 已实现
+- **理由**:per design Q3 决策 a,副旋律有自己的 ParallelHarmony 约束,注入动量可能冲突
 
 ---
 

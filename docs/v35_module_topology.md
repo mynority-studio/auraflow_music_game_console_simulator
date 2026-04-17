@@ -7,7 +7,7 @@
 
 ---
 
-## 当前版本：V3.5（2026-04-17）
+## 当前版本：V3.6（2026-04-17，叠加 V3.5 + MomentumStage）
 
 ### MelodyEngine 内部新增步骤（§1.1 step 2 内）
 
@@ -20,6 +20,10 @@ generateFullSong() 内部：
   │     └─ realizeMotif() 内：Bresenham 插值 + 弧度叠加替代原 contour
   ├─ GlobalReviewer.reviewAndFix() (Phase 1)
   ├─ cleanMelodyPostProcessing()  ← P5a/b/c 大跳/三全音/同音
+  ├─ ★ V3.6 MomentumStage.smooth() ★  ← 物理动量与阻尼（Luis #1，零 PRNG）
+  │     · 仅主旋律应用（vocal/counter 不动）
+  │     · StyleConfig.melody.useMomentum 可关闭（默认 true）
+  │     · 详见 docs/momentum_stage_design.md
   └─ AnchorDecisionStage.annotate()  ← 后处理 anchor 标注 + snap
 ```
 

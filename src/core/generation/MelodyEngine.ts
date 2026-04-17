@@ -11,6 +11,8 @@ import { GenerationOptions } from "./types";
 
 import { GlobalReviewer } from "./review/GlobalReviewer";
 import { AnchorDecisionStage } from "./composing/AnchorDecisionStage";
+import { MomentumStage } from "./composing/MomentumStage";
+import { PhraseContourPlanner } from "./composing/PhraseContourPlanner";
 
 import { MoodId, MoodRegistry } from "./config/MoodFlags";
 
@@ -271,6 +273,20 @@ export class MelodyEngine {
     };
     cleanMelodyPostProcessing(reviewed.melody);
     if (reviewed.vocal) cleanMelodyPostProcessing(reviewed.vocal);
+
+    // 🌟 V3.6 MomentumStage 阶段⑨.5：物理动量与阻尼（Luis #1）
+    // 仅对主旋律 melody 应用（per design Q3 决策 a），vocal/counter 不动
+    // 零 PRNG 消耗 — ACVE stateC/D 不变
+    // 详见 docs/momentum_stage_design.md
+    if (style.melody?.useMomentum !== false && reviewed.melody.length >= 2 && reviewed.chords.length > 0) {
+      const tensionEnv = PhraseContourPlanner.buildForSong(sections);
+      MomentumStage.smooth({
+        notes: reviewed.melody,
+        chords: reviewed.chords,
+        tonality,
+        tensionEnvelope: tensionEnv,
+      });
+    }
 
     // 🌟 P0 AnchorDecisionStage：按 section 为单位做全局 annotate
     // 放在 reharmonize + GlobalReviewer 之后 —— 保证 anchor 对齐最终 chord 和最终旋律

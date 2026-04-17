@@ -55,6 +55,8 @@
 > **V1.2 更新**(2026-04-17 PR#8/9/11 + V3.5 回写): 7 项升级 ✅ — 1.3(PR#9 DensityTracker)、4.1(V3.5 kickAnchors)、4.2(PR#8 capSyncopation)、5.3(PR#11 reviewParallelMotion)、6.3(PR#11 ramp)、7.2(PR#8 requireSidechain 唤醒)、1.4(行号漂移修正)。8.2 保持 ⚠️(已部分清理,冷路径残留)。原 ❌ 全部清零,统计从 ✅20/⚠️6/❌2 → ✅25/⚠️3/❌0。**同步新增 audit_standard §14 V3.5 RichIdioms 模块审计维度**(7 模块 24 检查项,覆盖 DrumIdiomRouter / CounterMelodyRouter / PianoIdiomRouter / AnchorBackbone / AnchorDecisionStage / PhraseContourPlanner / Subgenre+grooveDNA)。
 >
 > **V1.3 更新**(2026-04-17 文档治理): §12 状态快照 + tech debt 列表从 `.claude/rules/music_engine_audit_standard.md` 剥离至本文件,同时 pipeline_rule 附录 B(V3.5 模块拓扑)剥离至 `docs/v35_module_topology.md`。Rules-tier 仅保留恒定约束,迭代型快照统一进 docs。
+>
+> **V1.4 更新**(2026-04-17 V3.6 MomentumStage 上线): 新增 audit_standard §15 MomentumStage 动量与阻尼系统审计维度(8 检查项)。当前实装状态全部 ✅(15.1 PRNG 纯洁 / 15.2 Anchor 不变 / 15.3 调整幅度 ≤4 半音 / 15.4 RELATIVE 合规 / 15.5 阻尼债务 / 15.6 Style 开关 / 15.7 张力耦合 / 15.8 仅主旋律)。新增模块详见 `docs/momentum_stage_design.md` + `docs/v35_module_topology.md`(MelodyEngine 阶段⑨.5)。预期 Seed Lab Flow/Catchy 维度提升 ≥0.3,实际听感效果待累积更多 seed 样本验证。
 
 ### 主要 tech debt(按优先级)
 
@@ -66,6 +68,10 @@
 6. **P3** — 14.3.3 PianoIdiomRouter Pad/Pulsing 在 TextureMapper 端的差异化实现验证
 7. **P3** — 14.6.3 PhraseContourPlanner 边界连续性自动化测试
 8. **P3** — 14.6.4 velocity/timing 公式实际应用点的执行率审计
+9. **P3 (V3.6 新增)** — MomentumStage 听感效应调参(MAX_ADJUSTMENT_SEMITONES / MOMENTUM_THRESHOLD,基于 Seed Lab A/B 对照)— 用户首次听感"无明显异常"亦"无明显丝滑改善",可能是保守参数被 anchor 锚点 + clamp 吃掉
+10. **P3 (V3.6 后续)** — Luis 旋律建议 #4 Density 张力联动(PhraseContourPlanner densityHint → RhythmCells 池过滤)
+11. **P3 (V3.6 后续)** — Luis 旋律建议 #3 AnchorBackbone Bresenham → Catmull-Rom spline
+12. **P3 (V3.6 后续)** — Luis 旋律建议 #2 跨段 targetAnchor 注入
 
 > 已完成项(从历史 tech debt 清单移除): 4.2 切分音 cap (PR#8)、7.2 伪侧链 (PR#8)、1.3 DensityTracker (PR#9)、5.3 平行禁忌 (PR#11)、6.3 能量断崖 ramp (PR#11)、4.1 kickAnchors (V3.5)、1.4 m9 检测(已在 PR 早期完成,V1.0 误判为 tech debt)、V3.5 模块审计维度扩充(V1.2 audit_standard §14 已建立 — DrumIdiom / CounterMelody / PianoIdiom / AnchorBackbone / AnchorDecisionStage / PhraseContourPlanner / Subgenre+grooveDNA 7 维度 24 检查项)。
 
