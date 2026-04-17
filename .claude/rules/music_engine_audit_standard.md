@@ -3,7 +3,7 @@
 > **文档等级** — 最高约束(与 `music_generation_pipeline_rule.md` 并列)
 > **用途** — 每次大型优化 / 架构调整 / PR 合并后,必须按本文档逐项复盘
 > **读者** — 算法开发者 / AI Agent / Code Reviewer
-> **版本基线** — 2026-04-15 V1.0(PR #1~#7)；2026-04-17 V3.5 RichIdioms 新增 Idiom 系统/AnchorBackbone/PhraseContourPlanner（审计项待扩充）
+> **版本基线** — 2026-04-15 V1.0(PR #1~#7)；2026-04-17 V1.2(PR#8/9/11 回写 §12 + V3.5 RichIdioms 新增 §14 共 7 模块 24 检查项)
 
 ---
 
@@ -519,16 +519,16 @@
 
 ---
 
-## 12. 当前实现状态快照 (V1.0 基线)
+## 12. 当前实现状态快照 (V1.2 基线)
 
-基于 2026-04-15 对代码库的扫描结果(PR #7 合并后):
+基于 2026-04-17 对代码库的扫描结果(V3.5 RichIdioms 合并后,HEAD `8604c5c`):
 
 | # | 检查项 | 状态 | 证据 / 备注 |
 |---|--------|------|-------------|
 | 1.1 | 全局和声下发 | ✅ | HarmonyPipeline + Orchestrator.arrange |
 | 1.2 | 频段隔离 | ✅ | TextureMapper.clampToRange |
-| 1.3 | 节奏互锁 | ⚠️ | Call-and-Response 已实现,缺全局 DensityTracker |
-| 1.4 | Avoid Notes | ✅ | m9 检测已实现(ToplineEngine:2118,2126) |
+| 1.3 | 节奏互锁 | ✅ | PR#9 全局 DensityTracker (Orchestrator.ts:643) + Call-and-Response |
+| 1.4 | Avoid Notes | ✅ | m9 检测已实现(ToplineEngine:2365,2423; V3.5 后行号漂移) |
 | 2.1 | 和弦池深度 | ✅ | 28 候选,功能加分 +8 |
 | 2.2 | 节奏碎片化 | ⚠️ | RhythmCells 按 styleId 分组 + tag 过滤,无 styleId×energyLevel 交叉 |
 | 2.3 | 乐器随机池 | ✅ | EnsembleDrafter 10 slot |
@@ -536,19 +536,19 @@
 | 3.1 | Motif 生命周期 | ✅ | PR #6 修复 'A'→'M' bug |
 | 3.2 | 乐句呼吸 | ✅ | CadenceType + 强制休止 |
 | 3.3 | 能量曲线 | ✅ | EnergyThresholds 7 级 |
-| 4.1 | Kick+Bass 锁定 | ⚠️ | 无显式锚点,靠 GrooveDNA 间接 |
-| 4.2 | 切分音收敛 | ❌ | 无 cap 机制 |
+| 4.1 | Kick+Bass 锁定 | ✅ | V3.5 kickAnchors 显式构建并传入 BassLine (Orchestrator.ts:618-638 → TextureMapper.ts:31,198-202) |
+| 4.2 | 切分音收敛 | ✅ | PR#8 capSyncopation() + MAX_CONSECUTIVE_OFFBEAT=2 |
 | 5.1 | 公共音保留 | ✅ | ChordMask + Viterbi |
 | 5.2 | Top Voice 平滑 | ✅ | ChordScoreTable |
-| 5.3 | 平行禁忌 | ❌ | 无显式检测 |
+| 5.3 | 平行禁忌 | ✅ | PR#11 GlobalReviewer.reviewParallelMotion (GlobalReviewer.ts:294) |
 | 6.1 | 段落边界平滑 | ✅ | CC7 渐变 + entry delay |
 | 6.2 | Turnaround/Fill | ✅ | MotifLooper |
-| 6.3 | 能量断崖 | ⚠️ | 有段落类型无自动插入 |
+| 6.3 | 能量断崖 | ✅ | PR#11 applySectionVelocityCurve ramp(差≥4 时 ±1 拍线性插值) |
 | 7.1 | 增益级联 | ✅ | dB 相对缩放,顺序合规(Vocal+3/Melody 0/Drums+1/Bass-2/Chord-4) |
-| 7.2 | 伪侧链 | ⚠️ | Kick-triggered 代码被 needsSidechain=false 硬关闭 (PlaybackEngine:501) |
+| 7.2 | 伪侧链 | ✅ | PR#8 改为 requireSidechain !== false 默认启用 (PlaybackEngine.ts:502) |
 | 7.3 | 动态声场 | ✅ | CC10/CC74/CC91 |
 | 8.1 | PRNG 纯洁度 | ✅ | 零 Math.random |
-| 8.2 | 零 GC | ⚠️ | Viterbi/MotifMap 已优化,Orchestrator 仍有分配 |
+| 8.2 | 零 GC | ⚠️ | PR#11 清理 9 处 spread; 冷路径 .filter()/.map() 仍保留(guideline 级) |
 | 8.3 | ACVE 快照 | ✅ | A/B/C/D 已打点 |
 | 9.1 | 双空间分离 | ✅ | K-1 契约 |
 | 9.2 | 禁止预补偿 | ✅ | K-4 契约 |
@@ -558,29 +558,259 @@
 ### 统计
 
 - **总检查项**: 28(含技术检查,不含 §10 主观验证)
-- ✅ 已实现: 20
-- ⚠️ 部分实现: 6
-- ❌ 缺失: 2
+- ✅ 已实现: 25
+- ⚠️ 部分实现: 3
+- ❌ 缺失: 0
 
 > **V1.1 更新**(2026-04-15 基线审计): 1.4 升级 ✅(m9 已实现)、2.2 降级 ⚠️(记账修正)、7.1 保持 ✅(数值备注修正)、7.2 保持 ⚠️(发现硬关闭)。数字持平,但具体项目归类已同步。完整审计报告见 `docs/audits/2026-04-15_pr7_baseline_audit.md`。
+>
+> **V1.2 更新**(2026-04-17 PR#8/9/11 + V3.5 回写): 7 项升级 ✅ — 1.3(PR#9 DensityTracker)、4.1(V3.5 kickAnchors)、4.2(PR#8 capSyncopation)、5.3(PR#11 reviewParallelMotion)、6.3(PR#11 ramp)、7.2(PR#8 requireSidechain 唤醒)、1.4(行号漂移修正)。8.2 保持 ⚠️(已部分清理,冷路径残留)。原 ❌ 全部清零,统计从 ✅20/⚠️6/❌2 → ✅25/⚠️3/❌0。**同步新增 §14 V3.5 RichIdioms 模块审计维度**(7 模块 24 检查项,覆盖 DrumIdiomRouter / CounterMelodyRouter / PianoIdiomRouter / AnchorBackbone / AnchorDecisionStage / PhraseContourPlanner / Subgenre+grooveDNA)。
 
 ### 主要 tech debt(按优先级)
 
-1. **P0** — 4.2 切分音收敛 cap(可能导致节拍感混乱)
-2. **P1** — 1.3 全局 DensityTracker(解决声部拥挤)
-3. **P1** — 4.1 Kick 锚点显式传递给 Bass
-4. **P2** — 2.4 Humanization 扩展到 Melody/Chord
-5. **P2** — 7.2 Kick 触发伪侧链
-6. **P2** — 5.3 平行禁忌检测(Pop 风格非 P0)
-7. **P3** — 1.4 m9 vs Bass 碰撞检测
-8. **P3** — 6.3 能量断崖自动缓冲
+1. **P2** — 14.7.4 DrumIdiom swing 参数实际消费(6 个 idiom 均未消费 swing,AcousticSwingDrumIdiom 名字误导)
+2. **P2** — 2.4 Humanization 扩展到 Melody/Chord(humanize=0.01 仅 Drums 充分)
+3. **P2** — 2.2 RhythmCells 增加 styleId×energyLevel 交叉表
+4. **P3** — 8.2 Orchestrator 冷路径 spread/.filter()/.map() 进一步清理(C 移植友好)
+5. **P3** — 14.2.2 CounterMelody Call-and-Response 主旋律密度互锁定量验证
+6. **P3** — 14.3.3 PianoIdiomRouter Pad/Pulsing 在 TextureMapper 端的差异化实现验证
+7. **P3** — 14.6.3 PhraseContourPlanner 边界连续性自动化测试
+8. **P3** — 14.6.4 velocity/timing 公式实际应用点的执行率审计
+
+> 已完成项(从历史 tech debt 清单移除): 4.2 切分音 cap (PR#8)、7.2 伪侧链 (PR#8)、1.3 DensityTracker (PR#9)、5.3 平行禁忌 (PR#11)、6.3 能量断崖 ramp (PR#11)、4.1 kickAnchors (V3.5)、1.4 m9 检测(已在 PR 早期完成,V1.0 误判为 tech debt)、V3.5 模块审计维度扩充(V1.2 §14 已建立 — DrumIdiom / CounterMelody / PianoIdiom / AnchorBackbone / AnchorDecisionStage / PhraseContourPlanner / Subgenre+grooveDNA 7 维度 24 检查项)。
+
+---
+
+## 14. V3.5 RichIdioms 模块审计维度 ⭐ 新增维度
+
+> **新增日期** — 2026-04-17(V1.2 同步扩充)
+> **背景** — V3.5 引入 idioms/ 子系统、AnchorBackbone、AnchorDecisionStage、PhraseContourPlanner 与全链路 subgenre/grooveDNA。原 §1~§10 维度无法覆盖这些新模块的特定不变量,故新增 §14。
+> **审计触发条件** — 任何对 `/src/core/generation/idioms/`、`/composing/AnchorBackbone.ts`、`/composing/AnchorDecisionStage.ts`、`/composing/PhraseContourPlanner.ts` 或 subgenre 池(`StructureEngine.ts:128-143`)的改动。
+
+### 14.1 DrumIdiomRouter + 6 DrumIdiom
+
+#### 14.1.1 评分公平性 (Score Range & Tie-Breaking)
+
+- **检查点**:每个 DrumIdiom 的 `score(ctx)` 返回值是否在合理范围(典型 [20, 100])?同分时是否按 `name` 字典序确定性排序?
+- **证据位置**:`src/core/generation/idioms/drums/DrumIdiomRouter.ts:62-79`(评分循环 + sort)
+- **硬约束**:
+  - 任意 idiom 的 score 必须为有限正数(无 NaN / Infinity)
+  - tie-break 必须用 `idiom.name` 字典序,**禁止** Math.random() 或 PRNG
+- **当前状态**:✅ 已实现
+
+#### 14.1.2 切换保护阈值 (Switch Hysteresis)
+
+- **检查点**:相邻 section 选择 idiom 时,若 `prevIdiom` 在前两名且分差 < 10%,是否保持上一段 idiom?
+- **证据位置**:`DrumIdiomRouter.ts:62-79`,阈值常数 `0.10`
+- **硬约束**:`diffPct = (primaryScore - secondaryScore) / primaryScore`,必须用 `< 0.10`(严格小于,非 `<=`)
+- **当前状态**:✅ 已实现
+
+#### 14.1.3 华彩借调 PRNG 消耗一致性 (Flourish Determinism)
+
+- **检查点**:Bridge / PreChorus / Solo_Bridge / 高能 Chorus(energy≥9)+ 段长≥16 拍时,30% 概率切第二高分 idiom。无论是否触发,PRNG 消耗次数必须**恒定**。
+- **证据位置**:`DrumIdiomRouter.ts:83-108`(line 98 触发消耗,line 107 占位消耗)
+- **硬约束**:每个符合借调候选条件的 section,PRNG 消耗 == 1(无论结果如何);非候选 section 消耗 == 0
+- **当前状态**:✅ 已实现
+
+#### 14.1.4 过渡 Fill 完整性 (Transition Fill Integrity)
+
+- **检查点**:华彩借调触发时,主 idiom 末 1 拍是否含完整 4 音 Tom 链(Hi → Mid → Low → Snare)?华彩 idiom 首拍是否带 crash(pitch=49, duration=1.5, velocity≥0.85)?
+- **证据位置**:`DrumIdiomRouter.ts:113-148`
+- **硬约束**:
+  - Tom 链 onset 步进恰好 0.25 拍
+  - velocity 递增梯度 0.70 → 0.75 → 0.80 → 0.85
+  - 回归主 idiom 时,若 idiom 名不同且 energy≥4,首拍必须有重 kick + crash anchor
+- **当前状态**:✅ 已实现
+
+#### 14.1.5 Melody/Bass Listening 实际触发 (Listening Activation)
+
+- **检查点**:每个 DrumIdiom 是否真正消费传入的 `melodyNotes[]` / `bassNotes[]`,而非仅签名占位?
+- **证据位置**:`SteadyDrumIdiom.ts:46-49`(maskAccent 同拍位检测)、`SteadyDrumIdiom.ts:105-108`(bass ghost 弱拍检测)
+- **硬约束**:至少 SteadyDrumIdiom / HighEnergyDrumIdiom 两个主流 idiom 必须读 melody/bass(其余 idiom 可视设计意图豁免)
+- **当前状态**:✅ Steady 已实现;其他 idiom 实际消费率待逐一审计
+
+---
+
+### 14.2 CounterMelodyRouter + 3 模式
+
+#### 14.2.1 InterplayMode 哈希纯函数性 (Hash Purity)
+
+- **检查点**:`pickInterplayMode(sectionName, sectionType, energy)` 必须是纯函数,零 PRNG 消耗,同输入恒定输出
+- **证据位置**:`src/core/generation/idioms/countermelody/ICounterMelodyIdiom.ts:33-53`
+- **硬约束**:
+  - hash 公式 `hash = ((hash << 5) - hash + char) | 0` 必须用 `| 0` 强制 32-bit signed(C 移植一致性)
+  - 选择映射表(Chorus/Drop → 3 种,PreChorus/BuildUp → 2 种,默认 → 2:1 偏向 CallAndResponse)必须文档化
+- **当前状态**:✅ 已实现
+
+#### 14.2.2 主旋律密度互锁 (Density Hocketing)
+
+- **检查点**:CallAndResponseIdiom 的副旋律 onset 是否真正落在主旋律的休止区?
+- **证据位置**:`CallAndResponseIdiom.ts`(generate() 内部需读 melodyNotes 找空隙)
+- **硬约束**:CallAndResponse 模式下,副旋律 onset 与主旋律 onset 的同拍位重叠率 ≤ 20%
+- **当前状态**:🧪 实现存在但缺定量验证
+
+---
+
+### 14.3 PianoIdiomRouter + 5 策略
+
+#### 14.3.1 5 策略 score 上下界 (Score Bounds)
+
+- **检查点**:Block / Arpeggio / Rhythmic / Pad / Pulsing 五策略的 score 必须在 [20, 100],严格 `Math.min(score, 100)` 封顶
+- **证据位置**:`src/core/generation/idioms/piano/PianoIdiomRouter.ts:30-88`
+- **硬约束**:每个 strategy 的 base + bonus 总和 ≤ 100,任何 score 出现 >100 视为评分逻辑 bug
+- **当前状态**:✅ 已实现(代码内 Math.min 硬封顶)
+
+#### 14.3.2 切换保护 (Texture Hysteresis)
+
+- **检查点**:`prevTexture` 在前两名且分差 < 15% 时保持(注意阈值与 §14.1.2 不同 — 钢琴比鼓更宽容)
+- **证据位置**:`PianoIdiomRouter.ts:90-134`
+- **硬约束**:`diffPct < 0.15`(严格小于)
+- **当前状态**:✅ 已实现
+
+#### 14.3.3 texture 字符串与下游接口对齐 (Interface Contract)
+
+- **检查点**:Router 返回的 texture 字符串("Block"/"Arpeggio"/"Rhythmic"/"Pad"/"Pulsing")必须是 `TextureMapper.generateChordTexture()` 接受的合法值
+- **证据位置**:`PianoIdiomRouter.ts:105-130`(返回值)与 TextureMapper 实际生成代码
+- **硬约束**:Router 返回值集合 ⊆ TextureMapper 接受集合,新增 strategy 必须同步更新两侧
+- **当前状态**:⚠️ Pad / Pulsing 在 Router 已声明,TextureMapper 端实际差异化生成尚未深度验证
+
+---
+
+### 14.4 AnchorBackbone
+
+#### 14.4.1 anchor 数量自适应 (Anchor Count Adaptive)
+
+- **检查点**:每个 PhraseGroup 的 anchor 数量按长度自适应:≥13 拍 → 5,≥9 拍 → 4,≥5 拍 → 3,否则 2
+- **证据位置**:`src/core/generation/composing/AnchorBackbone.ts:110-126`
+- **硬约束**:`anchorCount ∈ [2, 5]`,**禁止** 1 或 6+
+- **当前状态**:✅ 已实现
+
+#### 14.4.2 anchor 间最大跳跃 (Max Anchor Interval)
+
+- **检查点**:相邻 anchorPitches[i] / anchorPitches[i+1] 跳跃 ≤ 7 半音(MAX_ANCHOR_INTERVAL,纯五度)
+- **证据位置**:`AnchorBackbone.ts:149-156`,`pickMidAnchorPitch()` 强制
+- **硬约束**:违反此约束的骨架必须被 reject 或 snap 修复
+- **当前状态**:✅ 已实现
+
+#### 14.4.3 cadenceTarget chord tone 对齐 (Cadence Lock)
+
+- **检查点**:末位 anchor 必须落在当前 chord 的 chord tone(或被 snap 吸附)
+- **证据位置**:`AnchorBackbone.ts:128-158`,`pickPitchForDegree()` + `precomputedCadenceDegree`
+- **硬约束**:cadenceTarget 必须由 `group.precomputedCadenceDegree` 或 `cadenceType`(Closed→root/3, Open→5/2)显式决定
+- **当前状态**:✅ 已实现
+
+#### 14.4.4 零 PRNG 消耗 (Zero PRNG Consumption)
+
+- **检查点**:整个 AnchorBackbone.buildForSection() 流程必须**零** `PRNGManager.next()` 调用(纯确定性算法)
+- **证据位置**:整个 `AnchorBackbone.ts`
+- **硬约束**:在 ACVE stateB → stateB' 之间穿插 anchorBackbone.buildForSection() 调用,PRNG state 必须不变
+- **当前状态**:✅ 已实现
+- **审计命令**:`grep -n "PRNGManager" src/core/generation/composing/AnchorBackbone.ts` — 应为空
+
+---
+
+### 14.5 AnchorDecisionStage
+
+#### 14.5.1 7 规则覆盖完整性 (Rule Coverage)
+
+- **检查点**:7 条规则(小节首末 / 局部极值 / 大跳目的地 / 长音 / 附点起音 / 段落末 / 装饰音排除)必须按声明顺序应用
+- **证据位置**:`src/core/generation/composing/AnchorDecisionStage.ts:58-142`
+- **硬约束**:规则编号 1~6 为 OR 关系打标 anchor;规则 7(装饰音排除)为 AND-NOT,必须**最后**执行覆盖前 6 项
+- **当前状态**:✅ 已实现
+
+#### 14.5.2 snap 位移上限 (Snap Displacement Cap)
+
+- **检查点**:非和弦音的 anchor 调用 `HarmonyCore.snapToScale()` 后,位移 > 3 半音 → 降级为非 anchor(保留原 pitch)
+- **证据位置**:`AnchorDecisionStage.ts:144-180`
+- **硬约束**:snap 位移 ≤ 3 半音是硬上限,违反必须 fallback 而非强行修改
+- **当前状态**:✅ 已实现
+
+#### 14.5.3 isPreBuiltAnchor 信任契约 (Pre-Built Anchor Trust)
+
+- **检查点**:P6a (AnchorBackbone) 写入 `isPreBuiltAnchor=true` 的音符,DecisionStage 必须**跳过** snap 校验(信任前置决策)
+- **证据位置**:`AnchorDecisionStage.ts:51-55`(初始化保留),`AnchorDecisionStage.ts:144-180`(snap 跳过条件)
+- **硬约束**:isPreBuiltAnchor 与 isAnchor 必须独立位,前者优先级高于规则打标
+- **当前状态**:✅ 已实现
+
+---
+
+### 14.6 PhraseContourPlanner
+
+#### 14.6.1 三层权重和 (Tension Weight Sum)
+
+- **检查点**:`tension = 0.5×songLevel + 0.3×sectionLevel + 0.2×phraseLevel`,权重和必须 == 1.0
+- **证据位置**:`src/core/generation/composing/PhraseContourPlanner.ts:177-186`
+- **硬约束**:0.5 + 0.3 + 0.2 = 1.0(若改权重,必须保持和为 1.0)
+- **当前状态**:✅ 已实现
+
+#### 14.6.2 张力值 ∈ [0, 1] clamped
+
+- **检查点**:每个层级返回值必须在 [0, 1],最终 tension 必须 clamp
+- **证据位置**:`PhraseContourPlanner.ts:177-186`
+- **硬约束**:clamp 必须用 `Math.max(0, Math.min(1, x))`,**禁止** 直接返回未约束值
+- **当前状态**:✅ 已实现
+
+#### 14.6.3 边界连续性 (Boundary Continuity)
+
+- **检查点**:section 边界处 tension 必须连续(section_i 末 ≈ section_{i+1} 首,误差 ε < 0.05)
+- **证据位置**:`PhraseContourPlanner.ts:31-43`(songLevel 映射表),`PhraseContourPlanner.ts:120-157`(sectionLevel 形态函数)
+- **硬约束**:相邻 SectionType 的张力差 ≤ 0.4 应通过形态函数自然过渡;>0.4 时由 §6.3 能量断崖 ramp 兜底
+- **当前状态**:🧪 形态函数已实现,边界连续性缺自动化测试
+
+#### 14.6.4 velocity / timing 公式 (Velocity & Timing Formula)
+
+- **检查点**:
+  - velocity 应用 `note.velocity *= (0.6 + 0.4 × tension)`
+  - timing jitter 应用 `jitter = baseJitter × (1.1 - tension)`(高张力 → 精准)
+- **证据位置**:`PhraseContourPlanner.ts` 头部注释 L14-16,实际应用在 ToplineEngine / Orchestrator
+- **硬约束**:tension=0 时 velocity 系数 0.6(柔);tension=1 时 1.0(满力);tension=1 时 jitter 系数 0.1(高度精准)
+- **当前状态**:⚠️ 公式已声明,实际应用点的执行率待逐一审计
+
+---
+
+### 14.7 全链路律动统一 (Subgenre + grooveDNA)
+
+#### 14.7.1 subgenre 抽样权重比 (Subgenre Sampling)
+
+- **检查点**:Pop / Funk / Lo-fi / Latin 4 池权重比必须严格 4:2:2:1
+- **证据位置**:`src/core/generation/composing/StructureEngine.ts:128-143`
+- **硬约束**:
+  - 任意 1000 seed 的统计分布必须满足 χ² 检验 p > 0.05
+  - 单池删改必须同步更新权重表(避免归一化错误)
+- **当前状态**:✅ 已实现
+
+#### 14.7.2 syncRange / swingRange 严格遵守 (Range Bounds)
+
+- **检查点**:抽样后的 songSyncopation / songSwing 必须落在 subgenre 对应区间内
+- **证据位置**:`StructureEngine.ts:139-140`(PRNG 抽样)
+- **硬约束**:
+  - Pop: sync ∈ [0.15, 0.35], swing ∈ [0.50, 0.52]
+  - Funk: sync ∈ [0.55, 0.80], swing ∈ [0.50, 0.54]
+  - Lo-fi: sync ∈ [0.30, 0.50], swing ∈ [0.55, 0.62]
+  - Latin: sync ∈ [0.45, 0.70], swing ∈ [0.50, 0.52]
+- **当前状态**:✅ 已实现
+
+#### 14.7.3 grooveDNA 数组单调递增 (grooveDNA Monotonicity)
+
+- **检查点**:每个 section 的 `grooveDNA[]` 排序后必须严格单调递增,长度 ≥ 2,值范围 ∈ [0, 2×beatsPerBar)
+- **证据位置**:`GrooveEngine.ts:33-162`(generateRhythmFingerprint),`GrooveEngine.ts:9`(MAX_CONSECUTIVE_OFFBEAT=2 capping)
+- **硬约束**:重复 onset 必须去重,溢出 loopLength 必须裁剪
+- **当前状态**:✅ 已实现
+
+#### 14.7.4 swing 参数实际消费 (Swing Consumption)
+
+- **检查点**:IDrumIdiom 接口接收 `swing` 参数,各 DrumIdiom 的 generate() 是否真正用 swing 调制 hi-hat / kick 时值?
+- **证据位置**:`IDrumIdiom.ts:53` 接口定义,各 idiom 的 generate() 实现
+- **硬约束**:至少 SteadyDrumIdiom / AcousticSwingDrumIdiom 必须真正消费 swing(后者名字含 Swing)
+- **当前状态**:❌ **审计发现** — 6 个 DrumIdiom 均**未消费** swing 参数(grep 验证零处使用)。AcousticSwingDrumIdiom 名字误导
+- **tech debt**:登记为 P2 — DrumIdiom swing 消费实装
 
 ---
 
 ## 13. 文档维护
 
 - **版本管理**:本文档每次大型架构调整后升级主版本号(V1.0 → V2.0)
-- **增补机制**:新增维度时,编号顺延(不修改已有编号,保证历史 PR 审计报告可追溯)
+- **增补机制**:新增维度时,编号顺延(不修改已有编号,保证历史 PR 审计报告可追溯)。新增维度示例:V1.2 在 §13 之前插入 §14(V3.5 RichIdioms 模块)
 - **基线快照**:每次版本升级时,§12 的状态表必须重新扫描更新
 - **与其他文档关系**:
   - `music_generation_pipeline_rule.md` — 管道拓扑硬约束(本文档 §8.x, §9.x 引用)

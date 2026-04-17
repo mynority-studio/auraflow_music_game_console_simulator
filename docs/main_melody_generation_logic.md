@@ -372,7 +372,7 @@ reviewAndFix(vocal, melody, chords, style, tonality):
        - 极端大跳（≥8半音）+ 后续同方向继续 ≥5半音 → 50% 概率反向 shiftDiatonic
 ```
 
-### 阶段 ⑨：P5a/b/c cleanMelodyPostProcessing（MelodyEngine.ts:158-259）
+### 阶段 ⑨：P5a/b/c cleanMelodyPostProcessing（MelodyEngine.ts:208-271）
 
 **P5a 大跳清零**（基于真实音 ≥0.2 拍，跳过装饰音）：
 ```typescript

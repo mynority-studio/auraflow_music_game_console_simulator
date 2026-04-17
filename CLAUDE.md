@@ -73,15 +73,26 @@ GeneratedTrack + StyleId + MusicContext
 
 ### 风格系统
 
-使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/StyleRegistry.ts`）映射 StyleId → StyleConfig。当前已注册 3 种风格：
+使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/styles/StyleRegistry.ts`）映射 StyleId → StyleConfig。`config/StyleRegistry.ts` 是兼容适配层，重导出 styles/ 子目录的真实实现。
 
-| StyleId | 名称 | BPM | 特征 |
-|---------|------|-----|------|
-| Default (0) | 通用流行 | 80-110 | 中等密度，Major 偏好 |
-| PowerBallad (1) | 欧美力量大歌 | 60-90 | 极留白，副歌爆发，弦乐铺底 |
-| RussianFolkBallad (2) | 俄式民谣 | 62-72 | 100% Minor，五声音阶，木吉他琶音 |
+**Enum 中声明的 StyleId**（3 个）：
 
-EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格。
+| StyleId | 名称 | 状态 |
+|---------|------|------|
+| ModernPop (0) | 现代华语流行 (Modern C-Pop) | ✅ 已注册（即 `Default` 别名指向 ModernPop） |
+| Synthwave (9) | 合成器浪潮 (Synthwave) | ⚠️ enum 占位，未注册 — `getStyleConfig()` 回退到 DefaultStyle |
+| LofiChill (17) | 放松低保真 (Lo-Fi Chill) | ⚠️ enum 占位，未注册 — `getStyleConfig()` 回退到 DefaultStyle |
+
+兼容别名：`Default = ModernPop`、`DarkSynthPop = Synthwave`、`LoFiChill = LofiChill`（StyleFlags.ts:6-9）。
+
+**当前唯一注册的 StyleConfig** — DefaultStyle（即 ModernPop），核心参数：
+- BPM 80-120
+- Tonality pool：Major 30% / Minor 25% / Dorian 15% / Mixolydian 15% / 五声 15%
+- densityBase [0.3, 0.85]，使用 Viterbi 和声管线（`useViterbiHarmony: true`）
+
+未来扩展 Synthwave / LofiChill 时，需在 `config/styles/` 下新增独立 StyleConfig 并加入 StyleRegistry 字典。
+
+EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格 — 当前由于仅 ModernPop 注册，实际所有 seed 都生成同一种风格（不同的 song-level 律动子风格 Pop/Funk/Lo-fi/Latin 由 V3.5 subgenre 池另行抽样）。
 
 ### Mood 系统
 
