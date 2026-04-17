@@ -544,47 +544,13 @@ expect(PRNGManager.getState()).toBe(recorded_stateD);   // PRNG 消耗一致
 
 ---
 
-## 附录 B：V3.5 RichIdioms 新增模块拓扑（2026-04-17）
+## 附录 B：V3.x 模块拓扑（已剥离至 docs/）
 
-> 以下模块是 §1.1 四模块管道的**内部子步骤**，不新增管道阶段（§0.3 合规）。
-
-### MelodyEngine 内部新增步骤（step 2 内）
-
-```
-generateFullSong() 内部：
-  ├─ P5f: tonality vs chord 投票反推（chord 生成后 → ToplineEngine 前）
-  ├─ ToplineEngine.generateTrackMelody()
-  │     ├─ PhraseContourPlanner.buildForSong()  ← 三层张力曲线（纯函数，不消耗 PRNG）
-  │     ├─ AnchorBackbone.buildForSection()     ← 骨架 anchor 生成（不消耗 PRNG）
-  │     └─ realizeMotif() 内：Bresenham 插值 + 弧度叠加替代原 contour
-  ├─ GlobalReviewer.reviewAndFix() (Phase 1)
-  ├─ cleanMelodyPostProcessing()  ← P5a/b/c 大跳/三全音/同音
-  └─ AnchorDecisionStage.annotate()  ← 后处理 anchor 标注 + snap
-```
-
-### Orchestrator 内部新增步骤（step 4 内）
-
-```
-arrange() 内部：
-  ├─ 鼓组：DrumIdiomRouter.generate(ctx)     ← 6 种 Idiom 评分选择 + 华彩借调
-  ├─ 副旋律：CounterMelodyRouter.generate()   ← 3 模式（ParallelHarmony / CallAndResponse）
-  ├─ 和弦：PianoIdiomRouter.pickTexture()     ← 5 策略评分选择 texture
-  ├─ 贝斯：generateBassLine(subgenre)         ← 4 种 hits pattern
-  └─ absoluteClampHigh(melodyIsPlucked ? 79 : 84)  ← 音域按包络分级
-```
-
-### Idiom 评分选择模型（通用）
-
-```typescript
-// 每个 Idiom 实现 score(ctx): number（0-100）
-// Router 在每个 section 入口调所有 idiom 的 score，选最高分
-// 切换保护：分差 < 10-15% 时保持上一段 idiom
-// 华彩借调：Bridge/PreChorus 30% 概率切第二高分 idiom
-
-interface IDrumIdiom {
-    readonly name: string;
-    score(ctx: DrumIdiomContext): number;
-    generate(ctx: DrumIdiomContext): NoteData[];
-}
-```
-
+> **V1.3 重构**(2026-04-17): 原附录 B "V3.5 RichIdioms 新增模块拓扑" 已剥离至 **`docs/v35_module_topology.md`**。
+>
+> **Why** — 模块拓扑会随每个版本（V3.5 / V3.6 / V4.0）演进，留在 rules-tier 会让 Claude 把过期模块当真。本文件(rules-tier)仅保留四模块**接口契约**（§1.1 + §2 + §3）—— 这些不会随版本变化；`docs/v35_module_topology.md` 承载**当前版本的内部实现拓扑**。
+>
+> **新增 idiom / 模块时的流程**:
+> 1. 如果只是**内部**子步骤（不新增 PRNG 消耗、不移动 ACVE 快照点）→ 仅更新 `docs/v35_module_topology.md`
+> 2. 如果**新增 PRNG 消耗**或**移动 ACVE 快照点** → 必须先修改本文件 §5（rules-tier）再更新 docs
+> 3. 如果新增的模块违反 §0.3 扩展协议（例如想新增管道阶段）→ 必须先修订本文件 §1.1
