@@ -1,6 +1,6 @@
 # 审计报告 — 2026-04-15 · PR #7 基线 · V1.0 首次全量审计
 
-> **审计标准文档**: `docs/music_engine_audit_standard.md` V1.0
+> **审计标准文档**: `.claude/rules/music_engine_audit_standard.md` V1.0（原 `docs/music_engine_audit_standard.md`，已迁移）
 > **审计范围**: 全部十维 28 项
 > **基准 commit**: `38922a8`(PR #7 完成后)
 > **涉及 commit**: `b8380bc..38922a8`(PR #1~#7 共 5 次 fix + 2 次 feat)

@@ -41,7 +41,7 @@
 | 场景 | 做法 | 不需改动 |
 |------|------|---------|
 | 新增风格 | 修改 `StyleFlags.ts` 中 `DefaultStyleConfig` 或新增 `StyleId` + 配置 | 管道接口 |
-| 新增演奏 Idiom | `/src/core/generation/idioms/` 下新增文件，由 Orchestrator/TextureMapper 分派 | 管道接口 |
+| 新增演奏 Idiom | `/src/core/generation/idioms/{drums,countermelody,piano}/` 下新增文件，实现 `IDrumIdiom` / `ICounterMelodyIdiom` 等接口，由对应 Router 评分选择分派 | 管道接口 |
 | 新增生成子模块 | 放入对应模块目录，自动继承本 Rule 全部约束 | 管道拓扑 |
 | 新增管道阶段 | **禁止** — 四模块拓扑不可变，需先修订本 Rule | — |
 
@@ -201,6 +201,20 @@ interface NoteData {
   pitchBendDuration?: number;
   fadeOutDuration?: number;
   isUserMotif?: boolean;
+  /**
+   * V3.5 新增：AnchorDecisionStage 标注的骨架音标记
+   * - true = 关键音（小节首末/极值/大跳目的地/长音/附点/乐句末）
+   * - false/undefined = 非关键音
+   * C 移植：与 isGraceNote/isUserMotif 共享 uint8_t flags bitfield，bit 2
+   * 读取规范（P-5）：必须写 `note.isAnchor === true`，不能 `if (note.isAnchor)`
+   */
+  isAnchor?: boolean;
+  /**
+   * V3.5 新增：AnchorBackbone 前置生成的骨架音标记
+   * AnchorDecisionStage 跳过此音的清零和 snap（信任前置决策）
+   * C 移植：uint8_t flags bitfield，bit 3
+   */
+  isPreBuiltAnchor?: boolean;
 }
 
 interface GeneratedChord {
@@ -225,6 +239,12 @@ interface SectionMetadata {
   endBeat: number;
   energyLevel: number;            // 1~10
   grooveDNA?: number[];           // 律动指纹
+  /**
+   * V3.5 新增：全曲律动子风格（"Pop" / "Funk" / "Lo-fi" / "Latin"）
+   * 由 StructureEngine 入口抽样，写入所有 section（同一首歌共享）
+   * Orchestrator 的 DrumIdiomRouter / 贝斯 / 和弦 / 旋律 RhythmCells 读取此字段
+   */
+  subgenre?: string;
 }
 ```
 
@@ -521,4 +541,50 @@ expect(PRNGManager.getState()).toBe(recorded_stateD);   // PRNG 消耗一致
 | Pitch Space 契约 | K-1 ~ K-7 | 7 |
 | 性能建议 | M-1 ~ M-3 | 3 (guideline) |
 | **合计** | | **43** (40 硬约束 + 3 guideline) |
+
+---
+
+## 附录 B：V3.5 RichIdioms 新增模块拓扑（2026-04-17）
+
+> 以下模块是 §1.1 四模块管道的**内部子步骤**，不新增管道阶段（§0.3 合规）。
+
+### MelodyEngine 内部新增步骤（step 2 内）
+
+```
+generateFullSong() 内部：
+  ├─ P5f: tonality vs chord 投票反推（chord 生成后 → ToplineEngine 前）
+  ├─ ToplineEngine.generateTrackMelody()
+  │     ├─ PhraseContourPlanner.buildForSong()  ← 三层张力曲线（纯函数，不消耗 PRNG）
+  │     ├─ AnchorBackbone.buildForSection()     ← 骨架 anchor 生成（不消耗 PRNG）
+  │     └─ realizeMotif() 内：Bresenham 插值 + 弧度叠加替代原 contour
+  ├─ GlobalReviewer.reviewAndFix() (Phase 1)
+  ├─ cleanMelodyPostProcessing()  ← P5a/b/c 大跳/三全音/同音
+  └─ AnchorDecisionStage.annotate()  ← 后处理 anchor 标注 + snap
+```
+
+### Orchestrator 内部新增步骤（step 4 内）
+
+```
+arrange() 内部：
+  ├─ 鼓组：DrumIdiomRouter.generate(ctx)     ← 6 种 Idiom 评分选择 + 华彩借调
+  ├─ 副旋律：CounterMelodyRouter.generate()   ← 3 模式（ParallelHarmony / CallAndResponse）
+  ├─ 和弦：PianoIdiomRouter.pickTexture()     ← 5 策略评分选择 texture
+  ├─ 贝斯：generateBassLine(subgenre)         ← 4 种 hits pattern
+  └─ absoluteClampHigh(melodyIsPlucked ? 79 : 84)  ← 音域按包络分级
+```
+
+### Idiom 评分选择模型（通用）
+
+```typescript
+// 每个 Idiom 实现 score(ctx): number（0-100）
+// Router 在每个 section 入口调所有 idiom 的 score，选最高分
+// 切换保护：分差 < 10-15% 时保持上一段 idiom
+// 华彩借调：Bridge/PreChorus 30% 概率切第二高分 idiom
+
+interface IDrumIdiom {
+    readonly name: string;
+    score(ctx: DrumIdiomContext): number;
+    generate(ctx: DrumIdiomContext): NoteData[];
+}
+```
 

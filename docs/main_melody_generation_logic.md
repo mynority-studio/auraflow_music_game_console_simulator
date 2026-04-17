@@ -702,7 +702,10 @@ melody: {
                             ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  Orchestrator.arrange(track) → ArrangedTrack                    │
-│  - 副旋律 / 贝斯 / 鼓 / 钢琴生成                                  │
+│  - 鼓组：DrumIdiomRouter（6 种 Idiom 评分选择 + 华彩借调）        │
+│  - 副旋律：CounterMelodyRouter（ParallelHarmony / CallAndResponse）│
+│  - 和弦：PianoIdiomRouter（5 策略评分选择 texture）               │
+│  - 贝斯：generateBassLine(subgenre)（4 种 hits pattern）         │
 │  - GlobalReviewer Phase 2 (counterpoint + parallel motion)       │
 │  - applyHumanization                                             │
 │  - applyOffset (+keyOffset → ABSOLUTE space)                     │
@@ -739,10 +742,71 @@ melody: {
 
 ---
 
+## 附录 C：V3.5 Idiom 系统（2026-04-17 补充）
+
+### C.1 DrumIdiom 系统
+
+**文件位置**：`src/core/generation/idioms/drums/`
+
+6 种 Idiom，每个实现 `IDrumIdiom { name, score(ctx), generate(ctx) }`：
+
+| Idiom | 甜区 | 核心特征 |
+|---|---|---|
+| **SteadyDrumIdiom** | energy 4-7, low sync, Pop | kick 1+3, snare 2+4, melody/bass listening（maskAccent） |
+| **SyncopatedDrumIdiom** | sync > 0.5, energy 5-8, Funk | 反拍 kick, ghost notes（snare vel 0.3）, open HH on "and" |
+| **HighEnergyDrumIdiom** | energy ≥ 8, EDM/Drop | 4-on-floor kick, off-beat OHH, clap(39), build-up snare roll |
+| **SparseDrumIdiom** | energy ≤ 3, Intro/Outro | tom_low 替代 kick, 极稀疏 crash |
+| **AcousticSwingDrumIdiom** | swing > 0.55, energy 3-6, Lo-fi | ride "ding-da-ding", cross-stick, hi-hat pedal(44) |
+| **CinematicDrumIdiom** | energy ≥ 7, Chorus_Epic/Solo | 3 层能量分级, snare+tom layering, double crash |
+
+**DrumIdiomRouter**：
+- 每个 section 入口评分所有 idiom → 选最高分
+- 华彩借调：Bridge/PreChorus/Solo_Bridge 30% 概率切第二高分 idiom
+- 顺滑过渡：crash 声明（入口）+ tom fill 告别（出口）+ 重 kick re-anchor（回归）
+- 切换保护：分差 < 10% 保持上一段 idiom
+
+### C.2 CounterMelody Idiom 系统
+
+**文件位置**：`src/core/generation/idioms/countermelody/`
+
+3 种 interplay 模式，由 `pickInterplayMode(sectionType, sectionName, energyLevel)` 确定性选择：
+
+| 模式 | 适合段落 | 描述 |
+|---|---|---|
+| **ParallelHarmony** | Chorus, PreChorus | 与主旋律三度/六度并行，50% 概率 snap 到 chord tone |
+| **CallAndResponse** | Verse, Intro, Bridge | 在主旋律休止间隙填补 1-3 个和弦音（contrary motion） |
+| **OctaveDoubling** | Chorus（高能量） | 八度加厚（暂用 ParallelHarmony 代替） |
+
+### C.3 PianoIdiomRouter（和弦织体）
+
+**文件位置**：`src/core/generation/idioms/piano/PianoIdiomRouter.ts`
+
+轻量级评分选择，复用现有 `TextureMapper.generateChordTexture` 的 textureType 参数：
+
+| 策略 | 甜区 | texture 值 |
+|---|---|---|
+| **Block** | energy 4-7, low sync, Pop/Latin | `'Block'` |
+| **Arpeggio** | energy 3-6, high swing, Lo-fi, Intro/Bridge | `'Arpeggio'` |
+| **Rhythmic** | sync > 0.5, energy 6-9, Funk | `'Rhythmic'` |
+| **Pad** | energy ≤ 3, Intro/Outro/Break | `'Pad'` |
+| **Pulsing** | energy ≥ 8, BuildUp/Drop | `'Pulsing'` |
+
+### C.4 全链路律动统一
+
+每首歌从 4 套 subgenre 池（Pop / Funk / Lo-fi / Latin）PRNG 抽一个，影响：
+- 鼓组：DrumIdiomRouter 评分的 subgenre 加分项
+- 贝斯：4 种 hits pattern（Pop=[0,1,2,3] / Funk=[0,1.75,2,3.75] / Lo-fi=[0,2,3] / Latin=[0,2.5,3.5]）
+- 和弦：PianoIdiomRouter 评分的 subgenre 加分项
+- 旋律：RhythmCells 30% 概率用 subgenre 对应的风格化节奏细胞（PopCells / FunkCells / JazzCells / BossaCells）
+- grooveDNA：按 PhraseGroup 级变化（每个大乐句 1-2 step 扰动，不再段落级固定）
+
+---
+
 **文档结束**
 
 如需进一步信息：
 - 完整源码：`src/core/generation/`
+- Idiom 系统：`src/core/generation/idioms/{drums,countermelody,piano}/`
 - 总规则文档：`.claude/rules/music_generation_pipeline_rule.md`
 - 风格配置：`src/core/generation/config/styles/StyleRegistry.ts`
 - 黄金种子测试：`scripts/golden-seed.ts`

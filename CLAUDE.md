@@ -92,12 +92,40 @@ EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随�
 - 数值枚举 + 查找表（Tonality、ChordQuality、SectionType、InstrumentFlags）
 - 全管道浮点 epsilon 比较、Map/Set → 数组、tonality string → 枚举
 - 生成管道内部零 GlobalContext 读取（S-2 合规）
-- 总混音温暖化（LPF 12kHz、Low Shelf +1.5dB、High Shelf -1.5dB）
-- 段落级力度曲线（弱起→正弦波动→渐强/弱收尾）
+- 总混音温暖化（LPF 11kHz、Low Shelf +2dB @200Hz、Peaking -2.5dB @350Hz、High Shelf -1.5dB @6kHz）
+- 段落级力度曲线（弱起→正弦波动→渐强/弱收尾）+ PhraseContourPlanner 三层张力曲线增强
 - 乐器特征后处理（管乐单声部、弦乐换弓、同音高重叠防护）
-- 鼓组 Mood 驱动技巧预算 + 鼓声调色板
-- 贝斯能量分层 + 趋近音
-- 副旋律三模式交互（Parallel Harmony / Call-and-Response / Pad）
+- 贝斯能量分层 + 趋近音 + subgenre 4 种 hits pattern
+
+### V3.5 RichIdioms 新增模块（2026-04-17）
+
+> 完整文档见 `docs/main_melody_generation_logic.md`（748 行）
+
+#### 旋律骨架与张力系统
+
+- `/src/core/generation/composing/AnchorDecisionStage.ts` — 关键音/非关键音分化（7 规则 + snap 校验）
+- `/src/core/generation/composing/AnchorBackbone.ts` — Bresenham 线性插值 + 弧度叠加骨架优先生成
+- `/src/core/generation/composing/PhraseContourPlanner.ts` — 三层张力曲线（song/section/phrase），驱动 velocity 和 timing 精准度
+
+#### 乐器 Idiom 系统（评分选择 + 华彩借调，不强绑风格）
+
+- `/src/core/generation/idioms/drums/` — 6 种 DrumIdiom + DrumIdiomRouter（评分选择，含 melody/bass listening）
+- `/src/core/generation/idioms/countermelody/` — CounterMelodyRouter（ParallelHarmony / CallAndResponse 模式）
+- `/src/core/generation/idioms/piano/` — PianoIdiomRouter（5 策略评分选择和弦织体）
+
+Idiom 系统的设计原则：**不与 subgenre 强绑定**，而是按 energy / syncopation / swing / sectionType 评分选择最适配的 Idiom。华彩借调在 Bridge / PreChorus 段末 30% 概率切到第二高分 Idiom，带 crash 声明 + fill 过渡。
+
+#### 全链路律动统一
+
+- 每首歌从 4 套 subgenre 池（Pop / Funk / Lo-fi / Latin）抽一个，影响鼓组 / 贝斯 / 和弦 / 旋律的律动基底
+- grooveDNA 按 PhraseGroup 级变化（不再段落级固定）
+- RhythmCells（`melody/RhythmCells.ts`）30% 概率用风格化节奏细胞替代分形细分
+
+#### 混音修复
+
+- AudioMixer 低频补偿（lowShelf +2dB / peaking 250→350Hz -2.5dB）
+- 贝斯声场（reverb 0.20 + chorus 60）
+- 主旋律 Plucked 乐器绝对空间音域上限 G5（79），Sustained 可到 C6（84）
 
 ## 关键开发规则
 

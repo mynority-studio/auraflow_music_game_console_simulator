@@ -3,7 +3,7 @@
 > **文档等级** — 最高约束(与 `music_generation_pipeline_rule.md` 并列)
 > **用途** — 每次大型优化 / 架构调整 / PR 合并后,必须按本文档逐项复盘
 > **读者** — 算法开发者 / AI Agent / Code Reviewer
-> **版本基线** — 2026-04-15,基于 PR #1~#7(Viterbi 和声管线完成后的状态)
+> **版本基线** — 2026-04-15 V1.0(PR #1~#7)；2026-04-17 V3.5 RichIdioms 新增 Idiom 系统/AnchorBackbone/PhraseContourPlanner（审计项待扩充）
 
 ---
 
