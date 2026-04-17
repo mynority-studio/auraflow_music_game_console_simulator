@@ -1,6 +1,6 @@
 # 算法编曲引擎 — 当前实现状态快照
 
-> **来源** — 本文件由 `.claude/rules/music_engine_audit_standard.md` §12 剥离而来（V1.2 重构）。
+> **来源** — 本文件由 `.claude/rules/music_engine_audit_standard.md` §12 剥离而来（V1.3 重构，2026-04-17）。
 > **维护节奏** — 每次大型 PR 合并后由开发者/Reviewer 手工同步；非 rules-tier 约束。
 > **审计框架** — 见 `.claude/rules/music_engine_audit_standard.md` §1~§11、§14（恒定不变的检查维度定义）。
 > **Why 拆出来** — §12 是会随每次 PR 漂移的"快照"，留在 rules-tier 会让 Claude 把过时的 ✅/⚠️ 当真。剥离后 rules-tier 只保留"违反了一定是 bug"的硬约束。

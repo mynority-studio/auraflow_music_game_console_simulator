@@ -2,7 +2,7 @@
 
 > ⚠️ **过期快照（2026-04-17 PRE-V3.5）** — 本评估写于 2026-04-17 上午，基线 commit `e00e929`（PR#12 僵尸代码清理）。当时代码 HEAD 尚未合入 V3.5 RichIdioms（`050b682`）与 idiom systems 文档增强（`8604c5c`）。
 >
-> 关键已失效结论（详见 `.claude/rules/music_engine_audit_standard.md` §12 V1.2 基线）：
+> 关键已失效结论（详见 `docs/audits/current_state.md` V1.2 基线，原 audit_standard §12，V1.3 已剥离）：
 > - §3.3 "缺鼓组 Kick/Snare/HiHat 模式分离" — V3.5 已实装 6 种 DrumIdiom + DrumIdiomRouter
 > - §3.4 "Pad / Pulsing 实现不完整" — V3.5 PianoIdiomRouter 5 策略已覆盖
 > - §3.5 "平行五八度硬检测缺失" — PR#11 `GlobalReviewer.reviewParallelMotion` 已实装
@@ -10,7 +10,7 @@
 > - §5 优先级表 P0/P1/P3 多项已完成（鼓组模式分离 / 平行禁忌等）
 > - 文件行数与 `file:line` 引用因 V3.5 大量改动而漂移（ToplineEngine 2,644→2,960、Orchestrator 1,293→1,377、`/generation/` 总行数 9,472→~12,001）
 >
-> 本文件**仅作历史快照保留**，不再随代码维护。新评估以 `.claude/rules/music_engine_audit_standard.md` §12 与 `project_v35_richidioms_status.md` 为准。
+> 本文件**仅作历史快照保留**，不再随代码维护。新评估以 `docs/audits/current_state.md` 与 memory `project_v35_richidioms_status.md` 为准。
 
 ---
 

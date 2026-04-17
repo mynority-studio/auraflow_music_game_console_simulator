@@ -26,7 +26,7 @@
 ```
 1. 开发者自查    → 按 §1~§10 逐项勾选,填写「审计报告模板」(§11)
 2. 证据锚点     → 每个 ✅ 必须附 file_path:line 或函数名
-3. Seed 回归    → 用 Seed Lab 抽查 10 个固定 seed,逐项听感验证(§12)
+3. Seed 回归    → 用 Seed Lab 抽查 10 个固定 seed,逐项听感验证(§10.1 固定 seed 回归池)
 4. ACVE 快照     → 跑确定性验证,A/B/C/D 快照对比
 5. Reviewer 复核 → 质疑任何 ✅ 的证据完整性
 6. 签收合并     → 缺失项转为 tech debt 登记到 todo_plan.md
