@@ -12,6 +12,10 @@ import { getStyleConfig } from '../config/styles/StyleRegistry';
 import { ENERGY } from '../config/EnergyThresholds';
 import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../config/InstrumentFlags';
 import { sortAndDedupNumbers } from '../utils/Dedup';
+import { DrumIdiomRouter } from '../idioms/drums/DrumIdiomRouter';
+import { DrumIdiomContext, GM_DRUMS } from '../idioms/drums/IDrumIdiom';
+import { CounterMelodyRouter } from '../idioms/countermelody/CounterMelodyRouter';
+import { PianoIdiomRouter } from '../idioms/piano/PianoIdiomRouter';
 
 // 兜底默认混音参数（当 StyleConfig.orchestration.mixingPreferences 字段缺失时使用）
 // 仅作为安全防护，正式风格应在 StyleConfig 中配置完整的 mixingPreferences
@@ -20,12 +24,12 @@ const FALLBACK_MIXING: Required<{
     counterMelody: MixingConfig; chord: MixingConfig; drums: MixingConfig; bass: MixingConfig;
 }> = {
     vocal:           { pan: 0,    reverb: 0.4,  volume: 8 },
-    melody:          { pan: 0,    reverb: 0.4,  volume: 4 },
-    secondaryMelody: { pan: 0.4,  reverb: 0.5,  volume: 1 },
-    counterMelody:   { pan: -0.4, reverb: 0.5,  volume: 1 },
+    melody:          { pan: 0,    reverb: 0.4,  volume: 6 },     // 🌟 4 → 6
+    secondaryMelody: { pan: 0.55, reverb: 0.75, volume: 3 },  // 🌟 2 → 3
+    counterMelody:   { pan: -0.4, reverb: 0.5,  volume: 2 },  // 🌟 F-Vol: 1 → 2 dB
     chord:           { pan: 0.6,  reverb: 0.7,  volume: 3 },
     drums:           { pan: 0,    reverb: 0.1,  volume: 6 },
-    bass:            { pan: 0,    reverb: 0,    volume: -1 },
+    bass:            { pan: 0,    reverb: 0.20, volume: 0, chorus: 60 }, // 🌟 F-Bass-Stage: 加 reverb+chorus 营造声场，volume +1 → 0
 };
 
 // 浅拷贝 MixingConfig，避免 palette.mixing 与 StyleConfig 共享引用
@@ -402,6 +406,7 @@ export class Orchestrator {
         });
 
         let prevVoicing: number[] = [];
+        let prevPianoTexture: string | null = null; // 🌟 B: PianoIdiomRouter 切换保护
 
         track.chords.forEach((chord, i) => {
             // 一次 findIndex 同时拿到 section 和它在数组中的索引（C 可移植路径）
@@ -627,7 +632,10 @@ export class Orchestrator {
                             if (beat2 >= chord.startBeat - 1e-6 && beat2 < chord.endBeat - 1e-6) kickAnchors.push(beat2);
                         }
                     }
-                    Orchestrator.appendAll(lhNotes, TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors));
+                    // 🌟 F-Bass-Subgenre: 找当前 chord 落在哪个 section 取 subgenre
+                    const bassSec = track.sections?.find(s => chord.startBeat >= s.startBeat - 1e-6 && chord.startBeat < s.endBeat - 1e-6);
+                    const bassSubgenre = bassSec?.subgenre || 'Pop';
+                    Orchestrator.appendAll(lhNotes, TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors, bassSubgenre));
                 }
             }
 
@@ -659,7 +667,13 @@ export class Orchestrator {
                     const counterTexture = (!forceCounterPad && energy >= ENERGY.HIGH_MIN && !isVoiceOrString) ? 'Synth_Pulse' : 'Pad';
                     Orchestrator.appendAll(counterMelodyNotes, TextureMapper.generateChordTexture(chord, energy, counterTexture, false, false, idiomaticMelody));
                 } else {
-                    Orchestrator.appendAll(counterMelodyNotes, TextureMapper.generateCounterMelody(chord, energy, idiomaticMelody, track.tonality));
+                    // 🌟 A1: CounterMelody Idiom Router 替换 generateCounterMelody
+                    // 3 种 interplay 模式：ParallelHarmony / OctaveDoubling / CallAndResponse
+                    const cmSecType = activeSection.sectionType ?? SectionType.Verse;
+                    Orchestrator.appendAll(counterMelodyNotes, CounterMelodyRouter.generate(
+                        chord, energy, idiomaticMelody, track.tonality,
+                        cmSecType, activeSection.name, track.timeSignature?.[0] || 4
+                    ));
                 }
             }
 
@@ -682,8 +696,20 @@ export class Orchestrator {
                 } else if (texture === "Riff") {
                     chordNotes = TextureMapper.generateRiff(chord, energy, track.tonality);
                 } else {
+                    // 🌟 B: PianoIdiomRouter 评分选择 texture（替代 F-Chord-Subgenre 的硬编码切换）
+                    // 按 energy + syncopation + swing + sectionType 评分选最佳织体
+                    const chordSubgenre = activeSection.subgenre || 'Pop';
+                    const pianoTexture = isSparseSection ? 'Pad' : PianoIdiomRouter.pickTexture(
+                        energy,
+                        activeSection.groove?.syncopationProb ?? 0.3,
+                        activeSection.groove?.swing ?? 0.5,
+                        activeSecType ?? SectionType.Verse,
+                        chordSubgenre,
+                        prevPianoTexture,
+                    );
+                    prevPianoTexture = pianoTexture;
                     chordNotes = TextureMapper.generateChordTexture(
-                        chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel
+                        chord, energy, pianoTexture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel
                     );
                 }
                 Orchestrator.appendAll(rhNotes, chordNotes);
@@ -713,6 +739,7 @@ export class Orchestrator {
 
         if (hasDrums) {
             let hasFullGrooveStarted = false;
+            let prevDrumIdiomName: string | null = null; // 🌟 DrumIdiom 切换保护：记住上一段用的 idiom
             track.sections.forEach((sec, index) => {
                 let playDrums = true;
                 let startBeat = sec.startBeat;
@@ -744,22 +771,58 @@ export class Orchestrator {
                 if (playDrums && startBeat < sec.endBeat) {
                     // 确保鼓组也吃当前的 GrooveDNA
                     GlobalContext.updateCurrentSlice(sec, track.chords[0], sec.grooveDNA ||[0,1,2,3]);
-                    const swingRatio = 0.5;
                     const effectiveEnergy = sec.energyLevel;
                     const nextSec = track.sections[index + 1];
                     const nextEnergyLevel = nextSec ? nextSec.energyLevel : 3;
-                    
-                    // 如果当前段落能量大于2，或者前奏且下一个段落能量大于2，说明完整的 groove 已经开始
+
                     if (effectiveEnergy > 2 || (sec.sectionType === SectionType.Intro && nextEnergyLevel > 2)) {
                         hasFullGrooveStarted = true;
                     }
 
-                    // 如果是鼓组 Solo 前奏，不应该被视为普通的 Intro（普通 Intro 只有踩镲）
-                    const isDrumSoloIntro = introHasDrums && !introHasPiano && !introHasMelody;
-                    const treatAsIntro = sec.sectionType === SectionType.Intro && !isDrumSoloIntro;
                     const isOutroSec = sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro;
+                    const isIntroSec = sec.sectionType === SectionType.Intro;
 
-                    Orchestrator.appendAll(drumNotes, TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, isOutroSec, swingRatio, nextEnergyLevel, hasFullGrooveStarted));
+                    // 🌟 DrumIdiom 路由器替换 generateDrumGroove
+                    // 构建 DrumIdiomContext，调用 DrumIdiomRouter.generate（评分选择 + 华彩借调）
+                    // 用 pre-humanize 的 melody/bass（此时 humanize 还没跑），做 melody/bass listening
+                    const secMelody = idiomaticMelody.filter(n => n.onset >= startBeat - 1e-6 && n.onset < sec.endBeat - 1e-6);
+                    const secBass = lhNotes.filter(n => n.onset >= startBeat - 1e-6 && n.onset < sec.endBeat - 1e-6);
+                    const drumCtx: DrumIdiomContext = {
+                        startBeat,
+                        endBeat: sec.endBeat,
+                        beatsPerBar: track.timeSignature?.[0] || 4,
+                        energyLevel: effectiveEnergy,
+                        nextEnergyLevel,
+                        isIntro: isIntroSec,
+                        isOutro: isOutroSec,
+                        sectionType: sec.sectionType ?? SectionType.Verse,
+                        sectionName: sec.name,
+                        is68: (track.timeSignature?.[0] || 4) === 6,
+                        isHalfTime: effectiveEnergy <= 3,
+                        grooveDensity: sec.groove?.density ?? 0.5,
+                        grooveSyncopation: sec.groove?.syncopationProb ?? 0.3,
+                        swing: sec.groove?.swing ?? 0.5,
+                        melodyNotes: secMelody,
+                        bassNotes: secBass,
+                        KICK: GM_DRUMS.KICK,
+                        SNARE: GM_DRUMS.SNARE,
+                        CHH: GM_DRUMS.CHH,
+                        OHH: GM_DRUMS.OHH,
+                        CRASH: GM_DRUMS.CRASH,
+                        CRASH2: GM_DRUMS.CRASH2,
+                        RIDE: GM_DRUMS.RIDE,
+                        CROSS_STICK: GM_DRUMS.CROSS_STICK,
+                        TOM_LOW: GM_DRUMS.TOM_LOW,
+                        TOM_MID: GM_DRUMS.TOM_MID,
+                        TOM_HI: GM_DRUMS.TOM_HI,
+                        laybackOffset: 0,
+                        subgenre: sec.subgenre || 'Pop',
+                        style: context?.style,
+                    };
+
+                    const { notes: secDrumNotes, idiomName } = DrumIdiomRouter.generate(drumCtx, prevDrumIdiomName);
+                    prevDrumIdiomName = idiomName;
+                    Orchestrator.appendAll(drumNotes, secDrumNotes);
                 }
             });
         }
@@ -946,6 +1009,27 @@ export class Orchestrator {
         applyOffset(humanizedLH);
         applyOffset(humanizedRH);
         applyOffset(humanizedCounterMelody);
+
+        // 🌟 绝对空间安全上限（P0 相关）：applyOffset 加了 keyOffset（最多 +11）后，
+        // 主/副旋律可能从相对空间的 C6 推到 B6/C#7，产生刺耳的极高单音。
+        // 这是 clampToRange 仅在相对空间工作留下的架构漏洞的保险杠修补。
+        // 超出上限的音降一个八度（-12），保持调性不变。
+        const absoluteClampHigh = (notes: NoteData[], maxPitch: number) => {
+            for (let i = 0; i < notes.length; i++) {
+                while (notes[i].pitch > maxPitch) notes[i].pitch -= 12;
+            }
+        };
+        // 🌟 F4: 主旋律按包络类型动态设上限
+        // Plucked (钢琴/吉他/Vibes) 在 G5+ 长音只有"叮"的敲击感，刺耳廉价 → 上限 79 (G5)
+        // Sustained (弦乐/木管/Pad) 在 B5+ 仍有长弓/吹气表现力 → 上限 84 (C6)
+        // 副作用：AnchorDecisionStage snap 可能把 anchor 向上吸附超过 ToplineEngine 的 clamp，
+        // 这里是最后一道保险杠。
+        const melodyProfile = palette.melodySound ? InstrumentProfiles[getInstrumentIdByName(palette.melodySound)] : undefined;
+        const melodyIsPlucked = melodyProfile?.envelope === AcousticEnvelope.Plucked;
+        absoluteClampHigh(humanizedMelody, melodyIsPlucked ? 79 : 84);
+        absoluteClampHigh(humanizedSecondaryMelody, 78);   // F#5 — 副旋律必须在主旋律下方（F1 + Vibraphone 中音区修复）
+        absoluteClampHigh(humanizedCounterMelody, 81);     // A5 — 平行和声副旋律略低于主旋律
+        if (humanizedVocal) absoluteClampHigh(humanizedVocal, 86);  // D6 人声略宽
 
         // 🌟 提案二：Ritardando 渐慢算法 (Non-linear tempo deceleration)
         const tempoCurves: any[] = [];

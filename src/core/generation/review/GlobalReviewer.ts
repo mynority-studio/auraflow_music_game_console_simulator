@@ -105,6 +105,12 @@ export class GlobalReviewer {
 
             // 1. 乐句结尾不落地 (Phrase Ending Resolution Fix)
             if (isPhraseEnd && isLongNote && !isChordTone) {
+                // 🌟 P0 契约断言：AnchorDecisionStage 应该已经前置保证 anchor 落在和弦音上。
+                // 如果此处触发说明该音是 anchor 但 snap 失败（位移 > 3 半音被降级为非 anchor 后未处理长音），
+                // 或旋律后处理（Humanized Accents/声部互让）破坏了 anchor 约定，需要排查 AnchorDecisionStage 口径。
+                if (note.isAnchor === true) {
+                    console.warn(`⚠️ [GlobalReviewer] AnchorStage contract violation: anchor not in chord tone at onset=${note.onset.toFixed(2)} pitch=${note.pitch} chord=${activeChord.numeral}`);
+                }
                 // 评分逻辑：由于是乐句结尾的长音，MelodyFixScore 较高（必须改旋律以保证落地）
                 console.log(`🔧 [GlobalReviewer] Fixing unresolved phrase end note: Pitch ${note.pitch} over ${activeChord.numeral}`);
                 

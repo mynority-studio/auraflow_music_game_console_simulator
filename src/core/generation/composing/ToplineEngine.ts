@@ -7,6 +7,10 @@ import { GlobalContext } from '../GlobalContext';
 import { ENERGY } from '../config/EnergyThresholds';
 import { isOnDownbeat, isOnGrid } from '../utils/BeatMath';
 import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../config/InstrumentFlags';
+import { AnchorDecisionStage } from './AnchorDecisionStage';
+import { getRandomRhythmCell, PopRhythmCells, FunkRhythmCells, JazzRhythmCells, BossaNovaRhythmCells } from '../melody/RhythmCells';
+import { PhraseContourPlanner, TensionEnvelope } from './PhraseContourPlanner';
+import { AnchorBackbone, SectionSkeleton, PhraseSkeleton } from './AnchorBackbone';
 
 type Contour = 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
 type PhraseForm = string[]; // e.g., ['A', 'A', 'B', 'A']
@@ -402,6 +406,9 @@ export class ToplineEngine {
         const fullMelody: NoteData[] = [];
         const beatsPerBar = GlobalContext.currentTimeSignature[0];
 
+        // 🌟 P6b: 全曲张力封套（一次性构建，全 section 共享）
+        const tensionEnv: TensionEnvelope = PhraseContourPlanner.buildForSong(sections);
+
         // 🌟 Phase 1: Global Groove Strategy (Now decoupled per section)
         const verseDensityMult = style.contrast.verseDensityMultiplier || 1.0;
         
@@ -428,8 +435,8 @@ export class ToplineEngine {
         if (firstChorus) {
             const chorusChords = chords.filter(c => c.startBeat >= firstChorus.startBeat && c.startBeat < firstChorus.endBeat);
             if (chorusChords.length === 0) chorusChords.push(chords[0]);
-            // Generate motifs only, don't realize notes yet
-            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, context);
+            // Generate motifs only, don't realize notes yet (no tensionEnv needed in motif-only mode)
+            const result = this.generateSectionMelody(firstChorus, chorusChords, style, tonality, instrumentName, beatsPerBar, userMotif, undefined, null, true, 0, isSecondary, 0, context, undefined, undefined);
             result.motifs.forEach((val, key) => chorusMotifs.set(key, val));
             // 🌟 PR #6: 保存第一个 Chorus 的 phraseGroups 供后续 Chorus 复用
             chorusPhraseGroups = result.phraseGroups ?? null;
@@ -459,7 +466,27 @@ export class ToplineEngine {
                 // 仅当段落长度与 firstChorus 相同时才复用 layout（不同长度会导致 slot 数不匹配）
                 const thisLengthBeats = section.endBeat - section.startBeat;
                 if (chorusPhraseGroups && Math.abs(thisLengthBeats - chorusLengthBeats) < 1e-6) {
-                    providedPhraseGroups = chorusPhraseGroups;
+                    // 🌟 P5d 修复：chorusPhraseGroups 里 group.startBeat 仍是 firstChorus 的绝对拍（如 0, 8, 16...），
+                    // 不能直接复用（否则 Chorus_Main/Epic 的音 onset 全落在 firstChorus 区间导致"空段"）。
+                    // 克隆并按 section.startBeat 相对 firstChorus.startBeat 的差值平移 group.startBeat。
+                    const firstChorusStartBeat = chorusPhraseGroups[0]?.startBeat ?? 0;
+                    // 用第一个 group 的 startBeat 推算 firstChorus 的起始（通常等于 firstChorus.startBeat）
+                    // 但更稳的做法：firstChorus 就是 sections.find(Chorus)，它已经在外层作用域里
+                    const anchorStart = firstChorus!.startBeat; // firstChorus 一定存在（前面生成过）
+                    const deltaBeat = section.startBeat - anchorStart;
+                    providedPhraseGroups = [];
+                    for (let gi = 0; gi < chorusPhraseGroups.length; gi++) {
+                        const src = chorusPhraseGroups[gi];
+                        // 浅克隆 group（保留 subMotifs 引用即可，slot 本身不含 startBeat）
+                        providedPhraseGroups.push({
+                            startBeat: src.startBeat + deltaBeat,
+                            lengthBeats: src.lengthBeats,
+                            subMotifs: src.subMotifs,
+                            cadenceType: src.cadenceType,
+                            hookPlan: src.hookPlan,
+                            formLabel: src.formLabel,
+                        });
+                    }
                 }
             } else if (chorusMotifs.size > 0 && section.sectionType === SectionType.PreChorus) {
                 // 🌟 PreChorus 使用动机插值器 (Motif Morpher)，平滑过渡到副歌
@@ -521,7 +548,7 @@ export class ToplineEngine {
                 }
             }
 
-            const result = this.generateSectionMelody(section, sectionChords, style, tonality, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, context, providedPhraseGroups);
+            const result = this.generateSectionMelody(section, sectionChords, style, tonality, instrumentName, beatsPerBar, userMotif, providedMotifs, currentPreviousPitch, false, globalUnresolvedCount, isSecondary, maxPitchBeforeChorus, context, providedPhraseGroups, tensionEnv);
             
             sectionMelodies[index] = result.notes;
             currentPreviousPitch = result.lastPitch; // Pass the last pitch to the next section!
@@ -805,7 +832,8 @@ export class ToplineEngine {
         isSecondary: boolean = false,
         maxPitchBeforeChorus: number = 0,
         context?: MusicContext,
-        providedPhraseGroups?: PhraseGroup[]  // 🌟 PR #6: 外部注入的 phrase layout，用于 Chorus 克隆
+        providedPhraseGroups?: PhraseGroup[],  // 🌟 PR #6: 外部注入的 phrase layout，用于 Chorus 克隆
+        tensionEnv?: TensionEnvelope  // 🌟 P6b: 张力封套（不传时 generateMotifsOnly=true 模式跳过）
     ): { notes: NoteData[], motifs: MotifMap, lastPitch: number | null, unresolvedCount: number, phraseGroups?: PhraseGroup[] } {
         const sectionDensity = section.groove?.density ?? 0.5;
         const sectionSyncopation = section.groove?.syncopationProb ?? 0.2;
@@ -958,6 +986,39 @@ export class ToplineEngine {
         }
         if (totalSlotsAcrossGroups === 0) totalSlotsAcrossGroups = 1;
 
+        // 🌟 P6a: 构建 anchor 骨架（per group），realizeMotif 接住作 Bresenham 插值
+        // motifs-only 模式（generateMotifsOnly=true）跳过：此时不生成实际音符
+        // 无 tensionEnv 时也跳过（如 hardStop / userMotif 路径）
+        let sectionSkeleton: SectionSkeleton | undefined = undefined;
+        if (!generateMotifsOnly && tensionEnv) {
+            // 取乐器 safeRange（绝对空间）作为 anchor 范围参考
+            const skInstId = getInstrumentIdByName(instrumentName);
+            const skProfile = InstrumentProfiles[skInstId];
+            const skRangeMin = skProfile?.safeRange?.[0] ?? 48;
+            const skRangeMax = skProfile?.safeRange?.[1] ?? 84;
+            // 主旋律 Plucked 上限按 F4 规则降到 79
+            const skMaxAdjusted = (skProfile?.envelope === AcousticEnvelope.Plucked && !isVocal)
+                ? Math.min(skRangeMax, 79) : skRangeMax;
+            // 扣 keyOffset 进入相对空间
+            const skKeyOffset = GlobalContext.currentKeyOffset || 0;
+            const relRange: [number, number] = [skRangeMin - skKeyOffset, skMaxAdjusted - skKeyOffset];
+
+            // 🌟 F-APR1: Persona 偏好（从 style 读 extensionTargeting / pentatonicShiftProbability 推断）
+            const persExt = (style.melody?.extensionTargeting === true)
+                || ((style.melody?.pentatonicShiftProbability ?? 0) > 0.2);
+            sectionSkeleton = AnchorBackbone.buildForSection(
+                section,
+                phraseGroups,
+                chords,
+                tonality,
+                tensionEnv,
+                incomingPreviousPitch,
+                60 + (style.contrast.versePitchOffset || 0),
+                relRange,
+                persExt,
+            );
+        }
+
         const motifs = new MotifMap();
         if (providedMotifs) {
             providedMotifs.forEach((val, key) => motifs.set(key, val));
@@ -984,6 +1045,11 @@ export class ToplineEngine {
             const slotCount = group.subMotifs.length;
             const isLastGroup = groupIdx === phraseGroups.length - 1;
             let slotOffsetBeats = 0;
+
+            // 🌟 F-Groove1: 每个 PhraseGroup 用变体律动（在 sectionGroove 基础上 1-2 step 扰动）
+            // 第一个 group 不扰动（保留段落锚点感），后续 group 引入节奏变化
+            const variedSectionGroove = GrooveEngine.varyGrooveForPhrase(sectionGroove, beatsPerBar, groupIdx);
+            const variedMelodyGroove = GrooveEngine.generateInverseGroove(variedSectionGroove, beatsPerBar, sectionDensity);
 
             for (let slotIdx = 0; slotIdx < slotCount; slotIdx++) {
                 const slot = group.subMotifs[slotIdx];
@@ -1107,7 +1173,7 @@ export class ToplineEngine {
                     const contour = contours[Math.floor(PRNGManager.next() * contours.length)];
 
                     let rhythm3D = this.generateMotifRhythm(
-                        melodyGroove, noteCount, slotLengthBeats, sectionDensity,
+                        variedMelodyGroove, noteCount, slotLengthBeats, sectionDensity,  // 🌟 F-Groove1: 用变体律动
                         (isIntro || isOutro) && globalSlotIdx === 0, !isSolo && !isLead, style, context
                     );
                     let rhythmOffsets = [...rhythm3D.pickup, ...rhythm3D.body, ...rhythm3D.tail];
@@ -1227,11 +1293,60 @@ export class ToplineEngine {
                     template, phraseStart, chords, tonality, isAnswer, currentPitchShift,
                     isSolo, isInstrumental, isLead, instrumentName, isLastSlotOfIntro, section.name, style,
                     currentPreviousPitch, forceStrongResolution, isClimaxSlot, maxPitchBeforeChorus, false, slotMacroTargetDegree,
-                    isClonedMotif  // 🌟 PR #6: 克隆锁，传入 realizeMotif 内部关闭随机源
+                    isClonedMotif,  // 🌟 PR #6: 克隆锁，传入 realizeMotif 内部关闭随机源
+                    sectionSkeleton ? sectionSkeleton[groupIdx] : undefined,  // 🌟 P6a: anchor 骨架
+                    tensionEnv,                                                  // 🌟 P6b: 张力封套
+                    group.lengthBeats,                                          // 🌟 P6: phrase 总长度
                 );
 
                 currentPreviousPitch = phraseResult.lastPitch;
                 const phraseNotes = phraseResult.notes;
+
+                // 🌟 F-APR2: phrase 末位（isLastSlotOfGroup && isAnswer）按 PRNG 选 3 种 resolution 形态
+                if (isLastSlotOfGroup && isAnswer && phraseNotes.length >= 2 && !isOutro && !isClonedMotif) {
+                    const resolveRoll = PRNGManager.next();
+                    const lastNote = phraseNotes[phraseNotes.length - 1];
+                    if (resolveRoll < 0.5) {
+                        // A 长音延留（50%）：末音延长 1.6 倍（最常见）
+                        lastNote.duration = Math.min(lastNote.duration * 1.6, group.lengthBeats - (lastNote.onset - group.startBeat));
+                    } else if (resolveRoll < 0.8) {
+                        // B 级进回落（30%）：末音前插入 3 个调内下行级进音（4-3-2-1 感）
+                        const lastChord = chords.find(c => lastNote.onset >= c.startBeat && lastNote.onset < c.endBeat) || chords[chords.length - 1];
+                        const lastSafeScale = HarmonyCore.getSafeScalePitches(lastChord, tonality);
+                        const stepDur = 0.25;
+                        const totalLeadIn = stepDur * 3;
+                        if (lastNote.duration > totalLeadIn + 0.25) {
+                            const originalDur = lastNote.duration;
+                            const originalOnset = lastNote.onset;
+                            // 限制 walkPitch 不超过当前音域上限（防止 shiftDiatonic 推高超出 79/84 范围）
+                            // 用 +1 度起步而非 +3 度，避免越界刺耳
+                            const walkStartShift = 1;
+                            let walkPitch = HarmonyCore.shiftDiatonic(lastNote.pitch, lastSafeScale, walkStartShift);
+                            // 安全 clamp：不超过 lastNote.pitch + 4 半音（pure 3rd 上限）
+                            if (walkPitch - lastNote.pitch > 4) walkPitch = lastNote.pitch + 4;
+                            lastNote.onset = originalOnset + totalLeadIn;
+                            lastNote.duration = originalDur - totalLeadIn;
+                            for (let s = 0; s < 3; s++) {
+                                let stepPitch = HarmonyCore.shiftDiatonic(walkPitch, lastSafeScale, -s);
+                                // 二次 clamp：每个级进音也不超过 lastNote.pitch + 4
+                                if (stepPitch - lastNote.pitch > 4) stepPitch = lastNote.pitch + 4 - s;
+                                phraseNotes.splice(phraseNotes.length - 1, 0, {
+                                    pitch: Math.floor(stepPitch),
+                                    onset: originalOnset + s * stepDur,
+                                    duration: stepDur,
+                                    velocity: lastNote.velocity * 0.7,
+                                });
+                            }
+                        }
+                    } else {
+                        // C 休止断带（20%）：末音切短一半，后半留 rest（R&B 突切感）
+                        lastNote.duration = Math.max(0.25, lastNote.duration * 0.5);
+                    }
+                }
+
+                // 🌟 P0 AnchorDecisionStage 已挪到 MelodyEngine.generateFullSong 的 reviewed 之后（全局一次性）
+                // 这样 anchor 能对齐最终 chord（含 reharmonize + GlobalReviewer Phase 1 修改）。
+                // 这里仅保留 willBeAnchor 预判（line 1670+）供装饰音守卫使用。
 
                 if (isOutro) {
                     const fadeOutFactor = 1.0 - (globalSlotIdx / totalSlotsAcrossGroups) * 0.6;
@@ -1298,6 +1413,33 @@ export class ToplineEngine {
         }
         const finalDensity = sectionDensity * (1.0 - 0.5 * sparsityScore);
         const syncopation = energyLevel >= ENERGY.HIGH_MIN ? 0.4 : 0.2;
+
+        // 🌟 A2: RhythmCells 激活 — 30% 概率用风格化 RhythmCells 替代分形细分
+        // subgenre 选 cellPool（Funk/Jazz/Bossa/RnB），让旋律节奏有风格特征
+        const subgenreForCells = GlobalContext.getActiveSection()?.subgenre || 'Pop';
+        const useCellPool = PRNGManager.next() < 0.3;
+        if (useCellPool) {
+            let cellPool = PopRhythmCells;
+            if (subgenreForCells === 'Funk') cellPool = FunkRhythmCells;
+            else if (subgenreForCells === 'Lo-fi') cellPool = JazzRhythmCells;
+            else if (subgenreForCells === 'Latin') cellPool = BossaNovaRhythmCells;
+
+            // 用 cell pool 铺满 body
+            const cellBody: number[] = [0];
+            let cellOffset = 0;
+            let safetyCounter = 0;
+            while (cellOffset < phraseLengthBeats - 0.25 && safetyCounter < 64) {
+                const cell = getRandomRhythmCell(cellPool, energyLevel, isVocal);
+                for (let ci = 0; ci < cell.length; ci++) {
+                    cellOffset += cell[ci];
+                    if (cellOffset < phraseLengthBeats - 1e-6) {
+                        cellBody.push(cellOffset);
+                    }
+                }
+                safetyCounter++;
+            }
+            return { pickup: [], body: cellBody, tail: [] };
+        }
 
         // 1. 分形细分 (Fractal Subdivision)
         // 🌟 PR #4 修订：恢复 16 分音符密度 + 加三连音 + 安全检查
@@ -1488,7 +1630,10 @@ export class ToplineEngine {
         maxPitchBeforeChorus: number = 0,
         isUserMotif: boolean = false,
         macroTargetDegree?: number,
-        isClonedMotif: boolean = false  // 🌟 PR #6: 克隆锁，true 时关闭 anticipation / restChance 等随机源
+        isClonedMotif: boolean = false,  // 🌟 PR #6: 克隆锁，true 时关闭 anticipation / restChance 等随机源
+        phraseSkeleton?: PhraseSkeleton,  // 🌟 P6a: 当前 phrase 的 anchor 骨架
+        tensionEnv?: TensionEnvelope,     // 🌟 P6b: 张力封套（用于 velocity/timing 调制）
+        phraseLengthBeats: number = 4,    // 🌟 P6: phrase 总长度（用于 phraseLevel 张力计算）
     ): { notes: NoteData[], lastPitch: number | null } {
         const notes: NoteData[] = [];
         let targetCenter = 60 + pitchShift;
@@ -1662,6 +1807,21 @@ export class ToplineEngine {
                 continue; // 仅在复杂和弦的尾部弱拍跳过，避免中段被掏空
             }
 
+            // 🌟 P0 AnchorDecisionStage 预判：该音"将会被 annotate() 标为 anchor"吗？
+            // 装饰音（grace/neighbor）守卫使用此预判 —— 只在关键音上挂装饰音（教程要求）。
+            // 口径对齐 AnchorDecisionStage 的规则 1/2/5/6/7 + isClimax（局部极值规则 3 和大跳规则 4 无法预判，略）。
+            // 🌟 P6a: 加入 phraseSkeleton anchor 命中判定，让装饰音优先挂前置 anchor
+            let isPreBuiltAnchorPredict = false;
+            if (phraseSkeleton) {
+                for (let pk = 0; pk < phraseSkeleton.anchorOnsets.length; pk++) {
+                    if (Math.abs(onset - phraseSkeleton.anchorOnsets[pk]) < 0.3) {
+                        isPreBuiltAnchorPredict = true;
+                        break;
+                    }
+                }
+            }
+            const willBeAnchor = isPreBuiltAnchorPredict || isStrongBeat || isLongNote || isPhraseEnd || isClimax || i === 0;
+
             const progress = adjustedOffsets.length > 1 ? i / (adjustedOffsets.length - 1) : 0; // 0.0 to 1.0
 
             // 🌟 计算目标线型音高 (Contour Target)
@@ -1749,6 +1909,55 @@ export class ToplineEngine {
                         idealPitch = targetCenter + (PRNGManager.next() * range - range / 2);
                         break;
                 }
+            }
+
+            // 🌟 P6a Bresenham 覆盖（保持 PRNG 序列不变，只覆盖 body 段的 idealPitch 值）
+            // 设计理由：原 contour 计算保留所有 PRNG 消耗（如 Wandering 分支），
+            // 这里在 body 段叠加"骨架引力"，让旋律有"目的地驱动"的全局意图。
+            // pickup/tail 段保留原逻辑（pickup 有 pickupShape，tail 有 macroTarget 强解决）。
+            if (phraseSkeleton && tensionEnv && isBody) {
+                const skOnsets = phraseSkeleton.anchorOnsets;
+                const skPitches = phraseSkeleton.anchorPitches;
+
+                // 找当前 onset 所在 segment（线性扫描，max ~6 anchors）
+                let beforeIdx = 0;
+                let afterIdx = 1;
+                for (let k = 0; k < skOnsets.length - 1; k++) {
+                    if (onset >= skOnsets[k] - 1e-6 && onset < skOnsets[k + 1] - 1e-6) {
+                        beforeIdx = k;
+                        afterIdx = k + 1;
+                        break;
+                    }
+                }
+                // onset 在末 anchor 之后 → 用末两个 anchor 做外推
+                if (onset >= skOnsets[skOnsets.length - 1] - 1e-6 && skOnsets.length >= 2) {
+                    beforeIdx = skOnsets.length - 2;
+                    afterIdx = skOnsets.length - 1;
+                }
+
+                const o0 = skOnsets[beforeIdx];
+                const o1 = skOnsets[afterIdx];
+                const p0 = skPitches[beforeIdx];
+                const p1 = skPitches[afterIdx];
+                let segT = (o1 - o0) > 1e-6 ? (onset - o0) / (o1 - o0) : 0;
+                if (segT < 0) segT = 0;
+                if (segT > 1) segT = 1;
+
+                // Bresenham 线性插值（实质 lerp）
+                const linearPitch = p0 + (p1 - p0) * segT;
+
+                // 弧度叠加：按 contour 类型 + 张力调制幅度
+                const tensionAt = tensionEnv.at(onset, phraseStart, phraseLengthBeats);
+                let arcAmp = 0;
+                if (contour === 'Arch') arcAmp = +5 * tensionAt;
+                else if (contour === 'Bowl') arcAmp = -5 * tensionAt;
+                else if (contour === 'Wandering') arcAmp = ((i % 3) - 1) * 2 * tensionAt;
+                // Ascending / Descending / Static：anchor 渐进已表达走向，不叠弧度
+
+                const bowedPitch = linearPitch + Math.sin(Math.PI * segT) * arcAmp;
+
+                // 70% Bresenham + 30% 原 contour 融合（保留 motif 特征，让骨架不死板）
+                idealPitch = bowedPitch * 0.7 + idealPitch * 0.3;
             }
 
             // 🌟 和声引力偏置 (Harmonic Gravity)
@@ -2034,11 +2243,22 @@ export class ToplineEngine {
                 if (sectionName.includes('Verse') || sectionName.includes('PreChorus')) {
                     maxPitch -= 5;
                 }
+            } else {
+                // 🌟 F4: 按乐器包络类型限制主旋律音域上限
+                // Plucked 类乐器（钢琴/电钢/吉他/Vibes）在 B5+ 的长音只有"叮"的敲击感，缺乏表现力，
+                // 听感廉价。限制到 G5(79) 绝对空间上限，Plucked 主旋律的高潮音留在温暖的中高音区。
+                // Sustained 类（弦乐/木管/Pad）在 B5+ 仍有长弓/吹气的表现力，保留 profile 默认上限。
+                const isPluckedEnvelope = profile?.envelope === AcousticEnvelope.Plucked;
+                if (isPluckedEnvelope) {
+                    maxPitch = Math.min(profileMax, 79); // G5 绝对空间上限
+                }
             }
             
             // K-5 合规：用 chord.keyOffset 调整相对空间的音域边界（applyOffset 后不超出绝对音域）
-            // 禁止 fallback 到 GlobalContext.currentKeyOffset（K-5）
-            const chordKeyOffset = activeChord.keyOffset !== undefined ? activeChord.keyOffset : 0;
+            // K-5 明文允许"音域限制（clamp to range）的边界调整"读取 GlobalContext.currentKeyOffset 作为 fallback —
+            // 否则 chord.keyOffset 未设时 fallback=0，会让 applyOffset 后的绝对 pitch 超出乐器 safeRange 一整个 keyOffset
+            // 之多（如 G 调 keyOffset=7，EP1 safeRange=[48,79]，没 fallback 时相对 pitch 可到 79 → 绝对 86 D6 刺耳）。
+            const chordKeyOffset = activeChord.keyOffset !== undefined ? activeChord.keyOffset : (GlobalContext.currentKeyOffset || 0);
             maxPitch -= chordKeyOffset;
             minPitch -= chordKeyOffset;
             if (currentPitch > maxPitch) currentPitch = HarmonyCore.shiftDiatonic(currentPitch, safeScalePcs, -2);
@@ -2081,6 +2301,15 @@ export class ToplineEngine {
                         }
                     }
                     currentPitch = this.getNearestOctave(bestPc, targetPitch);
+                    // 🌟 P5a fallback: getNearestOctave 可能仍落在 maxJump 外（例如 safeScale 里最近音 pc
+                    // 跨越八度后离 previousPitch 更远）。用 shiftDiatonic 从 previousPitch 级进 ±2 度兜底。
+                    if (Math.abs(currentPitch - previousPitch) > maxJump) {
+                        currentPitch = HarmonyCore.shiftDiatonic(previousPitch, safeScalePcs, direction * 2);
+                        // 最后保险：若还超 maxJump，直接 clamp 到 previousPitch ± maxJump（无 scale 约束）
+                        if (Math.abs(currentPitch - previousPitch) > maxJump) {
+                            currentPitch = previousPitch + direction * maxJump;
+                        }
+                    }
                 } else if (notes.length >= 2) {
                     // 🌟 柔性 Leap Compensation：大跳后有 45% 概率反向级进（非 100% 强制）
                     const prevPrevPitch = notes[notes.length - 2].pitch;
@@ -2133,6 +2362,30 @@ export class ToplineEngine {
                     if (!hasM9Clash) currentPitch = chromLeadPitch;
                 }
 
+                // 🌟 P5a final maxJump clamp：chord-boundary chromatic lead、peakSlot pitchShift 等
+                // 后处理可能让相邻音程跨越 maxJump。先强制 clamp，再做 pitch range clamp。
+                if (previousPitch !== null) {
+                    const maxJumpFinal = style?.melody?.maxJumpInterval ?? 12;
+                    const gapFinal = currentPitch - previousPitch;
+                    if (Math.abs(gapFinal) > maxJumpFinal) {
+                        const dirFinal = gapFinal > 0 ? 1 : -1;
+                        currentPitch = HarmonyCore.shiftDiatonic(previousPitch, safeScalePcs, dirFinal * 2);
+                        if (Math.abs(currentPitch - previousPitch) > maxJumpFinal) {
+                            currentPitch = previousPitch + dirFinal * maxJumpFinal;
+                        }
+                    }
+                }
+
+                // 🌟 F4 final clamp：Meyer's Leap / anchor prob / chord boundary approach 等后处理
+                // 可能把 currentPitch 推出 line 2063 的 maxPitch 边界。这里再 clamp 一次确保
+                // 装饰音分支和主音 push 都在 safeRange 内（否则 EP1 主旋律相对 79 → 绝对 86 D6 刺耳）。
+                if (currentPitch > maxPitch) {
+                    while (currentPitch > maxPitch) currentPitch -= 12;
+                }
+                if (currentPitch < minPitch) {
+                    while (currentPitch < minPitch) currentPitch += 12;
+                }
+
                 // 重新计算 interval 以供后续逻辑使用
                 interval = currentPitch - previousPitch;
                 absInterval = Math.abs(interval);
@@ -2144,7 +2397,8 @@ export class ToplineEngine {
                     let graceNotesInPhrase = notes.filter(n => (n as any).isGraceNote).length;
                     
                     const graceChance = style?.melody?.inflectionProbability ?? (isSolo ? 0.08 : (isInstrumental ? 0.04 : 0.02)); // 大幅降低倚音频率
-                    if (PRNGManager.next() < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
+                    // 🌟 P0 willBeAnchor 守卫：装饰音只挂在关键音上（教程要求，装饰非关键音会造成听觉混乱）
+                    if (PRNGManager.next() < graceChance && willBeAnchor && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
                         const lastNote = notes[notes.length - 1];
                         // 只有当上一个音足够长，且当前音在强拍或次强拍时，才加倚音，增加“高级感”
                         const isTargetStrongBeat = isOnDownbeat(onset) || (isOnGrid(onset, 0.5) && PRNGManager.next() < 0.3);
@@ -2196,7 +2450,8 @@ export class ToplineEngine {
                     // 当音高重复时，有概率将前一个音拆分，加入一个上方或下方的辅助音
                     const isEmotionalCore = sectionName.includes('Intro') || sectionName.includes('Chorus') || sectionName.includes('Outro');
                     const neighborChance = isEmotionalCore ? 0.15 : 0.05;
-                    if (PRNGManager.next() < neighborChance) {
+                    // 🌟 P0 willBeAnchor 守卫：同 grace，辅助音只分裂关键音
+                    if (PRNGManager.next() < neighborChance && willBeAnchor) {
                         const lastNote = notes[notes.length - 1];
                         if (lastNote.duration >= 0.5) {
                             const neighborDuration = Math.min(lastNote.duration * 0.5, 0.25);
@@ -2247,6 +2502,13 @@ export class ToplineEngine {
             // 音高越高，通常力度越大
             const pitchAccent = (currentPitch - 60) / 40; // 归一化音高影响
             let humanVelocity = metricAccent * (0.85 + PRNGManager.next() * 0.2) + pitchAccent * 0.1;
+
+            // 🌟 P6b: 张力封套调制 velocity（高张力 = 更强；低张力 = 更弱）
+            // 系数 0.4 是"动态范围"，可调；保留 PRNG 序列不变
+            if (tensionEnv) {
+                const tNow = tensionEnv.at(onset, phraseStart, phraseLengthBeats);
+                humanVelocity *= (0.6 + 0.4 * tNow);
+            }
             
             if (isSolo) humanVelocity *= 1.15; 
             else if (isLead && isInstrumental) humanVelocity *= 1.05;
@@ -2288,6 +2550,18 @@ export class ToplineEngine {
             } else {
                 // 默认：原有微小 rubato
                 timingJitter = (PRNGManager.next() * 0.04 - 0.02) * (1.1 - metricAccent) + rubatoShift;
+            }
+            // 🌟 P6b: 张力封套调制 jitter（高张力 = 节奏更精准；低张力 = 摇摆感更强）
+            if (tensionEnv) {
+                const tNow = tensionEnv.at(onset, phraseStart, phraseLengthBeats);
+                timingJitter *= (1.1 - tNow * 0.8); // 张力 0 → 1.1×，张力 1 → 0.3×
+            }
+            // 🌟 P5e: humanize 总偏移 cap 到 ±0.05 拍（≈ 25ms @ 120 BPM），保持网格感
+            // laidBack 风格的时间感受 cap 的保护，但总偏移不超过 0.08 拍避免延迟感
+            if (Math.abs(laidBack) < 1e-6) {
+                timingJitter = Math.max(-0.05, Math.min(0.05, timingJitter));
+            } else {
+                timingJitter = Math.max(-0.08, Math.min(0.08, timingJitter));
             }
             const finalOnset = Math.max(0, onset + timingJitter);
 
@@ -2474,8 +2748,50 @@ export class ToplineEngine {
                     }
                 }
 
+                // 🌟 P5a Push-time maxJump 强制拦截：装饰音（grace/trill/appoggiatura/chromatic approach）
+                // 生成过程中可能改变 previousPitch 与 currentPitch 的相对距离，这里是 push 主音前的最后保险。
+                // 如果主音相对上一个"非装饰音"跨度超过 maxJump，强制拉回。
+                if (notes.length > 0) {
+                    const maxJumpPush = style?.melody?.maxJumpInterval ?? 12;
+                    // 找上一个非装饰音（isGraceNote !== true）作为参考
+                    let refPitch: number | null = null;
+                    for (let k = notes.length - 1; k >= 0; k--) {
+                        if (notes[k].isGraceNote !== true) { refPitch = notes[k].pitch; break; }
+                    }
+                    if (refPitch !== null) {
+                        const gapPush = currentPitch - refPitch;
+                        if (Math.abs(gapPush) > maxJumpPush) {
+                            const dirPush = gapPush > 0 ? 1 : -1;
+                            let snapped = HarmonyCore.shiftDiatonic(refPitch, safeScalePcs, dirPush * 3); // 向 ref 方向级进 3 度
+                            if (Math.abs(snapped - refPitch) > maxJumpPush) {
+                                snapped = refPitch + dirPush * maxJumpPush;
+                            }
+                            currentPitch = snapped;
+                        }
+                    }
+                }
+
+                // 🌟 P6a 标记（只读不写）：如果当前 onset 对齐 phraseSkeleton 的某个 anchor，标 isPreBuiltAnchor。
+                // 关键：**不改 currentPitch**（避免改变 previousPitch 链，破坏后续 PRNG 序列）。
+                // P6a 的核心音乐性来自 Bresenham 覆盖 idealPitch，已在 line 1827+ 生效；
+                // 这里仅做下游识别用，让 AnchorDecisionStage 知道"这个音是骨架的一部分"。
+                let isPreBuilt = false;
+                if (phraseSkeleton) {
+                    for (let k = 0; k < phraseSkeleton.anchorOnsets.length; k++) {
+                        if (Math.abs(finalOnset - phraseSkeleton.anchorOnsets[k]) < 0.3) {
+                            isPreBuilt = true;
+                            break;
+                        }
+                    }
+                }
+
                 // 正常添加音符
-                notes.push({ pitch: Math.floor(currentPitch), onset: finalOnset, duration: legatoDuration, velocity: humanVelocity });
+                const noteData: NoteData = { pitch: Math.floor(currentPitch), onset: finalOnset, duration: legatoDuration, velocity: humanVelocity };
+                if (isPreBuilt) {
+                    noteData.isPreBuiltAnchor = true;
+                    noteData.isAnchor = true;
+                }
+                notes.push(noteData);
 
                 // 🌟 全音阶经过音链 (Diatonic Passing Tone Chain)
                 // 当前后两音间隔 ≥3 半音时，缩短前音尾部填入经过音

@@ -2,6 +2,19 @@ import { PRNGManager } from '../../utils/PRNG';
 import { EnsembleDraft, StyleConfig } from '../types';
 import { AcousticEnvelope, InstrumentProfiles, getInstrumentIdByName } from '../config/InstrumentFlags';
 
+// 🌟 F3 防御性清单：这些铃类/玩具乐器不允许做副旋律（Vibraphone/Music_Box 会产生廉价 spotlight 感，
+// Glockenspiel/Celesta/Tinkle_Bell 也同样锋利）。作为主旋律保留（偶尔有风格需要）。
+// 用普通字符串数组（P-1 禁 Set），线性扫描 5 项足够。
+const BELL_INSTRUMENTS_BANNED_FROM_SECONDARY: string[] = [
+    'Vibraphone', 'Music_Box', 'Glockenspiel', 'Celesta', 'Tinkle_Bell',
+];
+function isBannedFromSecondary(name: string): boolean {
+    for (let i = 0; i < BELL_INSTRUMENTS_BANNED_FROM_SECONDARY.length; i++) {
+        if (BELL_INSTRUMENTS_BANNED_FROM_SECONDARY[i] === name) return true;
+    }
+    return false;
+}
+
 export class EnsembleDrafter {
     /**
      * 配器规划：从 StyleConfig pool 中按约束选择乐器组合。
@@ -24,9 +37,11 @@ export class EnsembleDrafter {
         if (melodyPool.length > 1) {
             const candidates: string[] = [];
             for (let i = 0; i < melodyPool.length; i++) {
-                const cId = getInstrumentIdByName(melodyPool[i]);
-                if (InstrumentProfiles[cId].envelope === AcousticEnvelope.Plucked && melodyPool[i] !== melodySound) {
-                    candidates.push(melodyPool[i]);
+                const name = melodyPool[i];
+                if (isBannedFromSecondary(name)) continue; // 🌟 F3: 铃类不做副旋律
+                const cId = getInstrumentIdByName(name);
+                if (InstrumentProfiles[cId].envelope === AcousticEnvelope.Plucked && name !== melodySound) {
+                    candidates.push(name);
                 }
             }
             if (candidates.length > 0) {
@@ -36,7 +51,10 @@ export class EnsembleDrafter {
                 PRNGManager.next(); // slot 3
                 const others: string[] = [];
                 for (let i = 0; i < melodyPool.length; i++) {
-                    if (melodyPool[i] !== melodySound) others.push(melodyPool[i]);
+                    const name = melodyPool[i];
+                    if (name === melodySound) continue;
+                    if (isBannedFromSecondary(name)) continue; // 🌟 F3: 铃类不做副旋律
+                    others.push(name);
                 }
                 if (others.length > 0) {
                     secondarySound = others[Math.floor(PRNGManager.next() * others.length)]; // slot 4

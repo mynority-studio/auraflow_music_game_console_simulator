@@ -122,6 +122,26 @@ export class StructureEngine {
     const introBars = bpm < introBpmThreshold ? introBarsLow : introBarsHigh;
     const outroBars = style.global.outroBars ?? 4;
 
+    // 🌟 F-Groove3: 子风格池抽样（让每首歌有"风格类型"差异，而非仅数值微差）
+    // 4 个子风格 profile：Pop / Funk / Lo-fi / Latin
+    // 每首歌 PRNG 抽一个，用其 [syncMin, syncMax, swingMin, swingMax] 作为后续抽样的范围
+    const SUBGENRE_PROFILES = [
+        { name: 'Pop',   weight: 4, syncRange: [0.15, 0.35] as [number, number], swingRange: [0.50, 0.52] as [number, number] },
+        { name: 'Funk',  weight: 2, syncRange: [0.55, 0.80] as [number, number], swingRange: [0.50, 0.54] as [number, number] },
+        { name: 'Lo-fi', weight: 2, syncRange: [0.30, 0.50] as [number, number], swingRange: [0.55, 0.62] as [number, number] },
+        { name: 'Latin', weight: 1, syncRange: [0.45, 0.70] as [number, number], swingRange: [0.50, 0.52] as [number, number] },
+    ];
+    let subgenreRoll = PRNGManager.next() * SUBGENRE_PROFILES.reduce((s, p) => s + p.weight, 0);
+    let subgenre = SUBGENRE_PROFILES[0];
+    for (const p of SUBGENRE_PROFILES) { subgenreRoll -= p.weight; if (subgenreRoll <= 0) { subgenre = p; break; } }
+
+    // 🌟 F-Groove2: 全曲律动基础值抽样（每首歌不同；范围由 subgenre 决定）
+    const songSyncopationProb = subgenre.syncRange[0] + PRNGManager.next() * (subgenre.syncRange[1] - subgenre.syncRange[0]);
+    const songSwing = subgenre.swingRange[0] + PRNGManager.next() * (subgenre.swingRange[1] - subgenre.swingRange[0]);
+    const restBase = style.rhythm.restProbability ?? 0.18;
+    const songRestProb = Math.max(0.05, Math.min(0.4, restBase + (PRNGManager.next() - 0.5) * 0.25));
+    console.log(`[F-Groove3] subgenre=${subgenre.name} sync=${songSyncopationProb.toFixed(2)} swing=${songSwing.toFixed(2)} restProb=${songRestProb.toFixed(2)}`);
+
     const addSection = (name: string, bars: number, rawEnergy: number) => {
       // 🌟 临时屏蔽所有前奏，方便调试 (保留旧行为)
       if (name.startsWith("Intro")) {
@@ -138,7 +158,8 @@ export class StructureEngine {
       // 三套密度来源在 computeSectionDensity 内统一合成，调音单一可控
       const densityBase = style.rhythm.densityBase || [0.4, 0.6];
       const density = computeSectionDensity(energy, densityBase, mood.densityMultiplier);
-      const syncopationProb = style.rhythm.syncopationWeight || 0.5;
+      // 🌟 F-Groove2: 段落级 syncopation 在全曲基础上 ±10% 偏移（保持段落感）
+      const syncopationProb = Math.max(0.0, Math.min(0.9, songSyncopationProb + (PRNGManager.next() - 0.5) * 0.2));
 
       // --- Phase 3 & 4: Genre-Bending & Riff-Driven Logic ---
       let localStyleOverride: StyleId | undefined = undefined;
@@ -177,7 +198,7 @@ export class StructureEngine {
         groove: {
             density,
             syncopationProb,
-            swing: style.rhythm.swingRatio || 0.0
+            swing: songSwing  // 🌟 F-Groove2: 用全曲抽样的 swing
         },
         tracks: [
             {
@@ -231,6 +252,11 @@ export class StructureEngine {
     for (let i = 0; i < selectedTemplate.sections.length; i++) {
       const sec = selectedTemplate.sections[i];
       addSection(sec.name, sec.bars, sec.energy);
+    }
+
+    // 🌟 F-Drum: 把 subgenre 名字写到所有 section（让 Orchestrator 决定鼓组 pattern）
+    for (let i = 0; i < sections.length; i++) {
+      sections[i].subgenre = subgenre.name;
     }
 
     // 🌟 根据最后一个段落的能量，决定收尾方式 (Hard Stop vs Fade Out)

@@ -32,18 +32,18 @@ export class AudioMixer {
         this.hpf.frequency.value = 35;
         this.hpf.Q.value = 0.7;
 
-        // 2. Low Shelf: bypass（不再提升低频，避免浑浊）
+        // 2. Low Shelf: 🌟 F-Bass-Mix 补贝斯厚度（200Hz 以下 +2dB，让 sub bass 有重量感）
         this.lowShelf = nativeCtx.createBiquadFilter();
         this.lowShelf.type = 'lowshelf';
         this.lowShelf.frequency.value = 200;
-        this.lowShelf.gain.value = 0; // 原 +1.5dB 是浑浊元凶，归零
+        this.lowShelf.gain.value = 2.0;
 
-        // 3. Peaking EQ: 铲除 250Hz 浑浊区（给旋律让空间）
+        // 3. Peaking EQ: 🌟 F-Bass-Mix 频率从 250→350Hz（避开贝斯肉感）, gain -4→-2.5dB（不要这么狠）
         this.peakingEq = nativeCtx.createBiquadFilter();
         this.peakingEq.type = 'peaking';
-        this.peakingEq.frequency.value = 250;
+        this.peakingEq.frequency.value = 350;
         this.peakingEq.Q.value = 1.2;
-        this.peakingEq.gain.value = -4.0;
+        this.peakingEq.gain.value = -2.5;
 
         // 4. High Shelf: 温柔高频
         this.highShelf = nativeCtx.createBiquadFilter();

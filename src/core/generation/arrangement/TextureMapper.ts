@@ -29,6 +29,7 @@ export class TextureMapper {
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
     kickAnchors: number[] = [],
+    subgenre: string = 'Pop',  // 🌟 F-Bass-Subgenre: 子风格选择 bass pattern
   ): NoteData[] {
     const bassTones = HarmonyCore.getChordTones(chord, 36);
     let rootMidi = bassTones[0];
@@ -62,10 +63,53 @@ export class TextureMapper {
       // 稀疏段落：半音符根音
       notes.push({ pitch: rootMidi, onset: chord.startBeat, duration: Math.min(chordLen, 2), velocity: 0.7 });
     } else {
-      // 正常段落：每拍弹根音（跟随鼓组 groove）
-      const step = energyLevel >= ENERGY.HIGH_MIN ? 1 : 2;
+      // 🌟 F-Bass-Subgenre + F-Bass-Groove: 4 种 bass pattern（与鼓组 subgenre 同步）
+      // hits[i] 是相对 chord.startBeat 的拍位（从 0 开始）；hitDurations 是各 hit 的时值
+      // 全部确定性，不消耗 PRNG
+      let bassPattern: { hits: number[], duration: number }[];
+      if (subgenre === 'Funk') {
+        // Funk: 反拍切分 + 16 分 ghost（对齐 Funk kick 的 1 / 1.75 / 3 / 3.75 拍位）
+        bassPattern = [
+          { hits: [0, 1.75, 2, 3.75], duration: 0.5 },        // 4 hits per 4 beats
+        ];
+      } else if (subgenre === 'Lo-fi') {
+        // Lo-fi: walking bass，半音符 + 偶尔 walk
+        bassPattern = [
+          { hits: [0, 2, 3], duration: 0.75 },
+        ];
+      } else if (subgenre === 'Latin') {
+        // Latin: 切分根音（对齐 Latin kick 的 1 / 2.75 / 3.5）
+        bassPattern = [
+          { hits: [0, 2.5, 3.5], duration: 0.5 },
+        ];
+      } else {
+        // Pop（默认）: 每拍弹根音
+        bassPattern = [
+          { hits: energyLevel >= ENERGY.HIGH_MIN ? [0, 1, 2, 3] : [0, 2], duration: energyLevel >= ENERGY.HIGH_MIN ? 1 : 2 },
+        ];
+      }
+
+      const subPat = bassPattern[0];
+      const subHits = subPat.hits;
+      const subStep = subPat.duration;
+
+      // 用 hits 数组生成贝斯（对 chord 长度做 wrap）
       let beat = chord.startBeat;
       while (beat < chord.endBeat - 1e-6) {
+        // 找当前 beat 在 chord 内的相对位置（mod 4 拍 - 一个 bar 的 hits cycle）
+        const relInBar = (beat - chord.startBeat) % 4;
+        // 当前 beat 是否落在 hits 上（容差 0.05 拍）
+        let isHit = false;
+        for (let h = 0; h < subHits.length; h++) {
+          if (Math.abs(relInBar - subHits[h]) < 0.05) { isHit = true; break; }
+        }
+        if (!isHit) {
+          // 不是 hit 位，前进 0.25 拍找下个机会
+          beat += 0.25;
+          continue;
+        }
+
+        const step = subStep;
         const isLastStep = (beat + step >= chord.endBeat - 1e-6);
         const vel = Math.abs(beat % 2) < 1e-6 ? 0.75 : 0.6;
 
@@ -140,7 +184,7 @@ export class TextureMapper {
         } else {
           notes.push({ pitch: rootPitchForThisStep, onset: beat, duration: Math.min(step, chord.endBeat - beat), velocity: vel });
         }
-        beat += step;
+        beat += 0.25;  // 🌟 F-Bass-Subgenre: 每 0.25 拍推进找下一 hit（替代固定 step 推进）
       }
     }
 
@@ -219,13 +263,19 @@ export class TextureMapper {
     swingRatio: number = 0.5,
     nextEnergyLevel: number = 3,
     hasFullGrooveStarted: boolean = false,
-    melodyNotes: NoteData[] = []
+    melodyNotes: NoteData[] = [],
+    subgenre: string = 'Pop',  // 🌟 F-Drum: 子风格控制鼓 pattern
   ): NoteData[] {
     const KICK = 36;
     const SNARE = 38;
     const CHH = 42; // Closed hi-hat
     const OHH = 46; // Open hi-hat
     const CRASH = 49;
+    // 🌟 F-Drum-Tom: tom 鼓（GM 标准）
+    const TOM_LOW = 41;   // Low Floor Tom
+    const TOM_MID = 47;   // Low-Mid Tom
+    const TOM_HIGH = 50;  // High Tom
+    const RIDE = 51;
 
     const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
     const notes: NoteData[] = [];
@@ -245,55 +295,191 @@ export class TextureMapper {
       return notes;
     }
 
+    // 🌟 F-Drum: 4 种子风格 pattern（kick/snare/hihat 网格步进，16th 颗粒度）
+    // 每个 step = 0.25 拍，1 小节 = 16 step（4/4 拍）
+    // 数组定义：每 step 是否触发（true/false），velocity hint，swing 偏移可选
+    type DrumStep = { kick?: boolean; snare?: boolean; hihat?: boolean; openHat?: boolean; ghost?: boolean };
+    let pattern: DrumStep[] = [];
+
+    if (subgenre === 'Funk') {
+      // Funk: 反拍 kick + 16 分 hi-hat + 偶尔 syncopated snare
+      // 经典 James Brown / Funky drummer 简化版
+      pattern = [
+        { kick: true, hihat: true },              // step 0: 1 拍 kick + hh
+        { hihat: true, ghost: true },             // 0.5 + e
+        { kick: true, hihat: true },              // 0.75 + a (kick 反拍)
+        { hihat: true },                          // 1
+        { snare: true, hihat: true },             // 1 拍 snare
+        { hihat: true, ghost: true },             // e
+        { kick: true, hihat: true, openHat: true },// kick + open hh (funk groove)
+        { hihat: true },                          // a
+        { kick: true, hihat: true },              // 3 拍 kick
+        { hihat: true },                          // e
+        { hihat: true, ghost: true },             // and
+        { kick: true, hihat: true },              // a (kick 反拍切分)
+        { snare: true, hihat: true },             // 4 拍 snare
+        { hihat: true, ghost: true },             // e
+        { hihat: true },                          // and
+        { hihat: true },                          // a
+      ];
+    } else if (subgenre === 'Lo-fi') {
+      // Lo-fi: kick 1+3, snare 2+4, hi-hat 8 分但 swing
+      pattern = [
+        { kick: true, hihat: true },              // 1
+        {},                                       // e
+        { hihat: true },                          // and
+        {},                                       // a
+        { snare: true, hihat: true },             // 2
+        {},                                       // e
+        { hihat: true, ghost: true },             // and
+        {},                                       // a
+        { kick: true, hihat: true },              // 3
+        {},                                       // e
+        { hihat: true },                          // and
+        { ghost: true },                          // a (lazy ghost)
+        { snare: true, hihat: true },             // 4
+        {},                                       // e
+        { hihat: true },                          // and
+        {},                                       // a
+      ];
+    } else if (subgenre === 'Latin') {
+      // Latin: 切分 kick (1+3.5) + snare 2+4 + 三角铁式 hi-hat
+      pattern = [
+        { kick: true, hihat: true },              // 1
+        { hihat: true },                          // e
+        { hihat: true },                          // and
+        { hihat: true },                          // a
+        { snare: true, hihat: true },             // 2
+        { hihat: true },                          // e
+        { hihat: true },                          // and
+        { kick: true, hihat: true },              // a (kick syncopated 切分)
+        { hihat: true },                          // 3
+        { hihat: true },                          // e
+        { kick: true, hihat: true },              // and (kick on 3.5)
+        { hihat: true },                          // a
+        { snare: true, hihat: true },             // 4
+        { hihat: true },                          // e
+        { hihat: true },                          // and
+        { hihat: true },                          // a
+      ];
+    } else {
+      // Pop（默认）: 经典 kick 1+3, snare 2+4, hi-hat 8 分
+      pattern = [
+        { kick: true, hihat: true },              // 1
+        {},                                       // e
+        { hihat: true },                          // and
+        {},                                       // a
+        { snare: true, hihat: true },             // 2
+        {},                                       // e
+        { hihat: true },                          // and
+        {},                                       // a
+        { kick: true, hihat: true },              // 3
+        {},                                       // e
+        { hihat: true },                          // and
+        {},                                       // a
+        { snare: true, hihat: true },             // 4
+        {},                                       // e
+        { hihat: true },                          // and
+        {},                                       // a
+      ];
+    }
+
+    // 应用 pattern：扫描每 16th step
     let beat = startBeat;
-    let barBeat = 0; // position within current bar (0-based)
-
     while (beat < endBeat - 1e-6) {
-      barBeat = Math.round((beat - startBeat) * 4) % (beatsPerBar * 4); // in 16th note units
-      const beatInBar = barBeat / 4; // in quarter note units
-
-      // Kick: beats 1 and 3 (0-indexed: 0 and 2)
-      if (Math.abs(beatInBar - 0) < 1e-6 || Math.abs(beatInBar - 2) < 1e-6) {
-        notes.push({
-          pitch: KICK,
-          onset: beat,
-          duration: 0.5,
-          velocity: 0.85 + PRNGManager.next() * 0.1,
-        });
+      const stepInBar = Math.round((beat - startBeat) * 4) % 16;
+      const step = pattern[stepInBar];
+      if (step.kick) {
+        notes.push({ pitch: KICK, onset: beat, duration: 0.5, velocity: 0.85 + PRNGManager.next() * 0.1 });
       }
-
-      // Snare: beats 2 and 4 (0-indexed: 1 and 3)
-      if (Math.abs(beatInBar - 1) < 1e-6 || Math.abs(beatInBar - 3) < 1e-6) {
-        notes.push({
-          pitch: SNARE,
-          onset: beat,
-          duration: 0.25,
-          velocity: 0.8 + PRNGManager.next() * 0.1,
-        });
+      if (step.snare) {
+        notes.push({ pitch: SNARE, onset: beat, duration: 0.25, velocity: 0.8 + PRNGManager.next() * 0.1 });
       }
+      if (step.hihat) {
+        const isStrong = stepInBar % 4 === 0;
+        notes.push({ pitch: CHH, onset: beat, duration: 0.15, velocity: 0.5 + (isStrong ? 0.15 : 0) + PRNGManager.next() * 0.05 });
+      }
+      if (step.openHat) {
+        notes.push({ pitch: OHH, onset: beat, duration: 0.25, velocity: 0.55 + PRNGManager.next() * 0.05 });
+      }
+      if (step.ghost) {
+        // 鬼音：极轻的 hi-hat（不与 step.hihat 冲突，独立判定）
+        notes.push({ pitch: CHH, onset: beat, duration: 0.1, velocity: 0.3 + PRNGManager.next() * 0.05 });
+      }
+      // High energy: 在 16 分弱拍随机加 ghost hi-hat
+      if (energyLevel >= ENERGY.HIGH_MIN && !step.hihat && PRNGManager.next() < 0.3) {
+        notes.push({ pitch: CHH, onset: beat, duration: 0.1, velocity: 0.35 });
+      }
+      beat += 0.25;  // 16th note step
+    }
 
-      // Hi-hat: every 0.5 beat (8th notes)
-      notes.push({
-        pitch: CHH,
-        onset: beat,
-        duration: 0.15,
-        velocity: 0.5 + (Math.abs(beatInBar % 1) < 1e-6 ? 0.15 : 0) + PRNGManager.next() * 0.05,
-      });
-
-      // High energy: add ghost notes on 16th notes
-      if (energyLevel >= ENERGY.HIGH_MIN && PRNGManager.next() < 0.3) {
-        const ghostBeat = beat + 0.25;
-        if (ghostBeat < endBeat - 1e-6) {
-          notes.push({
-            pitch: CHH,
-            onset: ghostBeat,
-            duration: 0.1,
-            velocity: 0.35,
-          });
+    // 🌟 F-Drum-Tom + F-Drum-Variation: tom fill 注入
+    // 触发频率：8 小节末 100%；4 小节末（非 8 倍数）60% 概率（hash 决策，避免 PRNG）
+    // 替换该拍的 snare/hihat，插入 4 个 16 分 tom 音（high → mid → low → 重 snare/crash）
+    if (!isIntro && !isOutro) {
+      const totalBars = Math.round((endBeat - startBeat) / beatsPerBar);
+      const collectedBarsForFill: number[] = [];
+      // 收集所有 fill 触发位置：8 小节末必有，4 小节末按 hash 60%
+      for (let barIdx = 3; barIdx < totalBars; barIdx += 4) {
+        if ((barIdx + 1) % 8 === 0) {
+          // 8 小节末（barIdx=7, 15, 23...）100%
+          collectedBarsForFill.push(barIdx);
+        } else {
+          // 4 小节末非 8 倍数：用 hash(startBeat + barIdx) % 5 < 3 → 60% 概率
+          const hash = (Math.floor(startBeat * 7) + barIdx * 13) % 5;
+          if (hash < 3) collectedBarsForFill.push(barIdx);
+        }
+      }
+      for (const barIdx of collectedBarsForFill) {
+        const fillBarStart = startBeat + barIdx * beatsPerBar;
+        const fillBeat = fillBarStart + beatsPerBar - 1; // 末小节最后一拍
+        // 删除 fill 区间的 snare/hihat（保留 kick）
+        for (let ni = notes.length - 1; ni >= 0; ni--) {
+          if (notes[ni].onset >= fillBeat - 1e-6 && notes[ni].onset < fillBeat + 1.0 - 1e-6) {
+            if (notes[ni].pitch === SNARE || notes[ni].pitch === CHH || notes[ni].pitch === OHH) {
+              notes.splice(ni, 1);
+            }
+          }
+        }
+        // 插入 tom fill（4 个 16 分音：high → mid → mid → low + crash 在下小节首拍）
+        const fillVel = 0.7 + PRNGManager.next() * 0.15;
+        if (subgenre === 'Funk') {
+          // Funk: busy 16th fill (snare-tom-tom-tom)
+          notes.push({ pitch: SNARE, onset: fillBeat, duration: 0.2, velocity: fillVel });
+          notes.push({ pitch: TOM_HIGH, onset: fillBeat + 0.25, duration: 0.2, velocity: fillVel });
+          notes.push({ pitch: TOM_MID, onset: fillBeat + 0.5, duration: 0.2, velocity: fillVel + 0.05 });
+          notes.push({ pitch: TOM_LOW, onset: fillBeat + 0.75, duration: 0.2, velocity: fillVel + 0.1 });
+        } else if (subgenre === 'Latin') {
+          // Latin: 双 tom 切分 (tom_high - tom_mid - kick - tom_low)
+          notes.push({ pitch: TOM_HIGH, onset: fillBeat, duration: 0.2, velocity: fillVel });
+          notes.push({ pitch: TOM_MID, onset: fillBeat + 0.25, duration: 0.2, velocity: fillVel });
+          notes.push({ pitch: KICK, onset: fillBeat + 0.5, duration: 0.3, velocity: fillVel + 0.1 });
+          notes.push({ pitch: TOM_LOW, onset: fillBeat + 0.75, duration: 0.2, velocity: fillVel });
+        } else {
+          // Pop / Lo-fi: gentle 下行 fill (tom_high - tom_mid - tom_low - snare)
+          notes.push({ pitch: TOM_HIGH, onset: fillBeat, duration: 0.2, velocity: fillVel });
+          notes.push({ pitch: TOM_HIGH, onset: fillBeat + 0.25, duration: 0.2, velocity: fillVel });
+          notes.push({ pitch: TOM_MID, onset: fillBeat + 0.5, duration: 0.2, velocity: fillVel + 0.05 });
+          notes.push({ pitch: TOM_LOW, onset: fillBeat + 0.75, duration: 0.2, velocity: fillVel + 0.1 });
+        }
+        // 下小节首拍加 crash 强调（如果在 endBeat 内）
+        const nextBarStart = fillBarStart + beatsPerBar;
+        if (nextBarStart < endBeat - 1e-6) {
+          notes.push({ pitch: CRASH, onset: nextBarStart, duration: 1.5, velocity: 0.8 });
         }
       }
 
-      beat += 0.5;
+      // 🌟 段落末额外加 ride cymbal（替换最后 4 拍部分 hi-hat）—— Funk/Latin 才用
+      if (subgenre === 'Funk' || subgenre === 'Latin') {
+        const rideStart = endBeat - 4;
+        if (rideStart > startBeat + 1e-6) {
+          for (let ni = 0; ni < notes.length; ni++) {
+            if (notes[ni].onset >= rideStart - 1e-6 && notes[ni].pitch === CHH && PRNGManager.next() < 0.3) {
+              notes[ni].pitch = RIDE; // 30% hi-hat → ride
+            }
+          }
+        }
+      }
     }
 
     // Outro fade: reduce velocity for last 2 bars
@@ -320,15 +506,21 @@ export class TextureMapper {
    * 包括起始时间在区间外但仍在持续（sustain 跨过区间）的音符 —
    * 因为这些音符的发声仍会与副旋律产生纵向冲突。
    * max ~melodyNotes.length 元素
+   *
+   * @param anchorOnly 若 true，仅返回 isAnchor === true 的骨架音（P0 副旋律避让口径）。
+   *                   教程：副旋律只给主旋律的关键音让路，不给装饰/过渡音让路。
+   *                   未经 AnchorDecisionStage 标注的旧数据（isAnchor === undefined）被过滤。
    */
   private static getOverlappingMelodyNotes(
     melodyNotes: NoteData[],
     startBeat: number,
-    endBeat: number
+    endBeat: number,
+    anchorOnly: boolean = false
   ): NoteData[] {
     const result: NoteData[] = [];
     for (let i = 0; i < melodyNotes.length; i++) {
       const m = melodyNotes[i];
+      if (anchorOnly && m.isAnchor !== true) continue;
       const mEnd = m.onset + m.duration;
       // 区间重叠测试（半开区间，使用 epsilon 容差）
       if (m.onset < endBeat - 1e-6 && mEnd > startBeat + 1e-6) {
@@ -347,14 +539,53 @@ export class TextureMapper {
    *  11 = 大七度
    * 八度（mod 12 后为 0）也会被判为同度并跳过。
    * 返回 -1 表示无可用候选 — 调用方应跳过该副旋律事件。
+   *
+   * 🌟 P0 延伸音避让（chord 参数非 undefined 时启用）：
+   * 若某个重叠主旋律音符是 anchor 且落在和弦的 b7/maj7/9/11/13 延伸音位置，
+   * 副旋律候选必须**额外排除**该延伸音 pc —— 教程："关键音是和弦 7 度及以上延伸音，
+   * 伴奏中尽量不演奏该音，避免抢主旋律风头"。
    */
   private static pickConsonantPitch(
     candidates: number[],
-    overlappingMelody: NoteData[]
+    overlappingMelody: NoteData[],
+    chord?: GeneratedChord
   ): number {
+    // 计算需要额外 veto 的延伸音 pc（仅当主旋律 anchor 是和弦延伸音时）
+    const extensionVetoPcs: number[] = [];
+    if (chord !== undefined) {
+      const chordRootPc = ((chord.root % 12) + 12) % 12;
+      // 延伸音相对根音的半音偏移：b7=10, maj7=11, 9=2, 11=5, 13=9
+      const extensionOffsets = [10, 11, 2, 5, 9];
+      for (let mi = 0; mi < overlappingMelody.length; mi++) {
+        const m = overlappingMelody[mi];
+        if (m.isAnchor !== true) continue;
+        const mPc = ((m.pitch % 12) + 12) % 12;
+        const relToRoot = ((mPc - chordRootPc) + 12) % 12;
+        for (let ei = 0; ei < extensionOffsets.length; ei++) {
+          if (relToRoot === extensionOffsets[ei]) {
+            // anchor 落在延伸音上 → 伴奏必须避开这个 pc
+            let alreadyListed = false;
+            for (let vi = 0; vi < extensionVetoPcs.length; vi++) {
+              if (extensionVetoPcs[vi] === mPc) { alreadyListed = true; break; }
+            }
+            if (!alreadyListed) extensionVetoPcs.push(mPc);
+            break;
+          }
+        }
+      }
+    }
+
     for (let ci = 0; ci < candidates.length; ci++) {
       const p = candidates[ci];
       let ok = true;
+
+      // 延伸音 veto
+      const pPc = ((p % 12) + 12) % 12;
+      for (let vi = 0; vi < extensionVetoPcs.length; vi++) {
+        if (extensionVetoPcs[vi] === pPc) { ok = false; break; }
+      }
+      if (!ok) continue;
+
       for (let mi = 0; mi < overlappingMelody.length; mi++) {
         const interval = Math.abs(p - overlappingMelody[mi].pitch) % 12;
         if (interval === 0 || interval === 1 || interval === 6 || interval === 11) {
@@ -410,7 +641,8 @@ export class TextureMapper {
       // 必须检查整段持续期间所有重叠主旋律音符，不能只看起始点
       const holdStart = chord.startBeat;
       const holdEnd = Math.min(chord.endBeat, holdStart + 4);
-      const overlapping = this.getOverlappingMelodyNotes(melodyNotes, holdStart, holdEnd);
+      // 🌟 P0 anchorOnly：Pad 只避让主旋律的关键音，让过渡音自由穿行
+      const overlapping = this.getOverlappingMelodyNotes(melodyNotes, holdStart, holdEnd, true);
 
       // 候选优先级：三音 → 五音 → 根音 → 七音（snap 到调内）
       const padCandidates: number[] = [];
@@ -419,7 +651,7 @@ export class TextureMapper {
       if (chordTones.length > 0) padCandidates.push(HarmonyCore.snapToScale(chordTones[0], safeScalePcs));
       if (chordTones.length > 3) padCandidates.push(HarmonyCore.snapToScale(chordTones[3], safeScalePcs));
 
-      const padPitch = this.pickConsonantPitch(padCandidates, overlapping);
+      const padPitch = this.pickConsonantPitch(padCandidates, overlapping, chord);
       if (padPitch >= 0) {
         notes.push({
           pitch: padPitch,
@@ -441,10 +673,12 @@ export class TextureMapper {
 
         // 副旋律发声区间 [m.onset, m.onset + counterDuration)
         // 与该区间内所有重叠主旋律音符做冲突检测（不仅仅是同 onset 的 m 自身）
+        // 🌟 P0 anchorOnly：平行和声只避让主旋律的关键音
         const overlapping = this.getOverlappingMelodyNotes(
           melodyNotes,
           m.onset,
-          m.onset + counterDuration
+          m.onset + counterDuration,
+          true
         );
 
         // 候选优先级：三度 → 六度 → 四度 → 和弦音兜底
@@ -456,7 +690,7 @@ export class TextureMapper {
           candidates.push(chordTones[ti]);
         }
 
-        const counterPitch = this.pickConsonantPitch(candidates, overlapping);
+        const counterPitch = this.pickConsonantPitch(candidates, overlapping, chord);
         if (counterPitch < 0) continue;
 
         // 🌟 微错位 (Micro-shift)：副旋律在 ±0.05 拍内随机偏移，
@@ -578,10 +812,15 @@ export class TextureMapper {
           pitch,
           onset,
           duration: stepDur * 0.85, // 留一点 staccato 呼吸
-          velocity: 0.6,
+          velocity: 0.42, // F2: 背景化 — 从 0.6 降到 0.42，避免"独奏 spotlight"感
         });
       }
     }
+
+    // F1: 压到 C4-E5 中音区 — fill line 100% 孤立出现（主旋律休止窗口里），
+    // 高音区（G5-B5）用 Vibraphone/Glockenspiel 等金属音色会金属尖叫。
+    // 中音区让同样的音色变温暖，fill 作为"装饰"而非"独奏"。
+    this.clampToRange(fills, 60, 76); // C4 ~ E5
 
     return fills;
   }

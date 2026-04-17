@@ -63,14 +63,17 @@ const DefaultStyle: StyleConfig = {
         sectionTransitionPassingProb: 0.5,
     },
     rhythm: {
-        densityBase: [0.4, 0.6],
-        syncopationWeight: 0.2,
-        restProbability: 0.15,
-        disruptionProbability: 0.05,
+        // 🌟 F-Groove2: 扩大 base 区间。densityBase 是与 energy 联动的端点；
+        // syncopationWeight/restProbability/swingRatio 是 base，StructureEngine 在其基础上 PRNG 抽样
+        // 让歌与歌之间律动有质感差异。
+        densityBase: [0.3, 0.85],
+        syncopationWeight: 0.3,    // base 0.3 + PRNG ±0.225 → 全曲 [0.075, 0.525]
+        restProbability: 0.18,     // base 0.18 + PRNG ±0.125 → 全曲 [0.055, 0.305]
+        disruptionProbability: 0.08,
         humanize: 0.01,
-        swingRatio: 0.5,
+        swingRatio: 0.5,           // base 0.5 + PRNG +0~0.16 → 全曲 [0.5, 0.66]（直拍 → 中等摇摆）
         strictGrid: false,
-        chordAnticipation: 0,
+        chordAnticipation: 0.1,    // 0 → 0.1：偶尔出现和弦前奏增加 rhythmic 张力
     },
     melody: {
         stepwiseRatio: 0.7,
@@ -117,8 +120,13 @@ const DefaultStyle: StyleConfig = {
     },
     orchestration: {
         melodyInstruments: [
+            // 🌟 F-Melody-Pool: 用户指定，只保留键盘 / 敲击类（避免吹奏 + 弦乐 + 吉他作主旋律）
+            // - Piano / EP1: 温暖键盘
+            // - Music_Box / Marimba: 偶尔可做敲击式抒情主旋律（user 主动加回）
+            // 注意：Music_Box 仍在 EnsembleDrafter 的 BELL_INSTRUMENTS_BANNED_FROM_SECONDARY 里，
+            // 不会被选作副旋律，避免副旋律廉价 spotlight 感
             'Acoustic_Grand', 'Electric_Piano_1',
-            'Violin', 'Vibraphone', 'Music_Box',
+            'Music_Box', 'Marimba',
         ],
         chordInstruments: [
             'String_Ensemble', 'Pad_2_Warm', 'Acoustic_Guitar_Nylon',
@@ -128,11 +136,14 @@ const DefaultStyle: StyleConfig = {
             'Acoustic_Bass', 'Electric_Bass_Finger', 'Synth_Bass_1',
         ],
         drumInstruments: [
+            // 🌟 F-Drum-Kit: 扩展鼓组音色池（5 种 GM kit），让歌与歌之间鼓音色有差异
             'Standard_DrumKit', 'Electronic_DrumKit',
+            'Room_DrumKit', 'TR808_DrumKit', 'Orchestral_DrumKit',
         ],
         counterMelodyInstruments: [
-            'Pad_2_Warm', 'Choir_Aahs', 'Flute', 'Violin',
-            'Vibraphone', 'Marimba',
+            // 🌟 F-Counter-Pool: 用户指定，counterMelody 仅保留 pad / 人声铺底 / 键盘类
+            // 移除 Violin / Acoustic_Guitar_Nylon（弦乐 / 吉他作 counter 也不要）
+            'Pad_2_Warm', 'Choir_Aahs', 'Electric_Piano_2',
         ],
         texturePool: ['Block'],
         counterMelodyProbability: 0.5,
@@ -143,12 +154,14 @@ const DefaultStyle: StyleConfig = {
         // 公式：baseVol = 80 × 10^(dB/20)，+3dB=100, 0dB=80, -3dB=57, -6dB=40
         mixingPreferences: {
             vocal:           { pan: 0,    reverb: 0.43, volume: 3 },     // 100 — 主角但不爆
-            melody:          { pan: 0,    reverb: 0.43, volume: 0 },     // 80 — 适中，不抢不弱
-            secondaryMelody: { pan: 0.4,  reverb: 0.59, volume: -3, chorus: 40 },  // 57
-            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -4, chorus: 40 },  // 50
+            melody:          { pan: 0,    reverb: 0.43, volume: 2 },     // 🌟 0 → +2 dB 提升主旋律
+            secondaryMelody: { pan: 0.4,  reverb: 0.59, volume: 2, chorus: 40 },   // 🌟 +1 → +2 dB
+            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -1, chorus: 40 },  // 🌟 F-Vol: -4 → -1 dB
             chord:           { pan: 0.7,  reverb: 0.8,  volume: -4, chorus: 80 },  // 50
             drums:           { pan: 0,    reverb: 0.08, volume: 1 },     // 89
-            bass:            { pan: 0,    reverb: 0,    volume: -2 },    // 64
+            // 🌟 F-Bass-Stage: 贝斯加 reverb 0 → 0.20（空间感）+ chorus 60（stereo width，制造声场感）
+            // volume 0 → -1（按用户要求调小一档）
+            bass:            { pan: 0,    reverb: 0.20, volume: -1, chorus: 60 },
         },
     },
     modulation: {

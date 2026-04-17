@@ -8,13 +8,17 @@ export type ChordProgression = string[];
  *   uint8_t velocity;    // 0-127 (mapped from 0.0-1.0 float if needed)
  *   float onset;         // Beat position
  *   float duration;      // Beat length
- *   // Optional flags can be packed into a bitfield (uint8_t flags)
+ *   // Optional flags packed into a bitfield (uint8_t flags):
+ *   //   bit 0 = isGraceNote
+ *   //   bit 1 = isUserMotif
+ *   //   bit 2 = isAnchor          (melody anchor note; see AnchorDecisionStage)
+ *   //   bit 3 = isPreBuiltAnchor  (P6 pre-built anchor; AnchorDecisionStage 跳过其 snap/clear)
  * };
  */
 import { MoodId } from './config/MoodFlags';
 import { StyleId } from './config/StyleFlags';
 
-export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
+export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; isAnchor?: boolean; isPreBuiltAnchor?: boolean; }
 export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
@@ -153,6 +157,13 @@ export interface SubMotifSlot {
     lengthBars: number;     // 子动机长度（小节数），通常 1 或 2
     isPeak?: boolean;       // 是否是 hook 峰值位（仅 Chorus group 设置）
     pitchShift?: number;    // 相对 group 中心的半音偏移（用于 sequence）
+    /**
+     * 🌟 P6: 预抽的 cadence 度数（1=root, 3=3rd, 5=5th, 2/7=色彩音）
+     * - 仅在 group 末尾 slot 设置
+     * - AnchorBackbone 读取此值决定末位 anchor pitch（避免重复消耗 PRNG）
+     * - 由 ToplineEngine 在 phraseGroups 创建后立即预抽，挂到末位 slot 上
+     */
+    precomputedCadenceDegree?: number;
 }
 
 /**
@@ -397,6 +408,12 @@ export interface SectionMetadata {
     // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
     localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
     isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)
+    /**
+     * 🌟 F-Drum: 全曲律动子风格（Pop / Funk / Lo-fi / Latin）
+     * 由 StructureEngine 在 generateFullSongStructure 入口抽样，写入所有 section（同一首歌共享）
+     * Orchestrator 读取此字段决定鼓组 pattern
+     */
+    subgenre?: string;
 }
 
 export interface MixingConfig {

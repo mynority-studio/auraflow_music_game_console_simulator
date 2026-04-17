@@ -109,6 +109,58 @@ export class GrooveEngine {
         return this.capSyncopation(sortAndDedupNumbers(fingerprint));
     }
 
+    /**
+     * 🌟 F-Groove1: PhraseGroup 级律动变体
+     * 在 base 指纹基础上做 1-2 个 step 的概率扰动（增/删一个 hit），
+     * 让每个大乐句的节奏不完全相同，但保留段落"family resemblance"。
+     *
+     * @param baseGroove   段落级基础指纹
+     * @param beatsPerBar  拍号分子
+     * @param phraseIdx    PhraseGroup 索引（不同 phrase 引入不同扰动方向）
+     * @returns 变体指纹（保留 [0] 强拍锚点）
+     */
+    public static varyGrooveForPhrase(
+        baseGroove: number[],
+        beatsPerBar: number,
+        phraseIdx: number,
+    ): number[] {
+        if (baseGroove.length === 0) return baseGroove;
+        const result: number[] = [];
+        for (let i = 0; i < baseGroove.length; i++) result.push(baseGroove[i]);
+
+        const loopLength = 2 * beatsPerBar;
+        const totalSteps = loopLength / this.GRID_STEP;
+
+        // 第一个 phrase 不扰动（保持 base 锚点感），后续 phrase 每个做 1-2 次扰动
+        if (phraseIdx === 0) return result;
+
+        // 扰动次数：偶数 phrase 1 次，奇数 2 次（节奏感波动）
+        const mutateCount = (phraseIdx % 2 === 0) ? 1 : 2;
+        for (let m = 0; m < mutateCount; m++) {
+            const action = PRNGManager.next();
+            if (action < 0.5 && result.length > 2) {
+                // 删一个 hit（不删 [0] 强拍锚点）
+                const removeIdx = 1 + Math.floor(PRNGManager.next() * (result.length - 1));
+                result.splice(removeIdx, 1);
+            } else {
+                // 加一个 hit（在 base 没有的 step 上，优先加在 8 分反拍）
+                const candidates: number[] = [];
+                for (let s = 1; s < totalSteps; s++) {
+                    const offset = s * this.GRID_STEP;
+                    if (result.indexOf(offset) === -1) {
+                        candidates.push(offset);
+                    }
+                }
+                if (candidates.length > 0) {
+                    const addIdx = Math.floor(PRNGManager.next() * candidates.length);
+                    result.push(candidates[addIdx]);
+                    result.sort((a, b) => a - b);
+                }
+            }
+        }
+        return this.capSyncopation(result);
+    }
+
     // ⚖️ 旋律与伴奏的互补对抗 (Inverse Density)
     public static generateInverseGroove(baseGroove: number[], beatsPerBar: number, density: number = 0.5): number[] {
         const loopLength = 2 * beatsPerBar;
