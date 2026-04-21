@@ -2082,13 +2082,17 @@ export class ToplineEngine {
                     }
                     currentPitch = this.getNearestOctave(bestPc, targetPitch);
                 } else if (notes.length >= 2) {
-                    // 🌟 柔性 Leap Compensation：大跳后有 45% 概率反向级进（非 100% 强制）
+                    // 🌟 M1: 强制 Leap Resolution — 大跳(≥ leapThreshold)后 100% 反向级进,反向幅度 ≥2 半音
+                    // 原 45% 概率门控移除,经典对位法则"拉伸-释放"必须生效
                     const prevPrevPitch = notes[notes.length - 2].pitch;
                     const prevInterval = previousPitch - prevPrevPitch;
                     const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5;
-                    if (Math.abs(prevInterval) >= leapThreshold && PRNGManager.next() < 0.45) {
+                    if (Math.abs(prevInterval) >= leapThreshold) {
+                        PRNGManager.next(); // 保持 PRNG 序列对齐(原 gate)
+                        PRNGManager.next(); // 保持 PRNG 序列对齐(原方向 toss)
                         const gapDirection = prevInterval > 0 ? -1 : 1;
-                        let targetPitch = previousPitch + gapDirection * (PRNGManager.next() > 0.5 ? 1 : 2);
+                        // 反向幅度固定 ≥2 半音,保证"紧张-弛豫"听感明确
+                        const targetPitch = previousPitch + gapDirection * 2;
 
                         let bestPc = safeScalePcs[0];
                         let minDistance = 999;
@@ -2142,9 +2146,16 @@ export class ToplineEngine {
                     // 大幅降低倚音频率，避免过于密集和烦人。使用方法论：一小节最多出现一次，或者只在长音前出现
                     const maxGraceNotesPerPhrase = isSolo ? 2 : 1;
                     let graceNotesInPhrase = notes.filter(n => (n as any).isGraceNote).length;
-                    
+
                     const graceChance = style?.melody?.inflectionProbability ?? (isSolo ? 0.08 : (isInstrumental ? 0.04 : 0.02)); // 大幅降低倚音频率
-                    if (PRNGManager.next() < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
+                    const graceRoll = PRNGManager.next(); // 保持 PRNG 序列稳定,不随 O2 skip 跳过消耗
+
+                    // 🌟 O2: 大跳解决期间跳过倚音装饰 — 让反向级进的解决音独立鸣响,避免掩盖"拉伸-释放"对位
+                    let prevPrevInterval = 0;
+                    if (notes.length >= 2) prevPrevInterval = Math.abs(previousPitch - notes[notes.length - 2].pitch);
+                    const isResolvingLeap = prevPrevInterval > 3;
+
+                    if (!isResolvingLeap && graceRoll < graceChance && notes.length > 0 && !isPhraseEnd && graceNotesInPhrase < maxGraceNotesPerPhrase) {
                         const lastNote = notes[notes.length - 1];
                         // 只有当上一个音足够长，且当前音在强拍或次强拍时，才加倚音，增加“高级感”
                         const isTargetStrongBeat = isOnDownbeat(onset) || (isOnGrid(onset, 0.5) && PRNGManager.next() < 0.3);

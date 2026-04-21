@@ -425,6 +425,17 @@ export class Orchestrator {
             let texture = state.texture;
             let densityMultiplier = state.densityMultiplier || 1.0;
 
+            // 🌟 F4: melody density profile — Look-ahead Call-and-Response
+            // 统计当前 chord 时间段内主旋律 onset 密度 (notes/beat),高密度时伴奏自动让路
+            // 0.0=静默,1.0=密集(>=4 notes/beat = 16 分音符连音),伴奏在 >0.65 时退为 Pad/半速
+            const chordDurForDensity = Math.max(chord.endBeat - chord.startBeat, 1e-6);
+            let melodyOnsetCount = 0;
+            for (let mi = 0; mi < idiomaticMelody.length; mi++) {
+                const m = idiomaticMelody[mi];
+                if (m.onset >= chord.startBeat - 1e-6 && m.onset < chord.endBeat - 1e-6) melodyOnsetCount++;
+            }
+            const melodyDensity = Math.min(1.0, (melodyOnsetCount / chordDurForDensity) / 4.0);
+
             // 🌟 极低算力下的史诗级听感黑客技巧：真空效应 (Vacuum Effect / Dropout)
             const sectionIndex = activeSectionIdx; // 复用上面已计算的索引，避免重复 findIndex
             const beatsUntilNextSection = activeSection.endBeat - chord.startBeat;
@@ -627,7 +638,7 @@ export class Orchestrator {
                             if (beat2 >= chord.startBeat - 1e-6 && beat2 < chord.endBeat - 1e-6) kickAnchors.push(beat2);
                         }
                     }
-                    Orchestrator.appendAll(lhNotes, TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors));
+                    Orchestrator.appendAll(lhNotes, TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors, melodyDensity));
                 }
             }
 
@@ -683,17 +694,16 @@ export class Orchestrator {
                     chordNotes = TextureMapper.generateRiff(chord, energy, track.tonality);
                 } else {
                     chordNotes = TextureMapper.generateChordTexture(
-                        chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel
+                        chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel, melodyDensity
                     );
                 }
                 Orchestrator.appendAll(rhNotes, chordNotes);
                 
                 // Update prevVoicing for the next chord
+                // 🌟 F3: 阈值从 53 降至 48(C3),确保 chord-texture clamp 范围 [48,60] 内的所有音都参与 voice leading
                 if (chordNotes.length > 0) {
-                    // Extract unique pitches from ALL chord notes generated for this chord, ignoring bass notes
-                    const highNotes = chordNotes.filter(n => n.pitch >= 53);
+                    const highNotes = chordNotes.filter(n => n.pitch >= 48);
                     if (highNotes.length > 0) {
-                        // C 可移植：用专用 dedup 工具取代 Set
                         prevVoicing = sortAndDedupNumbers(highNotes.map(n => n.pitch));
                     }
                 }
@@ -759,7 +769,7 @@ export class Orchestrator {
                     const treatAsIntro = sec.sectionType === SectionType.Intro && !isDrumSoloIntro;
                     const isOutroSec = sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro;
 
-                    Orchestrator.appendAll(drumNotes, TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, isOutroSec, swingRatio, nextEnergyLevel, hasFullGrooveStarted));
+                    Orchestrator.appendAll(drumNotes, TextureMapper.generateDrumGroove(startBeat, sec.endBeat, effectiveEnergy, treatAsIntro, isOutroSec, swingRatio, nextEnergyLevel, hasFullGrooveStarted, idiomaticMelody, track.timeSignature));
                 }
             });
         }
@@ -869,6 +879,35 @@ export class Orchestrator {
         TransitionEngine.applyBoundaries(track.sections, lhNotes, rhNotes, drumNotes, track.timeSignature[0], style);
         if (!hasDrums) drumNotes.length = 0; 
 
+        // 🌟 M5: 段落末尾强制留白 gate — 高能量段落(energy ≥ 7)结束前 1 拍,
+        // 贝斯/和弦/副旋律强制静音,主旋律高潮余音在残响中回荡,制造戏剧泵感
+        // 条件: energy ≥ 7, 非最后段, 下一段能量差 >= -1 (避免副歌骤降到 Outro 引发二次失衡)
+        // Outro/PreOutro 段作为终章不触发,由 ritardando 处理
+        const SILENCE_BEATS = 1.0;
+        for (let si = 0; si < track.sections.length - 1; si++) {
+            const sec = track.sections[si];
+            if (sec.energyLevel < 7) continue;
+            if (sec.sectionType === SectionType.Outro || sec.sectionType === SectionType.PreOutro) continue;
+            const nextSec = track.sections[si + 1];
+            if (nextSec.energyLevel < sec.energyLevel - 1) continue;
+            const silenceStart = sec.endBeat - SILENCE_BEATS;
+            const silenceEnd = sec.endBeat;
+            // 原地截断:在静音窗口内有 onset 的音符被移除,持续到窗口内的音符 duration 缩短到窗口起点
+            const trimInWindow = (notes: NoteData[]) => {
+                for (let i = notes.length - 1; i >= 0; i--) {
+                    const n = notes[i];
+                    if (n.onset >= silenceStart - 1e-6 && n.onset < silenceEnd - 1e-6) {
+                        notes.splice(i, 1);
+                    } else if (n.onset < silenceStart - 1e-6 && n.onset + n.duration > silenceStart + 1e-6) {
+                        n.duration = silenceStart - n.onset;
+                    }
+                }
+            };
+            trimInWindow(lhNotes);
+            trimInWindow(rhNotes);
+            trimInWindow(counterMelodyNotes);
+        }
+
         // Use raw note arrays directly (no InstrumentIdiom post-processing)
         const humanizedLH = lhNotes;
         const humanizedRH = rhNotes;
@@ -946,6 +985,15 @@ export class Orchestrator {
         applyOffset(humanizedLH);
         applyOffset(humanizedRH);
         applyOffset(humanizedCounterMelody);
+
+        // 🌟 F1: applyOffset 后硬边界 — 防止高调号(A=+9, B=+11)下声部越界超 safeRange
+        // 每个声部按其功能音域八度回绕,保持动机走向但锁死物理音域,避免 Cello/Pad 声部越顶
+        this.wrapToAbsoluteRange(humanizedMelody, 48, 84);          // melody: C3-C6
+        if (humanizedVocal) this.wrapToAbsoluteRange(humanizedVocal, 48, 79);  // vocal: C3-G5
+        this.wrapToAbsoluteRange(humanizedSecondaryMelody, 48, 84); // secondary: C3-C6
+        this.wrapToAbsoluteRange(humanizedLH, 28, 52);              // bass: E1-E3
+        this.wrapToAbsoluteRange(humanizedRH, 48, 72);              // chord: C3-C5
+        this.wrapToAbsoluteRange(humanizedCounterMelody, 55, 79);   // counter: G3-G5
 
         // 🌟 提案二：Ritardando 渐慢算法 (Non-linear tempo deceleration)
         const tempoCurves: any[] = [];
@@ -1250,6 +1298,17 @@ export class Orchestrator {
      * 强拍 +0.03 / 弱拍 -0.03,加强拍感
      * 仅作用于 melody/chord/counter/secondary/vocal(bass 已由 Kick 锚点处理)
      */
+    /**
+     * F1: applyOffset 后的硬边界回绕 — 八度位移至 [minAbs, maxAbs] 范围内
+     * 不丢音符,只做八度折叠,保持旋律走向(contour)不变
+     */
+    private static wrapToAbsoluteRange(notes: NoteData[], minAbs: number, maxAbs: number): void {
+        for (let i = 0; i < notes.length; i++) {
+            while (notes[i].pitch > maxAbs) notes[i].pitch -= 12;
+            while (notes[i].pitch < minAbs) notes[i].pitch += 12;
+        }
+    }
+
     private static applyVelocityHumanize(notes: NoteData[]): void {
         for (let i = 0; i < notes.length; i++) {
             const n = notes[i];

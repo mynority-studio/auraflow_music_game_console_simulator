@@ -216,6 +216,30 @@ function scoreStep(
     const complexity = cand.bitCount - 3;
     const complexityTax = complexity > 0 ? complexity * W_COMPLEXITY_TAX : 0;
 
+    // 🌟 M2: iii9/vi9 度数级联惩罚 — 避免 Phrygian b9 / 模糊属音听感
+    // - iii (rootPc=4) 在大调中是 Phrygian 调式,加 9 得 b9,强烈不协和 → -2
+    // - vi (rootPc=9) 在大调中加 9 形成与 IV 级的导音冲突,弱化下降感 → -1
+    // 仅对 Minor9 扩展(ChordQuality.Minor9 = 12)生效
+    let degreeTax = 0;
+    if (cand.quality === 12 /* ChordQuality.Minor9 */) {
+        if (cand.rootPc === 4) degreeTax = -2;
+        else if (cand.rootPc === 9) degreeTax = -1;
+    }
+
+    // 🌟 O1: 扩展音跨和弦兼容性 — 防止复杂扩展和弦(5+ tones)突兀冲入/溢出
+    // 从简单三和弦(bitCount=3)直接跳到 11/13 大扩展(bitCount>=5) → 突兀,轻惩罚
+    // 两个扩展和弦连续出现 → 扩展音有机会共享(准备-解决),轻奖励
+    let extensionCompat = 0;
+    if (cand.bitCount >= 5 && prev !== null) {
+        if (prev.bitCount <= 3) {
+            extensionCompat = -1; // 突兀扩展
+        } else {
+            // 两复杂和弦衔接,若 mask 共同位 >=3 则平滑过渡
+            const shared = commonTones(cand.mask, prev.mask);
+            extensionCompat = shared >= 3 ? 1 : 0;
+        }
+    }
+
     // 加权求和（量纲：score × 10，个位留给 tiebreaker）
     // 🌟 PR #3: 加入 cand.functionalBonus —— 风格驱动的"特征和弦"补偿
     const base =
@@ -226,6 +250,8 @@ function scoreStep(
         functional * W_FUNCTIONAL +
         repeatPenalty +
         complexityTax +
+        degreeTax +
+        extensionCompat +
         cand.functionalBonus;
 
     // PRNG tiebreaker —— Luis 的决定论防坍塌机制

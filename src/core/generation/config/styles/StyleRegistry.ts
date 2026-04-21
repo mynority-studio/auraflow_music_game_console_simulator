@@ -128,7 +128,7 @@ const DefaultStyle: StyleConfig = {
             'Acoustic_Bass', 'Electric_Bass_Finger', 'Synth_Bass_1',
         ],
         drumInstruments: [
-            'Standard_DrumKit', 'Electronic_DrumKit',
+            'Standard_DrumKit',
         ],
         counterMelodyInstruments: [
             'Pad_2_Warm', 'Choir_Aahs', 'Flute', 'Violin',

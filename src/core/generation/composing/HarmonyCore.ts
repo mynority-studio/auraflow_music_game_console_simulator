@@ -232,6 +232,16 @@ export class HarmonyCore {
                     const move2 = cand[i-1] - prevVoicing[closestPrevIdx-1];
                     if ((move1 > 0 && move2 > 0) || (move1 < 0 && move2 < 0)) {
                         parallelMotionPenalty += 2; // Penalty for parallel motion
+
+                        // 🌟 M6: 平行五度/八度硬检测 — 古典对位绝对禁忌
+                        // 只有当两声部都同向移动,且音程保持 7(P5) 或 12/0(P8) 时触发
+                        const intervalPrev = Math.abs(prevVoicing[closestPrevIdx] - prevVoicing[closestPrevIdx - 1]);
+                        const intervalCand = Math.abs(cand[i] - cand[i - 1]);
+                        const ivPrev12 = intervalPrev % 12;
+                        const ivCand12 = intervalCand % 12;
+                        if ((ivPrev12 === 7 && ivCand12 === 7) || (ivPrev12 === 0 && ivCand12 === 0 && intervalPrev > 0 && intervalCand > 0)) {
+                            parallelMotionPenalty += 6; // 叠加硬惩罚,超过共同音奖励 -5 避免被一个 common tone 压过
+                        }
                     }
                 }
             }
@@ -394,16 +404,22 @@ export class HarmonyCore {
             }
         });
 
-        // 🌟 Avoid Note 过滤：大和弦完全四度 + sus4 大三度
-        const quality = chord.quality;
-        const chordRootPc = chord.root % 12;
-        if (quality === 'Major' || quality === 'Major7' || quality === 'Major9' || quality === 'Add9') {
-            const perfectFourth = (chordRootPc + 5) % 12;
-            scalePcs = scalePcs.filter(spc => spc !== perfectFourth);
-        }
-        if (quality === 'Sus4' || quality === 'Dominant7Sus4') {
-            const majorThird = (chordRootPc + 4) % 12;
-            scalePcs = scalePcs.filter(spc => spc !== majorThird);
+        // 🌟 F2: 通用 Avoid Note 清除 — 和弦音上方/下方半音若在 scale 中且非和弦音则禁用
+        // 典型案例:
+        //   I (C E G) → 移除 F (E+1, 经典 4th avoid) + B (C-1, 大七下方半音)
+        //   iii (Em) 在大调中 → 移除 F (E+1, Phrygian b2) + C (B+1, Phrygian 风味)
+        //   ii (Dm) 在大调中 → 移除 E (F-1, b9 avoid)
+        // 统一替代旧的 Major/Sus4 特殊规则,对所有 quality 和所有调式生效
+        for (let ci = 0; ci < chordTones.length; ci++) {
+            const ct = chordTones[ci];
+            const upper = (ct + 1) % 12;
+            const lower = (ct + 11) % 12;
+            if (!chordTones.includes(upper)) {
+                scalePcs = scalePcs.filter(spc => spc !== upper);
+            }
+            if (!chordTones.includes(lower)) {
+                scalePcs = scalePcs.filter(spc => spc !== lower);
+            }
         }
 
         return sortAndDedupNumbers([...scalePcs, ...chordTones]);

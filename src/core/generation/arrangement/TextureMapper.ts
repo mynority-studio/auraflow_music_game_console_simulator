@@ -1,7 +1,6 @@
 import { PRNGManager } from "../../utils/PRNG";
 import { NoteData, GeneratedChord, Tonality } from "../types";
 import { HarmonyCore } from "../composing/HarmonyCore";
-import { GlobalContext } from "../GlobalContext";
 import { ENERGY } from "../config/EnergyThresholds";
 
 export class TextureMapper {
@@ -29,10 +28,14 @@ export class TextureMapper {
     nextChord?: GeneratedChord,
     nextEnergyLevel: number = 3,
     kickAnchors: number[] = [],
+    melodyDensity: number = 0, // 🌟 F4: 0..1 主旋律密度,高时贝斯退化为半拍/整拍
   ): NoteData[] {
     const bassTones = HarmonyCore.getChordTones(chord, 36);
     let rootMidi = bassTones[0];
-    const fifthMidi = bassTones.length > 2 ? bassTones[2] : rootMidi; // 五音
+    // 🌟 M3: 低音域(< C2/MIDI 36)禁用三度堆叠,只使用 root/五度/八度避免拍频浑浊
+    // 直接用 root+7 取代 bassTones[2](避免 Diminished/Sus4 等不规则和弦返回 3rd/tritone 作"fifth")
+    // 即使 chord 是 Dim/HalfDim,bass 声部仍应保持纯五度地基,和弦色彩由 pianoRH 承担
+    const fifthMidi = rootMidi + 7;
     const chordLen = chord.endBeat - chord.startBeat;
     const notes: NoteData[] = [];
 
@@ -63,7 +66,9 @@ export class TextureMapper {
       notes.push({ pitch: rootMidi, onset: chord.startBeat, duration: Math.min(chordLen, 2), velocity: 0.7 });
     } else {
       // 正常段落：每拍弹根音（跟随鼓组 groove）
-      const step = energyLevel >= ENERGY.HIGH_MIN ? 1 : 2;
+      // 🌟 F4: melody 高密度时贝斯强制退化为 step=2 (半音符),给旋律让出空间
+      const forceSparse = melodyDensity > 0.65;
+      const step = forceSparse ? 2 : (energyLevel >= ENERGY.HIGH_MIN ? 1 : 2);
       let beat = chord.startBeat;
       while (beat < chord.endBeat - 1e-6) {
         const isLastStep = (beat + step >= chord.endBeat - 1e-6);
@@ -219,7 +224,8 @@ export class TextureMapper {
     swingRatio: number = 0.5,
     nextEnergyLevel: number = 3,
     hasFullGrooveStarted: boolean = false,
-    melodyNotes: NoteData[] = []
+    melodyNotes: NoteData[] = [],
+    timeSignature: [number, number] = [4, 4], // 🌟 M4: 显式接收 timeSignature,取代 GlobalContext 读取(K-5 合规)
   ): NoteData[] {
     const KICK = 36;
     const SNARE = 38;
@@ -227,7 +233,7 @@ export class TextureMapper {
     const OHH = 46; // Open hi-hat
     const CRASH = 49;
 
-    const beatsPerBar = GlobalContext.currentTimeSignature[0] || 4;
+    const beatsPerBar = timeSignature[0] || 4;
     const notes: NoteData[] = [];
 
     // Intro: hi-hat only with optional crash on beat 1
@@ -280,8 +286,17 @@ export class TextureMapper {
         velocity: 0.5 + (Math.abs(beatInBar % 1) < 1e-6 ? 0.15 : 0) + PRNGManager.next() * 0.05,
       });
 
+      // 🌟 O4: Hocketing — 检测当前半拍窗口内 melody 是否活跃
+      // melody 密集时抑制 ghost 概率,留白时稍微增强,形成互锁律动
+      let melodyBusy = false;
+      for (let mi = 0; mi < melodyNotes.length; mi++) {
+        const mOnset = melodyNotes[mi].onset;
+        if (mOnset >= beat - 1e-6 && mOnset < beat + 0.5 - 1e-6) { melodyBusy = true; break; }
+      }
+
       // High energy: add ghost notes on 16th notes
-      if (energyLevel >= ENERGY.HIGH_MIN && PRNGManager.next() < 0.3) {
+      const ghostChance = melodyBusy ? 0.1 : 0.35;
+      if (energyLevel >= ENERGY.HIGH_MIN && PRNGManager.next() < ghostChance) {
         const ghostBeat = beat + 0.25;
         if (ghostBeat < endBeat - 1e-6) {
           notes.push({
@@ -383,7 +398,6 @@ export class TextureMapper {
   ): NoteData[] {
     const notes: NoteData[] = [];
     const safeScalePcs = HarmonyCore.getSafeScalePitches(chord, tonality);
-    const chordTones = HarmonyCore.getChordTones(chord, 72); // C5 附近
 
     // 节奏决策仍按"和弦区间起始的主旋律音符"判断密度（保持原行为）
     const chordMelody = melodyNotes.filter(
@@ -391,6 +405,16 @@ export class TextureMapper {
     );
 
     if (chordMelody.length === 0) return notes;
+
+    // 🌟 M7: 动态锚点 — counterMelody 音域跟随主旋律重心,避免跨调号时声部倒悬
+    // counterMelody 保持 melody 上方 3-14 半音(大二度到小九度),让和声关系始终协调
+    let melodySum = 0;
+    for (let mi = 0; mi < chordMelody.length; mi++) melodySum += chordMelody[mi].pitch;
+    const mCenter = melodySum / chordMelody.length;
+    const counterMinPitch = Math.max(60, Math.floor(mCenter + 3));
+    const counterMaxPitch = Math.min(84, Math.floor(mCenter + 14));
+    // chordTones 中心对齐 melody 上方 ~7 半音(五度),保证选音在正确音域
+    const chordTones = HarmonyCore.getChordTones(chord, Math.floor(mCenter + 7));
 
     // 🌟 节奏互锁：检测主旋律密度
     // 连续短音（<=0.5拍）超过 3 个 = 密集段，副旋律只放长音 Pad
@@ -431,6 +455,11 @@ export class TextureMapper {
       // padPitch < 0 时静默跳过 — Pad 找不到非冲突音高时宁可空白也不要碰撞
     } else {
       // 稀疏段：三度上方平行
+      // 🌟 O3: 跨音符平行 P5/P8 检测状态 — 跟踪上一个 (counter, melody) 对,
+      // 若两次均为 P5/P8 且同向移动,则拒绝当前候选,改用次优
+      let prevCounterPitch = -1;
+      let prevMelodyPitch = -1;
+
       for (let i = 0; i < chordMelody.length; i++) {
         const m = chordMelody[i];
 
@@ -456,8 +485,34 @@ export class TextureMapper {
           candidates.push(chordTones[ti]);
         }
 
-        const counterPitch = this.pickConsonantPitch(candidates, overlapping);
+        // 🌟 O3: 过滤候选 — 若候选与 melody 形成 P5/P8 且与上一步平行运动,则淘汰
+        const filteredCandidates: number[] = [];
+        for (let ci = 0; ci < candidates.length; ci++) {
+          const cand = candidates[ci];
+          if (prevCounterPitch > 0 && prevMelodyPitch > 0) {
+            const prevIv = Math.abs(prevCounterPitch - prevMelodyPitch) % 12;
+            const curIv = Math.abs(cand - m.pitch) % 12;
+            const isParallelP5 = prevIv === 7 && curIv === 7;
+            const isParallelP8 = prevIv === 0 && curIv === 0;
+            if (isParallelP5 || isParallelP8) {
+              const counterMove = cand - prevCounterPitch;
+              const melodyMove = m.pitch - prevMelodyPitch;
+              if ((counterMove > 0 && melodyMove > 0) || (counterMove < 0 && melodyMove < 0)) {
+                continue; // 跳过此平行候选
+              }
+            }
+          }
+          filteredCandidates.push(cand);
+        }
+
+        const counterPitch = this.pickConsonantPitch(
+          filteredCandidates.length > 0 ? filteredCandidates : candidates,
+          overlapping
+        );
         if (counterPitch < 0) continue;
+
+        prevCounterPitch = counterPitch;
+        prevMelodyPitch = m.pitch;
 
         // 🌟 微错位 (Micro-shift)：副旋律在 ±0.05 拍内随机偏移，
         // 打破与主旋律的完全节奏同步，制造演奏不一致的人性化听感。
@@ -480,7 +535,8 @@ export class TextureMapper {
     }
 
     const truncated = this.truncateToChordEnd(notes, chord.endBeat);
-    this.clampToRange(truncated, 72, 84); // Counter Melody: C5 ~ C6
+    // 🌟 M7: 动态音域 clamp — 基于 melody 重心,非固定 72-84
+    this.clampToRange(truncated, counterMinPitch, counterMaxPitch);
     return truncated;
   }
 
@@ -600,7 +656,12 @@ export class TextureMapper {
     nextChord?: GeneratedChord,
     prevVoicing?: number[],
     nextEnergyLevel?: number,
+    melodyDensity: number = 0, // 🌟 F4: melody 密度,>0.65 强制 Pad 让旋律喘息
   ): NoteData[] {
+    // 🌟 F4: melody 16 分连音时,块和弦/琶音过于拥挤 → 强制 Pad 长音铺底
+    if (melodyDensity > 0.65 && textureType !== 'Riff') {
+      textureType = 'Pad';
+    }
     const notes: NoteData[] = [];
     const chordLen = chord.endBeat - chord.startBeat;
     // 🌟 energy 缩放 baseVelocity：各声部力度随 energy 呼吸
@@ -610,15 +671,10 @@ export class TextureMapper {
     if (prevVoicing && prevVoicing.length > 0) {
       voicing = HarmonyCore.getSmoothVoicing(chord, prevVoicing, 60);
     } else {
-      // 🌟 段落首个和弦：生成紧凑排列（close voicing），确保后续 voice leading 有合理起点
-      // 将所有音压缩到 C4(60) 附近的 1 个八度内，避免散乱的 block transpose
-      const raw = HarmonyCore.getChordTones(chord, 60);
-      voicing = raw.map(p => {
-        let v = p;
-        while (v < 55) v += 12;  // 不低于 G3
-        while (v > 72) v -= 12;  // 不高于 C5
-        return v;
-      });
+      // 🌟 F3: 段落首和弦也走 smooth voicing — 用 C4 大三和弦作虚拟前置
+      // 让首和弦同样经过转位枚举和 voice-leading 评分,避免与前段末尾或下一和弦产生 >5 半音跳跃
+      const synthPrev = [60, 64, 67]; // C major triad @ C4,仅作算法启动点
+      voicing = HarmonyCore.getSmoothVoicing(chord, synthPrev, 60);
     }
 
     voicing = voicing.map(p => p < 48 ? p + 12 : p);
