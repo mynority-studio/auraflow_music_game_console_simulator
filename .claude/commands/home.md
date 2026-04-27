@@ -114,7 +114,9 @@ if [ "$LOCAL_AHEAD" -eq 0 ] && [ "$REMOTE_AHEAD" -eq 0 ]; then
 elif [ "$REMOTE_AHEAD" -gt 0 ]; then
   echo "⚠️  远程领先 $REMOTE_AHEAD 个 commit，建议执行：git pull origin $DEFAULT_BRANCH"
 fi
-[ "$LOCAL_AHEAD" -gt 0 ] && echo "本地领先 $LOCAL_AHEAD 个 commit（可用 /save 推送）"
+if [ "$LOCAL_AHEAD" -gt 0 ]; then
+  echo "本地领先 $LOCAL_AHEAD 个 commit（可用 /save 推送）"
+fi
 
 # 如果之前 stash 过
 if [ -n "$STASHED" ]; then
