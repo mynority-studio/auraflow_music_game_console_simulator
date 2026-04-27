@@ -24,6 +24,21 @@ npm run clean        # 清除 dist/
 
 需要在 `.env.local` 中配置 `GEMINI_API_KEY`（参考 `.env.example`）。目前无测试框架（无 vitest/jest），`npm run lint` 仅执行 TypeScript 类型检查。
 
+## Slash Commands
+
+项目级 slash commands 位于 `.claude/commands/`，封装高频工作流：
+
+| Command | 用途 |
+|---------|------|
+| `/dev` | 启动前端（自动 `pnpm install` + 杀 3000 端口 + 后台挂起，输出 Local + Network 地址） |
+| `/save [msg]` | 敏感扫描 → `git add .` → commit → pull(merge) → push 一条龙 |
+| `/tag <ver> <desc>` | 给当前 HEAD 打 annotated tag 并推送（里程碑） |
+| `/rewind [tag]` | 切到指定 tag 的 detached HEAD（溯源历史版本） |
+| `/sync-rules <摘要>` | 同步乐理修订到 `.claude/rules/` 与 `docs/` |
+| `/sync-to-c` | TS → C 移植同步工作流（已存在） |
+
+详细流程见各 command 文件。
+
 ## 架构
 
 ### 双平台设计
