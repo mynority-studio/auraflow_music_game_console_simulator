@@ -18,15 +18,31 @@ allowed-tools: ["Bash", "AskUserQuestion"]
 
 ## Phase 1: 参数与预检
 
-**1.1 参数校验**
+**1.1 参数解析与校验**
 
-- `$1` = tag 名；为空 → STOP，输出用法：`/reset-to <tag>`，并提示用 `git tag -l --sort=-creatordate | head -10` 看候选
+> ⚠️ Claude Code `$1` 占位符解析不可靠，统一用 `$ARGUMENTS`。
+
+```bash
+TAG="$ARGUMENTS"
+TAG="${TAG#\"}"; TAG="${TAG%\"}"      # 去首尾双引号
+TAG="${TAG#\'}"; TAG="${TAG%\'}"      # 去首尾单引号
+TAG="${TAG##[[:space:]]}"             # trim 首空格
+TAG="${TAG%%[[:space:]]}"             # trim 尾空格
+
+if [ -z "$TAG" ]; then
+  echo "✗ /reset-to 需要 tag 参数"
+  echo "用法：/reset-to <tag>"
+  echo "可用 tag："
+  git tag -l --sort=-creatordate | head -10
+  exit 1
+fi
+```
 
 **1.2 tag 存在校验**
 
 ```bash
-if ! git rev-parse --verify "refs/tags/$1" >/dev/null 2>&1; then
-  echo "✗ Tag $1 不存在"
+if ! git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "✗ Tag $TAG 不存在"
   git tag -l --sort=-creatordate | head -10
   exit 1
 fi
@@ -73,17 +89,17 @@ BRANCH="$DEFAULT_BRANCH"
 **1.5 位置关系检查**
 
 ```bash
-TAG_COMMIT=$(git rev-parse "$1")
+TAG_COMMIT=$(git rev-parse "$TAG")
 HEAD_COMMIT=$(git rev-parse HEAD)
 
 if [ "$TAG_COMMIT" = "$HEAD_COMMIT" ]; then
-  echo "✓ HEAD 已经在 $1，无需 reset。退出。"
+  echo "✓ HEAD 已经在 $TAG，无需 reset。退出。"
   exit 0
 fi
 
 # 检查 tag 是否是 HEAD 的祖先（正常 reset 场景）
 if ! git merge-base --is-ancestor "$TAG_COMMIT" HEAD; then
-  echo "⚠️ Tag $1 不是 HEAD 的祖先 — 你想 reset 到一个更新或分叉的位置"
+  echo "⚠️ Tag $TAG 不是 HEAD 的祖先 — 你想 reset 到一个更新或分叉的位置"
   echo "   这通常不是 reset 的正常用途；如果是 sync 远程，用 git pull/fetch 更合适"
   echo "   仍要继续？请用 AskUserQuestion 确认"
 fi
@@ -110,13 +126,13 @@ reset 完成后，本地与 origin/$BRANCH 将分叉。是否 push、何时 push
 列出将被销毁的 commits，让用户看清放弃了什么：
 
 ```bash
-LOST_COUNT=$(git rev-list --count "$1..HEAD")
+LOST_COUNT=$(git rev-list --count "$TAG..HEAD")
 echo ""
 echo "=== 将被销毁的 commits ($LOST_COUNT 个) ==="
-git log --oneline --no-decorate "$1..HEAD"
+git log --oneline --no-decorate "$TAG..HEAD"
 echo ""
 echo "=== 影响范围（文件改动统计）==="
-git diff --stat "$1..HEAD" | tail -1
+git diff --stat "$TAG..HEAD" | tail -1
 ```
 
 如果 LOST_COUNT > 20 → 额外警告"丢弃量较大，请仔细复核"。
@@ -149,7 +165,7 @@ echo "  （远程未同步 — 这是命令的安全策略，避免在 reset 主
 用 **AskUserQuestion** 弹最终确认：
 
 ```
-question: "确认 HARD reset $BRANCH → $1？将销毁 $LOST_COUNT 个 commit"
+question: "确认 HARD reset $BRANCH → $TAG？将销毁 $LOST_COUNT 个 commit"
 options:
   - label: "确认重置（仅本地）"
     description: "执行 git reset --hard。备份分支 $BACKUP_BRANCH 已创建，可随时恢复"
@@ -167,12 +183,12 @@ options:
 
 ```bash
 OLD_HEAD=$(git rev-parse HEAD)
-git reset --hard "$1"
+git reset --hard "$TAG"
 NEW_HEAD=$(git rev-parse HEAD)
 
 echo "✓ Reset 完成：$BRANCH"
 echo "  Before: $(git rev-parse --short $OLD_HEAD)"
-echo "  After:  $(git rev-parse --short $NEW_HEAD) ($1)"
+echo "  After:  $(git rev-parse --short $NEW_HEAD) ($TAG)"
 ```
 
 **禁止**附加 `git push --force` / `--force-with-lease` 调用。push 完全交给用户。
@@ -188,7 +204,7 @@ echo "  After:  $(git rev-parse --short $NEW_HEAD) ($1)"
 
 分支:       $BRANCH
 旧 HEAD:    $OLD_HEAD ($(git log -1 --pretty=%s $OLD_HEAD))
-新 HEAD:    $NEW_HEAD ($1)
+新 HEAD:    $NEW_HEAD ($TAG)
 丢弃 commits: $LOST_COUNT 个
 
 备份:
@@ -196,7 +212,7 @@ echo "  After:  $(git rev-parse --short $NEW_HEAD) ($1)"
 
 远程状态:
   origin/$BRANCH 仍指向旧 HEAD ($OLD_HEAD)
-  本地 $BRANCH    现在指向 $1 ($NEW_HEAD)
+  本地 $BRANCH    现在指向 $TAG ($NEW_HEAD)
   → 本地与远程已分叉
 
 === 下一步：完全由你决定 ===

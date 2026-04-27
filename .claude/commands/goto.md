@@ -24,9 +24,20 @@ git for-each-ref --sort=-creatordate --format='%(refname:short)  %(objectname:sh
 
 ### 有参数 → 校验 + checkout
 
+> ⚠️ Claude Code `$1` 占位符解析不可靠，统一用 `$ARGUMENTS`。Phase 开头先 trim 引号与首尾空格：
+>
+> ```bash
+> TAG="$ARGUMENTS"
+> TAG="${TAG#\"}"; TAG="${TAG%\"}"
+> TAG="${TAG#\'}"; TAG="${TAG%\'}"
+> # trim 首尾空格
+> TAG="${TAG##[[:space:]]}"
+> TAG="${TAG%%[[:space:]]}"
+> ```
+
 ```bash
-if ! git rev-parse --verify "refs/tags/$1" >/dev/null 2>&1; then
-  echo "✗ Tag $1 不存在"
+if ! git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "✗ Tag $TAG 不存在"
   echo "可用 tag："
   git tag -l --sort=-creatordate | head -10
   exit 1
@@ -49,7 +60,7 @@ fi
 明确告知用户接下来进入 detached HEAD 状态，**修改不会保存到任何分支**：
 
 ```
-⚠️  即将切换到 tag $1（detached HEAD 模式）
+⚠️  即将切换到 tag $TAG（detached HEAD 模式）
    - 这是浏览历史的只读模式，不修改 main 分支
    - 任何修改不属于任何分支，需要新建分支才能保留
    - 浏览完毕用 git checkout main 回到主分支
@@ -58,13 +69,13 @@ fi
 ## Step 4: 执行 checkout
 
 ```bash
-git checkout "$1"
+git checkout "$TAG"
 ```
 
 ## Step 5: 报告
 
 输出：
 - 当前 detached HEAD 指向的 commit（hash + subject + date）
-- 与 main 的差距：`git rev-list --count $1..main` commits behind
+- 与 main 的差距：`git rev-list --count $TAG..main` commits behind
 - 退出方式：`git checkout main`
 - **不要**自动建议 `git reset --hard <tag>`（破坏性操作，需用户主动决定）

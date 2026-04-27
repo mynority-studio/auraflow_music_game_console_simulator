@@ -9,10 +9,31 @@ allowed-tools: ["Bash"]
 
 ## Step 1: 参数解析
 
-- `$1` = 版本号
-- `$2`+ = 描述（剩余所有 token 作为描述拼接）
+> ⚠️ Claude Code 当前对 `$1` `$2` 位置参数解析不可靠（实测会把第二个引号包裹的 token 错配给 `$1`，且 `$2` 替换为空）。本命令统一从 `$ARGUMENTS` 自行解析，**不要使用 `$1` `$2`**。
 
-若任一为空 → STOP，提示用法：
+从 `$ARGUMENTS` 解析两个值：
+- `TAG`：第一个空格之前的部分（版本号）
+- `MSG`：第一个空格之后的所有内容（去掉首尾引号）
+
+bash 解析片段：
+
+```bash
+ARGS="$ARGUMENTS"
+TAG="${ARGS%% *}"
+MSG="${ARGS#* }"
+[ "$MSG" = "$ARGS" ] && MSG=""        # ARGS 无空格 → MSG 为空
+MSG="${MSG#\"}"; MSG="${MSG%\"}"      # 去首尾双引号
+MSG="${MSG#\'}"; MSG="${MSG%\'}"      # 去首尾单引号
+```
+
+| `$ARGUMENTS` 示例 | `TAG` | `MSG` |
+|------------------|-------|-------|
+| `AuraFlowCmdSys-v1 "命令系统 v1.0 完成"` | `AuraFlowCmdSys-v1` | `命令系统 v1.0 完成` |
+| `v1.2.0 fix 旋律黑盒` | `v1.2.0` | `fix 旋律黑盒` |
+| `v1.2.0` | `v1.2.0` | `` (空) |
+
+`TAG` 或 `MSG` 任一为空 → STOP，提示用法：
+
 ```
 /tag v20260427-141500 "ConductorPlan 初版完成"
 /tag v1.2.0 "fix 旋律黑盒+混音补偿"
@@ -38,9 +59,9 @@ fi
 ## Step 3: tag 重名检查
 
 ```bash
-if git rev-parse --verify "refs/tags/$1" >/dev/null 2>&1; then
-  echo "✗ Tag $1 已存在，commit: $(git rev-parse $1)"
-  echo "  如需替换，请先：git tag -d $1 && git push --delete origin $1"
+if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "✗ Tag $TAG 已存在，commit: $(git rev-parse $TAG)"
+  echo "  如需替换，请先：git tag -d $TAG && git push --delete origin $TAG"
   exit 1
 fi
 ```
@@ -48,7 +69,7 @@ fi
 ## Step 4: 创建 annotated tag
 
 ```bash
-git tag -a "$1" -m "$2"
+git tag -a "$TAG" -m "$MSG"
 ```
 
 annotated（`-a`）而非 lightweight tag — 保留 tagger 信息和消息，可被 `git describe` 识别。
@@ -56,7 +77,7 @@ annotated（`-a`）而非 lightweight tag — 保留 tagger 信息和消息，�
 ## Step 5: 推送 tag
 
 ```bash
-git push origin "$1"
+git push origin "$TAG"
 ```
 
 push 失败 → 报告原因；本地 tag **保留**（用户可后续手动重推或 `git tag -d` 撤销）。
