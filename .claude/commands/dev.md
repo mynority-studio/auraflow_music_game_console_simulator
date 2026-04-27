@@ -4,9 +4,18 @@ argument-hint: ""
 allowed-tools: ["Bash"]
 ---
 
-启动 AuraFlow 前端开发服务器。完整流程包括依赖检查、端口清理、后台挂起。
+启动 AuraFlow 前端开发服务器。完整流程包括前置检查、依赖检查、端口清理、后台挂起。
 
-## Step 1: 依赖检查（pnpm）
+## Phase 0: 前置检查
+
+```bash
+# 必须在项目根目录跑（含 package.json）
+[ ! -f package.json ] && { echo "✗ 当前目录无 package.json，请 cd 到项目根目录"; exit 1; }
+# pnpm 必须可用
+command -v pnpm >/dev/null 2>&1 || { echo "✗ pnpm 未安装，请先 npm i -g pnpm"; exit 1; }
+```
+
+## Phase 1: 依赖检查（pnpm）
 
 比较 `package.json` 与 `node_modules/.modules.yaml`（pnpm 安装标记文件）的修改时间，判断是否需要 `pnpm install`：
 
@@ -14,7 +23,7 @@ allowed-tools: ["Bash"]
 if [ ! -d node_modules ] || [ ! -f node_modules/.modules.yaml ]; then
   echo "node_modules 缺失或非 pnpm 安装，执行 pnpm install"
   pnpm install
-elif [ package.json -nt node_modules/.modules.yaml ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
+elif [ "package.json" -nt "node_modules/.modules.yaml" ] || [ "pnpm-lock.yaml" -nt "node_modules/.modules.yaml" ]; then
   echo "package.json 或 pnpm-lock.yaml 较新，执行 pnpm install"
   pnpm install
 else
@@ -24,7 +33,7 @@ fi
 
 > 注：本仓库统一使用 **pnpm** 作为包管理器（与 `pnpm-lock.yaml` 一致）。若 pnpm 未安装，提示用户 `npm i -g pnpm` 后重试。
 
-## Step 2: 端口管理
+## Phase 2: 端口管理
 
 检查 3000 端口（Vite 配置端口）是否被占用，占用则强制释放：
 
@@ -37,7 +46,7 @@ if [ -n "$PIDS" ]; then
 fi
 ```
 
-## Step 3: 后台挂起
+## Phase 3: 后台挂起
 
 用 `nohup` 启动 dev 服务器（pnpm），日志重定向到 `/tmp/auraflow-dev.log`：
 
@@ -47,7 +56,7 @@ DEV_PID=$!
 echo "Dev server started: PID=$DEV_PID"
 ```
 
-## Step 4: 健康检查 + 地址解析
+## Phase 4: 健康检查 + 地址解析
 
 本项目通过 `@vitejs/plugin-basic-ssl` 自签证书启动 **HTTPS**（非 HTTP），健康检查需用 `https://` + `-k` 跳过证书校验。Vite 首次启动若遇 lockfile 变化会触发依赖再优化，等待时间需放宽到 5 秒；并用重试循环兜底慢启动：
 
@@ -97,13 +106,20 @@ echo "$URLS"
 >
 > **注意**：基于自签证书，浏览器首次访问会有"证书不受信任"警告，点 Advanced → Proceed 即可。
 
-## Step 5: 报告
+## Phase 5: 报告
 
-向用户输出：
-- **Dev server PID**: `$DEV_PID`
-- **Local**: 本机访问地址（通常是 `https://localhost:3000/`）
-- **Network**（多个）：局域网/Tailscale 等所有接口地址 — 列出 Vite 输出的全部行；优先选 `192.168.*` 或 `10.*` 给手机扫码
-- **日志路径**: `/tmp/auraflow-dev.log`
-- **停止方式**: `kill $DEV_PID` 或 `lsof -ti :3000 | xargs kill -9`
+输出统一格式：
+
+```
+=== Dev Server Started ===
+
+PID:      <DEV_PID>
+Local:    https://localhost:3000/
+Network:  https://192.168.x.x:3000/   ← 优先用此给手机扫码
+          https://100.x.x.x:3000/     ← Tailscale
+          ...                          ← 列出 Vite 输出的全部 Network 行
+Log:      /tmp/auraflow-dev.log
+Stop:     kill <DEV_PID>  /  lsof -ti :3000 | xargs kill -9
+```
 
 **注意**：本命令不会等待用户停止 dev server，启动完成后立即返回。

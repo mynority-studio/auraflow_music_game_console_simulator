@@ -1,6 +1,12 @@
+---
+description: 同步 TS 算法变更到 C 移植（ESP32 端）— 变更检测 → 翻译 → 编译 → 测试 → 黄金种子 → 文档同步
+argument-hint: ""
+allowed-tools: ["Bash", "Read", "Edit", "Grep"]
+---
+
 执行 TS → C 同步工作流（按需触发）。
 
-## Step 1: 变更检测
+## Phase 1: 变更检测
 
 读取 C 项目的 `.sync_state.json` 获取上次同步的 TS commit hash。
 对 TS 侧 `src/core/generation/` 执行 `git diff <last_commit>..HEAD`，按文件映射表分类变更。
@@ -21,7 +27,7 @@ arrangement/TextureMapper.ts → ar4_orchestrator.c (内联)
 MidiConverter.ts            → ar4_midi_converter.c
 ```
 
-## Step 2: 变更分类
+## Phase 2: 变更分类
 
 将 diff 分为 4 类并输出摘要给用户：
 - **A: 数据变更** — 风格参数/Mood 参数调整 → 直接覆盖值
@@ -29,7 +35,7 @@ MidiConverter.ts            → ar4_midi_converter.c
 - **C: 算法变更** — 旋律/和声/编配逻辑 → 逐函数对比翻译
 - **D: 架构变更** — 新增模块/接口变更 → 请用户确认方案
 
-## Step 3: 翻译执行
+## Phase 3: 翻译执行
 
 翻译规则：
 - 时间：TS `double` beat → C `uint16_t` tick（beat × 4）
@@ -41,7 +47,7 @@ MidiConverter.ts            → ar4_midi_converter.c
 
 C 项目路径：`/home/hsycc/claude/auraflow_music_game_console/main/aura_radio/`
 
-## Step 3.5: Code Review
+## Phase 3.5: Code Review
 
 翻译完成后、编译前，对变更的 C 文件执行 Pipeline Rule 合规检查：
 
@@ -58,7 +64,7 @@ C 项目路径：`/home/hsycc/claude/auraflow_music_game_console/main/aura_radio
 
 用户确认后继续。
 
-## Step 4: 编译验证
+## Phase 4: 编译验证
 
 用 Docker 编译：
 ```bash
@@ -66,7 +72,7 @@ docker run --rm -v /home/hsycc/claude/auraflow_music_game_console:/src -w /src g
   sh -c "gcc -O2 -I./main/aura_radio -c main/aura_radio/ar4_*.c && echo 'COMPILE OK'"
 ```
 
-## Step 5: 测试执行
+## Phase 5: 测试执行
 
 跑全部 4 个测试套件：
 ```bash
@@ -80,20 +86,20 @@ docker run --rm -v /home/hsycc/claude/auraflow_music_game_console:/src -w /src g
 
 如果有 FAIL：定位 → 修复 → 重跑。
 
-## Step 6: 黄金种子更新
+## Phase 6: 黄金种子更新
 
 如果 TS 侧算法变更导致输出变化：
 1. `npm run golden-seed`（TS 侧重新录制）
 2. `python3 scripts/json2c.py`（转 C 头文件）
 3. 更新 C 侧测试的 GOLDEN 期望值
 
-## Step 7: 文档同步
+## Phase 7: 文档同步
 
 - `docs/todo_plan.md` — 标记完成项
 - Pipeline Rule 变更 → 同步 `.claude/rules/aura_radio_v4_pipeline_rule.md`
 - 接口变更 → 更新 `docs/esp32_porting.md`
 
-## Step 8: 提交
+## Phase 8: 提交
 
 - C 侧: `git commit -m "sync: 同步 TS 变更 (<commit_range>)"`
 - TS 侧: 如更新了黄金种子，也提交

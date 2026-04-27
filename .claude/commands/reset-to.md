@@ -16,6 +16,12 @@ allowed-tools: ["Bash", "AskUserQuestion"]
 
 ---
 
+## Phase 0: 前置检查
+
+```bash
+git rev-parse --git-dir > /dev/null 2>&1 || { echo "✗ 不在 git 仓库"; exit 1; }
+```
+
 ## Phase 1: 参数与预检
 
 **1.1 参数解析与校验**

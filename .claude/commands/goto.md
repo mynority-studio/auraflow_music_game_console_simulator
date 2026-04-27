@@ -7,7 +7,13 @@ allowed-tools: ["Bash"]
 进入指定 tag 的 detached HEAD 状态，用于浏览历史版本或对比代码。
 **不会修改任何分支** — 不做 reset/branch 移动，仅 checkout 到 tag commit。
 
-## Step 1: 参数处理
+## Phase 0: 前置检查
+
+```bash
+git rev-parse --git-dir > /dev/null 2>&1 || { echo "✗ 不在 git 仓库"; exit 1; }
+```
+
+## Phase 1: 参数处理
 
 ### 无参数 → 列出最近 20 个 tag
 
@@ -44,7 +50,7 @@ if ! git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
 fi
 ```
 
-## Step 2: 工作树状态检查
+## Phase 2: 工作树状态检查
 
 ```bash
 if [ -n "$(git status --porcelain)" ]; then
@@ -55,7 +61,7 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 ```
 
-## Step 3: 提示 detached HEAD
+## Phase 3: 提示 detached HEAD
 
 明确告知用户接下来进入 detached HEAD 状态，**修改不会保存到任何分支**：
 
@@ -66,16 +72,26 @@ fi
    - 浏览完毕用 git checkout main 回到主分支
 ```
 
-## Step 4: 执行 checkout
+## Phase 4: 执行 checkout
 
 ```bash
 git checkout "$TAG"
 ```
 
-## Step 5: 报告
+## Phase 5: 报告
 
-输出：
-- 当前 detached HEAD 指向的 commit（hash + subject + date）
-- 与 main 的差距：`git rev-list --count $TAG..main` commits behind
-- 退出方式：`git checkout main`
-- **不要**自动建议 `git reset --hard <tag>`（破坏性操作，需用户主动决定）
+输出统一格式：
+
+```
+=== /goto 报告 ===
+
+Tag:        <tag>
+Commit:     <short-hash> <subject>
+Date:       <commit date>
+与 main:    main 领先 <N> 个 commit
+退出:       git switch -        ← 回到刚才所在分支（最快）
+            git checkout main   ← 显式切回 main
+            /home               ← 走完整安全检查（脏工作树 / 孤儿 commit 处理）
+```
+
+**不要**自动建议 `git reset --hard <tag>`（破坏性操作，需用户主动决定，使用 `/reset-to`）。

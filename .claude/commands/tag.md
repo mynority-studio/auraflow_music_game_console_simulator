@@ -7,7 +7,13 @@ allowed-tools: ["Bash"]
 为当前 HEAD 创建 annotated tag 作为里程碑，并推送到远程。
 适用于完成一个重要 **feat 功能** 后建立可追溯的版本节点。
 
-## Step 1: 参数解析
+## Phase 0: 前置检查
+
+```bash
+git rev-parse --git-dir > /dev/null 2>&1 || { echo "✗ 不在 git 仓库"; exit 1; }
+```
+
+## Phase 1: 参数解析
 
 > ⚠️ Claude Code 当前对 `$1` `$2` 位置参数解析不可靠（实测会把第二个引号包裹的 token 错配给 `$1`，且 `$2` 替换为空）。本命令统一从 `$ARGUMENTS` 自行解析，**不要使用 `$1` `$2`**。
 
@@ -46,7 +52,7 @@ MSG="${MSG#\'}"; MSG="${MSG%\'}"      # 去首尾单引号
 
 不强制阻止其他格式，但提醒用户。
 
-## Step 2: 工作树状态检查
+## Phase 2: 工作树状态检查
 
 ```bash
 if [ -n "$(git status --porcelain)" ]; then
@@ -56,7 +62,7 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 ```
 
-## Step 3: tag 重名检查
+## Phase 3: tag 重名检查
 
 ```bash
 if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -66,7 +72,7 @@ if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
 fi
 ```
 
-## Step 4: 创建 annotated tag
+## Phase 4: 创建 annotated tag
 
 ```bash
 git tag -a "$TAG" -m "$MSG"
@@ -74,7 +80,7 @@ git tag -a "$TAG" -m "$MSG"
 
 annotated（`-a`）而非 lightweight tag — 保留 tagger 信息和消息，可被 `git describe` 识别。
 
-## Step 5: 推送 tag
+## Phase 5: 推送 tag
 
 ```bash
 git push origin "$TAG"
@@ -82,9 +88,26 @@ git push origin "$TAG"
 
 push 失败 → 报告原因；本地 tag **保留**（用户可后续手动重推或 `git tag -d` 撤销）。
 
-## Step 6: 报告
+**常见 push 失败原因 + 修复**：
 
-输出：
-- Tag 名 + 指向的 commit hash + commit subject
-- GitHub release 链接（若 remote 是 GitHub）：`https://github.com/<owner>/<repo>/releases/tag/<tag>`
-- 提示：可用 `/goto <tag>` 切换到该 tag 浏览历史
+| 现象 | 可能原因 | 修复 |
+|------|---------|------|
+| `! [rejected] tag-name -> tag-name (already exists)` | 远程已有同名 tag（被他人或他设备先推） | `git fetch --tags` 看远程 tag 内容；要么换 tag 名，要么 `git push --delete origin <tag>` 后重推（破坏性，慎用） |
+| `Could not resolve host: github.com` | 网络问题 | 检查网络后 `git push origin <tag>` 单独重推 |
+| `Permission denied (publickey)` | SSH key 失效或无权限 | 检查 `ssh -T git@github.com` |
+| `error: src refspec <tag> does not match any` | 本地 tag 没创建成功 | 重新执行本命令，或 `git tag -l` 验证本地 tag 存在 |
+
+## Phase 6: 报告
+
+输出统一格式：
+
+```
+=== /tag 报告 ===
+
+Tag:        <tag>
+指向:       <short-hash>
+Subject:    <commit subject>
+推送:       origin/<tag> ← <short-hash>
+Release:    https://github.com/<owner>/<repo>/releases/tag/<tag>
+浏览历史:   /goto <tag>
+```

@@ -13,7 +13,31 @@ allowed-tools: ["Read", "Edit", "Write", "Bash", "AskUserQuestion"]
 
 **绝不动**：`pipeline_rule.md` / `CLAUDE.md` / `docs/*` —— 仅在最终报告中标注"建议人工 review"。
 
+> ⚠️ Claude Code `$1` 占位符解析不可靠，统一用 `$ARGUMENTS`。
+
 ---
+
+## 概览（决策树）
+
+1. **Phase 0** 前置检查（git 仓库 + 必要文件）
+2. **Phase 1** AI 自己回看对话上下文 → 输出话题清单 [T1, T2, ...]
+3. **Phase 1.5** 用户勾选要摄取的话题（无 focus 时；有 focus 时全部进入）
+4. **Phase 2** 原子化（含小表格例外）+ StyleId 标签校验
+5. **Phase 3** Push back 质量闸门（基础理论矛盾 / 数值越界 / 通用化谬误等 7 类）
+6. **Phase 4** 与 music_domain_knowledge.md 对账（NEW / EXPAND / CONFLICT / DUPLICATE / OUT_OF_SCOPE）
+7. **Phase 5** 用户裁决 CONFLICT（保留旧 / 采用新 / 合并 / 搁置）
+8. **Phase 6** Edit 写入文档（不批量 Write，逐条 Edit）
+9. **Phase 7** 追加 knowledge_log.md 摄取日志
+10. **Phase 8** 报告 → 提示用户 `/save` 提交
+
+---
+
+## Phase 0: 前置检查
+
+```bash
+git rev-parse --git-dir > /dev/null 2>&1 || { echo "✗ 不在 git 仓库（无法记录关联 commit hash）"; exit 1; }
+[ ! -f .claude/rules/music_domain_knowledge.md ] && { echo "✗ 找不到 .claude/rules/music_domain_knowledge.md"; exit 1; }
+```
 
 ## Phase 1: 回看对话上下文
 
@@ -105,6 +129,10 @@ options:
 ```bash
 rg -n '^\s*[A-Z][a-zA-Z]+\s*=\s*\d' src/core/generation/config/StyleFlags.ts | awk -F'=' '{print $1}' | tr -d ' '
 ```
+
+> ⚠️ **rg 表达式脆弱性提示**：上面的正则假设 StyleId 写法形如 `enum { ModernPop = 0, Synthwave = 9 }`。
+> 若未来 StyleFlags.ts 重构为 `as const` 字面量对象 / namespace 包裹 / 用 union literal 类型，此 rg 会**抓不到**——
+> 命令会走兜底路径（警告 + 跳过 styleId 校验）。重构 StyleFlags.ts 时记得同步更新本 rg 表达式。
 
 记下结果作为本轮的 **REGISTERED_STYLES** 集合，供 Phase 2 标签校验、Phase 3 push back 使用。若该文件不存在或 grep 无命中 → 警告用户「StyleRegistry 路径已变化」并提示更新本命令文件，本轮放弃 styleId 校验。
 
