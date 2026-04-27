@@ -26,14 +26,16 @@ npm run clean        # 清除 dist/
 
 ## Slash Commands
 
-项目级 slash commands 位于 `.claude/commands/`，封装高频工作流：
+项目级 slash commands 位于 `.claude/commands/`，封装高频工作流。其中 `/goto` `/home` `/reset-to` 构成 **git 历史导航三件套**（出门看历史 / 回家 / 重置主分支重新出发）：
 
 | Command | 用途 |
 |---------|------|
 | `/dev` | 启动前端（自动 `pnpm install` + 杀 3000 端口 + 后台挂起，输出 Local + Network 地址） |
 | `/save [msg]` | 敏感扫描 → `git add .` → commit → pull(merge) → push 一条龙 |
 | `/tag <ver> <desc>` | 给当前 HEAD 打 annotated tag 并推送（里程碑） |
-| `/rewind [tag]` | 切到指定 tag 的 detached HEAD（溯源历史版本） |
+| `/goto [tag]` | 切到指定 tag 的 detached HEAD（溯源历史版本，**只读浏览**） |
+| `/home` | 从任意位置（detached HEAD / 其他分支）安全回到主分支，处理脏工作树与孤儿 commit |
+| `/reset-to <tag>` | HARD reset 主分支到指定 tag（**仅 main**，强制本地备份，**绝不推送远程**） |
 | `/digest <材料>` | 摄取乐理材料 → 原子化 → push back 质疑 → 对账 → 裁决冲突 → 写入 `music_domain_knowledge.md` + 追加 `knowledge_log.md` |
 | `/sync-to-c` | TS → C 移植同步工作流（已存在） |
 

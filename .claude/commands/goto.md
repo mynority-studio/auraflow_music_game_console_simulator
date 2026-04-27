@@ -20,7 +20,7 @@ git tag -l --sort=-creatordate | head -20
 git for-each-ref --sort=-creatordate --format='%(refname:short)  %(objectname:short)  %(creatordate:short)  %(subject)' refs/tags | head -20
 ```
 
-让用户从列表中挑一个，再次调用 `/rewind <tag>`。
+让用户从列表中挑一个，再次调用 `/goto <tag>`。
 
 ### 有参数 → 校验 + checkout
 

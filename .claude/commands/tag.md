@@ -66,4 +66,4 @@ push 失败 → 报告原因；本地 tag **保留**（用户可后续手动重�
 输出：
 - Tag 名 + 指向的 commit hash + commit subject
 - GitHub release 链接（若 remote 是 GitHub）：`https://github.com/<owner>/<repo>/releases/tag/<tag>`
-- 提示：可用 `/rewind <tag>` 切换到该 tag 浏览历史
+- 提示：可用 `/goto <tag>` 切换到该 tag 浏览历史
