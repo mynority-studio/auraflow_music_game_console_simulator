@@ -65,6 +65,108 @@ export class PlaybackEngine {
         this.mixer.setMixerParam(category, param, value);
     }
 
+    /**
+     * 🌟 SONG COMPARISON LOG (跨系统 A/B 对比专用)
+     * 固定字段 + 固定格式,便于与其他音乐生成系统 diff
+     * 详见 SONG_COMPARISON_LOG_SPEC.md
+     */
+    private printComparisonSummary(song: ArrangedTrack): void {
+        if (!song.sections || !song.chords) return;
+
+        const sections = song.sections;
+        const chords = song.chords;
+        const timeSigArr = song.timeSignature || [4, 4];
+        const beatsPerBar = timeSigArr[0];
+        const totalBeats = sections.length > 0 ? sections[sections.length - 1].endBeat : 0;
+
+        const trackCount = (track?: { length: number }) => track ? track.length : 0;
+        const tracks = {
+            melody: trackCount(song.melody),
+            chord: trackCount(song.pianoRH),
+            bass: trackCount(song.pianoLH),
+            drums: trackCount(song.drums),
+            counter: trackCount(song.counterMelody),
+            secondary: trackCount(song.secondaryMelody),
+            vocal: trackCount(song.vocal),
+        };
+
+        // 预先计算每段 stats
+        const sectionStats = sections.map(sec => {
+            const secMel = (song.melody || []).filter(
+                n => n.onset >= sec.startBeat - 1e-6 && n.onset < sec.endBeat - 1e-6
+            );
+            const beats = sec.endBeat - sec.startBeat;
+            const bars = beats / beatsPerBar;
+
+            let pitchMin = 999, pitchMax = -1;
+            for (let i = 0; i < secMel.length; i++) {
+                if (secMel[i].pitch < pitchMin) pitchMin = secMel[i].pitch;
+                if (secMel[i].pitch > pitchMax) pitchMax = secMel[i].pitch;
+            }
+            if (pitchMin === 999) { pitchMin = 0; pitchMax = 0; }
+
+            // 级进 ≤2 半音, 跳跃 ≥5 半音(其中 3-4 为"中跳"不计入两类)
+            let stepCount = 0, leapCount = 0, total = 0;
+            for (let i = 1; i < secMel.length; i++) {
+                const iv = Math.abs(secMel[i].pitch - secMel[i - 1].pitch);
+                total++;
+                if (iv <= 2) stepCount++;
+                else if (iv >= 5) leapCount++;
+            }
+            const stepPct = total > 0 ? Math.round(100 * stepCount / total) : 0;
+            const leapPct = total > 0 ? Math.round(100 * leapCount / total) : 0;
+            const density = beats > 0 ? (secMel.length / beats) : 0;
+
+            return {
+                name: sec.name,
+                bars: Number(bars.toFixed(1)),
+                beats: Number(beats.toFixed(1)),
+                energy: sec.energyLevel,
+                count: secMel.length,
+                pitchMin,
+                pitchMax,
+                density: Number(density.toFixed(2)),
+                stepPct,
+                leapPct,
+            };
+        });
+
+        // Harmony per section
+        const harmony = sections.map(sec => {
+            const secChords = chords.filter(
+                c => c.startBeat >= sec.startBeat - 1e-6 && c.startBeat < sec.endBeat - 1e-6
+            );
+            return { name: sec.name, numerals: secChords.map(c => c.numeral).join(' ') };
+        });
+
+        const pad = (s: string, n: number) => s.length >= n ? s : s + ' '.repeat(n - s.length);
+
+        console.log('');
+        console.log('╔══════════════════════════════════════════════════════════╗');
+        console.log('║ 🎵 SONG COMPARISON LOG — AuraFlow                        ║');
+        console.log('╚══════════════════════════════════════════════════════════╝');
+        console.log(`META: key=${song.key} tempo=${song.bpm} timeSig=${timeSigArr.join('/')} beats=${totalBeats}`);
+        console.log(`TRACKS: melody=${tracks.melody} chord=${tracks.chord} bass=${tracks.bass} drums=${tracks.drums} counter=${tracks.counter} secondary=${tracks.secondary} vocal=${tracks.vocal}`);
+        console.log('');
+        console.log('STRUCTURE (name, bars, beats, energy)');
+        for (const s of sectionStats) {
+            console.log(`  ${pad(s.name, 16)} bars=${String(s.bars).padStart(4)}  beats=${String(s.beats).padStart(5)}  E=${s.energy}`);
+        }
+        console.log('');
+        console.log('MELODY STATS (name, count, midi_range, density_n_per_beat, step%/leap%)');
+        for (const s of sectionStats) {
+            console.log(
+                `  ${pad(s.name, 16)} count=${String(s.count).padStart(3)}  range=${s.pitchMin}-${s.pitchMax}  dens=${s.density.toFixed(2)}  step=${s.stepPct}%/leap=${s.leapPct}%`
+            );
+        }
+        console.log('');
+        console.log('HARMONY (name, chord progression)');
+        for (const h of harmony) {
+            console.log(`  ${pad(h.name, 16)} ${h.numerals}`);
+        }
+        console.log('══════════════════════════════════════════════════════════');
+    }
+
     public setFocusTrack(trackType: 'RHYTHM' | 'MELODY' | 'ATMOSPHERE' | 'NONE') {
         this.mixer.setFocusTrack(trackType);
     }
@@ -145,6 +247,9 @@ export class PlaybackEngine {
             });
         }
         console.log("========================================");
+
+        // 🌟 SONG COMPARISON LOG — 供跨系统 A/B 对比(固定字段,便于 diff)
+        this.printComparisonSummary(song);
         // ----------------------
 
         if (spessaSynth) {

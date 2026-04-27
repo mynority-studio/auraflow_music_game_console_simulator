@@ -128,8 +128,13 @@ export class StructureEngine {
         return;
       }
 
-      // Apply Mood Energy Cap
-      const energy = Math.max(mood.energyCap[0], Math.min(mood.energyCap[1], rawEnergy));
+      // 🌟 Apply Mood Energy Rescale (2026-04-22 修复)
+      // 旧版硬 clamp 导致 Chill/Melancholic 下所有段落被压平到单一值(E=4/5),彻底丢失段落对比。
+      // 新版把 rawEnergy (1-10) 按比例映射到 mood.energyCap 区间,保留段落间相对起伏。
+      // 例: standard-pop raw=[4,6,8,3,5,7,9,7,10] 在 Chill[1,4] 下从"全压到4" 变成 [2,3,3,1,2,3,4,3,4]
+      const rawNorm = Math.max(1, Math.min(10, rawEnergy));
+      const t = (rawNorm - 1) / 9;
+      const energy = Math.max(1, Math.round(mood.energyCap[0] + t * (mood.energyCap[1] - mood.energyCap[0])));
 
       const type = name.split('_')[0]; // e.g. "Verse", "Chorus" — 保留作为遗留显示字段
       const sectionType = inferSectionType(name); // 数值枚举，T-1 合规的对外接口

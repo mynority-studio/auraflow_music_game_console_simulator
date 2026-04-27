@@ -1,3 +1,5 @@
+// 🚨 d1-marker-ABC123: if you see this log, you are running the FRESH code
+console.log("🚨 [d1-marker-ABC123] ToplineEngine module loaded — fresh build active");
 import { PRNGManager } from '../../utils/PRNG';
 import { NoteData, GeneratedChord, SectionMetadata, StyleConfig, MusicContext, Tonality, SectionType, PhraseGroup, SubMotifSlot, CadenceType, HookPlan, PhraseLengthProfile } from '../types';
 import { HarmonyCore } from './HarmonyCore';
@@ -315,7 +317,55 @@ class PhraseGroupPlanner {
 }
 
 export class ToplineEngine {
-    
+    /**
+     * 🌟 Section-aware Hook Leap 概率查表
+     *
+     * hook leap 是 Chorus 专属武器(创造张力 → 反向级进"解决")。
+     * 非 Chorus 段落高频触发 → 积累"未释放"张力 → 听众等副歌来解决 → 非副歌难受。
+     *
+     * 段落功能映射:
+     *   Chorus/Drop  : 记忆点/爆发 → 多 hook
+     *   PreChorus    : 聚能 → 偶发 hook
+     *   Bridge       : 对比 → 中度 hook
+     *   Verse        : 叙事 → 少 hook(级进为主,呼吸感)
+     *   Intro/Outro  : 告别/铺陈 → 几乎无 hook
+     */
+    private static getHookLeapChance(sectionType?: SectionType): number {
+        if (sectionType === undefined) return 0.2;
+        switch (sectionType) {
+            case SectionType.Chorus:
+            case SectionType.Drop:
+                return 0.5;
+            case SectionType.PreChorus:
+                return 0.25;
+            case SectionType.Bridge:
+            case SectionType.Solo_Bridge:
+                return 0.3;
+            case SectionType.Verse:
+                return 0.08;
+            case SectionType.BuildUp:
+                return 0.2;
+            case SectionType.Intro:
+            case SectionType.Outro:
+            case SectionType.PreOutro:
+            case SectionType.Break:
+            case SectionType.Breakdown:
+                return 0.05;
+            default:
+                return 0.2;
+        }
+    }
+
+    // 🌟 d1 实验观测：Leap & Resolve 统计（每首歌重置）
+    public static m1ExperimentStats = {
+        proactiveLeaps: 0,      // 主动 hook leap 触发次数
+        resolves: 0,            // 反向级进解决次数
+        downbeatOpportunities: 0, // downbeat 可触发窗口总数（含未命中）
+        enteredPrevPitchBlock: 0, // 进入 if (previousPitch !== null) 次数
+        enteredElseIfLenCheck: 0, // 通过 absInterval<=maxJump 到达 else-if 次数
+        rejectedByDownbeatOrPhraseEnd: 0 // else-if 到了但 isOnDownbeat/isPhraseEnd 淘汰
+    };
+
     // 🌟 提取并简化副歌 Hook 作为前奏旋律 (Thematic Foreshadowing)
     public static extractForeshadowingIntro(chorusMotif: NoteData[], targetInstrument: number = 10 /* 10: Music Box */, introStartBeat: number = 0, chorusStartBeat: number = 0): NoteData[] {
         const introMelody: NoteData[] = [];
@@ -402,6 +452,14 @@ export class ToplineEngine {
         const fullMelody: NoteData[] = [];
         const beatsPerBar = GlobalContext.currentTimeSignature[0];
 
+        // 🌟 d1 实验：每首歌开始时重置观测计数器
+        this.m1ExperimentStats.proactiveLeaps = 0;
+        this.m1ExperimentStats.resolves = 0;
+        this.m1ExperimentStats.downbeatOpportunities = 0;
+        this.m1ExperimentStats.enteredPrevPitchBlock = 0;
+        this.m1ExperimentStats.enteredElseIfLenCheck = 0;
+        this.m1ExperimentStats.rejectedByDownbeatOrPhraseEnd = 0;
+
         // 🌟 Phase 1: Global Groove Strategy (Now decoupled per section)
         const verseDensityMult = style.contrast.verseDensityMultiplier || 1.0;
         
@@ -458,8 +516,15 @@ export class ToplineEngine {
                 providedMotifs = chorusMotifs;
                 // 仅当段落长度与 firstChorus 相同时才复用 layout（不同长度会导致 slot 数不匹配）
                 const thisLengthBeats = section.endBeat - section.startBeat;
-                if (chorusPhraseGroups && Math.abs(thisLengthBeats - chorusLengthBeats) < 1e-6) {
-                    providedPhraseGroups = chorusPhraseGroups;
+                if (chorusPhraseGroups && Math.abs(thisLengthBeats - chorusLengthBeats) < 1e-6 && firstChorus) {
+                    // 🌟 FIX: 深拷贝 + 按段落 startBeat 偏移
+                    // 之前是引用复用,group.startBeat 保留 firstChorus 值 → Chorus_Main/Epic 所有音符
+                    // 被 realizeMotif 写入 firstChorus 的时间窗口 → 下游按 onset 过滤后丢失 137+144 个音
+                    const delta = section.startBeat - firstChorus.startBeat;
+                    providedPhraseGroups = chorusPhraseGroups.map(g => ({
+                        ...g,
+                        startBeat: g.startBeat + delta
+                    }));
                 }
             } else if (chorusMotifs.size > 0 && section.sectionType === SectionType.PreChorus) {
                 // 🌟 PreChorus 使用动机插值器 (Motif Morpher)，平滑过渡到副歌
@@ -537,12 +602,27 @@ export class ToplineEngine {
         });
 
         // Assemble full melody in order
+        const perSection: string[] = [];
         sections.forEach((section, index) => {
             const notes = sectionMelodies[index];
+            const n = notes ? notes.length : 0;
+            perSection.push(`${section.name}=${n}`);
             if (notes) {
                 fullMelody.push(...notes);
             }
         });
+
+        // 🌟 d1 实验：报告观测数据（每首歌一次）
+        const stats = this.m1ExperimentStats;
+        const hitRate = stats.downbeatOpportunities > 0
+            ? ((stats.proactiveLeaps / stats.downbeatOpportunities) * 100).toFixed(1)
+            : '0.0';
+        console.log(
+            `🎯 [M1' Experiment] leaps:${stats.proactiveLeaps}/${stats.downbeatOpportunities}(${hitRate}%) resolves:${stats.resolves} | flow: prevPitch✓=${stats.enteredPrevPitchBlock} · elseIf✓=${stats.enteredElseIfLenCheck} · rejectedByDowbeat/PhraseEnd=${stats.rejectedByDownbeatOrPhraseEnd}`
+        );
+        console.log(
+            `📊 [ToplineEngine out] isSecondary=${isSecondary} total=${fullMelody.length} per-section: ${perSection.join(' ')}`
+        );
 
         return fullMelody;
     }
@@ -1227,7 +1307,8 @@ export class ToplineEngine {
                     template, phraseStart, chords, tonality, isAnswer, currentPitchShift,
                     isSolo, isInstrumental, isLead, instrumentName, isLastSlotOfIntro, section.name, style,
                     currentPreviousPitch, forceStrongResolution, isClimaxSlot, maxPitchBeforeChorus, false, slotMacroTargetDegree,
-                    isClonedMotif  // 🌟 PR #6: 克隆锁，传入 realizeMotif 内部关闭随机源
+                    isClonedMotif,  // 🌟 PR #6: 克隆锁，传入 realizeMotif 内部关闭随机源
+                    section.sectionType  // 🌟 Section-aware M1': 传入段落类型
                 );
 
                 currentPreviousPitch = phraseResult.lastPitch;
@@ -1488,7 +1569,8 @@ export class ToplineEngine {
         maxPitchBeforeChorus: number = 0,
         isUserMotif: boolean = false,
         macroTargetDegree?: number,
-        isClonedMotif: boolean = false  // 🌟 PR #6: 克隆锁，true 时关闭 anticipation / restChance 等随机源
+        isClonedMotif: boolean = false,  // 🌟 PR #6: 克隆锁，true 时关闭 anticipation / restChance 等随机源
+        sectionType?: SectionType  // 🌟 Section-aware M1': 按段落差异化 hookLeapChance
     ): { notes: NoteData[], lastPitch: number | null } {
         const notes: NoteData[] = [];
         let targetCenter = 60 + pitchShift;
@@ -1525,7 +1607,13 @@ export class ToplineEngine {
         
         // 记录上一个音高，用于迈尔跳进定律 (Meyer's Leap Rule)
         let previousPitch: number | null = incomingPreviousPitch;
-        
+
+        // 🌟 d1 实验：主动式 Leap & Resolve 状态机（灵感来自 AuraRadio）
+        // 旧 M1 = 反应式（大跳发生后 100% 反向修复 → 杀 motif 意图）
+        // 新 M1' = 主动式（downbeat 概率性制造 hook leap + 下一音承诺反向解决）
+        let requiresResolve = false;
+        let resolveDirection: 1 | -1 = 1;
+
         let consecutiveNotes = 0;
         let consecutiveDuration = 0;
 
@@ -2048,6 +2136,7 @@ export class ToplineEngine {
 
             // 🌟 迈尔跳进定律 (Meyer's Leap Rule) & 音程惩罚 (Interval Penalty)
             if (previousPitch !== null) {
+                ToplineEngine.m1ExperimentStats.enteredPrevPitchBlock++;
                 // 现代流行乐 (R&B/Rap影响) 喜欢同音反复，制造“念白感”或“律动感”
                 // 🌟 数据驱动的旋律锚定 (Melody Anchoring)
                 // 🌟 降低同音反复概率，避免旋律呆板无聊（原 vocal:0.35 / inst:0.15 过高）
@@ -2081,30 +2170,44 @@ export class ToplineEngine {
                         }
                     }
                     currentPitch = this.getNearestOctave(bestPc, targetPitch);
-                } else if (notes.length >= 2) {
-                    // 🌟 M1: 强制 Leap Resolution — 大跳(≥ leapThreshold)后 100% 反向级进,反向幅度 ≥2 半音
-                    // 原 45% 概率门控移除,经典对位法则"拉伸-释放"必须生效
-                    const prevPrevPitch = notes[notes.length - 2].pitch;
-                    const prevInterval = previousPitch - prevPrevPitch;
-                    const leapThreshold = style?.melody?.leapResolutionThreshold ?? 5;
-                    if (Math.abs(prevInterval) >= leapThreshold) {
-                        PRNGManager.next(); // 保持 PRNG 序列对齐(原 gate)
-                        PRNGManager.next(); // 保持 PRNG 序列对齐(原方向 toss)
-                        const gapDirection = prevInterval > 0 ? -1 : 1;
-                        // 反向幅度固定 ≥2 半音,保证"紧张-弛豫"听感明确
-                        const targetPitch = previousPitch + gapDirection * 2;
+                } else if (notes.length >= 1) {
+                    ToplineEngine.m1ExperimentStats.enteredElseIfLenCheck++;
+                    // 🌟 M1' (d1 实验): 主动式 Leap & Resolve — AuraRadio 移植
+                    // 旧 M1:反应式大跳 → 100% 反向级进（摧毁 motif 的 Ascending/Arch 意图）
+                    // 新 M1':downbeat 主动跳 5~9 半音 + 下一音承诺反向解决（创造副歌 hook）
+                    if (requiresResolve) {
+                        // 兑现上一音的跳跃承诺：反向级进 1 个音阶步
+                        currentPitch = HarmonyCore.shiftDiatonic(previousPitch, safeScalePcs, resolveDirection);
+                        requiresResolve = false;
+                        ToplineEngine.m1ExperimentStats.resolves++;
+                    } else if (isOnDownbeat(onset) && !isPhraseEnd) {
+                        ToplineEngine.m1ExperimentStats.downbeatOpportunities++;
+                        // 🌟 d1 A/B 开关:浏览器 console 里 `window.__HOOK_LEAP_CHANCE = 0` 关闭
+                        // 🌟 Section-aware (2026-04-22):按段落差异化,Verse 低/Chorus 高,避免"处处提张力"
+                        const runtimeOverride = (globalThis as any).__HOOK_LEAP_CHANCE;
+                        const hookChance = typeof runtimeOverride === 'number'
+                            ? runtimeOverride
+                            : ToplineEngine.getHookLeapChance(sectionType);
+                        if (PRNGManager.next() < hookChance) {
+                            const leapDir: 1 | -1 = PRNGManager.next() > 0.5 ? 1 : -1;
+                            const leapAmt = 5 + Math.floor(PRNGManager.next() * 5); // 5~9 半音
+                            const target = previousPitch + leapDir * leapAmt;
 
-                        let bestPc = safeScalePcs[0];
-                        let minDistance = 999;
-                        for (const sc of safeScalePcs) {
-                            const p = this.getNearestOctave(sc, targetPitch);
-                            const dist = Math.abs(p - targetPitch);
-                            if (dist < minDistance) {
-                                minDistance = dist;
-                                bestPc = sc;
+                            // snap 到最近和弦音（相对空间，K-3 合规）
+                            let bestPitch = target;
+                            let minDist = 999;
+                            for (const ct of chordTones) {
+                                const cand = this.getNearestOctave(ct, target);
+                                const d = Math.abs(cand - target);
+                                if (d < minDist) { minDist = d; bestPitch = cand; }
                             }
+                            currentPitch = bestPitch;
+                            requiresResolve = true;
+                            resolveDirection = (leapDir > 0 ? -1 : 1) as 1 | -1;
+                            ToplineEngine.m1ExperimentStats.proactiveLeaps++;
                         }
-                        currentPitch = this.getNearestOctave(bestPc, targetPitch);
+                    } else {
+                        ToplineEngine.m1ExperimentStats.rejectedByDownbeatOrPhraseEnd++;
                     }
                 }
                 

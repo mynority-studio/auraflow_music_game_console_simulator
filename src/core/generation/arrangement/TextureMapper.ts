@@ -657,6 +657,7 @@ export class TextureMapper {
     prevVoicing?: number[],
     nextEnergyLevel?: number,
     melodyDensity: number = 0, // 🌟 F4: melody 密度,>0.65 强制 Pad 让旋律喘息
+    kickAnchors: number[] = [], // 🌟 Kick-Aligned Trigger: 和弦 re-attack 点对齐 kick(AuraRadio 移植)
   ): NoteData[] {
     // 🌟 F4: melody 16 分连音时,块和弦/琶音过于拥挤 → 强制 Pad 长音铺底
     if (melodyDensity > 0.65 && textureType !== 'Riff') {
@@ -684,6 +685,52 @@ export class TextureMapper {
       const simplified: number[] = [voicing[0], voicing[1]];
       if (voicing.length > 3) simplified.push(voicing[3]);
       voicing = simplified;
+    }
+
+    // 🌟 NEW: Kick-Aligned Block Comping (AuraRadio 移植)
+    // 条件:提供了 kickAnchors + 非 Pad/Sparse + 能量 ≥ MEDIUM
+    // 效果:和弦逢 kick 必响 → 钢琴和鼓锁在同一个律动上,获得"参与演奏"而非"铺底"的听感
+    const useKickAligned =
+      kickAnchors.length > 0 &&
+      textureType !== 'Pad' &&
+      !isSparseSection &&
+      energyLevel >= ENERGY.MEDIUM_MIN;
+
+    if (useKickAligned) {
+      const attackPoints: number[] = [chord.startBeat];
+      for (let ki = 0; ki < kickAnchors.length; ki++) {
+        const kb = kickAnchors[ki];
+        if (kb >= chord.startBeat - 1e-6 && kb < chord.endBeat - 1e-6 && Math.abs(kb - chord.startBeat) > 1e-6) {
+          attackPoints.push(kb);
+        }
+      }
+      // HIGH 能量:额外加 1 个 offbeat 切分点(30% 概率),制造 syncopation
+      if (energyLevel >= ENERGY.HIGH_MIN && chordLen >= 2 && PRNGManager.next() < 0.3) {
+        const off = chord.startBeat + 1.5;
+        if (off < chord.endBeat - 1e-6 && !attackPoints.some(a => Math.abs(a - off) < 1e-6)) {
+          attackPoints.push(off);
+        }
+      }
+      attackPoints.sort((a, b) => a - b);
+
+      for (let ai = 0; ai < attackPoints.length; ai++) {
+        const attackBeat = attackPoints[ai];
+        const nextAttack = ai < attackPoints.length - 1 ? attackPoints[ai + 1] : chord.endBeat;
+        // stab-like duration:80% 与下一击的距离,上限 1.5 拍避免和下一击重叠
+        const dur = Math.min((nextAttack - attackBeat) * 0.8, 1.5);
+        const velScale = ai === 0 ? 1.0 : 0.85; // 首拍最重,其余 kick 稍轻
+        for (let vi = 0; vi < voicing.length; vi++) {
+          notes.push({
+            pitch: voicing[vi],
+            onset: attackBeat,
+            duration: Math.max(dur, 0.25),
+            velocity: baseVelocity * velScale + PRNGManager.next() * 0.05,
+          });
+        }
+      }
+
+      this.clampToRange(notes, 48, 60);
+      return this.deduplicateNotes(notes);
     }
 
     if (textureType === 'Pad' || isSparseSection) {

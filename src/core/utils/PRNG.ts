@@ -19,10 +19,12 @@ export type PRNGSnapshotKey = 'A' | 'B' | 'C' | 'D';
 
 class PRNG {
     private state: number;
+    private lastSeed: number = 0;
     private snapshots: { A?: number; B?: number; C?: number; D?: number } = {};
 
     constructor(seed: number) {
         this.state = seed;
+        this.lastSeed = seed >>> 0;
     }
 
     // LCG (Linear Congruential Generator) - Fast and C-friendly
@@ -41,8 +43,13 @@ class PRNG {
 
     public setSeed(seed: number): void {
         this.state = seed;
+        this.lastSeed = seed >>> 0;
         // 新 seed = 新一轮生成，清空所有 snapshot
         this.snapshots = {};
+    }
+
+    public getInitialSeed(): number {
+        return this.lastSeed;
     }
 
     public getState(): number {

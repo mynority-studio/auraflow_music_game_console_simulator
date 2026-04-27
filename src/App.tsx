@@ -7,6 +7,7 @@ import { AudioEngine } from './core/audio/AudioEngine';
 import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
 import { SeedController } from './components/SeedController';
+import { PipelineMonitor } from './components/PipelineMonitor';
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
@@ -32,9 +33,10 @@ export default function App() {
   const ActiveApp = APPS.find(app => app.id === deviceState)?.component;
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden">
+    <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden lg:pr-[680px]">
       <VolumeController />
       <SeedController />
+      <PipelineMonitor />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"

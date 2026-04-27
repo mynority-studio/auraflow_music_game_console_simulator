@@ -5,6 +5,30 @@ import { DefaultStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
+import { buildComparisonLog } from '../../core/generation/utils/SongComparisonLogger';
+
+const COMPARISON_LOG_KEY = 'AF_COMPARISON_LOG';
+const COMPARISON_SEED_KEY = 'AF_COMPARISON_SEED';
+const COMPARISON_GOLDEN_SEED = 12345;
+
+function isComparisonLogEnabled(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(COMPARISON_LOG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function getComparisonSeed(): number {
+  try {
+    const stored = localStorage.getItem(COMPARISON_SEED_KEY);
+    if (stored) {
+      const n = parseInt(stored, 10);
+      if (Number.isFinite(n)) return n >>> 0;
+    }
+  } catch {}
+  return COMPARISON_GOLDEN_SEED;
+}
 
 export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING';
 
@@ -96,21 +120,32 @@ export class EndlessRadioManager {
       if (currentGenId !== this.generationId) return;
 
       // §1.4 step 0: 每次生成前重新播种
-      const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
+      const comparisonMode = isComparisonLogEnabled();
+      const seed = comparisonMode
+        ? getComparisonSeed()
+        : (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
       PRNGManager.setSeed(seed);
       // ACVE §5.1 — 入口快照点 A（setSeed 之后、step 1 PRNG 消耗之前）
       PRNGManager.recordSnapshot('A');
-      console.log(`[Radio] New seed: ${seed}`);
+      console.log(`[Radio] New seed: ${seed}${comparisonMode ? ' (comparison-log mode)' : ''}`);
 
-      const melodyEngine = new MelodyEngine();
+      // 🌟 新管道：Stage 1 在内部抽风格+情绪，EndlessRadioManager 只传 allowedStyleIds 约束
+      const { runPipeline } = await import('../../core/generation/pipeline');
       const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
-      const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
-      
-      const rawTrack = melodyEngine.generateFullSong(randomStyleId);
-      
+      const rawTrack = runPipeline({ allowedStyleIds: pool });
+
+      const selectedStyleId = rawTrack.context.style?.id ?? StyleId.Default;
       const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
-      const randomStyle = StyleRegistry[randomStyleId] || DefaultStyleConfig;
+      const randomStyle = StyleRegistry[selectedStyleId] || DefaultStyleConfig;
+
+      if (comparisonMode) {
+        console.log(buildComparisonLog({
+          seed,
+          styleName: randomStyle.name,
+          track: rawTrack.track,
+        }));
+      }
       
       if (currentGenId !== this.generationId) return;
 

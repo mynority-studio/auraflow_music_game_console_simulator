@@ -257,6 +257,7 @@ export interface StyleConfig {
         passingToneChainProbability?: number;    // 大音程经过音填充概率（默认 0.12）
         harmonicGravityStrength?: number;        // 和弦功能引力强度 0-1（默认 0.3）
         leapResolutionThreshold?: number; // 🌟 新增：多大的音程被视为大跳并需要反向解决
+        hookLeapChance?: number; // 🌟 d1 实验：downbeat 主动触发 hook leap 的概率（0~1，默认 0.4）— AuraRadio 移植
         syncopationResolution?: 'strict' | 'loose';
         inflectionProbability?: number;
         pentatonicShiftProbability?: number;
@@ -437,6 +438,53 @@ export interface GeneratedTrack {
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
 }
 
+// 🌟 五阶段管道新增：乐队指挥计划与离调桥接
+export type InstrumentRole =
+    | 'melody'
+    | 'vocal'
+    | 'chord'
+    | 'bass'
+    | 'drums'
+    | 'counter'
+    | 'secondary';
+
+export type RhythmCenter = 'downbeat' | 'backbeat' | 'syncopated';
+export type GlobalRhythmProfile =
+    | 'four-on-floor'
+    | 'half-time'
+    | 'shuffle'
+    | 'ballad'
+    | 'syncopated';
+
+export interface ConductorSectionPlan {
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    focusInstrument: InstrumentRole;
+    supportInstruments: InstrumentRole[];
+    silentInstruments: InstrumentRole[];
+    rhythmCenter: RhythmCenter;
+    counterpointPairs: Array<[InstrumentRole, InstrumentRole]>;
+    fillWindows: number[];
+}
+
+export interface ConductorPlan {
+    sections: ConductorSectionPlan[];
+    globalRhythmProfile: GlobalRhythmProfile;
+}
+
+export interface CadentialBridge {
+    beat: number;
+    targetNumeral: string;
+    bridgeType: 'ii-V-I' | 'bVII-IV' | 'secondary-dom' | 'tritone-sub';
+}
+
+// Stage 1 输出的"轨迹与节奏"高层风格化描述（UI 可视化用）
+export interface TrajectoryProfile {
+    sync: string;   // 节奏密度风格："Fast Triplet Bursts" / "Steady Eighths" / ...
+    path: string;   // 旋律走向风格："Monotone Triplets" / "Lyrical Arch" / ...
+}
+
 export interface MusicContext {
     keyOffset: number;
     tonality: Tonality;
@@ -446,6 +494,9 @@ export interface MusicContext {
     moodId?: MoodId;
     ensemble?: EnsembleDraft;
     style?: StyleConfig;
+    conductorPlan?: ConductorPlan;
+    cadentialBridges?: CadentialBridge[];
+    trajectoryProfile?: TrajectoryProfile;
 }
 
 export interface GenerationOptions {

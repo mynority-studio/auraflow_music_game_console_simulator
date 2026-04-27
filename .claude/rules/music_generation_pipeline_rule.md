@@ -43,69 +43,85 @@
 | 新增风格 | 修改 `StyleFlags.ts` 中 `DefaultStyleConfig` 或新增 `StyleId` + 配置 | 管道接口 |
 | 新增演奏 Idiom | `/src/core/generation/idioms/` 下新增文件，由 Orchestrator/TextureMapper 分派 | 管道接口 |
 | 新增生成子模块 | 放入对应模块目录，自动继承本 Rule 全部约束 | 管道拓扑 |
-| 新增管道阶段 | **禁止** — 四模块拓扑不可变，需先修订本 Rule | — |
+| 新增管道阶段 | **禁止** — 五阶段拓扑不可变，需先修订本 Rule | — |
 
 ---
 
 ## 1. 管道拓扑
 
-### 1.1 四模块管道
+### 1.1 五阶段管道（2026-04-23 重构）
 
 ```
               ┌──────────────────────────────────────────────────────┐
               │               PRNGManager（隐式供给层）                │
               │       setSeed · next · getState · setState           │
-              └───┬──────────────────┬──────────────────┬────────────┘
-                  │ next() ×N        │ next() ×M        │ ×0
-                  ▼                  ▼                  ▼
-              ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
- Params ─────►│ MelodyEngine │  │ Orchestrator │  │ Midi         │
- Options? ───►│              ├─►│              ├─►│ Converter    ├──► MidiEvent[]
-              └──────────────┘  └──────────────┘  └──────────────┘
-                     │                 │                  │
-              GeneratedTrack    ArrangedTrack        MidiEvent[]
-              + MusicContext
-
-              ══════════════════════════════════════════════════════
-              ║  平台层（不属于本规范）                               ║
-              ║  MidiScheduler → SpessaSynth → 音频输出              ║
-              ══════════════════════════════════════════════════════
+              └──┬──────┬──────┬──────┬──────┬───────────────────────┘
+                 │      │      │      │      │
+                 ▼      ▼      ▼      ▼      ▼
+              ┌─────┐┌─────┐┌─────┐┌─────┐┌────────────┐
+              │Stg 1││Stg 2││Stg 3││Stg 4││ Stage 5    │
+              │style││basic││harm ││cond ││ instrument │──► GeneratedTrack
+              │mood ││param││+251 ││plan ││ layering   │    + MusicContext
+              └─────┘└─────┘└─────┘└─────┘└────────────┘
+                                                  │
+                                                  ▼
+                                        ┌──────────────────┐
+                                        │ Orchestrator     │──► ArrangedTrack
+                                        │ (consumes plan)  │
+                                        └──────────────────┘
+                                                  │
+                              ════════════════════▼════════════════════
+                              ║  平台层（不属于本规范）                 ║
+                              ║  PlaybackEngine → MidiScheduler        ║
+                              ║  → SpessaSynth → 音频输出              ║
+                              ══════════════════════════════════════════
 ```
 
-> 各模块输入/输出的完整字段定义见 §2（接口签名）和 §3（数据契约）。
+> 各阶段输入/输出的完整字段定义见 §2（接口签名）和 §3（数据契约）。
+> 五阶段实现位于 `src/core/generation/pipeline/`，统一入口 `runPipeline()`。
 
-### 1.2 模块职责
+### 1.2 阶段职责
 
-| # | 模块 | 职责 | PRNG |
+| # | 阶段 | 职责 | PRNG |
 |---|------|------|------|
 | 0 | PRNGManager | 确定性伪随机序列，支持状态快照/恢复 | 供给方 |
-| 1 | MelodyEngine | 从 GenerationParams 生成完整曲目（结构/和声/旋律/编制） | ×N |
-| 2 | Orchestrator | 单旋律展开为多轨编配 | ×M |
-| 3 | MidiConverter | 多轨 NoteData → MidiEvent[] | ×0 |
+| 1 | StyleAndMoodSelector | 在管道内部抽取 styleId + moodId（风格→情绪偏好表） | ×2 |
+| 2 | BasicParamsResolver | 按顺序：timeSig → tonality → keyOffset → bpm → sections | ×5~N |
+| 3 | HarmonicEngine | 和弦进行生成（Viterbi 或旧版）+ 251 桥接检测/注入 | ×M |
+| 4 | ConductorPlanner | 输出 ConductorPlan：每段 focus/support/silent/rhythm/fillWindows | ×10 |
+| 5 | InstrumentLayering | ToplineEngine 生成旋律 + GlobalReviewer 检查 | ×K |
+| * | Orchestrator | 读取 MusicContext.conductorPlan 执行乐器避让与加花（平台层之前） | ×J |
+| * | MidiConverter | 多轨 NoteData → MidiEvent[]（平台层） | ×0 |
 
 ### 1.3 链路约束
 
 | ID | 约束 |
 |----|------|
-| L-1 | 严格线性：PRNG → Melody → Orchestrate → Playback，禁止跨层调用 |
-| L-2 | 模块间仅通过函数参数与返回值传递数据，禁止访问对方内部状态 |
+| L-1 | 严格线性：PRNG → Stage1 → Stage2 → Stage3 → Stage4 → Stage5 → Orchestrator，禁止跨阶段调用 |
+| L-2 | 阶段间仅通过函数参数与返回值传递数据，禁止访问对方内部状态 |
 | L-3 | PRNGManager 为唯一允许的全局可变单例 |
 | L-4 | 风格配置（`StyleConfig`）为静态只读数据层，通过 `StyleRegistry[styleId]` 查询 |
 | L-5 | 管道终点为 `MidiEvent[]`，之后的调度/合成属于平台层 |
 | L-6 | **确定性**：同一 PRNG 状态 + 同一输入 = 同一输出（具体实现规则见 §4.1） |
+| L-7 | Stage 1 负责风格/情绪抽取——App 层禁止自己抽 styleId 传入（仅允许传 allowedStyleIds 约束池） |
+| L-8 | Stage 4 的 ConductorPlan 是指挥层的**唯一**输出——Stage 5 和 Orchestrator 必须遵守其 silentInstruments 硬约束 |
 
 ### 1.4 执行周期
 
 ```
 step 0  PRNGManager.setSeed(seed)
-step 1  PRNGManager.next() // ×1，保持 PRNG 序列对齐（原用于选风格）
-step 2  { track, context } = engine.generateFullSong(styleId, options?)
-step 3  history.push({ track, context })
-step 4  arranged = Orchestrator.arrange(track, styleId, context)
+step 1  PipelineResult = runPipeline({ allowedStyleIds?, generation? })
+        ├─ Stage 1  selectStyleAndMood()          → { styleId, style, moodId }
+        ├─ Stage 2  resolveBasicParams()           → + { timeSig, tonality, keyOffset, bpm, sections }
+        ├─ Stage 3  generateHarmony()              → + { chords, cadentialBridges }
+        ├─ Stage 4  planConductor()                → + { ensemble, conductorPlan }
+        └─ Stage 5  layerInstruments()             → { track: GeneratedTrack, context: MusicContext }
+step 2  history.push({ track, context })
+step 3  arranged = Orchestrator.arrange(track, styleId, context)
         ──── 以下为平台层（PlaybackEngine 内部）────
-step 5  PlaybackEngine.loadSong(arranged) // 内联转 MidiEvent[]
-step 6  midiScheduler.load(events) → play
-step 7  onTrackEnd → 有下一首 → goto 4 | 末尾 → goto 1
+step 4  PlaybackEngine.loadSong(arranged)
+step 5  midiScheduler.load(events) → play
+step 6  onTrackEnd → 有下一首 → goto 1 | 末尾 → idle
 ```
 
 ---
@@ -127,31 +143,107 @@ class PRNG {
 }
 ```
 
-### 2.2 MelodyEngine
+### 2.2 runPipeline（五阶段统一入口）
 
 ```typescript
-class MelodyEngine {
-  generateFullSong(
-    params: GenerationParams,
-    options?: GenerationOptions
-  ): { track: GeneratedTrack; context: MusicContext };
+// src/core/generation/pipeline/index.ts
+function runPipeline(options?: PipelineRunOptions): {
+  track: GeneratedTrack;
+  context: MusicContext;  // 含 conductorPlan + cadentialBridges
+};
+
+interface PipelineRunOptions {
+  allowedStyleIds?: StyleId[];    // App 层风格池约束（仅白名单，不抽取）
+  forcedStyleId?: StyleId;        // 强制指定风格（调试/兼容旧签名）
+  forcedMoodId?: MoodId;          // 强制指定情绪
+  generation?: GenerationOptions; // 传递到 Stage 5 的生成选项（motif 等）
 }
 ```
 
 | 属性 | 值 |
 |------|---|
 | 同步 | 是 — 禁止 async |
-| 副作用 | 无 — context 通过返回值输出，禁止写入全局单例 |
-| PRNG | 消耗 ×N，入口自动 `getState()` 快照 |
+| 副作用 | 无 — context 通过返回值输出，Stage 5 内仅兼容性写入 GlobalContext |
+| PRNG | 消耗 ×N，阶段入口记录 stateB / stateB2 / stateC / stateD |
 
-### 2.3 Orchestrator
+### 2.3 Stage 1 — selectStyleAndMood
+
+```typescript
+function selectStyleAndMood(options?: {
+  allowedStyleIds?: StyleId[];
+  forcedStyleId?: StyleId;
+  forcedMoodId?: MoodId;
+}): { styleId: StyleId; style: StyleConfig; moodId: MoodId };
+```
+
+| 属性 | 值 |
+|------|---|
+| PRNG | 消耗 ×2（style + mood），除非强制指定 |
+| 契约 | 风格→情绪偏好表内置：ModernPop 偏向 Euphoric/Energetic，Synthwave 偏向 Melancholic/Energetic，LofiChill 偏向 Chill/Melancholic |
+
+### 2.4 Stage 2 — resolveBasicParams
+
+```typescript
+function resolveBasicParams(
+  stage1: Stage1Output,
+  options?: { forcedTimeSignature?, forcedTonality?, forcedKeyOffset? }
+): Stage2Output;  // + { timeSignature, tonality, keyOffset, keyName, bpm, sections }
+```
+
+| 属性 | 值 |
+|------|---|
+| 顺序 | **timeSig → tonality → keyOffset → bpm → sections**（新管道规定顺序，Stage 1 之后） |
+| PRNG | 消耗 ×5 + StructureEngine 内部消耗 |
+
+### 2.5 Stage 3 — generateHarmony
+
+```typescript
+function generateHarmony(stage2: Stage2Output): Stage3Output;
+// + { chords: GeneratedChord[], cadentialBridges: CadentialBridge[] }
+```
+
+| 属性 | 值 |
+|------|---|
+| 和声引擎 | `style.useViterbiHarmony` 决定走 HarmonyPipeline 或旧版 HarmonyEngine |
+| 251 注入 | ii-V-I 策略（ModernPop）真正插入 ii7/iiø；其他策略仅标记 bridges，暂不改和弦 |
+| 前置条件 | 仅当前和弦时长 >= 2 拍且非 ii 家族时才注入，缩短前和弦 1 拍 |
+
+### 2.6 Stage 4 — planConductor
+
+```typescript
+function planConductor(stage3: Stage3Output): Stage4Output;
+// + { ensemble: EnsembleDraft, conductorPlan: ConductorPlan }
+```
+
+| 属性 | 值 |
+|------|---|
+| PRNG | 消耗 ×10（EnsembleDrafter 内部） |
+| 决策维度 | SectionType × StyleId × MoodId 三层叠加 |
+| 输出 | `ConductorPlan.sections[]` 每段含 focus/support/silent/rhythmCenter/counterpointPairs/fillWindows |
+
+### 2.7 Stage 5 — layerInstruments
+
+```typescript
+function layerInstruments(
+  stage4: Stage4Output,
+  options?: GenerationOptions
+): { track: GeneratedTrack; context: MusicContext };
+```
+
+| 属性 | 值 |
+|------|---|
+| 生成内容 | melody + vocal（复用 ToplineEngine）+ GlobalReviewer 检查 |
+| 副作用 | GlobalContext.initializeNewEra()（兼容保留，计划后续移除） |
+| 输出 context | 携带 conductorPlan / cadentialBridges 传递到 Orchestrator |
+
+### 2.8 Orchestrator
 
 ```typescript
 class Orchestrator {
   static arrange(
     track: GeneratedTrack,
-    params: GenerationParams,
-    context: MusicContext
+    styleId: StyleId,
+    context: MusicContext  // 消费 context.conductorPlan
   ): ArrangedTrack;
 }
 ```
@@ -159,16 +251,16 @@ class Orchestrator {
 | 属性 | 值 |
 |------|---|
 | 同步 | 是 |
-| 副作用 | 无 — 所有上下文从 context 参数读取 |
-| PRNG | 消耗 ×M，入口自动 `getState()` 快照 |
+| ConductorPlan 消费 | silentInstruments 硬约束覆盖能量阈值；fillWindows / rhythmCenter / focusInstrument 消费待实现 |
+| PRNG | 消耗 ×M |
 
-### 2.4 MidiConverter
+### 2.9 MidiConverter
 
 ```typescript
 class MidiConverter {
   static convert(
     song: ArrangedTrack,
-    channelMap: ChannelMap = DEFAULT_CHANNEL_MAP,  // 由平台层构建，默认值供测试用
+    channelMap: ChannelMap = DEFAULT_CHANNEL_MAP,
     options?: { countInBeats?: number; drumDucking?: boolean }
   ): MidiEvent[];
 }
@@ -472,21 +564,26 @@ enum ChordQuality {
 > 这不是可选的测试建议，而是代码合入的前置条件。
 > 验证失败 = 修改不可合入。
 
-### 5.1 四个快照点（不可移动）
+### 5.1 五个快照点（不可移动）
+
+> 2026-04-23 重构：四模块拓扑 → 五阶段拓扑，快照点相应调整为 A / B / B2 / C / D。
+> 重构后全部黄金种子需重新录制（见用户决策 5B）。
 
 ```
 setSeed(seed)
-  ├─ stateA ← getState()         // step 1 入口（选风格前）
-  ├─ next() ×1                    // 选风格
-  ├─ stateB ← getState()         // step 2 入口（MelodyEngine）
-  ├─ generateFullSong() 内部      // next() ×N
-  ├─ stateC ← getState()         // step 4 入口（Orchestrator）
-  ├─ arrange() 内部               // next() ×M
-  ├─ stateD ← getState()         // step 5 入口（MidiConverter）
-  └─ convert()                   // next() ×0
+  ├─ stateA  ← getState()        // App 层 triggerGeneration() 入口（setSeed 之后）
+  ├─ runPipeline() 进入
+  │   ├─ stateB  ← getState()    // Stage 1 入口（selectStyleAndMood）
+  │   ├─ Stage 1 消耗 ×2         // style + mood
+  │   ├─ stateB2 ← getState()    // Stage 2 入口（resolveBasicParams）
+  │   ├─ Stage 2~3 消耗 ×N
+  │   ├─ stateC  ← getState()    // Stage 4 入口（planConductor）
+  │   ├─ Stage 4~5 消耗 ×M
+  │   └─ stateD  ← getState()    // Stage 5 入口（layerInstruments）
+  └─ Orchestrator.arrange() 消耗 ×J
 ```
 
-stateA/B/C/D 的位置绑定在模块入口，禁止移动。这是全管道确定性验证的基础设施。
+stateA/B/B2/C/D 的位置绑定在阶段入口，禁止移动。这是全管道确定性验证的基础设施。
 
 ### 5.2 验证义务
 

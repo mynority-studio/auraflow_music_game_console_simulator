@@ -1,160 +1,35 @@
-import { PRNGManager } from '../utils/PRNG';
-import { GeneratedTrack, StyleConfig, MusicContext } from "./types";
-import { getStyleConfig } from "./config/styles/StyleRegistry";
-import { StyleId } from "./config/StyleFlags";
-import { StructureEngine } from "./composing/StructureEngine";
-import { HarmonyEngine, HarmonyCore } from "./composing/HarmonyCore";
-import { ToplineEngine } from "./composing/ToplineEngine";
-import { GlobalContext } from "./GlobalContext";
-import { EnsembleDrafter } from "./arrangement/EnsembleDrafter";
-import { GenerationOptions } from "./types";
+import { GeneratedTrack, MusicContext, GenerationOptions } from './types';
+import { StyleId } from './config/StyleFlags';
+import { runPipeline } from './pipeline';
 
-import { GlobalReviewer } from "./review/GlobalReviewer";
-
-import { MoodId, MoodRegistry } from "./config/MoodFlags";
-
-// 🌟 PR #2: 双阶段 Viterbi 和声管线
-import { generateHarmonyViaPipeline } from "./harmony/HarmonyPipeline";
-
+// 🌟 五阶段管道入口（2026-04-23 重构）
+//
+// 执行顺序：
+//   Stage 1  StyleAndMoodSelector    → { styleId, moodId }
+//   Stage 2  BasicParamsResolver     → timeSig → tonality → bpm → sections
+//   Stage 3  HarmonicEngine          → chords + cadentialBridges（251 桥接）
+//   Stage 4  ConductorPlanner        → ConductorPlan（焦点/支撑/避让/节奏中心/加花窗口）
+//   Stage 5  InstrumentLayering      → melody/vocal + GlobalReview → GeneratedTrack
+//
+// 旧签名 generateFullSong(styleId, options) 保留兼容，内部转发到 runPipeline。
 export class MelodyEngine {
+    public generateFullSong(
+        styleIdOrOptions?: StyleId | GenerationOptions,
+        legacyOptions: GenerationOptions = {},
+    ): { track: GeneratedTrack; context: MusicContext } {
+        let forcedStyleId: StyleId | undefined;
+        let options: GenerationOptions;
 
-  public generateFullSong(styleId: StyleId, options: GenerationOptions = {}): { track: GeneratedTrack, context: MusicContext } {
-    // 🌟 ACVE §5.1 — 模块入口快照点 B（generateFullSong 开始时的 PRNG state）
-    PRNGManager.recordSnapshot('B');
-
-    const style = getStyleConfig(styleId);
-    const {
-        userMotifRoot,
-        processedUserMotif,
-        motifRole = 'Foreground',
-        detectedTimeSignature,
-        detectedTonality,
-        moodId
-    } = options;
-    
-    if (!style.global) {
-      console.error("Style is missing global config:", style);
-      throw new Error(`Style ${styleId} is missing global config`);
-    }
-
-    // 🌟 决定 Mood
-    const finalMoodId = moodId !== undefined ? moodId : (PRNGManager.next() > 0.5 ? Math.floor(PRNGManager.next() * 5) + 1 : MoodId.Neutral);
-    const mood = MoodRegistry[finalMoodId as MoodId] || MoodRegistry[MoodId.Neutral];
-
-    // 🌟 真正的随机 BPM (区间内取值)
-    const minBpm = style.global.bpmRange[0];
-    const maxBpm = style.global.bpmRange[1];
-    const baseBpm = Math.floor(PRNGManager.next() * (maxBpm - minBpm + 1)) + minBpm;
-    let bpm = Math.round(baseBpm * (mood.bpmMultiplier[0] + PRNGManager.next() * (mood.bpmMultiplier[1] - mood.bpmMultiplier[0])));
-    bpm = Math.max(60, Math.min(190, bpm)); // Clamp to reasonable extremes
-
-    // 🌟 真正的随机真实调号与 UI 映射
-    // 如果外部传入了 Motif Root，则强制使用该 Root 作为歌曲的 Key
-    let keyOffset = Math.floor(PRNGManager.next() * 12);
-    if (userMotifRoot !== undefined) {
-        keyOffset = userMotifRoot % 12;
-    }
-    const keyNames =["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
-    const actualKey = keyNames[keyOffset];
-
-    // 🌟 根据权重抽取绝对调式 (大调/小调)
-    let tonality = style.global.tonalityPool[0].tonality;
-    if (detectedTonality) {
-        tonality = detectedTonality;
-    } else {
-        const tonalityPool = mood.tonalityBias || style.global.tonalityPool;
-        const tRoll = PRNGManager.next();
-        let tSum = 0;
-        for (const t of tonalityPool) {
-            tSum += t.weight;
-            if (tRoll < tSum) { tonality = t.tonality; break; }
+        if (typeof styleIdOrOptions === 'number') {
+            forcedStyleId = styleIdOrOptions;
+            options = legacyOptions;
+        } else {
+            options = styleIdOrOptions ?? {};
         }
+
+        return runPipeline({
+            forcedStyleId,
+            generation: options,
+        });
     }
-
-    let timeSig = style.global.timeSignaturePool[0].signature;
-    if (detectedTimeSignature) {
-        timeSig = detectedTimeSignature;
-    } else {
-        const tsRoll = PRNGManager.next();
-        let tsSum = 0;
-        for (const ts of style.global.timeSignaturePool) {
-            tsSum += ts.weight;
-            if (tsRoll < tsSum) { timeSig = ts.signature; break; }
-        }
-    }
-    
-    GlobalContext.initializeNewEra(style, bpm, keyOffset, tonality, timeSig, finalMoodId);
-
-    // 1. 生成宏观结构
-    const sections = StructureEngine.generateFullSongStructure(timeSig, bpm, style, finalMoodId);
-
-    // 2. 生成全曲和声轨道
-    // 🌟 PR #2: 双阶段 Viterbi 和声管线分支
-    //   - useViterbiHarmony=true: 走新管线（影子骨架 → 骨架旋律 → Viterbi）
-    //   - 否则回退到旧版 HarmonyEngine.generateHarmonyTimeline
-    const useViterbiPipeline = style.useViterbiHarmony === true;
-    const chords = useViterbiPipeline
-        ? generateHarmonyViaPipeline(sections, tonality, timeSig)
-        : HarmonyEngine.generateHarmonyTimeline(sections, style, timeSig);
-
-    // 3. 抽卡决定乐器编制与主唱性格
-    const instrumentPalette = EnsembleDrafter.draft(style);
-    
-    // Consume PRNG slot for persona selection alignment
-    PRNGManager.next();
-
-    const context: MusicContext = {
-        keyOffset,
-        tonality,
-        bpm,
-        timeSignature: timeSig,
-        grooveDNA: [],
-        moodId: finalMoodId,
-        ensemble: instrumentPalette,
-        style: style
-    };
-
-    // 4. 生成旋律（此时会将各段落独有的 GrooveDNA 写入 Sections）
-    const toplineMotif = motifRole === 'Foreground' ? processedUserMotif : undefined;
-    const leadInstrument = instrumentPalette.melodySound;
-    let vocal: any[] | undefined = undefined;
-    let melody: any[] = [];
-
-    if (instrumentPalette.vocalSound) {
-        vocal = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, instrumentPalette.vocalSound, toplineMotif, false, context
-        );
-        // Generate a sparser instrumental melody as accompaniment
-        melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, leadInstrument, undefined, true, context
-        );
-    } else {
-        melody = ToplineEngine.generateTrackMelody(
-            sections, chords, style, tonality, leadInstrument, toplineMotif, false, context
-        );
-    }
-
-    // 5. 基于旋律进行重配和弦 (Re-harmonization)
-    // 🌟 PR #2: Viterbi 管线下跳过 reharmonize —— Viterbi 已基于骨架旋律做了
-    // 全局最优 voice leading，再跑贪心 reharmonize 会破坏长线连贯性。
-    const finalChords = useViterbiPipeline
-        ? chords
-        : HarmonyEngine.reharmonize(chords, melody, style);
-
-    // 6. 全局检查与修复 (Global Review & Nudge)
-    const reviewed = GlobalReviewer.reviewAndFix(
-        vocal, melody, finalChords, style, tonality
-    );
-
-    const track: GeneratedTrack = {
-      chords: reviewed.chords, melody: reviewed.melody, vocal: reviewed.vocal, bpm, key: actualKey, keyOffset, tonality,
-      timeSignature: timeSig, sections,
-      blockIndex: 0, absoluteStartBeat: 0, hasIntro: true,
-      preSelectedPalette: instrumentPalette,
-      processedUserMotif,
-      motifRole
-    };
-
-    return { track, context };
-  }
 }

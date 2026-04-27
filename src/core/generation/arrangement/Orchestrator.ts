@@ -83,6 +83,15 @@ export class Orchestrator {
         PRNGManager.recordSnapshot('C');
         const style = getStyleConfig(styleId);
 
+        // 🌟 d1 诊断：Orchestrator 入口每个 section 的 melody 音符数
+        {
+            const perSec = (track.sections || []).map(s => {
+                const cnt = track.melody.filter(n => n.onset >= s.startBeat && n.onset < s.endBeat).length;
+                return `${s.name}=${cnt}`;
+            });
+            console.log(`📥 [Orchestrator in] track.melody total=${track.melody.length} per-section: ${perSec.join(' ')}`);
+        }
+
         const lhNotes: NoteData[] =[];
         let rhNotes: NoteData[] = [];
         const drumNotes: NoteData[] =[];
@@ -308,7 +317,13 @@ export class Orchestrator {
 
         track.sections.forEach(section => {
             const energy = section.energyLevel;
-            
+
+            // 🌟 Stage 4 ConductorPlan — 按 sectionName + startBeat 查找本段指挥计划
+            const conductorSection = context.conductorPlan?.sections.find(
+                s => s.sectionName === section.name
+                    && Math.abs(s.startBeat - section.startBeat) < 1e-6,
+            );
+
             // 🌟 动态阈值激活机制 (Dynamic Threshold Activation)
             let playBass = energy >= trackThresholds.bass;
             let playDrums = energy >= trackThresholds.drums;
@@ -386,6 +401,19 @@ export class Orchestrator {
                 // 副歌后半段突然加入副旋律推高潮
                 if (PRNGManager.next() < 0.7) {
                     counterMelodyEntryBeat = halfBeat;
+                }
+            }
+
+            // 🌟 Stage 4 ConductorPlan 硬约束 — silentInstruments 覆盖上面所有规则
+            // 指挥层对乐器静音的决策高于能量阈值、惯性保持、段落类型推导等
+            if (conductorSection) {
+                const silent = conductorSection.silentInstruments;
+                for (let i = 0; i < silent.length; i++) {
+                    const role = silent[i];
+                    if (role === 'bass') playBass = false;
+                    else if (role === 'drums') playDrums = false;
+                    else if (role === 'counter') playCounterMelody = false;
+                    else if (role === 'chord') playChords = false;
                 }
             }
 
@@ -600,6 +628,27 @@ export class Orchestrator {
 
             // localStyleOverride removed (pure computation mode)
 
+            // 🌟 PR#9 §4.1 + Kick-Aligned Chord: 计算 Kick 锚点,供 bass + chord 共享
+            // 4/4 默认 Kick 在每小节 beat 0 和 beat 2(TextureMapper.generateDrumGroove L213-221)
+            // Section 无鼓时 anchors 为空,Bass/Chord 退回原有逻辑
+            const kickAnchors: number[] = [];
+            const sectionHasDrums =
+                hasDrums &&
+                activeSection.sectionType !== SectionType.Breakdown &&
+                !(activeSection.sectionType === SectionType.Intro && !introHasDrums) &&
+                !(activeSection.sectionType === SectionType.Verse && activeSection.energyLevel <= ENERGY.AMBIENT_MAX);
+            if (sectionHasDrums) {
+                const beatsPerBar = track.timeSignature?.[0] || 4;
+                const firstBar = Math.floor(chord.startBeat / beatsPerBar);
+                const lastBar = Math.ceil(chord.endBeat / beatsPerBar);
+                for (let b = firstBar; b <= lastBar; b++) {
+                    const beat0 = b * beatsPerBar;
+                    const beat2 = b * beatsPerBar + 2;
+                    if (beat0 >= chord.startBeat - 1e-6 && beat0 < chord.endBeat - 1e-6) kickAnchors.push(beat0);
+                    if (beat2 >= chord.startBeat - 1e-6 && beat2 < chord.endBeat - 1e-6) kickAnchors.push(beat2);
+                }
+            }
+
             if (playBass) {
                 // 如果前奏有贝斯，为了避免割裂感，Verse_1 不应该变得稀疏
                 const bassSecType = activeSection.sectionType;
@@ -618,26 +667,7 @@ export class Orchestrator {
                     // K-4: 禁止预补偿 keyOffset，由 applyOffset() 统一处理
                     Orchestrator.appendAll(lhNotes, MotifLooper.loopMotif(track.processedUserMotif, chord, track.tonality, 36, track.motifRole));
                 } else {
-                    // 🌟 PR#9 §4.1: Kick 锚点计算
-                    // 4/4 默认 Kick 在每小节 beat 0 和 beat 2(TextureMapper.generateDrumGroove L213-221)
-                    // Section 无鼓时 anchors 为空,Bass 退回原有逻辑
-                    const kickAnchors: number[] = [];
-                    const sectionHasDrums =
-                        hasDrums &&
-                        activeSection.sectionType !== SectionType.Breakdown &&
-                        !(activeSection.sectionType === SectionType.Intro && !introHasDrums) &&
-                        !(activeSection.sectionType === SectionType.Verse && activeSection.energyLevel <= ENERGY.AMBIENT_MAX);
-                    if (sectionHasDrums) {
-                        const beatsPerBar = track.timeSignature?.[0] || 4;
-                        const firstBar = Math.floor(chord.startBeat / beatsPerBar);
-                        const lastBar = Math.ceil(chord.endBeat / beatsPerBar);
-                        for (let b = firstBar; b <= lastBar; b++) {
-                            const beat0 = b * beatsPerBar;
-                            const beat2 = b * beatsPerBar + 2;
-                            if (beat0 >= chord.startBeat - 1e-6 && beat0 < chord.endBeat - 1e-6) kickAnchors.push(beat0);
-                            if (beat2 >= chord.startBeat - 1e-6 && beat2 < chord.endBeat - 1e-6) kickAnchors.push(beat2);
-                        }
-                    }
+                    // kickAnchors 已在外层计算(bass + chord 共用)
                     Orchestrator.appendAll(lhNotes, TextureMapper.generateBassLine(chord, energy, isSparseSection, isSectionEnd, idiomaticMelody, isBassSolo, nextChord, nextEnergyLevel, kickAnchors, melodyDensity));
                 }
             }
@@ -694,7 +724,7 @@ export class Orchestrator {
                     chordNotes = TextureMapper.generateRiff(chord, energy, track.tonality);
                 } else {
                     chordNotes = TextureMapper.generateChordTexture(
-                        chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel, melodyDensity
+                        chord, energy, texture, isSparseSection, isSectionEnd, idiomaticMelody, nextChord, prevVoicing, nextEnergyLevel, melodyDensity, kickAnchors
                     );
                 }
                 Orchestrator.appendAll(rhNotes, chordNotes);
@@ -1158,6 +1188,15 @@ export class Orchestrator {
         // 25% 概率让 Intro 启用低通涌动（CC74 从闷到亮），但不适用于鼓 Solo Intro
         const isDrumSoloIntroFinal = introHasDrums && !introHasPiano && !introHasMelody;
         const useFilterSweep = introSection && !isDrumSoloIntroFinal && PRNGManager.next() < 0.25;
+
+        // 🌟 d1 诊断：Orchestrator 出口每个 section 的 melody 音符数
+        {
+            const perSec = (track.sections || []).map(s => {
+                const cnt = humanizedMelody.filter(n => n.onset >= s.startBeat && n.onset < s.endBeat).length;
+                return `${s.name}=${cnt}`;
+            });
+            console.log(`📤 [Orchestrator out] humanizedMelody total=${humanizedMelody.length} per-section: ${perSec.join(' ')}`);
+        }
 
         return {
             bpm: track.bpm, key: track.key, absoluteStartBeat: track.absoluteStartBeat,
