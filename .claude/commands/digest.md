@@ -1,11 +1,11 @@
 ---
-description: 摄取用户喂入的乐理材料 → 原子化 → 对账 → 裁决冲突 → 写入 music_domain_knowledge.md + knowledge_log.md
-argument-hint: "<乐理材料 / 片段 / 描述（可空，由后续追问获取）>"
+description: 回看本次对话提炼乐理讨论 → 原子化 → 对账 → 裁决冲突 → 写入 music_domain_knowledge.md + knowledge_log.md
+argument-hint: "[focus 主题 — 可选，缩小回看范围；不传则扫整段对话]"
 allowed-tools: ["Read", "Edit", "Write", "Bash", "AskUserQuestion"]
 ---
 
 **这是知识摄取（knowledge ingestion）命令**，不是"代码改了同步文档"命令。
-用户阶段性喂入乐理材料，本命令负责：解析 → 原子化 → 质疑可疑 → 与现有文档对账 → 用户裁决冲突 → 增量写入 → 追加日志。
+**总结是 AI 的活，不是用户的活** — 本命令由 AI 主动回看本次对话上下文中所有乐理/编曲/和声/律动/混音相关讨论，自动提炼后续：原子化 → 质疑可疑 → 与现有文档对账 → 用户裁决冲突 → 增量写入 → 追加日志。
 
 **唯一会被修改的文件**：
 - `.claude/rules/music_domain_knowledge.md`（领域知识库）
@@ -15,13 +15,86 @@ allowed-tools: ["Read", "Edit", "Write", "Bash", "AskUserQuestion"]
 
 ---
 
-## Phase 1: 接收原始材料
+## Phase 1: 回看对话上下文
 
-- 若 `$ARGUMENTS` 非空且 ≥ 30 字符 → 直接作为本次输入材料
-- 若 `$ARGUMENTS` 为空或太短 → 询问用户："请粘贴本次要摄取的乐理材料（可以是一段话/和弦谱/视频转录/书籍片段/对话记录，长度不限）"
-- 等待用户输入完整内容后再进入 Phase 2
+**核心原则**：用户调用 `/digest` 时，**禁止**反过来要求用户"粘贴材料"。AI 必须**自己回看本次对话上下文**，从中提炼乐理讨论。用户的活只有两件：(a) 决定是否带 focus 参数；(b) 在 Phase 1.5 勾选哪些话题进入摄取。
 
-不要在 Phase 1 做任何提取或判断。先把原料完整接住。
+**1.1 解析 focus 参数**
+
+```bash
+FOCUS="$ARGUMENTS"
+FOCUS="${FOCUS#\"}"; FOCUS="${FOCUS%\"}"
+FOCUS="${FOCUS#\'}"; FOCUS="${FOCUS%\'}"
+FOCUS="${FOCUS##[[:space:]]}"
+FOCUS="${FOCUS%%[[:space:]]}"
+```
+
+- `FOCUS` 为空 → 扫整段对话上下文
+- `FOCUS` 非空 → 仅保留与该主题相关的讨论片段（如 `旋律` / `三全音` / `Pad 音域`），其他主题忽略
+
+**1.2 扫描范围（AI 内部回看，不调用任何工具）**
+
+回看本次对话中所有涉及以下领域的讨论：
+- 和声与和弦进行（功能和声、调式互换、副属、三全音替代、声部连接）
+- 旋律与动机生成（级进/跳进、解决、乐句结构、变奏）
+- 节奏与律动设计（GrooveDNA、density、syncopation、强弱拍）
+- 编配与织体（层次 FG/MG/BG、能量曲线、副旋律模式）
+- 乐器演奏逻辑（音域、idiom、惯用法）
+- 混音约束（CC7/CC10/CC91、增益级联、频段隔离、伪侧链）
+
+**收纳标准**（必须满足全部）：
+- 是**结论性陈述**，不是中途的探讨/假设/被推翻的方案
+- 用户**主动表态**或**最终接受**的（如"对"、"同意"、"按这个改"，或代码已落实）
+- 与代码或决策有结合点，不是抽象闲聊
+
+**反例**（必须排除）：
+- AI 自己在对话中假设但被用户否定的内容
+- 在 plan 或讨论阶段被来回修改、最终未达成共识的方案
+- 仅讨论代码命名/UI/工程结构的部分（OUT_OF_SCOPE）
+
+**1.3 输出话题清单**
+
+向用户输出：
+
+```
+=== 本次对话识别到的乐理讨论话题 ===
+（focus: <FOCUS 内容>，无 focus 则写"无（扫整段对话）"）
+
+[T1] <话题简述，一句话>
+     涉及决策：<例：用户确认 X 规则成立>
+     位置：<例：对话第 N 轮，与代码 src/.../X.ts 关联>
+
+[T2] ...
+
+[T3] ...
+```
+
+> 若 FOCUS 非空但**未识别到任何匹配话题**：直接告诉用户「在 focus=`<FOCUS>` 范围内未识别到乐理讨论结论」并退出，不写任何文件。
+> 若 FOCUS 为空且**整段对话未识别到任何乐理讨论**：直接告诉用户「本次对话未识别到可固化的乐理讨论」并退出。
+
+---
+
+## Phase 1.5: 用户勾选要摄取的话题
+
+**核心安全门**：避免 AI 把对话中的临时探讨、推翻的方案误当结论写入。
+
+**有 FOCUS** → 跳过本 Phase（焦点已明确，全部话题进入 Phase 2）。
+
+**无 FOCUS** → 用 **AskUserQuestion** 多选（`multiSelect: true`）让用户勾选哪些话题进入下一步：
+
+```
+question: "勾选要摄取入 music_domain_knowledge.md 的话题（可多选）"
+options:
+  - label: "T1: <话题简述>"
+    description: "<涉及决策的一句话>"
+  - label: "T2: <话题简述>"
+    description: ...
+  - label: "T3: <话题简述>"
+    description: ...
+```
+
+用户**未勾选**的话题不进入后续 Phase（也不记入 knowledge_log）。
+用户**全部不勾选** → 退出，不修改任何文件。
 
 ---
 
@@ -211,8 +284,8 @@ test -f .claude/rules/knowledge_log.md
 ```markdown
 # 乐理知识摄取日志
 
-> Append-only 日志，记录 /sync-rules 每次摄取的内容来源与归宿。
-> 当 music_domain_knowledge.md 中某条规则被质疑时，回查本日志可追溯原始材料。
+> Append-only 日志，记录 /digest 每次摄取的对话片段来源与归宿。
+> 当 music_domain_knowledge.md 中某条规则被质疑时，回查本日志可追溯原始对话引用与关联 commit。
 > 禁止删除历史条目，只允许在末尾追加；如需勘误，新增"勘误"条目，不删旧条目。
 
 ---
@@ -226,7 +299,8 @@ test -f .claude/rules/knowledge_log.md
 ## YYYY-MM-DD HH:MM — <一句话摘要>
 
 **关联 commit**: `<short-hash>`（pre-edit HEAD）
-**原始材料长度**: ~XXX 字 / Y 段
+**focus**: <FOCUS 内容，无则写"无（扫整段对话）">
+**勾选话题数**: X / Y（用户勾选 / Phase 1 识别总数）
 **摄取摘要**:
 
 | # | 分类 | 类型/范围 | 一句话 | 归宿 |
@@ -240,11 +314,18 @@ test -f .claude/rules/knowledge_log.md
 **未变更文档**: pipeline_rule.md, CLAUDE.md, docs/*
 **建议人工 review**: <若有，列出文件 + 原因；否则写"无">
 
-**原始材料**（折叠供溯源）：
+**对话片段溯源**（折叠）：
 <details>
-<summary>展开原文</summary>
+<summary>展开对话引用</summary>
 
-<把用户喂入的原始材料原样粘进来>
+每颗摄取的话题，附 1-3 行**关键对话引用**（用户表态 + AI 落地的关键句），不要粘整段对话。
+格式：
+
+> [T1] 旋律级进规则
+> 用户："级进为主，跳进必须解决到和弦音"
+> AI 落地：在 src/.../MelodyEngine.ts 实现了 `resolveJump()` 函数
+
+> [T2] ...
 
 </details>
 
@@ -262,9 +343,11 @@ test -f .claude/rules/knowledge_log.md
 ```
 === 知识摄取报告 ===
 
-输入材料长度: ~XXX 字
-解析得原子知识: N 颗
-质量闸门: M 颗触发 push back（已裁决）
+focus: <FOCUS 内容，无则写"无（扫整段对话）">
+Phase 1 识别话题: Y 个
+用户勾选话题:    X 个（无 focus 时；有 focus 默认全部进入）
+解析得原子知识:   N 颗
+质量闸门:        M 颗触发 push back（已裁决）
 
 应用结果:
   NEW         X 颗 → § 和声与和弦进行(2), § 编配与织体(1)
@@ -292,7 +375,10 @@ test -f .claude/rules/knowledge_log.md
 
 ## 边界与失败处理
 
-- 若 Phase 2 提取不到任何原子知识（输入完全 OUT_OF_SCOPE）→ 报告"未识别出乐理知识颗粒，未修改任何文件"后退出
-- 若 Phase 3 push back 被用户多次拒绝（>3 次）→ 询问是否搁置整段材料
-- 若 Phase 5 用户全部选"搁置"→ 仅写 knowledge_log.md，不改 music_domain_knowledge.md
+- 若 Phase 1 扫整段对话**未识别到任何乐理讨论结论** → 报告"本次对话未识别到可固化的乐理讨论"后退出，不改任何文件
+- 若 Phase 1 在 focus=`<FOCUS>` 范围内**未识别到匹配话题** → 提示用户调整 focus 关键词或不传参数，退出不改文件
+- 若 Phase 1.5 用户**全部不勾选** → 退出不改文件
+- 若 Phase 2 通过原子化但全部命中 OUT_OF_SCOPE → 报告"勾选的话题均不属于乐理领域知识"后退出
+- 若 Phase 3 push back 被用户多次拒绝（>3 次）→ 询问是否搁置该原子，或退回 Phase 1 重新选题
+- 若 Phase 5 用户全部选"搁置"→ 仅写 knowledge_log.md（记录搁置原因），不改 music_domain_knowledge.md
 - 若 Edit 报错（行内容变化导致 old_string 不唯一）→ 重新 Read 文档定位，不要改用 Write 整体覆盖
