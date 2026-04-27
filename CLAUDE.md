@@ -34,7 +34,7 @@ npm run clean        # 清除 dist/
 | `/save [msg]` | 敏感扫描 → `git add .` → commit → pull(merge) → push 一条龙 |
 | `/tag <ver> <desc>` | 给当前 HEAD 打 annotated tag 并推送（里程碑） |
 | `/rewind [tag]` | 切到指定 tag 的 detached HEAD（溯源历史版本） |
-| `/sync-rules <摘要>` | 同步乐理修订到 `.claude/rules/` 与 `docs/` |
+| `/digest <材料>` | 摄取乐理材料 → 原子化 → push back 质疑 → 对账 → 裁决冲突 → 写入 `music_domain_knowledge.md` + 追加 `knowledge_log.md` |
 | `/sync-to-c` | TS → C 移植同步工作流（已存在） |
 
 详细流程见各 command 文件。
@@ -88,15 +88,17 @@ GeneratedTrack + StyleId + MusicContext
 
 ### 风格系统
 
-使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/StyleRegistry.ts`）映射 StyleId → StyleConfig。当前已注册 3 种风格：
+使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/styles/StyleRegistry.ts`）映射 StyleId → StyleConfig。
 
-| StyleId | 名称 | BPM | 特征 |
-|---------|------|-----|------|
-| Default (0) | 通用流行 | 80-110 | 中等密度，Major 偏好 |
-| PowerBallad (1) | 欧美力量大歌 | 60-90 | 极留白，副歌爆发，弦乐铺底 |
-| RussianFolkBallad (2) | 俄式民谣 | 62-72 | 100% Minor，五声音阶，木吉他琶音 |
+`StyleId` 枚举声明 3 种风格 + 兼容别名：`ModernPop=0`（别名 `Default`）、`Synthwave=9`（别名 `DarkSynthPop`）、`LofiChill=17`（别名 `LoFiChill`）。但 **StyleRegistry 当前仅注册 1 个实际配置**（`DefaultStyle` 绑定到 `StyleId.Default`），其余两个 enum 是占位待实现 — 未注册风格回退到 DefaultStyle：
 
-EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格。
+| StyleId | 显示名 | 状态 | BPM | 关键特征 |
+|---------|--------|------|-----|---------|
+| ModernPop / Default (0) | 现代华语流行 | ✓ 已注册 | 80-120 | 多调式池（Major/Minor/Dorian/Mixolydian/五声音阶），Pop 万能进行 10 种 chorus 模板（I-V-vi-IV / 小室进行 / Axis / 50s / Mixolydian vamp 等），含 chromatic passing、anchor probability、breathing room、Viterbi 双阶段和声 |
+| Synthwave / DarkSynthPop (9) | 合成器浪潮 | ⚠️ enum 占位 | — | 配置待实现，回退 DefaultStyle |
+| LofiChill / LoFiChill (17) | 放松低保真 | ⚠️ enum 占位 | — | 配置待实现，回退 DefaultStyle |
+
+EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格（落到未注册 ID 时回退）。
 
 ### Mood 系统
 
