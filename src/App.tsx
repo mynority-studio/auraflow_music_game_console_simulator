@@ -6,7 +6,6 @@ import { APPS } from './apps/AppRegistry';
 import { AudioEngine } from './core/audio/AudioEngine';
 import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
-import { SeedController } from './components/SeedController';
 import { PipelineMonitor } from './components/PipelineMonitor';
 
 export default function App() {
@@ -33,9 +32,8 @@ export default function App() {
   const ActiveApp = APPS.find(app => app.id === deviceState)?.component;
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden lg:pr-[680px]">
+    <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden">
       <VolumeController />
-      <SeedController />
       <PipelineMonitor />
       {/* Device Container */}
       <div 

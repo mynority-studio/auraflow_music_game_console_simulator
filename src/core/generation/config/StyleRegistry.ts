@@ -4,10 +4,8 @@
  */
 export { StyleRegistry, getAllAvailableStyles, getStyleConfig } from './styles/StyleRegistry';
 
-// ── 旧版命名兼容 ──
 import { getStyleConfig } from './styles/StyleRegistry';
 import { StyleId } from './StyleFlags';
 
-export const DefaultStyleConfig = getStyleConfig(StyleId.Default);
-export const DarkSynthPopStyleConfig = DefaultStyleConfig;
-export const LoFiChillStyleConfig = DefaultStyleConfig;
+// 当前唯一注册风格，作为缺省/兜底配置
+export const AcgStyleConfig = getStyleConfig(StyleId.AcgLightMusic);

@@ -1,28 +1,52 @@
-import { GeneratedChord, SectionMetadata, StyleConfig, Tonality, TonalityName } from './types';
+// ============================================================
+// 🚧 STUB — 全局生成上下文占位
+// ============================================================
+//
+// 历史功能：
+//   原 GlobalContextManager 是生成管道运行时的全局可变单例，
+//   存储当前 BPM / 调式 / 调号 / 时间签名 / 当前段落 / 当前和弦 / GrooveDNA 等运行时状态。
+//   阶段间通过它读写共享状态。
+//
+// 重构期占位行为：
+//   保留单例公开 API（属性 + 方法签名），全部赋默认值或返回 no-op。
+//   App 层（EndlessRadioManager / JamSessionManager）仅消费 currentTimeSignature，
+//   保持其默认 [4, 4] 即可让 Jam 模式的拍量算法正常工作。
+//
+// 重构方向：
+//   新引擎应优先消除对全局可变单例的依赖（生成管道纯函数化），
+//   仅在需要给 App 层暴露"当前播放上下文"时保留这一层薄包装。
+// ============================================================
+
+import { GeneratedChord, SectionMetadata, StyleConfig, Tonality } from './types';
 import { MoodId } from './config/MoodFlags';
-import { isOnDownbeat } from './utils/BeatMath';
 
 class GlobalContextManager {
     public currentStyle: StyleConfig | null = null;
     public currentBPM: number = 120;
-    public currentTimeSignature:[number, number] =[4, 4];
+    public currentTimeSignature: [number, number] = [4, 4];
     public currentTonality: Tonality = Tonality.Major;
-    public currentKeyOffset: number = 0;      
-    public globalAbsoluteBeat: number = 0;    
+    public currentKeyOffset: number = 0;
+    public globalAbsoluteBeat: number = 0;
     public currentMoodId?: MoodId;
-    
-    private currentGrooveDNA: number[] =[];   
+
+    private currentGrooveDNA: number[] = [];
     private activeSection: SectionMetadata | null = null;
     private activeChord: GeneratedChord | null = null;
 
-    public initializeNewEra(style: StyleConfig, bpm: number, keyOffset: number, tonality: Tonality, timeSignature: [number, number], moodId?: MoodId) {
+    public initializeNewEra(
+        style: StyleConfig,
+        bpm: number,
+        keyOffset: number,
+        tonality: Tonality,
+        timeSignature: [number, number],
+        moodId?: MoodId,
+    ) {
         this.currentStyle = style;
         this.currentBPM = bpm;
         this.currentKeyOffset = keyOffset;
         this.currentTonality = tonality;
         this.currentTimeSignature = timeSignature;
         this.currentMoodId = moodId;
-        // console.log(`[GlobalContext] 🪐 宇宙法则已重写: ${style.name} | BPM: ${bpm} | Key: ${keyOffset} | TimeSig: ${timeSignature[0]}/${timeSignature[1]}`);
     }
 
     public updateCurrentSlice(section: SectionMetadata, chord: GeneratedChord, grooveDNA: number[]) {
@@ -31,39 +55,13 @@ class GlobalContextManager {
         this.currentGrooveDNA = grooveDNA;
     }
 
-    public isGrooveHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return isOnDownbeat(absoluteBeat);
-        const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar;
-        const localBeat = absoluteBeat % loopLength;
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05);
-    }
+    public isGrooveHit(_absoluteBeat: number): boolean { return false; }
+    public isLayeringHit(_absoluteBeat: number): boolean { return false; }
+    public isInterleavingHit(_absoluteBeat: number): boolean { return false; }
 
-    /**
-     * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
-     */
-    public isLayeringHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return isOnDownbeat(absoluteBeat);
-        const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar;
-        const localBeat = absoluteBeat % loopLength;
-        // 叠加点：GrooveDNA 中的正拍 (0, 1, 2, 3...)
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && isOnDownbeat(hit));
+    public getCurrentEnergyLevel(): number {
+        return this.activeSection ? this.activeSection.energyLevel : 5;
     }
-
-    /**
-     * @deprecated Use style.rhythm.grooveTemplate or isGrooveHit instead.
-     */
-    public isInterleavingHit(absoluteBeat: number): boolean {
-        if (!this.currentGrooveDNA || this.currentGrooveDNA.length === 0) return false;
-        const beatsPerBar = this.currentTimeSignature[0];
-        const loopLength = 2 * beatsPerBar; 
-        const localBeat = absoluteBeat % loopLength;
-        // 穿插点：GrooveDNA 中的反拍或切分音
-        return this.currentGrooveDNA.some(hit => Math.abs(hit - localBeat) < 0.05 && hit % 1 !== 0);
-    }
-
-    public getCurrentEnergyLevel(): number { return this.activeSection ? this.activeSection.energyLevel : 5; }
     public getCurrentChord(): GeneratedChord | null { return this.activeChord; }
     public getActiveSection(): SectionMetadata | null { return this.activeSection; }
 

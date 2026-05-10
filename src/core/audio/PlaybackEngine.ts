@@ -13,7 +13,7 @@ export interface VisualEvent { type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' 
 export type VisualEventListener = (event: VisualEvent) => void;
 
 import { StyleId } from '../generation/config/StyleFlags';
-import { StyleRegistry, DefaultStyleConfig } from '../generation/config/StyleRegistry';
+import { StyleRegistry, AcgStyleConfig } from '../generation/config/StyleRegistry';
 import { getStyleConfig } from '../generation/config/styles/StyleRegistry';
 import { InstrumentProfiles, getInstrumentIdByName } from '../generation/config/InstrumentFlags';
 
@@ -264,7 +264,7 @@ export class PlaybackEngine {
         }
 
         // 🌟 1. 抽卡聘请总调音师 (Mastering)
-        const styleConfig = song.styleId !== undefined ? (StyleRegistry[song.styleId as StyleId] || DefaultStyleConfig) : DefaultStyleConfig;
+        const styleConfig = song.styleId !== undefined ? (StyleRegistry[song.styleId as StyleId] || AcgStyleConfig) : AcgStyleConfig;
         const selectedProfile = styleConfig.masteringProfileId || 'Retro_Gadget';
         await this.mixer.applyMasteringProfile(selectedProfile);
 
@@ -374,9 +374,8 @@ export class PlaybackEngine {
             }
         };
 
-        // 全局调性移调偏移量（生成管道在 C 大调相对空间工作）
-        const transposeOffset = (song.chords && song.chords.length > 0 && song.chords[0].keyOffset !== undefined)
-            ? song.chords[0].keyOffset : 0;
+        // Phase 5+: Orchestrator 已在 K-2 转换中应用 keyOffset 并完成 bass 寄存器锁定。
+        // PlaybackEngine 不再做转调或音域钳制 — ArrangedTrack 是即放即用的绝对 MIDI。
 
         const addPartEvents = (notes: any[], synth: any, eventType: VisualEvent['type']) => {
             if (!notes) return;
@@ -388,28 +387,15 @@ export class PlaybackEngine {
                 let dur = Math.max(0.1, rawDuration); // 不量化时值，保留连贯感
 
                 if (isNaN(dur) || dur <= 0) dur = 0.5;
-                
+
                 if (eventType === 'drums' && this.drumDucking) {
                     const duckedPitches = [35, 36, 38, 40, 41, 43, 45, 47, 48, 49, 50, 52, 53, 55, 57];
-                    if (duckedPitches.includes(n.pitch)) return; 
+                    if (duckedPitches.includes(n.pitch)) return;
                 }
 
                 const activeSynth = typeof synth === 'function' ? synth(onset) : synth;
                 let channel = activeSynth.channel;
-                // 全局调性移调 + 声部专属八度折叠
                 let pitch = n.pitch;
-                if (eventType !== 'drums' && transposeOffset !== 0) {
-                    pitch += transposeOffset;
-                    if (eventType === 'pianoLH') {
-                        // 贝斯专属：折叠到 E1(28) ~ G2(43)，保持低频地基
-                        while (pitch > 43) pitch -= 12;
-                        while (pitch < 28) pitch += 12;
-                    } else {
-                        // 其他声部：折叠到 C2(36) ~ C6(84)
-                        while (pitch > 84) pitch -= 12;
-                        while (pitch < 36) pitch += 12;
-                    }
-                }
                 
                 if (pitch !== undefined && !isNaN(pitch)) {
                     const startTick = globalMidiScheduler.beatsToTicks(onset + countInBeats);

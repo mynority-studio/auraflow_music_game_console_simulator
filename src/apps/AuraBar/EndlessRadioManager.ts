@@ -1,6 +1,6 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
-import { DefaultStyleConfig } from '../../core/generation/config/StyleRegistry';
+import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 // removed
@@ -448,7 +448,7 @@ export class EndlessRadioManager {
 
       const melodyEngine = new MelodyEngine();
       // 从所有已注册的风格中随机选择（PRNG 驱动，确定性）
-      const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop, StyleId.LoFiChill];
+      const allStyleIds = [StyleId.AcgLightMusic];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
       
@@ -457,7 +457,7 @@ export class EndlessRadioManager {
       // We need to get the actual style config used by the engine
       // Since MelodyEngine doesn't return the style config directly, we'll import StyleRegistry
       const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
-      const randomStyle = StyleRegistry[randomStyleId] || DefaultStyleConfig;
+      const randomStyle = StyleRegistry[randomStyleId] || AcgStyleConfig;
       
       if (currentGenId !== this.generationId) return;
 

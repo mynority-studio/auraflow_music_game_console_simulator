@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AudioEngine } from '../core/audio/AudioEngine';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { motion, useDragControls } from 'motion/react';
+import { Activity, Play, Square, X, Dice5, Volume2, VolumeX } from 'lucide-react';
+import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
+import { PartName } from '../core/audio/PlaybackEngine';
+import { globalMidiScheduler } from '../core/audio/MidiScheduler';
 import { PRNGManager } from '../core/utils/PRNG';
+import { MelodyEngine } from '../core/generation/MelodyEngine';
 import {
     ArrangedTrack,
     GeneratedChord,
@@ -12,7 +17,7 @@ import {
     ConductorSectionPlan,
 } from '../core/generation/types';
 import { MoodRegistry } from '../core/generation/config/MoodFlags';
-import { StyleIdName } from '../core/generation/config/StyleFlags';
+import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -21,6 +26,22 @@ const QUALITY_SUFFIX: Record<string, string> = {
     Dominant7: '7', Minor7: 'm7', Major7: 'maj7', HalfDiminished: 'm7b5',
     Sus4: 'sus4', Dominant7Sus4: '7sus4', Add9: 'add9',
     Minor9: 'm9', Major9: 'maj9', Dominant9: '9', Minor11: 'm11', Dominant13: '13',
+};
+
+// 复现 EndlessRadioManager 的 style 选择逻辑，让 seed 100% 复现 Radio 的任意歌曲
+const RADIO_STYLE_POOL: StyleId[] = [StyleId.AcgLightMusic];
+
+type PlayState = 'IDLE' | 'GENERATING' | 'PLAYING';
+
+// InstrumentRole（管道侧）↔ PartName（音频侧）映射
+const ROLE_TO_PART_NAME: Record<InstrumentRole, PartName> = {
+    melody: 'melody',
+    vocal: 'vocal',
+    chord: 'chord',
+    bass: 'bass',
+    drums: 'drums',
+    counter: 'counterMelody',
+    secondary: 'secondaryMelody',
 };
 
 function chordToAbsoluteName(chord: GeneratedChord): string {
@@ -53,12 +74,23 @@ export const PipelineMonitor: React.FC = () => {
     const [frame, setFrame] = useState<FrameSnapshot>({
         arranged: null, context: null, beat: 0, seed: 0,
     });
+    const [seedInput, setSeedInput] = useState('42');
+    const [currentSeed, setCurrentSeed] = useState<number | null>(null);
+    const [playState, setPlayState] = useState<PlayState>('IDLE');
+    const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
     const rafRef = useRef<number | null>(null);
+    const dragControls = useDragControls();
+    const playStateRef = useRef<PlayState>('IDLE');
+    playStateRef.current = playState;
+    const activeSeedRef = useRef<number | null>(null);
 
+    // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
         const keysPressed = new Set<string>();
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.repeat) return;
+            const target = e.target as HTMLElement;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
             keysPressed.add(e.key.toLowerCase());
             if (keysPressed.has('q') && keysPressed.has('h')) setIsVisible((v) => !v);
         };
@@ -97,6 +129,80 @@ export const PipelineMonitor: React.FC = () => {
         };
     }, [isVisible]);
 
+    // ==========================================================
+    // Seed 播放控制（原 SeedController 整合进来）
+    // ==========================================================
+
+    // 重新应用 mute 状态 —— 新歌曲 load 后 channel 可能变，需要重新 mute
+    const reapplyMutes = useCallback(() => {
+        for (const partName of Object.values(ROLE_TO_PART_NAME)) {
+            AudioEngine.setPartMute(partName as PartName, mutedParts.has(partName as PartName));
+        }
+    }, [mutedParts]);
+
+    const playSeed = useCallback(async (seed: number) => {
+        await startAudioContext();
+        AudioEngine.stop();
+        activeSeedRef.current = seed;
+        setPlayState('GENERATING');
+        setCurrentSeed(seed);
+
+        // 让 UI 先渲染一次
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // 复现 EndlessRadioManager.triggerGeneration 的 PRNG 消耗顺序
+        PRNGManager.setSeed(seed);
+        PRNGManager.recordSnapshot('A');
+        const styleId = RADIO_STYLE_POOL[Math.floor(PRNGManager.next() * RADIO_STYLE_POOL.length)];
+
+        const melodyEngine = new MelodyEngine();
+        const { track, context } = melodyEngine.generateFullSong(styleId);
+
+        // 检查 seed 是否被抢占
+        if (activeSeedRef.current !== seed) return;
+
+        await AudioEngine.playSong(track, styleId, context, melodyEngine);
+        setPlayState('PLAYING');
+
+        // 应用 mute 到新分配的 channel
+        reapplyMutes();
+
+        // 监听播放结束 → 同 seed 循环
+        globalMidiScheduler.onTrackEnd(() => {
+            if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING') {
+                playSeed(seed);
+            }
+        });
+    }, [reapplyMutes]);
+
+    const handlePlay = useCallback(async () => {
+        const seed = parseInt(seedInput, 10);
+        if (isNaN(seed) || seed < 0) return;
+        await playSeed(seed >>> 0);
+    }, [seedInput, playSeed]);
+
+    const handleStop = useCallback(() => {
+        activeSeedRef.current = null;
+        AudioEngine.stop();
+        setPlayState('IDLE');
+    }, []);
+
+    const handleRandom = useCallback(() => {
+        const newSeed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
+        setSeedInput(String(newSeed));
+    }, []);
+
+    const togglePartMute = useCallback((partName: PartName) => {
+        setMutedParts(prev => {
+            const next = new Set(prev);
+            const muted = !next.has(partName);
+            if (muted) next.add(partName);
+            else next.delete(partName);
+            AudioEngine.setPartMute(partName, muted);
+            return next;
+        });
+    }, []);
+
     if (!isVisible) return null;
 
     const { arranged, context, beat, seed } = frame;
@@ -126,50 +232,152 @@ export const PipelineMonitor: React.FC = () => {
     ) ?? null;
 
     return (
-        <div
-            className="fixed z-50 right-4 top-4 flex bg-zinc-950/90 backdrop-blur-md rounded-2xl border border-zinc-800 shadow-[0_8px_30px_rgba(0,0,0,0.6)] overflow-hidden"
-            style={{ width: '640px', maxHeight: '92vh', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+        <motion.div
+            drag
+            dragControls={dragControls}
+            dragListener={false}
+            dragMomentum={false}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed z-50 top-4 right-4 flex flex-col bg-zinc-950/90 backdrop-blur-md rounded-2xl border border-zinc-800 shadow-[0_8px_30px_rgba(0,0,0,0.6)] overflow-hidden"
+            style={{
+                width: 640,
+                height: 'min(92vh, 820px)',
+                minWidth: 420,
+                minHeight: 360,
+                resize: 'both',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            }}
         >
-            {/* close */}
-            <button
-                onClick={() => setIsVisible(false)}
-                className="absolute top-2 right-2 z-10 text-zinc-600 hover:text-white text-xs px-1"
-                title="Q+H 切换"
-            >×</button>
-
-            {/* 左栏：Stage 01-02 */}
-            <div className="w-1/2 overflow-y-auto custom-pipeline-scroll border-r border-zinc-800/60">
-                <Stage1MetaForm
-                    bpm={arranged?.bpm}
-                    keyName={arranged?.key}
-                    tonality={context?.tonality}
-                    seed={seed}
-                    moodName={context?.moodId !== undefined ? MoodRegistry[context.moodId]?.name : undefined}
-                    styleName={context?.style ? StyleIdName[context.style.id] : undefined}
-                    trajectory={context?.trajectoryProfile}
-                />
-                <Stage2Harmony
-                    chords={chords}
-                    currentSection={currentSection}
-                    currentChordIdx={currentChordIdx}
-                />
+            {/* Header (Draggable) */}
+            <div
+                className="flex items-center justify-between px-4 py-2 border-b border-zinc-800/80 cursor-grab active:cursor-grabbing bg-gradient-to-b from-zinc-900/80 to-transparent shrink-0"
+                onPointerDown={(e) => dragControls.start(e)}
+            >
+                <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-zinc-400" />
+                    <h3 className="text-zinc-300 font-bold tracking-widest text-xs uppercase">
+                        Pipeline Monitor
+                    </h3>
+                </div>
+                <button
+                    onClick={() => setIsVisible(false)}
+                    className="text-zinc-500 hover:text-white transition-colors"
+                    title="Q+H 切换"
+                >
+                    <X className="w-4 h-4" />
+                </button>
             </div>
 
-            {/* 右栏：Stage 03-05 */}
-            <div className="w-1/2 overflow-y-auto custom-pipeline-scroll">
-                <Stage3Structure
-                    sections={sections}
-                    currentSectionIdx={currentSectionIdx}
-                    beatsPerBar={arranged?.timeSignature?.[0]}
-                />
-                <Stage4Conductor
-                    plan={conductorPlanForCurrent}
-                    globalRhythm={context?.conductorPlan?.globalRhythmProfile}
-                />
-                <Stage5Ensemble
-                    palette={arranged?.palette}
-                    plan={conductorPlanForCurrent}
-                />
+            {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}
+            <div className="px-4 py-2.5 border-b border-zinc-800/80 bg-zinc-900/40 shrink-0">
+                <div className="flex items-center gap-2">
+                    <span className="text-[9px] uppercase tracking-widest text-emerald-400/80 font-bold w-12 shrink-0">Seed</span>
+                    <input
+                        type="text"
+                        value={seedInput}
+                        onChange={(e) => setSeedInput(e.target.value.replace(/[^0-9]/g, ''))}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handlePlay();
+                        }}
+                        placeholder="e.g. 2332053069"
+                        className="flex-1 bg-black/50 border border-emerald-500/20 rounded px-2 py-1 text-[11px] font-mono text-emerald-300 placeholder-zinc-600 focus:outline-none focus:border-emerald-400/60"
+                    />
+                    <button
+                        onClick={handleRandom}
+                        title="Random seed"
+                        className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 border border-white/5 rounded text-zinc-300 transition-colors"
+                    >
+                        <Dice5 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={handlePlay}
+                        disabled={playState === 'GENERATING'}
+                        title="Play (Enter)"
+                        className={`px-2 py-1 rounded transition-all ${
+                            playState === 'GENERATING'
+                                ? 'bg-zinc-700 text-zinc-500 cursor-wait'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                        }`}
+                    >
+                        <Play className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={handleStop}
+                        disabled={playState === 'IDLE'}
+                        title="Stop"
+                        className={`px-2 py-1 rounded transition-all ${
+                            playState === 'IDLE'
+                                ? 'bg-zinc-800/40 text-zinc-600 cursor-not-allowed'
+                                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-white/10'
+                        }`}
+                    >
+                        <Square className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+                {/* Status row */}
+                <div className="flex items-center gap-2 mt-1.5 text-[9px] font-mono">
+                    <div className={`w-1.5 h-1.5 rounded-full ${
+                        playState === 'PLAYING' ? 'bg-emerald-400 animate-pulse' :
+                        playState === 'GENERATING' ? 'bg-yellow-400 animate-pulse' :
+                        'bg-zinc-600'
+                    }`} />
+                    <span className="text-zinc-500 uppercase tracking-wider">{playState}</span>
+                    {playState === 'PLAYING' && <span className="text-zinc-600">↻ loop</span>}
+                    {currentSeed !== null && (
+                        <span className="text-zinc-600 ml-auto">
+                            now: <span className="text-emerald-300">{currentSeed}</span>
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            {/* 双栏内容区（按 header 之外的剩余空间分配） */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+                {/* 左栏：Stage 01-02 */}
+                <div className="w-1/2 overflow-y-auto custom-pipeline-scroll border-r border-zinc-800/60">
+                    <Stage1MetaForm
+                        bpm={arranged?.bpm}
+                        keyName={arranged?.key}
+                        tonality={context?.tonality}
+                        seed={seed}
+                        moodName={context?.moodId !== undefined ? MoodRegistry[context.moodId]?.name : undefined}
+                        styleName={context?.style ? StyleIdName[context.style.id] : undefined}
+                        trajectory={context?.trajectoryProfile}
+                    />
+                    <Stage2Harmony
+                        chords={chords}
+                        currentSection={currentSection}
+                        currentChordIdx={currentChordIdx}
+                    />
+                </div>
+
+                {/* 右栏：Stage 03-05 */}
+                <div className="w-1/2 overflow-y-auto custom-pipeline-scroll">
+                    <Stage3Structure
+                        sections={sections}
+                        currentSectionIdx={currentSectionIdx}
+                        beatsPerBar={arranged?.timeSignature?.[0]}
+                    />
+                    <Stage4Conductor
+                        plan={conductorPlanForCurrent}
+                        globalRhythm={context?.conductorPlan?.globalRhythmProfile}
+                    />
+                    <Stage5Ensemble
+                        palette={arranged?.palette}
+                        plan={conductorPlanForCurrent}
+                        mutedParts={mutedParts}
+                        onToggleMute={togglePartMute}
+                    />
+                </div>
+            </div>
+
+            {/* 右下 resize 提示 */}
+            <div className="absolute bottom-1 right-1 w-3 h-3 cursor-se-resize opacity-30 pointer-events-none text-zinc-400">
+                <svg viewBox="0 0 10 10" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 10V8H10V10H8ZM5 10V8H7V10H5ZM8 7V5H10V7H8ZM2 10V8H4V10H2ZM5 7V5H7V7H5ZM8 4V2H10V4H8Z" />
+                </svg>
             </div>
 
             <style dangerouslySetInnerHTML={{ __html: `
@@ -178,7 +386,7 @@ export const PipelineMonitor: React.FC = () => {
                 .custom-pipeline-scroll::-webkit-scrollbar-thumb { background: rgba(82,82,91,0.5); border-radius: 2px; }
                 .custom-pipeline-scroll::-webkit-scrollbar-thumb:hover { background: rgba(161,161,170,0.6); }
             `}} />
-        </div>
+        </motion.div>
     );
 };
 
@@ -419,6 +627,8 @@ const RoleRow: React.FC<{ label: string; roles: InstrumentRole[]; color: string 
 interface Stage5Props {
     palette: ArrangedTrack['palette'] | undefined;
     plan: ConductorSectionPlan | null;
+    mutedParts: Set<PartName>;
+    onToggleMute: (partName: PartName) => void;
 }
 
 const ROLE_TO_PALETTE_KEY: Record<InstrumentRole, keyof NonNullable<ArrangedTrack['palette']>> = {
@@ -433,7 +643,7 @@ const ROLE_TO_PALETTE_KEY: Record<InstrumentRole, keyof NonNullable<ArrangedTrac
 
 const ALL_ROLES: InstrumentRole[] = ['melody', 'vocal', 'chord', 'bass', 'drums', 'counter', 'secondary'];
 
-const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, plan }) => {
+const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, plan, mutedParts, onToggleMute }) => {
     if (!palette) {
         return (
             <section className="px-4 pt-4 pb-4">
@@ -450,6 +660,8 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, plan }) => {
                     const key = ROLE_TO_PALETTE_KEY[role];
                     const sound = palette[key];
                     if (!sound) return null;
+                    const partName = ROLE_TO_PART_NAME[role];
+                    const isMuted = mutedParts.has(partName);
                     let status: 'focus' | 'support' | 'silent' | 'idle' = 'idle';
                     if (plan) {
                         if (plan.focusInstrument === role) status = 'focus';
@@ -461,21 +673,34 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, plan }) => {
                             key={role}
                             className={
                                 'flex items-center gap-2 px-2 py-1 rounded text-[11px] ' +
-                                (status === 'focus' ? 'bg-rose-500/15 border border-rose-400/50'
+                                (isMuted ? 'bg-red-900/20 border border-red-500/30'
+                                    : status === 'focus' ? 'bg-rose-500/15 border border-rose-400/50'
                                     : status === 'silent' ? 'opacity-40 border border-transparent'
-                                        : 'border border-transparent')
+                                    : 'border border-transparent')
                             }
                         >
                             <span className={
                                 'w-14 text-[9px] uppercase tracking-widest ' +
-                                (status === 'focus' ? 'text-rose-300 font-bold' : 'text-zinc-500')
+                                (status === 'focus' && !isMuted ? 'text-rose-300 font-bold' : 'text-zinc-500')
                             }>{role}</span>
                             <span className={
                                 'flex-1 text-xs truncate ' +
-                                (status === 'silent' ? 'text-zinc-600 line-through' : 'text-zinc-300')
+                                (isMuted ? 'text-zinc-600 line-through'
+                                    : status === 'silent' ? 'text-zinc-600 line-through'
+                                    : 'text-zinc-300')
                             }>{String(sound)}</span>
-                            {status === 'focus' && <span className="text-[9px] text-rose-400">●</span>}
-                            {status === 'support' && <span className="text-[9px] text-zinc-500">○</span>}
+                            {!isMuted && status === 'focus' && <span className="text-[9px] text-rose-400">●</span>}
+                            {!isMuted && status === 'support' && <span className="text-[9px] text-zinc-500">○</span>}
+                            <button
+                                onClick={() => onToggleMute(partName)}
+                                title={isMuted ? `Unmute ${role}` : `Mute ${role}`}
+                                className={
+                                    'p-0.5 rounded transition-colors shrink-0 ' +
+                                    (isMuted ? 'text-red-400 hover:text-red-300' : 'text-zinc-500 hover:text-zinc-200')
+                                }
+                            >
+                                {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                            </button>
                         </div>
                     );
                 })}

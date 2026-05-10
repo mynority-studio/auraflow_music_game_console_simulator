@@ -1,169 +1,204 @@
+// ============================================================
+// GrooveEngine — 纯查表鼓组渲染器（数据外置改造 #1 + 拍号参数化 #4-A + GrooveDNA 回写 #3）
+// ============================================================
+// Pitch Space: ABSOLUTE-DRUM（GM Drum Map 物理键位，永不加 keyOffset）
+//
+// 算法零硬编码：所有鼓型来自 style.rhythm.drumPatterns。
+// 对每个段落：
+//   1) 按 energyLevel 选 pattern（落不到任何 pattern 区间则跳过该段）
+//   2) 按 0.25 拍步长扫整段，每个网格点：
+//      - 段首 crash（确定性，无 PRNG）
+//      - fixedHits 命中位 → 触发（确定性，无 PRNG）
+//      - densityHits 命中位 → PRNG<density 触发（PRNG ×1 trigger + ×1 velocity）
+//      - 16 分鬼音网格 → energy/density 双门槛 + PRNG<ghost.probability（PRNG ×1 + ×1）
+//   3) building-up 段落最后 1 小节后半段：drum fill（snare 滚奏 + 4 分 kick 铺底）
+//   4) 全部段落生成完毕后，按段提炼 grooveDNA（16 分槽位权重指纹）回写到 sec.grooveDNA
+//      —— 让 ToplineEngine 等下游消费同一份律动指纹，实现"全曲一致 groove"
+// ============================================================
+
+import { NoteData, SectionMetadata, StyleConfig, DrumPattern } from '../types';
+import { MoodConfig } from '../config/MoodFlags';
 import { PRNGManager } from '../../utils/PRNG';
-import { StyleConfig } from '../types';
-import { sortAndDedupNumbers } from '../utils/Dedup';
-import { isOnDownbeat, isOnOffbeat } from '../utils/BeatMath';
+
+const BEAT_EPS = 0.001;
+const GRID_EPS = 0.01;
+const POS_EPS = 0.01;
+
+const FILL_LAST_BAR_BEATS = 4;     // 最后 1 小节
+const FILL_START_BEAT = 2.0;       // 后半段（最后 2 拍）
+const FILL_VEL_BASE = 0.5;
+const FILL_VEL_RANGE = 0.5;
+const FILL_HIT_DUR = 0.25;
+
+const DEFAULT_TIME_SIGNATURE: [number, number] = [4, 4];
+
+// GrooveDNA：每 0.25 拍一个槽位的权重 0~1
+// 各 GM 鼓键位的"律动权重"（用于提炼指纹）：kick > snare > hihat > 其他
+const GROOVE_WEIGHT_KICK = 1.0;
+const GROOVE_WEIGHT_SNARE = 0.8;
+const GROOVE_WEIGHT_HIHAT_CLOSED = 0.3;
+const GROOVE_WEIGHT_HIHAT_OPEN = 0.4;
+const GROOVE_WEIGHT_OTHER = 0.2;
+
+function matchPosition(positions: number[], bInBar: number): boolean {
+    for (let i = 0; i < positions.length; i++) {
+        if (Math.abs(positions[i] - bInBar) < POS_EPS) return true;
+    }
+    return false;
+}
+
+function pickPattern(patterns: DrumPattern[] | undefined, energy: number): DrumPattern | null {
+    if (!patterns || patterns.length === 0) return null;
+    for (let i = 0; i < patterns.length; i++) {
+        const p = patterns[i];
+        if (energy >= p.energyMin && energy <= p.energyMax) return p;
+    }
+    return null;
+}
+
+function grooveWeight(pitch: number): number {
+    if (pitch === 36) return GROOVE_WEIGHT_KICK;
+    if (pitch === 38 || pitch === 37) return GROOVE_WEIGHT_SNARE;
+    if (pitch === 42) return GROOVE_WEIGHT_HIHAT_CLOSED;
+    if (pitch === 46) return GROOVE_WEIGHT_HIHAT_OPEN;
+    return GROOVE_WEIGHT_OTHER;
+}
 
 export class GrooveEngine {
-    private static GRID_STEP = 0.25;
-    // PR #8 §4.2: 连续非正拍音符上限(8 分反拍 + 16 分切分),超出后强制回正拍
-    private static MAX_CONSECUTIVE_OFFBEAT = 2;
+    public static generateDrums(
+        sections: SectionMetadata[],
+        mood?: MoodConfig,
+        style?: StyleConfig,
+        timeSignature: [number, number] = DEFAULT_TIME_SIGNATURE,
+    ): NoteData[] {
+        const drums: NoteData[] = [];
+        const density = mood ? mood.densityMultiplier : 1.0;
+        const patterns = style?.rhythm.drumPatterns;
 
-    /**
-     * 切分音收敛 cap — 连续 >2 个非 downbeat 音符时丢弃后续,直到遇到下一个正拍。
-     * 后处理,不消耗 PRNG,ACVE 兼容。
-     */
-    private static capSyncopation(sortedFingerprint: number[]): number[] {
-        const result: number[] = [];
-        let consecutiveOff = 0;
-        for (let i = 0; i < sortedFingerprint.length; i++) {
-            const offset = sortedFingerprint[i];
-            if (isOnDownbeat(offset)) {
-                consecutiveOff = 0;
-                result.push(offset);
-            } else {
-                consecutiveOff++;
-                if (consecutiveOff <= this.MAX_CONSECUTIVE_OFFBEAT) {
-                    result.push(offset);
+        // 拍号驱动：4/4=4 拍/小节, 3/4=3, 6/8=3, 12/8=6
+        const barBeats = (timeSignature[0] * 4) / timeSignature[1];
+
+        for (let si = 0; si < sections.length; si++) {
+            const sec = sections[si];
+            const e = sec.energyLevel;
+
+            const pattern = pickPattern(patterns, e);
+            if (!pattern) continue;
+
+            const nextSec = sections[si + 1];
+            const isBuildingUp = !!(nextSec && nextSec.energyLevel > sec.energyLevel);
+
+            const sectionFirstHitIdx = drums.length;
+
+            for (let b = sec.startBeat; b < sec.endBeat - BEAT_EPS; b += 0.25) {
+                const bInBar = (b - sec.startBeat) % barBeats;
+                const isDownbeat = Math.abs(bInBar - 0) < GRID_EPS;
+                const is8th = Math.abs((b * 2) % 1) < GRID_EPS;
+                const isLastBar = b >= sec.endBeat - FILL_LAST_BAR_BEATS;
+
+                // --- Drum Fill（building-up 段落末尾）---
+                if (isBuildingUp && isLastBar) {
+                    const fillBeat = b - (sec.endBeat - FILL_LAST_BAR_BEATS);
+                    if (fillBeat >= FILL_START_BEAT) {
+                        const swellVel =
+                            FILL_VEL_BASE +
+                            ((fillBeat - FILL_START_BEAT) / FILL_START_BEAT) * FILL_VEL_RANGE;
+                        drums.push({ pitch: 38, onset: b, duration: FILL_HIT_DUR, velocity: swellVel });
+                        if (
+                            isDownbeat ||
+                            Math.abs(bInBar - 1) < GRID_EPS ||
+                            Math.abs(bInBar - 2) < GRID_EPS ||
+                            Math.abs(bInBar - 3) < GRID_EPS
+                        ) {
+                            drums.push({ pitch: 36, onset: b, duration: FILL_HIT_DUR, velocity: 0.8 });
+                        }
+                        continue;
+                    }
+                }
+
+                // 检测 16 分鬼音命中（先取，让 8 分跳过逻辑能照顾它）
+                const ghostHit = pattern.ghost && matchPosition(pattern.ghost.positions, bInBar);
+
+                if (!is8th && !ghostHit) continue;
+
+                // --- 8 分网格主体击点 ---
+                if (is8th) {
+                    // 段首 crash（仅在该段第 1 拍 + 仅 pattern.crashOnSectionStart 存在时）
+                    if (
+                        pattern.crashOnSectionStart &&
+                        isDownbeat &&
+                        Math.abs(b - sec.startBeat) < GRID_EPS
+                    ) {
+                        drums.push({
+                            pitch: pattern.crashOnSectionStart.pitch,
+                            onset: b,
+                            duration: pattern.crashOnSectionStart.duration,
+                            velocity: pattern.crashOnSectionStart.velocity,
+                        });
+                    }
+
+                    // 固定击点：deterministic，无 PRNG
+                    for (let i = 0; i < pattern.fixedHits.length; i++) {
+                        const layer = pattern.fixedHits[i];
+                        if (matchPosition(layer.positions, bInBar)) {
+                            drums.push({
+                                pitch: layer.pitch,
+                                onset: b,
+                                duration: layer.duration,
+                                velocity: layer.velocity,
+                            });
+                        }
+                    }
+
+                    // 概率击点：PRNG ×1 trigger + ×1 velocity
+                    for (let i = 0; i < pattern.densityHits.length; i++) {
+                        const layer = pattern.densityHits[i];
+                        if (matchPosition(layer.positions, bInBar)) {
+                            if (PRNGManager.nextFloat(0, 1) < density) {
+                                drums.push({
+                                    pitch: layer.pitch,
+                                    onset: b,
+                                    duration: layer.duration,
+                                    velocity: PRNGManager.nextFloat(layer.velocityRange[0], layer.velocityRange[1]),
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // --- 16 分鬼音 ---
+                if (ghostHit && pattern.ghost) {
+                    const g = pattern.ghost;
+                    if (
+                        e >= g.energyMin &&
+                        density > g.densityThreshold &&
+                        PRNGManager.nextFloat(0, 1) < g.probability
+                    ) {
+                        drums.push({
+                            pitch: g.pitch,
+                            onset: b,
+                            duration: g.duration,
+                            velocity: PRNGManager.nextFloat(g.velocityRange[0], g.velocityRange[1]),
+                        });
+                    }
                 }
             }
-        }
-        return result;
-    }
 
-    public static generateRhythmFingerprint(
-        density: number,
-        syncopationProb: number,
-        beatsPerBar: number, 
-        userMotif?: any[]
-    ): number[] {
-        const loopLength = 2 * beatsPerBar; 
-        
-        // 🌟 核心修复：如果用户提供了 Motif，提取其节奏指纹作为全曲律动基准
-        if (userMotif && userMotif.length > 0) {
-            // C 可移植：用数组累积 + 末尾排序去重，取代 Set
-            const rawOffsets: number[] = [0]; // 强拍锚点，避免律动散架
-            for (let i = 0; i < userMotif.length; i++) {
-                const offset = userMotif[i].onset % loopLength;
-                const quantized = Math.round(offset / this.GRID_STEP) * this.GRID_STEP;
-                rawOffsets.push(quantized);
-            }
+            // --- GrooveDNA 提炼：扫该段内 hit 累加到 16 分槽位（按 barBeats×4），按 pitch 权重 + velocity 调权 ---
+            const slotsPerBar = Math.max(1, Math.round(barBeats * 4));
+            const dna: number[] = new Array(slotsPerBar);
+            for (let i = 0; i < slotsPerBar; i++) dna[i] = 0;
 
-            let result = sortAndDedupNumbers(rawOffsets);
-            
-            // 根据 density 动态删减音符 (例如在 Verse 中让律动更稀疏)
-            if (density < 0.5 && result.length > 2) {
-                const targetCount = Math.max(2, Math.floor(result.length * (density * 2)));
-                // 保留 0 拍，随机移除其他拍子
-                while (result.length > targetCount) {
-                    const removeIdx = 1 + Math.floor(PRNGManager.next() * (result.length - 1));
-                    result.splice(removeIdx, 1);
-                }
+            for (let i = sectionFirstHitIdx; i < drums.length; i++) {
+                const hit = drums[i];
+                const localBeat = hit.onset - sec.startBeat;
+                const slot = ((Math.round(localBeat * 4) % slotsPerBar) + slotsPerBar) % slotsPerBar;
+                const w = grooveWeight(hit.pitch) * hit.velocity;
+                if (w > dna[slot]) dna[slot] = w;
             }
-            return result;
+            sec.grooveDNA = dna;
         }
 
-        let targetDensity = Math.min(density, 0.9); 
-        
-        const totalSteps = loopLength / this.GRID_STEP; 
-        const targetNotesCount = Math.max(2, Math.floor(totalSteps * targetDensity)); // 确保最少有两个律动点
-        
-        let possibleSteps: { offset: number, weight: number }[] = [];
-        for (let i = 1; i < totalSteps; i++) {
-            const stepPos = (i * this.GRID_STEP) % beatsPerBar; 
-            
-            // 🌟 修复：大幅降低 16分音符的权重，避免产生"小碎音"，但 Funk 等高切分曲风除外
-            let baseWeight = 0;
-            if (isOnDownbeat(stepPos)) {
-                baseWeight = 1.0; // 正拍 (0, 1, 2, 3)
-            } else if (isOnOffbeat(stepPos)) {
-                baseWeight = 0.6 + syncopationProb * 0.4; // 8分音符反拍 (0.5, 1.5...)
-            } else {
-                if (syncopationProb >= 0.7) {
-                    baseWeight = 0.4 + syncopationProb * 0.3; // 允许 16分音符
-                } else {
-                    baseWeight = 0.05 + syncopationProb * 0.1; // 16分音符，极低权重
-                }
-            }
-            
-            possibleSteps.push({ offset: i * this.GRID_STEP, weight: baseWeight });
-        }
-        
-        // 引入随机性并按权重排序，确保音符分布在整个乐句中，而不是集中在开头
-        let fingerprint: number[] = [0]; // 第0拍永远有锚点
-        let availableSteps = [...possibleSteps];
-        for (let i = 0; i < targetNotesCount - 1 && availableSteps.length > 0; i++) {
-            let totalWeight = availableSteps.reduce((sum, step) => sum + step.weight, 0);
-            let randomVal = PRNGManager.next() * totalWeight;
-            let selectedIdx = 0;
-            for (let j = 0; j < availableSteps.length; j++) {
-                randomVal -= availableSteps[j].weight;
-                if (randomVal <= 0) {
-                    selectedIdx = j;
-                    break;
-                }
-            }
-            fingerprint.push(availableSteps[selectedIdx].offset);
-            availableSteps.splice(selectedIdx, 1);
-        }
-
-        return this.capSyncopation(sortAndDedupNumbers(fingerprint));
-    }
-
-    // ⚖️ 旋律与伴奏的互补对抗 (Inverse Density)
-    public static generateInverseGroove(baseGroove: number[], beatsPerBar: number, density: number = 0.5): number[] {
-        const loopLength = 2 * beatsPerBar;
-        const totalSteps = loopLength / this.GRID_STEP;
-        const baseDensity = baseGroove.length / totalSteps;
-        
-        // 如果伴奏极密 (density > 0.5)，旋律强制变疏 (长音为主)
-        // 如果伴奏极疏 (density < 0.3)，旋律强制变密 (填缝)
-        // 保证旋律密度在 0.2 到 0.8 之间
-        let targetDensity = Math.max(0.2, Math.min(0.8, 1.0 - baseDensity));
-        
-        // 🌟 修复：应用风格的密度乘数，防止在舒缓曲风中生成过于密集的旋律骨架
-        targetDensity = Math.min(0.8, targetDensity * (density * 2));
-        
-        const targetNotesCount = Math.max(2, Math.floor(totalSteps * targetDensity));
-        
-        let possibleSteps: { offset: number, weight: number }[] = [];
-        for (let i = 1; i < totalSteps; i++) {
-            const offset = i * this.GRID_STEP;
-            const stepPos = offset % beatsPerBar;
-            
-            // 互补对抗核心：如果伴奏在这个点发声了，旋律尽量避开；如果伴奏没发声，旋律尽量填补
-            const isBaseHit = baseGroove.includes(offset);
-            let weight = isBaseHit ? 0.1 : 0.9; 
-            
-            // 🌟 修复：加上节拍权重，防止在 inverse 时大量选中 16分音符
-            if (isOnDownbeat(stepPos)) {
-                weight *= 1.0;
-            } else if (isOnOffbeat(stepPos)) {
-                weight *= 0.8;
-            } else {
-                weight *= 0.1; // 极大地压制 16分音符
-            }
-            
-            possibleSteps.push({ offset, weight });
-        }
-        
-        // 引入随机性并按权重排序
-        let inverseFingerprint: number[] = [0]; // 强拍锚点
-        let availableSteps = [...possibleSteps];
-        for (let i = 0; i < targetNotesCount - 1 && availableSteps.length > 0; i++) {
-            let totalWeight = availableSteps.reduce((sum, step) => sum + step.weight, 0);
-            let randomVal = PRNGManager.next() * totalWeight;
-            let selectedIdx = 0;
-            for (let j = 0; j < availableSteps.length; j++) {
-                randomVal -= availableSteps[j].weight;
-                if (randomVal <= 0) {
-                    selectedIdx = j;
-                    break;
-                }
-            }
-            inverseFingerprint.push(availableSteps[selectedIdx].offset);
-            availableSteps.splice(selectedIdx, 1);
-        }
-
-        return this.capSyncopation(sortAndDedupNumbers(inverseFingerprint));
+        return drums;
     }
 }

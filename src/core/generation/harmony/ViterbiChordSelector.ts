@@ -1,444 +1,373 @@
-// ==========================================
-// 📄 /src/core/generation/harmony/ViterbiChordSelector.ts
-// 🌟 PR #1: Viterbi 和弦选择器 — 法则 1+2+3 的算法核心
+// ============================================================
+// ViterbiChordSelector — 张力驱动的 HMM + Viterbi 智能重配
+// ============================================================
+// Pitch Space: RELATIVE（candidates 的 root 全部 0~11，相对调式主音）
 //
-// 输入：
-//   - anchors[]：每个和弦槽位对应的"旋律骨架音"（pitch class 0~11，主调相对）
-//   - pool[]：候选和弦池（每个元素预计算好 mask / rootPc / quality / functionClass）
-//   - options：可选功能约束 / 前瞻权重调节
+// 算法概览：
+//   - 输入  basicChords (HarmonyCore 骨架) + melody + tonality + tensionMultiplier
+//   - 状态  N 个候选和弦（动态构建：顺阶 ∪ 借调色彩 ∪ 骨架保底）
+//   - 时间  T 个槽位（与 basicChords 一一对应，保留时间结构）
+//   - DP    V[t][i] = 到第 t 步选第 i 个候选的最佳累计分
+//           ptr[t][i] = 选 i 时的最优前驱 prev
+//   - 终止  全曲末尾给主音和弦 (root=0) 额外 +10 分以倾向收束
 //
-// 输出：
-//   - 每个槽位选中的和弦（和 pool 元素同一对象，不拷贝）
-//   - 可选：每步的得分明细（debug 用）
+// 评分维度：
+//   emission(cand, slice)     — 旋律音落入候选和弦音得 +5×duration，落外 -3×duration
+//   transition(prev, curr)    — 环形距离 + 张力门 + 半音平滑 + bVI→V 黄金奖励
 //
-// 算法：
-//   标准 Viterbi，状态 dp[i][k] = "前 i+1 个槽位，第 i 个用 pool[k]" 的最高累计分
-//   转移：dp[i][k] = max_j (dp[i-1][j] + score(pool[k], pool[j], anchor[i], lookahead))
-//   回溯：path[i][k] 记录最优前驱
+// tensionMultiplier (0.0 ~ 1.0)：
+//   - 0.0 → 离调被强烈惩罚 (-10)，乖乖弹原调
+//   - 1.0 → 离调零惩罚，开始秀操作（神级编配 1-6-b6-5 自发涌现）
+//   - 由 runPipeline 按段落传入：第一段 Chorus = 0.2，Final Chorus / Bridge = 1.0
 //
-// 决定论：
-//   - DP 表和 path 表静态预分配（扁平化 Int16Array / Uint8Array）
-//   - 所有"同分"分歧通过 PRNGManager.nextInt 注入微小扰动（base * 10 + jitter）
-//   - PRNG 消耗次数 = N × K × K（Viterbi 转移次数），可预测可复现
-//
-// 性能（ESP32 @ 240MHz 预算）：
-//   N ≤ 32, K ≤ 40 → 32 × 40 × 40 ≈ 51k 次转移评分 × ~20 cycles ≈ 1ms
-// ==========================================
+// C++ 移植：DP 矩阵全部用 Float32Array (V) 和 Int32Array (ptr) 扁平化，
+//   索引 t*N + i，零内部对象分配，零 GC 压力。
+// ============================================================
 
-import { ChordQuality } from '../types';
-import { ChordMask, commonTones, chordToMask, popcount12 } from './ChordMask';
-import { SCORE_TABLE } from './ChordScoreTable';
-import { PRNGManager } from '../../utils/PRNG';
+import { GeneratedChord, NoteData, Tonality, ChordQuality, ChordQualityName, SCALE_INTERVALS } from '../types';
+import { MusicTheory } from '../theory/MusicTheory';
 
-/**
- * 功能组（Harmonic Function）— Phase 1 影子骨架的输出 / Phase 3 的约束。
- * 数值枚举便于 C 移植和位运算分类。
- */
-export enum HarmonicFunction {
-    Tonic = 0,        // T — 主
-    Subdominant = 1,  // S — 下属
-    Dominant = 2,     // D — 属
-}
-
-/**
- * 和弦候选。预计算好 mask 和 popcount，避免 Viterbi 热路径重算。
- * Pitch Space: RELATIVE (rootPc 是主调相对空间)
- */
-export interface ChordCandidate {
-    rootPc: number;              // 0~11, 主调相对
+interface ChordCandidate {
+    numeral: string;
+    root: number;
     quality: ChordQuality;
-    mask: ChordMask;             // 预计算，chordToMask(rootPc, quality)
-    bitCount: number;            // 预计算，popcount(mask) — 热路径用作 complexity tax
-    functionClass: HarmonicFunction;
+}
+
+const BEAT_EPS = 0.001;
+const NEG_INF = -999999;
+
+// 评分权重（emission / 末态）
+const EMIT_IN_CHORD = 5.0;
+const EMIT_OUT_OF_CHORD = 3.0;
+const INIT_TONIC_BONUS = 5.0;
+const INIT_MATCH_BONUS = 5.0;
+const SKELETON_MATCH_BONUS = 4.0;
+const FINAL_TONIC_BONUS = 10.0;
+
+// 评分权重（transition：基础环形距离）
+const TRANS_FOURTH = 8.0;
+const TRANS_FIFTH = 4.0;
+const TRANS_SECOND = 2.0;
+const TRANS_THIRD = 1.0;
+const TRANS_TRITONE_PENALTY = 5.0;
+const TRANS_REPEAT_PENALTY = 4.0;
+const TRANS_V7_TO_I_BONUS = 5.0;
+
+// 评分权重（transition：高级法则）
+const BORROWED_PENALTY_MAX = 10.0;   // 离调最大惩罚（tension=0 时全额扣）
+const CHROMATIC_SMOOTH_BONUS = 6.0;  // 半音平滑（vi→bVI→V 类）
+const BVI_TO_V_BONUS = 5.0;          // bVI(8) → V(7) 黄金进行
+
+export class ViterbiChordSelector {
     /**
-     * 🌟 PR #3: 功能性奖励（Functional Bonus）
-     * 用于让某些"风格特征和弦"突破 Viterbi 的天然偏好（如借调/副属），
-     * 抵消它们的 complexity tax + diatonic 骨架不触发的天然劣势。
-     * 默认 0，bVII/bVI/bIII 等流行借调和弦设 +2~+3。
+     * @param basicChords        HarmonyCore 骨架（已含 startBeat / endBeat / keyOffset）
+     * @param melody             已生成的旋律（相对空间 pitch）
+     * @param tonality           调式
+     * @param tensionMultiplier  张力乘数 0~1（默认 0.5 — 中等张力，向后兼容旧调用）
      */
-    functionalBonus: number;
-}
+    public static reharmonize(
+        basicChords: GeneratedChord[],
+        melody: NoteData[],
+        tonality: Tonality,
+        tensionMultiplier: number = 0.5,
+    ): GeneratedChord[] {
+        const tension = tensionMultiplier < 0 ? 0 : tensionMultiplier > 1 ? 1 : tensionMultiplier;
 
-/**
- * 构造 ChordCandidate，自动预计算 mask 和 popcount。
- * 非热路径（pool 初始化时一次性调用），可以安全用。
- *
- * @param functionalBonus 可选，用于风格驱动的"特征和弦"加分（默认 0）
- */
-export function makeCandidate(
-    rootPc: number,
-    quality: ChordQuality,
-    functionClass: HarmonicFunction,
-    functionalBonus: number = 0,
-): ChordCandidate {
-    const mask = chordToMask(rootPc, quality);
-    return {
-        rootPc: ((rootPc % 12) + 12) % 12,
-        quality,
-        mask,
-        bitCount: popcount12(mask),
-        functionClass,
-        functionalBonus,
-    };
-}
+        const candidates = this.buildCandidates(tonality, basicChords);
+        const diatonicMask = this.buildDiatonicMask(tonality);
 
-/**
- * Viterbi 输入。
- */
-export interface ViterbiInput {
-    /** 每个槽位的旋律骨架音 pitch class（0~11，主调相对）。长度即 N。 */
-    anchors: number[];
-    /** 候选和弦池，全局共享。长度即 K，K ≤ MAX_K。 */
-    pool: ChordCandidate[];
-    /** 可选：每个槽位的功能约束（来自影子骨架）。长度必须等于 anchors.length。 */
-    functionConstraint?: HarmonicFunction[];
+        const T = basicChords.length;
+        const N = candidates.length;
+        if (T === 0) return [];
+
+        // 扁平 DP 矩阵：dp[t * N + i] / ptr[t * N + i]
+        const dp = new Float32Array(T * N);
+        const ptr = new Int32Array(T * N);
+
+        // 预切片：每个时间槽内的旋律音，避免内层重复扫描全曲
+        const melodySlices: NoteData[][] = [];
+        for (let t = 0; t < T; t++) {
+            const c = basicChords[t];
+            const slice: NoteData[] = [];
+            for (let i = 0; i < melody.length; i++) {
+                const n = melody[i];
+                if (n.onset >= c.startBeat - BEAT_EPS && n.onset < c.endBeat - BEAT_EPS) {
+                    slice.push(n);
+                }
+            }
+            melodySlices.push(slice);
+        }
+
+        // t=0 初始化：emission + 主音 / 骨架匹配奖励
+        for (let i = 0; i < N; i++) {
+            const em = this.getEmissionScore(candidates[i], melodySlices[0]);
+            let trans = 0;
+            if (candidates[i].root === 0) trans += INIT_TONIC_BONUS;
+            if (candidates[i].root === basicChords[0].root) trans += INIT_MATCH_BONUS;
+            dp[i] = em + trans;
+            ptr[i] = -1;
+        }
+
+        // t=1..T-1 转移
+        for (let t = 1; t < T; t++) {
+            const slice = melodySlices[t];
+            const origChord = basicChords[t];
+
+            for (let currIdx = 0; currIdx < N; currIdx++) {
+                const curr = candidates[currIdx];
+                const em = this.getEmissionScore(curr, slice);
+                let maxVal = NEG_INF;
+                let bestPrev = 0;
+
+                for (let prevIdx = 0; prevIdx < N; prevIdx++) {
+                    const prev = candidates[prevIdx];
+                    let trans = this.getTransitionScore(prev, curr, diatonicMask, tension);
+
+                    // 骨架匹配：与 HarmonyCore 原推荐根音一致额外加分（保留风格池倾向）
+                    if (curr.root === origChord.root) trans += SKELETON_MATCH_BONUS;
+                    // 末态收束：最后一拍倾向主音
+                    if (t === T - 1 && curr.root === 0) trans += FINAL_TONIC_BONUS;
+
+                    const val = dp[(t - 1) * N + prevIdx] + trans + em;
+                    if (val > maxVal) {
+                        maxVal = val;
+                        bestPrev = prevIdx;
+                    }
+                }
+                dp[t * N + currIdx] = maxVal;
+                ptr[t * N + currIdx] = bestPrev;
+            }
+        }
+
+        // 末态选择：argmax + 主音奖励
+        let bestLast = 0;
+        let maxV = NEG_INF;
+        for (let i = 0; i < N; i++) {
+            let score = dp[(T - 1) * N + i];
+            if (candidates[i].root === 0) score += FINAL_TONIC_BONUS;
+            if (score > maxV) {
+                maxV = score;
+                bestLast = i;
+            }
+        }
+
+        // 回溯 path
+        const path: number[] = [];
+        let currState = bestLast;
+        for (let t = T - 1; t >= 0; t--) {
+            path.push(currState);
+            currState = ptr[t * N + currState];
+        }
+        path.reverse();
+
+        // 装配输出（保持原 startBeat / endBeat / keyOffset，含抢拍后的非整拍切分）
+        const finalChords: GeneratedChord[] = [];
+        for (let t = 0; t < T; t++) {
+            const cand = candidates[path[t]];
+            const orig = basicChords[t];
+            // 保留原始 slash-chord bassOverride（仅当 Viterbi 维持了同根音的和弦时）
+            const preserveBass = orig.bassOverride !== undefined && cand.root === orig.root;
+            finalChords.push({
+                numeral: cand.numeral,
+                root: cand.root,
+                quality: ChordQualityName[cand.quality] as GeneratedChord['quality'],
+                startBeat: orig.startBeat,
+                endBeat: orig.endBeat,
+                keyOffset: orig.keyOffset,
+                ...(preserveBass ? { bassOverride: orig.bassOverride } : {}),
+            });
+        }
+        return finalChords;
+    }
+
+    // --------------------------------------------------------
+    // 候选池构建：顺阶 ∪ 借调 ∪ 骨架保底
+    // --------------------------------------------------------
     /**
-     * 可选：进入第一个槽位时的"虚拟前驱"—— 用于段落间 voice leading。
-     * null 表示首槽位无前驱（段落首和弦）。
+     * 用 (root << 5 | quality) 做唯一性比较——root 0~11 占 4 bit、quality 0~16 占 5 bit，
+     * 单 int 编码 (root, quality) 对，避免 Map/Set（rule P-1）。
+     * 总数控制在 25-30 个内（性能上限），实际通常 ~20。
      */
-    initialPrev?: ChordCandidate | null;
-}
+    private static buildCandidates(
+        tonality: Tonality,
+        basicChords: GeneratedChord[],
+    ): ChordCandidate[] {
+        const isMinor =
+            tonality === Tonality.Minor ||
+            tonality === Tonality.Minor_Pentatonic ||
+            tonality === Tonality.Dorian ||
+            tonality === Tonality.Melodic_Minor ||
+            tonality === Tonality.Harmonic_Minor ||
+            tonality === Tonality.Phrygian ||
+            tonality === Tonality.Blues;
 
-/**
- * 单步得分明细，debug 用。
- */
-export interface ScoreBreakdown {
-    slot: number;
-    chord: ChordCandidate;
-    topVoice: number;
-    lookAhead1: number;
-    lookAhead2: number;
-    voiceLeading: number;
-    functional: number;
-    tiebreaker: number;
-    total: number;
-}
+        const merged: ChordCandidate[] = [];
+        const seen: number[] = [];
 
-/**
- * Viterbi 输出。
- */
-export interface ViterbiResult {
-    selection: ChordCandidate[];           // 长度 = anchors.length
-    totalScore: number;                    // 最优路径累计分（含 tiebreaker）
-    breakdown?: ScoreBreakdown[];          // 可选 debug 明细
-}
+        const add = (cand: ChordCandidate) => {
+            const key = (cand.root << 5) | cand.quality;
+            for (let i = 0; i < seen.length; i++) {
+                if (seen[i] === key) return;
+            }
+            merged.push(cand);
+            seen.push(key);
+        };
 
-// ============================================================
-// 静态预分配的 DP 表（严禁热路径 new Array）
-// ============================================================
-
-/** DP 表最大容量，对应 per-section Viterbi 的上界。 */
-export const MAX_N = 32;
-export const MAX_K = 40;
-
-// 扁平化 DP 存储：dp[i * MAX_K + k]
-// Int32 而非 Int16 — Luis 的硬件防溢出建议：
-//   未来 PR #2/#3 加新评分项后，N=64 段落的累计分数可能突破 32K（Int16 上限）
-//   Int32 多 2.5KB 内存（5KB 总），ESP32 完全无压力，且 32-bit 处理器零性能损失
-const DP = new Int32Array(MAX_N * MAX_K);
-// 回溯表：path[i * MAX_K + k] = 最优前驱的 k（K ≤ 40 < 256，Uint8 足够）
-const PATH = new Uint8Array(MAX_N * MAX_K);
-
-// ============================================================
-// 评分权重（单位统一为"分 × 10"，低位留给 PRNG tiebreaker）
-// ============================================================
-
-const W_TOP_VOICE = 3;          // 当前骨架音权重（最高）
-const W_LOOKAHEAD_1 = 1;        // 下一骨架音，权重 /2
-const W_LOOKAHEAD_2 = 1;        // 下下骨架音，权重 /4
-const W_VOICE_LEADING = 2;      // 每个共同音的分数
-const VOICE_LEADING_CAP = 3;    // 共同音上限（防止 self-loop 满分坍塌）
-const W_FUNCTIONAL = 8;         // 功能约束匹配 bias（权重提高到能压住 voice leading）
-const W_REPEAT_PENALTY = -10;   // 相邻槽位选了同一个和弦的硬惩罚（强制和声运动）
-const W_COMPLEXITY_TAX = -1;    // 每个超出三和弦的扩展音 -1（防止 mega-chord 坍塌）
-const SCORE_SCALE = 10;         // 基础分放大 10 倍，个位留给 PRNG tiebreaker
-const TIEBREAKER_RANGE = 9;     // prng.nextInt(0, 9) 共 10 档扰动（占满个位）
-const NEG_INFTY = -(1 << 30);   // DP 初始"不可达"值（Int32 安全哨兵，远离正常分数范围）
-
-// ============================================================
-// 核心评分函数（热路径）
-// ============================================================
-
-/**
- * 单次评分。包含 PRNG tiebreaker，所以每次调用都会消耗一次 PRNG。
- *
- * Viterbi 的内层循环会对同一个 cand 调用 K 次（每个 prev 一次），
- * 每次 PRNG 扰动不同，这是有意为之 —— 让"同一 cand 对不同 prev"
- * 的分数也有微小差异，避免回溯表偏向数组前部。
- */
-function scoreStep(
-    cand: ChordCandidate,
-    prev: ChordCandidate | null,
-    anchor: number,
-    nextAnchor: number,       // -1 表示无
-    nextNextAnchor: number,   // -1 表示无
-    constraint: HarmonicFunction,  // -1 表示无
-): number {
-    // 1. Top Voice（法则 1+2）：当前骨架音是否是这个和弦的好听音
-    const iv0 = ((anchor - cand.rootPc) % 12 + 12) % 12;
-    const topVoice = SCORE_TABLE[cand.quality][iv0];
-
-    // 2. Lookahead 1（法则 2 前瞻）：下一骨架音是否也能被这个和弦托住
-    let lookAhead1 = 0;
-    if (nextAnchor >= 0) {
-        const iv1 = ((nextAnchor - cand.rootPc) % 12 + 12) % 12;
-        // 除以 2：用 >> 1 处理正数，负数用 Math.trunc 保持对称
-        const raw = SCORE_TABLE[cand.quality][iv1];
-        lookAhead1 = raw >= 0 ? (raw >> 1) : -((-raw) >> 1);
-    }
-
-    // 3. Lookahead 2（法则 2 长线）：下下骨架音的微弱奖励，捕获 ii-V-I 结构
-    let lookAhead2 = 0;
-    if (nextNextAnchor >= 0) {
-        const iv2 = ((nextNextAnchor - cand.rootPc) % 12 + 12) % 12;
-        const raw = SCORE_TABLE[cand.quality][iv2];
-        lookAhead2 = raw >= 0 ? (raw >> 2) : -((-raw) >> 2);
-    }
-
-    // 4. Voice Leading（法则 3）：与前一和弦的共同音数（capped 防 self-loop 坍塌）
-    let voiceLeading = 0;
-    let repeatPenalty = 0;
-    if (prev !== null) {
-        if (prev.rootPc === cand.rootPc && prev.quality === cand.quality) {
-            // 完全相同的和弦：voice leading 不奖励，触发硬惩罚强制和声运动
-            repeatPenalty = W_REPEAT_PENALTY;
+        // 1) 顺阶和弦（提取自当前 tonality）
+        if (isMinor) {
+            add({ numeral: 'i',      root: 0,  quality: ChordQuality.Minor });
+            add({ numeral: 'iidim',  root: 2,  quality: ChordQuality.Diminished });
+            add({ numeral: 'III',    root: 3,  quality: ChordQuality.Major });
+            add({ numeral: 'iv',     root: 5,  quality: ChordQuality.Minor });
+            add({ numeral: 'v',      root: 7,  quality: ChordQuality.Minor });
+            add({ numeral: 'V',      root: 7,  quality: ChordQuality.Major });        // 和声小调 V
+            add({ numeral: 'V7',     root: 7,  quality: ChordQuality.Dominant7 });    // 和声小调 V7
+            add({ numeral: 'VI',     root: 8,  quality: ChordQuality.Major });
+            add({ numeral: 'VII',    root: 10, quality: ChordQuality.Major });
+            // 七和弦色彩
+            add({ numeral: 'i7',     root: 0,  quality: ChordQuality.Minor7 });
+            add({ numeral: 'iv7',    root: 5,  quality: ChordQuality.Minor7 });
+            add({ numeral: 'VImaj7', root: 8,  quality: ChordQuality.Major7 });
         } else {
-            const ct = commonTones(cand.mask, prev.mask);
-            voiceLeading = ct > VOICE_LEADING_CAP ? VOICE_LEADING_CAP : ct;
+            add({ numeral: 'I',      root: 0,  quality: ChordQuality.Major });
+            add({ numeral: 'ii',     root: 2,  quality: ChordQuality.Minor });
+            add({ numeral: 'iii',    root: 4,  quality: ChordQuality.Minor });
+            add({ numeral: 'IV',     root: 5,  quality: ChordQuality.Major });
+            add({ numeral: 'V',      root: 7,  quality: ChordQuality.Major });
+            add({ numeral: 'vi',     root: 9,  quality: ChordQuality.Minor });
+            add({ numeral: 'viidim', root: 11, quality: ChordQuality.Diminished });
+            // 七和弦色彩
+            add({ numeral: 'Imaj7',  root: 0,  quality: ChordQuality.Major7 });
+            add({ numeral: 'ii7',    root: 2,  quality: ChordQuality.Minor7 });
+            add({ numeral: 'IVmaj7', root: 5,  quality: ChordQuality.Major7 });
+            add({ numeral: 'V7',     root: 7,  quality: ChordQuality.Dominant7 });
+            add({ numeral: 'vi7',    root: 9,  quality: ChordQuality.Minor7 });
         }
-    }
 
-    // 5. Functional bias：是否匹配影子骨架的功能约束
-    const functional = (constraint >= 0 && cand.functionClass === constraint) ? 1 : 0;
+        // 2) 常见借调/离调色彩和弦（无视 tonality 一律开放，由 tension gate 控制使用）
+        add({ numeral: 'bVI',  root: 8,  quality: ChordQuality.Major });    // 平行小调借（神级 1-6-b6-5 关键和弦）
+        add({ numeral: 'bIII', root: 3,  quality: ChordQuality.Major });    // 平行小调借
+        add({ numeral: 'iv',   root: 5,  quality: ChordQuality.Minor });    // modal mixture（大调借小四）
+        add({ numeral: 'bII',  root: 1,  quality: ChordQuality.Major });    // Neapolitan
+        add({ numeral: 'bVII', root: 10, quality: ChordQuality.Major });    // Mixolydian
 
-    // 6. Complexity tax：扩展和弦税收 —— 防止 mega-chord 用"包容性"坍塌评分
-    // 三和弦 bitCount=3 不扣，每多一个 chord tone 扣 1 分
-    const complexity = cand.bitCount - 3;
-    const complexityTax = complexity > 0 ? complexity * W_COMPLEXITY_TAX : 0;
-
-    // 🌟 M2: iii9/vi9 度数级联惩罚 — 避免 Phrygian b9 / 模糊属音听感
-    // - iii (rootPc=4) 在大调中是 Phrygian 调式,加 9 得 b9,强烈不协和 → -2
-    // - vi (rootPc=9) 在大调中加 9 形成与 IV 级的导音冲突,弱化下降感 → -1
-    // 仅对 Minor9 扩展(ChordQuality.Minor9 = 12)生效
-    let degreeTax = 0;
-    if (cand.quality === 12 /* ChordQuality.Minor9 */) {
-        if (cand.rootPc === 4) degreeTax = -2;
-        else if (cand.rootPc === 9) degreeTax = -1;
-    }
-
-    // 🌟 O1: 扩展音跨和弦兼容性 — 防止复杂扩展和弦(5+ tones)突兀冲入/溢出
-    // 从简单三和弦(bitCount=3)直接跳到 11/13 大扩展(bitCount>=5) → 突兀,轻惩罚
-    // 两个扩展和弦连续出现 → 扩展音有机会共享(准备-解决),轻奖励
-    let extensionCompat = 0;
-    if (cand.bitCount >= 5 && prev !== null) {
-        if (prev.bitCount <= 3) {
-            extensionCompat = -1; // 突兀扩展
-        } else {
-            // 两复杂和弦衔接,若 mask 共同位 >=3 则平滑过渡
-            const shared = commonTones(cand.mask, prev.mask);
-            extensionCompat = shared >= 3 ? 1 : 0;
+        // 3) 骨架保底：风格池里出现的所有 (root, quality) 唯一对一定能选回来
+        for (let i = 0; i < basicChords.length; i++) {
+            const ch = basicChords[i];
+            const qEnum = ChordQuality[ch.quality as keyof typeof ChordQuality];
+            if (qEnum === undefined) continue;
+            add({ numeral: ch.numeral, root: ch.root, quality: qEnum });
         }
+
+        return merged;
     }
 
-    // 加权求和（量纲：score × 10，个位留给 tiebreaker）
-    // 🌟 PR #3: 加入 cand.functionalBonus —— 风格驱动的"特征和弦"补偿
-    const base =
-        topVoice * W_TOP_VOICE +
-        lookAhead1 * W_LOOKAHEAD_1 +
-        lookAhead2 * W_LOOKAHEAD_2 +
-        voiceLeading * W_VOICE_LEADING +
-        functional * W_FUNCTIONAL +
-        repeatPenalty +
-        complexityTax +
-        degreeTax +
-        extensionCompat +
-        cand.functionalBonus;
-
-    // PRNG tiebreaker —— Luis 的决定论防坍塌机制
-    const jitter = PRNGManager.nextInt(0, TIEBREAKER_RANGE);
-    return base * SCORE_SCALE + jitter;
-}
-
-/**
- * 计算并填充一个 ScoreBreakdown（debug 用，不消耗额外 PRNG）。
- * 仅在返回 breakdown 时复算，保持 PRNG 序列不被 debug 污染。
- */
-function explainStep(
-    slot: number,
-    cand: ChordCandidate,
-    prev: ChordCandidate | null,
-    anchor: number,
-    nextAnchor: number,
-    nextNextAnchor: number,
-    constraint: HarmonicFunction,
-    totalFromDp: number,
-): ScoreBreakdown {
-    const iv0 = ((anchor - cand.rootPc) % 12 + 12) % 12;
-    const topVoice = SCORE_TABLE[cand.quality][iv0];
-
-    let lookAhead1 = 0;
-    if (nextAnchor >= 0) {
-        const iv1 = ((nextAnchor - cand.rootPc) % 12 + 12) % 12;
-        const raw = SCORE_TABLE[cand.quality][iv1];
-        lookAhead1 = raw >= 0 ? (raw >> 1) : -((-raw) >> 1);
-    }
-    let lookAhead2 = 0;
-    if (nextNextAnchor >= 0) {
-        const iv2 = ((nextNextAnchor - cand.rootPc) % 12 + 12) % 12;
-        const raw = SCORE_TABLE[cand.quality][iv2];
-        lookAhead2 = raw >= 0 ? (raw >> 2) : -((-raw) >> 2);
-    }
-    const voiceLeading = prev !== null ? commonTones(cand.mask, prev.mask) : 0;
-    const functional = (constraint >= 0 && cand.functionClass === constraint) ? 1 : 0;
-
-    const base =
-        topVoice * W_TOP_VOICE +
-        lookAhead1 * W_LOOKAHEAD_1 +
-        lookAhead2 * W_LOOKAHEAD_2 +
-        voiceLeading * W_VOICE_LEADING +
-        functional * W_FUNCTIONAL;
-
-    // totalFromDp 是 DP 表记录的总分（含 tiebreaker），
-    // 回推 tiebreaker = totalFromDp - base * SCORE_SCALE（仅该步骤）
-    return {
-        slot,
-        chord: cand,
-        topVoice,
-        lookAhead1,
-        lookAhead2,
-        voiceLeading,
-        functional,
-        tiebreaker: 0,  // 不可精确回推（DP 表累加了前面的），留 0 供 debug
-        total: totalFromDp,
-    };
-}
-
-// ============================================================
-// 主入口
-// ============================================================
-
-/**
- * 执行 Viterbi DP 选择最优和弦序列。
- *
- * @throws 如果 N > MAX_N 或 K > MAX_K
- */
-export function selectChords(
-    input: ViterbiInput,
-    withBreakdown: boolean = false,
-): ViterbiResult {
-    const { anchors, pool, functionConstraint, initialPrev } = input;
-    const N = anchors.length;
-    const K = pool.length;
-
-    if (N === 0) {
-        return { selection: [], totalScore: 0, breakdown: withBreakdown ? [] : undefined };
-    }
-    if (N > MAX_N) {
-        throw new Error(`ViterbiChordSelector: N=${N} exceeds MAX_N=${MAX_N}. Split into smaller sections.`);
-    }
-    if (K > MAX_K) {
-        throw new Error(`ViterbiChordSelector: K=${K} exceeds MAX_K=${MAX_K}. Shrink candidate pool.`);
-    }
-    if (K === 0) {
-        throw new Error('ViterbiChordSelector: empty candidate pool.');
-    }
-    if (functionConstraint && functionConstraint.length !== N) {
-        throw new Error(`functionConstraint length ${functionConstraint.length} !== anchors length ${N}`);
+    /**
+     * 当前调式的 pitch class 位掩码（bit i 设位 = i 是顺阶音）。
+     * 用于 transition 中判断 curr.root 是否为离调和弦根（O(1) 位运算）。
+     */
+    private static buildDiatonicMask(tonality: Tonality): number {
+        const intervals = SCALE_INTERVALS[tonality];
+        let mask = 0;
+        for (let i = 0; i < intervals.length; i++) {
+            mask |= (1 << intervals[i]);
+        }
+        return mask | 0;
     }
 
-    // 初始化 DP 第 0 列（清理脏状态）
-    for (let k = 0; k < K; k++) {
-        DP[k] = NEG_INFTY;
-        PATH[k] = 0;
-    }
+    /**
+     * 发射分：旋律音落入候选和弦音得 +5×duration，落外 -3×duration。
+     * 没有旋律音时返回 0（不影响候选偏好）。
+     */
+    private static getEmissionScore(cand: ChordCandidate, notes: NoteData[]): number {
+        if (notes.length === 0) return 0;
 
-    // lookahead 索引辅助
-    const la1 = (i: number): number => (i + 1 < N ? anchors[i + 1] : -1);
-    const la2 = (i: number): number => (i + 2 < N ? anchors[i + 2] : -1);
-    const cst = (i: number): HarmonicFunction => (functionConstraint ? functionConstraint[i] : -1 as HarmonicFunction);
+        const intervals = MusicTheory.getChordTones(cand.quality);
+        const chordPcs: number[] = [];
+        for (let i = 0; i < intervals.length; i++) {
+            chordPcs.push(((cand.root + intervals[i]) % 12 + 12) % 12);
+        }
 
-    // === 第 0 个槽位：initialPrev 作为虚拟前驱 ===
-    const prev0 = initialPrev ?? null;
-    for (let k = 0; k < K; k++) {
-        const s = scoreStep(pool[k], prev0, anchors[0], la1(0), la2(0), cst(0));
-        DP[k] = s;
-        PATH[k] = 0; // 没有前驱
-    }
+        let score = 0;
+        for (let i = 0; i < notes.length; i++) {
+            const note = notes[i];
+            const pc = ((Math.round(note.pitch) % 12) + 12) % 12;
 
-    // === 第 1..N-1 个槽位：标准 Viterbi 转移 ===
-    for (let i = 1; i < N; i++) {
-        const anchor = anchors[i];
-        const nextA = la1(i);
-        const nextNextA = la2(i);
-        const constraint = cst(i);
-        const rowPrev = (i - 1) * MAX_K;
-        const rowCurr = i * MAX_K;
-
-        for (let k = 0; k < K; k++) {
-            const cand = pool[k];
-            let bestScore = NEG_INFTY;
-            let bestPrev = 0;
-
-            for (let j = 0; j < K; j++) {
-                const prevScore = DP[rowPrev + j];
-                if (prevScore <= NEG_INFTY) continue;
-                const trans = scoreStep(cand, pool[j], anchor, nextA, nextNextA, constraint);
-                const total = prevScore + trans;
-                if (total > bestScore) {
-                    bestScore = total;
-                    bestPrev = j;
+            let inChord = false;
+            for (let j = 0; j < chordPcs.length; j++) {
+                if (chordPcs[j] === pc) {
+                    inChord = true;
+                    break;
                 }
             }
 
-            DP[rowCurr + k] = bestScore;
-            PATH[rowCurr + k] = bestPrev;
+            if (inChord) score += note.duration * EMIT_IN_CHORD;
+            else score -= note.duration * EMIT_OUT_OF_CHORD;
         }
+        return score;
     }
 
-    // === 回溯：找最后一列的最高分 ===
-    let bestLastK = 0;
-    let bestLastScore = NEG_INFTY;
-    const rowLast = (N - 1) * MAX_K;
-    for (let k = 0; k < K; k++) {
-        const s = DP[rowLast + k];
-        if (s > bestLastScore) {
-            bestLastScore = s;
-            bestLastK = k;
+    /**
+     * 转移分：基础环形距离 + 张力门 + 半音平滑 + 黄金进行。
+     *
+     * 1. 环形距离（保留旧逻辑）
+     *    diff 5  上四度 / V→I 类         +8
+     *    diff 7  上五度                   +4
+     *    diff 2/10 二度                   +2
+     *    diff 3/4/8/9 三度                +1
+     *    diff 6  三全音                   -5
+     *    diff 0 同质量 (停滞)             -4
+     *    prev=Dom7 + diff 5 (V7→I 解决)   +5
+     *
+     * 2. 离调惩罚 (Tension Gate)
+     *    curr.root ∉ diatonic           -10 × (1 - tension)
+     *    tension=0 → 全额惩罚（乖乖弹原调）
+     *    tension=1 → 零惩罚（开始秀操作）
+     *
+     * 3. 半音平滑 (Chromatic Bass Descent)
+     *    diff 1 或 11                    +6
+     *    （vi → bVI → V 这种声部下行串联会被算法主动选中）
+     *
+     * 4. 功能替代 (bVI → V 黄金进行)
+     *    prev.root=8 ∧ curr.root=7       +5
+     *    （平滑下属替代，进入 V 解决）
+     */
+    private static getTransitionScore(
+        prev: ChordCandidate,
+        curr: ChordCandidate,
+        diatonicMask: number,
+        tensionMultiplier: number,
+    ): number {
+        let score = 0;
+        const diff = ((curr.root - prev.root) % 12 + 12) % 12;
+
+        // 1. 基础环形距离打分
+        if (diff === 5) score += TRANS_FOURTH;
+        else if (diff === 7) score += TRANS_FIFTH;
+        else if (diff === 2 || diff === 10) score += TRANS_SECOND;
+        else if (diff === 3 || diff === 4 || diff === 8 || diff === 9) score += TRANS_THIRD;
+        else if (diff === 6) score -= TRANS_TRITONE_PENALTY;
+
+        if (diff === 0 && curr.quality === prev.quality) score -= TRANS_REPEAT_PENALTY;
+
+        if (prev.quality === ChordQuality.Dominant7 && diff === 5) score += TRANS_V7_TO_I_BONUS;
+
+        // 2. 离调惩罚受张力乘数控制（Tension Gate）
+        const isCurrBorrowed = (diatonicMask & (1 << curr.root)) === 0;
+        if (isCurrBorrowed) {
+            score -= BORROWED_PENALTY_MAX * (1.0 - tensionMultiplier);
         }
-    }
 
-    const selection: ChordCandidate[] = new Array(N);
-    let curK = bestLastK;
-    for (let i = N - 1; i >= 0; i--) {
-        selection[i] = pool[curK];
-        if (i > 0) curK = PATH[i * MAX_K + curK];
-    }
-
-    // === 可选：构造 breakdown（不影响 PRNG）===
-    // 重新按 selection 顺序回推每步累计分
-    let breakdown: ScoreBreakdown[] | undefined;
-    if (withBreakdown) {
-        breakdown = new Array(N);
-        // 先找到每步在 DP 表里对应的 k（直接从 selection + pool 身份相等匹配）
-        // pool 中元素独立，selection[i] === pool[k] 时 k 即为该步槽位 k
-        // 由于 pool 数组里每个 candidate 是唯一对象，可以用 indexOf
-        let prev: ChordCandidate | null = prev0;
-        for (let i = 0; i < N; i++) {
-            const cand = selection[i];
-            const k = pool.indexOf(cand);
-            const totalAtSlot = k >= 0 ? DP[i * MAX_K + k] : 0;
-            breakdown[i] = explainStep(
-                i, cand, prev,
-                anchors[i], la1(i), la2(i), cst(i),
-                totalAtSlot,
-            );
-            prev = cand;
+        // 3. 半音平滑法则（vi → bVI → V 串联自发涌现）
+        if (diff === 1 || diff === 11) {
+            score += CHROMATIC_SMOOTH_BONUS;
         }
-    }
 
-    return {
-        selection,
-        totalScore: bestLastScore,
-        breakdown,
-    };
+        // 4. 功能替代法则：bVI(8) → V(7) 黄金进行
+        if (prev.root === 8 && curr.root === 7) {
+            score += BVI_TO_V_BONUS;
+        }
+
+        return score;
+    }
 }

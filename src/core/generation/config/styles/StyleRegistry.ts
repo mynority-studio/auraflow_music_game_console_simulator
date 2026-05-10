@@ -2,14 +2,14 @@ import { StyleConfig } from '../../types';
 import { Tonality } from '../../types';
 import { StyleId } from '../StyleFlags';
 
-const DefaultStyle: StyleConfig = {
-    id: StyleId.Default,
-    name: 'Default',
-    // 🌟 PR #2: 启用双阶段 Viterbi 和声管线（影子骨架 → 骨架旋律 → Viterbi 选和弦）
-    // 跳过旧版 reharmonize，让 Viterbi 的 Top Voice + Common Tone 算法直接产出最终和弦。
+// 🌟 ACG 轻音乐 — 当前唯一注册风格（包含春日、史诗、落日的基因）
+const AcgStyle: StyleConfig = {
+    id: StyleId.AcgLightMusic,
+    name: '二次元轻音乐 (ACG Light Music)',
+    // Viterbi 双阶段和声管线（影子骨架 → 骨架旋律 → Viterbi 选和弦）
     useViterbiHarmony: true,
     global: {
-        bpmRange: [80, 120],
+        bpmRange: [80, 140],
         timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],
         tonalityPool: [
             { tonality: Tonality.Major, weight: 0.30 },
@@ -22,34 +22,19 @@ const DefaultStyle: StyleConfig = {
     },
     harmony: {
         chorusPool: [
-            ['I', 'V', 'vi', 'IV'],           // Pop 万能进行
-            ['vi', 'IV', 'I', 'V'],            // Axis 变体（Despacito 起手）
-            ['I', 'IV', 'vi', 'V'],            // Let It Be 型
-            ['I', 'vi', 'IV', 'V'],            // 50s 经典
-            ['IV', 'V', 'iii', 'vi'],          // J-Pop 王道（小室进行）
-            ['I', 'V', 'IV', 'V'],             // Rock anthem
-            ['vi', 'V', 'IV', 'V'],            // Minor dramatic
-            ['I', 'iii', 'IV', 'iv'],          // Creep 型（大→小四级借调）
-            ['I', 'bVII', 'IV', 'I'],          // Mixolydian vamp（Hey Jude 尾段）
-            ['I', 'V', 'vi', 'iii', 'IV'],     // Pachelbel Canon 5 和弦
+            ['IVmaj7', 'V', 'iii', 'vi'],                   // 王道进行
+            ['vi', 'IVmaj7', 'I', 'V'],                     // 小室进行
+            ['IVmaj7', 'III7', 'vi', 'I7'],                 // 丸谷进行
+            ['bVI', 'bVII', 'I', 'I']                       // 史诗进行
         ],
         versePool: [
-            ['I', 'IV', 'V', 'vi'],            // 标准叙事
-            ['I', 'vi', 'IV', 'V'],            // 50s doo-wop
-            ['vi', 'IV', 'I', 'V'],            // Minor 开头叙事
-            ['I', 'V', 'ii', 'IV'],            // Country/Folk
-            ['I', 'bVII', 'IV', 'I'],          // Mixolydian 放松
-            ['ii', 'IV', 'I', 'V'],            // Pre-funk groove
-            ['I', 'iii', 'vi', 'IV'],          // 下行三度链
-            ['vi', 'ii', 'V', 'I'],            // Minor-to-major 解决
+            ['I', 'V/VII', 'vi', 'I/V'],
+            ['IVmaj7', 'I', 'IVmaj7', 'I'],
+            ['vi', 'IV', 'I', 'V']
         ],
         preChorusPool: [
-            ['ii', 'V', 'IV', 'I'],            // 经典蓄力
-            ['IV', 'V', 'vi', 'I'],            // 上行推进
-            ['ii', 'V', 'I', 'vi'],            // 2-5-1 jazz touch
-            ['IV', 'iv', 'I', 'V'],            // 大小四级切换
-            ['vi', 'V', 'IV', 'V'],            // 半音下行低音
-            ['ii', 'iii', 'IV', 'V'],          // 阶梯上行
+            ['ii7', 'V7', 'iii', 'vi'],
+            ['IVmaj7', 'v', 'vi', 'I7']
         ],
     },
     harmonyRules: {
@@ -71,6 +56,44 @@ const DefaultStyle: StyleConfig = {
         swingRatio: 0.5,
         strictGrid: false,
         chordAnticipation: 0,
+        // 三档鼓型（按段落 energyLevel 分派）
+        // GM Drum Map: 36=Kick, 37=SideStick, 38=Snare, 42=ClosedHiHat, 46=OpenHiHat, 49=Crash
+        drumPatterns: [
+            // 低能段：仅 kick 主拍 + side stick 反拍（极简）
+            {
+                energyMin: 4, energyMax: 4,
+                fixedHits: [
+                    { pitch: 36, positions: [0],     velocity: 0.5, duration: 0.25 },
+                    { pitch: 37, positions: [1, 3],  velocity: 0.6, duration: 0.25 },
+                ],
+                densityHits: [],
+            },
+            // 中能段：kick 1/3 + snare 2/4 + closed hi-hat 8 分撒点 + 鬼音
+            {
+                energyMin: 5, energyMax: 7,
+                fixedHits: [
+                    { pitch: 36, positions: [0, 2],  velocity: 0.8, duration: 0.25 },
+                    { pitch: 38, positions: [1, 3],  velocity: 0.8, duration: 0.25 },
+                ],
+                densityHits: [
+                    { pitch: 42, positions: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], velocityRange: [0.5, 0.7], duration: 0.25 },
+                ],
+                ghost: { pitch: 38, positions: [0.75, 1.25, 2.75, 3.25], velocityRange: [0.3, 0.5], duration: 0.125, energyMin: 6, densityThreshold: 1.1, probability: 0.25 },
+            },
+            // 高能段：kick 1/3+2.5 切分 + snare 2/4 + open hi-hat + 段首 crash + 鬼音
+            {
+                energyMin: 8, energyMax: 10,
+                fixedHits: [
+                    { pitch: 36, positions: [0, 2, 2.5], velocity: 0.9, duration: 0.25 },
+                    { pitch: 38, positions: [1, 3],      velocity: 0.95, duration: 0.25 },
+                ],
+                densityHits: [
+                    { pitch: 46, positions: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], velocityRange: [0.6, 0.8], duration: 0.25 },
+                ],
+                ghost: { pitch: 38, positions: [0.75, 1.25, 2.75, 3.25], velocityRange: [0.3, 0.5], duration: 0.125, energyMin: 6, densityThreshold: 1.1, probability: 0.25 },
+                crashOnSectionStart: { pitch: 49, velocity: 0.95, duration: 1.0 },
+            },
+        ],
     },
     melody: {
         stepwiseRatio: 0.7,
@@ -78,13 +101,13 @@ const DefaultStyle: StyleConfig = {
         tensionTolerance: 0.5,
         mutationProbability: 0.3,
         mutationPool: ['inversion', 'retrograde'],
-        leapResolutionThreshold: 5,
+        leapResolutionThreshold: 4,
         breathingRoomProbability: 0.2,
         anchorProbability: 0.5,
         pentatonicPreference: 0.3,
         pentatonicShiftProbability: 0,
         chromaticPassingProbability: 0,
-        chromaticApproachProbability: 0.15,
+        chromaticApproachProbability: 0.3,        // 更多半音趋近
         passingToneChainProbability: 0.12,
         harmonicGravityStrength: 0.3,
         inflectionProbability: 0.15,
@@ -116,39 +139,25 @@ const DefaultStyle: StyleConfig = {
         chorusPitchOffset: 5,
     },
     orchestration: {
-        melodyInstruments: [
-            'Acoustic_Grand', 'Electric_Piano_1',
-            'Violin', 'Vibraphone', 'Music_Box',
-        ],
-        chordInstruments: [
-            'String_Ensemble', 'Pad_2_Warm', 'Acoustic_Guitar_Nylon',
-            'Electric_Piano_2', 'Synth_Strings_1',
-        ],
-        bassInstruments: [
-            'Acoustic_Bass', 'Electric_Bass_Finger', 'Synth_Bass_1',
-        ],
-        drumInstruments: [
-            'Standard_DrumKit',
-        ],
-        counterMelodyInstruments: [
-            'Pad_2_Warm', 'Choir_Aahs', 'Flute', 'Violin',
-            'Vibraphone', 'Marimba',
-        ],
+        allowDrumless: true,
+        allowBassless: true,
+        melodyInstruments: ['Acoustic_Grand'],
+        chordInstruments: ['Acoustic_Grand'],
+        bassInstruments: ['Acoustic_Bass', 'Synth_Bass_1'],
+        drumInstruments: ['Standard_DrumKit', 'Room_DrumKit'],
+        counterMelodyInstruments: [],
         texturePool: ['Block'],
-        counterMelodyProbability: 0.5,
+        counterMelodyProbability: 0.0,
         vocalProbability: 0,
         allowTradingFours: false,
-        // 🌟 增益级联重构：留出 headroom 防爆音
-        // CC7 天花板 115（不再 clamp 127），各声部留出动态余量
-        // 公式：baseVol = 80 × 10^(dB/20)，+3dB=100, 0dB=80, -3dB=57, -6dB=40
         mixingPreferences: {
-            vocal:           { pan: 0,    reverb: 0.43, volume: 3 },     // 100 — 主角但不爆
-            melody:          { pan: 0,    reverb: 0.43, volume: 0 },     // 80 — 适中，不抢不弱
-            secondaryMelody: { pan: 0.4,  reverb: 0.59, volume: -3, chorus: 40 },  // 57
-            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -4, chorus: 40 },  // 50
-            chord:           { pan: 0.7,  reverb: 0.8,  volume: -4, chorus: 80 },  // 50
-            drums:           { pan: 0,    reverb: 0.08, volume: 1 },     // 89
-            bass:            { pan: 0,    reverb: 0,    volume: -2 },    // 64
+            vocal:           { pan: 0,    reverb: 0.43, volume: 3 },
+            melody:          { pan: 0,    reverb: 0.43, volume: 0 },
+            secondaryMelody: { pan: 0.4,  reverb: 0.59, volume: -3, chorus: 40 },
+            counterMelody:   { pan: -0.4, reverb: 0.59, volume: -4, chorus: 40 },
+            chord:           { pan: 0.7,  reverb: 0.8,  volume: -4, chorus: 80 },
+            drums:           { pan: 0,    reverb: 0.08, volume: 1 },
+            bass:            { pan: 0,    reverb: 0,    volume: -2 },
         },
     },
     modulation: {
@@ -162,11 +171,11 @@ const DefaultStyle: StyleConfig = {
 };
 
 export const StyleRegistry: Record<number, StyleConfig> = {
-    [StyleId.Default]: DefaultStyle,
+    [StyleId.AcgLightMusic]: AcgStyle,
 };
 
 export function getStyleConfig(styleId: StyleId): StyleConfig {
-    return StyleRegistry[styleId] || DefaultStyle;
+    return StyleRegistry[styleId] || AcgStyle;
 }
 
 export function getAllAvailableStyles(): StyleConfig[] {

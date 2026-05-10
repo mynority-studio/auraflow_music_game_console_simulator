@@ -1,7 +1,7 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
-import { DefaultStyleConfig } from '../../core/generation/config/StyleRegistry';
+import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
@@ -131,13 +131,13 @@ export class EndlessRadioManager {
 
       // 🌟 新管道：Stage 1 在内部抽风格+情绪，EndlessRadioManager 只传 allowedStyleIds 约束
       const { runPipeline } = await import('../../core/generation/pipeline');
-      const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop];
+      const allStyleIds: StyleId[] = [StyleId.AcgLightMusic];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const rawTrack = runPipeline({ allowedStyleIds: pool });
 
-      const selectedStyleId = rawTrack.context.style?.id ?? StyleId.Default;
+      const selectedStyleId = rawTrack.context.style?.id ?? StyleId.AcgLightMusic;
       const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
-      const randomStyle = StyleRegistry[selectedStyleId] || DefaultStyleConfig;
+      const randomStyle = StyleRegistry[selectedStyleId] || AcgStyleConfig;
 
       if (comparisonMode) {
         console.log(buildComparisonLog({

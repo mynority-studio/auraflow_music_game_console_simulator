@@ -15,7 +15,7 @@ import { MoodId } from './config/MoodFlags';
 import { StyleId } from './config/StyleFlags';
 
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; }
+export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {
@@ -90,6 +90,58 @@ export interface MacroStructure {
     energyCurve: number[]; 
 }
 // -------------------------------------------------------
+
+// ============================================================
+// 鼓组数据契约 — GrooveEngine 数据驱动改造（#1）
+// ============================================================
+// 鼓型完全外置到 StyleConfig.rhythm.drumPatterns，GrooveEngine 退化为纯渲染器。
+// positions 是相对小节起点的拍位（4/4 下取 0~3.99，单位拍）；
+// 时值 / 力度 全部数据化，零硬编码。
+//
+// 三类击点：
+//   fixedHits     — 固定击点：每个 8 分网格上若 bInBar 命中 positions 必触发，无 PRNG。
+//   densityHits   — 概率击点：8 分网格上 PRNG<density 才触发，velocity 在 range 中抽。
+//   ghost         — 16 分鬼音：能量与密度双门槛 + 触发概率三层闸门，velocity 在 range 中抽。
+//   crashOnSectionStart — 段落首拍 crash：deterministic，无 PRNG。
+
+export interface DrumFixedHit {
+    pitch: number;            // GM Drum Map 物理键位
+    positions: number[];      // bInBar 触发位（4/4 拍下 [0,2] = 1 拍 + 3 拍）
+    velocity: number;         // 确定性力度
+    duration: number;         // 时长（拍）
+}
+
+export interface DrumDensityHit {
+    pitch: number;
+    positions: number[];      // 8 分网格触发位
+    velocityRange: [number, number];
+    duration: number;
+}
+
+export interface DrumGhostHit {
+    pitch: number;
+    positions: number[];      // 16 分缝隙位（[0.75, 1.25, 2.75, 3.25]）
+    velocityRange: [number, number];
+    duration: number;
+    energyMin: number;        // 能量门槛（不达不触发）
+    densityThreshold: number; // 密度门槛
+    probability: number;      // PRNG 触发概率
+}
+
+export interface DrumCrash {
+    pitch: number;
+    velocity: number;
+    duration: number;
+}
+
+export interface DrumPattern {
+    energyMin: number;        // 能量段（含）
+    energyMax: number;
+    fixedHits: DrumFixedHit[];
+    densityHits: DrumDensityHit[];
+    ghost?: DrumGhostHit;
+    crashOnSectionStart?: DrumCrash;
+}
 
 export interface DSPNodeConfig {
     type: BiquadFilterType; // 'highpass', 'lowpass', 'peaking', 'highshelf'
@@ -243,7 +295,7 @@ export interface StyleConfig {
         maxBorrowedChords?: number;            // 🌟 HC-5：全曲借调和弦上限（默认 2，作为"高光时刻"不滥用）
         extensionProbability?: number;         // 和弦扩展着色概率。0.4=Pop, 0.6=EDM, 0.8=JPop, 1.0=Jazz/Neo-Soul
     };
-    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; chordAnticipation?: number; };
+    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; chordAnticipation?: number; drumPatterns?: DrumPattern[]; };
     melody: { 
         stepwiseRatio: number; 
         maxJumpInterval: number; 
@@ -411,7 +463,7 @@ export interface MixingConfig {
 export interface EnsembleDraft {
     vocalSound?: string;
     melodySound: string;
-    secondaryMelodySound?: string;
+    secondaryMelodySound?: string | null;
     chordSound: string | null;
     bassSound: string | null;
     drumSound: string | null;
@@ -426,12 +478,92 @@ export interface EnsembleDraft {
         drums?: MixingConfig;
         counterMelody?: MixingConfig;
     };
+    roster?: BandRoster; // 🌟 虚拟乐队具体名单（每个槽位的乐手智能体）
 }
 
-export interface GeneratedTrack { 
-    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; bpm: number; key: string; 
+// --- 乐器语汇约束 (Instrument Idiom) ---
+// 抽离乐器的物理/演奏限制为纯数据，让生成引擎通过查表而非 if/switch 写死偏见。
+// 同一乐器在主奏(Lead)与伴奏(Comping)时演奏法完全不同，因此拆成两个子接口。
+//
+// LeadIdiom — 旋律层：呼吸换气 + 拟人化（力度抖动 / 踏板感连奏 / 倚音）
+//   驱动 ToplineEngine：管乐/人声 needsBreathing；钢琴 humanizeVelocity + legatoRatio + graceNoteProbability
+// CompingIdiom — 伴奏层：扫弦延迟 / 切分 pattern / Drop-2 开放排列
+//   驱动 TextureMapper 的 voicing 排列与切分律动。
+export interface LeadIdiom {
+    // 呼吸约束（管乐/人声）
+    needsBreathing: boolean;
+    breathPhraseLength?: number;
+    breathTriggerBeat?: number;
+    breathProbability?: number;
+    // 拟人化与演奏技法（钢琴/吉他）
+    humanizeVelocity?: number;     // 力度随机微调幅度（如 0.05 / 0.1）
+    legatoRatio?: number;          // 连奏延音比例，模拟踏板（>1 延长，<1 断开）
+    graceNoteProbability?: number; // 大跳时插入倚音（装饰音）的概率
+    octaveDoubling?: boolean;      // 允许主奏在重音/高能段开启下方八度叠置
+}
+
+export interface CompingIdiom {
+    strumDelay: number;
+    compingPatterns: number[][];   // Pattern 池：TextureMapper 按小节索引轮换，消除机械重复
+    arpeggioPatterns?: (number | null)[][]; // 支持带休止符(null)的琶音音型轨迹
+    compingDuration: number;
+    allowDrop2: boolean;
+    textureType?: 'block' | 'arpeggio' | 'mixed' | 'comping';
+    textureProbabilities?: { block: number, arpeggio: number, comping: number };
+}
+
+export interface InstrumentIdiom {
+    id: string;
+    lead: LeadIdiom;
+    comping: CompingIdiom;
+}
+
+// ============================================================
+// 🎸 虚拟乐队架构 (Virtual Band Architecture)
+// ============================================================
+// Lead 乐手的 genre 具有"全曲定调权"；其余 4 个槽位的乐手仅贡献个性微操。
+// PANGEA = 乐器物理底线（无曲风偏见），Musician = 乐器底线 + 擅长曲风 + 个人特质。
+// assembleActiveIdiom() 把基底 + 特质 deep merge 成最终图纸传给生成引擎。
+
+// 1. 乐队槽位 (5 个固定物理位置)
+export type BandSlot = 'Vocal' | 'Lead' | 'Comping' | 'Bass' | 'Drum';
+
+// 2. 个性化特质 (Personnel Traits) — 用于叠加和覆盖 Pangea 基底
+export interface PersonnelTraits {
+    leadOverrides?: Partial<LeadIdiom>;       // 作为主奏时的微操习惯
+    compingOverrides?: Partial<CompingIdiom>; // 作为伴奏时的微操习惯
+}
+
+// 3. 盘古乐器基底 (Pangea Instrument) — 定义物理底线
+export interface PangeaInstrument {
+    id: string;
+    baseLead: LeadIdiom;
+    baseComping: CompingIdiom;
+}
+
+// 4. 乐手智能体 (The Musician)
+export interface Musician {
+    id: string;                   // 如 "Alex_Pop_Keys"
+    name: string;                 // 显示名称
+    genre: StyleId;               // 擅长曲风（坐在 Lead 槽位时具有全曲定调权）
+    instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID
+    defaultSound: string;         // 默认挂载的 GM 音色名（如 'Acoustic_Grand'）
+    personnel: PersonnelTraits;   // 乐手的灵魂偏好
+}
+
+// 5. 乐队阵容名单 (Band Roster)
+export interface BandRoster {
+    lead: Musician;
+    comping: Musician;
+    vocal?: Musician | null;
+    bass?: Musician | null;
+    drum?: Musician | null;
+}
+
+export interface GeneratedTrack {
+    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; counterMelody?: NoteData[]; drums?: NoteData[]; bpm: number; key: string;
     keyOffset: number; tonality: Tonality; timeSignature: [number, number]; sections: SectionMetadata[];
-    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean; 
+    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean;
     preSelectedPalette?: EnsembleDraft;
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     processedUserMotif?: NoteData[];
@@ -537,9 +669,11 @@ export interface ArrangedTrack {
 // ============================================================
 
 // --- Tonality 数值枚举 ---
+// Harmonic_Minor / Phrygian：DarkSynth / Metal / Flamenco / Neoclassical 常用调式扩展。
 export enum Tonality {
     Major = 0, Minor = 1, Major_Pentatonic = 2, Minor_Pentatonic = 3,
-    Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8
+    Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8,
+    Harmonic_Minor = 9, Phrygian = 10
 }
 
 export const TonalityName: string[] = [];
@@ -552,6 +686,8 @@ TonalityName[Tonality.Dorian] = 'Dorian';
 TonalityName[Tonality.Mixolydian] = 'Mixolydian';
 TonalityName[Tonality.Melodic_Minor] = 'Melodic_Minor';
 TonalityName[Tonality.Lydian] = 'Lydian';
+TonalityName[Tonality.Harmonic_Minor] = 'Harmonic_Minor';
+TonalityName[Tonality.Phrygian] = 'Phrygian';
 
 /** 音阶音程查找表：SCALE_INTERVALS[tonality] → number[] (半音间隔) */
 export const SCALE_INTERVALS: number[][] = [];
@@ -564,6 +700,8 @@ SCALE_INTERVALS[Tonality.Dorian]           = [0, 2, 3, 5, 7, 9, 10];
 SCALE_INTERVALS[Tonality.Mixolydian]       = [0, 2, 4, 5, 7, 9, 10];
 SCALE_INTERVALS[Tonality.Melodic_Minor]    = [0, 2, 3, 5, 7, 9, 11];
 SCALE_INTERVALS[Tonality.Lydian]           = [0, 2, 4, 6, 7, 9, 11];
+SCALE_INTERVALS[Tonality.Harmonic_Minor]   = [0, 2, 3, 5, 7, 8, 11];
+SCALE_INTERVALS[Tonality.Phrygian]         = [0, 1, 3, 5, 7, 8, 10];
 
 // --- ChordQuality 数值枚举 ---
 export enum ChordQuality {

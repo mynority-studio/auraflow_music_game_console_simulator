@@ -1,6 +1,6 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
-import { DefaultStyleConfig } from '../../core/generation/config/StyleRegistry';
+import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
 import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from '../../core/generation/types';
@@ -148,7 +148,7 @@ export class JamSessionManager {
             const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality);
 
             // Style 随机选一个
-            const allStyleIds = [StyleId.Default, StyleId.DarkSynthPop, StyleId.LoFiChill];
+            const allStyleIds = [StyleId.AcgLightMusic];
             const randomStyleId = allStyleIds[Math.floor(PRNGManager.next() * allStyleIds.length)];
 
             const rawTrack = melodyEngine.generateFullSong(randomStyleId, {
@@ -159,7 +159,7 @@ export class JamSessionManager {
             });
 
             const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
-            const style = StyleRegistry[randomStyleId] || DefaultStyleConfig;
+            const style = StyleRegistry[randomStyleId] || AcgStyleConfig;
 
             if (currentGenId !== this.generationId) return;
 
