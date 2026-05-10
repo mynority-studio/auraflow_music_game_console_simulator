@@ -131,11 +131,11 @@ export class EndlessRadioManager {
 
       // 🌟 新管道：Stage 1 在内部抽风格+情绪，EndlessRadioManager 只传 allowedStyleIds 约束
       const { runPipeline } = await import('../../core/generation/pipeline');
-      const allStyleIds: StyleId[] = [StyleId.AcgLightMusic];
+      const allStyleIds: StyleId[] = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const rawTrack = runPipeline({ allowedStyleIds: pool });
 
-      const selectedStyleId = rawTrack.context.style?.id ?? StyleId.AcgLightMusic;
+      const selectedStyleId = rawTrack.context.style?.id ?? StyleId.ModernPop;
       const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
       const randomStyle = StyleRegistry[selectedStyleId] || AcgStyleConfig;
 

@@ -41,7 +41,7 @@ QUALITY_SUFFIX[ChordQuality.Minor11] = 'm11';
 QUALITY_SUFFIX[ChordQuality.Dominant13] = '13';
 
 // 复现 EndlessRadioManager 的 style 选择逻辑，让 seed 100% 复现 Radio 的任意歌曲
-const RADIO_STYLE_POOL: StyleId[] = [StyleId.AcgLightMusic];
+const RADIO_STYLE_POOL: StyleId[] = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
 
 type PlayState = 'IDLE' | 'GENERATING' | 'PLAYING';
 

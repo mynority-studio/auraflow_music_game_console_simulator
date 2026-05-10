@@ -3,13 +3,14 @@
 // ============================================================
 // Pitch Space: RELATIVE（chord.root 是 0~11，相对调式主音的半音偏移）
 //
-// 重构要点（vs 老版"一小节一换"）：
-//   1) 子小节解析：'vi,IV' → 两个时长各 2 拍的和弦平分一小节
-//      'i,bVII,VI,V' → 四个时长各 1 拍的和弦平分一小节
-//   2) 抢拍 (Anticipation)：高能段（energyLevel >= 6）非段首和弦
-//      30% 概率提前 0.5 拍切入（八分音符切分），并修正前一和弦的 endBeat
-//      让节拍咬合无缝（不能让前一和弦短到 < 0.5 拍，否则撤销抢拍）
-//   3) 段落 → pool 映射：Chorus → chorusPool / PreChorus → preChorusPool / 其它 → versePool
+// 风格池查找（参考架构 StyleHarmonyConfig 双模式形状）：
+//   - 按 tonality 选 style.harmony.major / minor 池
+//   - 按 sec.name.toLowerCase() 索引段落池（'verse'/'chorus'/'preChorus'/'bridge'/'intro'/'outro'）
+//   - 段落键缺失 → 兜底 'verse' → 'chorus' → 池内任意第一组
+//
+// 子小节解析：'vi,IV' → 两个时长各 2 拍的和弦平分一小节
+// 抢拍：高能段 (energyLevel ≥ 6) 非段首和弦按 style.anticipationProb（兜底 0.3）触发
+//       前一和弦残留时长 ≥ 0.5 拍方可触发，否则撤销
 //
 // PRNG 消耗（按和弦推进）：
 //   - 每段开头：×1（pool 内选进行）
@@ -21,11 +22,44 @@ import { PRNGManager } from '../../utils/PRNG';
 import { MusicTheory } from '../theory/MusicTheory';
 
 const BEAT_EPS = 0.001;
-const ANTICIPATION_BEAT = 0.5;        // 八分音符切分提前量
-const ANTICIPATION_PROB = 0.30;       // 高能段触发抢拍的概率
-const HIGH_ENERGY_THRESHOLD = 6;      // 启用抢拍的能量阈值
-const MIN_PREV_CHORD_AFTER_ANTICIPATE = 0.5;  // 抢拍后前一和弦最短残留时长（避免 1/16 碎片）
+const ANTICIPATION_BEAT = 0.5;
+const DEFAULT_ANTICIPATION_PROB = 0.30;
+const HIGH_ENERGY_THRESHOLD = 6;
+const MIN_PREV_CHORD_AFTER_ANTICIPATE = 0.5;
 const DEFAULT_TIME_SIGNATURE: [number, number] = [4, 4];
+
+function isMinorTonality(t: Tonality): boolean {
+    return t === Tonality.Minor
+        || t === Tonality.Minor_Pentatonic
+        || t === Tonality.Melodic_Minor
+        || t === Tonality.Harmonic_Minor
+        || t === Tonality.Phrygian
+        || t === Tonality.Dorian
+        || t === Tonality.Blues;
+}
+
+const SECTION_KEY_MAP: Record<string, string> = {
+    intro: 'intro',
+    verse: 'verse',
+    prechorus: 'preChorus',
+    chorus: 'chorus',
+    bridge: 'bridge',
+    outro: 'outro',
+};
+
+function pickProgressionPool(style: StyleConfig, tonality: Tonality, sectionName: string): string[][] {
+    const modeKey = isMinorTonality(tonality) ? 'minor' : 'major';
+    const pools = style.harmony[modeKey];
+    const lookup = SECTION_KEY_MAP[sectionName.toLowerCase()] ?? 'verse';
+    if (pools[lookup] && pools[lookup].length > 0) return pools[lookup];
+    if (pools['verse'] && pools['verse'].length > 0) return pools['verse'];
+    if (pools['chorus'] && pools['chorus'].length > 0) return pools['chorus'];
+    // 终极兜底：返回任一非空池
+    for (const k of Object.keys(pools)) {
+        if (pools[k] && pools[k].length > 0) return pools[k];
+    }
+    return [['I', 'IV', 'V', 'I']];
+}
 
 export class HarmonyCore {
     public static generateHarmonyTimeline(
@@ -40,14 +74,15 @@ export class HarmonyCore {
         // 拍号驱动的每小节拍数：4/4=4, 3/4=3, 6/8=3, 12/8=6
         const barBeats = (timeSignature[0] * 4) / timeSignature[1];
 
+        const anticipationProb = style.anticipationProb ?? DEFAULT_ANTICIPATION_PROB;
+
         for (let s = 0; s < sections.length; s++) {
             const sec = sections[s];
 
-            let pool = style.harmony.versePool;
-            if (sec.name === 'Chorus') pool = style.harmony.chorusPool;
-            else if (sec.name === 'PreChorus') pool = style.harmony.preChorusPool;
-
-            const progStr = pool[PRNGManager.nextInt(0, pool.length - 1)];
+            const pool = pickProgressionPool(style, tonality, sec.name);
+            const progArr = pool[PRNGManager.nextInt(0, pool.length - 1)];
+            // 池里每条进行可能是 string[]（标准）或 string（罕见兜底）
+            const progStr: string[] = Array.isArray(progArr) ? progArr : [progArr as unknown as string];
             const isHighEnergy = sec.energyLevel >= HIGH_ENERGY_THRESHOLD;
 
             let b = sec.startBeat;
@@ -69,9 +104,9 @@ export class HarmonyCore {
                     if (endBeat > sec.endBeat) endBeat = sec.endBeat;
                     let startBeat = b;
 
-                    // ★ 抢拍：高能段 + 非段首 + 30% 概率
+                    // ★ 抢拍：高能段 + 非段首 + style.anticipationProb 概率
                     if (isHighEnergy && !isFirstChordInSection) {
-                        if (PRNGManager.nextFloat(0, 1) < ANTICIPATION_PROB) {
+                        if (PRNGManager.nextFloat(0, 1) < anticipationProb) {
                             const candidateStart = b - ANTICIPATION_BEAT;
                             // 安全闸门：抢拍后前一和弦残留时长必须 >= 0.5 拍
                             if (chords.length > 0) {

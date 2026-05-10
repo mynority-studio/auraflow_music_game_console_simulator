@@ -7,5 +7,6 @@ export { StyleRegistry, getAllAvailableStyles, getStyleConfig } from './styles/S
 import { getStyleConfig } from './styles/StyleRegistry';
 import { StyleId } from './StyleFlags';
 
-// 当前唯一注册风格，作为缺省/兜底配置
-export const AcgStyleConfig = getStyleConfig(StyleId.AcgLightMusic);
+// 兜底兼容：apps 层仍有少量 fallback 引用（`StyleRegistry[id] || AcgStyleConfig`）。
+// 移植后 ACG 已删除，兜底默认到 ModernPop。
+export const AcgStyleConfig = getStyleConfig(StyleId.ModernPop);

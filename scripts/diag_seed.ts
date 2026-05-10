@@ -14,7 +14,7 @@ PRNGManager.setSeed(SEED);
 PRNGManager.next();  // 模拟 App 层 step 1 的 ×1 PRNG 消耗
 
 const { track, context } = runPipeline();
-const arranged = Orchestrator.arrange(track, StyleId.AcgLightMusic, context);
+const arranged = Orchestrator.arrange(track, context.style?.id ?? StyleId.ModernPop, context);
 
 const keyOffset = track.keyOffset;
 const tonality = track.tonality;

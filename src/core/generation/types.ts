@@ -139,6 +139,19 @@ export interface StructureTemplate {
 
 export interface StyleConfig {
     id: StyleId; name: string; description?: string;
+    // ============================================================
+    // 参考架构字段（ALL_SOURCE_CODE.md 移植）— 给 Idiom 引擎消费
+    // ============================================================
+    /** 七和弦扩展上限：9=Pop / 11=ChillJazz / 13=NeoSoul（IdiomUtils 用 degree>tensionLimits 剔除） */
+    tensionLimits?: number;
+    /** 全曲基准密度：0.4=ChillJazz / 0.5=NeoSoul / 0.6=Pop（PianoBaseIdiom 消费） */
+    densityBaseline?: number;
+    /** 经过和弦注入概率：0.2=Pop / 0.5=ChillJazz / 0.6=NeoSoul */
+    passingChordProb?: number;
+    /** 抢拍/推拍概率：0.3=Pop / 0.6=ChillJazz / 0.7=NeoSoul */
+    anticipationProb?: number;
+    /** Swing 比例：未设=直拍 / 0.55=ChillJazz 微 swing / 0.6=NeoSoul 中 swing */
+    swingRatio?: number;
     global: {
         bpmRange: [number, number];
         timeSignaturePool: Array<{ signature:[number, number], weight: number }>;
@@ -151,7 +164,15 @@ export interface StyleConfig {
         introBarsBpmThreshold?: number; // 慢/快曲分界 BPM，默认 90
         outroBars?: number;             // 尾奏小节数，默认 4
     };
-    harmony: { chorusPool: ChordProgression[]; versePool: ChordProgression[]; preChorusPool: ChordProgression[]; };
+    /**
+     * 罗马数字进行池（双模式 × 段落键），参考架构 StyleHarmonyConfig 形状。
+     * 段落键使用小写：'intro'/'verse'/'preChorus'/'chorus'/'bridge'/'outro'。
+     * HarmonyCore 按 tonality 选 major/minor 池，按 sec.name.toLowerCase() 查段落。
+     */
+    harmony: {
+        major: Record<string, string[][]>;
+        minor: Record<string, string[][]>;
+    };
     harmonyRules?: {
         maxDissonanceTolerance?: number;
         passingChords?: Array<'SecondaryDominant' | 'Diminished7' | 'TritoneSub' | 'Chromatic' | 'DescendingDiminished' | 'SharpFourHalfDim'>;
@@ -168,13 +189,13 @@ export interface StyleConfig {
         maxBorrowedChords?: number;            // 🌟 HC-5：全曲借调和弦上限（默认 2，作为"高光时刻"不滥用）
         extensionProbability?: number;         // 和弦扩展着色概率。0.4=Pop, 0.6=EDM, 0.8=JPop, 1.0=Jazz/Neo-Soul
     };
-    rhythm: { densityBase: [number, number]; syncopationWeight: number; restProbability: number; disruptionProbability: number; humanize: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; chordAnticipation?: number; drumPatterns?: DrumPattern[]; };
-    melody: { 
-        stepwiseRatio: number; 
-        maxJumpInterval: number; 
-        tensionTolerance: number; 
-        mutationProbability: number; 
-        mutationPool: Array<'inversion' | 'augmentation' | 'truncation' | 'retrograde' | 'diminution'>; 
+    rhythm: { densityBase?: [number, number]; syncopationWeight?: number; restProbability?: number; disruptionProbability?: number; humanize?: number; swingRatio?: number; swingSubdivision?: 0.5 | 0.25; strictGrid?: boolean; grooveTemplate?: RhythmCell[]; approachNoteProb?: number; grooveBankPool?: GrooveBankDef[]; chordAnticipation?: number; drumPatterns?: DrumPattern[]; };
+    melody?: {
+        stepwiseRatio?: number;
+        maxJumpInterval?: number;
+        tensionTolerance?: number;
+        mutationProbability?: number;
+        mutationPool?: Array<'inversion' | 'augmentation' | 'truncation' | 'retrograde' | 'diminution'>;
         pentatonicPreference?: number;
         extensionPreference?: number;
         chromaticPassingProbability?: number;
@@ -210,15 +231,15 @@ export interface StyleConfig {
         sequenceFreezeRhythm?: boolean;   // vary/resolve 变奏时冻结节奏DNA仅做音程模进
         chordMelodyProbability?: number;  // ChordMelody 织体触发概率。0=不使用，0.7=Lo-fi/Neo-Soul
     };
-    contrast: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
-    modulation: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
-    orchestration: { 
-        melodyInstruments: string[]; 
-        chordInstruments: string[]; 
+    contrast?: { versePitchOffset: number; verseDensityMultiplier: number; chorusPitchOffset?: number; };
+    modulation?: { probability: number; targetSection: 'Ending_Verse' | 'Final_Chorus' | 'Chorus'; intervalPool: number[]; };
+    orchestration: {
+        melodyInstruments: string[];
+        chordInstruments: string[];
         bassInstruments: string[];
         drumInstruments: string[];
         counterMelodyInstruments: string[];
-        texturePool: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass' | 'String_Ostinato' | 'Water_Arpeggio' | 'ChordMelody'>;
+        texturePool?: Array<'Block' | 'Arpeggio' | 'Pulsing' | 'WalkingBass' | 'Guitar_Strum' | 'Rhythmic' | 'Pad' | 'Riff' | 'Octave_Melody_Bass' | 'String_Ostinato' | 'Water_Arpeggio' | 'ChordMelody'>;
         drumProbability?: number; // 🌟 新增：鼓组出场率，彻底解耦
         counterMelodyProbability?: number; // 副旋律出场率
         fillStyle?: 'micro' | 'standard' | 'heavy' | 'electronic'; // 🌟 新增：加花风格
@@ -257,7 +278,7 @@ export interface StyleConfig {
             secondaryMelody?: InstrumentBehavior;
         };
     };
-    performance: { allowedPersonas: string[]; };
+    performance?: { allowedPersonas: string[]; };
     masteringProfileId?: string;
 }
 
@@ -369,14 +390,21 @@ export interface PangeaInstrument {
     baseComping: CompingIdiom;
 }
 
-// 4. 乐手智能体 (The Musician)
+// 4. 乐手智能体 (The Musician) — 参考架构移植：等价于 MusicianProfile 的精简表示
+//    用于 BandRoster / EnsembleDraft.roster；MUSICIAN_POOL 中数据兼容 Profile 形状。
 export interface Musician {
-    id: string;                   // 如 "Alex_Pop_Keys"
+    id: string;                   // 如 'accomp_alex_pop'
     name: string;                 // 显示名称
-    genre: StyleId;               // 擅长曲风（坐在 Lead 槽位时具有全曲定调权）
-    instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID
+    genre: StyleId;               // 擅长曲风（坐在 Lead 槽位时具有全曲定调权）= styleId
+    instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID（旧字段，过渡期保留）
     defaultSound: string;         // 默认挂载的 GM 音色名（如 'Acoustic_Grand'）
-    personnel: PersonnelTraits;   // 乐手的灵魂偏好
+    personnel: PersonnelTraits;   // 旧形状：作主奏/伴奏时的微操偏好（驱动 TextureMapper）
+
+    // 🌟 参考架构 Persona 字段（驱动未来 Idiom 引擎）
+    role: RoleType;
+    instrumentId: number;         // InstrumentRegistry key (0=GrandPiano / 1=EPiano / 2=EBass / 3=Drums)
+    persona: MusicianPersona;
+    description?: string;
 }
 
 // 5. 乐队阵容名单 (Band Roster)
@@ -564,3 +592,159 @@ export const SectionTypeName: Record<SectionType, string> = {
     [SectionType.PreOutro]: 'PreOutro',
     [SectionType.Solo_Bridge]: 'Solo_Bridge',
 };
+
+// ============================================================
+// 🎸 参考架构移植：Persona / Idiom / 演奏数据契约（ALL_SOURCE_CODE.md）
+// ============================================================
+// 与现有 Pangea+Personnel（Musician/InstrumentIdiom/LeadIdiom/CompingIdiom）并存：
+//   - 新形状（MusicianProfile + Persona）专供 Idiom 引擎（Phase 3 移植后）消费
+//   - 旧形状（Musician + Personnel）继续给 TextureMapper 提供 chordIdiom 兼容
+//   - assembleActiveIdiom() 同时认两种入参（等 Phase 3 后切换）
+// ============================================================
+
+/** Persona 演奏轮廓偏好 */
+export enum ContourType {
+    Upward = 0,
+    Downward = 1,
+    Alternating = 2,
+    Random = 3,
+}
+
+/** Bass 左手角色（PianoMotifDNA 消费） */
+export enum LHRole {
+    Anchor = 0,
+    Stride = 1,
+    Comp = 2,
+    Arp = 3,
+    Walking = 4,
+}
+
+/** Comping 右手角色（PianoMotifDNA 消费） */
+export enum RHRole {
+    Block = 0,
+    Arp = 1,
+    Linear = 2,
+    Sparse = 3,
+    Comp = 4,
+}
+
+/** 段落收尾策略（Orchestrator 后处理） */
+export enum OutroStrategy {
+    FadeOut = 0,
+    Ritardando = 1,
+    SuddenStop = 2,
+    MotifDecay = 3,
+    Unresolved = 4,
+}
+
+/** 乐手槽位（参考 RoleType） */
+export enum RoleType {
+    Vocal = 'vocal',
+    MainInst = 'mainInst',
+    AccompInst = 'accompInst',
+    Bass = 'bass',
+    Drums = 'drums',
+}
+
+/** 音乐角色（GlobalVoicer 用，决定每个 pitch class 在和弦内的功能） */
+export enum MusicalRole {
+    Lead = 'lead',
+    Accomp = 'accomp',
+    Bass = 'bass',
+    Percussion = 'percussion',
+    CounterMelody = 'counterMelody',
+}
+
+/** Idiom 类型（IdiomDispatcher 路由 key） */
+export enum IdiomType {
+    PopPiano = 0,
+    GenericPiano = 4,
+}
+
+/** 乐器物理参数 + 能力声明（参考 InstrumentConfig） */
+export interface InstrumentConfig {
+    id: number;
+    name: string;
+    minPitch: number;
+    maxPitch: number;
+    maxPolyphony: number;
+    /** 反浑浊阈值：低于此 pitch 的多音和弦需要 fold 八度 */
+    antiMudThreshold: number;
+    supportsPitchBend: boolean;
+    supportsSlide: boolean;
+    isMonophonic: boolean;
+    capabilities: MusicalRole[];
+}
+
+/** Persona 灵魂卡牌（演奏微操偏好） */
+export interface MusicianPersona {
+    /** 色彩倾向：0=只用三和弦 / 0.9=狂用 9/11/13 扩展 */
+    colorBias: number;
+    /** 稀疏倾向：0=密集弹满 / 0.8=只点关键拍位 */
+    sparsityTendency: number;
+    /** 旋律轮廓偏好（向上/向下/交替/随机） */
+    contourPreference: ContourType;
+    /** 切分攻击性：0=正拍 / 1=完全反拍 */
+    syncopationAssault: number;
+    /** 力度区间 [min, max]（0~127） */
+    dynamicRange: [number, number];
+    /** 触发签名乐句的概率 */
+    signatureLickProb?: number;
+    /** 自定义乐句池（覆盖 LickDictionary 默认） */
+    lickPool?: unknown[];
+}
+
+/** 乐手 Profile（移植自参考 MusicianProfile） */
+export interface MusicianProfile {
+    id: string;
+    name: string;
+    role: RoleType;
+    styleId: StyleId;
+    instrumentId: number;
+    persona: MusicianPersona;
+    description: string;
+}
+
+/** 运行时招募的乐手（精简 Profile） */
+export interface BandMusician {
+    id: string;
+    role: RoleType;
+    styleId: StyleId;
+    instrumentId: number;
+    persona: MusicianPersona;
+}
+
+/** 钢琴动机 DNA（BaseAccompIdiom 消费） */
+export interface PianoMotifDNA {
+    voicingPreference: number;   // 0~1
+    rhythmicAnchor: number;      // 0~1
+    contour: ContourType;
+    densityBaseline: number;     // 0~1
+    lhRole: LHRole;
+    rhRole: RHRole;
+    interlock: number;           // 0~1
+}
+
+/** 律动 DNA（参考 GrooveDNA 接口；与本工程现存 SectionMetadata.grooveDNA: number[] 同名不同形）*/
+export interface RefGrooveDNA {
+    anchors: number[];
+    density: number;
+    intensity: number;
+    pianoMotifDNA?: PianoMotifDNA;
+}
+
+/** GlobalVoicer 输出：每个和弦的"音功能分配" */
+export interface ToneAllocation {
+    pitchClass: number;     // 0~11
+    role: MusicalRole;
+    isEssential: boolean;
+    isTension: boolean;
+}
+
+export interface GlobalHarmonicFrame {
+    startBeat: number;
+    endBeat: number;
+    chord: GeneratedChord;
+    toneAllocations: ToneAllocation[];
+    pitchScale: number[];
+}
