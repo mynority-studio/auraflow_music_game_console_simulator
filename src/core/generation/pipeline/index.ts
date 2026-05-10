@@ -34,11 +34,15 @@ import { HarmonyCore } from '../harmony/HarmonyCore';
 import { ToplineEngine } from '../melody/ToplineEngine';
 import { GrooveEngine } from '../composing/GrooveEngine';
 import { StructureEngine } from '../composing/StructureEngine';
-import { assembleActiveIdiom, getRandomLeadMusician, getRandomMusicianByPangea } from '../idioms/MusicianRegistry';
+import { assembleActiveIdiom, getRandomLeadMusician, getRandomMusicianByPangea, getMusicianById } from '../idioms/MusicianRegistry';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
     forcedStyleId?: StyleId;
+    /** PipelineMonitor BandSelection 面板：用户手动选定 Lead 乐手 ID（Lead 决定全曲风格） */
+    forcedLeadId?: string;
+    /** 用户手动选定 Comping 乐手 ID（不设则按"主奏不同 Pangea 基底"策略抽） */
+    forcedCompingId?: string;
     generation?: GenerationOptions;
 }
 
@@ -48,9 +52,13 @@ export function runPipeline(options: PipelineRunOptions = {}): { track: Generate
     PRNGManager.recordSnapshot('B');
 
     // 🌟 1. 首发主奏（Lead Dictates Global）
+    //    优先级：forcedLeadId > forcedStyleId 约束下抽 > allowedStyleIds 约束下抽 > 全池抽
     let allowedStyles = options.allowedStyleIds;
     if (options.forcedStyleId) allowedStyles = [options.forcedStyleId];
-    const leadMusician = getRandomLeadMusician(allowedStyles, PRNGManager);
+    let leadMusician = options.forcedLeadId ? getMusicianById(options.forcedLeadId) : undefined;
+    if (!leadMusician) {
+        leadMusician = getRandomLeadMusician(allowedStyles, PRNGManager);
+    }
 
     const styleId = leadMusician.genre;
     const style = getStyleConfig(styleId);
@@ -99,12 +107,16 @@ export function runPipeline(options: PipelineRunOptions = {}): { track: Generate
     const noDrums = orch.allowDrumless && PRNGManager.nextFloat(0, 1) < 0.3;
     const noBass = noDrums && orch.allowBassless && PRNGManager.nextFloat(0, 1) < 0.8;
 
-    let compingMusician = getRandomMusicianByPangea('Base', PRNGManager);
-    if (!noBass && leadMusician.id === compingMusician.id) {
-        let attempts = 0;
-        while (leadMusician.id === compingMusician.id && attempts < 5) {
-            compingMusician = getRandomMusicianByPangea('Base', PRNGManager);
-            attempts++;
+    // forcedCompingId > 自动抽（尽量错开主奏 Pangea 基底）
+    let compingMusician = options.forcedCompingId ? getMusicianById(options.forcedCompingId) : undefined;
+    if (!compingMusician) {
+        compingMusician = getRandomMusicianByPangea('Base', PRNGManager);
+        if (!noBass && leadMusician.id === compingMusician.id) {
+            let attempts = 0;
+            while (leadMusician.id === compingMusician.id && attempts < 5) {
+                compingMusician = getRandomMusicianByPangea('Base', PRNGManager);
+                attempts++;
+            }
         }
     }
 

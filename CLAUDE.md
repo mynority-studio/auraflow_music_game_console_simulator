@@ -88,35 +88,51 @@ GeneratedTrack + StyleId + MusicContext
 | `AudioEngine` | `core/audio/AudioEngine.ts` | SpessaSynth 生命周期与播放编排（接收 GeneratedTrack + StyleId） |
 | `GlobalContext` | `core/generation/GlobalContext.ts` | 平台层使用（audio/apps）；生成管道内部已脱钩（S-2），仅 MelodyEngine 入口写入 |
 
-### 风格系统
+### 风格系统（2026-05 参考架构移植版）
 
-使用 `StyleId` + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/styles/StyleRegistry.ts`）映射 StyleId → StyleConfig。
+使用 `StyleId` 数值枚举 + `StyleConfig`（`config/StyleFlags.ts`），`StyleRegistry`（`config/styles/StyleRegistry.ts`）映射 StyleId → StyleConfig。3 个风格全部按 `docs/ALL_SOURCE_CODE.md` 参考架构移植：
 
-`StyleId` 枚举声明 3 种风格 + 兼容别名：`ModernPop=0`（别名 `Default`）、`Synthwave=9`（别名 `DarkSynthPop`）、`LofiChill=17`（别名 `LoFiChill`）。但 **StyleRegistry 当前仅注册 1 个实际配置**（`DefaultStyle` 绑定到 `StyleId.Default`），其余两个 enum 是占位待实现 — 未注册风格回退到 DefaultStyle：
+| StyleId | 显示名 | BPM | tensionLimits | densityBaseline | passingChordProb | anticipationProb | swingRatio |
+|---|---|---|---|---|---|---|---|
+| ModernPop (0) | Modern Pop | 88-128 | 9 | 0.6 | 0.2 | 0.3 | — |
+| ChillJazz (1) | Chill Jazz | 70-105 | 11 | 0.4 | 0.5 | 0.6 | 0.55 |
+| NeoSoul (2) | Neo-Soul | 78-100 | 13 | 0.5 | 0.6 | 0.7 | 0.6 |
 
-| StyleId | 显示名 | 状态 | BPM | 关键特征 |
-|---------|--------|------|-----|---------|
-| ModernPop / Default (0) | 现代华语流行 | ✓ 已注册 | 80-120 | 多调式池（Major/Minor/Dorian/Mixolydian/五声音阶），Pop 万能进行 10 种 chorus 模板（I-V-vi-IV / 小室进行 / Axis / 50s / Mixolydian vamp 等），含 chromatic passing、anchor probability、breathing room、Viterbi 双阶段和声 |
-| Synthwave / DarkSynthPop (9) | 合成器浪潮 | ⚠️ enum 占位 | — | 配置待实现，回退 DefaultStyle |
-| LofiChill / LoFiChill (17) | 放松低保真 | ⚠️ enum 占位 | — | 配置待实现，回退 DefaultStyle |
+每个风格的 `harmony.major / minor` 池按段落键（`'intro'/'verse'/'preChorus'/'chorus'/'bridge'/'outro'`）分组，HarmonyCore 按 tonality 选模、按 sec.name 查段。Pop / NeoSoul 共用 `DefaultHarmony`，ChillJazz 走专属 `ChillJazzHarmony`（重 ii7-V7-Imaj7 进行 + VImaj7 借调）。
 
-EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格（落到未注册 ID 时回退）。
+EndlessRadioManager 每次生成时从 bar 绑定的 `styleIds` 池中 PRNG 随机选择风格。
 
-### Mood 系统
+### Persona 系统（参考架构 4 乐手卡牌池）
 
-6 种情绪通过 `MoodRegistry`（`config/MoodFlags.ts`）定义，影响 BPM 乘数、能量上限、旋律/伴奏独立密度、切分概率、呼吸空间、力度/时值后处理。旋律和伴奏密度已解耦（`melodyDensityMultiplier` / `accompanimentDensityMultiplier`）。
+| Persona | RoleType | StyleId | InstrumentId | 核心特征 |
+|---|---|---|---|---|
+| Alex (Pop Piano) | AccompInst | ModernPop | 0 (GrandPiano) | colorBias=0.4 / sparsity=0.5 / sync=0.3 — 标准流行 |
+| Dave (Steady Pop) | Drums | ModernPop | 3 (DrumKit) | sparsity=0.6 / sync=0.2 — 干净直拍 |
+| Marcus (Neo-Soul Keys) | AccompInst | NeoSoul | 1 (EPiano) | colorBias=0.9 / sparsity=0.8 / sync=0.9 — 极稀疏重切分 |
+| Nina (Chill Jazz Piano) | AccompInst | ChillJazz | 0 (GrandPiano) | colorBias=0.8 / sparsity=0.65 / dynamic=[30,75] — 轻触爵士 |
+
+`MusicianPersona` 字段：`colorBias / sparsityTendency / contourPreference / syncopationAssault / dynamicRange / signatureLickProb`。
+`MusicianRegistry.assembleActiveIdiom()` 从 Persona 派生 LeadIdiom + CompingIdiom（驱动当前 TextureMapper 兼容层）；Phase 3 BaseAccompIdiom 移植后将直接消费 Persona。
+
+`InstrumentRegistry`（`idioms/InstrumentRegistry.ts`）含 4 个 InstrumentConfig（GrandPiano/EPiano/EBass/DrumKit），每个声明 `minPitch/maxPitch/maxPolyphony/antiMudThreshold/capabilities`，Phase 3 Idiom 引擎按 capability 派发角色。
+
+### Q+H 调试面板（PipelineMonitor）
+
+按 Q+H 唤出。集成功能：
+- Seed Lab：手动种子输入 / Play / Stop / Random
+- **BandSelection**：5 个 RoleType 下拉（Vocal/MainInst/AccompInst/Bass/Drums），可手选乐手强制 forcedLeadId / forcedCompingId 注入 runPipeline；不选则 PRNG 抽随机
+- Stage 01 Meta（BPM/Key/Tonality/StyleName）+ Stage 02 Harmony（窗口和弦）
+- Stage 03 Structure（段落能量条）+ Stage 04 Ensemble（乐手花名册 + 乐器音色 + 单轨 Mute）
 
 ### 已完成的架构改进
 
 - 数值枚举 + 查找表（Tonality、ChordQuality、SectionType、InstrumentFlags）
-- 全管道浮点 epsilon 比较、Map/Set → 数组、tonality string → 枚举
+- 全管道浮点 epsilon 比较、Map/Set → 数组
 - 生成管道内部零 GlobalContext 读取（S-2 合规）
-- 总混音温暖化（LPF 12kHz、Low Shelf +1.5dB、High Shelf -1.5dB）
-- 段落级力度曲线（弱起→正弦波动→渐强/弱收尾）
-- 乐器特征后处理（管乐单声部、弦乐换弓、同音高重叠防护）
-- 鼓组 Mood 驱动技巧预算 + 鼓声调色板
-- 贝斯能量分层 + 趋近音
-- 副旋律三模式交互（Parallel Harmony / Call-and-Response / Pad）
+- Pitch Space 契约（K-1~K-7）：Orchestrator.applyOffset 是相对→绝对的唯一转换点
+- HarmonyCore 子小节解析（'vi,IV' → 半小节切分）+ 高能段抢拍
+- ToplineEngine 16 分 grooveDNA 加权抽样（节奏跟鼓共振）
+- Bass 物理音域 fold（[28,43] E1~G2）保 ESP32 端 GM bass 不跑超
 
 ## 关键开发规则
 

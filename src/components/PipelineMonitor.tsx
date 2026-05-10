@@ -6,6 +6,7 @@ import { PartName } from '../core/audio/PlaybackEngine';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
 import { PRNGManager } from '../core/utils/PRNG';
 import { MelodyEngine } from '../core/generation/MelodyEngine';
+import { runPipeline } from '../core/generation/pipeline';
 import {
     ArrangedTrack,
     GeneratedChord,
@@ -15,8 +16,11 @@ import {
     Tonality,
     InstrumentRole,
     ChordQuality,
+    RoleType,
+    Musician,
 } from '../core/generation/types';
 import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
+import { MUSICIAN_POOL, getMusiciansByRole } from '../core/generation/idioms/MusicianRegistry';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -81,6 +85,17 @@ interface FrameSnapshot {
     seed: number;
 }
 
+// 5 个 RoleType 槽位顺序（Q+H BandSelection 面板按此顺序渲染）
+const BAND_SLOT_ORDER: { role: RoleType; label: string }[] = [
+    { role: RoleType.Vocal,      label: 'Vocal' },
+    { role: RoleType.MainInst,   label: 'Main Inst' },
+    { role: RoleType.AccompInst, label: 'Accomp (Lead)' },
+    { role: RoleType.Bass,       label: 'Bass' },
+    { role: RoleType.Drums,      label: 'Drums' },
+];
+
+type BandSelection = Partial<Record<RoleType, string | null>>;
+
 export const PipelineMonitor: React.FC = () => {
     const [isVisible, setIsVisible] = useState(true);
     const [frame, setFrame] = useState<FrameSnapshot>({
@@ -90,11 +105,14 @@ export const PipelineMonitor: React.FC = () => {
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
+    const [bandSelection, setBandSelection] = useState<BandSelection>({});
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
     playStateRef.current = playState;
     const activeSeedRef = useRef<number | null>(null);
+    const bandSelectionRef = useRef<BandSelection>({});
+    bandSelectionRef.current = bandSelection;
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -165,15 +183,31 @@ export const PipelineMonitor: React.FC = () => {
         // 复现 EndlessRadioManager.triggerGeneration 的 PRNG 消耗顺序
         PRNGManager.setSeed(seed);
         PRNGManager.recordSnapshot('A');
-        const styleId = RADIO_STYLE_POOL[Math.floor(PRNGManager.next() * RADIO_STYLE_POOL.length)];
+        // 当用户在 BandSelection 选定 AccompInst 时，跳过这次 PRNG 消耗（forcedLeadId 直接定调）；
+        // 否则消耗 1 次维持与 Radio 路径的种子对齐
+        const sel = bandSelectionRef.current;
+        const forcedLeadId = sel[RoleType.AccompInst] ?? sel[RoleType.MainInst] ?? undefined;
+        const forcedCompingId = sel[RoleType.Bass] ?? undefined;
+        let styleId: StyleId;
+        if (!forcedLeadId) {
+            styleId = RADIO_STYLE_POOL[Math.floor(PRNGManager.next() * RADIO_STYLE_POOL.length)];
+        } else {
+            // forcedLeadId 路径不走 RADIO_STYLE_POOL 抽 PRNG（避免无效消耗）
+            styleId = StyleId.ModernPop; // 占位，下行 runPipeline 真正决定
+        }
 
-        const melodyEngine = new MelodyEngine();
-        const { track, context } = melodyEngine.generateFullSong(styleId);
+        const { track, context } = runPipeline({
+            allowedStyleIds: forcedLeadId ? undefined : [styleId],
+            forcedLeadId,
+            forcedCompingId,
+        });
+        const realStyleId = context.style?.id ?? styleId;
 
         // 检查 seed 是否被抢占
         if (activeSeedRef.current !== seed) return;
 
-        await AudioEngine.playSong(track, styleId, context, melodyEngine);
+        const melodyEngine = new MelodyEngine();
+        await AudioEngine.playSong(track, realStyleId, context, melodyEngine);
         setPlayState('PLAYING');
 
         // 应用 mute 到新分配的 channel
@@ -339,6 +373,12 @@ export const PipelineMonitor: React.FC = () => {
                 </div>
             </div>
 
+            {/* BandSelection — 5 RoleType 槽位（参考架构 Vocal/MainInst/AccompInst/Bass/Drums） */}
+            <BandSelectionPanel
+                selection={bandSelection}
+                onChange={setBandSelection}
+            />
+
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 {/* 左栏：Stage 01-02 */}
@@ -387,6 +427,56 @@ export const PipelineMonitor: React.FC = () => {
                 .custom-pipeline-scroll::-webkit-scrollbar-thumb:hover { background: rgba(161,161,170,0.6); }
             `}} />
         </motion.div>
+    );
+};
+
+// ============================================================
+// BandSelection — 5 RoleType 下拉，PRNG 抽随机为兜底
+// ============================================================
+interface BandSelectionPanelProps {
+    selection: BandSelection;
+    onChange: (next: BandSelection) => void;
+}
+
+const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({ selection, onChange }) => {
+    const totalPersonas = MUSICIAN_POOL.length;
+    return (
+        <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0">
+            <div className="flex items-baseline justify-between mb-1">
+                <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
+                <span className="text-[9px] text-zinc-600">{totalPersonas} personas · 🎲 = PRNG random</span>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5">
+                {BAND_SLOT_ORDER.map(({ role, label }) => {
+                    const candidates: Musician[] = getMusiciansByRole(role);
+                    const value = selection[role] ?? '';
+                    const disabled = candidates.length === 0;
+                    return (
+                        <div key={role} className="flex flex-col">
+                            <span className="text-[8px] uppercase tracking-wider text-zinc-500 mb-0.5">{label}</span>
+                            <select
+                                value={value}
+                                disabled={disabled}
+                                onChange={(e) => onChange({ ...selection, [role]: e.target.value || null })}
+                                className={
+                                    'bg-black/60 border rounded px-1 py-1 text-[10px] font-mono ' +
+                                    (disabled
+                                        ? 'border-zinc-800 text-zinc-700 cursor-not-allowed'
+                                        : value
+                                            ? 'border-fuchsia-500/40 text-fuchsia-300'
+                                            : 'border-zinc-700 text-zinc-400')
+                                }
+                            >
+                                <option value="">{disabled ? '—' : '🎲 Random'}</option>
+                                {candidates.map((m) => (
+                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
     );
 };
 
