@@ -408,9 +408,10 @@ export interface Musician {
 }
 
 // 5. 乐队阵容名单 (Band Roster)
+//    全部槽位可选；缺槽 = null/undefined（Orchestrator + UI 显示按此判断）
 export interface BandRoster {
-    lead: Musician;
-    comping: Musician;
+    lead?: Musician | null;
+    comping?: Musician | null;
     vocal?: Musician | null;
     bass?: Musician | null;
     drum?: Musician | null;
@@ -443,6 +444,8 @@ export interface MusicContext {
     grooveDNA: number[];
     ensemble?: EnsembleDraft;
     style?: StyleConfig;
+    /** 5 槽位实际就位的乐手数组（缺槽 = 不在数组里）— Orchestrator 按 role 过滤生成轨 */
+    band?: Musician[];
 }
 
 export interface GenerationOptions {

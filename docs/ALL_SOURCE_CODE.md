@@ -1135,7 +1135,7 @@ export class MelodyEngine {
         const outroStrategy = PRNGManager.nextInt(0, 4) as OutroStrategy;
 
         const basicChords: GeneratedChord[] = HarmonyCore.generateHarmonyTimeline(sections, tonality, keyOffset, style, outroStrategy);
-        const harmonicFrames = GlobalVoicer.createHarmonicFrames(basicChords, style.tensionLimits ?? 13);
+        const harmonicFrames = GlobalVoicer.createHarmonicFrames(basicChords, style.tensionLimits ?? 13, tonality);
         
         // Pass harmonicFrames to ToplineEngine
         const melody: NoteData[] = ToplineEngine.generateMelody(basicChords, tonality, harmonicFrames);
@@ -1878,12 +1878,12 @@ export class GlobalVoicer {
      * This determines EXACLY what pitches (essential and tensions) exist in the ether
      * for a given duration, and assigns ROLES to them (who is responsible for playing them).
      */
-    public static createHarmonicFrames(chords: GeneratedChord[], styleTensionLimit: number = 13): GlobalHarmonicFrame[] {
+    public static createHarmonicFrames(chords: GeneratedChord[], styleTensionLimit: number = 13, tonality: Tonality): GlobalHarmonicFrame[] {
         const frames: GlobalHarmonicFrame[] = [];
 
         for (const chord of chords) {
             // 1. Identify Pitch Scale & Extracted Tensions based on chord quality
-            const { essentials, availableTensions, scale } = this.analyzeChord(chord, styleTensionLimit);
+            const { essentials, availableTensions, scale } = this.analyzeChord(chord, styleTensionLimit, tonality);
 
             // 2. Distribute Roles
             const allocations: ToneAllocation[] = [];
@@ -1909,12 +1909,26 @@ export class GlobalVoicer {
                 isEssential: true,
                 isTension: false
             });
+            // Give Lead the root
+            allocations.push({
+                pitchClass: chord.root,
+                role: MusicalRole.Lead,
+                isEssential: true,
+                isTension: false
+            });
 
             for (const gt of guideTones) {
                 // Accompaniment definitely gets the guide tones
                 allocations.push({
                     pitchClass: gt,
                     role: MusicalRole.Accomp,
+                    isEssential: true,
+                    isTension: false
+                });
+                // Lead also definitely gets the guide tones
+                allocations.push({
+                    pitchClass: gt,
+                    role: MusicalRole.Lead,
                     isEssential: true,
                     isTension: false
                 });
@@ -1949,38 +1963,29 @@ export class GlobalVoicer {
         return frames;
     }
 
-    private static analyzeChord(chord: GeneratedChord, tensionLimit: number): { essentials: number[], availableTensions: number[], scale: number[] } {
+    private static analyzeChord(chord: GeneratedChord, tensionLimit: number, tonality: Tonality): { essentials: number[], availableTensions: number[], scale: number[] } {
         const root = chord.root;
         const q = chord.quality;
         
-        let essentials: number[] = [root];
+        let essentials: number[] = [];
         let tensions: number[] = [];
         let scaleDegrees: number[] = [0, 2, 4, 5, 7, 9, 11]; // Default major scale relative offsets
 
-        // Simplify logical branching for essential and tension mapping
-        if (q === ChordQuality.Major || q === ChordQuality.Major7 || q === ChordQuality.Major9) {
-            essentials.push((root + 4) % 12, (root + 7) % 12);
-            if (q >= ChordQuality.Major7) essentials.push((root + 11) % 12);
-            if (q >= ChordQuality.Major9 && tensionLimit >= 9) tensions.push((root + 2) % 12); // 9th
-            if (tensionLimit >= 13) tensions.push((root + 9) % 12); // 13th
-            scaleDegrees = [0, 2, 4, 5, 7, 9, 11];
-        } else if (q === ChordQuality.Minor || q === ChordQuality.Minor7 || q === ChordQuality.Minor9) {
-            essentials.push((root + 3) % 12, (root + 7) % 12);
-            if (q >= ChordQuality.Minor7) essentials.push((root + 10) % 12);
-            if (q >= ChordQuality.Minor9 && tensionLimit >= 9) tensions.push((root + 2) % 12); // 9th
-            if (tensionLimit >= 11) tensions.push((root + 5) % 12); // 11th
-            scaleDegrees = [0, 2, 3, 5, 7, 8, 10]; // aeolian
-        } else if (q === ChordQuality.Dominant7 || q === ChordQuality.Dominant9 || q === ChordQuality.Dominant13) {
-            essentials.push((root + 4) % 12, (root + 7) % 12, (root + 10) % 12);
-            if (q >= ChordQuality.Dominant9 && tensionLimit >= 9) tensions.push((root + 2) % 12);
-            if (q >= ChordQuality.Dominant13 && tensionLimit >= 13) tensions.push((root + 9) % 12);
-            scaleDegrees = [0, 2, 4, 5, 7, 9, 10]; // mixolydian
+        // Use exact intervals from MusicTheory
+        const intervals = MusicTheory.getChordTones(q);
+        if (intervals && intervals.length > 0) {
+            // Usually roots, 3rds, 5ths, 7ths are essential
+            essentials = intervals.slice(0, Math.min(4, intervals.length)).map(i => (root + i) % 12);
+            // Higher extensions are tensions
+            if (intervals.length > 4) {
+                tensions = intervals.slice(4).map(i => (root + i) % 12);
+            }
         } else {
-             // Fallback for others
-             essentials.push((root + 4) % 12, (root + 7) % 12);
+            // Fallback
+             essentials.push(root, (root + 4) % 12, (root + 7) % 12);
         }
 
-        const absoluteScale = scaleDegrees.map(d => (root + d) % 12);
+        const absoluteScale = MusicTheory.getLocalScalePitches(root, q, tonality);
 
         return { essentials, availableTensions: tensions, scale: absoluteScale };
     }
@@ -1993,10 +1998,14 @@ import { MusicTheory } from '../theory/MusicTheory';
 import { HarmonyPlugin } from './plugins/HarmonyPlugin';
 import { AnticipationPlugin } from './plugins/AnticipationPlugin';
 import { PassingChordPlugin } from './plugins/PassingChordPlugin';
+import { ModalInterchangePlugin } from './plugins/ModalInterchangePlugin';
+import { SecondaryDominantPlugin } from './plugins/SecondaryDominantPlugin';
 
 export class HarmonyCore {
     private static plugins: HarmonyPlugin[] = [
+        new ModalInterchangePlugin(),
         new AnticipationPlugin(),
+        new SecondaryDominantPlugin(),
         new PassingChordPlugin()
     ];
 
@@ -2037,13 +2046,6 @@ export class HarmonyCore {
             while (b < sec.endBeat - 0.001) {
                 let numeralOrig = progStr[progIdx % progStr.length];
                 let numeral = numeralOrig;
-                
-                // --- Modal Interchange ---
-                if (!isMinor && PRNGManager.nextFloat(0, 1) < 0.15) { 
-                    if (numeralOrig === 'IV' || numeralOrig === 'IVmaj7') numeral = numeralOrig.replace('IV', 'iv');
-                    else if (numeralOrig === 'vi' || numeralOrig === 'vi7') numeral = numeralOrig.replace('vi', 'bVI');
-                    else if (numeralOrig === 'ii' || numeralOrig === 'ii7') numeral = numeralOrig.replace('ii', 'iiø');
-                }
                 
                 const parsed = MusicTheory.parseNumeral(numeral, tonality);
                 
@@ -2160,6 +2162,7 @@ export interface HarmonyPlugin {
 \n```${lang}\nimport { GeneratedChord, SectionMetadata, Tonality, StyleConfig } from '../../types';
 import { HarmonyPlugin } from './HarmonyPlugin';
 import { PRNGManager } from '../../../utils/PRNG';
+import { MusicTheory, ChordQualityEnum } from '../../theory/MusicTheory';
 
 export class PassingChordPlugin implements HarmonyPlugin {
     process(chords: GeneratedChord[], context: { sections: SectionMetadata[], tonality: Tonality, keyOffset: number, style?: StyleConfig }): GeneratedChord[] {
@@ -2167,6 +2170,10 @@ export class PassingChordPlugin implements HarmonyPlugin {
         if (passingProb <= 0) return chords;
 
         const result: GeneratedChord[] = [];
+        const scalePcs = MusicTheory.getScalePitches(context.tonality);
+
+        // Track how many times a progression might be repeating to only add passing chords on turnaround
+        let loopCounter = 0;
 
         for (let i = 0; i < chords.length; i++) {
             const bc = chords[i];
@@ -2174,26 +2181,118 @@ export class PassingChordPlugin implements HarmonyPlugin {
 
             const duration = bc.endBeat - bc.startBeat;
             
-            if (nextBc && duration >= 4 && PRNGManager.nextFloat(0, 1) < passingProb && duration > 2) {
-                const half = bc.startBeat + 2;
-                result.push({ 
-                    ...bc,
-                    endBeat: half
-                });
+            // Only trigger if moving to a different chord and there's enough room
+            if (nextBc && bc.root !== nextBc.root && duration >= 2) {
                 
-                // pick V7 of the ACTUAL next chord
-                const passingRoot = (nextBc.root + 7) % 12; // V of Next
-                result.push({ 
-                    numeral: 'V/next', 
-                    root: passingRoot, 
-                    quality: 5 /* ChordQuality.Dominant7 */, 
-                    startBeat: half, 
-                    endBeat: bc.endBeat, 
-                    keyOffset: context.keyOffset 
-                });
-            } else {
-                result.push(bc);
+                // Usually 1 measure = 4 beats, 2 measures = 8 beats.
+                // We want passing chords mostly on the 4th, 8th, 16th measure of a section.
+                const isEndOf4BarPhrase = (bc.endBeat % 16 === 0);
+                const isEndOf2BarPhrase = (bc.endBeat % 8 === 0) && !isEndOf4BarPhrase;
+                
+                // Base probability is extremely low to keep it special
+                let prob = passingProb * 0.05;
+                if (isEndOf4BarPhrase) prob = passingProb * 0.9;
+                else if (isEndOf2BarPhrase) prob = passingProb * 0.4;
+
+                if (PRNGManager.nextFloat(0, 1) < prob) {
+                    // Decide passing chord duration:
+                    // 1 beat, 2 beats, or a short syncopated "push" (0.5 beats before the next chord)
+                    let passingDur = 1.0;
+                    const durType = PRNGManager.nextFloat(0, 1);
+                    if (duration >= 4 && durType > 0.8) {
+                        passingDur = 2.0; // Half measure
+                    } else if (durType < 0.3) {
+                        passingDur = 0.5; // Short syncopated eighth-note pickup
+                    }
+
+                    const splitPoint = bc.endBeat - passingDur;
+
+                    result.push({ 
+                        ...bc,
+                        endBeat: splitPoint
+                    });
+                    
+                    // Determine passing chord type:
+                    // 1. Diatonic Step (e.g., vi -> v -> IV)
+                    // 2. Chromatic Approach (half step above/below target root)
+                    // 3. Diminished 7th Approach (viio7 / target)
+                    
+                    const pType = PRNGManager.nextFloat(0, 1);
+                    let passingRoot = bc.root;
+                    let passingQuality = bc.quality;
+                    let numeral = 'pass';
+                    let bassOverride = undefined;
+
+                    if (pType < 0.4) {
+                        // Diatonic Step
+                        let diff = nextBc.root - bc.root;
+                        if (diff < -6) diff += 12;
+                        if (diff > 6) diff -= 12;
+
+                        const dir = Math.sign(diff); 
+                        let currentScaleIdx = scalePcs.indexOf((bc.root) % 12);
+                        
+                        if (currentScaleIdx !== -1) {
+                            let passIdx = (currentScaleIdx + dir + scalePcs.length) % scalePcs.length;
+                            passingRoot = scalePcs[passIdx];
+                            
+                            // Map passing root to diatonic quality
+                            if (context.tonality === Tonality.Major) {
+                                if (passIdx === 0 || passIdx === 3 || passIdx === 4) passingQuality = ChordQualityEnum.Major;
+                                else if (passIdx === 1 || passIdx === 2 || passIdx === 5) passingQuality = ChordQualityEnum.Minor;
+                                else passingQuality = ChordQualityEnum.Diminished;
+                            } else {
+                                // Minor loosely
+                                if (passIdx === 0 || passIdx === 3 || passIdx === 4) passingQuality = ChordQualityEnum.Minor;
+                                else if (passIdx === 2 || passIdx === 5 || passIdx === 6) passingQuality = ChordQualityEnum.Major;
+                                else passingQuality = ChordQualityEnum.Diminished;
+                            }
+                        } else {
+                            passingRoot = (bc.root + dir * 2 + 12) % 12;
+                            passingQuality = bc.quality;
+                        }
+                        numeral = 'pass(diatonic)';
+                        
+                    } else if (pType < 0.7) {
+                        // Chromatic Approach (sliding into the next chord)
+                        const approachDir = PRNGManager.nextFloat(0, 1) > 0.5 ? 1 : -1;
+                        passingRoot = (nextBc.root - approachDir + 12) % 12;
+                        
+                        if (approachDir === -1) {
+                            // Approach from a half-step ABOVE -> Tritone substitution (SubV7)
+                            passingQuality = ChordQualityEnum.Dominant7;
+                            numeral = 'subV7/next';
+                        } else {
+                            // Approach from a half-step BELOW -> commonly viio7 or secondary dominant
+                            passingQuality = ChordQualityEnum.Diminished7;
+                            numeral = 'viio7/next';
+                        }
+                    } else {
+                        // Diminished Passing Chord
+                        // A diminished 7th chord a half step below the target root is very common in Jazz/R&B/Gospel
+                        passingRoot = (nextBc.root - 1 + 12) % 12;
+                        passingQuality = ChordQualityEnum.Diminished7;
+                        numeral = 'viio7/next';
+                        
+                        // Sometimes bass plays the root of the diminished
+                        bassOverride = passingRoot;
+                    }
+
+                    result.push({ 
+                        numeral, 
+                        root: passingRoot, 
+                        quality: passingQuality, 
+                        startBeat: splitPoint, 
+                        endBeat: bc.endBeat, 
+                        keyOffset: context.keyOffset,
+                        bassOverride
+                    });
+                    
+                    continue; // Skip pushing the original chord
+                }
             }
+            
+            result.push(bc);
         }
 
         return result;
@@ -2844,9 +2943,6 @@ import { Orchestrator } from '../Orchestrator';
 
 export class IdiomDispatcher {
     public static getIdiomType(styleId: string, instrumentId: number): IdiomType {
-        if (instrumentId === 0 || instrumentId === 1) { // Piano or EPiano
-            return IdiomType.GenericPiano; // We route them to PianoBaseIdiom via default now
-        }
         return IdiomType.GenericPiano;
     }
 
@@ -2856,27 +2952,7 @@ export class IdiomDispatcher {
         grooveDNA: GrooveDNA, 
         context: MusicContext
     ): { pianoLH: NoteData[]; pianoRH: NoteData[] } {
-        
-        let idiomType = IdiomType.GenericPiano;
-        const accompMusician = context.band?.find(m => m.role === RoleType.AccompInst);
-        
-        if (accompMusician) {
-            const styleId = context.globalStyleId || 'Pop';
-            idiomType = this.getIdiomType(styleId, accompMusician.instrumentId);
-        }
-
-        // For now, always use the new physically-modeled PianoBaseIdiom for piano
-        if (accompMusician?.instrumentId === 0 || accompMusician?.instrumentId === 1) {
-             return PianoBaseIdiom.generate(chords, sections, grooveDNA, context);
-        }
-
-        switch (idiomType) {
-            case IdiomType.PopPiano:
-                return PopPianoIdiom.generate(chords, sections, grooveDNA, context);
-            case IdiomType.GenericPiano:
-            default:
-                return GenericPianoIdiom.generateAccompaniment(chords, sections, grooveDNA, context);
-        }
+        return PianoBaseIdiom.generate(chords, sections, grooveDNA, context);
     }
 
     public static generateForMusician(
@@ -2887,22 +2963,8 @@ export class IdiomDispatcher {
         context: MusicContext
     ): { melody?: NoteData[]; pianoRH?: NoteData[]; pianoLH?: NoteData[] } {
         
-        const styleId = context.globalStyleId || 'Pop';
-        const idiomType = this.getIdiomType(styleId, musician.instrumentId);
-        
-        // Piano Instruments
-        if (musician.instrumentId === 0 || musician.instrumentId === 1) {
-             return PianoBaseIdiom.generateForRoles(roles, track, grooveDNA, context, musician);
-        }
-
-        // Bass Instrument
-        if (musician.instrumentId === 2) {
-             // Basic bass line generation (currently PianoBaseIdiom handles bass as LH if piano has the role)
-             // But if we want stand-alone bass: 
-             return { pianoLH: [] }; // You can expand standalone bass idiom here
-        }
-
-        return {};
+        // Always use PianoBaseIdiom for all for now, we can specialize later
+        return PianoBaseIdiom.generateForRoles(roles, track, grooveDNA, context, musician);
     }
 }
 
@@ -3243,7 +3305,12 @@ export class PianoBaseIdiom {
                 finalLH = rawLH;
             }
         } else if (hasBass && !hasAccomp) {
-            // Just bass (could call generic bass walk logic)
+            // Just bass
+            const { pianoLH } = this.generate(track.chords, track.sections, grooveDNA, context, musician, true, false);
+            // In generate(), if it only needs to generate LH (bass), it will still generate RH but we just ignore it.
+            // Oh wait! If we do this, generate() might use a pad strategy which is weird for standalone bass.
+            // But let's use it for now and extract LH.
+            finalLH = pianoLH.map(n => ({ ...n, pitch: n.pitch + track.keyOffset + 60 }));
         } else if (hasLead && !hasAccomp) {
             // If it's just Lead role with NO accomp, it plays the melody channel globally
             finalMelody = track.melody.map(n => ({
@@ -4012,7 +4079,8 @@ export const StyleRegistry: Record<string, StyleConfig> = {
 \n```${lang}\nimport { NoteData, GeneratedChord, Tonality, GlobalHarmonicFrame, MusicalRole, SectionMetadata } from '../types';
 import { PRNGManager } from '../../utils/PRNG';
 import { MusicTheory } from '../theory/MusicTheory';
-import { BASIC_RHYTHM_CELLS } from './RhythmCells';
+import { GrooveEngine } from './GrooveEngine';
+import { MelodicContourEngine } from './MelodicContourEngine';
 import { ToplinePlugin } from './plugins/ToplinePlugin';
 import { PassingNotePlugin } from './plugins/PassingNotePlugin';
 
@@ -4054,13 +4122,13 @@ export class ToplineEngine {
                 if (sec) {
                     // Start of a new 4-bar phrase or new section regenerates the motif
                     if (currentMotif.length === 0 || currentBeat % 16 === 0) {
-                        currentMotif = this.generateMotif(sec.energyLevel);
+                        currentMotif = GrooveEngine.generateMotif(16, sec.energyLevel);
                         motifBeatCursor = 0;
                         currentSectionEnergy = sec.energyLevel;
                     }
                 }
             } else if (currentMotif.length === 0 || currentBeat % 16 === 0) {
-                currentMotif = this.generateMotif(5); // fallback energy
+                currentMotif = GrooveEngine.generateMotif(16, 5); // fallback energy
                 motifBeatCursor = 0;
             }
 
@@ -4091,8 +4159,8 @@ export class ToplineEngine {
                 }
             }
             if (scalePcs.length === 0) {
-                // Rough fallback
-                scalePcs = [0, 2, 4, 5, 7, 9, 11].map(d => (chord.root + d) % 12);
+                // strict local scale to avoid clashing with passing chords
+                scalePcs = MusicTheory.getLocalScalePitches(chord.root, chord.quality, tonality);
             }
 
             // Generate rhythm for the duration of this chord
@@ -4144,51 +4212,13 @@ export class ToplineEngine {
                         }
 
                         if (possiblePitches.length > 0) {
-                            let bestPitch = possiblePitches[0];
-                            let bestScore = Infinity;
+                            const { bestPitch } = MelodicContourEngine.selectBestPitch(
+                                possiblePitches,
+                                lastPitch,
+                                lastMotion,
+                                currentSectionEnergy
+                            );
                             
-                            for (const p of possiblePitches) {
-                                const dist = Math.abs(p - lastPitch);
-                                const motion = p - lastPitch;
-                                let score = 0;
-                                
-                                // Base interval penalty
-                                if (dist === 0) {
-                                    score += 2.0; // slight penalty for repeated notes
-                                } else if (dist <= 2) {
-                                    score += 0.0; // ideal voice leading (steps)
-                                } else if (dist <= 4) {
-                                    score += 1.0; // good voice leading (thirds)
-                                } else if (dist <= 7) {
-                                    score += 3.5; // larger leaps (4ths/5ths) okay occasionally
-                                } else if (dist === 12) {
-                                    score += 4.5; // octave jump is acceptable
-                                } else {
-                                    score += 20.0; // penalize awkward leaps heavily
-                                }
-                                
-                                // Voice leading recovery: step in opposite direction after a leap
-                                if (Math.abs(lastMotion) > 4) {
-                                    if (Math.sign(motion) === Math.sign(lastMotion) && dist > 0) {
-                                        score += 12.0; // Try to prevent consecutive leaps in the same direction
-                                    } else if (dist <= 2) {
-                                        score -= 1.5; // Reward stepping back to recover from a leap
-                                    }
-                                }
-
-                                // Center of gravity (higher energy sections are pushed higher in pitch)
-                                const idealCenter = (currentSectionEnergy - 5) * 2.5; 
-                                score += Math.pow(p - idealCenter, 2) * 0.02;
-
-                                // Tie-breaking randomness to create variety
-                                score += PRNGManager.nextFloat(0, 1.2);
-
-                                if (score < bestScore) {
-                                    bestScore = score;
-                                    bestPitch = p;
-                                }
-                            }
-
                             const chosenPitch = bestPitch;
 
                             let actualOnset = currentBeat;
@@ -4240,37 +4270,6 @@ export class ToplineEngine {
 
         return melody;
     }
-
-    private static generateMotif(energy: number): number[] {
-        const motif: number[] = [];
-        let beatsToFill = 16; // A 4-bar phrase (16 beats)
-        
-        while (beatsToFill > 0) {
-            const flowingCells = BASIC_RHYTHM_CELLS.filter(c => !c.some(d => d < 0));
-            const restCells = BASIC_RHYTHM_CELLS.filter(c => c.some(d => d < 0));
-            
-            let cell: number[];
-            // Higher energy = more flowing cells, fewer rests
-            const flowProb = Math.min(0.95, 0.4 + (energy / 10) * 0.5); 
-            
-            if (PRNGManager.nextFloat(0, 1) < flowProb) {
-                cell = flowingCells[PRNGManager.nextInt(0, flowingCells.length - 1)];
-            } else {
-                cell = restCells[PRNGManager.nextInt(0, restCells.length - 1)];
-            }
-
-            const cellLen = cell.reduce((sum, d) => sum + Math.abs(d), 0);
-            if (cellLen <= beatsToFill) {
-                motif.push(...cell);
-                beatsToFill -= cellLen;
-            } else {
-                motif.push(beatsToFill > 0 ? beatsToFill : 1.0);
-                beatsToFill = 0;
-            }
-        }
-
-        return motif;
-    }
 }
 \n```\n\n### File: `${file}`
 **Description**: Plugin to connect melody gaps smoothly.
@@ -4291,30 +4290,48 @@ export class PassingNotePlugin implements ToplinePlugin {
 
             if (previousNote && currentNote.duration >= 0.5 && PRNGManager.nextFloat(0, 1) > 0.6) {
                 const dist = Math.abs(currentNote.pitch - previousNote.pitch);
+                // Trigger if there is a gap or leap
                 if (dist >= 3 && dist <= 7) {
                     
                     // Simple passing approach
                     let approachPitch = currentNote.pitch > previousNote.pitch ? currentNote.pitch - PRNGManager.nextInt(1, 2) : currentNote.pitch + PRNGManager.nextInt(1, 2);
                     
-                    // Snap to scale
-                    const approachPc = ((approachPitch % 12) + 12) % 12;
-                    if (!scalePcs.includes(approachPc)) {
-                        approachPitch += (currentNote.pitch > previousNote.pitch ? -1 : 1);
+                    // Snap to local scale if available
+                    let localScalePcs = scalePcs;
+                    if (context.frames) {
+                        const frame = context.frames.find(f => currentNote.onset >= f.startBeat && currentNote.onset < f.endBeat);
+                        if (frame) {
+                            localScalePcs = frame.pitchScale;
+                        }
                     }
+
+                    approachPitch = MusicTheory.snapToPool(approachPitch, localScalePcs);
                     
-                    const passingDur = currentNote.duration >= 1.0 ? 0.5 : 0.25;
+                    // The passing note takes up a small syncopated fraction
+                    const passingDur = currentNote.duration >= 1.0 ? 0.25 : 0.25; 
                     const baseVelPassing = 40 + (context.energyLevel * 5); // softer for passing
+                    
+                    // Place the passing note right BEFORE the current note
+                    const passingOnset = currentNote.onset - passingDur;
+                    
+                    // If the previous note is too close, trim it
+                    if (previousNote.onset + previousNote.duration > passingOnset) {
+                        previousNote.duration = passingOnset - previousNote.onset;
+                        // if we squeezed it too much, just cancel the passing note (rare)
+                        if (previousNote.duration <= 0.125) {
+                            enhancedMelody.push(currentNote);
+                            continue;
+                        }
+                    }
 
                     enhancedMelody.push({
                         pitch: approachPitch,
-                        onset: currentNote.onset,
+                        onset: passingOnset,
                         duration: passingDur * 0.9,
                         velocity: PRNGManager.nextInt(baseVelPassing, baseVelPassing + 15) / 127.0
                     });
 
-                    // Modify the current note (push it later)
-                    currentNote.onset += passingDur;
-                    currentNote.duration = (currentNote.duration - passingDur) * 0.95;
+                    // We DO NOT shift the current note's onset, it stays exactly on its intended rhythmic position.
                 }
             }
             enhancedMelody.push(currentNote);
@@ -4573,6 +4590,63 @@ const NUMERAL_REGEX = /^([b#]?)(VII|VI|IV|V|III|II|I|vii|vi|iv|v|iii|ii|i)(maj9|
 export class MusicTheory {
     public static getScalePitches(tonality: Tonality): number[] {
         return SCALE_INTERVALS[tonality];
+    }
+
+    public static getLocalScalePitches(chordRoot: number, quality: ChordQualityEnum, globalTonality?: Tonality): number[] {
+        let globalScale = [0, 2, 4, 5, 7, 9, 11]; // default major
+        if (globalTonality !== undefined) {
+             globalScale = MusicTheory.getScalePitches(globalTonality);
+        }
+
+        const chordTones = MusicTheory.getChordTones(quality).map(i => (chordRoot + i) % 12);
+        let localScale = [...globalScale];
+
+        for (const ct of chordTones) {
+            if (localScale.includes(ct)) continue;
+
+            const intervalFromRoot = (ct - chordRoot + 12) % 12;
+
+            // Find all notes in global scale that are 1 semitone away from our chord tone
+            const neighbors = localScale.filter(g => {
+                const diff = Math.abs(g - ct);
+                const d = Math.min(diff, 12 - diff);
+                return d === 1;
+            });
+
+            for (const n of neighbors) {
+                const neighborInterval = (n - chordRoot + 12) % 12;
+                
+                let shouldReplace = false;
+                // If it's a 3rd conflict (minor vs major 3rd)
+                if ((intervalFromRoot === 3 || intervalFromRoot === 4) && (neighborInterval === 3 || neighborInterval === 4)) {
+                    shouldReplace = true;
+                }
+                // If it's a 7th conflict (minor vs major 7th)
+                else if ((intervalFromRoot === 10 || intervalFromRoot === 11) && (neighborInterval === 10 || neighborInterval === 11)) {
+                    shouldReplace = true;
+                }
+                // If it's a 5th conflict (perfect vs diminished/augmented)
+                else if ((intervalFromRoot === 6 || intervalFromRoot === 7 || intervalFromRoot === 8) && (neighborInterval === 6 || neighborInterval === 7 || neighborInterval === 8)) {
+                    // Be careful not to replace the 4th (5) or 6th (9) unless they are strictly functioning as an altered 5th.
+                    // But 6 and 8 are explicitly augmented 4th / minor 6th in isolation. 
+                    // Let's just say if the neighbor is exactly 7 (perfect fifth) we replace it, or if interval is 7 and neighbor is 6/8 we replace it.
+                    if (intervalFromRoot === 7 || neighborInterval === 7) {
+                        shouldReplace = true;
+                    }
+                }
+                // Check flat 9 vs natural 9
+                else if ((intervalFromRoot === 1 || intervalFromRoot === 2) && (neighborInterval === 1 || neighborInterval === 2)) {
+                    shouldReplace = true;
+                }
+
+                if (shouldReplace) {
+                    localScale = localScale.filter(x => x !== n);
+                }
+            }
+        }
+
+        const finalSet = new Set([...localScale, ...chordTones]);
+        return Array.from(finalSet).sort((a, b) => a - b);
     }
 
     public static getChordTones(quality: ChordQualityEnum): number[] {

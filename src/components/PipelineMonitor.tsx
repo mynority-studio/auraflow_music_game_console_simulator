@@ -183,23 +183,22 @@ export const PipelineMonitor: React.FC = () => {
         // 复现 EndlessRadioManager.triggerGeneration 的 PRNG 消耗顺序
         PRNGManager.setSeed(seed);
         PRNGManager.recordSnapshot('A');
-        // 当用户在 BandSelection 选定 AccompInst 时，跳过这次 PRNG 消耗（forcedLeadId 直接定调）；
-        // 否则消耗 1 次维持与 Radio 路径的种子对齐
         const sel = bandSelectionRef.current;
-        const forcedLeadId = sel[RoleType.AccompInst] ?? sel[RoleType.MainInst] ?? undefined;
-        const forcedCompingId = sel[RoleType.Bass] ?? undefined;
+
+        // 是否有任意一个 Lead-role 槽位已选定（Lead 在场则 styleId 由其 genre 强定，跳过 RADIO_STYLE_POOL PRNG）
+        const hasLeadSelected = !!(sel[RoleType.AccompInst] ?? sel[RoleType.MainInst] ?? sel[RoleType.Vocal]);
+
         let styleId: StyleId;
-        if (!forcedLeadId) {
+        if (!hasLeadSelected) {
             styleId = RADIO_STYLE_POOL[Math.floor(PRNGManager.next() * RADIO_STYLE_POOL.length)];
         } else {
-            // forcedLeadId 路径不走 RADIO_STYLE_POOL 抽 PRNG（避免无效消耗）
+            // Lead 在场 → 不抽 RADIO_STYLE_POOL，runPipeline 内部按 leadMusician.genre 定调
             styleId = StyleId.ModernPop; // 占位，下行 runPipeline 真正决定
         }
 
         const { track, context } = runPipeline({
-            allowedStyleIds: forcedLeadId ? undefined : [styleId],
-            forcedLeadId,
-            forcedCompingId,
+            allowedStyleIds: hasLeadSelected ? undefined : [styleId],
+            forcedBand: sel,
         });
         const realStyleId = context.style?.id ?? styleId;
 
@@ -673,15 +672,26 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, mutedParts, on
             </section>
         );
     }
-    const leadName = roster?.lead?.name;
-    const compingName = roster?.comping?.name;
+    const rosterRows: { label: string; name: string | undefined; color: string }[] = [
+        { label: 'Vocal',   name: roster?.vocal?.name,   color: 'text-pink-300' },
+        { label: 'Lead',    name: roster?.lead?.name,    color: 'text-emerald-300' },
+        { label: 'Comping', name: roster?.comping?.name, color: 'text-amber-300' },
+        { label: 'Bass',    name: roster?.bass?.name,    color: 'text-blue-300' },
+        { label: 'Drum',    name: roster?.drum?.name,    color: 'text-fuchsia-300' },
+    ];
+    const anyRosterFilled = rosterRows.some(r => r.name);
     return (
         <section className="px-4 pt-4 pb-4">
             <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
-            {(leadName || compingName) && (
+            {anyRosterFilled && (
                 <div className="mt-2 text-[10px] text-zinc-500 leading-relaxed">
-                    {leadName && <div>Lead: <span className="text-emerald-300">{leadName}</span></div>}
-                    {compingName && <div>Comping: <span className="text-amber-300">{compingName}</span></div>}
+                    {rosterRows.map(r => (
+                        <div key={r.label}>
+                            {r.label}: {r.name
+                                ? <span className={r.color}>{r.name}</span>
+                                : <span className="text-zinc-700">—</span>}
+                        </div>
+                    ))}
                 </div>
             )}
             <div className="mt-3 space-y-1">

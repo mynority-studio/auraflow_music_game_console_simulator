@@ -1,188 +1,78 @@
 // ============================================================
-// runPipeline — 主奏定调 + 直线流水（无 Mood / 无 ConductorPlan / 无 Viterbi）
+// 🚧 STUB — 生成流水线占位（原五阶段被完全删除，等待重构）
 // ============================================================
-// Pitch Space: RELATIVE
-//   chord.root / melody.pitch / counterMelody.pitch 都是相对空间
-//   Orchestrator.arrange() 是 keyOffset 唯一应用点；鼓组是绝对 GM 键位永不加偏移
 //
-// 流程：
-//   1) Lead Dictates Global：根据 allowedStyleIds 抽 Lead 乐手，其 genre 强制成为全曲 styleId
-//   2) BPM / Tonality / KeyOffset / TimeSignature：按 styleConfig 内置池抽
-//   3) Sections：StructureEngine 抽曲式装配段落（baseEnergy 直透，无 mood 钳制）
-//   4) Band：招募 comping 乐手；不允许 noBass 时主奏兜底坐 Comping
-//   5) HarmonyCore：罗马数字池 + 子小节解析 + 高能段抢拍 → chords
-//   6) GrooveEngine：鼓组先行（律动权威），回写 sec.grooveDNA
-//   7) ToplineEngine：melody（消费 grooveDNA） + counterMelody
-//   8) ensemble + roster 写入 context，供 Orchestrator 消费图纸
+// 历史功能：
+//   Stage 1 selectStyleAndMood → Stage 2 resolveBasicParams → Stage 3 generateHarmony
+//   → Stage 4 planConductor → Stage 5 layerInstruments → { track, context }
+//   消费 PRNG、风格池、Persona 池、和声引擎、织体映射等子系统。
+//
+// 重构期占位行为：
+//   - 仍尊重 allowedStyleIds / forcedStyleId / forcedBand 的形参约束（保编译）
+//   - 仅消费 1 次 PRNG 抽风格，不再消费下游 PRNG（避免 ACVE 快照点错位的假象）
+//   - 返回最小空骨架 GeneratedTrack + MusicContext，所有数组为空
+//
+// 重构方向：
+//   新引擎重新填入五阶段。请保持 PRNG 消耗顺序与本占位一致（先抽 styleId）以便
+//   黄金种子录制能从此处稳定起步。
 // ============================================================
 
 import {
     GeneratedTrack,
-    MusicContext,
     GenerationOptions,
-    SectionMetadata,
-    NoteData,
-    GeneratedChord,
+    MusicContext,
+    RoleType,
     Tonality,
-    EnsembleDraft,
-    BandRoster,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
-import { getStyleConfig } from '../config/styles/StyleRegistry';
+import { getStyleConfig } from '../config/StyleRegistry';
 import { PRNGManager } from '../../utils/PRNG';
-import { HarmonyCore } from '../harmony/HarmonyCore';
-import { ToplineEngine } from '../melody/ToplineEngine';
-import { GrooveEngine } from '../composing/GrooveEngine';
-import { StructureEngine } from '../composing/StructureEngine';
-import { assembleActiveIdiom, getRandomLeadMusician, getRandomMusicianByPangea, getMusicianById } from '../idioms/MusicianRegistry';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
     forcedStyleId?: StyleId;
-    /** PipelineMonitor BandSelection 面板：用户手动选定 Lead 乐手 ID（Lead 决定全曲风格） */
-    forcedLeadId?: string;
-    /** 用户手动选定 Comping 乐手 ID（不设则按"主奏不同 Pangea 基底"策略抽） */
-    forcedCompingId?: string;
+    /**
+     * 5 槽位 BandSelection（PipelineMonitor）显式注入：
+     *   Partial<Record<RoleType, string | null>>
+     */
+    forcedBand?: Partial<Record<RoleType, string | null>>;
     generation?: GenerationOptions;
 }
 
-const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-
-export function runPipeline(options: PipelineRunOptions = {}): { track: GeneratedTrack; context: MusicContext } {
+export function runPipeline(
+    options: PipelineRunOptions = {},
+): { track: GeneratedTrack; context: MusicContext } {
     PRNGManager.recordSnapshot('B');
 
-    // 🌟 1. 首发主奏（Lead Dictates Global）
-    //    优先级：forcedLeadId > forcedStyleId 约束下抽 > allowedStyleIds 约束下抽 > 全池抽
-    let allowedStyles = options.allowedStyleIds;
-    if (options.forcedStyleId) allowedStyles = [options.forcedStyleId];
-    let leadMusician = options.forcedLeadId ? getMusicianById(options.forcedLeadId) : undefined;
-    if (!leadMusician) {
-        leadMusician = getRandomLeadMusician(allowedStyles, PRNGManager);
-    }
-
-    const styleId = leadMusician.genre;
+    const pool = options.forcedStyleId !== undefined
+        ? [options.forcedStyleId]
+        : (options.allowedStyleIds && options.allowedStyleIds.length > 0
+            ? options.allowedStyleIds
+            : [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]);
+    const styleId = pool[Math.floor(PRNGManager.next() * pool.length)];
     const style = getStyleConfig(styleId);
 
-    // --- BPM：直接从 styleConfig 抽 ---
-    const bpm = PRNGManager.nextInt(style.global.bpmRange[0], style.global.bpmRange[1]);
-
-    // --- Tonality：style.tonalityPool 加权抽 ---
-    let tonality: Tonality = Tonality.Major;
-    const tonalityPool = style.global.tonalityPool;
-    if (tonalityPool && tonalityPool.length > 0) {
-        let total = 0;
-        for (let i = 0; i < tonalityPool.length; i++) total += tonalityPool[i].weight;
-        if (total > 0) {
-            let r = PRNGManager.nextFloat(0, total);
-            for (let i = 0; i < tonalityPool.length; i++) {
-                r -= tonalityPool[i].weight;
-                if (r <= 0) { tonality = tonalityPool[i].tonality; break; }
-            }
-        }
-    }
-
-    const keyOffset = PRNGManager.nextInt(0, 11);
-    const key = KEY_NAMES[keyOffset];
-
-    // --- TimeSignature：style.timeSignaturePool 加权抽（兜底 4/4）---
-    let timeSignature: [number, number] = [4, 4];
-    const tsPool = style.global.timeSignaturePool;
-    if (tsPool && tsPool.length > 0) {
-        let tsTotal = 0;
-        for (let i = 0; i < tsPool.length; i++) tsTotal += tsPool[i].weight;
-        if (tsTotal > 0) {
-            let r = PRNGManager.nextFloat(0, tsTotal);
-            for (let i = 0; i < tsPool.length; i++) {
-                r -= tsPool[i].weight;
-                if (r <= 0) { timeSignature = tsPool[i].signature; break; }
-            }
-        }
-    }
-
-    // --- Sections：StructureEngine 抽曲式（无 mood 钳制）---
-    const sections: SectionMetadata[] = StructureEngine.generateStructure(bpm, style, timeSignature);
-
-    // --- 🌟 虚拟乐队招募 ---
-    const orch = style.orchestration;
-    const noDrums = orch.allowDrumless && PRNGManager.nextFloat(0, 1) < 0.3;
-    const noBass = noDrums && orch.allowBassless && PRNGManager.nextFloat(0, 1) < 0.8;
-
-    // forcedCompingId > 自动抽（尽量错开主奏 Pangea 基底）
-    let compingMusician = options.forcedCompingId ? getMusicianById(options.forcedCompingId) : undefined;
-    if (!compingMusician) {
-        compingMusician = getRandomMusicianByPangea('Base', PRNGManager);
-        if (!noBass && leadMusician.id === compingMusician.id) {
-            let attempts = 0;
-            while (leadMusician.id === compingMusician.id && attempts < 5) {
-                compingMusician = getRandomMusicianByPangea('Base', PRNGManager);
-                attempts++;
-            }
-        }
-    }
-
-    // 💡 神来之笔：无贝斯独奏模式下，主奏强行包揽伴奏位，心智统一！
-    if (noBass) {
-        compingMusician = leadMusician;
-    }
-
-    const roster: BandRoster = {
-        lead: leadMusician,
-        comping: compingMusician,
-    };
-
-    const pickInst = (pool: string[]): string => pool && pool.length > 0 ? pool[PRNGManager.nextInt(0, pool.length - 1)] : 'Acoustic_Grand';
-
-    const ensemble: EnsembleDraft = {
-        melodySound: leadMusician.defaultSound,
-        chordSound: compingMusician.defaultSound,
-        bassSound: noBass ? compingMusician.defaultSound : pickInst(orch.bassInstruments.length > 0 ? orch.bassInstruments : ['Acoustic_Bass']),
-        drumSound: noDrums ? null : pickInst(orch.drumInstruments.length > 0 ? orch.drumInstruments : ['Standard_DrumKit']),
-        secondaryMelodySound: null,
-        counterMelodySound: null,
-        roster,
-    };
-
-    // 图纸装配（Pangea 基底 + Personnel 特质）
-    const melodyIdiom = assembleActiveIdiom(roster.lead, 'Lead');
-    const counterMelodyIdiom = melodyIdiom; // 副旋律兜底（暂未启用独立副旋律乐手）
-
-    // --- 和声：HarmonyCore 罗马数字池 + 子小节解析 + 高能段抢拍 ---
-    const chords: GeneratedChord[] = HarmonyCore.generateHarmonyTimeline(sections, style, tonality, keyOffset, timeSignature);
-
-    // --- 鼓组先行（律动权威）→ 回写 sec.grooveDNA ---
-    const drums: NoteData[] = GrooveEngine.generateDrums(sections, style, timeSignature);
-
-    // --- 主旋律：消费 sec.grooveDNA ---
-    const melody: NoteData[] = ToplineEngine.generateMelody(chords, tonality, melodyIdiom, sections, style, timeSignature);
-
-    // --- 副旋律：与 melody 同源 chords ---
-    const counterMelody: NoteData[] = ToplineEngine.generateCounterMelody(chords, tonality, counterMelodyIdiom);
-
     const track: GeneratedTrack = {
-        chords,
-        melody,
-        counterMelody,
-        drums,
-        sections,
-        bpm,
-        key,
-        keyOffset,
-        tonality,
-        timeSignature,
+        chords: [],
+        melody: [],
+        sections: [],
+        bpm: 120,
+        key: 'C',
+        keyOffset: 0,
+        tonality: Tonality.Major,
+        timeSignature: [4, 4],
         blockIndex: 0,
         absoluteStartBeat: 0,
-        hasIntro: true,
-        preSelectedPalette: ensemble,
+        hasIntro: false,
     };
 
     const context: MusicContext = {
-        keyOffset,
-        tonality,
-        bpm,
-        timeSignature,
+        keyOffset: 0,
+        tonality: Tonality.Major,
+        bpm: 120,
+        timeSignature: [4, 4],
         grooveDNA: [],
         style,
-        ensemble,
     };
 
     return { track, context };
