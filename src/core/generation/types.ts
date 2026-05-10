@@ -11,11 +11,10 @@ export type ChordProgression = string[];
  *   // Optional flags can be packed into a bitfield (uint8_t flags)
  * };
  */
-import { MoodId } from './config/MoodFlags';
 import { StyleId } from './config/StyleFlags';
 
 export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-export interface GeneratedChord { numeral: string; root: number; quality: 'Major' | 'Minor' | 'Diminished' | 'Diminished7' | 'Augmented' | 'Dominant7' | 'Minor7' | 'Major7' | 'HalfDiminished' | 'Sus4' | 'Dominant7Sus4' | 'Add9' | 'Minor9' | 'Major9' | 'Dominant9' | 'Minor11' | 'Dominant13'; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number; }
+export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {
@@ -30,65 +29,6 @@ export interface GrooveBankDef {
     syncopationWeight: number;  // 该律动库的特征切分率（影响全曲切分倾向）
 }
 
-export interface HarmonyState {
-    baseProgression: string[];
-    complexityProb: number;
-    harmonicRhythm: number;
-}
-
-export interface GrooveState {
-    density: number;
-    syncopationProb: number;
-    swing: number;
-    feel?: "half-time" | "normal" | "double-time";
-}
-
-export interface TrackBehavior {
-    [key: string]: number | boolean | string;
-}
-
-export interface TrackState {
-    id: string;
-    instrument: string;
-    role: string;
-    activeEnergyThreshold: number;
-    behavior: TrackBehavior;
-}
-
-export interface SectionState {
-    id: string;
-    type: string;
-    lengthBars: number;
-    phraseTemplate: string; // Deprecated, use phraseActions instead
-    phraseActions?: PhraseAction[]; // e.g., [Repeat, Vary, Contrast]
-    energyLevel: number;
-    harmony: HarmonyState;
-    groove: GrooveState;
-    tracks: TrackState[];
-    startBeat: number;
-    endBeat: number;
-}
-
-export enum PhraseAction {
-    Repeat = 0,
-    Vary = 1,
-    Contrast = 2
-}
-
-export interface MotifTemplate {
-    pickupType: number; // 0: none, 1: 8th note, 2: quarter note
-    bodyDensity: number; // 0.0 to 1.0
-    tailLength: number; // in beats, e.g., 1.0, 2.0
-    rhythmOffsets: number[]; // the actual generated rhythm
-    contour: 'Ascending' | 'Descending' | 'Arch' | 'Bowl' | 'Static' | 'Wandering';
-    noteCount: number;
-    phraseLengthBeats: number;
-}
-
-export interface MacroStructure {
-    structure: string[]; 
-    energyCurve: number[]; 
-}
 // -------------------------------------------------------
 
 // ============================================================
@@ -169,66 +109,6 @@ export interface SectionTemplate {
     energy: number;     // 原始能量值 1-10（会被 mood.energyCap 进一步约束）
 }
 
-// ============================================================
-// 🌟 层级动机系统（Hierarchical Motif System）
-// ============================================================
-//
-// 三层结构：
-//   PhraseGroup（大乐句容器，4/8/16 小节）
-//     └── SubMotifSlot（子动机槽，1-2 小节，可重复/变奏）
-//           └── NoteData（音符）
-//
-// 这取代了原本"phrase = motif = 2 小节"的扁平模型，让旋律有"完整句子"的容器感。
-
-/**
- * 句式终止类型 — 决定 PhraseGroup 末尾应该是问句还是答句
- */
-export enum CadenceType {
-    Open = 0,    // 半终止：落在 V/2/7 度（导音、属音、上主音），听感"未完成"
-    Closed = 1,  // 全终止：落在 I/3 度（主音、中音），听感"完成"
-}
-
-/**
- * SubMotif 在 PhraseGroup 内的角色，决定它与其它 sub-motif 的关系
- */
-export type SubMotifRole = 'statement' | 'repeat' | 'vary' | 'contrast' | 'resolve' | 'climax';
-
-/**
- * 子动机槽位 — PhraseGroup 内的一个 1-2 小节生成单元
- *
- * label 决定动机复用：相同 label 共享同一份 motif 模板，
- * 不同的 role 会触发不同的变奏（vary 用 _prime/_seq/_inv，contrast 是新动机等）
- */
-export interface SubMotifSlot {
-    label: string;          // 'M' | 'M_prime' | 'N' | 'M_resolve' 等
-    role: SubMotifRole;
-    lengthBars: number;     // 子动机长度（小节数），通常 1 或 2
-    isPeak?: boolean;       // 是否是 hook 峰值位（仅 Chorus group 设置）
-    pitchShift?: number;    // 相对 group 中心的半音偏移（用于 sequence）
-}
-
-/**
- * Hook 主动架构计划 — 让副歌的"那个高音"被有意放置和重复轰击
- */
-export interface HookPlan {
-    peakSlotIndex: number;     // 哪个 sub-motif 是峰值位
-    targetPitchClass?: number; // 跨副歌共享的同一峰值音 pitch class（0-11），可选
-    climbCurve: 'gradual' | 'steep' | 'plateau';  // 峰值前的爬升路径
-    reinforceCount: number;    // 峰值在 group 内被重复砸的次数（>=1）
-}
-
-/**
- * 大乐句容器 — 4/8/16 小节，作为旋律生成的最小完整单元
- */
-export interface PhraseGroup {
-    startBeat: number;
-    lengthBeats: number;        // 总长度（拍）= lengthBars × beatsPerBar
-    subMotifs: SubMotifSlot[];  // 子动机槽位序列
-    cadenceType: CadenceType;
-    hookPlan?: HookPlan;        // 仅 Chorus PhraseGroup 设置
-    formLabel?: string;         // 'AABA' | 'ABAB' | 'ABAC' | 'longform' 等，用于调试
-}
-
 /**
  * 风格层乐句长度配置 — 决定每个段落使用的 PhraseGroup 长度
  */
@@ -259,13 +139,6 @@ export interface StructureTemplate {
 
 export interface StyleConfig {
     id: StyleId; name: string; description?: string;
-    /**
-     * 🌟 PR #2: 启用双阶段 Viterbi 和声管线（影子骨架 → 骨架旋律 → Viterbi 选和弦）。
-     * - undefined / false: 使用旧的 HarmonyEngine.generateHarmonyTimeline + reharmonize
-     * - true: 使用新的 HarmonyPipeline，跳过 reharmonize（Viterbi 已含其功能）
-     * 默认为 undefined，仅在显式 opt-in 的风格上启用，保证未迁移风格零回归。
-     */
-    useViterbiHarmony?: boolean;
     global: {
         bpmRange: [number, number];
         timeSignaturePool: Array<{ signature:[number, number], weight: number }>;
@@ -388,37 +261,6 @@ export interface StyleConfig {
     masteringProfileId?: string;
 }
 
-// ============================================================
-// PR #2: 双阶段和声管线 — Phase 1 影子骨架数据契约
-// ============================================================
-
-/**
- * 影子骨架的功能枚举：T(主) / S(下属) / D(属)
- * 对应 ViterbiChordSelector.HarmonicFunction，但放在 types.ts 让 SkeletonMelody 等模块能 import 而不用反向依赖 harmony/。
- */
-export enum ShadowFunction {
-    Tonic = 0,
-    Subdominant = 1,
-    Dominant = 2,
-}
-
-/**
- * 影子骨架的单个槽位 —— Phase 1 输出，Phase 2 消费。
- * Pitch Space: RELATIVE（suggestedRootPc 是主调相对 0~11）
- *
- * 槽位粒度：每小节一个（PR #2 最小可听版的妥协）。
- * 未来 PR #3 会引入动态粒度（Chorus 每拍、Verse 半小节）。
- */
-export interface ShadowSlot {
-    function: ShadowFunction;
-    suggestedRootPc: number;     // 0~11，主调相对
-    startBeat: number;           // 全曲绝对拍位
-    endBeat: number;             // 全曲绝对拍位
-    isStrong: boolean;           // 是否落在小节强拍（Beat 1），用于 Phase 2 选音
-}
-
-
-
 export interface SectionMetadata {
     name: string;      
     startBeat: number;
@@ -435,21 +277,7 @@ export interface SectionMetadata {
         color: number;      // Synth & Strings
     };
 
-    // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
-    sectionType?: SectionType; // 🌟 数值枚举，逐步替代 name.includes() 字符串匹配
-    type?: string;
-    lengthBars?: number;
-    phraseTemplate?: string; // e.g., "A-A-B-A'"
-    harmony?: HarmonyState;
-    groove?: GrooveState;
-    tracks?: TrackState[];
-
-    // --- Narrative Mood Arc: 段落级情绪覆盖 ---
-    moodOverride?: MoodId; // 不设时使用全曲 mood，设置后本段落独立调制密度/力度/鼓色彩等
-
-    // --- Phase 3 & 4: Genre-Bending & Riff-Driven ---
-    localStyleOverride?: StyleId; // 局部风格覆盖 (Option B)
-    isRiffDriven?: boolean;      // 是否由 Riff 驱动 (Option A)
+    sectionType?: SectionType; // 🌟 数值枚举，替代 name.includes() 字符串匹配
 }
 
 export interface MixingConfig {
@@ -570,7 +398,6 @@ export interface GeneratedTrack {
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
 }
 
-// 🌟 五阶段管道新增：乐队指挥计划与离调桥接
 export type InstrumentRole =
     | 'melody'
     | 'vocal'
@@ -580,60 +407,18 @@ export type InstrumentRole =
     | 'counter'
     | 'secondary';
 
-export type RhythmCenter = 'downbeat' | 'backbeat' | 'syncopated';
-export type GlobalRhythmProfile =
-    | 'four-on-floor'
-    | 'half-time'
-    | 'shuffle'
-    | 'ballad'
-    | 'syncopated';
-
-export interface ConductorSectionPlan {
-    sectionName: string;
-    startBeat: number;
-    endBeat: number;
-    focusInstrument: InstrumentRole;
-    supportInstruments: InstrumentRole[];
-    silentInstruments: InstrumentRole[];
-    rhythmCenter: RhythmCenter;
-    counterpointPairs: Array<[InstrumentRole, InstrumentRole]>;
-    fillWindows: number[];
-}
-
-export interface ConductorPlan {
-    sections: ConductorSectionPlan[];
-    globalRhythmProfile: GlobalRhythmProfile;
-}
-
-export interface CadentialBridge {
-    beat: number;
-    targetNumeral: string;
-    bridgeType: 'ii-V-I' | 'bVII-IV' | 'secondary-dom' | 'tritone-sub';
-}
-
-// Stage 1 输出的"轨迹与节奏"高层风格化描述（UI 可视化用）
-export interface TrajectoryProfile {
-    sync: string;   // 节奏密度风格："Fast Triplet Bursts" / "Steady Eighths" / ...
-    path: string;   // 旋律走向风格："Monotone Triplets" / "Lyrical Arch" / ...
-}
-
 export interface MusicContext {
     keyOffset: number;
     tonality: Tonality;
     bpm: number;
     timeSignature: [number, number];
     grooveDNA: number[];
-    moodId?: MoodId;
     ensemble?: EnsembleDraft;
     style?: StyleConfig;
-    conductorPlan?: ConductorPlan;
-    cadentialBridges?: CadentialBridge[];
-    trajectoryProfile?: TrajectoryProfile;
 }
 
 export interface GenerationOptions {
     styleId?: StyleId;
-    moodId?: MoodId;
     seed?: number;
     length?: 'short' | 'medium' | 'long';
     userMotifRoot?: number;

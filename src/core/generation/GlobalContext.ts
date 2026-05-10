@@ -18,7 +18,6 @@
 // ============================================================
 
 import { GeneratedChord, SectionMetadata, StyleConfig, Tonality } from './types';
-import { MoodId } from './config/MoodFlags';
 
 class GlobalContextManager {
     public currentStyle: StyleConfig | null = null;
@@ -27,7 +26,6 @@ class GlobalContextManager {
     public currentTonality: Tonality = Tonality.Major;
     public currentKeyOffset: number = 0;
     public globalAbsoluteBeat: number = 0;
-    public currentMoodId?: MoodId;
 
     private currentGrooveDNA: number[] = [];
     private activeSection: SectionMetadata | null = null;
@@ -39,14 +37,12 @@ class GlobalContextManager {
         keyOffset: number,
         tonality: Tonality,
         timeSignature: [number, number],
-        moodId?: MoodId,
     ) {
         this.currentStyle = style;
         this.currentBPM = bpm;
         this.currentKeyOffset = keyOffset;
         this.currentTonality = tonality;
         this.currentTimeSignature = timeSignature;
-        this.currentMoodId = moodId;
     }
 
     public updateCurrentSlice(section: SectionMetadata, chord: GeneratedChord, grooveDNA: number[]) {

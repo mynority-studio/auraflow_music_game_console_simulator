@@ -12,7 +12,6 @@
 // ============================================================
 
 import { SectionMetadata, StyleConfig } from '../types';
-import { MoodConfig } from '../config/MoodFlags';
 import { PRNGManager } from '../../utils/PRNG';
 
 const FORMS: string[][] = [
@@ -41,7 +40,6 @@ export class StructureEngine {
     public static generateStructure(
         _bpm: number,
         _style: StyleConfig,
-        mood: MoodConfig,
         timeSignature: [number, number] = DEFAULT_TIME_SIGNATURE,
     ): SectionMetadata[] {
         const selectedForm = FORMS[PRNGManager.nextInt(0, FORMS.length - 1)];
@@ -57,14 +55,11 @@ export class StructureEngine {
             const c = SECTION_CONFIG[name];
             const beats = c.bars * barBeats;
 
-            let e = c.baseEnergy;
-            e = Math.max(mood.energyCap[0], Math.min(mood.energyCap[1], e));
-
             sections.push({
                 name,
                 startBeat: currentBeat,
                 endBeat: currentBeat + beats,
-                energyLevel: e,
+                energyLevel: c.baseEnergy,
             });
             currentBeat += beats;
         }

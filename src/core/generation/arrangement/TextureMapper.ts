@@ -90,8 +90,8 @@ export class TextureMapper {
                 }
             }
 
-            // 2) 解析 quality 字符串到 enum，算 chord pitch class 集
-            const qEnum = ChordQuality[chord.quality as keyof typeof ChordQuality];
+            // 2) chord.quality 已是 ChordQuality 枚举（types.ts 数值类型），直接使用
+            const qEnum = chord.quality;
             const intervals = MusicTheory.getChordTones(qEnum);
             const pcs: number[] = [];
 

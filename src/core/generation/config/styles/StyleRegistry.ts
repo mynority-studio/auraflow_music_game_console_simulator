@@ -6,8 +6,6 @@ import { StyleId } from '../StyleFlags';
 const AcgStyle: StyleConfig = {
     id: StyleId.AcgLightMusic,
     name: '二次元轻音乐 (ACG Light Music)',
-    // Viterbi 双阶段和声管线（影子骨架 → 骨架旋律 → Viterbi 选和弦）
-    useViterbiHarmony: true,
     global: {
         bpmRange: [80, 140],
         timeSignaturePool: [{ signature: [4, 4] as [number, number], weight: 1.0 }],

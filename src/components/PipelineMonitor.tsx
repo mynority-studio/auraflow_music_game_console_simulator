@@ -14,19 +14,31 @@ import {
     TonalityName,
     Tonality,
     InstrumentRole,
-    ConductorSectionPlan,
+    ChordQuality,
 } from '../core/generation/types';
-import { MoodRegistry } from '../core/generation/config/MoodFlags';
 import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-const QUALITY_SUFFIX: Record<string, string> = {
-    Major: '', Minor: 'm', Diminished: 'dim', Diminished7: 'dim7', Augmented: 'aug',
-    Dominant7: '7', Minor7: 'm7', Major7: 'maj7', HalfDiminished: 'm7b5',
-    Sus4: 'sus4', Dominant7Sus4: '7sus4', Add9: 'add9',
-    Minor9: 'm9', Major9: 'maj9', Dominant9: '9', Minor11: 'm11', Dominant13: '13',
-};
+// 数值枚举索引到显示后缀（数组下标 = ChordQuality 枚举值）
+const QUALITY_SUFFIX: string[] = [];
+QUALITY_SUFFIX[ChordQuality.Major] = '';
+QUALITY_SUFFIX[ChordQuality.Minor] = 'm';
+QUALITY_SUFFIX[ChordQuality.Diminished] = 'dim';
+QUALITY_SUFFIX[ChordQuality.Diminished7] = 'dim7';
+QUALITY_SUFFIX[ChordQuality.Augmented] = 'aug';
+QUALITY_SUFFIX[ChordQuality.Dominant7] = '7';
+QUALITY_SUFFIX[ChordQuality.Minor7] = 'm7';
+QUALITY_SUFFIX[ChordQuality.Major7] = 'maj7';
+QUALITY_SUFFIX[ChordQuality.HalfDiminished] = 'm7b5';
+QUALITY_SUFFIX[ChordQuality.Sus4] = 'sus4';
+QUALITY_SUFFIX[ChordQuality.Dominant7Sus4] = '7sus4';
+QUALITY_SUFFIX[ChordQuality.Add9] = 'add9';
+QUALITY_SUFFIX[ChordQuality.Minor9] = 'm9';
+QUALITY_SUFFIX[ChordQuality.Major9] = 'maj9';
+QUALITY_SUFFIX[ChordQuality.Dominant9] = '9';
+QUALITY_SUFFIX[ChordQuality.Minor11] = 'm11';
+QUALITY_SUFFIX[ChordQuality.Dominant13] = '13';
 
 // 复现 EndlessRadioManager 的 style 选择逻辑，让 seed 100% 复现 Radio 的任意歌曲
 const RADIO_STYLE_POOL: StyleId[] = [StyleId.AcgLightMusic];
@@ -225,12 +237,6 @@ export const PipelineMonitor: React.FC = () => {
         }
     }
 
-    const conductorPlanForCurrent = context?.conductorPlan?.sections.find(
-        s => currentSection
-            && s.sectionName === currentSection.name
-            && Math.abs(s.startBeat - currentSection.startBeat) < 1e-6,
-    ) ?? null;
-
     return (
         <motion.div
             drag
@@ -342,9 +348,7 @@ export const PipelineMonitor: React.FC = () => {
                         keyName={arranged?.key}
                         tonality={context?.tonality}
                         seed={seed}
-                        moodName={context?.moodId !== undefined ? MoodRegistry[context.moodId]?.name : undefined}
                         styleName={context?.style ? StyleIdName[context.style.id] : undefined}
-                        trajectory={context?.trajectoryProfile}
                     />
                     <Stage2Harmony
                         chords={chords}
@@ -353,20 +357,16 @@ export const PipelineMonitor: React.FC = () => {
                     />
                 </div>
 
-                {/* 右栏：Stage 03-05 */}
+                {/* 右栏：Stage 03 + Ensemble */}
                 <div className="w-1/2 overflow-y-auto custom-pipeline-scroll">
                     <Stage3Structure
                         sections={sections}
                         currentSectionIdx={currentSectionIdx}
                         beatsPerBar={arranged?.timeSignature?.[0]}
                     />
-                    <Stage4Conductor
-                        plan={conductorPlanForCurrent}
-                        globalRhythm={context?.conductorPlan?.globalRhythmProfile}
-                    />
                     <Stage5Ensemble
                         palette={arranged?.palette}
-                        plan={conductorPlanForCurrent}
+                        roster={context?.ensemble?.roster}
                         mutedParts={mutedParts}
                         onToggleMute={togglePartMute}
                     />
@@ -408,12 +408,10 @@ interface Stage1Props {
     keyName: string | undefined;
     tonality: Tonality | undefined;
     seed: number;
-    moodName: string | undefined;
     styleName: string | undefined;
-    trajectory: { sync: string; path: string } | undefined;
 }
 
-const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, moodName, styleName, trajectory }) => {
+const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, styleName }) => {
     const tonicLabel = keyName ?? '—';
     const modeLabel = tonalityToShortMode(tonality);
     return (
@@ -439,15 +437,9 @@ const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, m
                 </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-3">
-                <div>
-                    <FieldLabel>Seed</FieldLabel>
-                    <div className="text-white text-xs break-all">{seed || '—'}</div>
-                </div>
-                <div>
-                    <FieldLabel>Emotion</FieldLabel>
-                    <div className="text-amber-400 text-sm font-bold uppercase">{moodName ?? '—'}</div>
-                </div>
+            <div className="mt-3">
+                <FieldLabel>Seed</FieldLabel>
+                <div className="text-white text-xs break-all">{seed || '—'}</div>
             </div>
 
             <div className="mt-3">
@@ -458,14 +450,6 @@ const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, m
             <div className="mt-3">
                 <FieldLabel>Melody Scale</FieldLabel>
                 <div className="text-white text-sm">{tonalityToHumanScale(tonality)}</div>
-            </div>
-
-            <div className="mt-3">
-                <FieldLabel>Trajectory & Rhythm</FieldLabel>
-                <div className="text-amber-400 text-xs leading-relaxed">
-                    <div>Sync: {trajectory?.sync ?? '—'}</div>
-                    <div>Path: {trajectory?.path ?? '—'}</div>
-                </div>
             </div>
         </section>
     );
@@ -571,62 +555,9 @@ const EnergyBar: React.FC<{ level: number; active: boolean }> = ({ level, active
     );
 };
 
-interface Stage4Props {
-    plan: ConductorSectionPlan | null;
-    globalRhythm: string | undefined;
-}
-
-const Stage4Conductor: React.FC<Stage4Props> = ({ plan, globalRhythm }) => {
-    if (!plan) {
-        return (
-            <section className="px-4 pt-4 pb-3 border-b border-zinc-800/60">
-                <StageBadge label="Stage 04: Conductor" color="rgb(168, 85, 247)" />
-                <div className="mt-3 text-zinc-600 text-xs">— 无指挥计划 —</div>
-            </section>
-        );
-    }
-    return (
-        <section className="px-4 pt-4 pb-3 border-b border-zinc-800/60">
-            <StageBadge label="Stage 04: Conductor" color="rgb(168, 85, 247)" />
-            <div className="mt-3 space-y-2 text-[11px]">
-                <RoleRow label="Focus" roles={[plan.focusInstrument]} color="text-purple-300" />
-                <RoleRow label="Support" roles={plan.supportInstruments} color="text-zinc-300" />
-                <RoleRow label="Silent" roles={plan.silentInstruments} color="text-zinc-600" />
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div>
-                        <div className="text-[9px] uppercase tracking-widest text-zinc-500">Rhythm</div>
-                        <div className="text-purple-300 text-xs">{plan.rhythmCenter}</div>
-                    </div>
-                    <div>
-                        <div className="text-[9px] uppercase tracking-widest text-zinc-500">Global</div>
-                        <div className="text-purple-300 text-xs">{globalRhythm ?? '—'}</div>
-                    </div>
-                </div>
-                {plan.fillWindows.length > 0 && (
-                    <div>
-                        <div className="text-[9px] uppercase tracking-widest text-zinc-500">Fill @</div>
-                        <div className="text-amber-400 text-xs">{plan.fillWindows.map(b => b.toFixed(1)).join(', ')}</div>
-                    </div>
-                )}
-            </div>
-        </section>
-    );
-};
-
-const RoleRow: React.FC<{ label: string; roles: InstrumentRole[]; color: string }> = ({ label, roles, color }) => (
-    <div className="flex items-baseline gap-2">
-        <span className="text-[9px] uppercase tracking-widest text-zinc-500 w-14">{label}</span>
-        <div className="flex flex-wrap gap-1">
-            {roles.length === 0
-                ? <span className="text-zinc-700 text-[11px]">—</span>
-                : roles.map((r, i) => <span key={i} className={`text-[11px] ${color}`}>{r}</span>)}
-        </div>
-    </div>
-);
-
 interface Stage5Props {
     palette: ArrangedTrack['palette'] | undefined;
-    plan: ConductorSectionPlan | null;
+    roster: import('../core/generation/types').BandRoster | undefined;
     mutedParts: Set<PartName>;
     onToggleMute: (partName: PartName) => void;
 }
@@ -643,18 +574,26 @@ const ROLE_TO_PALETTE_KEY: Record<InstrumentRole, keyof NonNullable<ArrangedTrac
 
 const ALL_ROLES: InstrumentRole[] = ['melody', 'vocal', 'chord', 'bass', 'drums', 'counter', 'secondary'];
 
-const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, plan, mutedParts, onToggleMute }) => {
+const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, mutedParts, onToggleMute }) => {
     if (!palette) {
         return (
             <section className="px-4 pt-4 pb-4">
-                <StageBadge label="Stage 05: Ensemble" color="rgb(244, 63, 94)" />
+                <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
                 <div className="mt-3 text-zinc-600 text-xs">— 未编制 —</div>
             </section>
         );
     }
+    const leadName = roster?.lead?.name;
+    const compingName = roster?.comping?.name;
     return (
         <section className="px-4 pt-4 pb-4">
-            <StageBadge label="Stage 05: Ensemble" color="rgb(244, 63, 94)" />
+            <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
+            {(leadName || compingName) && (
+                <div className="mt-2 text-[10px] text-zinc-500 leading-relaxed">
+                    {leadName && <div>Lead: <span className="text-emerald-300">{leadName}</span></div>}
+                    {compingName && <div>Comping: <span className="text-amber-300">{compingName}</span></div>}
+                </div>
+            )}
             <div className="mt-3 space-y-1">
                 {ALL_ROLES.map((role) => {
                     const key = ROLE_TO_PALETTE_KEY[role];
@@ -662,35 +601,20 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, plan, mutedParts, onTo
                     if (!sound) return null;
                     const partName = ROLE_TO_PART_NAME[role];
                     const isMuted = mutedParts.has(partName);
-                    let status: 'focus' | 'support' | 'silent' | 'idle' = 'idle';
-                    if (plan) {
-                        if (plan.focusInstrument === role) status = 'focus';
-                        else if (plan.supportInstruments.indexOf(role) >= 0) status = 'support';
-                        else if (plan.silentInstruments.indexOf(role) >= 0) status = 'silent';
-                    }
                     return (
                         <div
                             key={role}
                             className={
                                 'flex items-center gap-2 px-2 py-1 rounded text-[11px] ' +
                                 (isMuted ? 'bg-red-900/20 border border-red-500/30'
-                                    : status === 'focus' ? 'bg-rose-500/15 border border-rose-400/50'
-                                    : status === 'silent' ? 'opacity-40 border border-transparent'
                                     : 'border border-transparent')
                             }
                         >
-                            <span className={
-                                'w-14 text-[9px] uppercase tracking-widest ' +
-                                (status === 'focus' && !isMuted ? 'text-rose-300 font-bold' : 'text-zinc-500')
-                            }>{role}</span>
+                            <span className="w-14 text-[9px] uppercase tracking-widest text-zinc-500">{role}</span>
                             <span className={
                                 'flex-1 text-xs truncate ' +
-                                (isMuted ? 'text-zinc-600 line-through'
-                                    : status === 'silent' ? 'text-zinc-600 line-through'
-                                    : 'text-zinc-300')
+                                (isMuted ? 'text-zinc-600 line-through' : 'text-zinc-300')
                             }>{String(sound)}</span>
-                            {!isMuted && status === 'focus' && <span className="text-[9px] text-rose-400">●</span>}
-                            {!isMuted && status === 'support' && <span className="text-[9px] text-zinc-500">○</span>}
                             <button
                                 onClick={() => onToggleMute(partName)}
                                 title={isMuted ? `Unmute ${role}` : `Mute ${role}`}

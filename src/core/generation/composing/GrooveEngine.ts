@@ -17,7 +17,6 @@
 // ============================================================
 
 import { NoteData, SectionMetadata, StyleConfig, DrumPattern } from '../types';
-import { MoodConfig } from '../config/MoodFlags';
 import { PRNGManager } from '../../utils/PRNG';
 
 const BEAT_EPS = 0.001;
@@ -67,12 +66,11 @@ function grooveWeight(pitch: number): number {
 export class GrooveEngine {
     public static generateDrums(
         sections: SectionMetadata[],
-        mood?: MoodConfig,
         style?: StyleConfig,
         timeSignature: [number, number] = DEFAULT_TIME_SIGNATURE,
     ): NoteData[] {
         const drums: NoteData[] = [];
-        const density = mood ? mood.densityMultiplier : 1.0;
+        const density = 1.0;
         const patterns = style?.rhythm.drumPatterns;
 
         // 拍号驱动：4/4=4 拍/小节, 3/4=3, 6/8=3, 12/8=6

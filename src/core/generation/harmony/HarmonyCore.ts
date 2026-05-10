@@ -16,7 +16,7 @@
 //   - 每个非段首和弦（高能段）：×1（抢拍判定）
 // ============================================================
 
-import { GeneratedChord, SectionMetadata, StyleConfig, Tonality, ChordQualityName } from '../types';
+import { GeneratedChord, SectionMetadata, StyleConfig, Tonality } from '../types';
 import { PRNGManager } from '../../utils/PRNG';
 import { MusicTheory } from '../theory/MusicTheory';
 
@@ -87,7 +87,7 @@ export class HarmonyCore {
                     chords.push({
                         numeral,
                         root: parsed.root,
-                        quality: ChordQualityName[parsed.quality] as GeneratedChord['quality'],
+                        quality: parsed.quality,
                         startBeat,
                         endBeat,
                         keyOffset,

@@ -26,7 +26,6 @@ console.log('='.repeat(70));
 console.log(`SEED ${SEED}`);
 console.log(`bpm=${track.bpm}  key=${track.key}  keyOffset=${keyOffset}  tonality=${TonalityName[tonality]}`);
 console.log(`scale (abs pcs): ${[...scaleSet].sort((a, b) => a - b).join(',')}`);
-console.log(`useViterbiHarmony=${context.style?.useViterbiHarmony}`);
 console.log('='.repeat(70));
 
 function pitchClass(p: number): number {
@@ -63,7 +62,7 @@ const chords = arranged.chords ?? [];
 console.log('\n--- Chord progression (first 16, abs pcs) ---');
 for (let i = 0; i < Math.min(chords.length, 16); i++) {
     const c = chords[i];
-    const qEnum = ChordQuality[c.quality as keyof typeof ChordQuality];
+    const qEnum = c.quality;
     const intervals = CHORD_INTERVALS[qEnum];
     const absPcs: number[] = [];
     for (const iv of intervals) absPcs.push(((c.root + iv + (c.keyOffset ?? keyOffset)) % 12 + 12) % 12);
@@ -73,7 +72,7 @@ for (let i = 0; i < Math.min(chords.length, 16); i++) {
 function chordPcsAt(beat: number, chs: GeneratedChord[]): { pcs: Set<number>; numeral: string } | null {
     for (const c of chs) {
         if (beat >= c.startBeat - 0.001 && beat < c.endBeat - 0.001) {
-            const qEnum = ChordQuality[c.quality as keyof typeof ChordQuality];
+            const qEnum = c.quality;
             const intervals = CHORD_INTERVALS[qEnum];
             const set = new Set<number>();
             for (const iv of intervals) set.add(((c.root + iv + (c.keyOffset ?? keyOffset)) % 12 + 12) % 12);

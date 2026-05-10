@@ -86,26 +86,7 @@ export class Orchestrator {
             : [];
 
         // 4) 鼓组绝对音高特权：直接透传
-        let drums: NoteData[] = track.drums ? track.drums.map(n => ({ ...n })) : [];
-
-        // 5) ConductorPlan 物理消音：按 silentInstruments 在该段落内过滤音符
-        if (context.conductorPlan) {
-            const plan = context.conductorPlan;
-            for (let i = 0; i < plan.sections.length; i++) {
-                const planSec = plan.sections[i];
-                const filterSilence = (notes: NoteData[]): NoteData[] =>
-                    notes.filter(
-                        n => !(n.onset >= planSec.startBeat - SECTION_EPS &&
-                               n.onset < planSec.endBeat - SECTION_EPS),
-                    );
-                if (planSec.silentInstruments.indexOf('melody') >= 0) melody = filterSilence(melody);
-                if (planSec.silentInstruments.indexOf('counter') >= 0) counterMelody = filterSilence(counterMelody);
-                if (planSec.silentInstruments.indexOf('drums') >= 0) drums = filterSilence(drums);
-                if (planSec.silentInstruments.indexOf('bass') >= 0) pianoLH = filterSilence(pianoLH);
-                if (planSec.silentInstruments.indexOf('chord') >= 0) pianoRH = filterSilence(pianoRH);
-                if (planSec.silentInstruments.indexOf('secondary') >= 0) secondaryMelody = filterSilence(secondaryMelody);
-            }
-        }
+        const drums: NoteData[] = track.drums ? track.drums.map(n => ({ ...n })) : [];
 
         return {
             bpm: track.bpm,

@@ -1,21 +1,17 @@
 // ============================================================
-// ToplineEngine — 节奏-轮廓-引力 + 情绪密度 + Idiom 驱动的物理约束
+// ToplineEngine — 节奏-轮廓-引力 + Idiom 驱动的物理约束
 // ============================================================
 // Pitch Space: RELATIVE
 //   输入  chord.root / chord.quality 都是相对调式空间（root 0~11）
 //   输出  NoteData.pitch 全部相对值，keyOffset 由 Orchestrator 应用
 //
-// 数据驱动改造（V7.6 + Lead/Comping 拆分 + 拟人化）：
-//   - mood 注入：density = mood.densityMultiplier（Chill 0.6 / Energetic 1.2 等）
+// 数据驱动（V7.6 + Lead/Comping 拆分 + 拟人化）：
 //   - 呼吸感由 idiom.lead.needsBreathing/breath* 数据驱动
 //     （needsBreathing 的 idiom 触发 8 拍换气，键盘类跳过）
-//   - 密度休止：density<1 时按 (1-density) 概率随机休止
-//   - 高密度分裂：density>1.1 且时值≥1 拍时 40% 概率把 1 个音符分裂为 2 个
 //   - 拟人化后处理（return 前）：legatoRatio 延音 / humanizeVelocity 力度抖动 / graceNoteProbability 大跳倚音
 // ============================================================
 
-import { NoteData, GeneratedChord, Tonality, ChordQuality, InstrumentIdiom, SectionMetadata, StyleConfig, PhraseLengthProfile } from '../types';
-import { MoodConfig } from '../config/MoodFlags';
+import { NoteData, GeneratedChord, Tonality, InstrumentIdiom, SectionMetadata, StyleConfig, PhraseLengthProfile } from '../types';
 import { PRNGManager } from '../../utils/PRNG';
 import { MusicTheory } from '../theory/MusicTheory';
 import { BASIC_RHYTHM_CELLS } from './RhythmCells';
@@ -27,19 +23,7 @@ const NOTE_END_EPS = 0.001;
 const MIN_DUR = 0.05;
 const ARTICULATION_RATIO = 0.85;
 
-// 密度分裂参数
-const SPLIT_DENSITY_THRESHOLD = 1.1;
-const SPLIT_MIN_DUR = 1.0;
-const SPLIT_PROB = 0.4;
-
-// CounterMelody 密度过滤
-const COUNTER_REST_PROB = 0.4;
-
-// 骨架强拍锚点选择池：[root, 3rd, 5th] 在 chordPcs[0..2]
-const SKELETON_ANCHOR_INDICES = [0, 1, 2];
-
 // 段落 phrase 长度兜底（4/4 拍下，由实际 barBeats 替代）
-const DEFAULT_BAR_BEATS = 4;
 const MOTIF_BARS = 2;           // 每个 motif 固定 2 小节（拍数 = MOTIF_BARS × barBeats）
 const SLOTS_PER_BEAT = 4;       // 16 分网格
 
@@ -96,38 +80,9 @@ function cellGrooveFitness(cell: number[], grooveDNA: number[]): number {
 }
 
 export class ToplineEngine {
-    /**
-     * 影子骨架：每个和弦在 startBeat 上放 1 个强拍锚点（root/3rd/5th 三选一）。
-     * 用于 Viterbi 前置评分输入（基于"基本和声功能"而非完整旋律），让和弦重配可以
-     * 在不绑死具体旋律的情况下进行。生成完成后真正的 melody 直接基于 finalChords。
-     *
-     * Pitch Space: RELATIVE
-     * PRNG 消耗：每和弦 ×1（在 root/3rd/5th 间抽）
-     */
-    public static generateSkeleton(chords: GeneratedChord[]): NoteData[] {
-        const skeleton: NoteData[] = [];
-        for (let i = 0; i < chords.length; i++) {
-            const chord = chords[i];
-            const qualityEnum = ChordQuality[chord.quality as keyof typeof ChordQuality];
-            const intervals = MusicTheory.getChordTones(qualityEnum);
-            // 三选一：root / 3rd / 5th
-            const idx = SKELETON_ANCHOR_INDICES[PRNGManager.nextInt(0, Math.min(2, intervals.length - 1))];
-            const safeIdx = idx < intervals.length ? idx : 0;
-            const pitch = chord.root + intervals[safeIdx];
-            skeleton.push({
-                pitch,
-                onset: chord.startBeat,
-                duration: chord.endBeat - chord.startBeat,
-                velocity: 0.7,
-            });
-        }
-        return skeleton;
-    }
-
     public static generateMelody(
         chords: GeneratedChord[],
         tonality: Tonality,
-        mood?: MoodConfig,
         idiom?: InstrumentIdiom,
         sections?: SectionMetadata[],
         style?: StyleConfig,
@@ -137,7 +92,6 @@ export class ToplineEngine {
         if (chords.length === 0) return melody;
 
         const scalePcs = MusicTheory.getScalePitches(tonality);
-        const density = mood ? mood.densityMultiplier : 1.0;
 
         // 拍号驱动的每小节拍数 + 单个 motif 长度（默认 2 小节）
         const barBeats = (timeSignature[0] * 4) / timeSignature[1];
@@ -145,8 +99,7 @@ export class ToplineEngine {
 
         // 缓存和弦音池，避免内层循环重复计算
         const chordPools = chords.map(chord => {
-            const qualityEnum = ChordQuality[chord.quality as keyof typeof ChordQuality];
-            const chordIntervals = MusicTheory.getChordTones(qualityEnum);
+            const chordIntervals = MusicTheory.getChordTones(chord.quality);
             const chordPcs = chordIntervals.map(iv => ((chord.root + iv) % 12 + 12) % 12);
             const weakBeatPool = [...chordPcs];
             for (let j = 0; j < scalePcs.length; j++) {
@@ -257,7 +210,6 @@ export class ToplineEngine {
                         if (actualDur < MIN_DUR) continue;
 
                         if (isRest) continue;
-                        if (density < 1.0 && PRNGManager.nextFloat(0, 1) < (1.0 - density)) continue;
 
                         const leadIdiom = idiom?.lead;
                         if (leadIdiom?.needsBreathing && leadIdiom.breathPhraseLength && leadIdiom.breathTriggerBeat) {
@@ -267,12 +219,8 @@ export class ToplineEngine {
                             }
                         }
 
-                        let numNotes = 1;
-                        let noteDur = actualDur;
-                        if (density > SPLIT_DENSITY_THRESHOLD && actualDur >= SPLIT_MIN_DUR && PRNGManager.nextFloat(0, 1) < SPLIT_PROB) {
-                            numNotes = 2;
-                            noteDur = actualDur / 2;
-                        }
+                        const numNotes = 1;
+                        const noteDur = actualDur;
 
                         for (let n = 0; n < numNotes; n++) {
                             let targetPitch = ctx.chord.root + sequenceShift + mn.contourDelta;
@@ -357,24 +305,20 @@ export class ToplineEngine {
      *   - 节奏稀疏（每 2~4 拍一个音），不与 melody 抢前景
      *   - 力度弱（0.4~0.6），融入背景
      *   - 仅吸和弦音池（非完整音阶），保证和声纯净
-     *   - 低密度时 40% 跳过当前音符，进一步稀疏化
      *
      * 输出仍是相对空间，由 Orchestrator 应用 keyOffset。
      */
     public static generateCounterMelody(
         chords: GeneratedChord[],
         _tonality: Tonality,
-        mood?: MoodConfig,
         _idiom?: InstrumentIdiom,
     ): NoteData[] {
         const counter: NoteData[] = [];
         let currentPitch = -5;
-        const density = mood ? mood.densityMultiplier : 1.0;
 
         for (let ci = 0; ci < chords.length; ci++) {
             const chord = chords[ci];
-            const qualityEnum = ChordQuality[chord.quality as keyof typeof ChordQuality];
-            const chordIntervals = MusicTheory.getChordTones(qualityEnum);
+            const chordIntervals = MusicTheory.getChordTones(chord.quality);
 
             const chordPcs: number[] = [];
             for (let j = 0; j < chordIntervals.length; j++) {
@@ -390,12 +334,6 @@ export class ToplineEngine {
                     actualDur = chord.endBeat - currentBeat;
                 }
                 if (actualDur < MIN_DUR) {
-                    currentBeat += actualDur;
-                    continue;
-                }
-
-                // 密度过滤：低密度 40% 跳过当前音
-                if (density < 1.0 && PRNGManager.nextFloat(0, 1) < COUNTER_REST_PROB) {
                     currentBeat += actualDur;
                     continue;
                 }
