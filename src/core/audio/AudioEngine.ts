@@ -1,32 +1,28 @@
-// ============================================================
-// 🚧 STUB — 音频引擎单例占位
-// ============================================================
-//
-// 历史功能：
-//   AudioEngine 是 App 层与音频后端的总入口：
-//   ① 管理 PlaybackEngine 生命周期 + 转发 visualListener / rawVisualListener
-//   ② playSong(track, styleId, context, generator) 调 Orchestrator.arrange → playback.loadSong
-//   ③ 暴露 getCurrentArrangedTrack / getCurrentContext / getCurrentBeat / getCurrentTick / getBpm / getPpq
-//   ④ MIDI 通道工具：muteChannel / setPartMute / injectMidiEvent / get|replaceChannelEvents
-//   ⑤ 实时演奏：playNote / noteOn / noteOff / pitchBend（直接打 spessaSynth）
-//   ⑥ Mixer 状态读写 + Focus Track / Drum Ducking 等播放策略开关
-//
-// 重构期占位行为：
-//   - playSong 不真正播放，仅把传入 track + context 缓存供 PipelineMonitor UI 读取
-//   - 所有实时演奏 API（noteOn/noteOff/playNote/pitchBend）变成 no-op，
-//     SystemAudio / AuraBar / AuraJam 的"试听 / Jam 模式"全部静音降级
-//   - visualListener 仍可注册，但占位永远不会主动派发事件
-//   - 重导出 spessaSynth / isSpessaSynthReady / getAudioContext / startAudioContext，
-//     维持旧 import 路径不变
-//
-// 重构方向：
-//   新音频引擎重写时只需保持本文件公开方法的 shape 不变，App 层即可零改动接入。
-// ============================================================
+/**
+ * AudioEngine — 音频引擎单例（Phase 4 实装版）
+ *
+ * App 层与音频后端的总入口：
+ *   ① 管理 PlaybackEngine 生命周期 + 转发 visualListener / rawVisualListener
+ *   ② playSong(track, styleId, context, generator) 调 Orchestrator.arrange → playback.loadSong
+ *   ③ 暴露 getCurrentArrangedTrack / getCurrentContext / getCurrentBeat / getCurrentTick / getBpm / getPpq
+ *   ④ MIDI 通道工具：muteChannel / setPartMute / injectMidiEvent / get|replaceChannelEvents
+ *   ⑤ 实时演奏：playNote / noteOn / noteOff / pitchBend（暂保 no-op，Phase 5 实装）
+ *   ⑥ Mixer 状态读写 + Focus Track / Drum Ducking 等播放策略开关
+ *
+ * Phase 4 关键改动：
+ *   - 移除 expandVoicingsToNoteData — 老的 chord.voicing 展开逻辑被 Stage 5
+ *     accompaniment 轨取代。
+ *   - playSong 现在调用 Orchestrator.arrange 把 RELATIVE 空间 GeneratedTrack 转成
+ *     ABSOLUTE 空间 ArrangedTrack，再交给 PlaybackEngine.loadSong（内部跑
+ *     MidiConverter.convert）。
+ *   - K-2 唯一加 keyOffset 的位置：Orchestrator。本类**不再**触碰 keyOffset。
+ */
 
 import { PlaybackEngine, VisualEvent, PartName } from './PlaybackEngine';
 import { ArrangedTrack, GeneratedTrack, MusicContext } from '../generation/types';
 import { StyleId } from '../generation/config/StyleFlags';
 import { MelodyEngine } from '../generation/MelodyEngine';
+import { Orchestrator } from '../generation/pipeline/Orchestrator';
 import { globalMidiScheduler } from './MidiScheduler';
 import {
     spessaSynth,
@@ -68,29 +64,17 @@ class AudioEngineSystem {
         if (!this.playback) this.init();
         this.generator = generator;
 
-        // STUB：旧实现走 Orchestrator.arrange(initialTrack, styleId, context) → ArrangedTrack
-        // 占位期没有 Orchestrator，按 GeneratedTrack 字段直接拼一份最小 ArrangedTrack
-        const arranged: ArrangedTrack = {
-            bpm: initialTrack.bpm,
-            key: initialTrack.key,
-            absoluteStartBeat: initialTrack.absoluteStartBeat,
-            timeSignature: initialTrack.timeSignature,
-            styleId,
-            vocal: initialTrack.vocal,
-            melody: initialTrack.melody ?? [],
-            secondaryMelody: undefined,
-            pianoLH: [],
-            pianoRH: [],
-            drums: initialTrack.drums,
-            counterMelody: initialTrack.counterMelody,
-            userMotif: initialTrack.processedUserMotif,
-            palette: initialTrack.preSelectedPalette,
-            sections: initialTrack.sections,
-            globalRiff: initialTrack.globalRiff,
-            chords: initialTrack.chords,
-        };
+        // 确保 SpessaSynth 已就绪（用户手势后第一次播放才会真正加载 SF2）
+        await startAudioContext();
+
+        // pipeline rule §1.4 step 3：Orchestrator 是 RELATIVE→ABSOLUTE 的唯一转换点（K-2）
+        const arranged: ArrangedTrack = Orchestrator.arrange(initialTrack, styleId, context);
+
         this.currentArrangedTrack = arranged;
         this.currentContext = context;
+
+        await this.playback!.loadSong(arranged);
+        this.playback!.play();
     }
 
     public stop(): void {

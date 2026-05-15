@@ -1,26 +1,31 @@
-// ============================================================
-// 🚧 STUB — SpessaSynth 生命周期占位
-// ============================================================
-//
-// 历史功能：
-//   - getAudioContext()：单例创建/复用 Web Audio AudioContext
-//   - startAudioContext()：恢复 ctx + 初始化 SpessaSynth WorkletSynthesizer + 加载 GM128 SF2
-//   - 暴露 spessaSynth 实例 + isSpessaSynthReady 标志，给上层乐器/混音使用
-//
-// 重构期占位行为：
-//   - getAudioContext() 仍返回真实 AudioContext（消费方 .state / .resume() 调用不会崩）
-//   - startAudioContext() 仅 resume()，不再加载 SF2 / 初始化 SpessaSynth
-//   - spessaSynth = null：SystemAudio.ts 的 `if (!spessaSynth) return;` 守卫使所有
-//     UI 反馈音效自然降级为静音
-//   - isSpessaSynthReady = false
-//
-// 重构方向：
-//   新音频引擎决定是否继续使用 SpessaSynth（也可直接 Web Audio 合成 / WebMIDI）。
-//   保持 getAudioContext / startAudioContext 入口签名不变即可。
-// ============================================================
+/**
+ * SynthManager — SpessaSynth WorkletSynthesizer 生命周期（Phase 2.D 实装版）
+ *
+ * 启动流程：
+ *   1. getAudioContext() 单例
+ *   2. startAudioContext() → ctx.resume() → registerPlaybackWorklet → new WorkletSynthesizer
+ *      → fetch /GM128_3MB.sf2 → soundBankManager.addSoundBank → await isReady
+ *      → synth.connect(ctx.destination)
+ *
+ * 单 promise 串行：多次 startAudioContext() 只触发一次真正初始化。
+ * 失败时 spessaSynth 保持 null — 上层 `if (!spessaSynth) return;` 守卫降级静音。
+ *
+ * `export let` 提供 live binding — 消费方 `import { spessaSynth }` 会自动看到更新后的实例。
+ */
 
-export const spessaSynth: any = null;
-export const isSpessaSynthReady = false;
+import { WorkletSynthesizer } from 'spessasynth_lib';
+// Vite `?url` 后缀 — node_modules 内的 worklet processor 作为静态资源 emit，返回 URL 字符串
+// 这是 WorkletSynthesizer 构造前必须 addModule 注册的处理器代码
+import workletProcessorURL from 'spessasynth_lib/dist/spessasynth_processor.min.js?url';
+
+const SF2_URL = '/GM128_3MB.sf2';
+const SF2_BANK_ID = 'gm128';
+
+// ES module live binding — 初始化后这两个变量被赋值，所有 import 端自动可见
+export let spessaSynth: WorkletSynthesizer | null = null;
+export let isSpessaSynthReady = false;
+
+let _startPromise: Promise<void> | null = null;
 
 export const getAudioContext = (): AudioContext => {
     const w = window as unknown as { globalAudioContext?: AudioContext };
@@ -38,4 +43,26 @@ export const startAudioContext = async (): Promise<void> => {
     if (ctx.state !== 'running') {
         try { await ctx.resume(); } catch { /* ignore */ }
     }
+    if (_startPromise) return _startPromise;
+    _startPromise = (async () => {
+        // 注册 AudioWorklet 处理器（spessasynth-worklet-processor）— WorkletSynthesizer
+        // 构造时会 new AudioWorkletNode，要求此 processor 已 addModule
+        await ctx.audioWorklet.addModule(workletProcessorURL);
+
+        const synth = new WorkletSynthesizer(ctx);
+        await synth.isReady;
+
+        const response = await fetch(SF2_URL);
+        if (!response.ok) {
+            throw new Error(`SynthManager: SF2 fetch failed (${SF2_URL}, status ${response.status})`);
+        }
+        const buffer = await response.arrayBuffer();
+        await synth.soundBankManager.addSoundBank(buffer, SF2_BANK_ID, 0);
+
+        synth.connect(ctx.destination);
+
+        spessaSynth = synth;
+        isSpessaSynthReady = true;
+    })();
+    return _startPromise;
 };

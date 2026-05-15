@@ -1,29 +1,22 @@
-// ============================================================
-// 🚧 STUB — MIDI 调度器占位
-// ============================================================
-//
-// 历史功能：
-//   MidiScheduler 模拟 ESP32 上的 FreeRTOS 硬件定时器：
-//   ① 用 Web Worker 周期唤醒（背景标签页也能跑）
-//   ② 维护 events: MidiEvent[]（PPQ=480），按 currentTick 推进
-//   ③ 派发 noteOn/noteOff/cc/programChange/pitchBend/visual 到 SpessaSynth
-//   ④ 支持 muteChannel / loop / tempoCurves / onTrackEnd / channelEvents 替换
-//   消费方：PlaybackEngine（写）、AudioEngine（读 tick / channel）、
-//          EndlessRadioManager + JamSessionManager（jam 模式直接编辑事件流）。
-//
-// 重构期占位行为：
-//   - 所有调度方法均为 no-op，不会真正派发事件
-//   - getCurrentTick/getBpm/ppq 返回常量；beatsToTicks 仍是 round(beats*ppq)
-//   - injectEvent / replaceChannelEvents 仅维护一个简易事件数组以便 getChannelEvents 自洽
-//   - onTrackEnd 注册的回调永远不会被自动触发（曲子永不"结束"）— 调用方需要显式 stop
-//   - addVisualListener 仍记录 listener，但本占位永远不会主动触发可视化事件
-//
-// 重构方向：
-//   新音频引擎决定是否继续 PPQ=480 + Worker tick 的模型（C 移植口径）。
-//   重写时尽量保持 MidiEvent shape 与公开方法签名，让 PlaybackEngine 重写最小化。
-// ============================================================
+/**
+ * MidiScheduler — PPQ=480 tick 调度器（Phase 2.D 实装版）
+ *
+ * 工作模型：
+ *   - 5ms setInterval 轮询（主线程；够稳。背景标签页时 throttling 到 1Hz — 后续 Web Worker tick 优化时再补）
+ *   - 用 performance.now() 计算自 start 起的 elapsed → 推算 currentTick
+ *   - 每次轮询 fire all events with ticks ≤ currentTick AND未 fire 的
+ *   - 索引 nextEventIdx 单调推进（events 已按 ticks 排序）
+ *
+ * 派发：
+ *   - noteOn / noteOff / programChange → spessaSynth.*
+ *   - cc / pitchBend → spessaSynth.controllerChange / pitchWheel（如果有；否则跳过）
+ *   - visual → visualListeners
+ *
+ * 曲终：last event 之后等 200ms（让 noteOff 发音完整）→ fire onTrackEnd listeners → 自动停止。
+ */
 
 import type { TempoCurve } from '../generation/types';
+import { spessaSynth } from './SynthManager';
 
 export interface MidiEvent {
     ticks: number;
@@ -34,21 +27,164 @@ export interface MidiEvent {
     visualData?: any;
 }
 
+const TICK_LOOP_MS = 5;
+const TRAILING_SILENCE_MS = 200;
+
 export class MidiScheduler {
     public readonly ppq: number = 480;
-    public isPlaying: boolean = false;
-    public loop: boolean = false;
-    public loopStartTicks: number = 0;
-    public loopEndTicks: number = 0;
+    public isPlaying = false;
+    public loop = false;
+    public loopStartTicks = 0;
+    public loopEndTicks = 0;
 
     private events: MidiEvent[] = [];
-    private currentTick: number = 0;
-    private currentBpm: number = 120;
+    private nextEventIdx = 0;
+    private currentTick = 0;
+    private currentBpm = 120;
+
+    private startWallTimeMs = 0;
+    private startTickAtResume = 0;
+    private tickHandle: ReturnType<typeof setInterval> | null = null;
+    private endFireScheduled = false;
+
     private mutedChannels: Set<number> = new Set();
     private visualListeners: ((data: any) => void)[] = [];
     private endListeners: (() => void)[] = [];
 
-    public init(_synth: unknown): void { /* no-op */ }
+    public init(_synth: unknown): void { /* synth 由 SynthManager 单例管理，本方法保持签名兼容 */ }
+
+    // -----------------------------------------------------------
+    // 事件流装载
+    // -----------------------------------------------------------
+
+    public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
+        // 已按 ticks 升序排好（PlaybackEngine 输出时排序）— 这里再保险一次
+        this.events = events.slice().sort((a, b) => {
+            if (a.ticks !== b.ticks) return a.ticks - b.ticks;
+            // 同 tick 时 noteOff 先于 noteOn（避免新 note 被立刻关掉）
+            const orderA = a.type === 'noteOff' ? 0 : 1;
+            const orderB = b.type === 'noteOff' ? 0 : 1;
+            return orderA - orderB;
+        });
+        this.currentBpm = bpm;
+        this.currentTick = 0;
+        this.nextEventIdx = 0;
+        this.endFireScheduled = false;
+    }
+
+    public load(events: MidiEvent[], bpm: number): void { this.loadTrack(events, bpm); }
+
+    // -----------------------------------------------------------
+    // 播放控制
+    // -----------------------------------------------------------
+
+    public start(): void {
+        if (this.isPlaying) return;
+        this.isPlaying = true;
+        this.startWallTimeMs = performance.now();
+        this.startTickAtResume = this.currentTick;
+        if (this.tickHandle) clearInterval(this.tickHandle);
+        this.tickHandle = setInterval(() => this.tickLoop(), TICK_LOOP_MS);
+    }
+
+    public stop(): void {
+        this.isPlaying = false;
+        if (this.tickHandle) {
+            clearInterval(this.tickHandle);
+            this.tickHandle = null;
+        }
+        this.currentTick = 0;
+        this.nextEventIdx = 0;
+        this.endFireScheduled = false;
+        this.panic();
+    }
+
+    public pause(): void {
+        this.isPlaying = false;
+        if (this.tickHandle) {
+            clearInterval(this.tickHandle);
+            this.tickHandle = null;
+        }
+    }
+
+    public panic(): void {
+        // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音
+        const synth = spessaSynth;
+        if (!synth) return;
+        for (let ch = 0; ch < 16; ch++) {
+            try { synth.controllerChange(ch, 123, 0); } catch { /* ignore */ }
+        }
+    }
+
+    public clear(): void {
+        this.stop();
+        this.events = [];
+        this.visualListeners = [];
+        this.endListeners = [];
+        this.mutedChannels.clear();
+    }
+
+    // -----------------------------------------------------------
+    // 核心 tick 循环
+    // -----------------------------------------------------------
+
+    private tickLoop(): void {
+        if (!this.isPlaying) return;
+
+        const elapsedMs = performance.now() - this.startWallTimeMs;
+        const ticksPerSec = (this.currentBpm / 60) * this.ppq;
+        this.currentTick = this.startTickAtResume + (elapsedMs / 1000) * ticksPerSec;
+
+        // 派发所有 ticks ≤ currentTick 的未派发事件
+        while (
+            this.nextEventIdx < this.events.length &&
+            this.events[this.nextEventIdx].ticks <= this.currentTick
+        ) {
+            this.dispatchEvent(this.events[this.nextEventIdx]);
+            this.nextEventIdx++;
+        }
+
+        // 曲终检测
+        if (this.nextEventIdx >= this.events.length && !this.endFireScheduled) {
+            this.endFireScheduled = true;
+            setTimeout(() => {
+                if (this.isPlaying) {
+                    this.endListeners.forEach(l => {
+                        try { l(); } catch { /* ignore */ }
+                    });
+                    this.stop();
+                }
+            }, TRAILING_SILENCE_MS);
+        }
+    }
+
+    private dispatchEvent(ev: MidiEvent): void {
+        if (ev.type === 'visual') {
+            this.visualListeners.forEach(l => {
+                try { l(ev.visualData); } catch { /* ignore */ }
+            });
+            return;
+        }
+        if (this.mutedChannels.has(ev.channel)) return;
+        const synth = spessaSynth;
+        if (!synth) return;
+
+        try {
+            if (ev.type === 'noteOn') synth.noteOn(ev.channel, ev.data1, ev.data2);
+            else if (ev.type === 'noteOff') synth.noteOff(ev.channel, ev.data1);
+            else if (ev.type === 'programChange') synth.programChange(ev.channel, ev.data1);
+            else if (ev.type === 'cc') {
+                // controllerChange API exists on BasicSynthesizer
+                (synth as any).controllerChange?.(ev.channel, ev.data1, ev.data2);
+            } else if (ev.type === 'pitchBend') {
+                (synth as any).pitchWheel?.(ev.channel, ev.data1, ev.data2);
+            }
+        } catch { /* ignore — 静默单事件错误，保播放不中断 */ }
+    }
+
+    // -----------------------------------------------------------
+    // Channel mute / event injection
+    // -----------------------------------------------------------
 
     public muteChannel(channel: number, mute: boolean): void {
         if (mute) this.mutedChannels.add(channel);
@@ -60,7 +196,9 @@ export class MidiScheduler {
     }
 
     public injectEvent(ev: MidiEvent): void {
+        // 简单 append + 重排（注入点不在热路径，开销可接受）
         this.events.push(ev);
+        this.events.sort((a, b) => a.ticks - b.ticks);
     }
 
     public getChannelEvents(channel: number): MidiEvent[] {
@@ -80,7 +218,12 @@ export class MidiScheduler {
             return false;
         });
         this.events.push(...newEvents);
+        this.events.sort((a, b) => a.ticks - b.ticks);
     }
+
+    // -----------------------------------------------------------
+    // Listeners
+    // -----------------------------------------------------------
 
     public addVisualListener(listener: (data: any) => void): void {
         this.visualListeners.push(listener);
@@ -94,36 +237,28 @@ export class MidiScheduler {
         this.endListeners.push(listener);
     }
 
-    public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
-        this.events = [...events];
-        this.currentBpm = bpm;
-        this.currentTick = 0;
-    }
-
-    public load(events: MidiEvent[], bpm: number): void { this.loadTrack(events, bpm); }
+    // -----------------------------------------------------------
+    // Getters / Setters
+    // -----------------------------------------------------------
 
     public setBpm(bpm: number): void { this.currentBpm = bpm; }
     public getBpm(): number { return this.currentBpm; }
 
-    public setPosition(ticks: number): void { this.currentTick = ticks; }
+    public setPosition(ticks: number): void {
+        this.currentTick = ticks;
+        this.startTickAtResume = ticks;
+        this.startWallTimeMs = performance.now();
+        // 重新定位 nextEventIdx
+        this.nextEventIdx = 0;
+        while (
+            this.nextEventIdx < this.events.length &&
+            this.events[this.nextEventIdx].ticks < ticks
+        ) {
+            this.nextEventIdx++;
+        }
+    }
+
     public getCurrentTick(): number { return this.currentTick; }
-
-    public start(): void { this.isPlaying = false; /* placeholder: never actually plays */ }
-    public stop(): void {
-        this.isPlaying = false;
-        this.currentTick = 0;
-    }
-    public pause(): void { this.isPlaying = false; }
-
-    public clear(): void {
-        this.stop();
-        this.events = [];
-        this.visualListeners = [];
-        this.endListeners = [];
-        this.mutedChannels.clear();
-    }
-
-    public panic(): void { /* no-op */ }
 
     public beatsToTicks(beats: number): number {
         return Math.round(beats * this.ppq);

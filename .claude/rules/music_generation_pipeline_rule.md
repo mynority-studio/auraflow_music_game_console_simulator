@@ -555,6 +555,7 @@ enum ChordQuality {
 | K-5 | **`GlobalContext.currentKeyOffset` 禁入生成逻辑**：生成管道内（MelodyEngine / Orchestrator 的生成阶段）**禁止**读取 `GlobalContext.currentKeyOffset` 用于 pitch 计算。唯一允许的用途是 `applyOffset()` 内部和音域限制（clamp to range）的边界调整 |
 | K-6 | **后处理空间声明**：`GlobalReviewer` 接收的输入已经过 `applyOffset()`，处于绝对空间。其内部调用 `HarmonyCore` 函数（返回相对 pitch class）时，必须通过 `% 12` 桥接比较，不得直接与绝对 pitch 做加减运算 |
 | K-7 | **新函数标注义务**：新增任何返回 pitch 值的函数，必须在函数签名上方注释标注其 pitch 空间（`// Pitch Space: RELATIVE` 或 `// Pitch Space: ABSOLUTE`） |
+| K-8 | **Drum 轨 = 第三空间 (GM Drum Map)**：打击乐 NoteData.pitch 是 **GM Drum Map 物理键位**（Kick=36 / Snare=38 / ClosedHihat=42 等），**独立于 K-1 的 RELATIVE / ABSOLUTE 二分**，本质是 INSTRUMENT_COMMAND（乐器指令集）。Drum 轨**禁止**经过 `Orchestrator.applyOffset()`，**禁止**叠加 `keyOffset`，**禁止**做任何调内 / 调外移调运算。Drum 轨从 DrumIdiom 输出到 MidiConverter Channel 9 全程透传，pitch 字段含义恒定。新增任何返回 drum pitch 的函数须标注 `// Pitch Space: GM Drum Map (ABSOLUTE 物理键位)` |
 
 ---
 
@@ -615,7 +616,7 @@ expect(PRNGManager.getState()).toBe(recorded_stateD);   // PRNG 消耗一致
 | 类型纪律 | T-1 ~ T-6 | 6 |
 | 纯净性 | S-1 ~ S-7 | 7 |
 | C 可移植性 | C-1 ~ C-4 | 4 |
-| Pitch Space 契约 | K-1 ~ K-7 | 7 |
+| Pitch Space 契约 | K-1 ~ K-8 | 8 |
 | 性能建议 | M-1 ~ M-3 | 3 (guideline) |
-| **合计** | | **43** (40 硬约束 + 3 guideline) |
+| **合计** | | **44** (41 硬约束 + 3 guideline) |
 

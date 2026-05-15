@@ -13,8 +13,14 @@ export type ChordProgression = string[];
  */
 import { StyleId } from './config/StyleFlags';
 
-export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean; }
-export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number; }
+export interface NoteData { pitch: number; onset: number; duration: number; velocity: number; isGraceNote?: boolean; pitchBend?: number; pitchBendDuration?: number; fadeOutDuration?: number; isUserMotif?: boolean;
+    /** Phase 6.2 observability — 由 PCFG motif define/recall 自动标记的动机身份标签。仅供 Q+H 监控面板可视化与调试，**不参与音频生成逻辑**。
+     *  C 移植：const char*（指向 string intern 池）或 uint8_t enum index。可选字段，普通生成路径为 undefined。 */
+    motifName?: string;
+}
+export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number;
+    /** HarmonyCore 输出的声部分布 — Pitch Space: RELATIVE，升序 MIDI（Orchestrator/AudioEngine 再加 keyOffset） */
+    voicing?: number[]; }
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {
@@ -425,6 +431,12 @@ export interface GeneratedTrack {
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     processedUserMotif?: NoteData[];
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
+    /** Comping / 伴奏织体轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
+     *  Orchestrator 后续映射到 ArrangedTrack.pianoRH，加 keyOffset 后送 MIDI。 */
+    accompaniment?: NoteData[];
+    /** 低音轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
+     *  Orchestrator 后续映射到 ArrangedTrack.pianoLH（或独立电贝斯轨），加 keyOffset 后送 MIDI。 */
+    bass?: NoteData[];
 }
 
 export type InstrumentRole =
@@ -691,6 +703,12 @@ export interface MusicianPersona {
     syncopationAssault: number;
     /** 力度区间 [min, max]（0~127） */
     dynamicRange: [number, number];
+    /**
+     * 智能踏板系数 — 0=干（grammar duration 不变）/ 1=自然踏板（延音至下一个发声音或和弦边界）/ >1=过踏（仍被和弦边界硬钳制）
+     * ToplineEngine Pass 3 消费：final_dur = lerp(grammar_dur, pedaled_dur, legatoRatio)，硬钳到 chord.endBeat。
+     * 零 PRNG 消耗（纯后处理），未设置时回落 1.0（默认自然踏板）。
+     */
+    legatoRatio?: number;
     /** 触发签名乐句的概率 */
     signatureLickProb?: number;
     /** 自定义乐句池（覆盖 LickDictionary 默认） */
