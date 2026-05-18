@@ -40,6 +40,9 @@ class AudioEngineSystem {
     private currentArrangedTrack: ArrangedTrack | null = null;
     private currentContext: MusicContext | null = null;
 
+    // 并发互斥 — 快速连点 Play 时，仅最后一次触发的会话能完成 loadSong/play
+    private playSessionId: number = 0;
+
     private visualListeners: Set<VisualEventListener> = new Set();
     private rawVisualListeners: Set<VisualEventListener> = new Set();
 
@@ -64,10 +67,15 @@ class AudioEngineSystem {
         if (!this.playback) this.init();
         this.generator = generator;
 
+        // 并发互斥：每次调用领取一个新 session id；仅在 startAudioContext 后检查一次
+        // （loadSong 之后到 play() 之间无 await，没有新调用插入的窗口）
+        const currentSession = ++this.playSessionId;
+
         // 确保 SpessaSynth 已就绪（用户手势后第一次播放才会真正加载 SF2）
         await startAudioContext();
+        if (currentSession !== this.playSessionId) return;
 
-        // pipeline rule §1.4 step 3：Orchestrator 是 RELATIVE→ABSOLUTE 的唯一转换点（K-2）
+        // K-2：Orchestrator 是 RELATIVE→ABSOLUTE 的唯一转换点
         const arranged: ArrangedTrack = Orchestrator.arrange(initialTrack, styleId, context);
 
         this.currentArrangedTrack = arranged;

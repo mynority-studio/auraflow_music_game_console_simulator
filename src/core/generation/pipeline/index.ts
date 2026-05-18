@@ -59,23 +59,51 @@ export function runPipeline(
     const bundle = getStyleHarmonyBundle(styleId);
 
     // -----------------------------------------------------------
-    // Stage 2：基本参数（PRNG ×1 — BPM；其他暂硬编码）
+    // Stage 2：基本参数（PRNG ×2+4 — tonality / keyOffset / BPM / 4 段长度）
     // -----------------------------------------------------------
-    const tonality = Tonality.Major;
-    const keyOffset = 0;  // 暂固定 C — 接 Stage 2 完整版后由 PRNG 抽
+    // 调性池：覆盖 Major / Minor / Dorian / Mixolydian / Minor_Pentatonic
+    const TONALITY_POOL: Tonality[] = [
+        Tonality.Major,
+        Tonality.Minor,
+        Tonality.Dorian,
+        Tonality.Mixolydian,
+        Tonality.Minor_Pentatonic,
+    ];
+    const tonality = TONALITY_POOL[Math.floor(PRNGManager.next() * TONALITY_POOL.length)];
+
+    // 调号 0~11 等概率
+    const keyOffset = Math.floor(PRNGManager.next() * 12);
     const keyName = KEY_NAMES[keyOffset];
     const timeSignature: [number, number] = [4, 4];
 
     const [bpmLo, bpmHi] = bundle.bpmRange;
     const bpm = Math.floor(PRNGManager.nextFloat(bpmLo, bpmHi + 0.999));
 
-    // 段落骨架（占位 — Phase 2.6 真正接 StructureEngine 时替换）：
-    //   Intro 16 → Verse 16 → Chorus 16 → Outro 16  共 64 拍
+    // 段落骨架：四段长度由 PRNG 在各自池中抽取，保留 Intro→Verse→Chorus→Outro 顺序与能量递进
+    // 约束：每段长度必须是 16 的倍数 — chordsPerSection=4 时每和弦 = 4 拍（一整 bar），
+    // 满足 RhythmMutator/SyncopationEvaluator 的 "grid length must be a multiple of stepsPerBar" 契约。
+    const INTRO_LENGTHS  = [16, 32];
+    const VERSE_LENGTHS  = [16, 32, 48];
+    const CHORUS_LENGTHS = [16, 32, 48];
+    const OUTRO_LENGTHS  = [16, 32];
+
+    const introLen  = INTRO_LENGTHS [Math.floor(PRNGManager.next() * INTRO_LENGTHS.length)];
+    const verseLen  = VERSE_LENGTHS [Math.floor(PRNGManager.next() * VERSE_LENGTHS.length)];
+    const chorusLen = CHORUS_LENGTHS[Math.floor(PRNGManager.next() * CHORUS_LENGTHS.length)];
+    const outroLen  = OUTRO_LENGTHS [Math.floor(PRNGManager.next() * OUTRO_LENGTHS.length)];
+
+    const introStart  = 0;
+    const verseStart  = introStart  + introLen;
+    const chorusStart = verseStart  + verseLen;
+    const outroStart  = chorusStart + chorusLen;
+    const songEnd     = outroStart  + outroLen;
+
+    // 能量递进保持 Intro 3 → Verse 5 → Chorus 8 → Outro 4
     const sections: SectionMetadata[] = [
-        { name: 'Intro_1',  sectionType: SectionType.Intro,  startBeat: 0,  endBeat: 16, energyLevel: 3 },
-        { name: 'Verse_1',  sectionType: SectionType.Verse,  startBeat: 16, endBeat: 32, energyLevel: 5 },
-        { name: 'Chorus_1', sectionType: SectionType.Chorus, startBeat: 32, endBeat: 48, energyLevel: 7 },
-        { name: 'Outro_1',  sectionType: SectionType.Outro,  startBeat: 48, endBeat: 64, energyLevel: 4 },
+        { name: 'Intro_1',  sectionType: SectionType.Intro,  startBeat: introStart,  endBeat: verseStart,  energyLevel: 3 },
+        { name: 'Verse_1',  sectionType: SectionType.Verse,  startBeat: verseStart,  endBeat: chorusStart, energyLevel: 5 },
+        { name: 'Chorus_1', sectionType: SectionType.Chorus, startBeat: chorusStart, endBeat: outroStart,  energyLevel: 8 },
+        { name: 'Outro_1',  sectionType: SectionType.Outro,  startBeat: outroStart,  endBeat: songEnd,     energyLevel: 4 },
     ];
 
     PRNGManager.recordSnapshot('C');

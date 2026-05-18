@@ -51,10 +51,6 @@ class GlobalContextManager {
         this.currentGrooveDNA = grooveDNA;
     }
 
-    public isGrooveHit(_absoluteBeat: number): boolean { return false; }
-    public isLayeringHit(_absoluteBeat: number): boolean { return false; }
-    public isInterleavingHit(_absoluteBeat: number): boolean { return false; }
-
     public getCurrentEnergyLevel(): number {
         return this.activeSection ? this.activeSection.energyLevel : 5;
     }

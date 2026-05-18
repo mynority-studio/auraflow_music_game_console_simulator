@@ -33,8 +33,11 @@
  *   2. cursor 初值 anchorPitch（默认 72 = C5）— RELATIVE 空间中 C5 在 tonic PC=0 上。
  *   3. ChordTone 池 = CHORD_INTERVALS[chord.quality] 全部音程（root / 3 / 5 / 7 / ext）
  *      过 mod 12 + chord.root 偏移得到 PC 列表。
- *   4. ColorTone 池 = SCALE_INTERVALS[tonality] PC 列表 \ ChordTone PC 列表
- *      （调内但非和弦内的张力音；空池时回落到 ChordTone 池）。
+ *   4. ColorTone 池 = CHORD_SCALE_INTERVALS[chord.quality] PC 列表 \ ChordTone PC 列表
+ *      （Phase 6.3.5：Chord-Scale Theory 局部音阶 — Major7→Ionian / Minor7→Dorian /
+ *      Dominant7→Mixolydian / HalfDim→Locrian / Dim7→Whole-Half。空池时回落到
+ *      ChordTone 池。摒弃旧的"全局 SCALE_INTERVALS[tonality] 取交集"写法 — 借用 /
+ *      副属和弦不再被全局调式锁死，从根本上规避 Minor 9th 撞音）。
  *   5. PRNG 消耗（D-1 / D-5）：
  *      - Pass 1：每 chord/color tone ×2（leap 判定 + 索引抽取，恒定消耗）
  *      - Pass 2：每 approach ×1（方向二选一加权抽样）
@@ -65,7 +68,7 @@
 import { PRNGManager } from '../../utils/PRNG';
 import {
     GeneratedChord, NoteData, Tonality, ChordQuality,
-    CHORD_INTERVALS, SCALE_INTERVALS,
+    CHORD_INTERVALS, SCALE_INTERVALS, CHORD_SCALE_INTERVALS,
 } from '../types';
 import { TerminalSymbol, TerminalKind } from '../primitives/PCFGGrammarEngine';
 
@@ -243,11 +246,13 @@ export class ToplineEngine {
             }
 
             // Branch 2 / 3 — 走 mask 路径（包含 contourDir 过滤）
+            // Phase 6.3.5 — colorPcMask 已切换到 Chord-Scale Theory（局部音阶），
+            //               不再依赖全局 scalePcMask；签名同步收窄。
             let pcMask: number;
             if (slot.kind === 'chordTone') {
                 pcMask = ToplineEngine.chordPcMask(chord);
             } else {
-                pcMask = ToplineEngine.colorPcMask(chord, scalePcMask);
+                pcMask = ToplineEngine.colorPcMask(chord);
             }
             if (pcMask === 0) continue;  // 池空 — 静音（原行为：不消耗 PRNG，保持旧 seed 对齐）
 
@@ -352,13 +357,41 @@ export class ToplineEngine {
     }
 
     /**
-     * 色彩音 PC mask — 调内但非和弦内的 PC：
-     *   colorMask = scaleMask AND NOT chordMask
-     * 空池时回落到 chordMask（保证总有候选）。
+     * Phase 6.3.5 — Chord-Scale Theory 局部音阶 mask。
+     *
+     * CHORD_SCALE_INTERVALS[chord.quality] 给出该和弦质量在伯克利体系下最适配的
+     * 局部特征音阶半音步长（root-relative），每个 step 加上 chord.root 并 mod 12，
+     * 压缩成 12-bit PC mask。Pitch Space: RELATIVE — 禁止预补偿 keyOffset（K-2）。
+     *
+     * 未列出的 quality 兜底用 Ionian（与表里的 Major / Major7 同形）。
      */
-    private static colorPcMask(chord: GeneratedChord, scalePcMask: number): number {
+    private static buildLocalScaleMask(chord: GeneratedChord): number {
+        let intervals = CHORD_SCALE_INTERVALS[chord.quality];
+        if (intervals === undefined || intervals.length === 0) {
+            intervals = SCALE_INTERVALS[Tonality.Major];  // Ionian 兜底
+        }
+        let mask = 0;
+        for (let i = 0; i < intervals.length; i++) {
+            const pc = ((chord.root + intervals[i]) % PITCH_CLASS_SIZE + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE;
+            mask |= 1 << pc;
+        }
+        return mask;
+    }
+
+    /**
+     * 色彩音 PC mask — Phase 6.3.5 CST 升级：
+     *   colorMask = localScaleMask(chord) AND NOT chordMask
+     *
+     * 局部音阶由 CHORD_SCALE_INTERVALS[chord.quality] 决定（见 buildLocalScaleMask），
+     * 不再借用全局 scalePcMask — 这从根本上规避借用 / 副属和弦（如 C 大调里
+     * 的 D7 / E7）色彩音池里跳出与全局自然音冲突的 Minor 9th。
+     *
+     * 空池时回落到 chordMask（保证总有候选，不静音）。
+     */
+    private static colorPcMask(chord: GeneratedChord): number {
         const chordMask = ToplineEngine.chordPcMask(chord);
-        const color = scalePcMask & ~chordMask & 0xFFF;  // 限制在 12 PC
+        const localScaleMask = ToplineEngine.buildLocalScaleMask(chord);
+        const color = localScaleMask & ~chordMask & 0xFFF;  // 限制在 12 PC
         return color === 0 ? chordMask : color;
     }
 

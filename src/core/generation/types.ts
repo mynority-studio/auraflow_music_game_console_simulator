@@ -584,6 +584,66 @@ export const CQ_IS_MAJOR = (1 << ChordQuality.Major) | (1 << ChordQuality.Major7
 export const CQ_IS_DOM   = (1 << ChordQuality.Dominant7) | (1 << ChordQuality.Dominant7Sus4) | (1 << ChordQuality.Dominant9) | (1 << ChordQuality.Dominant13);
 export const CQ_IS_DIM   = (1 << ChordQuality.Diminished) | (1 << ChordQuality.Diminished7) | (1 << ChordQuality.HalfDiminished);
 
+// ============================================================
+// Chord-Scale Theory（Phase 6.3.5）
+// ============================================================
+// 把每个 ChordQuality 映射到伯克利体系下的"局部特征音阶"。
+// ToplineEngine.colorPcMask 用这张表（替代原先生搬全局 SCALE_INTERVALS[tonality]
+// 取交集的写法），从根本上规避借用/副属和弦时与全局调内自然音的 Minor 9th 撞音。
+//
+// 数据组织：纯数组、索引 = ChordQuality 数值、值为半音步长 — 与 CHORD_INTERVALS
+// 完全同构，C 移植直接复制即可，无哈希 / 无运行期解析。
+//
+// 映射依据（爵士/流行实践）：
+//   Major / Major7 / Add9 / Major9         → Ionian      [0,2,4,5,7,9,11]
+//   Minor / Minor7 / Minor9 / Minor11      → Dorian      [0,2,3,5,7,9,10]
+//   Dominant7 / Dominant9 / Dominant13 /
+//     Dominant7Sus4                        → Mixolydian  [0,2,4,5,7,9,10]
+//   HalfDiminished                         → Locrian     [0,1,3,5,6,8,10]
+//   Diminished / Diminished7               → 全半减音阶  [0,2,3,5,6,8,9,11]
+//   Sus4 / Augmented（未明确归类）         → Ionian 兜底
+//
+// 注意：本表里的步长是相对 chord.root 的，ToplineEngine 会做
+//       (chord.root + step) % 12 转换到 PC，禁止预补偿 keyOffset（K-2）。
+export const CHORD_SCALE_INTERVALS: number[][] = [];
+CHORD_SCALE_INTERVALS[ChordQuality.Major]          = [0, 2, 4, 5, 7, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Minor]          = [0, 2, 3, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Diminished]     = [0, 2, 3, 5, 6, 8, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Diminished7]    = [0, 2, 3, 5, 6, 8, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Augmented]      = [0, 2, 4, 5, 7, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Dominant7]      = [0, 2, 4, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Minor7]         = [0, 2, 3, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Major7]         = [0, 2, 4, 5, 7, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.HalfDiminished] = [0, 1, 3, 5, 6, 8, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Sus4]           = [0, 2, 4, 5, 7, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Dominant7Sus4]  = [0, 2, 4, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Add9]           = [0, 2, 4, 5, 7, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Minor9]         = [0, 2, 3, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Major9]         = [0, 2, 4, 5, 7, 9, 11];
+CHORD_SCALE_INTERVALS[ChordQuality.Dominant9]      = [0, 2, 4, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Minor11]        = [0, 2, 3, 5, 7, 9, 10];
+CHORD_SCALE_INTERVALS[ChordQuality.Dominant13]     = [0, 2, 4, 5, 7, 9, 10];
+
+/** quality → 局部音阶可读名（UI / 调试用，索引 = ChordQuality 数值） */
+export const CHORD_SCALE_NAME: string[] = [];
+CHORD_SCALE_NAME[ChordQuality.Major]          = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.Minor]          = 'Dorian';
+CHORD_SCALE_NAME[ChordQuality.Diminished]     = 'Whole-Half Diminished';
+CHORD_SCALE_NAME[ChordQuality.Diminished7]    = 'Whole-Half Diminished';
+CHORD_SCALE_NAME[ChordQuality.Augmented]      = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.Dominant7]      = 'Mixolydian';
+CHORD_SCALE_NAME[ChordQuality.Minor7]         = 'Dorian';
+CHORD_SCALE_NAME[ChordQuality.Major7]         = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.HalfDiminished] = 'Locrian';
+CHORD_SCALE_NAME[ChordQuality.Sus4]           = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.Dominant7Sus4]  = 'Mixolydian';
+CHORD_SCALE_NAME[ChordQuality.Add9]           = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.Minor9]         = 'Dorian';
+CHORD_SCALE_NAME[ChordQuality.Major9]         = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.Dominant9]      = 'Mixolydian';
+CHORD_SCALE_NAME[ChordQuality.Minor11]        = 'Dorian';
+CHORD_SCALE_NAME[ChordQuality.Dominant13]     = 'Mixolydian';
+
 // --- SectionType 数值枚举 ---
 export enum SectionType {
     Intro = 0, Verse = 1, PreChorus = 2, Chorus = 3, Bridge = 4,
@@ -713,6 +773,81 @@ export interface MusicianPersona {
     signatureLickProb?: number;
     /** 自定义乐句池（覆盖 LickDictionary 默认） */
     lickPool?: unknown[];
+    /** 角色的专属拓扑变异概率（算法折叠核心） */
+    topologyConfig?: TopologyConfig;
+}
+
+// --- 抽象职能与极限压缩结构 (Zero-Copy C-Portability) ---
+
+export enum TerminalKind {
+    Rest = 0,
+    ChordTone = 1,
+    ColorTone = 2,
+    ApproachTone = 3
+}
+
+/** 对应 C: struct { uint8_t kind:2; uint8_t duration:6; int8_t contourDir:2; uint8_t targetDegree:6; } */
+export interface AbstractToken {
+    kind: TerminalKind;
+    /** 映射为 1~63 的时间切片倍数 */
+    duration: number;
+    contourDir: 1 | -1 | 0;
+    targetDegree: number;
+}
+
+export interface GrammarRoot {
+    id: number;
+    baseWeight: number;
+    tokens: AbstractToken[];
+}
+
+export interface TopologyConfig {
+    /** 倒影概率 0.0 - 1.0 */
+    probInvert: number;
+    /** 逆行概率 0.0 - 1.0 */
+    probReverse: number;
+    /** 时值扩展概率 0.0 - 1.0 */
+    probExpand: number;
+    /** 半音侧滑概率 0.0 - 1.0 */
+    probSideSlip: number;
+    /** 侧滑幅度（半音，如 -2 到 2） */
+    sideSlipRange: number;
+    /** 色彩倾向（将 ChordTone 强制提升为 ColorTone 的概率） */
+    colorBias: number;
+}
+
+/**
+ * PersonaManifest — Flash 区 Persona 卡牌（模拟 ESP32 XIP 文件系统）
+ *
+ * 由 scripts/compile-grammars.mjs 离线编译 Impro-Visor 大师语法生成。
+ * 写入 flash/personas/<id>.json，运行时 IdiomDispatcher 按需加载。
+ *
+ * 与 SRAM 区 COMMON_GRAMMAR_ROOTS 的关系：
+ *   PersonaManifest 不内联 token 序列，而是通过 customRootIds 引用公共根字典。
+ *   多个大师共享同一段骨架时，SRAM 只存一份；persona 仅在 ID 列表里加一个引用。
+ *   这是参考 ESP32 SRAM/Flash 隔离的极限压缩策略。
+ */
+export interface PersonaManifest {
+    /** 唯一 ID（也是 JSON 文件名），如 'CharlieParker' */
+    id: string;
+    /** 显示名 */
+    name: string;
+    /** 描述（风格简介，仅供 UI / 调试） */
+    description?: string;
+    /** 引用 COMMON_GRAMMAR_ROOTS 中的 root id 数组，按该 persona 使用频次降序排列 */
+    customRootIds: number[];
+    /** 派生的拓扑变异参数 — 驱动 TopologyMutator.applyTopologyChain */
+    topologyConfig: TopologyConfig;
+    /** 原始 (parameter ...) 抽取的全局参数 — 调试与未来扩展（音域 / 律动倾向等） */
+    params?: Record<string, number | string | boolean>;
+    /** 派生统计指标 — 供 Q+H 监控面板与未来的特征驱动流派融合使用 */
+    stats?: {
+        totalRules: number;
+        totalRoots: number;
+        chordToneRatio: number;
+        colorToneRatio: number;
+        restRatio: number;
+    };
 }
 
 /** 乐手 Profile（移植自参考 MusicianProfile） */
@@ -768,4 +903,27 @@ export interface GlobalHarmonicFrame {
     chord: GeneratedChord;
     toneAllocations: ToneAllocation[];
     pitchScale: number[];
+}
+
+// ============================================================
+// 全曲结构规划器数据契约（ConductorPlanner 消费）
+// ============================================================
+// C 移植目标：定长结构体数组，MAX_SECTIONS = 16。
+// 复用上方 SectionType 数值枚举（已包含 Intro/Verse/PreChorus/Chorus/Bridge/Outro
+// 以及 EDM 模板所需的 BuildUp/Drop/Break），无需重复定义。
+
+/** 对应 C: struct { uint8_t type; uint8_t energyLevel; uint8_t barLength; uint16_t startBar; } */
+export interface SectionBlock {
+    type: SectionType;
+    /** 情绪能量：1 - 10 */
+    energyLevel: number;
+    /** 段落小节长度（如 4 或 8） */
+    barLength: number;
+    /** 绝对起始小节位置（由规划器计算填充） */
+    startBar: number;
+}
+
+export interface SongTimeline {
+    sections: SectionBlock[];
+    totalBars: number;
 }

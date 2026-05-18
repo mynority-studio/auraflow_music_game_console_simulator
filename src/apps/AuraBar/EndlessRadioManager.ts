@@ -3,7 +3,6 @@ import { StyleId } from '../../core/generation/config/StyleFlags';
 import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
-// removed
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
@@ -294,7 +293,7 @@ export class EndlessRadioManager {
 
           // 1. Add crash at the start of high energy sections
           for (const s of this.currentTrack.sections) {
-              const isChorusSection = s.energyLevel >= 0.8 || s.name.toLowerCase().includes('chorus');
+              const isChorusSection = s.energyLevel >= 8 || s.name.toLowerCase().includes('chorus');
               if (isChorusSection) {
                   const sectionStartTick = s.startBeat * ppq;
                   if (sectionStartTick >= tick && sectionStartTick < tick + this.jamLengthTicks) {
@@ -319,8 +318,8 @@ export class EndlessRadioManager {
 
               const hitBeat = hitTick / ppq;
               const hitSection = this.currentTrack.sections.find(s => hitBeat >= s.startBeat && hitBeat < s.endBeat) || this.currentTrack.sections[0];
-              const hitIsBreakdown = hitSection.energyLevel < 0.5;
-              const hitIsChorus = hitSection.energyLevel >= 0.8 || hitSection.name.toLowerCase().includes('chorus');
+              const hitIsBreakdown = hitSection.energyLevel < 5;
+              const hitIsChorus = hitSection.energyLevel >= 8 || hitSection.name.toLowerCase().includes('chorus');
               const hitIsBuild = hitSection.name.toLowerCase().includes('build');
 
               let note = hit.note;
@@ -429,7 +428,7 @@ export class EndlessRadioManager {
 
   public triggerGeneration = async () => {
     const currentGenId = ++this.generationId;
-    
+
     AudioEngine.stop();
     this.setState('GENERATING');
 

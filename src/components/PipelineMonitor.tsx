@@ -18,6 +18,7 @@ import {
     ChordQuality,
     RoleType,
     Musician,
+    CHORD_SCALE_NAME,
 } from '../core/generation/types';
 import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole } from '../core/generation/idioms/MusicianRegistry';
@@ -43,9 +44,6 @@ QUALITY_SUFFIX[ChordQuality.Major9] = 'maj9';
 QUALITY_SUFFIX[ChordQuality.Dominant9] = '9';
 QUALITY_SUFFIX[ChordQuality.Minor11] = 'm11';
 QUALITY_SUFFIX[ChordQuality.Dominant13] = '13';
-
-// 复现 EndlessRadioManager 的 style 选择逻辑，让 seed 100% 复现 Radio 的任意歌曲
-const RADIO_STYLE_POOL: StyleId[] = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
 
 type PlayState = 'IDLE' | 'GENERATING' | 'PLAYING';
 
@@ -76,6 +74,27 @@ function tonalityToShortMode(tonality: Tonality | undefined): string {
     if (tonality === undefined) return '';
     if (tonality === Tonality.Major || tonality === Tonality.Major_Pentatonic) return 'Major';
     return 'Minor';
+}
+
+/**
+ * Phase 6.3.5 — Chord-Scale Theory UI 联动。
+ *
+ * 把当前激活和弦 + 全局 tonality 映射到"绝对根音名 + 局部音阶名"（如 "D Mixolydian"、
+ * "A Dorian"）。chord === null（段落起拍前 / 段落末尾间隙）时回落到全局音阶名。
+ *
+ * Pitch Space: chord.root 是 RELATIVE PC，本函数把它过 keyOffset 转到 ABSOLUTE
+ * 显示空间（与 chordToAbsoluteName 同套路），不破坏 K-2。
+ */
+function getLocalScaleName(
+    chord: GeneratedChord | null,
+    tonality: Tonality | undefined,
+): string {
+    if (chord === null) return tonalityToHumanScale(tonality);
+    const offset = chord.keyOffset ?? 0;
+    const absRoot = ((chord.root + offset) % 12 + 12) % 12;
+    const rootName = KEY_NAMES[absRoot];
+    const scaleName = CHORD_SCALE_NAME[chord.quality] ?? 'Ionian';
+    return `${rootName} ${scaleName}`;
 }
 
 interface FrameSnapshot {
@@ -177,42 +196,24 @@ export const PipelineMonitor: React.FC = () => {
         setPlayState('GENERATING');
         setCurrentSeed(seed);
 
-        // 让 UI 先渲染一次
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        // 复现 EndlessRadioManager.triggerGeneration 的 PRNG 消耗顺序
+        // pipeline rule §1.4：setSeed → runPipeline → Orchestrator(in playSong) → MidiConverter
         PRNGManager.setSeed(seed);
         PRNGManager.recordSnapshot('A');
-        const sel = bandSelectionRef.current;
-
-        // 是否有任意一个 Lead-role 槽位已选定（Lead 在场则 styleId 由其 genre 强定，跳过 RADIO_STYLE_POOL PRNG）
-        const hasLeadSelected = !!(sel[RoleType.AccompInst] ?? sel[RoleType.MainInst] ?? sel[RoleType.Vocal]);
-
-        let styleId: StyleId;
-        if (!hasLeadSelected) {
-            styleId = RADIO_STYLE_POOL[Math.floor(PRNGManager.next() * RADIO_STYLE_POOL.length)];
-        } else {
-            // Lead 在场 → 不抽 RADIO_STYLE_POOL，runPipeline 内部按 leadMusician.genre 定调
-            styleId = StyleId.ModernPop; // 占位，下行 runPipeline 真正决定
-        }
 
         const { track, context } = runPipeline({
-            allowedStyleIds: hasLeadSelected ? undefined : [styleId],
-            forcedBand: sel,
+            forcedBand: bandSelectionRef.current,
         });
-        const realStyleId = context.style?.id ?? styleId;
 
-        // 检查 seed 是否被抢占
         if (activeSeedRef.current !== seed) return;
 
+        const styleId = context.style?.id ?? StyleId.ModernPop;
         const melodyEngine = new MelodyEngine();
-        await AudioEngine.playSong(track, realStyleId, context, melodyEngine);
+        await AudioEngine.playSong(track, styleId, context, melodyEngine);
+        reapplyMutes();
         setPlayState('PLAYING');
 
-        // 应用 mute 到新分配的 channel
-        reapplyMutes();
-
-        // 监听播放结束 → 同 seed 循环
         globalMidiScheduler.onTrackEnd(() => {
             if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING') {
                 playSeed(seed);
@@ -269,6 +270,7 @@ export const PipelineMonitor: React.FC = () => {
             currentChordIdx = i; break;
         }
     }
+    const currentChord: GeneratedChord | null = currentChordIdx >= 0 ? chords[currentChordIdx] : null;
 
     return (
         <motion.div
@@ -388,6 +390,7 @@ export const PipelineMonitor: React.FC = () => {
                         tonality={context?.tonality}
                         seed={seed}
                         styleName={context?.style ? StyleIdName[context.style.id] : undefined}
+                        currentChord={currentChord}
                     />
                     <Stage2Harmony
                         chords={chords}
@@ -498,9 +501,10 @@ interface Stage1Props {
     tonality: Tonality | undefined;
     seed: number;
     styleName: string | undefined;
+    currentChord: GeneratedChord | null;
 }
 
-const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, styleName }) => {
+const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, styleName, currentChord }) => {
     const tonicLabel = keyName ?? '—';
     const modeLabel = tonalityToShortMode(tonality);
     return (
@@ -538,7 +542,14 @@ const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, s
 
             <div className="mt-3">
                 <FieldLabel>Melody Scale</FieldLabel>
-                <div className="text-white text-sm">{tonalityToHumanScale(tonality)}</div>
+                <div className="text-white text-sm">
+                    {tonalityToHumanScale(tonality)}
+                    {currentChord !== null && (
+                        <span className="text-zinc-500 ml-2">
+                            (Local: <span className="text-cyan-300">{getLocalScaleName(currentChord, tonality)}</span>)
+                        </span>
+                    )}
+                </div>
             </div>
         </section>
     );

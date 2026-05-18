@@ -1,4 +1,5 @@
 import { NoteData, Tonality, SCALE_INTERVALS } from '@/src/core/generation/types';
+import { TopologyMutator } from '@/src/core/generation/primitives/TopologyMutator';
 
 type MotifRole = 'Foreground' | 'Middleground' | 'Background';
 
@@ -28,14 +29,15 @@ function analyzeMotif(notes: NoteData[]): MotifAnalysis {
     }
 
     // 1. 音程分析
-    const intervals: number[] = [];
+    const intervalCount = n - 1;
+    const intervals: number[] = new Array(intervalCount);
     let bigJumps = 0;
     let ups = 0;
     let downs = 0;
     let sames = 0;
     for (let i = 1; i < n; i++) {
         const interval = notes[i].pitch - notes[i - 1].pitch;
-        intervals.push(interval);
+        intervals[i - 1] = interval;
         const abs = Math.abs(interval);
         if (abs > 7) bigJumps++;
         if (interval > 0) ups++;
@@ -43,7 +45,7 @@ function analyzeMotif(notes: NoteData[]): MotifAnalysis {
         else sames++;
     }
 
-    const bigJumpRatio = bigJumps / intervals.length;
+    const bigJumpRatio = bigJumps / intervalCount;
     const intervalScore = Math.max(0, 1.0 - bigJumpRatio * 2.5); // 大跳越多越扣分
 
     // 2. 节奏规律性（能否量化到 16th grid）
@@ -76,20 +78,20 @@ function analyzeMotif(notes: NoteData[]): MotifAnalysis {
     // 5. 方向变化（有起伏比纯单向好）
     const hasUps = ups > 0;
     const hasDowns = downs > 0;
-    const directionScore = (hasUps && hasDowns) ? 1.0 : (sames > intervals.length * 0.5 ? 0.3 : 0.5);
+    const directionScore = (hasUps && hasDowns) ? 1.0 : (sames > intervalCount * 0.5 ? 0.3 : 0.5);
 
     // 综合评分
     const qualityScore = intervalScore * 0.3 + rhythmRegularity * 0.25 + rangeScore * 0.2 + countScore * 0.15 + directionScore * 0.1;
 
     // 音程轮廓分类
     let intervalProfile: 'stepwise' | 'jumpy' | 'static' | 'mixed' = 'mixed';
-    if (sames > intervals.length * 0.6) intervalProfile = 'static';
+    if (sames > intervalCount * 0.6) intervalProfile = 'static';
     else if (bigJumpRatio > 0.4) intervalProfile = 'jumpy';
     else if (bigJumpRatio < 0.15) intervalProfile = 'stepwise';
 
     // 角色推断
     let suggestedRole: MotifRole = 'Foreground';
-    if (n <= 4 && sames >= intervals.length * 0.3) suggestedRole = 'Background';
+    if (n <= 4 && sames >= intervalCount * 0.3) suggestedRole = 'Background';
     else if (n > 12) suggestedRole = 'Middleground';
 
     return { qualityScore, intervalProfile, rhythmRegularity, suggestedRole, noteCount: n };
@@ -108,20 +110,23 @@ function snapToScale(pitch: number, scalePcs: number[]): number {
         const dist = Math.min(Math.abs(pc - scalePcs[i]), 12 - Math.abs(pc - scalePcs[i]));
         if (dist < bestDist) { bestDist = dist; bestPc = scalePcs[i]; }
     }
-    // 选择最近的八度
-    const candidates = [bestPc + octave * 12, bestPc + (octave - 1) * 12, bestPc + (octave + 1) * 12];
-    let best = candidates[0];
-    let bestAbsDist = Math.abs(candidates[0] - pitch);
-    for (let i = 1; i < candidates.length; i++) {
-        const d = Math.abs(candidates[i] - pitch);
-        if (d < bestAbsDist) { best = candidates[i]; bestAbsDist = d; }
-    }
+    // 选择最近的八度（3 个候选：当前 / 上 / 下）
+    const cand0 = bestPc + octave * 12;
+    const cand1 = bestPc + (octave - 1) * 12;
+    const cand2 = bestPc + (octave + 1) * 12;
+    let best = cand0;
+    let bestAbsDist = Math.abs(cand0 - pitch);
+    const d1 = Math.abs(cand1 - pitch);
+    if (d1 < bestAbsDist) { best = cand1; bestAbsDist = d1; }
+    const d2 = Math.abs(cand2 - pitch);
+    if (d2 < bestAbsDist) { best = cand2; bestAbsDist = d2; }
     return best;
 }
 
 function cleanMotif(notes: NoteData[], tonality: Tonality): NoteData[] {
     const intervals = SCALE_INTERVALS[tonality] || SCALE_INTERVALS[Tonality.Major];
-    const scalePcs = intervals.map(i => i % 12);
+    const scalePcs: number[] = new Array(intervals.length);
+    for (let i = 0; i < intervals.length; i++) scalePcs[i] = intervals[i] % 12;
     const gridSize = 0.25;
 
     const cleaned: NoteData[] = [];
@@ -159,15 +164,12 @@ function cleanMotif(notes: NoteData[], tonality: Tonality): NoteData[] {
 }
 
 // ================================================================
-// 阶段 3：变奏扩展（A - A - A' - A'' 结构）
-// 保留 75% 原始音符，让用户能清晰听到自己的 motif
+// 阶段 3：拓扑形变扩展（Original - Invert - Original - Retrograde）
+// 用纯数学拓扑变换发展用户动机，无需任何乐理知识。
 // ================================================================
 
-function expandMotif(cleaned: NoteData[], tonality: Tonality, beatsPerBar: number): NoteData[] {
+function expandMotif(cleaned: NoteData[], _tonality: Tonality, beatsPerBar: number): NoteData[] {
     if (cleaned.length === 0) return [];
-
-    const intervals = SCALE_INTERVALS[tonality] || SCALE_INTERVALS[Tonality.Major];
-    const scalePcs = intervals.map(i => i % 12);
 
     // 计算 motif 原始长度，向上补齐到 beatsPerBar 的倍数
     let maxOnset = 0;
@@ -179,73 +181,91 @@ function expandMotif(cleaned: NoteData[], tonality: Tonality, beatsPerBar: numbe
 
     // 如果 motif 太长（> 8 拍），截取前 2 小节
     const maxLength = beatsPerBar * 2;
-    let core = cleaned;
+    let core: NoteData[] = cleaned;
     if (motifLength > maxLength) {
-        core = cleaned.filter(n => n.onset < maxLength);
-        if (core.length === 0) core = [cleaned[0]];
+        const trimmed: NoteData[] = [];
+        for (let i = 0; i < cleaned.length; i++) {
+            if (cleaned[i].onset < maxLength) trimmed.push(cleaned[i]);
+        }
+        core = trimmed.length === 0 ? [cleaned[0]] : trimmed;
     }
     const coreLength = Math.min(motifLength, maxLength);
 
     const result: NoteData[] = [];
 
-    // A: 原始 motif（第 1 遍，完全保留）
+    // Block 0: 原形 (Original) — onset 不变
     for (let i = 0; i < core.length; i++) {
-        result.push({ ...core[i] });
+        const src = core[i];
+        result.push({
+            pitch: src.pitch,
+            onset: src.onset,
+            duration: src.duration,
+            velocity: src.velocity,
+            isUserMotif: true
+        });
     }
 
-    // A: 原始 motif（第 2 遍，完全重复 — 强化记忆点）
-    for (let i = 0; i < core.length; i++) {
-        result.push({ ...core[i], onset: core[i].onset + coreLength });
+    // Block 1: 倒影 (Invert) — 以 core[0].pitch 为对称轴，onset += coreLength
+    const inverted = TopologyMutator.invert(core, core[0].pitch);
+    for (let i = 0; i < inverted.length; i++) {
+        const src = inverted[i];
+        result.push({
+            pitch: src.pitch,
+            onset: src.onset + coreLength,
+            duration: src.duration,
+            velocity: src.velocity,
+            isUserMotif: true
+        });
     }
 
-    // A': 微调变奏 — 仅最后一个音做调内位移
+    // Block 2: 原形复现 — onset += coreLength * 2（听觉重新锚定记忆）
     for (let i = 0; i < core.length; i++) {
-        const note = { ...core[i], onset: core[i].onset + coreLength * 2 };
-        if (i === core.length - 1) {
-            note.pitch = shiftDiatonic(note.pitch, scalePcs, 1);
-        }
-        result.push(note);
+        const src = core[i];
+        result.push({
+            pitch: src.pitch,
+            onset: src.onset + coreLength * 2,
+            duration: src.duration,
+            velocity: src.velocity,
+            isUserMotif: true
+        });
     }
 
-    // A'': 回归高潮 — 原始 motif + 最高音延长增强
-    let highestIdx = 0;
-    let highestPitch = -1;
-    for (let i = 0; i < core.length; i++) {
-        if (core[i].pitch > highestPitch) { highestPitch = core[i].pitch; highestIdx = i; }
-    }
-    for (let i = 0; i < core.length; i++) {
-        const note = { ...core[i], onset: core[i].onset + coreLength * 3, isUserMotif: true };
-        if (i === highestIdx) {
-            note.duration = Math.min(4.0, note.duration * 1.5);
-            note.velocity = Math.min(1.0, note.velocity * 1.2);
-        }
-        result.push(note);
+    // Block 3: 逆行 (Retrograde) — 时间轴翻转，onset += coreLength * 3
+    const reversed = TopologyMutator.reverse(core);
+    for (let i = 0; i < reversed.length; i++) {
+        const src = reversed[i];
+        result.push({
+            pitch: src.pitch,
+            onset: src.onset + coreLength * 3,
+            duration: src.duration,
+            velocity: src.velocity,
+            isUserMotif: true
+        });
     }
 
     return result;
 }
 
-function shiftDiatonic(pitch: number, scalePcs: number[], direction: number): number {
-    const pc = ((pitch % 12) + 12) % 12;
-    const octave = Math.floor(pitch / 12);
-    // 找到当前 pc 在音阶中的位置
-    let idx = -1;
-    let minDist = 99;
-    for (let i = 0; i < scalePcs.length; i++) {
-        const d = Math.min(Math.abs(pc - scalePcs[i]), 12 - Math.abs(pc - scalePcs[i]));
-        if (d < minDist) { minDist = d; idx = i; }
-    }
-    // 移动一个度
-    let newIdx = idx + direction;
-    let newOctave = octave;
-    if (newIdx >= scalePcs.length) { newIdx = 0; newOctave++; }
-    if (newIdx < 0) { newIdx = scalePcs.length - 1; newOctave--; }
-    return scalePcs[newIdx] + newOctave * 12;
-}
-
 // ================================================================
 // 阶段 4：质量门控 + 公开 API
 // ================================================================
+
+const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+function formatPitchNames(notes: NoteData[]): string {
+    const names: string[] = new Array(notes.length);
+    for (let i = 0; i < notes.length; i++) {
+        const p = notes[i].pitch;
+        names[i] = NOTE_NAMES[((p % 12) + 12) % 12] + Math.floor(p / 12);
+    }
+    return names.join(', ');
+}
+
+function formatOnsets(notes: NoteData[]): string {
+    const out: string[] = new Array(notes.length);
+    for (let i = 0; i < notes.length; i++) out[i] = notes[i].onset.toFixed(2);
+    return out.join(', ');
+}
 
 export function preprocessMotif(
     raw: NoteData[],
@@ -261,10 +281,9 @@ export function preprocessMotif(
 
     const analysis = analyzeMotif(raw);
 
-    const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
     console.log(`[MotifPreprocessor] Raw input: ${raw.length} notes, quality: ${analysis.qualityScore.toFixed(2)}, profile: ${analysis.intervalProfile}`);
-    console.log(`[MotifPreprocessor] Raw pitches: ${raw.map(n => NOTE_NAMES[((n.pitch % 12) + 12) % 12] + Math.floor(n.pitch / 12)).join(', ')}`);
-    console.log(`[MotifPreprocessor] Raw onsets: ${raw.map(n => n.onset.toFixed(2)).join(', ')}`);
+    console.log(`[MotifPreprocessor] Raw pitches: ${formatPitchNames(raw)}`);
+    console.log(`[MotifPreprocessor] Raw onsets: ${formatOnsets(raw)}`);
 
     // 质量太低：不传 motif，回退到正常随机生成
     if (analysis.qualityScore < 0.25) {
@@ -275,12 +294,12 @@ export function preprocessMotif(
     // 清洗
     const cleaned = cleanMotif(raw, tonality);
     console.log(`[MotifPreprocessor] After cleaning: ${cleaned.length} notes`);
-    console.log(`[MotifPreprocessor] Cleaned pitches: ${cleaned.map(n => NOTE_NAMES[((n.pitch % 12) + 12) % 12] + Math.floor(n.pitch / 12)).join(', ')}`);
+    console.log(`[MotifPreprocessor] Cleaned pitches: ${formatPitchNames(cleaned)}`);
 
-    // 变奏扩展
+    // 拓扑形变扩展
     const beatsPerBar = 4; // 默认 4/4
     const expanded = expandMotif(cleaned, tonality, beatsPerBar);
-    console.log(`[MotifPreprocessor] After expansion: ${expanded.length} notes (${cleaned.length} × 4 sections)`);
+    console.log(`[MotifPreprocessor] After expansion: ${expanded.length} notes (${cleaned.length} × 4 blocks: Original/Invert/Original/Retrograde)`);
 
     // 角色决定
     let role = analysis.suggestedRole;
