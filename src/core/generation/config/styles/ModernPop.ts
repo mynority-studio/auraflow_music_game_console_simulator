@@ -17,7 +17,7 @@
 
 import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
 import { HarmonyRulesConfig, HarmonicFunction } from '../../pipeline/MacroProgressionEngine';
-import { ContourType, MusicianPersona } from '../../types';
+import { ChordQuality, ContourType, MusicianPersona, NoteData } from '../../types';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
 import {
     GrammarConfig, GrammarRule, GrammarSymbol, TerminalKind, TerminalSymbol,
@@ -57,6 +57,11 @@ export const MODERN_POP_HARMONY_RULES: HarmonyRulesConfig = {
 
     // Cadential Hijacking — Pop 走经典 V→I 完全终止式
     cadentialPredominant: HarmonicFunction.Dominant,
+
+    progressionSkeletons: [
+        { weight: 5, roots: [0, 7, 9, 5], qualities: [ChordQuality.Major, ChordQuality.Major, ChordQuality.Minor, ChordQuality.Major] }, // I-V-vi-IV
+        { weight: 3, roots: [9, 5, 0, 7], qualities: [ChordQuality.Minor, ChordQuality.Major, ChordQuality.Major, ChordQuality.Major] }  // vi-IV-I-V
+    ],
 };
 
 // ============================================================
@@ -123,6 +128,10 @@ export const MODERN_POP_PERSONAS: MusicianPersona[] = [
         colorBias: 0.3, sparsityTendency: 0.4, contourPreference: ContourType.Random,
         syncopationAssault: 0.3, dynamicRange: [60, 110],
         legatoRatio: 1.0,
+        signatureLickProb: 0.15,
+        lickPool: [
+            [ { pitch: 72, onset: 0, duration: 0.5, velocity: 0.85 }, { pitch: 69, onset: 0.5, duration: 0.5, velocity: 0.75 }, { pitch: 67, onset: 1.0, duration: 0.5, velocity: 0.75 }, { pitch: 64, onset: 1.5, duration: 1.5, velocity: 0.9 } ]
+        ],
     },
     // Drums — Dave（dynamicRange 用于 DrumIdiom 的备份记录，实际 velocity 由 DRUM_GRID 控制）
     {

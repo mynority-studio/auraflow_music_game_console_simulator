@@ -51,6 +51,8 @@ import {
 import { DrumIdiom } from '../primitives/DrumIdiom';
 import { BassIdiom } from '../primitives/BassIdiom';
 import { ToplineEngine } from './ToplineEngine';
+import { TopologyMutator } from '../primitives/TopologyMutator';
+import { PRNGManager } from '../../utils/PRNG';
 
 const EPSILON = 1e-6;
 const STEPS_PER_BEAT = 4;
@@ -137,6 +139,8 @@ export interface Stage5LayeringInput {
     styleId: StyleId;
     /** 调式 — 由 Stage 2 决定，ToplineEngine 用于色彩音/调内邻音判定（Phase 6 新增） */
     tonality: Tonality;
+    /** Phase 2: 用户动机（RELATIVE pitch space），用于 Lead 的片段拼接（Direct Splice） */
+    userMotif?: NoteData[];
 }
 
 export interface Stage5LayeringResult {
@@ -207,6 +211,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
                 getPersona(bundle.personas, ROLE_LEAD),
                 bundle.fractal, bundle.grammar,
                 input.tonality, bundle.approachDownProb,
+                input.userMotif,
             );
         }
     }
@@ -315,6 +320,7 @@ function renderLead(
     grammar: GrammarConfig,
     tonality: Tonality,
     approachDownProb: number,
+    userMotif?: NoteData[],
 ): void {
     const sectionDur = section.endBeat - section.startBeat;
     if (sectionDur < EPSILON) return;
@@ -331,27 +337,96 @@ function renderLead(
 
         const blockOnset = section.startBeat + block.startBeat;
 
-        // 1. PCFG 展开 — kind + duration（无 pitch）
         const terminals = PCFGGrammarEngine.expand(block.duration, grammar);
         if (terminals.length === 0) continue;
 
-        // 2. ToplineEngine 实例化 pitch（chord-aware + scale-aware）+ Pass 3 智能踏板
-        //    persona.legatoRatio 透传：1.0=Pop 标准 / 1.2=Jazz 偏 lush / 0.7=NeoSoul 偏 staccato。
-        //    未设置时 ToplineEngine 内部回落 1.0（自然踏板，告别"干切"）。
-        const notes = ToplineEngine.render({
-            terminals,
-            chords,
-            startBeat: blockOnset,
-            tonality,
-            velocityRange: persona.dynamicRange,
-            pitchRange: [LEAD_RANGE_LO, LEAD_RANGE_HI],
-            anchorPitch: LEAD_ANCHOR_PITCH,
-            approachDownProb,
-            legatoRatio: persona.legatoRatio,
+        // Ghost Rendering: 无论是否拼接 Lick，都先真实跑一遍 ToplineEngine，强制消耗随机数
+        const generatedNotes = ToplineEngine.render({
+            terminals, chords, startBeat: blockOnset, tonality,
+            velocityRange: persona.dynamicRange, pitchRange: [LEAD_RANGE_LO, LEAD_RANGE_HI],
+            anchorPitch: LEAD_ANCHOR_PITCH, approachDownProb, legatoRatio: persona.legatoRatio,
         });
 
-        for (let k = 0; k < notes.length; k++) {
-            out.push(notes[k]);
+        // 恒定消耗判断拼接的 PRNG（无视条件，坚决放在 if 外部）
+        const spliceRoll = PRNGManager.next();
+        const lickIdxRoll = PRNGManager.next();
+        const topoRolls = [PRNGManager.next(), PRNGManager.next(), PRNGManager.next(), PRNGManager.next(), PRNGManager.next(), PRNGManager.next()];
+        let topoIdx = 0;
+
+        const lickProb = persona.signatureLickProb ?? 0.0;
+        const hasLicks = persona.lickPool && persona.lickPool.length > 0;
+        const useUserMotif = userMotif !== undefined && userMotif.length > 0;
+
+        let spliced = false;
+
+        // 仅在能量较高，且概率命中，并且 duration >= 1 时进行乐句替换
+        if (section.energyLevel >= 6 && block.duration >= 1.0 && ((useUserMotif && spliceRoll < 0.5) || (hasLicks && spliceRoll < lickProb))) {
+
+            let rawLick: NoteData[];
+            if (useUserMotif && spliceRoll < 0.5) {
+                rawLick = userMotif!;
+            } else {
+                const lickIdx = Math.floor(lickIdxRoll * persona.lickPool!.length);
+                rawLick = persona.lickPool![lickIdx];
+            }
+
+            const mutatedLick = TopologyMutator.applyTopologyChain(
+                rawLick,
+                persona.topologyConfig ?? { probInvert: 0, probReverse: 0, probExpand: 0, probSideSlip: 0, sideSlipRange: 0, colorBias: 0 },
+                () => topoRolls[topoIdx++ % topoRolls.length],
+                (min, max) => {
+                    const r = topoRolls[topoIdx++ % topoRolls.length];
+                    return Math.floor(r * (max - min + 1)) + min;
+                }
+            );
+
+            // 缩放 Lick 时长以适应 block.duration
+            let maxOnset = 0;
+            for (let k = 0; k < mutatedLick.length; k++) {
+                const end = mutatedLick[k].onset + mutatedLick[k].duration;
+                if (end > maxOnset) maxOnset = end;
+            }
+            const scale = maxOnset > EPSILON ? block.duration / maxOnset : 1.0;
+
+            let scaledLick = mutatedLick;
+            if (Math.abs(scale - 1.0) > EPSILON) {
+                scaledLick = TopologyMutator.expand(mutatedLick, scale);
+            }
+
+            // 找寻当前时间段和弦，用作 K-2 相对平移基准
+            let targetChord = chords[0];
+            for (let c = 0; c < chords.length; c++) {
+                if (chords[c].startBeat <= blockOnset && chords[c].endBeat > blockOnset) {
+                    targetChord = chords[c];
+                    break;
+                }
+            }
+            const rootPc = targetChord ? ((targetChord.root % 12) + 12) % 12 : 0;
+
+            for (let k = 0; k < scaledLick.length; k++) {
+                const n = scaledLick[k];
+                let p = n.pitch + rootPc;
+                // 防御性钳位，确保落在合理音域
+                while (p < LEAD_RANGE_LO) p += 12;
+                while (p > LEAD_RANGE_HI) p -= 12;
+
+                out.push({
+                    pitch: p,
+                    onset: blockOnset + n.onset * scale,
+                    duration: n.duration * scale,
+                    velocity: n.velocity,
+                    isUserMotif: true,
+                    motifName: 'MasterSplice'
+                });
+            }
+            spliced = true;
+        }
+
+        if (!spliced) {
+            // 如果不拼接，则装载 Ghost Rendering 跑出来的原生音符
+            for (let k = 0; k < generatedNotes.length; k++) {
+                out.push(generatedNotes[k]);
+            }
         }
     }
 }

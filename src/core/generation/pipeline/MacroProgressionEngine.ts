@@ -55,6 +55,23 @@ const PITCH_CLASS_SIZE = 12;
 const EPSILON          = 1e-6;
 
 /**
+ * Phase 2 — 预置和弦骨架（Progression Template）。
+ *
+ * 数据布局：纯 flat number[] / ChordQuality[]，C 端直接映射。
+ *   - roots[i]     : 第 i 个槽位的根音（相对调式主音的 pitch class 0~11）
+ *   - qualities[i] : 第 i 个槽位的和弦质（与 roots 平行索引）
+ *   - weight       : 风格池内的抽样权重（与其他模板竞争）
+ *
+ * 用法：HarmonyRulesConfig.progressionSkeletons 注入 → MacroProgressionEngine.generate
+ *       80% 概率走骨架循环（绕过马尔可夫），20% 仍走 T-S-D 推演（保多样性）。
+ */
+export interface ProgressionSkeleton {
+    roots: number[];
+    qualities: ChordQuality[];
+    weight: number;
+}
+
+/**
  * 和声规则配置 — 取代旧 ChordTransitionMatrix。
  *
  * 数据布局全部为 flat number[]：
@@ -96,6 +113,9 @@ export interface HarmonyRulesConfig {
      * 缺省时（undefined）退化为 Dominant（保留传统 V→I 完全终止式行为）。
      */
     cadentialPredominant?: HarmonicFunction;
+
+    /** Phase 2: 预置和弦骨架池。若提供，则绕过马尔可夫游走，直接循环骨架，再应用变异门 */
+    progressionSkeletons?: ProgressionSkeleton[];
 }
 
 export interface MacroProgressionInput {
@@ -195,42 +215,78 @@ export class MacroProgressionEngine {
             ));
             const beatsPerChord    = sectionDuration / chordsPer;
 
-            // 段首强制 Tonic — 0 PRNG，避免段间 PRNG 漂移
-            let curFunc: HarmonicFunction = HarmonicFunction.Tonic;
+            // Phase 2 — 段首预抽 ProgressionSkeleton：恒定消耗 2 次 PRNG（不论是否注入骨架池）
+            //   useSkeletonRoll < 0.8 命中（且池非空）→ activeTemplate 接管整段和弦
+            //   否则退化为 T-S-D 推演（兼容旧路径）
+            //   无骨架池时也空转 2 次 PRNG，保证 D-5 PRNG 序列对齐
+            let activeTemplate: ProgressionSkeleton | null = null;
+            if (input.rules.progressionSkeletons && input.rules.progressionSkeletons.length > 0) {
+                const useSkeletonRoll = PRNGManager.next();
+                const idxRoll = PRNGManager.next();
+                let totalW = 0;
+                for (let i = 0; i < input.rules.progressionSkeletons.length; i++) {
+                    totalW += input.rules.progressionSkeletons[i].weight;
+                }
+                if (useSkeletonRoll < 0.8 && totalW > EPSILON) {
+                    const pick = idxRoll * totalW;
+                    let cum = 0;
+                    for (let i = 0; i < input.rules.progressionSkeletons.length; i++) {
+                        cum += input.rules.progressionSkeletons[i].weight;
+                        if (pick < cum) {
+                            activeTemplate = input.rules.progressionSkeletons[i];
+                            break;
+                        }
+                    }
+                }
+            } else {
+                PRNGManager.next();
+                PRNGManager.next();
+            }
 
-            // Cadential Hijacking 目标功能（半终止位）— 缺省 Dominant 兼容旧黄金种子
-            const cadentialPredominant = rules.cadentialPredominant !== undefined
-                ? rules.cadentialPredominant
+            let curFunc: HarmonicFunction = HarmonicFunction.Tonic;
+            const cadentialPredominant = input.rules.cadentialPredominant !== undefined
+                ? input.rules.cadentialPredominant
                 : HarmonicFunction.Dominant;
 
             for (let c = 0; c < chordsPer; c++) {
-                // 1) 功能转移（段首跳过）
-                //
-                // Cadential Hijacking（任务 3）— 段落尾部劫持，覆写马尔可夫游走：
-                //   c === chordsPer-2（半终止位）：强制 cadentialPredominant
-                //   c === chordsPer-1（全终止位）：强制 Tonic
-                // 两种覆写都跳过 pickNextFunction，但必须空转 1 次 PRNG（D-5 对齐）。
-                if (c > 0) {
-                    const isHalfCadence = (c === chordsPer - 2);
-                    const isFullCadence = (c === chordsPer - 1);
-                    if (isHalfCadence) {
-                        curFunc = cadentialPredominant;
-                        PRNGManager.next();   // D-5 spin — 替代 pickNextFunction 的骰子
-                    } else if (isFullCadence) {
-                        curFunc = HarmonicFunction.Tonic;
-                        PRNGManager.next();   // D-5 spin — 替代 pickNextFunction 的骰子
-                    } else {
-                        curFunc = MacroProgressionEngine.pickNextFunction(
-                            curFunc, rules.functionTransitions,
-                        );
-                    }
-                }
+                let root0 = 0;
+                let quality0 = ChordQuality.Major7;
+                let numeral0 = '';
 
-                // 2) 变体抽取
-                const variantIdx = MacroProgressionEngine.pickVariant(curFunc, rules);
-                const root0      = MacroProgressionEngine.variantRoot(curFunc, variantIdx);
-                const quality0   = MacroProgressionEngine.variantQuality(curFunc, variantIdx);
-                const numeral0   = MacroProgressionEngine.variantNumeral(curFunc, variantIdx);
+                if (activeTemplate) {
+                    const skelLen = activeTemplate.roots.length;
+                    root0 = activeTemplate.roots[c % skelLen];
+                    quality0 = activeTemplate.qualities[c % skelLen];
+                    numeral0 = MacroProgressionEngine['numeralOfRoot'](root0);
+
+                    const r = MacroProgressionEngine['modPC'](root0);
+                    if (r === 5 || r === 2) curFunc = HarmonicFunction.Subdominant;
+                    else if (r === 7 || r === 11) curFunc = HarmonicFunction.Dominant;
+                    else curFunc = HarmonicFunction.Tonic;
+
+                    if (c > 0) PRNGManager.next(); // D-5 spin：替代 pickNextFunction
+                    PRNGManager.next();            // D-5 spin：替代 pickVariant
+                } else {
+                    if (c > 0) {
+                        const isHalfCadence = (c === chordsPer - 2);
+                        const isFullCadence = (c === chordsPer - 1);
+                        if (isHalfCadence) {
+                            curFunc = cadentialPredominant;
+                            PRNGManager.next();   // D-5 spin
+                        } else if (isFullCadence) {
+                            curFunc = HarmonicFunction.Tonic;
+                            PRNGManager.next();   // D-5 spin
+                        } else {
+                            curFunc = MacroProgressionEngine['pickNextFunction'](
+                                curFunc, input.rules.functionTransitions,
+                            );
+                        }
+                    }
+                    const variantIdx = MacroProgressionEngine['pickVariant'](curFunc, input.rules);
+                    root0 = MacroProgressionEngine['variantRoot'](curFunc, variantIdx);
+                    quality0 = MacroProgressionEngine['variantQuality'](curFunc, variantIdx);
+                    numeral0 = MacroProgressionEngine['variantNumeral'](curFunc, variantIdx);
+                }
 
                 const startBeat  = section.startBeat + c * beatsPerChord;
                 const endBeat    = section.startBeat + (c + 1) * beatsPerChord;

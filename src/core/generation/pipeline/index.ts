@@ -24,7 +24,7 @@
  */
 
 import {
-    GeneratedTrack, GenerationOptions, MusicContext,
+    GeneratedTrack, GenerationOptions, MusicContext, NoteData,
     RoleType, Tonality, SectionMetadata, SectionType, SectionTypeName,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
@@ -245,6 +245,7 @@ export function runPipeline(
         sections,
         styleId,
         tonality,
+        userMotif: options.generation?.processedUserMotif as NoteData[] | undefined,
     });
 
     const track: GeneratedTrack = {

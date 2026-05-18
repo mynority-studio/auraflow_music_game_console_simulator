@@ -19,7 +19,7 @@
 
 import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
 import { HarmonyRulesConfig, HarmonicFunction } from '../../pipeline/MacroProgressionEngine';
-import { ContourType, MusicianPersona } from '../../types';
+import { ChordQuality, ContourType, MusicianPersona, NoteData } from '../../types';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
 import {
     GrammarConfig, GrammarRule, GrammarSymbol, TerminalKind, TerminalSymbol,
@@ -61,6 +61,10 @@ export const CHILL_JAZZ_HARMONY_RULES: HarmonyRulesConfig = {
 
     // Cadential Hijacking — Jazz 走 ii-V-I（Dominant 半终止）
     cadentialPredominant: HarmonicFunction.Dominant,
+
+    progressionSkeletons: [
+        { weight: 5, roots: [2, 7, 0, 9], qualities: [ChordQuality.Minor7, ChordQuality.Dominant7, ChordQuality.Major7, ChordQuality.Minor7] } // ii-V-I-vi
+    ],
 };
 
 // ============================================================
@@ -123,6 +127,10 @@ export const CHILL_JAZZ_PERSONAS: MusicianPersona[] = [
         colorBias: 0.5, sparsityTendency: 0.5, contourPreference: ContourType.Alternating,
         syncopationAssault: 0.5, dynamicRange: [50, 100],
         legatoRatio: 1.2,
+        signatureLickProb: 0.25,
+        lickPool: [
+            [ { pitch: 64, onset: 0, duration: 0.5, velocity: 0.8 }, { pitch: 61, onset: 0.5, duration: 0.5, velocity: 0.7 }, { pitch: 67, onset: 1.0, duration: 0.5, velocity: 0.8 }, { pitch: 60, onset: 1.5, duration: 1.5, velocity: 0.9 } ]
+        ],
     },
     // Drums — 爵士打击 brush/ride 感（dynamicRange 仅参考，实际由 DRUM_GRID 控制）
     {

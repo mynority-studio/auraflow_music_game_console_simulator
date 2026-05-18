@@ -777,8 +777,8 @@ export interface MusicianPersona {
     legatoRatio?: number;
     /** 触发签名乐句的概率 */
     signatureLickProb?: number;
-    /** 自定义乐句池（覆盖 LickDictionary 默认） */
-    lickPool?: unknown[];
+    /** Phase 2: 大师经典 Licks 库 (RELATIVE pitch space) */
+    lickPool?: NoteData[][];
     /** 角色的专属拓扑变异概率（算法折叠核心） */
     topologyConfig?: TopologyConfig;
 }
