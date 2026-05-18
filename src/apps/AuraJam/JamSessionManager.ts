@@ -9,6 +9,7 @@ import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 import { ScaleEngine, ScaleState } from './ScaleEngine';
 import { MotifRecorder } from './MotifRecorder';
 import { preprocessMotif } from './MotifPreprocessor';
+import { getStyleStage5Bundle } from '../../core/generation/config/styles';
 
 export type JamAppState =
     | 'SCALE_VIEW'
@@ -144,12 +145,15 @@ export class JamSessionManager {
                 });
             }
 
-            // 🌟 Motif 智能预处理：质量分析 + 清洗 + 变奏扩展
-            const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality);
-
-            // Style 随机选一个
+            // Style 随机选一个 — 必须在 preprocessMotif 之前完成，以便注入 Lead 拓扑配置
             const allStyleIds = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
             const randomStyleId = allStyleIds[Math.floor(PRNGManager.next() * allStyleIds.length)];
+
+            const stage5Bundle = getStyleStage5Bundle(randomStyleId);
+            const leadTopology = stage5Bundle.personas[2]?.topologyConfig; // ROLE_LEAD = 2
+
+            // 🌟 Motif 智能预处理：质量分析 + 清洗 + 变奏扩展（拓扑链由 Lead Persona 注入）
+            const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality, leadTopology);
 
             const rawTrack = melodyEngine.generateFullSong(randomStyleId, {
                 processedUserMotif: processedMotif || undefined,

@@ -1,5 +1,6 @@
-import { NoteData, Tonality, SCALE_INTERVALS } from '@/src/core/generation/types';
+import { NoteData, Tonality, SCALE_INTERVALS, TopologyConfig } from '@/src/core/generation/types';
 import { TopologyMutator } from '@/src/core/generation/primitives/TopologyMutator';
+import { PRNGManager } from '@/src/core/utils/PRNG';
 
 type MotifRole = 'Foreground' | 'Middleground' | 'Background';
 
@@ -168,7 +169,7 @@ function cleanMotif(notes: NoteData[], tonality: Tonality): NoteData[] {
 // 用纯数学拓扑变换发展用户动机，无需任何乐理知识。
 // ================================================================
 
-function expandMotif(cleaned: NoteData[], _tonality: Tonality, beatsPerBar: number): NoteData[] {
+function expandMotif(cleaned: NoteData[], _tonality: Tonality, beatsPerBar: number, topologyConfig?: TopologyConfig): NoteData[] {
     if (cleaned.length === 0) return [];
 
     // 计算 motif 原始长度，向上补齐到 beatsPerBar 的倍数
@@ -191,58 +192,33 @@ function expandMotif(cleaned: NoteData[], _tonality: Tonality, beatsPerBar: numb
     }
     const coreLength = Math.min(motifLength, maxLength);
 
+    const configToUse: TopologyConfig = topologyConfig ?? {
+        probInvert: 0.4, probReverse: 0.2, probExpand: 0.0, probSideSlip: 0.3, sideSlipRange: 2, colorBias: 0, probTimeShift: 0.3, timeShiftBeats: 0.25
+    };
+
     const result: NoteData[] = [];
-
-    // Block 0: 原形 (Original) — onset 不变
-    for (let i = 0; i < core.length; i++) {
-        const src = core[i];
-        result.push({
-            pitch: src.pitch,
-            onset: src.onset,
-            duration: src.duration,
-            velocity: src.velocity,
-            isUserMotif: true
-        });
+    for (let b = 0; b < 4; b++) {
+        let blockNotes: NoteData[];
+        if (b === 0 || b === 2) {
+            // 听觉锚定：原形复现
+            blockNotes = core;
+        } else {
+            // 变奏：应用拓扑变异（直接消耗 PRNGManager 安全 —
+            // 本函数在 pipeline runPipeline 之前执行，B 快照尚未捕获）
+            blockNotes = TopologyMutator.applyTopologyChain(
+                core, configToUse,
+                () => PRNGManager.next(),
+                (min, max) => PRNGManager.nextInt(min, max)
+            );
+        }
+        for (let i = 0; i < blockNotes.length; i++) {
+            result.push({
+                ...blockNotes[i],
+                onset: blockNotes[i].onset + coreLength * b,
+                isUserMotif: true
+            });
+        }
     }
-
-    // Block 1: 倒影 (Invert) — 以 core[0].pitch 为对称轴，onset += coreLength
-    const inverted = TopologyMutator.invert(core, core[0].pitch);
-    for (let i = 0; i < inverted.length; i++) {
-        const src = inverted[i];
-        result.push({
-            pitch: src.pitch,
-            onset: src.onset + coreLength,
-            duration: src.duration,
-            velocity: src.velocity,
-            isUserMotif: true
-        });
-    }
-
-    // Block 2: 原形复现 — onset += coreLength * 2（听觉重新锚定记忆）
-    for (let i = 0; i < core.length; i++) {
-        const src = core[i];
-        result.push({
-            pitch: src.pitch,
-            onset: src.onset + coreLength * 2,
-            duration: src.duration,
-            velocity: src.velocity,
-            isUserMotif: true
-        });
-    }
-
-    // Block 3: 逆行 (Retrograde) — 时间轴翻转，onset += coreLength * 3
-    const reversed = TopologyMutator.reverse(core);
-    for (let i = 0; i < reversed.length; i++) {
-        const src = reversed[i];
-        result.push({
-            pitch: src.pitch,
-            onset: src.onset + coreLength * 3,
-            duration: src.duration,
-            velocity: src.velocity,
-            isUserMotif: true
-        });
-    }
-
     return result;
 }
 
@@ -269,7 +245,8 @@ function formatOnsets(notes: NoteData[]): string {
 
 export function preprocessMotif(
     raw: NoteData[],
-    tonality: Tonality
+    tonality: Tonality,
+    topologyConfig?: TopologyConfig
 ): PreprocessedMotif {
     if (raw.length === 0) {
         return {
@@ -296,10 +273,10 @@ export function preprocessMotif(
     console.log(`[MotifPreprocessor] After cleaning: ${cleaned.length} notes`);
     console.log(`[MotifPreprocessor] Cleaned pitches: ${formatPitchNames(cleaned)}`);
 
-    // 拓扑形变扩展
+    // 拓扑形变扩展（拓扑链由 Persona.topologyConfig 注入；缺省时回退到内置默认）
     const beatsPerBar = 4; // 默认 4/4
-    const expanded = expandMotif(cleaned, tonality, beatsPerBar);
-    console.log(`[MotifPreprocessor] After expansion: ${expanded.length} notes (${cleaned.length} × 4 blocks: Original/Invert/Original/Retrograde)`);
+    const expanded = expandMotif(cleaned, tonality, beatsPerBar, topologyConfig);
+    console.log(`[MotifPreprocessor] After expansion: ${expanded.length} notes (${cleaned.length} × 4 blocks: Anchor/Variation/Anchor/Variation via TopologyChain)`);
 
     // 角色决定
     let role = analysis.suggestedRole;

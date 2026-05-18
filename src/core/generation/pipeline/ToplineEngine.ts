@@ -256,9 +256,21 @@ export class ToplineEngine {
             }
             if (pcMask === 0) continue;  // 池空 — 静音（原行为：不消耗 PRNG，保持旧 seed 对齐）
 
+            // 引力向量预瞄 — 下一拍/下一和弦根音作为锚点（零 PRNG）
+            //   gravityTarget 未命中 chord 时为 undefined，pickPitchInMask 退化为纯 nearest。
+            let gravityTarget: number | undefined = undefined;
+            const nextBeat = slot.onset + Math.max(1.0, slot.duration);
+            const targetChord = ToplineEngine.findChordAt(input.chords, nextBeat);
+            if (targetChord !== null) {
+                const rootPc = ((targetChord.root % PITCH_CLASS_SIZE) + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE;
+                const foundAnchor = ToplineEngine.findNearestPitchByPc(rootPc, pitchCursor, rangeLo, rangeHi);
+                if (foundAnchor >= 0) gravityTarget = foundAnchor;
+            }
+
             const picked = ToplineEngine.pickPitchInMask(
                 pcMask, pitchCursor, rangeLo, rangeHi,
                 leapProb, candidatesBuffer, slot.contourDir,
+                gravityTarget, 0.35,
             );
             if (picked < 0) continue;
             slot.pitch = picked;
@@ -422,6 +434,7 @@ export class ToplineEngine {
         pcMask: number, cursor: number, lo: number, hi: number,
         leapProb: number, candidatesBuffer: number[],
         contourDir: number,
+        gravityTarget?: number, gravityWeight: number = 0.3,
     ): number {
         // Step A：收集候选池（原位重填）
         //   Phase 6.3 — 若 contourDir !== 0，按方向过滤；若过滤后空池，回退到全池
@@ -479,13 +492,21 @@ export class ToplineEngine {
         }
 
         // Step C：Nearest 分支（pickRoll 已被空转消耗）
+        //   引力向量：候选打分 = (1 - gw) * |p - cursor| + gw * |p - gravity|
+        //   gravityTarget 未提供时退化为纯 nearest（与原算法字节对齐）。
         let best = candidatesBuffer[0];
-        let bestDist = Math.abs(best - cursor);
+        let bestScore = Math.abs(best - cursor);
+        if (gravityTarget !== undefined) {
+            bestScore = bestScore * (1 - gravityWeight) + Math.abs(best - gravityTarget) * gravityWeight;
+        }
         for (let i = 1; i < N; i++) {
-            const d = Math.abs(candidatesBuffer[i] - cursor);
+            let score = Math.abs(candidatesBuffer[i] - cursor);
+            if (gravityTarget !== undefined) {
+                score = score * (1 - gravityWeight) + Math.abs(candidatesBuffer[i] - gravityTarget) * gravityWeight;
+            }
             // 严格 < — 同距离保留先到（升序扫描 = 较低音），沿用原 musical convention
-            if (d < bestDist) {
-                bestDist = d;
+            if (score < bestScore) {
+                bestScore = score;
                 best = candidatesBuffer[i];
             }
         }

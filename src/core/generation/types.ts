@@ -305,6 +305,12 @@ export interface SectionMetadata {
     };
 
     sectionType?: SectionType; // 🌟 数值枚举，替代 name.includes() 字符串匹配
+
+    /** Pipeline 注入：本段期望的和弦数。
+     *  MacroProgressionEngine 优先消费此值；缺省时回落到 input.chordsPerSection（默认 4）。
+     *  Cadential Hijacking 需要 ≥ 2（半终止 c=chordsPer-2 / 全终止 c=chordsPer-1），
+     *  Engine 内部用 Math.max(2, ...) 钳制下限。*/
+    chordsHint?: number;
 }
 
 export interface MixingConfig {
@@ -814,6 +820,10 @@ export interface TopologyConfig {
     sideSlipRange: number;
     /** 色彩倾向（将 ChordTone 强制提升为 ColorTone 的概率） */
     colorBias: number;
+    /** 抢拍/拖拍概率 0.0 - 1.0 */
+    probTimeShift?: number;
+    /** 抢拍/拖拍的幅度（单位：拍），如 0.25 或 0.5 */
+    timeShiftBeats?: number;
 }
 
 /**

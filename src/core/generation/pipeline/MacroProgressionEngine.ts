@@ -172,7 +172,7 @@ export class MacroProgressionEngine {
     public static generate(input: MacroProgressionInput): GeneratedChord[] {
         MacroProgressionEngine.validate(input);
 
-        const chordsPer = Math.max(1, Math.floor(input.chordsPerSection ?? 4));
+        const globalChordsPer = input.chordsPerSection;
         const rules     = input.rules;
         const out: GeneratedChord[]       = [];
         // 与 out 平行索引 — 跟踪每和弦的"原始/Gate1 后"功能标签，仅供 Gate 3 判定使用
@@ -185,6 +185,14 @@ export class MacroProgressionEngine {
             const section          = input.sections[secIdx];
             const sectionDuration  = section.endBeat - section.startBeat;
             if (sectionDuration < EPSILON) continue;
+            // Step 1B：chordsPer 改 per-section 解析
+            //   优先 section.chordsHint（Pipeline 按段长 / styleBeatsPerChord 算出）
+            //   回落 input.chordsPerSection（向后兼容）
+            //   最终 4
+            //   下限 2 钳制 — Cadential Hijacking 需要至少半终止 + 全终止两个位置
+            const chordsPer = Math.max(2, Math.floor(
+                section.chordsHint ?? globalChordsPer ?? 4
+            ));
             const beatsPerChord    = sectionDuration / chordsPer;
 
             // 段首强制 Tonic — 0 PRNG，避免段间 PRNG 漂移

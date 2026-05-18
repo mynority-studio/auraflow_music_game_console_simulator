@@ -2,7 +2,7 @@
 
 - **Project:** `react-example`
 - **Root:** `/Users/mynority/vibe_coding/auraflow_music_game_console_simulator`
-- **Generated:** 2026-05-18 03:46:19 UTC
+- **Generated:** 2026-05-18 05:07:48 UTC
 - **Files dumped:** 101
 - **Files skipped:** 0 (binary / oversize, see §2.5)
 - **Size cap:** 2.0 MB / file
@@ -171,7 +171,7 @@ auraflow_music_game_console_simulator/
 | 10 | `.claude/settings.local.json` | 72 | (JSON resource) |
 | 11 | `.env.example` | 10 | No description available. |
 | 12 | `.github/workflows/self_build.deploy.yaml` | 56 | (YAML config) |
-| 13 | `.gitignore` | 14 | (.gitignore) |
+| 13 | `.gitignore` | 15 | (.gitignore) |
 | 14 | `CHANGELOG.md` | 83 | > **当前版本:** 1.34.0 \| **最后更新:** 2026-04-02 |
 | 15 | `docker-compose.yaml` | 33 | (YAML config) |
 | 16 | `docker/nginx/nginx.conf` | 41 | (Config file) |
@@ -228,8 +228,8 @@ auraflow_music_game_console_simulator/
 | 67 | `src/core/generation/idioms/MusicianRegistry.ts` | 92 | No description available. |
 | 68 | `src/core/generation/MelodyEngine.ts` | 32 | No description available. |
 | 69 | `src/core/generation/pipeline/HarmonyCore.ts` | 647 | HarmonyCore — 和声推演与声部连接核心（Phase 6 换脑手术后） |
-| 70 | `src/core/generation/pipeline/index.ts` | 169 | runPipeline — 生成管线统一入口（Phase 3 实装版） |
-| 71 | `src/core/generation/pipeline/MacroProgressionEngine.ts` | 484 | MacroProgressionEngine — Phase 6 纯代数推演 / 功能和声引擎 |
+| 70 | `src/core/generation/pipeline/index.ts` | 279 | runPipeline — 生成管线统一入口（Phase 3 实装版） |
+| 71 | `src/core/generation/pipeline/MacroProgressionEngine.ts` | 492 | MacroProgressionEngine — Phase 6 纯代数推演 / 功能和声引擎 |
 | 72 | `src/core/generation/pipeline/Orchestrator.ts` | 151 | Orchestrator — RELATIVE → ABSOLUTE 转换器（K-2 唯一执行点） |
 | 73 | `src/core/generation/pipeline/Stage5Layering.ts` | 409 | Stage5Layering — 多轨织体层叠（Phase 5 配置剥离版） |
 | 74 | `src/core/generation/pipeline/ToplineEngine.ts` | 707 | ToplineEngine — 抽象终止符 → 物理 pitch 实例化（Phase 6） |
@@ -242,7 +242,7 @@ auraflow_music_game_console_simulator/
 | 81 | `src/core/generation/primitives/TextureMapper.ts` | 316 | TextureMapper — 织体映射器 |
 | 82 | `src/core/generation/primitives/TopologyMutator.ts` | 217 | TopologyMutator — 拓扑变换器 |
 | 83 | `src/core/generation/primitives/WeightedPitchSelector.ts` | 303 | WeightedPitchSelector — 一维加权 pitch 打分 + 抽样 / Top-N 选择器 |
-| 84 | `src/core/generation/types.ts` | 929 | C++ Porting Guide: This interface maps directly to a C struct to avoid heap fragmentation: struct NoteData { uint8_t pitch; // 0-127 uint8_t velocity; // 0-127 (mapped from 0.0-1.0 float if needed) float onset; // Beat position float durati … |
+| 84 | `src/core/generation/types.ts` | 935 | C++ Porting Guide: This interface maps directly to a C struct to avoid heap fragmentation: struct NoteData { uint8_t pitch; // 0-127 uint8_t velocity; // 0-127 (mapped from 0.0-1.0 float if needed) float onset; // Beat position float durati … |
 | 85 | `src/core/generation/utils/SongComparisonLogger.ts` | 30 | No description available. |
 | 86 | `src/core/GlobalContext.ts` | 3 | No description available. |
 | 87 | `src/core/hal/IHardware.ts` | 35 | Hardware Abstraction Layer (HAL) Interfaces |
@@ -1973,7 +1973,7 @@ jobs:
 ### File: `.gitignore`
 
 - **Path:** `.gitignore`
-- **Lines:** 14
+- **Lines:** 15
 
 ```gitignore
 node_modules/
@@ -1989,6 +1989,7 @@ scripts/*.h
 
 # Claude Code 本地设置（机器/会话特定，不应提交）
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 ```
 
 ### File: `CHANGELOG.md`
@@ -15336,7 +15337,7 @@ export class HarmonyCore {
 ### File: `src/core/generation/pipeline/index.ts`
 
 - **Path:** `src/core/generation/pipeline/index.ts`
-- **Lines:** 169
+- **Lines:** 279
 
 ```ts
 /**
@@ -15344,9 +15345,11 @@ export class HarmonyCore {
  *
  * 当前实装范围：
  *   Stage 1  selectStyle           PRNG ×1   — 从 allowedStyleIds 池抽
- *   Stage 2  resolveBasicParams    PRNG ×1   — 抽 BPM（固定 tonality=Major, keyOffset=0）
- *   Stage 3  HarmonyCore.generate  PRNG ×~80 — 真和声推演 + voicing
- *   Stage 4  (skip — 等 Phase 3.5 接 ConductorPlanner)
+ *   Stage 2  resolveBasicParams    PRNG ×4   — tonality / keyOffset / BPM / formTemplate 抽样
+ *                                              段落由 FORM_POOLS[styleId] 模板实例化，
+ *                                              每段 chordsHint = lengthBeats / STYLE_BEATS_PER_CHORD[styleId]
+ *   Stage 3  HarmonyCore.generate  PRNG ×~M  — 真和声推演 + voicing（M 随模板段数变化）
+ *   Stage 4  (skip — 等 Step 2 抽 StructureEngine 时把 FORM_POOLS 搬到 StyleConfig)
  *   Stage 5  layerInstruments      PRNG ×~N  — Bass(0) + AccompInst + Lead 三轨
  *
  * 输出契约：
@@ -15364,7 +15367,7 @@ export class HarmonyCore {
 
 import {
     GeneratedTrack, GenerationOptions, MusicContext,
-    RoleType, Tonality, SectionMetadata, SectionType,
+    RoleType, Tonality, SectionMetadata, SectionType, SectionTypeName,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/StyleRegistry';
@@ -15374,6 +15377,115 @@ import { HarmonyCore } from './HarmonyCore';
 import { layerInstruments } from './Stage5Layering';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+// ============================================================
+// Step 1B — 风格驱动的曲式模板池（Form Templates）
+// ============================================================
+//
+// 设计：StyleId → 多个 FormTemplate → PRNG 抽一个 → 实例化为 SectionMetadata[]
+//
+// 单位：bars（小节）。实例化时乘 timeSignature[0] 得 beats，
+//       再除以 STYLE_BEATS_PER_CHORD[styleId] 算出 chordsHint 注入 SectionMetadata。
+//
+// 设计约束（请保持）：
+//   1. 模板中所有 section.bars 必须满足 bars * timeSig[0] >= 2 * beatsPerChord
+//      （Cadential Hijacking 需要至少 2 个和弦位）
+//   2. bars * timeSig[0] 必须是 beatsPerChord 的整数倍，
+//      否则 RhythmMutator 的 "grid % stepsPerBar === 0" 契约会失败
+//
+// Step 2 计划：把 FORM_POOLS 搬到 StyleConfig.global.structureTemplates，
+//              本文件改为调 StructureEngine.pick(style)，pipeline 回归薄调度器。
+
+interface FormSection {
+    type: SectionType;
+    bars: number;       // 段落小节数
+    energy: number;     // 1-10 — 喂给 DrumIdiom 决定密度 / snare gate
+}
+interface FormTemplate {
+    id: string;         // 调试标识
+    sections: FormSection[];
+}
+
+/** 每个 style 的"和弦走多快"：Pop/Jazz 每小节换一次，NeoSoul 两小节才换（深 vamp）*/
+const STYLE_BEATS_PER_CHORD: Record<StyleId, number> = {
+    [StyleId.ModernPop]: 4,
+    [StyleId.ChillJazz]: 4,
+    [StyleId.NeoSoul]:   8,
+};
+
+const FORM_POOLS: Record<StyleId, FormTemplate[]> = {
+    [StyleId.ModernPop]: [
+        // 标准 Pop：I → V → PC → C → V → PC → C → Br → C → O
+        // 64 bars = 256 beats @ 110 BPM ≈ 2:20
+        { id: 'pop-standard', sections: [
+            { type: SectionType.Intro,     bars: 4, energy: 3 },
+            { type: SectionType.Verse,     bars: 8, energy: 5 },
+            { type: SectionType.PreChorus, bars: 4, energy: 6 },
+            { type: SectionType.Chorus,    bars: 8, energy: 8 },
+            { type: SectionType.Verse,     bars: 8, energy: 5 },
+            { type: SectionType.PreChorus, bars: 4, energy: 6 },
+            { type: SectionType.Chorus,    bars: 8, energy: 8 },
+            { type: SectionType.Bridge,    bars: 8, energy: 7 },
+            { type: SectionType.Chorus,    bars: 8, energy: 9 },  // 最后一遍推到 9
+            { type: SectionType.Outro,     bars: 4, energy: 4 },
+        ]},
+        // 短版：无 Bridge，V-C-V-C 收尾
+        // 40 bars = 160 beats @ 110 BPM ≈ 1:27
+        { id: 'pop-short', sections: [
+            { type: SectionType.Intro,  bars: 4, energy: 3 },
+            { type: SectionType.Verse,  bars: 8, energy: 5 },
+            { type: SectionType.Chorus, bars: 8, energy: 8 },
+            { type: SectionType.Verse,  bars: 8, energy: 5 },
+            { type: SectionType.Chorus, bars: 8, energy: 9 },
+            { type: SectionType.Outro,  bars: 4, energy: 4 },
+        ]},
+    ],
+    [StyleId.ChillJazz]: [
+        // AABA — Verse=A, Bridge=B
+        // 44 bars = 176 beats @ 100 BPM ≈ 1:46
+        { id: 'jazz-aaba', sections: [
+            { type: SectionType.Intro,  bars: 4, energy: 4 },
+            { type: SectionType.Verse,  bars: 8, energy: 5 },  // A1
+            { type: SectionType.Verse,  bars: 8, energy: 6 },  // A2（能量微推）
+            { type: SectionType.Bridge, bars: 8, energy: 7 },  // B
+            { type: SectionType.Verse,  bars: 8, energy: 6 },  // A3
+            { type: SectionType.Outro,  bars: 4, energy: 3 },
+        ]},
+        // ABAC — Verse=A, Chorus=C；A 再现后用 C 替代第二个 A 作为对比尾段
+        // 40 bars = 160 beats @ 100 BPM ≈ 1:36
+        { id: 'jazz-abac', sections: [
+            { type: SectionType.Intro,  bars: 4, energy: 4 },
+            { type: SectionType.Verse,  bars: 8, energy: 5 },  // A
+            { type: SectionType.Verse,  bars: 8, energy: 6 },  // A 变奏
+            { type: SectionType.Verse,  bars: 8, energy: 5 },  // A 再现
+            { type: SectionType.Chorus, bars: 8, energy: 7 },  // C
+            { type: SectionType.Outro,  bars: 4, energy: 3 },
+        ]},
+    ],
+    [StyleId.NeoSoul]: [
+        // NeoSoul Groove：长 Verse + 短 PreChorus + 长 Chorus
+        // 60 bars = 240 beats @ 85 BPM ≈ 2:50
+        { id: 'neosoul-groove', sections: [
+            { type: SectionType.Intro,     bars: 4,  energy: 4 },
+            { type: SectionType.Verse,     bars: 16, energy: 5 },
+            { type: SectionType.PreChorus, bars: 4,  energy: 6 },
+            { type: SectionType.Chorus,    bars: 12, energy: 8 },
+            { type: SectionType.Bridge,    bars: 8,  energy: 7 },
+            { type: SectionType.Chorus,    bars: 12, energy: 9 },
+            { type: SectionType.Outro,     bars: 4,  energy: 4 },
+        ]},
+        // Vamp Heavy：Breakdown 中段抽空 Accomp，留 bass+drums 深坑
+        // 68 bars = 272 beats @ 85 BPM ≈ 3:12
+        { id: 'neosoul-vamp-heavy', sections: [
+            { type: SectionType.Intro,     bars: 4,  energy: 3 },
+            { type: SectionType.Verse,     bars: 16, energy: 5 },
+            { type: SectionType.Verse,     bars: 16, energy: 6 },
+            { type: SectionType.Breakdown, bars: 8,  energy: 4 },  // bass + drums only
+            { type: SectionType.Chorus,    bars: 16, energy: 8 },
+            { type: SectionType.Outro,     bars: 8,  energy: 3 },
+        ]},
+    ],
+};
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -15400,7 +15512,7 @@ export function runPipeline(
     const bundle = getStyleHarmonyBundle(styleId);
 
     // -----------------------------------------------------------
-    // Stage 2：基本参数（PRNG ×2+4 — tonality / keyOffset / BPM / 4 段长度）
+    // Stage 2：基本参数（PRNG ×4 — tonality / keyOffset / BPM / formTemplate）
     // -----------------------------------------------------------
     // 调性池：覆盖 Major / Minor / Dorian / Mixolydian / Minor_Pentatonic
     const TONALITY_POOL: Tonality[] = [
@@ -15420,44 +15532,43 @@ export function runPipeline(
     const [bpmLo, bpmHi] = bundle.bpmRange;
     const bpm = Math.floor(PRNGManager.nextFloat(bpmLo, bpmHi + 0.999));
 
-    // 段落骨架：四段长度由 PRNG 在各自池中抽取，保留 Intro→Verse→Chorus→Outro 顺序与能量递进
-    // 约束：每段长度必须是 16 的倍数 — chordsPerSection=4 时每和弦 = 4 拍（一整 bar），
-    // 满足 RhythmMutator/SyncopationEvaluator 的 "grid length must be a multiple of stepsPerBar" 契约。
-    const INTRO_LENGTHS  = [16, 32];
-    const VERSE_LENGTHS  = [16, 32, 48];
-    const CHORUS_LENGTHS = [16, 32, 48];
-    const OUTRO_LENGTHS  = [16, 32];
+    // 段落骨架：风格驱动的曲式模板 — PRNG 抽一个模板，再实例化为 SectionMetadata[]
+    // 同类型段加序号区分（Verse_1 / Verse_2 / Chorus_1 / Chorus_2 ...）。
+    // chordsHint 按 STYLE_BEATS_PER_CHORD[styleId] 算出注入，MacroProgressionEngine 消费。
+    const formPool = FORM_POOLS[styleId];
+    const template = formPool[Math.floor(PRNGManager.next() * formPool.length)];
+    const beatsPerChord = STYLE_BEATS_PER_CHORD[styleId];
 
-    const introLen  = INTRO_LENGTHS [Math.floor(PRNGManager.next() * INTRO_LENGTHS.length)];
-    const verseLen  = VERSE_LENGTHS [Math.floor(PRNGManager.next() * VERSE_LENGTHS.length)];
-    const chorusLen = CHORUS_LENGTHS[Math.floor(PRNGManager.next() * CHORUS_LENGTHS.length)];
-    const outroLen  = OUTRO_LENGTHS [Math.floor(PRNGManager.next() * OUTRO_LENGTHS.length)];
-
-    const introStart  = 0;
-    const verseStart  = introStart  + introLen;
-    const chorusStart = verseStart  + verseLen;
-    const outroStart  = chorusStart + chorusLen;
-    const songEnd     = outroStart  + outroLen;
-
-    // 能量递进保持 Intro 3 → Verse 5 → Chorus 8 → Outro 4
-    const sections: SectionMetadata[] = [
-        { name: 'Intro_1',  sectionType: SectionType.Intro,  startBeat: introStart,  endBeat: verseStart,  energyLevel: 3 },
-        { name: 'Verse_1',  sectionType: SectionType.Verse,  startBeat: verseStart,  endBeat: chorusStart, energyLevel: 5 },
-        { name: 'Chorus_1', sectionType: SectionType.Chorus, startBeat: chorusStart, endBeat: outroStart,  energyLevel: 8 },
-        { name: 'Outro_1',  sectionType: SectionType.Outro,  startBeat: outroStart,  endBeat: songEnd,     energyLevel: 4 },
-    ];
+    const sections: SectionMetadata[] = [];
+    const typeCounters: number[] = new Array(12).fill(0);  // SectionType 枚举 12 个值
+    let cursor = 0;
+    for (let i = 0; i < template.sections.length; i++) {
+        const s = template.sections[i];
+        const lengthBeats = s.bars * timeSignature[0];
+        typeCounters[s.type] += 1;
+        sections.push({
+            name: `${SectionTypeName[s.type]}_${typeCounters[s.type]}`,
+            sectionType: s.type,
+            startBeat: cursor,
+            endBeat: cursor + lengthBeats,
+            energyLevel: s.energy,
+            chordsHint: Math.max(2, Math.floor(lengthBeats / beatsPerChord)),
+        });
+        cursor += lengthBeats;
+    }
 
     PRNGManager.recordSnapshot('C');
 
     // -----------------------------------------------------------
-    // Stage 3：HarmonyCore（PRNG ×~80）
+    // Stage 3：HarmonyCore（PRNG ×~M，M = 6 × Σ chordsHint，随模板段数变化）
     // -----------------------------------------------------------
     const harmony = HarmonyCore.generate({
         sections,
         tonality,
         harmonyRules: bundle.harmonyRules,
         voiceLeadingConfig: bundle.voiceLeading,
-        chordsPerSection: 4,
+        // chordsPerSection 全局值不再设置 — 每个 section.chordsHint 接管。
+        // Engine 内部仍保留 chordsPerSection 参数作为兜底，便于未来调试或回退。
     });
 
     // voicings 平行索引嵌回 chord.voicing — 下游 AudioEngine / Stage 5 直接读
@@ -15512,7 +15623,7 @@ export function runPipeline(
 ### File: `src/core/generation/pipeline/MacroProgressionEngine.ts`
 
 - **Path:** `src/core/generation/pipeline/MacroProgressionEngine.ts`
-- **Lines:** 484
+- **Lines:** 492
 
 ```ts
 /**
@@ -15689,7 +15800,7 @@ export class MacroProgressionEngine {
     public static generate(input: MacroProgressionInput): GeneratedChord[] {
         MacroProgressionEngine.validate(input);
 
-        const chordsPer = Math.max(1, Math.floor(input.chordsPerSection ?? 4));
+        const globalChordsPer = input.chordsPerSection;
         const rules     = input.rules;
         const out: GeneratedChord[]       = [];
         // 与 out 平行索引 — 跟踪每和弦的"原始/Gate1 后"功能标签，仅供 Gate 3 判定使用
@@ -15702,6 +15813,14 @@ export class MacroProgressionEngine {
             const section          = input.sections[secIdx];
             const sectionDuration  = section.endBeat - section.startBeat;
             if (sectionDuration < EPSILON) continue;
+            // Step 1B：chordsPer 改 per-section 解析
+            //   优先 section.chordsHint（Pipeline 按段长 / styleBeatsPerChord 算出）
+            //   回落 input.chordsPerSection（向后兼容）
+            //   最终 4
+            //   下限 2 钳制 — Cadential Hijacking 需要至少半终止 + 全终止两个位置
+            const chordsPer = Math.max(2, Math.floor(
+                section.chordsHint ?? globalChordsPer ?? 4
+            ));
             const beatsPerChord    = sectionDuration / chordsPer;
 
             // 段首强制 Tonic — 0 PRNG，避免段间 PRNG 漂移
@@ -19764,7 +19883,7 @@ export class WeightedPitchSelector {
 ### File: `src/core/generation/types.ts`
 
 - **Path:** `src/core/generation/types.ts`
-- **Lines:** 929
+- **Lines:** 935
 
 ```ts
 export type ChordProgression = string[];
@@ -20074,6 +20193,12 @@ export interface SectionMetadata {
     };
 
     sectionType?: SectionType; // 🌟 数值枚举，替代 name.includes() 字符串匹配
+
+    /** Pipeline 注入：本段期望的和弦数。
+     *  MacroProgressionEngine 优先消费此值；缺省时回落到 input.chordsPerSection（默认 4）。
+     *  Cadential Hijacking 需要 ≥ 2（半终止 c=chordsPer-2 / 全终止 c=chordsPer-1），
+     *  Engine 内部用 Math.max(2, ...) 钳制下限。*/
+    chordsHint?: number;
 }
 
 export interface MixingConfig {
