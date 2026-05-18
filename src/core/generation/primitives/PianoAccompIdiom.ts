@@ -84,6 +84,10 @@ const WALKING_VELOCITY_SCALE = 0.9;  // Walking 比 Sustained 稍重（每拍都
 const WALKING_BASS_MIN = 24;  // C1
 const WALKING_BASS_MAX = 47;  // B2
 
+// 改动 E — HandManager 物理约束：M1 Sustained 下 LH/RH 最小间距
+// 3 半音 = 小三度。比 1 octave 更宽容，让 Drop-2 仍能呈现开放感（只挤掉真正撞音的 voice）
+const MIN_HAND_SEPARATION = 3;
+
 // ============================================================
 // 织体 ID 枚举 — Sub-Phase 1 下沉到 data/PianoTextureEnums.ts，本文件 re-export 保持契约
 // ============================================================
@@ -272,6 +276,21 @@ export class PianoAccompIdiom {
                 // Drop-2 后最低音可能降到 < C3（48）— 不再过滤，让 Drop-2 的"开放"听感完整呈现
             }
 
+            // 改动 E — HandManager 物理约束：M1 模式下强制 RH 最低音离 LH ≥ MIN_HAND_SEPARATION
+            //   触发场景：
+            //     M1 + Sustained → lhFloor = voicing[0]（LH 持续 sustain）
+            //     M1 + WalkingTenths → lhFloor = WALKING_BASS_MAX (47)（walking bass 物理上限）
+            //   不触发：M4 (LH=Tacit 不发声) / M5 (自己合谱) / M6 (LH/RH 错时间) / M1 + Tacit
+            //   移植自 ImproVisor HandManager.repositionHands（doc:7250 附近），简化版
+            if (effectiveParams.coordMode === CoordMode.M1_SustainedRoot
+                && effectiveParams.lhTexture !== LHTexture.Tacit
+                && rhVoicing.length > 0) {
+                const lhFloor = effectiveParams.lhTexture === LHTexture.WalkingTenths
+                    ? WALKING_BASS_MAX
+                    : chord.voicing[0];
+                rhVoicing = enforceHandSeparation(rhVoicing, lhFloor);
+            }
+
             // ---- 改动 C：voicePattern 精化织体（Alberti / Montuno / Ragtime 等）----
             //   提供时完全替代 baseGrid + mutator + Block/Broken 旧逻辑，跳过 sparsity 与 anticipation
             //   仍享受 swing offset / velocity / intensity 参数
@@ -307,6 +326,17 @@ export class PianoAccompIdiom {
             const mutated = RhythmTopologyMutator.applyChain(baseGrid, rhVoicing, phraseChain);
             const effectiveGrid = mutated.grid;
             rhVoicing = mutated.voicing;
+
+            // 改动 E（mutator 后再调一次）— mutator 可能用 OP_VOICING_INVERT/OPEN 重排 rhVoicing，
+            // 导致 Drop-2 + 之前 E 的撞音修正失效。这里二次 enforce 保最终 RH 离 LH ≥ floor。
+            if (effectiveParams.coordMode === CoordMode.M1_SustainedRoot
+                && effectiveParams.lhTexture !== LHTexture.Tacit
+                && rhVoicing.length > 0) {
+                const lhFloor2 = effectiveParams.lhTexture === LHTexture.WalkingTenths
+                    ? WALKING_BASS_MAX
+                    : chord.voicing[0];
+                rhVoicing = enforceHandSeparation(rhVoicing, lhFloor2);
+            }
 
             // ---- RH 渲染 — V3.8 dispatch ----
             if (rhVoicing.length > 0) {
@@ -833,6 +863,36 @@ function pickThirdPc(rootPcNorm: number, quality: ChordQuality): number {
     if ((qBit & CQ_IS_DIM) !== 0) return (rootPcNorm + 3) % 12;
     if (quality === ChordQuality.Augmented || quality === ChordQuality.Add9) return (rootPcNorm + 4) % 12;
     return (rootPcNorm + 4) % 12;
+}
+
+/**
+ * 改动 E — HandManager 物理约束：把过低的 RH voice 上推 12 半音，保证 RH 最低 ≥ lhPitch + MIN_HAND_SEPARATION。
+ *
+ * 算法：对每个 rhVoicing[i]，如果 < lhPitch + MIN_HAND_SEPARATION，循环 +12 直到达标。
+ * 然后重新排序（升序），让后续 Block/Broken/voicePattern 渲染按索引取音的语义不变。
+ *
+ * 仅触发：M1_SustainedRoot + LHTexture.Sustained（LH voicing[0] 持续 sustain 的场景）。
+ * 不触发：Walking / Tacit / M5 / M6（短促击点或 LH 不发声，撞音听感影响小或不存在）。
+ *
+ * 移植自 ImproVisor HandManager.repositionHands / resetLH（doc:7250）— 不实装完整 spread 检测，
+ * 只做"避免 RH 跌入 LH 区"的最小集，保 Drop-2 开放感 vs 撞音整洁的平衡。
+ *
+ * @param rhVoicing 升序排列的 RH voice 数组
+ * @param lhPitch LH sustain pitch（chord.voicing[0]）
+ * @returns 升序排列的新数组（可能与输入相同 — 无需调整时直接返回 .slice()）
+ */
+function enforceHandSeparation(rhVoicing: number[], lhPitch: number): number[] {
+    const floor = lhPitch + MIN_HAND_SEPARATION;
+    const out: number[] = [];
+    let adjusted = false;
+    for (let i = 0; i < rhVoicing.length; i++) {
+        let p = rhVoicing[i];
+        while (p < floor) { p += 12; adjusted = true; }
+        if (p <= MIDI_MAX) out.push(p);
+    }
+    if (!adjusted) return rhVoicing.slice();
+    out.sort((a, b) => a - b);
+    return out;
 }
 
 /**
