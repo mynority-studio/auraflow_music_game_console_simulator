@@ -95,18 +95,19 @@ function verifyDrumPitchSet(styleId: StyleId): void {
 
     check(`${name}: drums 非空`, drums.length > 0, `count=${drums.length}`);
 
-    // K-8: pitch ∈ {36, 38, 42}
+    // K-8: pitch ∈ {36, 38, 42, 45, 47, 49, 50, 51}
+    const valid = [36, 38, 42, 45, 47, 49, 50, 51];
     let allValid = true;
     let invalidPitch = -1;
     for (const n of drums) {
-        if (n.pitch !== DRUM_KICK && n.pitch !== DRUM_SNARE && n.pitch !== DRUM_HIHAT_CLOSED) {
+        if (!valid.includes(n.pitch)) {
             allValid = false;
             invalidPitch = n.pitch;
             break;
         }
     }
     check(
-        `${name}: 所有 drums.pitch ∈ {36, 38, 42}（GM Drum Map K-8）`,
+        `${name}: 所有 drums.pitch ∈ {36, 38, 42, 45, 47, 49, 50, 51}（GM Drum Map K-8）`,
         allValid,
         allValid ? '' : `found invalid pitch=${invalidPitch}`,
     );
@@ -210,18 +211,19 @@ function verifyMidiChannel9(styleId: StyleId): void {
         `track=${trackDrums.length} arranged=${arrangedDrums.length}`,
     );
 
-    // ch9 noteOn 的 data1 (pitch) ∈ {36, 38, 42}
+    // ch9 noteOn 的 data1 (pitch) ∈ {36, 38, 42, 45, 47, 49, 50, 51}
+    const valid = [36, 38, 42, 45, 47, 49, 50, 51];
     let allValid = true;
     let invalidPitch = -1;
     for (const ev of ch9NoteOn) {
-        if (ev.data1 !== 36 && ev.data1 !== 38 && ev.data1 !== 42) {
+        if (!valid.includes(ev.data1)) {
             allValid = false;
             invalidPitch = ev.data1;
             break;
         }
     }
     check(
-        `${name}: ch9 noteOn pitch ∈ {36, 38, 42}（K-8 物理键位）`,
+        `${name}: ch9 noteOn pitch ∈ {36, 38, 42, 45, 47, 49, 50, 51}（K-8 物理键位）`,
         allValid,
         allValid ? '' : `found pitch=${invalidPitch}`,
     );

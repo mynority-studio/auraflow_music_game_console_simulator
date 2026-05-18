@@ -18,7 +18,7 @@
 
 import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
 import { HarmonyRulesConfig, HarmonicFunction } from '../../pipeline/MacroProgressionEngine';
-import { ChordQuality, ContourType, MusicianPersona, NoteData } from '../../types';
+import { ChordQuality, ContourType, MusicianPersona, NoteData, SectionType, StructureTemplate } from '../../types';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
 import {
     GrammarConfig, GrammarRule, GrammarSymbol, TerminalKind,
@@ -310,3 +310,12 @@ export const NEO_SOUL_DRUM_GRID: DrumGridConfig = {
     snareVelocity: [60, 105],            // 跨度大 → ghost 弱 + 反拍重
     hihatVelocity: [45, 80],
 };
+
+// ============================================================
+// 曲式模板池（Phase 3 结构剥离）
+// ============================================================
+
+export const NEO_SOUL_STRUCTURES: StructureTemplate[] = [
+    { id: 'neosoul-groove', sections: [ { name: 'Intro', type: SectionType.Intro, bars: 4, energy: 4 }, { name: 'Verse', type: SectionType.Verse, bars: 16, energy: 5 }, { name: 'PreChorus', type: SectionType.PreChorus, bars: 4, energy: 6 }, { name: 'Chorus', type: SectionType.Chorus, bars: 12, energy: 8 }, { name: 'Bridge', type: SectionType.Bridge, bars: 8, energy: 7 }, { name: 'Chorus', type: SectionType.Chorus, bars: 12, energy: 9 }, { name: 'Outro', type: SectionType.Outro, bars: 4, energy: 4 } ] },
+    { id: 'neosoul-vamp-heavy', sections: [ { name: 'Intro', type: SectionType.Intro, bars: 4, energy: 3 }, { name: 'Verse_1', type: SectionType.Verse, bars: 16, energy: 5 }, { name: 'Verse_2', type: SectionType.Verse, bars: 16, energy: 6 }, { name: 'Breakdown', type: SectionType.Breakdown, bars: 8, energy: 4 }, { name: 'Chorus', type: SectionType.Chorus, bars: 16, energy: 8 }, { name: 'Outro', type: SectionType.Outro, bars: 8, energy: 3 } ] }
+];

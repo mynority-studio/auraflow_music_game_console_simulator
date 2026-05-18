@@ -113,6 +113,7 @@ export interface SectionTemplate {
     name: string;       // 段落显示名 (e.g., "Verse_1", "Chorus_Main")
     bars: number;       // 小节数
     energy: number;     // 原始能量值 1-10（会被 mood.energyCap 进一步约束）
+    type?: SectionType; // 段落类型枚举（Phase 3 结构剥离新增）
 }
 
 /**

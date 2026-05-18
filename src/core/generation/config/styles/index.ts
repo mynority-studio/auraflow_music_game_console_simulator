@@ -8,7 +8,7 @@
  */
 
 import { StyleId } from '../StyleFlags';
-import { MusicianPersona } from '../../types';
+import { MusicianPersona, StructureTemplate } from '../../types';
 import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
 import { HarmonyRulesConfig } from '../../pipeline/MacroProgressionEngine';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
@@ -21,6 +21,7 @@ import {
     MODERN_POP_FRACTAL,
     MODERN_POP_GRAMMAR,
     MODERN_POP_DRUM_GRID,
+    MODERN_POP_STRUCTURES,
 } from './ModernPop';
 import {
     NEO_SOUL_HARMONY_RULES,
@@ -29,6 +30,7 @@ import {
     NEO_SOUL_FRACTAL,
     NEO_SOUL_GRAMMAR,
     NEO_SOUL_DRUM_GRID,
+    NEO_SOUL_STRUCTURES,
 } from './NeoSoul';
 import {
     CHILL_JAZZ_HARMONY_RULES,
@@ -37,6 +39,7 @@ import {
     CHILL_JAZZ_FRACTAL,
     CHILL_JAZZ_GRAMMAR,
     CHILL_JAZZ_DRUM_GRID,
+    CHILL_JAZZ_STRUCTURES,
 } from './ChillJazz';
 
 export interface StyleHarmonyBundle {
@@ -45,24 +48,34 @@ export interface StyleHarmonyBundle {
     voiceLeading: VoiceLeadingConfig;
     /** BPM 范围（min, max） */
     bpmRange: [number, number];
+    /** 曲式模板池（Phase 3 结构剥离） */
+    structureTemplates: StructureTemplate[];
+    /** 单和弦持续拍数（Pop/Jazz 每小节 1 个 = 4；NeoSoul 两小节 1 个 = 8） */
+    beatsPerChord: number;
 }
 
 const POP_BUNDLE: StyleHarmonyBundle = {
     harmonyRules: MODERN_POP_HARMONY_RULES,
     voiceLeading: MODERN_POP_VOICE_LEADING,
     bpmRange: [88, 128],
+    beatsPerChord: 4,
+    structureTemplates: MODERN_POP_STRUCTURES,
 };
 
 const NEOSOUL_BUNDLE: StyleHarmonyBundle = {
     harmonyRules: NEO_SOUL_HARMONY_RULES,
     voiceLeading: NEO_SOUL_VOICE_LEADING,
     bpmRange: [78, 100],
+    beatsPerChord: 8,
+    structureTemplates: NEO_SOUL_STRUCTURES,
 };
 
 const JAZZ_BUNDLE: StyleHarmonyBundle = {
     harmonyRules: CHILL_JAZZ_HARMONY_RULES,
     voiceLeading: CHILL_JAZZ_VOICE_LEADING,
     bpmRange: [70, 105],
+    beatsPerChord: 4,
+    structureTemplates: CHILL_JAZZ_STRUCTURES,
 };
 
 /** 数值索引查找表（T-1 合规 — enum 比较，无字符串分类） */

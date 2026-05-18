@@ -59,6 +59,13 @@ export const DRUM_KICK = 36;
 export const DRUM_SNARE = 38;
 /** Pitch Space: GM Drum Map (ABSOLUTE 物理键位) */
 export const DRUM_HIHAT_CLOSED = 42;
+/** Pitch Space: GM Drum Map (ABSOLUTE 物理键位) — Tom (high / mid / low) */
+export const DRUM_TOM_HI = 50;
+export const DRUM_TOM_MID = 47;
+export const DRUM_TOM_LO = 45;
+/** Pitch Space: GM Drum Map (ABSOLUTE 物理键位) — Crash / Ride 镲片 */
+export const DRUM_CRASH = 49;
+export const DRUM_RIDE = 51;
 
 // ============================================================
 // Grid 常量
@@ -148,7 +155,8 @@ export class DrumIdiom {
             const dur = section.endBeat - section.startBeat;
             if (dur < EPSILON) continue;
 
-            renderSection(out, section, grid);
+            const nextSection = sIdx + 1 < sections.length ? sections[sIdx + 1] : undefined;
+            renderSection(out, section, grid, nextSection);
         }
 
         // D-3：onset ASC，同 onset 时按 pitch ASC（Kick < Snare < Hihat 已自然有序，
@@ -207,6 +215,7 @@ function renderSection(
     out: NoteData[],
     section: SectionMetadata,
     grid: DrumGridConfig,
+    nextSection?: SectionMetadata,
 ): void {
     const startBeat = section.startBeat;
     const endBeat = section.endBeat;
@@ -222,50 +231,58 @@ function renderSection(
     const velScale = grid.energyVelScale[energyIdx];
     const snareGateOpen = (section.energyLevel | 0) >= grid.snareEnergyGate;
 
+    const gridLen = grid.grid.length;
     for (let stepIdx = 0; stepIdx < totalSteps; stepIdx++) {
-        const cellIdx = stepIdx % STEPS_PER_BAR;
+        const cellIdx = stepIdx % gridLen;
         const cell = grid.grid[cellIdx];
 
         const stepBeat = startBeat + stepIdx / STEPS_PER_BEAT;
 
-        // —— Kick gate ——（无条件 PRNG）
+        // 1. Ghost Evaluation (绝对不改变 PRNG 消耗次数)
         const kickDice = PRNGManager.next();
-        const kickThreshold = cell.kickProb * probScale;
-        if (kickDice < kickThreshold) {
-            const vel = sampleVelocity(grid.kickVelocity, velScale);
-            out.push({
-                pitch: DRUM_KICK,
-                onset: stepBeat,
-                duration: HIT_DURATION,
-                velocity: vel,
-            });
-        }
+        const kickHitOrig = kickDice < (cell.kickProb * probScale);
+        const kickVelOrig = kickHitOrig ? sampleVelocity(grid.kickVelocity, velScale) : 0;
 
-        // —— Snare gate ——（无条件 PRNG，硬阈值压 0 概率）
         const snareDice = PRNGManager.next();
-        const snareThreshold = snareGateOpen ? cell.snareProb * probScale : 0;
-        if (snareDice < snareThreshold) {
-            const vel = sampleVelocity(grid.snareVelocity, velScale);
-            out.push({
-                pitch: DRUM_SNARE,
-                onset: stepBeat,
-                duration: HIT_DURATION,
-                velocity: vel,
-            });
+        const snareHitOrig = snareDice < (snareGateOpen ? cell.snareProb * probScale : 0);
+        const snareVelOrig = snareHitOrig ? sampleVelocity(grid.snareVelocity, velScale) : 0;
+
+        const hihatDice = PRNGManager.next();
+        const hihatHitOrig = hihatDice < (cell.hihatProb * probScale);
+        const hihatVelOrig = hihatHitOrig ? sampleVelocity(grid.hihatVelocity, velScale) : 0;
+
+        // 2. 默认继承原始判定
+        let outKPitch = DRUM_KICK, outKHit = kickHitOrig, outKVel = kickVelOrig;
+        let outSPitch = DRUM_SNARE, outSHit = snareHitOrig, outSVel = snareVelOrig;
+        let outHPitch = DRUM_HIHAT_CLOSED, outHHit = hihatHitOrig, outHVel = hihatVelOrig;
+
+        // 3. Dynamic Overrides (算法强制覆写，0 PRNG 消耗)
+        const isHighEnergy = section.energyLevel >= 7;
+        const isBuildUp = nextSection !== undefined && nextSection.energyLevel > section.energyLevel;
+        const isCrashStep = stepIdx === 0 && isHighEnergy;
+        const isFillBar = isBuildUp && (totalSteps - stepIdx <= gridLen);
+
+        if (isCrashStep) {
+            outHHit = true; outHPitch = DRUM_CRASH; outHVel = Math.min(1.0, velScale * 1.2);
+            outKHit = true; outKVel = Math.min(1.0, velScale * 1.1);
+        } else if (isFillBar) {
+            outHHit = false; // Mute hihat during fill
+            outSHit = true;  // Force roll
+            const fillProgression = 1 - (totalSteps - stepIdx) / gridLen;
+            outSVel = 0.5 + 0.5 * fillProgression;
+
+            const subBeat = stepIdx % STEPS_PER_BEAT;
+            if (subBeat === 3) outSPitch = DRUM_TOM_HI;
+            else if (subBeat === 2 && fillProgression > 0.5) outSPitch = DRUM_TOM_MID;
+            else if (subBeat === 1 && fillProgression > 0.8) outSPitch = DRUM_TOM_LO;
+        } else if (section.energyLevel >= 8 && outHHit && stepIdx % 2 === 0) {
+            outHPitch = DRUM_RIDE;
         }
 
-        // —— Hihat gate ——（无条件 PRNG）
-        const hihatDice = PRNGManager.next();
-        const hihatThreshold = cell.hihatProb * probScale;
-        if (hihatDice < hihatThreshold) {
-            const vel = sampleVelocity(grid.hihatVelocity, velScale);
-            out.push({
-                pitch: DRUM_HIHAT_CLOSED,
-                onset: stepBeat,
-                duration: HIT_DURATION,
-                velocity: vel,
-            });
-        }
+        // 4. 发射音符
+        if (outKHit) out.push({ pitch: outKPitch, onset: stepBeat, duration: HIT_DURATION, velocity: outKVel });
+        if (outSHit) out.push({ pitch: outSPitch, onset: stepBeat, duration: HIT_DURATION, velocity: outSVel });
+        if (outHHit) out.push({ pitch: outHPitch, onset: stepBeat, duration: HIT_DURATION, velocity: outHVel });
     }
 }
 

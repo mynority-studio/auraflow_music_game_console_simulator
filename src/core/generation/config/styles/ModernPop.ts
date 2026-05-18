@@ -17,7 +17,7 @@
 
 import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
 import { HarmonyRulesConfig, HarmonicFunction } from '../../pipeline/MacroProgressionEngine';
-import { ChordQuality, ContourType, MusicianPersona, NoteData } from '../../types';
+import { ChordQuality, ContourType, MusicianPersona, NoteData, SectionType, StructureTemplate } from '../../types';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
 import {
     GrammarConfig, GrammarRule, GrammarSymbol, TerminalKind, TerminalSymbol,
@@ -314,3 +314,12 @@ export const MODERN_POP_DRUM_GRID: DrumGridConfig = {
     snareVelocity: [90, 115],
     hihatVelocity: [55, 85],             // 偏弱，让 Kick/Snare 跳出来
 };
+
+// ============================================================
+// 曲式模板池（Phase 3 结构剥离）
+// ============================================================
+
+export const MODERN_POP_STRUCTURES: StructureTemplate[] = [
+    { id: 'pop-standard', sections: [ { name: 'Intro', type: SectionType.Intro, bars: 4, energy: 3 }, { name: 'Verse', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'PreChorus', type: SectionType.PreChorus, bars: 4, energy: 6 }, { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 }, { name: 'Verse', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'PreChorus', type: SectionType.PreChorus, bars: 4, energy: 6 }, { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 }, { name: 'Bridge', type: SectionType.Bridge, bars: 8, energy: 7 }, { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 9 }, { name: 'Outro', type: SectionType.Outro, bars: 4, energy: 4 } ] },
+    { id: 'pop-short', sections: [ { name: 'Intro', type: SectionType.Intro, bars: 4, energy: 3 }, { name: 'Verse', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 }, { name: 'Verse', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 9 }, { name: 'Outro', type: SectionType.Outro, bars: 4, energy: 4 } ] }
+];

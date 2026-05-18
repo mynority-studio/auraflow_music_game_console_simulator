@@ -139,6 +139,8 @@ export interface Stage5LayeringInput {
     styleId: StyleId;
     /** 调式 — 由 Stage 2 决定，ToplineEngine 用于色彩音/调内邻音判定（Phase 6 新增） */
     tonality: Tonality;
+    /** 拍号 — 决定 RhythmMutator / TextureMapper 的 stepsPerBar */
+    timeSignature: [number, number];
     /** Phase 2: 用户动机（RELATIVE pitch space），用于 Lead 的片段拼接（Direct Splice） */
     userMotif?: NoteData[];
 }
@@ -203,6 +205,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
             renderAccompaniment(
                 accompaniment, sectionChords,
                 getPersona(bundle.personas, ROLE_ACCOMP),
+                input.timeSignature,
             );
         }
         if ((mask & MASK_LEAD) !== 0) {
@@ -257,7 +260,9 @@ function renderAccompaniment(
     out: NoteData[],
     chords: GeneratedChord[],
     persona: MusicianPersona,
+    timeSignature: [number, number],
 ): void {
+    const beatsPerBar = timeSignature[0];
     for (let i = 0; i < chords.length; i++) {
         const c = chords[i];
         const dur = c.endBeat - c.startBeat;
@@ -276,6 +281,7 @@ function renderAccompaniment(
         const grid = RhythmMutator.generate({
             totalBeats: dur,
             stepsPerBeat: STEPS_PER_BEAT,
+            beatsPerBar,
             sparsityTendency: persona.sparsityTendency,
             syncopationAssault: persona.syncopationAssault,
         });
@@ -285,6 +291,7 @@ function renderAccompaniment(
             voicing: compVoicing,
             grid,
             stepsPerBeat: STEPS_PER_BEAT,
+            beatsPerBar,
             contour: persona.contourPreference,
             velocityRange: persona.dynamicRange,
         });

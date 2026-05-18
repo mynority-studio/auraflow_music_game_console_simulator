@@ -25,7 +25,7 @@
 
 import {
     GeneratedTrack, GenerationOptions, MusicContext, NoteData,
-    RoleType, Tonality, SectionMetadata, SectionType, SectionTypeName,
+    RoleType, Tonality, SectionMetadata, SectionTypeName,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/StyleRegistry';
@@ -35,115 +35,6 @@ import { HarmonyCore } from './HarmonyCore';
 import { layerInstruments } from './Stage5Layering';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-
-// ============================================================
-// Step 1B — 风格驱动的曲式模板池（Form Templates）
-// ============================================================
-//
-// 设计：StyleId → 多个 FormTemplate → PRNG 抽一个 → 实例化为 SectionMetadata[]
-//
-// 单位：bars（小节）。实例化时乘 timeSignature[0] 得 beats，
-//       再除以 STYLE_BEATS_PER_CHORD[styleId] 算出 chordsHint 注入 SectionMetadata。
-//
-// 设计约束（请保持）：
-//   1. 模板中所有 section.bars 必须满足 bars * timeSig[0] >= 2 * beatsPerChord
-//      （Cadential Hijacking 需要至少 2 个和弦位）
-//   2. bars * timeSig[0] 必须是 beatsPerChord 的整数倍，
-//      否则 RhythmMutator 的 "grid % stepsPerBar === 0" 契约会失败
-//
-// Step 2 计划：把 FORM_POOLS 搬到 StyleConfig.global.structureTemplates，
-//              本文件改为调 StructureEngine.pick(style)，pipeline 回归薄调度器。
-
-interface FormSection {
-    type: SectionType;
-    bars: number;       // 段落小节数
-    energy: number;     // 1-10 — 喂给 DrumIdiom 决定密度 / snare gate
-}
-interface FormTemplate {
-    id: string;         // 调试标识
-    sections: FormSection[];
-}
-
-/** 每个 style 的"和弦走多快"：Pop/Jazz 每小节换一次，NeoSoul 两小节才换（深 vamp）*/
-const STYLE_BEATS_PER_CHORD: Record<StyleId, number> = {
-    [StyleId.ModernPop]: 4,
-    [StyleId.ChillJazz]: 4,
-    [StyleId.NeoSoul]:   8,
-};
-
-const FORM_POOLS: Record<StyleId, FormTemplate[]> = {
-    [StyleId.ModernPop]: [
-        // 标准 Pop：I → V → PC → C → V → PC → C → Br → C → O
-        // 64 bars = 256 beats @ 110 BPM ≈ 2:20
-        { id: 'pop-standard', sections: [
-            { type: SectionType.Intro,     bars: 4, energy: 3 },
-            { type: SectionType.Verse,     bars: 8, energy: 5 },
-            { type: SectionType.PreChorus, bars: 4, energy: 6 },
-            { type: SectionType.Chorus,    bars: 8, energy: 8 },
-            { type: SectionType.Verse,     bars: 8, energy: 5 },
-            { type: SectionType.PreChorus, bars: 4, energy: 6 },
-            { type: SectionType.Chorus,    bars: 8, energy: 8 },
-            { type: SectionType.Bridge,    bars: 8, energy: 7 },
-            { type: SectionType.Chorus,    bars: 8, energy: 9 },  // 最后一遍推到 9
-            { type: SectionType.Outro,     bars: 4, energy: 4 },
-        ]},
-        // 短版：无 Bridge，V-C-V-C 收尾
-        // 40 bars = 160 beats @ 110 BPM ≈ 1:27
-        { id: 'pop-short', sections: [
-            { type: SectionType.Intro,  bars: 4, energy: 3 },
-            { type: SectionType.Verse,  bars: 8, energy: 5 },
-            { type: SectionType.Chorus, bars: 8, energy: 8 },
-            { type: SectionType.Verse,  bars: 8, energy: 5 },
-            { type: SectionType.Chorus, bars: 8, energy: 9 },
-            { type: SectionType.Outro,  bars: 4, energy: 4 },
-        ]},
-    ],
-    [StyleId.ChillJazz]: [
-        // AABA — Verse=A, Bridge=B
-        // 44 bars = 176 beats @ 100 BPM ≈ 1:46
-        { id: 'jazz-aaba', sections: [
-            { type: SectionType.Intro,  bars: 4, energy: 4 },
-            { type: SectionType.Verse,  bars: 8, energy: 5 },  // A1
-            { type: SectionType.Verse,  bars: 8, energy: 6 },  // A2（能量微推）
-            { type: SectionType.Bridge, bars: 8, energy: 7 },  // B
-            { type: SectionType.Verse,  bars: 8, energy: 6 },  // A3
-            { type: SectionType.Outro,  bars: 4, energy: 3 },
-        ]},
-        // ABAC — Verse=A, Chorus=C；A 再现后用 C 替代第二个 A 作为对比尾段
-        // 40 bars = 160 beats @ 100 BPM ≈ 1:36
-        { id: 'jazz-abac', sections: [
-            { type: SectionType.Intro,  bars: 4, energy: 4 },
-            { type: SectionType.Verse,  bars: 8, energy: 5 },  // A
-            { type: SectionType.Verse,  bars: 8, energy: 6 },  // A 变奏
-            { type: SectionType.Verse,  bars: 8, energy: 5 },  // A 再现
-            { type: SectionType.Chorus, bars: 8, energy: 7 },  // C
-            { type: SectionType.Outro,  bars: 4, energy: 3 },
-        ]},
-    ],
-    [StyleId.NeoSoul]: [
-        // NeoSoul Groove：长 Verse + 短 PreChorus + 长 Chorus
-        // 60 bars = 240 beats @ 85 BPM ≈ 2:50
-        { id: 'neosoul-groove', sections: [
-            { type: SectionType.Intro,     bars: 4,  energy: 4 },
-            { type: SectionType.Verse,     bars: 16, energy: 5 },
-            { type: SectionType.PreChorus, bars: 4,  energy: 6 },
-            { type: SectionType.Chorus,    bars: 12, energy: 8 },
-            { type: SectionType.Bridge,    bars: 8,  energy: 7 },
-            { type: SectionType.Chorus,    bars: 12, energy: 9 },
-            { type: SectionType.Outro,     bars: 4,  energy: 4 },
-        ]},
-        // Vamp Heavy：Breakdown 中段抽空 Accomp，留 bass+drums 深坑
-        // 68 bars = 272 beats @ 85 BPM ≈ 3:12
-        { id: 'neosoul-vamp-heavy', sections: [
-            { type: SectionType.Intro,     bars: 4,  energy: 3 },
-            { type: SectionType.Verse,     bars: 16, energy: 5 },
-            { type: SectionType.Verse,     bars: 16, energy: 6 },
-            { type: SectionType.Breakdown, bars: 8,  energy: 4 },  // bass + drums only
-            { type: SectionType.Chorus,    bars: 16, energy: 8 },
-            { type: SectionType.Outro,     bars: 8,  energy: 3 },
-        ]},
-    ],
-};
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -192,10 +83,10 @@ export function runPipeline(
 
     // 段落骨架：风格驱动的曲式模板 — PRNG 抽一个模板，再实例化为 SectionMetadata[]
     // 同类型段加序号区分（Verse_1 / Verse_2 / Chorus_1 / Chorus_2 ...）。
-    // chordsHint 按 STYLE_BEATS_PER_CHORD[styleId] 算出注入，MacroProgressionEngine 消费。
-    const formPool = FORM_POOLS[styleId];
+    // chordsHint 按 bundle.beatsPerChord 算出注入，MacroProgressionEngine 消费。
+    const formPool = bundle.structureTemplates;
     const template = formPool[Math.floor(PRNGManager.next() * formPool.length)];
-    const beatsPerChord = STYLE_BEATS_PER_CHORD[styleId];
+    const beatsPerChord = bundle.beatsPerChord;
 
     const sections: SectionMetadata[] = [];
     const typeCounters: number[] = new Array(12).fill(0);  // SectionType 枚举 12 个值
@@ -203,10 +94,10 @@ export function runPipeline(
     for (let i = 0; i < template.sections.length; i++) {
         const s = template.sections[i];
         const lengthBeats = s.bars * timeSignature[0];
-        typeCounters[s.type] += 1;
+        typeCounters[s.type!] += 1;
         sections.push({
-            name: `${SectionTypeName[s.type]}_${typeCounters[s.type]}`,
-            sectionType: s.type,
+            name: `${SectionTypeName[s.type!]}_${typeCounters[s.type!]}`,
+            sectionType: s.type!,
             startBeat: cursor,
             endBeat: cursor + lengthBeats,
             energyLevel: s.energy,
@@ -245,6 +136,7 @@ export function runPipeline(
         sections,
         styleId,
         tonality,
+        timeSignature,
         userMotif: options.generation?.processedUserMotif as NoteData[] | undefined,
     });
 

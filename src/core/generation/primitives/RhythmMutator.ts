@@ -66,6 +66,9 @@ export interface RhythmMutatorInput {
 
     /** 变异循环上限（防 ESP32 死循环）；默认 20，建议 ≤ 30 */
     maxIterations?: number;
+
+    /** 每小节拍数（默认 4），与 timeSignature[0] 对齐，影响 stepsPerBar 与权重表选择 */
+    beatsPerBar?: number;
 }
 
 export interface RhythmMutatorDiagnostics {
@@ -107,7 +110,8 @@ export class RhythmMutator {
 
         const stepsPerBeat = input.stepsPerBeat ?? DEFAULT_STEPS_PER_BEAT;
         const totalSteps = Math.floor(input.totalBeats * stepsPerBeat);
-        const stepsPerBar = stepsPerBeat * 4;  // 4/4 假定
+        const beatsPerBar = input.beatsPerBar ?? 4;
+        const stepsPerBar = stepsPerBeat * beatsPerBar;
         const maxIterations = input.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 
         const grid = new Int8Array(totalSteps);
@@ -317,13 +321,6 @@ export class RhythmMutator {
     private static validate(input: RhythmMutatorInput): void {
         if (!Number.isFinite(input.totalBeats) || input.totalBeats <= 0) {
             throw new RhythmMutatorError('totalBeats must be > 0', { totalBeats: input.totalBeats });
-        }
-        const stepsPerBeat = input.stepsPerBeat ?? DEFAULT_STEPS_PER_BEAT;
-        if (stepsPerBeat !== DEFAULT_STEPS_PER_BEAT) {
-            throw new RhythmMutatorError(
-                'unsupported stepsPerBeat; currently only 4 is implemented',
-                { stepsPerBeat },
-            );
         }
         if (!Number.isFinite(input.sparsityTendency) ||
             input.sparsityTendency < 0 || input.sparsityTendency > 1) {

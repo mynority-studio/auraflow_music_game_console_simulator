@@ -19,7 +19,7 @@
 
 import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
 import { HarmonyRulesConfig, HarmonicFunction } from '../../pipeline/MacroProgressionEngine';
-import { ChordQuality, ContourType, MusicianPersona, NoteData } from '../../types';
+import { ChordQuality, ContourType, MusicianPersona, NoteData, SectionType, StructureTemplate } from '../../types';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
 import {
     GrammarConfig, GrammarRule, GrammarSymbol, TerminalKind, TerminalSymbol,
@@ -339,3 +339,12 @@ export const CHILL_JAZZ_DRUM_GRID: DrumGridConfig = {
     snareVelocity: [50, 80],           // brush 触感
     hihatVelocity: [55, 90],           // ride cymbal 力度差异
 };
+
+// ============================================================
+// 曲式模板池（Phase 3 结构剥离）
+// ============================================================
+
+export const CHILL_JAZZ_STRUCTURES: StructureTemplate[] = [
+    { id: 'jazz-aaba', sections: [ { name: 'Intro', type: SectionType.Intro, bars: 4, energy: 4 }, { name: 'Verse_A1', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'Verse_A2', type: SectionType.Verse, bars: 8, energy: 6 }, { name: 'Bridge_B', type: SectionType.Bridge, bars: 8, energy: 7 }, { name: 'Verse_A3', type: SectionType.Verse, bars: 8, energy: 6 }, { name: 'Outro', type: SectionType.Outro, bars: 4, energy: 3 } ] },
+    { id: 'jazz-abac', sections: [ { name: 'Intro', type: SectionType.Intro, bars: 4, energy: 4 }, { name: 'Verse_A1', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'Verse_A2', type: SectionType.Verse, bars: 8, energy: 6 }, { name: 'Verse_A3', type: SectionType.Verse, bars: 8, energy: 5 }, { name: 'Chorus_C', type: SectionType.Chorus, bars: 8, energy: 7 }, { name: 'Outro', type: SectionType.Outro, bars: 4, energy: 3 } ] }
+];

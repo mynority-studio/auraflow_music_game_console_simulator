@@ -77,6 +77,9 @@ export interface TextureMapperInput {
     /** 每拍 step 数（默认 4，即 16 分网格） */
     stepsPerBeat?: number;
 
+    /** 每小节拍数（默认 4），与 timeSignature[0] 对齐 */
+    beatsPerBar?: number;
+
     /** Persona.contourPreference */
     contour: ContourType;
 
@@ -115,7 +118,8 @@ export class TextureMapper {
         if (chordDur <= EPSILON) return out;
 
         const stepsPerBeat = input.stepsPerBeat ?? DEFAULT_STEPS_PER_BEAT;
-        const stepsPerBar = stepsPerBeat * 4;
+        const beatsPerBar = input.beatsPerBar ?? 4;
+        const stepsPerBar = stepsPerBeat * beatsPerBar;
         const truncate = input.truncateOverlap !== false;  // default true
         const L = input.grid.length;
         const stepLen = 1 / stepsPerBeat;  // 1 step = 多少拍
@@ -202,6 +206,7 @@ export class TextureMapper {
         voicings: number[][];
         grids: Array<Int8Array | number[]>;
         stepsPerBeat?: number;
+        beatsPerBar?: number;
         contour: ContourType;
         velocityRange: [number, number];
         truncateOverlap?: boolean;
@@ -221,6 +226,7 @@ export class TextureMapper {
                 voicing: voicings[i],
                 grid: grids[i],
                 stepsPerBeat: input.stepsPerBeat,
+                beatsPerBar: input.beatsPerBar,
                 contour: input.contour,
                 velocityRange: input.velocityRange,
                 truncateOverlap: input.truncateOverlap,

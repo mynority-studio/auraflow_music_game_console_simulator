@@ -49,6 +49,15 @@ const WEIGHT_16_PER_BAR: ReadonlyArray<number> = Object.freeze([
     4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
 ]);
 
+// 3/4 拍, 16分网格 (12 steps)
+const WEIGHT_12_PER_BAR: ReadonlyArray<number> = Object.freeze([
+    4, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0
+]);
+// 6/8 或 12/8 拍 (24 steps)
+const WEIGHT_24_PER_BAR: ReadonlyArray<number> = Object.freeze([
+    4, 0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 3, 0, 1, 0, 1, 0, 2, 0, 1, 0, 1, 0
+]);
+
 // ============================================================
 // 公开 API
 // ============================================================
@@ -67,17 +76,20 @@ export class SyncopationEvaluator {
      * 返回值 ≥ 0，0 表示最弱位（16 分弱拍），最大值出现在小节首（whole-note 位）。
      */
     public static getMetricalWeight(stepIndex: number, stepsPerBar: number = 16): number {
-        if (stepsPerBar !== 16) {
-            // 当前仅实装 16 step (4/4 + 16 分网格) 表。未来扩展可加 12 (4/4 + 三连)、
-            // 24 (6/8) 等表 — 用 switch 分派即可。
-            throw new SyncopationEvaluatorError(
-                'unsupported stepsPerBar; currently only 16 is implemented',
-                { stepsPerBar },
-            );
-        }
         const i = (stepIndex | 0) % stepsPerBar;
         const idx = i < 0 ? i + stepsPerBar : i;
-        return WEIGHT_16_PER_BAR[idx];
+        if (stepsPerBar === 16) return WEIGHT_16_PER_BAR[idx];
+        if (stepsPerBar === 12) return WEIGHT_12_PER_BAR[idx];
+        if (stepsPerBar === 24) return WEIGHT_24_PER_BAR[idx];
+
+        // 动态兜底算法
+        const stepsPerBeat = 4;
+        const beat = Math.floor(idx / stepsPerBeat);
+        const sub = idx % stepsPerBeat;
+        if (sub !== 0) return 0; // 反拍
+        if (beat === 0) return 4; // 首拍
+        if (beat === Math.floor(stepsPerBar / stepsPerBeat / 2)) return 3; // 半小节
+        return 2; // 其它正拍
     }
 
     /**
@@ -102,12 +114,6 @@ export class SyncopationEvaluator {
     ): number {
         const L = grid.length;
         if (L === 0) return 0;
-        if (L % stepsPerBar !== 0) {
-            throw new SyncopationEvaluatorError(
-                'grid length must be a multiple of stepsPerBar',
-                { gridLength: L, stepsPerBar },
-            );
-        }
 
         // 没有任何发声 → 没有切分（不是 NaN，是 0）
         let hasAnyHit = false;
