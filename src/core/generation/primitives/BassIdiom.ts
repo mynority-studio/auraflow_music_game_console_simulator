@@ -37,6 +37,7 @@ export interface BassIdiomInput {
     styleId: StyleId;
     tonality: Tonality;
     persona: MusicianPersona;
+    kickAnchors?: number[];
 }
 
 export class BassIdiom {
@@ -55,16 +56,31 @@ export class BassIdiom {
             const duration = chord.endBeat - chord.startBeat;
             if (duration < EPSILON) continue;
 
-            // slash 和弦优先：C/E → bassOverride=4 替代 root；否则用 chord.root
             const pc = chord.bassOverride !== undefined ? chord.bassOverride : chord.root;
             const pitch = BASS_ANCHOR + (((pc % 12) + 12) % 12);
 
-            out.push({
-                pitch,
-                onset: chord.startBeat,
-                duration,
-                velocity,
-            });
+            let hasHits = false;
+            if (input.kickAnchors && input.kickAnchors.length > 0) {
+                for (let j = 0; j < input.kickAnchors.length; j++) {
+                    const kOnset = input.kickAnchors[j];
+                    // 检查 kick 是否落在当前和弦内
+                    if (kOnset >= chord.startBeat - EPSILON && kOnset < chord.endBeat - EPSILON) {
+                        let nextOnset = chord.endBeat;
+                        if (j + 1 < input.kickAnchors.length && input.kickAnchors[j + 1] < chord.endBeat) {
+                            nextOnset = input.kickAnchors[j + 1];
+                        }
+                        // 留出间隙形成 staccato feel (Bass-Kick interlock)
+                        const dur = Math.max(0.125, (nextOnset - kOnset) * 0.85);
+                        out.push({ pitch, onset: kOnset, duration: dur, velocity });
+                        hasHits = true;
+                    }
+                }
+            }
+
+            // 兜底：如果这段没有 kick，依然在起拍打底
+            if (!hasHits) {
+                out.push({ pitch, onset: chord.startBeat, duration, velocity });
+            }
         }
         return out;
     }

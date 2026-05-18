@@ -243,9 +243,9 @@ function testMidiConverter(): void {
     const melVol = tickZero.find(e => e.channel === CHANNEL_MELODY && e.type === 'cc' && e.data1 === 7);
     const rhVol  = tickZero.find(e => e.channel === CHANNEL_PIANO_RH && e.type === 'cc' && e.data1 === 7);
     const lhVol  = tickZero.find(e => e.channel === CHANNEL_PIANO_LH && e.type === 'cc' && e.data1 === 7);
-    check('Mix 对齐: melody CC7 = 118', melVol?.data2 === 118);
-    check('Mix 对齐: pianoRH CC7 = 85', rhVol?.data2 === 85);
-    check('Mix 对齐: pianoLH CC7 = 98', lhVol?.data2 === 98);
+    check('Mix 对齐: melody CC7 = 122', melVol?.data2 === 122);
+    check('Mix 对齐: pianoRH CC7 = 102', rhVol?.data2 === 102);
+    check('Mix 对齐: pianoLH CC7 = 57', lhVol?.data2 === 57);
 
     // 2e: tick 转换 — beat=0.5 → tick=240，beat=1.0 → 480
     const noteOnEvents = events.filter(e => e.type === 'noteOn');

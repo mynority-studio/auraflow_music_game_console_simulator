@@ -25,7 +25,7 @@
 
 import {
     GeneratedTrack, GenerationOptions, MusicContext, NoteData,
-    RoleType, Tonality, SectionMetadata, SectionTypeName,
+    RoleType, Tonality, SectionMetadata, SectionType, SectionTypeName,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/StyleRegistry';
@@ -104,6 +104,19 @@ export function runPipeline(
             chordsHint: Math.max(2, Math.floor(lengthBeats / beatsPerChord)),
         });
         cursor += lengthBeats;
+    }
+
+    // ============================================================
+    // 能量断崖缓冲 (Energy Cliff Buffer)
+    // 若下一段能量较本段暴涨 (>= 4)，强制将当前段转为 BuildUp。
+    // 联动 Stage5 的 ConductorMask (切除主旋律) 与 DrumIdiom (滚奏加花)。
+    // ============================================================
+    for (let i = 0; i < sections.length - 1; i++) {
+        const currentEnergy = sections[i].energyLevel;
+        const nextEnergy = sections[i + 1].energyLevel;
+        if (nextEnergy - currentEnergy >= 4) {
+            sections[i].sectionType = SectionType.BuildUp;
+        }
     }
 
     PRNGManager.recordSnapshot('C');

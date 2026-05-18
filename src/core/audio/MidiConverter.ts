@@ -71,6 +71,7 @@ const GM_PROGRAM_DRUMS = 0;
 const CC_VOLUME = 7;
 const CC_PAN = 10;
 const CC_REVERB = 91;
+const CC_EXPRESSION = 11;
 
 // ============================================================
 // 基础混音 profile（Phase 6 — 钢琴 instrumental 编制重新校准 + The Walker 急救）
@@ -139,6 +140,22 @@ export class MidiConverter {
         // renderTrack 内部仅做 [0,127] clamp，不会越界。
         renderTrack(out, song.drums,   CHANNEL_DRUMS,    GM_PROGRAM_DRUMS,    MIX_DRUMS);
 
+        // Fake Sidechain (伪侧链): 基于 Kick 鼓点对伴奏和贝斯通道注入 CC11 闪避包络
+        // D-5 safe: 无 PRNG 消耗的机械注入，零 DSP 开销
+        const kicks = out.filter(e => e.type === 'noteOn' && e.channel === CHANNEL_DRUMS && e.data1 === 36);
+        for (let i = 0; i < kicks.length; i++) {
+            const kickTick = kicks[i].ticks;
+            // 对 PianoRH (和弦) 施加深度 ducking
+            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 60 });
+            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 90 });
+            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 127 });
+
+            // 对 PianoLH (贝斯) 施加中度 ducking，让出 Kick 频段
+            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 70 });
+            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 100 });
+            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 127 });
+        }
+
         // D-3：完全确定的排序
         out.sort((a, b) => {
             if (a.ticks !== b.ticks) return a.ticks - b.ticks;
@@ -168,10 +185,11 @@ function renderTrack(
     if (!notes || notes.length === 0) return;
 
     // tick 0 控制事件
-    out.push({ ticks: 0, type: 'programChange', channel, data1: program,   data2: 0 });
-    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_VOLUME, data2: mix.volume });
-    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_PAN,    data2: mix.pan });
-    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_REVERB, data2: mix.reverb });
+    out.push({ ticks: 0, type: 'programChange', channel, data1: program,        data2: 0 });
+    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_VOLUME,      data2: mix.volume });
+    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_PAN,         data2: mix.pan });
+    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_REVERB,      data2: mix.reverb });
+    out.push({ ticks: 0, type: 'cc',            channel, data1: CC_EXPRESSION,  data2: 127 });
 
     // 音符
     for (let i = 0; i < notes.length; i++) {

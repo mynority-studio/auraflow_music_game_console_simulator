@@ -232,6 +232,33 @@ export class RhythmMutator {
         }
 
         // ============================================================
+        // Phase C — 连续反拍收敛 (P0: Syncopation Cap)
+        // 强制限制连续反拍击点 (weight === 0) 数量，防止节拍感彻底崩溃。
+        // ============================================================
+        let consecutiveOffbeats = 0;
+        for (let i = 0; i < totalSteps; i++) {
+            if (grid[i] === 1) {
+                const w = SyncopationEvaluator.getMetricalWeight(i, stepsPerBar);
+                if (w === 0) {
+                    consecutiveOffbeats++;
+                    if (consecutiveOffbeats > 2) {
+                        grid[i] = 0; // 抹除超限反拍
+                        // 尝试在就近的后 4 个 step 内寻找正拍补偿一击
+                        for (let j = i + 1; j < Math.min(i + 4, totalSteps); j++) {
+                            if (grid[j] === 0 && SyncopationEvaluator.getMetricalWeight(j, stepsPerBar) > 0) {
+                                grid[j] = 1;
+                                break;
+                            }
+                        }
+                        consecutiveOffbeats = 0;
+                    }
+                } else {
+                    consecutiveOffbeats = 0;
+                }
+            }
+        }
+
+        // ============================================================
         // 诊断信息收尾
         // ============================================================
         let finalHits = 0;

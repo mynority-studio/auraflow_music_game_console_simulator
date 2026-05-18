@@ -181,6 +181,12 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
         ? DrumIdiom.render({ sections: drumSections, grid: bundle.drum })
         : [];
 
+    // Kick-Bass interlock: 提取所有 Kick (pitch===36) 落点，供 BassIdiom 对齐
+    const kickAnchors: number[] = [];
+    for (let d = 0; d < drums.length; d++) {
+        if (drums[d].pitch === 36) kickAnchors.push(drums[d].onset);
+    }
+
     for (let sIdx = 0; sIdx < input.sections.length; sIdx++) {
         const section = input.sections[sIdx];
         const mask = getConductorMask(section.sectionType);
@@ -198,6 +204,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
                 styleId: input.styleId,
                 tonality: input.tonality,
                 persona: getPersona(bundle.personas, ROLE_BASS),
+                kickAnchors,
             });
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);
         }
@@ -410,6 +417,7 @@ function renderLead(
             }
             const rootPc = targetChord ? ((targetChord.root % 12) + 12) % 12 : 0;
 
+            // scaledLick 已经过 TopologyMutator.expand 按 scale 缩放，此处不可再乘 scale（避免双重缩放越界）
             for (let k = 0; k < scaledLick.length; k++) {
                 const n = scaledLick[k];
                 let p = n.pitch + rootPc;
@@ -419,8 +427,8 @@ function renderLead(
 
                 out.push({
                     pitch: p,
-                    onset: blockOnset + n.onset * scale,
-                    duration: n.duration * scale,
+                    onset: blockOnset + n.onset,
+                    duration: n.duration,
                     velocity: n.velocity,
                     isUserMotif: true,
                     motifName: 'MasterSplice'

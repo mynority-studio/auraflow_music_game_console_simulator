@@ -195,7 +195,7 @@ function verifyMidiChannel9(styleId: StyleId): void {
         `cc=${ch9CC.length}, programChange=${ch9ProgChange.length})`);
 
     check(`${name}: ch9 含 programChange 事件（setup）`, ch9ProgChange.length === 1);
-    check(`${name}: ch9 含 3 个 CC setup 事件（CC7/10/91）`, ch9CC.length === 3);
+    check(`${name}: ch9 含 4 个 CC setup 事件（CC7/10/91/11）`, ch9CC.length === 4);
     check(`${name}: ch9 含 noteOn 事件`, ch9NoteOn.length > 0, `count=${ch9NoteOn.length}`);
     check(`${name}: ch9 noteOn === noteOff（每音符成对）`,
         ch9NoteOn.length === ch9NoteOff.length,
