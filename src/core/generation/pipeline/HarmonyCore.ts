@@ -133,6 +133,11 @@ export interface HarmonyCoreInput {
     voiceLeadingConfig: VoiceLeadingConfig;
     /** 每段和弦数 — 默认 4 */
     chordsPerSection?: number;
+    /** V4.2c — 风格进行池（来自 styleConfig.harmony）。提供时 MacroProgression 70% 概率从 pool 抽起手 */
+    progressionPool?: {
+        major: Record<string, string[][]>;
+        minor: Record<string, string[][]>;
+    };
 }
 
 /**
@@ -203,6 +208,34 @@ export class HarmonyCoreError extends Error {
 
 export class HarmonyCore {
     /**
+     * Fallback voicing 计算（V3.1 新增）— 给 PassingChordEngine 插入的"无 voicing 和弦"用。
+     *
+     * 简化算法：直接 chord-tone PC 数组 → 落到 [voiceRangeLo, voiceRangeHi] 区间内升序展开。
+     * 不做 voice leading 优化（passing chord 通常仅持续 0.5-2 拍，听不出 voice leading 损失）。
+     *
+     * 零 PRNG。
+     */
+    public static computeFallbackVoicing(chord: GeneratedChord): number[] {
+        const intervals = CHORD_INTERVALS[chord.quality];
+        if (intervals === undefined || intervals.length === 0) return [60];
+
+        const rootPc = ((chord.root % 12) + 12) % 12;
+        const out: number[] = [];
+        // 基线放在 C3 (48)，最高 ≤ C5 (72) — 与 HarmonyCore 默认 voiceRange 对齐
+        const baseOctave = 48;
+        for (let i = 0; i < intervals.length && i < 4; i++) {
+            const pc = (rootPc + intervals[i]) % 12;
+            let pitch = baseOctave + pc;
+            if (i > 0 && pitch <= out[out.length - 1]) pitch += 12;
+            if (pitch > 72) pitch -= 12;
+            if (pitch < 48) pitch += 12;
+            out.push(pitch);
+        }
+        out.sort((a, b) => a - b);
+        return out;
+    }
+
+    /**
      * 入口：推演和弦序列 + 计算声部连接。
      *
      * PRNG 消耗：
@@ -231,6 +264,8 @@ export class HarmonyCore {
             sections: input.sections,
             rules: input.harmonyRules,
             chordsPerSection: input.chordsPerSection,
+            tonality: input.tonality,
+            progressionPool: input.progressionPool,
         });
     }
 

@@ -1,0 +1,359 @@
+/**
+ * BandEngine — 乐队编曲决策器（MVP V1）
+ *
+ * 凌驾于 MusicGenerationEngine 之上的独立层。消费用户编制 (BandRoster) + 段落表 + 风格，
+ * 输出每段每职能的演奏决策 (BandPlan)，供 Stage5Layering 消费。
+ *
+ * MVP 范围（V1）：
+ *   - 固定 4 人乐队（Piano + Bass + Drums + Atmosphere），无 Vocal
+ *   - 不处理双钢琴 / 角色升降 / 随机匹配（V2 任务）
+ *   - 段落级 ConductorMask 仍由 Stage5Layering 处理（V1 不迁移）
+ *   - instrumentSpecificParams 暂置 undefined，渲染器走旧 personas fallback（PianoAccompIdiom 在 Step 3 接入后填）
+ *
+ * 4 个 Pass（V1 只实现 A 和 C）：
+ *   Pass A — Roster 验证：检查每个 musician 的 role 是否在 eligibleRoles 内
+ *   Pass B — 角色升降：跳过（V1 无 Vocal）
+ *   Pass C — 段落决策：对每段输出 SectionPlan
+ *   Pass D — 冲突解析：跳过（V1 无双钢琴/M5）
+ *
+ * Pitch Space: N/A（BandEngine 不接触 pitch，仅做决策矩阵）
+ * PRNG 消耗: 0（V1 决策完全确定性，仅由 roster + sections 决定）
+ *
+ * @author AuraFlow Tap! BandEngine MVP
+ */
+
+import {
+    BandPlan,
+    BandRole,
+    BandRoster,
+    ActiveMusician,
+    SectionPlan,
+    RoleAssignment,
+    SectionMetadata,
+    SectionType,
+    Tonality,
+    Musician,
+} from '../types';
+import { StyleId } from '../config/StyleFlags';
+import {
+    PianoAccompParams,
+    LHTexture,
+    RHTexture,
+    CoordMode,
+} from '../primitives/PianoAccompIdiom';
+import {
+    TextureRecipeId,
+    getPianoTextureRecipe,
+} from '../data/PianoTextureRecipes';
+import { MoodId, pickMood, moodToRecipe, pickWalkPattern } from './MoodRouter';
+import { WalkPatternId } from '../data/BassWalkPatterns';
+
+const EPSILON = 1e-6;
+const ENERGY_MAX = 10;
+const INTENSITY_MIN = 0.1;
+const INTENSITY_MAX = 1.0;
+
+export interface BandEngineInput {
+    /** 用户配置或随机抽取的乐队阵容 */
+    roster: BandRoster;
+    /** Stage 1~2 输出的段落表 */
+    sections: SectionMetadata[];
+    /** 仅作上下文传递（V1 不消费；V2 PianoAccompIdiom 可能按风格选织体） */
+    styleId: StyleId;
+    /** 仅作上下文传递（V1 不消费） */
+    tonality: Tonality;
+    /** 仅作上下文传递（V1 不消费） */
+    timeSignature: [number, number];
+    /** V5.2 Swing 比例（0.5=直拍 / 0.55=微 swing / 0.6=中 swing / 0.67=triplet）
+     *  来自 styleConfig.swingRatio，透传到 PianoAccompParams.swingRatio */
+    swingRatio?: number;
+    /**
+     * Sub-Phase 3：全曲 BPM（MoodRouter 的关键决策维度之一）。
+     *
+     * 缺省回落到 100（中速），保证旧调用方（V1 smoke 等）继续可用。
+     */
+    bpm?: number;
+}
+
+export class BandEngine {
+    /** V5.2 当前 plan() 调用的 swingRatio（从 styleConfig 透传，per-section pick 时读取） */
+    private static currentSwingRatio: number = 0.5;
+    /** Sub-Phase 3：当前 plan() 调用的 styleId + bpm（MoodRouter 决策时读取） */
+    private static currentStyleId: StyleId = StyleId.ModernPop;
+    private static currentBpm: number = 100;
+    private static currentTonality: Tonality = Tonality.Major;
+
+    /**
+     * 生成 BandPlan：4 个 Pass 顺序执行。
+     *
+     * 输出：
+     *   - sectionPlans: 长度 === sections.length，平行索引
+     *   - activeMusicians: roster 里非 null 且通过 Pass A 验证的乐手
+     */
+    public static plan(input: BandEngineInput): BandPlan {
+        // V5.2 — 暂存 swingRatio 给 pickPianoAccompParams 用
+        BandEngine.currentSwingRatio = input.swingRatio ?? 0.5;
+        // Sub-Phase 3 — 暂存 styleId / bpm / tonality 给 MoodRouter 用
+        BandEngine.currentStyleId = input.styleId;
+        BandEngine.currentBpm = input.bpm ?? 100;
+        BandEngine.currentTonality = input.tonality;
+
+        // ----------------------------------------------------------------
+        // Pass A: Roster 验证 — 收集合法乐手到 activeMusicians
+        // ----------------------------------------------------------------
+        const activeMusicians = BandEngine.validateRoster(input.roster);
+
+        // ----------------------------------------------------------------
+        // Pass B: 角色升降 — V1 跳过
+        // ----------------------------------------------------------------
+        // (V2 TODO: 检查 roster.mainInst === null && roster.accomp !== null
+        //  → 钢琴 Accomp 升格为 MainInst，设置 promotedFromAccomp = true)
+
+        // ----------------------------------------------------------------
+        // Pass C: 段落决策 — 为每段输出 SectionPlan
+        // ----------------------------------------------------------------
+        // bassActive 决定钢琴 LH 让位 (M4) 还是接管 (M1)；全曲恒定，预计算一次
+        const bassActive = activeMusicians.some(am => am.assignedRole === BandRole.Bass);
+
+        const sectionPlans: SectionPlan[] = [];
+        for (let i = 0; i < input.sections.length; i++) {
+            sectionPlans.push(BandEngine.planSection(i, input.sections[i], activeMusicians, bassActive));
+        }
+
+        // ----------------------------------------------------------------
+        // Pass D: 冲突解析 — V1 跳过
+        // ----------------------------------------------------------------
+        // (V2 TODO: 双钢琴音区分配 / M5 + Bass 互斥)
+
+        return { sectionPlans, activeMusicians };
+    }
+
+    // ================================================================
+    // Pass A — Roster 验证
+    // ================================================================
+
+    private static validateRoster(roster: BandRoster): ActiveMusician[] {
+        const out: ActiveMusician[] = [];
+        BandEngine.tryAdd(out, roster.vocal,      BandRole.Vocal);
+        BandEngine.tryAdd(out, roster.mainInst,   BandRole.MainInst);
+        BandEngine.tryAdd(out, roster.accomp,     BandRole.Accomp);
+        BandEngine.tryAdd(out, roster.bass,       BandRole.Bass);
+        BandEngine.tryAdd(out, roster.drums,      BandRole.Drums);
+        BandEngine.tryAdd(out, roster.atmosphere, BandRole.Atmosphere);
+        return out;
+    }
+
+    private static tryAdd(
+        out: ActiveMusician[],
+        musician: Musician | null | undefined,
+        slot: BandRole,
+    ): void {
+        if (musician === null || musician === undefined) return;
+
+        // eligibleRoles 校验：乐手必须能胜任当前槽位
+        let eligible = false;
+        for (let i = 0; i < musician.eligibleRoles.length; i++) {
+            if (musician.eligibleRoles[i] === slot) {
+                eligible = true;
+                break;
+            }
+        }
+        if (!eligible) {
+            throw new BandEngineError(
+                'musician not eligible for assigned role',
+                { musicianId: musician.id, assignedRole: slot, eligibleRoles: musician.eligibleRoles },
+            );
+        }
+
+        out.push({ card: musician, assignedRole: slot });
+    }
+
+    // ================================================================
+    // Pass C — 单段决策
+    // ================================================================
+
+    private static planSection(
+        sectionIdx: number,
+        section: SectionMetadata,
+        activeMusicians: ActiveMusician[],
+        bassActive: boolean,
+    ): SectionPlan {
+        const intensityScale = BandEngine.normalizeEnergy(section.energyLevel);
+
+        const assignments: Partial<Record<BandRole, RoleAssignment>> = {};
+        for (let i = 0; i < activeMusicians.length; i++) {
+            const am = activeMusicians[i];
+            const role = am.assignedRole;
+
+            // 按角色填 instrumentSpecificParams（V1：仅 Accomp 实装钢琴 params，其他角色保持 undefined 走旧 fallback）
+            let params: unknown = undefined;
+            if (role === BandRole.Accomp) {
+                params = BandEngine.pickPianoAccompParams(section, am.card, bassActive, intensityScale);
+            }
+
+            assignments[role] = {
+                musicianId: am.card.id,
+                intensityScale,
+                instrumentSpecificParams: params,
+            };
+        }
+
+        return { sectionIdx, assignments };
+    }
+
+    // ================================================================
+    // Pass C 子流程 — 钢琴伴奏织体选择
+    // ================================================================
+    //
+    // 启发式映射（基于音乐物理 + bassActive 决定 Solo Piano vs Ensemble 模式）：
+    //
+    // RH 织体（按 sectionType）：
+    //   - Verse / PreChorus       → R3 Stab（轻盈切分，给主旋律留空间）
+    //   - Chorus / Drop / BuildUp → R1 Block（柱式齐砸，能量感）
+    //   - Bridge / Intro / Outro / PreOutro / Solo_Bridge → R2 Broken（分解和弦，叙事铺垫）
+    //   - 其他段落 → R3 Stab 兜底
+    //
+    // 协作模式：
+    //   - bassActive=true  → M4 (Tacit LH + RH 织体)
+    //   - bassActive=false (Solo Piano)：
+    //     · groove section (Verse/PreChorus/Chorus/Drop/BuildUp) → M1 + L4 Walking Tenths
+    //     · lush section   (Bridge/Intro/Outro/PreOutro/Solo_Bridge) → M5 Two-Handed Voicing（E.2 接入）
+    //                                                                  V2 阶段未接入时回退 M1 + L1 Sustained
+    private static pickPianoAccompParams(
+        section: SectionMetadata,
+        musician: Musician,
+        bassActive: boolean,
+        intensityScale: number,
+    ): PianoAccompParams {
+        const isGrooveSection = BandEngine.isGrooveSection(section.sectionType);
+
+        // Sub-Phase 3：MoodRouter 决策织体配方。
+        //   1. pickMood(context) → MoodId（8 桶情绪）
+        //   2. moodToRecipe(mood, styleId) → TextureRecipeId
+        //   3. recipe.rhTexture → params.rhTexture（推荐渲染风格）
+        //   4. mood 同时塞进 params → PianoAccompIdiom 取 mood-specific phrase chain
+        const mood: MoodId = pickMood({
+            styleId: BandEngine.currentStyleId,
+            tonality: BandEngine.currentTonality,
+            bpm: BandEngine.currentBpm,
+            sectionType: section.sectionType,
+            energyLevel: section.energyLevel,
+            persona: musician.persona,
+        });
+        const recipeId: TextureRecipeId = moodToRecipe(mood, BandEngine.currentStyleId);
+        const rhTexture: RHTexture = getPianoTextureRecipe(recipeId).rhTexture;
+
+        // V4.1 Bounce 偏好检查（持票优先级最高，仅 Solo Piano 模式可用）
+        const bouncePreference = musician.persona.bouncePreference ?? 0;
+
+        let coordMode: CoordMode;
+        let lhTexture: LHTexture;
+        let walkPatternId: WalkPatternId | undefined;
+        if (bassActive) {
+            coordMode = CoordMode.M4_TacitWithComping;
+            lhTexture = LHTexture.Tacit;
+        } else {
+            // Solo Piano 模式：
+            //   bouncePreference > 0.5 + groove → M6 Bounce（覆盖 Walking）
+            //   groove section → M1 + L4 Walking Tenths (爵士 solo piano 标志)
+            //   lush section   → M5 Two-Handed Voicing (Bill Evans 风 spread chord)
+            if (isGrooveSection && bouncePreference > 0.5) {
+                coordMode = CoordMode.M6_OomPahBounce;
+                lhTexture = LHTexture.Tacit;  // M6 自己处理 LH
+            } else if (isGrooveSection) {
+                coordMode = CoordMode.M1_SustainedRoot;
+                lhTexture = LHTexture.WalkingTenths;
+                // 改动 B：按 mood × style 路由 walk pattern，让不同情绪的 walking 听感差异化
+                walkPatternId = pickWalkPattern(mood, BandEngine.currentStyleId);
+            } else {
+                coordMode = CoordMode.M5_TwoHandedVoicing;
+                lhTexture = LHTexture.Tacit;  // M5 自己处理 LH
+            }
+        }
+
+        // V3.3 Persona DNA mapping — 真正消费 sparsity/sync/colorBias，不再是数据壁纸
+        //   voicingSpan      ← colorBias × (0.5 + intensity)（高色彩 + 高能量 → Drop-2 开放）
+        //   anticipationProb ← syncopationAssault × (0.5 + intensity)（高 sync + 高能量 → 多 push）
+        //   sparsity         ← sparsityTendency × intensity（高 sparsity + 高能量 → 删击点）
+        //                       注：低能量段不删（已经稀薄了），靠 intensity 缓冲
+        const persona = musician.persona;
+        const voicingSpan = clamp01(persona.colorBias * (0.5 + intensityScale));
+        const anticipationProb = clamp01(persona.syncopationAssault * (0.5 + intensityScale));
+        const sparsity = clamp01(persona.sparsityTendency * intensityScale);
+        const signatureLickProb = persona.signatureLickProb !== undefined
+            ? clamp01(persona.signatureLickProb)
+            : 0;
+
+        // V3.8 Solver 触发：高 syncopationAssault (>0.5) 切换到物理约束求解器
+        const useSolver = persona.syncopationAssault > 0.5;
+
+        // V5.2 Swing — 从 styleConfig 透传（BandEngine 不感知 swingRatio 含义，只搬运）
+        const swingRatio = BandEngine.currentSwingRatio;
+
+        return {
+            lhTexture,
+            rhTexture,
+            coordMode,
+            velocityRange: persona.dynamicRange,
+            intensityScale,
+            voicingSpan,
+            anticipationProb,
+            sparsity,
+            signatureLickProb,
+            useSolver,
+            swingRatio,
+            recipeId,
+            mood,
+            walkPatternId,
+        };
+    }
+
+    /** sectionType → groove vs lush 二分类（驱动 Solo Piano 的 Walking vs Spread 选择） */
+    private static isGrooveSection(sectionType: SectionType | undefined): boolean {
+        switch (sectionType) {
+            case SectionType.Verse:
+            case SectionType.PreChorus:
+            case SectionType.Chorus:
+            case SectionType.Drop:
+            case SectionType.BuildUp:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // ================================================================
+    // 工具
+    // ================================================================
+
+    /** energyLevel (整数 1~10) → intensityScale (浮点 0.1~1.0)，clamp 兜底 */
+    private static normalizeEnergy(energyLevel: number): number {
+        if (!Number.isFinite(energyLevel)) return INTENSITY_MIN;
+        const raw = energyLevel / ENERGY_MAX;
+        if (raw < INTENSITY_MIN + EPSILON) return INTENSITY_MIN;
+        if (raw > INTENSITY_MAX - EPSILON) return INTENSITY_MAX;
+        return raw;
+    }
+}
+
+// ============================================================
+// 工具
+// ============================================================
+
+function clamp01(x: number): number {
+    if (!Number.isFinite(x)) return 0;
+    return x < 0 ? 0 : (x > 1 ? 1 : x);
+}
+
+// ============================================================
+// Error
+// ============================================================
+
+export class BandEngineError extends Error {
+    public readonly context: Record<string, unknown>;
+    constructor(message: string, context: Record<string, unknown>) {
+        super(message);
+        this.name = 'BandEngineError';
+        this.context = context;
+    }
+}

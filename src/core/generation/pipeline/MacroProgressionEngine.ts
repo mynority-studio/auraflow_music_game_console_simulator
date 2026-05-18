@@ -36,8 +36,9 @@
 
 import { PRNGManager } from '../../utils/PRNG';
 import {
-    GeneratedChord, SectionMetadata, ChordQuality,
+    GeneratedChord, SectionMetadata, ChordQuality, Tonality, SectionType,
 } from '../types';
+import { parseNumeral } from '../data/ChordNumeralParser';
 
 // ============================================================
 // 基础类型
@@ -123,6 +124,15 @@ export interface MacroProgressionInput {
     rules: HarmonyRulesConfig;
     /** 每段和弦数 — 默认 4 */
     chordsPerSection?: number;
+    /** V4.2c — 调式（pool 路径需要选 major/minor + parseNumeral 用） */
+    tonality?: Tonality;
+    /** V4.2c — 进行池（来自 styleConfig.harmony）。
+     *  提供时 70% 概率从 pool 抽起手 + 跳过 Step B 变异门（保留 pool 的"文化记忆"），
+     *  30% 概率走原代数推演 + 4 道变异门。 */
+    progressionPool?: {
+        major: Record<string, string[][]>;
+        minor: Record<string, string[][]>;
+    };
 }
 
 // ============================================================
@@ -197,6 +207,8 @@ export class MacroProgressionEngine {
         const out: GeneratedChord[]       = [];
         // 与 out 平行索引 — 跟踪每和弦的"原始/Gate1 后"功能标签，仅供 Gate 3 判定使用
         const functionTags: HarmonicFunction[] = [];
+        // V4.2c — 与 out 平行索引，true = chord 来自 progression pool（Step B 跳过变异门）
+        const fromPool: boolean[] = [];
 
         // -----------------------------------------------------------
         // Step A — 骨架推演（T-S-D 马尔可夫游走 + 变体抽取）
@@ -205,6 +217,11 @@ export class MacroProgressionEngine {
             const section          = input.sections[secIdx];
             const sectionDuration  = section.endBeat - section.startBeat;
             if (sectionDuration < EPSILON) continue;
+
+            // V4.2c — 优先尝试 pool 路径（70% 概率从风格进行池抽起手）
+            if (MacroProgressionEngine.tryPoolPath(section, input, out, functionTags, fromPool)) {
+                continue;
+            }
             // Step 1B：chordsPer 改 per-section 解析
             //   优先 section.chordsHint（Pipeline 按段长 / styleBeatsPerChord 算出）
             //   回落 input.chordsPerSection（向后兼容）
@@ -299,13 +316,24 @@ export class MacroProgressionEngine {
                     endBeat,
                 });
                 functionTags.push(curFunc);
+                fromPool.push(false);
             }
         }
 
         // -----------------------------------------------------------
         // Step B — 四道变异门串行处理（每和弦恒定 4 次 PRNG）
+        //   V4.2c：fromPool[i]=true 的 chord 跳过变异（保留 pool 的"文化记忆"），
+        //          但仍空转 4 次 PRNG 保 D-5 序列对齐
         // -----------------------------------------------------------
         for (let i = 0; i < out.length; i++) {
+            if (fromPool[i]) {
+                // Pool chord：跳过 4 道门，空转 PRNG 保对齐
+                PRNGManager.next();
+                PRNGManager.next();
+                PRNGManager.next();
+                PRNGManager.next();
+                continue;
+            }
             const chord     = out[i];
             const nextChord = (i + 1 < out.length) ? out[i + 1] : null;
 
@@ -364,6 +392,96 @@ export class MacroProgressionEngine {
         }
 
         return out;
+    }
+
+    // ─────────────── V4.2c Pool path ───────────────
+
+    /**
+     * 尝试从风格进行池抽起手（70% 概率）。
+     *
+     * 返回 true = pool 路径被采用（caller 跳过算法路径）；false = 走原代数路径。
+     *
+     * PRNG 消耗（确定性）：
+     *   - 始终 2 次（决定 use vs algebraic + pool idx）— 即使无 pool 也空转保对齐
+     *   - 若 pool 命中：每和弦 0 次额外 PRNG（parseNumeral 纯字符串解析）
+     *
+     * Pool 命中时 fromPool[i] 全标记 true，Step B 自动跳过变异门。
+     */
+    private static tryPoolPath(
+        section: SectionMetadata,
+        input: MacroProgressionInput,
+        out: GeneratedChord[],
+        functionTags: HarmonicFunction[],
+        fromPool: boolean[],
+    ): boolean {
+        // 始终消耗 2 次 PRNG（保 D-5 对齐，无视 pool 是否可用）
+        const useRoll = PRNGManager.next();
+        const idxRoll = PRNGManager.next();
+
+        if (input.progressionPool === undefined || input.tonality === undefined) return false;
+        const sectionKey = MacroProgressionEngine.sectionTypeToPoolKey(section.sectionType);
+        if (sectionKey === null) return false;
+
+        const poolByTonality = input.tonality === Tonality.Minor
+            ? input.progressionPool.minor
+            : input.progressionPool.major;
+        const sectionPool = poolByTonality[sectionKey];
+        if (sectionPool === undefined || sectionPool.length === 0) return false;
+
+        if (useRoll >= 0.7) return false;  // 30% 走原算法
+
+        const progIdx = Math.floor(idxRoll * sectionPool.length) % sectionPool.length;
+        const progression = sectionPool[progIdx];
+        if (progression.length === 0) return false;
+
+        const numChords = progression.length;
+        const sectionDuration = section.endBeat - section.startBeat;
+        const beatsPerChord = sectionDuration / numChords;
+
+        for (let c = 0; c < numChords; c++) {
+            const numeral = progression[c];
+            const parsed = parseNumeral(numeral, input.tonality);
+            const startBeat = section.startBeat + c * beatsPerChord;
+            const endBeat = section.startBeat + (c + 1) * beatsPerChord;
+            const chord: GeneratedChord = {
+                numeral,
+                root: parsed.root,
+                quality: parsed.quality,
+                startBeat,
+                endBeat,
+            };
+            if (parsed.bassOverride !== undefined) chord.bassOverride = parsed.bassOverride;
+            out.push(chord);
+            functionTags.push(MacroProgressionEngine.classifyFunctionByRoot(parsed.root));
+            fromPool.push(true);
+        }
+        return true;
+    }
+
+    /** SectionType → 进行池 key（与 StyleRegistry pool 键对齐） */
+    private static sectionTypeToPoolKey(s: SectionType | undefined): string | null {
+        if (s === undefined) return null;
+        switch (s) {
+            case SectionType.Intro:       return 'intro';
+            case SectionType.Verse:       return 'verse';
+            case SectionType.PreChorus:   return 'preChorus';
+            case SectionType.Chorus:      return 'chorus';
+            case SectionType.Bridge:      return 'bridge';
+            case SectionType.Outro:       return 'outro';
+            case SectionType.PreOutro:    return 'outro';
+            case SectionType.BuildUp:     return 'preChorus';
+            case SectionType.Solo_Bridge: return 'bridge';
+            // Drop / Break / Breakdown 无 pool 映射 → 走算法路径
+            default: return null;
+        }
+    }
+
+    /** 按 root PC 反推功能标签（pool chord 没有原生 functionTag） */
+    private static classifyFunctionByRoot(rootPc: number): HarmonicFunction {
+        const r = ((rootPc | 0) % 12 + 12) % 12;
+        if (r === 5 || r === 2) return HarmonicFunction.Subdominant;
+        if (r === 7 || r === 11) return HarmonicFunction.Dominant;
+        return HarmonicFunction.Tonic;
     }
 
     // ─────────────── Step A helpers ───────────────

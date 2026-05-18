@@ -37,6 +37,8 @@
 import {
     GeneratedChord, MusicianPersona, NoteData,
     SectionMetadata, SectionType, Tonality,
+    CHORD_SCALE_INTERVALS, SCALE_INTERVALS, // 🌟 新增
+    BandPlan, BandRole, AtmosphereIdiom,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleStage5Bundle } from '../config/styles';
@@ -50,6 +52,8 @@ import {
 } from '../primitives/PCFGGrammarEngine';
 import { DrumIdiom } from '../primitives/DrumIdiom';
 import { BassIdiom } from '../primitives/BassIdiom';
+import { AtmosphereRenderer } from '../primitives/AtmosphereRenderer';
+import { PianoAccompIdiom, PianoAccompParams } from '../primitives/PianoAccompIdiom';
 import { ToplineEngine } from './ToplineEngine';
 import { TopologyMutator } from '../primitives/TopologyMutator';
 import { PRNGManager } from '../../utils/PRNG';
@@ -67,47 +71,49 @@ const LEAD_RANGE_LO = 60;       // C4 — ToplineEngine 主旋律下界
 const LEAD_RANGE_HI = 84;       // C6 — ToplineEngine 主旋律上界
 
 // ============================================================
-// Role 枚举（本地）— 与 RoleType 字符串无关，避免 T-1 字符串分类
+// Role 枚举（本地）— 与 BandRole 字符串无关，避免 T-1 字符串分类
 // 索引必须与 config/styles/index.ts StyleStage5Bundle.personas 对齐
 // ============================================================
 const ROLE_BASS = 0;
 const ROLE_ACCOMP = 1;
 const ROLE_LEAD = 2;
 const ROLE_DRUMS = 3;
-const ROLE_COUNT = 4;
+const ROLE_ATMOSPHERE = 4;
+const ROLE_COUNT = 5;
 
 const MASK_BASS = 1 << ROLE_BASS;
 const MASK_ACCOMP = 1 << ROLE_ACCOMP;
 const MASK_LEAD = 1 << ROLE_LEAD;
 const MASK_DRUMS = 1 << ROLE_DRUMS;
-const MASK_ALL = MASK_BASS | MASK_ACCOMP | MASK_LEAD | MASK_DRUMS;
+const MASK_ATMOSPHERE = 1 << ROLE_ATMOSPHERE;
+const MASK_ALL = MASK_BASS | MASK_ACCOMP | MASK_LEAD | MASK_DRUMS | MASK_ATMOSPHERE;
 
 // ============================================================
 // Conductor Mask — sectionType → bit 掩码（与风格无关，音乐物理）
 // ============================================================
 //
 // 设计：
-//   - Intro / Outro / PreOutro: Bass + Accomp（**不出鼓** — 渐入/淡出感）
+//   - Intro / Outro / PreOutro: Bass + Accomp + Atmosphere（**不出鼓** — 渐入/淡出 + pad 铺底）
 //   - Verse/PreChorus/Chorus/Bridge/Drop/Solo_Bridge: ALL（全开）
-//   - BuildUp: Bass + Accomp + Drums（积累张力，旋律未进）
-//   - Break / Breakdown: Bass + Drums（"Rhythm Section Breakdown" — 清空中高频）
+//   - BuildUp: Bass + Accomp + Drums + Atmosphere（积累张力，旋律未进，pad 增加 lift）
+//   - Break / Breakdown: Bass + Drums（"Rhythm Section Breakdown" — 清空中高频，pad 也清空）
 //
 // 未列出的 sectionType 走 MASK_ALL 兜底。
 // ============================================================
 
 const CONDUCTOR_MASK_BY_SECTION_TYPE: number[] = (() => {
     const m: number[] = new Array(12);
-    m[SectionType.Intro]       = MASK_BASS | MASK_ACCOMP;
+    m[SectionType.Intro]       = MASK_BASS | MASK_ACCOMP | MASK_ATMOSPHERE;
     m[SectionType.Verse]       = MASK_ALL;
     m[SectionType.PreChorus]   = MASK_ALL;
     m[SectionType.Chorus]      = MASK_ALL;
     m[SectionType.Bridge]      = MASK_ALL;
-    m[SectionType.Outro]       = MASK_BASS | MASK_ACCOMP;
+    m[SectionType.Outro]       = MASK_BASS | MASK_ACCOMP | MASK_ATMOSPHERE;
     m[SectionType.Break]       = MASK_BASS | MASK_DRUMS;
     m[SectionType.Breakdown]   = MASK_BASS | MASK_DRUMS;
-    m[SectionType.BuildUp]     = MASK_BASS | MASK_ACCOMP | MASK_DRUMS;
+    m[SectionType.BuildUp]     = MASK_BASS | MASK_ACCOMP | MASK_DRUMS | MASK_ATMOSPHERE;
     m[SectionType.Drop]        = MASK_ALL;
-    m[SectionType.PreOutro]    = MASK_BASS | MASK_ACCOMP;
+    m[SectionType.PreOutro]    = MASK_BASS | MASK_ACCOMP | MASK_ATMOSPHERE;
     m[SectionType.Solo_Bridge] = MASK_ALL;
     return m;
 })();
@@ -143,6 +149,13 @@ export interface Stage5LayeringInput {
     timeSignature: [number, number];
     /** Phase 2: 用户动机（RELATIVE pitch space），用于 Lead 的片段拼接（Direct Splice） */
     userMotif?: NoteData[];
+    /**
+     * BandEngine 输出（Phase 1 BandEngine MVP 新增）。
+     * V1：仅用于决定 atmosphere 轨是否输出（roster.atmosphere 存在则上线）；
+     *      其他角色仍走 getStyleStage5Bundle 的 personas（fallback 路径，行为兼容）。
+     * V2+：personas 从 BandPlan.activeMusicians[].card.persona 取，逐步替换 styleId.personas。
+     */
+    bandPlan?: BandPlan;
 }
 
 export interface Stage5LayeringResult {
@@ -151,6 +164,8 @@ export interface Stage5LayeringResult {
     bass: NoteData[];
     /** Pitch Space: GM Drum Map (K-8 第三空间) — 不参与 Orchestrator.applyOffset */
     drums: NoteData[];
+    /** Pitch Space: RELATIVE — Pad/Strings 长音铺底。V1 渲染器未实装时为空数组 */
+    atmosphere: NoteData[];
 }
 
 /**
@@ -172,8 +187,19 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
     const melody: NoteData[] = [];
     const accompaniment: NoteData[] = [];
     const bass: NoteData[] = [];
+    const atmosphere: NoteData[] = [];
 
     const bundle = getStyleStage5Bundle(input.styleId);
+
+    // Atmosphere 乐手查找（V1：从 BandPlan.activeMusicians 取，整曲不变）
+    //   - bandPlan === undefined → 跳过 atmosphere 渲染（向后兼容）
+    //   - roster 未配 atmosphere → activeMusicians 不含 Atmosphere 角色 → 跳过
+    //   - 找到则提取 personnel.atmosphereOverrides 作为 AtmosphereIdiom 参数
+    const atmosphereMusician = input.bandPlan?.activeMusicians.find(
+        am => am.assignedRole === BandRole.Atmosphere,
+    )?.card;
+    const atmosphereIdiom: Partial<AtmosphereIdiom> | undefined =
+        atmosphereMusician?.personnel?.atmosphereOverrides;
 
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     const drumSections = collectDrumSections(input.sections);
@@ -209,11 +235,24 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);
         }
         if ((mask & MASK_ACCOMP) !== 0) {
-            renderAccompaniment(
-                accompaniment, sectionChords,
-                getPersona(bundle.personas, ROLE_ACCOMP),
-                input.timeSignature,
-            );
+            // Step 3：优先走 PianoAccompIdiom（BandEngine 已塞 PianoAccompParams 到 instrumentSpecificParams）
+            // 兼容路径：若 bandPlan 缺失 / Accomp 槽位空 / params 未实装 → 回退旧 renderAccompaniment
+            const accompAssign = input.bandPlan?.sectionPlans[sIdx]?.assignments[BandRole.Accomp];
+            const pianoParams = accompAssign?.instrumentSpecificParams as PianoAccompParams | undefined;
+            if (pianoParams !== undefined) {
+                const pianoNotes = PianoAccompIdiom.render({
+                    chords: sectionChords,
+                    params: pianoParams,
+                    beatsPerBar: input.timeSignature[0],
+                });
+                for (let k = 0; k < pianoNotes.length; k++) accompaniment.push(pianoNotes[k]);
+            } else {
+                renderAccompaniment(
+                    accompaniment, sectionChords,
+                    getPersona(bundle.personas, ROLE_ACCOMP),
+                    input.timeSignature,
+                );
+            }
         }
         if ((mask & MASK_LEAD) !== 0) {
             renderLead(
@@ -224,15 +263,28 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
                 input.userMotif,
             );
         }
+        // Atmosphere 在最后渲染 — 零 PRNG 消耗，顺序不影响其他声部
+        if ((mask & MASK_ATMOSPHERE) !== 0 && atmosphereMusician !== undefined) {
+            const sectionPlan = input.bandPlan?.sectionPlans[sIdx];
+            const atmoAssign = sectionPlan?.assignments[BandRole.Atmosphere];
+            const intensityScale = atmoAssign?.intensityScale ?? 0.5;
+            const atmoNotes = AtmosphereRenderer.render({
+                chords: sectionChords,
+                idiom: atmosphereIdiom,
+                intensityScale,
+            });
+            for (let k = 0; k < atmoNotes.length; k++) atmosphere.push(atmoNotes[k]);
+        }
     }
 
     // D-3：全局排序 — onset ASC, pitch ASC
     sortNotesInPlace(melody);
     sortNotesInPlace(accompaniment);
     sortNotesInPlace(bass);
+    sortNotesInPlace(atmosphere);
     // drums 已在 DrumIdiom 内部排序，无需再排
 
-    return { melody, accompaniment, bass, drums };
+    return { melody, accompaniment, bass, drums, atmosphere };
 }
 
 // ============================================================
@@ -270,6 +322,17 @@ function renderAccompaniment(
     timeSignature: [number, number],
 ): void {
     const beatsPerBar = timeSignature[0];
+
+    // 🌟 修复伴奏单一：为整个段落生成 2 小节的基准律动网格 (Groove Lock)
+    const baseGridBeats = beatsPerBar * 2;
+    const baseGrid = RhythmMutator.generate({
+        totalBeats: baseGridBeats,
+        stepsPerBeat: STEPS_PER_BEAT,
+        beatsPerBar,
+        sparsityTendency: persona.sparsityTendency,
+        syncopationAssault: persona.syncopationAssault,
+    });
+
     for (let i = 0; i < chords.length; i++) {
         const c = chords[i];
         const dur = c.endBeat - c.startBeat;
@@ -285,13 +348,14 @@ function renderAccompaniment(
         }
         if (compVoicing.length === 0) continue;
 
-        const grid = RhythmMutator.generate({
-            totalBeats: dur,
-            stepsPerBeat: STEPS_PER_BEAT,
-            beatsPerBar,
-            sparsityTendency: persona.sparsityTendency,
-            syncopationAssault: persona.syncopationAssault,
-        });
+        const totalSteps = Math.floor(dur * STEPS_PER_BEAT + 0.5);
+        const grid = new Int8Array(totalSteps);
+
+        // 🌟 将基准律动平铺 (Tile) 到和弦，避免每次都随机瞎弹
+        const startStep = Math.floor(c.startBeat * STEPS_PER_BEAT + 0.5);
+        for (let s = 0; s < totalSteps; s++) {
+            grid[s] = baseGrid[(startStep + s) % baseGrid.length];
+        }
 
         const notes = TextureMapper.render({
             chord: c,
@@ -417,10 +481,37 @@ function renderLead(
             }
             const rootPc = targetChord ? ((targetChord.root % 12) + 12) % 12 : 0;
 
+            // 🌟 修复跑调3：提取目标和弦的局部特征音阶，用于智能吸附
+            const localScaleMask = targetChord ? ToplineEngine.buildLocalScaleMask(targetChord) : 0xFFF;
+            const scalePcs: number[] = [];
+            for (let i = 0; i < 12; i++) {
+                if ((localScaleMask & (1 << i)) !== 0) scalePcs.push(i);
+            }
+
             // scaledLick 已经过 TopologyMutator.expand 按 scale 缩放，此处不可再乘 scale（避免双重缩放越界）
             for (let k = 0; k < scaledLick.length; k++) {
                 const n = scaledLick[k];
-                let p = n.pitch + rootPc;
+                let rawP = n.pitch + rootPc;
+
+                // 🌟 智能音阶吸附 (Snap to Scale)
+                const pc = ((rawP % 12) + 12) % 12;
+                const octave = Math.floor(rawP / 12);
+                let bestDist = 99;
+                let bestPc = pc;
+                for (let i = 0; i < scalePcs.length; i++) {
+                    const dist = Math.min(Math.abs(pc - scalePcs[i]), 12 - Math.abs(pc - scalePcs[i]));
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestPc = scalePcs[i];
+                    } else if (dist === bestDist && scalePcs[i] < bestPc) {
+                        bestPc = scalePcs[i]; // tie-breaker 偏好低音
+                    }
+                }
+
+                let p = bestPc + octave * 12;
+                if (Math.abs(p - rawP) > Math.abs(p + 12 - rawP)) p += 12;
+                if (Math.abs(p - rawP) > Math.abs(p - 12 - rawP)) p -= 12;
+
                 // 防御性钳位，确保落在合理音域
                 while (p < LEAD_RANGE_LO) p += 12;
                 while (p > LEAD_RANGE_HI) p -= 12;

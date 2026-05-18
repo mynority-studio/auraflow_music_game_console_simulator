@@ -70,9 +70,20 @@ export class Orchestrator {
 
         const keyOffset = track.keyOffset | 0;
 
-        const melody  = applyKeyOffset(track.melody         ?? [], keyOffset);
-        const pianoRH = applyKeyOffset(track.accompaniment  ?? [], keyOffset);
-        const pianoLH = applyKeyOffset(track.bass           ?? [], keyOffset);
+        const melody     = applyKeyOffset(track.melody         ?? [], keyOffset);
+        const atmosphere = applyKeyOffset(track.atmosphere     ?? [], keyOffset);
+        // V5.3 — bass 不再走 pianoLH；改路由到独立 ElectricBass 通道
+        const electricBass = applyKeyOffset(track.bass         ?? [], keyOffset);
+
+        // V5.3 — 钢琴 accompaniment 按 pitch C3 分流到 pianoLH / pianoRH 两通道
+        // 两通道共享 program 0 (Grand Piano)，但分通道允许独立 ducking + mix 控制
+        const accomp = applyKeyOffset(track.accompaniment ?? [], keyOffset);
+        const pianoLH: NoteData[] = [];
+        const pianoRH: NoteData[] = [];
+        for (let i = 0; i < accomp.length; i++) {
+            const n = accomp[i];
+            if (n.pitch < 48) pianoLH.push(n); else pianoRH.push(n);
+        }
 
         // K-8: drums 是 GM Drum Map 物理键位（第三空间，INSTRUMENT_COMMAND），
         // 独立于 K-1 的 RELATIVE/ABSOLUTE 二分；直接透传，禁止 applyKeyOffset。
@@ -85,6 +96,8 @@ export class Orchestrator {
             melody,
             pianoRH,
             pianoLH,
+            atmosphere,
+            electricBass,                   // V5.3 新增独立通道
             secondaryMelody: undefined,
             vocal:           track.vocal,
             drums:           track.drums,   // K-8 透传：GM Drum Map 物理键位

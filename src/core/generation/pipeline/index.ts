@@ -25,7 +25,7 @@
 
 import {
     GeneratedTrack, GenerationOptions, MusicContext, NoteData,
-    RoleType, Tonality, SectionMetadata, SectionType, SectionTypeName,
+    BandRole, BandRoster, Tonality, SectionMetadata, SectionType, SectionTypeName,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/StyleRegistry';
@@ -33,13 +33,16 @@ import { getStyleHarmonyBundle } from '../config/styles';
 import { PRNGManager } from '../../utils/PRNG';
 import { HarmonyCore } from './HarmonyCore';
 import { layerInstruments } from './Stage5Layering';
+import { BandEngine } from './BandEngine';
+import { PassingChordEngine } from './PassingChordEngine';
+import { getMusicianById } from '../idioms/MusicianRegistry';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
     forcedStyleId?: StyleId;
-    forcedBand?: Partial<Record<RoleType, string | null>>;
+    forcedBand?: Partial<Record<BandRole, string | null>>;
     generation?: GenerationOptions;
 }
 
@@ -63,13 +66,9 @@ export function runPipeline(
     // -----------------------------------------------------------
     // Stage 2：基本参数（PRNG ×4 — tonality / keyOffset / BPM / formTemplate）
     // -----------------------------------------------------------
-    // 调性池：覆盖 Major / Minor / Dorian / Mixolydian / Minor_Pentatonic
+    // 🌟 修复跑调1：全局调性绑定大调关系，防全局音阶跑偏
     const TONALITY_POOL: Tonality[] = [
         Tonality.Major,
-        Tonality.Minor,
-        Tonality.Dorian,
-        Tonality.Mixolydian,
-        Tonality.Minor_Pentatonic,
     ];
     const tonality = TONALITY_POOL[Math.floor(PRNGManager.next() * TONALITY_POOL.length)];
 
@@ -129,8 +128,9 @@ export function runPipeline(
         tonality,
         harmonyRules: bundle.harmonyRules,
         voiceLeadingConfig: bundle.voiceLeading,
+        // V4.2c — 注入风格进行池（70% 概率走 pool 路径 + 跳过 4 道变异门）
+        progressionPool: style.harmony,
         // chordsPerSection 全局值不再设置 — 每个 section.chordsHint 接管。
-        // Engine 内部仍保留 chordsPerSection 参数作为兜底，便于未来调试或回退。
     });
 
     // voicings 平行索引嵌回 chord.voicing — 下游 AudioEngine / Stage 5 直接读
@@ -139,10 +139,51 @@ export function runPipeline(
         harmony.chords[i].keyOffset = keyOffset;
     }
 
+    // -----------------------------------------------------------
+    // Stage 3.5：PassingChordEngine — 在 phrase boundary 插入经过和弦
+    //   与 MacroProgression 4 道变异门互补（替换 vs 插入）
+    //   新和弦无 voicing —— 下游 voicer 用 root + quality 即兴展开
+    // -----------------------------------------------------------
+    const passingProb = style.passingChordProb ?? 0.3;
+    const chromaticProb = style.chromaticPassingProb ?? 0.3;
+    if (passingProb > 0) {
+        harmony.chords = PassingChordEngine.insert({
+            chords: harmony.chords,
+            tonality,
+            keyOffset,
+            passingChordProb: passingProb,
+            chromaticPassingProb: chromaticProb,
+        });
+        // 新插入的 passing chord 缺 voicing —— 用 chord-tone 临时填充（让 Stage5 渲染可继续）
+        for (let i = 0; i < harmony.chords.length; i++) {
+            if (!harmony.chords[i].voicing || harmony.chords[i].voicing!.length === 0) {
+                harmony.chords[i].voicing = HarmonyCore.computeFallbackVoicing(harmony.chords[i]);
+                harmony.chords[i].keyOffset = keyOffset;
+            }
+        }
+    }
+
     PRNGManager.recordSnapshot('D');
 
     // -----------------------------------------------------------
-    // Stage 5：layerInstruments — Bass(0) + AccompInst + Lead 三轨
+    // Stage 4.5：BandEngine — 编曲决策（PRNG ×0）
+    //   消费 roster + sections + styleId，输出 BandPlan（每段每职能演奏决策矩阵）。
+    //   V1：固定 4 人乐队（alex_piano / frank_bass / dave_drums / nina_pad），
+    //       不处理 forcedBand / 双钢琴 / 角色升降。
+    // -----------------------------------------------------------
+    const roster: BandRoster = buildDefaultRoster(options.forcedBand);
+    const bandPlan = BandEngine.plan({
+        roster,
+        sections,
+        styleId,
+        tonality,
+        timeSignature,
+        swingRatio: style.swingRatio,  // V5.2 从 styleConfig 透传
+        bpm,                            // Sub-Phase 3：MoodRouter 决策维度
+    });
+
+    // -----------------------------------------------------------
+    // Stage 5：layerInstruments — Bass + AccompInst + Lead + Atmosphere 四轨（drums 单独）
     // -----------------------------------------------------------
     const stage5 = layerInstruments({
         chords: harmony.chords,
@@ -151,6 +192,7 @@ export function runPipeline(
         tonality,
         timeSignature,
         userMotif: options.generation?.processedUserMotif as NoteData[] | undefined,
+        bandPlan,
     });
 
     const track: GeneratedTrack = {
@@ -160,6 +202,7 @@ export function runPipeline(
         bass: stage5.bass,
         // K-8: drums 是 GM Drum Map 物理键位（第三空间），全程透传不加 keyOffset
         drums: stage5.drums,
+        atmosphere: stage5.atmosphere,
         sections,
         bpm,
         key: keyName,
@@ -181,4 +224,30 @@ export function runPipeline(
     };
 
     return { track, context };
+}
+
+// ============================================================
+// 默认 Roster 构造（V1 MVP 固定 4 人乐队）
+// ============================================================
+//
+// V1：直接装载 MUSICIAN_POOL 里的 4 张 MVP 卡牌。
+// forcedBand 可按 BandRole 覆盖单个槽位（UI BandSelection 下拉传入）。
+// V2+：按 styleId 做"风格 × 乐手"匹配度评分 + PRNG 随机抽取，支持双钢琴。
+function buildDefaultRoster(
+    forcedBand?: Partial<Record<BandRole, string | null>>,
+): BandRoster {
+    const pickOrDefault = (role: BandRole, defaultId: string) => {
+        const forcedId = forcedBand?.[role];
+        if (forcedId === null) return null;  // UI 显式置空
+        if (typeof forcedId === 'string') return getMusicianById(forcedId) ?? null;
+        return getMusicianById(defaultId) ?? null;
+    };
+
+    return {
+        mainInst:   pickOrDefault(BandRole.MainInst,   'alex_piano'),
+        accomp:     pickOrDefault(BandRole.Accomp,     'alex_piano'),
+        bass:       pickOrDefault(BandRole.Bass,       'frank_bass'),
+        drums:      pickOrDefault(BandRole.Drums,      'dave_drums'),
+        atmosphere: pickOrDefault(BandRole.Atmosphere, 'nina_pad'),
+    };
 }

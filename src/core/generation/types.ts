@@ -155,6 +155,8 @@ export interface StyleConfig {
     densityBaseline?: number;
     /** 经过和弦注入概率：0.2=Pop / 0.5=ChillJazz / 0.6=NeoSoul */
     passingChordProb?: number;
+    /** 离调（chromatic）经过和弦比例 — PassingChordEngine 路由到 D/E 派系（平行滑移 / SubV7）：0.3=Pop / 0.5=ChillJazz / 0.7=NeoSoul */
+    chromaticPassingProb?: number;
     /** 抢拍/推拍概率：0.3=Pop / 0.6=ChillJazz / 0.7=NeoSoul */
     anticipationProb?: number;
     /** Swing 比例：未设=直拍 / 0.55=ChillJazz 微 swing / 0.6=NeoSoul 中 swing */
@@ -374,10 +376,29 @@ export interface CompingIdiom {
     textureProbabilities?: { block: number, arpeggio: number, comping: number };
 }
 
+// AtmosphereIdiom — 氛围层：长音 pad / 合唱 / 弦乐铺底的演奏特性
+//   驱动 AtmosphereIdiom 渲染器（Phase 1 MVP）：长持续 voicing + 软起音 + 力度偏弱
+export interface AtmosphereIdiom {
+    /** 起音软度（0 = 瞬发 / 1 = 极慢淡入，约 1 拍） */
+    attackSoftness: number;
+    /** 拖尾长度比例（相对和弦持续时长；1 = 整段持续；>1 = 过踏延至下一和弦 head） */
+    releaseRatio: number;
+    /** 同时发声的 voice 数（pad 典型 3~5） */
+    voiceCount: number;
+    /** 力度范围（pad 偏弱，典型 [40, 80]） */
+    velocityRange: [number, number];
+    /** 是否在和弦切换时做交叉淡入淡出（避免硬切） */
+    crossfade: boolean;
+    /** 八度叠加：true = root 下方加一个八度（厚度感） */
+    octaveLayering?: boolean;
+}
+
 export interface InstrumentIdiom {
     id: string;
     lead: LeadIdiom;
     comping: CompingIdiom;
+    /** 氛围层（仅 Pad/Strings/EP 等氛围类乐器配置；其他乐器留空） */
+    atmosphere?: AtmosphereIdiom;
 }
 
 // ============================================================
@@ -387,13 +408,13 @@ export interface InstrumentIdiom {
 // PANGEA = 乐器物理底线（无曲风偏见），Musician = 乐器底线 + 擅长曲风 + 个人特质。
 // assembleActiveIdiom() 把基底 + 特质 deep merge 成最终图纸传给生成引擎。
 
-// 1. 乐队槽位 (5 个固定物理位置)
-export type BandSlot = 'Vocal' | 'Lead' | 'Comping' | 'Bass' | 'Drum';
+// 1. 乐队槽位 — 见下方 BandRole enum（6 个职能位置：Vocal/MainInst/Accomp/Bass/Drums/Atmosphere）
 
 // 2. 个性化特质 (Personnel Traits) — 用于叠加和覆盖 Pangea 基底
 export interface PersonnelTraits {
-    leadOverrides?: Partial<LeadIdiom>;       // 作为主奏时的微操习惯
-    compingOverrides?: Partial<CompingIdiom>; // 作为伴奏时的微操习惯
+    leadOverrides?: Partial<LeadIdiom>;             // 作为主奏时的微操习惯
+    compingOverrides?: Partial<CompingIdiom>;       // 作为伴奏时的微操习惯
+    atmosphereOverrides?: Partial<AtmosphereIdiom>; // 作为氛围乐手时的微操习惯
 }
 
 // 3. 盘古乐器基底 (Pangea Instrument) — 定义物理底线
@@ -401,6 +422,7 @@ export interface PangeaInstrument {
     id: string;
     baseLead: LeadIdiom;
     baseComping: CompingIdiom;
+    baseAtmosphere?: AtmosphereIdiom;  // 仅 Pad / Strings / EP 等氛围类乐器配置
 }
 
 // 4. 乐手智能体 (The Musician) — 参考架构移植：等价于 MusicianProfile 的精简表示
@@ -414,20 +436,94 @@ export interface Musician {
     personnel: PersonnelTraits;   // 旧形状：作主奏/伴奏时的微操偏好（驱动 TextureMapper）
 
     // 🌟 参考架构 Persona 字段（驱动未来 Idiom 引擎）
-    role: RoleType;
-    instrumentId: number;         // InstrumentRegistry key (0=GrandPiano / 1=EPiano / 2=EBass / 3=Drums)
+    role: BandRole;               // 主要角色（默认上岗位置）
+    /**
+     * 能胜任的所有职能（BandEngine 用于 roster 验证 / 动态升降）。
+     * 例：钢琴手 = [MainInst, Accomp]；电钢琴手 = [MainInst, Accomp, Atmosphere]；
+     *     贝斯手 = [Bass]；鼓手 = [Drums]；Pad 乐手 = [Atmosphere]
+     * 必须包含 role 字段值（约束："主要角色"必然在能胜任清单内）。
+     */
+    eligibleRoles: BandRole[];
+    instrumentId: number;         // InstrumentRegistry key (0=GrandPiano / 1=EPiano / 2=EBass / 3=Drums / 4=Pad)
     persona: MusicianPersona;
     description?: string;
 }
 
 // 5. 乐队阵容名单 (Band Roster)
-//    全部槽位可选；缺槽 = null/undefined（Orchestrator + UI 显示按此判断）
+//    全部槽位可选；缺槽 = null/undefined（BandEngine + UI 按此判断）
+//    字段名与 BandRole enum 对齐（mainInst / accomp / atmosphere 替代旧 lead / comping / 无）
 export interface BandRoster {
-    lead?: Musician | null;
-    comping?: Musician | null;
     vocal?: Musician | null;
+    mainInst?: Musician | null;
+    accomp?: Musician | null;
     bass?: Musician | null;
-    drum?: Musician | null;
+    drums?: Musician | null;
+    atmosphere?: Musician | null;
+}
+
+// 6. BandEngine 编曲输出 — Stage5Layering 的输入契约
+// ============================================================
+//
+// 设计哲学（与用户决议对齐）：
+//   - **乐器透明化**：每个乐器（钢琴/贝斯/鼓/Pad）的具体演奏参数（左右手织体 /
+//     walking 模式 / pad 长度等）由各自 Idiom 模块自行解释 instrumentSpecificParams: unknown，
+//     BandEngine 不感知乐器实现细节。新增乐器只需扩对应 Idiom 的 *Params 内部 interface，
+//     无需改 types.ts 或 BandEngine。
+//   - **段落级粒度**：sectionPlans[] 与 sections[] 平行索引，每段可独立决策织体 / 协作模式。
+//   - **角色升降显性化**：ActiveMusician.assignedRole 可能与 card.role 不同（如钢琴 Accomp
+//     在无 Vocal 时升格 MainInst），由 BandEngine.Pass B 决定。
+// ============================================================
+
+/**
+ * RoleAssignment — 单段单职能的演奏决策
+ *
+ * 每职能的具体参数由乐器自己解释 instrumentSpecificParams（unknown 强制类型守卫），
+ * 渲染器消费时做 `as PianoAccompParams` / `as BassParams` 等向下转型。
+ */
+export interface RoleAssignment {
+    /** 上岗乐手 ID（指向 MUSICIAN_POOL 卡牌） */
+    musicianId: string;
+    /** 段落能量乘子（来自 section.energyLevel 归一化到 [0, 1]），渲染器用于力度缩放 */
+    intensityScale: number;
+    /** 乐器特定参数（钢琴 = PianoAccompParams / 贝斯 = BassParams / 鼓 = DrumsParams / Pad = AtmosphereParams） */
+    instrumentSpecificParams: unknown;
+}
+
+/**
+ * SectionPlan — 单段落的全职能演奏分配
+ *
+ * assignments 用 Partial<Record<BandRole, ...>>：本段未发声的职能不出现在 map 里
+ * （由 ConductorMask 决定 — Intro 没鼓 → drums key 不存在）。
+ */
+export interface SectionPlan {
+    sectionIdx: number;
+    assignments: Partial<Record<BandRole, RoleAssignment>>;
+}
+
+/**
+ * ActiveMusician — 实际上岗的乐手快照
+ *
+ * roster 里非 null 且通过 eligibleRoles 验证的乐手会进这个列表。
+ * assignedRole 可能与 card.role 不同（钢琴 Accomp 升格 MainInst 等）。
+ */
+export interface ActiveMusician {
+    card: Musician;
+    assignedRole: BandRole;
+    /** 标记是否从 Accomp 升格为 MainInst（影响伴奏 ↔ 主奏的行为切换） */
+    promotedFromAccomp?: boolean;
+}
+
+/**
+ * BandPlan — BandEngine 的最终输出
+ *
+ * Stage5Layering 消费此结构，按 sectionPlans[sectionIdx].assignments[role]
+ * 决定每段每职能调用哪个 Idiom + 传什么参数。
+ */
+export interface BandPlan {
+    /** 全曲段落级演奏决策矩阵（长度 === sections.length） */
+    sectionPlans: SectionPlan[];
+    /** 实际上线的乐手（roster 里非 null 且通过 eligibleRoles 验证的） */
+    activeMusicians: ActiveMusician[];
 }
 
 export interface GeneratedTrack {
@@ -444,6 +540,9 @@ export interface GeneratedTrack {
     /** 低音轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
      *  Orchestrator 后续映射到 ArrangedTrack.pianoLH（或独立电贝斯轨），加 keyOffset 后送 MIDI。 */
     bass?: NoteData[];
+    /** 氛围轨（Phase 1 BandEngine 输出）— Pitch Space: RELATIVE。
+     *  Pad / Strings / Choir 长音铺底，Orchestrator 映射到 ArrangedTrack.atmosphere。 */
+    atmosphere?: NoteData[];
 }
 
 export type InstrumentRole =
@@ -485,10 +584,14 @@ export interface TempoCurve {
     curveType: 'linear' | 'exponential';
 }
 
-export interface ArrangedTrack { 
+export interface ArrangedTrack {
     bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
     styleId?: StyleId;
     vocal?: NoteData[]; melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
+    /** 氛围轨（Pad/Strings/Choir）— MidiConverter 路由到 CHANNEL_ATMOSPHERE */
+    atmosphere?: NoteData[];
+    /** V5.3 — 独立电贝斯轨（Bass musician 输出）— MidiConverter 路由到 CHANNEL_ELECTRIC_BASS */
+    electricBass?: NoteData[];
     palette?: EnsembleDraft; 
     sections?: SectionMetadata[];
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
@@ -719,13 +822,26 @@ export enum OutroStrategy {
     Unresolved = 4,
 }
 
-/** 乐手槽位（参考 RoleType） */
-export enum RoleType {
+/**
+ * BandRole — 乐队职能枚举（BandEngine 统一抽象）
+ *
+ * 6 个职能位置：
+ *   Vocal       — 人声主唱（V1 保留接口，暂不实现）
+ *   MainInst    — 主奏乐器（旋律）
+ *   Accomp      — 伴奏乐器（和声/comping）
+ *   Bass        — 低音线
+ *   Drums       — 打击乐
+ *   Atmosphere  — 氛围声部（Pad/合唱/弦乐铺底）
+ *
+ * 历史命名兼容：旧 `RoleType.AccompInst` → 新 `BandRole.Accomp`；旧 `BandSlot` 字符串 union 已废弃。
+ */
+export enum BandRole {
     Vocal = 'vocal',
     MainInst = 'mainInst',
-    AccompInst = 'accompInst',
+    Accomp = 'accomp',
     Bass = 'bass',
     Drums = 'drums',
+    Atmosphere = 'atmosphere',
 }
 
 /** 音乐角色（GlobalVoicer 用，决定每个 pitch class 在和弦内的功能） */
@@ -778,6 +894,9 @@ export interface MusicianPersona {
     legatoRatio?: number;
     /** 触发签名乐句的概率 */
     signatureLickProb?: number;
+    /** V4.1：Oom-Pah Bounce 偏好（0-1）。仅 Solo Piano 模式（bassActive=false）下生效；
+     *  0.0=从不 bounce / 0.5=偶尔 / 0.8=Billy 风格大量 bounce */
+    bouncePreference?: number;
     /** Phase 2: 大师经典 Licks 库 (RELATIVE pitch space) */
     lickPool?: NoteData[][];
     /** 角色的专属拓扑变异概率（算法折叠核心） */
@@ -865,7 +984,7 @@ export interface PersonaManifest {
 export interface MusicianProfile {
     id: string;
     name: string;
-    role: RoleType;
+    role: BandRole;
     styleId: StyleId;
     instrumentId: number;
     persona: MusicianPersona;
@@ -875,7 +994,7 @@ export interface MusicianProfile {
 /** 运行时招募的乐手（精简 Profile） */
 export interface BandMusician {
     id: string;
-    role: RoleType;
+    role: BandRole;
     styleId: StyleId;
     instrumentId: number;
     persona: MusicianPersona;

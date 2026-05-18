@@ -1,39 +1,237 @@
 // ============================================================
-// 🚧 STUB — Persona / Musician 卡牌池占位
+// MusicianRegistry — MVP 4 卡牌池
 // ============================================================
 //
-// 历史功能：
-//   - MUSICIAN_POOL：4 个参考 Persona（Alex/Dave/Marcus/Nina），
-//     按 RoleType × StyleId × instrumentId × MusicianPersona 字段定义。
-//   - assembleActiveIdiom(musician, slot)：把 Persona 派生成 LeadIdiom + CompingIdiom
-//     图纸供 TextureMapper / ToplineEngine 消费。
-//   - getRandomLeadMusician / getRandomMusicianByRole / getMusicianById / getMusiciansByRole：
-//     PRNG 驱动的招募与按角色查询，被 runPipeline 与 PipelineMonitor BandSelection 消费。
+// 4 个 MVP 卡牌（V1：每角色各 1 张，固定 4 人乐队）：
+//   - alex_piano   (Piano, eligible MainInst + Accomp)  — 双角色钢琴手
+//   - frank_bass   (Electric Bass, eligible Bass)        — 正拍稳重电贝斯
+//   - dave_drums   (Drum Kit, eligible Drums)            — Pop 干净直拍
+//   - nina_pad     (Warm Pad, eligible Atmosphere)       — 长音铺底氛围
 //
-// 重构期占位行为：
-//   - 池为空。getMusiciansByRole 永远返回 []，UI BandSelection 下拉里只剩 "🎲 Random"。
-//   - assembleActiveIdiom 返回空白 Lead+Comping 图纸（占位生成器消费不到，但保签名）。
-//   - getRandomLeadMusician 返回 undefined（旧实现里返回 Musician 必定有值，新引擎招募策略
-//     需要在重构时重新设计——此处用 undefined 让占位 runPipeline 走 fallback 路径）。
-//
-// 重构方向：
-//   新引擎应：① 重新填入 personas/ 子目录；② 决定 Persona → Idiom 的派生策略
-//   （或直接消费 Persona）；③ 给 runPipeline 提供"按风格招募完整 5 槽位乐队"的方法。
+// 后续 V2 扩展方向：
+//   - 每角色多张卡牌（Alex/Chloe/Marcus 三选一钢琴手）
+//   - 按 styleAffinity 做"乐手 × 风格"匹配度评分
+//   - assembleActiveIdiom 把 persona + PangeaInstrument deep merge 出实际 Idiom 图纸
 // ============================================================
 
 import {
     InstrumentIdiom,
     Musician,
-    BandSlot,
     LeadIdiom,
     CompingIdiom,
-    RoleType,
+    BandRole,
+    ContourType,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 
-export const MUSICIAN_POOL: Musician[] = [];
+// ------------------------------------------------------------
+// 4 卡牌池
+// ------------------------------------------------------------
+
+export const MUSICIAN_POOL: Musician[] = [
+    // 🎹 钢琴手 Alex — Pop/Jazz 通用，可承担 MainInst（旋律）+ Accomp（伴奏）双角色
+    {
+        id: 'alex_piano',
+        name: 'Alex',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'grand_piano',
+        defaultSound: 'Acoustic_Grand',
+        personnel: {},
+        role: BandRole.Accomp,
+        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        instrumentId: 0,
+        persona: {
+            colorBias: 0.4,
+            sparsityTendency: 0.5,
+            contourPreference: ContourType.Random,
+            syncopationAssault: 0.3,
+            dynamicRange: [55, 100],
+            legatoRatio: 1.0,
+            signatureLickProb: 0.15,
+        },
+        description: 'Pop/Jazz 通用钢琴手，双角色（主奏 + 伴奏）',
+    },
+    // 🎸 贝斯手 Frank — Pop/Funk 电贝斯，正拍稳重
+    {
+        id: 'frank_bass',
+        name: 'Frank',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'electric_bass',
+        defaultSound: 'Electric_Bass_Finger',
+        personnel: {},
+        role: BandRole.Bass,
+        eligibleRoles: [BandRole.Bass],
+        instrumentId: 2,
+        persona: {
+            colorBias: 0.0,
+            sparsityTendency: 0.5,
+            contourPreference: ContourType.Upward,
+            syncopationAssault: 0.1,
+            dynamicRange: [75, 110],
+        },
+        description: 'Pop 电贝斯，正拍稳重',
+    },
+    // 🥁 鼓手 Dave — Pop 干净直拍
+    {
+        id: 'dave_drums',
+        name: 'Dave',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'drum_kit',
+        defaultSound: 'Drums',
+        personnel: {},
+        role: BandRole.Drums,
+        eligibleRoles: [BandRole.Drums],
+        instrumentId: 3,
+        persona: {
+            colorBias: 0.0,
+            sparsityTendency: 0.6,
+            contourPreference: ContourType.Upward,
+            syncopationAssault: 0.2,
+            dynamicRange: [85, 115],
+        },
+        description: 'Pop 鼓手，干净直拍',
+    },
+    // 🎹 Chloe — Pop 直拍钢琴手（极低 sync、极简色彩，主流流行标准伴奏）
+    {
+        id: 'chloe_pop_piano',
+        name: 'Chloe',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'grand_piano',
+        defaultSound: 'Acoustic_Grand',
+        personnel: {},
+        role: BandRole.Accomp,
+        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        instrumentId: 0,
+        persona: {
+            colorBias: 0.15,           // 极少 9/11/13 — 三和弦 + 偶尔 7 为主
+            sparsityTendency: 0.4,
+            contourPreference: ContourType.Random,
+            syncopationAssault: 0.05,  // 几乎完全正拍 — 主流流行钢琴标准
+            dynamicRange: [60, 95],
+            legatoRatio: 1.0,
+            signatureLickProb: 0.0,    // 不用 lick
+        },
+        description: '主流 Pop 钢琴手 — 极简直拍，给主旋律留空间',
+    },
+    // 🎹 Marcus — Neo-Soul 钢琴手（高色彩 + 高 sync + 高 lickProb，D'Angelo 风）
+    {
+        id: 'marcus_neosoul_piano',
+        name: 'Marcus',
+        genre: StyleId.NeoSoul,
+        instrumentRef: 'grand_piano',
+        defaultSound: 'Acoustic_Grand',
+        personnel: {},
+        role: BandRole.Accomp,
+        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        instrumentId: 0,
+        persona: {
+            colorBias: 0.9,            // 大量 9/11/13 — Neo-Soul 标志高色彩
+            sparsityTendency: 0.7,     // 稀疏击点（让 groove 呼吸）
+            contourPreference: ContourType.Alternating,
+            syncopationAssault: 0.75,  // 高切分 — 触发 V3.8 物理求解器
+            dynamicRange: [45, 95],
+            legatoRatio: 0.8,
+            signatureLickProb: 0.25,   // 25% 概率甩 lick — Robert Glasper 风
+        },
+        description: 'Neo-Soul 钢琴手 — 高切分 + 高色彩 + 频繁签名 lick',
+    },
+    // 🎸 Maya — Slap Bass（高 sync + ghost note 风格）
+    {
+        id: 'maya_slap_bass',
+        name: 'Maya',
+        genre: StyleId.NeoSoul,
+        instrumentRef: 'electric_bass',
+        defaultSound: 'Electric_Bass_Slap',
+        personnel: {},
+        role: BandRole.Bass,
+        eligibleRoles: [BandRole.Bass],
+        instrumentId: 2,
+        persona: {
+            colorBias: 0.0,
+            sparsityTendency: 0.3,     // 比 Frank 密集 — slap 节奏密集
+            contourPreference: ContourType.Random,
+            syncopationAssault: 0.7,   // 高切分 — Marcus Miller 风
+            dynamicRange: [80, 115],   // 比 Frank 略响
+        },
+        description: 'Slap Bass — 切分密集、attack 强、Marcus Miller 风',
+    },
+    // 🥁 Jazz_Drummer — Brush 风（低 velocity + 高 sync ride pattern）
+    {
+        id: 'jazz_brush_drummer',
+        name: 'Brush',
+        genre: StyleId.ChillJazz,
+        instrumentRef: 'drum_kit',
+        defaultSound: 'Brush_Kit',
+        personnel: {},
+        role: BandRole.Drums,
+        eligibleRoles: [BandRole.Drums],
+        instrumentId: 3,
+        persona: {
+            colorBias: 0.0,
+            sparsityTendency: 0.7,     // 比 Dave 稀疏 — 爵士 brush 留白
+            contourPreference: ContourType.Upward,
+            syncopationAssault: 0.5,   // swing feel
+            dynamicRange: [55, 90],    // 比 Dave 弱 — brush 柔和
+        },
+        description: '爵士 Brush 鼓手 — 柔和低力度、swing ride、稀疏 fill',
+    },
+    // 🎹 Billy Bounce — Lemon Tree 风 oom-pah 钢琴手（Solo Piano 模式触发 M6 Bounce）
+    {
+        id: 'billy_bounce',
+        name: 'Billy',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'grand_piano',
+        defaultSound: 'Acoustic_Grand',
+        personnel: {},
+        role: BandRole.Accomp,
+        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        instrumentId: 0,
+        persona: {
+            colorBias: 0.2,            // 偏简单三和弦/7和弦
+            sparsityTendency: 0.1,     // 全程不停弹（bounce 律动靠重复）
+            contourPreference: ContourType.Alternating,
+            syncopationAssault: 0.1,   // 基本正拍
+            dynamicRange: [60, 100],
+            bouncePreference: 0.8,     // V4.1：高 bounce 偏好（Solo Piano 模式优先 M6）
+        },
+        description: 'Lemon Tree 风 oom-pah 钢琴手 — Solo Piano 模式触发 M6 Bounce',
+    },
+    // 🌫️ 氛围乐手 Nina — Warm Pad 长音铺底
+    {
+        id: 'nina_pad',
+        name: 'Nina',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'warm_pad',
+        defaultSound: 'Warm_Pad',
+        personnel: {
+            atmosphereOverrides: {
+                attackSoftness: 0.7,
+                releaseRatio: 1.1,
+                voiceCount: 4,
+                velocityRange: [40, 75],
+                crossfade: true,
+                octaveLayering: false,
+            },
+        },
+        role: BandRole.Atmosphere,
+        eligibleRoles: [BandRole.Atmosphere],
+        instrumentId: 4,
+        persona: {
+            colorBias: 0.5,
+            sparsityTendency: 0.9,   // 极稀疏（pad 每小节最多 1~2 击点）
+            contourPreference: ContourType.Alternating,
+            syncopationAssault: 0.0, // pad 永远不切分
+            dynamicRange: [40, 80],
+        },
+        description: 'Warm Pad 氛围乐手，长音铺底',
+    },
+];
 
 export const PANGEA_DICT: Record<string, unknown> = {};
+
+// ------------------------------------------------------------
+// Idiom 占位（V1：assembleActiveIdiom 仍是 stub，未来按 persona 派生）
+// ------------------------------------------------------------
 
 const STUB_LEAD: LeadIdiom = {
     needsBreathing: false,
@@ -52,36 +250,60 @@ const STUB_COMPING: CompingIdiom = {
     textureProbabilities: { block: 1.0, arpeggio: 0.0, comping: 0.0 },
 };
 
-export function assembleActiveIdiom(musician: Musician, slot: BandSlot): InstrumentIdiom {
+export function assembleActiveIdiom(musician: Musician, slot: BandRole): InstrumentIdiom {
     return { id: `${musician.id}_at_${slot}`, lead: { ...STUB_LEAD }, comping: { ...STUB_COMPING } };
 }
+
+// ------------------------------------------------------------
+// 查询 API
+// ------------------------------------------------------------
 
 interface PRNGLike {
     nextInt(min: number, max: number): number;
     nextFloat(min: number, max: number): number;
 }
 
-export function getRandomLeadMusician(
-    _allowedStyleIds: StyleId[] | undefined,
-    _prng: PRNGLike,
-): Musician | undefined {
+export function getMusicianById(id: string): Musician | undefined {
+    for (let i = 0; i < MUSICIAN_POOL.length; i++) {
+        if (MUSICIAN_POOL[i].id === id) return MUSICIAN_POOL[i];
+    }
     return undefined;
+}
+
+/**
+ * 按职能查询 — 走 eligibleRoles（不是单一 role）。
+ * 钢琴手会同时出现在 getMusiciansByRole(MainInst) 和 getMusiciansByRole(Accomp) 的结果中。
+ */
+export function getMusiciansByRole(role: BandRole): Musician[] {
+    const out: Musician[] = [];
+    for (let i = 0; i < MUSICIAN_POOL.length; i++) {
+        const m = MUSICIAN_POOL[i];
+        for (let r = 0; r < m.eligibleRoles.length; r++) {
+            if (m.eligibleRoles[r] === role) {
+                out.push(m);
+                break;
+            }
+        }
+    }
+    return out;
 }
 
 export function getRandomMusicianByRole(
-    _role: RoleType,
-    _prng: PRNGLike,
+    role: BandRole,
+    prng: PRNGLike,
     _allowedStyleIds?: StyleId[],
 ): Musician | undefined {
-    return undefined;
+    const pool = getMusiciansByRole(role);
+    if (pool.length === 0) return undefined;
+    const idx = prng.nextInt(0, pool.length - 1);
+    return pool[idx];
 }
 
-export function getMusiciansByRole(_role: RoleType): Musician[] {
-    return [];
-}
-
-export function getMusicianById(_id: string): Musician | undefined {
-    return undefined;
+export function getRandomLeadMusician(
+    _allowedStyleIds: StyleId[] | undefined,
+    prng: PRNGLike,
+): Musician | undefined {
+    return getRandomMusicianByRole(BandRole.MainInst, prng);
 }
 
 export const DEFAULT_FALLBACK_IDIOM: InstrumentIdiom = {

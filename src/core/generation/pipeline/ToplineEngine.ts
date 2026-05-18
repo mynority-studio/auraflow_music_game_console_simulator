@@ -377,7 +377,7 @@ export class ToplineEngine {
      *
      * 未列出的 quality 兜底用 Ionian（与表里的 Major / Major7 同形）。
      */
-    private static buildLocalScaleMask(chord: GeneratedChord): number {
+    public static buildLocalScaleMask(chord: GeneratedChord): number {
         let intervals = CHORD_SCALE_INTERVALS[chord.quality];
         if (intervals === undefined || intervals.length === 0) {
             intervals = SCALE_INTERVALS[Tonality.Major];  // Ionian 兜底
@@ -388,6 +388,21 @@ export class ToplineEngine {
             mask |= 1 << pc;
         }
         return mask;
+    }
+
+    // 🌟 修复跑调2：新增小九度清洗辅助方法
+    private static filterMinorNinths(mask: number, chordMask: number): number {
+        let filtered = mask;
+        for (let pc = 0; pc < PITCH_CLASS_SIZE; pc++) {
+            if ((filtered & (1 << pc)) !== 0) {
+                // 如果该 PC 距任何和弦音仅高半音，则构成小九度极度不协和，必须滤除
+                const prevPc = (pc - 1 + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE;
+                if ((chordMask & (1 << prevPc)) !== 0) {
+                    filtered &= ~(1 << pc);
+                }
+            }
+        }
+        return filtered;
     }
 
     /**
@@ -403,7 +418,11 @@ export class ToplineEngine {
     private static colorPcMask(chord: GeneratedChord): number {
         const chordMask = ToplineEngine.chordPcMask(chord);
         const localScaleMask = ToplineEngine.buildLocalScaleMask(chord);
-        const color = localScaleMask & ~chordMask & 0xFFF;  // 限制在 12 PC
+        let color = localScaleMask & ~chordMask & 0xFFF;  // 限制在 12 PC
+
+        // Minor 9th filter (Avoid Notes)
+        color = ToplineEngine.filterMinorNinths(color, chordMask);
+
         return color === 0 ? chordMask : color;
     }
 

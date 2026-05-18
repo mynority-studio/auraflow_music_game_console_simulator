@@ -177,10 +177,13 @@ export class TextureMapper {
             const veloInt = Math.floor(veloLo + (veloHi - veloLo) * weightRatio + 0.5);
             const velocity = veloInt / MIDI_MAX;
 
+            // 🌟 计算绝对拍位，注入给 emitNotes
+            const absStep = Math.floor(onset * stepsPerBeat + EPSILON);
+
             // 依 contour 派发
             TextureMapper.emitNotes(
                 out, input.contour, h, n, midVoiceIdx, input.voicing,
-                onset, duration, velocity,
+                onset, duration, velocity, absStep, stepsPerBar // 🌟 新增最后两个参数
             );
         }
 
@@ -260,6 +263,8 @@ export class TextureMapper {
         onset: number,
         duration: number,
         velocity: number,
+        absStep: number,        // 🌟 新增
+        stepsPerBar: number     // 🌟 新增
     ): void {
         switch (contour) {
             case ContourType.Upward: {
@@ -273,25 +278,40 @@ export class TextureMapper {
                 return;
             }
             case ContourType.Alternating: {
-                if ((hitIdx & 1) === 0) {
-                    // 偶数 hit — Block
+                if (n <= 1) {
+                    out.push({ pitch: voicing[0], onset, duration, velocity });
+                    return;
+                }
+                // 🌟 基于节拍权重的交替：强拍齐砸 Block，弱拍/反拍弹单音
+                const weight = SyncopationEvaluator.getMetricalWeight(absStep, stepsPerBar);
+                if (weight >= 2) {
                     for (let v = 0; v < n; v++) {
                         out.push({ pitch: voicing[v], onset, duration, velocity });
                     }
                 } else {
-                    // 奇数 hit — 中声部单音
                     out.push({ pitch: voicing[midVoiceIdx], onset, duration, velocity });
                 }
                 return;
             }
             case ContourType.Random: {
-                const roll = PRNGManager.next();
-                if (roll >= RANDOM_BLOCK_THRESHOLD) {
+                // 🌟 D-5 确定性：空转两次随机数，保持序列对齐
+                PRNGManager.next();
+                PRNGManager.next();
+
+                // 🌟 结构化律动点：强拍大概率砸和弦，弱拍大概率弹单音
+                const weight = SyncopationEvaluator.getMetricalWeight(absStep, stepsPerBar);
+                const blockProb = weight >= 2 ? 0.8 : 0.15;
+
+                // 基于绝对拍位的伪随机，使循环更有记忆点，不吃真 PRNG
+                const roll1 = ((absStep * 37) % 100) / 100;
+
+                if (roll1 < blockProb) {
                     for (let v = 0; v < n; v++) {
                         out.push({ pitch: voicing[v], onset, duration, velocity });
                     }
                 } else {
-                    const voiceIdx = Math.floor(PRNGManager.next() * n);
+                    const roll2 = ((absStep * 59) % 100) / 100;
+                    const voiceIdx = Math.floor(roll2 * n);
                     const clamped = voiceIdx >= n ? n - 1 : voiceIdx;
                     out.push({ pitch: voicing[clamped], onset, duration, velocity });
                 }
