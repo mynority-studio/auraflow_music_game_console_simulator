@@ -901,6 +901,26 @@ export interface MusicianPersona {
     lickPool?: NoteData[][];
     /** 角色的专属拓扑变异概率（算法折叠核心） */
     topologyConfig?: TopologyConfig;
+    /**
+     * Master 引用 — 指向 flash/personas 编译产物中的大师 manifest id（如 'BillEvans'）。
+     * 配合 masterMode 决定大师 grammar 的接入深度。
+     *
+     * 未设置 → 走原 PCFGGrammarEngine.expand 路径（风格层提供的 GrammarConfig），与本字段无关。
+     */
+    masterId?: string;
+    /**
+     * Master 接入模式（仅当 masterId 非空时生效）：
+     *
+     *   - 'takeover'（默认）：整段旋律的 TerminalSymbol[] 流由 MasterPhraseRenderer
+     *                          从 COMMON_GRAMMAR_ROOTS 抽样产出，**绕过** PCFGGrammarEngine。
+     *                          风格层 grammar 静默，大师腔调全程主导。
+     *   - 'lick-only'：       PCFGGrammarEngine 正常运行（风格 grammar 是底色），但
+     *                          persona.lickPool 预编译自大师 grammar，触发 signatureLickProb
+     *                          时拼接进去 — 大师作为"招牌乐句"偶尔甩出来。
+     *
+     * 缺省 = 'takeover'（向后兼容 v1：仅 masterId 字段引入时即为 takeover 行为）。
+     */
+    masterMode?: 'takeover' | 'lick-only';
 }
 
 // --- 抽象职能与极限压缩结构 (Zero-Copy C-Portability) ---

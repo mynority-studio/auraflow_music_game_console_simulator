@@ -21,8 +21,12 @@ import {
     CompingIdiom,
     BandRole,
     ContourType,
+    PersonaManifest,
+    MusicianPersona,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
+import { MASTER_MANIFESTS } from '../data/MasterPersonas';
+import { compileMasterLickPool } from '../primitives/MasterLickCompiler';
 
 // ------------------------------------------------------------
 // 4 卡牌池
@@ -225,9 +229,109 @@ export const MUSICIAN_POOL: Musician[] = [
         },
         description: 'Warm Pad 氛围乐手，长音铺底',
     },
+    // ============================================================
+    // 🎓 大师托管卡（Flash Personas → MainInst）
+    // ============================================================
+    // 这些卡的 persona 携带 `masterId`，触发 Stage5Layering 的 Master Takeover 路径：
+    //   整段旋律的 grammar 来源切换到 flash/personas/<id>.json 的 customRootIds
+    //   （指向 COMMON_GRAMMAR_ROOTS），绕过 style 层 PCFG rules。
+    //
+    // 用法：
+    //   forcedBand: { mainInst: 'master_bill_evans' }
+    //   → BandEngine.activeMusicians 含 MainInst card
+    //   → Stage5Layering 用该 card.persona 覆盖 bundle.personas[ROLE_LEAD]
+    //   → renderLead 命中 masterId → MasterPhraseRenderer 渲染整段 TerminalSymbol 流
+    //
+    // 注：`defaultSound` 统一用 Acoustic_Grand（项目尚无管乐 GM 音色映射），
+    //     未来扩展 sax/trumpet 音色时仅需改此字段。
+    // ============================================================
+    ...buildMasterCards(),
 ];
 
 export const PANGEA_DICT: Record<string, unknown> = {};
+
+// ============================================================
+// 大师 Persona → Musician 卡 派生
+// ============================================================
+//
+// 从 PersonaManifest（flash JSON 编译产物）派生 Musician 卡（MainInst-eligible 钢琴手）。
+//
+// 派生规则：
+//   - colorBias:        透传 manifest.topologyConfig.colorBias（已落在 0.42~0.62 区间）
+//   - sparsityTendency: 由 stats.restRatio 线性映射到 [0.3, 0.7]
+//                       （CommonRoots 已含 rest token，sparsityTendency 仅作为兜底参考；
+//                        Stage5 lead 路径主要由 grammar 自身决定密度）
+//   - syncopationAssault: 0.6 通用 jazz；DexterGordon 例外 0.3（hard bop 强拍锚定）
+//   - dynamicRange:     [60, 105] 中度 jazz lead 力度区间
+//   - legatoRatio:      1.0（钢琴自然踏板）
+//   - signatureLickProb:0.0（takeover 路径下整段已是大师 grammar，不再拼接额外 lick）
+//   - topologyConfig:   透传 manifest.topologyConfig（B-Lick 模式或拓扑变换路径仍可消费）
+//   - masterId:         透传 manifest.id（**takeover 路径的开关键**）
+//
+// `eligibleRoles = [MainInst]`：大师不接 Accomp，避免被 alex_piano 的 Accomp 角色挤占。
+// 后续如想让大师同时承担伴奏，可加入 BandRole.Accomp。
+function buildMasterCards(): Musician[] {
+    const out: Musician[] = [];
+    // 每位大师两张卡：takeover 主奏卡 + lick-only 偶发卡
+    //   - master_<id>        : takeover（整段大师 grammar 主导）
+    //   - master_<id>_licks  : lick-only（PCFG 为底色，signatureLickProb 触发时拼接大师 lick）
+    for (let i = 0; i < MASTER_MANIFESTS.length; i++) {
+        const m = MASTER_MANIFESTS[i];
+        out.push(deriveMasterCard(m, 'takeover'));
+        out.push(deriveMasterCard(m, 'lick-only'));
+    }
+    return out;
+}
+
+function deriveMasterCard(
+    manifest: PersonaManifest,
+    mode: 'takeover' | 'lick-only',
+): Musician {
+    const restRatio = manifest.stats?.restRatio ?? 0.1;
+    // restRatio 实测 0.05~0.11 → 映射到 [0.3, 0.7]（线性）
+    const sparsity = Math.min(0.7, Math.max(0.3, 0.3 + (restRatio - 0.05) * (0.4 / 0.06)));
+    const isHardBop = manifest.id === 'DexterGordon';
+
+    // lick-only 模式预编译 lickPool（一次性，模块加载时）；takeover 模式不需要
+    const lickPool = mode === 'lick-only' ? compileMasterLickPool(manifest) : undefined;
+    // lick-only 模式 signatureLickProb 拉高到 0.4（偶发但不稀有，让大师腔调可识别）
+    // takeover 模式整段已是大师 grammar，不再拼接额外 lick → 0
+    const signatureLickProb = mode === 'lick-only' ? 0.4 : 0.0;
+
+    const persona: MusicianPersona = {
+        colorBias: manifest.topologyConfig.colorBias,
+        sparsityTendency: sparsity,
+        contourPreference: ContourType.Random,
+        syncopationAssault: isHardBop ? 0.3 : 0.6,
+        dynamicRange: [60, 105],
+        legatoRatio: 1.0,
+        signatureLickProb,
+        topologyConfig: manifest.topologyConfig,
+        masterId: manifest.id,
+        masterMode: mode,
+        ...(lickPool !== undefined ? { lickPool } : {}),
+    };
+
+    const idSuffix = mode === 'lick-only' ? '_licks' : '';
+    const nameSuffix = mode === 'lick-only' ? ' (Licks)' : '';
+    const descSuffix = mode === 'lick-only'
+        ? ' [Lick 模式：PCFG 风格底色 + 大师签名乐句拼接]'
+        : ' [Takeover：整段大师 grammar 主导]';
+
+    return {
+        id: `master_${manifest.id.toLowerCase()}${idSuffix}`,
+        name: `${manifest.name}${nameSuffix}`,
+        genre: StyleId.ChillJazz,           // 6 位大师默认归属 ChillJazz；UI 可按 styleAffinity 过滤
+        instrumentRef: 'grand_piano',
+        defaultSound: 'Acoustic_Grand',
+        personnel: {},
+        role: BandRole.MainInst,
+        eligibleRoles: [BandRole.MainInst],
+        instrumentId: 0,
+        persona,
+        description: (manifest.description ?? `${manifest.name} — flash 大师 grammar`) + descSuffix,
+    };
+}
 
 // ------------------------------------------------------------
 // Idiom 占位（V1：assembleActiveIdiom 仍是 stub，未来按 persona 派生）

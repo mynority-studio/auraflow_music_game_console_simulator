@@ -50,6 +50,8 @@ import {
 import {
     PCFGGrammarEngine, GrammarConfig,
 } from '../primitives/PCFGGrammarEngine';
+import { MasterPhraseRenderer } from '../primitives/MasterPhraseRenderer';
+import { getMasterManifest } from '../data/MasterPersonas';
 import { DrumIdiom } from '../primitives/DrumIdiom';
 import { BassIdiom } from '../primitives/BassIdiom';
 import { AtmosphereRenderer } from '../primitives/AtmosphereRenderer';
@@ -201,6 +203,15 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
     const atmosphereIdiom: Partial<AtmosphereIdiom> | undefined =
         atmosphereMusician?.personnel?.atmosphereOverrides;
 
+    // MainInst 乐手查找 — 大师托管路径：若 roster.mainInst 提供了带 masterId 的 persona，
+    // 整曲 Lead 改走该 persona（覆盖 bundle.personas[ROLE_LEAD]）。
+    // 未配 MainInst → leadPersona 保持 bundle 默认（向后兼容，行为不变）。
+    const mainInstMusician = input.bandPlan?.activeMusicians.find(
+        am => am.assignedRole === BandRole.MainInst,
+    )?.card;
+    const leadPersona: MusicianPersona = mainInstMusician?.persona
+        ?? getPersona(bundle.personas, ROLE_LEAD);
+
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     const drumSections = collectDrumSections(input.sections);
     const drums: NoteData[] = drumSections.length > 0
@@ -257,7 +268,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
         if ((mask & MASK_LEAD) !== 0) {
             renderLead(
                 melody, section, sectionChords,
-                getPersona(bundle.personas, ROLE_LEAD),
+                leadPersona,
                 bundle.fractal, bundle.grammar,
                 input.tonality, bundle.approachDownProb,
                 input.userMotif,
@@ -415,7 +426,35 @@ function renderLead(
 
         const blockOnset = section.startBeat + block.startBeat;
 
-        const terminals = PCFGGrammarEngine.expand(block.duration, grammar);
+        // ----------------------------------------------------------------
+        // Grammar 来源路由：Master Takeover vs Style PCFG
+        // ----------------------------------------------------------------
+        //   - persona.masterId 命中 flash manifest **且** masterMode = 'takeover'（或缺省）
+        //     → MasterPhraseRenderer（整段大师 grammar）
+        //   - persona.masterId 设置但 masterMode = 'lick-only'
+        //     → 走 PCFG（风格 grammar 作底色），大师 lick 通过 lickPool 在 splice 阶段拼接
+        //   - 否则走 style 层的 PCFGGrammarEngine.expand（默认路径）
+        //
+        // 两条路径输出契约同形（TerminalSymbol[]），下游 ToplineEngine 无感知差异。
+        // PRNG 消耗形态不同：takeover 路径每 root ×1，PCFG 路径每非终止符 ×1 —— 但由于
+        // 路径选择是 persona 的固有属性（generation 启动前已定），同一 seed 同一 persona
+        // 总是走同一条路径，确定性（D-5）不受影响。
+        let terminals;
+        const useMasterTakeover =
+            persona.masterId !== undefined
+            && (persona.masterMode === undefined || persona.masterMode === 'takeover');
+        const masterManifest = useMasterTakeover
+            ? getMasterManifest(persona.masterId!)
+            : undefined;
+        if (masterManifest !== undefined) {
+            terminals = MasterPhraseRenderer.renderPhrase(
+                block.duration,
+                masterManifest,
+                () => PRNGManager.next(),
+            );
+        } else {
+            terminals = PCFGGrammarEngine.expand(block.duration, grammar);
+        }
         if (terminals.length === 0) continue;
 
         // Ghost Rendering: 无论是否拼接 Lick，都先真实跑一遍 ToplineEngine，强制消耗随机数
