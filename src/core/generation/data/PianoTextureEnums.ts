@@ -18,6 +18,13 @@
 export enum LHTexture {
     /** L1 — 长持续根音（每和弦 1 音，duration = chord 时长） */
     Sustained = 1,
+    /**
+     * L2 — Shell Voicing：guide tone 壳和弦（3+7 / 3+7+9 / root+3+7 三种变体确定性切换）。
+     * 用于"有独立 Bass 乐手"场景：bass 已锚定根音，钢琴左手让出根音区间，
+     * 改弹 [E3, F4] 区间的 guide tone shell，给 RH 留出 ≥ C4 的色彩音空间。
+     * 配套 CoordMode.M7_ShellWithComping。变体由 chordIndex + barInPhrase + colorBias 确定性选择。
+     */
+    ShellVoicing = 2,
     /** L4 — Walking Tenths：每拍 1 击点（root/5/root/approach） + 10th 双音 — 爵士 solo piano 标志 */
     WalkingTenths = 4,
     /** L8 — 不弹（让位给独立 Bass 轨） */
@@ -44,4 +51,10 @@ export enum CoordMode {
     M5_TwoHandedVoicing = 5,
     /** M6 — Oom-Pah Bounce：LH 强拍 root/5 交替 + RH 反拍 chord stab — Lemon Tree / boogie / ragtime 共用 */
     M6_OomPahBounce = 6,
+    /**
+     * M7 — Shell + Comping：用于"有独立 Bass 乐手"场景。
+     * LH 弹 guide tone 壳和弦（替代旧的 M4 Tacit "整段静音"），RH 走 comping 织体并主动
+     * 监听 LH 占用的 PC 集合避免 1 octave 内同音堆叠（"listen" 协同）。
+     */
+    M7_ShellWithComping = 7,
 }

@@ -67,6 +67,8 @@ export enum TextureRecipeId {
     MontunoInner     = 11,
     /** Ragtime Upper Stab — RH 仅打中高音 voice，让 LH 出 bass */
     RagtimeUpperStab = 12,
+    /** Chord Anchored Fill — 强拍砸全和弦 + 8 分反拍单音 fill（混合织体，pop ballad 钢琴风） */
+    ChordAnchoredFill = 13,
 }
 
 /**
@@ -116,6 +118,19 @@ export interface PianoTextureRecipe {
      * 缺省时（多数 recipe）：保持现行 baseGrid + rhTexture 行为。
      */
     voicePattern?: ReadonlyArray<ReadonlyArray<number> | null>;
+    /**
+     * A2：RH voicing 构造模式（控制 rhVoicing 来源算法）。
+     *   - 'tertian' / 缺省 → 用 HarmonyCore voicing.slice(1)（现状）
+     *   - 'rootless'       → buildRootlessVoicing：删 root + 按 colorBias 加 9/11/13，含 minor 9th avoid
+     *   - 'quartal'        → buildQuartalVoicing：纯 4 度叠置（modal jazz / cinematic）
+     *
+     * 选用 'rootless' / 'quartal' 时：
+     *   - 跳过 chord.voicing.slice(1) 路径
+     *   - 跳过 Drop-2（voicing 已经由构造器决定 register）
+     *   - HandManager 仍生效（防 RH < LH+3）
+     *   - A3a 的 applyRhListenToLhShell 不再外部调用（构造器内部已处理 listen）
+     */
+    voicingMode?: 'tertian' | 'rootless' | 'quartal';
 }
 
 // ============================================================
@@ -241,6 +256,26 @@ const VP_RAGTIME_UPPER: ReadonlyArray<ReadonlyArray<number> | null> = Object.fre
 ]);
 
 /**
+ * 索引 13 — Chord Anchored Fill：强拍砸全和弦 + 8 分反拍单音 fill
+ *
+ * 设计目的（改动 I）：解决"切到 voicePattern 单音织体后完全没有和声伴奏感"的问题。
+ *   - step 0/4/8/12（每拍头）：[0, 1, 2, 3] 全 voice 齐砸 → harmonic anchor 落实
+ *   - step 2/6/10/14（8 分反拍）：[3] 单音 fill → 保留 motion 不至于呆板
+ *
+ * 听感：pop ballad / lyrical 钢琴的"砰-叮-砰-叮"反复，强拍是 chord 体感，
+ * 反拍只是顶音点缀，整段始终能听到和声推进。voicingSpan>0.6 时 Drop-2 也照常生效。
+ */
+const GRID_CHORD_ANCHORED_FILL: ReadonlyArray<number> = Object.freeze([
+    1, 0, 1, 0,   1, 0, 1, 0,   1, 0, 1, 0,   1, 0, 1, 0,
+]);
+const VP_CHORD_ANCHORED_FILL: ReadonlyArray<ReadonlyArray<number> | null> = Object.freeze([
+    Object.freeze([0, 1, 2, 3]), null, Object.freeze([3]), null,
+    Object.freeze([0, 1, 2, 3]), null, Object.freeze([3]), null,
+    Object.freeze([0, 1, 2, 3]), null, Object.freeze([3]), null,
+    Object.freeze([0, 1, 2, 3]), null, Object.freeze([3]), null,
+]);
+
+/**
  * 配方索引表 — frozen array，索引必须 === TextureRecipeId 数值。
  *
  * 消费方约定：用 `PIANO_TEXTURE_RECIPES[recipeId]` 直接取，零运行期查找开销。
@@ -320,6 +355,8 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Tacit,
         coordMode: CoordMode.M4_TacitWithComping,
         voicingSpan: 0.5,
+        // A2：funk stab 配 rootless RH，让 9/13 撑色彩（colorBias≥0.55 时加 13）
+        voicingMode: 'rootless',
     }),
     Object.freeze({
         id: TextureRecipeId.NeoSoulVamp,
@@ -330,6 +367,8 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.75,
         swingHint: 0.6,
+        // A2：Neo-Soul 旗帜性 rootless voicing（D'Angelo / Robert Glasper 都常用 3+7+9+13）
+        voicingMode: 'rootless',
     }),
     Object.freeze({
         id: TextureRecipeId.CinematicHold,
@@ -370,6 +409,16 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
         voicePattern: VP_RAGTIME_UPPER,
+    }),
+    Object.freeze({
+        id: TextureRecipeId.ChordAnchoredFill,
+        name: 'Chord Anchored Fill',
+        baseGrid: GRID_CHORD_ANCHORED_FILL,
+        rhTexture: RHTexture.Block,
+        lhTexture: LHTexture.Sustained,
+        coordMode: CoordMode.M1_SustainedRoot,
+        voicingSpan: 0.5,
+        voicePattern: VP_CHORD_ANCHORED_FILL,
     }),
 ]);
 

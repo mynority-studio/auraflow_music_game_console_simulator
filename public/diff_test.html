@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><body><script type="module">
+import { runPipeline } from '/src/core/generation/pipeline/index.ts';
+import { PRNGManager } from '/src/core/utils/PRNG.ts';
+import { MUSICIAN_POOL, getMusiciansByRole } from '/src/core/generation/idioms/MusicianRegistry.ts';
+import { BandRole } from '/src/core/generation/types.ts';
+
+const SEED = 42;
+
+function hash(arr) {
+    if (!arr || arr.length === 0) return '<empty>';
+    return arr.length + '|first:' + arr[0].pitch + '@' + arr[0].onset.toFixed(2)
+         + '|mid:'   + arr[Math.floor(arr.length/2)].pitch + '@' + arr[Math.floor(arr.length/2)].onset.toFixed(2)
+         + '|last:'  + arr[arr.length-1].pitch + '@' + arr[arr.length-1].onset.toFixed(2);
+}
+
+function play(forcedBand, label) {
+    PRNGManager.setSeed(SEED);
+    PRNGManager.recordSnapshot('A');
+    const { track } = runPipeline({ forcedBand });
+    document.body.insertAdjacentHTML('beforeend',
+      `<pre>=== ${label} ===\n` +
+      `melody:        ${hash(track.melody)}\n` +
+      `accompaniment: ${hash(track.accompaniment)}\n` +
+      `bass:          ${hash(track.bass)}\n</pre>`);
+}
+
+document.body.insertAdjacentHTML('beforeend',
+  `<pre>MUSICIAN_POOL size: ${MUSICIAN_POOL.length}\n` +
+  `MainInst-eligible:   ${getMusiciansByRole(BandRole.MainInst).length}\n` +
+  `Master cards present:${MUSICIAN_POOL.filter(m => m.id.startsWith('master_')).map(m=>m.id).join(', ')}</pre>`);
+
+play({}, 'EMPTY forcedBand (defaults)');
+play({ [BandRole.MainInst]: 'alex_piano' }, 'MainInst=Alex (Pop persona)');
+play({ [BandRole.MainInst]: 'master_billevans' }, 'MainInst=Bill Evans (takeover)');
+play({ [BandRole.MainInst]: 'master_charlieparker' }, 'MainInst=Charlie Parker (takeover)');
+play({ [BandRole.MainInst]: 'master_billevans_licks' }, 'MainInst=Bill Evans (lick-only)');
+</script></body></html>

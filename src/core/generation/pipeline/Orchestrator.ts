@@ -66,7 +66,6 @@ export class Orchestrator {
         context: MusicContext,
     ): ArrangedTrack {
         Orchestrator.validate(track);
-        void context;  // 当前 Layer 1 未消费 context；保留参数与 pipeline rule 签名一致
 
         const keyOffset = track.keyOffset | 0;
 
@@ -107,6 +106,8 @@ export class Orchestrator {
             sections:        track.sections,
             globalRiff:      track.globalRiff,
             chords:          track.chords,
+            // B3：透传 GM 程式覆盖（context.gmProgramOverrides → ArrangedTrack.gmProgramOverrides）
+            gmProgramOverrides: context.gmProgramOverrides,
         };
 
         return arranged;

@@ -25,20 +25,22 @@ import type { ArrangedTrack } from '../generation/types';
 import { globalMidiScheduler } from './MidiScheduler';
 import {
     MidiConverter,
-    CHANNEL_MELODY, CHANNEL_PIANO_RH, CHANNEL_PIANO_LH,
+    CHANNEL_MELODY, CHANNEL_PIANO_RH, CHANNEL_PIANO_LH, CHANNEL_ATMOSPHERE, CHANNEL_ELECTRIC_BASS,
 } from './MidiConverter';
 
 const PPQ = 480;
 
 export const DEFAULT_CHANNEL_MAP = {
     vocal: 0,
-    melody: CHANNEL_MELODY,             // 1
+    melody: CHANNEL_MELODY,                  // 1
     secondaryMelody: 2,
     counterMelody: 3,
-    pianoRH: CHANNEL_PIANO_RH,          // 4 — 和弦织体（accompaniment）
-    pianoLH: CHANNEL_PIANO_LH,          // 5 — 贝斯（bass）
-    drums: 9,                           // GM 鼓固定
+    pianoRH: CHANNEL_PIANO_RH,               // 4 — 钢琴 RH（accompaniment ≥ C3）
+    pianoLH: CHANNEL_PIANO_LH,               // 5 — V5.3 钢琴 LH（accompaniment < C3，Grand Piano）
     userMotif: 6,
+    electricBass: CHANNEL_ELECTRIC_BASS,     // 7 — V5.3 独立电贝斯（Bass 乐手）
+    atmosphere: CHANNEL_ATMOSPHERE,          // 8 — 氛围铺底（Pad/Strings）
+    drums: 9,                                // GM 鼓固定
 } as const;
 
 export interface VisualEvent {

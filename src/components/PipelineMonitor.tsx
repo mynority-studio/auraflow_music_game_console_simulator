@@ -16,12 +16,13 @@ import {
     Tonality,
     InstrumentRole,
     ChordQuality,
-    RoleType,
+    BandRole,
     Musician,
     CHORD_SCALE_NAME,
 } from '../core/generation/types';
 import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
-import { MUSICIAN_POOL, getMusiciansByRole } from '../core/generation/idioms/MusicianRegistry';
+import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
+import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -104,16 +105,34 @@ interface FrameSnapshot {
     seed: number;
 }
 
-// 5 个 RoleType 槽位顺序（Q+H BandSelection 面板按此顺序渲染）
-const BAND_SLOT_ORDER: { role: RoleType; label: string }[] = [
-    { role: RoleType.Vocal,      label: 'Vocal' },
-    { role: RoleType.MainInst,   label: 'Main Inst' },
-    { role: RoleType.AccompInst, label: 'Accomp (Lead)' },
-    { role: RoleType.Bass,       label: 'Bass' },
-    { role: RoleType.Drums,      label: 'Drums' },
+// 6 个 BandRole 槽位顺序（Q+H BandSelection 面板按此顺序渲染）
+const BAND_SLOT_ORDER: { role: BandRole; label: string }[] = [
+    { role: BandRole.Vocal,      label: 'Vocal' },
+    { role: BandRole.MainInst,   label: 'Main Inst' },
+    { role: BandRole.Accomp,     label: 'Accomp' },
+    { role: BandRole.Bass,       label: 'Bass' },
+    { role: BandRole.Drums,      label: 'Drums' },
+    { role: BandRole.Atmosphere, label: 'Atmosphere' },
 ];
 
-type BandSelection = Partial<Record<RoleType, string | null>>;
+type BandSelection = Partial<Record<BandRole, string | null>>;
+/** B2：每 BandRole 的乐器(GM program number)选择。undefined = 用 BandEngine 默认 */
+type InstrumentSelection = Partial<Record<BandRole, number>>;
+
+/**
+ * B2：BandRole → 默认 musician id（与 pipeline/index.ts buildDefaultRoster 一致）。
+ *   UI 侧需要这个映射来：当用户没选 musician（默认状态）时，依然能根据
+ *   "系统将使用的默认 musician 的 instrumentRef" 给 Instr. 下拉提供合适选项。
+ *
+ * 若 buildDefaultRoster 默认值变更，本表需同步更新。
+ */
+const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
+    [BandRole.MainInst]:   'alex_piano',
+    [BandRole.Accomp]:     'alex_piano',
+    [BandRole.Bass]:       'frank_bass',
+    [BandRole.Drums]:      'dave_drums',
+    [BandRole.Atmosphere]: 'nina_pad',
+};
 
 export const PipelineMonitor: React.FC = () => {
     const [isVisible, setIsVisible] = useState(true);
@@ -125,6 +144,7 @@ export const PipelineMonitor: React.FC = () => {
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
     const [bandSelection, setBandSelection] = useState<BandSelection>({});
+    const [instrumentSelection, setInstrumentSelection] = useState<InstrumentSelection>({});
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
@@ -132,6 +152,8 @@ export const PipelineMonitor: React.FC = () => {
     const activeSeedRef = useRef<number | null>(null);
     const bandSelectionRef = useRef<BandSelection>({});
     bandSelectionRef.current = bandSelection;
+    const instrumentSelectionRef = useRef<InstrumentSelection>({});
+    instrumentSelectionRef.current = instrumentSelection;
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -202,9 +224,17 @@ export const PipelineMonitor: React.FC = () => {
         PRNGManager.setSeed(seed);
         PRNGManager.recordSnapshot('A');
 
+        // [TEMP DIAG] 诊断 forcedBand / forcedGmPrograms 是否真传到 runPipeline
+        console.log('[playSeed] seed=', seed,
+            ' forcedBand=', JSON.parse(JSON.stringify(bandSelectionRef.current)),
+            ' forcedGmPrograms=', JSON.parse(JSON.stringify(instrumentSelectionRef.current)));
+
         const { track, context } = runPipeline({
             forcedBand: bandSelectionRef.current,
+            forcedGmPrograms: instrumentSelectionRef.current,
         });
+        console.log('[playSeed] melody.length=', track.melody?.length,
+            ' first=', track.melody?.[0]?.pitch, '@', track.melody?.[0]?.onset);
 
         if (activeSeedRef.current !== seed) return;
 
@@ -374,10 +404,12 @@ export const PipelineMonitor: React.FC = () => {
                 </div>
             </div>
 
-            {/* BandSelection — 5 RoleType 槽位（参考架构 Vocal/MainInst/AccompInst/Bass/Drums） */}
+            {/* BandSelection — 6 BandRole 槽位（Vocal/MainInst/Accomp/Bass/Drums/Atmosphere）+ 各自 Instr 下拉 */}
             <BandSelectionPanel
                 selection={bandSelection}
                 onChange={setBandSelection}
+                instrumentSelection={instrumentSelection}
+                onInstrumentChange={setInstrumentSelection}
             />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
@@ -433,45 +465,113 @@ export const PipelineMonitor: React.FC = () => {
 };
 
 // ============================================================
-// BandSelection — 5 RoleType 下拉，PRNG 抽随机为兜底
+// BandSelection — 6 BandRole 下拉，PRNG 抽随机为兜底
 // ============================================================
 interface BandSelectionPanelProps {
     selection: BandSelection;
     onChange: (next: BandSelection) => void;
+    /** B2：per-role GM program 选择（来自 Instr. 下拉） */
+    instrumentSelection: InstrumentSelection;
+    onInstrumentChange: (next: InstrumentSelection) => void;
 }
 
-const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({ selection, onChange }) => {
+/** B1 哨兵值：UI dropdown "— 留空 —" 选项的 value，区别于"使用默认乐手"（value=""） */
+const BAND_SLOT_EMPTY_VALUE = '__empty__';
+
+const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
+    selection, onChange, instrumentSelection, onInstrumentChange,
+}) => {
     const totalPersonas = MUSICIAN_POOL.length;
     return (
         <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0">
             <div className="flex items-baseline justify-between mb-1">
                 <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
-                <span className="text-[9px] text-zinc-600">{totalPersonas} personas · 🎲 = PRNG random</span>
+                <span className="text-[9px] text-zinc-600">{totalPersonas} personas · 🎲 default · ⊘ empty</span>
             </div>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-6 gap-1.5">
                 {BAND_SLOT_ORDER.map(({ role, label }) => {
                     const candidates: Musician[] = getMusiciansByRole(role);
-                    const value = selection[role] ?? '';
+                    // B1：三态显示 — undefined/缺省 → ""；null（留空）→ '__empty__'；string → 该 id
+                    const cur = selection[role];
+                    const value = cur === null ? BAND_SLOT_EMPTY_VALUE : (cur ?? '');
                     const disabled = candidates.length === 0;
+                    const slotEmpty = value === BAND_SLOT_EMPTY_VALUE;
+
+                    // B2：定位 "活动 musician" 用于推 instrumentRef
+                    //   string id → 该乐手；undefined → DEFAULT_MUSICIAN_BY_ROLE[role]；null → 无
+                    let activeMusicianId: string | undefined;
+                    if (typeof cur === 'string') activeMusicianId = cur;
+                    else if (cur === undefined) activeMusicianId = DEFAULT_MUSICIAN_BY_ROLE[role];
+                    // null → activeMusicianId undefined → instr dropdown disabled
+                    const activeMusician = activeMusicianId ? getMusicianById(activeMusicianId) : undefined;
+                    const instrOptions: ReadonlyArray<GMSlotOption> = activeMusician
+                        ? getInstrumentFamily(activeMusician.instrumentRef)
+                        : [];
+                    const instrValue = instrumentSelection[role];
+                    const instrDropdownDisabled = disabled || slotEmpty || instrOptions.length === 0;
+
                     return (
-                        <div key={role} className="flex flex-col">
+                        <div key={role} className="flex flex-col gap-0.5">
                             <span className="text-[8px] uppercase tracking-wider text-zinc-500 mb-0.5">{label}</span>
+                            {/* Musician 下拉 */}
                             <select
                                 value={value}
                                 disabled={disabled}
-                                onChange={(e) => onChange({ ...selection, [role]: e.target.value || null })}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    const next: BandSelection = { ...selection };
+                                    if (v === BAND_SLOT_EMPTY_VALUE) next[role] = null;
+                                    else if (v === '') delete next[role];
+                                    else next[role] = v;
+                                    onChange(next);
+                                    // musician 切换 → 清掉旧 instr override（家族可能不同）
+                                    if (instrumentSelection[role] !== undefined) {
+                                        const nextInstr: InstrumentSelection = { ...instrumentSelection };
+                                        delete nextInstr[role];
+                                        onInstrumentChange(nextInstr);
+                                    }
+                                }}
                                 className={
                                     'bg-black/60 border rounded px-1 py-1 text-[10px] font-mono ' +
                                     (disabled
                                         ? 'border-zinc-800 text-zinc-700 cursor-not-allowed'
-                                        : value
-                                            ? 'border-fuchsia-500/40 text-fuchsia-300'
-                                            : 'border-zinc-700 text-zinc-400')
+                                        : slotEmpty
+                                            ? 'border-amber-500/40 text-amber-300'
+                                            : value
+                                                ? 'border-fuchsia-500/40 text-fuchsia-300'
+                                                : 'border-zinc-700 text-zinc-400')
                                 }
                             >
-                                <option value="">{disabled ? '—' : '🎲 Random'}</option>
+                                <option value="">{disabled ? '—' : '🎲 Default'}</option>
+                                <option value={BAND_SLOT_EMPTY_VALUE}>⊘ Empty</option>
                                 {candidates.map((m) => (
                                     <option key={m.id} value={m.id}>{m.name}</option>
+                                ))}
+                            </select>
+                            {/* B2：Instrument 下拉（基于 active musician 的 instrumentRef） */}
+                            <select
+                                value={instrValue !== undefined ? String(instrValue) : ''}
+                                disabled={instrDropdownDisabled}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    const next: InstrumentSelection = { ...instrumentSelection };
+                                    if (v === '') delete next[role];
+                                    else next[role] = parseInt(v, 10);
+                                    onInstrumentChange(next);
+                                }}
+                                title={activeMusician ? `${activeMusician.name} · ${activeMusician.instrumentRef}` : ''}
+                                className={
+                                    'bg-black/60 border rounded px-1 py-0.5 text-[9px] font-mono ' +
+                                    (instrDropdownDisabled
+                                        ? 'border-zinc-800 text-zinc-700 cursor-not-allowed'
+                                        : instrValue !== undefined
+                                            ? 'border-cyan-500/40 text-cyan-300'
+                                            : 'border-zinc-700/60 text-zinc-500')
+                                }
+                            >
+                                <option value="">Instr. default</option>
+                                {instrOptions.map((opt) => (
+                                    <option key={opt.id} value={opt.id}>{opt.name}</option>
                                 ))}
                             </select>
                         </div>

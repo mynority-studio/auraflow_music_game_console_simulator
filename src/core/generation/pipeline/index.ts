@@ -36,6 +36,7 @@ import { layerInstruments } from './Stage5Layering';
 import { BandEngine } from './BandEngine';
 import { PassingChordEngine } from './PassingChordEngine';
 import { getMusicianById } from '../idioms/MusicianRegistry';
+import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -43,6 +44,12 @@ export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
     forcedStyleId?: StyleId;
     forcedBand?: Partial<Record<BandRole, string | null>>;
+    /**
+     * B3：UI 端 per-role GM 程式号覆盖（0~127）。
+     *   优先级：forcedGmPrograms > musician.gmProgramOverride > (无,走 MidiConverter 文件级默认)
+     * 写进 context.gmProgramOverrides → Orchestrator 透传 → MidiConverter 消费。
+     */
+    forcedGmPrograms?: Partial<Record<BandRole, number>>;
     generation?: GenerationOptions;
 }
 
@@ -214,6 +221,55 @@ export function runPipeline(
         hasIntro: true,
     };
 
+    // -----------------------------------------------------------
+    // B3：构造 gmProgramOverrides — 仅在"显式"选择时写入
+    //
+    //   写入条件（任一命中即写）：
+    //     1. forcedGmPrograms[role] 提供（UI 显式选 instrument）  → 优先级最高
+    //     2. roster[role].gmProgramOverride 提供（musician card 内置 override）
+    //
+    //   **不写入** 条件：
+    //     - 用户什么都没选 + musician 也没设 gmProgramOverride
+    //       → trackKey 不出现在 overrides → MidiConverter 走 GM_PROGRAM_* 文件级默认
+    //       → 保 V5.x melody=1(Bright) / pianoRH=0(Grand) 等"lead vs comping 音色对比"行为零回归
+    //
+    //   设计原因：默认 GM_PROGRAM_MELODY=1(Bright Acoustic) vs GM_PROGRAM_PIANO_RH=0(Grand)
+    //   是 MidiConverter 内的"双钢琴音色分离"策略；如果一律从 musician.defaultSound 推导,
+    //   同一张 alex_piano 卡会让两个通道都变成 0(Grand)，损失辨识度。
+    //
+    //   defaultSound → GM 的映射仅在 B2 UI 下拉构造"family options"时使用,不在此处自动推导。
+    // -----------------------------------------------------------
+    const gmProgramOverrides: MusicContext['gmProgramOverrides'] = {};
+    const rosterByRole: { [r in BandRole]?: typeof roster.mainInst } = {
+        [BandRole.MainInst]:   roster.mainInst,
+        [BandRole.Accomp]:     roster.accomp,
+        [BandRole.Bass]:       roster.bass,
+        [BandRole.Drums]:      roster.drums,
+        [BandRole.Atmosphere]: roster.atmosphere,
+    };
+    const ROLES_TO_MAP: BandRole[] = [
+        BandRole.MainInst, BandRole.Accomp, BandRole.Bass, BandRole.Drums, BandRole.Atmosphere,
+    ];
+    for (let r = 0; r < ROLES_TO_MAP.length; r++) {
+        const role = ROLES_TO_MAP[r];
+        const musician = rosterByRole[role];
+        if (musician === null || musician === undefined) continue;
+        const trackKeys = bandRoleToTrackKeys(role);
+        if (trackKeys.length === 0) continue;
+
+        // 仅"显式"选择时写 override
+        const forcedGm = options.forcedGmPrograms?.[role];
+        let gm: number | undefined;
+        if (forcedGm !== undefined) gm = forcedGm;
+        else if (musician.gmProgramOverride !== undefined) gm = musician.gmProgramOverride;
+        else continue;  // 无显式选择 → 不写入 → MidiConverter 走文件级默认
+
+        for (let k = 0; k < trackKeys.length; k++) {
+            const key: GmProgramTrackKey = trackKeys[k];
+            (gmProgramOverrides as Record<string, number>)[key] = gm;
+        }
+    }
+
     const context: MusicContext = {
         keyOffset,
         tonality,
@@ -221,6 +277,7 @@ export function runPipeline(
         timeSignature,
         grooveDNA: [],
         style,
+        gmProgramOverrides,
     };
 
     return { track, context };

@@ -145,16 +145,25 @@ export class MidiConverter {
     public static convert(song: ArrangedTrack): MidiEvent[] {
         const out: MidiEvent[] = [];
 
+        // B3 — 动态 GM 程式覆盖（来自 ArrangedTrack.gmProgramOverrides，由 Orchestrator 从 context 透传）
+        const ov = song.gmProgramOverrides;
+        const progMelody       = ov?.melody       ?? GM_PROGRAM_MELODY;
+        const progPianoRH      = ov?.pianoRH      ?? GM_PROGRAM_PIANO_RH;
+        const progPianoLH      = ov?.pianoLH      ?? GM_PROGRAM_PIANO_LH;
+        const progDrums        = ov?.drums        ?? GM_PROGRAM_DRUMS;
+        const progAtmosphere   = ov?.atmosphere   ?? GM_PROGRAM_ATMOSPHERE;
+        const progElectricBass = ov?.electricBass ?? GM_PROGRAM_ELECTRIC_BASS;
+
         // 六轨渲染（顺序无所谓，最后会全局排序）
-        renderTrack(out, song.melody,       CHANNEL_MELODY,        GM_PROGRAM_MELODY,        MIX_MELODY);
-        renderTrack(out, song.pianoRH,      CHANNEL_PIANO_RH,      GM_PROGRAM_PIANO_RH,      MIX_PIANO_RH);
-        renderTrack(out, song.pianoLH,      CHANNEL_PIANO_LH,      GM_PROGRAM_PIANO_LH,      MIX_PIANO_LH);
+        renderTrack(out, song.melody,       CHANNEL_MELODY,        progMelody,        MIX_MELODY);
+        renderTrack(out, song.pianoRH,      CHANNEL_PIANO_RH,      progPianoRH,       MIX_PIANO_RH);
+        renderTrack(out, song.pianoLH,      CHANNEL_PIANO_LH,      progPianoLH,       MIX_PIANO_LH);
         // V5.3 — 独立电贝斯轨（Bass 角色乐手输出）
-        renderTrack(out, song.electricBass, CHANNEL_ELECTRIC_BASS, GM_PROGRAM_ELECTRIC_BASS, MIX_ELECTRIC_BASS);
+        renderTrack(out, song.electricBass, CHANNEL_ELECTRIC_BASS, progElectricBass,  MIX_ELECTRIC_BASS);
         // K-8: song.drums 已是 GM Drum Map 物理键位（pitch ∈ {36,38,42,...}），
-        // renderTrack 内部仅做 [0,127] clamp，不会越界。
-        renderTrack(out, song.drums,        CHANNEL_DRUMS,         GM_PROGRAM_DRUMS,         MIX_DRUMS);
-        renderTrack(out, song.atmosphere,   CHANNEL_ATMOSPHERE,    GM_PROGRAM_ATMOSPHERE,    MIX_ATMOSPHERE);
+        // renderTrack 内部仅做 [0,127] clamp，不会越界。channel 9 + program = kit id（SF2/GM2 兼容）
+        renderTrack(out, song.drums,        CHANNEL_DRUMS,         progDrums,         MIX_DRUMS);
+        renderTrack(out, song.atmosphere,   CHANNEL_ATMOSPHERE,    progAtmosphere,    MIX_ATMOSPHERE);
 
         // Fake Sidechain (伪侧链): 基于 Kick 鼓点对伴奏和贝斯通道注入 CC11 闪避包络
         // D-5 safe: 无 PRNG 消耗的机械注入，零 DSP 开销

@@ -156,7 +156,7 @@ const accompTextures = pianoPlan.sectionPlans
     .map(sp => sp.assignments[BandRole.Accomp]?.instrumentSpecificParams as PianoAccompParams | undefined)
     .filter(p => p !== undefined) as PianoAccompParams[];
 assert(accompTextures.length === pianoTrack.sections.length, 'every section has PianoAccompParams');
-assert(accompTextures.every(p => p.coordMode === CoordMode.M4_TacitWithComping), 'all sections use M4 (bass active)');
+assert(accompTextures.every(p => p.coordMode === CoordMode.M7_ShellWithComping), 'all sections use M7 ShellWithComping (bass active, A3a)');
 const distinctRH = new Set(accompTextures.map(p => p.rhTexture));
 assert(distinctRH.size >= 2, `at least 2 distinct RH textures across sections (got ${distinctRH.size})`);
 console.log(`  RH textures per section: [${accompTextures.map(p => RHTexture[p.rhTexture]).join(', ')}]`);

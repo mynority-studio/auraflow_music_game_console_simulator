@@ -52,6 +52,24 @@ export const MUSICIAN_POOL: Musician[] = [
             dynamicRange: [55, 100],
             legatoRatio: 1.0,
             signatureLickProb: 0.15,
+            // C1：Pop 经典 C 大调下行级进 hook（C5 → A4 → G4 → E4），1.5 拍长音收 mi
+            lickPool: [
+                [
+                    { pitch: 72, onset: 0,   duration: 0.5, velocity: 0.85 },
+                    { pitch: 69, onset: 0.5, duration: 0.5, velocity: 0.75 },
+                    { pitch: 67, onset: 1.0, duration: 0.5, velocity: 0.75 },
+                    { pitch: 64, onset: 1.5, duration: 1.5, velocity: 0.9  },
+                ],
+            ],
+            // C1：Pop 中庸 topologyConfig — invert/reverse 偶现，sideSlip 小幅度（避免破坏调内级进）
+            topologyConfig: {
+                probInvert:    0.15,
+                probReverse:   0.10,
+                probExpand:    0.20,
+                probSideSlip:  0.10,
+                sideSlipRange: 2,
+                colorBias:     0.4,
+            },
         },
         description: 'Pop/Jazz 通用钢琴手，双角色（主奏 + 伴奏）',
     },
@@ -72,8 +90,10 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Upward,
             syncopationAssault: 0.1,
             dynamicRange: [75, 110],
+            // A1：Pop 抒情 root-fifth 半音符律动（Bill Evans 风慢 walking）
+            walkPatternId: 1,  // WalkPatternId.HalfNote
         },
-        description: 'Pop 电贝斯，正拍稳重',
+        description: 'Pop 电贝斯，正拍稳重 + 半音符 walking',
     },
     // 🥁 鼓手 Dave — Pop 干净直拍
     {
@@ -136,6 +156,25 @@ export const MUSICIAN_POOL: Musician[] = [
             dynamicRange: [45, 95],
             legatoRatio: 0.8,
             signatureLickProb: 0.25,   // 25% 概率甩 lick — Robert Glasper 风
+            // C1：Neo-Soul 16 分密集切分 hook（D5 → C5 → A4 → B4 → C5），现代 R&B 标志旋律
+            lickPool: [
+                [
+                    { pitch: 74, onset: 0,    duration: 0.25, velocity: 0.8  },
+                    { pitch: 72, onset: 0.25, duration: 0.25, velocity: 0.9  },
+                    { pitch: 69, onset: 0.5,  duration: 0.25, velocity: 0.7  },
+                    { pitch: 71, onset: 0.75, duration: 0.25, velocity: 0.8  },
+                    { pitch: 72, onset: 1.0,  duration: 1.0,  velocity: 0.85 },
+                ],
+            ],
+            // C1：高 topologyConfig — invert/reverse/sideSlip 都拉高，每次 lick 都变形
+            topologyConfig: {
+                probInvert:    0.25,
+                probReverse:   0.20,
+                probExpand:    0.20,
+                probSideSlip:  0.25,
+                sideSlipRange: 3,
+                colorBias:     0.7,
+            },
         },
         description: 'Neo-Soul 钢琴手 — 高切分 + 高色彩 + 频繁签名 lick',
     },
@@ -156,8 +195,10 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Random,
             syncopationAssault: 0.7,   // 高切分 — Marcus Miller 风
             dynamicRange: [80, 115],   // 比 Frank 略响
+            // A1：Latin Tumbao 8th — root/5 + 切分 next-root，配合高 sync 的 slap attack
+            walkPatternId: 4,  // WalkPatternId.LatinTumbao
         },
-        description: 'Slap Bass — 切分密集、attack 强、Marcus Miller 风',
+        description: 'Slap Bass — 切分密集 + Latin Tumbao walking，Marcus Miller 风',
     },
     // 🥁 Jazz_Drummer — Brush 风（低 velocity + 高 sync ride pattern）
     {

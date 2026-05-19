@@ -212,8 +212,28 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
     const leadPersona: MusicianPersona = mainInstMusician?.persona
         ?? getPersona(bundle.personas, ROLE_LEAD);
 
+    // A1 / C2：Bass persona 路由 — roster.bass.persona 优先。
+    //   C2：bassMusician 不存在（用户显式 ⊘ Empty / forcedBand.bass=null / bandPlan 缺失）
+    //         → bassActive=false → 整曲 bass 轨不渲染（音轨为空）。
+    //   旧的 bundle.personas[ROLE_BASS] 兜底已删 — V5.x 以前的"风格自带 bass 声部"行为不再支持。
+    const bassMusician = input.bandPlan?.activeMusicians.find(
+        am => am.assignedRole === BandRole.Bass,
+    )?.card;
+    const bassActive = bassMusician !== undefined;
+    const bassPersona: MusicianPersona | undefined = bassMusician?.persona;
+
+    // Drums 角色路由（C2 新增）— 与 Bass 同思路：
+    //   drumsMusician 不存在 → 整曲 drums 轨不渲染。
+    //   drumsMusician.persona.dynamicRange 暂未被 DrumIdiom 消费（DrumIdiom 走 grid + energyScale）；
+    //   保留 musician 查找只为"是否上岗"判定。
+    const drumsMusician = input.bandPlan?.activeMusicians.find(
+        am => am.assignedRole === BandRole.Drums,
+    )?.card;
+    const drumsActive = drumsMusician !== undefined;
+
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
-    const drumSections = collectDrumSections(input.sections);
+    //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）
+    const drumSections = drumsActive ? collectDrumSections(input.sections) : [];
     const drums: NoteData[] = drumSections.length > 0
         ? DrumIdiom.render({ sections: drumSections, grid: bundle.drum })
         : [];
@@ -235,12 +255,13 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
         //   Drums 由 DrumIdiom 整体处理（已在循环外完成），此处仅 Bass/Accomp/Lead 三轨
         //   Bass 必须先于 Accomp/Lead — Phase 6 后 BassIdiom 在 Jazz/NeoSoul 消耗 PRNG，
         //   PRNG 顺序锁定为 Bass → Accomp → Lead（D-5）
-        if ((mask & MASK_BASS) !== 0) {
+        if ((mask & MASK_BASS) !== 0 && bassActive && bassPersona !== undefined) {
+            // C2：仅当 roster.bass 上岗时渲染；留空 → bass 轨纯空
             const bassNotes = BassIdiom.render({
                 chords: sectionChords,
                 styleId: input.styleId,
                 tonality: input.tonality,
-                persona: getPersona(bundle.personas, ROLE_BASS),
+                persona: bassPersona,
                 kickAnchors,
             });
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);

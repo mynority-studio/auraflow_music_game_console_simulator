@@ -107,7 +107,9 @@ function isBuildSection(s: SectionType | undefined): boolean {
  * 优先级 mood 决策表 — 第一个匹配的规则赢。
  *
  * 设计原则：sectionType 是**主轴**，其他维度（bpm/tonality/persona）做精修。
- *   - Lush 段（Intro/Bridge/Outro/PreOutro/Solo_Bridge）必落 Dreamy
+ *   - Intro 段单独路由（改动 G）：按 tonality/bpm/style/persona 派分
+ *     Melancholy/WarmIntimate/Groovy，兜底 Dreamy；避免每首歌开头都退化为同一 mood
+ *   - 其余 Lush 段（Bridge/Outro/PreOutro/Solo_Bridge）仍必落 Dreamy（mid-song 漂浮锚点）
  *   - Build 段（PreChorus/BuildUp）必落 UrgentTension
  *   - Peak 段（Chorus/Drop）按 tonality/style 派分 Triumphant/Dramatic/Groovy
  *   - Verse 按 bpm/tonality/style 派分 Groovy/Melancholy/WarmIntimate/Neutral
@@ -115,17 +117,25 @@ function isBuildSection(s: SectionType | undefined): boolean {
  * 这保证同一首歌内不同段落的 mood 一定有差异（lush vs peak vs verse），
  * 而同 sectionType 段落（如多个 Verse）会保持一致 mood，符合音乐直觉。
  *
- * 1. Dreamy        — Lush 段（无附加门槛）
- * 2. UrgentTension — Build 段（无附加门槛）
- * 3. Triumphant    — Peak 段 + 亮调 + energy≥7
- * 4. Dramatic      — Peak 段 + 暗调 + energy≥6
- * 5. Groovy        — Peak/Verse 段 + 风格 ∈ {ChillJazz, NeoSoul} + sync>0.4
- * 6. Melancholy    — 暗调 + bpm<100
- * 7. WarmIntimate  — 亮调 + bpm<90
- * 8. Neutral       — 兜底（中速 Pop verse 等）
+ * Intro 路由（改动 G）：
+ *   - 暗调 + colorBias>0.5             → Melancholy （minor 浓色 intro）
+ *   - 亮调 + bpm<90                    → WarmIntimate（慢 major 温柔 intro）
+ *   - (NeoSoul|ChillJazz) + sync>0.4   → Groovy      （爵士/灵魂 sync intro）
+ *   - 否则                             → Dreamy      （兜底"漂浮 intro"）
  */
 export function pickMood(ctx: MoodPickContext): MoodId {
     const major = isMajorLike(ctx.tonality);
+
+    // 改动 G — Intro 单独路由，吃 tonality/bpm/persona/style，避免开头千篇一律
+    if (ctx.sectionType === SectionType.Intro) {
+        if (!major && ctx.persona.colorBias > 0.5) return MoodId.Melancholy;
+        if (major && ctx.bpm < 90) return MoodId.WarmIntimate;
+        if ((ctx.styleId === StyleId.NeoSoul || ctx.styleId === StyleId.ChillJazz)
+            && ctx.persona.syncopationAssault > 0.4) {
+            return MoodId.Groovy;
+        }
+        return MoodId.Dreamy;
+    }
 
     if (isLushSection(ctx.sectionType)) {
         return MoodId.Dreamy;
@@ -176,16 +186,33 @@ export function pickMood(ctx: MoodPickContext): MoodId {
 // Ragtime Upper Stab 不进默认路由 — 它的"右手让位 LH"设计需要 LH 真出 bass，
 // 但 bassActive=true 时 BandEngine 强制 LH=Tacit，听感会变成稀薄高音 stab。留作
 // Solo Piano + 特殊 mood 桶后续触发。
+//
+// 改动 G — Dreamy 三列差异化：原 [CinematicHold × 3] 让所有风格 Intro/Bridge/Outro 都
+// 退化成"单击和弦"，是用户反映"每首歌开头都一样"的根因之一。现按风格分化。
+//
+// 改动 I — 撤掉所有纯单音 recipe 路由：原 G/D 改动把 5 个 cell 切到 AlbertiBass /
+// Arpeggio8th，但这两个 recipe 的 RH 只弹 1 个 voice 循环，整段听感是"单音节奏"，
+// 完全没有和声柱体感。用户反映"伴奏全是分解琶音，没和声"。
+//
+// 新策略：保留路由"差异化"的初衷，但全部切到 chord-style recipe（每拍头都有 chord
+// stack）。AlbertiBass / Arpeggio8th 留在代码内供手写 params 使用，不进默认路由。
+//
+//   - WarmIntimate × ModernPop : AlbertiBass    → ChordAnchoredFill（chord 锚 + 8 分 fill）
+//   - Melancholy   × ModernPop : Arpeggio8th    → ChordAnchoredFill（同上，pop ballad 听感）
+//   - Melancholy   × ChillJazz : AlbertiBass    → ChordAnchoredFill（爵士抒情仍要 harmonic 柱）
+//   - Dreamy       × ModernPop : Arpeggio8th    → ChordAnchoredFill（漂浮但保留和声）
+//   - Dreamy       × ChillJazz : AlbertiBass    → SyncopatedStab    （爵士 syncopated chord stab）
+//   - Groovy       × NeoSoul   → MontunoInner   （voicePattern 多 voice，保留拉丁推进）
 const MOOD_RECIPE: ReadonlyArray<ReadonlyArray<TextureRecipeId>> = Object.freeze([
-    // [ModernPop,                     ChillJazz,                    NeoSoul]
-    /* WarmIntimate  */ Object.freeze([TextureRecipeId.AlbertiBass,    TextureRecipeId.BossaClave,    TextureRecipeId.PopHeartbeat]),
-    /* Melancholy    */ Object.freeze([TextureRecipeId.Arpeggio8th,    TextureRecipeId.AlbertiBass,   TextureRecipeId.CinematicHold]),
-    /* UrgentTension */ Object.freeze([TextureRecipeId.Montuno,        TextureRecipeId.Funk16Stab,    TextureRecipeId.Funk16Stab]),
-    /* Triumphant    */ Object.freeze([TextureRecipeId.PopHeartbeat,   TextureRecipeId.PopHeartbeat,  TextureRecipeId.GospelDropFill]),
-    /* Groovy        */ Object.freeze([TextureRecipeId.BossaClave,     TextureRecipeId.BossaClave,    TextureRecipeId.MontunoInner]),
-    /* Dreamy        */ Object.freeze([TextureRecipeId.CinematicHold,  TextureRecipeId.CinematicHold, TextureRecipeId.CinematicHold]),
-    /* Dramatic      */ Object.freeze([TextureRecipeId.Montuno,        TextureRecipeId.NeoSoulVamp,   TextureRecipeId.NeoSoulVamp]),
-    /* Neutral       */ Object.freeze([TextureRecipeId.Pulse4thBlock,  TextureRecipeId.SyncopatedStab, TextureRecipeId.SyncopatedStab]),
+    // [ModernPop,                       ChillJazz,                        NeoSoul]
+    /* WarmIntimate  */ Object.freeze([TextureRecipeId.ChordAnchoredFill, TextureRecipeId.BossaClave,       TextureRecipeId.PopHeartbeat]),
+    /* Melancholy    */ Object.freeze([TextureRecipeId.ChordAnchoredFill, TextureRecipeId.ChordAnchoredFill, TextureRecipeId.CinematicHold]),
+    /* UrgentTension */ Object.freeze([TextureRecipeId.Montuno,           TextureRecipeId.Funk16Stab,       TextureRecipeId.Funk16Stab]),
+    /* Triumphant    */ Object.freeze([TextureRecipeId.PopHeartbeat,      TextureRecipeId.PopHeartbeat,     TextureRecipeId.GospelDropFill]),
+    /* Groovy        */ Object.freeze([TextureRecipeId.BossaClave,        TextureRecipeId.BossaClave,       TextureRecipeId.MontunoInner]),
+    /* Dreamy        */ Object.freeze([TextureRecipeId.ChordAnchoredFill, TextureRecipeId.SyncopatedStab,   TextureRecipeId.NeoSoulVamp]),
+    /* Dramatic      */ Object.freeze([TextureRecipeId.Montuno,           TextureRecipeId.NeoSoulVamp,      TextureRecipeId.NeoSoulVamp]),
+    /* Neutral       */ Object.freeze([TextureRecipeId.Pulse4thBlock,     TextureRecipeId.SyncopatedStab,   TextureRecipeId.SyncopatedStab]),
 ]);
 
 export function moodToRecipe(mood: MoodId, styleId: StyleId): TextureRecipeId {

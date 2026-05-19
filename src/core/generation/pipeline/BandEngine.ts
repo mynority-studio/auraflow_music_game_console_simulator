@@ -214,7 +214,10 @@ export class BandEngine {
     //   - 其他段落 → R3 Stab 兜底
     //
     // 协作模式：
-    //   - bassActive=true  → M4 (Tacit LH + RH 织体)
+    //   - bassActive=true  → M7 (ShellVoicing LH 弹 3+7 guide tone shell + RH 织体)
+    //     A3a：原 M4_TacitWithComping 让钢琴左手整段静音不符合常理；改为 M7 让 LH 弹壳和弦
+    //     bass 已锚定 root → LH 让出 root 区间，改弹 [E3, F4] guide tone shell。
+    //     RH 通过 lhPcSet "listen" 协同避撞音。
     //   - bassActive=false (Solo Piano)：
     //     · groove section (Verse/PreChorus/Chorus/Drop/BuildUp) → M1 + L4 Walking Tenths
     //     · lush section   (Bridge/Intro/Outro/PreOutro/Solo_Bridge) → M5 Two-Handed Voicing（E.2 接入）
@@ -250,8 +253,9 @@ export class BandEngine {
         let lhTexture: LHTexture;
         let walkPatternId: WalkPatternId | undefined;
         if (bassActive) {
-            coordMode = CoordMode.M4_TacitWithComping;
-            lhTexture = LHTexture.Tacit;
+            // A3a：bass 在编 → LH 不再 Tacit 整段静音，改弹 guide tone shell
+            coordMode = CoordMode.M7_ShellWithComping;
+            lhTexture = LHTexture.ShellVoicing;
         } else {
             // Solo Piano 模式：
             //   bouncePreference > 0.5 + groove → M6 Bounce（覆盖 Walking）
@@ -280,7 +284,14 @@ export class BandEngine {
         const voicingSpan = clamp01(persona.colorBias * (0.5 + intensityScale));
         const anticipationProb = clamp01(persona.syncopationAssault * (0.5 + intensityScale));
         const sparsity = clamp01(persona.sparsityTendency * intensityScale);
-        const signatureLickProb = persona.signatureLickProb !== undefined
+        // 改动 H — Intro / Outro / PreOutro 强制关 Signature Lick:
+        //   原 lick 触发 hash 在 chord index 0 处恒命中,且 lick 选择 hash 在 chordIndex=0 恒返回 lick 0
+        //   (Bebop II-V-I Run),导致每首歌开头都被一段从 8 分反拍起步的同形上行琶音替换。
+        //   漂浮段不该被 bebop run 切断;真正需要 lick 的段落(Verse/Chorus)在下面照常允许。
+        const allowLick = section.sectionType !== SectionType.Intro
+            && section.sectionType !== SectionType.Outro
+            && section.sectionType !== SectionType.PreOutro;
+        const signatureLickProb = allowLick && persona.signatureLickProb !== undefined
             ? clamp01(persona.signatureLickProb)
             : 0;
 

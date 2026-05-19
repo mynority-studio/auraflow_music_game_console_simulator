@@ -35,10 +35,12 @@
 import {
     GeneratedChord, NoteData,
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
+    CHORD_SCALE_INTERVALS,
 } from '../types';
 import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpers';
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';
+import { buildRootlessVoicing, buildQuartalVoicing } from './RootlessVoicer';
 import {
     TextureRecipeId,
     getPianoTextureRecipe,
@@ -87,6 +89,25 @@ const WALKING_BASS_MAX = 47;  // B2
 // 改动 E — HandManager 物理约束：M1 Sustained 下 LH/RH 最小间距
 // 3 半音 = 小三度。比 1 octave 更宽容，让 Drop-2 仍能呈现开放感（只挤掉真正撞音的 voice）
 const MIN_HAND_SEPARATION = 3;
+
+// ============================================================
+// A3a — L2 Shell Voicing 常量
+// ============================================================
+//
+// 用于"有独立 Bass 乐手"场景：bass 锚定根音，钢琴 LH 改弹 guide tone shell。
+//
+// 锚位 F3 = 53：标准 Bill Evans 风 shell voicing 区间中点；上下浮动 ±6 半音覆盖
+//              所有 12 PC 而不跨界。
+// 范围 [E3=52, A4=69]：兼容 LH 物理可达 + 给 RH 留出 ≥ C4 的色彩音空间。
+// 速度折扣 0.78：比 Sustained Root (0.85) 更弱 — shell 是"和声黏合剂"，
+//              不抢 RH 节奏击点的注意力。
+const SHELL_ANCHOR_PITCH = 53;          // F3
+const SHELL_RANGE_LO = 52;              // E3
+const SHELL_RANGE_HI = 69;              // A4
+const SHELL_VELOCITY_SCALE = 0.78;
+
+// LH shell 渲染后 RH 物理下界 = max(shellTopPitch + MIN_HAND_SEPARATION, RH_MIN_PITCH)
+// 在 enforceHandSeparation 调用前先按此 floor 过滤 rhVoicing
 
 // ============================================================
 // 织体 ID 枚举 — Sub-Phase 1 下沉到 data/PianoTextureEnums.ts，本文件 re-export 保持契约
@@ -246,10 +267,17 @@ export class PianoAccompIdiom {
             // V3.5 Signature Lick injection — 整和弦时长替换 grid 渲染
             //   触发：signatureLickProb > 0 + 确定性 chordIndex hash 命中
             //   仅 chord >= 2 beat 时才触发（短和弦塞不下完整 lick）
+            //
+            // 改动 H — hash 混入 chord.root：原 `(i * 67) % 100` 在 i=0 恒为 0，
+            //   导致任何 lickProb>0 都在 chord 0 必然触发，使每首歌的第 1 个 chord
+            //   被 lick 替换。叠加 pickLickDeterministic(0) 在 chordIndex=0 恒返回
+            //   lick 0 (Bebop II-V-I Run)，听感就是"每首歌都从第一拍 8 分反拍开始一段
+            //   同形上行琶音"。混入 chord.root 让不同调号 / 不同进行的 chord 0 散开。
             const lickProb = effectiveParams.signatureLickProb ?? 0;
+            const lickTriggerHash = ((i * 67 + chord.root * 13) % 100 + 100) % 100;
             if (lickProb > 0 && dur >= 2.0 - EPSILON
-                && ((i * 67) % 100) / 100 < lickProb) {
-                const lick = pickLickDeterministic(i);
+                && lickTriggerHash / 100 < lickProb) {
+                const lick = pickLickDeterministic(i, chord.root);
                 renderLick(out, chord, lick, effectiveParams);
                 continue;
             }
@@ -263,31 +291,85 @@ export class PianoAccompIdiom {
                 && effectiveParams.rhTexture !== RHTexture.Broken
                 && ((i * 41) % 100) / 100 < anticipationProb;
 
-            // RH voicing：丢掉 voicing[0]（bass voice 归 LH 或独立 Bass 轨），过滤 ≥ C3
-            let rhVoicing: number[] = [];
-            for (let v = 1; v < chord.voicing.length; v++) {
-                if (chord.voicing[v] >= RH_MIN_PITCH) rhVoicing.push(chord.voicing[v]);
-            }
+            // ====================================================
+            // A3a — L2 ShellVoicing：在 RH 之前先把 LH shell 渲染出来
+            //   1. 记录 lhShellPcSet 让 RH 后续"listen"避撞音
+            //   2. 记录 lhShellTopPitch 给 HandManager 当 lhFloor
+            //   3. 此分支命中后，下方 LH 渲染块（grid/voicePattern 两条路径）会跳过 ShellVoicing
+            // ====================================================
+            let lhShellPcSet: number[] = [];
+            let lhShellTopPitch = -1;
+            // HandManager lhFloor 统一计算（M1 + M7 共享）
+            let lhFloor: number | undefined = undefined;
 
-            // V3.7 Drop-2：voicingSpan > 0.6 + voicing 至少 3 voice 时套爵士开放排列
-            const voicingSpan = effectiveParams.voicingSpan ?? 0.5;
-            if (voicingSpan > DROP2_THRESHOLD && rhVoicing.length >= 3) {
-                rhVoicing = getDrop2Voicing(rhVoicing);
-                // Drop-2 后最低音可能降到 < C3（48）— 不再过滤，让 Drop-2 的"开放"听感完整呈现
-            }
-
-            // 改动 E — HandManager 物理约束：M1 模式下强制 RH 最低音离 LH ≥ MIN_HAND_SEPARATION
-            //   触发场景：
-            //     M1 + Sustained → lhFloor = voicing[0]（LH 持续 sustain）
-            //     M1 + WalkingTenths → lhFloor = WALKING_BASS_MAX (47)（walking bass 物理上限）
-            //   不触发：M4 (LH=Tacit 不发声) / M5 (自己合谱) / M6 (LH/RH 错时间) / M1 + Tacit
-            //   移植自 ImproVisor HandManager.repositionHands（doc:7250 附近），简化版
-            if (effectiveParams.coordMode === CoordMode.M1_SustainedRoot
-                && effectiveParams.lhTexture !== LHTexture.Tacit
-                && rhVoicing.length > 0) {
-                const lhFloor = effectiveParams.lhTexture === LHTexture.WalkingTenths
+            if (effectiveParams.coordMode === CoordMode.M7_ShellWithComping
+                && effectiveParams.lhTexture === LHTexture.ShellVoicing) {
+                const _barIdxForShell = Math.floor(chord.startBeat / beatsPerBar + EPSILON);
+                const _barInPhraseForShell = ((_barIdxForShell % 4) + 4) % 4;
+                const shell = renderLHShellVoicing(out, chord, effectiveParams, i, _barInPhraseForShell);
+                lhShellPcSet = shell.pcSet;
+                lhShellTopPitch = shell.topPitch;
+                if (lhShellTopPitch >= 0) lhFloor = lhShellTopPitch;
+            } else if (effectiveParams.coordMode === CoordMode.M1_SustainedRoot
+                && effectiveParams.lhTexture !== LHTexture.Tacit) {
+                lhFloor = effectiveParams.lhTexture === LHTexture.WalkingTenths
                     ? WALKING_BASS_MAX
                     : chord.voicing[0];
+            }
+
+            // ====================================================
+            // A2 — RH voicing 构造模式 dispatch
+            //   recipe.voicingMode 决定 rhVoicing 来源算法：
+            //     'rootless' → buildRootlessVoicing  (删 root + 按 colorBias 加 9/11/13 + 内置 listen)
+            //     'quartal'  → buildQuartalVoicing   (纯 4 度叠置，modal jazz / cinematic)
+            //     缺省       → tertian HarmonyCore voicing.slice(1) + applyRhListenToLhShell + Drop-2
+            // ====================================================
+            const _recipeForVoicing = getPianoTextureRecipe(recipeId);
+            const voicingMode = _recipeForVoicing.voicingMode ?? 'tertian';
+            const voicingSpan = effectiveParams.voicingSpan ?? 0.5;
+            let rhVoicing: number[];
+
+            if (voicingMode === 'rootless') {
+                rhVoicing = buildRootlessVoicing({
+                    chord,
+                    colorBias: voicingSpan,
+                    lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
+                    lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
+                });
+            } else if (voicingMode === 'quartal') {
+                rhVoicing = buildQuartalVoicing({
+                    chord,
+                    lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
+                    lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
+                });
+            } else {
+                // 'tertian' 默认 — 沿用 HarmonyCore voicing.slice(1) + 外置 listen + Drop-2
+                rhVoicing = [];
+                for (let v = 1; v < chord.voicing.length; v++) {
+                    if (chord.voicing[v] >= RH_MIN_PITCH) rhVoicing.push(chord.voicing[v]);
+                }
+
+                // A3a — RH "listen" LH shell：同 PC 撞音 voice 上移一个八度
+                //   仅 lhShellPcSet 非空时触发；过滤后空 → fallback 回原 voicing 保不静音
+                if (lhShellPcSet.length > 0) {
+                    rhVoicing = applyRhListenToLhShell(rhVoicing, lhShellPcSet, lhShellTopPitch);
+                }
+
+                // V3.7 Drop-2：voicingSpan > 0.6 + voicing 至少 3 voice 时套爵士开放排列
+                if (voicingSpan > DROP2_THRESHOLD && rhVoicing.length >= 3) {
+                    rhVoicing = getDrop2Voicing(rhVoicing);
+                    // Drop-2 后最低音可能降到 < C3（48）— 不再过滤，让 Drop-2 的"开放"听感完整呈现
+                }
+            }
+
+            // 改动 E — HandManager 物理约束：LH 主动时强制 RH 最低音离 LH ≥ MIN_HAND_SEPARATION
+            //   触发场景（lhFloor 在上方已统一计算）：
+            //     M1 + Sustained     → lhFloor = voicing[0]（LH 持续 sustain）
+            //     M1 + WalkingTenths → lhFloor = WALKING_BASS_MAX (47)（walking bass 物理上限）
+            //     M7 + ShellVoicing  → lhFloor = lhShellTopPitch（A3a 新增）
+            //   不触发：M4 (LH=Tacit 不发声) / M5 (自己合谱) / M6 (LH/RH 错时间) / M1 + Tacit
+            //   移植自 ImproVisor HandManager.repositionHands（doc:7250 附近），简化版
+            if (lhFloor !== undefined && rhVoicing.length > 0) {
                 rhVoicing = enforceHandSeparation(rhVoicing, lhFloor);
             }
 
@@ -329,13 +411,8 @@ export class PianoAccompIdiom {
 
             // 改动 E（mutator 后再调一次）— mutator 可能用 OP_VOICING_INVERT/OPEN 重排 rhVoicing，
             // 导致 Drop-2 + 之前 E 的撞音修正失效。这里二次 enforce 保最终 RH 离 LH ≥ floor。
-            if (effectiveParams.coordMode === CoordMode.M1_SustainedRoot
-                && effectiveParams.lhTexture !== LHTexture.Tacit
-                && rhVoicing.length > 0) {
-                const lhFloor2 = effectiveParams.lhTexture === LHTexture.WalkingTenths
-                    ? WALKING_BASS_MAX
-                    : chord.voicing[0];
-                rhVoicing = enforceHandSeparation(rhVoicing, lhFloor2);
+            if (lhFloor !== undefined && rhVoicing.length > 0) {
+                rhVoicing = enforceHandSeparation(rhVoicing, lhFloor);
             }
 
             // ---- RH 渲染 — V3.8 dispatch ----
@@ -364,6 +441,9 @@ export class PianoAccompIdiom {
             }
 
             // ---- LH 渲染 ----
+            //   M1 + Sustained/Walking 在此处统一渲染（顺序：RH → LH）
+            //   M7 + ShellVoicing 已在 chord 循环头部渲染（顺序：LH → RH，让 RH listen 可消费 lhPcSet）
+            //   M4 + Tacit 不渲染
             if (effectiveParams.coordMode === CoordMode.M1_SustainedRoot) {
                 if (effectiveParams.lhTexture === LHTexture.Sustained) {
                     renderLHSustained(out, chord, effectiveParams);
@@ -737,11 +817,12 @@ function renderLHWalkPattern(
                 bassPc = thirdPc;
                 break;
             case WalkRule.Approach: {
-                // 下一和弦根音 -1 半音（下邻 approach）；无下和弦时回 root
+                // A3b：approach 在 current chord scale 内取"比 nextRoot 低 1~2 半音"的 diatonic neighbor。
+                //   找不到（chord scale 不含合适 step） → 回落 chromatic -1 半音（旧行为）。
                 if (nextChord !== undefined) {
                     const nextRootPc = nextChord.bassOverride !== undefined ? nextChord.bassOverride : nextChord.root;
                     const nextRootNorm = ((nextRootPc % 12) + 12) % 12;
-                    bassPc = (nextRootNorm + 11) % 12;
+                    bassPc = pickDiatonicApproach(chord, nextRootNorm);
                 } else {
                     bassPc = rootPcNorm;
                 }
@@ -844,6 +925,48 @@ function buildWalkScalePool(chord: GeneratedChord): number[] {
         if (seen[pc]) out.push(pc);
     }
     return out;
+}
+
+/**
+ * A3b — 在 current chord scale 内挑"比 targetPc 低 1~2 半音"的 diatonic approach PC。
+ *
+ * 算法：
+ *   1. scalePcs = CHORD_SCALE_INTERVALS[currentChord.quality] + currentChord.root (mod 12)
+ *   2. 候选 = scalePcs 中 distance(pc, targetPc) 1 或 2 半音、且方向 < 0（向上行解决）
+ *   3. 选距离最近的那个；空集 → 回落 chromatic -1 半音
+ *
+ * 与旧 chromatic -1 实现的差异：
+ *   - 旧：targetPc=C(0) → approach=B(11)（恒下半音 leading tone）
+ *   - 新：targetPc=C(0)，当前 chord = Dm7(scale=Dorian D,E,F,G,A,B,C) →
+ *     candidates = scale 内距 C 1~2 半音 = [B(11) dist 1, ...]，pick B
+ *     而 targetPc=F(5)，当前 chord = Dm7 → candidates = [E(4) dist 1, G(7) dist 2 ↑]，pick E (downwards step)
+ *     当 chord = Cmaj7 + targetPc=Eb(3) → 没有 Eb 在 C Ionian → 回落 D=2 (chromatic -1)
+ *
+ * 仍保证 D-1（零 PRNG，纯查表 + 最小距离）。
+ */
+function pickDiatonicApproach(currentChord: GeneratedChord, targetPc: number): number {
+    const targetPcNorm = ((targetPc % 12) + 12) % 12;
+    const scale = CHORD_SCALE_INTERVALS[currentChord.quality];
+    const rootPc = ((currentChord.root % 12) + 12) % 12;
+    if (scale !== undefined && scale.length > 0) {
+        let best = -1;
+        let bestDist = 99;
+        for (let i = 0; i < scale.length; i++) {
+            const pc = ((rootPc + scale[i]) % 12 + 12) % 12;
+            if (pc === targetPcNorm) continue;
+            // 向下行距离（PC → targetPc 的正向步数）：(targetPc - pc + 12) % 12
+            const downDist = ((targetPcNorm - pc) % 12 + 12) % 12;
+            if (downDist === 0) continue;
+            if (downDist > 2) continue;  // 只接受 1 或 2 半音邻
+            if (downDist < bestDist) {
+                bestDist = downDist;
+                best = pc;
+            }
+        }
+        if (best >= 0) return best;
+    }
+    // 回落 chromatic -1 半音
+    return (targetPcNorm + 11) % 12;
 }
 
 /**
@@ -1310,6 +1433,205 @@ function renderM5TwoHandedVoicing(
             velocity,
         });
     }
+}
+
+// ============================================================
+// 内部：A3a — L2 Shell Voicing 渲染（有 Bass 时 LH 弹 guide tone 壳和弦）
+// ============================================================
+//
+// 设计哲学：
+//   独立 Bass 乐手已锚定根音 → 钢琴 LH 不再死守 voicing[0]（与 Bass 撞 root）；
+//   改弹 guide tone shell（3 + 7 +/- 9 / root）让和声"骨架可闻"但不抢 Bass 的位置。
+//   配套 RH listen：lhPcSet 透传给 RH 构建阶段，过滤掉 1 octave 内 PC 撞音 voice。
+//
+// 三种变体确定性切换（hash by chordIndex × barInPhrase × rootPc）：
+//   X = [3rd, 7th]           Bill Evans 经典两音 shell，最 jazzy
+//   Y = [3rd, 7th, 9th]      neo-soul 加色，更现代
+//   Z = [root, 3rd, 7th]     3 音 shell 带 root anchor，pop ballad / 抒情
+//
+// 变体权重按 colorBias 调（低 colorBias → 多 X，高 → 三者均衡）。
+//
+// LH 节奏：当前 V1 与 renderLHSustained 一致 —— 每和弦头一击 sustain 到结尾。
+// V2 可扩展 shellRhythm 字段做 per-beat / per-bar 切分（与 RH grid 互补）。
+//
+// PRNG 消耗：0（D-1 / D-5 hash 决定）。
+
+const SHELL_INTERVAL_3RD_MAJOR = 4;
+const SHELL_INTERVAL_3RD_MINOR = 3;
+const SHELL_INTERVAL_7TH_MAJ   = 11;
+const SHELL_INTERVAL_7TH_DOM   = 10;
+const SHELL_INTERVAL_7TH_DIM7  = 9;
+const SHELL_INTERVAL_9TH       = 2;
+const SHELL_SUS_4TH            = 5;
+
+type ShellVariant = 0 /* X: 3+7 */ | 1 /* Y: 3+7+9 */ | 2 /* Z: root+3+7 */;
+
+/**
+ * 按 chordIndex / barInPhrase / colorBias 确定性选 shell 变体。
+ * 同 (chordIndex, barInPhrase, rootPc, colorBias) → 同变体（D-5）。
+ */
+function pickShellVariant(
+    chordIndex: number, barInPhrase: number, colorBias: number, rootPc: number,
+): ShellVariant {
+    const hash = ((chordIndex * 31 + barInPhrase * 17 + rootPc * 11) % 100 + 100) % 100;
+    const cb = colorBias < 0 ? 0 : (colorBias > 1 ? 1 : colorBias);
+    if (cb < 0.3) {
+        // 低 colorBias：以 X 为主，偶尔 Z（pop ballad — 稳重，少加 9）
+        return hash < 80 ? 0 : 2;
+    }
+    if (cb < 0.6) {
+        // 中 colorBias：X / Z 主导，少量 Y
+        if (hash < 50) return 0;
+        if (hash < 80) return 2;
+        return 1;
+    }
+    // 高 colorBias：三者均衡（neo-soul / jazz — 经常 add 9）
+    if (hash < 30) return 0;
+    if (hash < 65) return 1;
+    return 2;
+}
+
+/**
+ * 按 chord.quality 算 (3rd, 7th) 半音间隔；sus 退化为 (4th, 7th)。
+ * 返回 [thirdInterval, seventhInterval]；thirdInterval=5 表示 sus 用 4 代 3。
+ */
+function getShellIntervals(quality: ChordQuality): [number, number] {
+    if (quality === ChordQuality.Sus4 || quality === ChordQuality.Dominant7Sus4) {
+        return [SHELL_SUS_4TH, SHELL_INTERVAL_7TH_DOM];
+    }
+    const qBit = 1 << quality;
+    const isMinorish = (qBit & CQ_IS_MINOR) !== 0 || (qBit & CQ_IS_DIM) !== 0;
+    const third = isMinorish ? SHELL_INTERVAL_3RD_MINOR : SHELL_INTERVAL_3RD_MAJOR;
+    let seventh: number;
+    if (quality === ChordQuality.Diminished7) seventh = SHELL_INTERVAL_7TH_DIM7;
+    else if ((qBit & CQ_IS_MAJOR) !== 0
+        || quality === ChordQuality.Augmented
+        || quality === ChordQuality.Add9) seventh = SHELL_INTERVAL_7TH_MAJ;
+    else seventh = SHELL_INTERVAL_7TH_DOM;  // Dom7 / Min7 / HalfDim → b7
+    return [third, seventh];
+}
+
+/**
+ * 按变体 + chord 构建 shell PC 集（顺序：低 → 高，未限制 octave）。
+ */
+function buildShellPcSet(chord: GeneratedChord, variant: ShellVariant): number[] {
+    const rootPc = (((chord.bassOverride !== undefined ? chord.bassOverride : chord.root) % 12) + 12) % 12;
+    const [thirdInt, seventhInt] = getShellIntervals(chord.quality);
+    const thirdPc   = (rootPc + thirdInt)   % 12;
+    const seventhPc = (rootPc + seventhInt) % 12;
+    if (variant === 0) return [thirdPc, seventhPc];                              // X
+    if (variant === 1) return [thirdPc, seventhPc, (rootPc + SHELL_INTERVAL_9TH) % 12]; // Y +9
+    return [rootPc, thirdPc, seventhPc];                                          // Z root anchored
+}
+
+/**
+ * 把 PC 放到离 anchor 最近的八度，并钳到 [SHELL_RANGE_LO, SHELL_RANGE_HI]。
+ */
+function placePcNearAnchor(pc: number, anchor: number): number {
+    const pcNorm = ((pc % 12) + 12) % 12;
+    const anchorPc = ((anchor % 12) + 12) % 12;
+    const anchorOctaveBase = anchor - anchorPc;
+    let candidate = anchorOctaveBase + pcNorm;
+    // 取 candidate / candidate ± 12 三个里离 anchor 最近的
+    const c1 = candidate;
+    const c2 = candidate + 12;
+    const c3 = candidate - 12;
+    let best = c1;
+    let bestDist = Math.abs(c1 - anchor);
+    if (Math.abs(c2 - anchor) < bestDist) { best = c2; bestDist = Math.abs(c2 - anchor); }
+    if (Math.abs(c3 - anchor) < bestDist) { best = c3; }
+    // 钳到合法 shell 范围
+    while (best < SHELL_RANGE_LO) best += 12;
+    while (best > SHELL_RANGE_HI) best -= 12;
+    return best;
+}
+
+/**
+ * 渲染 LH shell voicing — 每和弦头一击 sustain。
+ *
+ * 返回 lhPcSet（去重 PC 数组），供 RH "listen" 过滤撞音用。
+ * 失败（chord 太短 / dur 太小）→ 返回空数组。
+ */
+function renderLHShellVoicing(
+    out: NoteData[],
+    chord: GeneratedChord,
+    params: PianoAccompParams,
+    chordIndex: number,
+    barInPhrase: number,
+): { pcSet: number[]; topPitch: number } {
+    const dur = chord.endBeat - chord.startBeat;
+    if (dur <= EPSILON) return { pcSet: [], topPitch: -1 };
+
+    const rootPc = (((chord.bassOverride !== undefined ? chord.bassOverride : chord.root) % 12) + 12) % 12;
+    const colorBias = params.voicingSpan ?? 0.5;  // voicingSpan 在 BandEngine 已派生自 persona.colorBias × intensity
+    const variant = pickShellVariant(chordIndex, barInPhrase, colorBias, rootPc);
+    const pcSet = buildShellPcSet(chord, variant);
+
+    const rhVelocity = computeVelocity(params.velocityRange, params.intensityScale);
+    const velocity = rhVelocity * SHELL_VELOCITY_SCALE;
+
+    // PC → MIDI pitch（anchor 附近最近八度），再做撞音去重 + 升序排列
+    const pitches: number[] = [];
+    let topPitch = -1;
+    for (let i = 0; i < pcSet.length; i++) {
+        const p = placePcNearAnchor(pcSet[i], SHELL_ANCHOR_PITCH);
+        // 防同 pitch 重复
+        let dup = false;
+        for (let j = 0; j < pitches.length; j++) {
+            if (pitches[j] === p) { dup = true; break; }
+        }
+        if (!dup) {
+            pitches.push(p);
+            if (p > topPitch) topPitch = p;
+        }
+    }
+    pitches.sort((a, b) => a - b);
+
+    for (let i = 0; i < pitches.length; i++) {
+        out.push({
+            pitch: pitches[i],
+            onset: chord.startBeat,
+            duration: dur,
+            velocity,
+        });
+    }
+    return { pcSet, topPitch };
+}
+
+/**
+ * RH "listen" — 把 rhVoicing 中 PC 命中 lhPcSet 的 voice 上移一个八度避免撞音。
+ * 上移后越界（> 127）则丢弃。
+ *
+ * 设计原则：不直接 filter（会让 RH 变薄），而是 octave 上推（保留色彩音的存在感）。
+ */
+function applyRhListenToLhShell(rhVoicing: number[], lhPcSet: number[], lhTopPitch: number): number[] {
+    if (lhPcSet.length === 0 || rhVoicing.length === 0) return rhVoicing.slice();
+    const out: number[] = [];
+    for (let i = 0; i < rhVoicing.length; i++) {
+        let p = rhVoicing[i];
+        // PC 是否撞 LH
+        const pc = ((p % 12) + 12) % 12;
+        let conflict = false;
+        for (let j = 0; j < lhPcSet.length; j++) {
+            if (pc === lhPcSet[j]) { conflict = true; break; }
+        }
+        // 同 PC 但在 LH top 上方 ≥ 12 半音（差一个八度以上）→ 不算撞音，保留
+        if (conflict && p > lhTopPitch + 11) conflict = false;
+        if (conflict) {
+            // 上移到 LH top 之上一个八度
+            while (p <= lhTopPitch + 11 && p <= MIDI_MAX - 12) p += 12;
+            if (p > MIDI_MAX) continue;  // 越界丢弃
+        }
+        out.push(p);
+    }
+    // 去重 + 排序
+    out.sort((a, b) => a - b);
+    const dedup: number[] = [];
+    for (let i = 0; i < out.length; i++) {
+        if (dedup.length === 0 || dedup[dedup.length - 1] !== out[i]) dedup.push(out[i]);
+    }
+    if (dedup.length === 0) return rhVoicing.slice();  // fallback 防空
+    return dedup;
 }
 
 /**

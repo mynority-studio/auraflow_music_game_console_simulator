@@ -433,6 +433,12 @@ export interface Musician {
     genre: StyleId;               // 擅长曲风（坐在 Lead 槽位时具有全曲定调权）= styleId
     instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID（旧字段，过渡期保留）
     defaultSound: string;         // 默认挂载的 GM 音色名（如 'Acoustic_Grand'）
+    /**
+     * B3：可选 GM 程式号显式覆盖（0~127）。
+     * 设置时优先于 defaultSound → GM 的查表映射；UI 端 forcedGmPrograms 又会进一步覆盖此字段。
+     * 主要用例：同一 musician card 在不同曲风下挂不同音色（暂未启用，预留）。
+     */
+    gmProgramOverride?: number;
     personnel: PersonnelTraits;   // 旧形状：作主奏/伴奏时的微操偏好（驱动 TextureMapper）
 
     // 🌟 参考架构 Persona 字段（驱动未来 Idiom 引擎）
@@ -564,6 +570,18 @@ export interface MusicContext {
     style?: StyleConfig;
     /** 5 槽位实际就位的乐手数组（缺槽 = 不在数组里）— Orchestrator 按 role 过滤生成轨 */
     band?: Musician[];
+    /**
+     * B3：动态 GM 程式覆盖（0~127），由 runPipeline 根据 forcedGmPrograms + musician.gmProgramOverride + defaultSound 计算。
+     * Orchestrator 透传到 ArrangedTrack.gmProgramOverrides，再由 MidiConverter 消费。
+     */
+    gmProgramOverrides?: {
+        melody?: number;
+        pianoRH?: number;
+        pianoLH?: number;
+        drums?: number;
+        atmosphere?: number;
+        electricBass?: number;
+    };
 }
 
 export interface GenerationOptions {
@@ -592,12 +610,26 @@ export interface ArrangedTrack {
     atmosphere?: NoteData[];
     /** V5.3 — 独立电贝斯轨（Bass musician 输出）— MidiConverter 路由到 CHANNEL_ELECTRIC_BASS */
     electricBass?: NoteData[];
-    palette?: EnsembleDraft; 
+    palette?: EnsembleDraft;
     sections?: SectionMetadata[];
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     chords?: GeneratedChord[]; // 全曲和弦进行
     tempoCurves?: TempoCurve[]; // 渐慢/渐快曲线
     introFilterSweep?: boolean; // 🌟 ST-3: Intro 低通涌动标记，PlaybackEngine 读取后注入 CC74 渐变
+    /**
+     * B3：动态 GM 程式覆盖（0~127）。每个 key 对应 MidiConverter 内一条轨。
+     * Orchestrator 由 context.gmProgramOverrides 透传过来。
+     * MidiConverter 读取后用 override 覆盖文件级 GM_PROGRAM_* 默认。
+     * 缺省 / 字段缺失 → 走默认（保 V5.x 行为零回归）。
+     */
+    gmProgramOverrides?: {
+        melody?: number;
+        pianoRH?: number;
+        pianoLH?: number;
+        drums?: number;
+        atmosphere?: number;
+        electricBass?: number;
+    };
 }
 
 // ============================================================
@@ -921,6 +953,17 @@ export interface MusicianPersona {
      * 缺省 = 'takeover'（向后兼容 v1：仅 masterId 字段引入时即为 takeover 行为）。
      */
     masterMode?: 'takeover' | 'lick-only';
+    /**
+     * A1：Bass / 钢琴 LH walking 默认 pattern。
+     *
+     * Bass 角色 (BassIdiom)：未设置 → 退化到 Layer 1（每和弦头 1 击 root + sustain，兼容原行为）。
+     * 钢琴 LH (PianoAccompIdiom)：BandEngine 由 MoodRouter.pickWalkPattern 注入，
+     *   本字段作为 musician 偏好的兜底（如某位 bass 手习惯 Stride，永远走 Stride）。
+     *
+     * 值为 WalkPatternId 数值枚举（HalfNote=1 / Stride=2 / Pedal=3 / LatinTumbao=4 等）。
+     * 不强类型 import WalkPatternId 是因为 types.ts 不能依赖 data/ 层（架构分层）。
+     */
+    walkPatternId?: number;
 }
 
 // --- 抽象职能与极限压缩结构 (Zero-Copy C-Portability) ---

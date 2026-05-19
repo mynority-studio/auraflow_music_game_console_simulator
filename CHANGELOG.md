@@ -1,6 +1,16 @@
 # 变更日志
 
-> **当前版本:** 1.35.0 | **最后更新:** 2026-05-18
+> **当前版本:** 1.36.0 | **最后更新:** 2026-05-19
+
+- `v1.36.0`: **钢琴织体重构 + Band UI 解封 (The Pianist Update)**。
+  1. **A3a 钢琴左手壳和弦 (M7_ShellWithComping)**: 有 Bass 乐手时，钢琴 LH 不再 Tacit 整段静音；改弹 guide tone shell（3+7 / 3+7+9 / root+3+7 三变体按 chordIdx×barInPhrase×colorBias 确定性切换）。新增 `LHTexture.ShellVoicing` + `renderLHShellVoicing` / `applyRhListenToLhShell`。
+  2. **A2 右手 Rootless / Quartal / 9-11-13 延伸**: 新模块 `primitives/RootlessVoicer.ts`。Recipe 加 `voicingMode?: 'tertian'|'rootless'|'quartal'`；rootless 删 root + 按 colorBias 阶梯加 9/11/13，含 Minor 9th avoid filter + Dom7 用 #11（Lydian Dominant）。NeoSoulVamp / Funk16Stab 默认 `rootless`。
+  3. **A1 BassIdiom Chord-Scale Walking**: BassIdiom 从 87 行扩到 282 行，接入 `BassWalkPatterns` 字母语法 8 规则（B/5/3/A/N/=/C/S）。`MusicianPersona.walkPatternId` 新字段；frank_bass=HalfNote / maya_slap_bass=LatinTumbao。voice leading 就近原则跨和弦保持连贯。
+  4. **A3b 跨 chord Diatonic Approach**: Walking `A` 规则从固定 chromatic -1 半音升级为 `CHORD_SCALE_INTERVALS` 内最近 1~2 半音 diatonic neighbor。例：Dm7→G7 现在用 F 代替 F#。
+  5. **Stage5Layering Bass/Drums roster-aware (C2)**: roster.bass / roster.drums 为 null（UI ⊘ Empty）时彻底跳过对应 Idiom 渲染，不再回退 `bundle.personas[ROLE_BASS]`。
+  6. **MusicianCard topology 解封 (C1)**: alex_piano / marcus_neosoul_piano 补 lickPool + topologyConfig，Lead Lick 拼接路径的 invert/reverse/expand/sideSlip 算法变换从此真正可触发。
+  7. **B1+B2 Band UI 三态 + Instrument 下拉**: BandSelection dropdown 现有 🎲 Default / ⊘ Empty / 乐手 三选项。每个 slot 下方新增 Instr. 下拉，基于 active musician 的 instrumentRef 推出同家族 GM 选项（钢琴 14 / 贝斯 8 / 鼓 6 kit / Pad 8）。
+  8. **B3 ArrangedTrack 动态 GM Program**: 新文件 `data/GMSoundMap.ts`。`ArrangedTrack.gmProgramOverrides` 字段，由 `PipelineRunOptions.forcedGmPrograms` 透传，MidiConverter 用 override 覆盖文件级 `GM_PROGRAM_*` 默认。仅显式选择时填充 → 保 V5.x lead vs comping 音色对比零回归。
 
 - `v1.35.0`: **算法引擎全面解封与技术债清零 (The Musicality Update)**。
   1. **旋律引力模型**: ToplineEngine 引入局部目标音打分，产生强烈的线条感。

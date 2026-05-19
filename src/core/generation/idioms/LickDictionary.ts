@@ -133,9 +133,15 @@ const LICKS: ReadonlyArray<Lick> = Object.freeze([
 /**
  * 按 chordIndex 确定性选 lick（零 PRNG）。
  * 用法：caller 已经通过 signatureLickProb 判定触发，此函数返回选中的 lick。
+ *
+ * 改动 H — 增加可选 rootPc 参数：原 `(chordIndex * 53) % LICKS.length` 在
+ *   chordIndex=0 恒返回 lick 0 (Bebop II-V-I Run)，导致每首歌第 1 个 chord
+ *   被同一段琶音 lick 替换。混入 rootPc 让不同调号 / 不同进行的 chord 0 散开
+ *   到不同 lick；caller 不传 rootPc 时退化为旧行为（兼容现有调用）。
  */
-export function pickLickDeterministic(chordIndex: number): Lick {
-    const idx = ((chordIndex * 53) | 0) % LICKS.length;
+export function pickLickDeterministic(chordIndex: number, rootPc?: number): Lick {
+    const seed = ((chordIndex * 53) + ((rootPc ?? 0) * 17)) | 0;
+    const idx = seed % LICKS.length;
     const safe = idx < 0 ? idx + LICKS.length : idx;
     return LICKS[safe];
 }
