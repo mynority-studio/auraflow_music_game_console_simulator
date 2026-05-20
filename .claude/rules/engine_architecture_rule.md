@@ -660,18 +660,147 @@ DrumIdiom.render 每个 step 必消耗 **3 次** PRNG(Kick/Snare/Hat 各 1 次,
   → 想做"同风格不同鼓手个性",当前架构需要扩 DrumIdiom 让它消费 persona,
     而不是加卡(加卡无效)。这是 Phase 4+ TODO,目前不要假装鼓手卡能影响演奏。
 
+### 11.13 氛围层 — 5 层关切点分布
+
+```
+┌─ 决策层(说"这段 pad 怎么响") ───────────────────────────┐
+│  pipeline/Conductor.ts (line 209-213)                    │
+│    atmosphereMusician = bandPlan.activeMusicians.find(  │
+│      am.assignedRole === BandRole.Atmosphere)            │
+│    atmosphereIdiom: Partial<AtmosphereConfig> | undef    │
+│      = atmosphereMusician?.personnel?.atmosphereOverrides│
+│                                                          │
+│  ConductorMask (Conductor.ts line 112-127)               │
+│    Intro / Outro / PreOutro / BuildUp:含 MASK_ATMOSPHERE│
+│    Verse / Chorus / Bridge:MASK_ALL(含 atmosphere)      │
+│    Break / Breakdown:不含 atmosphere(rhythm section only)│
+│                                                          │
+│  **注意:氛围不走 CastingEngine.pickXxxParams 派生路径**, │
+│  atmosphereOverrides 直接从 musician 卡片读 —— 与鼓组一样│
+│  绕过 Casting 决策派生。                                 │
+└──────────────────────────────────────────────────────────┘
+        ↓ AtmosphereRenderInput { chords, idiom, intensityScale }
+┌─ 物理约束层 ──────────────────────────────────────────────┐
+│  primitives/AtmosphereRenderer.ts (line 41-49)           │
+│    ATMOSPHERE_MIN_PITCH = 48(C3,与 PianoRH 同底线避堆叠)│
+│    DEFAULT_VOICE_COUNT = 3(nina_pad 覆盖到 4)            │
+│    CROSSFADE_OVERLAP_BEATS = 0.25                        │
+│                                                          │
+│  Channel 路由(audio/MidiConverter.ts):                  │
+│    CHANNEL_ATMOSPHERE = 8 / GM 程式 89 (Warm Pad)        │
+│    MIX_ATMOSPHERE = { volume=70, pan=64, reverb=60 }     │
+│                                                          │
+│  Sustain 模型:**sustain_model = pad_envelope**          │
+│    跳过 ToplineEngine Pass 3(piano pedal / wind legato), │
+│    起音 / 收音由 Idiom 内 releaseRatio + crossfade 控制  │
+│    + GM 音源自带 ADSR envelope                           │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 算法层(怎么生成 pad 长音) ─────────────────────────────┐
+│  primitives/AtmosphereRenderer.render() (line 82-158)    │
+│    1. Idiom 参数解析(缺省补 DEFAULT_*)                  │
+│    2. velocity 插值:veloLo + (veloHi - veloLo)          │
+│       × intensityScale(段落能量驱动)                    │
+│    3. 每和弦循环:                                        │
+│       padVoicing = chord.voicing[1..voiceCount]          │
+│         (去 bass voice,跳过第一个,过滤 ≥ C3)            │
+│       duration = crossfade ? (next.start - cur.start)    │
+│                              + 0.25                      │
+│                            : chord.dur × releaseRatio    │
+│       每 voice push NoteData                             │
+│    4. 全局 sort(onset ASC, pitch ASC)                    │
+│                                                          │
+│  PRNG 消耗:**0**(完全决定性,仅 chord/idiom/intensity 驱动)│
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 渲染层(NoteData[]) ────────────────────────────────────┐
+│  primitives/AtmosphereRenderer.render() (同上)           │
+│  realizers/AtmosphereRealizer.realize(input)             │
+│    薄包装委托 AtmosphereRenderer.render                  │
+│                                                          │
+│  典型输出:每和弦 voiceCount 个 NoteData,长音齐砸,无琶音 │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 资源层 ──────────────────────────────────────────────────┐
+│  types.ts: AtmosphereConfig (line 372-385)               │
+│    7 字段:attackSoftness / releaseRatio / voiceCount /  │
+│      velocityRange / crossfade / octaveLayering          │
+│  idioms/MusicianRegistry.ts: nina_pad (line 253-282)     │
+│    instrumentFamily = Pad / atmosphereOverrides 注入     │
+│  audio/MidiConverter.ts: Channel 8 + Warm Pad GM 89      │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 11.14 氛围层优化场景对照表
+
+| 你想优化什么 | 主要改哪 | 次要改哪(如需) | Blast |
+|------------|---------|----------------|-------|
+| **改 nina_pad 整体声响**(voicing 数/起音/力度等) | `idioms/MusicianRegistry.ts` nina_pad.personnel.atmosphereOverrides | — | **1 文件** |
+| **改段落能量 → pad velocity 映射** | `primitives/AtmosphereRenderer.ts` (line 99-103 velocity 插值) | — | **1 文件** |
+| **改 pad 在某段落是否上线** | `pipeline/Conductor.ts` `CONDUCTOR_MASK_BY_SECTION_TYPE` (line 112-127) | — | **1 文件** |
+| **改 voicing 选 voice 策略**(当前去 bass voice 取 [1..N]) | `primitives/AtmosphereRenderer.ts` (line 115-120 padVoicing 提取) | — | **1 文件** |
+| **加新氛围乐手**(strings_pad / choir_pad) | `idioms/MusicianRegistry.ts` 加 musician 卡 | `config/styles/*.ts` 若需按风格选,加 plug | 1-2 文件 |
+| **加 octaveLayering**(已有字段,扩展行为) | `primitives/AtmosphereRenderer.ts` 实现 octave 叠加分支 | — | **1 文件** |
+| **加 filter sweep**(类 EDM 低通扫频) | `audio/MidiConverter.ts` 加 CC 74 输出 + `types.ts` ArrangedTrack 字段 | `primitives/AtmosphereRenderer.ts` 产 sweep 曲线 | 2-3 文件(加新概念) |
+| **实装 attackSoftness**(当前占位) | `audio/MidiConverter.ts` 加 CC 73 (attack time) 输出 | `primitives/AtmosphereRenderer.ts` 把字段映射到 CC 值 | 2 文件 |
+| **改 pad 与 piano voicing 撞音** | `pipeline/Reconciler.ts`(优先级表 atmosphere 已最低,撞了被 damp) | — | **1 文件** |
+| **加风格差异化的 pad 卡**(Pop 弱 / Jazz 干 / Neo 厚) | `idioms/MusicianRegistry.ts` 加多张 atmosphere 卡 + `config/styles/*.ts` 注入 | — | 2 文件 |
+
+### 11.15 氛围层 — 三个反直觉但关键的事实
+
+#### 11.15.1 **sustain_model = pad_envelope,跳过 ToplineEngine Pass 3**
+
+氛围**完全不走** ToplineEngine 的 sustain 后处理(Piano 的 applyPianoPedal /
+Wind 的 applyMonophonicLegato 都不消费 atmosphere)。
+
+原因:pad 自带 ADSR envelope —— GM 音色(Warm Pad 89)的合成器内置软起音 +
+长 sustain + 慢 release。NoteData.duration 的"延音"由 GM 音源处理,引擎层不
+干预。
+
+**含义**:想做"pad 慢淡入"不是改 ToplineEngine,而是改 GM 音色 attack time
+(CC 73)。但 CC 73 实装在 V1 还没接(见 11.15.2)。
+
+#### 11.15.2 **attackSoftness 当前 V1 是占位字段,改它无听感效果**
+
+`AtmosphereConfig.attackSoftness` 已定义在 types.ts:374,nina_pad 设了 0.7,
+**但 AtmosphereRenderer 实际不消费**(只占位,line 96-97 注释明确)。
+
+要让它生效,需要 MidiConverter 接入 CC 73 (attack time) 或 CC 76 (decay) 输出。
+当前 PR 范围内**改 attackSoftness 值无任何听感差异**。
+
+预计 Phase 9+ 实装,实装路径见 §11.14 表第 8 行(2 文件改动)。
+
+#### 11.15.3 **当前只有 1 张氛围卡 nina_pad,各风格共用,无差异化**
+
+不像鼓组(Pop/Jazz/NeoSoul 三套 grid),氛围层只有 nina_pad 一张卡,
+ModernPop / ChillJazz / NeoSoul 全用同一份 atmosphereOverrides。
+
+听感差异**全靠不同风格的 chord.voicing 自然产生**(NeoSoul voicing 更色彩
+化 → pad 也更色彩化),但 pad 本身的 attack / release / voice count 跨风格
+完全一致。
+
+**含义**:如果你觉得"NeoSoul pad 应该更厚",当前架构有两条路:
+1. 直接改 nina_pad 字段(影响所有风格)
+2. 按 §11.14 表第 10 行加多张 pad 卡 + 风格池注入(更干净)
+
+未来加 strings_pad / choir_pad 的 prerequisite 也是先建立"按风格选 pad 卡"
+的机制。
+
 ### 11.9 未来其他乐器速查(待补)
 
-待添加的乐器专题(按 §11.1-11.3 / §11.6-§11.8 / §11.10-§11.12 结构):
+待添加的乐器专题(按 §11.1-11.3 / §11.6-§11.8 / §11.10-§11.12 / §11.13-§11.15 结构):
 - [x] **钢琴**(§11.1-§11.3)
 - [x] **贝斯**(§11.6-§11.8)
 - [x] **鼓组**(§11.10-§11.12)
-- [ ] 氛围(AtmosphereRealizer + AtmosphereRenderer + AtmosphereConfig)
+- [x] **氛围**(§11.13-§11.15)
 - [ ] 吉他(Phase 8+ 加入)
 - [ ] 萨克斯 / 管乐(Phase 8+ 加入,届时引入 InstrumentProfile breath constraints)
 
 **每次加新乐器时,本节同步补 §11.X 子节**——填好"5 层分布 / 优化场景表 /
 反直觉事实"三节,§11.4 三个通用自问问题不重复。
+
+至此 **4 个 active 乐器(钢琴 / 贝斯 / 鼓组 / 氛围)**全部有反查表。
+后续吉他 / 萨克斯进入引擎时,按本节模板扩 §11.16-§11.18 / §11.19-§11.21 即可。
 
 ---
 
