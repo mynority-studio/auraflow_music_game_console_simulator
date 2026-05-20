@@ -62,6 +62,7 @@ import { getMasterManifest } from '../data/MasterPersonas';
 import { DrumRealizer } from '../realizers/DrumRealizer';
 import { BassRealizer } from '../realizers/BassRealizer';
 import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
+import { Reconciler, ReconcilerReport } from './Reconciler';
 import type { PianoAccompParams } from '../primitives/PianoAccompIdiom';
 import { PianoRealizer } from '../realizers/PianoRealizer';
 import { ToplineEngine } from './ToplineEngine';
@@ -177,6 +178,9 @@ export interface ConductorResult {
     drums: NoteData[];
     /** Pitch Space: RELATIVE — Pad/Strings 长音铺底。V1 渲染器未实装时为空数组 */
     atmosphere: NoteData[];
+    /** Phase 5:Reconciler 输出。v1 弱版本仅产 same-pitch collision damp + LIL 检测。
+     *  上游可选消费 unresolvedIssues 做诊断。详见 Reconciler.ts 升级路径注释。 */
+    reconcilerReport?: ReconcilerReport;
 }
 
 /**
@@ -383,7 +387,13 @@ export function conduct(input: ConductorInput): ConductorResult {
     sortNotesInPlace(atmosphere);
     // drums 已在 DrumIdiom 内部排序，无需再排
 
-    return { melody, accompaniment, bass, drums, atmosphere };
+    // Phase 5:跨乐器后置协调(v1 弱版本)
+    //   - 同 (pitch, onset) 重复音 → velocity damp(就地修改 4 轨)
+    //   - Low Interval Limit dyads → 仅报告,不修复(留 v2)
+    //   - drums 不参与(GM Drum Map 第三空间)
+    const reconcilerReport = Reconciler.reconcile({ melody, accompaniment, bass, atmosphere });
+
+    return { melody, accompaniment, bass, drums, atmosphere, reconcilerReport };
 }
 
 // ============================================================
