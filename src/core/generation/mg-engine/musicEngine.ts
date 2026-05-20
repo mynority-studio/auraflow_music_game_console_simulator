@@ -126,6 +126,15 @@ export interface ChordDef {
   bass: string;       // e.g., 'C', 'E'
   bassMidi: number;   // Exact MIDI note of the bass
   notes: string[];    // Pitches mapped to octave: 'C4', 'E4', 'G4', 'B4'
+  // Authoritative voicing MIDI. notes[] is a display projection
+  // (chord-root-relative spelling, may contain ##/bb/B#/Cb), while
+  // notesMidi[] is the source of truth the audio renderer reads.
+  // Same length and order as notes[]. Keeping both lets the UI label
+  // chords correctly while playback never depends on a string ↔ MIDI
+  // round-trip — eliminates a whole class of spelling-induced
+  // detuning if a future spelling refactor ever produces a name the
+  // parser doesn't recognise.
+  notesMidi: number[];
   duration: number;   // In beats (1 beat = 1 quarter note)
   // Divisi 2.0 — Harmonic state machine middleware fields. Populated
   // in realizeProgression after bassMidi is finalized via
@@ -291,6 +300,12 @@ interface NoteContext {
   //   等), MODAL_CHARACTERISTIC_NOTES 查特征音免死用.
   isModalContext: boolean;
   scaleNameForBar: string | undefined;
+  // Song style — consumed by style-tuned soft scores
+  // (blues-stepwise-bonus, etc.). All other style-specific behavior
+  // already routes through scaleNameForBar / isModalContext, but a
+  // few rules need direct access to the macro identity (BLUES wants
+  // explicit stepwise-bonus weighting independent of mode).
+  style: StyleName;
 }
 
 /**
@@ -550,8 +565,28 @@ export function midiToNoteInChord(
     chordType?: string,
 ): string {
     const pc = ((midi % 12) + 12) % 12;
-    const oct = Math.floor(midi / 12) - 1;
-    return `${spellPcInChord(pc, chordRootPc, keyRootPc, isMinor, chordType)}${oct}`;
+    const stdOct = Math.floor(midi / 12) - 1;
+    const name = spellPcInChord(pc, chordRootPc, keyRootPc, isMinor, chordType);
+    const letter = name[0];
+    const naturalPc = LETTER_NATURAL_PC[letter];
+    if (naturalPc === undefined) return `${name}${stdOct}`;
+    // adj ∈ [-2, +2] — accidental that bridges letter's natural pc to
+    // the spelled pc. Boundary-crossing cases:
+    //   naturalPc + adj >= 12  → letter B raised across C (e.g. B#, B##).
+    //                            Sounded pitch is in next MIDI octave but
+    //                            letter octave is one lower.
+    //   naturalPc + adj < 0    → letter C lowered across B (e.g. Cb, Cbb).
+    //                            Letter octave is one higher.
+    // Without this correction MIDI 60 spelled "B#" labels as "B#4"
+    // which round-trips back to MIDI 72 (C5), silently transposing
+    // the voicing up an octave on the audio renderer.
+    let adj = pc - naturalPc;
+    if (adj > 6) adj -= 12;
+    else if (adj < -6) adj += 12;
+    let oct = stdOct;
+    if (naturalPc + adj >= 12) oct -= 1;
+    else if (naturalPc + adj < 0) oct += 1;
+    return `${name}${oct}`;
 }
 
 // Standard music-theory note durations in beats. The motifMutator
@@ -709,7 +744,20 @@ export class Engine {
       mode = r.pick(EXOTIC_MODES as string[]);
       isExotic = true;
     } else {
-      mode = MAINSTREAM_EMOTION_TO_MODE[finalEmotion];
+      // Style-aware mainstream mapping. BLUES is the only style whose
+      // mainstream mode is NOT Ionian/Aeolian — the genre lives on
+      // Major Blues / Minor Blues (1 b3 3 4 b5 5 b7 family), and
+      // running the 12-bar form under plain Ionian erases every
+      // blue note (b3 / b5 / b7) the listener expects. The two
+      // BLUES sub-styles ('Blues' / 'Blues Turnaround') both declare
+      // ['Major Blues', 'Minor Blues'] availableModes, so this
+      // mapping is consistent with the style data, not a special
+      // case for the resolver.
+      if (config.style === 'BLUES') {
+        mode = finalEmotion === 'bright' ? 'Major Blues' : 'Minor Blues';
+      } else {
+        mode = MAINSTREAM_EMOTION_TO_MODE[finalEmotion];
+      }
       isExotic = false;
     }
 
@@ -1422,11 +1470,29 @@ export class Engine {
           const prevRoman = parsedChords.length > 0
               ? abstractPath[parsedChords.length - 1].roman
               : '';
-          const prevWasDominant = prevRoman.includes('V') && !prevRoman.includes('VI') && !prevRoman.includes('IV');
-          const isResolutionLanding = prevWasDominant && (
-              ap.roman === 'I' || ap.roman === 'i' || ap.roman === 'vi'
-              || ap.roman === 'VI' || ap.roman === 'bVI' || ap.roman === 'IV' || ap.roman === 'iv'
-          );
+          // Dominant detection: primary V (with quality suffix like
+          // V7, V9, V7alt) OR secondary V/X (V/ii, V/IV, V/vi). The
+          // legacy substring check `includes('V') && !includes('VI')
+          // && !includes('IV')` mis-classified V/IV and V/vi as
+          // non-dominant because their target tokens contain 'IV'/'VI',
+          // so the cadence to those targets missed the force-root
+          // anchor. Parse the secondary-dominant target explicitly:
+          //   V/X        → dominant of X, expect ap.roman == X
+          //   V or V7 …  → primary dominant, expect tonic-class landing
+          const isPrimaryV = /^V[^/IiVv]*$|^V$/.test(prevRoman.split('/')[0])
+              && prevRoman.split('/')[0] !== 'IV'
+              && prevRoman.split('/')[0] !== 'VI';
+          const isSecondaryV = prevRoman.startsWith('V/') || prevRoman.startsWith('V7/');
+          const secondaryTarget = isSecondaryV
+              ? prevRoman.split('/')[1]
+              : null;
+          const PRIMARY_LANDING_ROMANS = new Set([
+              'I', 'i', 'vi', 'VI', 'bVI', 'IV', 'iv',
+          ]);
+          const isResolutionLanding = (isPrimaryV && PRIMARY_LANDING_ROMANS.has(ap.roman))
+              || (isSecondaryV && secondaryTarget !== null
+                  && (ap.roman === secondaryTarget
+                      || ap.roman.toLowerCase() === secondaryTarget.toLowerCase()));
           const forceRootAnchor = isBarStart || isPhraseBoundary || isResolutionLanding;
 
           let bassM: number;
@@ -1484,7 +1550,8 @@ export class Engine {
           // + bass-to-voicing-bottom 8-14 sweet-spot constraint that
           // fixes the 84% mid-range tenor-gap problem.
           const prevCompingMidi = parsedChords.length > 0
-              ? parsedChords[parsedChords.length - 1].notes.map(n => noteToMidi(n))
+              ? (parsedChords[parsedChords.length - 1].notesMidi
+                  ?? parsedChords[parsedChords.length - 1].notes.map(n => noteToMidi(n)))
               : [];
           const compingNotesMidi = placeVoicingMidi(
               compingPcs, prevCompingMidi, bassM, activeType, rootKeyIndex,
@@ -1685,6 +1752,7 @@ export class Engine {
               // altered tensions read with correct accidentals (b9 of A7
               // is Bb, not A#; #11 of F is B, not Cb).
               notes: compingNotesMidi.map(m => midiToNoteInChord(m, rootKeyIndex, keyIndex, isMinorKey, activeType)),
+              notesMidi: compingNotesMidi.slice(),
               // Bar length in quarter-note time. 4/4 → 4, 3/4 → 3,
               // 6/8 → 3 (six eighths), 12/8 → 6, 5/4 → 5.
               duration: ctx.meterContext.beatsPerMeasure,
@@ -1698,6 +1766,25 @@ export class Engine {
               borrowedFrom: borrowed ?? undefined,
               localTonalCenterPc,
           });
+
+          // Round-trip guard. notesMidi is the authoritative source the
+          // audio renderer reads, but the legacy fallback path still
+          // round-trips through noteToMidi(notes[i]). This assert
+          // catches any spelling produced by midiToNoteInChord that
+          // the parser can't recognise — would silently detune the
+          // legacy path if a future spelling refactor introduces an
+          // unsupported accidental form. Dev-only (skipped under
+          // NODE_ENV='production' so the snapshot harness and audio
+          // path stay quiet in release builds).
+          if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') {
+              const justPushed = parsedChords[parsedChords.length - 1];
+              for (let i = 0; i < justPushed.notesMidi.length; i++) {
+                  const reparsed = noteToMidi(justPushed.notes[i]);
+                  if (reparsed !== justPushed.notesMidi[i]) {
+                      console.warn(`[voicing round-trip mismatch] bar=${parsedChords.length - 1} ${activeType} root=${rootName}: "${justPushed.notes[i]}" parsed to ${reparsed}, expected ${justPushed.notesMidi[i]}`);
+                  }
+              }
+          }
       });
 
       // Roman label sync. Progression templates and the mode-aware
@@ -2019,7 +2106,9 @@ export class Engine {
         //     in the relevant VL set (incoming for early-in-bar,
         //     outgoing for late-in-bar)
         const _pcOf = (m: number) => (((m % 12) + 12) % 12);
-        const _voicingPcs = (c: ChordDef) => new Set(c.notes.map(n => _pcOf(noteToMidi(n))));
+        const _voicingPcs = (c: ChordDef) => new Set(
+            (c.notesMidi ?? c.notes.map(n => noteToMidi(n))).map(_pcOf)
+        );
         const voiceLeadingIn: Set<number>[] = chords.map((c, i) => {
             if (i === 0) return new Set();
             const prev = _voicingPcs(chords[i - 1]);
@@ -2737,6 +2826,25 @@ export class Engine {
                 gridSeen.add(k);
                 return true;
             });
+            // Re-run single-voice melody enforcement after snap. Two
+            // melody events with different pitches but onset times like
+            // 0.245 and 0.255 both snap to 0.25 — the (time, midi, part)
+            // dedup above keeps both because they differ in noteNumber,
+            // producing an unintended 2-voice melody at the snapped
+            // grid point. Pick the higher-priority survivor by the same
+            // rule used before quantization.
+            const gridMelodyWinner = new Map<string, NoteEvent>();
+            for (const e of events) {
+                if (e.part !== 'melody') continue;
+                const k = e.time.toFixed(4);
+                const cur = gridMelodyWinner.get(k);
+                if (!cur || scoreEvent(e) > scoreEvent(cur)) gridMelodyWinner.set(k, e);
+            }
+            events = events.filter(e => {
+                if (e.part !== 'melody') return true;
+                const k = e.time.toFixed(4);
+                return gridMelodyWinner.get(k) === e;
+            });
         }
 
         return {
@@ -2803,9 +2911,28 @@ export class Engine {
           let step = this.random.range(0, 9);
           for (const d of pattern) {
               motif.push({ t, d, diatonicStep: step });
-              const moves = [-5, -4, -3, -3, -2, -2, 2, 2, 3, 3, 4, 5];
+              // Style-tuned random walk. BLUES leans on stepwise lick
+              // flow (±1/±2 dominant) so consecutive notes thread blue-
+              // scale tones; other styles use wider hops (±2..±5) so
+              // motif projections spread across the chord-tone snap
+              // basin instead of collapsing to the closest chord tone.
+              const moves = style === 'BLUES'
+                  ? [-2, -2, -2, -1, -1, -1, -1, 1, 1, 1, 1, 2, 2, 2]
+                  : [-5, -4, -3, -3, -2, -2, 2, 2, 3, 3, 4, 5];
               const delta = this.random.pick(moves);
-              step = Math.max(0, Math.min(9, step + delta));
+              // Reflect off the [0, 9] boundary instead of clamping.
+              // Clamping made step values pile up at 9 or 0 when the
+              // walk hit an edge with a same-direction delta (e.g.
+              // step=8 +5 → clamp 9, then 9 +5 → clamp 9 again),
+              // producing 3+ consecutive identical diatonicSteps which
+              // project to the same MIDI ("F-F-F-F" block-stuck
+              // symptom the BLUES audit caught: t=4.66/5.00/5.66 all
+              // MIDI 81). Reflection turns the over-shoot into a real
+              // direction reversal so the walk keeps moving.
+              let newStep = step + delta;
+              if (newStep > 9) newStep = 9 - (newStep - 9);
+              if (newStep < 0) newStep = -newStep;
+              step = Math.max(0, Math.min(9, newStep));
               t += d;
           }
           return motif;
@@ -3242,7 +3369,36 @@ export class Engine {
   // contributes either a filter or a score. Rules are independent —
   // adding a new one doesn't require finding "where in the pipeline"
   // it goes.
-  // =====================================================================
+  //
+  // HARD_FILTER_PRIORITY — relaxation drops filters from the END of
+  // the sorted list, so position 0 is preserved longest (most
+  // important) and position 13 drops first (least important).
+  // Filters split into two layers:
+  //   load-bearing musical (positions 0-8) — chord identity, avoid
+  //       on strong beat, tendency resolution, phrase cadence, pending
+  //       tension resolution, acoustic clash, gravity-line closure.
+  //       Sacrificing any of these produces an audible "wrong note".
+  //   etiquette (positions 9-13) — leap-cap, apex headroom, pc-repeat
+  //       anti-stuck, leap-recovery, anti-monotonicity. Violating any
+  //       degrades shape but doesn't break harmony; cheap to drop when
+  //       the pool is sparse.
+  // ===================================================================== */
+  private static readonly HARD_FILTER_PRIORITY: Record<string, number> = {
+      'in-melody-range': 0,
+      'no-avoid': 1,
+      'in-chord-contract': 2,
+      'saturation-resolve': 3,
+      'unified-tension-resolution': 4,
+      'phrase-end-no-unresolved-avoid': 5,
+      'no-cross-octave-m9': 6,
+      'scale-gravity-line': 7,
+      'color-line': 8,
+      'leap-octave-cap': 9,
+      'apex-headroom': 10,
+      'no-same-pc-repeat': 11,
+      'leap-recovery': 12,
+      'anti-monotonicity': 13,
+  };
 
   private selectBestMidi(
       ctx: NoteContext,
@@ -3290,7 +3446,19 @@ export class Engine {
 
       // 2. Apply hard filters in priority order. If filtered pool
       //    becomes empty, relax the LAST applied filter and retry.
-      const activeFilters = hardFilters.filter(f => f.shouldApply(ctx));
+      // Re-rank by musical priority so etiquette filters (anti-
+      // monotonicity / leap-recovery / no-same-pc-repeat) drop FIRST
+      // when the candidate pool is tight, and load-bearing musical
+      // filters (saturation-resolve, unified-tension-resolution,
+      // phrase-end-no-unresolved-avoid) drop LAST. The hardFilters
+      // array's source-order is convenient for reading; HARD_FILTER_PRIORITY
+      // dictates relaxation order.
+      const activeFilters = hardFilters
+          .filter(f => f.shouldApply(ctx))
+          .slice()
+          .sort((a, b) =>
+              (Engine.HARD_FILTER_PRIORITY[a.name] ?? 999) - (Engine.HARD_FILTER_PRIORITY[b.name] ?? 999)
+          );
       let valid = cands.filter(midi => activeFilters.every(f => f.accept(midi, ctx)));
       let droppedFilters = 0;
       while (valid.length === 0 && droppedFilters < activeFilters.length) {
@@ -3516,6 +3684,18 @@ export class Engine {
         // collapses the doubling to a single-octave bass when the
         // doubled octave would be out of range.
         const bMLow = (bM - 12 >= BASS_RANGE.LOW) ? bM - 12 : bM;
+        // Chord-root anchor in bass register. Used by inline texture
+        // patterns whose intervals (1-3-5-6-b7, root+P5 alternation,
+        // etc.) are written relative to the CHORD ROOT, not the actual
+        // bass. When the chord is in an inversion (stepwise_descent /
+        // walking_bass picked the 3rd, 5th, or 7th as bass), `bM` no
+        // longer carries the root, so `bM + 7` plays a fifth above
+        // whatever the bass is — not the chord 5th. Replace pattern
+        // arithmetic that's nominally rooted in chord intervals with
+        // `bRoot + N` / `bRootLow + N` to stay correctly rooted under
+        // inversions.
+        const bRoot = this.bassPitchAtRootOffset(chord, 0);
+        const bRootLow = (bRoot - 12 >= BASS_RANGE.LOW) ? bRoot - 12 : bRoot;
         // Divisi 2.0 — Smart Omit. When the chord is in 'FirstInversion'
         // state (3rd in bass), upper chord stabs that double the 3rd create
         // a low-frequency clash with the bass. Drop the 3rd from cM so
@@ -3524,13 +3704,29 @@ export class Engine {
         // semitones above the chord ROOT (NOT the bass), since cM is
         // upper-shell pitches relative to root. Other states pass cM
         // through unchanged.
-        let cM = chord.notes.map(n => noteToMidi(n));
+        // notesMidi is the authoritative source; notes[] is display
+        // only. Falls back to string parse if a legacy ChordDef arrives
+        // without notesMidi populated.
+        let cM = chord.notesMidi ?? chord.notes.map(n => noteToMidi(n));
         if (chord.tensionState === 'FirstInversion') {
             const rootPc = ((chord.rootMidi % 12) + 12) % 12;
-            cM = cM.filter(m => {
-                const intervalToRoot = (((m % 12) - rootPc + 12) % 12);
-                return intervalToRoot !== 3 && intervalToRoot !== 4;
-            });
+            const bassPc = ((chord.bassMidi % 12) + 12) % 12;
+            const bassIvToRoot = ((bassPc - rootPc + 12) % 12);
+            // Smart Omit only when bass is the chord 3rd (true first
+            // inversion). evaluateTensionState's fallback in
+            // musicTheory.ts also tags 7th-in-bass (Gm7/F: bass=F=b7)
+            // and other non-root inversions as FirstInversion since
+            // there's no separate state for them. Without this guard
+            // a chord like Gm7/F would lose its literal 3rd (Bb) from
+            // the comping, gutting the chord identity — bass already
+            // carries the b7, then comping drops the 3rd, leaving only
+            // root + 5 + b7 ringing upstairs.
+            if (bassIvToRoot === 3 || bassIvToRoot === 4) {
+                cM = cM.filter(m => {
+                    const intervalToRoot = (((m % 12) - rootPc + 12) % 12);
+                    return intervalToRoot !== 3 && intervalToRoot !== 4;
+                });
+            }
         }
 
         const pushEvent = (midis: number | number[], t: number, d: number, vol: number, part: 'bass' | 'chord') => {
@@ -3649,8 +3845,8 @@ export class Engine {
 
           case 'Root_5_8': // 3. 根五根 (1-5-1)
               pushEvent(bM, 0, 0.5, 0.8, 'bass');
-              pushEvent(bM + 7, 0.5, 0.5, 0.7, 'bass');
-              pushEvent(bM + 12, 1.0, duration - 1.0, 0.7, 'bass');
+              pushEvent(bRoot + 7, 0.5, 0.5, 0.7, 'bass');
+              pushEvent(bRoot + 12, 1.0, duration - 1.0, 0.7, 'bass');
               break;
 
           case 'Root_7_5_8': { // 4. 根七五根 (1-7-5-1) — bass walking pattern
@@ -3870,7 +4066,7 @@ export class Engine {
 
           case 'Root_Fifth_Bass':
               for (let i = 0; i < duration; i++) {
-                  pushEvent(i % 2 === 0 ? bM : bM + 7, i, 0.8, 0.8, 'bass');
+                  pushEvent(i % 2 === 0 ? bM : bRoot + 7, i, 0.8, 0.8, 'bass');
               }
               break;
 
@@ -3886,7 +4082,7 @@ export class Engine {
           case 'Slap_Bass_Line':
               pushEvent(bMLow, 0, 0.25, 0.9, 'bass'); // The "One"
               if (duration > 0.75) pushEvent(bM, 0.75, 0.15, 0.8, 'bass');
-              if (duration > 1.5) pushEvent(bM + 12, 1.5, 0.1, 0.7, 'bass');
+              if (duration > 1.5) pushEvent(bRoot + 12, 1.5, 0.1, 0.7, 'bass');
               if (duration > 2.25) pushEvent(bM, 2.25, 0.15, 0.7, 'bass');
               break;
 
@@ -3912,7 +4108,7 @@ export class Engine {
               // Modern pop ballad wave arpeggio (Adele / Ghibli-style).
               // Avoids beat 0 / beat 2 to leave space for the bass.
               pushEvent(bMLow, 0, duration, 0.8, 'bass');
-              if (duration >= 2) pushEvent(bM + 7, 0.5, duration - 0.5, 0.7, 'bass');
+              if (duration >= 2) pushEvent(bRoot + 7, 0.5, duration - 0.5, 0.7, 'bass');
               // Upper octave doubling is filtered against CHORD_RANGE.HIGH
               // — cM's top voicing is often near the ceiling, so a +12
               // doubling would overflow into the melody register.
@@ -3951,7 +4147,7 @@ export class Engine {
           case 'Pop_Ballad_158_Sweep': {
               // 1-5-8 pop ballad bass sweep with cM stab releases.
               pushEvent(bMLow, 0, duration, 0.8, 'bass');
-              pushEvent(bMLow + 7, 0.5, duration - 0.5, 0.65, 'bass');
+              pushEvent(bRootLow + 7, 0.5, duration - 0.5, 0.65, 'bass');
               pushEvent(bM, 1.0, duration - 1.0, 0.6, 'bass');
               if (duration > 1.5) pushEvent(cM, 1.5, duration - 1.5, 0.6, 'chord');
               if (duration > 2.5) pushEvent(cM, 2.5, duration - 2.5, 0.5, 'chord');
@@ -4023,7 +4219,7 @@ export class Engine {
               // Stevie Wonder-style descending arpeggio with sustained
               // chord pad on the first half of the bar.
               pushEvent(bMLow, 0, duration, 0.8, 'bass');
-              if (duration >= 2.0) pushEvent(bM + 7, 1.0, duration - 1.0, 0.6, 'bass');
+              if (duration >= 2.0) pushEvent(bRoot + 7, 1.0, duration - 1.0, 0.6, 'bass');
               if (duration >= 3.0) {
                   cM.slice().reverse().forEach((m, idx) => {
                       pushEvent(m, 2.0 + (idx * 0.25), 0.5, 0.6, 'chord');
@@ -4073,7 +4269,7 @@ export class Engine {
               // {0.5, 1.5, 2.0, 3.5}.
               for (let i = 0; i < Math.floor(duration); i += 2) {
                   pushEvent(bM, i, 1.5, 0.85, 'bass');
-                  if (i + 1 < duration) pushEvent(bM + 7, i + 1, 1.0, 0.75, 'bass');
+                  if (i + 1 < duration) pushEvent(bRoot + 7, i + 1, 1.0, 0.75, 'bass');
               }
               [0.5, 1.5, 2.0, 3.5].forEach(t => {
                   if (t < duration) pushEvent(cM, t, 0.4, 0.65, 'chord');
@@ -4139,7 +4335,7 @@ export class Engine {
               ];
               for (let i = 0; i < duration * 2; i++) {
                   const t = i * 0.5;
-                  pushEvent(bMLow + (pattern[i % 8] || 0), t, 0.4, 0.85, 'bass');
+                  pushEvent(bRootLow + (pattern[i % 8] || 0), t, 0.4, 0.85, 'bass');
                   if (i % 4 === 3) pushEvent(cM, t, 0.4, 0.7, 'chord');
               }
               break;
@@ -5241,11 +5437,23 @@ export class Engine {
           // ===========================================================
           {
               // Pre-rolls (mirrors legacy random consumption order):
-              //   1. Magnetism sacred-allow (only if sacred + tension)
+              //   1. Magnetism sacred-allow — random consumed but result
+              //      no longer reads into shouldApply. Previously this
+              //      gave sacred motif a 15% probability to keep an
+              //      avoid note on a structural beat ("preserve motif
+              //      color"). In practice this meant 15% of strong-
+              //      beat avoid notes survived as-is and the listener
+              //      heard them as "wrong". Authors who legitimately
+              //      want a structural avoid note (e.g. b9 over m
+              //      chord as deliberate tension) mark the motif note
+              //      with `!` → bypassSnap flag → still escapes the
+              //      no-avoid filter. Random consumption retained so
+              //      the snapshot stream stays stable.
               //   2. Bass-decoll sacred-allow (only if sacred)
               const magnetSacredAllow = (motifSacred && isTension)
                   ? (this.random.next() < 0.85)
                   : true;
+              void magnetSacredAllow;  // kept for stream stability; no longer consulted
               const bassDecollSacredAllow = motifSacred
                   ? (this.random.next() < 0.6)
                   : true;
@@ -5305,6 +5513,7 @@ export class Engine {
                   bypassSnap: !!m.bypassSnap,
                   isModalContext: isModalEnv,
                   scaleNameForBar: scaleNameForBar || undefined,
+                  style,
                   noteDuration: m.d,
               };
 
@@ -5320,8 +5529,7 @@ export class Engine {
                   // author's explicit color statement.
                   { name: 'no-avoid',
                     shouldApply: (c) => c.isStructural
-                        && !c.bypassSnap
-                        && (!c.isMotifSacred || magnetSacredAllow),
+                        && !c.bypassSnap,
                     accept: (m, c) => {
                         const pc = ((m % 12) + 12) % 12;
                         const iv = ((pc - c.chordRootPc + 12) % 12);
@@ -5465,8 +5673,13 @@ export class Engine {
                   { name: 'no-cross-octave-m9',
                     shouldApply: () => true,
                     accept: (m, c) => {
-                        for (const noteStr of c.chord.notes) {
-                            const vMidi = noteToMidi(noteStr);
+                        // Authoritative MIDI source. Re-parsing notes[]
+                        // through noteToMidi was the legacy fallback;
+                        // notesMidi is the source-of-truth populated by
+                        // realizeProgression.
+                        const voicingMidis = c.chord.notesMidi
+                            ?? c.chord.notes.map(n => noteToMidi(n));
+                        for (const vMidi of voicingMidis) {
                             const diff = m - vMidi;
                             if (diff === 13 || diff === -13) return false;
                         }
@@ -5548,8 +5761,31 @@ export class Engine {
                         const iv = ((pc - rootPc + 12) % 12);
                         // (a) Resolution — pc on scale target
                         if (iv === target) return true;
-                        // (b) Stepwise continuation — line 推进 ≤ 2 半音
-                        return Math.abs(m - melodyState.pendingScaleLineLastMidi) <= 2;
+                        // (b) Stepwise continuation — must be ≤ 2 semis
+                        // AND must close in on (or hold steady against)
+                        // the gravity target. Step-size-only ignores
+                        // direction: from Ab leading down to G, both
+                        // Ab→A and Ab→G are ≤ 2 semis, but Ab→A walks
+                        // AWAY from the target — direction-blind
+                        // approval lets the line ping-pong instead of
+                        // resolving. Pick the nearest target MIDI to
+                        // the prior step's pitch and require the new
+                        // candidate is no further from it.
+                        const lastMidi = melodyState.pendingScaleLineLastMidi;
+                        if (Math.abs(m - lastMidi) > 2) return false;
+                        let nearestTargetMidi = -999;
+                        let nearestDist = Infinity;
+                        for (let cand = target; cand < 128; cand += 12) {
+                            const d = Math.abs(cand - lastMidi);
+                            if (d < nearestDist) {
+                                nearestDist = d;
+                                nearestTargetMidi = cand;
+                            }
+                        }
+                        if (nearestTargetMidi < 0) return true; // defensive
+                        const oldDist = Math.abs(lastMidi - nearestTargetMidi);
+                        const newDist = Math.abs(m - nearestTargetMidi);
+                        return newDist <= oldDist;
                     } },
                   // Color-line — 老师哲理: 9/11/13/7 (high-voice color)
                   // open a tension WINDOW. Resolution is a process, not
@@ -5824,6 +6060,47 @@ export class Engine {
                         if (c.isPhraseEnd && c.isLastNote) mult *= 3;
                         return base[role] * mult;
                     } },
+                  // BLUES stepwise-bonus — rewards candidates within ±2
+                  // semitones of the previous emit so the line threads
+                  // blues-scale tones (b3/3/4/b5/5/b7) in a continuous
+                  // lick-flow rather than arpeggiating chord 1/3/5/7
+                  // (which is what in-chord-literal at weight 2.0 would
+                  // otherwise dominate). Heavier than step-leap-
+                  // distribution's stepwise reward so it actually pulls
+                  // the choice on structural beats too.
+                  { name: 'blues-stepwise-bonus', weight: 3.0,
+                    shouldApply: (c) => c.style === 'BLUES' && c.lastNoteMidi > 0,
+                    score: (m, c) => {
+                        const semis = Math.abs(m - c.lastNoteMidi);
+                        if (semis === 0) return 0;        // same MIDI handled separately
+                        if (semis <= 2) return 1;          // stepwise lick
+                        if (semis <= 4) return 0.3;        // small leap, still flow
+                        return 0;
+                    } },
+                  // Anti-bridge same-MIDI penalty — universal. The hard
+                  // no-same-pc-repeat bans candidates whose PC equals
+                  // the previous emit's PC; this soft penalty discourages
+                  // identical-MIDI candidates that survive when the hard
+                  // filter relaxes (sacred motif, sparse candidate pool),
+                  // and also penalizes "octave bounce" (m === lastMidi
+                  // ± 12) which sounds like a stutter. Strong enough to
+                  // override marginal preferences but not load-bearing
+                  // ones (in-chord-literal weight 2.0 still wins when
+                  // the only stepwise option lies outside contract).
+                  { name: 'same-midi-bridge-penalty', weight: 1.2,
+                    // BLUES + RNB only — these styles have repetition-
+                    // heavy motif fallbacks and color-tone wallpapering
+                    // tendencies. JAZZ + POP main pipelines already
+                    // distribute candidates well; adding the penalty
+                    // there cost ~4% melodyOK% (3 notes / song push out
+                    // of contract) for no measurable shape benefit.
+                    shouldApply: (c) => (c.style === 'BLUES' || c.style === 'RNB')
+                        && c.lastNoteMidi > 0 && !c.isFirstNote,
+                    score: (m, c) => {
+                        if (m === c.lastNoteMidi) return -1;
+                        if (m === c.lastNoteMidi + 12 || m === c.lastNoteMidi - 12) return -0.6;
+                        return 0;
+                    } },
               ];
 
               const newMidi = this.selectBestMidi(ctx, hardFilters, softScores);
@@ -5853,8 +6130,30 @@ export class Engine {
                   if (this.random.next() < 0.5) {
                       skipThisNote = true;
                   } else {
+                      // Step-up to next runScale tone. Validate the
+                      // replacement against the same musical contract
+                      // the per-note pipeline enforced — runScale
+                      // contains scale tones some of which are avoid
+                      // notes or sit outside the chord contract, and
+                      // an unchecked step-up can land the structural
+                      // beat on either. If the candidate fails, keep
+                      // the original (collision tolerated) rather than
+                      // silently writing the wrong note.
                       const tryIndex = runScale.indexOf(mNoteMidi) + 1;
-                      if (tryIndex > 0 && tryIndex < runScale.length) mNoteMidi = runScale[tryIndex];
+                      if (tryIndex > 0 && tryIndex < runScale.length) {
+                          const candidate = runScale[tryIndex];
+                          const candPc = ((candidate % 12) + 12) % 12;
+                          const ivFromRoot = ((candPc - ((chord.rootMidi % 12) + 12) % 12) + 12) % 12;
+                          const isAvoid = isStructuralNote && isAvoidNote(
+                              ivFromRoot, chord.type, scaleNameForBar || undefined,
+                              isModalEnv, chord.effectiveFunc ?? func,
+                          );
+                          const inContract = !isStructuralNote
+                              || computeGlobalContract(chord.type, ((chord.rootMidi % 12) + 12) % 12).pcs.has(candPc);
+                          if (!isAvoid && inContract) {
+                              mNoteMidi = candidate;
+                          }
+                      }
                   }
               }
           }
@@ -5890,8 +6189,20 @@ export class Engine {
           // on key tonic; Tier C handles D/S landings via
           // preserve-tension which naturally accommodates flowing
           // states without forcing a hard snap.
+          // Cadence is blocked only by REAL flowing inversions — bass on
+          // the 3rd (FirstInversion proper) or 5th (SecondInversion /
+          // Cadential64). evaluateTensionState's fallback also tags
+          // 7th-in-bass and other non-3rd shells as 'FirstInversion'
+          // (see musicTheory.ts), but those aren't flowing inversions —
+          // they're slash-flavored harmonies whose phrase endings
+          // should still receive cadence resolution.
+          const cadRootPc = ((chord.rootMidi % 12) + 12) % 12;
+          const cadBassPc = ((chord.bassMidi % 12) + 12) % 12;
+          const cadBassIvToRoot = ((cadBassPc - cadRootPc + 12) % 12);
+          const isRealFirstInversion = chord.tensionState === 'FirstInversion'
+              && (cadBassIvToRoot === 3 || cadBassIvToRoot === 4);
           const cadenceBlocked = !isLast && (
-              chord.tensionState === 'FirstInversion'
+              isRealFirstInversion
               || chord.tensionState === 'SecondInversion'
               || chord.tensionState === 'Cadential64'
           );
@@ -6120,6 +6431,39 @@ export class Engine {
           // the register.
           while (mNoteMidi > MELODY_RANGE.HIGH) mNoteMidi -= 12;
           while (mNoteMidi < MELODY_RANGE.LOW) mNoteMidi += 12;
+
+          // Cross-octave m9 escape. Any pitch sitting exactly 13 semis
+          // (= m9 = octave-expanded m2) above or below a currently-
+          // sounding voicing note creates an audible half-step grind
+          // even when both pitches are pc-legitimate chord tones — the
+          // canonical case is b3 of Cm9 (Eb5) sounding against the 9
+          // (D4) one m9 apart.
+          //
+          // Anchor scoring's `no-cross-octave-m9` filter catches the
+          // first-of-bar note; this catches mid-bar motif projections,
+          // passing tones, run-generator inserts, and grace notes that
+          // bypass anchor scoring. Sacred motif yields per the same
+          // architectural rule as cadence resolution: physical
+          // acoustic clash overrides pitch preservation.
+          //
+          // Strategy: shift ±12 (keeps pc identical → motif interval
+          // pattern reads unchanged). Prefer whichever direction
+          // escapes the clash and stays in MELODY_RANGE. If neither
+          // works (rare — voicing covers both flanks), keep the
+          // original — accepting the clash is preferable to dropping
+          // out of range or destroying the motif's pc.
+          {
+              const voicingMidis = chord.notesMidi ?? chord.notes.map(n => noteToMidi(n));
+              const formsM9 = (mid: number) =>
+                  voicingMidis.some(v => mid - v === 13 || mid - v === -13);
+              if (formsM9(mNoteMidi)) {
+                  const candidates = [mNoteMidi - 12, mNoteMidi + 12];
+                  const fix = candidates.find(c =>
+                      c >= MELODY_RANGE.LOW && c <= MELODY_RANGE.HIGH && !formsM9(c)
+                  );
+                  if (fix !== undefined) mNoteMidi = fix;
+              }
+          }
 
           // Inherit the bar role onto each direct motif note. role==='rest'
           // never reaches this loop (mutatedMotif stays empty).
@@ -6427,10 +6771,31 @@ export class Engine {
       }
       rnbPentPalette.sort((a, b) => a - b);
 
-      const fillStrategy: 'arpeggio_up' | 'pentatonic_cascade' | 'stepwise' =
+      // BLUES lick palette: Composite Blues (1, b3, 3, 4, b5, 5, b7) anchored
+      // on the SONG key, not the current chord. Composite Blues carries the
+      // double blue note (b3 and b5 simultaneously with natural 3 / 5), which
+      // is the blues-vocabulary signature — running through it produces the
+      // characteristic "blues lick" sound (b3→3 grace, 4→b5→5 chromatic
+      // approach, b7 tail). Key-anchored because blues genres ride the same
+      // scale over I/IV/V across the whole 12-bar form rather than chord-
+      // following — that's the source of the genre's "horizontal" identity.
+      const bluesPalette: number[] = [];
+      const compositeBluesIvs = [0, 3, 4, 5, 6, 7, 10];
+      const keyPcForBlues = ((noteToMidi(musicKey + "0") % 12) + 12) % 12;
+      for (let oct = 3; oct <= 6; oct++) {
+          for (const iv of compositeBluesIvs) {
+              bluesPalette.push((keyPcForBlues + iv) % 12 + (oct + 1) * 12);
+          }
+      }
+      bluesPalette.sort((a, b) => a - b);
+
+      const fillStrategy: 'arpeggio_up' | 'pentatonic_cascade' | 'blues_lick' | 'stepwise' =
           style === 'POP' ? 'arpeggio_up' :
-          style === 'RNB' ? 'pentatonic_cascade' : 'stepwise';
-      const insertDur = fillStrategy === 'stepwise' ? 0.5 : 0.25;
+          style === 'RNB' ? 'pentatonic_cascade' :
+          style === 'BLUES' ? 'blues_lick' : 'stepwise';
+      // 16-th note density on blues_lick to deliver actual run feel —
+      // 8th-note stepwise reads as "slow walk", not lick.
+      const insertDur = (fillStrategy === 'stepwise') ? 0.5 : 0.25;
       const minSlotSize = insertDur;
 
       for (let bi = 0; bi < barMel.length - 1; bi++) {
@@ -6438,7 +6803,14 @@ export class Engine {
           const next = barMel[bi + 1];
           const gap = next.time - (curr.time + curr.duration);
           const leap = Math.abs(next.noteNumber - curr.noteNumber);
-          if (gap <= 0.75 || leap < 4) continue;
+          // Trigger threshold per strategy. Blues licks need to fill
+          // smaller gaps + smaller leaps than the default — the run
+          // feel comes from continuous motion, not from filling rare
+          // big jumps. Lowered to gap ≥ 0.5 (was 0.75) and leap ≥ 3
+          // (was 4) for blues_lick.
+          const gapThreshold = fillStrategy === 'blues_lick' ? 0.5 : 0.75;
+          const leapThreshold = fillStrategy === 'blues_lick' ? 3 : 4;
+          if (gap <= gapThreshold || leap < leapThreshold) continue;
 
           const direction = next.noteNumber > curr.noteNumber ? 1 : -1;
           const maxByGap = Math.floor(gap / minSlotSize);
@@ -6446,7 +6818,9 @@ export class Engine {
           const maxByLeap = fillStrategy === 'stepwise'
               ? Math.max(1, Math.floor(leap / 2))
               : Math.max(1, Math.floor(leap / 1.5));
-          const nMaxCap = fillStrategy === 'pentatonic_cascade' ? 8 : (fillStrategy === 'arpeggio_up' ? 6 : 4);
+          const nMaxCap = fillStrategy === 'pentatonic_cascade' ? 8
+              : fillStrategy === 'blues_lick' ? 8
+              : fillStrategy === 'arpeggio_up' ? 6 : 4;
           const nInserts = Math.max(1, Math.min(nMaxCap, maxByGap, maxByLeap));
           const runStart = curr.time + curr.duration;
 
@@ -6454,6 +6828,7 @@ export class Engine {
           const palette =
               fillStrategy === 'arpeggio_up' ? popArpPalette :
               fillStrategy === 'pentatonic_cascade' ? rnbPentPalette :
+              fillStrategy === 'blues_lick' ? bluesPalette :
               (fillScale && fillScale.length > 0 ? fillScale : runScale);
 
           let bestIdx = 0;
@@ -6462,14 +6837,29 @@ export class Engine {
               const d = Math.abs(palette[k] - curr.noteNumber);
               if (d < bestDist) { bestDist = d; bestIdx = k; }
           }
+          // Voicing snapshot for m9 escape — same chord across the
+          // whole run since Run Generator works bar-internally.
+          const runVoicingMidis = chord.notesMidi ?? chord.notes.map(n => noteToMidi(n));
+          const runFormsM9 = (mid: number) =>
+              runVoicingMidis.some(v => mid - v === 13 || mid - v === -13);
           for (let s = 0; s < nInserts; s++) {
               const stepIdx = bestIdx + direction * (s + 1);
               if (stepIdx < 0 || stepIdx >= palette.length) break;
-              const stepMidi = palette[stepIdx];
+              let stepMidi = palette[stepIdx];
               if (stepMidi < MELODY_RANGE.LOW || stepMidi > MELODY_RANGE.HIGH) continue;
               if (stepMidi === curr.noteNumber || stepMidi === next.noteNumber) continue;
               if (direction > 0 && stepMidi >= next.noteNumber) break;
               if (direction < 0 && stepMidi <= next.noteNumber) break;
+              // m9 escape — try ±12 if the palette pitch would form a
+              // cross-octave m9 with the current voicing. Skip the
+              // insert entirely if no octave variant escapes.
+              if (runFormsM9(stepMidi)) {
+                  const alt = [stepMidi - 12, stepMidi + 12].find(c =>
+                      c >= MELODY_RANGE.LOW && c <= MELODY_RANGE.HIGH && !runFormsM9(c)
+                  );
+                  if (alt === undefined) continue;
+                  stepMidi = alt;
+              }
 
               runInserts.push({
                   noteNumber: stepMidi,
@@ -6760,6 +7150,34 @@ export class Engine {
               && Math.abs(lastEmit.noteNumber - melodyState.pendingColorLine.lineLastMidi) <= 2) {
               melodyState.pendingColorLine.lineLastMidi = lastEmit.noteNumber;
           }
+
+          // Re-sync currentMidi + lastEmitAssessment to the bar's
+          // chronologically-last melody event. The per-emit update inside
+          // generateBarPattern's main loop sets these to the LAST motif
+          // note, but Run Generator inserts, cadence-tail rewrites, and
+          // Active Divisi pulls push more events AFTER that point. Without
+          // this re-sync the next bar's anchor scoring, voice-leading
+          // distance, and unified-tension-resolution hard filter read the
+          // stale motif-loop reference instead of the actual prior pitch
+          // the listener just heard.
+          melodyState.currentMidi = lastEmit.noteNumber;
+          const lastEmitPcSync = ((lastEmit.noteNumber % 12) + 12) % 12;
+          melodyState.lastEmitAssessment = evaluateNoteInChordContext(
+              lastEmitPcSync,
+              chord.type,
+              chordRootPcLocal2,
+              chord.effectiveFunc ?? func,
+              nextChord ? nextChord.type : null,
+              nextChord ? ((nextChord.rootMidi % 12) + 12) % 12 : null,
+              ((noteToMidi(musicKey + "0") % 12) + 12) % 12,
+              scaleNameForBar || undefined,
+              isModalEnv,
+              runScalePcs,
+              this.songTonalCharacter,
+              chord.localTonalCenterPc,
+              modeToKeyFamily(musicMode),
+          );
+          melodyState.lastEmitChord = chord;
       }
 
       // Cycle boundary — tension tracker resets at every cadence position

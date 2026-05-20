@@ -11,18 +11,44 @@
 
 // ------------------------------------------------------------------
 // Note name ↔ MIDI conversion
+//
+// noteToMidi parses note strings as letter + accidental + octave so
+// every enharmonic spelling round-trips correctly:
+//
+//   C#4 / Db4    → 61    F##3 / G3    → 55
+//   B#3 → 60  (B-letter octave 3 + 1 = same pitch as C4)
+//   Cb4 → 59  (C-letter octave 4 - 1 = same pitch as B3)
+//   Bbb3 → 57 (B-letter octave 3 - 2 = same pitch as A3)
+//
+// The octave digit is anchored to the natural letter, not the spelled
+// pitch class — B#3 is "B in octave 3 raised one semitone", which
+// crosses the C boundary into C4 pitch. Same logic for Cb / Fb / B#.
+//
+// Source-of-truth roundtrip rule: every chord-voicing MIDI value must
+// satisfy noteToMidi(midiToNoteInChord(m, ...)) === m. Sharp-key chords
+// (F#m7 in D major) and chord-relative spellings (b5 of Fm9 = Cb)
+// route through this parser before reaching the audio renderer.
 // ------------------------------------------------------------------
 
-const NOTE_VALUES: Record<string, number> = {
-  'C': 0, 'Db': 1, 'D': 2, 'Eb': 3, 'E': 4, 'F': 5, 'Gb': 6, 'G': 7, 'Ab': 8, 'A': 9, 'Bb': 10, 'B': 11
+const _LETTER_NATURAL_PC: Record<string, number> = {
+  C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
 };
 
 export function noteToMidi(note: string): number {
   if (!note) return 60;
-  const pitchClass = note.replace(/\d+$/, '');
-  const octaveMatch = note.match(/\d+$/);
-  const octave = octaveMatch ? parseInt(octaveMatch[0]) : 4;
-  return (NOTE_VALUES[pitchClass] !== undefined ? NOTE_VALUES[pitchClass] : 0) + (octave + 1) * 12;
+  const m = note.match(/^([A-G])(##|#|bb|b)?(-?\d+)?$/);
+  if (!m) return 60;
+  const letter = m[1];
+  const acc = m[2] ?? '';
+  const octave = m[3] !== undefined ? parseInt(m[3], 10) : 4;
+  const natural = _LETTER_NATURAL_PC[letter];
+  if (natural === undefined) return 60;
+  let adj = 0;
+  if (acc === '#') adj = 1;
+  else if (acc === '##') adj = 2;
+  else if (acc === 'b') adj = -1;
+  else if (acc === 'bb') adj = -2;
+  return (octave + 1) * 12 + natural + adj;
 }
 
 export function midiToNote(midi: number): string {
