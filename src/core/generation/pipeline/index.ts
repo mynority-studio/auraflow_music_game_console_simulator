@@ -45,6 +45,7 @@ import type { RenderContext } from '../ir/RenderContext';
 import { BassRealizer } from '../realizers/BassRealizer';
 import { DrumRealizer } from '../realizers/DrumRealizer';
 import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
+import { modulateMgPianoByWeather } from './MgPianoWeatherModulator';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -158,6 +159,26 @@ export function runPipeline(
         mgChords[i].keyOffset = keyOffset;
     }
 
+    // ============================================================
+    // C.5 timing 对齐 — sections 总长截短到 ≤ mg 总长
+    // ============================================================
+    // 问题:mg styleDictionary.recommendedBars(POP/JAZZ=16 / BLUES=12)固定整曲长度,
+    // 但 auraflow structureTemplates 总长可能远大于(如 POP standard 64 bars)。
+    // 不修复 → 后半段 sections 没钢琴 → bass/drums/atmosphere 仍渲染但听感空洞。
+    //
+    // 修复:截短 sections 到 ≤ mg 实际生成总长(以最后一个 mg chord.endBeat 为准),
+    // sections 内 partial-section 也按比例 clip。
+    const mgTotalBeats = mgChords.length > 0
+        ? mgChords[mgChords.length - 1].endBeat
+        : sections.reduce((acc, s) => Math.max(acc, s.endBeat), 0);
+    for (let i = sections.length - 1; i >= 0; i--) {
+        if (sections[i].startBeat >= mgTotalBeats) {
+            sections.splice(i, 1);  // 整段超出 → 删除
+        } else if (sections[i].endBeat > mgTotalBeats) {
+            sections[i].endBeat = mgTotalBeats;  // 部分超出 → clip
+        }
+    }
+
     // NoteEvent[] → NoteData[]:mg melody + chord 合并到 accompaniment(走 PIANO_RH)
     //
     // 关键设计:mg 在 standalone 是单一 Salamander piano sampler,所有声音同音色 + 同混响。
@@ -235,10 +256,19 @@ export function runPipeline(
         });
     }
 
+    // ============================================================
+    // C.5 — Weather post-modulation 钢琴轨
+    // ============================================================
+    // mg 完整输出后(motif / cadence 跨段连贯保留),按每个 note onset 查 weather:
+    //   K → velocity 调制(段落能量驱动 — Verse 弱 / Chorus 强)
+    //   S → duration 调制(spatial sustain — ambient 长音 / build staccato)
+    // 不动 pitch / chord(保留 mg 哲学),只调音量+延时。
+    const mgPianoModulated = modulateMgPianoByWeather(mgPianoUnified, renderContext);
+
     const track: GeneratedTrack = {
         chords: mgChords,
         melody: [],                       // 统一到 accompaniment 走 Grand Acoustic
-        accompaniment: mgPianoUnified,    // mg melody + chord stab 合并(一架钢琴)
+        accompaniment: mgPianoModulated,  // mg piano + C.5 weather modulation
         bass: bassNotes,                  // C.4 — auraflow BassRealizer + mg chord
         drums: drumsNotes,                // C.4 — auraflow DrumRealizer
         atmosphere: atmosphereNotes,      // C.4 — auraflow AtmosphereRealizer
