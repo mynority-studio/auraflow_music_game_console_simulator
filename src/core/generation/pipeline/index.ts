@@ -1,26 +1,30 @@
 /**
- * runPipeline — 生成管线统一入口（Phase 3 实装版）
+ * runPipeline — 生成管线统一入口(C.2 永久切到 mg 路径)
  *
- * 当前实装范围：
+ * 当前实装范围(C.2 后):
  *   Stage 1  selectStyle           PRNG ×1   — 从 allowedStyleIds 池抽
  *   Stage 2  resolveBasicParams    PRNG ×4   — tonality / keyOffset / BPM / formTemplate 抽样
- *                                              段落由 FORM_POOLS[styleId] 模板实例化，
- *                                              每段 chordsHint = lengthBeats / STYLE_BEATS_PER_CHORD[styleId]
- *   Stage 3  HarmonyCore.generate  PRNG ×~M  — 真和声推演 + voicing（M 随模板段数变化）
- *   Stage 4  (skip — 等 Step 2 抽 StructureEngine 时把 FORM_POOLS 搬到 StyleConfig)
- *   Stage 5  conduct      PRNG ×~N  — Bass(0) + AccompInst + Lead 三轨
+ *   Stage 3  MgEngineFacade        PRNG ×0   — mg 接管钢琴和声 + 旋律推演(PRNG 隔离子流)
+ *   Stage 4  (C.4 待做)— bass / drums / atmosphere 接 mg chord
+ *   Stage 5  (C.4 待做)— Realizer 渲染 bass / drums / atmosphere 轨
  *
- * 输出契约：
- *   - track.chords[i].voicing       — RELATIVE 空间 voicing
- *   - track.bass / accompaniment    — RELATIVE 空间 NoteData[]（Phase 3 新增）
- *   - track.melody                  — RELATIVE 空间 NoteData[]（Phase 3 新增）
- *   - context 携带 bpm / tonality / keyOffset / style，供平台层消费
+ * 输出契约:
+ *   - track.chords             — mg ChordDef[] 经 MgChordAdapter 转换的 GeneratedChord[]
+ *   - track.melody             — [](C.1 设计:melody 与 chord 合并到 accompaniment 走 PIANO_RH)
+ *   - track.accompaniment      — mg melody + chordTexture 合并(一架钢琴的演绎)
+ *   - track.bass/drums/atmosphere — []  (C.4 待接和声后填充)
+ *   - context 携带 bpm / tonality / keyOffset / style / gmProgramOverrides
  *
- * 仍尊重的形参约束：
- *   allowedStyleIds / forcedStyleId / forcedBand / generation
+ * 仍尊重的形参约束:
+ *   allowedStyleIds / forcedStyleId / forcedBand / forcedGmPrograms / generation
  *
- * PRNG 快照点（D-5）：
- *   stateB（Stage 1 入口） / stateC（HarmonyCore 之前） / stateD（Stage 5 入口）
+ * PRNG 快照点(D-5):
+ *   stateB(Stage 1 入口) / stateC(Stage 3 前) / stateD(Stage 5 前)
+ *
+ * PRNG 隔离锚点(plan §2 决策 3):
+ *   mg 用自己的 Random(`${PRNGManager.state}::mg`)— 跟 PRNGManager 完全独立。
+ *   Stage 1+2 仍消费 PRNGManager,Stage 3+ 不消费(mg facade 内部用 mg Random)。
+ *   Phase 3 壳化时合并到 PRNGManager.fork API。
  */
 
 import {
@@ -31,10 +35,6 @@ import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/StyleRegistry';
 import { getStyleHarmonyBundle } from '../config/styles';
 import { PRNGManager } from '../../utils/PRNG';
-import { HarmonyCore } from './HarmonyCore';
-import { conduct } from './Conductor';
-import { CastingEngine } from './CastingEngine';
-import { PassingChordEngine } from './PassingChordEngine';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
 import { MgEngineFacade } from './MgEngineFacade';
@@ -53,24 +53,6 @@ export interface PipelineRunOptions {
      */
     forcedGmPrograms?: Partial<Record<BandRole, number>>;
     generation?: GenerationOptions;
-    /**
-     * Phase 1 Step 3(mg_engine_integration_plan.md):启用 MgEngineFacade 接管钢琴生成。
-     *
-     * true 时:
-     *   - Stage 3 跳过 HarmonyCore.generate / PassingChordEngine
-     *   - Stage 4.5 / 5 跳过(CastingEngine / Conductor / 各 Realizer)
-     *   - 直接调用 MgEngineFacade → 输出 ChordDef[] + NoteEvent[]
-     *   - track.chords / track.melody / track.accompaniment 直接从 mg 输出转换
-     *   - track.bass / track.drums / track.atmosphere 留空(Phase 2 接和声)
-     *   - track.sections 仍由 auraflow Stage 2 抽出(诊断 / UI 用,但 mg 不消费)
-     *
-     * false(默认):
-     *   - 走完整 auraflow pipeline(Batch 1-7 已实装的路径)
-     *   - golden-seed 与 v1.44.0 bit-exact
-     *
-     * PRNG 隔离:mgMode=true 时 mg 用自己的 Random(`${seed}::mg` 派生),不消费 PRNGManager。
-     */
-    mgMode?: boolean;
 }
 
 export function runPipeline(
@@ -148,181 +130,58 @@ export function runPipeline(
     PRNGManager.recordSnapshot('C');
 
     // ============================================================
-    // Phase 1 Step 3 — mgMode 分支:整段 Stage 3-5 走 MgEngineFacade
+    // Stage 3 — MgEngineFacade(C.2 永久切 mg 路径)
     // ============================================================
     // 设计哲学(plan §2 决策 3 PRNG 隔离):
-    //   - mg 用自己的 Random(`${seed}::mg`)— 与 PRNGManager 完全隔离
-    //   - Stage 3+(HarmonyCore / PassingChord / CastingEngine / Conductor / Realizer)
-    //     **全部跳过** — 钢琴 / chord 直接来自 mg,bass/drums/atmosphere 暂留空
-    //   - Phase 2 接 ChordDef → bass/atmosphere Realizer(走 auraflow 渲染);
-    //     Phase 3 壳化 + PRNG 合并
+    //   - mg 用自己的 Random(`${PRNGManager.state}::mg`)— 与 PRNGManager 完全隔离
+    //   - mg facade 内部 0 次 PRNGManager.next() 调用 → D-5 保证
+    //   - Phase 3 壳化时改用 PRNGManager.fork('mg') API
     //
     // 验收锚点:同 seed → 听感 = melodygenerative-standalone(决策 3 隔离的保证)
-    if (options.mgMode === true) {
-        // 用 PRNGManager 当前 seed 作 mg 子流锚定。PRNGManager 自身不被消费 —
-        // mg facade 内部 new Random(`${seed}::mg`),完全独立。
-        // 注:取当前 PRNG state 作 "auraflow seed surrogate"(因为 setSeed 是外部调,
-        // runPipeline 拿不到原始 seed number)。state 是 deterministic — 同 setSeed
-        // 输入 → 同 state → 同 mg 子流。
-        const mgSeed = PRNGManager.getState();
-        const mgResult = MgEngineFacade.generate({
-            seed: mgSeed,
-            styleId,
-            keyRootPc: keyOffset,
-            isMinor: tonality === Tonality.Minor,
-        });
-
-        // ChordDef[] → GeneratedChord[](Phase 1 最简 adapter,Phase 2 精化)
-        const mgChords = chordDefsToGeneratedChords(mgResult.chords);
-        // 给每个 chord 填 keyOffset(auraflow IR 约定)
-        for (let i = 0; i < mgChords.length; i++) {
-            mgChords[i].keyOffset = keyOffset;
-        }
-
-        // NoteEvent[] → NoteData[],按 part 拆轨(facade 已经按 part 拆好)
-        //
-        // Phase 1 关键设计:mg 在 standalone 是单一 Salamander piano sampler,
-        // 所有声音同音色 + 同混响 + mg 内部 velocity 已经做了平衡。
-        // auraflow MidiConverter 当前给 melody(GM=1 Bright + vol=122 + pan=74)与
-        // pianoRH(GM=0 Grand + vol=102 + pan=64)不同 mix → 听感"两架钢琴"。
-        //
-        // 修复:**把 mg.melody + mg.chordTexture 合并到 accompaniment(走 PIANO_RH
-        // channel)**,所有 mg 钢琴音统一 Grand Acoustic + MIX_PIANO_RH → "一架钢琴
-        // 演奏旋律 + 和声"(符合 mg 哲学)。
-        // mg.bass 暂不消费(Phase 2 用 auraflow BassRealizer 取代)。
-        const mgMelodyNotes = noteEventsToNoteData(mgResult.melody);
-        const mgChordNotes = noteEventsToNoteData(mgResult.chordTexture);
-        const mgPianoUnified: NoteData[] = mgMelodyNotes.concat(mgChordNotes);
-        // 按 onset 升序排序(playback 顺序;同 onset 时保留输入顺序,稳定排序)
-        mgPianoUnified.sort((a, b) => a.onset - b.onset);
-
-        const mgTrack: GeneratedTrack = {
-            chords: mgChords,
-            melody: [],                // Phase 1 静音 melody 轨(避免 Bright Acoustic 双重发声)
-            accompaniment: mgPianoUnified,  // 合并钢琴 melody + chord stab(一架 Grand)
-            bass: [],           // Phase 1 静音,Phase 2 接 BassRealizer
-            drums: [],          // 同上
-            atmosphere: [],     // 同上
-            sections,
-            bpm,
-            key: keyName,
-            keyOffset,
-            tonality,
-            timeSignature,
-            blockIndex: 0,
-            absoluteStartBeat: 0,
-            hasIntro: true,
-        };
-
-        const mgContext: MusicContext = {
-            keyOffset,
-            tonality,
-            bpm,
-            timeSignature,
-            grooveDNA: [],
-            style,
-            // gmProgramOverrides 暂留空 — Phase 1 不接 musician override
-        };
-
-        return { track: mgTrack, context: mgContext };
-    }
-
-    // -----------------------------------------------------------
-    // Stage 3:HarmonyCore(PRNG ×~M,M = 6 × Σ chordsHint,随模板段数变化)
-    // -----------------------------------------------------------
-    const harmony = HarmonyCore.generate({
-        sections,
-        tonality,
-        harmonyRules: bundle.harmonyRules,
-        voiceLeadingConfig: bundle.voiceLeading,
-        // V4.2c — 注入风格进行池（70% 概率走 pool 路径 + 跳过 4 道变异门）
-        progressionPool: style.harmony,
-        // Batch 5.2 — 启用 DYNAMIC_TSD_DICTIONARY:Gate 4 走 jazz 高级和弦池
-        // (Dom7Flat9 / Dom7Sharp11 / Major13 / Dom7Alt 等 idiomatic 变体)
+    const mgSeed = PRNGManager.getState();
+    const mgResult = MgEngineFacade.generate({
+        seed: mgSeed,
         styleId,
-        // chordsPerSection 全局值不再设置 — 每个 section.chordsHint 接管。
+        keyRootPc: keyOffset,
+        isMinor: tonality === Tonality.Minor,
     });
 
-    // voicings 平行索引嵌回 chord — 下游 AudioEngine / Stage 5 直接读
-    //
-    // Phase 1a: voicings 是 VoicedPitch[][](角色标记),双写两个字段:
-    //   - chord.voicingTagged = VoicedPitch[](Phase 1b 信息遮罩消费)
-    //   - chord.voicing       = VoicedPitch[].map(v => v.pitch)(老 callsite 兼容)
-    // 两字段顺序一致,pitch 完全 mirror。
-    for (let i = 0; i < harmony.chords.length && i < harmony.voicings.length; i++) {
-        const tagged = harmony.voicings[i];
-        harmony.chords[i].voicingTagged = tagged;
-        harmony.chords[i].voicing = tagged.map(v => v.pitch);
-        harmony.chords[i].keyOffset = keyOffset;
+    // ChordDef[] → GeneratedChord[](最简 adapter,Phase 2/C.4 精化)
+    const mgChords = chordDefsToGeneratedChords(mgResult.chords);
+    for (let i = 0; i < mgChords.length; i++) {
+        mgChords[i].keyOffset = keyOffset;
     }
 
-    // -----------------------------------------------------------
-    // Stage 3.5：PassingChordEngine — 在 phrase boundary 插入经过和弦
-    //   与 MacroProgression 4 道变异门互补（替换 vs 插入）
-    //   新和弦无 voicing —— 下游 voicer 用 root + quality 即兴展开
-    // -----------------------------------------------------------
-    const passingProb = style.passingChordProb ?? 0.3;
-    const chromaticProb = style.chromaticPassingProb ?? 0.3;
-    if (passingProb > 0) {
-        harmony.chords = PassingChordEngine.insert({
-            chords: harmony.chords,
-            tonality,
-            keyOffset,
-            passingChordProb: passingProb,
-            chromaticPassingProb: chromaticProb,
-        });
-        // 新插入的 passing chord 缺 voicing —— 用 chord-tone 临时填充（让 Stage5 渲染可继续）
-        // Phase 1a:同样双写 voicingTagged + voicing(顺序一致)。
-        for (let i = 0; i < harmony.chords.length; i++) {
-            if (!harmony.chords[i].voicing || harmony.chords[i].voicing!.length === 0) {
-                const tagged = HarmonyCore.computeFallbackVoicing(harmony.chords[i]);
-                harmony.chords[i].voicingTagged = tagged;
-                harmony.chords[i].voicing = tagged.map(v => v.pitch);
-                harmony.chords[i].keyOffset = keyOffset;
-            }
-        }
-    }
+    // NoteEvent[] → NoteData[]:mg melody + chord 合并到 accompaniment(走 PIANO_RH)
+    //
+    // 关键设计:mg 在 standalone 是单一 Salamander piano sampler,所有声音同音色 + 同混响。
+    // auraflow MidiConverter 给 melody(GM=1 Bright + vol=122)和 pianoRH(GM=0 Grand +
+    // vol=102)不同 mix → 听感"两架钢琴"。修复:统一走 PIANO_RH channel(Grand Acoustic),
+    // 保留 mg 内部 velocity 比例 → "一架钢琴演奏旋律 + 和声"(mg divisi 哲学)。
+    const mgMelodyNotes = noteEventsToNoteData(mgResult.melody);
+    const mgChordNotes = noteEventsToNoteData(mgResult.chordTexture);
+    const mgPianoUnified: NoteData[] = mgMelodyNotes.concat(mgChordNotes);
+    mgPianoUnified.sort((a, b) => a.onset - b.onset);
 
     PRNGManager.recordSnapshot('D');
 
-    // -----------------------------------------------------------
-    // Stage 4.5:CastingEngine — 编曲决策(PRNG ×0)
-    //   消费 roster + sections + styleId,输出 BandPlan(每段每职能演奏决策矩阵)。
-    //   V1:固定 4 人乐队(alex_piano / frank_bass / dave_drums / nina_pad),
-    //       不处理 forcedBand / 双钢琴 / 角色升降。
-    // -----------------------------------------------------------
+    // ============================================================
+    // Stage 4 — Roster + Band 系统(乐手卡片 / GM 程式 override 准备)
+    // ============================================================
+    // C.4 待做:用 roster 决定哪些 bass/drums/atmosphere 乐手在场,接 mg chord 渲染。
+    // 当前 C.2 阶段:roster 构造完成,但 bass/drums/atmosphere 仍输出空数组。
     const roster: BandRoster = buildDefaultRoster(options.forcedBand);
-    const bandPlan = CastingEngine.plan({
-        roster,
-        sections,
-        styleId,
-        tonality,
-        timeSignature,
-        swingRatio: style.swingRatio,  // V5.2 从 styleConfig 透传
-        bpm,                            // Sub-Phase 3：MoodRouter 决策维度
-    });
 
-    // -----------------------------------------------------------
-    // Stage 5：conduct — Bass + AccompInst + Lead + Atmosphere 四轨（drums 单独）
-    // -----------------------------------------------------------
-    const stage5 = conduct({
-        chords: harmony.chords,
-        sections,
-        styleId,
-        tonality,
-        timeSignature,
-        userMotif: options.generation?.processedUserMotif as NoteData[] | undefined,
-        bandPlan,
-    });
-
+    // ============================================================
+    // Stage 5 — 输出(C.4 待接 bass/drums/atmosphere 渲染)
+    // ============================================================
     const track: GeneratedTrack = {
-        chords: harmony.chords,
-        melody: stage5.melody,
-        accompaniment: stage5.accompaniment,
-        bass: stage5.bass,
-        // K-8: drums 是 GM Drum Map 物理键位（第三空间），全程透传不加 keyOffset
-        drums: stage5.drums,
-        atmosphere: stage5.atmosphere,
+        chords: mgChords,
+        melody: [],                       // 设计:统一到 accompaniment 走 Grand Acoustic
+        accompaniment: mgPianoUnified,    // mg melody + chord stab 合并(一架钢琴)
+        bass: [],                          // C.4 接 BassRealizer + mg chord
+        drums: [],                         // C.4 接 DrumRealizer
+        atmosphere: [],                    // C.4 接 AtmosphereRealizer
         sections,
         bpm,
         key: keyName,

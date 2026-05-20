@@ -42,7 +42,8 @@ import {
 } from '../types';
 import type { VoicedPitch } from '../types';
 import { WeightedPitchSelector } from './WeightedPitchSelector';
-import { VoicingDictId, lookupPianoVoicing } from '../data/PianoVoicingDictionary';
+// PianoVoicingDictionary 已删(C.2 — mg 取代钢琴 voicing 系统)。
+// dictId 字段保留为 unknown stub,以便 atmosphere 渲染层未来若需引入新 voicing dict 不破接口。
 
 // ============================================================
 // 共享常量
@@ -147,13 +148,10 @@ export interface RootlessVoicerInput {
     rangeLo?: number;
     /**
      * Batch 3:hand-tuned voicing 字典选择(JazzRootless / Pop / Rnb / Blues)。
-     * 提供时优先查 PIANO_VOICING_DICTIONARY[dictId][chord.quality]:
-     *   - 命中:用 dict intervals(Bill Evans / Glasper / 等校准过的具体音组合),
-     *           跳过 colorBias 阶梯抽取 + minor 9th 撞音过滤(dict 已手调过)
-     *   - 未命中:回落公式算法(与不传 dictId 行为完全一致)
-     * 缺省 undefined → 走公式算法(向后兼容,bit-exact 旧行为)。
+     * C.2 — PianoVoicingDictionary 已删,dictId 字段保留 stub 不再被消费。
+     * 当前所有 callsite 都走公式算法(atmosphere voicing 用)。
      */
-    dictId?: VoicingDictId;
+    dictId?: number;
 }
 
 /**
@@ -842,43 +840,10 @@ export class VoicingProcessor {
 
         const rootPc = normalizePc(chord.bassOverride !== undefined ? chord.bassOverride : chord.root);
 
-        // ============================================================
-        // Batch 3 — dict-first 路径(优先查 hand-tuned voicing dict)
-        // ============================================================
-        // dictId 显式提供 + dict 命中 → 用 dict intervals[] 直接构造 voicing。
-        // miss / undefined → fall through 到公式算法。
-        // 两条路径都不消费 PRNG,bit-exact 与原版兼容(undefined 时完全不走 dict)。
-        if (input.dictId !== undefined) {
-            const dictIntervals = lookupPianoVoicing(input.dictId, chord.quality);
-            if (dictIntervals !== undefined && dictIntervals.length > 0) {
-                // PC 集合 — dict intervals(已含跨八度信息 14/17/21 等,mod 12 后由
-                // placePcNearAnchor 选最近 octave。色彩高度由 placement 自然处理)
-                const dictPcs: number[] = [];
-                for (let i = 0; i < dictIntervals.length; i++) {
-                    const pc = normalizePc(rootPc + dictIntervals[i]);
-                    if (dictPcs.indexOf(pc) === -1) dictPcs.push(pc);
-                }
-
-                // 放置 + listen LH(同 PC 撞音上移一个八度)
-                const dictPitches: number[] = [];
-                for (let i = 0; i < dictPcs.length; i++) {
-                    const pc = dictPcs[i];
-                    let isLhPc = false;
-                    for (let j = 0; j < lhPcs.length; j++) {
-                        if (lhPcs[j] === pc) { isLhPc = true; break; }
-                    }
-                    const effectiveLo = isLhPc ? Math.max(lo, lhTop + 12) : lo;
-                    const p = placePcNearAnchor(pc, anchor, effectiveLo, hi);
-                    dictPitches.push(p);
-                }
-                dictPitches.sort((a, b) => a - b);
-                return tagVoicing(dedupSortedArray(dictPitches), chord);
-            }
-            // dict miss → 落到下方公式算法(等价于不传 dictId 的行为)
-        }
+        // C.2 — PianoVoicingDictionary 已删,直接走公式算法路径。
 
         // ============================================================
-        // 公式算法路径(未传 dictId 或 dict miss)
+        // 公式算法路径
         // ============================================================
         const intervals = CHORD_INTERVALS[chord.quality] ?? [0, 4, 7];
         const qBit   = 1 << chord.quality;

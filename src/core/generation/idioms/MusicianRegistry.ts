@@ -27,7 +27,8 @@ import {
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { MASTER_MANIFESTS } from '../data/MasterPersonas';
-import { compileMasterLickPool } from '../primitives/MasterLickCompiler';
+// MasterLickCompiler 已删(C.2 — 被 mg motif 系统取代)。lickPool 字段保留为 undefined,
+// 待 C.4 / Phase 2 决定是否基于 mg motif 重新接 master persona lick 系统。
 
 // ------------------------------------------------------------
 // 4 卡牌池
@@ -364,8 +365,9 @@ function deriveMasterCard(
     const sparsity = Math.min(0.7, Math.max(0.3, 0.3 + (restRatio - 0.05) * (0.4 / 0.06)));
     const isHardBop = manifest.id === 'DexterGordon';
 
-    // lick-only 模式预编译 lickPool（一次性，模块加载时）；takeover 模式不需要
-    const lickPool = mode === 'lick-only' ? compileMasterLickPool(manifest) : undefined;
+    // lick-only 模式 lickPool 暂为 undefined(C.2 — MasterLickCompiler 已删,等 C.4 / Phase 2
+    // 决定是否基于 mg motif 重做 master lick 系统)
+    const lickPool: import('../types').NoteData[][] | undefined = undefined;
     // lick-only 模式 signatureLickProb 拉高到 0.4（偶发但不稀有，让大师腔调可识别）
     // takeover 模式整段已是大师 grammar，不再拼接额外 lick → 0
     const signatureLickProb = mode === 'lick-only' ? 0.4 : 0.0;

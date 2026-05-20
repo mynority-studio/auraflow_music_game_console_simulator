@@ -252,8 +252,8 @@ export const PipelineMonitor: React.FC = () => {
         const { track, context } = runPipeline({
             forcedBand: bandSelectionRef.current,
             forcedGmPrograms: instrumentSelectionRef.current,
-            mgMode: true,  // C.2-C.3 阶段持续测试用 — C.3 永久切换 mgMode 默认值后此行可删
         });
+        // C.2 — runPipeline 永久切 mg 路径,mgMode flag 已删
         console.log('[playSeed] melody.length=', track.melody?.length,
             ' first=', track.melody?.[0]?.pitch, '@', track.melody?.[0]?.onset);
 

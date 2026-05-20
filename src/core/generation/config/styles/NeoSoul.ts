@@ -16,13 +16,8 @@
  *   - Top voice Color 列 50 高分 — 让 9/11/13 顶音常驻
  */
 
-import { VoiceLeadingConfig } from '../../pipeline/HarmonyCore';
-import { HarmonyRulesConfig, HarmonicFunction } from '../../pipeline/MacroProgressionEngine';
 import { ChordQuality, ContourType, MusicianPersona, NoteData, SectionType, StructureTemplate } from '../../types';
 import { FractalConfig } from '../../primitives/FractalStructureEngine';
-import {
-    GrammarConfig, GrammarRule, GrammarSymbol, TerminalKind,
-} from '../../primitives/PCFGGrammarEngine';
 import { DrumGridConfig, DrumStepConfig } from '../../primitives/DrumIdiom';
 
 // ============================================================
@@ -43,65 +38,11 @@ import { DrumGridConfig, DrumStepConfig } from '../../primitives/DrumIdiom';
 // 变异门：极高 tension + 高 modal interchange
 // ============================================================
 
-export const NEO_SOUL_HARMONY_RULES: HarmonyRulesConfig = {
-    functionTransitions: [
-        2, 3, 2,
-        2, 1, 4,
-        3, 3, 2,
-    ],
-    tonicVariantWeights:       [4, 4, 1],
-    subdominantVariantWeights: [2, 4],
-    dominantVariantWeights:    [5, 1],
-
-    secondaryDominantProb: 0.20,
-    tritoneSubProb:        0.10,
-    modalInterchangeProb:  0.30,
-    tensionExtensionProb:  0.90,
-
-    // Cadential Hijacking — NeoSoul 偏好 plagal/IV→I 蓝调归属感（Subdominant 半终止）
-    cadentialPredominant: HarmonicFunction.Subdominant,
-
-    progressionSkeletons: [
-        { weight: 5, roots: [5, 4, 9, 0], qualities: [ChordQuality.Major7, ChordQuality.Dominant7, ChordQuality.Minor7, ChordQuality.Dominant7] }, // IV-III7-vi-I7
-        { weight: 3, roots: [2, 7, 0, 9], qualities: [ChordQuality.Minor7, ChordQuality.Dominant7, ChordQuality.Major7, ChordQuality.Minor7] }
-    ],
-};
 
 // ============================================================
 // Voice Leading Config — NeoSoul 略黏 + 高 tension
 // ============================================================
 
-export const NEO_SOUL_VOICE_LEADING: VoiceLeadingConfig = {
-    voiceCount: 4,
-
-    // 比 Pop 黏一些，比 Classical 松一些 — 内声部 EPiano comping 要顺滑
-    commonToneMultiplier: 2.8,
-    halfStepMultiplier:   1.9,
-    wholeStepMultiplier:  1.5,
-
-    leapPenalty: 0.7,
-    leapThreshold: 4,
-
-    tendencyToneResolutionBoost: 4.0,
-    parallelFifthPenalty: 0.3,
-
-    // Voice Role × Chord Tone 表 — NeoSoul 偏色彩（Color 列权重整体抬高）
-    //              Root  Third Fifth Seventh Color
-    // Bass:        1000   35    20    30     5      ← root 强锚
-    // Inner:        10    35    20    45    25      ← 7th heavy + 中等 color
-    // Top:          15    20    25    20    50      ← color heavy（9/11/13 频出）
-    voiceRoleScoreTable: [
-        1000, 35, 20, 30,  5,
-          10, 35, 20, 45, 25,
-          15, 20, 25, 20, 50,
-    ],
-
-    pcDiversityFirstRepMultiplier: 0.5,
-    pcDiversitySecondRepMultiplier: 0,
-
-    voiceRangeLo: 48,
-    voiceRangeHi: 72,
-};
 
 // ============================================================
 // Stage 5 配置（Phase 5 配置剥离）
@@ -162,109 +103,8 @@ export const NEO_SOUL_FRACTAL: FractalConfig = {
 //   - colorTone 高频出现（9/11/13 是 R&B 色彩本体）
 //   - approachDownProb 拉到 0.75（下方半音 chromatic 主导 — Soul 经典走法）
 //   - Motif 折叠让 Pocket / Color 在和声游走中被反复"复刻"
-function Tone(kind: TerminalKind, duration: number): GrammarSymbol {
-    return { type: 'terminal', kind, duration };
-}
-function Rest(duration: number): GrammarSymbol {
-    return { type: 'terminal', kind: 'rest', duration };
-}
-function NT(name: string): GrammarSymbol {
-    return { type: 'nonterminal', name };
-}
-function Define(name: string): GrammarSymbol {
-    return { type: 'nonterminal', name, action: 'define' };
-}
-function Recall(name: string): GrammarSymbol {
-    return { type: 'nonterminal', name, action: 'recall' };
-}
 
-const NEOSOUL_GRAMMAR_RULES: GrammarRule[] = [
-    // ── M：顶层入口 — Pocket / Hang 双折叠 + 传统兜底 ──
-    //   折叠路径权重 4+3=7，传统路径 5+2+2+1=10，折叠概率 ≈ 41%（与设计目标一致）
-    { lhs: 'M', rhs: [NT('FORM_NEO_POCKET'), NT('M_TAIL')], weight: 4 },  // Dilla 切分折叠
-    { lhs: 'M', rhs: [NT('FORM_NEO_HANG'),   NT('M_TAIL')], weight: 3 },  // 色彩悬停折叠
-    { lhs: 'M', rhs: [NT('B'), NT('M')],                    weight: 5 },  // 传统递归兜底
-    { lhs: 'M', rhs: [NT('B')],                             weight: 2 },
-    { lhs: 'M', rhs: [Rest(0.25), NT('B'), NT('M')],        weight: 2 },  // 16 分起音休止
-    { lhs: 'M', rhs: [Rest(0.5),  NT('B'), NT('M')],        weight: 1 },
 
-    // ── M_TAIL：FORM 后续 — 继续递归或终止 ──
-    { lhs: 'M_TAIL', rhs: [NT('M')], weight: 5 },
-    { lhs: 'M_TAIL', rhs: [],        weight: 2 },
-
-    // ── FORM_NEO_POCKET：Dilla pocket 折叠（4-beat AABA，每拍 1-beat 动机） ──
-    { lhs: 'FORM_NEO_POCKET', rhs: [
-        Define('NeoPocket'),
-        Recall('NeoPocket'),
-        NT('B'),
-        Recall('NeoPocket'),
-    ], weight: 1 },
-
-    // ── FORM_NEO_HANG：色彩悬停折叠（4 beat，2-beat 动机 × 2） ──
-    { lhs: 'FORM_NEO_HANG', rhs: [
-        Define('NeoHang'),
-        Recall('NeoHang'),
-    ], weight: 1 },
-
-    // ── NeoPocket：1-beat 切分碎步动机（3 个 Dilla 风骨变体） ──
-    //   Lick_Neo_Pocket_Ghost — 弱位 ghost approach → chord（"和-2"切分）
-    { lhs: 'NeoPocket', rhs: [
-        Rest(0.25), Tone('approachTone', 0.25), Tone('chordTone', 0.5),
-    ], weight: 4 },
-    //   Lick_Neo_Pocket_Stutter — 16 分 chord-rest-approach-chord（口袋律动结巴）
-    { lhs: 'NeoPocket', rhs: [
-        Tone('chordTone', 0.25), Rest(0.25),
-        Tone('approachTone', 0.25), Tone('chordTone', 0.25),
-    ], weight: 3 },
-    //   Lick_Neo_Pocket_Pivot — 16 分 rest-chord-approach-color（避开重拍的 4-step pivot）
-    { lhs: 'NeoPocket', rhs: [
-        Rest(0.25), Tone('chordTone', 0.25),
-        Tone('approachTone', 0.25), Tone('colorTone', 0.25),
-    ], weight: 3 },
-
-    // ── NeoHang：2-beat 色彩悬停动机（2 个变体） ──
-    //   Lick_Neo_Color_Hang — approach 16 分 + 极长 color（7th-9th-11th 粘稠悬停）
-    { lhs: 'NeoHang', rhs: [
-        Tone('approachTone', 0.25), Tone('colorTone', 1.75),
-    ], weight: 3 },
-    //   Lick_Neo_Color_Pickup — 16 分起音休止 + 16 分 approach + 1.5 拍 color
-    { lhs: 'NeoHang', rhs: [
-        Rest(0.25), Tone('approachTone', 0.25), Tone('colorTone', 1.5),
-    ], weight: 2 },
-
-    // ── B — 1 拍内的兜底基元（Neo-Soul 切分美学：16 分链条主导） ──
-    //   16 分 approach→chord 链条（4 个 16 分填满 1 拍）— Dilla feel
-    { lhs: 'B', rhs: [
-        Tone('approachTone', 0.25), Tone('chordTone', 0.25),
-        Tone('approachTone', 0.25), Tone('chordTone', 0.25),
-    ], weight: 4 },
-    //   3 个 16 分 + 8 分（前半拍切碎，后半拍长）
-    { lhs: 'B', rhs: [
-        Tone('chordTone', 0.25), Tone('approachTone', 0.25),
-        Tone('chordTone', 0.25), Tone('colorTone', 0.25),
-    ], weight: 3 },
-    //   8 分 color + 16 分 approach + 16 分 chord（重切分进入）
-    { lhs: 'B', rhs: [
-        Tone('colorTone', 0.5), Tone('approachTone', 0.25), Tone('chordTone', 0.25),
-    ], weight: 3 },
-    //   两个 8 分 chord-color
-    { lhs: 'B', rhs: [Tone('chordTone', 0.5), Tone('colorTone', 0.5)], weight: 3 },
-    { lhs: 'B', rhs: [Tone('colorTone', 0.5), Tone('chordTone', 0.5)], weight: 2 },
-    //   1 拍长音 color（9/11/13 持续）
-    { lhs: 'B', rhs: [Tone('colorTone', 1.0)], weight: 2 },
-    //   1 拍长音 chord（呼吸）
-    { lhs: 'B', rhs: [Tone('chordTone', 1.0)], weight: 2 },
-    //   起音休止 + 后半拍切分（Dilla pocket）
-    { lhs: 'B', rhs: [Rest(0.5), Tone('approachTone', 0.25), Tone('chordTone', 0.25)], weight: 2 },
-    //   附点 chord + 16 分 approach
-    { lhs: 'B', rhs: [Tone('chordTone', 0.75), Tone('approachTone', 0.25)], weight: 1 },
-];
-
-export const NEO_SOUL_GRAMMAR: GrammarConfig = {
-    startSymbol: 'M',
-    rules: NEOSOUL_GRAMMAR_RULES,
-    maxExpansions: 300,
-};
 
 // ── Drum Grid — Neo-Soul "drunk" pocket: Kick syncopate + ghost snare + busy hihat ──
 //   Kick: step 0 强 + step 6 / 10 syncopate（"and of 2" / "and of 3" Dilla-feel）
