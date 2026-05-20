@@ -13,7 +13,7 @@ import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
 import { Orchestrator } from '../src/core/generation/pipeline/Orchestrator';
 import { MidiConverter, CHANNEL_ATMOSPHERE, CHANNEL_ELECTRIC_BASS, CHANNEL_PIANO_LH } from '../src/core/audio/MidiConverter';
-import { BandEngine } from '../src/core/generation/pipeline/BandEngine';
+import { CastingEngine } from '../src/core/generation/pipeline/CastingEngine';
 import { StyleId } from '../src/core/generation/config/StyleFlags';
 import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry';
 import { BandRole, SectionType } from '../src/core/generation/types';
@@ -66,7 +66,7 @@ console.log(`  Pad velocity range observed: [${minVel}, ${maxVel}] (Nina card: [
 assert(minVel >= 30 && maxVel <= 90, 'Pad velocities within Nina card range (allowing intensity scaling)');
 
 console.log('\n4. BandEngine direct call');
-const plan = BandEngine.plan({
+const plan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('alex_piano')!,
         accomp:     getMusicianById('alex_piano')!,
@@ -138,7 +138,7 @@ console.log('\n8. PianoAccompIdiom 织体选择 — BandEngine 按 sectionType �
 PRNGManager.setSeed(42);
 const { track: pianoTrack } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
 // 验证：默认 roster 有 Bass → 所有段落都应是 M4 (Tacit + RH)
-const pianoPlan = BandEngine.plan({
+const pianoPlan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('alex_piano')!,
         accomp:     getMusicianById('alex_piano')!,
@@ -179,7 +179,7 @@ assert(multiVoiceOnsets / onsetGroups.size > 0.08, `Block/Stab 占比 > 8% (实�
 
 console.log('\n10. Solo Piano 模式（无 Bass）— Walking Tenths + M5 路由');
 PRNGManager.setSeed(42);
-const noBassPlan = BandEngine.plan({
+const noBassPlan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('alex_piano')!,
         accomp:     getMusicianById('alex_piano')!,
@@ -295,7 +295,7 @@ if (lushSection !== undefined) {
 console.log('\n13. V4.1 — Billy Bounce M6 触发（Solo Piano 模式）');
 import('../src/core/generation/idioms/MusicianRegistry').then(({ getMusicianById }) => null);
 PRNGManager.setSeed(42);
-const billyPlan = BandEngine.plan({
+const billyPlan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('billy_bounce')!,
         accomp:     getMusicianById('billy_bounce')!,

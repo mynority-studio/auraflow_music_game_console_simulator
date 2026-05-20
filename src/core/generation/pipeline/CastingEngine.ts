@@ -1,25 +1,28 @@
 /**
- * BandEngine — 乐队编曲决策器（MVP V1）
+ * CastingEngine — 乐队编曲决策器(Phase 2 由 BandEngine 重命名而来)
  *
- * 凌驾于 MusicGenerationEngine 之上的独立层。消费用户编制 (BandRoster) + 段落表 + 风格，
- * 输出每段每职能的演奏决策 (BandPlan)，供 Stage5Layering 消费。
+ * 凌驾于 MusicGenerationEngine 之上的"导演层"。消费用户编制 (BandRoster) + 段落表 +
+ * 风格,输出每段每职能的演奏决策 (BandPlan),供 Stage5Layering 消费。
  *
- * MVP 范围（V1）：
- *   - 固定 4 人乐队（Piano + Bass + Drums + Atmosphere），无 Vocal
- *   - 不处理双钢琴 / 角色升降 / 随机匹配（V2 任务）
- *   - 段落级 ConductorMask 仍由 Stage5Layering 处理（V1 不迁移）
- *   - instrumentSpecificParams 暂置 undefined，渲染器走旧 personas fallback（PianoAccompIdiom 在 Step 3 接入后填）
+ * 改名理由(Phase 2):
+ *   - 旧名 BandEngine 暗示"渲染乐队声音",实际职责是"定角色 + 选织体 + 喂 idiom 参数",
+ *     即音乐工程里的 Casting Director。Phase 3+ 加入 Realizer / RegisterMap 后,
+ *     "导演"语义会被进一步加强。
+ *   - 输出数据类型 BandPlan / BandRoster / BandRole 等保留原名:它们描述的是
+ *     "乐队的计划",而非决策模块。
  *
- * 4 个 Pass（V1 只实现 A 和 C）：
- *   Pass A — Roster 验证：检查每个 musician 的 role 是否在 eligibleRoles 内
- *   Pass B — 角色升降：跳过（V1 无 Vocal）
- *   Pass C — 段落决策：对每段输出 SectionPlan
- *   Pass D — 冲突解析：跳过（V1 无双钢琴/M5）
+ * 4 个 Pass(V1 只实现 A 和 C):
+ *   Pass A — Roster 验证:检查每个 musician 的 role 是否在 eligibleRoles 内
+ *   Pass B — 角色升降:跳过(V1 无 Vocal)
+ *   Pass C — 段落决策:对每段输出 SectionPlan
+ *   Pass D — 冲突解析:跳过(V1 无双钢琴/M5)
  *
- * Pitch Space: N/A（BandEngine 不接触 pitch，仅做决策矩阵）
- * PRNG 消耗: 0（V1 决策完全确定性，仅由 roster + sections 决定）
+ * Pitch Space: N/A(CastingEngine 不接触 pitch,仅做决策矩阵)
+ * PRNG 消耗: 0(决策完全确定性,仅由 roster + sections + context 决定)
  *
- * @author AuraFlow Tap! BandEngine MVP
+ * Phase 2 重构:消除原 BandEngine 的 4 个 private static currentXxx 字段
+ *   (swingRatio / styleId / bpm / tonality)。改为 PlanContext 显式参数沿调用链
+ *   向下传,避免"伪装成类变量的临时上下文"——线程不安全 + 隐式状态。
  */
 
 import {
@@ -53,7 +56,7 @@ const ENERGY_MAX = 10;
 const INTENSITY_MIN = 0.1;
 const INTENSITY_MAX = 1.0;
 
-export interface BandEngineInput {
+export interface CastingEngineInput {
     /** 用户配置或随机抽取的乐队阵容 */
     roster: BandRoster;
     /** Stage 1~2 输出的段落表 */
@@ -75,49 +78,58 @@ export interface BandEngineInput {
     bpm?: number;
 }
 
-export class BandEngine {
-    /** V5.2 当前 plan() 调用的 swingRatio（从 styleConfig 透传，per-section pick 时读取） */
-    private static currentSwingRatio: number = 0.5;
-    /** Sub-Phase 3：当前 plan() 调用的 styleId + bpm（MoodRouter 决策时读取） */
-    private static currentStyleId: StyleId = StyleId.ModernPop;
-    private static currentBpm: number = 100;
-    private static currentTonality: Tonality = Tonality.Major;
+/**
+ * Phase 2 重构:决策上下文(原 BandEngine 的 4 个 private static currentXxx 替代品)。
+ *
+ * 在 plan() 入口一次性构造,沿调用链显式向下传到 planSection / pickPianoAccompParams。
+ * 不再隐藏在 class static 字段里 —— 纯函数风格,可并发、可测试。
+ */
+interface PlanContext {
+    /** V5.2 Swing 比例(0.5=直拍 / 0.55=微 swing / 0.6=中 swing / 0.67=triplet) */
+    swingRatio: number;
+    /** Sub-Phase 3 MoodRouter 决策维度 */
+    styleId: StyleId;
+    bpm: number;
+    tonality: Tonality;
+}
 
+export class CastingEngine {
     /**
-     * 生成 BandPlan：4 个 Pass 顺序执行。
+     * 生成 BandPlan:4 个 Pass 顺序执行。
      *
-     * 输出：
-     *   - sectionPlans: 长度 === sections.length，平行索引
+     * 输出:
+     *   - sectionPlans: 长度 === sections.length,平行索引
      *   - activeMusicians: roster 里非 null 且通过 Pass A 验证的乐手
      */
-    public static plan(input: BandEngineInput): BandPlan {
-        // V5.2 — 暂存 swingRatio 给 pickPianoAccompParams 用
-        BandEngine.currentSwingRatio = input.swingRatio ?? 0.5;
-        // Sub-Phase 3 — 暂存 styleId / bpm / tonality 给 MoodRouter 用
-        BandEngine.currentStyleId = input.styleId;
-        BandEngine.currentBpm = input.bpm ?? 100;
-        BandEngine.currentTonality = input.tonality;
+    public static plan(input: CastingEngineInput): BandPlan {
+        // Phase 2:决策上下文一次性构造,后续显式参数传递(无 class static)
+        const ctx: PlanContext = {
+            swingRatio: input.swingRatio ?? 0.5,
+            styleId: input.styleId,
+            bpm: input.bpm ?? 100,
+            tonality: input.tonality,
+        };
 
         // ----------------------------------------------------------------
         // Pass A: Roster 验证 — 收集合法乐手到 activeMusicians
         // ----------------------------------------------------------------
-        const activeMusicians = BandEngine.validateRoster(input.roster);
+        const activeMusicians = CastingEngine.validateRoster(input.roster);
 
         // ----------------------------------------------------------------
         // Pass B: 角色升降 — V1 跳过
         // ----------------------------------------------------------------
         // (V2 TODO: 检查 roster.mainInst === null && roster.accomp !== null
-        //  → 钢琴 Accomp 升格为 MainInst，设置 promotedFromAccomp = true)
+        //  → 钢琴 Accomp 升格为 MainInst,设置 promotedFromAccomp = true)
 
         // ----------------------------------------------------------------
         // Pass C: 段落决策 — 为每段输出 SectionPlan
         // ----------------------------------------------------------------
-        // bassActive 决定钢琴 LH 让位 (M4) 还是接管 (M1)；全曲恒定，预计算一次
+        // bassActive 决定钢琴 LH 让位 (M4) 还是接管 (M1);全曲恒定,预计算一次
         const bassActive = activeMusicians.some(am => am.assignedRole === BandRole.Bass);
 
         const sectionPlans: SectionPlan[] = [];
         for (let i = 0; i < input.sections.length; i++) {
-            sectionPlans.push(BandEngine.planSection(i, input.sections[i], activeMusicians, bassActive));
+            sectionPlans.push(CastingEngine.planSection(i, input.sections[i], activeMusicians, bassActive, ctx));
         }
 
         // ----------------------------------------------------------------
@@ -134,12 +146,12 @@ export class BandEngine {
 
     private static validateRoster(roster: BandRoster): ActiveMusician[] {
         const out: ActiveMusician[] = [];
-        BandEngine.tryAdd(out, roster.vocal,      BandRole.Vocal);
-        BandEngine.tryAdd(out, roster.mainInst,   BandRole.MainInst);
-        BandEngine.tryAdd(out, roster.accomp,     BandRole.Accomp);
-        BandEngine.tryAdd(out, roster.bass,       BandRole.Bass);
-        BandEngine.tryAdd(out, roster.drums,      BandRole.Drums);
-        BandEngine.tryAdd(out, roster.atmosphere, BandRole.Atmosphere);
+        CastingEngine.tryAdd(out, roster.vocal,      BandRole.Vocal);
+        CastingEngine.tryAdd(out, roster.mainInst,   BandRole.MainInst);
+        CastingEngine.tryAdd(out, roster.accomp,     BandRole.Accomp);
+        CastingEngine.tryAdd(out, roster.bass,       BandRole.Bass);
+        CastingEngine.tryAdd(out, roster.drums,      BandRole.Drums);
+        CastingEngine.tryAdd(out, roster.atmosphere, BandRole.Atmosphere);
         return out;
     }
 
@@ -159,7 +171,7 @@ export class BandEngine {
             }
         }
         if (!eligible) {
-            throw new BandEngineError(
+            throw new CastingEngineError(
                 'musician not eligible for assigned role',
                 { musicianId: musician.id, assignedRole: slot, eligibleRoles: musician.eligibleRoles },
             );
@@ -177,18 +189,19 @@ export class BandEngine {
         section: SectionMetadata,
         activeMusicians: ActiveMusician[],
         bassActive: boolean,
+        ctx: PlanContext,
     ): SectionPlan {
-        const intensityScale = BandEngine.normalizeEnergy(section.energyLevel);
+        const intensityScale = CastingEngine.normalizeEnergy(section.energyLevel);
 
         const assignments: Partial<Record<BandRole, RoleAssignment>> = {};
         for (let i = 0; i < activeMusicians.length; i++) {
             const am = activeMusicians[i];
             const role = am.assignedRole;
 
-            // 按角色填 instrumentSpecificParams（V1：仅 Accomp 实装钢琴 params，其他角色保持 undefined 走旧 fallback）
+            // 按角色填 instrumentSpecificParams(V1:仅 Accomp 实装钢琴 params,其他角色保持 undefined 走旧 fallback)
             let params: unknown = undefined;
             if (role === BandRole.Accomp) {
-                params = BandEngine.pickPianoAccompParams(section, am.card, bassActive, intensityScale);
+                params = CastingEngine.pickPianoAccompParams(section, am.card, bassActive, intensityScale, ctx);
             }
 
             assignments[role] = {
@@ -227,23 +240,24 @@ export class BandEngine {
         musician: Musician,
         bassActive: boolean,
         intensityScale: number,
+        ctx: PlanContext,
     ): PianoAccompParams {
-        const isGrooveSection = BandEngine.isGrooveSection(section.sectionType);
+        const isGrooveSection = CastingEngine.isGrooveSection(section.sectionType);
 
-        // Sub-Phase 3：MoodRouter 决策织体配方。
-        //   1. pickMood(context) → MoodId（8 桶情绪）
+        // Sub-Phase 3:MoodRouter 决策织体配方。
+        //   1. pickMood(context) → MoodId(8 桶情绪)
         //   2. moodToRecipe(mood, styleId) → TextureRecipeId
-        //   3. recipe.rhTexture → params.rhTexture（推荐渲染风格）
+        //   3. recipe.rhTexture → params.rhTexture(推荐渲染风格)
         //   4. mood 同时塞进 params → PianoAccompIdiom 取 mood-specific phrase chain
         const mood: MoodId = pickMood({
-            styleId: BandEngine.currentStyleId,
-            tonality: BandEngine.currentTonality,
-            bpm: BandEngine.currentBpm,
+            styleId: ctx.styleId,
+            tonality: ctx.tonality,
+            bpm: ctx.bpm,
             sectionType: section.sectionType,
             energyLevel: section.energyLevel,
             persona: musician.persona,
         });
-        const recipeId: TextureRecipeId = moodToRecipe(mood, BandEngine.currentStyleId);
+        const recipeId: TextureRecipeId = moodToRecipe(mood, ctx.styleId);
         const rhTexture: RHTexture = getPianoTextureRecipe(recipeId).rhTexture;
 
         // V4.1 Bounce 偏好检查（持票优先级最高，仅 Solo Piano 模式可用）
@@ -268,7 +282,7 @@ export class BandEngine {
                 coordMode = CoordMode.M1_SustainedRoot;
                 lhTexture = LHTexture.WalkingTenths;
                 // 改动 B：按 mood × style 路由 walk pattern，让不同情绪的 walking 听感差异化
-                walkPatternId = pickWalkPattern(mood, BandEngine.currentStyleId);
+                walkPatternId = pickWalkPattern(mood, ctx.styleId);
             } else {
                 coordMode = CoordMode.M5_TwoHandedVoicing;
                 lhTexture = LHTexture.Tacit;  // M5 自己处理 LH
@@ -298,8 +312,8 @@ export class BandEngine {
         // V3.8 Solver 触发：高 syncopationAssault (>0.5) 切换到物理约束求解器
         const useSolver = persona.syncopationAssault > 0.5;
 
-        // V5.2 Swing — 从 styleConfig 透传（BandEngine 不感知 swingRatio 含义，只搬运）
-        const swingRatio = BandEngine.currentSwingRatio;
+        // V5.2 Swing — 从 styleConfig 透传(CastingEngine 不感知 swingRatio 含义,只搬运)
+        const swingRatio = ctx.swingRatio;
 
         return {
             lhTexture,
@@ -360,11 +374,11 @@ function clamp01(x: number): number {
 // Error
 // ============================================================
 
-export class BandEngineError extends Error {
+export class CastingEngineError extends Error {
     public readonly context: Record<string, unknown>;
     constructor(message: string, context: Record<string, unknown>) {
         super(message);
-        this.name = 'BandEngineError';
+        this.name = 'CastingEngineError';
         this.context = context;
     }
 }

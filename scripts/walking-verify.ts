@@ -9,7 +9,7 @@ import { StyleId } from '../src/core/generation/config/StyleFlags';
 import {
     PianoAccompIdiom, LHTexture, CoordMode, PianoAccompParams,
 } from '../src/core/generation/primitives/PianoAccompIdiom';
-import { BandEngine } from '../src/core/generation/pipeline/BandEngine';
+import { CastingEngine } from '../src/core/generation/pipeline/CastingEngine';
 import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry';
 import { BandRole } from '../src/core/generation/types';
 import { WalkPatternId, WALK_PATTERNS } from '../src/core/generation/data/BassWalkPatterns';
@@ -19,7 +19,7 @@ PRNGManager.setSeed(42);
 const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
 
 // Solo Piano 模式（无 Bass）才会走 LH WalkingTenths
-const plan = BandEngine.plan({
+const plan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('alex_piano')!,
         accomp:     getMusicianById('alex_piano')!,

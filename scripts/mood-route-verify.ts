@@ -3,7 +3,7 @@
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
 import { StyleId } from '../src/core/generation/config/StyleFlags';
-import { BandEngine } from '../src/core/generation/pipeline/BandEngine';
+import { CastingEngine } from '../src/core/generation/pipeline/CastingEngine';
 import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry';
 import { BandRole } from '../src/core/generation/types';
 import {
@@ -23,7 +23,7 @@ const recipeHitCount: Record<number, number> = {};
 for (const style of styles) {
     PRNGManager.setSeed(42);
     const { track } = runPipeline({ forcedStyleId: style.id });
-    const plan = BandEngine.plan({
+    const plan = CastingEngine.plan({
         roster: {
             mainInst:   getMusicianById('alex_piano')!,
             accomp:     getMusicianById('alex_piano')!,
@@ -56,7 +56,7 @@ for (const style of styles) {
 console.log(`\n=== NeoSoul + Marcus (高 syncopationAssault，期望 Groovy mood 触发) ===`);
 PRNGManager.setSeed(42);
 const { track: nsTrack } = runPipeline({ forcedStyleId: StyleId.NeoSoul });
-const nsPlan = BandEngine.plan({
+const nsPlan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('marcus_neosoul_piano')!,
         accomp:     getMusicianById('marcus_neosoul_piano')!,
@@ -103,7 +103,7 @@ for (let seed = 1; seed <= 200; seed++) {
     for (const style of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
         PRNGManager.setSeed(seed);
         const { track } = runPipeline({ forcedStyleId: style });
-        const plan = BandEngine.plan({
+        const plan = CastingEngine.plan({
             roster: {
                 mainInst:   getMusicianById('alex_piano')!,
                 accomp:     getMusicianById('alex_piano')!,

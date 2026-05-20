@@ -33,7 +33,7 @@ import { getStyleHarmonyBundle } from '../config/styles';
 import { PRNGManager } from '../../utils/PRNG';
 import { HarmonyCore } from './HarmonyCore';
 import { layerInstruments } from './Stage5Layering';
-import { BandEngine } from './BandEngine';
+import { CastingEngine } from './CastingEngine';
 import { PassingChordEngine } from './PassingChordEngine';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
@@ -173,13 +173,13 @@ export function runPipeline(
     PRNGManager.recordSnapshot('D');
 
     // -----------------------------------------------------------
-    // Stage 4.5：BandEngine — 编曲决策（PRNG ×0）
-    //   消费 roster + sections + styleId，输出 BandPlan（每段每职能演奏决策矩阵）。
-    //   V1：固定 4 人乐队（alex_piano / frank_bass / dave_drums / nina_pad），
+    // Stage 4.5:CastingEngine — 编曲决策(PRNG ×0)
+    //   消费 roster + sections + styleId,输出 BandPlan(每段每职能演奏决策矩阵)。
+    //   V1:固定 4 人乐队(alex_piano / frank_bass / dave_drums / nina_pad),
     //       不处理 forcedBand / 双钢琴 / 角色升降。
     // -----------------------------------------------------------
     const roster: BandRoster = buildDefaultRoster(options.forcedBand);
-    const bandPlan = BandEngine.plan({
+    const bandPlan = CastingEngine.plan({
         roster,
         sections,
         styleId,
