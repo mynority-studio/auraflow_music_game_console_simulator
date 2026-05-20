@@ -531,6 +531,17 @@ export interface RoleAssignment {
 export interface SectionPlan {
     sectionIdx: number;
     assignments: Partial<Record<BandRole, RoleAssignment>>;
+    /**
+     * Phase 5 — Markov Drop 状态触发位置(beat,绝对位置)。
+     *
+     * 设定时:Bass + Drums 在 [dropFromBeat, section.endBeat) 区间静默(Vacuum Blossom),
+     *         Atmosphere + Lead 仍出声(担当"真空中的独白")。
+     * 缺省(undefined):本段无 Drop,所有 role 正常渲染。
+     *
+     * 由 MarkovStateMachine.attachDropStates 在 BuildUp → Chorus 边界按 deterministic
+     * hash 概率(默认 30%)激活,设置为 section.endBeat - 4 拍(最后 1 小节 4/4)。
+     */
+    dropFromBeat?: number;
 }
 
 /**

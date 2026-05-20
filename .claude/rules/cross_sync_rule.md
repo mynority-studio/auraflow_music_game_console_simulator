@@ -148,6 +148,33 @@
   - React/UI 调用代码(`src/components/*`)
 - **风险**:**高**(App / 嵌入式直接破坏;app_integration_rule 是 App dev 的真理之源,不同步会让外部消费方踩坑)
 
+### 1.13 SectionPlan.dropFromBeat ↔ MarkovStateMachine / Bass-Drum 消费链(Phase 5)
+
+- **触发器**:
+  - `MarkovStateMachine.attachDropStates` 触发条件变更(SectionType / 概率 / 持续时长)
+  - `DROP_TRIGGER_PROBABILITY` / `DROP_DURATION_BEATS` 常量调整
+- **必须同步**:
+  - `src/core/generation/pipeline/Conductor.ts`:
+    - `attachDropStates` 调用顺序(必须在 attachSuppressionPlan 之后,Realizer 之前)
+    - `collectDropWindows` + `filterNotesByDropWindows` 应用点(Drums + Bass 渲染后)
+  - `src/core/generation/primitives/BassIdiom.ts` / `DrumIdiom.ts`:**不在 Idiom 内 skip**
+    (D-5 PRNG 配额铁律)— 必须事后过滤
+  - 若加新乐器需要 Drop 静默 → 同步 Conductor 加 `filterNotesByDropWindows` 调用
+- **风险**:**中**(漏过滤 → Drop 失效;在 Idiom 内 skip → 破 D-5 PRNG)
+
+### 1.14 NCTApproachPatterns ↔ BassIdiom A 规则 ↔ 未来 Phase 6 Solo(Phase 5)
+
+- **触发器**:
+  - `data/NCTApproachPatterns.ts` 中 `NCT_APPROACH_PATTERNS` 数组变更
+  - `ApproachPatternId` 枚举数值变更
+  - 任一 pattern 的 `minRiskLevel` / `vector` / `useDiatonic` 变更
+- **必须同步**:
+  - `src/core/generation/primitives/BassIdiom.ts`:
+    A 规则的 R 维度阈值(目前 0.4)需与 ApproachPattern.minRiskLevel 表一致
+  - Phase 6 Solo `ImprovisationStrategy`(待实装):需复用相同表
+  - `pickApproachPattern` 函数(若改算法或新增过滤条件)
+- **风险**:**中**(数据表与消费方阈值不一致 → 同 R 值下不同消费方做不同决策)
+
 ### 1.12 isApex flag ↔ TextureContinuum / Piano-Atmosphere 消费链(Phase 4)
 
 - **触发器**:

@@ -31,7 +31,7 @@ import {
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
     CHORD_SCALE_INTERVALS,
 } from '../types';
-import type { RenderContext } from '../pipeline/RenderContext';
+import type { RenderContext, WeatherSampler } from '../pipeline/RenderContext';
 import { StyleId } from '../config/StyleFlags';
 import { getChordTonePCs } from '../data/ScaleHelpers';
 import {
@@ -87,6 +87,7 @@ export class BassIdiom {
                 const nextChord = i + 1 < input.chords.length ? input.chords[i + 1] : undefined;
                 lastBass = renderBassWalkPattern(
                     out, chord, nextChord, walkPatternId, i, velocity, lastBass,
+                    input.context.weather,
                 );
             }
             return out;
@@ -137,6 +138,7 @@ function renderBassWalkPattern(
     chordIndex: number,
     velocity: number,
     lastBass: number | undefined,
+    weather: WeatherSampler,  // Phase 5 — R 维度驱动 NCT 模式选择
 ): number | undefined {
     const chordDur = chord.endBeat - chord.startBeat;
     if (chordDur <= EPSILON) return lastBass;
@@ -174,12 +176,21 @@ function renderBassWalkPattern(
                 bassPc = thirdPc;
                 break;
             case WalkRule.Approach: {
-                // A3b：在 current chord scale 内取 diatonic neighbor（比 nextRoot 低 1~2 半音）；
-                //   scale 无合适邻音 → 回落 chromatic -1 半音 leading tone（旧行为）
+                // Phase 5 — NCT R 维度驱动:
+                //   R ≥ 0.4 → ChromaticBelow(下方半音趋近,Blues/Bebop 味)
+                //   R < 0.4 → DiatonicAbove(原 diatonic 路径,Pop 安全)
+                //   零 PRNG(hash 由 chord index + step 派生)
                 if (nextChord !== undefined) {
                     const nextRootPc = nextChord.bassOverride !== undefined ? nextChord.bassOverride : nextChord.root;
                     const nextRootNorm = ((nextRootPc % 12) + 12) % 12;
-                    bassPc = pickDiatonicApproachBass(chord, nextRootNorm);
+                    const r = weather.at(chord.startBeat).r;
+                    if (r >= 0.4) {
+                        // ChromaticBelow:目标音下方半音(无视 scale)
+                        bassPc = ((nextRootNorm - 1) + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE;
+                    } else {
+                        // DiatonicAbove(原路径):scale 内邻音
+                        bassPc = pickDiatonicApproachBass(chord, nextRootNorm);
+                    }
                 } else {
                     bassPc = rootPcNorm;
                 }

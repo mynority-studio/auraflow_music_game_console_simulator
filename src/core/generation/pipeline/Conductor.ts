@@ -71,6 +71,7 @@ import { RenderContext } from './RenderContext';
 import { CurveWeatherSampler } from './CurveWeatherSampler';
 import { attachVoicingMasks } from './VoicingMask';
 import { attachDensityPlan, attachSuppressionPlan } from './TextureContinuum';
+import { attachDropStates, collectDropWindows, filterNotesByDropWindows } from './MarkovStateMachine';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -321,7 +322,17 @@ export function conduct(input: ConductorInput): ConductorResult {
         attachSuppressionPlan(
             input.bandPlan, input.sections, renderContext.weather, activeMusicians,
         );
+        // Phase 5 — Markov Drop State:BuildUp → Chorus 边界按概率激活 Drop,
+        // BuildUp 末 4 拍 Bass + Drums 静默(Vacuum Blossom 真空绽放)
+        attachDropStates(
+            input.bandPlan, input.sections, renderContext.weather, activeMusicians,
+        );
     }
+
+    // Phase 5 — 提前收集 Drop 窗口供 Bass / Drum 渲染后过滤
+    const dropWindows = input.bandPlan !== undefined
+        ? collectDropWindows(input.bandPlan, input.sections)
+        : [];
 
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）
@@ -331,6 +342,8 @@ export function conduct(input: ConductorInput): ConductorResult {
     const drums: NoteData[] = drumSections.length > 0
         ? DrumRealizer.realize({ sections: drumSections, grid: bundle.drum, context: renderContext })
         : [];
+    // Phase 5 — Drop 窗口内 drum notes 剔除(渲染后过滤,不破 D-5 PRNG 配额)
+    filterNotesByDropWindows(drums, dropWindows);
 
     // Kick-Bass interlock: 提取所有 Kick (pitch===36) 落点，供 BassIdiom 对齐
     const kickAnchors: number[] = [];
@@ -372,6 +385,8 @@ export function conduct(input: ConductorInput): ConductorResult {
                 kickAnchors,
                 context: renderContext,
             });
+            // Phase 5 — Drop 窗口内 bass notes 剔除(per-section bass 渲染后立即过滤)
+            filterNotesByDropWindows(bassNotes, dropWindows);
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);
         }
         if ((mask & MASK_ACCOMP) !== 0) {
