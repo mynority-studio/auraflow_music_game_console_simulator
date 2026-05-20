@@ -45,7 +45,6 @@ import type { RenderContext } from '../ir/RenderContext';
 import { BassRealizer } from '../realizers/BassRealizer';
 import { DrumRealizer } from '../realizers/DrumRealizer';
 import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
-import { modulatePianoByWeather } from './PianoWeatherModulator';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -172,12 +171,26 @@ export function runPipeline(
     }
 
     // NoteEvent → NoteData:整曲 0-based,无 offset
-    // HarmonyEngine 内部 melody 与 chord 是两条独立 pipeline 输出,这里分流到
-    // auraflow 的 MainInst(钢琴主奏)和 Accomp(钢琴伴奏)两个 BandRole 槽。
+    //
+    // HarmonyEngine 内部输出三层 NoteEvent(melody / chord / bass),全部是
+    // "一架 Salamander piano" 同时弹奏的 3 part。映射到 auraflow:
+    //   melody (高音区 60-86)    → MainInst       → track.melody       → CHANNEL_MELODY
+    //   chord  (中音区 48-81)    → Accomp 钢琴右手 ┐
+    //   bass   (低音区 33-55)    → Accomp 钢琴左手 ┴→ track.accompaniment → CHANNEL_PIANO_RH/LH
+    //                                                (AbsoluteTransposer 按 pitch<48 自然分流)
+    //
+    // 钢琴轨**完全原生 mg 输出**,不做 weather 调制(I1):
+    //   - mg 内部已有完善的 velocity 设计(motif accent / cadence boost / melody-avoid duck)
+    //   - 段落起伏由 mg motif/phrase/cadence 哲学跨段自然体现
+    //   - weather 调制只保留给 bass/drums/atmosphere(auraflow 自渲染的轨道)
     const pianoMelody = noteEventsToNoteData(harmonyResult.melody, 0);
-    const pianoChordTexture = noteEventsToNoteData(harmonyResult.chordTexture, 0);
+    const pianoChord = noteEventsToNoteData(harmonyResult.chordTexture, 0);
+    const pianoBass = noteEventsToNoteData(harmonyResult.bass, 0);
     pianoMelody.sort((a, b) => a.onset - b.onset);
-    pianoChordTexture.sort((a, b) => a.onset - b.onset);
+
+    // Accomp = chord(右手中音区)+ bass(左手低音区)合并 — 钢琴一架弹两手
+    const pianoAccomp: NoteData[] = pianoChord.concat(pianoBass);
+    pianoAccomp.sort((a, b) => a.onset - b.onset);
 
     PRNGManager.recordSnapshot('D');
 
@@ -246,40 +259,31 @@ export function runPipeline(
     }
 
     // ============================================================
-    // Weather post-modulation 钢琴(melody + chord 各自调制)
+    // BandRole 路由 — melody → MainInst / (chord+bass) → Accomp
     // ============================================================
-    // 按每个 note onset 查 weather:
-    //   K → velocity 调制(段落能量驱动 — Verse 弱 / Chorus 强)
-    //   S → duration 调制(spatial sustain — ambient 长音 / build staccato)
-    // 不动 pitch / chord(保留 HarmonyEngine 哲学),只调音量 + 延时。
-    const melodyModulated = modulatePianoByWeather(pianoMelody, renderContext);
-    const chordModulated = modulatePianoByWeather(pianoChordTexture, renderContext);
-
-    // ============================================================
-    // BandRole 路由(G1) — melody → MainInst / chord → Accomp
-    // ============================================================
-    // HarmonyEngine 内部 melody 与 chord 是两条独立 pipeline。它们天然对应
-    // auraflow 乐队的两个钢琴槽位:
-    //   roster.mainInst  ↔ 主奏(melody)  → track.melody → CHANNEL_MELODY (Bright)
-    //   roster.accomp    ↔ 伴奏(chord)   → track.accompaniment → CHANNEL_PIANO_RH/LH (Grand)
+    // HarmonyEngine 内部 melody / chord / bass 三层是"一架 piano 弹三 part"的
+    // 三个独立输出。映射到 auraflow:
+    //   roster.mainInst  ↔ 主奏(melody)        → track.melody       → CHANNEL_MELODY (Bright)
+    //   roster.accomp    ↔ 伴奏(chord + bass) → track.accompaniment → CHANNEL_PIANO_RH/LH (Grand)
+    //                                            (pianoChord 在中音区进 RH,pianoBass 在低音区进 LH)
     //
     // 空槽语义(BandSelection UI 显式 null):
-    //   roster.mainInst = null → track.melody=[],主奏 channel 静音(只剩伴奏)
-    //   roster.accomp   = null → track.accompaniment=[],伴奏 channel 静音(只剩主奏)
+    //   roster.mainInst = null → track.melody=[],主奏 channel 静音(只剩 chord+bass 伴奏)
+    //   roster.accomp   = null → track.accompaniment=[],伴奏 channel 静音(只剩 melody 主奏)
     //   两个都 null → 钢琴全静,只剩 bass/drums/atmosphere 节奏组
     //
-    // 注意:HarmonyEngine 始终生成完整 melody+chord 不变(避让逻辑保持),
+    // 注意:HarmonyEngine 始终生成完整 melody+chord+bass 不变(避让逻辑保持),
     //      此处只是按 roster 决定输出。切换 roster 不影响输出确定性 + bit-exact。
     const trackMelody = roster.mainInst !== null && roster.mainInst !== undefined
-        ? melodyModulated : [];
+        ? pianoMelody : [];
     const trackAccompaniment = roster.accomp !== null && roster.accomp !== undefined
-        ? chordModulated : [];
+        ? pianoAccomp : [];
 
     const track: GeneratedTrack = {
         chords: harmonyChords,
-        melody: trackMelody,              // HarmonyEngine melody → MainInst → CHANNEL_MELODY
-        accompaniment: trackAccompaniment,// HarmonyEngine chord → Accomp → CHANNEL_PIANO_RH/LH
-        bass: bassNotes,                  // auraflow BassRealizer + harmony chord
+        melody: trackMelody,              // HarmonyEngine melody → CHANNEL_MELODY
+        accompaniment: trackAccompaniment,// HarmonyEngine chord+bass → CHANNEL_PIANO_RH+LH
+        bass: bassNotes,                  // auraflow BassRealizer ElectricBass
         drums: drumsNotes,                // auraflow DrumRealizer
         atmosphere: atmosphereNotes,      // auraflow AtmosphereRealizer
         sections,
