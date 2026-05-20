@@ -287,10 +287,10 @@ export const MUSICIAN_POOL: Musician[] = [
             atmosphereOverrides: {
                 attackSoftness: 0.7,
                 releaseRatio: 1.1,
-                voiceCount: 4,
+                voiceCount: 5,           // v1.57 — 4→5,多一声部,和弦更厚
                 velocityRange: [40, 75],
                 crossfade: true,
-                octaveLayering: false,
+                octaveLayering: true,    // v1.57 — false→true,叠加低八度,频段更宽
             },
         },
         role: BandRole.Atmosphere,

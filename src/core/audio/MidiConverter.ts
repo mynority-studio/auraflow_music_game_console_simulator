@@ -132,7 +132,7 @@ const MIX_MELODY:       MixProfile = { volume: 105, pan: 74, reverb: 70 };  // �
 const MIX_PIANO_RH:     MixProfile = { volume: 122, pan: 38, reverb: 70, sustainPedal: true };  // 伴奏右手左前 + 踏板
 const MIX_PIANO_LH:     MixProfile = { volume: 122, pan: 30, reverb: 70, sustainPedal: true };  // 伴奏左手更外侧 + 踏板
 const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
-const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
+const MIX_ATMOSPHERE:   MixProfile = { volume:  84, pan: 64, reverb: 60 };  // 铺底(v1.57 +20% vol)
 /** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
 const MIX_ELECTRIC_BASS: MixProfile = { volume:  78, pan: 64, reverb:  0 };
 
