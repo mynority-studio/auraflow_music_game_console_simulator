@@ -65,9 +65,14 @@ export const CHANNEL_ELECTRIC_BASS = 7;
 // Phase 7 计划按 styleId 切换为 EP（Neo-Soul Rhodes）等。
 
 const GM_PROGRAM_MELODY = 1;
-const GM_PROGRAM_PIANO_RH = 0;
-/** V5.3 — PianoLH 改回 0 Grand Piano（与 PianoRH 一致 — "一架真钢琴"） */
-const GM_PROGRAM_PIANO_LH = 0;
+// v1.55 — pianoRH/LH 跟 melody 完全相同(GM=1 Bright Acoustic + MIX_MELODY profile)
+// 用户反复反馈"accomp 跟 mainInst 听感差很多",诊断后发现:
+//   1. GM program 不同(Bright vs Grand)
+//   2. mix profile 不同(vol/pan/reverb)
+//   3. 关键 — kick ducking 只对 piano 生效不对 melody 生效 → "被截断"听感
+// 一次性对齐三者,让 accomp 真的等于 mainInst 同款混音
+const GM_PROGRAM_PIANO_RH = 1;
+const GM_PROGRAM_PIANO_LH = 1;
 const GM_PROGRAM_DRUMS = 0;
 /** Atmosphere → GM 89 Warm Pad（模拟 pad 暖色，融合度高，不抢焦点） */
 const GM_PROGRAM_ATMOSPHERE = 89;
@@ -122,12 +127,13 @@ interface MixProfile {
 }
 
 // MIX_PIANO_RH / MIX_PIANO_LH:
-//   v1.54 加 sustainPedal: true — 整曲常踩(延音解决"断续"听感)
-//   volume / pan / reverb 不动(保留 mg melody-avoid duck 的"伴奏让位主旋律"哲学)
+//   v1.55 — 完全复制 MIX_MELODY 配置(vol/pan/reverb 三参数一字不差)。
+//   理由:mainInst(melody)听感 = 用户想要的音色,既然同一架钢琴弹三 part,
+//   accomp(chord+bass)就用同样的混音参数 + 同 GM program(Bright)。
+//   保留 sustainPedal: true(钢琴 comping 物理需要,melody 是单音长 note 不需要)。
 const MIX_MELODY:       MixProfile = { volume: 122, pan: 74, reverb: 70 };  // 焦点：高音量 + 微右 + 长尾
-const MIX_PIANO_RH:     MixProfile = { volume: 102, pan: 64, reverb: 50, sustainPedal: true };  // 和声体右手 + 踏板延音
-/** V5.3 — PianoLH 现在是 Grand Piano 低音区，mix 与 RH 接近（"一架真钢琴"），微左 pan 增加空间感 */
-const MIX_PIANO_LH:     MixProfile = { volume:  96, pan: 54, reverb: 45, sustainPedal: true };  // 和声体左手 + 踏板延音
+const MIX_PIANO_RH:     MixProfile = { volume: 122, pan: 74, reverb: 70, sustainPedal: true };  // 完全同 melody + 踏板
+const MIX_PIANO_LH:     MixProfile = { volume: 122, pan: 74, reverb: 70, sustainPedal: true };  // 完全同 melody + 踏板
 const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
 const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
 /** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
@@ -187,23 +193,17 @@ export class MidiConverter {
         renderTrack(out, song.drums,        CHANNEL_DRUMS,         progDrums,         MIX_DRUMS);
         renderTrack(out, song.atmosphere,   CHANNEL_ATMOSPHERE,    progAtmosphere,    MIX_ATMOSPHERE);
 
-        // Fake Sidechain (伪侧链): 基于 Kick 鼓点对伴奏和贝斯通道注入 CC11 闪避包络
-        // D-5 safe: 无 PRNG 消耗的机械注入，零 DSP 开销
-        // V5.3 — 改为对 ElectricBass 通道做深度 ducking（原 PianoLH 当时是贝斯）；PianoLH 现在是钢琴低音区，做轻 ducking
+        // Fake Sidechain (伪侧链): 基于 Kick 鼓点对贝斯通道注入 CC11 闪避包络
+        // D-5 safe: 无 PRNG 消耗的机械注入,零 DSP 开销
+        //
+        // v1.55 — 仅对 ElectricBass 应用 ducking,**pianoRH/LH 不再 ducking**:
+        //   旧版本对钢琴 ducking(60→90→127)让伴奏听感"被截断 / 软绵绵 / 没电"
+        //   (用户反复反馈)。melody channel 没 ducking,所以 mainInst 听感连续。
+        //   现在钢琴 RH/LH 完全跟 melody 一样的 mix 处理(无 ducking)。
         const kicks = out.filter(e => e.type === 'noteOn' && e.channel === CHANNEL_DRUMS && e.data1 === 36);
         for (let i = 0; i < kicks.length; i++) {
             const kickTick = kicks[i].ticks;
-            // PianoRH 深 ducking
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 60 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 90 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 127 });
-
-            // PianoLH 轻 ducking（钢琴低音区，与 RH 一致 mix 思路）
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 80 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 105 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 127 });
-
-            // ElectricBass 中度 ducking，让出 Kick 频段（继承原 PianoLH 的处理）
+            // ElectricBass 中度 ducking,让出 Kick 频段
             out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_ELECTRIC_BASS, data1: CC_EXPRESSION, data2: 70 });
             out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_ELECTRIC_BASS, data1: CC_EXPRESSION, data2: 100 });
             out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_ELECTRIC_BASS, data1: CC_EXPRESSION, data2: 127 });
