@@ -33,6 +33,7 @@
 
 import { AtmosphereConfig, GeneratedChord, NoteData } from '../types';
 import type { RenderContext } from '../pipeline/RenderContext';
+import { applyVoicingMask } from '../pipeline/VoicingMask';
 
 const EPSILON = 1e-6;
 const MIDI_MAX = 127;
@@ -111,6 +112,13 @@ export class AtmosphereRenderer {
 
         // ----------------------------------------------------------------
         // 每和弦发射 voiceCount 个长音
+        //
+        // Phase 1b 信息遮罩消费(用户决策:Atmosphere voiceCount ≥ 2 保底):
+        //   1. 优先用 chord.voicingTagged + chord.voicingMask 派生过滤后 pitch[]
+        //   2. 过滤后 < 2 voice → fallback 用 chord.voicing(unmasked)的 slice(1)
+        //   3. 仍空 → 跳过本和弦(原行为)
+        // 这保证 Intro / Outro mask 较紧(MASK_ROOT_FIFTH/TRIAD)时 Pad 仍有声,
+        // 同时 mask 宽松时(Chorus MASK_EXTENDED)Pad 收到 ext 色彩。
         // ----------------------------------------------------------------
         for (let i = 0; i < chords.length; i++) {
             const c = chords[i];
@@ -118,12 +126,29 @@ export class AtmosphereRenderer {
             if (dur < EPSILON) continue;
             if (!c.voicing || c.voicing.length === 0) continue;
 
-            // 掐头：丢掉 voicing[0]（bass voice），取 voicing[1..] ≥ C3
-            const padVoicing: number[] = [];
-            for (let v = 1; v < c.voicing.length && padVoicing.length < voiceCount; v++) {
-                if (c.voicing[v] >= ATMOSPHERE_MIN_PITCH) {
-                    padVoicing.push(c.voicing[v]);
+            // 掐头(丢掉 voicing[0] bass voice)+ ≥ C3 过滤 + 取最多 voiceCount 个
+            // 内部 helper 减少重复逻辑(masked / unmasked 都走同一过滤链)
+            const pickPad = (pitches: number[]): number[] => {
+                const picked: number[] = [];
+                for (let v = 1; v < pitches.length && picked.length < voiceCount; v++) {
+                    if (pitches[v] >= ATMOSPHERE_MIN_PITCH) picked.push(pitches[v]);
                 }
+                return picked;
+            };
+
+            let padVoicing: number[];
+            // Phase 1b mask 应用路径
+            if (c.voicingTagged !== undefined && c.voicingMask !== undefined) {
+                const masked = applyVoicingMask(c.voicingTagged, c.voicingMask);
+                const maskedPitches = masked.map(v => v.pitch);
+                padVoicing = pickPad(maskedPitches);
+                // 保底:< 2 voice 时 fallback 用 unmasked voicing(避免 Pad 完全空洞)
+                if (padVoicing.length < 2) {
+                    padVoicing = pickPad(c.voicing);
+                }
+            } else {
+                // 老路径(没有 voicingTagged / voicingMask 信息)
+                padVoicing = pickPad(c.voicing);
             }
             if (padVoicing.length === 0) continue;
 

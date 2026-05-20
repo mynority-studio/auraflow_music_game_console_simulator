@@ -68,6 +68,7 @@ import { TopologyMutator } from '../primitives/TopologyMutator';
 import { SongHookEncoder, SongHookSkeleton } from '../primitives/SongHookEncoder';
 import { PRNGManager } from '../../utils/PRNG';
 import { createDefaultRenderContext } from './RenderContext';
+import { attachVoicingMasks } from './VoicingMask';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -275,7 +276,8 @@ export function conduct(input: ConductorInput): ConductorResult {
     // Phase 0 — RenderContext 构造(weather sampler / lookahead / state)
     //
     // 当前实装:ConstantWeatherSampler({k:0.5, t:0.5, s:0.5})。
-    // 所有 Idiom 接收 context 但不消费 → bit-exact 保证。
+    // 所有 Idiom 接收 context 但不消费(Phase 1b 起 weather 作 mask 计算输入,
+    // 仍是常量但接口已锁定)。
     //
     // 演进时间线:
     //   Phase 2: 替换为 CurveWeatherSampler(per-section anchor + 插值生成 beat 级曲线)
@@ -283,6 +285,17 @@ export function conduct(input: ConductorInput): ConductorResult {
     //   Phase 5+: Live 模式 LiveAccompanist 构造 RollingWeatherSampler,本逻辑保留作离线路径
     // ────────────────────────────────────────────────────────────
     const renderContext = createDefaultRenderContext();
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 1b — 按 sectionType + energyLevel 给每和弦附加 voicingMask
+    //
+    // mask 是"建议",不在此处过滤 chord.voicing/voicingTagged(保 unmasked 作 fallback 源)。
+    // 各 Idiom 渲染时自行 applyVoicingMask + fallback:
+    //   - AtmosphereRenderer:voiceCount ≥ 2 保底
+    //   - PianoAccompIdiom tertian / rootless:Root 永驻,filtered 空时降级
+    //   - Bass / Drum:不消费 mask
+    // ────────────────────────────────────────────────────────────
+    attachVoicingMasks(input.chords, input.sections, renderContext.weather);
 
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）

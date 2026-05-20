@@ -120,6 +120,23 @@ export interface GeneratedChord { numeral: string; root: number; quality: ChordQ
      * 可选(向后兼容):未升级的旧路径仍可只读 voicing。Phase 1b 起 Idiom 优先读 voicingTagged。
      */
     voicingTagged?: VoicedPitch[];
+    /**
+     * Phase 1b — 本和弦"建议 mask"(VoicingMask = number bitmask)。
+     *
+     * 由 Conductor.attachVoicingMasks 按 sectionType + energyLevel(+ weather Phase 2)
+     * 决定,在所有 Realizer 调用之前写入。
+     *
+     * 消费策略(每 Idiom 自行决定 fallback):
+     *   - 不消费 → 行为不变(老路径)
+     *   - 消费 → applyVoicingMask(chord.voicingTagged, chord.voicingMask)
+     *
+     * Phase 1b 消费方:
+     *   - AtmosphereRenderer:voiceCount ≥ 2 保底,否则用 unmasked
+     *   - PianoAccompIdiom tertian / rootless:Root 至少永驻,filtered 空时降级
+     *
+     * Bitmask 编码见 pipeline/VoicingMask.ts(bit 偏移 = VoiceRole 枚举值)。
+     */
+    voicingMask?: number;
 }
 
 export interface SectionMetadata {

@@ -36,8 +36,11 @@ import {
     GeneratedChord, NoteData,
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
     CHORD_SCALE_INTERVALS,
+    VoiceRole,
 } from '../types';
+import type { VoicedPitch } from '../types';
 import type { RenderContext } from '../pipeline/RenderContext';
+import { applyVoicingMask } from '../pipeline/VoicingMask';
 import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpers';
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';
@@ -63,6 +66,8 @@ const STEPS_PER_BEAT = 4;
 // RH 音域下界（与 Stage5Layering ACCOMP_MIN_PITCH 一致）
 // LH 用 voicing[0]，在 [48, 54) 区间（HarmonyCore voiceRange 等分），不与 Bass 轨 C1 锚位冲突
 const RH_MIN_PITCH = 48;  // C3
+// RH 音域上界 — 与 VoicingProcessor.DEFAULT_RH_RANGE_HI 对齐(C6)
+const RH_MAX_PITCH = 84;  // C6
 
 // R3 Stab 最大 duration（保持塞音的"短促"感）
 const STAB_MAX_DURATION_BEATS = 0.4;
@@ -350,26 +355,55 @@ export class PianoAccompIdiom {
             let rhVoicing: number[];
 
             if (voicingMode === 'rootless') {
-                // Phase 1a:VoicingProcessor 返 VoicedPitch[],本路径 rhVoicing 仍以 number[] 工作
-                // (applyRhListenToLhShell / getDrop2Voicing 等 number[] 算法链)。
-                // Phase 1b 起遮罩消费时考虑直接走 voicingTagged 路径。
-                rhVoicing = VoicingProcessor.buildRootlessRH({
+                let rootlessTagged = VoicingProcessor.buildRootlessRH({
                     chord,
                     colorBias: voicingSpan,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
-                }).map(v => v.pitch);
+                });
+                // Phase 1b 信息遮罩(用户决策:rootless 3rd+7th 被 mask 后降级 root+5th 双音)
+                if (chord.voicingMask !== undefined) {
+                    const masked = applyVoicingMask(rootlessTagged, chord.voicingMask);
+                    rootlessTagged = masked.length === 0
+                        ? buildRootFifthFallback(chord, RH_MIN_PITCH, RH_MAX_PITCH)
+                        : masked;
+                }
+                rhVoicing = rootlessTagged.map(v => v.pitch);
             } else if (voicingMode === 'quartal') {
-                rhVoicing = VoicingProcessor.buildQuartalRH({
+                let quartalTagged = VoicingProcessor.buildQuartalRH({
                     chord,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
-                }).map(v => v.pitch);
+                });
+                // Phase 1b mask(quartal 同 rootless 简单处理:空时退回 unmasked,不做 root+5th)
+                if (chord.voicingMask !== undefined) {
+                    const masked = applyVoicingMask(quartalTagged, chord.voicingMask);
+                    if (masked.length > 0) quartalTagged = masked;
+                }
+                rhVoicing = quartalTagged.map(v => v.pitch);
             } else {
                 // 'tertian' 默认 — 沿用 HarmonyCore voicing.slice(1) + 外置 listen + Drop-2
+                //
+                // Phase 1b:优先走 voicingTagged + mask 路径(派生 pitch[]),
+                // mask filtered 空时退回 unmasked slice(1)。
                 rhVoicing = [];
-                for (let v = 1; v < chord.voicing.length; v++) {
-                    if (chord.voicing[v] >= RH_MIN_PITCH) rhVoicing.push(chord.voicing[v]);
+                if (chord.voicingTagged !== undefined && chord.voicingMask !== undefined) {
+                    const skipBass = chord.voicingTagged.slice(1);
+                    const filteredTagged = applyVoicingMask(skipBass, chord.voicingMask);
+                    for (let v = 0; v < filteredTagged.length; v++) {
+                        if (filteredTagged[v].pitch >= RH_MIN_PITCH) rhVoicing.push(filteredTagged[v].pitch);
+                    }
+                    if (rhVoicing.length === 0) {
+                        // Fallback: filtered 全空,退回 unmasked
+                        for (let v = 1; v < chord.voicing.length; v++) {
+                            if (chord.voicing[v] >= RH_MIN_PITCH) rhVoicing.push(chord.voicing[v]);
+                        }
+                    }
+                } else {
+                    // 老路径(无 mask 信息)
+                    for (let v = 1; v < chord.voicing.length; v++) {
+                        if (chord.voicing[v] >= RH_MIN_PITCH) rhVoicing.push(chord.voicing[v]);
+                    }
                 }
 
                 // A3a — RH "listen" LH shell：同 PC 撞音 voice 上移一个八度
@@ -1111,6 +1145,32 @@ function pickThirdPc(rootPcNorm: number, quality: ChordQuality): number {
  * @param lhPitch LH sustain pitch（chord.voicing[0]）
  * @returns 升序排列的新数组（可能与输入相同 — 无需调整时直接返回 .slice()）
  */
+/**
+ * Phase 1b — Rootless RH 在 mask 把 3rd/7th 都过滤掉时的降级方案。
+ *
+ * 用户决策(Phase 1b):filtered 空 → "root + 5 双音 stab"(Intro 风格)。
+ *
+ * 算法:把 chord root PC 放置到 [rangeLo, rangeHi] 内距锚位 60 (C4) 最近的
+ * 八度,5 度在 root + 7 半音。两音都带 VoiceRole 标记。
+ */
+function buildRootFifthFallback(
+    chord: GeneratedChord, rangeLo: number, rangeHi: number,
+): VoicedPitch[] {
+    const rootRaw = chord.bassOverride !== undefined ? chord.bassOverride : chord.root;
+    const rootPc = ((rootRaw % 12) + 12) % 12;
+    // 找距 C4 (60) 最近的 root pc 八度,落在 [rangeLo, rangeHi]
+    const anchor = 60;
+    const anchorBase = anchor - ((anchor % 12) + 12) % 12;  // 60 - 0 = 60
+    let rootPitch = anchorBase + rootPc;
+    while (rootPitch < rangeLo) rootPitch += 12;
+    while (rootPitch > rangeHi) rootPitch -= 12;
+    if (rootPitch < rangeLo) return [];  // 区间太窄,无放置
+    const fifthPitch = rootPitch + 7;
+    const out: VoicedPitch[] = [{ pitch: rootPitch, role: VoiceRole.Root }];
+    if (fifthPitch <= rangeHi) out.push({ pitch: fifthPitch, role: VoiceRole.Fifth });
+    return out;
+}
+
 function enforceHandSeparation(rhVoicing: number[], lhPitch: number): number[] {
     const floor = lhPitch + MIN_HAND_SEPARATION;
     const out: number[] = [];
