@@ -53,6 +53,8 @@ const REPEAT_DAMP_FACTOR = 0.6;
 const LIL_BASS_PITCH_THRESHOLD = 48;  // C3,低于此为典型低音区
 /** Low Interval Limit "同时" 判定窗口 — onset 在此窗口内视为并发 */
 const LIL_ONSET_WINDOW = 0.125;       // 1/8 拍
+/** Phase 8b — deliberate doubling 阈值:钢琴 LH(< 48 = C3)与 bass 同 pitch + onset 视为故意八度加厚,不 damp */
+const LOW_REGISTER_DOUBLING_THRESHOLD = 48;  // C3
 
 /** 参与 Reconciler 的轨道名(drums 不参与:GM Drum Map 第三空间,不与旋律轨撞 pitch) */
 export type ReconcilerTrackName = 'melody' | 'bass' | 'accompaniment' | 'atmosphere';
@@ -110,6 +112,9 @@ export interface ReconcilerReport {
         velocityDamps: number;
         notesRemoved: number;  // v1 不剔除,恒为 0;留给将来扩展
     };
+    /** Phase 8b — 检测到但**故意不 damp** 的 doubling(钢琴 LH + bass 低音区八度加厚),
+     *  仅作为诊断 metric。这种 doubling 是音乐家明确意图,Reconciler 不应误伤。 */
+    deliberateDoublings: number;
     /** v1 检测到但未修复的问题,详见 UnresolvedIssue.kind */
     unresolvedIssues: UnresolvedIssue[];
 }
@@ -136,9 +141,12 @@ export class Reconciler {
 
         const collisions: CollisionEvent[] = [];
         const unresolvedIssues: UnresolvedIssue[] = [];
+        let deliberateDoublings = 0;
 
         // ─────────────────────────────────────────────
         // Pass 1: 同 (pitch, onset) 重复音 → velocity damp
+        //   Phase 8b 白名单:钢琴 LH(pitch < C3=48)与 bass 同根音 → deliberate
+        //   八度加厚,**不 damp**(钢琴 LH bass 同根音是经典编曲手法,误伤就听感糊)
         // ─────────────────────────────────────────────
         for (let i = 1; i < tracks.length; i++) {
             const lower = tracks[i];
@@ -158,6 +166,17 @@ export class Reconciler {
                     if (dampedBy !== null) break;
                 }
                 if (dampedBy !== null) {
+                    // Phase 8b — deliberate doubling 白名单
+                    const isLowRegisterBassPianoDoubling =
+                        dampedBy === 'bass' &&
+                        lower.name === 'accompaniment' &&
+                        note.pitch < LOW_REGISTER_DOUBLING_THRESHOLD;
+
+                    if (isLowRegisterBassPianoDoubling) {
+                        deliberateDoublings++;
+                        continue;  // 不 damp,跳过本 note
+                    }
+
                     const origVel = note.velocity;
                     note.velocity = note.velocity * REPEAT_DAMP_FACTOR;
                     collisions.push({
@@ -208,6 +227,7 @@ export class Reconciler {
                 velocityDamps: collisions.length,
                 notesRemoved: 0,
             },
+            deliberateDoublings,
             unresolvedIssues,
         };
     }
