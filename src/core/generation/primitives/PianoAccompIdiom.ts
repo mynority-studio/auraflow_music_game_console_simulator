@@ -40,7 +40,7 @@ import {
 import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpers';
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';
-import { buildRootlessVoicing, buildQuartalVoicing } from './RootlessVoicer';
+import { VoicingProcessor } from './VoicingProcessor';
 import {
     TextureRecipeId,
     getPianoTextureRecipe,
@@ -330,14 +330,14 @@ export class PianoAccompIdiom {
             let rhVoicing: number[];
 
             if (voicingMode === 'rootless') {
-                rhVoicing = buildRootlessVoicing({
+                rhVoicing = VoicingProcessor.buildRootlessRH({
                     chord,
                     colorBias: voicingSpan,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
                 });
             } else if (voicingMode === 'quartal') {
-                rhVoicing = buildQuartalVoicing({
+                rhVoicing = VoicingProcessor.buildQuartalRH({
                     chord,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
