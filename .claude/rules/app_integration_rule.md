@@ -60,7 +60,7 @@ const generator = new MelodyEngine();
 await AudioEngine.playSong(track, context.style!.id, context, generator);
 ```
 
-- 内部走 `Orchestrator.arrange()`(K-2 唯一加 keyOffset 点)→ MidiConverter → PlaybackEngine
+- 内部走 `AbsoluteTransposer.arrange()`(K-2 唯一加 keyOffset 点)→ MidiConverter → PlaybackEngine
 - async,返回 Promise<void>
 - 并发安全:快速连点 Play 只有最后一次会播
 
@@ -79,7 +79,7 @@ App                    Engine
  │◀──────────────────────│  { track (RELATIVE), context }
  │                       │
  │  playSong(...)        │
- │──────────────────────▶│  Orchestrator.arrange → RELATIVE→ABSOLUTE (K-2)
+ │──────────────────────▶│  AbsoluteTransposer.arrange → RELATIVE→ABSOLUTE (K-2)
  │                       │  MidiConverter.convert → MidiEvent[]
  │                       │  PlaybackEngine.loadSong → play
  │◀──────────────────────│  (Promise resolves when loading done)
@@ -139,7 +139,7 @@ App                    Engine
 ```
 
 ⚠️ **NoteData.pitch ∈ RELATIVE 空间**(0-11 + 八度偏移,未加 keyOffset),
-**禁止** App 层自己加 keyOffset —— 那是 `Orchestrator.arrange()` 的职责。
+**禁止** App 层自己加 keyOffset —— 那是 `AbsoluteTransposer.arrange()` 的职责。
 
 ### 4.2 `MusicContext`
 
@@ -157,7 +157,7 @@ App                    Engine
 }
 ```
 
-`playSong()` 需要原样把 `context` 传回去,内部要靠它做 Orchestrator 转置。
+`playSong()` 需要原样把 `context` 传回去,内部要靠它做 AbsoluteTransposer 转置。
 
 ---
 
@@ -324,7 +324,7 @@ voicing 数组长度 0-6,空间 RELATIVE。
   - `from '../core/generation/pipeline/*'`(除 `pipeline/index.ts` 的 `runPipeline` 外)
   - `from '../core/generation/ir/harmonic-skeleton'`(内部 IR,不公开)
   
-- ❌ **绕过 Orchestrator 自己加 keyOffset** —— K-2 铁律
+- ❌ **绕过 AbsoluteTransposer 自己加 keyOffset** —— K-2 铁律
 - ❌ **修改 `track.chords[i].voicing`** —— Phase 1 后由 VoicingProcessor 决定
 - ❌ **修改 `track.melody[i].pitch`** —— Pitch Space 已锁
 - ❌ **自己实现 voicing / 织体决策 / casting 决策** —— 这是引擎职责

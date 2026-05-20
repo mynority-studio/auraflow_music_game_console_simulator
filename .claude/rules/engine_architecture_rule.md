@@ -16,7 +16,7 @@
 - 调整任何模块的 PRNG 消耗
 - 改 IR 类型(`ir/` 下任何 interface 或 type)
 - 改风格配置中映射到管线决策的字段(`config/styles/*.ts`)
-- 改 Conductor / Orchestrator / Reconciler 调用顺序
+- 改 Conductor / AbsoluteTransposer / Reconciler 调用顺序
 
 ---
 
@@ -53,8 +53,8 @@
 │   末尾调 Reconciler.reconcile()                 │
 └─────────────────────────────────────────────────┘
         ↓
-┌─ Orchestrator (K-2 唯一加 keyOffset 点) ───────┐
-│ Orchestrator.arrange()                          │  → ArrangedTrack (ABSOLUTE)
+┌─ AbsoluteTransposer (K-2 唯一加 keyOffset 点) ───────┐
+│ AbsoluteTransposer.arrange()                          │  → ArrangedTrack (ABSOLUTE)
 └─────────────────────────────────────────────────┘
         ↓
    MidiConverter → PlaybackEngine → 音频输出
@@ -74,7 +74,7 @@
 | 和弦推演规则(T/S/D 转移概率) | `pipeline/MacroProgressionEngine.ts` | HarmonyCore(已是薄 facade,只委托) |
 | 乐器具体渲染算法(钢琴织体/贝斯走法/鼓型) | `primitives/*Idiom.ts` 或 `AtmosphereRenderer.ts` | Realizer 包装层只 forward,不加逻辑 |
 | 加新乐器 | 新建 `realizers/XxxRealizer.ts` + `primitives/XxxIdiom.ts` | Conductor 直接 import Idiom |
-| RELATIVE → ABSOLUTE 转换 | `pipeline/Orchestrator.ts`(K-2 唯一点) | 任何上游 |
+| RELATIVE → ABSOLUTE 转换 | `pipeline/AbsoluteTransposer.ts`(K-2 唯一点) | 任何上游 |
 | 跨乐器协调(damp / voice crossing 检测) | `pipeline/Reconciler.ts` | 各 Realizer / Conductor 内 |
 | 核心 IR 类型字段增删 | `ir/index.ts` / `ir/harmonic-skeleton.ts` | `types.ts` 旧位置(已 re-export) |
 | 风格参数(BPM 范围/和声池/personas) | `config/styles/*.ts` | 引擎模块内硬编 |
@@ -84,17 +84,21 @@
 
 ## 3. 命名约定
 
-| 后缀 | 语义 | 例子 |
-|------|------|------|
-| `*Engine` | 主动决策模块(消费输入 → 产决策) | CastingEngine, MacroProgressionEngine |
-| `*Realizer` | 乐器具象化(InstrumentRealizer 接口实现) | PianoRealizer, BassRealizer |
-| `*Processor` | 集中算法库(策略集合) | VoicingProcessor |
-| `*Renderer` / `*Idiom` | 渲染器(历史遗留命名) | AtmosphereRenderer, PianoAccompIdiom |
-| `*Encoder` | 分析器(从音符提取元数据) | SongHookEncoder |
-| `*Planner` / `*Router` | 路由/规划(纯查表 + 决策) | PhraseContourPlanner, MoodRouter |
-| `*Mutator` | 变换器(同形输入输出) | RhythmMutator, TopologyMutator |
+| 后缀 | 语义 | 类型 | 例子 |
+|------|------|------|------|
+| `*Engine` | 主动决策模块(消费输入 → 产决策) | class | CastingEngine, MacroProgressionEngine |
+| `*Realizer` | 乐器具象化(InstrumentRealizer 接口实现) | const/class | PianoRealizer, BassRealizer |
+| `*Processor` | 集中算法库(策略集合) | class | VoicingProcessor |
+| `*Transposer` | 空间转换 | class | AbsoluteTransposer |
+| `*Renderer` / `*Idiom` | 渲染器(class,历史命名) | **class only** | AtmosphereRenderer, PianoAccompIdiom |
+| `*Config` | 配置数据接口(取代历史 `*Idiom interface`) | **interface only** | AtmosphereConfig |
+| `*Encoder` | 分析器(从音符提取元数据) | class | SongHookEncoder |
+| `*Planner` / `*Router` | 路由/规划(纯查表 + 决策) | function | PhraseContourPlanner, MoodRouter |
+| `*Mutator` | 变换器(同形输入输出) | class/function | RhythmMutator, TopologyMutator |
 
-**新代码偏好 `*Realizer` 而非 `*Renderer / *Idiom`**(后两者是历史遗留,新乐器接入时只建 Realizer)。
+**关键约定(Phase 7 后定型)**:
+- `*Idiom` 后缀**仅指 class**(渲染器);interface 名禁用 `*Idiom`,改用 `*Config`(配置)/ `*Params`(参数)
+- `*Renderer` 与 `*Idiom` 当前并存(历史遗留);新代码偏好 `*Realizer` 包装,旧 `*Idiom` class 不必改名
 
 **Engine vs Processor 的区别**:
 - Engine 知道音乐意图("这段要 Triumphant"),Processor 只算数学("给我 4-voice voicing")
@@ -107,9 +111,9 @@
 ### 4.1 Pitch Space 三空间(K-1 / K-2 / K-7 / K-8)
 
 - **RELATIVE 空间**:Structure / Harmony / Casting / Realizer 全程使用,pitch 不含 keyOffset
-- **ABSOLUTE 空间**:Orchestrator.arrange() 之后,pitch = relative + keyOffset,clamp [0,127]
-- **GM Drum Map 第三空间**:Drums 轨 pitch 是物理键位(36-81),Conductor / Orchestrator 都**不加 keyOffset**
-- **K-2 铁律**:Orchestrator 之前的任何模块**禁止**给 `NoteData.pitch` 加 `keyOffset`
+- **ABSOLUTE 空间**:AbsoluteTransposer.arrange() 之后,pitch = relative + keyOffset,clamp [0,127]
+- **GM Drum Map 第三空间**:Drums 轨 pitch 是物理键位(36-81),Conductor / AbsoluteTransposer 都**不加 keyOffset**
+- **K-2 铁律**:AbsoluteTransposer 之前的任何模块**禁止**给 `NoteData.pitch` 加 `keyOffset`
 
 任何一处违反 K-2,golden seed 立即挂,且会导致跨调式渲染错位。
 
@@ -124,7 +128,7 @@
 
 - IR 字段**只增不减**,删除前必须跨整个引擎评估 + C 端移植同步
 - 新增字段**必须可选**(`field?: T`)
-- `GeneratedChord.voicing` 在 RELATIVE 空间;Orchestrator 之后才转 ABSOLUTE
+- `GeneratedChord.voicing` 在 RELATIVE 空间;AbsoluteTransposer 之后才转 ABSOLUTE
 - `SectionMetadata.startBeat/endBeat` 是拍数(float),不是采样数
 - `NoteData.velocity` 是 [0,1] float;C 端折算到 0-127
 
@@ -210,8 +214,8 @@
 - ❌ **同种 voicing 在多文件实现** —— Phase 1 前的 RootlessVoicer 问题
   → `VoicingProcessor.ts` 是唯一源,新策略直接加在那里
 
-- ❌ **Orchestrator 之前任何模块给 pitch 加 keyOffset**
-  → K-2 铁律,全局唯一加点在 `Orchestrator.arrange()`
+- ❌ **AbsoluteTransposer 之前任何模块给 pitch 加 keyOffset**
+  → K-2 铁律,全局唯一加点在 `AbsoluteTransposer.arrange()`
 
 - ❌ **用 `Math.random()`**
   → `PRNGManager.next()`,且在文件头声明 PRNG 预算

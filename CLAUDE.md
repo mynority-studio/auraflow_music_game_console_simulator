@@ -15,7 +15,7 @@
 - 调整任何模块的 PRNG 消耗
 - 改 IR 类型(`ir/` 下任何 interface)
 - 改风格配置中映射到管线决策的字段(`config/styles/*.ts`)
-- 改 Conductor / Orchestrator / Reconciler 调用顺序
+- 改 Conductor / AbsoluteTransposer / Reconciler 调用顺序
 
 ### 写 App / 嵌入式集成 → `.claude/rules/app_integration_rule.md`
 

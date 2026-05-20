@@ -1,7 +1,7 @@
 /**
  * AtmosphereRenderer — 氛围层（Pad / Strings / Choir）渲染器
  *
- * 消费 HarmonyCore 输出的 voicing[] + AtmosphereIdiom 参数 + 段落 intensityScale，
+ * 消费 HarmonyCore 输出的 voicing[] + AtmosphereConfig 参数 + 段落 intensityScale，
  * 每个和弦输出 voiceCount 个长音 NoteData，构成"长音铺底"的 pad 织体。
  *
  * 与 TextureMapper（comping）的区别：
@@ -31,7 +31,7 @@
  * @author AuraFlow Tap! BandEngine MVP Step 4
  */
 
-import { AtmosphereIdiom, GeneratedChord, NoteData } from '../types';
+import { AtmosphereConfig, GeneratedChord, NoteData } from '../types';
 
 const EPSILON = 1e-6;
 const MIDI_MAX = 127;
@@ -43,7 +43,7 @@ const ATMOSPHERE_MIN_PITCH = 48;  // C3
 // Crossfade overlap — 显式 crossfade 时延伸进下和弦的拍数
 const CROSSFADE_OVERLAP_BEATS = 0.25;
 
-// AtmosphereIdiom 默认值（Nina 卡片未覆盖时的兜底）
+// AtmosphereConfig 默认值（Nina 卡片未覆盖时的兜底）
 const DEFAULT_ATTACK_SOFTNESS = 0.5;
 const DEFAULT_RELEASE_RATIO   = 1.0;
 const DEFAULT_VOICE_COUNT     = 3;
@@ -59,10 +59,10 @@ export interface AtmosphereRenderInput {
     /** 段落内的和弦序列（已带 voicing 数组，RELATIVE 空间） */
     chords: GeneratedChord[];
     /**
-     * AtmosphereIdiom 参数 — 通常来自 musician.personnel.atmosphereOverrides。
+     * AtmosphereConfig 参数 — 通常来自 musician.personnel.atmosphereOverrides。
      * Partial 接受：未提供的字段走默认值（DEFAULT_*）。
      */
-    idiom: Partial<AtmosphereIdiom> | undefined;
+    idiom: Partial<AtmosphereConfig> | undefined;
     /**
      * 段落能量乘子 ∈ [0, 1]（BandEngine 输出，来自 section.energyLevel 归一化）。
      * 用于在 idiom.velocityRange 内做线性插值：低能量 → veloLo，高能量 → veloHi。

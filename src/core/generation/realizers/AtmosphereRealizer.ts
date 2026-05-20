@@ -5,7 +5,7 @@
 // 当前为薄包装,内部完全委托 AtmosphereRenderer.render。
 //
 // 与其他 Realizer 的特殊点:
-//   - 输入包含 idiom: Partial<AtmosphereIdiom>(从 musician.personnel.atmosphereOverrides
+//   - 输入包含 idiom: Partial<AtmosphereConfig>(从 musician.personnel.atmosphereOverrides
 //     来,未提供字段走 DEFAULT_*)
 //   - sustainModel = pad_envelope(自带 ADSR,跳过 ToplineEngine Pass 3 sustain 处理)
 //   - 渲染时使用 chord.voicing(GeneratedChord 已带的全局 SATB voicing)

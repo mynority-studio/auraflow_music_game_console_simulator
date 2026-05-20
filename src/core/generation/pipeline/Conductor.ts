@@ -44,7 +44,7 @@ import {
     GeneratedChord, MusicianPersona, NoteData,
     SectionMetadata, SectionType, Tonality,
     CHORD_SCALE_INTERVALS, SCALE_INTERVALS, // 🌟 新增
-    BandPlan, BandRole, AtmosphereIdiom, InstrumentFamily,
+    BandPlan, BandRole, AtmosphereConfig, InstrumentFamily,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleStage5Bundle } from '../config/styles';
@@ -209,11 +209,11 @@ export function conduct(input: ConductorInput): ConductorResult {
     // Atmosphere 乐手查找（V1：从 BandPlan.activeMusicians 取，整曲不变）
     //   - bandPlan === undefined → 跳过 atmosphere 渲染（向后兼容）
     //   - roster 未配 atmosphere → activeMusicians 不含 Atmosphere 角色 → 跳过
-    //   - 找到则提取 personnel.atmosphereOverrides 作为 AtmosphereIdiom 参数
+    //   - 找到则提取 personnel.atmosphereOverrides 作为 AtmosphereConfig 参数
     const atmosphereMusician = input.bandPlan?.activeMusicians.find(
         am => am.assignedRole === BandRole.Atmosphere,
     )?.card;
-    const atmosphereIdiom: Partial<AtmosphereIdiom> | undefined =
+    const atmosphereIdiom: Partial<AtmosphereConfig> | undefined =
         atmosphereMusician?.personnel?.atmosphereOverrides;
 
     // MainInst 乐手查找 — 大师托管路径：若 roster.mainInst 提供了带 masterId 的 persona，

@@ -367,9 +367,9 @@ export interface CompingIdiom {
     textureProbabilities?: { block: number, arpeggio: number, comping: number };
 }
 
-// AtmosphereIdiom — 氛围层：长音 pad / 合唱 / 弦乐铺底的演奏特性
-//   驱动 AtmosphereIdiom 渲染器（Phase 1 MVP）：长持续 voicing + 软起音 + 力度偏弱
-export interface AtmosphereIdiom {
+// AtmosphereConfig — 氛围层：长音 pad / 合唱 / 弦乐铺底的演奏特性
+//   驱动 AtmosphereConfig 渲染器（Phase 1 MVP）：长持续 voicing + 软起音 + 力度偏弱
+export interface AtmosphereConfig {
     /** 起音软度（0 = 瞬发 / 1 = 极慢淡入，约 1 拍） */
     attackSoftness: number;
     /** 拖尾长度比例（相对和弦持续时长；1 = 整段持续；>1 = 过踏延至下一和弦 head） */
@@ -389,7 +389,7 @@ export interface InstrumentIdiom {
     lead: LeadIdiom;
     comping: CompingIdiom;
     /** 氛围层（仅 Pad/Strings/EP 等氛围类乐器配置；其他乐器留空） */
-    atmosphere?: AtmosphereIdiom;
+    atmosphere?: AtmosphereConfig;
 }
 
 // ============================================================
@@ -405,7 +405,7 @@ export interface InstrumentIdiom {
 export interface PersonnelTraits {
     leadOverrides?: Partial<LeadIdiom>;             // 作为主奏时的微操习惯
     compingOverrides?: Partial<CompingIdiom>;       // 作为伴奏时的微操习惯
-    atmosphereOverrides?: Partial<AtmosphereIdiom>; // 作为氛围乐手时的微操习惯
+    atmosphereOverrides?: Partial<AtmosphereConfig>; // 作为氛围乐手时的微操习惯
 }
 
 // 3. 盘古乐器基底 (Pangea Instrument) — 定义物理底线
@@ -413,7 +413,7 @@ export interface PangeaInstrument {
     id: string;
     baseLead: LeadIdiom;
     baseComping: CompingIdiom;
-    baseAtmosphere?: AtmosphereIdiom;  // 仅 Pad / Strings / EP 等氛围类乐器配置
+    baseAtmosphere?: AtmosphereConfig;  // 仅 Pad / Strings / EP 等氛围类乐器配置
 }
 
 // 4. 乐手智能体 (The Musician) — 参考架构移植：等价于 MusicianProfile 的精简表示
