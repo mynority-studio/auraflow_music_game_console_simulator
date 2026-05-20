@@ -299,6 +299,13 @@ function dedupSortedArray(arr: number[]): number[] {
 // 但 Phase 1b mask 需求只关心"该 voice 是否可被 mask 掉",粗粒度即足够。
 //
 // Phase 2+ 若需更精确:让 VoicingProcessor 构造时直接标记 role,而非派生。
+//
+// ⚠️ CROSS-SYNC WARNING(`.claude/rules/cross_sync_rule.md` §1.4):
+//   本函数依赖 `CHORD_INTERVALS[chord.quality]` 的 includes 检测做 6/9 消歧。
+//   改 `ChordQuality` 枚举(types.ts)或 `CHORD_INTERVALS` 表时,**必须**同步检查
+//   本函数 — 新 quality 漏配 intervals 会让 deriveVoiceRole 把 9 当成 13(或反之),
+//   Phase 1b mask 会"看起来正常但偶发错位"(silently 破坏)。
+//   登记于 cross_sync_rule §1.4。
 // ============================================================
 
 function deriveVoiceRole(pitch: number, chord: GeneratedChord): VoiceRole {
