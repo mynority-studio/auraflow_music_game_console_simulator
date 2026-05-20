@@ -31,6 +31,7 @@ import {
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
     CHORD_SCALE_INTERVALS,
 } from '../types';
+import type { RenderContext } from '../pipeline/RenderContext';
 import { StyleId } from '../config/StyleFlags';
 import { getChordTonePCs } from '../data/ScaleHelpers';
 import {
@@ -56,6 +57,12 @@ export interface BassIdiomInput {
     persona: MusicianPersona;
     /** Drum Kick 落点（V5.x），仅 Layer 1 路径消费做 Bass-Kick interlock；walking 路径忽略 */
     kickAnchors?: number[];
+    /**
+     * Phase 0 — RenderContext 接入点(weather sampler / lookahead / state)。
+     * 当前实装不消费 context(bit-exact 保证);Phase 2+ walking 路径
+     * 在每 step 调 context.weather.at(beat) 调制 approach / chromatic 概率。
+     */
+    context: RenderContext;
 }
 
 export class BassIdiom {

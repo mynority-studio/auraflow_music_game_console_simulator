@@ -32,6 +32,7 @@
  */
 
 import { AtmosphereConfig, GeneratedChord, NoteData } from '../types';
+import type { RenderContext } from '../pipeline/RenderContext';
 
 const EPSILON = 1e-6;
 const MIDI_MAX = 127;
@@ -68,6 +69,12 @@ export interface AtmosphereRenderInput {
      * 用于在 idiom.velocityRange 内做线性插值：低能量 → veloLo，高能量 → veloHi。
      */
     intensityScale: number;
+    /**
+     * Phase 0 — RenderContext 接入点(weather sampler / lookahead / state)。
+     * 当前实装不消费 context(bit-exact 保证);Phase 2+ 用 T 维度调制
+     * voice count / filter / release ratio,用 S 维度调制 crossfade。
+     */
+    context: RenderContext;
 }
 
 export class AtmosphereRenderer {

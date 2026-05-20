@@ -19,6 +19,7 @@ import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry'
 import { BandRole, SectionType } from '../src/core/generation/types';
 import { RHTexture, LHTexture, CoordMode, PianoAccompParams } from '../src/core/generation/primitives/PianoAccompIdiom';
 import { PianoAccompIdiom } from '../src/core/generation/primitives/PianoAccompIdiom';
+import { createDefaultRenderContext } from '../src/core/generation/pipeline/RenderContext';
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {
@@ -228,6 +229,7 @@ if (grooveSection !== undefined) {
             chords: chordsInSection.slice(0, 2),
             params: walkingParams,
             beatsPerBar: 4,
+            context: createDefaultRenderContext(),
         });
         // Walking notes 有独特 duration 0.9（区别于 RH Stab 的 0.4 max + RH Block/Broken 的精确 beat 倍数）
         const walkingOnly = walkingNotes.filter(n => Math.abs(n.duration - 0.9) < 0.01);
@@ -271,6 +273,7 @@ if (lushSection !== undefined) {
             chords: lushChords.slice(0, 1),
             params: m5Params,
             beatsPerBar: 4,
+            context: createDefaultRenderContext(),
         });
         // M5 应输出 5-6 个 voice，全部同 onset，同 duration
         const firstChord = lushChords[0];

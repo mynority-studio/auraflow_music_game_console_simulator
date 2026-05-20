@@ -14,6 +14,7 @@ import {
 import {
     TextureRecipeId, PIANO_TEXTURE_RECIPES,
 } from '../src/core/generation/data/PianoTextureRecipes';
+import { createDefaultRenderContext } from '../src/core/generation/pipeline/RenderContext';
 
 PRNGManager.setSeed(42);
 const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
@@ -48,7 +49,7 @@ for (const recipeId of recipesToTest) {
         intensityScale: 0.6,
         recipeId,
     };
-    const notes = PianoAccompIdiom.render({ chords: [chord], params, beatsPerBar: 4 });
+    const notes = PianoAccompIdiom.render({ chords: [chord], params, beatsPerBar: 4, context: createDefaultRenderContext() });
 
     // 按 onset 分组，统计每个击点弹了几个 voice + 哪个 pitch
     const byOnset = new Map<number, number[]>();
@@ -80,7 +81,7 @@ const popParams: PianoAccompParams = {
     intensityScale: 0.6,
     recipeId: TextureRecipeId.PopHeartbeat,
 };
-const popNotes = PianoAccompIdiom.render({ chords: [chord], params: popParams, beatsPerBar: 4 });
+const popNotes = PianoAccompIdiom.render({ chords: [chord], params: popParams, beatsPerBar: 4, context: createDefaultRenderContext() });
 const popByOnset = new Map<number, number>();
 for (const n of popNotes) {
     const key = Math.round(n.onset * 16) / 16;

@@ -48,6 +48,7 @@
 
 import { PRNGManager } from '../../utils/PRNG';
 import { NoteData, SectionMetadata } from '../types';
+import type { RenderContext } from '../pipeline/RenderContext';
 
 // ============================================================
 // GM Drum Map 物理键位（不可移调，K-8 第三空间）
@@ -132,6 +133,13 @@ export class DrumIdiomError extends Error {
 export interface DrumIdiomInput {
     sections: SectionMetadata[];
     grid: DrumGridConfig;
+    /**
+     * Phase 0 — RenderContext 接入点(weather sampler / lookahead / state)。
+     * 当前实装不消费 context(bit-exact 保证;鼓 PRNG 配额对 D-5 锁帧关键,
+     * 任何 weather 调制必须严守每 step ×3 gate PRNG 预算)。
+     * Phase 3+ 可调制 ghost note 概率 / open hihat 切换等。
+     */
+    context: RenderContext;
 }
 
 export class DrumIdiom {

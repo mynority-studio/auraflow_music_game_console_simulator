@@ -67,6 +67,7 @@ import { ToplineEngine } from './ToplineEngine';
 import { TopologyMutator } from '../primitives/TopologyMutator';
 import { SongHookEncoder, SongHookSkeleton } from '../primitives/SongHookEncoder';
 import { PRNGManager } from '../../utils/PRNG';
+import { createDefaultRenderContext } from './RenderContext';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -270,13 +271,26 @@ export function conduct(input: ConductorInput): ConductorResult {
         }
     }
 
+    // ────────────────────────────────────────────────────────────
+    // Phase 0 — RenderContext 构造(weather sampler / lookahead / state)
+    //
+    // 当前实装:ConstantWeatherSampler({k:0.5, t:0.5, s:0.5})。
+    // 所有 Idiom 接收 context 但不消费 → bit-exact 保证。
+    //
+    // 演进时间线:
+    //   Phase 2: 替换为 CurveWeatherSampler(per-section anchor + 插值生成 beat 级曲线)
+    //   Phase 3: 五维齐全(加入 R / G 维度)
+    //   Phase 5+: Live 模式 LiveAccompanist 构造 RollingWeatherSampler,本逻辑保留作离线路径
+    // ────────────────────────────────────────────────────────────
+    const renderContext = createDefaultRenderContext();
+
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）
     //   Phase 9:drumsActive 与 rosterMask 等价,保留 drumsActive 是因 collectDrumSections
     //   还消费它做段落级 mask 检查,不需要重构 collectDrumSections 接口。
     const drumSections = drumsActive ? collectDrumSections(input.sections) : [];
     const drums: NoteData[] = drumSections.length > 0
-        ? DrumRealizer.realize({ sections: drumSections, grid: bundle.drum })
+        ? DrumRealizer.realize({ sections: drumSections, grid: bundle.drum, context: renderContext })
         : [];
 
     // Kick-Bass interlock: 提取所有 Kick (pitch===36) 落点，供 BassIdiom 对齐
@@ -317,6 +331,7 @@ export function conduct(input: ConductorInput): ConductorResult {
                 tonality: input.tonality,
                 persona: bassPersona,
                 kickAnchors,
+                context: renderContext,
             });
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);
         }
@@ -331,6 +346,7 @@ export function conduct(input: ConductorInput): ConductorResult {
                     chords: sectionChords,
                     params: pianoParams,
                     beatsPerBar: input.timeSignature[0],
+                    context: renderContext,
                 });
                 for (let k = 0; k < pianoNotes.length; k++) accompaniment.push(pianoNotes[k]);
             }
@@ -397,6 +413,7 @@ export function conduct(input: ConductorInput): ConductorResult {
                 chords: sectionChords,
                 idiom: atmosphereIdiom,
                 intensityScale,
+                context: renderContext,
             });
             for (let k = 0; k < atmoNotes.length; k++) atmosphere.push(atmoNotes[k]);
         }

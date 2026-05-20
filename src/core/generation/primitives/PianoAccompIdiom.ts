@@ -37,6 +37,7 @@ import {
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
     CHORD_SCALE_INTERVALS,
 } from '../types';
+import type { RenderContext } from '../pipeline/RenderContext';
 import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpers';
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';
@@ -214,6 +215,12 @@ export interface PianoAccompRenderInput {
     params: PianoAccompParams;
     /** 拍号第一位（小节内拍数），决定 stepsPerBar */
     beatsPerBar: number;
+    /**
+     * Phase 0 — RenderContext 接入点(weather sampler / lookahead / state)。
+     * 当前实装不消费 context(bit-exact 保证);Phase 2+ render 循环内
+     * 调 context.weather.at(beat) 调制节奏算子 / voicing / velocity。
+     */
+    context: RenderContext;
 }
 
 export class PianoAccompIdiom {
