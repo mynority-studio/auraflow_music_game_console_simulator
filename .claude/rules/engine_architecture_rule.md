@@ -531,12 +531,141 @@ fallback,Walking 才是"专业贝斯"路径。
 **当前贝斯无 signature lick 机制**(MusicianPersona 不含 `bassLickProb` 字段)。
 这是设计决策——贝斯主要靠 walking pattern 表达个性,lick 留给主奏乐器(钢琴 / 萨克斯)。
 
+### 11.10 鼓组 — 5 层关切点分布
+
+```
+┌─ 决策层(说"这段鼓怎么打") ──────────────────────────────┐
+│  config/styles/*.ts (整体决策权在风格层,非 CastingEngine)│
+│    ModernPop.ts:  buildPopGrid()         (line 306-316)  │
+│    ChillJazz.ts:  buildJazzGrid()        (line 333-341)  │
+│    NeoSoul.ts:    buildNeoSoulGrid()     (line 304-309)  │
+│    各返回 DrumGridConfig(16-step 概率表 + energy 曲线)  │
+│                                                          │
+│  pipeline/Conductor.ts                                   │
+│    collectDrumSections() (line 410-420)                  │
+│      段落级 ConductorMask 过滤(Break/Breakdown 等关鼓)   │
+│    入口处取 bundle.drum 喂给 DrumRealizer (line 253-256) │
+│                                                          │
+│  **注意:鼓不走 CastingEngine.pickXxxParams 决策路径**!  │
+│   编曲意图直接编码在 styleConfig 的 grid 概率里,不像     │
+│   钢琴/贝斯那样在 CastingEngine 派生 idiom params。      │
+└──────────────────────────────────────────────────────────┘
+        ↓ DrumIdiomInput { sections, grid }
+┌─ 物理约束层(GM Drum Map 第三空间,K-8) ──────────────────┐
+│  primitives/DrumIdiom.ts (line 56-68):                   │
+│    DRUM_KICK = 36     DRUM_SNARE = 38                    │
+│    DRUM_HIHAT_CLOSED = 42   DRUM_CRASH = 49              │
+│    DRUM_RIDE = 51     DRUM_TOM_HI/MID/LO = 50/47/45      │
+│                                                          │
+│  Channel 9 硬路由(GM 标准):                              │
+│    audio/MidiConverter.ts (line 60, 153, 165)            │
+│      CHANNEL_DRUMS = 9 — 鼓组永远在 channel 10           │
+│                                                          │
+│  Pitch 第三空间(K-8):                                    │
+│    AbsoluteTransposer **不加 keyOffset** 到 drums.pitch  │
+│    全程透传 GM 物理键位                                  │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 算法层(怎么生成击点) ──────────────────────────────────┐
+│  primitives/DrumIdiom.ts                                 │
+│    render() 主循环:段落 ASC → step ASC → Kick/Snare/Hat │
+│                                                          │
+│  PRNG 消耗(D-5 关键!):                                   │
+│    **每 step 固定 ×3 gate PRNG**(Kick/Snare/Hat 各 1) │
+│    条件 ×velocity PRNG(gate 命中后抽 velocity)          │
+│    全曲 = 3 × totalSteps + Σhits                         │
+│                                                          │
+│  Energy 缩放(line 229-232):                              │
+│    probScale = grid.energyProbScale[energyIdx]           │
+│    velScale  = grid.energyVelScale[energyIdx]            │
+│    snareGateOpen = section.energyLevel >= snareEnergyGate│
+│      (低能段硬关 Snare)                                  │
+│                                                          │
+│  段落特定逻辑(line 260-280):                             │
+│    Crash:isHighEnergy 段落首拍触发(stepIdx === 0)       │
+│    Fill: isBuildUp 段最后一小节,Tom 递进 + Snare roll    │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 渲染层(NoteData[]) ────────────────────────────────────┐
+│  primitives/DrumIdiom.ts                                 │
+│    render() 唯一入口(被 DrumRealizer 包装)               │
+│    HIT_DURATION = 0.125(固定 32 分,attack-only)         │
+│    输出按 (onset ASC, pitch ASC) 排序                    │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 资源层(数据库 / 卡片库) ───────────────────────────────┐
+│  types.ts: DrumGridConfig / DrumStepConfig / DrumPattern │
+│    (DrumFixedHit/DensityHit/GhostHit/Crash 类型已定义    │
+│     但 DrumIdiom 当前未消费,留给未来扩展)               │
+│  idioms/MusicianRegistry.ts:                             │
+│    dave_drums (ModernPop)        (line 101-120)          │
+│    jazz_brush_drummer (ChillJazz)(line 210-229)          │
+│  audio/MidiConverter.ts: Channel 9 + GM Drum 程式映射    │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 11.11 鼓组优化场景对照表
+
+| 你想优化什么 | 主要改哪 | 次要改哪(如需) | Blast |
+|------------|---------|----------------|-------|
+| **改某风格的整体鼓型**(Pop 直拍 / Jazz Brush / Neo-Soul Dilla) | `config/styles/<风格>.ts` 的 `buildXxxGrid()` 函数 | — | **1 文件** |
+| **改 Kick 在某风格的密度** | `config/styles/<风格>.ts` 的 grid[i].kickProb | — | **1 文件** |
+| **改 Snare 的能量门槛**(snareEnergyGate) | `config/styles/<风格>.ts` 的 DrumGridConfig.snareEnergyGate | — | **1 文件** |
+| **改能量响应曲线**(energyProbScale / energyVelScale) | `config/styles/<风格>.ts` 的两个数组 | — | **1 文件** |
+| **改 Velocity 范围**(kick/snare/hat 三类) | `config/styles/<风格>.ts` 的 kickVelocity/snareVelocity/hihatVelocity | — | **1 文件** |
+| **改 Crash 触发条件**(段落首拍逻辑) | `primitives/DrumIdiom.ts`(line 260+ isCrashStep 判断) | — | **1 文件** |
+| **改 BuildUp 段 Fill / 过门** | `primitives/DrumIdiom.ts`(line 268-277 isFillBar 分支) | — | **1 文件** |
+| **加 Open Hihat (46) 切换** | `primitives/DrumIdiom.ts` 加分支判断 | DrumGridConfig 加 openHihatProb 字段 | 2 文件 |
+| **加 16 分 Ghost note 触发规则** | `primitives/DrumIdiom.ts` 扩展 ghostHits 接口实现 | `types.ts` DrumGhostHit 已有定义 | 1-2 文件 |
+| **新鼓型**(Latin Rhumba / Funk Half-Time / 等) | 新建 `config/styles/<新风格>.ts` + `buildXxxGrid()` | `styles/index.ts` 注册新风格 | 2 文件 |
+| **新鼓手 musician**(如 funk_pocket_drummer) | `idioms/MusicianRegistry.ts` 加卡 | 当前 persona DNA 未被消费,加卡象征意义大于功能 | **1 文件** |
+| **加 Swing 到鼓组**(目前鼓不 swing) | `primitives/DrumIdiom.ts` 在 onset 计算加 swing offset | DrumGridConfig 加 swingRatio 字段 | 2 文件 |
+| **改鼓组 channel 路由** | `audio/MidiConverter.ts` 的 CHANNEL_DRUMS 常量 | **强烈不建议** — channel 9 是 GM 标准 | 1 文件(危险) |
+
+### 11.12 鼓组 — 三个反直觉但关键的事实
+
+#### 11.12.1 **鼓组绕过 CastingEngine,决策直接编码在 styleConfig 里**
+
+钢琴/贝斯走 `CastingEngine.pickXxxParams` 派生 idiom params,**鼓组完全不走这条路径**。
+DrumIdiom 直接消费 `styleStage5Bundle.drum`(DrumGridConfig),编曲意图全部在
+`config/styles/<风格>.ts` 的 `buildXxxGrid()` 函数里编码。
+
+**含义**:90% 的鼓组优化都在 `config/styles/*.ts` 一个文件改完。CastingEngine 不动。
+
+为什么这么设计:鼓组是**风格强相关**(Pop 直拍 vs Jazz Brush 是风格 DNA),
+不像钢琴/贝斯需要按段落动态切 idiom 模式。把决策硬编进 styleConfig 反而更直接。
+
+#### 11.12.2 **每 step 固定 ×3 gate PRNG 是 D-5 锁帧的关键**
+
+DrumIdiom.render 每个 step 必消耗 **3 次** PRNG(Kick/Snare/Hat 各 1 次,
+即使 energy 缩放后概率为 0,gate PRNG 仍要走!)。
+
+**这条铁律不能改**——任何"加 if/skip 跳过 PRNG"的优化都会破:
+- 不同 energy 下 PRNG 序列偏移,golden-seed bit-exact 失效
+- D-5 全引擎 PRNG 对账失败,跨段/跨乐器渲染顺序混乱
+
+如果要加新决策点(如 Open Hihat),**也必须走 gate PRNG 配额** —— 比如每 step 多消耗 1 次。
+预算改变要在 DrumIdiom 文件头**显式声明**,Conductor 对账。
+
+#### 11.12.3 **鼓组 pitch 是第三空间,且 musician.persona 当前形同摆设**
+
+- **第三空间**:Drums.pitch 是 GM Drum Map 物理键位(36-81),全程不加 keyOffset,
+  Channel 9 (= MIDI Channel 10)硬编路由。改 channel 一定破 GM 兼容。
+
+- **persona DNA 摆设**:dave_drums / jazz_brush_drummer 卡的 colorBias /
+  syncopationAssault / dynamicRange 字段**全部未被 DrumIdiom 消费**(参考 §6
+  注释)。当前所有"鼓手个性"差异**都在 styleConfig 层**通过不同的 grid 配置
+  实现,musician 卡是占位/未来扩展。
+
+  → 想做"同风格不同鼓手个性",当前架构需要扩 DrumIdiom 让它消费 persona,
+    而不是加卡(加卡无效)。这是 Phase 4+ TODO,目前不要假装鼓手卡能影响演奏。
+
 ### 11.9 未来其他乐器速查(待补)
 
-待添加的乐器专题(按 §11.1-11.3 / §11.6-§11.8 结构):
+待添加的乐器专题(按 §11.1-11.3 / §11.6-§11.8 / §11.10-§11.12 结构):
 - [x] **钢琴**(§11.1-§11.3)
 - [x] **贝斯**(§11.6-§11.8)
-- [ ] 鼓组(DrumRealizer + DrumIdiom + drumPatterns 风格池)
+- [x] **鼓组**(§11.10-§11.12)
 - [ ] 氛围(AtmosphereRealizer + AtmosphereRenderer + AtmosphereConfig)
 - [ ] 吉他(Phase 8+ 加入)
 - [ ] 萨克斯 / 管乐(Phase 8+ 加入,届时引入 InstrumentProfile breath constraints)
