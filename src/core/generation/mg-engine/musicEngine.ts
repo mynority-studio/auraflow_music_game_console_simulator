@@ -355,6 +355,23 @@ export interface GenerationConfig {
   // density / complexity are pinned to 0.5 internally — the magnetism +
   // motif-mutator branches that were gated on them are either always-on
   // or always-off under the divisi architecture, no need to expose.
+  //
+  // === auraflow integration extension ===
+  // barsOverride — let the embedding host (auraflow's section / structure
+  // system) drive total song length instead of the styleDictionary fixed
+  // recommendedBars. Safe because:
+  //   - Progression templates expand by `i % chosen.length` ring loop
+  //     (generateProgression) — any N works natively
+  //   - motif/phrase boundaries adapt via motifInterval (default 4 bars
+  //     per phrase) using modulo, so any N that's a motifInterval
+  //     multiple keeps phrase structure intact
+  //   - cadence triggers on phraseRoleByBar[i] (phrase_end / song_end),
+  //     no fixed 16-anchor assumption
+  // BLUES AAB form (i % 12 in generateArrangement) remains 12-anchored;
+  // for non-12 BLUES bars the AAB cycle wraps but cadence positions
+  // still snap to i % 12. BLUES is not yet wired into auraflow so this
+  // edge is moot for now.
+  barsOverride?: number;
 }
 
 export interface ResolvedGenerationContext {
@@ -814,7 +831,7 @@ export class Engine {
   generateProgressions(config: GenerationConfig): ChordDef[] {
     const { style, key } = config;
     const ctx = this.resolveGeneration(config);
-    const bars = STYLE_DICTIONARY[style]?.recommendedBars ?? 16;
+    const bars = config.barsOverride ?? STYLE_DICTIONARY[style]?.recommendedBars ?? 16;
     const progression = this.generateProgression(style, bars, ctx.mode);
 
     // Convert roman numerals & abstract chord defs to concrete notes

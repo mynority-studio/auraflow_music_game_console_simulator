@@ -28,7 +28,7 @@
  */
 
 import {
-    GeneratedTrack, GenerationOptions, MusicContext, NoteData, GeneratedChord,
+    GeneratedTrack, GenerationOptions, MusicContext, NoteData,
     BandRole, BandRoster, Tonality, SectionMetadata, SectionType, SectionTypeName,
     ActiveMusician, Musician,
 } from '../types';
@@ -137,62 +137,46 @@ export function runPipeline(
     PRNGManager.recordSnapshot('C');
 
     // ============================================================
-    // Stage 3 — MgEngineFacade per-section(A2 + B1 + C2 策略)
+    // Stage 3 — mg 一次性整曲生成(F1+ 原生 N bars)
     // ============================================================
-    // 设计哲学(plan §2 决策 3 PRNG 隔离 + A2 + B1 + C2):
-    //   A2  每段独立调一次 mg(每次输出完整 mg 整曲)+ crop 到段落长度
-    //   B1  同 SectionType 共享 seed suffix → Verse_1 与 Verse_2 完全相同 motif
-    //       (流行歌副歌重复的本质)
-    //   C2  emotion 按 SectionType 派生(Chorus/BuildUp 强制 bright,其他跟整曲)
-    //   隔离 mg 用自己 string Random,PRNGManager 不被触碰
+    // 设计哲学:
+    //   - mg 是 auraflow 的"和声+钢琴"原生引擎(不再是被 wrap 的外部库)
+    //   - auraflow sections 系统决定整曲总 bars 数,mg 用 barsOverride 接受
+    //   - mg 内部 progression 模板 ring loop(i % chosen.length)+
+    //     phrase 边界 modulo(i % motifInterval)→ N bars 自然适配
+    //   - mg motif/cadence/sub-style 哲学跨段连贯(motif 在 phrase 边界
+    //     自然复现,cadence 在 song_end 自然触发)
+    //   - 段落对比靠 weather post-modulation(C.5 在 modulateMgPianoByWeather
+    //     里 per-note onset 查 weather 调 velocity/duration)
     //
-    // mg 总长固定 16 bars(POP/JAZZ),段落 ≤ 16 bars 时 crop 到段长 +
-    // adapter onsetOffset 平移到 section.startBeat;> 16 bars 段尾静音
-    // (罕见 — 流行歌 Verse/Chorus 通常 ≤ 16 bars)。
+    // PRNG 隔离:mg 用 string Random(`${seed}::mg`),PRNGManager 不被触碰。
     const mgSeed = PRNGManager.getState();
-    const songIsMinor = tonality === Tonality.Minor;
+    const totalBeats = sections.length > 0
+        ? sections[sections.length - 1].endBeat
+        : 16 * timeSignature[0];
+    const totalBars = Math.max(4, Math.round(totalBeats / timeSignature[0]));
 
-    const allMgChords: GeneratedChord[] = [];
-    const allMgMelody: NoteData[] = [];
-    const allMgChordTexture: NoteData[] = [];
+    const mgResult = MgEngineFacade.generate({
+        seed: mgSeed,
+        styleId,
+        keyRootPc: keyOffset,
+        isMinor: tonality === Tonality.Minor,
+        totalBars,
+    });
 
-    for (let si = 0; si < sections.length; si++) {
-        const section = sections[si];
-        const sectionLengthBeats = section.endBeat - section.startBeat;
-
-        const sectionMg = MgEngineFacade.generateForSection({
-            seed: mgSeed,
-            styleId,
-            keyRootPc: keyOffset,
-            isMinor: songIsMinor,
-            sectionType: section.sectionType ?? SectionType.Verse,
-            sectionLengthBeats,
-        });
-
-        // ChordDef[] → GeneratedChord[](section.startBeat 偏移)
-        const sectionChords = chordDefsToGeneratedChords(
-            sectionMg.chords,
-            section.startBeat,
-        );
-        for (let i = 0; i < sectionChords.length; i++) {
-            sectionChords[i].keyOffset = keyOffset;
-        }
-        for (let i = 0; i < sectionChords.length; i++) {
-            allMgChords.push(sectionChords[i]);
-        }
-
-        // NoteEvent[] → NoteData[]:加 section.startBeat onsetOffset
-        const melodyNotes = noteEventsToNoteData(sectionMg.melody, section.startBeat);
-        const chordNotes = noteEventsToNoteData(sectionMg.chordTexture, section.startBeat);
-        for (let i = 0; i < melodyNotes.length; i++) allMgMelody.push(melodyNotes[i]);
-        for (let i = 0; i < chordNotes.length; i++) allMgChordTexture.push(chordNotes[i]);
+    // ChordDef[] → GeneratedChord[]:整曲 0-based,直接累积到 totalBeats
+    const mgChords = chordDefsToGeneratedChords(mgResult.chords, 0);
+    for (let i = 0; i < mgChords.length; i++) {
+        mgChords[i].keyOffset = keyOffset;
     }
 
-    const mgChords = allMgChords;
+    // NoteEvent → NoteData:整曲 0-based,无 offset
+    const mgMelodyNotes = noteEventsToNoteData(mgResult.melody, 0);
+    const mgChordNotes = noteEventsToNoteData(mgResult.chordTexture, 0);
 
-    // mg piano 统一(melody + chord 合并走 PIANO_RH channel — Grand Acoustic 单音色)
-    // 见 C.4 注释:standalone mg 是单 Salamander sampler,统一 channel 避免"两架钢琴"听感
-    const mgPianoUnified: NoteData[] = allMgMelody.concat(allMgChordTexture);
+    // mg piano 统一:melody + chord 合并走 PIANO_RH channel (Grand Acoustic 单音色)
+    // standalone mg 是单 Salamander sampler,统一 channel 避免"两架钢琴"听感
+    const mgPianoUnified: NoteData[] = mgMelodyNotes.concat(mgChordNotes);
     mgPianoUnified.sort((a, b) => a.onset - b.onset);
 
     PRNGManager.recordSnapshot('D');
