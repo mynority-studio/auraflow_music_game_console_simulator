@@ -148,6 +148,25 @@
   - React/UI 调用代码(`src/components/*`)
 - **风险**:**高**(App / 嵌入式直接破坏;app_integration_rule 是 App dev 的真理之源,不同步会让外部消费方踩坑)
 
+### 1.11 DensityLevel 枚举 ↔ PianoTextureRecipes / RhythmMask / Idiom 消费链
+
+- **触发器**:
+  - `src/core/generation/types.ts` 中 `DensityLevel` enum 数值变更或新增等级
+  - `src/core/generation/pipeline/RhythmMask.ts` 中 `METRIC_TIER` 表变更(影响 stepTier 派生)
+  - `src/core/generation/pipeline/TextureContinuum.ts` 中 `kToDensity` 量化边界变更
+- **必须同步**:
+  - `src/core/generation/data/PianoTextureRecipes.ts`:每个 recipe 的 `densityLevel` 字段
+    重新归档(Phase 3 标注的 14 个 recipe 的 L2-L7 分布)
+  - `src/core/generation/pipeline/CastingEngine.ts`:`STYLE_ANCHOR_RECIPE` 表(每风格的 anchor recipe 引用 DensityLevel 间接定义)
+  - `src/core/generation/pipeline/RhythmMask.ts`:`maskFromDensity` 的 tier ≤ density 阈值规则
+  - `src/core/generation/primitives/PianoAccompIdiom.ts`:`filterGridByDensity` 调用点(读 params.densityLevel)
+  - `src/core/generation/primitives/DrumIdiom.ts`:`k <= 0.15` Tacit 静默阈值(与 TextureContinuum.kToDensity 对齐)
+  - `src/core/generation/primitives/AtmosphereRenderer.ts`:`k <= 0.15` / `k <= 0.45` / `k > 0.75` 三档阈值(同上)
+- **风险**:**高**
+  - DensityLevel 数值即 stepTier 阈值;改值会让所有 mask 计算错位
+  - kToDensity 与 Idiom 内联阈值不同步 → Drum 与 Piano 在同一 K 下做不同决策(听感分裂)
+  - PianoTextureRecipes 漏标 densityLevel → CastingEngine.STYLE_ANCHOR_RECIPE 选择异常
+
 ---
 
 ## 2. 流程

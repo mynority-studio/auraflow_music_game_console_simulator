@@ -23,6 +23,7 @@
  */
 
 import { LHTexture, RHTexture, CoordMode } from './PianoTextureEnums';
+import { DensityLevel } from '../types';
 
 /** 16-step bar 长度（4/4 拍 16 分网格） */
 export const PIANO_TEXTURE_GRID_LENGTH = 16;
@@ -131,6 +132,20 @@ export interface PianoTextureRecipe {
      *   - A3a 的 applyRhListenToLhShell 不再外部调用（构造器内部已处理 listen）
      */
     voicingMode?: 'tertian' | 'rootless' | 'quartal';
+    /**
+     * Phase 3 — 本 recipe 在 7 级密度连续统上的归属(Texture Morphing)。
+     *
+     * 用途:
+     *   1. CastingEngine 按 anchor musician 的 STYLE_ANCHOR_RECIPE 表选 recipe(高密度 DNA)
+     *   2. 调试 / UI 显示该 recipe 的"基础密度感"
+     *   3. cross_sync_rule §1.11 文档化"recipe ↔ density"对应
+     *
+     * 注:实际 RhythmMask 过滤是按 stepTier(从 baseGrid 派生)实现,
+     *     本字段只是分类标签。改值不影响渲染逻辑,只影响 anchor 选择。
+     *
+     * 标注规则:按 baseGrid 击点数 + metric 位置(syncopated 高于直拍)归档。
+     */
+    densityLevel: DensityLevel;
 }
 
 // ============================================================
@@ -290,6 +305,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
+        densityLevel: DensityLevel.BlockQuarter,  // L3 — 4 hits/bar 正拍
     }),
     Object.freeze({
         id: TextureRecipeId.Arpeggio8th,
@@ -299,6 +315,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.4,
+        densityLevel: DensityLevel.BrokenEighth,  // L4 — 8 分音符 8 hits/bar
     }),
     Object.freeze({
         id: TextureRecipeId.SyncopatedStab,
@@ -308,6 +325,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
+        densityLevel: DensityLevel.CompingStab,  // L5 — 切分 stab(jazz comping 起点)
     }),
     // ---- Mood 路由备选（Sub-Phase 3 启用） ----
     Object.freeze({
@@ -318,6 +336,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.55,
+        densityLevel: DensityLevel.CompingStab,  // L5 — 5 hits 加密 stab
     }),
     Object.freeze({
         id: TextureRecipeId.BossaClave,
@@ -328,6 +347,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.65,
         swingHint: 0.55,
+        densityLevel: DensityLevel.CompingStab,  // L5 — 5 hits clave 切分
     }),
     Object.freeze({
         id: TextureRecipeId.Montuno,
@@ -337,6 +357,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
+        densityLevel: DensityLevel.ActiveArp,  // L6 — 7 hits tumbao 推进
     }),
     Object.freeze({
         id: TextureRecipeId.GospelDropFill,
@@ -346,6 +367,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.7,
+        densityLevel: DensityLevel.ActiveArp,  // L6 — 6 hits 含 16 分填充
     }),
     Object.freeze({
         id: TextureRecipeId.Funk16Stab,
@@ -357,6 +379,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         voicingSpan: 0.5,
         // A2：funk stab 配 rootless RH，让 9/13 撑色彩（colorBias≥0.55 时加 13）
         voicingMode: 'rootless',
+        densityLevel: DensityLevel.Saturated,  // L7 — 7 hits 16 分密集
     }),
     Object.freeze({
         id: TextureRecipeId.NeoSoulVamp,
@@ -369,6 +392,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         swingHint: 0.6,
         // A2：Neo-Soul 旗帜性 rootless voicing（D'Angelo / Robert Glasper 都常用 3+7+9+13）
         voicingMode: 'rootless',
+        densityLevel: DensityLevel.ActiveArp,  // L6 — 6 hits 拖拍 vamp
     }),
     Object.freeze({
         id: TextureRecipeId.CinematicHold,
@@ -378,6 +402,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         lhTexture: LHTexture.Sustained,
         coordMode: CoordMode.M5_TwoHandedVoicing,
         voicingSpan: 0.8,
+        densityLevel: DensityLevel.SparseSustain,  // L2 — 1 hit/bar 长音
     }),
     // ---- 改动 C — voicePattern 精化织体 ----
     Object.freeze({
@@ -389,6 +414,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.4,
         voicePattern: VP_ALBERTI_BASS,
+        densityLevel: DensityLevel.BrokenEighth,  // L4 — 8 分单音琶音
     }),
     Object.freeze({
         id: TextureRecipeId.MontunoInner,
@@ -399,6 +425,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
         voicePattern: VP_MONTUNO_INNER,
+        densityLevel: DensityLevel.BrokenEighth,  // L4 — 8 分内声部交替
     }),
     Object.freeze({
         id: TextureRecipeId.RagtimeUpperStab,
@@ -409,6 +436,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
         voicePattern: VP_RAGTIME_UPPER,
+        densityLevel: DensityLevel.BlockQuarter,  // L3 — 4 正拍 stab
     }),
     Object.freeze({
         id: TextureRecipeId.ChordAnchoredFill,
@@ -419,6 +447,7 @@ export const PIANO_TEXTURE_RECIPES: ReadonlyArray<PianoTextureRecipe> = Object.f
         coordMode: CoordMode.M1_SustainedRoot,
         voicingSpan: 0.5,
         voicePattern: VP_CHORD_ANCHORED_FILL,
+        densityLevel: DensityLevel.BrokenEighth,  // L4 — 8 分混合织体
     }),
 ]);
 

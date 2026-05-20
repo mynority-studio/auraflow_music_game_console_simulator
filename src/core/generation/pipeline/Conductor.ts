@@ -70,6 +70,7 @@ import { PRNGManager } from '../../utils/PRNG';
 import { RenderContext } from './RenderContext';
 import { CurveWeatherSampler } from './CurveWeatherSampler';
 import { attachVoicingMasks } from './VoicingMask';
+import { attachDensityPlan } from './TextureContinuum';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -300,6 +301,22 @@ export function conduct(input: ConductorInput): ConductorResult {
     //   - Bass / Drum:不消费 mask
     // ────────────────────────────────────────────────────────────
     attachVoicingMasks(input.chords, input.sections, renderContext.weather);
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 3 — Texture Morphing:给 bandPlan 注入每段每 role 的 densityLevel
+    //
+    // 算法:weather.k → 7 级 density 量化 + 跨段 ±1 平滑滑动 / R 驱动 staged 跳跃。
+    // anchor 乐手(alex_piano / nina_pad)的 recipe 已在 CastingEngine.pickPianoAccompParams
+    // 锁定到 STYLE_ANCHOR_RECIPE,本步骤只补 density(令 anchor 跨段 density 浮动)。
+    //
+    // 副作用:assignment.densityLevel 与 assignment.instrumentSpecificParams.densityLevel
+    // 双写,Idiom 通过任一路径都可读到。
+    // ────────────────────────────────────────────────────────────
+    if (input.bandPlan !== undefined) {
+        attachDensityPlan(
+            input.bandPlan, input.sections, renderContext.weather, activeMusicians,
+        );
+    }
 
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）

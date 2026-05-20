@@ -88,7 +88,7 @@ export class AtmosphereRenderer {
      * PRNG 消耗：0
      */
     public static render(input: AtmosphereRenderInput): NoteData[] {
-        const { chords, idiom, intensityScale } = input;
+        const { chords, idiom, intensityScale, context } = input;
         const out: NoteData[] = [];
 
         if (chords.length === 0) return out;
@@ -111,6 +111,18 @@ export class AtmosphereRenderer {
         const velocity = veloClamped / MIDI_MAX;
 
         // ----------------------------------------------------------------
+        // Phase 3 — Texture Morphing(Atmosphere 简化消费):
+        //   每和弦读 weather.k 派生 density level,
+        //   - density ≤ 1(Tacit) → 跳过本和弦(pad 静默)
+        //   - density ≤ 3 → voiceCount × 0.6(收薄)
+        //   - density ≥ 6 → octaveLayering 强制 true(增厚)
+        //   - 其他 → 原 voiceCount
+        //
+        // 注:不引入 DensityLevel 枚举依赖(避免循环引用 pipeline → primitives → pipeline),
+        // 直接用 K 阈值(与 TextureContinuum.kToDensity 表对齐:k≤0.15 L1, k≤0.45 L3, k>0.75 L6)。
+        // ----------------------------------------------------------------
+
+        // ----------------------------------------------------------------
         // 每和弦发射 voiceCount 个长音
         //
         // Phase 1b 信息遮罩消费(用户决策:Atmosphere voiceCount ≥ 2 保底):
@@ -126,11 +138,20 @@ export class AtmosphereRenderer {
             if (dur < EPSILON) continue;
             if (!c.voicing || c.voicing.length === 0) continue;
 
-            // 掐头(丢掉 voicing[0] bass voice)+ ≥ C3 过滤 + 取最多 voiceCount 个
+            // Phase 3 — 按 weather.k 派生本和弦的 effective voiceCount + octaveLayering
+            const chordMidBeat = (c.startBeat + c.endBeat) / 2;
+            const k = context.weather.at(chordMidBeat).k;
+            if (k <= 0.15) continue;  // Tacit:本和弦 pad 静默
+            const effectiveVoiceCount = k <= 0.45
+                ? Math.max(1, Math.floor(voiceCount * 0.6))  // L2-L3:收薄
+                : voiceCount;
+            const effectiveOctaveLayering = k > 0.75 ? true : octaveLayering;  // L6+ 增厚
+
+            // 掐头(丢掉 voicing[0] bass voice)+ ≥ C3 过滤 + 取最多 effectiveVoiceCount 个
             // 内部 helper 减少重复逻辑(masked / unmasked 都走同一过滤链)
             const pickPad = (pitches: number[]): number[] => {
                 const picked: number[] = [];
-                for (let v = 1; v < pitches.length && picked.length < voiceCount; v++) {
+                for (let v = 1; v < pitches.length && picked.length < effectiveVoiceCount; v++) {
                     if (pitches[v] >= ATMOSPHERE_MIN_PITCH) picked.push(pitches[v]);
                 }
                 return picked;
@@ -154,7 +175,8 @@ export class AtmosphereRenderer {
 
             // 可选：在最低 voice 下方再叠一个八度，增加厚度感
             // 仅当 voicing[0] - 12 仍 ≥ MIDI 0 (实际：voicing[0] 通常在 C3 附近，-12 = C2 = 36，安全)
-            if (octaveLayering && c.voicing[0] !== undefined) {
+            // Phase 3 — effectiveOctaveLayering 在高 density(L6+)强制为 true
+            if (effectiveOctaveLayering && c.voicing[0] !== undefined) {
                 const lowOct = c.voicing[0] - 12;
                 if (lowOct >= 0) padVoicing.push(lowOct);
             }

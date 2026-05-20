@@ -156,12 +156,22 @@ export class DrumIdiom {
         DrumIdiom.validate(input);
 
         const out: NoteData[] = [];
-        const { sections, grid } = input;
+        const { sections, grid, context } = input;
 
         for (let sIdx = 0; sIdx < sections.length; sIdx++) {
             const section = sections[sIdx];
             const dur = section.endBeat - section.startBeat;
             if (dur < EPSILON) continue;
+
+            // Phase 3 — Texture Morphing:weather.k ≤ 0.15 时(对应 DensityLevel.Tacit)
+            // 整段鼓静默。比走完整 grid + probScale=0 路径快(直接 continue 跳过整段)。
+            //
+            // 注意:不在此处削减部分 hits — DrumIdiom 的 D-5 PRNG 配额要求每 step ×3 gate
+            // PRNG 必须恒定。若需 partial density 缩减,需走 grid.energyProbScale 路径,
+            // 而非直接 skip step(skip 会破 PRNG 序列对齐)。
+            const midBeat = (section.startBeat + section.endBeat) / 2;
+            const k = context.weather.at(midBeat).k;
+            if (k <= 0.15) continue;  // Tacit:全段静默
 
             const nextSection = sIdx + 1 < sections.length ? sections[sIdx + 1] : undefined;
             renderSection(out, section, grid, nextSection);

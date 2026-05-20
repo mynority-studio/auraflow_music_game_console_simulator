@@ -491,6 +491,14 @@ export interface RoleAssignment {
     intensityScale: number;
     /** 乐器特定参数（钢琴 = PianoAccompParams / 贝斯 = BassParams / 鼓 = DrumsParams / Pad = AtmosphereParams） */
     instrumentSpecificParams: unknown;
+    /**
+     * Phase 3 — 本段该 role 的织体密度等级(1-7)。
+     * 由 TextureContinuum.attachDensityPlan 按 weather.k 派生 + 平滑滑动约束写入。
+     * Idiom render 时按本字段过滤节奏 grid / voice 数 / 概率缩放。
+     *
+     * 缺省时(老路径):Idiom 内部用 context.weather.at(beat).k 直接派生(简化路径)。
+     */
+    densityLevel?: DensityLevel;
 }
 
 /**
@@ -769,6 +777,29 @@ export enum SectionType {
     PreOutro = 10, Solo_Bridge = 11
 }
 
+// --- DensityLevel 7 级密度连续统(Phase 3 Texture Morphing)---
+//
+// 每件乐器在每段落的"织体密度"等级。从 Tacit(静默)到 Saturated(几乎无 rest 满载)。
+// 由 weather.k(动能)驱动:Conductor.attachDensityPlan 把每段 K 映射到 1-7 一档,
+// 再走平滑滑动约束(段间 ±1 / 戏剧性 staged 跳跃)。
+//
+// 各 Idiom 解释:
+//   - Piano:    RhythmMask 按 stepTier 过滤 baseGrid(L1 静默 ... L7 全 16 step)
+//   - Drum:     probScale ×= densityFactor(L1 全静 / L7 不衰减)
+//   - Atmosphere: voiceCount ↑ + octaveLayering 解锁(L1 无 voice / L7 多 voice + 低 8ve 叠加)
+//
+// 数值即 stepTier 阈值(参见 pipeline/RhythmMask.ts)— 改枚举值会破坏 mask 计算。
+// 登记于 cross_sync_rule.md §1.11。
+export enum DensityLevel {
+    Tacit          = 1,  // 静默
+    SparseSustain  = 2,  // 每小节 1 个长音(beat 1, 3 之一)
+    BlockQuarter   = 3,  // 四分音符正拍(4 hits/bar)
+    BrokenEighth   = 4,  // 8 分音符(正拍 + & beats)
+    CompingStab    = 5,  // 加 e of 强拍(切分填充起步)
+    ActiveArp      = 6,  // 加 e of 弱拍(16 分较密)
+    Saturated      = 7,  // 几乎无 rest 满载
+}
+
 // 数值枚举 → 字符串名映射，仅供需要 hashmap key 的旧代码使用
 // 新代码应直接用 SectionType.X 数值比较
 export const SectionTypeName: Record<SectionType, string> = {
@@ -941,6 +972,22 @@ export interface MusicianPersona {
     /** V4.1：Oom-Pah Bounce 偏好（0-1）。仅 Solo Piano 模式（bassActive=false）下生效；
      *  0.0=从不 bounce / 0.5=偶尔 / 0.8=Billy 风格大量 bounce */
     bouncePreference?: number;
+    /**
+     * Phase 3 — 锚点层标记(Texture Morphing)。
+     *
+     * isAnchor=true 的 musician 在跨段落渲染时:
+     *   - 织体形态(recipeId / baseGrid)**不变**(锁定为风格级 anchor recipe)
+     *   - 仅 densityLevel 随 weather.k 浮动(铺底的"呼吸感")
+     *
+     * 设计动机:解决 PEAA 中"段落拼接突兀"问题(用户痛点) — 在乐队里
+     * 总有一件乐器是"定海神针",其他乐器才能放飞自我。
+     *
+     * 当前规划:
+     *   - alex_piano.isAnchor = true(Pop / Jazz 钢琴 comping)
+     *   - nina_pad.isAnchor   = true(NeoSoul Pad 铺底)
+     *   - bass / drums        = false(节奏组天然就是 anchor 的另一层,不用本标记)
+     */
+    isAnchor?: boolean;
     /** Phase 2: 大师经典 Licks 库 (RELATIVE pitch space) */
     lickPool?: NoteData[][];
     /** 角色的专属拓扑变异概率（算法折叠核心） */

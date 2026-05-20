@@ -41,6 +41,7 @@ import {
 import type { VoicedPitch } from '../types';
 import type { RenderContext } from '../pipeline/RenderContext';
 import { applyVoicingMask } from '../pipeline/VoicingMask';
+import { filterGridByDensity } from '../pipeline/RhythmMask';
 import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpers';
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';
@@ -195,6 +196,20 @@ export interface PianoAccompParams {
      * 填入，让不同 mood × style 听感差异化。
      */
     walkPatternId?: WalkPatternId;
+/**
+     * Phase 3 — 织体密度等级(Texture Morphing)。
+     *
+     * 1-7 档,详见 types.ts DensityLevel:
+     *   L1=Tacit / L2=SparseSustain / L3=BlockQuarter / L4=BrokenEighth
+     *   L5=CompingStab / L6=ActiveArp / L7=Saturated
+     *
+     * 由 CastingEngine 从 weather.k 派生 + TextureContinuum 平滑滑动得出。
+     * PianoAccompIdiom 用 RhythmMask.filterGridByDensity(baseGrid, level)
+     * 过滤 baseGrid,实现"基因遮罩"渐进效果。
+     *
+     * 缺省时(不消费 mask):baseGrid 原样使用,行为同 Phase 2。
+     */
+    densityLevel?: number;
     /**
      * 阻尼器踏板系数 ∈ [0, 1] —— 来自 musician.persona.pianoPedalRatio。
      *
@@ -252,7 +267,14 @@ export class PianoAccompIdiom {
         const recipeId = params.recipeId !== undefined
             ? params.recipeId
             : legacyRhTextureToRecipe(params.rhTexture);
-        const baseGrid = getPianoTextureRecipe(recipeId).baseGrid;
+        const rawBaseGrid = getPianoTextureRecipe(recipeId).baseGrid;
+
+        // Phase 3 — Texture Morphing:densityLevel 提供时,RhythmMask 按 stepTier 过滤
+        // baseGrid。zero PRNG;baseGrid 越稀疏(高 tier),density 越低,越多 step 被 mask 掉。
+        // 缺省时(老路径)直接用 rawBaseGrid。
+        const baseGrid: ReadonlyArray<number> = params.densityLevel !== undefined
+            ? Array.from(filterGridByDensity(rawBaseGrid, params.densityLevel))
+            : rawBaseGrid;
 
         // L4 Walking Tenths voice-leading 状态 — 跨 chord 边界保持连贯
         // ImproVisor 风格：每个新 walking 音通过 placePitchNear(lastBass) 选最近八度，

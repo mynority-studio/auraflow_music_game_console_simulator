@@ -54,6 +54,9 @@ export const MUSICIAN_POOL: Musician[] = [
             dynamicRange: [55, 100],
             pianoPedalRatio: 1.0,
             signatureLickProb: 0.15,
+            // Phase 3 — alex_piano 是 Pop / Jazz 钢琴 comping 的"定海神针"
+            // 跨段保持 STYLE_ANCHOR_RECIPE 锁定的 recipe,只让 density 浮动
+            isAnchor: true,
             // C1：Pop 经典 C 大调下行级进 hook（C5 → A4 → G4 → E4），1.5 拍长音收 mi
             lickPool: [
                 [
@@ -277,6 +280,9 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Alternating,
             syncopationAssault: 0.0, // pad 永远不切分
             dynamicRange: [40, 80],
+            // Phase 3 — nina_pad 是 NeoSoul / Cinematic 编制的"定海神针"
+            // Pad 天然 sustained,density 浮动主要影响 voiceCount 与 octaveLayering
+            isAnchor: true,
         },
         description: 'Warm Pad 氛围乐手，长音铺底',
     },

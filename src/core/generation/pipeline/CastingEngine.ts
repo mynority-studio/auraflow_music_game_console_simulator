@@ -56,6 +56,27 @@ const ENERGY_MAX = 10;
 const INTENSITY_MIN = 0.1;
 const INTENSITY_MAX = 1.0;
 
+/**
+ * Phase 3 — 每风格的 anchor recipe(锚点乐器跨段锁定的"基因 DNA")。
+ *
+ * anchor musician(isAnchor=true,如 alex_piano)在所有段落使用本表对应的 recipe,
+ * 跨段不重选。然后 RhythmMask 按各段 density 过滤 baseGrid,实现"basal pattern
+ * 不变,density 浮动"的 PEAA Anchor Layer 效果。
+ *
+ * 选择标准:每风格挑一个"中高密度 + 风格签名"的 recipe 作为 anchor 锚定。
+ * Phase 3 起点,听感后调:
+ *   - Pop: AlbertiBass(L4 8 分琶音,BGM Pluck 感)
+ *   - Jazz: SyncopatedStab(L5 经典爵士 comping)
+ *   - NeoSoul: NeoSoulVamp(L6 拖拍 vamp + rootless voicing)
+ *
+ * 改 StyleId 枚举顺序需同步本表(cross_sync_rule.md §1.6)。
+ */
+const STYLE_ANCHOR_RECIPE: Readonly<Record<StyleId, TextureRecipeId>> = {
+    [StyleId.ModernPop]: TextureRecipeId.AlbertiBass,
+    [StyleId.ChillJazz]: TextureRecipeId.SyncopatedStab,
+    [StyleId.NeoSoul]:   TextureRecipeId.NeoSoulVamp,
+};
+
 export interface CastingEngineInput {
     /** 用户配置或随机抽取的乐队阵容 */
     roster: BandRoster;
@@ -257,7 +278,11 @@ export class CastingEngine {
             energyLevel: section.energyLevel,
             persona: musician.persona,
         });
-        const recipeId: TextureRecipeId = moodToRecipe(mood, ctx.styleId);
+        // Phase 3 — anchor 锁定 STYLE_ANCHOR_RECIPE,非 anchor 走 mood 路由
+        const isAnchor = musician.persona.isAnchor === true;
+        const recipeId: TextureRecipeId = isAnchor
+            ? STYLE_ANCHOR_RECIPE[ctx.styleId]
+            : moodToRecipe(mood, ctx.styleId);
         const rhTexture: RHTexture = getPianoTextureRecipe(recipeId).rhTexture;
 
         // V4.1 Bounce 偏好检查（持票优先级最高，仅 Solo Piano 模式可用）
