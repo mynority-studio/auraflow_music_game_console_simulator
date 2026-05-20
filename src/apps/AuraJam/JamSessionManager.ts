@@ -134,7 +134,7 @@ export class JamSessionManager {
             const melodyEngine = new MelodyEngine();
 
             // 🌟 关键：用户录制的是绝对 MIDI 音高（如 Bb3=58），
-            // 但生成管道在 C-相对空间工作，最后 Orchestrator.applyOffset 会加 keyOffset。
+            // 但生成管道在 C-相对空间工作，最后 AbsoluteTransposer.applyOffset 会加 keyOffset。
             // 所以必须先减去 keyOffset 转为 C-相对音高，否则会被 double-offset。
             const keyOffset = scaleState.key;
             const cRelativeMotif: NoteData[] = [];

@@ -47,7 +47,7 @@ export interface PipelineRunOptions {
     /**
      * B3：UI 端 per-role GM 程式号覆盖（0~127）。
      *   优先级：forcedGmPrograms > musician.gmProgramOverride > (无,走 MidiConverter 文件级默认)
-     * 写进 context.gmProgramOverrides → Orchestrator 透传 → MidiConverter 消费。
+     * 写进 context.gmProgramOverrides → AbsoluteTransposer 透传 → MidiConverter 消费。
      */
     forcedGmPrograms?: Partial<Record<BandRole, number>>;
     generation?: GenerationOptions;

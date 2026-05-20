@@ -3,7 +3,7 @@
  *
  * App 层与音频后端的总入口：
  *   ① 管理 PlaybackEngine 生命周期 + 转发 visualListener / rawVisualListener
- *   ② playSong(track, styleId, context, generator) 调 Orchestrator.arrange → playback.loadSong
+ *   ② playSong(track, styleId, context, generator) 调 AbsoluteTransposer.arrange → playback.loadSong
  *   ③ 暴露 getCurrentArrangedTrack / getCurrentContext / getCurrentBeat / getCurrentTick / getBpm / getPpq
  *   ④ MIDI 通道工具：muteChannel / setPartMute / injectMidiEvent / get|replaceChannelEvents
  *   ⑤ 实时演奏：playNote / noteOn / noteOff / pitchBend（暂保 no-op，Phase 5 实装）
@@ -12,17 +12,18 @@
  * Phase 4 关键改动：
  *   - 移除 expandVoicingsToNoteData — 老的 chord.voicing 展开逻辑被 Stage 5
  *     accompaniment 轨取代。
- *   - playSong 现在调用 Orchestrator.arrange 把 RELATIVE 空间 GeneratedTrack 转成
+ *   - playSong 现在调用 AbsoluteTransposer.arrange 把 RELATIVE 空间 GeneratedTrack 转成
  *     ABSOLUTE 空间 ArrangedTrack，再交给 PlaybackEngine.loadSong（内部跑
  *     MidiConverter.convert）。
- *   - K-2 唯一加 keyOffset 的位置：Orchestrator。本类**不再**触碰 keyOffset。
+ *   - K-2 唯一加 keyOffset 的位置：AbsoluteTransposer。本类**不再**触碰 keyOffset。
  */
 
 import { PlaybackEngine, VisualEvent, PartName } from './PlaybackEngine';
 import { ArrangedTrack, GeneratedTrack, MusicContext } from '../generation/types';
 import { StyleId } from '../generation/config/StyleFlags';
 import { MelodyEngine } from '../generation/MelodyEngine';
-import { Orchestrator } from '../generation/pipeline/Orchestrator';
+import { AbsoluteTransposer } from '../generation/pipeline/AbsoluteTransposer';
+
 import { globalMidiScheduler } from './MidiScheduler';
 import {
     spessaSynth,
@@ -75,8 +76,8 @@ class AudioEngineSystem {
         await startAudioContext();
         if (currentSession !== this.playSessionId) return;
 
-        // K-2：Orchestrator 是 RELATIVE→ABSOLUTE 的唯一转换点
-        const arranged: ArrangedTrack = Orchestrator.arrange(initialTrack, styleId, context);
+        // K-2：AbsoluteTransposer 是 RELATIVE→ABSOLUTE 的唯一转换点
+        const arranged: ArrangedTrack = AbsoluteTransposer.arrange(initialTrack, styleId, context);
 
         this.currentArrangedTrack = arranged;
         this.currentContext = context;

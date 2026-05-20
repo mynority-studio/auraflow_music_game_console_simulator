@@ -8,7 +8,7 @@
  *   4. Energy 硬阈值：低能段（energy < snareEnergyGate）无 Snare
  *   5. PRNG 隔离：改 drum velocity 范围**不影响** bass/accomp/melody（gate PRNG 无条件消耗）
  *   6. MidiConverter Channel 9：输出含 channel=9 的 noteOn 事件 + tick=0 setup
- *   7. drums 全程不加 keyOffset（Orchestrator 透传）
+ *   7. drums 全程不加 keyOffset（AbsoluteTransposer 透传）
  *
  * 运行：npx tsx scripts/test-phase5.ts
  */
@@ -16,7 +16,7 @@
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
 import { StyleId } from '../src/core/generation/config/StyleFlags';
-import { Orchestrator } from '../src/core/generation/pipeline/Orchestrator';
+import { AbsoluteTransposer } from '../src/core/generation/pipeline/AbsoluteTransposer';
 import { MidiConverter, CHANNEL_DRUMS } from '../src/core/audio/MidiConverter';
 import { DRUM_KICK, DRUM_SNARE, DRUM_HIHAT_CLOSED } from '../src/core/generation/primitives/DrumIdiom';
 import {
@@ -181,7 +181,7 @@ function verifyMidiChannel9(styleId: StyleId): void {
 
     PRNGManager.setSeed(SEED);
     const { track, context } = runPipeline({ forcedStyleId: styleId });
-    const arranged = Orchestrator.arrange(track, styleId, context);
+    const arranged = AbsoluteTransposer.arrange(track, styleId, context);
     const events = MidiConverter.convert(arranged);
 
     const ch9Events = events.filter(e => e.channel === CHANNEL_DRUMS);

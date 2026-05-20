@@ -537,13 +537,13 @@ export interface GeneratedTrack {
     processedUserMotif?: NoteData[];
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
     /** Comping / 伴奏织体轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
-     *  Orchestrator 后续映射到 ArrangedTrack.pianoRH，加 keyOffset 后送 MIDI。 */
+     *  AbsoluteTransposer 后续映射到 ArrangedTrack.pianoRH，加 keyOffset 后送 MIDI。 */
     accompaniment?: NoteData[];
     /** 低音轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
-     *  Orchestrator 后续映射到 ArrangedTrack.pianoLH（或独立电贝斯轨），加 keyOffset 后送 MIDI。 */
+     *  AbsoluteTransposer 后续映射到 ArrangedTrack.pianoLH（或独立电贝斯轨），加 keyOffset 后送 MIDI。 */
     bass?: NoteData[];
     /** 氛围轨（Phase 1 BandEngine 输出）— Pitch Space: RELATIVE。
-     *  Pad / Strings / Choir 长音铺底，Orchestrator 映射到 ArrangedTrack.atmosphere。 */
+     *  Pad / Strings / Choir 长音铺底，AbsoluteTransposer 映射到 ArrangedTrack.atmosphere。 */
     atmosphere?: NoteData[];
 }
 
@@ -592,7 +592,7 @@ export interface ArrangedTrack {
     introFilterSweep?: boolean; // 🌟 ST-3: Intro 低通涌动标记，PlaybackEngine 读取后注入 CC74 渐变
     /**
      * B3：动态 GM 程式覆盖（0~127）。每个 key 对应 MidiConverter 内一条轨。
-     * Orchestrator 由 context.gmProgramOverrides 透传过来。
+     * AbsoluteTransposer 由 context.gmProgramOverrides 透传过来。
      * MidiConverter 读取后用 override 覆盖文件级 GM_PROGRAM_* 默认。
      * 缺省 / 字段缺失 → 走默认（保 V5.x 行为零回归）。
      */
@@ -819,7 +819,7 @@ export enum RHRole {
     Comp = 4,
 }
 
-/** 段落收尾策略（Orchestrator 后处理） */
+/** 段落收尾策略（AbsoluteTransposer 后处理） */
 export enum OutroStrategy {
     FadeOut = 0,
     Ritardando = 1,

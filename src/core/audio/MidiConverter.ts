@@ -7,7 +7,7 @@
  *     - tick=0 处的 CC7 / CC10 / CC91（音量 / 声像 / 混响 — 基础混音）
  *     - 每个 NoteData 拆成 (noteOn, noteOff) 一对
  *
- * 调用点：PlaybackEngine.loadSong 内部，介于 Orchestrator.arrange 和
+ * 调用点：PlaybackEngine.loadSong 内部，介于 AbsoluteTransposer.arrange 和
  * globalMidiScheduler.loadTrack 之间。
  *
  * 关键铁律：
@@ -22,7 +22,7 @@
  *     也保证 tick=0 的 programChange/CC 先到 SpessaSynth 再发 note。
  *
  * Pitch Space:
- *   假定 NoteData.pitch 已是 ABSOLUTE（K-2 由 Orchestrator 完成）。
+ *   假定 NoteData.pitch 已是 ABSOLUTE（K-2 由 AbsoluteTransposer 完成）。
  *   本模块只做物理音域 [0, 127] clamp，不做 keyOffset。
  *
  * @author AuraFlow Tap! Phase 4
@@ -145,7 +145,7 @@ export class MidiConverter {
     public static convert(song: ArrangedTrack): MidiEvent[] {
         const out: MidiEvent[] = [];
 
-        // B3 — 动态 GM 程式覆盖（来自 ArrangedTrack.gmProgramOverrides，由 Orchestrator 从 context 透传）
+        // B3 — 动态 GM 程式覆盖（来自 ArrangedTrack.gmProgramOverrides，由 AbsoluteTransposer 从 context 透传）
         const ov = song.gmProgramOverrides;
         const progMelody       = ov?.melody       ?? GM_PROGRAM_MELODY;
         const progPianoRH      = ov?.pianoRH      ?? GM_PROGRAM_PIANO_RH;

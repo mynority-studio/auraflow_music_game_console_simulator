@@ -1,19 +1,19 @@
 /**
- * Phase 4 — Orchestrator + MidiConverter 静态验证
+ * Phase 4 — AbsoluteTransposer + MidiConverter 静态验证
  *
  * 不启动 AudioContext / 不真正播放，仅验算法正确性。
  * 真正的听感验证靠 `npm run dev` 启 web 端实弹试听。
  *
  * 验证矩阵：
  *
- *   Test 1 — Orchestrator
+ *   Test 1 — AbsoluteTransposer
  *     a. keyOffset=0 → pitch 不变
  *     b. keyOffset=3 (Eb) → 所有 pitch +3
  *     c. keyOffset=9 (A)  → 所有 pitch +9
  *     d. 输入 RELATIVE 范围 [36, 96] → 输出 ABSOLUTE 仍在 [0, 127]
  *     e. 三轨映射正确：melody→melody / accompaniment→pianoRH / bass→pianoLH
  *     f. 非破坏性：原 track.melody 数组不变
- *     g. keyOffset 越界（如 12）抛 OrchestratorError
+ *     g. keyOffset 越界（如 12）抛 AbsoluteTransposerError
  *
  *   Test 2 — MidiConverter
  *     a. ticks 严格升序
@@ -24,14 +24,14 @@
  *     f. velocity 整数化 + clamp [1, 127]
  *     g. pitch clamp [0, 127]
  *     h. 退化音符（duration=0 / startTick==endTick）被丢弃
- *     i. 完整端到端：runPipeline → Orchestrator → MidiConverter → 一致性 cross-check
+ *     i. 完整端到端：runPipeline → AbsoluteTransposer → MidiConverter → 一致性 cross-check
  *
  * 运行：npx tsx scripts/test-phase4.ts
  */
 
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
-import { Orchestrator, OrchestratorError } from '../src/core/generation/pipeline/Orchestrator';
+import { AbsoluteTransposer, AbsoluteTransposerError } from '../src/core/generation/pipeline/AbsoluteTransposer';
 import {
     MidiConverter,
     CHANNEL_MELODY, CHANNEL_PIANO_RH, CHANNEL_PIANO_LH,
@@ -67,7 +67,7 @@ function header(title: string): void {
 }
 
 // ============================================================
-// Test 1 — Orchestrator
+// Test 1 — AbsoluteTransposer
 // ============================================================
 
 function makeMockTrack(keyOffset: number): GeneratedTrack {
@@ -108,26 +108,26 @@ const mockContext: MusicContext = {
     grooveDNA: [],
 };
 
-function testOrchestrator(): void {
-    header('Test 1 — Orchestrator (RELATIVE → ABSOLUTE, K-2)');
+function testAbsoluteTransposer(): void {
+    header('Test 1 — AbsoluteTransposer (RELATIVE → ABSOLUTE, K-2)');
 
     // 1a: keyOffset=0 → pitch 不变
     const track0 = makeMockTrack(0);
-    const a0 = Orchestrator.arrange(track0, StyleId.ModernPop, mockContext);
+    const a0 = AbsoluteTransposer.arrange(track0, StyleId.ModernPop, mockContext);
     check('keyOffset=0: melody pitch 不变', a0.melody[0].pitch === 72 && a0.melody[1].pitch === 76);
     check('keyOffset=0: pianoRH pitch 不变', a0.pianoRH[0].pitch === 60);
     check('keyOffset=0: pianoLH pitch 不变', a0.pianoLH[0].pitch === 36);
 
     // 1b: keyOffset=3 (Eb) → 所有 pitch +3
     const track3 = makeMockTrack(3);
-    const a3 = Orchestrator.arrange(track3, StyleId.ModernPop, mockContext);
+    const a3 = AbsoluteTransposer.arrange(track3, StyleId.ModernPop, mockContext);
     check('keyOffset=3: melody[0].pitch = 72+3 = 75', a3.melody[0].pitch === 75);
     check('keyOffset=3: pianoRH[0].pitch = 60+3 = 63', a3.pianoRH[0].pitch === 63);
     check('keyOffset=3: pianoLH[0].pitch = 36+3 = 39', a3.pianoLH[0].pitch === 39);
 
     // 1c: keyOffset=9 (A) → +9
     const track9 = makeMockTrack(9);
-    const a9 = Orchestrator.arrange(track9, StyleId.ModernPop, mockContext);
+    const a9 = AbsoluteTransposer.arrange(track9, StyleId.ModernPop, mockContext);
     check('keyOffset=9: melody[1].pitch = 76+9 = 85', a9.melody[1].pitch === 85);
     check('keyOffset=9: pianoLH[0].pitch = 36+9 = 45', a9.pianoLH[0].pitch === 45);
 
@@ -154,11 +154,11 @@ function testOrchestrator(): void {
     let threwOOB = false;
     try {
         const bad = makeMockTrack(12);
-        Orchestrator.arrange(bad, StyleId.ModernPop, mockContext);
+        AbsoluteTransposer.arrange(bad, StyleId.ModernPop, mockContext);
     } catch (e) {
-        threwOOB = e instanceof OrchestratorError;
+        threwOOB = e instanceof AbsoluteTransposerError;
     }
-    check('keyOffset=12 (越界) 抛 OrchestratorError', threwOOB);
+    check('keyOffset=12 (越界) 抛 AbsoluteTransposerError', threwOOB);
 
     // 1h: 其他字段透传
     check('透传: bpm', a3.bpm === 120);
@@ -172,7 +172,7 @@ function testOrchestrator(): void {
 
 function makeMockArranged(keyOffset: number): ArrangedTrack {
     const track = makeMockTrack(keyOffset);
-    return Orchestrator.arrange(track, StyleId.ModernPop, mockContext);
+    return AbsoluteTransposer.arrange(track, StyleId.ModernPop, mockContext);
 }
 
 function testMidiConverter(): void {
@@ -303,11 +303,11 @@ function testMidiConverter(): void {
 }
 
 // ============================================================
-// Test 3 — 端到端：runPipeline → Orchestrator → MidiConverter
+// Test 3 — 端到端：runPipeline → AbsoluteTransposer → MidiConverter
 // ============================================================
 
 function testEndToEnd(): void {
-    header('Test 3 — E2E: runPipeline → Orchestrator → MidiConverter');
+    header('Test 3 — E2E: runPipeline → AbsoluteTransposer → MidiConverter');
 
     for (const styleId of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
         const name = StyleId[styleId];
@@ -319,8 +319,8 @@ function testEndToEnd(): void {
         const accompRel = track.accompaniment ?? [];
         const bassRel = track.bass ?? [];
 
-        // Orchestrator 转 ABSOLUTE
-        const arranged = Orchestrator.arrange(track, styleId, context);
+        // AbsoluteTransposer 转 ABSOLUTE
+        const arranged = AbsoluteTransposer.arrange(track, styleId, context);
 
         // 一致性：absolute = relative + keyOffset
         const kOff = track.keyOffset;
@@ -369,7 +369,7 @@ function testEndToEnd(): void {
         // 同 seed 两次跑事件字节一致
         PRNGManager.setSeed(SEED);
         const { track: t2, context: c2 } = runPipeline({ forcedStyleId: styleId });
-        const events2 = MidiConverter.convert(Orchestrator.arrange(t2, styleId, c2));
+        const events2 = MidiConverter.convert(AbsoluteTransposer.arrange(t2, styleId, c2));
         let bytesEqual = events.length === events2.length;
         if (bytesEqual) {
             for (let i = 0; i < events.length; i++) {
@@ -390,10 +390,10 @@ function testEndToEnd(): void {
 
 function main(): void {
     console.log(`\n${'■'.repeat(82)}`);
-    console.log(`  Phase 4 — Orchestrator + MidiConverter Verification   seed=${SEED}`);
+    console.log(`  Phase 4 — AbsoluteTransposer + MidiConverter Verification   seed=${SEED}`);
     console.log(`${'■'.repeat(82)}`);
 
-    testOrchestrator();
+    testAbsoluteTransposer();
     testMidiConverter();
     testEndToEnd();
 

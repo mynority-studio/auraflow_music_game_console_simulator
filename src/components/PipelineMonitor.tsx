@@ -220,7 +220,7 @@ export const PipelineMonitor: React.FC = () => {
 
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        // pipeline rule §1.4：setSeed → runPipeline → Orchestrator(in playSong) → MidiConverter
+        // pipeline rule §1.4：setSeed → runPipeline → AbsoluteTransposer(in playSong) → MidiConverter
         PRNGManager.setSeed(seed);
         PRNGManager.recordSnapshot('A');
 

@@ -3,7 +3,7 @@
  *
  * 用途（B2/B3）：
  *   1. Musician.defaultSound（'Acoustic_Grand' 等字符串）→ GM program number（0~127）
- *      → BandEngine / Orchestrator 用此映射决定 MidiConverter 走哪个 GM patch
+ *      → BandEngine / AbsoluteTransposer 用此映射决定 MidiConverter 走哪个 GM patch
  *   2. UI 下拉提供"同家族音色"列表：选了钢琴手 → 显示 [Grand / EP / Marimba / Vibraphone / ...]
  *
  * 数据组织：纯 const 数据，无运行期解析、无 PRNG。

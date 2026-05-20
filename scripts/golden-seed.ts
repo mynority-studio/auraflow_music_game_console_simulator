@@ -20,7 +20,7 @@ const __dirname = dirname(__filename);
 
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
-import { Orchestrator } from '../src/core/generation/pipeline/Orchestrator';
+import { AbsoluteTransposer } from '../src/core/generation/pipeline/AbsoluteTransposer';
 import { MidiConverter } from '../src/core/audio/MidiConverter';
 import { StyleId, StyleIdName } from '../src/core/generation/config/StyleFlags';
 import type { MidiEvent } from '../src/core/audio/MidiScheduler';
@@ -83,8 +83,8 @@ function runOneSeed(seed: number) {
     const snapshots = PRNGManager.getAllSnapshots();
     const stateB = snapshots.B ?? stateA;
 
-    // 编排：Orchestrator.arrange 是无 PRNG 纯转换（D-1）
-    const arranged = Orchestrator.arrange(track, selectedStyleId, context);
+    // 编排：AbsoluteTransposer.arrange 是无 PRNG 纯转换（D-1）
+    const arranged = AbsoluteTransposer.arrange(track, selectedStyleId, context);
     const stateD = PRNGManager.getState();  // arrange 不消费 PRNG，应等于 stateC
 
     // MidiConverter 同样零 PRNG（D-5）

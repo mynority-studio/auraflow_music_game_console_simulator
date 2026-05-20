@@ -1,14 +1,18 @@
 /**
- * Orchestrator — RELATIVE → ABSOLUTE 转换器（K-2 唯一执行点）
+ * AbsoluteTransposer — RELATIVE → ABSOLUTE 转换器(K-2 唯一执行点)
  *
- * 职责（pipeline rule §1.4 step 3）：
- *   消费 Stage 5 输出的 GeneratedTrack（pitch 全部 RELATIVE 空间），
- *   产出 ArrangedTrack（pitch 全部 ABSOLUTE 空间，可直送 MIDI 合成器）。
+ * Phase 7 重命名:旧名 Orchestrator 暗示"管线总指挥",实际职责仅是"最后一步
+ * 把 RELATIVE pitch 加 keyOffset 转 ABSOLUTE"。真正的总指挥是 Conductor。
+ * 改名后语义对齐:本类是"绝对音高转置器"。
  *
- * 这是全管线**唯一**允许把 keyOffset 加到 NoteData.pitch 的位置（K-2 铁律）。
- * 上游所有 Stage（HarmonyCore / RhythmMutator / TextureMapper / Fractal / PCFG）
- * 严禁触碰 keyOffset；Orchestrator 之后的所有消费者（MidiConverter / PlaybackEngine）
- * 假定 pitch 已是 ABSOLUTE。
+ * 职责(pipeline rule §1.4 step 3):
+ *   消费 Conductor 输出的 GeneratedTrack(pitch 全部 RELATIVE 空间),
+ *   产出 ArrangedTrack(pitch 全部 ABSOLUTE 空间,可直送 MIDI 合成器)。
+ *
+ * 这是全管线**唯一**允许把 keyOffset 加到 NoteData.pitch 的位置(K-2 铁律)。
+ * 上游所有 Stage(HarmonyCore / RhythmMutator / TextureMapper / Fractal / PCFG /
+ * Conductor / Reconciler)严禁触碰 keyOffset;AbsoluteTransposer 之后的所有
+ * 消费者(MidiConverter / PlaybackEngine)假定 pitch 已是 ABSOLUTE。
  *
  * 轨道映射：
  *   track.melody         (Lead)        → arranged.melody
@@ -41,16 +45,16 @@ import { StyleId } from '../config/StyleFlags';
 const PITCH_LO = 0;
 const PITCH_HI = 127;
 
-export class OrchestratorError extends Error {
+export class AbsoluteTransposerError extends Error {
     public readonly context: Record<string, unknown>;
     constructor(message: string, context: Record<string, unknown>) {
         super(message);
-        this.name = 'OrchestratorError';
+        this.name = 'AbsoluteTransposerError';
         this.context = context;
     }
 }
 
-export class Orchestrator {
+export class AbsoluteTransposer {
     /**
      * Pitch Space: ABSOLUTE（输出）
      *
@@ -65,7 +69,7 @@ export class Orchestrator {
         styleId: StyleId,
         context: MusicContext,
     ): ArrangedTrack {
-        Orchestrator.validate(track);
+        AbsoluteTransposer.validate(track);
 
         const keyOffset = track.keyOffset | 0;
 
@@ -115,14 +119,14 @@ export class Orchestrator {
 
     private static validate(track: GeneratedTrack): void {
         if (!Number.isFinite(track.keyOffset)) {
-            throw new OrchestratorError(
+            throw new AbsoluteTransposerError(
                 'track.keyOffset must be finite integer',
                 { keyOffset: track.keyOffset },
             );
         }
         if (track.keyOffset < 0 || track.keyOffset > 11) {
             // RELATIVE 空间下 keyOffset ∈ [0, 11]；超出范围说明 Stage 1~2 有 bug
-            throw new OrchestratorError(
+            throw new AbsoluteTransposerError(
                 'track.keyOffset out of [0, 11]',
                 { keyOffset: track.keyOffset },
             );

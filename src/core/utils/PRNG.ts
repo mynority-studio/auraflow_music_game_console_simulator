@@ -8,7 +8,7 @@
  * Snapshot mechanism (ACVE §5.1):
  *   - 'A' captured at setSeed() / 播放入口
  *   - 'B' captured at MelodyEngine.generateFullSong() 入口
- *   - 'C' captured at Orchestrator.arrange() 入口
+ *   - 'C' captured at AbsoluteTransposer.arrange() 入口
  *   - 'D' captured at MidiConverter.convert() 入口
  *
  * 这些 snapshot 用于隔离验证修改是否影响 PRNG 消耗序列。

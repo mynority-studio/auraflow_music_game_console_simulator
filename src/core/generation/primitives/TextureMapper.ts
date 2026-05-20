@@ -39,7 +39,7 @@
  *   - 输入 voicing[] 已是 HarmonyCore 输出的相对空间 MIDI（C=60 中心，不含 keyOffset）
  *   - 输出 NoteData.pitch 直接抄自 voicing[]
  *   - 绝对禁止 +keyOffset / -keyOffset / 任何调号补偿（K-4）
- *   - 由 Orchestrator.applyOffset() 在管道末端统一加 keyOffset 转绝对空间
+ *   - 由 AbsoluteTransposer.applyOffset() 在管道末端统一加 keyOffset 转绝对空间
  *
  * @author AuraFlow Tap! Phase 2.6
  */

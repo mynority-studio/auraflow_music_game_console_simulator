@@ -14,7 +14,7 @@
  * 风格无关:HarmonyCore 不认识 Pop / Jazz,所有风格差异通过 VoiceLeadingConfig +
  *   HarmonyRulesConfig 注入。
  *
- * Pitch Space: RELATIVE(K-1 / K-7)— voicings 仍在相对空间,Orchestrator 后续才加 keyOffset。
+ * Pitch Space: RELATIVE(K-1 / K-7)— voicings 仍在相对空间,AbsoluteTransposer 后续才加 keyOffset。
  *
  * VoiceLeadingConfig 仍从本模块导出(向后兼容 style 配置文件的 import 路径),
  *   实际定义已迁移至 VoicingProcessor。新代码请直接从 primitives/VoicingProcessor 导入。

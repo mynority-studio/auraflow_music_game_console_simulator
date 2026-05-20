@@ -19,7 +19,7 @@
  *     (kickAnchors 仅在 Layer 1 fallback 路径生效)
  *
  * Pitch Space (K-1 / K-2 / K-7)：
- *   RELATIVE — pitch 全部不含 keyOffset，由 Orchestrator.applyOffset 唯一加。
+ *   RELATIVE — pitch 全部不含 keyOffset，由 AbsoluteTransposer.applyOffset 唯一加。
  *
  * PRNG 消耗：0（D-1 / D-5，确定性 hash 决定 C/S 池抽样）。
  *

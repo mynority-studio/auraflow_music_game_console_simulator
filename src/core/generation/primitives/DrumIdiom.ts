@@ -8,7 +8,7 @@
  *
  * Pitch Space: GM Drum Map (ABSOLUTE 物理键位)
  *   依 pipeline rule K-8 — Drum 是第三空间（INSTRUMENT_COMMAND），**不**经过
- *   Orchestrator.applyOffset，**不**叠加 keyOffset。Kick=36 / Snare=38 / ClosedHihat=42
+ *   AbsoluteTransposer.applyOffset，**不**叠加 keyOffset。Kick=36 / Snare=38 / ClosedHihat=42
  *   从 DrumIdiom → GeneratedTrack.drums → ArrangedTrack.drums → Channel 9 全程透传。
  *
  * 确定性铁律（D-5）：

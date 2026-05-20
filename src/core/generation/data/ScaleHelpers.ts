@@ -34,7 +34,7 @@ import {
  * 返回 tonality 对应的调内 PC 数组（去 root 偏移版 —— 始终以 PC 0 为主音参照）。
  *
  * 注意：这是"调式相对"PC 集合（C 大调 = [0,2,4,5,7,9,11]）。
- * 实际调号偏移由 Orchestrator.applyOffset 统一处理。
+ * 实际调号偏移由 AbsoluteTransposer.applyOffset 统一处理。
  */
 export function getScalePitches(tonality: Tonality): number[] {
     const intervals = SCALE_INTERVALS[tonality];

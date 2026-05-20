@@ -17,7 +17,7 @@
  * Pitch Space: RELATIVE（K-1 / K-2）
  *   - 输入 voicing[] 已是 HarmonyCore 输出的相对空间 MIDI（C=60 中心）
  *   - 输出 NoteData.pitch 直接抄自 voicing[]
- *   - Orchestrator.applyOffset 在管道末端统一加 keyOffset
+ *   - AbsoluteTransposer.applyOffset 在管道末端统一加 keyOffset
  *
  * 约束遵从（music_generation_pipeline_rule.md）：
  *   D-1: 零 PRNG（V1 完全确定性，仅由 chords + idiom + intensityScale 决定）

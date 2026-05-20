@@ -11,7 +11,7 @@
 
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
-import { Orchestrator } from '../src/core/generation/pipeline/Orchestrator';
+import { AbsoluteTransposer } from '../src/core/generation/pipeline/AbsoluteTransposer';
 import { MidiConverter, CHANNEL_ATMOSPHERE, CHANNEL_ELECTRIC_BASS, CHANNEL_PIANO_LH } from '../src/core/audio/MidiConverter';
 import { CastingEngine } from '../src/core/generation/pipeline/CastingEngine';
 import { StyleId } from '../src/core/generation/config/StyleFlags';
@@ -34,7 +34,7 @@ console.log('\n=== BandEngine MVP smoke test ===\n');
 
 PRNGManager.setSeed(42);
 const { track, context } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
-const arranged = Orchestrator.arrange(track, StyleId.ChillJazz, context);
+const arranged = AbsoluteTransposer.arrange(track, StyleId.ChillJazz, context);
 const events = MidiConverter.convert(arranged);
 
 console.log('1. Pipeline output structure');
@@ -360,7 +360,7 @@ console.log(`  Total musicians in pool: ${MUSICIAN_POOL.length}`);
 console.log('\n17. V5.2 — Swing offset 验证（ChillJazz swingRatio=0.55 应产生 8th offbeat 偏移）');
 PRNGManager.setSeed(42);
 const { track: jazzSwing, context: jazzCtx } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
-const swingArranged = Orchestrator.arrange(jazzSwing, StyleId.ChillJazz, jazzCtx);
+const swingArranged = AbsoluteTransposer.arrange(jazzSwing, StyleId.ChillJazz, jazzCtx);
 // 找 accomp 里有没有 onset 非 0.25 倍数的（说明 swing 偏移生效）
 const accompOnsets = swingArranged.pianoRH.map(n => n.onset);
 let swingShifted = 0;

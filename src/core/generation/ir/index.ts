@@ -66,7 +66,7 @@ export interface NoteData { pitch: number; onset: number; duration: number; velo
 }
 
 export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number;
-    /** HarmonyCore 输出的声部分布 — Pitch Space: RELATIVE，升序 MIDI（Orchestrator/AudioEngine 再加 keyOffset） */
+    /** HarmonyCore 输出的声部分布 — Pitch Space: RELATIVE，升序 MIDI（AbsoluteTransposer/AudioEngine 再加 keyOffset） */
     voicing?: number[]; }
 
 export interface SectionMetadata {
@@ -105,11 +105,11 @@ export interface MusicContext {
     grooveDNA: number[];
     ensemble?: EnsembleDraft;
     style?: StyleConfig;
-    /** 5 槽位实际就位的乐手数组（缺槽 = 不在数组里）— Orchestrator 按 role 过滤生成轨 */
+    /** 5 槽位实际就位的乐手数组（缺槽 = 不在数组里）— AbsoluteTransposer 按 role 过滤生成轨 */
     band?: Musician[];
     /**
      * B3：动态 GM 程式覆盖（0~127），由 runPipeline 根据 forcedGmPrograms + musician.gmProgramOverride + defaultSound 计算。
-     * Orchestrator 透传到 ArrangedTrack.gmProgramOverrides，再由 MidiConverter 消费。
+     * AbsoluteTransposer 透传到 ArrangedTrack.gmProgramOverrides，再由 MidiConverter 消费。
      */
     gmProgramOverrides?: {
         melody?: number;

@@ -83,7 +83,7 @@ export interface CadencePoint {
  *
  * 元数据:
  *   - context.keyOffsetIsAbsolute === false 表示 root 仍在 RELATIVE 空间,
- *     由 Conductor / Orchestrator 在最后阶段加 keyOffset 转 ABSOLUTE。
+ *     由 Conductor / AbsoluteTransposer 在最后阶段加 keyOffset 转 ABSOLUTE。
  *     当前 Phase 恒为 false;预留字段是为了将来支持"已 absolute 的骨架"
  *     (例如从 MIDI 反推时直接给绝对 root)。
  */

@@ -8,7 +8,7 @@
  * 调用链：
  *   AudioEngine.playSong
  *     ↓
- *   Orchestrator.arrange(track, styleId, context)   // RELATIVE → ABSOLUTE（K-2）
+ *   AbsoluteTransposer.arrange(track, styleId, context)   // RELATIVE → ABSOLUTE（K-2）
  *     ↓
  *   PlaybackEngine.loadSong(arranged)
  *     ↓

@@ -5,9 +5,9 @@
  *   - 旧名 Stage5Layering 仅描述管线位置(第 5 阶段),不描述实际职责。
  *   - 实际职责是"总装" —— 调度所有 InstrumentRealizer + Lead 渲染,合并 4 轨。
  *     这正是音乐工程里的 Conductor(指挥/总装)。
- *   - 注意:本模块与下游 Orchestrator.ts(仅做 RELATIVE→ABSOLUTE)职责互不重叠;
- *     Phase 7 计划把 Orchestrator 的转置函数下沉为 Conductor 的最后一步,
- *     彻底消除 "Orchestrator 不是 orchestrator" 的命名误导。当前阶段两者并存。
+ *   - 注意:本模块与下游 AbsoluteTransposer.ts(仅做 RELATIVE→ABSOLUTE)职责互不重叠;
+ *     Phase 7 计划把 AbsoluteTransposer 的转置函数下沉为 Conductor 的最后一步,
+ *     彻底消除 "AbsoluteTransposer 不是 orchestrator" 的命名误导。当前阶段两者并存。
  *
  * 职责:消费 Stage 1~3 的输出(chords + voicings + sections + styleId),
  * 按 ConductorMask 决定每段哪些角色发声,输出 4 轨 NoteData[]:
@@ -20,7 +20,7 @@
  * 关键设计决策(与 .claude/rules/music_generation_pipeline_rule.md 对齐):
  *
  *   1. Pitch Space 三空间(K-1 / K-2 / K-7 / K-8):
- *      - melody / accompaniment / bass: RELATIVE — 由 Orchestrator.applyOffset 转 ABSOLUTE
+ *      - melody / accompaniment / bass: RELATIVE — 由 AbsoluteTransposer.applyOffset 转 ABSOLUTE
  *      - drums:                          GM Drum Map (K-8 第三空间) — 全程透传不加 keyOffset
  *
  *   2. 确定性(D-1 / D-5):
@@ -174,7 +174,7 @@ export interface ConductorResult {
     melody: NoteData[];
     accompaniment: NoteData[];
     bass: NoteData[];
-    /** Pitch Space: GM Drum Map (K-8 第三空间) — 不参与 Orchestrator.applyOffset */
+    /** Pitch Space: GM Drum Map (K-8 第三空间) — 不参与 AbsoluteTransposer.applyOffset */
     drums: NoteData[];
     /** Pitch Space: RELATIVE — Pad/Strings 长音铺底。V1 渲染器未实装时为空数组 */
     atmosphere: NoteData[];

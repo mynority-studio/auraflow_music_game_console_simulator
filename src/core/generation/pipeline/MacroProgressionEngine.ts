@@ -22,7 +22,7 @@
  *
  * Pitch Space: RELATIVE（K-1 / K-2 / K-7）
  *   输出 GeneratedChord.root ∈ [0, 11]，相对调式主音；不含 keyOffset。
- *   由 Orchestrator.applyOffset() 唯一接管相对 → 绝对的转换。
+ *   由 AbsoluteTransposer.applyOffset() 唯一接管相对 → 绝对的转换。
  *
  * 约束遵从：
  *   D-1: PRNG 全部走 PRNGManager.next()，无 Math.random

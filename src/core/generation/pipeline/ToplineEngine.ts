@@ -32,7 +32,7 @@
  *
  * 设计要点：
  *   1. K-1 / K-2 / K-5：全程 RELATIVE 空间，绝不读 GlobalContext.currentKeyOffset；
- *      Orchestrator.applyOffset() 是唯一的相对 → 绝对转换点。
+ *      AbsoluteTransposer.applyOffset() 是唯一的相对 → 绝对转换点。
  *   2. cursor 初值 anchorPitch（默认 72 = C5）— RELATIVE 空间中 C5 在 tonic PC=0 上。
  *   3. ChordTone 池 = CHORD_INTERVALS[chord.quality] 全部音程（root / 3 / 5 / 7 / ext）
  *      过 mod 12 + chord.root 偏移得到 PC 列表。
