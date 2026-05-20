@@ -1,5 +1,5 @@
 // ============================================================
-// MgChordAdapter — mg ChordDef / NoteEvent → auraflow IR 转换(Phase 1 Step 3+4 合做)
+// HarmonyChordAdapter — mg ChordDef / NoteEvent → auraflow IR 转换(Phase 1 Step 3+4 合做)
 // ============================================================
 //
 // 出处:mg_engine_integration_plan.md §4.4 Phase 2 新建 adapter(本批提前到 Phase 1
@@ -24,7 +24,7 @@
 //   - voicingTagged(VoicedPitch[] with role)派生
 //   - effectiveFunc / tensionState / virtualExtensions 透传
 //
-// 零 PRNG(纯转换函数)。仅依赖 mg-engine/* + auraflow types.ts + ir/。
+// 零 PRNG(纯转换函数)。仅依赖 harmony-engine/* + auraflow types.ts + ir/。
 // ============================================================
 
 import {
@@ -33,7 +33,7 @@ import {
     ChordQuality,
 } from '../types';
 import { NoteOrigin } from '../ir';
-import type { ChordDef, NoteEvent } from '../mg-engine/musicEngine';
+import type { ChordDef, NoteEvent } from '../harmony-engine/musicEngine';
 
 // ============================================================
 // 字符串 → PC 映射(支持 sharp / flat / 双重升降)
@@ -62,7 +62,7 @@ function parseNoteName(name: string): number {
     const pc = NOTE_TO_PC[name];
     if (pc === undefined) {
         // eslint-disable-next-line no-console
-        console.warn(`MgChordAdapter: unknown note name "${name}", falling back to C`);
+        console.warn(`HarmonyChordAdapter: unknown note name "${name}", falling back to C`);
         return 0;
     }
     return pc;
@@ -90,7 +90,7 @@ function parseMidiNoteName(name: string): number {
     const octave = parseInt(octaveStr, 10);
     if (!Number.isFinite(octave)) {
         // eslint-disable-next-line no-console
-        console.warn(`MgChordAdapter: cannot parse octave "${octaveStr}" from "${name}"`);
+        console.warn(`HarmonyChordAdapter: cannot parse octave "${octaveStr}" from "${name}"`);
         return parseNoteName(pcStr) + 60;
     }
     return (octave + 1) * 12 + parseNoteName(pcStr);
@@ -172,7 +172,7 @@ function chordTypeToQuality(type: string): ChordQuality {
     const quality = CHORD_TYPE_TO_QUALITY[type];
     if (quality !== undefined) return quality;
     // eslint-disable-next-line no-console
-    console.warn(`MgChordAdapter: unknown chord type "${type}", falling back to Major7`);
+    console.warn(`HarmonyChordAdapter: unknown chord type "${type}", falling back to Major7`);
     return ChordQuality.Major7;
 }
 

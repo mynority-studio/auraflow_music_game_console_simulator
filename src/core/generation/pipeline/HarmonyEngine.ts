@@ -1,5 +1,5 @@
 // ============================================================
-// MgEngineFacade — melodygenerative Engine 包装层(Phase 1 Step 2)
+// HarmonyEngine — melodygenerative Engine 包装层(Phase 1 Step 2)
 // ============================================================
 //
 // 出处:plan §3 Phase 1 + §2 决策 1-3。把 auraflow 的输入参数(numeric seed +
@@ -8,9 +8,9 @@
 // + NoteEvent[] 等结果。
 //
 // 设计决策(plan §2):
-//   - 决策 1:facade 放 pipeline/(对接 runPipeline);mg 代码放 mg-engine/
+//   - 决策 1:facade 放 pipeline/(对接 runPipeline);mg 代码放 harmony-engine/
 //   - 决策 2:不改 mg 代码,facade 是单向"翻译进 + 翻译出"层
-//   - 决策 3:**PRNG 隔离** — facade 内部传 `${seed}::mg` 字符串子流,
+//   - 决策 3:**PRNG 隔离** — facade 内部传 `${seed}::harmony` 字符串子流,
 //     mg.Engine 用自己的 Random 实例,完全不消费 PRNGManager。这是 Phase 1
 //     验收锚点的关键(同 seed → mg 输出 = melodygenerative-standalone 输出)。
 //
@@ -20,7 +20,7 @@
 //   - Phase 2:bass/atmosphere/drums 通过 ChordDef → GeneratedChord adapter 接和声
 //   - Phase 3:mg 内部 Random 删,改调 PRNGManager;facade 简化(seed 转换 + 调用)
 //
-// 依赖:仅依赖 mg-engine/*(不依赖 auraflow ir/ 或 pipeline/ 其他模块,符合
+// 依赖:仅依赖 harmony-engine/*(不依赖 auraflow ir/ 或 pipeline/ 其他模块,符合
 // §10 模块依赖规则 — pipeline 可消费 primitives,但 facade 是 leaf-call,
 // 不引入循环依赖)。
 //
@@ -37,9 +37,9 @@ import {
     MusicTimeline,
     GenerationConfig,
     ResolvedGenerationContext,
-} from '../mg-engine/musicEngine';
-import type { StyleName } from '../mg-engine/styleDictionary';
-import type { Emotion } from '../mg-engine/musicTheory';
+} from '../harmony-engine/musicEngine';
+import type { StyleName } from '../harmony-engine/styleDictionary';
+import type { Emotion } from '../harmony-engine/musicTheory';
 
 // ============================================================
 // 输入 / 输出接口
@@ -49,7 +49,7 @@ import type { Emotion } from '../mg-engine/musicTheory';
  * Facade 输入 — 由 runPipeline 在 Stage 3 调用前准备。
  *
  * seed:auraflow 主 seed(numeric)。facade 内部拼接成
- * `${seed}::mg` 字符串作为 mg 的 seed(字符串 fork 子流,跟 auraflow
+ * `${seed}::harmony` 字符串作为 mg 的 seed(字符串 fork 子流,跟 auraflow
  * PRNGManager 完全隔离)。
  *
  * styleId:auraflow StyleId 数值枚举(0=ModernPop / 1=ChillJazz / 2=NeoSoul)。
@@ -61,7 +61,7 @@ import type { Emotion } from '../mg-engine/musicTheory';
  * isMinor:true → mg.mode = 'Minor';false → 'Major'。其他 mode(Dorian /
  * Lydian / 等)需要 caller 显式传 modeOverride。
  */
-export interface MgFacadeInput {
+export interface HarmonyEngineInput {
     /** auraflow 主 seed(numeric)。facade 内部派生 `${seed}::${seedSuffix}` 子流 */
     seed: number;
     /** auraflow StyleId enum(0=ModernPop / 1=ChillJazz / 2=NeoSoul) */
@@ -106,7 +106,7 @@ export interface MgFacadeInput {
  *
  * resolved:诊断信息(emotion / mode / motifStrategy / basslineRule / 等)。
  */
-export interface MgFacadeOutput {
+export interface HarmonyEngineOutput {
     chords: ChordDef[];
     events: NoteEvent[];
     melody: NoteEvent[];
@@ -147,19 +147,19 @@ const KEY_NAMES: ReadonlyArray<string> = Object.freeze([
 ]);
 
 // ============================================================
-// MgEngineFacade 主类
+// HarmonyEngine 主类
 // ============================================================
 
-export class MgEngineFacadeError extends Error {
+export class HarmonyEngineError extends Error {
     public readonly context: Record<string, unknown>;
     constructor(message: string, context: Record<string, unknown>) {
         super(message);
-        this.name = 'MgEngineFacadeError';
+        this.name = 'HarmonyEngineError';
         this.context = context;
     }
 }
 
-export class MgEngineFacade {
+export class HarmonyEngine {
     /**
      * 主入口 — 一站式生成 mg 整曲输出。
      *
@@ -174,8 +174,8 @@ export class MgEngineFacade {
      * 不持久化 Engine 实例:每次 generate 创建新 Engine(mg 设计为 stateless,
      * config 决定一切)。
      */
-    public static generate(input: MgFacadeInput): MgFacadeOutput {
-        const config = MgEngineFacade.buildMgConfig(input);
+    public static generate(input: HarmonyEngineInput): HarmonyEngineOutput {
+        const config = HarmonyEngine.buildMgConfig(input);
 
         // 关键:Engine 需要 Random 实例(其 constructor 接受 Random)。
         // 字符串 fork 子流:同 mgSeed → mg 输出完全一致(决策 3 隔离 PRNG 锚点)。
@@ -212,17 +212,17 @@ export class MgEngineFacade {
     // ============================================================
 
     /**
-     * 把 MgFacadeInput 翻译成 mg.GenerationConfig。
+     * 把 HarmonyEngineInput 翻译成 mg.GenerationConfig。
      *
      * 关键转换:
-     *   numeric seed → `${seed}::mg` 子流字符串(PRNG 隔离)
+     *   numeric seed → `${seed}::harmony` 子流字符串(PRNG 隔离)
      *   StyleId enum → StyleName('POP' / 'JAZZ' / 'RNB')
      *   keyRootPc → KEY_NAMES[pc]('C' / 'Db' / 等)
      *   isMinor → mode 'Major' / 'Minor'(modeOverride 优先)
      */
-    private static buildMgConfig(input: MgFacadeInput): GenerationConfig {
+    private static buildMgConfig(input: HarmonyEngineInput): GenerationConfig {
         if (input.styleId < 0 || input.styleId >= STYLE_MAPPING.length) {
-            throw new MgEngineFacadeError(
+            throw new HarmonyEngineError(
                 'styleId out of range — auraflow StyleId 当前仅支持 0/1/2',
                 { styleId: input.styleId, validRange: [0, STYLE_MAPPING.length - 1] },
             );
@@ -235,7 +235,7 @@ export class MgEngineFacade {
         // 让某些 scale-aware 推演更精准),但 Phase 1+2 始终在 C 调推演。
         const pcNorm = (((input.keyRootPc | 0) % 12) + 12) % 12;
         if (KEY_NAMES[pcNorm] === undefined) {
-            throw new MgEngineFacadeError(
+            throw new HarmonyEngineError(
                 'invalid keyRootPc',
                 { keyRootPc: input.keyRootPc, pcNorm },
             );
@@ -247,13 +247,12 @@ export class MgEngineFacade {
             : (input.isMinor ? 'Minor' : 'Major');
 
         // PRNG 隔离 — 字符串子流 seed,跟 PRNGManager 完全独立。
-        // seedSuffix 默认 'mg';generateForSection 内部用 'section-${SectionTypeName}'
-        // 实现 B1 同 type 共享 motif、不同 type 段落对比。
-        const suffix = input.seedSuffix ?? 'mg';
-        const mgSeed = `${input.seed}::${suffix}`;
+        // 默认 'harmony';外部 caller 可传 seedSuffix 做实验分支。
+        const suffix = input.seedSuffix ?? 'harmony';
+        const harmonySeed = `${input.seed}::${suffix}`;
 
         const config: GenerationConfig = {
-            seed: mgSeed,
+            seed: harmonySeed,
             style,
             key,
             mode,

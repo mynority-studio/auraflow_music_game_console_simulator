@@ -29,7 +29,7 @@
  *   - MoodRouter MOOD_RECIPE / MOOD_WALK_PATTERN 二维表的列索引
  *   - config/StyleRegistry / styles/index.ts getStyleHarmonyBundle / getStyleStage5Bundle
  *   - data/GMSoundMap 相关 channel 路由
- *   - MgEngineFacade STYLE_MAPPING
+ *   - HarmonyEngine STYLE_MAPPING
  * Cross-sync §1.6 + §1.18(MoodRouter 二维表)。
  */
 export enum StyleId {

@@ -1,5 +1,5 @@
 // ============================================================
-// MgPianoWeatherModulator — mg 钢琴输出的 weather post-modulation(C.5)
+// PianoWeatherModulator — mg 钢琴输出的 weather post-modulation(C.5)
 // ============================================================
 //
 // 出处:mg_engine_integration_plan.md §3 C.5 — auraflow 5 维气象接入 mg 钢琴。
@@ -40,7 +40,7 @@ const S_DURATION_FLOOR = 0.7;   // S=0 时 duration 不衰减到 0,保留 70%
  *
  * 不修改 input 数组(避免副作用),返回新数组。
  */
-export function modulateMgPianoByWeather(
+export function modulatePianoByWeather(
     notes: NoteData[],
     context: RenderContext,
 ): NoteData[] {

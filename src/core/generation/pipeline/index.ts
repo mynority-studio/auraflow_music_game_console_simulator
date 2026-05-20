@@ -1,18 +1,19 @@
 /**
- * runPipeline — 生成管线统一入口(C.2 永久切到 mg 路径)
+ * runPipeline — 生成管线统一入口
  *
- * 当前实装范围(C.2 后):
+ * 当前实装范围:
  *   Stage 1  selectStyle           PRNG ×1   — 从 allowedStyleIds 池抽
  *   Stage 2  resolveBasicParams    PRNG ×4   — tonality / keyOffset / BPM / formTemplate 抽样
- *   Stage 3  MgEngineFacade        PRNG ×0   — mg 接管钢琴和声 + 旋律推演(PRNG 隔离子流)
- *   Stage 4  (C.4 待做)— bass / drums / atmosphere 接 mg chord
- *   Stage 5  (C.4 待做)— Realizer 渲染 bass / drums / atmosphere 轨
+ *   Stage 3  HarmonyEngine         PRNG ×0   — 钢琴伴奏引擎(和声进行 + 钢琴 melody+comping)
+ *                                              内部 string Random 隔离子流,PRNGManager 不消费
+ *   Stage 4  buildActiveMusicians + CurveWeatherSampler — auraflow 乐手/Band/Weather
+ *   Stage 5  Realizer 渲染 bass / drums / atmosphere(消费 HarmonyEngine 的 chord)
  *
  * 输出契约:
- *   - track.chords             — mg ChordDef[] 经 MgChordAdapter 转换的 GeneratedChord[]
- *   - track.melody             — [](C.1 设计:melody 与 chord 合并到 accompaniment 走 PIANO_RH)
- *   - track.accompaniment      — mg melody + chordTexture 合并(一架钢琴的演绎)
- *   - track.bass/drums/atmosphere — []  (C.4 待接和声后填充)
+ *   - track.chords             — HarmonyEngine 推演的 GeneratedChord[]
+ *   - track.melody             — [](melody 与 chord 合并到 accompaniment 走 PIANO_RH)
+ *   - track.accompaniment      — 钢琴 melody + chordTexture 合并 + weather 调制(一架钢琴的演绎)
+ *   - track.bass/drums/atmosphere — auraflow Realizer 渲染
  *   - context 携带 bpm / tonality / keyOffset / style / gmProgramOverrides
  *
  * 仍尊重的形参约束:
@@ -21,10 +22,9 @@
  * PRNG 快照点(D-5):
  *   stateB(Stage 1 入口) / stateC(Stage 3 前) / stateD(Stage 5 前)
  *
- * PRNG 隔离锚点(plan §2 决策 3):
- *   mg 用自己的 Random(`${PRNGManager.state}::mg`)— 跟 PRNGManager 完全独立。
- *   Stage 1+2 仍消费 PRNGManager,Stage 3+ 不消费(mg facade 内部用 mg Random)。
- *   Phase 3 壳化时合并到 PRNGManager.fork API。
+ * PRNG 隔离锚点:
+ *   HarmonyEngine 用自己的 Random(`${PRNGManager.state}::harmony`)— 跟 PRNGManager 完全独立。
+ *   Stage 1+2 仍消费 PRNGManager,Stage 3+ 不消费(HarmonyEngine facade 内部 string seed)。
  */
 
 import {
@@ -38,14 +38,14 @@ import { getStyleHarmonyBundle, getStyleStage5Bundle } from '../config/styles';
 import { PRNGManager } from '../../utils/PRNG';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
-import { MgEngineFacade } from './MgEngineFacade';
-import { chordDefsToGeneratedChords, noteEventsToNoteData } from './MgChordAdapter';
+import { HarmonyEngine } from './HarmonyEngine';
+import { chordDefsToGeneratedChords, noteEventsToNoteData } from './HarmonyChordAdapter';
 import { CurveWeatherSampler } from './CurveWeatherSampler';
 import type { RenderContext } from '../ir/RenderContext';
 import { BassRealizer } from '../realizers/BassRealizer';
 import { DrumRealizer } from '../realizers/DrumRealizer';
 import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
-import { modulateMgPianoByWeather } from './MgPianoWeatherModulator';
+import { modulatePianoByWeather } from './PianoWeatherModulator';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -137,27 +137,28 @@ export function runPipeline(
     PRNGManager.recordSnapshot('C');
 
     // ============================================================
-    // Stage 3 — mg 一次性整曲生成(F1+ 原生 N bars)
+    // Stage 3 — HarmonyEngine 一次性整曲生成(原生 N bars)
     // ============================================================
     // 设计哲学:
-    //   - mg 是 auraflow 的"和声+钢琴"原生引擎(不再是被 wrap 的外部库)
-    //   - auraflow sections 系统决定整曲总 bars 数,mg 用 barsOverride 接受
-    //   - mg 内部 progression 模板 ring loop(i % chosen.length)+
+    //   - HarmonyEngine 是 auraflow 的"和声+钢琴伴奏"原生引擎
+    //   - auraflow sections 系统决定整曲总 bars 数,HarmonyEngine 用 totalBars 接受
+    //   - 内部 progression 模板 ring loop(i % chosen.length)+
     //     phrase 边界 modulo(i % motifInterval)→ N bars 自然适配
-    //   - mg motif/cadence/sub-style 哲学跨段连贯(motif 在 phrase 边界
+    //   - motif/cadence/sub-style 哲学跨段连贯(motif 在 phrase 边界
     //     自然复现,cadence 在 song_end 自然触发)
-    //   - 段落对比靠 weather post-modulation(C.5 在 modulateMgPianoByWeather
+    //   - 段落对比靠 weather post-modulation(modulatePianoByWeather
     //     里 per-note onset 查 weather 调 velocity/duration)
     //
-    // PRNG 隔离:mg 用 string Random(`${seed}::mg`),PRNGManager 不被触碰。
-    const mgSeed = PRNGManager.getState();
+    // PRNG 隔离:HarmonyEngine 用 string Random(`${seed}::harmony`),
+    //          PRNGManager 不被触碰。
+    const harmonySeed = PRNGManager.getState();
     const totalBeats = sections.length > 0
         ? sections[sections.length - 1].endBeat
         : 16 * timeSignature[0];
     const totalBars = Math.max(4, Math.round(totalBeats / timeSignature[0]));
 
-    const mgResult = MgEngineFacade.generate({
-        seed: mgSeed,
+    const harmonyResult = HarmonyEngine.generate({
+        seed: harmonySeed,
         styleId,
         keyRootPc: keyOffset,
         isMinor: tonality === Tonality.Minor,
@@ -165,28 +166,28 @@ export function runPipeline(
     });
 
     // ChordDef[] → GeneratedChord[]:整曲 0-based,直接累积到 totalBeats
-    const mgChords = chordDefsToGeneratedChords(mgResult.chords, 0);
-    for (let i = 0; i < mgChords.length; i++) {
-        mgChords[i].keyOffset = keyOffset;
+    const harmonyChords = chordDefsToGeneratedChords(harmonyResult.chords, 0);
+    for (let i = 0; i < harmonyChords.length; i++) {
+        harmonyChords[i].keyOffset = keyOffset;
     }
 
     // NoteEvent → NoteData:整曲 0-based,无 offset
-    const mgMelodyNotes = noteEventsToNoteData(mgResult.melody, 0);
-    const mgChordNotes = noteEventsToNoteData(mgResult.chordTexture, 0);
+    const pianoMelody = noteEventsToNoteData(harmonyResult.melody, 0);
+    const pianoChordTexture = noteEventsToNoteData(harmonyResult.chordTexture, 0);
 
-    // mg piano 统一:melody + chord 合并走 PIANO_RH channel (Grand Acoustic 单音色)
-    // standalone mg 是单 Salamander sampler,统一 channel 避免"两架钢琴"听感
-    const mgPianoUnified: NoteData[] = mgMelodyNotes.concat(mgChordNotes);
-    mgPianoUnified.sort((a, b) => a.onset - b.onset);
+    // 钢琴统一:melody + chord 合并走 PIANO_RH channel(Grand Acoustic 单音色),
+    // 保留 HarmonyEngine 内部 divisi/velocity 比例 — 听感"一架钢琴演奏旋律+和声"。
+    const pianoUnified: NoteData[] = pianoMelody.concat(pianoChordTexture);
+    pianoUnified.sort((a, b) => a.onset - b.onset);
 
     PRNGManager.recordSnapshot('D');
 
     // ============================================================
-    // Stage 4 — Roster / Band / Weather(C.4 — auraflow 护城河接入)
+    // Stage 4 — Roster / Band / Weather
     // ============================================================
-    // 设计:mg 接管钢琴和声,auraflow 用乐手 / band / weather 系统装饰
-    //   bass / drums / atmosphere。所有 Realizer 接收 mg 输出的 chord 进行 +
-    //   auraflow 自己的 weather 调制。
+    // 设计:HarmonyEngine 接管钢琴和声,auraflow 用乐手 / band / weather 系统
+    //   装饰 bass / drums / atmosphere。所有 Realizer 接收 harmonyChords +
+    //   weather 调制。
     const roster: BandRoster = buildDefaultRoster(options.forcedBand);
     const activeMusicians: ActiveMusician[] = buildActiveMusicians(roster);
 
@@ -203,16 +204,16 @@ export function runPipeline(
     const stage5Bundle = getStyleStage5Bundle(styleId);
 
     // ============================================================
-    // Stage 5 — 渲染 bass / drums / atmosphere 三轨(钢琴已由 mg 接管)
+    // Stage 5 — 渲染 bass / drums / atmosphere 三轨(钢琴已由 HarmonyEngine 接管)
     // ============================================================
-    // 用 RELATIVE 空间的 mgChords 作为输入,Realizer 渲染 RELATIVE NoteData[]。
+    // 用 RELATIVE 空间的 harmonyChords 作为输入,Realizer 渲染 RELATIVE NoteData[]。
     // 下游 AbsoluteTransposer.arrange 加 keyOffset 转 ABSOLUTE(K-2 铁律唯一加点)。
 
     // BASS — 取 roster.bass 的 persona 渲染 walking / pattern bass
     let bassNotes: NoteData[] = [];
     if (roster.bass !== null && roster.bass !== undefined) {
         bassNotes = BassRealizer.realize({
-            chords: mgChords,
+            chords: harmonyChords,
             styleId,
             tonality,
             persona: roster.bass.persona,
@@ -238,7 +239,7 @@ export function runPipeline(
             ? sections.reduce((acc, s) => acc + s.energyLevel, 0) / sections.length / 10
             : 0.5;
         atmosphereNotes = AtmosphereRealizer.realize({
-            chords: mgChords,
+            chords: harmonyChords,
             idiom: roster.atmosphere.personnel?.atmosphereOverrides,
             intensityScale: avgIntensity,
             context: renderContext,
@@ -246,21 +247,22 @@ export function runPipeline(
     }
 
     // ============================================================
-    // C.5 — Weather post-modulation 钢琴轨
+    // Weather post-modulation 钢琴轨
     // ============================================================
-    // mg 完整输出后(motif / cadence 跨段连贯保留),按每个 note onset 查 weather:
+    // HarmonyEngine 输出后(motif/cadence 跨段连贯保留),按每个 note onset 查
+    // weather:
     //   K → velocity 调制(段落能量驱动 — Verse 弱 / Chorus 强)
     //   S → duration 调制(spatial sustain — ambient 长音 / build staccato)
-    // 不动 pitch / chord(保留 mg 哲学),只调音量+延时。
-    const mgPianoModulated = modulateMgPianoByWeather(mgPianoUnified, renderContext);
+    // 不动 pitch / chord(保留 HarmonyEngine 哲学),只调音量+延时。
+    const pianoModulated = modulatePianoByWeather(pianoUnified, renderContext);
 
     const track: GeneratedTrack = {
-        chords: mgChords,
+        chords: harmonyChords,
         melody: [],                       // 统一到 accompaniment 走 Grand Acoustic
-        accompaniment: mgPianoModulated,  // mg piano + C.5 weather modulation
-        bass: bassNotes,                  // C.4 — auraflow BassRealizer + mg chord
-        drums: drumsNotes,                // C.4 — auraflow DrumRealizer
-        atmosphere: atmosphereNotes,      // C.4 — auraflow AtmosphereRealizer
+        accompaniment: pianoModulated,    // HarmonyEngine piano + weather modulation
+        bass: bassNotes,                  // auraflow BassRealizer + harmony chord
+        drums: drumsNotes,                // auraflow DrumRealizer
+        atmosphere: atmosphereNotes,      // auraflow AtmosphereRealizer
         sections,
         bpm,
         key: keyName,
