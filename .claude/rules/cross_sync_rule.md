@@ -71,11 +71,34 @@
   - `types.ts`:
     - `CHORD_INTERVALS` 表(每 quality 对应 interval 集)
     - `CHORD_SCALE_INTERVALS` 表
+    - `CHORD_SCALE_NAME` 表(Phase 7c 补登记)— 与 CHORD_SCALE_INTERVALS **平行数组**,改一个必同步另一个,否则 idiomMode='diatonic' 查表越界
+    - `ChordQualityName` 字符串数组
     - `CQ_IS_MAJOR / CQ_IS_DOM / CQ_IS_MINOR / CQ_IS_DIM` bit 分组
   - `src/core/generation/primitives/VoicingProcessor.ts`:`deriveVoiceRole` 函数的 interval 6/9 消歧逻辑(依赖 quality 内含哪些 intervals 来区分 b5 vs #11 / dim7-bb7 vs 13)
   - `pipeline/MacroProgressionEngine.ts`:进行推演的 quality 转移表(如适用)
   - `data/ScaleHelpers.ts`:相关 getChordTonePCs / snapToPool 等
 - **风险**:**高**(voicing silently 错位 — 新 quality 漏配 intervals,deriveVoiceRole 把 9 当成 13,Phase 1b mask 把"该过的 voice"过滤掉)
+
+### 1.18 StyleId 顺序变更 ↔ MoodRouter 二维表列索引(Phase 7c 补登记)
+
+- **触发器**:`config/StyleFlags.ts` 中 `StyleId` enum 顺序变更
+- **必须同步**(§1.6 已列大多数,本条补遗漏点):
+  - `pipeline/MoodRouter.ts` 中以下二维表的**列索引**(列 = StyleId):
+    - `MOOD_RECIPE[mood][styleId]` — mood × style → recipe 映射
+    - `MOOD_WALK_PATTERN[mood][styleId]` — bass walking 路由
+    - `MOOD_PHRASE_CHAIN[mood][styleId]` — phrase chain 路由
+  - 列重排后 Pop/Jazz/NeoSoul 的 recipe / walk / phrase 全部错位 — golden seed 大幅 rebaseline
+- **风险**:**高**(silently 错位,听感"风格混乱"但不报错)
+
+### 1.19 MoodId 枚举顺序变更 ↔ MoodRouter 二维表行索引(Phase 7c 新登记)
+
+- **触发器**:`pipeline/MoodRouter.ts` 中 `MoodId` enum 顺序变更或新增 mood
+- **必须同步**:
+  - 三个二维表的**行索引**(行 = MoodId):
+    - `MOOD_RECIPE` / `MOOD_WALK_PATTERN` / `MOOD_PHRASE_CHAIN`
+  - 行重排会让原 "Dreamy 路由 Recipe X" 变成 "Triumphant 路由 Recipe X"
+  - `MoodName` 字符串数组同步
+- **风险**:**高**(同 §1.18)
 
 ### 1.5 BandRole 枚举 ↔ Roster / Conductor / CastingEngine / MidiConverter / MusicianRegistry
 

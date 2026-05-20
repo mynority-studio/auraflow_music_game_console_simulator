@@ -682,6 +682,17 @@ export interface ArrangedTrack {
 
 // --- Tonality 数值枚举 ---
 // Harmonic_Minor / Phrygian：DarkSynth / Metal / Flamenco / Neoclassical 常用调式扩展。
+/**
+ * C++ Porting Guide:
+ *   enum class Tonality : uint8_t {
+ *     Major = 0, Minor = 1, Major_Pentatonic = 2, Minor_Pentatonic = 3,
+ *     Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8,
+ *     Harmonic_Minor = 9, Phrygian = 10,
+ *   };
+ *
+ * 数值锁定 — SCALE_INTERVALS[tonality] 数组下标依赖,改顺序破 golden seed。
+ * Cross-sync:无单独条目(变动需同步 SCALE_INTERVALS + TonalityName)。
+ */
 export enum Tonality {
     Major = 0, Minor = 1, Major_Pentatonic = 2, Minor_Pentatonic = 3,
     Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8,
@@ -716,6 +727,24 @@ SCALE_INTERVALS[Tonality.Harmonic_Minor]   = [0, 2, 3, 5, 7, 8, 11];
 SCALE_INTERVALS[Tonality.Phrygian]         = [0, 1, 3, 5, 7, 8, 10];
 
 // --- ChordQuality 数值枚举 ---
+/**
+ * C++ Porting Guide:
+ *   enum class ChordQuality : uint8_t {
+ *     Major = 0, Minor = 1, Diminished = 2, Diminished7 = 3, Augmented = 4,
+ *     Dominant7 = 5, Minor7 = 6, Major7 = 7, HalfDiminished = 8,
+ *     Sus4 = 9, Dominant7Sus4 = 10, Add9 = 11, Minor9 = 12, Major9 = 13,
+ *     Dominant9 = 14, Minor11 = 15, Dominant13 = 16,
+ *   };
+ *
+ * 数值锁定 — 改顺序需同步:
+ *   - CHORD_INTERVALS[quality]
+ *   - CHORD_SCALE_INTERVALS[quality]
+ *   - CHORD_SCALE_NAME[quality]  ← Cross-sync §1.4 应登记此
+ *   - ChordQualityName[quality]
+ *   - CQ_IS_MINOR / MAJOR / DOM / DIM bitmask
+ *   - VoicingProcessor.deriveVoiceRole interval 6/9 消歧
+ * Cross-sync §1.4。
+ */
 export enum ChordQuality {
     Major = 0, Minor = 1, Diminished = 2, Diminished7 = 3, Augmented = 4,
     Dominant7 = 5, Minor7 = 6, Major7 = 7, HalfDiminished = 8,
@@ -829,6 +858,21 @@ CHORD_SCALE_NAME[ChordQuality.Minor11]        = 'Dorian';
 CHORD_SCALE_NAME[ChordQuality.Dominant13]     = 'Mixolydian';
 
 // --- SectionType 数值枚举 ---
+/**
+ * C++ Porting Guide:
+ *   enum class SectionType : uint8_t {
+ *     Intro = 0, Verse = 1, PreChorus = 2, Chorus = 3, Bridge = 4,
+ *     Outro = 5, Break = 6, Breakdown = 7, BuildUp = 8, Drop = 9,
+ *     PreOutro = 10, Solo_Bridge = 11,
+ *   };
+ *
+ * 数值锁定 — 改顺序需同步:
+ *   - Conductor CONDUCTOR_MASK_BY_SECTION_TYPE 表(按 sectionType 索引)
+ *   - VoicingMask.computeBaseMask switch case 覆盖
+ *   - SectionTypeName 字符串映射
+ *   - FractalStructureEngine / formTemplate 段落输出
+ * Cross-sync §1.3。
+ */
 export enum SectionType {
     Intro = 0, Verse = 1, PreChorus = 2, Chorus = 3, Bridge = 4,
     Outro = 5, Break = 6, Breakdown = 7, BuildUp = 8, Drop = 9,
@@ -931,6 +975,26 @@ export enum OutroStrategy {
  *   Atmosphere  — 氛围声部（Pad/合唱/弦乐铺底）
  *
  * 历史命名兼容：旧 `RoleType.AccompInst` → 新 `BandRole.Accomp`；旧 `BandSlot` 字符串 union 已废弃。
+ */
+/**
+ * C++ Porting Guide:
+ *   TS 端用 string enum(便于 JSON 序列化 + debug),但 C 端必须用 uint8_t 对齐:
+ *     enum class BandRole : uint8_t {
+ *       Vocal = 0, MainInst = 1, Accomp = 2, Bass = 3, Drums = 4, Atmosphere = 5,
+ *     };
+ *
+ * 跨端转换表(必须严格维护):
+ *   string ↔ uint8_t:
+ *     "vocal" ↔ 0 / "mainInst" ↔ 1 / "accomp" ↔ 2 / "bass" ↔ 3 / "drums" ↔ 4 / "atmosphere" ↔ 5
+ *
+ * 数值锁定 — 改值需同步:
+ *   - Conductor rosterMask 构造 switch + MASK_* 常量
+ *   - pipeline/index.ts buildDefaultRoster 默认填充
+ *   - CastingEngine 决策路由
+ *   - audio/MidiConverter channel 分配 + bandRoleToTrackKeys
+ *   - idioms/MusicianRegistry musician.eligibleRoles
+ *   - app_integration_rule.md §3 BandRole 取值文档
+ * Cross-sync §1.5。
  */
 export enum BandRole {
     Vocal = 'vocal',
