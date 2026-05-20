@@ -39,9 +39,9 @@ import {
     VoiceRole,
 } from '../types';
 import type { VoicedPitch } from '../types';
-import type { RenderContext } from '../pipeline/RenderContext';
-import { applyVoicingMask } from '../pipeline/VoicingMask';
-import { filterGridByDensity } from '../pipeline/RhythmMask';
+import type { RenderContext } from '../ir/RenderContext';
+import { applyVoicingMask } from './VoicingMask';
+import { filterGridByDensity } from './RhythmMask';
 import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpers';
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';

@@ -31,7 +31,7 @@ import {
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
     CHORD_SCALE_INTERVALS,
 } from '../types';
-import type { RenderContext, WeatherSampler } from '../pipeline/RenderContext';
+import type { RenderContext, WeatherSampler } from '../ir/RenderContext';
 import { StyleId } from '../config/StyleFlags';
 import { getChordTonePCs } from '../data/ScaleHelpers';
 import {

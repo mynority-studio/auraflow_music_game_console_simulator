@@ -14,7 +14,7 @@ import {
 import {
     TextureRecipeId, PIANO_TEXTURE_RECIPES,
 } from '../src/core/generation/data/PianoTextureRecipes';
-import { createDefaultRenderContext } from '../src/core/generation/pipeline/RenderContext';
+import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
 const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });

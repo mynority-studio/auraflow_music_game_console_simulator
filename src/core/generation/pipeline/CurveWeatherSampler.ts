@@ -35,7 +35,7 @@ import {
     ActiveMusician, MusicianPersona, SectionMetadata, SectionType,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
-import type { WeatherSampler, WeatherSnapshot } from './RenderContext';
+import type { WeatherSampler, WeatherSnapshot } from '../ir/RenderContext';
 
 // ============================================================
 // 常量 — Style / Section anchor 表(Phase 2 凭直觉值,待听感调)

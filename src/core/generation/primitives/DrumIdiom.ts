@@ -48,7 +48,7 @@
 
 import { PRNGManager } from '../../utils/PRNG';
 import { NoteData, SectionMetadata } from '../types';
-import type { RenderContext } from '../pipeline/RenderContext';
+import type { RenderContext } from '../ir/RenderContext';
 
 // ============================================================
 // GM Drum Map 物理键位（不可移调，K-8 第三空间）

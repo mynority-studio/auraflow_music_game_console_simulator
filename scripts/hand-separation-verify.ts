@@ -8,7 +8,7 @@ import {
     PianoAccompIdiom, LHTexture, RHTexture, CoordMode, PianoAccompParams,
 } from '../src/core/generation/primitives/PianoAccompIdiom';
 import { getDrop2Voicing } from '../src/core/generation/data/ScaleHelpers';
-import { createDefaultRenderContext } from '../src/core/generation/pipeline/RenderContext';
+import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
 const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });

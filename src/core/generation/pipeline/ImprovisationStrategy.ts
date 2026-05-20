@@ -29,7 +29,7 @@ import {
     GeneratedChord, MusicianPersona, NoteData, SectionMetadata, SectionType,
     ActiveMusician, BandRole, ChordQuality, CHORD_INTERVALS, CHORD_SCALE_INTERVALS, Tonality,
 } from '../types';
-import type { WeatherSampler } from './RenderContext';
+import type { WeatherSampler } from '../ir/RenderContext';
 import {
     NCT_APPROACH_PATTERNS, ApproachPatternId, pickApproachPattern,
 } from '../data/NCTApproachPatterns';

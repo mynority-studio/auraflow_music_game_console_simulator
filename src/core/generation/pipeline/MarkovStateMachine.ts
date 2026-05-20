@@ -30,7 +30,7 @@
 import {
     BandPlan, BandRole, SectionMetadata, SectionType, ActiveMusician,
 } from '../types';
-import type { WeatherSampler } from './RenderContext';
+import type { WeatherSampler } from '../ir/RenderContext';
 
 // ============================================================
 // 常量

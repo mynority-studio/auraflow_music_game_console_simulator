@@ -19,7 +19,7 @@ import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry'
 import { BandRole, SectionType } from '../src/core/generation/types';
 import { RHTexture, LHTexture, CoordMode, PianoAccompParams } from '../src/core/generation/primitives/PianoAccompIdiom';
 import { PianoAccompIdiom } from '../src/core/generation/primitives/PianoAccompIdiom';
-import { createDefaultRenderContext } from '../src/core/generation/pipeline/RenderContext';
+import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 let failures = 0;
 function assert(cond: boolean, msg: string) {

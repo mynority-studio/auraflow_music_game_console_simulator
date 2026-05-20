@@ -27,7 +27,7 @@
 // ============================================================
 
 import { NoteData } from '../types';
-import type { WeatherSampler } from './RenderContext';
+import type { WeatherSampler } from '../ir/RenderContext';
 
 // ============================================================
 // 常量

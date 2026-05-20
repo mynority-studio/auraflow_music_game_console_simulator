@@ -27,7 +27,7 @@
 import {
     BandPlan, BandRole, DensityLevel, SectionMetadata, ActiveMusician, SectionType,
 } from '../types';
-import type { WeatherSampler } from './RenderContext';
+import type { WeatherSampler } from '../ir/RenderContext';
 
 // ============================================================
 // K → density 量化映射(7 bin)

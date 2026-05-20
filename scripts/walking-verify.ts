@@ -14,7 +14,7 @@ import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry'
 import { BandRole } from '../src/core/generation/types';
 import { WalkPatternId, WALK_PATTERNS } from '../src/core/generation/data/BassWalkPatterns';
 import { MoodName } from '../src/core/generation/pipeline/MoodRouter';
-import { createDefaultRenderContext } from '../src/core/generation/pipeline/RenderContext';
+import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
 const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });

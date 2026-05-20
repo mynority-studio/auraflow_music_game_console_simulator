@@ -35,7 +35,7 @@
 import {
     GeneratedChord, SectionMetadata, SectionType, VoiceRole, VoicedPitch,
 } from '../types';
-import type { WeatherSampler } from './RenderContext';
+import type { WeatherSampler } from '../ir/RenderContext';
 
 // ============================================================
 // VoicingMask 类型与常量

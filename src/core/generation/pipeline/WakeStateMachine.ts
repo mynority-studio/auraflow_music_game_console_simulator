@@ -24,7 +24,7 @@
 import {
     ActiveMusician, BandPlan, BandRole, MusicianPersona, SectionMetadata,
 } from '../types';
-import type { WeatherSampler } from './RenderContext';
+import type { WeatherSampler } from '../ir/RenderContext';
 
 // ============================================================
 // 偏移上限(per-song deterministic ±X)

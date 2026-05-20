@@ -32,8 +32,8 @@
  */
 
 import { AtmosphereConfig, GeneratedChord, NoteData } from '../types';
-import type { RenderContext } from '../pipeline/RenderContext';
-import { applyVoicingMask } from '../pipeline/VoicingMask';
+import type { RenderContext } from '../ir/RenderContext';
+import { applyVoicingMask } from './VoicingMask';
 
 const EPSILON = 1e-6;
 const MIDI_MAX = 127;
