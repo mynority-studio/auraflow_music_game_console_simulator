@@ -49,6 +49,28 @@ import type {
 } from '../types';
 
 /**
+ * Sacred boundary 哲学 — 标记 NoteData 的"来源",决定它能否被后续 corrections 改写。
+ *
+ * 出处:melodygenerative origin tag(motif / develop / return)。motif 是"真人乐句
+ * 投影",大多数 corrections(LIL lift / magnet / texture collision)应跳过,只有
+ * 架构级例外(Cadence Resolution Definition 4 / Active Divisi)能改它。
+ *
+ * 0 = Motif    神圣动机,corrections 默认跳过(Reconciler / GrooveHumanizer pitch 改写守卫)
+ * 1 = Develop  动机派生 / 公式生成,可自由改写
+ * 2 = Return   架构 cadence rewrite 后的标记(Tier A/B 强制后变成 Return,记录"被改写过")
+ *
+ * 缺省 undefined → 视为 Develop(向后兼容,普通生成路径不需主动标记)。
+ *
+ * C 移植: enum class NoteOrigin : uint8_t { Motif=0, Develop=1, Return=2 };
+ *         在 NoteData 内打包到 flags bitfield 的高 2 bit。
+ */
+export enum NoteOrigin {
+    Motif   = 0,
+    Develop = 1,
+    Return  = 2,
+}
+
+/**
  * C++ Porting Guide:
  * This interface maps directly to a C struct to avoid heap fragmentation:
  * struct NoteData {
@@ -56,6 +78,7 @@ import type {
  *   uint8_t velocity;    // 0-127 (mapped from 0.0-1.0 float if needed)
  *   float onset;         // Beat position
  *   float duration;      // Beat length
+ *   uint8_t origin;      // NoteOrigin enum (Batch 7 — Sacred boundary)
  *   // Optional flags can be packed into a bitfield (uint8_t flags)
  * };
  */
@@ -63,6 +86,15 @@ export interface NoteData { pitch: number; onset: number; duration: number; velo
     /** Phase 6.2 observability — 由 PCFG motif define/recall 自动标记的动机身份标签。仅供 Q+H 监控面板可视化与调试，**不参与音频生成逻辑**。
      *  C 移植：const char*（指向 string intern 池）或 uint8_t enum index。可选字段，普通生成路径为 undefined。 */
     motifName?: string;
+    /**
+     * Batch 7 — Sacred boundary origin 标记。
+     * 缺省 undefined 等价于 Develop(corrections 可自由改写)。
+     * NoteOrigin.Motif 时,Reconciler / GrooveHumanizer 等改 pitch 的模块跳过 — 保护
+     * "真人乐句投影"不被算法 corrections 改坏。
+     * Cadence Resolution(Definition 4)是架构级例外,即使 motif 也被 force(Tier A/B)
+     * 或 preserve-tension(Tier C),并把 origin 改为 Return 记录改写。
+     */
+    origin?: NoteOrigin;
 }
 
 /**

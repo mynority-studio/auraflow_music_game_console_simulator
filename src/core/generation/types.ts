@@ -682,21 +682,32 @@ export interface ArrangedTrack {
 
 // --- Tonality 数值枚举 ---
 // Harmonic_Minor / Phrygian：DarkSynth / Metal / Flamenco / Neoclassical 常用调式扩展。
+// Batch 5 扩展(数值 11-16):Locrian / LydianDominant / PhrygianDominant / Altered /
+//   BebopDominant / BebopMajor — 给 V/X 借用、Altered 主导、爵士 bebop 经过等高级和声路径用。
 /**
  * C++ Porting Guide:
  *   enum class Tonality : uint8_t {
  *     Major = 0, Minor = 1, Major_Pentatonic = 2, Minor_Pentatonic = 3,
  *     Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8,
  *     Harmonic_Minor = 9, Phrygian = 10,
+ *     Locrian = 11, LydianDominant = 12, PhrygianDominant = 13,
+ *     Altered = 14, BebopDominant = 15, BebopMajor = 16,
  *   };
  *
  * 数值锁定 — SCALE_INTERVALS[tonality] 数组下标依赖,改顺序破 golden seed。
  * Cross-sync:无单独条目(变动需同步 SCALE_INTERVALS + TonalityName)。
+ *
+ * Batch 5 新增值仅作为"备用资源"(Batch 1/4 的 // TODO Batch 5 数据条目消化):
+ *   ModalCharacteristics / ScaleGravity / ChordColors 等本批补条目;
+ *   MacroProgressionEngine / FractalStructureEngine 暂不主动选用新 tonality,
+ *   golden seed bit-exact 兼容(新枚举值不进入推演路径)。
  */
 export enum Tonality {
     Major = 0, Minor = 1, Major_Pentatonic = 2, Minor_Pentatonic = 3,
     Blues = 4, Dorian = 5, Mixolydian = 6, Melodic_Minor = 7, Lydian = 8,
-    Harmonic_Minor = 9, Phrygian = 10
+    Harmonic_Minor = 9, Phrygian = 10,
+    Locrian = 11, LydianDominant = 12, PhrygianDominant = 13,
+    Altered = 14, BebopDominant = 15, BebopMajor = 16
 }
 
 export const TonalityName: string[] = [];
@@ -711,6 +722,12 @@ TonalityName[Tonality.Melodic_Minor] = 'Melodic_Minor';
 TonalityName[Tonality.Lydian] = 'Lydian';
 TonalityName[Tonality.Harmonic_Minor] = 'Harmonic_Minor';
 TonalityName[Tonality.Phrygian] = 'Phrygian';
+TonalityName[Tonality.Locrian] = 'Locrian';
+TonalityName[Tonality.LydianDominant] = 'Lydian Dominant';
+TonalityName[Tonality.PhrygianDominant] = 'Phrygian Dominant';
+TonalityName[Tonality.Altered] = 'Altered';
+TonalityName[Tonality.BebopDominant] = 'Bebop Dominant';
+TonalityName[Tonality.BebopMajor] = 'Bebop Major';
 
 /** 音阶音程查找表：SCALE_INTERVALS[tonality] → number[] (半音间隔) */
 export const SCALE_INTERVALS: number[][] = [];
@@ -725,6 +742,13 @@ SCALE_INTERVALS[Tonality.Melodic_Minor]    = [0, 2, 3, 5, 7, 9, 11];
 SCALE_INTERVALS[Tonality.Lydian]           = [0, 2, 4, 6, 7, 9, 11];
 SCALE_INTERVALS[Tonality.Harmonic_Minor]   = [0, 2, 3, 5, 7, 8, 11];
 SCALE_INTERVALS[Tonality.Phrygian]         = [0, 1, 3, 5, 7, 8, 10];
+// Batch 5 新增:
+SCALE_INTERVALS[Tonality.Locrian]          = [0, 1, 3, 5, 6, 8, 10];          // 7th mode of major
+SCALE_INTERVALS[Tonality.LydianDominant]   = [0, 2, 4, 6, 7, 9, 10];          // 4th mode of melodic minor
+SCALE_INTERVALS[Tonality.PhrygianDominant] = [0, 1, 4, 5, 7, 8, 10];          // 5th mode of harmonic minor
+SCALE_INTERVALS[Tonality.Altered]          = [0, 1, 3, 4, 6, 8, 10];          // 7th mode of melodic minor (super locrian)
+SCALE_INTERVALS[Tonality.BebopDominant]    = [0, 2, 4, 5, 7, 9, 10, 11];     // Mixolydian + nat 7 passing(8 音)
+SCALE_INTERVALS[Tonality.BebopMajor]       = [0, 2, 4, 5, 7, 8, 9, 11];      // Ionian + b6 passing(8 音)
 
 // --- ChordQuality 数值枚举 ---
 /**
@@ -734,6 +758,8 @@ SCALE_INTERVALS[Tonality.Phrygian]         = [0, 1, 3, 5, 7, 8, 10];
  *     Dominant7 = 5, Minor7 = 6, Major7 = 7, HalfDiminished = 8,
  *     Sus4 = 9, Dominant7Sus4 = 10, Add9 = 11, Minor9 = 12, Major9 = 13,
  *     Dominant9 = 14, Minor11 = 15, Dominant13 = 16,
+ *     Major13 = 17, Major7Sharp11 = 18, Dom7Flat9 = 19, Dom7Sharp9 = 20,
+ *     Dom7Sharp11 = 21, Dom7Flat13 = 22, Dom7Alt = 23, Dominant11 = 24,
  *   };
  *
  * 数值锁定 — 改顺序需同步:
@@ -744,12 +770,18 @@ SCALE_INTERVALS[Tonality.Phrygian]         = [0, 1, 3, 5, 7, 8, 10];
  *   - CQ_IS_MINOR / MAJOR / DOM / DIM bitmask
  *   - VoicingProcessor.deriveVoiceRole interval 6/9 消歧
  * Cross-sync §1.4。
+ *
+ * Batch 5 扩展(数值 17-24):8 个 jazz 高级和弦类型(maj13 / maj7#11 / 7b9 /
+ * 7#9 / 7#11 / 7b13 / 7alt / 11)。只增不减,新值在末尾,golden seed bit-exact
+ * (MacroProgressionEngine 暂不主动选用新 quality)。
  */
 export enum ChordQuality {
     Major = 0, Minor = 1, Diminished = 2, Diminished7 = 3, Augmented = 4,
     Dominant7 = 5, Minor7 = 6, Major7 = 7, HalfDiminished = 8,
     Sus4 = 9, Dominant7Sus4 = 10, Add9 = 11, Minor9 = 12, Major9 = 13,
-    Dominant9 = 14, Minor11 = 15, Dominant13 = 16
+    Dominant9 = 14, Minor11 = 15, Dominant13 = 16,
+    Major13 = 17, Major7Sharp11 = 18, Dom7Flat9 = 19, Dom7Sharp9 = 20,
+    Dom7Sharp11 = 21, Dom7Flat13 = 22, Dom7Alt = 23, Dominant11 = 24
 }
 
 export const ChordQualityName: string[] = [];
@@ -770,6 +802,15 @@ ChordQualityName[ChordQuality.Major9] = 'Major9';
 ChordQualityName[ChordQuality.Dominant9] = 'Dominant9';
 ChordQualityName[ChordQuality.Minor11] = 'Minor11';
 ChordQualityName[ChordQuality.Dominant13] = 'Dominant13';
+// Batch 5 新增:
+ChordQualityName[ChordQuality.Major13]       = 'Major13';
+ChordQualityName[ChordQuality.Major7Sharp11] = 'Major7Sharp11';
+ChordQualityName[ChordQuality.Dom7Flat9]     = 'Dom7Flat9';
+ChordQualityName[ChordQuality.Dom7Sharp9]    = 'Dom7Sharp9';
+ChordQualityName[ChordQuality.Dom7Sharp11]   = 'Dom7Sharp11';
+ChordQualityName[ChordQuality.Dom7Flat13]    = 'Dom7Flat13';
+ChordQualityName[ChordQuality.Dom7Alt]       = 'Dom7Alt';
+ChordQualityName[ChordQuality.Dominant11]    = 'Dominant11';
 
 /** 和弦音程查找表：CHORD_INTERVALS[quality] → number[] */
 export const CHORD_INTERVALS: number[][] = [];
@@ -790,11 +831,23 @@ CHORD_INTERVALS[ChordQuality.Major9]         = [0, 4, 7, 11, 14];
 CHORD_INTERVALS[ChordQuality.Dominant9]      = [0, 4, 7, 10, 14];
 CHORD_INTERVALS[ChordQuality.Minor11]        = [0, 3, 7, 10, 14, 17];
 CHORD_INTERVALS[ChordQuality.Dominant13]     = [0, 4, 7, 10, 14, 21];
+// Batch 5 新增 jazz 高级和弦:
+CHORD_INTERVALS[ChordQuality.Major13]        = [0, 4, 7, 11, 14, 21];        // 1 3 5 7 9 13
+CHORD_INTERVALS[ChordQuality.Major7Sharp11]  = [0, 4, 7, 11, 18];             // 1 3 5 7 #11(drop 9)
+CHORD_INTERVALS[ChordQuality.Dom7Flat9]      = [0, 4, 7, 10, 13];             // 1 3 5 b7 b9
+CHORD_INTERVALS[ChordQuality.Dom7Sharp9]     = [0, 4, 7, 10, 15];             // 1 3 5 b7 #9(Hendrix chord)
+CHORD_INTERVALS[ChordQuality.Dom7Sharp11]    = [0, 4, 7, 10, 14, 18];         // 1 3 5 b7 9 #11(Lydian dom)
+CHORD_INTERVALS[ChordQuality.Dom7Flat13]     = [0, 4, 7, 10, 14, 20];         // 1 3 5 b7 9 b13
+CHORD_INTERVALS[ChordQuality.Dom7Alt]        = [0, 4, 10, 13, 15, 20];        // 1 3 b7 b9 #9 b13(altered stack)
+CHORD_INTERVALS[ChordQuality.Dominant11]     = [0, 5, 7, 10, 14];             // 1 4 5 b7 9(sus11 form 避 11/3 b9 clash)
 
 /** 位掩码：快速分类检查 */
 export const CQ_IS_MINOR = (1 << ChordQuality.Minor) | (1 << ChordQuality.Minor7) | (1 << ChordQuality.Minor9) | (1 << ChordQuality.Minor11);
-export const CQ_IS_MAJOR = (1 << ChordQuality.Major) | (1 << ChordQuality.Major7) | (1 << ChordQuality.Major9);
-export const CQ_IS_DOM   = (1 << ChordQuality.Dominant7) | (1 << ChordQuality.Dominant7Sus4) | (1 << ChordQuality.Dominant9) | (1 << ChordQuality.Dominant13);
+export const CQ_IS_MAJOR = (1 << ChordQuality.Major) | (1 << ChordQuality.Major7) | (1 << ChordQuality.Major9)
+    | (1 << ChordQuality.Major13) | (1 << ChordQuality.Major7Sharp11);
+export const CQ_IS_DOM   = (1 << ChordQuality.Dominant7) | (1 << ChordQuality.Dominant7Sus4) | (1 << ChordQuality.Dominant9) | (1 << ChordQuality.Dominant13)
+    | (1 << ChordQuality.Dom7Flat9) | (1 << ChordQuality.Dom7Sharp9) | (1 << ChordQuality.Dom7Sharp11)
+    | (1 << ChordQuality.Dom7Flat13) | (1 << ChordQuality.Dom7Alt) | (1 << ChordQuality.Dominant11);
 export const CQ_IS_DIM   = (1 << ChordQuality.Diminished) | (1 << ChordQuality.Diminished7) | (1 << ChordQuality.HalfDiminished);
 
 // ============================================================
@@ -836,6 +889,15 @@ CHORD_SCALE_INTERVALS[ChordQuality.Major9]         = [0, 2, 4, 5, 7, 9, 11];
 CHORD_SCALE_INTERVALS[ChordQuality.Dominant9]      = [0, 2, 4, 5, 7, 9, 10];
 CHORD_SCALE_INTERVALS[ChordQuality.Minor11]        = [0, 2, 3, 5, 7, 9, 10];
 CHORD_SCALE_INTERVALS[ChordQuality.Dominant13]     = [0, 2, 4, 5, 7, 9, 10];
+// Batch 5 新增(每个 chord 关联其音乐学最 idiomatic 的 scale):
+CHORD_SCALE_INTERVALS[ChordQuality.Major13]        = [0, 2, 4, 5, 7, 9, 11];  // Ionian
+CHORD_SCALE_INTERVALS[ChordQuality.Major7Sharp11]  = [0, 2, 4, 6, 7, 9, 11];  // Lydian(#11 标志)
+CHORD_SCALE_INTERVALS[ChordQuality.Dom7Flat9]      = [0, 1, 4, 5, 7, 8, 10];  // Phrygian Dominant
+CHORD_SCALE_INTERVALS[ChordQuality.Dom7Sharp9]     = [0, 1, 3, 4, 6, 8, 10];  // Altered
+CHORD_SCALE_INTERVALS[ChordQuality.Dom7Sharp11]    = [0, 2, 4, 6, 7, 9, 10];  // Lydian Dominant
+CHORD_SCALE_INTERVALS[ChordQuality.Dom7Flat13]     = [0, 2, 4, 5, 7, 8, 10];  // Mixolydian b13(Hindu)
+CHORD_SCALE_INTERVALS[ChordQuality.Dom7Alt]        = [0, 1, 3, 4, 6, 8, 10];  // Altered(super locrian)
+CHORD_SCALE_INTERVALS[ChordQuality.Dominant11]     = [0, 2, 4, 5, 7, 9, 10];  // Mixolydian(sus11 形式)
 
 /** quality → 局部音阶可读名（UI / 调试用，索引 = ChordQuality 数值） */
 export const CHORD_SCALE_NAME: string[] = [];
@@ -856,6 +918,15 @@ CHORD_SCALE_NAME[ChordQuality.Major9]         = 'Ionian';
 CHORD_SCALE_NAME[ChordQuality.Dominant9]      = 'Mixolydian';
 CHORD_SCALE_NAME[ChordQuality.Minor11]        = 'Dorian';
 CHORD_SCALE_NAME[ChordQuality.Dominant13]     = 'Mixolydian';
+// Batch 5 新增:
+CHORD_SCALE_NAME[ChordQuality.Major13]        = 'Ionian';
+CHORD_SCALE_NAME[ChordQuality.Major7Sharp11]  = 'Lydian';
+CHORD_SCALE_NAME[ChordQuality.Dom7Flat9]      = 'Phrygian Dominant';
+CHORD_SCALE_NAME[ChordQuality.Dom7Sharp9]     = 'Altered';
+CHORD_SCALE_NAME[ChordQuality.Dom7Sharp11]    = 'Lydian Dominant';
+CHORD_SCALE_NAME[ChordQuality.Dom7Flat13]     = 'Mixolydian';
+CHORD_SCALE_NAME[ChordQuality.Dom7Alt]        = 'Altered';
+CHORD_SCALE_NAME[ChordQuality.Dominant11]     = 'Mixolydian';
 
 // --- SectionType 数值枚举 ---
 /**

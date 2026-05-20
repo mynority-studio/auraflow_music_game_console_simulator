@@ -50,6 +50,7 @@ import {
 } from '../data/PianoTextureRecipes';
 import { MoodId, pickMood, moodToRecipe, pickWalkPattern } from './MoodRouter';
 import { WalkPatternId } from '../data/BassWalkPatterns';
+import { PianoLHPatternId } from '../data/PianoLHPatterns';
 
 const EPSILON = 1e-6;
 const ENERGY_MAX = 10;
@@ -298,26 +299,38 @@ export class CastingEngine {
         let coordMode: CoordMode;
         let lhTexture: LHTexture;
         let walkPatternId: WalkPatternId | undefined;
+        let pianoLhPatternId: PianoLHPatternId | undefined;
         if (bassActive) {
             // A3a：bass 在编 → LH 不再 Tacit 整段静音，改弹 guide tone shell
             coordMode = CoordMode.M7_ShellWithComping;
             lhTexture = LHTexture.ShellVoicing;
         } else {
-            // Solo Piano 模式：
-            //   bouncePreference > 0.5 + groove → M6 Bounce（覆盖 Walking）
-            //   groove section → M1 + L4 Walking Tenths (爵士 solo piano 标志)
-            //   lush section   → M5 Two-Handed Voicing (Bill Evans 风 spread chord)
+            // Solo Piano 模式 — Batch 4 引入真钢琴 LH 习语:
+            //   bouncePreference > 0.5 + groove → M6 Bounce
+            //   特定 mood + groove → M1 + PianoLH(Stride / Boogie / Alberti)
+            //   特定 mood + lush   → M1 + PianoLH(PedalPoint / OpenTenthArp / Alberti)
+            //   其他 groove → M1 + Walking Tenths(bass walking 字母语法)
+            //   其他 lush  → M5 Two-Handed Voicing(Bill Evans spread)
+            const candidatePianoLh = pickPianoLhPattern(mood, isGrooveSection);
             if (isGrooveSection && bouncePreference > 0.5) {
                 coordMode = CoordMode.M6_OomPahBounce;
-                lhTexture = LHTexture.Tacit;  // M6 自己处理 LH
+                lhTexture = LHTexture.Tacit;
+            } else if (candidatePianoLh !== undefined) {
+                // Batch 7C 升级 — 真钢琴 LH 习语 + RH 稀疏 shell stab = M8 Solo Piano Mode
+                //   原 Batch 4 设计:M1 + LHTexture.PianoLH(RH 仍走 recipe)
+                //   现 Batch 7C 设计:M8(RH 改为头一击 shell sustain,跳过 recipe)
+                //   — 真"独奏钢琴"双手协奏,LH 律动 + RH 色彩静态
+                coordMode = CoordMode.M8_SoloPianoMode;
+                lhTexture = LHTexture.PianoLH;
+                pianoLhPatternId = candidatePianoLh;
             } else if (isGrooveSection) {
                 coordMode = CoordMode.M1_SustainedRoot;
                 lhTexture = LHTexture.WalkingTenths;
-                // 改动 B：按 mood × style 路由 walk pattern，让不同情绪的 walking 听感差异化
+                // 改动 B：mood × style 路由 walk pattern,让不同情绪的 walking 听感差异化
                 walkPatternId = pickWalkPattern(mood, ctx.styleId);
             } else {
                 coordMode = CoordMode.M5_TwoHandedVoicing;
-                lhTexture = LHTexture.Tacit;  // M5 自己处理 LH
+                lhTexture = LHTexture.Tacit;
             }
         }
 
@@ -368,6 +381,7 @@ export class CastingEngine {
             mood,
             walkPatternId,
             pianoPedalRatio,
+            pianoLhPatternId,
         };
     }
 
@@ -406,6 +420,43 @@ export class CastingEngine {
 function clamp01(x: number): number {
     if (!Number.isFinite(x)) return 0;
     return x < 0 ? 0 : (x > 1 ? 1 : x);
+}
+
+/**
+ * Batch 4 — Solo Piano 真钢琴 LH 习语路由。
+ *
+ * 仅 Solo Piano(bassActive=false)场景调用。返回 undefined 表示该 mood/section
+ * 组合不走 PianoLH(回落到旧路径:groove → WalkingTenths / lush → M5)。
+ *
+ * 路由表(mood × groove):
+ *   groove + Triumphant   → Stride         (重拍 root + 反拍 chord-stab)
+ *   groove + Dramatic     → BoogieEighth   (蓝调八分滚动)
+ *   groove + Groovy       → BoogieEighth   (蓝调八分滚动)
+ *   groove + WarmIntimate → Alberti        (古典 1-5-3-5 八分循环)
+ *   lush   + Dreamy       → PedalPoint     (持续低音根音)
+ *   lush   + WarmIntimate → OpenTenthArp   (古典慢板大十度琶音)
+ *   lush   + Melancholy   → Alberti        (古典抒情)
+ *   其他 mood/section     → undefined(回落)
+ *
+ * 后续 Batch 5+ 可扩(Neutral/UrgentTension 等);Batch 4 范围内保持保守接入。
+ */
+function pickPianoLhPattern(mood: MoodId, isGrooveSection: boolean): PianoLHPatternId | undefined {
+    if (isGrooveSection) {
+        switch (mood) {
+            case MoodId.Triumphant:   return PianoLHPatternId.Stride;
+            case MoodId.Dramatic:     return PianoLHPatternId.BoogieEighth;
+            case MoodId.Groovy:       return PianoLHPatternId.BoogieEighth;
+            case MoodId.WarmIntimate: return PianoLHPatternId.Alberti;
+            default:                  return undefined;
+        }
+    }
+    // lush section
+    switch (mood) {
+        case MoodId.Dreamy:       return PianoLHPatternId.PedalPoint;
+        case MoodId.WarmIntimate: return PianoLHPatternId.OpenTenthArp;
+        case MoodId.Melancholy:   return PianoLHPatternId.Alberti;
+        default:                  return undefined;
+    }
 }
 
 // ============================================================

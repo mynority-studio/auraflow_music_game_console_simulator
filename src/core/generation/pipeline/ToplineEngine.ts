@@ -73,7 +73,17 @@ import {
     GeneratedChord, NoteData, Tonality, ChordQuality, InstrumentFamily,
     CHORD_INTERVALS, SCALE_INTERVALS, CHORD_SCALE_INTERVALS,
 } from '../types';
+import { NoteOrigin } from '../ir';
 import { TerminalSymbol, TerminalKind } from '../primitives/PCFGGrammarEngine';
+import {
+    CadenceTier,
+    CadenceMode,
+    classifyChordFunction,
+    classifyCadenceTier,
+    getCadenceTargetPcs,
+    snapPitchToCadence,
+    isPitchInTargetPcs,
+} from './CadenceResolver';
 
 const EPSILON = 1e-6;
 const PITCH_CLASS_SIZE = 12;
@@ -107,6 +117,11 @@ interface PitchSlot {
      * targetDegree 已命中时本字段被忽略（优先级低）。
      */
     contourDir: number;
+    /**
+     * Batch 7 — Pass 4 Cadence / Pass 5 Active Divisi Magnet 改写标记。
+     * true 时 build output 阶段把 origin 设为 NoteOrigin.Return(记录"已被架构改写")。
+     */
+    _cadenceRewritten?: boolean;
 }
 
 export interface ToplineInput {
@@ -151,6 +166,16 @@ export interface ToplineInput {
      * 零 PRNG — 保留黄金种子。
      */
     legatoOverlap?: number;
+    /**
+     * Batch 6 — 是否全曲尾段(决定 Cadence Resolution 是否走 Tier A "剧终")。
+     *
+     * - true:最后 chord 是 Tonic 功能 → Tier A 强制落 key root / key 3rd
+     * - false(默认):走 Tier B(句号)/ Tier C(问号)
+     *
+     * 不论 true/false,只要 chords.length > 0,段落末尾音都会经过 CadenceResolver
+     * 的 Tier B/C 处理。runPipeline 仅在最后一段调用时传 true。
+     */
+    isGlobalEnd?: boolean;
 }
 
 export class ToplineEngineError extends Error {
@@ -342,6 +367,40 @@ export class ToplineEngine {
         // family === Pad / Bass / Percussion / Other → no-op（保 grammar duration）
 
         // -----------------------------------------------------------
+        // Pass 4 — Cadence Resolution(Batch 6,纯后处理零 PRNG)
+        //
+        // 扫描最后一个有效 slot,识别其所属 chord 的功能(T / S / D),按 tier 派分:
+        //   isGlobalEnd + T → Tier A(强制 key root/3rd)
+        //   段末 + T        → Tier B(强制 chord 1/3/5)
+        //   段末 + D/S      → Tier C(preserve-tension,已 in contract 不动)
+        //
+        // 仅 chords.length > 0 时触发(避免空段触发越界)。
+        // -----------------------------------------------------------
+        if (input.chords.length > 0) {
+            ToplineEngine.applyCadenceResolution(
+                slots,
+                input.chords,
+                input.tonality,
+                input.isGlobalEnd === true,
+                scalePcMask,
+            );
+        }
+
+        // -----------------------------------------------------------
+        // Pass 5 — Active Divisi Magnet(Batch 7,纯后处理零 PRNG)
+        //
+        // 长音(duration ≥ 1.0 拍)且非 motif 神圣音 → 自动吸到当前 chord 的"vacated
+        // extension"(top color tone)。divisi 哲学:LH 抓 shell,RH/melody 补色彩,
+        // 当 chord 声明的色彩(maj9 的 9 / m11 的 11 / 13 的 13)没被声部覆盖时,
+        // melody 的长音应该填上去。
+        //
+        // 跳过 Pass 4 已经改写的 slot(Cadence 优先级最高)。
+        // -----------------------------------------------------------
+        if (input.chords.length > 0) {
+            ToplineEngine.applyActiveDivisiMagnet(slots, input.chords);
+        }
+
+        // -----------------------------------------------------------
         // 输出 NoteData[]（velocity：chordTone 重，其他中）
         // -----------------------------------------------------------
         const veloLo = input.velocityRange[0];
@@ -362,6 +421,17 @@ export class ToplineEngine {
             };
             // observability：仅当 motifName 存在时才挂字段，保持普通路径的 NoteData 干净
             if (slot.motifName !== undefined) note.motifName = slot.motifName;
+            // Batch 7 — Sacred boundary origin 标记:
+            //   有 motifName(PCFG motif define/recall 路径)→ Motif(神圣)
+            //   slot._cadenceRewritten 标记的(Pass 4 改写)→ Return
+            //   其他 → Develop(默认,无需显式标记,但为下游消费一致仍写入 enum 值)
+            if (slot._cadenceRewritten === true) {
+                note.origin = NoteOrigin.Return;
+            } else if (slot.motifName !== undefined) {
+                note.origin = NoteOrigin.Motif;
+            } else {
+                note.origin = NoteOrigin.Develop;
+            }
             out.push(note);
         }
         return out;
@@ -663,6 +733,149 @@ export class ToplineEngine {
      *   - **零 PRNG** — D-5 序列对齐不变，仅 NoteData.duration 字段值变化。
      *   - **C 可移植** — 双重 for 线性扫描，无 Map/Set，无递归。
      */
+    /**
+     * Batch 6 — Pass 4 Cadence Resolution(纯后处理,零 PRNG)。
+     *
+     * 算法:
+     *   1. 找最后一个非 rest + pitch >= 0 的 slot(段落末尾 melody 音)
+     *   2. 找该 slot 所属 chord(简化:用 chords[length-1])
+     *   3. 用 CadenceResolver 派分 Tier + 取 target PCs + mode
+     *   4. PreserveTension 模式:若 pitch 已在 target PC 集合 → 保留不动
+     *   5. Force 模式 / PreserveTension miss:snap 到 target ∩ scale 最近 pitch
+     *
+     * 零 PRNG / 零 IR 字段新增 / 不破 D-5。
+     */
+    private static applyCadenceResolution(
+        slots: PitchSlot[],
+        chords: GeneratedChord[],
+        tonality: Tonality,
+        isGlobalEnd: boolean,
+        scalePcMask: number,
+    ): void {
+        // (1) 找最后一个有效 slot
+        let lastSlot: PitchSlot | null = null;
+        for (let i = slots.length - 1; i >= 0; i--) {
+            if (slots[i].kind === 'rest') continue;
+            if (slots[i].pitch < 0) continue;
+            lastSlot = slots[i];
+            break;
+        }
+        if (lastSlot === null) return;
+
+        // (2) 找它所属 chord — 优先用 onset 精确定位,fallback chords 末尾
+        let lastChord = ToplineEngine.findChordAt(chords, lastSlot.onset);
+        if (lastChord === null) lastChord = chords[chords.length - 1];
+        if (lastChord === undefined) return;
+
+        // (3) 派分 Tier
+        const chordFunc = classifyChordFunction(lastChord.root);
+        const tier = classifyCadenceTier({
+            isGlobalEnd,
+            isPhraseEnd: true,  // ToplineEngine 是 per-section 调用,段末自然 phrase end
+            chordFunc,
+        });
+        if (tier === CadenceTier.None) return;
+
+        // (4) 取 target pcs + mode
+        const { pcs, mode } = getCadenceTargetPcs(tier, {
+            chord: lastChord,
+            keyTonality: tonality,
+        });
+        if (pcs.length === 0) return;
+
+        // (5) PreserveTension 模式:已在 target → 不动
+        if (mode === CadenceMode.PreserveTension) {
+            if (isPitchInTargetPcs(lastSlot.pitch, pcs)) return;
+        }
+
+        // (6) Snap to target ∩ scale 最近 pitch(snap helper 内部处理 scale 交集)
+        const scalePcs: number[] = [];
+        for (let pc = 0; pc < PITCH_CLASS_SIZE; pc++) {
+            if ((scalePcMask & (1 << pc)) !== 0) scalePcs.push(pc);
+        }
+        const newPitch = snapPitchToCadence(lastSlot.pitch, pcs, scalePcs);
+        if (newPitch !== lastSlot.pitch) {
+            lastSlot.pitch = newPitch;
+            // Sacred boundary — Cadence 改写后标 Return(架构例外:即使 motif 也被改)
+            lastSlot._cadenceRewritten = true;
+        }
+    }
+
+    /**
+     * Batch 7 — Pass 5 Active Divisi Magnet(纯后处理,零 PRNG)。
+     *
+     * 设计哲学(melodygenerative Rule 6):
+     *   - Chord 声明扩展(maj9 含 9 / m11 含 11 / 13 含 13)却没在 voicing 顶端体现时,
+     *     melody 应该补上扩展色彩
+     *   - 触发条件:slot.duration ≥ 1.0 拍(长音,听觉锚点)
+     *   - 例外:motif 神圣保护,跳过(Sacred boundary)
+     *   - 例外:Pass 4 cadence 已改写的 slot,跳过(Cadence 优先级最高)
+     *
+     * 简化实现(auraflow 没有完整 vacated detection):
+     *   - 直接看 chord.quality 是否含 9/11/13 extension(chord type 末尾数字 ≥ 9)
+     *   - 是的话,取 chord 最高扩展 interval 对应的 PC
+     *   - 把长音 pitch 吸到该 PC 在 ±7 半音(perfect 5)内的最近位置
+     *
+     * 零 PRNG / 零 IR 字段新增 / 不破 D-5。
+     */
+    private static applyActiveDivisiMagnet(
+        slots: PitchSlot[],
+        chords: GeneratedChord[],
+    ): void {
+        const LONG_NOTE_BEAT_THRESHOLD = 1.0;
+        const MAX_PULL_SEMITONES = 7;  // perfect 5 内吸,超出放弃
+
+        for (let i = 0; i < slots.length; i++) {
+            const slot = slots[i];
+            if (slot.kind === 'rest') continue;
+            if (slot.pitch < 0) continue;
+            if (slot.duration < LONG_NOTE_BEAT_THRESHOLD) continue;
+
+            // Sacred boundary — motif 不被 magnet 改写
+            if (slot.motifName !== undefined) continue;
+            // Cadence 已改写的 slot — Cadence 优先级最高,跳过
+            if (slot._cadenceRewritten === true) continue;
+
+            const chord = ToplineEngine.findChordAt(chords, slot.onset);
+            if (chord === null) continue;
+
+            // 找 chord 的 top vacated extension interval(simplified):
+            //   maj9 / m9 / dom9 → 9 (interval 2 from root,跨八度 14)
+            //   maj13 / m11 / dom13 → 11/13 (interval 5/9 from root,跨八度 17/21)
+            //   dom7Sharp11 → #11 (interval 6 from root,跨八度 18)
+            //   dom7Flat13 → b13 (interval 8 from root,跨八度 20)
+            //
+            // 取 CHORD_INTERVALS[quality] 的最后一项(总是 chord 的 top extension)
+            const ivs = CHORD_INTERVALS[chord.quality];
+            if (ivs === undefined || ivs.length < 5) continue;  // 三和弦 / 7 和弦无 vacated extension
+            const topExtInterval = ivs[ivs.length - 1];
+            const rootPc = (((chord.root | 0) % PITCH_CLASS_SIZE) + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE;
+            const targetPc = (rootPc + topExtInterval) % PITCH_CLASS_SIZE;
+
+            const currentPc = (((slot.pitch % PITCH_CLASS_SIZE) + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE);
+            if (currentPc === targetPc) continue;  // 已经在 target,无需改
+
+            // 找 ±MAX_PULL_SEMITONES 范围内最近的 targetPc pitch
+            const lo = slot.pitch - MAX_PULL_SEMITONES;
+            const hi = slot.pitch + MAX_PULL_SEMITONES;
+            let best = slot.pitch;
+            let bestDist = MAX_PULL_SEMITONES + 1;
+            for (let p = lo; p <= hi; p++) {
+                const pc = (((p % PITCH_CLASS_SIZE) + PITCH_CLASS_SIZE) % PITCH_CLASS_SIZE);
+                if (pc !== targetPc) continue;
+                const dist = Math.abs(p - slot.pitch);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = p;
+                }
+            }
+            if (bestDist <= MAX_PULL_SEMITONES && best !== slot.pitch) {
+                slot.pitch = best;
+                slot._cadenceRewritten = true;  // 标记"已被 magnet 改写"(享受 Cadence 同款 Return tag)
+            }
+        }
+    }
+
     private static applyPianoPedal(
         slots: PitchSlot[],
         chords: GeneratedChord[],

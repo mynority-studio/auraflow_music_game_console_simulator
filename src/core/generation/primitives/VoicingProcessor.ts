@@ -42,6 +42,7 @@ import {
 } from '../types';
 import type { VoicedPitch } from '../types';
 import { WeightedPitchSelector } from './WeightedPitchSelector';
+import { VoicingDictId, lookupPianoVoicing } from '../data/PianoVoicingDictionary';
 
 // ============================================================
 // 共享常量
@@ -144,6 +145,15 @@ export interface RootlessVoicerInput {
     rangeHi?: number;
     /** RH 下界,默认 max(anchorPitch, lhTopPitch + 3) */
     rangeLo?: number;
+    /**
+     * Batch 3:hand-tuned voicing 字典选择(JazzRootless / Pop / Rnb / Blues)。
+     * 提供时优先查 PIANO_VOICING_DICTIONARY[dictId][chord.quality]:
+     *   - 命中:用 dict intervals(Bill Evans / Glasper / 等校准过的具体音组合),
+     *           跳过 colorBias 阶梯抽取 + minor 9th 撞音过滤(dict 已手调过)
+     *   - 未命中:回落公式算法(与不传 dictId 行为完全一致)
+     * 缺省 undefined → 走公式算法(向后兼容,bit-exact 旧行为)。
+     */
+    dictId?: VoicingDictId;
 }
 
 /**
@@ -809,12 +819,18 @@ export class VoicingProcessor {
     /**
      * 构造 Rootless 右手 voicing(原 buildRootlessVoicing)。
      *
-     * 算法(D-1 零 PRNG):
-     *   1. 取 chord tone PC 集(无 root)→ 3rd / 5th / 7th 等
-     *   2. 按 colorBias 决定加哪些扩展(9 / 13 / 11)
-     *   3. 过 minor 9th 撞音 filter(伯克利 avoid-note)
-     *   4. listen LH:与 lhPcSet 同 PC 的 voice 强制升到 lhTopPitch + 12 以上
-     *   5. 放置到 [rangeLo, rangeHi]、anchor 附近,升序 + 去重
+     * 路径:
+     *   - dict-first(Batch 3 新增):dictId 提供 + dict 命中 → 用 hand-tuned intervals,
+     *     仅做 listen LH + 放置 + 去重(跳过 colorBias 阶梯 + m9 撞音过滤)。
+     *     例:JazzRootless dict 的 Major7 = [4, 7, 11, 14] = 3 5 7M 9(Bill Evans A 位)
+     *   - 公式算法(原路径):
+     *     1. 取 chord tone PC 集(无 root)→ 3rd / 5th / 7th 等
+     *     2. 按 colorBias 决定加哪些扩展(9 / 13 / 11)
+     *     3. 过 minor 9th 撞音 filter(伯克利 avoid-note)
+     *     4. listen LH:与 lhPcSet 同 PC 的 voice 强制升到 lhTopPitch + 12 以上
+     *     5. 放置到 [rangeLo, rangeHi]、anchor 附近,升序 + 去重
+     *
+     * D-1 零 PRNG(两条路径都不消费 PRNG)。
      */
     public static buildRootlessRH(input: RootlessVoicerInput): VoicedPitch[] {
         const chord  = input.chord;
@@ -825,6 +841,45 @@ export class VoicingProcessor {
         const lhPcs  = input.lhPcSet      ?? [];
 
         const rootPc = normalizePc(chord.bassOverride !== undefined ? chord.bassOverride : chord.root);
+
+        // ============================================================
+        // Batch 3 — dict-first 路径(优先查 hand-tuned voicing dict)
+        // ============================================================
+        // dictId 显式提供 + dict 命中 → 用 dict intervals[] 直接构造 voicing。
+        // miss / undefined → fall through 到公式算法。
+        // 两条路径都不消费 PRNG,bit-exact 与原版兼容(undefined 时完全不走 dict)。
+        if (input.dictId !== undefined) {
+            const dictIntervals = lookupPianoVoicing(input.dictId, chord.quality);
+            if (dictIntervals !== undefined && dictIntervals.length > 0) {
+                // PC 集合 — dict intervals(已含跨八度信息 14/17/21 等,mod 12 后由
+                // placePcNearAnchor 选最近 octave。色彩高度由 placement 自然处理)
+                const dictPcs: number[] = [];
+                for (let i = 0; i < dictIntervals.length; i++) {
+                    const pc = normalizePc(rootPc + dictIntervals[i]);
+                    if (dictPcs.indexOf(pc) === -1) dictPcs.push(pc);
+                }
+
+                // 放置 + listen LH(同 PC 撞音上移一个八度)
+                const dictPitches: number[] = [];
+                for (let i = 0; i < dictPcs.length; i++) {
+                    const pc = dictPcs[i];
+                    let isLhPc = false;
+                    for (let j = 0; j < lhPcs.length; j++) {
+                        if (lhPcs[j] === pc) { isLhPc = true; break; }
+                    }
+                    const effectiveLo = isLhPc ? Math.max(lo, lhTop + 12) : lo;
+                    const p = placePcNearAnchor(pc, anchor, effectiveLo, hi);
+                    dictPitches.push(p);
+                }
+                dictPitches.sort((a, b) => a - b);
+                return tagVoicing(dedupSortedArray(dictPitches), chord);
+            }
+            // dict miss → 落到下方公式算法(等价于不传 dictId 的行为)
+        }
+
+        // ============================================================
+        // 公式算法路径(未传 dictId 或 dict miss)
+        // ============================================================
         const intervals = CHORD_INTERVALS[chord.quality] ?? [0, 4, 7];
         const qBit   = 1 << chord.quality;
 

@@ -45,6 +45,7 @@
  */
 
 import type { NoteData } from '../ir';
+import { NoteOrigin } from '../ir';
 
 /** 浮点 onset 比较 epsilon — 同 D-4 约束 */
 const EPSILON = 1e-6;
@@ -259,6 +260,10 @@ export class Reconciler {
             for (let n = 0; n < targetTrack.length; n++) {
                 const note = targetTrack[n];
                 if (Math.abs(note.onset - issue.startBeat) > LIL_ONSET_WINDOW) continue;
+                // Batch 7 — Sacred boundary 守卫:motif 来源的音不允许 LIL lift。
+                // 原因:LIL lift 跨八度改 pitch,会破坏 motif 投影的 interval-pattern 完整性。
+                // 这种 violation 留作 unresolved,后续由 mixing / lead 选择降低 damping ratio 弥补。
+                if (note.origin === NoteOrigin.Motif) continue;
                 // 检测 note 与 bass 是否仍构成 m9/m2 — 解析需要 bass pitch
                 // 简化:任何 upper track note 在窗口内 + 与该段任一 bass note 间距 1/13 半音,即提
                 let isViolating = false;

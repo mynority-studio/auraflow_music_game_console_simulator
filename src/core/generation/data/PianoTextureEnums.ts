@@ -29,6 +29,14 @@ export enum LHTexture {
     WalkingTenths = 4,
     /** L8 — 不弹（让位给独立 Bass 轨） */
     Tacit = 8,
+    /**
+     * L16 — Piano LH Pattern：Batch 4 新增的钢琴 LH 专属习语
+     * (Alberti / Stride / BoogieEighth / OpenTenthArp / PedalPoint)。
+     * 配套 params.pianoLhPatternId(PianoLHPatternId enum)选具体 pattern。
+     * 仅 Solo Piano(bassActive=false)场景启用 — 真正的钢琴左手语汇,
+     * 替代复用电贝斯 walking 的兜底方案。
+     */
+    PianoLH = 16,
 }
 
 /** 右手织体 */
@@ -57,4 +65,17 @@ export enum CoordMode {
      * 监听 LH 占用的 PC 集合避免 1 octave 内同音堆叠（"listen" 协同）。
      */
     M7_ShellWithComping = 7,
+    /**
+     * M8 — Solo Piano Mode(Batch 7C):真"独奏钢琴"模式。
+     *
+     * 设计哲学(melodygenerative divisi):
+     *   - LH 走真钢琴 LH 习语(Alberti / Stride / Boogie / OpenTenth / Pedal)— 节奏推进
+     *   - RH 每 chord 头一击 shell(3 / 5 / 7,Bill Evans rootless 风) — 和声色彩静态衬底
+     *   - 跳过 recipe / mutator / Drop-2 / sparsity / lick — 这些是"乐队 comping"导向,
+     *     与"独奏钢琴 + LH 节奏"语境冲突
+     *   - 配合 Active Divisi Magnet:non-cadence 长音吸到 chord top extension
+     *
+     * 仅 Solo Piano(bassActive=false)场景启用。需要 params.pianoLhPatternId 配套。
+     */
+    M8_SoloPianoMode = 8,
 }

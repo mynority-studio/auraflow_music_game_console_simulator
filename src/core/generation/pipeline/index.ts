@@ -137,6 +137,9 @@ export function runPipeline(
         voiceLeadingConfig: bundle.voiceLeading,
         // V4.2c — 注入风格进行池（70% 概率走 pool 路径 + 跳过 4 道变异门）
         progressionPool: style.harmony,
+        // Batch 5.2 — 启用 DYNAMIC_TSD_DICTIONARY:Gate 4 走 jazz 高级和弦池
+        // (Dom7Flat9 / Dom7Sharp11 / Major13 / Dom7Alt 等 idiomatic 变体)
+        styleId,
         // chordsPerSection 全局值不再设置 — 每个 section.chordsHint 接管。
     });
 

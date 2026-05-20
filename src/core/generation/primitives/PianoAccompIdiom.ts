@@ -35,7 +35,7 @@
 import {
     GeneratedChord, NoteData,
     ChordQuality, CQ_IS_MAJOR, CQ_IS_DOM, CQ_IS_MINOR, CQ_IS_DIM,
-    CHORD_SCALE_INTERVALS,
+    CHORD_SCALE_INTERVALS, CHORD_INTERVALS,
     VoiceRole,
 } from '../types';
 import type { VoicedPitch } from '../types';
@@ -46,6 +46,13 @@ import { getDrop2Voicing, snapToPool, getChordTonePCs } from '../data/ScaleHelpe
 import { pickLickDeterministic, Lick } from '../idioms/LickDictionary';
 import { SyncopationEvaluator } from './SyncopationEvaluator';
 import { VoicingProcessor } from './VoicingProcessor';
+import { VoicingDictId } from '../data/PianoVoicingDictionary';
+import {
+    PianoLHPatternId,
+    PIANO_LH_PATTERNS,
+    PianoLHStep,
+    resolveLHToneInterval,
+} from '../data/PianoLHPatterns';
 import {
     TextureRecipeId,
     getPianoTextureRecipe,
@@ -199,6 +206,15 @@ export interface PianoAccompConfig {
      * 阻尼器踏板系数 ∈ [0, 1] —— 来自 musician.persona.pianoPedalRatio。
      */
     pianoPedalRatio?: number;
+    /**
+     * Batch 4(Piano LH Pattern):钢琴 LH 专属习语 ID(Alberti / Stride / Boogie /
+     * OpenTenthArp / PedalPoint)。
+     *
+     * 仅在 lhTexture === LHTexture.PianoLH 时生效。CastingEngine 在 Solo Piano
+     * (bassActive=false)+ 特定 mood/section 时路由设置此字段;其他场景维持
+     * walkPatternId(BassWalkPatterns 字母语法)路径。
+     */
+    pianoLhPatternId?: PianoLHPatternId;
 }
 
 /**
@@ -331,6 +347,14 @@ export class PianoAccompIdiom {
                 continue;
             }
 
+            // Batch 7C — M8 Solo Piano Mode 独占分支:
+            //   LH 走 pianoLhPatternId(Batch 4 真钢琴习语)+ RH 头一击 shell sustain。
+            //   跳过 recipe / mutator / Drop-2 / sparsity / lick(乐队 comping 导向不适合独奏)。
+            if (effectiveParams.coordMode === CoordMode.M8_SoloPianoMode) {
+                renderM8SoloPianoMode(out, chord, effectiveParams);
+                continue;
+            }
+
             // M6 Oom-Pah Bounce 独占分支 — LH 强拍 root/5 + RH 反拍 chord stab
             if (effectiveParams.coordMode === CoordMode.M6_OomPahBounce) {
                 let bounceVoicing: number[] = [];
@@ -408,11 +432,15 @@ export class PianoAccompIdiom {
             let rhVoicing: number[];
 
             if (voicingMode === 'rootless') {
+                // Batch 3 — 接 hand-tuned Bill Evans A 位字典(JazzRootless dict-first)。
+                // dict 命中 chord.quality → 用 [3+5+7+9 / 3+13+b7+9 / b3+b7+9+11] 等
+                // listening-validated 具体音组合;dict miss → 回落 colorBias 公式算法。
                 let rootlessTagged = VoicingProcessor.buildRootlessRH({
                     chord,
                     colorBias: voicingSpan,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
+                    dictId: VoicingDictId.JazzRootless,
                 });
                 // Phase 1b 信息遮罩(用户决策:rootless 3rd+7th 被 mask 后降级 root+5th 双音)
                 if (chord.voicingMask !== undefined) {
@@ -501,6 +529,9 @@ export class PianoAccompIdiom {
                         } else {
                             lastLhBass = renderLHWalkingTenths(out, chord, nextChord, effectiveParams, lastLhBass);
                         }
+                    } else if (effectiveParams.lhTexture === LHTexture.PianoLH) {
+                        // Batch 4 — Solo Piano 真钢琴 LH 习语(Alberti / Stride / Boogie / OpenTenth / Pedal)
+                        renderLHPianoPattern(out, chord, effectiveParams);
                     }
                 }
                 continue;  // voicePattern 分支已完成本和弦渲染，跳过下方 grid 路径
@@ -565,6 +596,9 @@ export class PianoAccompIdiom {
                     } else {
                         lastLhBass = renderLHWalkingTenths(out, chord, nextChord, effectiveParams, lastLhBass);
                     }
+                } else if (effectiveParams.lhTexture === LHTexture.PianoLH) {
+                    // Batch 4 — Solo Piano 真钢琴 LH 习语
+                    renderLHPianoPattern(out, chord, effectiveParams);
                 }
                 // L8 Tacit：跳过
             }
@@ -1103,6 +1137,78 @@ function renderLHWalkPattern(
     }
 
     return currentLast;
+}
+
+// ============================================================
+// 内部：Batch 4 — 钢琴 LH 习语渲染(Alberti / Stride / Boogie / OpenTenth / Pedal)
+// ============================================================
+//
+// 与 renderLHWalkPattern(贝斯字母语法)的区别:
+//   - renderLHWalkPattern:WalkRule 字母语法 + placeBassNear(8 度自由选)
+//   - renderLHPianoPattern:固定 16-step grid + 显式 octaveShift,语义是真钢琴 LH
+//
+// 算法:
+//   1. 从 chord.voicing[0](SATB bass voice)派生 octaveBase = floor(/12)*12
+//   2. 按 pattern.steps 循环消费 chord 内时长
+//   3. 每个非 null step:
+//      - 对 step.tones 每个 LHTone → resolveLHToneInterval(quality, tone)
+//      - pitch = octaveBase + ((rootPc + interval) % 12) + step.octaveShift
+//      - 多 tone 同时发声(stride 反拍 chord-stab)
+//   4. velocity = base * step.velocityScale
+//
+// PRNG = 0(纯网格)。仅 Solo Piano 场景(bassActive=false + lhTexture=PianoLH)触发。
+
+function renderLHPianoPattern(
+    out: NoteData[],
+    chord: GeneratedChord,
+    params: PianoAccompParams,
+): void {
+    if (params.pianoLhPatternId === undefined) return;
+    if (!chord.voicing || chord.voicing.length === 0) return;
+    const chordDur = chord.endBeat - chord.startBeat;
+    if (chordDur <= EPSILON) return;
+
+    const pattern = PIANO_LH_PATTERNS[params.pianoLhPatternId];
+    if (pattern === undefined) return;
+
+    const STEP_LEN = 0.25;  // 16-step grid 内每 step = 0.25 拍(16 分音符)
+    const PATTERN_LEN = pattern.steps.length;
+
+    // 让 pattern 跟着 song bar 对齐(从 chord 起始 step 起算)
+    const startStep = Math.floor(chord.startBeat / STEP_LEN + 0.5);
+    const totalSteps = Math.floor(chordDur / STEP_LEN + 0.5);
+
+    const bassAnchor = chord.voicing[0];
+    const octaveBase = Math.floor(bassAnchor / 12) * 12;
+    const rootPc = ((chord.root % 12) + 12) % 12;
+
+    const rhVelocity = computeVelocity(params.velocityRange, params.intensityScale);
+    const baseVel = rhVelocity * LH_VELOCITY_SCALE;
+
+    for (let s = 0; s < totalSteps; s++) {
+        const step: PianoLHStep | null = pattern.steps[(startStep + s) % PATTERN_LEN];
+        if (step === null) continue;
+
+        const onset = chord.startBeat + s * STEP_LEN;
+        const remain = chord.endBeat - onset;
+        const dur = step.duration < remain ? step.duration : remain;
+        if (dur <= EPSILON) continue;
+
+        let vel = baseVel * step.velocityScale;
+        if (vel > 1) vel = 1;
+        if (vel < 0) vel = 0;
+
+        for (let t = 0; t < step.tones.length; t++) {
+            const interval = resolveLHToneInterval(chord.quality, step.tones[t]);
+            const pitch = octaveBase + ((rootPc + interval) % 12) + step.octaveShift;
+            out.push({
+                pitch,
+                onset,
+                duration: dur,
+                velocity: vel,
+            });
+        }
+    }
 }
 
 /**
@@ -1667,6 +1773,74 @@ function renderM5TwoHandedVoicing(
             duration: dur,
             velocity,
         });
+    }
+}
+
+// ============================================================
+// 内部:Batch 7C — M8 Solo Piano Mode 渲染
+// ============================================================
+//
+// 设计:真"独奏钢琴"双手协奏(melodygenerative divisi 哲学落地)
+//   LH — pianoLhPatternId(Batch 4 习语):Alberti / Stride / Boogie / OpenTenth / Pedal
+//        节奏推进 + 真钢琴语汇,替代电贝斯 walking 风的兜底
+//   RH — 每 chord 头一击 shell:取 chord.voicing slice(1, 4 voice 上限)
+//        + duration = chord 时长(sustain 整段),velocity 略轻于 RH recipe
+//        和声色彩静态衬底,让 LH 律动主导
+//
+// 跳过:recipe / mutator / Drop-2 / sparsity / anticipation / lick(乐队 comping 流程)
+//
+// PRNG = 0(LH 习语 + RH shell stab 都是决定性 grid)。
+// 仅 Solo Piano + pianoLhPatternId 提供时启用。
+
+const M8_RH_VELOCITY_SCALE = 0.75;   // RH 比 M5 spread 略轻 — 让 LH 律动主导
+
+function renderM8SoloPianoMode(
+    out: NoteData[],
+    chord: GeneratedChord,
+    params: PianoAccompParams,
+): void {
+    if (!chord.voicing || chord.voicing.length < 2) return;
+    const dur = chord.endBeat - chord.startBeat;
+    if (dur <= EPSILON) return;
+
+    // RH:取 chord.voicing slice(1)(去 bass voice),最多 4 voice 作为 shell stab
+    const rhVoicing: number[] = [];
+    for (let v = 1; v < chord.voicing.length && rhVoicing.length < 4; v++) {
+        if (chord.voicing[v] >= RH_MIN_PITCH) rhVoicing.push(chord.voicing[v]);
+    }
+    // Voicing 空时兜底:用 chord literal 3/5(rootless shell)
+    if (rhVoicing.length === 0) {
+        const intervals = CHORD_INTERVALS[chord.quality];
+        if (intervals !== undefined) {
+            const rootPc = (((chord.root | 0) % 12) + 12) % 12;
+            const anchorOctave = 60;  // C4 中音区作为 RH 锚
+            for (let i = 1; i < intervals.length && rhVoicing.length < 3; i++) {
+                const pc = (rootPc + intervals[i]) % 12;
+                rhVoicing.push(anchorOctave + pc);
+            }
+        }
+    }
+
+    const rhVelocity = computeVelocity(params.velocityRange, params.intensityScale);
+    const rhVel = rhVelocity * M8_RH_VELOCITY_SCALE;
+
+    // 发射 RH shell — 一击 sustain 整段
+    for (let v = 0; v < rhVoicing.length; v++) {
+        const pitch = rhVoicing[v];
+        if (pitch < 0 || pitch > 127) continue;
+        out.push({
+            pitch,
+            onset: chord.startBeat,
+            duration: dur,
+            velocity: rhVel,
+        });
+    }
+
+    // LH — 优先 pianoLhPatternId(Batch 4 真钢琴习语),fallback Sustained Root
+    if (params.pianoLhPatternId !== undefined) {
+        renderLHPianoPattern(out, chord, params);
+    } else {
+        renderLHSustained(out, chord, params);
     }
 }
 

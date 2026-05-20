@@ -29,6 +29,7 @@ import type { VoiceLeadingConfig } from '../primitives/VoicingProcessor';
 import {
     MacroProgressionEngine, HarmonyRulesConfig,
 } from './MacroProgressionEngine';
+import { StyleId } from '../config/StyleFlags';
 
 // 向后兼容 re-export — style 配置文件继续从 HarmonyCore 导入 VoiceLeadingConfig
 export type { VoiceLeadingConfig };
@@ -44,6 +45,8 @@ export interface HarmonyCoreInput {
     voiceLeadingConfig: VoiceLeadingConfig;
     /** 每段和弦数 — 默认 4 */
     chordsPerSection?: number;
+    /** Batch 5.2 — 透传风格 ID 给 MacroProgressionEngine,启用 DYNAMIC_TSD_DICTIONARY 路径 */
+    styleId?: StyleId;
     /** V4.2c — 风格进行池(来自 styleConfig.harmony)。提供时 MacroProgression 70% 概率从 pool 抽起手 */
     progressionPool?: {
         major: Record<string, string[][]>;
@@ -116,6 +119,7 @@ export class HarmonyCore {
             chordsPerSection: input.chordsPerSection,
             tonality: input.tonality,
             progressionPool: input.progressionPool,
+            styleId: input.styleId,  // Batch 5.2 — 启用 DYNAMIC_TSD 路径
         });
     }
 

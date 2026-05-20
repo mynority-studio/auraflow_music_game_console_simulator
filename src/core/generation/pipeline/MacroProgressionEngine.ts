@@ -39,6 +39,14 @@ import {
     GeneratedChord, SectionMetadata, ChordQuality, Tonality, SectionType,
 } from '../types';
 import { parseNumeral } from '../data/ChordNumeralParser';
+import { StyleId } from '../config/StyleFlags';
+import {
+    TsdFunc,
+    ResolutionTarget,
+    DynamicRule,
+    findDynamicRule,
+    analyzeTargetQuality,
+} from '../data/DynamicTSDDictionary';
 
 // ============================================================
 // 基础类型
@@ -133,6 +141,14 @@ export interface MacroProgressionInput {
         major: Record<string, string[][]>;
         minor: Record<string, string[][]>;
     };
+    /**
+     * Batch 5.2 — 风格 ID。提供时 Gate 4 走 DYNAMIC_TSD_DICTIONARY(jazz 高级和弦池);
+     * 缺省 → Gate 4 走旧 fixed 7→9 升级路径(向后兼容)。
+     *
+     * D-5 保证:接入 dict 不消费额外 PRNG — colorLevel + poolIdx 都从 r4 + chordIndex
+     * 派生(决定性 hash),Gate 4 仍恒消耗 1 次 PRNG。
+     */
+    styleId?: StyleId;
 }
 
 // ============================================================
@@ -383,15 +399,81 @@ export class MacroProgressionEngine {
             }
 
             // ─── Gate 4: Tension Extension ───
-            // 命中 → 把 7 和弦升到 9（Dom7→Dom9 / Maj7→Maj9 / Min7→Min9）
-            //   其他 quality（Sus / HalfDim / Dim / 三和弦）不升级 — 已经够色彩 / 物理上不规整
+            // 命中 → quality 升级到色彩浓厚版本:
+            //   - 缺省路径(无 styleId 或 dict miss):fixed 7→9(Dom7→Dom9 / Maj7→Maj9 / Min7→Min9)
+            //   - Batch 5.2 注入路径(styleId 提供 + DYNAMIC_TSD 命中):走风格 × 功能 × 目标类别
+            //     的 ChordQuality 池(JAZZ 的 7→13/7#11/7alt,RNB 的 maj→maj13/maj7#11 等)
+            //
+            // D-5:Gate 4 始终恒消耗 1 次 PRNG(r4),命中后 colorLevel + poolIdx 都从 r4 +
+            // chordIndex 派生(决定性 hash),不消费额外 PRNG。
             const r4 = PRNGManager.next();
             if (r4 < rules.tensionExtensionProb) {
-                MacroProgressionEngine.upgradeQuality(chord);
+                const nextFuncTag: HarmonicFunction | null = (i + 1 < out.length)
+                    ? functionTags[i + 1] : null;
+                const upgraded = input.styleId !== undefined
+                    ? MacroProgressionEngine.tryDynamicTsdUpgrade(
+                        chord, funcTag, nextChord, nextFuncTag, input.styleId, r4, i, rules.tensionExtensionProb,
+                    )
+                    : false;
+                if (!upgraded) {
+                    // Fallback:旧 fixed 7→9 升级(向后兼容)
+                    MacroProgressionEngine.upgradeQuality(chord);
+                }
             }
         }
 
         return out;
+    }
+
+    // ─────────────── Batch 5.2 helpers ───────────────
+
+    /**
+     * Gate 4 — DYNAMIC_TSD 路径(jazz 高级和弦池)。
+     *
+     * 算法:
+     *   1. analyzeTargetQuality(funcTag, nextFuncTag, nextChord.quality) → target
+     *   2. findDynamicRule(styleId, funcTag, target) → DynamicRule | null
+     *   3. rule 为 null → 返回 false(调用方走 fallback 旧升级)
+     *   4. colorLevel = floor((r4 / triggerProb) * 3) ∈ [0, 2]
+     *   5. poolIdx = ((chordIndex * 31 + funcTag * 17) % poolLen + poolLen) % poolLen
+     *   6. chord.quality 替换为 pool[colorLevel][poolIdx];返回 true
+     *
+     * D-5:零额外 PRNG。
+     */
+    private static tryDynamicTsdUpgrade(
+        chord: GeneratedChord,
+        funcTag: HarmonicFunction,
+        nextChord: GeneratedChord | null,
+        nextFuncTag: HarmonicFunction | null,
+        styleId: StyleId,
+        r4: number,
+        chordIndex: number,
+        triggerProb: number,
+    ): boolean {
+        const currFunc = funcTag as unknown as TsdFunc;     // HarmonicFunction 0/1/2 与 TsdFunc 数值同源
+        const nextFunc: TsdFunc | null = nextFuncTag === null
+            ? null : (nextFuncTag as unknown as TsdFunc);
+        const nextQuality: ChordQuality | null = nextChord !== null ? nextChord.quality : null;
+
+        const target: ResolutionTarget = analyzeTargetQuality(currFunc, nextFunc, nextQuality);
+        const rule: DynamicRule | null = findDynamicRule(styleId, currFunc, target);
+        if (rule === null) return false;
+
+        // colorLevel:把 r4 在 [0, triggerProb) 内的位置归一化到 [0, 3),取 floor
+        const normalized = triggerProb > EPSILON ? (r4 / triggerProb) : 0;
+        let colorLevel = Math.floor(normalized * 3);
+        if (colorLevel < 0) colorLevel = 0;
+        if (colorLevel > 2) colorLevel = 2;
+
+        const pool = rule.levels[colorLevel];
+        if (pool === undefined || pool.length === 0) return false;
+
+        // poolIdx 决定性 hash 派生(零 PRNG)
+        const hash = (chordIndex * 31 + (funcTag | 0) * 17) % pool.length;
+        const poolIdx = ((hash % pool.length) + pool.length) % pool.length;
+
+        chord.quality = pool[poolIdx];
+        return true;
     }
 
     // ─────────────── V4.2c Pool path ───────────────
