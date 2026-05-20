@@ -1176,7 +1176,7 @@ export interface MusicianPersona {
      * 总有一件乐器是"定海神针",其他乐器才能放飞自我。
      *
      * 当前规划:
-     *   - alex_piano.isAnchor = true(Pop / Jazz 钢琴 comping)
+     *   - mg_piano.isAnchor = true(Pop / Jazz 钢琴 comping)
      *   - nina_pad.isAnchor   = true(NeoSoul Pad 铺底)
      *   - bass / drums        = false(节奏组天然就是 anchor 的另一层,不用本标记)
      */
@@ -1188,7 +1188,7 @@ export interface MusicianPersona {
      * 缺省 undefined = 永不睡(老行为)。
      *
      * 推荐基线:
-     *   - alex_piano: 0.05(几乎不睡)
+     *   - mg_piano: 0.05(几乎不睡)
      *   - nina_pad:   0.10
      *   - frank_bass: 0.30(低 K Intro/Outro 睡)
      *   - dave_drums: 0.25

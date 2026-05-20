@@ -3,7 +3,7 @@
 // ============================================================
 //
 // 4 个 MVP 卡牌（V1：每角色各 1 张，固定 4 人乐队）：
-//   - alex_piano   (Piano, eligible MainInst + Accomp)  — 双角色钢琴手
+//   - mg_piano   (Piano, eligible MainInst + Accomp)  — 双角色钢琴手
 //   - frank_bass   (Electric Bass, eligible Bass)        — 正拍稳重电贝斯
 //   - dave_drums   (Drum Kit, eligible Drums)            — Pop 干净直拍
 //   - nina_pad     (Warm Pad, eligible Atmosphere)       — 长音铺底氛围
@@ -35,10 +35,18 @@ import { MASTER_MANIFESTS } from '../data/MasterPersonas';
 // ------------------------------------------------------------
 
 export const MUSICIAN_POOL: Musician[] = [
-    // 🎹 钢琴手 Alex — Pop/Jazz 通用，可承担 MainInst（旋律）+ Accomp（伴奏）双角色
+    // 🎹 MG Piano — auraflow HarmonyEngine(原 melodygenerative)钢琴
+    //
+    // 这张卡指向 auraflow 的"和声+钢琴伴奏"原生引擎(harmony-engine/musicEngine):
+    //   - MainInst 槽位 → 输出 mg melody(CHANNEL_MELODY,Bright Acoustic)
+    //   - Accomp 槽位   → 输出 mg chord+bass(CHANNEL_PIANO_RH/LH,Grand Acoustic)
+    //
+    // 当前(v1.52.0+)钢琴轨原生 mg 输出 — 不被 weather/persona/idiom 调制,
+    // 这张卡的 persona 字段对 HarmonyEngine 内部推演**无影响**(纯占位 + UI 标识)。
+    // 未来 persona 接入 HarmonyEngine 推演时(C.7+),这些字段才会生效。
     {
-        id: 'alex_piano',
-        name: 'Alex',
+        id: 'mg_piano',
+        name: 'MG Piano',
         genre: StyleId.POP,
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
@@ -55,7 +63,7 @@ export const MUSICIAN_POOL: Musician[] = [
             dynamicRange: [55, 100],
             pianoPedalRatio: 1.0,
             signatureLickProb: 0.15,
-            // Phase 3 — alex_piano 是 Pop / Jazz 钢琴 comping 的"定海神针"
+            // Phase 3 — mg_piano 是 Pop / Jazz 钢琴 comping 的"定海神针"
             // 跨段保持 STYLE_ANCHOR_RECIPE 锁定的 recipe,只让 density 浮动
             isAnchor: true,
             // Phase 6a — anchor 几乎不睡(wakeK 极低)
@@ -80,7 +88,7 @@ export const MUSICIAN_POOL: Musician[] = [
                 colorBias:     0.4,
             },
         },
-        description: 'Pop/Jazz 通用钢琴手，双角色（主奏 + 伴奏）',
+        description: 'auraflow HarmonyEngine 钢琴(双角色,MainInst + Accomp)',
     },
     // 🎸 贝斯手 Frank — Pop/Funk 电贝斯，正拍稳重
     {
@@ -145,7 +153,7 @@ export const MUSICIAN_POOL: Musician[] = [
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
-        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        eligibleRoles: [],  // v1.53 暂时解绑 — UI 不显示;persona 暂未接入 HarmonyEngine
         instrumentId: 0,
         persona: {
             colorBias: 0.15,           // 极少 9/11/13 — 三和弦 + 偶尔 7 为主
@@ -168,7 +176,7 @@ export const MUSICIAN_POOL: Musician[] = [
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
-        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        eligibleRoles: [],  // v1.53 暂时解绑 — UI 不显示;persona 暂未接入 HarmonyEngine
         instrumentId: 0,
         persona: {
             colorBias: 0.9,            // 大量 9/11/13 — Neo-Soul 标志高色彩
@@ -202,6 +210,7 @@ export const MUSICIAN_POOL: Musician[] = [
     },
     // 🎸 Maya — Slap Bass（高 sync + ghost note 风格）
     {
+        // v1.53 暂时解绑(eligibleRoles=[]) — UI 不显示
         id: 'maya_slap_bass',
         name: 'Maya',
         genre: StyleId.RNB,
@@ -210,7 +219,7 @@ export const MUSICIAN_POOL: Musician[] = [
         defaultSound: 'Electric_Bass_Slap',
         personnel: {},
         role: BandRole.Bass,
-        eligibleRoles: [BandRole.Bass],
+        eligibleRoles: [],  // v1.53 暂时解绑 — UI 不显示
         instrumentId: 2,
         persona: {
             colorBias: 0.0,
@@ -233,7 +242,7 @@ export const MUSICIAN_POOL: Musician[] = [
         defaultSound: 'Brush_Kit',
         personnel: {},
         role: BandRole.Drums,
-        eligibleRoles: [BandRole.Drums],
+        eligibleRoles: [],  // v1.53 暂时解绑 — UI 不显示
         instrumentId: 3,
         persona: {
             colorBias: 0.0,
@@ -254,7 +263,7 @@ export const MUSICIAN_POOL: Musician[] = [
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
-        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        eligibleRoles: [],  // v1.53 暂时解绑 — UI 不显示;persona 暂未接入 HarmonyEngine
         instrumentId: 0,
         persona: {
             colorBias: 0.2,            // 偏简单三和弦/7和弦
@@ -318,7 +327,8 @@ export const MUSICIAN_POOL: Musician[] = [
     // 注：`defaultSound` 统一用 Acoustic_Grand（项目尚无管乐 GM 音色映射），
     //     未来扩展 sax/trumpet 音色时仅需改此字段。
     // ============================================================
-    ...buildMasterCards(),
+    // v1.53 暂时解绑大师卡 — UI 不显示;persona 暂未接入 HarmonyEngine(C.7 后再开)
+    // ...buildMasterCards(),
 ];
 
 export const PANGEA_DICT: Record<string, unknown> = {};
@@ -341,7 +351,7 @@ export const PANGEA_DICT: Record<string, unknown> = {};
 //   - topologyConfig:   透传 manifest.topologyConfig（B-Lick 模式或拓扑变换路径仍可消费）
 //   - masterId:         透传 manifest.id（**takeover 路径的开关键**）
 //
-// `eligibleRoles = [MainInst]`：大师不接 Accomp，避免被 alex_piano 的 Accomp 角色挤占。
+// `eligibleRoles = [MainInst]`：大师不接 Accomp，避免被 mg_piano 的 Accomp 角色挤占。
 // 后续如想让大师同时承担伴奏，可加入 BandRole.Accomp。
 function buildMasterCards(): Musician[] {
     const out: Musician[] = [];

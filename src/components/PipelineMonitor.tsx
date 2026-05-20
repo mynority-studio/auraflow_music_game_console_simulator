@@ -128,8 +128,8 @@ type InstrumentSelection = Partial<Record<BandRole, number>>;
  * 若 buildDefaultRoster 默认值变更，本表需同步更新。
  */
 const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
-    [BandRole.MainInst]:   'alex_piano',
-    [BandRole.Accomp]:     'alex_piano',
+    [BandRole.MainInst]:   'mg_piano',
+    [BandRole.Accomp]:     'mg_piano',
     [BandRole.Bass]:       'frank_bass',
     [BandRole.Drums]:      'dave_drums',
     [BandRole.Atmosphere]: 'nina_pad',

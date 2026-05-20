@@ -311,7 +311,7 @@ export function runPipeline(
     //
     //   设计原因：默认 GM_PROGRAM_MELODY=1(Bright Acoustic) vs GM_PROGRAM_PIANO_RH=0(Grand)
     //   是 MidiConverter 内的"双钢琴音色分离"策略；如果一律从 musician.defaultSound 推导,
-    //   同一张 alex_piano 卡会让两个通道都变成 0(Grand)，损失辨识度。
+    //   同一张 mg_piano 卡会让两个通道都变成 0(Grand)，损失辨识度。
     //
     //   defaultSound → GM 的映射仅在 B2 UI 下拉构造"family options"时使用,不在此处自动推导。
     // -----------------------------------------------------------
@@ -400,8 +400,8 @@ function buildDefaultRoster(
     };
 
     return {
-        mainInst:   pickOrDefault(BandRole.MainInst,   'alex_piano'),
-        accomp:     pickOrDefault(BandRole.Accomp,     'alex_piano'),
+        mainInst:   pickOrDefault(BandRole.MainInst,   'mg_piano'),
+        accomp:     pickOrDefault(BandRole.Accomp,     'mg_piano'),
         bass:       pickOrDefault(BandRole.Bass,       'frank_bass'),
         drums:      pickOrDefault(BandRole.Drums,      'dave_drums'),
         atmosphere: pickOrDefault(BandRole.Atmosphere, 'nina_pad'),
