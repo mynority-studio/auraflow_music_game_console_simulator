@@ -53,9 +53,9 @@ import {
 import { MasterPhraseRenderer } from '../primitives/MasterPhraseRenderer';
 import { PhraseContourPlanner } from '../primitives/PhraseContourPlanner';
 import { getMasterManifest } from '../data/MasterPersonas';
-import { DrumIdiom } from '../primitives/DrumIdiom';
-import { BassIdiom } from '../primitives/BassIdiom';
-import { AtmosphereRenderer } from '../primitives/AtmosphereRenderer';
+import { DrumRealizer } from '../realizers/DrumRealizer';
+import { BassRealizer } from '../realizers/BassRealizer';
+import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
 import type { PianoAccompParams } from '../primitives/PianoAccompIdiom';
 import { PianoRealizer } from '../realizers/PianoRealizer';
 import { ToplineEngine } from './ToplineEngine';
@@ -242,7 +242,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）
     const drumSections = drumsActive ? collectDrumSections(input.sections) : [];
     const drums: NoteData[] = drumSections.length > 0
-        ? DrumIdiom.render({ sections: drumSections, grid: bundle.drum })
+        ? DrumRealizer.realize({ sections: drumSections, grid: bundle.drum })
         : [];
 
     // Kick-Bass interlock: 提取所有 Kick (pitch===36) 落点，供 BassIdiom 对齐
@@ -276,7 +276,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
         //   PRNG 顺序锁定为 Bass → Accomp → Lead（D-5）
         if ((mask & MASK_BASS) !== 0 && bassActive && bassPersona !== undefined) {
             // C2：仅当 roster.bass 上岗时渲染；留空 → bass 轨纯空
-            const bassNotes = BassIdiom.render({
+            const bassNotes = BassRealizer.realize({
                 chords: sectionChords,
                 styleId: input.styleId,
                 tonality: input.tonality,
@@ -361,7 +361,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
             const sectionPlan = input.bandPlan?.sectionPlans[sIdx];
             const atmoAssign = sectionPlan?.assignments[BandRole.Atmosphere];
             const intensityScale = atmoAssign?.intensityScale ?? 0.5;
-            const atmoNotes = AtmosphereRenderer.render({
+            const atmoNotes = AtmosphereRealizer.realize({
                 chords: sectionChords,
                 idiom: atmosphereIdiom,
                 intensityScale,
