@@ -172,13 +172,12 @@ export function runPipeline(
     }
 
     // NoteEvent → NoteData:整曲 0-based,无 offset
+    // HarmonyEngine 内部 melody 与 chord 是两条独立 pipeline 输出,这里分流到
+    // auraflow 的 MainInst(钢琴主奏)和 Accomp(钢琴伴奏)两个 BandRole 槽。
     const pianoMelody = noteEventsToNoteData(harmonyResult.melody, 0);
     const pianoChordTexture = noteEventsToNoteData(harmonyResult.chordTexture, 0);
-
-    // 钢琴统一:melody + chord 合并走 PIANO_RH channel(Grand Acoustic 单音色),
-    // 保留 HarmonyEngine 内部 divisi/velocity 比例 — 听感"一架钢琴演奏旋律+和声"。
-    const pianoUnified: NoteData[] = pianoMelody.concat(pianoChordTexture);
-    pianoUnified.sort((a, b) => a.onset - b.onset);
+    pianoMelody.sort((a, b) => a.onset - b.onset);
+    pianoChordTexture.sort((a, b) => a.onset - b.onset);
 
     PRNGManager.recordSnapshot('D');
 
@@ -247,19 +246,39 @@ export function runPipeline(
     }
 
     // ============================================================
-    // Weather post-modulation 钢琴轨
+    // Weather post-modulation 钢琴(melody + chord 各自调制)
     // ============================================================
-    // HarmonyEngine 输出后(motif/cadence 跨段连贯保留),按每个 note onset 查
-    // weather:
+    // 按每个 note onset 查 weather:
     //   K → velocity 调制(段落能量驱动 — Verse 弱 / Chorus 强)
     //   S → duration 调制(spatial sustain — ambient 长音 / build staccato)
-    // 不动 pitch / chord(保留 HarmonyEngine 哲学),只调音量+延时。
-    const pianoModulated = modulatePianoByWeather(pianoUnified, renderContext);
+    // 不动 pitch / chord(保留 HarmonyEngine 哲学),只调音量 + 延时。
+    const melodyModulated = modulatePianoByWeather(pianoMelody, renderContext);
+    const chordModulated = modulatePianoByWeather(pianoChordTexture, renderContext);
+
+    // ============================================================
+    // BandRole 路由(G1) — melody → MainInst / chord → Accomp
+    // ============================================================
+    // HarmonyEngine 内部 melody 与 chord 是两条独立 pipeline。它们天然对应
+    // auraflow 乐队的两个钢琴槽位:
+    //   roster.mainInst  ↔ 主奏(melody)  → track.melody → CHANNEL_MELODY (Bright)
+    //   roster.accomp    ↔ 伴奏(chord)   → track.accompaniment → CHANNEL_PIANO_RH/LH (Grand)
+    //
+    // 空槽语义(BandSelection UI 显式 null):
+    //   roster.mainInst = null → track.melody=[],主奏 channel 静音(只剩伴奏)
+    //   roster.accomp   = null → track.accompaniment=[],伴奏 channel 静音(只剩主奏)
+    //   两个都 null → 钢琴全静,只剩 bass/drums/atmosphere 节奏组
+    //
+    // 注意:HarmonyEngine 始终生成完整 melody+chord 不变(避让逻辑保持),
+    //      此处只是按 roster 决定输出。切换 roster 不影响输出确定性 + bit-exact。
+    const trackMelody = roster.mainInst !== null && roster.mainInst !== undefined
+        ? melodyModulated : [];
+    const trackAccompaniment = roster.accomp !== null && roster.accomp !== undefined
+        ? chordModulated : [];
 
     const track: GeneratedTrack = {
         chords: harmonyChords,
-        melody: [],                       // 统一到 accompaniment 走 Grand Acoustic
-        accompaniment: pianoModulated,    // HarmonyEngine piano + weather modulation
+        melody: trackMelody,              // HarmonyEngine melody → MainInst → CHANNEL_MELODY
+        accompaniment: trackAccompaniment,// HarmonyEngine chord → Accomp → CHANNEL_PIANO_RH/LH
         bass: bassNotes,                  // auraflow BassRealizer + harmony chord
         drums: drumsNotes,                // auraflow DrumRealizer
         atmosphere: atmosphereNotes,      // auraflow AtmosphereRealizer
