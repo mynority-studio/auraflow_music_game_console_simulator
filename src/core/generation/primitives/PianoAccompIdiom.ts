@@ -1456,101 +1456,15 @@ function renderM5TwoHandedVoicing(
 //
 // PRNG 消耗：0（D-1 / D-5 hash 决定）。
 
-const SHELL_INTERVAL_3RD_MAJOR = 4;
-const SHELL_INTERVAL_3RD_MINOR = 3;
-const SHELL_INTERVAL_7TH_MAJ   = 11;
-const SHELL_INTERVAL_7TH_DOM   = 10;
-const SHELL_INTERVAL_7TH_DIM7  = 9;
-const SHELL_INTERVAL_9TH       = 2;
-const SHELL_SUS_4TH            = 5;
-
-type ShellVariant = 0 /* X: 3+7 */ | 1 /* Y: 3+7+9 */ | 2 /* Z: root+3+7 */;
-
-/**
- * 按 chordIndex / barInPhrase / colorBias 确定性选 shell 变体。
- * 同 (chordIndex, barInPhrase, rootPc, colorBias) → 同变体（D-5）。
- */
-function pickShellVariant(
-    chordIndex: number, barInPhrase: number, colorBias: number, rootPc: number,
-): ShellVariant {
-    const hash = ((chordIndex * 31 + barInPhrase * 17 + rootPc * 11) % 100 + 100) % 100;
-    const cb = colorBias < 0 ? 0 : (colorBias > 1 ? 1 : colorBias);
-    if (cb < 0.3) {
-        // 低 colorBias：以 X 为主，偶尔 Z（pop ballad — 稳重，少加 9）
-        return hash < 80 ? 0 : 2;
-    }
-    if (cb < 0.6) {
-        // 中 colorBias：X / Z 主导，少量 Y
-        if (hash < 50) return 0;
-        if (hash < 80) return 2;
-        return 1;
-    }
-    // 高 colorBias：三者均衡（neo-soul / jazz — 经常 add 9）
-    if (hash < 30) return 0;
-    if (hash < 65) return 1;
-    return 2;
-}
-
-/**
- * 按 chord.quality 算 (3rd, 7th) 半音间隔；sus 退化为 (4th, 7th)。
- * 返回 [thirdInterval, seventhInterval]；thirdInterval=5 表示 sus 用 4 代 3。
- */
-function getShellIntervals(quality: ChordQuality): [number, number] {
-    if (quality === ChordQuality.Sus4 || quality === ChordQuality.Dominant7Sus4) {
-        return [SHELL_SUS_4TH, SHELL_INTERVAL_7TH_DOM];
-    }
-    const qBit = 1 << quality;
-    const isMinorish = (qBit & CQ_IS_MINOR) !== 0 || (qBit & CQ_IS_DIM) !== 0;
-    const third = isMinorish ? SHELL_INTERVAL_3RD_MINOR : SHELL_INTERVAL_3RD_MAJOR;
-    let seventh: number;
-    if (quality === ChordQuality.Diminished7) seventh = SHELL_INTERVAL_7TH_DIM7;
-    else if ((qBit & CQ_IS_MAJOR) !== 0
-        || quality === ChordQuality.Augmented
-        || quality === ChordQuality.Add9) seventh = SHELL_INTERVAL_7TH_MAJ;
-    else seventh = SHELL_INTERVAL_7TH_DOM;  // Dom7 / Min7 / HalfDim → b7
-    return [third, seventh];
-}
-
-/**
- * 按变体 + chord 构建 shell PC 集（顺序：低 → 高，未限制 octave）。
- */
-function buildShellPcSet(chord: GeneratedChord, variant: ShellVariant): number[] {
-    const rootPc = (((chord.bassOverride !== undefined ? chord.bassOverride : chord.root) % 12) + 12) % 12;
-    const [thirdInt, seventhInt] = getShellIntervals(chord.quality);
-    const thirdPc   = (rootPc + thirdInt)   % 12;
-    const seventhPc = (rootPc + seventhInt) % 12;
-    if (variant === 0) return [thirdPc, seventhPc];                              // X
-    if (variant === 1) return [thirdPc, seventhPc, (rootPc + SHELL_INTERVAL_9TH) % 12]; // Y +9
-    return [rootPc, thirdPc, seventhPc];                                          // Z root anchored
-}
-
-/**
- * 把 PC 放到离 anchor 最近的八度，并钳到 [SHELL_RANGE_LO, SHELL_RANGE_HI]。
- */
-function placePcNearAnchor(pc: number, anchor: number): number {
-    const pcNorm = ((pc % 12) + 12) % 12;
-    const anchorPc = ((anchor % 12) + 12) % 12;
-    const anchorOctaveBase = anchor - anchorPc;
-    let candidate = anchorOctaveBase + pcNorm;
-    // 取 candidate / candidate ± 12 三个里离 anchor 最近的
-    const c1 = candidate;
-    const c2 = candidate + 12;
-    const c3 = candidate - 12;
-    let best = c1;
-    let bestDist = Math.abs(c1 - anchor);
-    if (Math.abs(c2 - anchor) < bestDist) { best = c2; bestDist = Math.abs(c2 - anchor); }
-    if (Math.abs(c3 - anchor) < bestDist) { best = c3; }
-    // 钳到合法 shell 范围
-    while (best < SHELL_RANGE_LO) best += 12;
-    while (best > SHELL_RANGE_HI) best -= 12;
-    return best;
-}
-
 /**
  * 渲染 LH shell voicing — 每和弦头一击 sustain。
  *
- * 返回 lhPcSet（去重 PC 数组），供 RH "listen" 过滤撞音用。
- * 失败（chord 太短 / dur 太小）→ 返回空数组。
+ * Phase 3a 重构:voicing 计算(变体选择 / PC 集构建 / PC→MIDI 放置)迁移到
+ * VoicingProcessor.buildShellLH。本函数退化为薄包装:调 VoicingProcessor 拿
+ * pitches/pcSet/topPitch,再做 velocity 计算 + push 到 out。
+ *
+ * 返回 lhPcSet(去重 PC 数组),供 RH "listen" 过滤撞音用。
+ * 失败(chord 太短 / dur 太小)→ 返回空数组。
  */
 function renderLHShellVoicing(
     out: NoteData[],
@@ -1562,40 +1476,29 @@ function renderLHShellVoicing(
     const dur = chord.endBeat - chord.startBeat;
     if (dur <= EPSILON) return { pcSet: [], topPitch: -1 };
 
-    const rootPc = (((chord.bassOverride !== undefined ? chord.bassOverride : chord.root) % 12) + 12) % 12;
-    const colorBias = params.voicingSpan ?? 0.5;  // voicingSpan 在 BandEngine 已派生自 persona.colorBias × intensity
-    const variant = pickShellVariant(chordIndex, barInPhrase, colorBias, rootPc);
-    const pcSet = buildShellPcSet(chord, variant);
+    const colorBias = params.voicingSpan ?? 0.5;  // voicingSpan 在 CastingEngine 已派生自 persona.colorBias × intensity
+    const result = VoicingProcessor.buildShellLH({
+        chord,
+        chordIndex,
+        barInPhrase,
+        colorBias,
+        anchorPitch: SHELL_ANCHOR_PITCH,
+        rangeLo: SHELL_RANGE_LO,
+        rangeHi: SHELL_RANGE_HI,
+    });
 
     const rhVelocity = computeVelocity(params.velocityRange, params.intensityScale);
     const velocity = rhVelocity * SHELL_VELOCITY_SCALE;
 
-    // PC → MIDI pitch（anchor 附近最近八度），再做撞音去重 + 升序排列
-    const pitches: number[] = [];
-    let topPitch = -1;
-    for (let i = 0; i < pcSet.length; i++) {
-        const p = placePcNearAnchor(pcSet[i], SHELL_ANCHOR_PITCH);
-        // 防同 pitch 重复
-        let dup = false;
-        for (let j = 0; j < pitches.length; j++) {
-            if (pitches[j] === p) { dup = true; break; }
-        }
-        if (!dup) {
-            pitches.push(p);
-            if (p > topPitch) topPitch = p;
-        }
-    }
-    pitches.sort((a, b) => a - b);
-
-    for (let i = 0; i < pitches.length; i++) {
+    for (let i = 0; i < result.pitches.length; i++) {
         out.push({
-            pitch: pitches[i],
+            pitch: result.pitches[i],
             onset: chord.startBeat,
             duration: dur,
             velocity,
         });
     }
-    return { pcSet, topPitch };
+    return { pcSet: result.pcSet, topPitch: result.topPitch };
 }
 
 /**

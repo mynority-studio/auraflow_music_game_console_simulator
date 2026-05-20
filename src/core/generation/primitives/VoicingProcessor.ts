@@ -35,6 +35,9 @@ import {
     ChordQuality,
     CHORD_INTERVALS,
     CQ_IS_DOM,
+    CQ_IS_MAJOR,
+    CQ_IS_MINOR,
+    CQ_IS_DIM,
 } from '../types';
 import { WeightedPitchSelector } from './WeightedPitchSelector';
 
@@ -73,6 +76,15 @@ const EXT_13TH = 9;
 const BIAS_THRESHOLD_9TH = 0.30;
 const BIAS_THRESHOLD_13TH = 0.55;
 const BIAS_THRESHOLD_11TH = 0.80;
+
+// LH Guide-Tone Shell 常量(Phase 3a 从 PianoAccompIdiom 迁入)
+const SHELL_INTERVAL_3RD_MAJOR = 4;
+const SHELL_INTERVAL_3RD_MINOR = 3;
+const SHELL_INTERVAL_7TH_MAJ   = 11;
+const SHELL_INTERVAL_7TH_DOM   = 10;
+const SHELL_INTERVAL_7TH_DIM7  = 9;
+const SHELL_INTERVAL_9TH       = 2;
+const SHELL_SUS_4TH            = 5;
 
 // ============================================================
 // 接口定义
@@ -130,6 +142,39 @@ export interface RootlessVoicerInput {
     rangeHi?: number;
     /** RH 下界,默认 max(anchorPitch, lhTopPitch + 3) */
     rangeLo?: number;
+}
+
+/**
+ * Shell variant 选择:
+ *   0 (X) — 仅 3+7 guide tones,最干净的 jazz shell
+ *   1 (Y) — 3+7+9,加 9 度色彩(neo-soul / 现代爵士)
+ *   2 (Z) — root + 3+7,锚根版 shell(pop ballad / classical 偏好)
+ */
+export type ShellVariant = 0 | 1 | 2;
+
+export interface ShellLHInput {
+    chord: GeneratedChord;
+    /** 全曲和弦序号(决定性 hash 输入) */
+    chordIndex: number;
+    /** 4-bar phrase 内 bar 位置(决定性 hash 输入) */
+    barInPhrase: number;
+    /** 颜色偏好 ∈ [0, 1] — 决定 variant 分布 */
+    colorBias: number;
+    /** 放置 anchor(典型 F3=53) */
+    anchorPitch: number;
+    /** 合法范围下界(典型 E3=52) */
+    rangeLo: number;
+    /** 合法范围上界(典型 A4=69) */
+    rangeHi: number;
+}
+
+export interface ShellLHOutput {
+    /** 升序 MIDI(RELATIVE),已去重 */
+    pitches: number[];
+    /** PC 集(给 RH listen 用) */
+    pcSet: number[];
+    /** 最高 pitch — 没有有效 voice 时为 -1 */
+    topPitch: number;
 }
 
 export interface QuartalVoicerInput {
@@ -231,6 +276,95 @@ function dedupSortedArray(arr: number[]): number[] {
         if (arr[i] !== out[out.length - 1]) out.push(arr[i]);
     }
     return out;
+}
+
+// ============================================================
+// LH Shell 私有 helpers(Phase 3a 从 PianoAccompIdiom verbatim 迁入)
+// ============================================================
+
+/**
+ * 按 chordIndex / barInPhrase / colorBias 确定性选 shell 变体(D-5)。
+ * 同 (chordIndex, barInPhrase, rootPc, colorBias) → 同变体。零 PRNG。
+ */
+function pickShellVariant(
+    chordIndex: number, barInPhrase: number, colorBias: number, rootPc: number,
+): ShellVariant {
+    const hash = ((chordIndex * 31 + barInPhrase * 17 + rootPc * 11) % 100 + 100) % 100;
+    const cb = colorBias < 0 ? 0 : (colorBias > 1 ? 1 : colorBias);
+    if (cb < 0.3) {
+        // 低 colorBias:以 X 为主,偶尔 Z(pop ballad — 稳重,少加 9)
+        return hash < 80 ? 0 : 2;
+    }
+    if (cb < 0.6) {
+        // 中 colorBias:X / Z 主导,少量 Y
+        if (hash < 50) return 0;
+        if (hash < 80) return 2;
+        return 1;
+    }
+    // 高 colorBias:三者均衡(neo-soul / jazz — 经常 add 9)
+    if (hash < 30) return 0;
+    if (hash < 65) return 1;
+    return 2;
+}
+
+/**
+ * 按 chord.quality 算 (3rd, 7th) 半音间隔;sus 退化为 (4th, 7th)。
+ * 返回 [thirdInterval, seventhInterval];thirdInterval=5 表示 sus 用 4 代 3。
+ */
+function getShellIntervals(quality: ChordQuality): [number, number] {
+    if (quality === ChordQuality.Sus4 || quality === ChordQuality.Dominant7Sus4) {
+        return [SHELL_SUS_4TH, SHELL_INTERVAL_7TH_DOM];
+    }
+    const qBit = 1 << quality;
+    const isMinorish = (qBit & CQ_IS_MINOR) !== 0 || (qBit & CQ_IS_DIM) !== 0;
+    const third = isMinorish ? SHELL_INTERVAL_3RD_MINOR : SHELL_INTERVAL_3RD_MAJOR;
+    let seventh: number;
+    if (quality === ChordQuality.Diminished7) seventh = SHELL_INTERVAL_7TH_DIM7;
+    else if ((qBit & CQ_IS_MAJOR) !== 0
+        || quality === ChordQuality.Augmented
+        || quality === ChordQuality.Add9) seventh = SHELL_INTERVAL_7TH_MAJ;
+    else seventh = SHELL_INTERVAL_7TH_DOM;  // Dom7 / Min7 / HalfDim → b7
+    return [third, seventh];
+}
+
+/**
+ * 按变体 + chord 构建 shell PC 集(顺序:低 → 高,未限制 octave)。
+ */
+function buildShellPcSet(chord: GeneratedChord, variant: ShellVariant): number[] {
+    const rootPc = normalizePc(chord.bassOverride !== undefined ? chord.bassOverride : chord.root);
+    const [thirdInt, seventhInt] = getShellIntervals(chord.quality);
+    const thirdPc   = (rootPc + thirdInt)   % 12;
+    const seventhPc = (rootPc + seventhInt) % 12;
+    if (variant === 0) return [thirdPc, seventhPc];                              // X
+    if (variant === 1) return [thirdPc, seventhPc, (rootPc + SHELL_INTERVAL_9TH) % 12]; // Y +9
+    return [rootPc, thirdPc, seventhPc];                                          // Z root anchored
+}
+
+/**
+ * 把 PC 放到离 anchor 最近的八度,并钳到 [rangeLo, rangeHi]。
+ *
+ * 注:与 placePcNearAnchor(Rootless/Quartal 用)的算法不同:
+ *   - 此处只考虑 anchor 同八度 ±1 octave 三个候选
+ *   - 不预先 floor 检查,而是后置 clamp by ±12
+ * 保留两份独立实现以确保 Phase 3a 抽取后行为 bit-exact。
+ */
+function placePcInShellRange(pc: number, anchor: number, rangeLo: number, rangeHi: number): number {
+    const pcNorm = normalizePc(pc);
+    const anchorPc = normalizePc(anchor);
+    const anchorOctaveBase = anchor - anchorPc;
+    const candidate = anchorOctaveBase + pcNorm;
+    // 取 candidate / candidate ± 12 三个里离 anchor 最近的
+    const c1 = candidate;
+    const c2 = candidate + 12;
+    const c3 = candidate - 12;
+    let best = c1;
+    let bestDist = Math.abs(c1 - anchor);
+    if (Math.abs(c2 - anchor) < bestDist) { best = c2; bestDist = Math.abs(c2 - anchor); }
+    if (Math.abs(c3 - anchor) < bestDist) { best = c3; }
+    // 钳到合法 shell 范围
+    while (best < rangeLo) best += 12;
+    while (best > rangeHi) best -= 12;
+    return best;
 }
 
 // ============================================================
@@ -707,5 +841,46 @@ export class VoicingProcessor {
             out.push(next);
         }
         return out;
+    }
+
+    // ============================================================
+    // 钢琴 LH guide-tone shell voicing(Phase 3a 从 PianoAccompIdiom 迁入)
+    // ============================================================
+
+    /**
+     * 构造钢琴 LH guide-tone shell voicing(原 PianoAccompIdiom.renderLHShellVoicing 内核)。
+     *
+     * 算法(D-1 零 PRNG):
+     *   1. pickShellVariant — 按 (chordIndex, barInPhrase, colorBias, rootPc) hash 选 X/Y/Z 变体
+     *   2. buildShellPcSet — 按 chord.quality 构建 [3rd, 7th] / [3rd, 7th, 9] / [root, 3rd, 7th] PC 集
+     *   3. placePcInShellRange — 每个 PC 放置到 anchor 附近最近八度,钳到 [rangeLo, rangeHi]
+     *   4. 去重 + 升序排序 + 计算 topPitch
+     *
+     * 调用方负责:
+     *   - 提供 SHELL_ANCHOR_PITCH / SHELL_RANGE_LO / SHELL_RANGE_HI(钢琴专属配置)
+     *   - 渲染时把 pitches 转 NoteData 并 push 到 track(本函数不做副作用,纯计算)
+     *   - 用 pcSet + topPitch 给 RH 做 listen 协调(applyRhListenToLhShell 留在 PianoAccompIdiom)
+     */
+    public static buildShellLH(input: ShellLHInput): ShellLHOutput {
+        const rootPc = normalizePc(input.chord.bassOverride !== undefined ? input.chord.bassOverride : input.chord.root);
+        const variant = pickShellVariant(input.chordIndex, input.barInPhrase, input.colorBias, rootPc);
+        const pcSet = buildShellPcSet(input.chord, variant);
+
+        const pitches: number[] = [];
+        let topPitch = -1;
+        for (let i = 0; i < pcSet.length; i++) {
+            const p = placePcInShellRange(pcSet[i], input.anchorPitch, input.rangeLo, input.rangeHi);
+            // 防同 pitch 重复
+            let dup = false;
+            for (let j = 0; j < pitches.length; j++) {
+                if (pitches[j] === p) { dup = true; break; }
+            }
+            if (!dup) {
+                pitches.push(p);
+                if (p > topPitch) topPitch = p;
+            }
+        }
+        pitches.sort((a, b) => a - b);
+        return { pitches, pcSet, topPitch };
     }
 }

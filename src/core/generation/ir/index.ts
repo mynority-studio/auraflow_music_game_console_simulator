@@ -24,9 +24,19 @@
 //   - SectionMetadata  : 段落结构（5+ 模块消费）
 //   - MusicContext     : 运行时上下文（贯穿全管线 + MidiConverter）
 //
+// 转发的"乐器无关"IR(Phase 3a 新增,详见 ./harmonic-skeleton.ts):
+//   - HarmonicChord / HarmonicSkeleton / CadencePoint / TensionTone
+//
 // 不在本文件的"近 IR"类型（仍在 types.ts，未来视需要再升格）：
 //   GeneratedTrack / ArrangedTrack / TerminalSymbol / ContourSpec / Tonality 枚举等
 // ============================================================
+
+export type {
+    HarmonicChord,
+    HarmonicSkeleton,
+    CadencePoint,
+    TensionTone,
+} from './harmonic-skeleton';
 
 import type {
     ChordQuality,
