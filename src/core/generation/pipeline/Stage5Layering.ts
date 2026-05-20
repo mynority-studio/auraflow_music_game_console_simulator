@@ -56,7 +56,8 @@ import { getMasterManifest } from '../data/MasterPersonas';
 import { DrumIdiom } from '../primitives/DrumIdiom';
 import { BassIdiom } from '../primitives/BassIdiom';
 import { AtmosphereRenderer } from '../primitives/AtmosphereRenderer';
-import { PianoAccompIdiom, PianoAccompParams } from '../primitives/PianoAccompIdiom';
+import type { PianoAccompParams } from '../primitives/PianoAccompIdiom';
+import { PianoRealizer } from '../realizers/PianoRealizer';
 import { ToplineEngine } from './ToplineEngine';
 import { TopologyMutator } from '../primitives/TopologyMutator';
 import { SongHookEncoder, SongHookSkeleton } from '../primitives/SongHookEncoder';
@@ -285,12 +286,13 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);
         }
         if ((mask & MASK_ACCOMP) !== 0) {
-            // Step 3：优先走 PianoAccompIdiom（BandEngine 已塞 PianoAccompParams 到 instrumentSpecificParams）
-            // 兼容路径：若 bandPlan 缺失 / Accomp 槽位空 / params 未实装 → 回退旧 renderAccompaniment
+            // Step 3:优先走 PianoRealizer(Phase 3b 包装层;内部委托 PianoAccompIdiom.render)
+            //   CastingEngine 已塞 PianoAccompParams 到 instrumentSpecificParams
+            // 兼容路径:若 bandPlan 缺失 / Accomp 槽位空 / params 未实装 → 回退旧 renderAccompaniment
             const accompAssign = input.bandPlan?.sectionPlans[sIdx]?.assignments[BandRole.Accomp];
             const pianoParams = accompAssign?.instrumentSpecificParams as PianoAccompParams | undefined;
             if (pianoParams !== undefined) {
-                const pianoNotes = PianoAccompIdiom.render({
+                const pianoNotes = PianoRealizer.realize({
                     chords: sectionChords,
                     params: pianoParams,
                     beatsPerBar: input.timeSignature[0],
