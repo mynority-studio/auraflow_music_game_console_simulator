@@ -148,7 +148,7 @@ export class JamSessionManager {
             }
 
             // Style 随机选一个 — 必须在 preprocessMotif 之前完成，以便注入 Lead 拓扑配置
-            const allStyleIds = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
+            const allStyleIds = [StyleId.POP, StyleId.JAZZ, StyleId.RNB];
             const randomStyleId = allStyleIds[Math.floor(PRNGManager.next() * allStyleIds.length)];
 
             const stage5Bundle = getStyleStage5Bundle(randomStyleId);

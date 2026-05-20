@@ -17,7 +17,7 @@ import {
 import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
-const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
+const { track } = runPipeline({ forcedStyleId: StyleId.JAZZ });
 
 // 取一个 4-beat chord 做基准
 const chord = track.chords.find(c => Math.abs((c.endBeat - c.startBeat) - 4) < 0.01);

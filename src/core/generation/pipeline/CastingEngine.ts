@@ -73,9 +73,10 @@ const INTENSITY_MAX = 1.0;
  * 改 StyleId 枚举顺序需同步本表(cross_sync_rule.md §1.6)。
  */
 const STYLE_ANCHOR_RECIPE: Readonly<Record<StyleId, TextureRecipeId>> = {
-    [StyleId.ModernPop]: TextureRecipeId.AlbertiBass,
-    [StyleId.ChillJazz]: TextureRecipeId.SyncopatedStab,
-    [StyleId.NeoSoul]:   TextureRecipeId.NeoSoulVamp,
+    [StyleId.POP]:   TextureRecipeId.AlbertiBass,
+    [StyleId.JAZZ]:  TextureRecipeId.SyncopatedStab,
+    [StyleId.RNB]:   TextureRecipeId.NeoSoulVamp,
+    [StyleId.BLUES]: TextureRecipeId.SyncopatedStab,  // C.1 stub — 临时复用 JAZZ anchor
 };
 
 export interface CastingEngineInput {

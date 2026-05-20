@@ -13,9 +13,9 @@ import { PIANO_TEXTURE_RECIPES, TextureRecipeId } from '../src/core/generation/d
 import { MoodName } from '../src/core/generation/pipeline/MoodRouter';
 
 const styles: { id: StyleId; name: string }[] = [
-    { id: StyleId.ModernPop, name: 'ModernPop' },
-    { id: StyleId.ChillJazz, name: 'ChillJazz' },
-    { id: StyleId.NeoSoul,   name: 'NeoSoul'   },
+    { id: StyleId.POP, name: 'ModernPop' },
+    { id: StyleId.JAZZ, name: 'ChillJazz' },
+    { id: StyleId.RNB,   name: 'NeoSoul'   },
 ];
 
 const recipeHitCount: Record<number, number> = {};
@@ -55,7 +55,7 @@ for (const style of styles) {
 // 顺便试 NeoSoul + Marcus persona (syncopationAssault 高) — 看 Groovy 是否被触发
 console.log(`\n=== NeoSoul + Marcus (高 syncopationAssault，期望 Groovy mood 触发) ===`);
 PRNGManager.setSeed(42);
-const { track: nsTrack } = runPipeline({ forcedStyleId: StyleId.NeoSoul });
+const { track: nsTrack } = runPipeline({ forcedStyleId: StyleId.RNB });
 const nsPlan = CastingEngine.plan({
     roster: {
         mainInst:   getMusicianById('marcus_neosoul_piano')!,
@@ -65,7 +65,7 @@ const nsPlan = CastingEngine.plan({
         atmosphere: getMusicianById('nina_pad')!,
     },
     sections: nsTrack.sections,
-    styleId: StyleId.NeoSoul,
+    styleId: StyleId.RNB,
     tonality: nsTrack.tonality,
     timeSignature: [4, 4],
     bpm: nsTrack.bpm,
@@ -100,7 +100,7 @@ console.log(`\n=== 多 seed 扫描 — AlbertiBass 命中情况 ===`);
 let albertiSeeds: { seed: number; style: string; section: string; mood: string }[] = [];
 const styleNamesByEnum: Record<number, string> = { 0: 'ModernPop', 1: 'ChillJazz', 2: 'NeoSoul' };
 for (let seed = 1; seed <= 200; seed++) {
-    for (const style of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
+    for (const style of [StyleId.POP, StyleId.JAZZ, StyleId.RNB]) {
         PRNGManager.setSeed(seed);
         const { track } = runPipeline({ forcedStyleId: style });
         const plan = CastingEngine.plan({

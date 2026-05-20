@@ -80,9 +80,9 @@ const JAZZ_BUNDLE: StyleHarmonyBundle = {
 
 /** 数值索引查找表（T-1 合规 — enum 比较，无字符串分类） */
 const STYLE_HARMONY_BUNDLES: StyleHarmonyBundle[] = [];
-STYLE_HARMONY_BUNDLES[StyleId.ModernPop] = POP_BUNDLE;
-STYLE_HARMONY_BUNDLES[StyleId.NeoSoul]   = NEOSOUL_BUNDLE;
-STYLE_HARMONY_BUNDLES[StyleId.ChillJazz] = JAZZ_BUNDLE;
+STYLE_HARMONY_BUNDLES[StyleId.POP] = POP_BUNDLE;
+STYLE_HARMONY_BUNDLES[StyleId.RNB]   = NEOSOUL_BUNDLE;
+STYLE_HARMONY_BUNDLES[StyleId.JAZZ] = JAZZ_BUNDLE;
 
 export function getStyleHarmonyBundle(styleId: StyleId): StyleHarmonyBundle {
     const bundle = STYLE_HARMONY_BUNDLES[styleId];
@@ -146,9 +146,9 @@ const JAZZ_STAGE5: StyleStage5Bundle = {
 };
 
 const STYLE_STAGE5_BUNDLES: StyleStage5Bundle[] = [];
-STYLE_STAGE5_BUNDLES[StyleId.ModernPop] = POP_STAGE5;
-STYLE_STAGE5_BUNDLES[StyleId.NeoSoul]   = NEOSOUL_STAGE5;
-STYLE_STAGE5_BUNDLES[StyleId.ChillJazz] = JAZZ_STAGE5;
+STYLE_STAGE5_BUNDLES[StyleId.POP] = POP_STAGE5;
+STYLE_STAGE5_BUNDLES[StyleId.RNB]   = NEOSOUL_STAGE5;
+STYLE_STAGE5_BUNDLES[StyleId.JAZZ] = JAZZ_STAGE5;
 
 export function getStyleStage5Bundle(styleId: StyleId): StyleStage5Bundle {
     const bundle = STYLE_STAGE5_BUNDLES[styleId];

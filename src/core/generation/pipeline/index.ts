@@ -85,7 +85,7 @@ export function runPipeline(
         ? [options.forcedStyleId]
         : (options.allowedStyleIds && options.allowedStyleIds.length > 0
             ? options.allowedStyleIds
-            : [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]);
+            : [StyleId.POP, StyleId.JAZZ, StyleId.RNB]);
     const styleId = pool[Math.floor(PRNGManager.next() * pool.length)];
     const style = getStyleConfig(styleId);
     const bundle = getStyleHarmonyBundle(styleId);

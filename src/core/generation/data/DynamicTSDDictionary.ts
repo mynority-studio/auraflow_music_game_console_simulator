@@ -273,9 +273,9 @@ const RNB_D: ReadonlyArray<DynamicRule> = Object.freeze([
 /** 索引:DYNAMIC_TSD_DICTIONARY[styleId][func] = DynamicRule[] */
 export const DYNAMIC_TSD_DICTIONARY: ReadonlyArray<ReadonlyArray<ReadonlyArray<DynamicRule>>> = (() => {
     const arr: ReadonlyArray<ReadonlyArray<DynamicRule>>[] = [];
-    arr[StyleId.ModernPop] = Object.freeze([POP_T, POP_S, POP_D]);
-    arr[StyleId.ChillJazz] = Object.freeze([JAZZ_T, JAZZ_S, JAZZ_D]);
-    arr[StyleId.NeoSoul]   = Object.freeze([RNB_T, RNB_S, RNB_D]);
+    arr[StyleId.POP] = Object.freeze([POP_T, POP_S, POP_D]);
+    arr[StyleId.JAZZ] = Object.freeze([JAZZ_T, JAZZ_S, JAZZ_D]);
+    arr[StyleId.RNB]   = Object.freeze([RNB_T, RNB_S, RNB_D]);
     return Object.freeze(arr);
 })();
 

@@ -17,7 +17,7 @@ import { MoodName } from '../src/core/generation/pipeline/MoodRouter';
 import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
-const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
+const { track } = runPipeline({ forcedStyleId: StyleId.JAZZ });
 
 // Solo Piano 模式（无 Bass）才会走 LH WalkingTenths
 const plan = CastingEngine.plan({
@@ -29,7 +29,7 @@ const plan = CastingEngine.plan({
         atmosphere: getMusicianById('nina_pad')!,
     },
     sections: track.sections,
-    styleId: StyleId.ChillJazz,
+    styleId: StyleId.JAZZ,
     tonality: track.tonality,
     timeSignature: [4, 4],
     bpm: track.bpm,

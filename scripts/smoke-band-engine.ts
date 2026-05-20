@@ -34,8 +34,8 @@ function assert(cond: boolean, msg: string) {
 console.log('\n=== BandEngine MVP smoke test ===\n');
 
 PRNGManager.setSeed(42);
-const { track, context } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
-const arranged = AbsoluteTransposer.arrange(track, StyleId.ChillJazz, context);
+const { track, context } = runPipeline({ forcedStyleId: StyleId.JAZZ });
+const arranged = AbsoluteTransposer.arrange(track, StyleId.JAZZ, context);
 const events = MidiConverter.convert(arranged);
 
 console.log('1. Pipeline output structure');
@@ -76,7 +76,7 @@ const plan = CastingEngine.plan({
         atmosphere: getMusicianById('nina_pad')!,
     },
     sections: track.sections,
-    styleId: StyleId.ChillJazz,
+    styleId: StyleId.JAZZ,
     tonality: track.tonality,
     timeSignature: [4, 4],
     bpm: track.bpm,
@@ -108,7 +108,7 @@ assert(
 );
 
 console.log('\n6. Listening sanity — all 5 tracks non-empty across all 3 styles');
-for (const style of [StyleId.ModernPop, StyleId.NeoSoul, StyleId.ChillJazz]) {
+for (const style of [StyleId.POP, StyleId.RNB, StyleId.JAZZ]) {
     PRNGManager.setSeed(42);
     const { track: t } = runPipeline({ forcedStyleId: style });
     assert(
@@ -120,7 +120,7 @@ for (const style of [StyleId.ModernPop, StyleId.NeoSoul, StyleId.ChillJazz]) {
 
 console.log('\n7. Atmosphere ConductorMask — Break/Breakdown should NOT contain pad notes');
 PRNGManager.setSeed(42);
-const { track: tracker } = runPipeline({ forcedStyleId: StyleId.ModernPop });
+const { track: tracker } = runPipeline({ forcedStyleId: StyleId.POP });
 const breakSections = tracker.sections.filter(s =>
     s.sectionType === SectionType.Break || s.sectionType === SectionType.Breakdown,
 );
@@ -137,7 +137,7 @@ if (breakSections.length > 0) {
 
 console.log('\n8. PianoAccompIdiom 织体选择 — BandEngine 按 sectionType 选 RH 织体');
 PRNGManager.setSeed(42);
-const { track: pianoTrack } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
+const { track: pianoTrack } = runPipeline({ forcedStyleId: StyleId.JAZZ });
 // 验证：默认 roster 有 Bass → 所有段落都应是 M4 (Tacit + RH)
 const pianoPlan = CastingEngine.plan({
     roster: {
@@ -148,7 +148,7 @@ const pianoPlan = CastingEngine.plan({
         atmosphere: getMusicianById('nina_pad')!,
     },
     sections: pianoTrack.sections,
-    styleId: StyleId.ChillJazz,
+    styleId: StyleId.JAZZ,
     tonality: pianoTrack.tonality,
     timeSignature: [4, 4],
     bpm: pianoTrack.bpm,
@@ -189,7 +189,7 @@ const noBassPlan = CastingEngine.plan({
         atmosphere: getMusicianById('nina_pad')!,
     },
     sections: pianoTrack.sections,
-    styleId: StyleId.ChillJazz,
+    styleId: StyleId.JAZZ,
     tonality: pianoTrack.tonality,
     timeSignature: [4, 4],
     bpm: pianoTrack.bpm,
@@ -309,7 +309,7 @@ const billyPlan = CastingEngine.plan({
         atmosphere: getMusicianById('nina_pad')!,
     },
     sections: tracker.sections,
-    styleId: StyleId.ModernPop,
+    styleId: StyleId.POP,
     tonality: tracker.tonality,
     timeSignature: [4, 4],
     bpm: tracker.bpm,
@@ -342,7 +342,7 @@ assert(tc5.root === 8 && tc5.quality === ChordQuality.Major7, `bVImaj7 → root=
 console.log('\n15. V4.2c — 进行池命中验证');
 // 默认 roster 跑 ChillJazz，应该有部分 chord numeral 是 pool 进行的字符串（如 Imaj7 / IVmaj7 / ii7）
 PRNGManager.setSeed(42);
-const { track: jazzTrack } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
+const { track: jazzTrack } = runPipeline({ forcedStyleId: StyleId.JAZZ });
 const poolNumerals = new Set(['Imaj7', 'IVmaj7', 'ii7', 'V7', 'vi7', 'iii7', 'iiø', 'i7']);
 const poolChords = jazzTrack.chords.filter(c => poolNumerals.has(c.numeral));
 const algoChords = jazzTrack.chords.filter(c =>
@@ -364,8 +364,8 @@ console.log(`  Total musicians in pool: ${MUSICIAN_POOL.length}`);
 
 console.log('\n17. V5.2 — Swing offset 验证（ChillJazz swingRatio=0.55 应产生 8th offbeat 偏移）');
 PRNGManager.setSeed(42);
-const { track: jazzSwing, context: jazzCtx } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
-const swingArranged = AbsoluteTransposer.arrange(jazzSwing, StyleId.ChillJazz, jazzCtx);
+const { track: jazzSwing, context: jazzCtx } = runPipeline({ forcedStyleId: StyleId.JAZZ });
+const swingArranged = AbsoluteTransposer.arrange(jazzSwing, StyleId.JAZZ, jazzCtx);
 // 找 accomp 里有没有 onset 非 0.25 倍数的（说明 swing 偏移生效）
 const accompOnsets = swingArranged.pianoRH.map(n => n.onset);
 let swingShifted = 0;
@@ -390,7 +390,7 @@ assert(lhProgram?.data1 === 0, 'PianoLH channel 5 程式为 GM 0 (Grand Piano)')
 console.log('\n19. V5.4 — forcedBand UI 路由验证（Marcus 替换 Alex）');
 PRNGManager.setSeed(42);
 const { track: marcusTrack } = runPipeline({
-    forcedStyleId: StyleId.ChillJazz,
+    forcedStyleId: StyleId.JAZZ,
     forcedBand: { [BandRole.Accomp]: 'marcus_neosoul_piano' },
 });
 // Marcus syncopationAssault=0.75 → useSolver=true，应产生不同 onset 分布

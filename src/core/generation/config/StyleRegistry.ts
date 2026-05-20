@@ -171,7 +171,7 @@ const NEOSOUL_HARMONY_POOLS = {
 };
 
 export const StyleRegistry: Record<StyleId, StyleConfig> = {
-    [StyleId.ModernPop]: makeStubStyle(StyleId.ModernPop, {
+    [StyleId.POP]: makeStubStyle(StyleId.POP, {
         passingChordProb: 0.3,
         chromaticPassingProb: 0.3,
         anticipationProb: 0.3,
@@ -179,7 +179,7 @@ export const StyleRegistry: Record<StyleId, StyleConfig> = {
         densityBaseline: 0.6,
         harmony: POP_HARMONY_POOLS,
     }),
-    [StyleId.ChillJazz]: makeStubStyle(StyleId.ChillJazz, {
+    [StyleId.JAZZ]: makeStubStyle(StyleId.JAZZ, {
         passingChordProb: 0.5,
         chromaticPassingProb: 0.5,
         anticipationProb: 0.6,
@@ -188,7 +188,7 @@ export const StyleRegistry: Record<StyleId, StyleConfig> = {
         swingRatio: 0.55,
         harmony: JAZZ_HARMONY_POOLS,
     }),
-    [StyleId.NeoSoul]: makeStubStyle(StyleId.NeoSoul, {
+    [StyleId.RNB]: makeStubStyle(StyleId.RNB, {
         passingChordProb: 0.6,
         chromaticPassingProb: 0.7,
         anticipationProb: 0.7,
@@ -197,14 +197,25 @@ export const StyleRegistry: Record<StyleId, StyleConfig> = {
         swingRatio: 0.6,
         harmony: NEOSOUL_HARMONY_POOLS,
     }),
+    // C.1 — BLUES stub:enum 已加但 config 暂未实装,临时回落 JAZZ(mg JAZZ 含 BLUES 元素)
+    // C.4/Phase 2 阶段决定是否提供独立 BLUES config(目前默认 pool 不抽 BLUES)
+    [StyleId.BLUES]: makeStubStyle(StyleId.BLUES, {
+        passingChordProb: 0.5,
+        chromaticPassingProb: 0.5,
+        anticipationProb: 0.5,
+        tensionLimits: 9,
+        densityBaseline: 0.5,
+        swingRatio: 0.6,
+        harmony: JAZZ_HARMONY_POOLS,  // 临时复用 JAZZ pool
+    }),
 };
 
 export function getStyleConfig(id: StyleId): StyleConfig {
-    return StyleRegistry[id] ?? StyleRegistry[StyleId.ModernPop];
+    return StyleRegistry[id] ?? StyleRegistry[StyleId.POP];
 }
 
 export function getAllAvailableStyles(): StyleConfig[] {
     return Object.values(StyleRegistry);
 }
 
-export const AcgStyleConfig: StyleConfig = StyleRegistry[StyleId.ModernPop];
+export const AcgStyleConfig: StyleConfig = StyleRegistry[StyleId.POP];

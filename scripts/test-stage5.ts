@@ -77,9 +77,9 @@ function notesEqual(a: NoteData[], b: NoteData[]): boolean {
 
 function styleName(styleId: StyleId): string {
     switch (styleId) {
-        case StyleId.ModernPop: return 'ModernPop';
-        case StyleId.ChillJazz: return 'ChillJazz';
-        case StyleId.NeoSoul:   return 'NeoSoul';
+        case StyleId.POP: return 'ModernPop';
+        case StyleId.JAZZ: return 'ChillJazz';
+        case StyleId.RNB:   return 'NeoSoul';
         default: return `Style#${styleId}`;
     }
 }
@@ -207,7 +207,7 @@ function verifyStyle(styleId: StyleId): void {
 function verifyDeterminism(): void {
     header('Determinism — 同 seed 两次跑应字节一致（D-1 / D-5）');
 
-    for (const styleId of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
+    for (const styleId of [StyleId.POP, StyleId.JAZZ, StyleId.RNB]) {
         const name = styleName(styleId);
         const t1 = runStyle(styleId);
         const t2 = runStyle(styleId);
@@ -237,9 +237,9 @@ function verifyDifferentSeeds(): void {
     header('Different seeds → different outputs (negative determinism)');
 
     PRNGManager.setSeed(SEED);
-    const t1 = runPipeline({ forcedStyleId: StyleId.ModernPop }).track;
+    const t1 = runPipeline({ forcedStyleId: StyleId.POP }).track;
     PRNGManager.setSeed(SEED + 1);
-    const t2 = runPipeline({ forcedStyleId: StyleId.ModernPop }).track;
+    const t2 = runPipeline({ forcedStyleId: StyleId.POP }).track;
 
     const melodyDiffers = !notesEqual(t1.melody, t2.melody);
     const accompDiffers = !notesEqual(t1.accompaniment ?? [], t2.accompaniment ?? []);
@@ -258,7 +258,7 @@ function verifyDifferentSeeds(): void {
 function dumpFirstNotes(): void {
     header('听感采样 — 各风格前 8 个 NoteData');
 
-    for (const styleId of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
+    for (const styleId of [StyleId.POP, StyleId.JAZZ, StyleId.RNB]) {
         const name = styleName(styleId);
         const track = runStyle(styleId);
         console.log(`\n  ${name}:`);
@@ -306,9 +306,9 @@ function main(): void {
     console.log(`  Phase 3 — Stage 5 layerInstruments E2E Verification   seed=${SEED}`);
     console.log(`${'■'.repeat(82)}`);
 
-    verifyStyle(StyleId.ModernPop);
-    verifyStyle(StyleId.ChillJazz);
-    verifyStyle(StyleId.NeoSoul);
+    verifyStyle(StyleId.POP);
+    verifyStyle(StyleId.JAZZ);
+    verifyStyle(StyleId.RNB);
     verifyDeterminism();
     verifyDifferentSeeds();
     dumpFirstNotes();

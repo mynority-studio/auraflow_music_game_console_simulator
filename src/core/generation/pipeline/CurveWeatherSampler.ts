@@ -238,7 +238,7 @@ function computeR(
     const personaBase = avgPersona(activeMusicians, p => p.signatureLickProb ?? PERSONA_DEFAULT_R);
     let r = clamp01(0.6 * styleBase + 0.3 * clamp01(sectionBase) + 0.1 * personaBase);
     // Pop 风格 hard clamp(防 outside)
-    if (styleId === StyleId.ModernPop) r = Math.min(r, POP_R_CLAMP);
+    if (styleId === StyleId.POP) r = Math.min(r, POP_R_CLAMP);
     return r;
 }
 

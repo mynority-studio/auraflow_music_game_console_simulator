@@ -130,7 +130,7 @@ export function pickMood(ctx: MoodPickContext): MoodId {
     if (ctx.sectionType === SectionType.Intro) {
         if (!major && ctx.persona.colorBias > 0.5) return MoodId.Melancholy;
         if (major && ctx.bpm < 90) return MoodId.WarmIntimate;
-        if ((ctx.styleId === StyleId.NeoSoul || ctx.styleId === StyleId.ChillJazz)
+        if ((ctx.styleId === StyleId.RNB || ctx.styleId === StyleId.JAZZ)
             && ctx.persona.syncopationAssault > 0.4) {
             return MoodId.Groovy;
         }
@@ -146,7 +146,7 @@ export function pickMood(ctx: MoodPickContext): MoodId {
     if (isPeakSection(ctx.sectionType)) {
         if (major && ctx.energyLevel >= 7) return MoodId.Triumphant;
         if (!major && ctx.energyLevel >= 6) return MoodId.Dramatic;
-        if ((ctx.styleId === StyleId.NeoSoul || ctx.styleId === StyleId.ChillJazz)
+        if ((ctx.styleId === StyleId.RNB || ctx.styleId === StyleId.JAZZ)
             && ctx.persona.syncopationAssault > 0.4) {
             return MoodId.Groovy;
         }
@@ -154,7 +154,7 @@ export function pickMood(ctx: MoodPickContext): MoodId {
         return major ? MoodId.WarmIntimate : MoodId.Melancholy;
     }
     // ---- 剩下：Verse 及其他未分类段（Break/Breakdown 等已被 ConductorMask 静音，这里走兜底）----
-    if ((ctx.styleId === StyleId.NeoSoul || ctx.styleId === StyleId.ChillJazz)
+    if ((ctx.styleId === StyleId.RNB || ctx.styleId === StyleId.JAZZ)
         && ctx.persona.syncopationAssault > 0.4) {
         return MoodId.Groovy;
     }
@@ -218,7 +218,7 @@ const MOOD_RECIPE: ReadonlyArray<ReadonlyArray<TextureRecipeId>> = Object.freeze
 export function moodToRecipe(mood: MoodId, styleId: StyleId): TextureRecipeId {
     const row = MOOD_RECIPE[mood] ?? MOOD_RECIPE[MoodId.Neutral];
     const cell = row[styleId];
-    return cell !== undefined ? cell : row[StyleId.ModernPop];
+    return cell !== undefined ? cell : row[StyleId.POP];
 }
 
 // ============================================================
@@ -251,7 +251,7 @@ const MOOD_WALK_PATTERN: ReadonlyArray<ReadonlyArray<WalkPatternId>> = Object.fr
 export function pickWalkPattern(mood: MoodId, styleId: StyleId): WalkPatternId {
     const row = MOOD_WALK_PATTERN[mood] ?? MOOD_WALK_PATTERN[MoodId.Neutral];
     const cell = row[styleId];
-    return cell !== undefined ? cell : row[StyleId.ModernPop];
+    return cell !== undefined ? cell : row[StyleId.POP];
 }
 
 // ============================================================

@@ -38,7 +38,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'alex_piano',
         name: 'Alex',
-        genre: StyleId.ModernPop,
+        genre: StyleId.POP,
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
@@ -85,7 +85,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'frank_bass',
         name: 'Frank',
-        genre: StyleId.ModernPop,
+        genre: StyleId.POP,
         instrumentRef: 'electric_bass',
         instrumentFamily: InstrumentFamily.Bass,
         defaultSound: 'Electric_Bass_Finger',
@@ -111,7 +111,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'dave_drums',
         name: 'Dave',
-        genre: StyleId.ModernPop,
+        genre: StyleId.POP,
         instrumentRef: 'drum_kit',
         instrumentFamily: InstrumentFamily.Percussion,
         defaultSound: 'Drums',
@@ -138,7 +138,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'chloe_pop_piano',
         name: 'Chloe',
-        genre: StyleId.ModernPop,
+        genre: StyleId.POP,
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
@@ -161,7 +161,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'marcus_neosoul_piano',
         name: 'Marcus',
-        genre: StyleId.NeoSoul,
+        genre: StyleId.RNB,
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
@@ -203,7 +203,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'maya_slap_bass',
         name: 'Maya',
-        genre: StyleId.NeoSoul,
+        genre: StyleId.RNB,
         instrumentRef: 'electric_bass',
         instrumentFamily: InstrumentFamily.Bass,
         defaultSound: 'Electric_Bass_Slap',
@@ -226,7 +226,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'jazz_brush_drummer',
         name: 'Brush',
-        genre: StyleId.ChillJazz,
+        genre: StyleId.JAZZ,
         instrumentRef: 'drum_kit',
         instrumentFamily: InstrumentFamily.Percussion,
         defaultSound: 'Brush_Kit',
@@ -247,7 +247,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'billy_bounce',
         name: 'Billy',
-        genre: StyleId.ModernPop,
+        genre: StyleId.POP,
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
@@ -269,7 +269,7 @@ export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'nina_pad',
         name: 'Nina',
-        genre: StyleId.ModernPop,
+        genre: StyleId.POP,
         instrumentRef: 'warm_pad',
         instrumentFamily: InstrumentFamily.Pad,
         defaultSound: 'Warm_Pad',
@@ -393,7 +393,7 @@ function deriveMasterCard(
     return {
         id: `master_${manifest.id.toLowerCase()}${idSuffix}`,
         name: `${manifest.name}${nameSuffix}`,
-        genre: StyleId.ChillJazz,           // 6 位大师默认归属 ChillJazz；UI 可按 styleAffinity 过滤
+        genre: StyleId.JAZZ,           // 6 位大师默认归属 ChillJazz；UI 可按 styleAffinity 过滤
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',

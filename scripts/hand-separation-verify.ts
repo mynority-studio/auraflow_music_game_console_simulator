@@ -11,7 +11,7 @@ import { getDrop2Voicing } from '../src/core/generation/data/ScaleHelpers';
 import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
-const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
+const { track } = runPipeline({ forcedStyleId: StyleId.JAZZ });
 
 const MIN_HAND_SEPARATION = 3;
 const RH_MIN_PITCH = 48;

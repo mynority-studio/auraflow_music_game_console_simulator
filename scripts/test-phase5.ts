@@ -50,9 +50,9 @@ function header(title: string): void {
 
 function styleName(styleId: StyleId): string {
     switch (styleId) {
-        case StyleId.ModernPop: return 'ModernPop';
-        case StyleId.ChillJazz: return 'ChillJazz';
-        case StyleId.NeoSoul:   return 'NeoSoul';
+        case StyleId.POP: return 'ModernPop';
+        case StyleId.JAZZ: return 'ChillJazz';
+        case StyleId.RNB:   return 'NeoSoul';
         default: return `Style#${styleId}`;
     }
 }
@@ -134,7 +134,7 @@ function verifyDrumPitchSet(styleId: StyleId): void {
 function verifyDeterminism(): void {
     header('Determinism — 同 seed 两次跑 drums 字节一致');
 
-    for (const styleId of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
+    for (const styleId of [StyleId.POP, StyleId.JAZZ, StyleId.RNB]) {
         const name = styleName(styleId);
         const t1 = runStyle(styleId);
         const t2 = runStyle(styleId);
@@ -163,9 +163,9 @@ function verifyDifferentSeeds(): void {
     header('Different seeds → drums 内容变化（negative determinism）');
 
     PRNGManager.setSeed(SEED);
-    const t1 = runPipeline({ forcedStyleId: StyleId.ModernPop }).track;
+    const t1 = runPipeline({ forcedStyleId: StyleId.POP }).track;
     PRNGManager.setSeed(SEED + 1);
-    const t2 = runPipeline({ forcedStyleId: StyleId.ModernPop }).track;
+    const t2 = runPipeline({ forcedStyleId: StyleId.POP }).track;
 
     const drumsDiffers = !notesEqual(t1.drums ?? [], t2.drums ?? []);
     check('seed +1 → drums 内容变化', drumsDiffers);
@@ -272,21 +272,21 @@ function main(): void {
     console.log(`  Phase 5 — DrumIdiom + Channel 9 E2E Verification   seed=${SEED}`);
     console.log(`${'■'.repeat(82)}`);
 
-    verifyDrumPitchSet(StyleId.ModernPop);
-    verifyDrumPitchSet(StyleId.ChillJazz);
-    verifyDrumPitchSet(StyleId.NeoSoul);
+    verifyDrumPitchSet(StyleId.POP);
+    verifyDrumPitchSet(StyleId.JAZZ);
+    verifyDrumPitchSet(StyleId.RNB);
 
     verifyDeterminism();
     verifyDifferentSeeds();
 
-    verifyMidiChannel9(StyleId.ModernPop);
-    verifyMidiChannel9(StyleId.ChillJazz);
-    verifyMidiChannel9(StyleId.NeoSoul);
+    verifyMidiChannel9(StyleId.POP);
+    verifyMidiChannel9(StyleId.JAZZ);
+    verifyMidiChannel9(StyleId.RNB);
 
     header('听感采样');
-    dumpDrumPattern(StyleId.ModernPop);
-    dumpDrumPattern(StyleId.ChillJazz);
-    dumpDrumPattern(StyleId.NeoSoul);
+    dumpDrumPattern(StyleId.POP);
+    dumpDrumPattern(StyleId.JAZZ);
+    dumpDrumPattern(StyleId.RNB);
 
     console.log(`\n${'═'.repeat(82)}`);
     console.log(`  SUMMARY:  ${passed} passed,  ${failed} failed   (total ${passed + failed})`);

@@ -22,11 +22,11 @@ import {
 import { SongHookEncoder } from '../src/core/generation/primitives/SongHookEncoder';
 
 const SEED = 12345;
-const STYLES: StyleId[] = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
+const STYLES: StyleId[] = [StyleId.POP, StyleId.JAZZ, StyleId.RNB];
 const STYLE_NAMES: Record<number, string> = {
-    [StyleId.ModernPop]: 'ModernPop',
-    [StyleId.ChillJazz]: 'ChillJazz',
-    [StyleId.NeoSoul]: 'NeoSoul',
+    [StyleId.POP]: 'ModernPop',
+    [StyleId.JAZZ]: 'ChillJazz',
+    [StyleId.RNB]: 'NeoSoul',
 };
 
 function notesInRange(notes: NoteData[], startBeat: number, endBeat: number): NoteData[] {

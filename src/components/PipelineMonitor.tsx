@@ -259,7 +259,7 @@ export const PipelineMonitor: React.FC = () => {
 
         if (activeSeedRef.current !== seed) return;
 
-        const styleId = context.style?.id ?? StyleId.ModernPop;
+        const styleId = context.style?.id ?? StyleId.POP;
         const melodyEngine = new MelodyEngine();
         await AudioEngine.playSong(track, styleId, context, melodyEngine);
         reapplyMutes();

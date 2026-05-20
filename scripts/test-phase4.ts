@@ -113,21 +113,21 @@ function testAbsoluteTransposer(): void {
 
     // 1a: keyOffset=0 → pitch 不变
     const track0 = makeMockTrack(0);
-    const a0 = AbsoluteTransposer.arrange(track0, StyleId.ModernPop, mockContext);
+    const a0 = AbsoluteTransposer.arrange(track0, StyleId.POP, mockContext);
     check('keyOffset=0: melody pitch 不变', a0.melody[0].pitch === 72 && a0.melody[1].pitch === 76);
     check('keyOffset=0: pianoRH pitch 不变', a0.pianoRH[0].pitch === 60);
     check('keyOffset=0: pianoLH pitch 不变', a0.pianoLH[0].pitch === 36);
 
     // 1b: keyOffset=3 (Eb) → 所有 pitch +3
     const track3 = makeMockTrack(3);
-    const a3 = AbsoluteTransposer.arrange(track3, StyleId.ModernPop, mockContext);
+    const a3 = AbsoluteTransposer.arrange(track3, StyleId.POP, mockContext);
     check('keyOffset=3: melody[0].pitch = 72+3 = 75', a3.melody[0].pitch === 75);
     check('keyOffset=3: pianoRH[0].pitch = 60+3 = 63', a3.pianoRH[0].pitch === 63);
     check('keyOffset=3: pianoLH[0].pitch = 36+3 = 39', a3.pianoLH[0].pitch === 39);
 
     // 1c: keyOffset=9 (A) → +9
     const track9 = makeMockTrack(9);
-    const a9 = AbsoluteTransposer.arrange(track9, StyleId.ModernPop, mockContext);
+    const a9 = AbsoluteTransposer.arrange(track9, StyleId.POP, mockContext);
     check('keyOffset=9: melody[1].pitch = 76+9 = 85', a9.melody[1].pitch === 85);
     check('keyOffset=9: pianoLH[0].pitch = 36+9 = 45', a9.pianoLH[0].pitch === 45);
 
@@ -154,7 +154,7 @@ function testAbsoluteTransposer(): void {
     let threwOOB = false;
     try {
         const bad = makeMockTrack(12);
-        AbsoluteTransposer.arrange(bad, StyleId.ModernPop, mockContext);
+        AbsoluteTransposer.arrange(bad, StyleId.POP, mockContext);
     } catch (e) {
         threwOOB = e instanceof AbsoluteTransposerError;
     }
@@ -163,7 +163,7 @@ function testAbsoluteTransposer(): void {
     // 1h: 其他字段透传
     check('透传: bpm', a3.bpm === 120);
     check('透传: timeSignature', a3.timeSignature?.[0] === 4 && a3.timeSignature?.[1] === 4);
-    check('透传: styleId', a3.styleId === StyleId.ModernPop);
+    check('透传: styleId', a3.styleId === StyleId.POP);
 }
 
 // ============================================================
@@ -172,7 +172,7 @@ function testAbsoluteTransposer(): void {
 
 function makeMockArranged(keyOffset: number): ArrangedTrack {
     const track = makeMockTrack(keyOffset);
-    return AbsoluteTransposer.arrange(track, StyleId.ModernPop, mockContext);
+    return AbsoluteTransposer.arrange(track, StyleId.POP, mockContext);
 }
 
 function testMidiConverter(): void {
@@ -309,7 +309,7 @@ function testMidiConverter(): void {
 function testEndToEnd(): void {
     header('Test 3 — E2E: runPipeline → AbsoluteTransposer → MidiConverter');
 
-    for (const styleId of [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul]) {
+    for (const styleId of [StyleId.POP, StyleId.JAZZ, StyleId.RNB]) {
         const name = StyleId[styleId];
         PRNGManager.setSeed(SEED);
         const { track, context } = runPipeline({ forcedStyleId: styleId });

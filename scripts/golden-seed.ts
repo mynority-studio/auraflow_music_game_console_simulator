@@ -27,7 +27,7 @@ import type { MidiEvent } from '../src/core/audio/MidiScheduler';
 
 const PPQ = 480;
 const SEEDS = [1, 7, 42, 12345, 99999, 314159, 271828];
-const STYLES: StyleId[] = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
+const STYLES: StyleId[] = [StyleId.POP, StyleId.JAZZ, StyleId.RNB];
 
 function eventSha256(events: MidiEvent[]): string {
     const h = createHash('sha256');

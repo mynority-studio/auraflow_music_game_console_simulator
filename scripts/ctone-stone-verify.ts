@@ -10,7 +10,7 @@ import { WalkPatternId, WALK_PATTERNS } from '../src/core/generation/data/BassWa
 import { createDefaultRenderContext } from '../src/core/generation/ir/RenderContext';
 
 PRNGManager.setSeed(42);
-const { track } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
+const { track } = runPipeline({ forcedStyleId: StyleId.JAZZ });
 const chords = track.chords.slice(0, 8);
 
 console.log('=== BebopWalk (B C 5 A) — 验证 C step PC 多样性 ===\n');
