@@ -315,6 +315,11 @@ export class CastingEngine {
         // V5.2 Swing — 从 styleConfig 透传(CastingEngine 不感知 swingRatio 含义,只搬运)
         const swingRatio = ctx.swingRatio;
 
+        // Phase 8a — 钢琴阻尼器踏板系数(从 persona 透传到 PianoAccompIdiom 后处理)
+        // 缺省 1.0(自然踏板);persona 显式设 0 = 完全干(staccato 风格)
+        const pianoPedalRatio = persona.pianoPedalRatio !== undefined
+            ? persona.pianoPedalRatio : 1.0;
+
         return {
             lhTexture,
             rhTexture,
@@ -330,6 +335,7 @@ export class CastingEngine {
             recipeId,
             mood,
             walkPatternId,
+            pianoPedalRatio,
         };
     }
 

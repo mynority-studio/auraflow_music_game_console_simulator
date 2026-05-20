@@ -189,6 +189,19 @@ export interface PianoAccompParams {
      * 填入，让不同 mood × style 听感差异化。
      */
     walkPatternId?: WalkPatternId;
+    /**
+     * 阻尼器踏板系数 ∈ [0, 1] —— 来自 musician.persona.pianoPedalRatio。
+     *
+     *   0   = 干(grammar duration 不变)
+     *   1   = 自然踏板(延音至下一同 pitch onset 或 chord 边界,rest 透明)
+     *   >1  = 过踏(仍被 chord 边界硬钳)
+     *
+     * 缺省 1.0(自然踏板)。零 PRNG 消耗 —— 仅纯后处理改写 NoteData.duration。
+     *
+     * 算法参考 ToplineEngine.applyPianoPedal,适配 PianoAccompIdiom 多声部
+     * NoteData[] 输出场景(per-pitch 找下一同 pitch onset)。
+     */
+    pianoPedalRatio?: number;
 }
 
 const DROP2_THRESHOLD = 0.6;
@@ -461,6 +474,17 @@ export class PianoAccompIdiom {
             // M4：LH 永远 Tacit
         }
 
+        // Phase 8a — 阻尼器踏板后处理(rest 透明 + 同 pitch 钳)
+        //   把 grammar 内 step 距离决定的短 duration 延长到下一同 pitch onset 或
+        //   chord 边界,实现钢琴的自然延音(消除"截断/压缩"听感)。
+        //   缺省 pianoPedalRatio=1.0(自然踏板),从 CastingEngine 透传 persona 值。
+        //   零 PRNG,纯后处理 NoteData.duration。
+        const pianoPedalRatio = params.pianoPedalRatio !== undefined
+            ? params.pianoPedalRatio : 1.0;
+        if (pianoPedalRatio >= EPSILON) {
+            applyPianoPedalToAccomp(out, chords, pianoPedalRatio);
+        }
+
         // D-3：onset ASC, pitch ASC
         out.sort((a, b) => {
             const d = a.onset - b.onset;
@@ -469,6 +493,79 @@ export class PianoAccompIdiom {
         });
 
         return out;
+    }
+}
+
+// ============================================================
+// 阻尼器踏板后处理 — Phase 8a(钢琴伴奏专属)
+// ============================================================
+//
+// 算法(从 ToplineEngine.applyPianoPedal 移植 + 多声部适配):
+//   对每个 note (pitch P, onset O, duration D):
+//     1. 查 note.onset 落在哪个 chord(O ∈ [chord.startBeat, chord.endBeat))
+//     2. 在 notes[] 内向后找**同 pitch**、onset > O、且仍在当前 chord 内的最早 note
+//        → nextSamePitchOnset(未找到则 = +∞)
+//     3. ceiling = min(nextSamePitchOnset, chord.endBeat)
+//     4. pedaledDur = ceiling - O
+//     5. finalDur = lerp(grammarDur=D, pedaledDur, pianoPedalRatio)
+//        - ratio 0:final = grammar(干)
+//        - ratio 1:final = pedaled(完全踏板)
+//        - ratio >1:过踏(被 chord 边界硬钳)
+//     6. 硬钳:never > chord.endBeat - O / never < grammarDur
+//
+// 关键设计:
+//   - **和弦边界硬钳**:钢琴家在和弦切换必须松踏板防糊,音乐物理而非乐手个性
+//   - **同 pitch 钳**:同 pitch 重击时前一击必须先 Note Off 再 Note On(否则合成器无法
+//     正确触发新音头)。这与 Topline 的"找任意下一个发声音"不同 —— Topline 是单声部
+//     monophonic,这里是多声部,只有同 pitch 才相互打断。
+//   - **rest 透明**:NoteData[] 里不存在 rest 节拍,故"句中 rest 不打断延音"自然成立。
+//   - **零 PRNG**:D-5 序列对齐不变,仅 NoteData.duration 字段值变化。
+//
+function applyPianoPedalToAccomp(
+    notes: NoteData[],
+    chords: GeneratedChord[],
+    pianoPedalRatio: number,
+): void {
+    for (let i = 0; i < notes.length; i++) {
+        const note = notes[i];
+
+        // 找当前 note 所在 chord — 线性扫描(典型 N <= 20,够快)
+        let chord: GeneratedChord | null = null;
+        for (let c = 0; c < chords.length; c++) {
+            const cc = chords[c];
+            if (note.onset >= cc.startBeat - EPSILON && note.onset < cc.endBeat - EPSILON) {
+                chord = cc;
+                break;
+            }
+        }
+        if (chord === null) continue;
+
+        // 向后找同 pitch 最早 onset(在当前 chord 内)
+        let nextSamePitchOnset = Number.POSITIVE_INFINITY;
+        for (let j = 0; j < notes.length; j++) {
+            if (j === i) continue;
+            const other = notes[j];
+            if (other.pitch !== note.pitch) continue;
+            if (other.onset <= note.onset + EPSILON) continue;
+            if (other.onset >= chord.endBeat - EPSILON) continue;
+            if (other.onset < nextSamePitchOnset) {
+                nextSamePitchOnset = other.onset;
+            }
+        }
+
+        const ceiling = nextSamePitchOnset < chord.endBeat ? nextSamePitchOnset : chord.endBeat;
+        const pedaledDur = ceiling - note.onset;
+        if (pedaledDur < EPSILON) continue;
+
+        const grammarDur = note.duration;
+        const delta = pedaledDur - grammarDur;
+        let finalDur = grammarDur + delta * pianoPedalRatio;
+
+        const maxDur = chord.endBeat - note.onset;
+        if (finalDur > maxDur) finalDur = maxDur;
+        if (finalDur < grammarDur) finalDur = grammarDur;
+
+        note.duration = finalDur;
     }
 }
 
