@@ -40,6 +40,7 @@ import {
 } from '../mg-engine/musicEngine';
 import type { StyleName } from '../mg-engine/styleDictionary';
 import type { Emotion } from '../mg-engine/musicTheory';
+import { SectionType, SectionTypeName } from '../types';
 
 // ============================================================
 // 输入 / 输出接口
@@ -62,7 +63,7 @@ import type { Emotion } from '../mg-engine/musicTheory';
  * Lydian / 等)需要 caller 显式传 modeOverride。
  */
 export interface MgFacadeInput {
-    /** auraflow 主 seed(numeric)。facade 内部派生 `${seed}::mg` 子流 */
+    /** auraflow 主 seed(numeric)。facade 内部派生 `${seed}::${seedSuffix}` 子流 */
     seed: number;
     /** auraflow StyleId enum(0=ModernPop / 1=ChillJazz / 2=NeoSoul) */
     styleId: number;
@@ -76,6 +77,16 @@ export interface MgFacadeInput {
     emotion?: 'auto' | Emotion;
     /** 可选:meter 覆盖(默认走 mg style.timeSignature) */
     meter?: [number, number];
+    /**
+     * 可选:seed fork 后缀(默认 'mg')。
+     *
+     * 用途:per-section 调 mg 时,同 SectionType 共享同 seedSuffix
+     *     (B1 策略:Verse_1 与 Verse_2 用 'section-Verse' → 同 motif),
+     *     不同 SectionType 用不同 suffix(段落对比)。
+     *
+     * 完整 mg seed = `${seed}::${seedSuffix}`,跟 PRNGManager 完全隔离。
+     */
+    seedSuffix?: string;
 }
 
 /**
@@ -229,8 +240,11 @@ export class MgEngineFacade {
             ? input.modeOverride
             : (input.isMinor ? 'Minor' : 'Major');
 
-        // PRNG 隔离 — 字符串子流 seed,跟 PRNGManager 完全独立
-        const mgSeed = `${input.seed}::mg`;
+        // PRNG 隔离 — 字符串子流 seed,跟 PRNGManager 完全独立。
+        // seedSuffix 默认 'mg';generateForSection 内部用 'section-${SectionTypeName}'
+        // 实现 B1 同 type 共享 motif、不同 type 段落对比。
+        const suffix = input.seedSuffix ?? 'mg';
+        const mgSeed = `${input.seed}::${suffix}`;
 
         const config: GenerationConfig = {
             seed: mgSeed,
@@ -247,6 +261,122 @@ export class MgEngineFacade {
     // ============================================================
     // 调试 / 诊断 helpers
     // ============================================================
+
+    // ============================================================
+    // generateForSection — per-section 调 mg(A2 + B1 + C2 策略)
+    // ============================================================
+    //
+    // 策略:
+    //   A2  每段独立调一次 mg(每次输出完整 16-bar / 12-bar / 等)
+    //   B1  同 SectionType 共享 seed suffix → Verse_1 与 Verse_2 完全相同
+    //       (流行歌副歌每次重复的本质)
+    //   C2  emotion 按 SectionType 派生:Chorus / BuildUp → 'bright',
+    //       其他段跟整曲 isMinor。这样 Minor 整曲在 Chorus 走 Major mode
+    //       (同主音 modal mixture,流行歌经典套路)。
+    //
+    // 输出在 facade 内 crop 到 sectionLengthBeats:
+    //   - ChordDef[]:从前往后累积 duration,达到 sectionLengthBeats 停止;
+    //                 边界 chord clip 到剩余长度
+    //   - NoteEvent[]:filter time < sectionLengthBeats;duration clip 到段尾
+    //                 (避免段间 overlap 听感糊)
+    //
+    // PRNG 隔离:每段调用各自 string seed,PRNGManager 不被触碰。
+    //
+    // 注意:facade 返回的 chord / event time **仍是 0-based**(段内坐标),
+    //       caller(runPipeline)用 adapter 的 onsetOffset / startBeat 参数
+    //       平移到 section.startBeat 全局坐标。
+    public static generateForSection(input: MgFacadeInput & {
+        sectionType: SectionType;
+        sectionLengthBeats: number;
+    }): MgFacadeOutput {
+        const seedSuffix = `section-${SectionTypeName[input.sectionType]}`;
+        const emotion = MgEngineFacade.deriveSectionEmotion(
+            input.sectionType,
+            input.isMinor,
+        );
+
+        const sectionInput: MgFacadeInput = {
+            ...input,
+            seedSuffix,
+            emotion,
+        };
+
+        const raw = MgEngineFacade.generate(sectionInput);
+        return MgEngineFacade.cropOutput(raw, input.sectionLengthBeats);
+    }
+
+    /**
+     * C2 — SectionType → emotion 派生。
+     *
+     *   Chorus / BuildUp:强制 'bright'(让段落"绽放"感)
+     *   其他段:跟整曲 isMinor('sad' 或 'bright')
+     *
+     * 整曲 Minor 时,Chorus 走 Major mode = 同主音 modal mixture(流行歌经典)。
+     * 整曲 Major 时,所有段都 'bright' / Major(无段落 mode 切)。
+     */
+    public static deriveSectionEmotion(
+        sectionType: SectionType,
+        songIsMinor: boolean,
+    ): Emotion {
+        if (sectionType === SectionType.Chorus || sectionType === SectionType.BuildUp) {
+            return 'bright';
+        }
+        return songIsMinor ? 'sad' : 'bright';
+    }
+
+    /**
+     * Crop facade output 到 maxBeats(段内长度)。
+     *
+     * ChordDef[]:累积 duration > maxBeats 时 clip 边界 chord;之后的 chord 删除
+     * NoteEvent[]:filter time < maxBeats;duration clip 到段尾防 overlap
+     *
+     * resolved / timeline.visuals / 等元数据原样透传(诊断用,不需 crop)。
+     */
+    private static cropOutput(raw: MgFacadeOutput, maxBeats: number): MgFacadeOutput {
+        // Crop ChordDef[]
+        const croppedChords: ChordDef[] = [];
+        let chordCursor = 0;
+        for (let i = 0; i < raw.chords.length; i++) {
+            if (chordCursor >= maxBeats) break;
+            const cd = raw.chords[i];
+            const remaining = maxBeats - chordCursor;
+            if (cd.duration <= remaining) {
+                croppedChords.push(cd);
+                chordCursor += cd.duration;
+            } else {
+                // 边界 chord clip 到剩余长度
+                croppedChords.push({ ...cd, duration: remaining });
+                chordCursor = maxBeats;
+            }
+        }
+
+        // Crop NoteEvent[]:filter time < maxBeats + clip duration 到段尾
+        const cropEvents = (events: NoteEvent[]): NoteEvent[] => {
+            const out: NoteEvent[] = [];
+            for (let i = 0; i < events.length; i++) {
+                const ev = events[i];
+                if (ev.time >= maxBeats) continue;
+                const clippedDur = Math.min(ev.duration, maxBeats - ev.time);
+                out.push({ ...ev, duration: clippedDur });
+            }
+            return out;
+        };
+
+        const croppedEvents = cropEvents(raw.events);
+        const croppedMelody = cropEvents(raw.melody);
+        const croppedChordTexture = cropEvents(raw.chordTexture);
+        const croppedBass = cropEvents(raw.bass);
+
+        return {
+            chords: croppedChords,
+            events: croppedEvents,
+            melody: croppedMelody,
+            chordTexture: croppedChordTexture,
+            bass: croppedBass,
+            resolved: raw.resolved,
+            timeline: { ...raw.timeline, events: croppedEvents },
+        };
+    }
 
     /**
      * 把 StyleId 数值翻译成 mg StyleName 字符串(诊断面板用)。

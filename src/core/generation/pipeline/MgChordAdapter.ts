@@ -255,11 +255,11 @@ export function chordDefsToGeneratedChords(
  *   - chordSymbol(UI hint)
  *   - part('melody' / 'chord' / 'bass')— 调用方按 part 拆轨后转换
  */
-export function noteEventToNoteData(ev: NoteEvent): NoteData {
+export function noteEventToNoteData(ev: NoteEvent, onsetOffset: number = 0): NoteData {
     const velocity = Math.max(0, Math.min(1, ev.velocity / 127));
     const result: NoteData = {
         pitch: ev.noteNumber,
-        onset: ev.time,
+        onset: ev.time + onsetOffset,
         duration: ev.duration,
         velocity,
         origin: originStringToEnum(ev.origin),
@@ -269,11 +269,17 @@ export function noteEventToNoteData(ev: NoteEvent): NoteData {
 
 /**
  * 批量 mg NoteEvent[] → auraflow NoteData[]。
+ *
+ * onsetOffset:每个 NoteData.onset 偏移量(beats),用于 per-section 调 mg 时
+ * 把每段 mg 输出(0-based)平移到 section.startBeat 起点。
  */
-export function noteEventsToNoteData(events: NoteEvent[]): NoteData[] {
+export function noteEventsToNoteData(
+    events: NoteEvent[],
+    onsetOffset: number = 0,
+): NoteData[] {
     const out: NoteData[] = new Array(events.length);
     for (let i = 0; i < events.length; i++) {
-        out[i] = noteEventToNoteData(events[i]);
+        out[i] = noteEventToNoteData(events[i], onsetOffset);
     }
     return out;
 }

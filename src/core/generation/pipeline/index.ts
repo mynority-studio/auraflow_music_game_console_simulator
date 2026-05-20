@@ -28,7 +28,7 @@
  */
 
 import {
-    GeneratedTrack, GenerationOptions, MusicContext, NoteData,
+    GeneratedTrack, GenerationOptions, MusicContext, NoteData, GeneratedChord,
     BandRole, BandRoster, Tonality, SectionMetadata, SectionType, SectionTypeName,
     ActiveMusician, Musician,
 } from '../types';
@@ -137,57 +137,62 @@ export function runPipeline(
     PRNGManager.recordSnapshot('C');
 
     // ============================================================
-    // Stage 3 — MgEngineFacade(C.2 永久切 mg 路径)
+    // Stage 3 — MgEngineFacade per-section(A2 + B1 + C2 策略)
     // ============================================================
-    // 设计哲学(plan §2 决策 3 PRNG 隔离):
-    //   - mg 用自己的 Random(`${PRNGManager.state}::mg`)— 与 PRNGManager 完全隔离
-    //   - mg facade 内部 0 次 PRNGManager.next() 调用 → D-5 保证
-    //   - Phase 3 壳化时改用 PRNGManager.fork('mg') API
+    // 设计哲学(plan §2 决策 3 PRNG 隔离 + A2 + B1 + C2):
+    //   A2  每段独立调一次 mg(每次输出完整 mg 整曲)+ crop 到段落长度
+    //   B1  同 SectionType 共享 seed suffix → Verse_1 与 Verse_2 完全相同 motif
+    //       (流行歌副歌重复的本质)
+    //   C2  emotion 按 SectionType 派生(Chorus/BuildUp 强制 bright,其他跟整曲)
+    //   隔离 mg 用自己 string Random,PRNGManager 不被触碰
     //
-    // 验收锚点:同 seed → 听感 = melodygenerative-standalone(决策 3 隔离的保证)
+    // mg 总长固定 16 bars(POP/JAZZ),段落 ≤ 16 bars 时 crop 到段长 +
+    // adapter onsetOffset 平移到 section.startBeat;> 16 bars 段尾静音
+    // (罕见 — 流行歌 Verse/Chorus 通常 ≤ 16 bars)。
     const mgSeed = PRNGManager.getState();
-    const mgResult = MgEngineFacade.generate({
-        seed: mgSeed,
-        styleId,
-        keyRootPc: keyOffset,
-        isMinor: tonality === Tonality.Minor,
-    });
+    const songIsMinor = tonality === Tonality.Minor;
 
-    // ChordDef[] → GeneratedChord[](最简 adapter,Phase 2/C.4 精化)
-    const mgChords = chordDefsToGeneratedChords(mgResult.chords);
-    for (let i = 0; i < mgChords.length; i++) {
-        mgChords[i].keyOffset = keyOffset;
-    }
+    const allMgChords: GeneratedChord[] = [];
+    const allMgMelody: NoteData[] = [];
+    const allMgChordTexture: NoteData[] = [];
 
-    // ============================================================
-    // C.5 timing 对齐 — sections 总长截短到 ≤ mg 总长
-    // ============================================================
-    // 问题:mg styleDictionary.recommendedBars(POP/JAZZ=16 / BLUES=12)固定整曲长度,
-    // 但 auraflow structureTemplates 总长可能远大于(如 POP standard 64 bars)。
-    // 不修复 → 后半段 sections 没钢琴 → bass/drums/atmosphere 仍渲染但听感空洞。
-    //
-    // 修复:截短 sections 到 ≤ mg 实际生成总长(以最后一个 mg chord.endBeat 为准),
-    // sections 内 partial-section 也按比例 clip。
-    const mgTotalBeats = mgChords.length > 0
-        ? mgChords[mgChords.length - 1].endBeat
-        : sections.reduce((acc, s) => Math.max(acc, s.endBeat), 0);
-    for (let i = sections.length - 1; i >= 0; i--) {
-        if (sections[i].startBeat >= mgTotalBeats) {
-            sections.splice(i, 1);  // 整段超出 → 删除
-        } else if (sections[i].endBeat > mgTotalBeats) {
-            sections[i].endBeat = mgTotalBeats;  // 部分超出 → clip
+    for (let si = 0; si < sections.length; si++) {
+        const section = sections[si];
+        const sectionLengthBeats = section.endBeat - section.startBeat;
+
+        const sectionMg = MgEngineFacade.generateForSection({
+            seed: mgSeed,
+            styleId,
+            keyRootPc: keyOffset,
+            isMinor: songIsMinor,
+            sectionType: section.sectionType ?? SectionType.Verse,
+            sectionLengthBeats,
+        });
+
+        // ChordDef[] → GeneratedChord[](section.startBeat 偏移)
+        const sectionChords = chordDefsToGeneratedChords(
+            sectionMg.chords,
+            section.startBeat,
+        );
+        for (let i = 0; i < sectionChords.length; i++) {
+            sectionChords[i].keyOffset = keyOffset;
         }
+        for (let i = 0; i < sectionChords.length; i++) {
+            allMgChords.push(sectionChords[i]);
+        }
+
+        // NoteEvent[] → NoteData[]:加 section.startBeat onsetOffset
+        const melodyNotes = noteEventsToNoteData(sectionMg.melody, section.startBeat);
+        const chordNotes = noteEventsToNoteData(sectionMg.chordTexture, section.startBeat);
+        for (let i = 0; i < melodyNotes.length; i++) allMgMelody.push(melodyNotes[i]);
+        for (let i = 0; i < chordNotes.length; i++) allMgChordTexture.push(chordNotes[i]);
     }
 
-    // NoteEvent[] → NoteData[]:mg melody + chord 合并到 accompaniment(走 PIANO_RH)
-    //
-    // 关键设计:mg 在 standalone 是单一 Salamander piano sampler,所有声音同音色 + 同混响。
-    // auraflow MidiConverter 给 melody(GM=1 Bright + vol=122)和 pianoRH(GM=0 Grand +
-    // vol=102)不同 mix → 听感"两架钢琴"。修复:统一走 PIANO_RH channel(Grand Acoustic),
-    // 保留 mg 内部 velocity 比例 → "一架钢琴演奏旋律 + 和声"(mg divisi 哲学)。
-    const mgMelodyNotes = noteEventsToNoteData(mgResult.melody);
-    const mgChordNotes = noteEventsToNoteData(mgResult.chordTexture);
-    const mgPianoUnified: NoteData[] = mgMelodyNotes.concat(mgChordNotes);
+    const mgChords = allMgChords;
+
+    // mg piano 统一(melody + chord 合并走 PIANO_RH channel — Grand Acoustic 单音色)
+    // 见 C.4 注释:standalone mg 是单 Salamander sampler,统一 channel 避免"两架钢琴"听感
+    const mgPianoUnified: NoteData[] = allMgMelody.concat(allMgChordTexture);
     mgPianoUnified.sort((a, b) => a.onset - b.onset);
 
     PRNGManager.recordSnapshot('D');
