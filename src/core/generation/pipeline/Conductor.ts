@@ -61,7 +61,7 @@ import { DrumRealizer } from '../realizers/DrumRealizer';
 import { BassRealizer } from '../realizers/BassRealizer';
 import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
 import { Reconciler, ReconcilerReport } from './Reconciler';
-import type { PianoAccompParams } from '../primitives/PianoAccompIdiom';
+import type { PianoAccompConfig, PianoAccompModulation } from '../primitives/PianoAccompIdiom';
 import { PianoRealizer } from '../realizers/PianoRealizer';
 import { ToplineEngine } from './ToplineEngine';
 import { TopologyMutator } from '../primitives/TopologyMutator';
@@ -421,13 +421,16 @@ export function conduct(input: ConductorInput): ConductorResult {
             //   CastingEngine 必然填了 pianoParams。原 fallback 到 renderAccompaniment 的
             //   else 分支(bundle.personas[ROLE_ACCOMP] 兜底)已删除 —— 严格 roster 语义。
             const accompAssign = input.bandPlan?.sectionPlans[sIdx]?.assignments[BandRole.Accomp];
-            const pianoParams = accompAssign?.instrumentSpecificParams as PianoAccompParams | undefined;
+            // Phase 7e — instrumentSpecificParams 现在是 { config, modulation } 嵌套
+            const pianoData = accompAssign?.instrumentSpecificParams as
+                { config: PianoAccompConfig; modulation: PianoAccompModulation } | undefined;
             // Phase 6a — sleeping=true skip Accomp realize
             const accompSleeping = accompAssign?.sleeping === true;
-            if (pianoParams !== undefined && !accompSleeping) {
+            if (pianoData !== undefined && !accompSleeping) {
                 const pianoNotes = PianoRealizer.realize({
                     chords: sectionChords,
-                    params: pianoParams,
+                    config: pianoData.config,
+                    modulation: pianoData.modulation,
                     beatsPerBar: input.timeSignature[0],
                     context: renderContext,
                 });

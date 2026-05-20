@@ -205,13 +205,18 @@ export function attachDensityPlan(
                 );
 
             assignment.densityLevel = writeDensity;
-            // Phase 3:同步写入 instrumentSpecificParams.densityLevel
-            // (Piano 等 Idiom 通过 params 而非 assignment 消费,需镜像)
+            // Phase 3 → Phase 7e:写入 instrumentSpecificParams.modulation.densityLevel
+            // (Piano Idiom 通过 input.modulation.densityLevel 消费 — Phase 7e 解耦后,
+            //  modulation 是独立 sub-object,与 config 分离便于扩展)
             if (assignment.instrumentSpecificParams !== undefined
                 && typeof assignment.instrumentSpecificParams === 'object'
                 && assignment.instrumentSpecificParams !== null) {
-                (assignment.instrumentSpecificParams as { densityLevel?: number })
-                    .densityLevel = writeDensity;
+                const wrapper = assignment.instrumentSpecificParams as {
+                    modulation?: { densityLevel?: number };
+                };
+                if (wrapper.modulation !== undefined) {
+                    wrapper.modulation.densityLevel = writeDensity;
+                }
             }
             currentDensityByRole.set(role, writeDensity);
         }
@@ -288,15 +293,17 @@ export function attachSuppressionPlan(
 
             assignment.apexActive = true;
             assignment.suppressionFactor = DEFAULT_SUPPRESSION_FACTOR;
-            // 镜像到 instrumentSpecificParams(Idiom 通过 params 消费)
+            // Phase 4 → Phase 7e:镜像到 instrumentSpecificParams.modulation
             if (assignment.instrumentSpecificParams !== undefined
                 && typeof assignment.instrumentSpecificParams === 'object'
                 && assignment.instrumentSpecificParams !== null) {
-                const params = assignment.instrumentSpecificParams as {
-                    apexActive?: boolean; suppressionFactor?: number;
+                const wrapper = assignment.instrumentSpecificParams as {
+                    modulation?: { apexActive?: boolean; suppressionFactor?: number };
                 };
-                params.apexActive = true;
-                params.suppressionFactor = DEFAULT_SUPPRESSION_FACTOR;
+                if (wrapper.modulation !== undefined) {
+                    wrapper.modulation.apexActive = true;
+                    wrapper.modulation.suppressionFactor = DEFAULT_SUPPRESSION_FACTOR;
+                }
             }
         }
     }

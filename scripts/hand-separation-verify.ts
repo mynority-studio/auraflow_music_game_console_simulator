@@ -41,7 +41,7 @@ for (const chord of sampleChords) {
         intensityScale: 0.6,
         voicingSpan: 0.9,
     };
-    const notes = PianoAccompIdiom.render({ chords: [chord], params, beatsPerBar: 4, context: createDefaultRenderContext() });
+    const notes = PianoAccompIdiom.render({ chords: [chord], config: params, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
     // LH sustain：duration === chord 总长 (4) + pitch === voicing[0]
     const chordDur = chord.endBeat - chord.startBeat;
     const rhActualNotes = notes.filter(n => !(n.pitch === lhPitch && Math.abs(n.duration - chordDur) < 0.01));

@@ -142,7 +142,22 @@ import { LHTexture, RHTexture, CoordMode } from '../data/PianoTextureEnums';
 // 公开 API
 // ============================================================
 
-export interface PianoAccompParams {
+/**
+ * PianoAccompConfig — CastingEngine 在 plan 时**一次性写入**的决策配置。
+ *
+ * Phase 7e 设计哲学(解耦):
+ *   - 这些字段是"段落级编曲决策"的产物 — 由 mood / persona / style 派生
+ *   - CastingEngine.pickPianoAccompConfig 是唯一 writer
+ *   - PianoAccompIdiom.render 是 reader
+ *   - 一旦写入,本段内不变(对应"段落级决策"语义)
+ *
+ * 若未来要替换 Piano 实现:
+ *   - 新实现可定义自己的 Config 类型(只要 CastingEngine 适配)
+ *   - 输出契约(NoteData[] RELATIVE)不变即可
+ *
+ * 关联 cross_sync_rule §1.8(RenderContext 字段)+ §1.4(ChordQuality 影响 voicing)
+ */
+export interface PianoAccompConfig {
     lhTexture: LHTexture;
     rhTexture: RHTexture;
     coordMode: CoordMode;
@@ -170,72 +185,65 @@ export interface PianoAccompParams {
     swingRatio?: number;
     /**
      * Sub-Phase 1（Piano Texture Renaissance）：织体配方 ID。
-     *
-     * 提供时直接走 PIANO_TEXTURE_RECIPES[recipeId].baseGrid。
-     * 缺省时回落到 legacyRhTextureToRecipe(rhTexture) → 等价旧 grid，保持向后兼容。
-     * Sub-Phase 3（MoodRouter）会成为 BandEngine 选 recipe 的唯一入口。
      */
     recipeId?: TextureRecipeId;
     /**
-     * Sub-Phase 3：本和弦/段落所处的情绪桶。
-     *
-     * 提供时 PianoAccompIdiom 用 MoodRouter.buildOperatorChain(mood, barInPhrase)
-     * 取对应 mood 的 4-bar phrase 算子链；缺省时回落到 Sub-Phase 2 通用剧本。
-     *
-     * 一次决策、整段稳定：BandEngine 按段落决定 mood 并塞进 RoleAssignment.params。
+     * Sub-Phase 3：本和弦/段落所处的情绪桶(MoodRouter)。
      */
     mood?: MoodId;
     /**
      * 改动 B（Piano LH Walk Pattern）：LH walking 字母语法配方 ID。
-     *
-     * 仅当 lhTexture === WalkingTenths 时生效。提供时走 `renderLHWalkPattern`
-     * 解释器（B/5/3/A/N/= 规则）；缺省时回落到旧 `renderLHWalkingTenths`
-     * 硬编码 4 拍序列（保证 smoke #11 手写 params 不回归）。
-     *
-     * BandEngine 在 walking 路由分支调用 `MoodRouter.pickWalkPattern(mood, styleId)`
-     * 填入，让不同 mood × style 听感差异化。
      */
     walkPatternId?: WalkPatternId;
+    /**
+     * 阻尼器踏板系数 ∈ [0, 1] —— 来自 musician.persona.pianoPedalRatio。
+     */
+    pianoPedalRatio?: number;
+}
+
 /**
-     * Phase 3 — 织体密度等级(Texture Morphing)。
-     *
-     * 1-7 档,详见 types.ts DensityLevel:
-     *   L1=Tacit / L2=SparseSustain / L3=BlockQuarter / L4=BrokenEighth
-     *   L5=CompingStab / L6=ActiveArp / L7=Saturated
-     *
-     * 由 CastingEngine 从 weather.k 派生 + TextureContinuum 平滑滑动得出。
-     * PianoAccompIdiom 用 RhythmMask.filterGridByDensity(baseGrid, level)
-     * 过滤 baseGrid,实现"基因遮罩"渐进效果。
-     *
-     * 缺省时(不消费 mask):baseGrid 原样使用,行为同 Phase 2。
+ * PianoAccompModulation — 跨阶段 attach 函数写入的"段级状态调制"。
+ *
+ * Phase 7e 设计哲学(解耦):
+ *   - 这些字段是"运行时调制"的产物 — 由 attach* 函数按 weather / apex / drop 派生
+ *   - 多个 writer:attachDensityPlan / attachSuppressionPlan / WakeStateMachine
+ *   - PianoAccompIdiom.render 是 reader
+ *   - 与 PianoAccompConfig 分开 — 让重写 Piano 时可独立扩展状态字段
+ *
+ * 若未来要加新调制字段(如 Phase 8 Live 模式特有 state):
+ *   - 只动 PianoAccompModulation,**不动 PianoAccompConfig**
+ *   - 新 attach 函数写入,新 Piano 实现按需消费
+ *
+ * 关联 cross_sync_rule §1.11(DensityLevel)+ §1.12(isApex)+ §1.15(wakeK)
+ */
+export interface PianoAccompModulation {
+    /**
+     * Phase 3 — 织体密度等级(1-7,Texture Morphing)。
+     * 由 TextureContinuum.attachDensityPlan 派生 + 平滑滑动写入。
+     * 缺省时(不消费 mask):baseGrid 原样使用。
      */
     densityLevel?: number;
     /**
-     * Phase 4 — Apex 抑制标记(Apex Predator Suppression)。
-     *
-     * apexActive=true 时本段被 ducking,所有 NoteData.velocity ×= suppressionFactor。
-     * 由 TextureContinuum.attachSuppressionPlan 写入,Idiom 在 render 末端应用。
+     * Phase 4 — Apex 抑制标记。apexActive=true 时本段被 ducking。
+     * 由 TextureContinuum.attachSuppressionPlan 写入。
      */
     apexActive?: boolean;
     /**
      * Phase 4 — Apex ducking 强度(默认 0.6 = 让出 40% velocity)。
-     * apexActive=false 时本字段无效。
      */
     suppressionFactor?: number;
-    /**
-     * 阻尼器踏板系数 ∈ [0, 1] —— 来自 musician.persona.pianoPedalRatio。
-     *
-     *   0   = 干(grammar duration 不变)
-     *   1   = 自然踏板(延音至下一同 pitch onset 或 chord 边界,rest 透明)
-     *   >1  = 过踏(仍被 chord 边界硬钳)
-     *
-     * 缺省 1.0(自然踏板)。零 PRNG 消耗 —— 仅纯后处理改写 NoteData.duration。
-     *
-     * 算法参考 ToplineEngine.applyPianoPedal,适配 PianoAccompIdiom 多声部
-     * NoteData[] 输出场景(per-pitch 找下一同 pitch onset)。
-     */
-    pianoPedalRatio?: number;
 }
+
+/**
+ * @deprecated Phase 7e — 优先用 PianoAccompConfig + PianoAccompModulation 区分语义。
+ *
+ * 保留作 union alias 用于:
+ *   - 渐进迁移期间 scripts / 测试 / 老 callsite 引用
+ *   - TextureContinuum / Conductor 的中间 cast(后续可改成 { config, modulation })
+ *
+ * Phase 8+ 完全移除后,需同步 cross_sync_rule §1.x 更新所有引用 PianoAccompParams 的条目。
+ */
+export type PianoAccompParams = PianoAccompConfig & PianoAccompModulation;
 
 const DROP2_THRESHOLD = 0.6;
 const ANTICIPATION_OFFSET_BEATS = 0.25;
@@ -244,13 +252,20 @@ const ANTICIPATION_MIN_CHORD_DUR = 2.0;
 export interface PianoAccompRenderInput {
     /** 段落内的和弦序列（已带 voicing[]，RELATIVE 空间） */
     chords: GeneratedChord[];
-    params: PianoAccompParams;
+    /**
+     * Phase 7e — 分开的"段级决策"配置(CastingEngine 一次性写)。
+     * 若要替换 Piano 实现,新实现可定义自己的 Config(由 CastingEngine 适配)。
+     */
+    config: PianoAccompConfig;
+    /**
+     * Phase 7e — 分开的"运行时调制"状态(attach* 多次写)。
+     * 加新调制字段时只动本 interface,不影响 Config。
+     */
+    modulation: PianoAccompModulation;
     /** 拍号第一位（小节内拍数），决定 stepsPerBar */
     beatsPerBar: number;
     /**
      * Phase 0 — RenderContext 接入点(weather sampler / lookahead / state)。
-     * 当前实装不消费 context(bit-exact 保证);Phase 2+ render 循环内
-     * 调 context.weather.at(beat) 调制节奏算子 / voicing / velocity。
      */
     context: RenderContext;
 }
@@ -268,7 +283,11 @@ export class PianoAccompIdiom {
      * PRNG 消耗：0（完全决定性）
      */
     public static render(input: PianoAccompRenderInput): NoteData[] {
-        const { chords, params } = input;
+        const { chords } = input;
+        // Phase 7e — 内部 merge config + modulation 成"flat params"shim,
+        // 让 render 内部代码不需大改(数百处 params.X 访问保持)。
+        // 新增字段时按 config / modulation 区分写到 input,内部依然走 params 读。
+        const params = { ...input.config, ...input.modulation };
         const out: NoteData[] = [];
         if (chords.length === 0) return out;
 

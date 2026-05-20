@@ -39,7 +39,7 @@ import {
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import {
-    PianoAccompParams,
+    PianoAccompConfig,
     LHTexture,
     RHTexture,
     CoordMode,
@@ -220,9 +220,12 @@ export class CastingEngine {
             const role = am.assignedRole;
 
             // 按角色填 instrumentSpecificParams(V1:仅 Accomp 实装钢琴 params,其他角色保持 undefined 走旧 fallback)
+            // Phase 7e — Piano 改为 { config, modulation } 嵌套结构。
+            // CastingEngine 只写 config(段级决策),modulation 由后续 attach* 函数填。
             let params: unknown = undefined;
             if (role === BandRole.Accomp) {
-                params = CastingEngine.pickPianoAccompParams(section, am.card, bassActive, intensityScale, ctx);
+                const pianoConfig = CastingEngine.pickPianoAccompParams(section, am.card, bassActive, intensityScale, ctx);
+                params = { config: pianoConfig, modulation: {} };
             }
 
             assignments[role] = {
@@ -256,13 +259,17 @@ export class CastingEngine {
     //     · groove section (Verse/PreChorus/Chorus/Drop/BuildUp) → M1 + L4 Walking Tenths
     //     · lush section   (Bridge/Intro/Outro/PreOutro/Solo_Bridge) → M5 Two-Handed Voicing（E.2 接入）
     //                                                                  V2 阶段未接入时回退 M1 + L1 Sustained
+    /**
+     * Phase 7e — 返回 PianoAccompConfig(无 modulation 字段)。
+     * Modulation(densityLevel / apexActive / suppressionFactor)由后续 attach* 函数填。
+     */
     private static pickPianoAccompParams(
         section: SectionMetadata,
         musician: Musician,
         bassActive: boolean,
         intensityScale: number,
         ctx: PlanContext,
-    ): PianoAccompParams {
+    ): PianoAccompConfig {
         const isGrooveSection = CastingEngine.isGrooveSection(section.sectionType);
 
         // Sub-Phase 3:MoodRouter 决策织体配方。

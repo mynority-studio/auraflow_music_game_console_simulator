@@ -49,7 +49,7 @@ for (const recipeId of recipesToTest) {
         intensityScale: 0.6,
         recipeId,
     };
-    const notes = PianoAccompIdiom.render({ chords: [chord], params, beatsPerBar: 4, context: createDefaultRenderContext() });
+    const notes = PianoAccompIdiom.render({ chords: [chord], config: params, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
 
     // 按 onset 分组，统计每个击点弹了几个 voice + 哪个 pitch
     const byOnset = new Map<number, number[]>();
@@ -81,7 +81,7 @@ const popParams: PianoAccompParams = {
     intensityScale: 0.6,
     recipeId: TextureRecipeId.PopHeartbeat,
 };
-const popNotes = PianoAccompIdiom.render({ chords: [chord], params: popParams, beatsPerBar: 4, context: createDefaultRenderContext() });
+const popNotes = PianoAccompIdiom.render({ chords: [chord], config: popParams, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
 const popByOnset = new Map<number, number>();
 for (const n of popNotes) {
     const key = Math.round(n.onset * 16) / 16;

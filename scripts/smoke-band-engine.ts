@@ -227,7 +227,8 @@ if (grooveSection !== undefined) {
         };
         const walkingNotes = PianoAccompIdiom.render({
             chords: chordsInSection.slice(0, 2),
-            params: walkingParams,
+            config: walkingParams,
+            modulation: {},
             beatsPerBar: 4,
             context: createDefaultRenderContext(),
         });
@@ -271,7 +272,8 @@ if (lushSection !== undefined) {
         };
         const m5Notes = PianoAccompIdiom.render({
             chords: lushChords.slice(0, 1),
-            params: m5Params,
+            config: m5Params,
+            modulation: {},
             beatsPerBar: 4,
             context: createDefaultRenderContext(),
         });

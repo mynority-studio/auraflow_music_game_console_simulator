@@ -28,7 +28,7 @@ const params: PianoAccompParams = {
     walkPatternId: WalkPatternId.BebopWalk,
 };
 
-const notes = PianoAccompIdiom.render({ chords, params, beatsPerBar: 4, context: createDefaultRenderContext() });
+const notes = PianoAccompIdiom.render({ chords, config: params, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
 // 提取 LH bass — 按 onset 取最低 pitch（去除 10th）
 const lowNotes = notes.filter(n => n.pitch < 64 && n.duration < 1.5);
 const byOnset = new Map<string, number>();
@@ -59,7 +59,7 @@ for (let i = 0; i < chords.length; i++) {
 
 console.log(`\n=== ScaleClimb (B S S A) — 验证 S step 走 scale tone 池（含 9/6 色彩音）===\n`);
 const paramsScale: PianoAccompParams = { ...params, walkPatternId: WalkPatternId.ScaleClimb };
-const notesScale = PianoAccompIdiom.render({ chords, params: paramsScale, beatsPerBar: 4, context: createDefaultRenderContext() });
+const notesScale = PianoAccompIdiom.render({ chords, config: paramsScale, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
 const lowScale = notesScale.filter(n => n.pitch < 64 && n.duration < 1.5);
 const byOnsetScale = new Map<string, number>();
 for (const n of lowScale) {

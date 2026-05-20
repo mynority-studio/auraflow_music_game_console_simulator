@@ -71,7 +71,7 @@ if (firstWalkingIdx >= 0) {
         c.startBeat >= section.startBeat && c.endBeat <= section.endBeat,
     ).slice(0, 4);
 
-    const notes = PianoAccompIdiom.render({ chords: chordsInSection, params, beatsPerBar: 4, context: createDefaultRenderContext() });
+    const notes = PianoAccompIdiom.render({ chords: chordsInSection, config: params, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
     // 以"低于 RH 起始区"作为 walking 输出（包含 bass + 10th 双音，10th 可达 63 = D#4）
     // 由于 pattern 多 stepDur (0.5/1/2)，不能按 duration 过滤；改按 onset 分组取最低
     const lowNotes = notes.filter(n => n.pitch < 64);
@@ -119,7 +119,7 @@ for (const pid of samplePatterns) {
         intensityScale: 0.6,
         walkPatternId: pid,
     };
-    const notes = PianoAccompIdiom.render({ chords: sampleChords, params, beatsPerBar: 4, context: createDefaultRenderContext() });
+    const notes = PianoAccompIdiom.render({ chords: sampleChords, config: params, modulation: {}, beatsPerBar: 4, context: createDefaultRenderContext() });
     // 取 onset 簇 — pitch < 64 包含 bass+10th
     const lowNotes = notes.filter(n => n.pitch < 64);
     const distinctOnsets = new Set(lowNotes.map(n => n.onset.toFixed(4)));
