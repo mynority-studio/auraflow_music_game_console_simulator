@@ -3,9 +3,11 @@ import { StyleId } from '../../core/generation/config/StyleFlags';
 import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
+import { runPipeline } from '../../core/generation/pipeline';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
+import { BandSelectionStore } from '../../state/BandSelectionStore';
 
 export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING' | 'PREPARING_JAM' | 'JAMMING_DRUMS' | 'JAMMING_MELODY';
 
@@ -445,16 +447,22 @@ export class EndlessRadioManager {
       PRNGManager.recordSnapshot('A');
       console.log(`[Radio] New seed: ${seed}`);
 
-      const melodyEngine = new MelodyEngine();
       // 从所有已注册的风格中随机选择（PRNG 驱动，确定性）
       const allStyleIds = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
       const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
       const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
-      
-      const rawTrack = melodyEngine.generateFullSong(randomStyleId);
-      
-      // We need to get the actual style config used by the engine
-      // Since MelodyEngine doesn't return the style config directly, we'll import StyleRegistry
+
+      // 直接调 runPipeline + 透传 BandSelectionStore committed 状态(Q+H Apply 后的乐队)
+      // MelodyEngine.generateFullSong 是 thin wrapper 不接 forcedBand,跳过用 runPipeline 直调
+      const rawTrack = runPipeline({
+        forcedStyleId: randomStyleId,
+        forcedBand: BandSelectionStore.getBand(),
+        forcedGmPrograms: BandSelectionStore.getInstruments(),
+      });
+
+      console.log('[Radio] forcedBand=', JSON.stringify(BandSelectionStore.getBand()),
+                  ' forcedGmPrograms=', JSON.stringify(BandSelectionStore.getInstruments()));
+
       const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
       const randomStyle = StyleRegistry[randomStyleId] || AcgStyleConfig;
       

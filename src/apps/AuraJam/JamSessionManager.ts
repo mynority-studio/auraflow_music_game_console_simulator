@@ -3,6 +3,8 @@ import { StyleId } from '../../core/generation/config/StyleFlags';
 import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { MelodyEngine } from '../../core/generation/MelodyEngine';
+import { runPipeline } from '../../core/generation/pipeline';
+import { BandSelectionStore } from '../../state/BandSelectionStore';
 import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
@@ -155,11 +157,17 @@ export class JamSessionManager {
             // 🌟 Motif 智能预处理：质量分析 + 清洗 + 变奏扩展（拓扑链由 Lead Persona 注入）
             const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality, leadTopology);
 
-            const rawTrack = melodyEngine.generateFullSong(randomStyleId, {
-                processedUserMotif: processedMotif || undefined,
-                motifRole,
-                userMotifRoot: scaleState.key,
-                detectedTonality: scaleState.tonality
+            // Single Pipeline 原则:所有 app 走同一个 runPipeline,共享 BandSelectionStore 状态
+            const rawTrack = runPipeline({
+                forcedStyleId: randomStyleId,
+                forcedBand: BandSelectionStore.getBand(),
+                forcedGmPrograms: BandSelectionStore.getInstruments(),
+                generation: {
+                    processedUserMotif: processedMotif || undefined,
+                    motifRole,
+                    userMotifRoot: scaleState.key,
+                    detectedTonality: scaleState.tonality,
+                },
             });
 
             const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');

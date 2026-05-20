@@ -90,6 +90,25 @@
   - 列重排后 Pop/Jazz/NeoSoul 的 recipe / walk / phrase 全部错位 — golden seed 大幅 rebaseline
 - **风险**:**高**(silently 错位,听感"风格混乱"但不报错)
 
+### 1.20 runPipeline 行为变更 ↔ 所有 app 自动继承(Single Pipeline 原则)
+
+- **触发器**:
+  - 任何 `runPipeline` 输入字段(`PipelineRunOptions`)增/删/改
+  - 输出 schema(`GeneratedTrack` / `MusicContext`)变更
+  - Phase 升级(任何 Phase 0-7e 类似的引擎重构)
+- **必须验证(无需改 app 代码,但需跨 app 一致性测)**:
+  - PipelineMonitor.playSeed → 跑 `npm run golden-seed`
+  - AuraBar.triggerGeneration → 听感测试(双击 TapArea)
+  - AuraJam.triggerGeneration → 听感测试(motif → 全曲)
+  - 3 个 app 行为必须一致 — 不一致即 Single Pipeline 违规
+- **反向触发**:加新跨 app 配置(类 BandSelectionStore 的新 store)
+  - 必须 3 个 app(PipelineMonitor / AuraBar / AuraJam)都消费
+  - 否则 app 行为不一致,违反 Single Pipeline 原则
+- **违规检测**:`grep -rn "from.*'primitives/'" src/apps/` 应为空
+  - 任何 app 直接 import primitives/* = 红线
+- **风险**:**中**(违反原则会让 Q+H 与 AuraBar 听感不同 → debug 失效)
+- 关联 `app_integration_rule.md` §0 Single Pipeline Principle
+
 ### 1.19 MoodId 枚举顺序变更 ↔ MoodRouter 二维表行索引(Phase 7c 新登记)
 
 - **触发器**:`pipeline/MoodRouter.ts` 中 `MoodId` enum 顺序变更或新增 mood

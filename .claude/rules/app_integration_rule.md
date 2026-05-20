@@ -8,6 +8,55 @@
 
 ---
 
+## §0 ⚠ Single Pipeline Principle(单一管道原则)— 核心原则
+
+**所有 app(AuraBar / AuraJam / Q+H / 未来新 app)消费"离线全曲生成"必须**
+**通过 `runPipeline()` 唯一入口。任何 app 不允许设计自己的平行 pipeline。**
+
+理由:
+- **一个 pipeline = 一份 golden seed baseline** — 跨 app 听感一致性
+- **pipeline 调整自动同步到所有 app** — 改一处生效全场,不必每个 app 重写
+- **Q+H 是 app 的调试窗口,不是独立 app** — 与 AuraBar / AuraJam 共享同一 pipeline
+
+### 允许偏离(白名单,任何其他偏离都视为反模式)
+
+| 例外 | 理由 | 例子 |
+|------|------|------|
+| `scripts/*` 验证脚本可直接调 Idiom.render | 单元测试 / 算法 debug,非用户面向生成 | `walking-verify.ts` / `voice-pattern-verify.ts` |
+| Phase 8+ Live 模式走 `LiveAccompanist` | 实时流 ≠ 离线全曲,语义不同 | (Phase 8+ 实装) |
+| Jam 模式实时演奏(按键触发单音) | 不走"全曲生成",直接 AudioEngine.playNote | AuraJam 用户按键 |
+
+### 跨 app 共享配置(单一真理之源)
+
+任何"用户可配置 + 多个 app 都要用"的状态,必须放在**模块级 store**,**不要**用各自的
+useState / Context / 局部 ref。
+
+| 共享配置 | Store 模块 |
+|---------|-----------|
+| 乐队选择(forcedBand / forcedGmPrograms) | `src/state/BandSelectionStore.ts` |
+| 未来其他跨 app 状态(motif / mood / etc.) | 沿用模式新建 `src/state/XxxStore.ts` |
+
+PipelineMonitor 点 Apply / 修改 → 写入 store;
+AuraBar / AuraJam 等其他 app 在 `runPipeline` 调用时读 store。
+
+### 违反信号(任一命中触发 review)
+
+- ❌ 新 app 含 `XxxPipeline.ts` / `XxxGenerator.ts` 自定义生成模块
+- ❌ 新 app 不经 runPipeline,直接调 `PianoAccompIdiom` / `BassIdiom` / `DrumIdiom` / `AtmosphereRenderer` 等底层(scripts 除外)
+- ❌ 新 app 跳过 runPipeline,自己拼装 `GeneratedTrack`
+- ❌ 跨 app 状态分散在各 app 的 useState / 局部 Context,而不是模块级 Store
+- ❌ 不同 app 对同 seed 产出不同结果(只可能由 Single Pipeline 违规导致)
+
+### 当前 3 个 app 的合规状态(基线时间 2026-05-20)
+
+- `src/components/PipelineMonitor.tsx:playSeed` → `runPipeline({ forcedBand, forcedGmPrograms, ... })` ✓
+- `src/apps/AuraBar/EndlessRadioManager.ts:triggerGeneration` → `runPipeline({ forcedStyleId, forcedBand: BandSelectionStore.getBand(), ... })` ✓
+- `src/apps/AuraJam/JamSessionManager.ts` → `runPipeline({ forcedStyleId, forcedBand: ..., generation: { processedUserMotif, ... } })` ✓
+
+`MelodyEngine.generateFullSong` 是 thin wrapper(留作向后兼容,新代码请直调 `runPipeline`)。
+
+---
+
 ## 0. 何时读本文件
 
 任一条件命中,**先读完再动手**:

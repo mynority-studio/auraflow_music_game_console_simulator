@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, useDragControls } from 'motion/react';
 import { Activity, Play, Square, X, Dice5, Volume2, VolumeX } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
@@ -23,6 +23,7 @@ import {
 import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
+import { BandSelectionStore } from '../state/BandSelectionStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -143,17 +144,36 @@ export const PipelineMonitor: React.FC = () => {
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
+    // Pending(UI 编辑中)— 用户在下拉框选乐手时即时变,但**不影响 Play**
     const [bandSelection, setBandSelection] = useState<BandSelection>({});
     const [instrumentSelection, setInstrumentSelection] = useState<InstrumentSelection>({});
+    // Committed(Apply 后)— Play / Tap 实际消费的快照
+    const [committedBand, setCommittedBand] = useState<BandSelection>({});
+    const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>({});
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
     playStateRef.current = playState;
     const activeSeedRef = useRef<number | null>(null);
+    // refs 指向 **committed**(不是 pending),Play / Tap 通过 ref 拿乐队
     const bandSelectionRef = useRef<BandSelection>({});
-    bandSelectionRef.current = bandSelection;
+    bandSelectionRef.current = committedBand;
     const instrumentSelectionRef = useRef<InstrumentSelection>({});
-    instrumentSelectionRef.current = instrumentSelection;
+    instrumentSelectionRef.current = committedInstruments;
+
+    // dirty 检测 — pending !== committed 时按钮高亮提示
+    const isBandDirty = useMemo(() => {
+        return JSON.stringify(bandSelection) !== JSON.stringify(committedBand)
+            || JSON.stringify(instrumentSelection) !== JSON.stringify(committedInstruments);
+    }, [bandSelection, instrumentSelection, committedBand, committedInstruments]);
+
+    // Apply 按钮:pending → committed 一次性提交
+    // 同步写到全局 BandSelectionStore — AuraBar TapArea 双击触发也读这个
+    const applyBandSelection = useCallback(() => {
+        setCommittedBand({ ...bandSelection });
+        setCommittedInstruments({ ...instrumentSelection });
+        BandSelectionStore.setBand(bandSelection, instrumentSelection);
+    }, [bandSelection, instrumentSelection]);
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -410,6 +430,8 @@ export const PipelineMonitor: React.FC = () => {
                 onChange={setBandSelection}
                 instrumentSelection={instrumentSelection}
                 onInstrumentChange={setInstrumentSelection}
+                isDirty={isBandDirty}
+                onApply={applyBandSelection}
             />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
@@ -473,19 +495,39 @@ interface BandSelectionPanelProps {
     /** B2：per-role GM program 选择（来自 Instr. 下拉） */
     instrumentSelection: InstrumentSelection;
     onInstrumentChange: (next: InstrumentSelection) => void;
+    /** 编辑状态与已 apply 状态有差异时高亮 Apply 按钮 */
+    isDirty: boolean;
+    /** Apply 按钮点击 — 把当前编辑提交为 committed,Play 才会用 */
+    onApply: () => void;
 }
 
 /** B1 哨兵值：UI dropdown "— 留空 —" 选项的 value，区别于"使用默认乐手"（value=""） */
 const BAND_SLOT_EMPTY_VALUE = '__empty__';
 
 const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
-    selection, onChange, instrumentSelection, onInstrumentChange,
+    selection, onChange, instrumentSelection, onInstrumentChange, isDirty, onApply,
 }) => {
     const totalPersonas = MUSICIAN_POOL.length;
     return (
         <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0">
             <div className="flex items-baseline justify-between mb-1">
-                <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
+                <div className="flex items-center gap-2">
+                    <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
+                    {/* Apply 按钮:dirty 时高亮提示用户"有未应用变更",clean 时灰色 */}
+                    <button
+                        type="button"
+                        onClick={onApply}
+                        disabled={!isDirty}
+                        className={`text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded transition-all ${
+                            isDirty
+                                ? 'bg-fuchsia-500/80 text-white hover:bg-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.5)] animate-pulse'
+                                : 'bg-zinc-800 text-zinc-600 cursor-default'
+                        }`}
+                        title={isDirty ? '应用本次乐队选择,下次 Play / Tap 将使用' : '当前选择已应用'}
+                    >
+                        {isDirty ? '⚡ Apply' : '✓ Applied'}
+                    </button>
+                </div>
                 <span className="text-[9px] text-zinc-600">{totalPersonas} personas · 🎲 default · ⊘ empty</span>
             </div>
             <div className="grid grid-cols-6 gap-1.5">
