@@ -271,12 +271,162 @@ data/                 ← 纯数据,不依赖任何引擎模块
 
 ---
 
+## 11. 乐器修改速查 — 按"想优化什么"反查文件
+
+> 当你脑子里有"我想让钢琴更摇摆 / 更稀疏 / 加个新 lick / 改撞音规则"等
+> **具体需求**时,直接查本节对应行,避免在错位置改 + 多处打补丁。
+>
+> 本节是 §2"单一真理之源"的**乐器维度补充**——§2 按"改什么"查,本节按
+> "想优化哪个乐器的什么方面"查。
+>
+> 当前覆盖:钢琴(Phase 7 后第一个详细范例)。
+> 未来加吉他 / 萨克斯 / 弦乐等,**按本节模板新增 §11.2 / §11.3 子节**。
+
+### 11.1 钢琴 — 5 层关切点分布
+
+```
+┌─ 决策层(说"这段钢琴想怎么演奏") ────────────────────────┐
+│  pipeline/MoodRouter.ts          ← Mood 决策(8 桶)       │
+│    pickMood()                    (style/bpm/section/persona → MoodId)
+│    moodToRecipe()                (mood × style → TextureRecipeId)
+│                                                          │
+│  pipeline/CastingEngine.ts       ← 综合决策              │
+│    pickPianoAccompParams()         (line 238-334)        │
+│    - 选 LH 模式(Sustained/Walking/Tacit/Shell)           │
+│    - 选 RH 织体(Block/Stab/Broken)                       │
+│    - 选 CoordMode(M1/M5/M6/M7)                           │
+│    - Persona DNA 映射(colorBias→voicingSpan 等)          │
+│                                                          │
+│  config/styles/*.ts              ← 风格池注入(personas)  │
+└──────────────────────────────────────────────────────────┘
+        ↓ 决策结果打包成 PianoAccompParams
+┌─ 物理约束层(钢琴的物理事实) ────────────────────────────┐
+│  primitives/PianoAccompIdiom.ts (常量区,line 58-107)     │
+│    RH_MIN_PITCH=48 / SHELL_RANGE [52, 69] / 等           │
+│    MIN_HAND_SEPARATION=3 半音                            │
+│    enforceHandSeparation()       (line 992-1008)         │
+│                                                          │
+│  pipeline/ToplineEngine.ts (Pass 3,line 651-697)         │
+│    pianoPedalRatio → 阻尼器自然延音建模                  │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 算法 / Voicing 层(怎么算出具体音符) ───────────────────┐
+│  primitives/VoicingProcessor.ts                          │
+│    buildShellLH()       ← LH guide-tone shell            │
+│    buildRootlessRH()    ← RH rootless                    │
+│    buildQuartalRH()     ← RH quartal                     │
+│    computeSATBVoicings()← 4-voice 全局                   │
+│                                                          │
+│  primitives/RhythmTopologyMutator.ts                     │
+│    OP_DENSIFY/DECIMATE/ROTATE/MIRROR 等节奏算子          │
+│  primitives/SyncopationEvaluator.ts                      │
+│    metricalWeight() — 切分张力评估                       │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 渲染层(把决策 + 算法 → NoteData[]) ────────────────────┐
+│  primitives/PianoAccompIdiom.ts (1679 行,核心)           │
+│    render()           ← 入口(被 PianoRealizer 包装)       │
+│    renderGrid()       ← 应用 baseGrid + 算子链           │
+│    renderLHWalkPattern() ← LH walking 解释器             │
+│    renderM5TwoHandedVoicing() ← Bill Evans 风            │
+│    renderLHShellVoicing() ← 调 VoicingProcessor          │
+│    renderLick()       ← 签名 lick 落音                   │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 资源层(数据库 / 卡片库,只读不算) ──────────────────────┐
+│  data/PianoTextureRecipes.ts  ← 10 种 RH 织体配方        │
+│  data/PianoTextureEnums.ts    ← LHTexture/RHTexture/CoordMode 枚举
+│  data/BassWalkPatterns.ts     ← Solo Piano LH walking 配方
+│  idioms/LickDictionary.ts     ← 4 个签名 lick            │
+│  idioms/MusicianRegistry.ts   ← alex/chloe/marcus_piano 卡
+└──────────────────────────────────────────────────────────┘
+```
+
+### 11.2 钢琴优化场景对照表(每个最多动 1-2 个文件)
+
+| 你想优化什么 | 主要改哪 | 次要改哪(如需) | Blast |
+|------------|---------|----------------|-------|
+| **加一种新 RH 织体**(如 Stride / Latin Montuno 变体) | `data/PianoTextureRecipes.ts` 加 enum + 配方 | `PianoAccompIdiom.renderGrid()` 如需新分支 | 1-2 文件 |
+| **调某 mood 下的 voicing 偏好** | `pipeline/MoodRouter.ts` 改 `MOOD_RECIPE[mood][styleId]` 表 | — | **1 文件** |
+| **加新 signature lick** | `idioms/LickDictionary.ts` 加 Lick 对象到 LICKS 数组 | — (hash 自动路由) | **1 文件** |
+| **改进双手撞音检测** | `PianoAccompIdiom.enforceHandSeparation()` (line 992-1008) | 若涉及跨乐器,扩 `Reconciler.ts` | 1-2 文件 |
+| **新 LH 演奏模式**(如 Boogie Woogie) | `data/BassWalkPatterns.ts` 加 WalkPatternId + WALK_PATTERNS 配方 | `MoodRouter.MOOD_WALK_PATTERN` 表加路由 | 1-2 文件 |
+| **改 LH/RH 物理约束**(改音域 / 改最小间隔) | `PianoAccompIdiom.ts` 顶部常量 (line 58-107) | — | **1 文件** |
+| **新 CoordMode**(双手协作模式,如 M8) | `data/PianoTextureEnums.ts` enum + `PianoAccompIdiom` 渲染分支 + `CastingEngine.pickPianoAccompParams` 路由 | (3 文件,但都是已知点) | 3 文件 |
+| **新钢琴 musician**(如 herbie_jazz_piano) | `idioms/MusicianRegistry.ts` 加 musician 卡 | `config/styles/*.ts` 选择性 plug 进 personas | 1-2 文件 |
+| **改 voicing 算法本身**(如重写 rootless 加 chromatic approach) | `primitives/VoicingProcessor.ts` 对应 build*RH 函数 | — | **1 文件** |
+| **改 persona DNA → params 映射**(如 colorBias 加非线性) | `pipeline/CastingEngine.pickPianoAccompParams` (line 298-300) | — | **1 文件** |
+| **改踏板物理**(如双层踏板 / sostenuto) | `pipeline/ToplineEngine.ts` Pass 3 + 新增 `pedalSostenuto?` 字段到 `MusicianPersona` | types.ts | 2-3 文件 |
+
+### 11.3 钢琴 — 三个反直觉但关键的事实
+
+#### 11.3.1 **PianoAccompIdiom.ts 是渲染器,不是决策器**
+
+1679 行看起来吓人,但**决策代码全不在这里**——它只渲染 `PianoAccompParams`
+(已经决策好的输入)。如果你想"让钢琴在 verse 段加更多切分",改
+`CastingEngine.pickPianoAccompParams` 或 `MoodRouter`,**别在 PianoAccompIdiom
+里加 if/else**——那是反模式,会让决策散落。
+
+#### 11.3.2 **voicing 改造已经收口到 VoicingProcessor**
+
+Phase 1 + 3a 之后,所有钢琴 voicing(SATB / Rootless / Quartal / Shell)集中
+在 `VoicingProcessor.ts`。**PianoAccompIdiom 不算 voicing**——它调
+`VoicingProcessor.buildShellLH()` / `buildRootlessRH()` 拿现成结果。要改
+voicing 算法,只动 VoicingProcessor 一个文件。
+
+#### 11.3.3 **persona DNA 是钢琴个性的真正源头**
+
+钢琴乐手卡的 DNA 字段直接映射到行为:
+- `colorBias` → Drop-2 开放度 / 9-13 扩展色彩
+- `syncopationAssault` → push hit 密度
+- `sparsityTendency` → grid 击点删除概率
+- `bouncePreference` → Solo Piano 时切到 Oom-Pah 节奏
+- `pianoPedalRatio` → 踏板延音比例
+- `signatureLickProb` → 签名乐句触发率
+- `walkPatternId` → Solo Piano LH walking 选择
+
+**加新 musician = 调上面这些 DNA 参数 + 写一张卡**(`MusicianRegistry.ts` 内)。
+完全不动渲染代码。
+
+### 11.4 优化前自问 3 个问题(对应 §2 单一真理之源)
+
+1. **决策 vs 渲染?**
+   - 决策 → CastingEngine / MoodRouter / config/styles
+   - 渲染 → PianoAccompIdiom / VoicingProcessor
+
+2. **算法 vs 数据?**
+   - 算法 → VoicingProcessor / PianoAccompIdiom / RhythmTopologyMutator
+   - 数据(配方/枚举/lick 库)→ data/* 或 idioms/*
+
+3. **钢琴专有 vs 跨乐器共通?**
+   - 专有 → 上述钢琴文件
+   - 共通(撞音/voice crossing/跨乐器声部协调)→ `pipeline/Reconciler.ts`
+
+**90% 的钢琴优化只改 1-2 个文件**。剩 10%(如新增 CoordMode、改 IR 字段)需要
+3+ 文件,这是天然的"加新概念"代价,不可避免。
+
+### 11.5 未来其他乐器速查(待补)
+
+待添加的乐器专题(按 §11.1-11.4 结构):
+- [ ] 贝斯(BassRealizer + BassIdiom + BassWalkPatterns)
+- [ ] 鼓组(DrumRealizer + DrumIdiom + drumPatterns 风格池)
+- [ ] 氛围(AtmosphereRealizer + AtmosphereRenderer + AtmosphereConfig)
+- [ ] 吉他(Phase 8+ 加入)
+- [ ] 萨克斯 / 管乐(Phase 8+ 加入,届时引入 InstrumentProfile breath constraints)
+
+**每次加新乐器时,本节同步补 §11.X 子节**——把"决策/物理约束/算法/渲染/资源"
+5 层分布 + 优化场景表 + 反直觉提醒填好。
+
+---
+
 ## 附录:历史里程碑 tag
 
 - `v1.35.0` —— 技术债清零基线
 - `v1.36.0 The Pianist Update` —— 钢琴织体重构 + Band UI 解封
 - `v1.37.0-refactor-foundations` —— IR / VoicingProcessor / CastingEngine / Realizer 四件套落地
 - `v1.38.0-reconciler-online` —— Reconciler 上线 + Conductor 命名收尾
+- `v1.39.0-rules-online` —— 规则双轨完整覆盖(engine + app integration 双文件)
+- `v1.39.1-naming-cleanup` —— Orchestrator → AbsoluteTransposer + AtmosphereIdiom interface → AtmosphereConfig
 
 每次重构后**同步更新本文件 + 打 tag**。
 
