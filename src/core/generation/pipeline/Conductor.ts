@@ -74,6 +74,7 @@ import { attachDensityPlan, attachSuppressionPlan } from './TextureContinuum';
 import { attachDropStates, collectDropWindows, filterNotesByDropWindows } from './MarkovStateMachine';
 import { attachWakeStates, deriveSongHash } from './WakeStateMachine';
 import { humanizeTrack } from './GrooveHumanizer';
+import { findPlateauRegions, pickSoloist, generateSoloNotes } from './ImprovisationStrategy';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -512,6 +513,53 @@ export function conduct(input: ConductorInput): ConductorResult {
     sortNotesInPlace(bass);
     sortNotesInPlace(atmosphere);
     // drums 已在 DrumIdiom 内部排序，无需再排
+
+    // Phase 6b — Solo 引擎:plateau detection + Lead 替换
+    //   1. 扫 weather 找 K plateau ≥ 8 拍 / Solo_Bridge 段
+    //   2. 选 Soloist(MainInst → Accomp fallback)
+    //   3. 每 region 生成 NCT-aware solo notes(Tension + Landing Gear)
+    //   4. melody 在 region 内剔除原 lead notes,注入 solo notes
+    //
+    // 时机:Reconciler 之前 — 让 Reconciler 处理 solo 与其他声部撞音。
+    if (activeMusicians.length > 0) {
+        const soloRegions = findPlateauRegions(input.sections, renderContext.weather);
+        const soloist = pickSoloist(activeMusicians);
+        for (let i = 0; i < soloRegions.length; i++) {
+            const region = soloRegions[i];
+            // 取 region 内 chords
+            const regionChords = input.chords.filter(
+                c => c.endBeat > region.fromBeat && c.startBeat < region.toBeat,
+            );
+            if (regionChords.length === 0) continue;
+            // prevPitch:region 起点之前最后一个 melody note
+            let prevPitch: number | undefined;
+            for (let m = melody.length - 1; m >= 0; m--) {
+                if (melody[m].onset < region.fromBeat) { prevPitch = melody[m].pitch; break; }
+            }
+            const soloNotes = generateSoloNotes(
+                region, regionChords, renderContext.weather, soloist, prevPitch,
+            );
+            // 剔除 region 内原 lead notes(in-place 过滤)
+            let writeIdx = 0;
+            for (let m = 0; m < melody.length; m++) {
+                const n = melody[m];
+                if (n.onset >= region.fromBeat && n.onset < region.toBeat) continue;
+                if (writeIdx !== m) melody[writeIdx] = n;
+                writeIdx++;
+            }
+            melody.length = writeIdx;
+            // 注入 solo notes
+            for (let s = 0; s < soloNotes.length; s++) melody.push(soloNotes[s]);
+        }
+        // 重排 melody(onset ASC)
+        if (soloRegions.length > 0) {
+            melody.sort((a, b) => {
+                const d = a.onset - b.onset;
+                if (Math.abs(d) > EPSILON) return d;
+                return a.pitch - b.pitch;
+            });
+        }
+    }
 
     // Phase 5:跨乐器后置协调(v2 含 LIL lift)
     //   - 同 (pitch, onset) 重复音 → velocity damp(就地修改 4 轨)

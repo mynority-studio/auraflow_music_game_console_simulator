@@ -552,6 +552,22 @@ export interface SectionPlan {
      * hash 概率(默认 30%)激活,设置为 section.endBeat - 4 拍(最后 1 小节 4/4)。
      */
     dropFromBeat?: number;
+    /**
+     * Phase 6b — Solo 区间(绝对 beat 位置,该段被 ImprovisationStrategy 替换 Lead)。
+     *
+     * 触发条件(任一命中):
+     *   1. K plateau ≥ 8 拍持续 K ≥ 0.65
+     *   2. sectionType === Solo_Bridge
+     *
+     * Solo 区间内:
+     *   - melody 原 lead 被剔除
+     *   - 由 ImprovisationStrategy 派生新 NoteData(NCT + Tension Accumulator + Landing Gear)
+     *   - Apex 派发暂未联动(留 Phase 7+);保留 GrooveHumanizer 末端处理
+     *
+     * 缺省时(undefined):本段无 Solo,Lead 走 ToplineEngine 默认路径。
+     */
+    soloFromBeat?: number;
+    soloToBeat?: number;
 }
 
 /**

@@ -148,6 +148,24 @@
   - React/UI 调用代码(`src/components/*`)
 - **风险**:**高**(App / 嵌入式直接破坏;app_integration_rule 是 App dev 的真理之源,不同步会让外部消费方踩坑)
 
+### 1.17 SectionPlan.soloFromBeat/toBeat ↔ ImprovisationStrategy ↔ Conductor melody overlay(Phase 6b)
+
+- **触发器**:
+  - 改 `PLATEAU_K_THRESHOLD`(默认 0.65)/ `MIN_PLATEAU_BEATS`(默认 8)
+  - 改 `TENSION_FORCE_THRESHOLD`(默认 5)/ Tension 增量表
+  - 改 Solo 音域(SOLO_RANGE_LO/HI)
+  - 改 hash choice 公式(40% chord / 30% scale / 30% NCT)
+- **必须同步**:
+  - `pipeline/ImprovisationStrategy.ts`:
+    - findPlateauRegions / pickSoloist / generateSoloNotes 三个函数公式一致
+    - Tension Accumulator 阈值与 chord/scale/NCT 增量协调
+  - `pipeline/Conductor.ts`:
+    - findPlateauRegions 调用点 + melody overlay 替换逻辑(剔除 + 注入 + sort)
+    - **必须在 Reconciler 之前**(Reconciler 需要处理 solo 与其他声部撞音)
+  - `data/NCTApproachPatterns.ts`:NCT pickApproachPattern 与 R 阈值表对齐
+  - **MainInst / Accomp 角色**:pickSoloist 优先级(MainInst → Accomp);改 BandRole 优先级需同步
+- **风险**:**中-高**(Solo 区间叠加多机制 — sleeping + apex + drop + solo 同段时优先级未明)
+
 ### 1.15 MusicianPersona.wakeK/peakK ↔ WakeStateMachine ↔ Conductor sleeping gates(Phase 6a)
 
 - **触发器**:
