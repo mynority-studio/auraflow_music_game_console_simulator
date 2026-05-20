@@ -1,37 +1,43 @@
 /**
- * Stage5Layering — 多轨织体层叠（Phase 5 配置剥离版）
+ * Conductor — 总装协调器(Phase 6 由 Stage5Layering 重命名而来)
  *
- * 职责：消费 Stage 1~3 的输出（chords + voicings + sections + styleId），
- * 按 ConductorPlan 决定每段哪些角色发声，输出 4 轨 NoteData[]：
+ * 改名理由(Phase 6):
+ *   - 旧名 Stage5Layering 仅描述管线位置(第 5 阶段),不描述实际职责。
+ *   - 实际职责是"总装" —— 调度所有 InstrumentRealizer + Lead 渲染,合并 4 轨。
+ *     这正是音乐工程里的 Conductor(指挥/总装)。
+ *   - 注意:本模块与下游 Orchestrator.ts(仅做 RELATIVE→ABSOLUTE)职责互不重叠;
+ *     Phase 7 计划把 Orchestrator 的转置函数下沉为 Conductor 的最后一步,
+ *     彻底消除 "Orchestrator 不是 orchestrator" 的命名误导。当前阶段两者并存。
  *
- *   melody         — Lead 主旋律（FractalStructureEngine + PCFGGrammarEngine 驱动）
- *   accompaniment  — Comping 伴奏（RhythmMutator + TextureMapper 驱动）
- *   bass           — 低音锚定（极简 Layer 1：每和弦起拍 root，长和弦中位补一击）
- *   drums          — 打击乐（DrumIdiom 16-step grid 驱动）— Phase 5 新增
+ * 职责:消费 Stage 1~3 的输出(chords + voicings + sections + styleId),
+ * 按 ConductorMask 决定每段哪些角色发声,输出 4 轨 NoteData[]:
  *
- * 关键设计决策（与 .claude/rules/music_generation_pipeline_rule.md 对齐）：
+ *   melody         — Lead 主旋律(FractalStructureEngine + PCFGGrammarEngine 驱动)
+ *   accompaniment  — Comping 伴奏(RhythmMutator + TextureMapper 驱动,PianoRealizer)
+ *   bass           — 低音锚定(BassRealizer)
+ *   drums          — 打击乐(DrumRealizer,16-step grid 驱动)
  *
- *   1. Pitch Space 三空间（K-1 / K-2 / K-7 / K-8）：
+ * 关键设计决策(与 .claude/rules/music_generation_pipeline_rule.md 对齐):
+ *
+ *   1. Pitch Space 三空间(K-1 / K-2 / K-7 / K-8):
  *      - melody / accompaniment / bass: RELATIVE — 由 Orchestrator.applyOffset 转 ABSOLUTE
  *      - drums:                          GM Drum Map (K-8 第三空间) — 全程透传不加 keyOffset
  *
- *   2. 确定性（D-1 / D-5）：
- *      遍历顺序：sections ASC → role [Bass, AccompInst, Drums, Lead] → chordIdx ASC。
- *      Bass 零 PRNG 消耗；DrumIdiom 按 step 升序遍历，每 step 固定 3 次 gate PRNG。
+ *   2. 确定性(D-1 / D-5):
+ *      遍历顺序:sections ASC → role [Bass, AccompInst, Drums, Lead] → chordIdx ASC。
+ *      Bass 零 PRNG 消耗;DrumIdiom 按 step 升序遍历,每 step 固定 3 次 gate PRNG。
  *
- *   3. AccompInst 掐头（混音物理约束）：
- *      Comping 用 chord.voicing.slice(1)，把 voicing[0]（bass voice）让给 Bass 轨，
- *      避免低频堆叠（CLAUDE.md "Bass E1-B2 / PianoRH ≥ C3"）。
+ *   3. AccompInst 掐头(混音物理约束):
+ *      Comping 用 chord.voicing.slice(1),把 voicing[0](bass voice)让给 Bass 轨,
+ *      避免低频堆叠(CLAUDE.md "Bass E1-B2 / PianoRH ≥ C3")。
  *
- *   4. **配置剥离**（Phase 5）：
+ *   4. **配置剥离**(Phase 5 早期已落地):
  *      Personas / Fractal / Grammar / Drum Grid 全部下沉到 config/styles/*.ts 的
- *      StyleStage5Bundle。本文件零硬编码风格参数，仅保留：
- *        - Pitch Space 锚（BASS_ANCHOR / ACCOMP_MIN / LEAD_ANCHOR）— 跨风格物理常量
- *        - ConductorMask（段落类型 → 角色启停）— 与风格无关的音乐物理
+ *      StyleStage5Bundle。本文件零硬编码风格参数,仅保留:
+ *        - Pitch Space 锚(BASS_ANCHOR / ACCOMP_MIN / LEAD_ANCHOR)— 跨风格物理常量
+ *        - ConductorMask(段落类型 → 角色启停)— 与风格无关的音乐物理
  *
- *   5. 错误处理（S-7）：非法输入抛 Stage5LayeringError，runPipeline 入口统一 catch。
- *
- * @author AuraFlow Tap! Phase 5 Stage 5
+ *   5. 错误处理(S-7):非法输入抛 ConductorError,runPipeline 入口统一 catch。
  */
 
 import {
@@ -132,7 +138,7 @@ function getConductorMask(sectionType: SectionType | undefined): number {
 function getPersona(personas: MusicianPersona[], role: number): MusicianPersona {
     const p = personas[role];
     if (p === undefined) {
-        throw new Stage5LayeringError(
+        throw new ConductorError(
             'no Persona at role index',
             { role, personasLength: personas.length },
         );
@@ -144,7 +150,7 @@ function getPersona(personas: MusicianPersona[], role: number): MusicianPersona 
 // 公开 API
 // ============================================================
 
-export interface Stage5LayeringInput {
+export interface ConductorInput {
     chords: GeneratedChord[];     // 已带 voicing（HarmonyCore 输出）
     sections: SectionMetadata[];
     styleId: StyleId;
@@ -163,7 +169,7 @@ export interface Stage5LayeringInput {
     bandPlan?: BandPlan;
 }
 
-export interface Stage5LayeringResult {
+export interface ConductorResult {
     melody: NoteData[];
     accompaniment: NoteData[];
     bass: NoteData[];
@@ -186,7 +192,7 @@ export interface Stage5LayeringResult {
  *
  * 调用方应在调用前 recordSnapshot('D')，本函数不主动记 snapshot 以保接口纯净。
  */
-export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResult {
+export function conduct(input: ConductorInput): ConductorResult {
     validateInput(input);
 
     const melody: NoteData[] = [];
@@ -388,7 +394,7 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
 // 注意：DrumIdiom 内部按 startBeat ASC 遍历段落，PRNG 消耗顺序锁定。
 //
 // **关键确定性约束**：drum sections 收集必须发生在 Bass/Accomp/Lead 渲染**之前**，
-// 因为 DrumIdiom 在 layerInstruments() 入口立即消耗 PRNG（全曲段落遍历）。
+// 因为 DrumIdiom 在 conduct() 入口立即消耗 PRNG（全曲段落遍历）。
 // 后续 Bass/Accomp/Lead 渲染按 sections 升序消耗 PRNG，与 Drums 解耦。
 
 function collectDrumSections(sections: SectionMetadata[]): SectionMetadata[] {
@@ -695,25 +701,25 @@ function sortNotesInPlace(notes: NoteData[]): void {
     });
 }
 
-function validateInput(input: Stage5LayeringInput): void {
+function validateInput(input: ConductorInput): void {
     if (!Array.isArray(input.chords)) {
-        throw new Stage5LayeringError('chords must be an array', {
+        throw new ConductorError('chords must be an array', {
             actual: typeof input.chords,
         });
     }
     if (!Array.isArray(input.sections)) {
-        throw new Stage5LayeringError('sections must be an array', {
+        throw new ConductorError('sections must be an array', {
             actual: typeof input.sections,
         });
     }
     // styleId 合法性由 getStyleStage5Bundle 兜底（未知 ID 回落到 Pop）
 }
 
-export class Stage5LayeringError extends Error {
+export class ConductorError extends Error {
     public readonly context: Record<string, unknown>;
     constructor(message: string, context: Record<string, unknown>) {
         super(message);
-        this.name = 'Stage5LayeringError';
+        this.name = 'ConductorError';
         this.context = context;
     }
 }

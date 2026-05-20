@@ -8,7 +8,7 @@
  *                                              每段 chordsHint = lengthBeats / STYLE_BEATS_PER_CHORD[styleId]
  *   Stage 3  HarmonyCore.generate  PRNG ×~M  — 真和声推演 + voicing（M 随模板段数变化）
  *   Stage 4  (skip — 等 Step 2 抽 StructureEngine 时把 FORM_POOLS 搬到 StyleConfig)
- *   Stage 5  layerInstruments      PRNG ×~N  — Bass(0) + AccompInst + Lead 三轨
+ *   Stage 5  conduct      PRNG ×~N  — Bass(0) + AccompInst + Lead 三轨
  *
  * 输出契约：
  *   - track.chords[i].voicing       — RELATIVE 空间 voicing
@@ -32,7 +32,7 @@ import { getStyleConfig } from '../config/StyleRegistry';
 import { getStyleHarmonyBundle } from '../config/styles';
 import { PRNGManager } from '../../utils/PRNG';
 import { HarmonyCore } from './HarmonyCore';
-import { layerInstruments } from './Stage5Layering';
+import { conduct } from './Conductor';
 import { CastingEngine } from './CastingEngine';
 import { PassingChordEngine } from './PassingChordEngine';
 import { getMusicianById } from '../idioms/MusicianRegistry';
@@ -190,9 +190,9 @@ export function runPipeline(
     });
 
     // -----------------------------------------------------------
-    // Stage 5：layerInstruments — Bass + AccompInst + Lead + Atmosphere 四轨（drums 单独）
+    // Stage 5：conduct — Bass + AccompInst + Lead + Atmosphere 四轨（drums 单独）
     // -----------------------------------------------------------
-    const stage5 = layerInstruments({
+    const stage5 = conduct({
         chords: harmony.chords,
         sections,
         styleId,
