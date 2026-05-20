@@ -98,34 +98,51 @@ export function applyVoicingMask(
 // ============================================================
 
 /**
- * 按 sectionType + energyLevel 决定该和弦的 voicing mask。
+ * 按 sectionType + energyLevel + weather.t 决定该和弦的 voicing mask。
  *
- * Phase 1b 规则(weather 已接入但暂未消费,等 Phase 2):
- *   Intro / Outro / PreOutro:
- *     - energy ≤ 3 → MASK_ROOT_FIFTH(空五度,无和声决断)
- *     - energy 4-6 → MASK_TRIAD(显形 3rd 决定大小调)
- *     - energy 7+ → MASK_SEVENTH(接近正歌)
- *   Verse:
- *     - energy ≤ 3 → MASK_TRIAD
- *     - 否则 → MASK_SEVENTH
- *   Chorus / Solo_Bridge:
- *     - energy ≤ 5 → MASK_SEVENTH
- *     - 否则 → MASK_EXTENDED
- *   Bridge: MASK_SEVENTH
- *   BuildUp:
- *     - energy ≤ 5 → MASK_TRIAD
- *     - 否则 → MASK_SEVENTH
- *   Break / Breakdown: MASK_ALL(ConductorMask 已段落级压制,本 mask 不参与)
- *   缺省: MASK_SEVENTH
+ * 两步式:
+ *   1. **基础 mask**(sectionType + energyLevel 查表):
+ *      Intro/Outro/PreOutro: e≤3 ROOT_FIFTH / e 4-6 TRIAD / e 7+ SEVENTH
+ *      Verse:                e≤3 TRIAD / else SEVENTH
+ *      Chorus/Solo_Bridge:   e≤5 SEVENTH / else EXTENDED
+ *      Bridge:               SEVENTH
+ *      BuildUp:              e≤5 TRIAD / else SEVENTH
+ *      Break/Breakdown:      ALL(段落级 ConductorMask 已压制)
+ *      default:              SEVENTH
  *
- * Phase 2: weather.t(色彩温度)接入后,T 高解锁 EXTENDED,T 低收缩到 TRIAD;
+ *   2. **Phase 2 — T 维硬切档**(用户决策):
+ *      weather.t < 0.40 → 收缩一档(EXTENDED → SEVENTH → TRIAD → ROOT_FIFTH)
+ *      weather.t > 0.60 → 扩展一档(ROOT_FIFTH → TRIAD → SEVENTH → EXTENDED)
+ *      0.40 ≤ T ≤ 0.60  → 维持基础 mask
+ *
+ *      阈值选择(Phase 2 起点,待听感调):默认 4 人乐队 colorBias 平均 ~0.225
+ *      (bass/drums = 0.0),T 计算后落在 [0.32, 0.62];0.40/0.60 阈值能覆盖:
+ *        - Intro/Outro(T~0.32-0.38)→ tierDown(更稀疏)
+ *        - NeoSoul Chorus(T~0.62)→ tierUp(EXTENDED)
+ *        - Pop Verse/Chorus(T~0.42-0.54)中段保持不变
+ *
+ *      听感调参建议(若需要更激进):0.42/0.55;若需要更保守:0.35/0.65。
+ *
  * Phase 3: weather.r(冒险)解锁 Tension bit;weather.g(律动)不影响 voicing。
  */
 export function computeChordMask(
     section: SectionMetadata,
-    _weather: WeatherSampler,  // Phase 1b: 占位,Phase 2 起消费
-    _beatInSection: number,    // Phase 1b: 占位,Phase 2 起按 beat 调制
+    weather: WeatherSampler,
+    beatInSection: number,
 ): VoicingMask {
+    // ① 基础 mask:sectionType × energyLevel
+    const baseMask = computeBaseMask(section);
+
+    // ② Phase 2: T 维硬切档(阈值 0.40/0.60,待听感调)
+    const beat = section.startBeat + beatInSection;
+    const t = weather.at(beat).t;
+    if (t < 0.40) return tierDown(baseMask);
+    if (t > 0.60) return tierUp(baseMask);
+    return baseMask;
+}
+
+/** 第一步:不含 T 维的基础 mask 查表(便于单元测试和 Phase 3 拆解) */
+function computeBaseMask(section: SectionMetadata): VoicingMask {
     const energy = section.energyLevel;
     const sectionType = section.sectionType;
 
@@ -155,11 +172,41 @@ export function computeChordMask(
 
         case SectionType.Break:
         case SectionType.Breakdown:
-            // ConductorMask 已段落级压制大多数轨,本 mask 不参与
             return MASK_ALL;
 
         default:
             return MASK_SEVENTH;
+    }
+}
+
+/**
+ * Mask 等级阶梯(从稀疏到丰满,Phase 2 T 切档用):
+ *   ROOT_ONLY → ROOT_FIFTH → TRIAD → SEVENTH → EXTENDED → ALL
+ *
+ * 切档逻辑:tierUp 升一级,tierDown 降一级。已到极值则保持。
+ *
+ * 注意 — 用 mask 值精确匹配做 switch,而非"或多于"(避免误升降)。
+ * 非档位 mask(如自定义组合)保持原 mask。
+ */
+function tierUp(mask: VoicingMask): VoicingMask {
+    switch (mask) {
+        case MASK_ROOT_ONLY:   return MASK_ROOT_FIFTH;
+        case MASK_ROOT_FIFTH:  return MASK_TRIAD;
+        case MASK_TRIAD:       return MASK_SEVENTH;
+        case MASK_SEVENTH:     return MASK_EXTENDED;
+        case MASK_EXTENDED:    return MASK_ALL;
+        default:               return mask;  // 已极值或非档位
+    }
+}
+
+function tierDown(mask: VoicingMask): VoicingMask {
+    switch (mask) {
+        case MASK_ALL:         return MASK_EXTENDED;
+        case MASK_EXTENDED:    return MASK_SEVENTH;
+        case MASK_SEVENTH:     return MASK_TRIAD;
+        case MASK_TRIAD:       return MASK_ROOT_FIFTH;
+        case MASK_ROOT_FIFTH:  return MASK_ROOT_ONLY;
+        default:               return mask;  // 已极值或非档位
     }
 }
 

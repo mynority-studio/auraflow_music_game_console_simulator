@@ -67,7 +67,8 @@ import { ToplineEngine } from './ToplineEngine';
 import { TopologyMutator } from '../primitives/TopologyMutator';
 import { SongHookEncoder, SongHookSkeleton } from '../primitives/SongHookEncoder';
 import { PRNGManager } from '../../utils/PRNG';
-import { createDefaultRenderContext } from './RenderContext';
+import { RenderContext } from './RenderContext';
+import { CurveWeatherSampler } from './CurveWeatherSampler';
 import { attachVoicingMasks } from './VoicingMask';
 
 const EPSILON = 1e-6;
@@ -273,18 +274,21 @@ export function conduct(input: ConductorInput): ConductorResult {
     }
 
     // ────────────────────────────────────────────────────────────
-    // Phase 0 — RenderContext 构造(weather sampler / lookahead / state)
+    // Phase 2 — RenderContext 构造(5 维 CurveWeatherSampler 实装)
     //
-    // 当前实装:ConstantWeatherSampler({k:0.5, t:0.5, s:0.5})。
-    // 所有 Idiom 接收 context 但不消费(Phase 1b 起 weather 作 mask 计算输入,
-    // 仍是常量但接口已锁定)。
+    // 当前实装:CurveWeatherSampler(per-section anchor + 80/20 段间插值,5 维齐全)。
+    // anchor = sectionType + styleId + activeMusicians.persona 加权和(零 PRNG)。
     //
-    // 演进时间线:
-    //   Phase 2: 替换为 CurveWeatherSampler(per-section anchor + 插值生成 beat 级曲线)
-    //   Phase 3: 五维齐全(加入 R / G 维度)
+    // 演进时间线(承前 Phase 0 接口锁定 / Phase 1b mask 实装):
+    //   Phase 3:  hash-based wobble + Idiom 算法层全面消费 K/T/S/R/G
     //   Phase 5+: Live 模式 LiveAccompanist 构造 RollingWeatherSampler,本逻辑保留作离线路径
     // ────────────────────────────────────────────────────────────
-    const renderContext = createDefaultRenderContext();
+    // 复用上方 rosterMask 构造时已取的 activeMusicians 局部变量
+    const renderContext: RenderContext = {
+        weather: new CurveWeatherSampler(input.sections, input.styleId, activeMusicians),
+        lookaheadLimit: 9999,
+        prevState: undefined,
+    };
 
     // ────────────────────────────────────────────────────────────
     // Phase 1b — 按 sectionType + energyLevel 给每和弦附加 voicingMask

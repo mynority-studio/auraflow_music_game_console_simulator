@@ -35,10 +35,13 @@
  * 多维气象瞬时快照 — 同一 beat 上各维度的标量值。
  *
  * 维度时间线:
- *   Phase 0/1: 三维(K/T/S)— k/t/s 必填,r/g 可选(占位)
- *   Phase 3:   五维齐全(K/T/S/R/G) — r/g 必填
+ *   Phase 0/1: 三维(K/T/S)+ r/g 可选(占位,ConstantSampler 不填)
+ *   Phase 2:   **五维齐全(K/T/S/R/G)全必填** — CurveWeatherSampler 接入
+ *              消费者 Phase 2 唯一:VoicingMask.computeChordMask 用 T 硬切档
+ *   Phase 3:   Idiom 算法层全面消费(K → rhythm topology mutator / T → voicing
+ *              register / S → sustain ratio / R → chromatic approach / G → microtiming)
  *
- * 取值范围: 全部 [0, 1] float
+ * 取值范围: 全部 [0, 1] float(clamp01 保证)
  *
  * 维度语义(用户讨论确认):
  *   K (Kinetic)       — 时间密度 / 忙碌度。高 → 16th 涌现;低 → 长音休止
@@ -54,10 +57,10 @@ export interface WeatherSnapshot {
     t: number;
     /** Spatial — 心理距离 / sustain [0,1] */
     s: number;
-    /** Risk — 调外 / chromatic 概率 [0,1](Phase 3 必填,Phase 0/1 可选) */
-    r?: number;
-    /** Groove — 微观律动人性化 [0,1](Phase 3 必填,Phase 0/1 可选) */
-    g?: number;
+    /** Risk — 调外 / chromatic 概率 [0,1] */
+    r: number;
+    /** Groove — 微观律动人性化 [0,1] */
+    g: number;
 }
 
 /**
@@ -80,11 +83,11 @@ export interface WeatherSampler {
 /**
  * 常量采样器 — 任意 beat 返回构造时传入的固定 snapshot。
  *
- * Phase 0 唯一使用的 sampler。所有 Idiom 接到 context 但不消费,
- * 确保 bit-exact 保证。Phase 1b 起 Conductor 用本类构造 weather=0.5
- * 喂给 computeChordMasks(用于 mask 计算函数签名提前对齐,值仍是常量)。
- *
- * Phase 2 起被 CurveWeatherSampler 替代,本类仅留作测试 fixture。
+ * Phase 0-1b 主用;Phase 2 起 Conductor 用 CurveWeatherSampler 替代,
+ * 本类保留作:
+ *   - scripts/* dev 校验脚本(createDefaultRenderContext)
+ *   - 单元测试 fixture
+ *   - Live 模式(Phase 5+)初始 warm-up 期占位
  */
 export class ConstantWeatherSampler implements WeatherSampler {
     private readonly snapshot: WeatherSnapshot;
@@ -163,14 +166,18 @@ export interface RenderContext {
 // ============================================================
 
 /**
- * 构造 Phase 0 默认 RenderContext。
+ * 构造默认 RenderContext(5 维 ConstantSampler 占位)。
  *
- * 用于 Conductor 起点构造一次,传给所有 4 个 Realizer。
- * Phase 2 起被 Conductor 内更复杂的构造逻辑替代。
+ * Phase 0-1b 期间 Conductor 唯一入口;Phase 2 起 Conductor 改用
+ * CurveWeatherSampler 直接构造,本工厂留作 scripts / 测试 / Live 暖机用。
+ *
+ * 默认值含义:K/T/S 中庸 0.5,R 偏低 0.3(默认偏保守),G 中庸 0.5。
  */
 export function createDefaultRenderContext(): RenderContext {
     return {
-        weather: new ConstantWeatherSampler({ k: 0.5, t: 0.5, s: 0.5 }),
+        weather: new ConstantWeatherSampler({
+            k: 0.5, t: 0.5, s: 0.5, r: 0.3, g: 0.5,
+        }),
         lookaheadLimit: 9999,
         prevState: undefined,
     };
