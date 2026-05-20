@@ -37,6 +37,8 @@ import { CastingEngine } from './CastingEngine';
 import { PassingChordEngine } from './PassingChordEngine';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
+import { MgEngineFacade } from './MgEngineFacade';
+import { chordDefsToGeneratedChords, noteEventsToNoteData } from './MgChordAdapter';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -51,6 +53,24 @@ export interface PipelineRunOptions {
      */
     forcedGmPrograms?: Partial<Record<BandRole, number>>;
     generation?: GenerationOptions;
+    /**
+     * Phase 1 Step 3(mg_engine_integration_plan.md):启用 MgEngineFacade 接管钢琴生成。
+     *
+     * true 时:
+     *   - Stage 3 跳过 HarmonyCore.generate / PassingChordEngine
+     *   - Stage 4.5 / 5 跳过(CastingEngine / Conductor / 各 Realizer)
+     *   - 直接调用 MgEngineFacade → 输出 ChordDef[] + NoteEvent[]
+     *   - track.chords / track.melody / track.accompaniment 直接从 mg 输出转换
+     *   - track.bass / track.drums / track.atmosphere 留空(Phase 2 接和声)
+     *   - track.sections 仍由 auraflow Stage 2 抽出(诊断 / UI 用,但 mg 不消费)
+     *
+     * false(默认):
+     *   - 走完整 auraflow pipeline(Batch 1-7 已实装的路径)
+     *   - golden-seed 与 v1.44.0 bit-exact
+     *
+     * PRNG 隔离:mgMode=true 时 mg 用自己的 Random(`${seed}::mg` 派生),不消费 PRNGManager。
+     */
+    mgMode?: boolean;
 }
 
 export function runPipeline(
@@ -127,8 +147,76 @@ export function runPipeline(
 
     PRNGManager.recordSnapshot('C');
 
+    // ============================================================
+    // Phase 1 Step 3 — mgMode 分支:整段 Stage 3-5 走 MgEngineFacade
+    // ============================================================
+    // 设计哲学(plan §2 决策 3 PRNG 隔离):
+    //   - mg 用自己的 Random(`${seed}::mg`)— 与 PRNGManager 完全隔离
+    //   - Stage 3+(HarmonyCore / PassingChord / CastingEngine / Conductor / Realizer)
+    //     **全部跳过** — 钢琴 / chord 直接来自 mg,bass/drums/atmosphere 暂留空
+    //   - Phase 2 接 ChordDef → bass/atmosphere Realizer(走 auraflow 渲染);
+    //     Phase 3 壳化 + PRNG 合并
+    //
+    // 验收锚点:同 seed → 听感 = melodygenerative-standalone(决策 3 隔离的保证)
+    if (options.mgMode === true) {
+        // 用 PRNGManager 当前 seed 作 mg 子流锚定。PRNGManager 自身不被消费 —
+        // mg facade 内部 new Random(`${seed}::mg`),完全独立。
+        // 注:取当前 PRNG state 作 "auraflow seed surrogate"(因为 setSeed 是外部调,
+        // runPipeline 拿不到原始 seed number)。state 是 deterministic — 同 setSeed
+        // 输入 → 同 state → 同 mg 子流。
+        const mgSeed = PRNGManager.getState();
+        const mgResult = MgEngineFacade.generate({
+            seed: mgSeed,
+            styleId,
+            keyRootPc: keyOffset,
+            isMinor: tonality === Tonality.Minor,
+        });
+
+        // ChordDef[] → GeneratedChord[](Phase 1 最简 adapter,Phase 2 精化)
+        const mgChords = chordDefsToGeneratedChords(mgResult.chords);
+        // 给每个 chord 填 keyOffset(auraflow IR 约定)
+        for (let i = 0; i < mgChords.length; i++) {
+            mgChords[i].keyOffset = keyOffset;
+        }
+
+        // NoteEvent[] → NoteData[],按 part 拆轨(facade 已经按 part 拆好)
+        const mgMelody = noteEventsToNoteData(mgResult.melody);
+        const mgAccomp = noteEventsToNoteData(mgResult.chordTexture);
+        // mg.bass 暂不消费(Phase 2 用 auraflow BassRealizer 取代;现 Phase 1 留空)
+
+        const mgTrack: GeneratedTrack = {
+            chords: mgChords,
+            melody: mgMelody,
+            accompaniment: mgAccomp,
+            bass: [],           // Phase 1 静音,Phase 2 接 BassRealizer
+            drums: [],          // 同上
+            atmosphere: [],     // 同上
+            sections,
+            bpm,
+            key: keyName,
+            keyOffset,
+            tonality,
+            timeSignature,
+            blockIndex: 0,
+            absoluteStartBeat: 0,
+            hasIntro: true,
+        };
+
+        const mgContext: MusicContext = {
+            keyOffset,
+            tonality,
+            bpm,
+            timeSignature,
+            grooveDNA: [],
+            style,
+            // gmProgramOverrides 暂留空 — Phase 1 不接 musician override
+        };
+
+        return { track: mgTrack, context: mgContext };
+    }
+
     // -----------------------------------------------------------
-    // Stage 3：HarmonyCore（PRNG ×~M，M = 6 × Σ chordsHint，随模板段数变化）
+    // Stage 3:HarmonyCore(PRNG ×~M,M = 6 × Σ chordsHint,随模板段数变化)
     // -----------------------------------------------------------
     const harmony = HarmonyCore.generate({
         sections,

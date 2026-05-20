@@ -212,14 +212,18 @@ export class MgEngineFacade {
         }
         const style = STYLE_MAPPING[input.styleId];
 
+        // K-2 铁律对齐 — facade 总传 key='C',让 mg 输出在 RELATIVE 空间(C 调)。
+        // 真实 keyOffset 由 auraflow AbsoluteTransposer.arrange 在下游加(K-2 唯一加点)。
+        // input.keyRootPc 暂保留为接口字段供未来扩展(Phase 3 壳化时可能用 mg 真实 key
+        // 让某些 scale-aware 推演更精准),但 Phase 1+2 始终在 C 调推演。
         const pcNorm = (((input.keyRootPc | 0) % 12) + 12) % 12;
-        const key = KEY_NAMES[pcNorm];
-        if (key === undefined) {
+        if (KEY_NAMES[pcNorm] === undefined) {
             throw new MgEngineFacadeError(
                 'invalid keyRootPc',
                 { keyRootPc: input.keyRootPc, pcNorm },
             );
         }
+        const key = 'C';  // 强制 RELATIVE 空间(K-2 铁律)
 
         const mode = input.modeOverride !== undefined
             ? input.modeOverride
