@@ -23,6 +23,7 @@
 import {
     GeneratedChord, SectionMetadata, Tonality,
 } from '../types';
+import type { VoicedPitch } from '../types';
 import { VoicingProcessor } from '../primitives/VoicingProcessor';
 import type { VoiceLeadingConfig } from '../primitives/VoicingProcessor';
 import {
@@ -53,10 +54,14 @@ export interface HarmonyCoreInput {
 /**
  * voicings 与 chords 平行索引;voicings[i] 是 chords[i] 的声部分布(升序,相对空间 MIDI)。
  * Pitch Space: RELATIVE
+ *
+ * Phase 1a — voicings 升级为 VoicedPitch[][](携带 VoiceRole 角色标记),
+ * Phase 1b VoicingMask 按角色 bitmask 过滤。
+ * 老 callsite 取裸 pitch: `voicings[i].map(v => v.pitch)`。
  */
 export interface HarmonyResult {
     chords: GeneratedChord[];
-    voicings: number[][];
+    voicings: VoicedPitch[][];
 }
 
 // ============================================================
@@ -81,7 +86,7 @@ export class HarmonyCore {
      * Fallback voicing 计算 — 给 PassingChordEngine 插入的"无 voicing 和弦"用。
      * 委托 VoicingProcessor.computeFallbackVoicing。零 PRNG。
      */
-    public static computeFallbackVoicing(chord: GeneratedChord): number[] {
+    public static computeFallbackVoicing(chord: GeneratedChord): VoicedPitch[] {
         return VoicingProcessor.computeFallbackVoicing(chord);
     }
 

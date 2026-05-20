@@ -88,6 +88,10 @@ function runStyle(
     };
     const result: HarmonyResult = HarmonyCore.generate(input);
 
+    // Phase 1a:result.voicings 是 VoicedPitch[][];本脚本所有 numeric 校验(升序 / range /
+    // PC 抽取等)在 pitch-only 视图下工作,转换零成本。
+    const voicings: number[][] = result.voicings.map(v => v.map(p => p.pitch));
+
     // 标题
     console.log(`\n${'═'.repeat(86)}`);
     console.log(`  ${name}   seed=${SEED}   ${result.chords.length} chords / ${voiceLeading.voiceCount} voices`);
@@ -98,7 +102,7 @@ function runStyle(
     // 输出每和弦
     for (let i = 0; i < result.chords.length; i++) {
         const c = result.chords[i];
-        const v = result.voicings[i];
+        const v = voicings[i];
         const voicingStr = v.length > 0
             ? v.map((p) => `${pcName(p).padEnd(4)}`).join(' ')
             : '(empty)';
@@ -112,7 +116,7 @@ function runStyle(
     const report: SanityReport = {
         style: name,
         chordCount: result.chords.length,
-        voicingCount: result.voicings.length,
+        voicingCount: voicings.length,
         ascendingViolations: 0,
         rangeViolations: 0,
         qualityCounts: {},
@@ -122,8 +126,8 @@ function runStyle(
         bassRootHits: 0,
     };
 
-    for (let i = 0; i < result.voicings.length; i++) {
-        const v = result.voicings[i];
+    for (let i = 0; i < voicings.length; i++) {
+        const v = voicings[i];
         for (let j = 1; j < v.length; j++) {
             if (v[j] <= v[j - 1]) report.ascendingViolations++;
         }

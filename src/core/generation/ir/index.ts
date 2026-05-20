@@ -65,9 +65,62 @@ export interface NoteData { pitch: number; onset: number; duration: number; velo
     motifName?: string;
 }
 
+/**
+ * 声部在和弦内的功能角色(Phase 1a 引入,Phase 1b 信息遮罩消费)。
+ *
+ * 用于 Conductor.computeChordMasks 按 bitmask 过滤 voice —— 例如 Intro
+ * 强制 MASK_ROOT_ONLY,逐段落能量爬升解锁 Third/Fifth/Seventh/Extensions。
+ *
+ * **数值即 bit 偏移** — VoicingMask 用 `(mask >> role) & 1` 检测;
+ * 改枚举值需同步更新 VoicingMask 常量定义。
+ *
+ * C 移植: enum class VoiceRole : uint8_t { ... } — 直接 reinterpret_cast。
+ */
+export enum VoiceRole {
+    Root        = 0,
+    Third       = 1,  // 3rd(major / minor / sus2 / sus4 视为 Third 槽位)
+    Fifth       = 2,  // 5th(perfect / diminished / augmented)
+    Seventh     = 3,  // 7th(m7 / M7 / dim7)
+    Ninth       = 4,  // 9th(b9 / 9 / #9)
+    Eleventh    = 5,  // 11th(11 / #11)
+    Thirteenth  = 6,  // 13th(b13 / 13 / 6 占同槽位)
+    Tension     = 7,  // 其他改变音 / 不在标准槽位的色彩音(b5 单独存在等)
+}
+
+/**
+ * 角色标记 voicing 元素(Phase 1a)。
+ *
+ * 与裸 `number[]` 相比,携带 role 元数据让 Conductor 信息遮罩、
+ * Reconciler 撞音裁决等下游模块按声部功能(而非按 MIDI pitch)做决策。
+ *
+ * C 移植:
+ *   struct VoicedPitch {
+ *       uint8_t pitch;       // 0-127, RELATIVE space
+ *       uint8_t role;        // VoiceRole enum value
+ *   };
+ *   单条 voicing = VoicedPitch[max_voices](max_voices 通常 ≤ 7)。
+ */
+export interface VoicedPitch {
+    /** MIDI pitch [0,127],RELATIVE 空间(未加 keyOffset) */
+    pitch: number;
+    /** 声部功能角色 */
+    role: VoiceRole;
+}
+
 export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number;
     /** HarmonyCore 输出的声部分布 — Pitch Space: RELATIVE，升序 MIDI（AbsoluteTransposer/AudioEngine 再加 keyOffset） */
-    voicing?: number[]; }
+    voicing?: number[];
+    /**
+     * Phase 1a — 角色标记 voicing(VoicedPitch[]),与 voicing 平行,顺序一致。
+     *
+     * - voicing[i].pitch === voicingTagged[i].pitch(对账保证)
+     * - role 来自 VoicingProcessor 构造时的语义知识(buildShellLH 知道哪个是 root / 哪个是 7th)
+     * - Phase 1b VoicingMask 消费本字段做 bitmask 过滤,voicing(number[])保留作 fallback
+     *
+     * 可选(向后兼容):未升级的旧路径仍可只读 voicing。Phase 1b 起 Idiom 优先读 voicingTagged。
+     */
+    voicingTagged?: VoicedPitch[];
+}
 
 export interface SectionMetadata {
     name: string;

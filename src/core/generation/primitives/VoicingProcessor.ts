@@ -38,7 +38,9 @@ import {
     CQ_IS_MAJOR,
     CQ_IS_MINOR,
     CQ_IS_DIM,
+    VoiceRole,
 } from '../types';
+import type { VoicedPitch } from '../types';
 import { WeightedPitchSelector } from './WeightedPitchSelector';
 
 // ============================================================
@@ -169,8 +171,13 @@ export interface ShellLHInput {
 }
 
 export interface ShellLHOutput {
-    /** 升序 MIDI(RELATIVE),已去重 */
-    pitches: number[];
+    /**
+     * 升序 MIDI(RELATIVE),已去重。Phase 1a 起携带 VoiceRole 角色标记。
+     *
+     * 老 callsite 取裸 pitch: `pitches.map(v => v.pitch)`
+     * Phase 1b 起信息遮罩消费 role 字段做 bitmask 过滤。
+     */
+    pitches: VoicedPitch[];
     /** PC 集(给 RH listen 用) */
     pcSet: number[];
     /** 最高 pitch — 没有有效 voice 时为 -1 */
@@ -274,6 +281,64 @@ function dedupSortedArray(arr: number[]): number[] {
     const out: number[] = [arr[0]];
     for (let i = 1; i < arr.length; i++) {
         if (arr[i] !== out[out.length - 1]) out.push(arr[i]);
+    }
+    return out;
+}
+
+// ============================================================
+// Phase 1a — VoiceRole 派生(从 pitch + chord 推断声部功能角色)
+// ============================================================
+//
+// 给 Phase 1b VoicingMask 提供按角色过滤能力(bitmask 操作)。
+// 派生规则按 interval 半音数 + 和弦 quality 内含 intervals 消歧:
+//   - 6 半音:dim 和弦内含且无 P5 时 → Fifth(b5);否则 → Eleventh(#11)
+//   - 9 半音:含 9 不含 10/11 时 → Seventh(bb7 of dim7);否则 → Thirteenth
+// 其他 interval 走简单查表。
+//
+// 这是"近似派生" — 完美派生需要看 voicing 上下文(同和弦内同时存在哪些音),
+// 但 Phase 1b mask 需求只关心"该 voice 是否可被 mask 掉",粗粒度即足够。
+//
+// Phase 2+ 若需更精确:让 VoicingProcessor 构造时直接标记 role,而非派生。
+// ============================================================
+
+function deriveVoiceRole(pitch: number, chord: GeneratedChord): VoiceRole {
+    const rootPc = normalizePc(chord.bassOverride !== undefined ? chord.bassOverride : chord.root);
+    const interval = normalizePc(pitch - rootPc);
+    const intervals = CHORD_INTERVALS[chord.quality];
+
+    switch (interval) {
+        case 0:  return VoiceRole.Root;
+        case 1:  return VoiceRole.Ninth;        // b9
+        case 2:  return VoiceRole.Ninth;        // 9
+        case 3:  return VoiceRole.Third;        // m3
+        case 4:  return VoiceRole.Third;        // M3
+        case 5:  return VoiceRole.Eleventh;     // 11
+        case 6: {
+            // 6 半音消歧:dim 和弦自带 b5(无 P5 共存)→ Fifth;否则 #11 → Eleventh
+            const hasB5 = intervals !== undefined && intervals.indexOf(6) >= 0;
+            const hasP5 = intervals !== undefined && intervals.indexOf(7) >= 0;
+            return (hasB5 && !hasP5) ? VoiceRole.Fifth : VoiceRole.Eleventh;
+        }
+        case 7:  return VoiceRole.Fifth;
+        case 8:  return VoiceRole.Thirteenth;   // b13 / #5(占同槽位)
+        case 9: {
+            // 9 半音消歧:dim7 的 bb7(含 9 不含 10/11)→ Seventh;否则 13/6 → Thirteenth
+            const hasBb7 = intervals !== undefined && intervals.indexOf(9) >= 0;
+            const has7th = intervals !== undefined
+                && (intervals.indexOf(10) >= 0 || intervals.indexOf(11) >= 0);
+            return (hasBb7 && !has7th) ? VoiceRole.Seventh : VoiceRole.Thirteenth;
+        }
+        case 10: return VoiceRole.Seventh;      // m7
+        case 11: return VoiceRole.Seventh;      // M7
+        default: return VoiceRole.Tension;
+    }
+}
+
+/** 把裸 pitch 数组转为带角色标记的 VoicedPitch 数组(顺序保持) */
+function tagVoicing(pitches: number[], chord: GeneratedChord): VoicedPitch[] {
+    const out: VoicedPitch[] = new Array(pitches.length);
+    for (let i = 0; i < pitches.length; i++) {
+        out[i] = { pitch: pitches[i], role: deriveVoiceRole(pitches[i], chord) };
     }
     return out;
 }
@@ -397,9 +462,11 @@ export class VoicingProcessor {
      *
      * 零 PRNG。
      */
-    public static computeFallbackVoicing(chord: GeneratedChord): number[] {
+    public static computeFallbackVoicing(chord: GeneratedChord): VoicedPitch[] {
         const intervals = CHORD_INTERVALS[chord.quality];
-        if (intervals === undefined || intervals.length === 0) return [60];
+        if (intervals === undefined || intervals.length === 0) {
+            return [{ pitch: 60, role: VoiceRole.Root }];
+        }
 
         const rootPc = normalizePc(chord.root);
         const out: number[] = [];
@@ -414,7 +481,7 @@ export class VoicingProcessor {
             out.push(pitch);
         }
         out.sort((a, b) => a - b);
-        return out;
+        return tagVoicing(out, chord);
     }
 
     /**
@@ -426,8 +493,8 @@ export class VoicingProcessor {
     public static computeSATBVoicings(
         chords: GeneratedChord[],
         cfg: VoiceLeadingConfig,
-    ): number[][] {
-        const voicings: number[][] = [];
+    ): VoicedPitch[][] {
+        const voicings: VoicedPitch[][] = [];
         if (chords.length === 0) return voicings;
 
         // 复用一个 scratch selector — reset() 而非 new,减少分配(M-1)
@@ -447,11 +514,13 @@ export class VoicingProcessor {
         let prevRoot = 0;
 
         for (let i = 0; i < chords.length; i++) {
-            const voicing = VoicingProcessor.computeChordVoicing(
+            // 内部 computeChordVoicing 仍以 number[] 工作(voice leading 算法 PRNG 序列敏感,
+            // 不动)。在边界 tagVoicing 标记角色,得 VoicedPitch[]。
+            const rawVoicing = VoicingProcessor.computeChordVoicing(
                 selector, chords[i], prevVoicing, prevQuality, prevRoot, cfg,
             );
-            voicings.push(voicing);
-            prevVoicing = voicing;
+            voicings.push(tagVoicing(rawVoicing, chords[i]));
+            prevVoicing = rawVoicing;
             prevQuality = chords[i].quality;
             prevRoot = chords[i].root;
         }
@@ -740,7 +809,7 @@ export class VoicingProcessor {
      *   4. listen LH:与 lhPcSet 同 PC 的 voice 强制升到 lhTopPitch + 12 以上
      *   5. 放置到 [rangeLo, rangeHi]、anchor 附近,升序 + 去重
      */
-    public static buildRootlessRH(input: RootlessVoicerInput): number[] {
+    public static buildRootlessRH(input: RootlessVoicerInput): VoicedPitch[] {
         const chord  = input.chord;
         const anchor = input.anchorPitch ?? DEFAULT_RH_ANCHOR;
         const hi     = input.rangeHi      ?? DEFAULT_RH_RANGE_HI;
@@ -808,7 +877,7 @@ export class VoicingProcessor {
         }
 
         pitches.sort((a, b) => a - b);
-        return dedupSortedArray(pitches);
+        return tagVoicing(dedupSortedArray(pitches), chord);
     }
 
     /**
@@ -819,7 +888,7 @@ export class VoicingProcessor {
      *   2. 向上叠 voiceCount-1 个纯四度(5 半音步长)
      *   3. 起点放在 anchor 附近最近八度,后续 voice 顺次 +5 半音直到越界
      */
-    public static buildQuartalRH(input: QuartalVoicerInput): number[] {
+    public static buildQuartalRH(input: QuartalVoicerInput): VoicedPitch[] {
         const chord  = input.chord;
         const anchor = input.anchorPitch ?? DEFAULT_QUARTAL_ANCHOR;
         const hi     = input.rangeHi      ?? DEFAULT_RH_RANGE_HI;
@@ -840,7 +909,7 @@ export class VoicingProcessor {
             if (next > hi) break;
             out.push(next);
         }
-        return out;
+        return tagVoicing(out, chord);
     }
 
     // ============================================================
@@ -881,6 +950,6 @@ export class VoicingProcessor {
             }
         }
         pitches.sort((a, b) => a - b);
-        return { pitches, pcSet, topPitch };
+        return { pitches: tagVoicing(pitches, input.chord), pcSet, topPitch };
     }
 }

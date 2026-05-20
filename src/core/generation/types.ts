@@ -5,8 +5,10 @@ import { StyleId } from './config/StyleFlags';
 // CONSTITUTION CHAPTER I — 核心 IR 类型已迁移至 ./ir/index.ts。
 // 此处保留 re-export 以兼容现有 callsite。新代码请直接从 './ir' 导入。
 // 同时 import 以保证 types.ts 内部其他 interface（GeneratedTrack/ArrangedTrack 等）可继续引用。
-import type { NoteData, GeneratedChord, SectionMetadata, MusicContext } from './ir';
-export type { NoteData, GeneratedChord, SectionMetadata, MusicContext };
+import type { NoteData, GeneratedChord, SectionMetadata, MusicContext, VoicedPitch } from './ir';
+import { VoiceRole } from './ir';
+export type { NoteData, GeneratedChord, SectionMetadata, MusicContext, VoicedPitch };
+export { VoiceRole };
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
 export interface RhythmCell {

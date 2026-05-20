@@ -378,10 +378,14 @@ function testEndToEnd(): void {
         chordsPerSection: 4,
     });
 
+    // Phase 1a:harmony.voicings 是 VoicedPitch[][],为 TextureMapper / .includes 测试
+    // 派生 pitch-only 数组(本脚本仅供 dev debug,转换零成本)。
+    const voicingsPitchArray: number[][] = harmony.voicings.map(v => v.map(p => p.pitch));
+
     console.log(`\n  HarmonyCore output: ${harmony.chords.length} chords`);
     for (let i = 0; i < harmony.chords.length; i++) {
         const c = harmony.chords[i];
-        const v = harmony.voicings[i];
+        const v = voicingsPitchArray[i];
         console.log(
             `     [${i}] ${c.numeral.padEnd(8)} ` +
             `${(ChordQualityName[c.quality] ?? '?').padEnd(14)} ` +
@@ -423,10 +427,10 @@ function testEndToEnd(): void {
         );
     }
 
-    // TextureMapper 批量渲染
+    // TextureMapper 批量渲染(TextureMapper 仍接受 number[][],转 pitch-only)
     const notes: NoteData[] = TextureMapper.renderProgression({
         chords: harmony.chords,
-        voicings: harmony.voicings,
+        voicings: voicingsPitchArray,
         grids,
         stepsPerBeat: 4,
         contour: marcusPersona.contour,
@@ -470,9 +474,9 @@ function testEndToEnd(): void {
             console.log(`     ✗ note onset=${n.onset} 落在 chord 区间外`);
             break;
         }
-        if (!harmony.voicings[chordIdx].includes(n.pitch)) {
+        if (!voicingsPitchArray[chordIdx].includes(n.pitch)) {
             allPitchesValid = false;
-            console.log(`     ✗ note pitch=${n.pitch} 不在 chord[${chordIdx}].voicing=${harmony.voicings[chordIdx]}`);
+            console.log(`     ✗ note pitch=${n.pitch} 不在 chord[${chordIdx}].voicing=${voicingsPitchArray[chordIdx]}`);
             break;
         }
     }

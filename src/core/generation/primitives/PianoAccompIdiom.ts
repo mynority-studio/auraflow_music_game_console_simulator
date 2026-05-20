@@ -350,18 +350,21 @@ export class PianoAccompIdiom {
             let rhVoicing: number[];
 
             if (voicingMode === 'rootless') {
+                // Phase 1a:VoicingProcessor 返 VoicedPitch[],本路径 rhVoicing 仍以 number[] 工作
+                // (applyRhListenToLhShell / getDrop2Voicing 等 number[] 算法链)。
+                // Phase 1b 起遮罩消费时考虑直接走 voicingTagged 路径。
                 rhVoicing = VoicingProcessor.buildRootlessRH({
                     chord,
                     colorBias: voicingSpan,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
-                });
+                }).map(v => v.pitch);
             } else if (voicingMode === 'quartal') {
                 rhVoicing = VoicingProcessor.buildQuartalRH({
                     chord,
                     lhPcSet: lhShellPcSet.length > 0 ? lhShellPcSet : undefined,
                     lhTopPitch: lhShellTopPitch >= 0 ? lhShellTopPitch : undefined,
-                });
+                }).map(v => v.pitch);
             } else {
                 // 'tertian' 默认 — 沿用 HarmonyCore voicing.slice(1) + 外置 listen + Drop-2
                 rhVoicing = [];
@@ -1595,8 +1598,9 @@ function renderLHShellVoicing(
     const velocity = rhVelocity * SHELL_VELOCITY_SCALE;
 
     for (let i = 0; i < result.pitches.length; i++) {
+        // Phase 1a:result.pitches[i] 现在是 VoicedPitch(含 role),取 .pitch 即可。
         out.push({
-            pitch: result.pitches[i],
+            pitch: result.pitches[i].pitch,
             onset: chord.startBeat,
             duration: dur,
             velocity,

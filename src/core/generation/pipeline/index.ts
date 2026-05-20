@@ -140,9 +140,16 @@ export function runPipeline(
         // chordsPerSection 全局值不再设置 — 每个 section.chordsHint 接管。
     });
 
-    // voicings 平行索引嵌回 chord.voicing — 下游 AudioEngine / Stage 5 直接读
+    // voicings 平行索引嵌回 chord — 下游 AudioEngine / Stage 5 直接读
+    //
+    // Phase 1a: voicings 是 VoicedPitch[][](角色标记),双写两个字段:
+    //   - chord.voicingTagged = VoicedPitch[](Phase 1b 信息遮罩消费)
+    //   - chord.voicing       = VoicedPitch[].map(v => v.pitch)(老 callsite 兼容)
+    // 两字段顺序一致,pitch 完全 mirror。
     for (let i = 0; i < harmony.chords.length && i < harmony.voicings.length; i++) {
-        harmony.chords[i].voicing = harmony.voicings[i];
+        const tagged = harmony.voicings[i];
+        harmony.chords[i].voicingTagged = tagged;
+        harmony.chords[i].voicing = tagged.map(v => v.pitch);
         harmony.chords[i].keyOffset = keyOffset;
     }
 
@@ -162,9 +169,12 @@ export function runPipeline(
             chromaticPassingProb: chromaticProb,
         });
         // 新插入的 passing chord 缺 voicing —— 用 chord-tone 临时填充（让 Stage5 渲染可继续）
+        // Phase 1a:同样双写 voicingTagged + voicing(顺序一致)。
         for (let i = 0; i < harmony.chords.length; i++) {
             if (!harmony.chords[i].voicing || harmony.chords[i].voicing!.length === 0) {
-                harmony.chords[i].voicing = HarmonyCore.computeFallbackVoicing(harmony.chords[i]);
+                const tagged = HarmonyCore.computeFallbackVoicing(harmony.chords[i]);
+                harmony.chords[i].voicingTagged = tagged;
+                harmony.chords[i].voicing = tagged.map(v => v.pitch);
                 harmony.chords[i].keyOffset = keyOffset;
             }
         }
