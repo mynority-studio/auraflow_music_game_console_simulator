@@ -64,13 +64,10 @@ export const CHANNEL_ELECTRIC_BASS = 7;
 //
 // Phase 7 计划按 styleId 切换为 EP（Neo-Soul Rhodes）等。
 
-const GM_PROGRAM_MELODY = 1;
-// v1.55 — pianoRH/LH 跟 melody 完全相同(GM=1 Bright Acoustic + MIX_MELODY profile)
-// 用户反复反馈"accomp 跟 mainInst 听感差很多",诊断后发现:
-//   1. GM program 不同(Bright vs Grand)
-//   2. mix profile 不同(vol/pan/reverb)
-//   3. 关键 — kick ducking 只对 piano 生效不对 melody 生效 → "被截断"听感
-// 一次性对齐三者,让 accomp 真的等于 mainInst 同款混音
+// v1.56 — melody 改 Grand(降高音),pianoRH/LH 保留 Bright
+//   用户反馈"mainInst 高音和音量调低" → melody GM 1 → 0(Grand 比 Bright 暗)
+//   accomp 不动音色,只动声场(pan 偏左)
+const GM_PROGRAM_MELODY = 0;
 const GM_PROGRAM_PIANO_RH = 1;
 const GM_PROGRAM_PIANO_LH = 1;
 const GM_PROGRAM_DRUMS = 0;
@@ -126,14 +123,14 @@ interface MixProfile {
     sustainPedal?: boolean;
 }
 
-// MIX_PIANO_RH / MIX_PIANO_LH:
-//   v1.55 — 完全复制 MIX_MELODY 配置(vol/pan/reverb 三参数一字不差)。
-//   理由:mainInst(melody)听感 = 用户想要的音色,既然同一架钢琴弹三 part,
-//   accomp(chord+bass)就用同样的混音参数 + 同 GM program(Bright)。
-//   保留 sustainPedal: true(钢琴 comping 物理需要,melody 是单音长 note 不需要)。
-const MIX_MELODY:       MixProfile = { volume: 122, pan: 74, reverb: 70 };  // 焦点：高音量 + 微右 + 长尾
-const MIX_PIANO_RH:     MixProfile = { volume: 122, pan: 74, reverb: 70, sustainPedal: true };  // 完全同 melody + 踏板
-const MIX_PIANO_LH:     MixProfile = { volume: 122, pan: 74, reverb: 70, sustainPedal: true };  // 完全同 melody + 踏板
+// v1.56 — 声场分离 + melody 微调
+//   主奏(melody)在右前方(pan 74),vol 122 → 105(降音量),GM=0 Grand(降高音)
+//   伴奏右手(pianoRH)在左前方(pan 38),vol/reverb 保留 122/70
+//   伴奏左手(pianoLH)更外侧(pan 30),vol/reverb 保留 122/70
+//   理由:用户希望 accomp 偏左前方 + mainInst 高音和音量微降
+const MIX_MELODY:       MixProfile = { volume: 105, pan: 74, reverb: 70 };  // 主奏右前 + 降亮度音量
+const MIX_PIANO_RH:     MixProfile = { volume: 122, pan: 38, reverb: 70, sustainPedal: true };  // 伴奏右手左前 + 踏板
+const MIX_PIANO_LH:     MixProfile = { volume: 122, pan: 30, reverb: 70, sustainPedal: true };  // 伴奏左手更外侧 + 踏板
 const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
 const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
 /** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
