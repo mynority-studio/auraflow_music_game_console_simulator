@@ -48,8 +48,6 @@ import {
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleStage5Bundle } from '../config/styles';
-import { RhythmMutator } from '../primitives/RhythmMutator';
-import { TextureMapper } from '../primitives/TextureMapper';
 import {
     FractalStructureEngine, FractalBlock, FractalConfig,
 } from '../primitives/FractalStructureEngine';
@@ -71,13 +69,11 @@ import { SongHookEncoder, SongHookSkeleton } from '../primitives/SongHookEncoder
 import { PRNGManager } from '../../utils/PRNG';
 
 const EPSILON = 1e-6;
-const STEPS_PER_BEAT = 4;
 const FRACTAL_ITERATIONS = 3;
 
 // Pitch Space anchors — melody/accomp/bass 全 RELATIVE
 // Phase 6 The Walker: BASS_ANCHOR 下移到 C1 (24)，配合 BassIdiom 单八度运行
 // 与 MidiConverter MIX_PIANO_LH (volume 95 / reverb 0) 共同实现"沉到底层 + 干净 attack"。
-const ACCOMP_MIN_PITCH = 48;    // C3 — 混音约束下界（PianoRH ≥ C3）
 const LEAD_ANCHOR_PITCH = 72;   // C5 — 主旋律高音区
 const LEAD_RANGE_LO = 60;       // C4 — ToplineEngine 主旋律下界
 const LEAD_RANGE_HI = 84;       // C6 — ToplineEngine 主旋律上界
@@ -248,8 +244,36 @@ export function conduct(input: ConductorInput): ConductorResult {
     )?.card;
     const drumsActive = drumsMusician !== undefined;
 
+    // ────────────────────────────────────────────────────────────
+    // Phase 9 — 严格 roster gate(完全以 BandEngine 传入的编制为准)
+    //
+    // 设计意图:roster 是音乐生成的唯一权威。某角色不在 roster → 对应轨道完全空。
+    //   不再有"无 mainInst 用 bundle.personas[ROLE_LEAD] 兜底" / "Accomp 缺失
+    //   走 renderAccompaniment fallback"等隐式 fallback —— 这些 fallback 让
+    //   用户无法精准隔离单乐器问题(如"只听贝斯走得对不对" / "钢琴只做伴奏
+    //   不要 topline")。
+    //
+    // rosterMask 在每段 mask 检查时 AND 进去,效果:
+    //   - 默认 roster(5 槽位填满)→ rosterMask 全 bit set → 行为不变(bit-exact)
+    //   - forcedBand 传 null → 对应 bit 清零 → 该角色全曲静音
+    //   - 极端案例 forcedBand 全 null → 整曲静音(此时调用方应给个空响应)
+    // ────────────────────────────────────────────────────────────
+    let rosterMask = 0;
+    const activeMusicians = input.bandPlan?.activeMusicians ?? [];
+    for (let i = 0; i < activeMusicians.length; i++) {
+        switch (activeMusicians[i].assignedRole) {
+            case BandRole.MainInst:   rosterMask |= MASK_LEAD;       break;
+            case BandRole.Bass:       rosterMask |= MASK_BASS;       break;
+            case BandRole.Accomp:     rosterMask |= MASK_ACCOMP;     break;
+            case BandRole.Drums:      rosterMask |= MASK_DRUMS;      break;
+            case BandRole.Atmosphere: rosterMask |= MASK_ATMOSPHERE; break;
+        }
+    }
+
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）
+    //   Phase 9:drumsActive 与 rosterMask 等价,保留 drumsActive 是因 collectDrumSections
+    //   还消费它做段落级 mask 检查,不需要重构 collectDrumSections 接口。
     const drumSections = drumsActive ? collectDrumSections(input.sections) : [];
     const drums: NoteData[] = drumSections.length > 0
         ? DrumRealizer.realize({ sections: drumSections, grid: bundle.drum })
@@ -275,7 +299,8 @@ export function conduct(input: ConductorInput): ConductorResult {
 
     for (let sIdx = 0; sIdx < input.sections.length; sIdx++) {
         const section = input.sections[sIdx];
-        const mask = getConductorMask(section.sectionType);
+        // Phase 9 — 双重 mask:段落允许 AND roster 在编
+        const mask = getConductorMask(section.sectionType) & rosterMask;
 
         const sectionChords = collectChordsInSection(input.chords, section);
         if (sectionChords.length === 0) continue;
@@ -296,9 +321,9 @@ export function conduct(input: ConductorInput): ConductorResult {
             for (let k = 0; k < bassNotes.length; k++) bass.push(bassNotes[k]);
         }
         if ((mask & MASK_ACCOMP) !== 0) {
-            // Step 3:优先走 PianoRealizer(Phase 3b 包装层;内部委托 PianoAccompIdiom.render)
-            //   CastingEngine 已塞 PianoAccompParams 到 instrumentSpecificParams
-            // 兼容路径:若 bandPlan 缺失 / Accomp 槽位空 / params 未实装 → 回退旧 renderAccompaniment
+            // Phase 9 — 严格 roster gate 之后:走到这里时 Accomp 一定在 activeMusicians 内,
+            //   CastingEngine 必然填了 pianoParams。原 fallback 到 renderAccompaniment 的
+            //   else 分支(bundle.personas[ROLE_ACCOMP] 兜底)已删除 —— 严格 roster 语义。
             const accompAssign = input.bandPlan?.sectionPlans[sIdx]?.assignments[BandRole.Accomp];
             const pianoParams = accompAssign?.instrumentSpecificParams as PianoAccompParams | undefined;
             if (pianoParams !== undefined) {
@@ -308,13 +333,10 @@ export function conduct(input: ConductorInput): ConductorResult {
                     beatsPerBar: input.timeSignature[0],
                 });
                 for (let k = 0; k < pianoNotes.length; k++) accompaniment.push(pianoNotes[k]);
-            } else {
-                renderAccompaniment(
-                    accompaniment, sectionChords,
-                    getPersona(bundle.personas, ROLE_ACCOMP),
-                    input.timeSignature,
-                );
             }
+            // pianoParams === undefined 时:CastingEngine 未填 params(意味着 Accomp 在
+            // roster 但非钢琴乐器,例如未来的 guitar Accomp)。当前 MVP 不支持非钢琴
+            // Accomp,直接静音处理 —— Phase 8+ 接入新乐器时,此处需扩展 dispatch。
         }
         if ((mask & MASK_LEAD) !== 0) {
             const leadStartIdx = melody.length;
@@ -424,63 +446,8 @@ function collectDrumSections(sections: SectionMetadata[]): SectionMetadata[] {
 // ============================================================
 // Bass 渲染已下沉到 primitives/BassIdiom.ts（Phase 6 The Walker）
 
-function renderAccompaniment(
-    out: NoteData[],
-    chords: GeneratedChord[],
-    persona: MusicianPersona,
-    timeSignature: [number, number],
-): void {
-    const beatsPerBar = timeSignature[0];
-
-    // 🌟 修复伴奏单一：为整个段落生成 2 小节的基准律动网格 (Groove Lock)
-    const baseGridBeats = beatsPerBar * 2;
-    const baseGrid = RhythmMutator.generate({
-        totalBeats: baseGridBeats,
-        stepsPerBeat: STEPS_PER_BEAT,
-        beatsPerBar,
-        sparsityTendency: persona.sparsityTendency,
-        syncopationAssault: persona.syncopationAssault,
-    });
-
-    for (let i = 0; i < chords.length; i++) {
-        const c = chords[i];
-        const dur = c.endBeat - c.startBeat;
-        if (dur < EPSILON) continue;
-        if (!c.voicing || c.voicing.length < 2) continue;
-
-        // 掐头：去掉 voicing[0]（bass voice）
-        const compVoicing: number[] = [];
-        for (let v = 1; v < c.voicing.length; v++) {
-            if (c.voicing[v] >= ACCOMP_MIN_PITCH) {
-                compVoicing.push(c.voicing[v]);
-            }
-        }
-        if (compVoicing.length === 0) continue;
-
-        const totalSteps = Math.floor(dur * STEPS_PER_BEAT + 0.5);
-        const grid = new Int8Array(totalSteps);
-
-        // 🌟 将基准律动平铺 (Tile) 到和弦，避免每次都随机瞎弹
-        const startStep = Math.floor(c.startBeat * STEPS_PER_BEAT + 0.5);
-        for (let s = 0; s < totalSteps; s++) {
-            grid[s] = baseGrid[(startStep + s) % baseGrid.length];
-        }
-
-        const notes = TextureMapper.render({
-            chord: c,
-            voicing: compVoicing,
-            grid,
-            stepsPerBeat: STEPS_PER_BEAT,
-            beatsPerBar,
-            contour: persona.contourPreference,
-            velocityRange: persona.dynamicRange,
-        });
-
-        for (let k = 0; k < notes.length; k++) {
-            out.push(notes[k]);
-        }
-    }
-}
+// Phase 9 — renderAccompaniment 函数已删除(原本作为 bundle.personas[ROLE_ACCOMP]
+// fallback,Phase 9 严格 roster gate 后变 dead code,清理)。
 
 // ============================================================
 // Lead 渲染（FractalStructureEngine + PCFGGrammarEngine + ToplineEngine）
