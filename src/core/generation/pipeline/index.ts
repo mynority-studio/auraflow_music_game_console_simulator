@@ -180,14 +180,26 @@ export function runPipeline(
         }
 
         // NoteEvent[] → NoteData[],按 part 拆轨(facade 已经按 part 拆好)
-        const mgMelody = noteEventsToNoteData(mgResult.melody);
-        const mgAccomp = noteEventsToNoteData(mgResult.chordTexture);
-        // mg.bass 暂不消费(Phase 2 用 auraflow BassRealizer 取代;现 Phase 1 留空)
+        //
+        // Phase 1 关键设计:mg 在 standalone 是单一 Salamander piano sampler,
+        // 所有声音同音色 + 同混响 + mg 内部 velocity 已经做了平衡。
+        // auraflow MidiConverter 当前给 melody(GM=1 Bright + vol=122 + pan=74)与
+        // pianoRH(GM=0 Grand + vol=102 + pan=64)不同 mix → 听感"两架钢琴"。
+        //
+        // 修复:**把 mg.melody + mg.chordTexture 合并到 accompaniment(走 PIANO_RH
+        // channel)**,所有 mg 钢琴音统一 Grand Acoustic + MIX_PIANO_RH → "一架钢琴
+        // 演奏旋律 + 和声"(符合 mg 哲学)。
+        // mg.bass 暂不消费(Phase 2 用 auraflow BassRealizer 取代)。
+        const mgMelodyNotes = noteEventsToNoteData(mgResult.melody);
+        const mgChordNotes = noteEventsToNoteData(mgResult.chordTexture);
+        const mgPianoUnified: NoteData[] = mgMelodyNotes.concat(mgChordNotes);
+        // 按 onset 升序排序(playback 顺序;同 onset 时保留输入顺序,稳定排序)
+        mgPianoUnified.sort((a, b) => a.onset - b.onset);
 
         const mgTrack: GeneratedTrack = {
             chords: mgChords,
-            melody: mgMelody,
-            accompaniment: mgAccomp,
+            melody: [],                // Phase 1 静音 melody 轨(避免 Bright Acoustic 双重发声)
+            accompaniment: mgPianoUnified,  // 合并钢琴 melody + chord stab(一架 Grand)
             bass: [],           // Phase 1 静音,Phase 2 接 BassRealizer
             drums: [],          // 同上
             atmosphere: [],     // 同上
