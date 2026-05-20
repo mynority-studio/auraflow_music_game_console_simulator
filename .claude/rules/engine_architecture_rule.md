@@ -405,17 +405,144 @@ voicing 算法,只动 VoicingProcessor 一个文件。
 **90% 的钢琴优化只改 1-2 个文件**。剩 10%(如新增 CoordMode、改 IR 字段)需要
 3+ 文件,这是天然的"加新概念"代价,不可避免。
 
-### 11.5 未来其他乐器速查(待补)
+### 11.5 (预留) — 后续乐器按本结构补 §11.6, §11.10, §11.14 ...
 
-待添加的乐器专题(按 §11.1-11.4 结构):
-- [ ] 贝斯(BassRealizer + BassIdiom + BassWalkPatterns)
+每个乐器使用 4 个子节:**5 层分布** / **优化场景表** / **反直觉事实** / (§11.4
+通用 3 问题不重复)。
+
+### 11.6 贝斯 — 5 层关切点分布
+
+```
+┌─ 决策层(说"这段贝斯怎么走") ────────────────────────────┐
+│  pipeline/MoodRouter.ts          ← Mood × Style 路由     │
+│    pickWalkPattern()             (line 251-255)          │
+│    MOOD_WALK_PATTERN 表          (line 239-249,8×3=24 条路由)
+│                                                          │
+│  pipeline/CastingEngine.ts       ← 当前不做贝斯决策       │
+│    (贝斯 walkPatternId 直接来自 persona,见下)            │
+│                                                          │
+│  pipeline/Conductor.ts           ← 编排                  │
+│    ① drums 先渲染 → 提取 kickAnchors                     │
+│    ② BassRealizer.realize({ chords, persona,             │
+│                              styleId, tonality,          │
+│                              kickAnchors })              │
+│                                                          │
+│  config/styles/*.ts              ← 风格池注入贝斯 persona │
+└──────────────────────────────────────────────────────────┘
+        ↓ 输入 BassIdiomInput
+┌─ 物理约束层(贝斯的物理事实) ────────────────────────────┐
+│  primitives/BassIdiom.ts (常量区,line 40-50)             │
+│    BASS_ANCHOR = 24       ← C1(单八度起点,避钢琴 LH=C2)
+│    BASS_RANGE_LO = 24     ← C1                           │
+│    BASS_RANGE_HI = 47     ← B2(单八度上限)               │
+│    单声部:每 step 只发 1 个 NoteData(语义级约束)         │
+│                                                          │
+│  placeBassNearAnchor()    (line 246-273)                 │
+│    PC + lastBass anchor → 最近同 PC 八度(voice leading)   │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 算法 / Grammar 层(怎么生成贝斯线) ─────────────────────┐
+│  data/BassWalkPatterns.ts                                │
+│    WalkPatternId 枚举(HalfNote/JazzQuarter/Stride/      │
+│      LatinTumbao/QuarterHalf/Pedal/BebopWalk/ScaleClimb)│
+│    WALK_PATTERNS 配方表(每条 pattern 是 WalkStep[])      │
+│    WalkRule 字母语法:                                    │
+│      B = Root, 5 = Fifth, 3 = Third (chord-aware 自适应) │
+│      A = diatonic Approach(scale-aware 半音趋近)         │
+│      N = NextRoot(提前切入下一和弦)                      │
+│      = = Repeat(节奏复读)                                │
+│      C = ChordTone(hash 决定性抽 chord 内音)             │
+│      S = ScaleTone(hash 决定性抽 chord-scale 池)         │
+│                                                          │
+│  primitives/BassIdiom.ts (line 159-213)                  │
+│    renderBassWalkPattern() — 字母语法解释器              │
+│    pickBassThirdPc()    (line 306-317) — 3rd 自适应      │
+│    pickDiatonicApproachBass() (line 281-301) — A 规则    │
+│    buildBassScalePool() (line 325-345) — S 规则池        │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 渲染层(把决策 + 算法 → NoteData[]) ────────────────────┐
+│  primitives/BassIdiom.ts (核心,1 个 render 入口)         │
+│    render()                ← 入口(被 BassRealizer 包装)   │
+│    分流:                                                 │
+│      Layer 1(persona.walkPatternId 未设):               │
+│        line 98-110:每和弦头一击 root + sustain,         │
+│        可选 kickAnchors 对齐(kick-bass interlock)        │
+│      Walking Pattern(persona.walkPatternId 已设):        │
+│        line 159-240:按 WalkRule 序列逐 step 生成        │
+│                                                          │
+│    PRNG = 0 — 完全决定性(hash 决定 C/S 规则)             │
+└──────────────────────────────────────────────────────────┘
+        ↓
+┌─ 资源层(数据库 / 卡片库) ───────────────────────────────┐
+│  data/BassWalkPatterns.ts   ← 当前 8 种 walk 配方        │
+│  idioms/MusicianRegistry.ts ← frank_bass / maya_slap_bass
+│  types.ts                    ← BassIdiomInput / persona  │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 11.7 贝斯优化场景对照表
+
+| 你想优化什么 | 主要改哪 | 次要改哪(如需) | Blast |
+|------------|---------|----------------|-------|
+| **加一种新 walk pattern**(如 Boogie Walking / Funk Slap) | `data/BassWalkPatterns.ts` 加 enum + WALK_PATTERNS 配方 | `MoodRouter.MOOD_WALK_PATTERN` 表加路由 | 1-2 文件 |
+| **调某 mood 下的 walk 偏好** | `pipeline/MoodRouter.ts` `MOOD_WALK_PATTERN[mood][styleId]` 表 | — | **1 文件** |
+| **改 kick-bass interlock 策略** | `primitives/BassIdiom.ts` Layer 1 (line 98-110) | `Conductor.ts` kickAnchors 提取(line 258-262) | 1-2 文件 |
+| **改 WalkRule 字母语法**(加新字母 / 改 A 趋近逻辑) | `data/BassWalkPatterns.ts` WalkRule enum + `BassIdiom.renderBassWalkPattern` 解释器 | — | 2 文件 |
+| **改 3rd / 5th / approach 计算** | `BassIdiom.ts` `pickBassThirdPc` / `pickDiatonicApproachBass` | — | **1 文件** |
+| **改贝斯音域物理约束** | `BassIdiom.ts` 顶部常量 (line 40-50:BASS_ANCHOR / RANGE) | — | **1 文件** |
+| **改 voice-leading 连贯性**(八度跳跃最小化) | `BassIdiom.placeBassNearAnchor()` (line 246-273) | — | **1 文件** |
+| **新贝斯 musician**(如 charlie_jazz_bass) | `idioms/MusicianRegistry.ts` 加 musician 卡 + 选 walkPatternId | `config/styles/*.ts` plug 进 personas(如需) | 1-2 文件 |
+| **加 slap / pop 演奏技巧** | `BassIdiom.ts` 新 idiom 分支(类似 Layer 1 与 Walking Pattern 并列) | `WalkPatternId` enum + persona 字段如需 | 2-3 文件 |
+| **支持双八度 bass**(突破 [C1, B2] 单八度) | `BassIdiom.ts` BASS_RANGE_HI + placeBassNearAnchor | 极其谨慎,可能影响混音物理 | 1 文件 |
+| **加贝斯 signature lick**(当前缺失) | 新建模块 `BassLickDictionary.ts` + `MusicianPersona.bassLickProb` 字段 | `BassIdiom.ts` 触发点 + `BassRealizer` 集成 | 3-4 文件(加新概念) |
+
+### 11.8 贝斯 — 三个反直觉但关键的事实
+
+#### 11.8.1 **贝斯有两条完全分离的路径,由 `persona.walkPatternId` 切换**
+
+不是"一个统一渲染器跑所有贝斯"——`BassIdiom.render` 内部分流:
+- `walkPatternId` **未设** → Layer 1(每和弦头一击 root + sustain),消费 kickAnchors
+- `walkPatternId` **已设** → Walking Pattern(WalkRule 字母语法解释器),忽略 kickAnchors
+
+加新 musician 时,要清楚选哪条路径。**两条路径行为差异巨大**,Layer 1 是简化
+fallback,Walking 才是"专业贝斯"路径。
+
+#### 11.8.2 **Kick-Bass interlock 是 Conductor 编排的,不是 BassIdiom 主动**
+
+`kickAnchors[]` 来自 `Conductor` 在调用 BassRealizer 之前提取 drums 轨的 Kick
+落点。**BassIdiom 不主动看 drums**——只被动接受 kickAnchors 数组。
+
+要改 interlock 策略(如让 Walking 路径也对齐 kick / 让 Layer 1 不消费 kick):
+- 改取舍点在 `BassIdiom.ts`(谁消费 kickAnchors)
+- 改提取逻辑在 `Conductor.ts`(kickAnchors 怎么取)
+- 不要在 BassIdiom 里 import drums 相关模块
+
+#### 11.8.3 **贝斯 PRNG = 0 — 完全决定性**
+
+整条贝斯轨**零随机**。Walking Pattern 的 C / S 规则用确定性 hash
+(`chordIndex*31 + stepIdx*17`)抽 chord tone / scale tone。
+
+任何想加随机变化的优化(如"让 walk 有时多走半音 approach")**慎重**:
+- 加 PRNG 消耗 → 破 bit-exact + 改变 D-5 PRNG 序列对齐
+- 优先用 hash 变体(改 hash 系数)而不是 PRNG
+- 若必须用 PRNG:在 BassIdiom 文件头**预声明 PRNG 预算**,Conductor 对账
+
+**当前贝斯无 signature lick 机制**(MusicianPersona 不含 `bassLickProb` 字段)。
+这是设计决策——贝斯主要靠 walking pattern 表达个性,lick 留给主奏乐器(钢琴 / 萨克斯)。
+
+### 11.9 未来其他乐器速查(待补)
+
+待添加的乐器专题(按 §11.1-11.3 / §11.6-§11.8 结构):
+- [x] **钢琴**(§11.1-§11.3)
+- [x] **贝斯**(§11.6-§11.8)
 - [ ] 鼓组(DrumRealizer + DrumIdiom + drumPatterns 风格池)
 - [ ] 氛围(AtmosphereRealizer + AtmosphereRenderer + AtmosphereConfig)
 - [ ] 吉他(Phase 8+ 加入)
 - [ ] 萨克斯 / 管乐(Phase 8+ 加入,届时引入 InstrumentProfile breath constraints)
 
-**每次加新乐器时,本节同步补 §11.X 子节**——把"决策/物理约束/算法/渲染/资源"
-5 层分布 + 优化场景表 + 反直觉提醒填好。
+**每次加新乐器时,本节同步补 §11.X 子节**——填好"5 层分布 / 优化场景表 /
+反直觉事实"三节,§11.4 三个通用自问问题不重复。
 
 ---
 
