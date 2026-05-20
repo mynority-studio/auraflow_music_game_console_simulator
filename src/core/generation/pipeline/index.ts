@@ -30,15 +30,21 @@
 import {
     GeneratedTrack, GenerationOptions, MusicContext, NoteData,
     BandRole, BandRoster, Tonality, SectionMetadata, SectionType, SectionTypeName,
+    ActiveMusician, Musician,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleConfig } from '../config/StyleRegistry';
-import { getStyleHarmonyBundle } from '../config/styles';
+import { getStyleHarmonyBundle, getStyleStage5Bundle } from '../config/styles';
 import { PRNGManager } from '../../utils/PRNG';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
 import { MgEngineFacade } from './MgEngineFacade';
 import { chordDefsToGeneratedChords, noteEventsToNoteData } from './MgChordAdapter';
+import { CurveWeatherSampler } from './CurveWeatherSampler';
+import type { RenderContext } from '../ir/RenderContext';
+import { BassRealizer } from '../realizers/BassRealizer';
+import { DrumRealizer } from '../realizers/DrumRealizer';
+import { AtmosphereRealizer } from '../realizers/AtmosphereRealizer';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -166,22 +172,76 @@ export function runPipeline(
     PRNGManager.recordSnapshot('D');
 
     // ============================================================
-    // Stage 4 — Roster + Band 系统(乐手卡片 / GM 程式 override 准备)
+    // Stage 4 — Roster / Band / Weather(C.4 — auraflow 护城河接入)
     // ============================================================
-    // C.4 待做:用 roster 决定哪些 bass/drums/atmosphere 乐手在场,接 mg chord 渲染。
-    // 当前 C.2 阶段:roster 构造完成,但 bass/drums/atmosphere 仍输出空数组。
+    // 设计:mg 接管钢琴和声,auraflow 用乐手 / band / weather 系统装饰
+    //   bass / drums / atmosphere。所有 Realizer 接收 mg 输出的 chord 进行 +
+    //   auraflow 自己的 weather 调制。
     const roster: BandRoster = buildDefaultRoster(options.forcedBand);
+    const activeMusicians: ActiveMusician[] = buildActiveMusicians(roster);
+
+    // CurveWeatherSampler:per-section 5 维气象 anchor(K/T/S/R/G)+ 80/20 插值。
+    // 各 Realizer 通过 context.weather.at(beat) 获取该 beat 的瞬时气象,调制渲染参数。
+    const weatherSampler = new CurveWeatherSampler(sections, styleId, activeMusicians);
+    const renderContext: RenderContext = {
+        weather: weatherSampler,
+        lookaheadLimit: 9999,           // 离线模式 — Idiom 不会真用满
+        prevState: undefined,
+    };
+
+    // Stage 5 bundle — drum grid / atmosphere idiom 等
+    const stage5Bundle = getStyleStage5Bundle(styleId);
 
     // ============================================================
-    // Stage 5 — 输出(C.4 待接 bass/drums/atmosphere 渲染)
+    // Stage 5 — 渲染 bass / drums / atmosphere 三轨(钢琴已由 mg 接管)
     // ============================================================
+    // 用 RELATIVE 空间的 mgChords 作为输入,Realizer 渲染 RELATIVE NoteData[]。
+    // 下游 AbsoluteTransposer.arrange 加 keyOffset 转 ABSOLUTE(K-2 铁律唯一加点)。
+
+    // BASS — 取 roster.bass 的 persona 渲染 walking / pattern bass
+    let bassNotes: NoteData[] = [];
+    if (roster.bass !== null && roster.bass !== undefined) {
+        bassNotes = BassRealizer.realize({
+            chords: mgChords,
+            styleId,
+            tonality,
+            persona: roster.bass.persona,
+            context: renderContext,
+        });
+    }
+
+    // DRUMS — DrumGrid 来自 stage5Bundle(风格驱动),sections 决定能量 + section type
+    let drumsNotes: NoteData[] = [];
+    if (roster.drums !== null && roster.drums !== undefined) {
+        drumsNotes = DrumRealizer.realize({
+            sections,
+            grid: stage5Bundle.drum,
+            context: renderContext,
+        });
+    }
+
+    // ATMOSPHERE — pad / strings 长音 voicing,intensityScale 段间能量插值
+    let atmosphereNotes: NoteData[] = [];
+    if (roster.atmosphere !== null && roster.atmosphere !== undefined) {
+        // intensityScale 取整曲段落能量平均(段落级 idiom 不感知 per-beat,用平均作 baseline)
+        const avgIntensity = sections.length > 0
+            ? sections.reduce((acc, s) => acc + s.energyLevel, 0) / sections.length / 10
+            : 0.5;
+        atmosphereNotes = AtmosphereRealizer.realize({
+            chords: mgChords,
+            idiom: roster.atmosphere.personnel?.atmosphereOverrides,
+            intensityScale: avgIntensity,
+            context: renderContext,
+        });
+    }
+
     const track: GeneratedTrack = {
         chords: mgChords,
-        melody: [],                       // 设计:统一到 accompaniment 走 Grand Acoustic
+        melody: [],                       // 统一到 accompaniment 走 Grand Acoustic
         accompaniment: mgPianoUnified,    // mg melody + chord stab 合并(一架钢琴)
-        bass: [],                          // C.4 接 BassRealizer + mg chord
-        drums: [],                         // C.4 接 DrumRealizer
-        atmosphere: [],                    // C.4 接 AtmosphereRealizer
+        bass: bassNotes,                  // C.4 — auraflow BassRealizer + mg chord
+        drums: drumsNotes,                // C.4 — auraflow DrumRealizer
+        atmosphere: atmosphereNotes,      // C.4 — auraflow AtmosphereRealizer
         sections,
         bpm,
         key: keyName,
@@ -253,6 +313,29 @@ export function runPipeline(
     };
 
     return { track, context };
+}
+
+// ============================================================
+// buildActiveMusicians — roster 内非 null 槽位转 ActiveMusician[]
+// ============================================================
+//
+// C.4 — CurveWeatherSampler 消费 activeMusicians 计算 5 维气象 anchor。
+// 跳过 null / undefined 槽位(forcedBand: { ...role: null } 显式置空)。
+// 不做 eligibleRoles 校验(简化 — 旧 CastingEngine 的 Pass A 已删,Realizer 内部宽容处理)。
+function buildActiveMusicians(roster: BandRoster): ActiveMusician[] {
+    const out: ActiveMusician[] = [];
+    const tryAdd = (musician: Musician | null | undefined, role: BandRole) => {
+        if (musician !== null && musician !== undefined) {
+            out.push({ card: musician, assignedRole: role });
+        }
+    };
+    tryAdd(roster.vocal,      BandRole.Vocal);
+    tryAdd(roster.mainInst,   BandRole.MainInst);
+    tryAdd(roster.accomp,     BandRole.Accomp);
+    tryAdd(roster.bass,       BandRole.Bass);
+    tryAdd(roster.drums,      BandRole.Drums);
+    tryAdd(roster.atmosphere, BandRole.Atmosphere);
+    return out;
 }
 
 // ============================================================
