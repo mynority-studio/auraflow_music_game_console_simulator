@@ -76,6 +76,12 @@ export interface AtmosphereRenderInput {
      * voice count / filter / release ratio,用 S 维度调制 crossfade。
      */
     context: RenderContext;
+    /**
+     * Phase 4 — Apex 抑制(全段一致,从 RoleAssignment.apexActive 直传)。
+     * 缺省 false / 1.0 时无 ducking。
+     */
+    apexActive?: boolean;
+    suppressionFactor?: number;
 }
 
 export class AtmosphereRenderer {
@@ -92,6 +98,10 @@ export class AtmosphereRenderer {
         const out: NoteData[] = [];
 
         if (chords.length === 0) return out;
+
+        // Phase 4 — Apex ducking 全段一致(从 RoleAssignment 透传)
+        const apexFactor = (input.apexActive === true && input.suppressionFactor !== undefined)
+            ? input.suppressionFactor : 1.0;
 
         // ----------------------------------------------------------------
         // Idiom 解析（缺省补默认）
@@ -191,12 +201,14 @@ export class AtmosphereRenderer {
             }
             if (extendedDur <= EPSILON) continue;
 
+            // Phase 4 — apex ducking 应用于 velocity(全段 apexActive 一致)
+            const effectiveVelocity = velocity * apexFactor;
             for (let v = 0; v < padVoicing.length; v++) {
                 out.push({
                     pitch: padVoicing[v],
                     onset: c.startBeat,
                     duration: extendedDur,
-                    velocity,
+                    velocity: effectiveVelocity,
                 });
             }
         }

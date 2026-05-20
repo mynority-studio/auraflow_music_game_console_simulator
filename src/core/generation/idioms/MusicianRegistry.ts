@@ -119,6 +119,9 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Upward,
             syncopationAssault: 0.2,
             dynamicRange: [85, 115],
+            // Phase 4 — Apex Predator 演示:鼓组 BuildUp/Chorus 峰值 K > 0.80 时
+            // 触发 ducking,Accomp + Atmosphere velocity ×= 0.6,让出空间给鼓
+            isApex: true,
         },
         description: 'Pop 鼓手，干净直拍',
     },

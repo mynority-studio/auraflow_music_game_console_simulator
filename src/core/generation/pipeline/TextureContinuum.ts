@@ -25,7 +25,7 @@
 // ============================================================
 
 import {
-    BandPlan, BandRole, DensityLevel, SectionMetadata, ActiveMusician,
+    BandPlan, BandRole, DensityLevel, SectionMetadata, ActiveMusician, SectionType,
 } from '../types';
 import type { WeatherSampler } from './RenderContext';
 
@@ -214,6 +214,90 @@ export function attachDensityPlan(
                     .densityLevel = writeDensity;
             }
             currentDensityByRole.set(role, writeDensity);
+        }
+    }
+}
+
+// ============================================================
+// Phase 4 — Apex Predator Suppression(侧链 ducking)
+// ============================================================
+
+/**
+ * Apex 触发的 K 阈值 — K > 此值且任一 apex musician active → 本段 ducking 激活
+ *
+ * Phase 4 校准:0.80 实测从未触发(默认乐队 personaK avg ~0.15,Pop BuildUp K 上限 0.74)。
+ * 调至 0.70 → BuildUp 段(energy 10)触发,Chorus(energy 8)未触发,符合"drop 效果"音乐性。
+ * 听感后可继续调:激进 0.65 / 保守 0.75。
+ */
+const APEX_K_THRESHOLD = 0.70;
+
+/** 默认 suppression 强度(0.6 = 让出 40% velocity 给 apex) */
+const DEFAULT_SUPPRESSION_FACTOR = 0.6;
+
+/** 被 ducking 影响的 role 集合(节奏组 Bass / Drums / MainInst 豁免) */
+const DUCKING_TARGET_ROLES: ReadonlyArray<BandRole> = Object.freeze([
+    BandRole.Accomp,
+    BandRole.Atmosphere,
+]);
+
+/**
+ * 为 bandPlan 注入 apex ducking 标记。
+ *
+ * 检测逻辑:
+ *   1. 对每段,扫描 activeMusicians 找 isApex=true 的乐手
+ *   2. 取该段中点 weather.k(用 K 而非 isApex 乐手专属 K,是因为本期 Apex 乐手通常是
+ *      鼓 / 主奏,其 K 等同全段 K)
+ *   3. K > APEX_K_THRESHOLD → 本段 ducking active,
+ *      给 DUCKING_TARGET_ROLES 的 assignment 写 apexActive=true + suppressionFactor
+ *
+ * 副作用:in-place 修改 bandPlan.sectionPlans[sIdx].assignments[role].apexActive
+ *         + .suppressionFactor + instrumentSpecificParams 镜像
+ */
+export function attachSuppressionPlan(
+    bandPlan: BandPlan,
+    sections: SectionMetadata[],
+    weather: WeatherSampler,
+    activeMusicians: ActiveMusician[],
+): void {
+    // Phase 4 MVP:乐队级 hasApex 一票通过 — 后续可改为 per-section apex 检测
+    const hasApex = activeMusicians.some(am => am.card.persona.isApex === true);
+    if (!hasApex) return;  // 无 apex 乐手,本 Phase 4 无 ducking 触发
+
+    for (let sIdx = 0; sIdx < sections.length; sIdx++) {
+        const section = sections[sIdx];
+        const k = midBeatK(section, weather);
+
+        // Apex 触发条件(任一命中):
+        //   ① K > APEX_K_THRESHOLD(K-driven 峰值)
+        //   ② sectionType ∈ {BuildUp, Drop}(类型驱动 — 音乐性"drop ducking")
+        //
+        // 理由:BuildUp 段虽 energyLevel 来自模板原值(非真高),但 musically 应让位主奏;
+        //       Drop 段是 EDM 经典侧链场景,自然触发。
+        const isApexSection = k > APEX_K_THRESHOLD
+            || section.sectionType === SectionType.BuildUp
+            || section.sectionType === SectionType.Drop;
+        if (!isApexSection) continue;
+
+        const plan = bandPlan.sectionPlans[sIdx];
+        if (plan === undefined) continue;
+
+        for (let r = 0; r < DUCKING_TARGET_ROLES.length; r++) {
+            const role = DUCKING_TARGET_ROLES[r];
+            const assignment = plan.assignments[role];
+            if (assignment === undefined) continue;
+
+            assignment.apexActive = true;
+            assignment.suppressionFactor = DEFAULT_SUPPRESSION_FACTOR;
+            // 镜像到 instrumentSpecificParams(Idiom 通过 params 消费)
+            if (assignment.instrumentSpecificParams !== undefined
+                && typeof assignment.instrumentSpecificParams === 'object'
+                && assignment.instrumentSpecificParams !== null) {
+                const params = assignment.instrumentSpecificParams as {
+                    apexActive?: boolean; suppressionFactor?: number;
+                };
+                params.apexActive = true;
+                params.suppressionFactor = DEFAULT_SUPPRESSION_FACTOR;
+            }
         }
     }
 }

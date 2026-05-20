@@ -148,6 +148,24 @@
   - React/UI 调用代码(`src/components/*`)
 - **风险**:**高**(App / 嵌入式直接破坏;app_integration_rule 是 App dev 的真理之源,不同步会让外部消费方踩坑)
 
+### 1.12 isApex flag ↔ TextureContinuum / Piano-Atmosphere 消费链(Phase 4)
+
+- **触发器**:
+  - `MusicianPersona.isApex` 字段值变更或新增 apex musician
+  - `TextureContinuum.attachSuppressionPlan` 的 K 阈值 / SectionType 触发条件变更
+  - Apex 与 Anchor 同时设(语义冲突,严禁)
+- **必须同步**:
+  - `src/core/generation/pipeline/TextureContinuum.ts`:`APEX_K_THRESHOLD` /
+    `DUCKING_TARGET_ROLES` / 触发 SectionType 集合(BuildUp / Drop)
+  - `src/core/generation/primitives/PianoAccompIdiom.ts`:`params.apexActive`
+    + `params.suppressionFactor` 消费(velocity 缩放点)
+  - `src/core/generation/primitives/AtmosphereRenderer.ts`:`input.apexActive`
+    + `input.suppressionFactor` 消费(velocity 缩放点)
+  - `src/core/generation/pipeline/Conductor.ts`:AtmosphereRealizer 调用点透传
+    `atmoAssign.apexActive` / `atmoAssign.suppressionFactor`
+  - `idioms/MusicianRegistry.ts`:apex/anchor 互斥校验(同 musician 不能同时设 true)
+- **风险**:**中**(漏改消费方 → ducking 不生效,听感无感;但不会破坏算法 D-5)
+
 ### 1.11 DensityLevel 枚举 ↔ PianoTextureRecipes / RhythmMask / Idiom 消费链
 
 - **触发器**:

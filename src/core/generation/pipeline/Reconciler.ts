@@ -1,12 +1,13 @@
 /**
  * Cross-Part Reconciler — 跨乐器后置校验。
  *
- * v1 = WEAK VERSION(当前实现目标)
+ * v1 = WEAK VERSION(Phase 1-3 实装)
  *   只做: 检测 + velocity damp + 重复音剔除
- *   不做: 反向要求 Realizer 重生成
  *
- * v2 = STRONG VERSION(未来升级,触发条件见下)
- *   会做: 消费 unresolvedIssues + BandPlan,调度某个 Realizer 用新约束重生成
+ * v2 = STRONG VERSION(Phase 4 实装,本文件已升级)
+ *   现做: 消费 unresolvedIssues 做"声部重排"(local repair):
+ *     - LIL violation → 上声部 note pitch+=12 octave 解开 m9/m2 dyad
+ *   未做(留 v3+): 调度 Realizer 用新约束完整重生成
  *
  * ─────────────────────────────────────────────────────────────────────
  * UPGRADE TRIGGER(什么时候必须做 v2):
@@ -111,11 +112,14 @@ export interface ReconcilerReport {
     appliedFixes: {
         velocityDamps: number;
         notesRemoved: number;  // v1 不剔除,恒为 0;留给将来扩展
+        /** Phase 4 v2 — LIL 修复:上声部 note pitch+=12 octave 解开 m9/m2 dyad 的次数 */
+        liftedNotes: number;
     };
     /** Phase 8b — 检测到但**故意不 damp** 的 doubling(钢琴 LH + bass 低音区八度加厚),
      *  仅作为诊断 metric。这种 doubling 是音乐家明确意图,Reconciler 不应误伤。 */
     deliberateDoublings: number;
-    /** v1 检测到但未修复的问题,详见 UnresolvedIssue.kind */
+    /** 检测到但未修复的问题,详见 UnresolvedIssue.kind。
+     *  Phase 4 v2 起 LIL 主动修复后从本数组移除;其他 kind(cross_track / voice_crossing 等)仍留作 v3 接力。 */
     unresolvedIssues: UnresolvedIssue[];
 }
 
@@ -221,14 +225,69 @@ export class Reconciler {
             }
         }
 
+        // ─────────────────────────────────────────────
+        // Pass 3 (Phase 4 v2): 主动解决 LIL 违规
+        //   上声部 note pitch+=12(octave lift)→ m9/m2 dyad 散开,声学上不再撞
+        //   若上提后越界(> 96 = C7)→ 留作 unresolved(放回数组)
+        //   注意:LIL onset window 内可能多个 upper note,只移目标 note(pitch matching)
+        // ─────────────────────────────────────────────
+        const stillUnresolved: UnresolvedIssue[] = [];
+        let liftedNotes = 0;
+        for (let i = 0; i < unresolvedIssues.length; i++) {
+            const issue = unresolvedIssues[i];
+            if (issue.kind !== 'low_interval_limit_violation') {
+                stillUnresolved.push(issue);
+                continue;
+            }
+            // 从 note 字符串解析 upper pitch 与 track(已写为 'bass=X, name=Y, ...' 格式)
+            // 直接遍历 atmosphere + accompaniment 找匹配 (track, pitch, onset) 的 note,
+            // pitch+=12 解开。
+            const involvedUpper = issue.involvedTracks.find(t => t !== 'bass');
+            if (involvedUpper === undefined) {
+                stillUnresolved.push(issue);
+                continue;
+            }
+            const targetTrack = involvedUpper === 'accompaniment'
+                ? input.accompaniment
+                : involvedUpper === 'atmosphere' ? input.atmosphere : null;
+            if (targetTrack === null) {
+                stillUnresolved.push(issue);
+                continue;
+            }
+            // 找 onset 在 issue 窗口内的 upper notes,逐个尝试上提
+            let resolved = false;
+            for (let n = 0; n < targetTrack.length; n++) {
+                const note = targetTrack[n];
+                if (Math.abs(note.onset - issue.startBeat) > LIL_ONSET_WINDOW) continue;
+                // 检测 note 与 bass 是否仍构成 m9/m2 — 解析需要 bass pitch
+                // 简化:任何 upper track note 在窗口内 + 与该段任一 bass note 间距 1/13 半音,即提
+                let isViolating = false;
+                for (let b = 0; b < input.bass.length; b++) {
+                    if (Math.abs(input.bass[b].onset - note.onset) > LIL_ONSET_WINDOW) continue;
+                    const interval = Math.abs(note.pitch - input.bass[b].pitch);
+                    if (interval === 1 || interval === 13) {
+                        isViolating = true; break;
+                    }
+                }
+                if (!isViolating) continue;
+                const lifted = note.pitch + 12;
+                if (lifted > 96) continue;  // 越界放弃,issue 留作 unresolved
+                note.pitch = lifted;
+                liftedNotes++;
+                resolved = true;
+            }
+            if (!resolved) stillUnresolved.push(issue);
+        }
+
         return {
             collisions,
             appliedFixes: {
                 velocityDamps: collisions.length,
                 notesRemoved: 0,
+                liftedNotes,
             },
             deliberateDoublings,
-            unresolvedIssues,
+            unresolvedIssues: stillUnresolved,
         };
     }
 }

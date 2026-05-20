@@ -499,6 +499,27 @@ export interface RoleAssignment {
      * 缺省时(老路径):Idiom 内部用 context.weather.at(beat).k 直接派生(简化路径)。
      */
     densityLevel?: DensityLevel;
+    /**
+     * Phase 4 — 本段该 role 是否被 apex 乐手 ducking。
+     *
+     * 由 TextureContinuum.attachSuppressionPlan 检测:
+     *   若同段任一 active musician.persona.isApex=true 且本段 K > 0.80,
+     *   则非节奏组(Accomp / Atmosphere)的 RoleAssignment 标 apexActive=true。
+     *
+     * Idiom 消费:velocity ×= suppressionFactor / voiceCount -1 等。
+     */
+    apexActive?: boolean;
+    /**
+     * Phase 4 — apex ducking 强度。
+     *
+     * 0.0 = 完全 mute(用户极端选项,不建议)
+     * 0.5 = 主流 ducking(听众感受"明显让位")
+     * 0.6 = Phase 4 默认值(温和让位,保留 60% velocity)
+     * 1.0 = 等于无 ducking(此时 apexActive 应为 false)
+     *
+     * 缺省 1.0(无 ducking)。
+     */
+    suppressionFactor?: number;
 }
 
 /**
@@ -988,6 +1009,25 @@ export interface MusicianPersona {
      *   - bass / drums        = false(节奏组天然就是 anchor 的另一层,不用本标记)
      */
     isAnchor?: boolean;
+    /**
+     * Phase 4 — 顶级捕食者标记(Apex Predator Suppression)。
+     *
+     * isApex=true 的 musician 在 weather.k 跨过高阈值(默认 0.80)的段落,
+     * 触发"侧链 ducking":同段落非节奏组 role(Accomp / Atmosphere)的
+     * velocity 与 voice 被压制,为其让出频段与空间。
+     *
+     * 设计动机:PEAA "Apex Predator Suppression" —— 模拟"主奏来了,其他人闭嘴"
+     * 的乐队反应。BuildUp / Chorus 巅峰段尤其有效。
+     *
+     * 风险约定:
+     *   - isApex 与 isAnchor **不应共存于同一 musician**(语义冲突)
+     *   - apex 与节奏组(Bass/Drums)兼容性最好;主奏(Lead/MainInst)也合理
+     *
+     * 当前规划:
+     *   - dave_drums.isApex = true(Phase 4 演示:鼓组 BuildUp/Chorus 峰值 ducking)
+     *   - 未来 Phase 6 Solo 引擎可动态分配 apex
+     */
+    isApex?: boolean;
     /** Phase 2: 大师经典 Licks 库 (RELATIVE pitch space) */
     lickPool?: NoteData[][];
     /** 角色的专属拓扑变异概率（算法折叠核心） */

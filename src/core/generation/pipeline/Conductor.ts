@@ -70,7 +70,7 @@ import { PRNGManager } from '../../utils/PRNG';
 import { RenderContext } from './RenderContext';
 import { CurveWeatherSampler } from './CurveWeatherSampler';
 import { attachVoicingMasks } from './VoicingMask';
-import { attachDensityPlan } from './TextureContinuum';
+import { attachDensityPlan, attachSuppressionPlan } from './TextureContinuum';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -316,6 +316,11 @@ export function conduct(input: ConductorInput): ConductorResult {
         attachDensityPlan(
             input.bandPlan, input.sections, renderContext.weather, activeMusicians,
         );
+        // Phase 4 — Apex Predator Suppression:apex 乐手在 K > 0.80 段触发,
+        // 给 Accomp / Atmosphere assignment 写 apexActive + suppressionFactor
+        attachSuppressionPlan(
+            input.bandPlan, input.sections, renderContext.weather, activeMusicians,
+        );
     }
 
     // Drums 按段落过滤后整体交给 DrumIdiom（PRNG 消耗在 sections 升序遍历内完成）
@@ -448,6 +453,9 @@ export function conduct(input: ConductorInput): ConductorResult {
                 idiom: atmosphereIdiom,
                 intensityScale,
                 context: renderContext,
+                // Phase 4 — apex ducking 从 RoleAssignment 透传
+                apexActive: atmoAssign?.apexActive,
+                suppressionFactor: atmoAssign?.suppressionFactor,
             });
             for (let k = 0; k < atmoNotes.length; k++) atmosphere.push(atmoNotes[k]);
         }

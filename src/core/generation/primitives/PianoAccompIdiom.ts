@@ -211,6 +211,18 @@ export interface PianoAccompParams {
      */
     densityLevel?: number;
     /**
+     * Phase 4 — Apex 抑制标记(Apex Predator Suppression)。
+     *
+     * apexActive=true 时本段被 ducking,所有 NoteData.velocity ×= suppressionFactor。
+     * 由 TextureContinuum.attachSuppressionPlan 写入,Idiom 在 render 末端应用。
+     */
+    apexActive?: boolean;
+    /**
+     * Phase 4 — Apex ducking 强度(默认 0.6 = 让出 40% velocity)。
+     * apexActive=false 时本字段无效。
+     */
+    suppressionFactor?: number;
+    /**
      * 阻尼器踏板系数 ∈ [0, 1] —— 来自 musician.persona.pianoPedalRatio。
      *
      *   0   = 干(grammar duration 不变)
@@ -549,6 +561,15 @@ export class PianoAccompIdiom {
             ? params.pianoPedalRatio : 1.0;
         if (pianoPedalRatio >= EPSILON) {
             applyPianoPedalToAccomp(out, chords, pianoPedalRatio);
+        }
+
+        // Phase 4 — Apex Predator ducking:本段被 apex 乐手压制时,
+        // 全体 NoteData velocity ×= suppressionFactor
+        if (params.apexActive === true && params.suppressionFactor !== undefined) {
+            const factor = params.suppressionFactor;
+            for (let i = 0; i < out.length; i++) {
+                out[i].velocity *= factor;
+            }
         }
 
         // D-3：onset ASC, pitch ASC
