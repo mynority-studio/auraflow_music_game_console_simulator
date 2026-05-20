@@ -20,12 +20,15 @@
  *     扫描 approach 槽位，找下一个已决定 pitch 的非 rest 槽位作 target，按
  *     approachDownProb 概率决定下方半音 chromatic neighbor 或上方调内 diatonic neighbor。
  *
- *   Pass 3（顺序，零 PRNG）：智能踏板（chord-aware sustain + 句尾延音）。
- *     对每个已决定 pitch 的 slot，把 duration 从 grammar 给的硬切时长线性插值到
- *     "自然踏板时长"（= min(下一发声音 onset, 当前和弦 endBeat) - 本音 onset）：
- *       final_dur = lerp(grammar_dur, pedaled_dur, legatoRatio)
- *     和弦边界硬钳（钢琴家换和弦必松踏板）；rest 透明（钢琴阻尼器下落需时间，
- *     短 rest 内的音会自然续响）。零 PRNG 消耗 → 保留 D-5 序列对齐。
+ *   Pass 3（顺序，零 PRNG）：sustain 后处理 — **按 instrumentFamily 分派**。
+ *     - InstrumentFamily.Piano → applyPianoPedal（真•阻尼器踏板）：
+ *         ceiling = min(下一发声音 onset, 当前和弦 endBeat)；rest 透明（钢琴阻尼器下落需时间）。
+ *         final_dur = lerp(grammar_dur, pedaled_dur, pianoPedalRatio)；和弦边界硬钳。
+ *     - InstrumentFamily.Wind / Voice / Guitar / Strings → applyMonophonicLegato（单声部 legato）：
+ *         ceiling = 下一个 slot 的 onset（rest 不透明 — 气息/换弓尊重休止符）；
+ *         final_dur = lerp(grammar_dur, legato_dur, legatoOverlap)；无和弦边界钳（单声部无糊）。
+ *     - InstrumentFamily.Pad / Bass / Percussion / Other → 跳过（自有 envelope / 不走 topline）。
+ *     零 PRNG 消耗 → 保留 D-5 序列对齐。
  *
  * 设计要点：
  *   1. K-1 / K-2 / K-5：全程 RELATIVE 空间，绝不读 GlobalContext.currentKeyOffset；
@@ -67,7 +70,7 @@
 
 import { PRNGManager } from '../../utils/PRNG';
 import {
-    GeneratedChord, NoteData, Tonality, ChordQuality,
+    GeneratedChord, NoteData, Tonality, ChordQuality, InstrumentFamily,
     CHORD_INTERVALS, SCALE_INTERVALS, CHORD_SCALE_INTERVALS,
 } from '../types';
 import { TerminalSymbol, TerminalKind } from '../primitives/PCFGGrammarEngine';
@@ -130,11 +133,24 @@ export interface ToplineInput {
      */
     leapProbability?: number;
     /**
-     * Phase 6 智能踏板 — Pass 3 后处理系数，默认 1.0（自然踏板）。
-     * 0 = 干（grammar duration 不变）/ 1 = 延音至下一个发声音或和弦边界 / >1 = 过踏（被和弦边界硬钳）。
-     * 零 PRNG 消耗 — 保留黄金种子（pitch 序列不变，仅 duration 字段变化）。
+     * 乐器族裔 — Pass 3 sustain 策略分派开关。默认 InstrumentFamily.Piano（向后兼容旧调用方）。
+     *   Piano → applyPianoPedal 消费 pianoPedalRatio
+     *   Wind/Voice/Guitar/Strings → applyMonophonicLegato 消费 legatoOverlap
+     *   Pad/Bass/Percussion/Other → 跳过 Pass 3
      */
-    legatoRatio?: number;
+    instrumentFamily?: InstrumentFamily;
+    /**
+     * Pass 3 — 钢琴阻尼器踏板系数（**仅 instrumentFamily === Piano 时生效**），默认 1.0。
+     * 0=干 / 1=延音至下一发声音或和弦边界（rest 透明）/ >1=过踏（被和弦边界硬钳）。
+     * 零 PRNG — 保留黄金种子。
+     */
+    pianoPedalRatio?: number;
+    /**
+     * Pass 3 — 单声部 legato 重叠系数（**仅 instrumentFamily ∈ {Wind, Voice, Guitar, Strings} 时生效**），默认 1.0。
+     * 0=干 / 1=slur 至下一个 slot onset（rest 不透明 — 气息/换弓尊重停顿）/ >1=过头（被下一 onset 钳）。
+     * 零 PRNG — 保留黄金种子。
+     */
+    legatoOverlap?: number;
 }
 
 export class ToplineEngineError extends Error {
@@ -167,8 +183,12 @@ export class ToplineEngine {
             ? input.approachDownProb : DEFAULT_APPROACH_DOWN_PROB;
         const leapProb = input.leapProbability !== undefined
             ? input.leapProbability : DEFAULT_LEAP_PROBABILITY;
-        const legatoRatio = input.legatoRatio !== undefined
-            ? input.legatoRatio : 1.0;
+        const family = input.instrumentFamily !== undefined
+            ? input.instrumentFamily : InstrumentFamily.Piano;
+        const pianoPedalRatio = input.pianoPedalRatio !== undefined
+            ? input.pianoPedalRatio : 1.0;
+        const legatoOverlap = input.legatoOverlap !== undefined
+            ? input.legatoOverlap : 1.0;
 
         const scalePcMask = ToplineEngine.buildScaleMask(input.tonality);
 
@@ -303,10 +323,23 @@ export class ToplineEngine {
         }
 
         // -----------------------------------------------------------
-        // Pass 3：智能踏板（chord-aware sustain + 句尾延音）
+        // Pass 3：sustain 后处理 — 按 instrumentFamily 分派
+        //   Piano                    → applyPianoPedal（chord-aware sustain + rest 透明）
+        //   Wind/Voice/Guitar/Strings → applyMonophonicLegato（next-onset 钳 + rest 不透明）
+        //   Pad/Bass/Percussion/Other → 跳过（自有 envelope / 不走 topline）
         // 零 PRNG 消耗 — 保留 D-5 黄金种子的 pitch 序列对齐。
         // -----------------------------------------------------------
-        ToplineEngine.applyIntelligentPedal(slots, input.chords, legatoRatio);
+        if (family === InstrumentFamily.Piano) {
+            ToplineEngine.applyPianoPedal(slots, input.chords, pianoPedalRatio);
+        } else if (
+            family === InstrumentFamily.Wind
+            || family === InstrumentFamily.Voice
+            || family === InstrumentFamily.Guitar
+            || family === InstrumentFamily.Strings
+        ) {
+            ToplineEngine.applyMonophonicLegato(slots, legatoOverlap);
+        }
+        // family === Pad / Bass / Percussion / Other → no-op（保 grammar duration）
 
         // -----------------------------------------------------------
         // 输出 NoteData[]（velocity：chordTone 重，其他中）
@@ -603,7 +636,11 @@ export class ToplineEngine {
     }
 
     /**
-     * Pass 3 — 智能踏板（chord-aware sustain + 句尾延音）。
+     * Pass 3（族裔分支：Piano）— 真•阻尼器踏板（chord-aware sustain + 句尾延音）。
+     *
+     * 仅当 ToplineInput.instrumentFamily === InstrumentFamily.Piano 时被分派。
+     * 单声部气息/弓弦乐器请改走 applyMonophonicLegato — 钢琴的 chord-boundary 钳
+     * 与"rest 透明"建模的是阻尼器物理，套到管乐/人声/吉他上会得到错误演奏。
      *
      * 算法（零 PRNG 消耗，纯后处理）：
      *   对每个已决定 pitch 的 slot：
@@ -612,7 +649,7 @@ export class ToplineEngine {
      *        - 找到 → ceiling = min(next_onset, chord_i.endBeat)
      *        - 未找到 → ceiling = chord_i.endBeat（句尾延音至和弦边界）
      *     3. pedaled_dur = ceiling - slot.onset（自然踏板时长）
-     *     4. final_dur = lerp(grammar_dur, pedaled_dur, legatoRatio)
+     *     4. final_dur = lerp(grammar_dur, pedaled_dur, pianoPedalRatio)
      *        - ratio = 0：final = grammar（干，纯 grammar）
      *        - ratio = 1：final = pedaled（完全踏板，钢琴自然延音）
      *        - ratio > 1：过踏（仍被 chord.endBeat 硬钳）
@@ -626,12 +663,12 @@ export class ToplineEngine {
      *   - **零 PRNG** — D-5 序列对齐不变，仅 NoteData.duration 字段值变化。
      *   - **C 可移植** — 双重 for 线性扫描，无 Map/Set，无递归。
      */
-    private static applyIntelligentPedal(
+    private static applyPianoPedal(
         slots: PitchSlot[],
         chords: GeneratedChord[],
-        legatoRatio: number,
+        pianoPedalRatio: number,
     ): void {
-        if (legatoRatio < EPSILON) return;  // 0 = 关闭踏板，保留 grammar duration 原样
+        if (pianoPedalRatio < EPSILON) return;  // 0 = 关闭踏板，保留 grammar duration 原样
 
         for (let i = 0; i < slots.length; i++) {
             const slot = slots[i];
@@ -658,11 +695,60 @@ export class ToplineEngine {
 
             const grammarDur = slot.duration;
             const delta = pedaledDur - grammarDur;
-            let finalDur = grammarDur + delta * legatoRatio;
+            let finalDur = grammarDur + delta * pianoPedalRatio;
 
             // 硬钳：never 越过和弦边界、never 短于 grammar
             const maxDur = chordEnd - slot.onset;
             if (finalDur > maxDur) finalDur = maxDur;
+            if (finalDur < grammarDur) finalDur = grammarDur;
+
+            slot.duration = finalDur;
+        }
+    }
+
+    /**
+     * Pass 3（族裔分支：Wind / Voice / Guitar / Strings）— 单声部 legato 重叠。
+     *
+     * 仅当 ToplineInput.instrumentFamily ∈ {Wind, Voice, Guitar, Strings} 时被分派。
+     * 钢琴族裔请改走 applyPianoPedal。
+     *
+     * 算法（零 PRNG，纯后处理）：
+     *   对每个已决定 pitch 的 slot：
+     *     1. ceiling = 下一个 slot 的 onset（**无视 kind** — rest 是真实呼吸/换弓点，不透明）。
+     *        若本音是最后一个 slot → 跳过（无 next，保 grammar）。
+     *     2. legato_dur = ceiling - slot.onset
+     *     3. final_dur = lerp(grammar_dur, legato_dur, legatoOverlap)
+     *     4. 硬钳：never < grammar_dur（不缩短）、never > legato_dur（不越下一事件）。
+     *
+     * 关键差异（vs applyPianoPedal）：
+     *   - **无 chord-boundary 钳** — 单声部乐器无多声部"和弦糊音"问题，phrase 跨和弦的 slur
+     *     是合法演奏（slurred legato 在管乐/弦乐中是基本表达）。
+     *   - **rest 不透明** — rest 即停顿/换气/换弓。气息乐器与擦弦乐器必须遵守；若下一 slot
+     *     是 rest，ceiling 自然等于本音 grammar 末尾 → 无延长，物理正确。
+     *   - **零 PRNG** — D-5 序列对齐不变，仅 NoteData.duration 字段值变化。
+     *   - **C 可移植** — 单层 for 线性扫描，无 Map/Set，无递归。
+     */
+    private static applyMonophonicLegato(
+        slots: PitchSlot[],
+        legatoOverlap: number,
+    ): void {
+        if (legatoOverlap < EPSILON) return;  // 0 = 关闭 legato，保留 grammar duration 原样
+
+        // 最后一个 slot 无 next，不延长 — 单层 for 走 length - 1
+        for (let i = 0; i < slots.length - 1; i++) {
+            const slot = slots[i];
+            if (slot.pitch < 0) continue;
+            if (slot.kind === 'rest') continue;
+
+            const ceiling = slots[i + 1].onset;
+            const legatoDur = ceiling - slot.onset;
+            if (legatoDur < EPSILON) continue;  // 退化切片
+
+            const grammarDur = slot.duration;
+            const delta = legatoDur - grammarDur;
+            let finalDur = grammarDur + delta * legatoOverlap;
+
+            if (finalDur > legatoDur) finalDur = legatoDur;
             if (finalDur < grammarDur) finalDur = grammarDur;
 
             slot.duration = finalDur;

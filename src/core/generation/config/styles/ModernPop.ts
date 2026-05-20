@@ -127,7 +127,7 @@ export const MODERN_POP_PERSONAS: MusicianPersona[] = [
     {
         colorBias: 0.3, sparsityTendency: 0.4, contourPreference: ContourType.Random,
         syncopationAssault: 0.3, dynamicRange: [60, 110],
-        legatoRatio: 1.0,
+        pianoPedalRatio: 1.0,
         signatureLickProb: 0.15,
         lickPool: [
             [ { pitch: 72, onset: 0, duration: 0.5, velocity: 0.85 }, { pitch: 69, onset: 0.5, duration: 0.5, velocity: 0.75 }, { pitch: 67, onset: 1.0, duration: 0.5, velocity: 0.75 }, { pitch: 64, onset: 1.5, duration: 1.5, velocity: 0.9 } ]

@@ -123,7 +123,7 @@ export const NEO_SOUL_PERSONAS: MusicianPersona[] = [
     {
         colorBias: 0.4, sparsityTendency: 0.5, contourPreference: ContourType.Random,
         syncopationAssault: 0.6, dynamicRange: [55, 105],
-        legatoRatio: 0.7,
+        pianoPedalRatio: 0.7,
         signatureLickProb: 0.2,
         lickPool: [
             [ { pitch: 74, onset: 0, duration: 0.25, velocity: 0.8 }, { pitch: 72, onset: 0.25, duration: 0.25, velocity: 0.9 }, { pitch: 69, onset: 0.5, duration: 0.25, velocity: 0.7 }, { pitch: 71, onset: 0.75, duration: 0.25, velocity: 0.8 }, { pitch: 72, onset: 1.0, duration: 1.0, velocity: 0.85 } ]

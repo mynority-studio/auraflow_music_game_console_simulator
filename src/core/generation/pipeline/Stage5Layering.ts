@@ -38,7 +38,7 @@ import {
     GeneratedChord, MusicianPersona, NoteData,
     SectionMetadata, SectionType, Tonality,
     CHORD_SCALE_INTERVALS, SCALE_INTERVALS, // 🌟 新增
-    BandPlan, BandRole, AtmosphereIdiom,
+    BandPlan, BandRole, AtmosphereIdiom, InstrumentFamily,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { getStyleStage5Bundle } from '../config/styles';
@@ -51,6 +51,7 @@ import {
     PCFGGrammarEngine, GrammarConfig,
 } from '../primitives/PCFGGrammarEngine';
 import { MasterPhraseRenderer } from '../primitives/MasterPhraseRenderer';
+import { PhraseContourPlanner } from '../primitives/PhraseContourPlanner';
 import { getMasterManifest } from '../data/MasterPersonas';
 import { DrumIdiom } from '../primitives/DrumIdiom';
 import { BassIdiom } from '../primitives/BassIdiom';
@@ -58,6 +59,7 @@ import { AtmosphereRenderer } from '../primitives/AtmosphereRenderer';
 import { PianoAccompIdiom, PianoAccompParams } from '../primitives/PianoAccompIdiom';
 import { ToplineEngine } from './ToplineEngine';
 import { TopologyMutator } from '../primitives/TopologyMutator';
+import { SongHookEncoder, SongHookSkeleton } from '../primitives/SongHookEncoder';
 import { PRNGManager } from '../../utils/PRNG';
 
 const EPSILON = 1e-6;
@@ -211,6 +213,10 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
     )?.card;
     const leadPersona: MusicianPersona = mainInstMusician?.persona
         ?? getPersona(bundle.personas, ROLE_LEAD);
+    // Pass 3 sustain 策略分派：MainInst 卡的族裔决定走 piano pedal 还是 monophonic legato。
+    // 未配 MainInst → fallback 到 Piano（与 MVP 现状一致：所有 style 默认 lead persona 都是钢琴）。
+    const leadInstrumentFamily: InstrumentFamily = mainInstMusician?.instrumentFamily
+        ?? InstrumentFamily.Piano;
 
     // A1 / C2：Bass persona 路由 — roster.bass.persona 优先。
     //   C2：bassMusician 不存在（用户显式 ⊘ Empty / forcedBand.bass=null / bandPlan 缺失）
@@ -243,6 +249,18 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
     for (let d = 0; d < drums.length; d++) {
         if (drums[d].pitch === 36) kickAnchors.push(drums[d].onset);
     }
+
+    // ----------------------------------------------------------------
+    // Phase 7.1 — Song Hook 缓存（跨 Chorus section 保持同一句副歌主题）
+    //
+    // 首次 Chorus：渲染完后扫该段 lead notes 的 motifName 覆盖区间，整拍对齐 + clamp，
+    //              encode 为度级骨架存入 songHook（不存绝对 pitch — 不同 Chorus 和弦可能不同）。
+    // 后续 Chorus：照常完整渲染（保 D-5 PRNG 对齐），然后用骨架按当前段和弦序列 project
+    //              得到新 NoteData[]，splice 进 melody 覆盖前 hook.totalBeats 区间。
+    //
+    // 零 PRNG 消耗 — 骨架编码/投影都是查表 + 算术，不动 PRNGManager，黄金种子序列不变。
+    // ----------------------------------------------------------------
+    let songHook: SongHookSkeleton | null = null;
 
     for (let sIdx = 0; sIdx < input.sections.length; sIdx++) {
         const section = input.sections[sIdx];
@@ -287,13 +305,54 @@ export function layerInstruments(input: Stage5LayeringInput): Stage5LayeringResu
             }
         }
         if ((mask & MASK_LEAD) !== 0) {
+            const leadStartIdx = melody.length;
             renderLead(
                 melody, section, sectionChords,
-                leadPersona,
+                leadPersona, leadInstrumentFamily,
                 bundle.fractal, bundle.grammar,
                 input.tonality, bundle.approachDownProb,
                 input.userMotif,
             );
+
+            // Phase 7.1 — Chorus hook 编码/投影分支
+            if (section.sectionType === SectionType.Chorus) {
+                if (songHook === null) {
+                    // 首次 Chorus：扫本段 lead notes 找 motif 区间 → encode
+                    const sectionLead: NoteData[] = [];
+                    for (let r = leadStartIdx; r < melody.length; r++) sectionLead.push(melody[r]);
+                    const span = SongHookEncoder.computeHookSpan(
+                        sectionLead, section.startBeat, section.endBeat,
+                    );
+                    if (span !== null) {
+                        songHook = SongHookEncoder.encode(
+                            sectionLead, sectionChords,
+                            span.startBeat, span.endBeat,
+                            LEAD_ANCHOR_PITCH,
+                        );
+                    }
+                } else if (songHook.notes.length > 0) {
+                    // 后续 Chorus：project 骨架 + splice 覆盖前 hook.totalBeats 区间
+                    const projected = SongHookEncoder.project(
+                        songHook, sectionChords, section.startBeat,
+                        LEAD_ANCHOR_PITCH, LEAD_RANGE_LO, LEAD_RANGE_HI,
+                    );
+                    const hookEndBeat = section.startBeat + songHook.totalBeats;
+                    // 原地删除 melody[leadStartIdx..] 中 onset ∈ [section.startBeat, hookEndBeat) 的 notes
+                    let writeIdx = leadStartIdx;
+                    for (let r = leadStartIdx; r < melody.length; r++) {
+                        const n = melody[r];
+                        if (n.onset >= section.startBeat - EPSILON
+                            && n.onset < hookEndBeat - EPSILON) {
+                            continue;  // 被 hook 覆盖
+                        }
+                        if (writeIdx !== r) melody[writeIdx] = n;
+                        writeIdx++;
+                    }
+                    melody.length = writeIdx;
+                    // append 投影出的 hook notes（最终全局 sortNotesInPlace 会按 onset 排好）
+                    for (let p = 0; p < projected.length; p++) melody.push(projected[p]);
+                }
+            }
         }
         // Atmosphere 在最后渲染 — 零 PRNG 消耗，顺序不影响其他声部
         if ((mask & MASK_ATMOSPHERE) !== 0 && atmosphereMusician !== undefined) {
@@ -426,6 +485,7 @@ function renderLead(
     section: SectionMetadata,
     chords: GeneratedChord[],
     persona: MusicianPersona,
+    instrumentFamily: InstrumentFamily,
     fractalCfg: FractalConfig,
     grammar: GrammarConfig,
     tonality: Tonality,
@@ -478,11 +538,19 @@ function renderLead(
         }
         if (terminals.length === 0) continue;
 
+        // Phase 6.4 — Phrase Contour Planner：按 section.contour / sectionType 注入弧线 hint
+        //   零 PRNG 消耗，对下游 ToplineEngine 的 D-5 字节对齐透明。
+        //   block.startBeat 已是 section 内偏移（block.duration 同上）。
+        PhraseContourPlanner.shape(terminals, section, block.startBeat, block.duration);
+
         // Ghost Rendering: 无论是否拼接 Lick，都先真实跑一遍 ToplineEngine，强制消耗随机数
         const generatedNotes = ToplineEngine.render({
             terminals, chords, startBeat: blockOnset, tonality,
             velocityRange: persona.dynamicRange, pitchRange: [LEAD_RANGE_LO, LEAD_RANGE_HI],
-            anchorPitch: LEAD_ANCHOR_PITCH, approachDownProb, legatoRatio: persona.legatoRatio,
+            anchorPitch: LEAD_ANCHOR_PITCH, approachDownProb,
+            instrumentFamily,
+            pianoPedalRatio: persona.pianoPedalRatio,
+            legatoOverlap: persona.legatoOverlap,
         });
 
         // 恒定消耗判断拼接的 PRNG（无视条件，坚决放在 if 外部）

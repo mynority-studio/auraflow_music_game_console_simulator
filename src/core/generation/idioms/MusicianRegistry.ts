@@ -21,6 +21,7 @@ import {
     CompingIdiom,
     BandRole,
     ContourType,
+    InstrumentFamily,
     PersonaManifest,
     MusicianPersona,
 } from '../types';
@@ -39,6 +40,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Alex',
         genre: StyleId.ModernPop,
         instrumentRef: 'grand_piano',
+        instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
@@ -50,7 +52,7 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Random,
             syncopationAssault: 0.3,
             dynamicRange: [55, 100],
-            legatoRatio: 1.0,
+            pianoPedalRatio: 1.0,
             signatureLickProb: 0.15,
             // C1：Pop 经典 C 大调下行级进 hook（C5 → A4 → G4 → E4），1.5 拍长音收 mi
             lickPool: [
@@ -79,6 +81,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Frank',
         genre: StyleId.ModernPop,
         instrumentRef: 'electric_bass',
+        instrumentFamily: InstrumentFamily.Bass,
         defaultSound: 'Electric_Bass_Finger',
         personnel: {},
         role: BandRole.Bass,
@@ -101,6 +104,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Dave',
         genre: StyleId.ModernPop,
         instrumentRef: 'drum_kit',
+        instrumentFamily: InstrumentFamily.Percussion,
         defaultSound: 'Drums',
         personnel: {},
         role: BandRole.Drums,
@@ -121,6 +125,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Chloe',
         genre: StyleId.ModernPop,
         instrumentRef: 'grand_piano',
+        instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
@@ -132,7 +137,7 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Random,
             syncopationAssault: 0.05,  // 几乎完全正拍 — 主流流行钢琴标准
             dynamicRange: [60, 95],
-            legatoRatio: 1.0,
+            pianoPedalRatio: 1.0,
             signatureLickProb: 0.0,    // 不用 lick
         },
         description: '主流 Pop 钢琴手 — 极简直拍，给主旋律留空间',
@@ -143,6 +148,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Marcus',
         genre: StyleId.NeoSoul,
         instrumentRef: 'grand_piano',
+        instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
@@ -154,7 +160,7 @@ export const MUSICIAN_POOL: Musician[] = [
             contourPreference: ContourType.Alternating,
             syncopationAssault: 0.75,  // 高切分 — 触发 V3.8 物理求解器
             dynamicRange: [45, 95],
-            legatoRatio: 0.8,
+            pianoPedalRatio: 0.8,
             signatureLickProb: 0.25,   // 25% 概率甩 lick — Robert Glasper 风
             // C1：Neo-Soul 16 分密集切分 hook（D5 → C5 → A4 → B4 → C5），现代 R&B 标志旋律
             lickPool: [
@@ -184,6 +190,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Maya',
         genre: StyleId.NeoSoul,
         instrumentRef: 'electric_bass',
+        instrumentFamily: InstrumentFamily.Bass,
         defaultSound: 'Electric_Bass_Slap',
         personnel: {},
         role: BandRole.Bass,
@@ -206,6 +213,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Brush',
         genre: StyleId.ChillJazz,
         instrumentRef: 'drum_kit',
+        instrumentFamily: InstrumentFamily.Percussion,
         defaultSound: 'Brush_Kit',
         personnel: {},
         role: BandRole.Drums,
@@ -226,6 +234,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Billy',
         genre: StyleId.ModernPop,
         instrumentRef: 'grand_piano',
+        instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.Accomp,
@@ -247,6 +256,7 @@ export const MUSICIAN_POOL: Musician[] = [
         name: 'Nina',
         genre: StyleId.ModernPop,
         instrumentRef: 'warm_pad',
+        instrumentFamily: InstrumentFamily.Pad,
         defaultSound: 'Warm_Pad',
         personnel: {
             atmosphereOverrides: {
@@ -304,7 +314,7 @@ export const PANGEA_DICT: Record<string, unknown> = {};
 //                        Stage5 lead 路径主要由 grammar 自身决定密度）
 //   - syncopationAssault: 0.6 通用 jazz；DexterGordon 例外 0.3（hard bop 强拍锚定）
 //   - dynamicRange:     [60, 105] 中度 jazz lead 力度区间
-//   - legatoRatio:      1.0（钢琴自然踏板）
+//   - pianoPedalRatio:  1.0（钢琴自然踏板 — 大师卡全部 Piano 族裔）
 //   - signatureLickProb:0.0（takeover 路径下整段已是大师 grammar，不再拼接额外 lick）
 //   - topologyConfig:   透传 manifest.topologyConfig（B-Lick 模式或拓扑变换路径仍可消费）
 //   - masterId:         透传 manifest.id（**takeover 路径的开关键**）
@@ -345,7 +355,7 @@ function deriveMasterCard(
         contourPreference: ContourType.Random,
         syncopationAssault: isHardBop ? 0.3 : 0.6,
         dynamicRange: [60, 105],
-        legatoRatio: 1.0,
+        pianoPedalRatio: 1.0,
         signatureLickProb,
         topologyConfig: manifest.topologyConfig,
         masterId: manifest.id,
@@ -364,6 +374,7 @@ function deriveMasterCard(
         name: `${manifest.name}${nameSuffix}`,
         genre: StyleId.ChillJazz,           // 6 位大师默认归属 ChillJazz；UI 可按 styleAffinity 过滤
         instrumentRef: 'grand_piano',
+        instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.MainInst,
@@ -381,7 +392,7 @@ function deriveMasterCard(
 const STUB_LEAD: LeadIdiom = {
     needsBreathing: false,
     humanizeVelocity: 0.05,
-    legatoRatio: 1.0,
+    pianoPedalRatio: 1.0,
     graceNoteProbability: 0.0,
     octaveDoubling: false,
 };

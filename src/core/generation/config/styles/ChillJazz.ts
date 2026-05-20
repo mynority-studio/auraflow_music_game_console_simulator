@@ -126,7 +126,7 @@ export const CHILL_JAZZ_PERSONAS: MusicianPersona[] = [
     {
         colorBias: 0.5, sparsityTendency: 0.5, contourPreference: ContourType.Alternating,
         syncopationAssault: 0.5, dynamicRange: [50, 100],
-        legatoRatio: 1.2,
+        pianoPedalRatio: 1.2,
         signatureLickProb: 0.25,
         lickPool: [
             [ { pitch: 64, onset: 0, duration: 0.5, velocity: 0.8 }, { pitch: 61, onset: 0.5, duration: 0.5, velocity: 0.7 }, { pitch: 67, onset: 1.0, duration: 0.5, velocity: 0.8 }, { pitch: 60, onset: 1.5, duration: 1.5, velocity: 0.9 } ]

@@ -291,15 +291,42 @@ export interface StyleConfig {
     masteringProfileId?: string;
 }
 
+/**
+ * Phrase Contour — section 级旋律弧线 hint。
+ *
+ * 由 PhraseContourPlanner 消费，向 TerminalSymbol 注入 targetDegree / contourDir，
+ * 让 ToplineEngine 在更大尺度上沿一条规划好的弧线展开旋律。
+ *
+ * 决策优先级（PhraseContourPlanner.resolvePlan）：
+ *   1. section.contour 显式提供 → 完全采用（含 intensity）
+ *   2. 仅 section.sectionType 有 → 走内部 DEFAULT_CONTOUR_BY_SECTION 表
+ *   3. 两者皆无 → 退化为 'flat'（实质 no-op）
+ *
+ * intensity 缺省 → energyLevel / 10（[0, 1] 钳制）。
+ */
+export type ContourArchetype = 'flat' | 'ascent' | 'descent' | 'arch' | 'wave';
+
+export interface ContourSpec {
+    archetype: ContourArchetype;
+    /** arch 专用：峰位 ∈ [0, 1]。其他 archetype 忽略。默认 0.5。
+     *  Chorus 默认 0.6（峰偏后）；Drop 默认 0.1（峰立刻落地）。 */
+    peakAt?: number;
+    /** wave 专用：完整周期数。其他 archetype 忽略。默认 1。 */
+    cycles?: number;
+    /** 注入强度 ∈ [0, 1]。缺省时由 section.energyLevel / 10 决定。
+     *  0 = 不注入任何 hint（planner 透明）；1 = 每个结构音都注入。 */
+    intensity?: number;
+}
+
 export interface SectionMetadata {
-    name: string;      
+    name: string;
     startBeat: number;
     endBeat: number;
-    energyLevel: number; 
+    energyLevel: number;
     grooveDNA?: number[]; // 🌟 这个极为重要：每一段将拥有自己独立的 Groove
     endingType?: 'hard_stop' | 'fade_out'; // 🌟 决定结尾的收尾方式
     localKeyOffset?: number; // 🌟 局部转调偏移量 (Local Key Offset)
-    
+
     // 🌟 P2: 律动比例控制器 (Groove Ratio Controller)
     grooveRatio?: {
         foundation: number; // Bass & Kick
@@ -314,6 +341,9 @@ export interface SectionMetadata {
      *  Cadential Hijacking 需要 ≥ 2（半终止 c=chordsPer-2 / 全终止 c=chordsPer-1），
      *  Engine 内部用 Math.max(2, ...) 钳制下限。*/
     chordsHint?: number;
+
+    /** Phrase contour hint — 缺省时 PhraseContourPlanner 按 sectionType 查表。 */
+    contour?: ContourSpec;
 }
 
 export interface MixingConfig {
@@ -350,7 +380,7 @@ export interface EnsembleDraft {
 // 同一乐器在主奏(Lead)与伴奏(Comping)时演奏法完全不同，因此拆成两个子接口。
 //
 // LeadIdiom — 旋律层：呼吸换气 + 拟人化（力度抖动 / 踏板感连奏 / 倚音）
-//   驱动 ToplineEngine：管乐/人声 needsBreathing；钢琴 humanizeVelocity + legatoRatio + graceNoteProbability
+//   驱动 ToplineEngine：管乐/人声 needsBreathing；钢琴 humanizeVelocity + pianoPedalRatio + graceNoteProbability
 // CompingIdiom — 伴奏层：扫弦延迟 / 切分 pattern / Drop-2 开放排列
 //   驱动 TextureMapper 的 voicing 排列与切分律动。
 export interface LeadIdiom {
@@ -361,7 +391,8 @@ export interface LeadIdiom {
     breathProbability?: number;
     // 拟人化与演奏技法（钢琴/吉他）
     humanizeVelocity?: number;     // 力度随机微调幅度（如 0.05 / 0.1）
-    legatoRatio?: number;          // 连奏延音比例，模拟踏板（>1 延长，<1 断开）
+    /** 阻尼器踏板系数 — 仅钢琴族裔生效（0=干 / 1=自然踏板 / >1=过踏被和弦边界硬钳）。 */
+    pianoPedalRatio?: number;
     graceNoteProbability?: number; // 大跳时插入倚音（装饰音）的概率
     octaveDoubling?: boolean;      // 允许主奏在重音/高能段开启下方八度叠置
 }
@@ -432,6 +463,11 @@ export interface Musician {
     name: string;                 // 显示名称
     genre: StyleId;               // 擅长曲风（坐在 Lead 槽位时具有全曲定调权）= styleId
     instrumentRef: string;        // 指向 Pangea 字典中基础乐器的 ID（旧字段，过渡期保留）
+    /**
+     * 乐器族裔 — 决定 ToplineEngine Pass 3 的 sustain 策略（damper pedal / monophonic legato / pad envelope）。
+     * 必填：新乐手卡上岗前必须显式声明族裔，避免 pedal 物理被错套到管乐/人声/吉他上。
+     */
+    instrumentFamily: InstrumentFamily;
     defaultSound: string;         // 默认挂载的 GM 音色名（如 'Acoustic_Grand'）
     /**
      * B3：可选 GM 程式号显式覆盖（0~127）。
@@ -876,6 +912,31 @@ export enum BandRole {
     Atmosphere = 'atmosphere',
 }
 
+/**
+ * 乐器族裔 — 决定 ToplineEngine Pass 3 的 sustain 后处理策略。
+ *
+ *   - Piano:       真•阻尼器踏板（chord-aware sustain + rest 透明）。pianoPedalRatio 生效。
+ *   - Wind / Voice / Guitar / Strings:
+ *                  单声部 legato（next-onset 钳 + rest 不透明 — 气息/换弓尊重休止符）。legatoOverlap 生效。
+ *   - Pad:         自带 ADSR envelope，跳过 Pass 3（AtmosphereRenderer 单独处理）。
+ *   - Bass / Percussion:
+ *                  不走 ToplineEngine（BassIdiom / DrumIdiom 自渲染）；占位以便 Musician 卡填字段。
+ *   - Other:       未分类，默认跳过 Pass 3（保 grammar 原 duration）。
+ *
+ * 新增乐器时：先定族裔，再决定 sustain 策略 — 严禁把 pianoPedalRatio 套到非 Piano 族裔上。
+ */
+export enum InstrumentFamily {
+    Piano = 'piano',
+    Wind = 'wind',
+    Voice = 'voice',
+    Guitar = 'guitar',
+    Strings = 'strings',
+    Pad = 'pad',
+    Bass = 'bass',
+    Percussion = 'percussion',
+    Other = 'other',
+}
+
 /** 音乐角色（GlobalVoicer 用，决定每个 pitch class 在和弦内的功能） */
 export enum MusicalRole {
     Lead = 'lead',
@@ -919,11 +980,22 @@ export interface MusicianPersona {
     /** 力度区间 [min, max]（0~127） */
     dynamicRange: [number, number];
     /**
-     * 智能踏板系数 — 0=干（grammar duration 不变）/ 1=自然踏板（延音至下一个发声音或和弦边界）/ >1=过踏（仍被和弦边界硬钳制）
-     * ToplineEngine Pass 3 消费：final_dur = lerp(grammar_dur, pedaled_dur, legatoRatio)，硬钳到 chord.endBeat。
-     * 零 PRNG 消耗（纯后处理），未设置时回落 1.0（默认自然踏板）。
+     * 钢琴阻尼器踏板系数 — **仅当乐手 instrumentFamily === Piano** 时由 ToplineEngine Pass 3 消费。
+     *   0  = 干（grammar duration 不变）
+     *   1  = 自然踏板（延音至下一个发声音或和弦边界；rest 透明 — 阻尼器下落需时间）
+     *   >1 = 过踏（仍被和弦边界硬钳制）
+     * 未设置回落 1.0。其他族裔忽略本字段（请用 legatoOverlap）。零 PRNG 消耗。
      */
-    legatoRatio?: number;
+    pianoPedalRatio?: number;
+    /**
+     * 单声部 legato 重叠系数 — 当乐手 instrumentFamily ∈ {Wind, Voice, Guitar, Strings} 时
+     * 由 ToplineEngine Pass 3 消费。
+     *   0  = 干（grammar duration 不变 — 偏 staccato）
+     *   1  = 完全 slur（延音至下一个 slot onset；rest 不透明 — 气息/换弓必须断开）
+     *   >1 = 过头（仍被下一个 slot onset 钳）
+     * 未设置回落 1.0（默认连贯）。钢琴族裔忽略本字段（请用 pianoPedalRatio）。零 PRNG 消耗。
+     */
+    legatoOverlap?: number;
     /** 触发签名乐句的概率 */
     signatureLickProb?: number;
     /** V4.1：Oom-Pah Bounce 偏好（0-1）。仅 Solo Piano 模式（bassActive=false）下生效；
