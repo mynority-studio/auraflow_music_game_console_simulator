@@ -72,6 +72,8 @@ import { CurveWeatherSampler } from './CurveWeatherSampler';
 import { attachVoicingMasks } from './VoicingMask';
 import { attachDensityPlan, attachSuppressionPlan } from './TextureContinuum';
 import { attachDropStates, collectDropWindows, filterNotesByDropWindows } from './MarkovStateMachine';
+import { attachWakeStates, deriveSongHash } from './WakeStateMachine';
+import { humanizeTrack } from './GrooveHumanizer';
 
 const EPSILON = 1e-6;
 const FRACTAL_ITERATIONS = 3;
@@ -327,6 +329,17 @@ export function conduct(input: ConductorInput): ConductorResult {
         attachDropStates(
             input.bandPlan, input.sections, renderContext.weather, activeMusicians,
         );
+        // Phase 6a — Wake State:K < musician.wakeK 整段 sleeping;
+        //   per-song hash mutation ±0.15 偏移 musician 阈值,防"听 10 次发现规律"
+        //   songHash 由 styleId + tonality + sections + chords 派生(deterministic)
+        const songHash = deriveSongHash(
+            (input.styleId << 16) ^ (input.tonality << 8) ^
+            (input.sections.length << 4) ^ input.chords.length,
+        );
+        attachWakeStates(
+            input.bandPlan, input.sections, renderContext.weather,
+            activeMusicians, songHash,
+        );
     }
 
     // Phase 5 — 提前收集 Drop 窗口供 Bass / Drum 渲染后过滤
@@ -338,7 +351,17 @@ export function conduct(input: ConductorInput): ConductorResult {
     //   C2：drumsActive=false 时直接产空轨，跳过 DrumIdiom（也跳过 PRNG 消耗 → D-5 不锁帧）
     //   Phase 9:drumsActive 与 rosterMask 等价,保留 drumsActive 是因 collectDrumSections
     //   还消费它做段落级 mask 检查,不需要重构 collectDrumSections 接口。
-    const drumSections = drumsActive ? collectDrumSections(input.sections) : [];
+    //   Phase 6a:WakeStateMachine 标 sleeping 的段落从 drumSections 排除
+    //   注意:DrumIdiom 内部按 sections 升序遍历消耗 PRNG;sleeping 段落整段不在
+    //   sections 内,意味着该段不消耗 drum PRNG → 改动后 D-5 仍恒(因为 sleeping
+    //   判定 deterministic from songHash + weather,且对所有 seed 一致)。
+    let drumSections = drumsActive ? collectDrumSections(input.sections) : [];
+    if (input.bandPlan !== undefined) {
+        drumSections = drumSections.filter(s => {
+            const sIdx = input.sections.indexOf(s);
+            return !(input.bandPlan!.sectionPlans[sIdx]?.assignments[BandRole.Drums]?.sleeping === true);
+        });
+    }
     const drums: NoteData[] = drumSections.length > 0
         ? DrumRealizer.realize({ sections: drumSections, grid: bundle.drum, context: renderContext })
         : [];
@@ -375,7 +398,10 @@ export function conduct(input: ConductorInput): ConductorResult {
         //   Drums 由 DrumIdiom 整体处理（已在循环外完成），此处仅 Bass/Accomp/Lead 三轨
         //   Bass 必须先于 Accomp/Lead — Phase 6 后 BassIdiom 在 Jazz/NeoSoul 消耗 PRNG，
         //   PRNG 顺序锁定为 Bass → Accomp → Lead（D-5）
-        if ((mask & MASK_BASS) !== 0 && bassActive && bassPersona !== undefined) {
+        // Phase 6a — sleeping=true 的段落 skip 整 role realize 调用
+        const bassAssign = input.bandPlan?.sectionPlans[sIdx]?.assignments[BandRole.Bass];
+        const bassSleeping = bassAssign?.sleeping === true;
+        if ((mask & MASK_BASS) !== 0 && bassActive && bassPersona !== undefined && !bassSleeping) {
             // C2：仅当 roster.bass 上岗时渲染；留空 → bass 轨纯空
             const bassNotes = BassRealizer.realize({
                 chords: sectionChords,
@@ -395,7 +421,9 @@ export function conduct(input: ConductorInput): ConductorResult {
             //   else 分支(bundle.personas[ROLE_ACCOMP] 兜底)已删除 —— 严格 roster 语义。
             const accompAssign = input.bandPlan?.sectionPlans[sIdx]?.assignments[BandRole.Accomp];
             const pianoParams = accompAssign?.instrumentSpecificParams as PianoAccompParams | undefined;
-            if (pianoParams !== undefined) {
+            // Phase 6a — sleeping=true skip Accomp realize
+            const accompSleeping = accompAssign?.sleeping === true;
+            if (pianoParams !== undefined && !accompSleeping) {
                 const pianoNotes = PianoRealizer.realize({
                     chords: sectionChords,
                     params: pianoParams,
@@ -462,6 +490,8 @@ export function conduct(input: ConductorInput): ConductorResult {
         if ((mask & MASK_ATMOSPHERE) !== 0 && atmosphereMusician !== undefined) {
             const sectionPlan = input.bandPlan?.sectionPlans[sIdx];
             const atmoAssign = sectionPlan?.assignments[BandRole.Atmosphere];
+            // Phase 6a — sleeping=true skip Atmosphere realize
+            if (atmoAssign?.sleeping === true) continue;
             const intensityScale = atmoAssign?.intensityScale ?? 0.5;
             const atmoNotes = AtmosphereRealizer.realize({
                 chords: sectionChords,
@@ -483,11 +513,20 @@ export function conduct(input: ConductorInput): ConductorResult {
     sortNotesInPlace(atmosphere);
     // drums 已在 DrumIdiom 内部排序，无需再排
 
-    // Phase 5:跨乐器后置协调(v1 弱版本)
+    // Phase 5:跨乐器后置协调(v2 含 LIL lift)
     //   - 同 (pitch, onset) 重复音 → velocity damp(就地修改 4 轨)
-    //   - Low Interval Limit dyads → 仅报告,不修复(留 v2)
+    //   - Low Interval Limit dyads → v2 上声部 octave lift
     //   - drums 不参与(GM Drum Map 第三空间)
     const reconcilerReport = Reconciler.reconcile({ melody, accompaniment, bass, atmosphere });
+
+    // Phase 6a — G 维度末端 humanization:onset / velocity 微扰打破机械感
+    //   每 track 给独立 trackSalt 避免相同 pitch+onset 走同样扰动
+    //   Reconciler 之后执行 → 不破 v1 damp / v2 LIL lift
+    humanizeTrack(melody, renderContext.weather, 0x4D454C44);       // 'MELD'
+    humanizeTrack(accompaniment, renderContext.weather, 0x41434350); // 'ACCP'
+    humanizeTrack(bass, renderContext.weather, 0x42415353);         // 'BASS'
+    humanizeTrack(drums, renderContext.weather, 0x4452554D, true);  // 'DRUM' + isDrums
+    humanizeTrack(atmosphere, renderContext.weather, 0x41544D4F);   // 'ATMO'
 
     return { melody, accompaniment, bass, drums, atmosphere, reconcilerReport };
 }

@@ -242,10 +242,18 @@ function renderBassWalkPattern(
         }
 
         // step 不超 chord 边界
+        // Phase 6a — S 维度调制 staccato:S 高 → sustain 长(staccato 弱)
+        //   S=0(干)→ STACCATO_RATIO × 0.78(更短促 = 0.70)
+        //   S=0.5  → STACCATO_RATIO × 1.0(原 0.9)
+        //   S=1(湿)→ STACCATO_RATIO × 1.11(更绵长 = 1.0,无 staccato gap)
+        const onset = chord.startBeat + cursor;
+        const sBass = weather.at(onset).s;
+        const sStaccatoFactor = 0.78 + sBass * 0.33;
+        const effectiveStaccato = STACCATO_RATIO * sStaccatoFactor;
+        const clampedStaccato = effectiveStaccato > 1.0 ? 1.0 : effectiveStaccato;
         const remaining = chordDur - cursor;
-        const playDur = (stepDur < remaining ? stepDur : remaining) * STACCATO_RATIO;
+        const playDur = (stepDur < remaining ? stepDur : remaining) * clampedStaccato;
         if (playDur > EPSILON) {
-            const onset = chord.startBeat + cursor;
             out.push({ pitch: bassPitch, onset, duration: playDur, velocity });
         }
 

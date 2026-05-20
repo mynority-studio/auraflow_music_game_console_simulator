@@ -149,9 +149,10 @@ export class AtmosphereRenderer {
             if (!c.voicing || c.voicing.length === 0) continue;
 
             // Phase 3 — 按 weather.k 派生本和弦的 effective voiceCount + octaveLayering
+            // Phase 6a:K<=0.15 整段静默逻辑已迁到 WakeStateMachine(per-musician wakeK),
+            //          本处只保留 voice count / octaveLayering 的 K-driven 调制。
             const chordMidBeat = (c.startBeat + c.endBeat) / 2;
             const k = context.weather.at(chordMidBeat).k;
-            if (k <= 0.15) continue;  // Tacit:本和弦 pad 静默
             const effectiveVoiceCount = k <= 0.45
                 ? Math.max(1, Math.floor(voiceCount * 0.6))  // L2-L3:收薄
                 : voiceCount;
@@ -191,13 +192,20 @@ export class AtmosphereRenderer {
                 if (lowOct >= 0) padVoicing.push(lowOct);
             }
 
+            // Phase 6a — S 维度调制 release / crossfade(per-chord)
+            // S 高(开阔)→ releaseRatio 拉长(最高 1.5×),crossfade 强制 true
+            // S 低(干)  → releaseRatio 收缩(最低 0.7×),crossfade 保留 idiom 设定
+            const s = context.weather.at(chordMidBeat).s;
+            const effectiveReleaseRatio = releaseRatio * (0.7 + s * 0.8);  // S=0 → 0.7;S=1 → 1.5
+            const effectiveCrossfade = s > 0.6 ? true : crossfade;
+
             // 计算实际 duration（releaseRatio + 可选 crossfade）
             let extendedDur: number;
-            if (crossfade && i < chords.length - 1) {
+            if (effectiveCrossfade && i < chords.length - 1) {
                 // crossfade 模式：延伸到下和弦 head + CROSSFADE_OVERLAP_BEATS
                 extendedDur = (chords[i + 1].startBeat - c.startBeat) + CROSSFADE_OVERLAP_BEATS;
             } else {
-                extendedDur = dur * releaseRatio;
+                extendedDur = dur * effectiveReleaseRatio;
             }
             if (extendedDur <= EPSILON) continue;
 

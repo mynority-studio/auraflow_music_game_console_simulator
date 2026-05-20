@@ -557,8 +557,14 @@ export class PianoAccompIdiom {
         //   chord 边界,实现钢琴的自然延音(消除"截断/压缩"听感)。
         //   缺省 pianoPedalRatio=1.0(自然踏板),从 CastingEngine 透传 persona 值。
         //   零 PRNG,纯后处理 NoteData.duration。
-        const pianoPedalRatio = params.pianoPedalRatio !== undefined
-            ? params.pianoPedalRatio : 1.0;
+        // Phase 6a — S 维度调制 pedal:S 高 → pedal 加深(更绵长 / 浪漫)
+        //   sFactor 在段首采样:S=0 → 0.6× / S=0.5 → 1.0× / S=1 → 1.4×
+        const sectionS = chords.length > 0
+            ? input.context.weather.at(chords[0].startBeat).s
+            : 0.5;
+        const sPedalFactor = 0.6 + sectionS * 0.8;
+        const pianoPedalRatio = (params.pianoPedalRatio !== undefined
+            ? params.pianoPedalRatio : 1.0) * sPedalFactor;
         if (pianoPedalRatio >= EPSILON) {
             applyPianoPedalToAccomp(out, chords, pianoPedalRatio);
         }

@@ -148,6 +148,40 @@
   - React/UI 调用代码(`src/components/*`)
 - **风险**:**高**(App / 嵌入式直接破坏;app_integration_rule 是 App dev 的真理之源,不同步会让外部消费方踩坑)
 
+### 1.15 MusicianPersona.wakeK/peakK ↔ WakeStateMachine ↔ Conductor sleeping gates(Phase 6a)
+
+- **触发器**:
+  - 改 musician.persona.wakeK / peakK 数值
+  - 改 `THRESHOLD_MUTATION_RANGE`(0.15)— per-song 偏移幅度
+  - 改 `deriveSongHash` 输入(目前 styleId+tonality+sections.length+chords.length)
+- **必须同步**:
+  - `pipeline/WakeStateMachine.ts`:`attachWakeStates` 算法 + `clamp01` 边界
+  - `pipeline/Conductor.ts`:5 个 Realizer 调用点的 sleeping gate
+    (Drums:filter drumSections / Bass/Piano/Atmosphere:per-section sleeping check)
+  - `primitives/DrumIdiom.ts`:已删硬编 K<=0.15;若回退需同步删 attachWakeStates
+  - `primitives/AtmosphereRenderer.ts`:同上
+  - **anchor / apex 与 wake 互不冲突**:isAnchor=true 通常配 wakeK 0-0.10;
+    isApex=true 通常配 peakK=1.00
+- **风险**:**中-高**(漏 Conductor 端 gate → sleeping 标了但 Idiom 仍渲染 → 矛盾状态)
+
+### 1.16 S/G 维度消费链(Phase 6a)
+
+- **触发器**:
+  - 改 S anchor 公式(CurveWeatherSampler.computeS)
+  - 改 G anchor 公式(CurveWeatherSampler.computeG)
+  - 改 GrooveHumanizer 偏移常量
+- **必须同步**:
+  - **S 维度**(release / sustain / pedal):
+    - `AtmosphereRenderer.ts`:`effectiveReleaseRatio = releaseRatio * (0.7 + s*0.8)` 公式
+    - `AtmosphereRenderer.ts`:`effectiveCrossfade = s > 0.6 ? true : crossfade`
+    - `PianoAccompIdiom.ts`:`sPedalFactor = 0.6 + sectionS * 0.8`(段首采样)
+    - `BassIdiom.ts`:`sStaccatoFactor = 0.78 + sBass * 0.33`(每 step 采样)
+  - **G 维度**(humanization):
+    - `pipeline/GrooveHumanizer.ts`:`ONSET_OFFSET_MAX_BEATS` / `VELOCITY_OFFSET_MAX` / `HIHAT_LAYBACK_MAX_BEATS`
+    - `pipeline/Conductor.ts`:5 个 `humanizeTrack` 调用点(每 track 独立 salt)
+    - **必须在 Reconciler 之后**(否则破 v1 damp 匹配 / v2 LIL lift 解析)
+- **风险**:**中**(S 公式不一致 → 不同乐器对同 S 值响应方向不同,听感分裂)
+
 ### 1.13 SectionPlan.dropFromBeat ↔ MarkovStateMachine / Bass-Drum 消费链(Phase 5)
 
 - **触发器**:

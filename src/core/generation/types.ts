@@ -520,6 +520,16 @@ export interface RoleAssignment {
      * 缺省 1.0(无 ducking)。
      */
     suppressionFactor?: number;
+    /**
+     * Phase 6a — 本段该 role 是否处于 sleep 状态。
+     *
+     * 由 WakeStateMachine.attachWakeStates 检测:K < musician.wakeK → sleeping=true。
+     * Conductor 在 realize 调用前判断,sleeping=true 整段跳过该 role。
+     *
+     * 替代了 Phase 3-5 在 Idiom 内部硬编阈值的方式 — 集中由 musician 级 wakeK 派生,
+     * per-song mutation 让阈值在基线 ±0.15 偏移 → 防"听 10 次发现规律"。
+     */
+    sleeping?: boolean;
 }
 
 /**
@@ -1020,6 +1030,34 @@ export interface MusicianPersona {
      *   - bass / drums        = false(节奏组天然就是 anchor 的另一层,不用本标记)
      */
     isAnchor?: boolean;
+    /**
+     * Phase 6a — K wake 阈值(Per-Instrument Wake System)。
+     *
+     * 当 section midK < wakeK 时,本 musician 在该段静默(sleeping=true)。
+     * 缺省 undefined = 永不睡(老行为)。
+     *
+     * 推荐基线:
+     *   - alex_piano: 0.05(几乎不睡)
+     *   - nina_pad:   0.10
+     *   - frank_bass: 0.30(低 K Intro/Outro 睡)
+     *   - dave_drums: 0.25
+     *
+     * 与 Anchor 兼容:isAnchor=true 通常 wakeK 设 0-0.10 (基本不睡)
+     * 与 Apex 兼容:isApex=true 通常 peakK 设 1.00(Solo 期间永远不饱和)
+     *
+     * Per-song mutation(防固化):WakeStateMachine.mutateThresholds 用
+     * deterministic hash 在基线 ±0.15 偏移 → 同 musician 每首歌阈值微变。
+     */
+    wakeK?: number;
+    /**
+     * Phase 6a — K peak 阈值(满载激活,Idiom 内部参考)。
+     *
+     * 当 section midK > peakK 时,本 musician 视为"满载"。Idiom 可读此值
+     * 决定是否进入"狂躁模式"(Phase 6b Solo 引擎会用此触发 Solo)。
+     *
+     * 缺省 undefined = 永不满载(老行为)。
+     */
+    peakK?: number;
     /**
      * Phase 4 — 顶级捕食者标记(Apex Predator Suppression)。
      *

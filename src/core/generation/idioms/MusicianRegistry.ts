@@ -57,6 +57,9 @@ export const MUSICIAN_POOL: Musician[] = [
             // Phase 3 — alex_piano 是 Pop / Jazz 钢琴 comping 的"定海神针"
             // 跨段保持 STYLE_ANCHOR_RECIPE 锁定的 recipe,只让 density 浮动
             isAnchor: true,
+            // Phase 6a — anchor 几乎不睡(wakeK 极低)
+            wakeK: 0.05,
+            peakK: 0.85,
             // C1：Pop 经典 C 大调下行级进 hook（C5 → A4 → G4 → E4），1.5 拍长音收 mi
             lickPool: [
                 [
@@ -98,6 +101,9 @@ export const MUSICIAN_POOL: Musician[] = [
             dynamicRange: [75, 110],
             // A1：Pop 抒情 root-fifth 半音符律动（Bill Evans 风慢 walking）
             walkPatternId: 1,  // WalkPatternId.HalfNote
+            // Phase 6a — bass 中等 wake(低 K Intro/Outro 可睡,Verse 起开始走)
+            wakeK: 0.30,
+            peakK: 0.90,
         },
         description: 'Pop 电贝斯，正拍稳重 + 半音符 walking',
     },
@@ -122,6 +128,9 @@ export const MUSICIAN_POOL: Musician[] = [
             // Phase 4 — Apex Predator 演示:鼓组 BuildUp/Chorus 峰值 K > 0.80 时
             // 触发 ducking,Accomp + Atmosphere velocity ×= 0.6,让出空间给鼓
             isApex: true,
+            // Phase 6a — 鼓在低 K(Intro/Outro)睡眠;peakK=1.0 永不饱和(apex 主导)
+            wakeK: 0.25,
+            peakK: 1.00,
         },
         description: 'Pop 鼓手，干净直拍',
     },
@@ -286,6 +295,9 @@ export const MUSICIAN_POOL: Musician[] = [
             // Phase 3 — nina_pad 是 NeoSoul / Cinematic 编制的"定海神针"
             // Pad 天然 sustained,density 浮动主要影响 voiceCount 与 octaveLayering
             isAnchor: true,
+            // Phase 6a — pad 几乎不睡(开阔感铺底);peakK 中等(高 K 触发 octaveLayering 已够)
+            wakeK: 0.10,
+            peakK: 0.85,
         },
         description: 'Warm Pad 氛围乐手，长音铺底',
     },
