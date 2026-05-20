@@ -108,14 +108,13 @@ interface MixProfile {
     /**
      * 钢琴 sustain pedal — 整曲常踩(CC64=127 在 tick=0 发一次)。
      *
-     * 出处:auraflow 用 GM128_3MB.sf2(3MB 轻量 SoundFont)release tail 很短,
-     * mg HarmonyEngine 输出的 chord 是 staccato comping(duration 0.4 拍 ≈ 0.25s),
-     * 不踩 sustain 听感"断断续续 / 没电 / 被截断"(用户实测反馈)。
+     * 出处:HarmonyEngine 输出的 chord 是 staccato comping(每 0.25 拍一次
+     * 短促 hit,4-voice block + 低 velocity)。真钢琴 comping 演奏者靠右脚
+     * sustain pedal 把短促 hit 延音化 — 这是钢琴标准演奏方式。
      *
-     * 流行/爵士钢琴 comping 本来就靠 sustain pedal 把短促 hit 延音化,
-     * 这是钢琴标准演奏方式。SF2 sampler 收到 CC64=127 会延长 release。
+     * SF2 sampler 收到 CC64=127 会延长 release tail,模拟"踩住踏板"。
      *
-     * 当前策略:整曲常踩(不松)— 简单,符合 90% 流行钢琴 comping 习惯。
+     * 当前策略:整曲常踩(不松)— 简单,符合 90% 流行/爵士钢琴 comping 习惯。
      * 未来如需 chord-aware 控制(每 chord 短暂松开再踩),可扩展为
      * sustainPedalCurve: NoteData-like 数组。
      */
@@ -123,14 +122,12 @@ interface MixProfile {
 }
 
 // MIX_PIANO_RH / MIX_PIANO_LH:
-//   v1.54 调整(用户实测听感反馈"伴奏没电 / 软绵绵 / 断续"):
-//     - volume +8 (102→110 RH / 96→105 LH)— 跟 melody 122 拉近,但仍保留主旋律突出
-//     - sustainPedal: true — 整曲常踩(延音解决"断续"听感)
-//     - reverb 不变(已经 50/45,跟 melody 70 拉开"主奏空间感 vs 伴奏紧凑")
+//   v1.54 加 sustainPedal: true — 整曲常踩(延音解决"断续"听感)
+//   volume / pan / reverb 不动(保留 mg melody-avoid duck 的"伴奏让位主旋律"哲学)
 const MIX_MELODY:       MixProfile = { volume: 122, pan: 74, reverb: 70 };  // 焦点：高音量 + 微右 + 长尾
-const MIX_PIANO_RH:     MixProfile = { volume: 110, pan: 64, reverb: 50, sustainPedal: true };  // 和声体右手 + 踏板延音
+const MIX_PIANO_RH:     MixProfile = { volume: 102, pan: 64, reverb: 50, sustainPedal: true };  // 和声体右手 + 踏板延音
 /** V5.3 — PianoLH 现在是 Grand Piano 低音区，mix 与 RH 接近（"一架真钢琴"），微左 pan 增加空间感 */
-const MIX_PIANO_LH:     MixProfile = { volume: 105, pan: 54, reverb: 45, sustainPedal: true };  // 和声体左手 + 踏板延音
+const MIX_PIANO_LH:     MixProfile = { volume:  96, pan: 54, reverb: 45, sustainPedal: true };  // 和声体左手 + 踏板延音
 const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
 const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
 /** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
