@@ -28,8 +28,14 @@
 // ============================================================
 
 export type EngineId = 'AF' | 'MG';
+/**
+ * MG 引擎的 style 选择(对应 mg-engine/styleDictionary 中的 StyleName)。
+ * 与 auraflow StyleId 完全独立 — MG 是钢琴 solo 引擎,有自己的 4 风格分类。
+ */
+export type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB';
 
 let _engine: EngineId = 'AF';
+let _mgStyle: MgStyle = 'POP';
 
 export const EngineSelectionStore = {
     /**
@@ -45,5 +51,19 @@ export const EngineSelectionStore = {
      */
     setEngine(engine: EngineId): void {
         _engine = engine;
+    },
+
+    /**
+     * 取当前 MG style(仅 MG 模式生效;AF 模式下本字段被忽略)。
+     */
+    getMgStyle(): MgStyle {
+        return _mgStyle;
+    },
+
+    /**
+     * 设置 MG style。
+     */
+    setMgStyle(style: MgStyle): void {
+        _mgStyle = style;
     },
 };

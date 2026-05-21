@@ -24,7 +24,7 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-import { EngineSelectionStore, EngineId } from '../state/EngineSelectionStore';
+import { EngineSelectionStore, EngineId, MgStyle } from '../state/EngineSelectionStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -153,7 +153,9 @@ export const PipelineMonitor: React.FC = () => {
     const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>({});
     // Engine 选择(镜像 EngineSelectionStore,UI 用 React state 触发重渲)
     const [engine, setEngineState] = useState<EngineId>(EngineSelectionStore.getEngine());
-    // 错误提示(MG 模式 Phase 0 stub 抛 NOT_IMPLEMENTED 时显示)
+    // MG Style(仅 MG 模式下生效;AF 模式只是闲置)
+    const [mgStyle, setMgStyleState] = useState<MgStyle>(EngineSelectionStore.getMgStyle());
+    // 错误提示(MG 模式抛错时显示)
     const [playError, setPlayError] = useState<string | null>(null);
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
@@ -187,6 +189,12 @@ export const PipelineMonitor: React.FC = () => {
         setEngineState(next);
         setPlayError(null);
     }, [engine]);
+
+    const handleMgStyleChange = useCallback((next: MgStyle) => {
+        if (next === mgStyle) return;
+        EngineSelectionStore.setMgStyle(next);
+        setMgStyleState(next);
+    }, [mgStyle]);
 
     const isMgMode = engine === 'MG';
 
@@ -416,10 +424,32 @@ export const PipelineMonitor: React.FC = () => {
                         MG
                     </button>
                 </div>
-                <span className="text-[9px] text-zinc-500 font-mono">
+                {/* MG Style 下拉 — 仅 MG 模式可用,AF 模式灰显 */}
+                <div className="flex items-center gap-1.5">
+                    <span className={`text-[9px] uppercase tracking-wider font-mono ${isMgMode ? 'text-orange-400/60' : 'text-zinc-700'}`}>
+                        MG Style
+                    </span>
+                    <select
+                        value={mgStyle}
+                        disabled={!isMgMode}
+                        onChange={(e) => handleMgStyleChange(e.target.value as MgStyle)}
+                        className={`bg-black/60 border rounded px-1.5 py-0.5 text-[10px] font-mono ${
+                            isMgMode
+                                ? 'border-orange-500/40 text-orange-300'
+                                : 'border-zinc-800 text-zinc-700 cursor-not-allowed'
+                        }`}
+                        title={isMgMode ? 'MG 引擎风格(POP/JAZZ/BLUES/RNB)' : '切到 MG 才能选'}
+                    >
+                        <option value="POP">POP</option>
+                        <option value="JAZZ">JAZZ</option>
+                        <option value="BLUES">BLUES</option>
+                        <option value="RNB">RNB</option>
+                    </select>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono ml-auto">
                     {engine === 'AF'
                         ? 'Full band pipeline'
-                        : 'Piano solo (Phase 0 stub — Play will fail)'}
+                        : 'Piano solo (mg-engine)'}
                 </span>
             </div>
 
