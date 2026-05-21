@@ -43,6 +43,7 @@ import { PRNGManager } from '../../utils/PRNG';
 import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { getMusicianById } from '../idioms/MusicianRegistry';
+import { Random } from '../mg-engine/musicEngine';
 
 import { MgKernelInvoker } from './MgKernelInvoker';
 import { SectionPlanner } from './SectionPlanner';
@@ -109,10 +110,26 @@ export const Af2EngineFacade = {
 
         // -----------------------------------------------------------
         // Step 4.6: DrumGenerator(条件:Drums 槽位有 Percussion family 乐手)
+        //
+        // Phase 2b.2 升级:port AF 16-step grid 架构 + per-mgStyle 4 套 grid
+        //   (POP/JAZZ/BLUES/RNB)+ energy 双轴缩放 + Dynamic Override
+        //   (Crash/Fill/Ride)+ 保留 chord/bass modifier。
+        //
+        //   - mgStyle 决定 grid 风格 DNA
+        //   - rng:独立 PRNG 派生 seed(与 mg / ChordTextureEngine 不冲突,
+        //     每 step 固定 3 次 gate PRNG D-5 锁帧)
+        //   - bassNotes/chordNotes 作为 probability modifier
         // -----------------------------------------------------------
         const drumMusician = routed[BandRole.Drums].musician;
         const drumNotes = drumMusician?.instrumentFamily === InstrumentFamily.Percussion
-            ? DrumGenerator.generate({ sections, beatsPerMeasure: 4 })
+            ? DrumGenerator.generate({
+                sections,
+                beatsPerMeasure: 4,
+                mgStyle,
+                bassNotes: routed[BandRole.Bass].notes,
+                chordNotes: routed[BandRole.Accomp].notes,
+                rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
+            })
             : [];
 
         // -----------------------------------------------------------
