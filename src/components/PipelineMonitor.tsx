@@ -395,7 +395,7 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* Engine Toggle:AF / MG 双引擎切换(写 EngineSelectionStore,全局生效) */}
+            {/* Engine Toggle:AF / MG / AF2 三引擎切换(写 EngineSelectionStore,全局生效) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
                 <div className="flex bg-black/50 border border-zinc-700/60 rounded overflow-hidden">
@@ -419,9 +419,21 @@ export const PipelineMonitor: React.FC = () => {
                                 ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
                                 : 'text-zinc-500 hover:text-zinc-300'
                         }`}
-                        title="melodygenerative 钢琴 solo 引擎(Phase 0:stub)"
+                        title="melodygenerative 钢琴 solo 引擎"
                     >
                         MG
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleEngineChange('AF2')}
+                        className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors ${
+                            engine === 'AF2'
+                                ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+                                : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                        title="AuraFlow v2 融合引擎(Phase 0:stub,NOT_IMPLEMENTED)"
+                    >
+                        AF2
                     </button>
                 </div>
                 {/* MG Style 下拉 — 仅 MG 模式可用,AF 模式灰显 */}
@@ -449,7 +461,9 @@ export const PipelineMonitor: React.FC = () => {
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
                     {engine === 'AF'
                         ? 'Full band pipeline'
-                        : 'Piano solo (mg-engine)'}
+                        : engine === 'MG'
+                            ? 'Piano solo (mg-engine)'
+                            : 'AF2 fusion · 5 slots active (no vocal)'}
                 </span>
             </div>
 
@@ -523,7 +537,9 @@ export const PipelineMonitor: React.FC = () => {
             </div>
 
             {/* BandSelection — 6 BandRole 槽位(Vocal/MainInst/Accomp/Bass/Drums/Atmosphere)+ 各自 Instr 下拉。
-                MG 模式无乐手概念,整面板 disable(灰显但可见,纯展示)。 */}
+                MG 模式:整面板 disable(无乐手概念)。
+                AF2 模式(Phase 2a):仅 Vocal 单槽 disable(mg 不生成 vocal)。
+                Drums / Atmosphere 已解锁 — AF2 端 PadGenerator / DrumGenerator 自生成。 */}
             <BandSelectionPanel
                 selection={bandSelection}
                 onChange={setBandSelection}
@@ -532,6 +548,7 @@ export const PipelineMonitor: React.FC = () => {
                 isDirty={isBandDirty}
                 onApply={applyBandSelection}
                 disabled={isMgMode}
+                disabledSlots={engine === 'AF2' ? [BandRole.Vocal] : undefined}
             />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
@@ -601,6 +618,11 @@ interface BandSelectionPanelProps {
     onApply: () => void;
     /** Engine === 'MG' 时整面板灰显 disable(MG 无乐手概念) */
     disabled?: boolean;
+    /**
+     * 单槽位 disable 列表。Engine === 'AF2' 时把 Vocal/Drums/Atmosphere 加入
+     * 此列表 — AF2 Phase 1 这 3 个槽位无效(mg 不生成 vocal/drums/atmosphere)。
+     */
+    disabledSlots?: ReadonlyArray<BandRole>;
 }
 
 /** B1 哨兵值：UI dropdown "— 留空 —" 选项的 value，区别于"使用默认乐手"（value=""） */
@@ -609,7 +631,10 @@ const BAND_SLOT_EMPTY_VALUE = '__empty__';
 const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
     selection, onChange, instrumentSelection, onInstrumentChange, isDirty, onApply,
     disabled: panelDisabled = false,
+    disabledSlots,
 }) => {
+    const isSlotDisabled = (role: BandRole): boolean =>
+        disabledSlots != null && disabledSlots.includes(role);
     const totalPersonas = MUSICIAN_POOL.length;
     return (
         <div className={`px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0 ${panelDisabled ? 'opacity-40 pointer-events-none select-none' : ''}`}>
@@ -643,8 +668,10 @@ const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
                     // B1：三态显示 — undefined/缺省 → ""；null（留空）→ '__empty__'；string → 该 id
                     const cur = selection[role];
                     const value = cur === null ? BAND_SLOT_EMPTY_VALUE : (cur ?? '');
-                    const disabled = candidates.length === 0;
-                    const slotEmpty = value === BAND_SLOT_EMPTY_VALUE;
+                    const slotForcedEmpty = isSlotDisabled(role);
+                    const disabled = candidates.length === 0 || slotForcedEmpty;
+                    // AF2 模式下 Vocal/Drums/Atmosphere 强制视为空槽(实际生成时也会被忽略)
+                    const slotEmpty = value === BAND_SLOT_EMPTY_VALUE || slotForcedEmpty;
 
                     // B2：定位 "活动 musician" 用于推 instrumentRef
                     //   string id → 该乐手；undefined → DEFAULT_MUSICIAN_BY_ROLE[role]；null → 无

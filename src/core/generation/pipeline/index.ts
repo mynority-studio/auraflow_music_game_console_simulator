@@ -39,6 +39,7 @@ import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
 import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 import { MgEngineFacade } from '../mg-engine/MgEngineFacade';
+import { Af2EngineFacade } from '../af2-engine/Af2EngineFacade';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -59,18 +60,23 @@ export function runPipeline(
     options: PipelineRunOptions = {},
 ): { track: GeneratedTrack; context: MusicContext } {
     // ============================================================
-    // Engine Switch — AF / MG 双引擎路由(Phase 0 起)
+    // Engine Switch — AF / MG / AF2 三引擎路由
     //
     //   读 EngineSelectionStore(Q+H 顶部 Toggle 写入)分流:
-    //     'AF' → 走下面完整 Stage 1-5 + Conductor 管线(本函数 99% 代码)
-    //     'MG' → 调 MgEngineFacade.generate()(Phase 0 stub:抛 NOT_IMPLEMENTED)
+    //     'AF'  → 走下面完整 Stage 1-5 + Conductor 管线(本函数 99% 代码)
+    //     'MG'  → 调 MgEngineFacade.generate()(钢琴 solo,PRNG 隔离)
+    //     'AF2' → 调 Af2EngineFacade.generate()(融合引擎,Phase 0 stub:抛 NOT_IMPLEMENTED)
     //
     //   外部调用契约不变:不论哪个引擎,返回 { track, context } 同形状,
     //   AudioEngine.playSong / AbsoluteTransposer 下游零改动。
     //   详见 .claude/rules/app_integration_rule.md §0 Single Pipeline 原则。
     // ============================================================
-    if (EngineSelectionStore.getEngine() === 'MG') {
+    const _engine = EngineSelectionStore.getEngine();
+    if (_engine === 'MG') {
         return MgEngineFacade.generate(options);
+    }
+    if (_engine === 'AF2') {
+        return Af2EngineFacade.generate(options);
     }
 
     PRNGManager.recordSnapshot('B');

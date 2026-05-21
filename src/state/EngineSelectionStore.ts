@@ -1,11 +1,15 @@
 // ============================================================
-// EngineSelectionStore — 全局生成引擎选择存储(AF / MG 双引擎切换)
+// EngineSelectionStore — 全局生成引擎选择存储(AF / MG / AF2 三引擎切换)
 // ============================================================
 //
 // 设计动机:
-//   Phase 0 起 auraflow 同时持有两套生成引擎 —
-//     - 'AF' (auraflow):现有 Stage 1-5 + Conductor 完整管线
-//     - 'MG' (melodygenerative):激进移植进来的钢琴 solo 引擎
+//   auraflow 当前同时持有三套生成引擎 —
+//     - 'AF'  (auraflow):现有 Stage 1-5 + Conductor 完整管线
+//     - 'MG'  (melodygenerative):激进移植进来的钢琴 solo 引擎
+//     - 'AF2' (auraflow v2 fusion):融合引擎(Phase 0 stub,待实装)
+//       AF + MG 的融合产物 —— MG 强项是全局和声 / 段落和声编配,
+//       AF 强项是乐手 / 段落骨架 / 5 维气象 / Reconciler,AF2 取两者。
+//       稳定后 AF2 将取代 AF / MG 成为唯一引擎。
 //   Q+H(PipelineMonitor)顶部的 Engine Toggle 写本 store,
 //   runPipeline 内部读 getEngine() 分流。
 //
@@ -27,7 +31,7 @@
 //     BandSelectionStore 的职责)。
 // ============================================================
 
-export type EngineId = 'AF' | 'MG';
+export type EngineId = 'AF' | 'MG' | 'AF2';
 /**
  * MG 引擎的 style 选择(对应 mg-engine/styleDictionary 中的 StyleName)。
  * 与 auraflow StyleId 完全独立 — MG 是钢琴 solo 引擎,有自己的 4 风格分类。

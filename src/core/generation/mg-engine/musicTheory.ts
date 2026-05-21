@@ -3389,11 +3389,6 @@ export function isChordBackbone(intervalToRoot: number, chordType: string): bool
 //   voicings that hold shared tones across chord transitions (smoother
 //   voice leading, classical/jazz comping principle).
 //
-// getVoiceLeadingPenalty — numeric roughness score for a voice-by-voice
-//   MIDI transition. Higher = rougher. Penalises octave+ leaps and
-//   voice-count mismatches. Used as the cost function inside
-//   voiceLeadingSmoother when scoring candidate voicings.
-//
 // getResolutionTargets — typed accessor over INTERVAL_AESTHETICS'
 //   expectedResolutions field for a given interval (semitones from key
 //   root). Empty array for stable/anchor intervals (1, 3, 5). Used by
@@ -3412,20 +3407,6 @@ export function findCommonTones(chordAPcs: number[], chordBPcs: number[]): numbe
     }
   }
   return result;
-}
-
-export function getVoiceLeadingPenalty(prevMidi: number[], nextMidi: number[]): number {
-  if (prevMidi.length === 0 || nextMidi.length === 0) return 0;
-  const pairs = Math.min(prevMidi.length, nextMidi.length);
-  let penalty = 0;
-  for (let i = 0; i < pairs; i++) {
-    const delta = Math.abs(prevMidi[i] - nextMidi[i]);
-    penalty += delta;
-    if (delta > 12) penalty += (delta - 12) * 2; // octave+ leaps double-penalised
-  }
-  // Voice count change (thinning / thickening) is rougher than smooth motion.
-  penalty += Math.abs(prevMidi.length - nextMidi.length) * 3;
-  return penalty;
 }
 
 export function getResolutionTargets(intervalSemitones: number): number[] {

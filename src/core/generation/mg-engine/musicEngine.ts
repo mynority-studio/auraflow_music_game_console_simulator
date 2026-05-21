@@ -60,7 +60,6 @@ import {
   getResolutionTargets,
   MELODY_RANGE,
   findCommonTones,
-  getVoiceLeadingPenalty,
   CHORD_TYPES,
   JAZZ_ROOTLESS_VOICINGS,
   POP_VOICINGS,
@@ -1038,203 +1037,6 @@ export class Engine {
       });
   }
 
-  // === 声部连接平滑器 (Voice Leading Smoother) ===
-  private voiceLeadingSmoother(prevNotesMidi: number[], pitchClasses: number[], prevChordRootPc: number = -1, currChordRootPc: number = -1, prevChordFunc: 'T' | 'S' | 'D' | null = null): number[] {
-      // Voice leading — chord-to-chord 实施五大经典原则:
-      //   1. Common tone retention — 共同音保留 (零位移强 bonus)
-      //   2. Least motion — 半音位移最小化
-      //   3. Smooth resolution — ≤2 半音优先
-      //   4. Avoid parallel 5ths / octaves — 同向 P5/P8 penalty
-      //   5. Guide tone resolve (jazz) — prev b7 → curr 3 半音下 bonus
-      // 算法: 穷举 voice-to-pc permutation (N ≤ 5, 120 permutations
-      // 最多), 每排列算 cost = motion penalty + parallel penalty -
-      // guide-tone bonus - common-tone bonus, 选最小.
-
-      const COMP_LOW = 53;   // F3 — bottom voice floor
-      const COMP_HIGH = 80;  // G#5 — top voice ceiling
-      const uniquePcs = Array.from(new Set(pitchClasses));
-      const N = uniquePcs.length;
-
-      // First chord — build a close voicing in the mid register, root
-      // in bottom (no prev to lead from).
-      if (prevNotesMidi.length === 0) {
-          const baseOct = 4;
-          const out: number[] = [];
-          let cursor = uniquePcs[0] + (baseOct + 1) * 12;
-          out.push(cursor);
-          for (let i = 1; i < N; i++) {
-              let next = uniquePcs[i] + Math.floor(cursor / 12) * 12;
-              while (next <= cursor) next += 12;
-              out.push(next);
-              cursor = next;
-          }
-          return out;
-      }
-
-      // Helper: find the midi closest to refMidi sharing pitch class pc.
-      const nearestMidiWithPc = (refMidi: number, pc: number): number => {
-          const refOct = Math.floor(refMidi / 12);
-          const candidates = [pc + refOct * 12, pc + (refOct - 1) * 12, pc + (refOct + 1) * 12];
-          let best = candidates[0];
-          let bestDist = Math.abs(best - refMidi);
-          for (const c of candidates) {
-              const d = Math.abs(c - refMidi);
-              if (d < bestDist) { bestDist = d; best = c; }
-          }
-          return best;
-      };
-
-      // Guide tone pcs (jazz): prev b7 = prevRoot + 10; curr 3 =
-      // currRoot + 4. When a prev voice is on b7 and the same voice
-      // moves to curr 3 by half step (-1 semi), it's the ii-V-I
-      // signature voice leading. Bonus.
-      // Guide tone bonus 已内联到 cost loop (限 D 函数), 不需 module-level 缓存.
-
-      // Enumerate permutations of uniquePcs assigned to prev voices.
-      // For voice count mismatch we fill out the shorter array with
-      // -1 placeholders so permutation indexing still works.
-      const Vprev = prevNotesMidi.length;
-      const permutationLen = Math.max(N, Vprev);
-      // Pad uniquePcs (for permutation) so each permutation has length
-      // permutationLen — extra slots flagged -1 (= "add new pc").
-      const padded: number[] = [...uniquePcs];
-      while (padded.length < permutationLen) padded.push(-1);
-
-      const allPerms: number[][] = [];
-      const permute = (arr: number[], start: number) => {
-          if (start === arr.length - 1) { allPerms.push([...arr]); return; }
-          for (let i = start; i < arr.length; i++) {
-              [arr[start], arr[i]] = [arr[i], arr[start]];
-              permute(arr, start + 1);
-              [arr[start], arr[i]] = [arr[i], arr[start]];
-          }
-      };
-      permute([...padded], 0);
-
-      let bestVoicing: number[] = [];
-      let bestCost = Infinity;
-
-      for (const perm of allPerms) {
-          const voicing: number[] = [];
-          let cost = 0;
-
-          for (let v = 0; v < Vprev; v++) {
-              const targetPc = perm[v];
-              if (targetPc < 0) continue;  // this prev voice is dropped
-              const prevMidi = prevNotesMidi[v];
-              const newMidi = nearestMidiWithPc(prevMidi, targetPc);
-              voicing.push(newMidi);
-              const movement = Math.abs(newMidi - prevMidi);
-
-              // 老师哲学升级: 共同音 -25 (大幅强化 "能不动就不动"),
-              // smooth ≤2 半音 -5 base + movement (奖励级进),
-              // 3-4 半音 ×3, >4 半音 ×6 (严惩内声部大跳).
-              if (movement === 0) {
-                  cost -= 25;
-              } else if (movement <= 2) {
-                  cost += movement - 5;  // -5 base + small motion
-              } else if (movement <= 4) {
-                  cost += movement * 3;
-              } else {
-                  cost += movement * 6;
-              }
-
-              // Guide tone resolution bonus — 老师哲学: 强奖励倾向音
-              // 半音解决. 限定 prev chord function === 'D' (= 真正的
-              // 导音 / 属七音 才有解决意义). 其他 chord 上 chord 3rd
-              // 跳到 next root 不算导音, 不给 bonus.
-              if (prevChordFunc === 'D' && prevChordRootPc >= 0 && currChordRootPc >= 0) {
-                  const prevPc = ((prevMidi % 12) + 12) % 12;
-                  const newPc = ((newMidi % 12) + 12) % 12;
-                  const prev3rd = ((prevChordRootPc + 4) % 12 + 12) % 12;  // 导音
-                  const prev7th = ((prevChordRootPc + 10) % 12 + 12) % 12; // 属七音
-                  const currRoot = ((currChordRootPc % 12) + 12) % 12;
-                  const currMaj3 = ((currChordRootPc + 4) % 12 + 12) % 12;
-                  const currMin3 = ((currChordRootPc + 3) % 12 + 12) % 12;
-                  // 魔法 1: 导音半音向上解决 (3 → 1) — V→I 标志
-                  if (prevPc === prev3rd && newPc === currRoot && newMidi > prevMidi && movement === 1) {
-                      cost -= 20;
-                  }
-                  // 魔法 2: 属七音半音/全音向下解决 (b7 → 3) — guide tone
-                  if (prevPc === prev7th && (newPc === currMaj3 || newPc === currMin3) && newMidi < prevMidi) {
-                      cost -= 20;
-                  }
-              }
-          }
-
-          // Parallel 5th / octave penalty. Two voices moving same
-          // direction with both prev AND curr intervals being P5 or P8.
-          for (let i = 0; i < voicing.length; i++) {
-              for (let j = i + 1; j < voicing.length; j++) {
-                  // Get prev pair midis (same voice slot indices into
-                  // the source prev array). voicing index = order of
-                  // emit; map back through perm.
-                  // Find which prev voice this voicing[i] came from
-                  // by scanning prev → voicing assignment.
-                  // (Simplest: track explicitly.)
-                  // 实际上 voicing 跟 prev[v] (其中 perm[v]≥0) 一一对应:
-                  // voicing 索引 k 对应 prev 索引 prevIdx[k].
-                  // 为简化, 重算 (perm[v]≥0 的 v 序列就是 prev 对应序列).
-                  // 提到 outer 块算就是.
-              }
-          }
-
-          // 直接重算 prev → voicing 对应序列, 用同 i/j 检测平行
-          const prevForVoicing: number[] = [];
-          for (let v = 0; v < Vprev; v++) {
-              if (perm[v] >= 0) prevForVoicing.push(prevNotesMidi[v]);
-          }
-          for (let i = 0; i < voicing.length; i++) {
-              for (let j = i + 1; j < voicing.length; j++) {
-                  const prevInt = Math.abs(prevForVoicing[i] - prevForVoicing[j]) % 12;
-                  const currInt = Math.abs(voicing[i] - voicing[j]) % 12;
-                  // P5 (= 7 semitones) or P8 (= 0 semitones, octave apart)
-                  const isParallelInterval = (prevInt === 7 && currInt === 7)
-                      || (prevInt === 0 && currInt === 0 && prevForVoicing[i] !== prevForVoicing[j]);
-                  if (!isParallelInterval) continue;
-                  // Both voices must move the same direction (and non-zero)
-                  const dir1 = Math.sign(voicing[i] - prevForVoicing[i]);
-                  const dir2 = Math.sign(voicing[j] - prevForVoicing[j]);
-                  if (dir1 !== 0 && dir1 === dir2) {
-                      cost += 25;  // strong penalty
-                  }
-              }
-          }
-
-          // Handle target-pc not yet placed (perm[v] < 0 prev slot OR
-          // N > Vprev → uniquePcs not all used). Append in octave above
-          // current top.
-          const usedPcs = new Set(voicing.map(m => ((m % 12) + 12) % 12));
-          for (const pc of uniquePcs) {
-              if (usedPcs.has(pc)) continue;
-              const top = voicing.length > 0 ? Math.max(...voicing) : 60;
-              let extra = pc + Math.floor(top / 12) * 12;
-              while (extra <= top) extra += 12;
-              voicing.push(extra);
-              usedPcs.add(pc);
-              cost += 3;  // small penalty: introducing a new pc costs a bit
-          }
-
-          // Skip degenerate (zero-voice) results.
-          if (voicing.length === 0) continue;
-          // Register clamp
-          const sorted = voicing.slice().sort((a, b) => a - b);
-          if (sorted[0] < COMP_LOW - 12) cost += 50;
-          if (sorted[sorted.length - 1] > COMP_HIGH + 12) cost += 50;
-
-          if (cost < bestCost) {
-              bestCost = cost;
-              bestVoicing = sorted;
-          }
-      }
-
-      // Final register clamp on the winner
-      while (bestVoicing.length > 0 && bestVoicing[0] < COMP_LOW) bestVoicing[0] += 12;
-      while (bestVoicing.length > 0 && bestVoicing[bestVoicing.length - 1] > COMP_HIGH) bestVoicing[bestVoicing.length - 1] -= 12;
-      bestVoicing.sort((a, b) => a - b);
-      return bestVoicing;
-  }
-
   // === 动机变奏算法机 (Motif Mutator) ===
   private motifMutator(
       motif: any[], 
@@ -1367,11 +1169,10 @@ export class Engine {
           //      etc. knowledge. When tables miss, assembleVoicing
           //      synthesizes pcs via aesthetic table + clash arbitration
           //      (fixes POP V7b13 and other altered cases).
-          //   3. MIDI placement (G3): placeVoicingMidi replaces the old
-          //      voiceLeadingSmoother. Multi-objective brute-force search
-          //      finds octaves matching preferredRegister hints + bass
-          //      distance constraint + voice-leading. This fixes the
-          //      84%-mid-range-tenor-gap problem uniformly.
+          //   3. MIDI placement (G3): placeVoicingMidi — multi-objective
+          //      brute-force search finds octaves matching preferredRegister
+          //      hints + bass distance constraint + voice-leading. This
+          //      fixes the 84%-mid-range-tenor-gap problem uniformly.
           //
           // Step 1: pcs selection — existing style voicing table takes
           // precedence (Stage B hand-tuned wisdom), assembleVoicing as
@@ -1545,10 +1346,10 @@ export class Engine {
               }
           }
 
-          // Step 3b: MIDI placement via placeVoicingMidi (G3). Replaces
-          // the old voiceLeadingSmoother — adds preferredRegister hints
-          // + bass-to-voicing-bottom 8-14 sweet-spot constraint that
-          // fixes the 84% mid-range tenor-gap problem.
+          // Step 3b: MIDI placement via placeVoicingMidi (G3). Adds
+          // preferredRegister hints + bass-to-voicing-bottom 8-14
+          // sweet-spot constraint that fixes the 84% mid-range
+          // tenor-gap problem.
           const prevCompingMidi = parsedChords.length > 0
               ? (parsedChords[parsedChords.length - 1].notesMidi
                   ?? parsedChords[parsedChords.length - 1].notes.map(n => noteToMidi(n)))

@@ -1,0 +1,50 @@
+// ============================================================
+// BassIdiom — AF2 电贝斯 idiom(Phase 2a)
+// ============================================================
+//
+// 决策(PHASE2A.md §10):
+//   - Q3 B:GM 34 Electric Bass Finger(尊重 frank_bass.defaultSound 字段)
+//   - Q4 A:独立 electricBass 通道(V5.3 预留通道真正启用)
+//
+// 职责(Phase 2a 简化):
+//   纯直通 mg.bass 音符 — 不改 pitch / onset / duration / velocity。
+//   唯一与 PianoIdiom 的差异 = 音色(GM 34)+ 通道(electricBass)。
+//
+// 物理约束:
+//   - 音域 E1-G4(MIDI 28-67)— 电贝斯标准 4 弦音域
+//   - 单声部(mg.bass 已经是单声部)
+//   - eligibleSlots: [Bass](不可放 MainInst / Accomp / Drums / Atmosphere / Vocal)
+//
+// Phase 2b+ 可扩展(本文件预留接口):
+//   - articulation(slide / hammer-on / pull-off / mute)
+//   - persona 消费(syncopationAssault → fill 密度 / walkPatternId)
+// ============================================================
+
+import type { NoteData } from '../../types';
+import { BandRole } from '../../types';
+
+/** 电贝斯物理参数 */
+export const BASS_INSTRUMENT_SPEC = {
+    /** GM 34 Electric Bass Finger(Q3 B 决策) */
+    gmProgram: 34,
+    /** 物理音域(MIDI):E1-G4 */
+    rangeLo: 28,
+    rangeHi: 67,
+    eligibleSlots: [BandRole.Bass] as const,
+} as const;
+
+export const BassIdiom = {
+    /**
+     * 电贝斯渲染 — Phase 2a 直通。
+     *
+     * 不改 pitch / onset / duration / velocity。返回 NoteData[] 的浅拷贝
+     * (防御性,避免下游 mutate 污染 mg 原输出)。
+     */
+    realize(notes: NoteData[]): NoteData[] {
+        return notes.map(n => ({ ...n }));
+    },
+
+    getGmProgram(): number {
+        return BASS_INSTRUMENT_SPEC.gmProgram;
+    },
+};

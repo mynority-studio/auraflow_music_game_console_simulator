@@ -111,7 +111,7 @@ const MIX_PIANO_LH:     MixProfile = { volume: 125, pan: 54, reverb: 45 };  // �
 const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
 const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
 /** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
-const MIX_ELECTRIC_BASS: MixProfile = { volume:  78, pan: 64, reverb:  0 };
+const MIX_ELECTRIC_BASS: MixProfile = { volume: 115, pan: 64, reverb:  0 };  // 2026-05-21:78→115,补 commit 2f52a3d 漏同步;与 pianoLH=125 同档,让 AF2 electricBass 通道达到"有存在感"的听感
 
 // ============================================================
 // 事件优先级（同 tick 排序的次序）
