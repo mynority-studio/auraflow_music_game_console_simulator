@@ -258,17 +258,17 @@ export const MgEngineFacade = {
             blockIndex: 0,
             absoluteStartBeat: 0,
             hasIntro: false,
-            // 关键:跳过 AbsoluteTransposer 的 pitch<48 LH/RH 切分,所有 accomp 走单通道。
-            // 实现"mg-standalone 单 sampler 中央渲染"语义对齐。
-            skipHandSplit: true,
+            // 2026-05-21 Channel 重构:skipHandSplit 字段弃用(AbsoluteTransposer
+            // 不再按 pitch<48 切 LH/RH,accompaniment 永远整体进 ch2 accomp)。
+            // mg-standalone 单 sampler 语义自动满足。
         };
 
         // -----------------------------------------------------------
         // 8. MusicContext
         //
-        //   gmProgramOverrides 强制 piano sound 覆盖默认 melody=1(Bright):
-        //     melody / pianoLH / pianoRH 全 = 0(Grand Piano)
-        //     drums / atmosphere / electricBass 不设(无音符,无影响)
+        //   gmProgramOverrides 覆盖默认 melody=1(Bright)→ 0(Grand Piano):
+        //     melody / accomp 全 = 0(Grand Piano)
+        //     bass / drums / atmosphere 不设(无音符,无影响)
         // -----------------------------------------------------------
         const afStyleId = MG_STYLE_TO_AF_STYLE[mgStyle];
         const context: MusicContext = {
@@ -278,15 +278,11 @@ export const MgEngineFacade = {
             timeSignature: [4, 4],
             grooveDNA: [],
             style: {
-                // 最小占位 StyleConfig — 下游 AudioEngine 只读 styleId 数字字段,
-                // 完整 styleConfig 由 getStyleConfig(afStyleId) 在 AF 模式提供;
-                // MG 模式不消费 styleConfig 其他字段,这里只塞 id 满足类型。
                 id: afStyleId,
             } as MusicContext['style'],
             gmProgramOverrides: {
-                melody: 0,    // Grand Piano(覆盖默认 1=Bright Acoustic)
-                pianoLH: 0,
-                pianoRH: 0,
+                melody: 0,
+                accomp: 0,
             },
         };
 

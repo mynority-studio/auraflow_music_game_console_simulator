@@ -14,10 +14,13 @@
  * Conductor / Reconciler)严禁触碰 keyOffset;AbsoluteTransposer 之后的所有
  * 消费者(MidiConverter / PlaybackEngine)假定 pitch 已是 ABSOLUTE。
  *
- * 轨道映射：
- *   track.melody         (Lead)        → arranged.melody
- *   track.accompaniment  (AccompInst)  → arranged.pianoRH
- *   track.bass           (Bass)        → arranged.pianoLH
+ * 轨道映射(2026-05-21 Channel 重构后):
+ *   track.melody         (MainInst BandRole) → arranged.melody     (ch1)
+ *   track.accompaniment  (Accomp BandRole)   → arranged.accomp     (ch2)
+ *   track.bass           (Bass BandRole)     → arranged.bass       (ch3)
+ *   track.atmosphere     (Atmosphere)        → arranged.atmosphere (ch4)
+ *   track.drums          (Drums)             → arranged.drums      (ch9)
+ *   钢琴一个乐器,无所谓几只手弹 — accomp 通道单一,不再切 LH/RH。
  *
  * Pitch Space:
  *   - 输入 NoteData.pitch ∈ RELATIVE（K-1）
@@ -73,35 +76,20 @@ export class AbsoluteTransposer {
 
         const keyOffset = track.keyOffset | 0;
 
+        // 5 BandRole 通道(+ vocal / counter / userMotif 等辅助通道)直通,各加 keyOffset:
+        //   melody     (MainInst)    → ch1
+        //   accomp     (Accomp)      → ch2  ← 钢琴一手包办 chord+bass(无 BassRole 乐手时),
+        //                                     或专纯 chord(有 BassRole 乐手时)
+        //   bass       (Bass)        → ch3
+        //   atmosphere (Atmosphere)  → ch4
+        //   drums      (Drums)       → ch9 (GM Drum Map K-8 第三空间,不加 keyOffset)
         const melody     = applyKeyOffset(track.melody         ?? [], keyOffset);
+        const accomp     = applyKeyOffset(track.accompaniment  ?? [], keyOffset);
+        const bass       = applyKeyOffset(track.bass           ?? [], keyOffset);
         const atmosphere = applyKeyOffset(track.atmosphere     ?? [], keyOffset);
-        // V5.3 — bass 不再走 pianoLH；改路由到独立 ElectricBass 通道
-        const electricBass = applyKeyOffset(track.bass         ?? [], keyOffset);
 
-        // V5.3 — 钢琴 accompaniment 按 pitch C3 分流到 pianoLH / pianoRH 两通道
-        // 两通道共享 program 0 (Grand Piano)，但分通道允许独立 ducking + mix 控制。
-        //
-        // MG 单通道分支(track.skipHandSplit=true):
-        //   跳过 LH/RH 切分,全部进 pianoRH。语义对齐 mg-standalone 单 Tone.Sampler 渲染
-        //   (中央 pan / 统一 volume / 统一 reverb)。pianoLH 留空 → renderTrack 直接跳过该通道,
-        //   下游 MidiConverter 不发任何 setup/CC 事件到 channel 1。
-        //   AF 路径 skipHandSplit 为 undefined,走原 pitch<48 切分,bit-exact 不变。
-        const accomp = applyKeyOffset(track.accompaniment ?? [], keyOffset);
-        const pianoLH: NoteData[] = [];
-        const pianoRH: NoteData[] = [];
-        if (track.skipHandSplit) {
-            for (let i = 0; i < accomp.length; i++) {
-                pianoRH.push(accomp[i]);
-            }
-        } else {
-            for (let i = 0; i < accomp.length; i++) {
-                const n = accomp[i];
-                if (n.pitch < 48) pianoLH.push(n); else pianoRH.push(n);
-            }
-        }
-
-        // K-8: drums 是 GM Drum Map 物理键位（第三空间，INSTRUMENT_COMMAND），
-        // 独立于 K-1 的 RELATIVE/ABSOLUTE 二分；直接透传，禁止 applyKeyOffset。
+        // K-8: drums 是 GM Drum Map 物理键位(第三空间,INSTRUMENT_COMMAND),
+        // 独立于 K-1 的 RELATIVE/ABSOLUTE 二分;直接透传,禁止 applyKeyOffset。
         const arranged: ArrangedTrack = {
             bpm: track.bpm,
             key: track.key,
@@ -109,20 +97,18 @@ export class AbsoluteTransposer {
             timeSignature: track.timeSignature,
             styleId,
             melody,
-            pianoRH,
-            pianoLH,
+            accomp,
+            bass,
             atmosphere,
-            electricBass,                   // V5.3 新增独立通道
             secondaryMelody: undefined,
             vocal:           track.vocal,
-            drums:           track.drums,   // K-8 透传：GM Drum Map 物理键位
+            drums:           track.drums,   // K-8 透传:GM Drum Map 物理键位
             counterMelody:   track.counterMelody,
             userMotif:       track.processedUserMotif,
             palette:         track.preSelectedPalette,
             sections:        track.sections,
             globalRiff:      track.globalRiff,
             chords:          track.chords,
-            // B3：透传 GM 程式覆盖（context.gmProgramOverrides → ArrangedTrack.gmProgramOverrides）
             gmProgramOverrides: context.gmProgramOverrides,
         };
 

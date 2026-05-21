@@ -159,32 +159,31 @@ export function getInstrumentFamily(instrumentRef: string | undefined): Readonly
 /**
  * BandRole → ArrangedTrack 内对应轨道的"程式覆盖 key"。
  *
- * 设计：
- *   - MainInst   → 'melody'           （主旋律通道）
- *   - Accomp     → 'pianoRH' + 'pianoLH'（钢琴双通道共享同一 musician 同一程式）
- *   - Bass       → 'electricBass'
- *   - Drums      → 'drums'            （channel 9，program 字节 = kit id）
- *   - Atmosphere → 'atmosphere'
+ * 设计(2026-05-21 Channel 重构后,每 role 一个 key):
+ *   - MainInst   → 'melody'      (主旋律通道 ch1)
+ *   - Accomp     → 'accomp'      (伴奏通道 ch2,原 pianoRH+pianoLH 合并)
+ *   - Bass       → 'bass'        (低音通道 ch3,原 electricBass 通用化重命名)
+ *   - Drums      → 'drums'       (channel 9,program 字节 = kit id)
+ *   - Atmosphere → 'atmosphere'  (氛围通道 ch4)
  *
- * Vocal 暂无 track（项目无 VocalIdiom），不映射。
+ * Vocal 暂无 track(项目无 VocalIdiom),不映射。
  */
 export type GmProgramTrackKey =
     | 'melody'
-    | 'pianoRH'
-    | 'pianoLH'
+    | 'accomp'
+    | 'bass'
     | 'drums'
-    | 'atmosphere'
-    | 'electricBass';
+    | 'atmosphere';
 
 /**
- * 返回 role 对应的所有 track key（accomp 返回 2 个，其他返回 1 个）。
- * 未列出的 role（Vocal）返回空数组。
+ * 返回 role 对应的 track key。
+ * 未列出的 role(Vocal)返回空数组。
  */
 export function bandRoleToTrackKeys(role: BandRole): ReadonlyArray<GmProgramTrackKey> {
     switch (role) {
         case BandRole.MainInst:   return ['melody'];
-        case BandRole.Accomp:     return ['pianoRH', 'pianoLH'];
-        case BandRole.Bass:       return ['electricBass'];
+        case BandRole.Accomp:     return ['accomp'];
+        case BandRole.Bass:       return ['bass'];
         case BandRole.Drums:      return ['drums'];
         case BandRole.Atmosphere: return ['atmosphere'];
         default:                  return [];

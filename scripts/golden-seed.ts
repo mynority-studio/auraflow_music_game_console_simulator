@@ -108,8 +108,9 @@ function runOneSeed(seed: number) {
         },
         arranged: {
             melodyNoteCount: arranged.melody?.length ?? 0,
-            pianoLHNoteCount: arranged.pianoLH?.length ?? 0,
-            pianoRHNoteCount: arranged.pianoRH?.length ?? 0,
+            accompNoteCount: arranged.accomp?.length ?? 0,
+            bassNoteCount: arranged.bass?.length ?? 0,
+            atmosphereNoteCount: arranged.atmosphere?.length ?? 0,
             drumsNoteCount: arranged.drums?.length ?? 0,
             secondaryMelodyNoteCount: arranged.secondaryMelody?.length ?? 0,
             counterMelodyNoteCount: arranged.counterMelody?.length ?? 0,

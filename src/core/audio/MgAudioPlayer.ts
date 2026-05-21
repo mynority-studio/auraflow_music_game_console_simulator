@@ -222,7 +222,7 @@ class MgAudioPlayerSystem {
     /**
      * Mute 控制 —— 由 AudioEngine.setPartMute 适配过来:
      *   PartName='melody'  → setMute('melody', muted)
-     *   PartName='chord'/'bass'/'pianoRH'/'pianoLH' → setMute('accomp', muted)
+     *   PartName='chord'/'bass'/其他 → setMute('accomp', muted)
      */
     public setMute(kind: MgPartKind, muted: boolean): void {
         if (kind === 'melody') this.muteMelody = muted;

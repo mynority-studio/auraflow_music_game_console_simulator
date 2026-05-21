@@ -7,7 +7,7 @@ export const VolumeController: React.FC = () => {
     const [isVisible, setIsVisible] = useState(false);
     const dragControls = useDragControls();
     const [state, setState] = useState({
-        volumes: { master: 14, melody: 0, pianoLH: 7, pianoRH: 2 },
+        volumes: { master: 14, melody: 0, accomp: 2, bass: 7 },
         eq: {
             melody: { low: 0, mid: 2, high: 1 },
             piano: { low: 2, mid: -3, high: -6 }
@@ -127,8 +127,8 @@ export const VolumeController: React.FC = () => {
                         <div className="flex justify-around items-end h-48">
                             <VerticalSlider label="Master" icon={<Volume2 className="w-4 h-4" />} value={state.volumes.master} onChange={(v) => handleParamChange('volumes', 'master', v)} min={-60} max={30} />
                             <VerticalSlider label="Melody" icon={<Music className="w-4 h-4" />} value={state.volumes.melody} onChange={(v) => handleParamChange('volumes', 'melody', v)} min={-60} max={10} />
-                            <VerticalSlider label="Piano LH" icon={<Piano className="w-4 h-4" />} value={state.volumes.pianoLH} onChange={(v) => handleParamChange('volumes', 'pianoLH', v)} min={-60} max={10} />
-                            <VerticalSlider label="Piano RH" icon={<Piano className="w-4 h-4" />} value={state.volumes.pianoRH} onChange={(v) => handleParamChange('volumes', 'pianoRH', v)} min={-60} max={10} />
+                            <VerticalSlider label="Accomp" icon={<Piano className="w-4 h-4" />} value={state.volumes.accomp} onChange={(v) => handleParamChange('volumes', 'accomp', v)} min={-60} max={10} />
+                            <VerticalSlider label="Bass" icon={<Piano className="w-4 h-4" />} value={state.volumes.bass} onChange={(v) => handleParamChange('volumes', 'bass', v)} min={-60} max={10} />
                         </div>
                     </section>
 

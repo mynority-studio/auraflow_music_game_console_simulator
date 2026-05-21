@@ -12,7 +12,7 @@
 import { PRNGManager } from '../src/core/utils/PRNG';
 import { runPipeline } from '../src/core/generation/pipeline';
 import { AbsoluteTransposer } from '../src/core/generation/pipeline/AbsoluteTransposer';
-import { MidiConverter, CHANNEL_ATMOSPHERE, CHANNEL_ELECTRIC_BASS, CHANNEL_PIANO_LH } from '../src/core/audio/MidiConverter';
+import { MidiConverter, CHANNEL_ATMOSPHERE, CHANNEL_BASS, CHANNEL_ACCOMP } from '../src/core/audio/MidiConverter';
 import { CastingEngine } from '../src/core/generation/pipeline/CastingEngine';
 import { StyleId } from '../src/core/generation/config/StyleFlags';
 import { getMusicianById } from '../src/core/generation/idioms/MusicianRegistry';
@@ -47,8 +47,7 @@ assert(Array.isArray(track.drums), 'GeneratedTrack.drums is array');
 
 console.log('\n2. ArrangedTrack atmosphere field');
 assert(Array.isArray(arranged.atmosphere), 'ArrangedTrack.atmosphere is array');
-assert(arranged.pianoRH.length > 0, 'ArrangedTrack.pianoRH non-empty');
-assert(arranged.pianoLH.length > 0, 'ArrangedTrack.pianoLH non-empty');
+assert((arranged.accomp ?? []).length > 0, 'ArrangedTrack.accomp non-empty');
 assert(arranged.melody.length > 0, 'ArrangedTrack.melody non-empty');
 
 console.log('\n3. MidiConverter Atmosphere channel (Step 4 — renderer in place)');
@@ -366,8 +365,8 @@ console.log('\n17. V5.2 — Swing offset 验证（ChillJazz swingRatio=0.55 应�
 PRNGManager.setSeed(42);
 const { track: jazzSwing, context: jazzCtx } = runPipeline({ forcedStyleId: StyleId.ChillJazz });
 const swingArranged = AbsoluteTransposer.arrange(jazzSwing, StyleId.ChillJazz, jazzCtx);
-// 找 accomp 里有没有 onset 非 0.25 倍数的（说明 swing 偏移生效）
-const accompOnsets = swingArranged.pianoRH.map(n => n.onset);
+// 找 accomp 里有没有 onset 非 0.25 倍数的(说明 swing 偏移生效)
+const accompOnsets = (swingArranged.accomp ?? []).map(n => n.onset);
 let swingShifted = 0;
 for (const o of accompOnsets) {
     const fractional = (o * 16) % 1;
@@ -376,16 +375,16 @@ for (const o of accompOnsets) {
 console.log(`  Onset 非 16-grid 对齐数: ${swingShifted} / ${accompOnsets.length}`);
 assert(swingShifted > 0, 'ChillJazz 触发 swing offset（部分 onset 非 grid-aligned）');
 
-console.log('\n18. V5.3 — ElectricBass 独立通道 + PianoLH 现在是 Grand');
+console.log('\n18. 2026-05-21 Channel 重构 — Bass 独立通道 + Accomp 单通道');
 const v5Events = MidiConverter.convert(swingArranged);
-const ebEvents = v5Events.filter(e => e.channel === CHANNEL_ELECTRIC_BASS);
-const ebProgram = ebEvents.find(e => e.type === 'programChange');
-console.log(`  ElectricBass channel events: ${ebEvents.length}, program=${ebProgram?.data1}`);
-assert(ebProgram?.data1 === 33, 'ElectricBass channel 7 程式为 GM 33 (Finger Bass)');
-const lhEvents = v5Events.filter(e => e.channel === CHANNEL_PIANO_LH);
-const lhProgram = lhEvents.find(e => e.type === 'programChange');
-console.log(`  PianoLH channel events: ${lhEvents.length}, program=${lhProgram?.data1}`);
-assert(lhProgram?.data1 === 0, 'PianoLH channel 5 程式为 GM 0 (Grand Piano)');
+const bassEvents = v5Events.filter(e => e.channel === CHANNEL_BASS);
+const bassProgram = bassEvents.find(e => e.type === 'programChange');
+console.log(`  Bass channel events: ${bassEvents.length}, program=${bassProgram?.data1}`);
+assert(bassProgram?.data1 === 34, 'Bass channel 3 程式为 GM 34 (Electric Bass Finger)');
+const accompEvents = v5Events.filter(e => e.channel === CHANNEL_ACCOMP);
+const accompProgram = accompEvents.find(e => e.type === 'programChange');
+console.log(`  Accomp channel events: ${accompEvents.length}, program=${accompProgram?.data1}`);
+assert(accompProgram?.data1 === 0, 'Accomp channel 2 程式为 GM 0 (Grand Piano)');
 
 console.log('\n19. V5.4 — forcedBand UI 路由验证（Marcus 替换 Alex）');
 PRNGManager.setSeed(42);

@@ -604,24 +604,21 @@ export interface GeneratedTrack {
     globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
     processedUserMotif?: NoteData[];
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
-    /** Comping / 伴奏织体轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
-     *  AbsoluteTransposer 后续映射到 ArrangedTrack.pianoRH，加 keyOffset 后送 MIDI。 */
+    /** Comping / 伴奏织体轨（Accomp BandRole 输出）— Pitch Space: RELATIVE。
+     *  AbsoluteTransposer 直接透传到 ArrangedTrack.accomp,加 keyOffset 后送 MIDI ch2。
+     *  2026-05-21 起不再按 pitch<48 切分 LH/RH(钢琴一个乐器,无所谓几只手弹)。 */
     accompaniment?: NoteData[];
-    /** 低音轨（Phase 3 Stage 5 输出）— Pitch Space: RELATIVE。
-     *  AbsoluteTransposer 后续映射到 ArrangedTrack.pianoLH（或独立电贝斯轨），加 keyOffset 后送 MIDI。 */
+    /** 低音轨（Bass BandRole 输出）— Pitch Space: RELATIVE。
+     *  AbsoluteTransposer 透传到 ArrangedTrack.bass,加 keyOffset 后送 MIDI ch3。 */
     bass?: NoteData[];
-    /** 氛围轨（Phase 1 BandEngine 输出）— Pitch Space: RELATIVE。
-     *  Pad / Strings / Choir 长音铺底，AbsoluteTransposer 映射到 ArrangedTrack.atmosphere。 */
+    /** 氛围轨（Atmosphere BandRole 输出）— Pitch Space: RELATIVE。
+     *  Pad / Strings / Choir 长音铺底,AbsoluteTransposer 映射到 ArrangedTrack.atmosphere。 */
     atmosphere?: NoteData[];
     /**
-     * 跳过 AbsoluteTransposer 默认的 "accompaniment pitch<48 切 pianoLH / 否则 pianoRH" 行为。
-     *
-     * - undefined / false(默认):AF 模式 — 仍按 pitch<48 切到 pianoLH 通道,
-     *   保留"钢琴 SATB 双手分轨 + LH/RH 独立 mix"的现有行为(bit-exact 不变)。
-     * - true:MG 模式 — 所有 accompaniment 进 pianoRH 单通道,pianoLH 留空。
-     *   语义对齐 mg-standalone 单 Tone.Sampler 渲染(中央 pan / 统一 volume / 统一 reverb)。
-     *
-     * 不影响 melody / atmosphere / bass / drums 通道。
+     * @deprecated 2026-05-21 Channel 重构后弃用。
+     *   原本控制 AbsoluteTransposer 是否按 pitch<48 切 pianoLH/RH。
+     *   现在 LH/RH 通道已删,accompaniment 永远整体进 accomp channel,本字段被忽略。
+     *   字段保留只是为了不破坏现有 callsite 编译;未来 commit 全清后可删。
      */
     skipHandSplit?: boolean;
 }
@@ -658,30 +655,37 @@ export interface TempoCurve {
 export interface ArrangedTrack {
     bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
     styleId?: StyleId;
-    vocal?: NoteData[]; melody: NoteData[]; secondaryMelody?: NoteData[]; pianoLH: NoteData[]; pianoRH: NoteData[]; drums?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
-    /** 氛围轨（Pad/Strings/Choir）— MidiConverter 路由到 CHANNEL_ATMOSPHERE */
+    /** 主奏轨(MainInst BandRole) — MidiConverter 路由到 CHANNEL_MAIN_INST (ch1) */
+    melody: NoteData[];
+    vocal?: NoteData[]; secondaryMelody?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
+    /** 伴奏轨(Accomp BandRole) — MidiConverter 路由到 CHANNEL_ACCOMP (ch2)
+     *  2026-05-21 Channel 重构:原 pianoRH+pianoLH 合并为单通道。
+     *  钢琴一个乐器,无所谓几只手弹,音色在和声色彩里。 */
+    accomp?: NoteData[];
+    /** 低音轨(Bass BandRole) — MidiConverter 路由到 CHANNEL_BASS (ch3)
+     *  通用 bass 通道(原 electricBass 重命名),GM program 由 musician.instrumentFamily 决定。 */
+    bass?: NoteData[];
+    /** 氛围轨(Atmosphere BandRole) — MidiConverter 路由到 CHANNEL_ATMOSPHERE (ch4) */
     atmosphere?: NoteData[];
-    /** V5.3 — 独立电贝斯轨（Bass musician 输出）— MidiConverter 路由到 CHANNEL_ELECTRIC_BASS */
-    electricBass?: NoteData[];
+    /** 鼓组(Drums BandRole) — Channel 9 GM Drum Map 硬路由 */
+    drums?: NoteData[];
     palette?: EnsembleDraft;
     sections?: SectionMetadata[];
-    globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
-    chords?: GeneratedChord[]; // 全曲和弦进行
-    tempoCurves?: TempoCurve[]; // 渐慢/渐快曲线
-    introFilterSweep?: boolean; // 🌟 ST-3: Intro 低通涌动标记，PlaybackEngine 读取后注入 CC74 渐变
+    globalRiff?: NoteData[];
+    chords?: GeneratedChord[];
+    tempoCurves?: TempoCurve[];
+    introFilterSweep?: boolean;
     /**
-     * B3：动态 GM 程式覆盖（0~127）。每个 key 对应 MidiConverter 内一条轨。
-     * AbsoluteTransposer 由 context.gmProgramOverrides 透传过来。
-     * MidiConverter 读取后用 override 覆盖文件级 GM_PROGRAM_* 默认。
-     * 缺省 / 字段缺失 → 走默认（保 V5.x 行为零回归）。
+     * 动态 GM 程式覆盖(0~127)。每个 key 对应 MidiConverter 一个 channel。
+     * AbsoluteTransposer 从 context.gmProgramOverrides 透传过来。
+     * 2026-05-21 字段:melody/accomp/bass/atmosphere/drums(原 pianoLH/RH/electricBass 已删)。
      */
     gmProgramOverrides?: {
         melody?: number;
-        pianoRH?: number;
-        pianoLH?: number;
-        drums?: number;
+        accomp?: number;
+        bass?: number;
         atmosphere?: number;
-        electricBass?: number;
+        drums?: number;
     };
 }
 

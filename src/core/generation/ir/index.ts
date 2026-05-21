@@ -215,10 +215,9 @@ export interface MusicContext {
      */
     gmProgramOverrides?: {
         melody?: number;
-        pianoRH?: number;
-        pianoLH?: number;
-        drums?: number;
+        accomp?: number;
+        bass?: number;
         atmosphere?: number;
-        electricBass?: number;
+        drums?: number;
     };
 }

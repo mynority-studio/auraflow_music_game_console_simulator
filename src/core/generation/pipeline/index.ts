@@ -267,11 +267,11 @@ export function runPipeline(
     //   **不写入** 条件：
     //     - 用户什么都没选 + musician 也没设 gmProgramOverride
     //       → trackKey 不出现在 overrides → MidiConverter 走 GM_PROGRAM_* 文件级默认
-    //       → 保 V5.x melody=1(Bright) / pianoRH=0(Grand) 等"lead vs comping 音色对比"行为零回归
+    //       → 保 melody=1(Bright Acoustic) / accomp=0(Grand) 等"lead vs comping 音色对比"行为
     //
-    //   设计原因：默认 GM_PROGRAM_MELODY=1(Bright Acoustic) vs GM_PROGRAM_PIANO_RH=0(Grand)
-    //   是 MidiConverter 内的"双钢琴音色分离"策略；如果一律从 musician.defaultSound 推导,
-    //   同一张 alex_piano 卡会让两个通道都变成 0(Grand)，损失辨识度。
+    //   设计原因：默认 GM_PROGRAM_MELODY=1(Bright Acoustic) vs GM_PROGRAM_ACCOMP=0(Grand)
+    //   是 MidiConverter 内的"主奏 vs 伴奏音色分离"策略;如果一律从 musician.defaultSound 推导,
+    //   同一张 alex_piano 卡会让两个通道都变成 0(Grand),损失辨识度。
     //
     //   defaultSound → GM 的映射仅在 B2 UI 下拉构造"family options"时使用,不在此处自动推导。
     // -----------------------------------------------------------

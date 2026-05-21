@@ -37,42 +37,43 @@ const PPQ = 480;
 // 通道映射（GM 默认）— 与 PlaybackEngine 的 DEFAULT_CHANNEL_MAP 对齐
 // ============================================================
 
-export const CHANNEL_MELODY = 1;
-export const CHANNEL_PIANO_RH = 4;
-export const CHANNEL_PIANO_LH = 5;
-/** GM 标准固定鼓通道（Phase 5 新增）— pitch 直接对应 GM Drum Map，program 被忽略 */
+// ============================================================
+// MIDI Channel 映射(2026-05-21 重构)— 按 BandRole 分,不按演奏物理
+// ============================================================
+//
+// 钢琴一个乐器,无所谓几只手弹 — 删 pianoLH/RH 概念。每 channel 一个 BandRole 槽位,
+// GM program 由 musician.instrumentFamily 决定(钢琴 0 / 萨克斯 65 / 弦乐 48 / 电贝斯 34 / pad 89)。
+//
+//   ch1 = MainInst   (主奏槽位 — 旧 melody 通道)
+//   ch2 = Accomp     (伴奏槽位 — 旧 pianoRH + pianoLH 合并)
+//   ch3 = Bass       (低音槽位 — 旧 electricBass 通用化重命名)
+//   ch4 = Atmosphere (氛围槽位)
+//   ch5 / ch6       预留 Vocal / 备用
+//   ch9 = Drums      (GM Drum Map 硬路由,不可改)
+export const CHANNEL_MELODY = 1;          // MainInst — 命名保留兼容历史("melody" = MainInst 输出)
+export const CHANNEL_ACCOMP = 2;          // Accomp(原 pianoRH+pianoLH 合并)
+export const CHANNEL_BASS = 3;            // Bass(原 electricBass)
+export const CHANNEL_ATMOSPHERE = 4;
 export const CHANNEL_DRUMS = 9;
-/** 氛围通道（BandEngine MVP 新增）— Pad/Strings/Choir 长音铺底 */
-export const CHANNEL_ATMOSPHERE = 8;
-/** V5.3 — 独立电贝斯通道（Bass 角色乐手）— 与 PianoLH 物理分离 */
-export const CHANNEL_ELECTRIC_BASS = 7;
 
 // ============================================================
-// GM Program 分配（Phase 6 — 双钢琴层位）
+// GM Program 默认分配(每 channel 的默认音色)
 // ============================================================
 //
-// 选型逻辑：
-//   - melody → 1  (Bright Acoustic Piano)  与 comping 同家族保证融合；更亮的 attack
-//                                          + 微右 pan 74 + 长尾 reverb 70 让它从中频
-//                                          钢琴织体上方"切"出来作为 lead voice
-//   - pianoRH → 0  (Acoustic Grand)        comping 主力，中频饱满、居中、短混响
-//   - pianoLH → 33 (Electric Bass)         低频锚定，attack 干净
-//   - drums  → 0  (GM 鼓固定，program 被 Channel 9 忽略；发 0 兜底)
+// 实际 GM program 由 musician.instrumentFamily 通过 gmProgramOverrides 提供。
+// 本表只是 fallback,当 override 未提供时启用。
 //
-// 双钢琴区分三层：① 音色家族同但 brightness 不同  ② pan 错位（74 vs 64）
-//                ③ reverb 深度（70 vs 50）— 远近感分离
-//
-// Phase 7 计划按 styleId 切换为 EP（Neo-Soul Rhodes）等。
+//   melody     → 1  (Bright Acoustic Piano)  — MainInst 默认略亮
+//   accomp     → 0  (Acoustic Grand)         — 伴奏主力,中频饱满
+//   bass       → 34 (Electric Bass Finger)   — 低频
+//   atmosphere → 89 (Warm Pad)               — 长音铺底
+//   drums      → 0  (GM Drum Map 硬路由,program 被忽略)
 
 const GM_PROGRAM_MELODY = 1;
-const GM_PROGRAM_PIANO_RH = 0;
-/** V5.3 — PianoLH 改回 0 Grand Piano（与 PianoRH 一致 — "一架真钢琴"） */
-const GM_PROGRAM_PIANO_LH = 0;
-const GM_PROGRAM_DRUMS = 0;
-/** Atmosphere → GM 89 Warm Pad（模拟 pad 暖色，融合度高，不抢焦点） */
+const GM_PROGRAM_ACCOMP = 0;
+const GM_PROGRAM_BASS = 34;
 const GM_PROGRAM_ATMOSPHERE = 89;
-/** V5.3 — 独立电贝斯 GM 33 Finger Bass（原 PianoLH 用途，现拆出独立通道） */
-const GM_PROGRAM_ELECTRIC_BASS = 33;
+const GM_PROGRAM_DRUMS = 0;
 
 // ============================================================
 // CC 编号
@@ -102,16 +103,14 @@ const CC_EXPRESSION = 11;
 
 interface MixProfile { volume: number; pan: number; reverb: number; }
 
-const MIX_MELODY:       MixProfile = { volume: 122, pan: 74, reverb: 70 };  // 焦点：高音量 + 微右 + 长尾
-// 伴奏音轨 +30%(2026-05-21):RH 102→127(吊顶,实际 +24.5%) / LH 96→125(+30.2%)
-// 改动对 AF / MG 两条引擎自动同步 — 两边都汇合到本 MidiConverter,共用 MIX_* 常量。
-const MIX_PIANO_RH:     MixProfile = { volume: 127, pan: 64, reverb: 50 };  // 和声体:上抬 +24.5%(原 102)
-/** V5.3 — PianoLH 现在是 Grand Piano 低音区，mix 与 RH 接近（"一架真钢琴"），微左 pan 增加空间感 */
-const MIX_PIANO_LH:     MixProfile = { volume: 125, pan: 54, reverb: 45 };  // 上抬 +30.2%(原 96)
-const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
-const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
-/** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
-const MIX_ELECTRIC_BASS: MixProfile = { volume: 115, pan: 64, reverb:  0 };  // 2026-05-21:78→115,补 commit 2f52a3d 漏同步;与 pianoLH=125 同档,让 AF2 electricBass 通道达到"有存在感"的听感
+const MIX_MELODY:     MixProfile = { volume: 122, pan: 74, reverb: 70 };  // MainInst:高音量 + 微右 + 长尾
+// 2026-05-21 Channel 重构:原 MIX_PIANO_RH+MIX_PIANO_LH 合并 → 单 accomp 通道。
+// 取 RH(volume 127 / pan 64 / reverb 50)作为基线,因为 RH 是和声主体。
+// 钢琴 LH 的"微左 pan 54"做"分声场"听感被牺牲(钢琴一个乐器无须双声场)。
+const MIX_ACCOMP:     MixProfile = { volume: 127, pan: 64, reverb: 50 };
+const MIX_BASS:       MixProfile = { volume: 115, pan: 64, reverb:  0 };  // 继承原 MIX_ELECTRIC_BASS
+const MIX_ATMOSPHERE: MixProfile = { volume:  70, pan: 64, reverb: 60 };
+const MIX_DRUMS:      MixProfile = { volume: 102, pan: 64, reverb: 25 };
 
 // ============================================================
 // 事件优先级（同 tick 排序的次序）
@@ -147,46 +146,39 @@ export class MidiConverter {
     public static convert(song: ArrangedTrack): MidiEvent[] {
         const out: MidiEvent[] = [];
 
-        // B3 — 动态 GM 程式覆盖（来自 ArrangedTrack.gmProgramOverrides，由 AbsoluteTransposer 从 context 透传）
+        // 动态 GM 程式覆盖(来自 context.gmProgramOverrides,musician 决定)
         const ov = song.gmProgramOverrides;
-        const progMelody       = ov?.melody       ?? GM_PROGRAM_MELODY;
-        const progPianoRH      = ov?.pianoRH      ?? GM_PROGRAM_PIANO_RH;
-        const progPianoLH      = ov?.pianoLH      ?? GM_PROGRAM_PIANO_LH;
-        const progDrums        = ov?.drums        ?? GM_PROGRAM_DRUMS;
-        const progAtmosphere   = ov?.atmosphere   ?? GM_PROGRAM_ATMOSPHERE;
-        const progElectricBass = ov?.electricBass ?? GM_PROGRAM_ELECTRIC_BASS;
+        const progMelody     = ov?.melody     ?? GM_PROGRAM_MELODY;
+        const progAccomp     = ov?.accomp     ?? GM_PROGRAM_ACCOMP;
+        const progBass       = ov?.bass       ?? GM_PROGRAM_BASS;
+        const progAtmosphere = ov?.atmosphere ?? GM_PROGRAM_ATMOSPHERE;
+        const progDrums      = ov?.drums      ?? GM_PROGRAM_DRUMS;
 
-        // 六轨渲染（顺序无所谓，最后会全局排序）
-        renderTrack(out, song.melody,       CHANNEL_MELODY,        progMelody,        MIX_MELODY);
-        renderTrack(out, song.pianoRH,      CHANNEL_PIANO_RH,      progPianoRH,       MIX_PIANO_RH);
-        renderTrack(out, song.pianoLH,      CHANNEL_PIANO_LH,      progPianoLH,       MIX_PIANO_LH);
-        // V5.3 — 独立电贝斯轨（Bass 角色乐手输出）
-        renderTrack(out, song.electricBass, CHANNEL_ELECTRIC_BASS, progElectricBass,  MIX_ELECTRIC_BASS);
-        // K-8: song.drums 已是 GM Drum Map 物理键位（pitch ∈ {36,38,42,...}），
-        // renderTrack 内部仅做 [0,127] clamp，不会越界。channel 9 + program = kit id（SF2/GM2 兼容）
-        renderTrack(out, song.drums,        CHANNEL_DRUMS,         progDrums,         MIX_DRUMS);
-        renderTrack(out, song.atmosphere,   CHANNEL_ATMOSPHERE,    progAtmosphere,    MIX_ATMOSPHERE);
+        // 5 轨渲染(顺序无所谓,最后会全局排序)
+        renderTrack(out, song.melody,     CHANNEL_MELODY,     progMelody,     MIX_MELODY);
+        renderTrack(out, song.accomp,     CHANNEL_ACCOMP,     progAccomp,     MIX_ACCOMP);
+        renderTrack(out, song.bass,       CHANNEL_BASS,       progBass,       MIX_BASS);
+        renderTrack(out, song.atmosphere, CHANNEL_ATMOSPHERE, progAtmosphere, MIX_ATMOSPHERE);
+        // K-8: song.drums 已是 GM Drum Map 物理键位(pitch ∈ {36,38,42,...}),
+        // renderTrack 内部仅做 [0,127] clamp。channel 9 + program = kit id(SF2/GM2 兼容)
+        renderTrack(out, song.drums,      CHANNEL_DRUMS,      progDrums,      MIX_DRUMS);
 
-        // Fake Sidechain (伪侧链): 基于 Kick 鼓点对伴奏和贝斯通道注入 CC11 闪避包络
-        // D-5 safe: 无 PRNG 消耗的机械注入，零 DSP 开销
-        // V5.3 — 改为对 ElectricBass 通道做深度 ducking（原 PianoLH 当时是贝斯）；PianoLH 现在是钢琴低音区，做轻 ducking
+        // Fake Sidechain(伪侧链):基于 Kick 鼓点对伴奏 + 贝斯通道注入 CC11 闪避包络
+        // D-5 safe:无 PRNG 消耗的机械注入,零 DSP 开销
+        // 2026-05-21 重构:原 PianoRH+LH 双 ducking → 合并到 ACCOMP 单通道 ducking,
+        // 与 BASS 通道独立 ducking。各 channel 一份。
         const kicks = out.filter(e => e.type === 'noteOn' && e.channel === CHANNEL_DRUMS && e.data1 === 36);
         for (let i = 0; i < kicks.length; i++) {
             const kickTick = kicks[i].ticks;
-            // PianoRH 深 ducking
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 60 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 90 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_PIANO_RH, data1: CC_EXPRESSION, data2: 127 });
+            // Accomp 深 ducking(原 PianoRH ducking 配置)
+            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_ACCOMP, data1: CC_EXPRESSION, data2: 60 });
+            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_ACCOMP, data1: CC_EXPRESSION, data2: 90 });
+            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_ACCOMP, data1: CC_EXPRESSION, data2: 127 });
 
-            // PianoLH 轻 ducking（钢琴低音区，与 RH 一致 mix 思路）
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 80 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 105 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_PIANO_LH, data1: CC_EXPRESSION, data2: 127 });
-
-            // ElectricBass 中度 ducking，让出 Kick 频段（继承原 PianoLH 的处理）
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_ELECTRIC_BASS, data1: CC_EXPRESSION, data2: 70 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_ELECTRIC_BASS, data1: CC_EXPRESSION, data2: 100 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_ELECTRIC_BASS, data1: CC_EXPRESSION, data2: 127 });
+            // Bass 中度 ducking,让出 Kick 频段
+            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_BASS, data1: CC_EXPRESSION, data2: 70 });
+            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_BASS, data1: CC_EXPRESSION, data2: 100 });
+            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_BASS, data1: CC_EXPRESSION, data2: 127 });
         }
 
         // D-3：完全确定的排序
@@ -250,10 +242,9 @@ function renderTrack(
 // ============================================================
 
 export const __mixProfilesForTest = {
-    melody: MIX_MELODY,
-    pianoRH: MIX_PIANO_RH,
-    pianoLH: MIX_PIANO_LH,
-    drums: MIX_DRUMS,
+    melody:     MIX_MELODY,
+    accomp:     MIX_ACCOMP,
+    bass:       MIX_BASS,
     atmosphere: MIX_ATMOSPHERE,
-    electricBass: MIX_ELECTRIC_BASS,
+    drums:      MIX_DRUMS,
 } as const;

@@ -4,11 +4,11 @@
 //
 // 决策(PHASE2A.md §10):
 //   - Q3 B:GM 34 Electric Bass Finger(尊重 frank_bass.defaultSound 字段)
-//   - Q4 A:独立 electricBass 通道(V5.3 预留通道真正启用)
+//   - Q4 A:独立 bass 通道(2026-05-21 Channel 重构后简称为 ch3 bass channel)
 //
 // 职责(Phase 2a 简化):
 //   纯直通 mg.bass 音符 — 不改 pitch / onset / duration / velocity。
-//   唯一与 PianoIdiom 的差异 = 音色(GM 34)+ 通道(electricBass)。
+//   唯一与 PianoIdiom 的差异 = 音色(GM 34)+ 通道(bass ch3)。
 //
 // 物理约束:
 //   - 音域 E1-G4(MIDI 28-67)— 电贝斯标准 4 弦音域

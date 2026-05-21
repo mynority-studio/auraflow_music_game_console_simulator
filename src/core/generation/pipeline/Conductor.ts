@@ -81,7 +81,7 @@ const FRACTAL_ITERATIONS = 3;
 
 // Pitch Space anchors — melody/accomp/bass 全 RELATIVE
 // Phase 6 The Walker: BASS_ANCHOR 下移到 C1 (24)，配合 BassIdiom 单八度运行
-// 与 MidiConverter MIX_PIANO_LH (volume 95 / reverb 0) 共同实现"沉到底层 + 干净 attack"。
+// 与 MidiConverter MIX_BASS (volume 115 / reverb 0) 共同实现"沉到底层 + 干净 attack"。
 const LEAD_ANCHOR_PITCH = 72;   // C5 — 主旋律高音区
 const LEAD_RANGE_LO = 60;       // C4 — ToplineEngine 主旋律下界
 const LEAD_RANGE_HI = 84;       // C6 — ToplineEngine 主旋律上界

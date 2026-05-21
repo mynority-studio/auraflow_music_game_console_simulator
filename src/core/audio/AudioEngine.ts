@@ -193,7 +193,7 @@ class AudioEngineSystem {
     public setPartMute(partName: PartName, mute: boolean): void {
         // MG 路径:partName → MgAudioPlayer 的 'melody' / 'accomp' 二分
         //   - 'melody' → melody mute
-        //   - 其他全部 → accomp mute(MG 不分 chord/bass/pianoRH/pianoLH,全单通道)
+        //   - 其他全部 → accomp mute(MG 不分 chord/bass,全单通道)
         // 同时仍写 AF 链的 mute(切回 AF 时状态保留)
         if (this.mgPlayingActive) {
             MgAudioPlayer.setMute(partName === 'melody' ? 'melody' : 'accomp', mute);

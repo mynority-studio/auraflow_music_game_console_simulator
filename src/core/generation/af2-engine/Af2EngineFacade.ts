@@ -137,14 +137,13 @@ export const Af2EngineFacade = {
         // -----------------------------------------------------------
         // Step 6: 装配 GeneratedTrack
         //
-        //   - bass 路径取决于 useElectricBass:
-        //       true  → track.bass = renderedBass(走 electricBass 通道,GM 34)
-        //              accompaniment 只含 mg.chord(走 pianoLH/RH 通道)
-        //       false → track.bass = []
-        //              accompaniment = mg.chord + mg.bass 合并(Phase 1 行为,
-        //              AbsoluteTransposer 按 pitch<48 切 pianoLH/RH)
-        //   - atmosphere / drums 在 Phase 2a 真实启用
-        //   - skipHandSplit = false → 走 AF 标准路径(SpessaSynth GM128 SF2)
+        // 2026-05-21 Channel 重构:bass 一律走 bass channel,GM program 由
+        //   musician.instrumentFamily 决定(钢琴=0 / 电贝斯=34)。
+        //   - useElectricBass=true  → track.bass = renderedBass,accompaniment = chord 单独
+        //   - useElectricBass=false → bass 槽位为空或钢琴(钢琴一手包办低音):
+        //                              accompaniment = chord + bass 合并 → ch2,
+        //                              track.bass = []
+        //   - atmosphere / drums:Phase 2a 已启用
         // -----------------------------------------------------------
         let accompaniment: NoteData[];
         let trackBass: NoteData[];
@@ -152,6 +151,7 @@ export const Af2EngineFacade = {
             accompaniment = [...renderedAccomp];
             trackBass = renderedBass;
         } else {
+            // 钢琴在 Accomp + Bass 槽位空/钢琴:一手包办,chord+bass 合并到 accompaniment
             accompaniment = [...renderedAccomp, ...renderedBass];
             trackBass = [];
         }
@@ -173,25 +173,24 @@ export const Af2EngineFacade = {
             blockIndex: 0,
             absoluteStartBeat: 0,
             hasIntro: sections[0]?.sectionType === 0,
-            skipHandSplit: false,
         };
 
         // -----------------------------------------------------------
         // Step 6b: MusicContext + gmProgramOverrides
         //
-        //   钢琴(melody/pianoLH/pianoRH)— 总是设(MainInst/Accomp 都走 PianoIdiom)
-        //   electricBass — 仅 useElectricBass=true 时设
-        //   atmosphere   — 仅 padNotes 非空时设(避免空通道也覆盖默认)
-        //   drums        — 走 Channel 9 GM Drum Map 硬路由,不设 gmProgram
+        //   melody  — 钢琴(GM 0)
+        //   accomp  — 钢琴(GM 0)
+        //   bass    — 仅 useElectricBass 时设 GM 34;否则空(钢琴包办的低音随 accomp 走 GM 0)
+        //   atmosphere — 仅 padNotes 非空时设 GM 89
+        //   drums   — Channel 9 GM Drum 硬路由,不设 program
         // -----------------------------------------------------------
         const afStyleId = MG_STYLE_TO_AF_STYLE[mgStyle];
         const gmOverrides: NonNullable<MusicContext['gmProgramOverrides']> = {
-            melody:  PianoIdiom.getGmProgram(),
-            pianoLH: PianoIdiom.getGmProgram(),
-            pianoRH: PianoIdiom.getGmProgram(),
+            melody: PianoIdiom.getGmProgram(),
+            accomp: PianoIdiom.getGmProgram(),
         };
         if (useElectricBass) {
-            gmOverrides.electricBass = BassIdiom.getGmProgram();
+            gmOverrides.bass = BassIdiom.getGmProgram();
         }
         if (renderedPad.length > 0) {
             gmOverrides.atmosphere = PadIdiom.getGmProgram();

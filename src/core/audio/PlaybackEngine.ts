@@ -25,26 +25,26 @@ import type { ArrangedTrack } from '../generation/types';
 import { globalMidiScheduler } from './MidiScheduler';
 import {
     MidiConverter,
-    CHANNEL_MELODY, CHANNEL_PIANO_RH, CHANNEL_PIANO_LH, CHANNEL_ATMOSPHERE, CHANNEL_ELECTRIC_BASS,
+    CHANNEL_MELODY, CHANNEL_ACCOMP, CHANNEL_BASS, CHANNEL_ATMOSPHERE, CHANNEL_DRUMS,
 } from './MidiConverter';
 
 const PPQ = 480;
 
+// 2026-05-21 Channel 重构:按 BandRole 分通道。
 export const DEFAULT_CHANNEL_MAP = {
-    vocal: 0,
-    melody: CHANNEL_MELODY,                  // 1
-    secondaryMelody: 2,
-    counterMelody: 3,
-    pianoRH: CHANNEL_PIANO_RH,               // 4 — 钢琴 RH（accompaniment ≥ C3）
-    pianoLH: CHANNEL_PIANO_LH,               // 5 — V5.3 钢琴 LH（accompaniment < C3，Grand Piano）
-    userMotif: 6,
-    electricBass: CHANNEL_ELECTRIC_BASS,     // 7 — V5.3 独立电贝斯（Bass 乐手）
-    atmosphere: CHANNEL_ATMOSPHERE,          // 8 — 氛围铺底（Pad/Strings）
-    drums: 9,                                // GM 鼓固定
+    vocal: 0,                                // 预留
+    melody: CHANNEL_MELODY,                  // ch1 MainInst
+    secondaryMelody: 5,                      // 预留
+    counterMelody: 6,                        // 预留
+    accomp: CHANNEL_ACCOMP,                  // ch2 Accomp(原 pianoRH+pianoLH 合并)
+    bass: CHANNEL_BASS,                      // ch3 Bass(原 electricBass)
+    userMotif: 7,                            // 预留
+    atmosphere: CHANNEL_ATMOSPHERE,          // ch4
+    drums: CHANNEL_DRUMS,                    // ch9 GM Drum 硬路由
 } as const;
 
 export interface VisualEvent {
-    type: 'melody' | 'pianoLH' | 'pianoRH' | 'drums' | 'bass' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active';
+    type: 'melody' | 'accomp' | 'bass' | 'drums' | 'counterMelody' | 'confirm' | 'custom_particle' | 'fn_key_active';
     midiNote?: number;
     velocity?: number;
     col?: number;
@@ -66,7 +66,7 @@ export type PartName =
     | 'secondaryMelody' | 'counterMelody';
 
 export interface MixerStateStub {
-    volumes: { master: number; melody: number; pianoLH: number; pianoRH: number };
+    volumes: { master: number; melody: number; accomp: number; bass: number };
     eq: {
         melody: { low: number; mid: number; high: number };
         piano: { low: number; mid: number; high: number };
@@ -80,7 +80,7 @@ export interface MixerStateStub {
 }
 
 const DEFAULT_MIXER_STATE: MixerStateStub = {
-    volumes: { master: 0, melody: 0, pianoLH: 0, pianoRH: 0 },
+    volumes: { master: 0, melody: 0, accomp: 0, bass: 0 },
     eq: {
         melody: { low: 0, mid: 0, high: 0 },
         piano: { low: 0, mid: 0, high: 0 },
@@ -151,15 +151,16 @@ export class PlaybackEngine {
     ): Promise<void> {
         this.partChannels = {};
 
-        // partChannels 注册（用于 setPartMute / Q+H 面板单轨 mute）
+        // partChannels 注册(用于 setPartMute / Q+H 面板单轨 mute)
+        // 2026-05-21:按 BandRole 通道映射 — chord part → accomp channel / bass part → bass channel
         if (song.melody && song.melody.length > 0) {
             this.partChannels.melody = DEFAULT_CHANNEL_MAP.melody;
         }
-        if (song.pianoRH && song.pianoRH.length > 0) {
-            this.partChannels.chord = DEFAULT_CHANNEL_MAP.pianoRH;
+        if (song.accomp && song.accomp.length > 0) {
+            this.partChannels.chord = DEFAULT_CHANNEL_MAP.accomp;
         }
-        if (song.pianoLH && song.pianoLH.length > 0) {
-            this.partChannels.bass = DEFAULT_CHANNEL_MAP.pianoLH;
+        if (song.bass && song.bass.length > 0) {
+            this.partChannels.bass = DEFAULT_CHANNEL_MAP.bass;
         }
 
         // 委托 MidiConverter 渲染 — 纯同步、零 PRNG、已全局排序（pipeline rule §2.9）
@@ -175,8 +176,8 @@ export class PlaybackEngine {
     public stop(): void { globalMidiScheduler.stop(); }
 
     public getDuration(): number {
-        // 优先用 pianoRH 通道末尾估算；为空则 fallback 到 melody
-        let events = globalMidiScheduler.getChannelEvents(DEFAULT_CHANNEL_MAP.pianoRH);
+        // 优先用 accomp 通道末尾估算;为空则 fallback 到 melody
+        let events = globalMidiScheduler.getChannelEvents(DEFAULT_CHANNEL_MAP.accomp);
         if (events.length === 0) {
             events = globalMidiScheduler.getChannelEvents(DEFAULT_CHANNEL_MAP.melody);
         }
