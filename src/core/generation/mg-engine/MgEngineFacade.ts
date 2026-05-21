@@ -201,10 +201,13 @@ export const MgEngineFacade = {
         // -----------------------------------------------------------
         // 5. NoteEvent[] → NoteData[],按 part 切轨
         //
-        //   mg.part='melody'  → track.melody             (Lead 通道)
-        //   mg.part='chord'   → track.accompaniment      (AbsoluteTransposer 按 pitch<48 切 pianoLH/pianoRH)
-        //   mg.part='bass'    → 合并进 accompaniment     (低 pitch → 自动落到 pianoLH,与 mg-standalone
-        //                                                  单 sampler 渲染听感对齐)
+        //   mg.part='melody'        → track.melody          (Lead 通道)
+        //   mg.part='chord' / 'bass' → 全进 track.accompaniment
+        //
+        //   配合下面 track.skipHandSplit = true:
+        //     AbsoluteTransposer 把整条 accompaniment 全送 pianoRH 单通道,pianoLH 留空。
+        //     与 mg-standalone 的"单 Tone.Sampler 中央 pan / 统一 volume / 统一 reverb"
+        //     渲染语义对齐。
         //
         //   track.bass 留空(我们不走 electricBass 通道)。
         // -----------------------------------------------------------
@@ -255,6 +258,9 @@ export const MgEngineFacade = {
             blockIndex: 0,
             absoluteStartBeat: 0,
             hasIntro: false,
+            // 关键:跳过 AbsoluteTransposer 的 pitch<48 LH/RH 切分,所有 accomp 走单通道。
+            // 实现"mg-standalone 单 sampler 中央渲染"语义对齐。
+            skipHandSplit: true,
         };
 
         // -----------------------------------------------------------

@@ -79,13 +79,25 @@ export class AbsoluteTransposer {
         const electricBass = applyKeyOffset(track.bass         ?? [], keyOffset);
 
         // V5.3 — 钢琴 accompaniment 按 pitch C3 分流到 pianoLH / pianoRH 两通道
-        // 两通道共享 program 0 (Grand Piano)，但分通道允许独立 ducking + mix 控制
+        // 两通道共享 program 0 (Grand Piano)，但分通道允许独立 ducking + mix 控制。
+        //
+        // MG 单通道分支(track.skipHandSplit=true):
+        //   跳过 LH/RH 切分,全部进 pianoRH。语义对齐 mg-standalone 单 Tone.Sampler 渲染
+        //   (中央 pan / 统一 volume / 统一 reverb)。pianoLH 留空 → renderTrack 直接跳过该通道,
+        //   下游 MidiConverter 不发任何 setup/CC 事件到 channel 1。
+        //   AF 路径 skipHandSplit 为 undefined,走原 pitch<48 切分,bit-exact 不变。
         const accomp = applyKeyOffset(track.accompaniment ?? [], keyOffset);
         const pianoLH: NoteData[] = [];
         const pianoRH: NoteData[] = [];
-        for (let i = 0; i < accomp.length; i++) {
-            const n = accomp[i];
-            if (n.pitch < 48) pianoLH.push(n); else pianoRH.push(n);
+        if (track.skipHandSplit) {
+            for (let i = 0; i < accomp.length; i++) {
+                pianoRH.push(accomp[i]);
+            }
+        } else {
+            for (let i = 0; i < accomp.length; i++) {
+                const n = accomp[i];
+                if (n.pitch < 48) pianoLH.push(n); else pianoRH.push(n);
+            }
         }
 
         // K-8: drums 是 GM Drum Map 物理键位（第三空间，INSTRUMENT_COMMAND），

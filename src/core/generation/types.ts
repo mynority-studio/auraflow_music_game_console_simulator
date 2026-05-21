@@ -613,6 +613,17 @@ export interface GeneratedTrack {
     /** 氛围轨（Phase 1 BandEngine 输出）— Pitch Space: RELATIVE。
      *  Pad / Strings / Choir 长音铺底，AbsoluteTransposer 映射到 ArrangedTrack.atmosphere。 */
     atmosphere?: NoteData[];
+    /**
+     * 跳过 AbsoluteTransposer 默认的 "accompaniment pitch<48 切 pianoLH / 否则 pianoRH" 行为。
+     *
+     * - undefined / false(默认):AF 模式 — 仍按 pitch<48 切到 pianoLH 通道,
+     *   保留"钢琴 SATB 双手分轨 + LH/RH 独立 mix"的现有行为(bit-exact 不变)。
+     * - true:MG 模式 — 所有 accompaniment 进 pianoRH 单通道,pianoLH 留空。
+     *   语义对齐 mg-standalone 单 Tone.Sampler 渲染(中央 pan / 统一 volume / 统一 reverb)。
+     *
+     * 不影响 melody / atmosphere / bass / drums 通道。
+     */
+    skipHandSplit?: boolean;
 }
 
 export type InstrumentRole =
