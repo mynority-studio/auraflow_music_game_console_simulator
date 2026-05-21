@@ -103,9 +103,11 @@ const CC_EXPRESSION = 11;
 interface MixProfile { volume: number; pan: number; reverb: number; }
 
 const MIX_MELODY:       MixProfile = { volume: 122, pan: 74, reverb: 70 };  // 焦点：高音量 + 微右 + 长尾
-const MIX_PIANO_RH:     MixProfile = { volume: 102, pan: 64, reverb: 50 };  // 和声体：上抬 17 单位
+// 伴奏音轨 +30%(2026-05-21):RH 102→127(吊顶,实际 +24.5%) / LH 96→125(+30.2%)
+// 改动对 AF / MG 两条引擎自动同步 — 两边都汇合到本 MidiConverter,共用 MIX_* 常量。
+const MIX_PIANO_RH:     MixProfile = { volume: 127, pan: 64, reverb: 50 };  // 和声体:上抬 +24.5%(原 102)
 /** V5.3 — PianoLH 现在是 Grand Piano 低音区，mix 与 RH 接近（"一架真钢琴"），微左 pan 增加空间感 */
-const MIX_PIANO_LH:     MixProfile = { volume:  96, pan: 54, reverb: 45 };
+const MIX_PIANO_LH:     MixProfile = { volume: 125, pan: 54, reverb: 45 };  // 上抬 +30.2%(原 96)
 const MIX_DRUMS:        MixProfile = { volume: 102, pan: 64, reverb: 25 };  // 微降让 melody 透气
 const MIX_ATMOSPHERE:   MixProfile = { volume:  70, pan: 64, reverb: 60 };  // 铺底
 /** V5.3 — 独立电贝斯：继承原 PianoLH 的零混响 + 低音量配置（Phase 6 The Walker 标定） */
