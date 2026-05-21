@@ -187,6 +187,219 @@ export const TEXTURE_MAPPING: Record<string, FamilyParams> = {
             velocity: 0.85,
         },
     },
+
+    // ============================================================
+    // Phase 2b.3 — 18 个 textureType 补完
+    // ============================================================
+
+    // === 族 C 8th Pulse(3 个)===
+    'Pop_Anthem_Pulse': {
+        family: 'PopAnthem',
+        params: { chord_velocity_even: 0.75, chord_velocity_odd: 0.55, bass_octave_low: true },
+    },
+    'Pop_Broken_8ths_Sync': {
+        family: 'PopBroken8th',
+        params: { velocity_low: 0.55, velocity_high: 0.65 },
+    },
+    'Jazz_Charleston_Comp': {
+        family: 'JazzCharleston',
+        params: {
+            chord_first_velocity: 0.75,
+            chord_charleston_velocity: 0.65,
+            charleston_time: 1.66,
+            bass_octave_low: true,
+        },
+    },
+
+    // === 族 D 16th Dense(4 个)===
+    'Broken_Chord': {
+        family: 'PureArp',
+        params: {
+            pattern: 'cyclic',
+            grid_step: 0.5,
+            note_duration: 0.5,
+            velocity_base: 0.5,
+            bass_source: 'bM',
+        },
+    },
+    'Arpeggio_Flow': {
+        family: 'PureArp',
+        params: {
+            pattern: 'cyclic_two_octave',
+            grid_step: 0.25,
+            note_duration: 0.25,
+            velocity_base: 0.5,
+            bass_source: 'bMLow',
+        },
+    },
+    'Arp_Seq': {
+        family: 'PureArp',
+        params: {
+            pattern: 'cyclic_octave_flip',
+            grid_step: 0.25,
+            note_duration: 0.2,
+            velocity_base: 0.6,
+            bass_source: 'bMLow',
+        },
+    },
+    'Pop_Piano_Arp_16ths': {
+        family: 'PureArp',
+        params: {
+            pattern: 'sin_envelope_skip_strong',
+            grid_step: 0.25,
+            note_duration: 0.4,
+            velocity_base: 0.5,
+            bass_source: 'bMLow',
+        },
+    },
+    'Ostinato_16s': {
+        family: 'OstinatoLayered',
+        params: {
+            grid_step: 0.25,
+            top_velocity: 0.5,
+            accent_step_mod: 4,
+            accent_boost: 0.2,
+            bass_source: 'bM',
+            has_lower_layer: false,
+        },
+    },
+    'Pop_Ostinato_Rock': {
+        family: 'OstinatoLayered',
+        params: {
+            grid_step: 0.25,
+            top_velocity: 0.6,
+            accent_step_mod: 4,
+            accent_boost: 0.15,
+            bass_source: 'bMLow',
+            has_lower_layer: true,
+            lower_velocity: 0.5,
+        },
+    },
+    'RnB_Gospel_Triplets': {
+        family: 'Triplet',
+        params: {
+            triplet_velocities: [0.65, 0.55, 0.5],
+            triplet_duration: 0.35,
+            bass_source: 'bM',
+            blues_pitches: false,
+        },
+    },
+    'Blues_Slow_12_8_Arp': {
+        family: 'Triplet',
+        params: {
+            triplet_velocities: [0.7, 0.6, 0.6],
+            triplet_duration: 0.3,
+            bass_source: 'bMLow',
+            blues_pitches: true,
+        },
+    },
+    'RnB_Neo_Soul_Roll': {
+        family: 'Roll',
+        params: {
+            roll_delay: 0.04,
+            roll_chord_velocity_start: 0.55,
+            roll_chord_velocity_step: 0.05,
+            roll_at_beats: [0, 2],
+            syncopated_bass_at: 2.75,
+        },
+    },
+
+    // === 族 F Layered Sweep(5 个)===
+    'Block_Chord': {
+        family: 'BlockLayered',
+        params: { bass_velocity: 0.85, chord_pattern: 'block' },
+    },
+    'Jazz_Comping': {
+        family: 'BlockLayered',
+        params: { bass_velocity: 0.8, chord_pattern: 'sparse_off_beat' },
+    },
+    'Pop_Ballad_158_Sweep': {
+        family: 'SweepProgressive',
+        params: {
+            bass_layers: [
+                { time: 0, duration_mode: 'to_end', offset: 'low_octave', velocity: 0.8 },
+                { time: 0.5, duration_mode: 'to_end', offset: 'rootLow_5th', velocity: 0.65 },
+                { time: 1.0, duration_mode: 'to_end', offset: 'root', velocity: 0.6 },
+            ],
+            chord_late_pattern: 'sustained_pad',
+            chord_late_start: 1.5,
+            chord_late_velocity: 0.6,
+        },
+    },
+    'RnB_Classic_Soul_Arp': {
+        family: 'SweepProgressive',
+        params: {
+            bass_layers: [
+                { time: 0, duration_mode: 'to_end', offset: 'low_octave', velocity: 0.8 },
+                { time: 1.0, duration_mode: 'to_end', offset: '5th', velocity: 0.6 },
+            ],
+            chord_late_pattern: 'reverse_arp_descend',
+            chord_late_start: 2.0,
+            chord_late_velocity: 0.6,
+        },
+    },
+    'RnB_Laid_Back_Groove': {
+        family: 'GrooveDelay',
+        params: {
+            bass_velocity: 0.8,
+            chord_delay: 0.12,
+            chord_at: [0, 1.5, 2.5],
+            chord_duration: 0.75,
+            chord_velocity: 0.7,
+        },
+    },
+    'Jazz_Drop_2_Comp': {
+        family: 'SpecialVoicing',
+        params: {
+            voicing_strategy: 'drop_2',
+            comp_times: [0.66, 1.5, 2.66],
+            velocity_base: 0.5,
+            velocity_random_range: 0.2,
+            chord_duration: 0.25,
+            bass_velocity: 0.8,
+        },
+    },
+    'Blues_Tremolo_Comp': {
+        family: 'DoubleStopTremolo',
+        params: {
+            bottom_velocity: 0.75,
+            top_velocity: 0.65,
+            top_duration: 0.15,
+            bottom_duration: 0.5,
+            bass_velocity: 0.85,
+        },
+    },
+
+    // === 族 G Quality-Aware(2 个)===
+    'Blues_Boogie_Woogie': {
+        family: 'BoogieWalk',
+        params: {
+            emit_chord_every_4_steps: true,
+            long_short_pattern: false,
+            bass_velocity: 0.85,
+            chord_velocity: 0.7,
+        },
+    },
+    'Blues_Shuffle_Bass': {
+        family: 'BoogieWalk',
+        params: {
+            emit_chord_every_4_steps: false,
+            long_short_pattern: true,
+            bass_velocity: 0.8,
+            chord_velocity: 0.0,
+        },
+    },
+
+    // === 族 H Anticipated(1 个)===
+    'Jazz_Red_Garland_Block': {
+        family: 'AnticipatedBlock',
+        params: {
+            anticipation_offset: -0.34,
+            chord_velocity: 0.4,
+            chord_duration: 0.3,
+            bass_velocity: 0.75,
+        },
+    },
 };
 
 /**
