@@ -24,6 +24,7 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
+import { EngineSelectionStore, EngineId } from '../state/EngineSelectionStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -150,6 +151,10 @@ export const PipelineMonitor: React.FC = () => {
     // Committed(Apply 后)— Play / Tap 实际消费的快照
     const [committedBand, setCommittedBand] = useState<BandSelection>({});
     const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>({});
+    // Engine 选择(镜像 EngineSelectionStore,UI 用 React state 触发重渲)
+    const [engine, setEngineState] = useState<EngineId>(EngineSelectionStore.getEngine());
+    // 错误提示(MG 模式 Phase 0 stub 抛 NOT_IMPLEMENTED 时显示)
+    const [playError, setPlayError] = useState<string | null>(null);
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
@@ -174,6 +179,16 @@ export const PipelineMonitor: React.FC = () => {
         setCommittedInstruments({ ...instrumentSelection });
         BandSelectionStore.setBand(bandSelection, instrumentSelection);
     }, [bandSelection, instrumentSelection]);
+
+    // Engine 切换 — 写 store(全局生效) + 镜像到 React state(触发重渲) + 清理错误
+    const handleEngineChange = useCallback((next: EngineId) => {
+        if (next === engine) return;
+        EngineSelectionStore.setEngine(next);
+        setEngineState(next);
+        setPlayError(null);
+    }, [engine]);
+
+    const isMgMode = engine === 'MG';
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -237,38 +252,49 @@ export const PipelineMonitor: React.FC = () => {
         activeSeedRef.current = seed;
         setPlayState('GENERATING');
         setCurrentSeed(seed);
+        setPlayError(null);
 
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        // pipeline rule §1.4：setSeed → runPipeline → AbsoluteTransposer(in playSong) → MidiConverter
-        PRNGManager.setSeed(seed);
-        PRNGManager.recordSnapshot('A');
+        try {
+            // pipeline rule §1.4：setSeed → runPipeline → AbsoluteTransposer(in playSong) → MidiConverter
+            PRNGManager.setSeed(seed);
+            PRNGManager.recordSnapshot('A');
 
-        // [TEMP DIAG] 诊断 forcedBand / forcedGmPrograms 是否真传到 runPipeline
-        console.log('[playSeed] seed=', seed,
-            ' forcedBand=', JSON.parse(JSON.stringify(bandSelectionRef.current)),
-            ' forcedGmPrograms=', JSON.parse(JSON.stringify(instrumentSelectionRef.current)));
+            // [TEMP DIAG] 诊断 forcedBand / forcedGmPrograms 是否真传到 runPipeline
+            console.log('[playSeed] seed=', seed,
+                ' forcedBand=', JSON.parse(JSON.stringify(bandSelectionRef.current)),
+                ' forcedGmPrograms=', JSON.parse(JSON.stringify(instrumentSelectionRef.current)));
 
-        const { track, context } = runPipeline({
-            forcedBand: bandSelectionRef.current,
-            forcedGmPrograms: instrumentSelectionRef.current,
-        });
-        console.log('[playSeed] melody.length=', track.melody?.length,
-            ' first=', track.melody?.[0]?.pitch, '@', track.melody?.[0]?.onset);
+            // runPipeline 内部读 EngineSelectionStore 分流 AF / MG。
+            // MG 模式下 Phase 0 stub 会抛 NOT_IMPLEMENTED,被下面 catch 捕获。
+            const { track, context } = runPipeline({
+                forcedBand: bandSelectionRef.current,
+                forcedGmPrograms: instrumentSelectionRef.current,
+            });
+            console.log('[playSeed] melody.length=', track.melody?.length,
+                ' first=', track.melody?.[0]?.pitch, '@', track.melody?.[0]?.onset);
 
-        if (activeSeedRef.current !== seed) return;
+            if (activeSeedRef.current !== seed) return;
 
-        const styleId = context.style?.id ?? StyleId.ModernPop;
-        const melodyEngine = new MelodyEngine();
-        await AudioEngine.playSong(track, styleId, context, melodyEngine);
-        reapplyMutes();
-        setPlayState('PLAYING');
+            const styleId = context.style?.id ?? StyleId.ModernPop;
+            const melodyEngine = new MelodyEngine();
+            await AudioEngine.playSong(track, styleId, context, melodyEngine);
+            reapplyMutes();
+            setPlayState('PLAYING');
 
-        globalMidiScheduler.onTrackEnd(() => {
-            if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING') {
-                playSeed(seed);
-            }
-        });
+            globalMidiScheduler.onTrackEnd(() => {
+                if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING') {
+                    playSeed(seed);
+                }
+            });
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error('[playSeed] pipeline failed:', e);
+            setPlayError(msg);
+            setPlayState('IDLE');
+            activeSeedRef.current = null;
+        }
     }, [reapplyMutes]);
 
     const handlePlay = useCallback(async () => {
@@ -361,6 +387,42 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
+            {/* Engine Toggle:AF / MG 双引擎切换(写 EngineSelectionStore,全局生效) */}
+            <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
+                <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
+                <div className="flex bg-black/50 border border-zinc-700/60 rounded overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => handleEngineChange('AF')}
+                        className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors ${
+                            engine === 'AF'
+                                ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+                                : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                        title="auraflow 完整管线(Stage 1-5 + Conductor)"
+                    >
+                        AF
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleEngineChange('MG')}
+                        className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors ${
+                            engine === 'MG'
+                                ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+                                : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                        title="melodygenerative 钢琴 solo 引擎(Phase 0:stub)"
+                    >
+                        MG
+                    </button>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono">
+                    {engine === 'AF'
+                        ? 'Full band pipeline'
+                        : 'Piano solo (Phase 0 stub — Play will fail)'}
+                </span>
+            </div>
+
             {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}
             <div className="px-4 py-2.5 border-b border-zinc-800/80 bg-zinc-900/40 shrink-0">
                 <div className="flex items-center gap-2">
@@ -422,9 +484,16 @@ export const PipelineMonitor: React.FC = () => {
                         </span>
                     )}
                 </div>
+                {/* MG 模式 stub 错误提示 */}
+                {playError !== null && (
+                    <div className="mt-1.5 px-2 py-1 bg-red-950/40 border border-red-500/30 rounded text-[9px] font-mono text-red-300 break-words">
+                        ⚠ {playError}
+                    </div>
+                )}
             </div>
 
-            {/* BandSelection — 6 BandRole 槽位（Vocal/MainInst/Accomp/Bass/Drums/Atmosphere）+ 各自 Instr 下拉 */}
+            {/* BandSelection — 6 BandRole 槽位(Vocal/MainInst/Accomp/Bass/Drums/Atmosphere)+ 各自 Instr 下拉。
+                MG 模式无乐手概念,整面板 disable(灰显但可见,纯展示)。 */}
             <BandSelectionPanel
                 selection={bandSelection}
                 onChange={setBandSelection}
@@ -432,6 +501,7 @@ export const PipelineMonitor: React.FC = () => {
                 onInstrumentChange={setInstrumentSelection}
                 isDirty={isBandDirty}
                 onApply={applyBandSelection}
+                disabled={isMgMode}
             />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
@@ -499,6 +569,8 @@ interface BandSelectionPanelProps {
     isDirty: boolean;
     /** Apply 按钮点击 — 把当前编辑提交为 committed,Play 才会用 */
     onApply: () => void;
+    /** Engine === 'MG' 时整面板灰显 disable(MG 无乐手概念) */
+    disabled?: boolean;
 }
 
 /** B1 哨兵值：UI dropdown "— 留空 —" 选项的 value，区别于"使用默认乐手"（value=""） */
@@ -506,10 +578,11 @@ const BAND_SLOT_EMPTY_VALUE = '__empty__';
 
 const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
     selection, onChange, instrumentSelection, onInstrumentChange, isDirty, onApply,
+    disabled: panelDisabled = false,
 }) => {
     const totalPersonas = MUSICIAN_POOL.length;
     return (
-        <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0">
+        <div className={`px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0 ${panelDisabled ? 'opacity-40 pointer-events-none select-none' : ''}`}>
             <div className="flex items-baseline justify-between mb-1">
                 <div className="flex items-center gap-2">
                     <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
@@ -517,18 +590,22 @@ const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
                     <button
                         type="button"
                         onClick={onApply}
-                        disabled={!isDirty}
+                        disabled={!isDirty || panelDisabled}
                         className={`text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded transition-all ${
-                            isDirty
+                            isDirty && !panelDisabled
                                 ? 'bg-fuchsia-500/80 text-white hover:bg-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.5)] animate-pulse'
                                 : 'bg-zinc-800 text-zinc-600 cursor-default'
                         }`}
-                        title={isDirty ? '应用本次乐队选择,下次 Play / Tap 将使用' : '当前选择已应用'}
+                        title={panelDisabled ? 'MG 引擎无乐手概念,Band Selection 不可用' : (isDirty ? '应用本次乐队选择,下次 Play / Tap 将使用' : '当前选择已应用')}
                     >
                         {isDirty ? '⚡ Apply' : '✓ Applied'}
                     </button>
                 </div>
-                <span className="text-[9px] text-zinc-600">{totalPersonas} personas · 🎲 default · ⊘ empty</span>
+                <span className="text-[9px] text-zinc-600">
+                    {panelDisabled
+                        ? 'MG mode · band disabled'
+                        : `${totalPersonas} personas · 🎲 default · ⊘ empty`}
+                </span>
             </div>
             <div className="grid grid-cols-6 gap-1.5">
                 {BAND_SLOT_ORDER.map(({ role, label }) => {

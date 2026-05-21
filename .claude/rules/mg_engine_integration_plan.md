@@ -1,5 +1,29 @@
 # MG-Engine Integration Plan — melodygenerative 激进替换工程
 
+> ⚠️ **DEPRECATED(2026-05-21)** — 路线已变更为**双引擎切换**(AF / MG 并存,
+> Q+H 顶部 UI Toggle 控制),不再走"激进替换"。本文件保留作为历史决策记录
+> (含 Batch 1-7 翻译路线复盘 / 稀释率分析 / 激进替换设计讨论),**不再作为
+> 当前路线指导**。
+>
+> **当前路线落地点**:
+> - `src/state/EngineSelectionStore.ts` — AF/MG 全局切换 store
+> - `src/core/generation/mg-engine/MgEngineFacade.ts` — MG 引擎入口(Phase 0 stub)
+> - `src/core/generation/pipeline/index.ts:runPipeline` — 顶部分流
+> - `src/components/PipelineMonitor.tsx` — Q+H Engine Toggle UI
+>
+> 新路线**核心差异**:
+> - AF 现有 `src/core/generation/` 整体**完全保留**,不删任何模块
+> - MG 与 AF **并存**,UI Toggle 切换,runPipeline 内部路由
+> - app(AuraBar / AuraJam)调用契约不变,自动跟随 EngineSelectionStore
+> - Phase 1+2 期间 mg-engine **PRNG 隔离**(保留 mg 自带 Random 类),
+>   Phase 3 才考虑合并(若 mg 听感稳定且不再独立迭代)
+>
+> 完整新路线文档将在 Phase 1(真 copy mg 代码 + 钢琴跑通)后写入新文档。
+>
+> ---
+>
+> **(以下为原激进替换路线的历史记录)**
+
 > **写本文档时点**:基线 commit `4232c56` + tag `v1.44.0-mg-port-v1`(Batch 1-7 完成,
 > "翻译进 auraflow 单引擎"路线的终点)。本文档定义**下一阶段路线** —
 > 把 melodygenerative 整体 move 进来作为 auraflow 的新内核,而不是再翻译。

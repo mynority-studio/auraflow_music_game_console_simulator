@@ -37,6 +37,8 @@ import { CastingEngine } from './CastingEngine';
 import { PassingChordEngine } from './PassingChordEngine';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { bandRoleToTrackKeys, GmProgramTrackKey } from '../data/GMSoundMap';
+import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
+import { MgEngineFacade } from '../mg-engine/MgEngineFacade';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -56,6 +58,21 @@ export interface PipelineRunOptions {
 export function runPipeline(
     options: PipelineRunOptions = {},
 ): { track: GeneratedTrack; context: MusicContext } {
+    // ============================================================
+    // Engine Switch — AF / MG 双引擎路由(Phase 0 起)
+    //
+    //   读 EngineSelectionStore(Q+H 顶部 Toggle 写入)分流:
+    //     'AF' → 走下面完整 Stage 1-5 + Conductor 管线(本函数 99% 代码)
+    //     'MG' → 调 MgEngineFacade.generate()(Phase 0 stub:抛 NOT_IMPLEMENTED)
+    //
+    //   外部调用契约不变:不论哪个引擎,返回 { track, context } 同形状,
+    //   AudioEngine.playSong / AbsoluteTransposer 下游零改动。
+    //   详见 .claude/rules/app_integration_rule.md §0 Single Pipeline 原则。
+    // ============================================================
+    if (EngineSelectionStore.getEngine() === 'MG') {
+        return MgEngineFacade.generate(options);
+    }
+
     PRNGManager.recordSnapshot('B');
 
     // -----------------------------------------------------------

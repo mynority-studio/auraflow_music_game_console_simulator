@@ -34,10 +34,29 @@ useState / Context / 局部 ref。
 | 共享配置 | Store 模块 |
 |---------|-----------|
 | 乐队选择(forcedBand / forcedGmPrograms) | `src/state/BandSelectionStore.ts` |
+| 引擎选择(AF / MG 双引擎切换) | `src/state/EngineSelectionStore.ts` |
 | 未来其他跨 app 状态(motif / mood / etc.) | 沿用模式新建 `src/state/XxxStore.ts` |
 
 PipelineMonitor 点 Apply / 修改 → 写入 store;
 AuraBar / AuraJam 等其他 app 在 `runPipeline` 调用时读 store。
+
+### 引擎双路由(2026-05-21 起新增,符合 Single Pipeline 原则)
+
+`runPipeline()` 内部可基于 `EngineSelectionStore.getEngine()` 路由到 AF / MG
+不同子引擎,**app 侧调用契约保持不变**:
+
+- AF(默认):走 Stage 1-5 + Conductor 完整管线
+- MG:跳过 weather / band / musicians,直接调 melodygenerative 引擎(Phase 0:stub)
+
+**为什么这不违反 Single Pipeline**:
+- app 入口仍是唯一 `runPipeline({...})`,返回类型仍是 `{ track, context }`
+- 内部分流由 store 全局控制,所有 app 同时跟随,不存在"app A 走 AF / app B 走 MG"的分裂
+- Q+H 顶部 Engine Toggle 改 store → AuraBar / AuraJam 下次生成自动跟随
+
+**MG 模式下 app 的合理行为**:
+- `forcedBand` / `forcedGmPrograms` 在 MG 内被忽略(MG 无乐手概念)
+- UI 应在 MG 模式下 disable 相关控件(参照 PipelineMonitor 实现)
+- AuraBar / AuraJam 无需特别适配 — 它们读 BandSelectionStore 但 MG 内会忽略
 
 ### 违反信号(任一命中触发 review)
 
