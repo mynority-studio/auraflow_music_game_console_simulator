@@ -197,6 +197,8 @@ export const PipelineMonitor: React.FC = () => {
     }, [mgStyle]);
 
     const isMgMode = engine === 'MG';
+    /** MG Style 下拉对 MG + AF2 都可用 — AF2 内部也读 mgStyle 调 mg 内核生成和声 */
+    const mgStyleEnabled = engine === 'MG' || engine === 'AF2';
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -436,21 +438,21 @@ export const PipelineMonitor: React.FC = () => {
                         AF2
                     </button>
                 </div>
-                {/* MG Style 下拉 — 仅 MG 模式可用,AF 模式灰显 */}
+                {/* MG Style 下拉 — MG + AF2 模式都可用(AF2 内部也读 mgStyle),AF 模式灰显 */}
                 <div className="flex items-center gap-1.5">
-                    <span className={`text-[9px] uppercase tracking-wider font-mono ${isMgMode ? 'text-orange-400/60' : 'text-zinc-700'}`}>
+                    <span className={`text-[9px] uppercase tracking-wider font-mono ${mgStyleEnabled ? 'text-orange-400/60' : 'text-zinc-700'}`}>
                         MG Style
                     </span>
                     <select
                         value={mgStyle}
-                        disabled={!isMgMode}
+                        disabled={!mgStyleEnabled}
                         onChange={(e) => handleMgStyleChange(e.target.value as MgStyle)}
                         className={`bg-black/60 border rounded px-1.5 py-0.5 text-[10px] font-mono ${
-                            isMgMode
+                            mgStyleEnabled
                                 ? 'border-orange-500/40 text-orange-300'
                                 : 'border-zinc-800 text-zinc-700 cursor-not-allowed'
                         }`}
-                        title={isMgMode ? 'MG 引擎风格(POP/JAZZ/BLUES/RNB)' : '切到 MG 才能选'}
+                        title={mgStyleEnabled ? 'MG/AF2 引擎风格(POP/JAZZ/BLUES/RNB)' : '切到 MG 或 AF2 才能选'}
                     >
                         <option value="POP">POP</option>
                         <option value="JAZZ">JAZZ</option>

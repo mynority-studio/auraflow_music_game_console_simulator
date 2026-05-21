@@ -99,6 +99,9 @@ import {
 } from './musicTheory';
 import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
 import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi } from './basslineRules';
+// AF2 ChordTextureEngine 单点劫持(Phase 2b.1 集成).applyTexture 入口先试 AF2,
+// 未覆盖的 textureType 返回 null 时 fallback 到下方 mg 原实现.
+import { ChordTextureEngine } from '../af2-engine/instruments/chord-texture/ChordTextureEngine';
 
 // Re-export theory primitives that external callers import from musicEngine
 // (test_batch.ts uses noteToMidi). Engine itself no longer owns these.
@@ -3476,6 +3479,21 @@ export class Engine {
     }
 
     private applyTexture(chord: ChordDef, textureType: string, startBeat: number, duration: number, melodyEvents: NoteEvent[], isShuffle: boolean, accentMode: 'heavy' | 'syncopated', density: number = 0.5, nextChord: ChordDef | null = null): NoteEvent[] {
+        // ========================================================
+        // AF2 ChordTextureEngine 劫持(Phase 2b.1)
+        // ========================================================
+        // 覆盖 20/38 textureType:走 AF2 网格概率版本。
+        // 未覆盖 18 个:返回 null,继续走下方 mg 原实现(渐进 fallback)。
+        //
+        // melodyEvents / isShuffle / accentMode / density 暂未传给 AF2
+        // (Phase 2b.1 9 子族不消费,Phase 2b.2+ 引入族 D/F 需要 melody dependency
+        // 时再扩 ChordTextureInput schema)。
+        const af2Events = ChordTextureEngine.applyByTextureType(
+            textureType, chord, nextChord, startBeat, duration, this.random,
+        );
+        if (af2Events !== null) return af2Events;
+        // ↓↓↓ 未覆盖:走原 mg.applyTexture 实现 ↓↓↓
+
         const events: NoteEvent[] = [];
         const bM = chord.bassMidi;
         // Octave-doubled bass note used by Root_Octave / Arpeggio_Flow /
