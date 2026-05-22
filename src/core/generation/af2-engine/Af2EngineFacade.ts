@@ -60,7 +60,7 @@ import { Reconciler } from './Reconciler';
 // per-section 模板编排;StaticConductor 保留作 fallback)
 import type { Score } from './Score';
 import type { Band, SectionAssignment } from './Conductor';
-import { DynamicConductor } from './Conductor';
+import { DynamicConductor, CONDUCTOR_TEMPLATES_BY_STYLE } from './Conductor';
 
 export interface Af2GenerateResult {
     track: GeneratedTrack;
@@ -132,12 +132,13 @@ export const Af2EngineFacade = {
             [BandRole.Drums]:      routed[BandRole.Drums].musician,
             [BandRole.Atmosphere]: routed[BandRole.Atmosphere].musician,
         };
-        // C.4:DynamicConductor 默认上线。Section-type 模板:
-        //   Intro:pad + accomp  / Verse/Chorus:全员  / Bridge:无 drums
-        //   Break/Breakdown:仅 drums+bass  / Outro:pad + bass
-        // PadGenerator (C.3 + C.4) 已消费 assignments;其他 musicians (C.5+) 改造完后
-        // 会跟着 Conductor 编排走。
-        const conductor = new DynamicConductor();
+        // C.4 + 模板参数化:DynamicConductor 上线,每 mgStyle 用各自模板。
+        //   POP:   default(Intro pad+accomp / Bridge 无 drums / Outro pad+bass 等)
+        //   JAZZ:  Intro/Outro 加 walking bass + Bridge 保鼓 + 厚收尾
+        //   BLUES: pad 整体减少(blues 偏 rhythm 主导)
+        //   RNB:   Intro/Outro 三件套(pad + accomp + bass 厚 neo-soul)
+        // PadGenerator + DrumGenerator + PianoIdiom + BassIdiom 全部消费 assignments(C.5)
+        const conductor = new DynamicConductor(CONDUCTOR_TEMPLATES_BY_STYLE[mgStyle]);
         const sectionAssignments: ReadonlyArray<SectionAssignment> = conductor.dispatch(score, band);
 
         // -----------------------------------------------------------

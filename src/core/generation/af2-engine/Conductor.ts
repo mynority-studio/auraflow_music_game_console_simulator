@@ -20,6 +20,7 @@
 import { BandRole, SectionType } from '../types';
 import type { Musician, NoteData, SectionMetadata } from '../types';
 import type { Score } from './Score';
+import type { MgStyle } from '../../../state/EngineSelectionStore';
 
 /**
  * Conductor 用的 role(乐手在某 section 的"功能角色")。
@@ -131,10 +132,13 @@ function buildDefaultByMusician(band: Band): ReadonlyMap<string, ReadonlyArray<C
 // ============================================================
 
 /**
- * Section-type → 该段允许的 ConductorRole 集。不在集内的 musician 该段 silent。
- * "*"(undefined)= 全员(默认 fallback)。
+ * ConductorTemplate:section-type → 该段允许的 ConductorRole 集。
+ * 不在集内的 musician 该段 silent。未注册 sectionType → 全员 fallback。
  */
-const DYNAMIC_SECTION_TEMPLATE: Partial<Record<SectionType, ReadonlySet<ConductorRole>>> = {
+export type ConductorTemplate = Partial<Record<SectionType, ReadonlySet<ConductorRole>>>;
+
+/** 默认模板(POP-flavored,所有 musicians 标准配置)。 */
+export const DEFAULT_CONDUCTOR_TEMPLATE: ConductorTemplate = {
     [SectionType.Intro]:     new Set(['pad', 'accomp']),
     [SectionType.Verse]:     new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
     [SectionType.PreChorus]: new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
@@ -149,11 +153,57 @@ const DYNAMIC_SECTION_TEMPLATE: Partial<Record<SectionType, ReadonlySet<Conducto
     [SectionType.Solo_Bridge]: new Set(['melody', 'accomp', 'bass', 'pad']),
 };
 
+/**
+ * Per-mgStyle 模板覆盖:不同风格的编排习惯。
+ * 与 DEFAULT_CONDUCTOR_TEMPLATE 合并(per-section key 覆盖)。
+ *
+ * 初版编排习惯(可调):
+ *   POP:   等同 default(标准 pop 编曲)
+ *   JAZZ:  Intro/Outro 加 bass(walking bass 习惯)+ Bridge 保留 drums(jazz
+ *          bridge 鼓不退场)+ Outro pad+bass+accomp 三件套(jazz 收尾)
+ *   BLUES: pad 整体减少(blues 偏 rhythm 主导)+ Intro / Outro 只用 bass+drums
+ *          → 也减 pad
+ *   RNB:   Intro pad+accomp+bass(neo-soul 三件套 intro)+ Outro pad+bass+accomp
+ *          (neo-soul 厚 outro)
+ */
+export const CONDUCTOR_TEMPLATES_BY_STYLE: Record<MgStyle, ConductorTemplate> = {
+    POP: DEFAULT_CONDUCTOR_TEMPLATE,
+    JAZZ: {
+        ...DEFAULT_CONDUCTOR_TEMPLATE,
+        [SectionType.Intro]:     new Set(['pad', 'accomp', 'bass']),       // jazz intro 加 walking bass
+        [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),  // bridge 保鼓
+        [SectionType.Outro]:     new Set(['pad', 'accomp', 'bass']),       // jazz 收尾三件套
+        [SectionType.PreOutro]:  new Set(['pad', 'accomp', 'bass', 'drums']),
+    },
+    BLUES: {
+        ...DEFAULT_CONDUCTOR_TEMPLATE,
+        [SectionType.Intro]:     new Set(['drums', 'bass']),               // blues intro rhythm only,无 pad
+        [SectionType.Verse]:     new Set(['melody', 'accomp', 'bass', 'drums']),  // 无 pad(blues 不太用 pad)
+        [SectionType.PreChorus]: new Set(['melody', 'accomp', 'bass', 'drums']),
+        [SectionType.Chorus]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),  // chorus 才加 pad
+        [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'drums']),
+        [SectionType.Outro]:     new Set(['drums', 'bass']),               // blues 收尾 rhythm only
+        [SectionType.PreOutro]:  new Set(['accomp', 'bass', 'drums']),
+    },
+    RNB: {
+        ...DEFAULT_CONDUCTOR_TEMPLATE,
+        [SectionType.Intro]:     new Set(['pad', 'accomp', 'bass']),       // neo-soul intro 三件套
+        [SectionType.Outro]:     new Set(['pad', 'accomp', 'bass']),       // 厚 outro
+        [SectionType.PreOutro]:  new Set(['pad', 'accomp', 'bass', 'drums']),
+    },
+};
+
 export class DynamicConductor implements Conductor {
+    private readonly template: ConductorTemplate;
+
+    constructor(template?: ConductorTemplate) {
+        this.template = template ?? DEFAULT_CONDUCTOR_TEMPLATE;
+    }
+
     dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment> {
         const fullByMusician = buildDefaultByMusician(band);
         return score.sections.map((section, idx) => {
-            const allowedRoles = DYNAMIC_SECTION_TEMPLATE[section.sectionType];
+            const allowedRoles = this.template[section.sectionType];
             if (!allowedRoles) {
                 // 未注册的 sectionType → 全员上场
                 return { sectionIdx: idx, byMusician: fullByMusician };
