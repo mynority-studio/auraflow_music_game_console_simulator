@@ -50,7 +50,7 @@ export const PIANO_REGIONS = {
     bass:   { lo: 33, hi: 55 },  // A1 - G3(piano LH / bass)
 } as const;
 
-/** 5% 越界保留概率(95% 拉回主区) */
+/** 5% 越界保留概率(95% 拉回主区,musician 卡可覆盖) */
 const ESCAPE_PROBABILITY = 0.05;
 
 /**
@@ -72,18 +72,19 @@ function detHash01(pitch: number, onset: number): number {
  *
  *   pitch 在 [lo, hi] 内:直通
  *   pitch 在主区外:
- *     - escape 命中(<5%):保留越界 pitch(自然感 / 小概率越界)
- *     - 否则(95%):八度移调到主区(±12 直到落入)
+ *     - escape 命中(<escapeProb,默认 5%):保留越界 pitch(自然感)
+ *     - 否则:八度移调到主区(±12 直到落入)
  *
  * 越界往主区折叠时优先选离原 pitch 最近的八度,保留 voice-leading 语义。
  */
 function applyRegionProbability(
     notes: NoteData[],
     region: { lo: number; hi: number },
+    escapeProb: number = ESCAPE_PROBABILITY,
 ): NoteData[] {
     return notes.map(n => {
         if (n.pitch >= region.lo && n.pitch <= region.hi) return { ...n };
-        const escape = detHash01(n.pitch, n.onset) < ESCAPE_PROBABILITY;
+        const escape = detHash01(n.pitch, n.onset) < escapeProb;
         if (escape) return { ...n };
         // 95% 路径:八度移调拉回主区
         let p = n.pitch;
@@ -106,7 +107,7 @@ function applyRegionProbability(
 function planForRole(
     input: MusicianPlanInput,
     role: ConductorRole,
-    region: { lo: number; hi: number },
+    defaultRegion: { lo: number; hi: number },
 ): NoteData[] {
     const raw = input.notes?.[role] ?? [];
     if (raw.length === 0) return [];
@@ -118,7 +119,13 @@ function planForRole(
         if (!myRoles.includes(role)) continue;  // Conductor 让我这段 silent for this role
         filtered.push(n);
     }
-    return applyRegionProbability(filtered, region);
+    // Musician 卡 Layer 1/2 overrides
+    const overrides = input.musician?.af2Overrides;
+    const region = (role === 'melody' || role === 'accomp' || role === 'bass')
+        ? (overrides?.regions?.[role] ?? defaultRegion)
+        : defaultRegion;
+    const escapeProb = overrides?.escapeProbability ?? ESCAPE_PROBABILITY;
+    return applyRegionProbability(filtered, region, escapeProb);
 }
 
 // ============================================================
@@ -173,11 +180,12 @@ function findElevenWindows(chords: ReadonlyArray<GeneratedChord>): ElevenWindow[
 }
 
 /**
- * Add11 人手物理:在 add11 窗口内 60% 概率把 melody 移到 11音最近 octave。
+ * Add11 人手物理:在 add11 窗口内 gateProb 概率把 melody 移到 11音最近 octave。
  */
 function applyAdd11HandPhysics(
     notes: NoteData[],
     chords: ReadonlyArray<GeneratedChord>,
+    gateProb: number = ADD11_GATE_PROBABILITY,
 ): NoteData[] {
     if (notes.length === 0 || chords.length === 0) return notes;
     const windows = findElevenWindows(chords);
@@ -189,8 +197,8 @@ function applyAdd11HandPhysics(
             if (n.onset >= w.startBeat && n.onset < w.endBeat) { window = w; break; }
         }
         if (!window) return n;
-        // 概率门(60% 触发 / 40% 保留)
-        if (detHash01(n.pitch, n.onset) >= ADD11_GATE_PROBABILITY) return n;
+        // 概率门(gateProb 触发 / 1-gateProb 保留)
+        if (detHash01(n.pitch, n.onset) >= gateProb) return n;
         // 触发:把 melody 移到最近 11音 octave(保留 PC)
         const melodyPc = (((n.pitch % 12) + 12) % 12);
         const targetOctave = Math.floor(window.elevenMidi / 12);
@@ -222,7 +230,8 @@ export const PianoIdiom = {
      */
     planMelody(input: MusicianPlanInput): NoteData[] {
         const filtered = planForRole(input, 'melody', PIANO_REGIONS.melody);
-        return applyAdd11HandPhysics(filtered, input.score.chords);
+        const add11Gate = input.musician?.af2Overrides?.add11GateProbability ?? ADD11_GATE_PROBABILITY;
+        return applyAdd11HandPhysics(filtered, input.score.chords, add11Gate);
     },
 
     /**

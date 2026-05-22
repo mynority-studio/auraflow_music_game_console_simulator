@@ -451,6 +451,46 @@ export interface Musician {
     instrumentId: number;         // InstrumentRegistry key (0=GrandPiano / 1=EPiano / 2=EBass / 3=Drums / 4=Pad)
     persona: MusicianPersona;
     description?: string;
+
+    /**
+     * AF2 musician 卡参数化 overrides(可选)。
+     *
+     * 让单张 musician 卡覆盖 AF2 默认行为参数,实现"乐手个性"差异化:
+     *   alex_piano(standard)vs marcus_neosoul(更激进色彩)vs chloe_pop(保守)等。
+     *
+     * 字段全 optional — 缺省走默认值,不影响行为。详见 Af2MusicianOverrides。
+     */
+    af2Overrides?: Af2MusicianOverrides;
+}
+
+/**
+ * AF2 musician 卡参数化 overrides — 3 层:
+ *   1. regions:per-role 主区(改 Phase B 音区分布)
+ *   2. escapeProbability / add11GateProbability:概率门(改 Phase B/C 触发率)
+ *   3. sectionRolePreference:per-section role 偏好(覆盖 DynamicConductor 模板)
+ *
+ * 设计原则:全 optional + 默认值兜底 → musician 卡可以只覆盖关心的部分。
+ */
+export interface Af2MusicianOverrides {
+    /** Layer 1:per-role 主区覆盖 PIANO_REGIONS / BASS_REGION */
+    regions?: {
+        melody?: { lo: number; hi: number };
+        accomp?: { lo: number; hi: number };
+        bass?: { lo: number; hi: number };
+    };
+    /** Layer 2:Phase B 越界自然感概率(0..1,默认 0.05) */
+    escapeProbability?: number;
+    /** Layer 2:Phase C add11 物理触发概率(0..1,默认 0.60) */
+    add11GateProbability?: number;
+    /**
+     * Layer 3:per-section role 偏好,与 Conductor 模板做 INTERSECTION。
+     * Key = SectionType 数值,Value = 该 section musician 想演的 roles 集合。
+     * 缺 key(undefined)= 不加 filter(走 Conductor 模板默认)。
+     *
+     * 例:保守的 chloe_pop 想在 Bridge 也silent → 写 { [SectionType.Bridge]: new Set() }
+     *     爱表现的 marcus 想在 Outro 兼 melody → 写 { [SectionType.Outro]: new Set(['accomp', 'melody']) }
+     */
+    sectionRolePreference?: Partial<Record<SectionType, ReadonlySet<string>>>;
 }
 
 // 5. 乐队阵容名单 (Band Roster)

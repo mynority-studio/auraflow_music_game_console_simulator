@@ -202,18 +202,32 @@ export class DynamicConductor implements Conductor {
 
     dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment> {
         const fullByMusician = buildDefaultByMusician(band);
+        // 构建 musicianId → Musician 反查表(用 Layer 3 sectionRolePreference)
+        const musicianById = new Map<string, Musician>();
+        for (const slot of Object.keys(band) as ReadonlyArray<BandRole>) {
+            const m = band[slot];
+            if (m) musicianById.set(m.id, m);
+        }
+
         return score.sections.map((section, idx) => {
             const allowedRoles = this.template[section.sectionType];
-            if (!allowedRoles) {
-                // 未注册的 sectionType → 全员上场
-                return { sectionIdx: idx, byMusician: fullByMusician };
-            }
-            // 过滤每个 musician 的 roles,保留 allowedRoles 内的
             const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
-            for (const [id, roles] of fullByMusician) {
-                const kept = roles.filter(r => allowedRoles.has(r));
-                if (kept.length > 0) filtered.set(id, Object.freeze(kept));
-                // kept 为空 → 该段该 musician silent(不进 map = 无 role)
+
+            for (const [musicianId, roles] of fullByMusician) {
+                let kept = roles as ReadonlyArray<ConductorRole>;
+                // (1) Style template filter(若注册)
+                if (allowedRoles) {
+                    kept = kept.filter(r => allowedRoles.has(r));
+                }
+                // (2) Layer 3:musician 卡 sectionRolePreference INTERSECTION
+                const musicianPref = musicianById.get(musicianId)?.af2Overrides?.sectionRolePreference?.[section.sectionType];
+                if (musicianPref !== undefined) {
+                    // musician 卡明确声明该 section 偏好 — 只保留 pref 内的 roles
+                    // 空 Set = musician 主动 silent
+                    kept = kept.filter(r => musicianPref.has(r));
+                }
+                if (kept.length > 0) filtered.set(musicianId, Object.freeze([...kept]));
+                // kept 空 → 该 musician 该段 silent(不进 map)
             }
             return { sectionIdx: idx, byMusician: filtered };
         });
@@ -248,6 +262,16 @@ export interface MusicianPlanInput {
      * 同时拿 melody / accomp / bass 多流(若 musician 兼任多 role)。
      */
     readonly notes?: Partial<Record<ConductorRole, ReadonlyArray<NoteData>>>;
+    /**
+     * Musician 卡(可选,musician 卡参数化用):
+     *   musician.af2Overrides.regions     → 覆盖 PIANO_REGIONS
+     *   musician.af2Overrides.escapeProbability   → 覆盖 Phase B 5%
+     *   musician.af2Overrides.add11GateProbability → 覆盖 Phase C 60%
+     *
+     * Layer 3 sectionRolePreference 已在 Conductor.dispatch 阶段消费,这里
+     * musician.af2Overrides 主要给 PianoIdiom / BassIdiom 读 Layer 1/2 overrides。
+     */
+    readonly musician?: Musician;
 }
 
 /**

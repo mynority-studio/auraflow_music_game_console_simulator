@@ -153,6 +153,7 @@ export const Af2EngineFacade = {
             ? PadGenerator.plan({
                 score,
                 musicianId: atmosphereMusician.id,
+                musician: atmosphereMusician,
                 assignments: sectionAssignments,
                 peers: new Map(),
               })
@@ -182,6 +183,8 @@ export const Af2EngineFacade = {
                 rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
             })
             : [];
+        // Note: DrumPlanInput 是 drum-specific shape(rng/mgStyle 主导行为),
+        // 当前未传 musician 卡(drum 暂未消费 musician.af2Overrides — Phase 后续可加)
 
         // -----------------------------------------------------------
         // Step 5: Realizer — 按 musician.instrumentFamily 分支
@@ -196,29 +199,27 @@ export const Af2EngineFacade = {
         const bassMusician = routed[BandRole.Bass].musician;
         const useElectricBass = bassMusician?.instrumentFamily === InstrumentFamily.Bass;
 
-        // C.5:全 musicians 迁 plan(MusicianPlanInput) 协议。
-        //   - PianoIdiom planMelody/planAccomp/planBass 接 MusicianPlanInput
-        //     · per-section role gate(Conductor 让我这段 silent → 该 section 不 emit)
-        //     · Phase B 音区概率分布 仍生效
-        //   - BassIdiom plan 同上(role='bass' gate)
+        // C.5 + musician 卡参数化:全 musicians 迁 plan(MusicianPlanInput) 协议,
+        // musician 字段透传以解锁 Layer 1/2 overrides(regions / escapeProb / add11Gate)。
+        //   - Layer 3 sectionRolePreference 已在 Conductor.dispatch 时消费完毕
         //   - 空 musician → 直接跳过
         const planMain = (m: typeof mainMusician) => m && PianoIdiom.planMelody({
-            score, musicianId: m.id, assignments: sectionAssignments,
+            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
             peers: new Map(),
             notes: { melody: routed[BandRole.MainInst].notes },
         }) || [];
         const planAccomp = (m: typeof accompMusician) => m && PianoIdiom.planAccomp({
-            score, musicianId: m.id, assignments: sectionAssignments,
+            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
             peers: new Map(),
             notes: { accomp: routed[BandRole.Accomp].notes },
         }) || [];
         const planBassPiano = (m: typeof bassMusician) => m && PianoIdiom.planBass({
-            score, musicianId: m.id, assignments: sectionAssignments,
+            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
             peers: new Map(),
             notes: { bass: routed[BandRole.Bass].notes },
         }) || [];
         const planBassElectric = (m: typeof bassMusician) => m && BassIdiom.plan({
-            score, musicianId: m.id, assignments: sectionAssignments,
+            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
             peers: new Map(),
             notes: { bass: routed[BandRole.Bass].notes },
         }) || [];
