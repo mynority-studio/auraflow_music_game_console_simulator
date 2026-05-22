@@ -12,8 +12,8 @@
 // ============================================================
 
 import { StyleName, STYLE_DICTIONARY } from './styleDictionary';
-import { harmonicFunctionFromRoman } from './musicEngine';
-import type { ChordDef } from './musicEngine';
+import { harmonicFunctionFromRoman, QUANTIZED_DURATIONS, Random } from './musicEngine';
+import type { ChordDef, GenerationConfig } from './musicEngine';
 import { CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote } from './musicTheory';
 
 /**
@@ -405,4 +405,250 @@ export function getScaleForStyle(
         });
     }
     return midiScale.sort((a,b) => a-b);
+}
+
+// ============================================================
+// Phase 2 — 组 B PRNG 参数化(0 state 依赖,通过参数收 Random)
+// ============================================================
+//
+// 这些 method 在 mg.Engine class 中通过 `this.random` 消耗 PRNG。抽离后改为接收
+// `rng: Random` 参数,PRNG 调用顺序 verbatim 保持(D-5 锁帧)。
+//
+// callsite 改造方式:Engine class 内保留 method stub,内部 forward 到 free
+// function,callsite 0 改动。Phase 5+ 删除 Engine class 时再把 callsite 直接换。
+// ============================================================
+
+/**
+ * 抽自 mg.Engine.resolveMotifStrategy (原 L791-816)。
+ * style 偏好驱动的 motif 策略选择(regular vs functional)+ interval 选择。
+ *
+ * PRNG 消耗:固定 3 次(strategy / enginePick / styleRule.N snap),
+ * 第一次条件性多消耗 1 次(styleRule 存在时)。
+ */
+export function resolveMotifStrategy(
+    config: GenerationConfig,
+    r: Random,
+): { motifStrategy: 'regular' | 'functional'; motifInterval: number } {
+    const profile = STYLE_DICTIONARY[config.style];
+    const styleRule = profile?.motifRepeatStrategy;
+
+    let strategy: 'regular' | 'functional';
+    if (styleRule && r.next() < 0.7) {
+        strategy = styleRule.preferred;
+    } else {
+        strategy = r.next() < 0.5 ? 'regular' : 'functional';
+    }
+
+    const enginePick = 2 + Math.floor(r.next() * 7); // 2..8
+    let interval = enginePick;
+    if (styleRule?.N) {
+        const [lo, hi] = styleRule.N.range;
+        interval = Math.max(lo, Math.min(hi, enginePick));
+        if (r.next() < 0.5) interval = styleRule.N.preferred;
+    }
+
+    return { motifStrategy: strategy, motifInterval: interval };
+}
+
+/**
+ * 抽自 mg.Engine.generateMelodyPhrase (原 L2668-2753)。
+ * style motif 库抽取,或 evaluator-driven random scaffold fallback。
+ *
+ * PRNG 消耗:有 motif 库时 1 次(pick);无库时变长(pattern.pick + range +
+ * 每 step × 2 = 1 + 1 + 2N)。
+ *
+ * Evaluator-driven random fallback(无 motif 库时):
+ *   生成 rhythmic scaffold + 随机 diatonic steps,downstream 评估器做音乐工作:
+ *     - evaluateNoteInChordContext flags out-of-contract pitches
+ *     - unified-tension-resolution 当 urgency ≥ 0.5 snap follow-up note
+ *     - in-chord-contract 强制 structural-beat pitches 入 chord contract
+ *     - cadence resolution 按 Tier 重写 phrase-end last notes
+ *     - leading-tone-on-V cross-check 把 B-on-G7 升为 tension
+ *   即使 raw 随机,emit melody 仍尊重 chord context;质量上限由评估器决定,非 motif 设计。
+ *
+ * RHYTHM_PATTERNS 偏好 8th / 16th:isStructural 在 strong-beat OR duration ≥ 1.5
+ *   时触发 — 长音过多 → structural 位置过多 → in-chord-contract 把它们 snap 到
+ *   chord literal → same-PC clusters。8ths 介于强拍 → 作 passing tones 通过。
+ *
+ * Random walk 步幅 ±2..±5(无 ±0/±1):投影 pitch 落得远 → chord-tone snap 分散
+ *   到多 chord 位置,而不是塌缩到最近的;否则多个 stepwise step snap 到同 chord-tone
+ *   → same-PC clusters。
+ *
+ * Reflection(BLUES audit 教训):clamp 在 [0,9] 边界会让 step 在 9 或 0 堆积
+ *   (e.g. step=8 +5 → clamp 9, then 9 +5 → clamp 9)→ 3+ 连续相同 diatonicStep
+ *   投影同 MIDI("F-F-F-F" 卡块,L4.66/5.00/5.66 全 MIDI 81)。Reflection 把
+ *   overshoot 翻为真实方向反转 → walk 继续运动。
+ */
+export function generateMelodyPhrase(style: StyleName, rng: Random): any[] {
+    const phrases = STYLE_DICTIONARY[style]?.motifs || STYLE_DICTIONARY['POP'].motifs;
+    if (!phrases || phrases.length === 0) {
+        const RHYTHM_PATTERNS: number[][] = [
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],          // straight 8ths
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1],                 // 8ths + tail quarter
+            [0.5, 0.5, 1, 0.5, 0.5, 1],                        // 8-8-Q-8-8-Q
+            [0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 0.5, 1],          // 16th opener
+            [1, 0.5, 0.5, 0.5, 0.5, 1],                        // Q-8-8-8-8-Q
+            [0.5, 0.5, 0.5, 0.5, 2],                           // 8ths + half rest
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.5],               // breath ending
+            [0.25, 0.25, 0.25, 0.25, 0.5, 0.5, 2],             // 16ths gathering
+        ];
+        const pattern = rng.pick(RHYTHM_PATTERNS);
+        const motif: any[] = [];
+        let t = 0;
+        let step = rng.range(0, 9);
+        for (const d of pattern) {
+            motif.push({ t, d, diatonicStep: step });
+            // BLUES leans on stepwise lick flow(±1/±2);其他 style 用宽跳
+            // (±2..±5)分散到 chord-tone snap basin。
+            const moves = style === 'BLUES'
+                ? [-2, -2, -2, -1, -1, -1, -1, 1, 1, 1, 1, 2, 2, 2]
+                : [-5, -4, -3, -3, -2, -2, 2, 2, 3, 3, 4, 5];
+            const delta = rng.pick(moves);
+            // Reflect off [0, 9] boundary 而非 clamp(见 jsdoc 注释 Reflection 段)。
+            let newStep = step + delta;
+            if (newStep > 9) newStep = 9 - (newStep - 9);
+            if (newStep < 0) newStep = -newStep;
+            step = Math.max(0, Math.min(9, newStep));
+            t += d;
+        }
+        return motif;
+    }
+    const picked = rng.pick(phrases);
+    // Unwrap MotifDef wrappers — downstream pipeline expects raw note arrays.
+    return Array.isArray(picked) ? picked : (picked as { notes: any[] }).notes;
+}
+
+/**
+ * 抽自 mg.Engine.deriveDevelopmentMotif (原 L3240-3286)。
+ * 3 分支:Inversion(<0.34)/ Late entry(<0.67)/ Truncation(else)。
+ *
+ * PRNG 消耗:固定 1 次(分支判别)。
+ *
+ * - Inversion: 镜像 diatonicSteps / chromaticOffsets 围绕首音值;首音不动,其余
+ *   每音对首音的 interval 取反。
+ * - Late entry(subtle lay-back): 原版 0.5 拍 shift 在 120bpm 下 250ms drag,大到
+ *   velocity-accent check(m.t % 1 === 0)在原弱拍触发 → 听感"错拍 accent"。
+ *   降到 32 分(0.125 beats ≈ 60ms @ 120bpm)— 微 soul lay-back,不破 grid 对齐。
+ *   超出 4-beat bar 的音被 drop。
+ * - Truncation with rest: 保留前半数音,其余 drop;bar 剩余 reads as silence
+ *   (rhythm builder 后台继续,melody 是"喘口气"的)。
+ */
+export function deriveDevelopmentMotif(currentMotif: any[], rng: Random): any[] {
+    if (currentMotif.length === 0) return [];
+    const r = rng.next();
+
+    if (r < 0.34) {
+        const first = currentMotif[0];
+        const baseDia = ('diatonicStep' in first) ? first.diatonicStep : 0;
+        const baseChrom = ('chromaticOffset' in first) ? first.chromaticOffset : 0;
+        return currentMotif.map((n, i) => {
+            const out: any = { ...n };
+            if (i === 0) return out;
+            if ('diatonicStep' in n) {
+                out.diatonicStep = baseDia - (n.diatonicStep - baseDia);
+            } else if ('chromaticOffset' in n) {
+                out.chromaticOffset = baseChrom - (n.chromaticOffset - baseChrom);
+            }
+            return out;
+        });
+    }
+
+    if (r < 0.67) {
+        const shift = 0.125;
+        const shifted = currentMotif
+            .map(n => ({ ...n, t: n.t + shift }))
+            .filter(n => n.t < 4 && n.t + n.d <= 4);
+        if (shifted.length === 0) {
+            return [{ ...currentMotif[currentMotif.length - 1], t: 3.5, d: 0.5 }];
+        }
+        return shifted;
+    }
+
+    const keepCount = Math.max(1, Math.ceil(currentMotif.length / 2));
+    return currentMotif.slice(0, keepCount).map(n => ({ ...n }));
+}
+
+/**
+ * 抽自 mg.Engine.motifMutator (原 L1046-1117)。
+ * Style/density/complexity 驱动的 motif 调制(Jazz chromatic approach / Pop
+ * stutter / Pop legato),末尾 QUANTIZED_DURATIONS 量化。
+ *
+ * PRNG 消耗:逐 step 变长 — 每 step 最多 2 次(chromatic gate / direction or
+ * stutter gate or legato gate)。
+ *
+ * 三档 style 调制:
+ *   - 爵士调制 / R&B(JAZZ + complexity>0.6): 在 gap ≥ 0.5 拍处插入半音 approach
+ *     (小二度趋近 next)。
+ *   - Funk / 电子(POP + density>0.7): 长音 [d=1] 切割为 [d=0.25, 休止, t+0.5 d=0.25]
+ *     的 stutter 模式。
+ *   - Pop Ballad(POP + density<0.5): legato 连音 — 把当前音 d 拉满到下一音起拍。
+ *
+ * 末尾 QUANTIZED_DURATIONS 量化:snap d 到标准乐理时值(16th / 8th / dotted-8th /
+ * 1/4 / dotted-1/4 / 1/2 / dotted-1/2 / 全音符),不让 sub-style motif 或
+ * deriveDevelopmentMotif 的 diminution 算术输出 1.25 / 2.5 这类非标准值。
+ * 最小值 0.25(16th)— 更短听感"碎裂"而非"节奏"。
+ *
+ * 注:`isShuffle` 当前 method body 未消费,签名保留作未来 shuffle 调制扩展点。
+ */
+export function motifMutator(
+    motif: any[],
+    style: StyleName,
+    density: number,
+    complexity: number,
+    isShuffle: boolean,
+    rng: Random,
+): any[] {
+    void isShuffle;
+    let mutated: any[] = [];
+    const len = motif.length;
+
+    for (let i = 0; i < len; i++) {
+        const v = motif[i];
+        const next = motif[i + 1];
+        const gap = next ? (next.t - (v.t + v.d)) : (4 - (v.t + v.d));
+
+        mutated.push({ ...v });
+
+        // 爵士调制 / R&B 调制:包围音与半音经过音
+        if (style === 'JAZZ' && complexity > 0.6) {
+            if (gap >= 0.5 && rng.next() < (complexity * 0.8)) {
+                const targetOffset = next ? (next.chromaticOffset ?? (next.diatonicStep * 2)) : (v.chromaticOffset ?? (v.diatonicStep * 2));
+                mutated.push({
+                    t: (next ? next.t : 4) - 0.25,
+                    d: 0.25,
+                    chromaticOffset: targetOffset + (rng.next() > 0.5 ? 1 : -1)
+                });
+            }
+        }
+
+        // Funk 调制 / 电子调制:时值碎片化/Stutter 切割
+        if (style === 'POP' && density > 0.7) {
+            if (v.d >= 0.75 && rng.next() < (density * 0.8)) {
+                const newMutated = [...mutated];
+                const last = newMutated[newMutated.length - 1];
+                last.d = 0.25;
+                newMutated.push({
+                    t: last.t + 0.5,
+                    d: 0.25,
+                    ...('diatonicStep' in last ? { diatonicStep: last.diatonicStep } : { chromaticOffset: last.chromaticOffset })
+                });
+                mutated = newMutated;
+            }
+        }
+
+        // Pop Ballad:平滑连音(Legato stretch)
+        if (style === 'POP' && density < 0.5) {
+            if (gap > 0.1 && gap < 1.0 && rng.next() > 0.5) {
+                mutated[mutated.length - 1].d += gap;
+            }
+        }
+    }
+
+    for (const n of mutated) {
+        n.d = QUANTIZED_DURATIONS.reduce((best, v) =>
+            Math.abs(v - n.d) < Math.abs(best - n.d) ? v : best,
+            QUANTIZED_DURATIONS[0]
+        );
+    }
+    return mutated;
 }

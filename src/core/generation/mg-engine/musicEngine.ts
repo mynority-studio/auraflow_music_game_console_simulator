@@ -103,11 +103,17 @@ import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_R
 // 未覆盖的 textureType 返回 null 时 fallback 到下方 mg 原实现.
 import { ChordTextureEngine } from '../af2-engine/instruments/chord-texture/ChordTextureEngine';
 // Phase 1 (#6) — Engine class 组 A 纯函数化:抽出无 state 依赖的 method 到 engine-utils.
+// Phase 2 (#6) — Engine class 组 B PRNG 参数化:接 `Random` 为参数的 method 同步抽出.
 import {
     resolveTonalCharacter, getHarmonicFunction, applySwing,
     computeBackboneTargets, estimateBackboneAlignment,
     findClosestCrossChordPair, estimateMotifShapeMetrics,
     getFillScaleForStyle, getScaleForStyle,
+    // Phase 2
+    resolveMotifStrategy as utilResolveMotifStrategy,
+    generateMelodyPhrase as utilGenerateMelodyPhrase,
+    deriveDevelopmentMotif as utilDeriveDevelopmentMotif,
+    motifMutator as utilMotifMutator,
 } from './engine-utils';
 
 // Re-export theory primitives that external callers import from musicEngine
@@ -606,7 +612,7 @@ export function midiToNoteInChord(
 // 1.0 = quarter, 1.5 = dotted-quarter, 2.0 = half, 3.0 = dotted-half,
 // 4.0 = whole. Triplets are excluded — re-introduce later via a
 // dedicated mechanism if a style needs them.
-const QUANTIZED_DURATIONS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0];
+export const QUANTIZED_DURATIONS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0];
 
 function getNoteFromInterval(root: string, interval: number, octave: number): string {
   const rootIndex = KEYS.indexOf(root);
@@ -788,31 +794,10 @@ export class Engine {
    * motifRepeatStrategy.N is set, the value is clamped to its range
    * with a 50% chance to snap to the preferred N.
    */
+  // Phase 2 (#6):resolveMotifStrategy 已抽到 engine-utils.ts(组 B PRNG 参数化)
   private resolveMotifStrategy(config: GenerationConfig, r: Random):
       { motifStrategy: 'regular' | 'functional'; motifInterval: number } {
-    const profile = STYLE_DICTIONARY[config.style];
-    const styleRule = profile?.motifRepeatStrategy;
-
-    // Strategy: 50/50 unless style biases. We treat the style.preferred as
-    // a strong nudge — 70% chance of using it.
-    let strategy: 'regular' | 'functional';
-    if (styleRule && r.next() < 0.7) {
-      strategy = styleRule.preferred;
-    } else {
-      strategy = r.next() < 0.5 ? 'regular' : 'functional';
-    }
-
-    // Interval: engine picks 2-8, style modifies (clamp to range, prefer N).
-    const enginePick = 2 + Math.floor(r.next() * 7); // 2..8
-    let interval = enginePick;
-    if (styleRule?.N) {
-      const [lo, hi] = styleRule.N.range;
-      interval = Math.max(lo, Math.min(hi, enginePick));
-      // 50% chance to snap to the style's preferred N within range.
-      if (r.next() < 0.5) interval = styleRule.N.preferred;
-    }
-
-    return { motifStrategy: strategy, motifInterval: interval };
+    return utilResolveMotifStrategy(config, r);
   }
 
   generateProgressions(config: GenerationConfig): ChordDef[] {
@@ -1043,77 +1028,15 @@ export class Engine {
   }
 
   // === 动机变奏算法机 (Motif Mutator) ===
+  // Phase 2 (#6):motifMutator 已抽到 engine-utils.ts(组 B PRNG 参数化)
   private motifMutator(
-      motif: any[], 
-      style: StyleName, 
-      density: number, 
+      motif: any[],
+      style: StyleName,
+      density: number,
       complexity: number,
       isShuffle: boolean
   ): any[] {
-      let mutated: any[] = [];
-      const len = motif.length;
-
-      for (let i = 0; i < len; i++) {
-          const v = motif[i];
-          const next = motif[i+1];
-          const gap = next ? (next.t - (v.t + v.d)) : (4 - (v.t + v.d)); // gap to next note
-
-          mutated.push({...v});
-
-          // == 爵士调制 / R&B 调制：包围音与半音经过音 (Jazz chromatic approaches) ==
-          if (style === 'JAZZ' && complexity > 0.6) {
-              // 若有超过 0.5拍的停顿，填充经过音
-              if (gap >= 0.5 && this.random.next() < (complexity * 0.8)) {
-                  const targetOffset = next ? (next.chromaticOffset ?? (next.diatonicStep * 2)) : (v.chromaticOffset ?? (v.diatonicStep * 2));
-                  // 插入一个极短的前缀经过音（距离下一个音小半拍或三连音）
-                  mutated.push({
-                      t: (next ? next.t : 4) - 0.25,
-                      d: 0.25,
-                      chromaticOffset: targetOffset + (this.random.next() > 0.5 ? 1 : -1) // 上或下小二度趋近
-                  });
-              }
-          }
-
-          // == Funk 调制 / 电子调制：时值碎片化/Stutter切割 ==
-          if (style === 'POP' && density > 0.7) {
-              if (v.d >= 0.75 && this.random.next() < (density * 0.8)) {
-                  // 将长音 [d=1] 切割为 [d=0.25, 休止, t+0.5 开始 d=0.25]
-                  const newMutated = [...mutated];
-                  const last = newMutated[newMutated.length - 1];
-                  last.d = 0.25; // 缩短原音
-                  newMutated.push({
-                      t: last.t + 0.5,
-                      d: 0.25,
-                      ...('diatonicStep' in last ? { diatonicStep: last.diatonicStep } : { chromaticOffset: last.chromaticOffset })
-                  });
-                  mutated = newMutated;
-              }
-          }
-
-          // == Pop Ballad：平滑连音 (Legato stretch) ==
-          if (style === 'POP' && density < 0.5) {
-              if (gap > 0.1 && gap < 1.0 && this.random.next() > 0.5) {
-                  // 把当前音符直接拉满到下一个音符的起拍
-                  mutated[mutated.length - 1].d += gap;
-              }
-          }
-      }
-
-      // Duration quantization. Snap every note's `d` to the nearest
-      // standard musical value so the emitted melody ALWAYS reads as
-      // 16th / 8th / dotted-8th / quarter / dotted-quarter / half /
-      // dotted-half / whole — no broken sub-16ths or non-standard
-      // values like 1.25 or 2.5 leaking through from sub-style motifs
-      // or deriveDevelopmentMotif's diminution arithmetic. The min
-      // value is 0.25 (16th); shorter would feel "broken" rather
-      // than rhythmic.
-      for (const n of mutated) {
-          n.d = QUANTIZED_DURATIONS.reduce((best, v) =>
-              Math.abs(v - n.d) < Math.abs(best - n.d) ? v : best,
-              QUANTIZED_DURATIONS[0]
-          );
-      }
-      return mutated;
+      return utilMotifMutator(motif, style, density, complexity, isShuffle, this.random);
   }
 
   private realizeProgression(abstractPath: any[], key: string, style: StyleName, ctx: ResolvedGenerationContext): ChordDef[] {
@@ -2665,91 +2588,11 @@ export class Engine {
         };
     }
 
+  // Phase 2 (#6):generateMelodyPhrase 已抽到 engine-utils.ts(组 B PRNG 参数化)
+  // 原 method 内含详尽设计注释(rhythm scaffold + random walk + reflection),
+  // 完整保留在 engine-utils.ts 内同名函数;此处仅 stub forward。
   private generateMelodyPhrase(style: StyleName): any[] {
-      const phrases = STYLE_DICTIONARY[style]?.motifs || STYLE_DICTIONARY['POP'].motifs;
-      // Evaluator-driven random fallback when no motifs are defined.
-      //
-      // Strategy: generate a random rhythmic scaffold (one of a few
-      // simple patterns) populated with random diatonic steps. The
-      // engine's downstream layers do the musical work:
-      //   - evaluateNoteInChordContext flags out-of-contract pitches
-      //   - unified-tension-resolution hard constraint snaps the
-      //     follow-up note to resolutionTargets when urgency ≥ 0.5
-      //   - in-chord-contract hard constraint forces structural-beat
-      //     pitches into the chord's contract (literal + extensions)
-      //   - cadence resolution rewrites phrase-end last notes per Tier
-      //   - leading-tone-on-V cross-check upgrades B-on-G7 to tension
-      //   - scale awareness + V-borrowing + tonal/modal all participate
-      // Result: even with random raw steps, the emitted melody respects
-      // chord context and resolution requirements. Truly bad random
-      // picks get snapped; truly good ones pass through. Music quality
-      // is bounded by the evaluator's correctness, not by motif design.
-      //
-      // Seeded random — same seed → same melody, determinism preserved.
-      if (!phrases || phrases.length === 0) {
-          // Rhythm scaffolds — each totals 4 beats. Patterns favor
-          // 8th / 16th notes over quarters because isStructural fires
-          // on strong-beat OR duration ≥ 1.5 — too many long notes
-          // means too many structural positions, which the in-chord-
-          // contract hard constraint then snaps to chord literal,
-          // producing same-PC clusters. 8ths sit between strong beats
-          // so they pass as passing tones and the evaluator's random
-          // contour survives. Mix-in long notes (1.5 / 2) for phrase
-          // breaths and stop-feel.
-          const RHYTHM_PATTERNS: number[][] = [
-              [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],          // straight 8ths
-              [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1],                  // 8ths + tail quarter
-              [0.5, 0.5, 1, 0.5, 0.5, 1],                          // 8-8-Q-8-8-Q
-              [0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 0.5, 1],            // 16th opener
-              [1, 0.5, 0.5, 0.5, 0.5, 1],                          // Q-8-8-8-8-Q
-              [0.5, 0.5, 0.5, 0.5, 2],                             // 8ths + half rest
-              [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.5],                 // breath ending
-              [0.25, 0.25, 0.25, 0.25, 0.5, 0.5, 2],               // 16ths gathering
-          ];
-          const pattern = this.random.pick(RHYTHM_PATTERNS);
-          const motif: any[] = [];
-          let t = 0;
-          // Random-walk contour over a wide range. Start anywhere in
-          // [0, 9] (1.5 octaves of scale) so each bar starts in a
-          // different register; step ±2..±5 each note (NO ±0/±1) so
-          // the projected pitches land far apart and the evaluator's
-          // chord-tone snap distributes across many chord positions
-          // rather than collapsing to the closest one. Without this
-          // wide spread, multiple stepwise steps snap to the same
-          // chord-tone and produce same-PC clusters.
-          let step = this.random.range(0, 9);
-          for (const d of pattern) {
-              motif.push({ t, d, diatonicStep: step });
-              // Style-tuned random walk. BLUES leans on stepwise lick
-              // flow (±1/±2 dominant) so consecutive notes thread blue-
-              // scale tones; other styles use wider hops (±2..±5) so
-              // motif projections spread across the chord-tone snap
-              // basin instead of collapsing to the closest chord tone.
-              const moves = style === 'BLUES'
-                  ? [-2, -2, -2, -1, -1, -1, -1, 1, 1, 1, 1, 2, 2, 2]
-                  : [-5, -4, -3, -3, -2, -2, 2, 2, 3, 3, 4, 5];
-              const delta = this.random.pick(moves);
-              // Reflect off the [0, 9] boundary instead of clamping.
-              // Clamping made step values pile up at 9 or 0 when the
-              // walk hit an edge with a same-direction delta (e.g.
-              // step=8 +5 → clamp 9, then 9 +5 → clamp 9 again),
-              // producing 3+ consecutive identical diatonicSteps which
-              // project to the same MIDI ("F-F-F-F" block-stuck
-              // symptom the BLUES audit caught: t=4.66/5.00/5.66 all
-              // MIDI 81). Reflection turns the over-shoot into a real
-              // direction reversal so the walk keeps moving.
-              let newStep = step + delta;
-              if (newStep > 9) newStep = 9 - (newStep - 9);
-              if (newStep < 0) newStep = -newStep;
-              step = Math.max(0, Math.min(9, newStep));
-              t += d;
-          }
-          return motif;
-      }
-      const picked = this.random.pick(phrases);
-      // Unwrap MotifDef wrappers — downstream pipeline expects raw
-      // note arrays, not the rules-bearing wrapper object.
-      return Array.isArray(picked) ? picked : (picked as { notes: any[] }).notes;
+      return utilGenerateMelodyPhrase(style, this.random);
   }
 
   /**
@@ -3237,52 +3080,11 @@ export class Engine {
    */
   // Phase 1 (#6):estimateMotifShapeMetrics 已抽到 engine-utils.ts(组 A 纯函数化)
 
+  // Phase 2 (#6):deriveDevelopmentMotif 已抽到 engine-utils.ts(组 B PRNG 参数化)
+  // 原 method 注释(inversion / late-entry / truncation 设计)全文保留在
+  // engine-utils.ts 同名函数;此处仅 stub forward。
   private deriveDevelopmentMotif(currentMotif: any[]): any[] {
-      if (currentMotif.length === 0) return [];
-      const r = this.random.next();
-
-      if (r < 0.34) {
-          // Inversion — mirror diatonicSteps (and chromaticOffsets)
-          // around the first note's value. The first note stays put;
-          // every subsequent note's interval to the first is negated.
-          const first = currentMotif[0];
-          const baseDia = ('diatonicStep' in first) ? first.diatonicStep : 0;
-          const baseChrom = ('chromaticOffset' in first) ? first.chromaticOffset : 0;
-          return currentMotif.map((n, i) => {
-              const out: any = { ...n };
-              if (i === 0) return out;
-              if ('diatonicStep' in n) {
-                  out.diatonicStep = baseDia - (n.diatonicStep - baseDia);
-              } else if ('chromaticOffset' in n) {
-                  out.chromaticOffset = baseChrom - (n.chromaticOffset - baseChrom);
-              }
-              return out;
-          });
-      }
-
-      if (r < 0.67) {
-          // Late entry — subtle lay-back. Original 0.5 (half-beat) shift
-          // produced 250ms drag at 120bpm, big enough that the velocity-
-          // accent check (m.t % 1 === 0) fired on what was originally a
-          // weak beat — listener heard "wrong-beat accents". Reduced to
-          // a 32nd note (0.125 beats ≈ 60ms @ 120bpm): subtle soul
-          // lay-back, no rhythmic mismatch with the texture's grid.
-          // Notes overflowing the 4-beat bar are dropped.
-          const shift = 0.125;
-          const shifted = currentMotif
-              .map(n => ({ ...n, t: n.t + shift }))
-              .filter(n => n.t < 4 && n.t + n.d <= 4);
-          if (shifted.length === 0) {
-              return [{ ...currentMotif[currentMotif.length - 1], t: 3.5, d: 0.5 }];
-          }
-          return shifted;
-      }
-
-      // Truncation with rest — keep first half of notes, drop the rest.
-      // The remainder of the bar reads as silence (rhythm builder
-      // behind continues; melody is the one taking a breath).
-      const keepCount = Math.max(1, Math.ceil(currentMotif.length / 2));
-      return currentMotif.slice(0, keepCount).map(n => ({ ...n }));
+      return utilDeriveDevelopmentMotif(currentMotif, this.random);
   }
 
 
