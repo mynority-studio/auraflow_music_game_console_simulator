@@ -50,7 +50,7 @@ export interface ChordSkeletonSlot {
   beats?: number;
 }
 
-import { ChordQuality } from './musicTheory';
+import { ChordQuality } from '../af2-engine/music-theory';
 
 export interface DiatonicMotifNote {
   t: number;

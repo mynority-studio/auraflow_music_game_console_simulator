@@ -14,7 +14,7 @@
 // ============================================================
 
 import type { ChordDef, Random } from '../../../mg-engine/musicEngine';
-import { BASS_RANGE } from '../../../mg-engine/musicTheory';
+import { BASS_RANGE } from '../../music-theory';
 
 /** 基础 bass — chord.bassMidi 直接读 */
 export function bassMidi(chord: ChordDef): number {

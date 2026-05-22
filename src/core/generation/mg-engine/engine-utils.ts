@@ -26,8 +26,8 @@ import {
     assembleVoicing, placeVoicingMidi, evaluateTensionState, detectModeBorrowing,
     STYLE_SHELL, STYLE_ROOTLESS, STYLE_CLUSTER, STYLE_FULL, STYLE_BLUES,
     JAZZ_ROOTLESS_VOICINGS, POP_VOICINGS, RNB_VOICINGS, BLUES_VOICINGS,
-} from './musicTheory';
-import type { Emotion, VoicingStylePreference } from './musicTheory';
+} from '../af2-engine/music-theory';
+import type { Emotion, VoicingStylePreference } from '../af2-engine/music-theory';
 import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
 import {
     pickBasslineRule, BASSLINE_RULES, DEFAULT_BASSLINE_RULE,

@@ -3,7 +3,7 @@
 import type { ChordDef, NoteEvent, Random } from '../../../../mg-engine/musicEngine';
 import type { PureArpParams } from '../types';
 import * as P from '../PitchPrimitives';
-import { CHORD_RANGE } from '../../../../mg-engine/musicTheory';
+import { CHORD_RANGE } from '../../../music-theory';
 
 export function applyPureArp(
     chord: ChordDef,

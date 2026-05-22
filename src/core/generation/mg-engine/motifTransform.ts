@@ -20,7 +20,7 @@
 // ------------------------------------------------------------------
 
 import { MotifNote, DiatonicMotifNote, ChromaticMotifNote } from './styleDictionary';
-import { MeterContext, computeGlobalContract } from './musicTheory';
+import { MeterContext, computeGlobalContract } from '../af2-engine/music-theory';
 
 function isOnStrongBeat(t: number, meterContext: MeterContext): boolean {
   const bpm = meterContext.beatsPerMeasure;

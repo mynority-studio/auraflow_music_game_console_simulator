@@ -96,7 +96,7 @@ import {
   evaluateNoteInChordContext,
   NoteHarmonicAssessment,
   modeToKeyFamily,
-} from './musicTheory';
+} from '../af2-engine/music-theory';
 import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
 import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi } from './basslineRules';
 // AF2 ChordTextureEngine 单点劫持(Phase 2b.1 集成).applyTexture 入口先试 AF2,
@@ -123,8 +123,8 @@ import {
 
 // Re-export theory primitives that external callers import from musicEngine
 // (test_batch.ts uses noteToMidi). Engine itself no longer owns these.
-export { noteToMidi, midiToNote, TensionTracker } from './musicTheory';
-export type { Emotion } from './musicTheory';
+export { noteToMidi, midiToNote, TensionTracker } from '../af2-engine/music-theory';
+export type { Emotion } from '../af2-engine/music-theory';
 
 // Resolution urgency threshold. evaluateNoteInChordContext returns
 // urgency ∈ [0, 1]; values at or above this gate the unified-tension-
@@ -295,7 +295,7 @@ interface NoteContext {
   // Scale Gravity (universal physics, per scale name). Pre-built
   // Map<fromInterval-from-scale-root, ScaleGravityRule>. The note
   // context provides scale root pc so degree calculation is local.
-  scaleGravityRules: Map<number, import('./musicTheory').ScaleGravityRule> | null;
+  scaleGravityRules: Map<number, import('../af2-engine/music-theory').ScaleGravityRule> | null;
   scaleRootPc: number;          // -1 if scale unknown
   gravityStrictness: number;    // 0..1 from style; controls weight
   effectiveFunc: 'T' | 'S' | 'D';
