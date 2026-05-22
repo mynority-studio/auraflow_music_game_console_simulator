@@ -39,6 +39,11 @@ export interface Af2AbstractStep {
     type: string;
     rootOffset: number;
     scaleDegree?: number;
+    /**
+     * 可选 beats(默认 ctx.meterContext.beatsPerMeasure = 4)。
+     * Augmentation 用此切分 bar:e.g. ii-V 共享 1 bar → 各占 2 beats。
+     */
+    beats?: number;
 }
 
 // Section-aware 进行池 helpers — 各 section 类型用专门 progression
@@ -177,6 +182,83 @@ function getSectionPool(mgStyle: MgStyle, sectionType: SectionType): Progression
         ?? [[ I(), IV(), V(), I() ]];
 }
 
+// ============================================================
+// Augmentation:Modal interchange / passing chords 注入
+// ============================================================
+//
+// 在 section-aware Arranger 产出的"骨架"上,概率注入借和弦 + ii-V 转位:
+//
+//   ii-V split(jazz cliche):前面是 V chord 时,split V 的 bar 为 [ii (2 beats), V (2 beats)]
+//   iv borrowing(modal interchange):IV 偶尔替换为 iv(借平行小调色彩)
+//
+// Per-mgStyle 概率门:
+//   POP   ii-V 0.10 / iv 0.05(轻度色彩)
+//   JAZZ  ii-V 0.50 / iv 0.10(jazz 语言强 ii-V)
+//   BLUES ii-V 0    / iv 0   (blues 用属和弦,不需 ii-V)
+//   RNB   ii-V 0.30 / iv 0.20(neo-soul 多 modal interchange)
+//
+// Augmentation 不改全曲长度(总 beats 不变)— ii-V split 内部切 bar,iv 只换 type/roman。
+// ============================================================
+
+const II_V_INSERT_PROB: Record<MgStyle, number> = {
+    POP:   0.10,
+    JAZZ:  0.50,
+    BLUES: 0,
+    RNB:   0.30,
+};
+
+const IV_BORROW_PROB: Record<MgStyle, number> = {
+    POP:   0.05,
+    JAZZ:  0.10,
+    BLUES: 0,
+    RNB:   0.20,
+};
+
+/**
+ * Modal interchange / passing chord 注入。
+ *
+ * 算法:
+ *   遍历 progression,每 step:
+ *     1. 该 step 是 V(rootOffset===7,type='maj'/'7'/'maj7'/'sus4' 等):
+ *        rng.next() < ii-V prob → 把此 step split 为 [ii (2 beats), V (2 beats)]
+ *     2. 该 step 是 IV(rootOffset===5,type='maj'/'maj7'):
+ *        rng.next() < iv-borrow prob → 替换为 iv(type='min'/'m7',roman='iv')
+ *   未触发的 step 原样保留。
+ *
+ * PRNG 消耗:每 step 最多 2 次(ii-V gate + iv gate),deterministic per seed。
+ */
+function augmentProgression(
+    progression: Af2AbstractStep[],
+    mgStyle: MgStyle,
+    rng: Random,
+): Af2AbstractStep[] {
+    const iiVProb = II_V_INSERT_PROB[mgStyle];
+    const ivProb = IV_BORROW_PROB[mgStyle];
+    const out: Af2AbstractStep[] = [];
+
+    for (const step of progression) {
+        // Augmentation 1:ii-V split(在 V chord 上)
+        if (step.rootOffset === 7 && rng.next() < iiVProb) {
+            // V 的 jazz turnaround:前面 ii(rootOffset=2,m7),后面 V(原 type 不变)
+            out.push({ roman: 'ii', type: 'm7', rootOffset: 2, scaleDegree: 2, beats: 2 });
+            out.push({ ...step, beats: 2 });
+            continue;
+        }
+        // Augmentation 2:iv borrowing(在 IV chord 上)
+        if (step.rootOffset === 5 && (step.type === 'maj' || step.type === 'maj7')
+            && rng.next() < ivProb) {
+            // IV → iv(minor 借和弦,modal interchange)
+            const borrowedType = step.type === 'maj7' ? 'm7' : 'min';
+            out.push({ ...step, roman: 'iv', type: borrowedType });
+            continue;
+        }
+        // 默认:原样保留(也要消耗 1 次 PRNG 保持 stream 对齐 — ii-V gate 已走过,
+        // iv gate 在 rootOffset!=7 / type!=maj 时不走,统一处理)
+        out.push({ ...step });
+    }
+    return out;
+}
+
 export const Af2Arranger = {
     /**
      * AF2 编曲师 — section-aware 抽进行 + 拼接全曲。
@@ -204,7 +286,8 @@ export const Af2Arranger = {
                 out.push({ ...chosen[bar % chosen.length] });
             }
         }
-        return out;
+        // Modal interchange / passing chord 注入(per-mgStyle 概率门)
+        return augmentProgression(out, mgStyle, rng);
     },
 
     /**
