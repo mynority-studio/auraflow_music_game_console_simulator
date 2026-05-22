@@ -29,9 +29,9 @@
 
 import type { NoteData, SectionMetadata } from '../../types';
 import { BandRole } from '../../types';
-// C.3:plan(score, role, peers) 协议 — Conductor + Score 架构地基
-import type { Score } from '../Score';
-import type { ConductorRole } from '../Conductor';
+// C.3 → C.4:MusicianPlanInput 共享协议 + per-section role 查询
+import type { MusicianPlanInput } from '../Conductor';
+import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 
 /** Pad 物理参数 */
 export const PAD_INSTRUMENT_SPEC = {
@@ -46,19 +46,7 @@ export const PAD_INSTRUMENT_SPEC = {
 const PAD_CENTER_LO = 60;    // C4
 const PAD_CENTER_HI = 72;    // C5
 
-/**
- * C.3 plan() 协议输入(全 musician planners 共享同一签名,C.5 提取到顶层
- * shared interface)。
- *
- *   score: 总谱(只读)
- *   role:  Conductor 分配给本 musician 的功能角色
- *   peers: 同伴 musicianId → 已 emit 的 notes(cross-track 协调用,Pad 当前不消费)
- */
-export interface PadPlanInput {
-    score: Score;
-    role: ConductorRole;
-    peers: ReadonlyMap<string, ReadonlyArray<NoteData>>;
-}
+// C.4:PadPlanInput 已并入共享 MusicianPlanInput(见 Conductor.ts)
 
 /**
  * 根据 chord.startBeat 找它落在哪个段落,返回 energyLevel。
@@ -99,20 +87,21 @@ function shiftToPadCenter(voicing: number[]): number[] {
 
 export const PadGenerator = {
     /**
-     * C.3:plan(score, role, peers) — Conductor + Score 协议下乐手 plan 入口。
+     * C.4:plan(MusicianPlanInput) — per-section role-aware Pad 生成。
      *
-     * role 检查:
-     *   - 'silent' / 不是 'pad' → 返回 []
-     *   - 'pad' → 按 Score 编自己演奏
+     * 每 chord:
+     *   1. 查 chord.startBeat 落在哪个 section
+     *   2. 查本 musician 在该 section 的 roles
+     *   3. 仅 roles 含 'pad' 时,emit pad notes for this chord
+     *   4. 否则 → 跳过(Conductor 让我这段 silent)
      *
-     * peers 字段当前不消费(Pad 暂不需要 cross-track 协调);保留作 C.5+ 时让
-     * 其他 musicians 看 pad notes 用。
+     * DynamicConductor 可让 pad 在 Verse/Chorus 进入,Outro 单独保留 pad,
+     * Break/Breakdown 期间退场(无 pad role 分配)等。
      *
-     * 算法等价原 generate(input):只是把 input.chords / sections 来源改为 score。
+     * peers 当前不消费(Pad 不需 cross-track 协调);保留作未来 melody/accomp
+     * 改造后看 pad notes 用。
      */
-    plan(input: PadPlanInput): NoteData[] {
-        if (input.role !== 'pad') return [];
-        // peers 暂不消费(C.3 试点)
+    plan(input: MusicianPlanInput): NoteData[] {
         void input.peers;
         const { score } = input;
         const chords = score.chords;
@@ -121,6 +110,12 @@ export const PadGenerator = {
 
         for (let i = 0; i < chords.length; i++) {
             const chord = chords[i];
+
+            // C.4:查本 musician 在该 chord 所在 section 的 roles
+            const sectionIdx = findSectionIdxForBeat(chord.startBeat, sections);
+            if (sectionIdx < 0) continue;
+            const myRoles = getMyRolesInSection(input, sectionIdx);
+            if (!myRoles.includes('pad')) continue;
 
             // Step 1: 取 voicing(已 voice-leading 优化)
             if (!chord.voicing || chord.voicing.length < 2) continue;

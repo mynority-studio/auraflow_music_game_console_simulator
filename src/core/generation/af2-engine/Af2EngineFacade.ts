@@ -56,11 +56,11 @@ import { BassIdiom } from './instruments/BassIdiom';
 import { PadGenerator, PadIdiom } from './instruments/PadIdiom';
 import { DrumGenerator } from './instruments/DrumIdiom';
 import { Reconciler } from './Reconciler';
-// C.1 + C.2:Score 数据契约 + Conductor 分谱层(StaticConductor 默认实现 = 当前
-// forcedBand 行为,SectionAssignment 暂未被 musicians 消费 — C.3+ 接入)
+// C.1 + C.2 + C.4:Score 数据契约 + Conductor 分谱层(DynamicConductor 默认,
+// per-section 模板编排;StaticConductor 保留作 fallback)
 import type { Score } from './Score';
-import type { Band } from './Conductor';
-import { StaticConductor } from './Conductor';
+import type { Band, SectionAssignment } from './Conductor';
+import { DynamicConductor } from './Conductor';
 
 export interface Af2GenerateResult {
     track: GeneratedTrack;
@@ -132,10 +132,13 @@ export const Af2EngineFacade = {
             [BandRole.Drums]:      routed[BandRole.Drums].musician,
             [BandRole.Atmosphere]: routed[BandRole.Atmosphere].musician,
         };
-        const conductor = new StaticConductor();
-        const _sectionAssignments = conductor.dispatch(score, band);
-        // C.3+:musicians 改造后此对象会被消费;当前阶段保 reference 防 dead-code 警告
-        void _sectionAssignments;
+        // C.4:DynamicConductor 默认上线。Section-type 模板:
+        //   Intro:pad + accomp  / Verse/Chorus:全员  / Bridge:无 drums
+        //   Break/Breakdown:仅 drums+bass  / Outro:pad + bass
+        // PadGenerator (C.3 + C.4) 已消费 assignments;其他 musicians (C.5+) 改造完后
+        // 会跟着 Conductor 编排走。
+        const conductor = new DynamicConductor();
+        const sectionAssignments: ReadonlyArray<SectionAssignment> = conductor.dispatch(score, band);
 
         // -----------------------------------------------------------
         // Step 4.5: PadGenerator(条件:Atmosphere 槽位有 Pad family 乐手)
@@ -146,7 +149,12 @@ export const Af2EngineFacade = {
         // -----------------------------------------------------------
         const atmosphereMusician = routed[BandRole.Atmosphere].musician;
         const padNotes = atmosphereMusician?.instrumentFamily === InstrumentFamily.Pad
-            ? PadGenerator.plan({ score, role: 'pad', peers: new Map() })
+            ? PadGenerator.plan({
+                score,
+                musicianId: atmosphereMusician.id,
+                assignments: sectionAssignments,
+                peers: new Map(),
+              })
             : [];
 
         // -----------------------------------------------------------

@@ -17,8 +17,8 @@
 //     Verse 2 全队进入"),同一乐手可在不同 section 切换 role
 // ============================================================
 
-import { BandRole } from '../types';
-import type { Musician } from '../types';
+import { BandRole, SectionType } from '../types';
+import type { Musician, NoteData, SectionMetadata } from '../types';
 import type { Score } from './Score';
 
 /**
@@ -86,26 +86,130 @@ function defaultRoleFor(slot: BandRole): ConductorRole | null {
 
 export class StaticConductor implements Conductor {
     dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment> {
-        // 1. 计算"通用 byMusician 表"(全曲沿用)
-        const byMusician = new Map<string, ConductorRole[]>();
-        // BandRole 是 string enum,key 直接是 string value(如 'mainInst' / 'accomp')
-        for (const slot of Object.keys(band) as ReadonlyArray<BandRole>) {
-            const musician = band[slot];
-            if (!musician) continue;
-            const role = defaultRoleFor(slot);
-            if (!role) continue;
-            const existing = byMusician.get(musician.id);
-            if (existing) existing.push(role);
-            else byMusician.set(musician.id, [role]);
-        }
-        // freeze inner arrays(防 caller mutate)
-        const frozenByMusician = new Map<string, ReadonlyArray<ConductorRole>>();
-        for (const [id, roles] of byMusician) frozenByMusician.set(id, Object.freeze([...roles]));
-
-        // 2. 全曲沿用同一份 assignment
+        const frozenByMusician = buildDefaultByMusician(band);
+        // 全曲沿用同一份 assignment
         return score.sections.map((_, idx) => ({
             sectionIdx: idx,
             byMusician: frozenByMusician,
         }));
     }
+}
+
+/** Helper:band → musicianId → roles 默认表(全员上场,1 musician → 1 role) */
+function buildDefaultByMusician(band: Band): ReadonlyMap<string, ReadonlyArray<ConductorRole>> {
+    const byMusician = new Map<string, ConductorRole[]>();
+    for (const slot of Object.keys(band) as ReadonlyArray<BandRole>) {
+        const musician = band[slot];
+        if (!musician) continue;
+        const role = defaultRoleFor(slot);
+        if (!role) continue;
+        const existing = byMusician.get(musician.id);
+        if (existing) existing.push(role);
+        else byMusician.set(musician.id, [role]);
+    }
+    const frozen = new Map<string, ReadonlyArray<ConductorRole>>();
+    for (const [id, roles] of byMusician) frozen.set(id, Object.freeze([...roles]));
+    return frozen;
+}
+
+// ============================================================
+// DynamicConductor — per-section 动态编排(C.4)
+// ============================================================
+//
+// 默认策略:section-type 模板驱动。例如:
+//   Intro:pad + accomp 进入(无 melody / drums,营造氛围)
+//   Verse / PreChorus / Chorus:全员
+//   Bridge:无 drums(更柔)
+//   Break / Breakdown:仅 drums + bass(rhythm section only)
+//   Outro / PreOutro:pad / accomp / bass(收尾减员)
+//   Solo_Bridge / BuildUp / Drop:默认全员(Phase 后续可细化)
+//
+// 后续可扩展:
+//   - 自定义模板(从 styleDictionary 读)
+//   - musician 卡的"在某 section 出不出场"覆盖
+//   - 概率门(每 section 50% 概率某乐手 silent,增加变化)
+// ============================================================
+
+/**
+ * Section-type → 该段允许的 ConductorRole 集。不在集内的 musician 该段 silent。
+ * "*"(undefined)= 全员(默认 fallback)。
+ */
+const DYNAMIC_SECTION_TEMPLATE: Partial<Record<SectionType, ReadonlySet<ConductorRole>>> = {
+    [SectionType.Intro]:     new Set(['pad', 'accomp']),
+    [SectionType.Verse]:     new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
+    [SectionType.PreChorus]: new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
+    [SectionType.Chorus]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
+    [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'pad']),         // 无 drums
+    [SectionType.Break]:     new Set(['drums', 'bass']),                           // rhythm only
+    [SectionType.Breakdown]: new Set(['drums', 'bass']),
+    [SectionType.BuildUp]:   new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
+    [SectionType.Drop]:      new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
+    [SectionType.Outro]:     new Set(['pad', 'bass']),
+    [SectionType.PreOutro]:  new Set(['pad', 'accomp', 'bass']),
+    [SectionType.Solo_Bridge]: new Set(['melody', 'accomp', 'bass', 'pad']),
+};
+
+export class DynamicConductor implements Conductor {
+    dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment> {
+        const fullByMusician = buildDefaultByMusician(band);
+        return score.sections.map((section, idx) => {
+            const allowedRoles = DYNAMIC_SECTION_TEMPLATE[section.sectionType];
+            if (!allowedRoles) {
+                // 未注册的 sectionType → 全员上场
+                return { sectionIdx: idx, byMusician: fullByMusician };
+            }
+            // 过滤每个 musician 的 roles,保留 allowedRoles 内的
+            const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
+            for (const [id, roles] of fullByMusician) {
+                const kept = roles.filter(r => allowedRoles.has(r));
+                if (kept.length > 0) filtered.set(id, Object.freeze(kept));
+                // kept 为空 → 该段该 musician silent(不进 map = 无 role)
+            }
+            return { sectionIdx: idx, byMusician: filtered };
+        });
+    }
+}
+
+// ============================================================
+// Musician plan() 协议输入(C.3 起共享签名)
+// ============================================================
+//
+// 所有 musicians 改造为 plan() 后,接收同一形状的输入。Musician 自查 own role
+// per section,自查 peers(其他 musicians 已 emit 的 notes,cross-track 协调用)。
+// ============================================================
+
+export interface MusicianPlanInput {
+    /** 总谱(只读) */
+    readonly score: Score;
+    /** 本 musician 在 Band 里的 id(用于在 assignments 中自查 own role) */
+    readonly musicianId: string;
+    /** Conductor 的 per-section role 分配(全曲所有 sections) */
+    readonly assignments: ReadonlyArray<SectionAssignment>;
+    /** 其他 musicians 已 emit notes(musicianId 也可能是 key,自查时 dedup)*/
+    readonly peers: ReadonlyMap<string, ReadonlyArray<NoteData>>;
+}
+
+/**
+ * Helper:从 MusicianPlanInput 查"本 musician 在某 section 的角色列表"。
+ * 未注册 / silent → 返回空数组。
+ */
+export function getMyRolesInSection(
+    input: MusicianPlanInput,
+    sectionIdx: number,
+): ReadonlyArray<ConductorRole> {
+    return input.assignments[sectionIdx]?.byMusician.get(input.musicianId) ?? [];
+}
+
+/**
+ * Helper:beat 落在哪个 section index(sections 应 startBeat 升序)。
+ * 找不到 → 返回 -1。
+ */
+export function findSectionIdxForBeat(
+    beat: number,
+    sections: ReadonlyArray<SectionMetadata>,
+): number {
+    for (let i = 0; i < sections.length; i++) {
+        if (beat < sections[i].endBeat) return i;
+    }
+    return sections.length > 0 ? sections.length - 1 : -1;
 }
