@@ -38,7 +38,9 @@ import { StyleId } from '../config/StyleFlags';
 import type { PipelineRunOptions } from '../pipeline';
 import { PRNGManager } from '../../utils/PRNG';
 import { EngineSelectionStore, MgStyle } from '../../../state/EngineSelectionStore';
-import { Engine, Random, ChordDef, NoteEvent, GenerationConfig } from './musicEngine';
+import { Random, ChordDef, NoteEvent, GenerationConfig } from './musicEngine';
+// Phase 6.5:直接 import engine-utils free function,绕过 Engine class
+import { generateProgressions, generateArrangement } from './engine-utils';
 
 export interface MgGenerateResult {
     track: GeneratedTrack;
@@ -177,13 +179,14 @@ export const MgEngineFacade = {
             key,
             emotion: 'auto',
         };
-        const engine = new Engine(new Random(seedString));
+        // Phase 6.5:绕过 Engine class,直接调 free function
+        const rng = new Random(seedString);
 
         // -----------------------------------------------------------
         // 3. 跑 mg 管线:Progressions → Arrangement
         // -----------------------------------------------------------
-        const mgChords: ChordDef[] = engine.generateProgressions(config);
-        const timeline = engine.generateArrangement(mgChords, config);
+        const mgChords: ChordDef[] = generateProgressions(config, rng);
+        const timeline = generateArrangement(mgChords, config, rng);
         const events: NoteEvent[] = timeline.events;
 
         // -----------------------------------------------------------

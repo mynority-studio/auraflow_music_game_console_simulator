@@ -23,8 +23,10 @@
 
 import { ChordQuality, Tonality } from '../types';
 import type { GeneratedChord, NoteData } from '../types';
-import { Engine, Random } from '../mg-engine/musicEngine';
+import { Random } from '../mg-engine/musicEngine';
 import type { ChordDef, NoteEvent, GenerationConfig } from '../mg-engine/musicEngine';
+// Phase 6.5:直接 import engine-utils free function,绕过 Engine class
+import { generateProgressions, generateArrangement } from '../mg-engine/engine-utils';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 
 /**
@@ -153,10 +155,10 @@ export const MgKernelInvoker = {
             key,
             emotion: 'auto',
         };
-        const engine = new Engine(new Random(seedString));
-
-        const mgChords: ChordDef[] = engine.generateProgressions(config);
-        const timeline = engine.generateArrangement(mgChords, config);
+        // Phase 6.5:绕过 Engine class,直接调 free function
+        const rng = new Random(seedString);
+        const mgChords: ChordDef[] = generateProgressions(config, rng);
+        const timeline = generateArrangement(mgChords, config, rng);
         const mgEvents: NoteEvent[] = timeline.events;
 
         // ChordDef[] → GeneratedChord[](累积 startBeat)

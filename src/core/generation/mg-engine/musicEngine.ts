@@ -99,9 +99,8 @@ import {
 } from '../af2-engine/music-theory';
 import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from '../af2-engine/data/dynamicHarmony';
 import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi } from '../af2-engine/data/basslineRules';
-// AF2 ChordTextureEngine 单点劫持(Phase 2b.1 集成).applyTexture 入口先试 AF2,
-// 未覆盖的 textureType 返回 null 时 fallback 到下方 mg 原实现.
-import { ChordTextureEngine } from '../af2-engine/instruments/chord-texture/ChordTextureEngine';
+// AF2 ChordTextureEngine 单点劫持 — Phase 3.2 后 applyTexture 已抽到 engine-utils.ts,
+// ChordTextureEngine import 随 applyTexture 一起搬走;此处不再需要。
 // Phase 1 (#6) — Engine class 组 A 纯函数化:抽出无 state 依赖的 method 到 engine-utils.
 // Phase 2 (#6) — Engine class 组 B PRNG 参数化:接 `Random` 为参数的 method 同步抽出.
 import {
