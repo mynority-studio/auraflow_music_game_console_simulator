@@ -16,7 +16,8 @@
 //   - 改 velocity 是合法的(humanization 是音乐 standard 做法)
 // ============================================================
 
-import type { NoteData, SectionMetadata } from '../types';
+import type { NoteData, SectionMetadata, GeneratedChord } from '../types';
+import { ChordQuality } from '../types';
 
 /**
  * energyLevel(1-10)→ velocity 缩放因子。
@@ -122,6 +123,71 @@ function hasBassCollision(accompEvent: NoteData, bass: NoteData[]): boolean {
     return false;
 }
 
+// ============================================================
+// Phase C — add11 人手物理模拟
+// ============================================================
+//
+// 物理场景:钢琴 accomp 出 add11 柱式和弦时,11音(root + 5 PC,octave+4th 位置)
+// 通常超出左手单手按宽度。物理上需要"借右手"按 11音,但右手不能在高音区
+// 同时按 melody — 否则跟 accomp 高位的 11音组合成 add 20+(色彩不对)。
+//
+// 听感后果:在 add11 和弦窗口内,melody 倾向于围绕 11音位置游走(右手已经在
+// 11音附近)。Phase C 用概率门 + 八度调整模拟此约束。
+//
+// 触发条件:chord.quality ∈ ELEVEN_FAMILY AND chord.voicing 实际含 11音 PC
+// 概率门:60% 触发(deterministic hash,与 D-5 兼容,不消耗 PRNG)
+// 调整:melody 八度移调到 11音 ±12 半音内最近位置
+// ============================================================
+
+const ELEVEN_FAMILY: ReadonlySet<ChordQuality> = new Set([
+    ChordQuality.Minor11,
+    ChordQuality.Dominant11,
+    ChordQuality.Dominant13,  // 13 includes natural 11
+    ChordQuality.Major13,
+]);
+
+/** Phase C 概率门(60% — 用户"一定概率") */
+const ADD11_GATE_PROBABILITY = 0.60;
+/** Phase C melody 偏离 11音的最大距离(半音) */
+const ADD11_MAX_DIST = 12;
+
+/** Deterministic hash(与 PianoIdiom detHash01 同构,但独立 inline 避免 cross-file dep)*/
+function detHash01(pitch: number, onset: number): number {
+    const seedInt = ((pitch & 0xff) << 16) ^ Math.floor(onset * 16) ^ 0x9e3779b9;
+    let x = seedInt >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+    x = (x ^ (x >>> 16)) >>> 0;
+    return (x & 0xffffff) / 0x1000000;
+}
+
+interface ElevenWindow {
+    startBeat: number;
+    endBeat: number;
+    /** 11音 在 voicing 中的实际 midi 位置(highest occurrence — borrowed-hand 顶音) */
+    elevenMidi: number;
+}
+
+/** 扫描 chords,产出所有 add11 窗口 + 11音 midi */
+function findElevenWindows(chords: GeneratedChord[]): ElevenWindow[] {
+    const out: ElevenWindow[] = [];
+    for (const chord of chords) {
+        if (!ELEVEN_FAMILY.has(chord.quality)) continue;
+        const elevenPc = ((chord.root + 5) % 12 + 12) % 12;
+        // 在 voicing 中找 PC 匹配的最高 midi(borrowed-hand 通常按顶部 11音)
+        const matched = chord.voicing
+            .filter(p => (((p % 12) + 12) % 12) === elevenPc)
+            .sort((a, b) => b - a);
+        if (matched.length === 0) continue;
+        out.push({
+            startBeat: chord.startBeat,
+            endBeat: chord.endBeat,
+            elevenMidi: matched[0],
+        });
+    }
+    return out;
+}
+
 /** Melody 同上 — 检测 accomp 顶音是否撞 melody */
 function hasMelodyCollision(accompEvent: NoteData, melody: NoteData[]): boolean {
     const accompPc = pitchClass(accompEvent.pitch);
@@ -133,6 +199,51 @@ function hasMelodyCollision(accompEvent: NoteData, melody: NoteData[]): boolean 
 }
 
 export const Reconciler = {
+    /**
+     * Phase C — add11 人手物理模拟(跨 part:chord → melody 八度调整)。
+     *
+     * 在 11音家族(Minor11/Dominant11/Dominant13/Major13)和弦窗口内,melody
+     * 60% 概率移到最近 11音 octave(±12 半音内),模拟"借右手按 11音 → melody
+     * 受限于 11音区域"的物理约束。
+     *
+     * 概率门:`detHash01(pitch, onset)`,deterministic,不消耗 PRNG(D-5 兼容)。
+     * 移调方式:取 melody PC,找离 11音 midi 最近的同 PC octave 位置。
+     */
+    applyAdd11HandPhysics(melody: NoteData[], chords: GeneratedChord[]): NoteData[] {
+        if (melody.length === 0 || chords.length === 0) return melody;
+        const windows = findElevenWindows(chords);
+        if (windows.length === 0) return melody;
+
+        const out: NoteData[] = new Array(melody.length);
+        for (let i = 0; i < melody.length; i++) {
+            const n = melody[i];
+            // 找 onset 落在哪个 11 窗口
+            let window: ElevenWindow | undefined;
+            for (const w of windows) {
+                if (n.onset >= w.startBeat && n.onset < w.endBeat) { window = w; break; }
+            }
+            if (!window) { out[i] = { ...n }; continue; }
+            // 概率门(60% 触发 / 40% 保留)
+            if (detHash01(n.pitch, n.onset) >= ADD11_GATE_PROBABILITY) { out[i] = { ...n }; continue; }
+            // 触发:把 melody 移到最近 11音 octave(保留 PC)
+            const melodyPc = (((n.pitch % 12) + 12) % 12);
+            // 计算 candidate octaves(11音 octave + 邻近 octave)
+            const targetOctave = Math.floor(window.elevenMidi / 12);
+            let best = n.pitch;
+            let bestDist = Math.abs(n.pitch - window.elevenMidi);
+            for (const oct of [targetOctave - 1, targetOctave, targetOctave + 1]) {
+                const cand = melodyPc + 12 * oct;
+                const dist = Math.abs(cand - window.elevenMidi);
+                if (dist <= ADD11_MAX_DIST && dist < bestDist) {
+                    bestDist = dist;
+                    best = cand;
+                }
+            }
+            out[i] = { ...n, pitch: best };
+        }
+        return out;
+    },
+
     /**
      * v1.0 — 段落能量驱动 velocity humanization。
      *
