@@ -12,18 +12,27 @@
 // ============================================================
 
 import { StyleName, STYLE_DICTIONARY } from './styleDictionary';
-import { harmonicFunctionFromRoman, QUANTIZED_DURATIONS, Random } from './musicEngine';
+import {
+    harmonicFunctionFromRoman, QUANTIZED_DURATIONS, Random,
+    KEYS, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
+} from './musicEngine';
 import type { ChordDef, GenerationConfig, ResolvedGenerationContext } from './musicEngine';
 import {
     CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote,
     getModeAwareSubstitutions, modeProgressionTemplate,
     MAINSTREAM_EMOTION_TO_MODE, MAJOR_FLAVOR_MODES,
     EXOTIC_MODE_PROBABILITY, EXOTIC_MODES,
-    getMeterContext,
+    getMeterContext, modeToKeyFamily,
+    assembleVoicing, placeVoicingMidi, evaluateTensionState, detectModeBorrowing,
+    STYLE_SHELL, STYLE_ROOTLESS, STYLE_CLUSTER, STYLE_FULL, STYLE_BLUES,
+    JAZZ_ROOTLESS_VOICINGS, POP_VOICINGS, RNB_VOICINGS, BLUES_VOICINGS,
 } from './musicTheory';
-import type { Emotion } from './musicTheory';
+import type { Emotion, VoicingStylePreference } from './musicTheory';
 import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
-import { pickBasslineRule } from './basslineRules';
+import {
+    pickBasslineRule, BASSLINE_RULES, DEFAULT_BASSLINE_RULE,
+    BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi,
+} from './basslineRules';
 
 /**
  * 抽自 mg.Engine.resolveTonalCharacter (原 L684-689)。
@@ -939,4 +948,398 @@ export function resolveGeneration(config: GenerationConfig): ResolvedGenerationC
         meterContext: meterCtx,
         tonalCharacter: resolveTonalCharacter(config.style, mode),
     };
+}
+
+/**
+ * 抽自 mg.Engine.realizeProgression (原 L894-1409,515 行)。
+ *
+ * 把 abstract chord path(generateProgression 输出)展开为完整 ChordDef[](含
+ * voicing / bass / 极性化的 chordSymbol / Divisi 2.0 harmonicState / modal
+ * borrowing / sub-V slash 处理)。Stage G 的 voicing pipeline 顶配版。
+ *
+ * Voicing pipeline(Stage G refactor):
+ *   1. BASS first(G5 prep):bassline rule 决定 bass MIDI;必须先于 voicing
+ *      因为 G3 placeVoicingMidi 需要 bass 位置来 enforce 8-14 semitone
+ *      "sweet spot" gap。
+ *   2. PCS selection(G2):existing style voicing tables(JAZZ_ROOTLESS / POP /
+ *      BLUES / RNB)优先 — encode Stage B 手调 Bill Evans / Glasper 知识;
+ *      miss 时 assembleVoicing 走 aesthetic table + clash arbitration
+ *      (修 POP V7b13 等 altered cases)。
+ *   3. MIDI placement(G3):placeVoicingMidi multi-objective brute-force
+ *      搜索匹配 preferredRegister + bass distance constraint + voice-leading
+ *      (修 84% mid-range tenor-gap)。
+ *
+ * Structural root-anchor(audit 修正后):bar 0 / phrase boundary / cadential
+ * landing 三种条件触发强制 root anchor;否则走 ruleFn(stepwise_descent 等)。
+ * 修复前 RNB / JAZZ-minor 78.9% non-Solid,8/8 seeds affected。
+ *
+ * V/X 副属和弦专属 bass pattern(老师 4):
+ *   - (a) 跳进式:root → 3rd 转位切换(beat 0-1 / 2-3)
+ *   - (b) Walk-up:root → 3rd → 5th → leading(next chord root - 1)
+ *   PRNG 0.5 gate 选 a/b。
+ *
+ * 末尾两 pass roman label sync:
+ *   - Pass 1:major-quality type → uppercase / minor / dim → lowercase
+ *     (cosmetic only — UI label 与 audible chord 对齐)
+ *   - Pass 2:subV/X 用 X 的 synced label(deferred 到 Pass 1 完成后)
+ *
+ * PRNG 消耗:
+ *   - 每 bar:2 次条件(POP maj / min add9 swap)+ 1 次条件(secondary dom
+ *     bass mode 0.5 gate)
+ *   - 每 bar(非 forceRootAnchor 路径):bassline ruleFn 内消耗(可变)
+ *   - 每 bar(bassPattern 路径):BASS_PATTERN_RULES rule 内消耗(可变)
+ */
+export function realizeProgression(
+    abstractPath: any[],
+    key: string,
+    style: StyleName,
+    ctx: ResolvedGenerationContext,
+    rng: Random,
+): ChordDef[] {
+    const keyIndex = Math.max(0, KEYS.indexOf(key));
+    const isMinorKey = modeToKeyFamily(ctx.mode) === 'minor';
+    const degreeOffsets: Record<string, number> = {
+        'I': 0, 'ii': 2, 'iii': 4, 'IV': 5, 'V': 7, 'vi': 9, 'vii': 11
+    };
+
+    const parsedChords: ChordDef[] = [];
+
+    abstractPath.forEach((ap, apIdx) => {
+        let rootOffset = 0;
+        let activeType = ap.type;
+
+        if (ap.rootOffset !== undefined) {
+            rootOffset = ap.rootOffset;
+        } else if (ap.roman.includes('/')) {
+            const [chordPart, targetPart] = ap.roman.split('/');
+            const targetOffset = degreeOffsets[targetPart] || 0;
+            if (chordPart === 'V') {
+                rootOffset = (targetOffset + 7) % 12;
+            } else if (chordPart === 'iim7') {
+                rootOffset = (targetOffset + 2) % 12;
+            } else if (chordPart === 'V7') {
+                rootOffset = (targetOffset + 7) % 12;
+            }
+        } else {
+            const baseRoman = ap.roman.replace(/maj7|m7|7|maj9|m9|7sus4|b/, '');
+            if (ap.roman.startsWith('bVII')) {
+                rootOffset = 10;
+            } else {
+                rootOffset = degreeOffsets[baseRoman] !== undefined ? degreeOffsets[baseRoman] : 0;
+            }
+        }
+
+        if (style === 'POP' && activeType === 'maj') activeType = rng.next() > 0.5 ? 'add9' : 'maj';
+        if (style === 'POP' && activeType === 'min') activeType = rng.next() > 0.5 ? 'm7' : 'min';
+
+        const rootKeyIndex = (keyIndex + rootOffset) % 12;
+        const rootName = spellPcInKey(rootKeyIndex, keyIndex, isMinorKey);
+        const intervals = CHORD_TYPES[activeType] || CHORD_TYPES['maj'];
+
+        // Step 1: pcs selection
+        const compingMode = STYLE_DICTIONARY[style]?.compingVoicingMode ?? 'shell';
+        const stylePref: VoicingStylePreference =
+            compingMode === 'rootless' ? STYLE_ROOTLESS :
+            compingMode === 'cluster'  ? STYLE_CLUSTER  :
+            compingMode === 'full'     ? STYLE_FULL     :
+            compingMode === 'blues'    ? STYLE_BLUES    :
+            STYLE_SHELL;
+
+        const overrideTable: Record<string, number[]> | null =
+            compingMode === 'rootless' ? JAZZ_ROOTLESS_VOICINGS :
+            compingMode === 'cluster'  ? RNB_VOICINGS           :
+            compingMode === 'full'     ? POP_VOICINGS           :
+            compingMode === 'blues'    ? BLUES_VOICINGS         :
+            null;
+        const overrideIntervals = overrideTable ? overrideTable[activeType] : undefined;
+
+        let compingPcs: number[];
+        if (overrideIntervals) {
+            compingPcs = overrideIntervals.map(iv => (((rootKeyIndex + iv) % 12) + 12) % 12);
+            compingPcs = Array.from(new Set(compingPcs));
+        } else {
+            compingPcs = assembleVoicing(activeType, rootKeyIndex, stylePref);
+        }
+
+        // Secondary dominant 9th injection
+        const isSecondaryDom = ap.roman.includes('/');
+        if (isSecondaryDom) {
+            const ninthPc = (((rootKeyIndex + 2) % 12) + 12) % 12;
+            if (!compingPcs.includes(ninthPc)) compingPcs.push(ninthPc);
+        }
+
+        const pitchClasses = compingPcs;
+
+        // Step 2: Bass — G5 Bass Planner
+        const slotBassRole = (ap as any).bassRole as
+            ('root' | '3rd' | '5th' | '7th' | 'pedal' | undefined);
+        const slotBassPedalPc = (ap as any).bassPedalPc as number | undefined;
+        const bassAnchorPc = resolveBassAnchorPc(
+            slotBassRole, rootKeyIndex, intervals, slotBassPedalPc,
+        );
+
+        const ruleFn = BASSLINE_RULES[ctx.basslineRule] ?? BASSLINE_RULES[DEFAULT_BASSLINE_RULE];
+        const prevBassMidi = parsedChords.length > 0
+            ? parsedChords[parsedChords.length - 1].bassMidi
+            : null;
+        const isCadenceToTonic = ap.roman === 'I'
+            && parsedChords.length > 0
+            && abstractPath[parsedChords.length - 1].roman.includes('V');
+
+        // Structural root-anchor positions
+        const isBarStart = parsedChords.length === 0;
+        const isPhraseBoundary = ctx.motifInterval > 0
+            && parsedChords.length > 0
+            && parsedChords.length % ctx.motifInterval === 0;
+        const prevRoman = parsedChords.length > 0
+            ? abstractPath[parsedChords.length - 1].roman
+            : '';
+        const isPrimaryV = /^V[^/IiVv]*$|^V$/.test(prevRoman.split('/')[0])
+            && prevRoman.split('/')[0] !== 'IV'
+            && prevRoman.split('/')[0] !== 'VI';
+        const isSecondaryV = prevRoman.startsWith('V/') || prevRoman.startsWith('V7/');
+        const secondaryTarget = isSecondaryV
+            ? prevRoman.split('/')[1]
+            : null;
+        const PRIMARY_LANDING_ROMANS = new Set([
+            'I', 'i', 'vi', 'VI', 'bVI', 'IV', 'iv',
+        ]);
+        const isResolutionLanding = (isPrimaryV && PRIMARY_LANDING_ROMANS.has(ap.roman))
+            || (isSecondaryV && secondaryTarget !== null
+                && (ap.roman === secondaryTarget
+                    || ap.roman.toLowerCase() === secondaryTarget.toLowerCase()));
+        const forceRootAnchor = isBarStart || isPhraseBoundary || isResolutionLanding;
+
+        let bassM: number;
+        if (slotBassRole && slotBassRole !== 'root') {
+            bassM = clampPcToBassMidi(bassAnchorPc);
+        } else if (forceRootAnchor) {
+            bassM = clampPcToBassMidi(bassAnchorPc);
+        } else {
+            // Bass ONLY anchor on chord literal pcs (1/3/5/7) — never extensions
+            const chordLiteralPcs = intervals.slice(0, 4).map(iv => ((rootKeyIndex + iv) % 12 + 12) % 12);
+            bassM = ruleFn({
+                chordRootPc: rootKeyIndex,
+                bassAnchorPc,
+                pitchClasses: chordLiteralPcs,
+                prevBassMidi,
+                isCadenceToTonic,
+                isLast: parsedChords.length === abstractPath.length - 1,
+                barIndex: parsedChords.length,
+                random: rng,
+            });
+        }
+
+        // Step 3a: Chord-identity guard for inversions (G7 fix)
+        const inversionBassPc = (((bassM % 12) + 12) % 12);
+        if (inversionBassPc !== rootKeyIndex && stylePref.rootPolicy === 'omit') {
+            compingPcs = compingPcs.filter(pc => pc !== inversionBassPc);
+            if (!compingPcs.includes(rootKeyIndex)) {
+                compingPcs.push(rootKeyIndex);
+            }
+        }
+
+        // Step 3b: MIDI placement
+        const prevCompingMidi = parsedChords.length > 0
+            ? (parsedChords[parsedChords.length - 1].notesMidi
+                ?? parsedChords[parsedChords.length - 1].notes.map(n => noteToMidi(n)))
+            : [];
+        const compingNotesMidi = placeVoicingMidi(
+            compingPcs, prevCompingMidi, bassM, activeType, rootKeyIndex,
+        );
+
+        // Divisi 2.0 — Harmonic state machine middleware
+        const bassPc = ((bassM % 12) + 12) % 12;
+        const upperRootPc = ((rootKeyIndex % 12) + 12) % 12;
+        const pitchClassesSet = new Set(pitchClasses);
+        pitchClassesSet.add(upperRootPc);
+        const keyRootPc = ((noteToMidi(key + "0") % 12) + 12) % 12;
+        const originalFunc = harmonicFunctionFromRoman(ap.roman);
+        const harmonicState = evaluateTensionState(
+            upperRootPc, pitchClassesSet, bassPc, originalFunc, keyRootPc, ap.roman
+        );
+
+        // Display chord symbol — extension upgrade so label matches audible chord
+        const voicingPcSet = new Set(compingNotesMidi.map(m => ((m % 12) + 12) % 12));
+        const has9 = voicingPcSet.has(((rootKeyIndex + 2) % 12 + 12) % 12);
+        const has11 = voicingPcSet.has(((rootKeyIndex + 5) % 12 + 12) % 12);
+        const has13 = voicingPcSet.has(((rootKeyIndex + 9) % 12 + 12) % 12);
+        let displayType = activeType;
+        if (activeType === 'm7') {
+            if (has9 && has11) displayType = 'm11';
+            else if (has9 && has13) displayType = 'm13';
+            else if (has9) displayType = 'm9';
+            else if (has11) displayType = 'm7add11';
+        } else if (activeType === 'maj7') {
+            if (has9 && has13) displayType = 'maj13';
+            else if (has9) displayType = 'maj9';
+            else if (has13) displayType = 'maj7add13';
+        } else if (activeType === '7') {
+            if (has9 && has13) displayType = '13';
+            else if (has9) displayType = '9';
+            else if (has13) displayType = '7add13';
+        } else if (activeType === 'min' || activeType === 'm') {
+            if (has9 && has11) displayType = 'm11';
+            else if (has9) displayType = 'madd9';
+        } else if (activeType === 'maj') {
+            if (has9 && has13) displayType = '6/9';
+            else if (has9) displayType = 'add9';
+            else if (has13) displayType = '6';
+        }
+        const displayChordSymbol = bassPc === upperRootPc
+            ? `${rootName}${displayType === 'maj' ? '' : displayType}`
+            : `${rootName}${displayType === 'maj' ? '' : displayType}/${spellPcInKey(bassPc, keyIndex, isMinorKey)}`;
+
+        // Bass pattern dispatch (老师 4)
+        const bassPatternKey = STYLE_DICTIONARY[style]?.bassPattern;
+        let bassPatternEvents: { time: number; midi: number; duration: number; velocity: number }[] | undefined;
+        // V/X 副属和弦 walk-up / inversion 推进
+        if (isSecondaryDom) {
+            const isMinorChord = activeType === 'min' || activeType === 'm7' || activeType === 'm9'
+                || activeType === 'm11' || activeType === 'm7b5' || activeType === 'dim' || activeType === 'dim7';
+            const thirdSemis = isMinorChord ? 3 : 4;
+            const fifthSemis = activeType === 'dim' || activeType === 'dim7' || activeType === 'm7b5'
+                ? 6 : (activeType === 'aug' ? 8 : 7);
+            const clampBass = (m: number): number => {
+                while (m < 33) m += 12;
+                while (m > 55) m -= 12;
+                return m;
+            };
+            const thirdBassMidi = clampBass(((rootKeyIndex + thirdSemis) % 12) + 36);
+            const fifthBassMidi = clampBass(((rootKeyIndex + fifthSemis) % 12) + 36);
+            const modeRoll = rng.next();
+            if (modeRoll < 0.5) {
+                // (a) 跳进式
+                bassPatternEvents = [
+                    { time: 0, midi: bassM, duration: 2, velocity: 92 },
+                    { time: 2, midi: thirdBassMidi, duration: 2, velocity: 96 },
+                ];
+            } else {
+                // (b) Walk-up
+                const nextAp = abstractPath[apIdx + 1];
+                let leadingMidi = thirdBassMidi;
+                if (nextAp) {
+                    let nextRootOff = nextAp.rootOffset;
+                    if (nextRootOff === undefined) {
+                        const baseRoman = nextAp.roman.replace(/maj7|m7|7|maj9|m9|7sus4|b/, '');
+                        nextRootOff = nextAp.roman.startsWith('bVII') ? 10 : (degreeOffsets[baseRoman] ?? 0);
+                    }
+                    const nextRootPc = (keyIndex + nextRootOff) % 12;
+                    const leadingPc = ((nextRootPc - 1) % 12 + 12) % 12;
+                    leadingMidi = clampBass(leadingPc + 36);
+                }
+                bassPatternEvents = [
+                    { time: 0, midi: bassM, duration: 1, velocity: 95 },
+                    { time: 1, midi: thirdBassMidi, duration: 1, velocity: 88 },
+                    { time: 2, midi: fifthBassMidi, duration: 1, velocity: 90 },
+                    { time: 3, midi: leadingMidi, duration: 1, velocity: 96 },
+                ];
+            }
+        } else if (bassPatternKey && BASS_PATTERN_RULES[bassPatternKey]) {
+            const chordLiteralPcsPat = intervals.slice(0, 4).map(iv => ((rootKeyIndex + iv) % 12 + 12) % 12);
+            bassPatternEvents = BASS_PATTERN_RULES[bassPatternKey]({
+                chordRootPc: rootKeyIndex,
+                bassPc: ((bassM % 12) + 12) % 12,
+                pitchClasses: chordLiteralPcsPat,
+                prevBassMidi,
+                isCadenceToTonic,
+                isLast: parsedChords.length === abstractPath.length - 1,
+                barIndex: parsedChords.length,
+                random: rng,
+            });
+        }
+
+        // Mode-borrowing detection
+        const borrowed = detectModeBorrowing(
+            rootKeyIndex,
+            activeType,
+            keyIndex,
+            ctx.mode,
+        );
+
+        // Local tonal center
+        let localTonalCenterPc: number = keyIndex;
+        if (ap.roman.includes('/')) {
+            const targetPart = ap.roman.split('/')[1];
+            const cleanTarget = targetPart.replace(/^b/, '').replace(/^#/, '');
+            const targetDegreeOffset = degreeOffsets[cleanTarget]
+                ?? degreeOffsets[cleanTarget.charAt(0).toUpperCase() + cleanTarget.slice(1).toLowerCase()]
+                ?? degreeOffsets[cleanTarget.toLowerCase()];
+            if (targetDegreeOffset !== undefined) {
+                let offset = targetDegreeOffset;
+                if (targetPart.startsWith('b')) offset = (offset - 1 + 12) % 12;
+                else if (targetPart.startsWith('#')) offset = (offset + 1) % 12;
+                localTonalCenterPc = (keyIndex + offset) % 12;
+            }
+        }
+
+        parsedChords.push({
+            root: rootName,
+            rootMidi: rootKeyIndex + 48,
+            type: activeType,
+            roman: ap.roman,
+            bass: midiToNoteInKey(bassM, keyIndex, isMinorKey),
+            bassMidi: bassM,
+            notes: compingNotesMidi.map(m => midiToNoteInChord(m, rootKeyIndex, keyIndex, isMinorKey, activeType)),
+            notesMidi: compingNotesMidi.slice(),
+            duration: ((ap as any).beats as number | undefined)
+                ?? ctx.meterContext.beatsPerMeasure,
+            tensionState: harmonicState.tensionState,
+            effectiveFunc: harmonicState.effectiveFunc,
+            virtualExtensions: harmonicState.virtualExtensions,
+            chordSymbol: displayChordSymbol,
+            bassPattern: bassPatternEvents,
+            borrowedFrom: borrowed ?? undefined,
+            localTonalCenterPc,
+        });
+
+        // Round-trip guard (dev-only)
+        if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') {
+            const justPushed = parsedChords[parsedChords.length - 1];
+            for (let i = 0; i < justPushed.notesMidi.length; i++) {
+                const reparsed = noteToMidi(justPushed.notes[i]);
+                if (reparsed !== justPushed.notesMidi[i]) {
+                    console.warn(`[voicing round-trip mismatch] bar=${parsedChords.length - 1} ${activeType} root=${rootName}: "${justPushed.notes[i]}" parsed to ${reparsed}, expected ${justPushed.notesMidi[i]}`);
+                }
+            }
+        }
+    });
+
+    // Roman label sync — 2-pass(own romans first,then sub-V deferred)
+    const isMinorType = (t: string): boolean =>
+        t === 'min' || t === 'm'
+        || (t.startsWith('m') && !t.startsWith('maj'))
+        || t === 'dim' || t === 'dim7' || t === 'm7b5' || t === 'm9b5';
+    const syncRoman = (roman: string, type: string): string => {
+        if (roman.includes('/')) return roman;
+        const flat = roman.startsWith('b') ? 'b' : '';
+        const base = flat ? roman.slice(1) : roman;
+        return flat + (isMinorType(type) ? base.toLowerCase() : base.toUpperCase());
+    };
+    parsedChords.forEach((c) => {
+        c.roman = syncRoman(c.roman, c.type);
+    });
+    parsedChords.forEach((c, i) => {
+        if (c.roman.startsWith('subV/')) {
+            const nextRoman = parsedChords[(i + 1) % parsedChords.length].roman;
+            c.roman = `subV/${nextRoman.split('/')[0]}`;
+        }
+    });
+
+    return parsedChords;
+}
+
+/**
+ * 抽自 mg.Engine.generateProgressions (原 L803-811,public)。
+ * Public 入口 — 串联 resolveGeneration → generateProgression → realizeProgression,
+ * 一次性给出"骨架展开 + voicing 实化"后的完整 ChordDef[]。
+ *
+ * 行数小但语义不可省 — 是 mg pipeline 的 harmony 顶层入口。
+ */
+export function generateProgressions(config: GenerationConfig, rng: Random): ChordDef[] {
+    const { style, key } = config;
+    const ctx = resolveGeneration(config);
+    const bars = STYLE_DICTIONARY[style]?.recommendedBars ?? 16;
+    const progression = generateProgression(style, bars, ctx.mode, rng);
+    return realizeProgression(progression, key, style, ctx, rng);
 }
