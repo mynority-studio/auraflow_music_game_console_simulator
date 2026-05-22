@@ -11,7 +11,7 @@
 // 本文件位置(mg-engine/)暂时,#6.6 整体迁移到 af2-engine/ 时一起搬。
 // ============================================================
 
-import { StyleName, STYLE_DICTIONARY } from './styleDictionary';
+import { StyleName, STYLE_DICTIONARY } from '../af2-engine/data/styleDictionary';
 import {
     harmonicFunctionFromRoman, QUANTIZED_DURATIONS, Random,
     KEYS, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
@@ -28,11 +28,11 @@ import {
     JAZZ_ROOTLESS_VOICINGS, POP_VOICINGS, RNB_VOICINGS, BLUES_VOICINGS,
 } from '../af2-engine/music-theory';
 import type { Emotion, VoicingStylePreference } from '../af2-engine/music-theory';
-import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
+import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from '../af2-engine/data/dynamicHarmony';
 import {
     pickBasslineRule, BASSLINE_RULES, DEFAULT_BASSLINE_RULE,
     BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi,
-} from './basslineRules';
+} from '../af2-engine/data/basslineRules';
 
 /**
  * 抽自 mg.Engine.resolveTonalCharacter (原 L684-689)。

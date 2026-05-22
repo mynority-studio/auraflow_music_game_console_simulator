@@ -41,7 +41,7 @@ export class Random {
   }
 }
 
-import { STYLE_DICTIONARY, StyleName } from './styleDictionary';
+import { STYLE_DICTIONARY, StyleName } from '../af2-engine/data/styleDictionary';
 import {
   noteToMidi,
   midiToNote,
@@ -97,8 +97,8 @@ import {
   NoteHarmonicAssessment,
   modeToKeyFamily,
 } from '../af2-engine/music-theory';
-import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
-import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi } from './basslineRules';
+import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from '../af2-engine/data/dynamicHarmony';
+import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_RULES, resolveBassAnchorPc, clampPcToBassMidi } from '../af2-engine/data/basslineRules';
 // AF2 ChordTextureEngine 单点劫持(Phase 2b.1 集成).applyTexture 入口先试 AF2,
 // 未覆盖的 textureType 返回 null 时 fallback 到下方 mg 原实现.
 import { ChordTextureEngine } from '../af2-engine/instruments/chord-texture/ChordTextureEngine';
