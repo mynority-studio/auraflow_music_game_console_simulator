@@ -55,6 +55,7 @@ import { PianoIdiom } from './instruments/PianoIdiom';
 import { BassIdiom } from './instruments/BassIdiom';
 import { PadGenerator, PadIdiom } from './instruments/PadIdiom';
 import { DrumGenerator } from './instruments/DrumIdiom';
+import { Reconciler } from './Reconciler';
 
 export interface Af2GenerateResult {
     track: GeneratedTrack;
@@ -145,13 +146,26 @@ export const Af2EngineFacade = {
         const bassMusician = routed[BandRole.Bass].musician;
         const useElectricBass = bassMusician?.instrumentFamily === InstrumentFamily.Bass;
 
-        const renderedMain   = PianoIdiom.realize(routed[BandRole.MainInst].notes);
-        const renderedAccomp = PianoIdiom.realize(routed[BandRole.Accomp].notes);
-        const renderedBass   = useElectricBass
+        const renderedMainRaw   = PianoIdiom.realize(routed[BandRole.MainInst].notes);
+        const renderedAccompRaw = PianoIdiom.realize(routed[BandRole.Accomp].notes);
+        const renderedBassRaw   = useElectricBass
             ? BassIdiom.realize(routed[BandRole.Bass].notes)
             : PianoIdiom.realize(routed[BandRole.Bass].notes);
         const renderedPad    = PadIdiom.realize(padNotes);
         // DrumGenerator 直接产 NoteData,无须 DrumIdiom.realize 后处理(它也是直通)
+
+        // -----------------------------------------------------------
+        // Step 5.5: Reconciler v1.0 — 段落能量驱动 velocity humanization
+        //
+        // 对 melody / accompaniment / bass 三轨按段落 energyLevel 缩放 velocity:
+        //   energy 1 → ×0.70(intro 弱)/ 5 → ×1.00 / 10 → ×1.10(chorus 略强)
+        //
+        // **跳过 drums / atmosphere** — DrumGenerator 已带 energyVelScale,
+        // PadGenerator 已用 energy 决定 velocity,二次缩放会过度。
+        // -----------------------------------------------------------
+        const renderedMain   = Reconciler.applyEnergyHumanization(renderedMainRaw, sections);
+        const renderedAccomp = Reconciler.applyEnergyHumanization(renderedAccompRaw, sections);
+        const renderedBass   = Reconciler.applyEnergyHumanization(renderedBassRaw, sections);
 
         // -----------------------------------------------------------
         // Step 6: 装配 GeneratedTrack
