@@ -139,10 +139,14 @@ export const Af2EngineFacade = {
 
         // -----------------------------------------------------------
         // Step 4.5: PadGenerator(条件:Atmosphere 槽位有 Pad family 乐手)
+        //
+        // C.3:改用 plan(score, role, peers) 协议 — Conductor + Score 架构试点。
+        // PadGenerator 是 AF2 自有(不动 mg),零风险作为新协议第一个 musician。
+        // peers 当前为空 Map(C.5+ 其他 musicians 改造完后才有内容)。
         // -----------------------------------------------------------
         const atmosphereMusician = routed[BandRole.Atmosphere].musician;
         const padNotes = atmosphereMusician?.instrumentFamily === InstrumentFamily.Pad
-            ? PadGenerator.generate({ chords: mg.chords, sections })
+            ? PadGenerator.plan({ score, role: 'pad', peers: new Map() })
             : [];
 
         // -----------------------------------------------------------
