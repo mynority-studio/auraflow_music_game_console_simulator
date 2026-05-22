@@ -171,9 +171,10 @@ export const Af2EngineFacade = {
         // -----------------------------------------------------------
         const drumMusician = routed[BandRole.Drums].musician;
         const drumNotes = drumMusician?.instrumentFamily === InstrumentFamily.Percussion
-            ? DrumGenerator.generate({
-                sections,
-                beatsPerMeasure: 4,
+            ? DrumGenerator.plan({
+                score,
+                musicianId: drumMusician.id,
+                assignments: sectionAssignments,
                 mgStyle,
                 bassNotes: routed[BandRole.Bass].notes,
                 chordNotes: routed[BandRole.Accomp].notes,
@@ -194,23 +195,40 @@ export const Af2EngineFacade = {
         const bassMusician = routed[BandRole.Bass].musician;
         const useElectricBass = bassMusician?.instrumentFamily === InstrumentFamily.Bass;
 
-        // Phase A:槽位 empty(musician=null)= 无人演奏 → 不渲染。
-        // 这是用户的"乐手槽位语义"修正:之前 Phase 1 设计是"空 → fallback 钢琴默认"
-        // 但语义不一致(Atmosphere/Drums 已是 empty→无声);本次统一为"empty=无声"。
-        //
-        // Phase A:PianoIdiom 按 role 分 API(realizeMelody / realizeAccomp / realizeBass),
-        //   Phase A 实现仍直通,Phase B+ 在对应方法内加 melody/accomp 各自的技巧 + 音区概率分布。
-        const renderedMainRaw   = mainMusician
-            ? PianoIdiom.realizeMelody(routed[BandRole.MainInst].notes)
-            : [];
-        const renderedAccompRaw = accompMusician
-            ? PianoIdiom.realizeAccomp(routed[BandRole.Accomp].notes)
-            : [];
+        // C.5:全 musicians 迁 plan(MusicianPlanInput) 协议。
+        //   - PianoIdiom planMelody/planAccomp/planBass 接 MusicianPlanInput
+        //     · per-section role gate(Conductor 让我这段 silent → 该 section 不 emit)
+        //     · Phase B 音区概率分布 仍生效
+        //   - BassIdiom plan 同上(role='bass' gate)
+        //   - 空 musician → 直接跳过
+        const planMain = (m: typeof mainMusician) => m && PianoIdiom.planMelody({
+            score, musicianId: m.id, assignments: sectionAssignments,
+            peers: new Map(),
+            notes: { melody: routed[BandRole.MainInst].notes },
+        }) || [];
+        const planAccomp = (m: typeof accompMusician) => m && PianoIdiom.planAccomp({
+            score, musicianId: m.id, assignments: sectionAssignments,
+            peers: new Map(),
+            notes: { accomp: routed[BandRole.Accomp].notes },
+        }) || [];
+        const planBassPiano = (m: typeof bassMusician) => m && PianoIdiom.planBass({
+            score, musicianId: m.id, assignments: sectionAssignments,
+            peers: new Map(),
+            notes: { bass: routed[BandRole.Bass].notes },
+        }) || [];
+        const planBassElectric = (m: typeof bassMusician) => m && BassIdiom.plan({
+            score, musicianId: m.id, assignments: sectionAssignments,
+            peers: new Map(),
+            notes: { bass: routed[BandRole.Bass].notes },
+        }) || [];
+
+        const renderedMainRaw   = planMain(mainMusician);
+        const renderedAccompRaw = planAccomp(accompMusician);
         const renderedBassRaw   = !bassMusician
             ? []
             : useElectricBass
-                ? BassIdiom.realize(routed[BandRole.Bass].notes)
-                : PianoIdiom.realizeBass(routed[BandRole.Bass].notes);
+                ? planBassElectric(bassMusician)
+                : planBassPiano(bassMusician);
         const renderedPadRaw = PadIdiom.realize(padNotes);
         // DrumGenerator 直接产 NoteData,无须 DrumIdiom.realize 后处理(它也是直通)
 

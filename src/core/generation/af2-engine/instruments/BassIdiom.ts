@@ -22,6 +22,9 @@
 
 import type { NoteData } from '../../types';
 import { BandRole } from '../../types';
+// C.5:MusicianPlanInput 协议 + per-section role gate
+import type { MusicianPlanInput } from '../Conductor';
+import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 
 /** 电贝斯物理参数 */
 export const BASS_INSTRUMENT_SPEC = {
@@ -35,13 +38,26 @@ export const BASS_INSTRUMENT_SPEC = {
 
 export const BassIdiom = {
     /**
-     * 电贝斯渲染 — Phase 2a 直通。
+     * C.5:plan bass role(Bass 槽 + Conductor 给本 musician 分 'bass' role 的 sections)。
      *
-     * 不改 pitch / onset / duration / velocity。返回 NoteData[] 的浅拷贝
-     * (防御性,避免下游 mutate 污染 mg 原输出)。
+     * 流程:input.notes.bass 是 mg bass 原料 → per-section role gate → 直通(电
+     * 贝斯不做音区调整,mg 输出已是合理 bass 范围)。
+     *
+     * Phase D+ 可加:articulation(slide / hammer-on / pull-off / mute)/
+     * persona 消费(walkPatternId)
      */
-    realize(notes: NoteData[]): NoteData[] {
-        return notes.map(n => ({ ...n }));
+    plan(input: MusicianPlanInput): NoteData[] {
+        const raw = input.notes?.bass ?? [];
+        if (raw.length === 0) return [];
+        const out: NoteData[] = [];
+        for (const n of raw) {
+            const sectionIdx = findSectionIdxForBeat(n.onset, input.score.sections);
+            if (sectionIdx < 0) continue;
+            const myRoles = getMyRolesInSection(input, sectionIdx);
+            if (!myRoles.includes('bass')) continue;
+            out.push({ ...n });
+        }
+        return out;
     },
 
     getGmProgram(): number {

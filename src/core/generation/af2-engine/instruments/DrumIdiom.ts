@@ -40,6 +40,9 @@ import type { MgStyle } from '../../../../state/EngineSelectionStore';
 import { getDrumGridByMgStyle } from './drum-grid/grids';
 import type { DrumGridConfig } from './drum-grid/types';
 import { STEPS_PER_BEAT, STEPS_PER_BAR, ENERGY_LEVELS } from './drum-grid/types';
+// C.5:MusicianPlanInput 协议(DrumPlanInput 扩展)
+import type { Score } from '../Score';
+import type { SectionAssignment } from '../Conductor';
 
 /** GM Drum Map 物理键位 */
 const DRUM_KICK = 36;
@@ -64,17 +67,27 @@ export const DRUM_INSTRUMENT_SPEC = {
     eligibleSlots: [BandRole.Drums] as const,
 } as const;
 
-export interface DrumGeneratorInput {
-    sections: SectionMetadata[];
-    beatsPerMeasure: number;
-    /** Phase 2b.2:决定使用哪套 mgStyle grid */
+/**
+ * C.5:DrumPlanInput 扩展 MusicianPlanInput 加 drum-specific extras。
+ *
+ * sections + beatsPerMeasure 现从 score 派生(timeSignature[0]),DrumGenerator
+ * 不再独立持有。
+ */
+export interface DrumPlanInput {
+    /** 总谱(provides sections + timeSignature) */
+    score: Score;
+    /** 本 musician id(per-section role gate 用)*/
+    musicianId: string;
+    /** Conductor 输出 */
+    assignments: ReadonlyArray<SectionAssignment>;
+    /** mgStyle decide grid */
     mgStyle: MgStyle;
-    /** Phase 2b.2:跨乐手感知 — bass strong onset 提 kick prob */
-    bassNotes?: NoteData[];
-    /** Phase 2b.2:跨乐手感知 — chord syncopate onset 提 snare prob */
-    chordNotes?: NoteData[];
-    /** Phase 2b.2:PRNG 显式注入(与 mg 独立 stream 推荐派生 seed) */
+    /** PRNG 显式注入(与 mg 独立 stream 推荐派生 seed) */
     rng: Random;
+    /** 跨乐手感知 — bass strong onset 提 kick prob */
+    bassNotes?: ReadonlyArray<NoteData>;
+    /** 跨乐手感知 — chord syncopate onset 提 snare prob */
+    chordNotes?: ReadonlyArray<NoteData>;
 }
 
 /**
@@ -142,19 +155,36 @@ function hasChordSyncopateNear(
 
 export const DrumGenerator = {
     /**
-     * 生成 drums NoteData[],onset 升序 + 同 onset 按 pitch 升序。
+     * C.5:plan(DrumPlanInput) — Conductor + Score 协议下的 drums 生成。
+     *
+     * 流程:
+     *   1. 遍历 score.sections
+     *   2. **per-section gate**:assignments[sIdx].byMusician.get(musicianId) 不含 'drums'
+     *      → 跳过(Conductor 让我这段 silent)
+     *   3. 通过的 section 走原 renderSection 逻辑(grid + energy + modifiers)
+     *
+     * peers via bassNotes / chordNotes(跨乐手 onset 触发 kick/snare prob 修正)。
      */
-    generate(input: DrumGeneratorInput): NoteData[] {
-        const { sections, beatsPerMeasure, mgStyle, bassNotes = [], chordNotes = [], rng } = input;
+    plan(input: DrumPlanInput): NoteData[] {
+        const { score, musicianId, assignments, mgStyle, bassNotes = [], chordNotes = [], rng } = input;
+        const sections = score.sections;
+        const beatsPerMeasure = score.timeSignature[0];
         const grid = getDrumGridByMgStyle(mgStyle);
         const out: NoteData[] = [];
 
         for (let sIdx = 0; sIdx < sections.length; sIdx++) {
+            // C.5:per-section role gate
+            const myRoles = assignments[sIdx]?.byMusician.get(musicianId) ?? [];
+            if (!myRoles.includes('drums')) continue;  // Conductor 让我这段 silent
+
             const section = sections[sIdx];
             const dur = section.endBeat - section.startBeat;
             if (dur < EPSILON) continue;
             const nextSection = sIdx + 1 < sections.length ? sections[sIdx + 1] : undefined;
-            renderSection(out, section, nextSection, grid, beatsPerMeasure, bassNotes, chordNotes, rng);
+            renderSection(
+                out, section, nextSection, grid, beatsPerMeasure,
+                bassNotes as NoteData[], chordNotes as NoteData[], rng,
+            );
         }
 
         out.sort((a, b) => {

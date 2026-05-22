@@ -28,6 +28,9 @@
 
 import type { NoteData } from '../../types';
 import { BandRole } from '../../types';
+// C.5:MusicianPlanInput 共享协议 + per-section role gate
+import type { MusicianPlanInput, ConductorRole } from '../Conductor';
+import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 
 /** 钢琴物理参数(Phase 1 仅文档,Phase 2+ BandSelectionPanel 消费) */
 export const PIANO_INSTRUMENT_SPEC = {
@@ -93,35 +96,62 @@ function applyRegionProbability(
     });
 }
 
+/**
+ * 内部 helper:per-section role gate + Phase B region clamp。
+ *
+ * 1. 从 input.notes[role] 取本 role 的原料 events
+ * 2. 每 note 查 sectionIdx → getMyRolesInSection → 不含 role 则 skip
+ * 3. 通过的 notes 走 Phase B 音区概率分布
+ */
+function planForRole(
+    input: MusicianPlanInput,
+    role: ConductorRole,
+    region: { lo: number; hi: number },
+): NoteData[] {
+    const raw = input.notes?.[role] ?? [];
+    if (raw.length === 0) return [];
+    const filtered: NoteData[] = [];
+    for (const n of raw) {
+        const sectionIdx = findSectionIdxForBeat(n.onset, input.score.sections);
+        if (sectionIdx < 0) continue;
+        const myRoles = getMyRolesInSection(input, sectionIdx);
+        if (!myRoles.includes(role)) continue;  // Conductor 让我这段 silent for this role
+        filtered.push(n);
+    }
+    return applyRegionProbability(filtered, region);
+}
+
 export const PianoIdiom = {
     /**
-     * 渲染 MainInst 槽位的 melody 音符。
+     * C.5:plan melody role(MainInst 槽 + Conductor 给本 musician 分 'melody' role 的 sections)。
      *
-     * Phase B:主区 [C4, D6],超出 95% 拉回 / 5% 越界保留。
-     * Phase C+ 计划:melody 技巧 / 装饰 / passing tones / cross-track 物理(add11)
+     * 流程:input.notes.melody 是 mg 原料 → per-section role gate → Phase B 音区概率分布。
+     *
+     * Phase B 主区 [C4, D6],超出 95% 拉回 / 5% 越界保留。
+     * Phase D+ 计划:melody 技巧 / 装饰 / passing tones / cross-track 物理(add11)
      */
-    realizeMelody(notes: NoteData[]): NoteData[] {
-        return applyRegionProbability(notes, PIANO_REGIONS.melody);
+    planMelody(input: MusicianPlanInput): NoteData[] {
+        return planForRole(input, 'melody', PIANO_REGIONS.melody);
     },
 
     /**
-     * 渲染 Accomp 槽位的伴奏音符(原 'chord' 语义)。
+     * C.5:plan accomp role(Accomp 槽 + Conductor 给本 musician 分 'accomp' role 的 sections)。
      *
-     * Phase B:主区 [C3, B4],超出 95% 拉回 / 5% 越界保留。
-     * Phase C+ 计划:柱式 / 分解 / smart omit + add11 hand-spread 约束
+     * Phase B 主区 [C3, B4],超出 95% 拉回 / 5% 越界保留。
+     * Phase D+ 计划:柱式 / 分解 / smart omit + add11 hand-spread 约束
      */
-    realizeAccomp(notes: NoteData[]): NoteData[] {
-        return applyRegionProbability(notes, PIANO_REGIONS.accomp);
+    planAccomp(input: MusicianPlanInput): NoteData[] {
+        return planForRole(input, 'accomp', PIANO_REGIONS.accomp);
     },
 
     /**
-     * 渲染 Bass 槽位的钢琴低音(钢琴占 Bass 槽时,无电贝斯)。
+     * C.5:plan bass role(钢琴占 Bass 槽时,无电贝斯)。
      *
-     * Phase B:主区 [A1, G3],超出 95% 拉回 / 5% 越界保留。
-     * Phase C+ 计划:walking / stride / boogie 技巧
+     * Phase B 主区 [A1, G3],超出 95% 拉回 / 5% 越界保留。
+     * Phase D+ 计划:walking / stride / boogie 技巧
      */
-    realizeBass(notes: NoteData[]): NoteData[] {
-        return applyRegionProbability(notes, PIANO_REGIONS.bass);
+    planBass(input: MusicianPlanInput): NoteData[] {
+        return planForRole(input, 'bass', PIANO_REGIONS.bass);
     },
 
     /**

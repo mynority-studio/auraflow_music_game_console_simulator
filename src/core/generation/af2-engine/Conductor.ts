@@ -187,6 +187,17 @@ export interface MusicianPlanInput {
     readonly assignments: ReadonlyArray<SectionAssignment>;
     /** 其他 musicians 已 emit notes(musicianId 也可能是 key,自查时 dedup)*/
     readonly peers: ReadonlyMap<string, ReadonlyArray<NoteData>>;
+    /**
+     * mg-derived 输入流(可选)。
+     *
+     * - **AF2-native musicians**(Pad / Drum):忽略此字段,纯从 Score 生成
+     * - **mg-derived musicians**(Piano / Bass):此处是 SlotRouter 给本 musician
+     *   的 mg 原料 events,musician 做 per-section role gate + 演绎转换
+     *
+     * 用 Partial<Record<ConductorRole, ...>> 而非单一 array:让 musician 可
+     * 同时拿 melody / accomp / bass 多流(若 musician 兼任多 role)。
+     */
+    readonly notes?: Partial<Record<ConductorRole, ReadonlyArray<NoteData>>>;
 }
 
 /**
