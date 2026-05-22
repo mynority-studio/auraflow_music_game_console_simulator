@@ -57,6 +57,41 @@ function findSectionIdx(onset: number, sections: SectionMetadata[]): number {
 }
 
 // ============================================================
+// v1.2 — Drop / BuildUp 段落动态
+// ============================================================
+
+/** Drop section 阈值:energyLevel < 此值视为 drop 段 */
+const DROP_ENERGY_THRESHOLD = 3;
+/** BuildUp 触发阈值:下一段 energy 比当前段高 ≥ 此值视为 BuildUp */
+const BUILDUP_ENERGY_DELTA = 2;
+
+export type InstrumentKind = 'melody' | 'accomp' | 'bass' | 'pad';
+
+/**
+ * Per-instrument-kind 段落动态响应表。
+ *   drop:drop 段 velocity multiplier
+ *   buildupRampMax:buildup 最后 1 bar 末尾 velocity 上限(线性从 1.0 → 此值)
+ */
+const DYNAMICS_TABLE: Record<InstrumentKind, { drop: number; buildupRampMax: number }> = {
+    melody: { drop: 1.0,  buildupRampMax: 1.15 },   // hero:drop 不动,buildup 突出
+    accomp: { drop: 0.5,  buildupRampMax: 1.20 },   // 让位 + 强突出
+    bass:   { drop: 0.6,  buildupRampMax: 1.15 },   // 保留 anchor + 突出
+    pad:    { drop: 1.2,  buildupRampMax: 1.10 },   // 反向突出(drop 接管 ambient)
+};
+
+type SectionDynamicState = 'drop' | 'buildup' | 'normal';
+
+function classifySectionDynamic(idx: number, sections: SectionMetadata[]): SectionDynamicState {
+    const cur = sections[idx];
+    if (cur.energyLevel < DROP_ENERGY_THRESHOLD) return 'drop';
+    if (idx + 1 < sections.length) {
+        const next = sections[idx + 1];
+        if (next.energyLevel > cur.energyLevel + BUILDUP_ENERGY_DELTA) return 'buildup';
+    }
+    return 'normal';
+}
+
+// ============================================================
 // v1.1 — 撞音检测 + damp
 // ============================================================
 
@@ -162,6 +197,65 @@ export const Reconciler = {
             out[i] = damped
                 ? { ...ev, velocity: ev.velocity * COLLISION_DAMP_FACTOR }
                 : { ...ev };
+        }
+        return out;
+    },
+
+    /**
+     * v1.2 — Drop / BuildUp 段落动态。
+     *
+     * Drop 段(energy<3):velocity multiplier 按 kind 表(accomp/bass 减弱,
+     *   pad 反向突出接管 ambient,melody 不动 hero)。
+     * BuildUp 段(next.energy > cur+2):最后 1 bar 内 velocity 线性 ramp(每 kind
+     *   有不同 ramp max,如 accomp 上到 1.20、melody 上到 1.15)。
+     *
+     * Drums 由调用方跳过 — DrumIdiom 内部已感知 isBuildUp(Tom Fill)。
+     */
+    applyDropBuildupDynamics(
+        events: NoteData[],
+        sections: SectionMetadata[],
+        kind: InstrumentKind,
+        beatsPerMeasure: number = 4,
+    ): NoteData[] {
+        if (events.length === 0 || sections.length === 0) return events;
+
+        const sectionStates = sections.map((_, i) => classifySectionDynamic(i, sections));
+        const config = DYNAMICS_TABLE[kind];
+
+        const out: NoteData[] = new Array(events.length);
+        for (let i = 0; i < events.length; i++) {
+            const ev = events[i];
+            const sIdx = findSectionIdx(ev.onset, sections);
+            if (sIdx < 0) {
+                out[i] = { ...ev };
+                continue;
+            }
+            const state = sectionStates[sIdx];
+            const section = sections[sIdx];
+
+            let velMul = 1.0;
+
+            if (state === 'drop') {
+                velMul = config.drop;
+            } else if (state === 'buildup') {
+                // 仅最后 1 bar 应用 ramp
+                const lastBarStart = section.endBeat - beatsPerMeasure;
+                if (ev.onset >= lastBarStart) {
+                    const progress = (ev.onset - lastBarStart) / beatsPerMeasure;
+                    const clamped = progress < 0 ? 0 : progress > 1 ? 1 : progress;
+                    velMul = 1.0 + (config.buildupRampMax - 1.0) * clamped;
+                }
+            }
+
+            if (velMul === 1.0) {
+                out[i] = { ...ev };
+            } else {
+                const newVel = ev.velocity * velMul;
+                out[i] = {
+                    ...ev,
+                    velocity: newVel < 0 ? 0 : newVel > 1 ? 1 : newVel,
+                };
+            }
         }
         return out;
     },

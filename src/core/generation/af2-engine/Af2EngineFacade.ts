@@ -151,7 +151,7 @@ export const Af2EngineFacade = {
         const renderedBassRaw   = useElectricBass
             ? BassIdiom.realize(routed[BandRole.Bass].notes)
             : PianoIdiom.realize(routed[BandRole.Bass].notes);
-        const renderedPad    = PadIdiom.realize(padNotes);
+        const renderedPadRaw = PadIdiom.realize(padNotes);
         // DrumGenerator 直接产 NoteData,无须 DrumIdiom.realize 后处理(它也是直通)
 
         // -----------------------------------------------------------
@@ -176,9 +176,19 @@ export const Af2EngineFacade = {
         //
         // melody / bass 是 mg 主输出,不修改。
         // -----------------------------------------------------------
-        const renderedMain   = energyMain;
-        const renderedBass   = energyBass;
-        const renderedAccomp = Reconciler.dampAccompForCollisions(energyAccomp, energyBass, energyMain);
+        const collisionAccomp = Reconciler.dampAccompForCollisions(energyAccomp, energyBass, energyMain);
+
+        // -----------------------------------------------------------
+        // Step 5.7: Reconciler v1.2 — Drop / BuildUp 段落动态
+        //
+        // Drop 段(energy<3):accomp×0.5 / bass×0.6 / pad×1.2(反向)/ melody 不动
+        // BuildUp 段(next.energy > cur+2):末 1 bar velocity 线性 ramp(per-kind)
+        // Drums 跳过:DrumIdiom 内部 isBuildUp + Tom Fill 已感知
+        // -----------------------------------------------------------
+        const renderedMain   = Reconciler.applyDropBuildupDynamics(energyMain,      sections, 'melody');
+        const renderedBass   = Reconciler.applyDropBuildupDynamics(energyBass,      sections, 'bass');
+        const renderedAccomp = Reconciler.applyDropBuildupDynamics(collisionAccomp, sections, 'accomp');
+        const renderedPad    = Reconciler.applyDropBuildupDynamics(renderedPadRaw,  sections, 'pad');
 
         // -----------------------------------------------------------
         // Step 6: 装配 GeneratedTrack
