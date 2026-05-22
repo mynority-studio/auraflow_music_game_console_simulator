@@ -163,9 +163,22 @@ export const Af2EngineFacade = {
         // **跳过 drums / atmosphere** — DrumGenerator 已带 energyVelScale,
         // PadGenerator 已用 energy 决定 velocity,二次缩放会过度。
         // -----------------------------------------------------------
-        const renderedMain   = Reconciler.applyEnergyHumanization(renderedMainRaw, sections);
-        const renderedAccomp = Reconciler.applyEnergyHumanization(renderedAccompRaw, sections);
-        const renderedBass   = Reconciler.applyEnergyHumanization(renderedBassRaw, sections);
+        const energyMain   = Reconciler.applyEnergyHumanization(renderedMainRaw, sections);
+        const energyAccomp = Reconciler.applyEnergyHumanization(renderedAccompRaw, sections);
+        const energyBass   = Reconciler.applyEnergyHumanization(renderedBassRaw, sections);
+
+        // -----------------------------------------------------------
+        // Step 5.6: Reconciler v1.1 — 撞音 damp(只 damp accomp)
+        //
+        // 优先级 melody > bass > accomp,accomp 在以下情况 velocity × 0.5:
+        //   · pitch < 60 且与 bass 同 onset±0.05 + 同 pitch class → 让 bass 主导低频
+        //   · pitch >= 60 且与 melody 同 onset±0.05 + 同 pitch class → 让 melody 主导顶音
+        //
+        // melody / bass 是 mg 主输出,不修改。
+        // -----------------------------------------------------------
+        const renderedMain   = energyMain;
+        const renderedBass   = energyBass;
+        const renderedAccomp = Reconciler.dampAccompForCollisions(energyAccomp, energyBass, energyMain);
 
         // -----------------------------------------------------------
         // Step 6: 装配 GeneratedTrack

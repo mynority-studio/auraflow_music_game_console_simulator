@@ -56,6 +56,47 @@ function findSectionIdx(onset: number, sections: SectionMetadata[]): number {
     return sections.length - 1;
 }
 
+// ============================================================
+// v1.1 — 撞音检测 + damp
+// ============================================================
+
+/** 撞音时间窗口(beat):accomp event 与 bass/melody 的 onset 差 < 此值视为同 onset */
+const COLLISION_TIME_WINDOW = 0.05;
+/** Bass 低音区上限(pitch),accomp event pitch 低于此值才检测 vs bass 撞音 */
+const BASS_REGION_PITCH_MAX = 60;
+/** Melody 区下限,accomp event pitch 高于此值才检测 vs melody 撞音 */
+const MELODY_REGION_PITCH_MIN = 60;
+/** 撞音 damp 因子(accomp velocity × 此值) */
+const COLLISION_DAMP_FACTOR = 0.5;
+
+/** pitch class(0-11)— 抹掉八度差异 */
+function pitchClass(pitch: number): number {
+    return ((pitch % 12) + 12) % 12;
+}
+
+/**
+ * 检测 accomp event 在 bass 中是否有同时间窗口 + 同 pitch class 的 event。
+ * 触发条件:onset 差 < COLLISION_TIME_WINDOW + pitchClass 相等。
+ */
+function hasBassCollision(accompEvent: NoteData, bass: NoteData[]): boolean {
+    const accompPc = pitchClass(accompEvent.pitch);
+    for (const bn of bass) {
+        if (Math.abs(bn.onset - accompEvent.onset) > COLLISION_TIME_WINDOW) continue;
+        if (pitchClass(bn.pitch) === accompPc) return true;
+    }
+    return false;
+}
+
+/** Melody 同上 — 检测 accomp 顶音是否撞 melody */
+function hasMelodyCollision(accompEvent: NoteData, melody: NoteData[]): boolean {
+    const accompPc = pitchClass(accompEvent.pitch);
+    for (const mn of melody) {
+        if (Math.abs(mn.onset - accompEvent.onset) > COLLISION_TIME_WINDOW) continue;
+        if (pitchClass(mn.pitch) === accompPc) return true;
+    }
+    return false;
+}
+
 export const Reconciler = {
     /**
      * v1.0 — 段落能量驱动 velocity humanization。
@@ -79,6 +120,48 @@ export const Reconciler = {
                 ...ev,
                 velocity: newVel < 0 ? 0 : newVel > 1 ? 1 : newVel,
             };
+        }
+        return out;
+    },
+
+    /**
+     * v1.1 — 撞音检测 + accomp damp。
+     *
+     * 优先级 melody > bass > accomp > pad > drums,只 damp accomp(melody/bass
+     * 是 mg 主输出不动)。
+     *
+     * 触发规则:
+     *   1. accomp.pitch < BASS_REGION_PITCH_MAX(60)且与 bass 同 onset±0.05 +
+     *      同 pitch class → damp(让 bass 主导低频)
+     *   2. accomp.pitch >= MELODY_REGION_PITCH_MIN(60)且与 melody 同 onset±0.05 +
+     *      同 pitch class → damp(让 melody 主导顶音)
+     *
+     * Damp 方式:velocity × COLLISION_DAMP_FACTOR(0.5)。
+     */
+    dampAccompForCollisions(
+        accomp: NoteData[],
+        bass: NoteData[],
+        melody: NoteData[],
+    ): NoteData[] {
+        if (accomp.length === 0) return accomp;
+
+        const out: NoteData[] = new Array(accomp.length);
+        for (let i = 0; i < accomp.length; i++) {
+            const ev = accomp[i];
+            let damped = false;
+
+            // 规则 1:低音区 vs bass
+            if (ev.pitch < BASS_REGION_PITCH_MAX && hasBassCollision(ev, bass)) {
+                damped = true;
+            }
+            // 规则 2:顶音区 vs melody
+            else if (ev.pitch >= MELODY_REGION_PITCH_MIN && hasMelodyCollision(ev, melody)) {
+                damped = true;
+            }
+
+            out[i] = damped
+                ? { ...ev, velocity: ev.velocity * COLLISION_DAMP_FACTOR }
+                : { ...ev };
         }
         return out;
     },
