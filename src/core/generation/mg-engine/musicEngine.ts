@@ -102,6 +102,8 @@ import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_R
 // AF2 ChordTextureEngine 单点劫持(Phase 2b.1 集成).applyTexture 入口先试 AF2,
 // 未覆盖的 textureType 返回 null 时 fallback 到下方 mg 原实现.
 import { ChordTextureEngine } from '../af2-engine/instruments/chord-texture/ChordTextureEngine';
+// Phase 1 (#6) — Engine class 组 A 纯函数化:抽出无 state 依赖的 method 到 engine-utils.
+import { resolveTonalCharacter, getHarmonicFunction, applySwing } from './engine-utils';
 
 // Re-export theory primitives that external callers import from musicEngine
 // (test_batch.ts uses noteToMidi). Engine itself no longer owns these.
@@ -681,12 +683,7 @@ export class Engine {
    *     Functional harmony is the load-bearing structure; tensions
    *     must resolve via the unified-tension-resolution constraint.
    */
-  private resolveTonalCharacter(style: StyleName, mode: string): 'tonal' | 'modal' {
-    if (style === 'BLUES') return 'modal';
-    const tonalModes = new Set(['Major', 'Minor', 'Ionian', 'Aeolian']);
-    if (!tonalModes.has(mode)) return 'modal';
-    return 'tonal';
-  }
+  // Phase 1 (#6):resolveTonalCharacter 已抽到 engine-utils.ts(组 A 纯函数化)
 
   /**
    * Resolve emotion → mode for a generation run. Deterministic by SEED.
@@ -727,7 +724,7 @@ export class Engine {
         basslineRule,
         meter: meterCtx.meter,
         meterContext: meterCtx,
-        tonalCharacter: this.resolveTonalCharacter(config.style, mode),
+        tonalCharacter: resolveTonalCharacter(config.style, mode),
       };
     }
 
@@ -773,7 +770,7 @@ export class Engine {
       basslineRule,
       meter: meterCtx.meter,
       meterContext: meterCtx,
-      tonalCharacter: this.resolveTonalCharacter(config.style, mode),
+      tonalCharacter: resolveTonalCharacter(config.style, mode),
     };
   }
 
@@ -867,8 +864,8 @@ export class Engine {
       else if (r < probs.level0 + probs.level1) colorLevel = 1;
       else colorLevel = 2;
 
-      const currFunc = this.getHarmonicFunction(base.roman);
-      const nextFunc = this.getHarmonicFunction(nextBase.roman);
+      const currFunc = getHarmonicFunction(base.roman);
+      const nextFunc = getHarmonicFunction(nextBase.roman);
 
       // 2. Look-ahead context analysis.
       const targetQuality = analyzeTargetQuality(currFunc, nextFunc, nextBase.roman, nextBase.type);
@@ -1383,7 +1380,7 @@ export class Engine {
           const pitchClassesSet = new Set(pitchClasses);
           pitchClassesSet.add(upperRootPc);
           const keyRootPc = ((noteToMidi(key + "0") % 12) + 12) % 12;
-          const originalFunc = this.getHarmonicFunction(ap.roman);
+          const originalFunc = getHarmonicFunction(ap.roman);
           const harmonicState = evaluateTensionState(
               upperRootPc, pitchClassesSet, bassPc, originalFunc, keyRootPc, ap.roman
           );
@@ -1631,9 +1628,7 @@ export class Engine {
       return parsedChords;
   }
 
-  private getHarmonicFunction(romanOriginal: string): 'T' | 'S' | 'D' {
-      return harmonicFunctionFromRoman(romanOriginal);
-  }
+  // Phase 1 (#6):getHarmonicFunction 已抽到 engine-utils.ts(组 A 纯函数化)
 
     generateArrangement(chords: ChordDef[], config: GenerationConfig): MusicTimeline {
         // Re-resolve so this call uses the exact same mode as
@@ -1876,11 +1871,11 @@ export class Engine {
         const thematicMemory: Record<string, any[]> = {};
         const memKey = (i: number, role: string) => {
             const c = chords[i];
-            const f = c.effectiveFunc ?? this.getHarmonicFunction(c.roman);
+            const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
             return `${f}_${c.type}_${role}`;
         };
         const runScales: number[][] = chords.map((c) => {
-            const f = c.effectiveFunc ?? this.getHarmonicFunction(c.roman);
+            const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
             return this.getScaleForStyle(style, c, f, musicKey, musicMode);
         });
         // Parallel fill-scale array. Used by Run Generator (in-bar
@@ -1888,7 +1883,7 @@ export class Engine {
         // flavor (Bebop / Pentatonic / Mixolydian b6 / Blues hybrid)
         // to non-backbone notes. Backbone path uses runScales[i].
         const fillScales: number[][] = chords.map((c, idx) => {
-            const f = c.effectiveFunc ?? this.getHarmonicFunction(c.roman);
+            const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
             return this.getFillScaleForStyle(style, c, f, musicKey, musicMode, runScales[idx]);
         });
         // Backbone targets per bar — pre-compute the "regression points"
@@ -2243,7 +2238,7 @@ export class Engine {
             const funcCount: Record<'T'|'S'|'D', number> = { T: 0, S: 0, D: 0 };
             const N = ctx.motifInterval;
             for (let i = 0; i < chords.length; i++) {
-                const f = this.getHarmonicFunction(chords[i].roman);
+                const f = getHarmonicFunction(chords[i].roman);
                 funcCount[f]++;
                 const isPhraseStart = i % N === 0;
                 const isPhraseEnd = (i + 1) % N === 0 || i === chords.length - 1;
@@ -2391,7 +2386,7 @@ export class Engine {
             // 6/4 second-inversion reads as D). Cadence Resolution
             // and other downstream func-aware logic must see the
             // effective function, not the roman-derived one.
-            const func = chord.effectiveFunc ?? this.getHarmonicFunction(chord.roman);
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
             const isLast = i === chords.length - 1;
             const nextChord = isLast ? null : chords[i + 1];
 
@@ -2812,7 +2807,7 @@ export class Engine {
       const isDiatonic = chordLiteralPcs.every(pc => keyPcs.has(pc));
       if (isDiatonic && !targets.has(keyRootPc)) {
           const intvFromChordRoot = ((keyRootPc - chordRootPc) % 12 + 12) % 12;
-          const cFunc = chord.effectiveFunc ?? this.getHarmonicFunction(chord.roman);
+          const cFunc = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
           if (!isAvoidNote(intvFromChordRoot, chord.type, undefined, isModalContext, cFunc)) {
               targets.add(keyRootPc);
           }
@@ -2882,7 +2877,7 @@ export class Engine {
 
       let conflicts = 0;
       const isDominant = chord.effectiveFunc === 'D'
-          || this.getHarmonicFunction(chord.roman) === 'D';
+          || getHarmonicFunction(chord.roman) === 'D';
       // Pre-compute per-note ivFromChord so we can detect motion patterns.
       const ivs: number[] = [];
       for (const note of motif) {
@@ -2992,7 +2987,7 @@ export class Engine {
       // Zero-Drift property: pure-array pool → Tier1 == Tier2 == pool,
       // identical random.pick behaviour as pre-upgrade.
       const chordQuality = classifyEngineChordType(chord.type);
-      const currentFunc: 'T'|'S'|'D' = chord.effectiveFunc ?? this.getHarmonicFunction(chord.roman);
+      const currentFunc: 'T'|'S'|'D' = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
       const tier1: (any[] | { notes: any[]; rules?: any })[] = [];
       const tier2: (any[] | { notes: any[]; rules?: any })[] = [];
       for (const item of pool) {
@@ -3415,17 +3410,7 @@ export class Engine {
   }
 
 
-    private applySwing(t: number, isShuffle: boolean): number {
-        if (!isShuffle) return t;
-        const beat = Math.floor(t);
-        const fraction = t - beat;
-        if (fraction === 0) return t;
-        // Swing factor (2:1 ratio for 0.66)
-        if (Math.abs(fraction - 0.5) < 0.01) return beat + 0.66;
-        if (Math.abs(fraction - 0.25) < 0.01) return beat + 0.33;
-        if (Math.abs(fraction - 0.75) < 0.01) return beat + 0.83;
-        return t;
-    }
+    // Phase 1 (#6):applySwing 已抽到 engine-utils.ts(组 A 纯函数化)
 
     private applyTexture(chord: ChordDef, textureType: string, startBeat: number, duration: number, melodyEvents: NoteEvent[], isShuffle: boolean, accentMode: 'heavy' | 'syncopated', density: number = 0.5, nextChord: ChordDef | null = null): NoteEvent[] {
         // ========================================================
@@ -3880,7 +3865,7 @@ export class Engine {
       // MIDI 0).
       const melodyBlueprint: NoteEvent[] = mutatedMotif.map((m: { t: number; d: number }) => ({
           noteNumber: -999,
-          time: startBeat + this.applySwing(m.t, isShuffle),
+          time: startBeat + applySwing(m.t, isShuffle),
           duration: m.d,
           velocity: 100,
           part: 'melody' as const,
@@ -4195,7 +4180,7 @@ export class Engine {
       //     post-pass at the end of generateBarPattern)
       if (melodyState.lastNoteEnd > 0 && mutatedMotif.length > 0) {
           const firstM = mutatedMotif[0];
-          const firstAbsTime = startBeat + this.applySwing(firstM.t, isShuffle);
+          const firstAbsTime = startBeat + applySwing(firstM.t, isShuffle);
           // Predicted first projected pitch — anchored at chord root
           // (matching the per-note loop's chord-relative semantics).
           let firstTargetMidi: number;
@@ -4265,7 +4250,7 @@ export class Engine {
               // tables. Without this the walk leaks 4-of-maj or maj7-of-7
               // onto structural listening positions.
               const sourceChord = prevChord;
-              const sourceFunc = sourceChord ? (sourceChord.effectiveFunc ?? this.getHarmonicFunction(sourceChord.roman)) : 'T';
+              const sourceFunc = sourceChord ? (sourceChord.effectiveFunc ?? getHarmonicFunction(sourceChord.roman)) : 'T';
               const isAcceptable = (sm: number): boolean => {
                   const pc = (((sm % 12) + 12) % 12);
                   if (sourceChord) {
@@ -4349,7 +4334,7 @@ export class Engine {
       }
 
       mutatedMotif.forEach((m: any, idx) => {
-          const swTime = this.applySwing(m.t, isShuffle);
+          const swTime = applySwing(m.t, isShuffle);
           const absTime = startBeat + swTime;
 
           // Structural-note detection lifted ABOVE the projection so the
@@ -5450,7 +5435,7 @@ export class Engine {
               // motifMutator can insert chromatic-approach notes so
               // mutatedMotif may exceed motif.length. The previous-note
               // lookup must use mutatedMotif since idx is iterating it.
-              const lastSwTime = this.applySwing(mutatedMotif[idx-1].t, isShuffle);
+              const lastSwTime = applySwing(mutatedMotif[idx-1].t, isShuffle);
               lastAbsTime = startBeat + lastSwTime;
               timeDiff = absTime - lastAbsTime;
               pitchDiff = mNoteMidi - lastNoteMidi;
