@@ -23,6 +23,8 @@
 
 import type { Random } from '../mg-engine/musicEngine';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
+import { SectionType } from '../types';
+import type { SectionMetadata } from '../types';
 
 /**
  * AF2 抽象进行步(mg.realizeProgression 输入兼容形式)。
@@ -39,7 +41,35 @@ export interface Af2AbstractStep {
     scaleDegree?: number;
 }
 
-/** Per-mgStyle 进行池(MVP — 每 style 1-2 条) */
+// Section-aware 进行池 helpers — 各 section 类型用专门 progression
+type ProgressionPool = ReadonlyArray<ReadonlyArray<Af2AbstractStep>>;
+
+// 常用级数 builder(避免重复代码)
+const I  = (type = 'maj'): Af2AbstractStep => ({ roman: 'I',  type, rootOffset: 0, scaleDegree: 1 });
+const ii = (type = 'min'): Af2AbstractStep => ({ roman: 'ii', type, rootOffset: 2, scaleDegree: 2 });
+const iii = (type = 'min'): Af2AbstractStep => ({ roman: 'iii', type, rootOffset: 4, scaleDegree: 3 });
+const IV = (type = 'maj'): Af2AbstractStep => ({ roman: 'IV', type, rootOffset: 5, scaleDegree: 4 });
+const V  = (type = 'maj'): Af2AbstractStep => ({ roman: 'V',  type, rootOffset: 7, scaleDegree: 5 });
+const vi = (type = 'min'): Af2AbstractStep => ({ roman: 'vi', type, rootOffset: 9, scaleDegree: 6 });
+const bVII = (type = 'maj'): Af2AbstractStep => ({ roman: 'bVII', type, rootOffset: 10, scaleDegree: 7 });
+
+/** 默认 fallback 进行(每 sectionType 兜底,POP-flavored) */
+const DEFAULT_BY_SECTION: Partial<Record<SectionType, ProgressionPool>> = {
+    [SectionType.Intro]:     [[ I(), V() ]],
+    [SectionType.Verse]:     [[ I(), V(), vi(), IV() ], [ I(), vi(), IV(), V() ]],
+    [SectionType.PreChorus]: [[ vi(), IV(), V(), V() ], [ IV(), V(), V(), V() ]],
+    [SectionType.Chorus]:    [[ I(), V(), vi(), IV() ], [ vi(), IV(), I(), V() ]],
+    [SectionType.Bridge]:    [[ vi(), iii(), IV(), I() ], [ bVII(), IV(), I(), I() ]],
+    [SectionType.BuildUp]:   [[ V(), V(), V(), V() ]],  // V pedal
+    [SectionType.Drop]:      [[ I(), I(), I(), I() ]],
+    [SectionType.Break]:     [[ I(), IV(), I(), I() ]],
+    [SectionType.Breakdown]: [[ I(), I(), I(), I() ]],
+    [SectionType.PreOutro]:  [[ vi(), V(), IV(), I() ]],
+    [SectionType.Outro]:     [[ I(), IV(), I(), I() ], [ vi(), V(), I(), I() ]],
+    [SectionType.Solo_Bridge]: [[ ii(), V(), I(), vi() ]],
+};
+
+/** Per-mgStyle 全曲 fallback(老 API,单循环 progression) */
 const AF2_PROGRESSION_POOL: Record<MgStyle, ReadonlyArray<ReadonlyArray<Af2AbstractStep>>> = {
     POP: [
         // I-V-vi-IV (Axis of Awesome,流行最常见)
@@ -108,26 +138,83 @@ const AF2_PROGRESSION_POOL: Record<MgStyle, ReadonlyArray<ReadonlyArray<Af2Abstr
     ],
 };
 
+// Per-mgStyle × per-sectionType 进行池(JAZZ / RNB 用更色彩化的 chord type)
+const SECTION_POOLS_BY_STYLE: Record<MgStyle, Partial<Record<SectionType, ProgressionPool>>> = {
+    POP: DEFAULT_BY_SECTION,
+    JAZZ: {
+        [SectionType.Intro]:     [[ ii('m7'), V('7') ]],
+        [SectionType.Verse]:     [[ I('maj7'), vi('m7'), ii('m7'), V('7') ], [ ii('m7'), V('7'), I('maj7'), vi('m7') ]],
+        [SectionType.PreChorus]: [[ ii('m7'), V('7'), ii('m7'), V('7') ]],
+        [SectionType.Chorus]:    [[ I('maj7'), V('7'), vi('m7'), IV('maj7') ], [ ii('m7'), V('7'), I('maj7'), I('maj7') ]],
+        [SectionType.Bridge]:    [[ iii('m7'), vi('m7'), ii('m7'), V('7') ]],
+        [SectionType.Outro]:     [[ I('maj7'), I('maj7'), I('maj7'), I('maj7') ]],
+    },
+    BLUES: {
+        // BLUES 通常用 12-bar 整曲,这里按 section 拆 4-bar 片段
+        [SectionType.Intro]:     [[ I('7'), I('7'), I('7'), I('7') ]],
+        [SectionType.Verse]:     [[ I('7'), IV('7'), I('7'), V('7') ], [ I('7'), I('7'), IV('7'), I('7') ]],
+        [SectionType.PreChorus]: [[ IV('7'), IV('7'), I('7'), I('7') ]],
+        [SectionType.Chorus]:    [[ V('7'), IV('7'), I('7'), V('7') ]],
+        [SectionType.Outro]:     [[ I('7'), IV('7'), I('7'), I('7') ]],
+    },
+    RNB: {
+        [SectionType.Intro]:     [[ I('maj7'), IV('maj7') ]],
+        [SectionType.Verse]:     [[ I('maj7'), iii('m7'), vi('m7'), IV('maj7') ], [ ii('m7'), V('7'), I('maj7'), IV('maj7') ]],
+        [SectionType.PreChorus]: [[ ii('m7'), V('7'), ii('m7'), V('7') ]],
+        [SectionType.Chorus]:    [[ I('maj7'), V('7'), vi('m7'), IV('maj7') ], [ vi('m7'), IV('maj7'), I('maj7'), V('7') ]],
+        [SectionType.Bridge]:    [[ IV('maj7'), iii('m7'), ii('m7'), I('maj7') ]],
+        [SectionType.Outro]:     [[ I('maj7'), IV('maj7'), I('maj7'), I('maj7') ]],
+    },
+};
+
+/**
+ * 查给定 (mgStyle, sectionType) 的进行池;缺则 fall through 到 DEFAULT_BY_SECTION,
+ * 仍缺则用 [[I, IV, V, I]] 兜底。
+ */
+function getSectionPool(mgStyle: MgStyle, sectionType: SectionType): ProgressionPool {
+    return SECTION_POOLS_BY_STYLE[mgStyle]?.[sectionType]
+        ?? DEFAULT_BY_SECTION[sectionType]
+        ?? [[ I(), IV(), V(), I() ]];
+}
+
 export const Af2Arranger = {
     /**
-     * AF2 编曲师 — 抽进行 + 展开到 bars 长度。
+     * AF2 编曲师 — section-aware 抽进行 + 拼接全曲。
      *
-     * MVP 算法:
-     *   1. 从 pool 抽 1 条 progression(rng.pick deterministic)
-     *   2. 长度短于 bars → 循环填充
-     *   3. 长度等于 bars(BLUES 12 = recommended 12)→ 直接用
+     * 算法:
+     *   1. 每 section:从 (mgStyle, sectionType) 进行池抽 1 条
+     *   2. 该 section 占的 bars(从 section.startBeat / endBeat 派生)用此进行循环填充
+     *   3. 拼接所有 section 的 chord 序列 → 全曲 abstractPath
+     *
+     * 每 section 独立抽 → 同 seed 下 Verse / Chorus / Bridge 进行不同。
      */
-    arrange(mgStyle: MgStyle, bars: number, rng: Random): Af2AbstractStep[] {
+    arrange(
+        mgStyle: MgStyle,
+        sections: ReadonlyArray<SectionMetadata>,
+        beatsPerMeasure: number,
+        rng: Random,
+    ): Af2AbstractStep[] {
+        const out: Af2AbstractStep[] = [];
+        for (const section of sections) {
+            const sectionBeats = section.endBeat - section.startBeat;
+            const sectionBars = Math.max(1, Math.round(sectionBeats / beatsPerMeasure));
+            const pool = getSectionPool(mgStyle, section.sectionType);
+            const chosen = rng.pick(pool as Af2AbstractStep[][]);
+            for (let bar = 0; bar < sectionBars; bar++) {
+                out.push({ ...chosen[bar % chosen.length] });
+            }
+        }
+        return out;
+    },
+
+    /**
+     * 旧 API(bars-based,单 progression 循环填全曲)。保留兼容 MVP fallback。
+     */
+    arrangeByBars(mgStyle: MgStyle, bars: number, rng: Random): Af2AbstractStep[] {
         const pool = AF2_PROGRESSION_POOL[mgStyle];
         if (!pool || pool.length === 0) {
-            // Fallback:I-IV-V-I 极简
             return Array.from({ length: bars }, (_, i) => {
-                const presets: Af2AbstractStep[] = [
-                    { roman: 'I',  type: 'maj', rootOffset: 0, scaleDegree: 1 },
-                    { roman: 'IV', type: 'maj', rootOffset: 5, scaleDegree: 4 },
-                    { roman: 'V',  type: 'maj', rootOffset: 7, scaleDegree: 5 },
-                    { roman: 'I',  type: 'maj', rootOffset: 0, scaleDegree: 1 },
-                ];
+                const presets: Af2AbstractStep[] = [I(), IV(), V(), I()];
                 return { ...presets[i % presets.length] };
             });
         }

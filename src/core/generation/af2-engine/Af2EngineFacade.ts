@@ -89,19 +89,20 @@ export const Af2EngineFacade = {
         const key = 'C';
 
         // -----------------------------------------------------------
-        // Step 2(先调,因为段落骨架要知道总小节)
+        // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
         //
-        // Option C:useAf2Arranger=true → AF2 自有 Arranger 接管和声进行决策,
-        //   Composer 仍委托 mg.realizeProgression + mg.generateArrangement。
-        //   AF2 进行池:per-mgStyle 1-2 条标志性 progression(I-V-vi-IV / ii-V-I /
-        //   12-bar / Imaj7-iiim7-vim7-IVmaj7)。
+        // mg.recommendedBars 通过 MgKernelInvoker.getRecommendedBars 静态查表,
+        // 不需要先 invoke mg。
         // -----------------------------------------------------------
-        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key, /* useAf2Arranger */ true);
+        const totalBars = MgKernelInvoker.getRecommendedBars(mgStyle);
+        const sections = SectionPlanner.plan(mgStyle, totalBars, 4);
 
         // -----------------------------------------------------------
-        // Step 1: AF 段落骨架(总小节 = mg.recommendedBars)
+        // Step 2: mg 内核(useAf2Arranger=true → Section-aware AF2 Arranger 接管
+        //   和声进行决策,每 section 独立抽 progression,Verse/Chorus/Bridge/Outro
+        //   各自不同走向。Composer 仍委托 mg.realizeProgression。)
         // -----------------------------------------------------------
-        const sections = SectionPlanner.plan(mgStyle, mg.recommendedBars, 4);
+        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key, /* useAf2Arranger */ true, sections);
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)

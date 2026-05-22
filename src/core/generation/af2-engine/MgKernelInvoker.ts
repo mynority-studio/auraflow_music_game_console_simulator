@@ -22,7 +22,7 @@
 // ============================================================
 
 import { ChordQuality, Tonality } from '../types';
-import type { GeneratedChord, NoteData } from '../types';
+import type { GeneratedChord, NoteData, SectionMetadata } from '../types';
 import { Random } from '../mg-engine/musicEngine';
 import type { ChordDef, NoteEvent, GenerationConfig } from '../mg-engine/musicEngine';
 // Phase 6.5:直接 import engine-utils free function,绕过 Engine class
@@ -151,8 +151,16 @@ export const MgKernelInvoker = {
      * @param key         调号字符串(默认 'C'。mg 已绝对化 MIDI,实际渲染由 keyOffset 处理)
      * @param useAf2Arranger  Option C:true 时用 AF2 自有 Arranger 替代 mg
      *                        进行决策;Composer 仍委托 mg.realizeProgression。
+     * @param sections        Optional:per-section 不同进行(传入则用 section-aware
+     *                        Af2Arranger);未传则退化到 bars-based 单循环 progression。
      */
-    invoke(seedString: string, mgStyle: MgStyle, key: string = 'C', useAf2Arranger: boolean = false): MgKernelOutput {
+    invoke(
+        seedString: string,
+        mgStyle: MgStyle,
+        key: string = 'C',
+        useAf2Arranger: boolean = false,
+        sections?: ReadonlyArray<SectionMetadata>,
+    ): MgKernelOutput {
         const config: GenerationConfig = {
             seed: seedString,
             style: mgStyle,
@@ -166,11 +174,14 @@ export const MgKernelInvoker = {
         if (useAf2Arranger) {
             // Option C:AF2 Arranger 接管和声进行决策
             //   1. resolveGeneration → ctx(mode/motifStrategy/bassline/meter/tonalCharacter)
-            //   2. Af2Arranger.arrange → abstractPath(AF2 自有进行池抽选)
-            //   3. realizeProgression(abstractPath, ...) → ChordDef[](mg Composer 做 voicing)
+            //   2. Af2Arranger:
+            //      · sections 给 → section-aware arrange(per-section 不同进行)
+            //      · sections 未给 → arrangeByBars(单 progression 循环)
+            //   3. realizeProgression → ChordDef[](mg Composer 做 voicing)
             const ctx = resolveGeneration(config);
-            const bars = MG_STYLE_BARS[mgStyle];
-            const abstractPath = Af2Arranger.arrange(mgStyle, bars, rng);
+            const abstractPath = sections
+                ? Af2Arranger.arrange(mgStyle, sections, 4 /* beatsPerMeasure */, rng)
+                : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
             mgChords = realizeProgression(abstractPath, key, mgStyle, ctx, rng);
         } else {
             // 默认:mg 一气呵成(MG 模式 / AF2 没选 Option C 时)
