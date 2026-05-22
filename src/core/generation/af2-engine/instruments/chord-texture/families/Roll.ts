@@ -42,7 +42,7 @@ export function applyRoll(
                 time: startBeat + t,
                 duration: Math.min(2, duration - t) - 0.2,
                 velocity: Math.min(127, vel * 127),
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

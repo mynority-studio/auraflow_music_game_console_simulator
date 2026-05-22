@@ -26,7 +26,7 @@ export function applyHemiola(
                     time: startBeat + t,
                     duration: 0.5,
                     velocity: params.velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

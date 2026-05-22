@@ -40,12 +40,35 @@ export const PIANO_INSTRUMENT_SPEC = {
 
 export const PianoIdiom = {
     /**
-     * 钢琴渲染 — Phase 1 直通。
+     * 渲染 MainInst 槽位的 melody 音符。
      *
-     * 不改 pitch / onset / duration / velocity。返回 NoteData[] 的浅拷贝
-     * (防御性,避免下游 mutate 污染 mg 原输出)。
+     * Phase A 直通(pass-through)。Phase B+ 会加入:
+     *   - melody 技巧 / 演绎方式(legato / staccato / 装饰音 / passing tones)
+     *   - 音区概率分布(~95% 高音区 [C4-D6],5% 中低区 cross-region)
+     *   - cross-track 物理模拟(accomp add11 时 melody 概率围绕 11 音区)
      */
-    realize(notes: NoteData[]): NoteData[] {
+    realizeMelody(notes: NoteData[]): NoteData[] {
+        return notes.map(n => ({ ...n }));
+    },
+
+    /**
+     * 渲染 Accomp 槽位的伴奏音符(原 'chord' 语义)。
+     *
+     * Phase A 直通。Phase B+ 会加入:
+     *   - accomp 技巧(柱式 / 分解 / 切分 / smart omit)
+     *   - 音区概率分布(~95% 中低区 [C3-B4],5% 高音区 voice-leading 借音)
+     *   - 物理 hand-spread 约束(add11 时 11 音超手按范围则借右手位置)
+     */
+    realizeAccomp(notes: NoteData[]): NoteData[] {
+        return notes.map(n => ({ ...n }));
+    },
+
+    /**
+     * 渲染 Bass 槽位的钢琴低音(钢琴占 Bass 槽时,无电贝斯)。
+     *
+     * Phase A 直通。Phase B+ 可加 walking / stride / boogie 技巧。
+     */
+    realizeBass(notes: NoteData[]): NoteData[] {
         return notes.map(n => ({ ...n }));
     },
 

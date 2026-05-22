@@ -34,7 +34,7 @@ export function applyGhostStab(
                 time: startBeat + stabTime,
                 duration: stabDur,
                 velocity: vel,
-                part: 'chord',
+                part: 'accomp',
             });
         }
 
@@ -48,7 +48,7 @@ export function applyGhostStab(
                         time: startBeat + ghostTime,
                         duration: 0.15,
                         velocity: 0.3 * 127,
-                        part: 'chord',
+                        part: 'accomp',
                     });
                 }
             }

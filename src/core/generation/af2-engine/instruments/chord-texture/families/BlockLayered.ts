@@ -28,7 +28,7 @@ export function applyBlockLayered(
                 time: startBeat,
                 duration: firstDur,
                 velocity: 0.7 * 127,
-                part: 'chord',
+                part: 'accomp',
             });
         }
         if (duration > 2) {
@@ -38,7 +38,7 @@ export function applyBlockLayered(
                     time: startBeat + 2,
                     duration: duration - 2,
                     velocity: 0.6 * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }
@@ -51,7 +51,7 @@ export function applyBlockLayered(
                     time: startBeat + 1.5,
                     duration: 0.5,
                     velocity: 0.7 * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }
@@ -62,7 +62,7 @@ export function applyBlockLayered(
                     time: startBeat + 3.0,
                     duration: 0.5,
                     velocity: 0.6 * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

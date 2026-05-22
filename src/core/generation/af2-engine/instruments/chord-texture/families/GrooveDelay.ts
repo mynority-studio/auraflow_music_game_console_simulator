@@ -27,7 +27,7 @@ export function applyGrooveDelay(
                 time: startBeat + delayedT,
                 duration: params.chord_duration,
                 velocity: params.chord_velocity * 127,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

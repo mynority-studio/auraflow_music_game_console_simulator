@@ -27,7 +27,7 @@ export function applyPopAnthem(
                 time: startBeat + i * 0.5,
                 duration: 0.45,
                 velocity: vel,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

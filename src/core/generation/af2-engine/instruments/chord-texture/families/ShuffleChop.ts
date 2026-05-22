@@ -30,7 +30,7 @@ export function applyShuffleChop(
                         time: startBeat + Math.max(0, beat + params.grace_lead_ms),
                         duration: 0.1,
                         velocity: 0.6 * 127,
-                        part: 'chord',
+                        part: 'accomp',
                     });
                 }
                 // Main chop
@@ -40,7 +40,7 @@ export function applyShuffleChop(
                         time: startBeat + beat,
                         duration: params.chop_duration,
                         velocity: params.velocity * 127,
-                        part: 'chord',
+                        part: 'accomp',
                     });
                 }
             }
@@ -54,7 +54,7 @@ export function applyShuffleChop(
                     time: startBeat + i,
                     duration: 0.3,
                     velocity: 0.6 * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
                 if (params.shuffle_offset > 0 && i + params.shuffle_offset < duration) {
                     out.push({
@@ -62,7 +62,7 @@ export function applyShuffleChop(
                         time: startBeat + i + params.shuffle_offset,
                         duration: 0.3,
                         velocity: params.velocity * 127,
-                        part: 'chord',
+                        part: 'accomp',
                     });
                 }
             }

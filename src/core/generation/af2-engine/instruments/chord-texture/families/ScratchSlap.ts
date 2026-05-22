@@ -30,7 +30,7 @@ export function applyScratchSlap(
                     time: startBeat + t,
                     duration: params.short_duration,
                     velocity: 0.4 * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

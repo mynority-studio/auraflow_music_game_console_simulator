@@ -34,7 +34,7 @@ export function applyPopBroken8th(
                 time: startBeat + i * 0.5,
                 duration: 0.4,
                 velocity: vel,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

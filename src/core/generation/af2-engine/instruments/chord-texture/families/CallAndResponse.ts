@@ -43,7 +43,7 @@ export function applyCallAndResponse(
                     time: absTime,
                     duration: params.chord_step,
                     velocity: params.chord_velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

@@ -42,7 +42,7 @@ import type { NoteDataWithPartAndSection } from './SectionMapper';
  */
 const PART_TO_SLOT: Record<string, BandRole> = {
     melody: BandRole.MainInst,
-    chord:  BandRole.Accomp,
+    accomp: BandRole.Accomp,
     bass:   BandRole.Bass,
 };
 

@@ -56,7 +56,7 @@ export function applySweepProgressive(
                     time: startBeat + params.chord_late_start,
                     duration: Math.min(1.5, duration - params.chord_late_start),
                     velocity: params.chord_late_velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
             // 后续 sustained chord(if dur >= 2.5)
@@ -67,7 +67,7 @@ export function applySweepProgressive(
                         time: startBeat + 2.5,
                         duration: duration - 2.5,
                         velocity: (params.chord_late_velocity - 0.05) * 127,
-                        part: 'chord',
+                        part: 'accomp',
                     });
                 }
             }
@@ -82,7 +82,7 @@ export function applySweepProgressive(
                     time: startBeat + t,
                     duration: 0.5,
                     velocity: params.chord_late_velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

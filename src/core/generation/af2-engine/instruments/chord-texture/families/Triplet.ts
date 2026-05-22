@@ -39,7 +39,7 @@ export function applyTriplet(
                 time: startBeat + t,
                 duration: params.triplet_duration,
                 velocity: params.triplet_velocities[pos] * 127,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

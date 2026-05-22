@@ -61,7 +61,7 @@ export function applyPureArp(
             time: startBeat + t,
             duration: params.note_duration,
             velocity: Math.max(0, Math.min(127, vel * 127)),
-            part: 'chord',
+            part: 'accomp',
         });
     }
     return out;

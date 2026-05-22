@@ -30,7 +30,7 @@ export function applyAnticipatedBlock(
                 time: startBeat + t,
                 duration: params.chord_duration,
                 velocity: params.chord_velocity * 127,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

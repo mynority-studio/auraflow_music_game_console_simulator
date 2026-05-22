@@ -205,7 +205,7 @@ export const MgEngineFacade = {
         // 5. NoteEvent[] → NoteData[],按 part 切轨
         //
         //   mg.part='melody'        → track.melody          (Lead 通道)
-        //   mg.part='chord' / 'bass' → 全进 track.accompaniment
+        //   mg.part='accomp' / 'bass' → 全进 track.accompaniment
         //
         //   配合下面 track.skipHandSplit = true:
         //     AbsoluteTransposer 把整条 accompaniment 全送 pianoRH 单通道,pianoLH 留空。
@@ -222,7 +222,7 @@ export const MgEngineFacade = {
             if (ev.part === 'melody') {
                 melody.push(note);
             } else {
-                // 'chord' / 'bass' 都进 accompaniment
+                // 'accomp' / 'bass' 都进 accompaniment
                 accompaniment.push(note);
             }
         }

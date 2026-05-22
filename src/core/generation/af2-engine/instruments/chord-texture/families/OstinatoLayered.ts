@@ -32,7 +32,7 @@ export function applyOstinatoLayered(
             time: startBeat + t,
             duration: 0.2,
             velocity: Math.min(127, (params.top_velocity + accentBoost) * 127),
-            part: 'chord',
+            part: 'accomp',
         });
         // lower 层 — 仅偶数 step 打(Pop_Ostinato_Rock)
         if (params.has_lower_layer && i % 2 === 0 && lowerNotes.length > 0 && params.lower_velocity !== undefined) {
@@ -42,7 +42,7 @@ export function applyOstinatoLayered(
                     time: startBeat + t,
                     duration: 0.4,
                     velocity: params.lower_velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

@@ -45,7 +45,7 @@ export function applyBoogieWalk(
                     time: startBeat + t,
                     duration: 0.4,
                     velocity: params.chord_velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

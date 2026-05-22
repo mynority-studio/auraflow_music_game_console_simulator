@@ -24,7 +24,7 @@ export function applyJazzCharleston(
             time: startBeat,
             duration: 0.5,
             velocity: params.chord_first_velocity * 127,
-            part: 'chord',
+            part: 'accomp',
         });
     }
     // charleston at 1.66 (and of 2 in swing)
@@ -35,7 +35,7 @@ export function applyJazzCharleston(
                 time: startBeat + params.charleston_time,
                 duration: 0.34,
                 velocity: params.chord_charleston_velocity * 127,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }

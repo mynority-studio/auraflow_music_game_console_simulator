@@ -143,14 +143,28 @@ export const Af2EngineFacade = {
         //   MainInst / Accomp:Phase 2a 统一 PianoIdiom(Phase 2b+ 加非钢琴 idiom 时
         //                      在此分支)
         // -----------------------------------------------------------
+        const mainMusician = routed[BandRole.MainInst].musician;
+        const accompMusician = routed[BandRole.Accomp].musician;
         const bassMusician = routed[BandRole.Bass].musician;
         const useElectricBass = bassMusician?.instrumentFamily === InstrumentFamily.Bass;
 
-        const renderedMainRaw   = PianoIdiom.realize(routed[BandRole.MainInst].notes);
-        const renderedAccompRaw = PianoIdiom.realize(routed[BandRole.Accomp].notes);
-        const renderedBassRaw   = useElectricBass
-            ? BassIdiom.realize(routed[BandRole.Bass].notes)
-            : PianoIdiom.realize(routed[BandRole.Bass].notes);
+        // Phase A:槽位 empty(musician=null)= 无人演奏 → 不渲染。
+        // 这是用户的"乐手槽位语义"修正:之前 Phase 1 设计是"空 → fallback 钢琴默认"
+        // 但语义不一致(Atmosphere/Drums 已是 empty→无声);本次统一为"empty=无声"。
+        //
+        // Phase A:PianoIdiom 按 role 分 API(realizeMelody / realizeAccomp / realizeBass),
+        //   Phase A 实现仍直通,Phase B+ 在对应方法内加 melody/accomp 各自的技巧 + 音区概率分布。
+        const renderedMainRaw   = mainMusician
+            ? PianoIdiom.realizeMelody(routed[BandRole.MainInst].notes)
+            : [];
+        const renderedAccompRaw = accompMusician
+            ? PianoIdiom.realizeAccomp(routed[BandRole.Accomp].notes)
+            : [];
+        const renderedBassRaw   = !bassMusician
+            ? []
+            : useElectricBass
+                ? BassIdiom.realize(routed[BandRole.Bass].notes)
+                : PianoIdiom.realizeBass(routed[BandRole.Bass].notes);
         const renderedPadRaw = PadIdiom.realize(padNotes);
         // DrumGenerator 直接产 NoteData,无须 DrumIdiom.realize 后处理(它也是直通)
 

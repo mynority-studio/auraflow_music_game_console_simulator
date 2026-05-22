@@ -35,7 +35,7 @@ export function applyPureStab(
                     time: startBeat + t,
                     duration: params.stab_duration,
                     velocity,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

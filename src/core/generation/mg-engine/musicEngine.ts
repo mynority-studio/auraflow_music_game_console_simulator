@@ -132,7 +132,7 @@ export interface NoteEvent {
   time: number;            // In beats from start of progression
   duration: number;        // In beats
   velocity: number;        // 0 to 127
-  part: 'melody' | 'chord' | 'bass';
+  part: 'melody' | 'accomp' | 'bass';
   chordSymbol?: string;    // Only set on the first event of a chord change to notify UI
   pitchOffset?: number;    // Single pitch bend (e.g. +0.5 for a quarter tone sharp)
   pitchEnvelope?: Array<{ timeOffset: number, offsetValue: number }>; // Glide curve

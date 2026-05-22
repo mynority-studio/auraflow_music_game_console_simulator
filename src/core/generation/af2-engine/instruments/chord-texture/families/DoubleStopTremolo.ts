@@ -30,7 +30,7 @@ export function applyDoubleStopTremolo(
             time: startBeat + i,
             duration: params.bottom_duration,
             velocity: params.bottom_velocity * 127,
-            part: 'chord',
+            part: 'accomp',
         });
         // top tremolo on odd beats (i % 2 !== 0)
         if (i % 2 !== 0) {
@@ -41,7 +41,7 @@ export function applyDoubleStopTremolo(
                     time: startBeat + i + j * 0.25,
                     duration: params.top_duration,
                     velocity: params.top_velocity * 127,
-                    part: 'chord',
+                    part: 'accomp',
                 });
             }
         }

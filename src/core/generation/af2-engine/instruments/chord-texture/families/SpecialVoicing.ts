@@ -34,7 +34,7 @@ export function applySpecialVoicing(
                 time: startBeat + t,
                 duration: params.chord_duration,
                 velocity: clampedVel,
-                part: 'chord',
+                part: 'accomp',
             });
         }
     }
