@@ -306,8 +306,14 @@ export interface ScaleGravityRule {
   type: 'resolve_down' | 'resolve_up' | 'hang';
 }
 
-export const SCALE_GRAVITY: Record<string, ScaleGravityRule[]> = {
-    // ---- Major Family — Lerdahl-derived (computeLerdahlScaleGravity at module init) ----
+// Lazy-init cache(Phase 6.1 拆分后必须 lazy:tendency ↔ scale ↔ chord-color
+// 形成 ES 模块循环,module-load 时 SCALE_TYPES 处于 TDZ,inline 调
+// computeLerdahlScaleGravity → throw。延迟到首次 getScaleGravity 调用,
+// 那时所有模块已 fully loaded。)
+let _scaleGravityCache: Record<string, ScaleGravityRule[]> | null = null;
+function buildScaleGravityTable(): Record<string, ScaleGravityRule[]> {
+  return {
+    // ---- Major Family — Lerdahl-derived (computeLerdahlScaleGravity at first access) ----
     // 自动派生自 Lerdahl 2001 TPS ch.4 attraction formula α = (s_to/s_from)×(1/n²)。
     // 跟原手调表对比:
     //   Ionian   4→3=15 (exact)、7→1=22→25 (+3)、2→1=6 (exact)、6→5=4→5 (+1)
@@ -378,13 +384,31 @@ export const SCALE_GRAVITY: Record<string, ScaleGravityRule[]> = {
         { fromInterval: 11, toInterval: 0,  score: 22, type: 'resolve_up' },   // 7→1
         { fromInterval: 8,  toInterval: 7,  score: 12, type: 'resolve_down' }, // added b6→5
     ],
-};
+  };
+}
+
+/** Public access — preserves original SCALE_GRAVITY API while triggering lazy init. */
+export function getScaleGravityTable(): Record<string, ScaleGravityRule[]> {
+  if (_scaleGravityCache === null) _scaleGravityCache = buildScaleGravityTable();
+  return _scaleGravityCache;
+}
+
+// Backwards-compat re-export(原 `export const SCALE_GRAVITY`,现 Proxy lazy)
+export const SCALE_GRAVITY = new Proxy({} as Record<string, ScaleGravityRule[]>, {
+  get(_, key: string) { return getScaleGravityTable()[key]; },
+  ownKeys() { return Object.keys(getScaleGravityTable()); },
+  getOwnPropertyDescriptor(_, key: string) {
+    const table = getScaleGravityTable();
+    if (key in table) return { configurable: true, enumerable: true, value: table[key] };
+    return undefined;
+  },
+});
 
 // Look up scale gravity for a given scale name, returning rules
 // keyed by fromInterval for fast pendingResolve dispatch.
 export function getScaleGravity(scaleName: string): Map<number, ScaleGravityRule> {
   const out = new Map<number, ScaleGravityRule>();
-  const rules = SCALE_GRAVITY[scaleName];
+  const rules = getScaleGravityTable()[scaleName];
   if (!rules) return out;
   // If multiple rules share fromInterval, prefer highest score.
   for (const rule of rules) {
