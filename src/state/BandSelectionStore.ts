@@ -27,12 +27,25 @@
 //   - 不要在这里做 deep clone(调用方负责传 deep-cloned 对象)
 // ============================================================
 
-import type { BandRole } from '../core/generation/types';
+import { BandRole } from '../core/generation/types';
 
 export type BandSelection = Partial<Record<BandRole, string | null>>;
 export type InstrumentSelection = Partial<Record<BandRole, number>>;
 
-let _band: BandSelection = {};
+/**
+ * 默认 band(fresh load 时):5 槽预填合理 musicians,保证 AF2 模式开盒即响。
+ * 之前 Phase A 改 "empty 槽 = 无声" 后,如果 store 是 {} 会全静音 → 必须给默认。
+ * 用户点 BandSelection Apply 会 setBand() 覆盖这份默认。
+ */
+const DEFAULT_BAND: BandSelection = {
+    [BandRole.MainInst]:   'alex_piano',
+    [BandRole.Accomp]:     'chloe_pop_piano',
+    [BandRole.Bass]:       'frank_bass',
+    [BandRole.Drums]:      'dave_drums',
+    [BandRole.Atmosphere]: 'nina_pad',
+};
+
+let _band: BandSelection = { ...DEFAULT_BAND };
 let _instruments: InstrumentSelection = {};
 
 export const BandSelectionStore = {

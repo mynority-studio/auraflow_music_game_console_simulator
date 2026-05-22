@@ -146,11 +146,12 @@ export const PipelineMonitor: React.FC = () => {
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
     // Pending(UI 编辑中)— 用户在下拉框选乐手时即时变,但**不影响 Play**
-    const [bandSelection, setBandSelection] = useState<BandSelection>({});
-    const [instrumentSelection, setInstrumentSelection] = useState<InstrumentSelection>({});
+    // 初值从 BandSelectionStore 拿(Phase A 后 store 含 DEFAULT_BAND,保证不是全空)
+    const [bandSelection, setBandSelection] = useState<BandSelection>(() => ({ ...BandSelectionStore.getBand() }));
+    const [instrumentSelection, setInstrumentSelection] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
     // Committed(Apply 后)— Play / Tap 实际消费的快照
-    const [committedBand, setCommittedBand] = useState<BandSelection>({});
-    const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>({});
+    const [committedBand, setCommittedBand] = useState<BandSelection>(() => ({ ...BandSelectionStore.getBand() }));
+    const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
     // Engine 选择(镜像 EngineSelectionStore,UI 用 React state 触发重渲)
     const [engine, setEngineState] = useState<EngineId>(EngineSelectionStore.getEngine());
     // MG Style(仅 MG 模式下生效;AF 模式只是闲置)

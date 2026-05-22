@@ -1,22 +1,24 @@
 // ============================================================
-// PianoIdiom — AF2 钢琴乐器 idiom(Phase 1:直通)
+// PianoIdiom — AF2 钢琴乐器 idiom(Phase A:槽位 API split;Phase B:音区概率分布)
 // ============================================================
 //
 // 在用户的三层架构里,本文件属于**"世界规则库" 之 "乐器 baseidiom"**子层
 //(AF2 私有版本,Phase N 删 AF/MG 后可考虑提升到顶层 src/core/generation/instruments/)。
 //
-// Phase 1 职责(钢琴特例):
-//   直通 — mg 输出的钢琴音符不做任何二次加工。NoteData 主字段全保留,
-//   GM program = 0(Grand Piano),让音色与 MG 模式 bit-exact 一致。
+// Phase A 职责:按 role 拆 3 个 API(realizeMelody / realizeAccomp / realizeBass)。
+// Phase B 职责:实装 95% 主区音区分布 + 5% 越界保留。
 //
-// 为什么钢琴是直通:
-//   mg 的算法本身就是为钢琴写的(chord/bass 落 piano LH,melody 落 piano RH)。
-//   AF2 的目标是"忠实 mg" — 钢琴渲染没有"加 articulation"的空间,加了反而偏离。
+// Phase B 音区设计:
+//   realizeMelody  主区 [C4=60, D6=86]    超主区音 95% 拉回 / 5% 越界保留
+//   realizeAccomp  主区 [C3=48, B4=71]    超主区音 95% 拉回 / 5% 越界保留
+//   realizeBass    主区 [A1=33, G3=55]    超主区音 95% 拉回 / 5% 越界保留
 //
-// 未来其他乐器的样板:
-//   Phase 2+ 萨克斯 / 小提琴 / 等 idiom 会加 articulation(萨克斯起音滑音 +
-//   breath noise / 小提琴 portamento 等),**但永远禁止改 pitch/onset/duration/velocity**。
-//   articulation 字段需要在 NoteData 上新增可选字段(Phase 2 评估)。
+// 概率门用 deterministic hash(pitch + onset)— 不消耗 PRNG,可重现。
+// 拉回 = 八度移调(±12 半音)直到落入主区。
+//
+// 与 mg 偏离声明:Phase B 是 AF2 主动改 pitch(八度移调),与 Phase 1 的"直通忠实
+// mg"不一致。但 2026-05-21 reframe 后 AF2 ≠ MG bit-exact 已可接受,验收锚点改为
+// "AF2 听感不输给 mg-standalone"。
 //
 // 物理声明(供 BandSelectionPanel 校验槽位):
 //   - 音域:21-108(标准 88 键)
@@ -38,38 +40,88 @@ export const PIANO_INSTRUMENT_SPEC = {
     eligibleSlots: [BandRole.MainInst, BandRole.Accomp, BandRole.Bass] as const,
 } as const;
 
+/** 各 role 的主区(MIDI 边界,inclusive)。Phase B 实装,Phase C 可让 musician 卡覆盖。 */
+export const PIANO_REGIONS = {
+    melody: { lo: 60, hi: 86 },  // C4 - D6(soprano 主流域)
+    accomp: { lo: 48, hi: 71 },  // C3 - B4(中低 comping 域)
+    bass:   { lo: 33, hi: 55 },  // A1 - G3(piano LH / bass)
+} as const;
+
+/** 5% 越界保留概率(95% 拉回主区) */
+const ESCAPE_PROBABILITY = 0.05;
+
+/**
+ * Deterministic hash(pitch + onset)→ [0, 1) 浮点。
+ * 用 32-bit Mulberry-like 混合 + 取低位,稳定可重现,不消耗 PRNG。
+ */
+function detHash01(pitch: number, onset: number): number {
+    // mix integer pitch + onset (quantized to 1/16 beat) into 32-bit
+    const seedInt = ((pitch & 0xff) << 16) ^ Math.floor(onset * 16) ^ 0x9e3779b9;
+    let x = seedInt >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+    x = (x ^ (x >>> 16)) >>> 0;
+    return (x & 0xffffff) / 0x1000000;  // → [0, 1)
+}
+
+/**
+ * 把单音 pitch 按"主区 + 越界概率"约束调整。
+ *
+ *   pitch 在 [lo, hi] 内:直通
+ *   pitch 在主区外:
+ *     - escape 命中(<5%):保留越界 pitch(自然感 / 小概率越界)
+ *     - 否则(95%):八度移调到主区(±12 直到落入)
+ *
+ * 越界往主区折叠时优先选离原 pitch 最近的八度,保留 voice-leading 语义。
+ */
+function applyRegionProbability(
+    notes: NoteData[],
+    region: { lo: number; hi: number },
+): NoteData[] {
+    return notes.map(n => {
+        if (n.pitch >= region.lo && n.pitch <= region.hi) return { ...n };
+        const escape = detHash01(n.pitch, n.onset) < ESCAPE_PROBABILITY;
+        if (escape) return { ...n };
+        // 95% 路径:八度移调拉回主区
+        let p = n.pitch;
+        while (p < region.lo) p += 12;
+        while (p > region.hi) p -= 12;
+        // p 现在在 [region.lo - 11, region.hi] 内,clamp 保险
+        if (p < region.lo) p = region.lo;
+        if (p > region.hi) p = region.hi;
+        return { ...n, pitch: p };
+    });
+}
+
 export const PianoIdiom = {
     /**
      * 渲染 MainInst 槽位的 melody 音符。
      *
-     * Phase A 直通(pass-through)。Phase B+ 会加入:
-     *   - melody 技巧 / 演绎方式(legato / staccato / 装饰音 / passing tones)
-     *   - 音区概率分布(~95% 高音区 [C4-D6],5% 中低区 cross-region)
-     *   - cross-track 物理模拟(accomp add11 时 melody 概率围绕 11 音区)
+     * Phase B:主区 [C4, D6],超出 95% 拉回 / 5% 越界保留。
+     * Phase C+ 计划:melody 技巧 / 装饰 / passing tones / cross-track 物理(add11)
      */
     realizeMelody(notes: NoteData[]): NoteData[] {
-        return notes.map(n => ({ ...n }));
+        return applyRegionProbability(notes, PIANO_REGIONS.melody);
     },
 
     /**
      * 渲染 Accomp 槽位的伴奏音符(原 'chord' 语义)。
      *
-     * Phase A 直通。Phase B+ 会加入:
-     *   - accomp 技巧(柱式 / 分解 / 切分 / smart omit)
-     *   - 音区概率分布(~95% 中低区 [C3-B4],5% 高音区 voice-leading 借音)
-     *   - 物理 hand-spread 约束(add11 时 11 音超手按范围则借右手位置)
+     * Phase B:主区 [C3, B4],超出 95% 拉回 / 5% 越界保留。
+     * Phase C+ 计划:柱式 / 分解 / smart omit + add11 hand-spread 约束
      */
     realizeAccomp(notes: NoteData[]): NoteData[] {
-        return notes.map(n => ({ ...n }));
+        return applyRegionProbability(notes, PIANO_REGIONS.accomp);
     },
 
     /**
      * 渲染 Bass 槽位的钢琴低音(钢琴占 Bass 槽时,无电贝斯)。
      *
-     * Phase A 直通。Phase B+ 可加 walking / stride / boogie 技巧。
+     * Phase B:主区 [A1, G3],超出 95% 拉回 / 5% 越界保留。
+     * Phase C+ 计划:walking / stride / boogie 技巧
      */
     realizeBass(notes: NoteData[]): NoteData[] {
-        return notes.map(n => ({ ...n }));
+        return applyRegionProbability(notes, PIANO_REGIONS.bass);
     },
 
     /**
