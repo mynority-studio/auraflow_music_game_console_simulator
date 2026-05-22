@@ -56,6 +56,11 @@ import { BassIdiom } from './instruments/BassIdiom';
 import { PadGenerator, PadIdiom } from './instruments/PadIdiom';
 import { DrumGenerator } from './instruments/DrumIdiom';
 import { Reconciler } from './Reconciler';
+// C.1 + C.2:Score 数据契约 + Conductor 分谱层(StaticConductor 默认实现 = 当前
+// forcedBand 行为,SectionAssignment 暂未被 musicians 消费 — C.3+ 接入)
+import type { Score } from './Score';
+import type { Band } from './Conductor';
+import { StaticConductor } from './Conductor';
 
 export interface Af2GenerateResult {
     track: GeneratedTrack;
@@ -102,6 +107,35 @@ export const Af2EngineFacade = {
         // Step 4: 6 槽位路由 + musician 装配
         // -----------------------------------------------------------
         const routed = SlotRouter.route(eventsWithSection, options.forcedBand, getMusicianById);
+
+        // -----------------------------------------------------------
+        // Step 4.1 (C.1+C.2):构造 Score + Conductor.dispatch
+        //
+        // Score = mg + SectionPlanner 输出的素材打包(数据契约,无新算法)。
+        // StaticConductor.dispatch = 把当前 band 映射到所有 sections(行为等价
+        // 当前 forcedBand)。SectionAssignment 暂未被 musicians 消费 — C.3+ 才
+        // 让 musicians 改造为 plan(score, role, peers) 协议时接入。
+        // -----------------------------------------------------------
+        const score: Score = {
+            chords: mg.chords,
+            sections,
+            bpm: mg.bpm,
+            key,
+            keyOffset: 0,
+            tonality: Tonality.Major,
+            timeSignature: [4, 4],
+        };
+        const band: Band = {
+            [BandRole.MainInst]:   routed[BandRole.MainInst].musician,
+            [BandRole.Accomp]:     routed[BandRole.Accomp].musician,
+            [BandRole.Bass]:       routed[BandRole.Bass].musician,
+            [BandRole.Drums]:      routed[BandRole.Drums].musician,
+            [BandRole.Atmosphere]: routed[BandRole.Atmosphere].musician,
+        };
+        const conductor = new StaticConductor();
+        const _sectionAssignments = conductor.dispatch(score, band);
+        // C.3+:musicians 改造后此对象会被消费;当前阶段保 reference 防 dead-code 警告
+        void _sectionAssignments;
 
         // -----------------------------------------------------------
         // Step 4.5: PadGenerator(条件:Atmosphere 槽位有 Pad family 乐手)
