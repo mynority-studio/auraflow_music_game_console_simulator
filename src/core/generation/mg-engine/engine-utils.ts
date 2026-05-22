@@ -13,8 +13,17 @@
 
 import { StyleName, STYLE_DICTIONARY } from './styleDictionary';
 import { harmonicFunctionFromRoman, QUANTIZED_DURATIONS, Random } from './musicEngine';
-import type { ChordDef, GenerationConfig } from './musicEngine';
-import { CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote } from './musicTheory';
+import type { ChordDef, GenerationConfig, ResolvedGenerationContext } from './musicEngine';
+import {
+    CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote,
+    getModeAwareSubstitutions, modeProgressionTemplate,
+    MAINSTREAM_EMOTION_TO_MODE, MAJOR_FLAVOR_MODES,
+    EXOTIC_MODE_PROBABILITY, EXOTIC_MODES,
+    getMeterContext,
+} from './musicTheory';
+import type { Emotion } from './musicTheory';
+import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from './dynamicHarmony';
+import { pickBasslineRule } from './basslineRules';
 
 /**
  * 抽自 mg.Engine.resolveTonalCharacter (原 L684-689)。
@@ -651,4 +660,283 @@ export function motifMutator(
         );
     }
     return mutated;
+}
+
+/**
+ * 抽自 mg.Engine.decorateChordType (原 L837-975)。
+ * 8-step decision pipeline 把骨架 chord(roman + type + rootOffset)的 type
+ * 升级为色彩化版本(maj7 / 9 / 13 / altered / sub-V 等)。
+ *
+ * 算法流(逐 step):
+ *   1. Roll colorLevel(单次 random.next,总是消耗 — D-5 锁帧保护)
+ *   2. Look-ahead 分析:用 next chord 决定 targetQuality
+ *   3. Dynamic TSD dictionary 查表(POP/JAZZ/BLUES/RNB 直查,与 StyleName 1-1 对应)
+ *   4. Tritone substitution 条件 random(仅 currFunc=='D' + 上行五度时消耗 — D-5
+ *      保证当且仅当替换 eligible 时漂移)
+ *   5. 静态 fallback 到 colorChoices(动态字典 miss 时)
+ *   6. Mode-aware 审核:filter pickFrom 到 mode 内可用 type;sub-V 与 V/X 跳过
+ *      filter(V/X by definition non-diatonic;sub-V 故意外 palette)
+ *   7. Data-debt guard:final type 不在 CHORD_TYPES 时按 func 降级到安全 type
+ *   8. Sub-V override:Lydian Dominant family 静态查 colorLevel,override
+ *      rootOffset(+6 半音)+ roman(subV/X);Stage 3 Divisi 2.0 middleware 看新
+ *      物理 bass 重分类
+ *
+ * PRNG 消耗:固定 1 次(colorLevel)+ 1 次(pick finalType);条件 1 次(tritone)。
+ *
+ * 调用者 callsite 唯一(realizeProgression),不会被多线程并发。
+ */
+export function decorateChordType(
+    base: { roman: string; type: string; rootOffset: number; scaleDegree?: number },
+    nextBase: { roman: string; type: string; rootOffset: number; scaleDegree?: number },
+    style: StyleName,
+    mode: string,
+    rng: Random,
+): {
+    type: string;
+    rootOffsetOverride?: number;
+    romanOverride?: string;
+} {
+    const profile = STYLE_DICTIONARY[style] || STYLE_DICTIONARY['POP'];
+    const probs = profile.colorLevelProbabilities;
+
+    // 1. Roll colorLevel — 单次 random.next 总是消耗
+    const r = rng.next();
+    let colorLevel: 0 | 1 | 2 = 0;
+    if (r < probs.level0) colorLevel = 0;
+    else if (r < probs.level0 + probs.level1) colorLevel = 1;
+    else colorLevel = 2;
+
+    const currFunc = harmonicFunctionFromRoman(base.roman);
+    const nextFunc = harmonicFunctionFromRoman(nextBase.roman);
+
+    // 2. Look-ahead context analysis
+    const targetQuality = analyzeTargetQuality(currFunc, nextFunc, nextBase.roman, nextBase.type);
+
+    // 3. Dynamic dictionary lookup
+    const rules = DYNAMIC_TSD_DICTIONARY[style]?.[currFunc];
+    let choices: string[] | undefined;
+    let isTritoneSub = false;
+
+    if (rules) {
+        const rule = rules.find(rl => rl.target === targetQuality)
+            ?? rules.find(rl => rl.target === 'Default');
+        if (rule && rule.levels[colorLevel]) {
+            choices = rule.levels[colorLevel];
+
+            // 4. Tritone substitution gate(D-5:仅在真正 eligible 时消耗 random)
+            if (rule.tritoneProb && currFunc === 'D' && targetQuality !== 'Deceptive') {
+                const rootDelta = (((nextBase.rootOffset - base.rootOffset) % 12) + 12) % 12;
+                if (rootDelta === 5 && rng.next() < rule.tritoneProb) {
+                    isTritoneSub = true;
+                }
+            }
+        }
+    }
+
+    // 5. Static fallback
+    if (!choices || choices.length === 0) {
+        const choicesMap = profile.colorChoices || STYLE_DICTIONARY['POP'].colorChoices!;
+        const romanBase = base.roman.split('/')[0].replace(/maj7|m7|7|maj9|m9|7sus4|b/g, '');
+        let staticChoices = choicesMap[base.roman] || choicesMap[romanBase];
+
+        if (!staticChoices) {
+            const isMinor = base.type === 'min'
+                || (base.type.startsWith('m') && !base.type.startsWith('maj'))
+                || base.roman === base.roman.toLowerCase();
+            if (currFunc === 'D') staticChoices = choicesMap['V'];
+            else if (currFunc === 'S') staticChoices = isMinor ? choicesMap['ii'] : choicesMap['IV'];
+            else staticChoices = isMinor ? choicesMap['vi'] : choicesMap['I'];
+        }
+        choices = staticChoices?.[colorLevel] ?? [base.type];
+    }
+
+    // 6. Mode-aware audit — sub-V / V/X 跳过
+    const isSecondaryDom = base.roman.includes('/');
+    let pickFrom = choices;
+    if (base.scaleDegree !== undefined && !isTritoneSub && !isSecondaryDom) {
+        const filtered = getModeAwareSubstitutions(pickFrom, mode, base.scaleDegree);
+        pickFrom = filtered.length > 0 ? filtered : choices;
+    }
+    // V/X:filter sus4(sus4 会替换 borrowed major 3rd → 完全 diatonic → engine
+    // 选 diatonic fast path → borrow 失效)。强制 major-3rd dom 保 borrow identity。
+    if (isSecondaryDom) {
+        const noSus = pickFrom.filter(t => !/sus/.test(t));
+        pickFrom = noSus.length > 0 ? noSus : ['7'];
+    }
+
+    let finalType = rng.pick(pickFrom);
+
+    // 7. Data-debt guard
+    if (!CHORD_TYPES[finalType]) {
+        if (currFunc === 'D') finalType = '7';
+        else if (currFunc === 'S') finalType = targetQuality === 'MinorTarget' ? 'm7' : 'maj7';
+        else finalType = targetQuality === 'MinorTarget' ? 'min' : 'maj';
+    }
+
+    // 8. Sub-V override — Lydian Dominant family
+    if (isTritoneSub) {
+        let subVType: string;
+        if (colorLevel === 0) subVType = '7';
+        else if (colorLevel === 1) subVType = '9';
+        else subVType = targetQuality === 'MinorTarget' ? '7#11' : '13';
+
+        return {
+            type: subVType,
+            rootOffsetOverride: ((base.rootOffset + 6) % 12 + 12) % 12,
+            romanOverride: `subV/${nextBase.roman.split('/')[0]}`,
+        };
+    }
+
+    return { type: finalType };
+}
+
+/**
+ * 抽自 mg.Engine.generateProgression (原 L977-1029)。
+ * 从 style.progressions[mode] 抽一条骨架,展开到 bars 长,逐 bar 调
+ * decorateChordType 做 look-ahead 色彩化。
+ *
+ * Fallback 链:mode 直查 → modeProgressionTemplate 路由 → defaultMode → 内置三和弦默认。
+ *
+ * Skeletons 做 shallow copy — 防止 bar i 的 look-ahead override 通过共享 ref
+ * 污染 bar i+1 的 lookup。
+ *
+ * Look-ahead 注释:每 bar consult next bar(ring index 处理 song 末尾)→ chord-type
+ * 选择能 idiomatically voice-lead 到下个 chord。Sub-V tritone substitution 可能
+ * 改写 rootOffset / roman;shallow copy 吸收 override,下游 realizeProgression
+ * 看到的是 substituted bass anchor。
+ *
+ * PRNG 消耗:1 次(pick progressions)+ N 次 × decorateChordType 内部消耗
+ * (每 bar 1-3 次)。
+ */
+export function generateProgression(style: StyleName, bars: number, mode: string, rng: Random): any[] {
+    const profile = STYLE_DICTIONARY[style];
+    let progressions = profile?.progressions?.[mode];
+
+    // Exotic-mode fallback
+    if (!progressions) {
+        const template = modeProgressionTemplate(mode);
+        progressions = profile?.progressions?.[template];
+    }
+
+    // Style-default fallback
+    if (!progressions) {
+        const defaultMode = profile?.defaultMode || 'Major';
+        progressions = profile?.progressions?.[defaultMode];
+    }
+
+    if (!progressions) {
+        // Ultimate fallback if dictionary is somehow empty
+        progressions = [
+            [{ roman: 'I', type: 'maj', scaleDegree: 1, rootOffset: 0 }, { roman: 'IV', type: 'maj', scaleDegree: 4, rootOffset: 5 }, { roman: 'V', type: 'maj', scaleDegree: 5, rootOffset: 7 }, { roman: 'I', type: 'maj', scaleDegree: 1, rootOffset: 0 }]
+        ];
+    }
+
+    const chosen = rng.pick(progressions);
+    const skeletons: any[] = [];
+    for (let i = 0; i < bars; i++) {
+        skeletons.push({ ...chosen[i % chosen.length] });
+    }
+
+    return skeletons.map((skel, i) => {
+        const nextSkel = skeletons[(i + 1) % skeletons.length];
+        const deco = decorateChordType(skel, nextSkel, style, mode, rng);
+        return {
+            ...skel,
+            type: deco.type,
+            ...(deco.rootOffsetOverride !== undefined ? { rootOffset: deco.rootOffsetOverride } : {}),
+            ...(deco.romanOverride !== undefined ? { roman: deco.romanOverride } : {}),
+        };
+    });
+}
+
+/**
+ * 抽自 mg.Engine.resolveGeneration (原 L707-786)。
+ * Song-level decision resolver:emotion / mode / motifStrategy / basslineRule /
+ * meter / tonalCharacter 一次性 resolve 出来给下游 pipeline。
+ *
+ * PRNG 来源:**自带** `new Random(\`${config.seed}::emotion\`)` — 不接外部 rng
+ * 参数。Engine class 内调用时也是如此(method body 第一行 new Random)。
+ * 因此本函数虽属"组 B PRNG-aware",但语义上更像 Group A 的"自带 RNG"模式。
+ *
+ * 决策流:
+ *   1. Meter resolved up-front:config.meter > style.timeSignature > [4,4] fallback
+ *   2. Direct mode override(snapshot tests / 高级 caller 用 config.mode 直接指定)
+ *      → 仍消耗 motifStrategy + basslineRule 的 PRNG(D-5 stream 不动)
+ *   3. emotion 分支:auto → 50/50;固定 emotion 跳过 PRNG(但 exotic-gate 仍消耗)
+ *   4. Exotic gate:总是 r.next() 消耗(EXOTIC_MODE_PROBABILITY 调参不破 stream)
+ *   5. BLUES 例外:mainstream mode 用 Major Blues / Minor Blues(非 Ionian/Aeolian),
+ *      因 BLUES 风格只在 blues 音阶 (1 b3 3 4 b5 5 b7) 上有意义,Ionian 抹平所有 blue notes
+ *   6. resolveMotifStrategy(extracted)+ pickBasslineRule 消耗剩余 PRNG
+ *   7. tonalCharacter 由 style + mode 决定(BLUES / 非主流 mode → modal,否则 tonal)
+ *
+ * PRNG 消耗(`r` 内部 stream):
+ *   - direct mode 路径:0 次(emotion 短路)+ motifStrategy(3-4)+ basslineRule(0-1)
+ *   - auto emotion + exotic gate:1(emotion auto)+ 1(exotic gate)+ 1(exotic pick)
+ *     + motifStrategy + basslineRule
+ *   - 固定 emotion + 非 exotic:1(exotic gate)+ motifStrategy + basslineRule
+ */
+export function resolveGeneration(config: GenerationConfig): ResolvedGenerationContext {
+    // emotion fork:song-level decisions 共用一条 deterministic chain
+    const r = new Random(`${config.seed}::emotion`);
+
+    const meterCtx = getMeterContext(
+        config.meter ?? STYLE_DICTIONARY[config.style]?.timeSignature ?? [4, 4],
+    );
+
+    // Direct override(snapshot tests / 高级 caller)
+    if (config.mode) {
+        const mode = config.mode;
+        const known = mode in SCALE_TYPES;
+        const isMainstream = mode === MAINSTREAM_EMOTION_TO_MODE.bright
+                          || mode === MAINSTREAM_EMOTION_TO_MODE.sad
+                          || mode === 'Major' || mode === 'Minor'
+                          || mode === 'Major Blues' || mode === 'Minor Blues';
+        const motif = resolveMotifStrategy(config, r);
+        const basslineRule = pickBasslineRule(STYLE_DICTIONARY[config.style]?.basslineRules, r);
+        return {
+            mode,
+            emotion: MAJOR_FLAVOR_MODES.includes(mode) || mode === 'Major' ? 'bright' : 'sad',
+            isExotic: known && !isMainstream,
+            ...motif,
+            basslineRule,
+            meter: meterCtx.meter,
+            meterContext: meterCtx,
+            tonalCharacter: resolveTonalCharacter(config.style, mode),
+        };
+    }
+
+    const requested = config.emotion ?? 'auto';
+    const finalEmotion: Emotion = requested === 'auto'
+        ? (r.next() < 0.5 ? 'bright' : 'sad')
+        : requested;
+
+    let mode: string;
+    let isExotic: boolean;
+    // Exotic-gate 总是消耗 PRNG(EXOTIC_MODE_PROBABILITY 调参不破 stream)
+    const exoticRoll = r.next();
+    if (exoticRoll < EXOTIC_MODE_PROBABILITY) {
+        mode = r.pick(EXOTIC_MODES as string[]);
+        isExotic = true;
+    } else {
+        // BLUES 例外:mainstream mode 是 Major Blues / Minor Blues(blue notes 关键)
+        if (config.style === 'BLUES') {
+            mode = finalEmotion === 'bright' ? 'Major Blues' : 'Minor Blues';
+        } else {
+            mode = MAINSTREAM_EMOTION_TO_MODE[finalEmotion];
+        }
+        isExotic = false;
+    }
+
+    const motif = resolveMotifStrategy(config, r);
+    const basslineRule = pickBasslineRule(STYLE_DICTIONARY[config.style]?.basslineRules, r);
+    return {
+        emotion: finalEmotion,
+        mode,
+        isExotic,
+        ...motif,
+        basslineRule,
+        meter: meterCtx.meter,
+        meterContext: meterCtx,
+        tonalCharacter: resolveTonalCharacter(config.style, mode),
+    };
 }

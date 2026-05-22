@@ -114,6 +114,9 @@ import {
     generateMelodyPhrase as utilGenerateMelodyPhrase,
     deriveDevelopmentMotif as utilDeriveDevelopmentMotif,
     motifMutator as utilMotifMutator,
+    decorateChordType as utilDecorateChordType,
+    generateProgression as utilGenerateProgression,
+    resolveGeneration as utilResolveGeneration,
 } from './engine-utils';
 
 // Re-export theory primitives that external callers import from musicEngine
@@ -704,85 +707,11 @@ export class Engine {
    * pipeline determinism for callers that pass `mode` directly stable
    * across M3 changes.
    */
+  // Phase 2 (#6):resolveGeneration 已抽到 engine-utils.ts(自带 Random 不接外部 rng)
+  // 完整决策流(meter / direct mode override / emotion auto / exotic gate / BLUES 例外)
+  // 与设计注释保留在 engine-utils.ts 同名函数。
   resolveGeneration(config: GenerationConfig): ResolvedGenerationContext {
-    // The fork is shared by emotion/exotic AND motif-strategy rolls so the
-    // whole "song-level decisions" stream is one deterministic chain.
-    const r = new Random(`${config.seed}::emotion`);
-
-    // Meter resolved up-front so both branches return it. Priority:
-    //   1. config.meter (explicit override, snapshot tests)
-    //   2. style.timeSignature (per-substyle default)
-    //   3. [4, 4] fallback
-    const meterCtx = getMeterContext(
-      config.meter ?? STYLE_DICTIONARY[config.style]?.timeSignature ?? [4, 4],
-    );
-
-    // Direct override path (snapshot tests, advanced callers).
-    if (config.mode) {
-      const mode = config.mode;
-      const known = mode in SCALE_TYPES;
-      const isMainstream = mode === MAINSTREAM_EMOTION_TO_MODE.bright
-                        || mode === MAINSTREAM_EMOTION_TO_MODE.sad
-                        || mode === 'Major' || mode === 'Minor'
-                        || mode === 'Major Blues' || mode === 'Minor Blues';
-      const motif = this.resolveMotifStrategy(config, r);
-      const basslineRule = pickBasslineRule(STYLE_DICTIONARY[config.style]?.basslineRules, r);
-      return {
-        mode,
-        emotion: MAJOR_FLAVOR_MODES.includes(mode) || mode === 'Major' ? 'bright' : 'sad',
-        isExotic: known && !isMainstream,
-        ...motif,
-        basslineRule,
-        meter: meterCtx.meter,
-        meterContext: meterCtx,
-        tonalCharacter: resolveTonalCharacter(config.style, mode),
-      };
-    }
-
-    const requested = config.emotion ?? 'auto';
-    const finalEmotion: Emotion = requested === 'auto'
-      ? (r.next() < 0.5 ? 'bright' : 'sad')
-      : requested;
-
-    let mode: string;
-    let isExotic: boolean;
-    // Always consume the exotic-gate random so the main pipeline's
-    // stream stays stable when EXOTIC_MODE_PROBABILITY is tuned. The
-    // branch fires only when the rolled value is below the gate.
-    const exoticRoll = r.next();
-    if (exoticRoll < EXOTIC_MODE_PROBABILITY) {
-      mode = r.pick(EXOTIC_MODES as string[]);
-      isExotic = true;
-    } else {
-      // Style-aware mainstream mapping. BLUES is the only style whose
-      // mainstream mode is NOT Ionian/Aeolian — the genre lives on
-      // Major Blues / Minor Blues (1 b3 3 4 b5 5 b7 family), and
-      // running the 12-bar form under plain Ionian erases every
-      // blue note (b3 / b5 / b7) the listener expects. The two
-      // BLUES sub-styles ('Blues' / 'Blues Turnaround') both declare
-      // ['Major Blues', 'Minor Blues'] availableModes, so this
-      // mapping is consistent with the style data, not a special
-      // case for the resolver.
-      if (config.style === 'BLUES') {
-        mode = finalEmotion === 'bright' ? 'Major Blues' : 'Minor Blues';
-      } else {
-        mode = MAINSTREAM_EMOTION_TO_MODE[finalEmotion];
-      }
-      isExotic = false;
-    }
-
-    const motif = this.resolveMotifStrategy(config, r);
-    const basslineRule = pickBasslineRule(STYLE_DICTIONARY[config.style]?.basslineRules, r);
-    return {
-      emotion: finalEmotion,
-      mode,
-      isExotic,
-      ...motif,
-      basslineRule,
-      meter: meterCtx.meter,
-      meterContext: meterCtx,
-      tonalCharacter: resolveTonalCharacter(config.style, mode),
-    };
+    return utilResolveGeneration(config);
   }
 
   /**
@@ -810,30 +739,8 @@ export class Engine {
     return this.realizeProgression(progression, key, style, ctx);
   }
 
-  // Stage 2 — Dynamic TSD-aware chord decoration with Look-ahead.
-  //
-  // Decision flow per chord:
-  //   1. Roll colorLevel (0/1/2) from style.colorLevelProbabilities.
-  //      Always consumes ONE random.next() — preserves determinism
-  //      stream stability for non-decoration consumers.
-  //   2. Classify the next chord's role via analyzeTargetQuality
-  //      (MajorTarget / MinorTarget / Deceptive / Default).
-  //   3. Look up DYNAMIC_TSD_DICTIONARY[style][currFunc] for matching
-  //      target rule. Pick a chord-type from rule.levels[colorLevel].
-  //   4. If the rule defines tritoneProb AND current→next root motion
-  //      is a perfect-fifth-down (rootDelta = 5) AND non-deceptive,
-  //      consume ONE conditional random.next() to roll Sub-V activation.
-  //   5. Static fallback to colorChoices map if dynamic dict misses.
-  //   6. Mode-aware filter for exotic modes (Mixolydian / Dorian /
-  //      Phrygian / ...) — only when NOT triggering Sub-V.
-  //   7. Data-debt guard: if final chord type isn't in CHORD_TYPES,
-  //      downgrade to a safe default per function. Prevents silent
-  //      fallback-to-'maj' chord when a typo / dict-only entry leaks
-  //      through.
-  //   8. Sub-V override: when isTritoneSub fires, statically map the
-  //      Lydian Dominant chord type by colorLevel (no extra random).
-  //      Override rootOffset (+6 semitones) and roman (subV/X). Stage
-  //      3's Divisi 2.0 middleware re-classifies on the new bass.
+  // Phase 2 (#6):decorateChordType 已抽到 engine-utils.ts(组 B PRNG 参数化)
+  // 完整 8-step decision pipeline + 设计注释保留在 engine-utils.ts 同名函数。
   private decorateChordType(
       base: { roman: string; type: string; rootOffset: number; scaleDegree?: number },
       nextBase: { roman: string; type: string; rootOffset: number; scaleDegree?: number },
@@ -844,187 +751,13 @@ export class Engine {
       rootOffsetOverride?: number;
       romanOverride?: string;
   } {
-      const profile = STYLE_DICTIONARY[style] || STYLE_DICTIONARY['POP'];
-      const probs = profile.colorLevelProbabilities;
-
-      // 1. Roll colorLevel — single random.next() always consumed.
-      const r = this.random.next();
-      let colorLevel: 0 | 1 | 2 = 0;
-      if (r < probs.level0) colorLevel = 0;
-      else if (r < probs.level0 + probs.level1) colorLevel = 1;
-      else colorLevel = 2;
-
-      const currFunc = getHarmonicFunction(base.roman);
-      const nextFunc = getHarmonicFunction(nextBase.roman);
-
-      // 2. Look-ahead context analysis.
-      const targetQuality = analyzeTargetQuality(currFunc, nextFunc, nextBase.roman, nextBase.type);
-
-      // 3. Dynamic dictionary lookup. Macro StyleName matches dict keys
-      // 1-to-1 (POP / JAZZ / BLUES / RNB) — direct lookup, no routing.
-      const rules = DYNAMIC_TSD_DICTIONARY[style]?.[currFunc];
-      let choices: string[] | undefined;
-      let isTritoneSub = false;
-
-      if (rules) {
-          const rule = rules.find(rl => rl.target === targetQuality)
-              ?? rules.find(rl => rl.target === 'Default');
-          if (rule && rule.levels[colorLevel]) {
-              choices = rule.levels[colorLevel];
-
-              // 4. Tritone Substitution probability check. Conditional
-              // random.next() — only consumed when the look-ahead AND
-              // tritoneProb are both present, so determinism only
-              // varies on truly substitution-eligible spots.
-              if (rule.tritoneProb && currFunc === 'D' && targetQuality !== 'Deceptive') {
-                  const rootDelta = (((nextBase.rootOffset - base.rootOffset) % 12) + 12) % 12;
-                  if (rootDelta === 5 && this.random.next() < rule.tritoneProb) {
-                      isTritoneSub = true;
-                  }
-              }
-          }
-      }
-
-      // 5. Static fallback to colorChoices when dynamic dict misses.
-      if (!choices || choices.length === 0) {
-          const choicesMap = profile.colorChoices || STYLE_DICTIONARY['POP'].colorChoices!;
-          const romanBase = base.roman.split('/')[0].replace(/maj7|m7|7|maj9|m9|7sus4|b/g, '');
-          let staticChoices = choicesMap[base.roman] || choicesMap[romanBase];
-
-          if (!staticChoices) {
-              const isMinor = base.type === 'min'
-                  || (base.type.startsWith('m') && !base.type.startsWith('maj'))
-                  || base.roman === base.roman.toLowerCase();
-              if (currFunc === 'D') staticChoices = choicesMap['V'];
-              else if (currFunc === 'S') staticChoices = isMinor ? choicesMap['ii'] : choicesMap['IV'];
-              else staticChoices = isMinor ? choicesMap['vi'] : choicesMap['I'];
-          }
-          choices = staticChoices?.[colorLevel] ?? [base.type];
-      }
-
-      // 6. Mode-aware audit. Skipped for:
-      //    - Sub-V (tritone substitution intentionally outside palette)
-      //    - Secondary dominant V/X (chord.roman.includes('/')) —
-      //      V/X is BY DEFINITION non-diatonic to song mode (V of vi
-      //      in major = altered E major triad / E7, NOT diatonic iii).
-      //      Without this skip, mode filter rejects '7' for diatonic
-      //      iii position and downgrades to 'min' / 'm7b5', killing
-      //      the borrow.
-      const isSecondaryDom = base.roman.includes('/');
-      let pickFrom = choices;
-      if (base.scaleDegree !== undefined && !isTritoneSub && !isSecondaryDom) {
-          const filtered = getModeAwareSubstitutions(pickFrom, mode, base.scaleDegree);
-          // Guard: keep the un-filtered pool if mode-aware filter
-          // emptied it (rather than crashing on random.pick of []).
-          pickFrom = filtered.length > 0 ? filtered : choices;
-      }
-      // For V/X secondary dominants: filter out sus types. A sus4 V/X
-      // (e.g. D7sus4 as V/vi in Bb major) replaces the major 3rd
-      // (= F#, the BORROWED alteration) with the 4th (= G, diatonic
-      // to Bb), which makes the chord fully diatonic to the song key.
-      // Engine's getScaleForStyle then takes the diatonic fast path
-      // and never picks the borrowed scale (Phrygian Dominant /
-      // Mixolydian) — borrow becomes invisible. Force major-3rd dom
-      // types so V/X retains its altered identity.
-      if (isSecondaryDom) {
-          const noSus = pickFrom.filter(t => !/sus/.test(t));
-          // Fallback to '7' when the rule's level offers ONLY sus
-          // variants (e.g. POP D MinorTarget level 1 = ['7sus4']).
-          // Without explicit fallback, the un-filtered pickFrom would
-          // keep '7sus4', triggering diatonic fast path and killing
-          // the borrow.
-          pickFrom = noSus.length > 0 ? noSus : ['7'];
-      }
-
-      let finalType = this.random.pick(pickFrom);
-
-      // 7. Data-debt guard. If a dictionary entry references a chord
-      // type that's not in CHORD_TYPES, the engine would silently
-      // fall back to 'maj' triad downstream — losing all the color.
-      // Catch the gap here and downgrade to a safe known type per
-      // function instead.
-      if (!CHORD_TYPES[finalType]) {
-          if (currFunc === 'D') finalType = '7';
-          else if (currFunc === 'S') finalType = targetQuality === 'MinorTarget' ? 'm7' : 'maj7';
-          else finalType = targetQuality === 'MinorTarget' ? 'min' : 'maj';
-      }
-
-      // 8. Sub-V override — Lydian Dominant family. Statically mapped
-      // from colorLevel; abandons the rolled finalType to avoid
-      // monster strings like '7#9#11' (which would compose two
-      // independent altered tensions and likely hit the data-debt
-      // guard anyway). The substitution rewrites the chord's
-      // rootOffset (+6 semitones = tritone away) AND roman (subV/X);
-      // Stage 3's Divisi 2.0 middleware sees the new physical bass
-      // and re-classifies the state cleanly without engine-side
-      // special handling.
-      if (isTritoneSub) {
-          let subVType: string;
-          if (colorLevel === 0) subVType = '7';
-          else if (colorLevel === 1) subVType = '9';
-          else subVType = targetQuality === 'MinorTarget' ? '7#11' : '13';
-
-          return {
-              type: subVType,
-              rootOffsetOverride: ((base.rootOffset + 6) % 12 + 12) % 12,
-              romanOverride: `subV/${nextBase.roman.split('/')[0]}`,
-          };
-      }
-
-      return { type: finalType };
+      return utilDecorateChordType(base, nextBase, style, mode, this.random);
   }
 
+  // Phase 2 (#6):generateProgression 已抽到 engine-utils.ts(组 B PRNG 参数化)
+  // 内部 decorateChordType 调用已直接 import free function 形式.
   private generateProgression(style: StyleName, bars: number, mode: string): any[] {
-      const profile = STYLE_DICTIONARY[style];
-      let progressions = profile?.progressions?.[mode];
-
-      // Exotic-mode fallback: when an exotic mode like 'Dorian' is selected
-      // but the style only ships Major/Minor templates, route to the
-      // nearest-flavour template. Snapshot M2 baseline relies on direct
-      // mode matches still hitting first, so this branch only runs when
-      // the lookup misses.
-      if (!progressions) {
-          const template = modeProgressionTemplate(mode);
-          progressions = profile?.progressions?.[template];
-      }
-
-      // Final style-default fallback if even the template is absent.
-      if (!progressions) {
-          const defaultMode = profile?.defaultMode || 'Major';
-          progressions = profile?.progressions?.[defaultMode];
-      }
-
-      if (!progressions) {
-          // Ultimate fallback if dictionary is somehow empty
-          progressions = [
-              [{ roman: 'I', type: 'maj', scaleDegree: 1, rootOffset: 0 }, { roman: 'IV', type: 'maj', scaleDegree: 4, rootOffset: 5 }, { roman: 'V', type: 'maj', scaleDegree: 5, rootOffset: 7 }, { roman: 'I', type: 'maj', scaleDegree: 1, rootOffset: 0 }]
-          ];
-      }
-
-      const chosen = this.random.pick(progressions);
-      const skeletons: any[] = [];
-      for (let i = 0; i < bars; i++) {
-        // Shallow copy so the look-ahead overrides on bar i don't
-        // propagate via shared object refs into bar i+1's lookup.
-        skeletons.push({ ...chosen[i % chosen.length] });
-      }
-
-      // Look-ahead decoration. Each bar consults the NEXT bar (ring
-      // index for the song's last bar) so chord-type choice can
-      // voice-lead idiomatically into the upcoming chord. Sub-V
-      // tritone substitution may rewrite rootOffset and roman; the
-      // shallow-copied skeleton absorbs the override so downstream
-      // realizeProgression sees the substituted bass anchor.
-      return skeletons.map((skel, i) => {
-          const nextSkel = skeletons[(i + 1) % skeletons.length];
-          const deco = this.decorateChordType(skel, nextSkel, style, mode);
-          return {
-              ...skel,
-              type: deco.type,
-              ...(deco.rootOffsetOverride !== undefined ? { rootOffset: deco.rootOffsetOverride } : {}),
-              ...(deco.romanOverride !== undefined ? { roman: deco.romanOverride } : {}),
-          };
-      });
+      return utilGenerateProgression(style, bars, mode, this.random);
   }
 
   // === 动机变奏算法机 (Motif Mutator) ===
