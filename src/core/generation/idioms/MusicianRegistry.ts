@@ -24,6 +24,7 @@ import {
     InstrumentFamily,
     PersonaManifest,
     MusicianPersona,
+    SectionType,
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { MASTER_MANIFESTS } from '../data/MasterPersonas';
@@ -156,6 +157,14 @@ export const MUSICIAN_POOL: Musician[] = [
             signatureLickProb: 0.0,    // 不用 lick
         },
         description: '主流 Pop 钢琴手 — 极简直拍，给主旋律留空间',
+        // AF2 overrides — 保守 Pop:严守主区,极少越界,不太用 add11 物理
+        af2Overrides: {
+            regions: {
+                accomp: { lo: 50, hi: 67 },  // D3-G4,中区保守(默认 [48, 71] 更窄)
+            },
+            escapeProbability: 0.02,      // 默认 0.05 → 0.02(几乎完全 clamp)
+            add11GateProbability: 0.30,   // 默认 0.60 → 0.30(Pop 不太用 11音物理)
+        },
     },
     // 🎹 Marcus — Neo-Soul 钢琴手（高色彩 + 高 sync + 高 lickProb，D'Angelo 风）
     {
@@ -198,6 +207,15 @@ export const MUSICIAN_POOL: Musician[] = [
             },
         },
         description: 'Neo-Soul 钢琴手 — 高切分 + 高色彩 + 频繁签名 lick',
+        // AF2 overrides — 激进 Neo-Soul:扩展 accomp 上探色彩位,自由越界,强 add11 物理
+        af2Overrides: {
+            regions: {
+                melody: { lo: 60, hi: 89 },  // C4-F6,允许较高 lead(默认 hi=86)
+                accomp: { lo: 48, hi: 79 },  // C3-G5,上探到 G5(neo-soul comping 拉到 high color)
+            },
+            escapeProbability: 0.12,      // 默认 0.05 → 0.12(更多自然越界,对应 colorBias 0.9)
+            add11GateProbability: 0.85,   // 默认 0.60 → 0.85(D'Angelo 风强烈 11音物理)
+        },
     },
     // 🎸 Maya — Slap Bass（高 sync + ghost note 风格）
     {
@@ -264,6 +282,18 @@ export const MUSICIAN_POOL: Musician[] = [
             bouncePreference: 0.8,     // V4.1：高 bounce 偏好（Solo Piano 模式优先 M6）
         },
         description: 'Lemon Tree 风 oom-pah 钢琴手 — Solo Piano 模式触发 M6 Bounce',
+        // AF2 overrides — Billy 不停弹(sparsityTendency 0.1),Outro/Break 也要 accomp 存在
+        af2Overrides: {
+            // 标准 region(billy 不上探也不下探)
+            // sectionRolePreference:Billy 在 Conductor template 默认 silent 的 sections
+            // (Break/Outro)也保持 accomp 存在(bounce 律动靠不停)
+            sectionRolePreference: {
+                [SectionType.Break]:     new Set(['accomp']),                  // bounce 不停
+                [SectionType.Breakdown]: new Set(['accomp']),
+                [SectionType.Outro]:     new Set(['accomp', 'bass']),          // outro 兼 bass
+                [SectionType.PreOutro]:  new Set(['accomp', 'bass']),
+            },
+        },
     },
     // 🌫️ 氛围乐手 Nina — Warm Pad 长音铺底
     {
