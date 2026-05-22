@@ -44,6 +44,8 @@ import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { Random } from '../mg-engine/musicEngine';
+import { bandRoleToTrackKeys } from '../data/GMSoundMap';
+import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
 import { MgKernelInvoker } from './MgKernelInvoker';
 import { SectionPlanner } from './SectionPlanner';
@@ -195,13 +197,17 @@ export const Af2EngineFacade = {
         // -----------------------------------------------------------
         // Step 6b: MusicContext + gmProgramOverrides
         //
-        //   melody  — 钢琴(GM 0)
-        //   accomp  — 钢琴(GM 0)
-        //   bass    — 仅 useElectricBass 时设 GM 34;否则空(钢琴包办的低音随 accomp 走 GM 0)
-        //   atmosphere — 仅 padNotes 非空时设 GM 89
-        //   drums   — Channel 9 GM Drum 硬路由,不设 program
+        // 优先级(与 AF 路径一致):
+        //   1. options.forcedGmPrograms[role]    — UI Instr 下拉显式选(最高)
+        //   2. musician.gmProgramOverride        — musician 卡内置 override
+        //   3. AF2 idiom 默认                     — PianoIdiom=0 / BassIdiom=34 / PadIdiom=89
+        //   4. 不写入                              — MidiConverter 文件级默认
+        //
+        //   Drums:Channel 9 硬路由,不设 program(GM Drum Map)
         // -----------------------------------------------------------
         const afStyleId = MG_STYLE_TO_AF_STYLE[mgStyle];
+
+        // Step 6b.1:先按 AF2 idiom 默认填(钢琴/电贝斯/Pad)
         const gmOverrides: NonNullable<MusicContext['gmProgramOverrides']> = {
             melody: PianoIdiom.getGmProgram(),
             accomp: PianoIdiom.getGmProgram(),
@@ -211,6 +217,28 @@ export const Af2EngineFacade = {
         }
         if (renderedPad.length > 0) {
             gmOverrides.atmosphere = PadIdiom.getGmProgram();
+        }
+
+        // Step 6b.2:用 forcedGmPrograms / musician.gmProgramOverride 覆盖
+        //   遍历 5 槽位,trackKey 映射后写入(BandRole.MainInst → 'melody' 等)
+        const ROLES_TO_MAP: BandRole[] = [
+            BandRole.MainInst, BandRole.Accomp, BandRole.Bass, BandRole.Drums, BandRole.Atmosphere,
+        ];
+        for (const role of ROLES_TO_MAP) {
+            const slotMusician = routed[role].musician;
+            const forcedGm = options.forcedGmPrograms?.[role];
+            let gm: number | undefined;
+            if (forcedGm !== undefined) {
+                gm = forcedGm;
+            } else if (slotMusician?.gmProgramOverride !== undefined) {
+                gm = slotMusician.gmProgramOverride;
+            } else {
+                continue;  // 无显式选择 → 保留 6b.1 默认 或 走文件级
+            }
+            const trackKeys = bandRoleToTrackKeys(role);
+            for (const key of trackKeys as ReadonlyArray<GmProgramTrackKey>) {
+                (gmOverrides as Record<string, number>)[key] = gm;
+            }
         }
 
         const context: MusicContext = {
