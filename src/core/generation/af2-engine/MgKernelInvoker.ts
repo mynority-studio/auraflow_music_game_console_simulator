@@ -26,8 +26,10 @@ import type { GeneratedChord, NoteData } from '../types';
 import { Random } from '../mg-engine/musicEngine';
 import type { ChordDef, NoteEvent, GenerationConfig } from '../mg-engine/musicEngine';
 // Phase 6.5:直接 import engine-utils free function,绕过 Engine class
-import { generateProgressions, generateArrangement } from '../mg-engine/engine-utils';
+import { generateProgressions, generateArrangement, resolveGeneration, realizeProgression } from '../mg-engine/engine-utils';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
+// Option C:AF2 自有 Arranger(替代 mg.generateProgressions 的进行决策)
+import { Af2Arranger } from './Af2Arranger';
 
 /**
  * mg ChordDef.type(字符串)→ auraflow ChordQuality 映射。
@@ -147,8 +149,10 @@ export const MgKernelInvoker = {
      *                    的 `mg_*` 区分,避免用户混淆"同 seed 不同结果")
      * @param mgStyle     mg 风格(POP/JAZZ/BLUES/RNB)
      * @param key         调号字符串(默认 'C'。mg 已绝对化 MIDI,实际渲染由 keyOffset 处理)
+     * @param useAf2Arranger  Option C:true 时用 AF2 自有 Arranger 替代 mg
+     *                        进行决策;Composer 仍委托 mg.realizeProgression。
      */
-    invoke(seedString: string, mgStyle: MgStyle, key: string = 'C'): MgKernelOutput {
+    invoke(seedString: string, mgStyle: MgStyle, key: string = 'C', useAf2Arranger: boolean = false): MgKernelOutput {
         const config: GenerationConfig = {
             seed: seedString,
             style: mgStyle,
@@ -157,7 +161,21 @@ export const MgKernelInvoker = {
         };
         // Phase 6.5:绕过 Engine class,直接调 free function
         const rng = new Random(seedString);
-        const mgChords: ChordDef[] = generateProgressions(config, rng);
+
+        let mgChords: ChordDef[];
+        if (useAf2Arranger) {
+            // Option C:AF2 Arranger 接管和声进行决策
+            //   1. resolveGeneration → ctx(mode/motifStrategy/bassline/meter/tonalCharacter)
+            //   2. Af2Arranger.arrange → abstractPath(AF2 自有进行池抽选)
+            //   3. realizeProgression(abstractPath, ...) → ChordDef[](mg Composer 做 voicing)
+            const ctx = resolveGeneration(config);
+            const bars = MG_STYLE_BARS[mgStyle];
+            const abstractPath = Af2Arranger.arrange(mgStyle, bars, rng);
+            mgChords = realizeProgression(abstractPath, key, mgStyle, ctx, rng);
+        } else {
+            // 默认:mg 一气呵成(MG 模式 / AF2 没选 Option C 时)
+            mgChords = generateProgressions(config, rng);
+        }
         const timeline = generateArrangement(mgChords, config, rng);
         const mgEvents: NoteEvent[] = timeline.events;
 

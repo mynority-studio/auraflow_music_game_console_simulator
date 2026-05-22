@@ -90,8 +90,13 @@ export const Af2EngineFacade = {
 
         // -----------------------------------------------------------
         // Step 2(先调,因为段落骨架要知道总小节)
+        //
+        // Option C:useAf2Arranger=true → AF2 自有 Arranger 接管和声进行决策,
+        //   Composer 仍委托 mg.realizeProgression + mg.generateArrangement。
+        //   AF2 进行池:per-mgStyle 1-2 条标志性 progression(I-V-vi-IV / ii-V-I /
+        //   12-bar / Imaj7-iiim7-vim7-IVmaj7)。
         // -----------------------------------------------------------
-        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key);
+        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key, /* useAf2Arranger */ true);
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(总小节 = mg.recommendedBars)
