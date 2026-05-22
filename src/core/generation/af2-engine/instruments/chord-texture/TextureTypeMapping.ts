@@ -400,6 +400,20 @@ export const TEXTURE_MAPPING: Record<string, FamilyParams> = {
             bass_velocity: 0.75,
         },
     },
+
+    // ============================================================
+    // Phase 2c — 族 X Cross-Track(1 个)
+    // ============================================================
+    'Call_And_Response': {
+        family: 'CallAndResponse',
+        params: {
+            melody_lookahead_back: 0.1,
+            melody_lookahead_forward: 0.3,
+            chord_velocity: 0.6,
+            chord_step: 0.5,
+            bass_velocity: 0.8,
+        },
+    },
 };
 
 /**

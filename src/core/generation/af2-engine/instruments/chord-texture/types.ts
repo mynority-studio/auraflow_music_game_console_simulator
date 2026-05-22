@@ -8,7 +8,7 @@
 // 设计参考:af2-engine/CHORD_TEXTURE_ENGINE.md §3 / §4。
 // ============================================================
 
-import type { ChordDef, Random } from '../../../mg-engine/musicEngine';
+import type { ChordDef, NoteEvent, Random } from '../../../mg-engine/musicEngine';
 
 export type FamilyName =
     // Phase 2b.1 — 9 子族
@@ -35,7 +35,9 @@ export type FamilyName =
     | 'SpecialVoicing'
     | 'DoubleStopTremolo'
     | 'BoogieWalk'
-    | 'AnticipatedBlock';
+    | 'AnticipatedBlock'
+    // Phase 2c — cross-track(需要 melodyEvents)
+    | 'CallAndResponse';
 
 /** PureWalk 的 bass 偏移名(对应 PitchPrimitives 的几种 bass 取法) */
 export type BassOffsetName = 'root' | '5th' | '7th' | 'octave' | 'low_octave';
@@ -267,6 +269,18 @@ export interface AnticipatedBlockParams {
     bass_velocity: number;
 }
 
+// ----- 族 X: Cross-Track(Phase 2c)-----
+
+export interface CallAndResponseParams {
+    /** melody 占用检测窗口:[time - back, time + forward) */
+    melody_lookahead_back: number;
+    melody_lookahead_forward: number;
+    chord_velocity: number;
+    /** 每 chord 检查步进(0.5 = 每半拍检查) */
+    chord_step: number;
+    bass_velocity: number;
+}
+
 // ============================================================
 // Discriminated union — FamilyParams
 // ============================================================
@@ -299,7 +313,9 @@ export type FamilyParams =
     | { family: 'SpecialVoicing';    params: SpecialVoicingParams }
     | { family: 'DoubleStopTremolo'; params: DoubleStopTremoloParams }
     | { family: 'BoogieWalk';        params: BoogieWalkParams }
-    | { family: 'AnticipatedBlock';  params: AnticipatedBlockParams };
+    | { family: 'AnticipatedBlock';  params: AnticipatedBlockParams }
+    // Phase 2c
+    | { family: 'CallAndResponse';   params: CallAndResponseParams };
 
 // ============================================================
 // 主入口 input
@@ -314,6 +330,11 @@ export interface BaseInput {
     duration: number;
     /** PRNG 实例(显式注入,不依赖任何 class state) */
     rng: Random;
+    /**
+     * Phase 2c — cross-track 数据(全曲已生成的 melody events)。
+     * Call_And_Response 等 cross-track family 必需。其他 family 可忽略。
+     */
+    melodyEvents?: NoteEvent[];
 }
 
 export type ChordTextureInput = BaseInput & FamilyParams;

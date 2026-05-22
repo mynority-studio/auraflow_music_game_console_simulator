@@ -18,6 +18,7 @@
 // ============================================================
 
 import type { ChordDef, NoteEvent, Random } from '../../../mg-engine/musicEngine';
+// NoteEvent 类型在 Phase 2c applyByTextureType 签名扩展中作为 melodyEvents 类型使用
 import type { ChordTextureInput } from './types';
 import { TEXTURE_MAPPING } from './TextureTypeMapping';
 
@@ -46,13 +47,15 @@ import { applySpecialVoicing } from './families/SpecialVoicing';
 import { applyDoubleStopTremolo } from './families/DoubleStopTremolo';
 import { applyBoogieWalk } from './families/BoogieWalk';
 import { applyAnticipatedBlock } from './families/AnticipatedBlock';
+// Phase 2c (1 子族 cross-track)
+import { applyCallAndResponse } from './families/CallAndResponse';
 
 export const ChordTextureEngine = {
     /**
      * 主 apply 入口 — 接收已 narrow 的 family + params。
      */
     apply(input: ChordTextureInput): NoteEvent[] {
-        const { chord, nextChord, startBeat, duration, rng } = input;
+        const { chord, nextChord, startBeat, duration, rng, melodyEvents } = input;
         switch (input.family) {
             // Phase 2b.1
             case 'Sustained':         return applySustained(chord, nextChord, startBeat, duration, input.params, rng);
@@ -79,6 +82,8 @@ export const ChordTextureEngine = {
             case 'DoubleStopTremolo': return applyDoubleStopTremolo(chord, nextChord, startBeat, duration, input.params, rng);
             case 'BoogieWalk':        return applyBoogieWalk(chord, nextChord, startBeat, duration, input.params, rng);
             case 'AnticipatedBlock':  return applyAnticipatedBlock(chord, nextChord, startBeat, duration, input.params, rng);
+            // Phase 2c — cross-track(传入 melodyEvents)
+            case 'CallAndResponse':   return applyCallAndResponse(chord, nextChord, startBeat, duration, input.params, rng, melodyEvents);
         }
     },
 
@@ -94,6 +99,7 @@ export const ChordTextureEngine = {
         startBeat: number,
         duration: number,
         rng: Random,
+        melodyEvents?: NoteEvent[],
     ): NoteEvent[] | null {
         const mapping = TEXTURE_MAPPING[textureType];
         if (!mapping) return null;
@@ -105,6 +111,7 @@ export const ChordTextureEngine = {
             startBeat,
             duration,
             rng,
+            melodyEvents,
             family: mapping.family,
             params: mapping.params,
         } as ChordTextureInput;
