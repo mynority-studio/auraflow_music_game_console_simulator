@@ -103,7 +103,12 @@ import { BASSLINE_RULES, DEFAULT_BASSLINE_RULE, pickBasslineRule, BASS_PATTERN_R
 // 未覆盖的 textureType 返回 null 时 fallback 到下方 mg 原实现.
 import { ChordTextureEngine } from '../af2-engine/instruments/chord-texture/ChordTextureEngine';
 // Phase 1 (#6) — Engine class 组 A 纯函数化:抽出无 state 依赖的 method 到 engine-utils.
-import { resolveTonalCharacter, getHarmonicFunction, applySwing } from './engine-utils';
+import {
+    resolveTonalCharacter, getHarmonicFunction, applySwing,
+    computeBackboneTargets, estimateBackboneAlignment,
+    findClosestCrossChordPair, estimateMotifShapeMetrics,
+    getFillScaleForStyle, getScaleForStyle,
+} from './engine-utils';
 
 // Re-export theory primitives that external callers import from musicEngine
 // (test_batch.ts uses noteToMidi). Engine itself no longer owns these.
@@ -1876,7 +1881,7 @@ export class Engine {
         };
         const runScales: number[][] = chords.map((c) => {
             const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
-            return this.getScaleForStyle(style, c, f, musicKey, musicMode);
+            return getScaleForStyle(style, c, f, musicKey, musicMode);
         });
         // Parallel fill-scale array. Used by Run Generator (in-bar
         // gap fill) and in-bar passing-tone insertion to add style
@@ -1884,7 +1889,7 @@ export class Engine {
         // to non-backbone notes. Backbone path uses runScales[i].
         const fillScales: number[][] = chords.map((c, idx) => {
             const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
-            return this.getFillScaleForStyle(style, c, f, musicKey, musicMode, runScales[idx]);
+            return getFillScaleForStyle(style, c, f, musicKey, musicMode, runScales[idx]);
         });
         // Backbone targets per bar — pre-compute the "regression points"
         // the melody's structural notes must land on. Used by
@@ -1896,7 +1901,7 @@ export class Engine {
         const isModalEnvGlobal = STYLE_DICTIONARY[style]?.allowFloatingColor === true
             || STYLE_DICTIONARY[style]?.allowBluesHangTone === true;
         const backboneTargets: Set<number>[] = chords.map((c) =>
-            this.computeBackboneTargets(c, keyRootPcGlobal, modeIvForKey, isModalEnvGlobal));
+            computeBackboneTargets(c, keyRootPcGlobal, modeIvForKey, isModalEnvGlobal));
 
         // Voice leading common-tone sets per bar — pcs of the current
         // chord's voicing that ARE ALSO in the previous (incoming) /
@@ -2782,38 +2787,7 @@ export class Engine {
    * chord pcs are entirely chromatic to the key, only sub-V style
    * substitutions), fall back to chord literal pcs.
    */
-  private computeBackboneTargets(chord: ChordDef, keyRootPc: number, modeIntervals: number[], isModalContext: boolean = false): Set<number> {
-      const chordRootPc = (((chord.rootMidi % 12) + 12) % 12);
-      const intervals = CHORD_TYPES[chord.type] || [0, 4, 7];
-
-      // Backbone = chord literal pcs (always, full). Filtering by the
-      // global key palette would drop the color tones of secondary
-      // dominants (A7 in C → C# missing), sub-V Lydian Dominants, and
-      // modal borrows (iv, bVI, bVII) — exactly the notes the listener
-      // EXPECTS to hear when those chords play. The runScale already
-      // handles TSD modal borrowing (Phrygian Dominant for V/X → minor,
-      // Lydian Dominant for sub-V, etc.), so chord literal is in scale
-      // by construction.
-      const targets = new Set<number>();
-      for (const iv of intervals) targets.add((chordRootPc + iv) % 12);
-
-      // Key root added as "regression home" ONLY for fully diatonic
-      // chords. Borrowed / secondary / sub-V chords want complete
-      // tonicization — diluting their backbone with the global key
-      // root would erase the temporary tonal center they create.
-      const keyPcs = new Set<number>();
-      for (const iv of modeIntervals) keyPcs.add((keyRootPc + iv) % 12);
-      const chordLiteralPcs = Array.from(targets);
-      const isDiatonic = chordLiteralPcs.every(pc => keyPcs.has(pc));
-      if (isDiatonic && !targets.has(keyRootPc)) {
-          const intvFromChordRoot = ((keyRootPc - chordRootPc) % 12 + 12) % 12;
-          const cFunc = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
-          if (!isAvoidNote(intvFromChordRoot, chord.type, undefined, isModalContext, cFunc)) {
-              targets.add(keyRootPc);
-          }
-      }
-      return targets;
-  }
+  // Phase 1 (#6):computeBackboneTargets 已抽到 engine-utils.ts(组 A 纯函数化)
 
   /**
    * Score a motif's structural-position alignment with backbone targets.
@@ -2825,36 +2799,7 @@ export class Engine {
    * loop — diatonicStep through runScale rooted at chord root,
    * chromaticOffset as semitones from chord root.
    */
-  private estimateBackboneAlignment(motif: any[], chord: ChordDef, runScale: number[], targets: Set<number>): number {
-      if (motif.length === 0) return 0;
-      const chordRootPc = (((chord.rootMidi % 12) + 12) % 12);
-      const scalePcs = Array.from(new Set(runScale.map(x => ((x%12)+12)%12))).sort((a,b)=>a-b);
-      const N = scalePcs.length || 7;
-      const rootIdx = scalePcs.indexOf(chordRootPc);
-      const startIdx = rootIdx >= 0 ? rootIdx : 0;
-
-      let backboneCount = 0;
-      let hits = 0;
-      for (let i = 0; i < motif.length; i++) {
-          const m = motif[i];
-          const beatPos = ((m.t % 4) + 4) % 4;
-          const isStrong = Math.abs(beatPos) < 0.05 || Math.abs(beatPos - 2) < 0.05;
-          const isLong = m.d >= 1.5;
-          const isLast = i === motif.length - 1;
-          if (!(isStrong || isLong || isLast)) continue;
-          backboneCount++;
-
-          let pc: number;
-          if ('chromaticOffset' in m) {
-              pc = ((chordRootPc + m.chromaticOffset) % 12 + 12) % 12;
-          } else {
-              const targetIdx = ((startIdx + m.diatonicStep) % N + N) % N;
-              pc = scalePcs[targetIdx];
-          }
-          if (targets.has(pc)) hits++;
-      }
-      return backboneCount > 0 ? hits / backboneCount : 0;
-  }
+  // Phase 1 (#6):estimateBackboneAlignment 已抽到 engine-utils.ts(组 A 纯函数化)
 
   private estimateMotifConflictRatio(motif: any[], chord: ChordDef, runScale: number[], func: string = 'T', isModalContext: boolean = false, scaleName?: string): number {
       if (motif.length === 0) return 0;
@@ -3040,10 +2985,10 @@ export class Engine {
           const notes = Array.isArray(c) ? c : c.notes;
           const avoidRate = this.estimateMotifConflictRatio(notes, chord, runScale);
           const backboneHit = backboneTargets
-              ? this.estimateBackboneAlignment(notes, chord, runScale, backboneTargets)
+              ? estimateBackboneAlignment(notes, chord, runScale, backboneTargets)
               : 0;
           const { vlInHit, vlOutHit, variety } =
-              this.estimateMotifShapeMetrics(notes, chord, runScale, vlIn, vlOut);
+              estimateMotifShapeMetrics(notes, chord, runScale, vlIn, vlOut);
           let parallelismHit = 0;
           if (prevPhrasePcs && prevPhrasePcs.size > 0) {
               const candPcs = this.predictMotifStructuralPcs(notes, chord, runScale);
@@ -3127,31 +3072,7 @@ export class Engine {
    * is closer to the current melody anchor (anchorPc). This biases
    * toward smooth voice-leading from the melody's current position.
    */
-  private findClosestCrossChordPair(
-      currChord: ChordDef,
-      nextChord: ChordDef,
-      anchorPc: number = -1,
-  ): { pcA: number; pcB: number; distance: number } {
-      const aLit = CHORD_TYPES[currChord.type] || [0, 4, 7];
-      const bLit = CHORD_TYPES[nextChord.type] || [0, 4, 7];
-      const aRoot = (((currChord.rootMidi % 12) + 12) % 12);
-      const bRoot = (((nextChord.rootMidi % 12) + 12) % 12);
-      const aPcs = aLit.map(iv => (aRoot + iv) % 12);
-      const bPcs = bLit.map(iv => (bRoot + iv) % 12);
-      let best = { pcA: aPcs[0], pcB: bPcs[0], distance: 99, anchorDist: 99 };
-      for (const a of aPcs) {
-          for (const b of bPcs) {
-              const d = Math.min(((a - b + 12) % 12), ((b - a + 12) % 12));
-              const ad = anchorPc >= 0
-                  ? Math.min(((a - anchorPc + 12) % 12), ((anchorPc - a + 12) % 12))
-                  : 0;
-              if (d < best.distance || (d === best.distance && ad < best.anchorDist)) {
-                  best = { pcA: a, pcB: b, distance: d, anchorDist: ad };
-              }
-          }
-      }
-      return { pcA: best.pcA, pcB: best.pcB, distance: best.distance };
-  }
+  // Phase 1 (#6):findClosestCrossChordPair 已抽到 engine-utils.ts(组 A 纯函数化)
 
   // =====================================================================
   // AND-architecture melody constraint framework
@@ -3314,52 +3235,7 @@ export class Engine {
    *   chromaticOffset → chord_root_pc + offset
    *   diatonicStep    → runScale rotated to start at chord root
    */
-  private estimateMotifShapeMetrics(
-      motif: any[],
-      chord: ChordDef,
-      runScale: number[],
-      vlIn: Set<number> | null,
-      vlOut: Set<number> | null,
-  ): { vlInHit: number; vlOutHit: number; variety: number } {
-      if (motif.length === 0) return { vlInHit: 0, vlOutHit: 0, variety: 0 };
-      const chordRootPc = (((chord.rootMidi % 12) + 12) % 12);
-      const scalePcs = Array.from(new Set(runScale.map(x => ((x%12)+12)%12))).sort((a,b)=>a-b);
-      const N = scalePcs.length || 7;
-      const rootIdx = scalePcs.indexOf(chordRootPc);
-      const startIdx = rootIdx >= 0 ? rootIdx : 0;
-
-      const projectPc = (m: any): number => {
-          if ('chromaticOffset' in m) {
-              return ((chordRootPc + m.chromaticOffset) % 12 + 12) % 12;
-          }
-          const targetIdx = ((startIdx + m.diatonicStep) % N + N) % N;
-          return scalePcs[targetIdx];
-      };
-
-      // Identify structural-position notes
-      const structPcs: number[] = [];
-      let firstStructPc = -1;
-      let lastStructPc = -1;
-      for (let i = 0; i < motif.length; i++) {
-          const m = motif[i];
-          const beatPos = ((m.t % 4) + 4) % 4;
-          const isStrong = Math.abs(beatPos) < 0.05 || Math.abs(beatPos - 2) < 0.05;
-          const isLong = m.d >= 1.5;
-          const isLast = i === motif.length - 1;
-          if (!(isStrong || isLong || isLast)) continue;
-          const pc = projectPc(m);
-          structPcs.push(pc);
-          if (firstStructPc < 0) firstStructPc = pc;
-          lastStructPc = pc;
-      }
-
-      const vlInHit = (vlIn && firstStructPc >= 0 && vlIn.has(firstStructPc)) ? 1 : 0;
-      const vlOutHit = (vlOut && lastStructPc >= 0 && vlOut.has(lastStructPc)) ? 1 : 0;
-      const variety = structPcs.length > 0
-          ? new Set(structPcs).size / structPcs.length
-          : 0;
-      return { vlInHit, vlOutHit, variety };
-  }
+  // Phase 1 (#6):estimateMotifShapeMetrics 已抽到 engine-utils.ts(组 A 纯函数化)
 
   private deriveDevelopmentMotif(currentMotif: any[]): any[] {
       if (currentMotif.length === 0) return [];
@@ -3450,265 +3326,9 @@ export class Engine {
    * The Run Generator and in-bar passing-tone logic find the closest
    * scale tone via linear scan (nearest-neighbor fill principle).
    */
-  private getFillScaleForStyle(
-      style: StyleName,
-      chord: ChordDef,
-      func: 'T' | 'S' | 'D',
-      musicKey: string,
-      _musicMode: string | undefined,
-      fallbackRunScale: number[],
-  ): number[] {
-      const profile = STYLE_DICTIONARY[style];
-      const fillMap = profile.fillScales?.[func];
-      if (!fillMap) return fallbackRunScale;
+  // Phase 1 (#6):getFillScaleForStyle 已抽到 engine-utils.ts(组 A 纯函数化)
 
-      let scaleNames: string[] | undefined = fillMap[chord.type];
-      if (!scaleNames || scaleNames.length === 0) {
-          // Family fallback: probe by chord-quality keyword.
-          const t = chord.type;
-          if (t.includes('maj')) scaleNames = fillMap['maj7'] || fillMap['maj'];
-          else if (t.startsWith('m') && !t.startsWith('maj')) scaleNames = fillMap['m7'] || fillMap['min'] || fillMap['m'];
-          else if (t.includes('7') || t.includes('9') || t.includes('13')) scaleNames = fillMap['7'];
-          else scaleNames = fillMap['maj'];
-      }
-      if (!scaleNames || scaleNames.length === 0) return fallbackRunScale;
-
-      const scaleName = scaleNames[0];  // first preference per fillMap entry
-      const intervals = SCALE_TYPES[scaleName];
-      if (!intervals) return fallbackRunScale;
-
-      // BLUES blue-note family stays anchored on key root so the
-      // characteristic b3 / b5 / b7 ride across the whole 12-bar form.
-      const isBluesFamily = /Blues|Pentatonic/.test(scaleName);
-      const rootM = (style === 'BLUES' && isBluesFamily)
-          ? noteToMidi(musicKey + "3")
-          : chord.rootMidi;
-
-      const midiScale: number[] = [];
-      for (let oct = -2; oct <= 3; oct++) {
-          intervals.forEach(iv => midiScale.push(rootM + (oct * 12) + iv));
-      }
-      return midiScale.sort((a, b) => a - b);
-  }
-
-  private getScaleForStyle(style: StyleName, chord: ChordDef, func: 'T' | 'S' | 'D', musicKey: string, musicMode?: string): number[] {
-      const profile = STYLE_DICTIONARY[style] || STYLE_DICTIONARY['POP'];
-      const mapping = profile.scaleMapping[func];
-
-      // ============================================================
-      // Diatonic-mode-of-key fast path.
-      //
-      // Music-theory invariant: when a song is in mode M with key
-      // root K, a chord whose root pitch class AND every chord
-      // interval pitch class are subsets of M's pitch class set
-      // is "diatonic to the key". The melodic palette for that
-      // chord MUST be the key's pitch class set — anchored on the
-      // chord root, the resulting scale is the rotation-of-M
-      // starting at the chord's degree (Ionian's IV → Lydian,
-      // ii → Dorian, V → Mixolydian, etc.).
-      //
-      // The previous logic picked the runScale via
-      //   score = preference_bonus(+5) + matching_pcs (0..7)
-      // which let "Ionian" (a +5 preference in POP) override
-      // "Lydian" on a IV chord even when Lydian fit the key 7/7
-      // and Ionian only 6/7 (introducing a foreign Bb). The
-      // listener heard a non-diatonic note as the bar's anchor.
-      //
-      // Fix: detect diatonic chords and bypass style preference
-      // entirely. The scale's pc set is fixed by the key, full
-      // stop — preference is a "soft" axis that can't override
-      // a hard music-theory constraint.
-      //
-      // BLUES style is excluded from this fast path because its
-      // signature aesthetic (b3 + b7 over major chords, blue notes)
-      // depends on the chord-rooted Blues scale anchored on the
-      // song key — that's an intentional non-diatonic palette and
-      // is handled separately further down.
-      //
-      // Exotic modes (Mixolydian / Dorian / etc. as the song mode)
-      // are still handled here as long as the chord is diatonic to
-      // the exotic palette. The diatonic check is mode-agnostic;
-      // it asks "is the chord built only from notes of the song's
-      // declared mode" regardless of which mode that is.
-      const modeName = (musicMode && musicMode in SCALE_TYPES)
-          ? musicMode
-          : 'Ionian';
-      if (style !== 'BLUES') {
-          const keyRootPc = (((noteToMidi(musicKey + "0") % 12) + 12) % 12);
-          const modeIntervals = SCALE_TYPES[modeName];
-          const keyPcs = new Set(modeIntervals.map(iv => (keyRootPc + iv) % 12));
-          const chordRootPc = (((chord.rootMidi % 12) + 12) % 12);
-          const chordIntervals = CHORD_TYPES[chord.type] || [];
-          const chordPcs = chordIntervals.map(iv => (chordRootPc + iv) % 12);
-          const chordIsDiatonic = keyPcs.has(chordRootPc)
-              && chordPcs.every(pc => keyPcs.has(pc));
-          if (chordIsDiatonic) {
-              const intervalsFromChordRoot: number[] = [];
-              for (let iv = 0; iv < 12; iv++) {
-                  if (keyPcs.has((chordRootPc + iv) % 12)) {
-                      intervalsFromChordRoot.push(iv);
-                  }
-              }
-              const midiScale: number[] = [];
-              for (let oct = -2; oct <= 3; oct++) {
-                  intervalsFromChordRoot.forEach(iv => {
-                      midiScale.push(chord.rootMidi + (oct * 12) + iv);
-                  });
-              }
-              return midiScale.sort((a, b) => a - b);
-          }
-      }
-
-      // LOGIC PRO: Plan A global scale mapping implementation
-      let preferences = profile.scalePreference || [];
-      if (musicMode && profile.globalMelodyScaleMapping && profile.globalMelodyScaleMapping[musicMode]) {
-          preferences = profile.globalMelodyScaleMapping[musicMode];
-      }
-
-      // When an exotic mode is in effect (the 10% gate in
-      // resolveGeneration), styleDictionary entries above never name it.
-      // Push the exotic mode to the top of preferences so it scores
-      // higher than Ionian/Aeolian, and inject it into the chord-type-
-      // specific candidate pool below. Without this, melodies in exotic
-      // modes silently revert to mainstream scales.
-      const isExoticMode = !!musicMode && musicMode in SCALE_TYPES
-          && !['Ionian', 'Aeolian', 'Major', 'Minor', 'Major Blues', 'Minor Blues'].includes(musicMode);
-      if (isExoticMode) {
-          preferences = [musicMode!, ...preferences];
-      }
-
-      let scaleChoices: string[] = [];
-
-      // 1. 根据和弦类型获取该风格下的音阶候选池
-      if (mapping[chord.type]) {
-          scaleChoices = mapping[chord.type];
-      } else if (chord.type.includes('maj') && mapping['maj']) {
-          scaleChoices = mapping['maj'];
-      } else if (chord.type.includes('7') && mapping['7']) {
-          scaleChoices = mapping['7'];
-      } else if (chord.type.includes('min') && mapping['min']) {
-          scaleChoices = mapping['min'];
-      }
-
-      // 1.5 — Smart TSD Modal Borrowing for secondary dominants.
-      //
-      // When a chord is a secondary dominant (V/X, V7/X, subV/X), the
-      // scale choice should reflect the chord's role and the target's
-      // quality, not just the chord type alone:
-      //
-      //   subV/X  — tritone substitution. Always Lydian Dominant /
-      //             Altered regardless of target. The #11 / b13 are
-      //             the substitution's defining color.
-      //
-      //   V/X with minor target  — Phrygian Dominant (5th mode of
-      //             Harmonic Minor). The b9 / b13 give the dark
-      //             "borrowed from Aeolian" flavor that resolves
-      //             into a minor i / iv / vi / etc.
-      //
-      //   V/X with major target  — Mixolydian / Lydian Dominant.
-      //             Natural 9 / natural 13. Bright "borrowed from
-      //             parallel major" flavor.
-      //
-      // Detection: chord.roman has '/' AND source side is a dominant
-      // function. Excludes 'ii/V' style "ii-V on V level" (not itself
-      // dominant). Our codebase's roman never contains '/' for chord
-      // inversions (those go in chordSymbol), so the gate is safe.
-      if (chord.roman.includes('/')) {
-          const [src, target] = chord.roman.split('/');
-          if (src.startsWith('subV')) {
-              // Tritone substitution — Lydian Dominant flavor regardless
-              // of target. The #11 / 13 ARE the substitution's identity.
-              scaleChoices = ['Lydian Dominant', 'Altered'];
-          } else if (/^(V|VII)/.test(src) && target) {
-              const targetIsMinor = target === target.toLowerCase()
-                  || ['ii', 'iii', 'vi', 'iv'].includes(target);
-              scaleChoices = targetIsMinor
-                  ? ['Phrygian Dominant', 'Altered', 'Harmonic Minor']
-                  : ['Mixolydian', 'Lydian Dominant'];
-          }
-      }
-
-      // 2. 兜底方案：如果映射表中没有，则根据和弦性质给出基本音阶
-      if (scaleChoices.length === 0) {
-          if (chord.type.includes('m') && !chord.type.includes('maj')) scaleChoices = ['Dorian', 'Aeolian'];
-          else if (chord.type.includes('dim') || chord.type.includes('b5')) scaleChoices = ['Locrian'];
-          else if (chord.type.includes('7') && !chord.type.includes('maj')) scaleChoices = ['Mixolydian'];
-          else scaleChoices = ['Ionian', 'Lydian'];
-      }
-
-      // Make sure the exotic mode is in the candidate set the scoring
-      // loop will see.
-      if (isExoticMode && !scaleChoices.includes(musicMode!)) {
-          scaleChoices = [musicMode!, ...scaleChoices];
-      }
-
-      // Exotic-mode override: force the resolved mode as the scale and
-      // root it on the global key (not the chord root) so the colour
-      // persists across the progression. Mixolydian rebuilt on the V
-      // chord of a C song would collapse back to C major otherwise,
-      // and the exotic flavour would disappear. Per-chord re-rooting
-      // is preserved for the mainstream Major/Minor path.
-      let forcedExoticScale: string | null = null;
-      if (isExoticMode) {
-          forcedExoticScale = musicMode!;
-      }
-
-      // 3. 匹配风格偏好与主调关系
-      // 我们计算主调的音阶集合（通常是 Ionian）
-      const keyRootMidi = noteToMidi(musicKey + "0") % 12;
-      const keyScaleIntervals = SCALE_TYPES['Ionian']; 
-      const keyPcs = new Set(keyScaleIntervals.map(i => (keyRootMidi + i) % 12));
-
-      // 评分系统：优先选择 1.风格偏好中有的 2.与主调重合音符多的
-      let bestScale = scaleChoices[0];
-      let maxScore = -1;
-
-      scaleChoices.forEach(scaleName => {
-          let score = 0;
-          // 风格偏好加成
-          if (preferences.includes(scaleName)) score += 5;
-
-          // 主调兼容性评估
-          const scaleIntervals = SCALE_TYPES[scaleName] || SCALE_TYPES['Ionian'];
-          const chordRootMidi = chord.rootMidi % 12;
-          const scalePcs = scaleIntervals.map(i => (chordRootMidi + i) % 12);
-          const coincidence = scalePcs.filter(pc => keyPcs.has(pc)).length;
-          score += coincidence; // 重合音符越多得分越高
-
-          if (score > maxScore) {
-              maxScore = score;
-              bestScale = scaleName;
-          }
-      });
-
-      // Honour the exotic-mode override even if the scoring loop above
-      // picked something else (it can lose to scales with stronger keyPcs
-      // overlap, e.g. Aeolian beating Mixolydian on a vi chord).
-      const effectiveScale = forcedExoticScale ?? bestScale;
-      const finalScaleIntervals = SCALE_TYPES[effectiveScale] || SCALE_TYPES['Ionian'];
-
-      // 返回所有可用MIDI音符（供旋律生成使用）
-      // 特殊情况：对于Blues等风格，如果是Blues/Pentatonic音阶，应该以全局主调为根音构建，而不是随和弦根音移动
-      let rootM = chord.rootMidi;
-      if (style === 'BLUES' && (effectiveScale === 'Blues' || effectiveScale === 'Major Blues' || effectiveScale === 'Minor Pentatonic' || effectiveScale === 'Major Pentatonic')) {
-          rootM = noteToMidi(musicKey + "3"); // Use octave 3 to match chord.rootMidi range (48 is C3)
-      } else if (forcedExoticScale) {
-          // Anchor the exotic scale on the global key so the mode's
-          // characteristic notes persist across all chord changes.
-          rootM = noteToMidi(musicKey + "3");
-      }
-      
-      const midiScale: number[] = [];
-      const pcs = new Set(finalScaleIntervals.map(i => (rootM + i) % 12));
-      
-      // We want the scale centered around the chord root, providing a few octaves
-      for (let oct = -2; oct <= 3; oct++) {
-          finalScaleIntervals.forEach(interval => {
-              midiScale.push(rootM + (oct * 12) + interval);
-          });
-      }
-      return midiScale.sort((a,b) => a-b);
-  }
+  // Phase 1 (#6):getScaleForStyle 已抽到 engine-utils.ts(组 A 纯函数化)
 
   private generateBarPattern(
       chord: ChordDef, nextChord: ChordDef | null, style: StyleName, startBeat: number, motif: any[],
@@ -3768,7 +3388,7 @@ export class Engine {
       // Ionian proxy. The same runScale is reused by anchor scoring
       // and the per-note projection loop further down — single
       // construction, three consumers.
-      const runScale = this.getScaleForStyle(style, chord, func, musicKey, musicMode);
+      const runScale = getScaleForStyle(style, chord, func, musicKey, musicMode);
       // Pcs view of the runScale — passed to evaluator so it can apply
       // scale-awareness. The runScale already includes borrowed scales
       // (Phrygian Dominant / Lydian Dominant / Altered) on secondary
@@ -4217,7 +3837,7 @@ export class Engine {
               let bridgeTargetMidi = firstTargetMidi;
               if (prevChord && pitchLeap >= 4) {
                   const lastPc = (((lastNoteMidi % 12) + 12) % 12);
-                  const { pcB } = this.findClosestCrossChordPair(prevChord, chord, lastPc);
+                  const { pcB } = findClosestCrossChordPair(prevChord, chord, lastPc);
                   const targetOct = Math.floor(lastNoteMidi / 12);
                   let bestPcMidi = bridgeTargetMidi;
                   let bestPcDist = Infinity;
@@ -4967,7 +4587,7 @@ export class Engine {
                     shouldApply: (c) => c.isLastNote && c.nextChord !== null,
                     score: (m, c) => {
                         const projPc = ((c.motifProjMidi % 12) + 12) % 12;
-                        const { pcA } = this.findClosestCrossChordPair(c.chord, c.nextChord!, projPc);
+                        const { pcA } = findClosestCrossChordPair(c.chord, c.nextChord!, projPc);
                         const pc = ((m % 12) + 12) % 12;
                         return pc === pcA ? 1 : 0;
                     } },
@@ -4978,7 +4598,7 @@ export class Engine {
                         && Math.abs(c.motifProjMidi - c.lastNoteMidi) >= 4,
                     score: (m, c) => {
                         const prevPc = ((c.lastNoteMidi % 12) + 12) % 12;
-                        const { pcB } = this.findClosestCrossChordPair(c.prevChord!, c.chord, prevPc);
+                        const { pcB } = findClosestCrossChordPair(c.prevChord!, c.chord, prevPc);
                         const pc = ((m % 12) + 12) % 12;
                         return pc === pcB ? 1 : 0;
                     } },
