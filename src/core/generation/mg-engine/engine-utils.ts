@@ -18,7 +18,7 @@ import {
     KEYS, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
     UNRESOLVED_TENSION_THRESHOLD,
 } from './musicEngine';
-import type { ChordDef, GenerationConfig, ResolvedGenerationContext, NoteContext, HardConstraint, SoftScore, NoteEvent, BarPatternSongContext } from './musicEngine';
+import type { ChordDef, GenerationConfig, ResolvedGenerationContext, NoteContext, HardConstraint, SoftScore, NoteEvent, BarPatternSongContext, MusicTimeline } from './musicEngine';
 import {
     CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote, MELODY_RANGE, classifyEngineChordType,
     getModeAwareSubstitutions, modeProgressionTemplate,
@@ -34,10 +34,12 @@ import {
     computeGlobalContract, getResolutionTargets,
     evaluateNoteInChordContext, getScaleGravity,
     getChordBackboneIntervals,
+    // Phase 3.3 — generateArrangement dependencies
+    TensionTracker, detectPhrases,
 } from '../af2-engine/music-theory';
 import type {
     Emotion, VoicingStylePreference, NoteRole, NoteHarmonicAssessment, PhraseRole,
-    TensionTracker, MeterContext,
+    MeterContext, PhraseSegment,
 } from '../af2-engine/music-theory';
 import { DYNAMIC_TSD_DICTIONARY, analyzeTargetQuality } from '../af2-engine/data/dynamicHarmony';
 import {
@@ -4282,3 +4284,1068 @@ export function generateBarPattern(
 
       return { patternEvents: events, bridgeVisual };
   }
+
+// ============================================================
+// Phase 3.3 — generateArrangement(1029 行,mg.Engine 最后一个 method)
+//
+// Class state 改为函数局部 var(原 Engine.aestheticAnchor / songApex* /
+// songGravityStrictness / songMeterContext / songTonalCharacter)。bar 循环
+// 调 generateBarPattern 时打包 songCtx 直接传入(不再经 stub forward)。
+//
+// PRNG verbatim:所有 random 调用顺序通过 rng(原 this.random)透传。
+// ============================================================
+
+export function generateArrangement(chords: ChordDef[], config: GenerationConfig, rng: Random): MusicTimeline {
+    // Local mirror of原 Engine class song-level state(Phase 3.3 抽出后由本函数管理)
+    let aestheticAnchor: Random | null = null;
+    let songApexBarIdx: number = -1;
+    let songApexPitchMidi: number = -1;
+    let songApexPhraseStartBar: number = -1;
+    let songApexPhraseEndBar: number = -1;
+    let songGravityStrictness: number = 0.5;
+    let songMeterContext: MeterContext = {
+        meter: [4, 4], literal: '4/4', beatsPerMeasure: 4,
+        strongBeats: [0, 2], isCompound: false, isSimple: true, isIrregular: false,
+    };
+    let songTonalCharacter: 'tonal' | 'modal' = 'tonal';
+        // Re-resolve so this call uses the exact same mode as
+        // generateProgressions did. Forking by SEED makes it deterministic.
+        const ctx = resolveGeneration(config);
+        const { style, key: musicKey } = config;
+        // density / complexity are pinned to 0.5 — see GenerationConfig.
+        // The magnetism + motif-mutator branches gated on these always
+        // behave at the "moderate" point.
+        const complexity = 0.5;
+        const density = 0.5;
+        const musicMode = ctx.mode;
+        let events: NoteEvent[] = [];
+        let visuals: { time: number, label: string }[] = [];
+        let beatAcc = 0;
+        
+        // Rule 10 — Apex Singularity + Golden Ratio. Pre-plan the
+        // song's high point: pick an apex bar at golden-ratio position
+        // (60-75% of song length) and an apex pitch in the upper end
+        // of MELODY_RANGE (high register, ~3 semis below the absolute
+        // top). The apex pitch is rooted on the apex bar's chord-tone
+        // pc whenever a high-register chord-tone is reachable, otherwise
+        // falls back to a generic high note.
+        // Forked Random keeps apex deterministic per seed and isolated
+        // from the main pipeline's stream.
+        const apexRand = new Random(`${config.seed}::apex`);
+        const apexFraction = 0.6 + apexRand.next() * 0.15;  // [0.6, 0.75)
+        const apexBarIdx = Math.min(chords.length - 1,
+            Math.max(0, Math.floor(chords.length * apexFraction)));
+        const apexChord = chords[apexBarIdx];
+        const apexLiteral = CHORD_TYPES[apexChord.type] || [0, 4, 7];
+        const apexRootPc = (((apexChord.rootMidi % 12) + 12) % 12);
+        // Try each chord-literal pc in upper octave; pick the highest
+        // midi available within (HIGH-3, HIGH-9) — keeps apex within
+        // the upper 9 semis of the melody range so it's a clear "high
+        // point" but not the absolute ceiling (saves headroom for
+        // momentary 16th-note overshoots).
+        let apexPitchMidi = -1;
+        const upperBound = MELODY_RANGE.HIGH - 3;
+        const lowerBound = MELODY_RANGE.HIGH - 9;
+        for (let m = upperBound; m >= lowerBound; m--) {
+            const candPc = ((m % 12) + 12) % 12;
+            for (const iv of apexLiteral) {
+                if ((apexRootPc + iv) % 12 === candPc) {
+                    apexPitchMidi = m;
+                    break;
+                }
+            }
+            if (apexPitchMidi > 0) break;
+        }
+        // Fallback: pick the highest midi within bounds regardless of
+        // chord literal — guarantees apex always lands in the upper
+        // ~3-9 semis of MELODY_RANGE.
+        if (apexPitchMidi < 0) apexPitchMidi = upperBound;
+        // Stash on Engine instance so generateBarPattern's NoteContext
+        // builder can read without threading more parameters.
+        songApexBarIdx = apexBarIdx;
+        songApexPitchMidi = apexPitchMidi;
+        // Compute apex phrase window — the phrase containing apexBarIdx
+        // gets the high register baseline. Phrase length tracked via
+        // motifInterval (default 4). Apex phrase = floor(apexBarIdx / N)
+        // → bars [phrase * N, phrase * N + N - 1] inclusive.
+        if (apexBarIdx >= 0) {
+            const N = ctx.motifInterval || 4;
+            const phraseIdx = Math.floor(apexBarIdx / N);
+            songApexPhraseStartBar = phraseIdx * N;
+            songApexPhraseEndBar = Math.min(chords.length - 1, phraseIdx * N + N - 1);
+        } else {
+            songApexPhraseStartBar = -1;
+            songApexPhraseEndBar = -1;
+        }
+
+        // Read scale-gravity strictness from style profile. Per the
+        // SCALE_GRAVITY architecture: scale-internal physics (b6→5 in
+        // Aeolian, 7→1 in Ionian) is universal, style only controls
+        // execution strictness.
+        songGravityStrictness = STYLE_DICTIONARY[style]?.gravityStrictness ?? 0.5;
+        // Cache meter on instance so generateBarPattern's isStrongBeat
+        // predicate + motif scaling read from one source.
+        songMeterContext = ctx.meterContext;
+        // Cache tonalCharacter so evaluator calls inside generateBarPattern
+        // (anchor scoring + per-emit state update) read the song-level
+        // verdict without re-passing ctx through every signature.
+        songTonalCharacter = ctx.tonalCharacter;
+
+        // K-K profile picked by mode family. modeProgressionTemplate
+        // maps Ionian/Lydian/Mixolydian → 'Major' and everything else
+        // → 'Minor' (interval-content-based — modes with a b3 fall on
+        // Minor side). Tracker uses this to apply the K-K minor probe-
+        // tone profile so b3 / b6 / b7 aren't mis-flagged as urgent
+        // tensions in minor songs.
+        const tensionTracker = new TensionTracker(modeProgressionTemplate(musicMode));
+        // melodyState carries the last emitted melody note's pitch
+        // AND its end-time across bars. lastNoteEnd starts at -1 so
+        // the cross-bar bridge knows there's no preceding event on
+        // the song's first bar (and so doesn't try to bridge from
+        // negative time).
+        // Cross-bar melody state. lastLeapSemis = signed leap from
+        // prev-prev → prev (Rule 9 Leap Recovery). sameDirRunLength
+        // = count of consecutive same-direction steps ending at the
+        // previous emitted note (Rule 11 Anti-Monotonicity). Both
+        // updated after each emitted note, fed into the AND pipeline
+        // as hard constraints.
+        const melodyState: {
+            currentMidi: number;
+            lastNoteEnd: number;
+            lastLeapSemis: number;
+            sameDirRunLength: number;
+            stepCount: number;
+            leapCount: number;
+            // SCALE_GRAVITY-driven pending resolve. When the PREVIOUS
+            // emitted note matched a fromInterval in the bar's
+            // scale-gravity rule, this caches the target interval +
+            // score so the NEXT note's score lookup is O(1). Cleared
+            // after the pull is consumed by a structural emit or by
+            // bar boundary.
+            pendingScaleResolveTarget: number | null; // target interval-from-scale-root
+            pendingScaleResolveRootPc: number;        // scale root pc
+            pendingScaleResolveScore: number;         // rule score 0-30
+            // 老师哲学升级: scale-gravity 解决也是过程不是事件.
+            // 4 拍窗口期内允许多音/包围回归 (4-2-3 / 4-5-3 / 4-1-3-2-1).
+            // accept = stepwise from lineLastMidi OR pc match target.
+            pendingScaleLineWindowEnd: number;        // -1 if not armed
+            pendingScaleLineLastMidi: number;         // -1 if not armed
+            // Color-line pending. Per user哲理: 9/11/13 (and 7) are
+            // high-voice color whose physics open a tension window
+            // when emitted as structural backbone. Resolution is a
+            // PROCESS, not a single event — a stepwise melodic line
+            // (any number of notes / passing tones / 16ths / octave
+            // displacement) must land on chord 1/3/5 (any octave's
+            // pitch class) within the listener's tension-retention
+            // window (≤ 4 beats from open). Cleared when the line
+            // lands on chord 1/3/5 pc, when the window expires, or
+            // when cadence resolution takes over the landing.
+            //   startMidi/startPc/startTime: where the color emit
+            //     opened the line.
+            //   windowEnd: absolute beat time after which tension
+            //     dissipates (listener forgets).
+            //   lineLastMidi: last emit on the line — used for the
+            //     stepwise-continuity test (next emit must be ≤ 2
+            //     semis from this OR pc-resolve to chord 1/3/5).
+            pendingColorLine: {
+                startMidi: number;
+                startPc: number;
+                startTime: number;
+                windowEnd: number;
+                lineLastMidi: number;
+            } | null;
+            // 老师"避讳音解决奖励" 用. 上一 emit 的角色 + midi.
+            lastEmitRole: NoteRole;
+            lastEmitMidi: number;
+            // Unified harmonic assessment of the previous emit, plus
+            // the chord it landed on. When the assessment's urgency
+            // exceeds the resolution threshold, the next note is
+            // forced onto its resolutionTargets. Replaces the prior
+            // 7-specific tracking (only caught chord-7 hits) and the
+            // pendingResolve ghost (only knew key-relative leading /
+            // four). Now ANY unresolved tension — 7-tones, suspended
+            // 4ths, altered tensions (b9 / #11 / b13), avoid notes
+            // that escaped the structural filter — gets the same
+            // unified follow-through.
+            lastEmitAssessment: NoteHarmonicAssessment | null;
+            lastEmitChord: ChordDef | null;
+        } = {
+            currentMidi: noteToMidi(musicKey + "5"),
+            lastNoteEnd: -1,
+            lastLeapSemis: 0,
+            sameDirRunLength: 0,
+            stepCount: 0,
+            leapCount: 0,
+            pendingScaleResolveTarget: null,
+            pendingScaleResolveRootPc: -1,
+            pendingScaleResolveScore: 0,
+            pendingScaleLineWindowEnd: -1,
+            pendingScaleLineLastMidi: -1,
+            pendingColorLine: null,
+            // 老师哲学: 跟踪上一 emit 的角色 + midi, 用于
+            // avoid-resolution-reward 检测"避讳音 → 半步解决到 chord 音".
+            lastEmitRole: 'chord_tone' as NoteRole,
+            lastEmitMidi: -1,
+            lastEmitAssessment: null,
+            lastEmitChord: null,
+        };
+
+        // Forked Random for the Aesthetic Anchor scoring. Tiebreak
+        // jitter in scoreCandidateAnchor consumes from this stream
+        // instead of the main random — prevents Phase 1 changes from
+        // shifting downstream decisions (motif placement, cadence
+        // randoms, etc.) every time scoring weights are tweaked.
+        aestheticAnchor = new Random(`${config.seed}::anchor`);
+
+        // === STYLE-BASED CLOSED LOOP CONFIGURATION (风格驱动的闭环配置) ===
+        const profile = STYLE_DICTIONARY[style] || STYLE_DICTIONARY['POP'];
+        const isShuffle = profile.grooveType === 'swing' || profile.grooveType === 'shuffle' || profile.grooveType === 'dilla';
+        
+        // 我们锁定风格专属的重音模式和织体池. After the macro merge,
+        // primaryTextures is the union of all member sub-styles' texture
+        // names, e.g. POP can contain ['Block_Chord', 'Broken_Chord',
+        // 'Arpeggio_Flow_Wide', 'Stabs', ...]. We pick ONE texture for
+        // the entire song and use it bar-to-bar — mixing two textures
+        // (e.g. Block_Chord on bar 0 then Stabs on bar 4) breaks the
+        // listener's sense of arrangement consistency, so the engine
+        // commits to a single texture per generation.
+        const accentMode: 'heavy' | 'syncopated' = (profile.accentMode === 'downbeat' || profile.accentMode === 'fourOnTheFloor') ? 'heavy' : 'syncopated';
+        const songTexture = rng.pick(profile.primaryTextures);
+        // =============================================================
+
+        // === Phrase plan: M3e strategy-aware ===
+        // Three canonical motifs are generated up front; per-bar logic decides
+        // which one (or a derived variant) plays in each chord.
+        const motifA = generateMelodyPhrase(style, rng);
+        const motifB = generateMelodyPhrase(style, rng);
+        const motifC = generateMelodyPhrase(style, rng);
+        const emptyMotif: any[] = [];
+
+        const phrasePlan: any[][] = new Array(chords.length);
+        // Parallel role array. 'motif' bars are sacred — corrections in
+        // generateBarPattern skip them. 'develop' bars are derived and
+        // are eligible for tension / voice-leading / backbone fixes.
+        // 'rest' bars emit no melody.
+        const phraseRole: ('motif' | 'develop' | 'rest')[] = new Array(chords.length);
+
+        // Macro-level pool gate, hoisted so all three strategy branches
+        // (BLUES 12-bar / regular head-body-tail / functional) can
+        // share the decision. When pool is incomplete, every branch
+        // falls back to the legacy motifA/B/C behaviour.
+        const useMotifPool = !!profile.motifPool
+            && profile.motifPool.starts.length > 0
+            && profile.motifPool.flows.length > 0
+            && profile.motifPool.ends.length > 0;
+        const pool = profile.motifPool;
+
+        // "Motifs as Islands" infrastructure — thematicMemory caches
+        // selected motifs per (effectiveFunc, chord type, role) so the
+        // same harmonic context replays the same lick most of the time
+        // (60% reuse rate via MEMORY_REUSE_PROB), creating hook unity
+        // instead of "lick salad". runScales are precomputed so
+        // selectBestMotif can score candidates against the chord's
+        // actual melodic palette.
+        const thematicMemory: Record<string, any[]> = {};
+        const memKey = (i: number, role: string) => {
+            const c = chords[i];
+            const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
+            return `${f}_${c.type}_${role}`;
+        };
+        const runScales: number[][] = chords.map((c) => {
+            const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
+            return getScaleForStyle(style, c, f, musicKey, musicMode);
+        });
+        // Parallel fill-scale array. Used by Run Generator (in-bar
+        // gap fill) and in-bar passing-tone insertion to add style
+        // flavor (Bebop / Pentatonic / Mixolydian b6 / Blues hybrid)
+        // to non-backbone notes. Backbone path uses runScales[i].
+        const fillScales: number[][] = chords.map((c, idx) => {
+            const f = c.effectiveFunc ?? getHarmonicFunction(c.roman);
+            return getFillScaleForStyle(style, c, f, musicKey, musicMode, runScales[idx]);
+        });
+        // Backbone targets per bar — pre-compute the "regression points"
+        // the melody's structural notes must land on. Used by
+        // selectBestMotif (Step 1 of pipeline) and by Color Magnetism
+        // to enforce backbone-on-chord-tone (Step 3).
+        const modeIvForKey = SCALE_TYPES[(musicMode && musicMode in SCALE_TYPES) ? musicMode : 'Ionian'];
+        const keyRootPcGlobal = (((noteToMidi(musicKey + "0") % 12) + 12) % 12);
+        // 物理避音法则上下文 (严格版): 仅 RNB / BLUES 风格授权 = modal.
+        const isModalEnvGlobal = STYLE_DICTIONARY[style]?.allowFloatingColor === true
+            || STYLE_DICTIONARY[style]?.allowBluesHangTone === true;
+        const backboneTargets: Set<number>[] = chords.map((c) =>
+            computeBackboneTargets(c, keyRootPcGlobal, modeIvForKey, isModalEnvGlobal));
+
+        // Voice leading common-tone sets per bar — pcs of the current
+        // chord's voicing that ARE ALSO in the previous (incoming) /
+        // next (outgoing) chord's voicing. These are the "smooth
+        // connection points" between adjacent harmonies. Used by:
+        //   - selectBestMotif: prefer motifs whose first structural
+        //     note ∈ voiceLeadingIn and last structural note ∈
+        //     voiceLeadingOut
+        //   - Color Magnetism: when snapping a structural note off
+        //     contract, prefer chord-literal targets that are also
+        //     in the relevant VL set (incoming for early-in-bar,
+        //     outgoing for late-in-bar)
+        const _pcOf = (m: number) => (((m % 12) + 12) % 12);
+        const _voicingPcs = (c: ChordDef) => new Set(
+            (c.notesMidi ?? c.notes.map(n => noteToMidi(n))).map(_pcOf)
+        );
+        const voiceLeadingIn: Set<number>[] = chords.map((c, i) => {
+            if (i === 0) return new Set();
+            const prev = _voicingPcs(chords[i - 1]);
+            const curr = _voicingPcs(c);
+            const out = new Set<number>();
+            for (const pc of curr) if (prev.has(pc)) out.add(pc);
+            return out;
+        });
+        const voiceLeadingOut: Set<number>[] = chords.map((c, i) => {
+            if (i === chords.length - 1) return new Set();
+            const next = _voicingPcs(chords[i + 1]);
+            const curr = _voicingPcs(c);
+            const out = new Set<number>();
+            for (const pc of curr) if (next.has(pc)) out.add(pc);
+            return out;
+        });
+
+        // Phrase-parallelism state — track the previous phrase's
+        // accumulated structural pcs and the current phrase being
+        // built. Phrase length = motifInterval. At every phrase
+        // boundary (i % phraseLen === 0 && i > 0), curr → prev,
+        // curr resets to empty. selectBestMotif consumes prev to
+        // score candidates by Jaccard similarity, peaking at ~50%
+        // (排比 / antecedent-consequent parallelism).
+        const phraseLen = ctx.motifInterval || 4;
+        let prevPhrasePcs: Set<number> = new Set();
+        let currPhrasePcs: Set<number> = new Set();
+        const advancePhraseIfBoundary = (i: number) => {
+            if (i > 0 && i % phraseLen === 0) {
+                prevPhrasePcs = currPhrasePcs;
+                currPhrasePcs = new Set();
+            }
+        };
+        const accumulateMotifPcs = (motif: any[], chord: ChordDef, runScale: number[]) => {
+            if (!motif || motif.length === 0) return;
+            const pcs = predictMotifStructuralPcs(motif, chord, runScale);
+            pcs.forEach(p => currPhrasePcs.add(p));
+        };
+        // 老师哲学: phrase 末尾"答" = 回归稳定. ends 池 motif 末位
+        // 必须落 chord triad (1/3/5). RNB allowFloatingColor 时, chord
+        // 类型自带的色彩 (m9 的 9 等) 也算稳定基线.
+        // 7 不算"完全稳定" (老师哲学下 7 仍是色彩需要解决) — 不进入
+        // strictEnd pool. 但 chord 自带的 maj7/b7 只有 floating 风格 OK.
+        const IONIAN_STEPS = [0, 2, 4, 5, 7, 9, 11];
+        const isMotifLastNoteStable = (motif: any, chord: ChordDef, allowFloating: boolean): boolean => {
+            const notes: any[] = (motif && 'notes' in motif && Array.isArray(motif.notes))
+                ? motif.notes
+                : (Array.isArray(motif) ? motif : []);
+            if (notes.length === 0) return true;
+            const last = notes[notes.length - 1];
+            let iv: number | null = null;
+            if ('chromaticOffset' in last) {
+                iv = ((last.chromaticOffset % 12) + 12) % 12;
+            } else if ('diatonicStep' in last) {
+                const step = ((last.diatonicStep % 7) + 7) % 7;
+                iv = IONIAN_STEPS[step];
+            }
+            if (iv === null) return true;
+            // Chord triad 1/3/5 (mode-aware via getChordBackboneIntervals
+            // would require an import; use type-derived intervals < 8).
+            const intervals = CHORD_TYPES[chord.type] || CHORD_TYPES['maj'];
+            const triad = intervals.filter((i: number) => i < 8);
+            if (triad.includes(iv)) return true;
+            if (allowFloating) {
+                const chordTypeIvs = intervals.map((i: number) => i % 12);
+                if (chordTypeIvs.includes(iv)) return true;
+            }
+            return false;
+        };
+        // Bound helper: advances phrase state at boundary, calls
+        // selectBestMotif with all 9 params (incl. prevPhrasePcs),
+        // then accumulates the picked motif's structural pcs into
+        // currPhrasePcs. All bar-loop call sites use this so the
+        // parallelism state stays correctly maintained across
+        // the three strategy paths (BLUES, regular, functional).
+        // strictEnd=true: filter pool to motifs whose last note is
+        // stable (chord triad pc); used at phrase-end positions per
+        // 老师哲学"答 = 回归稳定". Falls back to full pool if filter
+        // empties out (degenerate chord types where no motif end fits).
+        // Pair tracking — when a motif with pairId is picked, the next
+        // bar prefers a partner (same pairName, different role). Bridges
+        // designed pairs like Rocket+Feather across bars without
+        // requiring a global pair-aware selector.
+        let lastPickedPairId: string | null = null;
+        const TURNAROUND_KEYWORDS = /turnaround|回转/i;
+        const pickMotif = (pool: (any[] | { notes: any[]; rules?: any })[], i: number, role: string, strictEnd: boolean = false, preferTurnaround: boolean = false): any[] => {
+            advancePhraseIfBoundary(i);
+
+            // Pre-pick: turnaround section (BLUES bar 11) — prefer
+            // motifs whose description names them as turnaround licks.
+            // Bypasses selectBestMotif for these markers since the
+            // section's identity is the priority over conflict scoring.
+            if (preferTurnaround) {
+                const turnaroundCandidates = pool.filter(item => {
+                    if (Array.isArray(item)) return false;
+                    const desc = (item as any).description;
+                    return typeof desc === 'string' && TURNAROUND_KEYWORDS.test(desc);
+                });
+                if (turnaroundCandidates.length > 0) {
+                    const chosen = rng.pick(turnaroundCandidates) as { notes: any[]; rules?: any };
+                    accumulateMotifPcs(chosen.notes, chords[i], runScales[i]);
+                    lastPickedPairId = (chosen.rules && typeof chosen.rules.pairId === 'string') ? chosen.rules.pairId : null;
+                    return chosen.notes;
+                }
+            }
+
+            // Pre-pick: if previous bar's motif had pairId, look for
+            // partner (same pair name, different role) in current pool.
+            if (lastPickedPairId) {
+                const colon = lastPickedPairId.indexOf(':');
+                const pairName = colon > 0 ? lastPickedPairId.slice(0, colon) : '';
+                const prevRole = colon > 0 ? lastPickedPairId.slice(colon + 1) : '';
+                if (pairName) {
+                    const partner = pool.find(item => {
+                        if (Array.isArray(item)) return false;
+                        const rules = (item as any).rules;
+                        const pid = rules?.pairId;
+                        if (typeof pid !== 'string') return false;
+                        const c2 = pid.indexOf(':');
+                        if (c2 <= 0) return false;
+                        return pid.slice(0, c2) === pairName && pid.slice(c2 + 1) !== prevRole;
+                    });
+                    if (partner && !Array.isArray(partner)) {
+                        const notes = (partner as any).notes;
+                        accumulateMotifPcs(notes, chords[i], runScales[i]);
+                        lastPickedPairId = (partner as any).rules.pairId;
+                        return notes;
+                    }
+                }
+                // No partner found — drop pair tracking.
+                lastPickedPairId = null;
+            }
+
+            let usePool = pool;
+            if (strictEnd) {
+                const allowFloating = STYLE_DICTIONARY[style]?.allowFloatingColor === true;
+                const filtered = pool.filter(m => isMotifLastNoteStable(m, chords[i], allowFloating));
+                if (filtered.length > 0) usePool = filtered;
+            }
+            // 老师哲学: 长音概率分配按音乐性. Phrase 中段 (starts /
+            // flows) 偏好末位短的 motif (≤ 1.0 拍), 让中段流动. Phrase
+            // 末位 (ends) 不过滤 — cadence 长 hold 自然 OK. Song 末位
+            // (last bar of song) 也走 ends 路径自然保留长音.
+            // 联网研究: cadence 末位常 hold ≥ 2 拍; phrase 中段 attack
+            // 密度增加, 长 hold 是 phrase end / song end 标志.
+            if (role !== 'ends') {
+                const flowFiltered = usePool.filter(m => {
+                    const notes: any[] = ('notes' in (m as any) && Array.isArray((m as any).notes))
+                        ? (m as any).notes
+                        : (Array.isArray(m) ? m : []);
+                    if (notes.length === 0) return true;
+                    const last = notes[notes.length - 1];
+                    return last && typeof last.d === 'number' && last.d <= 1.0;
+                });
+                if (flowFiltered.length > 0) usePool = flowFiltered;
+            }
+            const m = selectBestMotif(
+                usePool, chords[i], runScales[i], memKey(i, role),
+                thematicMemory, backboneTargets[i],
+                voiceLeadingIn[i], voiceLeadingOut[i],
+                prevPhrasePcs.size > 0 ? prevPhrasePcs : null, rng,
+            );
+            accumulateMotifPcs(m, chords[i], runScales[i]);
+
+            // Post-pick: detect if returned motif has pairId by matching
+            // its notes reference against pool wrappers. selectBestMotif
+            // returns the wrapper's `notes` array directly so === holds.
+            const sourceWrapper = pool.find(item => {
+                if (Array.isArray(item)) return item === m;
+                return (item as any).notes === m;
+            });
+            if (sourceWrapper && !Array.isArray(sourceWrapper)) {
+                const rules = (sourceWrapper as any).rules;
+                lastPickedPairId = (rules && typeof rules.pairId === 'string') ? rules.pairId : null;
+            } else {
+                lastPickedPairId = null;
+            }
+            return m;
+        };
+
+        if (style === 'BLUES' && chords.length >= 12) {
+            // Standard 12-bar blues structure (AAB + turnaround). The
+            // genre dictates its own layout, but the bar-role pulls
+            // come from MACRO_MOTIF_POOLS.BLUES — same head-body-tail
+            // assembly as other macros, just laid out across the AAB
+            // form's three 4-bar phrases:
+            //
+            //   Phrase A1 (0-3): start, flow, breath/flow-dev, breath/end
+            //   Phrase A2 (4-7): start, flow, breath/flow-dev, breath/end
+            //   Phrase B  (8-11): start, flow, flow-dev, turnaround/end
+            //
+            // The "breath" bars (2, 3, 6, 7, 11) preserve the blues
+            // singer's pause-for-breath aesthetic via probabilistic
+            // rest. Rest probabilities mirror the prior layout (60%
+            // for bars 2/3/6/7, 70% for bar 11). useMotifPool / pool
+            // hoisted to the strategy switch's outer scope.
+            for (let i = 0; i < chords.length; i++) {
+                const barIn12 = i % 12;
+                if (barIn12 === 0 || barIn12 === 4) {
+                    // A-phrase head
+                    phrasePlan[i] = (useMotifPool && pool)
+                        ? pickMotif(pool.starts, i, 'starts')
+                        : motifA;
+                    phraseRole[i] = 'motif';
+                } else if (barIn12 === 1 || barIn12 === 5) {
+                    // A-phrase body
+                    phrasePlan[i] = (useMotifPool && pool)
+                        ? pickMotif(pool.flows, i, 'flows')
+                        : motifA;
+                    phraseRole[i] = 'motif';
+                } else if (barIn12 === 2 || barIn12 === 6) {
+                    // breath bar — 60% rest / 40% flows-develop
+                    if (rng.next() > 0.4) { phrasePlan[i] = emptyMotif; phraseRole[i] = 'rest'; }
+                    else {
+                        phrasePlan[i] = (useMotifPool && pool)
+                            ? pickMotif(pool.flows, i, 'flows')
+                            : motifC;
+                        phraseRole[i] = 'develop';
+                    }
+                } else if (barIn12 === 3 || barIn12 === 7) {
+                    // A-phrase tail — 60% rest / 40% ends (motif role
+                    // so cadence yield can fire)
+                    if (rng.next() > 0.4) { phrasePlan[i] = emptyMotif; phraseRole[i] = 'rest'; }
+                    else {
+                        phrasePlan[i] = (useMotifPool && pool)
+                            ? pickMotif(pool.ends, i, 'ends', true)
+                            : motifC;
+                        phraseRole[i] = 'motif';
+                    }
+                } else if (barIn12 === 8) {
+                    // B-phrase head
+                    phrasePlan[i] = (useMotifPool && pool)
+                        ? pickMotif(pool.starts, i, 'starts')
+                        : motifB;
+                    phraseRole[i] = 'motif';
+                } else if (barIn12 === 9) {
+                    // B-phrase body
+                    phrasePlan[i] = (useMotifPool && pool)
+                        ? pickMotif(pool.flows, i, 'flows')
+                        : motifB;
+                    phraseRole[i] = 'motif';
+                } else if (barIn12 === 10) {
+                    // B-phrase develop — turnaround approach. 老师 D
+                    // 选项: bar 9-12 是 turnaround section. bar 10 选
+                    // 一条 ends 池 turnaround motif 作铺垫(approach).
+                    phrasePlan[i] = (useMotifPool && pool)
+                        ? pickMotif(pool.ends, i, 'ends', true, true)
+                        : motifC;
+                    phraseRole[i] = 'develop';
+                } else {
+                    // bar 11 — turnaround section landing. 100% 强制 ends
+                    // turnaround motif (废弃旧的 70% rest fallback —
+                    // turnaround 是 12-bar form 的标志位置, 必须出现).
+                    // Drain 1 random.next() to keep stream symmetric with
+                    // legacy seed snapshots even though turnaround is
+                    // unconditional now.
+                    rng.next();
+                    phrasePlan[i] = (useMotifPool && pool)
+                        ? pickMotif(pool.ends, i, 'ends', true, true)
+                        : motifA;
+                    phraseRole[i] = 'motif';
+                }
+            }
+        } else if (useMotifPool && pool && ctx.motifStrategy === 'regular') {
+            // Head-Body-Tail (起承合) phrase layout. Each chunk of N bars
+            // assembles a phrase from role-classified motif pools so the
+            // bar-by-bar shape reflects real-world phrase architecture:
+            //   bar 0          → starts (anacrusis / Bebop enclosure)
+            //   bar 1..N-3     → flows  (continuous running material)
+            //   bar N-2        → flows OR derive(starts) (develop)
+            //   bar N-1        → ends   (cadential resolution)
+            //
+            // Each bar fresh-picks from its role pool — coherence comes
+            // from the data design (all flows are stylistically related)
+            // rather than reusing one canonical motif. Develop bar's
+            // 50/50 fork between fresh flow and derived-start gives
+            // either continuation or a head-callback feeling.
+            const N = chords.length < ctx.motifInterval
+                ? Math.max(1, chords.length)
+                : ctx.motifInterval;
+            for (let i = 0; i < chords.length; i++) {
+                const idxInChunk = i % N;
+                if (idxInChunk === 0) {
+                    phrasePlan[i] = pickMotif(pool.starts, i, 'starts');
+                    phraseRole[i] = 'motif';
+                } else if (idxInChunk === N - 1 && N >= 2) {
+                    phrasePlan[i] = pickMotif(pool.ends, i, 'ends', true);
+                    phraseRole[i] = 'motif';
+                } else if (idxInChunk === N - 2 && N >= 3) {
+                    if (rng.next() < 0.5) {
+                        phrasePlan[i] = pickMotif(pool.flows, i, 'flows');
+                    } else {
+                        phrasePlan[i] = deriveDevelopmentMotif(pickMotif(pool.starts, i, 'starts'), rng);
+                    }
+                    phraseRole[i] = 'develop';
+                } else {
+                    phrasePlan[i] = pickMotif(pool.flows, i, 'flows');
+                    phraseRole[i] = 'motif';
+                }
+            }
+        } else if (ctx.motifStrategy === 'functional') {
+            // Strategy B — recurrence by harmonic function, layered on
+            // top of head-body-tail phrase shape.
+            //
+            // The previous implementation used motifA/B/C from the flat
+            // legacy pool, completely bypassing motifPool. With the
+            // categorized pools in place, we can preserve the functional
+            // recurrence intent (T/S/D positions accumulate distinct
+            // shapes across the song) AND respect phrase boundaries
+            // (each N-bar chunk has start, body, body, end).
+            //
+            // Phrase-position rules:
+            //   isPhraseStart (bar 0 of chunk) → starts
+            //   isPhraseEnd   (last bar of chunk OR song) → ends
+            //   middle bars   → flows for the first 2 occurrences of
+            //                   each TSD function; afterward develop
+            //                   variant of starts (callback feel)
+            //
+            // The funcCount gate keeps the "first 2 occurrences play
+            // verbatim, then develop" recurrence behavior the legacy
+            // implementation had — but now that recurrence operates
+            // over the FLOWS pool instead of one fixed motif.
+            const funcCount: Record<'T'|'S'|'D', number> = { T: 0, S: 0, D: 0 };
+            const N = ctx.motifInterval;
+            for (let i = 0; i < chords.length; i++) {
+                const f = getHarmonicFunction(chords[i].roman);
+                funcCount[f]++;
+                const isPhraseStart = i % N === 0;
+                const isPhraseEnd = (i + 1) % N === 0 || i === chords.length - 1;
+
+                if (useMotifPool && pool) {
+                    if (isPhraseStart) {
+                        phrasePlan[i] = pickMotif(pool.starts, i, 'starts');
+                        phraseRole[i] = 'motif';
+                    } else if (isPhraseEnd) {
+                        phrasePlan[i] = pickMotif(pool.ends, i, 'ends', true);
+                        phraseRole[i] = 'motif';
+                    } else if (funcCount[f] <= 2 || rng.next() < 0.5) {
+                        phrasePlan[i] = pickMotif(pool.flows, i, 'flows');
+                        phraseRole[i] = 'motif';
+                    } else {
+                        phrasePlan[i] = deriveDevelopmentMotif(pickMotif(pool.starts, i, 'starts'), rng);
+                        phraseRole[i] = 'develop';
+                    }
+                } else {
+                    // Legacy fallback (no motifPool — Max Martin Pop /
+                    // Modern Trap territory). Same behaviour as before.
+                    const funcMotifMap: Record<'T'|'S'|'D', any[]> = { T: motifA, S: motifB, D: motifC };
+                    if (funcCount[f] <= 2) {
+                        phrasePlan[i] = funcMotifMap[f];
+                        phraseRole[i] = 'motif';
+                    } else {
+                        phrasePlan[i] = deriveDevelopmentMotif(funcMotifMap[f], rng);
+                        phraseRole[i] = 'develop';
+                    }
+                }
+            }
+        } else {
+            // Strategy A — recurrence every N bars. P2 short-song fallback:
+            // when bars < N we only have room for one motif statement at the
+            // very start; everything else is development.
+            const N = chords.length < ctx.motifInterval
+                ? Math.max(1, chords.length)
+                : ctx.motifInterval;
+            for (let i = 0; i < chords.length; i++) {
+                const cycleIdx = Math.floor(i / N);
+                const barInCycle = i % N;
+                const currentMotif = (cycleIdx % 2 === 0) ? motifA : motifB;
+
+                if (barInCycle === 0) {
+                    phrasePlan[i] = currentMotif;
+                    phraseRole[i] = 'motif';
+                } else if (barInCycle === N - 1 && N >= 3) {
+                    // Cycle-end response: chance of rest, otherwise motifC fill.
+                    if (rng.next() > 0.5) {
+                        phrasePlan[i] = emptyMotif;
+                        phraseRole[i] = 'rest';
+                    } else {
+                        phrasePlan[i] = motifC;
+                        phraseRole[i] = 'develop';
+                    }
+                } else {
+                    phrasePlan[i] = deriveDevelopmentMotif(currentMotif, rng);
+                    phraseRole[i] = 'develop';
+                }
+            }
+        }
+
+        // Fallback-mode per-bar randomisation. When sub-style motifs
+        // are empty AND the macro pool is empty, the strategy switch
+        // above produced phrasePlan from motifA/B/C (3 generated
+        // random motifs replayed across the song). Replaying 3 motifs
+        // for 16 bars cascades into PC clusters when the same motif
+        // step keeps projecting to the same chord-tone across multiple
+        // bars on the same chord (e.g. Em7 ×4 in the progression →
+        // motif's "5th" step lands on B four times). Override here so
+        // every non-rest bar gets a FRESH random scaffold — listener
+        // hears a new shape every bar even though the underlying
+        // generator is just evaluator-driven random walk.
+        const fallbackMode = (STYLE_DICTIONARY[style]?.motifs?.length ?? 0) === 0
+                          && !useMotifPool;
+        if (fallbackMode) {
+            for (let i = 0; i < chords.length; i++) {
+                if (phraseRole[i] === 'rest') continue;
+                phrasePlan[i] = generateMelodyPhrase(style, rng);
+            }
+        }
+
+        // Per-bar cadence-resolution flags + phrase role (Phase 5 —
+        // 和声驱动 phrase 检测). detectPhrases 扫 chord 进行的 strong
+        // cadence (D→strong T) 切 phrase 边界,classifyPhrase 识别
+        // Period (antecedent open + consequent closed)。
+        //
+        // phraseShouldReturn[i] 现在由 phraseRoleByBar[i] !== 'mid_phrase'
+        // 决定 — 即 phrase 边界处 (含 antecedent 末尾 / consequent
+        // 末尾 / through-composed phrase 末尾 / 整曲末尾) 都 fire cadence。
+        // 替代了旧的 "每 motifInterval bar 硬切" 逻辑。
+        //
+        // style.returnRule.enabled = false 仍是总开关 (ambient 风格)。
+        // probabilityPerPhrase 对非终止性 phrase-end 随机 gate。
+        // Sacred motif 仍不豁免 — Definition 4 在 cadence 位 yield sacred。
+        const phraseSegments: PhraseSegment[] = detectPhrases(chords);
+        const phraseRoleByBar: PhraseRole[] = new Array(chords.length).fill('mid_phrase');
+        for (const seg of phraseSegments) {
+            if (seg.type === 'Period') {
+                if (seg.antecedentEndBar !== undefined) {
+                    phraseRoleByBar[seg.antecedentEndBar] = 'antecedent_end';
+                }
+                phraseRoleByBar[seg.endBar] = 'consequent_end';
+            } else {
+                phraseRoleByBar[seg.endBar] = 'phrase_end_through';
+            }
+        }
+        // 整曲末尾压在 song_end 上 (覆盖前面可能赋的 consequent_end /
+        // phrase_end_through)。Tier A 由 song_end + func='T' 触发。
+        if (chords.length > 0) {
+            phraseRoleByBar[chords.length - 1] = 'song_end';
+        }
+
+        const phraseShouldReturn: boolean[] = new Array(chords.length).fill(false);
+        const returnRule = profile.returnRule;
+        if (returnRule?.enabled !== false) {
+            const phraseProb = returnRule?.probabilityPerPhrase ?? 1;
+            for (let i = 0; i < chords.length; i++) {
+                if (phraseRole[i] === 'rest') continue;
+                const role = phraseRoleByBar[i];
+                if (role === 'mid_phrase') continue;
+                // 整曲末尾必 fire (Tier A);其他 phrase-end 按概率门。
+                const fire = role === 'song_end' ? true : (rng.next() < phraseProb);
+                phraseShouldReturn[i] = fire;
+            }
+        }
+
+        // Phase 3.3 — songCtx 打包当前 song-level state,传给 generateBarPattern
+        const songCtx: BarPatternSongContext = {
+            aestheticAnchor,
+            songApexBarIdx,
+            songApexPitchMidi,
+            songApexPhraseStartBar,
+            songApexPhraseEndBar,
+            songGravityStrictness,
+            songMeterContext,
+            songTonalCharacter,
+            rng,
+        };
+
+        chords.forEach((chord, i) => {
+            const currentPhrase = phrasePlan[i];
+            const currentRole = phraseRole[i];
+            const currentShouldReturn = phraseShouldReturn[i];
+
+            // 决定当前小节使用的织体（50%概率切换到副织体，模拟对比段落）
+            const activeTexture = songTexture;
+
+            visuals.push({
+                time: beatAcc,
+                label: `${chord.root}${chord.type} (${chord.roman})`
+            });
+
+            // Divisi 2.0 — TSD function override. evaluateTensionState
+            // rewrites the function when the actual sounding chord
+            // doesn't match the roman label (suspended dominant F/G
+            // reads as D regardless of roman, pedal-on-key reads as T,
+            // 6/4 second-inversion reads as D). Cadence Resolution
+            // and other downstream func-aware logic must see the
+            // effective function, not the roman-derived one.
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            const isLast = i === chords.length - 1;
+            const nextChord = isLast ? null : chords[i + 1];
+
+            const prevChord = i > 0 ? chords[i - 1] : null;
+            const { patternEvents, bridgeVisual } = generateBarPattern(
+                chord, nextChord, style, beatAcc, currentPhrase, func, isLast, musicKey, musicMode, tensionTracker, melodyState,
+                activeTexture, isShuffle, accentMode, i, chords.length, density, complexity, currentRole,
+                currentShouldReturn, ctx.motifInterval, fillScales[i], backboneTargets[i], prevChord,
+                phraseRoleByBar[i], songCtx,
+            );
+            events.push(...patternEvents);
+            if (bridgeVisual) {
+                visuals.push(bridgeVisual);
+            }
+            beatAcc += chord.duration;
+        });
+
+        events = events.filter(e => {
+            if (!Number.isFinite(e.noteNumber) || isNaN(e.noteNumber) || !Number.isFinite(e.duration) || e.duration <= 0) {
+                 console.warn("Filtered out invalid note event generated by engine:", e);
+                 return false;
+            }
+            return true;
+        });
+
+        // Bass AND chord both always retained. Dropping either layer
+        // produces audibly broken arrangements:
+        //   - drop bass → slash chords / inversions / Divisi state lose
+        //     their harmonic anchor (audit case: BLUES_001/RNB_001/
+        //     JAZZ_002 prior to this had bass=0)
+        //   - drop chord → harmonic identity vanishes, listener hears
+        //     "melody + lone bass note" (audit case: POP_gc1z2g + JAZZ_002
+        //     prior to this had chord=0)
+        // For sparse-arrangement variation, do it at the velocity / density
+        // level (lower chord velocities), not by dropping the whole layer.
+        const chordLayerDropped = false;
+
+        // Bass-only compensation. When the chord layer was dropped,
+        // the listener has only the bass (root pc) plus the melody —
+        // the chord's 3rd / 5th / 7th identity is otherwise unheard.
+        // Inject melody enrichment so the chord color is reconstructed
+        // through the melody:
+        //   1. Long melody notes (>= 1.0 beat) on backbone positions
+        //      get a SECOND simultaneous chord-tone in a nearby octave
+        //      (50% chance per qualifying note).
+        //   2. Wide gaps between melody events (>= 1.0 beat) get a
+        //      chord-tone passing note inserted at the gap's mid-point.
+        //
+        // The compensation is deterministic (forked Random
+        // `seed::bassOnlyComp`) and only fires when chordLayerDropped.
+        // Original melody notes are not modified — only NEW notes are
+        // added alongside.
+        if (chordLayerDropped) {
+            const compFork = new Random(`${config.seed}::bassOnlyComp`);
+            const compInserts: NoteEvent[] = [];
+            const melSorted = events
+                .filter(e => e.part === 'melody')
+                .sort((a, b) => a.time - b.time);
+
+            // Pre-compute per-bar chord lookup
+            const chordAt = (t: number): ChordDef => {
+                const ci = Math.min(Math.floor(t / 4), chords.length - 1);
+                return chords[Math.max(0, ci)];
+            };
+
+            // 1. Double-stops on long held melody notes
+            for (const e of melSorted) {
+                if (e.duration < 1.0) continue;
+                if (compFork.next() > 0.5) continue;
+                const c = chordAt(e.time);
+                const intervals = CHORD_TYPES[c.type] || [0, 4, 7];
+                const rootPc = (((c.rootMidi % 12) + 12) % 12);
+                const melPc = (((e.noteNumber % 12) + 12) % 12);
+                // Pick a chord tone that's NOT the same pitch class as
+                // the melody. Prefer the chord 3rd or 5th (defining
+                // tones); otherwise 7th.
+                const chordPcs = intervals
+                    .map(iv => (rootPc + iv) % 12)
+                    .filter(pc => pc !== melPc);
+                if (chordPcs.length === 0) continue;
+                // Prefer 3rd if available
+                const preferredIv = intervals.find(iv => iv === 3 || iv === 4);
+                const targetPc = preferredIv !== undefined
+                    ? (rootPc + preferredIv) % 12
+                    : chordPcs[Math.floor(compFork.next() * chordPcs.length)];
+                if (targetPc === melPc) continue;
+                // Place the double-stop a 3rd-or-6th below the melody
+                // (whichever lands on targetPc within MELODY_RANGE).
+                let candidateMidi = e.noteNumber;
+                let bestDist = Infinity;
+                for (let octShift = -2; octShift <= 0; octShift++) {
+                    const baseOct = Math.floor(e.noteNumber / 12) + octShift;
+                    const cand = baseOct * 12 + targetPc;
+                    if (cand >= MELODY_RANGE.LOW && cand < e.noteNumber) {
+                        const d = e.noteNumber - cand;
+                        if (d < bestDist) { bestDist = d; candidateMidi = cand; }
+                    }
+                }
+                if (candidateMidi !== e.noteNumber && candidateMidi >= MELODY_RANGE.LOW) {
+                    compInserts.push({
+                        noteNumber: candidateMidi,
+                        time: e.time,
+                        duration: e.duration,
+                        velocity: Math.max(60, Math.round(e.velocity * 0.85)),
+                        part: 'melody',
+                        origin: 'develop',
+                    });
+                }
+            }
+
+            // 2. Chord-tone passing notes in melody gaps
+            for (let k = 1; k < melSorted.length; k++) {
+                const prev = melSorted[k - 1];
+                const curr = melSorted[k];
+                const gap = curr.time - (prev.time + prev.duration);
+                if (gap < 1.0) continue;
+                if (compFork.next() > 0.5) continue;
+                const c = chordAt(prev.time + prev.duration + gap / 2);
+                const intervals = CHORD_TYPES[c.type] || [0, 4, 7];
+                const rootPc = (((c.rootMidi % 12) + 12) % 12);
+                // Pick a chord tone (prefer 3rd or 5th) closest to prev pitch
+                const candidatePcs = intervals.map(iv => (rootPc + iv) % 12);
+                let bestMidi = prev.noteNumber;
+                let bestDist = Infinity;
+                for (const pc of candidatePcs) {
+                    for (let oct = -1; oct <= 1; oct++) {
+                        const baseOct = Math.floor(prev.noteNumber / 12) + oct;
+                        const cand = baseOct * 12 + pc;
+                        if (cand < MELODY_RANGE.LOW || cand > MELODY_RANGE.HIGH) continue;
+                        const d = Math.abs(cand - prev.noteNumber);
+                        if (d < bestDist && d > 0) { bestDist = d; bestMidi = cand; }
+                    }
+                }
+                if (bestDist === Infinity) continue;
+                const passTime = prev.time + prev.duration + 0.25;
+                const passDur = Math.min(0.5, gap - 0.25);
+                if (passDur >= 0.25) {
+                    compInserts.push({
+                        noteNumber: bestMidi,
+                        time: passTime,
+                        duration: passDur,
+                        velocity: 80,
+                        part: 'melody',
+                        origin: 'develop',
+                    });
+                }
+            }
+
+            events.push(...compInserts);
+        }
+
+        // Final dedupe — collapse any (time, midi, part) collisions to
+        // a single event. Sources of accidental collision: BLUES motif
+        // double-stops where two different chromaticOffsets happen to
+        // project to the same MIDI on a particular chord/anchor; Active
+        // Divisi pulling two long notes to the same vacated extension;
+        // texture's [bMLow, bM] collapsing when bMLow falls back to bM.
+        // Hearing the same pitch twice at the same instant is zero-info,
+        // and the doubled sample re-trigger produces a phase glitch on
+        // attack. Time is rounded to 4 decimals so 0.999999 ≈ 1.0
+        // floating-point fuzz doesn't survive as a separate key.
+        const dedupSeen = new Set<string>();
+        events = events.filter(e => {
+            const k = `${e.time.toFixed(4)}|${e.noteNumber}|${e.part}`;
+            if (dedupSeen.has(k)) return false;
+            dedupSeen.add(k);
+            return true;
+        });
+
+        // Single-voice melody enforcement. The dedupe pass above only
+        // collapses EXACT (time, midi, part) duplicates; two melody
+        // events at the same time with DIFFERENT pitches both survive,
+        // producing an unintended two-voice melody (the listener hears
+        // a chord on the melody line). Melody is contractually a
+        // single-voice line — at any instant the line plays one pitch.
+        //
+        // When multiple melody events collide at the same beat, pick
+        // one by priority:
+        //   1. origin: motif > return > develop (sacred boundary
+        //      wins — the motif's pitch is the engine's primary
+        //      intent; return is the cadence rewrite; develop is
+        //      mutated material and is the most replaceable).
+        //   2. velocity (higher wins — louder note is the one the
+        //      writer wanted on top).
+        //   3. higher MIDI (deterministic tiebreak).
+        const ORIGIN_PRIORITY: Record<string, number> = {
+            motif: 3,
+            return: 2,
+            develop: 1,
+        };
+        const scoreEvent = (e: NoteEvent): number =>
+            (ORIGIN_PRIORITY[e.origin ?? ''] ?? 0) * 1e6
+            + e.velocity * 1000 + e.noteNumber;
+        // Two-pass: first, find which melody event wins per (time) slot;
+        // second, filter the array in place to preserve original order.
+        // Filtering in place keeps non-melody events untouched and
+        // melody-survivor relative order stable — the snapshot's event
+        // ordering remains byte-equal when no actual collision occurs.
+        const melodyWinner = new Map<string, NoteEvent>();
+        for (const e of events) {
+            if (e.part !== 'melody') continue;
+            const k = e.time.toFixed(4);
+            const cur = melodyWinner.get(k);
+            if (!cur || scoreEvent(e) > scoreEvent(cur)) melodyWinner.set(k, e);
+        }
+        events = events.filter(e => {
+            if (e.part !== 'melody') return true;
+            const k = e.time.toFixed(4);
+            return melodyWinner.get(k) === e;
+        });
+
+        // Strict-grid quantization for non-shuffle styles. Per user:
+        // POP must be on grid; JAZZ/RNB/BLUES allowed off-grid for
+        // swing / lay-back groove. profile.grooveType === 'straight'
+        // is the gate. Cross-bar bridge / Run Generator inserts can
+        // produce 0.125 / 0.375 / 0.625 fractional onsets when slot
+        // arithmetic doesn't land on 16th boundaries — those snap to
+        // nearest 0.25-multiple here. Melody-only snap; bass / chord
+        // textures already grid-aligned via applyTexture.
+        //
+        // **Skip grace notes** (duration < 0.1 beat, develop origin):
+        // grace notes are intentional sub-grid 50ms flam attacks before
+        // the main note. Snapping them to grid collapses them onto the
+        // main note's onset (= same-time double event), reducing them
+        // to "noise" rather than "ornament". Detection: develop origin
+        // + d < 0.1 — 老师诊断"塞 32 分位置导致切断"的真凶.
+        const profileForGrid = STYLE_DICTIONARY[style];
+        if (profileForGrid?.grooveType === 'straight') {
+            events = events.map(e => {
+                if (e.part !== 'melody') return e;
+                if (e.origin === 'develop' && e.duration < 0.1) return e; // grace note pass-through
+                const snappedTime = Math.round(e.time * 4) / 4;
+                if (Math.abs(snappedTime - e.time) < 0.001) return e;
+                return { ...e, time: snappedTime };
+            });
+            // Re-dedup (snapping can create new collisions on the grid)
+            const gridSeen = new Set<string>();
+            events = events.filter(e => {
+                const k = `${e.time.toFixed(4)}|${e.noteNumber}|${e.part}`;
+                if (gridSeen.has(k)) return false;
+                gridSeen.add(k);
+                return true;
+            });
+            // Re-run single-voice melody enforcement after snap. Two
+            // melody events with different pitches but onset times like
+            // 0.245 and 0.255 both snap to 0.25 — the (time, midi, part)
+            // dedup above keeps both because they differ in noteNumber,
+            // producing an unintended 2-voice melody at the snapped
+            // grid point. Pick the higher-priority survivor by the same
+            // rule used before quantization.
+            const gridMelodyWinner = new Map<string, NoteEvent>();
+            for (const e of events) {
+                if (e.part !== 'melody') continue;
+                const k = e.time.toFixed(4);
+                const cur = gridMelodyWinner.get(k);
+                if (!cur || scoreEvent(e) > scoreEvent(cur)) gridMelodyWinner.set(k, e);
+            }
+            events = events.filter(e => {
+                if (e.part !== 'melody') return true;
+                const k = e.time.toFixed(4);
+                return gridMelodyWinner.get(k) === e;
+            });
+        }
+
+        return {
+            events, visuals,
+            unresolvedTensions: tensionTracker.unresolved.length,
+            phraseSegments,
+            phraseRoleByBar,
+            meterContext: songMeterContext,
+        };
+    }
