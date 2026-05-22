@@ -26,8 +26,8 @@
 //   - 不能放:Drums / Vocal(物理性质不同)
 // ============================================================
 
-import type { NoteData } from '../../types';
-import { BandRole } from '../../types';
+import type { GeneratedChord, NoteData } from '../../types';
+import { BandRole, ChordQuality } from '../../types';
 // C.5:MusicianPlanInput 共享协议 + per-section role gate
 import type { MusicianPlanInput, ConductorRole } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
@@ -121,17 +121,108 @@ function planForRole(
     return applyRegionProbability(filtered, region);
 }
 
+// ============================================================
+// Add11 人手物理(原 Reconciler.applyAdd11HandPhysics,Phase C → C.5 下沉)
+// ============================================================
+//
+// 物理场景:钢琴 accomp 出 add11 柱式时,11音(root + 17 半音)超左手按宽,
+// 需"借右手"按 11音,但右手不能再去高音区按 melody — 否则跟 accomp 顶部
+// 11音组成 add 20+(色彩破坏)。所以 melody 物理只能在 11音附近游走。
+//
+// 触发条件:chord.quality ∈ ELEVEN_FAMILY AND chord.voicing 实际含 11音 PC
+// 概率门:60% 触发(deterministic detHash01,与 D-5 兼容,不消耗 PRNG)
+// 调整:melody 八度移调到 11音 ±12 半音内最近位置
+//
+// C.5 下沉理由:Reconciler 现是 velocity 层 + 全局动态层,pitch 层 cross-track
+// 协调应内化到 musician.plan()。planMelody 已能看到 input.score.chords → 自给
+// 自足,不需要 Reconciler 兜底。
+// ============================================================
+
+const ELEVEN_FAMILY: ReadonlySet<ChordQuality> = new Set([
+    ChordQuality.Minor11,
+    ChordQuality.Dominant11,
+    ChordQuality.Dominant13,  // 13 includes natural 11
+    ChordQuality.Major13,
+]);
+
+const ADD11_GATE_PROBABILITY = 0.60;
+const ADD11_MAX_DIST = 12;
+
+interface ElevenWindow {
+    startBeat: number;
+    endBeat: number;
+    elevenMidi: number;  // 11音 voicing 中最高 midi(borrowed-hand 顶音)
+}
+
+function findElevenWindows(chords: ReadonlyArray<GeneratedChord>): ElevenWindow[] {
+    const out: ElevenWindow[] = [];
+    for (const chord of chords) {
+        if (!ELEVEN_FAMILY.has(chord.quality)) continue;
+        const elevenPc = ((chord.root + 5) % 12 + 12) % 12;
+        const matched = chord.voicing
+            .filter(p => (((p % 12) + 12) % 12) === elevenPc)
+            .sort((a, b) => b - a);
+        if (matched.length === 0) continue;
+        out.push({
+            startBeat: chord.startBeat,
+            endBeat: chord.endBeat,
+            elevenMidi: matched[0],
+        });
+    }
+    return out;
+}
+
+/**
+ * Add11 人手物理:在 add11 窗口内 60% 概率把 melody 移到 11音最近 octave。
+ */
+function applyAdd11HandPhysics(
+    notes: NoteData[],
+    chords: ReadonlyArray<GeneratedChord>,
+): NoteData[] {
+    if (notes.length === 0 || chords.length === 0) return notes;
+    const windows = findElevenWindows(chords);
+    if (windows.length === 0) return notes;
+
+    return notes.map(n => {
+        let window: ElevenWindow | undefined;
+        for (const w of windows) {
+            if (n.onset >= w.startBeat && n.onset < w.endBeat) { window = w; break; }
+        }
+        if (!window) return n;
+        // 概率门(60% 触发 / 40% 保留)
+        if (detHash01(n.pitch, n.onset) >= ADD11_GATE_PROBABILITY) return n;
+        // 触发:把 melody 移到最近 11音 octave(保留 PC)
+        const melodyPc = (((n.pitch % 12) + 12) % 12);
+        const targetOctave = Math.floor(window.elevenMidi / 12);
+        let best = n.pitch;
+        let bestDist = Math.abs(n.pitch - window.elevenMidi);
+        for (const oct of [targetOctave - 1, targetOctave, targetOctave + 1]) {
+            const cand = melodyPc + 12 * oct;
+            const dist = Math.abs(cand - window.elevenMidi);
+            if (dist <= ADD11_MAX_DIST && dist < bestDist) {
+                bestDist = dist;
+                best = cand;
+            }
+        }
+        return { ...n, pitch: best };
+    });
+}
+
 export const PianoIdiom = {
     /**
      * C.5:plan melody role(MainInst 槽 + Conductor 给本 musician 分 'melody' role 的 sections)。
      *
-     * 流程:input.notes.melody 是 mg 原料 → per-section role gate → Phase B 音区概率分布。
+     * 流程:
+     *   1. input.notes.melody 是 mg 原料 → per-section role gate(planForRole)
+     *   2. Phase B 主区 [C4, D6] 音区概率分布(95% 拉回 / 5% 越界)
+     *   3. Phase C add11 人手物理(下沉自 Reconciler):11音家族窗口内 60%
+     *      melody 八度移调到 11音附近(cross-track 协调内化到乐手层)
      *
-     * Phase B 主区 [C4, D6],超出 95% 拉回 / 5% 越界保留。
-     * Phase D+ 计划:melody 技巧 / 装饰 / passing tones / cross-track 物理(add11)
+     * Phase D+ 计划:melody 技巧(legato/staccato/装饰音/passing tones)
      */
     planMelody(input: MusicianPlanInput): NoteData[] {
-        return planForRole(input, 'melody', PIANO_REGIONS.melody);
+        const filtered = planForRole(input, 'melody', PIANO_REGIONS.melody);
+        return applyAdd11HandPhysics(filtered, input.score.chords);
     },
 
     /**

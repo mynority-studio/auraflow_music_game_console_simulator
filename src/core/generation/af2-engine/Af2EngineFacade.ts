@@ -233,16 +233,10 @@ export const Af2EngineFacade = {
         // DrumGenerator 直接产 NoteData,无须 DrumIdiom.realize 后处理(它也是直通)
 
         // -----------------------------------------------------------
-        // Step 5.4: Reconciler Phase C — add11 人手物理(跨 part chord → melody)
-        //
-        // 在 add11 系列(Minor11/Dominant11/Dominant13/Major13)和弦窗口内,
-        // melody 60% 概率移到 11音 ±12 半音内最近 octave(模拟借右手 → melody 受限)。
-        // 仅改 pitch,不改 onset/duration/velocity。
-        // -----------------------------------------------------------
-        const add11Main = Reconciler.applyAdd11HandPhysics(renderedMainRaw, mg.chords);
-
-        // -----------------------------------------------------------
         // Step 5.5: Reconciler v1.0 — 段落能量驱动 velocity humanization
+        //
+        // Note:Phase C add11 人手物理(原 Step 5.4)已下沉到 PianoIdiom.planMelody
+        // 内化(commit C.5 末)。Reconciler 现在专注 velocity / 段落动态层。
         //
         // 对 melody / accompaniment / bass 三轨按段落 energyLevel 缩放 velocity:
         //   energy 1 → ×0.70(intro 弱)/ 5 → ×1.00 / 10 → ×1.10(chorus 略强)
@@ -250,7 +244,7 @@ export const Af2EngineFacade = {
         // **跳过 drums / atmosphere** — DrumGenerator 已带 energyVelScale,
         // PadGenerator 已用 energy 决定 velocity,二次缩放会过度。
         // -----------------------------------------------------------
-        const energyMain   = Reconciler.applyEnergyHumanization(add11Main, sections);
+        const energyMain   = Reconciler.applyEnergyHumanization(renderedMainRaw, sections);
         const energyAccomp = Reconciler.applyEnergyHumanization(renderedAccompRaw, sections);
         const energyBass   = Reconciler.applyEnergyHumanization(renderedBassRaw, sections);
 
