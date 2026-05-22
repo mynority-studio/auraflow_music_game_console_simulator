@@ -16,9 +16,9 @@ import {
     harmonicFunctionFromRoman, QUANTIZED_DURATIONS, Random,
     KEYS, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
 } from './musicEngine';
-import type { ChordDef, GenerationConfig, ResolvedGenerationContext } from './musicEngine';
+import type { ChordDef, GenerationConfig, ResolvedGenerationContext, NoteContext, HardConstraint, SoftScore } from './musicEngine';
 import {
-    CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote,
+    CHORD_TYPES, SCALE_TYPES, noteToMidi, isAvoidNote, MELODY_RANGE, classifyEngineChordType,
     getModeAwareSubstitutions, modeProgressionTemplate,
     MAINSTREAM_EMOTION_TO_MODE, MAJOR_FLAVOR_MODES,
     EXOTIC_MODE_PROBABILITY, EXOTIC_MODES,
@@ -1342,4 +1342,330 @@ export function generateProgressions(config: GenerationConfig, rng: Random): Cho
     const bars = STYLE_DICTIONARY[style]?.recommendedBars ?? 16;
     const progression = generateProgression(style, bars, ctx.mode, rng);
     return realizeProgression(progression, key, style, ctx, rng);
+}
+
+// ============================================================
+// Phase 3 — Group A 续:arrangement 层的 stateless helpers
+// ============================================================
+
+/**
+ * 抽自 mg.Engine.predictMotifStructuralPcs (原 L2088-2113)。
+ * 给定 motif + chord + runScale,预测每个 structural note(strong beat / 长音
+ * / 末音)落在的 pc 集合。给 evaluator 做 motif 形状评估用。
+ *
+ * 0 state / 0 PRNG。
+ */
+export function predictMotifStructuralPcs(motif: any[], chord: ChordDef, runScale: number[]): Set<number> {
+    const out = new Set<number>();
+    if (motif.length === 0) return out;
+    const chordRootPc = (((chord.rootMidi % 12) + 12) % 12);
+    const scalePcs = Array.from(new Set(runScale.map(x => ((x % 12) + 12) % 12))).sort((a, b) => a - b);
+    const N = scalePcs.length || 7;
+    const rootIdx = scalePcs.indexOf(chordRootPc);
+    const startIdx = rootIdx >= 0 ? rootIdx : 0;
+    for (let i = 0; i < motif.length; i++) {
+        const m = motif[i];
+        const beatPos = ((m.t % 4) + 4) % 4;
+        const isStrong = Math.abs(beatPos) < 0.05 || Math.abs(beatPos - 2) < 0.05;
+        const isLong = m.d >= 1.5;
+        const isLast = i === motif.length - 1;
+        if (!(isStrong || isLong || isLast)) continue;
+        let pc: number;
+        if ('chromaticOffset' in m) {
+            pc = ((chordRootPc + m.chromaticOffset) % 12 + 12) % 12;
+        } else {
+            const targetIdx = ((startIdx + m.diatonicStep) % N + N) % N;
+            pc = scalePcs[targetIdx];
+        }
+        out.add(pc);
+    }
+    return out;
+}
+
+/**
+ * 抽自 mg.Engine.estimateMotifConflictRatio (原 L1867-1915)。
+ * 估算 motif 中有多少音是 chord context 下的 avoid note,返回 [0, 1] 冲突率。
+ *
+ * Dominant chord 上的 3→4 上行半音 motion(false resolve)额外计 ×4 conflict,
+ * 任一对此类 motion 即足以排除该 motif 候选。
+ *
+ * 0 state / 0 PRNG。
+ */
+export function estimateMotifConflictRatio(
+    motif: any[],
+    chord: ChordDef,
+    runScale: number[],
+    func: string = 'T',
+    isModalContext: boolean = false,
+    scaleName?: string,
+): number {
+    if (motif.length === 0) return 0;
+    const chordRootPc = (((chord.rootMidi % 12) + 12) % 12);
+    const scalePcsSet = new Set<number>();
+    runScale.forEach(m => scalePcsSet.add((((m % 12) + 12) % 12)));
+    let scalePcs = Array.from(scalePcsSet).sort((a, b) => a - b);
+    if (scalePcs.length === 0) {
+        scalePcs = SCALE_TYPES['Ionian'].map(iv => (chordRootPc + iv) % 12).sort((a, b) => a - b);
+    }
+    const rootIdx = scalePcs.indexOf(chordRootPc);
+    const rotated = rootIdx >= 0
+        ? [...scalePcs.slice(rootIdx), ...scalePcs.slice(0, rootIdx)]
+        : scalePcs;
+    const N = rotated.length;
+
+    let conflicts = 0;
+    const isDominant = chord.effectiveFunc === 'D'
+        || getHarmonicFunction(chord.roman) === 'D';
+    const ivs: number[] = [];
+    for (const note of motif) {
+        let pc: number;
+        if ('chromaticOffset' in note) {
+            pc = (((chordRootPc + note.chromaticOffset) % 12) + 12) % 12;
+        } else {
+            const step = note.diatonicStep;
+            const wrappedStep = ((step % N) + N) % N;
+            pc = rotated[wrappedStep];
+        }
+        const intvFromChordRoot = (((pc - chordRootPc) % 12) + 12) % 12;
+        ivs.push(intvFromChordRoot);
+        if (isAvoidNote(intvFromChordRoot, chord.type, scaleName, isModalContext, func)) conflicts++;
+    }
+    // 老师规则 1:D 函数 3→4 上行半音(false-resolve)× 4 倍计 conflict
+    if (isDominant) {
+        for (let i = 0; i < ivs.length - 1; i++) {
+            if (ivs[i] === 4 && ivs[i + 1] === 5) conflicts += 4;
+        }
+    }
+    return Math.min(1, conflicts / motif.length);
+}
+
+/**
+ * Hard-filter relaxation priority(原 mg.Engine.HARD_FILTER_PRIORITY static)。
+ * Selectee 在候选池空时按 priority 从高到低 drop filter。0 = 最重要(保留最久),
+ * 13 = 最不重要(最先丢)。
+ *
+ * Load-bearing musical(0-8)— chord identity / avoid on strong beat / tendency
+ * resolution / phrase cadence / pending tension resolution / acoustic clash /
+ * gravity-line closure。任一被丢都产生可听 "wrong note"。
+ *
+ * Etiquette(9-13)— leap-cap / apex headroom / pc-repeat / leap-recovery /
+ * anti-monotonicity。违反时降级形状,不破和声;池子稀疏时优先丢弃。
+ */
+export const HARD_FILTER_PRIORITY: Record<string, number> = {
+    'in-melody-range': 0,
+    'no-avoid': 1,
+    'in-chord-contract': 2,
+    'saturation-resolve': 3,
+    'unified-tension-resolution': 4,
+    'phrase-end-no-unresolved-avoid': 5,
+    'no-cross-octave-m9': 6,
+    'scale-gravity-line': 7,
+    'color-line': 8,
+    'leap-octave-cap': 9,
+    'apex-headroom': 10,
+    'no-same-pc-repeat': 11,
+    'leap-recovery': 12,
+    'anti-monotonicity': 13,
+};
+
+/**
+ * 抽自 mg.Engine.selectBestMidi (原 L2191-2281)。
+ * AND-architecture melody constraint selector:
+ *   1. 建 candidate pool(runScale ±10 半音 + chord literal pcs 邻近八度
+ *      + apex pitch guard)
+ *   2. Hard filters 按 priority 排序应用;空池时从末尾 relax
+ *   3. Soft scores 加权打分;motif intent 距离微 penalty(0.15)preserve 形状
+ *
+ * 全 fail fallback:return ctx.motifProjMidi。
+ *
+ * 0 state / 0 PRNG(完全依赖 ctx + filters + scores)。
+ */
+export function selectBestMidi(
+    ctx: NoteContext,
+    hardFilters: HardConstraint[],
+    softScores: SoftScore[],
+): number {
+    const proj = ctx.motifProjMidi;
+
+    // 1. Build candidate pool
+    const candSet = new Set<number>();
+    if (proj >= MELODY_RANGE.LOW && proj <= MELODY_RANGE.HIGH) candSet.add(proj);
+    for (const sm of ctx.runScale) {
+        if (Math.abs(sm - proj) <= 10
+            && sm >= MELODY_RANGE.LOW && sm <= MELODY_RANGE.HIGH) {
+            candSet.add(sm);
+        }
+    }
+    const literal = CHORD_TYPES[ctx.chord.type] || [0, 4, 7];
+    const rootPc = (((ctx.chord.rootMidi % 12) + 12) % 12);
+    for (const iv of literal) {
+        const pc = (rootPc + iv) % 12;
+        for (let oct = 4; oct <= 7; oct++) {
+            const m = oct * 12 + pc;
+            if (Math.abs(m - proj) <= 12
+                && m >= MELODY_RANGE.LOW && m <= MELODY_RANGE.HIGH) {
+                candSet.add(m);
+            }
+        }
+    }
+
+    // Rule 10 — apex pitch guard
+    if (ctx.isApexBar && ctx.isStructural && ctx.apexPitchMidi > 0
+        && ctx.apexPitchMidi >= MELODY_RANGE.LOW
+        && ctx.apexPitchMidi <= MELODY_RANGE.HIGH) {
+        candSet.add(ctx.apexPitchMidi);
+    }
+
+    const cands = Array.from(candSet);
+
+    // 2. Hard filters with relaxation
+    const activeFilters = hardFilters
+        .filter(f => f.shouldApply(ctx))
+        .slice()
+        .sort((a, b) =>
+            (HARD_FILTER_PRIORITY[a.name] ?? 999) - (HARD_FILTER_PRIORITY[b.name] ?? 999)
+        );
+    let valid = cands.filter(midi => activeFilters.every(f => f.accept(midi, ctx)));
+    let droppedFilters = 0;
+    while (valid.length === 0 && droppedFilters < activeFilters.length) {
+        droppedFilters++;
+        const relaxed = activeFilters.slice(0, activeFilters.length - droppedFilters);
+        valid = cands.filter(midi => relaxed.every(f => f.accept(midi, ctx)));
+    }
+    if (valid.length === 0) {
+        return ctx.motifProjMidi;
+    }
+
+    // 3. Soft score + tiny distance penalty
+    const activeScores = softScores.filter(s => s.shouldApply(ctx));
+    let best = valid[0];
+    let bestScore = -Infinity;
+    for (const midi of valid) {
+        let total = 0;
+        for (const s of activeScores) {
+            total += s.weight * s.score(midi, ctx);
+        }
+        total -= 0.15 * Math.abs(midi - ctx.motifProjMidi);
+        if (total > bestScore) {
+            bestScore = total;
+            best = midi;
+        }
+    }
+    return best;
+}
+
+/** "Motifs as Islands" selector tuning(原 Engine.N_CANDIDATES static)。
+ *  从 final pool 抽 5 个候选,按 conflict-aware 排序选最优。 */
+export const N_CANDIDATES = 5;
+/** Memory reuse 概率(原 Engine.MEMORY_REUSE_PROB static)。
+ *  同 memoryKey 重出时,60% 复用 cached motif,40% 重新选 — 兼顾 thematic
+ *  recurrence 与 variation。 */
+export const MEMORY_REUSE_PROB = 0.60;
+
+/**
+ * 抽自 mg.Engine.selectBestMotif (原 L1937-2040)。
+ * "Motifs as Islands" selector — 替换盲目 `random.pick(pool)`,加入:
+ *   1. Three-tier 上下文 pre-filter(allowedQualities × allowedTSD)
+ *   2. Memory 复用 60% 概率(同 chord 上下文复用之前选过的 motif)
+ *   3. N=5 候选抽样 + multi-criteria 评分(backbone × 2.0 + vlIn × 1.0 +
+ *      vlOut × 1.5 + variety × 0.5 + parallelism × 0.8 - avoidRate × 1.0)
+ *   4. Cache winner to thematicMemory
+ *
+ * Zero-Drift property:pure-array pool → Tier1 == Tier2 == pool → 与 pre-upgrade
+ * `random.pick` 行为等价。Cache hit 也 drain 5 次 random.pick,stream 对称。
+ *
+ * PRNG 消耗:固定 1(memory roll)+ N_CANDIDATES(候选抽样)= 6 次,与分支无关。
+ */
+export function selectBestMotif(
+    pool: (any[] | { notes: any[]; rules?: any })[],
+    chord: ChordDef,
+    runScale: number[],
+    memoryKey: string,
+    thematicMemory: Record<string, any[]>,
+    backboneTargets: Set<number> | null = null,
+    vlIn: Set<number> | null = null,
+    vlOut: Set<number> | null = null,
+    prevPhrasePcs: Set<number> | null = null,
+    rng: Random = new Random('default'),
+): any[] {
+    if (!pool || pool.length === 0) return [];
+
+    // Three-tier context-aware pre-filter
+    const chordQuality = classifyEngineChordType(chord.type);
+    const currentFunc: 'T' | 'S' | 'D' = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+    const tier1: (any[] | { notes: any[]; rules?: any })[] = [];
+    const tier2: (any[] | { notes: any[]; rules?: any })[] = [];
+    for (const item of pool) {
+        if (Array.isArray(item)) {
+            tier1.push(item);
+            tier2.push(item);
+            continue;
+        }
+        const rules = item.rules;
+        if (!rules) {
+            tier1.push(item);
+            tier2.push(item);
+            continue;
+        }
+        const passQuality = !rules.allowedQualities
+            || rules.allowedQualities.includes(chordQuality);
+        const passTSD = !rules.allowedTSD
+            || rules.allowedTSD.includes(currentFunc);
+        if (passQuality) {
+            tier2.push(item);
+            if (passTSD) tier1.push(item);
+        }
+    }
+    let finalPool: (any[] | { notes: any[]; rules?: any })[] = pool;
+    if (tier1.length >= 3) finalPool = tier1;
+    else if (tier2.length >= 3) finalPool = tier2;
+
+    // Memory reuse roll
+    const memRoll = rng.next();
+    const cached = thematicMemory[memoryKey];
+    if (cached && memRoll < MEMORY_REUSE_PROB) {
+        // Drain N_CANDIDATES picks even on cache hit so stream stays symmetric
+        for (let i = 0; i < N_CANDIDATES; i++) rng.pick(finalPool);
+        return cached;
+    }
+
+    // Draw N candidates
+    const candidates: (any[] | { notes: any[]; rules?: any })[] = [];
+    for (let i = 0; i < N_CANDIDATES; i++) {
+        candidates.push(rng.pick(finalPool));
+    }
+
+    let best: any = candidates[0];
+    let bestRank = -Infinity;
+    for (const c of candidates) {
+        const notes = Array.isArray(c) ? c : c.notes;
+        const avoidRate = estimateMotifConflictRatio(notes, chord, runScale);
+        const backboneHit = backboneTargets
+            ? estimateBackboneAlignment(notes, chord, runScale, backboneTargets)
+            : 0;
+        const { vlInHit, vlOutHit, variety } =
+            estimateMotifShapeMetrics(notes, chord, runScale, vlIn, vlOut);
+        let parallelismHit = 0;
+        if (prevPhrasePcs && prevPhrasePcs.size > 0) {
+            const candPcs = predictMotifStructuralPcs(notes, chord, runScale);
+            if (candPcs.size > 0) {
+                let inter = 0;
+                candPcs.forEach(p => { if (prevPhrasePcs!.has(p)) inter++; });
+                const union = candPcs.size + prevPhrasePcs.size - inter;
+                const sim = union > 0 ? inter / union : 0;
+                parallelismHit = Math.max(0, 1 - 2 * Math.abs(sim - 0.5));
+            }
+        }
+        const rank = backboneHit * 2.0
+            + vlInHit * 1.0
+            + vlOutHit * 1.5
+            + variety * 0.5
+            + parallelismHit * 0.8
+            - avoidRate * 1.0;
+        if (rank > bestRank) { bestRank = rank; best = c; }
+    }
+
+    const bestNotes = Array.isArray(best) ? best : best.notes;
+    thematicMemory[memoryKey] = bestNotes;
+    return bestNotes;
 }
