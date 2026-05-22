@@ -193,6 +193,21 @@ export const CONDUCTOR_TEMPLATES_BY_STYLE: Record<MgStyle, ConductorTemplate> = 
     },
 };
 
+/**
+ * Energy-driven role 修正:section.energyLevel 1-10 映射到"密度档"。
+ *   1-2(极低 energy,Intro 渐入 / Outro 渐弱):**仅 pad + bass + accomp**(无 melody / drums)
+ *   3-4(低 energy):允许 +melody,无 drums
+ *   5-7(中等):允许所有 roles(走 template)
+ *   8-10(高 energy):同上(template 已是 5 roles)
+ *
+ * 与 Conductor.template 做 INTERSECTION → 双向 conservative。
+ */
+function energyConstrainedRoles(energyLevel: number): ReadonlySet<ConductorRole> {
+    if (energyLevel <= 2) return new Set<ConductorRole>(['pad', 'bass', 'accomp']);
+    if (energyLevel <= 4) return new Set<ConductorRole>(['pad', 'bass', 'accomp', 'melody']);
+    return new Set<ConductorRole>(['pad', 'bass', 'accomp', 'melody', 'drums']);
+}
+
 export class DynamicConductor implements Conductor {
     private readonly template: ConductorTemplate;
 
@@ -210,24 +225,25 @@ export class DynamicConductor implements Conductor {
         }
 
         return score.sections.map((section, idx) => {
-            const allowedRoles = this.template[section.sectionType];
+            // 综合决策(B 升级):template ∩ energyOverride
+            const templateRoles = this.template[section.sectionType];
+            const energyRoles = energyConstrainedRoles(section.energyLevel ?? 5);
             const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
 
             for (const [musicianId, roles] of fullByMusician) {
                 let kept = roles as ReadonlyArray<ConductorRole>;
-                // (1) Style template filter(若注册)
-                if (allowedRoles) {
-                    kept = kept.filter(r => allowedRoles.has(r));
-                }
-                // (2) Layer 3:musician 卡 sectionRolePreference INTERSECTION
+                // (1) Style template filter
+                if (templateRoles) kept = kept.filter(r => templateRoles.has(r));
+                // (2) Energy-driven filter(综合决策 B 升级)
+                //     低 energy section 强制减员,即使 template 允许;
+                //     高 energy 不额外限制(已 template-bound)
+                kept = kept.filter(r => energyRoles.has(r));
+                // (3) Layer 3:musician 卡 sectionRolePreference INTERSECTION
                 const musicianPref = musicianById.get(musicianId)?.af2Overrides?.sectionRolePreference?.[section.sectionType];
                 if (musicianPref !== undefined) {
-                    // musician 卡明确声明该 section 偏好 — 只保留 pref 内的 roles
-                    // 空 Set = musician 主动 silent
                     kept = kept.filter(r => musicianPref.has(r));
                 }
                 if (kept.length > 0) filtered.set(musicianId, Object.freeze([...kept]));
-                // kept 空 → 该 musician 该段 silent(不进 map)
             }
             return { sectionIdx: idx, byMusician: filtered };
         });

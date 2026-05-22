@@ -58,20 +58,56 @@ const V  = (type = 'maj'): Af2AbstractStep => ({ roman: 'V',  type, rootOffset: 
 const vi = (type = 'min'): Af2AbstractStep => ({ roman: 'vi', type, rootOffset: 9, scaleDegree: 6 });
 const bVII = (type = 'maj'): Af2AbstractStep => ({ roman: 'bVII', type, rootOffset: 10, scaleDegree: 7 });
 
-/** 默认 fallback 进行(每 sectionType 兜底,POP-flavored) */
+/** 默认 fallback 进行(每 sectionType 兜底,POP-flavored — 多条候选增加多样性) */
 const DEFAULT_BY_SECTION: Partial<Record<SectionType, ProgressionPool>> = {
-    [SectionType.Intro]:     [[ I(), V() ]],
-    [SectionType.Verse]:     [[ I(), V(), vi(), IV() ], [ I(), vi(), IV(), V() ]],
-    [SectionType.PreChorus]: [[ vi(), IV(), V(), V() ], [ IV(), V(), V(), V() ]],
-    [SectionType.Chorus]:    [[ I(), V(), vi(), IV() ], [ vi(), IV(), I(), V() ]],
-    [SectionType.Bridge]:    [[ vi(), iii(), IV(), I() ], [ bVII(), IV(), I(), I() ]],
-    [SectionType.BuildUp]:   [[ V(), V(), V(), V() ]],  // V pedal
-    [SectionType.Drop]:      [[ I(), I(), I(), I() ]],
-    [SectionType.Break]:     [[ I(), IV(), I(), I() ]],
-    [SectionType.Breakdown]: [[ I(), I(), I(), I() ]],
-    [SectionType.PreOutro]:  [[ vi(), V(), IV(), I() ]],
-    [SectionType.Outro]:     [[ I(), IV(), I(), I() ], [ vi(), V(), I(), I() ]],
-    [SectionType.Solo_Bridge]: [[ ii(), V(), I(), vi() ]],
+    [SectionType.Intro]: [
+        [ I(), V() ],
+        [ I(), vi() ],          // sad intro
+        [ vi(), V() ],          // suspenseful
+        [ I(), IV() ],          // church
+        [ I(), iii() ],         // dreamy
+    ],
+    [SectionType.Verse]: [
+        [ I(), V(), vi(), IV() ],          // Axis of Awesome
+        [ I(), vi(), IV(), V() ],          // 50s
+        [ vi(), IV(), I(), V() ],          // sad verse
+        [ I(), iii(), IV(), V() ],         // ascending mediant
+        [ I(), V(), IV(), V() ],           // simple loop
+    ],
+    [SectionType.PreChorus]: [
+        [ vi(), IV(), V(), V() ],          // build
+        [ IV(), V(), V(), V() ],           // V tension
+        [ I(), V(), vi(), V() ],           // bounce-build
+        [ ii(), IV(), V(), V() ],          // subdom build
+    ],
+    [SectionType.Chorus]: [
+        [ I(), V(), vi(), IV() ],          // pumping
+        [ vi(), IV(), I(), V() ],          // Coldplay
+        [ IV(), I(), V(), vi() ],          // anthem
+        [ I(), IV(), V(), IV() ],          // simple loop
+        [ I(), V(), IV(), V() ],           // dance pop
+    ],
+    [SectionType.Bridge]: [
+        [ vi(), iii(), IV(), I() ],        // modulation feel
+        [ bVII(), IV(), I(), I() ],        // mixolydian borrowing
+        [ ii(), V(), iii(), vi() ],        // jazzy bridge
+        [ IV(), V(), iii(), vi() ],        // emo-pop
+    ],
+    [SectionType.BuildUp]:   [[ V(), V(), V(), V() ], [ IV(), V(), IV(), V() ]],
+    [SectionType.Drop]:      [[ I(), I(), I(), I() ], [ vi(), IV(), I(), V() ]],
+    [SectionType.Break]:     [[ I(), IV(), I(), I() ], [ vi(), V(), I(), I() ]],
+    [SectionType.Breakdown]: [[ I(), I(), I(), I() ], [ vi(), I(), V(), I() ]],
+    [SectionType.PreOutro]:  [[ vi(), V(), IV(), I() ], [ IV(), V(), I(), I() ]],
+    [SectionType.Outro]: [
+        [ I(), IV(), I(), I() ],
+        [ vi(), V(), I(), I() ],
+        [ IV(), V(), I(), I() ],           // plagal resolve
+        [ I(), V(), I(), I() ],            // simple
+    ],
+    [SectionType.Solo_Bridge]: [
+        [ ii(), V(), I(), vi() ],
+        [ iii(), vi(), ii(), V() ],
+    ],
 };
 
 /** Per-mgStyle 全曲 fallback(老 API,单循环 progression) */
@@ -147,12 +183,38 @@ const AF2_PROGRESSION_POOL: Record<MgStyle, ReadonlyArray<ReadonlyArray<Af2Abstr
 const SECTION_POOLS_BY_STYLE: Record<MgStyle, Partial<Record<SectionType, ProgressionPool>>> = {
     POP: DEFAULT_BY_SECTION,
     JAZZ: {
-        [SectionType.Intro]:     [[ ii('m7'), V('7') ]],
-        [SectionType.Verse]:     [[ I('maj7'), vi('m7'), ii('m7'), V('7') ], [ ii('m7'), V('7'), I('maj7'), vi('m7') ]],
-        [SectionType.PreChorus]: [[ ii('m7'), V('7'), ii('m7'), V('7') ]],
-        [SectionType.Chorus]:    [[ I('maj7'), V('7'), vi('m7'), IV('maj7') ], [ ii('m7'), V('7'), I('maj7'), I('maj7') ]],
-        [SectionType.Bridge]:    [[ iii('m7'), vi('m7'), ii('m7'), V('7') ]],
-        [SectionType.Outro]:     [[ I('maj7'), I('maj7'), I('maj7'), I('maj7') ]],
+        [SectionType.Intro]: [
+            [ ii('m7'), V('7') ],
+            [ iii('m7'), vi('m7') ],          // modulation hint
+            [ IV('maj7'), V('7') ],
+        ],
+        [SectionType.Verse]: [
+            [ I('maj7'), vi('m7'), ii('m7'), V('7') ],   // Anatole
+            [ ii('m7'), V('7'), I('maj7'), vi('m7') ],   // turnaround start
+            [ I('maj7'), iii('m7'), vi('m7'), ii('m7') ], // descending
+            [ ii('m7'), V('7'), iii('m7'), vi('m7') ],   // V/vi insertion
+        ],
+        [SectionType.PreChorus]: [
+            [ ii('m7'), V('7'), ii('m7'), V('7') ],
+            [ IV('maj7'), V('7'), ii('m7'), V('7') ],    // IV-V-ii-V
+            [ vi('m7'), ii('m7'), V('7'), V('7') ],      // build
+        ],
+        [SectionType.Chorus]: [
+            [ I('maj7'), V('7'), vi('m7'), IV('maj7') ],
+            [ ii('m7'), V('7'), I('maj7'), I('maj7') ],
+            [ I('maj7'), vi('m7'), ii('m7'), V('7') ],   // turnaround
+            [ IV('maj7'), iii('m7'), ii('m7'), V('7') ], // descending
+        ],
+        [SectionType.Bridge]: [
+            [ iii('m7'), vi('m7'), ii('m7'), V('7') ],
+            [ IV('maj7'), iii('m7'), ii('m7'), I('maj7') ], // descending stepwise
+            [ vi('m7'), ii('m7'), V('7'), I('maj7') ],     // jazz cycle
+        ],
+        [SectionType.Outro]: [
+            [ I('maj7'), I('maj7'), I('maj7'), I('maj7') ],
+            [ ii('m7'), V('7'), I('maj7'), I('maj7') ],  // final cadence
+        ],
+        [SectionType.PreOutro]: [[ ii('m7'), V('7'), iii('m7'), vi('m7') ]],
     },
     BLUES: {
         // BLUES 通常用 12-bar 整曲,这里按 section 拆 4-bar 片段
@@ -163,12 +225,40 @@ const SECTION_POOLS_BY_STYLE: Record<MgStyle, Partial<Record<SectionType, Progre
         [SectionType.Outro]:     [[ I('7'), IV('7'), I('7'), I('7') ]],
     },
     RNB: {
-        [SectionType.Intro]:     [[ I('maj7'), IV('maj7') ]],
-        [SectionType.Verse]:     [[ I('maj7'), iii('m7'), vi('m7'), IV('maj7') ], [ ii('m7'), V('7'), I('maj7'), IV('maj7') ]],
-        [SectionType.PreChorus]: [[ ii('m7'), V('7'), ii('m7'), V('7') ]],
-        [SectionType.Chorus]:    [[ I('maj7'), V('7'), vi('m7'), IV('maj7') ], [ vi('m7'), IV('maj7'), I('maj7'), V('7') ]],
-        [SectionType.Bridge]:    [[ IV('maj7'), iii('m7'), ii('m7'), I('maj7') ]],
-        [SectionType.Outro]:     [[ I('maj7'), IV('maj7'), I('maj7'), I('maj7') ]],
+        [SectionType.Intro]: [
+            [ I('maj7'), IV('maj7') ],
+            [ I('maj7'), iii('m7') ],         // dreamy
+            [ IV('maj7'), I('maj7') ],
+            [ vi('m7'), IV('maj7') ],         // sad intro
+        ],
+        [SectionType.Verse]: [
+            [ I('maj7'), iii('m7'), vi('m7'), IV('maj7') ], // neo-soul 标志
+            [ ii('m7'), V('7'), I('maj7'), IV('maj7') ],
+            [ vi('m7'), IV('maj7'), I('maj7'), V('7') ],    // sad RnB
+            [ I('maj7'), V('7'), vi('m7'), iii('m7') ],     // descending
+        ],
+        [SectionType.PreChorus]: [
+            [ ii('m7'), V('7'), ii('m7'), V('7') ],
+            [ IV('maj7'), V('7'), iii('m7'), vi('m7') ],
+            [ ii('m7'), iii('m7'), IV('maj7'), V('7') ],    // build
+        ],
+        [SectionType.Chorus]: [
+            [ I('maj7'), V('7'), vi('m7'), IV('maj7') ],
+            [ vi('m7'), IV('maj7'), I('maj7'), V('7') ],
+            [ I('maj7'), IV('maj7'), vi('m7'), V('7') ],    // anthem RnB
+            [ IV('maj7'), V('7'), iii('m7'), vi('m7') ],    // descending
+        ],
+        [SectionType.Bridge]: [
+            [ IV('maj7'), iii('m7'), ii('m7'), I('maj7') ],
+            [ bVII('maj7'), IV('maj7'), I('maj7'), I('maj7') ], // bVII modal borrowing
+            [ vi('m7'), ii('m7'), V('7'), I('maj7') ],
+        ],
+        [SectionType.Outro]: [
+            [ I('maj7'), IV('maj7'), I('maj7'), I('maj7') ],
+            [ IV('maj7'), I('maj7'), I('maj7'), I('maj7') ], // plagal
+            [ vi('m7'), V('7'), I('maj7'), I('maj7') ],
+        ],
+        [SectionType.PreOutro]: [[ IV('maj7'), V('7'), I('maj7'), I('maj7') ]],
     },
 };
 
