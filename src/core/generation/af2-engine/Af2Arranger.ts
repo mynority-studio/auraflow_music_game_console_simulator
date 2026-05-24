@@ -88,7 +88,7 @@ export interface Af2AbstractStep {
 // Section-aware 进行池 helpers — 各 section 类型用专门 progression
 type ProgressionPool = ReadonlyArray<ReadonlyArray<Af2AbstractStep>>;
 
-// 常用级数 builder(避免重复代码)
+// 常用级数 builder(Major 调式;大小写遵循 Major-key roman 习惯)
 const I  = (type = 'maj'): Af2AbstractStep => ({ roman: 'I',  type, rootOffset: 0, scaleDegree: 1 });
 const ii = (type = 'min'): Af2AbstractStep => ({ roman: 'ii', type, rootOffset: 2, scaleDegree: 2 });
 const iii = (type = 'min'): Af2AbstractStep => ({ roman: 'iii', type, rootOffset: 4, scaleDegree: 3 });
@@ -96,6 +96,17 @@ const IV = (type = 'maj'): Af2AbstractStep => ({ roman: 'IV', type, rootOffset: 
 const V  = (type = 'maj'): Af2AbstractStep => ({ roman: 'V',  type, rootOffset: 7, scaleDegree: 5 });
 const vi = (type = 'min'): Af2AbstractStep => ({ roman: 'vi', type, rootOffset: 9, scaleDegree: 6 });
 const bVII = (type = 'maj'): Af2AbstractStep => ({ roman: 'bVII', type, rootOffset: 10, scaleDegree: 7 });
+
+// K2 阶段:Minor 调级数 builder(自然小调/和声小调混合)
+//   i / iv / v 用 minor;V 复用 major(harmonic-minor dominant,V → i 强解决)
+//   bIII / bVI / bVII 用 major(Aeolian 自然小调 borrowed-from-relative-major)
+//   ii° 用 m7b5(Aeolian 真正的 pre-dom);TonicizationPlanner 会 forbid 它作为 target
+const i    = (type = 'min'): Af2AbstractStep => ({ roman: 'i',    type, rootOffset: 0, scaleDegree: 1 });
+const ii_d = (type = 'm7b5'): Af2AbstractStep => ({ roman: 'ii°', type, rootOffset: 2, scaleDegree: 2 });
+const bIII = (type = 'maj'): Af2AbstractStep => ({ roman: 'bIII', type, rootOffset: 3, scaleDegree: 3 });
+const iv   = (type = 'min'): Af2AbstractStep => ({ roman: 'iv',   type, rootOffset: 5, scaleDegree: 4 });
+const vmin = (type = 'min'): Af2AbstractStep => ({ roman: 'v',    type, rootOffset: 7, scaleDegree: 5 });
+const bVI  = (type = 'maj'): Af2AbstractStep => ({ roman: 'bVI',  type, rootOffset: 8, scaleDegree: 6 });
 
 /** 默认 fallback 进行(每 sectionType 兜底,POP-flavored — 多条候选增加多样性) */
 const DEFAULT_BY_SECTION: Partial<Record<SectionType, ProgressionPool>> = {
@@ -301,11 +312,167 @@ const SECTION_POOLS_BY_STYLE: Record<MgStyle, Partial<Record<SectionType, Progre
     },
 };
 
+// ============================================================
+// K2 阶段:Minor 调进行池
+// ============================================================
+//
+// 自然小调 / 和声小调混用。V(harmonic)做主导属和弦(V → i 强解决感),
+// v(natural)偶尔出现作为 modal flavor。bIII / bVI / bVII 是 Aeolian 标志。
+//
+// 注意:BorrowChordPlanner 在 Minor 时 short-circuit(rule 池是 Major-designed)。
+// 所以 Minor 调 borrow 不会被 planner 加工 — 池里直接写需要的进行。
+//
+// TonicizationPlanner 仍跑 — 它自动 minor-aware(ii_dim m7b5 + 7b9 V/X 配 Phrygian Dominant)。
+// ============================================================
+
+const DEFAULT_BY_SECTION_MINOR: Partial<Record<SectionType, ProgressionPool>> = {
+    [SectionType.Intro]: [
+        [ i(), V() ],                       // tonic→dom 经典
+        [ i(), bVII() ],                    // Aeolian opening
+        [ i(), iv() ],                      // modal
+        [ i(), bVI() ],                     // sad / cinematic
+    ],
+    [SectionType.Verse]: [
+        [ i(), bVI(), bIII(), bVII() ],     // Royal Road minor(Pop 标志)
+        [ i(), bVII(), bVI(), V() ],        // Andalusian descent
+        [ i(), iv(), bVI(), V() ],          // sad minor classic
+        [ i(), bVII(), iv(), V() ],         // 4-chord minor
+        [ i(), V(), iv(), bVII() ],         // modal 反向
+    ],
+    [SectionType.PreChorus]: [
+        [ iv(), V(), V(), V() ],            // build to V
+        [ bVI(), V(), V(), V() ],           // cinematic build
+        [ ii_d(), V(), V(), V() ],          // minor ii-V build
+        [ iv(), bVII(), V(), V() ],         // step-up
+    ],
+    [SectionType.Chorus]: [
+        [ i(), bVI(), bIII(), bVII() ],     // Royal Road(再现)
+        [ i(), V(), bVI(), iv() ],          // V-bVI deceptive
+        [ bVI(), bVII(), i(), i() ],        // bVI-bVII-i lift
+        [ i(), bVII(), bVI(), bVII() ],     // 4-chord loop
+        [ iv(), V(), i(), bVI() ],          // emotional
+    ],
+    [SectionType.Bridge]: [
+        [ bIII(), bVII(), iv(), i() ],      // modal cycle
+        [ iv(), bIII(), bVI(), V() ],       // descending stepwise
+        [ bVI(), bVII(), bIII(), V() ],     // rock minor bridge
+        [ i(), vmin(), iv(), bVII() ],      // modal v(自然小调)
+    ],
+    [SectionType.BuildUp]: [[ V(), V(), V(), V() ], [ iv(), V(), iv(), V() ]],
+    [SectionType.Drop]: [[ i(), i(), i(), i() ], [ i(), bVI(), i(), V() ]],
+    [SectionType.Break]: [[ i(), iv(), i(), i() ], [ bVI(), V(), i(), i() ]],
+    [SectionType.Breakdown]: [[ i(), i(), i(), i() ], [ i(), bVII(), i(), i() ]],
+    [SectionType.PreOutro]: [[ iv(), V(), i(), i() ], [ bVI(), V(), i(), i() ]],
+    [SectionType.Outro]: [
+        [ i(), iv(), i(), i() ],            // plagal close
+        [ bVI(), V(), i(), i() ],           // dramatic
+        [ iv(), V(), i(), i() ],            // V-i close
+        [ i(), bVII(), i(), i() ],          // modal close
+    ],
+    [SectionType.Solo_Bridge]: [
+        [ ii_d(), V(), i(), bVI() ],
+        [ bIII(), bVI(), ii_d(), V() ],
+    ],
+};
+
+// Per-mgStyle Minor 池(JAZZ/RNB 用更色彩化 chord type)
+const SECTION_POOLS_BY_STYLE_MINOR: Record<MgStyle, Partial<Record<SectionType, ProgressionPool>>> = {
+    POP: DEFAULT_BY_SECTION_MINOR,
+    JAZZ: {
+        [SectionType.Intro]: [
+            [ ii_d('m7b5'), V('7b9') ],
+            [ i('m7'), V('7b9') ],
+            [ iv('m7'), V('7b9') ],
+        ],
+        [SectionType.Verse]: [
+            [ i('m7'), iv('m7'), V('7b9'), i('m7') ],          // jazz minor cycle
+            [ i('m7'), bVI('maj7'), bIII('maj7'), bVII('7') ], // modal jazz
+            [ ii_d('m7b5'), V('7b9'), i('m7'), iv('m7') ],     // ii-V-i extended
+            [ i('m7'), V('7b9'), bVI('maj7'), V('7b9') ],      // cliche jazz
+        ],
+        [SectionType.PreChorus]: [
+            [ ii_d('m7b5'), V('7b9'), ii_d('m7b5'), V('7b9') ],
+            [ iv('m7'), V('7b9'), iv('m7'), V('7b9') ],
+            [ bVI('maj7'), V('7b9'), bVI('maj7'), V('7b9') ],
+        ],
+        [SectionType.Chorus]: [
+            [ i('m9'), V('7b9'), bVI('maj9'), bVII('7') ],
+            [ i('m7'), bIII('maj7'), iv('m7'), V('7b9') ],
+            [ ii_d('m7b5'), V('7b9'), i('m9'), i('m9') ],
+            [ iv('m9'), bVII('7'), bIII('maj9'), bVI('maj9') ],
+        ],
+        [SectionType.Bridge]: [
+            [ bIII('maj9'), bVI('maj9'), ii_d('m7b5'), V('7b9') ],
+            [ iv('m9'), bVII('7'), bIII('maj9'), bVI('maj9') ],
+            [ bVI('maj9'), V('7b9'), i('m9'), iv('m9') ],
+        ],
+        [SectionType.Outro]: [
+            [ i('m7'), i('m7'), i('m7'), i('m7') ],
+            [ ii_d('m7b5'), V('7b9'), i('m7'), i('m7') ],
+        ],
+        [SectionType.PreOutro]: [[ ii_d('m7b5'), V('7b9'), iv('m7'), bVII('7') ]],
+    },
+    BLUES: {
+        // Minor blues(12-bar 经典:i7 i7 i7 i7 iv7 iv7 i7 i7 V7 iv7 i7 V7)
+        [SectionType.Intro]:     [[ i('m7'), i('m7'), i('m7'), i('m7') ]],
+        [SectionType.Verse]:     [[ i('m7'), iv('m7'), i('m7'), V('7') ], [ i('m7'), i('m7'), iv('m7'), i('m7') ]],
+        [SectionType.PreChorus]: [[ iv('m7'), iv('m7'), i('m7'), i('m7') ]],
+        [SectionType.Chorus]:    [[ V('7'), iv('m7'), i('m7'), V('7') ]],
+        [SectionType.Outro]:     [[ i('m7'), iv('m7'), i('m7'), i('m7') ]],
+    },
+    RNB: {
+        [SectionType.Intro]: [
+            [ i('m9'), bIII('maj9') ],
+            [ iv('m9'), i('m9') ],
+            [ bVI('maj9'), bIII('maj9') ],
+            [ i('m7'), V('7sus4') ],          // D'Angelo opening
+        ],
+        [SectionType.Verse]: [
+            [ i('m9'), bIII('maj9'), bVI('maj9'), bVII('7') ],    // Stevie modal
+            [ i('m7'), iv('m7'), bVII('7'), bIII('maj7') ],       // R&B classic
+            [ iv('m9'), V('7sus4'), i('m9'), bVI('maj9') ],       // D'Angelo ballad
+            [ i('m9'), bVII('7'), bVI('maj9'), V('7') ],          // descending
+        ],
+        [SectionType.PreChorus]: [
+            [ ii_d('m7b5'), V('7sus4'), ii_d('m7b5'), V('7sus4') ],
+            [ iv('m9'), V('7sus4'), iv('m9'), V('7sus4') ],
+            [ bVI('maj9'), V('7'), bVI('maj9'), V('7') ],
+        ],
+        [SectionType.Chorus]: [
+            [ i('m9'), V('7'), bVI('maj9'), iv('m9') ],
+            [ bVII('7'), bVI('maj9'), V('7'), i('m9') ],
+            [ i('m9'), bIII('maj9'), bVI('maj9'), iv('m9') ],
+            [ iv('m9'), bVII('7'), bIII('maj9'), bVI('maj9') ],
+        ],
+        [SectionType.Bridge]: [
+            [ bVI('maj9'), bIII('maj9'), bVII('7'), i('m9') ],
+            [ iv('m9'), V('7'), bVI('maj9'), i('m9') ],
+            [ bIII('maj9'), bVI('maj9'), iv('m9'), V('7sus4') ],
+        ],
+        [SectionType.Outro]: [
+            [ iv('m9'), V('7'), i('m9'), i('m9') ],
+            [ bVI('maj9'), bVII('7'), i('m9'), i('m9') ],
+            [ i('m9'), iv('m9'), i('m9'), i('m9') ],
+        ],
+        [SectionType.PreOutro]: [[ iv('m9'), V('7'), bVI('maj9'), i('m9') ]],
+    },
+};
+
 /**
- * 查给定 (mgStyle, sectionType) 的进行池;缺则 fall through 到 DEFAULT_BY_SECTION,
- * 仍缺则用 [[I, IV, V, I]] 兜底。
+ * 查给定 (mgStyle, sectionType, isMinor) 的进行池;
+ * Minor 调走 *_MINOR 池,Major 走原池。
+ * 缺则 fall through 到 DEFAULT_*,仍缺则用 i-iv-V-i / I-IV-V-I 兜底。
  */
-function getSectionPool(mgStyle: MgStyle, sectionType: SectionType): ProgressionPool {
+function getSectionPool(
+    mgStyle: MgStyle,
+    sectionType: SectionType,
+    isMinor: boolean = false,
+): ProgressionPool {
+    if (isMinor) {
+        return SECTION_POOLS_BY_STYLE_MINOR[mgStyle]?.[sectionType]
+            ?? DEFAULT_BY_SECTION_MINOR[sectionType]
+            ?? [[ i(), iv(), V(), i() ]];
+    }
     return SECTION_POOLS_BY_STYLE[mgStyle]?.[sectionType]
         ?? DEFAULT_BY_SECTION[sectionType]
         ?? [[ I(), IV(), V(), I() ]];
@@ -344,6 +511,8 @@ export interface ArrangePlannerOptions {
     mode?: string;
     /** Phrase 长度(bars),默认 4 — phrase-role classification 用 */
     motifInterval?: number;
+    /** K2 阶段:是否 Minor 调(走 Minor 进行池)。默认 false */
+    isMinor?: boolean;
 }
 
 export const Af2Arranger = {
@@ -366,10 +535,11 @@ export const Af2Arranger = {
         plannerOptions?: ArrangePlannerOptions,
     ): Af2AbstractStep[] {
         let out: Af2AbstractStep[] = [];
+        const isMinor = plannerOptions?.isMinor ?? false;
         for (const section of sections) {
             const sectionBeats = section.endBeat - section.startBeat;
             const sectionBars = Math.max(1, Math.round(sectionBeats / beatsPerMeasure));
-            const pool = getSectionPool(mgStyle, section.sectionType);
+            const pool = getSectionPool(mgStyle, section.sectionType, isMinor);
             const chosen = rng.pick(pool as Af2AbstractStep[][]);
             for (let bar = 0; bar < sectionBars; bar++) {
                 out.push({ ...chosen[bar % chosen.length] });

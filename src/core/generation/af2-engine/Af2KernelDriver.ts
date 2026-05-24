@@ -117,6 +117,7 @@ export const Af2KernelDriver = {
         mgStyle: MgStyle,
         key: string = 'C',
         sections?: ReadonlyArray<SectionMetadata>,
+        isMinor: boolean = false,
     ): MgKernelOutput {
         const rng = new Random(seedString);
 
@@ -145,11 +146,15 @@ export const Af2KernelDriver = {
                 tonicizeRng,
                 borrowSource,
                 songKeyRootPc,
-                mode: 'Maj/Ionian',
+                // K2 阶段:Minor 调传 'minor/Aeolian' — BorrowChordPlanner 在
+                // MODAL_HOME_MODES 里包含此值,会 short-circuit(Minor borrow rule 留 K3)
+                mode: isMinor ? 'minor/Aeolian' : 'Maj/Ionian',
                 motifInterval: 4,
+                isMinor,
             })
             : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
-        const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, false, mgStyle, rng);
+        // K2 阶段:Composer isMinor 影响 chord spell(B♭ 调 minor vs A# 调 major)
+        const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, isMinor, mgStyle, rng);
 
         // ChordDef[] → GeneratedChord[](累积 startBeat)
         const chords: GeneratedChord[] = [];

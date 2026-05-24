@@ -397,8 +397,13 @@ export interface PlanBorrowedOptions {
     borrowSource: BorrowSource;
 }
 
-// 异国 / modal home 不参与借调(已经在 modal 色彩里再借 = 听感稀释)。
+// 异国 / modal home / Minor 不参与借调(modal 色彩里再借 = 听感稀释)。
+//
+// K2 阶段:'minor/Aeolian' 加入(BorrowChordPlanner 7 rule 是 Major-designed —
+// A1 IV→iv 在 Minor 调里 IV 本就不是 diatonic;Rule C ii-V→bVI-bVII-I 在 Minor
+// 里 bVI/bVII 本就 diatonic。Minor borrow 需要全新 rule set,留 K3)。
 const MODAL_HOME_MODES = new Set([
+    'minor/Aeolian',
     'Dorian', 'Phrygian', 'Lydian', 'Mixolydian', 'Locrian',
     'Blues', 'Major Blues', 'Minor Blues', 'Composite Blues', 'Country Blues',
     'Bebop Dominant', 'Bebop Major', 'Bebop Dorian', 'Altered',

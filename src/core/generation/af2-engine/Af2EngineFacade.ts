@@ -105,13 +105,24 @@ export const Af2EngineFacade = {
             return EngineSelectionStore.getMgStyle();
         })();
 
-        // K 阶段(2026-05-24):PRNG-driven keyOffset 替代硬编 'C'。
-        // forked stream `${seed}::key` 独立 — planner 不 fire 时主 rng 流稳定。
-        // Tonality 暂保持 Major(Arranger 进行池仍是 Major 偏向,Minor 待后续扩)。
+        // K 阶段(2026-05-24):PRNG-driven keyOffset + tonality 替代硬编 'C'/Major。
+        // forked stream `af2_key_${seed}` / `af2_tonality_${seed}` 独立 —
+        // 主 rng 流不受影响,同 seed 之前生成内容(进行/voicing/family)行为不变。
+        //
+        // Tonality 分布:Major 70% / Minor 30%(Pop/Jazz/Blues/RNB 通用经验值;
+        // 后续可 per-mgStyle 微调,如 BLUES 偏 Major、Jazz 偏 Minor)。
+        //
+        // Minor 限制(K2 阶段):
+        //   - BorrowChordPlanner 在 Minor 时 short-circuit(rule 池是 Major-designed,
+        //     Minor borrow 留 K3)
+        //   - Arranger 用 Minor 专用进行池(SECTION_POOLS_BY_STYLE_MINOR)
+        //   - TonicizationPlanner 自动 minor-aware(读 next.roman/type 判 quality)
+        //   - Composer isMinorKey=true 让 spell 正确(Bb 调 minor vs A# 调 major)
         const keyRng = new Random(`af2_key_${auraflowSeed >>> 0}`);
         const keyOffset = keyRng.range(0, 11);
         const key = KEYS[keyOffset];
-        const tonality = Tonality.Major;
+        const tonalityRng = new Random(`af2_tonality_${auraflowSeed >>> 0}`);
+        const tonality = tonalityRng.next() < 0.7 ? Tonality.Major : Tonality.Minor;
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
@@ -128,7 +139,8 @@ export const Af2EngineFacade = {
         //   - Af2Composer:决 voicing + bass + chordSymbol
         //   - events 永远空(全 AF2 musicians plan() 自给)
         // -----------------------------------------------------------
-        const mg = Af2KernelDriver.invoke(mgSeedString, mgStyle, key, sections);
+        const isMinor = tonality === Tonality.Minor;
+        const mg = Af2KernelDriver.invoke(mgSeedString, mgStyle, key, sections, isMinor);
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)
