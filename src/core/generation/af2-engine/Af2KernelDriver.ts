@@ -163,7 +163,9 @@ export const Af2KernelDriver = {
             })
             : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
         // K2 阶段:Composer isMinor 影响 chord spell(B♭ 调 minor vs A# 调 major)
-        const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, isMinor, mgStyle, rng);
+        // P6 阶段:subStyle 影响 voicing mode(JazzSwing rootless / NeoSoul cluster /
+        //   MotownSoul full / ModernTrap shell / ...)— 优先于 mgStyle 默认
+        const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, isMinor, mgStyle, rng, subStyle);
 
         // ChordDef[] → GeneratedChord[](累积 startBeat)
         const chords: GeneratedChord[] = [];
