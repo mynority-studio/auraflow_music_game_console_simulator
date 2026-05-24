@@ -28,6 +28,7 @@ import type { SectionMetadata } from '../types';
 import { planBorrowedChords, type BorrowSource } from './BorrowChordPlanner';
 import { planTonicization } from './TonicizationPlanner';
 import { planPicardyEndings } from './PicardyPlanner';
+import { planMinorBorrows } from './MinorBorrowPlanner';
 
 /**
  * 5-way classification of chromatic / non-diatonic chords —
@@ -516,6 +517,8 @@ export interface ArrangePlannerOptions {
     isMinor?: boolean;
     /** K3 阶段:PRNG 子流(`${seed}::picardy`)— Minor only,Major 时未消费 */
     picardyRng?: Random;
+    /** K4 阶段:PRNG 子流(`${seed}::minor-borrow`)— Minor only(iv→IV / bVI→VI)*/
+    minorBorrowRng?: Random;
 }
 
 export const Af2Arranger = {
@@ -574,7 +577,19 @@ export const Af2Arranger = {
                     random: plannerOptions.picardyRng,
                 });
             }
-            // Pass 3:Tonicization(4 placement × target mult × cooldown)
+            // Pass 3(K4):Minor parallel-major borrow(Minor only)
+            //   M2 iv→IV(Dorian flavor)+ M3 bVI→VI(chromatic mediant);
+            //   Picardy 之后跑,这样 Picardy 已锁的 i→I 不再被本 planner 二次处理
+            //   (它们 lockType=true)。
+            if (isMinor && plannerOptions.minorBorrowRng) {
+                out = planMinorBorrows({
+                    skeleton: out,
+                    style: mgStyle,
+                    motifInterval,
+                    random: plannerOptions.minorBorrowRng,
+                });
+            }
+            // Pass 4:Tonicization(4 placement × target mult × cooldown)
             //   Minor-aware:m7b5 + 7b9 配 Phrygian Dominant scale
             out = planTonicization({
                 skeleton: out,

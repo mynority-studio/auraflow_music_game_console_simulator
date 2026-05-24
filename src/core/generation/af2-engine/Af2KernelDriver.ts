@@ -130,6 +130,8 @@ export const Af2KernelDriver = {
         const tonicizeRng = new Random(`${seedString}::tonicize`);
         // K3 阶段:Picardy 3rd ending(Minor only)— Major 调不消费
         const picardyRng = new Random(`${seedString}::picardy`);
+        // K4 阶段:Minor parallel-major borrow(iv→IV / bVI→VI)— Major 调不消费
+        const minorBorrowRng = new Random(`${seedString}::minor-borrow`);
 
         // 单 borrow-source per song(Rule 3 user policy)。
         //   80% Aeolian / 12% Mixolydian / 8% Phrygian
@@ -153,7 +155,8 @@ export const Af2KernelDriver = {
                 mode: isMinor ? 'minor/Aeolian' : 'Maj/Ionian',
                 motifInterval: 4,
                 isMinor,
-                picardyRng,   // K3:Minor 调 Picardy 3rd ending
+                picardyRng,        // K3:Minor 调 Picardy 3rd ending
+                minorBorrowRng,    // K4:Minor 调 iv→IV / bVI→VI borrow
             })
             : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
         // K2 阶段:Composer isMinor 影响 chord spell(B♭ 调 minor vs A# 调 major)
