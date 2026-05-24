@@ -25,25 +25,64 @@ import type { Random } from './utils/Random';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { SectionType } from '../types';
 import type { SectionMetadata } from '../types';
+import { planBorrowedChords, type BorrowSource } from './BorrowChordPlanner';
+import { planTonicization } from './TonicizationPlanner';
 
 /**
- * AF2 抽象进行步(mg.realizeProgression 输入兼容形式)。
+ * 5-way classification of chromatic / non-diatonic chords —
+ * Berklee Contemporary Harmony. Set by L 阶段 BorrowChordPlanner /
+ * TonicizationPlanner;UI / future melody scoring may consume。
  *
+ *   secondary_dominant — V/X (lone secondary dom)
+ *   secondary_ii_v    — ii/X + V/X chain
+ *   backdoor_dominant — bVII7 functioning as D toward T (not Mixolydian color)
+ *   modal_interchange — borrowed for color, mustResolve = false
+ *   chromatic_color   — chromatic passing chord, no specific category
+ */
+export type BorrowedSource =
+    | 'secondary_dominant'
+    | 'secondary_ii_v'
+    | 'backdoor_dominant'
+    | 'modal_interchange'
+    | 'chromatic_color';
+
+/**
+ * AF2 抽象进行步。
+ *
+ * 必填:
  * - roman:级数显示串('I' / 'V7' / 'ii7')
- * - type:chord type(mg 词汇 — 'maj' / 'min' / 'maj7' / 'm7' / '7' 等)
- * - rootOffset:相对调根的半音 offset(0=I / 2=ii / 4=iii / 5=IV / 7=V / 9=vi / 11=vii)
- * - scaleDegree:可选 1-7 级数(给 mg 的 mode-aware filter 用)
+ * - type:chord type('maj' / 'min' / 'maj7' / 'm7' / '7' 等)
+ * - rootOffset:相对调根的半音 offset(0=I / 2=ii / 4=iii / 5=IV / 7=V / 9=vi)
+ *
+ * 可选:
+ * - scaleDegree:1-7 级数(给 mode-aware filter 用)
+ * - beats:bar 内 beats(默认 = beatsPerMeasure = 4)。Tonicization 切分时设半 bar
+ *
+ * L 阶段 Planner 注入字段(都可选):
+ * - localTonalCenterPc:临时局部调中心 PC(secondary dominant 指向 X)
+ * - forcedScale:scale 强制(Tonicization 标 'Mixolydian' / 'Phrygian Dominant')
+ * - lockType:Planner 已锁定 type,Composer Divisi 不要再改
+ * - borrowedFrom:借调诊断标签('iv (parallel minor)' / 'bVII7 (backdoor)' 等)
+ * - effectiveFunc:Planner 强制 TSD 功能(Rule A2 bVII7 = D)
+ * - borrowedSource:Berklee 5-way 分类
+ * - mustResolve:tension 必须解决(V/X / ii/X / bVII7 = true)
+ * - tonicizationPlacement:Tonicization 形式(light / approach / iiv_split / full_2bar)
  */
 export interface Af2AbstractStep {
     roman: string;
     type: string;
     rootOffset: number;
     scaleDegree?: number;
-    /**
-     * 可选 beats(默认 ctx.meterContext.beatsPerMeasure = 4)。
-     * Augmentation 用此切分 bar:e.g. ii-V 共享 1 bar → 各占 2 beats。
-     */
     beats?: number;
+    // L 阶段 Planner 注入字段
+    localTonalCenterPc?: number;
+    forcedScale?: string;
+    lockType?: boolean;
+    borrowedFrom?: string;
+    effectiveFunc?: 'T' | 'S' | 'D';
+    borrowedSource?: BorrowedSource;
+    mustResolve?: boolean;
+    tonicizationPlacement?: 'light' | 'approach' | 'iiv_split' | 'full_2bar';
 }
 
 // Section-aware 进行池 helpers — 各 section 类型用专门 progression
@@ -273,107 +312,49 @@ function getSectionPool(mgStyle: MgStyle, sectionType: SectionType): Progression
 }
 
 // ============================================================
-// Augmentation:Modal interchange / passing chords 注入
+// L 阶段(2026-05-24):Modal interchange + Tonicization 双 pass
 // ============================================================
 //
-// 在 section-aware Arranger 产出的"骨架"上,概率注入借和弦 + ii-V 转位:
+// 替换原 augmentProgression(简化 3 分支)→ 接 mg 移植的 2 planner:
 //
-//   ii-V split(jazz cliche):前面是 V chord 时,split V 的 bar 为 [ii (2 beats), V (2 beats)]
-//   iv borrowing(modal interchange):IV 偶尔替换为 iv(借平行小调色彩)
+//   BorrowChordPlanner:7 rule × 3 source 锁定 × 5 道防呆(603 行)
+//     POP 0.45 / JAZZ 0.35 / RNB 0.55 / BLUES 0,per-song max 3/4/5/0 次
 //
-// Per-mgStyle 概率门:
-//   POP   ii-V 0.10 / iv 0.05(轻度色彩)
-//   JAZZ  ii-V 0.50 / iv 0.10(jazz 语言强 ii-V)
-//   BLUES ii-V 0    / iv 0   (blues 用属和弦,不需 ii-V)
-//   RNB   ii-V 0.30 / iv 0.20(neo-soul 多 modal interchange)
+//   TonicizationPlanner:4 placement × per-target mult × chain cooldown(505 行)
+//     POP 0.30 / JAZZ 0.65 / RNB 0.40 / BLUES 0,per-song max 2/4/3/0 次
 //
-// Augmentation 不改全曲长度(总 beats 不变)— ii-V split 内部切 bar,iv 只换 type/roman。
+// 顺序:raw skeleton → borrow → tonicize → output
+// (borrow 先,因为 tonicize 看 borrow 输出决定是否 approach borrowed target)
 // ============================================================
-
-const II_V_INSERT_PROB: Record<MgStyle, number> = {
-    POP:   0.10,
-    JAZZ:  0.50,
-    BLUES: 0,
-    RNB:   0.30,
-};
-
-const IV_BORROW_PROB: Record<MgStyle, number> = {
-    POP:   0.05,
-    JAZZ:  0.10,
-    BLUES: 0,
-    RNB:   0.20,
-};
-
-// Sub-V tritone substitution(V → bII7,jazz 三全音替代)
-//   仅在 ii-V split 未触发时尝试(ii-V 优先,因更显)。
-//   JAZZ 最常用,RNB 偶尔,POP 极少,BLUES 不用(blues 走 dominant cycle)。
-const SUB_V_PROB: Record<MgStyle, number> = {
-    POP:   0.02,
-    JAZZ:  0.20,
-    BLUES: 0,
-    RNB:   0.10,
-};
 
 /**
- * Modal interchange / passing chord 注入。
- *
- * 算法:
- *   遍历 progression,每 step:
- *     1. 该 step 是 V(rootOffset===7,type='maj'/'7'/'maj7'/'sus4' 等):
- *        rng.next() < ii-V prob → 把此 step split 为 [ii (2 beats), V (2 beats)]
- *     2. 该 step 是 IV(rootOffset===5,type='maj'/'maj7'):
- *        rng.next() < iv-borrow prob → 替换为 iv(type='min'/'m7',roman='iv')
- *   未触发的 step 原样保留。
- *
- * PRNG 消耗:每 step 最多 2 次(ii-V gate + iv gate),deterministic per seed。
+ * L 阶段 planner 配置 — 由 KernelDriver / Facade 注入。
+ * 未传则不跑 planner(向后兼容 arrangeByBars / 老 callsite)。
  */
-function augmentProgression(
-    progression: Af2AbstractStep[],
-    mgStyle: MgStyle,
-    rng: Random,
-): Af2AbstractStep[] {
-    const iiVProb = II_V_INSERT_PROB[mgStyle];
-    const ivProb = IV_BORROW_PROB[mgStyle];
-    const subVProb = SUB_V_PROB[mgStyle];
-    const out: Af2AbstractStep[] = [];
-
-    for (const step of progression) {
-        // Augmentation 1:ii-V split(在 V chord 上,优先级最高)
-        if (step.rootOffset === 7 && rng.next() < iiVProb) {
-            // V 的 jazz turnaround:前面 ii(rootOffset=2,m7),后面 V(原 type 不变)
-            out.push({ roman: 'ii', type: 'm7', rootOffset: 2, scaleDegree: 2, beats: 2 });
-            out.push({ ...step, beats: 2 });
-            continue;
-        }
-        // Augmentation 2:Sub-V tritone substitution(ii-V 未触发时,在 V chord 上)
-        //   V (rootOffset=7) → bII7 (rootOffset=1) — 与原 V 共享三全音(b7/3 互换)
-        //   产生半音下行 root motion(bII → I),色彩更暗
-        if (step.rootOffset === 7 && rng.next() < subVProb) {
-            out.push({ roman: 'bII7', type: '7', rootOffset: 1, scaleDegree: 2 });
-            continue;
-        }
-        // Augmentation 3:iv borrowing(在 IV chord 上)
-        if (step.rootOffset === 5 && (step.type === 'maj' || step.type === 'maj7')
-            && rng.next() < ivProb) {
-            // IV → iv(minor 借和弦,modal interchange)
-            const borrowedType = step.type === 'maj7' ? 'm7' : 'min';
-            out.push({ ...step, roman: 'iv', type: borrowedType });
-            continue;
-        }
-        // 默认:原样保留
-        out.push({ ...step });
-    }
-    return out;
+export interface ArrangePlannerOptions {
+    /** PRNG 子流(`${seed}::borrow`) */
+    borrowRng: Random;
+    /** PRNG 子流(`${seed}::tonicize`) */
+    tonicizeRng: Random;
+    /** Per-song 单 borrow-source(由 caller `${seed}::borrow-source` forked 抽)*/
+    borrowSource: BorrowSource;
+    /** 曲调 key root pc (0..11) — Tonicization 用 */
+    songKeyRootPc: number;
+    /** 调式名(modal-home-mode skip 用),默认 'Maj/Ionian' */
+    mode?: string;
+    /** Phrase 长度(bars),默认 4 — phrase-role classification 用 */
+    motifInterval?: number;
 }
 
 export const Af2Arranger = {
     /**
-     * AF2 编曲师 — section-aware 抽进行 + 拼接全曲。
+     * AF2 编曲师 — section-aware 抽进行 + 拼接 + (可选)borrow + tonicize。
      *
      * 算法:
      *   1. 每 section:从 (mgStyle, sectionType) 进行池抽 1 条
      *   2. 该 section 占的 bars(从 section.startBeat / endBeat 派生)用此进行循环填充
      *   3. 拼接所有 section 的 chord 序列 → 全曲 abstractPath
+     *   4. (L 阶段)若 plannerOptions 传入:借和弦 planner → 二级属 planner 双 pass
      *
      * 每 section 独立抽 → 同 seed 下 Verse / Chorus / Bridge 进行不同。
      */
@@ -382,8 +363,9 @@ export const Af2Arranger = {
         sections: ReadonlyArray<SectionMetadata>,
         beatsPerMeasure: number,
         rng: Random,
+        plannerOptions?: ArrangePlannerOptions,
     ): Af2AbstractStep[] {
-        const out: Af2AbstractStep[] = [];
+        let out: Af2AbstractStep[] = [];
         for (const section of sections) {
             const sectionBeats = section.endBeat - section.startBeat;
             const sectionBars = Math.max(1, Math.round(sectionBeats / beatsPerMeasure));
@@ -393,8 +375,32 @@ export const Af2Arranger = {
                 out.push({ ...chosen[bar % chosen.length] });
             }
         }
-        // Modal interchange / passing chord 注入(per-mgStyle 概率门)
-        return augmentProgression(out, mgStyle, rng);
+        // L 阶段:接 mg 移植的 2 planner
+        if (plannerOptions) {
+            const { borrowRng, tonicizeRng, borrowSource, songKeyRootPc } = plannerOptions;
+            const motifInterval = plannerOptions.motifInterval ?? 4;
+            const mode = plannerOptions.mode ?? 'Maj/Ionian';
+            // Pass 1:Modal Interchange(7 rule × 3 source × 5 防呆)
+            out = planBorrowedChords({
+                skeleton: out,
+                style: mgStyle,
+                motifInterval,
+                random: borrowRng,
+                beatsPerMeasure,
+                mode,
+                borrowSource,
+            });
+            // Pass 2:Tonicization(4 placement × target mult × cooldown)
+            out = planTonicization({
+                skeleton: out,
+                style: mgStyle,
+                motifInterval,
+                random: tonicizeRng,
+                beatsPerMeasure,
+                songKeyRootPc,
+            });
+        }
+        return out;
     },
 
     /**

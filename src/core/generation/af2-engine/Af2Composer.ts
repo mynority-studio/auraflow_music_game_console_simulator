@@ -119,7 +119,12 @@ export const Af2Composer = {
             let voicingPcs = Array.from(pcSet);
 
             // 3.5. Divisi 2.0 — tension extension(9 / 11 / 13)概率注入
-            if (mgStyle && rng) {
+            //
+            // L 阶段(2026-05-24):lockType=true 的 slot 是 Planner(borrow /
+            // tonicize)已锁定的 chord type — 跳过 Divisi 避免叠加。
+            //   例:Rule A2 backdoor bVII7 + Divisi 9 = bVII9 听感歪
+            //   例:Rule A1 iv (m7) + Divisi 9 = iv9 — 听感可接受但 planner 不预期
+            if (mgStyle && rng && !step.lockType) {
                 voicingPcs = addExtensionPcs(step.type, voicingPcs, rootKeyIndex, mgStyle, rng);
             }
 
@@ -156,7 +161,8 @@ export const Af2Composer = {
                 notes,
                 notesMidi: voicing.slice(),
                 duration,
-                effectiveFunc: harmonicFunctionFromRoman(step.roman),
+                // L 阶段:Planner 强制 effectiveFunc 优先(Rule A2 标 bVII7=D)
+                effectiveFunc: step.effectiveFunc ?? harmonicFunctionFromRoman(step.roman),
                 chordSymbol,
                 // 跳过 tensionState / virtualExtensions / bassPattern / borrowedFrom
                 // (mg.generateArrangement 这些字段可空 — 行为退化到默认)

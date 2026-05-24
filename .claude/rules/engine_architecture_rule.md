@@ -48,10 +48,11 @@
 │ af2-engine/Af2Arranger.ts                                      │
 │   per section:从 SECTION_POOLS_BY_STYLE[mgStyle][sectionType] │
 │     抽进行 → 累积成全曲 abstractPath                            │
-│   augmentProgression:                                          │
-│     · ii-V split(JAZZ 0.50 / RNB 0.30 / POP 0.10 / BLUES 0)  │
-│     · Sub-V tritone(JAZZ 0.20 / RNB 0.10 / POP 0.02)         │
-│     · iv borrowing(modal interchange)                         │
+│   L 阶段(2026-05-24)2 planner 双 pass:                       │
+│     · BorrowChordPlanner — 7 rule × 3 source 锁定 × 5 防呆    │
+│       (POP 0.45/3 | JAZZ 0.35/4 | RNB 0.55/5 | BLUES 0)       │
+│     · TonicizationPlanner — 4 placement × target mult × cooldown│
+│       (POP 0.30/2 | JAZZ 0.65/4 | RNB 0.40/3 | BLUES 0)       │
 │   → Af2AbstractStep[](roman + type + rootOffset)             │
 └────────────────────────────────────────────────────────────────┘
         ↓
@@ -120,7 +121,8 @@
 | 修改诉求 | 必须改 | 禁止改 |
 |---------|--------|--------|
 | 和弦进行池(per mgStyle × sectionType) | `af2-engine/Af2Arranger.ts` 的 `SECTION_POOLS_BY_STYLE` | 任何其他位置硬编 progression |
-| Modal interchange / ii-V / Sub-V 概率 | `af2-engine/Af2Arranger.ts` 的 `II_V_INSERT_PROB` / `SUB_V_PROB` / `IV_BORROW_PROB` | 不要散到 Composer |
+| Modal interchange(7 rule × 3 source) | `af2-engine/BorrowChordPlanner.ts` 的 `RULES` / `STYLE_BORROW_PROB` / `STYLE_MAX_BORROWS_PER_SONG` | 不要散到 Arranger / Composer |
+| Tonicization / 二级属(4 placement) | `af2-engine/TonicizationPlanner.ts` 的 `STYLE_TONICIZE_PROB` / `STYLE_PLACEMENT_WEIGHTS` / `TARGET_MULT` | 不要散到 Arranger / Composer |
 | Voicing 算法 / placeVoicingMidi | `af2-engine/music-theory/voicing.ts`(+ `Af2Composer.ts` 调用层) | 不要在各 Idiom 重写 voicing |
 | Divisi 2.0(9/11/13 tension 注入) | `af2-engine/Af2Composer.ts` 的 `addExtensionPcs` + `EXTENSION_PROB` | 不要在 MgKernelInvoker / MusicianRegistry |
 | Chord type interval 表 | `af2-engine/music-theory/chord-types.ts` 的 `CHORD_TYPES` | 不要硬编到具体 idiom |
@@ -164,6 +166,11 @@
   - Af2MelodyGen / Af2AccompGen(rhythm pattern / passing tone / pattern 选择都是 hash)
   - PadGenerator(slice mode 选 hash)
   - Conductor template 抽 variant(seed XOR styleHash)
+- Forked sub-stream(KernelDriver 在 invoke 内 fork,与主 rng 隔离):
+  - `${seed}::borrow-source` — Borrow 单 source 锁定(80/12/8)抽 1 个
+  - `${seed}::borrow` — BorrowChordPlanner 主 PRNG 流
+  - `${seed}::tonicize` — TonicizationPlanner 主 PRNG 流(每 slot 1-2 rolls)
+  - `af2_drum_${seed}` — DrumGenerator
 
 ### 3.3 数据契约(types.ts + ir/)
 
@@ -223,8 +230,10 @@ af2-engine/             ← 唯一活跃引擎
 ├─ instruments/         ← 5 个 idiom(Piano/Bass/Drum/Pad)+ drum-grid
 ├─ Score.ts             ← 总谱契约
 ├─ Conductor.ts         ← 编排决策
-├─ Af2Arranger.ts       ← 进行决策
-├─ Af2Composer.ts       ← Voicing 决策
+├─ Af2Arranger.ts       ← 进行决策 + 接 2 planner
+├─ BorrowChordPlanner.ts← Modal interchange(7 rule × 3 source 锁定)
+├─ TonicizationPlanner.ts← Tonicization(4 placement × target mult)
+├─ Af2Composer.ts       ← Voicing 决策 + 消费 lockType / effectiveFunc
 ├─ Dispatcher.ts        ← 调用顺序
 ├─ Af2MelodyGen.ts      ← AF2 自家 melody 算法
 ├─ Af2AccompGen.ts      ← AF2 自家 accomp 算法

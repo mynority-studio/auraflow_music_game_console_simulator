@@ -100,7 +100,8 @@
 - **触发器**:`state/EngineSelectionStore.ts` `MgStyle` union 变更或新增风格
 - **必须同步**:
   - `af2-engine/Af2Arranger.ts` `AF2_PROGRESSION_POOL` + `SECTION_POOLS_BY_STYLE`
-    + `II_V_INSERT_PROB` + `SUB_V_PROB` + `IV_BORROW_PROB`
+  - `af2-engine/BorrowChordPlanner.ts` `STYLE_BORROW_PROB` + `STYLE_MAX_BORROWS_PER_SONG`(L 阶段,2026-05-24)
+  - `af2-engine/TonicizationPlanner.ts` `STYLE_TONICIZE_PROB` + `STYLE_TONICIZE_MAX_PER_SONG` + `STYLE_PLACEMENT_WEIGHTS`(L 阶段)
   - `af2-engine/Af2Composer.ts` `EXTENSION_PROB`
   - `af2-engine/Conductor.ts` `CONDUCTOR_TEMPLATES_BY_STYLE` +
     `CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE`

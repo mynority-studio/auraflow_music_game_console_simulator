@@ -26,6 +26,8 @@ import type { ChordDef } from './types/ChordDef';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { Af2Arranger } from './Af2Arranger';
 import { Af2Composer } from './Af2Composer';
+import type { BorrowSource } from './BorrowChordPlanner';
+import { noteToMidi } from './music-theory/midi';
 
 /**
  * mg ChordDef.type(字符串)→ auraflow ChordQuality 映射。
@@ -118,8 +120,34 @@ export const Af2KernelDriver = {
     ): MgKernelOutput {
         const rng = new Random(seedString);
 
+        // L 阶段:fork 3 子 PRNG 流给 BorrowChordPlanner + TonicizationPlanner。
+        //   隔离子流让 planner 触发/不触发都不影响主 rng 顺序 →
+        //   同 seed 下"加 planner"vs"不加 planner"chord skeleton 一致(planner
+        //   不 fire 时)。
+        const borrowSourceRng = new Random(`${seedString}::borrow-source`);
+        const borrowRng = new Random(`${seedString}::borrow`);
+        const tonicizeRng = new Random(`${seedString}::tonicize`);
+
+        // 单 borrow-source per song(Rule 3 user policy)。
+        //   80% Aeolian / 12% Mixolydian / 8% Phrygian
+        const sourceRoll = borrowSourceRng.next();
+        const borrowSource: BorrowSource =
+            sourceRoll < 0.80 ? 'Aeolian'
+            : sourceRoll < 0.92 ? 'Mixolydian'
+            : 'Phrygian';
+
+        // key → pc(给 TonicizationPlanner 算 absolute localTonalCenterPc)
+        const songKeyRootPc = ((noteToMidi(key + '0') % 12) + 12) % 12;
+
         const abstractPath = sections
-            ? Af2Arranger.arrange(mgStyle, sections, 4 /* beatsPerMeasure */, rng)
+            ? Af2Arranger.arrange(mgStyle, sections, 4 /* beatsPerMeasure */, rng, {
+                borrowRng,
+                tonicizeRng,
+                borrowSource,
+                songKeyRootPc,
+                mode: 'Maj/Ionian',
+                motifInterval: 4,
+            })
             : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
         const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, false, mgStyle, rng);
 
