@@ -125,7 +125,6 @@ src/core/generation/
 │  │  ├─ PadIdiom.ts              ← Pad voicing slice + attack pre-roll
 │  │  └─ drum-grid/               ← per-mgStyle drum grid
 │  ├─ music-theory/               ← 12 主题文件(midi/scale/chord-types/voicing/spell/...)
-│  ├─ data/                       ← styleDictionary / basslineRules / dynamicHarmony
 │  ├─ utils/                      ← Random / TopologyMutator
 │  └─ types/                      ← ChordDef
 ├─ pipeline/

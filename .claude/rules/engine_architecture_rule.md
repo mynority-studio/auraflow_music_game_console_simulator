@@ -221,8 +221,6 @@ af2-engine/             ← 唯一活跃引擎
 │                        chord-detection / chord-color / voicing /
 │                        tendency / cadence / spell(数学+理论)
 ├─ instruments/         ← 5 个 idiom(Piano/Bass/Drum/Pad)+ drum-grid
-├─ data/                ← styleDictionary / basslineRules / dynamicHarmony
-│                        (从老 mg-engine 内化进来的资源)
 ├─ Score.ts             ← 总谱契约
 ├─ Conductor.ts         ← 编排决策
 ├─ Af2Arranger.ts       ← 进行决策
