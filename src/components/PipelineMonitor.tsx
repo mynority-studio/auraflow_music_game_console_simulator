@@ -24,7 +24,7 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-import { EngineSelectionStore, EngineId, MgStyle } from '../state/EngineSelectionStore';
+import { EngineSelectionStore, MgStyle } from '../state/EngineSelectionStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -152,8 +152,8 @@ export const PipelineMonitor: React.FC = () => {
     // Committed(Apply 后)— Play / Tap 实际消费的快照
     const [committedBand, setCommittedBand] = useState<BandSelection>(() => ({ ...BandSelectionStore.getBand() }));
     const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
-    // Engine 选择(镜像 EngineSelectionStore,UI 用 React state 触发重渲)
-    const [engine, setEngineState] = useState<EngineId>(EngineSelectionStore.getEngine());
+    // 2026-05-24 删 AF/MG 后:engine 常量 'AF2'(保留变量名供后续 JSX 引用,
+    // 但不再有切换 UI)
     // MG Style(仅 MG 模式下生效;AF 模式只是闲置)
     const [mgStyle, setMgStyleState] = useState<MgStyle>(EngineSelectionStore.getMgStyle());
     // 错误提示(MG 模式抛错时显示)
@@ -183,23 +183,15 @@ export const PipelineMonitor: React.FC = () => {
         BandSelectionStore.setBand(bandSelection, instrumentSelection);
     }, [bandSelection, instrumentSelection]);
 
-    // Engine 切换 — 写 store(全局生效) + 镜像到 React state(触发重渲) + 清理错误
-    const handleEngineChange = useCallback((next: EngineId) => {
-        if (next === engine) return;
-        EngineSelectionStore.setEngine(next);
-        setEngineState(next);
-        setPlayError(null);
-    }, [engine]);
-
     const handleMgStyleChange = useCallback((next: MgStyle) => {
         if (next === mgStyle) return;
         EngineSelectionStore.setMgStyle(next);
         setMgStyleState(next);
     }, [mgStyle]);
 
-    const isMgMode = engine === 'MG';
-    /** MG Style 下拉对 MG + AF2 都可用 — AF2 内部也读 mgStyle 调 mg 内核生成和声 */
-    const mgStyleEnabled = engine === 'MG' || engine === 'AF2';
+    // 2026-05-24 删 AF/MG 后:AF2 唯一引擎,mgStyle 选择恒可用
+    const isMgMode = false;
+    const mgStyleEnabled = true;
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -398,62 +390,21 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* Engine Toggle:AF / MG / AF2 三引擎切换(写 EngineSelectionStore,全局生效) */}
+            {/* AF2 唯一引擎 + MG Style 选择(2026-05-24 删 AF/MG 后) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <div className="flex bg-black/50 border border-zinc-700/60 rounded overflow-hidden">
-                    <button
-                        type="button"
-                        onClick={() => handleEngineChange('AF')}
-                        className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors ${
-                            engine === 'AF'
-                                ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
-                                : 'text-zinc-500 hover:text-zinc-300'
-                        }`}
-                        title="auraflow 完整管线(Stage 1-5 + Conductor)"
-                    >
-                        AF
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleEngineChange('MG')}
-                        className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors ${
-                            engine === 'MG'
-                                ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
-                                : 'text-zinc-500 hover:text-zinc-300'
-                        }`}
-                        title="melodygenerative 钢琴 solo 引擎"
-                    >
-                        MG
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleEngineChange('AF2')}
-                        className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors ${
-                            engine === 'AF2'
-                                ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
-                                : 'text-zinc-500 hover:text-zinc-300'
-                        }`}
-                        title="AuraFlow v2 融合引擎(Phase 0:stub,NOT_IMPLEMENTED)"
-                    >
-                        AF2
-                    </button>
-                </div>
-                {/* MG Style 下拉 — MG + AF2 模式都可用(AF2 内部也读 mgStyle),AF 模式灰显 */}
+                <span className="px-3 py-1 bg-orange-500/80 text-white text-[10px] font-bold tracking-wider uppercase rounded shadow-[0_0_8px_rgba(249,115,22,0.5)]">
+                    AF2
+                </span>
                 <div className="flex items-center gap-1.5">
-                    <span className={`text-[9px] uppercase tracking-wider font-mono ${mgStyleEnabled ? 'text-orange-400/60' : 'text-zinc-700'}`}>
-                        MG Style
+                    <span className="text-[9px] uppercase tracking-wider font-mono text-orange-400/60">
+                        Style
                     </span>
                     <select
                         value={mgStyle}
-                        disabled={!mgStyleEnabled}
                         onChange={(e) => handleMgStyleChange(e.target.value as MgStyle)}
-                        className={`bg-black/60 border rounded px-1.5 py-0.5 text-[10px] font-mono ${
-                            mgStyleEnabled
-                                ? 'border-orange-500/40 text-orange-300'
-                                : 'border-zinc-800 text-zinc-700 cursor-not-allowed'
-                        }`}
-                        title={mgStyleEnabled ? 'MG/AF2 引擎风格(POP/JAZZ/BLUES/RNB)' : '切到 MG 或 AF2 才能选'}
+                        className="bg-black/60 border border-orange-500/40 text-orange-300 rounded px-1.5 py-0.5 text-[10px] font-mono"
+                        title="AF2 风格(POP/JAZZ/BLUES/RNB)— 影响 Arranger 进行池 / Composer Divisi / Conductor 模板"
                     >
                         <option value="POP">POP</option>
                         <option value="JAZZ">JAZZ</option>
@@ -462,11 +413,7 @@ export const PipelineMonitor: React.FC = () => {
                     </select>
                 </div>
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
-                    {engine === 'AF'
-                        ? 'Full band pipeline'
-                        : engine === 'MG'
-                            ? 'Piano solo (mg-engine)'
-                            : 'AF2 fusion · 5 slots active (no vocal)'}
+                    AF2 sole engine · 5 slots active (no vocal)
                 </span>
             </div>
 
@@ -551,7 +498,7 @@ export const PipelineMonitor: React.FC = () => {
                 isDirty={isBandDirty}
                 onApply={applyBandSelection}
                 disabled={isMgMode}
-                disabledSlots={engine === 'AF2' ? [BandRole.Vocal] : undefined}
+                disabledSlots={[BandRole.Vocal]}
             />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
