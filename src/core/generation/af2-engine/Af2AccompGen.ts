@@ -31,7 +31,9 @@ import { Random } from './utils/Random';
 import { ChordTextureEngine } from './chord-texture/ChordTextureEngine';
 import { generatedChordToChordDef } from './chord-texture/adapter';
 import type { NoteEvent } from './chord-texture/types';
+import { TEXTURE_DENSITY } from './chord-texture/TextureDensity';
 import { SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
+import { TEXTURE_VARIATIONS } from './TextureVariations';
 
 // ============================================================
 // Per-mgStyle × sectionType textureType pool(N 阶段 8 family 覆盖)
@@ -158,133 +160,78 @@ const SYNCOPATION_PREFERENCE: Record<MgStyle, string> = {
  */
 const PHRASE_CHORD_COUNT = 4;
 
-/** TextureType 密度标签(给 energy filter 用)
- *  - sparse:  长音 / 单击 / 整 bar 一击 — 留白,低能量
- *  - medium:  Charleston / clave / 走句 / arp — 中能量
- *  - dense:   8th pulse / 16th arp / anthem / ostinato — 高能量
- */
-type TextureDensity = 'sparse' | 'medium' | 'dense';
-
-const TEXTURE_DENSITY: Record<string, TextureDensity> = {
-    // Sustained 系 — sparse
-    'Single_Root':           'sparse',
-    'Root_Octave':           'sparse',
-    // PureWalk 系 — medium(bass 走句但 chord 不密)
-    'Root_5_8':              'medium',
-    'Root_7_5_8':            'medium',
-    'Root_5_7_5':            'medium',
-    'Root_Fifth_Bass':       'sparse',
-    'Root_Octave_Pulse':     'medium',
-    // WalkingBass — medium
-    'Jazz_Walking_Bass':     'medium',
-    // Bossa 系 — medium
-    'Bossa_Piano_Arp':       'medium',
-    'Bossa_Clave_Comping':   'medium',
-    // Hemiola — medium
-    'Jazz_Waltz_Hemiola':    'medium',
-    // PureStab 系 — medium / dense
-    'Stabs':                 'dense',
-    'Syncopated_Stabs':      'medium',
-    'Block_Chord_Staccato':  'medium',
-    'RnB_16th_Funk_Stabs':   'dense',
-    // GhostStab 系 — medium
-    'Blues_Stabs':           'medium',
-    'RnB_Neo_Soul_Stab':     'dense',
-    // ScratchSlap — dense(16th 密)
-    'Funk_Guitar_Scratch':   'dense',
-    'Slap_Bass_Line':        'medium',
-    // ShuffleChop — medium
-    'Blues_Chicago_Shuffle': 'medium',
-    'Blues_Slow_Chops':      'sparse',
-    // PopAnthem — dense
-    'Pop_Anthem_Pulse':      'dense',
-    'Pop_Broken_8ths_Sync':  'dense',
-    // JazzCharleston — medium
-    'Jazz_Charleston_Comp':  'medium',
-    // PureArp — dense(16th 默认密)
-    'Broken_Chord':          'medium',  // 8th 较稀
-    'Arpeggio_Flow':         'dense',
-    'Arp_Seq':               'dense',
-    'Pop_Piano_Arp_16ths':   'dense',
-    // OstinatoLayered — dense
-    'Ostinato_16s':          'dense',
-    'Pop_Ostinato_Rock':     'dense',
-    // Triplet — medium(12/8 三连不算 dense)
-    'RnB_Gospel_Triplets':   'medium',
-    'Blues_Slow_12_8_Arp':   'medium',
-    // Roll — dense
-    'RnB_Neo_Soul_Roll':     'dense',
-    // BlockLayered — medium / dense
-    'Block_Chord':           'medium',
-    'Jazz_Comping':          'sparse',  // sparse_off_beat 留白多
-    // SweepProgressive — medium
-    'Pop_Ballad_158_Sweep':  'medium',
-    'RnB_Classic_Soul_Arp':  'medium',
-    // GrooveDelay — medium
-    'RnB_Laid_Back_Groove':  'medium',
-    // SpecialVoicing — medium
-    'Jazz_Drop_2_Comp':      'medium',
-    // DoubleStopTremolo — dense
-    'Blues_Tremolo_Comp':    'dense',
-    // BoogieWalk — dense
-    'Blues_Boogie_Woogie':   'dense',
-    'Blues_Shuffle_Bass':    'medium',
-    // AnticipatedBlock — medium
-    'Jazz_Red_Garland_Block':'medium',
-    // CallAndResponse — sparse(melody silent 才填,稀疏)
-    'Call_And_Response':     'sparse',
-};
+// TEXTURE_DENSITY 表已提到 chord-texture/TextureDensity.ts(Q+S 共享)
 
 /**
  * TextureType 选择 — pool hash 均分;persona 加权偏好:
  *   - sparsityTendency 高 → 偏 Single_Root(留白)
  *   - syncopationAssault 高 → 偏 per-mgStyle 切分 textureType
  *
- * 优先级链:
- *   1. sub-style primaryTextures(P 阶段,若 subStyle 传入)
- *   2. per-mgStyle sectionType pool(N 阶段)
- *   3. POP sectionType pool fallback
- *   4. DEFAULT_TEXTURE_POOL(Single_Root)
+ * S 阶段优先级(2026-05-24):
+ *   1. **songBase + Variation**(若 songBase 传入)
+ *      energy 4-6 (Verse/Bridge/etc): 直接用 songBase
+ *      energy >= 7 (Chorus/Drop):      VARIATIONS[songBase].dense 升级
+ *      energy <= 3 (Intro/Outro/Break): VARIATIONS[songBase].sparse 降级
+ *      整曲 60-70% bar 用 songBase 律动一致,Section 切换时按主题升降级。
+ *      消除 phrase 间律动突变(那个 AI"动机克隆法则" + 用户讨论)。
+ *   2. songBase 缺(legacy / fallback):走 Q 阶段 phrase-lock + energy-filter pool
  *
- * Q 阶段(2026-05-24)关键改造:
- *   - Phrase Lock:hash key 用 phraseIdx = floor(chordIdxInSection / 4),
- *     同 phrase 内 4 chord 抽到同 textureType(zero-cache,deterministic)
- *   - Energy filter:energyLevel >= 7 偏 dense / <= 3 偏 sparse
- *     filter 后池空 → fallback 原池(保证不报错)
+ * Q 阶段保留(songBase 缺时启用):
+ *   - sub-style primaryTextures 优先
+ *   - mgStyle sectionType pool fallback
+ *   - Phrase Lock(hash key phraseIdx)
+ *   - Energy filter(sparse/dense)
  *
- * PRNG 消耗:0(deterministic hash)。
+ * persona 加权(sparsity → Single_Root / syncopation → SYNCOPATION_PREFERENCE)
+ * 在 songBase 路径仍生效。
+ *
+ * PRNG 消耗:0(deterministic hash + 表查询)。
  */
 function pickTextureType(
     sectionType: SectionType,
     chordIdxInSection: number,
     mgStyle: MgStyle,
     subStyle: SubStyle | undefined,
+    songBase: string | undefined,
     energyLevel: number,
     sparsity: number = 0,
     syncopation: number = 0,
 ): string {
-    let pool: ReadonlyArray<string>;
-    if (subStyle && SUB_STYLE_PRIMARY_TEXTURES[subStyle]?.length > 0) {
-        pool = SUB_STYLE_PRIMARY_TEXTURES[subStyle];
+    let pick: string;
+
+    if (songBase) {
+        // S 阶段:base + variation 优先
+        if (energyLevel >= 7) {
+            pick = TEXTURE_VARIATIONS[songBase]?.dense ?? songBase;
+        } else if (energyLevel <= 3) {
+            pick = TEXTURE_VARIATIONS[songBase]?.sparse ?? songBase;
+        } else {
+            pick = songBase;  // mid energy 直接用 base(整曲律动统一)
+        }
     } else {
-        const stylePool = STYLE_TEXTURE_POOL[mgStyle];
-        pool = stylePool[sectionType] ?? STYLE_TEXTURE_POOL.POP[sectionType] ?? DEFAULT_TEXTURE_POOL;
+        // Q 阶段 fallback(songBase 未传):phrase-lock + energy-filter pool
+        let pool: ReadonlyArray<string>;
+        if (subStyle && SUB_STYLE_PRIMARY_TEXTURES[subStyle]?.length > 0) {
+            pool = SUB_STYLE_PRIMARY_TEXTURES[subStyle];
+        } else {
+            const stylePool = STYLE_TEXTURE_POOL[mgStyle];
+            pool = stylePool[sectionType] ?? STYLE_TEXTURE_POOL.POP[sectionType] ?? DEFAULT_TEXTURE_POOL;
+        }
+        if (energyLevel >= 7) {
+            const denseFiltered = pool.filter(t => TEXTURE_DENSITY[t] !== 'sparse');
+            if (denseFiltered.length > 0) pool = denseFiltered;
+        } else if (energyLevel <= 3) {
+            const sparseFiltered = pool.filter(t => TEXTURE_DENSITY[t] !== 'dense');
+            if (sparseFiltered.length > 0) pool = sparseFiltered;
+        }
+        const phraseIdx = Math.floor(chordIdxInSection / PHRASE_CHORD_COUNT);
+        const h = (phraseIdx * 11 + (sectionType as number) * 13) & 0xff;
+        pick = pool[h % pool.length];
     }
 
-    // Q 阶段:energy filter — 高能段偏 dense,低能段偏 sparse,中能段不 filter
-    if (energyLevel >= 7) {
-        const denseFiltered = pool.filter(t => TEXTURE_DENSITY[t] !== 'sparse');
-        if (denseFiltered.length > 0) pool = denseFiltered;
-    } else if (energyLevel <= 3) {
-        const sparseFiltered = pool.filter(t => TEXTURE_DENSITY[t] !== 'dense');
-        if (sparseFiltered.length > 0) pool = sparseFiltered;
-    }
-
-    // Q 阶段:Phrase Lock — hash key 用 phraseIdx 替代 chordIdxInSection,
-    // 同 phrase 内 4 chord 抽到同 textureType(消除 chord-level 律动断裂)。
+    // persona 加权(两条路径都跑):sparsity → Single_Root / syncopation → preference
     const phraseIdx = Math.floor(chordIdxInSection / PHRASE_CHORD_COUNT);
     const h = (phraseIdx * 11 + (sectionType as number) * 13) & 0xff;
-    let pick = pool[h % pool.length];
     const h2 = ((h * 31 + 17) & 0xff) / 255;
     if (h2 < sparsity * 0.6) pick = SPARSITY_FALLBACK;
     else if (h2 < sparsity * 0.6 + syncopation * 0.5) pick = SYNCOPATION_PREFERENCE[mgStyle];
@@ -312,6 +259,7 @@ export function generateAf2Accomp(
     const dynamicMid = (dynamicLo + dynamicHi) / 2;
     const mgStyle: MgStyle = input.mgStyle ?? 'POP';
     const subStyle = input.subStyle as SubStyle | undefined;
+    const songBase = input.songBase;  // S 阶段:整曲律动外壳
 
     // N6 阶段:melody peer NoteData → NoteEvent 一次性转换(Cross-track family
     // 如 CallAndResponse 需要 NoteEvent;Facade 已在 accomp closure 内从
@@ -343,7 +291,7 @@ export function generateAf2Accomp(
 
         const sectionType = sections[sectionIdx].sectionType;
         const energyLevel = sections[sectionIdx].energyLevel ?? 5;
-        const textureType = pickTextureType(sectionType, chordIdxInSection, mgStyle, subStyle, energyLevel, sparsity, syncopation);
+        const textureType = pickTextureType(sectionType, chordIdxInSection, mgStyle, subStyle, songBase, energyLevel, sparsity, syncopation);
         const voicing = chord.voicing ?? [];
         if (voicing.length === 0) continue;
 

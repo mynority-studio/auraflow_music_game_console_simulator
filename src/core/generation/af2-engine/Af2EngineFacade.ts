@@ -49,7 +49,8 @@ import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
 import { Af2KernelDriver } from './Af2KernelDriver';
 import { KEYS } from './music-theory/spell';
-import { SUB_STYLES_BY_MG, type SubStyle } from './SubStyleTextures';
+import { SUB_STYLES_BY_MG, SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
+import { TEXTURE_DENSITY } from './chord-texture/TextureDensity';
 import { SectionPlanner } from './SectionPlanner';
 import { SectionMapper } from './SectionMapper';
 import { SlotRouter } from './SlotRouter';
@@ -138,6 +139,21 @@ export const Af2EngineFacade = {
         const subStyle: SubStyle = (userSubStyle && (subStylePool as ReadonlyArray<string>).includes(userSubStyle))
             ? userSubStyle as SubStyle
             : subStylePool[substyleRng.range(0, subStylePool.length - 1)];
+
+        // S 阶段:per-song songBase textureType — 整曲贯穿的"律动外壳"。
+        // 从 sub-style primaryTextures 抽 medium-density textureType(避免起点
+        // 太 sparse 或太 dense)。AccompGen 会:
+        //   energy 4-6 (Verse/Bridge): 直接用 songBase
+        //   energy >= 7 (Chorus/Drop): VARIATIONS[songBase].dense 升级
+        //   energy <= 3 (Intro/Outro): VARIATIONS[songBase].sparse 降级
+        // 这样整曲 60-70% bar 用同一 textureType(律动外壳一致),
+        // section 切换时按主题升降级(变化服务于段落能量曲线)。
+        const songBaseRng = new Random(`af2_song_base_${auraflowSeed >>> 0}`);
+        const subStyleTextures = SUB_STYLE_PRIMARY_TEXTURES[subStyle] ?? [];
+        const mediumBasePool = subStyleTextures.filter(t => TEXTURE_DENSITY[t] === 'medium');
+        const songBase: string = (mediumBasePool.length > 0)
+            ? mediumBasePool[songBaseRng.range(0, mediumBasePool.length - 1)]
+            : (subStyleTextures[0] ?? 'Single_Root');
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
@@ -258,6 +274,7 @@ export const Af2EngineFacade = {
         //   N6:从 input.peers 读 melody musicianId 的 NoteData[] → 通过
         //   melodyPeerNotes 字段透传到 AccompGen → ChordTextureEngine → CallAndResponse。
         //   P 阶段:加 subStyle 透传(AccompGen 优先用 sub-style primaryTextures)
+        //   S 阶段:加 songBase 透传(AccompGen 优先 base + variation,而非 phrase 抽)
         if (accompMusician) {
             const am = accompMusician;
             const mainMusicianId = mainMusician?.id;
@@ -271,6 +288,7 @@ export const Af2EngineFacade = {
                         ? (input.peers.get(mainMusicianId) ?? []) as NoteData[]
                         : undefined,
                     subStyle,
+                    songBase,
                 }),
             });
         }

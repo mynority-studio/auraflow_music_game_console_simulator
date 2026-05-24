@@ -428,6 +428,16 @@ export interface MusicianPlanInput {
      * 其他 idiom 可忽略。
      */
     readonly subStyle?: string;
+    /**
+     * S 阶段:per-song songBase textureType — 整曲贯穿的"律动外壳"。
+     * 由 Facade 从 sub-style primaryTextures 抽 medium-density textureType 注入。
+     * AccompGen 用它 + energyLevel 决定每 chord 实际 textureType:
+     *   energy 4-6 → 直接用 songBase(整曲基调统一)
+     *   energy >= 7 → TEXTURE_VARIATIONS[songBase].dense 升级
+     *   energy <= 3 → TEXTURE_VARIATIONS[songBase].sparse 降级
+     * 其他 idiom 可忽略。
+     */
+    readonly songBase?: string;
 }
 
 /**
