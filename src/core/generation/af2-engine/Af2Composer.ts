@@ -27,7 +27,7 @@
 // ============================================================
 
 import {
-    CHORD_TYPES, placeVoicingMidi, BASS_RANGE,
+    CHORD_TYPES, placeVoicingMidi, BASS_RANGE, CHORD_RANGE,
     KEYS, harmonicFunctionFromRoman, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
     assembleVoicing,
     STYLE_FULL, STYLE_ROOTLESS, STYLE_CLUSTER, STYLE_BLUES, STYLE_SHELL,
@@ -210,6 +210,99 @@ function decorateChordType(
     return { type: finalType };
 }
 
+// ============================================================
+// R 阶段(2026-05-24):跨 chord voice leading 全局 smoother
+// ============================================================
+//
+// Composer 主循环已有 placeVoicingMidi 局部 voice leading(基于 prev),
+// 但只 forward-aware,不看 next。R 阶段加 post-pass smoother:
+//   对每 chord(除首尾),试 4 个 inversion variants(整体 octave 移位):
+//     - lift bottom +12 / +24    最低音上移八度
+//     - drop top    -12 / -24    最高音下移八度
+//   保 pc 集不变(只调 octave 不改音名)。
+//   选 min cost = L1(prev, candidate) + L1(candidate, next)
+//
+// 工程影响:
+//   - PRNG 消耗:0(deterministic hill-climbing)
+//   - O(N × 5) 时间;N 通常 16-32 chord,跑一遍 < 1ms
+//   - 不影响 bassMidi(独立由 chord.bassMidi 决定)
+//   - 不重算 notes display(notesMidi 是 audio truth,notes 是 UI 标签)
+// ============================================================
+
+/**
+ * 两个 voicing(已 sort)之间的 L1 距离 + 长度差异 penalty
+ */
+function voicingL1(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
+    if (a.length === 0 || b.length === 0) return 0;
+    let sum = 0;
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) sum += Math.abs(a[i] - b[i]);
+    sum += Math.abs(a.length - b.length) * 4;  // 长度差 penalty
+    return sum;
+}
+
+/**
+ * 生成 voicing 的 inversion candidates(原 + 4 个 octave-shift 变体)。
+ * 所有 candidate 保 pc 集不变,只调单音 octave。
+ * 越界(CHORD_RANGE [48, 81])的 candidate 过滤。
+ */
+function generateInversionCandidates(voicing: ReadonlyArray<number>): number[][] {
+    if (voicing.length === 0) return [voicing.slice()];
+    const candidates: number[][] = [voicing.slice()];
+
+    const lastIdx = voicing.length - 1;
+
+    // Lift bottom +12 / +24
+    for (const lift of [12, 24]) {
+        const lifted = voicing.slice();
+        lifted[0] += lift;
+        if (lifted[0] <= CHORD_RANGE.HIGH) {
+            lifted.sort((a, b) => a - b);
+            candidates.push(lifted);
+        }
+    }
+    // Drop top -12 / -24
+    for (const drop of [12, 24]) {
+        const dropped = voicing.slice();
+        dropped[lastIdx] -= drop;
+        if (dropped[lastIdx] >= CHORD_RANGE.LOW) {
+            dropped.sort((a, b) => a - b);
+            candidates.push(dropped);
+        }
+    }
+    return candidates;
+}
+
+/**
+ * Post-pass smoother:in-place 更新每 chord(除首尾)的 notesMidi 为最优 inversion。
+ * 跑一遍,O(N × 5)。
+ */
+function smoothChordVoicings(out: ChordDef[]): void {
+    if (out.length < 3) return;  // 无 prev+next 上下文,跳过
+    for (let i = 1; i < out.length - 1; i++) {
+        const prev = out[i - 1].notesMidi;
+        const next = out[i + 1].notesMidi;
+        const curr = out[i].notesMidi;
+        const candidates = generateInversionCandidates(curr);
+
+        let bestVoicing = curr;
+        let bestCost = voicingL1(prev, curr) + voicingL1(curr, next);
+        for (let c = 1; c < candidates.length; c++) {
+            const cand = candidates[c];
+            const cost = voicingL1(prev, cand) + voicingL1(cand, next);
+            if (cost < bestCost) {
+                bestVoicing = cand;
+                bestCost = cost;
+            }
+        }
+
+        if (bestVoicing !== curr) {
+            // 替换 notesMidi(notes display 标签保持旧 octave — UI 用,不影响音频)
+            out[i] = { ...out[i], notesMidi: bestVoicing };
+        }
+    }
+}
+
 export const Af2Composer = {
     /**
      * 把 Af2AbstractStep[] 实化为 ChordDef[](Composer 入口)。
@@ -304,6 +397,12 @@ export const Af2Composer = {
 
             prevVoicing = voicing;
         }
+
+        // R 阶段:post-pass voice leading smoother(0 PRNG,deterministic)
+        //   forward pass 完后,对每 chord 试 inversion variants,选 min
+        //   L1(prev, candidate) + L1(candidate, next) — 消除跨 chord 大跳。
+        smoothChordVoicings(out);
+
         return out;
     },
 };
