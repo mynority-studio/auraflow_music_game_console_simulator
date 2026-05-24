@@ -61,6 +61,8 @@ import { Reconciler } from './Reconciler';
 import type { Score } from './Score';
 import type { Band, SectionAssignment } from './Conductor';
 import { DynamicConductor, CONDUCTOR_TEMPLATES_BY_STYLE } from './Conductor';
+import type { MusicianStep } from './Dispatcher';
+import { dispatchMusicians } from './Dispatcher';
 
 export interface Af2GenerateResult {
     track: GeneratedTrack;
@@ -148,97 +150,92 @@ export const Af2EngineFacade = {
         const sectionAssignments: ReadonlyArray<SectionAssignment> = conductor.dispatch(score, band);
 
         // -----------------------------------------------------------
-        // Step 4.5: PadGenerator(条件:Atmosphere 槽位有 Pad family 乐手)
+        // Step 4.5 + 5:Dispatcher(显式"大脑分谱" — 8 层架构 #5)
         //
-        // C.3:改用 plan(score, role, peers) 协议 — Conductor + Score 架构试点。
-        // PadGenerator 是 AF2 自有(不动 mg),零风险作为新协议第一个 musician。
-        // peers 当前为空 Map(C.5+ 其他 musicians 改造完后才有内容)。
+        // 按顺序调用 musicians.plan(),累积 peers(cross-track 协调地基)。
+        //   Order:bass → accomp → drums → melody → pad
+        //   (rhythm 先建 → harmonic 上 → drums 看 bass/accomp → melody → pad 收尾)
+        //
+        // 每个 step 是 closure,内部桥接到对应 idiom 实现 + 捕获原料 notes /
+        // musician 卡 / drum 专用 rng 等。Dispatcher 不感知 idiom 细节,只管"按顺序
+        // 调,累积 peers"。peers 暂未被 musicians 消费(future ready)。
         // -----------------------------------------------------------
         const atmosphereMusician = routed[BandRole.Atmosphere].musician;
-        const padNotes = atmosphereMusician?.instrumentFamily === InstrumentFamily.Pad
-            ? PadGenerator.plan({
-                score,
-                musicianId: atmosphereMusician.id,
-                musician: atmosphereMusician,
-                assignments: sectionAssignments,
-                peers: new Map(),
-              })
-            : [];
-
-        // -----------------------------------------------------------
-        // Step 4.6: DrumGenerator(条件:Drums 槽位有 Percussion family 乐手)
-        //
-        // Phase 2b.2 升级:port AF 16-step grid 架构 + per-mgStyle 4 套 grid
-        //   (POP/JAZZ/BLUES/RNB)+ energy 双轴缩放 + Dynamic Override
-        //   (Crash/Fill/Ride)+ 保留 chord/bass modifier。
-        //
-        //   - mgStyle 决定 grid 风格 DNA
-        //   - rng:独立 PRNG 派生 seed(与 mg / ChordTextureEngine 不冲突,
-        //     每 step 固定 3 次 gate PRNG D-5 锁帧)
-        //   - bassNotes/chordNotes 作为 probability modifier
-        // -----------------------------------------------------------
         const drumMusician = routed[BandRole.Drums].musician;
-        const drumNotes = drumMusician?.instrumentFamily === InstrumentFamily.Percussion
-            ? DrumGenerator.plan({
-                score,
-                musicianId: drumMusician.id,
-                assignments: sectionAssignments,
-                mgStyle,
-                bassNotes: routed[BandRole.Bass].notes,
-                chordNotes: routed[BandRole.Accomp].notes,
-                rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
-            })
-            : [];
-        // Note: DrumPlanInput 是 drum-specific shape(rng/mgStyle 主导行为),
-        // 当前未传 musician 卡(drum 暂未消费 musician.af2Overrides — Phase 后续可加)
-
-        // -----------------------------------------------------------
-        // Step 5: Realizer — 按 musician.instrumentFamily 分支
-        //
-        //   Bass 槽位:Bass family → BassIdiom + electricBass 通道
-        //              其他 / 空 → PianoIdiom + pianoLH/RH 通道(Phase 1 行为)
-        //   MainInst / Accomp:Phase 2a 统一 PianoIdiom(Phase 2b+ 加非钢琴 idiom 时
-        //                      在此分支)
-        // -----------------------------------------------------------
         const mainMusician = routed[BandRole.MainInst].musician;
         const accompMusician = routed[BandRole.Accomp].musician;
         const bassMusician = routed[BandRole.Bass].musician;
         const useElectricBass = bassMusician?.instrumentFamily === InstrumentFamily.Bass;
 
-        // C.5 + musician 卡参数化:全 musicians 迁 plan(MusicianPlanInput) 协议,
-        // musician 字段透传以解锁 Layer 1/2 overrides(regions / escapeProb / add11Gate)。
-        //   - Layer 3 sectionRolePreference 已在 Conductor.dispatch 时消费完毕
-        //   - 空 musician → 直接跳过
-        const planMain = (m: typeof mainMusician) => m && PianoIdiom.planMelody({
-            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
-            peers: new Map(),
-            notes: { melody: routed[BandRole.MainInst].notes },
-        }) || [];
-        const planAccomp = (m: typeof accompMusician) => m && PianoIdiom.planAccomp({
-            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
-            peers: new Map(),
-            notes: { accomp: routed[BandRole.Accomp].notes },
-        }) || [];
-        const planBassPiano = (m: typeof bassMusician) => m && PianoIdiom.planBass({
-            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
-            peers: new Map(),
-            notes: { bass: routed[BandRole.Bass].notes },
-        }) || [];
-        const planBassElectric = (m: typeof bassMusician) => m && BassIdiom.plan({
-            score, musicianId: m.id, musician: m, assignments: sectionAssignments,
-            peers: new Map(),
-            notes: { bass: routed[BandRole.Bass].notes },
-        }) || [];
+        const steps: MusicianStep[] = [];
 
-        const renderedMainRaw   = planMain(mainMusician);
-        const renderedAccompRaw = planAccomp(accompMusician);
-        const renderedBassRaw   = !bassMusician
-            ? []
-            : useElectricBass
-                ? planBassElectric(bassMusician)
-                : planBassPiano(bassMusician);
+        // 1. Bass(rhythm 底)
+        if (bassMusician) {
+            const bm = bassMusician;
+            steps.push({
+                musicianId: bm.id,
+                plan: (input) => useElectricBass
+                    ? BassIdiom.plan({ ...input, musician: bm, notes: { bass: routed[BandRole.Bass].notes } })
+                    : PianoIdiom.planBass({ ...input, musician: bm, notes: { bass: routed[BandRole.Bass].notes } }),
+            });
+        }
+
+        // 2. Accomp(harmonic 底)
+        if (accompMusician) {
+            const am = accompMusician;
+            steps.push({
+                musicianId: am.id,
+                plan: (input) => PianoIdiom.planAccomp({ ...input, musician: am, notes: { accomp: routed[BandRole.Accomp].notes } }),
+            });
+        }
+
+        // 3. Drums(rhythm grid,看 bass + accomp 做 modifier — bassNotes/chordNotes 注入)
+        if (drumMusician?.instrumentFamily === InstrumentFamily.Percussion) {
+            const dm = drumMusician;
+            steps.push({
+                musicianId: dm.id,
+                plan: (input) => DrumGenerator.plan({
+                    score: input.score,
+                    musicianId: input.musicianId,
+                    assignments: input.assignments,
+                    mgStyle,
+                    bassNotes: routed[BandRole.Bass].notes,
+                    chordNotes: routed[BandRole.Accomp].notes,
+                    rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
+                }),
+            });
+        }
+
+        // 4. Melody(看 bass + accomp + drums,跨 part 协调可参考 peers)
+        if (mainMusician) {
+            const mm = mainMusician;
+            steps.push({
+                musicianId: mm.id,
+                plan: (input) => PianoIdiom.planMelody({ ...input, musician: mm, notes: { melody: routed[BandRole.MainInst].notes } }),
+            });
+        }
+
+        // 5. Pad(填空 / ambient,看所有人 peers — 当前不消费)
+        if (atmosphereMusician?.instrumentFamily === InstrumentFamily.Pad) {
+            const atm = atmosphereMusician;
+            steps.push({
+                musicianId: atm.id,
+                plan: (input) => PadGenerator.plan({ ...input, musician: atm }),
+            });
+        }
+
+        const performanceByMusician = dispatchMusicians(score, sectionAssignments, steps);
+
+        // Extract per-musician notes(空 musician → [])
+        const renderedBassRaw   = bassMusician      ? performanceByMusician.get(bassMusician.id)      ?? [] : [];
+        const renderedAccompRaw = accompMusician    ? performanceByMusician.get(accompMusician.id)    ?? [] : [];
+        const drumNotes         = drumMusician?.instrumentFamily === InstrumentFamily.Percussion
+                                  ? performanceByMusician.get(drumMusician.id)      ?? [] : [];
+        const renderedMainRaw   = mainMusician      ? performanceByMusician.get(mainMusician.id)      ?? [] : [];
+        const padNotes          = atmosphereMusician?.instrumentFamily === InstrumentFamily.Pad
+                                  ? performanceByMusician.get(atmosphereMusician.id) ?? [] : [];
+
         const renderedPadRaw = PadIdiom.realize(padNotes);
-        // DrumGenerator 直接产 NoteData,无须 DrumIdiom.realize 后处理(它也是直通)
 
         // -----------------------------------------------------------
         // Step 5.5: Reconciler v1.0 — 段落能量驱动 velocity humanization
