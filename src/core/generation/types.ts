@@ -695,6 +695,15 @@ export interface GenerationOptions {
     motifRole?: 'Foreground' | 'Middleground' | 'Background';
     detectedTimeSignature?: [number, number];
     detectedTonality?: Tonality;
+    /**
+     * K5 阶段:user 显式指定 keyOffset(0-11)— pc 0=C,1=Db,2=D,...,11=B。
+     * 未传 → Facade 用 `af2_key_${seed}` PRNG 抽 0-11。
+     * 越界值(<0 / >11)→ ignore,fallback PRNG。
+     *
+     * 跟 detectedTonality 独立:user 可单独指定 key 而保持 tonality 随机,
+     * 或反之。
+     */
+    detectedKey?: number;
 }
 export interface TempoCurve {
     startTick: number;

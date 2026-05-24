@@ -109,20 +109,25 @@ export const Af2EngineFacade = {
         // forked stream `af2_key_${seed}` / `af2_tonality_${seed}` 独立 —
         // 主 rng 流不受影响,同 seed 之前生成内容(进行/voicing/family)行为不变。
         //
-        // Tonality 分布:Major 70% / Minor 30%(Pop/Jazz/Blues/RNB 通用经验值;
-        // 后续可 per-mgStyle 微调,如 BLUES 偏 Major、Jazz 偏 Minor)。
+        // Tonality 分布:Major 70% / Minor 30%(Pop/Jazz/Blues/RNB 通用经验值)。
         //
-        // Minor 限制(K2 阶段):
-        //   - BorrowChordPlanner 在 Minor 时 short-circuit(rule 池是 Major-designed,
-        //     Minor borrow 留 K3)
-        //   - Arranger 用 Minor 专用进行池(SECTION_POOLS_BY_STYLE_MINOR)
-        //   - TonicizationPlanner 自动 minor-aware(读 next.roman/type 判 quality)
-        //   - Composer isMinorKey=true 让 spell 正确(Bb 调 minor vs A# 调 major)
+        // K5 阶段 user override 优先级(若 user 显式传):
+        //   detectedKey ∈ [0, 11]    → 用 user keyOffset(否则 PRNG 抽,sub-rng 仍 fork)
+        //   detectedTonality 已传    → 用 user tonality(否则 PRNG 抽)
+        //
+        // 两字段独立:user 可单独锁 key 而保持 tonality 随机,或反之。
+        // sub-rng 独立 fork — user override 时 rng 创建但不 advance(主流不变)。
         const keyRng = new Random(`af2_key_${auraflowSeed >>> 0}`);
-        const keyOffset = keyRng.range(0, 11);
-        const key = KEYS[keyOffset];
         const tonalityRng = new Random(`af2_tonality_${auraflowSeed >>> 0}`);
-        const tonality = tonalityRng.next() < 0.7 ? Tonality.Major : Tonality.Minor;
+        const userKey = options.generation?.detectedKey;
+        const keyOffset = (userKey !== undefined && Number.isInteger(userKey) && userKey >= 0 && userKey <= 11)
+            ? userKey
+            : keyRng.range(0, 11);
+        const key = KEYS[keyOffset];
+        const userTonality = options.generation?.detectedTonality;
+        const tonality = (userTonality === Tonality.Major || userTonality === Tonality.Minor)
+            ? userTonality
+            : (tonalityRng.next() < 0.7 ? Tonality.Major : Tonality.Minor);
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
