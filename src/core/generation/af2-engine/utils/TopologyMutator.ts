@@ -25,7 +25,7 @@
  * @author AuraFlow Tap!
  */
 
-import { NoteData, TopologyConfig } from '../types';
+import { NoteData, TopologyConfig } from '../../types';
 
 export class TopologyMutator {
     private static readonly EPSILON = 1e-6;

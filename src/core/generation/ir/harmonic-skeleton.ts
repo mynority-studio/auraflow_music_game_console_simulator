@@ -21,7 +21,13 @@
 // ============================================================
 
 import type { ChordQuality } from '../types';
-import { HarmonicFunction } from '../pipeline/MacroProgressionEngine';
+
+/** 功能和声三态(T-S-D)— 从原 pipeline/MacroProgressionEngine 内联 */
+export enum HarmonicFunction {
+    Tonic       = 0,
+    Subdominant = 1,
+    Dominant    = 2,
+}
 
 /**
  * 张力延伸音建议(色彩音,**非和弦音**)。

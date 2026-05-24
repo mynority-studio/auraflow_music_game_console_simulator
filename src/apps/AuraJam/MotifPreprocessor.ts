@@ -1,5 +1,5 @@
 import { NoteData, Tonality, SCALE_INTERVALS, TopologyConfig } from '@/src/core/generation/types';
-import { TopologyMutator } from '@/src/core/generation/primitives/TopologyMutator';
+import { TopologyMutator } from '@/src/core/generation/af2-engine/utils/TopologyMutator';
 import { PRNGManager } from '@/src/core/utils/PRNG';
 
 type MotifRole = 'Foreground' | 'Middleground' | 'Background';
