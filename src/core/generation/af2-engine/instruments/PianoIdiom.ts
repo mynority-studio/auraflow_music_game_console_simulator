@@ -32,6 +32,7 @@ import { BandRole, ChordQuality } from '../../types';
 import type { MusicianPlanInput, ConductorRole } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 import { generateAf2Melody } from '../Af2MelodyGen';
+import { generateAf2Accomp } from '../Af2AccompGen';
 
 /** 钢琴物理参数(Phase 1 仅文档,Phase 2+ BandSelectionPanel 消费) */
 export const PIANO_INSTRUMENT_SPEC = {
@@ -255,6 +256,15 @@ export const PianoIdiom = {
      * Phase D+ 计划:柱式 / 分解 / smart omit + add11 hand-spread 约束
      */
     planAccomp(input: MusicianPlanInput): NoteData[] {
+        const algo = input.musician?.af2Overrides?.accompAlgorithm ?? 'mg';
+        if (algo === 'af2') {
+            // AF2 自家 accomp(Block/Arp/Stab/Sustained patterns)
+            const generated = generateAf2Accomp(input.score.chords, input.score.sections, input);
+            // 仍走 region 概率调整(尊重 musician 卡 regions.accomp 覆盖)
+            const accompRegion = input.musician?.af2Overrides?.regions?.accomp ?? PIANO_REGIONS.accomp;
+            const escapeProb = input.musician?.af2Overrides?.escapeProbability ?? ESCAPE_PROBABILITY;
+            return applyRegionProbability(generated, accompRegion, escapeProb);
+        }
         return planForRole(input, 'accomp', PIANO_REGIONS.accomp);
     },
 

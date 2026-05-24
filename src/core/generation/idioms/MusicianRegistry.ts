@@ -81,6 +81,12 @@ export const MUSICIAN_POOL: Musician[] = [
             },
         },
         description: 'Pop/Jazz 通用钢琴手，双角色（主奏 + 伴奏）',
+        // AF2 overrides — alex 作"通用对照"opt-in melody+accomp 全 AF2 算法,
+        // 验证 v1.1 跨 musician 稳定性。marcus 留对照(纯 mg)
+        af2Overrides: {
+            melodyAlgorithm: 'af2',
+            accompAlgorithm: 'af2',
+        },
     },
     // 🎸 贝斯手 Frank — Pop/Funk 电贝斯，正拍稳重
     {
@@ -172,6 +178,7 @@ export const MUSICIAN_POOL: Musician[] = [
             escapeProbability: 0.02,      // 默认 0.05 → 0.02(几乎完全 clamp)
             add11GateProbability: 0.30,   // 默认 0.60 → 0.30(Pop 不太用 11音物理)
             melodyAlgorithm: 'af2',        // MVP testbed:opt-in AF2 自家 melody 算法
+            accompAlgorithm: 'af2',        // accomp 也 opt-in(配套测试 Block/Arp/Stab patterns)
         },
     },
     // 🎹 Marcus — Neo-Soul 钢琴手（高色彩 + 高 sync + 高 lickProb，D'Angelo 风）

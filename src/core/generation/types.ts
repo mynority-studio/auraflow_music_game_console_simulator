@@ -499,6 +499,12 @@ export interface Af2MusicianOverrides {
      * 默认 'mg' 保持向后兼容。opt-in 'af2' 让 musician 走 AF2 自家 melody 算法。
      */
     melodyAlgorithm?: 'af2' | 'mg';
+    /**
+     * Layer 4(同上,accomp 路径):
+     *   'mg'  (默认):planAccomp 直通 mg.notes.accomp
+     *   'af2'        :planAccomp 调 Af2AccompGen 自家(Block/Arp/Stab/Sustained patterns)
+     */
+    accompAlgorithm?: 'af2' | 'mg';
 }
 
 // 5. 乐队阵容名单 (Band Roster)
