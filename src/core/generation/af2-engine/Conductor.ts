@@ -208,6 +208,15 @@ function energyConstrainedRoles(energyLevel: number): ReadonlySet<ConductorRole>
     return new Set<ConductorRole>(['pad', 'bass', 'accomp', 'melody', 'drums']);
 }
 
+/**
+ * Section.energyLevel(1-10)→ K(归一化 0-1,与 musician.persona.wakeK 比较用)。
+ * 公式:K = (energyLevel - 1) / 9,clamp [0, 1]。
+ */
+function energyLevelToK(energyLevel: number): number {
+    const k = (energyLevel - 1) / 9;
+    return k < 0 ? 0 : k > 1 ? 1 : k;
+}
+
 export class DynamicConductor implements Conductor {
     private readonly template: ConductorTemplate;
 
@@ -230,7 +239,14 @@ export class DynamicConductor implements Conductor {
             const energyRoles = energyConstrainedRoles(section.energyLevel ?? 5);
             const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
 
+            const sectionK = energyLevelToK(section.energyLevel ?? 5);
             for (const [musicianId, roles] of fullByMusician) {
+                const musician = musicianById.get(musicianId);
+                // (0) Persona wakeK gate(综合决策 C 升级)— K < wakeK → 该段 musician sleeping
+                //   alex_piano (wakeK 0.05) 几乎不睡 / frank_bass (0.30) 低 K Intro/Outro 睡
+                const wakeK = musician?.persona?.wakeK;
+                if (wakeK !== undefined && sectionK < wakeK) continue;  // sleeping
+
                 let kept = roles as ReadonlyArray<ConductorRole>;
                 // (1) Style template filter
                 if (templateRoles) kept = kept.filter(r => templateRoles.has(r));
@@ -239,7 +255,7 @@ export class DynamicConductor implements Conductor {
                 //     高 energy 不额外限制(已 template-bound)
                 kept = kept.filter(r => energyRoles.has(r));
                 // (3) Layer 3:musician 卡 sectionRolePreference INTERSECTION
-                const musicianPref = musicianById.get(musicianId)?.af2Overrides?.sectionRolePreference?.[section.sectionType];
+                const musicianPref = musician?.af2Overrides?.sectionRolePreference?.[section.sectionType];
                 if (musicianPref !== undefined) {
                     kept = kept.filter(r => musicianPref.has(r));
                 }

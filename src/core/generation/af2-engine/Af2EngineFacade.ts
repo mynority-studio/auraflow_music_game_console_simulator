@@ -189,9 +189,20 @@ export const Af2EngineFacade = {
             });
         }
 
-        // 3. Drums(rhythm grid,看 bass + accomp 做 modifier — bassNotes/chordNotes 注入)
+        // 3. Drums(rhythm grid,跨 part peers 实际消费 B 升级:
+        //    从 input.peers 读 bass + accomp musicians 已 emit 的 notes,而非
+        //    closure 直接传 routed.notes)
+        //
+        //    peers 的好处:
+        //    - 看到的是 musician 已经经过 plan() 调整的 notes(per-section gate /
+        //      Phase B/C 处理后的最终输出),drums 对齐的是"实际听到的"bass/accomp
+        //    - 不再 hard-code 与 routed 槽位的耦合
+        //
+        //    若 bass / accomp musician null → peers 没对应 key → 空数组 fallback
         if (drumMusician?.instrumentFamily === InstrumentFamily.Percussion) {
             const dm = drumMusician;
+            const bassMusicianId = bassMusician?.id;
+            const accompMusicianId = accompMusician?.id;
             steps.push({
                 musicianId: dm.id,
                 plan: (input) => DrumGenerator.plan({
@@ -199,8 +210,9 @@ export const Af2EngineFacade = {
                     musicianId: input.musicianId,
                     assignments: input.assignments,
                     mgStyle,
-                    bassNotes: routed[BandRole.Bass].notes,
-                    chordNotes: routed[BandRole.Accomp].notes,
+                    // B 升级:从 peers 读(drums 是 step 3,bass+accomp 已 emit 完毕)
+                    bassNotes: bassMusicianId ? (input.peers.get(bassMusicianId) ?? []) as NoteData[] : [],
+                    chordNotes: accompMusicianId ? (input.peers.get(accompMusicianId) ?? []) as NoteData[] : [],
                     rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
                 }),
             });
