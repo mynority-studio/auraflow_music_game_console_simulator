@@ -43,7 +43,7 @@ import { PRNGManager } from '../../utils/PRNG';
 import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { getMusicianById } from '../idioms/MusicianRegistry';
-import { Random } from '../mg-engine/musicEngine';
+import { Random } from './utils/Random';
 import { bandRoleToTrackKeys } from '../data/GMSoundMap';
 import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
@@ -100,20 +100,12 @@ export const Af2EngineFacade = {
         const sections = SectionPlanner.plan(mgStyle, totalBars, 4);
 
         // -----------------------------------------------------------
-        // Step 2: mg 内核 with AF2 Arranger + AF2 Composer + skipArrangement
-        //   - useAf2Arranger=true → Section-aware AF2 Arranger 决进行
-        //   - useAf2Composer=true → AF2 Composer 决 voicing + bass + chordSymbol
-        //   - skipArrangement=true → 跳过 mg.generateArrangement(events=[])
-        //     所有 piano musicians 都 opt-in AF2 算法,所有 bass walkPatternId 已设,
-        //     drums/pad AF2-native,events 已无消费者
+        // Step 2: AF2 内核(MgKernelInvoker 仅保留命名,内部全 AF2 — 删 mg 后简化)
+        //   - Af2Arranger:section-aware 决进行
+        //   - Af2Composer:决 voicing + bass + chordSymbol
+        //   - events 永远空(全 AF2 musicians plan() 自给)
         // -----------------------------------------------------------
-        const mg = MgKernelInvoker.invoke(
-            mgSeedString, mgStyle, key,
-            /* useAf2Arranger */ true,
-            sections,
-            /* useAf2Composer */ true,
-            /* skipArrangement */ true,
-        );
+        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key, sections);
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)

@@ -35,7 +35,7 @@
 
 import type { NoteData, SectionMetadata, MusicianPersona } from '../../types';
 import { BandRole } from '../../types';
-import type { Random } from '../../mg-engine/musicEngine';
+import type { Random } from '../utils/Random';
 import type { MgStyle } from '../../../../state/EngineSelectionStore';
 import { getDrumGridByMgStyle } from './drum-grid/grids';
 import type { DrumGridConfig } from './drum-grid/types';

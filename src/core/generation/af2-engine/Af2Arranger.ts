@@ -21,7 +21,7 @@
 //   - 与 musician 卡的 sectionRolePreference 协同(主奏喜欢的进行风格)
 // ============================================================
 
-import type { Random } from '../mg-engine/musicEngine';
+import type { Random } from './utils/Random';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { SectionType } from '../types';
 import type { SectionMetadata } from '../types';

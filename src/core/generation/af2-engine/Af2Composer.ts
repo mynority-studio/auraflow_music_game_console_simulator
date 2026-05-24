@@ -26,12 +26,12 @@
 //   7. effectiveFunc = harmonicFunctionFromRoman(roman)
 // ============================================================
 
-import { CHORD_TYPES, placeVoicingMidi, BASS_RANGE } from './music-theory';
 import {
+    CHORD_TYPES, placeVoicingMidi, BASS_RANGE,
     KEYS, harmonicFunctionFromRoman, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
-    Random,
-} from '../mg-engine/musicEngine';
-import type { ChordDef } from '../mg-engine/musicEngine';
+} from './music-theory';
+import { Random } from './utils/Random';
+import type { ChordDef } from './types/ChordDef';
 import type { Af2AbstractStep } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 
