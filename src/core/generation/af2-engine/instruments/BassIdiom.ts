@@ -36,13 +36,17 @@ import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 import { WALK_PATTERNS, WalkRule, WalkPatternId } from '../../data/BassWalkPatterns';
 import { thirdInterval, fifthInterval } from '../music-theory/chord-intervals';
 import { placeNearAnchor as placeBassNearAnchor } from '../utils/voice-leading';
+import { BASS_RANGE } from '../music-theory';
 import type { MgStyle } from '../../../../state/EngineSelectionStore';
 
-/** 电贝斯物理参数 */
+/** 电贝斯物理参数(rangeLo/rangeHi = 物理音域描述,UI / BandSelectionPanel 用)
+ *  生成算法用全局 BASS_RANGE [33, 55] = A1-G3 真 bass 区,跟 Composer /
+ *  PianoIdiom bass 一致(避免 walking 飘到中音区撞 chord 频段)。
+ */
 export const BASS_INSTRUMENT_SPEC = {
     gmProgram: 34,           // GM 34 Electric Bass Finger
-    rangeLo: 28,             // E1
-    rangeHi: 67,             // G4
+    rangeLo: 28,             // E1(物理下限)
+    rangeHi: 67,             // G4(物理上限,但生成不用)
     eligibleSlots: [BandRole.Bass] as const,
 } as const;
 
@@ -140,7 +144,10 @@ function renderAf2Walking(
 ): NoteData[] {
     const pattern = WALK_PATTERNS[walkPatternId];
     if (!pattern || pattern.steps.length === 0) return [];
-    const { rangeLo, rangeHi } = BASS_INSTRUMENT_SPEC;
+    // 生成限制用 BASS_RANGE [33, 55] = A1-G3,不用 SPEC.rangeHi=67(G4)。
+    // SPEC.rangeHi 是物理上限给 UI 用,生成飞到 G4 会撞 piano 中音区(audit 2026-05-24)。
+    const rangeLo = BASS_RANGE.LOW;
+    const rangeHi = BASS_RANGE.HIGH;
     const out: NoteData[] = [];
     let prevMidi = BASS_ANCHOR_MIDI;
     let prevPc = chords.length > 0 ? chords[0].root : 0;
