@@ -27,6 +27,7 @@ import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { Af2Arranger } from './Af2Arranger';
 import { Af2Composer } from './Af2Composer';
 import type { BorrowSource } from './BorrowChordPlanner';
+import type { SubStyle } from './SubStyleTextures';
 import { noteToMidi } from './music-theory/midi';
 
 /**
@@ -118,6 +119,7 @@ export const Af2KernelDriver = {
         key: string = 'C',
         sections?: ReadonlyArray<SectionMetadata>,
         isMinor: boolean = false,
+        subStyle?: SubStyle,
     ): MgKernelOutput {
         const rng = new Random(seedString);
 
@@ -157,6 +159,7 @@ export const Af2KernelDriver = {
                 isMinor,
                 picardyRng,        // K3:Minor 调 Picardy 3rd ending
                 minorBorrowRng,    // K4:Minor 调 iv→IV / bVI→VI borrow
+                subStyle,          // P5:per-song sub-style → 进行池优先
             })
             : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
         // K2 阶段:Composer isMinor 影响 chord spell(B♭ 调 minor vs A# 调 major)

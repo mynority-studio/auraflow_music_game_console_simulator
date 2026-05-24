@@ -155,7 +155,7 @@ export const Af2EngineFacade = {
         //   - events 永远空(全 AF2 musicians plan() 自给)
         // -----------------------------------------------------------
         const isMinor = tonality === Tonality.Minor;
-        const mg = Af2KernelDriver.invoke(mgSeedString, mgStyle, key, sections, isMinor);
+        const mg = Af2KernelDriver.invoke(mgSeedString, mgStyle, key, sections, isMinor, subStyle);
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)

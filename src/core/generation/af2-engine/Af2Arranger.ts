@@ -29,6 +29,8 @@ import { planBorrowedChords, type BorrowSource } from './BorrowChordPlanner';
 import { planTonicization } from './TonicizationPlanner';
 import { planPicardyEndings } from './PicardyPlanner';
 import { planMinorBorrows } from './MinorBorrowPlanner';
+import { SUB_STYLE_PROGRESSIONS } from './SubStyleProgressions';
+import type { SubStyle } from './SubStyleTextures';
 
 /**
  * 5-way classification of chromatic / non-diatonic chords —
@@ -461,15 +463,32 @@ const SECTION_POOLS_BY_STYLE_MINOR: Record<MgStyle, Partial<Record<SectionType, 
 };
 
 /**
- * 查给定 (mgStyle, sectionType, isMinor) 的进行池;
- * Minor 调走 *_MINOR 池,Major 走原池。
- * 缺则 fall through 到 DEFAULT_*,仍缺则用 i-iv-V-i / I-IV-V-I 兜底。
+ * 查给定 (mgStyle, sectionType, isMinor, subStyle) 的进行池。
+ *
+ * P5 优先级:
+ *   1. sub-style 进行池(SUB_STYLE_PROGRESSIONS[subStyle].Major/Minor)
+ *      — 不分 sectionType,所有段从同一池抽,但 rng 顺序保证 section 间差异
+ *   2. (Minor)SECTION_POOLS_BY_STYLE_MINOR[mgStyle][sectionType]
+ *      → DEFAULT_BY_SECTION_MINOR → [i-iv-V-i]
+ *   3. (Major)SECTION_POOLS_BY_STYLE[mgStyle][sectionType]
+ *      → DEFAULT_BY_SECTION → [I-IV-V-I]
+ *
+ * BLUES sub-style 不在 SUB_STYLE_PROGRESSIONS 覆盖范围 — fallback 到 mgStyle pool
+ * (保 12-bar 切片完整性)。
  */
 function getSectionPool(
     mgStyle: MgStyle,
     sectionType: SectionType,
     isMinor: boolean = false,
+    subStyle?: SubStyle,
 ): ProgressionPool {
+    // P5:sub-style pool 优先(若有)
+    if (subStyle) {
+        const subStylePools = SUB_STYLE_PROGRESSIONS[subStyle];
+        const pool = isMinor ? subStylePools?.Minor : subStylePools?.Major;
+        if (pool && pool.length > 0) return pool;
+    }
+    // Fallback to mgStyle section pool
     if (isMinor) {
         return SECTION_POOLS_BY_STYLE_MINOR[mgStyle]?.[sectionType]
             ?? DEFAULT_BY_SECTION_MINOR[sectionType]
@@ -519,6 +538,8 @@ export interface ArrangePlannerOptions {
     picardyRng?: Random;
     /** K4 阶段:PRNG 子流(`${seed}::minor-borrow`)— Minor only(iv→IV / bVI→VI)*/
     minorBorrowRng?: Random;
+    /** P5 阶段:per-song sub-style(若有则优先用 SUB_STYLE_PROGRESSIONS 池) */
+    subStyle?: SubStyle;
 }
 
 export const Af2Arranger = {
@@ -542,10 +563,11 @@ export const Af2Arranger = {
     ): Af2AbstractStep[] {
         let out: Af2AbstractStep[] = [];
         const isMinor = plannerOptions?.isMinor ?? false;
+        const subStyle = plannerOptions?.subStyle;
         for (const section of sections) {
             const sectionBeats = section.endBeat - section.startBeat;
             const sectionBars = Math.max(1, Math.round(sectionBeats / beatsPerMeasure));
-            const pool = getSectionPool(mgStyle, section.sectionType, isMinor);
+            const pool = getSectionPool(mgStyle, section.sectionType, isMinor, subStyle);
             const chosen = rng.pick(pool as Af2AbstractStep[][]);
             for (let bar = 0; bar < sectionBars; bar++) {
                 out.push({ ...chosen[bar % chosen.length] });
