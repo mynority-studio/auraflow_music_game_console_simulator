@@ -199,12 +199,6 @@ export const StyleRegistry: Record<StyleId, StyleConfig> = {
     }),
 };
 
-export function getStyleConfig(id: StyleId): StyleConfig {
-    return StyleRegistry[id] ?? StyleRegistry[StyleId.ModernPop];
-}
-
-export function getAllAvailableStyles(): StyleConfig[] {
-    return Object.values(StyleRegistry);
-}
-
+// 2026-05-24:删 getStyleConfig / getAllAvailableStyles(0 caller)。
+//   保留 AcgStyleConfig — Apps fallback 用。
 export const AcgStyleConfig: StyleConfig = StyleRegistry[StyleId.ModernPop];

@@ -11,7 +11,7 @@ import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 import { ScaleEngine, ScaleState } from './ScaleEngine';
 import { MotifRecorder } from './MotifRecorder';
 import { preprocessMotif } from './MotifPreprocessor';
-import { getStyleStage5Bundle } from '../../core/generation/config/styles';
+// getStyleStage5Bundle 已不需要(motif 预处理 topologyConfig 已删 2026-05-24)
 
 export type JamAppState =
     | 'SCALE_VIEW'
@@ -150,11 +150,9 @@ export class JamSessionManager {
             const allStyleIds = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
             const randomStyleId = allStyleIds[Math.floor(PRNGManager.next() * allStyleIds.length)];
 
-            const stage5Bundle = getStyleStage5Bundle(randomStyleId);
-            const leadTopology = stage5Bundle.personas[2]?.topologyConfig; // ROLE_LEAD = 2
-
-            // 🌟 Motif 智能预处理：质量分析 + 清洗 + 变奏扩展（拓扑链由 Lead Persona 注入）
-            const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality, leadTopology);
+            // 2026-05-24:topologyConfig persona 字段已删,motif 预处理走内置默认 TopologyConfig
+            //   (preprocessMotif 第 3 参 undefined 时 fallback 到 expandMotif 内 configToUse 默认)
+            const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality);
 
             // Single Pipeline 原则:所有 app 走同一个 runPipeline,共享 BandSelectionStore 状态
             const rawTrack = runPipeline({

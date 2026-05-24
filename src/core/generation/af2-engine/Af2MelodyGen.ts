@@ -25,87 +25,17 @@
 
 import type { NoteData, SectionMetadata } from '../types';
 import type { GeneratedChord } from '../ir';
-import { ChordQuality, SectionType, Tonality } from '../types';
+import { SectionType, Tonality } from '../types';
 import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
 import { rankCandidatePcs } from './music-theory/note-evaluator';
+import { thirdInterval, fifthInterval, seventhInterval } from './music-theory/chord-intervals';
+import { placeNearAnchor } from './utils/voice-leading';
 
 const MELODY_DEFAULT_VELOCITY = 0.72;
 
-// ============================================================
-// 音程 helpers(按 chord quality 取 3rd / 5th / 7th)
-// ============================================================
-
-function thirdInterval(q: ChordQuality): number {
-    switch (q) {
-        case ChordQuality.Minor:
-        case ChordQuality.Minor7:
-        case ChordQuality.Minor9:
-        case ChordQuality.Minor11:
-        case ChordQuality.HalfDiminished:
-        case ChordQuality.Diminished:
-        case ChordQuality.Diminished7:
-            return 3;
-        default:
-            return 4;
-    }
-}
-
-function fifthInterval(q: ChordQuality): number {
-    switch (q) {
-        case ChordQuality.Diminished:
-        case ChordQuality.Diminished7:
-        case ChordQuality.HalfDiminished:
-            return 6;
-        case ChordQuality.Augmented:
-            return 8;
-        default:
-            return 7;
-    }
-}
-
-function seventhInterval(q: ChordQuality): number {
-    switch (q) {
-        case ChordQuality.Major7:
-        case ChordQuality.Major9:
-        case ChordQuality.Major13:
-        case ChordQuality.Major7Sharp11:
-            return 11;
-        case ChordQuality.Diminished7:
-            return 9;
-        case ChordQuality.HalfDiminished:
-        case ChordQuality.Minor7:
-        case ChordQuality.Minor9:
-        case ChordQuality.Minor11:
-        case ChordQuality.Dominant7:
-        case ChordQuality.Dominant9:
-        case ChordQuality.Dominant11:
-        case ChordQuality.Dominant13:
-            return 10;
-        default:
-            return 11;
-    }
-}
-
-/** 同 PC 取离 prevMidi 最近的八度,clamp 到 range */
-function placeNearAnchor(pc: number, prevMidi: number, lo: number, hi: number): number {
-    let best = pc;
-    while (best < lo) best += 12;
-    while (best > hi) best -= 12;
-    if (best < lo) best = pc + 12 * Math.ceil((lo - pc) / 12);
-    let bestDist = Math.abs(best - prevMidi);
-    for (let m = best - 12; m >= lo; m -= 12) {
-        const d = Math.abs(m - prevMidi);
-        if (d < bestDist) { bestDist = d; best = m; }
-    }
-    for (let m = best + 12; m <= hi; m += 12) {
-        const d = Math.abs(m - prevMidi);
-        if (d < bestDist) { bestDist = d; best = m; }
-    }
-    if (best < lo) best = lo;
-    if (best > hi) best = hi;
-    return best;
-}
+// thirdInterval / fifthInterval / seventhInterval / placeNearAnchor
+// 已抽取到 music-theory/chord-intervals.ts + utils/voice-leading.ts(2026-05-24)
 
 // ============================================================
 // Rhythm patterns(slot duration 数组,sum 必须 = 1.0,代表占 chord 比例)

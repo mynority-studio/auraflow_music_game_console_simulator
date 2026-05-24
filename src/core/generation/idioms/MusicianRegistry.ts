@@ -20,7 +20,6 @@ import {
     LeadIdiom,
     CompingIdiom,
     BandRole,
-    ContourType,
     InstrumentFamily,
     MusicianPersona,
     SectionType,
@@ -50,35 +49,13 @@ export const MUSICIAN_POOL: Musician[] = [
         persona: {
             colorBias: 0.4,
             sparsityTendency: 0.5,
-            contourPreference: ContourType.Random,
             syncopationAssault: 0.3,
             dynamicRange: [55, 100],
-            pianoPedalRatio: 1.0,
-            signatureLickProb: 0.15,
             // Phase 3 — alex_piano 是 Pop / Jazz 钢琴 comping 的"定海神针"
             // 跨段保持 STYLE_ANCHOR_RECIPE 锁定的 recipe,只让 density 浮动
-            isAnchor: true,
             // Phase 6a — anchor 几乎不睡(wakeK 极低)
             wakeK: 0.05,
             peakK: 0.85,
-            // C1：Pop 经典 C 大调下行级进 hook（C5 → A4 → G4 → E4），1.5 拍长音收 mi
-            lickPool: [
-                [
-                    { pitch: 72, onset: 0,   duration: 0.5, velocity: 0.85 },
-                    { pitch: 69, onset: 0.5, duration: 0.5, velocity: 0.75 },
-                    { pitch: 67, onset: 1.0, duration: 0.5, velocity: 0.75 },
-                    { pitch: 64, onset: 1.5, duration: 1.5, velocity: 0.9  },
-                ],
-            ],
-            // C1：Pop 中庸 topologyConfig — invert/reverse 偶现，sideSlip 小幅度（避免破坏调内级进）
-            topologyConfig: {
-                probInvert:    0.15,
-                probReverse:   0.10,
-                probExpand:    0.20,
-                probSideSlip:  0.10,
-                sideSlipRange: 2,
-                colorBias:     0.4,
-            },
         },
         description: 'Pop/Jazz 通用钢琴手，双角色（主奏 + 伴奏）',
         // AF2 overrides — alex 作"通用对照"opt-in melody+accomp 全 AF2 算法,
@@ -103,7 +80,6 @@ export const MUSICIAN_POOL: Musician[] = [
         persona: {
             colorBias: 0.0,
             sparsityTendency: 0.5,
-            contourPreference: ContourType.Upward,
             syncopationAssault: 0.1,
             dynamicRange: [75, 110],
             // A1：Pop 抒情 root-fifth 半音符律动（Bill Evans 风慢 walking）
@@ -136,7 +112,6 @@ export const MUSICIAN_POOL: Musician[] = [
         persona: {
             colorBias: 0.0,
             sparsityTendency: 0.6,
-            contourPreference: ContourType.Upward,
             syncopationAssault: 0.2,
             dynamicRange: [85, 115],
             // Phase 4 — Apex Predator 演示:鼓组 BuildUp/Chorus 峰值 K > 0.80 时
@@ -163,11 +138,8 @@ export const MUSICIAN_POOL: Musician[] = [
         persona: {
             colorBias: 0.15,           // 极少 9/11/13 — 三和弦 + 偶尔 7 为主
             sparsityTendency: 0.4,
-            contourPreference: ContourType.Random,
             syncopationAssault: 0.05,  // 几乎完全正拍 — 主流流行钢琴标准
             dynamicRange: [60, 95],
-            pianoPedalRatio: 1.0,
-            signatureLickProb: 0.0,    // 不用 lick
         },
         description: '主流 Pop 钢琴手 — 极简直拍，给主旋律留空间',
         // AF2 overrides — 保守 Pop:严守主区,极少越界,不太用 add11 物理
@@ -205,12 +177,10 @@ export const MUSICIAN_POOL: Musician[] = [
         persona: {
             colorBias: 0.5,
             sparsityTendency: 0.9,   // 极稀疏（pad 每小节最多 1~2 击点）
-            contourPreference: ContourType.Alternating,
             syncopationAssault: 0.0, // pad 永远不切分
             dynamicRange: [40, 80],
             // Phase 3 — nina_pad 是 NeoSoul / Cinematic 编制的"定海神针"
             // Pad 天然 sustained,density 浮动主要影响 voiceCount 与 octaveLayering
-            isAnchor: true,
             // Phase 6a — pad 几乎不睡(开阔感铺底);peakK 中等(高 K 触发 octaveLayering 已够)
             wakeK: 0.10,
             peakK: 0.85,
@@ -230,7 +200,6 @@ export const PANGEA_DICT: Record<string, unknown> = {};
 const STUB_LEAD: LeadIdiom = {
     needsBreathing: false,
     humanizeVelocity: 0.05,
-    pianoPedalRatio: 1.0,
     graceNoteProbability: 0.0,
     octaveDoubling: false,
 };

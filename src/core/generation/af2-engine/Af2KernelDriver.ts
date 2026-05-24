@@ -1,5 +1,5 @@
 // ============================================================
-// MgKernelInvoker — AF2 chord 生成入口(2026-05-24 删 mg 后保留名称兼容)
+// Af2KernelDriver — AF2 chord 生成入口(2026-05-24 删 mg 后保留名称兼容)
 // ============================================================
 //
 // 历史:本模块原是"AF2 调 mg.Engine 的封装层",做 PRNG 隔离 + mg 转 IR。
@@ -16,7 +16,7 @@
 // events 字段保留为 NoteDataWithPart[] 兼容(永远空数组 — 所有 musicians 都
 //   走 AF2-native plan() 不消费 mg events)。
 //
-// 命名:模块名"MgKernelInvoker"保留作历史 grep 索引,后续可改名 Af2KernelDriver。
+// 命名:模块名"Af2KernelDriver"保留作历史 grep 索引,后续可改名 Af2KernelDriver。
 // ============================================================
 
 import { ChordQuality, Tonality } from '../types';
@@ -101,7 +101,7 @@ function chordDefToGeneratedChord(
     return { generated, durationBeats: chord.duration };
 }
 
-export const MgKernelInvoker = {
+export const Af2KernelDriver = {
     /**
      * AF2 chord 生成入口(纯 AF2 内核,无 mg 依赖)。
      *

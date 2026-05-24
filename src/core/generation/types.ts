@@ -1198,136 +1198,40 @@ export interface InstrumentConfig {
     capabilities: MusicalRole[];
 }
 
-/** Persona 灵魂卡牌（演奏微操偏好） */
+/**
+ * Persona 灵魂卡牌(演奏微操偏好)。
+ *
+ * 2026-05-24 大清理后只保留 AF2 真正消费的字段。删除的老 AF/V4.1 字段:
+ *   contourPreference / pianoPedalRatio / legatoOverlap / signatureLickProb /
+ *   bouncePreference / isAnchor / lickPool / topologyConfig / masterId / masterMode
+ */
 export interface MusicianPersona {
-    /** 色彩倾向：0=只用三和弦 / 0.9=狂用 9/11/13 扩展 */
+    /** 色彩倾向:0=只用三和弦 / 0.9=狂用 9/11/13 扩展。PadIdiom slice + Af2MelodyGen 消费 */
     colorBias: number;
-    /** 稀疏倾向：0=密集弹满 / 0.8=只点关键拍位 */
+    /** 稀疏倾向:0=密集弹满 / 0.8=只点关键拍位。Af2MelodyGen / Af2AccompGen / DrumIdiom 消费 */
     sparsityTendency: number;
-    /** 旋律轮廓偏好（向上/向下/交替/随机） */
-    contourPreference: ContourType;
-    /** 切分攻击性：0=正拍 / 1=完全反拍 */
+    /** 切分攻击性:0=正拍 / 1=完全反拍。Af2MelodyGen / Af2AccompGen / DrumIdiom 消费 */
     syncopationAssault: number;
-    /** 力度区间 [min, max]（0~127） */
+    /** 力度区间 [min, max](0~127)。所有 idiom velocity 浮动消费 */
     dynamicRange: [number, number];
     /**
-     * 钢琴阻尼器踏板系数 — **仅当乐手 instrumentFamily === Piano** 时由 ToplineEngine Pass 3 消费。
-     *   0  = 干（grammar duration 不变）
-     *   1  = 自然踏板（延音至下一个发声音或和弦边界；rest 透明 — 阻尼器下落需时间）
-     *   >1 = 过踏（仍被和弦边界硬钳制）
-     * 未设置回落 1.0。其他族裔忽略本字段（请用 legatoOverlap）。零 PRNG 消耗。
-     */
-    pianoPedalRatio?: number;
-    /**
-     * 单声部 legato 重叠系数 — 当乐手 instrumentFamily ∈ {Wind, Voice, Guitar, Strings} 时
-     * 由 ToplineEngine Pass 3 消费。
-     *   0  = 干（grammar duration 不变 — 偏 staccato）
-     *   1  = 完全 slur（延音至下一个 slot onset；rest 不透明 — 气息/换弓必须断开）
-     *   >1 = 过头（仍被下一个 slot onset 钳）
-     * 未设置回落 1.0（默认连贯）。钢琴族裔忽略本字段（请用 pianoPedalRatio）。零 PRNG 消耗。
-     */
-    legatoOverlap?: number;
-    /** 触发签名乐句的概率 */
-    signatureLickProb?: number;
-    /** V4.1：Oom-Pah Bounce 偏好（0-1）。仅 Solo Piano 模式（bassActive=false）下生效；
-     *  0.0=从不 bounce / 0.5=偶尔 / 0.8=Billy 风格大量 bounce */
-    bouncePreference?: number;
-    /**
-     * Phase 3 — 锚点层标记(Texture Morphing)。
-     *
-     * isAnchor=true 的 musician 在跨段落渲染时:
-     *   - 织体形态(recipeId / baseGrid)**不变**(锁定为风格级 anchor recipe)
-     *   - 仅 densityLevel 随 weather.k 浮动(铺底的"呼吸感")
-     *
-     * 设计动机:解决 PEAA 中"段落拼接突兀"问题(用户痛点) — 在乐队里
-     * 总有一件乐器是"定海神针",其他乐器才能放飞自我。
-     *
-     * 当前规划:
-     *   - alex_piano.isAnchor = true(Pop / Jazz 钢琴 comping)
-     *   - nina_pad.isAnchor   = true(NeoSoul Pad 铺底)
-     *   - bass / drums        = false(节奏组天然就是 anchor 的另一层,不用本标记)
-     */
-    isAnchor?: boolean;
-    /**
-     * Phase 6a — K wake 阈值(Per-Instrument Wake System)。
-     *
-     * 当 section midK < wakeK 时,本 musician 在该段静默(sleeping=true)。
-     * 缺省 undefined = 永不睡(老行为)。
-     *
-     * 推荐基线:
-     *   - alex_piano: 0.05(几乎不睡)
-     *   - nina_pad:   0.10
-     *   - frank_bass: 0.30(低 K Intro/Outro 睡)
-     *   - dave_drums: 0.25
-     *
-     * 与 Anchor 兼容:isAnchor=true 通常 wakeK 设 0-0.10 (基本不睡)
-     * 与 Apex 兼容:isApex=true 通常 peakK 设 1.00(Solo 期间永远不饱和)
-     *
-     * Per-song mutation(防固化):WakeStateMachine.mutateThresholds 用
-     * deterministic hash 在基线 ±0.15 偏移 → 同 musician 每首歌阈值微变。
+     * Conductor wakeK gate — section K < wakeK 时该段 sleeping。
+     * 缺省 undefined = 永不睡。
      */
     wakeK?: number;
     /**
-     * Phase 6a — K peak 阈值(满载激活,Idiom 内部参考)。
-     *
-     * 当 section midK > peakK 时,本 musician 视为"满载"。Idiom 可读此值
-     * 决定是否进入"狂躁模式"(Phase 6b Solo 引擎会用此触发 Solo)。
-     *
-     * 缺省 undefined = 永不满载(老行为)。
+     * Conductor 满载阈值 — section K > peakK 时该 musician 满载(预留 Solo 触发)。
+     * 当前 idiom 不消费(预留)。
      */
     peakK?: number;
     /**
-     * Phase 4 — 顶级捕食者标记(Apex Predator Suppression)。
-     *
-     * isApex=true 的 musician 在 weather.k 跨过高阈值(默认 0.80)的段落,
-     * 触发"侧链 ducking":同段落非节奏组 role(Accomp / Atmosphere)的
-     * velocity 与 voice 被压制,为其让出频段与空间。
-     *
-     * 设计动机:PEAA "Apex Predator Suppression" —— 模拟"主奏来了,其他人闭嘴"
-     * 的乐队反应。BuildUp / Chorus 巅峰段尤其有效。
-     *
-     * 风险约定:
-     *   - isApex 与 isAnchor **不应共存于同一 musician**(语义冲突)
-     *   - apex 与节奏组(Bass/Drums)兼容性最好;主奏(Lead/MainInst)也合理
-     *
-     * 当前规划:
-     *   - dave_drums.isApex = true(Phase 4 演示:鼓组 BuildUp/Chorus 峰值 ducking)
-     *   - 未来 Phase 6 Solo 引擎可动态分配 apex
+     * Conductor isApex 例外 — 高 energy section(>=7)强制保留 musician 所有 roles
+     * 绕过 wakeK / template / energy filter。当前仅 dave_drums 用。
      */
     isApex?: boolean;
-    /** Phase 2: 大师经典 Licks 库 (RELATIVE pitch space) */
-    lickPool?: NoteData[][];
-    /** 角色的专属拓扑变异概率（算法折叠核心） */
-    topologyConfig?: TopologyConfig;
     /**
-     * Master 引用 — 指向 flash/personas 编译产物中的大师 manifest id（如 'BillEvans'）。
-     * 配合 masterMode 决定大师 grammar 的接入深度。
-     *
-     * 未设置 → 走原 PCFGGrammarEngine.expand 路径（风格层提供的 GrammarConfig），与本字段无关。
-     */
-    masterId?: string;
-    /**
-     * Master 接入模式（仅当 masterId 非空时生效）：
-     *
-     *   - 'takeover'（默认）：整段旋律的 TerminalSymbol[] 流由 MasterPhraseRenderer
-     *                          从 COMMON_GRAMMAR_ROOTS 抽样产出，**绕过** PCFGGrammarEngine。
-     *                          风格层 grammar 静默，大师腔调全程主导。
-     *   - 'lick-only'：       PCFGGrammarEngine 正常运行（风格 grammar 是底色），但
-     *                          persona.lickPool 预编译自大师 grammar，触发 signatureLickProb
-     *                          时拼接进去 — 大师作为"招牌乐句"偶尔甩出来。
-     *
-     * 缺省 = 'takeover'（向后兼容 v1：仅 masterId 字段引入时即为 takeover 行为）。
-     */
-    masterMode?: 'takeover' | 'lick-only';
-    /**
-     * A1：Bass / 钢琴 LH walking 默认 pattern。
-     *
-     * Bass 角色 (BassIdiom)：未设置 → 退化到 Layer 1（每和弦头 1 击 root + sustain，兼容原行为）。
-     * 钢琴 LH (PianoAccompIdiom)：BandEngine 由 MoodRouter.pickWalkPattern 注入，
-     *   本字段作为 musician 偏好的兜底（如某位 bass 手习惯 Stride，永远走 Stride）。
-     *
-     * 值为 WalkPatternId 数值枚举（HalfNote=1 / Stride=2 / Pedal=3 / LatinTumbao=4 等）。
-     * 不强类型 import WalkPatternId 是因为 types.ts 不能依赖 data/ 层（架构分层）。
+     * Bass walking pattern id(WalkPatternId enum 数值,HalfNote=1 等)。
+     * BassIdiom:未设置 → 退化 mg pass-through;已设 → AF2 WALK_PATTERNS 渲染。
      */
     walkPatternId?: number;
 }

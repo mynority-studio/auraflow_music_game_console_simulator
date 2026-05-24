@@ -414,13 +414,20 @@ export function getMyRolesInSection(
 /**
  * Helper:beat 落在哪个 section index(sections 应 startBeat 升序)。
  * 找不到 → 返回 -1。
+ *
+ * 2026-05-24 优化:binary search,从 O(n) 线性扫描 → O(log n)。
+ * Idiom 每 chord 重复调用,优化后从 200~500 次 × O(n) → O(log n) 显著降本。
  */
 export function findSectionIdxForBeat(
     beat: number,
     sections: ReadonlyArray<SectionMetadata>,
 ): number {
-    for (let i = 0; i < sections.length; i++) {
-        if (beat < sections[i].endBeat) return i;
+    if (sections.length === 0) return -1;
+    let lo = 0, hi = sections.length - 1;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (beat < sections[mid].endBeat) hi = mid;
+        else lo = mid + 1;
     }
-    return sections.length > 0 ? sections.length - 1 : -1;
+    return lo;
 }

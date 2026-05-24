@@ -13,7 +13,7 @@
 //
 // Phase 2a 实装 8 步管线(见 PHASE2A.md §2):
 //   Step 1:   SectionPlanner.plan          ← AF 段落骨架
-//   Step 2:   MgKernelInvoker.invoke       ← 调 mg 核心(bit-exact = MG)
+//   Step 2:   Af2KernelDriver.invoke       ← 调 mg 核心(bit-exact = MG)
 //   Step 3:   SectionMapper.assignSections ← events 标段落
 //   Step 4:   SlotRouter.route             ← 6 槽位路由(读 forcedBand)
 //   Step 4.5: PadGenerator(条件性)        ← Atmosphere 槽位有乐手时
@@ -47,7 +47,7 @@ import { Random } from './utils/Random';
 import { bandRoleToTrackKeys } from '../data/GMSoundMap';
 import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
-import { MgKernelInvoker } from './MgKernelInvoker';
+import { Af2KernelDriver } from './Af2KernelDriver';
 import { SectionPlanner } from './SectionPlanner';
 import { SectionMapper } from './SectionMapper';
 import { SlotRouter } from './SlotRouter';
@@ -84,28 +84,43 @@ export const Af2EngineFacade = {
     generate(options: PipelineRunOptions): Af2GenerateResult {
         // -----------------------------------------------------------
         // 0. 准备 seed / mgStyle
+        //
+        // mgStyle 决定 Arranger 进行池 / Composer Divisi 概率 / Conductor 模板 /
+        // Drum grid。优先级:
+        //   1. options.forcedStyleId(Apps 显式传入)→ 映射为 mgStyle
+        //   2. EngineSelectionStore.getMgStyle()(Q+H Style 下拉全局状态)
         // -----------------------------------------------------------
         const auraflowSeed = PRNGManager.getInitialSeed();
-        const mgSeedString = `mg_${auraflowSeed >>> 0}`;
-        const mgStyle = EngineSelectionStore.getMgStyle();
+        const mgSeedString = `af2_${auraflowSeed >>> 0}`;
+        const mgStyle: MgStyle = (() => {
+            if (options.forcedStyleId !== undefined) {
+                // Apps 传入的 forcedStyleId(auraflow 历史 StyleId)→ 映射回 mgStyle
+                switch (options.forcedStyleId) {
+                    case StyleId.ModernPop:  return 'POP';
+                    case StyleId.ChillJazz:  return 'JAZZ';
+                    case StyleId.NeoSoul:    return 'RNB';
+                }
+            }
+            return EngineSelectionStore.getMgStyle();
+        })();
         const key = 'C';
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
         //
-        // mg.recommendedBars 通过 MgKernelInvoker.getRecommendedBars 静态查表,
+        // mg.recommendedBars 通过 Af2KernelDriver.getRecommendedBars 静态查表,
         // 不需要先 invoke mg。
         // -----------------------------------------------------------
-        const totalBars = MgKernelInvoker.getRecommendedBars(mgStyle);
+        const totalBars = Af2KernelDriver.getRecommendedBars(mgStyle);
         const sections = SectionPlanner.plan(mgStyle, totalBars, 4);
 
         // -----------------------------------------------------------
-        // Step 2: AF2 内核(MgKernelInvoker 仅保留命名,内部全 AF2 — 删 mg 后简化)
+        // Step 2: AF2 内核(Af2KernelDriver 仅保留命名,内部全 AF2 — 删 mg 后简化)
         //   - Af2Arranger:section-aware 决进行
         //   - Af2Composer:决 voicing + bass + chordSymbol
         //   - events 永远空(全 AF2 musicians plan() 自给)
         // -----------------------------------------------------------
-        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key, sections);
+        const mg = Af2KernelDriver.invoke(mgSeedString, mgStyle, key, sections);
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)

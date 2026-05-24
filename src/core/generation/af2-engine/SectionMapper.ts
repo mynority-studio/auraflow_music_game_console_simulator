@@ -3,7 +3,7 @@
 // ============================================================
 //
 // 职责:
-//   遍历 MgKernelInvoker 输出的 events,根据每个 event 的 onset 落入哪个
+//   遍历 Af2KernelDriver 输出的 events,根据每个 event 的 onset 落入哪个
 //   SectionMetadata 的 [startBeat, endBeat) 范围,标注 sectionIdx。
 //
 // 硬约束(融合原则):
@@ -18,7 +18,7 @@
 // ============================================================
 
 import type { SectionMetadata } from '../types';
-import type { NoteDataWithPart } from './MgKernelInvoker';
+import type { NoteDataWithPart } from './Af2KernelDriver';
 
 /** events 经过 SectionMapper 后携带的额外字段 */
 export interface NoteDataWithPartAndSection extends NoteDataWithPart {

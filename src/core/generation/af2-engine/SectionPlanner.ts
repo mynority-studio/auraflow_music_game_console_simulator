@@ -122,7 +122,7 @@ export const SectionPlanner = {
      * 生成段落骨架。
      *
      * @param mgStyle  mg 风格,用于决定 bars
-     * @param totalBars  来自 MgKernelInvoker.getRecommendedBars(),传入而非 import
+     * @param totalBars  来自 Af2KernelDriver.getRecommendedBars(),传入而非 import
      *                   避免循环依赖
      * @param beatsPerMeasure  默认 4(mg 当前所有 macro style 都是 4/4)
      */

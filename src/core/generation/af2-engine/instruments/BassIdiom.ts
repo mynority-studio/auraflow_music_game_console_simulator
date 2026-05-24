@@ -34,6 +34,8 @@ import type { GeneratedChord } from '../../ir';
 import type { MusicianPlanInput } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 import { WALK_PATTERNS, WalkRule, WalkPatternId } from '../../data/BassWalkPatterns';
+import { thirdInterval, fifthInterval } from '../music-theory/chord-intervals';
+import { placeNearAnchor as placeBassNearAnchor } from '../utils/voice-leading';
 
 /** 电贝斯物理参数 */
 export const BASS_INSTRUMENT_SPEC = {
@@ -84,55 +86,8 @@ const SWING_RATIO_BY_PATTERN: Record<WalkPatternId, number> = {
 const ACCENT_DOWN = 0.08;
 const ACCENT_OFF = -0.06;
 
-/** Quality → minor/major 3rd 判定 */
-function thirdInterval(q: ChordQuality): number {
-    switch (q) {
-        case ChordQuality.Minor:
-        case ChordQuality.Minor7:
-        case ChordQuality.Minor9:
-        case ChordQuality.Minor11:
-        case ChordQuality.HalfDiminished:
-        case ChordQuality.Diminished:
-        case ChordQuality.Diminished7:
-            return 3;     // minor 3rd
-        default:
-            return 4;     // major 3rd
-    }
-}
-
-/** Quality → 5th 类型 */
-function fifthInterval(q: ChordQuality): number {
-    switch (q) {
-        case ChordQuality.Diminished:
-        case ChordQuality.Diminished7:
-        case ChordQuality.HalfDiminished:
-            return 6;     // diminished 5th
-        case ChordQuality.Augmented:
-            return 8;     // augmented 5th
-        default:
-            return 7;     // perfect 5th
-    }
-}
-
-/** 同 PC 取离 prevMidi 最近的八度,clamp 到 range */
-function placeBassNearAnchor(pc: number, prevMidi: number, rangeLo: number, rangeHi: number): number {
-    let best = pc;
-    while (best < rangeLo) best += 12;
-    while (best > rangeHi) best -= 12;
-    if (best < rangeLo) best = pc + 12 * Math.ceil((rangeLo - pc) / 12);
-    let bestDist = Math.abs(best - prevMidi);
-    for (let m = best - 12; m >= rangeLo; m -= 12) {
-        const d = Math.abs(m - prevMidi);
-        if (d < bestDist) { bestDist = d; best = m; }
-    }
-    for (let m = best + 12; m <= rangeHi; m += 12) {
-        const d = Math.abs(m - prevMidi);
-        if (d < bestDist) { bestDist = d; best = m; }
-    }
-    if (best < rangeLo) best = rangeLo;
-    if (best > rangeHi) best = rangeHi;
-    return best;
-}
+// thirdInterval / fifthInterval / placeBassNearAnchor 已抽取到
+//   music-theory/chord-intervals.ts + utils/voice-leading.ts(2026-05-24)
 
 /**
  * Resolve WalkRule → 目标 PC(0-11)+ 是否要"用前一个 MIDI"标记。

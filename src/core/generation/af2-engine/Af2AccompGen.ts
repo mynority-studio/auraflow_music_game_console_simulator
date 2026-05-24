@@ -34,6 +34,7 @@ import type { GeneratedChord } from '../ir';
 import { ChordQuality, SectionType } from '../types';
 import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
+import { thirdInterval } from './music-theory/chord-intervals';
 
 const ACCOMP_BLOCK_VELOCITY = 0.62;
 const ACCOMP_ARP_VELOCITY = 0.60;
@@ -90,21 +91,6 @@ function pickPattern(
 // ============================================================
 // Voicing fallback(chord.voicing 空时,用 [root, root+3rd, root+5th] 在 C4 区)
 // ============================================================
-
-function thirdInterval(q: ChordQuality): number {
-    switch (q) {
-        case ChordQuality.Minor:
-        case ChordQuality.Minor7:
-        case ChordQuality.Minor9:
-        case ChordQuality.Minor11:
-        case ChordQuality.HalfDiminished:
-        case ChordQuality.Diminished:
-        case ChordQuality.Diminished7:
-            return 3;
-        default:
-            return 4;
-    }
-}
 
 function fallbackVoicing(root: number, quality: ChordQuality): number[] {
     const ANCHOR = 60;  // C4

@@ -2,7 +2,7 @@
 // ChordDef — AF2 chord 实化形状(原 mg-engine/musicEngine.ts copy 精简)
 // ============================================================
 //
-// Af2Composer.compose 输出此类型,作为 MgKernelInvoker 内部 chord 中间表示。
+// Af2Composer.compose 输出此类型,作为 Af2KernelDriver 内部 chord 中间表示。
 // 进一步 chordDefToGeneratedChord 转换为 GeneratedChord(IR)给下游 musicians 用。
 //
 // 2026-05-24:从 mg-engine 内化到 af2-engine。
