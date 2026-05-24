@@ -237,13 +237,21 @@ af2-engine/             ← 唯一活跃引擎
 │                        chord-detection / chord-color / voicing /
 │                        tendency / cadence / spell(数学+理论)
 ├─ instruments/         ← 5 个 idiom(Piano/Bass/Drum/Pad)+ drum-grid
-├─ chord-texture/       ← N 阶段(2026-05-24)mg 移植 8 family + Engine + Mapping
-│   ├─ types.ts             ─ FamilyName / FamilyParams / NoteEvent
+├─ chord-texture/       ← N+N5 阶段(2026-05-24)mg 移植 23 family + Engine + Mapping
+│   ├─ types.ts             ─ FamilyName(23)/ FamilyParams / NoteEvent
 │   ├─ PitchPrimitives.ts   ─ bassMidi / chordVoicing / quality intervals
 │   ├─ adapter.ts           ─ GeneratedChord → ChordDef
-│   ├─ ChordTextureEngine.ts─ dispatcher + NoteEvent→NoteData adapter
-│   ├─ TextureTypeMapping.ts─ textureType → {family, params}(13 个)
-│   └─ families/            ─ 8 个 family(PopAnthem/JazzCharleston/...)
+│   ├─ ChordTextureEngine.ts─ dispatcher(23 case)+ NoteEvent→NoteData adapter
+│   ├─ TextureTypeMapping.ts─ textureType → {family, params}(38 个,1 待 N6)
+│   └─ families/            ─ 23 个 family:
+│                              N(8): Sustained/PopAnthem/PopBroken8th/JazzCharleston/
+│                                    Bossa/BoogieWalk/GhostStab/PureArp
+│                              N5(15): PureWalk/WalkingBass/Hemiola/PureStab/
+│                                      ScratchSlap/ShuffleChop/OstinatoLayered/
+│                                      Triplet/Roll/BlockLayered/SweepProgressive/
+│                                      GrooveDelay/SpecialVoicing/DoubleStopTremolo/
+│                                      AnticipatedBlock
+│                              N6 待移植: CallAndResponse(需 cross-track melody peers)
 ├─ Score.ts             ← 总谱契约
 ├─ Conductor.ts         ← 编排决策
 ├─ Af2Arranger.ts       ← 进行决策 + 接 2 planner

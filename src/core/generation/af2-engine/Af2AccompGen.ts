@@ -46,58 +46,73 @@ import { generatedChordToChordDef } from './chord-texture/adapter';
 // fallback 路径:风格未匹配 sectionType → POP 同 sectionType → ['Single_Root']
 // ============================================================
 
+// N5 扩展:加入新 textureType
+//   PureWalk(bass 行走)→ POP Intro
+//   Block_Chord / Ostinato_16s / Pop_Ostinato_Rock → POP Verse-Chorus
+//   Jazz_Walking_Bass / Jazz_Comping / Jazz_Drop_2_Comp / Jazz_Red_Garland_Block
+//     / Jazz_Waltz_Hemiola → JAZZ
+//   Blues_Chicago_Shuffle / Blues_Slow_Chops / Blues_Slow_12_8_Arp / Blues_Tremolo_Comp
+//     / Blues_Shuffle_Bass → BLUES
+//   RnB_Classic_Soul_Arp(SweepProgressive 修正)/ RnB_Laid_Back_Groove
+//     / RnB_16th_Funk_Stabs / RnB_Gospel_Triplets / RnB_Neo_Soul_Roll → RNB
+//   Pop_Ballad_158_Sweep → POP Bridge / 慢段
+//
+// 未塞入 pool 的 textureType(仍在 TEXTURE_MAPPING 可 explicit 调用):
+//   Funk_Guitar_Scratch / Slap_Bass_Line(留 FUNK mgStyle 时启用)
+//   Root_7_5_8 / Root_5_7_5 / Root_Fifth_Bass / Root_Octave_Pulse
+//   Stabs / Syncopated_Stabs / Block_Chord_Staccato / Arpeggio_Flow / Arp_Seq
 const STYLE_TEXTURE_POOL: Record<MgStyle, Partial<Record<SectionType, ReadonlyArray<string>>>> = {
     POP: {
-        [SectionType.Intro]:     ['Single_Root', 'Root_Octave'],
-        [SectionType.Verse]:     ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync'],
-        [SectionType.PreChorus]: ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync'],
-        [SectionType.Chorus]:    ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync', 'Pop_Piano_Arp_16ths'],
-        [SectionType.Bridge]:    ['Pop_Broken_8ths_Sync', 'Pop_Piano_Arp_16ths'],
-        [SectionType.BuildUp]:   ['Pop_Anthem_Pulse'],
-        [SectionType.Drop]:      ['Pop_Anthem_Pulse'],
-        [SectionType.Break]:     ['Single_Root'],
-        [SectionType.Breakdown]: ['Single_Root'],
-        [SectionType.Outro]:     ['Single_Root', 'Root_Octave'],
-        [SectionType.PreOutro]:  ['Root_Octave', 'Pop_Anthem_Pulse'],
+        [SectionType.Intro]:     ['Single_Root', 'Root_Octave', 'Root_5_8'],
+        [SectionType.Verse]:     ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync', 'Block_Chord', 'Pop_Ostinato_Rock'],
+        [SectionType.PreChorus]: ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync', 'Pop_Ostinato_Rock', 'Block_Chord'],
+        [SectionType.Chorus]:    ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync', 'Pop_Piano_Arp_16ths', 'Pop_Ostinato_Rock'],
+        [SectionType.Bridge]:    ['Pop_Broken_8ths_Sync', 'Pop_Piano_Arp_16ths', 'Pop_Ballad_158_Sweep', 'Ostinato_16s'],
+        [SectionType.BuildUp]:   ['Pop_Anthem_Pulse', 'Pop_Ostinato_Rock'],
+        [SectionType.Drop]:      ['Pop_Anthem_Pulse', 'Block_Chord'],
+        [SectionType.Break]:     ['Single_Root', 'Pop_Ballad_158_Sweep'],
+        [SectionType.Breakdown]: ['Single_Root', 'Pop_Ballad_158_Sweep'],
+        [SectionType.Outro]:     ['Single_Root', 'Root_Octave', 'Pop_Ballad_158_Sweep'],
+        [SectionType.PreOutro]:  ['Root_Octave', 'Pop_Anthem_Pulse', 'Pop_Ballad_158_Sweep'],
     },
     JAZZ: {
-        [SectionType.Intro]:     ['Single_Root', 'Jazz_Charleston_Comp'],
-        [SectionType.Verse]:     ['Jazz_Charleston_Comp', 'Bossa_Clave_Comping'],
-        [SectionType.PreChorus]: ['Jazz_Charleston_Comp'],
-        [SectionType.Chorus]:    ['Jazz_Charleston_Comp', 'Bossa_Piano_Arp'],
-        [SectionType.Bridge]:    ['Bossa_Piano_Arp', 'Bossa_Clave_Comping'],
-        [SectionType.BuildUp]:   ['Jazz_Charleston_Comp'],
-        [SectionType.Drop]:      ['Jazz_Charleston_Comp'],
-        [SectionType.Break]:     ['Single_Root'],
-        [SectionType.Breakdown]: ['Single_Root'],
+        [SectionType.Intro]:     ['Single_Root', 'Jazz_Charleston_Comp', 'Jazz_Comping'],
+        [SectionType.Verse]:     ['Jazz_Charleston_Comp', 'Bossa_Clave_Comping', 'Jazz_Comping', 'Jazz_Walking_Bass'],
+        [SectionType.PreChorus]: ['Jazz_Charleston_Comp', 'Jazz_Comping', 'Jazz_Drop_2_Comp'],
+        [SectionType.Chorus]:    ['Jazz_Charleston_Comp', 'Bossa_Piano_Arp', 'Jazz_Drop_2_Comp', 'Jazz_Red_Garland_Block'],
+        [SectionType.Bridge]:    ['Bossa_Piano_Arp', 'Bossa_Clave_Comping', 'Jazz_Waltz_Hemiola', 'Jazz_Drop_2_Comp'],
+        [SectionType.BuildUp]:   ['Jazz_Charleston_Comp', 'Jazz_Red_Garland_Block'],
+        [SectionType.Drop]:      ['Jazz_Charleston_Comp', 'Jazz_Drop_2_Comp'],
+        [SectionType.Break]:     ['Single_Root', 'Jazz_Comping'],
+        [SectionType.Breakdown]: ['Single_Root', 'Jazz_Comping'],
         [SectionType.Outro]:     ['Single_Root', 'Jazz_Charleston_Comp'],
-        [SectionType.PreOutro]:  ['Jazz_Charleston_Comp'],
+        [SectionType.PreOutro]:  ['Jazz_Charleston_Comp', 'Jazz_Walking_Bass'],
     },
     BLUES: {
         [SectionType.Intro]:     ['Single_Root', 'Root_Octave'],
-        [SectionType.Verse]:     ['Blues_Boogie_Woogie', 'Blues_Stabs'],
-        [SectionType.PreChorus]: ['Blues_Stabs'],
-        [SectionType.Chorus]:    ['Blues_Boogie_Woogie', 'Blues_Stabs'],
-        [SectionType.Bridge]:    ['Blues_Stabs'],
-        [SectionType.BuildUp]:   ['Blues_Stabs'],
-        [SectionType.Drop]:      ['Blues_Boogie_Woogie'],
-        [SectionType.Break]:     ['Single_Root'],
-        [SectionType.Breakdown]: ['Single_Root'],
-        [SectionType.Outro]:     ['Single_Root', 'Blues_Boogie_Woogie'],
-        [SectionType.PreOutro]:  ['Blues_Boogie_Woogie'],
+        [SectionType.Verse]:     ['Blues_Boogie_Woogie', 'Blues_Stabs', 'Blues_Chicago_Shuffle', 'Blues_Tremolo_Comp'],
+        [SectionType.PreChorus]: ['Blues_Stabs', 'Blues_Tremolo_Comp'],
+        [SectionType.Chorus]:    ['Blues_Boogie_Woogie', 'Blues_Stabs', 'Blues_Chicago_Shuffle'],
+        [SectionType.Bridge]:    ['Blues_Stabs', 'Blues_Slow_Chops', 'Blues_Slow_12_8_Arp'],
+        [SectionType.BuildUp]:   ['Blues_Stabs', 'Blues_Boogie_Woogie'],
+        [SectionType.Drop]:      ['Blues_Boogie_Woogie', 'Block_Chord'],
+        [SectionType.Break]:     ['Single_Root', 'Blues_Slow_Chops'],
+        [SectionType.Breakdown]: ['Single_Root', 'Blues_Slow_12_8_Arp'],
+        [SectionType.Outro]:     ['Single_Root', 'Blues_Boogie_Woogie', 'Blues_Slow_Chops'],
+        [SectionType.PreOutro]:  ['Blues_Boogie_Woogie', 'Blues_Shuffle_Bass'],
     },
     RNB: {
-        [SectionType.Intro]:     ['Single_Root', 'Pop_Piano_Arp_16ths'],
-        [SectionType.Verse]:     ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
-        [SectionType.PreChorus]: ['RnB_Neo_Soul_Stab', 'Pop_Piano_Arp_16ths'],
-        [SectionType.Chorus]:    ['Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Stab'],
-        [SectionType.Bridge]:    ['RnB_Classic_Soul_Arp', 'Pop_Piano_Arp_16ths'],
-        [SectionType.BuildUp]:   ['RnB_Neo_Soul_Stab'],
-        [SectionType.Drop]:      ['RnB_Neo_Soul_Stab'],
-        [SectionType.Break]:     ['Single_Root'],
+        [SectionType.Intro]:     ['Single_Root', 'Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
+        [SectionType.Verse]:     ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp', 'RnB_Laid_Back_Groove', 'RnB_16th_Funk_Stabs'],
+        [SectionType.PreChorus]: ['RnB_Neo_Soul_Stab', 'Pop_Piano_Arp_16ths', 'RnB_16th_Funk_Stabs'],
+        [SectionType.Chorus]:    ['Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Stab', 'RnB_Gospel_Triplets', 'RnB_Neo_Soul_Roll'],
+        [SectionType.Bridge]:    ['RnB_Classic_Soul_Arp', 'Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Roll', 'RnB_Laid_Back_Groove'],
+        [SectionType.BuildUp]:   ['RnB_Neo_Soul_Stab', 'RnB_Gospel_Triplets'],
+        [SectionType.Drop]:      ['RnB_Neo_Soul_Stab', 'RnB_16th_Funk_Stabs'],
+        [SectionType.Break]:     ['Single_Root', 'RnB_Laid_Back_Groove'],
         [SectionType.Breakdown]: ['Single_Root', 'Pop_Piano_Arp_16ths'],
-        [SectionType.Outro]:     ['Single_Root', 'Pop_Piano_Arp_16ths'],
-        [SectionType.PreOutro]:  ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
+        [SectionType.Outro]:     ['Single_Root', 'Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
+        [SectionType.PreOutro]:  ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp', 'RnB_Laid_Back_Groove'],
     },
 };
 
