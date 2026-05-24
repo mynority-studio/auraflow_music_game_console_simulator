@@ -30,6 +30,7 @@ import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { Random } from './utils/Random';
 import { ChordTextureEngine } from './chord-texture/ChordTextureEngine';
 import { generatedChordToChordDef } from './chord-texture/adapter';
+import type { NoteEvent } from './chord-texture/types';
 
 // ============================================================
 // Per-mgStyle × sectionType textureType pool(N 阶段 8 family 覆盖)
@@ -77,10 +78,10 @@ const STYLE_TEXTURE_POOL: Record<MgStyle, Partial<Record<SectionType, ReadonlyAr
     },
     JAZZ: {
         [SectionType.Intro]:     ['Single_Root', 'Jazz_Charleston_Comp', 'Jazz_Comping'],
-        [SectionType.Verse]:     ['Jazz_Charleston_Comp', 'Bossa_Clave_Comping', 'Jazz_Comping', 'Jazz_Walking_Bass'],
+        [SectionType.Verse]:     ['Jazz_Charleston_Comp', 'Bossa_Clave_Comping', 'Jazz_Comping', 'Jazz_Walking_Bass', 'Call_And_Response'],
         [SectionType.PreChorus]: ['Jazz_Charleston_Comp', 'Jazz_Comping', 'Jazz_Drop_2_Comp'],
         [SectionType.Chorus]:    ['Jazz_Charleston_Comp', 'Bossa_Piano_Arp', 'Jazz_Drop_2_Comp', 'Jazz_Red_Garland_Block'],
-        [SectionType.Bridge]:    ['Bossa_Piano_Arp', 'Bossa_Clave_Comping', 'Jazz_Waltz_Hemiola', 'Jazz_Drop_2_Comp'],
+        [SectionType.Bridge]:    ['Bossa_Piano_Arp', 'Bossa_Clave_Comping', 'Jazz_Waltz_Hemiola', 'Jazz_Drop_2_Comp', 'Call_And_Response'],
         [SectionType.BuildUp]:   ['Jazz_Charleston_Comp', 'Jazz_Red_Garland_Block'],
         [SectionType.Drop]:      ['Jazz_Charleston_Comp', 'Jazz_Drop_2_Comp'],
         [SectionType.Break]:     ['Single_Root', 'Jazz_Comping'],
@@ -103,10 +104,10 @@ const STYLE_TEXTURE_POOL: Record<MgStyle, Partial<Record<SectionType, ReadonlyAr
     },
     RNB: {
         [SectionType.Intro]:     ['Single_Root', 'Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
-        [SectionType.Verse]:     ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp', 'RnB_Laid_Back_Groove', 'RnB_16th_Funk_Stabs'],
+        [SectionType.Verse]:     ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp', 'RnB_Laid_Back_Groove', 'RnB_16th_Funk_Stabs', 'Call_And_Response'],
         [SectionType.PreChorus]: ['RnB_Neo_Soul_Stab', 'Pop_Piano_Arp_16ths', 'RnB_16th_Funk_Stabs'],
         [SectionType.Chorus]:    ['Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Stab', 'RnB_Gospel_Triplets', 'RnB_Neo_Soul_Roll'],
-        [SectionType.Bridge]:    ['RnB_Classic_Soul_Arp', 'Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Roll', 'RnB_Laid_Back_Groove'],
+        [SectionType.Bridge]:    ['RnB_Classic_Soul_Arp', 'Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Roll', 'RnB_Laid_Back_Groove', 'Call_And_Response'],
         [SectionType.BuildUp]:   ['RnB_Neo_Soul_Stab', 'RnB_Gospel_Triplets'],
         [SectionType.Drop]:      ['RnB_Neo_Soul_Stab', 'RnB_16th_Funk_Stabs'],
         [SectionType.Break]:     ['Single_Root', 'RnB_Laid_Back_Groove'],
@@ -172,6 +173,19 @@ export function generateAf2Accomp(
     const dynamicMid = (dynamicLo + dynamicHi) / 2;
     const mgStyle: MgStyle = input.mgStyle ?? 'POP';
 
+    // N6 阶段:melody peer NoteData → NoteEvent 一次性转换(Cross-track family
+    // 如 CallAndResponse 需要 NoteEvent;Facade 已在 accomp closure 内从
+    // peers.get(mainMusicianId) 注入 melodyPeerNotes)。
+    const melodyEvents: ReadonlyArray<NoteEvent> | undefined = input.melodyPeerNotes
+        ? input.melodyPeerNotes.map(n => ({
+            noteNumber: n.pitch,
+            time: n.onset,
+            duration: n.duration,
+            velocity: n.velocity * 127,
+            part: 'melody' as const,
+        }))
+        : undefined;
+
     for (let ci = 0; ci < chords.length; ci++) {
         const chord = chords[ci];
         const nextChord = chords[ci + 1] ?? null;
@@ -200,10 +214,12 @@ export function generateAf2Accomp(
         const chordRng = new Random(`accomp_${mgStyle}_${chord.startBeat.toFixed(2)}_${ci}`);
 
         // 调用 ChordTextureEngine,只取 accomp(bass 走 BassIdiom)
+        // N6:传 melodyEvents 给 cross-track family(CallAndResponse 等)
         const events = ChordTextureEngine.applyByTextureType(
             textureType, chordDef, nextChordDef,
             chord.startBeat, chordDef.duration, chordRng,
             'accomp',
+            melodyEvents,
         );
 
         // Velocity 重映射到 persona.dynamicRange + 微浮动(±10%)

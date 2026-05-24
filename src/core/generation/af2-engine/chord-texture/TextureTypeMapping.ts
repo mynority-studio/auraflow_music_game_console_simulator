@@ -388,7 +388,16 @@ export const TEXTURE_MAPPING: Record<string, FamilyParams> = {
     },
 
     // ============================================================
-    // N6 待移植:CallAndResponse('Call_And_Response')— 需要 melodyEvents
-    // cross-track,Dispatcher peers 设计调整后再加
+    // 族 X Cross-Track(N6 阶段 — CallAndResponse 1 个)
     // ============================================================
+    'Call_And_Response': {
+        family: 'CallAndResponse',
+        params: {
+            melody_lookahead_back: 0.1,
+            melody_lookahead_forward: 0.3,
+            chord_velocity: 0.6,
+            chord_step: 0.5,
+            bass_velocity: 0.8,
+        },
+    },
 };

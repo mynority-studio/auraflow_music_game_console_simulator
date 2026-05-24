@@ -208,7 +208,32 @@ export const Af2EngineFacade = {
 
         const steps: MusicianStep[] = [];
 
-        // 1. Bass(rhythm 底)
+        // N6 阶段(2026-05-24)Dispatcher steps 顺序重排:
+        //   melody → bass → accomp → drums → pad
+        //
+        //   原因:cross-track chord-texture 'Call_And_Response' 需要 melody peers
+        //   在 accomp 跑时已就位。melody 当前 self-contained(不读任何 peers),
+        //   前置无副作用;drums 仍能在 bass+accomp 之后读到它们的 peers。
+        //
+        //   原顺序 bass → accomp → drums → melody → pad:
+        //     - drums 读 bass/accomp peers ✓
+        //     - 其他 musicians 都不读 peers
+        //   新顺序 melody → bass → accomp → drums → pad:
+        //     - accomp 读 melody peers(CallAndResponse 用)✓
+        //     - drums 仍读 bass/accomp peers ✓
+        //     - 其他不读 peers
+        //   迁移影响:零(只有 drums 用 peers,顺序不变)
+
+        // 1. Melody(N6:前置 — 让 accomp 能读 melody peers 给 CallAndResponse)
+        if (mainMusician) {
+            const mm = mainMusician;
+            steps.push({
+                musicianId: mm.id,
+                plan: (input) => PianoIdiom.planMelody({ ...input, musician: mm, notes: { melody: routed[BandRole.MainInst].notes } }),
+            });
+        }
+
+        // 2. Bass(rhythm 底)
         if (bassMusician) {
             const bm = bassMusician;
             steps.push({
@@ -219,25 +244,26 @@ export const Af2EngineFacade = {
             });
         }
 
-        // 2. Accomp(harmonic 底)
+        // 3. Accomp(harmonic 底)
+        //   N6:从 input.peers 读 melody musicianId 的 NoteData[] → 通过
+        //   melodyPeerNotes 字段透传到 AccompGen → ChordTextureEngine → CallAndResponse。
         if (accompMusician) {
             const am = accompMusician;
+            const mainMusicianId = mainMusician?.id;
             steps.push({
                 musicianId: am.id,
-                plan: (input) => PianoIdiom.planAccomp({ ...input, musician: am, notes: { accomp: routed[BandRole.Accomp].notes } }),
+                plan: (input) => PianoIdiom.planAccomp({
+                    ...input,
+                    musician: am,
+                    notes: { accomp: routed[BandRole.Accomp].notes },
+                    melodyPeerNotes: mainMusicianId
+                        ? (input.peers.get(mainMusicianId) ?? []) as NoteData[]
+                        : undefined,
+                }),
             });
         }
 
-        // 3. Drums(rhythm grid,跨 part peers 实际消费 B 升级:
-        //    从 input.peers 读 bass + accomp musicians 已 emit 的 notes,而非
-        //    closure 直接传 routed.notes)
-        //
-        //    peers 的好处:
-        //    - 看到的是 musician 已经经过 plan() 调整的 notes(per-section gate /
-        //      Phase B/C 处理后的最终输出),drums 对齐的是"实际听到的"bass/accomp
-        //    - 不再 hard-code 与 routed 槽位的耦合
-        //
-        //    若 bass / accomp musician null → peers 没对应 key → 空数组 fallback
+        // 4. Drums(rhythm grid)— 从 peers 读 bass + accomp(它们在 drums 前 emit)
         if (drumMusician?.instrumentFamily === InstrumentFamily.Percussion) {
             const dm = drumMusician;
             const bassMusicianId = bassMusician?.id;
@@ -249,21 +275,11 @@ export const Af2EngineFacade = {
                     musicianId: input.musicianId,
                     assignments: input.assignments,
                     mgStyle,
-                    // B 升级:从 peers 读(drums 是 step 3,bass+accomp 已 emit 完毕)
                     bassNotes: bassMusicianId ? (input.peers.get(bassMusicianId) ?? []) as NoteData[] : [],
                     chordNotes: accompMusicianId ? (input.peers.get(accompMusicianId) ?? []) as NoteData[] : [],
                     rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
                     persona: dm.persona,
                 }),
-            });
-        }
-
-        // 4. Melody(看 bass + accomp + drums,跨 part 协调可参考 peers)
-        if (mainMusician) {
-            const mm = mainMusician;
-            steps.push({
-                musicianId: mm.id,
-                plan: (input) => PianoIdiom.planMelody({ ...input, musician: mm, notes: { melody: routed[BandRole.MainInst].notes } }),
             });
         }
 

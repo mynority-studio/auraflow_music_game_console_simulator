@@ -44,8 +44,10 @@ import { applyGrooveDelay } from './families/GrooveDelay';
 import { applySpecialVoicing } from './families/SpecialVoicing';
 import { applyDoubleStopTremolo } from './families/DoubleStopTremolo';
 import { applyAnticipatedBlock } from './families/AnticipatedBlock';
+// N6 阶段(1)— cross-track
+import { applyCallAndResponse } from './families/CallAndResponse';
 
-/** Family dispatch — 23 family 覆盖(N+N5)。CallAndResponse 待 N6 cross-track 设计 */
+/** Family dispatch — 24 family 完整覆盖 mg(N+N5+N6) */
 function dispatchFamily(input: ChordTextureInput): NoteEvent[] {
     const { chord, nextChord, startBeat, duration, rng } = input;
     switch (input.family) {
@@ -74,6 +76,8 @@ function dispatchFamily(input: ChordTextureInput): NoteEvent[] {
         case 'SpecialVoicing':    return applySpecialVoicing(chord, nextChord, startBeat, duration, input.params, rng);
         case 'DoubleStopTremolo': return applyDoubleStopTremolo(chord, nextChord, startBeat, duration, input.params, rng);
         case 'AnticipatedBlock':  return applyAnticipatedBlock(chord, nextChord, startBeat, duration, input.params, rng);
+        // N6 阶段(1)— cross-track,需 melodyEvents
+        case 'CallAndResponse':   return applyCallAndResponse(chord, nextChord, startBeat, duration, input.params, rng, input.melodyEvents);
     }
 }
 
@@ -104,6 +108,8 @@ export const ChordTextureEngine = {
     /**
      * 主入口:textureType 字符串查 mapping 自动 dispatch。
      * 未映射 textureType → fallback Sustained Single_Root(避免静默)。
+     *
+     * N6 阶段:加 melodyEvents 可选参数,给 CallAndResponse 等 cross-track family 用。
      */
     applyByTextureType(
         textureType: string,
@@ -113,11 +119,13 @@ export const ChordTextureEngine = {
         duration: number,
         rng: Random,
         partFilter?: 'accomp' | 'bass',
+        melodyEvents?: ReadonlyArray<NoteEvent>,
     ): NoteData[] {
         const mapping = TEXTURE_MAPPING[textureType] ?? TEXTURE_MAPPING['Single_Root'];
         const input = {
             ...mapping,
             chord, nextChord, startBeat, duration, rng,
+            melodyEvents,
         } as ChordTextureInput;
         return adaptEvents(dispatchFamily(input), partFilter);
     },

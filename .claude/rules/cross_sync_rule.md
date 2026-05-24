@@ -194,10 +194,14 @@
 - **触发器**:改 `Af2EngineFacade` 内构造 `steps` 数组的顺序
 - **必须同步**:
   - 后置 step 看前面 step emit 的 notes;改顺序前确认依赖关系
-  - 当前顺序:bass → accomp → drums → melody → pad
+  - 当前顺序(N6 重排,2026-05-24):**melody → bass → accomp → drums → pad**
   - drums 消费 bass + accomp peers(kick-bass interlock + chord syncopate)
-  - 其他 step 当前**不消费** peers(预留接口)
+  - accomp 消费 melody peers(给 chord-texture `CallAndResponse` family 用,
+    通过 `MusicianPlanInput.melodyPeerNotes` 字段透传)
+  - melody / bass / pad 当前**不消费** peers(预留接口)
 - **风险**:**中**(改顺序 silently 破坏 cross-track 协调,如 drum 看不到 bass)
+  - N6 重排前置 melody 是 zero-risk 操作(只有 drums 读 peers,顺序仍保 drums
+    在 bass+accomp 之后)。如未来加新 musician 读 peers,必须验证顺序假设。
 
 ---
 

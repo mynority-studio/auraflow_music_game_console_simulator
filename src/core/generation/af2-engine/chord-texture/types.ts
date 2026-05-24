@@ -24,7 +24,7 @@ export interface NoteEvent {
     part: 'melody' | 'accomp' | 'bass';
 }
 
-/** N+N5 阶段 family 名(23 个,CallAndResponse 留 N6 cross-track 设计)*/
+/** N+N5+N6 阶段 family 名(24 个完整覆盖 mg)*/
 export type FamilyName =
     // N 阶段(8)
     | 'Sustained'
@@ -50,7 +50,9 @@ export type FamilyName =
     | 'GrooveDelay'
     | 'SpecialVoicing'
     | 'DoubleStopTremolo'
-    | 'AnticipatedBlock';
+    | 'AnticipatedBlock'
+    // N6 阶段(1)— cross-track,需 melodyEvents
+    | 'CallAndResponse';
 
 /** PureWalk / SweepProgressive 用的 bass 偏移名 */
 export type BassOffsetName = 'root' | '5th' | '7th' | 'octave' | 'low_octave';
@@ -275,6 +277,20 @@ export interface AnticipatedBlockParams {
 }
 
 // ============================================================
+// N6 阶段 cross-track family params
+// ============================================================
+
+export interface CallAndResponseParams {
+    /** melody 占用检测窗口:[time - back, time + forward) */
+    melody_lookahead_back: number;
+    melody_lookahead_forward: number;
+    chord_velocity: number;
+    /** 每 chord 内检查步进(0.5 = 每半拍检查) */
+    chord_step: number;
+    bass_velocity: number;
+}
+
+// ============================================================
 // FamilyParams discriminated union(N + N5 = 23 family)
 // ============================================================
 
@@ -303,7 +319,9 @@ export type FamilyParams =
     | { family: 'GrooveDelay'; params: GrooveDelayParams }
     | { family: 'SpecialVoicing'; params: SpecialVoicingParams }
     | { family: 'DoubleStopTremolo'; params: DoubleStopTremoloParams }
-    | { family: 'AnticipatedBlock'; params: AnticipatedBlockParams };
+    | { family: 'AnticipatedBlock'; params: AnticipatedBlockParams }
+    // N6 阶段(1)
+    | { family: 'CallAndResponse'; params: CallAndResponseParams };
 
 /** Engine.apply 主输入 */
 export type ChordTextureInput = FamilyParams & {
@@ -312,6 +330,11 @@ export type ChordTextureInput = FamilyParams & {
     startBeat: number;
     duration: number;
     rng: Random;
+    /**
+     * N6 阶段:cross-track melody events(全曲已生成的 melody)。
+     * CallAndResponse 等 cross-track family 必需;其他 family 可忽略。
+     */
+    melodyEvents?: ReadonlyArray<NoteEvent>;
 };
 
 // Re-export NoteData for convenience

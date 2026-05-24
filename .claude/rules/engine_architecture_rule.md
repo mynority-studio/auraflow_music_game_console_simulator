@@ -75,7 +75,7 @@
         ↓ (转 GeneratedChord IR)
 ┌─ 5. Dispatcher ───────────────────────────────────────────────┐
 │ af2-engine/Dispatcher.ts — dispatchMusicians(score, ...)       │
-│   顺序 bass → accomp → drums → melody → pad                   │
+│   顺序 melody → bass → accomp → drums → pad(N6 重排)         │
 │   每 step 把前面 emit 的 notes 累积到 peers                    │
 │   → Map<musicianId, NoteData[]>                                │
 └────────────────────────────────────────────────────────────────┘

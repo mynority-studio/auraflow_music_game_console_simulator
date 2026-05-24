@@ -409,6 +409,17 @@ export interface MusicianPlanInput {
      * 可选保持向后兼容;未传时 idiom 走 POP fallback。
      */
     readonly mgStyle?: MgStyle;
+    /**
+     * N6 阶段:cross-track melody peer notes(已 emit 的 mainMusician notes)。
+     * 由 Facade 在 accomp closure 内从 input.peers.get(mainMusicianId) 注入。
+     * AccompGen → ChordTextureEngine → CallAndResponse family 用于 melody 占用
+     * 窗口检测。其他 idiom 可忽略。
+     *
+     * 前提:Dispatcher steps 顺序为 melody → bass → accomp → ...,确保 accomp
+     * 跑时 melody peers 已存在。Major 调里 cross-track 用 textureType 'Call_And_Response'
+     * 触发(per-mgStyle pool 决定),其他 textureType 忽略此字段。
+     */
+    readonly melodyPeerNotes?: ReadonlyArray<NoteData>;
 }
 
 /**
