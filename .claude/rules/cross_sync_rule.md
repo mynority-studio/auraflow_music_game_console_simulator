@@ -95,7 +95,7 @@
   - `af2-engine/music-theory/chord-types.ts` `CHORD_TYPES`
 - **风险**:**高**(quality 漏配 → fallback Major triad,色彩消失)
 
-### 1.5 MgStyle 枚举 ↔ Arranger / Composer / Conductor / Drum-grid
+### 1.5 MgStyle 枚举 ↔ Arranger / Composer / Conductor / Drum-grid / Idiom 节奏池
 
 - **触发器**:`state/EngineSelectionStore.ts` `MgStyle` union 变更或新增风格
 - **必须同步**:
@@ -105,9 +105,13 @@
   - `af2-engine/Conductor.ts` `CONDUCTOR_TEMPLATES_BY_STYLE` +
     `CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE`
   - `af2-engine/instruments/drum-grid/grids/` per-style grid 文件
+  - `af2-engine/Af2AccompGen.ts` `STYLE_ACCOMP_POOL[mgStyle]`(B2,2026-05-24)
+  - `af2-engine/Af2MelodyGen.ts` `RHYTHM_PATTERNS_BY_STYLE[mgStyle]`(B3,2026-05-24)
+  - `af2-engine/instruments/BassIdiom.ts` `DEFAULT_WALK_PATTERN_BY_STYLE[mgStyle]`(B4,2026-05-24)
   - `af2-engine/MgKernelInvoker.ts` `MG_STYLE_BARS` + `MG_STYLE_BPM`
   - `af2-engine/Af2EngineFacade.ts` `MG_STYLE_TO_AF_STYLE`
-- **风险**:**高**(新 mgStyle 漏配某层 → fallback 行为多端不一致)
+- **风险**:**高**(新 mgStyle 漏配某层 → fallback 行为多端不一致,
+  Af2AccompGen/MelodyGen/BassIdiom 缺则 fallback 到 POP 静默劣化)
 
 ### 1.6 BandRole 枚举 ↔ Roster / Conductor / SlotRouter / MidiConverter
 

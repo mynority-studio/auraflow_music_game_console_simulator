@@ -403,6 +403,12 @@ export interface MusicianPlanInput {
      * musician.af2Overrides 主要给 PianoIdiom / BassIdiom 读 Layer 1/2 overrides。
      */
     readonly musician?: Musician;
+    /**
+     * 当前曲目 mgStyle(由 Facade 从 EngineSelectionStore.getMgStyle 取或
+     * options.forcedStyleId 映射)。供 idiom 选 per-mgStyle 节奏/织体表用。
+     * 可选保持向后兼容;未传时 idiom 走 POP fallback。
+     */
+    readonly mgStyle?: MgStyle;
 }
 
 /**

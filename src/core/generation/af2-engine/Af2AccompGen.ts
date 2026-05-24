@@ -34,6 +34,7 @@ import type { GeneratedChord } from '../ir';
 import { SectionType } from '../types';
 import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
+import type { MgStyle } from '../../../state/EngineSelectionStore';
 
 const ACCOMP_BLOCK_VELOCITY = 0.62;
 const ACCOMP_ARP_VELOCITY = 0.60;
@@ -51,18 +52,68 @@ enum AccompPattern {
     Sustained = 3,
 }
 
-const SECTION_ACCOMP_POOL: Partial<Record<SectionType, ReadonlyArray<AccompPattern>>> = {
-    [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Block],
-    [SectionType.Verse]:     [AccompPattern.Block, AccompPattern.Arpeggiated],
-    [SectionType.PreChorus]: [AccompPattern.Stab, AccompPattern.Arpeggiated],
-    [SectionType.Chorus]:    [AccompPattern.Arpeggiated, AccompPattern.Stab, AccompPattern.Block],
-    [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Arpeggiated],
-    [SectionType.BuildUp]:   [AccompPattern.Stab],
-    [SectionType.Drop]:      [AccompPattern.Block],
-    [SectionType.Break]:     [AccompPattern.Sustained],
-    [SectionType.Breakdown]: [AccompPattern.Sustained],
-    [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Block],
-    [SectionType.PreOutro]:  [AccompPattern.Block, AccompPattern.Sustained],
+// Per-mgStyle × sectionType pattern 偏好(B2 升级,2026-05-24)
+//
+// 设计语义:
+//   POP   直拍为主 — Block / Stab 多,Sustained 留白少
+//   JAZZ  comping 为主 — Stab 多(柔和切分),Arp 少(避免 piano dominate),Sustained 多
+//   RNB   Arp 神经质 + cluster 切分 — Arp 主力,Stab 次之
+//   BLUES Stab 节拍重 + Sustained 留蓝调 hang — Stab + Sustained
+//
+// fallback:风格未匹配 sectionType → 走 POP 同 sectionType;POP 未匹配 → DEFAULT_POOL
+const STYLE_ACCOMP_POOL: Record<MgStyle, Partial<Record<SectionType, ReadonlyArray<AccompPattern>>>> = {
+    POP: {
+        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Block],
+        [SectionType.Verse]:     [AccompPattern.Block, AccompPattern.Arpeggiated],
+        [SectionType.PreChorus]: [AccompPattern.Stab, AccompPattern.Block],
+        [SectionType.Chorus]:    [AccompPattern.Block, AccompPattern.Stab, AccompPattern.Arpeggiated],
+        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Arpeggiated],
+        [SectionType.BuildUp]:   [AccompPattern.Stab],
+        [SectionType.Drop]:      [AccompPattern.Block],
+        [SectionType.Break]:     [AccompPattern.Sustained],
+        [SectionType.Breakdown]: [AccompPattern.Sustained],
+        [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Block],
+        [SectionType.PreOutro]:  [AccompPattern.Block, AccompPattern.Sustained],
+    },
+    JAZZ: {
+        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Stab],
+        [SectionType.Verse]:     [AccompPattern.Stab, AccompPattern.Sustained],
+        [SectionType.PreChorus]: [AccompPattern.Stab],
+        [SectionType.Chorus]:    [AccompPattern.Stab, AccompPattern.Arpeggiated],
+        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Stab],
+        [SectionType.BuildUp]:   [AccompPattern.Stab],
+        [SectionType.Drop]:      [AccompPattern.Stab],
+        [SectionType.Break]:     [AccompPattern.Sustained],
+        [SectionType.Breakdown]: [AccompPattern.Sustained],
+        [SectionType.Outro]:     [AccompPattern.Sustained],
+        [SectionType.PreOutro]:  [AccompPattern.Sustained, AccompPattern.Stab],
+    },
+    RNB: {
+        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Arpeggiated],
+        [SectionType.Verse]:     [AccompPattern.Arpeggiated, AccompPattern.Stab],
+        [SectionType.PreChorus]: [AccompPattern.Stab, AccompPattern.Arpeggiated],
+        [SectionType.Chorus]:    [AccompPattern.Arpeggiated, AccompPattern.Stab],
+        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Arpeggiated],
+        [SectionType.BuildUp]:   [AccompPattern.Stab, AccompPattern.Arpeggiated],
+        [SectionType.Drop]:      [AccompPattern.Stab],
+        [SectionType.Break]:     [AccompPattern.Sustained],
+        [SectionType.Breakdown]: [AccompPattern.Sustained, AccompPattern.Arpeggiated],
+        [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Arpeggiated],
+        [SectionType.PreOutro]:  [AccompPattern.Arpeggiated, AccompPattern.Sustained],
+    },
+    BLUES: {
+        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Stab],
+        [SectionType.Verse]:     [AccompPattern.Stab, AccompPattern.Block],
+        [SectionType.PreChorus]: [AccompPattern.Stab],
+        [SectionType.Chorus]:    [AccompPattern.Stab, AccompPattern.Block],
+        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Stab],
+        [SectionType.BuildUp]:   [AccompPattern.Stab],
+        [SectionType.Drop]:      [AccompPattern.Block],
+        [SectionType.Break]:     [AccompPattern.Sustained],
+        [SectionType.Breakdown]: [AccompPattern.Sustained],
+        [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Stab],
+        [SectionType.PreOutro]:  [AccompPattern.Stab, AccompPattern.Sustained],
+    },
 };
 
 const DEFAULT_POOL: ReadonlyArray<AccompPattern> = [AccompPattern.Block, AccompPattern.Arpeggiated];
@@ -71,14 +122,19 @@ const DEFAULT_POOL: ReadonlyArray<AccompPattern> = [AccompPattern.Block, AccompP
  * Pattern 选择 — 默认 pool hash 均分;persona 加权:
  *   - sparsityTendency 高 → 偏 Sustained(留白)
  *   - syncopationAssault 高 → 偏 Stab(切分密集)
+ *
+ * B2:mgStyle 决定 sectionType → pattern 池(POP/JAZZ/RNB/BLUES 各自偏好)。
+ * 未传 mgStyle → POP fallback。
  */
 function pickPattern(
     sectionType: SectionType,
     chordIdxInSection: number,
+    mgStyle: MgStyle,
     sparsity: number = 0,
     syncopation: number = 0,
 ): AccompPattern {
-    const pool = SECTION_ACCOMP_POOL[sectionType] ?? DEFAULT_POOL;
+    const stylePool = STYLE_ACCOMP_POOL[mgStyle];
+    const pool = stylePool[sectionType] ?? STYLE_ACCOMP_POOL.POP[sectionType] ?? DEFAULT_POOL;
     const h = (chordIdxInSection * 11 + (sectionType as number) * 13) & 0xff;
     let pick = pool[h % pool.length];
     const h2 = ((h * 31 + 17) & 0xff) / 255;
@@ -172,6 +228,7 @@ export function generateAf2Accomp(
     const dynamicLo = (persona?.dynamicRange?.[0] ?? 55) / 127;
     const dynamicHi = (persona?.dynamicRange?.[1] ?? 100) / 127;
     const dynamicMid = (dynamicLo + dynamicHi) / 2;
+    const mgStyle: MgStyle = input.mgStyle ?? 'POP';
 
     for (const chord of chords) {
         const sectionIdx = findSectionIdxForBeat(chord.startBeat, sections);
@@ -188,7 +245,7 @@ export function generateAf2Accomp(
         sectionChordIdx.set(sectionIdx, chordIdxInSection + 1);
 
         const sectionType = sections[sectionIdx].sectionType;
-        const pattern = pickPattern(sectionType, chordIdxInSection, sparsity, syncopation);
+        const pattern = pickPattern(sectionType, chordIdxInSection, mgStyle, sparsity, syncopation);
         const voicing = chord.voicing ?? [];
         if (voicing.length === 0) continue;
 

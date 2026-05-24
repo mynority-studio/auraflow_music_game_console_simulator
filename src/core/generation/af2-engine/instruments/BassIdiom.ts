@@ -36,6 +36,7 @@ import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 import { WALK_PATTERNS, WalkRule, WalkPatternId } from '../../data/BassWalkPatterns';
 import { thirdInterval, fifthInterval } from '../music-theory/chord-intervals';
 import { placeNearAnchor as placeBassNearAnchor } from '../utils/voice-leading';
+import type { MgStyle } from '../../../../state/EngineSelectionStore';
 
 /** 电贝斯物理参数 */
 export const BASS_INSTRUMENT_SPEC = {
@@ -81,6 +82,19 @@ const SWING_RATIO_BY_PATTERN: Record<WalkPatternId, number> = {
     [WalkPatternId.QuarterHalf]: 0.55,
     [WalkPatternId.BebopWalk]:   0.66,
     [WalkPatternId.ScaleClimb]:  0.66,
+};
+
+// B4(2026-05-24):per-mgStyle 默认 walkPattern。
+//   POP   → HalfNote     half-note Pop sub-bass(根五半音符律动,Bill Evans Pop 风)
+//   JAZZ  → BebopWalk    quarter-note walking(swing 0.66)
+//   BLUES → Stride       low-high alternation(12-bar 律动)
+//   RNB   → QuarterHalf  mixed pocket(neo-soul 半切分)
+// musician.persona.walkPatternId 显式填了就 override 这张表(个性优先)。
+const DEFAULT_WALK_PATTERN_BY_STYLE: Record<MgStyle, WalkPatternId> = {
+    POP:   WalkPatternId.HalfNote,
+    JAZZ:  WalkPatternId.BebopWalk,
+    BLUES: WalkPatternId.Stride,
+    RNB:   WalkPatternId.QuarterHalf,
 };
 
 const ACCENT_DOWN = 0.08;
@@ -197,18 +211,22 @@ function renderAf2Walking(
 export const BassIdiom = {
     /**
      * Plan bass role。
-     *   walkPatternId 已设 → AF2 自家 walking(score.chords + WALK_PATTERNS)
-     *   walkPatternId 未设 → 退化 mg pass-through
+     * 优先级(B4 升级):
+     *   1. musician.persona.walkPatternId 显式填了 → AF2 walking 用 musician 卡
+     *   2. input.mgStyle 已传 → AF2 walking 用 DEFAULT_WALK_PATTERN_BY_STYLE[mgStyle]
+     *   3. 都没有 → 退化 mg pass-through(legacy)
      */
     plan(input: MusicianPlanInput): NoteData[] {
-        const walkPatternId = input.musician?.persona?.walkPatternId;
+        const cardWalkPatternId = input.musician?.persona?.walkPatternId;
+        const styleDefault = input.mgStyle ? DEFAULT_WALK_PATTERN_BY_STYLE[input.mgStyle] : undefined;
+        const walkPatternId = cardWalkPatternId ?? styleDefault;
 
         // AF2 自家 walking 路径
         if (walkPatternId !== undefined && walkPatternId !== null) {
             return renderAf2Walking(input.score.chords, walkPatternId as WalkPatternId, input);
         }
 
-        // Mg pass-through 退化路径
+        // Mg pass-through 退化路径(musician 卡未填 walkPatternId 且未传 mgStyle)
         const raw = input.notes?.bass ?? [];
         if (raw.length === 0) return [];
         const out: NoteData[] = [];

@@ -31,6 +31,7 @@ import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
 import { rankCandidatePcs } from './music-theory/note-evaluator';
 import { thirdInterval, fifthInterval, seventhInterval } from './music-theory/chord-intervals';
 import { placeNearAnchor } from './utils/voice-leading';
+import type { MgStyle } from '../../../state/EngineSelectionStore';
 
 const MELODY_DEFAULT_VELOCITY = 0.72;
 
@@ -38,48 +39,75 @@ const MELODY_DEFAULT_VELOCITY = 0.72;
 // 已抽取到 music-theory/chord-intervals.ts + utils/voice-leading.ts(2026-05-24)
 
 // ============================================================
-// Rhythm patterns(slot duration 数组,sum 必须 = 1.0,代表占 chord 比例)
+// Per-mgStyle rhythm patterns(B3,2026-05-24)
 // ============================================================
 //
-// 4 种节奏:
-//   A. 4 quarter:[0.25, 0.25, 0.25, 0.25]  (v1.0 默认)
-//   B. 2 half:   [0.5, 0.5]                (留白)
-//   C. dotted:   [0.375, 0.125, 0.5]       (附点四分 + 8th + 半)
-//   D. sync:     [0.25, 0.125, 0.125, 0.5] (切分 + 后半留白)
+// 每个池 4 个 pattern,index 语义跨风格一致:
+//   idx 0 — 标准 baseline(直拍 / bebop 8th / 16th sync / shuffle)
+//   idx 1 — 留白型(2 halfs)            ← persona.sparsityTendency 偏好
+//   idx 2 — Dotted / anticipation       ← persona.syncopationAssault 偏好(h 偶数)
+//   idx 3 — Sync / pocket               ← persona.syncopationAssault 偏好(h 奇数)
+//
+// QUANTIZED_DURATIONS 合法值:0.125 / 0.25 / 0.375 / 0.5 / 0.75 / 1.0
+// sum 必须 = 1.0(占 chord 比例)
+//
+// POP   直拍 / dotted 经典      — radio 听感
+// JAZZ  bebop 8th + comping 长留白 + anticipation — 摇摆律动
+// RNB   16th syncopate / Dilla pocket / rest+flurry — neo-soul 神经质
+// BLUES shuffle / call-response — 12-bar 律动
 // ============================================================
 
-const RHYTHM_PATTERNS: ReadonlyArray<ReadonlyArray<number>> = Object.freeze([
-    Object.freeze([0.25, 0.25, 0.25, 0.25]),
-    Object.freeze([0.5, 0.5]),
-    Object.freeze([0.375, 0.125, 0.5]),
-    Object.freeze([0.25, 0.125, 0.125, 0.5]),
-]);
+const RHYTHM_PATTERNS_BY_STYLE: Record<MgStyle, ReadonlyArray<ReadonlyArray<number>>> = {
+    POP: [
+        Object.freeze([0.25, 0.25, 0.25, 0.25]),
+        Object.freeze([0.5, 0.5]),
+        Object.freeze([0.375, 0.125, 0.5]),
+        Object.freeze([0.25, 0.125, 0.125, 0.5]),
+    ],
+    JAZZ: [
+        Object.freeze([0.125, 0.125, 0.25, 0.125, 0.125, 0.25]),
+        Object.freeze([0.5, 0.5]),
+        Object.freeze([0.75, 0.25]),
+        Object.freeze([0.125, 0.125, 0.25, 0.5]),
+    ],
+    RNB: [
+        Object.freeze([0.125, 0.125, 0.25, 0.125, 0.125, 0.25]),
+        Object.freeze([0.5, 0.5]),
+        Object.freeze([0.375, 0.125, 0.25, 0.25]),
+        Object.freeze([0.25, 0.125, 0.125, 0.5]),
+    ],
+    BLUES: [
+        Object.freeze([0.375, 0.125, 0.375, 0.125]),
+        Object.freeze([0.5, 0.5]),
+        Object.freeze([0.75, 0.25]),
+        Object.freeze([0.25, 0.25, 0.5]),
+    ],
+};
 
 /**
- * Deterministic 节奏选择(零 PRNG)。
- * sectionIdx + chordIdxInSection → pattern index [0..3]
- */
-/**
- * Pattern 选择 — 默认 hash 均分;persona 加权偏好:
- *   - sparsityTendency 高 → 偏 B(2 half,留白)
- *   - syncopationAssault 高 → 偏 C/D(dotted / sync)
+ * Pattern 选择 — 风格池 hash 均分;persona 加权偏好:
+ *   - sparsityTendency 高 → 偏 idx 1(2 half,留白)
+ *   - syncopationAssault 高 → 偏 idx 2/3(dotted / sync)
  *
  * 实现:基础 hash 抽 base index,再按 persona 概率"跳"到偏好 index。
+ * mgStyle 选哪个池;未传时走 POP fallback。
  */
 function pickRhythmPattern(
     sectionIdx: number,
     chordIdxInSection: number,
+    mgStyle: MgStyle,
     sparsity: number = 0,
     syncopation: number = 0,
 ): ReadonlyArray<number> {
+    const pool = RHYTHM_PATTERNS_BY_STYLE[mgStyle];
     const h = (sectionIdx * 7 + chordIdxInSection * 11) & 0xff;
-    let idx = h % RHYTHM_PATTERNS.length;
+    let idx = h % pool.length;
     // 二阶 hash 给"偏好跳转"概率
     const h2 = (h * 31 + 17) & 0xff;
     const p2 = h2 / 255;
     if (p2 < sparsity * 0.7) idx = 1;                                       // → Half
     else if (p2 < sparsity * 0.7 + syncopation * 0.7) idx = (h % 2 ? 3 : 2); // → Sync / Dotted
-    return RHYTHM_PATTERNS[idx];
+    return pool[idx];
 }
 
 // ============================================================
@@ -197,6 +225,9 @@ export function generateAf2Melody(
     const keyRootPc = ((input.score.keyOffset % 12) + 12) % 12;
     const isMinor = input.score.tonality === Tonality.Minor;
 
+    // B3:mgStyle 决定 rhythm pattern 池;未传 → POP fallback
+    const mgStyle: MgStyle = input.mgStyle ?? 'POP';
+
     // 预处理:每 chord 标注 sectionIdx + chordIdxInSection + section progress
     interface ChordCtx {
         chord: GeneratedChord;
@@ -269,8 +300,8 @@ export function generateAf2Melody(
             (root + seventhInterval(chord.quality)) % 12,
         ];
 
-        // 节奏 pattern + slot 缩放到 chord beats(persona 加权)
-        const pattern = pickRhythmPattern(sectionIdx, chordIdxInSection, sparsity, syncopation);
+        // 节奏 pattern + slot 缩放到 chord beats(persona 加权 + mgStyle 选池)
+        const pattern = pickRhythmPattern(sectionIdx, chordIdxInSection, mgStyle, sparsity, syncopation);
         const slotDurs = pattern.map(p => p * chordBeats);
 
         // Phrase contour:bias anchor 用于本 chord 的所有 slots

@@ -82,13 +82,17 @@ export const MUSICIAN_POOL: Musician[] = [
             sparsityTendency: 0.5,
             syncopationAssault: 0.1,
             dynamicRange: [75, 110],
-            // A1：Pop 抒情 root-fifth 半音符律动（Bill Evans 风慢 walking）
-            walkPatternId: 1,  // WalkPatternId.HalfNote
+            // B4(2026-05-24):移除 walkPatternId 让 mgStyle 默认生效
+            //   - mgStyle=POP   → HalfNote(同原始 Pop 抒情 root-fifth,听感不变)
+            //   - mgStyle=JAZZ  → BebopWalk(swing 0.66)
+            //   - mgStyle=BLUES → Stride
+            //   - mgStyle=RNB   → QuarterHalf
+            // 如需固定某 musician 走某 walking 不管 mgStyle,在此处填 walkPatternId override。
             // Phase 6a — bass 中等 wake(低 K Intro/Outro 可睡,Verse 起开始走)
             wakeK: 0.30,
             peakK: 0.90,
         },
-        description: 'Pop 电贝斯，正拍稳重 + 半音符 walking',
+        description: 'Pop/Jazz/Blues/RNB 通用电贝斯,walking 跟 mgStyle 走',
         // AF2 overrides — Pop sub-bass 标准:Intro 不进,Outro 撤(经典 Pop 编曲)
         af2Overrides: {
             sectionRolePreference: {

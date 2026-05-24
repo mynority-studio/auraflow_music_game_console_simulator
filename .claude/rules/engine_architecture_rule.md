@@ -293,12 +293,12 @@ utils/                  ← PRNGManager
 
 | 想优化什么 | 主要改哪 |
 |------------|---------|
-| Melody 节奏 pattern | `Af2MelodyGen.RHYTHM_PATTERNS` |
+| Melody 节奏 pattern(per mgStyle) | `Af2MelodyGen.RHYTHM_PATTERNS_BY_STYLE` |
 | Melody phrase contour(arch/up/down)| `Af2MelodyGen.phraseContourBias` |
 | Melody chord-tone cycle [root,5,3,7] | `Af2MelodyGen.cyclePcs` 构造 |
 | Melody passing tone | `Af2MelodyGen.passingToneGate` + `pickPassingPc` |
 | Melody phrase ending | `Af2MelodyGen` `progress >= 0.95` 分支 |
-| Accomp pattern(Block/Arp/Stab/Sustained) | `Af2AccompGen.SECTION_ACCOMP_POOL` + `pickPattern` |
+| Accomp pattern 池(per mgStyle × sectionType) | `Af2AccompGen.STYLE_ACCOMP_POOL` + `pickPattern` |
 | Accomp velocity 范围 | `Af2AccompGen.ACCOMP_*_VELOCITY` |
 | add11 物理触发 | `PianoIdiom.applyAdd11HandPhysics` |
 | 主区 / 越界自然感 | `PianoIdiom.PIANO_REGIONS` + `applyRegionProbability` |
@@ -309,10 +309,11 @@ utils/                  ← PRNGManager
 | 想优化什么 | 主要改哪 |
 |------------|---------|
 | Walking pattern(HalfNote/LatinTumbao/Stride/等)| `data/BassWalkPatterns.ts` `WALK_PATTERNS` |
+| Per-mgStyle 默认 walking | `BassIdiom.DEFAULT_WALK_PATTERN_BY_STYLE` |
 | Swing 比例 | `BassIdiom.SWING_RATIO_BY_PATTERN` |
 | Dynamic accent(down/off-beat)| `BassIdiom.ACCENT_DOWN/OFF` |
 | 物理音域 / anchor | `BassIdiom.BASS_INSTRUMENT_SPEC` + `BASS_ANCHOR_MIDI` |
-| 选哪个 pattern 给 musician | `MusicianRegistry` 的 `persona.walkPatternId` |
+| 选哪个 pattern 给 musician(override mgStyle 默认) | `MusicianRegistry` 的 `persona.walkPatternId` |
 | musician 加 section preference | `MusicianRegistry` 的 `af2Overrides.sectionRolePreference` |
 
 ### 8.3 鼓组(DrumIdiom)

@@ -251,7 +251,7 @@ export const Af2EngineFacade = {
             });
         }
 
-        const performanceByMusician = dispatchMusicians(score, sectionAssignments, steps);
+        const performanceByMusician = dispatchMusicians(score, sectionAssignments, steps, mgStyle);
 
         // Extract per-musician notes(空 musician → [])
         const renderedBassRaw   = bassMusician      ? performanceByMusician.get(bassMusician.id)      ?? [] : [];
