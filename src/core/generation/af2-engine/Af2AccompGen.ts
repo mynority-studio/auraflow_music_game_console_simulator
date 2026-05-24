@@ -1,32 +1,24 @@
 // ============================================================
-// Af2AccompGen — AF2 自家伴奏生成器 MVP
+// Af2AccompGen — AF2 自家伴奏生成器(N 阶段:接 ChordTextureEngine)
 // ============================================================
 //
-// 8 层架构 #6 "乐手 idiom" 内的 accomp 算法。当 musician 卡 af2Overrides.accompAlgorithm
-// = 'af2' 时,PianoIdiom.planAccomp 调用本模块替代 mg.notes.accomp pass-through。
+// 8 层架构 #6 "乐手 idiom" 内的 accomp 算法。PianoIdiom.planAccomp 调用本模块。
 //
-// 4 种 pattern,per chord 按 (sectionType, chordIdx) hash deterministic 选:
+// N 阶段(2026-05-24)从 mg 移植 chord-texture 系统:per chord 从
+// (mgStyle, sectionType)textureType pool 抽 1 个 textureType,走
+// ChordTextureEngine.applyByTextureType 渲染。
 //
-//   Block        整 voicing 在 chord 起点一击,持续整个 chord(柱式)
-//   Arpeggiated  voicing 各音 quarter/eighth 逐个演奏(分解和弦)
-//   Stab         per-beat 短促重复 voicing(comping rhythm)
-//   Sustained    Block 的低速版本(轻 velocity,留空间给 melody)
+// 替换 B2 阶段的简单 4 pattern (Block/Arp/Stab/Sustained)。
 //
-// Per-sectionType 偏好(POP 默认):
-//   Intro / Outro / PreOutro     Sustained / Block(留白)
-//   Verse                        Block / Arp(平稳)
-//   Chorus                       Arp / Stab(动起来)
-//   PreChorus / BuildUp          Stab(节奏渐密)
-//   Bridge                       Sustained / Arp
-//   Drop                         Block(power punch)
-//   Break / Breakdown            Sustained
+// PRNG 隔离:每 chord 新建独立 `accomp_${seed}_${chord.startBeat}` Random,
+// 不影响主 rng 流;family 内部消耗 random 不传染。
 //
-// PRNG 消耗:**0**(hash deterministic)。
+// bass 过滤:partFilter='accomp' — family 输出含 bass + accomp,
+// 我们只取 accomp(bass 走 BassIdiom)。
 //
 // 输入约束:
-//   chord.voicing 应非空(Composer 输出已保证;空时 fallback 到 [root, root+3rd, root+5th])
+//   chord.voicing 应非空(Composer 输出保证);空时 fallback root pc 三和弦
 //   voicing 在 RELATIVE 空间(AbsoluteTransposer 后期 +keyOffset)
-//   不强制 clamp 到 accomp region(由 PianoIdiom.planAccomp 后续 applyRegionProbability 处理)
 // ============================================================
 
 import type { NoteData, SectionMetadata } from '../types';
@@ -35,178 +27,113 @@ import { SectionType } from '../types';
 import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
-
-const ACCOMP_BLOCK_VELOCITY = 0.62;
-const ACCOMP_ARP_VELOCITY = 0.60;
-const ACCOMP_STAB_VELOCITY = 0.55;
-const ACCOMP_SUSTAINED_VELOCITY = 0.45;
+import { Random } from './utils/Random';
+import { ChordTextureEngine } from './chord-texture/ChordTextureEngine';
+import { generatedChordToChordDef } from './chord-texture/adapter';
 
 // ============================================================
-// Pattern enum + per-sectionType 偏好表
+// Per-mgStyle × sectionType textureType pool(N 阶段 8 family 覆盖)
 // ============================================================
-
-enum AccompPattern {
-    Block = 0,
-    Arpeggiated = 1,
-    Stab = 2,
-    Sustained = 3,
-}
-
-// Per-mgStyle × sectionType pattern 偏好(B2 升级,2026-05-24)
 //
 // 设计语义:
-//   POP   直拍为主 — Block / Stab 多,Sustained 留白少
-//   JAZZ  comping 为主 — Stab 多(柔和切分),Arp 少(避免 piano dominate),Sustained 多
-//   RNB   Arp 神经质 + cluster 切分 — Arp 主力,Stab 次之
-//   BLUES Stab 节拍重 + Sustained 留蓝调 hang — Stab + Sustained
+//   POP   直拍 anthem + broken 8th 律动 + arp 16th(chorus)
+//   JAZZ  Charleston comping 主力,bossa 偶尔
+//   BLUES Boogie Woogie + Stabs(blues 律动 + 切分)
+//   RNB   Neo-soul stab + classic arp(16th 神经质)
 //
-// fallback:风格未匹配 sectionType → 走 POP 同 sectionType;POP 未匹配 → DEFAULT_POOL
-const STYLE_ACCOMP_POOL: Record<MgStyle, Partial<Record<SectionType, ReadonlyArray<AccompPattern>>>> = {
+// 通用低能量段(Intro / Outro / Break / Breakdown):Single_Root 留白
+//
+// fallback 路径:风格未匹配 sectionType → POP 同 sectionType → ['Single_Root']
+// ============================================================
+
+const STYLE_TEXTURE_POOL: Record<MgStyle, Partial<Record<SectionType, ReadonlyArray<string>>>> = {
     POP: {
-        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Block],
-        [SectionType.Verse]:     [AccompPattern.Block, AccompPattern.Arpeggiated],
-        [SectionType.PreChorus]: [AccompPattern.Stab, AccompPattern.Block],
-        [SectionType.Chorus]:    [AccompPattern.Block, AccompPattern.Stab, AccompPattern.Arpeggiated],
-        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Arpeggiated],
-        [SectionType.BuildUp]:   [AccompPattern.Stab],
-        [SectionType.Drop]:      [AccompPattern.Block],
-        [SectionType.Break]:     [AccompPattern.Sustained],
-        [SectionType.Breakdown]: [AccompPattern.Sustained],
-        [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Block],
-        [SectionType.PreOutro]:  [AccompPattern.Block, AccompPattern.Sustained],
+        [SectionType.Intro]:     ['Single_Root', 'Root_Octave'],
+        [SectionType.Verse]:     ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync'],
+        [SectionType.PreChorus]: ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync'],
+        [SectionType.Chorus]:    ['Pop_Anthem_Pulse', 'Pop_Broken_8ths_Sync', 'Pop_Piano_Arp_16ths'],
+        [SectionType.Bridge]:    ['Pop_Broken_8ths_Sync', 'Pop_Piano_Arp_16ths'],
+        [SectionType.BuildUp]:   ['Pop_Anthem_Pulse'],
+        [SectionType.Drop]:      ['Pop_Anthem_Pulse'],
+        [SectionType.Break]:     ['Single_Root'],
+        [SectionType.Breakdown]: ['Single_Root'],
+        [SectionType.Outro]:     ['Single_Root', 'Root_Octave'],
+        [SectionType.PreOutro]:  ['Root_Octave', 'Pop_Anthem_Pulse'],
     },
     JAZZ: {
-        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Stab],
-        [SectionType.Verse]:     [AccompPattern.Stab, AccompPattern.Sustained],
-        [SectionType.PreChorus]: [AccompPattern.Stab],
-        [SectionType.Chorus]:    [AccompPattern.Stab, AccompPattern.Arpeggiated],
-        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Stab],
-        [SectionType.BuildUp]:   [AccompPattern.Stab],
-        [SectionType.Drop]:      [AccompPattern.Stab],
-        [SectionType.Break]:     [AccompPattern.Sustained],
-        [SectionType.Breakdown]: [AccompPattern.Sustained],
-        [SectionType.Outro]:     [AccompPattern.Sustained],
-        [SectionType.PreOutro]:  [AccompPattern.Sustained, AccompPattern.Stab],
-    },
-    RNB: {
-        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Arpeggiated],
-        [SectionType.Verse]:     [AccompPattern.Arpeggiated, AccompPattern.Stab],
-        [SectionType.PreChorus]: [AccompPattern.Stab, AccompPattern.Arpeggiated],
-        [SectionType.Chorus]:    [AccompPattern.Arpeggiated, AccompPattern.Stab],
-        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Arpeggiated],
-        [SectionType.BuildUp]:   [AccompPattern.Stab, AccompPattern.Arpeggiated],
-        [SectionType.Drop]:      [AccompPattern.Stab],
-        [SectionType.Break]:     [AccompPattern.Sustained],
-        [SectionType.Breakdown]: [AccompPattern.Sustained, AccompPattern.Arpeggiated],
-        [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Arpeggiated],
-        [SectionType.PreOutro]:  [AccompPattern.Arpeggiated, AccompPattern.Sustained],
+        [SectionType.Intro]:     ['Single_Root', 'Jazz_Charleston_Comp'],
+        [SectionType.Verse]:     ['Jazz_Charleston_Comp', 'Bossa_Clave_Comping'],
+        [SectionType.PreChorus]: ['Jazz_Charleston_Comp'],
+        [SectionType.Chorus]:    ['Jazz_Charleston_Comp', 'Bossa_Piano_Arp'],
+        [SectionType.Bridge]:    ['Bossa_Piano_Arp', 'Bossa_Clave_Comping'],
+        [SectionType.BuildUp]:   ['Jazz_Charleston_Comp'],
+        [SectionType.Drop]:      ['Jazz_Charleston_Comp'],
+        [SectionType.Break]:     ['Single_Root'],
+        [SectionType.Breakdown]: ['Single_Root'],
+        [SectionType.Outro]:     ['Single_Root', 'Jazz_Charleston_Comp'],
+        [SectionType.PreOutro]:  ['Jazz_Charleston_Comp'],
     },
     BLUES: {
-        [SectionType.Intro]:     [AccompPattern.Sustained, AccompPattern.Stab],
-        [SectionType.Verse]:     [AccompPattern.Stab, AccompPattern.Block],
-        [SectionType.PreChorus]: [AccompPattern.Stab],
-        [SectionType.Chorus]:    [AccompPattern.Stab, AccompPattern.Block],
-        [SectionType.Bridge]:    [AccompPattern.Sustained, AccompPattern.Stab],
-        [SectionType.BuildUp]:   [AccompPattern.Stab],
-        [SectionType.Drop]:      [AccompPattern.Block],
-        [SectionType.Break]:     [AccompPattern.Sustained],
-        [SectionType.Breakdown]: [AccompPattern.Sustained],
-        [SectionType.Outro]:     [AccompPattern.Sustained, AccompPattern.Stab],
-        [SectionType.PreOutro]:  [AccompPattern.Stab, AccompPattern.Sustained],
+        [SectionType.Intro]:     ['Single_Root', 'Root_Octave'],
+        [SectionType.Verse]:     ['Blues_Boogie_Woogie', 'Blues_Stabs'],
+        [SectionType.PreChorus]: ['Blues_Stabs'],
+        [SectionType.Chorus]:    ['Blues_Boogie_Woogie', 'Blues_Stabs'],
+        [SectionType.Bridge]:    ['Blues_Stabs'],
+        [SectionType.BuildUp]:   ['Blues_Stabs'],
+        [SectionType.Drop]:      ['Blues_Boogie_Woogie'],
+        [SectionType.Break]:     ['Single_Root'],
+        [SectionType.Breakdown]: ['Single_Root'],
+        [SectionType.Outro]:     ['Single_Root', 'Blues_Boogie_Woogie'],
+        [SectionType.PreOutro]:  ['Blues_Boogie_Woogie'],
+    },
+    RNB: {
+        [SectionType.Intro]:     ['Single_Root', 'Pop_Piano_Arp_16ths'],
+        [SectionType.Verse]:     ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
+        [SectionType.PreChorus]: ['RnB_Neo_Soul_Stab', 'Pop_Piano_Arp_16ths'],
+        [SectionType.Chorus]:    ['Pop_Piano_Arp_16ths', 'RnB_Neo_Soul_Stab'],
+        [SectionType.Bridge]:    ['RnB_Classic_Soul_Arp', 'Pop_Piano_Arp_16ths'],
+        [SectionType.BuildUp]:   ['RnB_Neo_Soul_Stab'],
+        [SectionType.Drop]:      ['RnB_Neo_Soul_Stab'],
+        [SectionType.Break]:     ['Single_Root'],
+        [SectionType.Breakdown]: ['Single_Root', 'Pop_Piano_Arp_16ths'],
+        [SectionType.Outro]:     ['Single_Root', 'Pop_Piano_Arp_16ths'],
+        [SectionType.PreOutro]:  ['Pop_Piano_Arp_16ths', 'RnB_Classic_Soul_Arp'],
     },
 };
 
-const DEFAULT_POOL: ReadonlyArray<AccompPattern> = [AccompPattern.Block, AccompPattern.Arpeggiated];
+const DEFAULT_TEXTURE_POOL: ReadonlyArray<string> = ['Single_Root'];
+
+// Per-mgStyle 高 sparsity / 高 syncopation 偏好覆盖 textureType
+const SPARSITY_FALLBACK = 'Single_Root';
+const SYNCOPATION_PREFERENCE: Record<MgStyle, string> = {
+    POP:   'Pop_Broken_8ths_Sync',
+    JAZZ:  'Jazz_Charleston_Comp',
+    BLUES: 'Blues_Stabs',
+    RNB:   'RnB_Neo_Soul_Stab',
+};
 
 /**
- * Pattern 选择 — 默认 pool hash 均分;persona 加权:
- *   - sparsityTendency 高 → 偏 Sustained(留白)
- *   - syncopationAssault 高 → 偏 Stab(切分密集)
+ * TextureType 选择 — pool hash 均分;persona 加权偏好:
+ *   - sparsityTendency 高 → 偏 Single_Root(留白)
+ *   - syncopationAssault 高 → 偏 per-mgStyle 切分 textureType
  *
- * B2:mgStyle 决定 sectionType → pattern 池(POP/JAZZ/RNB/BLUES 各自偏好)。
- * 未传 mgStyle → POP fallback。
+ * PRNG 消耗:0(deterministic hash)。
  */
-function pickPattern(
+function pickTextureType(
     sectionType: SectionType,
     chordIdxInSection: number,
     mgStyle: MgStyle,
     sparsity: number = 0,
     syncopation: number = 0,
-): AccompPattern {
-    const stylePool = STYLE_ACCOMP_POOL[mgStyle];
-    const pool = stylePool[sectionType] ?? STYLE_ACCOMP_POOL.POP[sectionType] ?? DEFAULT_POOL;
+): string {
+    const stylePool = STYLE_TEXTURE_POOL[mgStyle];
+    const pool = stylePool[sectionType] ?? STYLE_TEXTURE_POOL.POP[sectionType] ?? DEFAULT_TEXTURE_POOL;
     const h = (chordIdxInSection * 11 + (sectionType as number) * 13) & 0xff;
     let pick = pool[h % pool.length];
     const h2 = ((h * 31 + 17) & 0xff) / 255;
-    if (h2 < sparsity * 0.6) pick = AccompPattern.Sustained;
-    else if (h2 < sparsity * 0.6 + syncopation * 0.5) pick = AccompPattern.Stab;
+    if (h2 < sparsity * 0.6) pick = SPARSITY_FALLBACK;
+    else if (h2 < sparsity * 0.6 + syncopation * 0.5) pick = SYNCOPATION_PREFERENCE[mgStyle];
     return pick;
-}
-
-// fallbackVoicing 已删(Composer 保证 voicing 非空)— 直接用 chord.voicing
-
-// ============================================================
-// Pattern 渲染器
-// ============================================================
-
-function renderBlock(chord: GeneratedChord, voicing: number[]): NoteData[] {
-    const dur = chord.endBeat - chord.startBeat;
-    return voicing.map(p => ({
-        pitch: p,
-        onset: chord.startBeat,
-        duration: dur * 0.98,
-        velocity: ACCOMP_BLOCK_VELOCITY,
-    }));
-}
-
-function renderArpeggiated(chord: GeneratedChord, voicing: number[], chordIdxInSection: number): NoteData[] {
-    const beats = chord.endBeat - chord.startBeat;
-    // Af2Composer.placeVoicingMidi 已输出排序,直接消费(无 spread + sort 开销)
-    const sorted = voicing;
-    // numNotes ~ beats(每拍 1 个 arp 音),clamp [2, 8]
-    const numNotes = Math.max(2, Math.min(8, Math.round(beats * 2)));  // 8th-note arp 密度
-    const stepDur = beats / numNotes;
-    // Direction:up / down by hash
-    const goUp = ((chordIdxInSection * 7) & 1) === 0;
-    return Array.from({ length: numNotes }, (_, i) => {
-        const idx = goUp ? i % sorted.length : (sorted.length - 1 - (i % sorted.length));
-        return {
-            pitch: sorted[idx],
-            onset: chord.startBeat + i * stepDur,
-            duration: stepDur * 0.9,
-            velocity: ACCOMP_ARP_VELOCITY,
-        };
-    });
-}
-
-function renderStab(chord: GeneratedChord, voicing: number[]): NoteData[] {
-    const beats = chord.endBeat - chord.startBeat;
-    // Stab per beat,clamp [2, 8]
-    const stabs = Math.max(2, Math.min(8, Math.round(beats)));
-    const stabSpacing = beats / stabs;
-    const stabDur = stabSpacing * 0.4;  // 短促 staccato
-    const out: NoteData[] = [];
-    for (let i = 0; i < stabs; i++) {
-        for (const p of voicing) {
-            out.push({
-                pitch: p,
-                onset: chord.startBeat + i * stabSpacing,
-                duration: stabDur,
-                velocity: ACCOMP_STAB_VELOCITY,
-            });
-        }
-    }
-    return out;
-}
-
-function renderSustained(chord: GeneratedChord, voicing: number[]): NoteData[] {
-    const dur = chord.endBeat - chord.startBeat;
-    return voicing.map(p => ({
-        pitch: p,
-        onset: chord.startBeat,
-        duration: dur,                                    // 完整持续(无 0.98 gap)
-        velocity: ACCOMP_SUSTAINED_VELOCITY,
-    }));
 }
 
 // ============================================================
@@ -230,13 +157,14 @@ export function generateAf2Accomp(
     const dynamicMid = (dynamicLo + dynamicHi) / 2;
     const mgStyle: MgStyle = input.mgStyle ?? 'POP';
 
-    for (const chord of chords) {
+    for (let ci = 0; ci < chords.length; ci++) {
+        const chord = chords[ci];
+        const nextChord = chords[ci + 1] ?? null;
         const sectionIdx = findSectionIdxForBeat(chord.startBeat, sections);
         if (sectionIdx < 0) continue;
 
         const myRoles = getMyRolesInSection(input, sectionIdx);
         if (!myRoles.includes('accomp')) {
-            // 仍要 increment idx 保持 deterministic
             sectionChordIdx.set(sectionIdx, (sectionChordIdx.get(sectionIdx) ?? 0) + 1);
             continue;
         }
@@ -245,26 +173,37 @@ export function generateAf2Accomp(
         sectionChordIdx.set(sectionIdx, chordIdxInSection + 1);
 
         const sectionType = sections[sectionIdx].sectionType;
-        const pattern = pickPattern(sectionType, chordIdxInSection, mgStyle, sparsity, syncopation);
+        const textureType = pickTextureType(sectionType, chordIdxInSection, mgStyle, sparsity, syncopation);
         const voicing = chord.voicing ?? [];
         if (voicing.length === 0) continue;
 
-        let notes: NoteData[];
-        switch (pattern) {
-            case AccompPattern.Block:       notes = renderBlock(chord, voicing); break;
-            case AccompPattern.Arpeggiated: notes = renderArpeggiated(chord, voicing, chordIdxInSection); break;
-            case AccompPattern.Stab:        notes = renderStab(chord, voicing); break;
-            case AccompPattern.Sustained:   notes = renderSustained(chord, voicing); break;
-            default:                        notes = renderBlock(chord, voicing);
-        }
-        // Velocity 重映射到 persona.dynamicRange + 各 note 微浮动(±10%)
-        for (let i = 0; i < notes.length; i++) {
-            const n = notes[i];
+        // GeneratedChord → ChordDef adapter
+        const chordDef = generatedChordToChordDef(chord);
+        const nextChordDef = nextChord ? generatedChordToChordDef(nextChord) : null;
+
+        // Per-chord deterministic Random — family 内 rng 不传染主 stream
+        const chordRng = new Random(`accomp_${mgStyle}_${chord.startBeat.toFixed(2)}_${ci}`);
+
+        // 调用 ChordTextureEngine,只取 accomp(bass 走 BassIdiom)
+        const events = ChordTextureEngine.applyByTextureType(
+            textureType, chordDef, nextChordDef,
+            chord.startBeat, chordDef.duration, chordRng,
+            'accomp',
+        );
+
+        // Velocity 重映射到 persona.dynamicRange + 微浮动(±10%)
+        for (let i = 0; i < events.length; i++) {
+            const n = events[i];
             const velH = ((sectionIdx * 7 + chordIdxInSection * 19 + i * 23) & 0xff) / 255;
             const vel = dynamicMid + (velH - 0.5) * (dynamicHi - dynamicLo) * 0.4;
-            notes[i] = { ...n, velocity: Math.max(0.1, Math.min(1, vel * (n.velocity / 0.6))) };
+            // 保留 family 输出 velocity 的相对差(对 family 内的 strong/weak 区分有用):
+            // 用 family velocity 与 0.6 中线的偏差做缩放
+            const relScale = n.velocity / 0.6;
+            out.push({
+                ...n,
+                velocity: Math.max(0.1, Math.min(1, vel * relScale)),
+            });
         }
-        out.push(...notes);
     }
     return out;
 }

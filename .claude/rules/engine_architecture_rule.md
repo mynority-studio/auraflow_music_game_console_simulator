@@ -237,6 +237,13 @@ af2-engine/             ← 唯一活跃引擎
 │                        chord-detection / chord-color / voicing /
 │                        tendency / cadence / spell(数学+理论)
 ├─ instruments/         ← 5 个 idiom(Piano/Bass/Drum/Pad)+ drum-grid
+├─ chord-texture/       ← N 阶段(2026-05-24)mg 移植 8 family + Engine + Mapping
+│   ├─ types.ts             ─ FamilyName / FamilyParams / NoteEvent
+│   ├─ PitchPrimitives.ts   ─ bassMidi / chordVoicing / quality intervals
+│   ├─ adapter.ts           ─ GeneratedChord → ChordDef
+│   ├─ ChordTextureEngine.ts─ dispatcher + NoteEvent→NoteData adapter
+│   ├─ TextureTypeMapping.ts─ textureType → {family, params}(13 个)
+│   └─ families/            ─ 8 个 family(PopAnthem/JazzCharleston/...)
 ├─ Score.ts             ← 总谱契约
 ├─ Conductor.ts         ← 编排决策
 ├─ Af2Arranger.ts       ← 进行决策 + 接 2 planner
@@ -317,8 +324,11 @@ utils/                  ← PRNGManager
 | Melody chord-tone cycle [root,5,3,7] | `Af2MelodyGen.cyclePcs` 构造 |
 | Melody passing tone | `Af2MelodyGen.passingToneGate` + `pickPassingPc` |
 | Melody phrase ending | `Af2MelodyGen` `progress >= 0.95` 分支 |
-| Accomp pattern 池(per mgStyle × sectionType) | `Af2AccompGen.STYLE_ACCOMP_POOL` + `pickPattern` |
-| Accomp velocity 范围 | `Af2AccompGen.ACCOMP_*_VELOCITY` |
+| Accomp textureType 池(per mgStyle × sectionType) | `Af2AccompGen.STYLE_TEXTURE_POOL` + `pickTextureType` |
+| Chord 演绎 family(8 个,如 PopAnthem/JazzCharleston/Bossa/BoogieWalk/GhostStab/PureArp/PopBroken8th/Sustained) | `af2-engine/chord-texture/families/*.ts` | 不要在 AccompGen 重新实装演绎逻辑 |
+| Chord 演绎 textureType → family + params 映射 | `af2-engine/chord-texture/TextureTypeMapping.ts` `TEXTURE_MAPPING` | 加新 textureType 必须同步 family case |
+| Chord 演绎 dispatch + NoteEvent → NoteData adapter | `af2-engine/chord-texture/ChordTextureEngine.ts` | 不要绕过 dispatcher 直接调 family |
+| Accomp velocity 重映射 to persona | `Af2AccompGen.generateAf2Accomp` 末尾 dynamic loop |
 | add11 物理触发 | `PianoIdiom.applyAdd11HandPhysics` |
 | 主区 / 越界自然感 | `PianoIdiom.PIANO_REGIONS` + `applyRegionProbability` |
 | musician 卡个性 | `MusicianRegistry` 的 `af2Overrides`(regions/escape/add11Gate/algorithm) |

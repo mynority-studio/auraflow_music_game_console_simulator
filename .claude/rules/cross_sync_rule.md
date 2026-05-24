@@ -107,7 +107,8 @@
   - `af2-engine/Conductor.ts` `CONDUCTOR_TEMPLATES_BY_STYLE` +
     `CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE`
   - `af2-engine/instruments/drum-grid/grids/` per-style grid 文件
-  - `af2-engine/Af2AccompGen.ts` `STYLE_ACCOMP_POOL[mgStyle]`(B2,2026-05-24)
+  - `af2-engine/Af2AccompGen.ts` `STYLE_TEXTURE_POOL[mgStyle]`(N 阶段,2026-05-24)
+  - `af2-engine/chord-texture/TextureTypeMapping.ts` `TEXTURE_MAPPING`(N 阶段;加新 textureType 必须同步 ChordTextureEngine family case)
   - `af2-engine/Af2MelodyGen.ts` `RHYTHM_PATTERNS_BY_STYLE[mgStyle]`(B3,2026-05-24)
   - `af2-engine/instruments/BassIdiom.ts` `DEFAULT_WALK_PATTERN_BY_STYLE[mgStyle]`(B4,2026-05-24)
   - `af2-engine/MgKernelInvoker.ts` `MG_STYLE_BARS` + `MG_STYLE_BPM`
