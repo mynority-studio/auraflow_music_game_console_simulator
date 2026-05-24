@@ -30,6 +30,8 @@ import { generateProgressions, generateArrangement, resolveGeneration, realizePr
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 // Option C:AF2 自有 Arranger(替代 mg.generateProgressions 的进行决策)
 import { Af2Arranger } from './Af2Arranger';
+// AF2 自有 Composer(替代 mg.realizeProgression — voicing / bass / chordSymbol)
+import { Af2Composer } from './Af2Composer';
 
 /**
  * mg ChordDef.type(字符串)→ auraflow ChordQuality 映射。
@@ -153,6 +155,8 @@ export const MgKernelInvoker = {
      *                        进行决策;Composer 仍委托 mg.realizeProgression。
      * @param sections        Optional:per-section 不同进行(传入则用 section-aware
      *                        Af2Arranger);未传则退化到 bars-based 单循环 progression。
+     * @param useAf2Composer  Option C 续:true 时用 AF2 Composer 替代 mg.realizeProgression
+     *                        做 voicing / bass / chordSymbol。仅在 useAf2Arranger=true 时生效。
      */
     invoke(
         seedString: string,
@@ -160,6 +164,7 @@ export const MgKernelInvoker = {
         key: string = 'C',
         useAf2Arranger: boolean = false,
         sections?: ReadonlyArray<SectionMetadata>,
+        useAf2Composer: boolean = false,
     ): MgKernelOutput {
         const config: GenerationConfig = {
             seed: seedString,
@@ -177,12 +182,16 @@ export const MgKernelInvoker = {
             //   2. Af2Arranger:
             //      · sections 给 → section-aware arrange(per-section 不同进行)
             //      · sections 未给 → arrangeByBars(单 progression 循环)
-            //   3. realizeProgression → ChordDef[](mg Composer 做 voicing)
+            //   3. Composer:
+            //      · useAf2Composer=true → Af2Composer.compose(自家 voicing + bass)
+            //      · 否则 → mg.realizeProgression(原 mg Composer)
             const ctx = resolveGeneration(config);
             const abstractPath = sections
                 ? Af2Arranger.arrange(mgStyle, sections, 4 /* beatsPerMeasure */, rng)
                 : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
-            mgChords = realizeProgression(abstractPath, key, mgStyle, ctx, rng);
+            mgChords = useAf2Composer
+                ? Af2Composer.compose(abstractPath, key)
+                : realizeProgression(abstractPath, key, mgStyle, ctx, rng);
         } else {
             // 默认:mg 一气呵成(MG 模式 / AF2 没选 Option C 时)
             mgChords = generateProgressions(config, rng);

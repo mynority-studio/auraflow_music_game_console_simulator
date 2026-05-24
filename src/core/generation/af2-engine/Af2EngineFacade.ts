@@ -100,11 +100,17 @@ export const Af2EngineFacade = {
         const sections = SectionPlanner.plan(mgStyle, totalBars, 4);
 
         // -----------------------------------------------------------
-        // Step 2: mg 内核(useAf2Arranger=true → Section-aware AF2 Arranger 接管
-        //   和声进行决策,每 section 独立抽 progression,Verse/Chorus/Bridge/Outro
-        //   各自不同走向。Composer 仍委托 mg.realizeProgression。)
+        // Step 2: mg 内核 with AF2 Arranger + AF2 Composer(8 层架构 #3 + #4 完成):
+        //   - useAf2Arranger=true → Section-aware AF2 Arranger 决进行
+        //   - useAf2Composer=true → AF2 Composer 决 voicing + bass + chordSymbol
+        //   仅剩 mg.generateArrangement(melody/accomp/bass 生成)未 AF2 化。
         // -----------------------------------------------------------
-        const mg = MgKernelInvoker.invoke(mgSeedString, mgStyle, key, /* useAf2Arranger */ true, sections);
+        const mg = MgKernelInvoker.invoke(
+            mgSeedString, mgStyle, key,
+            /* useAf2Arranger */ true,
+            sections,
+            /* useAf2Composer */ true,
+        );
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)
