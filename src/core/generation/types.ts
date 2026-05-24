@@ -491,6 +491,14 @@ export interface Af2MusicianOverrides {
      *     爱表现的 marcus 想在 Outro 兼 melody → 写 { [SectionType.Outro]: new Set(['accomp', 'melody']) }
      */
     sectionRolePreference?: Partial<Record<SectionType, ReadonlySet<string>>>;
+    /**
+     * Layer 4(8 层架构 #6 乐手 idiom 算法选择):
+     *   'mg'  (默认):planMelody 直通 mg.notes.melody(mg.generateArrangement 输出)
+     *   'af2'        :planMelody 调 Af2MelodyGen 自家生成(chord-tone cycle MVP)
+     *
+     * 默认 'mg' 保持向后兼容。opt-in 'af2' 让 musician 走 AF2 自家 melody 算法。
+     */
+    melodyAlgorithm?: 'af2' | 'mg';
 }
 
 // 5. 乐队阵容名单 (Band Roster)

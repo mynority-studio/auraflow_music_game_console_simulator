@@ -31,6 +31,7 @@ import { BandRole, ChordQuality } from '../../types';
 // C.5:MusicianPlanInput 共享协议 + per-section role gate
 import type { MusicianPlanInput, ConductorRole } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
+import { generateAf2Melody } from '../Af2MelodyGen';
 
 /** 钢琴物理参数(Phase 1 仅文档,Phase 2+ BandSelectionPanel 消费) */
 export const PIANO_INSTRUMENT_SPEC = {
@@ -229,9 +230,22 @@ export const PianoIdiom = {
      * Phase D+ 计划:melody 技巧(legato/staccato/装饰音/passing tones)
      */
     planMelody(input: MusicianPlanInput): NoteData[] {
-        const filtered = planForRole(input, 'melody', PIANO_REGIONS.melody);
+        const algo = input.musician?.af2Overrides?.melodyAlgorithm ?? 'mg';
+        const melodyRegion = input.musician?.af2Overrides?.regions?.melody ?? PIANO_REGIONS.melody;
+
+        let melody: NoteData[];
+        if (algo === 'af2') {
+            // AF2 自家 chord-tone melody(MVP)— 替代 mg.notes.melody pass-through
+            melody = generateAf2Melody(
+                input.score.chords, input.score.sections, input,
+                melodyRegion.lo, melodyRegion.hi,
+            );
+        } else {
+            // mg pass-through(默认行为)
+            melody = planForRole(input, 'melody', PIANO_REGIONS.melody);
+        }
         const add11Gate = input.musician?.af2Overrides?.add11GateProbability ?? ADD11_GATE_PROBABILITY;
-        return applyAdd11HandPhysics(filtered, input.score.chords, add11Gate);
+        return applyAdd11HandPhysics(melody, input.score.chords, add11Gate);
     },
 
     /**

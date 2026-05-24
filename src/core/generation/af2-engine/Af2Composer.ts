@@ -29,9 +29,61 @@
 import { CHORD_TYPES, placeVoicingMidi, BASS_RANGE } from './music-theory';
 import {
     KEYS, harmonicFunctionFromRoman, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
+    Random,
 } from '../mg-engine/musicEngine';
 import type { ChordDef } from '../mg-engine/musicEngine';
 import type { Af2AbstractStep } from './Af2Arranger';
+import type { MgStyle } from '../../../state/EngineSelectionStore';
+
+// ============================================================
+// Divisi 2.0:tension extension(9 / 11 / 13)概率注入
+// ============================================================
+//
+// 在 voicingPcs 上,per chord-type 概率门加 tension PC:
+//   maj7  → +9   (Cmaj9 — bright)
+//   m7    → +9   (Cm9   — neo-soul)
+//   7     → +9 / +13 (C9 / C13 — jazz dominant color)
+//
+// Per-mgStyle 概率:
+//   POP   极少加(triad / 7th 已够)
+//   JAZZ  常加(jazz 语言)
+//   BLUES 仅 dominant +9 偶尔(blue note)
+//   RNB   neo-soul 加 9 / 13(色彩感)
+//
+// PRNG 消耗:每 step 最多 2 次(gate + dom7 9-vs-13 选择),deterministic per seed。
+// 不改 chord.type — 仅扩 voicing notesMidi,mg.generateArrangement 透明吸收。
+// ============================================================
+
+const EXTENSION_PROB: Record<MgStyle, { maj7: number; m7: number; dom7: number }> = {
+    POP:   { maj7: 0.10, m7: 0.05, dom7: 0.05 },
+    JAZZ:  { maj7: 0.50, m7: 0.40, dom7: 0.60 },
+    BLUES: { maj7: 0,    m7: 0,    dom7: 0.10 },
+    RNB:   { maj7: 0.40, m7: 0.50, dom7: 0.30 },
+};
+
+function addExtensionPcs(
+    type: string,
+    voicingPcs: number[],
+    rootKeyIndex: number,
+    mgStyle: MgStyle,
+    rng: Random,
+): number[] {
+    const prob = EXTENSION_PROB[mgStyle];
+    const extPcs = new Set(voicingPcs);
+    if (type === 'maj7' && rng.next() < prob.maj7) {
+        extPcs.add((rootKeyIndex + 2) % 12); // +9
+    } else if (type === 'm7' && rng.next() < prob.m7) {
+        extPcs.add((rootKeyIndex + 2) % 12); // +9
+    } else if (type === '7' && rng.next() < prob.dom7) {
+        // 50/50 +9 vs +13(major 6th)
+        if (rng.next() < 0.5) {
+            extPcs.add((rootKeyIndex + 2) % 12); // +9
+        } else {
+            extPcs.add((rootKeyIndex + 9) % 12); // +13
+        }
+    }
+    return Array.from(extPcs);
+}
 
 export const Af2Composer = {
     /**
@@ -41,7 +93,13 @@ export const Af2Composer = {
      * @param key           调号字符串(如 'C')
      * @param isMinorKey    调式 minor 否(默认 false = major)
      */
-    compose(abstractPath: Af2AbstractStep[], key: string, isMinorKey: boolean = false): ChordDef[] {
+    compose(
+        abstractPath: Af2AbstractStep[],
+        key: string,
+        isMinorKey: boolean = false,
+        mgStyle?: MgStyle,
+        rng?: Random,
+    ): ChordDef[] {
         const keyIndex = Math.max(0, KEYS.indexOf(key));
         const out: ChordDef[] = [];
         let prevVoicing: number[] = [];
@@ -58,7 +116,12 @@ export const Af2Composer = {
             for (const iv of intervals) {
                 pcSet.add(((rootKeyIndex + iv) % 12 + 12) % 12);
             }
-            const voicingPcs = Array.from(pcSet);
+            let voicingPcs = Array.from(pcSet);
+
+            // 3.5. Divisi 2.0 — tension extension(9 / 11 / 13)概率注入
+            if (mgStyle && rng) {
+                voicingPcs = addExtensionPcs(step.type, voicingPcs, rootKeyIndex, mgStyle, rng);
+            }
 
             // 4. Bass MIDI:root pc clamp 到 BASS_RANGE
             let bassMidi = rootKeyIndex + 36; // C2 区间起步

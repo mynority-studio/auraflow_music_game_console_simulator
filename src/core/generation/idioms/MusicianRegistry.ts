@@ -107,6 +107,13 @@ export const MUSICIAN_POOL: Musician[] = [
             peakK: 0.90,
         },
         description: 'Pop 电贝斯，正拍稳重 + 半音符 walking',
+        // AF2 overrides — Pop sub-bass 标准:Intro 不进,Outro 撤(经典 Pop 编曲)
+        af2Overrides: {
+            sectionRolePreference: {
+                [SectionType.Intro]: new Set<string>(),   // Pop bass 不在 Intro 进
+                [SectionType.Outro]: new Set<string>(),   // Outro 淡出
+            },
+        },
     },
     // 🥁 鼓手 Dave — Pop 干净直拍
     {
@@ -164,6 +171,7 @@ export const MUSICIAN_POOL: Musician[] = [
             },
             escapeProbability: 0.02,      // 默认 0.05 → 0.02(几乎完全 clamp)
             add11GateProbability: 0.30,   // 默认 0.60 → 0.30(Pop 不太用 11音物理)
+            melodyAlgorithm: 'af2',        // MVP testbed:opt-in AF2 自家 melody 算法
         },
     },
     // 🎹 Marcus — Neo-Soul 钢琴手（高色彩 + 高 sync + 高 lickProb，D'Angelo 风）
@@ -239,6 +247,15 @@ export const MUSICIAN_POOL: Musician[] = [
             walkPatternId: 4,  // WalkPatternId.LatinTumbao
         },
         description: 'Slap Bass — 切分密集 + Latin Tumbao walking，Marcus Miller 风',
+        // AF2 overrides — Slap 挑段:Intro/Outro 不显,Chorus/PreChorus 必弹推 groove
+        af2Overrides: {
+            sectionRolePreference: {
+                [SectionType.Intro]: new Set<string>(),
+                [SectionType.Outro]: new Set<string>(),
+                [SectionType.PreChorus]: new Set<string>(['bass']),  // 必弹推 build
+                [SectionType.Chorus]: new Set<string>(['bass']),     // 必弹主推
+            },
+        },
     },
     // 🥁 Jazz_Drummer — Brush 风（低 velocity + 高 sync ride pattern）
     {

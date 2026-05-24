@@ -190,7 +190,7 @@ export const MgKernelInvoker = {
                 ? Af2Arranger.arrange(mgStyle, sections, 4 /* beatsPerMeasure */, rng)
                 : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
             mgChords = useAf2Composer
-                ? Af2Composer.compose(abstractPath, key)
+                ? Af2Composer.compose(abstractPath, key, false, mgStyle, rng)
                 : realizeProgression(abstractPath, key, mgStyle, ctx, rng);
         } else {
             // 默认:mg 一气呵成(MG 模式 / AF2 没选 Option C 时)
