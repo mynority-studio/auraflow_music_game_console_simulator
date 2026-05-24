@@ -34,7 +34,7 @@
 // ============================================================
 
 import type { NoteData, SectionMetadata, MusicianPersona } from '../../types';
-import { BandRole } from '../../types';
+import { BandRole, SectionType } from '../../types';
 import type { Random } from '../utils/Random';
 import type { MgStyle } from '../../../../state/EngineSelectionStore';
 import { getDrumGridByMgStyle } from './drum-grid/grids';
@@ -62,6 +62,18 @@ const EPSILON = 1e-6;
 const MODIFIER_TIME_WINDOW = 0.1;
 /** bass strong velocity 阈值 */
 const BASS_STRONG_VEL = 0.75;
+
+/**
+ * O 阶段:Crash-triggering section types。
+ * Chorus / Drop / Bridge / BuildUp 起点几乎必然 Crash(不论 energy);
+ * 其他 sectionType 仍走 isHighEnergy ≥ 7 阈值。
+ */
+const CRASH_SECTION_TYPES: ReadonlySet<SectionType> = new Set([
+    SectionType.Chorus,
+    SectionType.Drop,
+    SectionType.Bridge,
+    SectionType.BuildUp,
+]);
 
 export const DRUM_INSTRUMENT_SPEC = {
     eligibleSlots: [BandRole.Drums] as const,
@@ -229,9 +241,21 @@ function renderSection(
     const snareGateOpen = (section.energyLevel | 0) >= grid.snareEnergyGate;
 
     // Dynamic Override 标志
+    // O 阶段扩展:section-type-aware crash + 任何能量升 / Chorus 类切换都触发 fill。
+    //   原 isBuildUp 只看能量升(BuildUp 段名),现 isSectionTransition 看更宽:
+    //   任何 next 存在且(能量升 OR next 是 crash-section-type)都做 fill。
     const isHighEnergy = section.energyLevel >= 7;
-    const isBuildUp = nextSection !== undefined && nextSection.energyLevel > section.energyLevel;
+    const isCrashSection = CRASH_SECTION_TYPES.has(section.sectionType);
     const isVeryHigh = section.energyLevel >= 8;
+    const nextIsCrashSection = nextSection !== undefined && CRASH_SECTION_TYPES.has(nextSection.sectionType);
+    const energyJump = nextSection !== undefined ? (nextSection.energyLevel - section.energyLevel) : 0;
+    const isSectionTransition = nextSection !== undefined && (energyJump >= 1 || nextIsCrashSection);
+
+    // O 阶段:fill 形态选择(per-section hash,deterministic 0 PRNG)
+    //   'tom'        = 原 Tom 阶梯(snare → tom-hi/mid/lo)
+    //   'snare_roll' = 纯 Snare 16th roll(velocity 渐升,无 tom)
+    type FillStyle = 'tom' | 'snare_roll';
+    const fillStyle: FillStyle = (Math.floor(section.startBeat) & 1) === 0 ? 'tom' : 'snare_roll';
 
     const gridLen = grid.grid.length;
     const stepsPerBar = STEPS_PER_BAR;  // 16
@@ -291,28 +315,37 @@ function renderSection(
 
         // ----------------------------------------------------------
         // Dynamic Override(强制规则,0 PRNG 消耗)
+        // O 阶段:Crash / Fill 触发条件放宽 + Fill 形态变体
         // ----------------------------------------------------------
-        const isCrashStep = stepIdx === 0 && isHighEnergy;
-        const isFillBar = isBuildUp && (totalSteps - stepIdx <= stepsPerBar);
+        // Crash 触发:段首 + (Chorus/Drop/Bridge/BuildUp section type OR high energy)
+        const isCrashStep = stepIdx === 0 && (isCrashSection || isHighEnergy);
+        // Fill 触发:next section 存在 + (能量升 OR next 是 crash section type)
+        //   触发后 last bar 走 fill 形态(per fillStyle)
+        const isFillBar = isSectionTransition && (totalSteps - stepIdx <= stepsPerBar);
 
         if (isCrashStep) {
-            // 高能段首拍:Crash + 加强 kick
+            // Crash + 加强 kick(section 标志起点)
             outHHit = true;
             outHPitch = DRUM_CRASH;
             outHVel = Math.min(1.0, velScale * 1.2);
             outKHit = true;
             outKVel = Math.min(1.0, velScale * 1.1);
         } else if (isFillBar) {
-            // BuildUp 段最后一 bar:Tom 阶梯 fill
+            // section transition 最后一 bar:fill(2 种形态 per-section hash)
             outHHit = false;  // mute hihat
-            outSHit = true;   // 强制 snare roll
+            outSHit = true;   // 强制 snare(or tom)击
             const fillProgression = 1 - (totalSteps - stepIdx) / stepsPerBar;
             outSVel = 0.5 + 0.5 * fillProgression;
 
-            const subBeat = stepIdx % STEPS_PER_BEAT;
-            if (subBeat === 3) outSPitch = DRUM_TOM_HI;
-            else if (subBeat === 2 && fillProgression > 0.5) outSPitch = DRUM_TOM_MID;
-            else if (subBeat === 1 && fillProgression > 0.8) outSPitch = DRUM_TOM_LO;
+            if (fillStyle === 'tom') {
+                // Tom 阶梯(原有)— sub-beat 3 → tom_hi,sub-beat 2 fill_prog>0.5 → tom_mid,
+                //                    sub-beat 1 fill_prog>0.8 → tom_lo
+                const subBeat = stepIdx % STEPS_PER_BEAT;
+                if (subBeat === 3) outSPitch = DRUM_TOM_HI;
+                else if (subBeat === 2 && fillProgression > 0.5) outSPitch = DRUM_TOM_MID;
+                else if (subBeat === 1 && fillProgression > 0.8) outSPitch = DRUM_TOM_LO;
+            }
+            // 'snare_roll':保 DRUM_SNARE 不动,纯 snare 16th velocity 渐升
         } else if (isVeryHigh && outHHit && stepIdx % 2 === 0) {
             // 高能段 + 偶数 step + hihat 命中 → Ride 替代
             outHPitch = DRUM_RIDE;
