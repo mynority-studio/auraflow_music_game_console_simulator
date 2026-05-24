@@ -1,34 +1,27 @@
 // ============================================================
-// PadIdiom — AF2 氛围 pad idiom(Phase 2a)
+// PadIdiom v1.1 — AF2 氛围 pad idiom
 // ============================================================
 //
-// 决策(PHASE2A.md §10):
-//   Q1 C:借用 mg.chord.voicing(去最低音)+ 整体八度移动到 pad 中心区
+// v1.0 → v1.1 增强:
+//   - **Voicing slice mode**:per sectionType 选择 pad voicing 切片
+//     · LowCluster(深沉,Intro/Outro/Bridge)— voicing 低 2-3 个 + 中 octave 下沉
+//     · MidPad(标准,Verse)— voicing 中部
+//     · HighPad(明亮,Chorus/BuildUp)— voicing 高 2-3 个 + 上 octave 提升
+//   - **Attack pre-roll**:Sustained sections(Bridge/Break)attack 提前 0.25 beat
+//     (slow fade-in 听感);Stab sections(BuildUp)精确对齐 chord 起点
+//   - **Velocity ramp**:BuildUp 段 velocity 按 progress 渐强(0.4 → 0.7)
+//   - **Persona 消费**:colorBias 高 → 偏 HighPad / sparsityTendency 高 → 偏 LowCluster
 //
-// 职责(Phase 2a):
-//   PadGenerator 消费 mg.chords + sections.energyLevel,生成长音 pad NoteData[]。
-//   每和弦一击长音,持续整个 chord 区间(无 crossfade,Phase 2b 加)。
-//
-// 算法(Q1 C — 借用 mg 智慧):
-//   for each chord:
-//     1. 取 chord.voicing(已经过 mg voice-leading 优化的 MIDI 数组)
-//     2. 去最低音(那是 bass,由 mg.bass / electricBass 通道负责)
-//     3. 整体八度平移到 pad 中心区(平均 pitch ≈ G4 = 67)
-//     4. clamp 到 PAD_RANGE_LO / HI
-//     5. energy → velocity(段落能量驱动)
-//     6. duration = chord.endBeat - chord.startBeat(整个 chord 区间)
-//     7. 每个 voice 一条 NoteData
-//
-// 物理约束:
+// 物理约束(不变):
 //   - GM 89 Warm Pad
-//   - 音域 C3-C6(MIDI 48-84)— 不沉到 bass 区,不顶到 melody 区
+//   - 音域 C3-C6(MIDI 48-84)
 //   - eligibleSlots: [Atmosphere]
 //
-// PRNG:**0**(完全决定性,只依赖 chord + sections)
+// PRNG:**0**(完全决定性 hash on sectionIdx + chordIdxInSection)
 // ============================================================
 
 import type { NoteData, SectionMetadata } from '../../types';
-import { BandRole } from '../../types';
+import { BandRole, SectionType } from '../../types';
 // C.3 → C.4:MusicianPlanInput 共享协议 + per-section role 查询
 import type { MusicianPlanInput } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
@@ -46,7 +39,90 @@ export const PAD_INSTRUMENT_SPEC = {
 const PAD_CENTER_LO = 60;    // C4
 const PAD_CENTER_HI = 72;    // C5
 
-// C.4:PadPlanInput 已并入共享 MusicianPlanInput(见 Conductor.ts)
+// ============================================================
+// v1.1:Voicing slice mode
+// ============================================================
+
+enum PadSliceMode {
+    LowCluster = 0,   // 取 voicing 低 2-3 + 整体八度下沉
+    MidPad = 1,       // 取 voicing 中部(默认)
+    HighPad = 2,      // 取 voicing 高 2-3 + 整体八度上提
+}
+
+const SECTION_SLICE_POOL: Partial<Record<SectionType, ReadonlyArray<PadSliceMode>>> = {
+    [SectionType.Intro]:     [PadSliceMode.LowCluster, PadSliceMode.MidPad],
+    [SectionType.Verse]:     [PadSliceMode.MidPad],
+    [SectionType.PreChorus]: [PadSliceMode.MidPad, PadSliceMode.HighPad],
+    [SectionType.Chorus]:    [PadSliceMode.HighPad, PadSliceMode.MidPad],
+    [SectionType.Bridge]:    [PadSliceMode.LowCluster, PadSliceMode.MidPad],
+    [SectionType.BuildUp]:   [PadSliceMode.HighPad],
+    [SectionType.Drop]:      [PadSliceMode.HighPad, PadSliceMode.MidPad],
+    [SectionType.Break]:     [PadSliceMode.LowCluster],
+    [SectionType.Breakdown]: [PadSliceMode.LowCluster],
+    [SectionType.Outro]:     [PadSliceMode.LowCluster, PadSliceMode.MidPad],
+    [SectionType.PreOutro]:  [PadSliceMode.MidPad, PadSliceMode.LowCluster],
+};
+const DEFAULT_SLICE_POOL: ReadonlyArray<PadSliceMode> = [PadSliceMode.MidPad];
+
+function pickSliceMode(
+    sectionType: SectionType,
+    chordIdxInSection: number,
+    colorBias: number,
+    sparsity: number,
+): PadSliceMode {
+    const pool = SECTION_SLICE_POOL[sectionType] ?? DEFAULT_SLICE_POOL;
+    const h = (chordIdxInSection * 11 + (sectionType as number) * 13) & 0xff;
+    let pick = pool[h % pool.length];
+    // Persona 加权:colorBias 高 → 偏 HighPad / sparsity 高 → 偏 LowCluster
+    const h2 = ((h * 31 + 17) & 0xff) / 255;
+    if (h2 < sparsity * 0.5) pick = PadSliceMode.LowCluster;
+    else if (h2 < sparsity * 0.5 + colorBias * 0.4) pick = PadSliceMode.HighPad;
+    return pick;
+}
+
+/** 切 voicing 子集 + octave 调整 */
+function sliceAndShift(voicing: number[], mode: PadSliceMode): number[] {
+    if (voicing.length === 0) return voicing;
+    const sorted = [...voicing].sort((a, b) => a - b);
+    let slice: number[];
+    let octShift = 0;
+    switch (mode) {
+        case PadSliceMode.LowCluster:
+            slice = sorted.slice(0, Math.max(2, Math.min(3, sorted.length)));
+            octShift = -12;  // 下沉一个八度
+            break;
+        case PadSliceMode.HighPad:
+            slice = sorted.slice(Math.max(0, sorted.length - 3));
+            octShift = 12;   // 上提一个八度
+            break;
+        case PadSliceMode.MidPad:
+        default: {
+            const mid = Math.floor(sorted.length / 2);
+            const start = Math.max(0, mid - 1);
+            const end = Math.min(sorted.length, mid + 2);
+            slice = sorted.slice(start, end);
+            octShift = 0;
+            break;
+        }
+    }
+    return slice.map(m => m + octShift);
+}
+
+/** Attack pre-roll(slow fade-in 听感)— per sectionType */
+function attackPreRoll(sectionType: SectionType): number {
+    switch (sectionType) {
+        case SectionType.Bridge:
+        case SectionType.Break:
+        case SectionType.Breakdown:
+        case SectionType.Intro:
+            return 0.25;
+        case SectionType.BuildUp:
+        case SectionType.Drop:
+            return 0;
+        default:
+            return 0.1;
+    }
+}
 
 /**
  * 根据 chord.startBeat 找它落在哪个段落,返回 energyLevel。
@@ -108,12 +184,27 @@ export const PadGenerator = {
         const sections = score.sections;
         const out: NoteData[] = [];
 
+        // Persona 消费
+        const persona = input.musician?.persona;
+        const colorBias = persona?.colorBias ?? 0;
+        const sparsity = persona?.sparsityTendency ?? 0;
+
+        // 累计 chord idx + total per section(给 velocity ramp 用)
+        const sectionTotals = new Map<number, number>();
+        for (const ch of chords) {
+            const si = findSectionIdxForBeat(ch.startBeat, sections);
+            if (si >= 0) sectionTotals.set(si, (sectionTotals.get(si) ?? 0) + 1);
+        }
+        const sectionChordIdx = new Map<number, number>();
+
         for (let i = 0; i < chords.length; i++) {
             const chord = chords[i];
 
             // C.4:查本 musician 在该 chord 所在 section 的 roles
             const sectionIdx = findSectionIdxForBeat(chord.startBeat, sections);
             if (sectionIdx < 0) continue;
+            const idxInSection = sectionChordIdx.get(sectionIdx) ?? 0;
+            sectionChordIdx.set(sectionIdx, idxInSection + 1);
             const myRoles = getMyRolesInSection(input, sectionIdx);
             if (!myRoles.includes('pad')) continue;
 
@@ -125,8 +216,13 @@ export const PadGenerator = {
             voicing.shift();
             if (voicing.length === 0) continue;
 
-            // Step 3: 整体八度移动到 pad 中心区
+            // Step 3: 整体八度移动到 pad 中心区(先 normalize)
             voicing = shiftToPadCenter(voicing);
+
+            // Step 3.5: v1.1 — Slice mode 选择 + octave 调整
+            const sectionType = sections[sectionIdx].sectionType;
+            const sliceMode = pickSliceMode(sectionType, idxInSection, colorBias, sparsity);
+            voicing = sliceAndShift(voicing, sliceMode);
 
             // Step 4: 边界 clamp 到 [PAD_RANGE_LO, PAD_RANGE_HI]
             voicing = voicing.filter(
@@ -134,20 +230,27 @@ export const PadGenerator = {
             );
             if (voicing.length === 0) continue;
 
-            // Step 5: energy → velocity
+            // Step 5: energy → velocity + v1.1 BuildUp ramp
             const energy = energyForBeat(chord.startBeat, sections);
-            const velocityRaw = 0.3 + energy * 0.06;
+            let velocityRaw = 0.3 + energy * 0.06;
+            if (sectionType === SectionType.BuildUp) {
+                const total = sectionTotals.get(sectionIdx) ?? 1;
+                const progress = total > 1 ? idxInSection / (total - 1) : 0.5;
+                velocityRaw = 0.4 + progress * 0.3;   // 0.4 → 0.7 渐强
+            }
             const velocity = velocityRaw < 0.3 ? 0.3 : velocityRaw > 0.9 ? 0.9 : velocityRaw;
 
-            // Step 6: duration = 整个 chord 区间
-            const duration = chord.endBeat - chord.startBeat;
+            // Step 6: v1.1 — Attack pre-roll(slow fade-in 听感)
+            const preRoll = attackPreRoll(sectionType);
+            const onset = Math.max(0, chord.startBeat - preRoll);
+            const duration = (chord.endBeat - chord.startBeat) + preRoll;
             if (duration <= 0) continue;
 
             // Step 7: 每 voice 一条 NoteData
             for (const pitch of voicing) {
                 out.push({
                     pitch,
-                    onset: chord.startBeat,
+                    onset,
                     duration,
                     velocity,
                 });

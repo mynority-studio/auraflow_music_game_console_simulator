@@ -193,6 +193,91 @@ export const CONDUCTOR_TEMPLATES_BY_STYLE: Record<MgStyle, ConductorTemplate> = 
     },
 };
 
+// ============================================================
+// Conductor 模板自家化(2026-05-24 加):per-mgStyle 多 variants
+// ============================================================
+//
+// 设计动机:同 mgStyle 不同 seed 给不同 variant template,让编曲多样性更高。
+// Pop seed 1 可能走 "standard"(满编)Pop seed 2 可能走 "minimal"(Verse 无 drums)
+// 用 seed hash deterministic 抽 variant,**零额外 PRNG 消耗**。
+//
+// Variant 结构:{ name, template }。template 是完整 ConductorTemplate(不是覆盖)。
+// ============================================================
+
+export interface ConductorTemplateVariant {
+    name: string;
+    template: ConductorTemplate;
+}
+
+/** POP 变种 */
+const POP_MINIMAL: ConductorTemplate = {
+    ...DEFAULT_CONDUCTOR_TEMPLATE,
+    [SectionType.Verse]:     new Set(['accomp', 'bass', 'pad']),                    // verse 无 drums + 无 melody
+    [SectionType.Chorus]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),
+    [SectionType.PreChorus]: new Set(['accomp', 'bass', 'drums']),
+};
+const POP_DENSE: ConductorTemplate = {
+    ...DEFAULT_CONDUCTOR_TEMPLATE,
+    [SectionType.Intro]:     new Set(['melody', 'accomp', 'bass', 'pad']),          // 满编 intro
+    [SectionType.Outro]:     new Set(['melody', 'accomp', 'bass', 'pad']),          // 满编 outro
+    [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']), // bridge 加鼓
+};
+
+/** JAZZ 变种 */
+const JAZZ_INTRO_SOLO: ConductorTemplate = {
+    ...CONDUCTOR_TEMPLATES_BY_STYLE.JAZZ,
+    [SectionType.Intro]:     new Set(['melody']),                                    // piano solo intro
+};
+const JAZZ_QUIET: ConductorTemplate = {
+    ...CONDUCTOR_TEMPLATES_BY_STYLE.JAZZ,
+    [SectionType.Verse]:     new Set(['melody', 'accomp', 'bass', 'pad']),          // verse 无 drums(brushed feel)
+};
+
+/** RNB 变种 */
+const RNB_AIRY: ConductorTemplate = {
+    ...CONDUCTOR_TEMPLATES_BY_STYLE.RNB,
+    [SectionType.Intro]:     new Set(['pad']),                                       // ambient intro 仅 pad
+    [SectionType.Bridge]:    new Set(['melody', 'accomp', 'pad']),                  // bridge 无 drums + 无 bass(空灵)
+};
+
+export const CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE: Record<MgStyle, ReadonlyArray<ConductorTemplateVariant>> = {
+    POP: [
+        { name: 'standard', template: CONDUCTOR_TEMPLATES_BY_STYLE.POP },
+        { name: 'minimal',  template: POP_MINIMAL },
+        { name: 'dense',    template: POP_DENSE },
+    ],
+    JAZZ: [
+        { name: 'standard',    template: CONDUCTOR_TEMPLATES_BY_STYLE.JAZZ },
+        { name: 'intro_solo',  template: JAZZ_INTRO_SOLO },
+        { name: 'quiet',       template: JAZZ_QUIET },
+    ],
+    BLUES: [
+        { name: 'standard', template: CONDUCTOR_TEMPLATES_BY_STYLE.BLUES },
+    ],
+    RNB: [
+        { name: 'standard', template: CONDUCTOR_TEMPLATES_BY_STYLE.RNB },
+        { name: 'airy',     template: RNB_AIRY },
+    ],
+};
+
+/**
+ * 用 seed deterministic 抽 variant(零 PRNG 消耗 — 仅 hash on number).
+ * Facade 在构造 DynamicConductor 之前调用,选好 variant 传入 constructor。
+ */
+export function pickConductorTemplate(mgStyle: MgStyle, seed: number): {
+    name: string;
+    template: ConductorTemplate;
+} {
+    const variants = CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE[mgStyle];
+    if (!variants || variants.length === 0) {
+        return { name: 'fallback', template: DEFAULT_CONDUCTOR_TEMPLATE };
+    }
+    // 简单 hash:seed XOR mgStyle string hash
+    const styleHash = mgStyle.split('').reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 0);
+    const idx = ((seed ^ styleHash) >>> 0) % variants.length;
+    return variants[idx];
+}
+
 /**
  * Energy-driven role 修正:section.energyLevel 1-10 映射到"密度档"。
  *   1-2(极低 energy,Intro 渐入 / Outro 渐弱):**仅 pad + bass + accomp**(无 melody / drums)

@@ -60,7 +60,7 @@ import { Reconciler } from './Reconciler';
 // per-section 模板编排;StaticConductor 保留作 fallback)
 import type { Score } from './Score';
 import type { Band, SectionAssignment } from './Conductor';
-import { DynamicConductor, CONDUCTOR_TEMPLATES_BY_STYLE } from './Conductor';
+import { DynamicConductor, pickConductorTemplate } from './Conductor';
 import type { MusicianStep } from './Dispatcher';
 import { dispatchMusicians } from './Dispatcher';
 
@@ -149,13 +149,11 @@ export const Af2EngineFacade = {
             [BandRole.Drums]:      routed[BandRole.Drums].musician,
             [BandRole.Atmosphere]: routed[BandRole.Atmosphere].musician,
         };
-        // C.4 + 模板参数化:DynamicConductor 上线,每 mgStyle 用各自模板。
-        //   POP:   default(Intro pad+accomp / Bridge 无 drums / Outro pad+bass 等)
-        //   JAZZ:  Intro/Outro 加 walking bass + Bridge 保鼓 + 厚收尾
-        //   BLUES: pad 整体减少(blues 偏 rhythm 主导)
-        //   RNB:   Intro/Outro 三件套(pad + accomp + bass 厚 neo-soul)
-        // PadGenerator + DrumGenerator + PianoIdiom + BassIdiom 全部消费 assignments(C.5)
-        const conductor = new DynamicConductor(CONDUCTOR_TEMPLATES_BY_STYLE[mgStyle]);
+        // C.4 + Conductor 模板自家化(2026-05-24):per-mgStyle 多 variants,
+        //   seed deterministic 抽 1 个 variant 用全曲。同 mgStyle 不同 seed
+        //   听感差异更大(POP standard/minimal/dense 3 variants 等)。
+        const variantPick = pickConductorTemplate(mgStyle, auraflowSeed);
+        const conductor = new DynamicConductor(variantPick.template);
         const sectionAssignments: ReadonlyArray<SectionAssignment> = conductor.dispatch(score, band);
 
         // -----------------------------------------------------------
