@@ -241,6 +241,49 @@ function voicingL1(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
     return sum;
 }
 
+// ============================================================
+// S2 阶段(2026-05-24):phrase-arc top voice motif
+// ============================================================
+//
+// 在 R smoother 的 cost 函数加 phrase-arc bonus,主动让 top voice 在
+// phrase 内形成"上 → 顶 → 回"的弧形 motif,产生隐性旋律线感(用户讨论
+// 的"音高变化形成旋律线")。
+//
+// 设计:
+//   phrase position(i % 4):
+//     0 - phrase 起点 → expected top shift = 0(接平 prev top)
+//     1 - phrase 第 2 chord → expected top shift = +ARC_AMP(上行)
+//     2 - phrase 第 3 chord → expected top shift = +ARC_AMP(顶点保持)
+//     3 - phrase 末 → expected top shift = 0(回归 prev 水平)
+//
+// arcCost = |actualShift - expectedShift| × ARC_WEIGHT
+// 加到 totalCost = L1(prev, c) + L1(c, next) + arcCost
+//
+// ARC_WEIGHT 调小(0.6)避免 override L1 voice leading;只在 L1 cost
+// 相近时 arc 偏好生效 — "tie-breaker"性质。
+// ============================================================
+
+const PHRASE_CHORD_COUNT_SMOOTHER = 4;
+const ARC_AMPLITUDE = 5;     // top voice 在 phrase 顶点期望比起点高的半音数
+const ARC_WEIGHT = 0.6;      // arc cost 权重(< 1 = tie-breaker 不主导 L1)
+
+/**
+ * Phrase position → expected top voice shift from prev top。
+ * 弧形:0(start)→ +amp(mid)→ +amp(mid)→ 0(end return)
+ */
+function expectedArcShift(phrasePos: number): number {
+    if (phrasePos === 0) return 0;
+    if (phrasePos === PHRASE_CHORD_COUNT_SMOOTHER - 1) return 0;
+    return ARC_AMPLITUDE;
+}
+
+/**
+ * 取 voicing 顶音(已 sort,最后一个)。空 voicing 返 0(降级 cost)。
+ */
+function topVoice(v: ReadonlyArray<number>): number {
+    return v.length > 0 ? v[v.length - 1] : 0;
+}
+
 /**
  * 生成 voicing 的 inversion candidates(原 + 4 个 octave-shift 变体)。
  * 所有 candidate 保 pc 集不变,只调单音 octave。
@@ -276,6 +319,10 @@ function generateInversionCandidates(voicing: ReadonlyArray<number>): number[][]
 /**
  * Post-pass smoother:in-place 更新每 chord(除首尾)的 notesMidi 为最优 inversion。
  * 跑一遍,O(N × 5)。
+ *
+ * S2 升级:cost 函数加 phrase-arc bonus(top voice 弧形 motif),
+ *   总 cost = L1(prev, c) + L1(c, next) + arcCost
+ *   arcCost = |actualTopShift - expectedTopShift| × ARC_WEIGHT
  */
 function smoothChordVoicings(out: ChordDef[]): void {
     if (out.length < 3) return;  // 无 prev+next 上下文,跳过
@@ -285,11 +332,21 @@ function smoothChordVoicings(out: ChordDef[]): void {
         const curr = out[i].notesMidi;
         const candidates = generateInversionCandidates(curr);
 
+        // S2:phrase-arc bonus 用 phrase position 算 expected top shift
+        const phrasePos = i % PHRASE_CHORD_COUNT_SMOOTHER;
+        const expectedShift = expectedArcShift(phrasePos);
+        const prevTop = topVoice(prev);
+
+        const computeCost = (cand: ReadonlyArray<number>): number => {
+            const arcCost = Math.abs(topVoice(cand) - prevTop - expectedShift) * ARC_WEIGHT;
+            return voicingL1(prev, cand) + voicingL1(cand, next) + arcCost;
+        };
+
         let bestVoicing = curr;
-        let bestCost = voicingL1(prev, curr) + voicingL1(curr, next);
+        let bestCost = computeCost(curr);
         for (let c = 1; c < candidates.length; c++) {
             const cand = candidates[c];
-            const cost = voicingL1(prev, cand) + voicingL1(cand, next);
+            const cost = computeCost(cand);
             if (cost < bestCost) {
                 bestVoicing = cand;
                 bestCost = cost;
