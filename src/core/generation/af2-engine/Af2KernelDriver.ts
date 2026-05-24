@@ -66,8 +66,16 @@ const MG_TYPE_TO_QUALITY: Record<string, ChordQuality> = {
     '11':      ChordQuality.Dominant11,
 };
 
-/** Per-mgStyle 默认全曲小节数 / BPM(可被 sections 覆盖) */
-export const MG_STYLE_BARS: Record<MgStyle, number> = { POP: 16, JAZZ: 16, BLUES: 12, RNB: 16 };
+/** Per-mgStyle 默认全曲小节数 / BPM(可被 sections 覆盖)
+ *  U 阶段(2026-05-24):从 12/16 扩到 32/36/48,目标 80-130 秒完整曲式
+ *  (之前 16 bar 只 32 秒,听感像"短片段")。
+ *
+ *  POP   48 bar / 120 BPM = 96 秒(典型 pop 完整曲)
+ *  JAZZ  32 bar / 96  BPM = 80 秒(标准 jazz AABA form)
+ *  BLUES 36 bar / 100 BPM = 86 秒(3 × 12-bar blues form)
+ *  RNB   48 bar / 88  BPM = 130 秒(R&B 长 ballad)
+ */
+export const MG_STYLE_BARS: Record<MgStyle, number> = { POP: 48, JAZZ: 32, BLUES: 36, RNB: 48 };
 export const MG_STYLE_BPM: Record<MgStyle, number> = { POP: 120, JAZZ: 96, BLUES: 100, RNB: 88 };
 
 /** Part tag(SlotRouter 用)— events 永远空,但接口保留兼容 */

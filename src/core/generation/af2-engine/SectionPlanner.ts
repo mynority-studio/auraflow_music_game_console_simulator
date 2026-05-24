@@ -39,81 +39,155 @@ interface Af2SectionTemplate {
     }>;
 }
 
+// ============================================================
+// U 阶段(2026-05-24):完整曲式模板池(32/36/48 bar)
+// ============================================================
+//
+// 设计原则:
+//   - 完整情绪曲线:Intro(铺垫)→ Verse(起)→ PreChorus(承)→
+//     Chorus(抒发)→ Verse_2(回 / 起 2)→ Chorus_2(抒发 2)→
+//     Bridge(变)→ Chorus_3(高潮)→ Outro(收)
+//   - 至少 2 大段落(Verse + Chorus 各 ≥ 2 次)
+//   - 各模板 bars 总和必须 = totalBars
+//   - energy 范围 1-10
+//   - typeCounters 自动给同 type 加 _1/_2/_3 后缀(SectionPlanner.plan)
+// ============================================================
+
 /**
- * 16-bar 模板池(POP / JAZZ / RNB)
- * 设计原则:
- *   - 必须包含 Verse + Chorus(至少一种主体段落)
- *   - Intro / Outro 可选(短曲下省略以让 Verse/Chorus 更突出)
- *   - 各模板 bars 总和必须 = 16
- *   - energy 范围 1-10(与 AF SectionMetadata.energyLevel 一致)
+ * 48-bar 模板池(POP / RNB)— 完整流行歌曲架构
+ * 时长:POP 96 秒 / RNB 130 秒
  */
-const TEMPLATES_16BAR: Af2SectionTemplate[] = [
+const TEMPLATES_48BAR: Af2SectionTemplate[] = [
     {
-        id: 'af2-16-classic',
+        id: 'af2-48-pop-full',
         sections: [
-            { name: 'Intro',  type: SectionType.Intro,  bars: 2, energy: 3 },
-            { name: 'Verse',  type: SectionType.Verse,  bars: 6, energy: 5 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 6, energy: 8 },
-            { name: 'Outro',  type: SectionType.Outro,  bars: 2, energy: 4 },
+            { name: 'Intro',     type: SectionType.Intro,     bars: 4, energy: 3 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 5 },
+            { name: 'PreChorus', type: SectionType.PreChorus, bars: 4, energy: 6 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 8 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 6 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 9 },
+            { name: 'Bridge',    type: SectionType.Bridge,    bars: 4, energy: 7 },
+            { name: 'Outro',     type: SectionType.Outro,     bars: 4, energy: 4 },
         ],
     },
     {
-        id: 'af2-16-no-intro',
+        id: 'af2-48-pop-double-chorus',
         sections: [
-            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 5 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 },
+            { name: 'Intro',     type: SectionType.Intro,     bars: 4, energy: 3 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 5 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 8 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 6 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 9 },
+            { name: 'Bridge',    type: SectionType.Bridge,    bars: 4, energy: 7 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 10 },
         ],
     },
     {
-        id: 'af2-16-vcvc',
+        id: 'af2-48-pop-no-bridge',
         sections: [
-            { name: 'Verse',  type: SectionType.Verse,  bars: 4, energy: 5 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 4, energy: 8 },
-            { name: 'Verse',  type: SectionType.Verse,  bars: 4, energy: 6 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 4, energy: 9 },
+            { name: 'Intro',     type: SectionType.Intro,     bars: 4, energy: 3 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 5 },
+            { name: 'PreChorus', type: SectionType.PreChorus, bars: 4, energy: 6 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 8 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 6 },
+            { name: 'PreChorus', type: SectionType.PreChorus, bars: 4, energy: 7 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 9 },
+            { name: 'Outro',     type: SectionType.Outro,     bars: 4, energy: 4 },
         ],
     },
     {
-        id: 'af2-16-bridge',
+        id: 'af2-48-pop-ballad',
         sections: [
-            { name: 'Verse',  type: SectionType.Verse,  bars: 4, energy: 5 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 6, energy: 8 },
-            { name: 'Bridge', type: SectionType.Bridge, bars: 4, energy: 7 },
-            { name: 'Outro',  type: SectionType.Outro,  bars: 2, energy: 4 },
+            { name: 'Intro',     type: SectionType.Intro,     bars: 4, energy: 2 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 4 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 7 },
+            { name: 'Verse',     type: SectionType.Verse,     bars: 8, energy: 5 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 8 },
+            { name: 'Bridge',    type: SectionType.Bridge,    bars: 4, energy: 6 },
+            { name: 'Chorus',    type: SectionType.Chorus,    bars: 8, energy: 9 },
         ],
     },
 ];
 
 /**
- * 12-bar 模板池(BLUES)
- * 12-bar blues 传统结构:I-IV-V 三段各 4 小节,这里用段落标签反映
+ * 32-bar 模板池(JAZZ)— 标准 jazz AABA form
+ * 时长:JAZZ 80 秒 / 大多 jazz standard 的 head
  */
-const TEMPLATES_12BAR: Af2SectionTemplate[] = [
+const TEMPLATES_32BAR: Af2SectionTemplate[] = [
     {
-        id: 'af2-12-blues-aab',
+        id: 'af2-32-jazz-aaba',
         sections: [
-            { name: 'Verse',  type: SectionType.Verse,  bars: 4, energy: 5 },
-            { name: 'Verse',  type: SectionType.Verse,  bars: 4, energy: 6 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 4, energy: 8 },
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 5 },     // A
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 6 },     // A
+            { name: 'Bridge', type: SectionType.Bridge, bars: 8, energy: 7 },     // B
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 5 },     // A return
         ],
     },
     {
-        id: 'af2-12-blues-intro-vc',
+        id: 'af2-32-jazz-with-chorus',
         sections: [
-            { name: 'Intro',  type: SectionType.Intro,  bars: 2, energy: 3 },
-            { name: 'Verse',  type: SectionType.Verse,  bars: 4, energy: 5 },
-            { name: 'Chorus', type: SectionType.Chorus, bars: 4, energy: 8 },
+            { name: 'Intro',  type: SectionType.Intro,  bars: 4, energy: 3 },
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 5 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 },
+            { name: 'Bridge', type: SectionType.Bridge, bars: 4, energy: 7 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 6, energy: 9 },
             { name: 'Outro',  type: SectionType.Outro,  bars: 2, energy: 4 },
+        ],
+    },
+    {
+        id: 'af2-32-jazz-double-verse',
+        sections: [
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 5 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 },
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 6 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 9 },
+        ],
+    },
+];
+
+/**
+ * 36-bar 模板池(BLUES)— 3 × 12-bar blues form
+ * 时长:BLUES 86 秒
+ */
+const TEMPLATES_36BAR: Af2SectionTemplate[] = [
+    {
+        id: 'af2-36-blues-3-loop',
+        sections: [
+            { name: 'Verse',  type: SectionType.Verse,  bars: 12, energy: 5 },     // 12-bar I
+            { name: 'Verse',  type: SectionType.Verse,  bars: 12, energy: 7 },     // 12-bar II(solo)
+            { name: 'Chorus', type: SectionType.Chorus, bars: 12, energy: 9 },     // 12-bar III(climax)
+        ],
+    },
+    {
+        id: 'af2-36-blues-intro-3-outro',
+        sections: [
+            { name: 'Intro',  type: SectionType.Intro,  bars: 4, energy: 3 },
+            { name: 'Verse',  type: SectionType.Verse,  bars: 12, energy: 5 },
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8,  energy: 7 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 8,  energy: 9 },
+            { name: 'Outro',  type: SectionType.Outro,  bars: 4, energy: 4 },
+        ],
+    },
+    {
+        id: 'af2-36-blues-vcvc-bridge',
+        sections: [
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 5 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 8 },
+            { name: 'Verse',  type: SectionType.Verse,  bars: 8, energy: 6 },
+            { name: 'Bridge', type: SectionType.Bridge, bars: 4, energy: 7 },
+            { name: 'Chorus', type: SectionType.Chorus, bars: 8, energy: 9 },
         ],
     },
 ];
 
 function poolForBars(bars: number): Af2SectionTemplate[] {
-    if (bars === 12) return TEMPLATES_12BAR;
-    if (bars === 16) return TEMPLATES_16BAR;
+    if (bars === 32) return TEMPLATES_32BAR;
+    if (bars === 36) return TEMPLATES_36BAR;
+    if (bars === 48) return TEMPLATES_48BAR;
     throw new Error(
-        `SectionPlanner: unsupported mg.recommendedBars=${bars}. ` +
-        `Phase 1 supports only 12 (BLUES) or 16 (POP/JAZZ/RNB).`,
+        `SectionPlanner: unsupported totalBars=${bars}. ` +
+        `Supported: 32 (JAZZ) / 36 (BLUES) / 48 (POP/RNB).`,
     );
 }
 
