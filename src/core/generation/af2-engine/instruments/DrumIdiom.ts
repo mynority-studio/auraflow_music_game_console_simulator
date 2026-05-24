@@ -33,7 +33,7 @@
 //   rng 从 Af2EngineFacade 显式注入(派生 seed,与 mg / ChordTextureEngine 独立)。
 // ============================================================
 
-import type { NoteData, SectionMetadata } from '../../types';
+import type { NoteData, SectionMetadata, MusicianPersona } from '../../types';
 import { BandRole } from '../../types';
 import type { Random } from '../../mg-engine/musicEngine';
 import type { MgStyle } from '../../../../state/EngineSelectionStore';
@@ -88,6 +88,12 @@ export interface DrumPlanInput {
     bassNotes?: ReadonlyArray<NoteData>;
     /** 跨乐手感知 — chord syncopate onset 提 snare prob */
     chordNotes?: ReadonlyArray<NoteData>;
+    /**
+     * Musician persona(可选)。当前消费:
+     *   sparsityTendency 高 → kick/snare/hihat prob 整体 × (1 - sparsity * 0.4)
+     *   syncopationAssault 高 → syncopated step 上 snare prob 加成
+     */
+    persona?: MusicianPersona;
 }
 
 /**
@@ -166,11 +172,13 @@ export const DrumGenerator = {
      * peers via bassNotes / chordNotes(跨乐手 onset 触发 kick/snare prob 修正)。
      */
     plan(input: DrumPlanInput): NoteData[] {
-        const { score, musicianId, assignments, mgStyle, bassNotes = [], chordNotes = [], rng } = input;
+        const { score, musicianId, assignments, mgStyle, bassNotes = [], chordNotes = [], rng, persona } = input;
         const sections = score.sections;
         const beatsPerMeasure = score.timeSignature[0];
         const grid = getDrumGridByMgStyle(mgStyle);
         const out: NoteData[] = [];
+        const sparsity = persona?.sparsityTendency ?? 0;
+        const syncopation = persona?.syncopationAssault ?? 0;
 
         for (let sIdx = 0; sIdx < sections.length; sIdx++) {
             // C.5:per-section role gate
@@ -184,6 +192,7 @@ export const DrumGenerator = {
             renderSection(
                 out, section, nextSection, grid, beatsPerMeasure,
                 bassNotes as NoteData[], chordNotes as NoteData[], rng,
+                sparsity, syncopation,
             );
         }
 
@@ -205,6 +214,8 @@ function renderSection(
     bassNotes: NoteData[],
     chordNotes: NoteData[],
     rng: Random,
+    sparsity: number = 0,
+    syncopation: number = 0,
 ): void {
     const startBeat = section.startBeat;
     const sectionBeats = section.endBeat - startBeat;
@@ -233,10 +244,13 @@ function renderSection(
 
         // ----------------------------------------------------------
         // chord/bass modifier(Phase 2b.2 新增,不消耗 PRNG)
+        //   + persona DNA(sparsity 减密 / syncopation syncopated-step boost)
         // ----------------------------------------------------------
-        let kickProbAdj = cell.kickProb * probScale;
-        let snareProbAdj = (snareGateOpen ? cell.snareProb : 0) * probScale;
-        const hihatProbAdj = cell.hihatProb * probScale;
+        // Persona sparsity → 整体 prob 降低(留白)
+        const sparsityFactor = 1 - sparsity * 0.4;
+        let kickProbAdj = cell.kickProb * probScale * sparsityFactor;
+        let snareProbAdj = (snareGateOpen ? cell.snareProb : 0) * probScale * sparsityFactor;
+        const hihatProbAdj = cell.hihatProb * probScale * sparsityFactor;
 
         // bass strong onset → 提 kick prob
         if (hasBassStrongNear(stepBeat, bassNotes)) {
@@ -245,6 +259,14 @@ function renderSection(
         // chord syncopate → 提 snare prob(ghost-like accent)
         if (snareGateOpen && hasChordSyncopateNear(stepBeat, barStart, chordNotes)) {
             snareProbAdj = Math.min(0.85, snareProbAdj * 1.3);
+        }
+        // Persona syncopation → syncopated step 上 snare prob 加成
+        if (syncopation > 0 && snareGateOpen) {
+            const relStep = stepIdx % STEPS_PER_BEAT;
+            // 16-step 中 syncopated 位 = 第 2 / 第 4 sub-step(off-beat 16th)
+            if (relStep === 1 || relStep === 3) {
+                snareProbAdj = Math.min(0.90, snareProbAdj + syncopation * 0.3);
+            }
         }
 
         // ----------------------------------------------------------

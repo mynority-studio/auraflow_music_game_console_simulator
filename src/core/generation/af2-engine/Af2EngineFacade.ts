@@ -100,16 +100,19 @@ export const Af2EngineFacade = {
         const sections = SectionPlanner.plan(mgStyle, totalBars, 4);
 
         // -----------------------------------------------------------
-        // Step 2: mg 内核 with AF2 Arranger + AF2 Composer(8 层架构 #3 + #4 完成):
+        // Step 2: mg 内核 with AF2 Arranger + AF2 Composer + skipArrangement
         //   - useAf2Arranger=true → Section-aware AF2 Arranger 决进行
         //   - useAf2Composer=true → AF2 Composer 决 voicing + bass + chordSymbol
-        //   仅剩 mg.generateArrangement(melody/accomp/bass 生成)未 AF2 化。
+        //   - skipArrangement=true → 跳过 mg.generateArrangement(events=[])
+        //     所有 piano musicians 都 opt-in AF2 算法,所有 bass walkPatternId 已设,
+        //     drums/pad AF2-native,events 已无消费者
         // -----------------------------------------------------------
         const mg = MgKernelInvoker.invoke(
             mgSeedString, mgStyle, key,
             /* useAf2Arranger */ true,
             sections,
             /* useAf2Composer */ true,
+            /* skipArrangement */ true,
         );
 
         // -----------------------------------------------------------
@@ -220,6 +223,7 @@ export const Af2EngineFacade = {
                     bassNotes: bassMusicianId ? (input.peers.get(bassMusicianId) ?? []) as NoteData[] : [],
                     chordNotes: accompMusicianId ? (input.peers.get(accompMusicianId) ?? []) as NoteData[] : [],
                     rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
+                    persona: dm.persona,
                 }),
             });
         }

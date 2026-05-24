@@ -230,6 +230,8 @@ export const MUSICIAN_POOL: Musician[] = [
             },
             escapeProbability: 0.12,      // 默认 0.05 → 0.12(更多自然越界,对应 colorBias 0.9)
             add11GateProbability: 0.85,   // 默认 0.60 → 0.85(D'Angelo 风强烈 11音物理)
+            melodyAlgorithm: 'af2',        // 跨 musician 稳定性验证:NeoSoul 也 opt-in
+            accompAlgorithm: 'af2',
         },
     },
     // 🎸 Maya — Slap Bass（高 sync + ghost note 风格）
@@ -317,6 +319,8 @@ export const MUSICIAN_POOL: Musician[] = [
                 [SectionType.Outro]:     new Set(['accomp', 'bass']),          // outro 兼 bass
                 [SectionType.PreOutro]:  new Set(['accomp', 'bass']),
             },
+            melodyAlgorithm: 'af2',
+            accompAlgorithm: 'af2',
         },
     },
     // 🌫️ 氛围乐手 Nina — Warm Pad 长音铺底

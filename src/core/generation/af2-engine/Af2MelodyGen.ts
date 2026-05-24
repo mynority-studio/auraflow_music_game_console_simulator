@@ -128,9 +128,27 @@ const RHYTHM_PATTERNS: ReadonlyArray<ReadonlyArray<number>> = Object.freeze([
  * Deterministic 节奏选择(零 PRNG)。
  * sectionIdx + chordIdxInSection → pattern index [0..3]
  */
-function pickRhythmPattern(sectionIdx: number, chordIdxInSection: number): ReadonlyArray<number> {
+/**
+ * Pattern 选择 — 默认 hash 均分;persona 加权偏好:
+ *   - sparsityTendency 高 → 偏 B(2 half,留白)
+ *   - syncopationAssault 高 → 偏 C/D(dotted / sync)
+ *
+ * 实现:基础 hash 抽 base index,再按 persona 概率"跳"到偏好 index。
+ */
+function pickRhythmPattern(
+    sectionIdx: number,
+    chordIdxInSection: number,
+    sparsity: number = 0,
+    syncopation: number = 0,
+): ReadonlyArray<number> {
     const h = (sectionIdx * 7 + chordIdxInSection * 11) & 0xff;
-    return RHYTHM_PATTERNS[h % RHYTHM_PATTERNS.length];
+    let idx = h % RHYTHM_PATTERNS.length;
+    // 二阶 hash 给"偏好跳转"概率
+    const h2 = (h * 31 + 17) & 0xff;
+    const p2 = h2 / 255;
+    if (p2 < sparsity * 0.7) idx = 1;                                       // → Half
+    else if (p2 < sparsity * 0.7 + syncopation * 0.7) idx = (h % 2 ? 3 : 2); // → Sync / Dotted
+    return RHYTHM_PATTERNS[idx];
 }
 
 // ============================================================
@@ -211,6 +229,14 @@ export function generateAf2Melody(
     const baseAnchor = Math.floor((melodyLo + melodyHi) / 2);   // 73 ≈ C#5
     let prevMidi = baseAnchor;
 
+    // Persona 消费(DNA → 算法行为)
+    const persona = input.musician?.persona;
+    const sparsity = persona?.sparsityTendency ?? 0;
+    const syncopation = persona?.syncopationAssault ?? 0;
+    const dynamicLo = (persona?.dynamicRange?.[0] ?? 72) / 127;
+    const dynamicHi = (persona?.dynamicRange?.[1] ?? 110) / 127;
+    const velocityBase = (dynamicLo + dynamicHi) / 2;
+
     // 预处理:每 chord 标注 sectionIdx + chordIdxInSection + section progress
     interface ChordCtx {
         chord: GeneratedChord;
@@ -254,6 +280,26 @@ export function generateAf2Melody(
         const chordBeats = chord.endBeat - chord.startBeat;
         if (chordBeats <= 0) continue;
 
+        // Phrase ending:section 末 chord 改写为 "短 pickup + 长 tonic 收音"
+        // 触发条件:progress >= 0.95(section 最后 chord)
+        if (progress >= 0.95) {
+            // 简化:emit 单个长音落在 chord.root,duration = 80% chord beats
+            const targetPc = chord.root;
+            // anchor 偏低(回归感)
+            const endingAnchor = Math.floor((melodyLo + melodyHi) / 2) - 2;
+            const midi = placeNearAnchor(targetPc, endingAnchor, melodyLo, melodyHi);
+            const velH = ((sectionIdx * 19 + chordIdxInSection * 23) & 0xff) / 255;
+            const vel = velocityBase + (velH - 0.5) * (dynamicHi - dynamicLo) * 0.3;
+            out.push({
+                pitch: midi,
+                onset: chord.startBeat + chordBeats * 0.15,    // 短 pickup 间隔
+                duration: chordBeats * 0.80,                    // 长收音
+                velocity: Math.max(0.1, Math.min(1, vel)),
+            });
+            prevMidi = midi;
+            continue;
+        }
+
         // chord-tone cycle:[root, 5, 3, 7]
         const root = chord.root;
         const cyclePcs = [
@@ -263,8 +309,8 @@ export function generateAf2Melody(
             (root + seventhInterval(chord.quality)) % 12,
         ];
 
-        // 节奏 pattern + slot 缩放到 chord beats
-        const pattern = pickRhythmPattern(sectionIdx, chordIdxInSection);
+        // 节奏 pattern + slot 缩放到 chord beats(persona 加权)
+        const pattern = pickRhythmPattern(sectionIdx, chordIdxInSection, sparsity, syncopation);
         const slotDurs = pattern.map(p => p * chordBeats);
 
         // Phrase contour:bias anchor 用于本 chord 的所有 slots
@@ -288,12 +334,19 @@ export function generateAf2Melody(
             // anchor:contourMidi 与 prevMidi 平均(平滑 voice-leading)
             const anchor = Math.round((contourMidi + prevMidi) / 2);
             const midi = placeNearAnchor(pc, anchor, melodyLo, melodyHi);
-            out.push({
-                pitch: midi,
-                onset: chord.startBeat + beatCursor,
-                duration: slotDur * 0.95,
-                velocity: MELODY_DEFAULT_VELOCITY,
-            });
+            // Sparsity:per slot deterministic gate 删音(高 sparsity → 多空隙)
+            const sparseH = ((sectionIdx * 41 + chordIdxInSection * 53 + s * 67) & 0xff) / 255;
+            if (sparseH >= sparsity * 0.4) {
+                // Velocity:dynamicRange 内 deterministic 浮动(±10% 自然感)
+                const velH = ((sectionIdx * 19 + chordIdxInSection * 23 + s * 29) & 0xff) / 255;
+                const vel = velocityBase + (velH - 0.5) * (dynamicHi - dynamicLo) * 0.5;
+                out.push({
+                    pitch: midi,
+                    onset: chord.startBeat + beatCursor,
+                    duration: slotDur * 0.95,
+                    velocity: Math.max(0.1, Math.min(1, vel)),
+                });
+            }
             prevPc = pc;
             prevMidi = midi;
             beatCursor += slotDur;

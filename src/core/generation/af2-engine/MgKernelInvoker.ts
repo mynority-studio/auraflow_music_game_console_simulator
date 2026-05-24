@@ -157,6 +157,9 @@ export const MgKernelInvoker = {
      *                        Af2Arranger);未传则退化到 bars-based 单循环 progression。
      * @param useAf2Composer  Option C 续:true 时用 AF2 Composer 替代 mg.realizeProgression
      *                        做 voicing / bass / chordSymbol。仅在 useAf2Arranger=true 时生效。
+     * @param skipArrangement true 时跳过 mg.generateArrangement(events=[]).当所有 musician
+     *                        都 opt-in AF2 算法时,mg events 不再被消费 — 可省 mg 计算。
+     *                        默认 false(MG 模式仍需 mg events)。
      */
     invoke(
         seedString: string,
@@ -165,6 +168,7 @@ export const MgKernelInvoker = {
         useAf2Arranger: boolean = false,
         sections?: ReadonlyArray<SectionMetadata>,
         useAf2Composer: boolean = false,
+        skipArrangement: boolean = false,
     ): MgKernelOutput {
         const config: GenerationConfig = {
             seed: seedString,
@@ -196,8 +200,10 @@ export const MgKernelInvoker = {
             // 默认:mg 一气呵成(MG 模式 / AF2 没选 Option C 时)
             mgChords = generateProgressions(config, rng);
         }
-        const timeline = generateArrangement(mgChords, config, rng);
-        const mgEvents: NoteEvent[] = timeline.events;
+        // skipArrangement:跳过 mg.generateArrangement(events 留空)— 全 AF2 模式
+        const mgEvents: NoteEvent[] = skipArrangement
+            ? []
+            : generateArrangement(mgChords, config, rng).events;
 
         // ChordDef[] → GeneratedChord[](累积 startBeat)
         const chords: GeneratedChord[] = [];

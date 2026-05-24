@@ -67,10 +67,24 @@ const SECTION_ACCOMP_POOL: Partial<Record<SectionType, ReadonlyArray<AccompPatte
 
 const DEFAULT_POOL: ReadonlyArray<AccompPattern> = [AccompPattern.Block, AccompPattern.Arpeggiated];
 
-function pickPattern(sectionType: SectionType, chordIdxInSection: number): AccompPattern {
+/**
+ * Pattern 选择 — 默认 pool hash 均分;persona 加权:
+ *   - sparsityTendency 高 → 偏 Sustained(留白)
+ *   - syncopationAssault 高 → 偏 Stab(切分密集)
+ */
+function pickPattern(
+    sectionType: SectionType,
+    chordIdxInSection: number,
+    sparsity: number = 0,
+    syncopation: number = 0,
+): AccompPattern {
     const pool = SECTION_ACCOMP_POOL[sectionType] ?? DEFAULT_POOL;
     const h = (chordIdxInSection * 11 + (sectionType as number) * 13) & 0xff;
-    return pool[h % pool.length];
+    let pick = pool[h % pool.length];
+    const h2 = ((h * 31 + 17) & 0xff) / 255;
+    if (h2 < sparsity * 0.6) pick = AccompPattern.Sustained;
+    else if (h2 < sparsity * 0.6 + syncopation * 0.5) pick = AccompPattern.Stab;
+    return pick;
 }
 
 // ============================================================
@@ -181,6 +195,14 @@ export function generateAf2Accomp(
     const out: NoteData[] = [];
     const sectionChordIdx = new Map<number, number>();
 
+    // Persona 消费
+    const persona = input.musician?.persona;
+    const sparsity = persona?.sparsityTendency ?? 0;
+    const syncopation = persona?.syncopationAssault ?? 0;
+    const dynamicLo = (persona?.dynamicRange?.[0] ?? 55) / 127;
+    const dynamicHi = (persona?.dynamicRange?.[1] ?? 100) / 127;
+    const dynamicMid = (dynamicLo + dynamicHi) / 2;
+
     for (const chord of chords) {
         const sectionIdx = findSectionIdxForBeat(chord.startBeat, sections);
         if (sectionIdx < 0) continue;
@@ -196,7 +218,7 @@ export function generateAf2Accomp(
         sectionChordIdx.set(sectionIdx, idxInSection + 1);
 
         const sectionType = sections[sectionIdx].sectionType;
-        const pattern = pickPattern(sectionType, idxInSection);
+        const pattern = pickPattern(sectionType, idxInSection, sparsity, syncopation);
         const voicing = getVoicing(chord);
 
         let notes: NoteData[];
@@ -206,6 +228,13 @@ export function generateAf2Accomp(
             case AccompPattern.Stab:        notes = renderStab(chord, voicing); break;
             case AccompPattern.Sustained:   notes = renderSustained(chord, voicing); break;
             default:                        notes = renderBlock(chord, voicing);
+        }
+        // Velocity 重映射到 persona.dynamicRange + 各 note 微浮动(±10%)
+        for (let i = 0; i < notes.length; i++) {
+            const n = notes[i];
+            const velH = ((sectionIdx * 7 + idxInSection * 19 + i * 23) & 0xff) / 255;
+            const vel = dynamicMid + (velH - 0.5) * (dynamicHi - dynamicLo) * 0.4;
+            notes[i] = { ...n, velocity: Math.max(0.1, Math.min(1, vel * (n.velocity / 0.6))) };
         }
         out.push(...notes);
     }
