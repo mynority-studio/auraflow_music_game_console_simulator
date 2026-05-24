@@ -420,6 +420,14 @@ export interface MusicianPlanInput {
      * 触发(per-mgStyle pool 决定),其他 textureType 忽略此字段。
      */
     readonly melodyPeerNotes?: ReadonlyArray<NoteData>;
+    /**
+     * P 阶段:per-song sub-style(SUB_STYLES_BY_MG 内某值)。
+     * 由 Facade 从 options.generation.detectedSubStyle 或 PRNG fork 解析后注入。
+     * AccompGen pickTextureType 优先 sub-style primaryTextures,缺则
+     * fallback 到 STYLE_TEXTURE_POOL[mgStyle][sectionType]。
+     * 其他 idiom 可忽略。
+     */
+    readonly subStyle?: string;
 }
 
 /**

@@ -31,6 +31,7 @@ import { Random } from './utils/Random';
 import { ChordTextureEngine } from './chord-texture/ChordTextureEngine';
 import { generatedChordToChordDef } from './chord-texture/adapter';
 import type { NoteEvent } from './chord-texture/types';
+import { SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
 
 // ============================================================
 // Per-mgStyle × sectionType textureType pool(N 阶段 8 family 覆盖)
@@ -133,17 +134,32 @@ const SYNCOPATION_PREFERENCE: Record<MgStyle, string> = {
  *   - sparsityTendency 高 → 偏 Single_Root(留白)
  *   - syncopationAssault 高 → 偏 per-mgStyle 切分 textureType
  *
+ * P 阶段优先级(2026-05-24):
+ *   1. sub-style primaryTextures(若 subStyle 传入)— mg sub-style 风味
+ *   2. per-mgStyle sectionType pool — 通用 section-aware 后备
+ *   3. POP sectionType pool fallback
+ *   4. DEFAULT_TEXTURE_POOL(Single_Root)
+ *
+ * sub-style 不分 sectionType,但 section type 仍影响 hash → 同 sub-style
+ * 内 verse vs chorus 仍可能抽到不同 textureType。
+ *
  * PRNG 消耗:0(deterministic hash)。
  */
 function pickTextureType(
     sectionType: SectionType,
     chordIdxInSection: number,
     mgStyle: MgStyle,
+    subStyle: SubStyle | undefined,
     sparsity: number = 0,
     syncopation: number = 0,
 ): string {
-    const stylePool = STYLE_TEXTURE_POOL[mgStyle];
-    const pool = stylePool[sectionType] ?? STYLE_TEXTURE_POOL.POP[sectionType] ?? DEFAULT_TEXTURE_POOL;
+    let pool: ReadonlyArray<string>;
+    if (subStyle && SUB_STYLE_PRIMARY_TEXTURES[subStyle]?.length > 0) {
+        pool = SUB_STYLE_PRIMARY_TEXTURES[subStyle];
+    } else {
+        const stylePool = STYLE_TEXTURE_POOL[mgStyle];
+        pool = stylePool[sectionType] ?? STYLE_TEXTURE_POOL.POP[sectionType] ?? DEFAULT_TEXTURE_POOL;
+    }
     const h = (chordIdxInSection * 11 + (sectionType as number) * 13) & 0xff;
     let pick = pool[h % pool.length];
     const h2 = ((h * 31 + 17) & 0xff) / 255;
@@ -172,6 +188,7 @@ export function generateAf2Accomp(
     const dynamicHi = (persona?.dynamicRange?.[1] ?? 100) / 127;
     const dynamicMid = (dynamicLo + dynamicHi) / 2;
     const mgStyle: MgStyle = input.mgStyle ?? 'POP';
+    const subStyle = input.subStyle as SubStyle | undefined;
 
     // N6 阶段:melody peer NoteData → NoteEvent 一次性转换(Cross-track family
     // 如 CallAndResponse 需要 NoteEvent;Facade 已在 accomp closure 内从
@@ -202,7 +219,7 @@ export function generateAf2Accomp(
         sectionChordIdx.set(sectionIdx, chordIdxInSection + 1);
 
         const sectionType = sections[sectionIdx].sectionType;
-        const textureType = pickTextureType(sectionType, chordIdxInSection, mgStyle, sparsity, syncopation);
+        const textureType = pickTextureType(sectionType, chordIdxInSection, mgStyle, subStyle, sparsity, syncopation);
         const voicing = chord.voicing ?? [];
         if (voicing.length === 0) continue;
 

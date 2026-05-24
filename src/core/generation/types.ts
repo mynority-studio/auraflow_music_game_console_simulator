@@ -704,6 +704,19 @@ export interface GenerationOptions {
      * 或反之。
      */
     detectedKey?: number;
+    /**
+     * P 阶段:user 显式指定 SubStyle(15 个,跨 4 mgStyle 细分)。
+     *   POP:  'PopBallad' / 'SynthPop' / 'MaxMartinPop' /
+     *         'AsianPopWalkdown' / 'ModernStadiumPop' / 'ModernTrap'
+     *   JAZZ: 'JazzSwing' / 'JazzChromaticDrop' / 'BossaNova'
+     *   BLUES:'DominantBlues' / 'MinorBlues' / 'BluesTurnaround'
+     *   RNB:  'NeoSoulRnB' / 'GospelNeoSoul' / 'MotownSoul'
+     * 未传 → Facade 用 `af2_substyle_${seed}` PRNG 从 SUB_STYLES_BY_MG[mgStyle] 抽。
+     * SubStyle 影响 AccompGen textureType pool 选择(per-substyle primaryTextures
+     * 优先于 per-mgStyle SECTION pool)。
+     * 跨 mgStyle 不匹配(如 POP mgStyle 传 'JazzSwing')→ ignore,fallback PRNG。
+     */
+    detectedSubStyle?: string;
 }
 export interface TempoCurve {
     startTick: number;

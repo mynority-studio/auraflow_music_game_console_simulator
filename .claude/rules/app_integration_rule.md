@@ -154,13 +154,24 @@ App                    Engine
 | `allowedStyleIds` | `StyleId[]` | 否 | 允许 PRNG 抽取的曲风池。不传则全 3 个 |
 | `forcedBand` | `Partial<Record<BandRole, string \| null>>` | 否 | 强制乐队编制。Key 是 BandRole,value 是 musician ID 或 null(空槽)|
 | `forcedGmPrograms` | `Partial<Record<BandRole, number>>` | 否 | per-role GM 程式号覆盖(0-127)。优先级最高 |
-| `generation` | `GenerationOptions` | 否 | 进阶选项:`seed` / `length` / `userMotif` / `motifRole` / `detectedTimeSignature` / `detectedTonality`(Major/Minor)/ `detectedKey`(0-11 pc,K5 阶段 2026-05-24)|
+| `generation` | `GenerationOptions` | 否 | 进阶选项:`seed` / `length` / `userMotif` / `motifRole` / `detectedTimeSignature` / `detectedTonality`(Major/Minor)/ `detectedKey`(0-11 pc,K5 阶段 2026-05-24)/ `detectedSubStyle`(15 个 sub-style 字符串,P 阶段 2026-05-24)|
 
 **`generation.detectedKey`(K5)**:user 显式指定 keyOffset,`0=C / 1=Db / 2=D / 3=Eb / 4=E / 5=F / 6=Gb / 7=G / 8=Ab / 9=A / 10=Bb / 11=B`。
 越界(<0 / >11 / 非整数)→ ignore,fallback `af2_key_${seed}` PRNG 随机抽 0-11。
 跟 `detectedTonality` 独立 — user 可单独锁 key 而保持 tonality 随机,或反之。
 
 **`generation.detectedTonality`(K2 + K5)**:user 显式指定调性(`Tonality.Major` / `Tonality.Minor`)。未传 → fallback `af2_tonality_${seed}` PRNG(70% Major / 30% Minor)。
+
+**`generation.detectedSubStyle`(P 阶段)**:user 显式指定 sub-style(15 个,跨 4 mgStyle 细分)。
+有效取值取决于当前 mgStyle:
+- POP:`'PopBallad' / 'SynthPop' / 'MaxMartinPop' / 'AsianPopWalkdown' / 'ModernStadiumPop' / 'ModernTrap'`
+- JAZZ:`'JazzSwing' / 'JazzChromaticDrop' / 'BossaNova'`
+- BLUES:`'DominantBlues' / 'MinorBlues' / 'BluesTurnaround'`
+- RNB:`'NeoSoulRnB' / 'GospelNeoSoul' / 'MotownSoul'`
+
+跨 mgStyle 不匹配(如 POP mgStyle 传 'JazzSwing')→ ignore,fallback `af2_substyle_${seed}` PRNG。
+影响范围:仅 AccompGen textureType pool 选择(per-substyle primaryTextures 优先于 STYLE_TEXTURE_POOL)。
+Arranger / Composer 仍 by mgStyle(P5 留扩)。
 
 **BandRole 取值**:`'vocal' / 'mainInst' / 'accomp' / 'bass' / 'drums' / 'atmosphere'`
 

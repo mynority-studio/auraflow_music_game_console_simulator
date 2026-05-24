@@ -49,6 +49,7 @@ import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
 import { Af2KernelDriver } from './Af2KernelDriver';
 import { KEYS } from './music-theory/spell';
+import { SUB_STYLES_BY_MG, type SubStyle } from './SubStyleTextures';
 import { SectionPlanner } from './SectionPlanner';
 import { SectionMapper } from './SectionMapper';
 import { SlotRouter } from './SlotRouter';
@@ -128,6 +129,15 @@ export const Af2EngineFacade = {
         const tonality = (userTonality === Tonality.Major || userTonality === Tonality.Minor)
             ? userTonality
             : (tonalityRng.next() < 0.7 ? Tonality.Major : Tonality.Minor);
+
+        // P 阶段:per-song sub-style fork(影响 AccompGen textureType pool 选择)
+        // 跨 mgStyle 不匹配的 user override → ignore,走 PRNG
+        const substyleRng = new Random(`af2_substyle_${auraflowSeed >>> 0}`);
+        const userSubStyle = options.generation?.detectedSubStyle;
+        const subStylePool = SUB_STYLES_BY_MG[mgStyle];
+        const subStyle: SubStyle = (userSubStyle && (subStylePool as ReadonlyArray<string>).includes(userSubStyle))
+            ? userSubStyle as SubStyle
+            : subStylePool[substyleRng.range(0, subStylePool.length - 1)];
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
@@ -247,6 +257,7 @@ export const Af2EngineFacade = {
         // 3. Accomp(harmonic 底)
         //   N6:从 input.peers 读 melody musicianId 的 NoteData[] → 通过
         //   melodyPeerNotes 字段透传到 AccompGen → ChordTextureEngine → CallAndResponse。
+        //   P 阶段:加 subStyle 透传(AccompGen 优先用 sub-style primaryTextures)
         if (accompMusician) {
             const am = accompMusician;
             const mainMusicianId = mainMusician?.id;
@@ -259,6 +270,7 @@ export const Af2EngineFacade = {
                     melodyPeerNotes: mainMusicianId
                         ? (input.peers.get(mainMusicianId) ?? []) as NoteData[]
                         : undefined,
+                    subStyle,
                 }),
             });
         }
