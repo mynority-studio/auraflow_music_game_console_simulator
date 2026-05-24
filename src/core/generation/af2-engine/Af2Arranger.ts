@@ -27,6 +27,7 @@ import { SectionType } from '../types';
 import type { SectionMetadata } from '../types';
 import { planBorrowedChords, type BorrowSource } from './BorrowChordPlanner';
 import { planTonicization } from './TonicizationPlanner';
+import { planPicardyEndings } from './PicardyPlanner';
 
 /**
  * 5-way classification of chromatic / non-diatonic chords —
@@ -513,6 +514,8 @@ export interface ArrangePlannerOptions {
     motifInterval?: number;
     /** K2 阶段:是否 Minor 调(走 Minor 进行池)。默认 false */
     isMinor?: boolean;
+    /** K3 阶段:PRNG 子流(`${seed}::picardy`)— Minor only,Major 时未消费 */
+    picardyRng?: Random;
 }
 
 export const Af2Arranger = {
@@ -545,12 +548,12 @@ export const Af2Arranger = {
                 out.push({ ...chosen[bar % chosen.length] });
             }
         }
-        // L 阶段:接 mg 移植的 2 planner
+        // L+K3 阶段:接 mg 移植的 planner 链
         if (plannerOptions) {
             const { borrowRng, tonicizeRng, borrowSource, songKeyRootPc } = plannerOptions;
             const motifInterval = plannerOptions.motifInterval ?? 4;
             const mode = plannerOptions.mode ?? 'Maj/Ionian';
-            // Pass 1:Modal Interchange(7 rule × 3 source × 5 防呆)
+            // Pass 1:Modal Interchange(Major 调,Minor short-circuit)
             out = planBorrowedChords({
                 skeleton: out,
                 style: mgStyle,
@@ -560,7 +563,19 @@ export const Af2Arranger = {
                 mode,
                 borrowSource,
             });
-            // Pass 2:Tonicization(4 placement × target mult × cooldown)
+            // Pass 2(K3):Picardy 3rd ending(Minor only)
+            //   Minor 调 borrow short-circuit 后,用 Picardy 给 phrase ending
+            //   提供"sad → hope"修辞;Major 调 picardyRng 未消费(prob short-circuit)
+            if (isMinor && plannerOptions.picardyRng) {
+                out = planPicardyEndings({
+                    skeleton: out,
+                    style: mgStyle,
+                    motifInterval,
+                    random: plannerOptions.picardyRng,
+                });
+            }
+            // Pass 3:Tonicization(4 placement × target mult × cooldown)
+            //   Minor-aware:m7b5 + 7b9 配 Phrygian Dominant scale
             out = planTonicization({
                 skeleton: out,
                 style: mgStyle,
