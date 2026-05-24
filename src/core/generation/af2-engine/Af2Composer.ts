@@ -29,60 +29,153 @@
 import {
     CHORD_TYPES, placeVoicingMidi, BASS_RANGE,
     KEYS, harmonicFunctionFromRoman, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
+    assembleVoicing,
+    STYLE_FULL, STYLE_ROOTLESS, STYLE_CLUSTER, STYLE_BLUES,
+    type VoicingStylePreference,
 } from './music-theory';
 import { Random } from './utils/Random';
 import type { ChordDef } from './types/ChordDef';
 import type { Af2AbstractStep } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
+import {
+    DYNAMIC_TSD_DICTIONARY,
+    COLOR_LEVEL_PROBABILITIES,
+    analyzeTargetQuality,
+    type TSD_Func,
+} from './DynamicHarmony';
 
 // ============================================================
-// Divisi 2.0:tension extension(9 / 11 / 13)概率注入
+// M 阶段(2026-05-24):Dynamic TSD chord-type decoration
 // ============================================================
 //
-// 在 voicingPcs 上,per chord-type 概率门加 tension PC:
-//   maj7  → +9   (Cmaj9 — bright)
-//   m7    → +9   (Cm9   — neo-soul)
-//   7     → +9 / +13 (C9 / C13 — jazz dominant color)
+// 替换原 EXTENSION_PROB / addExtensionPcs(简化 9/13 加色)→ 接 mg 移植的
+// Look-ahead Dynamic TSD dictionary:
 //
-// Per-mgStyle 概率:
-//   POP   极少加(triad / 7th 已够)
-//   JAZZ  常加(jazz 语言)
-//   BLUES 仅 dominant +9 偶尔(blue note)
-//   RNB   neo-soul 加 9 / 13(色彩感)
+//   Per step decorateChordType:
+//     1. step.lockType=true → 保留 step.type(Planner 已锁,跳过 random 消耗保持流稳定)
+//     2. Roll colorLevel(0/1/2)from COLOR_LEVEL_PROBABILITIES[mgStyle]
+//     3. analyzeTargetQuality(currFunc, nextFunc, next.roman, next.type)
+//     4. DYNAMIC_TSD_DICTIONARY[mgStyle][currFunc].find(target) → levels[colorLevel]
+//     5. Sub-V activation(D-function only):perfect-fifth-down + tritoneProb gate
+//     6. Data-debt guard:!CHORD_TYPES[finalType] → 按 currFunc downgrade
+//     7. Sub-V override:rootOffset +6 + romanOverride 'subV/X'
 //
-// PRNG 消耗:每 step 最多 2 次(gate + dom7 9-vs-13 选择),deterministic per seed。
-// 不改 chord.type — 仅扩 voicing notesMidi,mg.generateArrangement 透明吸收。
+// PRNG 消耗:每 step 1(colorLevel roll)+ 1(pick)+ 0-1(Sub-V activation)
+// = 2-3 per step,deterministic per seed。
 // ============================================================
 
-const EXTENSION_PROB: Record<MgStyle, { maj7: number; m7: number; dom7: number }> = {
-    POP:   { maj7: 0.10, m7: 0.05, dom7: 0.05 },
-    JAZZ:  { maj7: 0.50, m7: 0.40, dom7: 0.60 },
-    BLUES: { maj7: 0,    m7: 0,    dom7: 0.10 },
-    RNB:   { maj7: 0.40, m7: 0.50, dom7: 0.30 },
+// ============================================================
+// M 阶段:per-mgStyle 默认 compingVoicingMode
+// ============================================================
+//
+//   POP   → STYLE_FULL     (5 voice,包 root,vocal-style 完整 voicing)
+//   JAZZ  → STYLE_ROOTLESS (4 voice,无 root,Bill Evans A/B-position 自动加 9)
+//   BLUES → STYLE_BLUES    (4 voice,包 root,boogie comping)
+//   RNB   → STYLE_CLUSTER  (4 voice,无 root,Neo-soul/D'Angelo cluster + 9)
+//
+// 用 assembleVoicing(已带 clash detection + density priority drop)替换原
+// 简陋的 `intervals.map(iv => (root + iv) % 12)`,听感:
+//   - JAZZ 钢琴 comping 不再 doubles root,腾出 bass 频段
+//   - RNB 自动密集 cluster + 9 — neo-soul 标志
+//   - POP 完整 5 voice — vocal-style chord support
+//   - BLUES 不加色 — boogie 干净 4 voice
+// ============================================================
+
+const DEFAULT_VOICING_MODE_BY_STYLE: Record<MgStyle, VoicingStylePreference> = {
+    POP:   STYLE_FULL,
+    JAZZ:  STYLE_ROOTLESS,
+    BLUES: STYLE_BLUES,
+    RNB:   STYLE_CLUSTER,
 };
 
-function addExtensionPcs(
-    type: string,
-    voicingPcs: number[],
-    rootKeyIndex: number,
+interface DecorateResult {
+    type: string;
+    rootOffsetOverride?: number;
+    romanOverride?: string;
+}
+
+function decorateChordType(
+    step: Af2AbstractStep,
+    next: Af2AbstractStep,
     mgStyle: MgStyle,
     rng: Random,
-): number[] {
-    const prob = EXTENSION_PROB[mgStyle];
-    const extPcs = new Set(voicingPcs);
-    if (type === 'maj7' && rng.next() < prob.maj7) {
-        extPcs.add((rootKeyIndex + 2) % 12); // +9
-    } else if (type === 'm7' && rng.next() < prob.m7) {
-        extPcs.add((rootKeyIndex + 2) % 12); // +9
-    } else if (type === '7' && rng.next() < prob.dom7) {
-        // 50/50 +9 vs +13(major 6th)
-        if (rng.next() < 0.5) {
-            extPcs.add((rootKeyIndex + 2) % 12); // +9
-        } else {
-            extPcs.add((rootKeyIndex + 9) % 12); // +13
+): DecorateResult {
+    // Locked slot — Planner(borrow/tonicize)已设 exact type。
+    // 仍消耗 1 + 1 random 保持 stream 稳定(roll + pick)。
+    if (step.lockType) {
+        rng.next();
+        rng.next();
+        return { type: step.type };
+    }
+
+    // 1. Roll colorLevel
+    const probs = COLOR_LEVEL_PROBABILITIES[mgStyle];
+    const r = rng.next();
+    let colorLevel: 0 | 1 | 2 = 0;
+    if (r < probs.level0) colorLevel = 0;
+    else if (r < probs.level0 + probs.level1) colorLevel = 1;
+    else colorLevel = 2;
+
+    // 2. Functional analysis(currFunc 优先用 Planner 标的 effectiveFunc)
+    const currFunc: TSD_Func = step.effectiveFunc ?? harmonicFunctionFromRoman(step.roman);
+    const nextFunc: TSD_Func = next.effectiveFunc ?? harmonicFunctionFromRoman(next.roman);
+    const targetQuality = analyzeTargetQuality(currFunc, nextFunc, next.roman, next.type);
+
+    // 3. Dynamic dictionary lookup
+    const rules = DYNAMIC_TSD_DICTIONARY[mgStyle]?.[currFunc];
+    let choices: string[] | undefined;
+    let isTritoneSub = false;
+
+    if (rules) {
+        const rule = rules.find(rl => rl.target === targetQuality)
+            ?? rules.find(rl => rl.target === 'Default');
+        if (rule && rule.levels[colorLevel]) {
+            choices = rule.levels[colorLevel];
+
+            // 4. Tritone Substitution probability gate
+            // Conditional random:只在 look-ahead AND tritoneProb 都存在 + D-function
+            // AND non-deceptive 时 consume。determinism 只在 substitution-eligible 处 vary。
+            if (rule.tritoneProb && currFunc === 'D' && targetQuality !== 'Deceptive') {
+                const rootDelta = (((next.rootOffset - step.rootOffset) % 12) + 12) % 12;
+                if (rootDelta === 5 && rng.next() < rule.tritoneProb) {
+                    isTritoneSub = true;
+                }
+            }
         }
     }
-    return Array.from(extPcs);
+
+    // 5. Pick(若无 choices,保留原 step.type;仍消耗 1 random 保持稳定)
+    let finalType: string;
+    if (choices && choices.length > 0) {
+        finalType = rng.pick(choices);
+    } else {
+        rng.next();
+        finalType = step.type;
+    }
+
+    // 6. Data-debt guard:dictionary 引用未注册的 chord type → 按 function downgrade
+    if (!CHORD_TYPES[finalType]) {
+        if (currFunc === 'D') finalType = '7';
+        else if (currFunc === 'S') finalType = targetQuality === 'MinorTarget' ? 'm7' : 'maj7';
+        else finalType = targetQuality === 'MinorTarget' ? 'min' : 'maj';
+    }
+
+    // 7. Sub-V override — Lydian Dominant family。静态 map colorLevel
+    // 避免 '7#9#11' monster + 不消耗额外 random。
+    if (isTritoneSub) {
+        let subVType: string;
+        if (colorLevel === 0) subVType = '7';
+        else if (colorLevel === 1) subVType = '9';
+        else subVType = targetQuality === 'MinorTarget' ? '7#11' : '13';
+
+        return {
+            type: subVType,
+            rootOffsetOverride: ((step.rootOffset + 6) % 12 + 12) % 12,
+            romanOverride: `subV/${next.roman.split('/')[0]}`,
+        };
+    }
+
+    return { type: finalType };
 }
 
 export const Af2Composer = {
@@ -104,68 +197,76 @@ export const Af2Composer = {
         const out: ChordDef[] = [];
         let prevVoicing: number[] = [];
 
-        for (const step of abstractPath) {
-            // 1. rootKeyIndex(在调内 pc 0-11)
-            const rootKeyIndex = ((keyIndex + step.rootOffset) % 12 + 12) % 12;
+        for (let i = 0; i < abstractPath.length; i++) {
+            const step = abstractPath[i];
+            // M 阶段:Look-ahead next chord(最后 step 看自己,Default target)
+            const next = abstractPath[i + 1] ?? step;
 
-            // 2. CHORD_TYPES 查表(fallback to 'maj' triad)
-            const intervals = CHORD_TYPES[step.type] || CHORD_TYPES['maj'];
-
-            // 3. Voicing PCs(dedupe)
-            const pcSet = new Set<number>();
-            for (const iv of intervals) {
-                pcSet.add(((rootKeyIndex + iv) % 12 + 12) % 12);
-            }
-            let voicingPcs = Array.from(pcSet);
-
-            // 3.5. Divisi 2.0 — tension extension(9 / 11 / 13)概率注入
-            //
-            // L 阶段(2026-05-24):lockType=true 的 slot 是 Planner(borrow /
-            // tonicize)已锁定的 chord type — 跳过 Divisi 避免叠加。
-            //   例:Rule A2 backdoor bVII7 + Divisi 9 = bVII9 听感歪
-            //   例:Rule A1 iv (m7) + Divisi 9 = iv9 — 听感可接受但 planner 不预期
-            if (mgStyle && rng && !step.lockType) {
-                voicingPcs = addExtensionPcs(step.type, voicingPcs, rootKeyIndex, mgStyle, rng);
+            // 1. M 阶段 decorate — Dynamic TSD 选 chord type + 可选 Sub-V override
+            //    没传 mgStyle/rng 退化原 step.type
+            let finalType: string = step.type;
+            let finalRootOffset: number = step.rootOffset;
+            let finalRoman: string = step.roman;
+            if (mgStyle && rng) {
+                const decorated = decorateChordType(step, next, mgStyle, rng);
+                finalType = decorated.type;
+                if (decorated.rootOffsetOverride !== undefined) {
+                    finalRootOffset = decorated.rootOffsetOverride;
+                }
+                if (decorated.romanOverride !== undefined) {
+                    finalRoman = decorated.romanOverride;
+                }
             }
 
-            // 4. Bass MIDI:root pc clamp 到 BASS_RANGE
+            // 2. rootKeyIndex(在调内 pc 0-11)
+            const rootKeyIndex = ((keyIndex + finalRootOffset) % 12 + 12) % 12;
+
+            // 3 + 4. M 阶段:assembleVoicing 替代原"intervals.map + dedupe"。
+            //   引入 per-mgStyle voicing mode(STYLE_FULL/ROOTLESS/CLUSTER/BLUES)
+            //   走完整 pipeline:CHORD_TYPES → addColorOnTriad → clash detection →
+            //   rootPolicy(omit/include)→ density cap with priority drop。
+            //   未传 mgStyle 退化 STYLE_FULL(含 root,无 add-color,5 voice cap)。
+            const voicingMode = mgStyle
+                ? DEFAULT_VOICING_MODE_BY_STYLE[mgStyle]
+                : STYLE_FULL;
+            const voicingPcs = assembleVoicing(finalType, rootKeyIndex, voicingMode);
+
+            // 5. Bass MIDI:root pc clamp 到 BASS_RANGE
             let bassMidi = rootKeyIndex + 36; // C2 区间起步
             while (bassMidi < BASS_RANGE.LOW) bassMidi += 12;
             while (bassMidi > BASS_RANGE.HIGH) bassMidi -= 12;
             if (bassMidi < BASS_RANGE.LOW) bassMidi = BASS_RANGE.LOW;
             if (bassMidi > BASS_RANGE.HIGH) bassMidi = BASS_RANGE.HIGH;
 
-            // 5. Voice-leading placement(music-theory helper)
+            // 6. Voice-leading placement(music-theory helper)
             const voicing = placeVoicingMidi(
-                voicingPcs, prevVoicing, bassMidi, step.type, rootKeyIndex,
+                voicingPcs, prevVoicing, bassMidi, finalType, rootKeyIndex,
             );
 
-            // 6. Chord symbol display(简易:type === 'maj' 时省略后缀)
+            // 7. Chord symbol display(简易:type === 'maj' 时省略后缀)
             const rootName = spellPcInKey(rootKeyIndex, keyIndex, isMinorKey);
-            const chordSymbol = `${rootName}${step.type === 'maj' ? '' : step.type}`;
+            const chordSymbol = `${rootName}${finalType === 'maj' ? '' : finalType}`;
 
-            // 7. Notes(display,chord-root-relative spelling 让 altered tensions 拼写正确)
+            // 8. Notes(display,chord-root-relative spelling 让 altered tensions 拼写正确)
             const notes = voicing.map(m =>
-                midiToNoteInChord(m, rootKeyIndex, keyIndex, isMinorKey, step.type)
+                midiToNoteInChord(m, rootKeyIndex, keyIndex, isMinorKey, finalType)
             );
 
             const duration = step.beats ?? 4;
 
             out.push({
                 root: rootName,
-                rootMidi: rootKeyIndex + 48,  // C3 octave(mg convention 默认 4 八度根音引用)
-                type: step.type,
-                roman: step.roman,
+                rootMidi: rootKeyIndex + 48,  // C3 octave
+                type: finalType,
+                roman: finalRoman,
                 bass: midiToNoteInKey(bassMidi, keyIndex, isMinorKey),
                 bassMidi,
                 notes,
                 notesMidi: voicing.slice(),
                 duration,
-                // L 阶段:Planner 强制 effectiveFunc 优先(Rule A2 标 bVII7=D)
-                effectiveFunc: step.effectiveFunc ?? harmonicFunctionFromRoman(step.roman),
+                // M 阶段:Sub-V 后用 final roman 重算;Planner 强制 effectiveFunc 优先
+                effectiveFunc: step.effectiveFunc ?? harmonicFunctionFromRoman(finalRoman),
                 chordSymbol,
-                // 跳过 tensionState / virtualExtensions / bassPattern / borrowedFrom
-                // (mg.generateArrangement 这些字段可空 — 行为退化到默认)
             });
 
             prevVoicing = voicing;
