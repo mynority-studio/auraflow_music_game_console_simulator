@@ -326,8 +326,8 @@ function renderSection(
 }
 
 export const DrumIdiom = {
-    /** Drums 透传 — DrumGenerator 已直接产 NoteData */
+    /** Drums 透传 — DrumGenerator 已直接产 NoteData,无需 clone(notes 来自本地 out 数组) */
     realize(notes: NoteData[]): NoteData[] {
-        return notes.map(n => ({ ...n }));
+        return notes;
     },
 };

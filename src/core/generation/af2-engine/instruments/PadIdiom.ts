@@ -80,10 +80,10 @@ function pickSliceMode(
     return pick;
 }
 
-/** 切 voicing 子集 + octave 调整 */
+/** 切 voicing 子集 + octave 调整 — Composer 保证 voicing 已排序 */
 function sliceAndShift(voicing: number[], mode: PadSliceMode): number[] {
     if (voicing.length === 0) return voicing;
-    const sorted = [...voicing].sort((a, b) => a - b);
+    const sorted = voicing;  // Af2Composer.placeVoicingMidi 已输出排序
     let slice: number[];
     let octShift = 0;
     switch (mode) {
@@ -203,14 +203,14 @@ export const PadGenerator = {
             // C.4:查本 musician 在该 chord 所在 section 的 roles
             const sectionIdx = findSectionIdxForBeat(chord.startBeat, sections);
             if (sectionIdx < 0) continue;
-            const idxInSection = sectionChordIdx.get(sectionIdx) ?? 0;
-            sectionChordIdx.set(sectionIdx, idxInSection + 1);
+            const chordIdxInSection = sectionChordIdx.get(sectionIdx) ?? 0;
+            sectionChordIdx.set(sectionIdx, chordIdxInSection + 1);
             const myRoles = getMyRolesInSection(input, sectionIdx);
             if (!myRoles.includes('pad')) continue;
 
-            // Step 1: 取 voicing(已 voice-leading 优化)
+            // Step 1: 取 voicing(Composer 已 voice-leading + 排序)
             if (!chord.voicing || chord.voicing.length < 2) continue;
-            let voicing = chord.voicing.slice().sort((a, b) => a - b);
+            let voicing = chord.voicing.slice();  // shift() 会 mutate,故 slice
 
             // Step 2: 去最低音(bass)
             voicing.shift();
@@ -221,7 +221,7 @@ export const PadGenerator = {
 
             // Step 3.5: v1.1 — Slice mode 选择 + octave 调整
             const sectionType = sections[sectionIdx].sectionType;
-            const sliceMode = pickSliceMode(sectionType, idxInSection, colorBias, sparsity);
+            const sliceMode = pickSliceMode(sectionType, chordIdxInSection, colorBias, sparsity);
             voicing = sliceAndShift(voicing, sliceMode);
 
             // Step 4: 边界 clamp 到 [PAD_RANGE_LO, PAD_RANGE_HI]
@@ -235,7 +235,7 @@ export const PadGenerator = {
             let velocityRaw = 0.3 + energy * 0.06;
             if (sectionType === SectionType.BuildUp) {
                 const total = sectionTotals.get(sectionIdx) ?? 1;
-                const progress = total > 1 ? idxInSection / (total - 1) : 0.5;
+                const progress = total > 1 ? chordIdxInSection / (total - 1) : 0.5;
                 velocityRaw = 0.4 + progress * 0.3;   // 0.4 → 0.7 渐强
             }
             const velocity = velocityRaw < 0.3 ? 0.3 : velocityRaw > 0.9 ? 0.9 : velocityRaw;

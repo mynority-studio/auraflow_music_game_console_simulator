@@ -34,9 +34,7 @@ export const SectionMapper = {
         events: NoteDataWithPart[],
         sections: SectionMetadata[],
     ): NoteDataWithPartAndSection[] {
-        if (sections.length === 0) {
-            throw new Error('SectionMapper: sections 不能为空');
-        }
+        // 前置条件:sections 非空(SectionPlanner.plan 保证)
         const lastIdx = sections.length - 1;
 
         return events.map(ev => {

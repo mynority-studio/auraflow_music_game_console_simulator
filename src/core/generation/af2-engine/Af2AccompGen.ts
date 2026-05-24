@@ -31,10 +31,9 @@
 
 import type { NoteData, SectionMetadata } from '../types';
 import type { GeneratedChord } from '../ir';
-import { ChordQuality, SectionType } from '../types';
+import { SectionType } from '../types';
 import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
-import { thirdInterval } from './music-theory/chord-intervals';
 
 const ACCOMP_BLOCK_VELOCITY = 0.62;
 const ACCOMP_ARP_VELOCITY = 0.60;
@@ -88,23 +87,7 @@ function pickPattern(
     return pick;
 }
 
-// ============================================================
-// Voicing fallback(chord.voicing 空时,用 [root, root+3rd, root+5th] 在 C4 区)
-// ============================================================
-
-function fallbackVoicing(root: number, quality: ChordQuality): number[] {
-    const ANCHOR = 60;  // C4
-    return [
-        ANCHOR + ((root + 12) % 12),
-        ANCHOR + ((root + thirdInterval(quality) + 12) % 12),
-        ANCHOR + ((root + 7 + 12) % 12),  // perfect 5th
-    ];
-}
-
-function getVoicing(chord: GeneratedChord): number[] {
-    if (chord.voicing && chord.voicing.length > 0) return chord.voicing;
-    return fallbackVoicing(chord.root, chord.quality);
-}
+// fallbackVoicing 已删(Composer 保证 voicing 非空)— 直接用 chord.voicing
 
 // ============================================================
 // Pattern 渲染器
@@ -122,7 +105,8 @@ function renderBlock(chord: GeneratedChord, voicing: number[]): NoteData[] {
 
 function renderArpeggiated(chord: GeneratedChord, voicing: number[], chordIdxInSection: number): NoteData[] {
     const beats = chord.endBeat - chord.startBeat;
-    const sorted = [...voicing].sort((a, b) => a - b);
+    // Af2Composer.placeVoicingMidi 已输出排序,直接消费(无 spread + sort 开销)
+    const sorted = voicing;
     // numNotes ~ beats(每拍 1 个 arp 音),clamp [2, 8]
     const numNotes = Math.max(2, Math.min(8, Math.round(beats * 2)));  // 8th-note arp 密度
     const stepDur = beats / numNotes;
@@ -200,17 +184,18 @@ export function generateAf2Accomp(
             continue;
         }
 
-        const idxInSection = sectionChordIdx.get(sectionIdx) ?? 0;
-        sectionChordIdx.set(sectionIdx, idxInSection + 1);
+        const chordIdxInSection = sectionChordIdx.get(sectionIdx) ?? 0;
+        sectionChordIdx.set(sectionIdx, chordIdxInSection + 1);
 
         const sectionType = sections[sectionIdx].sectionType;
-        const pattern = pickPattern(sectionType, idxInSection, sparsity, syncopation);
-        const voicing = getVoicing(chord);
+        const pattern = pickPattern(sectionType, chordIdxInSection, sparsity, syncopation);
+        const voicing = chord.voicing ?? [];
+        if (voicing.length === 0) continue;
 
         let notes: NoteData[];
         switch (pattern) {
             case AccompPattern.Block:       notes = renderBlock(chord, voicing); break;
-            case AccompPattern.Arpeggiated: notes = renderArpeggiated(chord, voicing, idxInSection); break;
+            case AccompPattern.Arpeggiated: notes = renderArpeggiated(chord, voicing, chordIdxInSection); break;
             case AccompPattern.Stab:        notes = renderStab(chord, voicing); break;
             case AccompPattern.Sustained:   notes = renderSustained(chord, voicing); break;
             default:                        notes = renderBlock(chord, voicing);
@@ -218,7 +203,7 @@ export function generateAf2Accomp(
         // Velocity 重映射到 persona.dynamicRange + 各 note 微浮动(±10%)
         for (let i = 0; i < notes.length; i++) {
             const n = notes[i];
-            const velH = ((sectionIdx * 7 + idxInSection * 19 + i * 23) & 0xff) / 255;
+            const velH = ((sectionIdx * 7 + chordIdxInSection * 19 + i * 23) & 0xff) / 255;
             const vel = dynamicMid + (velH - 0.5) * (dynamicHi - dynamicLo) * 0.4;
             notes[i] = { ...n, velocity: Math.max(0.1, Math.min(1, vel * (n.velocity / 0.6))) };
         }

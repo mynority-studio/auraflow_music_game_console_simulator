@@ -215,18 +215,18 @@ export function generateAf2Melody(
         if (si < 0) continue;
         sectionChordCounts.set(si, (sectionChordCounts.get(si) ?? 0) + 1);
     }
-    // 再 assign idxInSection + progress
+    // 再 assign chordIdxInSection + progress
     for (const chord of chords) {
         const si = findSectionIdxForBeat(chord.startBeat, sections);
         if (si < 0) continue;
-        const idxInSection = sectionChordIdx.get(si) ?? 0;
-        sectionChordIdx.set(si, idxInSection + 1);
+        const chordIdxInSection = sectionChordIdx.get(si) ?? 0;
+        sectionChordIdx.set(si, chordIdxInSection + 1);
         const totalInSection = sectionChordCounts.get(si) ?? 1;
-        const progress = totalInSection > 1 ? idxInSection / (totalInSection - 1) : 0.5;
+        const progress = totalInSection > 1 ? chordIdxInSection / (totalInSection - 1) : 0.5;
         chordCtxs.push({
             chord, sectionIdx: si,
             sectionType: sections[si].sectionType,
-            chordIdxInSection: idxInSection, progress,
+            chordIdxInSection: chordIdxInSection, progress,
         });
     }
 

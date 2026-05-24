@@ -59,19 +59,8 @@ export interface SectionAssignment {
 }
 
 /**
- * Conductor 接口 — 实现方决定具体调度策略。
- */
-export interface Conductor {
-    dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment>;
-}
-
-// ============================================================
-// StaticConductor — 默认实现:全曲沿用相同 band(= 当前 forcedBand 行为)
-// ============================================================
-
-/**
  * BandRole → ConductorRole 默认 1:1 映射(slot 身份 → 演奏功能)。
- * Vocal slot 暂未映射(AF2 未实装 vocal)。
+ * DynamicConductor 默认 fallback 用。
  */
 function defaultRoleFor(slot: BandRole): ConductorRole | null {
     switch (slot) {
@@ -80,19 +69,8 @@ function defaultRoleFor(slot: BandRole): ConductorRole | null {
         case BandRole.Bass:       return 'bass';
         case BandRole.Drums:      return 'drums';
         case BandRole.Atmosphere: return 'pad';
-        case BandRole.Vocal:      return null;  // Phase 后期
+        case BandRole.Vocal:      return null;
         default:                  return null;
-    }
-}
-
-export class StaticConductor implements Conductor {
-    dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment> {
-        const frozenByMusician = buildDefaultByMusician(band);
-        // 全曲沿用同一份 assignment
-        return score.sections.map((_, idx) => ({
-            sectionIdx: idx,
-            byMusician: frozenByMusician,
-        }));
     }
 }
 
@@ -302,7 +280,7 @@ function energyLevelToK(energyLevel: number): number {
     return k < 0 ? 0 : k > 1 ? 1 : k;
 }
 
-export class DynamicConductor implements Conductor {
+export class DynamicConductor {
     private readonly template: ConductorTemplate;
 
     constructor(template?: ConductorTemplate) {
@@ -311,7 +289,6 @@ export class DynamicConductor implements Conductor {
 
     dispatch(score: Score, band: Band): ReadonlyArray<SectionAssignment> {
         const fullByMusician = buildDefaultByMusician(band);
-        // 构建 musicianId → Musician 反查表(用 Layer 3 sectionRolePreference)
         const musicianById = new Map<string, Musician>();
         for (const slot of Object.keys(band) as ReadonlyArray<BandRole>) {
             const m = band[slot];
@@ -319,45 +296,73 @@ export class DynamicConductor implements Conductor {
         }
 
         return score.sections.map((section, idx) => {
-            // 综合决策(B 升级):template ∩ energyOverride
-            const templateRoles = this.template[section.sectionType];
-            const energyRoles = energyConstrainedRoles(section.energyLevel ?? 5);
             const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
-
-            const sectionK = energyLevelToK(section.energyLevel ?? 5);
-            const sectionEnergyLevel = section.energyLevel ?? 5;
+            const ctx = sectionFilterContext(section, this.template);
             for (const [musicianId, roles] of fullByMusician) {
                 const musician = musicianById.get(musicianId);
-                const isApex = musician?.persona?.isApex === true;
-                const isHighEnergy = sectionEnergyLevel >= 7;
-
-                // (0) Persona wakeK gate — K < wakeK → 该段 musician sleeping
-                //     apex 例外:高 energy 段强制不睡(dominate high energy)
-                const wakeK = musician?.persona?.wakeK;
-                if (wakeK !== undefined && sectionK < wakeK && !(isApex && isHighEnergy)) continue;
-
-                let kept = roles as ReadonlyArray<ConductorRole>;
-                // (1) Style template filter
-                //     apex 例外:高 energy 段不过 template filter(apex predator 占场)
-                if (templateRoles && !(isApex && isHighEnergy)) {
-                    kept = kept.filter(r => templateRoles.has(r));
-                }
-                // (2) Energy-driven filter
-                //     apex 例外:高 energy 段不过 energy filter(等 template 已经允许)
-                if (!(isApex && isHighEnergy)) {
-                    kept = kept.filter(r => energyRoles.has(r));
-                }
-                // (3) Layer 3:musician 卡 sectionRolePreference INTERSECTION
-                //     即使 apex,musician 卡显式说"我这段不演" → 尊重(避免覆盖用户意图)
-                const musicianPref = musician?.af2Overrides?.sectionRolePreference?.[section.sectionType];
-                if (musicianPref !== undefined) {
-                    kept = kept.filter(r => musicianPref.has(r));
-                }
-                if (kept.length > 0) filtered.set(musicianId, Object.freeze([...kept]));
+                const kept = applyMusicianGates(roles, musician, section, ctx);
+                if (kept.length > 0) filtered.set(musicianId, Object.freeze(kept));
             }
             return { sectionIdx: idx, byMusician: filtered };
         });
     }
+}
+
+/** Section 级 filter 上下文(per-section 算 1 次,所有 musician 共享) */
+interface SectionFilterContext {
+    templateRoles: ReadonlySet<ConductorRole> | undefined;
+    energyRoles: ReadonlySet<ConductorRole>;
+    sectionK: number;
+    isHighEnergy: boolean;
+}
+
+function sectionFilterContext(section: SectionMetadata, template: ConductorTemplate): SectionFilterContext {
+    const energyLevel = section.energyLevel ?? 5;
+    return {
+        templateRoles: template[section.sectionType],
+        energyRoles: energyConstrainedRoles(energyLevel),
+        sectionK: energyLevelToK(energyLevel),
+        isHighEnergy: energyLevel >= 7,
+    };
+}
+
+/**
+ * 综合 5 层决策应用到单 musician:
+ *   (0) wakeK gate — K < wakeK 时 sleeping(apex 高能段例外)
+ *   (1) Style template filter(apex 高能段例外)
+ *   (2) Energy-driven filter(apex 高能段例外)
+ *   (3) musician.sectionRolePreference INTERSECTION(apex 也尊重)
+ *
+ * 返回:musician 在该 section 保留的 roles 列表(空数组 = 该段 silent)。
+ */
+function applyMusicianGates(
+    roles: ReadonlyArray<ConductorRole>,
+    musician: Musician | undefined,
+    section: SectionMetadata,
+    ctx: SectionFilterContext,
+): ConductorRole[] {
+    const isApex = musician?.persona?.isApex === true;
+    const apexException = isApex && ctx.isHighEnergy;
+
+    // (0) wakeK gate
+    const wakeK = musician?.persona?.wakeK;
+    if (wakeK !== undefined && ctx.sectionK < wakeK && !apexException) return [];
+
+    let kept: ConductorRole[] = [...roles];
+    // (1) Style template filter
+    if (ctx.templateRoles && !apexException) {
+        kept = kept.filter(r => ctx.templateRoles!.has(r));
+    }
+    // (2) Energy-driven filter
+    if (!apexException) {
+        kept = kept.filter(r => ctx.energyRoles.has(r));
+    }
+    // (3) musician sectionRolePreference INTERSECTION(apex 也尊重用户意图)
+    const musicianPref = musician?.af2Overrides?.sectionRolePreference?.[section.sectionType];
+    if (musicianPref !== undefined) {
+        kept = kept.filter(r => musicianPref.has(r));
+    }
+    return kept;
 }
 
 // ============================================================

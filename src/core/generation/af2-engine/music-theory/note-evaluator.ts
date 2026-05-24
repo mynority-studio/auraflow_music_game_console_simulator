@@ -179,6 +179,11 @@ export function rankCandidatePcs(
     isMinor: boolean = false,
     options?: { prevPc?: number; nextPc?: number },
 ): RankedPc[] {
+    // 性能优化:per-call 预算 chordTones + scaleTones 一次,4-6 candidates 共享
+    //   (原 evaluateNoteInContext 每 candidate 重新构造 Set,~6× 重复浪费)
+    const chordTones = getChordTonePcs(chordRootPc, quality);
+    const scaleTones = getKeyScalePcs(keyRootPc, isMinor);
+
     let goUp = false;
     let hasBias = false;
     if (options?.prevPc !== undefined && options?.nextPc !== undefined) {
@@ -187,7 +192,7 @@ export function rankCandidatePcs(
         hasBias = true;
     }
     const ranked: RankedPc[] = candidates.map(pc => {
-        const evaluation = evaluateNoteInContext(pc, chordRootPc, quality, keyRootPc, isMinor);
+        const evaluation = evaluateWithSets(pc, chordTones, scaleTones);
         let bias = 0;
         if (hasBias && options?.prevPc !== undefined) {
             const stepDir = ((pc - options.prevPc + 12) % 12);
@@ -198,4 +203,21 @@ export function rankCandidatePcs(
     });
     ranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
     return ranked;
+}
+
+/** Internal:预算 chord+scale Set 后的轻量评估(rankCandidatePcs 内部用) */
+function evaluateWithSets(
+    pitch: number,
+    chordTones: Set<number>,
+    scaleTones: Set<number>,
+): NoteEvaluation {
+    const pc = ((pitch % 12) + 12) % 12;
+    const distanceToChord = distanceToNearestChordTone(pc, chordTones);
+    const isDiatonic = scaleTones.has(pc);
+    let category: NoteCategory;
+    if (chordTones.has(pc)) category = NoteCategory.ChordTone;
+    else if (isDiatonic) category = NoteCategory.ScaleTone;
+    else if (distanceToChord === 1) category = NoteCategory.ChromaticPassing;
+    else category = NoteCategory.Avoid;
+    return { category, score: SCORE_BY_CATEGORY[category], distanceToChord, isDiatonic };
 }
