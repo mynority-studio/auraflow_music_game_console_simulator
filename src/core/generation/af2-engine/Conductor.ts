@@ -240,21 +240,30 @@ export class DynamicConductor implements Conductor {
             const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
 
             const sectionK = energyLevelToK(section.energyLevel ?? 5);
+            const sectionEnergyLevel = section.energyLevel ?? 5;
             for (const [musicianId, roles] of fullByMusician) {
                 const musician = musicianById.get(musicianId);
-                // (0) Persona wakeK gate(综合决策 C 升级)— K < wakeK → 该段 musician sleeping
-                //   alex_piano (wakeK 0.05) 几乎不睡 / frank_bass (0.30) 低 K Intro/Outro 睡
+                const isApex = musician?.persona?.isApex === true;
+                const isHighEnergy = sectionEnergyLevel >= 7;
+
+                // (0) Persona wakeK gate — K < wakeK → 该段 musician sleeping
+                //     apex 例外:高 energy 段强制不睡(dominate high energy)
                 const wakeK = musician?.persona?.wakeK;
-                if (wakeK !== undefined && sectionK < wakeK) continue;  // sleeping
+                if (wakeK !== undefined && sectionK < wakeK && !(isApex && isHighEnergy)) continue;
 
                 let kept = roles as ReadonlyArray<ConductorRole>;
                 // (1) Style template filter
-                if (templateRoles) kept = kept.filter(r => templateRoles.has(r));
-                // (2) Energy-driven filter(综合决策 B 升级)
-                //     低 energy section 强制减员,即使 template 允许;
-                //     高 energy 不额外限制(已 template-bound)
-                kept = kept.filter(r => energyRoles.has(r));
+                //     apex 例外:高 energy 段不过 template filter(apex predator 占场)
+                if (templateRoles && !(isApex && isHighEnergy)) {
+                    kept = kept.filter(r => templateRoles.has(r));
+                }
+                // (2) Energy-driven filter
+                //     apex 例外:高 energy 段不过 energy filter(等 template 已经允许)
+                if (!(isApex && isHighEnergy)) {
+                    kept = kept.filter(r => energyRoles.has(r));
+                }
                 // (3) Layer 3:musician 卡 sectionRolePreference INTERSECTION
+                //     即使 apex,musician 卡显式说"我这段不演" → 尊重(避免覆盖用户意图)
                 const musicianPref = musician?.af2Overrides?.sectionRolePreference?.[section.sectionType];
                 if (musicianPref !== undefined) {
                     kept = kept.filter(r => musicianPref.has(r));

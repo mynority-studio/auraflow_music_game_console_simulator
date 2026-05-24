@@ -304,6 +304,16 @@ const IV_BORROW_PROB: Record<MgStyle, number> = {
     RNB:   0.20,
 };
 
+// Sub-V tritone substitution(V → bII7,jazz 三全音替代)
+//   仅在 ii-V split 未触发时尝试(ii-V 优先,因更显)。
+//   JAZZ 最常用,RNB 偶尔,POP 极少,BLUES 不用(blues 走 dominant cycle)。
+const SUB_V_PROB: Record<MgStyle, number> = {
+    POP:   0.02,
+    JAZZ:  0.20,
+    BLUES: 0,
+    RNB:   0.10,
+};
+
 /**
  * Modal interchange / passing chord 注入。
  *
@@ -324,17 +334,25 @@ function augmentProgression(
 ): Af2AbstractStep[] {
     const iiVProb = II_V_INSERT_PROB[mgStyle];
     const ivProb = IV_BORROW_PROB[mgStyle];
+    const subVProb = SUB_V_PROB[mgStyle];
     const out: Af2AbstractStep[] = [];
 
     for (const step of progression) {
-        // Augmentation 1:ii-V split(在 V chord 上)
+        // Augmentation 1:ii-V split(在 V chord 上,优先级最高)
         if (step.rootOffset === 7 && rng.next() < iiVProb) {
             // V 的 jazz turnaround:前面 ii(rootOffset=2,m7),后面 V(原 type 不变)
             out.push({ roman: 'ii', type: 'm7', rootOffset: 2, scaleDegree: 2, beats: 2 });
             out.push({ ...step, beats: 2 });
             continue;
         }
-        // Augmentation 2:iv borrowing(在 IV chord 上)
+        // Augmentation 2:Sub-V tritone substitution(ii-V 未触发时,在 V chord 上)
+        //   V (rootOffset=7) → bII7 (rootOffset=1) — 与原 V 共享三全音(b7/3 互换)
+        //   产生半音下行 root motion(bII → I),色彩更暗
+        if (step.rootOffset === 7 && rng.next() < subVProb) {
+            out.push({ roman: 'bII7', type: '7', rootOffset: 1, scaleDegree: 2 });
+            continue;
+        }
+        // Augmentation 3:iv borrowing(在 IV chord 上)
         if (step.rootOffset === 5 && (step.type === 'maj' || step.type === 'maj7')
             && rng.next() < ivProb) {
             // IV → iv(minor 借和弦,modal interchange)
@@ -342,8 +360,7 @@ function augmentProgression(
             out.push({ ...step, roman: 'iv', type: borrowedType });
             continue;
         }
-        // 默认:原样保留(也要消耗 1 次 PRNG 保持 stream 对齐 — ii-V gate 已走过,
-        // iv gate 在 rootOffset!=7 / type!=maj 时不走,统一处理)
+        // 默认:原样保留
         out.push({ ...step });
     }
     return out;
