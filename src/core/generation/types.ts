@@ -671,10 +671,8 @@ export interface GeneratedTrack {
     /**
      * @deprecated 2026-05-21 Channel 重构后弃用。
      *   原本控制 AbsoluteTransposer 是否按 pitch<48 切 pianoLH/RH。
-     *   现在 LH/RH 通道已删,accompaniment 永远整体进 accomp channel,本字段被忽略。
-     *   字段保留只是为了不破坏现有 callsite 编译;未来 commit 全清后可删。
+     *   2026-05-24 删 MG audio + LH/RH 通道后字段已无消费者。
      */
-    skipHandSplit?: boolean;
 }
 
 export type InstrumentRole =

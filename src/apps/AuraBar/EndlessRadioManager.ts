@@ -2,7 +2,7 @@ import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
 import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
-import { MelodyEngine } from '../../core/generation/MelodyEngine';
+// MelodyEngine 已删(2026-05-24)
 import { runPipeline } from '../../core/generation/pipeline';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
@@ -405,8 +405,6 @@ export class EndlessRadioManager {
   }
 
   private async playTrack(track: GeneratedTrack, context: MusicContext, style: StyleConfig, genId: number) {
-    const melodyEngine = new MelodyEngine();
-    
     this.currentTrack = track;
     this.currentStyle = style;
 
@@ -414,7 +412,7 @@ export class EndlessRadioManager {
       this.onStyleChange(style.name);
     }
 
-    await AudioEngine.playSong(track, style.id, context, melodyEngine);
+    await AudioEngine.playSong(track, style.id, context);
     
     if (genId !== this.generationId) return;
     

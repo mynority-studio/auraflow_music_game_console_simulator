@@ -5,7 +5,7 @@ import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
 import { PartName } from '../core/audio/PlaybackEngine';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
 import { PRNGManager } from '../core/utils/PRNG';
-import { MelodyEngine } from '../core/generation/MelodyEngine';
+// MelodyEngine 已删(2026-05-24)
 import { runPipeline } from '../core/generation/pipeline';
 import {
     ArrangedTrack,
@@ -281,8 +281,7 @@ export const PipelineMonitor: React.FC = () => {
             if (activeSeedRef.current !== seed) return;
 
             const styleId = context.style?.id ?? StyleId.ModernPop;
-            const melodyEngine = new MelodyEngine();
-            await AudioEngine.playSong(track, styleId, context, melodyEngine);
+            await AudioEngine.playSong(track, styleId, context);
             reapplyMutes();
             setPlayState('PLAYING');
 

@@ -2,7 +2,7 @@ import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
 import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
-import { MelodyEngine } from '../../core/generation/MelodyEngine';
+// MelodyEngine 已删(2026-05-24)— Apps 直接 import runPipeline,AudioEngine.playSong 不再需 generator 参数
 import { runPipeline } from '../../core/generation/pipeline';
 import { BandSelectionStore } from '../../state/BandSelectionStore';
 import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from '../../core/generation/types';
@@ -133,7 +133,6 @@ export class JamSessionManager {
             PRNGManager.recordSnapshot('A');
 
             const scaleState = this.scaleEngine.getState();
-            const melodyEngine = new MelodyEngine();
 
             // 🌟 关键：用户录制的是绝对 MIDI 音高（如 Bb3=58），
             // 但生成管道在 C-相对空间工作，最后 AbsoluteTransposer.applyOffset 会加 keyOffset。
@@ -178,7 +177,7 @@ export class JamSessionManager {
             this.currentTrack = rawTrack.track;
             this.currentStyle = style;
 
-            await AudioEngine.playSong(rawTrack.track, style.id, rawTrack.context, melodyEngine);
+            await AudioEngine.playSong(rawTrack.track, style.id, rawTrack.context);
 
             if (currentGenId !== this.generationId) return;
             this.setState('PLAYING');
