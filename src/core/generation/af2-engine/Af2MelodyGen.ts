@@ -25,9 +25,10 @@
 
 import type { NoteData, SectionMetadata } from '../types';
 import type { GeneratedChord } from '../ir';
-import { ChordQuality, SectionType } from '../types';
+import { ChordQuality, SectionType, Tonality } from '../types';
 import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
+import { rankCandidatePcs } from './music-theory/note-evaluator';
 
 const MELODY_DEFAULT_VELOCITY = 0.72;
 
@@ -187,13 +188,36 @@ function phraseContourBias(sectionType: SectionType, progress: number): number {
 // Passing tone(slot duration < 1 beat 时 50% 概率换为 chromatic passing)
 // ============================================================
 
-function pickPassingPc(prevPc: number, nextPc: number): number {
-    // chromatic step toward nextPc
-    const fwdDist = ((nextPc - prevPc + 12) % 12);
-    if (fwdDist === 0) return prevPc;  // same — no passing meaningful
-    return fwdDist <= 6
-        ? (prevPc + 1) % 12
-        : (prevPc - 1 + 12) % 12;
+/**
+ * Evaluator-driven passing pc selection(v1.2 升级)。
+ *
+ * 候选集:prev 的 ±1 / ±2 半音邻(4 个)。用 note-evaluator 打分:
+ *   - 最高分 = diatonic ScaleTone(0.85 = 0.70 + 0.15 direction bias)
+ *   - 次高 = ChromaticPassing(0.65)
+ *   - 末尾 = Avoid 类非调音
+ *
+ * 方向偏好(direction bias):候选 step 方向与 prev→next 一致时 +0.15 分,
+ *   倾向"顺势"过渡。
+ */
+function pickBestPassingPc(
+    prevPc: number,
+    nextPc: number,
+    chord: GeneratedChord,
+    keyRootPc: number,
+    isMinor: boolean,
+): number {
+    if (((nextPc - prevPc + 12) % 12) === 0) return prevPc;
+    const candidates = [
+        (prevPc + 1) % 12,
+        (prevPc - 1 + 12) % 12,
+        (prevPc + 2) % 12,
+        (prevPc - 2 + 12) % 12,
+    ];
+    const ranked = rankCandidatePcs(
+        candidates, chord.root, chord.quality, keyRootPc, isMinor,
+        { prevPc, nextPc },
+    );
+    return ranked[0].pc;
 }
 
 /**
@@ -236,6 +260,12 @@ export function generateAf2Melody(
     const dynamicLo = (persona?.dynamicRange?.[0] ?? 72) / 127;
     const dynamicHi = (persona?.dynamicRange?.[1] ?? 110) / 127;
     const velocityBase = (dynamicLo + dynamicHi) / 2;
+
+    // v1.2:Key 信息给 note-evaluator(passing tone 的 diatonic 偏好)
+    //   keyOffset 是 RELATIVE(0-11),Composer 用同样的方式建 voicing
+    //   tonality:Major=0 / Minor=1,其他模式 fallback 到 Major(MVP)
+    const keyRootPc = ((input.score.keyOffset % 12) + 12) % 12;
+    const isMinor = input.score.tonality === Tonality.Minor;
 
     // 预处理:每 chord 标注 sectionIdx + chordIdxInSection + section progress
     interface ChordCtx {
@@ -325,8 +355,8 @@ export function generateAf2Melody(
             const nextCyclePc = cyclePcs[cycleIdx % cyclePcs.length];
             let pc: number;
             if (isShortSlot && prevPc >= 0 && passingToneGate(sectionIdx, chordIdxInSection, s)) {
-                // Passing tone:不动 cycleIdx,prevPc → nextCyclePc 之间 chromatic 邻
-                pc = pickPassingPc(prevPc, nextCyclePc);
+                // Passing tone(v1.2):evaluator-driven 选 diatonic-aware 邻音
+                pc = pickBestPassingPc(prevPc, nextCyclePc, chord, keyRootPc, isMinor);
             } else {
                 pc = nextCyclePc;
                 cycleIdx++;

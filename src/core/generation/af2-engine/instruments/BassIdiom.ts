@@ -14,7 +14,7 @@
 //
 // 算法选择由 musician 卡 persona 决定:
 //   frank_bass  walkPatternId = 1 (HalfNote)    → AF2 自家 walking
-//   maya_slap_bass walkPatternId = 4 (LatinTumbao) → AF2 自家 walking
+//   未来 slap musician 用 walkPatternId = 4 (LatinTumbao) → AF2 自家 walking
 //   其他 musician 未设 → mg pass-through
 //
 // 与 mg.generateArrangement 关系:

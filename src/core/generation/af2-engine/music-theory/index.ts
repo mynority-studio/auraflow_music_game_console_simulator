@@ -36,3 +36,4 @@ export * from './tension-state';
 export * from './audit';
 export * from './cadence';
 export * from './spell';
+export * from './note-evaluator';
