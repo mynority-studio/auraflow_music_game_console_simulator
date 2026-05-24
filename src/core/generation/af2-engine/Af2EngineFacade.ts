@@ -48,6 +48,7 @@ import { bandRoleToTrackKeys } from '../data/GMSoundMap';
 import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
 import { Af2KernelDriver } from './Af2KernelDriver';
+import { KEYS } from './music-theory/spell';
 import { SectionPlanner } from './SectionPlanner';
 import { SectionMapper } from './SectionMapper';
 import { SlotRouter } from './SlotRouter';
@@ -103,7 +104,14 @@ export const Af2EngineFacade = {
             }
             return EngineSelectionStore.getMgStyle();
         })();
-        const key = 'C';
+
+        // K 阶段(2026-05-24):PRNG-driven keyOffset 替代硬编 'C'。
+        // forked stream `${seed}::key` 独立 — planner 不 fire 时主 rng 流稳定。
+        // Tonality 暂保持 Major(Arranger 进行池仍是 Major 偏向,Minor 待后续扩)。
+        const keyRng = new Random(`af2_key_${auraflowSeed >>> 0}`);
+        const keyOffset = keyRng.range(0, 11);
+        const key = KEYS[keyOffset];
+        const tonality = Tonality.Major;
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)
@@ -145,8 +153,8 @@ export const Af2EngineFacade = {
             sections,
             bpm: mg.bpm,
             key,
-            keyOffset: 0,
-            tonality: Tonality.Major,
+            keyOffset,
+            tonality,
             timeSignature: [4, 4],
         };
         const band: Band = {
@@ -336,8 +344,8 @@ export const Af2EngineFacade = {
             sections,
             bpm: mg.bpm,
             key,
-            keyOffset: 0,
-            tonality: Tonality.Major,
+            keyOffset,
+            tonality,
             timeSignature: [4, 4],
             blockIndex: 0,
             absoluteStartBeat: 0,
@@ -392,8 +400,8 @@ export const Af2EngineFacade = {
         }
 
         const context: MusicContext = {
-            keyOffset: 0,
-            tonality: Tonality.Major,
+            keyOffset,
+            tonality,
             bpm: mg.bpm,
             timeSignature: [4, 4],
             grooveDNA: [],
