@@ -27,6 +27,13 @@
 //
 // Strike 时如果 voicing 内有 LH+RH 双簇,加 micro strum(< 18ms 总跨度,
 // 跟 AF2 MicroTimingHumanizer 一致避 fake crescendo)。
+//
+// Sustain pedal 模拟(2026-05-25 加):
+//   钢琴 ballad / arp 演奏经典是踩 sustain pedal,每 strike 持续到 chord 切换。
+//   AudioEngine 不支持 MIDI CC64 pedal signal,所以靠 NoteData.duration 模拟:
+//   每个 X / U / D / B emit 的音 duration = (chord 末 - 本音 onset) * 0.95
+//   而非 token 自带的 dur * 0.95。这样 strike 之间自然叠加(模拟 pedal sustain)。
+//   注:同 chord 内 cluster 越叠越多可能糊,但这是钢琴 lush 感的真实原因。
 // ============================================================
 
 import { parseDurationBeats } from './duration-parser';
@@ -72,20 +79,21 @@ export function applyChordPattern(
       if (dur <= 0) continue;
       if (cursor >= chordBeats) break;  // 越界跳出
       const onset = startBeat + cursor;
-      const dropDur = Math.min(dur, chordBeats - cursor) * 0.95;
-      emitStrike(out, voicing, onset, dropDur, velocity);
+      // sustain pedal 模拟:strike 持续到 chord 末(不是只 X4 自己 dur)
+      const sustainDur = (chordBeats - cursor) * 0.95;
+      emitStrike(out, voicing, onset, sustainDur, velocity);
       cursor += dur;
       continue;
     }
     if (ch === 'U' || ch === 'D') {
-      // arp Up / Down — 逐音 emit,每音占 dur/N
+      // arp Up / Down — 逐音 emit,每音 onset 间隔 stepDur,每音 sustain 到 chord 末
       const dur = parseDurationBeats(raw.slice(1));
       if (dur <= 0) continue;
       if (cursor >= chordBeats) break;
       const onset = startBeat + cursor;
       const dropDur = Math.min(dur, chordBeats - cursor);
       const seq = ch === 'U' ? voicing : voicing.slice().reverse();
-      emitArp(out, seq, onset, dropDur, velocity);
+      emitArp(out, seq, onset, dropDur, velocity, chordBeats, cursor);
       cursor += dur;
       continue;
     }
@@ -96,7 +104,7 @@ export function applyChordPattern(
       if (cursor >= chordBeats) break;
       const onset = startBeat + cursor;
       const dropDur = Math.min(dur, chordBeats - cursor);
-      emitBrokenPair(out, voicing, onset, dropDur, velocity);
+      emitBrokenPair(out, voicing, onset, dropDur, velocity, chordBeats, cursor);
       cursor += dur;
       continue;
     }
@@ -106,7 +114,8 @@ export function applyChordPattern(
 }
 
 /**
- * Arp 逐音 emit — 每音占 dur/N(N=voicing.length),音持续 stepDur*0.9。
+ * Arp 逐音 emit — 每音占 dur/N(N=voicing.length),onset 间隔 stepDur。
+ * sustain pedal 模拟:每音 sustain 到 chord 末(不是只 stepDur)。
  */
 function emitArp(
   out: NoteEvent[],
@@ -114,15 +123,21 @@ function emitArp(
   onset: number,
   duration: number,
   velocity: number,
+  chordBeats: number,
+  cursorAtArp: number,
 ): void {
   const n = seq.length;
   if (n === 0) return;
   const stepDur = duration / n;
   for (let i = 0; i < n; i++) {
+    const noteOnset = onset + i * stepDur;
+    const noteCursor = cursorAtArp + i * stepDur;
+    // sustain 到 chord 末(模拟 pedal)
+    const sustainDur = (chordBeats - noteCursor) * 0.95;
     out.push({
       pitch: seq[i]!,
-      onset: onset + i * stepDur,
-      duration: stepDur * 0.9,
+      onset: noteOnset,
+      duration: sustainDur,
       velocity,
       part: 'accomp',
     });
@@ -132,6 +147,7 @@ function emitArp(
 /**
  * Broken pair — voicing 升序拆中点:lower 半 strike @ onset / upper 半 strike @ onset + halfDur。
  * 每簇内部仍 micro-strum(< 18ms cap)。
+ * sustain pedal 模拟:lower / upper 都 sustain 到 chord 末。
  */
 function emitBrokenPair(
   out: NoteEvent[],
@@ -139,15 +155,21 @@ function emitBrokenPair(
   onset: number,
   duration: number,
   velocity: number,
+  chordBeats: number,
+  cursorAtBroken: number,
 ): void {
   if (voicing.length === 0) return;
   const halfDur = duration / 2;
   const mid = Math.ceil(voicing.length / 2);
   const lower = voicing.slice(0, mid);
   const upper = voicing.slice(mid);
-  emitStrike(out, lower, onset, halfDur * 0.9, velocity);
+  // lower 簇 sustain 到 chord 末
+  const lowerSustain = (chordBeats - cursorAtBroken) * 0.95;
+  emitStrike(out, lower, onset, lowerSustain, velocity);
   if (upper.length > 0) {
-    emitStrike(out, upper, onset + halfDur, halfDur * 0.9, velocity);
+    // upper 簇 sustain 到 chord 末(从 upper onset 算)
+    const upperSustain = (chordBeats - (cursorAtBroken + halfDur)) * 0.95;
+    emitStrike(out, upper, onset + halfDur, upperSustain, velocity);
   }
 }
 
