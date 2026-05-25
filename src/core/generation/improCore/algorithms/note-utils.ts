@@ -130,3 +130,47 @@ export function placeNearMidi(pc: number, prevMidi: number, lo: number, hi: numb
   if (best > hi) best = hi;
   return best;
 }
+
+/**
+ * 同 placeNearMidi 但加 **低区偏好** — bass 专用(避免飘到高区)。
+ * 算法:
+ *   1. 枚举 [lo, hi] 内所有 pc 同 octave 候选
+ *   2. 给每个候选打 cost = |distance from prevMidi| + (octave 越高,额外 octavePenalty)
+ *   3. 选 cost 最小
+ *
+ * octavePenalty 让 prevMidi 上方候选 vs 下方候选 同距离时偏好下方。
+ *
+ * 例:pc=0 (C), prevMidi=55, lo=43, hi=60
+ *   候选:48 (C3) 距 7,60 (C4) 距 5
+ *   placeNearMidi:选 60 (近)
+ *   placeBassMidi:cost(48)=7+0=7,cost(60)=5+3=8 → 选 48 (C3,低区)
+ */
+export function placeBassMidi(
+  pc: number,
+  prevMidi: number,
+  lo: number,
+  hi: number,
+  octavePenalty: number = 3,
+): number {
+  const pcMod = ((pc % 12) + 12) % 12;
+  const candidates: number[] = [];
+  for (let m = pcMod; m < 128; m += 12) {
+    if (m >= lo && m <= hi) candidates.push(m);
+  }
+  if (candidates.length === 0) {
+    // 区间无 pc 可放 — fallback clamp 到边界
+    return Math.max(lo, Math.min(hi, pcMod + Math.round((prevMidi - pcMod) / 12) * 12));
+  }
+  let best = candidates[0]!;
+  let bestCost = Infinity;
+  for (const m of candidates) {
+    const dist = Math.abs(m - prevMidi);
+    const penalty = m > prevMidi ? octavePenalty : 0;
+    const cost = dist + penalty;
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = m;
+    }
+  }
+  return best;
+}

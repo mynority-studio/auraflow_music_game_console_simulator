@@ -33,7 +33,7 @@
 
 import type { Random } from '../../af2-engine/utils/Random';
 import { parseDurationBeats } from './duration-parser';
-import { placeNearMidi } from './note-utils';
+import { placeBassMidi } from './note-utils';
 import type { NoteEvent } from './chord-pattern';
 
 const DEFAULT_VELOCITY = 95;
@@ -121,7 +121,7 @@ export function applyBassPattern(
       directionBias = 0;
       continue;
     }
-    const midi = placeNearMidi(pc, prevMidi, bassLowMidi, bassHighMidi);
+    const midi = placeBassMidi(pc, prevMidi, bassLowMidi, bassHighMidi);
     out.push({
       pitch: midi,
       onset: startBeat + cursor,

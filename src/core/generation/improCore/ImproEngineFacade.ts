@@ -204,12 +204,19 @@ export const ImproEngineFacade = {
         const drumEvents: NoteEvent[] = [];
 
         // 物理音域(从 style 读 — note name → MIDI)
-        const bassLowMidi = parseNoteName(style.bassLow) ?? 36;
-        const bassHighMidi = parseNoteName(style.bassHigh) ?? 60;
+        // .sty bass-high 经常偏高(ballad 的 'c' = MIDI 60 = C4),用户感觉"bass 飘高音区"。
+        // hardcode cap 到 C3 (48) 让 bass 留在 [bassLow, C3] 真实电贝斯/钢琴 LH 音域内。
+        const bassLowRaw = parseNoteName(style.bassLow) ?? 36;
+        const bassHighRaw = parseNoteName(style.bassHigh) ?? 60;
+        const bassLowMidi = bassLowRaw;
+        const bassHighMidi = Math.min(bassHighRaw, 50);  // cap D3 (50) — bass 不上中音区
 
         let prevVoicing: number[] = [];
         let prevLhLow = settings.lhLowerLimit;
-        let prevBassMidi = bassLowMidi + 12;
+        // 初始 bass anchor:用 style.bassBase(ballad C2 = 36)clamp 到 range,
+        // 取代原 bassLow+12(总在 G3 偏高位置导致 voice leading 飘高)
+        const bassBaseRaw = parseNoteName(style.bassBase) ?? bassLowMidi;
+        let prevBassMidi = Math.max(bassLowMidi, Math.min(bassHighMidi, bassBaseRaw));
         const enrichedChords: GeneratedChord[] = [];
 
         for (let ci = 0; ci < stepsWithTime.length; ci++) {
