@@ -403,27 +403,34 @@ function duckByMelodyDensity(
 }
 
 // ============================================================
-// Z1 阶段:Per-mgStyle accomp swing(8th 摆动)
+// Z1 + Z1b 阶段:Per-mgStyle accomp swing(精确化 — 只 swing 直拍 8th and)
 // ============================================================
 //
-// post-pass 重映射 onset 让 8th off-beat 推后,跟 Y 阶段 drum swing 同 ratio。
+// Z1 初版本:linear 重映射所有 onset within beat [0, 1) — 但 family 内部
+// 很多 onset 已经 pre-swung(JazzCharleston 1.66 / ShuffleChop 0.66 /
+// Triplet 0.33/0.66 / Bossa clave 0.5/1.5/3.5),会造成 double-swing 错位。
+//
+// Z1b 精确化:**只 swing 直拍 8th and 位置**(within ≈ 0.5,容差 0.05)。
+// 其他位置(triplet 0.33/0.66 / 16th 0.25/0.75 / pre-swung 0.66 等)不动。
+//
+// 这样:
+//   PopAnthem 8th pulse at 0.5  → 0.66 ✓(POP swing=0.5 不变)
+//   JazzCharleston at 1.66      → 1.66 不动 ✓(已 pre-swung)
+//   Triplet at 0.33/0.66        → 不动 ✓(12/8 律动保 invariant)
+//   Chicago_Shuffle at 0.66     → 不动 ✓(已 pre-swung)
+//   Bossa clave at 0.5/1.5/3.5  → swing 到 0.66/1.66/3.66
+//                                  (实际 Bossa 在 JAZZ pool,轻 swing 不破)
+//   16th positions(0.25/0.75)→ 不动 ✓
 //
 // SWING_RATIO_BY_STYLE:
-//   POP/RNB 0.50 — 直拍(identity 映射,onset 不变)
-//   JAZZ    0.66 — triplet swing(8th 第二个推到 0.66 拍)
-//   BLUES   0.66 — shuffle(同 jazz)
-//
-// onset within beat x ∈ [0, 1):
-//   x ∈ [0, 0.5)  → r × x × 2          linear map [0, 0.5) → [0, r)
-//   x ∈ [0.5, 1) → r + (1-r)(x-0.5)×2  linear map [0.5, 1) → [r, 1)
-//
-// swing=0.5 → identity(POP/RNB bit-identical)
-// swing=0.66 → x=0.5 映射到 0.66(8th and 推后)
+//   POP/RNB 0.50 — 直拍(identity 触发条件,函数提前 return)
+//   JAZZ    0.66 — triplet swing
+//   BLUES   0.66 — shuffle
 //
 // 工程:
 //   - deterministic 0 PRNG
-//   - 跟 family 内部已固定 onset 不冲突(只重映射,不重排)
-//   - 跟 micro-timing 协同:swing 先做改 cluster 主位,micro-timing 后做加 strum
+//   - 容差 0.05 让 micro-timing 4ms 滚奏不会触发(0.008 << 0.05)
+//   - swing 优先于 micro-timing 跑 → cluster 主位移后再加 strum delay
 // ============================================================
 
 const ACCOMP_SWING_BY_STYLE: Record<MgStyle, number> = {
@@ -433,10 +440,7 @@ const ACCOMP_SWING_BY_STYLE: Record<MgStyle, number> = {
     RNB:   0.50,
 };
 
-function swingMapWithinBeat(x: number, swingRatio: number): number {
-    if (x < 0.5) return swingRatio * x * 2;
-    return swingRatio + (1 - swingRatio) * (x - 0.5) * 2;
-}
+const SWING_TRIGGER_TOLERANCE = 0.05;  // within ≈ 0.5 容差(避免触发 16th / triplet 位置)
 
 function applySwing(notes: NoteData[], mgStyle: MgStyle): void {
     const swing = ACCOMP_SWING_BY_STYLE[mgStyle] ?? 0.5;
@@ -445,8 +449,11 @@ function applySwing(notes: NoteData[], mgStyle: MgStyle): void {
         const n = notes[i];
         const beatBase = Math.floor(n.onset);
         const within = n.onset - beatBase;
-        const swungWithin = swingMapWithinBeat(within, swing);
-        notes[i] = { ...n, onset: beatBase + swungWithin };
+        // Z1b:只 swing 直拍 8th and 位置(within ≈ 0.5),其他不动
+        // (避免 double-swing pre-swung family onset 如 charleston 0.66 / triplet 0.33)
+        if (Math.abs(within - 0.5) < SWING_TRIGGER_TOLERANCE) {
+            notes[i] = { ...n, onset: beatBase + swing };
+        }
     }
 }
 
