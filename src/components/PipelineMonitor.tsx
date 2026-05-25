@@ -24,6 +24,7 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
+import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -142,6 +143,11 @@ export const PipelineMonitor: React.FC = () => {
         arranged: null, context: null, beat: 0, seed: 0,
     });
     const [seedInput, setSeedInput] = useState('42');
+    const [engine, setEngineState] = useState<EngineId>(() => EngineSelectionStore.getEngine());
+    const switchEngine = useCallback((next: EngineId) => {
+        EngineSelectionStore.setEngine(next);
+        setEngineState(next);
+    }, []);
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
@@ -380,14 +386,31 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* AF2 引擎指示(2026-05-25 POP-only,style 选择 UI 已移除) */}
+            {/* Engine toggle — AF2 / Impro 切换(2026-05-25 加,共识 1-4 已达成) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <span className="px-3 py-1 bg-orange-500/80 text-white text-[10px] font-bold tracking-wider uppercase rounded shadow-[0_0_8px_rgba(249,115,22,0.5)]">
-                    AF2 · POP
-                </span>
+                <button
+                    onClick={() => switchEngine('AF2')}
+                    className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase rounded transition-all ${
+                        engine === 'AF2'
+                            ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    }`}
+                >
+                    AF2
+                </button>
+                <button
+                    onClick={() => switchEngine('Impro')}
+                    className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase rounded transition-all ${
+                        engine === 'Impro'
+                            ? 'bg-cyan-500/80 text-white shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    }`}
+                >
+                    Impro
+                </button>
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
-                    POP-only · 5 slots active (no vocal)
+                    {engine === 'AF2' ? 'POP-only · 5 slots active (no vocal)' : 'piano LH+RH + bass + drums (no melody)'}
                 </span>
             </div>
 

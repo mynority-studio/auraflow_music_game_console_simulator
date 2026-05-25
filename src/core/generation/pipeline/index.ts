@@ -17,6 +17,8 @@
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { Af2EngineFacade } from '../af2-engine/Af2EngineFacade';
+import { ImproEngineFacade } from '../improCore/ImproEngineFacade';
+import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -33,5 +35,9 @@ export interface PipelineRunOptions {
 export function runPipeline(
     options: PipelineRunOptions = {},
 ): { track: GeneratedTrack; context: MusicContext } {
+    const engine = EngineSelectionStore.getEngine();
+    if (engine === 'Impro') {
+        return ImproEngineFacade.generate(options);
+    }
     return Af2EngineFacade.generate(options);
 }
