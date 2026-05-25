@@ -304,6 +304,7 @@ export function generateAf2Accomp(
 
         // 调用 ChordTextureEngine,只取 accomp(bass 走 BassIdiom)
         // N6:传 melodyEvents 给 cross-track family(CallAndResponse 等)
+        // 注:NoteEvent (melody local) — 这里 events 是当前 chord 的 accomp output
         const events = ChordTextureEngine.applyByTextureType(
             textureType, chordDef, nextChordDef,
             chord.startBeat, chordDef.duration, chordRng,
@@ -325,5 +326,67 @@ export function generateAf2Accomp(
             });
         }
     }
-    return out;
+
+    // T 阶段(2026-05-25):Melody-aware density ducking post-pass
+    // melody 密时 accomp 让空间,melody 稀时 accomp 填空隙(对话感)
+    return duckByMelodyDensity(out, input.melodyPeerNotes);
+}
+
+// ============================================================
+// T 阶段:Melody-aware density ducking
+// ============================================================
+//
+// 扫每个 accomp note onset,在 ±DUCK_WINDOW 内统计 melody onset 数:
+//   countNear >= HIGH_DENSITY_THRESHOLD (=2)  → velocity × DUCK_RATIO (0.6)
+//   countNear === 0                            → velocity × FILL_BOOST (1.15)
+//   1 个 melody onset(中间密度)              → 不动
+//
+// 听感效果(用户讨论的"频率避让" + "空隙填补"):
+//   主唱长音 / 休止 → accomp 增亮(填补听觉空白)
+//   主唱密集 16th   → accomp 退后(让 melody 突出)
+//   产生"melody 主导 → accomp 应答"的对话感
+//
+// 性能:O(N_accomp × N_melody),典型 ~200 × ~100 = 20k 操作 < 5ms。
+// PRNG:0(deterministic scale)。
+// ============================================================
+
+const DUCK_WINDOW = 0.2;              // ± beat window
+const HIGH_DENSITY_THRESHOLD = 2;     // melody onset 数 >= 此值 = 高密度
+const DUCK_RATIO = 0.6;               // 高密度时 accomp velocity 缩放
+const FILL_BOOST = 1.15;              // melody 空时 accomp velocity 增强
+
+function duckByMelodyDensity(
+    accompNotes: NoteData[],
+    melodyNotes: ReadonlyArray<NoteData> | undefined,
+): NoteData[] {
+    if (!melodyNotes || melodyNotes.length === 0) return accompNotes;
+    // 预排序 melody 按 onset(已经基本有序但保险一遍)
+    const sortedMelody = melodyNotes.slice().sort((a, b) => a.onset - b.onset);
+
+    for (let i = 0; i < accompNotes.length; i++) {
+        const note = accompNotes[i];
+        // 统计同窗口 melody onset 数
+        let countNear = 0;
+        for (const m of sortedMelody) {
+            if (m.onset < note.onset - DUCK_WINDOW) continue;
+            if (m.onset > note.onset + DUCK_WINDOW) break;
+            countNear++;
+            if (countNear >= HIGH_DENSITY_THRESHOLD) break;  // 早退,够判定即可
+        }
+        if (countNear >= HIGH_DENSITY_THRESHOLD) {
+            // 高密度 — accomp 让位
+            accompNotes[i] = {
+                ...note,
+                velocity: Math.max(0.1, note.velocity * DUCK_RATIO),
+            };
+        } else if (countNear === 0) {
+            // 空白 — accomp 填补
+            accompNotes[i] = {
+                ...note,
+                velocity: Math.min(1, note.velocity * FILL_BOOST),
+            };
+        }
+        // countNear === 1 (中间密度) → 不动,保持平衡
+    }
+    return accompNotes;
 }
