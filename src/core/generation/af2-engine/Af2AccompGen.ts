@@ -331,9 +331,14 @@ export function generateAf2Accomp(
     // melody 密时 accomp 让空间,melody 稀时 accomp 填空隙(对话感)
     duckByMelodyDensity(out, input.melodyPeerNotes);
 
+    // Z1 阶段(2026-05-25):per-mgStyle swing post-pass
+    // JAZZ/BLUES swing 8th 摆动 — 跟 Y 阶段 drum swing 同 ratio,律动同步
+    applySwing(out, mgStyle);
+
     // U 阶段(2026-05-25):Micro-timing humanization
     // 同 onset chord cluster 按 pitch 升序加递增 delay,模拟人手"先按低音再按高音"
     // 的滚奏感(strum-like)。deterministic 0 PRNG。
+    // 注:在 swing 之后跑,这样 strum 在 swing 之后的最终 onset 位置生效。
     applyMicroTiming(out);
 
     return out;
@@ -394,6 +399,54 @@ function duckByMelodyDensity(
             };
         }
         // countNear === 1 (中间密度) → 不动,保持平衡
+    }
+}
+
+// ============================================================
+// Z1 阶段:Per-mgStyle accomp swing(8th 摆动)
+// ============================================================
+//
+// post-pass 重映射 onset 让 8th off-beat 推后,跟 Y 阶段 drum swing 同 ratio。
+//
+// SWING_RATIO_BY_STYLE:
+//   POP/RNB 0.50 — 直拍(identity 映射,onset 不变)
+//   JAZZ    0.66 — triplet swing(8th 第二个推到 0.66 拍)
+//   BLUES   0.66 — shuffle(同 jazz)
+//
+// onset within beat x ∈ [0, 1):
+//   x ∈ [0, 0.5)  → r × x × 2          linear map [0, 0.5) → [0, r)
+//   x ∈ [0.5, 1) → r + (1-r)(x-0.5)×2  linear map [0.5, 1) → [r, 1)
+//
+// swing=0.5 → identity(POP/RNB bit-identical)
+// swing=0.66 → x=0.5 映射到 0.66(8th and 推后)
+//
+// 工程:
+//   - deterministic 0 PRNG
+//   - 跟 family 内部已固定 onset 不冲突(只重映射,不重排)
+//   - 跟 micro-timing 协同:swing 先做改 cluster 主位,micro-timing 后做加 strum
+// ============================================================
+
+const ACCOMP_SWING_BY_STYLE: Record<MgStyle, number> = {
+    POP:   0.50,
+    JAZZ:  0.66,
+    BLUES: 0.66,
+    RNB:   0.50,
+};
+
+function swingMapWithinBeat(x: number, swingRatio: number): number {
+    if (x < 0.5) return swingRatio * x * 2;
+    return swingRatio + (1 - swingRatio) * (x - 0.5) * 2;
+}
+
+function applySwing(notes: NoteData[], mgStyle: MgStyle): void {
+    const swing = ACCOMP_SWING_BY_STYLE[mgStyle] ?? 0.5;
+    if (Math.abs(swing - 0.5) < 1e-6) return;  // 直拍无变化,跳过
+    for (let i = 0; i < notes.length; i++) {
+        const n = notes[i];
+        const beatBase = Math.floor(n.onset);
+        const within = n.onset - beatBase;
+        const swungWithin = swingMapWithinBeat(within, swing);
+        notes[i] = { ...n, onset: beatBase + swungWithin };
     }
 }
 
