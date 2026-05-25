@@ -29,6 +29,7 @@ import { BandRole, SectionType } from '../../types';
 // C.3 → C.4:MusicianPlanInput 共享协议 + per-section role 查询
 import type { MusicianPlanInput } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
+import { hashApplyPersonaPass } from '../utils/hash-utils';
 
 /** Pad 物理参数 */
 export const PAD_INSTRUMENT_SPEC = {
@@ -78,7 +79,7 @@ function pickSliceMode(
     const h = (chordIdxInSection * 11 + (sectionType as number) * 13) & 0xff;
     let pick = pool[h % pool.length];
     // Persona 加权:colorBias 高 → 偏 HighPad / sparsity 高 → 偏 LowCluster
-    const h2 = ((h * 31 + 17) & 0xff) / 255;
+    const h2 = hashApplyPersonaPass(h);
     if (h2 < sparsity * 0.5) pick = PadSliceMode.LowCluster;
     else if (h2 < sparsity * 0.5 + colorBias * 0.4) pick = PadSliceMode.HighPad;
     return pick;

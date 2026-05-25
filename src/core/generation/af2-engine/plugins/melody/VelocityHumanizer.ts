@@ -12,6 +12,7 @@
 // 与本 plugin 隔离。
 // ============================================================
 
+import { clampVelocity } from '../../utils/velocity';
 import type { MelodyPluginMeta } from './types';
 
 /** 常规 slot velocity jitter 系数(dynamicRange 内 ±50%) */
@@ -35,6 +36,6 @@ export const VelocityHumanizer: MelodyPluginMeta & {
     compute(sectionIdx, chordIdxInSection, slotIdx, velocityBase, dynamicLo, dynamicHi) {
         const velH = ((sectionIdx * 19 + chordIdxInSection * 23 + slotIdx * 29) & 0xff) / 255;
         const vel = velocityBase + (velH - 0.5) * (dynamicHi - dynamicLo) * SLOT_JITTER_FACTOR;
-        return Math.max(0.1, Math.min(1, vel));
+        return clampVelocity(vel);
     },
 };

@@ -17,6 +17,7 @@
 
 import type { GeneratedChord, NoteData } from '../../../ir';
 import { placeNearAnchor } from '../../utils/voice-leading';
+import { clampVelocity } from '../../utils/velocity';
 import type { MelodyPluginMeta } from './types';
 
 /** Phrase ending velocity jitter 系数(比常规 slot 的 0.5 收紧) */
@@ -59,7 +60,7 @@ export const PhraseEndingDecider: MelodyPluginMeta & {
             pitch: midi,
             onset: chord.startBeat + chordBeats * 0.15,
             duration: chordBeats * 0.80,
-            velocity: Math.max(0.1, Math.min(1, vel)),
+            velocity: clampVelocity(vel),
         };
     },
 };

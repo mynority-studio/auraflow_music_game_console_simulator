@@ -39,6 +39,8 @@ import {
     SwingApplier,
     MicroTimingHumanizer,
 } from './plugins/accomp';
+import { hashApplyPersonaPass } from './utils/hash-utils';
+import { clampVelocity } from './utils/velocity';
 
 // ============================================================
 // Per-mgStyle × sectionType textureType pool(N 阶段 8 family 覆盖)
@@ -236,7 +238,7 @@ function pickTextureType(
     }
 
     // persona 加权(两条路径都跑):sparsity → Single_Root / syncopation → preference
-    const h2 = ((h * 31 + 17) & 0xff) / 255;
+    const h2 = hashApplyPersonaPass(h);
     if (h2 < sparsity * 0.6) pick = SPARSITY_FALLBACK;
     else if (h2 < sparsity * 0.6 + syncopation * 0.5) pick = SYNCOPATION_PREFERENCE[mgStyle];
     return pick;
@@ -326,7 +328,7 @@ export function generateAf2Accomp(
             const relScale = n.velocity / 0.6;
             out.push({
                 ...n,
-                velocity: Math.max(0.1, Math.min(1, vel * relScale)),
+                velocity: clampVelocity(vel * relScale),
             });
         }
     }

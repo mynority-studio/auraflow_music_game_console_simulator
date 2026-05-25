@@ -36,6 +36,7 @@ import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
 import { WALK_PATTERNS, WalkRule, WalkPatternId } from '../../data/BassWalkPatterns';
 import { thirdInterval, fifthInterval } from '../music-theory/chord-intervals';
 import { placeNearAnchor as placeBassNearAnchor } from '../utils/voice-leading';
+import { clampVelocity } from '../utils/velocity';
 import { BASS_RANGE } from '../music-theory';
 import type { MgStyle } from '../../../../state/EngineSelectionStore';
 
@@ -201,7 +202,7 @@ function renderAf2Walking(
             // velocity 微浮动(deterministic hash)
             const velH = ((ci * 13 + stepIdx * 17) & 0xff) / 255;
             const velJitter = (velH - 0.5) * (dynamicHi - dynamicLo) * 0.3;
-            const vel = Math.max(0.1, Math.min(1, velMid + accentDelta + velJitter));
+            const vel = clampVelocity(velMid + accentDelta + velJitter);
             out.push({
                 pitch: midi,
                 onset: chord.startBeat + beatCursor + onsetOffset,

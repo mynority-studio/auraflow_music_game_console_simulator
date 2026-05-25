@@ -23,6 +23,7 @@
 // ============================================================
 
 import type { MgStyle } from '../../../../../state/EngineSelectionStore';
+import { hashApplyPersonaPass } from '../../utils/hash-utils';
 import type { MelodyPluginMeta } from './types';
 
 const RHYTHM_PATTERNS_BY_STYLE: Record<MgStyle, ReadonlyArray<ReadonlyArray<number>>> = {
@@ -70,8 +71,7 @@ export const RhythmPatternPicker: MelodyPluginMeta & {
         const pool = RHYTHM_PATTERNS_BY_STYLE[mgStyle];
         const h = (sectionIdx * 7 + chordIdxInSection * 11) & 0xff;
         let idx = h % pool.length;
-        const h2 = (h * 31 + 17) & 0xff;
-        const p2 = h2 / 255;
+        const p2 = hashApplyPersonaPass(h);
         if (p2 < sparsity * 0.7) idx = 1;                                        // → Half
         else if (p2 < sparsity * 0.7 + syncopation * 0.7) idx = (h % 2 ? 3 : 2);  // → Sync / Dotted
         return pool[idx];
