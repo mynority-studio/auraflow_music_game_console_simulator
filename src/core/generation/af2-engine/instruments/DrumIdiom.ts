@@ -48,6 +48,7 @@ import type { SectionAssignment } from '../Conductor';
 const DRUM_KICK = 36;
 const DRUM_SNARE = 38;
 const DRUM_CLOSED_HIHAT = 42;
+const DRUM_OPEN_HIHAT = 46;        // V 阶段(2026-05-25)— POP/RNB 副歌标志
 const DRUM_TOM_HI = 50;
 const DRUM_TOM_MID = 47;
 const DRUM_TOM_LO = 45;
@@ -316,14 +317,27 @@ function renderSection(
         // ----------------------------------------------------------
         // Dynamic Override(强制规则,0 PRNG 消耗)
         // O 阶段:Crash / Fill 触发条件放宽 + Fill 形态变体
+        // V 阶段(2026-05-25):Break(BuildUp→Drop transition 末 1/4 bar 静音)+
+        //                     Open Hihat(高能段 and-of-4)
         // ----------------------------------------------------------
         // Crash 触发:段首 + (Chorus/Drop/Bridge/BuildUp section type OR high energy)
         const isCrashStep = stepIdx === 0 && (isCrashSection || isHighEnergy);
+        // V2 Break 触发:next section 是 Drop + 当前 section 末 1/4 bar(让 Drop
+        //   起点产生戏剧性静默冲击,优先级高于 Fill)
+        const nextIsDrop = nextSection !== undefined && nextSection.sectionType === SectionType.Drop;
+        const isBreakStep = nextIsDrop && (totalSteps - stepIdx <= Math.floor(stepsPerBar / 4));
         // Fill 触发:next section 存在 + (能量升 OR next 是 crash section type)
         //   触发后 last bar 走 fill 形态(per fillStyle)
-        const isFillBar = isSectionTransition && (totalSteps - stepIdx <= stepsPerBar);
+        //   注:Break 优先级更高,Break 区间内 Fill 自动让位
+        const isFillBar = isSectionTransition && !isBreakStep && (totalSteps - stepIdx <= stepsPerBar);
 
-        if (isCrashStep) {
+        if (isBreakStep) {
+            // V2 Break:全静音(BuildUp→Drop 末 1/4 bar,dramatic silence)
+            //   让 Drop 起点的 Crash 冲击最大化(silence 后击鼓 = "炸开"听感)
+            outKHit = false;
+            outSHit = false;
+            outHHit = false;
+        } else if (isCrashStep) {
             // Crash + 加强 kick(section 标志起点)
             outHHit = true;
             outHPitch = DRUM_CRASH;
@@ -349,6 +363,15 @@ function renderSection(
         } else if (isVeryHigh && outHHit && stepIdx % 2 === 0) {
             // 高能段 + 偶数 step + hihat 命中 → Ride 替代
             outHPitch = DRUM_RIDE;
+        }
+
+        // V1 Open Hihat:高能段 + and-of-4(step 14 of bar)+ hihat 命中
+        //   → 替换 closed → open hihat + velocity ×1.1
+        //   听感:POP/RNB 副歌每 bar 末 "ts-ts-ts-tssss" 开镲点,过渡到 next bar
+        //   注:在所有其他 override 后跑(独立 layer,不冲突 Crash/Fill/Ride)
+        if (isHighEnergy && outHHit && (stepIdx % stepsPerBar) === 14) {
+            outHPitch = DRUM_OPEN_HIHAT;
+            outHVel = Math.min(1.0, outHVel * 1.1);
         }
 
         // 发射音符
