@@ -81,17 +81,21 @@ const GRAMMAR_JAZZ_BEBOP: GrammarDef = {
     rules: [
         { head: 'P', body: ['BRICK_4'], weight: 1.0 },
         // 8 分密集流动 chord+color
-        { head: 'BRICK_4', body: ['C8', 'L8', 'C8', 'L8', 'C8', 'A8', 'C8', 'L8'], weight: 0.25 },
+        { head: 'BRICK_4', body: ['C8', 'L8', 'C8', 'L8', 'C8', 'A8', 'C8', 'L8'], weight: 0.20 },
         // 8 分 + 16 分混
-        { head: 'BRICK_4', body: ['C8', 'L8', 'C16', 'L16', 'C16', 'L16', 'C8', 'L8', 'C8'], weight: 0.20 },
+        { head: 'BRICK_4', body: ['C8', 'L8', 'C16', 'L16', 'C16', 'L16', 'C8', 'L8', 'C8'], weight: 0.15 },
         // scale-degree run(直接 emit 3rd / 5th / 7th 度)
         { head: 'BRICK_4', body: [['X', '3', '8'], ['X', '5', '8'], ['X', '7', '8'], 'L8', 'C4'], weight: 0.15 },
         // approach + chord 切分
-        { head: 'BRICK_4', body: ['L8', 'A8', 'C4', 'L8', 'A8', 'C4'], weight: 0.15 },
+        { head: 'BRICK_4', body: ['L8', 'A8', 'C4', 'L8', 'A8', 'C4'], weight: 0.10 },
         // 8th triplet feel(简化:更密 8 分)
-        { head: 'BRICK_4', body: ['C8', 'L8', 'A8', 'C8', 'L8', 'A8', 'C8', 'L8'], weight: 0.15 },
+        { head: 'BRICK_4', body: ['C8', 'L8', 'A8', 'C8', 'L8', 'A8', 'C8', 'L8'], weight: 0.10 },
         // 长持续 + bebop 装饰
         { head: 'BRICK_4', body: ['C2', 'L8', 'A8', 'C4'], weight: 0.10 },
+        // C2:slope 上行 run(每步 +1 ~ +3 半音)— bebop 经典上行音阶 lick
+        { head: 'BRICK_4', body: [['slope', '1', '3', 'C8', 'L8', 'C8', 'L8', 'C8', 'L8', 'C8', 'L8']], weight: 0.10 },
+        // C2:slope 下行 run(每步 -3 ~ -1)— 下行 bebop lick
+        { head: 'BRICK_4', body: [['slope', '-3', '-1', 'C8', 'L8', 'C8', 'L8', 'C8', 'L8', 'C8', 'L8']], weight: 0.10 },
     ],
 };
 
@@ -316,8 +320,10 @@ function chooseNoteType(
  * @param chordSpellPcs  chord tones pcs (ABSOLUTE,加了 keyOffset)
  * @param chordColorPcs  color tones pcs(chord 内 extension,可能含 altered tension)
  * @param scalePcs       当前 chord 的 local scale pcs(chord-scale relationship)
- * @param prevMidi       上一音 MIDI(给 range 找最近)
- * @param lo / hi        melody range(MIDI 区间)
+ * @param prevMidi       上一音 MIDI(给 Margulis proximity)
+ * @param prevPrevMidi   上上音 MIDI(给 Margulis direction;< 0 跳过 direction 项)
+ * @param rootPc         chord root pc(给 Margulis stability)
+ * @param lo / hi        melody range(MIDI 区间)— 可被 slope bound 收紧
  * @param rng            AF2 Random
  *
  * @returns final MIDI pitch
@@ -328,6 +334,8 @@ export function chooseNote(
     chordColorPcs: number[],
     scalePcs: number[],
     prevMidi: number,
+    prevPrevMidi: number,
+    rootPc: number,
     lo: number,
     hi: number,
     rng: Random,
@@ -370,11 +378,30 @@ export function chooseNote(
         default:         pool = chordCands.length > 0 ? chordCands : (effectiveRandomCands.length > 0 ? effectiveRandomCands : colorCands);
     }
     if (pool.length === 0) return Math.max(lo, Math.min(hi, prevMidi));
-    // prefer 距 prev 最近的(简化 voice leading)
-    pool.sort((a, b) => Math.abs(a - prevMidi) - Math.abs(b - prevMidi));
-    // 在前 3 个最近的里 weighted random(stop 完全 deterministic-by-prev)
-    const top = pool.slice(0, Math.min(3, pool.length));
-    return top[Math.floor(rng.next() * top.length)]!;
+    // C2:Margulis Expectancy 选音(替代 top 3 random)— 让 melody 更"自然":
+    //   重音落 chord tone / 倾向 stepwise / 大跳后反向回收
+    // 仍保留 stochastic — top N(by Margulis score)内 weighted random,
+    // 避免完全 deterministic 单调
+    if (prevMidi < 0) {
+        // 首音 — 选 stability 最高的(典型是 root)
+        pool.sort((a, b) => margulisStability(b, rootPc, chordSpellPcs, scalePcs)
+                          - margulisStability(a, rootPc, chordSpellPcs, scalePcs));
+        return pool[0]!;
+    }
+    const scored = pool.map(m => ({
+        midi: m,
+        score: margulisScore(m, prevMidi, prevPrevMidi, rootPc, chordSpellPcs, scalePcs),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    // top 3 高分内 weighted random(分数 = weight,高分概率更大)
+    const top = scored.slice(0, Math.min(3, scored.length));
+    const totalScore = top.reduce((s, x) => s + Math.max(0.01, x.score), 0);
+    let target = rng.next() * totalScore;
+    for (const x of top) {
+        target -= Math.max(0.01, x.score);
+        if (target <= 0) return x.midi;
+    }
+    return top[0]!.midi;
 }
 
 // ============================================================
@@ -409,7 +436,7 @@ function parseTerminal(token: GrammarToken): ParsedTerminal | null {
             if (isNaN(degree) || beats <= 0) return null;
             return { type: 0, isRest: false, beats, isApproach: false, scaleDegree: degree };
         }
-        // (slope ...) / 其他 list — 第一版不支持,跳过
+        // (slope MIN MAX ...) — 第二版不在此处展开,主循环 handleSlope 单独处理
         return null;
     }
     // atom string
@@ -447,6 +474,67 @@ function scaleDegreeToPc(degree: number, chordSpellPcs: number[], chordRootPc: n
     // fallback major scale
     const iv = MAJOR_SCALE_INTERVAL[degree] ?? 0;
     return (((chordRootPc + iv) % 12) + 12) % 12;
+}
+
+// ============================================================
+// C2 — Margulis Expectancy(inline,独立于 AF2)
+// ============================================================
+// 原 AF2 plugins/melody/MargulisExpectancyShaper 的算法复刻 — 不通过 GeneratedChord
+// IR 接,改 takes rootPc + spellPcs + scalePcs,独立于 AF2 IR。
+//
+// 公式:E = stability × proximity × mobility + direction
+// 用于 chooseNote 候选选音(替代 top 3 random)— melody 更"自然":
+//   - 重音落 chord tone(stability)
+//   - 倾向 stepwise motion(proximity 在 1-2 半音最高)
+//   - 大跳后倾向反向回收(direction)
+// ============================================================
+const MARGULIS_PROXIMITY: readonly number[] = [
+    24, 36, 32, 25, 20, 14, 10, 6, 4, 2, 1, 0.5, 0.25, 0.01,
+];
+const MARGULIS_DIR_SMALL: readonly number[] = [6, 20, 12, 6, 0];
+const MARGULIS_DIR_LARGE: readonly number[] = [6, 12, 25, 36, 52, 75];
+
+function margulisStability(pc: number, rootPc: number, spellPcs: number[], scalePcs: number[]): number {
+    const n = ((pc % 12) + 12) % 12;
+    if (n === ((rootPc % 12) + 12) % 12) return 6;
+    if (spellPcs.includes(n)) return 5;
+    if (scalePcs.includes(n)) return 4;
+    return 1;
+}
+
+function margulisProximity(distance: number): number {
+    const d = Math.min(Math.abs(distance), MARGULIS_PROXIMITY.length - 1);
+    return MARGULIS_PROXIMITY[d]!;
+}
+
+function margulisDirection(pitch: number, prev: number, prevPrev: number): number {
+    if (prev === prevPrev) return 0;
+    const prevInterval = Math.abs(prev - prevPrev);
+    const prevDir = Math.sign(prev - prevPrev);
+    const currDir = Math.sign(pitch - prev);
+    if (prevInterval <= 4) {
+        if (currDir === prevDir && prevInterval < MARGULIS_DIR_SMALL.length) {
+            return MARGULIS_DIR_SMALL[prevInterval]!;
+        }
+        return 0;
+    }
+    if (currDir !== prevDir) {
+        const idx = Math.min(prevInterval - 5, MARGULIS_DIR_LARGE.length - 1);
+        return MARGULIS_DIR_LARGE[idx]!;
+    }
+    return 0;
+}
+
+function margulisScore(
+    candidate: number, prev: number, prevPrev: number,
+    rootPc: number, spellPcs: number[], scalePcs: number[],
+): number {
+    const stab = margulisStability(candidate, rootPc, spellPcs, scalePcs);
+    if (prev < 0) return stab;
+    const prox = margulisProximity(candidate - prev);
+    const mob = candidate === prev ? 0.67 : 1.0;
+    const dir = prevPrev >= 0 ? margulisDirection(candidate, prev, prevPrev) : 0;
+    return stab * prox * mob + dir;
 }
 
 /** 简化 duration parser — 只支持 '4' / '8' / '16' / '2' / '1' + 'n+m' tied */
@@ -516,6 +604,7 @@ export function generateMelody(
 ): MelodyNote[] {
     const out: MelodyNote[] = [];
     let prevMidi = Math.floor((melodyLo + melodyHi) / 2);  // 72 ≈ C5 起点
+    let prevPrevMidi = -1;   // C2 Margulis direction 需要 prev-prev,< 0 = skip
 
     for (let ci = 0; ci < chordCtxs.length; ci++) {
         const cc = chordCtxs[ci]!;
@@ -535,6 +624,7 @@ export function generateMelody(
                 duration: cc.beats * 0.95,
                 velocity: MELODY_VELOCITY,
             });
+            prevPrevMidi = prevMidi;
             prevMidi = tonicMidi;
             continue;
         }
@@ -549,6 +639,49 @@ export function generateMelody(
             const tok = terminals[ti % terminals.length];
             if (!tok) break;
             ti++;
+
+            // C2:slope 约束 — (slope MIN MAX innerTerm1 innerTerm2 ...)
+            //   slope 内每个 terminal 的 pitch 必须落在 [prevPitch + MIN, prevPitch + MAX] 内
+            //   slope 内 terminal 按顺序展开,每个用当前 prevMidi 算 bound
+            if (Array.isArray(tok) && tok[0] === 'slope' && tok.length >= 4) {
+                const slopeMin = parseInt(tok[1] as string, 10);
+                const slopeMax = parseInt(tok[2] as string, 10);
+                if (!isNaN(slopeMin) && !isNaN(slopeMax)) {
+                    for (let sIdx = 3; sIdx < tok.length; sIdx++) {
+                        if (cursor >= cc.beats) break;
+                        const innerTok = tok[sIdx]!;
+                        const innerParsed = parseTerminal(innerTok);
+                        if (!innerParsed) continue;
+                        const remainBeats = cc.beats - cursor;
+                        const innerNoteBeats = Math.min(innerParsed.beats, remainBeats);
+                        if (innerParsed.isRest) {
+                            cursor += innerNoteBeats;
+                            continue;
+                        }
+                        // bound 是 prevMidi + slopeMin 到 prevMidi + slopeMax
+                        // 跟 melody range [melodyLo, melodyHi] 取交集
+                        const slopeBoundLo = Math.max(melodyLo, prevMidi + slopeMin);
+                        const slopeBoundHi = Math.min(melodyHi, prevMidi + slopeMax);
+                        const effLo = slopeBoundLo <= slopeBoundHi ? slopeBoundLo : melodyLo;
+                        const effHi = slopeBoundLo <= slopeBoundHi ? slopeBoundHi : melodyHi;
+                        const pitch = chooseNote(
+                            innerParsed.type, cc.spellPcs, cc.colorPcs, cc.scalePcs,
+                            prevMidi, prevPrevMidi, cc.rootPc, effLo, effHi, rng,
+                        );
+                        out.push({
+                            pitch,
+                            onset: cc.startBeat + cursor,
+                            duration: innerNoteBeats * 0.95,
+                            velocity: MELODY_VELOCITY,
+                        });
+                        prevPrevMidi = prevMidi;
+                        prevMidi = pitch;
+                        cursor += innerParsed.beats;
+                    }
+                    continue;
+                }
+            }
+
             const parsed = parseTerminal(tok);
             if (!parsed) continue;
             const remainingBeats = cc.beats - cursor;
@@ -582,6 +715,8 @@ export function generateMelody(
                     cc.colorPcs,
                     cc.scalePcs,
                     prevMidi,
+                    prevPrevMidi,
+                    cc.rootPc,
                     melodyLo,
                     melodyHi,
                     rng,
@@ -594,9 +729,14 @@ export function generateMelody(
                 duration: noteBeats * 0.95,
                 velocity: MELODY_VELOCITY,
             });
+            prevPrevMidi = prevMidi;
             prevMidi = pitch;
             cursor += parsed.beats;
         }
+
+        // phrase-end 也更新 prevPrev(因为 phrase-end 直接 emit tonic,prev 跳过 grammar 但已 push)
+        // 主循环顶部 phrase-end branch 已 set prevMidi,这里补 prevPrev
+        // (实际由 phrase-end branch 内的 prevMidi 赋值带动,本行只为下一 chord 接续清晰)
     }
     return out;
 }
