@@ -329,7 +329,14 @@ export function generateAf2Accomp(
 
     // T 阶段(2026-05-25):Melody-aware density ducking post-pass
     // melody 密时 accomp 让空间,melody 稀时 accomp 填空隙(对话感)
-    return duckByMelodyDensity(out, input.melodyPeerNotes);
+    duckByMelodyDensity(out, input.melodyPeerNotes);
+
+    // U 阶段(2026-05-25):Micro-timing humanization
+    // 同 onset chord cluster 按 pitch 升序加递增 delay,模拟人手"先按低音再按高音"
+    // 的滚奏感(strum-like)。deterministic 0 PRNG。
+    applyMicroTiming(out);
+
+    return out;
 }
 
 // ============================================================
@@ -358,8 +365,8 @@ const FILL_BOOST = 1.15;              // melody 空时 accomp velocity 增强
 function duckByMelodyDensity(
     accompNotes: NoteData[],
     melodyNotes: ReadonlyArray<NoteData> | undefined,
-): NoteData[] {
-    if (!melodyNotes || melodyNotes.length === 0) return accompNotes;
+): void {
+    if (!melodyNotes || melodyNotes.length === 0) return;
     // 预排序 melody 按 onset(已经基本有序但保险一遍)
     const sortedMelody = melodyNotes.slice().sort((a, b) => a.onset - b.onset);
 
@@ -388,5 +395,63 @@ function duckByMelodyDensity(
         }
         // countNear === 1 (中间密度) → 不动,保持平衡
     }
-    return accompNotes;
+}
+
+// ============================================================
+// U 阶段:Micro-timing humanization(strum 滚奏感)
+// ============================================================
+//
+// 同 onset chord cluster(>=2 notes at same time)按 pitch 升序加递增
+// delay,模拟人手按和弦时低音→高音的极小先后顺序:
+//   note[0] (lowest):  onset += 0
+//   note[1]:           onset += MICRO_DELAY
+//   note[2]:           onset += 2 × MICRO_DELAY
+//   note[3] (highest): onset += 3 × MICRO_DELAY
+//
+// MICRO_DELAY = 0.008 beat
+//   @ 120 BPM: ~4ms / step,4-音 chord 总跨度 ~12ms
+//   @ 88  BPM: ~5.5ms / step,~16ms total
+//   在人类感知"自然滚奏"范围内(< 20ms 不破节奏感)。
+//
+// deterministic 0 PRNG:同 seed bit-identical。
+//
+// 只 accomp 用 — bass/melody/drums 是单声部 + 节奏感强,不需要。
+// pad 已有 attack pre-roll,不重复加。
+//
+// 实现:先 sort by onset,然后找相邻同 onset cluster(±EPSILON 容差),
+//       按 pitch 升序 reassign onset(deterministic).
+// ============================================================
+
+const MICRO_DELAY = 0.008;       // beat,单 step
+const ONSET_CLUSTER_EPSILON = 1e-4;  // 同 onset 判定容差
+
+function applyMicroTiming(notes: NoteData[]): void {
+    if (notes.length < 2) return;
+    // 先 sort by onset(micro-timing 检测 cluster 需要相邻同 onset)
+    notes.sort((a, b) => {
+        const d = a.onset - b.onset;
+        if (Math.abs(d) > ONSET_CLUSTER_EPSILON) return d;
+        return a.pitch - b.pitch;  // tie-break by pitch ascending
+    });
+
+    let i = 0;
+    while (i < notes.length) {
+        const baseOnset = notes[i].onset;
+        let j = i + 1;
+        while (j < notes.length && Math.abs(notes[j].onset - baseOnset) <= ONSET_CLUSTER_EPSILON) {
+            j++;
+        }
+        const clusterSize = j - i;
+        if (clusterSize >= 2) {
+            // notes[i..j-1] 已按 pitch 升序(上面 sort tie-break 保证)
+            // 加递增 delay(low pitch 不动,high pitch delay 最大)
+            for (let k = 1; k < clusterSize; k++) {
+                notes[i + k] = {
+                    ...notes[i + k],
+                    onset: baseOnset + k * MICRO_DELAY,
+                };
+            }
+        }
+        i = j;
+    }
 }
