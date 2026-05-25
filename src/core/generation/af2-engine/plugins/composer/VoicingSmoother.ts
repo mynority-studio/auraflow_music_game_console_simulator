@@ -62,6 +62,47 @@ function topVoice(v: ReadonlyArray<number>): number {
     return v.length > 0 ? v[v.length - 1] : 0;
 }
 
+// ============================================================
+// Phase 5(Impro-Visor invert-9th 移植,2026-05-25)
+// ============================================================
+// 检测 voicing 内相邻两音差 13 半音(小 9 度,muddy)→ 交换两音 pc(保各自
+// octave 区),把差缩成 11 半音(major 7,干净)。
+// 例:[C4=60, Db5=73] 差 13 → swap pc → [Db4=61, C5=72] 差 11。
+// pc 集不变 → chord identity 保持。
+// ============================================================
+const MINOR_9_INTERVAL = 13;
+
+/** 检测并修复 voicing 中所有相邻小 9 度。返回新 voicing(已 sort)。 */
+function fixMinor9Intervals(voicing: ReadonlyArray<number>): number[] {
+    if (voicing.length < 2) return voicing.slice();
+    const result = voicing.slice();
+    let changed = true;
+    let maxIter = 4; // 防止极端 case 无限循环
+    while (changed && maxIter-- > 0) {
+        changed = false;
+        for (let i = 0; i < result.length - 1; i++) {
+            const lower = result[i]!;
+            const upper = result[i + 1]!;
+            if (upper - lower !== MINOR_9_INTERVAL) continue;
+            // swap pc preserve octave 区
+            const lowerOctave = Math.floor(lower / 12);
+            const upperOctave = Math.floor(upper / 12);
+            const lowerPc = lower % 12;
+            const upperPc = upper % 12;
+            const newLower = lowerOctave * 12 + upperPc;
+            const newUpper = upperOctave * 12 + lowerPc;
+            // 必须保升序 + 改善(差变小)
+            if (newLower < newUpper && newUpper - newLower < MINOR_9_INTERVAL) {
+                result[i] = newLower;
+                result[i + 1] = newUpper;
+                changed = true;
+            }
+        }
+        if (changed) result.sort((a, b) => a - b);
+    }
+    return result;
+}
+
 /**
  * 生成 voicing 的 inversion candidates(原 + 4 个 octave-shift 变体)。
  * 所有 candidate 保 pc 集不变,只调单音 octave。
@@ -97,9 +138,9 @@ export const VoicingSmoother: ComposerPluginMeta & {
     apply(chords: ReadonlyArray<ChordDef>): ChordDef[];
 } = {
     name: 'VoicingSmoother',
-    version: 'v1.1 (R + S2 phase)',
+    version: 'v1.2 (R + S2 + invert-9th)',
     prngConsumption: 'zero',
-    description: 'Post-pass cross-chord voice leading smoother(inversion candidates + phrase-arc bonus)',
+    description: 'Post-pass cross-chord voice leading smoother(inversion candidates + phrase-arc bonus + invert-9th detector)',
 
     apply(chords) {
         const out = chords.slice();
@@ -132,9 +173,27 @@ export const VoicingSmoother: ComposerPluginMeta & {
                 }
             }
 
-            if (bestVoicing !== curr) {
+            // Phase 5:invert-9th detector — 把 muddy 小 9 度 swap 成 major 7
+            const fixedVoicing = fixMinor9Intervals(bestVoicing);
+
+            if (fixedVoicing !== curr) {
                 // 替换 notesMidi(notes display 标签保持旧 octave — UI 用,不影响音频)
-                out[i] = { ...out[i], notesMidi: bestVoicing };
+                out[i] = { ...out[i], notesMidi: fixedVoicing };
+            }
+        }
+        // 首尾两个 chord 也跑一次 invert-9th 修复(主循环只覆盖 i in [1, length-2])
+        if (out.length > 0) {
+            const head = out[0]!;
+            const fixedHead = fixMinor9Intervals(head.notesMidi);
+            if (fixedHead.some((m, k) => m !== head.notesMidi[k])) {
+                out[0] = { ...head, notesMidi: fixedHead };
+            }
+        }
+        if (out.length > 1) {
+            const tail = out[out.length - 1]!;
+            const fixedTail = fixMinor9Intervals(tail.notesMidi);
+            if (fixedTail.some((m, k) => m !== tail.notesMidi[k])) {
+                out[out.length - 1] = { ...tail, notesMidi: fixedTail };
             }
         }
         return out;

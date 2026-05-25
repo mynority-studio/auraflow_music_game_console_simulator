@@ -1032,6 +1032,68 @@ try {
 
 ---
 
+## 17. Impro-Visor 启发清单(2026-05-25 移植)
+
+> 来源:`/Users/mynority/vibe_coding/Impro-Visor`(Harvey Mudd CS 学术工具,Java 1.8)。
+> 完整审计见 `.claude/notes/impro-visor-audit.md`。
+> 5 phase 全部已 ship 基础设施 + 默认 OFF gate(不破坏现有听感),后续按
+> 听感 review 逐个 mgStyle / sub-style 开启。
+
+### 17.1 移植落位表
+
+| Phase | 文件 / 模块 | AF2 层 | 启用开关 | 默认 | 备注 |
+|---|---|---|---|---|---|
+| 1 | `music-theory/chord-vocab.ts` | 数据基础 | 始终启用 | ON | 18 curated type + fallback derive |
+| 2 | `plugins/composer/HandPartitioner.ts` | Composer | `HAND_PARTITION_BY_SUB_STYLE` | OFF | per sub-style table 全 false |
+| 3 | `plugins/melody/MargulisExpectancyShaper.ts` | MelodyGen | `MARGULIS_RERANK_ENABLED` const | OFF | global gate |
+| 4a | `plugins/melody/SlopeContourGate.ts` | MelodyGen | `SLOPE_GATE_ENABLED` const | OFF | per-sectionType slope 表已就位 |
+| 4b | `plugins/melody/ApproachToneTargeter.ts` | MelodyGen | `APPROACH_TONE_ENABLED` const | OFF | global gate |
+| 5 | `plugins/composer/VoicingSmoother.ts` invert-9th | Composer post-pass | 始终启用 | ON | swap pc preserve octave |
+
+### 17.2 启用工作流(后续 phase)
+
+每个 OFF gate 开启前的最小 SOP:
+1. 选一个 mgStyle × sub-style 试点(POP/PopBallad 推荐起点 — 风格保守听感稳)
+2. 改对应 const / table 启用
+3. lint 过
+4. 听感对账 — 同 seed 多次跑,确认输出稳定、听感改善而非劣化
+5. PRNG 流验证:`grep rng.next` 计数不变(plugin 全 zero PRNG)
+6. 不破坏则推广到下一 mgStyle
+
+### 17.3 跨同步登记(关联组扩展)
+
+- 改 `ChordDef.lhMidi/rhMidi` 字段语义 → 同步 `chord-texture/families/` 所有可消费 hand
+  分布的 family + MidiConverter(若分通道)
+- 改 `CHORD_VOCAB[type]` 任何字段 → 同步 §12 关联组 #4(ChordQuality)+ Margulis
+  stability 计算 + Approach 选音
+- 改 `DEFAULT_SLOPE_BY_SECTION[X]` → SectionType 新增时同步加 slope spec(关联组 #3)
+
+### 17.4 PRNG 协议确认
+
+5 phase 所有 plugin 全 `'zero'` PRNG:
+- HandPartitioner — hash gate(chord.idx + finalRootOffset + keyIndex)
+- MargulisExpectancyShaper — 纯打分函数,无 PRNG
+- SlopeContourGate — 纯 clamp 函数,无 PRNG
+- ApproachToneTargeter — 纯选音函数,无 PRNG
+- invert-9th detector — 纯 detection + swap,无 PRNG
+
+启用任何 gate 后,同 seed bit-exact 输出**不应**改变(只改变 voicing/melody MIDI 分布,
+不消耗 PRNG)。如发现 PRNG 流漂移,说明 plugin 内部偷偷用了 Math.random — bug。
+
+### 17.5 不搬清单(冲突 AF2 设计哲学)
+
+| Impro-Visor 机制 | 不搬原因 |
+|---|---|
+| VoicingGenerator 的 weighted random 采样 | 违反 D-5 PRNG 协议(Math.random 每次新种子) |
+| Grammar PCFG | AF2 plugin 链已超越(`memo:pcfg_grammar_removed.md`) |
+| NoteChooser 28 行 lookup table | chord-tone cycle + plugin 更确定可解释 |
+| CYK Brick parser | 只影响 UI roadmap 显示,不影响生成 |
+| Polylist Lisp data | TS array + JSON 更干净 |
+| Advisor 静态 DB | plugin 元数据更干净 |
+| Pattern DSL(X4 R8 weighted) | chord-texture 24 family 表达力远超 |
+
+---
+
 ## 附录:验证 SOP
 
 每次 commit 前:

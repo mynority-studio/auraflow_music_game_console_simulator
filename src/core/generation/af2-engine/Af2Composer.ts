@@ -37,7 +37,7 @@ import { Random } from './utils/Random';
 import type { ChordDef } from './types/ChordDef';
 import type { Af2AbstractStep } from './Af2Arranger';
 import type { SubStyle } from './SubStyleTextures';
-import { DynamicHarmonyDecorator, VoicingSmoother } from './plugins/composer';
+import { DynamicHarmonyDecorator, VoicingSmoother, partitionHands, mergeHands, DEFAULT_HAND_CONFIG } from './plugins/composer';
 
 // ============================================================
 // M 阶段(2026-05-24):Dynamic TSD chord-type decoration
@@ -71,6 +71,20 @@ import { DynamicHarmonyDecorator, VoicingSmoother } from './plugins/composer';
 // ============================================================
 
 const DEFAULT_VOICING_MODE: VoicingStylePreference = STYLE_FULL;
+
+// ============================================================
+// Phase 2(Impro-Visor HandManager 移植,2026-05-25):钢琴 LH/RH 双手分手
+// ============================================================
+//
+// Per sub-style 启停 hand partition。默认全 false — 不破坏现有听感。
+// 启用 sub-style 时:Composer 主循环走 partitionHands path,填 ChordDef.lhMidi/rhMidi
+// + notesMidi 同步合并 LH+RH 升序。
+//
+// 开放给后续 phase 调音 — 验证 sub-style 启用后听感稳定再批量打开。
+// ============================================================
+const HAND_PARTITION_BY_SUB_STYLE: Partial<Record<SubStyle, boolean>> = {
+    // 全部默认 false。后续验证 sub-style 听感 ready 时开启。
+};
 
 // POP sub-style voicing mode override(6 sub-style)
 // ModernTrap 用 STYLE_SHELL(简洁 4 voice 含 root),其余 STYLE_FULL
@@ -108,6 +122,10 @@ export const Af2Composer = {
         const keyIndex = Math.max(0, KEYS.indexOf(key));
         const out: ChordDef[] = [];
         let prevVoicing: number[] = [];
+        // Phase 2:hand partition 启用时维持 prev LH/RH(独立 voice leading)
+        const handPartitionEnabled = subStyle ? !!HAND_PARTITION_BY_SUB_STYLE[subStyle] : false;
+        let prevLhMidi: number[] = [];
+        let prevRhMidi: number[] = [];
 
         for (let i = 0; i < abstractPath.length; i++) {
             const step = abstractPath[i];
@@ -151,9 +169,29 @@ export const Af2Composer = {
             if (bassMidi > BASS_RANGE.HIGH) bassMidi = BASS_RANGE.HIGH;
 
             // 6. Voice-leading placement(music-theory helper)
-            const voicing = placeVoicingMidi(
-                voicingPcs, prevVoicing, bassMidi, finalType, rootKeyIndex,
-            );
+            //    Phase 2 opt-in:若 hand partition 启用 → 走 partitionHands 双手 path,
+            //    notesMidi = LH ∪ RH 升序;否则走原单簇 placeVoicingMidi。
+            let voicing: number[];
+            let lhMidi: number[] | undefined;
+            let rhMidi: number[] | undefined;
+            if (handPartitionEnabled) {
+                // deterministic hash:i + finalRootOffset(zero PRNG)
+                const seedHash = (i * 31 + finalRootOffset * 7 + keyIndex) >>> 0;
+                const hands = partitionHands(
+                    voicingPcs, finalType, rootKeyIndex, bassMidi,
+                    prevLhMidi, prevRhMidi, seedHash, DEFAULT_HAND_CONFIG,
+                );
+                if (hands) {
+                    lhMidi = hands.lhMidi;
+                    rhMidi = hands.rhMidi;
+                    voicing = mergeHands(hands.lhMidi, hands.rhMidi);
+                } else {
+                    // pcs 太少回退单簇
+                    voicing = placeVoicingMidi(voicingPcs, prevVoicing, bassMidi, finalType, rootKeyIndex);
+                }
+            } else {
+                voicing = placeVoicingMidi(voicingPcs, prevVoicing, bassMidi, finalType, rootKeyIndex);
+            }
 
             // 7. Chord symbol display(简易:type === 'maj' 时省略后缀)
             const rootName = spellPcInKey(rootKeyIndex, keyIndex, isMinorKey);
@@ -179,9 +217,13 @@ export const Af2Composer = {
                 // M 阶段:Sub-V 后用 final roman 重算;Planner 强制 effectiveFunc 优先
                 effectiveFunc: step.effectiveFunc ?? harmonicFunctionFromRoman(finalRoman),
                 chordSymbol,
+                lhMidi,
+                rhMidi,
             });
 
             prevVoicing = voicing;
+            if (lhMidi) prevLhMidi = lhMidi;
+            if (rhMidi) prevRhMidi = rhMidi;
         }
 
         // Post-pass plugin:VoicingSmoother(R + S2 阶段,2026-05-25 拆 plugin)

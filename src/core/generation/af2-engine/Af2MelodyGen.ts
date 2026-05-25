@@ -33,7 +33,36 @@ import {
     PhraseEndingDecider,
     SparsityGate,
     VelocityHumanizer,
+    pickByExpectancy,
+    clampToSlope,
+    DEFAULT_SLOPE_BY_SECTION,
+    approachPitch,
+    shouldApproach,
 } from './plugins/melody';
+
+// ============================================================
+// Phase 3(Impro-Visor Margulis 移植,2026-05-25):melodic expectation
+// ============================================================
+//
+// placeNearAnchor 给一个 nearest-octave MIDI;启用时用 Margulis score 在
+// [midi-12, midi, midi+12] 三 octave 候选中选最优。默认 OFF — 听感 review
+// 后逐步开启(per-mgStyle / global gate)。
+// ============================================================
+const MARGULIS_RERANK_ENABLED = false;
+
+// ============================================================
+// Phase 4(Impro-Visor Slope + Approach,2026-05-25):melody 硬约束
+// ============================================================
+//
+// SLOPE_GATE_ENABLED:每 slot 把 midi clamp 到 [prev + slope.min, prev + slope.max]
+//   (per-sectionType 区间 — 防止 PhraseContour bias 被 placeNearAnchor 八度跳穿)
+// APPROACH_TONE_ENABLED:chord 末尾 30% slots(且有 next chord)→ 强 ±1 半音
+//   进入下一 chord root(jazz leading tone)
+//
+// 默认全 OFF — 听感 review 后再 mgStyle / sub-style 启用。
+// ============================================================
+const SLOPE_GATE_ENABLED = false;
+const APPROACH_TONE_ENABLED = false;
 
 /**
  * AF2 melody 生成(core orchestrator)。
@@ -98,8 +127,10 @@ export function generateAf2Melody(
         });
     }
 
-    for (const cc of chordCtxs) {
+    for (let ccIdx = 0; ccIdx < chordCtxs.length; ccIdx++) {
+        const cc = chordCtxs[ccIdx]!;
         const { chord, sectionIdx, sectionType, chordIdxInSection, progress } = cc;
+        const nextCc = chordCtxs[ccIdx + 1]; // Phase 4 ApproachToneTargeter 用
 
         // Core:section role gate
         const myRoles = getMyRolesInSection(input, sectionIdx);
@@ -138,24 +169,54 @@ export function generateAf2Melody(
 
         let cycleIdx = 0;
         let prevPc = -1;
+        let prevPrevMidi = -1;
         let beatCursor = 0;
         for (let s = 0; s < slotDurs.length; s++) {
             const slotDur = slotDurs[s];
             const isShortSlot = slotDur < 1.0;
             const nextCyclePc = cyclePcs[cycleIdx % cyclePcs.length];
 
-            // Plugin:PassingToneSelector(短 slot + prevPc 可用时 50% 概率替换)
+            // Phase 4 opt-in:ApproachToneTargeter — chord 末 30% slots + 有 next chord
+            //   → 强 ±1 半音进入下一 chord root(jazz leading tone)
+            const slotProgressInChord = slotDurs.length > 1 ? s / (slotDurs.length - 1) : 0;
+            let midi: number;
             let pc: number;
-            if (isShortSlot && prevPc >= 0 && PassingToneSelector.gate(sectionIdx, chordIdxInSection, s)) {
-                pc = PassingToneSelector.pick(prevPc, nextCyclePc, chord, keyRootPc, isMinor);
-            } else {
-                pc = nextCyclePc;
+            if (
+                APPROACH_TONE_ENABLED
+                && nextCc
+                && shouldApproach(slotProgressInChord, true)
+                && prevMidi !== baseAnchor
+            ) {
+                midi = approachPitch(nextCc.chord, prevMidi, 0, melodyLo, melodyHi);
+                pc = ((midi % 12) + 12) % 12;
                 cycleIdx++;
-            }
+            } else {
+                // Plugin:PassingToneSelector(短 slot + prevPc 可用时 50% 概率替换)
+                if (isShortSlot && prevPc >= 0 && PassingToneSelector.gate(sectionIdx, chordIdxInSection, s)) {
+                    pc = PassingToneSelector.pick(prevPc, nextCyclePc, chord, keyRootPc, isMinor);
+                } else {
+                    pc = nextCyclePc;
+                    cycleIdx++;
+                }
 
-            // Core:placeNearAnchor(contourMidi + prevMidi 平均,平滑 voice-leading)
-            const anchor = Math.round((contourMidi + prevMidi) / 2);
-            const midi = placeNearAnchor(pc, anchor, melodyLo, melodyHi);
+                // Core:placeNearAnchor(contourMidi + prevMidi 平均,平滑 voice-leading)
+                const anchor = Math.round((contourMidi + prevMidi) / 2);
+                midi = placeNearAnchor(pc, anchor, melodyLo, melodyHi);
+
+                // Phase 3 opt-in:Margulis octave rerank(默认 OFF — 不破坏既有 melody)
+                if (MARGULIS_RERANK_ENABLED && prevMidi !== baseAnchor) {
+                    const octaveCandidates = [midi - 12, midi, midi + 12];
+                    midi = pickByExpectancy(
+                        octaveCandidates, prevMidi, prevPrevMidi, chord, melodyLo, melodyHi,
+                    );
+                }
+
+                // Phase 4 opt-in:SlopeContourGate — clamp 到 [prev + slope.min, prev + slope.max]
+                if (SLOPE_GATE_ENABLED && prevMidi !== baseAnchor) {
+                    const slope = DEFAULT_SLOPE_BY_SECTION[sectionType] ?? DEFAULT_SLOPE_BY_SECTION[SectionType.Verse];
+                    midi = clampToSlope(midi, prevMidi, slope, melodyLo, melodyHi);
+                }
+            }
 
             // Plugin:SparsityGate + VelocityHumanizer
             if (SparsityGate.shouldEmit(sectionIdx, chordIdxInSection, s, sparsity)) {
@@ -171,8 +232,10 @@ export function generateAf2Melody(
                 });
             }
 
-            // prevPc / prevMidi / beatCursor 照常推进(空隙不影响后续 voice-leading)
+            // prevPc / prevMidi / prevPrevMidi / beatCursor 照常推进
+            // (空隙不影响后续 voice-leading;prevPrevMidi 用于 Phase 3 Margulis direction)
             prevPc = pc;
+            prevPrevMidi = prevMidi;
             prevMidi = midi;
             beatCursor += slotDur;
         }

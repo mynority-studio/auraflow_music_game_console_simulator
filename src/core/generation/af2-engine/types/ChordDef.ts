@@ -22,4 +22,10 @@ export interface ChordDef {
     effectiveFunc?: 'T' | 'S' | 'D';
     /** UI 显示用(如 "Cmaj7" / "Dm9") */
     chordSymbol?: string;
+    /** Phase 2(Impro-Visor HandManager 移植):钢琴 LH 簇 MIDI(可选)。
+     *  当 HandPartitioner 启用时填;notesMidi 同步合并 LH+RH 并升序。
+     *  Consumer 不消费此字段时,按 notesMidi 单簇处理(向后兼容)。 */
+    lhMidi?: number[];
+    /** Phase 2:钢琴 RH 簇 MIDI(可选)。配合 lhMidi 一起填。 */
+    rhMidi?: number[];
 }

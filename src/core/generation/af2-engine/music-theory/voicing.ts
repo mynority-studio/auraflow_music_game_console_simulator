@@ -419,21 +419,35 @@ export function placeVoicingMidi(
   bassMidi: number,
   chordType: string,
   chordRootPc: number,
+  /** Phase 2(Impro-Visor HandManager):可选自定义 MIDI range。不传 → CHORD_RANGE 默认。
+   *  HandPartitioner 调两次 placeVoicingMidi(LH range / RH range)实现分手。 */
+  range?: { low: number; high: number },
 ): number[] {
   if (pcs.length === 0) return [];
 
-  // Build candidate MIDI list for each pc — all octaves within CHORD_RANGE.
+  const effectiveLow = range?.low ?? CHORD_RANGE.LOW;
+  const effectiveHigh = range?.high ?? CHORD_RANGE.HIGH;
+
+  // Build candidate MIDI list for each pc — all octaves within range.
   const pcModNormalize = (pc: number): number => (((pc % 12) + 12) % 12);
   const candidates: number[][] = pcs.map(pc => {
     const pcMod = pcModNormalize(pc);
     const out: number[] = [];
-    for (let m = pcMod; m <= 100; m += 12) {
-      if (m < CHORD_RANGE.LOW || m > CHORD_RANGE.HIGH) continue;
+    for (let m = pcMod; m <= 127; m += 12) {
+      if (m < effectiveLow || m > effectiveHigh) continue;
       out.push(m);
     }
-    // If empty (shouldn't happen for valid pcs in CHORD_RANGE), include
-    // closest in-range MIDI as fallback.
-    if (out.length === 0) out.push(pcMod + 60);
+    // If empty (range too narrow for some pc), include closest in-range MIDI as fallback.
+    if (out.length === 0) {
+      const center = (effectiveLow + effectiveHigh) / 2;
+      let best = pcMod + 60;
+      let bestDist = Math.abs(best - center);
+      for (let m = pcMod; m <= 127; m += 12) {
+        const d = Math.abs(m - center);
+        if (d < bestDist) { best = m; bestDist = d; }
+      }
+      out.push(best);
+    }
     return out;
   });
 
