@@ -47,7 +47,8 @@ import { Af2KernelDriver, MG_TYPE_TO_QUALITY, POP_BPM } from '../af2-engine/Af2K
 import { Af2Arranger } from '../af2-engine/Af2Arranger';
 import { ChordQuality } from '../types';
 import { getChordVocab } from '../af2-engine/music-theory/chord-vocab';
-import { BALLAD_STYLE, SWING_STYLE, CLOSED_HIGH_VOICING_SETTINGS } from './data/loaded';
+import { getStyleByName, CLOSED_HIGH_VOICING_SETTINGS } from './data/loaded';
+import { ImproStyleStore } from '../../../state/ImproStyleStore';
 import type { StyleData, BassPattern, ChordPattern, DrumPattern } from './data/sty-parser';
 import { planHands } from './algorithms/hand-manager';
 import { generateVoicing } from './algorithms/voicing-generator';
@@ -61,9 +62,11 @@ export interface ImproGenerateResult {
     context: MusicContext;
 }
 
-/** ImproEngine 默认 style — Q+H UI 后续可加 selector */
-const DEFAULT_STYLE: StyleData = BALLAD_STYLE;
-void SWING_STYLE; // 保留 import 避免 unused warning(后续 UI 接入再用)
+/** ImproEngine 当前 style — 由 ImproStyleStore (Q+H UI dropdown 写入) 决定。
+ *  Fallback:找不到 fall back 到 ballad。 */
+function getCurrentStyle(): StyleData {
+    return getStyleByName(ImproStyleStore.getStyleName());
+}
 
 const POP_STYLE_ID: StyleId = StyleId.ModernPop;
 
@@ -181,7 +184,7 @@ export const ImproEngineFacade = {
         }
 
         // 3. ImproCore — per chord 跑 voicing + 3 pattern
-        const style: StyleData = DEFAULT_STYLE;
+        const style: StyleData = getCurrentStyle();
         const settings = CLOSED_HIGH_VOICING_SETTINGS;
         // augment chord-pattern pool 加 arp/broken(原 .sty 全柱式 → 听感单一)
         const augmentedChordPatterns: ChordPattern[] = [

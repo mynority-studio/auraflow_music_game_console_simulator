@@ -25,6 +25,8 @@ import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/gene
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
 import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionStore';
+import { ImproStyleStore } from '../state/ImproStyleStore';
+import { ALL_STYLE_NAMES } from '../core/generation/improCore/data/loaded';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -147,6 +149,11 @@ export const PipelineMonitor: React.FC = () => {
     const switchEngine = useCallback((next: EngineId) => {
         EngineSelectionStore.setEngine(next);
         setEngineState(next);
+    }, []);
+    const [improStyle, setImproStyleState] = useState<string>(() => ImproStyleStore.getStyleName());
+    const switchImproStyle = useCallback((name: string) => {
+        ImproStyleStore.setStyleName(name);
+        setImproStyleState(name);
     }, []);
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
@@ -409,8 +416,22 @@ export const PipelineMonitor: React.FC = () => {
                 >
                     Impro
                 </button>
+                {engine === 'Impro' && (
+                    <select
+                        value={improStyle}
+                        onChange={(e) => switchImproStyle(e.target.value)}
+                        title={`${ALL_STYLE_NAMES.length} styles 可选`}
+                        className="ml-2 bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60 max-w-[140px]"
+                    >
+                        {ALL_STYLE_NAMES.map(n => (
+                            <option key={n} value={n}>{n}</option>
+                        ))}
+                    </select>
+                )}
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
-                    {engine === 'AF2' ? 'POP-only · 5 slots active (no vocal)' : 'piano LH+RH + bass + drums (no melody)'}
+                    {engine === 'AF2'
+                        ? 'POP-only · 5 slots active (no vocal)'
+                        : `${ALL_STYLE_NAMES.length} styles · piano + bass + drums (no melody)`}
                 </span>
             </div>
 
