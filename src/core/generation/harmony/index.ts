@@ -14,3 +14,4 @@
 // ============================================================
 
 export * from './wide-piano-voicing';
+export * from './harmonic-coherence';
