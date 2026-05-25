@@ -42,6 +42,7 @@ import {
 } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import type { PipelineRunOptions } from '../pipeline';
+import { bandRoleToTrackKeys, type GmProgramTrackKey } from '../data/GMSoundMap';
 import { SectionPlanner } from '../af2-engine/SectionPlanner';
 import { Af2KernelDriver, MG_TYPE_TO_QUALITY, POP_BPM } from '../af2-engine/Af2KernelDriver';
 import { Af2Arranger } from '../af2-engine/Af2Arranger';
@@ -580,8 +581,30 @@ export const ImproEngineFacade = {
             hasIntro: true,
         };
 
-        // BandRole 不消费(ImproCore 不走 musician 槽位),用 AF2 同款 cast 绕 type
-        void BandRole;
+        // BandRole 不消费 musician(ImproCore 不走 musician 算法),但 forcedGmPrograms
+        // 仍然消费 — UI 给 mainInst/accomp/bass/drums 选 GM patch 时生效。
+        // 默认 GM programs(MidiConverter fallback 同款):melody/accomp Piano,
+        // bass Electric Bass,drums Drum Kit(channel 9 program=0)。
+        const gmOverrides: NonNullable<MusicContext['gmProgramOverrides']> = {
+            melody:     1,   // Bright Acoustic Piano
+            accomp:     0,   // Acoustic Grand
+            bass:       34,  // Electric Bass Finger
+            drums:      0,   // GM Drum Kit
+        };
+        // 应用 forcedGmPrograms 覆盖(UI Instr 下拉显式选)
+        const ROLES_TO_MAP: BandRole[] = [
+            BandRole.MainInst, BandRole.Accomp, BandRole.Bass, BandRole.Drums, BandRole.Atmosphere,
+        ];
+        for (const role of ROLES_TO_MAP) {
+            const forcedGm = options.forcedGmPrograms?.[role];
+            if (forcedGm === undefined) continue;
+            const trackKeys = bandRoleToTrackKeys(role);
+            for (const key of trackKeys as ReadonlyArray<GmProgramTrackKey>) {
+                (gmOverrides as Record<string, number>)[key] = forcedGm;
+            }
+        }
+        void options.forcedBand;  // musician 不消费
+
         const context: MusicContext = {
             keyOffset: 0,                   // 同上,K-2 不动
             tonality,
@@ -589,8 +612,8 @@ export const ImproEngineFacade = {
             timeSignature: [4, 4],
             grooveDNA: [],
             style: { id: POP_STYLE_ID } as MusicContext['style'],
+            gmProgramOverrides: gmOverrides,
         };
-        void options.forcedBand;
 
         return { track, context };
     },
