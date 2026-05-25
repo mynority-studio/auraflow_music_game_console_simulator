@@ -204,12 +204,14 @@ export const ImproEngineFacade = {
         const drumEvents: NoteEvent[] = [];
 
         // 物理音域(从 style 读 — note name → MIDI)
-        // .sty bass-high 经常偏高(ballad 的 'c' = MIDI 60 = C4),用户感觉"bass 飘高音区"。
-        // hardcode cap 到 C3 (48) 让 bass 留在 [bassLow, C3] 真实电贝斯/钢琴 LH 音域内。
+        // .sty bass-low / bass-high 经常偏高(ballad 的 'g--'=G2 / 'c'=C4),
+        // 用户反馈"bass 还是高" — 即使 cap D3 仍听感不像真低音(电贝斯 D3 算中高音)。
+        // 改 hardcode 区间 [C2 (36), C3 (48)] — 典型钢琴 LH / 真实低音区。
+        // 取 .sty 字段做参考(若更低则用 .sty 值,但绝不让 high 超 C3)。
         const bassLowRaw = parseNoteName(style.bassLow) ?? 36;
         const bassHighRaw = parseNoteName(style.bassHigh) ?? 60;
-        const bassLowMidi = bassLowRaw;
-        const bassHighMidi = Math.min(bassHighRaw, 50);  // cap D3 (50) — bass 不上中音区
+        const bassLowMidi = Math.min(bassLowRaw, 36);    // 下扩到 C2 (36) 或更低
+        const bassHighMidi = Math.min(bassHighRaw, 48);  // cap C3 (48) — 钢琴 LH 上限
 
         let prevVoicing: number[] = [];
         let prevLhLow = settings.lhLowerLimit;
