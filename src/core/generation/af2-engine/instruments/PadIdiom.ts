@@ -1,19 +1,23 @@
 // ============================================================
-// PadIdiom v1.1 — AF2 氛围 pad idiom
+// PadIdiom v1.2 — AF2 氛围 pad idiom(W 阶段 2026-05-25:atmosphereOverrides 完整 wire)
 // ============================================================
 //
 // v1.0 → v1.1 增强:
 //   - **Voicing slice mode**:per sectionType 选择 pad voicing 切片
-//     · LowCluster(深沉,Intro/Outro/Bridge)— voicing 低 2-3 个 + 中 octave 下沉
-//     · MidPad(标准,Verse)— voicing 中部
-//     · HighPad(明亮,Chorus/BuildUp)— voicing 高 2-3 个 + 上 octave 提升
-//   - **Attack pre-roll**:Sustained sections(Bridge/Break)attack 提前 0.25 beat
-//     (slow fade-in 听感);Stab sections(BuildUp)精确对齐 chord 起点
-//   - **Velocity ramp**:BuildUp 段 velocity 按 progress 渐强(0.4 → 0.7)
-//   - **Persona 消费**:colorBias 高 → 偏 HighPad / sparsityTendency 高 → 偏 LowCluster
+//   - **Attack pre-roll**:Sustained sections attack 提前 0.25 beat
+//   - **Velocity ramp**:BuildUp 段 velocity 按 progress 渐强
+//   - **Persona colorBias / sparsity 加权**
+//
+// v1.1 → v1.2(W 阶段):musician.personnel.atmosphereOverrides 5 字段全 wire
+//   - voiceCount      限制 voicing 输出最多 N voice(默认 4)
+//   - velocityRange   [lo, hi] MIDI 0-127 → 替换 0.3+energy×0.06 公式
+//   - octaveLayering  true 时复制每 voice +12 octave 加厚
+//   - attackSoftness  0-1 → preRoll 系数(0.5 = 默认,1.0 = 强 fade-in)
+//   - releaseRatio    1.0+ → duration 系数(拖长尾)
+//   - crossfade       暂未消费(需 chord 间 envelope,跳过)
 //
 // 物理约束(不变):
-//   - GM 89 Warm Pad
+//   - GM Program 由 Facade per-mgStyle 决定(W2,POP=89/JAZZ=95/RNB=91/BLUES=89)
 //   - 音域 C3-C6(MIDI 48-84)
 //   - eligibleSlots: [Atmosphere]
 //
@@ -189,6 +193,14 @@ export const PadGenerator = {
         const colorBias = persona?.colorBias ?? 0;
         const sparsity = persona?.sparsityTendency ?? 0;
 
+        // W 阶段:personnel.atmosphereOverrides 完整 wire(若 musician 卡有)
+        const atmos = input.musician?.personnel?.atmosphereOverrides;
+        const voiceCount = atmos?.voiceCount ?? 4;
+        const velocityRange: [number, number] = atmos?.velocityRange ?? [40, 90];  // MIDI 0-127
+        const octaveLayering = atmos?.octaveLayering ?? false;
+        const attackSoftness = atmos?.attackSoftness ?? 0.5;  // 0-1
+        const releaseRatio = atmos?.releaseRatio ?? 1.0;       // 1.0 = default,>1 = 拖长尾
+
         // 累计 chord idx + total per section(给 velocity ramp 用)
         const sectionTotals = new Map<number, number>();
         for (const ch of chords) {
@@ -230,20 +242,42 @@ export const PadGenerator = {
             );
             if (voicing.length === 0) continue;
 
-            // Step 5: energy → velocity + v1.1 BuildUp ramp
+            // Step 4.5: W 阶段 — voiceCount 限制(从 atmos.voiceCount;默认 4)
+            //   超出 voiceCount → 取低 voiceCount 个(保 bass 区,丢 top 色彩音)
+            if (voicing.length > voiceCount) {
+                voicing = voicing.slice(0, voiceCount);
+            }
+
+            // Step 4.6: W 阶段 — octaveLayering(若 true 则复制每 voice +12)
+            //   加厚听感,但保 PAD_RANGE 边界
+            if (octaveLayering) {
+                const layered = voicing.map(p => p + 12).filter(p => p <= PAD_INSTRUMENT_SPEC.rangeHi);
+                voicing = voicing.concat(layered).sort((a, b) => a - b);
+            }
+
+            // Step 5: energy → velocity(W 阶段:用 atmos.velocityRange 映射,
+            //   而非旧固定公式 0.3 + energy × 0.06)
+            //   energy 1-10 → ratio 0-1 → lerp(velocityRange[0], velocityRange[1])
+            //   BuildUp 段仍走 progress ramp(覆盖 energy 公式)
             const energy = energyForBeat(chord.startBeat, sections);
-            let velocityRaw = 0.3 + energy * 0.06;
+            const velLoFloat = velocityRange[0] / 127;
+            const velHiFloat = velocityRange[1] / 127;
+            const energyRatio = Math.max(0, Math.min(1, (energy - 1) / 9));  // 1→0, 10→1
+            let velocityRaw = velLoFloat + (velHiFloat - velLoFloat) * energyRatio;
             if (sectionType === SectionType.BuildUp) {
                 const total = sectionTotals.get(sectionIdx) ?? 1;
                 const progress = total > 1 ? chordIdxInSection / (total - 1) : 0.5;
-                velocityRaw = 0.4 + progress * 0.3;   // 0.4 → 0.7 渐强
+                // BuildUp 渐强:velLo → velHi by progress(尊重 atmos.velocityRange)
+                velocityRaw = velLoFloat + (velHiFloat - velLoFloat) * progress;
             }
-            const velocity = velocityRaw < 0.3 ? 0.3 : velocityRaw > 0.9 ? 0.9 : velocityRaw;
+            const velocity = Math.max(velLoFloat, Math.min(velHiFloat, velocityRaw));
 
             // Step 6: v1.1 — Attack pre-roll(slow fade-in 听感)
-            const preRoll = attackPreRoll(sectionType);
+            //   W 阶段:乘 attackSoftness × 2 系数(0.5 默认 = 1.0×,1.0 = 2×强 fade-in,0 = 无 pre-roll)
+            const preRoll = attackPreRoll(sectionType) * attackSoftness * 2;
             const onset = Math.max(0, chord.startBeat - preRoll);
-            const duration = (chord.endBeat - chord.startBeat) + preRoll;
+            // W 阶段:duration 乘 releaseRatio(1.0 默认,>1 拖长尾)
+            const duration = ((chord.endBeat - chord.startBeat) + preRoll) * releaseRatio;
             if (duration <= 0) continue;
 
             // Step 7: 每 voice 一条 NoteData

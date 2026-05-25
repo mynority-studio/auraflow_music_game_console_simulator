@@ -429,6 +429,14 @@ export const Af2EngineFacade = {
         const afStyleId = MG_STYLE_TO_AF_STYLE[mgStyle];
 
         // Step 6b.1:先按 AF2 idiom 默认填(钢琴/电贝斯/Pad)
+        // W 阶段(2026-05-25):Pad GM 按 mgStyle 查表,POP/JAZZ/RNB/BLUES 各自
+        // 用风格 idiomatic pad 音色(GM 88-95 8 个 pad,选 4 个最贴合的)
+        const PAD_GM_BY_STYLE: Record<MgStyle, number> = {
+            POP:   89,  // Warm Pad — 温暖,默认
+            JAZZ:  95,  // Sweep Pad — 空灵 sweep,jazz 神秘感
+            BLUES: 89,  // Warm Pad — blues 不常用 pad,warm 中性 fallback
+            RNB:   91,  // Choir Pad — neo-soul 声乐质感
+        };
         const gmOverrides: NonNullable<MusicContext['gmProgramOverrides']> = {
             melody: PianoIdiom.getGmProgram(),
             accomp: PianoIdiom.getGmProgram(),
@@ -437,7 +445,7 @@ export const Af2EngineFacade = {
             gmOverrides.bass = BassIdiom.getGmProgram();
         }
         if (renderedPad.length > 0) {
-            gmOverrides.atmosphere = PadIdiom.getGmProgram();
+            gmOverrides.atmosphere = PAD_GM_BY_STYLE[mgStyle];
         }
 
         // Step 6b.2:用 forcedGmPrograms / musician.gmProgramOverride 覆盖
