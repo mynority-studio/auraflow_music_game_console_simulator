@@ -116,7 +116,8 @@ src/core/generation/
 │  ├─ Af2Arranger.ts              ← 进行决策(section-aware + ii-V/Sub-V/iv 注入)
 │  ├─ Af2Composer.ts              ← Voicing(Divisi 2.0 加 9/13 tension)
 │  ├─ Dispatcher.ts               ← 调用顺序 bass→accomp→drums→melody→pad
-│  ├─ Af2MelodyGen.ts             ← 钢琴 melody 算法(chord-tone + rhythm + contour)
+│  ├─ Af2MelodyGen.ts             ← melody orchestrator core(2026-05-25 拆:role gate + chord-tone cycle + placeNearAnchor)
+│  ├─ plugins/melody/             ← 6 plugin(RhythmPattern / PhraseContour / PassingTone / PhraseEnding / Sparsity / Velocity)
 │  ├─ Af2AccompGen.ts             ← 钢琴 accomp 算法(Block/Arp/Stab/Sustained)
 │  ├─ plugins/reconciler/         ← velocity plugin chain(2026-05-25 拆:EnergyHumanizer / CollisionDamper / DropBuildupDynamics + types.ts)
 │  ├─ instruments/

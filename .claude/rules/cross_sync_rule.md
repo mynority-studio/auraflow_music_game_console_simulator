@@ -78,7 +78,7 @@
     - `DEFAULT_BY_SECTION`
     - `SECTION_POOLS_BY_STYLE`(POP/JAZZ/BLUES/RNB 各 sectionType 池)
   - `af2-engine/Af2AccompGen.ts` `SECTION_ACCOMP_POOL`
-  - `af2-engine/Af2MelodyGen.ts` `phraseContourBias`(per sectionType bias)
+  - `af2-engine/plugins/melody/PhraseContourShaper.ts`(2026-05-25 拆 plugin:per sectionType bias)
   - `af2-engine/instruments/PadIdiom.ts` `SECTION_SLICE_POOL` + `attackPreRoll`
   - `af2-engine/SectionPlanner.ts` 段落生成(structureTemplate)
 - **风险**:**高**(新 sectionType 漏配 → fallback 到 default 听感不符,silently)
@@ -90,7 +90,7 @@
   - `af2-engine/Af2Composer.ts` `MG_TYPE_TO_QUALITY` 表(string → enum)
   - `af2-engine/MgKernelInvoker.ts` `MG_TYPE_TO_QUALITY` 表(同上,镜像)
   - `af2-engine/DynamicHarmony.ts` `DYNAMIC_TSD_DICTIONARY` per-quality 字段(M 阶段,2026-05-24)
-  - `af2-engine/Af2MelodyGen.ts` `thirdInterval` / `fifthInterval` / `seventhInterval`
+  - `af2-engine/Af2MelodyGen.ts` 主循环 cyclePcs 构造调 `thirdInterval` / `fifthInterval` / `seventhInterval`
   - `af2-engine/instruments/BassIdiom.ts` `thirdInterval` / `fifthInterval`
   - `af2-engine/music-theory/chord-types.ts` `CHORD_TYPES`
 - **风险**:**高**(quality 漏配 → fallback Major triad,色彩消失)
@@ -110,7 +110,7 @@
   - `af2-engine/Af2AccompGen.ts` `STYLE_TEXTURE_POOL[mgStyle]`(N 阶段,2026-05-24)
   - `af2-engine/chord-texture/TextureTypeMapping.ts` `TEXTURE_MAPPING`(N 阶段;加新 textureType 必须同步 ChordTextureEngine family case)
   - `af2-engine/SubStyleTextures.ts` `SUB_STYLES_BY_MG[mgStyle]` + `SUB_STYLE_PRIMARY_TEXTURES`(P 阶段,2026-05-24;加新 mgStyle 必须 给至少 1 个 sub-style + primaryTextures)
-  - `af2-engine/Af2MelodyGen.ts` `RHYTHM_PATTERNS_BY_STYLE[mgStyle]`(B3,2026-05-24)
+  - `af2-engine/plugins/melody/RhythmPatternPicker.ts` `RHYTHM_PATTERNS_BY_STYLE[mgStyle]`(2026-05-25 拆 plugin;B3 原 Af2MelodyGen)
   - `af2-engine/instruments/BassIdiom.ts` `DEFAULT_WALK_PATTERN_BY_STYLE[mgStyle]`(B4,2026-05-24)
   - `af2-engine/MgKernelInvoker.ts` `MG_STYLE_BARS` + `MG_STYLE_BPM`
   - `af2-engine/Af2EngineFacade.ts` `MG_STYLE_TO_AF_STYLE`

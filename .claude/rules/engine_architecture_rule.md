@@ -144,7 +144,8 @@
 | Conductor 5 层 filter(WakeK / PeakK / Template / Energy / Pref) | `af2-engine/plugins/conductor/{WakeKGate,PeakKGate,StyleTemplateFilter,EnergyFilter,MusicianPrefFilter}.ts` + `index.ts` 的 `DEFAULT_ROLE_FILTERS` 数组(2026-05-25 拆 plugin) | 不要散到 Conductor.ts 内部硬编 if 链 |
 | Conductor filter 顺序 / 启停 | `af2-engine/plugins/conductor/index.ts` 的 `DEFAULT_ROLE_FILTERS` 数组 | 不要 fork dispatch 跳过某 filter |
 | 乐手 idiom 实装(钢琴/贝斯/鼓/Pad) | `af2-engine/instruments/{Piano,Bass,Drum,Pad}Idiom.ts` | 不要在 Dispatcher 加渲染逻辑 |
-| 钢琴 melody 算法 | `af2-engine/Af2MelodyGen.ts`(generateAf2Melody)| 不要在 PianoIdiom 直接写算法 |
+| 钢琴 melody orchestrator(core) | `af2-engine/Af2MelodyGen.ts`(generateAf2Melody — 主循环 / role gate / chord-tone cycle / placeNearAnchor) | 不要在 PianoIdiom 直接写算法 |
+| 钢琴 melody 6 plugin(rhythm / contour / passing / phrase end / sparsity / velocity) | `af2-engine/plugins/melody/{RhythmPatternPicker,PhraseContourShaper,PassingToneSelector,PhraseEndingDecider,SparsityGate,VelocityHumanizer}.ts`(2026-05-25 拆 plugin) | 不要把 plugin 决策搬回 orchestrator |
 | 钢琴 accomp 算法 | `af2-engine/Af2AccompGen.ts`(generateAf2Accomp)| 不要在 PianoIdiom 直接写算法 |
 | Bass walking 模式 | `af2-engine/instruments/BassIdiom.ts` 的 `renderAf2Walking` + `data/BassWalkPatterns.ts` 的 `WALK_PATTERNS` | 不要在 Composer 改 bass |
 | 鼓组 grid | `af2-engine/instruments/drum-grid/grids/` per-mgStyle 配置 | 不要在 DrumIdiom 硬编 |
@@ -268,7 +269,8 @@ af2-engine/             ← 唯一活跃引擎
 ├─ DynamicHarmony.ts    ← TSD 字典 + Sub-V(Composer Look-ahead 用)
 ├─ Af2Composer.ts       ← decorate + Sub-V override + 5-mode assembleVoicing
 ├─ Dispatcher.ts        ← 调用顺序
-├─ Af2MelodyGen.ts      ← AF2 自家 melody 算法
+├─ Af2MelodyGen.ts      ← melody orchestrator(core:role gate + cycle + placeNearAnchor)
+├─ plugins/melody/      ← 6 plugin(RhythmPattern / PhraseContour / PassingTone / PhraseEnding / Sparsity / Velocity)
 ├─ Af2AccompGen.ts      ← AF2 自家 accomp 算法
 ├─ plugins/reconciler/  ← velocity plugin chain(EnergyHumanizer / CollisionDamper / DropBuildupDynamics + types.ts)
 ├─ SectionPlanner.ts    ← 段落生成
@@ -335,11 +337,12 @@ utils/                  ← PRNGManager
 
 | 想优化什么 | 主要改哪 |
 |------------|---------|
-| Melody 节奏 pattern(per mgStyle) | `Af2MelodyGen.RHYTHM_PATTERNS_BY_STYLE` |
-| Melody phrase contour(arch/up/down)| `Af2MelodyGen.phraseContourBias` |
-| Melody chord-tone cycle [root,5,3,7] | `Af2MelodyGen.cyclePcs` 构造 |
-| Melody passing tone | `Af2MelodyGen.passingToneGate` + `pickPassingPc` |
-| Melody phrase ending | `Af2MelodyGen` `progress >= 0.95` 分支 |
+| Melody 节奏 pattern(per mgStyle) | `plugins/melody/RhythmPatternPicker.ts` 的 `RHYTHM_PATTERNS_BY_STYLE` |
+| Melody phrase contour(arch/up/down)| `plugins/melody/PhraseContourShaper.ts` |
+| Melody chord-tone cycle [root,5,3,7] | `Af2MelodyGen.generateAf2Melody` 主循环内 cyclePcs 构造(core,不在 plugin)|
+| Melody passing tone | `plugins/melody/PassingToneSelector.ts`(gate + pick 两 method)|
+| Melody phrase ending | `plugins/melody/PhraseEndingDecider.ts` |
+| Melody sparsity / velocity | `plugins/melody/{SparsityGate,VelocityHumanizer}.ts` |
 | Accomp textureType 池(per mgStyle × sectionType) | `Af2AccompGen.STYLE_TEXTURE_POOL` + `pickTextureType` |
 | Chord 演绎 family(8 个,如 PopAnthem/JazzCharleston/Bossa/BoogieWalk/GhostStab/PureArp/PopBroken8th/Sustained) | `af2-engine/chord-texture/families/*.ts` | 不要在 AccompGen 重新实装演绎逻辑 |
 | Chord 演绎 textureType → family + params 映射 | `af2-engine/chord-texture/TextureTypeMapping.ts` `TEXTURE_MAPPING` | 加新 textureType 必须同步 family case |
