@@ -60,11 +60,11 @@
 │   → Af2AbstractStep[](roman + type + rootOffset)             │
 └────────────────────────────────────────────────────────────────┘
         ↓
-┌─ 4. Composer ─────────────────────────────────────────────────┐
-│ af2-engine/Af2Composer.ts(M 阶段重构 2026-05-24)              │
+┌─ 4. Composer(orchestrator + DynamicHarmonyDecorator plugin)──┐
+│ af2-engine/Af2Composer.ts — orchestrator(2026-05-25 decorator 拆 plugin) │
 │   per step + Look-ahead next:                                  │
-│     1. decorateChordType(DynamicHarmony):                     │
-│        · lockType skip(Planner 已锁)                          │
+│     1. plugins/composer/DynamicHarmonyDecorator(全 decoration):│
+│        · lockType skip(Planner 已锁,2 PRNG ceremony)         │
 │        · colorLevel roll(per-mgStyle 0/1/2 概率)              │
 │        · DYNAMIC_TSD[mgStyle][T/S/D].find(target) pick type    │
 │        · Sub-V activation(D + fifth-down + tritoneProb)       │
@@ -74,6 +74,7 @@
 │        含 addColorOnTriad + clash detection + density 优先 drop │
 │     3. placeVoicingMidi → voice-leading + chord range placement │
 │     4. spellPcInKey / midiToNoteInChord → 拼写                 │
+│     5. smoothChordVoicings post-pass(R 阶段,事实 plugin)      │
 │   → ChordDef[](voicing + bass + chordSymbol)                  │
 └────────────────────────────────────────────────────────────────┘
         ↓ (转 GeneratedChord IR)
@@ -136,7 +137,8 @@
 | Tonicization / 二级属(4 placement) | `af2-engine/TonicizationPlanner.ts` 的 `STYLE_TONICIZE_PROB` / `STYLE_PLACEMENT_WEIGHTS` / `TARGET_MULT` | 不要散到 Arranger / Composer |
 | Voicing 算法 / placeVoicingMidi | `af2-engine/music-theory/voicing.ts`(+ `Af2Composer.ts` 调用层) | 不要在各 Idiom 重写 voicing |
 | Dynamic TSD chord type 字典(Look-ahead) | `af2-engine/DynamicHarmony.ts` 的 `DYNAMIC_TSD_DICTIONARY` + `COLOR_LEVEL_PROBABILITIES` + `analyzeTargetQuality` | 不要散到 Composer / Arranger |
-| Sub-V tritone substitution 触发 | `af2-engine/DynamicHarmony.ts` 的 rule.`tritoneProb` + `Af2Composer.decorateChordType` 内 Sub-V override | 不要在 Arranger borrow 处做 |
+| Sub-V tritone substitution 触发 | `af2-engine/DynamicHarmony.ts` 的 rule.`tritoneProb` + `plugins/composer/DynamicHarmonyDecorator.ts` 内 Sub-V override(2026-05-25 拆 plugin) | 不要在 Arranger borrow 处做 |
+| Chord-type decoration(colorLevel / TSD / Sub-V / data-debt guard) | `af2-engine/plugins/composer/DynamicHarmonyDecorator.ts`(2026-05-25 拆 plugin;原 Af2Composer.decorateChordType) | 不要散到 Composer 主循环 |
 | Per-mgStyle 默认 voicing mode(shell/rootless/cluster/full/blues) | `af2-engine/Af2Composer.ts` 的 `DEFAULT_VOICING_MODE_BY_STYLE` | 不要 musician 卡 override(voicing mode 是风格属性) |
 | Voicing PCs assembly(addColor + clash + density) | `af2-engine/music-theory/voicing.ts` 的 `assembleVoicing` | Composer 一律走它,不要 inline pcs 计算 |
 | Chord type interval 表 | `af2-engine/music-theory/chord-types.ts` 的 `CHORD_TYPES` | 不要硬编到具体 idiom |
@@ -268,7 +270,8 @@ af2-engine/             ← 唯一活跃引擎
 ├─ BorrowChordPlanner.ts← Modal interchange(7 rule × 3 source 锁定)
 ├─ TonicizationPlanner.ts← Tonicization(4 placement × target mult)
 ├─ DynamicHarmony.ts    ← TSD 字典 + Sub-V(Composer Look-ahead 用)
-├─ Af2Composer.ts       ← decorate + Sub-V override + 5-mode assembleVoicing
+├─ Af2Composer.ts       ← orchestrator(主循环 + assembleVoicing + placeVoicingMidi + smoothChordVoicings)
+├─ plugins/composer/    ← DynamicHarmonyDecorator(chord-type decoration:TSD/colorLevel/Sub-V/data-debt)
 ├─ Dispatcher.ts        ← 调用顺序
 ├─ Af2MelodyGen.ts      ← melody orchestrator(core:role gate + cycle + placeNearAnchor)
 ├─ plugins/melody/      ← 6 plugin(RhythmPattern / PhraseContour / PassingTone / PhraseEnding / Sparsity / Velocity)

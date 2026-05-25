@@ -37,13 +37,8 @@ import { Random } from './utils/Random';
 import type { ChordDef } from './types/ChordDef';
 import type { Af2AbstractStep } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
-import {
-    DYNAMIC_TSD_DICTIONARY,
-    COLOR_LEVEL_PROBABILITIES,
-    analyzeTargetQuality,
-    type TSD_Func,
-} from './DynamicHarmony';
 import type { SubStyle } from './SubStyleTextures';
+import { DynamicHarmonyDecorator } from './plugins/composer';
 
 // ============================================================
 // M 阶段(2026-05-24):Dynamic TSD chord-type decoration
@@ -120,95 +115,8 @@ const SUB_STYLE_VOICING_MODE: Partial<Record<SubStyle, VoicingStylePreference>> 
     MotownSoul:        STYLE_FULL,      // motown 钢琴完整 voicing
 };
 
-interface DecorateResult {
-    type: string;
-    rootOffsetOverride?: number;
-    romanOverride?: string;
-}
-
-function decorateChordType(
-    step: Af2AbstractStep,
-    next: Af2AbstractStep,
-    mgStyle: MgStyle,
-    rng: Random,
-): DecorateResult {
-    // Locked slot — Planner(borrow/tonicize)已设 exact type。
-    // 仍消耗 1 + 1 random 保持 stream 稳定(roll + pick)。
-    if (step.lockType) {
-        rng.next();
-        rng.next();
-        return { type: step.type };
-    }
-
-    // 1. Roll colorLevel
-    const probs = COLOR_LEVEL_PROBABILITIES[mgStyle];
-    const r = rng.next();
-    let colorLevel: 0 | 1 | 2 = 0;
-    if (r < probs.level0) colorLevel = 0;
-    else if (r < probs.level0 + probs.level1) colorLevel = 1;
-    else colorLevel = 2;
-
-    // 2. Functional analysis(currFunc 优先用 Planner 标的 effectiveFunc)
-    const currFunc: TSD_Func = step.effectiveFunc ?? harmonicFunctionFromRoman(step.roman);
-    const nextFunc: TSD_Func = next.effectiveFunc ?? harmonicFunctionFromRoman(next.roman);
-    const targetQuality = analyzeTargetQuality(currFunc, nextFunc, next.roman, next.type);
-
-    // 3. Dynamic dictionary lookup
-    const rules = DYNAMIC_TSD_DICTIONARY[mgStyle]?.[currFunc];
-    let choices: string[] | undefined;
-    let isTritoneSub = false;
-
-    if (rules) {
-        const rule = rules.find(rl => rl.target === targetQuality)
-            ?? rules.find(rl => rl.target === 'Default');
-        if (rule && rule.levels[colorLevel]) {
-            choices = rule.levels[colorLevel];
-
-            // 4. Tritone Substitution probability gate
-            // Conditional random:只在 look-ahead AND tritoneProb 都存在 + D-function
-            // AND non-deceptive 时 consume。determinism 只在 substitution-eligible 处 vary。
-            if (rule.tritoneProb && currFunc === 'D' && targetQuality !== 'Deceptive') {
-                const rootDelta = (((next.rootOffset - step.rootOffset) % 12) + 12) % 12;
-                if (rootDelta === 5 && rng.next() < rule.tritoneProb) {
-                    isTritoneSub = true;
-                }
-            }
-        }
-    }
-
-    // 5. Pick(若无 choices,保留原 step.type;仍消耗 1 random 保持稳定)
-    let finalType: string;
-    if (choices && choices.length > 0) {
-        finalType = rng.pick(choices);
-    } else {
-        rng.next();
-        finalType = step.type;
-    }
-
-    // 6. Data-debt guard:dictionary 引用未注册的 chord type → 按 function downgrade
-    if (!CHORD_TYPES[finalType]) {
-        if (currFunc === 'D') finalType = '7';
-        else if (currFunc === 'S') finalType = targetQuality === 'MinorTarget' ? 'm7' : 'maj7';
-        else finalType = targetQuality === 'MinorTarget' ? 'min' : 'maj';
-    }
-
-    // 7. Sub-V override — Lydian Dominant family。静态 map colorLevel
-    // 避免 '7#9#11' monster + 不消耗额外 random。
-    if (isTritoneSub) {
-        let subVType: string;
-        if (colorLevel === 0) subVType = '7';
-        else if (colorLevel === 1) subVType = '9';
-        else subVType = targetQuality === 'MinorTarget' ? '7#11' : '13';
-
-        return {
-            type: subVType,
-            rootOffsetOverride: ((step.rootOffset + 6) % 12 + 12) % 12,
-            romanOverride: `subV/${next.roman.split('/')[0]}`,
-        };
-    }
-
-    return { type: finalType };
-}
+// decorateChordType 已拆 plugin → plugins/composer/DynamicHarmonyDecorator.ts(2026-05-25)
+// Composer 主循环直接调 DynamicHarmonyDecorator.apply(step, next, mgStyle, rng)
 
 // ============================================================
 // R 阶段(2026-05-24):跨 chord voice leading 全局 smoother
@@ -391,7 +299,7 @@ export const Af2Composer = {
             let finalRootOffset: number = step.rootOffset;
             let finalRoman: string = step.roman;
             if (mgStyle && rng) {
-                const decorated = decorateChordType(step, next, mgStyle, rng);
+                const decorated = DynamicHarmonyDecorator.apply(step, next, mgStyle, rng);
                 finalType = decorated.type;
                 if (decorated.rootOffsetOverride !== undefined) {
                     finalRootOffset = decorated.rootOffsetOverride;
