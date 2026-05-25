@@ -111,7 +111,8 @@ npm run lint           # tsc --noEmit 必过
 src/core/generation/
 ├─ af2-engine/                    ← 唯一活引擎
 │  ├─ Af2EngineFacade.ts          ← 顶层入口(runPipeline 调)
-│  ├─ Conductor.ts                ← 编排决策(5 层 + per-style template variants)
+│  ├─ Conductor.ts                ← 编排决策 core(template + DynamicConductor.dispatch;5 层 filter 2026-05-25 拆到 plugins/conductor/)
+│  ├─ plugins/conductor/          ← 5 RoleFilter plugin chain(WakeK / PeakK / Template / Energy / Pref + types + index)
 │  ├─ Af2Arranger.ts              ← 进行决策(section-aware + ii-V/Sub-V/iv 注入)
 │  ├─ Af2Composer.ts              ← Voicing(Divisi 2.0 加 9/13 tension)
 │  ├─ Dispatcher.ts               ← 调用顺序 bass→accomp→drums→melody→pad

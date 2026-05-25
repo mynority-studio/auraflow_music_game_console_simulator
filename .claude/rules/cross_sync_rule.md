@@ -149,16 +149,20 @@
   - 添加新字段 → 同时更新 MusicianRegistry 注释 + engine_architecture_rule §8 乐器速查表
 - **风险**:**中**(新字段 musician 卡填了但 idiom 不消费 → 改卡无效果)
 
-### 1.9 Conductor 5 层决策 ↔ persona 字段 / musician 卡
+### 1.9 Conductor 5 RoleFilter plugin chain ↔ persona 字段 / musician 卡
 
 - **触发器**:
-  - 改 `Conductor.dispatch` 5 层决策逻辑
+  - 改 `plugins/conductor/{WakeKGate,PeakKGate,StyleTemplateFilter,EnergyFilter,MusicianPrefFilter}.ts` 任一 filter 逻辑
+  - 改 `plugins/conductor/index.ts` 的 `DEFAULT_ROLE_FILTERS` 数组(顺序 / 增 / 减)
+  - 改 `plugins/conductor/types.ts` 的 `RoleFilterContext` 字段 / `CONTINUITY_K_MARGIN`
   - 加新 persona 字段(wakeK / peakK / isApex / sectionRolePreference / etc.)
 - **必须同步**:
   - musician 卡填新字段(MusicianRegistry)
-  - 文档 engine_architecture_rule §1 第 2 层 Conductor 5 层说明同步更新
+  - 加新 filter → 同时建新 plugin 文件 + 加入 `DEFAULT_ROLE_FILTERS` 数组 + 决定 apex bypass 语义
+  - 文档 engine_architecture_rule §1 第 2 层 Conductor RoleFilter chain 说明同步更新
   - 各 musician.persona 默认值(undefined / 0 / 5 / 等)行为兼容性
-- **风险**:**中**(改决策顺序但 musician 卡没改默认 → 行为漂移)
+- **风险**:**中**(改 filter 顺序 / 拔某 filter 但 musician 卡没改默认 → 行为漂移)
+- **架构**:Conductor 拆 plugin 后(2026-05-25),改 filter 顺序 / 启停 = 改 1 行数组,**不要**回退到 Conductor.ts 内硬编 if 链
 
 ### 1.10 PRNG 消耗 ↔ deterministic-hash 模块
 

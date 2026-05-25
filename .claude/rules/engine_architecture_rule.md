@@ -32,15 +32,19 @@
 │                       Atmosphere)+ forcedBand 覆盖             │
 └────────────────────────────────────────────────────────────────┘
         ↓
-┌─ 2. Conductor ────────────────────────────────────────────────┐
+┌─ 2. Conductor(core + 5 RoleFilter plugin chain)──────────────┐
 │ af2-engine/Conductor.ts — DynamicConductor.dispatch            │
 │   pickConductorTemplate(mgStyle, seed) → template variant      │
-│   per section 5 层决策:                                        │
-│     (0) wakeK gate(sleeping)                                  │
-│     (1) Style template filter                                  │
-│     (2) Energy-driven filter(low → less roles)                │
-│     (3) musician.af2Overrides.sectionRolePreference 交集       │
-│     (4) isApex 例外(高 energy 段绕过 0-2 过滤)                │
+│   core = buildDefaultByMusician(全员上岗 1:1 默认 role)        │
+│   plugins/conductor/ DEFAULT_ROLE_FILTERS 链(2026-05-25 拆):  │
+│     1. WakeKGate          — K < wakeK 时 sleeping              │
+│     2. PeakKGate          — K > peakK 时退出                   │
+│     3. StyleTemplateFilter — per-mgStyle template INTERSECTION │
+│     4. EnergyFilter       — energy 密度档 INTERSECTION         │
+│     5. MusicianPrefFilter — musician 卡 sectionRolePreference  │
+│   apex 例外:isApex && energy>=7 → 前 4 filter bypass(尊重 #5) │
+│   Z3 continuity:prev 上岗时 wakeK/peakK 给 ±0.15 容差          │
+│   全部 zero PRNG 消耗;加/减/调 filter 改 plugins/conductor/index.ts 数组 │
 │   → SectionAssignment[](per section per musician → roles)     │
 └────────────────────────────────────────────────────────────────┘
         ↓
@@ -136,7 +140,9 @@
 | Per-mgStyle 默认 voicing mode(shell/rootless/cluster/full/blues) | `af2-engine/Af2Composer.ts` 的 `DEFAULT_VOICING_MODE_BY_STYLE` | 不要 musician 卡 override(voicing mode 是风格属性) |
 | Voicing PCs assembly(addColor + clash + density) | `af2-engine/music-theory/voicing.ts` 的 `assembleVoicing` | Composer 一律走它,不要 inline pcs 计算 |
 | Chord type interval 表 | `af2-engine/music-theory/chord-types.ts` 的 `CHORD_TYPES` | 不要硬编到具体 idiom |
-| Conductor 编排决策 | `af2-engine/Conductor.ts` 的 `CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE` + 5 层决策 | 不要在 Dispatcher / Idiom 加 role gate |
+| Conductor 编排决策(template / variant) | `af2-engine/Conductor.ts` 的 `CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE` + `DynamicConductor.dispatch` | 不要在 Dispatcher / Idiom 加 role gate |
+| Conductor 5 层 filter(WakeK / PeakK / Template / Energy / Pref) | `af2-engine/plugins/conductor/{WakeKGate,PeakKGate,StyleTemplateFilter,EnergyFilter,MusicianPrefFilter}.ts` + `index.ts` 的 `DEFAULT_ROLE_FILTERS` 数组(2026-05-25 拆 plugin) | 不要散到 Conductor.ts 内部硬编 if 链 |
+| Conductor filter 顺序 / 启停 | `af2-engine/plugins/conductor/index.ts` 的 `DEFAULT_ROLE_FILTERS` 数组 | 不要 fork dispatch 跳过某 filter |
 | 乐手 idiom 实装(钢琴/贝斯/鼓/Pad) | `af2-engine/instruments/{Piano,Bass,Drum,Pad}Idiom.ts` | 不要在 Dispatcher 加渲染逻辑 |
 | 钢琴 melody 算法 | `af2-engine/Af2MelodyGen.ts`(generateAf2Melody)| 不要在 PianoIdiom 直接写算法 |
 | 钢琴 accomp 算法 | `af2-engine/Af2AccompGen.ts`(generateAf2Accomp)| 不要在 PianoIdiom 直接写算法 |
@@ -254,7 +260,8 @@ af2-engine/             ← 唯一活跃引擎
 │                                      AnticipatedBlock
 │                              N6 待移植: CallAndResponse(需 cross-track melody peers)
 ├─ Score.ts             ← 总谱契约
-├─ Conductor.ts         ← 编排决策
+├─ Conductor.ts         ← 编排决策 core(template + DynamicConductor.dispatch)
+├─ plugins/conductor/   ← 5 RoleFilter plugin chain(WakeK/PeakK/Template/Energy/Pref + types.ts + index.ts)
 ├─ Af2Arranger.ts       ← 进行决策 + 接 2 planner
 ├─ BorrowChordPlanner.ts← Modal interchange(7 rule × 3 source 锁定)
 ├─ TonicizationPlanner.ts← Tonicization(4 placement × target mult)
