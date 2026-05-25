@@ -97,12 +97,13 @@
 │   → NoteData[] per musician                                    │
 └────────────────────────────────────────────────────────────────┘
         ↓
-┌─ 7. Reconciler ───────────────────────────────────────────────┐
-│ af2-engine/Reconciler.ts                                       │
-│   v1.0:energy humanization(velocity 段落能量化)              │
-│   v1.1:collision damp(同 pitch+onset 重复 ×0.6)              │
-│   v1.2:drop/buildup velocity 调整                             │
-│   pitch 协调(如 add11)已下沉到 PianoIdiom 内部,此层只做 velocity │
+┌─ 7. Reconciler plugin chain(无 core,3 plugin 顺序叠加)─────┐
+│ af2-engine/plugins/reconciler/(2026-05-25 拆 plugin)         │
+│   EnergyHumanizer  v1.0 — 段落能量驱动 velocity              │
+│   CollisionDamper  v1.1 — accomp 撞 bass/melody 时 ×0.5      │
+│   DropBuildupDynamics v1.2 — Drop/BuildUp kind-specific 动态 │
+│   pitch 协调(如 add11)已下沉到 PianoIdiom 内部,此层 velocity-only │
+│   全部 zero PRNG 消耗;任一 plugin 拔掉听感劣化但不破坏正确性  │
 └────────────────────────────────────────────────────────────────┘
         ↓
 ┌─ 8. GM128 装配 ────────────────────────────────────────────────┐
@@ -144,7 +145,7 @@
 | 鼓组算法 | `af2-engine/instruments/DrumIdiom.ts` 的 `renderSection` + `DrumGenerator` | 不要分散 |
 | Pad voicing slice / attack / velocity | `af2-engine/instruments/PadIdiom.ts`(PadGenerator)| 不要分散 |
 | Dispatcher 顺序 / peers 累积 | `af2-engine/Dispatcher.ts` 的 `dispatchMusicians` 中 steps 数组顺序 | 不要在 idiom 互相 import |
-| Reconciler velocity 调整 | `af2-engine/Reconciler.ts` v1.0/1.1/1.2 | 不要在各 musician plan() 内调 velocity |
+| Reconciler velocity 调整 | `af2-engine/plugins/reconciler/{EnergyHumanizer,CollisionDamper,DropBuildupDynamics}.ts`(2026-05-25 拆 plugin) | 不要在各 musician plan() 内调 velocity |
 | musician 卡个性 | `idioms/MusicianRegistry.ts` 的 `af2Overrides` + `persona` | 不要在 PianoIdiom 内硬编 musician 行为 |
 | Note 拼写 / KEYS / midiToNote | `af2-engine/music-theory/spell.ts` | 不要重写 |
 | PRNG 类 / 字符串 fork | `af2-engine/utils/Random.ts`(标准 Random class)| 不要 `Math.random()` |
@@ -262,7 +263,7 @@ af2-engine/             ← 唯一活跃引擎
 ├─ Dispatcher.ts        ← 调用顺序
 ├─ Af2MelodyGen.ts      ← AF2 自家 melody 算法
 ├─ Af2AccompGen.ts      ← AF2 自家 accomp 算法
-├─ Reconciler.ts        ← velocity 全局调整
+├─ plugins/reconciler/  ← velocity plugin chain(EnergyHumanizer / CollisionDamper / DropBuildupDynamics + types.ts)
 ├─ SectionPlanner.ts    ← 段落生成
 ├─ SectionMapper.ts     ← events 段落标注
 ├─ SlotRouter.ts        ← Band 槽位路由

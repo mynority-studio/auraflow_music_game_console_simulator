@@ -58,7 +58,9 @@ import { PianoIdiom } from './instruments/PianoIdiom';
 import { BassIdiom } from './instruments/BassIdiom';
 import { PadGenerator, PadIdiom } from './instruments/PadIdiom';
 import { DrumGenerator } from './instruments/DrumIdiom';
-import { Reconciler } from './Reconciler';
+import { EnergyHumanizer } from './plugins/reconciler/EnergyHumanizer';
+import { CollisionDamper } from './plugins/reconciler/CollisionDamper';
+import { DropBuildupDynamics } from './plugins/reconciler/DropBuildupDynamics';
 // C.1 + C.2 + C.4:Score 数据契约 + Conductor 分谱层(DynamicConductor 默认,
 // per-section 模板编排;StaticConductor 保留作 fallback)
 import type { Score } from './Score';
@@ -336,43 +338,27 @@ export const Af2EngineFacade = {
         const renderedPadRaw = PadIdiom.realize(padNotes);
 
         // -----------------------------------------------------------
-        // Step 5.5: Reconciler v1.0 — 段落能量驱动 velocity humanization
+        // Step 5.5-5.7: Reconciler plugin chain(无 core,3 plugin 顺序叠加)
         //
-        // Note:Phase C add11 人手物理(原 Step 5.4)已下沉到 PianoIdiom.planMelody
-        // 内化(commit C.5 末)。Reconciler 现在专注 velocity / 段落动态层。
+        // 原 Reconciler.ts 拆为 plugins/reconciler/* 三 plugin(2026-05-25)。
+        // 全部 zero PRNG 消耗,velocity-only 改写,任一 plugin 拔掉听感
+        // 劣化(less humanization)但不破坏正确性。
         //
-        // 对 melody / accompaniment / bass 三轨按段落 energyLevel 缩放 velocity:
-        //   energy 1 → ×0.70(intro 弱)/ 5 → ×1.00 / 10 → ×1.10(chorus 略强)
-        //
-        // **跳过 drums / atmosphere** — DrumGenerator 已带 energyVelScale,
-        // PadGenerator 已用 energy 决定 velocity,二次缩放会过度。
+        // 顺序与依赖:
+        //   1. EnergyHumanizer  — 段落能量驱动 velocity(skip drums/atmosphere)
+        //   2. CollisionDamper  — accomp 撞 bass/melody 时 velocity × 0.5
+        //   3. DropBuildupDynamics — Drop/BuildUp 段 kind-specific 动态(skip drums)
         // -----------------------------------------------------------
-        const energyMain   = Reconciler.applyEnergyHumanization(renderedMainRaw, sections);
-        const energyAccomp = Reconciler.applyEnergyHumanization(renderedAccompRaw, sections);
-        const energyBass   = Reconciler.applyEnergyHumanization(renderedBassRaw, sections);
+        const energyMain   = EnergyHumanizer.apply(renderedMainRaw,   sections);
+        const energyAccomp = EnergyHumanizer.apply(renderedAccompRaw, sections);
+        const energyBass   = EnergyHumanizer.apply(renderedBassRaw,   sections);
 
-        // -----------------------------------------------------------
-        // Step 5.6: Reconciler v1.1 — 撞音 damp(只 damp accomp)
-        //
-        // 优先级 melody > bass > accomp,accomp 在以下情况 velocity × 0.5:
-        //   · pitch < 60 且与 bass 同 onset±0.05 + 同 pitch class → 让 bass 主导低频
-        //   · pitch >= 60 且与 melody 同 onset±0.05 + 同 pitch class → 让 melody 主导顶音
-        //
-        // melody / bass 是 mg 主输出,不修改。
-        // -----------------------------------------------------------
-        const collisionAccomp = Reconciler.dampAccompForCollisions(energyAccomp, energyBass, energyMain);
+        const collisionAccomp = CollisionDamper.apply(energyAccomp, energyBass, energyMain);
 
-        // -----------------------------------------------------------
-        // Step 5.7: Reconciler v1.2 — Drop / BuildUp 段落动态
-        //
-        // Drop 段(energy<3):accomp×0.5 / bass×0.6 / pad×1.2(反向)/ melody 不动
-        // BuildUp 段(next.energy > cur+2):末 1 bar velocity 线性 ramp(per-kind)
-        // Drums 跳过:DrumIdiom 内部 isBuildUp + Tom Fill 已感知
-        // -----------------------------------------------------------
-        const renderedMain   = Reconciler.applyDropBuildupDynamics(energyMain,      sections, 'melody');
-        const renderedBass   = Reconciler.applyDropBuildupDynamics(energyBass,      sections, 'bass');
-        const renderedAccomp = Reconciler.applyDropBuildupDynamics(collisionAccomp, sections, 'accomp');
-        const renderedPad    = Reconciler.applyDropBuildupDynamics(renderedPadRaw,  sections, 'pad');
+        const renderedMain   = DropBuildupDynamics.apply(energyMain,      sections, 'melody');
+        const renderedBass   = DropBuildupDynamics.apply(energyBass,      sections, 'bass');
+        const renderedAccomp = DropBuildupDynamics.apply(collisionAccomp, sections, 'accomp');
+        const renderedPad    = DropBuildupDynamics.apply(renderedPadRaw,  sections, 'pad');
 
         // -----------------------------------------------------------
         // Step 6: 装配 GeneratedTrack

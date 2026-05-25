@@ -117,7 +117,7 @@ src/core/generation/
 │  ├─ Dispatcher.ts               ← 调用顺序 bass→accomp→drums→melody→pad
 │  ├─ Af2MelodyGen.ts             ← 钢琴 melody 算法(chord-tone + rhythm + contour)
 │  ├─ Af2AccompGen.ts             ← 钢琴 accomp 算法(Block/Arp/Stab/Sustained)
-│  ├─ Reconciler.ts               ← velocity 全局调整
+│  ├─ plugins/reconciler/         ← velocity plugin chain(2026-05-25 拆:EnergyHumanizer / CollisionDamper / DropBuildupDynamics + types.ts)
 │  ├─ instruments/
 │  │  ├─ PianoIdiom.ts            ← 钢琴 idiom 入口(调 Af2MelodyGen/AccompGen)
 │  │  ├─ BassIdiom.ts             ← Bass walking(swing + accents)
