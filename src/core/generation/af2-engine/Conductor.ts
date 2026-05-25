@@ -295,16 +295,28 @@ export class DynamicConductor {
             if (m) musicianById.set(m.id, m);
         }
 
-        return score.sections.map((section, idx) => {
+        // Z3 阶段(2026-05-25):per-section continuity — musician 一旦上岗,
+        // 即使 wakeK / peakK 边界轻微超出仍可继续(避免单段闪现 / 突然退场)。
+        // 需要跟踪 prev section assignment 给下一 section 用。
+        const prevAssignment = new Map<string, ReadonlyArray<ConductorRole>>();
+
+        const out: SectionAssignment[] = [];
+        for (let idx = 0; idx < score.sections.length; idx++) {
+            const section = score.sections[idx];
             const filtered = new Map<string, ReadonlyArray<ConductorRole>>();
             const ctx = sectionFilterContext(section, this.template);
             for (const [musicianId, roles] of fullByMusician) {
                 const musician = musicianById.get(musicianId);
-                const kept = applyMusicianGates(roles, musician, section, ctx);
+                const prevRoles = prevAssignment.get(musicianId);
+                const kept = applyMusicianGates(roles, musician, section, ctx, prevRoles);
                 if (kept.length > 0) filtered.set(musicianId, Object.freeze(kept));
             }
-            return { sectionIdx: idx, byMusician: filtered };
-        });
+            out.push({ sectionIdx: idx, byMusician: filtered });
+            // 更新 prev assignment 给下一 section 用
+            prevAssignment.clear();
+            for (const [k, v] of filtered) prevAssignment.set(k, v);
+        }
+        return out;
     }
 }
 
@@ -326,12 +338,21 @@ function sectionFilterContext(section: SectionMetadata, template: ConductorTempl
     };
 }
 
+/** Z3 阶段:wake/peak K 边界 continuity margin(prev 上岗时容差) */
+const CONTINUITY_K_MARGIN = 0.15;
+
 /**
- * 综合 5 层决策应用到单 musician:
- *   (0) wakeK gate — K < wakeK 时 sleeping(apex 高能段例外)
+ * 综合 5 层 + Z3 阶段细化的 musician 决策:
+ *   (0) wakeK gate — K < wakeK 时 sleeping(apex 高能段例外;Z3: prev 上岗
+ *       且 wakeK - sectionK <= 0.15 时给"惯性"继续)
+ *   (0b) peakK gate(Z3 新加)— K > peakK 时退出(prev 上岗且 sectionK - peakK
+ *        <= 0.15 时给"惯性"继续)
  *   (1) Style template filter(apex 高能段例外)
  *   (2) Energy-driven filter(apex 高能段例外)
  *   (3) musician.sectionRolePreference INTERSECTION(apex 也尊重)
+ *
+ * Z3 continuity 原则:musician 一旦上岗,后续 section 边界轻微超出 wakeK/peakK
+ * 仍可继续(避免单段闪现 / 突然退场)— 但只在容差内,不能强制违规。
  *
  * 返回:musician 在该 section 保留的 roles 列表(空数组 = 该段 silent)。
  */
@@ -340,13 +361,31 @@ function applyMusicianGates(
     musician: Musician | undefined,
     section: SectionMetadata,
     ctx: SectionFilterContext,
+    prevRoles?: ReadonlyArray<ConductorRole>,
 ): ConductorRole[] {
     const isApex = musician?.persona?.isApex === true;
     const apexException = isApex && ctx.isHighEnergy;
+    const prevActive = prevRoles !== undefined && prevRoles.length > 0;
 
-    // (0) wakeK gate
+    // (0) wakeK gate(Z3 continuity:prev 上岗时给 ±MARGIN 容差)
     const wakeK = musician?.persona?.wakeK;
-    if (wakeK !== undefined && ctx.sectionK < wakeK && !apexException) return [];
+    if (wakeK !== undefined && !apexException) {
+        const wakeKDeficit = wakeK - ctx.sectionK;  // 正 = 没达 wakeK
+        if (wakeKDeficit > 0) {
+            // 没达 wakeK:除非 prev 已上岗且差距 <= margin,否则 sleep
+            if (!prevActive || wakeKDeficit > CONTINUITY_K_MARGIN) return [];
+        }
+    }
+
+    // (0b) peakK gate(Z3 新加,continuity 容差同理)
+    const peakK = musician?.persona?.peakK;
+    if (peakK !== undefined) {
+        const peakKExcess = ctx.sectionK - peakK;  // 正 = 超过 peakK
+        if (peakKExcess > 0) {
+            // 超过 peakK:除非 prev 已上岗且差距 <= margin,否则退出
+            if (!prevActive || peakKExcess > CONTINUITY_K_MARGIN) return [];
+        }
+    }
 
     let kept: ConductorRole[] = [...roles];
     // (1) Style template filter
