@@ -6,8 +6,18 @@
 > **2026-05-25 起 7 / 8 层显式 core+plugin 架构**(Conductor / Arranger / Composer /
 > MelodyGen / AccompGen / DrumIdiom / Reconciler 全部 plugin 化,plugins/ 45+ 文件)。
 >
-> **2026-05-25 规则文件已清空,待重写**(原 engine_architecture / app_integration /
-> cross_sync 3 rule 反映重构前架构,与现状脱节。新规则结构待定)。
+> **2026-05-25 单规则重写完成** — 原 3 rule 合并为 [`.claude/rules/architecture.md`](.claude/rules/architecture.md)
+> (按 8 层架构主轴 + App API 集成,~700 行宪法风)。
+
+## 强制阅读
+
+任一命中,先读 [`.claude/rules/architecture.md`](.claude/rules/architecture.md)(详见该文件 §0 触发条件清单):
+
+- 改 `src/core/generation/af2-engine/` 下任何文件
+- 改 IR / enum / PRNG 消耗
+- 加新 plugin / musician / mgStyle / SectionType / BandRole
+- 改 `runPipeline` / `AudioEngine` 公开方法签名
+- 写 App / 嵌入式直接调引擎
 
 ## 验证 SOP
 
@@ -32,7 +42,7 @@ npm run lint           # tsc --noEmit 必过
 
 ## 规则文件登记
 
-- `.claude/rules/` — **2026-05-25 清空,待重写**
+- [`.claude/rules/architecture.md`](.claude/rules/architecture.md) — AF2 唯一宪法(8 层架构 + plugins/ + 三大不变式 + 单一真理之源 + 跨同步登记 + 工作流速查 + 反模式 + App API)
 
 ## AF2 关键文件速查
 
