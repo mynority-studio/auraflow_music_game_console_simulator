@@ -34,6 +34,11 @@ import type { NoteEvent } from './chord-texture/types';
 import { TEXTURE_DENSITY } from './chord-texture/TextureDensity';
 import { SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
 import { TEXTURE_VARIATIONS } from './TextureVariations';
+import {
+    MelodyDensityDucker,
+    SwingApplier,
+    MicroTimingHumanizer,
+} from './plugins/accomp';
 
 // ============================================================
 // Per-mgStyle × sectionType textureType pool(N 阶段 8 family 覆盖)
@@ -327,191 +332,12 @@ export function generateAf2Accomp(
         }
     }
 
-    // T 阶段(2026-05-25):Melody-aware density ducking post-pass
-    // melody 密时 accomp 让空间,melody 稀时 accomp 填空隙(对话感)
-    duckByMelodyDensity(out, input.melodyPeerNotes);
-
-    // Z1 阶段(2026-05-25):per-mgStyle swing post-pass
-    // JAZZ/BLUES swing 8th 摆动 — 跟 Y 阶段 drum swing 同 ratio,律动同步
-    applySwing(out, mgStyle);
-
-    // U 阶段(2026-05-25):Micro-timing humanization
-    // 同 onset chord cluster 按 pitch 升序加递增 delay,模拟人手"先按低音再按高音"
-    // 的滚奏感(strum-like)。deterministic 0 PRNG。
-    // 注:在 swing 之后跑,这样 strum 在 swing 之后的最终 onset 位置生效。
-    applyMicroTiming(out);
-
-    return out;
-}
-
-// ============================================================
-// T 阶段:Melody-aware density ducking
-// ============================================================
-//
-// 扫每个 accomp note onset,在 ±DUCK_WINDOW 内统计 melody onset 数:
-//   countNear >= HIGH_DENSITY_THRESHOLD (=2)  → velocity × DUCK_RATIO (0.6)
-//   countNear === 0                            → velocity × FILL_BOOST (1.15)
-//   1 个 melody onset(中间密度)              → 不动
-//
-// 听感效果(用户讨论的"频率避让" + "空隙填补"):
-//   主唱长音 / 休止 → accomp 增亮(填补听觉空白)
-//   主唱密集 16th   → accomp 退后(让 melody 突出)
-//   产生"melody 主导 → accomp 应答"的对话感
-//
-// 性能:O(N_accomp × N_melody),典型 ~200 × ~100 = 20k 操作 < 5ms。
-// PRNG:0(deterministic scale)。
-// ============================================================
-
-const DUCK_WINDOW = 0.2;              // ± beat window
-const HIGH_DENSITY_THRESHOLD = 2;     // melody onset 数 >= 此值 = 高密度
-const DUCK_RATIO = 0.6;               // 高密度时 accomp velocity 缩放
-const FILL_BOOST = 1.15;              // melody 空时 accomp velocity 增强
-
-function duckByMelodyDensity(
-    accompNotes: NoteData[],
-    melodyNotes: ReadonlyArray<NoteData> | undefined,
-): void {
-    if (!melodyNotes || melodyNotes.length === 0) return;
-    // 预排序 melody 按 onset(已经基本有序但保险一遍)
-    const sortedMelody = melodyNotes.slice().sort((a, b) => a.onset - b.onset);
-
-    for (let i = 0; i < accompNotes.length; i++) {
-        const note = accompNotes[i];
-        // 统计同窗口 melody onset 数
-        let countNear = 0;
-        for (const m of sortedMelody) {
-            if (m.onset < note.onset - DUCK_WINDOW) continue;
-            if (m.onset > note.onset + DUCK_WINDOW) break;
-            countNear++;
-            if (countNear >= HIGH_DENSITY_THRESHOLD) break;  // 早退,够判定即可
-        }
-        if (countNear >= HIGH_DENSITY_THRESHOLD) {
-            // 高密度 — accomp 让位
-            accompNotes[i] = {
-                ...note,
-                velocity: Math.max(0.1, note.velocity * DUCK_RATIO),
-            };
-        } else if (countNear === 0) {
-            // 空白 — accomp 填补
-            accompNotes[i] = {
-                ...note,
-                velocity: Math.min(1, note.velocity * FILL_BOOST),
-            };
-        }
-        // countNear === 1 (中间密度) → 不动,保持平衡
-    }
-}
-
-// ============================================================
-// Z1 + Z1b 阶段:Per-mgStyle accomp swing(精确化 — 只 swing 直拍 8th and)
-// ============================================================
-//
-// Z1 初版本:linear 重映射所有 onset within beat [0, 1) — 但 family 内部
-// 很多 onset 已经 pre-swung(JazzCharleston 1.66 / ShuffleChop 0.66 /
-// Triplet 0.33/0.66 / Bossa clave 0.5/1.5/3.5),会造成 double-swing 错位。
-//
-// Z1b 精确化:**只 swing 直拍 8th and 位置**(within ≈ 0.5,容差 0.05)。
-// 其他位置(triplet 0.33/0.66 / 16th 0.25/0.75 / pre-swung 0.66 等)不动。
-//
-// 这样:
-//   PopAnthem 8th pulse at 0.5  → 0.66 ✓(POP swing=0.5 不变)
-//   JazzCharleston at 1.66      → 1.66 不动 ✓(已 pre-swung)
-//   Triplet at 0.33/0.66        → 不动 ✓(12/8 律动保 invariant)
-//   Chicago_Shuffle at 0.66     → 不动 ✓(已 pre-swung)
-//   Bossa clave at 0.5/1.5/3.5  → swing 到 0.66/1.66/3.66
-//                                  (实际 Bossa 在 JAZZ pool,轻 swing 不破)
-//   16th positions(0.25/0.75)→ 不动 ✓
-//
-// SWING_RATIO_BY_STYLE:
-//   POP/RNB 0.50 — 直拍(identity 触发条件,函数提前 return)
-//   JAZZ    0.66 — triplet swing
-//   BLUES   0.66 — shuffle
-//
-// 工程:
-//   - deterministic 0 PRNG
-//   - 容差 0.05 让 micro-timing 4ms 滚奏不会触发(0.008 << 0.05)
-//   - swing 优先于 micro-timing 跑 → cluster 主位移后再加 strum delay
-// ============================================================
-
-const ACCOMP_SWING_BY_STYLE: Record<MgStyle, number> = {
-    POP:   0.50,
-    JAZZ:  0.66,
-    BLUES: 0.66,
-    RNB:   0.50,
-};
-
-const SWING_TRIGGER_TOLERANCE = 0.05;  // within ≈ 0.5 容差(避免触发 16th / triplet 位置)
-
-function applySwing(notes: NoteData[], mgStyle: MgStyle): void {
-    const swing = ACCOMP_SWING_BY_STYLE[mgStyle] ?? 0.5;
-    if (Math.abs(swing - 0.5) < 1e-6) return;  // 直拍无变化,跳过
-    for (let i = 0; i < notes.length; i++) {
-        const n = notes[i];
-        const beatBase = Math.floor(n.onset);
-        const within = n.onset - beatBase;
-        // Z1b:只 swing 直拍 8th and 位置(within ≈ 0.5),其他不动
-        // (避免 double-swing pre-swung family onset 如 charleston 0.66 / triplet 0.33)
-        if (Math.abs(within - 0.5) < SWING_TRIGGER_TOLERANCE) {
-            notes[i] = { ...n, onset: beatBase + swing };
-        }
-    }
-}
-
-// ============================================================
-// U 阶段:Micro-timing humanization(strum 滚奏感)
-// ============================================================
-//
-// 同 onset chord cluster(>=2 notes at same time)按 pitch 升序加递增
-// delay,模拟人手按和弦时低音→高音的极小先后顺序:
-//   note[0] (lowest):  onset += 0
-//   note[1]:           onset += MICRO_DELAY
-//   note[2]:           onset += 2 × MICRO_DELAY
-//   note[3] (highest): onset += 3 × MICRO_DELAY
-//
-// MICRO_DELAY = 0.008 beat
-//   @ 120 BPM: ~4ms / step,4-音 chord 总跨度 ~12ms
-//   @ 88  BPM: ~5.5ms / step,~16ms total
-//   在人类感知"自然滚奏"范围内(< 20ms 不破节奏感)。
-//
-// deterministic 0 PRNG:同 seed bit-identical。
-//
-// 只 accomp 用 — bass/melody/drums 是单声部 + 节奏感强,不需要。
-// pad 已有 attack pre-roll,不重复加。
-//
-// 实现:先 sort by onset,然后找相邻同 onset cluster(±EPSILON 容差),
-//       按 pitch 升序 reassign onset(deterministic).
-// ============================================================
-
-const MICRO_DELAY = 0.008;       // beat,单 step
-const ONSET_CLUSTER_EPSILON = 1e-4;  // 同 onset 判定容差
-
-function applyMicroTiming(notes: NoteData[]): void {
-    if (notes.length < 2) return;
-    // 先 sort by onset(micro-timing 检测 cluster 需要相邻同 onset)
-    notes.sort((a, b) => {
-        const d = a.onset - b.onset;
-        if (Math.abs(d) > ONSET_CLUSTER_EPSILON) return d;
-        return a.pitch - b.pitch;  // tie-break by pitch ascending
-    });
-
-    let i = 0;
-    while (i < notes.length) {
-        const baseOnset = notes[i].onset;
-        let j = i + 1;
-        while (j < notes.length && Math.abs(notes[j].onset - baseOnset) <= ONSET_CLUSTER_EPSILON) {
-            j++;
-        }
-        const clusterSize = j - i;
-        if (clusterSize >= 2) {
-            // notes[i..j-1] 已按 pitch 升序(上面 sort tie-break 保证)
-            // 加递增 delay(low pitch 不动,high pitch delay 最大)
-            for (let k = 1; k < clusterSize; k++) {
-                notes[i + k] = {
-                    ...notes[i + k],
-                    onset: baseOnset + k * MICRO_DELAY,
-                };
-            }
-        }
-        i = j;
-    }
+    // Post-pass plugin chain(2026-05-25 拆 plugins/accomp/*):
+    //   1. MelodyDensityDucker  — melody 密时 accomp 让,melody 稀时 accomp 填(对话感)
+    //   2. SwingApplier         — per-mgStyle 直拍 8th and swing(避 double-swing)
+    //   3. MicroTimingHumanizer — 同 onset cluster pitch-升序 strum micro-delay
+    // 全 zero PRNG;swing 必须早于 micro-timing(strum 在 swing 之后的最终 onset 生效)。
+    const ducked = MelodyDensityDucker.apply(out, input.melodyPeerNotes);
+    const swung = SwingApplier.apply(ducked, mgStyle);
+    return MicroTimingHumanizer.apply(swung);
 }

@@ -146,7 +146,8 @@
 | 乐手 idiom 实装(钢琴/贝斯/鼓/Pad) | `af2-engine/instruments/{Piano,Bass,Drum,Pad}Idiom.ts` | 不要在 Dispatcher 加渲染逻辑 |
 | 钢琴 melody orchestrator(core) | `af2-engine/Af2MelodyGen.ts`(generateAf2Melody — 主循环 / role gate / chord-tone cycle / placeNearAnchor) | 不要在 PianoIdiom 直接写算法 |
 | 钢琴 melody 6 plugin(rhythm / contour / passing / phrase end / sparsity / velocity) | `af2-engine/plugins/melody/{RhythmPatternPicker,PhraseContourShaper,PassingToneSelector,PhraseEndingDecider,SparsityGate,VelocityHumanizer}.ts`(2026-05-25 拆 plugin) | 不要把 plugin 决策搬回 orchestrator |
-| 钢琴 accomp 算法 | `af2-engine/Af2AccompGen.ts`(generateAf2Accomp)| 不要在 PianoIdiom 直接写算法 |
+| 钢琴 accomp orchestrator(core) | `af2-engine/Af2AccompGen.ts`(generateAf2Accomp — pickTextureType / family dispatch / velocity persona 重映射) | 不要在 PianoIdiom 直接写算法 |
+| 钢琴 accomp post-pass 3 plugin(duck / swing / micro-timing) | `af2-engine/plugins/accomp/{MelodyDensityDucker,SwingApplier,MicroTimingHumanizer}.ts`(2026-05-25 拆 plugin) | 不要把 post-pass 决策搬回 orchestrator;swing 必须早于 micro-timing |
 | Bass walking 模式 | `af2-engine/instruments/BassIdiom.ts` 的 `renderAf2Walking` + `data/BassWalkPatterns.ts` 的 `WALK_PATTERNS` | 不要在 Composer 改 bass |
 | 鼓组 grid | `af2-engine/instruments/drum-grid/grids/` per-mgStyle 配置 | 不要在 DrumIdiom 硬编 |
 | 鼓组算法 | `af2-engine/instruments/DrumIdiom.ts` 的 `renderSection` + `DrumGenerator` | 不要分散 |
@@ -271,7 +272,8 @@ af2-engine/             ← 唯一活跃引擎
 ├─ Dispatcher.ts        ← 调用顺序
 ├─ Af2MelodyGen.ts      ← melody orchestrator(core:role gate + cycle + placeNearAnchor)
 ├─ plugins/melody/      ← 6 plugin(RhythmPattern / PhraseContour / PassingTone / PhraseEnding / Sparsity / Velocity)
-├─ Af2AccompGen.ts      ← AF2 自家 accomp 算法
+├─ Af2AccompGen.ts      ← accomp orchestrator(core:pickTextureType + family dispatch + velocity persona)
+├─ plugins/accomp/      ← 3 post-pass plugin(MelodyDensityDucker / SwingApplier / MicroTimingHumanizer)
 ├─ plugins/reconciler/  ← velocity plugin chain(EnergyHumanizer / CollisionDamper / DropBuildupDynamics + types.ts)
 ├─ SectionPlanner.ts    ← 段落生成
 ├─ SectionMapper.ts     ← events 段落标注
@@ -347,7 +349,10 @@ utils/                  ← PRNGManager
 | Chord 演绎 family(8 个,如 PopAnthem/JazzCharleston/Bossa/BoogieWalk/GhostStab/PureArp/PopBroken8th/Sustained) | `af2-engine/chord-texture/families/*.ts` | 不要在 AccompGen 重新实装演绎逻辑 |
 | Chord 演绎 textureType → family + params 映射 | `af2-engine/chord-texture/TextureTypeMapping.ts` `TEXTURE_MAPPING` | 加新 textureType 必须同步 family case |
 | Chord 演绎 dispatch + NoteEvent → NoteData adapter | `af2-engine/chord-texture/ChordTextureEngine.ts` | 不要绕过 dispatcher 直接调 family |
-| Accomp velocity 重映射 to persona | `Af2AccompGen.generateAf2Accomp` 末尾 dynamic loop |
+| Accomp velocity 重映射 to persona | `Af2AccompGen.generateAf2Accomp` 末尾 dynamic loop(orchestrator core) |
+| Accomp melody-aware density ducking(T 阶段) | `af2-engine/plugins/accomp/MelodyDensityDucker.ts` |
+| Accomp per-mgStyle swing 8th and(Z1b 阶段) | `af2-engine/plugins/accomp/SwingApplier.ts` |
+| Accomp 同 onset cluster strum micro-delay(U 阶段) | `af2-engine/plugins/accomp/MicroTimingHumanizer.ts` |
 | add11 物理触发 | `PianoIdiom.applyAdd11HandPhysics` |
 | 主区 / 越界自然感 | `PianoIdiom.PIANO_REGIONS` + `applyRegionProbability` |
 | musician 卡个性 | `MusicianRegistry` 的 `af2Overrides`(regions/escape/add11Gate/algorithm) |

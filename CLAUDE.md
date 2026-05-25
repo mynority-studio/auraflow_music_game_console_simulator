@@ -118,7 +118,8 @@ src/core/generation/
 │  ├─ Dispatcher.ts               ← 调用顺序 bass→accomp→drums→melody→pad
 │  ├─ Af2MelodyGen.ts             ← melody orchestrator core(2026-05-25 拆:role gate + chord-tone cycle + placeNearAnchor)
 │  ├─ plugins/melody/             ← 6 plugin(RhythmPattern / PhraseContour / PassingTone / PhraseEnding / Sparsity / Velocity)
-│  ├─ Af2AccompGen.ts             ← 钢琴 accomp 算法(Block/Arp/Stab/Sustained)
+│  ├─ Af2AccompGen.ts             ← accomp orchestrator core(pickTextureType + family dispatch + velocity persona)
+│  ├─ plugins/accomp/             ← 3 post-pass plugin(MelodyDensityDucker / SwingApplier / MicroTimingHumanizer)
 │  ├─ plugins/reconciler/         ← velocity plugin chain(2026-05-25 拆:EnergyHumanizer / CollisionDamper / DropBuildupDynamics + types.ts)
 │  ├─ instruments/
 │  │  ├─ PianoIdiom.ts            ← 钢琴 idiom 入口(调 Af2MelodyGen/AccompGen)
