@@ -460,20 +460,55 @@ function parseTerminal(token: GrammarToken): ParsedTerminal | null {
 const SPELL_IDX_BY_DEGREE: Record<number, number> = {
     1: 0, 3: 1, 5: 2, 7: 3, 9: 4, 11: 5, 13: 6,
 };
-/** fallback degree → major scale interval(用于 spell 不够时) */
-const MAJOR_SCALE_INTERVAL: Record<number, number> = {
-    1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11,
-    9: 14, 11: 17, 13: 21,
+/** Diatonic scale degree → 0-indexed position(给 local scale fallback 用)*/
+const DIATONIC_DEGREE_IDX: Record<number, number> = {
+    1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6,
+    9: 1, 11: 3, 13: 5,  // 9/11/13 复用 2/4/6
 };
 
-function scaleDegreeToPc(degree: number, chordSpellPcs: number[], chordRootPc: number): number {
-    const idx = SPELL_IDX_BY_DEGREE[degree];
-    if (idx !== undefined && idx < chordSpellPcs.length) {
-        return chordSpellPcs[idx]!;
+/**
+ * Scale degree → chord pc。**4 重 fallback** 防 (X N) 走 major scale 跟 local scale 冲突:
+ *   1. chord spell idx 命中 → spell[idx](原行为,正确)
+ *   2. local scale diatonic idx 命中 → scaleAscending[idx]
+ *   3. local scale 内"接近"该度的音(从 root 推 typical interval 找最近)
+ *   4. fallback 只用 root pc(避免引入 major scale 调外音)
+ *
+ * 例:Cm7(spell [C,Eb,G,Bb])+ local scale C aeolian [C,D,Eb,F,G,Ab,Bb]
+ *     (X 6) → spell 无 idx 5 → fallback aeolian[5] = Ab(正确 b6)
+ *     (X 9) → spell idx 4(无)→ fallback aeolian[1] = D(正确 9)
+ *
+ * 例:G7 dim chord(spell [G,Bb,Db]) — 无 7th in spell,无 local scale 给 fallback
+ *     时直接返 rootPc 比飞出 local scale 安全
+ */
+function scaleDegreeToPc(
+    degree: number,
+    chordSpellPcs: number[],
+    chordRootPc: number,
+    localScalePcs?: number[],
+): number {
+    // 1. chord spell idx 命中(原行为 — degree 1/3/5/7/9/11/13 → spell idx 0..6)
+    const spellIdx = SPELL_IDX_BY_DEGREE[degree];
+    if (spellIdx !== undefined && spellIdx < chordSpellPcs.length) {
+        return chordSpellPcs[spellIdx]!;
     }
-    // fallback major scale
-    const iv = MAJOR_SCALE_INTERVAL[degree] ?? 0;
-    return (((chordRootPc + iv) % 12) + 12) % 12;
+
+    // 2. local scale diatonic idx 命中(给 9/11/13 在 spell 短的 chord 一个调内 fallback)
+    //    scaleAscending = local scale 从 chord root 升序排列
+    if (localScalePcs && localScalePcs.length >= 7) {
+        const rootMod = ((chordRootPc % 12) + 12) % 12;
+        const scaleAsc: number[] = [];
+        for (let i = 0; i < 12; i++) {
+            const candPc = (rootMod + i) % 12;
+            if (localScalePcs.includes(candPc)) scaleAsc.push(candPc);
+        }
+        const diaIdx = DIATONIC_DEGREE_IDX[degree];
+        if (diaIdx !== undefined && diaIdx < scaleAsc.length) {
+            return scaleAsc[diaIdx]!;
+        }
+    }
+
+    // 3. fallback:返 root pc(避免引入 major scale 调外音 — 比 cross-scale conflict 安全)
+    return ((chordRootPc % 12) + 12) % 12;
 }
 
 // ============================================================
@@ -693,8 +728,10 @@ export function generateMelody(
 
             let pitch: number;
             // C 扩展 1:(X N dur) scale-degree — 直接 emit chord 第 N 度
+            //   传 cc.scalePcs(local scale)给 fallback 用,避免 spell 不命中 +
+            //   major scale fallback 飞出 chord 当下的 dorian/aeolian/etc local scale
             if (parsed.scaleDegree !== undefined) {
-                const targetPc = scaleDegreeToPc(parsed.scaleDegree, cc.spellPcs, cc.rootPc);
+                const targetPc = scaleDegreeToPc(parsed.scaleDegree, cc.spellPcs, cc.rootPc, cc.scalePcs);
                 pitch = placeNearMidi(targetPc, prevMidi, melodyLo, melodyHi);
             }
             // C 扩展 2:A approach — ±1 半音进入 next chord root
