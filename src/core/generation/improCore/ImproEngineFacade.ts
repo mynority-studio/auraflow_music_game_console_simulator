@@ -63,6 +63,7 @@ import {
     evaluateHarmony, type CoherenceChordInput,
     type BorrowChordInput, type TonicizationChordInput,
     type BorrowSource,
+    attachWidePianoVoicings, type WideVoicingChordInput, type WidePianoVoicing,
 } from '../harmony';
 
 export interface ImproGenerateResult {
@@ -329,6 +330,44 @@ export const ImproEngineFacade = {
         let prevBassMidi = Math.max(bassLowMidi, Math.min(bassHighMidi, bassBaseRaw));
         const enrichedChords: GeneratedChord[] = [];
 
+        // ─────────────────────────────────────────────────────
+        // Pass 0(2026-05-25):attachWidePianoVoicings — 全 chord chain 一次性
+        // 计算 6-lane wide voicing + drop2 + muddy-check + inner motion(跨 chord)。
+        // 主循环 chord LH/RH 用 wide.attackMidi 替代 VoicingGenerator 输出。
+        // ─────────────────────────────────────────────────────
+        // Pass 0a:per step 算 enhanced type + 估 bassMidi(给 wide voicing muddy-check 用,
+        // 实际 bass 在主循环后才确定,这里用 chord root + C2 估值,误差 ±1 octave OK)
+        const wideInputs: WideVoicingChordInput[] = stepsWithTime.map((step, i) => {
+            const ns = stepsWithTime[i + 1] ?? null;
+            // isPhraseEnd 判定跟主循环逻辑一致
+            const isPhraseEnd = !ns || sections.find(s =>
+                step.startBeat >= s.startBeat - 0.1 && step.endBeat <= s.endBeat + 0.1
+            ) !== sections.find(s =>
+                ns.startBeat >= s.startBeat - 0.1 && ns.endBeat <= s.endBeat + 0.1
+            );
+            const enhType = enhanceChordType(step.roman, step.type, isPhraseEnd);
+            const absRoot = ((step.rootOffset + keyOffset) % 12 + 12) % 12;
+            return {
+                rootPc: absRoot,
+                chordType: enhType,
+                bassMidi: 36 + absRoot,  // C2 octave 估值(实际 bass 后续算)
+                duration: step.endBeat - step.startBeat,
+                roman: step.roman,
+                effectiveFunc: step.effectiveFunc,
+                forcedScale: undefined,
+            };
+        });
+        const wideVoicings: WidePianoVoicing[] = attachWidePianoVoicings({
+            chords: wideInputs,
+            style: 'POP',
+            density: 0.5,                     // 中庸 density(后续可 per-section 调)
+            keyRootPc: keyOffset,
+            mode: isMinor ? 'Aeolian' : 'Ionian',
+            sectionFunction: 'VERSE',         // 简化:全 VERSE(后续 per-section)
+            motifInterval: 4,
+            random: new Random(`${seedString}_wide_voicing`),
+        });
+
         for (let ci = 0; ci < stepsWithTime.length; ci++) {
             const step = stepsWithTime[ci]!;
             const nextStep = stepsWithTime[ci + 1] ?? null;
@@ -381,14 +420,21 @@ export const ImproEngineFacade = {
             // bass S token 也用 local scale(每 chord 当下的 scale,而非全曲 key)
             const scalePcs = localScalePcs;
 
-            // 3b. hand layout
-            const handLayout = planHands(settings, prevLhLow, handsRng);
-
-            // 3c. voicing — colorPcs 已过滤调内,VoicingGenerator 不再选 altered tension
-            const { lhMidi, rhMidi } = generateVoicing(
-                priorityPcs, colorPcs, handLayout, prevVoicing, settings, voicingRng,
-            );
-            const fullVoicing = [...lhMidi, ...rhMidi].sort((a, b) => a - b);
+            // 3b/c. ★ wide piano voicing — 替代 VoicingGenerator + HandPartitioner
+            //   widePianoVoicing 6-lane(2 outer + 3 inner + bass)+ drop2 + muddy-check
+            //   "两边开阔中间密集"— outer 放结构(root/3/5),inner 放色彩(7/9/11/13)
+            //   melodygenerative 听感"完美"主要靠这层
+            const wide = wideVoicings[ci]!;
+            const fullVoicing = wide.attackMidi;
+            // VoicingGenerator + HandPartitioner 不再调,但 import 保留(后续可作备选)
+            void generateVoicing;
+            void planHands;
+            void priorityPcs;
+            void colorPcs;
+            void prevVoicing;
+            void prevLhLow;
+            void handsRng;
+            void voicingRng;
 
             // 同步压入 enriched(GeneratedChord 用 enhanced quality 给 UI 显示升级后类型)
             enrichedChords.push({
@@ -404,6 +450,22 @@ export const ImproEngineFacade = {
             const cp: ChordPattern | null = pickWeighted(augmentedChordPatterns, chordPatternRng);
             if (cp) {
                 accompEvents.push(...applyChordPattern(cp.rules, fullVoicing, step.startBeat, chordBeats));
+            }
+
+            // 3d-bis. ★ inner motion 弱拍漂(widePianoVoicing 的副旋律层)
+            //   跨 chord 在 inner lane(C4-D5 RH 低声部)弱拍 emit motion event
+            //   strike chord 之间的"暗中漂"— Bill Evans 风
+            if (wide.innerMotion) {
+                for (const ev of wide.innerMotion) {
+                    if (ev.time >= chordBeats) continue;
+                    accompEvents.push({
+                        pitch: ev.midi,
+                        onset: step.startBeat + ev.time,
+                        duration: ev.duration,
+                        velocity: ev.velocity,
+                        part: 'accomp',
+                    });
+                }
             }
 
             // 3e. bass pattern
