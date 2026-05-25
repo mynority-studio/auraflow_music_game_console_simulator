@@ -62,41 +62,41 @@ export const MUSICIAN_POOL: Musician[] = [
         },
     },
     // 🎸 贝斯手 Frank — Pop/Funk 电贝斯，正拍稳重
-    {
-        id: 'frank_bass',
-        name: 'Frank',
-        genre: StyleId.ModernPop,
-        instrumentRef: 'electric_bass',
-        instrumentFamily: InstrumentFamily.Bass,
-        defaultSound: 'Electric_Bass_Finger',
-        personnel: {},
-        role: BandRole.Bass,
-        eligibleRoles: [BandRole.Bass],
-        instrumentId: 2,
-        persona: {
-            colorBias: 0.0,
-            sparsityTendency: 0.5,
-            syncopationAssault: 0.1,
-            dynamicRange: [75, 110],
-            // B4(2026-05-24):移除 walkPatternId 让 mgStyle 默认生效
-            //   - mgStyle=POP   → HalfNote(同原始 Pop 抒情 root-fifth,听感不变)
-            //   - mgStyle=JAZZ  → BebopWalk(swing 0.66)
-            //   - mgStyle=BLUES → Stride
-            //   - mgStyle=RNB   → QuarterHalf
-            // 如需固定某 musician 走某 walking 不管 mgStyle,在此处填 walkPatternId override。
-            // Phase 6a — bass 中等 wake(低 K Intro/Outro 可睡,Verse 起开始走)
-            wakeK: 0.30,
-            peakK: 0.90,
-        },
-        description: 'Pop/Jazz/Blues/RNB 通用电贝斯,walking 跟 mgStyle 走',
-        // AF2 overrides — Pop sub-bass 标准:Intro 不进,Outro 撤(经典 Pop 编曲)
-        af2Overrides: {
-            sectionRolePreference: {
-                [SectionType.Intro]: new Set<string>(),   // Pop bass 不在 Intro 进
-                [SectionType.Outro]: new Set<string>(),   // Outro 淡出
-            },
-        },
-    },
+    // ============================================================
+    // 2026-05-25 暂时禁用 — 切"钢琴独奏"模式
+    // ============================================================
+    // AF2 调试期决定:聚焦钢琴 melody + accomp 调音,删 bass musician 走
+    // 钢琴独奏(HandPartitioner LH 替代 bass 角色,弹 BASS_RANGE 低音支撑)。
+    // BassIdiom / Facade Step 2 / Conductor RoleFilter 代码全留 — 后续要恢复
+    // 多乐手时取消下面整段注释即可。
+    // ============================================================
+    // {
+    //     id: 'frank_bass',
+    //     name: 'Frank',
+    //     genre: StyleId.ModernPop,
+    //     instrumentRef: 'electric_bass',
+    //     instrumentFamily: InstrumentFamily.Bass,
+    //     defaultSound: 'Electric_Bass_Finger',
+    //     personnel: {},
+    //     role: BandRole.Bass,
+    //     eligibleRoles: [BandRole.Bass],
+    //     instrumentId: 2,
+    //     persona: {
+    //         colorBias: 0.0,
+    //         sparsityTendency: 0.5,
+    //         syncopationAssault: 0.1,
+    //         dynamicRange: [75, 110],
+    //         wakeK: 0.30,
+    //         peakK: 0.90,
+    //     },
+    //     description: 'Pop/Jazz/Blues/RNB 通用电贝斯,walking 跟 mgStyle 走',
+    //     af2Overrides: {
+    //         sectionRolePreference: {
+    //             [SectionType.Intro]: new Set<string>(),
+    //             [SectionType.Outro]: new Set<string>(),
+    //         },
+    //     },
+    // },
     // 🥁 鼓手 Dave — Pop 干净直拍
     {
         id: 'dave_drums',

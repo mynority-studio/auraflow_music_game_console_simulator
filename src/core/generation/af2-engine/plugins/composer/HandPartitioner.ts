@@ -52,17 +52,27 @@ export interface HandPartitionConfig {
   minTotalNotes: number;
 }
 
-/** AF2 默认 HandPartitionConfig — Impro-Visor Closed-High.fv 推荐值改编 */
+/** AF2 默认 HandPartitionConfig — "钢琴独奏"模式(2026-05-25)
+ *
+ * 设计变更:bass musician 已删,HandPartitioner LH 承担 bass 角色(BASS_RANGE 33-55)。
+ *   - LH 1-2 音(像 bass 单音 / power chord,不在低音区堆 cluster 造成 muddy)
+ *   - LH range = BASS_RANGE(33-55)+ 微上扩到 57(给低 chord 音 octave 选择空间)
+ *   - RH 仍 3-4 音弹 chord 主体,range 58-84(中高区)
+ *   - minTotalNotes = 3(triad-only 也能分手,LH=root,RH=3+5)
+ *
+ * 历史(恢复多乐手时改回):
+ *   lhMinNotes 2 / lhMaxNotes 3 / lhRangeLow 38 / lhRangeHigh 57 / minTotalNotes 4
+ */
 export const DEFAULT_HAND_CONFIG: HandPartitionConfig = {
-  lhMinNotes: 2,
-  lhMaxNotes: 3,
+  lhMinNotes: 1,        // 钢琴独奏 LH 替代 bass — 1-2 音不 muddy
+  lhMaxNotes: 2,
   rhMinNotes: 3,
   rhMaxNotes: 4,
-  lhRangeLow: 38,       // D2 — 给 bass(C2-G3 BASS_RANGE)留 gap
-  lhRangeHigh: 57,      // A3
+  lhRangeLow: 33,       // A1 — BASS_RANGE 起点(承担 bass 角色)
+  lhRangeHigh: 57,      // A3 — 留点空间给 chord 第 2 音
   rhRangeLow: 58,       // Bb3
   rhRangeHigh: 84,      // C6
-  minTotalNotes: 4,     // 少于 4 个 pc 不分手(triad-only 不值得分)
+  minTotalNotes: 3,     // triad-only(3 音)也分手
 };
 
 export const HandPartitioner: ComposerPluginMeta = {

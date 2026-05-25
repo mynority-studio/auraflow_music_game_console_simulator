@@ -40,7 +40,9 @@ export type InstrumentSelection = Partial<Record<BandRole, number>>;
 const DEFAULT_BAND: BandSelection = {
     [BandRole.MainInst]:   'alex_piano',
     [BandRole.Accomp]:     'chloe_pop_piano',
-    [BandRole.Bass]:       'frank_bass',
+    // 2026-05-25 切"钢琴独奏"模式:删 bass musician,HandPartitioner LH 替代 bass
+    // 恢复多乐手时改回 'frank_bass'(MusicianRegistry 注释也要恢复)
+    [BandRole.Bass]:       null,
     [BandRole.Drums]:      'dave_drums',
     [BandRole.Atmosphere]: 'nina_pad',
 };

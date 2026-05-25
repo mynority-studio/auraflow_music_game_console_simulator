@@ -130,7 +130,8 @@ type InstrumentSelection = Partial<Record<BandRole, number>>;
 const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
     [BandRole.MainInst]:   'alex_piano',
     [BandRole.Accomp]:     'alex_piano',
-    [BandRole.Bass]:       'frank_bass',
+    // 2026-05-25 切"钢琴独奏"模式:bass 槽空(HandPartitioner LH 替代)
+    // [BandRole.Bass]:    'frank_bass',
     [BandRole.Drums]:      'dave_drums',
     [BandRole.Atmosphere]: 'nina_pad',
 };
