@@ -33,7 +33,7 @@ import { noteToMidi } from './music-theory/midi';
  * mg ChordDef.type(字符串)→ auraflow ChordQuality 映射。
  * Af2Composer 输出的 type 与原 mg 一致(maj / m7 / dom7 / 等)。
  */
-const MG_TYPE_TO_QUALITY: Record<string, ChordQuality> = {
+export const MG_TYPE_TO_QUALITY: Record<string, ChordQuality> = {
     'maj':     ChordQuality.Major,
     'min':     ChordQuality.Minor,
     'dim':     ChordQuality.Diminished,

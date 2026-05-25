@@ -2,25 +2,34 @@
 // ImproEngineFacade — ImproCore 主入口(mirror Af2EngineFacade.generate)
 // ============================================================
 //
-// 共识 1(B):复用 AF2 Layer 1-3 输出(SectionPlanner + Af2KernelDriver
-// 给的 chord progression),ImproCore 只替换 Layer 4-7。
+// 共识 1(B + A 升级 2026-05-25):
+//   B:复用 AF2 Layer 1-3 输出(SectionPlanner + Arranger),Impro 只替换 Layer 4-7
+//   A 升级:绕过 Af2KernelDriver.invoke(那里跑 Composer + DynamicHarmonyDecorator
+//          + 4 Planner)— 直接调 Af2Arranger.arrange 不传 plannerOptions,
+//          拿"裸 Roman + base type"(maj/min/dom7/m7/dim 等基础 type),
+//          没有 Cmaj9/Cmaj7#11 之类 decoration,没有 borrow/picardy/tonicize 修改。
+//          ImproCore 的 VoicingGenerator 在裸 chord 上自由加色 — 这才是 Impro-Visor
+//          哲学(用户输入裸 chord symbol → VoicingGenerator 决定 voicing)。
 //
 // 流程:
-//   1. AF2 借用:keyOffset / tonality / sections / chord progression(GeneratedChord[])
-//   2. per chord:
+//   1. AF2 借用:keyOffset / tonality / sections
+//   2. Af2Arranger.arrange(sections, 4, rng) — 不传 plannerOptions,4 Planner 全跳过
+//   3. Af2AbstractStep[] → chord 序列(累 startBeat/endBeat,默认 4 beat/bar)
+//   4. per chord:
 //      a. ChordVocab 查 priority/color(AF2 chord-vocab.ts 18 curated)
 //      b. HandManager.planHands → numLH/numRH + 区间
 //      c. VoicingGenerator.generateVoicing → { lhMidi, rhMidi }(ABSOLUTE MIDI)
 //      d. weighted pick chord-pattern + applyChordPattern → accomp NoteEvent[]
 //      e. weighted pick bass-pattern + applyBassPattern → bass NoteEvent[]
 //      f. weighted pick drum-pattern + applyDrumPattern → drum NoteEvent[]
-//   3. NoteEvent → NoteData
-//   4. GeneratedTrack(keyOffset = 0 防 K-2 重复转调)
+//   5. NoteEvent → NoteData
+//   6. GeneratedTrack(keyOffset = 0 防 K-2 重复转调)
 //
 // 共识 2:全 D-5 deterministic — 用 AF2 Random class,seed sub-fork
 // (impro_${seed}_${chord_idx}_voicing / _bass / _drum / _pattern)
 //
-// 不消费的 AF2 字段:musician / Conductor / Reconciler / chord-texture / MelodyGen
+// 不消费的 AF2 字段:Composer / DynamicHarmonyDecorator / 4 Planner / Conductor /
+// Reconciler / chord-texture / MelodyGen / section.sectionType / section.energyLevel
 // 输出 melody = [](共识 4 第一版无 melody)
 // ============================================================
 
@@ -34,8 +43,8 @@ import {
 import { StyleId } from '../config/StyleFlags';
 import type { PipelineRunOptions } from '../pipeline';
 import { SectionPlanner } from '../af2-engine/SectionPlanner';
-import { Af2KernelDriver } from '../af2-engine/Af2KernelDriver';
-import { ChordQualityName } from '../types';
+import { Af2KernelDriver, MG_TYPE_TO_QUALITY, POP_BPM } from '../af2-engine/Af2KernelDriver';
+import { Af2Arranger } from '../af2-engine/Af2Arranger';
 import { ChordQuality } from '../types';
 import { getChordVocab } from '../af2-engine/music-theory/chord-vocab';
 import { BALLAD_STYLE, SWING_STYLE, CLOSED_HIGH_VOICING_SETTINGS } from './data/loaded';
@@ -58,21 +67,15 @@ void SWING_STYLE; // 保留 import 避免 unused warning(后续 UI 接入再用)
 
 const POP_STYLE_ID: StyleId = StyleId.ModernPop;
 
-function qualityToVocabKey(q: ChordQuality): string {
-    const name = ChordQualityName[q] ?? 'Major';
-    const aliases: Record<string, string> = {
-        'Major': 'maj', 'Minor': 'min', 'Diminished': 'dim', 'Augmented': 'aug',
-        'Major7': 'maj7', 'Minor7': 'm7', 'Dominant7': 'dom7',
-        'HalfDiminished': 'm7b5', 'Diminished7': 'dim7',
-        'Sus4': 'sus4', 'Dominant7Sus4': '7sus4',
-        'Add9': 'add9', 'Minor9': 'm9', 'Major9': 'maj9',
-        'Dominant9': '9', 'Minor11': 'm11', 'Dominant13': '13',
-        'Major13': 'maj13', 'Major7Sharp11': 'maj7#11',
-        'Dom7Flat9': '7b9', 'Dom7Sharp9': '7#9', 'Dom7Sharp11': '7#11',
-        'Dom7Flat13': '7b13', 'Dom7Alt': '7alt', 'Dominant11': '11',
-    };
-    return aliases[name] ?? 'maj';
+/**
+ * Af2AbstractStep.type 是字符串(maj/min/dom7/m7/...),直接当 ChordVocab key 用。
+ * 输出 GeneratedTrack.chords 时反向 string → ChordQuality enum(借 MG_TYPE_TO_QUALITY)。
+ */
+function typeStringToQuality(typeStr: string): ChordQuality {
+    return MG_TYPE_TO_QUALITY[typeStr] ?? ChordQuality.Major;
 }
+
+void Af2KernelDriver;   // 保 import 不动(后续 SectionPlanner.getRecommendedBars 用)
 
 function pickWeighted<T extends { weight: number }>(items: readonly T[], rng: Random): T | null {
     if (items.length === 0) return null;
@@ -117,12 +120,39 @@ export const ImproEngineFacade = {
             : (tonalityRng.next() < 0.7 ? Tonality.Major : Tonality.Minor);
         const isMinor = tonality === Tonality.Minor;
 
-        // 2. AF2 借用:sections + chord progression
+        // 2. AF2 借用:sections
         const totalBars = Af2KernelDriver.getRecommendedBars();
         const sections = SectionPlanner.plan(totalBars, 4);
-        const mg = Af2KernelDriver.invoke(seedString, key, sections, isMinor, undefined);
-        const chords: GeneratedChord[] = mg.chords;
-        const bpm = mg.bpm;
+        const bpm = POP_BPM;
+        void key; // K-2 不消费(下面 keyOffset 单独处理 ABSOLUTE pc 转换)
+
+        // 2b. ★ A 路径:Af2Arranger.arrange 不传 plannerOptions → 4 Planner 全跳过
+        //     拿"裸 Roman + base type"(无 borrow/picardy/tonicize/decoration)
+        const arrangerRng = new Random(seedString);
+        const abstractPath = Af2Arranger.arrange(sections, 4, arrangerRng);
+
+        // 2c. Af2AbstractStep[] → step-with-time 序列(累 startBeat/endBeat)
+        //     默认每 step 占 4 beat(一 bar 4/4),除非 step.beats 显式设
+        interface TimedStep {
+            roman: string;
+            type: string;        // ChordVocab key 兼容(maj/min/dom7/m7/...)
+            rootOffset: number;  // RELATIVE pc
+            startBeat: number;
+            endBeat: number;
+        }
+        const stepsWithTime: TimedStep[] = [];
+        let cursor = 0;
+        for (const step of abstractPath) {
+            const stepBeats = step.beats ?? 4;
+            stepsWithTime.push({
+                roman: step.roman,
+                type: step.type,
+                rootOffset: ((step.rootOffset % 12) + 12) % 12,
+                startBeat: cursor,
+                endBeat: cursor + stepBeats,
+            });
+            cursor += stepBeats;
+        }
 
         // 3. ImproCore — per chord 跑 voicing + 3 pattern
         const style: StyleData = DEFAULT_STYLE;
@@ -148,18 +178,16 @@ export const ImproEngineFacade = {
         let prevBassMidi = bassLowMidi + 12;
         const enrichedChords: GeneratedChord[] = [];
 
-        for (let ci = 0; ci < chords.length; ci++) {
-            const chord = chords[ci];
-            const nextChord = chords[ci + 1] ?? null;
-            const chordBeats = chord.endBeat - chord.startBeat;
-            if (chordBeats <= 0) {
-                enrichedChords.push(chord);
-                continue;
-            }
+        for (let ci = 0; ci < stepsWithTime.length; ci++) {
+            const step = stepsWithTime[ci]!;
+            const nextStep = stepsWithTime[ci + 1] ?? null;
+            const chordBeats = step.endBeat - step.startBeat;
+            if (chordBeats <= 0) continue;
 
-            // 3a. chord vocab(absRoot = chord.root in RELATIVE 空间;加 keyOffset → ABSOLUTE)
-            const absRootPc = ((chord.root + keyOffset) % 12 + 12) % 12;
-            const vocab = getChordVocab(qualityToVocabKey(chord.quality));
+            // 3a. chord vocab — step.type 直接当 vocab key(string,A 路径无 enum 转)
+            //     absRoot = step.rootOffset(RELATIVE pc)+ keyOffset → ABSOLUTE
+            const absRootPc = ((step.rootOffset + keyOffset) % 12 + 12) % 12;
+            const vocab = getChordVocab(step.type);
             const priorityPcs = vocab.priority.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const colorPcs = vocab.color.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const spellPcs = vocab.spell.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
@@ -174,24 +202,32 @@ export const ImproEngineFacade = {
             );
             const fullVoicing = [...lhMidi, ...rhMidi].sort((a, b) => a - b);
 
-            enrichedChords.push({ ...chord, voicing: fullVoicing });
+            // 同步压入 enriched(GeneratedChord 用 enum quality 给 UI)
+            enrichedChords.push({
+                numeral: step.roman,
+                root: step.rootOffset,
+                quality: typeStringToQuality(step.type),
+                startBeat: step.startBeat,
+                endBeat: step.endBeat,
+                voicing: fullVoicing,
+            });
 
             // 3d. chord pattern
             const cp: ChordPattern | null = pickWeighted(style.chordPatterns, chordPatternRng);
             if (cp) {
-                accompEvents.push(...applyChordPattern(cp.rules, fullVoicing, chord.startBeat, chordBeats));
+                accompEvents.push(...applyChordPattern(cp.rules, fullVoicing, step.startBeat, chordBeats));
             }
 
             // 3e. bass pattern
             const bp: BassPattern | null = pickWeighted(style.bassPatterns, bassPatternRng);
             if (bp) {
-                const nextAbsRootPc = nextChord
-                    ? ((nextChord.root + keyOffset) % 12 + 12) % 12
+                const nextAbsRootPc = nextStep
+                    ? ((nextStep.rootOffset + keyOffset) % 12 + 12) % 12
                     : null;
                 const bassNotes = applyBassPattern(
                     bp.rules, absRootPc, spellPcs, colorPcs, scalePcs, nextAbsRootPc,
                     prevBassMidi, bassLowMidi, bassHighMidi,
-                    chord.startBeat, chordBeats, bassPickRng,
+                    step.startBeat, chordBeats, bassPickRng,
                 );
                 bassEvents.push(...bassNotes);
                 const lastBass = bassNotes[bassNotes.length - 1];
@@ -201,7 +237,7 @@ export const ImproEngineFacade = {
             // 3f. drum pattern
             const dp: DrumPattern | null = pickWeighted(style.drumPatterns, drumPatternRng);
             if (dp) {
-                drumEvents.push(...applyDrumPattern(dp, chord.startBeat, chordBeats));
+                drumEvents.push(...applyDrumPattern(dp, step.startBeat, chordBeats));
             }
 
             prevVoicing = fullVoicing;
