@@ -152,7 +152,10 @@
 | 钢琴 accomp post-pass 3 plugin(duck / swing / micro-timing) | `af2-engine/plugins/accomp/{MelodyDensityDucker,SwingApplier,MicroTimingHumanizer}.ts`(2026-05-25 拆 plugin) | 不要把 post-pass 决策搬回 orchestrator;swing 必须早于 micro-timing |
 | Bass walking 模式 | `af2-engine/instruments/BassIdiom.ts` 的 `renderAf2Walking` + `data/BassWalkPatterns.ts` 的 `WALK_PATTERNS` | 不要在 Composer 改 bass |
 | 鼓组 grid | `af2-engine/instruments/drum-grid/grids/` per-mgStyle 配置 | 不要在 DrumIdiom 硬编 |
-| 鼓组算法 | `af2-engine/instruments/DrumIdiom.ts` 的 `renderSection` + `DrumGenerator` | 不要分散 |
+| 鼓组 orchestrator(主循环 + PRNG 3 gate + role gate) | `af2-engine/instruments/DrumIdiom.ts` 的 `renderSection` + `DrumGenerator` | 不要分散 |
+| 鼓组 3 Modifier(pre-PRNG prob 调整) | `af2-engine/plugins/drum/{PersonaSparsity,CrossTrackModifier,PersonaSyncopation}.ts`(2026-05-25 拆 plugin) | 不要把 modifier 逻辑搬回 orchestrator |
+| 鼓组 5 Override(post-PRNG hit state) | `af2-engine/plugins/drum/{Break,Crash,Fill,Ride,OpenHihat}Override.ts`(2026-05-25 拆 plugin) | 不要把 override 决策搬回 orchestrator |
+| Drum plugin 链顺序 | `af2-engine/plugins/drum/index.ts` 的 `DEFAULT_DRUM_MODIFIERS` / `EXCLUSIVE_DRUM_OVERRIDES` / `INDEPENDENT_DRUM_OVERRIDES` | Modifier 顺序敏感(Sparsity→CrossTrack→Sync);Override 互斥链 first-match short-circuit |
 | Pad voicing slice / attack / velocity | `af2-engine/instruments/PadIdiom.ts`(PadGenerator)| 不要分散 |
 | Dispatcher 顺序 / peers 累积 | `af2-engine/Dispatcher.ts` 的 `dispatchMusicians` 中 steps 数组顺序 | 不要在 idiom 互相 import |
 | Reconciler velocity 调整 | `af2-engine/plugins/reconciler/{EnergyHumanizer,CollisionDamper,DropBuildupDynamics}.ts`(2026-05-25 拆 plugin) | 不要在各 musician plan() 内调 velocity |
@@ -248,6 +251,8 @@ af2-engine/             ← 唯一活跃引擎
 │                        chord-detection / chord-color / voicing /
 │                        tendency / cadence / spell(数学+理论)
 ├─ instruments/         ← 5 个 idiom(Piano/Bass/Drum/Pad)+ drum-grid
+│   └─ DrumIdiom.ts     ← orchestrator(主循环 + PRNG 3 gate + role gate)
+├─ plugins/drum/        ← 3 Modifier + 5 Override(2026-05-25 拆 plugin)
 ├─ chord-texture/       ← N+N5 阶段(2026-05-24)mg 移植 23 family + Engine + Mapping
 │   ├─ types.ts             ─ FamilyName(23)/ FamilyParams / NoteEvent
 │   ├─ PitchPrimitives.ts   ─ bassMidi / chordVoicing / quality intervals
@@ -377,9 +382,9 @@ utils/                  ← PRNGManager
 | 想优化什么 | 主要改哪 |
 |------------|---------|
 | Per-mgStyle drum grid | `instruments/drum-grid/grids/{Pop,Jazz,Blues,Rnb}.ts` |
-| Crash / Fill / Ride 触发 | `DrumIdiom.renderSection` Dynamic Override 块 |
-| Persona sparsity / sync 接入 | `DrumIdiom.renderSection` sparsityFactor 计算 |
-| Bass-kick interlock 阈值 | `DrumIdiom.BASS_STRONG_VEL` + `hasBassStrongNear` |
+| Crash / Fill / Break / Ride / OpenHihat 触发 | `af2-engine/plugins/drum/*.ts`(5 个 Override plugin,2026-05-25) |
+| Persona sparsity / syncopation 接入 | `af2-engine/plugins/drum/{PersonaSparsity,PersonaSyncopation}.ts`(2026-05-25 拆 plugin) |
+| Bass-kick interlock 阈值 | `af2-engine/plugins/drum/CrossTrackModifier.ts` 的 `BASS_STRONG_VEL` + `hasBassStrongNear`(2026-05-25 拆 plugin) |
 
 ### 8.4 氛围(PadIdiom)
 

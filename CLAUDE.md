@@ -125,7 +125,8 @@ src/core/generation/
 │  ├─ instruments/
 │  │  ├─ PianoIdiom.ts            ← 钢琴 idiom 入口(调 Af2MelodyGen/AccompGen)
 │  │  ├─ BassIdiom.ts             ← Bass walking(swing + accents)
-│  │  ├─ DrumIdiom.ts             ← Drum grid 渲染 + persona sparsity/sync
+│  │  ├─ DrumIdiom.ts             ← orchestrator(主循环 + PRNG 3 gate + role gate;2026-05-25 拆 plugin)
+│  │  ├─ ../plugins/drum/         ← 3 Modifier + 5 Override(PersonaSparsity / CrossTrack / Sync ; Break / Crash / Fill / Ride / OpenHihat)
 │  │  ├─ PadIdiom.ts              ← Pad voicing slice + attack pre-roll
 │  │  └─ drum-grid/               ← per-mgStyle drum grid
 │  ├─ music-theory/               ← 12 主题文件(midi/scale/chord-types/voicing/spell/...)
