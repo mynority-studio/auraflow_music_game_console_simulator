@@ -67,6 +67,32 @@ void SWING_STYLE; // 保留 import 避免 unused warning(后续 UI 接入再用)
 
 const POP_STYLE_ID: StyleId = StyleId.ModernPop;
 
+// ============================================================
+// ImproCore 扩展:arp / broken / 混合 chord-pattern augment(2026-05-25)
+// ============================================================
+// .sty 原 chord-pattern 只有 X/R/V token → 全柱式听感。
+// 这里 augment 含 U(arp up)/ D(arp down)/ B(broken pair)的 pattern,加到
+// style.chordPatterns pool weighted random 抽样,让伴奏听感呈柱式 / arp / broken / 混合。
+//
+// weight 设计:总 weight ≈ 70.0,对比 ballad.sty 原池总 weight ≈ 100,新池占 41%
+// (柱式仍主流,arp/broken 当装饰)。
+// ============================================================
+const ARP_AUGMENT_CHORD_PATTERNS: ChordPattern[] = [
+    // 纯 arp(arp 主导)
+    { rules: ['V80', 'U2'],             weight: 8.0 },   // 2 拍上行 arp
+    { rules: ['V80', 'D2'],             weight: 5.0 },   // 2 拍下行 arp
+    { rules: ['V75', 'U4', 'D4'],       weight: 10.0 },  // 上行 + 下行(一来回)
+    { rules: ['V70', 'U1'],             weight: 4.0 },   // 1 拍 arp(快速)
+    // Broken pair(高低对)
+    { rules: ['V85', 'B4', 'B4'],       weight: 12.0 },  // 高低对 x 2
+    { rules: ['V85', 'B2'],             weight: 8.0 },   // 长 broken
+    { rules: ['V80', 'B4', 'B4', 'B4', 'B4'], weight: 6.0 }, // 8 beat 高低对密集
+    // 混合(柱式 + 装饰)
+    { rules: ['V90', 'X4', 'U4'],       weight: 10.0 },  // 1 拍柱 + 1 拍 arp
+    { rules: ['V90', 'X4', 'B4'],       weight: 10.0 },  // 1 拍柱 + 1 拍 broken
+    { rules: ['V85', 'X2', 'U2'],       weight: 7.0 },   // 2 拍柱 + 2 拍 arp
+];
+
 /**
  * Af2AbstractStep.type 是字符串(maj/min/dom7/m7/...),直接当 ChordVocab key 用。
  * 输出 GeneratedTrack.chords 时反向 string → ChordQuality enum(借 MG_TYPE_TO_QUALITY)。
@@ -157,6 +183,11 @@ export const ImproEngineFacade = {
         // 3. ImproCore — per chord 跑 voicing + 3 pattern
         const style: StyleData = DEFAULT_STYLE;
         const settings = CLOSED_HIGH_VOICING_SETTINGS;
+        // augment chord-pattern pool 加 arp/broken(原 .sty 全柱式 → 听感单一)
+        const augmentedChordPatterns: ChordPattern[] = [
+            ...style.chordPatterns,
+            ...ARP_AUGMENT_CHORD_PATTERNS,
+        ];
 
         const voicingRng = new Random(`${seedString}_voicing`);
         const handsRng = new Random(`${seedString}_hands`);
@@ -212,8 +243,8 @@ export const ImproEngineFacade = {
                 voicing: fullVoicing,
             });
 
-            // 3d. chord pattern
-            const cp: ChordPattern | null = pickWeighted(style.chordPatterns, chordPatternRng);
+            // 3d. chord pattern(从 augmented pool 抽 — 原柱式 + arp/broken/混合)
+            const cp: ChordPattern | null = pickWeighted(augmentedChordPatterns, chordPatternRng);
             if (cp) {
                 accompEvents.push(...applyChordPattern(cp.rules, fullVoicing, step.startBeat, chordBeats));
             }
