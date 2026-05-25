@@ -294,8 +294,15 @@ export const ImproEngineFacade = {
             const absRootPc = ((step.rootOffset + keyOffset) % 12 + 12) % 12;
             const vocab = getChordVocab(enhancedType);
             const priorityPcs = vocab.priority.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
-            const colorPcs = vocab.color.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
+            const colorPcsAll = vocab.color.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const spellPcs = vocab.spell.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
+            // 关键修复:chord vocab color 含 altered tension(b9/#11/b13 等调外音),
+            //   VoicingGenerator 加权会让 chord LH/RH 选到这些音 → chord 漏调外
+            //   melody/bass 又被限制在 key 内 → 出现"chord 弹 Db / melody 弹 D"半音冲突
+            //   修:colorPcs 传 VoicingGenerator 之前过滤 keyDiatonicPcs 内,
+            //   只留调内 diatonic extensions(typical 9/13/11 等 — 6th/9th 都在 major scale 内)
+            const diaSet = new Set(keyDiatonicPcs);
+            const colorPcs = colorPcsAll.filter(pc => diaSet.has(pc));
             // bass S token 用 keyDiatonicPcs(7 个调内音)替代 spell+color 混合,
             // 避免 chord vocab color 的 altered tension(b9/#11/b13)漏到 bass 听感调外
             const scalePcs = keyDiatonicPcs;
@@ -303,7 +310,7 @@ export const ImproEngineFacade = {
             // 3b. hand layout
             const handLayout = planHands(settings, prevLhLow, handsRng);
 
-            // 3c. voicing
+            // 3c. voicing — colorPcs 已过滤调内,VoicingGenerator 不再选 altered tension
             const { lhMidi, rhMidi } = generateVoicing(
                 priorityPcs, colorPcs, handLayout, prevVoicing, settings, voicingRng,
             );
