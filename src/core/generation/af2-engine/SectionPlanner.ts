@@ -24,7 +24,6 @@
 import { SectionType } from '../types';
 import type { SectionMetadata } from '../types';
 import { PRNGManager } from '../../utils/PRNG';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 
 /**
  * 段落模板(自包含,不复用 AF 的 StructureTemplate 因小节数不兼容)
@@ -201,7 +200,6 @@ export const SectionPlanner = {
      * @param beatsPerMeasure  默认 4(mg 当前所有 macro style 都是 4/4)
      */
     plan(
-        mgStyle: MgStyle,
         totalBars: number,
         beatsPerMeasure: number = 4,
     ): SectionMetadata[] {

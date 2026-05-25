@@ -35,17 +35,12 @@
 // ==========================================
 
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
 import { classifyPhraseRole } from './utils/phrase-role';
 import { MINOR_TO_MAJOR_TYPE } from './utils/minor-major-type';
 
-const STYLE_PICARDY_PROB: Record<MgStyle, number> = {
-    POP:   0.30,
-    JAZZ:  0.20,
-    RNB:   0.25,
-    BLUES: 0.10,
-};
+// POP-only Picardy 概率(JAZZ/BLUES/RNB 已退役)
+const PICARDY_PROB: number = 0.30;
 
 /** 是否是 minor tonic chord(rootOffset=0 + minor 家族 type)*/
 function isMinorTonic(step: Af2AbstractStep): boolean {
@@ -55,7 +50,6 @@ function isMinorTonic(step: Af2AbstractStep): boolean {
 
 export interface PlanPicardyOptions {
     skeleton: Af2AbstractStep[];
-    style: MgStyle;
     motifInterval: number;
     random: Random;
 }
@@ -66,8 +60,8 @@ export interface PlanPicardyOptions {
  * lockType 标记的 slot 跳过(BorrowPlanner / TonicizationPlanner 已处理过)。
  */
 export function planPicardyEndings(opts: PlanPicardyOptions): Af2AbstractStep[] {
-    const { skeleton, style, motifInterval, random } = opts;
-    const baseProb = STYLE_PICARDY_PROB[style] ?? 0;
+    const { skeleton, motifInterval, random } = opts;
+    const baseProb = PICARDY_PROB;
     if (baseProb === 0 || skeleton.length < 2) return skeleton.slice();
 
     const result: Af2AbstractStep[] = [];

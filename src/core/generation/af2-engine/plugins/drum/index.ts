@@ -14,7 +14,7 @@ import type { DrumModifier, DrumOverride } from './types';
 
 export { PersonaSparsity, CrossTrackModifier, PersonaSyncopation };
 export { BreakOverride, CrashOverride, FillOverride, RideOverride, OpenHihatOverride };
-export { FILL_STYLES_BY_STYLE, pickFillStyle } from './FillOverride';
+export { FILL_STYLES_POP, pickFillStyle } from './FillOverride';
 export type {
     DrumPluginMeta, DrumModifier, DrumOverride,
     DrumProbs, DrumHitState, DrumModifierContext, DrumOverrideContext,

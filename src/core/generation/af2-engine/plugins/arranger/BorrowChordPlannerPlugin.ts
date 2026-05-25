@@ -29,7 +29,6 @@ export const BorrowChordPlannerPlugin: ProgressionPlanner = {
     apply(skeleton, ctx) {
         return planBorrowedChords({
             skeleton,
-            style: ctx.style,
             motifInterval: ctx.motifInterval,
             random: ctx.borrowRng,
             beatsPerMeasure: ctx.beatsPerMeasure,

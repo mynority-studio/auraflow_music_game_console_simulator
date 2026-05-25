@@ -26,7 +26,6 @@
 // ============================================================
 
 import type { NoteData, SectionMetadata } from '../../../types';
-import type { MgStyle } from '../../../../../state/EngineSelectionStore';
 import type { DrumStepConfig } from '../../instruments/drum-grid/types';
 
 export interface DrumPluginMeta {
@@ -85,7 +84,6 @@ export interface DrumOverrideContext {
     readonly stepsPerBeat: number;
     readonly section: SectionMetadata;
     readonly nextSection: SectionMetadata | undefined;
-    readonly mgStyle: MgStyle;
     readonly fillStyle: FillStyle;
     readonly velScale: number;
     readonly isHighEnergy: boolean;

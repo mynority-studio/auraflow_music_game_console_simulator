@@ -20,7 +20,6 @@
 import { BandRole, SectionType } from '../types';
 import type { Musician, NoteData, SectionMetadata } from '../types';
 import type { Score } from './Score';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import {
     DEFAULT_ROLE_FILTERS,
     buildSectionContext,
@@ -149,32 +148,10 @@ export const DEFAULT_CONDUCTOR_TEMPLATE: ConductorTemplate = {
  *   RNB:   Intro pad+accomp+bass(neo-soul 三件套 intro)+ Outro pad+bass+accomp
  *          (neo-soul 厚 outro)
  */
-export const CONDUCTOR_TEMPLATES_BY_STYLE: Record<MgStyle, ConductorTemplate> = {
-    POP: DEFAULT_CONDUCTOR_TEMPLATE,
-    JAZZ: {
-        ...DEFAULT_CONDUCTOR_TEMPLATE,
-        [SectionType.Intro]:     new Set(['pad', 'accomp', 'bass']),       // jazz intro 加 walking bass
-        [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),  // bridge 保鼓
-        [SectionType.Outro]:     new Set(['pad', 'accomp', 'bass']),       // jazz 收尾三件套
-        [SectionType.PreOutro]:  new Set(['pad', 'accomp', 'bass', 'drums']),
-    },
-    BLUES: {
-        ...DEFAULT_CONDUCTOR_TEMPLATE,
-        [SectionType.Intro]:     new Set(['drums', 'bass']),               // blues intro rhythm only,无 pad
-        [SectionType.Verse]:     new Set(['melody', 'accomp', 'bass', 'drums']),  // 无 pad(blues 不太用 pad)
-        [SectionType.PreChorus]: new Set(['melody', 'accomp', 'bass', 'drums']),
-        [SectionType.Chorus]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']),  // chorus 才加 pad
-        [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'drums']),
-        [SectionType.Outro]:     new Set(['drums', 'bass']),               // blues 收尾 rhythm only
-        [SectionType.PreOutro]:  new Set(['accomp', 'bass', 'drums']),
-    },
-    RNB: {
-        ...DEFAULT_CONDUCTOR_TEMPLATE,
-        [SectionType.Intro]:     new Set(['pad', 'accomp', 'bass']),       // neo-soul intro 三件套
-        [SectionType.Outro]:     new Set(['pad', 'accomp', 'bass']),       // 厚 outro
-        [SectionType.PreOutro]:  new Set(['pad', 'accomp', 'bass', 'drums']),
-    },
-};
+/**
+ * POP-only 模板(JAZZ/BLUES/RNB 已退役)。
+ */
+export const CONDUCTOR_TEMPLATE: ConductorTemplate = DEFAULT_CONDUCTOR_TEMPLATE;
 
 // ============================================================
 // Conductor 模板自家化(2026-05-24 加):per-mgStyle 多 variants
@@ -192,7 +169,7 @@ export interface ConductorTemplateVariant {
     template: ConductorTemplate;
 }
 
-/** POP 变种 */
+/** POP-only 变种(JAZZ/BLUES/RNB 已退役) */
 const POP_MINIMAL: ConductorTemplate = {
     ...DEFAULT_CONDUCTOR_TEMPLATE,
     [SectionType.Verse]:     new Set(['accomp', 'bass', 'pad']),                    // verse 无 drums + 无 melody
@@ -206,58 +183,25 @@ const POP_DENSE: ConductorTemplate = {
     [SectionType.Bridge]:    new Set(['melody', 'accomp', 'bass', 'drums', 'pad']), // bridge 加鼓
 };
 
-/** JAZZ 变种 */
-const JAZZ_INTRO_SOLO: ConductorTemplate = {
-    ...CONDUCTOR_TEMPLATES_BY_STYLE.JAZZ,
-    [SectionType.Intro]:     new Set(['melody']),                                    // piano solo intro
-};
-const JAZZ_QUIET: ConductorTemplate = {
-    ...CONDUCTOR_TEMPLATES_BY_STYLE.JAZZ,
-    [SectionType.Verse]:     new Set(['melody', 'accomp', 'bass', 'pad']),          // verse 无 drums(brushed feel)
-};
-
-/** RNB 变种 */
-const RNB_AIRY: ConductorTemplate = {
-    ...CONDUCTOR_TEMPLATES_BY_STYLE.RNB,
-    [SectionType.Intro]:     new Set(['pad']),                                       // ambient intro 仅 pad
-    [SectionType.Bridge]:    new Set(['melody', 'accomp', 'pad']),                  // bridge 无 drums + 无 bass(空灵)
-};
-
-export const CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE: Record<MgStyle, ReadonlyArray<ConductorTemplateVariant>> = {
-    POP: [
-        { name: 'standard', template: CONDUCTOR_TEMPLATES_BY_STYLE.POP },
-        { name: 'minimal',  template: POP_MINIMAL },
-        { name: 'dense',    template: POP_DENSE },
-    ],
-    JAZZ: [
-        { name: 'standard',    template: CONDUCTOR_TEMPLATES_BY_STYLE.JAZZ },
-        { name: 'intro_solo',  template: JAZZ_INTRO_SOLO },
-        { name: 'quiet',       template: JAZZ_QUIET },
-    ],
-    BLUES: [
-        { name: 'standard', template: CONDUCTOR_TEMPLATES_BY_STYLE.BLUES },
-    ],
-    RNB: [
-        { name: 'standard', template: CONDUCTOR_TEMPLATES_BY_STYLE.RNB },
-        { name: 'airy',     template: RNB_AIRY },
-    ],
-};
+export const CONDUCTOR_TEMPLATE_VARIANTS: ReadonlyArray<ConductorTemplateVariant> = [
+    { name: 'standard', template: CONDUCTOR_TEMPLATE },
+    { name: 'minimal',  template: POP_MINIMAL },
+    { name: 'dense',    template: POP_DENSE },
+];
 
 /**
  * 用 seed deterministic 抽 variant(零 PRNG 消耗 — 仅 hash on number).
  * Facade 在构造 DynamicConductor 之前调用,选好 variant 传入 constructor。
  */
-export function pickConductorTemplate(mgStyle: MgStyle, seed: number): {
+export function pickConductorTemplate(seed: number): {
     name: string;
     template: ConductorTemplate;
 } {
-    const variants = CONDUCTOR_TEMPLATE_VARIANTS_BY_STYLE[mgStyle];
+    const variants = CONDUCTOR_TEMPLATE_VARIANTS;
     if (!variants || variants.length === 0) {
         return { name: 'fallback', template: DEFAULT_CONDUCTOR_TEMPLATE };
     }
-    // 简单 hash:seed XOR mgStyle string hash
-    const styleHash = mgStyle.split('').reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 0);
-    const idx = ((seed ^ styleHash) >>> 0) % variants.length;
+    const idx = (seed >>> 0) % variants.length;
     return variants[idx];
 }
 
@@ -351,12 +295,6 @@ export interface MusicianPlanInput {
      * musician.af2Overrides 主要给 PianoIdiom / BassIdiom 读 Layer 1/2 overrides。
      */
     readonly musician?: Musician;
-    /**
-     * 当前曲目 mgStyle(由 Facade 从 EngineSelectionStore.getMgStyle 取或
-     * options.forcedStyleId 映射)。供 idiom 选 per-mgStyle 节奏/织体表用。
-     * 可选保持向后兼容;未传时 idiom 走 POP fallback。
-     */
-    readonly mgStyle?: MgStyle;
     /**
      * N6 阶段:cross-track melody peer notes(已 emit 的 mainMusician notes)。
      * 由 Facade 在 accomp closure 内从 input.peers.get(mainMusicianId) 注入。

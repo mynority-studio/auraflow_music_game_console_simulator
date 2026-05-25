@@ -24,7 +24,6 @@
 import type { Score } from './Score';
 import type { MusicianPlanInput, SectionAssignment } from './Conductor';
 import type { NoteData } from '../types';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 
 /**
  * MusicianStep — Dispatcher 调度的单个 musician 步骤。
@@ -62,7 +61,6 @@ export function dispatchMusicians(
     score: Score,
     assignments: ReadonlyArray<SectionAssignment>,
     steps: ReadonlyArray<MusicianStep>,
-    mgStyle?: MgStyle,
 ): Map<string, NoteData[]> {
     const peers = new Map<string, ReadonlyArray<NoteData>>();
     const out = new Map<string, NoteData[]>();
@@ -72,7 +70,6 @@ export function dispatchMusicians(
             assignments,
             musicianId: step.musicianId,
             peers,
-            mgStyle,
         };
         const notes = step.plan(input);
         out.set(step.musicianId, notes);

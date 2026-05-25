@@ -35,7 +35,6 @@ export const MinorBorrowPlannerPlugin: ProgressionPlanner = {
     apply(skeleton, ctx) {
         return planMinorBorrows({
             skeleton,
-            style: ctx.style,
             motifInterval: ctx.motifInterval,
             random: ctx.minorBorrowRng!,  // shouldApply 保证非空
         });

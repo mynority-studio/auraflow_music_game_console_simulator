@@ -590,79 +590,20 @@ export function buildChordVoicing(
   return placeVoicingMidi(pcs, prevVoicingMidi, bassMidi, chordType, chordRootPc);
 }
 
-// Style preset constants for the 5 modes used in realizeProgression.
-// Wiring (G4) will dispatch via these instead of inline heuristics.
+// POP-only style presets(JAZZ ROOTLESS / RNB CLUSTER / BLUES 已退役)。
+// STYLE_FULL / STYLE_SHELL 是通用 voicing 模式语义,保留。
 export const STYLE_SHELL: VoicingStylePreference = {
   rootPolicy: 'include',
   density: 4,
   addColorOnTriad: false,
-};
-export const STYLE_ROOTLESS: VoicingStylePreference = {
-  rootPolicy: 'omit',
-  density: 4,
-  addColorOnTriad: true,  // Bill Evans signature
-};
-export const STYLE_CLUSTER: VoicingStylePreference = {
-  rootPolicy: 'omit',
-  density: 4,
-  addColorOnTriad: true,
 };
 export const STYLE_FULL: VoicingStylePreference = {
   rootPolicy: 'include',
   density: 5,
   addColorOnTriad: false,
 };
-export const STYLE_BLUES: VoicingStylePreference = {
-  rootPolicy: 'include',
-  density: 4,
-  addColorOnTriad: false,
-};
 
-export const JAZZ_ROOTLESS_VOICINGS: Record<string, number[]> = {
-  // maj family — always include 9
-  'maj':       [4, 7, 14],          // 3 5 9
-  'maj7':      [4, 7, 11, 14],      // 3 5 7M 9
-  'maj9':      [4, 7, 11, 14],
-  'maj13':     [4, 7, 11, 14, 21],  // 3 5 7M 9 13
-  'maj7#11':   [4, 11, 14, 18],     // 3 7M 9 #11 (drop 5, Lydian color)
-  'maj9#11':   [4, 11, 14, 18],
-  '6':         [4, 7, 9, 14],       // 3 5 6 9
-  '6/9':       [4, 7, 9, 14],
-  'add9':      [4, 7, 14],
-
-  // min family — always include 9
-  'min':       [3, 7, 14],          // b3 5 9
-  'm7':        [3, 7, 10, 14],      // b3 5 b7 9
-  'm9':        [3, 7, 10, 14],
-  'm11':       [3, 10, 14, 17],     // b3 b7 9 11 (drop 5)
-
-  // dom family — drop 5, lean on 13 (= 6M) and 9
-  '7':         [4, 9, 10, 14],      // 3 13 b7 9   (Bill Evans A)
-  'dom7':      [4, 9, 10, 14],
-  '9':         [4, 9, 10, 14],
-  '13':        [4, 9, 10, 14],      // pc-identical to 9 once 13 is in
-  '7b9':       [4, 9, 10, 13],      // 3 13 b7 b9
-  '7#9':       [4, 9, 10, 15],      // 3 13 b7 #9
-  '13b9':      [4, 9, 10, 13],
-  '7b13':      [4, 8, 10, 13],      // 3 b13 b7 b9
-  '7#5':       [4, 8, 10, 14],      // 3 #5 b7 9
-  '7#11':      [10, 14, 18, 21],    // b7 9 #11 13  (no 3, Lydian-dom signature)
-  '7alt':      [4, 10, 13, 15, 20], // 3 b7 b9 #9 b13 (altered stack)
-  '11':        [5, 10, 14],         // 4 b7 9 — natural 11 in dom context = sus voicing
-
-  // half-dim / dim / aug — keep root; identity is fragile rootless
-  'm7b5':      [0, 3, 6, 10],
-  'm9b5':      [0, 3, 6, 10, 14],
-  'dim':       [0, 3, 6],
-  'dim7':      [0, 3, 6, 9],
-  'aug':       [0, 4, 8],
-
-  // sus
-  'sus4':      [5, 7, 14],          // 4 5 9
-  '7sus4':     [5, 10, 14],         // 4 b7 9
-  '9sus4':     [5, 10, 14],
-  'm7sus4':    [5, 10, 14],
-};
+// JAZZ_ROOTLESS_VOICINGS 已退役(POP-only flat 化,2026-05-25)。
 
 // ------------------------------------------------------------------
 // POP_VOICINGS — full-extension pop comping idiom.
@@ -694,105 +635,7 @@ export const POP_VOICINGS: Record<string, number[]> = {
   '11':        [0, 5, 7, 10, 14],
 };
 
-// ------------------------------------------------------------------
-// RNB_VOICINGS — Neo-Soul / D'Angelo / Glasper signature voicings.
-//
-// What: lookup table that augments the 'cluster' compingVoicingMode
-// for chord types where the bare cluster heuristic (slice(1, 5))
-// would discard the signature Neo-Soul color tone. Semitones from
-// chord root.
-//
-// Why: the cluster heuristic "drop root + take next 4" works fine
-// for maj9 / m9 / 6/9 (the upper four ARE 3/5/7/9). But for m11,
-// 13, 7b13, 7#11, 7alt, 9sus4 the heuristic drops the very note
-// that defines the chord:
-//   - m11's 11 (D'Angelo "Untitled" signature) — heuristic gives
-//     b3 5 b7 9, missing the 11
-//   - 13's 13 (V13 R&B punch) — heuristic gives 3 5 b7 9, missing 13
-//   - 7b13's b13 (altered tension) — heuristic keeps natural 5
-//   - 9sus4's 11 (Glasper sus voicing) — heuristic gives 4 5 b7 9
-//
-// This table provides the corrected voicings for those types only;
-// chord types not listed fall through to the cluster heuristic.
-//
-// Source: D'Angelo / Glasper / Erykah Badu transcriptions (Neo-Soul
-// piano idiom); NOT copied from any specific transcription — a
-// generic Neo-Soul cluster pattern applied across chord types.
-// ------------------------------------------------------------------
-export const RNB_VOICINGS: Record<string, number[]> = {
-  'm11':       [3, 10, 14, 17],       // b3 b7 9 11 — D'Angelo Untitled signature
-  '13':        [4, 10, 14, 21],       // 3 b7 9 13 — drop 5 to make room for 13
-  '13b9':      [4, 10, 13, 21],
-  '7b13':      [4, 10, 13, 20],       // 3 b7 9b b13 — full altered tension
-  '7alt':      [4, 10, 13, 15, 20],   // 3 b7 b9 #9 b13
-  '7#11':      [4, 10, 14, 18],       // 3 b7 9 #11
-  'maj13':     [4, 11, 14, 21],       // 3 7 9 13 — Glasper maj13
-  'maj9#11':   [4, 11, 14, 18, 21],   // 3 7 9 #11 13
-  '9sus4':     [5, 10, 14, 17],       // 4 b7 9 11 — Glasper sus voicing
-  '11':        [5, 10, 14, 17],       // same as 9sus4 effectively
-};
-
-// ------------------------------------------------------------------
-// BLUES_VOICINGS — boogie / shuffle piano right-hand comping.
-//
-// What: per chord type, the pitch-set the right hand plays when the
-// left hand is running a boogie_pattern bass (root-3-5-6-b7-5-3-root
-// or similar 8th-note walk). Semitones from chord root.
-//
-// Why: with the left hand owning the 5 in the bass walk, the right
-// hand drops the 5 on dominant chords to make room for the blues
-// alterations (9 / b9 / #9 / b13) and the 3+b7 guide tones. The
-// "horn shout" voicing (root + 3 + b7 + 9) is the boogie / barrelhouse
-// signature. Triads / m7 / maj7 keep their fifths since they don't
-// need to clear space for tension.
-//
-// Source: standard boogie-woogie piano comping (Otis Spann / Mose
-// Allison / Memphis Slim transcriptions); Hal Leonard blues piano
-// series. NOT copied from any specific transcription verbatim —
-// a generic boogie/barrelhouse pattern applied across chord types.
-// ------------------------------------------------------------------
-export const BLUES_VOICINGS: Record<string, number[]> = {
-  // Triads / quality 7-chords — keep all (no dominant tension to make room for)
-  'maj':       [0, 4, 7],
-  'min':       [0, 3, 7],
-  'dim':       [0, 3, 6],
-  'aug':       [0, 4, 8],
-  'maj7':      [0, 4, 7, 11],
-  'm7':        [0, 3, 7, 10],
-  'maj9':      [0, 4, 7, 11, 14],
-  'm9':        [0, 3, 7, 10, 14],
-  'm11':       [0, 3, 7, 10, 14, 17],
-  'maj13':     [0, 4, 7, 11, 14, 21],
-  'm7b5':      [0, 3, 6, 10],
-  'm9b5':      [0, 3, 6, 10, 14],
-  'dim7':      [0, 3, 6, 9],
-  'mM7':       [0, 3, 7, 11],
-  'add9':      [0, 4, 7, 14],
-  '6':         [0, 4, 7, 9],
-  '6/9':       [0, 4, 7, 9, 14],
-
-  // Dominant chords — drop 5, emphasize 3+b7 guide tones + upper color
-  'dom7':      [0, 4, 10],            // root + 3 + b7
-  '7':         [0, 4, 10],
-  '9':         [0, 4, 10, 14],        // boogie horn-shout: root + 3 + b7 + 9
-  '13':        [0, 4, 10, 14, 21],    // + 13
-  '7b9':       [0, 4, 10, 13],
-  '7#9':       [0, 4, 10, 15],        // Hendrix chord
-  '7b13':      [0, 4, 10, 20],
-  '7#5':       [0, 4, 8, 10],
-  '7#11':      [0, 4, 10, 14, 18],
-  '7alt':      [0, 4, 10, 13, 15, 20],
-  '13b9':      [0, 4, 10, 13, 21],
-  'maj7#11':   [0, 4, 7, 11, 18],
-  'maj9#11':   [0, 4, 7, 11, 14, 18],
-
-  // sus — bass owns root, comping has 4 + b7 + extensions
-  'sus4':      [0, 5, 7],
-  '7sus4':     [0, 5, 10],
-  '9sus4':     [0, 5, 10, 14],
-  '11':        [0, 5, 10, 14],
-  'm7sus4':    [0, 5, 7, 10],
-};
+// RNB_VOICINGS / BLUES_VOICINGS 已退役(POP-only flat 化,2026-05-25)。
 
 // ------------------------------------------------------------------
 // Global-harmony contract — under the divisi model, "stable" expands

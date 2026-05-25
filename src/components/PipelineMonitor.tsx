@@ -24,7 +24,6 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-import { EngineSelectionStore, MgStyle } from '../state/EngineSelectionStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -154,8 +153,7 @@ export const PipelineMonitor: React.FC = () => {
     const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
     // 2026-05-24 删 AF/MG 后:engine 常量 'AF2'(保留变量名供后续 JSX 引用,
     // 但不再有切换 UI)
-    // MG Style(仅 MG 模式下生效;AF 模式只是闲置)
-    const [mgStyle, setMgStyleState] = useState<MgStyle>(EngineSelectionStore.getMgStyle());
+    // POP-only(2026-05-25 删 JAZZ/BLUES/RNB)— mgStyle 选择 UI 移除
     // 错误提示(MG 模式抛错时显示)
     const [playError, setPlayError] = useState<string | null>(null);
     const rafRef = useRef<number | null>(null);
@@ -183,15 +181,7 @@ export const PipelineMonitor: React.FC = () => {
         BandSelectionStore.setBand(bandSelection, instrumentSelection);
     }, [bandSelection, instrumentSelection]);
 
-    const handleMgStyleChange = useCallback((next: MgStyle) => {
-        if (next === mgStyle) return;
-        EngineSelectionStore.setMgStyle(next);
-        setMgStyleState(next);
-    }, [mgStyle]);
-
-    // 2026-05-24 删 AF/MG 后:AF2 唯一引擎,mgStyle 选择恒可用
-    const isMgMode = false;
-    const mgStyleEnabled = true;
+    // 2026-05-25 大瘦身后:POP-only,mgStyle 选择/UI 全部移除
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -389,30 +379,14 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* AF2 唯一引擎 + MG Style 选择(2026-05-24 删 AF/MG 后) */}
+            {/* AF2 引擎指示(2026-05-25 POP-only,style 选择 UI 已移除) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
                 <span className="px-3 py-1 bg-orange-500/80 text-white text-[10px] font-bold tracking-wider uppercase rounded shadow-[0_0_8px_rgba(249,115,22,0.5)]">
-                    AF2
+                    AF2 · POP
                 </span>
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] uppercase tracking-wider font-mono text-orange-400/60">
-                        Style
-                    </span>
-                    <select
-                        value={mgStyle}
-                        onChange={(e) => handleMgStyleChange(e.target.value as MgStyle)}
-                        className="bg-black/60 border border-orange-500/40 text-orange-300 rounded px-1.5 py-0.5 text-[10px] font-mono"
-                        title="AF2 风格(POP/JAZZ/BLUES/RNB)— 影响 Arranger 进行池 / Composer Divisi / Conductor 模板"
-                    >
-                        <option value="POP">POP</option>
-                        <option value="JAZZ">JAZZ</option>
-                        <option value="BLUES">BLUES</option>
-                        <option value="RNB">RNB</option>
-                    </select>
-                </div>
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
-                    AF2 sole engine · 5 slots active (no vocal)
+                    POP-only · 5 slots active (no vocal)
                 </span>
             </div>
 
@@ -496,7 +470,7 @@ export const PipelineMonitor: React.FC = () => {
                 onInstrumentChange={setInstrumentSelection}
                 isDirty={isBandDirty}
                 onApply={applyBandSelection}
-                disabled={isMgMode}
+                disabled={false}
                 disabledSlots={[BandRole.Vocal]}
             />
 

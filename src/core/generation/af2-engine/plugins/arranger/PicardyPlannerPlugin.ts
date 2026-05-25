@@ -29,7 +29,6 @@ export const PicardyPlannerPlugin: ProgressionPlanner = {
     apply(skeleton, ctx) {
         return planPicardyEndings({
             skeleton,
-            style: ctx.style,
             motifInterval: ctx.motifInterval,
             random: ctx.picardyRng!,  // shouldApply 保证非空
         });

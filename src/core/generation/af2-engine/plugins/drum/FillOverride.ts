@@ -22,20 +22,15 @@
 //   ghost_flam   — 主拍 snare + 16th ghost snare + kick(RNB idiom)
 // ============================================================
 
-import type { MgStyle } from '../../../../../state/EngineSelectionStore';
 import type { DrumOverride, DrumHitState, DrumOverrideContext, FillStyle } from './types';
 import { DRUM_TOM_HI, DRUM_TOM_MID, DRUM_TOM_LO, DRUM_CRASH, DRUM_RIDE } from './constants';
 
-export const FILL_STYLES_BY_STYLE: Record<MgStyle, ReadonlyArray<FillStyle>> = {
-    POP:   ['tom', 'snare_roll'],
-    JAZZ:  ['ride_drift', 'snare_roll'],
-    BLUES: ['shuffle_fill', 'snare_roll'],
-    RNB:   ['ghost_flam', 'snare_roll'],
-};
+// POP-only fill style 池(JAZZ/BLUES/RNB 已退役)
+export const FILL_STYLES_POP: ReadonlyArray<FillStyle> = ['tom', 'snare_roll'];
 
 /** Per-section deterministic fill style 选(orchestrator 调用一次,传给 ctx) */
-export function pickFillStyle(mgStyle: MgStyle, sectionStartBeat: number): FillStyle {
-    const pool = FILL_STYLES_BY_STYLE[mgStyle] ?? ['tom', 'snare_roll'];
+export function pickFillStyle(sectionStartBeat: number): FillStyle {
+    const pool = FILL_STYLES_POP;
     return pool[Math.floor(sectionStartBeat) % pool.length];
 }
 

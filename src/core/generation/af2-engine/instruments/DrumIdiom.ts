@@ -22,8 +22,7 @@
 import type { NoteData, SectionMetadata, MusicianPersona } from '../../types';
 import { BandRole, SectionType } from '../../types';
 import type { Random } from '../utils/Random';
-import type { MgStyle } from '../../../../state/EngineSelectionStore';
-import { getDrumGridByMgStyle } from './drum-grid/grids';
+import { DRUM_GRID } from './drum-grid/grids';
 import type { DrumGridConfig } from './drum-grid/types';
 import { STEPS_PER_BEAT, STEPS_PER_BAR, ENERGY_LEVELS } from './drum-grid/types';
 import type { Score } from '../Score';
@@ -53,18 +52,10 @@ const CRASH_SECTION_TYPES: ReadonlySet<SectionType> = new Set([
 ]);
 
 /**
- * Y 阶段:per-mgStyle drum swing ratio(影响 16-step grid sub-step onset)。
- *   POP   0.50 — 直拍
- *   JAZZ  0.66 — triplet swing
- *   BLUES 0.66 — shuffle
- *   RNB   0.50 — 直 16th
+ * POP-only drum swing ratio(JAZZ/BLUES/RNB 已退役):
+ *   POP 0.50 — 直拍
  */
-const SWING_RATIO_BY_STYLE: Record<MgStyle, number> = {
-    POP:   0.50,
-    JAZZ:  0.66,
-    BLUES: 0.66,
-    RNB:   0.50,
-};
+const SWING_RATIO_POP: number = 0.50;
 
 function stepOnsetWithinBeat(subStep: number, swingRatio: number): number {
     if (subStep === 0) return 0;
@@ -84,7 +75,6 @@ export interface DrumPlanInput {
     score: Score;
     musicianId: string;
     assignments: ReadonlyArray<SectionAssignment>;
-    mgStyle: MgStyle;
     rng: Random;
     bassNotes?: ReadonlyArray<NoteData>;
     chordNotes?: ReadonlyArray<NoteData>;
@@ -124,10 +114,10 @@ export const DrumGenerator = {
      *   3. 通过的 section 走 renderSection 主循环 + plugin chain
      */
     plan(input: DrumPlanInput): NoteData[] {
-        const { score, musicianId, assignments, mgStyle, bassNotes = [], chordNotes = [], rng, persona } = input;
+        const { score, musicianId, assignments, bassNotes = [], chordNotes = [], rng, persona } = input;
         const sections = score.sections;
         const beatsPerMeasure = score.timeSignature[0];
-        const grid = getDrumGridByMgStyle(mgStyle);
+        const grid = DRUM_GRID;
         const out: NoteData[] = [];
         const sparsity = persona?.sparsityTendency ?? 0;
         const syncopation = persona?.syncopationAssault ?? 0;
@@ -143,7 +133,7 @@ export const DrumGenerator = {
             renderSection(
                 out, section, nextSection, grid, beatsPerMeasure,
                 bassNotes, chordNotes, rng,
-                sparsity, syncopation, mgStyle,
+                sparsity, syncopation,
             );
         }
 
@@ -167,7 +157,6 @@ function renderSection(
     rng: Random,
     sparsity: number,
     syncopation: number,
-    mgStyle: MgStyle,
 ): void {
     const startBeat = section.startBeat;
     const sectionBeats = section.endBeat - startBeat;
@@ -190,11 +179,11 @@ function renderSection(
     const nextIsDrop = nextSection !== undefined && nextSection.sectionType === SectionType.Drop;
 
     // Fill style per-section deterministic 选(0 PRNG)
-    const fillStyle = pickFillStyle(mgStyle, startBeat);
+    const fillStyle = pickFillStyle(startBeat);
 
     const gridLen = grid.grid.length;
     const stepsPerBar = STEPS_PER_BAR;
-    const swingRatio = SWING_RATIO_BY_STYLE[mgStyle] ?? 0.5;
+    const swingRatio = SWING_RATIO_POP;
 
     for (let stepIdx = 0; stepIdx < totalSteps; stepIdx++) {
         const cellIdx = stepIdx % gridLen;
@@ -253,7 +242,7 @@ function renderSection(
         const ovCtx: DrumOverrideContext = {
             stepIdx, totalSteps, stepsPerBar, stepsPerBeat: STEPS_PER_BEAT,
             section, nextSection,
-            mgStyle, fillStyle, velScale,
+            fillStyle, velScale,
             isHighEnergy, isCrashSection, isVeryHigh, isSectionTransition, nextIsDrop,
         };
         for (const ov of EXCLUSIVE_DRUM_OVERRIDES) {

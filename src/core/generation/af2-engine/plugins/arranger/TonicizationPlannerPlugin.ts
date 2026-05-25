@@ -38,7 +38,6 @@ export const TonicizationPlannerPlugin: ProgressionPlanner = {
     apply(skeleton, ctx) {
         return planTonicization({
             skeleton,
-            style: ctx.style,
             motifInterval: ctx.motifInterval,
             random: ctx.tonicizeRng,
             beatsPerMeasure: ctx.beatsPerMeasure,

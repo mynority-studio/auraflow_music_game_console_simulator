@@ -23,7 +23,6 @@
 // ============================================================
 
 import type { Random } from '../../utils/Random';
-import type { MgStyle } from '../../../../../state/EngineSelectionStore';
 import type { Af2AbstractStep } from '../../Af2Arranger';
 import type { BorrowSource } from '../../BorrowChordPlanner';
 
@@ -43,7 +42,6 @@ export interface ProgressionPlannerMeta {
  *   Tonicize     → tonicizeRng / songKeyRootPc / beatsPerMeasure / motifInterval / style
  */
 export interface ProgressionPlannerContext {
-    readonly style: MgStyle;
     readonly motifInterval: number;
     readonly beatsPerMeasure: number;
     readonly songKeyRootPc: number;

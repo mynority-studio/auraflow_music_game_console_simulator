@@ -27,16 +27,15 @@
 // ============================================================
 
 import {
-    CHORD_TYPES, placeVoicingMidi, BASS_RANGE,
+    placeVoicingMidi, BASS_RANGE,
     KEYS, harmonicFunctionFromRoman, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
     assembleVoicing,
-    STYLE_FULL, STYLE_ROOTLESS, STYLE_CLUSTER, STYLE_BLUES, STYLE_SHELL,
+    STYLE_FULL, STYLE_SHELL,
     type VoicingStylePreference,
 } from './music-theory';
 import { Random } from './utils/Random';
 import type { ChordDef } from './types/ChordDef';
 import type { Af2AbstractStep } from './Af2Arranger';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { SubStyle } from './SubStyleTextures';
 import { DynamicHarmonyDecorator, VoicingSmoother } from './plugins/composer';
 
@@ -61,58 +60,27 @@ import { DynamicHarmonyDecorator, VoicingSmoother } from './plugins/composer';
 // ============================================================
 
 // ============================================================
-// M 阶段:per-mgStyle 默认 compingVoicingMode
+// POP-only:默认 compingVoicingMode = STYLE_FULL(5 voice,vocal-style 完整 voicing)
 // ============================================================
 //
-//   POP   → STYLE_FULL     (5 voice,包 root,vocal-style 完整 voicing)
-//   JAZZ  → STYLE_ROOTLESS (4 voice,无 root,Bill Evans A/B-position 自动加 9)
-//   BLUES → STYLE_BLUES    (4 voice,包 root,boogie comping)
-//   RNB   → STYLE_CLUSTER  (4 voice,无 root,Neo-soul/D'Angelo cluster + 9)
+// 历史(非 POP 退役):
+//   JAZZ → STYLE_ROOTLESS / BLUES → STYLE_BLUES / RNB → STYLE_CLUSTER
 //
 // 用 assembleVoicing(已带 clash detection + density priority drop)替换原
-// 简陋的 `intervals.map(iv => (root + iv) % 12)`,听感:
-//   - JAZZ 钢琴 comping 不再 doubles root,腾出 bass 频段
-//   - RNB 自动密集 cluster + 9 — neo-soul 标志
-//   - POP 完整 5 voice — vocal-style chord support
-//   - BLUES 不加色 — boogie 干净 4 voice
+// 简陋的 `intervals.map(iv => (root + iv) % 12)`。POP 完整 5 voice — vocal-style chord support。
 // ============================================================
 
-const DEFAULT_VOICING_MODE_BY_STYLE: Record<MgStyle, VoicingStylePreference> = {
-    POP:   STYLE_FULL,
-    JAZZ:  STYLE_ROOTLESS,
-    BLUES: STYLE_BLUES,
-    RNB:   STYLE_CLUSTER,
-};
+const DEFAULT_VOICING_MODE: VoicingStylePreference = STYLE_FULL;
 
-// P6 阶段:per-sub-style voicing mode override(15 个)
-// mg 显式标的(Pop Ballad/Jazz Swing/Dominant Blues/Minor Blues/Neo Soul)按 mg;
-// 其他按风格特征推断:
-//   Bossa Nova → 'rootless'(bass 担 root,piano 不重复)
-//   Jazz Chromatic Drop → 'rootless'(同 Jazz)
-//   Modern Stadium Pop → 'full'(Coldplay vocal-style 完整)
-//   Modern Trap → 'shell'(冰冷简洁,4 voice 含 root)
-//   Gospel Neo-Soul → 'cluster'(同 Neo Soul)
-//   Motown Soul → 'full'(motown 钢琴用根音 + 完整 chord,不 rootless)
+// POP sub-style voicing mode override(6 sub-style)
+// ModernTrap 用 STYLE_SHELL(简洁 4 voice 含 root),其余 STYLE_FULL
 const SUB_STYLE_VOICING_MODE: Partial<Record<SubStyle, VoicingStylePreference>> = {
-    // POP
-    PopBallad:         STYLE_FULL,      // mg 显式
+    PopBallad:         STYLE_FULL,
     SynthPop:          STYLE_FULL,
     MaxMartinPop:      STYLE_FULL,
     AsianPopWalkdown:  STYLE_FULL,
-    ModernStadiumPop:  STYLE_FULL,      // Coldplay vocal
-    ModernTrap:        STYLE_SHELL,     // 简洁 4 voice 含 root
-    // JAZZ
-    JazzSwing:         STYLE_ROOTLESS,  // mg 显式 — Bill Evans
-    JazzChromaticDrop: STYLE_ROOTLESS,
-    BossaNova:         STYLE_ROOTLESS,  // bossa bass 担 root
-    // BLUES
-    DominantBlues:     STYLE_BLUES,     // mg 显式
-    MinorBlues:        STYLE_BLUES,     // mg 显式
-    BluesTurnaround:   STYLE_BLUES,
-    // RNB
-    NeoSoulRnB:        STYLE_CLUSTER,   // mg 显式 — D'Angelo
-    GospelNeoSoul:     STYLE_CLUSTER,
-    MotownSoul:        STYLE_FULL,      // motown 钢琴完整 voicing
+    ModernStadiumPop:  STYLE_FULL,
+    ModernTrap:        STYLE_SHELL,    // 简洁 4 voice 含 root
 };
 
 // decorateChordType 已拆 plugin → plugins/composer/DynamicHarmonyDecorator.ts(2026-05-25)
@@ -134,7 +102,6 @@ export const Af2Composer = {
         abstractPath: Af2AbstractStep[],
         key: string,
         isMinorKey: boolean = false,
-        mgStyle?: MgStyle,
         rng?: Random,
         subStyle?: SubStyle,
     ): ChordDef[] {
@@ -148,12 +115,12 @@ export const Af2Composer = {
             const next = abstractPath[i + 1] ?? step;
 
             // 1. M 阶段 decorate — Dynamic TSD 选 chord type + 可选 Sub-V override
-            //    没传 mgStyle/rng 退化原 step.type
+            //    没传 rng 退化原 step.type
             let finalType: string = step.type;
             let finalRootOffset: number = step.rootOffset;
             let finalRoman: string = step.roman;
-            if (mgStyle && rng) {
-                const decorated = DynamicHarmonyDecorator.apply(step, next, mgStyle, rng);
+            if (rng) {
+                const decorated = DynamicHarmonyDecorator.apply(step, next, rng);
                 finalType = decorated.type;
                 if (decorated.rootOffsetOverride !== undefined) {
                     finalRootOffset = decorated.rootOffsetOverride;
@@ -173,7 +140,7 @@ export const Af2Composer = {
             //   rootPolicy(omit/include)→ density cap with priority drop。
             //   未传 mgStyle 退化 STYLE_FULL。
             const voicingMode = (subStyle && SUB_STYLE_VOICING_MODE[subStyle])
-                ?? (mgStyle ? DEFAULT_VOICING_MODE_BY_STYLE[mgStyle] : STYLE_FULL);
+                ?? DEFAULT_VOICING_MODE;
             const voicingPcs = assembleVoicing(finalType, rootKeyIndex, voicingMode);
 
             // 5. Bass MIDI:root pc clamp 到 BASS_RANGE

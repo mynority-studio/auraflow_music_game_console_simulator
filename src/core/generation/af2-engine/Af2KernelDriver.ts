@@ -23,7 +23,6 @@ import { ChordQuality, Tonality } from '../types';
 import type { GeneratedChord, NoteData, SectionMetadata } from '../types';
 import { Random } from './utils/Random';
 import type { ChordDef } from './types/ChordDef';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { Af2Arranger } from './Af2Arranger';
 import { Af2Composer } from './Af2Composer';
 import type { BorrowSource } from './BorrowChordPlanner';
@@ -66,17 +65,11 @@ const MG_TYPE_TO_QUALITY: Record<string, ChordQuality> = {
     '11':      ChordQuality.Dominant11,
 };
 
-/** Per-mgStyle 默认全曲小节数 / BPM(可被 sections 覆盖)
- *  U 阶段(2026-05-24):从 12/16 扩到 32/36/48,目标 80-130 秒完整曲式
- *  (之前 16 bar 只 32 秒,听感像"短片段")。
- *
+/** POP-only 默认全曲小节数 / BPM(可被 sections 覆盖)
  *  POP   48 bar / 120 BPM = 96 秒(典型 pop 完整曲)
- *  JAZZ  32 bar / 96  BPM = 80 秒(标准 jazz AABA form)
- *  BLUES 36 bar / 100 BPM = 86 秒(3 × 12-bar blues form)
- *  RNB   48 bar / 88  BPM = 130 秒(R&B 长 ballad)
  */
-export const MG_STYLE_BARS: Record<MgStyle, number> = { POP: 48, JAZZ: 32, BLUES: 36, RNB: 48 };
-export const MG_STYLE_BPM: Record<MgStyle, number> = { POP: 120, JAZZ: 96, BLUES: 100, RNB: 88 };
+export const POP_BARS: number = 48;
+export const POP_BPM: number = 120;
 
 /** Part tag(SlotRouter 用)— events 永远空,但接口保留兼容 */
 export type MgPart = 'melody' | 'accomp' | 'bass' | 'drums' | 'pad';
@@ -123,7 +116,6 @@ export const Af2KernelDriver = {
      */
     invoke(
         seedString: string,
-        mgStyle: MgStyle,
         key: string = 'C',
         sections?: ReadonlyArray<SectionMetadata>,
         isMinor: boolean = false,
@@ -155,7 +147,7 @@ export const Af2KernelDriver = {
         const songKeyRootPc = ((noteToMidi(key + '0') % 12) + 12) % 12;
 
         const abstractPath = sections
-            ? Af2Arranger.arrange(mgStyle, sections, 4 /* beatsPerMeasure */, rng, {
+            ? Af2Arranger.arrange(sections, 4 /* beatsPerMeasure */, rng, {
                 borrowRng,
                 tonicizeRng,
                 borrowSource,
@@ -169,11 +161,10 @@ export const Af2KernelDriver = {
                 minorBorrowRng,    // K4:Minor 调 iv→IV / bVI→VI borrow
                 subStyle,          // P5:per-song sub-style → 进行池优先
             })
-            : Af2Arranger.arrangeByBars(mgStyle, MG_STYLE_BARS[mgStyle], rng);
+            : Af2Arranger.arrangeByBars(POP_BARS, rng);
         // K2 阶段:Composer isMinor 影响 chord spell(B♭ 调 minor vs A# 调 major)
-        // P6 阶段:subStyle 影响 voicing mode(JazzSwing rootless / NeoSoul cluster /
-        //   MotownSoul full / ModernTrap shell / ...)— 优先于 mgStyle 默认
-        const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, isMinor, mgStyle, rng, subStyle);
+        // P6 阶段:subStyle 影响 voicing mode(ModernTrap shell,其他 STYLE_FULL)
+        const mgChords: ChordDef[] = Af2Composer.compose(abstractPath, key, isMinor, rng, subStyle);
 
         // ChordDef[] → GeneratedChord[](累积 startBeat)
         const chords: GeneratedChord[] = [];
@@ -188,17 +179,17 @@ export const Af2KernelDriver = {
             chords,
             events: [],   // 全 AF2 musicians 都 plan() 自家生成,不消费 mg events
             totalBeats: cursor,
-            recommendedBars: MG_STYLE_BARS[mgStyle],
-            bpm: MG_STYLE_BPM[mgStyle],
+            recommendedBars: POP_BARS,
+            bpm: POP_BPM,
         };
     },
 
-    getRecommendedBars(mgStyle: MgStyle): number {
-        return MG_STYLE_BARS[mgStyle];
+    getRecommendedBars(): number {
+        return POP_BARS;
     },
 
-    getBpm(mgStyle: MgStyle): number {
-        return MG_STYLE_BPM[mgStyle];
+    getBpm(): number {
+        return POP_BPM;
     },
 };
 

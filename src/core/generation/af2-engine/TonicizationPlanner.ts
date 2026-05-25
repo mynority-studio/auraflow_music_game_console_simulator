@@ -25,42 +25,19 @@
 // ==========================================
 
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
 
-const STYLE_TONICIZE_PROB: Record<MgStyle, number> = {
-    POP:   0.30,
-    JAZZ:  0.65,
-    RNB:   0.40,
-    BLUES: 0,
-};
-
-/**
- * Per-song 硬上限。每 fire 发 1 chord(light)或 2 chord(approach/iiv_split/
- * full_2bar)。听感事件计数在此封顶。
- *
- * 用户审计反馈:
- *   "JAZZ 连续 3 个 full_2bar 看起来像功能练习题,不是音乐"
- *   "POP 默认 V/X 或半小节 compact ii-V,不堆 chain"
- */
-const STYLE_TONICIZE_MAX_PER_SONG: Record<MgStyle, number> = {
-    POP: 2,
-    JAZZ: 4,
-    RNB: 3,
-    BLUES: 0,
-};
+// POP-only(JAZZ/BLUES/RNB 已退役)
+const TONICIZE_PROB: number = 0.30;
+const TONICIZE_MAX_PER_SONG: number = 2;
 
 type Placement = 'light' | 'approach' | 'iiv_split' | 'full_2bar';
 
-const STYLE_PLACEMENT_WEIGHTS: Record<MgStyle, { light: number; approach: number; iiv_split: number; full_2bar: number }> = {
-    POP:   { light: 0.45, approach: 0.35, iiv_split: 0.20, full_2bar: 0    },
-    JAZZ:  { light: 0.10, approach: 0.15, iiv_split: 0.45, full_2bar: 0.30 },
-    RNB:   { light: 0.30, approach: 0.30, iiv_split: 0.30, full_2bar: 0.10 },
-    BLUES: { light: 0,    approach: 0,    iiv_split: 0,    full_2bar: 0    },
-};
+const PLACEMENT_WEIGHTS: { light: number; approach: number; iiv_split: number; full_2bar: number } =
+    { light: 0.45, approach: 0.35, iiv_split: 0.20, full_2bar: 0 };
 
-function pickPlacement(roll: number, style: MgStyle): Placement {
-    const w = STYLE_PLACEMENT_WEIGHTS[style] ?? STYLE_PLACEMENT_WEIGHTS.POP;
+function pickPlacement(roll: number): Placement {
+    const w = PLACEMENT_WEIGHTS;
     if (roll < w.light) return 'light';
     if (roll < w.light + w.approach) return 'approach';
     if (roll < w.light + w.approach + w.iiv_split) return 'iiv_split';
@@ -123,7 +100,6 @@ function targetKey(roman: string): string | null {
 
 export interface PlanTonicizationOptions {
     skeleton: Af2AbstractStep[];
-    style: MgStyle;
     motifInterval: number;
     random: Random;
     beatsPerMeasure: number;
@@ -144,11 +120,11 @@ export interface PlanTonicizationOptions {
  * adjacent insertion / home target / cooldown 中。
  */
 export function planTonicization(opts: PlanTonicizationOptions): Af2AbstractStep[] {
-    const { skeleton, style, motifInterval, random, beatsPerMeasure, songKeyRootPc } = opts;
-    const baseProb = STYLE_TONICIZE_PROB[style] ?? 0;
+    const { skeleton, motifInterval, random, beatsPerMeasure, songKeyRootPc } = opts;
+    const baseProb = TONICIZE_PROB;
     if (baseProb === 0 || skeleton.length < 2) return skeleton.slice();
 
-    const maxFires = STYLE_TONICIZE_MAX_PER_SONG[style] ?? 0;
+    const maxFires = TONICIZE_MAX_PER_SONG;
     let firesUsed = 0;
 
     const result: Af2AbstractStep[] = [];
@@ -281,7 +257,7 @@ export function planTonicization(opts: PlanTonicizationOptions): Af2AbstractStep
         };
 
         const placementRoll = random.next();
-        let placement = pickPlacement(placementRoll, style);
+        let placement = pickPlacement(placementRoll);
 
         // full_2bar 需 backward-modify result[last]。Validate prev:
         //   • i=0 没 prev → 退 iiv_split

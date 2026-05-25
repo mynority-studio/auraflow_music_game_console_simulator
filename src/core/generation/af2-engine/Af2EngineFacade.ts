@@ -41,7 +41,6 @@ import type { PipelineRunOptions } from '../pipeline';
 import { StyleId } from '../config/StyleFlags';
 import { PRNGManager } from '../../utils/PRNG';
 import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { Random } from './utils/Random';
 import { bandRoleToTrackKeys } from '../data/GMSoundMap';
@@ -49,7 +48,7 @@ import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
 import { Af2KernelDriver } from './Af2KernelDriver';
 import { KEYS } from './music-theory/spell';
-import { SUB_STYLES_BY_MG, SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
+import { SUB_STYLES_POP, SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
 import { TEXTURE_DENSITY } from './chord-texture/TextureDensity';
 import { SectionPlanner } from './SectionPlanner';
 import { SectionMapper } from './SectionMapper';
@@ -72,13 +71,8 @@ export interface Af2GenerateResult {
     context: MusicContext;
 }
 
-/** mg style → 占位 auraflow StyleId(给 ArrangedTrack.styleId 字段提供值) */
-const MG_STYLE_TO_AF_STYLE: Record<MgStyle, StyleId> = {
-    POP:   StyleId.ModernPop,
-    JAZZ:  StyleId.ChillJazz,
-    BLUES: StyleId.ChillJazz,
-    RNB:   StyleId.NeoSoul,
-};
+/** POP-only 占位 auraflow StyleId(给 ArrangedTrack.styleId 字段提供值) */
+const POP_STYLE_ID: StyleId = StyleId.ModernPop;
 
 export const Af2EngineFacade = {
     /**
@@ -86,26 +80,10 @@ export const Af2EngineFacade = {
      */
     generate(options: PipelineRunOptions): Af2GenerateResult {
         // -----------------------------------------------------------
-        // 0. 准备 seed / mgStyle
-        //
-        // mgStyle 决定 Arranger 进行池 / Composer Divisi 概率 / Conductor 模板 /
-        // Drum grid。优先级:
-        //   1. options.forcedStyleId(Apps 显式传入)→ 映射为 mgStyle
-        //   2. EngineSelectionStore.getMgStyle()(Q+H Style 下拉全局状态)
+        // 0. 准备 seed(POP-only,2026-05-25 大瘦身后无 mgStyle 分支)
         // -----------------------------------------------------------
         const auraflowSeed = PRNGManager.getInitialSeed();
         const mgSeedString = `af2_${auraflowSeed >>> 0}`;
-        const mgStyle: MgStyle = (() => {
-            if (options.forcedStyleId !== undefined) {
-                // Apps 传入的 forcedStyleId(auraflow 历史 StyleId)→ 映射回 mgStyle
-                switch (options.forcedStyleId) {
-                    case StyleId.ModernPop:  return 'POP';
-                    case StyleId.ChillJazz:  return 'JAZZ';
-                    case StyleId.NeoSoul:    return 'RNB';
-                }
-            }
-            return EngineSelectionStore.getMgStyle();
-        })();
 
         // K 阶段(2026-05-24):PRNG-driven keyOffset + tonality 替代硬编 'C'/Major。
         // forked stream `af2_key_${seed}` / `af2_tonality_${seed}` 独立 —
@@ -135,7 +113,7 @@ export const Af2EngineFacade = {
         // 跨 mgStyle 不匹配的 user override → ignore,走 PRNG
         const substyleRng = new Random(`af2_substyle_${auraflowSeed >>> 0}`);
         const userSubStyle = options.generation?.detectedSubStyle;
-        const subStylePool = SUB_STYLES_BY_MG[mgStyle];
+        const subStylePool = SUB_STYLES_POP;
         const subStyle: SubStyle = (userSubStyle && (subStylePool as ReadonlyArray<string>).includes(userSubStyle))
             ? userSubStyle as SubStyle
             : subStylePool[substyleRng.range(0, subStylePool.length - 1)];
@@ -161,8 +139,8 @@ export const Af2EngineFacade = {
         // mg.recommendedBars 通过 Af2KernelDriver.getRecommendedBars 静态查表,
         // 不需要先 invoke mg。
         // -----------------------------------------------------------
-        const totalBars = Af2KernelDriver.getRecommendedBars(mgStyle);
-        const sections = SectionPlanner.plan(mgStyle, totalBars, 4);
+        const totalBars = Af2KernelDriver.getRecommendedBars();
+        const sections = SectionPlanner.plan(totalBars, 4);
 
         // -----------------------------------------------------------
         // Step 2: AF2 内核(Af2KernelDriver 仅保留命名,内部全 AF2 — 删 mg 后简化)
@@ -171,7 +149,7 @@ export const Af2EngineFacade = {
         //   - events 永远空(全 AF2 musicians plan() 自给)
         // -----------------------------------------------------------
         const isMinor = tonality === Tonality.Minor;
-        const mg = Af2KernelDriver.invoke(mgSeedString, mgStyle, key, sections, isMinor, subStyle);
+        const mg = Af2KernelDriver.invoke(mgSeedString, key, sections, isMinor, subStyle);
 
         // -----------------------------------------------------------
         // Step 3: 段落映射(只读切片)
@@ -210,7 +188,7 @@ export const Af2EngineFacade = {
         // C.4 + Conductor 模板自家化(2026-05-24):per-mgStyle 多 variants,
         //   seed deterministic 抽 1 个 variant 用全曲。同 mgStyle 不同 seed
         //   听感差异更大(POP standard/minimal/dense 3 variants 等)。
-        const variantPick = pickConductorTemplate(mgStyle, auraflowSeed);
+        const variantPick = pickConductorTemplate(auraflowSeed);
         const conductor = new DynamicConductor(variantPick.template);
         const sectionAssignments: ReadonlyArray<SectionAssignment> = conductor.dispatch(score, band);
 
@@ -304,7 +282,6 @@ export const Af2EngineFacade = {
                     score: input.score,
                     musicianId: input.musicianId,
                     assignments: input.assignments,
-                    mgStyle,
                     bassNotes: bassMusicianId ? (input.peers.get(bassMusicianId) ?? []) as NoteData[] : [],
                     chordNotes: accompMusicianId ? (input.peers.get(accompMusicianId) ?? []) as NoteData[] : [],
                     rng: new Random(`af2_drum_${auraflowSeed >>> 0}`),
@@ -322,7 +299,7 @@ export const Af2EngineFacade = {
             });
         }
 
-        const performanceByMusician = dispatchMusicians(score, sectionAssignments, steps, mgStyle);
+        const performanceByMusician = dispatchMusicians(score, sectionAssignments, steps);
 
         // Extract per-musician notes(空 musician → [])
         const renderedBassRaw   = bassMusician      ? performanceByMusician.get(bassMusician.id)      ?? [] : [];
@@ -410,17 +387,11 @@ export const Af2EngineFacade = {
         //
         //   Drums:Channel 9 硬路由,不设 program(GM Drum Map)
         // -----------------------------------------------------------
-        const afStyleId = MG_STYLE_TO_AF_STYLE[mgStyle];
+        const afStyleId = POP_STYLE_ID;
 
         // Step 6b.1:先按 AF2 idiom 默认填(钢琴/电贝斯/Pad)
-        // W 阶段(2026-05-25):Pad GM 按 mgStyle 查表,POP/JAZZ/RNB/BLUES 各自
-        // 用风格 idiomatic pad 音色(GM 88-95 8 个 pad,选 4 个最贴合的)
-        const PAD_GM_BY_STYLE: Record<MgStyle, number> = {
-            POP:   89,  // Warm Pad — 温暖,默认
-            JAZZ:  95,  // Sweep Pad — 空灵 sweep,jazz 神秘感
-            BLUES: 89,  // Warm Pad — blues 不常用 pad,warm 中性 fallback
-            RNB:   91,  // Choir Pad — neo-soul 声乐质感
-        };
+        // W 阶段:POP-only Pad GM = 89(Warm Pad — 温暖默认)
+        const PAD_GM_POP = 89;
         const gmOverrides: NonNullable<MusicContext['gmProgramOverrides']> = {
             melody: PianoIdiom.getGmProgram(),
             accomp: PianoIdiom.getGmProgram(),
@@ -429,7 +400,7 @@ export const Af2EngineFacade = {
             gmOverrides.bass = BassIdiom.getGmProgram();
         }
         if (renderedPad.length > 0) {
-            gmOverrides.atmosphere = PAD_GM_BY_STYLE[mgStyle];
+            gmOverrides.atmosphere = PAD_GM_POP;
         }
 
         // Step 6b.2:用 forcedGmPrograms / musician.gmProgramOverride 覆盖

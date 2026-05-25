@@ -33,27 +33,13 @@
 // ==========================================
 
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
 import { classifyPhraseRole, type PhraseRole } from './utils/phrase-role';
 import { romanHead } from './utils/roman';
 
-const STYLE_BORROW_PROB: Record<MgStyle, number> = {
-    POP:   0.45,
-    JAZZ:  0.35,
-    RNB:   0.55,
-    BLUES: 0,
-};
-
-// Per-song fire 上限。Lerdahl/Berklee:"extended use dilutes tonality
-// or causes unwanted modulation"。1-3 borrows / 16-bar 是 tasteful color,
-// 4+ 开始听感像 key change。RNB / Neo-Soul tolerates more。
-const STYLE_MAX_BORROWS_PER_SONG: Record<MgStyle, number> = {
-    POP: 3,
-    JAZZ: 4,
-    RNB: 5,
-    BLUES: 0,
-};
+// POP-only:概率 + 上限(JAZZ/BLUES/RNB 已退役)
+const BORROW_PROB: number = 0.45;
+const MAX_BORROWS_PER_SONG: number = 3;
 
 export type BorrowSource = 'Aeolian' | 'Mixolydian' | 'Phrygian';
 
@@ -365,7 +351,6 @@ const RULES: BorrowedRule[] = [
 
 export interface PlanBorrowedOptions {
     skeleton: Af2AbstractStep[];
-    style: MgStyle;
     motifInterval: number;
     random: Random;
     beatsPerMeasure: number;
@@ -399,12 +384,12 @@ const MODAL_HOME_MODES = new Set([
  * lockType 标记的 slot 跳过(其他 planner 已处理)。
  */
 export function planBorrowedChords(opts: PlanBorrowedOptions): Af2AbstractStep[] {
-    const { skeleton, style, motifInterval, random, beatsPerMeasure, mode } = opts;
-    const baseProb = STYLE_BORROW_PROB[style] ?? 0;
+    const { skeleton, motifInterval, random, beatsPerMeasure, mode } = opts;
+    const baseProb = BORROW_PROB;
     if (baseProb === 0 || skeleton.length < 2) return skeleton.slice();
     if (MODAL_HOME_MODES.has(mode)) return skeleton.slice();
 
-    const maxFires = STYLE_MAX_BORROWS_PER_SONG[style] ?? 3;
+    const maxFires = MAX_BORROWS_PER_SONG;
     let firesUsed = 0;
 
     const result: Af2AbstractStep[] = [];

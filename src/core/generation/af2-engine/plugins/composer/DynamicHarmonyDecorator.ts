@@ -22,7 +22,6 @@
 // ============================================================
 
 import type { Af2AbstractStep } from '../../Af2Arranger';
-import type { MgStyle } from '../../../../../state/EngineSelectionStore';
 import type { Random } from '../../utils/Random';
 import {
     DYNAMIC_TSD_DICTIONARY,
@@ -38,7 +37,6 @@ export const DynamicHarmonyDecorator: ComposerPluginMeta & {
     apply(
         step: Af2AbstractStep,
         next: Af2AbstractStep,
-        mgStyle: MgStyle,
         rng: Random,
     ): DecorateResult;
 } = {
@@ -47,7 +45,7 @@ export const DynamicHarmonyDecorator: ComposerPluginMeta & {
     prngConsumption: 'locked',
     description: 'TSD dict + colorLevel roll + Sub-V tritone substitution + lockType ceremony + data-debt guard',
 
-    apply(step, next, mgStyle, rng) {
+    apply(step, next, rng) {
         // Locked slot — Planner(borrow/tonicize)已设 exact type
         // 仍消耗 1 + 1 random 保持 stream 稳定(roll + pick)
         if (step.lockType) {
@@ -57,7 +55,7 @@ export const DynamicHarmonyDecorator: ComposerPluginMeta & {
         }
 
         // 1. Roll colorLevel
-        const probs = COLOR_LEVEL_PROBABILITIES[mgStyle];
+        const probs = COLOR_LEVEL_PROBABILITIES;
         const r = rng.next();
         let colorLevel: 0 | 1 | 2 = 0;
         if (r < probs.level0) colorLevel = 0;
@@ -70,7 +68,7 @@ export const DynamicHarmonyDecorator: ComposerPluginMeta & {
         const targetQuality = analyzeTargetQuality(currFunc, nextFunc, next.roman, next.type);
 
         // 3. Dynamic dictionary lookup
-        const rules = DYNAMIC_TSD_DICTIONARY[mgStyle]?.[currFunc];
+        const rules = DYNAMIC_TSD_DICTIONARY?.[currFunc];
         let choices: string[] | undefined;
         let isTritoneSub = false;
 

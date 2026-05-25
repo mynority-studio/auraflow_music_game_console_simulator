@@ -37,36 +37,18 @@
 // ==========================================
 
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
 import { classifyPhraseRole, type PhraseRole } from './utils/phrase-role';
 import { romanHead } from './utils/roman';
 import { MINOR_TO_MAJOR_TYPE } from './utils/minor-major-type';
 
-const STYLE_IV_BORROW_PROB: Record<MgStyle, number> = {
-    POP:   0.20,
-    JAZZ:  0.30,
-    RNB:   0.25,
-    BLUES: 0,
-};
-
-const STYLE_VI_BORROW_PROB: Record<MgStyle, number> = {
-    POP:   0.10,
-    JAZZ:  0.20,
-    RNB:   0.15,
-    BLUES: 0,
-};
-
-const STYLE_MAX_MINOR_BORROWS_PER_SONG: Record<MgStyle, number> = {
-    POP: 2,
-    JAZZ: 3,
-    RNB: 3,
-    BLUES: 0,
-};
+// POP-only(JAZZ/BLUES/RNB 已退役)
+const IV_BORROW_PROB: number = 0.20;
+const VI_BORROW_PROB: number = 0.10;
+const MAX_MINOR_BORROWS_PER_SONG: number = 2;
 
 export interface PlanMinorBorrowOptions {
     skeleton: Af2AbstractStep[];
-    style: MgStyle;
     motifInterval: number;
     random: Random;
 }
@@ -76,12 +58,12 @@ export interface PlanMinorBorrowOptions {
  * Per slot 单 roll → 决定是否 fire(iv→IV 优先,bVI→VI 次之;每 slot 只 fire 1 种)。
  */
 export function planMinorBorrows(opts: PlanMinorBorrowOptions): Af2AbstractStep[] {
-    const { skeleton, style, motifInterval, random } = opts;
-    const ivProb = STYLE_IV_BORROW_PROB[style] ?? 0;
-    const viProb = STYLE_VI_BORROW_PROB[style] ?? 0;
+    const { skeleton, motifInterval, random } = opts;
+    const ivProb = IV_BORROW_PROB;
+    const viProb = VI_BORROW_PROB;
     if ((ivProb + viProb) === 0 || skeleton.length < 2) return skeleton.slice();
 
-    const maxFires = STYLE_MAX_MINOR_BORROWS_PER_SONG[style] ?? 0;
+    const maxFires = MAX_MINOR_BORROWS_PER_SONG;
     let firesUsed = 0;
 
     const result: Af2AbstractStep[] = [];

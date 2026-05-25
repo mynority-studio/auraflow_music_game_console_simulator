@@ -38,7 +38,6 @@ import { thirdInterval, fifthInterval } from '../music-theory/chord-intervals';
 import { placeNearAnchor as placeBassNearAnchor } from '../utils/voice-leading';
 import { clampVelocity } from '../utils/velocity';
 import { BASS_RANGE } from '../music-theory';
-import type { MgStyle } from '../../../../state/EngineSelectionStore';
 
 /** 电贝斯物理参数(rangeLo/rangeHi = 物理音域描述,UI / BandSelectionPanel 用)
  *  生成算法用全局 BASS_RANGE [33, 55] = A1-G3 真 bass 区,跟 Composer /
@@ -89,18 +88,10 @@ const SWING_RATIO_BY_PATTERN: Record<WalkPatternId, number> = {
     [WalkPatternId.ScaleClimb]:  0.66,
 };
 
-// B4(2026-05-24):per-mgStyle 默认 walkPattern。
-//   POP   → HalfNote     half-note Pop sub-bass(根五半音符律动,Bill Evans Pop 风)
-//   JAZZ  → BebopWalk    quarter-note walking(swing 0.66)
-//   BLUES → Stride       low-high alternation(12-bar 律动)
-//   RNB   → QuarterHalf  mixed pocket(neo-soul 半切分)
-// musician.persona.walkPatternId 显式填了就 override 这张表(个性优先)。
-const DEFAULT_WALK_PATTERN_BY_STYLE: Record<MgStyle, WalkPatternId> = {
-    POP:   WalkPatternId.HalfNote,
-    JAZZ:  WalkPatternId.BebopWalk,
-    BLUES: WalkPatternId.Stride,
-    RNB:   WalkPatternId.QuarterHalf,
-};
+// POP-only 默认 walkPattern(JAZZ/BLUES/RNB 已退役):
+//   HalfNote — half-note Pop sub-bass(根五半音符律动,Bill Evans Pop 风)
+// musician.persona.walkPatternId 显式填了就 override(个性优先)。
+const DEFAULT_WALK_PATTERN: WalkPatternId = WalkPatternId.HalfNote;
 
 const ACCENT_DOWN = 0.08;
 const ACCENT_OFF = -0.06;
@@ -226,8 +217,7 @@ export const BassIdiom = {
      */
     plan(input: MusicianPlanInput): NoteData[] {
         const cardWalkPatternId = input.musician?.persona?.walkPatternId;
-        const styleDefault = input.mgStyle ? DEFAULT_WALK_PATTERN_BY_STYLE[input.mgStyle] : undefined;
-        const walkPatternId = cardWalkPatternId ?? styleDefault;
+        const walkPatternId = cardWalkPatternId ?? DEFAULT_WALK_PATTERN;
 
         // AF2 自家 walking 路径
         if (walkPatternId !== undefined && walkPatternId !== null) {

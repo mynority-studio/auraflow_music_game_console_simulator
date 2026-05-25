@@ -26,7 +26,6 @@ import type { MusicianPlanInput } from './Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from './Conductor';
 import { thirdInterval, fifthInterval, seventhInterval } from './music-theory/chord-intervals';
 import { placeNearAnchor } from './utils/voice-leading';
-import type { MgStyle } from '../../../state/EngineSelectionStore';
 import {
     RhythmPatternPicker,
     PhraseContourShaper,
@@ -67,9 +66,6 @@ export function generateAf2Melody(
     // Key 信息给 PassingToneSelector(diatonic 偏好)
     const keyRootPc = ((input.score.keyOffset % 12) + 12) % 12;
     const isMinor = input.score.tonality === Tonality.Minor;
-
-    // mgStyle 给 RhythmPatternPicker;未传 → POP fallback
-    const mgStyle: MgStyle = input.mgStyle ?? 'POP';
 
     // 预处理:每 chord 标注 sectionIdx + chordIdxInSection + section progress
     interface ChordCtx {
@@ -134,7 +130,7 @@ export function generateAf2Melody(
         ];
 
         // Plugin:RhythmPatternPicker(persona 加权 + mgStyle 选池)
-        const pattern = RhythmPatternPicker.pick(sectionIdx, chordIdxInSection, mgStyle, sparsity, syncopation);
+        const pattern = RhythmPatternPicker.pick(sectionIdx, chordIdxInSection, sparsity, syncopation);
         const slotDurs = pattern.map(p => p * chordBeats);
 
         // Plugin:PhraseContourShaper — bias anchor 用于本 chord 的所有 slots
