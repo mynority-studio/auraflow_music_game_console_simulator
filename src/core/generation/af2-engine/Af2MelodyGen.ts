@@ -45,10 +45,10 @@ import {
 // ============================================================
 //
 // placeNearAnchor 给一个 nearest-octave MIDI;启用时用 Margulis score 在
-// [midi-12, midi, midi+12] 三 octave 候选中选最优。默认 OFF — 听感 review
-// 后逐步开启(per-mgStyle / global gate)。
+// [midi-12, midi, midi+12] 三 octave 候选中选最优。
+// 2026-05-25 全启用 — Q+H UI 无 sub-style 选项,直接 global ON。
 // ============================================================
-const MARGULIS_RERANK_ENABLED = false;
+const MARGULIS_RERANK_ENABLED = true;
 
 // ============================================================
 // Phase 4(Impro-Visor Slope + Approach,2026-05-25):melody 硬约束
@@ -59,10 +59,10 @@ const MARGULIS_RERANK_ENABLED = false;
 // APPROACH_TONE_ENABLED:chord 末尾 30% slots(且有 next chord)→ 强 ±1 半音
 //   进入下一 chord root(jazz leading tone)
 //
-// 默认全 OFF — 听感 review 后再 mgStyle / sub-style 启用。
+// 2026-05-25 全启用 — Q+H UI 无 sub-style 选项,直接 global ON。
 // ============================================================
-const SLOPE_GATE_ENABLED = false;
-const APPROACH_TONE_ENABLED = false;
+const SLOPE_GATE_ENABLED = true;
+const APPROACH_TONE_ENABLED = true;
 
 /**
  * AF2 melody 生成(core orchestrator)。

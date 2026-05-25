@@ -76,14 +76,19 @@ const DEFAULT_VOICING_MODE: VoicingStylePreference = STYLE_FULL;
 // Phase 2(Impro-Visor HandManager 移植,2026-05-25):钢琴 LH/RH 双手分手
 // ============================================================
 //
-// Per sub-style 启停 hand partition。默认全 false — 不破坏现有听感。
-// 启用 sub-style 时:Composer 主循环走 partitionHands path,填 ChordDef.lhMidi/rhMidi
-// + notesMidi 同步合并 LH+RH 升序。
-//
-// 开放给后续 phase 调音 — 验证 sub-style 启用后听感稳定再批量打开。
+// Per sub-style 启停 hand partition。
+// 2026-05-25 全启用 — Q+H UI 无法选 sub-style,sub-style level gate 失去意义,
+// 6 个 POP sub-style 全 true 等效 mgStyle 全开。
+// Composer 主循环走 partitionHands path,填 ChordDef.lhMidi/rhMidi + notesMidi
+// 同步合并 LH+RH 升序。
 // ============================================================
 const HAND_PARTITION_BY_SUB_STYLE: Partial<Record<SubStyle, boolean>> = {
-    // 全部默认 false。后续验证 sub-style 听感 ready 时开启。
+    PopBallad:         true,
+    SynthPop:          true,
+    MaxMartinPop:      true,
+    AsianPopWalkdown:  true,
+    ModernStadiumPop:  true,
+    ModernTrap:        true,
 };
 
 // POP sub-style voicing mode override(6 sub-style)
