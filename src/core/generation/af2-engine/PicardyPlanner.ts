@@ -37,6 +37,8 @@
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
+import { classifyPhraseRole } from './utils/phrase-role';
+import { MINOR_TO_MAJOR_TYPE } from './utils/minor-major-type';
 
 const STYLE_PICARDY_PROB: Record<MgStyle, number> = {
     POP:   0.30,
@@ -44,26 +46,6 @@ const STYLE_PICARDY_PROB: Record<MgStyle, number> = {
     RNB:   0.25,
     BLUES: 0.10,
 };
-
-/** Minor 家族 chord type → Picardy major 等价物 */
-const MINOR_TO_MAJOR_TYPE: Record<string, string> = {
-    'min':  'maj',
-    'm':    'maj',
-    'm7':   'maj7',
-    'm9':   'maj9',
-    'm11':  'maj9',     // 11 与 maj3 m9 clash,降级 maj9
-    'm6':   'maj6',
-    'm13':  'maj13',
-};
-
-type PhraseRole = 'start' | 'middle' | 'cadence' | 'ending';
-
-function classifyPhraseRole(i: number, total: number, motifInterval: number): PhraseRole {
-    if (i === total - 1) return 'ending';
-    if (motifInterval > 0 && (i + 1) % motifInterval === 0) return 'cadence';
-    if (motifInterval > 0 && i % motifInterval === 0) return 'start';
-    return 'middle';
-}
 
 /** 是否是 minor tonic chord(rootOffset=0 + minor 家族 type)*/
 function isMinorTonic(step: Af2AbstractStep): boolean {

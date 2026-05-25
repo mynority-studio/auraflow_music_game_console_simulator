@@ -202,8 +202,11 @@ function pickTextureType(
     sparsity: number = 0,
     syncopation: number = 0,
 ): string {
-    let pick: string;
+    // Phrase-lock hash(两条路径 + persona 加权三处都用,统一在函数顶 hoist)
+    const phraseIdx = Math.floor(chordIdxInSection / PHRASE_CHORD_COUNT);
+    const h = (phraseIdx * 11 + (sectionType as number) * 13) & 0xff;
 
+    let pick: string;
     if (songBase) {
         // S 阶段:base + variation 优先
         if (energyLevel >= 7) {
@@ -229,14 +232,10 @@ function pickTextureType(
             const sparseFiltered = pool.filter(t => TEXTURE_DENSITY[t] !== 'dense');
             if (sparseFiltered.length > 0) pool = sparseFiltered;
         }
-        const phraseIdx = Math.floor(chordIdxInSection / PHRASE_CHORD_COUNT);
-        const h = (phraseIdx * 11 + (sectionType as number) * 13) & 0xff;
         pick = pool[h % pool.length];
     }
 
     // persona 加权(两条路径都跑):sparsity → Single_Root / syncopation → preference
-    const phraseIdx = Math.floor(chordIdxInSection / PHRASE_CHORD_COUNT);
-    const h = (phraseIdx * 11 + (sectionType as number) * 13) & 0xff;
     const h2 = ((h * 31 + 17) & 0xff) / 255;
     if (h2 < sparsity * 0.6) pick = SPARSITY_FALLBACK;
     else if (h2 < sparsity * 0.6 + syncopation * 0.5) pick = SYNCOPATION_PREFERENCE[mgStyle];

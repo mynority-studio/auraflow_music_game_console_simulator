@@ -35,6 +35,8 @@
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
+import { classifyPhraseRole, type PhraseRole } from './utils/phrase-role';
+import { romanHead } from './utils/roman';
 
 const STYLE_BORROW_PROB: Record<MgStyle, number> = {
     POP:   0.45,
@@ -70,24 +72,6 @@ function tsdFunction(roman: string): 'T' | 'S' | 'D' {
     if (['V', 'v', 'vii', 'VII'].includes(base)) return 'D';
     if (['IV', 'iv', 'ii', 'II', 'bVII'].includes(base)) return 'S';
     return 'T';
-}
-
-type PhraseRole = 'start' | 'middle' | 'cadence' | 'ending';
-
-function classifyPhraseRole(i: number, total: number, motifInterval: number): PhraseRole {
-    if (i === total - 1) return 'ending';
-    if (motifInterval > 0 && (i + 1) % motifInterval === 0) return 'cadence';
-    if (motifInterval > 0 && i % motifInterval === 0) return 'start';
-    return 'middle';
-}
-
-/**
- * Strip accidentals + extract Roman head ('IV', 'iv', 'V', 'vi', 'I' 等)。
- */
-function romanHead(roman: string): string {
-    if (!roman) return '';
-    const stripped = roman.replace(/^[b#n]+/, '');
-    return stripped.match(/^[IVivXx]+/)?.[0] ?? '';
 }
 
 type Quality = 'maj' | 'min' | 'dom' | 'dim' | 'sus' | 'other';

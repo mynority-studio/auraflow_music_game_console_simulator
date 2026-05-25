@@ -39,6 +39,9 @@
 import type { Af2AbstractStep, BorrowedSource } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { Random } from './utils/Random';
+import { classifyPhraseRole, type PhraseRole } from './utils/phrase-role';
+import { romanHead } from './utils/roman';
+import { MINOR_TO_MAJOR_TYPE } from './utils/minor-major-type';
 
 const STYLE_IV_BORROW_PROB: Record<MgStyle, number> = {
     POP:   0.20,
@@ -59,32 +62,6 @@ const STYLE_MAX_MINOR_BORROWS_PER_SONG: Record<MgStyle, number> = {
     JAZZ: 3,
     RNB: 3,
     BLUES: 0,
-};
-
-type PhraseRole = 'start' | 'middle' | 'cadence' | 'ending';
-
-function classifyPhraseRole(i: number, total: number, motifInterval: number): PhraseRole {
-    if (i === total - 1) return 'ending';
-    if (motifInterval > 0 && (i + 1) % motifInterval === 0) return 'cadence';
-    if (motifInterval > 0 && i % motifInterval === 0) return 'start';
-    return 'middle';
-}
-
-function romanHead(roman: string): string {
-    if (!roman) return '';
-    const stripped = roman.replace(/^[b#n]+/, '');
-    return stripped.match(/^[IVivXx]+/)?.[0] ?? '';
-}
-
-/** Minor m7/m9/m11 → 对应 maj 等价(参考 PicardyPlanner 同样映射逻辑) */
-const MINOR_TO_MAJOR_TYPE: Record<string, string> = {
-    'min':  'maj',
-    'm':    'maj',
-    'm7':   'maj7',
-    'm9':   'maj9',
-    'm11':  'maj9',     // 11 跟 maj3 m9 clash,降级 maj9
-    'm6':   'maj6',
-    'm13':  'maj13',
 };
 
 export interface PlanMinorBorrowOptions {
