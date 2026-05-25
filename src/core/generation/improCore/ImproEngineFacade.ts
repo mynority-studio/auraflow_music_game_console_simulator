@@ -58,6 +58,12 @@ import { applyDrumPattern } from './algorithms/drum-pattern';
 import { generateMelody, getGrammarByName, type MelodyChordCtx } from './algorithms/lick-gen';
 import { ImproGrammarStore } from '../../../state/ImproGrammarStore';
 import { parseNoteName, getScalePcs } from './algorithms/note-utils';
+import {
+    planBorrowedChords, planTonicization,
+    evaluateHarmony, type CoherenceChordInput,
+    type BorrowChordInput, type TonicizationChordInput,
+    type BorrowSource,
+} from '../harmony';
 
 export interface ImproGenerateResult {
     track: GeneratedTrack;
@@ -197,25 +203,82 @@ export const ImproEngineFacade = {
         const arrangerRng = new Random(seedString);
         const abstractPath = Af2Arranger.arrange(sections, 4, arrangerRng);
 
-        // 2c. Af2AbstractStep[] → step-with-time 序列(累 startBeat/endBeat)
-        //     默认每 step 占 4 beat(一 bar 4/4),除非 step.beats 显式设
+        // 2b-bis. ★ harmony shared 层接入:borrow + tonicize 增强 chord progression
+        //   melodygenerative 10 borrow rules + tonicization(P5a + per-target cooldown + borrow-source coloring)
+        //   per-song borrow-source fork(80% Aeolian / 12% Mixolydian / 8% Phrygian)
+        const songKeyRootPc = keyOffset;
+        const borrowSourceRng = new Random(`${seedString}_borrow_source`);
+        const borrowSourceRoll = borrowSourceRng.next();
+        const borrowSource: BorrowSource = borrowSourceRoll < 0.80 ? 'Aeolian'
+            : borrowSourceRoll < 0.92 ? 'Mixolydian'
+            : 'Phrygian';
+
+        // Af2AbstractStep → BorrowChordInput(plain object)
+        const initialSlots: BorrowChordInput[] = abstractPath.map(s => ({
+            roman: s.roman,
+            type: s.type,
+            scaleDegree: s.scaleDegree,
+            rootOffset: ((s.rootOffset % 12) + 12) % 12,
+            beats: s.beats ?? 4,
+        }));
+
+        // 跑 borrow planner
+        const borrowedSlots = planBorrowedChords({
+            skeleton: initialSlots,
+            baseProb: 0.45,          // POP default(STYLE_BORROW_PROB)
+            maxFires: 3,             // POP default
+            motifInterval: 4,
+            random: new Random(`${seedString}_borrow`),
+            beatsPerMeasure: 4,
+            mode: isMinor ? 'Aeolian' : 'Ionian',
+            borrowSource,
+            isMinorKey: isMinor,
+        });
+
+        // 跑 tonicization planner(input 复用 borrow 输出,接口字段兼容)
+        const tonicizedSlots = planTonicization({
+            skeleton: borrowedSlots as TonicizationChordInput[],
+            style: 'POP',
+            motifInterval: 4,
+            random: new Random(`${seedString}_tonicize`),
+            beatsPerMeasure: 4,
+            songKeyRootPc,
+            borrowSource,
+        });
+
+        // 2c. enhanced slots → step-with-time 序列(累 startBeat/endBeat)
+        //     borrow/tonicize 可能改变 chord 数量 + chord beats,重新累积时间
         interface TimedStep {
             roman: string;
-            type: string;        // ChordVocab key 兼容(maj/min/dom7/m7/...)
-            rootOffset: number;  // RELATIVE pc
+            type: string;
+            rootOffset: number;
             startBeat: number;
             endBeat: number;
+            localTonalCenterPc?: number;
+            analysisKeyPc?: number;
+            localRoman?: string;
+            borrowedSource?: string;
+            borrowedFrom?: string;
+            effectiveFunc?: 'T' | 'S' | 'D';
+            mustResolve?: boolean;
         }
         const stepsWithTime: TimedStep[] = [];
         let cursor = 0;
-        for (const step of abstractPath) {
-            const stepBeats = step.beats ?? 4;
+        for (const slot of tonicizedSlots) {
+            const stepBeats = slot.beats ?? 4;
             stepsWithTime.push({
-                roman: step.roman,
-                type: step.type,
-                rootOffset: ((step.rootOffset % 12) + 12) % 12,
+                roman: slot.roman,
+                type: slot.type,
+                rootOffset: ((slot.rootOffset % 12) + 12) % 12,
                 startBeat: cursor,
                 endBeat: cursor + stepBeats,
+                localTonalCenterPc: slot.localTonalCenterPc,
+                analysisKeyPc: slot.analysisKeyPc,
+                localRoman: slot.localRoman,
+                borrowedSource: slot.borrowedSource,
+                borrowedFrom: slot.borrowedFrom,
+                effectiveFunc: slot.effectiveFunc,
+                mustResolve: slot.mustResolve,
             });
             cursor += stepBeats;
         }
@@ -398,6 +461,43 @@ export const ImproEngineFacade = {
             duration: e.duration,
             velocity: e.velocity / 127,
         }));
+
+        // 4c. ★ harmonicCoherence diagnostic post-pass — 不 mutate 生成,仅评分 + console
+        //   把 enrichedChords + bass + voicing 转 CoherenceChordInput → evaluateHarmony
+        const coherenceChords: CoherenceChordInput[] = stepsWithTime.map((step, i) => {
+            const ec = enrichedChords[i];
+            const voicing = ec?.voicing ?? [];
+            // bass MIDI:从 enrichedChords 拿不到,用 step 的 absRoot + 36(C2 bass 起点)估
+            const absRootPc = ((step.rootOffset + keyOffset) % 12 + 12) % 12;
+            const bassMidi = 36 + absRootPc;
+            // rootMidi(ABSOLUTE):absRoot + 48(C3 octave 估)
+            const rootMidi = 48 + absRootPc;
+            return {
+                rootMidi,
+                bassMidi,
+                notesMidi: voicing.length > 0 ? voicing : [rootMidi],
+                type: step.type,
+                roman: step.roman,
+                duration: step.endBeat - step.startBeat,
+                chordSymbol: `${step.roman}${step.type === 'maj' ? '' : step.type}`,
+                effectiveFunc: step.effectiveFunc,
+                borrowedSource: step.borrowedSource,
+                borrowedFrom: step.borrowedFrom,
+                analysisKeyPc: step.analysisKeyPc,
+                localTonalCenterPc: step.localTonalCenterPc,
+                localRoman: step.localRoman,
+                mustResolve: step.mustResolve,
+            };
+        });
+        const report = evaluateHarmony(coherenceChords, 'POP', songKeyRootPc);
+        console.log(`[ImproCore] HarmonicCoherence report (POP, key pc ${songKeyRootPc}):`, {
+            score: report.score.toFixed(3),
+            passed: report.passed,
+            subscores: Object.entries(report.subscores).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(' '),
+            obligations: report.obligations.length,
+            issues: report.issues.length,
+            topIssues: report.issues.slice(0, 5).map(i => `[${i.severity}] ${i.kind}: ${i.message}`),
+        });
 
         // 5. GeneratedTrack(keyOffset = 0 — ImproCore 直接生成 ABSOLUTE MIDI,
         //    AbsoluteTransposer 不再加 transposition)
