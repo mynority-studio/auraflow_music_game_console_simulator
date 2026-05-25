@@ -12,3 +12,5 @@ export { applyChordPattern } from './chord-pattern';
 export type { NoteEvent } from './chord-pattern';
 export { applyBassPattern } from './bass-pattern';
 export { applyDrumPattern } from './drum-pattern';
+export { generateMelody, chooseNote } from './lick-gen';
+export type { MelodyChordCtx, MelodyNote, GrammarDef, GrammarRule, GrammarToken } from './lick-gen';

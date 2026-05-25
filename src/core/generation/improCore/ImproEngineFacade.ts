@@ -55,6 +55,7 @@ import { generateVoicing } from './algorithms/voicing-generator';
 import { applyChordPattern, type NoteEvent } from './algorithms/chord-pattern';
 import { applyBassPattern } from './algorithms/bass-pattern';
 import { applyDrumPattern } from './algorithms/drum-pattern';
+import { generateMelody, type MelodyChordCtx } from './algorithms/lick-gen';
 import { parseNoteName } from './algorithms/note-utils';
 
 export interface ImproGenerateResult {
@@ -204,6 +205,9 @@ export const ImproEngineFacade = {
         const accompEvents: NoteEvent[] = [];
         const bassEvents: NoteEvent[] = [];
         const drumEvents: NoteEvent[] = [];
+        // Step A 最小可跑 melody — 收集 per-chord MelodyChordCtx,主循环后一次性 generateMelody
+        const melodyCtxs: MelodyChordCtx[] = [];
+        const melodyRng = new Random(`${seedString}_melody`);
 
         // 物理音域(从 style 读 — note name → MIDI)
         // .sty bass-low / bass-high 经常偏高(ballad 的 'g--'=G2 / 'c'=C4),
@@ -279,7 +283,15 @@ export const ImproEngineFacade = {
                 if (lastBass) prevBassMidi = lastBass.pitch;
             }
 
-            // 3f. drum pattern
+            // 3f. melody chord ctx(per chord 收集,主循环后 generateMelody 跑)
+            melodyCtxs.push({
+                startBeat: step.startBeat,
+                beats: chordBeats,
+                spellPcs,
+                colorPcs,
+            });
+
+            // 3g. drum pattern
             const dp: DrumPattern | null = pickWeighted(style.drumPatterns, drumPatternRng);
             if (dp) {
                 drumEvents.push(...applyDrumPattern(dp, step.startBeat, chordBeats));
@@ -294,11 +306,20 @@ export const ImproEngineFacade = {
         const bass = bassEvents.map(noteEventToNoteData);
         const drums = drumEvents.map(noteEventToNoteData);
 
+        // 4b. Step A:per-chord MelodyChordCtx → 一次性 generateMelody → NoteData[]
+        const melodyEvents = generateMelody(melodyCtxs, melodyRng);
+        const melody: NoteData[] = melodyEvents.map(e => ({
+            pitch: e.pitch,
+            onset: e.onset,
+            duration: e.duration,
+            velocity: e.velocity / 127,
+        }));
+
         // 5. GeneratedTrack(keyOffset = 0 — ImproCore 直接生成 ABSOLUTE MIDI,
         //    AbsoluteTransposer 不再加 transposition)
         const track: GeneratedTrack = {
             chords: enrichedChords,
-            melody: [],                     // Step 2 共识:第一版无 melody
+            melody,                         // Step A:LickGen + 默认 grammar 生成
             accompaniment,
             bass,
             drums,
