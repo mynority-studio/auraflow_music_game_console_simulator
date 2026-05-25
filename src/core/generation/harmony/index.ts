@@ -16,3 +16,4 @@
 export * from './wide-piano-voicing';
 export * from './harmonic-coherence';
 export * from './borrow-rules';
+export * from './tonicization-rules';
