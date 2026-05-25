@@ -314,8 +314,8 @@ function chooseNoteType(
 /**
  * @param requestedType  0=CHORD / 1=COLOR / 2=RANDOM / 3=SCALE
  * @param chordSpellPcs  chord tones pcs (ABSOLUTE,加了 keyOffset)
- * @param chordColorPcs  color tones pcs(注:含 altered tension,只在显式 COLOR 用)
- * @param keyDiatonicPcs key 的 7 个 diatonic pc(限制 RANDOM/SCALE 候选避免调外音)
+ * @param chordColorPcs  color tones pcs(chord 内 extension,可能含 altered tension)
+ * @param scalePcs       当前 chord 的 local scale pcs(chord-scale relationship)
  * @param prevMidi       上一音 MIDI(给 range 找最近)
  * @param lo / hi        melody range(MIDI 区间)
  * @param rng            AF2 Random
@@ -326,7 +326,7 @@ export function chooseNote(
     requestedType: number,
     chordSpellPcs: number[],
     chordColorPcs: number[],
-    keyDiatonicPcs: number[],
+    scalePcs: number[],
     prevMidi: number,
     lo: number,
     hi: number,
@@ -334,22 +334,22 @@ export function chooseNote(
 ): number {
     // build candidates by type in [lo, hi]
     //   chordCands  = chord spell 内
-    //   colorCands  = chord color 内但不在 spell(altered tension 全集)
-    //   scaleCands  = key diatonic 内但不在 chord(调内非 chord 音)
-    //   randomCands = 不在以上 — chromatic 调外音(very rare,仅 RANDOM type fallback)
+    //   colorCands  = chord color 内但不在 spell(altered tension 或 extension)
+    //   scaleCands  = local scale 内但不在 chord(scale tone)
+    //   randomCands = 不在以上 — scale 外 chromatic(极少用)
     const chordCands: number[] = [];
     const colorCands: number[] = [];
     const scaleCands: number[] = [];
     const randomCands: number[] = [];
     const spellSet = new Set(chordSpellPcs.map(p => ((p % 12) + 12) % 12));
     const colorSet = new Set(chordColorPcs.map(p => ((p % 12) + 12) % 12));
-    const diaSet = new Set(keyDiatonicPcs.map(p => ((p % 12) + 12) % 12));
+    const scaleSet = new Set(scalePcs.map(p => ((p % 12) + 12) % 12));
     for (let m = lo; m <= hi; m++) {
         const pc = ((m % 12) + 12) % 12;
         if (spellSet.has(pc)) chordCands.push(m);
-        else if (diaSet.has(pc)) scaleCands.push(m);  // 调内非 chord = scale 候选
-        else if (colorSet.has(pc)) colorCands.push(m); // 调外 chord color(altered) — 谨慎
-        else randomCands.push(m);                      // 完全调外 chromatic — 极少用
+        else if (scaleSet.has(pc)) scaleCands.push(m);   // local scale 内非 chord
+        else if (colorSet.has(pc)) colorCands.push(m);   // chord color 但不在 local scale(altered)
+        else randomCands.push(m);                        // 完全调外 chromatic — 极少用
     }
     // RANDOM type 改用 scale candidates(调内非 chord)替代真 random — 避免调外音
     // 真 randomCands 只在 scale 也为空时启用
@@ -474,12 +474,14 @@ export interface MelodyChordCtx {
     rootPc: number;
     /** ABSOLUTE chord tone pcs 0-11(已加 keyOffset) */
     spellPcs: number[];
-    /** ABSOLUTE color tone pcs(注:chord vocab color 含 altered tension 如 b9/#11,
-     *  melody/bass 走"调内"行为时应优先 keyDiatonicPcs 过滤) */
+    /** ABSOLUTE color tone pcs(chord 内 extension,可能含 altered tension)
+     *  melody chooseNote COLOR type 用此 */
     colorPcs: number[];
-    /** ABSOLUTE key diatonic pcs(7 个 key scale 音 — Major 或 Minor)。
-     *  melody chooseNote 的 RANDOM/SCALE 候选限制在此内,避免 altered tension 漏出 */
-    keyDiatonicPcs: number[];
+    /** ABSOLUTE 当前 chord 的 local scale pcs(chord-scale relationship):
+     *  C maj7 → C major / lydian / Dm7 → D dorian / G7 → G mixolydian / etc.
+     *  melody RANDOM/SCALE 候选限制此 — chord 在 dorian 时 melody 也在 dorian。
+     *  典型已跟 key scale 做交集,保 chord 跟 melody/bass 永远同 local scale。 */
+    scalePcs: number[];
     /** Step C:本 chord 是否在 section 末(phrase ending)— true 则 emit 长 tonic 不跑 grammar */
     isPhraseEnd?: boolean;
 }
@@ -578,7 +580,7 @@ export function generateMelody(
                     parsed.type,
                     cc.spellPcs,
                     cc.colorPcs,
-                    cc.keyDiatonicPcs,
+                    cc.scalePcs,
                     prevMidi,
                     melodyLo,
                     melodyHi,

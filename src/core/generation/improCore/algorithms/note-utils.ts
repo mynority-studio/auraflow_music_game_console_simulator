@@ -145,6 +145,65 @@ export function placeNearMidi(pc: number, prevMidi: number, lo: number, hi: numb
  *   placeNearMidi:选 60 (近)
  *   placeBassMidi:cost(48)=7+0=7,cost(60)=5+3=8 → 选 48 (C3,低区)
  */
+// ============================================================
+// SCALE_INTERVALS — chord vocab scales[] 字段对应的 scale pc intervals
+// ============================================================
+//
+// 用法:per chord 从 vocab.scales[0] 取 scale 名,查表得 intervals,
+// 加 chord root → chord 当下的 local scale pcs(ABSOLUTE)。
+//
+// 25+ scale 覆盖 chord-vocab.ts 18 curated 用到的全部名字。
+// 缺失:fallback 'major'。
+// ============================================================
+export const SCALE_INTERVALS: Record<string, number[]> = {
+  // 7-note diatonic modes
+  'major':              [0, 2, 4, 5, 7, 9, 11],
+  'ionian':             [0, 2, 4, 5, 7, 9, 11],
+  'lydian':             [0, 2, 4, 6, 7, 9, 11],
+  'mixolydian':         [0, 2, 4, 5, 7, 9, 10],
+  'dorian':             [0, 2, 3, 5, 7, 9, 10],
+  'aeolian':            [0, 2, 3, 5, 7, 8, 10],
+  'phrygian':           [0, 1, 3, 5, 7, 8, 10],
+  'locrian':            [0, 1, 3, 5, 6, 8, 10],
+  // melodic / harmonic minor + modes
+  'melodic minor':      [0, 2, 3, 5, 7, 9, 11],
+  'harmonic minor':     [0, 2, 3, 5, 7, 8, 11],
+  'harmonic major':     [0, 2, 4, 5, 7, 8, 11],
+  'lydian dominant':    [0, 2, 4, 6, 7, 9, 10],
+  'lydian augmented':   [0, 2, 4, 6, 8, 9, 11],
+  'altered':            [0, 1, 3, 4, 6, 8, 10],
+  'locrian #2':         [0, 2, 3, 5, 6, 8, 10],
+  // pentatonic / blues
+  'major pentatonic':   [0, 2, 4, 7, 9],
+  'minor pentatonic':   [0, 3, 5, 7, 10],
+  'major blues':        [0, 2, 3, 4, 7, 9],
+  'minor blues':        [0, 3, 5, 6, 7, 10],
+  'composite blues':    [0, 2, 3, 4, 5, 6, 7, 9, 10],
+  // diminished
+  'diminished':         [0, 2, 3, 5, 6, 8, 9, 11],   // W-H from root(常见 W-H from root,m7b5 / dim7 用)
+  'half-whole':         [0, 1, 3, 4, 6, 7, 9, 10],   // H-W(dom7 b9 用)
+  // whole tone
+  'whole tone':         [0, 2, 4, 6, 8, 10],
+  'augmented':          [0, 3, 4, 7, 8, 11],
+  // bebop
+  'bebop dominant':     [0, 2, 4, 5, 7, 9, 10, 11],
+  'bebop major':        [0, 2, 4, 5, 7, 8, 9, 11],
+  'bebop minor':        [0, 2, 3, 5, 7, 8, 9, 10],
+  // chromatic
+  'chromatic':          [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+};
+
+/**
+ * Scale name + chord root → ABSOLUTE scale pcs。
+ * @param scaleName 'major' / 'mixolydian' / 'dorian' / 等。识别不了 → 默认 major
+ * @param rootPc    chord root pc 0-11(ABSOLUTE,已加 keyOffset)
+ */
+export function getScalePcs(scaleName: string, rootPc: number): number[] {
+  const intervals = SCALE_INTERVALS[scaleName] ?? SCALE_INTERVALS['major']!;
+  const root = ((rootPc % 12) + 12) % 12;
+  return intervals.map(iv => ((root + iv) % 12 + 12) % 12);
+}
+
 export function placeBassMidi(
   pc: number,
   prevMidi: number,

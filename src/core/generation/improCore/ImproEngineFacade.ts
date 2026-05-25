@@ -57,7 +57,7 @@ import { applyBassPattern } from './algorithms/bass-pattern';
 import { applyDrumPattern } from './algorithms/drum-pattern';
 import { generateMelody, getGrammarByName, type MelodyChordCtx } from './algorithms/lick-gen';
 import { ImproGrammarStore } from '../../../state/ImproGrammarStore';
-import { parseNoteName } from './algorithms/note-utils';
+import { parseNoteName, getScalePcs } from './algorithms/note-utils';
 
 export interface ImproGenerateResult {
     track: GeneratedTrack;
@@ -296,16 +296,27 @@ export const ImproEngineFacade = {
             const priorityPcs = vocab.priority.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const colorPcsAll = vocab.color.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const spellPcs = vocab.spell.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
-            // 关键修复:chord vocab color 含 altered tension(b9/#11/b13 等调外音),
-            //   VoicingGenerator 加权会让 chord LH/RH 选到这些音 → chord 漏调外
-            //   melody/bass 又被限制在 key 内 → 出现"chord 弹 Db / melody 弹 D"半音冲突
-            //   修:colorPcs 传 VoicingGenerator 之前过滤 keyDiatonicPcs 内,
-            //   只留调内 diatonic extensions(typical 9/13/11 等 — 6th/9th 都在 major scale 内)
-            const diaSet = new Set(keyDiatonicPcs);
-            const colorPcs = colorPcsAll.filter(pc => diaSet.has(pc));
-            // bass S token 用 keyDiatonicPcs(7 个调内音)替代 spell+color 混合,
-            // 避免 chord vocab color 的 altered tension(b9/#11/b13)漏到 bass 听感调外
-            const scalePcs = keyDiatonicPcs;
+
+            // ★ chord-scale relationship — per chord 算 local scale(替代全曲 key scale)
+            //   chord vocab.scales[0] 是经典 idiomatic scale(C maj→major / Dm7→dorian /
+            //   G7→mixolydian / G7b9→diminished etc.)
+            //   每个 chord 当下用自己的 local scale 给 melody/bass 游走,而不是全曲 key
+            //   这样 chord 加 9/11/13(jazz extension)时 scale 也包含这些音 → 不冲突
+            const chordScaleName = vocab.scales[0] ?? 'major';
+            const chordScaleRaw = getScalePcs(chordScaleName, absRootPc);
+            // 与 keyDiatonicPcs 取交集(防 chord 自己 scale 含调外音 — 如 F maj→F major
+            // scale 含 Bb,在 C key 里 Bb 调外。交集保 melody/bass 仍在 key 内)。
+            // 交集太小(<4 pc)→ 用纯 chord scale fallback(允许 jazz altered chord 的 b9 等)
+            const keyDiaSet = new Set(keyDiatonicPcs);
+            const chordScaleIntersect = chordScaleRaw.filter(pc => keyDiaSet.has(pc));
+            const localScalePcs = chordScaleIntersect.length >= 4 ? chordScaleIntersect : chordScaleRaw;
+
+            // chord LH/RH colorPcs 用 local scale 过滤(替代之前的 key scale 过滤)
+            // 这样 chord 允许 9/11/13 调内 extension,但禁 altered tension(除非 chord scale 本身允许)
+            const localScaleSet = new Set(localScalePcs);
+            const colorPcs = colorPcsAll.filter(pc => localScaleSet.has(pc));
+            // bass S token 也用 local scale(每 chord 当下的 scale,而非全曲 key)
+            const scalePcs = localScalePcs;
 
             // 3b. hand layout
             const handLayout = planHands(settings, prevLhLow, handsRng);
@@ -350,14 +361,15 @@ export const ImproEngineFacade = {
 
             // 3f. melody chord ctx(per chord 收集,主循环后 generateMelody 跑)
             //     Step C:phrase end 标记 → melody 走 long tonic 收音 path
-            //     keyDiatonicPcs:limit RANDOM/SCALE candidates to key,避免调外漏出
+            //     scalePcs:chord 当下的 local scale(chord-scale relationship),
+            //              替代全曲 key scale — melody 在 chord 的 dorian/mixolydian 内游走
             melodyCtxs.push({
                 startBeat: step.startBeat,
                 beats: chordBeats,
                 rootPc: absRootPc,
                 spellPcs,
                 colorPcs,
-                keyDiatonicPcs,
+                scalePcs: localScalePcs,
                 isPhraseEnd,
             });
 

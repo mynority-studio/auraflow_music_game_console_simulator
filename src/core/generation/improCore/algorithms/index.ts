@@ -2,7 +2,7 @@
 // algorithms/index.ts — ImproCore 算法 barrel
 // ============================================================
 
-export { parseNoteName, drumNameToMidi, placeNearMidi, placeBassMidi, BASE_C_MIDI, DRUM_NAME_TO_MIDI } from './note-utils';
+export { parseNoteName, drumNameToMidi, placeNearMidi, placeBassMidi, getScalePcs, BASE_C_MIDI, DRUM_NAME_TO_MIDI, SCALE_INTERVALS } from './note-utils';
 export { parseDurationBeats } from './duration-parser';
 export { planHands } from './hand-manager';
 export type { HandLayout } from './hand-manager';
