@@ -109,6 +109,19 @@ function typeStringToQuality(typeStr: string): ChordQuality {
 void Af2KernelDriver;   // 保 import 不动(后续 SectionPlanner.getRecommendedBars 用)
 
 /**
+ * 算 key 的 7 个 diatonic pc(ABSOLUTE,已加 keyOffset)。
+ * Major key:Ionian 1-2-3-4-5-6-7 = [0,2,4,5,7,9,11]
+ * Minor key:Aeolian(自然小调) 1-2-b3-4-5-b6-b7 = [0,2,3,5,7,8,10]
+ *
+ * 用法:melody chooseNote RANDOM 候选限制 + bass S token 选音 — 避免 chord vocab
+ * color 的 altered tension(b9/#9/#11/b13)漏到这两条线造成调外感。
+ */
+function computeKeyDiatonicPcs(keyOffset: number, isMinor: boolean): number[] {
+    const intervals = isMinor ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
+    return intervals.map(iv => ((iv + keyOffset) % 12 + 12) % 12);
+}
+
+/**
  * Step A 修复"张力没解决"— 给 A 路径 base type 升级:
  *   V → 7 (dom7) 给 dominant 力度,V7→I 是经典 authentic cadence
  *   ii → m7         (jazz comping 经典 ii7-V7-I)
@@ -232,6 +245,9 @@ export const ImproEngineFacade = {
         const melodyCtxs: MelodyChordCtx[] = [];
         const melodyRng = new Random(`${seedString}_melody`);
 
+        // 全曲共享:key 的 7 个 diatonic pc(过滤调外音用 — bass S + melody RANDOM)
+        const keyDiatonicPcs = computeKeyDiatonicPcs(keyOffset, isMinor);
+
         // 物理音域(从 style 读 — note name → MIDI)
         // .sty bass-low / bass-high 经常偏高(ballad 的 'g--'=G2 / 'c'=C4),
         // 用户反馈"bass 还是高" — 即使 cap D3 仍听感不像真低音(电贝斯 D3 算中高音)。
@@ -280,7 +296,9 @@ export const ImproEngineFacade = {
             const priorityPcs = vocab.priority.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const colorPcs = vocab.color.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const spellPcs = vocab.spell.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
-            const scalePcs = spellPcs.concat(colorPcs); // 简化:scale = spell ∪ color
+            // bass S token 用 keyDiatonicPcs(7 个调内音)替代 spell+color 混合,
+            // 避免 chord vocab color 的 altered tension(b9/#11/b13)漏到 bass 听感调外
+            const scalePcs = keyDiatonicPcs;
 
             // 3b. hand layout
             const handLayout = planHands(settings, prevLhLow, handsRng);
@@ -325,12 +343,14 @@ export const ImproEngineFacade = {
 
             // 3f. melody chord ctx(per chord 收集,主循环后 generateMelody 跑)
             //     Step C:phrase end 标记 → melody 走 long tonic 收音 path
+            //     keyDiatonicPcs:limit RANDOM/SCALE candidates to key,避免调外漏出
             melodyCtxs.push({
                 startBeat: step.startBeat,
                 beats: chordBeats,
                 rootPc: absRootPc,
                 spellPcs,
                 colorPcs,
+                keyDiatonicPcs,
                 isPhraseEnd,
             });
 

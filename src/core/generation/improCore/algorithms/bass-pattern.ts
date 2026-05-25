@@ -6,7 +6,7 @@
 //
 // Rule DSL(单声部 bass walking):
 //   B4     bass note(chord root)at quarter
-//   S4     scale tone(diatonic to chord scale)
+//   S4     scale tone(diatonic to KEY,过滤掉 chord vocab color 的 altered tension)
 //   C4     chord tone(spell 内任意)
 //   A8     approach tone(±1 半音 leading to next)
 //   1-12   interval above root(数字代表 semitone interval)
