@@ -463,6 +463,8 @@ export interface MelodyChordCtx {
     spellPcs: number[];
     /** ABSOLUTE color tone pcs */
     colorPcs: number[];
+    /** Step C:本 chord 是否在 section 末(phrase ending)— true 则 emit 长 tonic 不跑 grammar */
+    isPhraseEnd?: boolean;
 }
 
 export interface MelodyNote {
@@ -500,7 +502,25 @@ export function generateMelody(
         const cc = chordCtxs[ci]!;
         const nextCc = chordCtxs[ci + 1] ?? null;
         if (cc.beats <= 0) continue;
-        // expand grammar 一次得到 terminal 序列
+
+        // Step C:phrase ending — 跳过 grammar,emit 单个长 tonic 占整 chord
+        // melody 真正"落地" — 长持续 root 音给听众明确解决感
+        if (cc.isPhraseEnd) {
+            // 短 pickup(可选):前 1/4 beat emit 1 个 chord tone 装饰
+            // 长 tonic:剩 3/4 beat root pitch sustain
+            const tonicMidi = placeNearMidi(cc.rootPc, prevMidi, melodyLo, melodyHi);
+            // 整 chord = 1 个长 tonic(简化版,不加装饰)
+            out.push({
+                pitch: tonicMidi,
+                onset: cc.startBeat,
+                duration: cc.beats * 0.95,
+                velocity: MELODY_VELOCITY,
+            });
+            prevMidi = tonicMidi;
+            continue;
+        }
+
+        // 非 phrase end:正常跑 grammar
         const terminals = expandGrammar(grammar, rng);
         // 时间累积 fill 到 chord beats(超出截断,不够循环 padding)
         let cursor = 0;

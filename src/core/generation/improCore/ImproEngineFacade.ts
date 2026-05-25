@@ -108,6 +108,28 @@ function typeStringToQuality(typeStr: string): ChordQuality {
 
 void Af2KernelDriver;   // 保 import 不动(后续 SectionPlanner.getRecommendedBars 用)
 
+/**
+ * Step A 修复"张力没解决"— 给 A 路径 base type 升级:
+ *   V → 7 (dom7) 给 dominant 力度,V7→I 是经典 authentic cadence
+ *   ii → m7         (jazz comping 经典 ii7-V7-I)
+ *   末 chord I → maj7 (色彩 + 解决感)
+ *   末 chord i → m7   (jazz minor 收束)
+ * 其他保持 base type(避免太 jazz)。
+ *
+ * 注:vocab key 必须存在于 chord-vocab.ts(18 curated):'7' / 'm7' / 'maj7' 都在。
+ */
+function enhanceChordType(roman: string, baseType: string, isLastInSection: boolean): string {
+    if (isLastInSection) {
+        if (roman === 'I') return 'maj7';
+        if (roman === 'i') return 'm7';
+        // 其他末 chord(V / IV / vi 等)保持 — 避免太多变化
+    }
+    if (roman === 'V') return '7';
+    if (roman === 'v') return 'm7';   // minor key 的 v(小七 = 自然小调)
+    if (roman === 'ii') return 'm7';
+    return baseType;
+}
+
 function pickWeighted<T extends { weight: number }>(items: readonly T[], rng: Random): T | null {
     if (items.length === 0) return null;
     const total = items.reduce((s, x) => s + x.weight, 0);
@@ -234,10 +256,27 @@ export const ImproEngineFacade = {
             const chordBeats = step.endBeat - step.startBeat;
             if (chordBeats <= 0) continue;
 
-            // 3a. chord vocab — step.type 直接当 vocab key(string,A 路径无 enum 转)
+            // Step C:判定本 chord 是否 section 末(phrase ending)
+            //   规则:next step 在不同 section(或不存在)→ 本 step 是 section 末
+            const isPhraseEnd = (() => {
+                if (!nextStep) return true;  // 全曲最后 chord
+                const mySection = sections.find(s =>
+                    step.startBeat >= s.startBeat - 0.1 && step.endBeat <= s.endBeat + 0.1
+                );
+                const nextSection = sections.find(s =>
+                    nextStep.startBeat >= s.startBeat - 0.1 && nextStep.endBeat <= s.endBeat + 0.1
+                );
+                return mySection !== nextSection;
+            })();
+
+            // Step A:enhance chord type — V→V7, ii→m7, 末 chord I→Imaj7 等
+            //   只升不降:升级到 chord-vocab.ts 有 curated 的 key(7/m7/maj7)
+            const enhancedType = enhanceChordType(step.roman, step.type, isPhraseEnd);
+
+            // 3a. chord vocab — 用 enhancedType 替代 step.type
             //     absRoot = step.rootOffset(RELATIVE pc)+ keyOffset → ABSOLUTE
             const absRootPc = ((step.rootOffset + keyOffset) % 12 + 12) % 12;
-            const vocab = getChordVocab(step.type);
+            const vocab = getChordVocab(enhancedType);
             const priorityPcs = vocab.priority.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const colorPcs = vocab.color.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
             const spellPcs = vocab.spell.map(pc => ((absRootPc + pc) % 12 + 12) % 12);
@@ -252,11 +291,11 @@ export const ImproEngineFacade = {
             );
             const fullVoicing = [...lhMidi, ...rhMidi].sort((a, b) => a - b);
 
-            // 同步压入 enriched(GeneratedChord 用 enum quality 给 UI)
+            // 同步压入 enriched(GeneratedChord 用 enhanced quality 给 UI 显示升级后类型)
             enrichedChords.push({
                 numeral: step.roman,
                 root: step.rootOffset,
-                quality: typeStringToQuality(step.type),
+                quality: typeStringToQuality(enhancedType),
                 startBeat: step.startBeat,
                 endBeat: step.endBeat,
                 voicing: fullVoicing,
@@ -285,12 +324,14 @@ export const ImproEngineFacade = {
             }
 
             // 3f. melody chord ctx(per chord 收集,主循环后 generateMelody 跑)
+            //     Step C:phrase end 标记 → melody 走 long tonic 收音 path
             melodyCtxs.push({
                 startBeat: step.startBeat,
                 beats: chordBeats,
                 rootPc: absRootPc,
                 spellPcs,
                 colorPcs,
+                isPhraseEnd,
             });
 
             // 3g. drum pattern
