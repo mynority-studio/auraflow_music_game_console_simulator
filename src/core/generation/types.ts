@@ -337,38 +337,6 @@ export interface EnsembleDraft {
     roster?: BandRoster; // 🌟 虚拟乐队具体名单（每个槽位的乐手智能体）
 }
 
-// --- 乐器语汇约束 (Instrument Idiom) ---
-// 抽离乐器的物理/演奏限制为纯数据，让生成引擎通过查表而非 if/switch 写死偏见。
-// 同一乐器在主奏(Lead)与伴奏(Comping)时演奏法完全不同，因此拆成两个子接口。
-//
-// LeadIdiom — 旋律层：呼吸换气 + 拟人化（力度抖动 / 踏板感连奏 / 倚音）
-//   驱动 ToplineEngine：管乐/人声 needsBreathing；钢琴 humanizeVelocity + pianoPedalRatio + graceNoteProbability
-// CompingIdiom — 伴奏层：扫弦延迟 / 切分 pattern / Drop-2 开放排列
-//   驱动 TextureMapper 的 voicing 排列与切分律动。
-export interface LeadIdiom {
-    // 呼吸约束（管乐/人声）
-    needsBreathing: boolean;
-    breathPhraseLength?: number;
-    breathTriggerBeat?: number;
-    breathProbability?: number;
-    // 拟人化与演奏技法（钢琴/吉他）
-    humanizeVelocity?: number;     // 力度随机微调幅度（如 0.05 / 0.1）
-    /** 阻尼器踏板系数 — 仅钢琴族裔生效（0=干 / 1=自然踏板 / >1=过踏被和弦边界硬钳）。 */
-    pianoPedalRatio?: number;
-    graceNoteProbability?: number; // 大跳时插入倚音（装饰音）的概率
-    octaveDoubling?: boolean;      // 允许主奏在重音/高能段开启下方八度叠置
-}
-
-export interface CompingIdiom {
-    strumDelay: number;
-    compingPatterns: number[][];   // Pattern 池：TextureMapper 按小节索引轮换，消除机械重复
-    arpeggioPatterns?: (number | null)[][]; // 支持带休止符(null)的琶音音型轨迹
-    compingDuration: number;
-    allowDrop2: boolean;
-    textureType?: 'block' | 'arpeggio' | 'mixed' | 'comping';
-    textureProbabilities?: { block: number, arpeggio: number, comping: number };
-}
-
 // AtmosphereConfig — 氛围层：长音 pad / 合唱 / 弦乐铺底的演奏特性
 //   驱动 AtmosphereConfig 渲染器（Phase 1 MVP）：长持续 voicing + 软起音 + 力度偏弱
 export interface AtmosphereConfig {
@@ -386,39 +354,19 @@ export interface AtmosphereConfig {
     octaveLayering?: boolean;
 }
 
-export interface InstrumentIdiom {
-    id: string;
-    lead: LeadIdiom;
-    comping: CompingIdiom;
-    /** 氛围层（仅 Pad/Strings/EP 等氛围类乐器配置；其他乐器留空） */
-    atmosphere?: AtmosphereConfig;
-}
-
 // ============================================================
 // 🎸 虚拟乐队架构 (Virtual Band Architecture)
 // ============================================================
 // Lead 乐手的 genre 具有"全曲定调权"；其余 4 个槽位的乐手仅贡献个性微操。
-// PANGEA = 乐器物理底线（无曲风偏见），Musician = 乐器底线 + 擅长曲风 + 个人特质。
-// assembleActiveIdiom() 把基底 + 特质 deep merge 成最终图纸传给生成引擎。
 
 // 1. 乐队槽位 — 见下方 BandRole enum（6 个职能位置：Vocal/MainInst/Accomp/Bass/Drums/Atmosphere）
 
-// 2. 个性化特质 (Personnel Traits) — 用于叠加和覆盖 Pangea 基底
+// 2. 个性化特质 (Personnel Traits) — 氛围乐手的微操覆盖（PadIdiom 消费）
 export interface PersonnelTraits {
-    leadOverrides?: Partial<LeadIdiom>;             // 作为主奏时的微操习惯
-    compingOverrides?: Partial<CompingIdiom>;       // 作为伴奏时的微操习惯
     atmosphereOverrides?: Partial<AtmosphereConfig>; // 作为氛围乐手时的微操习惯
 }
 
-// 3. 盘古乐器基底 (Pangea Instrument) — 定义物理底线
-export interface PangeaInstrument {
-    id: string;
-    baseLead: LeadIdiom;
-    baseComping: CompingIdiom;
-    baseAtmosphere?: AtmosphereConfig;  // 仅 Pad / Strings / EP 等氛围类乐器配置
-}
-
-// 4. 乐手智能体 (The Musician) — 参考架构移植：等价于 MusicianProfile 的精简表示
+// 3. 乐手智能体 (The Musician) — 参考架构移植：等价于 MusicianProfile 的精简表示
 //    用于 BandRoster / EnsembleDraft.roster；MUSICIAN_POOL 中数据兼容 Profile 形状。
 export interface Musician {
     id: string;                   // 如 'accomp_alex_pop'
@@ -437,7 +385,7 @@ export interface Musician {
      * 主要用例：同一 musician card 在不同曲风下挂不同音色（暂未启用，预留）。
      */
     gmProgramOverride?: number;
-    personnel: PersonnelTraits;   // 旧形状：作主奏/伴奏时的微操偏好（驱动 TextureMapper）
+    personnel: PersonnelTraits;   // 氛围乐手覆盖（PadIdiom 消费 atmosphereOverrides）
 
     // 🌟 参考架构 Persona 字段（驱动未来 Idiom 引擎）
     role: BandRole;               // 主要角色（默认上岗位置）
@@ -1080,12 +1028,7 @@ export const SectionTypeName: Record<SectionType, string> = {
 };
 
 // ============================================================
-// 🎸 参考架构移植：Persona / Idiom / 演奏数据契约（ALL_SOURCE_CODE.md）
-// ============================================================
-// 与现有 Pangea+Personnel（Musician/InstrumentIdiom/LeadIdiom/CompingIdiom）并存：
-//   - 新形状（MusicianProfile + Persona）专供 Idiom 引擎（Phase 3 移植后）消费
-//   - 旧形状（Musician + Personnel）继续给 TextureMapper 提供 chordIdiom 兼容
-//   - assembleActiveIdiom() 同时认两种入参（等 Phase 3 后切换）
+// 🎸 Persona 演奏数据契约
 // ============================================================
 
 /** Persona 演奏轮廓偏好 */

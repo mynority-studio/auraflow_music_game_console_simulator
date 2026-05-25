@@ -11,14 +11,10 @@
 // 后续 V2 扩展方向：
 //   - 每角色多张卡牌（Alex/Chloe/Marcus 三选一钢琴手）
 //   - 按 styleAffinity 做"乐手 × 风格"匹配度评分
-//   - assembleActiveIdiom 把 persona + PangeaInstrument deep merge 出实际 Idiom 图纸
 // ============================================================
 
 import {
-    InstrumentIdiom,
     Musician,
-    LeadIdiom,
-    CompingIdiom,
     BandRole,
     InstrumentFamily,
     MusicianPersona,
@@ -382,40 +378,9 @@ export const MUSICIAN_POOL: Musician[] = [
     },
 ];
 
-export const PANGEA_DICT: Record<string, unknown> = {};
-
-// ------------------------------------------------------------
-// Idiom 占位（V1：assembleActiveIdiom 仍是 stub，未来按 persona 派生）
-// ------------------------------------------------------------
-
-const STUB_LEAD: LeadIdiom = {
-    needsBreathing: false,
-    humanizeVelocity: 0.05,
-    graceNoteProbability: 0.0,
-    octaveDoubling: false,
-};
-
-const STUB_COMPING: CompingIdiom = {
-    strumDelay: 0.0,
-    compingPatterns: [],
-    compingDuration: 0.5,
-    allowDrop2: false,
-    textureType: 'block',
-    textureProbabilities: { block: 1.0, arpeggio: 0.0, comping: 0.0 },
-};
-
-export function assembleActiveIdiom(musician: Musician, slot: BandRole): InstrumentIdiom {
-    return { id: `${musician.id}_at_${slot}`, lead: { ...STUB_LEAD }, comping: { ...STUB_COMPING } };
-}
-
 // ------------------------------------------------------------
 // 查询 API
 // ------------------------------------------------------------
-
-interface PRNGLike {
-    nextInt(min: number, max: number): number;
-    nextFloat(min: number, max: number): number;
-}
 
 export function getMusicianById(id: string): Musician | undefined {
     for (let i = 0; i < MUSICIAN_POOL.length; i++) {
@@ -442,26 +407,3 @@ export function getMusiciansByRole(role: BandRole): Musician[] {
     return out;
 }
 
-export function getRandomMusicianByRole(
-    role: BandRole,
-    prng: PRNGLike,
-    _allowedStyleIds?: StyleId[],
-): Musician | undefined {
-    const pool = getMusiciansByRole(role);
-    if (pool.length === 0) return undefined;
-    const idx = prng.nextInt(0, pool.length - 1);
-    return pool[idx];
-}
-
-export function getRandomLeadMusician(
-    _allowedStyleIds: StyleId[] | undefined,
-    prng: PRNGLike,
-): Musician | undefined {
-    return getRandomMusicianByRole(BandRole.MainInst, prng);
-}
-
-export const DEFAULT_FALLBACK_IDIOM: InstrumentIdiom = {
-    id: 'stub_fallback',
-    lead: { ...STUB_LEAD },
-    comping: { ...STUB_COMPING },
-};
