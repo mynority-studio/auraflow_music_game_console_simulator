@@ -108,6 +108,23 @@ function stepOnsetWithinBeat(subStep: number, swingRatio: number): number {
     return swingRatio + (1 - swingRatio) / 2;  // subStep === 3
 }
 
+/**
+ * Z2 阶段(2026-05-25):per-mgStyle fill style pool
+ * 各 mgStyle idiomatic fill 形态:
+ *   POP   tom 阶梯 / snare 16th roll(通用)
+ *   JAZZ  ride drift(渐升 + 末 crash)/ snare roll(后备)
+ *   BLUES shuffle fill(snare/kick 交替)/ snare roll
+ *   RNB   ghost flam(snare 主 + ghost 16th + kick)/ snare roll
+ *
+ * fill style 选择:per-section startBeat 整数 % pool.length(deterministic)
+ */
+const FILL_STYLES_BY_STYLE: Record<MgStyle, ReadonlyArray<'tom' | 'snare_roll' | 'ride_drift' | 'shuffle_fill' | 'ghost_flam'>> = {
+    POP:   ['tom', 'snare_roll'],
+    JAZZ:  ['ride_drift', 'snare_roll'],
+    BLUES: ['shuffle_fill', 'snare_roll'],
+    RNB:   ['ghost_flam', 'snare_roll'],
+};
+
 export const DRUM_INSTRUMENT_SPEC = {
     eligibleSlots: [BandRole.Drums] as const,
 } as const;
@@ -285,11 +302,15 @@ function renderSection(
     const energyJump = nextSection !== undefined ? (nextSection.energyLevel - section.energyLevel) : 0;
     const isSectionTransition = nextSection !== undefined && (energyJump >= 1 || nextIsCrashSection);
 
-    // O 阶段:fill 形态选择(per-section hash,deterministic 0 PRNG)
-    //   'tom'        = 原 Tom 阶梯(snare → tom-hi/mid/lo)
-    //   'snare_roll' = 纯 Snare 16th roll(velocity 渐升,无 tom)
-    type FillStyle = 'tom' | 'snare_roll';
-    const fillStyle: FillStyle = (Math.floor(section.startBeat) & 1) === 0 ? 'tom' : 'snare_roll';
+    // O+Z2 阶段:fill 形态选择(per-section hash + per-mgStyle pool,0 PRNG)
+    //   'tom'          = Tom 阶梯(snare → tom-hi/mid/lo)— POP 通用
+    //   'snare_roll'   = 纯 Snare 16th roll velocity 渐升 — POP 通用
+    //   'ride_drift'   = Ride 渐升 + bar 末 Crash — JAZZ idiom
+    //   'shuffle_fill' = snare/kick 交替 shuffle pattern — BLUES idiom
+    //   'ghost_flam'   = 主拍 snare + 16th ghost snare + kick — RNB idiom
+    type FillStyle = 'tom' | 'snare_roll' | 'ride_drift' | 'shuffle_fill' | 'ghost_flam';
+    const fillStylePool: ReadonlyArray<FillStyle> = FILL_STYLES_BY_STYLE[mgStyle] ?? ['tom', 'snare_roll'];
+    const fillStyle: FillStyle = fillStylePool[Math.floor(section.startBeat) % fillStylePool.length];
 
     const gridLen = grid.grid.length;
     const stepsPerBar = STEPS_PER_BAR;  // 16
@@ -385,21 +406,63 @@ function renderSection(
             outKHit = true;
             outKVel = Math.min(1.0, velScale * 1.1);
         } else if (isFillBar) {
-            // section transition 最后一 bar:fill(2 种形态 per-section hash)
-            outHHit = false;  // mute hihat
-            outSHit = true;   // 强制 snare(or tom)击
+            // section transition 最后一 bar:fill(per-mgStyle 5 形态选,Z2 阶段)
             const fillProgression = 1 - (totalSteps - stepIdx) / stepsPerBar;
-            outSVel = 0.5 + 0.5 * fillProgression;
+            const subBeat = stepIdx % STEPS_PER_BEAT;
+            const stepInBar = stepIdx % stepsPerBar;
 
             if (fillStyle === 'tom') {
-                // Tom 阶梯(原有)— sub-beat 3 → tom_hi,sub-beat 2 fill_prog>0.5 → tom_mid,
-                //                    sub-beat 1 fill_prog>0.8 → tom_lo
-                const subBeat = stepIdx % STEPS_PER_BEAT;
+                // POP Tom 阶梯(原有)
+                outHHit = false;
+                outSHit = true;
+                outSVel = 0.5 + 0.5 * fillProgression;
                 if (subBeat === 3) outSPitch = DRUM_TOM_HI;
                 else if (subBeat === 2 && fillProgression > 0.5) outSPitch = DRUM_TOM_MID;
                 else if (subBeat === 1 && fillProgression > 0.8) outSPitch = DRUM_TOM_LO;
+            } else if (fillStyle === 'snare_roll') {
+                // POP 通用纯 Snare 16th roll
+                outHHit = false;
+                outSHit = true;
+                outSVel = 0.5 + 0.5 * fillProgression;
+                // 保 DRUM_SNARE
+            } else if (fillStyle === 'ride_drift') {
+                // JAZZ Ride 渐升,bar 末最后 2 step 落 Crash
+                outSHit = false;
+                outHHit = true;
+                outHPitch = DRUM_RIDE;
+                outHVel = 0.5 + 0.4 * fillProgression;
+                if (stepInBar >= stepsPerBar - 2) {
+                    outHPitch = DRUM_CRASH;
+                    outHVel = Math.min(1.0, velScale * 1.1);
+                    outKHit = true;
+                    outKVel = Math.min(1.0, velScale * 1.0);
+                }
+            } else if (fillStyle === 'shuffle_fill') {
+                // BLUES shuffle fill:snare on subBeat 0/2,kick on subBeat 1/3(swing 后效果)
+                outHHit = false;
+                if (subBeat === 0 || subBeat === 2) {
+                    outSHit = true;
+                    outSVel = 0.55 + 0.35 * fillProgression;
+                } else {
+                    outSHit = false;
+                    outKHit = true;
+                    outKVel = 0.45 + 0.35 * fillProgression;
+                }
+            } else if (fillStyle === 'ghost_flam') {
+                // RNB ghost flam:主拍 snare 强,sub 16th ghost snare 弱,kick 平铺
+                outHHit = false;
+                outSHit = true;
+                if (subBeat === 0) {
+                    outSVel = 0.6 + 0.3 * fillProgression;
+                } else {
+                    outSVel = 0.25 + 0.15 * fillProgression;  // ghost notes
+                }
+                // kick 加在 subBeat 0 加强主拍
+                if (subBeat === 0) {
+                    outKHit = true;
+                    outKVel = 0.7 + 0.2 * fillProgression;
+                }
             }
-            // 'snare_roll':保 DRUM_SNARE 不动,纯 snare 16th velocity 渐升
         } else if (isVeryHigh && outHHit && stepIdx % 2 === 0) {
             // 高能段 + 偶数 step + hihat 命中 → Ride 替代
             outHPitch = DRUM_RIDE;
