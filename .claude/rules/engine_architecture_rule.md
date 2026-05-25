@@ -74,7 +74,7 @@
 │        含 addColorOnTriad + clash detection + density 优先 drop │
 │     3. placeVoicingMidi → voice-leading + chord range placement │
 │     4. spellPcInKey / midiToNoteInChord → 拼写                 │
-│     5. smoothChordVoicings post-pass(R 阶段,事实 plugin)      │
+│     5. plugins/composer/VoicingSmoother(R + S2 阶段,2026-05-25 拆 plugin)│
 │   → ChordDef[](voicing + bass + chordSymbol)                  │
 └────────────────────────────────────────────────────────────────┘
         ↓ (转 GeneratedChord IR)
@@ -139,6 +139,7 @@
 | Dynamic TSD chord type 字典(Look-ahead) | `af2-engine/DynamicHarmony.ts` 的 `DYNAMIC_TSD_DICTIONARY` + `COLOR_LEVEL_PROBABILITIES` + `analyzeTargetQuality` | 不要散到 Composer / Arranger |
 | Sub-V tritone substitution 触发 | `af2-engine/DynamicHarmony.ts` 的 rule.`tritoneProb` + `plugins/composer/DynamicHarmonyDecorator.ts` 内 Sub-V override(2026-05-25 拆 plugin) | 不要在 Arranger borrow 处做 |
 | Chord-type decoration(colorLevel / TSD / Sub-V / data-debt guard) | `af2-engine/plugins/composer/DynamicHarmonyDecorator.ts`(2026-05-25 拆 plugin;原 Af2Composer.decorateChordType) | 不要散到 Composer 主循环 |
+| Cross-chord voice leading smoother(R + S2 阶段 phrase-arc) | `af2-engine/plugins/composer/VoicingSmoother.ts`(2026-05-25 拆 plugin;原 Af2Composer.smoothChordVoicings) | 不要在 Composer 主循环 inline |
 | Per-mgStyle 默认 voicing mode(shell/rootless/cluster/full/blues) | `af2-engine/Af2Composer.ts` 的 `DEFAULT_VOICING_MODE_BY_STYLE` | 不要 musician 卡 override(voicing mode 是风格属性) |
 | Voicing PCs assembly(addColor + clash + density) | `af2-engine/music-theory/voicing.ts` 的 `assembleVoicing` | Composer 一律走它,不要 inline pcs 计算 |
 | Chord type interval 表 | `af2-engine/music-theory/chord-types.ts` 的 `CHORD_TYPES` | 不要硬编到具体 idiom |
@@ -275,8 +276,8 @@ af2-engine/             ← 唯一活跃引擎
 ├─ BorrowChordPlanner.ts← Modal interchange(7 rule × 3 source 锁定)
 ├─ TonicizationPlanner.ts← Tonicization(4 placement × target mult)
 ├─ DynamicHarmony.ts    ← TSD 字典 + Sub-V(Composer Look-ahead 用)
-├─ Af2Composer.ts       ← orchestrator(主循环 + assembleVoicing + placeVoicingMidi + smoothChordVoicings)
-├─ plugins/composer/    ← DynamicHarmonyDecorator(chord-type decoration:TSD/colorLevel/Sub-V/data-debt)
+├─ Af2Composer.ts       ← orchestrator(主循环 + assembleVoicing + placeVoicingMidi)
+├─ plugins/composer/    ← DynamicHarmonyDecorator(chord-type decoration)+ VoicingSmoother(R+S2 post-pass)
 ├─ Dispatcher.ts        ← 调用顺序
 ├─ Af2MelodyGen.ts      ← melody orchestrator(core:role gate + cycle + placeNearAnchor)
 ├─ plugins/melody/      ← 6 plugin(RhythmPattern / PhraseContour / PassingTone / PhraseEnding / Sparsity / Velocity)

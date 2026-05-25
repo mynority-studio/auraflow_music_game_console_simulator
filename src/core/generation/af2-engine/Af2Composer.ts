@@ -27,7 +27,7 @@
 // ============================================================
 
 import {
-    CHORD_TYPES, placeVoicingMidi, BASS_RANGE, CHORD_RANGE,
+    CHORD_TYPES, placeVoicingMidi, BASS_RANGE,
     KEYS, harmonicFunctionFromRoman, spellPcInKey, midiToNoteInKey, midiToNoteInChord,
     assembleVoicing,
     STYLE_FULL, STYLE_ROOTLESS, STYLE_CLUSTER, STYLE_BLUES, STYLE_SHELL,
@@ -38,7 +38,7 @@ import type { ChordDef } from './types/ChordDef';
 import type { Af2AbstractStep } from './Af2Arranger';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import type { SubStyle } from './SubStyleTextures';
-import { DynamicHarmonyDecorator } from './plugins/composer';
+import { DynamicHarmonyDecorator, VoicingSmoother } from './plugins/composer';
 
 // ============================================================
 // M 阶段(2026-05-24):Dynamic TSD chord-type decoration
@@ -118,155 +118,9 @@ const SUB_STYLE_VOICING_MODE: Partial<Record<SubStyle, VoicingStylePreference>> 
 // decorateChordType 已拆 plugin → plugins/composer/DynamicHarmonyDecorator.ts(2026-05-25)
 // Composer 主循环直接调 DynamicHarmonyDecorator.apply(step, next, mgStyle, rng)
 
-// ============================================================
-// R 阶段(2026-05-24):跨 chord voice leading 全局 smoother
-// ============================================================
-//
-// Composer 主循环已有 placeVoicingMidi 局部 voice leading(基于 prev),
-// 但只 forward-aware,不看 next。R 阶段加 post-pass smoother:
-//   对每 chord(除首尾),试 4 个 inversion variants(整体 octave 移位):
-//     - lift bottom +12 / +24    最低音上移八度
-//     - drop top    -12 / -24    最高音下移八度
-//   保 pc 集不变(只调 octave 不改音名)。
-//   选 min cost = L1(prev, candidate) + L1(candidate, next)
-//
-// 工程影响:
-//   - PRNG 消耗:0(deterministic hill-climbing)
-//   - O(N × 5) 时间;N 通常 16-32 chord,跑一遍 < 1ms
-//   - 不影响 bassMidi(独立由 chord.bassMidi 决定)
-//   - 不重算 notes display(notesMidi 是 audio truth,notes 是 UI 标签)
-// ============================================================
-
-/**
- * 两个 voicing(已 sort)之间的 L1 距离 + 长度差异 penalty
- */
-function voicingL1(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
-    if (a.length === 0 || b.length === 0) return 0;
-    let sum = 0;
-    const n = Math.min(a.length, b.length);
-    for (let i = 0; i < n; i++) sum += Math.abs(a[i] - b[i]);
-    sum += Math.abs(a.length - b.length) * 4;  // 长度差 penalty
-    return sum;
-}
-
-// ============================================================
-// S2 阶段(2026-05-24):phrase-arc top voice motif
-// ============================================================
-//
-// 在 R smoother 的 cost 函数加 phrase-arc bonus,主动让 top voice 在
-// phrase 内形成"上 → 顶 → 回"的弧形 motif,产生隐性旋律线感(用户讨论
-// 的"音高变化形成旋律线")。
-//
-// 设计:
-//   phrase position(i % 4):
-//     0 - phrase 起点 → expected top shift = 0(接平 prev top)
-//     1 - phrase 第 2 chord → expected top shift = +ARC_AMP(上行)
-//     2 - phrase 第 3 chord → expected top shift = +ARC_AMP(顶点保持)
-//     3 - phrase 末 → expected top shift = 0(回归 prev 水平)
-//
-// arcCost = |actualShift - expectedShift| × ARC_WEIGHT
-// 加到 totalCost = L1(prev, c) + L1(c, next) + arcCost
-//
-// ARC_WEIGHT 调小(0.6)避免 override L1 voice leading;只在 L1 cost
-// 相近时 arc 偏好生效 — "tie-breaker"性质。
-// ============================================================
-
-const PHRASE_CHORD_COUNT_SMOOTHER = 4;
-const ARC_AMPLITUDE = 5;     // top voice 在 phrase 顶点期望比起点高的半音数
-const ARC_WEIGHT = 0.6;      // arc cost 权重(< 1 = tie-breaker 不主导 L1)
-
-/**
- * Phrase position → expected top voice shift from prev top。
- * 弧形:0(start)→ +amp(mid)→ +amp(mid)→ 0(end return)
- */
-function expectedArcShift(phrasePos: number): number {
-    if (phrasePos === 0) return 0;
-    if (phrasePos === PHRASE_CHORD_COUNT_SMOOTHER - 1) return 0;
-    return ARC_AMPLITUDE;
-}
-
-/**
- * 取 voicing 顶音(已 sort,最后一个)。空 voicing 返 0(降级 cost)。
- */
-function topVoice(v: ReadonlyArray<number>): number {
-    return v.length > 0 ? v[v.length - 1] : 0;
-}
-
-/**
- * 生成 voicing 的 inversion candidates(原 + 4 个 octave-shift 变体)。
- * 所有 candidate 保 pc 集不变,只调单音 octave。
- * 越界(CHORD_RANGE [48, 81])的 candidate 过滤。
- */
-function generateInversionCandidates(voicing: ReadonlyArray<number>): number[][] {
-    if (voicing.length === 0) return [voicing.slice()];
-    const candidates: number[][] = [voicing.slice()];
-
-    const lastIdx = voicing.length - 1;
-
-    // Lift bottom +12 / +24
-    for (const lift of [12, 24]) {
-        const lifted = voicing.slice();
-        lifted[0] += lift;
-        if (lifted[0] <= CHORD_RANGE.HIGH) {
-            lifted.sort((a, b) => a - b);
-            candidates.push(lifted);
-        }
-    }
-    // Drop top -12 / -24
-    for (const drop of [12, 24]) {
-        const dropped = voicing.slice();
-        dropped[lastIdx] -= drop;
-        if (dropped[lastIdx] >= CHORD_RANGE.LOW) {
-            dropped.sort((a, b) => a - b);
-            candidates.push(dropped);
-        }
-    }
-    return candidates;
-}
-
-/**
- * Post-pass smoother:in-place 更新每 chord(除首尾)的 notesMidi 为最优 inversion。
- * 跑一遍,O(N × 5)。
- *
- * S2 升级:cost 函数加 phrase-arc bonus(top voice 弧形 motif),
- *   总 cost = L1(prev, c) + L1(c, next) + arcCost
- *   arcCost = |actualTopShift - expectedTopShift| × ARC_WEIGHT
- */
-function smoothChordVoicings(out: ChordDef[]): void {
-    if (out.length < 3) return;  // 无 prev+next 上下文,跳过
-    for (let i = 1; i < out.length - 1; i++) {
-        const prev = out[i - 1].notesMidi;
-        const next = out[i + 1].notesMidi;
-        const curr = out[i].notesMidi;
-        const candidates = generateInversionCandidates(curr);
-
-        // S2:phrase-arc bonus 用 phrase position 算 expected top shift
-        const phrasePos = i % PHRASE_CHORD_COUNT_SMOOTHER;
-        const expectedShift = expectedArcShift(phrasePos);
-        const prevTop = topVoice(prev);
-
-        const computeCost = (cand: ReadonlyArray<number>): number => {
-            const arcCost = Math.abs(topVoice(cand) - prevTop - expectedShift) * ARC_WEIGHT;
-            return voicingL1(prev, cand) + voicingL1(cand, next) + arcCost;
-        };
-
-        let bestVoicing = curr;
-        let bestCost = computeCost(curr);
-        for (let c = 1; c < candidates.length; c++) {
-            const cand = candidates[c];
-            const cost = computeCost(cand);
-            if (cost < bestCost) {
-                bestVoicing = cand;
-                bestCost = cost;
-            }
-        }
-
-        if (bestVoicing !== curr) {
-            // 替换 notesMidi(notes display 标签保持旧 octave — UI 用,不影响音频)
-            out[i] = { ...out[i], notesMidi: bestVoicing };
-        }
-    }
-}
+// smoothChordVoicings 已拆 plugin → plugins/composer/VoicingSmoother.ts(2026-05-25)
+// 配套 helpers(voicingL1 / expectedArcShift / topVoice / generateInversionCandidates)
+// + 常量(PHRASE_CHORD_COUNT_SMOOTHER / ARC_AMPLITUDE / ARC_WEIGHT)一并移入 plugin。
 
 export const Af2Composer = {
     /**
@@ -363,11 +217,8 @@ export const Af2Composer = {
             prevVoicing = voicing;
         }
 
-        // R 阶段:post-pass voice leading smoother(0 PRNG,deterministic)
-        //   forward pass 完后,对每 chord 试 inversion variants,选 min
-        //   L1(prev, candidate) + L1(candidate, next) — 消除跨 chord 大跳。
-        smoothChordVoicings(out);
-
-        return out;
+        // Post-pass plugin:VoicingSmoother(R + S2 阶段,2026-05-25 拆 plugin)
+        //   inversion candidates + phrase-arc bonus,zero PRNG。
+        return VoicingSmoother.apply(out);
     },
 };
