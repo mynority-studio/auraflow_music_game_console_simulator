@@ -27,6 +27,9 @@
 
 import type { Random } from '../../af2-engine/utils/Random';
 import { placeNearMidi } from './note-utils';
+import type { GrammarData } from '../data/grammar-parser';
+import { ALL_GRAMMAR_DATA_MAP } from '../data/grammar-parser';
+import { expandGrammarData, detectCadenceHint } from './grammar-runner';
 
 // ============================================================
 // Grammar 类型
@@ -167,7 +170,7 @@ const GRAMMAR_SWING_SYNCOPATED: GrammarDef = {
     ],
 };
 
-/** 6 grammar Map — UI dropdown 用 */
+/** 6 grammar Map — UI dropdown 用(legacy hardcode,Step 5 与 85 real grammar 合并) */
 export const ALL_GRAMMARS_MAP: ReadonlyMap<string, GrammarDef> = new Map([
     ['quarter-baseline', GRAMMAR_QUARTER_BASELINE],
     ['jazz-bebop',       GRAMMAR_JAZZ_BEBOP],
@@ -184,6 +187,36 @@ export function getGrammarByName(name: string): GrammarDef {
 }
 
 const DEFAULT_GRAMMAR: GrammarDef = GRAMMAR_QUARTER_BASELINE;
+
+// ─────────────────────────────────────────────────────────────────
+// Step 5:Grammar selection union — hardcode + real .grammar 合并
+// ─────────────────────────────────────────────────────────────────
+
+export type GrammarSelection =
+    | { kind: 'def'; name: string; def: GrammarDef }
+    | { kind: 'data'; name: string; data: GrammarData };
+
+/** UI dropdown 完整 list:6 hardcode + 85 real(real 含 sort)*/
+export const ALL_GRAMMAR_DROPDOWN_NAMES: ReadonlyArray<string> = (() => {
+    const hardcode = Array.from(ALL_GRAMMARS_MAP.keys());
+    const real = Array.from(ALL_GRAMMAR_DATA_MAP.keys()).sort();
+    return [...hardcode, ...real];
+})();
+
+/**
+ * 根据 name 选 grammar source:
+ *   - 优先 hardcode(6 个)
+ *   - 否则查 real grammar(85 个)
+ *   - 都没 → fallback hardcode quarter-baseline
+ */
+export function selectGrammarByName(name: string): GrammarSelection {
+    if (ALL_GRAMMARS_MAP.has(name)) {
+        return { kind: 'def', name, def: ALL_GRAMMARS_MAP.get(name)! };
+    }
+    const data = ALL_GRAMMAR_DATA_MAP.get(name);
+    if (data) return { kind: 'data', name, data };
+    return { kind: 'def', name: 'quarter-baseline', def: GRAMMAR_QUARTER_BASELINE };
+}
 
 // ============================================================
 // Grammar PCFG runner
@@ -607,6 +640,8 @@ export interface MelodyChordCtx {
     scalePcs: number[];
     /** Step C:本 chord 是否在 section 末(phrase ending)— true 则 emit 长 tonic 不跑 grammar */
     isPhraseEnd?: boolean;
+    /** Step 5:本 chord roman 级数(如 'V' / 'iv' / 'bVI')— 给 BRICK cadence detector 用 */
+    roman?: string;
 }
 
 export interface MelodyNote {
@@ -630,10 +665,29 @@ const MELODY_VELOCITY = 90;
  *
  * @returns melody NoteData[]
  */
+const DEFAULT_GRAMMAR_SELECTION: GrammarSelection = {
+    kind: 'def',
+    name: 'quarter-baseline',
+    def: DEFAULT_GRAMMAR,
+};
+
+/** Per-chord expand dispatch — hardcode → expandGrammar / real → expandGrammarData */
+function expandPerChord(
+    sel: GrammarSelection,
+    chordBeats: number,
+    rng: Random,
+    brickHint?: string,
+): GrammarToken[] {
+    if (sel.kind === 'def') return expandGrammar(sel.def, rng);
+    // Impro-Visor 标准:120 slots/beat,chord 长度转 totalSlots
+    const slots = Math.max(120, Math.round(chordBeats * 120));
+    return expandGrammarData(sel.data, slots, rng, brickHint);
+}
+
 export function generateMelody(
     chordCtxs: MelodyChordCtx[],
     rng: Random,
-    grammar: GrammarDef = DEFAULT_GRAMMAR,
+    grammar: GrammarSelection = DEFAULT_GRAMMAR_SELECTION,
     melodyLo: number = MELODY_LO_DEFAULT,
     melodyHi: number = MELODY_HI_DEFAULT,
 ): MelodyNote[] {
@@ -664,8 +718,11 @@ export function generateMelody(
             continue;
         }
 
-        // 非 phrase end:正常跑 grammar
-        const terminals = expandGrammar(grammar, rng);
+        // 非 phrase end:正常跑 grammar(real grammar 加 brick hint)
+        const brickHint = grammar.kind === 'data'
+            ? detectCadenceHint(cc.roman ?? '', nextCc?.roman ?? null)
+            : undefined;
+        const terminals = expandPerChord(grammar, cc.beats, rng, brickHint);
         // 时间累积 fill 到 chord beats(超出截断,不够循环 padding)
         let cursor = 0;
         let ti = 0;

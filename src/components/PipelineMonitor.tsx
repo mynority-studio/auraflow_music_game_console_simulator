@@ -28,7 +28,7 @@ import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionSto
 import { ImproStyleStore } from '../state/ImproStyleStore';
 import { ImproGrammarStore } from '../state/ImproGrammarStore';
 import { ALL_STYLE_NAMES } from '../core/generation/improCore/data/loaded';
-import { ALL_GRAMMAR_NAMES } from '../core/generation/improCore/algorithms/lick-gen';
+import { ALL_GRAMMAR_NAMES, ALL_GRAMMAR_DROPDOWN_NAMES } from '../core/generation/improCore/algorithms/lick-gen';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -438,19 +438,26 @@ export const PipelineMonitor: React.FC = () => {
                         <select
                             value={improGrammar}
                             onChange={(e) => switchImproGrammar(e.target.value)}
-                            title={`${ALL_GRAMMAR_NAMES.length} melody grammar 可选(影响 melody 节奏 + 选音风格)`}
+                            title={`${ALL_GRAMMAR_DROPDOWN_NAMES.length} melody grammar 可选 — ${ALL_GRAMMAR_NAMES.length} hardcode + ${ALL_GRAMMAR_DROPDOWN_NAMES.length - ALL_GRAMMAR_NAMES.length} Impro-Visor .grammar`}
                             className="ml-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px]"
                         >
-                            {ALL_GRAMMAR_NAMES.map(n => (
-                                <option key={n} value={n}>{n}</option>
-                            ))}
+                            <optgroup label={`Hardcoded (${ALL_GRAMMAR_NAMES.length})`}>
+                                {ALL_GRAMMAR_NAMES.map(n => (
+                                    <option key={n} value={n}>{n}</option>
+                                ))}
+                            </optgroup>
+                            <optgroup label={`Impro-Visor (${ALL_GRAMMAR_DROPDOWN_NAMES.length - ALL_GRAMMAR_NAMES.length})`}>
+                                {ALL_GRAMMAR_DROPDOWN_NAMES.slice(ALL_GRAMMAR_NAMES.length).map(n => (
+                                    <option key={n} value={n}>{n}</option>
+                                ))}
+                            </optgroup>
                         </select>
                     </>
                 )}
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
                     {engine === 'AF2'
                         ? 'POP-only · 5 slots active (no vocal)'
-                        : `${ALL_STYLE_NAMES.length} styles · ${ALL_GRAMMAR_NAMES.length} melody grammars · 4 tracks`}
+                        : `${ALL_STYLE_NAMES.length} styles · ${ALL_GRAMMAR_DROPDOWN_NAMES.length} grammars · 4 tracks`}
                 </span>
             </div>
 

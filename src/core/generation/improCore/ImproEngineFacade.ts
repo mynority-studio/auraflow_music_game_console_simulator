@@ -56,7 +56,7 @@ import { generateVoicing } from './algorithms/voicing-generator';
 import { applyChordPattern, type NoteEvent } from './algorithms/chord-pattern';
 import { applyBassPattern } from './algorithms/bass-pattern';
 import { applyDrumPattern } from './algorithms/drum-pattern';
-import { generateMelody, getGrammarByName, type MelodyChordCtx } from './algorithms/lick-gen';
+import { generateMelody, selectGrammarByName, type MelodyChordCtx } from './algorithms/lick-gen';
 import { ImproGrammarStore } from '../../../state/ImproGrammarStore';
 import { parseNoteName, getScalePcs } from './algorithms/note-utils';
 import {
@@ -497,6 +497,7 @@ export const ImproEngineFacade = {
                 colorPcs,
                 scalePcs: localScalePcs,
                 isPhraseEnd,
+                roman: step.roman,
             });
 
             // 3g. drum pattern
@@ -515,9 +516,9 @@ export const ImproEngineFacade = {
         const drums = drumEvents.map(noteEventToNoteData);
 
         // 4b. Step A:per-chord MelodyChordCtx → 一次性 generateMelody → NoteData[]
-        // Step B:从 ImproGrammarStore 取用户选的 grammar(6 个 hardcode 风格)
-        const grammar = getGrammarByName(ImproGrammarStore.getGrammarName());
-        const melodyEvents = generateMelody(melodyCtxs, melodyRng, grammar);
+        // Step 5:union grammar selection — 6 hardcode + 85 real .grammar(自动 dispatch)
+        const grammarSelection = selectGrammarByName(ImproGrammarStore.getGrammarName());
+        const melodyEvents = generateMelody(melodyCtxs, melodyRng, grammarSelection);
         const melody: NoteData[] = melodyEvents.map(e => ({
             pitch: e.pitch,
             onset: e.onset,
