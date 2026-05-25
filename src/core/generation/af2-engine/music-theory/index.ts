@@ -16,11 +16,11 @@
 //   tendency.ts      — KK / INTERVAL_AESTHETICS / Lerdahl / TENDENCY_TABLE
 //                      + evaluateNoteInChordContext
 //   tension-state.ts — TensionTracker / TensionState / evaluateTensionState
-//   audit.ts         — Harmonic perception + melody audit
-//   cadence.ts       — Cadence tier / phrase / tonic strength / DURATION_VALUES
 //
 // 调用方应优先 import 特定 topic 文件(e.g. './music-theory/midi'),也可
 // 用 barrel `import { X } from './music-theory'`(等价于本文件)。
+//
+// 2026-05-25 死代码清扫:删 audit.ts(整文件)/ cadence.ts(整文件)— 零外部 import。
 // ============================================================
 
 export * from './midi';
@@ -33,7 +33,5 @@ export * from './chord-color';
 export * from './voicing';
 export * from './tendency';
 export * from './tension-state';
-export * from './audit';
-export * from './cadence';
 export * from './spell';
 export * from './note-evaluator';

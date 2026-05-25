@@ -32,13 +32,16 @@ export interface SectionFilterContext {
     readonly isHighEnergy: boolean;
 }
 
-/** Per-musician filter 上下文(per-section per-musician 算 1 次,filter 链共享) */
+/**
+ * Per-musician filter 上下文(per-section per-musician 算 1 次,filter 链共享)。
+ *
+ * 注:isApex 和 prevRoles 不暴露(2026-05-25 死字段清扫)— plugin 只读
+ * 派生字段 apexException + prevActive。如未来 plugin 需要原始值,加回即可。
+ */
 export interface RoleFilterContext {
     readonly section: SectionMetadata;
     readonly sectionCtx: SectionFilterContext;
     readonly musician: Musician | undefined;
-    readonly prevRoles: ReadonlyArray<ConductorRole> | undefined;
-    readonly isApex: boolean;
     /** isApex && sectionCtx.isHighEnergy:WakeK / PeakK / Template / Energy filter bypass */
     readonly apexException: boolean;
     /** prevRoles !== undefined && prevRoles.length > 0 — Z3 continuity 检测 */
@@ -104,5 +107,5 @@ export function buildRoleFilterContext(
     const isApex = musician?.persona?.isApex === true;
     const apexException = isApex && sectionCtx.isHighEnergy;
     const prevActive = prevRoles !== undefined && prevRoles.length > 0;
-    return { section, sectionCtx, musician, prevRoles, isApex, apexException, prevActive };
+    return { section, sectionCtx, musician, apexException, prevActive };
 }

@@ -1,19 +1,11 @@
 // ============================================================
-// chord-color.ts — Resolution targets / global contract
+// chord-color.ts — Global contract(extended chord pcs)
 // ============================================================
 // Phase 6.1 拆分自 mg-engine/musicTheory.ts。
-// Sources: getResolutionTargets (L3412-3460) + computeGlobalContract (L3938-4024)。
-// CHORD_COLOR_DICTIONARY 见 chord-types.ts(避免循环依赖)。
+// 2026-05-25 死代码清扫:删 getResolutionTargets(零外部调用)。
 // ============================================================
 
 import { CHORD_TYPES } from './chord-types';
-import { INTERVAL_AESTHETICS } from './tendency';
-
-export function getResolutionTargets(intervalSemitones: number): number[] {
-  const pc = ((intervalSemitones % 12) + 12) % 12;
-  const rule = INTERVAL_AESTHETICS[pc];
-  return rule?.expectedResolutions ?? [];
-}
 
 // ------------------------------------------------------------------
 // Divisi 2.0 — Harmonic state machine middleware.
