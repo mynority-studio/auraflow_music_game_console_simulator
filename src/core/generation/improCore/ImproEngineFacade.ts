@@ -47,7 +47,7 @@ import { Af2KernelDriver, MG_TYPE_TO_QUALITY, POP_BPM } from '../af2-engine/Af2K
 import { Af2Arranger } from '../af2-engine/Af2Arranger';
 import { ChordQuality } from '../types';
 import { getChordVocab } from '../af2-engine/music-theory/chord-vocab';
-import { getStyleByName, CLOSED_HIGH_VOICING_SETTINGS } from './data/loaded';
+import { getStyleByName, getVoicingSettingsForType } from './data/loaded';
 import { ImproStyleStore } from '../../../state/ImproStyleStore';
 import type { StyleData, BassPattern, ChordPattern, DrumPattern } from './data/sty-parser';
 import { planHands } from './algorithms/hand-manager';
@@ -185,7 +185,9 @@ export const ImproEngineFacade = {
 
         // 3. ImproCore — per chord 跑 voicing + 3 pattern
         const style: StyleData = getCurrentStyle();
-        const settings = CLOSED_HIGH_VOICING_SETTINGS;
+        // ★ 根据 .sty voicing-type 字段路由 .fv preset(open / closed / quartal / shell)
+        //   每个 .sty 的 voicing 哲学不同 — voicing-type 是 .sty 设计意图,必须 respect
+        const settings = getVoicingSettingsForType(style.voicingType);
         // augment chord-pattern pool 加 arp/broken(原 .sty 全柱式 → 听感单一)
         const augmentedChordPatterns: ChordPattern[] = [
             ...style.chordPatterns,
