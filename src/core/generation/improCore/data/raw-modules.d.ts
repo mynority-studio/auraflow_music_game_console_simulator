@@ -14,3 +14,8 @@ declare module '*.fv?raw' {
   const content: string;
   export default content;
 }
+
+declare module '*.grammar?raw' {
+  const content: string;
+  export default content;
+}
