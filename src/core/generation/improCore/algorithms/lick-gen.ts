@@ -26,6 +26,7 @@
 // ============================================================
 
 import type { Random } from '../../af2-engine/utils/Random';
+import { placeNearMidi } from './note-utils';
 
 // ============================================================
 // Grammar 类型
@@ -50,59 +51,169 @@ export interface GrammarDef {
 }
 
 // ============================================================
-// 默认极简 grammar
+// 6 个风格化 hardcode grammar(Step B 第一版)
 // ============================================================
-// 4 个 4-beat melody 模板:中速 / 8 分流动 / 长持续 / 切分
-// 每 chord 跑一次 grammar(start P,总 4 beat 输出)
+// 每 grammar 是 per-4-beat motif pool。Q+H UI 切换 grammar 听不同 melody 风格。
+// 后续 Step B 第二版可搬真 .grammar 文件(BillEvans / Bach / 等)。
 // ============================================================
 
-const DEFAULT_GRAMMAR: GrammarDef = {
+const GRAMMAR_QUARTER_BASELINE: GrammarDef = {
     start: 'P',
     rules: [
-        // P → BRICK_4(4 beat 的 melody 片段)
         { head: 'P', body: ['BRICK_4'], weight: 1.0 },
-
-        // BRICK_4 — 4 beat 的几个旋律 motif
-        // 中速 quarter chord-tone motif
-        { head: 'BRICK_4', body: ['C4', 'L4', 'C4', 'L4'], weight: 0.20 },
-        // 8 分流动 — 多 chord-tone + 偶尔 color
-        { head: 'BRICK_4', body: ['C8', 'L8', 'C8', 'L8', 'C8', 'L8', 'C8', 'L8'], weight: 0.20 },
-        // 长持续 — half note 沉稳
-        { head: 'BRICK_4', body: ['C2', 'L2'], weight: 0.15 },
-        // 切分 — 强拍 chord + 偏 off 色彩
+        // 中速 quarter chord-tone
+        { head: 'BRICK_4', body: ['C4', 'L4', 'C4', 'L4'], weight: 0.25 },
+        // 长持续 half
+        { head: 'BRICK_4', body: ['C2', 'L2'], weight: 0.20 },
+        // 8 分流动
+        { head: 'BRICK_4', body: ['C8', 'L8', 'C8', 'L8', 'C8', 'L8', 'C8', 'L8'], weight: 0.15 },
+        // 切分
         { head: 'BRICK_4', body: ['C4', 'R8', 'L8', 'C4', 'L4'], weight: 0.15 },
-        // 16 分密集
-        { head: 'BRICK_4', body: ['C16', 'L16', 'C16', 'L16', 'C8', 'L4', 'C4'], weight: 0.10 },
-        // 短 + 留白
-        { head: 'BRICK_4', body: ['C4', 'R4', 'C4', 'R4'], weight: 0.10 },
-        // arp-ish chord run
+        // 短+留白
+        { head: 'BRICK_4', body: ['C4', 'R4', 'C4', 'R4'], weight: 0.15 },
+        // arp-ish run
         { head: 'BRICK_4', body: ['C8', 'C8', 'L8', 'C8', 'C8', 'L8', 'C8', 'C8'], weight: 0.10 },
     ],
 };
+
+const GRAMMAR_JAZZ_BEBOP: GrammarDef = {
+    start: 'P',
+    rules: [
+        { head: 'P', body: ['BRICK_4'], weight: 1.0 },
+        // 8 分密集流动 chord+color
+        { head: 'BRICK_4', body: ['C8', 'L8', 'C8', 'L8', 'C8', 'A8', 'C8', 'L8'], weight: 0.25 },
+        // 8 分 + 16 分混
+        { head: 'BRICK_4', body: ['C8', 'L8', 'C16', 'L16', 'C16', 'L16', 'C8', 'L8', 'C8'], weight: 0.20 },
+        // scale-degree run(直接 emit 3rd / 5th / 7th 度)
+        { head: 'BRICK_4', body: [['X', '3', '8'], ['X', '5', '8'], ['X', '7', '8'], 'L8', 'C4'], weight: 0.15 },
+        // approach + chord 切分
+        { head: 'BRICK_4', body: ['L8', 'A8', 'C4', 'L8', 'A8', 'C4'], weight: 0.15 },
+        // 8th triplet feel(简化:更密 8 分)
+        { head: 'BRICK_4', body: ['C8', 'L8', 'A8', 'C8', 'L8', 'A8', 'C8', 'L8'], weight: 0.15 },
+        // 长持续 + bebop 装饰
+        { head: 'BRICK_4', body: ['C2', 'L8', 'A8', 'C4'], weight: 0.10 },
+    ],
+};
+
+const GRAMMAR_BACH_CHORD_TONE: GrammarDef = {
+    start: 'P',
+    rules: [
+        { head: 'P', body: ['BRICK_4'], weight: 1.0 },
+        // chord-tone arpeggio(古典三和弦运动)
+        { head: 'BRICK_4', body: [['X', '1', '8'], ['X', '3', '8'], ['X', '5', '8'], ['X', '3', '8'], ['X', '1', '8'], ['X', '3', '8'], ['X', '5', '8'], ['X', '3', '8']], weight: 0.30 },
+        // 三度跳行
+        { head: 'BRICK_4', body: [['X', '1', '4'], ['X', '3', '4'], ['X', '5', '4'], ['X', '3', '4']], weight: 0.25 },
+        // 长 chord tone 持续
+        { head: 'BRICK_4', body: [['X', '1', '2'], ['X', '5', '2']], weight: 0.20 },
+        // 阶梯式
+        { head: 'BRICK_4', body: [['X', '1', '8'], ['X', '2', '8'], ['X', '3', '8'], ['X', '4', '8'], ['X', '5', '8'], ['X', '4', '8'], ['X', '3', '8'], ['X', '2', '8']], weight: 0.15 },
+        // 简朴 chord-tone whole
+        { head: 'BRICK_4', body: [['X', '1', '1']], weight: 0.10 },
+    ],
+};
+
+const GRAMMAR_CHROMATIC_COLOR: GrammarDef = {
+    start: 'P',
+    rules: [
+        { head: 'P', body: ['BRICK_4'], weight: 1.0 },
+        // color tone 主导
+        { head: 'BRICK_4', body: ['L8', 'L8', 'C8', 'L8', 'L8', 'C8', 'L8', 'L8'], weight: 0.25 },
+        // chromatic approach 密集
+        { head: 'BRICK_4', body: ['A8', 'C8', 'A8', 'L8', 'A8', 'C8', 'A8', 'L8'], weight: 0.20 },
+        // X random + color
+        { head: 'BRICK_4', body: ['X8', 'L8', 'X8', 'L8', 'X8', 'L8', 'X8', 'L8'], weight: 0.20 },
+        // 长 color + chromatic 修饰
+        { head: 'BRICK_4', body: ['L4', 'A8', 'L8', 'L4', 'A4'], weight: 0.20 },
+        // chord 锚 + 大量 chromatic
+        { head: 'BRICK_4', body: ['C4', 'A8', 'X8', 'L4', 'A4'], weight: 0.15 },
+    ],
+};
+
+const GRAMMAR_LONG_SPARSE: GrammarDef = {
+    start: 'P',
+    rules: [
+        { head: 'P', body: ['BRICK_4'], weight: 1.0 },
+        // whole 持续
+        { head: 'BRICK_4', body: ['C1'], weight: 0.30 },
+        // half + rest
+        { head: 'BRICK_4', body: ['C2', 'R2'], weight: 0.25 },
+        // 短 + 长 rest
+        { head: 'BRICK_4', body: ['C4', 'R2', 'R4'], weight: 0.20 },
+        // 全 rest(留白)
+        { head: 'BRICK_4', body: ['R1'], weight: 0.10 },
+        // 两 half
+        { head: 'BRICK_4', body: ['C2', 'L2'], weight: 0.15 },
+    ],
+};
+
+const GRAMMAR_SWING_SYNCOPATED: GrammarDef = {
+    start: 'P',
+    rules: [
+        { head: 'P', body: ['BRICK_4'], weight: 1.0 },
+        // 切分 8 分(off-beat 重音感)
+        { head: 'BRICK_4', body: ['R8', 'C8', 'C8', 'L8', 'R8', 'C8', 'L8', 'C8'], weight: 0.25 },
+        // dotted quarter + 8 切分
+        { head: 'BRICK_4', body: ['C4+8', 'L8', 'C4+8', 'L8'], weight: 0.20 },
+        // off-beat anchor
+        { head: 'BRICK_4', body: ['R8', 'C8', 'L4', 'R8', 'C8', 'L4'], weight: 0.20 },
+        // approach 切分
+        { head: 'BRICK_4', body: ['R8', 'A8', 'C4', 'R8', 'A8', 'C4'], weight: 0.20 },
+        // tied 长持续
+        { head: 'BRICK_4', body: ['C2+4', 'L4'], weight: 0.15 },
+    ],
+};
+
+/** 6 grammar Map — UI dropdown 用 */
+export const ALL_GRAMMARS_MAP: ReadonlyMap<string, GrammarDef> = new Map([
+    ['quarter-baseline', GRAMMAR_QUARTER_BASELINE],
+    ['jazz-bebop',       GRAMMAR_JAZZ_BEBOP],
+    ['bach-chord-tone',  GRAMMAR_BACH_CHORD_TONE],
+    ['chromatic-color',  GRAMMAR_CHROMATIC_COLOR],
+    ['long-sparse',      GRAMMAR_LONG_SPARSE],
+    ['swing-syncopated', GRAMMAR_SWING_SYNCOPATED],
+]);
+
+export const ALL_GRAMMAR_NAMES: ReadonlyArray<string> = Array.from(ALL_GRAMMARS_MAP.keys());
+
+export function getGrammarByName(name: string): GrammarDef {
+    return ALL_GRAMMARS_MAP.get(name) ?? GRAMMAR_QUARTER_BASELINE;
+}
+
+const DEFAULT_GRAMMAR: GrammarDef = GRAMMAR_QUARTER_BASELINE;
 
 // ============================================================
 // Grammar PCFG runner
 // ============================================================
 /**
- * Expand grammar 从 start 符号 → terminals(全 string atom)。
+ * Expand grammar 从 start 符号 → terminals(string atom 或 terminal list 如 (X 5 8))。
  * Weighted random rule pick,无 backtrack。
- * 简化:不限 step 数 / 不限 token 深度,信任 grammar 是 well-formed。
+ *
+ * Terminal list 识别:list head 若不是 grammar rule 的 head,treat 为 terminal(保留 list)。
+ * 这让 (X 5 8) (slope -3 5 C8) 等 list terminal 跟 atom terminal 平行存活到 out。
  */
-function expandGrammar(grammar: GrammarDef, rng: Random, maxIter: number = 1000): string[] {
-    const out: string[] = [];
+function expandGrammar(grammar: GrammarDef, rng: Random, maxIter: number = 1000): GrammarToken[] {
+    const out: GrammarToken[] = [];
     const stack: GrammarToken[] = [grammar.start];
+    const ruleHeads = new Set(grammar.rules.map(r => r.head));
     let iter = 0;
     while (stack.length > 0 && iter++ < maxIter) {
         const top = stack.pop()!;
         if (Array.isArray(top)) {
-            // nested list — flatten 到 stack 头(reverse 保 left-to-right 处理)
+            // 检查 list head 是否是 non-terminal(在 grammar.rules.heads 内)
+            const head = top[0];
+            if (typeof head === 'string' && !ruleHeads.has(head)) {
+                // head 不是 non-terminal → terminal list,保留 push 到 out
+                out.push(top);
+                continue;
+            }
+            // head 是 non-terminal 或空 → flatten 到 stack 头(reverse 保 left-to-right)
             for (let i = top.length - 1; i >= 0; i--) stack.push(top[i]!);
             continue;
         }
         // top 是 string atom — 找匹配规则
         const matchingRules = grammar.rules.filter(r => r.head === top);
         if (matchingRules.length === 0) {
-            // 没规则匹配 = terminal,push 到 out
+            // 没规则匹配 = terminal atom,push 到 out
             out.push(top);
             continue;
         }
@@ -254,38 +365,75 @@ export function chooseNote(
 }
 
 // ============================================================
-// Terminal parser(C8 / L4 / R8 → 类型 + 时值)
+// Terminal parser(C8 / L4 / R8 / A8 / (X 5 8) → 类型 + 时值)
 // ============================================================
 /**
- * 解析 grammar terminal token:
- *   C4   chord tone, quarter note
- *   L8   color tone, eighth
- *   R8   rest, eighth
- *   X4   random, quarter
- *   S4   scale, quarter
- *
- * 返:{ type: 0/1/2/3, isRest, beats }
+ * 解析 grammar terminal:
+ *   atom string:
+ *     C4   chord tone, quarter
+ *     L8   color tone, eighth
+ *     X4   random, quarter
+ *     S4   scale, quarter
+ *     A8   approach tone(±1 半音进入 next chord root)
+ *     R8   rest
+ *   list:
+ *     (X N dur)   scale-degree N(chord 第 N 度)at dur
  */
 interface ParsedTerminal {
-    type: number;       // 0=CHORD 1=COLOR 2=RANDOM 3=SCALE
+    type: number;                  // 0=CHORD 1=COLOR 2=RANDOM 3=SCALE
     isRest: boolean;
     beats: number;
+    isApproach: boolean;           // A token
+    scaleDegree?: number;          // (X N dur) token
 }
 
-function parseTerminal(token: string): ParsedTerminal | null {
+function parseTerminal(token: GrammarToken): ParsedTerminal | null {
+    if (Array.isArray(token)) {
+        // list terminal:(X N dur) = scale-degree
+        if (token.length >= 3 && token[0] === 'X') {
+            const degree = parseInt(token[1] as string, 10);
+            const beats = parseTerminalDuration(token[2] as string);
+            if (isNaN(degree) || beats <= 0) return null;
+            return { type: 0, isRest: false, beats, isApproach: false, scaleDegree: degree };
+        }
+        // (slope ...) / 其他 list — 第一版不支持,跳过
+        return null;
+    }
+    // atom string
     if (!token) return null;
     const ch = token[0]!;
     const durStr = token.slice(1);
     const beats = parseTerminalDuration(durStr);
     if (beats <= 0) return null;
     switch (ch) {
-        case 'C': return { type: 0, isRest: false, beats };
-        case 'L': return { type: 1, isRest: false, beats };
-        case 'X': return { type: 2, isRest: false, beats };
-        case 'S': return { type: 3, isRest: false, beats };
-        case 'R': return { type: 0, isRest: true, beats };
+        case 'C': return { type: 0, isRest: false, beats, isApproach: false };
+        case 'L': return { type: 1, isRest: false, beats, isApproach: false };
+        case 'X': return { type: 2, isRest: false, beats, isApproach: false };
+        case 'S': return { type: 3, isRest: false, beats, isApproach: false };
+        case 'A': return { type: 1, isRest: false, beats, isApproach: true };
+        case 'R': return { type: 0, isRest: true, beats, isApproach: false };
         default:  return null;
     }
+}
+
+/** scale degree → chord spell array index(简化:1→0 / 3→1 / 5→2 / 7→3 / 9→4 / 11→5 / 13→6) */
+const SPELL_IDX_BY_DEGREE: Record<number, number> = {
+    1: 0, 3: 1, 5: 2, 7: 3, 9: 4, 11: 5, 13: 6,
+};
+/** fallback degree → major scale interval(用于 spell 不够时) */
+const MAJOR_SCALE_INTERVAL: Record<number, number> = {
+    1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11,
+    9: 14, 11: 17, 13: 21,
+};
+
+function scaleDegreeToPc(degree: number, chordSpellPcs: number[], chordRootPc: number): number {
+    const idx = SPELL_IDX_BY_DEGREE[degree];
+    if (idx !== undefined && idx < chordSpellPcs.length) {
+        return chordSpellPcs[idx]!;
+    }
+    // fallback major scale
+    const iv = MAJOR_SCALE_INTERVAL[degree] ?? 0;
+    return (((chordRootPc + iv) % 12) + 12) % 12;
 }
 
 /** 简化 duration parser — 只支持 '4' / '8' / '16' / '2' / '1' + 'n+m' tied */
@@ -309,6 +457,8 @@ export interface MelodyChordCtx {
     startBeat: number;
     /** chord 拍长 */
     beats: number;
+    /** ABSOLUTE chord root pc 0-11(已加 keyOffset)— 给 scale-degree 计算用 */
+    rootPc: number;
     /** ABSOLUTE chord tone pcs 0-11(已加 keyOffset) */
     spellPcs: number[];
     /** ABSOLUTE color tone pcs */
@@ -346,7 +496,9 @@ export function generateMelody(
     const out: MelodyNote[] = [];
     let prevMidi = Math.floor((melodyLo + melodyHi) / 2);  // 72 ≈ C5 起点
 
-    for (const cc of chordCtxs) {
+    for (let ci = 0; ci < chordCtxs.length; ci++) {
+        const cc = chordCtxs[ci]!;
+        const nextCc = chordCtxs[ci + 1] ?? null;
         if (cc.beats <= 0) continue;
         // expand grammar 一次得到 terminal 序列
         const terminals = expandGrammar(grammar, rng);
@@ -366,15 +518,36 @@ export function generateMelody(
                 cursor += noteBeats;
                 continue;
             }
-            const pitch = chooseNote(
-                parsed.type,
-                cc.spellPcs,
-                cc.colorPcs,
-                prevMidi,
-                melodyLo,
-                melodyHi,
-                rng,
-            );
+
+            let pitch: number;
+            // C 扩展 1:(X N dur) scale-degree — 直接 emit chord 第 N 度
+            if (parsed.scaleDegree !== undefined) {
+                const targetPc = scaleDegreeToPc(parsed.scaleDegree, cc.spellPcs, cc.rootPc);
+                pitch = placeNearMidi(targetPc, prevMidi, melodyLo, melodyHi);
+            }
+            // C 扩展 2:A approach — ±1 半音进入 next chord root
+            else if (parsed.isApproach && nextCc) {
+                const nextRoot = nextCc.rootPc;
+                const belowPc = ((nextRoot - 1) + 12) % 12;
+                const abovePc = (nextRoot + 1) % 12;
+                const belowMidi = placeNearMidi(belowPc, prevMidi, melodyLo, melodyHi);
+                const aboveMidi = placeNearMidi(abovePc, prevMidi, melodyLo, melodyHi);
+                pitch = Math.abs(belowMidi - prevMidi) <= Math.abs(aboveMidi - prevMidi)
+                    ? belowMidi : aboveMidi;
+            }
+            // A 路径 baseline:C/L/X/S 走 NoteChooser
+            else {
+                pitch = chooseNote(
+                    parsed.type,
+                    cc.spellPcs,
+                    cc.colorPcs,
+                    prevMidi,
+                    melodyLo,
+                    melodyHi,
+                    rng,
+                );
+            }
+
             out.push({
                 pitch,
                 onset: cc.startBeat + cursor,

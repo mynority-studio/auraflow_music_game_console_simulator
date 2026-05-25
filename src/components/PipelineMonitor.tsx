@@ -26,7 +26,9 @@ import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSou
 import { BandSelectionStore } from '../state/BandSelectionStore';
 import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionStore';
 import { ImproStyleStore } from '../state/ImproStyleStore';
+import { ImproGrammarStore } from '../state/ImproGrammarStore';
 import { ALL_STYLE_NAMES } from '../core/generation/improCore/data/loaded';
+import { ALL_GRAMMAR_NAMES } from '../core/generation/improCore/algorithms/lick-gen';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -154,6 +156,11 @@ export const PipelineMonitor: React.FC = () => {
     const switchImproStyle = useCallback((name: string) => {
         ImproStyleStore.setStyleName(name);
         setImproStyleState(name);
+    }, []);
+    const [improGrammar, setImproGrammarState] = useState<string>(() => ImproGrammarStore.getGrammarName());
+    const switchImproGrammar = useCallback((name: string) => {
+        ImproGrammarStore.setGrammarName(name);
+        setImproGrammarState(name);
     }, []);
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
@@ -417,21 +424,33 @@ export const PipelineMonitor: React.FC = () => {
                     Impro
                 </button>
                 {engine === 'Impro' && (
-                    <select
-                        value={improStyle}
-                        onChange={(e) => switchImproStyle(e.target.value)}
-                        title={`${ALL_STYLE_NAMES.length} styles 可选`}
-                        className="ml-2 bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60 max-w-[140px]"
-                    >
-                        {ALL_STYLE_NAMES.map(n => (
-                            <option key={n} value={n}>{n}</option>
-                        ))}
-                    </select>
+                    <>
+                        <select
+                            value={improStyle}
+                            onChange={(e) => switchImproStyle(e.target.value)}
+                            title={`${ALL_STYLE_NAMES.length} styles 可选(accomp/bass/drum 节奏型 + voicing-type → .fv preset)`}
+                            className="ml-2 bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60 max-w-[140px]"
+                        >
+                            {ALL_STYLE_NAMES.map(n => (
+                                <option key={n} value={n}>{n}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={improGrammar}
+                            onChange={(e) => switchImproGrammar(e.target.value)}
+                            title={`${ALL_GRAMMAR_NAMES.length} melody grammar 可选(影响 melody 节奏 + 选音风格)`}
+                            className="ml-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px]"
+                        >
+                            {ALL_GRAMMAR_NAMES.map(n => (
+                                <option key={n} value={n}>{n}</option>
+                            ))}
+                        </select>
+                    </>
                 )}
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
                     {engine === 'AF2'
                         ? 'POP-only · 5 slots active (no vocal)'
-                        : `${ALL_STYLE_NAMES.length} styles · piano + bass + drums (no melody)`}
+                        : `${ALL_STYLE_NAMES.length} styles · ${ALL_GRAMMAR_NAMES.length} melody grammars · 4 tracks`}
                 </span>
             </div>
 

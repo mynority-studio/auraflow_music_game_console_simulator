@@ -55,7 +55,8 @@ import { generateVoicing } from './algorithms/voicing-generator';
 import { applyChordPattern, type NoteEvent } from './algorithms/chord-pattern';
 import { applyBassPattern } from './algorithms/bass-pattern';
 import { applyDrumPattern } from './algorithms/drum-pattern';
-import { generateMelody, type MelodyChordCtx } from './algorithms/lick-gen';
+import { generateMelody, getGrammarByName, type MelodyChordCtx } from './algorithms/lick-gen';
+import { ImproGrammarStore } from '../../../state/ImproGrammarStore';
 import { parseNoteName } from './algorithms/note-utils';
 
 export interface ImproGenerateResult {
@@ -287,6 +288,7 @@ export const ImproEngineFacade = {
             melodyCtxs.push({
                 startBeat: step.startBeat,
                 beats: chordBeats,
+                rootPc: absRootPc,
                 spellPcs,
                 colorPcs,
             });
@@ -307,7 +309,9 @@ export const ImproEngineFacade = {
         const drums = drumEvents.map(noteEventToNoteData);
 
         // 4b. Step A:per-chord MelodyChordCtx → 一次性 generateMelody → NoteData[]
-        const melodyEvents = generateMelody(melodyCtxs, melodyRng);
+        // Step B:从 ImproGrammarStore 取用户选的 grammar(6 个 hardcode 风格)
+        const grammar = getGrammarByName(ImproGrammarStore.getGrammarName());
+        const melodyEvents = generateMelody(melodyCtxs, melodyRng, grammar);
         const melody: NoteData[] = melodyEvents.map(e => ({
             pitch: e.pitch,
             onset: e.onset,
