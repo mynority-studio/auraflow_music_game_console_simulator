@@ -23,6 +23,75 @@
 
 ---
 
+## 0.5 需求评估守则(动手前必做)
+
+**核心原则**:每次需求评估,**先做一次综合判断**,避免一开始就走偏 — 把通用的写进
+专用文件 → 多处重复同步;把专用的写进 utils → 污染共享层。3 个必答问题:
+
+### Q1:这是通用改动还是专用改动?
+
+| 改动范围 | 该改哪 |
+|---|---|
+| **1 个 musician 卡专用** | `idioms/MusicianRegistry.ts` 卡内 `persona` / `af2Overrides` |
+| **1 个 mgStyle 专用**(POP/JAZZ/RNB/BLUES) | per-style 配置表(Arranger `SECTION_POOLS_BY_STYLE` / AccompGen `STYLE_TEXTURE_POOL` / Composer `DEFAULT_VOICING_MODE_BY_STYLE` / drum-grid / `FILL_STYLES_BY_STYLE` 等) |
+| **1 个 sectionType 专用**(Intro/Verse/Chorus 等) | per-sectionType 池(`SECTION_POOLS` / `SECTION_SLICE_POOL` / `phraseContourBias` 等) |
+| **1 个 plugin 内部细节** | 该 plugin 文件(`plugins/<layer>/Xxx.ts`) |
+| **≥ 2 处复用**(跨 plugin / 跨 idiom) | 抽 `utils/*.ts` 或 `music-theory/*.ts` |
+| **跨 layer 协议**(改 plugin 元数据 / 改 PRNG 协议 / 改 IR) | 改 core 协议 + 更新本规则对应章节 + §12 跨同步登记表新增条目 |
+
+**错位惩罚**:
+- 通用逻辑写进专用文件 → 多处重复同步,改一处漏一处(本会话 §13 已遇 7 次)
+- 专用配置写进 utils → 污染共享层,模糊"哪些是 invariant / 哪些是 tunable"
+
+### Q2:是否已有重复实现?
+
+动手前 grep 类似公式 / helper / 配置:
+
+```bash
+# hash 公式(plugin 内常见 deterministic gate)
+grep -rn "& 0xff" src/core/generation/af2-engine/
+
+# velocity clamp([0.1, 1.0] 全系统统一)
+grep -rn "Math.max(0.1, Math.min(1" src/core/generation/af2-engine/
+
+# pitch class normalization
+grep -rn "((.*% 12) + 12) % 12" src/core/generation/af2-engine/
+
+# per-style 配置表(看哪些已存在,加新 mgStyle 时全部同步)
+grep -rn "Record<MgStyle" src/core/generation/af2-engine/
+
+# musician override 字段消费者
+grep -rn "af2Overrides\." src/core/generation/af2-engine/
+```
+
+存在 → **复用 / 扩展**(prefer 复用);**严禁第二份独立实现**。
+不存在但 Q1 答"≥ 2 处复用" → 抽到 utils,这次实现就抽。
+
+### Q3:PRNG 影响评估
+
+| 改动 | 必须做 |
+|---|---|
+| 加 `rng.next()` / `rng.pick()` 调用 | 同 seed 输出会变 → 必须更新该 plugin metadata `prngConsumption`;'locked' plugin 必须**保占位**(条件分支跳过也要 `rng.next()`,见 DynamicHarmonyDecorator lockType ceremony) |
+| 减 `rng.next()` 调用 | 同上,绝不要直接删除;改 plugin 协议为 `'zero'` 并改用 deterministic hash gate |
+| 改 hash gate 公式 | 同 seed bit-exact 改变 → 听感 4 mgStyle 重新对账(POP/JAZZ/RNB/BLUES) |
+| 加新 plugin 用 PRNG | metadata 明文标 `'zero'` / `'locked'` / `'forked'`,选 `'forked'` 派 `${seed}::name` sub-stream 不污染主流 |
+
+### 反例清单(本会话审计踩到的)
+
+| 反例 | 修复 |
+|---|---|
+| GM Drum 键位散落 4 个 override 文件 | 抽 `plugins/drum/constants.ts` |
+| `(h * 31 + 17) & 0xff` 重复 3 处 | 抽 `utils/hash-utils.ts` `hashApplyPersonaPass(h)` |
+| `Math.max(0.1, Math.min(1, v))` 重复 4 处 | 抽 `utils/velocity.ts` `clampVelocity(v)` |
+| `classifyPhraseRole` 重复 3 个 Planner | 抽 `utils/phrase-role.ts` |
+| `romanHead` 重复 2 个 Planner | 抽 `utils/roman.ts` |
+| `MINOR_TO_MAJOR_TYPE` 重复 2 文件 | 抽 `utils/minor-major-type.ts` |
+| `phraseIdx + h` 在 AccompGen.pickTextureType 算两遍 | hoist 到函数顶 |
+
+**走完 3 问 + grep**,从源头避免"已经做过的事再做一遍"。
+
+---
+
 ## 1. 总览:8 层架构 + 7/8 层 plugin 化
 
 ### 1.1 数据流(顶层)
@@ -70,6 +139,143 @@
 | 8 | GM128 装配 | thin priority chain | — |
 
 7 / 8 层显式 core+plugin。余下 3 thin 层(BandEngine / Dispatcher / GM128)是 framework seam,不值得拆。
+
+### 1.3 全景树状图(core + plugin 职责)
+
+每个 layer 的 core / plugin 全清单 + 一句话职责。详细 PRNG / 触发条件 / 改 X 去哪改见 §3-§10 各 layer 章节。
+
+```
+┌─ Layer 1: BandEngine ──────────────────────────────────────────────────────────┐
+│ Core                                                                            │
+│   BandSelectionStore + MusicianRegistry  从 9 张 musician 卡选 5 槽位 Band      │
+│ Plugin: 无(thin selector,无算法决策)                                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 2: Conductor ───────────────────────────────────────────────────────────┐
+│ Core                                                                            │
+│   buildDefaultByMusician          全员上岗,1 musician → 1 default role         │
+│   pickConductorTemplate           per-mgStyle template variant 抽(seed hash) │
+│ Plugin chain(DEFAULT_ROLE_FILTERS,5 RoleFilter,全 'zero' PRNG)              │
+│   1. WakeKGate                    K < wakeK → silent(apex 例外 + Z3 ±0.15)   │
+│   2. PeakKGate                    K > peakK → silent(apex 例外 + Z3 ±0.15)   │
+│   3. StyleTemplateFilter          per-mgStyle template INTERSECTION(apex 例外)│
+│   4. EnergyFilter                 energy 密度档 INTERSECTION(apex 例外)       │
+│   5. MusicianPrefFilter           musician.sectionRolePreference INTERSECTION  │
+│                                   (不 bypass apex,尊重 user 意图)             │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 3: Arranger ────────────────────────────────────────────────────────────┐
+│ Core                                                                            │
+│   arrange() 主循环                per-section 从池抽进行 + 拼接 skeleton        │
+│   SECTION_POOLS_BY_STYLE          Major 进行池(per mgStyle × sectionType)    │
+│   SECTION_POOLS_BY_STYLE_MINOR    Minor 镜像池                                  │
+│   SUB_STYLE_PROGRESSIONS          per-sub-style 优先池(P5 阶段)              │
+│ Plugin chain(DEFAULT_PROGRESSION_PLANNERS,4 Planner,全 'forked' PRNG)       │
+│   1. BorrowChordPlanner           Modal interchange(7 rule × 3 source × 5 防呆)│
+│   2. PicardyPlanner               Minor only:phrase end i→I picardy 3rd       │
+│   3. MinorBorrowPlanner           Minor only:iv→IV / bVI→VI parallel-major   │
+│   4. TonicizationPlanner          secondary ii-V(4 placement × target mult)  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 4: Composer ────────────────────────────────────────────────────────────┐
+│ Core                                                                            │
+│   compose() 主循环                per step + look-ahead next → ChordDef[]      │
+│   assembleVoicing                 per-mgStyle voicing mode(FULL/ROOTLESS/etc)│
+│   placeVoicingMidi                voice-leading + chord range placement        │
+│   spellPcInKey / midiToNoteInChord  音名拼写                                   │
+│ Plugin(2)                                                                       │
+│   1. DynamicHarmonyDecorator      chord-type decoration('locked' 2-3 PRNG):  │
+│                                   lockType ceremony + colorLevel + TSD dict +  │
+│                                   Sub-V tritone + data-debt guard              │
+│   2. VoicingSmoother              R+S2 post-pass voice leading('zero'):      │
+│                                   inversion candidates + phrase-arc bonus      │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 5: Dispatcher ──────────────────────────────────────────────────────────┐
+│ Core                                                                            │
+│   dispatchMusicians()             按顺序调用 musician,累积 peers              │
+│   调用顺序                        melody → bass → accomp → drums → pad        │
+│ Plugin: 无(thin orchestrator,调用顺序由 framework 硬编)                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 6: 4 musician idiom ────────────────────────────────────────────────────┐
+│                                                                                 │
+│ 6.1 PianoIdiom(planMelody / planAccomp / planBass 3 method)                   │
+│   Core sub-orchestrator                                                         │
+│     Af2MelodyGen                  chord-tone melody 主循环(role gate + cycle  │
+│                                   [root,5,3,7] + placeNearAnchor + 边界 clamp) │
+│     Af2AccompGen                  accomp 主循环(pickTextureType phrase-lock +│
+│                                   ChordTextureEngine dispatch + velocity persona)│
+│   Plugin: Melody 6 + Accomp 3 post-pass(全 'zero' PRNG)                       │
+│     Melody(per slot 决策):                                                    │
+│       1. RhythmPatternPicker      per-mgStyle rhythm pool + persona 加权       │
+│       2. PhraseContourShaper      per-sectionType MIDI bias(arch/up/down)    │
+│       3. PassingToneSelector      chromatic passing 50% gate + diatonic 选音 │
+│       4. PhraseEndingDecider      section 末 chord 短 pickup + 长 tonic       │
+│       5. SparsityGate             per-slot 删音                                │
+│       6. VelocityHumanizer        per-slot velocity 浮动                       │
+│     Accomp post-pass(链式调用):                                              │
+│       1. MelodyDensityDucker      melody 密 ×0.6 / 稀 ×1.15(对话感)          │
+│       2. SwingApplier             per-mgStyle 直拍 8th and swing               │
+│       3. MicroTimingHumanizer     同 onset cluster strum micro-delay           │
+│                                                                                 │
+│ 6.2 BassIdiom(atomic,不拆 plugin)                                            │
+│   Core                                                                          │
+│     plan() 主循环                  walking pattern + swing + accents + jitter  │
+│     WALK_PATTERNS                  per-pattern 节奏型(`data/BassWalkPatterns`)│
+│     DEFAULT_WALK_PATTERN_BY_STYLE  per-mgStyle 默认 walking                    │
+│     SWING_RATIO_BY_PATTERN         per-pattern swing 比例                      │
+│   Plugin: 无(254 行紧凑,拆 plugin 性价比低)                                  │
+│                                                                                 │
+│ 6.3 DrumIdiom(orchestrator + 3 Modifier + 5 Override)                          │
+│   Core                                                                          │
+│     renderSection 主循环           per-step 16th grid + energy 双轴缩放 +      │
+│                                   PRNG 3 gate(kick/snare/hihat)+ emit       │
+│     drum-grid                     per-mgStyle grid(POP/JAZZ/BLUES/RNB)       │
+│     SWING_RATIO_BY_STYLE          per-mgStyle drum swing                       │
+│     plugins/drum/constants.ts     GM Drum Map 键位常量                         │
+│   Plugin                                                                        │
+│     Modifier(3,pre-PRNG,顺序敏感,全 'zero'):                                │
+│       1. PersonaSparsity          全 probs × (1 - sparsity * 0.4)             │
+│       2. CrossTrackModifier       bass strong → kick floor / chord sync → snare│
+│       3. PersonaSyncopation       16th off-beat → snare boost                  │
+│     Override(5,post-PRNG,前 4 互斥 + 第 5 独立,全 'zero'):                 │
+│       1. BreakOverride            next Drop + 末 1/4 bar → 全静音(优先级最高)│
+│       2. CrashOverride            段首 + crash section/高能 → Crash + kick     │
+│       3. FillOverride             section transition 末 1 bar(5 fill style)  │
+│       4. RideOverride             very high + 偶数 step + hihat → Ride        │
+│       5. OpenHihatOverride        高能 + and-of-4 + hihat → Open Hihat(独立) │
+│                                                                                 │
+│ 6.4 PadIdiom(atomic,不拆 plugin)                                             │
+│   Core                                                                          │
+│     plan() 主循环                  voicing slice + attack pre-roll + velocity ramp│
+│     SECTION_SLICE_POOL            per-sectionType slice mode 池(Low/Mid/High)│
+│     atmosphereOverrides 消费       musician 卡 5 字段 wire                     │
+│   Plugin: 无(308 行紧凑,拆 plugin 性价比低)                                  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 7: Reconciler(无 core,纯 plugin 集合)─────────────────────────────────┐
+│ Core: 无                                                                        │
+│ Plugin(3,Facade Step 5.5-5.7 顺序调用,全 'zero' PRNG)                        │
+│   1. EnergyHumanizer              段落能量驱动 velocity                         │
+│                                   (energy 1→×0.70 / 5→×1.00 / 10→×1.10)     │
+│                                   作用轨:melody / accomp / bass                │
+│   2. CollisionDamper              accomp 撞 bass(<60)/melody(≥60)同 PC+   │
+│                                   同 onset → ×0.5(只 damp accomp)           │
+│   3. DropBuildupDynamics          Drop kind 缩放 + BuildUp 末 bar velocity ramp│
+│                                   作用轨:melody / bass / accomp / pad         │
+│                                   (drums 跳过,DrumIdiom 内部已感知)          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Layer 8: GM128 装配 ──────────────────────────────────────────────────────────┐
+│ Core(thin priority chain)                                                      │
+│   Facade Step 6b                  优先级:                                       │
+│                                   forcedGmPrograms > musician.gmProgramOverride│
+│                                   > musician.defaultSound > AF2 idiom 默认     │
+│ Plugin: 无                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
