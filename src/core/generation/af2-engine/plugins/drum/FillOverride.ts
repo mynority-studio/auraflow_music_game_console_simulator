@@ -24,14 +24,7 @@
 
 import type { MgStyle } from '../../../../../state/EngineSelectionStore';
 import type { DrumOverride, DrumHitState, DrumOverrideContext, FillStyle } from './types';
-
-const DRUM_KICK = 36;
-const DRUM_SNARE = 38;
-const DRUM_TOM_HI = 50;
-const DRUM_TOM_MID = 47;
-const DRUM_TOM_LO = 45;
-const DRUM_CRASH = 49;
-const DRUM_RIDE = 51;
+import { DRUM_TOM_HI, DRUM_TOM_MID, DRUM_TOM_LO, DRUM_CRASH, DRUM_RIDE } from './constants';
 
 export const FILL_STYLES_BY_STYLE: Record<MgStyle, ReadonlyArray<FillStyle>> = {
     POP:   ['tom', 'snare_roll'],

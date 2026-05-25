@@ -17,8 +17,8 @@
 // ============================================================
 
 import type { DrumOverride, DrumHitState, DrumOverrideContext } from './types';
+import { DRUM_OPEN_HIHAT } from './constants';
 
-const DRUM_OPEN_HIHAT = 46;
 const AND_OF_4_STEP = 14;
 const OPEN_HIHAT_VEL_BOOST = 1.1;
 

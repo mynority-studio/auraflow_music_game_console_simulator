@@ -18,8 +18,7 @@
 // ============================================================
 
 import type { DrumOverride, DrumHitState, DrumOverrideContext } from './types';
-
-const DRUM_CRASH = 49;
+import { DRUM_CRASH } from './constants';
 
 export const CrashOverride: DrumOverride = {
     name: 'CrashOverride',

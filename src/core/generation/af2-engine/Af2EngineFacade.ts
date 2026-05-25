@@ -58,9 +58,7 @@ import { PianoIdiom } from './instruments/PianoIdiom';
 import { BassIdiom } from './instruments/BassIdiom';
 import { PadGenerator, PadIdiom } from './instruments/PadIdiom';
 import { DrumGenerator } from './instruments/DrumIdiom';
-import { EnergyHumanizer } from './plugins/reconciler/EnergyHumanizer';
-import { CollisionDamper } from './plugins/reconciler/CollisionDamper';
-import { DropBuildupDynamics } from './plugins/reconciler/DropBuildupDynamics';
+import { EnergyHumanizer, CollisionDamper, DropBuildupDynamics } from './plugins/reconciler';
 // C.1 + C.2 + C.4:Score 数据契约 + Conductor 分谱层(DynamicConductor 默认,
 // per-section 模板编排;StaticConductor 保留作 fallback)
 import type { Score } from './Score';

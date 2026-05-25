@@ -35,11 +35,7 @@ import {
     pickFillStyle,
 } from '../plugins/drum';
 import type { DrumHitState, DrumOverrideContext, DrumModifierContext } from '../plugins/drum';
-
-/** GM Drum Map 物理键位(orchestrator 默认 + plugin 共享常量) */
-const DRUM_KICK = 36;
-const DRUM_SNARE = 38;
-const DRUM_CLOSED_HIHAT = 42;
+import { DRUM_KICK, DRUM_SNARE, DRUM_CLOSED_HIHAT } from '../plugins/drum/constants';
 
 /** 击点固定时长(32 分音符,attack-only,GM Drum 自带 envelope) */
 const HIT_DURATION = 0.125;
