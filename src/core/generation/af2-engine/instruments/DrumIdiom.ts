@@ -76,6 +76,38 @@ const CRASH_SECTION_TYPES: ReadonlySet<SectionType> = new Set([
     SectionType.BuildUp,
 ]);
 
+/**
+ * Y 阶段(2026-05-25):per-mgStyle drum swing ratio
+ * 影响 16-step grid 内 sub-step 的 onset 位置(8th off-beat 推后)。
+ *
+ *   POP   0.50 — 直拍
+ *   JAZZ  0.66 — triplet swing(8th 第二个推到 0.66 拍)
+ *   BLUES 0.66 — shuffle(12/8 类似 jazz swing)
+ *   RNB   0.50 — 直 16th(neo-soul 神经质来自 syncopate 不是 swing)
+ *
+ * 公式:per beat 4 sub-steps onset 位置:
+ *   subStep 0: 0
+ *   subStep 1: swing/2     (16th e,strong 跟 off-beat 之间 1/2)
+ *   subStep 2: swing       (8th and,off-beat 主位)
+ *   subStep 3: swing + (1-swing)/2 (16th a,off-beat 跟 next strong 1/2)
+ *
+ * 直拍(swing=0.5)= [0, 0.25, 0.5, 0.75] — 跟原行为一致
+ * Jazz(swing=0.66)= [0, 0.33, 0.66, 0.83] — 8th 摆动 triplet feel
+ */
+const SWING_RATIO_BY_STYLE: Record<MgStyle, number> = {
+    POP:   0.50,
+    JAZZ:  0.66,
+    BLUES: 0.66,
+    RNB:   0.50,
+};
+
+function stepOnsetWithinBeat(subStep: number, swingRatio: number): number {
+    if (subStep === 0) return 0;
+    if (subStep === 1) return swingRatio / 2;
+    if (subStep === 2) return swingRatio;
+    return swingRatio + (1 - swingRatio) / 2;  // subStep === 3
+}
+
 export const DRUM_INSTRUMENT_SPEC = {
     eligibleSlots: [BandRole.Drums] as const,
 } as const;
@@ -205,7 +237,7 @@ export const DrumGenerator = {
             renderSection(
                 out, section, nextSection, grid, beatsPerMeasure,
                 bassNotes as NoteData[], chordNotes as NoteData[], rng,
-                sparsity, syncopation,
+                sparsity, syncopation, mgStyle,
             );
         }
 
@@ -229,6 +261,7 @@ function renderSection(
     rng: Random,
     sparsity: number = 0,
     syncopation: number = 0,
+    mgStyle: MgStyle = 'POP',
 ): void {
     const startBeat = section.startBeat;
     const sectionBeats = section.endBeat - startBeat;
@@ -261,10 +294,17 @@ function renderSection(
     const gridLen = grid.grid.length;
     const stepsPerBar = STEPS_PER_BAR;  // 16
 
+    // Y 阶段:swing-aware step onset(JAZZ/BLUES 8th 摆动 triplet feel)
+    const swingRatio = SWING_RATIO_BY_STYLE[mgStyle] ?? 0.5;
+
     for (let stepIdx = 0; stepIdx < totalSteps; stepIdx++) {
         const cellIdx = stepIdx % gridLen;
         const cell = grid.grid[cellIdx];
-        const stepBeat = startBeat + stepIdx / STEPS_PER_BEAT;
+        // Y 阶段:swing-aware stepBeat(POP/RNB swing=0.5 跟原行为一致,
+        // JAZZ/BLUES swing=0.66 让 8th 第二个推后到 0.66 拍)
+        const beatBase = Math.floor(stepIdx / STEPS_PER_BEAT);
+        const subStep = stepIdx % STEPS_PER_BEAT;
+        const stepBeat = startBeat + beatBase + stepOnsetWithinBeat(subStep, swingRatio);
         const barStart = startBeat + Math.floor(stepIdx / stepsPerBar) * beatsPerMeasure;
 
         // ----------------------------------------------------------
