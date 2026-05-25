@@ -113,7 +113,8 @@ src/core/generation/
 │  ├─ Af2EngineFacade.ts          ← 顶层入口(runPipeline 调)
 │  ├─ Conductor.ts                ← 编排决策 core(template + DynamicConductor.dispatch;5 层 filter 2026-05-25 拆到 plugins/conductor/)
 │  ├─ plugins/conductor/          ← 5 RoleFilter plugin chain(WakeK / PeakK / Template / Energy / Pref + types + index)
-│  ├─ Af2Arranger.ts              ← 进行决策(section-aware + ii-V/Sub-V/iv 注入)
+│  ├─ Af2Arranger.ts              ← 进行决策 orchestrator(core 抽进行 + 4 plugin chain;2026-05-25 framework 化)
+│  ├─ plugins/arranger/           ← 4 ProgressionPlanner plugin(BorrowChord / Picardy / MinorBorrow / Tonicization)
 │  ├─ Af2Composer.ts              ← orchestrator(主循环 + assembleVoicing + placeVoicingMidi)
 │  ├─ plugins/composer/           ← DynamicHarmonyDecorator(decoration)+ VoicingSmoother(R+S2 post-pass,2026-05-25)
 │  ├─ Dispatcher.ts               ← 调用顺序 bass→accomp→drums→melody→pad

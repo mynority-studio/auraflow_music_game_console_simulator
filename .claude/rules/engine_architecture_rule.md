@@ -48,15 +48,21 @@
 │   → SectionAssignment[](per section per musician → roles)     │
 └────────────────────────────────────────────────────────────────┘
         ↓
-┌─ 3. Arranger ─────────────────────────────────────────────────┐
-│ af2-engine/Af2Arranger.ts                                      │
-│   per section:从 SECTION_POOLS_BY_STYLE[mgStyle][sectionType] │
-│     抽进行 → 累积成全曲 abstractPath                            │
-│   L 阶段(2026-05-24)2 planner 双 pass:                       │
-│     · BorrowChordPlanner — 7 rule × 3 source 锁定 × 5 防呆    │
-│       (POP 0.45/3 | JAZZ 0.35/4 | RNB 0.55/5 | BLUES 0)       │
-│     · TonicizationPlanner — 4 placement × target mult × cooldown│
-│       (POP 0.30/2 | JAZZ 0.65/4 | RNB 0.40/3 | BLUES 0)       │
+┌─ 3. Arranger(core 抽进行 + 4 ProgressionPlanner plugin chain)─┐
+│ af2-engine/Af2Arranger.ts — orchestrator(2026-05-25 framework 化)│
+│   per section:SECTION_POOLS_BY_STYLE[mgStyle][sectionType]    │
+│     抽进行 → 累积成全曲 skeleton(core)                       │
+│   plugins/arranger/ DEFAULT_PROGRESSION_PLANNERS 链(顺序敏感):│
+│     1. BorrowChordPlanner   — Modal interchange(7 rule × 3 source)│
+│        POP 0.45/3 | JAZZ 0.35/4 | RNB 0.55/5 | BLUES 0/0       │
+│     2. PicardyPlanner       — Minor only:phrase end i→I       │
+│        POP 0.30 | JAZZ 0.20 | RNB 0.25 | BLUES 0.10            │
+│     3. MinorBorrowPlanner   — Minor only:iv→IV / bVI→VI       │
+│        POP 2/3 | JAZZ 3/3 | RNB 3/3 | BLUES 0/0                │
+│     4. TonicizationPlanner  — 4 placement × target mult × cooldown│
+│        POP 0.30/2 | JAZZ 0.65/4 | RNB 0.40/3 | BLUES 0/0       │
+│   各 plugin shouldApply 自决(Minor only 自动跳 Major 调)     │
+│   全 'forked' PRNG(各 plugin 独立 sub-stream 不污染主流)      │
 │   → Af2AbstractStep[](roman + type + rootOffset)             │
 └────────────────────────────────────────────────────────────────┘
         ↓
@@ -135,6 +141,10 @@
 | 和弦进行池(per mgStyle × sectionType) | `af2-engine/Af2Arranger.ts` 的 `SECTION_POOLS_BY_STYLE` | 任何其他位置硬编 progression |
 | Modal interchange(7 rule × 3 source) | `af2-engine/BorrowChordPlanner.ts` 的 `RULES` / `STYLE_BORROW_PROB` / `STYLE_MAX_BORROWS_PER_SONG` | 不要散到 Arranger / Composer |
 | Tonicization / 二级属(4 placement) | `af2-engine/TonicizationPlanner.ts` 的 `STYLE_TONICIZE_PROB` / `STYLE_PLACEMENT_WEIGHTS` / `TARGET_MULT` | 不要散到 Arranger / Composer |
+| Picardy 3rd ending(Minor only) | `af2-engine/PicardyPlanner.ts` 的 `STYLE_PICARDY_PROB` + `MINOR_TO_MAJOR_TYPE` | 不要在 Arranger 内 inline 替换 |
+| Minor parallel-major borrow(iv→IV / bVI→VI) | `af2-engine/MinorBorrowPlanner.ts` 的 `STYLE_IV/VI_BORROW_PROB` + `STYLE_MAX_MINOR_BORROWS_PER_SONG` | 不要散 |
+| Arranger 4 Planner 链顺序 / 启停 | `af2-engine/plugins/arranger/index.ts` 的 `DEFAULT_PROGRESSION_PLANNERS` 数组(2026-05-25 framework) | 不要 fork Arranger.arrange 跳过某 plugin |
+| Arranger 4 Planner plugin 适配器 | `af2-engine/plugins/arranger/{BorrowChord,Picardy,MinorBorrow,Tonicization}PlannerPlugin.ts`(thin wrappers,2026-05-25) | 实际算法在原 BorrowChordPlanner.ts 等 — 改算法去那里改 |
 | Voicing 算法 / placeVoicingMidi | `af2-engine/music-theory/voicing.ts`(+ `Af2Composer.ts` 调用层) | 不要在各 Idiom 重写 voicing |
 | Dynamic TSD chord type 字典(Look-ahead) | `af2-engine/DynamicHarmony.ts` 的 `DYNAMIC_TSD_DICTIONARY` + `COLOR_LEVEL_PROBABILITIES` + `analyzeTargetQuality` | 不要散到 Composer / Arranger |
 | Sub-V tritone substitution 触发 | `af2-engine/DynamicHarmony.ts` 的 rule.`tritoneProb` + `plugins/composer/DynamicHarmonyDecorator.ts` 内 Sub-V override(2026-05-25 拆 plugin) | 不要在 Arranger borrow 处做 |
@@ -272,9 +282,12 @@ af2-engine/             ← 唯一活跃引擎
 ├─ Score.ts             ← 总谱契约
 ├─ Conductor.ts         ← 编排决策 core(template + DynamicConductor.dispatch)
 ├─ plugins/conductor/   ← 5 RoleFilter plugin chain(WakeK/PeakK/Template/Energy/Pref + types.ts + index.ts)
-├─ Af2Arranger.ts       ← 进行决策 + 接 2 planner
-├─ BorrowChordPlanner.ts← Modal interchange(7 rule × 3 source 锁定)
-├─ TonicizationPlanner.ts← Tonicization(4 placement × target mult)
+├─ Af2Arranger.ts       ← 进行决策 orchestrator(core 抽进行 + 调 plugin chain)
+├─ plugins/arranger/    ← 4 ProgressionPlanner plugin(thin wrapper,2026-05-25 framework)
+├─ BorrowChordPlanner.ts← Modal interchange 算法(7 rule × 3 source 锁定)
+├─ PicardyPlanner.ts    ← Picardy 3rd ending 算法(Minor only)
+├─ MinorBorrowPlanner.ts← Minor parallel-major borrow 算法(iv→IV / bVI→VI)
+├─ TonicizationPlanner.ts← Tonicization 算法(4 placement × target mult)
 ├─ DynamicHarmony.ts    ← TSD 字典 + Sub-V(Composer Look-ahead 用)
 ├─ Af2Composer.ts       ← orchestrator(主循环 + assembleVoicing + placeVoicingMidi)
 ├─ plugins/composer/    ← DynamicHarmonyDecorator(chord-type decoration)+ VoicingSmoother(R+S2 post-pass)

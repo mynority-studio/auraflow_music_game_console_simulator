@@ -25,12 +25,11 @@ import type { Random } from './utils/Random';
 import type { MgStyle } from '../../../state/EngineSelectionStore';
 import { SectionType } from '../types';
 import type { SectionMetadata } from '../types';
-import { planBorrowedChords, type BorrowSource } from './BorrowChordPlanner';
-import { planTonicization } from './TonicizationPlanner';
-import { planPicardyEndings } from './PicardyPlanner';
-import { planMinorBorrows } from './MinorBorrowPlanner';
+import type { BorrowSource } from './BorrowChordPlanner';
 import { SUB_STYLE_PROGRESSIONS } from './SubStyleProgressions';
 import type { SubStyle } from './SubStyleTextures';
+import { DEFAULT_PROGRESSION_PLANNERS } from './plugins/arranger';
+import type { ProgressionPlannerContext } from './plugins/arranger';
 
 /**
  * 5-way classification of chromatic / non-diatonic chords —
@@ -500,24 +499,31 @@ function getSectionPool(
 }
 
 // ============================================================
-// L 阶段(2026-05-24):Modal interchange + Tonicization 双 pass
+// L+K3+K4+L 阶段:ProgressionPlanner plugin chain(2026-05-25 framework 化)
 // ============================================================
 //
-// 替换原 augmentProgression(简化 3 分支)→ 接 mg 移植的 2 planner:
+// 原 4 Planner(BorrowChord / Picardy / MinorBorrow / Tonicization)散落在
+// orchestrator 内 if-else 块,现统一为 plugins/arranger/* plugin chain:
 //
-//   BorrowChordPlanner:7 rule × 3 source 锁定 × 5 道防呆(603 行)
-//     POP 0.45 / JAZZ 0.35 / RNB 0.55 / BLUES 0,per-song max 3/4/5/0 次
+//   1. BorrowChordPlanner   — Modal interchange(7 rule × 3 source × 5 防呆)
+//                              POP 0.45/3 / JAZZ 0.35/4 / RNB 0.55/5 / BLUES 0/0
+//   2. PicardyPlanner       — Minor only:phrase ending i→I picardy 3rd
+//                              POP 0.30 / JAZZ 0.20 / RNB 0.25 / BLUES 0.10
+//   3. MinorBorrowPlanner   — Minor only:iv→IV / bVI→VI(parallel-major borrow)
+//                              POP 2/3 / JAZZ 3/3 / RNB 3/3 / BLUES 0/0
+//   4. TonicizationPlanner  — 4 placement × per-target mult × chain cooldown
+//                              POP 0.30/2 / JAZZ 0.65/4 / RNB 0.40/3 / BLUES 0/0
 //
-//   TonicizationPlanner:4 placement × per-target mult × chain cooldown(505 行)
-//     POP 0.30 / JAZZ 0.65 / RNB 0.40 / BLUES 0,per-song max 2/4/3/0 次
+// 顺序敏感:Borrow 先(给 Tonicize 看 borrow 后 target)/ Picardy 早于 MinorBorrow
+// (Picardy lockType=true 不被 MinorBorrow 二次处理)/ Tonicize 末位(看最终 skeleton)。
 //
-// 顺序:raw skeleton → borrow → tonicize → output
-// (borrow 先,因为 tonicize 看 borrow 输出决定是否 approach borrowed target)
+// 改 plugin 顺序 / 加新 plugin / 禁某 plugin = 改 plugins/arranger/index.ts 一行数组。
+// 各 plugin shouldApply 自决(Minor only 自动跳过 Major 调)。
 // ============================================================
 
 /**
- * L 阶段 planner 配置 — 由 KernelDriver / Facade 注入。
- * 未传则不跑 planner(向后兼容 arrangeByBars / 老 callsite)。
+ * 4 Planner chain 的 orchestrator 配置 — 由 KernelDriver / Facade 注入。
+ * 未传则不跑 chain(向后兼容 arrangeByBars / 老 callsite)。
  */
 export interface ArrangePlannerOptions {
     /** PRNG 子流(`${seed}::borrow`) */
@@ -573,54 +579,28 @@ export const Af2Arranger = {
                 out.push({ ...chosen[bar % chosen.length] });
             }
         }
-        // L+K3 阶段:接 mg 移植的 planner 链
+        // L+K3+K4+L 阶段:ProgressionPlanner plugin chain
+        //   4 plugin 按 DEFAULT_PROGRESSION_PLANNERS 顺序跑(2026-05-25 framework 化)
+        //   各 plugin shouldApply 自决(Minor only 自动跳 Major 调)
         if (plannerOptions) {
-            const { borrowRng, tonicizeRng, borrowSource, songKeyRootPc } = plannerOptions;
-            const motifInterval = plannerOptions.motifInterval ?? 4;
-            const mode = plannerOptions.mode ?? 'Maj/Ionian';
-            // Pass 1:Modal Interchange(Major 调,Minor short-circuit)
-            out = planBorrowedChords({
-                skeleton: out,
+            const ctx: ProgressionPlannerContext = {
                 style: mgStyle,
-                motifInterval,
-                random: borrowRng,
+                motifInterval: plannerOptions.motifInterval ?? 4,
                 beatsPerMeasure,
-                mode,
-                borrowSource,
-            });
-            // Pass 2(K3):Picardy 3rd ending(Minor only)
-            //   Minor 调 borrow short-circuit 后,用 Picardy 给 phrase ending
-            //   提供"sad → hope"修辞;Major 调 picardyRng 未消费(prob short-circuit)
-            if (isMinor && plannerOptions.picardyRng) {
-                out = planPicardyEndings({
-                    skeleton: out,
-                    style: mgStyle,
-                    motifInterval,
-                    random: plannerOptions.picardyRng,
-                });
+                songKeyRootPc: plannerOptions.songKeyRootPc,
+                mode: plannerOptions.mode ?? 'Maj/Ionian',
+                isMinor,
+                borrowSource: plannerOptions.borrowSource,
+                borrowRng: plannerOptions.borrowRng,
+                tonicizeRng: plannerOptions.tonicizeRng,
+                picardyRng: plannerOptions.picardyRng,
+                minorBorrowRng: plannerOptions.minorBorrowRng,
+            };
+            for (const plugin of DEFAULT_PROGRESSION_PLANNERS) {
+                if (plugin.shouldApply(ctx)) {
+                    out = plugin.apply(out, ctx);
+                }
             }
-            // Pass 3(K4):Minor parallel-major borrow(Minor only)
-            //   M2 iv→IV(Dorian flavor)+ M3 bVI→VI(chromatic mediant);
-            //   Picardy 之后跑,这样 Picardy 已锁的 i→I 不再被本 planner 二次处理
-            //   (它们 lockType=true)。
-            if (isMinor && plannerOptions.minorBorrowRng) {
-                out = planMinorBorrows({
-                    skeleton: out,
-                    style: mgStyle,
-                    motifInterval,
-                    random: plannerOptions.minorBorrowRng,
-                });
-            }
-            // Pass 4:Tonicization(4 placement × target mult × cooldown)
-            //   Minor-aware:m7b5 + 7b9 配 Phrygian Dominant scale
-            out = planTonicization({
-                skeleton: out,
-                style: mgStyle,
-                motifInterval,
-                random: tonicizeRng,
-                beatsPerMeasure,
-                songKeyRootPc,
-            });
         }
         return out;
     },
