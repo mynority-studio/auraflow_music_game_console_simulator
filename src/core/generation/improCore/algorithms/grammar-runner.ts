@@ -75,35 +75,43 @@ function evalExpr(expr: GrammarToken, bindings: Map<string, number>): number | u
  *   params(如 (P Y))接受 — 把 arg bind 到 params[0]
  *
  * 返:[(rule, bindings)]。base rules 排在前(优先 termination match)。
+ *
+ * @param brickHint  可选 — 当 head='BRICK' 时,优先 match builtin.name === brickHint 的 rules
+ *                   未匹配 fallback 所有 BRICK rules(weighted random,跟普通 rule 一致)
  */
 function findMatchingRules(
     grammar: GrammarData,
     head: string,
     arg: number | undefined,
+    brickHint?: string,
 ): Array<{ rule: GrammarRule; bindings: Map<string, number> }> {
     const out: Array<{ rule: GrammarRule; bindings: Map<string, number> }> = [];
 
     // base rules first(termination 优先)
     for (const rule of grammar.baseRules) {
         if (rule.head !== head) continue;
-        // base rule 的 headFixedArg 一般是固定数值(如 (P 0)),要严格 match arg
         if (rule.headFixedArg !== undefined && rule.headFixedArg !== arg) continue;
-        // base rule 无 params(典型 (P 0) 没变量),不 bind
         out.push({ rule, bindings: new Map() });
     }
 
     // recursive rules
     for (const rule of grammar.rules) {
         if (rule.head !== head) continue;
-        // headFixedArg match
         if (rule.headFixedArg !== undefined && rule.headFixedArg !== arg) continue;
-        // params bind:(P Y) 期待传入 arg,绑给 Y
         const bindings = new Map<string, number>();
         if (rule.params.length > 0 && arg !== undefined) {
             bindings.set(rule.params[0]!, arg);
         }
         out.push({ rule, bindings });
     }
+
+    // BRICK 优先 match builtin.name === brickHint
+    if (head === 'BRICK' && brickHint && out.length > 0) {
+        const matched = out.filter(m => m.rule.builtin?.name === brickHint);
+        if (matched.length > 0) return matched;
+        // 无 hint match → fallback 全 BRICK rules(原 out)
+    }
+
     return out;
 }
 
@@ -130,6 +138,8 @@ function pickWeightedRule(
 interface RunnerState {
     /** Motif sharing — (share Name) 缓存 expansion,后续同名 (share Name) 用缓存 */
     sharedMotifs: Map<string, GrammarToken[]>;
+    /** 当前 brick name hint(给 BRICK rule 优先 match builtin.name 用) */
+    brickHint?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -236,7 +246,7 @@ function expandToken(
             const argExpr = token[1]!;
             arg = evalExpr(argExpr, bindings);
         }
-        const matches = findMatchingRules(grammar, head, arg);
+        const matches = findMatchingRules(grammar, head, arg, state.brickHint);
         const picked = pickWeightedRule(matches, rng);
         if (!picked) {
             // 无 rule 匹配(可能 arg ≤ 0 但没有 base rule)— 终止
@@ -267,17 +277,40 @@ function expandToken(
  * @param totalSlots   起始 Y 值(典型一 chord 4 beat = 480 slots,Impro-Visor 标准:120 slots/beat)
  * @param rng          AF2 Random
  */
+/**
+ * @param brickHint  可选 — 当前 chord cadence type(给 BRICK rule 优先 match)
+ *                   典型 4 种:'Authentic-Cadence' / 'Plagal-Cadence' /
+ *                              'Deceptive-Cadence' / 'Half-Cadence'
+ *                   未 hint 或 hint 无匹配 → fallback 全 BRICK rules weighted random
+ */
 export function expandGrammarData(
     grammar: GrammarData,
     totalSlots: number,
     rng: Random,
+    brickHint?: string,
 ): GrammarToken[] {
     const out: GrammarToken[] = [];
     const initialToken: GrammarToken = [grammar.startSymbol, String(totalSlots)];
     const bindings = new Map<string, number>();
-    const state: RunnerState = { sharedMotifs: new Map() };
+    const state: RunnerState = { sharedMotifs: new Map(), brickHint };
     expandToken(initialToken, grammar, bindings, rng, out, state, 0);
     return out;
+}
+
+/**
+ * 简化版 cadence detector — per chord 看 curr/next chord roman 估 brick name。
+ * 只 cover 4 个经典 cadence。其他返 undefined,grammar fallback 全 BRICK random。
+ */
+export function detectCadenceHint(currRoman: string, nextRoman: string | null): string | undefined {
+    const stripRoman = (r: string): string => r.replace(/^[b#n]+/, '').match(/^[IVivXx]+/)?.[0] ?? '';
+    const cr = stripRoman(currRoman);
+    const nr = nextRoman ? stripRoman(nextRoman) : '';
+
+    if (cr === 'V' && (nr === 'I' || nr === 'i')) return 'Authentic-Cadence';
+    if (cr === 'V' && nr === 'vi') return 'Deceptive-Cadence';
+    if ((cr === 'IV' || cr === 'iv') && (nr === 'I' || nr === 'i')) return 'Plagal-Cadence';
+    if (cr === 'V' && !nextRoman) return 'Half-Cadence';
+    return undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────
