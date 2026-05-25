@@ -124,6 +124,15 @@ function pickWeightedRule(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Runner state(motif sharing + fill counter)
+// ─────────────────────────────────────────────────────────────────
+
+interface RunnerState {
+    /** Motif sharing — (share Name) 缓存 expansion,后续同名 (share Name) 用缓存 */
+    sharedMotifs: Map<string, GrammarToken[]>;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Expansion
 // ─────────────────────────────────────────────────────────────────
 
@@ -135,6 +144,7 @@ function pickWeightedRule(
  * @param bindings    变量绑定(从父 rule 继承)
  * @param rng         AF2 Random
  * @param out         terminal tokens 累积
+ * @param state       runner state(share/unshare motif state)
  * @param depth       递归深度(防爆栈)
  */
 function expandToken(
@@ -143,6 +153,7 @@ function expandToken(
     bindings: Map<string, number>,
     rng: Random,
     out: GrammarToken[],
+    state: RunnerState,
     depth: number,
 ): void {
     if (depth > 500) return;  // safeguard
@@ -159,14 +170,17 @@ function expandToken(
         const picked = pickWeightedRule(matches, rng);
         if (!picked) { out.push(token); return; }
         for (const child of picked.rule.body) {
-            expandToken(child, grammar, picked.bindings, rng, out, depth + 1);
+            expandToken(child, grammar, picked.bindings, rng, out, state, depth + 1);
         }
         return;
     }
 
     // list — could be:
-    //   1. (head arg) — rule invocation(head 在 grammar rules 内)
-    //   2. terminal list — (X N dur) / (slope MIN MAX ...) / (- Y N) 等
+    //   1. (share Name)   — motif sharing(缓存 expansion 给下次同名 share 用)
+    //   2. (unshare Name) — 清除缓存
+    //   3. (fill N expr)  — fill operator(expand expr,N 当 hint)
+    //   4. (head arg)     — rule invocation
+    //   5. terminal list  — (X N dur) / (slope ...) 等
     if (token.length < 1) {
         out.push(token);
         return;
@@ -174,6 +188,42 @@ function expandToken(
     const head = token[0];
     if (typeof head !== 'string') {
         out.push(token);
+        return;
+    }
+
+    // (share Name) — motif sharing
+    if (head === 'share' && token.length >= 2) {
+        const motifName = token[1];
+        if (typeof motifName === 'string') {
+            const cached = state.sharedMotifs.get(motifName);
+            if (cached) {
+                // 用缓存(motif coherence)
+                for (const t of cached) out.push(t);
+            } else {
+                // expand 一次,缓存,emit
+                const sub: GrammarToken[] = [];
+                expandToken(motifName, grammar, bindings, rng, sub, state, depth + 1);
+                state.sharedMotifs.set(motifName, sub);
+                for (const t of sub) out.push(t);
+            }
+        }
+        return;
+    }
+
+    // (unshare Name) — 清除缓存,后续 fire Name 重新随机
+    if (head === 'unshare' && token.length >= 2) {
+        const motifName = token[1];
+        if (typeof motifName === 'string') {
+            state.sharedMotifs.delete(motifName);
+        }
+        return;
+    }
+
+    // (fill N expr) — fill operator
+    //   简化版:expand expr 一次,忽略 N(原 Impro-Visor 用 N 当 expr 内 Y arg,
+    //   我们当前不支持上下文 Y rebind,fallback 走 expr 原 Y bindings)
+    if (head === 'fill' && token.length >= 3) {
+        expandToken(token[2]!, grammar, bindings, rng, out, state, depth + 1);
         return;
     }
 
@@ -197,7 +247,7 @@ function expandToken(
             picked.bindings.set(picked.rule.params[0]!, arg);
         }
         for (const child of picked.rule.body) {
-            expandToken(child, grammar, picked.bindings, rng, out, depth + 1);
+            expandToken(child, grammar, picked.bindings, rng, out, state, depth + 1);
         }
         return;
     }
@@ -225,7 +275,8 @@ export function expandGrammarData(
     const out: GrammarToken[] = [];
     const initialToken: GrammarToken = [grammar.startSymbol, String(totalSlots)];
     const bindings = new Map<string, number>();
-    expandToken(initialToken, grammar, bindings, rng, out, 0);
+    const state: RunnerState = { sharedMotifs: new Map() };
+    expandToken(initialToken, grammar, bindings, rng, out, state, 0);
     return out;
 }
 
