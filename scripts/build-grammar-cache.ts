@@ -38,30 +38,40 @@ function bodyToFingerprint(body: GrammarToken[]): string {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Compiled JSON 格式
+// Compiled JSON 格式 v2(2026-05-26 Step 8.2:short keys + 默认值省略)
 // ─────────────────────────────────────────────────────────────────
+//
+// 紧凑 schema 设计:
+//   - short keys:h/b/w/a/p/ib/bn(对应 head/bodyId/weight/headFixedArg/params/isBase/builtinName)
+//   - 默认值省略:
+//       w=1.0   → 省(grammar 中 default weight 比例极高)
+//       ib=false → 省(只 base rule 标 ib:1)
+//       a=undefined → 省(只 BRICK rule 有 headFixedArg)
+//       p=[]    → 省(只 P Y / Q Y 类 recursive rule 有 params)
+//       bn=undefined → 省(只 BRICK rule 有 builtin)
+//   - builtin.type 总是 'brick' 在所有 grammar 文件 → 不存,reconstruct 时硬编
 
-interface CompiledRule {
-    head: string;
-    params?: string[];
-    headFixedArg?: number;
-    bodyId: number;            // 总是 pool 索引(全 rule 去重)
-    weight: number;
-    isBase?: boolean;
-    builtin?: { type: string; name: string };
+interface CompactRuleV2 {
+    h: string;
+    b: number;
+    w?: number;
+    a?: number;
+    p?: string[];
+    ib?: 1;
+    bn?: string;
 }
 
-interface CompiledGrammar {
-    version: 1;
-    name: string;
-    parameters: Array<[string, string | number | boolean]>;
-    startSymbol: string;
-    rules: CompiledRule[];
-    baseRules: CompiledRule[];
+interface CompactGrammarV2 {
+    v: 2;
+    n: string;       // name
+    p: Array<[string, string | number | boolean]>;  // parameters
+    s: string;       // startSymbol
+    r: CompactRuleV2[];     // rules
+    br: CompactRuleV2[];    // baseRules
 }
 
 interface CompiledIndex {
-    version: 1;
+    version: 2;
     grammars: string[];
     poolBodyCount: number;
     builtAt: string;
@@ -127,31 +137,33 @@ console.log(`  pool.txt: ${(poolText.length / 1024).toFixed(1)} KB (${bodyFinger
 // Phase 3: write per-grammar compiled JSON
 // ─────────────────────────────────────────────────────────────────
 
-function compileRule(r: GrammarRule): CompiledRule {
+function compileRule(r: GrammarRule): CompactRuleV2 {
     const fp = bodyToFingerprint(r.body);
     const bodyId = fpToBodyId.get(fp);
     if (bodyId === undefined) throw new Error(`internal: rule body not in pool: ${fp.slice(0, 60)}`);
-    const out: CompiledRule = {
-        head: r.head,
-        bodyId,
-        weight: r.weight,
+    const out: CompactRuleV2 = {
+        h: r.head,
+        b: bodyId,
     };
-    if (r.params.length > 0) out.params = r.params;
-    if (r.headFixedArg !== undefined) out.headFixedArg = r.headFixedArg;
-    if (r.isBase) out.isBase = true;
-    if (r.builtin) out.builtin = r.builtin;
+    // 默认值省略 — 极大幅 raw size 缩减
+    if (r.weight !== 1.0) out.w = r.weight;
+    if (r.headFixedArg !== undefined) out.a = r.headFixedArg;
+    if (r.params.length > 0) out.p = r.params;
+    if (r.isBase) out.ib = 1;
+    // builtin.type 在 grammar 文件中始终 'brick',只存 name
+    if (r.builtin) out.bn = r.builtin.name;
     return out;
 }
 
 let totalGrammarJsonSize = 0;
 for (const { name, parsed: p } of parsed) {
-    const compiled: CompiledGrammar = {
-        version: 1,
-        name,
-        parameters: [...p.parameters.entries()],
-        startSymbol: p.startSymbol,
-        rules: p.rules.map(compileRule),
-        baseRules: p.baseRules.map(compileRule),
+    const compiled: CompactGrammarV2 = {
+        v: 2,
+        n: name,
+        p: [...p.parameters.entries()],
+        s: p.startSymbol,
+        r: p.rules.map(compileRule),
+        br: p.baseRules.map(compileRule),
     };
     const json = JSON.stringify(compiled);
     writeFileSync(join(OUT_DIR, `${name}.json`), json);
@@ -164,7 +176,7 @@ console.log(`  per-grammar JSON: ${(totalGrammarJsonSize / 1024).toFixed(1)} KB 
 // ─────────────────────────────────────────────────────────────────
 
 const index: CompiledIndex = {
-    version: 1,
+    version: 2,
     grammars: parsed.map(e => e.name).sort(),
     poolBodyCount: bodyFingerprints.length,
     builtAt: new Date().toISOString(),

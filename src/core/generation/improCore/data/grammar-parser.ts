@@ -245,26 +245,27 @@ export function parseGrammar(src: string, name: string): GrammarData {
 
 import { readSexpr } from './sexpr-reader';
 
-// Compiled JSON 格式 — 与 scripts/build-grammar-cache.ts 同步
-interface CompiledRule {
-    head: string;
-    params?: string[];
-    headFixedArg?: number;
-    bodyId: number;
-    weight: number;
-    isBase?: boolean;
-    builtin?: { type: string; name: string };
+// Compiled JSON 格式 v2(2026-05-26 Step 8.2:short keys + 默认值省略)
+// 与 scripts/build-grammar-cache.ts 同步
+interface CompactRuleV2 {
+    h: string;       // head
+    b: number;       // bodyId
+    w?: number;      // weight(默认 1.0)
+    a?: number;      // headFixedArg
+    p?: string[];    // params(默认 [])
+    ib?: 1;          // isBase(默认 false)
+    bn?: string;     // builtin.name(builtin.type 总 'brick')
 }
-interface CompiledGrammar {
-    version: 1;
-    name: string;
-    parameters: Array<[string, string | number | boolean]>;
-    startSymbol: string;
-    rules: CompiledRule[];
-    baseRules: CompiledRule[];
+interface CompactGrammarV2 {
+    v: 2;
+    n: string;
+    p: Array<[string, string | number | boolean]>;
+    s: string;
+    r: CompactRuleV2[];
+    br: CompactRuleV2[];
 }
 interface CompiledIndex {
-    version: 1;
+    version: 2;
     grammars: string[];
     poolBodyCount: number;
     builtAt: string;
@@ -317,23 +318,23 @@ async function loadBodyPool(): Promise<readonly GrammarToken[][]> {
     return _bodyPoolInflight;
 }
 
-/** Reconstruct GrammarData from compiled JSON + 共享 pool。语义与 parseGrammar 输出一致。 */
-function reconstructGrammarData(compiled: CompiledGrammar, pool: readonly GrammarToken[][]): GrammarData {
-    function expandRule(r: CompiledRule): GrammarRule {
-        const body = pool[r.bodyId];
-        if (!body) throw new Error(`[ImproCore] bodyId ${r.bodyId} out of pool (size ${pool.length})`);
+/** Reconstruct GrammarData from compiled JSON v2 + 共享 pool。语义与 parseGrammar 输出一致。 */
+function reconstructGrammarData(compiled: CompactGrammarV2, pool: readonly GrammarToken[][]): GrammarData {
+    function expandRule(r: CompactRuleV2): GrammarRule {
+        const body = pool[r.b];
+        if (!body) throw new Error(`[ImproCore] bodyId ${r.b} out of pool (size ${pool.length})`);
         return {
-            head: r.head,
-            params: r.params ?? [],
+            head: r.h,
+            params: r.p ?? [],
             body,
-            weight: r.weight,
-            builtin: r.builtin,
-            headFixedArg: r.headFixedArg,
-            isBase: r.isBase ?? false,
+            weight: r.w ?? 1.0,                              // default weight = 1.0
+            builtin: r.bn !== undefined ? { type: 'brick', name: r.bn } : undefined,  // type 总是 'brick'
+            headFixedArg: r.a,
+            isBase: r.ib === 1,                               // default false
         };
     }
-    const rules = compiled.rules.map(expandRule);
-    const baseRules = compiled.baseRules.map(expandRule);
+    const rules = compiled.r.map(expandRule);
+    const baseRules = compiled.br.map(expandRule);
 
     // 重建 head 索引(与 parseGrammar 同逻辑)
     const rulesByHead = new Map<string, GrammarRule[]>();
@@ -353,9 +354,9 @@ function reconstructGrammarData(compiled: CompiledGrammar, pool: readonly Gramma
     }
 
     return {
-        name: compiled.name,
-        parameters: new Map(compiled.parameters),
-        startSymbol: compiled.startSymbol,
+        name: compiled.n,
+        parameters: new Map(compiled.p),
+        startSymbol: compiled.s,
         rules,
         baseRules,
         rulesByHead,
@@ -380,7 +381,7 @@ export async function loadGrammarByName(name: string): Promise<GrammarData> {
             _grammarInflight.delete(name);
             throw new Error(`[ImproCore] compiled grammar fetch failed: ${name} (HTTP ${resp.status})`);
         }
-        const compiled = await resp.json() as CompiledGrammar;
+        const compiled = await resp.json() as CompactGrammarV2;
         const data = reconstructGrammarData(compiled, pool);
         _grammarCache.set(name, data);
         _grammarInflight.delete(name);

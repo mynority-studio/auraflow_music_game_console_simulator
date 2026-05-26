@@ -27,22 +27,23 @@ const COMPILED_DIR = 'public/grammars-compiled';
 // 复制 grammar-parser.ts 里的 reconstruct 逻辑(node 端无法 fetch)
 // ─────────────────────────────────────────────────────────────────
 
-interface CompiledRule {
-    head: string;
-    params?: string[];
-    headFixedArg?: number;
-    bodyId: number;
-    weight: number;
-    isBase?: boolean;
-    builtin?: { type: string; name: string };
+// Compact v2 schema(short keys + 默认值省略)
+interface CompactRuleV2 {
+    h: string;
+    b: number;
+    w?: number;
+    a?: number;
+    p?: string[];
+    ib?: 1;
+    bn?: string;
 }
-interface CompiledGrammar {
-    version: 1;
-    name: string;
-    parameters: Array<[string, string | number | boolean]>;
-    startSymbol: string;
-    rules: CompiledRule[];
-    baseRules: CompiledRule[];
+interface CompactGrammarV2 {
+    v: 2;
+    n: string;
+    p: Array<[string, string | number | boolean]>;
+    s: string;
+    r: CompactRuleV2[];
+    br: CompactRuleV2[];
 }
 
 function loadBodyPool(): GrammarToken[][] {
@@ -57,22 +58,22 @@ function loadBodyPool(): GrammarToken[][] {
     return bodies;
 }
 
-function reconstructGrammarData(compiled: CompiledGrammar, pool: GrammarToken[][]): GrammarData {
-    function expandRule(r: CompiledRule): GrammarRule {
-        const body = pool[r.bodyId];
-        if (!body) throw new Error(`bodyId ${r.bodyId} out of pool (size ${pool.length})`);
+function reconstructGrammarData(compiled: CompactGrammarV2, pool: GrammarToken[][]): GrammarData {
+    function expandRule(r: CompactRuleV2): GrammarRule {
+        const body = pool[r.b];
+        if (!body) throw new Error(`bodyId ${r.b} out of pool (size ${pool.length})`);
         return {
-            head: r.head,
-            params: r.params ?? [],
+            head: r.h,
+            params: r.p ?? [],
             body,
-            weight: r.weight,
-            builtin: r.builtin,
-            headFixedArg: r.headFixedArg,
-            isBase: r.isBase ?? false,
+            weight: r.w ?? 1.0,
+            builtin: r.bn !== undefined ? { type: 'brick', name: r.bn } : undefined,
+            headFixedArg: r.a,
+            isBase: r.ib === 1,
         };
     }
-    const rules = compiled.rules.map(expandRule);
-    const baseRules = compiled.baseRules.map(expandRule);
+    const rules = compiled.r.map(expandRule);
+    const baseRules = compiled.br.map(expandRule);
     const rulesByHead = new Map<string, GrammarRule[]>();
     const baseRulesByHead = new Map<string, GrammarRule[]>();
     const headSet = new Set<string>();
@@ -89,9 +90,9 @@ function reconstructGrammarData(compiled: CompiledGrammar, pool: GrammarToken[][
         headSet.add(r.head);
     }
     return {
-        name: compiled.name,
-        parameters: new Map(compiled.parameters),
-        startSymbol: compiled.startSymbol,
+        name: compiled.n,
+        parameters: new Map(compiled.p),
+        startSymbol: compiled.s,
         rules,
         baseRules,
         rulesByHead,
@@ -168,7 +169,7 @@ for (const f of compiledFiles) {
     }
 
     const compiledRaw = readFileSync(join(COMPILED_DIR, f), 'utf8');
-    const compiled = JSON.parse(compiledRaw) as CompiledGrammar;
+    const compiled = JSON.parse(compiledRaw) as CompactGrammarV2;
     const dataRecon = reconstructGrammarData(compiled, pool);
 
     // 比较字段
