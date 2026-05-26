@@ -71,6 +71,63 @@ function chordToAbsoluteName(chord: GeneratedChord): string {
     return KEY_NAMES[absRoot] + (QUALITY_SUFFIX[chord.quality] ?? '');
 }
 
+/** 完整和声色彩名 — root + quality + extensions + bass override(如 Dadd9/F#)*/
+function chordToFullName(chord: GeneratedChord): string {
+    const offset = chord.keyOffset ?? 0;
+    const absRoot = ((chord.root + offset) % 12 + 12) % 12;
+    const ext = (chord.extensions ?? []).join('');
+    const bass = chord.bassOverride !== undefined
+        ? '/' + KEY_NAMES[(((chord.bassOverride + offset) % 12) + 12) % 12]
+        : '';
+    return KEY_NAMES[absRoot] + (QUALITY_SUFFIX[chord.quality] ?? '') + ext + bass;
+}
+
+/** Backbone 音名 — chord 骨干(root + 3 + 5 + 7 if present) */
+function computeBackboneNames(chord: GeneratedChord): string[] {
+    const offset = chord.keyOffset ?? 0;
+    const absRoot = ((chord.root + offset) % 12 + 12) % 12;
+    const q = chord.quality;
+    const isMinor3 = q === ChordQuality.Minor || q === ChordQuality.Minor7
+        || q === ChordQuality.Minor9 || q === ChordQuality.Minor11
+        || q === ChordQuality.Diminished || q === ChordQuality.Diminished7
+        || q === ChordQuality.HalfDiminished;
+    const isDim5 = q === ChordQuality.Diminished || q === ChordQuality.Diminished7
+        || q === ChordQuality.HalfDiminished;
+    const isAug = q === ChordQuality.Augmented;
+    const isSus = q === ChordQuality.Sus4 || q === ChordQuality.Dominant7Sus4;
+    const third = isSus ? 5 : (isMinor3 ? 3 : 4);
+    const fifth = isDim5 ? 6 : (isAug ? 8 : 7);
+    let seventh: number | null = null;
+    if (q === ChordQuality.Major7 || q === ChordQuality.Major9) seventh = 11;
+    else if (q === ChordQuality.Dominant7 || q === ChordQuality.Dominant7Sus4
+        || q === ChordQuality.Dominant9 || q === ChordQuality.Dominant13
+        || q === ChordQuality.Minor7 || q === ChordQuality.Minor9
+        || q === ChordQuality.Minor11 || q === ChordQuality.HalfDiminished) seventh = 10;
+    else if (q === ChordQuality.Diminished7) seventh = 9;
+    const pcs = [absRoot, (absRoot + third) % 12, (absRoot + fifth) % 12];
+    if (seventh !== null) pcs.push((absRoot + seventh) % 12);
+    return pcs.map(pc => KEY_NAMES[pc]!);
+}
+
+/** TSD 功能 — 从 roman 推 Tonic/Subdominant/Dominant */
+function tsdFromRoman(roman: string): 'T' | 'S' | 'D' {
+    if (!roman) return 'T';
+    if (roman.includes('/')) return 'D';   // secondary dominant
+    const stripped = roman.replace(/^[b#n]+/, '');
+    const m = stripped.match(/^[IVivXx]+/);
+    const base = m ? m[0].toUpperCase() : '';
+    if (base === 'V' || base === 'VII') return 'D';
+    if (base === 'IV' || base === 'II') return 'S';
+    return 'T';   // I / III / VI / 等
+}
+
+/** TSD 颜色 tag */
+const TSD_STYLE: Record<'T' | 'S' | 'D', string> = {
+    T: 'text-emerald-300 bg-emerald-900/40 border-emerald-500/40',
+    S: 'text-amber-300 bg-amber-900/40 border-amber-500/40',
+    D: 'text-rose-300 bg-rose-900/40 border-rose-500/40',
+};
+
 function tonalityToHumanScale(tonality: Tonality | undefined): string {
     if (tonality === undefined) return '—';
     const raw = TonalityName[tonality] ?? 'Unknown';
@@ -855,18 +912,36 @@ const Stage2Harmony: React.FC<Stage2Props> = ({ chords, currentSection, currentC
                 ) : (
                     windowChords.map(({ chord, idx }) => {
                         const isCurrent = idx === currentChordIdx;
+                        const fullName = chordToFullName(chord);
+                        const backbone = computeBackboneNames(chord);
+                        const tsd = tsdFromRoman(chord.numeral);
                         return (
                             <div
                                 key={idx}
-                                title={chord.numeral}
                                 className={
-                                    'px-3 py-2 rounded-lg border text-base font-bold ' +
+                                    'px-3 py-2.5 rounded-lg border min-w-[110px] flex flex-col items-center gap-1.5 transition-all ' +
                                     (isCurrent
-                                        ? 'border-emerald-400 text-white bg-black/60 ring-1 ring-emerald-400/40'
-                                        : 'border-zinc-700 text-zinc-300 bg-black/30')
+                                        ? 'border-emerald-400 bg-black/70 ring-2 ring-emerald-400/40 scale-105'
+                                        : 'border-zinc-700 bg-black/30')
                                 }
                             >
-                                {chordToAbsoluteName(chord)}
+                                <div className={
+                                    'text-lg font-bold leading-tight ' +
+                                    (isCurrent ? 'text-white' : 'text-orange-200')
+                                }>
+                                    {fullName}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-mono text-cyan-300/90 px-1 py-0.5 rounded bg-cyan-950/40 border border-cyan-700/30">
+                                        {chord.numeral}
+                                    </span>
+                                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${TSD_STYLE[tsd]}`}>
+                                        {tsd}
+                                    </span>
+                                </div>
+                                <div className="text-[10px] font-mono text-zinc-500 tracking-wider">
+                                    {backbone.join(' ')}
+                                </div>
                             </div>
                         );
                     })
