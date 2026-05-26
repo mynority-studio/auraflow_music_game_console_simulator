@@ -1,24 +1,19 @@
 // ============================================================
-// runPipeline — AF2 唯一入口(2026-05-24 删 AF/MG 后)
+// runPipeline — 单一入口(2026-05-26 Step 6.4 合并 AF2+ImproCore 后)
 // ============================================================
 //
-// 历史:本文件早期承载完整 Stage 1-5 + Conductor + MG/AF2 分流。
-//        2026-05-24 删 AF/MG 路径后,本文件退化为薄壳:始终路由到
-//        Af2EngineFacade.generate(options)。
+// 历史:
+//   2026-05-24:删 AF/MG → AF2 唯一内核
+//   2026-05-25:加 ImproCore Facade,EngineSelectionStore 切换 AF2 / Impro 两套
+//   2026-05-26:Step 6.4 — ImproCore 算法装进 AF2 framework(adapter),
+//              ImproEngineFacade 删除,EngineSelectionStore 退化(单引擎)
 //
-// app_integration_rule §0 Single Pipeline 原则保持不变:
-//   所有 app(AuraBar / AuraJam / PipelineMonitor)继续 import runPipeline
-//   from '../../core/generation/pipeline',调用契约 0 变化。
-//
-// 后续清理:旧 AF pipeline / primitives / realizers / mg-engine 等文件
-//   不再被 runPipeline 调用,留待后续 commit 物理删除。
+// 现状:始终路由 Af2EngineFacade.generate(内部 PianoIdiom 调 ImproCore adapter)。
 // ============================================================
 
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { Af2EngineFacade } from '../af2-engine/Af2EngineFacade';
-import { ImproEngineFacade } from '../improCore/ImproEngineFacade';
-import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -35,9 +30,5 @@ export interface PipelineRunOptions {
 export function runPipeline(
     options: PipelineRunOptions = {},
 ): { track: GeneratedTrack; context: MusicContext } {
-    const engine = EngineSelectionStore.getEngine();
-    if (engine === 'Impro') {
-        return ImproEngineFacade.generate(options);
-    }
     return Af2EngineFacade.generate(options);
 }

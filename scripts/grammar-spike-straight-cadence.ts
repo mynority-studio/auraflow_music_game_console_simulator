@@ -28,7 +28,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { parseGrammar, type GrammarToken } from '../src/core/generation/improCore/data/grammar-parser';
 
-const GRAMMARS_DIR = 'public/grammars';
+const GRAMMARS_DIR = 'data/grammars';
 const OUTPUT_PATH = '.claude/notes/grammar-spike-straight-cadence.md';
 const TARGET_BRICK = 'Straight-Cadence';
 

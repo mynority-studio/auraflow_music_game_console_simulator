@@ -12,7 +12,10 @@ import { CHORD_TYPES } from './chord-types';
 import { SCALE_TYPES, isAvoidNote } from './scale';
 import { noteToMidi } from './midi';
 import { modeToKeyFamily } from './mode';
-import { getChordVoicingAesthetics } from './voicing';
+// 2026-05-26 Step 6.4:voicing.ts 已删(ImproCore wide-piano-voicing 接管)。
+// tendency.ts 的 chordTable lookup 退化为空 table — role / tensionLevel 走 fallback。
+// 实际 tendency.ts 整体已无外部 caller(评估为 dead code,Step 6.5 清理时再删)。
+const getChordVoicingAesthetics = (_chordType: string): Record<number, { role?: string; tensionLevel?: number }> => ({});
 import { computeGlobalContract } from './chord-color';
 
 // ------------------------------------------------------------------

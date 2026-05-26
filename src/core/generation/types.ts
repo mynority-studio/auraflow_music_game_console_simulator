@@ -1199,6 +1199,14 @@ export interface MusicianPersona {
      * BassIdiom:未设置 → 退化 mg pass-through;已设 → AF2 WALK_PATTERNS 渲染。
      */
     walkPatternId?: number;
+    /**
+     * ImproCore grammar 名(2026-05-26 加,合并 AF2+ImproCore 后)。
+     * Piano 卡用此字段绑 grammar(BillEvans / Bach / CharlieParker / ...)。
+     * 当 MainInst 槽位用此 musician 时,planMelody 走 ImproCore lick-gen 生成
+     * 对应 grammar 的 melody。未设置 → fallback 'quarter-baseline'。
+     * Drums / Pad 卡无需设置(其 plan() 不消费 grammar)。
+     */
+    grammarName?: string;
 }
 
 // --- 抽象职能与极限压缩结构 (Zero-Copy C-Portability) ---

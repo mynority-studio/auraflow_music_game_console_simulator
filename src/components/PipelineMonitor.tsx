@@ -24,7 +24,7 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionStore';
+// 2026-05-26 Step 6.4:EngineSelectionStore 删(单一引擎)
 import { ImproStyleStore } from '../state/ImproStyleStore';
 import { ImproGrammarStore } from '../state/ImproGrammarStore';
 import { ALL_STYLE_NAMES } from '../core/generation/improCore/data/loaded';
@@ -192,9 +192,9 @@ type InstrumentSelection = Partial<Record<BandRole, number>>;
  */
 const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
     [BandRole.MainInst]:   'alex_piano',
-    [BandRole.Accomp]:     'alex_piano',
-    // 2026-05-25 切"钢琴独奏"模式:bass 槽空(HandPartitioner LH 替代)
-    // [BandRole.Bass]:    'frank_bass',
+    [BandRole.Accomp]:     'chloe_pop_piano',
+    // 2026-05-26 Step 7.1:bass 复活,frank_bass 走 ImproCore bass-pattern
+    [BandRole.Bass]:       'frank_bass',
     [BandRole.Drums]:      'dave_drums',
     [BandRole.Atmosphere]: 'nina_pad',
 };
@@ -205,11 +205,7 @@ export const PipelineMonitor: React.FC = () => {
         arranged: null, context: null, beat: 0, seed: 0,
     });
     const [seedInput, setSeedInput] = useState('42');
-    const [engine, setEngineState] = useState<EngineId>(() => EngineSelectionStore.getEngine());
-    const switchEngine = useCallback((next: EngineId) => {
-        EngineSelectionStore.setEngine(next);
-        setEngineState(next);
-    }, []);
+    // 2026-05-26 Step 6.4:engine 单一,删 toggle
     const [improStyle, setImproStyleState] = useState<string>(() => ImproStyleStore.getStyleName());
     const switchImproStyle = useCallback((name: string) => {
         ImproStyleStore.setStyleName(name);
@@ -478,65 +474,40 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* Engine toggle — AF2 / Impro 切换(2026-05-25 加,共识 1-4 已达成) */}
+            {/* Style + Grammar dropdown(2026-05-26 Step 6.4:engine toggle 删,合并后单引擎) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
-                <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <button
-                    onClick={() => switchEngine('AF2')}
-                    className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase rounded transition-all ${
-                        engine === 'AF2'
-                            ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                    }`}
+                <span className="text-[9px] uppercase tracking-widest text-cyan-400/80 font-bold w-12 shrink-0">Style</span>
+                <select
+                    value={improStyle}
+                    onChange={(e) => switchImproStyle(e.target.value)}
+                    title={`${ALL_STYLE_NAMES.length} styles 可选(accomp/bass/drum 节奏型 + voicing-type → .fv preset)`}
+                    className="bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60 max-w-[140px]"
                 >
-                    AF2
-                </button>
-                <button
-                    onClick={() => switchEngine('Impro')}
-                    className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase rounded transition-all ${
-                        engine === 'Impro'
-                            ? 'bg-cyan-500/80 text-white shadow-[0_0_8px_rgba(6,182,212,0.5)]'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                    }`}
+                    {ALL_STYLE_NAMES.map(n => (
+                        <option key={n} value={n}>{n}</option>
+                    ))}
+                </select>
+                <span className="text-[9px] uppercase tracking-widest text-purple-400/80 font-bold ml-2">Grammar</span>
+                <select
+                    value={improGrammar}
+                    onChange={(e) => switchImproGrammar(e.target.value)}
+                    disabled={grammarLoading}
+                    title={grammarLoading ? `loading grammar...` : `${grammarDropdown.length} melody grammar 可选 — ${ALL_GRAMMAR_NAMES.length} hardcode + ${grammarDropdown.length - ALL_GRAMMAR_NAMES.length} Impro-Visor .grammar (当前由 musician 卡 grammarName 决定 — UI 选择暂为 cosmetic,后续可加 override)`}
+                    className={`bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px] ${grammarLoading ? 'opacity-50 cursor-wait' : ''}`}
                 >
-                    Impro
-                </button>
-                {engine === 'Impro' && (
-                    <>
-                        <select
-                            value={improStyle}
-                            onChange={(e) => switchImproStyle(e.target.value)}
-                            title={`${ALL_STYLE_NAMES.length} styles 可选(accomp/bass/drum 节奏型 + voicing-type → .fv preset)`}
-                            className="ml-2 bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60 max-w-[140px]"
-                        >
-                            {ALL_STYLE_NAMES.map(n => (
-                                <option key={n} value={n}>{n}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={improGrammar}
-                            onChange={(e) => switchImproGrammar(e.target.value)}
-                            disabled={grammarLoading}
-                            title={grammarLoading ? `loading grammar...` : `${grammarDropdown.length} melody grammar 可选 — ${ALL_GRAMMAR_NAMES.length} hardcode + ${grammarDropdown.length - ALL_GRAMMAR_NAMES.length} Impro-Visor .grammar`}
-                            className={`ml-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px] ${grammarLoading ? 'opacity-50 cursor-wait' : ''}`}
-                        >
-                            <optgroup label={`Hardcoded (${ALL_GRAMMAR_NAMES.length})`}>
-                                {ALL_GRAMMAR_NAMES.map(n => (
-                                    <option key={n} value={n}>{n}</option>
-                                ))}
-                            </optgroup>
-                            <optgroup label={`Impro-Visor (${grammarDropdown.length - ALL_GRAMMAR_NAMES.length})`}>
-                                {grammarDropdown.slice(ALL_GRAMMAR_NAMES.length).map(n => (
-                                    <option key={n} value={n}>{n}</option>
-                                ))}
-                            </optgroup>
-                        </select>
-                    </>
-                )}
+                    <optgroup label={`Hardcoded (${ALL_GRAMMAR_NAMES.length})`}>
+                        {ALL_GRAMMAR_NAMES.map(n => (
+                            <option key={n} value={n}>{n}</option>
+                        ))}
+                    </optgroup>
+                    <optgroup label={`Impro-Visor (${grammarDropdown.length - ALL_GRAMMAR_NAMES.length})`}>
+                        {grammarDropdown.slice(ALL_GRAMMAR_NAMES.length).map(n => (
+                            <option key={n} value={n}>{n}</option>
+                        ))}
+                    </optgroup>
+                </select>
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
-                    {engine === 'AF2'
-                        ? 'POP-only · 5 slots active (no vocal)'
-                        : `${ALL_STYLE_NAMES.length} styles · ${grammarDropdown.length} grammars · 4 tracks`}
+                    {`${ALL_STYLE_NAMES.length} styles · ${grammarDropdown.length} grammars · 5 tracks`}
                 </span>
             </div>
 

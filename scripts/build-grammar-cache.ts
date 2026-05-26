@@ -22,7 +22,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync
 import { join } from 'path';
 import { parseGrammar, type GrammarToken, type GrammarRule } from '../src/core/generation/improCore/data/grammar-parser';
 
-const SRC_DIR = 'public/grammars';
+const SRC_DIR = 'data/grammars';
 const OUT_DIR = 'public/grammars-compiled';
 
 // ─────────────────────────────────────────────────────────────────

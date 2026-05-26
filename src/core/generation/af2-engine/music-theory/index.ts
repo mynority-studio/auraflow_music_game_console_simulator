@@ -30,7 +30,7 @@ export * from './scale';
 export * from './chord-types';
 export * from './chord-detection';
 export * from './chord-color';
-export * from './voicing';
+// voicing.ts 已删(2026-05-26 Step 6.4)— ImproCore wide-piano-voicing 接管
 export * from './tendency';
 export * from './tension-state';
 export * from './spell';

@@ -52,6 +52,9 @@ export const MUSICIAN_POOL: Musician[] = [
             // Phase 6a — anchor 几乎不睡(wakeK 极低)
             wakeK: 0.05,
             peakK: 0.85,
+            // Step 6(2026-05-26):AF2+ImproCore 合并 — alex 用 BillEvans grammar
+            // (jazz 标杆,用户实测好听)。后续可换。
+            grammarName: 'BillEvans',
         },
         description: 'Pop/Jazz 通用钢琴手，双角色（主奏 + 伴奏）',
         // AF2 overrides — alex 作"通用对照"opt-in melody+accomp 全 AF2 算法,
@@ -61,42 +64,32 @@ export const MUSICIAN_POOL: Musician[] = [
             accompAlgorithm: 'af2',
         },
     },
-    // 🎸 贝斯手 Frank — Pop/Funk 电贝斯，正拍稳重
+    // 🎸 贝斯手 Frank — Pop/Funk 电贝斯,ImproCore bass-pattern 跟 style 走
     // ============================================================
-    // 2026-05-25 暂时禁用 — 切"钢琴独奏"模式
+    // 2026-05-26 Step 7.1 复活 — AF2+ImproCore 合并完成后接 ImproCore bass adapter,
+    // BassIdiom.plan 走 .sty bassPatterns(用户 UI 选 style 决定 walking 形态)
     // ============================================================
-    // AF2 调试期决定:聚焦钢琴 melody + accomp 调音,删 bass musician 走
-    // 钢琴独奏(HandPartitioner LH 替代 bass 角色,弹 BASS_RANGE 低音支撑)。
-    // BassIdiom / Facade Step 2 / Conductor RoleFilter 代码全留 — 后续要恢复
-    // 多乐手时取消下面整段注释即可。
-    // ============================================================
-    // {
-    //     id: 'frank_bass',
-    //     name: 'Frank',
-    //     genre: StyleId.ModernPop,
-    //     instrumentRef: 'electric_bass',
-    //     instrumentFamily: InstrumentFamily.Bass,
-    //     defaultSound: 'Electric_Bass_Finger',
-    //     personnel: {},
-    //     role: BandRole.Bass,
-    //     eligibleRoles: [BandRole.Bass],
-    //     instrumentId: 2,
-    //     persona: {
-    //         colorBias: 0.0,
-    //         sparsityTendency: 0.5,
-    //         syncopationAssault: 0.1,
-    //         dynamicRange: [75, 110],
-    //         wakeK: 0.30,
-    //         peakK: 0.90,
-    //     },
-    //     description: 'Pop/Jazz/Blues/RNB 通用电贝斯,walking 跟 mgStyle 走',
-    //     af2Overrides: {
-    //         sectionRolePreference: {
-    //             [SectionType.Intro]: new Set<string>(),
-    //             [SectionType.Outro]: new Set<string>(),
-    //         },
-    //     },
-    // },
+    {
+        id: 'frank_bass',
+        name: 'Frank',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'electric_bass',
+        instrumentFamily: InstrumentFamily.Bass,
+        defaultSound: 'Electric_Bass_Finger',
+        personnel: {},
+        role: BandRole.Bass,
+        eligibleRoles: [BandRole.Bass],
+        instrumentId: 2,
+        persona: {
+            colorBias: 0.0,
+            sparsityTendency: 0.5,
+            syncopationAssault: 0.1,
+            dynamicRange: [75, 110],
+            wakeK: 0.30,
+            peakK: 0.90,
+        },
+        description: 'Pop/Jazz/Blues/RNB 通用电贝斯 — ImproCore .sty bass pattern 驱动',
+    },
     // 🥁 鼓手 Dave — Pop 干净直拍
     {
         id: 'dave_drums',
@@ -140,6 +133,9 @@ export const MUSICIAN_POOL: Musician[] = [
             sparsityTendency: 0.4,
             syncopationAssault: 0.05,  // 几乎完全正拍 — 主流流行钢琴标准
             dynamicRange: [60, 95],
+            // Step 6(2026-05-26):chloe 是 Pop 钢琴 — 用 Bach(简洁 chord-tone)
+            // 跟 alex_piano(jazz BillEvans)形成对照
+            grammarName: 'Bach',
         },
         description: '主流 Pop 钢琴手 — 极简直拍，给主旋律留空间',
         // AF2 overrides — 保守 Pop:严守主区,极少越界,不太用 add11 物理

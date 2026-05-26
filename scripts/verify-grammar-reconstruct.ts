@@ -20,7 +20,7 @@ import { join } from 'path';
 import { parseGrammar, type GrammarData, type GrammarToken, type GrammarRule } from '../src/core/generation/improCore/data/grammar-parser';
 import { readSexpr } from '../src/core/generation/improCore/data/sexpr-reader';
 
-const SRC_DIR = 'public/grammars';
+const SRC_DIR = 'data/grammars';
 const COMPILED_DIR = 'public/grammars-compiled';
 
 // ─────────────────────────────────────────────────────────────────

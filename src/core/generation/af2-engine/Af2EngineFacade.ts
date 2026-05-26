@@ -40,7 +40,7 @@ import type { GeneratedTrack, MusicContext, NoteData } from '../types';
 import type { PipelineRunOptions } from '../pipeline';
 import { StyleId } from '../config/StyleFlags';
 import { PRNGManager } from '../../utils/PRNG';
-import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
+// 2026-05-26 Step 6.4:EngineSelectionStore 已退化(单引擎,runPipeline 直接调本 Facade)
 import { getMusicianById } from '../idioms/MusicianRegistry';
 import { Random } from './utils/Random';
 import { bandRoleToTrackKeys } from '../data/GMSoundMap';
@@ -48,8 +48,9 @@ import type { GmProgramTrackKey } from '../data/GMSoundMap';
 
 import { Af2KernelDriver } from './Af2KernelDriver';
 import { KEYS } from './music-theory/spell';
-import { SUB_STYLES_POP, SUB_STYLE_PRIMARY_TEXTURES, type SubStyle } from './SubStyleTextures';
-import { TEXTURE_DENSITY } from './chord-texture/TextureDensity';
+import { SUB_STYLES_POP, type SubStyle } from './SubStyleTextures';
+// 2026-05-26 Step 6.4:SUB_STYLE_PRIMARY_TEXTURES + TEXTURE_DENSITY 已死(AccompGen 删,
+// 无人消费 songBase)。songBase 字段保留但赋默认值,后续清理 input 协议时一并删。
 import { SectionPlanner } from './SectionPlanner';
 import { SectionMapper } from './SectionMapper';
 import { SlotRouter } from './SlotRouter';
@@ -76,7 +77,7 @@ const POP_STYLE_ID: StyleId = StyleId.ModernPop;
 
 export const Af2EngineFacade = {
     /**
-     * 主入口:被 runPipeline 在 EngineSelectionStore.getEngine() === 'AF2' 时调用。
+     * 主入口:被 runPipeline 调用(单一引擎入口,2026-05-26 起)。
      */
     generate(options: PipelineRunOptions): Af2GenerateResult {
         // -----------------------------------------------------------
@@ -126,12 +127,9 @@ export const Af2EngineFacade = {
         //   energy <= 3 (Intro/Outro): VARIATIONS[songBase].sparse 降级
         // 这样整曲 60-70% bar 用同一 textureType(律动外壳一致),
         // section 切换时按主题升降级(变化服务于段落能量曲线)。
-        const songBaseRng = new Random(`af2_song_base_${auraflowSeed >>> 0}`);
-        const subStyleTextures = SUB_STYLE_PRIMARY_TEXTURES[subStyle] ?? [];
-        const mediumBasePool = subStyleTextures.filter(t => TEXTURE_DENSITY[t] === 'medium');
-        const songBase: string = (mediumBasePool.length > 0)
-            ? mediumBasePool[songBaseRng.range(0, mediumBasePool.length - 1)]
-            : (subStyleTextures[0] ?? 'Single_Root');
+        // 2026-05-26 Step 6.4:songBase 死字段(AccompGen 删后无 consumer);保占位以兼容 input 协议
+        void auraflowSeed;
+        const songBase: string = 'Single_Root';
 
         // -----------------------------------------------------------
         // Step 1: AF 段落骨架(先于 mg 调用,因为 Section-aware Arranger 要 sections)

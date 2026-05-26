@@ -31,8 +31,8 @@ import { BandRole, ChordQuality } from '../../types';
 // C.5:MusicianPlanInput 共享协议 + per-section role gate
 import type { MusicianPlanInput, ConductorRole } from '../Conductor';
 import { getMyRolesInSection, findSectionIdxForBeat } from '../Conductor';
-import { generateAf2Melody } from '../Af2MelodyGen';
-import { generateAf2Accomp } from '../Af2AccompGen';
+// 2026-05-26 Step 6.3 合并:删 Af2MelodyGen / Af2AccompGen,改用 ImproCore adapter
+import { planMelodyImproCore, planAccompImproCore } from '../adapters/improcore-adapter';
 
 /** 钢琴物理参数(Phase 1 仅文档,Phase 2+ BandSelectionPanel 消费) */
 export const PIANO_INSTRUMENT_SPEC = {
@@ -100,11 +100,31 @@ function applyRegionProbability(
 }
 
 /**
- * 内部 helper:per-section role gate + Phase B region clamp。
+ * 内部 helper:per-section role gate。
  *
- * 1. 从 input.notes[role] 取本 role 的原料 events
- * 2. 每 note 查 sectionIdx → getMyRolesInSection → 不含 role 则 skip
- * 3. 通过的 notes 走 Phase B 音区概率分布
+ * 每 note 查 sectionIdx → getMyRolesInSection → 不含 role 则 skip(Conductor 让此段 silent for this role)。
+ * 2026-05-26 Step 6.3 起:从 input.notes pass-through 模式 → 从 ImproCore 算法输出 filter。
+ */
+function filterByRoleGate(
+    notes: ReadonlyArray<NoteData>,
+    input: MusicianPlanInput,
+    role: ConductorRole,
+): NoteData[] {
+    if (notes.length === 0) return [];
+    const filtered: NoteData[] = [];
+    for (const n of notes) {
+        const sectionIdx = findSectionIdxForBeat(n.onset, input.score.sections);
+        if (sectionIdx < 0) continue;
+        const myRoles = getMyRolesInSection(input, sectionIdx);
+        if (!myRoles.includes(role)) continue;
+        filtered.push(n);
+    }
+    return filtered;
+}
+
+/**
+ * 兼容旧路径(Bass idiom 仍用 pass-through input.notes.bass)。
+ * Step 6.3 后 melody/accomp 不走此 path,bass 暂留(后续 Step 6.5 看是否切 ImproCore)。
  */
 function planForRole(
     input: MusicianPlanInput,
@@ -113,15 +133,7 @@ function planForRole(
 ): NoteData[] {
     const raw = input.notes?.[role] ?? [];
     if (raw.length === 0) return [];
-    const filtered: NoteData[] = [];
-    for (const n of raw) {
-        const sectionIdx = findSectionIdxForBeat(n.onset, input.score.sections);
-        if (sectionIdx < 0) continue;
-        const myRoles = getMyRolesInSection(input, sectionIdx);
-        if (!myRoles.includes(role)) continue;  // Conductor 让我这段 silent for this role
-        filtered.push(n);
-    }
-    // Musician 卡 Layer 1/2 overrides
+    const filtered = filterByRoleGate(raw as NoteData[], input, role);
     const overrides = input.musician?.af2Overrides;
     const region = (role === 'melody' || role === 'accomp' || role === 'bass')
         ? (overrides?.regions?.[role] ?? defaultRegion)
@@ -231,22 +243,16 @@ export const PianoIdiom = {
      * Phase D+ 计划:melody 技巧(legato/staccato/装饰音/passing tones)
      */
     planMelody(input: MusicianPlanInput): NoteData[] {
-        const algo = input.musician?.af2Overrides?.melodyAlgorithm ?? 'mg';
         const melodyRegion = input.musician?.af2Overrides?.regions?.melody ?? PIANO_REGIONS.melody;
-
-        let melody: NoteData[];
-        if (algo === 'af2') {
-            // AF2 自家 chord-tone melody(MVP)— 替代 mg.notes.melody pass-through
-            melody = generateAf2Melody(
-                input.score.chords, input.score.sections, input,
-                melodyRegion.lo, melodyRegion.hi,
-            );
-        } else {
-            // mg pass-through(默认行为)
-            melody = planForRole(input, 'melody', PIANO_REGIONS.melody);
-        }
+        // 2026-05-26 Step 6.3:单路径走 ImproCore lick-gen(grammar 由 musician.persona.grammarName 决定)
+        const rawMelody = planMelodyImproCore(input, melodyRegion.lo, melodyRegion.hi);
+        // per-section role gate + region 概率分布(保留 PianoIdiom 物理层)
+        const escapeProb = input.musician?.af2Overrides?.escapeProbability ?? ESCAPE_PROBABILITY;
+        const filtered = filterByRoleGate(rawMelody, input, 'melody');
+        const regioned = applyRegionProbability(filtered, melodyRegion, escapeProb);
+        // Add11 hand physics(保留 cross-track 协调)
         const add11Gate = input.musician?.af2Overrides?.add11GateProbability ?? ADD11_GATE_PROBABILITY;
-        return applyAdd11HandPhysics(melody, input.score.chords, add11Gate);
+        return applyAdd11HandPhysics(regioned, input.score.chords, add11Gate);
     },
 
     /**
@@ -256,16 +262,13 @@ export const PianoIdiom = {
      * Phase D+ 计划:柱式 / 分解 / smart omit + add11 hand-spread 约束
      */
     planAccomp(input: MusicianPlanInput): NoteData[] {
-        const algo = input.musician?.af2Overrides?.accompAlgorithm ?? 'mg';
-        if (algo === 'af2') {
-            // AF2 自家 accomp(Block/Arp/Stab/Sustained patterns)
-            const generated = generateAf2Accomp(input.score.chords, input.score.sections, input);
-            // 仍走 region 概率调整(尊重 musician 卡 regions.accomp 覆盖)
-            const accompRegion = input.musician?.af2Overrides?.regions?.accomp ?? PIANO_REGIONS.accomp;
-            const escapeProb = input.musician?.af2Overrides?.escapeProbability ?? ESCAPE_PROBABILITY;
-            return applyRegionProbability(generated, accompRegion, escapeProb);
-        }
-        return planForRole(input, 'accomp', PIANO_REGIONS.accomp);
+        // 2026-05-26 Step 6.3:单路径走 ImproCore chord-pattern(从 input.score.chords[i].voicing 取 voicing)
+        const accompRegion = input.musician?.af2Overrides?.regions?.accomp ?? PIANO_REGIONS.accomp;
+        const escapeProb = input.musician?.af2Overrides?.escapeProbability ?? ESCAPE_PROBABILITY;
+        const rawAccomp = planAccompImproCore(input);
+        // per-section role gate + region 概率分布
+        const filtered = filterByRoleGate(rawAccomp, input, 'accomp');
+        return applyRegionProbability(filtered, accompRegion, escapeProb);
     },
 
     /**

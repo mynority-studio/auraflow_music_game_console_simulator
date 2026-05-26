@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { parseGrammar, type GrammarData, type GrammarRule, type GrammarToken } from '../src/core/generation/improCore/data/grammar-parser';
 
-const GRAMMARS_DIR = 'public/grammars';
+const GRAMMARS_DIR = 'data/grammars';
 const OUTPUT_PATH = '.claude/notes/grammar-audit.md';
 
 // ─────────────────────────────────────────────────────────────────
