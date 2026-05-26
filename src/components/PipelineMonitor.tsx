@@ -28,7 +28,8 @@ import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionSto
 import { ImproStyleStore } from '../state/ImproStyleStore';
 import { ImproGrammarStore } from '../state/ImproGrammarStore';
 import { ALL_STYLE_NAMES } from '../core/generation/improCore/data/loaded';
-import { ALL_GRAMMAR_NAMES, ALL_GRAMMAR_DROPDOWN_NAMES } from '../core/generation/improCore/algorithms/lick-gen';
+import { ALL_GRAMMAR_NAMES, getDropdownNames, loadDropdownNames, isHardcodeGrammar } from '../core/generation/improCore/algorithms/lick-gen';
+import { loadGrammarByName } from '../core/generation/improCore/data/grammar-parser';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -215,9 +216,29 @@ export const PipelineMonitor: React.FC = () => {
         setImproStyleState(name);
     }, []);
     const [improGrammar, setImproGrammarState] = useState<string>(() => ImproGrammarStore.getGrammarName());
-    const switchImproGrammar = useCallback((name: string) => {
-        ImproGrammarStore.setGrammarName(name);
-        setImproGrammarState(name);
+    const [grammarLoading, setGrammarLoading] = useState(false);
+    const switchImproGrammar = useCallback(async (name: string) => {
+        if (isHardcodeGrammar(name)) {
+            ImproGrammarStore.setGrammarName(name);
+            setImproGrammarState(name);
+            return;
+        }
+        // Real grammar:await fetch+parse 完再生效,避免 Play 用 fallback baseline
+        setGrammarLoading(true);
+        try {
+            await loadGrammarByName(name);
+            ImproGrammarStore.setGrammarName(name);
+            setImproGrammarState(name);
+        } catch (e) {
+            console.error(`[PipelineMonitor] grammar "${name}" load failed`, e);
+        } finally {
+            setGrammarLoading(false);
+        }
+    }, []);
+    // Grammar dropdown 异步 list:初始 6 hardcode,fetch index.json 后变 6 + 85
+    const [grammarDropdown, setGrammarDropdown] = useState<ReadonlyArray<string>>(() => getDropdownNames());
+    useEffect(() => {
+        loadDropdownNames().then(setGrammarDropdown).catch(e => console.warn('[ImproCore] grammar index load failed', e));
     }, []);
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
@@ -495,16 +516,17 @@ export const PipelineMonitor: React.FC = () => {
                         <select
                             value={improGrammar}
                             onChange={(e) => switchImproGrammar(e.target.value)}
-                            title={`${ALL_GRAMMAR_DROPDOWN_NAMES.length} melody grammar 可选 — ${ALL_GRAMMAR_NAMES.length} hardcode + ${ALL_GRAMMAR_DROPDOWN_NAMES.length - ALL_GRAMMAR_NAMES.length} Impro-Visor .grammar`}
-                            className="ml-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px]"
+                            disabled={grammarLoading}
+                            title={grammarLoading ? `loading grammar...` : `${grammarDropdown.length} melody grammar 可选 — ${ALL_GRAMMAR_NAMES.length} hardcode + ${grammarDropdown.length - ALL_GRAMMAR_NAMES.length} Impro-Visor .grammar`}
+                            className={`ml-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px] ${grammarLoading ? 'opacity-50 cursor-wait' : ''}`}
                         >
                             <optgroup label={`Hardcoded (${ALL_GRAMMAR_NAMES.length})`}>
                                 {ALL_GRAMMAR_NAMES.map(n => (
                                     <option key={n} value={n}>{n}</option>
                                 ))}
                             </optgroup>
-                            <optgroup label={`Impro-Visor (${ALL_GRAMMAR_DROPDOWN_NAMES.length - ALL_GRAMMAR_NAMES.length})`}>
-                                {ALL_GRAMMAR_DROPDOWN_NAMES.slice(ALL_GRAMMAR_NAMES.length).map(n => (
+                            <optgroup label={`Impro-Visor (${grammarDropdown.length - ALL_GRAMMAR_NAMES.length})`}>
+                                {grammarDropdown.slice(ALL_GRAMMAR_NAMES.length).map(n => (
                                     <option key={n} value={n}>{n}</option>
                                 ))}
                             </optgroup>
@@ -514,7 +536,7 @@ export const PipelineMonitor: React.FC = () => {
                 <span className="text-[9px] text-zinc-500 font-mono ml-auto">
                     {engine === 'AF2'
                         ? 'POP-only · 5 slots active (no vocal)'
-                        : `${ALL_STYLE_NAMES.length} styles · ${ALL_GRAMMAR_DROPDOWN_NAMES.length} grammars · 4 tracks`}
+                        : `${ALL_STYLE_NAMES.length} styles · ${grammarDropdown.length} grammars · 4 tracks`}
                 </span>
             </div>
 
@@ -541,10 +563,10 @@ export const PipelineMonitor: React.FC = () => {
                     </button>
                     <button
                         onClick={handlePlay}
-                        disabled={playState === 'GENERATING'}
-                        title="Play (Enter)"
+                        disabled={playState === 'GENERATING' || grammarLoading}
+                        title={grammarLoading ? 'loading grammar...' : 'Play (Enter)'}
                         className={`px-2 py-1 rounded transition-all ${
-                            playState === 'GENERATING'
+                            playState === 'GENERATING' || grammarLoading
                                 ? 'bg-zinc-700 text-zinc-500 cursor-wait'
                                 : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                         }`}

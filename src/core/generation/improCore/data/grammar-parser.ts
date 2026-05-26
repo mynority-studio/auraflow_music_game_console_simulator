@@ -221,31 +221,204 @@ export function parseGrammar(src: string, name: string): GrammarData {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Glob load all .grammar files
+// Lazy fetch + 内存 cache + compiled JSON 格式(2026-05-26)
 // ─────────────────────────────────────────────────────────────────
+//
+// 改造历史:
+//   v1(2026-05-26 早):eager glob → lazy fetch .grammar Lisp 文本
+//   v2(2026-05-26 晚):lazy fetch compiled JSON(pool.txt + per-grammar JSON)
+//                    body 全 rule 去重共享 pool,per-grammar 仅存 bodyId 引用
+//                    为后续"musician 风格融合 / persona 控制"建索引基础设施
+//
+// 数据源:public/grammars-compiled/(由 scripts/build-grammar-cache.ts 生成)
+//   - pool.txt              全局 body 池(行 = bodyId,Lisp 文本)
+//   - <name>.json × 82      per-grammar compact(bodyId 索引 pool)
+//   - index.json            grammar 名列表 + meta
+//
+// API(对外):
+//   loadGrammarByName(name): Promise<GrammarData>  — fetch compiled + reconstruct + cache
+//   getCachedGrammar(name):  GrammarData | undefined — 同步 cache 读(给 lick-gen 用)
+//   loadGrammarIndex():      Promise<string[]>       — fetch index.json
+//   getCachedGrammarNames(): string[]                — 同步取已 fetch 的 index
+//
+// reconstruct 后 GrammarData 跟 v1 parseGrammar 输出语义完全一致 — PCFG runner 零修改。
 
-const grammarModules = import.meta.glob('./grammars/*.grammar', {
-    query: '?raw',
-    import: 'default',
-    eager: true,
-}) as Record<string, string>;
+import { readSexpr } from './sexpr-reader';
 
-export const ALL_GRAMMAR_DATA_MAP: ReadonlyMap<string, GrammarData> = (() => {
-    const map = new Map<string, GrammarData>();
-    for (const [path, raw] of Object.entries(grammarModules)) {
-        const name = path.split('/').pop()?.replace(/\.grammar$/, '') ?? path;
-        try {
-            const data = parseGrammar(raw, name);
-            map.set(name, data);
-        } catch (e) {
-            console.warn(`[ImproCore] grammar parse failed:${path}`, e);
+// Compiled JSON 格式 — 与 scripts/build-grammar-cache.ts 同步
+interface CompiledRule {
+    head: string;
+    params?: string[];
+    headFixedArg?: number;
+    bodyId: number;
+    weight: number;
+    isBase?: boolean;
+    builtin?: { type: string; name: string };
+}
+interface CompiledGrammar {
+    version: 1;
+    name: string;
+    parameters: Array<[string, string | number | boolean]>;
+    startSymbol: string;
+    rules: CompiledRule[];
+    baseRules: CompiledRule[];
+}
+interface CompiledIndex {
+    version: 1;
+    grammars: string[];
+    poolBodyCount: number;
+    builtAt: string;
+}
+
+const _grammarCache = new Map<string, GrammarData>();
+const _grammarInflight = new Map<string, Promise<GrammarData>>();
+let _grammarNames: string[] | null = null;
+let _grammarNamesInflight: Promise<string[]> | null = null;
+let _bodyPool: readonly GrammarToken[][] | null = null;
+let _bodyPoolInflight: Promise<readonly GrammarToken[][]> | null = null;
+
+function compiledGrammarUrl(name: string): string {
+    const base = import.meta.env.BASE_URL ?? '/';
+    return `${base}grammars-compiled/${name}.json`;
+}
+function poolUrl(): string {
+    const base = import.meta.env.BASE_URL ?? '/';
+    return `${base}grammars-compiled/pool.txt`;
+}
+function indexUrl(): string {
+    const base = import.meta.env.BASE_URL ?? '/';
+    return `${base}grammars-compiled/index.json`;
+}
+
+/** Fetch + parse pool.txt(全局共享 body 池)。idempotent + dedup。 */
+async function loadBodyPool(): Promise<readonly GrammarToken[][]> {
+    if (_bodyPool) return _bodyPool;
+    if (_bodyPoolInflight) return _bodyPoolInflight;
+
+    _bodyPoolInflight = (async () => {
+        const resp = await fetch(poolUrl());
+        if (!resp.ok) {
+            _bodyPoolInflight = null;
+            throw new Error(`[ImproCore] body pool fetch failed (HTTP ${resp.status})`);
         }
+        const text = await resp.text();
+        // pool.txt 末尾固定有 trailing \n,先剔掉;中间空行 = 空 body(合法,如 base rule (base (P 0) () weight))
+        const trimmed = text.endsWith('\n') ? text.slice(0, -1) : text;
+        const lines = trimmed.split('\n');
+        const bodies: GrammarToken[][] = [];
+        for (const line of lines) {
+            // wrap 整行成 list → readSexpr 返单 Polylist = GrammarToken[]
+            const wrapped = readSexpr(`(${line})`) as GrammarToken[];
+            bodies.push(wrapped);
+        }
+        _bodyPool = bodies;
+        return bodies;
+    })();
+    return _bodyPoolInflight;
+}
+
+/** Reconstruct GrammarData from compiled JSON + 共享 pool。语义与 parseGrammar 输出一致。 */
+function reconstructGrammarData(compiled: CompiledGrammar, pool: readonly GrammarToken[][]): GrammarData {
+    function expandRule(r: CompiledRule): GrammarRule {
+        const body = pool[r.bodyId];
+        if (!body) throw new Error(`[ImproCore] bodyId ${r.bodyId} out of pool (size ${pool.length})`);
+        return {
+            head: r.head,
+            params: r.params ?? [],
+            body,
+            weight: r.weight,
+            builtin: r.builtin,
+            headFixedArg: r.headFixedArg,
+            isBase: r.isBase ?? false,
+        };
     }
-    return map;
-})();
+    const rules = compiled.rules.map(expandRule);
+    const baseRules = compiled.baseRules.map(expandRule);
 
-export const ALL_GRAMMAR_DATA_NAMES: ReadonlyArray<string> = Array.from(ALL_GRAMMAR_DATA_MAP.keys()).sort();
+    // 重建 head 索引(与 parseGrammar 同逻辑)
+    const rulesByHead = new Map<string, GrammarRule[]>();
+    const baseRulesByHead = new Map<string, GrammarRule[]>();
+    const headSet = new Set<string>();
+    for (const r of rules) {
+        let arr = rulesByHead.get(r.head);
+        if (!arr) { arr = []; rulesByHead.set(r.head, arr); }
+        arr.push(r);
+        headSet.add(r.head);
+    }
+    for (const r of baseRules) {
+        let arr = baseRulesByHead.get(r.head);
+        if (!arr) { arr = []; baseRulesByHead.set(r.head, arr); }
+        arr.push(r);
+        headSet.add(r.head);
+    }
 
+    return {
+        name: compiled.name,
+        parameters: new Map(compiled.parameters),
+        startSymbol: compiled.startSymbol,
+        rules,
+        baseRules,
+        rulesByHead,
+        baseRulesByHead,
+        headSet,
+    };
+}
+
+/** Fetch compiled grammar JSON + pool → reconstruct GrammarData + cache。同 name 命中 cache / inflight。 */
+export async function loadGrammarByName(name: string): Promise<GrammarData> {
+    const cached = _grammarCache.get(name);
+    if (cached) return cached;
+    const inflight = _grammarInflight.get(name);
+    if (inflight) return inflight;
+
+    const p = (async () => {
+        const [pool, resp] = await Promise.all([
+            loadBodyPool(),
+            fetch(compiledGrammarUrl(name)),
+        ]);
+        if (!resp.ok) {
+            _grammarInflight.delete(name);
+            throw new Error(`[ImproCore] compiled grammar fetch failed: ${name} (HTTP ${resp.status})`);
+        }
+        const compiled = await resp.json() as CompiledGrammar;
+        const data = reconstructGrammarData(compiled, pool);
+        _grammarCache.set(name, data);
+        _grammarInflight.delete(name);
+        return data;
+    })();
+    _grammarInflight.set(name, p);
+    return p;
+}
+
+/** 同步 cache 读 — 给 lick-gen.ts 之类的同步消费方用。cache miss 返 undefined。 */
+export function getCachedGrammar(name: string): GrammarData | undefined {
+    return _grammarCache.get(name);
+}
+
+/** Fetch + cache index.json(grammar 名列表)。idempotent。 */
+export async function loadGrammarIndex(): Promise<string[]> {
+    if (_grammarNames) return _grammarNames;
+    if (_grammarNamesInflight) return _grammarNamesInflight;
+
+    _grammarNamesInflight = (async () => {
+        const resp = await fetch(indexUrl());
+        if (!resp.ok) {
+            _grammarNamesInflight = null;
+            throw new Error(`[ImproCore] grammar index fetch failed (HTTP ${resp.status})`);
+        }
+        const json = await resp.json() as CompiledIndex;
+        _grammarNames = [...json.grammars];
+        return _grammarNames;
+    })();
+    return _grammarNamesInflight;
+}
+
+/** 同步取已 fetch 的 grammar 名列表(给 UI dropdown 用,初始 [])。 */
+export function getCachedGrammarNames(): ReadonlyArray<string> {
+    return _grammarNames ?? [];
+}
+
+/** @deprecated 旧 API 兼容 — 改用 getCachedGrammar(同语义,同步从 cache 读)。 */
 export function getGrammarData(name: string): GrammarData | undefined {
-    return ALL_GRAMMAR_DATA_MAP.get(name);
+    return _grammarCache.get(name);
 }

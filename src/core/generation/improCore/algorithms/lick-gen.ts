@@ -28,7 +28,7 @@
 import type { Random } from '../../af2-engine/utils/Random';
 import { placeNearMidi } from './note-utils';
 import type { GrammarData } from '../data/grammar-parser';
-import { ALL_GRAMMAR_DATA_MAP } from '../data/grammar-parser';
+import { getCachedGrammar, getCachedGrammarNames, loadGrammarIndex } from '../data/grammar-parser';
 import { expandGrammarData, detectCadenceHint } from './grammar-runner';
 
 // ============================================================
@@ -186,6 +186,11 @@ export function getGrammarByName(name: string): GrammarDef {
     return ALL_GRAMMARS_MAP.get(name) ?? GRAMMAR_QUARTER_BASELINE;
 }
 
+/** 是否 hardcode grammar(无需 fetch,内存常驻)— ImproGrammarStore + UI loading 判定共用 */
+export function isHardcodeGrammar(name: string): boolean {
+    return ALL_GRAMMARS_MAP.has(name);
+}
+
 const DEFAULT_GRAMMAR: GrammarDef = GRAMMAR_QUARTER_BASELINE;
 
 // ─────────────────────────────────────────────────────────────────
@@ -196,25 +201,41 @@ export type GrammarSelection =
     | { kind: 'def'; name: string; def: GrammarDef }
     | { kind: 'data'; name: string; data: GrammarData };
 
-/** UI dropdown 完整 list:6 hardcode + 85 real(real 含 sort)*/
-export const ALL_GRAMMAR_DROPDOWN_NAMES: ReadonlyArray<string> = (() => {
+/**
+ * UI dropdown 当前 list:6 hardcode + N real(N = 已 fetch 的 index.json 中条数,初始 0)。
+ *
+ * 同步读 — React 组件首 render 拿到 6 个 hardcode;调 loadDropdownNames() 后
+ * index.json 入 cache,下次调返 6 + 85。
+ */
+export function getDropdownNames(): ReadonlyArray<string> {
     const hardcode = Array.from(ALL_GRAMMARS_MAP.keys());
-    const real = Array.from(ALL_GRAMMAR_DATA_MAP.keys()).sort();
+    const real = [...getCachedGrammarNames()].sort();
     return [...hardcode, ...real];
-})();
+}
+
+/**
+ * 异步 fetch grammar index.json + 返回完整 dropdown list(6 hardcode + 85 real)。
+ * React 组件 useEffect 调一次,setState 触发 re-render。idempotent。
+ */
+export async function loadDropdownNames(): Promise<ReadonlyArray<string>> {
+    await loadGrammarIndex();
+    return getDropdownNames();
+}
 
 /**
  * 根据 name 选 grammar source:
  *   - 优先 hardcode(6 个)
- *   - 否则查 real grammar(85 个)
- *   - 都没 → fallback hardcode quarter-baseline
+ *   - 否则查 cached real grammar(若已 prefetch)
+ *   - cache miss(未 prefetch / fetch 中)→ fallback hardcode quarter-baseline + warn
+ *     (避免生成挂掉;真正期望 prefetch 在 setGrammarName 时触发)
  */
 export function selectGrammarByName(name: string): GrammarSelection {
     if (ALL_GRAMMARS_MAP.has(name)) {
         return { kind: 'def', name, def: ALL_GRAMMARS_MAP.get(name)! };
     }
-    const data = ALL_GRAMMAR_DATA_MAP.get(name);
+    const data = getCachedGrammar(name);
     if (data) return { kind: 'data', name, data };
+    console.warn(`[ImproCore] grammar "${name}" not in cache — falling back to quarter-baseline (prefetch may still be in flight)`);
     return { kind: 'def', name: 'quarter-baseline', def: GRAMMAR_QUARTER_BASELINE };
 }
 
