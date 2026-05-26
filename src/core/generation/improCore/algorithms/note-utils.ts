@@ -209,7 +209,7 @@ export function placeBassMidi(
   prevMidi: number,
   lo: number,
   hi: number,
-  octavePenalty: number = 3,
+  octavePenalty: number = 6,   // 2026-05-26:3→6,主动 pull 向下区(用户报"不够浑厚")
 ): number {
   const pcMod = ((pc % 12) + 12) % 12;
   const candidates: number[] = [];

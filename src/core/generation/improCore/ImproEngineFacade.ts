@@ -314,21 +314,21 @@ export const ImproEngineFacade = {
         const keyDiatonicPcs = computeKeyDiatonicPcs(keyOffset, isMinor);
 
         // 物理音域(从 style 读 — note name → MIDI)
-        // .sty bass-low / bass-high 经常偏高(ballad 的 'g--'=G2 / 'c'=C4),
-        // 用户反馈"bass 还是高" — 即使 cap D3 仍听感不像真低音(电贝斯 D3 算中高音)。
-        // 改 hardcode 区间 [C2 (36), C3 (48)] — 典型钢琴 LH / 真实低音区。
-        // 取 .sty 字段做参考(若更低则用 .sty 值,但绝不让 high 超 C3)。
+        // 2026-05-26 二次下扩:用户仍报"不够浑厚",cap 从 C3(48)再降到 G2(43);
+        // 下限 C2(36)→ E1(28),覆盖真实电/原声贝斯主区(E1-A2)。
+        // octavePenalty 同步加大 3→6(见 placeBassMidi 调用)— 主动 pull 向下区。
         const bassLowRaw = parseNoteName(style.bassLow) ?? 36;
         const bassHighRaw = parseNoteName(style.bassHigh) ?? 60;
-        const bassLowMidi = Math.min(bassLowRaw, 36);    // 下扩到 C2 (36) 或更低
-        const bassHighMidi = Math.min(bassHighRaw, 48);  // cap C3 (48) — 钢琴 LH 上限
+        const bassLowMidi = Math.min(bassLowRaw, 28);    // 下扩到 E1 (28)
+        const bassHighMidi = Math.min(bassHighRaw, 43);  // cap G2 (43) — 贝斯主区上限
 
         let prevVoicing: number[] = [];
         let prevLhLow = settings.lhLowerLimit;
-        // 初始 bass anchor:用 style.bassBase(ballad C2 = 36)clamp 到 range,
-        // 取代原 bassLow+12(总在 G3 偏高位置导致 voice leading 飘高)
+        // 初始 bass anchor:起点限在 bassHigh - 12 以下(即低 octave),
+        // 避免起手就在中区,后续 voice leading 顺势向下扎根
         const bassBaseRaw = parseNoteName(style.bassBase) ?? bassLowMidi;
-        let prevBassMidi = Math.max(bassLowMidi, Math.min(bassHighMidi, bassBaseRaw));
+        const bassBaseCap = bassHighMidi - 12;  // 起点上限 = 高 cap 下移一八度
+        let prevBassMidi = Math.max(bassLowMidi, Math.min(bassBaseCap, bassBaseRaw));
         const enrichedChords: GeneratedChord[] = [];
 
         // ─────────────────────────────────────────────────────
