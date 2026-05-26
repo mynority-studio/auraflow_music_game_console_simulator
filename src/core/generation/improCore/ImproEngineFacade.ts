@@ -338,6 +338,7 @@ export const ImproEngineFacade = {
         // ─────────────────────────────────────────────────────
         // Pass 0a:per step 算 enhanced type + 估 bassMidi(给 wide voicing muddy-check 用,
         // 实际 bass 在主循环后才确定,这里用 chord root + C2 估值,误差 ±1 octave OK)
+        const keyDiaSetForWide = new Set(keyDiatonicPcs);
         const wideInputs: WideVoicingChordInput[] = stepsWithTime.map((step, i) => {
             const ns = stepsWithTime[i + 1] ?? null;
             // isPhraseEnd 判定跟主循环逻辑一致
@@ -348,6 +349,14 @@ export const ImproEngineFacade = {
             );
             const enhType = enhanceChordType(step.roman, step.type, isPhraseEnd);
             const absRoot = ((step.rootOffset + keyOffset) % 12 + 12) % 12;
+            // 风险 1 + 2 修:算 per-chord local scale(跟主循环 line 408-415 算法一致)
+            //   chord-vocab.scales[0] 取 chord 的 idiomatic scale,与 key 取交集
+            //   传给 wide voicing 用以过滤 LH/RH tension lane + inner motion
+            const vocabW = getChordVocab(enhType);
+            const cScaleName = vocabW.scales[0] ?? 'major';
+            const cScaleRaw = getScalePcs(cScaleName, absRoot);
+            const cScaleInter = cScaleRaw.filter(pc => keyDiaSetForWide.has(pc));
+            const wideLocalScalePcs = new Set(cScaleInter.length >= 4 ? cScaleInter : cScaleRaw);
             return {
                 rootPc: absRoot,
                 chordType: enhType,
@@ -356,6 +365,7 @@ export const ImproEngineFacade = {
                 roman: step.roman,
                 effectiveFunc: step.effectiveFunc,
                 forcedScale: undefined,
+                localScalePcs: wideLocalScalePcs,
             };
         });
         const wideVoicings: WidePianoVoicing[] = attachWidePianoVoicings({

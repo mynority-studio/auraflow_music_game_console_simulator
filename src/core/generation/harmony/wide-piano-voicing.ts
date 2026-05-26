@@ -81,7 +81,15 @@ export interface WideVoicingChordInput {
   duration: number;       // beats
   roman: string;          // 'I' / 'V' / 'ii' / etc.(给 spread mode dispatch 用)
   effectiveFunc?: 'T' | 'S' | 'D';
-  forcedScale?: string;   // 优先 inner motion 用的 scale 名(可选)
+  forcedScale?: string;   // 优先 inner motion 用的 scale 名(可选,与 localScalePcs 二选一)
+  /**
+   * Per-chord local scale 允许 pc 集合(已含 chord-scale ∩ key-scale)。
+   * - color/9/11/13/sixth lane 的 pc 若不在此集合 → skip(避免与 melody/bass 同拍冲突)
+   * - structural(root/3/5/7)无视此过滤,始终保留(chord identity)
+   * - inner motion 也用此集合(取代全曲 mode 的 INTERNAL_SCALE_INTERVALS lookup)
+   * - 缺省 / undefined → 旧行为(无过滤)
+   */
+  localScalePcs?: ReadonlySet<number>;
 }
 
 /** Caller 传入的 PRNG 接口(deterministic) */
@@ -207,13 +215,22 @@ export function buildWidePianoVoicing(args: {
   chordType: string;
   bassMidi: number;
   options: WidePianoOptions;
+  /** Per-chord local scale 允许 pc 集合 — 过滤 color/9/11/13/sixth(structural 不过滤)*/
+  localScalePcs?: ReadonlySet<number>;
 }): WidePianoVoicing {
-  const { rootPc, chordType, options } = args;
+  const { rootPc, chordType, options, localScalePcs } = args;
   const pcs = getChordRolePcs(rootPc, chordType);
   const notes: PianoVoicingNote[] = [];
 
+  // structural roles 永远 keep(root/3/5/7/doubling/eleventh-as-sus 都是 chord identity)
+  // tension roles 受 localScale 过滤:9 / 11 / 13 / sixth / color(altered tension)
+  const TENSION_ROLES: ReadonlySet<VoiceRole> = new Set<VoiceRole>([
+    'ninth', 'eleventh', 'thirteenth', 'sixth', 'color',
+  ]);
   const add = (role: VoiceRole, lane: PianoVoiceLane, hand: 'LH' | 'RH', midi: number, velocity: number): void => {
     if (midi < 0 || !Number.isFinite(midi)) return;
+    // localScale 过滤:tension role 的 pc 若不在 allowed set → skip
+    if (localScalePcs && TENSION_ROLES.has(role) && !localScalePcs.has(pc(midi))) return;
     notes.push({ midi, pc: pc(midi), role, lane, hand, velocity });
   };
 
@@ -527,6 +544,7 @@ export function attachWidePianoVoicings(args: {
         style,
         spreadMode,
       },
+      localScalePcs: chord.localScalePcs,
     });
   });
 
@@ -536,9 +554,17 @@ export function attachWidePianoVoicings(args: {
     const curr = wides[i]!;
     const next = wides[(i + 1) % wides.length]!;
     const chord = chords[i]!;
-    const scaleName = chord.forcedScale ?? args.mode;
-    const scaleIntervals = INTERNAL_SCALE_INTERVALS[scaleName] ?? INTERNAL_SCALE_INTERVALS['Ionian']!;
-    const scalePcs = new Set(scaleIntervals.map(iv => pc(chord.rootPc + iv)));
+    // 风险 2 修:per-chord local scale 优先(取代全曲 mode 的 INTERNAL_SCALE_INTERVALS lookup)
+    //   优先级:chord.localScalePcs(per-chord 真实 scale)>
+    //          chord.forcedScale 查表 > 全曲 mode 查表(legacy fallback)
+    let scalePcs: Set<number>;
+    if (chord.localScalePcs && chord.localScalePcs.size > 0) {
+      scalePcs = new Set(chord.localScalePcs);
+    } else {
+      const scaleName = chord.forcedScale ?? args.mode;
+      const scaleIntervals = INTERNAL_SCALE_INTERVALS[scaleName] ?? INTERNAL_SCALE_INTERVALS['Ionian']!;
+      scalePcs = new Set(scaleIntervals.map(iv => pc(chord.rootPc + iv)));
+    }
     const innerMotion = spreadModes[i] === 'close' ? [] : buildInnerMotion({
       curr, next, chordScalePcs: scalePcs,
       durationBeats: chord.duration, density,

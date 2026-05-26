@@ -105,7 +105,8 @@ export function applyBassPattern(
       pc = pickFrom(pool, prevPc, directionBias, rng);
       durStr = raw.slice(1);
     } else if (ch === 'A') {
-      pc = pickApproachPc(nextChordRoot, prevPc, directionBias, chordColor);
+      // 风险 3 修:approach 优先选 localScale 内的 below/above,避免强拍调外 chromatic
+      pc = pickApproachPc(nextChordRoot, prevPc, directionBias, chordColor, scalePcs);
       durStr = raw.slice(1);
     } else if (ch >= '0' && ch <= '9') {
       // 数字 interval(B 的同义,offset above root)
@@ -152,18 +153,36 @@ function pickFrom(pool: number[], prevPc: number, _bias: number, rng: Random): n
 /**
  * 选 approach pc — ±1 半音 leading to next chord root。
  * nextRoot 为 null → fallback prev pc。
+ *
+ * 风险 3 修(2026-05-26):优先在 localScale 内选 below/above,避免强拍 chromatic
+ * 与 melody/RH 同拍冲突。两边都在 scale 内 → 按 bias / prev 距离;
+ * 只一边在 → 用那边;都不在(罕见,如 alt scale)→ fallback 原 chromatic 行为。
  */
 function pickApproachPc(
   nextRoot: number | null,
   prevPc: number,
   bias: number,
   _chordColor: number[],
+  scalePcs: number[],
 ): number {
   if (nextRoot === null) return prevPc;
-  if (bias > 0) return ((nextRoot - 1) + 12) % 12;   // approach from below
-  if (bias < 0) return (nextRoot + 1) % 12;          // approach from above
-  // 自动选(prev 离哪边近就反方向)
   const below = ((nextRoot - 1) + 12) % 12;
   const above = (nextRoot + 1) % 12;
+  const scaleSet = new Set(scalePcs);
+  const belowIn = scaleSet.has(below);
+  const aboveIn = scaleSet.has(above);
+  // bias 指定方向且该方向在 scale 内 → 用 bias
+  if (bias > 0 && belowIn) return below;
+  if (bias < 0 && aboveIn) return above;
+  // 双向 in-scale → 按 prev 距离选(原行为)
+  if (belowIn && aboveIn) {
+    return Math.abs(prevPc - below) <= Math.abs(prevPc - above) ? below : above;
+  }
+  // 单向 in-scale → 用那个
+  if (belowIn) return below;
+  if (aboveIn) return above;
+  // 都不在(altered scale 或 scalePcs 空)→ fallback 原 chromatic 行为
+  if (bias > 0) return below;
+  if (bias < 0) return above;
   return Math.abs(prevPc - below) <= Math.abs(prevPc - above) ? below : above;
 }
