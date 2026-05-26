@@ -392,9 +392,12 @@ export function chooseNote(
         else if (colorSet.has(pc)) colorCands.push(m);   // chord color 但不在 local scale(altered)
         else randomCands.push(m);                        // 完全调外 chromatic — 极少用
     }
-    // RANDOM type 改用 scale candidates(调内非 chord)替代真 random — 避免调外音
-    // 真 randomCands 只在 scale 也为空时启用
-    const effectiveRandomCands = scaleCands.length > 0 ? scaleCands : randomCands;
+    // 2026-05-26 用户报 BillEvans melody 跑调 — 根因:slope 极窄 / 极宽 token 导致
+    //   scaleCands 空时 fallback 到 randomCands(scale 外 chromatic)→ 跟 LH/RH 冲突。
+    //   现在:**永远** = scaleCands(空就空),不再 fallback chromatic。
+    //   pool 空时 chooseNote 末尾返 prevMidi(repeat — 无 chromatic 风险)。
+    void randomCands;
+    const effectiveRandomCands = scaleCands;
     // chooseNoteType 的 "haveRandom" 用 effective 是否非空(表面是 random,实际是 scale tone)
     const finalType = chooseNoteType(
         requestedType,
