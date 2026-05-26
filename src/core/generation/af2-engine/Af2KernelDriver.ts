@@ -25,7 +25,7 @@ import { Random } from './utils/Random';
 import type { ChordDef } from './types/ChordDef';
 import { Af2Arranger } from './Af2Arranger';
 import { Af2Composer } from './Af2Composer';
-import type { BorrowSource } from './BorrowChordPlanner';
+import type { BorrowSource } from '../harmony';
 import type { SubStyle } from './SubStyleTextures';
 import { noteToMidi } from './music-theory/midi';
 

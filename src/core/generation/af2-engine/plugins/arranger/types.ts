@@ -24,7 +24,7 @@
 
 import type { Random } from '../../utils/Random';
 import type { Af2AbstractStep } from '../../Af2Arranger';
-import type { BorrowSource } from '../../BorrowChordPlanner';
+import type { BorrowSource } from '../../../harmony';
 
 export interface ProgressionPlannerMeta {
     readonly name: string;

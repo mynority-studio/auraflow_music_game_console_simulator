@@ -11,7 +11,7 @@
 import type { Random } from './utils/Random';
 import { SectionType } from '../types';
 import type { SectionMetadata } from '../types';
-import type { BorrowSource } from './BorrowChordPlanner';
+import type { BorrowSource } from '../harmony';
 import { SUB_STYLE_PROGRESSIONS } from './SubStyleProgressions';
 import type { SubStyle } from './SubStyleTextures';
 import { DEFAULT_PROGRESSION_PLANNERS } from './plugins/arranger';
@@ -32,7 +32,13 @@ export type BorrowedSource =
 /**
  * AF2 抽象进行步。
  */
+/**
+ * @field analysisKeyPc / localRoman — Tonicization 输出携带的临时调中心元数据
+ *   (harmony/tonicization-rules.ts 产出)。下游 voicing / melody 可消费但不必须。
+ */
 export interface Af2AbstractStep {
+    analysisKeyPc?: number;
+    localRoman?: string;
     roman: string;
     type: string;
     rootOffset: number;

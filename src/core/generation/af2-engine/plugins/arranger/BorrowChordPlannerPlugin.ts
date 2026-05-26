@@ -2,38 +2,47 @@
 // BorrowChordPlannerPlugin — Modal Interchange wrapper
 // ============================================================
 //
-// Wraps planBorrowedChords(L 阶段 2026-05-24)to ProgressionPlanner protocol。
+// Wraps harmony/borrow-rules.ts(melodygenerative 完整 port:10 rule A1-G,
+// 4 source Aeolian/Mixolydian/Phrygian/Dorian)to ProgressionPlanner protocol。
 //
-// 7 rule × 3 source(Aeolian 80% / Mixolydian 12% / Phrygian 8%)锁定 + 5 防呆。
-// Per-mgStyle 概率 + 上限:POP 0.45/3 / JAZZ 0.35/4 / RNB 0.55/5 / BLUES 0/0。
+// 旧 af2-engine/BorrowChordPlanner.ts(7 rule POP-only 简化版)已删,本 plugin
+// 与 ImproCore facade 共享 harmony/ 单源真理,改一处规则两边同步。
 //
-// Minor 调 short-circuit(MODAL_HOME_MODES skip)— planner 自己处理,本 plugin
-// 总是 shouldApply=true(让 planner 内部 gate 自主决策)。
+// POP-only 概率硬编(baseProb=0.45 / maxFires=3)— 沿用旧简化版语义。
+// 后续若 ctx 加 mgStyle 字段可改 per-style 表。
+//
+// Af2AbstractStep ↔ BorrowChordInput 字段几乎全 superset,cast 透传,
+// harmony 输出附加 analysisKeyPc 在 Af2AbstractStep 已有 optional 字段。
 //
 // PRNG 子流:`${seed}::borrow`(由 Facade fork)。
 // ============================================================
 
-import { planBorrowedChords } from '../../BorrowChordPlanner';
+import { planBorrowedChords, type BorrowChordInput } from '../../../harmony';
 import type { ProgressionPlanner } from './types';
+import type { Af2AbstractStep } from '../../Af2Arranger';
 
 export const BorrowChordPlannerPlugin: ProgressionPlanner = {
     name: 'BorrowChordPlanner',
-    version: 'v1.0 (L phase)',
+    version: 'v2.0 (harmony port)',
     prngConsumption: 'forked',
-    description: 'Modal interchange via positional rules(7 rule × 3 source 锁定 × 5 防呆)',
+    description: 'Modal interchange via harmony/borrow-rules(10 rule A1-G × 4 source 锁定)',
 
     shouldApply(_ctx) {
-        return true;  // planner 内部 BLUES / Minor short-circuit 自主处理
+        return true;  // harmony planner 内部 BLUES / modal home mode short-circuit
     },
 
     apply(skeleton, ctx) {
-        return planBorrowedChords({
-            skeleton,
+        const result = planBorrowedChords({
+            skeleton: skeleton as BorrowChordInput[],
+            baseProb: 0.45,        // POP default(STYLE_BORROW_PROB)
+            maxFires: 3,           // POP default(STYLE_MAX_BORROWS_PER_SONG)
             motifInterval: ctx.motifInterval,
             random: ctx.borrowRng,
             beatsPerMeasure: ctx.beatsPerMeasure,
             mode: ctx.mode,
             borrowSource: ctx.borrowSource,
+            isMinorKey: ctx.isMinor,
         });
+        return result as Af2AbstractStep[];
     },
 };

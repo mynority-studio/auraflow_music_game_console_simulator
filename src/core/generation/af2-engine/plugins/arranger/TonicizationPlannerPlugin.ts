@@ -2,46 +2,52 @@
 // TonicizationPlannerPlugin — secondary ii-V wrapper
 // ============================================================
 //
-// Wraps planTonicization(L 阶段 2026-05-24)to ProgressionPlanner protocol。
+// Wraps harmony/tonicization-rules.ts(melodygenerative 完整 port:4 placement
+// × V_TYPE_BY_SOURCE_TARGET / II_TYPE_BY_SOURCE_TARGET 表 × repeated-target
+// cooldown × Mixolydian/Phrygian Dominant scale 切换)to ProgressionPlanner。
 //
-// 4 placement × per-target mult × chain cooldown:
-//   light       curr bar → V/X            (POP 0.45)
-//   approach    curr 半 + V/X 半         (POP 0.35)
-//   iiv_split   ii/X 半 + V/X 半         (JAZZ 0.45)
-//   full_2bar   prev→ii/X, curr→V/X      (JAZZ 0.30)
+// 旧 af2-engine/TonicizationPlanner.ts(固定 VType='7b9' 简化版)已删,
+// 与 ImproCore facade 共享 harmony/ 单源真理。
 //
-// Per-mgStyle prob:POP 0.30 / JAZZ 0.65 / RNB 0.40 / BLUES 0。
-// Per-song 上限:POP 2 / JAZZ 4 / RNB 3 / BLUES 0。
+// 4 placement 同 melodygenerative:
+//   light       curr bar → V/X
+//   approach    curr 半 + V/X 半
+//   iiv_split   ii/X 半 + V/X 半
+//   full_2bar   prev→ii/X, curr→V/X
 //
-// Minor-aware:Phrygian Dominant(minor target)/ Mixolydian(major target)
-// scale 切换 + m7b5 / 7b9 chord type 选择(planner 内自处理)。
+// POP-only style 硬编 — 沿用旧简化版语义(harmony 内 STYLE_TONICIZE_PROB /
+// STYLE_TONICIZE_MAX_PER_SONG / STYLE_PLACEMENT_WEIGHTS 完整表;'POP' 取
+// 0.30 / 2 / 4-way placement)。后续 ctx 加 mgStyle 可走 per-style。
 //
-// 顺序:链末尾 — 基于 Borrow + Picardy + MinorBorrow 完成后的最终 skeleton
-// 决定 secondary ii-V 插入点(包括 approach borrowed mediant 的能力)。
+// 顺序:链末尾 — 看 Borrow + Picardy + MinorBorrow 完成后的最终 skeleton。
 //
 // PRNG 子流:`${seed}::tonicize`(由 Facade fork)。
 // ============================================================
 
-import { planTonicization } from '../../TonicizationPlanner';
+import { planTonicization, type TonicizationChordInput } from '../../../harmony';
 import type { ProgressionPlanner } from './types';
+import type { Af2AbstractStep } from '../../Af2Arranger';
 
 export const TonicizationPlannerPlugin: ProgressionPlanner = {
     name: 'TonicizationPlanner',
-    version: 'v1.0 (L phase)',
+    version: 'v2.0 (harmony port)',
     prngConsumption: 'forked',
-    description: 'Tonicization 4 placement × target mult × chain cooldown(secondary ii-V)',
+    description: 'Tonicization via harmony/tonicization-rules(4 placement × V_TYPE 表)',
 
     shouldApply(_ctx) {
-        return true;  // BLUES 0 prob,planner 内部自处理
+        return true;
     },
 
     apply(skeleton, ctx) {
-        return planTonicization({
-            skeleton,
+        const result = planTonicization({
+            skeleton: skeleton as TonicizationChordInput[],
+            style: 'POP',           // POP default(sync with ImproCore facade)
             motifInterval: ctx.motifInterval,
             random: ctx.tonicizeRng,
             beatsPerMeasure: ctx.beatsPerMeasure,
             songKeyRootPc: ctx.songKeyRootPc,
+            borrowSource: ctx.borrowSource,
         });
+        return result as Af2AbstractStep[];
     },
 };
