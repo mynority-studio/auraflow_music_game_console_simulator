@@ -87,22 +87,26 @@ function findMatchingRules(
 ): Array<{ rule: GrammarRule; bindings: Map<string, number> }> {
     const out: Array<{ rule: GrammarRule; bindings: Map<string, number> }> = [];
 
-    // base rules first(termination 优先)
-    for (const rule of grammar.baseRules) {
-        if (rule.head !== head) continue;
-        if (rule.headFixedArg !== undefined && rule.headFixedArg !== arg) continue;
-        out.push({ rule, bindings: new Map() });
+    // base rules first(termination 优先)— O(1) by head
+    const bases = grammar.baseRulesByHead.get(head);
+    if (bases) {
+        for (const rule of bases) {
+            if (rule.headFixedArg !== undefined && rule.headFixedArg !== arg) continue;
+            out.push({ rule, bindings: new Map() });
+        }
     }
 
-    // recursive rules
-    for (const rule of grammar.rules) {
-        if (rule.head !== head) continue;
-        if (rule.headFixedArg !== undefined && rule.headFixedArg !== arg) continue;
-        const bindings = new Map<string, number>();
-        if (rule.params.length > 0 && arg !== undefined) {
-            bindings.set(rule.params[0]!, arg);
+    // recursive rules — O(1) by head
+    const recurs = grammar.rulesByHead.get(head);
+    if (recurs) {
+        for (const rule of recurs) {
+            if (rule.headFixedArg !== undefined && rule.headFixedArg !== arg) continue;
+            const bindings = new Map<string, number>();
+            if (rule.params.length > 0 && arg !== undefined) {
+                bindings.set(rule.params[0]!, arg);
+            }
+            out.push({ rule, bindings });
         }
-        out.push({ rule, bindings });
     }
 
     // BRICK 优先 match builtin.name === brickHint
@@ -238,8 +242,8 @@ function expandToken(
     }
 
     // 检查是否是 rule invocation:(P Y) / (BRICK 1920) — head 必须在 grammar rules 内
-    const isHead = grammar.rules.some(r => r.head === head) || grammar.baseRules.some(r => r.head === head);
-    if (isHead) {
+    // O(1) headSet lookup(代替 O(N) .some)
+    if (grammar.headSet.has(head)) {
         // 尝试求值 arg(可能是 Y 变量或 (- Y 120) 表达式)
         let arg: number | undefined;
         if (token.length >= 2) {

@@ -58,6 +58,12 @@ export interface GrammarData {
     rules: GrammarRule[];
     /** Base rules(termination conditions — Y === 0 等)*/
     baseRules: GrammarRule[];
+    /** Step 5+ 性能:rules indexed by head name(O(1) lookup,替代 O(N) filter)*/
+    rulesByHead: ReadonlyMap<string, ReadonlyArray<GrammarRule>>;
+    /** Step 5+ 性能:base rules indexed by head name */
+    baseRulesByHead: ReadonlyMap<string, ReadonlyArray<GrammarRule>>;
+    /** Step 5+ 性能:non-terminal head 集合(grammar.rules + baseRules 合集)— rule invocation 判定 */
+    headSet: ReadonlySet<string>;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -194,7 +200,24 @@ export function parseGrammar(src: string, name: string): GrammarData {
         }
     }
 
-    return { name, parameters, startSymbol, rules, baseRules };
+    // Step 5+ 性能:预 index by head name(O(1) lookup,避免 every-call linear filter)
+    const rulesByHead = new Map<string, GrammarRule[]>();
+    const baseRulesByHead = new Map<string, GrammarRule[]>();
+    const headSet = new Set<string>();
+    for (const r of rules) {
+        let arr = rulesByHead.get(r.head);
+        if (!arr) { arr = []; rulesByHead.set(r.head, arr); }
+        arr.push(r);
+        headSet.add(r.head);
+    }
+    for (const r of baseRules) {
+        let arr = baseRulesByHead.get(r.head);
+        if (!arr) { arr = []; baseRulesByHead.set(r.head, arr); }
+        arr.push(r);
+        headSet.add(r.head);
+    }
+
+    return { name, parameters, startSymbol, rules, baseRules, rulesByHead, baseRulesByHead, headSet };
 }
 
 // ─────────────────────────────────────────────────────────────────
