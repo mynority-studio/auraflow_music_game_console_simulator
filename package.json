@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "golden-seed": "tsx scripts/golden-seed.ts"
+    "golden-seed": "tsx scripts/golden-seed.ts",
+    "precompile-grammars": "node scripts/precompile-grammars.mjs",
+    "verify-grammars-rom": "node scripts/verify-grammars-rom.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

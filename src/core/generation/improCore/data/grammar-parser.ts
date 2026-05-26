@@ -16,7 +16,25 @@
 //
 // 输出 GrammarData(后续 Step 2-4 给 grammar runner 用)。
 //
-// Step 1 仅 parse,不 run。
+// ────────────────────────────────────────────────────────────
+// 真理之源 vs 源:`grammars/*.grammar` 不是 runtime 真理之源
+// ────────────────────────────────────────────────────────────
+// 同目录下的 `grammars/*.grammar`(85 个 Impro-Visor 学术语料)只在
+// build-time 被 `scripts/precompile-grammars.mjs` 读取,生成 ROM:
+//
+//   grammars/*.grammar  ──[precompile]──▶  grammars.rom (991 KB,嵌入式)
+//                                          grammars-rom-bytes.ts (base64 inline,web)
+//
+// Runtime(web 浏览器 + 嵌入式)全部从 ROM 解码,**不再 import.meta.glob**
+// 那 85 个文件。本文件末尾的 ALL_GRAMMAR_DATA_MAP 实际 re-export from
+// `grammar-rom-reader.ts`(ROM decoder),parseGrammar 仍 export 供单条
+// .grammar 文本 ad-hoc 解析(如 dev tools)用,生产链路不走 parseGrammar。
+//
+// 改 grammar 工作流(罕见,user 已声明"后续不需要改"):
+//   1. 改 grammars/*.grammar
+//   2. npm run precompile-grammars
+//   3. npm run verify-grammars-rom    ← 必须 0 mismatch
+//   4. 提交 .grammar + .rom + -bytes.ts
 // ============================================================
 
 import type { Polylist } from './polylist';
@@ -221,31 +239,12 @@ export function parseGrammar(src: string, name: string): GrammarData {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Glob load all .grammar files
+// 全量 grammar lookup:从 precompile 出的 grammars.rom(无损二进制 ROM,
+// build-time 由 scripts/precompile-grammars.mjs 生成)读取,而非启动时
+// glob/parse 85 个 .grammar 文件。bundle 体积:4.7 MB Lisp text →
+// 991 KB ROM(嵌入式预算内)+ base64 inline TS module(web 端 sync import)。
+//
+// parseGrammar(上面)仍 export — 单条 .grammar 文本 ad-hoc parse 场景
+// (如 dev tools / 实验)仍可用,但生产链路全走 reader。
 // ─────────────────────────────────────────────────────────────────
-
-const grammarModules = import.meta.glob('./grammars/*.grammar', {
-    query: '?raw',
-    import: 'default',
-    eager: true,
-}) as Record<string, string>;
-
-export const ALL_GRAMMAR_DATA_MAP: ReadonlyMap<string, GrammarData> = (() => {
-    const map = new Map<string, GrammarData>();
-    for (const [path, raw] of Object.entries(grammarModules)) {
-        const name = path.split('/').pop()?.replace(/\.grammar$/, '') ?? path;
-        try {
-            const data = parseGrammar(raw, name);
-            map.set(name, data);
-        } catch (e) {
-            console.warn(`[ImproCore] grammar parse failed:${path}`, e);
-        }
-    }
-    return map;
-})();
-
-export const ALL_GRAMMAR_DATA_NAMES: ReadonlyArray<string> = Array.from(ALL_GRAMMAR_DATA_MAP.keys()).sort();
-
-export function getGrammarData(name: string): GrammarData | undefined {
-    return ALL_GRAMMAR_DATA_MAP.get(name);
-}
+export { ALL_GRAMMAR_DATA_MAP, ALL_GRAMMAR_DATA_NAMES, getGrammarData } from './grammar-rom-reader';
