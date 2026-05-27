@@ -60,16 +60,12 @@ export const CHANNEL_DRUMS = 9;
 // GM Program 默认分配(每 channel 的默认音色)
 // ============================================================
 //
-// 实际 GM program 由 musician.instrumentFamily 通过 gmProgramOverrides 提供。
-// 本表只是 fallback,当 override 未提供时启用。
-//
-//   melody     → 1  (Bright Acoustic Piano)  — MainInst 默认略亮
-//   accomp     → 0  (Acoustic Grand)         — 伴奏主力,中频饱满
-//   bass       → 34 (Electric Bass Finger)   — 低频
-//   atmosphere → 89 (Warm Pad)               — 长音铺底
-//   drums      → 0  (GM Drum Map 硬路由,program 被忽略)
+// 2026-05-27 mgEngine 中性化:melody / accomp 都默认 Acoustic Grand(GM 0),
+// 与 mg App.tsx 的 Salamander piano 单一钢琴音源对齐。
+// gmProgramOverrides 仍可覆盖(UI 钢琴族下拉)。
+// bass / atmosphere / drums 槽位在 mg 钢琴独奏模式下不会用,但保留默认值给未来扩展。
 
-const GM_PROGRAM_MELODY = 1;
+const GM_PROGRAM_MELODY = 0;
 const GM_PROGRAM_ACCOMP = 0;
 const GM_PROGRAM_BASS = 34;
 const GM_PROGRAM_ATMOSPHERE = 89;
@@ -84,33 +80,26 @@ const CC_REVERB = 91;
 const CC_EXPRESSION = 11;
 
 // ============================================================
-// 基础混音 profile（Phase 6 — 钢琴 instrumental 编制重新校准 + The Walker 急救）
+// 基础混音 profile — 中性化(2026-05-27 mgEngine 接入)
 // ============================================================
 //
-// CLAUDE.md 原始等级 "Vocal/Melody 118 > Drums 108 > Bass 98 > Chord 85" 是
-// vocal-led 流行编制：vocal 是焦点，bass 比 chord 强 13 单位作为律动锚点。
-// 但本工程是钢琴 instrumental 编制（lead piano 替代 vocal），需要校准两点：
+// 原 per-channel volume/pan/reverb 差异化预设(melody 微右+长尾混响 /
+// accomp 中度混响 / bass 零混响 punchy / atmosphere 低音量 / drums 中度)
+// 全部清零,与 mg App.tsx "single Salamander piano + global reverb" 对齐。
+// 所有通道:volume=127(max) / pan=64(center) / reverb=0(SF2 默认混响关)。
 //
-//   1. 没有 vocal 时，lead piano 就是焦点 — 推到 CC7 上限附近确保压住伴奏
-//   2. 没有独立 chord pad 时，comping piano 是唯一和声体 — 必须大幅高于原"Chord 85"
-//
-// Phase 6 The Walker 修订：
-//   - Bass 严禁混响：长尾混响会糊掉低频根音的 attack，让 Walking Bass 的"行进感"消失
-//   - Bass volume 上抬补偿失去混响后的响度，且 Walking / Funk 需要 punchy attack 占位
-//
-// pan: 64 = 居中
-// reverb: 0~127；melody 长尾制造空间感
+// 如果需要"模拟" mg 的全局长尾混响,加在 SF2 / SpessaSynth 全局即可,不要
+// 重新引入 per-channel 差异。
 
 interface MixProfile { volume: number; pan: number; reverb: number; }
 
-const MIX_MELODY:     MixProfile = { volume: 122, pan: 74, reverb: 70 };  // MainInst:高音量 + 微右 + 长尾
-// 2026-05-21 Channel 重构:原 MIX_PIANO_RH+MIX_PIANO_LH 合并 → 单 accomp 通道。
-// 取 RH(volume 127 / pan 64 / reverb 50)作为基线,因为 RH 是和声主体。
-// 钢琴 LH 的"微左 pan 54"做"分声场"听感被牺牲(钢琴一个乐器无须双声场)。
-const MIX_ACCOMP:     MixProfile = { volume: 127, pan: 64, reverb: 50 };
-const MIX_BASS:       MixProfile = { volume: 115, pan: 64, reverb:  0 };  // 继承原 MIX_ELECTRIC_BASS
-const MIX_ATMOSPHERE: MixProfile = { volume:  70, pan: 64, reverb: 60 };
-const MIX_DRUMS:      MixProfile = { volume: 102, pan: 64, reverb: 25 };
+const MIX_IDENTITY: MixProfile = { volume: 127, pan: 64, reverb: 0 };
+
+const MIX_MELODY     = MIX_IDENTITY;
+const MIX_ACCOMP     = MIX_IDENTITY;
+const MIX_BASS       = MIX_IDENTITY;
+const MIX_ATMOSPHERE = MIX_IDENTITY;
+const MIX_DRUMS      = MIX_IDENTITY;
 
 // ============================================================
 // 事件优先级（同 tick 排序的次序）
@@ -163,25 +152,11 @@ export class MidiConverter {
         // renderTrack 内部仅做 [0,127] clamp。channel 9 + program = kit id(SF2/GM2 兼容)
         renderTrack(out, song.drums,      CHANNEL_DRUMS,      progDrums,      MIX_DRUMS);
 
-        // Fake Sidechain(伪侧链):基于 Kick 鼓点对伴奏 + 贝斯通道注入 CC11 闪避包络
-        // D-5 safe:无 PRNG 消耗的机械注入,零 DSP 开销
-        // 2026-05-21 重构:原 PianoRH+LH 双 ducking → 合并到 ACCOMP 单通道 ducking,
-        // 与 BASS 通道独立 ducking。各 channel 一份。
-        const kicks = out.filter(e => e.type === 'noteOn' && e.channel === CHANNEL_DRUMS && e.data1 === 36);
-        for (let i = 0; i < kicks.length; i++) {
-            const kickTick = kicks[i].ticks;
-            // Accomp 深 ducking(原 PianoRH ducking 配置)
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_ACCOMP, data1: CC_EXPRESSION, data2: 60 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_ACCOMP, data1: CC_EXPRESSION, data2: 90 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_ACCOMP, data1: CC_EXPRESSION, data2: 127 });
+        // 2026-05-27 mgEngine 中性化:删除 kick-triggered 伪侧链 ducking(原对
+        // accomp + bass 注入 CC11 dip→recovery 包络)。mg 不做侧链,所有声部
+        // 平铺,我们也对齐。
 
-            // Bass 中度 ducking,让出 Kick 频段
-            out.push({ ticks: kickTick,       type: 'cc', channel: CHANNEL_BASS, data1: CC_EXPRESSION, data2: 70 });
-            out.push({ ticks: kickTick + 120, type: 'cc', channel: CHANNEL_BASS, data1: CC_EXPRESSION, data2: 100 });
-            out.push({ ticks: kickTick + 240, type: 'cc', channel: CHANNEL_BASS, data1: CC_EXPRESSION, data2: 127 });
-        }
-
-        // D-3：完全确定的排序
+        // D-3:完全确定的排序
         out.sort((a, b) => {
             if (a.ticks !== b.ticks) return a.ticks - b.ticks;
             return eventPriority(a.type) - eventPriority(b.type);
