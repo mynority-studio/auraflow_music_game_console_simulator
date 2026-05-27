@@ -80,26 +80,29 @@ const CC_REVERB = 91;
 const CC_EXPRESSION = 11;
 
 // ============================================================
-// 基础混音 profile — 中性化(2026-05-27 mgEngine 接入)
+// 基础混音 profile — mg-aligned global reverb(2026-05-27)
 // ============================================================
 //
-// 原 per-channel volume/pan/reverb 差异化预设(melody 微右+长尾混响 /
-// accomp 中度混响 / bass 零混响 punchy / atmosphere 低音量 / drums 中度)
-// 全部清零,与 mg App.tsx "single Salamander piano + global reverb" 对齐。
-// 所有通道:volume=127(max) / pan=64(center) / reverb=0(SF2 默认混响关)。
+// 对齐 mg App.tsx 的 "single Salamander + Tone reverb decay=2.5s preDelay=10ms"
+// 全局长尾混响听感。SF2 没法做 Tone-style 算法 reverb,但每通道 CC91 拉到
+// 同一值 ≈ "全通道走同一个 GM reverb send",听感上等价。
 //
-// 如果需要"模拟" mg 的全局长尾混响,加在 SF2 / SpessaSynth 全局即可,不要
-// 重新引入 per-channel 差异。
+// 所有"活动"通道(MainInst=melody / Accomp=accomp)统一 reverb=75(约 60%),
+// 这是按用户耳朵估算贴近 mg 的值,可调。其他三槽(bass/atmosphere/drums)在
+// 当前 mgEngine 路由下永远 undefined notes → renderTrack 直接 return,
+// MIX 数据不会发出,留 75 是 "未来若启用也保持同一 reverb" 的占位。
+//
+// volume=127(max)/ pan=64(center)— 无差异化,纯生 GM piano 单 sampler 等价。
 
 interface MixProfile { volume: number; pan: number; reverb: number; }
 
-const MIX_IDENTITY: MixProfile = { volume: 127, pan: 64, reverb: 0 };
+const MIX_MGLIKE: MixProfile = { volume: 127, pan: 64, reverb: 75 };
 
-const MIX_MELODY     = MIX_IDENTITY;
-const MIX_ACCOMP     = MIX_IDENTITY;
-const MIX_BASS       = MIX_IDENTITY;
-const MIX_ATMOSPHERE = MIX_IDENTITY;
-const MIX_DRUMS      = MIX_IDENTITY;
+const MIX_MELODY     = MIX_MGLIKE;
+const MIX_ACCOMP     = MIX_MGLIKE;
+const MIX_BASS       = MIX_MGLIKE;
+const MIX_ATMOSPHERE = MIX_MGLIKE;
+const MIX_DRUMS      = MIX_MGLIKE;
 
 // ============================================================
 // 事件优先级（同 tick 排序的次序）
