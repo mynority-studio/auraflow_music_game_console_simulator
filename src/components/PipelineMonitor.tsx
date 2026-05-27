@@ -316,8 +316,8 @@ export const PipelineMonitor: React.FC = () => {
                 ' forcedBand=', JSON.parse(JSON.stringify(bandSelectionRef.current)),
                 ' forcedGmPrograms=', JSON.parse(JSON.stringify(instrumentSelectionRef.current)));
 
-            // 2026-05-27 wipe music engines:runPipeline 是 stub,这里调用会 throw,
-            // 被下面 catch 捕获 — 新引擎接上之前 Play 都不会出声。
+            // 2026-05-27 mgEngine 接管:runPipeline 调 mg.Engine.generateArrangement,
+            // forcedBand 决定 melody / accompaniment 哪个轨剪掉(null = 该槽空)。
             const { track, context } = runPipeline({
                 forcedBand: bandSelectionRef.current,
                 forcedGmPrograms: instrumentSelectionRef.current,
@@ -436,10 +436,10 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* Engine slot — 2026-05-27 wipe music engines 后置空,等新引擎接管 */}
+            {/* Engine slot — mgEngine 唯一引擎(2026-05-27) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <span className="text-[10px] text-zinc-500 font-mono">no engine wired · Play will throw</span>
+                <span className="text-[10px] text-cyan-400 font-mono">mgEngine · POP · key=C</span>
             </div>
 
             {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}
