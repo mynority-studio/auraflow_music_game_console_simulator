@@ -16,15 +16,14 @@ import { StyleId } from '../config/StyleFlags';
 export const MUSICIAN_POOL: Musician[] = [
     {
         id: 'alex_piano',
-        name: 'Alex',
+        name: 'Alex (Melody)',
         genre: StyleId.ModernPop,
         instrumentRef: 'grand_piano',
         instrumentFamily: InstrumentFamily.Piano,
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.MainInst,
-        // 2026-05-27 单轨调试模式:仅 MainInst,Accomp 槽下拉只剩「⊘ Empty」。
-        // runPipeline 内部把 mg 全输出(melody+chord+bass)合并塞进 MainInst 单轨。
+        // 2026-05-27 分 mg 2-Layer 路由:Alex 只承担 MainInst(mg part='melody')
         eligibleRoles: [BandRole.MainInst],
         instrumentId: 0,
         persona: {
@@ -35,7 +34,30 @@ export const MUSICIAN_POOL: Musician[] = [
             wakeK: 0.05,
             peakK: 0.85,
         },
-        description: 'Pop/Jazz 钢琴手,跑 mgEngine melody + chord',
+        description: 'mg 主旋律手 — 跑 mg part="melody",路由到 MainInst (ch1)',
+    },
+    {
+        id: 'chloe_piano',
+        name: 'Chloe (Harmony)',
+        genre: StyleId.ModernPop,
+        instrumentRef: 'grand_piano',
+        instrumentFamily: InstrumentFamily.Piano,
+        defaultSound: 'Acoustic_Grand',
+        personnel: {},
+        role: BandRole.Accomp,
+        // Chloe 只承担 Accomp(mg part='chord' + 'bass' 合并 — 对应 mg App.tsx 的
+        // "Harmony Layer",即 events.filter(e => e.part === 'chord' || e.part === 'bass'))
+        eligibleRoles: [BandRole.Accomp],
+        instrumentId: 0,
+        persona: {
+            colorBias: 0.4,
+            sparsityTendency: 0.5,
+            syncopationAssault: 0.3,
+            dynamicRange: [55, 100],
+            wakeK: 0.05,
+            peakK: 0.85,
+        },
+        description: 'mg 伴奏手 — 跑 mg part="chord" + "bass" 合并,路由到 Accomp (ch2)',
     },
 ];
 

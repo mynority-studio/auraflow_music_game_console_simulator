@@ -60,37 +60,44 @@ export function runPipeline(
     const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: 'C' });
 
     // ========================================================================
-    // 2026-05-27 单轨调试模式
+    // 2026-05-27 mg 2-Layer 分轨路由
     // ========================================================================
-    // 用户怀疑 multi-channel 路由是听感"chord 第二个开始没了"的根因。把 mg 完整
-    // 输出(melody + chord + bass)合并按 onset 升序塞进 MainInst 单轨,
-    // 绕开通道 2/3 的 SF2 加载 / 通道隔离问题。
+    // 按 mg App.tsx 的逻辑分组(line 488-489):
+    //   - Melody Layer  = events.filter(part === 'melody')           → MainInst (ch1)
+    //   - Harmony Layer = events.filter(part === 'chord' || 'bass')  → Accomp   (ch2)
     //
-    // Accomp / Bass / Drums / Atmosphere 槽全空(MusicianRegistry 已限制
-    // alex_piano.eligibleRoles=[MainInst])。
+    // adapter 已经拆好 melody / accompaniment / bass 三轨,这里把 bass 合并进
+    // accompaniment(mg 的 Harmony Layer 就是这两个加在一起,且 mg 自己一个
+    // Salamander sampler 同时弹 — 我们等价用同一个 GM piano 在同 channel)。
+    // Bass / Drums / Atmosphere 槽永远空。
     // ========================================================================
     const forcedBand = options.forcedBand ?? {};
+
     if (forcedBand[BandRole.MainInst] == null) {
-        // MainInst 槽空 → 整曲不出声
         track.melody = [];
+    }
+
+    if (forcedBand[BandRole.Accomp] == null) {
+        track.accompaniment = [];
     } else {
-        const merged = [
-            ...(track.melody ?? []),
+        // 合并 chord + bass 到 accompaniment(mg Harmony Layer)
+        const harmony = [
             ...(track.accompaniment ?? []),
             ...(track.bass ?? []),
         ];
-        merged.sort((a, b) => a.onset - b.onset);
-        track.melody = merged;
+        harmony.sort((a, b) => a.onset - b.onset);
+        track.accompaniment = harmony;
     }
-    track.accompaniment = undefined;
+
     track.bass = undefined;
     track.drums = undefined;
     track.atmosphere = undefined;
 
-    // GM 程式号覆盖(MidiConverter 消费)— 单轨调试只用 melody 通道
+    // GM 程式号覆盖(MidiConverter 消费)— 两通道分别覆盖
     const gm = options.forcedGmPrograms ?? {};
     context.gmProgramOverrides = {
         melody: gm[BandRole.MainInst],
+        accomp: gm[BandRole.Accomp],
     };
 
     return { track, context };

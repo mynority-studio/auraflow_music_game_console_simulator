@@ -38,8 +38,8 @@ export type InstrumentSelection = Partial<Record<BandRole, number>>;
  *   (跑 mg chord)。其他 3 槽默认「空」,UI 下拉也只有「空」可选,等扩展。
  */
 const DEFAULT_BAND: BandSelection = {
-    [BandRole.MainInst]:   'alex_piano',
-    [BandRole.Accomp]:     'alex_piano',
+    [BandRole.MainInst]:   'alex_piano',     // mg part='melody'  → ch1
+    [BandRole.Accomp]:     'chloe_piano',    // mg part='chord'+'bass' 合并 → ch2
     [BandRole.Bass]:       null,
     [BandRole.Drums]:      null,
     [BandRole.Atmosphere]: null,

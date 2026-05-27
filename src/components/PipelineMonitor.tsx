@@ -187,7 +187,7 @@ type InstrumentSelection = Partial<Record<BandRole, number>>;
  */
 const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
     [BandRole.MainInst]: 'alex_piano',
-    [BandRole.Accomp]:   'alex_piano',
+    [BandRole.Accomp]:   'chloe_piano',
     // 2026-05-27 mgEngine:Bass / Drums / Atmosphere 槽位无对应 musician,下拉自动空
 };
 
