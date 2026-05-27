@@ -187,12 +187,9 @@ type InstrumentSelection = Partial<Record<BandRole, number>>;
  * 若 buildDefaultRoster 默认值变更，本表需同步更新。
  */
 const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
-    [BandRole.MainInst]:   'alex_piano',
-    [BandRole.Accomp]:     'alex_piano',
-    // 2026-05-25 切"钢琴独奏"模式:bass 槽空(HandPartitioner LH 替代)
-    // [BandRole.Bass]:    'frank_bass',
-    [BandRole.Drums]:      'dave_drums',
-    [BandRole.Atmosphere]: 'nina_pad',
+    [BandRole.MainInst]: 'alex_piano',
+    [BandRole.Accomp]:   'alex_piano',
+    // 2026-05-27 mgEngine:Bass / Drums / Atmosphere 槽位无对应 musician,下拉自动空
 };
 
 export const PipelineMonitor: React.FC = () => {

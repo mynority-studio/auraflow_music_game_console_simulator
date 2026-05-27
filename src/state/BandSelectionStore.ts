@@ -33,18 +33,16 @@ export type BandSelection = Partial<Record<BandRole, string | null>>;
 export type InstrumentSelection = Partial<Record<BandRole, number>>;
 
 /**
- * 默认 band(fresh load 时):5 槽预填合理 musicians,保证 AF2 模式开盒即响。
- * 之前 Phase A 改 "empty 槽 = 无声" 后,如果 store 是 {} 会全静音 → 必须给默认。
- * 用户点 BandSelection Apply 会 setBand() 覆盖这份默认。
+ * 默认 band(fresh load 时):
+ *   mgEngine 接入(2026-05-27)— 只用 MainInst(跑 mg melody)+ Accomp
+ *   (跑 mg chord)。其他 3 槽默认「空」,UI 下拉也只有「空」可选,等扩展。
  */
 const DEFAULT_BAND: BandSelection = {
     [BandRole.MainInst]:   'alex_piano',
-    [BandRole.Accomp]:     'chloe_pop_piano',
-    // 2026-05-25 切"钢琴独奏"模式:删 bass musician,HandPartitioner LH 替代 bass
-    // 恢复多乐手时改回 'frank_bass'(MusicianRegistry 注释也要恢复)
+    [BandRole.Accomp]:     'alex_piano',
     [BandRole.Bass]:       null,
-    [BandRole.Drums]:      'dave_drums',
-    [BandRole.Atmosphere]: 'nina_pad',
+    [BandRole.Drums]:      null,
+    [BandRole.Atmosphere]: null,
 };
 
 let _band: BandSelection = { ...DEFAULT_BAND };
