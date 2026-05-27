@@ -1,24 +1,15 @@
 // ============================================================
-// runPipeline — AF2 唯一入口(2026-05-24 删 AF/MG 后)
+// runPipeline — stub(2026-05-27 wipe music engines)
 // ============================================================
 //
-// 历史:本文件早期承载完整 Stage 1-5 + Conductor + MG/AF2 分流。
-//        2026-05-24 删 AF/MG 路径后,本文件退化为薄壳:始终路由到
-//        Af2EngineFacade.generate(options)。
-//
-// app_integration_rule §0 Single Pipeline 原则保持不变:
-//   所有 app(AuraBar / AuraJam / PipelineMonitor)继续 import runPipeline
-//   from '../../core/generation/pipeline',调用契约 0 变化。
-//
-// 后续清理:旧 AF pipeline / primitives / realizers / mg-engine 等文件
-//   不再被 runPipeline 调用,留待后续 commit 物理删除。
+// 所有音乐生成引擎(af2-engine / improCore algorithms / harmony)已物理删除。
+// 本文件保留 PipelineRunOptions 契约签名,供 App 层(PipelineMonitor /
+// EndlessRadioManager / JamSessionManager)的 import 继续编译通过;
+// 调用 runPipeline 会 throw,等新引擎接管。
 // ============================================================
 
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
-import { Af2EngineFacade } from '../af2-engine/Af2EngineFacade';
-import { ImproEngineFacade } from '../improCore/ImproEngineFacade';
-import { EngineSelectionStore } from '../../../state/EngineSelectionStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -33,11 +24,11 @@ export interface PipelineRunOptions {
 }
 
 export function runPipeline(
-    options: PipelineRunOptions = {},
+    _options: PipelineRunOptions = {},
 ): { track: GeneratedTrack; context: MusicContext } {
-    const engine = EngineSelectionStore.getEngine();
-    if (engine === 'Impro') {
-        return ImproEngineFacade.generate(options);
-    }
-    return Af2EngineFacade.generate(options);
+    void _options;
+    throw new Error(
+        '[runPipeline] music generation engine not implemented — '
+        + 'all engines wiped on 2026-05-27. Implement new engine and route here.',
+    );
 }

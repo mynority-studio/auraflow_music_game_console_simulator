@@ -24,11 +24,8 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-import { EngineSelectionStore, type EngineId } from '../state/EngineSelectionStore';
-import { ImproStyleStore } from '../state/ImproStyleStore';
-import { ImproGrammarStore } from '../state/ImproGrammarStore';
-import { ALL_STYLE_NAMES } from '../core/generation/improCore/data/loaded';
-import { ALL_GRAMMAR_NAMES, ALL_GRAMMAR_DROPDOWN_NAMES } from '../core/generation/improCore/algorithms/lick-gen';
+// 2026-05-27 wipe music engines:Engine/Impro 切换 + style/grammar 选择已删,
+// runPipeline 现在是 stub,触发 Play 会 throw。
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -204,21 +201,6 @@ export const PipelineMonitor: React.FC = () => {
         arranged: null, context: null, beat: 0, seed: 0,
     });
     const [seedInput, setSeedInput] = useState('42');
-    const [engine, setEngineState] = useState<EngineId>(() => EngineSelectionStore.getEngine());
-    const switchEngine = useCallback((next: EngineId) => {
-        EngineSelectionStore.setEngine(next);
-        setEngineState(next);
-    }, []);
-    const [improStyle, setImproStyleState] = useState<string>(() => ImproStyleStore.getStyleName());
-    const switchImproStyle = useCallback((name: string) => {
-        ImproStyleStore.setStyleName(name);
-        setImproStyleState(name);
-    }, []);
-    const [improGrammar, setImproGrammarState] = useState<string>(() => ImproGrammarStore.getGrammarName());
-    const switchImproGrammar = useCallback((name: string) => {
-        ImproGrammarStore.setGrammarName(name);
-        setImproGrammarState(name);
-    }, []);
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
@@ -337,8 +319,8 @@ export const PipelineMonitor: React.FC = () => {
                 ' forcedBand=', JSON.parse(JSON.stringify(bandSelectionRef.current)),
                 ' forcedGmPrograms=', JSON.parse(JSON.stringify(instrumentSelectionRef.current)));
 
-            // runPipeline 内部读 EngineSelectionStore 分流 AF / MG。
-            // MG 模式下 Phase 0 stub 会抛 NOT_IMPLEMENTED,被下面 catch 捕获。
+            // 2026-05-27 wipe music engines:runPipeline 是 stub,这里调用会 throw,
+            // 被下面 catch 捕获 — 新引擎接上之前 Play 都不会出声。
             const { track, context } = runPipeline({
                 forcedBand: bandSelectionRef.current,
                 forcedGmPrograms: instrumentSelectionRef.current,
@@ -457,65 +439,10 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* Engine toggle — AF2 / Impro 切换(2026-05-25 加,共识 1-4 已达成) */}
+            {/* Engine slot — 2026-05-27 wipe music engines 后置空,等新引擎接管 */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <button
-                    onClick={() => switchEngine('AF2')}
-                    className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase rounded transition-all ${
-                        engine === 'AF2'
-                            ? 'bg-orange-500/80 text-white shadow-[0_0_8px_rgba(249,115,22,0.5)]'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                    }`}
-                >
-                    AF2
-                </button>
-                <button
-                    onClick={() => switchEngine('Impro')}
-                    className={`px-3 py-1 text-[10px] font-bold tracking-wider uppercase rounded transition-all ${
-                        engine === 'Impro'
-                            ? 'bg-cyan-500/80 text-white shadow-[0_0_8px_rgba(6,182,212,0.5)]'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                    }`}
-                >
-                    Impro
-                </button>
-                {engine === 'Impro' && (
-                    <>
-                        <select
-                            value={improStyle}
-                            onChange={(e) => switchImproStyle(e.target.value)}
-                            title={`${ALL_STYLE_NAMES.length} styles 可选(accomp/bass/drum 节奏型 + voicing-type → .fv preset)`}
-                            className="ml-2 bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60 max-w-[140px]"
-                        >
-                            {ALL_STYLE_NAMES.map(n => (
-                                <option key={n} value={n}>{n}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={improGrammar}
-                            onChange={(e) => switchImproGrammar(e.target.value)}
-                            title={`${ALL_GRAMMAR_DROPDOWN_NAMES.length} melody grammar 可选 — ${ALL_GRAMMAR_NAMES.length} hardcode + ${ALL_GRAMMAR_DROPDOWN_NAMES.length - ALL_GRAMMAR_NAMES.length} Impro-Visor .grammar`}
-                            className="ml-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60 max-w-[160px]"
-                        >
-                            <optgroup label={`Hardcoded (${ALL_GRAMMAR_NAMES.length})`}>
-                                {ALL_GRAMMAR_NAMES.map(n => (
-                                    <option key={n} value={n}>{n}</option>
-                                ))}
-                            </optgroup>
-                            <optgroup label={`Impro-Visor (${ALL_GRAMMAR_DROPDOWN_NAMES.length - ALL_GRAMMAR_NAMES.length})`}>
-                                {ALL_GRAMMAR_DROPDOWN_NAMES.slice(ALL_GRAMMAR_NAMES.length).map(n => (
-                                    <option key={n} value={n}>{n}</option>
-                                ))}
-                            </optgroup>
-                        </select>
-                    </>
-                )}
-                <span className="text-[9px] text-zinc-500 font-mono ml-auto">
-                    {engine === 'AF2'
-                        ? 'POP-only · 5 slots active (no vocal)'
-                        : `${ALL_STYLE_NAMES.length} styles · ${ALL_GRAMMAR_DROPDOWN_NAMES.length} grammars · 4 tracks`}
-                </span>
+                <span className="text-[10px] text-zinc-500 font-mono">no engine wired · Play will throw</span>
             </div>
 
             {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}
