@@ -25,6 +25,7 @@ import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/gene
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
 import { MgStyleStore, MG_STYLE_OPTIONS, type MgStyle } from '../state/MgStyleStore';
+import { MgKeyStore, MG_KEY_OPTIONS, type MgKey } from '../state/MgKeyStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -202,6 +203,11 @@ export const PipelineMonitor: React.FC = () => {
     const switchMgStyle = useCallback((next: MgStyle) => {
         MgStyleStore.setStyle(next);
         setMgStyleState(next);
+    }, []);
+    const [mgKey, setMgKeyState] = useState<MgKey>(() => MgKeyStore.getKey());
+    const switchMgKey = useCallback((next: MgKey) => {
+        MgKeyStore.setKey(next);
+        setMgKeyState(next);
     }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
@@ -455,7 +461,17 @@ export const PipelineMonitor: React.FC = () => {
                         <option key={s} value={s}>{s}</option>
                     ))}
                 </select>
-                <span className="text-[9px] text-zinc-500 font-mono ml-auto">key=C</span>
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500 ml-1">key</span>
+                <select
+                    value={mgKey}
+                    onChange={(e) => switchMgKey(e.target.value as MgKey)}
+                    className="bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60"
+                    title="mg key 选择 — 下次 Play 生效"
+                >
+                    {MG_KEY_OPTIONS.map((k) => (
+                        <option key={k} value={k}>{k}</option>
+                    ))}
+                </select>
             </div>
 
             {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}

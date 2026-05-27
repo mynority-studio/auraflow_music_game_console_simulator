@@ -18,6 +18,7 @@ import { StyleId } from '../config/StyleFlags';
 import { runMgEngine } from '../mgEngine/adapter';
 import { PRNGManager } from '../../utils/PRNG';
 import { MgStyleStore } from '../../../state/MgStyleStore';
+import { MgKeyStore } from '../../../state/MgKeyStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -55,9 +56,10 @@ export function runPipeline(
     // PRNGManager.setSeed(N),这里读回 N 喂给 mg)。
     const numericSeed = PRNGManager.getInitialSeed();
     const mgStyle = MgStyleStore.getStyle();
+    const mgKey = MgKeyStore.getKey();
     const mgSeed = deriveMgSeed(numericSeed, mgStyle);
 
-    const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: 'C' });
+    const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: mgKey });
 
     // ========================================================================
     // 2026-05-27 mg 2-Layer 分轨路由
