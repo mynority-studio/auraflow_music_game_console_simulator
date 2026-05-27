@@ -23,7 +23,9 @@ export const MUSICIAN_POOL: Musician[] = [
         defaultSound: 'Acoustic_Grand',
         personnel: {},
         role: BandRole.MainInst,
-        eligibleRoles: [BandRole.MainInst, BandRole.Accomp],
+        // 2026-05-27 单轨调试模式:仅 MainInst,Accomp 槽下拉只剩「⊘ Empty」。
+        // runPipeline 内部把 mg 全输出(melody+chord+bass)合并塞进 MainInst 单轨。
+        eligibleRoles: [BandRole.MainInst],
         instrumentId: 0,
         persona: {
             colorBias: 0.4,

@@ -59,26 +59,38 @@ export function runPipeline(
 
     const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: 'C' });
 
-    // 槽位剪枝:槽 = null 或 undefined → 对应轨清空。
-    // (forcedBand 字段缺省时视为 null —— PipelineMonitor 已强制写全 5 槽)
+    // ========================================================================
+    // 2026-05-27 单轨调试模式
+    // ========================================================================
+    // 用户怀疑 multi-channel 路由是听感"chord 第二个开始没了"的根因。把 mg 完整
+    // 输出(melody + chord + bass)合并按 onset 升序塞进 MainInst 单轨,
+    // 绕开通道 2/3 的 SF2 加载 / 通道隔离问题。
+    //
+    // Accomp / Bass / Drums / Atmosphere 槽全空(MusicianRegistry 已限制
+    // alex_piano.eligibleRoles=[MainInst])。
+    // ========================================================================
     const forcedBand = options.forcedBand ?? {};
     if (forcedBand[BandRole.MainInst] == null) {
+        // MainInst 槽空 → 整曲不出声
         track.melody = [];
+    } else {
+        const merged = [
+            ...(track.melody ?? []),
+            ...(track.accompaniment ?? []),
+            ...(track.bass ?? []),
+        ];
+        merged.sort((a, b) => a.onset - b.onset);
+        track.melody = merged;
     }
-    if (forcedBand[BandRole.Accomp] == null) {
-        track.accompaniment = [];
-    }
-    // 其他槽:bass / drums / atmosphere — mg 不生成 drums/atmosphere,bass 槽
-    // 默认就剪掉(我们这次只用钢琴手两槽)。
+    track.accompaniment = undefined;
     track.bass = undefined;
     track.drums = undefined;
     track.atmosphere = undefined;
 
-    // GM 程式号覆盖(MidiConverter 消费)
+    // GM 程式号覆盖(MidiConverter 消费)— 单轨调试只用 melody 通道
     const gm = options.forcedGmPrograms ?? {};
     context.gmProgramOverrides = {
         melody: gm[BandRole.MainInst],
-        accomp: gm[BandRole.Accomp],
     };
 
     return { track, context };
