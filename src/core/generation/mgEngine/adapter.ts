@@ -8,19 +8,22 @@
 // mg 输入:string seed + style + key + emotion
 // mg 输出:MusicTimeline.events(NoteEvent[],含 part: melody/chord/bass)
 //          + ChordDef[](和弦 metadata)
+//          + pedalEvents(真延音踏板 CC64 on/off,LOFI 整 bar 踩 / POP 长 chord 踩
+//             / JAZZ/BLUES 不踩)
 //
 // 我们的输出:GeneratedTrack(melody/accompaniment/chords/bpm/key/...)
 //             + MusicContext(keyOffset/bpm/timeSignature/tonality)
 //
-// 简化规则(MVP):
+// 关键约定:
 //   - keyOffset = 0,所有 NoteData.pitch 保持 mg 的 absolute MIDI
 //     (AbsoluteTransposer 加 0 = no-op,直接进 MidiConverter)
 //   - velocity 127 scale → [0,1] float
-//   - chords[] 给最小 stub(只够 UI 显示,不参与发声路由)
-//   - 段落只填一个 Verse 全曲覆盖(够 PipelineMonitor 渲染)
+//   - **踏板延音**:chord/bass 部分,落在 pedal-on 区间内的 event 把 duration
+//     延长到 max(natural, min(pedalEnd - onset, 8))。melody 不受影响
+//     (mg 内部约定:延音 melody 会糊掉,真实演奏家也是踩-放-踩)。
 // ============================================================
 
-import { Engine, Random, type GenerationConfig, type ChordDef, type NoteEvent } from './musicEngine';
+import { Engine, Random, type GenerationConfig, type ChordDef, type NoteEvent, type PedalEvent } from './musicEngine';
 import { STYLE_DICTIONARY, type StyleName } from './styleDictionary';
 import {
     GeneratedTrack,
@@ -40,20 +43,72 @@ export interface MgRunOptions {
     key?: string;
 }
 
+interface PedalSegment { start: number; end: number }
+
+/**
+ * 从 mg PedalEvent[](CC64 on/off 序列)算出按下区间数组。
+ * 同 mg App.tsx 的 pedalSegments 构造逻辑等价。
+ */
+function buildPedalSegments(pedalEvents: PedalEvent[] | undefined): PedalSegment[] {
+    if (!pedalEvents || pedalEvents.length === 0) return [];
+    const segs: PedalSegment[] = [];
+    let down = false;
+    let segStart = 0;
+    for (let i = 0; i < pedalEvents.length; i++) {
+        const pe = pedalEvents[i];
+        if (pe.type === 'on' && !down) {
+            segStart = pe.time;
+            down = true;
+        } else if (pe.type === 'off' && down) {
+            segs.push({ start: segStart, end: pe.time });
+            down = false;
+        }
+    }
+    if (down) segs.push({ start: segStart, end: Number.POSITIVE_INFINITY });
+    return segs;
+}
+
+/**
+ * 在 pedalSegments 里查 t 所在段的结束时刻;不在任何段内返 null。
+ */
+function pedalEndAfter(segs: PedalSegment[], t: number): number | null {
+    for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        if (t >= s.start && t < s.end) return s.end;
+    }
+    return null;
+}
+
+const PEDAL_MAX_RING_BEATS = 8;  // cap: 一个 voice ring 不超过 8 拍(同 mg App.tsx)
+
 /**
  * 把 mg NoteEvent[] 中某个 part 提取出来,转成 NoteData[]。
  *   - velocity 0-127 → [0,1] float
  *   - pitch 透传(absolute MIDI;我们的 keyOffset 设 0)
+ *   - applyPedal=true 时(chord/bass)走踏板延长
  */
-function eventsToNoteData(events: NoteEvent[], part: NoteEvent['part']): NoteData[] {
+function eventsToNoteData(
+    events: NoteEvent[],
+    part: NoteEvent['part'],
+    pedalSegs: PedalSegment[],
+    applyPedal: boolean,
+): NoteData[] {
     const out: NoteData[] = [];
     for (let i = 0; i < events.length; i++) {
         const e = events[i];
         if (e.part !== part) continue;
+        let duration = e.duration;
+        if (applyPedal && pedalSegs.length > 0) {
+            const pedalEnd = pedalEndAfter(pedalSegs, e.time);
+            if (pedalEnd !== null) {
+                const pedalDur = pedalEnd - e.time;
+                duration = Math.max(duration, Math.min(pedalDur, PEDAL_MAX_RING_BEATS));
+            }
+        }
         out.push({
             pitch: e.noteNumber,
             onset: e.time,
-            duration: e.duration,
+            duration,
             velocity: Math.max(0, Math.min(1, e.velocity / 127)),
         });
     }
@@ -123,9 +178,12 @@ export function runMgEngine(opts: MgRunOptions = {}): {
     const genChords = engine.generateProgressions(config);
     const timeline = engine.generateArrangement(genChords, config);
 
-    const melody = eventsToNoteData(timeline.events, 'melody');
-    const accompaniment = eventsToNoteData(timeline.events, 'chord');
-    const bass = eventsToNoteData(timeline.events, 'bass');
+    const pedalSegs = buildPedalSegments(timeline.pedalEvents);
+
+    // 同 mg App.tsx:chord + bass 走踏板,melody 不走
+    const melody         = eventsToNoteData(timeline.events, 'melody', pedalSegs, false);
+    const accompaniment  = eventsToNoteData(timeline.events, 'chord',  pedalSegs, true);
+    const bass           = eventsToNoteData(timeline.events, 'bass',   pedalSegs, true);
 
     const profile = STYLE_DICTIONARY[style];
     const bpm = profile

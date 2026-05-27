@@ -24,8 +24,7 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-// 2026-05-27 wipe music engines:Engine/Impro 切换 + style/grammar 选择已删,
-// runPipeline 现在是 stub,触发 Play 会 throw。
+import { MgStyleStore, MG_STYLE_OPTIONS, type MgStyle } from '../state/MgStyleStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -199,6 +198,11 @@ export const PipelineMonitor: React.FC = () => {
     });
     const [seedInput, setSeedInput] = useState('42');
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
+    const [mgStyle, setMgStyleState] = useState<MgStyle>(() => MgStyleStore.getStyle());
+    const switchMgStyle = useCallback((next: MgStyle) => {
+        MgStyleStore.setStyle(next);
+        setMgStyleState(next);
+    }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
     // Pending(UI 编辑中)— 用户在下拉框选乐手时即时变,但**不影响 Play**
@@ -439,7 +443,19 @@ export const PipelineMonitor: React.FC = () => {
             {/* Engine slot — mgEngine 唯一引擎(2026-05-27) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <span className="text-[10px] text-cyan-400 font-mono">mgEngine · POP · key=C</span>
+                <span className="text-[10px] text-cyan-400 font-mono">mgEngine</span>
+                <span className="text-[9px] uppercase tracking-wider text-zinc-500">style</span>
+                <select
+                    value={mgStyle}
+                    onChange={(e) => switchMgStyle(e.target.value as MgStyle)}
+                    className="bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60"
+                    title="mg 风格选择 — 下次 Play 生效"
+                >
+                    {MG_STYLE_OPTIONS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                    ))}
+                </select>
+                <span className="text-[9px] text-zinc-500 font-mono ml-auto">key=C</span>
             </div>
 
             {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}

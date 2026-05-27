@@ -17,6 +17,7 @@ import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../ty
 import { StyleId } from '../config/StyleFlags';
 import { runMgEngine } from '../mgEngine/adapter';
 import { PRNGManager } from '../../utils/PRNG';
+import { MgStyleStore } from '../../../state/MgStyleStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -31,10 +32,20 @@ export interface PipelineRunOptions {
 }
 
 /**
- * mg 期待 string seed。我们 PRNGManager 用数字 seed,这里直接 String() 转。
+ * mg 期待 string seed,格式 `${stylePrefix}_${suffix}`。stylePrefix 必须跟当前
+ * MgStyle 一致(否则 mg 端 PREFIX_TO_STYLE 解析后样式不匹配)。
  */
-function deriveMgSeed(numericSeed: number): string {
-    return `pop_${numericSeed}`;
+const MG_STYLE_PREFIX: Record<string, string> = {
+    POP:   'pop',
+    JAZZ:  'jazz',
+    BLUES: 'blues',
+    RNB:   'rnb',
+    LOFI:  'lofi',
+};
+
+function deriveMgSeed(numericSeed: number, style: string): string {
+    const prefix = MG_STYLE_PREFIX[style] ?? 'pop';
+    return `${prefix}_${numericSeed}`;
 }
 
 export function runPipeline(
@@ -43,9 +54,10 @@ export function runPipeline(
     // 取当前 PRNG 状态对应的 seed 字符串(PipelineMonitor 在 playSeed 前会
     // PRNGManager.setSeed(N),这里读回 N 喂给 mg)。
     const numericSeed = PRNGManager.getInitialSeed();
-    const mgSeed = deriveMgSeed(numericSeed);
+    const mgStyle = MgStyleStore.getStyle();
+    const mgSeed = deriveMgSeed(numericSeed, mgStyle);
 
-    const { track, context } = runMgEngine({ seed: mgSeed, style: 'POP', key: 'C' });
+    const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: 'C' });
 
     // 槽位剪枝:槽 = null 或 undefined → 对应轨清空。
     // (forcedBand 字段缺省时视为 null —— PipelineMonitor 已强制写全 5 槽)
