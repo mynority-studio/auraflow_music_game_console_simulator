@@ -68,10 +68,16 @@ export function buildArrangementContract(args: {
   voicingMidis: number[];
   style: string;
   songFeel: RhythmFeel;
+  // Step 4 — tension-ownership planner can force the compingMode. When
+  // provided, overrides the lick-density-driven decision. The override
+  // flows into applyCompingModeToTextureEvents's filtering, not just
+  // the density modulation, so altered-dom / sus / melody-owns-color
+  // bars actually strip extensions from the rendered texture.
+  compingModeOverride?: import('./rhythmContract').CompingMode;
 }): ArrangementContract {
-  const { barIdx, startBeat, chord, lickNotes, voicingMidis, style, songFeel, lickProjectedMidis } = args;
+  const { barIdx, startBeat, chord, lickNotes, voicingMidis, style, songFeel, lickProjectedMidis, compingModeOverride } = args;
   const barLick = buildBarLickContract(lickNotes, chord.duration);
-  const compingMode = decideCompingModeForLick(barLick);
+  const compingMode = compingModeOverride ?? decideCompingModeForLick(barLick);
   const melodyContract = buildMelodyChordContract(chord, { style: style as any });
   const voicingPcs = new Set(voicingMidis.map(m => ((m % 12) + 12) % 12));
   const lickAttackTimes: number[] = [];

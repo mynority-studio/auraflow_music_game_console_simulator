@@ -63,6 +63,12 @@ import {
   applyCompingModeToTextureEvents,
   ArrangementContract,
 } from './arrangementContract';
+import {
+  buildHarmonicSlots,
+  HarmonicSlot,
+} from './harmonicSlot';
+import { buildMelodyPreview } from './melodyPreview';
+import { decideTensionOwnership } from './tensionOwnership';
 import { TEXTURE_POOL } from './styleDictionary';
 import { parseRoadMap, findBlockForChord, Block } from './roadmapParser';
 import { planTonicization } from './tonicizationPlanner';
@@ -306,6 +312,14 @@ export interface NoteEvent {
   // etc.) skip events with this flag — the lick author's pitch + timing
   // are the final answer.
   lickSource?: boolean;
+  // Degree label (lick author's intent: '1', '3', 'b7', '#11', etc.).
+  // Set on lick-sourced events; absent on motif-derived events.
+  // Diagnostic + consumed by Step 4 (tension ownership planner).
+  degree?: string;
+  // Tone category against the bar's chord contract — CT / STABLE_COLOR
+  // / CONDITIONAL / AVOID / OTHER. Set by melodyPreview when a contract
+  // is provided. Consumed by texture / accompaniment decisions.
+  toneCategory?: import('./melodyChordContract').LickToneCategory;
   // Instrument tag — set by enforceInstrumentConstraints. Audio renderer
   // can dispatch to different samplers based on this; future MIDI export
   // emits per-instrument tracks. Default: undefined (renderer defaults
@@ -859,6 +873,13 @@ export class Engine {
   // bar's block to filter the lick pool by matching brickType. Empty when
   // generateArrangement hasn't run (tests / direct invocations).
   songBlocks: Block[] = [];
+
+  // Per-chord HarmonicSlot fact source (chordSymbol / roman / effectiveFunc
+  // / localTonalCenter / chordContract / soundingPcs / duration unified into
+  // one read-only adapter). Built once after V/X relabel finishes; downstream
+  // readers consume HarmonicSlot rather than re-parsing chord fields. Empty
+  // when generateArrangement hasn't run.
+  harmonicSlots: HarmonicSlot[] = [];
 
   // Per-bar trace of which lick reference was picked. Diagnostic only —
   // populated by pickMotif when the brick filter activates. Audit
@@ -2584,6 +2605,13 @@ export class Engine {
         }
 
         this.songBlocks = songBlocks;
+        // Build the HarmonicSlot[] fact source from the post-V/X-relabel
+        // chords. Downstream readers (lick projection, audit, contracts,
+        // future tension-ownership planner) consume this instead of
+        // re-deriving facts from chord fields. Cheap pure build — no
+        // random.next() consumption, snapshot baseline unaffected.
+        const styleForSlots = (style === 'LOFI' ? 'POP' : style) as 'POP'|'RNB'|'JAZZ'|'BLUES'|'LOFI';
+        this.harmonicSlots = buildHarmonicSlots(chords, { style: styleForSlots, mode: ctx.mode });
         this.lickPicksPerBar = new Map();
         // Phase 11 reverted — single-musician lock disabled per user.
         // poolForBrick gets null musician = all musicians available.
@@ -6477,28 +6505,27 @@ export class Engine {
       const swingLickNote = (m: { degreeLabel?: string; t: number }): boolean =>
           !!m.degreeLabel && !lickIsTripletIdiom;
 
-      // === 1. Texture Generation FIRST (伴奏织体锁定骨架) ===
-      // 我们把 density 作为参数渗透下去，如果是非常高/很低的 density，能在内部调整
+      // === 1. Dry-run melody preview FIRST (Step 2) ===
+      // Project mutatedMotif → real-midi NoteEvent[] BEFORE applyTexture
+      // runs. The accompaniment now sees actual pitches (not -999
+      // sentinels), so pushEvent's close-pitch octave-drop guard fires
+      // as designed — chord/bass events within ±2 semis of melody get
+      // dropped an octave when register allows, dramatically reducing
+      // vertical m2/M2 between melody and texture.
       //
-      // Rhythmic Interlocking — pass the motif's rhythmic schedule
-      // (timing only, no pitch) so applyTexture can duck under
-      // melody hits and step back when melody rests, completing the
-      // divisi (melody动 / 伴奏静, 旋律停 / 伴奏托). The blueprint
-      // uses noteNumber: -999 as a sentinel so pushEvent's
-      // close-pitch octave-drop check at the texture side never
-      // misfires against it (real melody pitches are always above
-      // MIDI 0).
-      const melodyBlueprint: NoteEvent[] = mutatedMotif.map((m: { t: number; d: number; degreeLabel?: string }) => ({
-          noteNumber: -999,
-          // Triplet-idiom lick notes preserve authored time (no swing
-          // could shift their position without breaking triplet figures).
-          // Straight-idiom lick notes AND non-lick notes go through
-          // applySwing so they groove with the swung texture.
-          time: startBeat + ((m.degreeLabel && lickIsTripletIdiom) ? m.t : this.applySwing(m.t, isShuffle)),
-          duration: m.d,
-          velocity: 100,
-          part: 'melody' as const,
-      }));
+      // Triplet-idiom lick notes preserve authored time (swing would
+      // break triplet figures); straight-idiom + non-lick notes go
+      // through applySwing. buildMelodyPreview handles both branches.
+      const barSlot = this.harmonicSlots[barIndex];
+      const melodyPreview: NoteEvent[] = buildMelodyPreview({
+          motif: mutatedMotif as any,
+          chord,
+          startBeat,
+          contract: barSlot?.symbolContract,
+          lickIsTripletIdiom,
+          applySwing: (t, sh) => this.applySwing(t, sh),
+          isShuffle,
+      });
       // Per-bar comping mode — Impro-Visor's "dense lick → shell comp"
       // principle. When the lick is busy (≥ 8 attacks or covers most
       // of the bar), thin the accompaniment so the listener can hear
@@ -6512,9 +6539,21 @@ export class Engine {
       //   occupied ≥ 2.5 → answer_only      (density × 0.40)
       //   otherwise      → full_voicing     (density × 1.00)
       const _barLickContract = buildBarLickContract(mutatedMotif as any, chord.duration);
-      const _compingMode: CompingMode = decideCompingModeForLick(_barLickContract);
+      let _compingMode: CompingMode = decideCompingModeForLick(_barLickContract);
+      // Step 4 — Tension Ownership planner override. When melody holds a
+      // STABLE_COLOR ≥ 1 beat (melody owns color), or when the chord is an
+      // altered dominant with melody on natural extensions, or when sus
+      // chord meets melody-on-3rd, force comp to shell_only. This is the
+      // core fix for vertical dissonance — the lick gets unobstructed
+      // sonic space for the color it's already declaring.
+      const _ownership = barSlot
+          ? decideTensionOwnership(barSlot, melodyPreview)
+          : null;
+      if (_ownership?.forceCompingMode) {
+          _compingMode = _ownership.forceCompingMode;
+      }
       const _densityForBar = density * densityMultiplierForCompingMode(_compingMode);
-      const _rawTextureEvents = this.applyTexture(chord, textureType, startBeat, chord.duration, melodyBlueprint, isShuffle, accentMode, _densityForBar, nextChord);
+      const _rawTextureEvents = this.applyTexture(chord, textureType, startBeat, chord.duration, melodyPreview, isShuffle, accentMode, _densityForBar, nextChord);
 
       // ArrangementContract per bar — couples lick and texture decisions.
       // Texture data ITSELF stays unchanged (texture pool / patterns
@@ -6522,16 +6561,13 @@ export class Engine {
       // comping mode + lick attack overlap + m2 prevention. Preserves
       // rich voicing on sparse-lick bars; thins to guide tones on dense.
       //
-      // Project each lick note's MIDI for the m2-clash detector. Use
-      // chord.rootMidi + offset (one-step projection, matches what the
-      // lick will actually emit before any post-projection adjustments).
-      const _lickProjectedMidis = (mutatedMotif as any[]).map((m: any) => {
-        const offset = effectiveChromaticOffset(m, chord.type);
-        let mid = chord.rootMidi + offset;
-        while (mid > MELODY_RANGE.HIGH) mid -= 12;
-        while (mid < MELODY_RANGE.LOW) mid += 12;
-        return { t: m.t, midi: mid };
-      });
+      // Re-shape preview into the {t (relative), midi} array
+      // arrangementContract expects. Same midis, derived from the
+      // same one-step projection that texture saw — no double-projection.
+      const _lickProjectedMidis = melodyPreview.map((p, i) => ({
+        t: (mutatedMotif as any[])[i]?.t ?? 0,
+        midi: p.noteNumber,
+      }));
       const _arrangementContract = buildArrangementContract({
         barIdx: barIndex,
         startBeat,
@@ -6541,6 +6577,12 @@ export class Engine {
         voicingMidis: chord.notesMidi ?? chord.notes.map((n: string) => noteToMidi(n)),
         style,
         songFeel: 'swing_8',
+        // Step 4 — forward the tension-ownership override so the
+        // contract's filtering layer (applyCompingModeToTextureEvents)
+        // actually strips altered/extension notes when the planner says
+        // shell_only. Without this, only density is reduced; the comp
+        // events themselves stay un-filtered.
+        compingModeOverride: _ownership?.forceCompingMode ?? undefined,
       });
       const textureEvents = applyCompingModeToTextureEvents(_rawTextureEvents, _arrangementContract);
       // 老师 4 — BASSLINE 自有线条. style.bassPattern 已在
