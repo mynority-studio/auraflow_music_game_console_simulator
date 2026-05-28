@@ -23,7 +23,7 @@ import {
     ChordQuality,
 } from '../types';
 import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
-import { STYLE_VECTORS, mutateVector, makePrng } from './styleVector';
+import { STYLE_VECTORS, mutateVector, makePrng, applySongJitter } from './styleVector';
 import { pickBass, HARMONY_KERNELS, type KernelContext } from './kernels';
 
 export interface MgV2RunOptions {
@@ -116,16 +116,19 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
     //
     //    同首歌内 vector 微动,每 bar 触发的 kernel 集合 / 参数都不一样,
     //    实现"基于一种 base style 的智能 mutant"。
-    const anchor = STYLE_VECTORS[style];
+    const styleAnchor = STYLE_VECTORS[style];
     const totalBars = genChords.length;
     const prng = makePrng(seed);
+
+    // 每首歌按 seed 把 styleAnchor jitter ±0.12 — 同 style 不同 seed → 不同 songAnchor
+    const songAnchor = applySongJitter(styleAnchor, prng);
 
     const kernelEvents: NoteEvent[] = [];
     let beatAcc = 0;
     const recipeLog: string[] = [];
     for (let i = 0; i < genChords.length; i++) {
         const chord = genChords[i];
-        const vector = mutateVector(anchor, i, totalBars, prng);
+        const vector = mutateVector(songAnchor, i, totalBars, prng);
 
         const ctx: KernelContext = {
             startBeat: beatAcc,
@@ -171,8 +174,8 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             velocity: Math.max(0, Math.min(1, e.velocity / 127)),
         }));
 
-    // Diagnostic — 输出 anchor + 每 bar mutated vector + 触发 kernel 列表
-    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | anchor=${JSON.stringify(anchor)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    // Diagnostic — 输出 styleAnchor / songAnchor / 每 bar mutated vector
+    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | styleAnchor=${JSON.stringify(styleAnchor)} | songAnchor=${JSON.stringify(songAnchor)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
     console.log(`[mgCoreV2] per-bar:\n  ${recipeLog.join('\n  ')}`);
 
     // 4. 拼 GeneratedTrack

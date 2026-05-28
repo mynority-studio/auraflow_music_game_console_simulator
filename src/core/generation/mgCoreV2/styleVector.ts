@@ -77,14 +77,42 @@ export function makePrng(seedStr: string): () => number {
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
 /**
- * 给定 anchor + bar 位置,生成该 bar 的 mutated vector。
+ * Seed-based anchor jitter — 每首歌入口对 anchor 6 轴做整体 offset。
+ *
+ * 目的:同 style 不同 seed 应该听感不同。光 mutateVector 的 per-bar noise 不够 —
+ * phraseWave / songArc 是纯 barIdx 函数,跟 seed 无关。songAnchor 把 anchor 在
+ * 6D 中"挪一挪",从此 mutateVector 的输出序列也跟着 seed 走。
+ *
+ * 偏移幅度 ±0.12 — 足以让阈值附近的 kernel 跨 activate(例如 syncopation
+ * anchor 0.30 ± 0.12 = 0.18 ~ 0.42 → StabBackbeat (阈 0.25) 可触发 / 不触发)。
+ * 但不大到改变 style 的 DNA(POP 仍是 POP,不会跨成 LOFI)。
+ *
+ * prng 内部消耗 6 次,跟 mutateVector 共用同一个 prng 让序列继续 deterministic。
+ */
+export function applySongJitter(
+    anchor: StyleVector,
+    prng: () => number,
+): StyleVector {
+    const j = (): number => (prng() - 0.5) * 0.24;  // ±0.12
+    return {
+        density:       clamp01(anchor.density       + j()),
+        syncopation:   clamp01(anchor.syncopation   + j()),
+        bassLinearity: clamp01(anchor.bassLinearity + j()),
+        voicingSpread: clamp01(anchor.voicingSpread + j()),
+        articulation:  clamp01(anchor.articulation  + j()),
+        pedalUsage:    clamp01(anchor.pedalUsage    + j()),
+    };
+}
+
+/**
+ * 给定 song-jittered anchor + bar 位置,生成该 bar 的 mutated vector。
  *
  * 三种调制叠加:
  *   1. Phrase wave(4 bar 一周期 sinusoidal):density/syncopation 在 phrase
  *      中段拱起,phrase 头/末略低 → 起 settling 感
  *   2. Song arc(整曲一个穹顶):density/spread/bassLinearity 全曲中段稍高
  *      → 自然能量曲线(intro 收 → middle 展 → outro 收)
- *   3. Noise(±0.04):每轴小幅随机扰动,加"人味"
+ *   3. Noise(±0.12):每轴随机扰动,跨 kernel 阈值
  *
  * Clamp 到 [0,1] 保证 kernel.activate 判定不爆界。
  */
@@ -94,27 +122,21 @@ export function mutateVector(
     totalBars: number,
     prng: () => number,
 ): StyleVector {
-    // Phrase wave(period 4):sin(2π * pos/4)
-    //   pos 0 → 0      bar 起(settling)
-    //   pos 1 → 1      bar 中段 peak
-    //   pos 2 → 0
-    //   pos 3 → -1     phrase 末 trough(为 fill 留空间反而稀,听感"喘"一下)
     const phrasePos = barIdx % 4;
     const phraseWave = Math.sin((phrasePos / 4) * 2 * Math.PI);
 
-    // Song arc:sin(π * progress) — 起伏 dome,中段 peak
     const progress = totalBars > 1 ? barIdx / (totalBars - 1) : 0.5;
     const songArc = Math.sin(progress * Math.PI);
 
-    const noise = () => (prng() - 0.5) * 0.08;
+    const noise = (): number => (prng() - 0.5) * 0.24;  // ±0.12
 
     return {
         density:       clamp01(anchor.density       + phraseWave * 0.10 + songArc * 0.08 + noise()),
         syncopation:   clamp01(anchor.syncopation   + phraseWave * 0.08 + noise()),
         bassLinearity: clamp01(anchor.bassLinearity + songArc    * 0.06 + noise()),
         voicingSpread: clamp01(anchor.voicingSpread + songArc    * 0.06 + noise()),
-        articulation:  clamp01(anchor.articulation  - songArc    * 0.04 + noise()),  // 中段更尖锐
-        pedalUsage:    clamp01(anchor.pedalUsage    + noise()),                       // 踏板大多稳
+        articulation:  clamp01(anchor.articulation  - songArc    * 0.04 + noise()),
+        pedalUsage:    clamp01(anchor.pedalUsage    + noise() * 0.5),  // 踏板半幅,更稳
     };
 }
 

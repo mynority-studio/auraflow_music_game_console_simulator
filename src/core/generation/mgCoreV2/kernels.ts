@@ -56,6 +56,40 @@ function getBassNote(chord: ChordDef, vector: StyleVector): number {
     return baseBass;
 }
 
+/**
+ * 从 chord.notesMidi 反推真实 chord tone(自动识别 maj/min/dim/aug 三度,
+ * 完全/减/增五度,大/小七度),在 bass 区域 wrap 到合理八度。
+ *
+ * 修了 V2 之前 BassWalk / AlbertiBass 写死 root+4(大三度)的 bug — 小调和弦
+ * 时 LH 弹 root+4 = 大三度,跟 RH minor voicing 的 b3 直接冲撞,听起来"不在调上"。
+ */
+function chordToneAt(chord: ChordDef, role: 'third' | 'fifth' | 'seventh', vector: StyleVector): number {
+    const rootPc = ((chord.rootMidi % 12) + 12) % 12;
+    const intervals = new Set<number>();
+    for (const m of chord.notesMidi) {
+        intervals.add((((m % 12) - rootPc) + 12) % 12);
+    }
+
+    let semis: number;
+    if (role === 'third') {
+        // 优先小三(3),其次大三(4)— minor / dim 和弦走 b3
+        semis = intervals.has(3) ? 3 : intervals.has(4) ? 4 : 4;
+    } else if (role === 'fifth') {
+        // 减五(6) / 完五(7) / 增五(8)
+        semis = intervals.has(7) ? 7 : intervals.has(6) ? 6 : intervals.has(8) ? 8 : 7;
+    } else {
+        // seventh:b7(10) 优先,maj7(11) 次之
+        semis = intervals.has(10) ? 10 : intervals.has(11) ? 11 : 10;
+    }
+
+    const bassRef = getBassNote(chord, vector);
+    const bassOct = Math.floor(bassRef / 12);
+    let result = bassOct * 12 + ((rootPc + semis) % 12);
+    while (result < bassRef - 6) result += 12;
+    while (result > bassRef + 6) result -= 12;
+    return result;
+}
+
 /** density [0,1] + 基线 → MIDI velocity,phrase 强弱可在 kernel 内额外调 */
 function densityVel(v: StyleVector, isStrong: boolean = false): number {
     const base = BASE_VELOCITY + (v.density - 0.5) * 20;  // density 0 → 70, 1 → 90
@@ -269,11 +303,13 @@ export const BassRoot: Kernel = (chord, ctx) => {
 export const BassWalk: Kernel = (chord, ctx) => {
     const events: NoteEvent[] = [];
     const root = getBassNote(chord, ctx.vector);
-    const fifth = root + 7;
-    const third = root + 4;  // 简化大三度
+    // 从 chord.notesMidi 反推真实三度/五度(自动识别 major/minor/dim,调内安全)
+    const third = chordToneAt(chord, 'third', ctx.vector);
+    const fifth = chordToneAt(chord, 'fifth', ctx.vector);
     const vel = Math.round(densityVel(ctx.vector, true) * 1.05);
     const stepDur = ctx.duration / Math.max(1, Math.floor(ctx.duration));
-    const pattern = ctx.duration >= 4 ? [root, third, fifth, root + 7] : [root, fifth];
+    // Walk: root → 3rd → 5th → octave(4 beat),or root → 5th(2 beat)
+    const pattern = ctx.duration >= 4 ? [root, third, fifth, root + 12] : [root, fifth];
     const noteDur = stepDur * articulationToDurRatio(ctx.vector.articulation);
 
     for (let i = 0; i < pattern.length; i++) {
@@ -292,8 +328,9 @@ export const BassWalk: Kernel = (chord, ctx) => {
 export const AlbertiBass: Kernel = (chord, ctx) => {
     const events: NoteEvent[] = [];
     const root = getBassNote(chord, ctx.vector);
-    const fifth = root + 7;
-    const third = root + 4;
+    // 自动 minor/major 识别(同 BassWalk)
+    const third = chordToneAt(chord, 'third', ctx.vector);
+    const fifth = chordToneAt(chord, 'fifth', ctx.vector);
     const vel = Math.round(densityVel(ctx.vector) * 0.95);
     const noteDur = 0.5 * articulationToDurRatio(ctx.vector.articulation);
     const pattern = [root, fifth, third, fifth];
