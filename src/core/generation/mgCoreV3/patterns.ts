@@ -26,12 +26,20 @@ import type { NoteData } from '../ir';
 export interface PatternArgs {
     /** Viterbi 选的 voicing(sorted ascending,RH register 48-84) */
     voicing: number[];
-    /** chord bass MIDI(已 clamp 到 bass register 38-50) */
+    /** chord root MIDI(chord.rootMidi clamped to bass register)— 用于 interval 计算 */
+    rootMidi: number;
+    /** chord bass MIDI(chord.bassMidi clamped 到 bass register 38-50)— 实际弹的"贝斯音",
+     *  slash chord 时 ≠ rootMidi(例 Dm/F 的 bassMidi=F,rootMidi=D) */
     bassMidi: number;
     /** chord 在全曲的绝对起始 beat */
     startBeat: number;
     /** chord 持续 beat 数 */
     duration: number;
+    /**
+     * 下一 chord 的 bass MIDI(全曲最后 chord 时 undefined)。
+     * walking bass 用于 beat 4 leading tone approach。
+     */
+    nextBassMidi?: number;
 }
 
 export type Pattern = (args: PatternArgs) => NoteData[];
@@ -67,29 +75,19 @@ export const bassRootSustained: Pattern = ({ bassMidi, startBeat, duration }) =>
  *   音源:bassMidi + voicing 中 PC 距 root +7/+6/+8 的音
  *   chord < 4 beat 时退化为单 root
  */
-export const bassRoot5: Pattern = ({ voicing, bassMidi, startBeat, duration }) => {
+export const bassRoot5: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration }) => {
+    if (duration < 4) {
+        return [{ pitch: bassMidi, onset: startBeat, duration: duration * 0.95, velocity: VEL_BASS_STRONG }];
+    }
     const out: NoteData[] = [
         { pitch: bassMidi, onset: startBeat, duration: 2 * 0.95, velocity: VEL_BASS_STRONG },
     ];
-    if (duration < 4) return [{ pitch: bassMidi, onset: startBeat, duration: duration * 0.95, velocity: VEL_BASS_STRONG }];
-
-    // 从 voicing 找 5th(寻最近 fifth interval 的实音,wrap 到 bass register)
-    const rootPc = ((bassMidi % 12) + 12) % 12;
-    let fifthMidi: number | null = null;
-    for (const m of voicing) {
-        const pc = ((m % 12) + 12) % 12;
-        const interval = ((pc - rootPc) + 12) % 12;
-        if (interval === 7 || interval === 6 || interval === 8) {
-            // 把这个 fifth wrap 到 bass register(bassMidi ± 6 内)
-            let p = m;
-            while (p > bassMidi + 9) p -= 12;
-            while (p < bassMidi - 3) p += 12;
-            fifthMidi = p;
-            break;
-        }
-    }
-    // 没找到 5th(罕见,只有 power chord 之类)→ 用 bassMidi 兜底
-    const beat2Note = fifthMidi ?? bassMidi;
+    // Beat 2 fifth(用 chord ROOT 算 interval,从 voicing 找实音,wrap 到 bass register)
+    // slash chord 时 bass ≠ root,但 5th 仍以 root 为参考
+    const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]);
+    // fallback:若 voicing 无 5th,且 chord 真无 5th(power chord 极少见)→ 用 bassMidi 兜底
+    // 注意 fallback 不再用 bassMidi+7(slash chord 时可能出非 chord tone)
+    const beat2Note = fifth ?? bassMidi;
     out.push({
         pitch: beat2Note,
         onset: startBeat + 2,
@@ -98,6 +96,99 @@ export const bassRoot5: Pattern = ({ voicing, bassMidi, startBeat, duration }) =
     });
     return out;
 };
+
+/**
+ * bassWalkingClassic — Walking bass(4 拍 chord 用 quarter notes 走 chord tone + leading tone)
+ *
+ * Pattern(4-beat chord):
+ *   beat 0: chord.bassMidi(root,strong)
+ *   beat 1: voicing 中的 3rd(chord tone,wrap 到 bass register)
+ *   beat 2: voicing 中的 5th(chord tone)
+ *   beat 3: **leading tone to next chord's bassMidi**(半音 approach,
+ *           **唯一允许的非当前-chord-tone**,严格约束:beat 4 weak / short / 必 resolve)
+ *
+ * 2-beat chord:退化到 beat 0 root + beat 1 fifth(都是 chord tone)
+ *
+ * 这是教科书 jazz/pop walking bass 写法。**leading tone exception 必须文档化**,
+ * 它是 V3 patterns 里唯一一个允许 non-chord-tone 的位置,
+ * 用 nextBassMidi 半音下 / 半音上选最近的(注意必须 wrap 在 bass register)。
+ */
+export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration, nextBassMidi }) => {
+    if (duration < 4) {
+        // 2-beat chord 退化:bass(slash 可能 ≠ root)+ fifth(从 root 算)
+        const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
+        return [
+            { pitch: bassMidi, onset: startBeat, duration: 0.95, velocity: VEL_BASS_STRONG },
+            { pitch: fifth, onset: startBeat + 1, duration: 0.95, velocity: VEL_BASS_WEAK },
+        ];
+    }
+
+    const out: NoteData[] = [];
+    const stepDur = 0.95;
+    // 用 chord ROOT 算 interval(从 voicing 找实音),从而 slash chord 时也走 chord tone
+    const third = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [3, 4]) ?? bassMidi;
+    const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
+
+    out.push({ pitch: bassMidi, onset: startBeat,     duration: stepDur, velocity: VEL_BASS_STRONG });
+    out.push({ pitch: third,    onset: startBeat + 1, duration: stepDur, velocity: VEL_BASS_WEAK });
+    out.push({ pitch: fifth,    onset: startBeat + 2, duration: stepDur, velocity: VEL_BASS_WEAK });
+
+    // Beat 4:leading tone to next chord's bass(approach by half-step)
+    if (nextBassMidi !== undefined) {
+        // 选半音下 / 半音上里离 bass register 中心(MIDI 44)最近的
+        const candA = nextBassMidi - 1;
+        const candB = nextBassMidi + 1;
+        // 必须落在 bass register [38, 50]
+        const inRange = (m: number): boolean => m >= 38 && m <= 50;
+        let leading: number;
+        if (inRange(candA) && inRange(candB)) {
+            // 偏好半音下 approach(更"自然下行"听感)
+            leading = candA;
+        } else if (inRange(candA)) {
+            leading = candA;
+        } else if (inRange(candB)) {
+            leading = candB;
+        } else {
+            // 都不在 range,wrap candA
+            leading = candA;
+            while (leading > 50) leading -= 12;
+            while (leading < 38) leading += 12;
+        }
+        out.push({ pitch: leading, onset: startBeat + 3, duration: stepDur, velocity: VEL_BASS_WEAK });
+    } else {
+        // 全曲最后 chord:beat 4 退到 root(干净收)
+        out.push({ pitch: bassMidi, onset: startBeat + 3, duration: stepDur, velocity: VEL_BASS_WEAK });
+    }
+
+    return out;
+};
+
+/**
+ * Helper:从 voicing 找"距 ROOT 某 interval"的音,wrap 到 bass register([nearMidi-3, nearMidi+9])。
+ * rootMidi 用于 interval PC 计算(slash chord 时,root ≠ bass)。
+ * nearMidi 用于 register wrap(typically = bassMidi,保证 walking 各音在同一八度区)。
+ * 找不到返 null。
+ */
+function pickIntervalInBassRegister(
+    voicing: number[],
+    rootMidi: number,
+    nearMidi: number,
+    semisCandidates: number[],
+): number | null {
+    const rootPc = ((rootMidi % 12) + 12) % 12;
+    for (const semis of semisCandidates) {
+        const targetPc = (rootPc + semis) % 12;
+        for (const m of voicing) {
+            if (((m % 12) + 12) % 12 === targetPc) {
+                let p = m;
+                while (p > nearMidi + 9) p -= 12;
+                while (p < nearMidi - 3) p += 12;
+                return p;
+            }
+        }
+    }
+    return null;
+}
 
 /**
  * bassRootOctave — root low @ beat 0,root octave @ beat 2
@@ -210,6 +301,51 @@ export const chordArpUp: Pattern = ({ voicing, startBeat, duration }) => {
 };
 
 /**
+ * chordRhythmicHits — 节奏多样化 chord stab(jazz/pop comping 经典)
+ *
+ * Pattern(4-beat chord):
+ *   beat 0    : short stab(0.4 beat)
+ *   beat 0.75 : dotted-quarter held(持续 1.25 beat 到 beat 2)
+ *   (beat 2-3 rest)
+ *   beat 3.5  : 8th anticipation stab(eighth note before next chord)
+ *
+ * 2-beat chord:
+ *   beat 0 short stab + beat 1.5 anticipation
+ *
+ * 关键特性:**有 rest**(beat 2-3 留空)+ **dotted rhythm**(beat 0.75)
+ * + **anticipation**(beat 3.5)— 不再是均匀 8 分音的"音游谱面"。
+ * 音源:voicing(全 chord tone)
+ */
+export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration }) => {
+    const out: NoteData[] = [];
+    if (voicing.length === 0) return out;
+
+    const pushVoicing = (offset: number, dur: number, vel: number): void => {
+        if (offset >= duration) return;
+        const actualDur = Math.min(dur, duration - offset);
+        for (const m of voicing) {
+            out.push({
+                pitch: m,
+                onset: startBeat + offset,
+                duration: actualDur * 0.95,
+                velocity: vel,
+            });
+        }
+    };
+
+    if (duration >= 4) {
+        pushVoicing(0,    0.4,  VEL_RH_DOWNBEAT);   // short stab
+        pushVoicing(0.75, 1.25, VEL_RH_UPBEAT);     // dotted-quarter held
+        // beat 2-3 rest
+        pushVoicing(3.5,  0.5,  VEL_RH_DOWNBEAT);   // anticipation
+    } else {
+        pushVoicing(0,    0.4,  VEL_RH_DOWNBEAT);
+        pushVoicing(1.5,  0.5,  VEL_RH_UPBEAT);
+    }
+    return out;
+};
+
+/**
  * chordArpAlberti — Alberti 左手:[low, top, mid, top] 循环
  *   pattern:voicing[0] - voicing[top] - voicing[mid] - voicing[top]
  *   音源:voicing(选索引 0、length-1、length/2)
@@ -249,23 +385,33 @@ export interface StylePatterns {
 
 export const STYLE_PATTERNS: Record<StyleName, StylePatterns> = {
     POP: {
-        bass: bassRoot5,
-        chord: [chordBlockTwice],            // 1+3 拍 block,典型 pop balad
+        // LH walking 给"流动",beat 4 半音 leading 到下 chord
+        bass: bassWalkingClassic,
+        // RH 节奏化 stab(rest + anticipation),不再均匀 8 分
+        chord: [chordRhythmicHits],
     },
     LOFI: {
+        // LH 长按维持 dream 感
         bass: bassRootSustained,
-        chord: [chordBlockOnce, chordArpUp], // 长按 + 上行 arp,梦境感
+        // RH 长按 + 上行 arp,arp 提供横向流动
+        chord: [chordBlockOnce, chordArpUp],
     },
     JAZZ: {
-        bass: bassRoot5,
-        chord: [chordCharleston],            // 1 + 1.5 切分 comping
+        // LH classic jazz walking,leading tone 半音解决
+        bass: bassWalkingClassic,
+        // RH 节奏化 comping(Charleston-like + anticipation)
+        chord: [chordRhythmicHits],
     },
     BLUES: {
+        // LH Alberti 摆动(blues piano LH 招牌)
         bass: bassRootOctave,
-        chord: [chordArpAlberti],            // Alberti 8 分摆动
+        // RH Alberti arp 跟 LH 错位互补
+        chord: [chordArpAlberti],
     },
     RNB: {
+        // LH 长按
         bass: bassRootSustained,
-        chord: [chordBlockOnce, chordArpUp], // 同 LOFI,稍亮(velocity 在 NoteData 0-1 不分)
+        // RH 节奏化 + 偶尔 arp,加 R&B 软切分感
+        chord: [chordRhythmicHits, chordArpUp],
     },
 };

@@ -142,11 +142,14 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
     for (let i = 0; i < genChords.length; i++) {
         const chord = genChords[i];
         const v = result.voicings[i] ?? [];
+        const nextChord = genChords[i + 1];
         const patternArgs = {
             voicing: v,
+            rootMidi: clampBassMidi(chord.rootMidi),
             bassMidi: clampBassMidi(chord.bassMidi),
             startBeat: beatAcc,
             duration: chord.duration,
+            nextBassMidi: nextChord ? clampBassMidi(nextChord.bassMidi) : undefined,
         };
         bass.push(...stylePats.bass(patternArgs));
         for (const chordPat of stylePats.chord) {
