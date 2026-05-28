@@ -1,17 +1,26 @@
 // ============================================================
-// mgCoreV3/adapter.ts — V3 新沙箱(2026-05-28)
+// mgCoreV3/adapter.ts — Viterbi voice leading 实验(Phase 1)
 // ============================================================
 //
-// V1 (mgEngine/adapter.ts) 是 byte-identical mg standalone 的参考实现,不动。
-// V2 (mgCoreV2) 已废弃删除 — 6 axis dimensional kernel synthesis 实验,虽然
-// 验证了 dimensional 路线可行,但 m2 clash / scale 校正 / 听感平衡问题多,
-// 同 style 不同 seed 区分度也不够,推倒重做。
+// 实验假设:V3 不用 mg 的局部 widePianoVoicing,改用全曲 Viterbi DP 求
+// 总半音移动最小的 voicing 序列,听感会更平滑、专业。
 //
-// V3 当前状态:Phase 0 — byte-identical V1。后续按用户指示重新设计实验方向。
-// console marker `[mgCoreV3]` 用于验证切换确实路由到这里。
+// 流程:
+//   1. mg.generateProgressions → ChordDef[](mg 进行不变)
+//   2. enumerateVoicings(chord) for each → 候选集
+//   3. viterbiVoiceLeading(candidates) → 最优 voicing 序列
+//   4. 简单 block-chord renderer + 单根 bass(暂不引入 kernel/texture 维度)
+//   5. melody pass-through from mg
+//
+// 跟 mg / V1 的可控差异:
+//   - chord 进行、melody:**完全一致 mg V1**
+//   - chord+bass voicing:V3 自家 Viterbi 决定,跟 mg widePianoVoicing 不同
+//   - rhythm 极简(beat 0 全 voicing,duration 4 时 beat 2 再来一次)
+//
+// 听感对比聚焦:**voice leading 平滑度**单一变量。
 // ============================================================
 
-import { Engine, Random, type GenerationConfig, type ChordDef, type NoteEvent, type PedalEvent } from '../mgEngine/musicEngine';
+import { Engine, Random, type GenerationConfig, type ChordDef, type NoteEvent } from '../mgEngine/musicEngine';
 import { STYLE_DICTIONARY, type StyleName } from '../mgEngine/styleDictionary';
 import {
     GeneratedTrack,
@@ -21,6 +30,8 @@ import {
     ChordQuality,
 } from '../types';
 import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
+import { enumerateVoicings, type Voicing } from './voicing';
+import { viterbiVoiceLeading } from './viterbi';
 
 export interface MgV3RunOptions {
     seed?: string;
@@ -28,64 +39,9 @@ export interface MgV3RunOptions {
     key?: string;
 }
 
-interface PedalSegment { start: number; end: number }
-
-function buildPedalSegments(pedalEvents: PedalEvent[] | undefined): PedalSegment[] {
-    if (!pedalEvents || pedalEvents.length === 0) return [];
-    const segs: PedalSegment[] = [];
-    let down = false;
-    let segStart = 0;
-    for (let i = 0; i < pedalEvents.length; i++) {
-        const pe = pedalEvents[i];
-        if (pe.type === 'on' && !down) {
-            segStart = pe.time;
-            down = true;
-        } else if (pe.type === 'off' && down) {
-            segs.push({ start: segStart, end: pe.time });
-            down = false;
-        }
-    }
-    if (down) segs.push({ start: segStart, end: Number.POSITIVE_INFINITY });
-    return segs;
-}
-
-function pedalEndAfter(segs: PedalSegment[], t: number): number | null {
-    for (let i = 0; i < segs.length; i++) {
-        const s = segs[i];
-        if (t >= s.start && t < s.end) return s.end;
-    }
-    return null;
-}
-
-const PEDAL_MAX_RING_BEATS = 8;
-
-function eventsToNoteData(
-    events: NoteEvent[],
-    part: NoteEvent['part'],
-    pedalSegs: PedalSegment[],
-    applyPedal: boolean,
-): NoteData[] {
-    const out: NoteData[] = [];
-    for (let i = 0; i < events.length; i++) {
-        const e = events[i];
-        if (e.part !== part) continue;
-        let duration = e.duration;
-        if (applyPedal && pedalSegs.length > 0) {
-            const pedalEnd = pedalEndAfter(pedalSegs, e.time);
-            if (pedalEnd !== null) {
-                const pedalDur = pedalEnd - e.time;
-                duration = Math.max(duration, Math.min(pedalDur, PEDAL_MAX_RING_BEATS));
-            }
-        }
-        out.push({
-            pitch: e.noteNumber,
-            onset: e.time,
-            duration,
-            velocity: Math.max(0, Math.min(1, e.velocity / 127)),
-        });
-    }
-    return out;
-}
+// ─────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────
 
 function mapChordQuality(type: string): ChordQuality {
     const t = type.toLowerCase();
@@ -123,8 +79,73 @@ function chordsToGeneratedChords(chords: ChordDef[]): GeneratedChord[] {
     return out;
 }
 
+/** mg NoteEvent → NoteData(melody pass-through) */
+function melodyEventsToData(events: NoteEvent[]): NoteData[] {
+    const out: NoteData[] = [];
+    for (const e of events) {
+        if (e.part !== 'melody') continue;
+        out.push({
+            pitch: e.noteNumber,
+            onset: e.time,
+            duration: e.duration,
+            velocity: Math.max(0, Math.min(1, e.velocity / 127)),
+        });
+    }
+    return out;
+}
+
 // ─────────────────────────────────────────────────────────────────
-// V3 main(Phase 0 — byte-identical V1 占位)
+// 极简 rhythm renderer(beat 0 全 voicing,duration ≥ 4 再 beat 2 一次)
+// ─────────────────────────────────────────────────────────────────
+
+const RH_VELOCITY = 0.62;  // ~MIDI 79
+const BASS_VELOCITY = 0.72;  // ~MIDI 91
+
+function renderChordBlock(voicing: Voicing, startBeat: number, duration: number): NoteData[] {
+    if (voicing.length === 0) return [];
+    const events: NoteData[] = [];
+    const dur = Math.min(duration * 0.95, 4);
+
+    // Beat 0:全 voicing
+    for (const m of voicing) {
+        events.push({
+            pitch: m,
+            onset: startBeat,
+            duration: dur,
+            velocity: RH_VELOCITY,
+        });
+    }
+
+    // duration ≥ 4:beat 2 再来一次(中拍重击,稍弱)
+    if (duration >= 4) {
+        const rep2Dur = Math.min((duration - 2) * 0.95, 2);
+        for (const m of voicing) {
+            events.push({
+                pitch: m,
+                onset: startBeat + 2,
+                duration: rep2Dur,
+                velocity: RH_VELOCITY * 0.85,
+            });
+        }
+    }
+    return events;
+}
+
+/** LH 单根音 bass(从 chord.bassMidi 出发,clamp 到 D2-D3 区) */
+function renderBass(chord: ChordDef, startBeat: number, duration: number): NoteData[] {
+    let bass = chord.bassMidi;
+    while (bass > 50) bass -= 12;
+    while (bass < 38) bass += 12;
+    return [{
+        pitch: bass,
+        onset: startBeat,
+        duration: duration * 0.95,
+        velocity: BASS_VELOCITY,
+    }];
+}
+
+// ─────────────────────────────────────────────────────────────────
+// V3 main
 // ─────────────────────────────────────────────────────────────────
 
 export function runMgCoreV3(opts: MgV3RunOptions = {}): {
@@ -135,23 +156,45 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
     const style: StyleName = opts.style ?? 'POP';
     const key = opts.key ?? 'C';
 
-    console.log(`[mgCoreV3] generate seed=${seed} style=${style} key=${key} (Phase 0 placeholder — byte-identical V1)`);
-
     const config: GenerationConfig = { seed, style, key, emotion: 'auto' };
     const engine = new Engine(new Random(seed));
+
+    // 1. mg progression + arrangement(我们要 chord 列表 + melody)
     const genChords = engine.generateProgressions(config);
     const timeline = engine.generateArrangement(genChords, config);
 
-    const pedalSegs = buildPedalSegments(timeline.pedalEvents);
-    const melody         = eventsToNoteData(timeline.events, 'melody', pedalSegs, false);
-    const accompaniment  = eventsToNoteData(timeline.events, 'chord',  pedalSegs, true);
-    const bass           = eventsToNoteData(timeline.events, 'bass',   pedalSegs, true);
+    // 2. Melody pass-through
+    const melody = melodyEventsToData(timeline.events);
 
+    // 3. 每 chord 枚举候选 voicing
+    const candidates = genChords.map(c => enumerateVoicings(c));
+
+    // 4. Viterbi DP 求最优序列
+    const result = viterbiVoiceLeading(candidates);
+
+    // 5. 渲染 chord block + bass
+    const accompaniment: NoteData[] = [];
+    const bass: NoteData[] = [];
+    let beatAcc = 0;
+    for (let i = 0; i < genChords.length; i++) {
+        const chord = genChords[i];
+        const v = result.voicings[i] ?? [];
+        accompaniment.push(...renderChordBlock(v, beatAcc, chord.duration));
+        bass.push(...renderBass(chord, beatAcc, chord.duration));
+        beatAcc += chord.duration;
+    }
+
+    // Diagnostic
+    const candStats = result.candidateCounts;
+    const avgCands = candStats.length > 0 ? candStats.reduce((s, n) => s + n, 0) / candStats.length : 0;
+    console.log(`[mgCoreV3] seed=${seed} style=${style} key=${key} | Viterbi:totalCost=${result.totalCost.toFixed(1)} avgCandidates=${avgCands.toFixed(1)} bars=${genChords.length} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    console.log(`[mgCoreV3] voicings: ${result.voicings.map((v, i) => `${genChords[i].roman}=[${v.join(',')}]`).join(' | ')}`);
+
+    // 6. 拼 GeneratedTrack
     const profile = STYLE_DICTIONARY[style];
     const bpm = profile
         ? Math.round((profile.tempoRange[0] + profile.tempoRange[1]) / 2)
         : 100;
-
     const totalBeats = genChords.reduce((s, c) => s + c.duration, 0);
     const section: SectionMetadata = {
         name: 'Verse',
