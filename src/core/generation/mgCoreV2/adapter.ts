@@ -1,20 +1,19 @@
 // ============================================================
-// mgCoreV2/adapter.ts — V2 沙箱(2026-05-28)
+// mgCoreV2/adapter.ts — Phase 3 kernel synthesis 接管 harmony
 // ============================================================
 //
-// V1 (mgEngine/adapter.ts) 是 byte-identical mg standalone 的参考实现,不动。
-// V2 是我们后续 dimensional / MMA-kernel synthesis 实验的容器。
+// V2 第三阶段:
+//   - 复用 mg 的 progression generation(harmony 进行 / mode / voicing
+//     都用 mg 算出来,不重做)
+//   - 复用 mg 的 melody events(主旋律 pass-through)
+//   - **替换 chord + bass 渲染**:不再用 mg 的 50 个 applyTexture switch,
+//     改成 4-axis StyleVector → 6-kernel 合成器
 //
-// 当前状态:Phase 0 — V2 复用 V1 musicEngine 完全相同输出(byte-identical V1)。
-// console marker `[mgCoreV2]` 用于验证切换确实路由到这里。
-//
-// 后续 phase 计划:
-//   Phase 1: 从 V1 events 出发,做后处理实验(re-voice / re-density / etc.)
-//   Phase 2: parse MMA stdlib(122 .mma files)抽出 StyleVector
-//   Phase 3: kernel-based synthesis 替代 V1 的 applyTexture switch
+// A/B 听感对比:V1 vs V2 现在差异**只在 harmony(chord + bass)**,melody
+// 完全相同,适合听感聚焦评估"维度合成思路"是否成立。
 // ============================================================
 
-import { Engine, Random, type GenerationConfig, type ChordDef, type NoteEvent, type PedalEvent } from '../mgEngine/musicEngine';
+import { Engine, Random, type GenerationConfig, type ChordDef, type NoteEvent } from '../mgEngine/musicEngine';
 import { STYLE_DICTIONARY, type StyleName } from '../mgEngine/styleDictionary';
 import {
     GeneratedTrack,
@@ -24,6 +23,8 @@ import {
     ChordQuality,
 } from '../types';
 import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
+import { STYLE_VECTORS } from './styleVector';
+import { pickKernels, type KernelContext } from './kernels';
 
 export interface MgV2RunOptions {
     seed?: string;
@@ -31,64 +32,9 @@ export interface MgV2RunOptions {
     key?: string;
 }
 
-interface PedalSegment { start: number; end: number }
-
-function buildPedalSegments(pedalEvents: PedalEvent[] | undefined): PedalSegment[] {
-    if (!pedalEvents || pedalEvents.length === 0) return [];
-    const segs: PedalSegment[] = [];
-    let down = false;
-    let segStart = 0;
-    for (let i = 0; i < pedalEvents.length; i++) {
-        const pe = pedalEvents[i];
-        if (pe.type === 'on' && !down) {
-            segStart = pe.time;
-            down = true;
-        } else if (pe.type === 'off' && down) {
-            segs.push({ start: segStart, end: pe.time });
-            down = false;
-        }
-    }
-    if (down) segs.push({ start: segStart, end: Number.POSITIVE_INFINITY });
-    return segs;
-}
-
-function pedalEndAfter(segs: PedalSegment[], t: number): number | null {
-    for (let i = 0; i < segs.length; i++) {
-        const s = segs[i];
-        if (t >= s.start && t < s.end) return s.end;
-    }
-    return null;
-}
-
-const PEDAL_MAX_RING_BEATS = 8;
-
-function eventsToNoteData(
-    events: NoteEvent[],
-    part: NoteEvent['part'],
-    pedalSegs: PedalSegment[],
-    applyPedal: boolean,
-): NoteData[] {
-    const out: NoteData[] = [];
-    for (let i = 0; i < events.length; i++) {
-        const e = events[i];
-        if (e.part !== part) continue;
-        let duration = e.duration;
-        if (applyPedal && pedalSegs.length > 0) {
-            const pedalEnd = pedalEndAfter(pedalSegs, e.time);
-            if (pedalEnd !== null) {
-                const pedalDur = pedalEnd - e.time;
-                duration = Math.max(duration, Math.min(pedalDur, PEDAL_MAX_RING_BEATS));
-            }
-        }
-        out.push({
-            pitch: e.noteNumber,
-            onset: e.time,
-            duration,
-            velocity: Math.max(0, Math.min(1, e.velocity / 127)),
-        });
-    }
-    return out;
-}
+// ─────────────────────────────────────────────────────────────────
+// Helpers(从 mgEngine/adapter.ts 复用 / 简化)
+// ─────────────────────────────────────────────────────────────────
 
 function mapChordQuality(type: string): ChordQuality {
     const t = type.toLowerCase();
@@ -126,6 +72,25 @@ function chordsToGeneratedChords(chords: ChordDef[]): GeneratedChord[] {
     return out;
 }
 
+/** mg NoteEvent → 我们的 NoteData(velocity 127→[0,1],pitch 透传 absolute) */
+function noteEventToData(events: NoteEvent[], filterPart: NoteEvent['part']): NoteData[] {
+    const out: NoteData[] = [];
+    for (const e of events) {
+        if (e.part !== filterPart) continue;
+        out.push({
+            pitch: e.noteNumber,
+            onset: e.time,
+            duration: e.duration,
+            velocity: Math.max(0, Math.min(1, e.velocity / 127)),
+        });
+    }
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// V2 main
+// ─────────────────────────────────────────────────────────────────
+
 export function runMgCoreV2(opts: MgV2RunOptions = {}): {
     track: GeneratedTrack;
     context: MusicContext;
@@ -134,22 +99,55 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
     const style: StyleName = opts.style ?? 'POP';
     const key = opts.key ?? 'C';
 
-    // 标记 V2 路由(便于在 console 验证切换确实生效)
-    console.log(`[mgCoreV2] generate seed=${seed} style=${style} key=${key}`);
-
-    // Phase 0:跟 V1 完全相同的引擎调用(reuse mgEngine/musicEngine.ts)
-    // Phase 1+ 在这里开始变化(insert post-processing / kernel synthesis 等)
     const config: GenerationConfig = { seed, style, key, emotion: 'auto' };
     const engine = new Engine(new Random(seed));
+
+    // 1. mg progression + arrangement(我们要 melody 和 chord 列表)
     const genChords = engine.generateProgressions(config);
     const timeline = engine.generateArrangement(genChords, config);
 
-    const pedalSegs = buildPedalSegments(timeline.pedalEvents);
+    // 2. Melody pass-through(V1/V2 melody 完全一致)
+    const melody = noteEventToData(timeline.events, 'melody');
 
-    const melody         = eventsToNoteData(timeline.events, 'melody', pedalSegs, false);
-    const accompaniment  = eventsToNoteData(timeline.events, 'chord',  pedalSegs, true);
-    const bass           = eventsToNoteData(timeline.events, 'bass',   pedalSegs, true);
+    // 3. **替换 chord + bass**:用 kernel 合成
+    const vector = STYLE_VECTORS[style];
+    const { bass: bassKernel, harmony: harmonyKernel } = pickKernels(vector);
 
+    const kernelEvents: NoteEvent[] = [];
+    let beatAcc = 0;
+    for (const chord of genChords) {
+        const ctx: KernelContext = {
+            startBeat: beatAcc,
+            duration: chord.duration,
+            vector,
+        };
+        kernelEvents.push(...bassKernel(chord, ctx));
+        kernelEvents.push(...harmonyKernel(chord, ctx));
+        beatAcc += chord.duration;
+    }
+
+    const accompaniment: NoteData[] = kernelEvents
+        .filter(e => e.part === 'chord')
+        .map(e => ({
+            pitch: e.noteNumber,
+            onset: e.time,
+            duration: e.duration,
+            velocity: Math.max(0, Math.min(1, e.velocity / 127)),
+        }));
+
+    const bass: NoteData[] = kernelEvents
+        .filter(e => e.part === 'bass')
+        .map(e => ({
+            pitch: e.noteNumber,
+            onset: e.time,
+            duration: e.duration,
+            velocity: Math.max(0, Math.min(1, e.velocity / 127)),
+        }));
+
+    // Diagnostic
+    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | bass=${bassKernel.name} harmony=${harmonyKernel.name} | vector=${JSON.stringify(vector)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+
+    // 4. 拼 GeneratedTrack
     const profile = STYLE_DICTIONARY[style];
     const bpm = profile
         ? Math.round((profile.tempoRange[0] + profile.tempoRange[1]) / 2)
