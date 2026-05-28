@@ -26,6 +26,7 @@ import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSou
 import { BandSelectionStore } from '../state/BandSelectionStore';
 import { MgStyleStore, MG_STYLE_OPTIONS, type MgStyle } from '../state/MgStyleStore';
 import { MgKeyStore, MG_KEY_OPTIONS, type MgKey } from '../state/MgKeyStore';
+import { MgSeedStore, hashSeedToInt } from '../state/MgSeedStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -357,9 +358,13 @@ export const PipelineMonitor: React.FC = () => {
     }, [reapplyMutes]);
 
     const handlePlay = useCallback(async () => {
-        const seed = parseInt(seedInput, 10);
-        if (isNaN(seed) || seed < 0) return;
-        await playSeed(seed >>> 0);
+        // mg 接受 alphanumeric seed(`42` / `4f9a2b` / `mySeed01`)。把原字符串写
+        // MgSeedStore → runPipeline 内部按 style 拼 `pop_42` 喂 mg。
+        // PRNGManager 仍要 numeric,用 djb2 hash 转 uint32 给它消费(只影响我们
+        // 内部 snapshot 机制,不影响 mg 输出)。
+        MgSeedStore.setSuffix(seedInput || '0');
+        const numHash = hashSeedToInt(seedInput || '0');
+        await playSeed(numHash);
     }, [seedInput, playSeed]);
 
     const handleStop = useCallback(() => {
@@ -369,8 +374,11 @@ export const PipelineMonitor: React.FC = () => {
     }, []);
 
     const handleRandom = useCallback(() => {
-        const newSeed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
-        setSeedInput(String(newSeed));
+        // 对齐 mg App.tsx 的 randomTail(6 字符 base36 hex 串,如 `4f9a2b`)
+        const chars = '0123456789abcdefghijklmnopqrstuvwxyz';
+        let out = '';
+        for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+        setSeedInput(out);
     }, []);
 
     const togglePartMute = useCallback((partName: PartName) => {
@@ -481,7 +489,7 @@ export const PipelineMonitor: React.FC = () => {
                     <input
                         type="text"
                         value={seedInput}
-                        onChange={(e) => setSeedInput(e.target.value.replace(/[^0-9]/g, ''))}
+                        onChange={(e) => setSeedInput(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') handlePlay();
                         }}

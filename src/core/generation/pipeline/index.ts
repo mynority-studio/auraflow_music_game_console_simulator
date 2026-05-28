@@ -16,9 +16,9 @@
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { runMgEngine } from '../mgEngine/adapter';
-import { PRNGManager } from '../../utils/PRNG';
 import { MgStyleStore } from '../../../state/MgStyleStore';
 import { MgKeyStore } from '../../../state/MgKeyStore';
+import { MgSeedStore } from '../../../state/MgSeedStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -35,6 +35,10 @@ export interface PipelineRunOptions {
 /**
  * mg 期待 string seed,格式 `${stylePrefix}_${suffix}`。stylePrefix 必须跟当前
  * MgStyle 一致(否则 mg 端 PREFIX_TO_STYLE 解析后样式不匹配)。
+ *
+ * 用户输入策略(MgSeedStore.getSuffix() 来源,跟 mg App.tsx 一致):
+ *   - 含下划线 → 用户输入了完整 mg seed(如 `pop_42`)→ 原样使用
+ *   - 不含下划线 → 用户只输入 suffix(如 `42` / `4f9a2b`)→ 当前 style 前缀拼上去
  */
 const MG_STYLE_PREFIX: Record<string, string> = {
     POP:   'pop',
@@ -44,20 +48,21 @@ const MG_STYLE_PREFIX: Record<string, string> = {
     LOFI:  'lofi',
 };
 
-function deriveMgSeed(numericSeed: number, style: string): string {
+function deriveMgSeed(suffix: string, style: string): string {
+    if (suffix.includes('_')) return suffix;
     const prefix = MG_STYLE_PREFIX[style] ?? 'pop';
-    return `${prefix}_${numericSeed}`;
+    return `${prefix}_${suffix}`;
 }
 
 export function runPipeline(
     options: PipelineRunOptions = {},
 ): { track: GeneratedTrack; context: MusicContext } {
-    // 取当前 PRNG 状态对应的 seed 字符串(PipelineMonitor 在 playSeed 前会
-    // PRNGManager.setSeed(N),这里读回 N 喂给 mg)。
-    const numericSeed = PRNGManager.getInitialSeed();
+    // 从 MgSeedStore 读用户输入的 raw alphanumeric seed,跟 mg App.tsx 完全
+    // 对齐(支持字母数字下划线,如 `42` / `4f9a2b` / `pop_42`)。
+    const seedSuffix = MgSeedStore.getSuffix();
     const mgStyle = MgStyleStore.getStyle();
     const mgKey = MgKeyStore.getKey();
-    const mgSeed = deriveMgSeed(numericSeed, mgStyle);
+    const mgSeed = deriveMgSeed(seedSuffix, mgStyle);
 
     const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: mgKey });
 
