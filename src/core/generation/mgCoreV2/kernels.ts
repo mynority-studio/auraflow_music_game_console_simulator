@@ -57,11 +57,16 @@ function getBassNote(chord: ChordDef, vector: StyleVector): number {
 }
 
 /**
- * 从 chord.notesMidi 反推真实 chord tone(自动识别 maj/min/dim/aug 三度,
- * 完全/减/增五度,大/小七度),在 bass 区域 wrap 到合理八度。
+ * 从 chord.notesMidi 反推真实 chord tone,bass 区域 wrap 到合理八度。
  *
- * 修了 V2 之前 BassWalk / AlbertiBass 写死 root+4(大三度)的 bug — 小调和弦
- * 时 LH 弹 root+4 = 大三度,跟 RH minor voicing 的 b3 直接冲撞,听起来"不在调上"。
+ * **核心保证**:返回值的 pitch class **永远是 chord 实际包含的音**(即
+ * chord.notesMidi 里某个音的 mod 12)。没有任何 hardcoded fallback 到非
+ * 和弦音。sus / dyad / power chord / 任何稀疏 voicing 都安全。
+ *
+ * Role 优先级链(找不到目标音类则降级到下一个,最差降到 root,绝不出错音):
+ *   third   :  b3(3) → maj3(4) → sus2(2) → sus4(5) → 5th(7) → root(0)
+ *   fifth   :  P5(7) → d5(6) → A5(8) → root(0)
+ *   seventh :  b7(10) → maj7(11) → 6(9) → root(0)
  */
 function chordToneAt(chord: ChordDef, role: 'third' | 'fifth' | 'seventh', vector: StyleVector): number {
     const rootPc = ((chord.rootMidi % 12) + 12) % 12;
@@ -69,17 +74,24 @@ function chordToneAt(chord: ChordDef, role: 'third' | 'fifth' | 'seventh', vecto
     for (const m of chord.notesMidi) {
         intervals.add((((m % 12) - rootPc) + 12) % 12);
     }
+    // root 永远存在(保险)
+    intervals.add(0);
+
+    /** 找第一个在 intervals 里的 semis,找不到返 0(root) */
+    const firstAvailable = (candidates: number[]): number => {
+        for (const s of candidates) if (intervals.has(s)) return s;
+        return 0;
+    };
 
     let semis: number;
     if (role === 'third') {
-        // 优先小三(3),其次大三(4)— minor / dim 和弦走 b3
-        semis = intervals.has(3) ? 3 : intervals.has(4) ? 4 : 4;
+        // minor 3 / major 3 / sus2 / sus4 / 5th / root —— 全部从 chord 实音里挑
+        semis = firstAvailable([3, 4, 2, 5, 7]);
     } else if (role === 'fifth') {
-        // 减五(6) / 完五(7) / 增五(8)
-        semis = intervals.has(7) ? 7 : intervals.has(6) ? 6 : intervals.has(8) ? 8 : 7;
+        semis = firstAvailable([7, 6, 8]);
     } else {
-        // seventh:b7(10) 优先,maj7(11) 次之
-        semis = intervals.has(10) ? 10 : intervals.has(11) ? 11 : 10;
+        // seventh:b7 优先,大七次之,然后 6 度
+        semis = firstAvailable([10, 11, 9]);
     }
 
     const bassRef = getBassNote(chord, vector);
