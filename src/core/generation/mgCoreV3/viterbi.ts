@@ -15,7 +15,7 @@
 // ============================================================
 
 import type { Voicing } from './voicing';
-import { voiceLeadingCost, priorCost } from './voicing';
+import { voiceLeadingCost, priorCost, internalClusterPenalty } from './voicing';
 
 export interface ViterbiResult {
     /** 最优 voicing 序列(每 chord 一个) */
@@ -44,19 +44,23 @@ export function viterbiVoiceLeading(candidatesPerChord: Voicing[][]): ViterbiRes
     const dp: number[][] = candidatesPerChord.map(cs => cs.map(() => Infinity));
     const back: number[][] = candidatesPerChord.map(cs => cs.map(() => -1));
 
-    // —— 初始 prior:第 0 chord 各候选用 priorCost ——
+    // —— 初始 prior:第 0 chord 各候选用 priorCost + clusterPenalty ——
     for (let k = 0; k < candidatesPerChord[0].length; k++) {
-        dp[0][k] = priorCost(candidatesPerChord[0][k]);
+        const v = candidatesPerChord[0][k];
+        dp[0][k] = priorCost(v) + internalClusterPenalty(v);
     }
 
     // —— Forward DP ——
+    // 每 chord 状态附加 internalClusterPenalty 进 cost,Viterbi 自动避开有
+    // m2 内部冲撞的 voicing(典型如 b9 / b13 紧贴本音的密排)。
     for (let i = 1; i < N; i++) {
         const prevCs = candidatesPerChord[i - 1];
         const curCs = candidatesPerChord[i];
         for (let j = 0; j < curCs.length; j++) {
+            const stateCost = internalClusterPenalty(curCs[j]);
             for (let k = 0; k < prevCs.length; k++) {
                 if (!Number.isFinite(dp[i - 1][k])) continue;
-                const c = dp[i - 1][k] + voiceLeadingCost(prevCs[k], curCs[j]);
+                const c = dp[i - 1][k] + voiceLeadingCost(prevCs[k], curCs[j]) + stateCost;
                 if (c < dp[i][j]) {
                     dp[i][j] = c;
                     back[i][j] = k;
