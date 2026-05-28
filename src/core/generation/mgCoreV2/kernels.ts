@@ -29,6 +29,10 @@ export interface KernelContext {
     duration: number;
     /** style vector */
     vector: StyleVector;
+    /** 该 chord 在全曲中的 index(0-based)— kernel 可据此做 per-bar 变奏 */
+    barIndex: number;
+    /** 全曲 chord 总数 */
+    totalBars: number;
 }
 
 export type Kernel = (chord: ChordDef, ctx: KernelContext) => NoteEvent[];
@@ -355,55 +359,88 @@ export const ArpFill: Kernel = (chord, ctx) => {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// STYLE RECIPES — 每 style 的多 kernel 组合(Phase 3.F)
+// STYLE RECIPE SETS — 每 style 多层 recipe,按 bar 位 ABAC 切换(Phase 3.H)
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * 每个 style 由多个 kernel 在不同 beat 位置层叠组成,形成真正的
- * LH/RH "切片组合"。kernel 之间通过 beat 位错开避免重复。
+ * 三层 recipe 结构,按 phrase 位置组合:
+ *   base       — 每 bar 都有的核心层
+ *   embellish  — 装饰层,中间 bar 加进来
+ *   fill       — 填充层,phrase 末 bar 用(每 4 bar 第 4 个)
+ *
+ * 4-bar phrase ABAC 切换规则:
+ *   bar 0 (phrase 起):base 单层(干净进入)
+ *   bar 1:           base + embellish
+ *   bar 2:           base + embellish
+ *   bar 3 (phrase 末):base + fill(转折)
+ *   bar 4 起循环
+ *
+ * 这样同一 style 在一首 16 bar 里有 3 种 texture 轮换,听感更"活"。
  */
-export const STYLE_RECIPES: Record<StyleName, Kernel[]> = {
-    POP: [
-        // LH:稳定 root 击点
-        BassRoot,
-        // RH:1+3 下拍 block chord + 2+4 后拍 stab(标准 four-on-the-floor 流行)
-        BlockChord,
-        StabBackbeat,
-    ],
-    LOFI: [
-        // LH:简单根音
-        BassRoot,
-        // RH:整 chord 长按 + 下半 bar arp 填充(招牌的"梦境感")
-        PedalSustained,
-        ArpFill,
-    ],
-    JAZZ: [
-        // LH:walking bass
-        BassWalk,
-        // RH:charleston 切分 + 偶尔 stab 加 swing
-        Charleston,
-        StabBackbeat,
-    ],
-    BLUES: [
-        // LH:阿尔贝蒂式摆动(blues / boogie 招牌)
-        AlbertiBass,
-        // RH:1+3 block chord
-        BlockChord,
-    ],
-    RNB: [
-        // LH:稳定 root
-        BassRoot,
-        // RH:长按 pedal + 下半 bar arp
-        PedalSustained,
-        ArpFill,
-    ],
+export interface StyleRecipeSet {
+    base: Kernel[];
+    embellish?: Kernel[];
+    fill?: Kernel[];
+}
+
+export const STYLE_RECIPE_SETS: Record<StyleName, StyleRecipeSet> = {
+    POP: {
+        base:      [BassRoot, BlockChord],
+        embellish: [StabBackbeat],
+        fill:      [ArpFill],
+    },
+    LOFI: {
+        base:      [BassRoot, PedalSustained],
+        embellish: [ArpFill],
+        fill:      [Arpeggio],
+    },
+    JAZZ: {
+        base:      [BassWalk, Charleston],
+        embellish: [StabBackbeat],
+        fill:      [ArpFill],
+    },
+    BLUES: {
+        base:      [AlbertiBass, BlockChord],
+        embellish: [StabBackbeat],
+        fill:      [Arpeggio],
+    },
+    RNB: {
+        base:      [BassRoot, PedalSustained],
+        embellish: [ArpFill],
+        fill:      [Stab],
+    },
 };
 
 /**
- * 选当前 style 的 kernel 列表。adapter 对每个 chord 逐个 apply。
- * vector 参数留 hook 用于后续根据 vector 动态调整 recipe(目前未用)。
+ * 按 bar 索引选 kernel 列表,实现 phrase 级 ABAC 变奏。
+ *   - bar 0 (mod 4 === 0):base 单层(phrase 起首,干净)
+ *   - bar 1, 2 (mod 4 === 1 or 2):base + embellish
+ *   - bar 3 (mod 4 === 3):base + fill(phrase 末转折)
+ *
+ * 末尾 bar(全曲最后)强制 base 单层,避免 fill 切到下一段。
  */
-export function pickKernels(vector: StyleVector, style: StyleName): Kernel[] {
-    void vector;  // 当前 recipe 选 style 表;后续可加 density 阈值动态加 ArpFill 等
-    return STYLE_RECIPES[style] ?? STYLE_RECIPES.POP;
+export function pickKernelsForBar(
+    style: StyleName,
+    barIndex: number,
+    totalBars: number,
+): Kernel[] {
+    const recipe = STYLE_RECIPE_SETS[style] ?? STYLE_RECIPE_SETS.POP;
+    const kernels: Kernel[] = [...recipe.base];
+
+    const isLastBar = barIndex === totalBars - 1;
+    if (isLastBar) return kernels;  // 末 bar 干净收
+
+    const phrasePos = barIndex % 4;
+    if (phrasePos === 0) {
+        // phrase 起首:只 base
+        return kernels;
+    } else if (phrasePos === 3 && recipe.fill) {
+        // phrase 末:base + fill(没有 fill 时退化到 embellish)
+        kernels.push(...recipe.fill);
+    } else if (recipe.embellish) {
+        // 中间 bar:base + embellish
+        kernels.push(...recipe.embellish);
+    }
+
+    return kernels;
 }

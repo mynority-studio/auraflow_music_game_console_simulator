@@ -24,7 +24,7 @@ import {
 } from '../types';
 import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
 import { STYLE_VECTORS } from './styleVector';
-import { pickKernels, type KernelContext } from './kernels';
+import { pickKernelsForBar, type KernelContext } from './kernels';
 
 export interface MgV2RunOptions {
     seed?: string;
@@ -109,21 +109,28 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
     // 2. Melody pass-through(V1/V2 melody 完全一致)
     const melody = noteEventToData(timeline.events, 'melody');
 
-    // 3. **替换 chord + bass**:多 kernel recipe 合成(2-4 个 kernel 层叠)
+    // 3. **替换 chord + bass**:多 kernel recipe + phrase 变奏(Phase 3.H)
+    //    每 bar 按 phrase position(0=起首/3=末)切换 base / base+embellish / base+fill
     const vector = STYLE_VECTORS[style];
-    const kernels = pickKernels(vector, style);
+    const totalBars = genChords.length;
 
     const kernelEvents: NoteEvent[] = [];
     let beatAcc = 0;
-    for (const chord of genChords) {
+    const recipeLog: string[] = [];  // 记录每 bar 用了什么 recipe(调试用)
+    for (let i = 0; i < genChords.length; i++) {
+        const chord = genChords[i];
+        const kernels = pickKernelsForBar(style, i, totalBars);
         const ctx: KernelContext = {
             startBeat: beatAcc,
             duration: chord.duration,
             vector,
+            barIndex: i,
+            totalBars,
         };
         for (const kernel of kernels) {
             kernelEvents.push(...kernel(chord, ctx));
         }
+        recipeLog.push(`bar${i}=${kernels.map(k => k.name).join('+')}`);
         beatAcc += chord.duration;
     }
 
@@ -145,9 +152,9 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             velocity: Math.max(0, Math.min(1, e.velocity / 127)),
         }));
 
-    // Diagnostic
-    const kernelNames = kernels.map(k => k.name || 'anon').join('+');
-    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | recipe=[${kernelNames}] | vector=${JSON.stringify(vector)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    // Diagnostic — 输出每 bar 用的 kernel 组合,验证 phrase 变奏
+    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | vector=${JSON.stringify(vector)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    console.log(`[mgCoreV2] bar recipes: ${recipeLog.join(' | ')}`);
 
     // 4. 拼 GeneratedTrack
     const profile = STYLE_DICTIONARY[style];
