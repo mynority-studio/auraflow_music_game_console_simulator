@@ -30,8 +30,9 @@ import {
     ChordQuality,
 } from '../types';
 import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
-import { enumerateVoicings, type Voicing } from './voicing';
+import { enumerateVoicings } from './voicing';
 import { viterbiVoiceLeading } from './viterbi';
+import { STYLE_PATTERNS } from './patterns';
 
 export interface MgV3RunOptions {
     seed?: string;
@@ -95,53 +96,14 @@ function melodyEventsToData(events: NoteEvent[]): NoteData[] {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// 极简 rhythm renderer(beat 0 全 voicing,duration ≥ 4 再 beat 2 一次)
+// Bass register clamp(38-50 = D2-D3)
 // ─────────────────────────────────────────────────────────────────
 
-const RH_VELOCITY = 0.62;  // ~MIDI 79
-const BASS_VELOCITY = 0.72;  // ~MIDI 91
-
-function renderChordBlock(voicing: Voicing, startBeat: number, duration: number): NoteData[] {
-    if (voicing.length === 0) return [];
-    const events: NoteData[] = [];
-    const dur = Math.min(duration * 0.95, 4);
-
-    // Beat 0:全 voicing
-    for (const m of voicing) {
-        events.push({
-            pitch: m,
-            onset: startBeat,
-            duration: dur,
-            velocity: RH_VELOCITY,
-        });
-    }
-
-    // duration ≥ 4:beat 2 再来一次(中拍重击,稍弱)
-    if (duration >= 4) {
-        const rep2Dur = Math.min((duration - 2) * 0.95, 2);
-        for (const m of voicing) {
-            events.push({
-                pitch: m,
-                onset: startBeat + 2,
-                duration: rep2Dur,
-                velocity: RH_VELOCITY * 0.85,
-            });
-        }
-    }
-    return events;
-}
-
-/** LH 单根音 bass(从 chord.bassMidi 出发,clamp 到 D2-D3 区) */
-function renderBass(chord: ChordDef, startBeat: number, duration: number): NoteData[] {
-    let bass = chord.bassMidi;
-    while (bass > 50) bass -= 12;
-    while (bass < 38) bass += 12;
-    return [{
-        pitch: bass,
-        onset: startBeat,
-        duration: duration * 0.95,
-        velocity: BASS_VELOCITY,
-    }];
+function clampBassMidi(bassMidi: number): number {
+    let b = bassMidi;
+    while (b > 50) b -= 12;
+    while (b < 38) b += 12;
+    return b;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -172,15 +134,24 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
     // 4. Viterbi DP 求最优序列
     const result = viterbiVoiceLeading(candidates);
 
-    // 5. 渲染 chord block + bass
+    // 5. 渲染:per-style pattern combo(bass + 1-2 chord pattern 层叠)
+    const stylePats = STYLE_PATTERNS[style];
     const accompaniment: NoteData[] = [];
     const bass: NoteData[] = [];
     let beatAcc = 0;
     for (let i = 0; i < genChords.length; i++) {
         const chord = genChords[i];
         const v = result.voicings[i] ?? [];
-        accompaniment.push(...renderChordBlock(v, beatAcc, chord.duration));
-        bass.push(...renderBass(chord, beatAcc, chord.duration));
+        const patternArgs = {
+            voicing: v,
+            bassMidi: clampBassMidi(chord.bassMidi),
+            startBeat: beatAcc,
+            duration: chord.duration,
+        };
+        bass.push(...stylePats.bass(patternArgs));
+        for (const chordPat of stylePats.chord) {
+            accompaniment.push(...chordPat(patternArgs));
+        }
         beatAcc += chord.duration;
     }
 
