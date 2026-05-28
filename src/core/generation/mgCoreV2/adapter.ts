@@ -156,7 +156,37 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
         beatAcc += chord.duration;
     }
 
-    const accompaniment: NoteData[] = kernelEvents
+    // ────────────────────────────────────────────────────────────────
+    // Melody-clash 过滤(对齐 mg arrangementContract.applyCompingMode)
+    // ────────────────────────────────────────────────────────────────
+    // mg V1 内置:chord 事件若在 melody 攻击点窗口内,且 pitch 跟 melody
+    // 形成 m2 / m9 / M7(diff ≤2 或 mod12 ∈ {1,11})→ drop 该 chord 事件,
+    // 避免半音冲撞。V2 之前缺这层,某些 chord(尤其 dom7 / m7b5 / 含 leading
+    // tone 的 V chord)voicing 会跟 melody 撞 — 听起来"不在调上"。
+    //
+    // 例:A 小调 ii°-V7-i 进行,E9 voicing 含 G♯(主音引导),melody 此处
+    // 落在 G natural → V2 必撞;mg V1 drop chord 事件保全 melody。
+    const melodyAttacks = timeline.events.filter(e => e.part === 'melody');
+    const TOLERANCE_BEFORE = 0.05;
+    const TOLERANCE_AFTER  = 0.02;
+    const clashesWithMelody = (e: NoteEvent): boolean => {
+        const eEnd = e.time + e.duration;
+        for (const atk of melodyAttacks) {
+            // 仅当 melody 攻击落在 chord/bass 事件 sounding 窗口内
+            if (atk.time < e.time - TOLERANCE_BEFORE) continue;
+            if (atk.time > eEnd - TOLERANCE_AFTER) continue;
+            const diff = Math.abs(atk.noteNumber - e.noteNumber);
+            const mod12 = diff % 12;
+            // m2(1)/ m9 / M7(11)半音类冲撞
+            if (diff <= 2 || mod12 === 1 || mod12 === 11) return true;
+        }
+        return false;
+    };
+    const beforeFilter = kernelEvents.length;
+    const filteredKernelEvents = kernelEvents.filter(e => !clashesWithMelody(e));
+    const droppedCount = beforeFilter - filteredKernelEvents.length;
+
+    const accompaniment: NoteData[] = filteredKernelEvents
         .filter(e => e.part === 'chord')
         .map(e => ({
             pitch: e.noteNumber,
@@ -165,7 +195,7 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             velocity: Math.max(0, Math.min(1, e.velocity / 127)),
         }));
 
-    const bass: NoteData[] = kernelEvents
+    const bass: NoteData[] = filteredKernelEvents
         .filter(e => e.part === 'bass')
         .map(e => ({
             pitch: e.noteNumber,
@@ -174,8 +204,8 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             velocity: Math.max(0, Math.min(1, e.velocity / 127)),
         }));
 
-    // Diagnostic — 输出 styleAnchor / songAnchor / 每 bar mutated vector
-    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | styleAnchor=${JSON.stringify(styleAnchor)} | songAnchor=${JSON.stringify(songAnchor)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    // Diagnostic — 输出 styleAnchor / songAnchor / 每 bar mutated vector / clash drops
+    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | styleAnchor=${JSON.stringify(styleAnchor)} | songAnchor=${JSON.stringify(songAnchor)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length} | melody-clash dropped: ${droppedCount}/${beforeFilter}`);
     console.log(`[mgCoreV2] per-bar:\n  ${recipeLog.join('\n  ')}`);
 
     // 4. 拼 GeneratedTrack
