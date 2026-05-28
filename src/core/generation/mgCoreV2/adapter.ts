@@ -23,8 +23,8 @@ import {
     ChordQuality,
 } from '../types';
 import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
-import { STYLE_VECTORS } from './styleVector';
-import { pickKernelsForBar, type KernelContext } from './kernels';
+import { STYLE_VECTORS, mutateVector, makePrng } from './styleVector';
+import { pickBass, HARMONY_KERNELS, type KernelContext } from './kernels';
 
 export interface MgV2RunOptions {
     seed?: string;
@@ -109,17 +109,24 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
     // 2. Melody pass-through(V1/V2 melody 完全一致)
     const melody = noteEventToData(timeline.events, 'melody');
 
-    // 3. **替换 chord + bass**:多 kernel recipe + phrase 变奏(Phase 3.H)
-    //    每 bar 按 phrase position(0=起首/3=末)切换 base / base+embellish / base+fill
-    const vector = STYLE_VECTORS[style];
+    // 3. **替换 chord + bass**:dimensional kernel dispatch(Phase 4)
+    //    每 bar 把 anchor vector mutate(phrase wave + song arc + noise)→
+    //    pickBass(v) 互斥选 1 bass kernel + HARMONY_KERNELS 各自 activate(v)
+    //    谓词独立决定是否 fire → 层叠多 kernel = "切片组合"
+    //
+    //    同首歌内 vector 微动,每 bar 触发的 kernel 集合 / 参数都不一样,
+    //    实现"基于一种 base style 的智能 mutant"。
+    const anchor = STYLE_VECTORS[style];
     const totalBars = genChords.length;
+    const prng = makePrng(seed);
 
     const kernelEvents: NoteEvent[] = [];
     let beatAcc = 0;
-    const recipeLog: string[] = [];  // 记录每 bar 用了什么 recipe(调试用)
+    const recipeLog: string[] = [];
     for (let i = 0; i < genChords.length; i++) {
         const chord = genChords[i];
-        const kernels = pickKernelsForBar(style, i, totalBars);
+        const vector = mutateVector(anchor, i, totalBars, prng);
+
         const ctx: KernelContext = {
             startBeat: beatAcc,
             duration: chord.duration,
@@ -127,10 +134,22 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             barIndex: i,
             totalBars,
         };
-        for (const kernel of kernels) {
-            kernelEvents.push(...kernel(chord, ctx));
+
+        // Bass(互斥选 1)
+        const { name: bassName, kernel: bassKernel } = pickBass(vector);
+        kernelEvents.push(...bassKernel(chord, ctx));
+
+        // Harmony(各 kernel 自己 activate)
+        const activeHarmony: string[] = [];
+        for (const desc of HARMONY_KERNELS) {
+            if (desc.activate(vector)) {
+                kernelEvents.push(...desc.kernel(chord, ctx));
+                activeHarmony.push(desc.name);
+            }
         }
-        recipeLog.push(`bar${i}=${kernels.map(k => k.name).join('+')}`);
+
+        const vTag = `d=${vector.density.toFixed(2)} s=${vector.syncopation.toFixed(2)} bL=${vector.bassLinearity.toFixed(2)} p=${vector.pedalUsage.toFixed(2)}`;
+        recipeLog.push(`bar${i} {${vTag}} ${bassName}+[${activeHarmony.join(',')}]`);
         beatAcc += chord.duration;
     }
 
@@ -152,9 +171,9 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             velocity: Math.max(0, Math.min(1, e.velocity / 127)),
         }));
 
-    // Diagnostic — 输出每 bar 用的 kernel 组合,验证 phrase 变奏
-    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | vector=${JSON.stringify(vector)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
-    console.log(`[mgCoreV2] bar recipes: ${recipeLog.join(' | ')}`);
+    // Diagnostic — 输出 anchor + 每 bar mutated vector + 触发 kernel 列表
+    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | anchor=${JSON.stringify(anchor)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    console.log(`[mgCoreV2] per-bar:\n  ${recipeLog.join('\n  ')}`);
 
     // 4. 拼 GeneratedTrack
     const profile = STYLE_DICTIONARY[style];
