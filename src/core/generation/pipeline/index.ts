@@ -16,7 +16,7 @@
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { runMgEngine } from '../mgEngine/adapter';
-import { runMgCoreV2 } from '../mgCoreV2/adapter';
+import { runMgCoreV3 } from '../mgCoreV3/adapter';
 import { MgStyleStore } from '../../../state/MgStyleStore';
 import { MgKeyStore } from '../../../state/MgKeyStore';
 import { MgSeedStore } from '../../../state/MgSeedStore';
@@ -67,8 +67,8 @@ export function runPipeline(
     const mgSeed = deriveMgSeed(seedSuffix, mgStyle);
 
     const variant = MgEngineVariantStore.getVariant();
-    const { track, context } = variant === 'mgV2'
-        ? runMgCoreV2({ seed: mgSeed, style: mgStyle, key: mgKey })
+    const { track, context } = variant === 'mgV3'
+        ? runMgCoreV3({ seed: mgSeed, style: mgStyle, key: mgKey })
         : runMgEngine({ seed: mgSeed, style: mgStyle, key: mgKey });
 
     // ========================================================================
