@@ -27,6 +27,7 @@ import { BandSelectionStore } from '../state/BandSelectionStore';
 import { MgStyleStore, MG_STYLE_OPTIONS, type MgStyle } from '../state/MgStyleStore';
 import { MgKeyStore, MG_KEY_OPTIONS, type MgKey } from '../state/MgKeyStore';
 import { MgSeedStore, hashSeedToInt } from '../state/MgSeedStore';
+import { MgEngineVariantStore, MG_ENGINE_VARIANTS, type MgEngineVariant } from '../state/MgEngineVariantStore';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -209,6 +210,11 @@ export const PipelineMonitor: React.FC = () => {
     const switchMgKey = useCallback((next: MgKey) => {
         MgKeyStore.setKey(next);
         setMgKeyState(next);
+    }, []);
+    const [mgVariant, setMgVariantState] = useState<MgEngineVariant>(() => MgEngineVariantStore.getVariant());
+    const switchMgVariant = useCallback((next: MgEngineVariant) => {
+        MgEngineVariantStore.setVariant(next);
+        setMgVariantState(next);
     }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
@@ -454,10 +460,25 @@ export const PipelineMonitor: React.FC = () => {
                 </button>
             </div>
 
-            {/* Engine slot — mgEngine 唯一引擎(2026-05-27) */}
+            {/* Engine slot — mg / mgV2 切换(2026-05-28) */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <span className="text-[10px] text-cyan-400 font-mono">mgEngine</span>
+                <div className="flex items-center gap-1">
+                    {MG_ENGINE_VARIANTS.map(v => (
+                        <button
+                            key={v.id}
+                            onClick={() => switchMgVariant(v.id)}
+                            className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider rounded transition-all ${
+                                mgVariant === v.id
+                                    ? 'bg-cyan-500/80 text-white shadow-[0_0_6px_rgba(6,182,212,0.5)]'
+                                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                            }`}
+                            title={`切到 ${v.label}(下次 Play 生效)`}
+                        >
+                            {v.label}
+                        </button>
+                    ))}
+                </div>
                 <span className="text-[9px] uppercase tracking-wider text-zinc-500">style</span>
                 <select
                     value={mgStyle}

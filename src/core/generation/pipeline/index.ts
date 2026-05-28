@@ -16,9 +16,11 @@
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { runMgEngine } from '../mgEngine/adapter';
+import { runMgCoreV2 } from '../mgCoreV2/adapter';
 import { MgStyleStore } from '../../../state/MgStyleStore';
 import { MgKeyStore } from '../../../state/MgKeyStore';
 import { MgSeedStore } from '../../../state/MgSeedStore';
+import { MgEngineVariantStore } from '../../../state/MgEngineVariantStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -64,7 +66,10 @@ export function runPipeline(
     const mgKey = MgKeyStore.getKey();
     const mgSeed = deriveMgSeed(seedSuffix, mgStyle);
 
-    const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: mgKey });
+    const variant = MgEngineVariantStore.getVariant();
+    const { track, context } = variant === 'mgV2'
+        ? runMgCoreV2({ seed: mgSeed, style: mgStyle, key: mgKey })
+        : runMgEngine({ seed: mgSeed, style: mgStyle, key: mgKey });
 
     // ========================================================================
     // 2026-05-27 mg 2-Layer 分轨路由
