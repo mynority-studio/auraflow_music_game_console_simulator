@@ -109,9 +109,9 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
     // 2. Melody pass-through(V1/V2 melody 完全一致)
     const melody = noteEventToData(timeline.events, 'melody');
 
-    // 3. **替换 chord + bass**:用 kernel 合成
+    // 3. **替换 chord + bass**:多 kernel recipe 合成(2-4 个 kernel 层叠)
     const vector = STYLE_VECTORS[style];
-    const { bass: bassKernel, harmony: harmonyKernel } = pickKernels(vector);
+    const kernels = pickKernels(vector, style);
 
     const kernelEvents: NoteEvent[] = [];
     let beatAcc = 0;
@@ -121,8 +121,9 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
             duration: chord.duration,
             vector,
         };
-        kernelEvents.push(...bassKernel(chord, ctx));
-        kernelEvents.push(...harmonyKernel(chord, ctx));
+        for (const kernel of kernels) {
+            kernelEvents.push(...kernel(chord, ctx));
+        }
         beatAcc += chord.duration;
     }
 
@@ -145,7 +146,8 @@ export function runMgCoreV2(opts: MgV2RunOptions = {}): {
         }));
 
     // Diagnostic
-    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | bass=${bassKernel.name} harmony=${harmonyKernel.name} | vector=${JSON.stringify(vector)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    const kernelNames = kernels.map(k => k.name || 'anon').join('+');
+    console.log(`[mgCoreV2] seed=${seed} style=${style} key=${key} | recipe=[${kernelNames}] | vector=${JSON.stringify(vector)} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
 
     // 4. 拼 GeneratedTrack
     const profile = STYLE_DICTIONARY[style];

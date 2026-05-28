@@ -14,6 +14,7 @@
 // ============================================================
 
 import type { ChordDef, NoteEvent } from '../mgEngine/musicEngine';
+import type { StyleName } from '../mgEngine/styleDictionary';
 import {
     type StyleVector,
     articulationToDurRatio,
@@ -229,29 +230,180 @@ export const BassWalk: Kernel = (chord, ctx) => {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// pickKernels — 按 vector 选 bass + harmony 两个 kernel
+// OFF-BEAT / LAYERING KERNELS(Phase 3.E)
 // ─────────────────────────────────────────────────────────────────
 
-export interface KernelPair {
-    bass: Kernel;
-    harmony: Kernel;
-}
-
-export function pickKernels(vector: StyleVector): KernelPair {
-    // Bass:density > 0.6 走 walking,否则 root sustain
-    const bass = vector.density > 0.6 ? BassWalk : BassRoot;
-
-    // Harmony:articulation 极端 → Stab / PedalSustained;否则按 density 选
-    let harmony: Kernel;
-    if (vector.articulation > 0.85) {
-        harmony = PedalSustained;
-    } else if (vector.articulation < 0.3) {
-        harmony = Stab;
-    } else if (vector.density > 0.6) {
-        harmony = Arpeggio;
-    } else {
-        harmony = BlockChord;
+/**
+ * StabBackbeat — 后半拍 stab(beat 2 + beat 4,即 chord-relative offset 1 + 3)
+ *   跟 BlockChord 在 beat 1+3 上的下拍击点形成 1-2-3-4 完整覆盖
+ *   音量略低(陪衬下拍 chord)
+ */
+export const StabBackbeat: Kernel = (chord, ctx) => {
+    const events: NoteEvent[] = [];
+    const voicing = getVoicingForRH(chord, ctx.vector);
+    const vel = Math.round(volumeToVelocity(ctx.vector.volume) * 0.85);
+    const stabDur = 0.3;
+    // 后半拍位置(chord-relative offset 1 + 3)
+    const beats = [1, 3].filter(b => b < ctx.duration);
+    for (const b of beats) {
+        for (const m of voicing) {
+            events.push({
+                noteNumber: m,
+                time: ctx.startBeat + b,
+                duration: stabDur,
+                velocity: vel,
+                part: 'chord',
+            });
+        }
     }
+    return events;
+};
 
-    return { bass, harmony };
+/**
+ * Charleston — 1 + 1.5 (and-of-1) 切分音 + 持续到 beat 2
+ *   爵士最经典的 comping 节奏,跟 walking bass 配对天然
+ */
+export const Charleston: Kernel = (chord, ctx) => {
+    const events: NoteEvent[] = [];
+    const voicing = getVoicingForRH(chord, ctx.vector);
+    const vel = volumeToVelocity(ctx.vector.volume);
+    // 一组 charleston 单元:[0 短 stab, 0.5 长 stab]。chord ≥ 4 拍再来一组 [2, 2.5]
+    const units = ctx.duration >= 4 ? [0, 2] : [0];
+    for (const u of units) {
+        if (u >= ctx.duration) continue;
+        // 第一击:beat 1 短 stab(0.3 beat)
+        for (const m of voicing) {
+            events.push({
+                noteNumber: m,
+                time: ctx.startBeat + u,
+                duration: 0.3,
+                velocity: vel,
+                part: 'chord',
+            });
+        }
+        // 第二击:beat 1.5 长按(持续到下一拍)
+        if (u + 0.5 < ctx.duration) {
+            for (const m of voicing) {
+                events.push({
+                    noteNumber: m,
+                    time: ctx.startBeat + u + 0.5,
+                    duration: Math.min(1.5, ctx.duration - (u + 0.5)),
+                    velocity: Math.round(vel * 0.85),
+                    part: 'chord',
+                });
+            }
+        }
+    }
+    return events;
+};
+
+/**
+ * AlbertiBass — 阿尔贝蒂左手:根-五-三-五 八分音符摆动(古典 + lofi 招牌)
+ *   只 emit bass 三音,在 oct3 区域,每拍 0.5 beat 一个音
+ */
+export const AlbertiBass: Kernel = (chord, ctx) => {
+    const events: NoteEvent[] = [];
+    const root = getBassNote(chord, ctx.vector);
+    const fifth = root + 7;
+    const third = root + 4;  // 简化:暂不区分大小三度
+    const vel = Math.round(volumeToVelocity(ctx.vector.volume) * 0.95);
+    const noteDur = 0.5 * articulationToDurRatio(ctx.vector.articulation);
+
+    // 4-note Alberti pattern: root-5-3-5,8 分音符
+    const pattern = [root, fifth, third, fifth];
+    const stepDur = 0.5;
+    const steps = Math.floor(ctx.duration / stepDur);
+
+    for (let i = 0; i < steps; i++) {
+        events.push({
+            noteNumber: pattern[i % pattern.length],
+            time: ctx.startBeat + i * stepDur,
+            duration: noteDur,
+            velocity: i === 0 || i === 4 ? vel : Math.round(vel * 0.85),
+            part: 'bass',
+        });
+    }
+    return events;
+};
+
+/**
+ * ArpFill — chord 下半 bar 的 8 分音 arpeggio 填充
+ *   beat 2.5 ~ beat 4 之间 emit voicing 上行 / 下行
+ *   跟 BlockChord(在 beat 1+3 给和声锚定)互补,填补"空隙"
+ */
+export const ArpFill: Kernel = (chord, ctx) => {
+    const events: NoteEvent[] = [];
+    const voicing = getVoicingForRH(chord, ctx.vector);
+    if (voicing.length === 0) return events;
+    const vel = Math.round(volumeToVelocity(ctx.vector.volume) * 0.75);
+    const dur = 0.4 * articulationToDurRatio(ctx.vector.articulation);
+
+    // 只在 chord 下半部分填(offset 2.5 → end)
+    const startOffset = Math.max(2.5, ctx.duration - 1.5);
+    let i = 0;
+    for (let t = startOffset; t < ctx.duration - 0.2; t += 0.5, i++) {
+        const pitch = voicing[i % voicing.length];
+        events.push({
+            noteNumber: pitch,
+            time: ctx.startBeat + t,
+            duration: dur,
+            velocity: vel,
+            part: 'chord',
+        });
+    }
+    return events;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// STYLE RECIPES — 每 style 的多 kernel 组合(Phase 3.F)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * 每个 style 由多个 kernel 在不同 beat 位置层叠组成,形成真正的
+ * LH/RH "切片组合"。kernel 之间通过 beat 位错开避免重复。
+ */
+export const STYLE_RECIPES: Record<StyleName, Kernel[]> = {
+    POP: [
+        // LH:稳定 root 击点
+        BassRoot,
+        // RH:1+3 下拍 block chord + 2+4 后拍 stab(标准 four-on-the-floor 流行)
+        BlockChord,
+        StabBackbeat,
+    ],
+    LOFI: [
+        // LH:简单根音
+        BassRoot,
+        // RH:整 chord 长按 + 下半 bar arp 填充(招牌的"梦境感")
+        PedalSustained,
+        ArpFill,
+    ],
+    JAZZ: [
+        // LH:walking bass
+        BassWalk,
+        // RH:charleston 切分 + 偶尔 stab 加 swing
+        Charleston,
+        StabBackbeat,
+    ],
+    BLUES: [
+        // LH:阿尔贝蒂式摆动(blues / boogie 招牌)
+        AlbertiBass,
+        // RH:1+3 block chord
+        BlockChord,
+    ],
+    RNB: [
+        // LH:稳定 root
+        BassRoot,
+        // RH:长按 pedal + 下半 bar arp
+        PedalSustained,
+        ArpFill,
+    ],
+};
+
+/**
+ * 选当前 style 的 kernel 列表。adapter 对每个 chord 逐个 apply。
+ * vector 参数留 hook 用于后续根据 vector 动态调整 recipe(目前未用)。
+ */
+export function pickKernels(vector: StyleVector, style: StyleName): Kernel[] {
+    void vector;  // 当前 recipe 选 style 表;后续可加 density 阈值动态加 ArpFill 等
+    return STYLE_RECIPES[style] ?? STYLE_RECIPES.POP;
 }
