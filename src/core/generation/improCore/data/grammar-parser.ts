@@ -72,6 +72,8 @@ export interface GrammarData {
     parameters: Map<string, string | number | boolean>;
     /** Start symbol(典型 'P' / 'P_motif')*/
     startSymbol: string;
+    /** (terminals ...) 声明的终结符字面(保序保重复);无声明 → []。引擎当前不消费,仅 ROM 无损保真 */
+    terminals: string[];
     /** Recursive rules(weighted random pick by head match) */
     rules: GrammarRule[];
     /** Base rules(termination conditions — Y === 0 等)*/
@@ -157,6 +159,7 @@ export function parseGrammar(src: string, name: string): GrammarData {
     const lists = readMultiSexpr(src);
     const parameters = new Map<string, string | number | boolean>();
     let startSymbol = 'P';
+    const terminals: string[] = [];
     const rules: GrammarRule[] = [];
     const baseRules: GrammarRule[] = [];
 
@@ -180,6 +183,14 @@ export function parseGrammar(src: string, name: string): GrammarData {
         // (startsymbol Name)
         if (head === 'startsymbol' && list.length >= 2 && isAtom(list[1]!)) {
             startSymbol = list[1] as string;
+            continue;
+        }
+        // (terminals X2 X4 ... slope) — 保序保重复
+        if (head === 'terminals') {
+            for (let i = 1; i < list.length; i++) {
+                const t = list[i];
+                if (isAtom(t!)) terminals.push(t as string);
+            }
             continue;
         }
         // (rule (head args) (body) weight) 或 (rule (head args) (body) (builtin ...) weight)
@@ -235,7 +246,7 @@ export function parseGrammar(src: string, name: string): GrammarData {
         headSet.add(r.head);
     }
 
-    return { name, parameters, startSymbol, rules, baseRules, rulesByHead, baseRulesByHead, headSet };
+    return { name, parameters, startSymbol, terminals, rules, baseRules, rulesByHead, baseRulesByHead, headSet };
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -62,6 +62,7 @@ function parseGroundTruth() {
         const idx = { i: 0 };
         let startSymbol = 'P';
         const parameters = [];
+        const terminals = [];
         const rules = [];
         try {
             while (idx.i < toks.length) {
@@ -71,6 +72,8 @@ function parseGroundTruth() {
                 if (head === 'startsymbol' && item.length >= 2) startSymbol = String(item[1]);
                 else if (head === 'parameter' && item.length >= 2 && Array.isArray(item[1])) {
                     parameters.push([String(item[1][0]), String(item[1][1])]);
+                } else if (head === 'terminals') {
+                    for (let i = 1; i < item.length; i++) terminals.push(String(item[i]));
                 } else if ((head === 'rule' || head === 'base') && item.length >= 3) {
                     const isBase = head === 'base';
                     const headExpr = item[1];
@@ -96,7 +99,7 @@ function parseGroundTruth() {
                 }
             }
         } catch (e) {}
-        grammars.push({ filename: f, startSymbol, parameters, rules });
+        grammars.push({ filename: f, startSymbol, parameters, terminals, rules });
     }
     return grammars;
 }
@@ -186,6 +189,19 @@ function decodeRom(rom) {
             const ppId = rom[off++];
             const ps = PARAM_PATTERN_FROM_ID[ppId];
             headSigs.push({ head: headNames[headNameId], headParams: ps === '' ? [] : [ps] });
+        }
+    }
+
+    // Section 11: TERMINALS(per-grammar,positional)
+    const terminalsPerGrammar = [];
+    {
+        let off = sections.get(11).offset;
+        const num = rom.readUInt16LE(off); off += 2;
+        for (let i = 0; i < num; i++) {
+            const count = rom[off++];
+            const list = [];
+            for (let t = 0; t < count; t++) { const r = readStr(rom, off); list.push(r.s); off = r.next; }
+            terminalsPerGrammar.push(list);
         }
     }
 
@@ -297,7 +313,7 @@ function decodeRom(rom) {
         bodies.push(tokensToAst(tokStrs));
     }
 
-    return grammarMeta.map(gm => {
+    return grammarMeta.map((gm, gi) => {
         const rules = [];
         for (let i = gm.ruleStart; i < gm.ruleEnd; i++) {
             const rh = ruleHeaders[i];
@@ -311,7 +327,7 @@ function decodeRom(rom) {
                 weight: rh.weight,
             });
         }
-        return { filename: gm.filename, startSymbol: gm.startSymbol, parameters: gm.parameters, rules };
+        return { filename: gm.filename, startSymbol: gm.startSymbol, parameters: gm.parameters, terminals: terminalsPerGrammar[gi] ?? [], rules };
     });
 }
 
@@ -371,6 +387,13 @@ for (let gi = 0; gi < gt.length; gi++) {
             const [ka, va] = a.parameters[pi];
             const [kb, vb] = b.parameters[pi];
             if (ka !== kb || va !== vb) { mismatches++; if (firstMismatches.length < 10) firstMismatches.push(`${a.filename} param[${pi}]`); }
+        }
+    }
+    if (a.terminals.length !== b.terminals.length) {
+        mismatches++; if (firstMismatches.length < 10) firstMismatches.push(`${a.filename} terminals.length ${a.terminals.length} !== ${b.terminals.length}`);
+    } else {
+        for (let ti = 0; ti < a.terminals.length; ti++) {
+            if (a.terminals[ti] !== b.terminals[ti]) { mismatches++; if (firstMismatches.length < 10) firstMismatches.push(`${a.filename} terminals[${ti}] ${a.terminals[ti]} !== ${b.terminals[ti]}`); }
         }
     }
     if (a.rules.length !== b.rules.length) { mismatches++; if (firstMismatches.length < 10) firstMismatches.push(`${a.filename} rules.length`); continue; }

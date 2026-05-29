@@ -219,6 +219,23 @@ function decodeRom(rom: Uint8Array): GrammarData[] {
         }
     }
 
+    // Section 11: TERMINALS(per-grammar,positional;v2+。缺失 → 全部 [] 优雅降级)
+    const terminalsPerGrammar: string[][] = [];
+    if (sections.has(11)) {
+        let off = getSect(11).offset;
+        const num = readU16(rom, off); off += 2;
+        for (let i = 0; i < num; i++) {
+            const count = rom[off++]!;
+            const list: string[] = [];
+            for (let t = 0; t < count; t++) {
+                const r = readStrU8Len(rom, off);
+                list.push(r.s);
+                off = r.next;
+            }
+            terminalsPerGrammar.push(list);
+        }
+    }
+
     // Section 9: RULE_INDEX(9 B/rule)
     type RuleHeader = {
         head: string;
@@ -324,7 +341,8 @@ function decodeRom(rom: Uint8Array): GrammarData[] {
 
     // 装配 GrammarData(含 rulesByHead / baseRulesByHead / headSet 后置 index)
     const out: GrammarData[] = [];
-    for (const gm of grammarMeta) {
+    for (let gi = 0; gi < grammarMeta.length; gi++) {
+        const gm = grammarMeta[gi]!;
         const grammarName = gm.filename.replace(/\.grammar$/, '');
         const parametersMap = new Map<string, string | number | boolean>();
         for (const [k, v] of gm.parameters) parametersMap.set(k, atomToValue(v));
@@ -369,6 +387,7 @@ function decodeRom(rom: Uint8Array): GrammarData[] {
             name: grammarName,
             parameters: parametersMap,
             startSymbol: gm.startSymbol,
+            terminals: terminalsPerGrammar[gi] ?? [],
             rules,
             baseRules,
             rulesByHead,

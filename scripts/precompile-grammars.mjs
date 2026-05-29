@@ -77,6 +77,7 @@ for (const f of files) {
     const idx = { i: 0 };
     let startSymbol = 'P';
     const parameters = [];
+    const terminals = [];
     const rules = [];
     try {
         while (idx.i < toks.length) {
@@ -87,6 +88,10 @@ for (const f of files) {
                 startSymbol = String(item[1]);
             } else if (head === 'parameter' && item.length >= 2 && Array.isArray(item[1])) {
                 parameters.push([String(item[1][0]), String(item[1][1])]);
+            } else if (head === 'terminals') {
+                // (terminals X2 X4 ... slope) — 保序、保重复,逐字符串收录
+                if (terminals.length > 0) throw new Error(`Multiple terminals forms in ${f}`);
+                for (let i = 1; i < item.length; i++) terminals.push(String(item[i]));
             } else if ((head === 'rule' || head === 'base') && item.length >= 3) {
                 const isBase = head === 'base';
                 const headExpr = item[1];
@@ -114,7 +119,7 @@ for (const f of files) {
     } catch (e) {
         console.warn(`Parse failed: ${f}: ${e.message}`);
     }
-    grammars.push({ filename: f, startSymbol, parameters, rules });
+    grammars.push({ filename: f, startSymbol, parameters, terminals, rules });
 }
 
 console.log(`Parsed ${grammars.length} grammars,${grammars.reduce((s,g) => s + g.rules.length, 0)} rules`);
@@ -261,6 +266,7 @@ const SECTION_PARAM_KEY_TABLE = 7;
 const SECTION_GRAMMAR_INDEX   = 8;
 const SECTION_RULE_INDEX      = 9;
 const SECTION_HEAD_SIG        = 10;
+const SECTION_TERMINALS       = 11;
 
 // 字节 builder helpers
 function writeStrU8Len(buf, s) {
@@ -356,6 +362,17 @@ for (const sig of headSigList) {
     headSigSect.push(sig.paramPatternId);
 }
 
+// Section 11: TERMINALS(per-grammar,positional — 与 GRAMMAR_INDEX 同序)
+const terminalsSect = [];
+writeU16LE(terminalsSect, grammars.length);
+for (const g of grammars) {
+    if (g.terminals.length > 255) throw new Error(`Terminals count > 255 in ${g.filename}`);
+    terminalsSect.push(g.terminals.length);
+    for (const t of g.terminals) writeStrU8Len(terminalsSect, t);
+}
+const grammarsWithTerminals = grammars.filter(g => g.terminals.length > 0).length;
+console.log(`Terminals: ${grammarsWithTerminals}/${grammars.length} grammars have a terminals form`);
+
 // ─────────────────────────────────────────────────────────────
 // Assemble ROM
 // ─────────────────────────────────────────────────────────────
@@ -370,6 +387,7 @@ const sections = [
     { id: SECTION_GRAMMAR_INDEX,   data: Buffer.from(grammarIndexSect) },
     { id: SECTION_RULE_INDEX,      data: Buffer.from(ruleIndexSect) },
     { id: SECTION_HEAD_SIG,        data: Buffer.from(headSigSect) },
+    { id: SECTION_TERMINALS,       data: Buffer.from(terminalsSect) },
 ];
 
 const HEADER_BYTES = 16;
@@ -379,7 +397,7 @@ let currentOff = HEADER_BYTES + sectTableBytes;
 
 const headerBuf = Buffer.alloc(HEADER_BYTES);
 headerBuf.write('GRM1', 0, 'ascii');
-headerBuf.writeUInt32LE(1, 4);
+headerBuf.writeUInt32LE(2, 4); // v2: + SECTION_TERMINALS (11)
 headerBuf.writeUInt32LE(sections.length, 8);
 headerBuf.writeUInt32LE(ruleCount, 12);
 
@@ -424,6 +442,7 @@ sections.forEach(s => {
         [SECTION_GRAMMAR_INDEX]:   'GRAMMAR_INDEX',
         [SECTION_RULE_INDEX]:      'RULE_INDEX',
         [SECTION_HEAD_SIG]:        'HEAD_SIG',
+        [SECTION_TERMINALS]:       'TERMINALS',
     }[s.id];
     console.log(`  ${name.padEnd(20)} ${(s.data.length/1024).toFixed(2).padStart(8)} KB  (${(s.data.length*100/rom.length).toFixed(1)}%)`);
 });
@@ -437,7 +456,7 @@ ROM_LAYOUT(grammars.rom):
 
   Header(16 B):
     [0..4)   magic           = 'GRM1' (0x47 0x52 0x4D 0x31)
-    [4..8)   version         = u32 LE
+    [4..8)   version         = u32 LE (2 = + TERMINALS section)
     [8..12)  section_count   = u32 LE
     [12..16) total_rule_count= u32 LE
 
@@ -458,4 +477,7 @@ ROM_LAYOUT(grammars.rom):
     9 RULE_INDEX:      total_rule_count × 9 B { u16 sigId, u16 fixedArg(0xffff=none), u24 bodyId, u8 builtinId, u8 weightId|isBase }
    10 HEAD_SIG:        u16 num + N × (u16 headNameId + u8 paramPatternId)
                        paramPattern: 0=[] 1=[Z] 2=[Y]
+   11 TERMINALS:       u16 num (= grammar count, GRAMMAR_INDEX order)
+                       + num × { u8 count + count × (u8 len + UTF-8) }
+                       count=0 = grammar 无 (terminals ...) 形式
 */
