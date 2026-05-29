@@ -37,6 +37,7 @@ import { STYLE_BASE_TEXTURES } from './styleBaseTexture';
 import { extractMetadata } from './metadata';
 import { makeBarPrng } from './prng';
 import { getChordScale } from './scale';
+import { applyPruning } from './pruning';
 
 export interface MgV3RunOptions {
     seed?: string;
@@ -175,10 +176,29 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
         beatAcc += chord.duration;
     }
 
+    // 7. P3 Layer 5 pruning(melody-aware clash filter / density ducking / ghost floor)
+    //    chord boundaries 用 genChords.duration 累加生成
+    const chordBoundaries: Array<{ start: number; end: number }> = [];
+    let bAcc = 0;
+    for (const c of genChords) {
+        chordBoundaries.push({ start: bAcc, end: bAcc + c.duration });
+        bAcc += c.duration;
+    }
+    const pruned = applyPruning({
+        chord: accompaniment,
+        bass,
+        melody,
+        chordBoundaries,
+        melodyDensityByBar: metadata.melodyDensityByBar,
+    });
+    const finalAccompaniment = pruned.chord;
+    const finalBass = pruned.bass;
+
     // Diagnostic
     const candStats = result.candidateCounts;
     const avgCands = candStats.length > 0 ? candStats.reduce((s, n) => s + n, 0) / candStats.length : 0;
-    console.log(`[mgCoreV3] seed=${seed} style=${style} key=${key} | Viterbi:totalCost=${result.totalCost.toFixed(1)} avgCandidates=${avgCands.toFixed(1)} bars=${genChords.length} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    console.log(`[mgCoreV3] seed=${seed} style=${style} key=${key} | Viterbi:totalCost=${result.totalCost.toFixed(1)} avgCandidates=${avgCands.toFixed(1)} bars=${genChords.length} | events: mel=${melody.length} chord=${finalAccompaniment.length} bass=${finalBass.length}`);
+    console.log(`[mgCoreV3] P3 pruning: chord ${pruned.stats.chordIn}→${finalAccompaniment.length}(clash ${pruned.stats.chordClashDropped}, ducked ${pruned.stats.chordDucked}, ghost ${pruned.stats.chordGhosted}) | bass ${pruned.stats.bassIn}→${finalBass.length}(clash ${pruned.stats.bassClashDropped})`);
     console.log(`[mgCoreV3] L1 metadata: section=${metadata.sectionFunction} hasMelody=${metadata.hasMelody} totalBars=${metadata.totalBars}`);
     console.log(`[mgCoreV3] baseTexture: lh=${baseTexture.lh} rh=${baseTexture.rh} velocityScale=${baseTexture.velocityScale} fillProb=${baseTexture.fillProb} restProb=${baseTexture.restProb}(P2+ 用)`);
     console.log(`[mgCoreV3] songPosByBar: [${metadata.songPositionByBar.join(',')}]`);
@@ -202,8 +222,8 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
     const track: GeneratedTrack = {
         chords: chordsToGeneratedChords(genChords),
         melody,
-        accompaniment,
-        bass: bass.length > 0 ? bass : undefined,
+        accompaniment: finalAccompaniment,
+        bass: finalBass.length > 0 ? finalBass : undefined,
         bpm,
         key,
         keyOffset: 0,
