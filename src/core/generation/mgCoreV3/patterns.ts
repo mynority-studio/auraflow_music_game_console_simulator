@@ -22,6 +22,7 @@
 // ============================================================
 
 import type { NoteData } from '../ir';
+import type { StyleBaseTexture } from './styleBaseTexture';
 
 export interface PatternArgs {
     /** Viterbi 选的 voicing(sorted ascending,RH register 48-84) */
@@ -40,18 +41,30 @@ export interface PatternArgs {
      * walking bass 用于 beat 4 leading tone approach。
      */
     nextBassMidi?: number;
+    /**
+     * 当前 style 的 base texture(L1 提供)。
+     * P1 阶段:patterns 只读 baseTexture.velocityScale 微调输出。
+     * P2+:patterns 用 fillProb / syncShiftProb / restProb 做概率决策。
+     */
+    baseTexture: StyleBaseTexture;
 }
 
 export type Pattern = (args: PatternArgs) => NoteData[];
 
 // ─────────────────────────────────────────────────────────────────
-// Velocity constants(0-1 float)
+// Velocity constants(0-1 float)— 基线值,patterns 内 ×= baseTexture.velocityScale
 // ─────────────────────────────────────────────────────────────────
 
-const VEL_BASS_STRONG = 0.72;
-const VEL_BASS_WEAK   = 0.62;
-const VEL_RH_DOWNBEAT = 0.62;
-const VEL_RH_UPBEAT   = 0.52;
+const BASELINE_BASS_STRONG = 0.85;
+const BASELINE_BASS_WEAK   = 0.72;
+const BASELINE_RH_DOWN     = 0.72;
+const BASELINE_RH_UP       = 0.60;
+
+/** Pattern 内统一调速:baseline × baseTexture.velocityScale */
+function vBassStrong(t: StyleBaseTexture): number { return BASELINE_BASS_STRONG * t.velocityScale; }
+function vBassWeak(t: StyleBaseTexture): number   { return BASELINE_BASS_WEAK   * t.velocityScale; }
+function vRhDown(t: StyleBaseTexture): number     { return BASELINE_RH_DOWN     * t.velocityScale; }
+function vRhUp(t: StyleBaseTexture): number       { return BASELINE_RH_UP       * t.velocityScale; }
 
 // ─────────────────────────────────────────────────────────────────
 // BASS PATTERNS
@@ -62,11 +75,11 @@ const VEL_RH_UPBEAT   = 0.52;
  *   emit:bassMidi @ beat 0,duration = chord 全长 * 0.95
  *   音源:chord.bassMidi(本身是 chord tone)
  */
-export const bassRootSustained: Pattern = ({ bassMidi, startBeat, duration }) => [{
+export const bassRootSustained: Pattern = ({ bassMidi, startBeat, duration, baseTexture }) => [{
     pitch: bassMidi,
     onset: startBeat,
     duration: duration * 0.95,
-    velocity: VEL_BASS_STRONG,
+    velocity: vBassStrong(baseTexture),
 }];
 
 /**
@@ -75,12 +88,12 @@ export const bassRootSustained: Pattern = ({ bassMidi, startBeat, duration }) =>
  *   音源:bassMidi + voicing 中 PC 距 root +7/+6/+8 的音
  *   chord < 4 beat 时退化为单 root
  */
-export const bassRoot5: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration }) => {
+export const bassRoot5: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration, baseTexture }) => {
     if (duration < 4) {
-        return [{ pitch: bassMidi, onset: startBeat, duration: duration * 0.95, velocity: VEL_BASS_STRONG }];
+        return [{ pitch: bassMidi, onset: startBeat, duration: duration * 0.95, velocity: vBassStrong(baseTexture) }];
     }
     const out: NoteData[] = [
-        { pitch: bassMidi, onset: startBeat, duration: 2 * 0.95, velocity: VEL_BASS_STRONG },
+        { pitch: bassMidi, onset: startBeat, duration: 2 * 0.95, velocity: vBassStrong(baseTexture) },
     ];
     // Beat 2 fifth(用 chord ROOT 算 interval,从 voicing 找实音,wrap 到 bass register)
     // slash chord 时 bass ≠ root,但 5th 仍以 root 为参考
@@ -92,7 +105,7 @@ export const bassRoot5: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, dur
         pitch: beat2Note,
         onset: startBeat + 2,
         duration: (duration - 2) * 0.95,
-        velocity: VEL_BASS_WEAK,
+        velocity: vBassWeak(baseTexture),
     });
     return out;
 };
@@ -113,13 +126,13 @@ export const bassRoot5: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, dur
  * 它是 V3 patterns 里唯一一个允许 non-chord-tone 的位置,
  * 用 nextBassMidi 半音下 / 半音上选最近的(注意必须 wrap 在 bass register)。
  */
-export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration, nextBassMidi }) => {
+export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration, nextBassMidi, baseTexture }) => {
     if (duration < 4) {
         // 2-beat chord 退化:bass(slash 可能 ≠ root)+ fifth(从 root 算)
         const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
         return [
-            { pitch: bassMidi, onset: startBeat, duration: 0.95, velocity: VEL_BASS_STRONG },
-            { pitch: fifth, onset: startBeat + 1, duration: 0.95, velocity: VEL_BASS_WEAK },
+            { pitch: bassMidi, onset: startBeat, duration: 0.95, velocity: vBassStrong(baseTexture) },
+            { pitch: fifth, onset: startBeat + 1, duration: 0.95, velocity: vBassWeak(baseTexture) },
         ];
     }
 
@@ -129,9 +142,9 @@ export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, start
     const third = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [3, 4]) ?? bassMidi;
     const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
 
-    out.push({ pitch: bassMidi, onset: startBeat,     duration: stepDur, velocity: VEL_BASS_STRONG });
-    out.push({ pitch: third,    onset: startBeat + 1, duration: stepDur, velocity: VEL_BASS_WEAK });
-    out.push({ pitch: fifth,    onset: startBeat + 2, duration: stepDur, velocity: VEL_BASS_WEAK });
+    out.push({ pitch: bassMidi, onset: startBeat,     duration: stepDur, velocity: vBassStrong(baseTexture) });
+    out.push({ pitch: third,    onset: startBeat + 1, duration: stepDur, velocity: vBassWeak(baseTexture) });
+    out.push({ pitch: fifth,    onset: startBeat + 2, duration: stepDur, velocity: vBassWeak(baseTexture) });
 
     // Beat 4:leading tone to next chord's bass(approach by half-step)
     if (nextBassMidi !== undefined) {
@@ -154,10 +167,10 @@ export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, start
             while (leading > 50) leading -= 12;
             while (leading < 38) leading += 12;
         }
-        out.push({ pitch: leading, onset: startBeat + 3, duration: stepDur, velocity: VEL_BASS_WEAK });
+        out.push({ pitch: leading, onset: startBeat + 3, duration: stepDur, velocity: vBassWeak(baseTexture) });
     } else {
         // 全曲最后 chord:beat 4 退到 root(干净收)
-        out.push({ pitch: bassMidi, onset: startBeat + 3, duration: stepDur, velocity: VEL_BASS_WEAK });
+        out.push({ pitch: bassMidi, onset: startBeat + 3, duration: stepDur, velocity: vBassWeak(baseTexture) });
     }
 
     return out;
@@ -195,9 +208,9 @@ function pickIntervalInBassRegister(
  *   emit:bassMidi + bassMidi+12(若 +12 不超 60 = C4)
  *   音源:bassMidi(同 PC,不同八度,仍是 chord tone)
  */
-export const bassRootOctave: Pattern = ({ bassMidi, startBeat, duration }) => {
+export const bassRootOctave: Pattern = ({ bassMidi, startBeat, duration, baseTexture }) => {
     const out: NoteData[] = [
-        { pitch: bassMidi, onset: startBeat, duration: Math.min(2, duration) * 0.95, velocity: VEL_BASS_STRONG },
+        { pitch: bassMidi, onset: startBeat, duration: Math.min(2, duration) * 0.95, velocity: vBassStrong(baseTexture) },
     ];
     if (duration < 4) return out;
     const octave = bassMidi + 12 <= 60 ? bassMidi + 12 : bassMidi;
@@ -205,7 +218,7 @@ export const bassRootOctave: Pattern = ({ bassMidi, startBeat, duration }) => {
         pitch: octave,
         onset: startBeat + 2,
         duration: (duration - 2) * 0.95,
-        velocity: VEL_BASS_WEAK,
+        velocity: vBassWeak(baseTexture),
     });
     return out;
 };
@@ -219,12 +232,12 @@ export const bassRootOctave: Pattern = ({ bassMidi, startBeat, duration }) => {
  *   emit:voicing 全音 @ 0,duration = chord 全长 * 0.95
  *   音源:voicing(Viterbi 选,全 chord tone)
  */
-export const chordBlockOnce: Pattern = ({ voicing, startBeat, duration }) => {
+export const chordBlockOnce: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
     return voicing.map(m => ({
         pitch: m,
         onset: startBeat,
         duration: duration * 0.95,
-        velocity: VEL_RH_DOWNBEAT,
+        velocity: vRhDown(baseTexture),
     }));
 };
 
@@ -232,16 +245,16 @@ export const chordBlockOnce: Pattern = ({ voicing, startBeat, duration }) => {
  * chordBlockTwice — full voicing @ beat 0 + beat 2(4-beat chord 才有第二击)
  *   音源:voicing
  */
-export const chordBlockTwice: Pattern = ({ voicing, startBeat, duration }) => {
+export const chordBlockTwice: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
     const out: NoteData[] = [];
     const strokeDur = Math.min(2, duration) * 0.95;
     for (const m of voicing) {
-        out.push({ pitch: m, onset: startBeat, duration: strokeDur, velocity: VEL_RH_DOWNBEAT });
+        out.push({ pitch: m, onset: startBeat, duration: strokeDur, velocity: vRhDown(baseTexture) });
     }
     if (duration >= 4) {
         const rep2Dur = Math.min(2, duration - 2) * 0.95;
         for (const m of voicing) {
-            out.push({ pitch: m, onset: startBeat + 2, duration: rep2Dur, velocity: VEL_RH_UPBEAT });
+            out.push({ pitch: m, onset: startBeat + 2, duration: rep2Dur, velocity: vRhUp(baseTexture) });
         }
     }
     return out;
@@ -255,7 +268,7 @@ export const chordBlockTwice: Pattern = ({ voicing, startBeat, duration }) => {
  *     若 duration >= 4:beat 2/2.5 重复一组
  *   音源:voicing
  */
-export const chordCharleston: Pattern = ({ voicing, startBeat, duration }) => {
+export const chordCharleston: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
     const out: NoteData[] = [];
     const phraseAtBeat = (b: number, isHalf: boolean): void => {
         if (b >= duration) return;
@@ -264,7 +277,7 @@ export const chordCharleston: Pattern = ({ voicing, startBeat, duration }) => {
                 pitch: m,
                 onset: startBeat + b,
                 duration: isHalf ? Math.min(1.5, duration - b) * 0.95 : 0.3,
-                velocity: isHalf ? VEL_RH_UPBEAT : VEL_RH_DOWNBEAT,
+                velocity: isHalf ? vRhUp(baseTexture) : vRhDown(baseTexture),
             });
         }
     };
@@ -282,7 +295,7 @@ export const chordCharleston: Pattern = ({ voicing, startBeat, duration }) => {
  *   pattern:voicing[i] @ beat i*0.5(i 取模 voicing.length)
  *   音源:voicing(每个音都是 chord tone)
  */
-export const chordArpUp: Pattern = ({ voicing, startBeat, duration }) => {
+export const chordArpUp: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
     const out: NoteData[] = [];
     if (voicing.length === 0) return out;
     const stepDur = 0.5;
@@ -294,7 +307,7 @@ export const chordArpUp: Pattern = ({ voicing, startBeat, duration }) => {
             pitch,
             onset: startBeat + i * stepDur,
             duration: noteDur,
-            velocity: i === 0 ? VEL_RH_DOWNBEAT : VEL_RH_UPBEAT,
+            velocity: i === 0 ? vRhDown(baseTexture) : vRhUp(baseTexture),
         });
     }
     return out;
@@ -316,7 +329,7 @@ export const chordArpUp: Pattern = ({ voicing, startBeat, duration }) => {
  * + **anticipation**(beat 3.5)— 不再是均匀 8 分音的"音游谱面"。
  * 音源:voicing(全 chord tone)
  */
-export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration }) => {
+export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
     const out: NoteData[] = [];
     if (voicing.length === 0) return out;
 
@@ -334,13 +347,13 @@ export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration }) => 
     };
 
     if (duration >= 4) {
-        pushVoicing(0,    0.4,  VEL_RH_DOWNBEAT);   // short stab
-        pushVoicing(0.75, 1.25, VEL_RH_UPBEAT);     // dotted-quarter held
+        pushVoicing(0,    0.4,  vRhDown(baseTexture));   // short stab
+        pushVoicing(0.75, 1.25, vRhUp(baseTexture));     // dotted-quarter held
         // beat 2-3 rest
-        pushVoicing(3.5,  0.5,  VEL_RH_DOWNBEAT);   // anticipation
+        pushVoicing(3.5,  0.5,  vRhDown(baseTexture));   // anticipation
     } else {
-        pushVoicing(0,    0.4,  VEL_RH_DOWNBEAT);
-        pushVoicing(1.5,  0.5,  VEL_RH_UPBEAT);
+        pushVoicing(0,    0.4,  vRhDown(baseTexture));
+        pushVoicing(1.5,  0.5,  vRhUp(baseTexture));
     }
     return out;
 };
@@ -350,7 +363,7 @@ export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration }) => 
  *   pattern:voicing[0] - voicing[top] - voicing[mid] - voicing[top]
  *   音源:voicing(选索引 0、length-1、length/2)
  */
-export const chordArpAlberti: Pattern = ({ voicing, startBeat, duration }) => {
+export const chordArpAlberti: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
     const out: NoteData[] = [];
     if (voicing.length < 2) return out;
     const low = voicing[0];
@@ -365,7 +378,7 @@ export const chordArpAlberti: Pattern = ({ voicing, startBeat, duration }) => {
             pitch: pattern[i % pattern.length],
             onset: startBeat + i * stepDur,
             duration: noteDur,
-            velocity: i % 4 === 0 ? VEL_RH_DOWNBEAT : VEL_RH_UPBEAT,
+            velocity: i % 4 === 0 ? vRhDown(baseTexture) : vRhUp(baseTexture),
         });
     }
     return out;

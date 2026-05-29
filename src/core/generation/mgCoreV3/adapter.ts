@@ -33,6 +33,8 @@ import { NoteData, GeneratedChord, SectionMetadata } from '../ir';
 import { enumerateVoicings } from './voicing';
 import { viterbiVoiceLeading } from './viterbi';
 import { STYLE_PATTERNS } from './patterns';
+import { STYLE_BASE_TEXTURES } from './styleBaseTexture';
+import { extractMetadata } from './metadata';
 
 export interface MgV3RunOptions {
     seed?: string;
@@ -121,21 +123,28 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
     const config: GenerationConfig = { seed, style, key, emotion: 'auto' };
     const engine = new Engine(new Random(seed));
 
-    // 1. mg progression + arrangement(我们要 chord 列表 + melody)
+    // 1. mg progression + arrangement(我们要 chord 列表 + melody + ctx)
+    const ctx = engine.resolveGeneration(config);
     const genChords = engine.generateProgressions(config);
     const timeline = engine.generateArrangement(genChords, config);
 
     // 2. Melody pass-through
     const melody = melodyEventsToData(timeline.events);
 
-    // 3. 每 chord 枚举候选 voicing
+    // 3. L1 metadata 抽取(P1:仅 diag console;P2+ 各层消费)
+    const metadata = extractMetadata(ctx, timeline, genChords);
+
+    // 4. 每 chord 枚举候选 voicing
     const candidates = genChords.map(c => enumerateVoicings(c));
 
-    // 4. Viterbi DP 求最优序列
+    // 5. Viterbi DP 求最优序列
     const result = viterbiVoiceLeading(candidates);
 
-    // 5. 渲染:per-style pattern combo(bass + 1-2 chord pattern 层叠)
+    // 6. 渲染:per-style pattern combo(bass + 1-2 chord pattern 层叠)
+    //    P1:patterns 现在读 baseTexture.velocityScale 微调输出。
+    //    P2+:grid + fillProb + restProb 等其他参数也接入。
     const stylePats = STYLE_PATTERNS[style];
+    const baseTexture = STYLE_BASE_TEXTURES[style];
     const accompaniment: NoteData[] = [];
     const bass: NoteData[] = [];
     let beatAcc = 0;
@@ -150,6 +159,7 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
             startBeat: beatAcc,
             duration: chord.duration,
             nextBassMidi: nextChord ? clampBassMidi(nextChord.bassMidi) : undefined,
+            baseTexture,
         };
         bass.push(...stylePats.bass(patternArgs));
         for (const chordPat of stylePats.chord) {
@@ -162,6 +172,10 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
     const candStats = result.candidateCounts;
     const avgCands = candStats.length > 0 ? candStats.reduce((s, n) => s + n, 0) / candStats.length : 0;
     console.log(`[mgCoreV3] seed=${seed} style=${style} key=${key} | Viterbi:totalCost=${result.totalCost.toFixed(1)} avgCandidates=${avgCands.toFixed(1)} bars=${genChords.length} | events: mel=${melody.length} chord=${accompaniment.length} bass=${bass.length}`);
+    console.log(`[mgCoreV3] L1 metadata: section=${metadata.sectionFunction} hasMelody=${metadata.hasMelody} totalBars=${metadata.totalBars}`);
+    console.log(`[mgCoreV3] baseTexture: lh=${baseTexture.lh} rh=${baseTexture.rh} velocityScale=${baseTexture.velocityScale} fillProb=${baseTexture.fillProb} restProb=${baseTexture.restProb}(P2+ 用)`);
+    console.log(`[mgCoreV3] songPosByBar: [${metadata.songPositionByBar.join(',')}]`);
+    console.log(`[mgCoreV3] melDensByBar: [${metadata.melodyDensityByBar.join(',')}]`);
     console.log(`[mgCoreV3] voicings: ${result.voicings.map((v, i) => `${genChords[i].roman}=[${v.join(',')}]`).join(' | ')}`);
 
     // 6. 拼 GeneratedTrack
