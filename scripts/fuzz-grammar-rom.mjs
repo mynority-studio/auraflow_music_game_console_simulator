@@ -426,6 +426,8 @@ function mulberry32(seed) {
 }
 const ri = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
+const astDepth = (x) => Array.isArray(x) ? 1 + x.reduce((m, e) => Math.max(m, astDepth(e)), 0) : 0;
+const astNodes = (x) => Array.isArray(x) ? 1 + x.reduce((s, e) => s + astNodes(e), 0) : 1;
 
 // codec 支持域内的安全 atom:不撞 marker、不以 X:/SLOPE:/L: 开头、非纯数字字符串
 const MARKERS = new Set(['L_START', 'L_END', 'L_EMPTY', 'SLOPE_END']);
@@ -446,17 +448,21 @@ function safeAtom(rng) {
     const s = pick(rng, STR_ATOM_POOL) + (rng() < 0.5 ? '' : ri(rng, 0, 99));
     return isSafeAtomStr(s) ? s : 'sym' + ri(rng, 0, 999);
 }
-// 生成 body(list);depth 控制嵌套;bias 控制边界倾向
-function genBody(rng, depth, bias) {
+// 生成 body(list);depth = 最大嵌套深;budget.n = 全树节点预算(防 deep×wide 指数爆炸,
+// 也把单 body 字节数压在 u24 body-offset 上限 ~16MB 之下);bias 控制边界倾向。
+function genBody(rng, depth, bias, budget) {
     if (bias.empty && rng() < 0.25) return [];
-    const len = bias.wide ? ri(rng, 0, 9) : ri(rng, 0, 4);
+    const maxLen = bias.wide ? 30 : (bias.deep ? 5 : 6);
+    const len = ri(rng, 0, maxLen);
+    const recurseProb = bias.deep ? 0.7 : (bias.wide ? 0.1 : 0.25);
     const list = [];
     // 首元素:atom(走 L:)或 list(走 L_START)
-    if (depth > 0 && rng() < (bias.deep ? 0.6 : 0.25)) list.push(genBody(rng, depth - 1, bias));
+    if (depth > 0 && budget.n > 0 && rng() < recurseProb) { budget.n--; list.push(genBody(rng, depth - 1, bias, budget)); }
     else list.push(safeAtom(rng));
     for (let i = 1; i < len; i++) {
+        budget.n--;
         const r = rng();
-        if (depth > 0 && r < (bias.deep ? 0.5 : 0.2)) list.push(genBody(rng, depth - 1, bias));
+        if (depth > 0 && budget.n > 0 && r < recurseProb) list.push(genBody(rng, depth - 1, bias, budget));
         else if (r < 0.55) list.push(safeAtom(rng));
         else if (r < 0.7) list.push(['X', ri(rng, 0, 64), ri(rng, 0, 64)]);                 // X 特殊形式
         else if (r < 0.8) { const sl = ['slope', ri(rng, -8, 8), ri(rng, -8, 8)]; const k = ri(rng, 0, 3); for (let j = 0; j < k; j++) sl.push(safeAtom(rng)); list.push(sl); } // slope
@@ -469,7 +475,13 @@ const HEAD_POOL = ['P', 'A', 'B', 'Sub', 'Q', 'Seg', 'Motif', 'BRICK', 'Phrase',
 function genRule(rng, bias, bodyCache, weightPool) {
     let body;
     if (bias.dupBody && bodyCache.length > 0 && rng() < 0.6) body = bodyCache[Math.floor(rng() * bodyCache.length)];
-    else { body = genBody(rng, bias.deep ? 5 : 2, bias); bodyCache.push(body); }
+    else {
+        // 维度分离:深嵌套走极深+窄+大预算;宽 body 走浅+极宽;多 rule 走浅+小预算;其余适中
+        const depth = bias.deep ? ri(rng, 8, 18) : bias.wide ? 2 : bias.manyRules ? ri(rng, 0, 2) : ri(rng, 1, 4);
+        const budgetN = bias.deep ? 2000 : bias.wide ? 2000 : bias.manyRules ? 24 : 200;
+        body = genBody(rng, depth, bias, { n: budgetN });
+        bodyCache.push(body);
+    }
     return {
         isBase: rng() < 0.25,
         head: pick(rng, HEAD_POOL) + (rng() < 0.4 ? ri(rng, 0, 20) : ''),
@@ -482,21 +494,26 @@ function genRule(rng, bias, bodyCache, weightPool) {
 }
 function genGrammarSet(rng, round) {
     // 按轮次切换边界偏置 mode
-    const mode = round % 8;
+    const mode = round % 9;
     const bias = {
         empty: mode === 0, deep: mode === 1, wide: mode === 2, dupBody: mode === 3,
-        maxTerm: mode === 4, manyWeights: mode === 5, unicode: mode === 6, // mode 7 = mixed/default
+        maxTerm: mode === 4, manyWeights: mode === 5, unicode: mode === 6, manyRules: mode === 7,
+        // mode 8 = mixed/default
     };
     // weight pool:manyWeights 模式逼近 127 上限
     const wn = bias.manyWeights ? ri(rng, 100, 127) : ri(rng, 1, 30);
     const weightPool = [];
     const wseen = new Set();
     while (weightPool.length < wn) { const w = rng() < 0.7 ? ri(rng, 1, 500) : Math.round(rng() * 1000) / 100; if (!wseen.has(w)) { wseen.add(w); weightPool.push(w); } }
-    const nG = bias.empty ? ri(rng, 1, 3) : ri(rng, 2, 12);
+    // manyRules 模式 grammar 数压小(单 grammar 塞极多 rule);其余适度放大到 ≤18
+    const nG = bias.empty ? ri(rng, 1, 3) : bias.manyRules ? ri(rng, 1, 4) : ri(rng, 2, 18);
     const grammars = [];
     const bodyCache = [];
     for (let gi = 0; gi < nG; gi++) {
-        const nR = bias.empty && rng() < 0.4 ? 0 : (bias.wide ? ri(rng, 0, 60) : ri(rng, 0, 25));
+        const nR = bias.empty && rng() < 0.4 ? 0
+            : bias.manyRules ? ri(rng, 200, 600)   // 每 grammar 极多 rule(原上限 60)
+            : bias.deep ? ri(rng, 0, 10)
+            : ri(rng, 0, 50);
         const rules = [];
         for (let r = 0; r < nR; r++) rules.push(genRule(rng, bias, bodyCache, weightPool));
         const nP = ri(rng, 0, 5);
@@ -545,8 +562,9 @@ if (step2mis === 0) console.log(`  ✓ 85 grammars / ${gt.reduce((s, g) => s + g
 else { failed = true; console.log(`  ✗ ${step2mis} mismatches`); }
 
 console.log(`\n━━━ STEP 3 — ${ROUNDS} 轮随机数据 round-trip (random → buildRom → decodeRom → deep-equal) ━━━`);
-const modeNames = ['empty/sparse', 'deep-nest', 'wide', 'dup-body', 'max-terminals(≤255)', 'many-weights(→127)', 'unicode', 'mixed'];
+const modeNames = ['empty/sparse', 'deep-nest', 'wide-body', 'dup-body', 'max-terminals(≤255)', 'many-weights(→127)', 'unicode', 'many-rules', 'mixed'];
 let totalG = 0, totalR = 0, roundFail = 0;
+let maxRules = 0, maxDepth = 0, maxNodes = 0;
 for (let round = 0; round < ROUNDS; round++) {
     const rng = mulberry32(((0xC0FFEE + round * 2654435761) >>> 0) ^ 0x9E3779B9);
     let grammars;
@@ -560,15 +578,20 @@ for (let round = 0; round < ROUNDS; round++) {
     } catch (e) { mism = `EXCEPTION: ${e.message}`; }
     const gN = grammars.length, rN = grammars.reduce((s, g) => s + g.rules.length, 0);
     totalG += gN; totalR += rN;
+    for (const g of grammars) {
+        if (g.rules.length > maxRules) maxRules = g.rules.length;
+        for (const r of g.rules) { const d = astDepth(r.body); if (d > maxDepth) maxDepth = d; const n = astNodes(r.body); if (n > maxNodes) maxNodes = n; }
+    }
     if (mism) {
         failed = true; roundFail++;
-        console.log(`  ✗ round ${round} [${modeNames[round % 8]}] seed-derived: ${mism}`);
+        console.log(`  ✗ round ${round} [${modeNames[round % 9]}] seed-derived: ${mism}`);
     } else if (round % 10 === 9 || round === ROUNDS - 1) {
-        console.log(`  ✓ rounds 0..${round} ok  (cum ${totalG} grammars / ${totalR} rules; last mode=${modeNames[round % 8]}, ${gN}g/${rN}r)`);
+        console.log(`  ✓ rounds 0..${round} ok  (cum ${totalG} grammars / ${totalR} rules; last mode=${modeNames[round % 9]}, ${gN}g/${rN}r)`);
     }
 }
 
 console.log('\n━━━ Result ━━━');
 console.log(`STEP 3: ${ROUNDS - roundFail}/${ROUNDS} rounds passed,${totalG} random grammars / ${totalR} rules round-tripped`);
+console.log(`极端规模触达: max ${maxRules} rules/grammar · max nesting depth ${maxDepth} · max ${maxNodes} nodes/body`);
 if (!failed) { console.log('✓ 全部通过 — codec 在随机 + 边界数据上 round-trip 无损'); process.exit(0); }
 else { console.log('✗ 存在失败(见上)'); process.exit(1); }
