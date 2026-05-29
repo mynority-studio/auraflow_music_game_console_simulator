@@ -23,6 +23,9 @@
 
 import type { NoteData } from '../ir';
 import type { StyleBaseTexture } from './styleBaseTexture';
+import type { Prng } from './prng';
+import type { ChordScale } from './scale';
+import { walkScaleToTarget } from './scale';
 
 export interface PatternArgs {
     /** Viterbi 选的 voicing(sorted ascending,RH register 48-84) */
@@ -41,12 +44,12 @@ export interface PatternArgs {
      * walking bass 用于 beat 4 leading tone approach。
      */
     nextBassMidi?: number;
-    /**
-     * 当前 style 的 base texture(L1 提供)。
-     * P1 阶段:patterns 只读 baseTexture.velocityScale 微调输出。
-     * P2+:patterns 用 fillProb / syncShiftProb / restProb 做概率决策。
-     */
+    /** 当前 style 的 base texture(参数集) */
     baseTexture: StyleBaseTexture;
+    /** Per-bar deterministic PRNG(P2 概率决策都用它) */
+    prng: Prng;
+    /** Per-chord local scale(P2 walking scale-run 用) */
+    scale: ChordScale;
 }
 
 export type Pattern = (args: PatternArgs) => NoteData[];
@@ -126,9 +129,11 @@ export const bassRoot5: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, dur
  * 它是 V3 patterns 里唯一一个允许 non-chord-tone 的位置,
  * 用 nextBassMidi 半音下 / 半音上选最近的(注意必须 wrap 在 bass register)。
  */
-export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, startBeat, duration, nextBassMidi, baseTexture }) => {
+export const bassWalkingClassic: Pattern = ({
+    voicing, rootMidi, bassMidi, startBeat, duration, nextBassMidi,
+    baseTexture, prng, scale,
+}) => {
     if (duration < 4) {
-        // 2-beat chord 退化:bass(slash 可能 ≠ root)+ fifth(从 root 算)
         const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
         return [
             { pitch: bassMidi, onset: startBeat, duration: 0.95, velocity: vBassStrong(baseTexture) },
@@ -138,7 +143,6 @@ export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, start
 
     const out: NoteData[] = [];
     const stepDur = 0.95;
-    // 用 chord ROOT 算 interval(从 voicing 找实音),从而 slash chord 时也走 chord tone
     const third = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [3, 4]) ?? bassMidi;
     const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
 
@@ -146,35 +150,49 @@ export const bassWalkingClassic: Pattern = ({ voicing, rootMidi, bassMidi, start
     out.push({ pitch: third,    onset: startBeat + 1, duration: stepDur, velocity: vBassWeak(baseTexture) });
     out.push({ pitch: fifth,    onset: startBeat + 2, duration: stepDur, velocity: vBassWeak(baseTexture) });
 
-    // Beat 4:leading tone to next chord's bass(approach by half-step)
+    // P2:beat 3+ 的 approach 决策
+    //   - 概率 fillProb × 0.5 触发 "2-tone scale run"(beat 2.5 + 3 走 scale 半 ~ 全步逼近)
+    //   - 否则保留 P1 单 leading tone(beat 3 半音 approach)
+    if (nextBassMidi !== undefined && scale && prng.chance(baseTexture.fillProb * 0.5)) {
+        // Scale run:从 fifth 出发,走 scale 2 步到 nextBassMidi
+        const scalePath = walkScaleToTarget(scale, fifth, nextBassMidi, 2);
+        if (scalePath.length === 2) {
+            // 替换 beat 3 单 leading tone → beat 2.5 + 3 两步 scale 行进
+            // 注意:scale 内音可能不在当前 chord PCs(那才是"走 scale 流动"的意义),
+            // 但严格在 scale 内 → audit 通过的"scale-run exception"
+            const p1 = clampToBassRegister(scalePath[0]);
+            const p2 = clampToBassRegister(scalePath[1]);
+            out.push({ pitch: p1, onset: startBeat + 2.5, duration: 0.45, velocity: vBassWeak(baseTexture) * 0.95 });
+            out.push({ pitch: p2, onset: startBeat + 3.0, duration: 0.95, velocity: vBassWeak(baseTexture) });
+            return out;
+        }
+        // path 不够 2 步 → fallback 单 leading tone
+    }
+
+    // P1 fallback:单 leading tone @ beat 3
     if (nextBassMidi !== undefined) {
-        // 选半音下 / 半音上里离 bass register 中心(MIDI 44)最近的
         const candA = nextBassMidi - 1;
         const candB = nextBassMidi + 1;
-        // 必须落在 bass register [38, 50]
         const inRange = (m: number): boolean => m >= 38 && m <= 50;
         let leading: number;
-        if (inRange(candA) && inRange(candB)) {
-            // 偏好半音下 approach(更"自然下行"听感)
-            leading = candA;
-        } else if (inRange(candA)) {
-            leading = candA;
-        } else if (inRange(candB)) {
-            leading = candB;
-        } else {
-            // 都不在 range,wrap candA
-            leading = candA;
-            while (leading > 50) leading -= 12;
-            while (leading < 38) leading += 12;
-        }
+        if (inRange(candA))      leading = candA;
+        else if (inRange(candB)) leading = candB;
+        else { leading = candA; while (leading > 50) leading -= 12; while (leading < 38) leading += 12; }
         out.push({ pitch: leading, onset: startBeat + 3, duration: stepDur, velocity: vBassWeak(baseTexture) });
     } else {
-        // 全曲最后 chord:beat 4 退到 root(干净收)
         out.push({ pitch: bassMidi, onset: startBeat + 3, duration: stepDur, velocity: vBassWeak(baseTexture) });
     }
 
     return out;
 };
+
+/** clamp 到 bass register [38, 50] — 保留 PC */
+function clampToBassRegister(m: number): number {
+    let p = m;
+    while (p > 50) p -= 12;
+    while (p < 38) p += 12;
+    return p;
+}
 
 /**
  * Helper:从 voicing 找"距 ROOT 某 interval"的音,wrap 到 bass register([nearMidi-3, nearMidi+9])。
@@ -314,27 +332,27 @@ export const chordArpUp: Pattern = ({ voicing, startBeat, duration, baseTexture 
 };
 
 /**
- * chordRhythmicHits — 节奏多样化 chord stab(jazz/pop comping 经典)
+ * chordRhythmicHits — 节奏化 chord stab + P2 概率扩展
  *
- * Pattern(4-beat chord):
+ * **Skeleton(deterministic)**:风格"灵魂"不动 — 同 style 总是这几个击点
  *   beat 0    : short stab(0.4 beat)
- *   beat 0.75 : dotted-quarter held(持续 1.25 beat 到 beat 2)
- *   (beat 2-3 rest)
- *   beat 3.5  : 8th anticipation stab(eighth note before next chord)
+ *   beat 0.75 : dotted-quarter 长按到 beat 2
+ *   beat 3.5  : 8th anticipation
  *
- * 2-beat chord:
- *   beat 0 short stab + beat 1.5 anticipation
+ * **P2 概率装饰(per-bar 不同)**:
+ *   - restProb:beat 0 skeleton 击点有 restProb 概率被跳过(创造"喘息")
+ *   - fillProb:beat 1.5 / beat 2.5 / beat 3 的 weak slot 概率补击(填空)
+ *   - syncShiftProb:beat 0 stab 概率前移 0.25 beat(变成 beat 3.75 anticipation
+ *                   into next bar — 但这里限定在本 chord 内)
  *
- * 关键特性:**有 rest**(beat 2-3 留空)+ **dotted rhythm**(beat 0.75)
- * + **anticipation**(beat 3.5)— 不再是均匀 8 分音的"音游谱面"。
- * 音源:voicing(全 chord tone)
+ * 音源:voicing(全 chord tone,概率装饰不出非和弦音)
  */
-export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration, baseTexture }) => {
+export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration, baseTexture, prng }) => {
     const out: NoteData[] = [];
     if (voicing.length === 0) return out;
 
     const pushVoicing = (offset: number, dur: number, vel: number): void => {
-        if (offset >= duration) return;
+        if (offset < 0 || offset >= duration) return;
         const actualDur = Math.min(dur, duration - offset);
         for (const m of voicing) {
             out.push({
@@ -347,13 +365,38 @@ export const chordRhythmicHits: Pattern = ({ voicing, startBeat, duration, baseT
     };
 
     if (duration >= 4) {
-        pushVoicing(0,    0.4,  vRhDown(baseTexture));   // short stab
-        pushVoicing(0.75, 1.25, vRhUp(baseTexture));     // dotted-quarter held
-        // beat 2-3 rest
-        pushVoicing(3.5,  0.5,  vRhDown(baseTexture));   // anticipation
+        // Skeleton — beat 0 stab(可被 restProb 跳过,或 syncShiftProb 前移)
+        if (!prng.chance(baseTexture.restProb)) {
+            const shift = prng.chance(baseTexture.syncShiftProb) ? -0.25 : 0;
+            pushVoicing(0 + shift, 0.4, vRhDown(baseTexture));
+        }
+        // Skeleton — beat 0.75 dotted hold(skeleton 长按不动)
+        pushVoicing(0.75, 1.25, vRhUp(baseTexture));
+        // Skeleton — beat 3.5 anticipation
+        pushVoicing(3.5, 0.5, vRhDown(baseTexture));
+
+        // P2 概率 fill — weak slot 之间补击点
+        // beat 1.5 (and-of-2,weight 0.4) — fillProb × weight
+        if (prng.chance(baseTexture.fillProb * 0.4)) {
+            pushVoicing(1.5, 0.3, vRhUp(baseTexture) * 0.85);
+        }
+        // beat 2.5 (and-of-3,weight 0.4)
+        if (prng.chance(baseTexture.fillProb * 0.4)) {
+            pushVoicing(2.5, 0.3, vRhUp(baseTexture) * 0.85);
+        }
+        // beat 3 (beat 4 strong-ish,weight 0.6)— "通过到 anticipation"的桥
+        if (prng.chance(baseTexture.fillProb * 0.5)) {
+            pushVoicing(3.0, 0.4, vRhUp(baseTexture));
+        }
     } else {
-        pushVoicing(0,    0.4,  vRhDown(baseTexture));
-        pushVoicing(1.5,  0.5,  vRhUp(baseTexture));
+        // 2-beat chord:skeleton 同 P1
+        if (!prng.chance(baseTexture.restProb)) {
+            pushVoicing(0, 0.4, vRhDown(baseTexture));
+        }
+        pushVoicing(1.5, 0.5, vRhUp(baseTexture));
+        if (prng.chance(baseTexture.fillProb * 0.4)) {
+            pushVoicing(0.75, 0.25, vRhUp(baseTexture) * 0.85);
+        }
     }
     return out;
 };

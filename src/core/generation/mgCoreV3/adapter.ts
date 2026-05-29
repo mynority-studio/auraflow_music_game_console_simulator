@@ -35,6 +35,8 @@ import { viterbiVoiceLeading } from './viterbi';
 import { STYLE_PATTERNS } from './patterns';
 import { STYLE_BASE_TEXTURES } from './styleBaseTexture';
 import { extractMetadata } from './metadata';
+import { makeBarPrng } from './prng';
+import { getChordScale } from './scale';
 
 export interface MgV3RunOptions {
     seed?: string;
@@ -152,6 +154,9 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
         const chord = genChords[i];
         const v = result.voicings[i] ?? [];
         const nextChord = genChords[i + 1];
+        // P2:per-bar prng + per-chord local scale
+        const prng = makeBarPrng(seed, i);
+        const scale = getChordScale(chord, ctx);
         const patternArgs = {
             voicing: v,
             rootMidi: clampBassMidi(chord.rootMidi),
@@ -160,6 +165,8 @@ export function runMgCoreV3(opts: MgV3RunOptions = {}): {
             duration: chord.duration,
             nextBassMidi: nextChord ? clampBassMidi(nextChord.bassMidi) : undefined,
             baseTexture,
+            prng,
+            scale,
         };
         bass.push(...stylePats.bass(patternArgs));
         for (const chordPat of stylePats.chord) {
