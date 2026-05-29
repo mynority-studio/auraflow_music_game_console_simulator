@@ -222,6 +222,31 @@ function pickIntervalInBassRegister(
 }
 
 /**
+ * 同 pickIntervalInBassRegister,但 wrap 到 LH "中低音区" [50, 62](D3-D4)。
+ * 用于 stride 的中音 chord stab、shell voicing 的 3rd/7th — 这些不该跟低音
+ * 根重叠也不该跟 RH(48-84)抢顶部空间,所以专走 50-62 这层。
+ */
+function pickIntervalInMidLowRegister(
+    voicing: number[],
+    rootMidi: number,
+    semisCandidates: number[],
+): number | null {
+    const rootPc = ((rootMidi % 12) + 12) % 12;
+    for (const semis of semisCandidates) {
+        const targetPc = (rootPc + semis) % 12;
+        for (const m of voicing) {
+            if (((m % 12) + 12) % 12 === targetPc) {
+                let p = m;
+                while (p > 62) p -= 12;
+                while (p < 50) p += 12;
+                return p;
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * bassRootOctave — root low @ beat 0,root octave @ beat 2
  *   emit:bassMidi + bassMidi+12(若 +12 不超 60 = C4)
  *   音源:bassMidi(同 PC,不同八度,仍是 chord tone)
@@ -238,6 +263,180 @@ export const bassRootOctave: Pattern = ({ bassMidi, startBeat, duration, baseTex
         duration: (duration - 2) * 0.95,
         velocity: vBassWeak(baseTexture),
     });
+    return out;
+};
+
+/**
+ * bassStride — Stride piano LH(ragtime / blues / 老派爵士招牌)
+ *
+ * Pattern(4-beat chord,LH 单手包打):
+ *   beat 0:低音区 root(MIDI ~38-44)
+ *   beat 1:**mid-low chord stab**(从 voicing 取低 3 音 wrap 到 50-62)
+ *   beat 2:低音区 fifth
+ *   beat 3:mid-low chord stab(同 beat 1)
+ *
+ * 关键听感:低音 - 中音 - 低音 - 中音 跳跃,跟 walking quarter notes
+ * 完全不同。LH 包揽了 bass 锚定 + 中音 chord 律动两件事。
+ *
+ * 音源:bassMidi(root)+ pickInterval(fifth)+ voicing[0..2] 移到 50-62 mid-low。
+ * 全部 chord tone。
+ *
+ * 2-beat chord:退化为 beat 0 root + beat 1 chord stab。
+ */
+export const bassStride: Pattern = ({
+    voicing, rootMidi, bassMidi, startBeat, duration, baseTexture,
+}) => {
+    const out: NoteData[] = [];
+    // 低音区 root:bassMidi 通常已 clamp 38-50,stride 偏好更低 ~38-44 区
+    const lowRoot = bassMidi > 44 ? bassMidi - 12 : bassMidi;
+    const lowBass = Math.max(36, lowRoot);
+
+    // Mid-low chord stab:取 voicing 最低 3 音 wrap 到 [50, 62]
+    const stabNotes = voicing.slice(0, 3).map(m => {
+        let p = m;
+        while (p > 62) p -= 12;
+        while (p < 50) p += 12;
+        return p;
+    });
+
+    // Beat 0:低音区 root
+    out.push({
+        pitch: lowBass, onset: startBeat, duration: 0.9,
+        velocity: vBassStrong(baseTexture),
+    });
+
+    // Beat 1:mid-low chord stab
+    if (duration >= 2) {
+        for (const m of stabNotes) {
+            out.push({
+                pitch: m, onset: startBeat + 1, duration: 0.4,
+                velocity: vBassWeak(baseTexture),
+            });
+        }
+    }
+
+    if (duration >= 4) {
+        // Beat 2:低音区 fifth
+        const fifth = pickIntervalInBassRegister(voicing, rootMidi, lowBass, [7, 6, 8]) ?? lowBass;
+        out.push({
+            pitch: fifth, onset: startBeat + 2, duration: 0.9,
+            velocity: vBassStrong(baseTexture) * 0.9,
+        });
+        // Beat 3:mid-low chord stab
+        for (const m of stabNotes) {
+            out.push({
+                pitch: m, onset: startBeat + 3, duration: 0.4,
+                velocity: vBassWeak(baseTexture),
+            });
+        }
+    }
+
+    return out;
+};
+
+/**
+ * bassBossa — Bossa Nova bass(Latin / Brazilian / Latin-influenced R&B)
+ *
+ * Pattern(4-beat chord):
+ *   beat 0   : root(1 beat held)
+ *   beat 1.5 : fifth(anticipation,0.5 beat)
+ *   beat 2   : root(1 beat held)
+ *   beat 3.5 : fifth(anticipation,0.5 beat)
+ *
+ * 关键听感:**强拍根 + and-of-2/4 五度切分**,典型 Latin 推拉律动感。
+ * 跟 walking / sustained / stride 完全是另一种节奏 DNA。
+ *
+ * 2-beat chord:beat 0 root + beat 1.5 fifth(单组)。
+ */
+export const bassBossa: Pattern = ({
+    voicing, rootMidi, bassMidi, startBeat, duration, baseTexture,
+}) => {
+    const out: NoteData[] = [];
+    const fifth = pickIntervalInBassRegister(voicing, rootMidi, bassMidi, [7, 6, 8]) ?? bassMidi;
+
+    // Beat 0:root,1 beat
+    out.push({
+        pitch: bassMidi, onset: startBeat, duration: 1.0,
+        velocity: vBassStrong(baseTexture),
+    });
+
+    // Beat 1.5:fifth,anticipation
+    if (duration > 1.5) {
+        out.push({
+            pitch: fifth, onset: startBeat + 1.5, duration: 0.5,
+            velocity: vBassWeak(baseTexture),
+        });
+    }
+
+    if (duration >= 4) {
+        // Beat 2:root
+        out.push({
+            pitch: bassMidi, onset: startBeat + 2, duration: 1.0,
+            velocity: vBassStrong(baseTexture) * 0.9,
+        });
+        // Beat 3.5:fifth anticipation
+        out.push({
+            pitch: fifth, onset: startBeat + 3.5, duration: 0.5,
+            velocity: vBassWeak(baseTexture),
+        });
+    }
+
+    return out;
+};
+
+/**
+ * bassShellVoicing — Jazz LH shell(现代爵士 comping 标准)
+ *
+ * Pattern(4-beat chord):
+ *   beat 0:低音 root + mid-low 3rd + 7th(stab 持 1.5 beat)
+ *   beat 2:同上(stab 持 1.5 beat)
+ *
+ * 关键听感:LH 不弹单线,弹"骨架和弦"(root + 3 + 7)— 现代 jazz 钢琴
+ * 必备 voicing。Bill Evans / Herbie Hancock 标志性 LH 形态。
+ *
+ * 音源:bassMidi(root)+ pickIntervalInMidLowRegister 找 3rd / 7th。
+ * 3rd/7th 来自 voicing 实音 → 严格 chord tone(没 7 时只弹 root + 3rd)。
+ */
+export const bassShellVoicing: Pattern = ({
+    voicing, rootMidi, bassMidi, startBeat, duration, baseTexture,
+}) => {
+    const out: NoteData[] = [];
+    const third   = pickIntervalInMidLowRegister(voicing, rootMidi, [3, 4]);
+    const seventh = pickIntervalInMidLowRegister(voicing, rootMidi, [10, 11]);
+
+    const pushStab = (beatOffset: number, holdDur: number, strong: boolean): void => {
+        if (beatOffset >= duration) return;
+        const vBass  = strong ? vBassStrong(baseTexture) : vBassWeak(baseTexture);
+        const vShell = vBass * 0.82;
+        // root(low)
+        out.push({
+            pitch: bassMidi, onset: startBeat + beatOffset,
+            duration: Math.min(holdDur, duration - beatOffset),
+            velocity: vBass,
+        });
+        // 3rd(mid-low)
+        if (third !== null) {
+            out.push({
+                pitch: third, onset: startBeat + beatOffset,
+                duration: Math.min(holdDur, duration - beatOffset),
+                velocity: vShell,
+            });
+        }
+        // 7th(mid-low)
+        if (seventh !== null) {
+            out.push({
+                pitch: seventh, onset: startBeat + beatOffset,
+                duration: Math.min(holdDur, duration - beatOffset),
+                velocity: vShell,
+            });
+        }
+    };
+
+    // Beat 0:shell stab
+    pushStab(0, 1.5, true);
+    // Beat 2:shell stab(4-beat chord)
+    if (duration >= 4) pushStab(2, 1.5, false);
+
     return out;
 };
 
@@ -459,15 +658,15 @@ export const STYLE_PATTERNS: Record<StyleName, StylePatterns> = {
         chord: [chordRhythmicHits],
     },
     BLUES: {
-        // LH Alberti 摆动(blues piano LH 招牌)
-        bass: bassRootOctave,
-        // RH Alberti arp 跟 LH 错位互补
+        // LH Stride(P3.5)— 低音根 + mid-low chord stab 跳跃,ragtime/blues 招牌
+        bass: bassStride,
+        // RH Alberti arp 跟 LH stride 错位互补
         chord: [chordArpAlberti],
     },
     RNB: {
-        // LH 长按
-        bass: bassRootSustained,
-        // RH 节奏化 + 偶尔 arp,加 R&B 软切分感
+        // LH Bossa(P3.5)— 切分根 + 5,Latin-influenced R&B groove
+        bass: bassBossa,
+        // RH 节奏化 + 偶尔 arp,跟 bossa LH 推拉互补
         chord: [chordRhythmicHits, chordArpUp],
     },
 };
