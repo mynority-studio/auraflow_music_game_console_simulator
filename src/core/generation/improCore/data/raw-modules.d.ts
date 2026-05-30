@@ -19,3 +19,13 @@ declare module '*.grammar?raw' {
   const content: string;
   export default content;
 }
+
+declare module '*.voc?raw' {
+  const content: string;
+  export default content;
+}
+
+declare module '*.transform?raw' {
+  const content: string;
+  export default content;
+}

@@ -7,6 +7,7 @@ import { AudioEngine } from './core/audio/AudioEngine';
 import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
 import { PipelineMonitor } from './components/PipelineMonitor';
+import { ImproCorePanel } from './core/generation/improCore/sandbox';
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
@@ -35,6 +36,8 @@ export default function App() {
     <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden">
       <VolumeController />
       <PipelineMonitor />
+      {/* ImproCore 移植沙盒 — 同时按 Q+I 调出,独立于主系统 */}
+      <ImproCorePanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"
