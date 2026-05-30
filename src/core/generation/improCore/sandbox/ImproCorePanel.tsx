@@ -20,6 +20,7 @@ import {
     generateLstmMelody, getConnectome, ALL_CONNECTOME_NAMES,
 } from '../engine';
 import { playSlotNotes, playTracks, stopPlayback, type SlotNote } from './audioOut';
+import { smartGen } from './smartGen';
 
 // Phase 6:生成 N 条 solo,按 Expectancy 平均期待择优(更平滑连贯)
 const SOLO_CANDIDATES = 4;
@@ -224,6 +225,16 @@ export function ImproCorePanel(): React.ReactElement | null {
         }
     }, [chordText, genRawSolo, soloLabel, style, bpm, embellish, transform, rectifyMode, melodyProgram, compProgram, bassProgram, drumKit]);
 
+    const handleSmartGen = useCallback(() => {
+        try {
+            const r = smartGen();
+            setChordText(r.tokens);
+            setStatus(`✨ SmartGen · ${r.style} / ${r.key}调 · ${r.count} 和弦(mg engine 随机风格)`);
+        } catch (err) {
+            setStatus(`SmartGen 失败:${String(err)}`);
+        }
+    }, []);
+
     const handleStop = useCallback(() => {
         stopPlayback();
         setStatus('已停止');
@@ -261,7 +272,17 @@ export function ImproCorePanel(): React.ReactElement | null {
 
                     {/* 和弦输入 */}
                     <label className="block">
-                        <span className="mb-1 block text-xs text-zinc-400">和弦(空格/逗号分隔,默认一 bar 一个)</span>
+                        <span className="mb-1 flex items-center justify-between text-xs text-zinc-400">
+                            <span>和弦(空格/逗号分隔,默认一 bar 一个)</span>
+                            <button
+                                type="button"
+                                onClick={handleSmartGen}
+                                title="调用 mg engine 随机风格生成一条和弦进行,自动填入"
+                                className="rounded-md border border-fuchsia-400/40 bg-fuchsia-500/15 px-2 py-0.5 text-[11px] text-fuchsia-200 transition hover:bg-fuchsia-500/25"
+                            >
+                                ✨ SmartGen
+                            </button>
+                        </span>
                         <input
                             type="text"
                             value={chordText}
