@@ -20,7 +20,7 @@ import {
     generateLstmMelody, getConnectome, ALL_CONNECTOME_NAMES,
 } from '../engine';
 import { playSlotNotes, playTracks, stopPlayback, type SlotNote } from './audioOut';
-import { smartGen } from './smartGen';
+import { smartGen, getMgContext, renderMgTexture } from './smartGen';
 
 // Phase 6:生成 N 条 solo,按 Expectancy 平均期待择优(更平滑连贯)
 const SOLO_CANDIDATES = 4;
@@ -101,6 +101,7 @@ export function ImproCorePanel(): React.ReactElement | null {
     const [connectome, setConnectome] = useState(ALL_CONNECTOME_NAMES[0] ?? '');
     const [grammar, setGrammar] = useState(ALL_GRAMMAR_NAMES.includes('ArtFarmer') ? 'ArtFarmer' : (ALL_GRAMMAR_NAMES[0] ?? ''));
     const [style, setStyle] = useState(ALL_STYLE_NAMES.includes('swing') ? 'swing' : (ALL_STYLE_NAMES[0] ?? ''));
+    const [compMode, setCompMode] = useState<'style' | 'mg'>('style'); // 伴奏织体:ImproCore Style / mg engine
     const [embellish, setEmbellish] = useState(false);
     const [transform, setTransform] = useState(ALL_TRANSFORM_NAMES[0] ?? '');
     const [rectifyMode, setRectifyMode] = useState<'off' | 'chord' | 'key'>('chord'); // IV 默认吸附和弦音阶
@@ -111,6 +112,7 @@ export function ImproCorePanel(): React.ReactElement | null {
     const [drumKit, setDrumKit] = useState(0);              // Standard Kit
     const [status, setStatus] = useState('就绪');
     const heldKeys = useRef<Set<string>>(new Set());
+    const lastSmartGenTokens = useRef<string>(''); // 最近一次 SmartGen 填入的串(判断 mg texture 是否仍同源)
 
     // 全局 Q+I 调出 / Esc 关闭
     useEffect(() => {
@@ -152,24 +154,51 @@ export function ImproCorePanel(): React.ReactElement | null {
         } catch { return []; }
     }, [chordText]);
 
-    // 只播当前 style 的伴奏织体(bass + chords + drums),与 ▶ 全部 的伴奏一致
+    // mg texture 仅在 SmartGen 生成后可用(需 mg 原生同源和弦);手输和弦时不可用
+    const mgAvailable = getMgContext() !== null && chordText.trim() === lastSmartGenTokens.current;
+
+    // 统一构建伴奏轨:Style 织体 或 mg texture(chord+bass)+ Style 鼓。
+    // 返回已 applySwing 的三轨 + 标签;mg texture 不可用时回退 Style。
+    const buildComp = (cp: ChordPart) => {
+        const st = getStyle(style);
+        if (compMode === 'mg' && mgAvailable && getMgContext()) {
+            const tex = renderMgTexture(getMgContext()!);
+            const drums = st ? renderComping(cp, st).drums : [];
+            const sw = st?.compSwing ?? 0.5;
+            return {
+                label: `mg texture(${getMgContext()!.style})+${style}鼓`,
+                bass: applySwing(tex.bass, sw),
+                chords: applySwing(tex.chords, sw),
+                drums: applySwing(drums, sw),
+            };
+        }
+        if (!st) return null;
+        const comp = renderComping(cp, st);
+        return {
+            label: `${style} 伴奏`,
+            bass: applySwing(comp.bass, st.compSwing),
+            chords: applySwing(comp.chords, st.compSwing),
+            drums: applySwing(comp.drums, st.compSwing),
+        };
+    };
+
+    // 只播伴奏织体(bass + chords + drums),与 ▶ 全部 的伴奏一致
     const handlePlay = useCallback(async () => {
         const cp = buildChordPart(chordText);
-        const st = getStyle(style);
-        if (!st) { setStatus(`style 未找到:${style}`); return; }
-        setStatus(`${style} 伴奏生成中…`);
+        const comp = buildComp(cp);
+        if (!comp) { setStatus(`style 未找到:${style}`); return; }
+        setStatus(`${comp.label} 生成中…`);
         try {
-            const comp = renderComping(cp, st);
             await playTracks([
-                { notes: applySwing(comp.bass, st.compSwing), channel: 1, program: bassProgram },
-                { notes: applySwing(comp.chords, st.compSwing), channel: 2, program: compProgram },
-                { notes: applySwing(comp.drums, st.compSwing), channel: 9, program: drumKit },
+                { notes: comp.bass, channel: 1, program: bassProgram },
+                { notes: comp.chords, channel: 2, program: compProgram },
+                { notes: comp.drums, channel: 9, program: drumKit },
             ], bpm);
-            setStatus(`▶ ${style} 伴奏 · bass ${comp.bass.length} / chord ${comp.chords.length} / drum ${comp.drums.length} @ ${bpm}bpm`);
+            setStatus(`▶ ${comp.label} · bass ${comp.bass.length} / chord ${comp.chords.length} / drum ${comp.drums.length} @ ${bpm}bpm`);
         } catch (err) {
             setStatus(`发声失败:${String(err)}`);
         }
-    }, [chordText, style, bpm, compProgram, bassProgram, drumKit]);
+    }, [chordText, style, compMode, mgAvailable, bpm, compProgram, bassProgram, drumKit]);
 
     // 生成原始 solo —— 按 genMode 分流:grammar 加权推导 / LSTM connectome 神经网络
     const genRawSolo = useCallback(async (cp: ChordPart): Promise<SlotNote[]> => {
@@ -211,33 +240,35 @@ export function ImproCorePanel(): React.ReactElement | null {
 
     const handleAll = useCallback(async () => {
         const cp = buildChordPart(chordText);
-        const st = getStyle(style);
-        if (!st) { setStatus(`style 未找到:${style}`); return; }
-        setStatus(`${soloLabel} + ${style} 生成中…`);
+        const comp = buildComp(cp);
+        if (!comp) { setStatus(`style 未找到:${style}`); return; }
+        const swing = getStyle(style)?.swing ?? 0.5;
+        setStatus(`${soloLabel} + ${comp.label} 生成中…`);
         try {
             let soloRaw = await genRawSolo(cp);
             if (embellish) { const subs = getTransform(transform); if (subs) soloRaw = applyTransform(soloRaw, cp, subs); }
             if (rectifyMode === 'chord') soloRaw = rectify(soloRaw, cp);
             else if (rectifyMode === 'key') soloRaw = rectifyToKey(soloRaw, inferKey(cp));
-            const solo = applySwing(soloRaw, st.swing);
-            const comp = renderComping(cp, st);
+            const solo = applySwing(soloRaw, swing);
             await playTracks([
-                { notes: solo, channel: 0, program: melodyProgram },                       // 旋律音色
-                { notes: applySwing(comp.bass, st.compSwing), channel: 1, program: bassProgram },
-                { notes: applySwing(comp.chords, st.compSwing), channel: 2, program: compProgram },  // 伴奏音色
-                { notes: applySwing(comp.drums, st.compSwing), channel: 9, program: drumKit },       // Drums
+                { notes: solo, channel: 0, program: melodyProgram },   // 旋律音色
+                { notes: comp.bass, channel: 1, program: bassProgram },
+                { notes: comp.chords, channel: 2, program: compProgram }, // 伴奏音色
+                { notes: comp.drums, channel: 9, program: drumKit },      // Drums
             ], bpm);
-            setStatus(`▶ ${soloLabel} solo + ${style} · bass ${comp.bass.length} / chord ${comp.chords.length} / drum ${comp.drums.length} @ ${bpm}bpm`);
+            setStatus(`▶ ${soloLabel} solo + ${comp.label} · bass ${comp.bass.length} / chord ${comp.chords.length} / drum ${comp.drums.length} @ ${bpm}bpm`);
         } catch (err) {
             setStatus(`生成失败:${String(err)}`);
         }
-    }, [chordText, genRawSolo, soloLabel, style, bpm, embellish, transform, rectifyMode, melodyProgram, compProgram, bassProgram, drumKit]);
+    }, [chordText, genRawSolo, soloLabel, style, compMode, mgAvailable, bpm, embellish, transform, rectifyMode, melodyProgram, compProgram, bassProgram, drumKit]);
 
     const handleSmartGen = useCallback(() => {
         try {
             const r = smartGen();
             setChordText(r.tokens);
-            setStatus(`✨ SmartGen · ${r.style} / ${r.key}调 · ${r.count} 和弦(mg engine 随机风格)`);
+            lastSmartGenTokens.current = r.tokens; // 记录同源串,mg texture 据此判可用
+            setCompMode('mg');                     // 自动切到 mg texture(随 SmartGen 风格演绎)
+            setStatus(`✨ SmartGen · ${r.style} / ${r.key}调 · ${r.count} 和弦 · 伴奏=mg texture`);
         } catch (err) {
             setStatus(`SmartGen 失败:${String(err)}`);
         }
@@ -363,7 +394,7 @@ export function ImproCorePanel(): React.ReactElement | null {
                             </label>
                         )}
                         <label className="flex flex-1 items-center gap-2 text-xs text-zinc-400">
-                            Style
+                            {compMode === 'mg' ? '鼓(Style)' : 'Style'}
                             <select
                                 value={style}
                                 onChange={(e) => setStyle(e.target.value)}
@@ -383,6 +414,30 @@ export function ImproCorePanel(): React.ReactElement | null {
                             />
                             bpm
                         </label>
+                    </div>
+
+                    {/* 伴奏织体:ImproCore Style / mg engine texture */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-400">伴奏织体</span>
+                        <div className="flex overflow-hidden rounded-md border border-white/10">
+                            {([['style', 'Style 织体'], ['mg', 'mg texture']] as const).map(([m, label]) => (
+                                <button
+                                    key={m}
+                                    onClick={() => setCompMode(m)}
+                                    disabled={m === 'mg' && !mgAvailable}
+                                    title={m === 'mg' ? 'mg engine 按 SmartGen 风格演绎和声织体(+Style 鼓);需先 SmartGen' : 'ImproCore .sty 织体'}
+                                    className={`px-3 py-1 text-xs transition ${compMode === m ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'} disabled:opacity-40`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        {compMode === 'mg' && mgAvailable && getMgContext() && (
+                            <span className="text-[10px] text-fuchsia-300/80">{getMgContext()!.style} 织体 · 随 SmartGen 风格自动切换</span>
+                        )}
+                        {compMode === 'mg' && !mgAvailable && (
+                            <span className="text-[10px] text-zinc-500">改了和弦 → 已回退 Style(重按 SmartGen 恢复)</span>
+                        )}
                     </div>
 
                     {/* Rectify + 装饰(Transform) */}
