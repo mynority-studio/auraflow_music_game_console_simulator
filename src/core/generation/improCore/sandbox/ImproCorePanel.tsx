@@ -140,11 +140,21 @@ export function ImproCorePanel(): React.ReactElement | null {
     }, [open]);
 
     const tokens = parseChordTokens(chordText);
+    // leadsheet 文本 → ChordPart(支持 | 分小节 / 重复;空串退回 CM7)
+    const buildChordPart = (text: string) => ChordPart.fromText(text.trim() || 'CM7');
+    // 解析预览:实际 span(名 + 拍数),反映 | 分小节后的时值
+    const chordPreview = React.useMemo(() => {
+        try {
+            return buildChordPart(chordText).getSpans().map(s => ({
+                name: s.chord.getName(),
+                beats: Math.round((s.end - s.start) / 120),
+            }));
+        } catch { return []; }
+    }, [chordText]);
 
     // 只播当前 style 的伴奏织体(bass + chords + drums),与 ▶ 全部 的伴奏一致
     const handlePlay = useCallback(async () => {
-        const chords = parseChordTokens(chordText);
-        const cp = ChordPart.fromTokens(chords.length > 0 ? chords : ['CM7']);
+        const cp = buildChordPart(chordText);
         const st = getStyle(style);
         if (!st) { setStatus(`style 未找到:${style}`); return; }
         setStatus(`${style} 伴奏生成中…`);
@@ -182,8 +192,7 @@ export function ImproCorePanel(): React.ReactElement | null {
     const soloLabel = genMode === 'lstm' ? `${connectome}(神经网络)` : grammar;
 
     const handleSolo = useCallback(async () => {
-        const chords = parseChordTokens(chordText);
-        const cp = ChordPart.fromTokens(chords.length > 0 ? chords : ['CM7']);
+        const cp = buildChordPart(chordText);
         setStatus(`${soloLabel} 生成中…`);
         try {
             const swing = getStyle(style)?.swing ?? 0.5;
@@ -201,8 +210,7 @@ export function ImproCorePanel(): React.ReactElement | null {
     }, [chordText, genRawSolo, soloLabel, style, bpm, embellish, transform, rectifyMode, melodyProgram]);
 
     const handleAll = useCallback(async () => {
-        const chords = parseChordTokens(chordText);
-        const cp = ChordPart.fromTokens(chords.length > 0 ? chords : ['CM7']);
+        const cp = buildChordPart(chordText);
         const st = getStyle(style);
         if (!st) { setStatus(`style 未找到:${style}`); return; }
         setStatus(`${soloLabel} + ${style} 生成中…`);
@@ -267,13 +275,13 @@ export function ImproCorePanel(): React.ReactElement | null {
                     <p className="text-[11px] leading-relaxed text-zinc-400">
                         独立沙盒,不走主系统。<span className="text-cyan-300">▶ 全部</span> = grammar solo + Style 伴奏
                         (Walking Bass + 钢琴 comping + 鼓)四轨同步;<span className="text-cyan-300">伴奏</span>键单播 Style 织体。
-                        旋律 / 伴奏音色可分别选。默认 4/4 一 bar 一和弦。
+                        旋律 / 伴奏音色可分别选。和弦用 <code className="text-cyan-300">|</code> 分小节(节内平分),支持经过和弦。
                     </p>
 
                     {/* 和弦输入 */}
                     <label className="block">
                         <span className="mb-1 flex items-center justify-between text-xs text-zinc-400">
-                            <span>和弦(空格/逗号分隔,默认一 bar 一个)</span>
+                            <span>和弦(<code className="text-cyan-300">|</code> 分小节,节内多和弦平分;<code className="text-cyan-300">/</code> 重复;无 <code className="text-cyan-300">|</code> 时每和弦一 bar)</span>
                             <button
                                 type="button"
                                 onClick={handleSmartGen}
@@ -288,24 +296,25 @@ export function ImproCorePanel(): React.ReactElement | null {
                             value={chordText}
                             onChange={(e) => setChordText(e.target.value)}
                             className="w-full rounded-md border border-white/10 bg-zinc-800 px-3 py-2 font-mono text-sm outline-none focus:border-cyan-400"
-                            placeholder="Amaj7 Dmaj7 Bm7 E7"
+                            placeholder="Dm7 G7 | CM7 | Am7  (或 Amaj7 Dmaj7 …)"
                         />
                     </label>
 
-                    {/* 解析预览 */}
+                    {/* 解析预览:按实际 ChordPart span 显示(含 | 分小节后的时值)*/}
                     <div className="flex flex-wrap gap-1.5">
-                        {tokens.map((t, i) => {
-                            const names = chordSpellNames(t);
-                            return (
-                                <span
-                                    key={i}
-                                    className={`rounded px-2 py-0.5 font-mono text-xs ${names ? 'bg-white/5 text-cyan-200' : 'bg-red-500/15 text-red-300'}`}
-                                >
-                                    {i + 1}. {t}{names ? ` → ${names.join(' ')}` : ' ⚠ 未知'}
-                                </span>
-                            );
-                        })}
-                        {tokens.length === 0 && <span className="text-xs text-zinc-500">(空 → 默认 CM7)</span>}
+                        {chordPreview.map((s, i) => (
+                            <span
+                                key={i}
+                                className="rounded bg-white/5 px-2 py-0.5 font-mono text-xs text-cyan-200"
+                                title={`${s.beats} 拍`}
+                            >
+                                {s.name}{s.beats !== 4 ? <span className="text-cyan-500/70"> ·{s.beats}拍</span> : null}
+                            </span>
+                        ))}
+                        {chordPreview.length === 0 && <span className="text-xs text-zinc-500">(空 → 默认 CM7)</span>}
+                        {tokens.some(t => t !== '|' && t !== '/' && !chordSpellNames(t)) && (
+                            <span className="rounded bg-red-500/15 px-2 py-0.5 font-mono text-xs text-red-300">⚠ 有无法解析的和弦</span>
+                        )}
                     </div>
 
                     {/* Solo 引擎切换:语法推导 / 深度学习 connectome */}

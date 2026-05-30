@@ -39,6 +39,26 @@ export interface SmartGenResult {
     count: number;
 }
 
+const BEATS_PER_BAR = 4; // mg duration 以 beats 计,4/4
+
+/**
+ * 把 mg 和弦序列(带 duration beats)排成 Impro-Visor leadsheet 文本:
+ *   `|` 分小节,小节内多和弦空格分隔(经过和弦)。
+ * mg 的进行总拍数是 4 的倍数且和弦不跨小节,故按累计拍数在 4 的边界插 `|`。
+ */
+function toLeadsheet(chords: { root: string; type: string; duration: number }[]): string {
+    const bars: string[][] = [];
+    let cur: string[] = [];
+    let acc = 0;
+    for (const c of chords) {
+        cur.push(mgChordToToken(c.root, c.type));
+        acc += c.duration;
+        if (acc >= BEATS_PER_BAR) { bars.push(cur); cur = []; acc = 0; }
+    }
+    if (cur.length) bars.push(cur); // 尾巴(理论上不会有,兜底)
+    return bars.map(b => b.join(' ')).join(' | ');
+}
+
 /** 随机风格 + 随机调 + 随机种子,生成一条和弦进行 */
 export function smartGen(): SmartGenResult {
     const styles = Object.keys(STYLE_DICTIONARY) as StyleName[];
@@ -50,6 +70,6 @@ export function smartGen(): SmartGenResult {
     const engine = new Engine(new Random(seed));
     const chords = engine.generateProgressions(config);
 
-    const tokens = chords.map((c) => mgChordToToken(c.root, c.type)).join(' ');
+    const tokens = toLeadsheet(chords);
     return { tokens, style, key, count: chords.length };
 }
