@@ -16,6 +16,7 @@
 // ============================================================
 
 import { readSexpr } from '../data/sexpr-reader';
+import type { GrammarData } from '../data/grammar-parser';
 import { BEAT } from './constants';
 import {
     type GVal, type GList,
@@ -86,6 +87,32 @@ export class Grammar {
         const cleaned = text.replace(/\/\*[\s\S]*?\*\//g, ' '); // 去 /* */ 块注释
         const rules = extractTopLevelLists(cleaned).map(s => numberize(readSexpr(s))) as GList;
         return new Grammar(rules);
+    }
+
+    /**
+     * 从预编译的 GrammarData(grammars.rom 解出)构造,等价于 fromText。
+     * 重建引擎需要的 forms:parameter(LickGen 读 min-pitch 等)+ startsymbol + rule。
+     *   - rule 恒 4 元 (rule lhs body WEIGHT);builtin 规则文本里是 5 元
+     *     (rule lhs body (builtin..) weight) → findRule 只收 4 元故被跳过(死规则),
+     *     这里照样重建成 5 元以保持"跳过"行为一致。
+     *   - base 规则 findRule 不参与(continue),但仍可放入数组(不影响生成)。
+     * 已由 __harness__/grammar-rom-equiv 验证:全 85 grammar × 5 种子逐字节等价 fromText。
+     */
+    static fromData(data: GrammarData): Grammar {
+        const forms: unknown[] = [];
+        // 参数值转回字符串再 numberize,精确复刻 fromText:数字→number,'true'→保留字符串
+        // (fromText 路径里布尔参数也是字符串 "true",getParameters 只取 kv[1] 单值)。
+        for (const [k, v] of data.parameters) forms.push(['parameter', [k, String(v)]]);
+        forms.push([START, data.startSymbol]);
+        const emit = (r: GrammarData['rules'][number], tag: string) => {
+            const lhs: unknown[] = [r.head, ...r.params];
+            if (r.headFixedArg !== undefined) lhs.push(String(r.headFixedArg));
+            if (r.builtin) forms.push([tag, lhs, r.body, ['builtin', r.builtin.type, r.builtin.name], String(r.weight)]);
+            else forms.push([tag, lhs, r.body, String(r.weight)]);
+        };
+        for (const r of data.rules) emit(r, RULE);
+        for (const r of data.baseRules) emit(r, BASE);
+        return new Grammar(numberize(forms as never) as GList);
     }
 
     getRules(): GList { return this.rules; }

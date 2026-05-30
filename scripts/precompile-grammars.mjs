@@ -55,7 +55,8 @@ function parseSexpr(tokens, idx) {
     if (tokens[idx.i] !== '(') {
         const a = tokens[idx.i++];
         const n = Number(a);
-        if (!Number.isNaN(n) && /^-?\d+(\.\d+)?$/.test(a)) return n;
+        // 对齐 Impro-Visor Tokenizer:整数/小数(含前导点 .9)/科学计数法(5.0E-4)
+        if (!Number.isNaN(n) && /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(a)) return n;
         return a;
     }
     idx.i++;

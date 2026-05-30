@@ -94,7 +94,7 @@ function atomToValue(s: string): string | number | boolean {
     if (s === 'true') return true;
     if (s === 'false') return false;
     const n = parseFloat(s);
-    if (!isNaN(n) && /^-?\d+(\.\d+)?$/.test(s)) return n;
+    if (!isNaN(n) && /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) return n;
     return s;
 }
 
@@ -114,7 +114,7 @@ function parseHead(headList: Polylist): { head: string; params: string[]; headFi
         const a = headList[i];
         if (!isAtom(a)) continue;
         const num = parseFloat(a);
-        if (!isNaN(num) && /^-?\d+(\.\d+)?$/.test(a)) {
+        if (!isNaN(num) && /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(a)) {
             // 字面数字 → headFixedArg(rule 的 head 含 literal arg,如 (BRICK 1920))
             headFixedArg = num;
         } else {

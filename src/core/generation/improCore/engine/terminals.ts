@@ -25,7 +25,10 @@ import { getDuration as durationOf, isDuration } from './duration';
 export type GVal = number | string | GList;
 export interface GList extends ReadonlyArray<GVal> {}
 
-const NUMERIC = /^-?\d+(\.\d+)?$/;
+// 对齐 Impro-Visor 的 Tokenizer(Long→Double→word):接受整数、小数(含前导点
+// 形式 .9)、科学计数法(5.0E-4 / 1.0E8)。乐符 token(C8 / 16/5 / 4+8 / #7)以
+// 非数字字符或含 / + 故不被误判。
+const NUMERIC = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 /** "看起来是数字"的 atom → JS number;其余原样(slope 的 -2 → -2,"C8"/"#7"/"16/3" 留 string) */
 export function numberize(node: string | readonly (string | unknown)[]): GVal {

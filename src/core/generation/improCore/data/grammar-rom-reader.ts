@@ -59,14 +59,14 @@ function atomToValue(s: string): string | number | boolean {
     if (s === 'true') return true;
     if (s === 'false') return false;
     const n = parseFloat(s);
-    if (!isNaN(n) && /^-?\d+(\.\d+)?$/.test(s)) return n;
+    if (!isNaN(n) && /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) return n;
     return s;
 }
 
 // LISP atom string → number(if int/float string)or 原 string
 function maybeNum(s: string): string | number {
     const n = Number(s);
-    if (!Number.isNaN(n) && /^-?\d+(\.\d+)?$/.test(s)) return n;
+    if (!Number.isNaN(n) && /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) return n;
     return s;
 }
 
