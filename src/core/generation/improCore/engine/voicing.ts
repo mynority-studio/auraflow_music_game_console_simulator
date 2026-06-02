@@ -9,7 +9,7 @@
 //   enforce min-interval;可选去小九度(invertM9)、rootless。
 //
 // 与 comp.ts 集成:替换原 close voicing,跨和弦传 previousVoicing 做平滑连接。
-// 简化:单手覆盖 chord 音域(IV 支持双手);设置用 Closed-High.fv 缩放后的默认。
+// 简化:单手覆盖 chord 音域(IMP 支持双手);设置用 Closed-High.fv 缩放后的默认。
 // ============================================================
 
 export interface VoicingSettings {

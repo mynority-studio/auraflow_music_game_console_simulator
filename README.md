@@ -30,6 +30,7 @@
 
 - `CLAUDE.md` — 项目架构与开发规则
 - `.claude/rules/music_generation_pipeline_rule.md` — 生成管道最高约束
+- `docs/music_generation_flow.md` — 音乐生成逻辑链路流程图
 - `docs/esp32_porting.md` — ESP32 移植指南与卡点决策
 - `docs/todo_plan.md` — TS→C 移植计划
 - `docs/framework_alignment.md` — 框架对齐状态

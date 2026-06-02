@@ -27,6 +27,12 @@ import {
 // ChordForm
 // ------------------------------------------------------------
 
+/** vocab 的 (approach (target a1 a2 …) …):每条 = 一个目标和弦音 + 引向它的 approach tones(均以 C 表示)*/
+export interface ApproachEntry {
+    readonly target: NoteSymbol;
+    readonly approaches: NoteSymbol[];
+}
+
 export class ChordForm {
     readonly name: string;
     readonly family: string;
@@ -35,10 +41,14 @@ export class ChordForm {
     readonly color: NoteSymbol[];
     readonly priority: NoteSymbol[];
     readonly scales: string[][];       // 每项如 ['C','major'](Phase 3 再解析成实际音阶)
+    readonly avoid: NoteSymbol[];      // vocab 的 (avoid ...) — 该躲的音(以 C 表示)
+    readonly approach: ApproachEntry[]; // vocab 的 (approach ...) — 每个和弦音的 approach tones(以 C 表示)
 
     constructor(init: {
         name: string; family: string; same: string | null;
         spell: NoteSymbol[]; color: NoteSymbol[]; priority: NoteSymbol[]; scales: string[][];
+        avoid?: NoteSymbol[];
+        approach?: ApproachEntry[];
     }) {
         this.name = init.name;
         this.family = init.family;
@@ -47,6 +57,8 @@ export class ChordForm {
         this.color = init.color;
         this.priority = init.priority;
         this.scales = init.scales;
+        this.avoid = init.avoid ?? [];
+        this.approach = init.approach ?? [];
     }
 
     private rise(root: string): number {
@@ -69,13 +81,78 @@ export class ChordForm {
      */
     getFirstScalePCs(root: string): number[] | null {
         if (this.scales.length === 0) return null;
-        const type = this.scales[0]!.slice(1).join(' ');
+        return this.scalePCsByName(this.scales[0]!, root);
+    }
+
+    /** 候选音阶名列表(vocab 手工挂的有序清单),如 ['major','lydian','bebop major',...] */
+    getScaleNames(): string[] {
+        return this.scales.map(s => s.slice(1).join(' '));
+    }
+
+    /** 第 n 条候选音阶移到 root 的 PCs;越界/未知返 null */
+    getScalePCsByIndex(n: number, root: string): number[] | null {
+        const s = this.scales[n];
+        return s ? this.scalePCsByName(s, root) : null;
+    }
+
+    /** 按音阶名(忽略 vocab 里的 'C' 前缀根)取该 root 下的 PCs;清单里没有则 null */
+    getScalePCsByType(type: string, root: string): number[] | null {
+        const hit = this.scales.find(s => s.slice(1).join(' ') === type);
+        return hit ? this.scalePCsByName(hit, root) : null;
+    }
+
+    /** 全部候选音阶的 PCs(有序,与 getScaleNames 对齐)*/
+    getAllScalePCs(root: string): number[][] {
+        return this.scales.map(s => this.scalePCsByName(s, root)).filter((x): x is number[] => x !== null);
+    }
+
+    /** avoid 音的 pitch classes(移到 root);无则空数组 */
+    getAvoidPCs(root: string): number[] {
+        const rise = this.riseFor(root);
+        if (rise === null) return [];
+        return this.avoid.map(ns => (((ns.getSemitones() + rise) % 12) + 12) % 12);
+    }
+
+    /** 全部 approach tone 的 pitch classes(扁平、去重、移到 root)— 快速"是否 approach 音"判断;无则空数组 */
+    getApproachPCs(root: string): number[] {
+        const rise = this.riseFor(root);
+        if (rise === null) return [];
+        const set = new Set<number>();
+        for (const entry of this.approach) {
+            for (const ns of entry.approaches) set.add((((ns.getSemitones() + rise) % 12) + 12) % 12);
+        }
+        return [...set];
+    }
+
+    /** 结构化 approach 表(移到 root):每条 = 目标和弦音 PC + 引向它的 approach tone PCs — 旋律生成器查"什么引向和弦音 X" */
+    getApproachMap(root: string): Array<{ targetPc: number; approachPcs: number[] }> {
+        const rise = this.riseFor(root);
+        if (rise === null) return [];
+        return this.approach.map(entry => ({
+            targetPc: (((entry.target.getSemitones() + rise) % 12) + 12) % 12,
+            approachPcs: entry.approaches.map(ns => (((ns.getSemitones() + rise) % 12) + 12) % 12),
+        }));
+    }
+
+    private riseFor(root: string): number | null {
+        const idx = pitchClassIndexFromName(root);
+        return idx === null ? null : findRiseFromC(idx);
+    }
+
+    /** vocab scale 项 ['C','major'] / 'C major' 形式 → 移到 root 的 PCs。
+     *  注意:scale 项第一个 atom 是 vocab 写死的根(可能是 G,如 'G major pentatonic'),
+     *  PC 集已含该根偏移,这里再按目标 root 相对 C 平移。 */
+    private scalePCsByName(scaleEntry: string[], root: string): number[] | null {
+        const type = scaleEntry.slice(1).join(' ');
         const cPCs = getScalePCs(type);
         if (!cPCs) return null;
-        const idx = pitchClassIndexFromName(root);
-        if (idx === null) return null;
-        const rise = findRiseFromC(idx);
-        return cPCs.map(pc => (((pc + rise) % 12) + 12) % 12);
+        // vocab 里 scale 项的根(scaleEntry[0],如 'C'/'G'):相对 C 的偏移要叠加
+        const scaleRootIdx = pitchClassIndexFromName(scaleEntry[0] ?? 'C');
+        const scaleRootRise = scaleRootIdx === null ? 0 : findRiseFromC(scaleRootIdx);
+        const rise = this.riseFor(root);
+        if (rise === null) return null;
+        const total = rise + scaleRootRise;
+        return cPCs.map(pc => (((pc + total) % 12) + 12) % 12);
     }
 }
 
@@ -106,6 +183,20 @@ function noteSymbolList(sub: Polylist | null): NoteSymbol[] {
     return out;
 }
 
+/** (approach (target a1 a2 …) …) → ApproachEntry[]。每个内层 list = target + approach tones。无/空则 [] */
+function approachList(sub: Polylist | null): ApproachEntry[] {
+    if (!sub) return [];
+    const out: ApproachEntry[] = [];
+    for (let i = 1; i < sub.length; i++) {
+        const inner = sub[i];
+        if (!Array.isArray(inner) || inner.length === 0) continue;
+        const tones = noteSymbolList(['_', ...inner]);  // 复用 noteSymbolList(它跳过 head),整条都是 tone
+        if (tones.length === 0) continue;
+        out.push({ target: tones[0]!, approaches: tones.slice(1) });
+    }
+    return out;
+}
+
 function makeChordForm(form: Polylist): ChordForm | null {
     const nameEl = assoc(form, 'name');
     if (!nameEl || typeof nameEl[1] !== 'string') return null;
@@ -129,6 +220,8 @@ function makeChordForm(form: Polylist): ChordForm | null {
         color: noteSymbolList(assoc(form, 'color')),
         priority: noteSymbolList(assoc(form, 'priority')),
         scales,
+        avoid: noteSymbolList(assoc(form, 'avoid')),
+        approach: approachList(assoc(form, 'approach')),
     });
 }
 

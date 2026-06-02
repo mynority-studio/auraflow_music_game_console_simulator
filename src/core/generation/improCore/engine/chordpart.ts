@@ -92,7 +92,7 @@ export class ChordPart {
         for (const s of this.spans) {
             if (slot >= s.start && slot < s.end) return s.chord;
         }
-        // 超出末尾 → 用最后一个和弦(faithful:IV getCurrentChord clamps)
+        // 超出末尾 → 用最后一个和弦(faithful:IMP getCurrentChord clamps)
         if (this.spans.length > 0 && slot >= this.totalSlots) {
             return this.spans[this.spans.length - 1]!.chord;
         }

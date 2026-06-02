@@ -412,7 +412,7 @@ export class Grammar {
         if (arg1 === 'brick') {
             if (typeof arg2 !== 'string') return 0;
             const name = this.ctx ? this.ctx.brickNameAtSlot(this.chordSlot) : null;
-            if (name === null) return 0.1;                 // 无 roadmap → 保活权重(= IV "不匹配" 值)
+            if (name === null) return 0.1;                 // 无 roadmap → 保活权重(= IMP "不匹配" 值)
             return name === arg2 ? 1 : 0.1;
         }
         return 0;                                          // 其它 builtin:Phase 2 暂返 0

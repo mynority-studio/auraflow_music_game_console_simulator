@@ -13,3 +13,11 @@ scripts/*.h
 # Claude Code 本地设置（机器/会话特定，不应提交）
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+
+.oracle-build
+# 生成的音乐日志 / 调试产物
+tmp/
+
+# motifCore 调试探针(一次性诊断脚本,本地保留不入库)
+src/core/generation/motifCore/__probe__/

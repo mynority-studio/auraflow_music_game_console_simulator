@@ -8,6 +8,7 @@ import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
 import { PipelineMonitor } from './components/PipelineMonitor';
 import { ImproCorePanel } from './core/generation/improCore/sandbox';
+import { MotifCorePanel } from './core/generation/motifCore';
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
@@ -38,6 +39,8 @@ export default function App() {
       <PipelineMonitor />
       {/* ImproCore 移植沙盒 — 同时按 Q+I 调出,独立于主系统 */}
       <ImproCorePanel />
+      {/* motifCore 听感沙盒 — 同时按 Q+M 调出,平行 improCore */}
+      <MotifCorePanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"
