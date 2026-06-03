@@ -1,4 +1,8 @@
-// newEngine · render · 公开入口(Slice 0:伴奏 + 只读 Auditor + Coordinator)
+// newEngine · render · 公开入口
 export * from './accompanimentRenderer';
 export * from './readOnlyHarmonyAuditor';
 export * from './renderCoordinator';
+export * from './Motif';
+export * from './MotifStore';
+export * from './MelodyAnchorPlan';
+export * from './occurrenceResolver';
