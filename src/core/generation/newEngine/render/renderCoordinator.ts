@@ -9,13 +9,16 @@
 import { ticks, type RandomContext, type Timebase } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
+import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
-import { freezeMusicalIR, type MusicalIR, type TrackIR } from '../ir/MusicalIR';
+import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { runPrepass } from './motifAnchorPrepass';
 import { renderMelody } from './melodyRenderer';
+import { buildOccupationMap } from './OccupationMap';
+import { resolveInteractions } from './interactionResolver';
 import type { CandidateSwap } from './MotifStore';
 
 export interface RenderResult {
@@ -56,6 +59,7 @@ export function renderSongFull(
   band: BandSpec,
   arrangement: ArrangementPlan,
   plan: HarmonicPlan,
+  instrumentation: InstrumentationPlan,
   timebase: Timebase,
   rng: RandomContext,
   candidateSwap?: CandidateSwap,
@@ -65,11 +69,20 @@ export function renderSongFull(
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
   const tracks: TrackIR[] = [...accompaniment, lead];
 
-  const ir = freezeMusicalIR({
+  // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
+  const reserved = {
+    lowMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi,
+    highMidi: instrumentation.melodyReservationPlan.reservedRegister.highMidi,
+  };
+  const occupation = buildOccupationMap(tracks, reserved);
+  const draft: MusicalIRData = {
     tracks,
     timebase,
     durationTicks: ticks(totalDurationTicks(plan, timebase)),
-  });
+  };
+  const resolved = resolveInteractions(draft, occupation);
+
+  const ir = freezeMusicalIR(resolved.data);
   const audit = auditHarmony(ir, plan, timebase);
   return { ir, audit };
 }

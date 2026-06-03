@@ -11,6 +11,7 @@
 import { beats, createRandomContext, createTimebase, type RandomContext } from '../foundation';
 import { buildBandSpec, type GenerationRequest } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
+import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
 import type { MusicalIR } from '../ir/MusicalIR';
@@ -73,6 +74,7 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
   const arrangement = buildArrangementPlan(band);
+  const instrumentation = buildInstrumentationPlan(band, arrangement);
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
   const timebase = createTimebase({
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
@@ -80,7 +82,7 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
   });
 
   const render: RenderFn = (retry) =>
-    renderSongFull(band, arrangement, harmonic, timebase, retry?.rng ?? seedRng, retry?.candidateSwap);
+    renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng, retry?.candidateSwap);
 
   return runGenerationControl(render, seedRng, budget);
 }
