@@ -1,0 +1,35 @@
+// ============================================================
+// newEngine · ir · MusicalIR / TrackIR / NoteIR(最终乐谱)
+// ------------------------------------------------------------
+// 架构定稿 Part 2.9。NoteIR 无 intentional 字段(合法性靠预消解,不开后门)。
+// 交付前 deepFreeze;timebase 共享时间底座(Function leaf 保可调用)。
+// ============================================================
+
+import { deepFreeze, type DeepReadonly, type Midi, type Ticks } from '../foundation';
+import type { Timebase } from '../foundation';
+
+export type InstrumentRole = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
+
+export interface NoteIR {
+  pitch: Midi;
+  startTick: Ticks;
+  durationTicks: Ticks;
+  velocity: number;
+}
+
+export interface TrackIR {
+  role: InstrumentRole;
+  notes: NoteIR[];
+}
+
+export interface MusicalIRData {
+  tracks: TrackIR[];
+  timebase: Timebase;
+  durationTicks: Ticks;
+}
+
+export type MusicalIR = DeepReadonly<MusicalIRData>;
+
+export function freezeMusicalIR(data: MusicalIRData): MusicalIR {
+  return deepFreeze(data);
+}
