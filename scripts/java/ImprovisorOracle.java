@@ -2,9 +2,11 @@ import imp.lickgen.Grammar;
 import imp.lickgen.LickGen;
 import imp.lickgen.NoteChooser;
 import imp.lickgen.Terminals;
+import imp.guidetone.GuideLineGenerator;
 import imp.voicing.VoicingGenerator;
 import imp.data.Chord;
 import imp.data.ChordPart;
+import imp.data.MelodyPart;
 import imp.data.Note;
 import imp.data.Score;
 import imp.data.Part;
@@ -108,6 +110,11 @@ public final class ImprovisorOracle {
                 runVoicing(args);
                 return;
             }
+            if ("guidetone".equals(command)) {
+                if (args.length != 11 && args.length != 13) usage();
+                runGuideTone(args);
+                return;
+            }
             usage();
         } catch (Throwable t) {
             System.err.println(t.getClass().getName() + ": " + t.getMessage());
@@ -132,6 +139,7 @@ public final class ImprovisorOracle {
         System.err.println("  java ImprovisorOracle lickgen-choose-state <pos> <low> <high> <chord:dur,...> <type> <lastPitch> <minPitch> <maxPitch>");
         System.err.println("  java ImprovisorOracle lickgen-choose-state-batch <tsv-file: label TAB pos TAB low TAB high TAB chordSpec TAB type TAB lastPitch TAB minPitch TAB maxPitch>");
         System.err.println("  java ImprovisorOracle voicing <seed> <priorityCsv> <colorCsv> <root> <leftLow> <leftHigh> <leftN> <rightLow> <rightHigh> <rightN> <previousCsv|-> <prevMult> <halfAway> <fullAway> <priorityMult> <repeatMult> <halfReduce> <fullReduce>");
+        System.err.println("  java ImprovisorOracle guidetone <chord:dur,...> <direction> <startDegree1> <startDegree2> <alternating> <low> <high> <maxDuration> <mix> <allowColor> [<alwaysDisallowSame> <contour>]");
         System.exit(2);
     }
 
@@ -362,7 +370,11 @@ public final class ImprovisorOracle {
             Polylist next = (Polylist) search.first();
             if (next == null || next.isEmpty() || !(next.first() instanceof String)) continue;
             String type = (String) next.first();
-            if (!"rule".equals(type) || next.length() != 4) continue;
+            // Mirror Grammar.findRule: ACTIVATE_BRICK_GATING also accepts 5-field brick rules
+            // (weight from 4th field below). Keeps this candidate reimpl faithful to the real engine.
+            if (!"rule".equals(type)
+                    || (next.length() != 4
+                        && !(Grammar.ACTIVATE_BRICK_GATING && next.length() == 5))) continue;
 
             Object rawLHS = next.second();
             Object rawRHS = next.third();
@@ -786,10 +798,71 @@ public final class ImprovisorOracle {
         return out;
     }
 
+    private static void runGuideTone(String[] args) {
+        ChordPart cp = normalChordPart(args[1]);
+        int direction = Integer.parseInt(args[2]);
+        String startDegree1 = args[3];
+        String startDegree2 = args[4];
+        boolean alternating = Boolean.parseBoolean(args[5]);
+        int low = Integer.parseInt(args[6]);
+        int high = Integer.parseInt(args[7]);
+        int maxDuration = Integer.parseInt(args[8]);
+        boolean mix = Boolean.parseBoolean(args[9]);
+        boolean allowColor = Boolean.parseBoolean(args[10]);
+        GuideLineGenerator gen;
+        if (args.length == 13) {
+            boolean alwaysDisallowSame = Boolean.parseBoolean(args[11]);
+            String contour = args[12];
+            gen = new GuideLineGenerator(cp, direction, startDegree1, startDegree2, alternating, low, high, maxDuration, mix, allowColor, alwaysDisallowSame, contour);
+        } else {
+            gen = new GuideLineGenerator(cp, direction, startDegree1, startDegree2, alternating, low, high, maxDuration, mix, allowColor);
+        }
+        MelodyPart melody = gen.makeGuideLine();
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        field(json, "kind", "guidetone").append(",");
+        numberField(json, "durationSlots", melody.getSize()).append(",");
+        json.append("\"notes\":[");
+        boolean first = true;
+        for (int slot = 0; slot < melody.getSize();) {
+            Note note = melody.getNote(slot);
+            if (note == null) {
+                slot++;
+                continue;
+            }
+            if (!first) json.append(",");
+            first = false;
+            json.append("{");
+            numberField(json, "pitch", note.isRest() ? -1 : note.getPitch()).append(",");
+            numberField(json, "startSlot", slot).append(",");
+            numberField(json, "durationSlots", note.getRhythmValue());
+            json.append("}");
+            slot += Math.max(1, note.getRhythmValue());
+        }
+        json.append("]}");
+        System.out.println(json.toString());
+    }
+
     private static ChordPart chordPart(String spec) {
         initPreferences();
         initAdvisor();
         ChordPart cp = unsafeChordPart();
+        if (spec.trim().length() == 0) return cp;
+        String[] parts = spec.split(",");
+        for (String part : parts) {
+            String[] pair = part.trim().split(":", 2);
+            if (pair.length != 2) throw new IllegalArgumentException("Bad chord spec: " + part);
+            Chord chord = Chord.makeChord(pair[0], Integer.parseInt(pair[1]));
+            if (chord == null) throw new IllegalArgumentException("Bad chord name: " + pair[0]);
+            cp.addChord(chord);
+        }
+        return cp;
+    }
+
+    private static ChordPart normalChordPart(String spec) {
+        initPreferences();
+        initAdvisor();
+        ChordPart cp = new ChordPart();
         if (spec.trim().length() == 0) return cp;
         String[] parts = spec.split(",");
         for (String part : parts) {
@@ -851,6 +924,11 @@ public final class ImprovisorOracle {
         Field scoreField = Notate.class.getDeclaredField("score");
         scoreField.setAccessible(true);
         scoreField.set(notate, score);
+        // Notate.ensureRoadmap() reads Notate's own chordProg field (not score's), so set it too
+        // (needed once ACTIVATE_BRICK_GATING makes the brick builtin reachable).
+        Field notateChordProgField = Notate.class.getDeclaredField("chordProg");
+        notateChordProgField.setAccessible(true);
+        notateChordProgField.set(notate, cp);
         return notate;
     }
 
@@ -870,6 +948,10 @@ public final class ImprovisorOracle {
             setField(Part.class, cp, "beatValue", 120);
             setField(Part.class, cp, "measureLength", 480);
             setField(Part.class, cp, "swing", 0.67);
+            // Default empty roadmap so Grammar.evaluateBuiltin(brick) -> notate.ensureRoadmap()
+            // short-circuits (getRoadMap() != null) instead of entering GUI-only code that NPEs
+            // on this headless fake. chordPartWithRoadMap() overrides with real blocks afterwards.
+            cp.setRoadmap(new RoadMap(new ArrayList<Block>()));
             return cp;
         } catch (Exception e) {
             throw new RuntimeException(e);

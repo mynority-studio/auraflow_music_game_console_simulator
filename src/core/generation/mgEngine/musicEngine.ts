@@ -63,6 +63,7 @@ import {
   applyCompingModeToTextureEvents,
   ArrangementContract,
 } from './arrangementContract';
+import { pickForm, type SongSection } from './songForm';
 import {
   buildHarmonicSlots,
   HarmonicSlot,
@@ -1091,10 +1092,42 @@ export class Engine {
     return { motifStrategy: strategy, motifInterval: interval };
   }
 
-  generateProgressions(config: GenerationConfig): ChordDef[] {
+  /**
+   * 曲式层(顶层宏观结构):抽段落骨架(genre-aware + 随机)→ 逐段生成进行 → 拼成
+   * 整首(~32-64 小节)+ 段落元数据。段落 = 宏观和声框架(不涉旋律/织体渲染),故归 mg。
+   * material 相同的段复用同一进行(verse 重复=记忆点),不同 material 换料(verse≠chorus=对比)。
+   * 每段经完整 generateProgressions 管线(借和弦/离调 planner 都在)。详见 songForm.ts。
+   */
+  generateSongForm(config: GenerationConfig): { chords: ChordDef[]; sections: SongSection[] } {
+    const form = pickForm(config.style, new Random(`${config.seed}::form`));
+    const cache = new Map<string, ChordDef[]>();
+    const chords: ChordDef[] = [];
+    const sections: SongSection[] = [];
+    let startBar = 0;
+    for (const sec of form) {
+      const key = `${sec.materialKey}:${sec.bars}:${sec.function}`;
+      let prog = cache.get(key);
+      if (!prog) {
+        // 同一 material 的 seed 一致 → 重复段进行相同;异 material/段长/功能 → 不同 seed → 换料。
+        const secConfig: GenerationConfig = { ...config, seed: `${config.seed}::mat-${sec.materialKey}-${sec.bars}-${sec.function}` };
+        prog = this.generateProgressions(secConfig, { bars: sec.bars, sectionFunction: sec.function });
+        cache.set(key, prog);
+      }
+      const actualBars = Math.max(1, Math.round(prog.reduce((s, c) => s + (c.duration ?? 4), 0) / 4));
+      chords.push(...prog.map(c => ({ ...c })));   // 克隆,避免重复段共享引用
+      sections.push({ function: sec.function, label: sec.label, startBar, bars: actualBars });
+      startBar += actualBars;
+    }
+    return { chords, sections };
+  }
+
+  generateProgressions(config: GenerationConfig, override?: { bars?: number; sectionFunction?: SectionFunction }): ChordDef[] {
     const { style, key } = config;
     const ctx = this.resolveGeneration(config);
-    const bars = STYLE_DICTIONARY[style]?.recommendedBars ?? 16;
+    // Song-form layer (generateSongForm) overrides per-section bar-count + role;
+    // default path (no override) keeps the original single-section behavior.
+    if (override?.sectionFunction) ctx.sectionFunction = override.sectionFunction;
+    const bars = override?.bars ?? STYLE_DICTIONARY[style]?.recommendedBars ?? 16;
     const progression = this.generateProgression(style, bars, ctx.mode, ctx.motifInterval, ctx.sectionFunction);
 
     // Borrowed-Chord Planner — positional Modal Interchange. Four

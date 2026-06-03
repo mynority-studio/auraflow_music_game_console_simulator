@@ -20,7 +20,10 @@ interface JavaGrammarRun {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
-const runOracle = join(repo, 'scripts/run-improvisor-oracle.sh');
+const runOracle = process.platform === 'win32'
+  ? join(repo, 'scripts/run-improvisor-oracle.cmd')
+  : join(repo, 'scripts/run-improvisor-oracle.sh');
+const oracleCommand = process.platform === 'win32' ? 'cmd.exe' : runOracle;
 
 const vocText = readFileSync(join(repo, 'src/core/generation/improCore/engine/vocab/My.voc'), 'utf8');
 setActiveVocab(parseVocab(vocText));
@@ -62,7 +65,7 @@ function javaGrammarRun(grammarFile: string, slots: number, seed?: number, chord
     ? ['grammar-run', grammarFile, String(slots)]
     : ['grammar-run-chords', grammarFile, String(slots), chordSpec];
   if (seed !== undefined) args.push(String(seed));
-  const out = execFileSync(runOracle, args, {
+  const out = execFileSync(oracleCommand, process.platform === 'win32' ? ['/c', runOracle, ...args] : args, {
     cwd: repo,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],

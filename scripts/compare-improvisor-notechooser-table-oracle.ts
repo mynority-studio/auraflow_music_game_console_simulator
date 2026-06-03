@@ -12,10 +12,14 @@ interface JavaNoteChooserTable {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
-const runOracle = join(repo, 'scripts/run-improvisor-oracle.sh');
+const runOracle = process.platform === 'win32'
+  ? join(repo, 'scripts/run-improvisor-oracle.cmd')
+  : join(repo, 'scripts/run-improvisor-oracle.sh');
+const oracleCommand = process.platform === 'win32' ? 'cmd.exe' : runOracle;
 
 function javaTable(): Map<string, number[]> {
-  const out = execFileSync(runOracle, ['notechooser-prob-table'], {
+  const args = ['notechooser-prob-table'];
+  const out = execFileSync(oracleCommand, process.platform === 'win32' ? ['/c', runOracle, ...args] : args, {
     cwd: repo,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],

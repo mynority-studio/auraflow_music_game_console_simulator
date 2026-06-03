@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ALL_TRANSFORM_NAMES } from '../improCore/engine';
 import { TOPLINE_GRAMMARS, DEFAULT_GRAMMAR } from './grammarPalette';
+import { ALL_GRAMMAR_NAMES } from '../improCore/engine';
 import { buildPhrase, buildGroove, type MotifSource } from './motifDemo';
 import { buildDefaultSong, smartGenSong, type Song } from './songSource';
 import { routeFor } from './stylePalette';
@@ -66,6 +67,11 @@ const btn: React.CSSProperties = {
     color: '#e6e9ef', cursor: 'pointer', fontSize: 14,
 };
 
+// 曲式段落配色(曲式条):chorus/hook=金(记忆点高亮),verse=蓝,bridge=紫,intro/outro=灰
+const SECTION_COLOR: Record<string, string> = {
+    INTRO: '#7a8699', VERSE: '#5b9bd5', CHORUS: '#e0a44a', BRIDGE: '#a07ad0', OUTRO: '#7a8699',
+};
+
 // 音阶名缩写(bar 卡省地方):Mixolydian→Mixo, Lydian Dominant→LydDom 等
 const SCALE_ABBR: Record<string, string> = {
     Ionian: 'Ion', Dorian: 'Dor', Phrygian: 'Phr', Lydian: 'Lyd', Mixolydian: 'Mixo',
@@ -88,18 +94,19 @@ function Legend({ color, text }: { color: string; text: string }): React.ReactEl
 
 export function MotifCorePanel(): React.ReactElement | null {
     const [open, setOpen] = useState(false);
-    const [srcKind, setSrcKind] = useState<'grammar' | 'guidetone'>('guidetone');
+    const [srcKind, setSrcKind] = useState<'grammar' | 'guidetone'>('grammar'); // grammar 体裁(JAZZ/BLUES)默认 grammar
     const [grammar, setGrammar] = useState(DEFAULT_GRAMMAR);
-    const [gtColor, setGtColor] = useState(true);      // GuideTone 允许色彩音(起始音级=加权随机,见 motifDemo)
-    const [transformOn, setTransformOn] = useState(true); // Transform 后处理(默认开,随机用一个风格库)
-    const [divideOn, setDivideOn] = useState(true);    // Divide 后处理(默认开,概率触发 ×1)
+    const [fullGrammar, setFullGrammar] = useState(false); // false=topline 白名单;true=ALL_GRAMMAR_NAMES 全量
+    // GuideTone:色彩音(allowColor)+ 列表序平手(impTiebreak)强制开启,不暴露勾选。
+    // 想改回音乐性平手(朝下个和弦根音)把 GT_IMP_TIEBREAK 翻 false 即可。
+    const GT_ALLOW_COLOR = true;
+    const GT_IMP_TIEBREAK = true;
     const [bpm, setBpm] = useState(84);
     // 三轨独立 mute(伴奏每次都生成,这里只控制是否发声)
     const [melodyOn, setMelodyOn] = useState(true); // 主旋律(可 mute 单独听伴奏)
     const [compOn, setCompOn] = useState(true);   // 和弦织体(drop2 voicing 铺底)
     const [bassOn, setBassOn] = useState(true);   // 贝斯(IMP walking / mg)
     const [drumsOn, setDrumsOn] = useState(true); // 鼓(IMP style 流派鼓)
-    const [resolveEnd, setResolveEnd] = useState(true);
     const [pedalOn, setPedalOn] = useState(true);  // CC64 延音踏板(织体整句/旋律半句)
     const [melodyProgram, setMelodyProgram] = useState(73); // 默认 Flute
     const [bassProgram, setBassProgram] = useState(32);     // 默认 Acoustic Bass
@@ -110,6 +117,11 @@ export function MotifCorePanel(): React.ReactElement | null {
     const [status, setStatus] = useState('就绪 — 按生成试听整曲');
     const [diag, setDiag] = useState<HarmonyReport | null>(null); // 和声诊断报告
     const heldKeys = useRef<Set<string>>(new Set());
+
+    // 风格路由(收敛):Grammar 只在 JAZZ/BLUES 实行;POP/RNB/LOFI 暂走 GuideTone。
+    const grammarGenre = song.macro === 'JAZZ' || song.macro === 'BLUES';
+    const effSrc: 'grammar' | 'guidetone' = grammarGenre ? srcKind : 'guidetone';
+    const grammarList = fullGrammar ? ALL_GRAMMAR_NAMES : TOPLINE_GRAMMARS;
 
     // 和弦显示模块:按 bar 分组。优先用 mg 权威分析(SmartGen),无则回退启发式。
     const { chordBars, mgPowered } = useMemo(() => {
@@ -145,6 +157,50 @@ export function MotifCorePanel(): React.ReactElement | null {
 
     const head = usePlayhead(song.barCount);
 
+    // 单个小节卡片(和弦名 + 级数 + TSD + 音阶 + 播放头高亮)。分组/扁平两种布局复用。
+    const renderBar = (b: (typeof chordBars)[number]) => {
+        const active = head.playing && head.bar === b.bar;
+        return (
+            <div key={b.bar} style={{
+                position: 'relative', minWidth: 56, flex: '0 0 auto',
+                border: '1px solid ' + (active ? '#5b7cff' : '#2a3346'),
+                borderRadius: 6, padding: '4px 6px 5px', textAlign: 'center',
+                background: active ? '#243056' : '#0f131c',
+                boxShadow: active ? '0 0 0 1px #5b7cff, 0 0 12px rgba(91,124,255,0.4)' : 'none',
+                transition: 'background 80ms, box-shadow 80ms',
+            }}>
+                <div style={{ fontSize: 9, opacity: 0.45, marginBottom: 1 }}>{b.bar + 1}</div>
+                {b.chords.map((c, i) => (
+                    <div key={i} style={{ lineHeight: 1.25 }} title={c.note}>
+                        <div style={{ fontSize: 12, color: '#e6e9ef' }}>{c.token}</div>
+                        <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'baseline' }}>
+                            <span style={{ fontSize: 11, color: KIND_COLOR[c.kind], fontWeight: 600 }}>
+                                {c.roman}{c.outOfKey ? '*' : ''}
+                            </span>
+                            {c.func && (
+                                <span style={{ fontSize: 8, color: FUNC_COLOR[c.func], fontWeight: 700 }}>
+                                    {c.func}{c.funcOverridden ? '*' : ''}
+                                </span>
+                            )}
+                        </div>
+                        {c.scaleName && (
+                            <div style={{ fontSize: 8, color: c.scaleForced ? '#f2994a' : '#5fb3a3', opacity: 0.95 }}
+                                 title={c.scaleForced ? 'planner 盖的离调色彩音阶' : 'chordScaleFor 功能推导'}>
+                                {abbrevScale(c.scaleName)}
+                            </div>
+                        )}
+                        {c.localRoman && (
+                            <div style={{ fontSize: 8, color: '#9c7b3f' }}>loc:{c.localRoman}</div>
+                        )}
+                        {c.mustResolve && (
+                            <div style={{ fontSize: 8, color: '#e06b6b', opacity: 0.85 }}>↳须解决</div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
     useEffect(() => {
         const isTyping = () => {
             const el = document.activeElement;
@@ -175,13 +231,13 @@ export function MotifCorePanel(): React.ReactElement | null {
             const s = useSeedArg && useSeedArg.trim() ? useSeedArg.trim() : makeSeed();
             setSeed(s);
             const source: MotifSource =
-                srcKind === 'grammar' ? { grammar }
-                : { guidetone: { startDegree: 'random', allowColor: gtColor, direction: 0 } }; // 起始音级加权随机,密度默认 HALF
+                effSrc === 'grammar' ? { grammar }
+                : { guidetone: { startDegree: 'random', allowColor: GT_ALLOW_COLOR, direction: 0, impTiebreak: GT_IMP_TIEBREAK } }; // 起始音级加权随机,密度默认 HALF
             // 在 seed 控制的随机流下生成整曲 → 同一 seed 完全可复现。
-            // Transform 默认开 → 随机选一个乐手风格库(不分类);放进 withSeed 闭包保证可复现。
+            // IMP 原生链路:transform 常驻(随机选一个乐手 .transform 库);放进 withSeed 闭包保证可复现。
             const phrase = withSeed(s, () => {
-                const tf = transformOn ? (ALL_TRANSFORM_NAMES[Math.floor(Math.random() * ALL_TRANSFORM_NAMES.length)] ?? 'off') : 'off';
-                return buildPhrase(source, song, { transform: tf, divideProb: divideOn ? 0.5 : 0, resolveEnd });
+                const tf = ALL_TRANSFORM_NAMES[Math.floor(Math.random() * ALL_TRANSFORM_NAMES.length)] ?? 'off';
+                return buildPhrase(source, song, { transform: tf });
             });
             const g = buildGroove(song);
             // 踏板边界 = 和弦段起始 slot(每和弦换抬一下,参考 mg);风格 usePedal + 面板 pedalOn 双控
@@ -193,19 +249,19 @@ export function MotifCorePanel(): React.ReactElement | null {
             // 音量均衡:各轨归一到目标 velocity(mix),主旋律最突出 > bass > 织体 > 鼓
             const tracks: DemoTrack[] = [];
             if (melodyOn) tracks.push({ notes: phrase.melody, channel: 0, program: melodyProgram, mix: 96 }); // 主旋律:最响
-            if (compOn) tracks.push({ notes: phrase.chords, channel: 1, program: compProgram, mix: 74, pedalBoundaries: chordBoundaries }); // 织体:中等铺底
-            if (bassOn) tracks.push({ notes: g.bass, channel: 2, program: bassProgram, mix: 80 });   // bass:支撑
-            if (compOn && g.comp.length) tracks.push({ notes: g.comp, channel: 3, program: compProgram, mix: 74 });
-            if (drumsOn) tracks.push({ notes: g.drums, channel: 9, program: drumKit, mix: 70 });      // 鼓:律动不抢
+            if (compOn) tracks.push({ notes: phrase.chords, channel: 1, program: compProgram, mix: 96, pedalBoundaries: chordBoundaries }); // 织体:74→96(+30%)
+            if (bassOn) tracks.push({ notes: g.bass, channel: 2, program: bassProgram, mix: 56 });   // bass:80→56(−30%)
+            if (compOn && g.comp.length) tracks.push({ notes: g.comp, channel: 3, program: compProgram, mix: 96 }); // 织体:74→96(+30%)
+            if (drumsOn) tracks.push({ notes: g.drums, channel: 9, program: drumKit, mix: 77 });      // 鼓:70→77(+10%)
             void playTracks(tracks, bpm);
             // 和声诊断:核 bass/织体/旋律骨干位的和声合规
             setDiag(diagnoseHarmony(song, { melody: phrase.melody, bass: g.bass, comp: phrase.chords }));
-            const srcLabel = srcKind === 'grammar' ? grammar : 'GuideTone';
+            const srcLabel = effSrc === 'grammar' ? grammar : 'GuideTone';
             setStatus(`▶ ${s} · ${song.macro} · ${srcLabel} · ${phrase.pitches.length} 音`);
         } catch (err) {
             setStatus('✗ ' + (err as Error).message);
         }
-    }, [srcKind, grammar, gtColor, transformOn, divideOn, bpm, melodyOn, compOn, bassOn, drumsOn, resolveEnd, pedalOn, melodyProgram, bassProgram, compProgram, drumKit, song]);
+    }, [effSrc, grammar, bpm, melodyOn, compOn, bassOn, drumsOn, pedalOn, melodyProgram, bassProgram, compProgram, drumKit, song]);
 
     const regen = useCallback(() => {
         try {
@@ -251,88 +307,89 @@ export function MotifCorePanel(): React.ReactElement | null {
                         <Legend color={KIND_COLOR.chromatic} text="半音" />
                     </span>
                 </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 18 }}>
-                    {chordBars.map(b => {
-                        const active = head.playing && head.bar === b.bar;
-                        return (
-                            <div key={b.bar} style={{
-                                position: 'relative', minWidth: 56, flex: '0 0 auto',
-                                border: '1px solid ' + (active ? '#5b7cff' : '#2a3346'),
-                                borderRadius: 6, padding: '4px 6px 5px', textAlign: 'center',
-                                background: active ? '#243056' : '#0f131c',
-                                boxShadow: active ? '0 0 0 1px #5b7cff, 0 0 12px rgba(91,124,255,0.4)' : 'none',
-                                transition: 'background 80ms, box-shadow 80ms',
-                            }}>
-                                <div style={{ fontSize: 9, opacity: 0.45, marginBottom: 1 }}>{b.bar + 1}</div>
-                                {b.chords.map((c, i) => (
-                                    <div key={i} style={{ lineHeight: 1.25 }} title={c.note}>
-                                        <div style={{ fontSize: 12, color: '#e6e9ef' }}>{c.token}</div>
-                                        <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'baseline' }}>
-                                            <span style={{ fontSize: 11, color: KIND_COLOR[c.kind], fontWeight: 600 }}>
-                                                {c.roman}{c.outOfKey ? '*' : ''}
-                                            </span>
-                                            {c.func && (
-                                                <span style={{ fontSize: 8, color: FUNC_COLOR[c.func], fontWeight: 700 }}>
-                                                    {c.func}{c.funcOverridden ? '*' : ''}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {c.scaleName && (
-                                            <div style={{ fontSize: 8, color: c.scaleForced ? '#f2994a' : '#5fb3a3', opacity: 0.95 }}
-                                                 title={c.scaleForced ? 'planner 盖的离调色彩音阶' : 'chordScaleFor 功能推导'}>
-                                                {abbrevScale(c.scaleName)}
-                                            </div>
-                                        )}
-                                        {c.localRoman && (
-                                            <div style={{ fontSize: 8, color: '#9c7b3f' }}>loc:{c.localRoman}</div>
-                                        )}
-                                        {c.mustResolve && (
-                                            <div style={{ fontSize: 8, color: '#e06b6b', opacity: 0.85 }}>↳须解决</div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    })}
-                </div>
+                {/* 曲式条 — mg 曲式层产出的段落骨架(INTRO/VERSE/CHORUS/BRIDGE/OUTRO);宽度按小节数 */}
+                {song.sections && song.sections.length > 0 && (
+                    <div style={{ display: 'flex', gap: 3, marginBottom: 8 }}>
+                        {song.sections.map((s, i) => {
+                            const inSec = head.playing && head.bar >= s.startBar && head.bar < s.startBar + s.bars;
+                            return (
+                                <div key={i} title={`${s.label} · bar ${s.startBar + 1}–${s.startBar + s.bars}`}
+                                    style={{
+                                        flex: s.bars, minWidth: 0, padding: '3px 4px', borderRadius: 4, textAlign: 'center',
+                                        fontSize: 10, fontWeight: 700, color: '#0f131c',
+                                        background: SECTION_COLOR[s.function] ?? '#5b7cff',
+                                        outline: inSec ? '2px solid #cdd9ff' : 'none',
+                                        overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                                    }}>{s.label}</div>
+                            );
+                        })}
+                    </div>
+                )}
+                {/* 和弦/级数:有曲式 → 按段落分组(每段标题 + 该段小节);无曲式 → 扁平网格 */}
+                {song.sections && song.sections.length > 0 ? (
+                    <div style={{ marginBottom: 14 }}>
+                        {song.sections.map((s, si) => {
+                            const inSec = head.playing && head.bar >= s.startBar && head.bar < s.startBar + s.bars;
+                            const bars = chordBars.filter(b => b.bar >= s.startBar && b.bar < s.startBar + s.bars);
+                            return (
+                                <div key={si} style={{ marginBottom: 8 }}>
+                                    <div style={{
+                                        display: 'inline-block', fontSize: 10, fontWeight: 700, color: '#0f131c',
+                                        background: SECTION_COLOR[s.function] ?? '#5b7cff',
+                                        padding: '2px 8px', borderRadius: 4, marginBottom: 4,
+                                        outline: inSec ? '2px solid #cdd9ff' : 'none',
+                                    }}>{s.label} <span style={{ opacity: 0.7, fontWeight: 400 }}>bar {s.startBar + 1}–{s.startBar + s.bars}</span></div>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{bars.map(renderBar)}</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 18 }}>
+                        {chordBars.map(renderBar)}
+                    </div>
+                )}
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 10 }}>
                     <span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>motif 来源</span>
                     {([
                         ['guidetone', 'GuideTone', '导音骨架(确定·平滑·贴和声;起始音级加权随机 3/7 优先)'],
-                        ['grammar', 'Grammar', 'Impro-Visor 语法 lick(随机)'],
-                    ] as ReadonlyArray<[typeof srcKind, string, string]>).map(([k, label, tip]) => (
-                        <button key={k} title={tip} onClick={() => setSrcKind(k)}
-                            style={{
-                                padding: '5px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                                border: '1px solid ' + (srcKind === k ? '#5b7cff' : '#313c52'),
-                                background: srcKind === k ? '#26314f' : '#1d2433',
-                                color: srcKind === k ? '#cdd9ff' : '#9aa6bd',
-                            }}>{label}</button>
-                    ))}
-                    {srcKind === 'grammar' && (
-                        <select value={grammar} onChange={e => setGrammar(e.target.value)}
-                            style={{ marginLeft: 'auto', background: '#0f131c', color: '#e6e9ef', border: '1px solid #313c52', borderRadius: 6, padding: '3px 6px' }}>
-                            {TOPLINE_GRAMMARS.map(n => <option key={n} value={n}>{n}</option>)}
-                        </select>
+                        ['grammar', 'Grammar', 'Impro-Visor 语法 lick — 仅 JAZZ/BLUES'],
+                    ] as ReadonlyArray<[typeof srcKind, string, string]>).map(([k, label, tip]) => {
+                        const disabled = k === 'grammar' && !grammarGenre;   // Grammar 仅 JAZZ/BLUES
+                        const active = effSrc === k;
+                        return (
+                            <button key={k} disabled={disabled}
+                                title={disabled ? `Grammar 仅 JAZZ/BLUES;当前 ${song.macro} → 走 GuideTone` : tip}
+                                onClick={() => setSrcKind(k)}
+                                style={{
+                                    padding: '5px 10px', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12,
+                                    border: '1px solid ' + (active ? '#5b7cff' : '#313c52'),
+                                    background: active ? '#26314f' : '#1d2433',
+                                    color: disabled ? '#55607a' : (active ? '#cdd9ff' : '#9aa6bd'),
+                                    opacity: disabled ? 0.5 : 1,
+                                }}>{label}</button>
+                        );
+                    })}
+                    <span style={{ opacity: 0.5, fontSize: 11 }}>· {song.macro} → {effSrc === 'grammar' ? 'Grammar' : 'GuideTone'}</span>
+                    {effSrc === 'grammar' && (
+                        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="关=topline 白名单(抒情系);开=全部 grammar(含 bebop/hard-bop 密集系)">
+                                <input type="checkbox" checked={fullGrammar} onChange={e => setFullGrammar(e.target.checked)} />全部
+                            </label>
+                            <select value={grammar} onChange={e => setGrammar(e.target.value)}
+                                style={{ background: '#0f131c', color: '#e6e9ef', border: '1px solid #313c52', borderRadius: 6, padding: '3px 6px' }}>
+                                {grammarList.map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                        </div>
                     )}
-                    {srcKind === 'guidetone' && (
-                        <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <input type="checkbox" checked={gtColor} onChange={e => setGtColor(e.target.checked)} />色彩音
-                        </label>
+                    {effSrc === 'guidetone' && (
+                        <div style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>色彩音 + 列表序平手(已锁定)</div>
                     )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 12, marginBottom: 12 }}>
-                    <span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>后处理</span>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }} title="真人即兴习语装饰(默认开,随机用一个风格库)">
-                        <input type="checkbox" checked={transformOn} onChange={e => setTransformOn(e.target.checked)} />
-                        Transform <span style={{ opacity: 0.5 }}>(随机风格库)</span>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }} title="Fractal 概率细分成更活跃的线(每段 50% 触发 ×1)">
-                        <input type="checkbox" checked={divideOn} onChange={e => setDivideOn(e.target.checked)} />
-                        Divide <span style={{ opacity: 0.5 }}>(概率 ×1)</span>
-                    </label>
+                <div style={{ fontSize: 11, opacity: 0.5, marginBottom: 12 }}>
+                    旋律链路(IMP 原生):{effSrc === 'grammar' ? 'Grammar' : 'GuideTone'} → transform → rectify
                 </div>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 8 }}>
@@ -384,7 +441,7 @@ export function MotifCorePanel(): React.ReactElement | null {
                     onClick={() => play()}>
                     ▶ 生成整曲旋律
                     <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.6, marginTop: 2 }}>
-                        在整首 changes 上跑 {srcKind === 'grammar' ? grammar : 'GuideTone'} → Transform/Divide → 选音
+                        在整首 changes 上跑 {effSrc === 'grammar' ? grammar : 'GuideTone'} → transform → rectify(IMP 原生链路)
                     </div>
                 </button>
 
@@ -404,10 +461,6 @@ export function MotifCorePanel(): React.ReactElement | null {
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6 }} title="鼓(IMP style 流派鼓组)">
                         <input type="checkbox" checked={drumsOn} onChange={e => setDrumsOn(e.target.checked)} />
                         鼓
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input type="checkbox" checked={resolveEnd} onChange={e => setResolveEnd(e.target.checked)} />
-                        曲尾落主音
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6 }} title="CC64 延音踏板(织体整句/旋律半句)">
                         <input type="checkbox" checked={pedalOn} onChange={e => setPedalOn(e.target.checked)} />

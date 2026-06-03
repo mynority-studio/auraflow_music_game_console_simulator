@@ -16,7 +16,7 @@
 
 import {
     realize, getGrammar, applyTransform, getTransform, rectify,
-    renderComping, getStyle, applySwing,
+    renderComping, getStyle, applySwing, ACTIVATE_BRICK_GATING, lickGenParamsFrom,
     type SlotNote, type GrammarChordContext, type ChordPart,
 } from '../improCore/engine';
 import { routeFor } from './stylePalette';
@@ -39,7 +39,6 @@ function swingEighths(notes: SlotNote[], ratio: number): SlotNote[] {
 }
 import { rootPc, type Song } from './songSource';
 import { makeGuideLine, type GuideLineParams } from './guideline';
-import { fractalDivide } from './fractal';
 
 // 选音 = 忠实 IMP 纯 rectify:生成后逐音吸附到当前和弦音阶(rectify=true,IMP 默认)。
 // 之前自创的 mgscale/beat/pent 档已移除(mgscale 在无 analysis 时漏吸调外音的 bug 来源)。
@@ -47,8 +46,6 @@ import { fractalDivide } from './fractal';
 const BAR = 480;                  // WHOLE = 一小节 slot(BEAT=120 × 4)
 
 export type MotifSource = { grammar: string } | { guidetone: GuideLineParams };
-
-const clone = (m: SlotNote[]): SlotNote[] => m.map(n => ({ ...n }));
 
 /** slot → 该位置和声功能块的 brick 名(查 song.analysis,按 startBeat→slot 区间)。
  *  无 analysis(默认 ii-V)→ null,grammar 退化为无 brick 随机选 lick。 */
@@ -61,21 +58,60 @@ function brickAtSlot(song: Song, slot: number): string | null {
     return hit ?? null;
 }
 
+/** 把曲子按 brick 名切成连续功能段(相邻同名合并)。每段 → 一次独立 grammar run。
+ *  依赖 cp.getSpans()(可靠的绝对 slot)+ brickAtSlot(查 analysis),无新接口。 */
+function brickSegments(song: Song): Array<{ start: number; end: number; brick: string | null }> {
+    const cp = song.cp;
+    const total = cp.getTotalSlots();
+    const segs: Array<{ start: number; end: number; brick: string | null }> = [];
+    for (const span of cp.getSpans()) {
+        const brick = brickAtSlot(song, span.start);
+        const last = segs[segs.length - 1];
+        if (last && last.brick === brick) last.end = span.end;       // 相邻同功能 → 合并成一块
+        else segs.push({ start: span.start, end: span.end, brick });
+    }
+    if (segs.length > 0) segs[segs.length - 1]!.end = Math.max(segs[segs.length - 1]!.end, total);
+    return segs;
+}
+
 /** Grammar 在【整首】changes 上生成一条连贯线(Impro-Visor 原生用法,非 2-bar motif)。
  *  **单条生成** —— 忠实 IMP 默认(expectancyMultiplier=0,即不做期待择优)。
  *  之前的 pickBest 4选1 是 Expectancy 公式 + Critic 式多选一的自创混搭(IMP 两套机制独立、
  *  默认都关),会偏向选密集流畅候选、放大「突然密集」→ 已移除,回归 IMP 单条。
- *  brickNameAtSlot 喂 RoadMap 功能块名 → grammar 的 (builtin brick X) 按功能加权选 lick。 */
+ *
+ *  ── 逐功能块贴句(ACTIVATE_BRICK_GATING + 有 roadmap)──
+ *  单条整首跑时,P 的时长权重阶梯(1..1e6)让它一次选一条最长 lick 铺满全曲,只命中开头那块砖。
+ *  这里改为「按 roadmap 功能块切段、每段单独跑 grammar 并强制该段功能名」,让 brick 逐块落位:
+ *  每个终止/转折/POT 各自挑到匹配的真人 lick。各段产出抽象 token 拼接(g.run 已 truncate 到段长,
+ *  位置不漂),最后 realize 一次(在整首 cp 上,绝对位置正确)→ 再交给下游 rectify/swing。
+ *  详见 docs/improvisor-brick-grammar-dead-feature.md。无 roadmap → 退回单条整首跑。 */
 function grammarFull(name: string, song: Song): SlotNote[] | null {
     const g = getGrammar(name);
     if (!g) return null;
     const cp = song.cp;
     const total = cp.getTotalSlots();
+    const lp = lickGenParamsFrom(g.getParameters());   // 忠实 IMP:realize 用本条 grammar 自己的音域/音程
+
+    if (ACTIVATE_BRICK_GATING && song.analysis && song.analysis.length > 0) {
+        const segs = brickSegments(song);
+        if (segs.length > 0) {
+            const abstract = segs.flatMap(seg => {
+                if (seg.end <= seg.start) return [];
+                const ctx: GrammarChordContext = {
+                    familyAtSlot: (localSlot) => cp.getCurrentChord(seg.start + localSlot)?.getFamily() ?? null,
+                    brickNameAtSlot: () => seg.brick,           // 整段锁定该功能块 → brick 逐块匹配
+                };
+                return g.run(seg.end - seg.start, ctx);
+            });
+            return realize(abstract, cp, lp).filter(n => n.startSlot < total);
+        }
+    }
+
     const ctx: GrammarChordContext = {
         familyAtSlot: (slot) => cp.getCurrentChord(slot)?.getFamily() ?? null,
         brickNameAtSlot: (slot) => brickAtSlot(song, slot),
     };
-    return realize(g.run(total, ctx), cp).filter(n => n.startSlot < total);
+    return realize(g.run(total, ctx), cp, lp).filter(n => n.startSlot < total);
 }
 
 // 起始音级加权随机:3/7 是 guide tone 核心(最高权),1 次之,5 最低。
@@ -125,53 +161,6 @@ function applyStyleTransform(notes: SlotNote[], cp: ChordPart, name: string): Sl
     }
 }
 
-// ============================================================
-// 机制 B —— 乐句留白(phrase breathing)
-// ------------------------------------------------------------
-// Impro-Visor 靠 chorus 边界 / trading padding 给乐句间留白;我们整曲一次
-// 生成,把多个 lick 无缝拼成长串(审计见 27 连音不喘气)。这里在【子乐句边界】
-// (每 phraseBars 个 bar,从 song 的 roman 自重复检测)给旋律换气:把跨越边界
-// 的音截到边界、并在边界前留出一段短休止,让密集流在乐句接缝处自然断开。
-// 不消灭密集(级进跑动是 bebop 本色),只在乐句呼吸点切断超长无喘息的连缀。
-// ============================================================
-
-const BREATH_SLOTS = 90; // 换气留白时长(略短于八分,~3/16 拍)
-
-function breathe(notes: SlotNote[], song: Song): SlotNote[] {
-    const phraseSlots = song.phraseBars * BAR;
-    if (phraseSlots <= 0 || phraseSlots >= song.totalSlots) return notes; // 整曲一句 → 不换气
-    const out: SlotNote[] = [];
-    // 每个子乐句边界(phraseSlots, 2×, 3×... 不含曲尾)前留出 BREATH_SLOTS 静默
-    for (const n of notes) {
-        if (n.pitch < 0) { out.push(n); continue; }
-        const end = n.startSlot + n.durationSlots;
-        // 该音跨越或贴住某个乐句边界?找它之后最近的边界
-        const nextBoundary = Math.ceil((n.startSlot + 1) / phraseSlots) * phraseSlots;
-        if (nextBoundary < song.totalSlots && end > nextBoundary - BREATH_SLOTS) {
-            // 截到 (边界 - 换气);太短(<30)则整音丢弃,避免碎渣
-            const newDur = nextBoundary - BREATH_SLOTS - n.startSlot;
-            if (newDur >= 30) out.push({ ...n, durationSlots: newDur });
-            // else: 落在换气窗内的音直接吃掉(成为留白的一部分)
-        } else {
-            out.push(n);
-        }
-    }
-    return out;
-}
-
-/** 把整曲最后一个发声音改写成 ≤ 它的最近主音 —— 给曲尾一个解决感 */
-function resolveToTonic(notes: SlotNote[], keyRoot: number): SlotNote[] {
-    const out = clone(notes);
-    for (let i = out.length - 1; i >= 0; i--) {
-        const n = out[i]!;
-        if (n.pitch < 0) continue;
-        const down = (((n.pitch % 12) + 12) % 12 - keyRoot + 12) % 12; // 落到 ≤ 当前音的最近主音
-        n.pitch = n.pitch - down;
-        break;
-    }
-    return out;
-}
-
 export interface Phrase {
     melody: SlotNote[];
     chords: SlotNote[];
@@ -179,26 +168,23 @@ export interface Phrase {
 }
 
 /**
- * 主入口 — 全面拥抱 Impro-Visor 管道:在整首 changes 上生成一条连贯旋律,
- * 过后处理(Transform 装饰 → Divide 概率细分)→ 遮罩 → 返回。
- * 不再有 2-bar motif / form 复制 / 句式层(句式结构交给 grammar/GT 自身)。
- * resolveEnd=true 时,把最后一个发声音落主音给个结束感。
+ * 主入口 — IMP 原生旋律链路:在整首 changes 上生成一条连贯旋律 →
+ * transform 装饰 → rectify 吸附,即 Impro-Visor 本来的「(Grammar 链路 或 GuideTone 链路)
+ * + transform + rectify」。之后 swing(回放手感)。
+ * 已收敛:删去 Divide / 换气 / 落主音 / faithful 双模式等非原生发展层(参考 IMP)。
  */
-export function buildPhrase(source: MotifSource, song: Song, opts: { transform?: string; divideProb?: number; resolveEnd?: boolean; breath?: boolean } = {}): Phrase {
-    const { cp, keyRoot } = song;
+export function buildPhrase(source: MotifSource, song: Song, opts: { transform?: string } = {}): Phrase {
+    const { cp } = song;
     const transform = opts.transform && opts.transform !== 'off' ? opts.transform : null;
-    const divideProb = opts.divideProb ?? 0;
-
     const route = routeFor(song.macro);
+    // IMP 原生链路:生成 → transform(IMP .transform 库装饰)→ rectify(吸附当前和弦音阶)→ swing
     let melody = buildFullMelody(source, song);
     if (transform) melody = applyStyleTransform(melody, cp, transform);
-    if (divideProb > 0 && Math.random() < divideProb) melody = fractalDivide(melody, { numTimes: 1 });
-    melody = rectify(melody, cp); // IMP 纯 rectify:吸附到当前和弦音阶
-    if (opts.breath !== false) melody = breathe(melody, song); // 机制 B:乐句边界换气(默认开)
-    if (opts.resolveEnd) melody = resolveToTonic(melody, keyRoot);
-    melody = swingEighths(melody, route.melodySwing); // 连音感知 swing(只 warp 主拍八分,不压连音)
+    melody = rectify(melody, cp);
+    melody = swingEighths(melody, route.melodySwing);
 
     let chords = buildBacking(song);
+    chords = applySectionTexture(chords, song); // 段落织体包络:INTRO/OUTRO 点缀(稀疏),VERSE+ 全织体
     chords = swingEighths(chords, route.compSwing);
 
     return {
@@ -258,6 +244,31 @@ function buildBacking(song: Song): SlotNote[] {
         for (const p of uniq) {
             out.push({ pitch: p, startSlot: span.start, durationSlots: span.end - span.start, velocity: 64 });
         }
+    }
+    return out;
+}
+
+/** 段落织体包络:伴奏织体在一个结构内保持一致,切换结构时变形。
+ *  INTRO/OUTRO → 点缀(只留每小节起拍的和弦、缩短成 stab、降力度 → 稀疏铺垫);
+ *  VERSE/CHORUS/BRIDGE → 全织体(原样保留 mg/手写 voicing)。
+ *  对 mgTexture(drop2)与手写 voicing 都生效(纯过滤输出 SlotNote,不动 voicing 美学)。
+ *  无 sections(默认 song)→ 原样返回。 */
+function applySectionTexture(comp: SlotNote[], song: Song): SlotNote[] {
+    const secs = song.sections;
+    if (!secs || secs.length === 0) return comp;
+    const isSparse = (slot: number): boolean => {
+        const bar = Math.floor(slot / BAR);
+        const sec = secs.find(s => bar >= s.startBar && bar < s.startBar + s.bars);
+        return sec ? (sec.function === 'INTRO' || sec.function === 'OUTRO') : false;
+    };
+    const out: SlotNote[] = [];
+    for (const n of comp) {
+        if (!isSparse(n.startSlot)) { out.push(n); continue; }
+        // 点缀:只保留落在小节第一拍的和弦音,缩成 ≤ 半小节的 stab,力度 ×0.75
+        if (n.startSlot % BAR < 120) {
+            out.push({ ...n, durationSlots: Math.min(n.durationSlots, 240), velocity: Math.round((n.velocity ?? 64) * 0.75) });
+        }
+        // 其余(过第一拍的)丢弃 → 稀疏
     }
     return out;
 }

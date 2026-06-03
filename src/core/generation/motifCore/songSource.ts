@@ -15,6 +15,7 @@
 import { ChordPart, makeChordSymbol, MEASURE_LENGTH } from '../improCore/engine';
 import type { SlotNote } from '../improCore/engine';
 import { Engine, Random, harmonicFunctionFromRoman, type GenerationConfig, type ChordDef, type NoteEvent } from '../mgEngine/musicEngine';
+import type { SongSection } from '../mgEngine/songForm';
 import { chordScaleFor, scalePcsForMode } from '../mgEngine/musicTheory';
 import { parseRoadMap } from '../mgEngine/roadmapParser';
 import { STYLE_DICTIONARY, type StyleName, type BorrowedSource } from '../mgEngine/styleDictionary';
@@ -101,6 +102,8 @@ export interface Song {
     phraseBars: number;
     /** macro 风格(伴奏三轨按它路由 IMP style)。默认 song = POP。 */
     macro: MacroStyle;
+    /** 曲式段落(mg 曲式层产出:INTRO/VERSE/CHORUS/BRIDGE/OUTRO 跨度);SmartGen 有,默认 song 无。 */
+    sections?: SongSection[];
 }
 
 const ROOT_LETTER: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -134,7 +137,7 @@ function detectPhraseBars(analysis: ChordAnalysis[] | undefined, barCount: numbe
     return barCount;
 }
 
-function buildSong(leadsheet: string, key: string, label: string, macro: MacroStyle, analysis?: ChordAnalysis[]): Song {
+function buildSong(leadsheet: string, key: string, label: string, macro: MacroStyle, analysis?: ChordAnalysis[], sections?: SongSection[]): Song {
     const cp = ChordPart.fromText(leadsheet);
     const totalSlots = cp.getTotalSlots();
     const barCount = Math.round(totalSlots / MEASURE_LENGTH);
@@ -148,6 +151,7 @@ function buildSong(leadsheet: string, key: string, label: string, macro: MacroSt
         analysis,
         phraseBars: detectPhraseBars(analysis, barCount),
         macro,
+        sections,
     };
 }
 
@@ -246,7 +250,8 @@ export function smartGenSong(): Song {
 
     const config: GenerationConfig = { seed, style, key, emotion: 'auto' };
     const engine = new Engine(new Random(seed));
-    const chords = engine.generateProgressions(config);
+    // 曲式层(mg):先抽段落骨架,逐段生成进行 → 整首 48-64 小节 + 段落元数据。
+    const { chords, sections } = engine.generateSongForm(config);
     const mode = engine.resolveGeneration(config).mode; // 'Major'/'Minor'/exotic
 
     // mg 编曲器:在同源 chords 上演绎风格化伴奏织体(drop2/rootless comping + bass)。
@@ -263,6 +268,7 @@ export function smartGenSong(): Song {
 
     const leadsheet = toLeadsheet(chords);
     const analysis = extractAnalysis(chords, rootPc(key), mode);
-    const song = buildSong(leadsheet, key, '', macroFromMgStyle(style), analysis);
-    return { ...song, mgTexture, label: `SmartGen · ${style} · ${key} · ${mode} · ${song.barCount} 小节` };
+    const song = buildSong(leadsheet, key, '', macroFromMgStyle(style), analysis, sections);
+    const formLabel = sections.map(s => s.label.replace(/ \d+$/, '')).filter((v, i, a) => a[i - 1] !== v).join('-');
+    return { ...song, mgTexture, label: `SmartGen · ${style} · ${key} · ${mode} · ${song.barCount} 小节 · ${formLabel}` };
 }

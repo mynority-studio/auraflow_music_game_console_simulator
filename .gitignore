@@ -15,7 +15,9 @@ scripts/*.h
 .claude/scheduled_tasks.lock
 
 
-.oracle-build
+# oracle 用的本地 JDK(temurin,324M,勿入库)
+.deps/
+# 注:.oracle-build(编译好的 IMP oracle 类,~15M)纳入 git,使 oracle 测试自包含、不依赖外部 IMP clone
 # 生成的音乐日志 / 调试产物
 tmp/
 

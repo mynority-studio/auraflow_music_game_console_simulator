@@ -54,6 +54,24 @@ export const DEFAULT_PARAMS: LickGenParams = {
     minPitch: 58, maxPitch: 82, minInterval: 0, maxInterval: 6,
 };
 
+/** 从 grammar 的 (parameter …) Map 取 LickGen 参数 —— 忠实 IMP:每条 grammar 用自己的音域/音程,
+ *  而非全局写死(默认值恰好=MilesDavis,导致其它 grammar 误用 MilesDavis 音域)。缺项回退默认。
+ *  注:chord/color/scale-tone-weight、rest/leap-prob、min/max-duration 属 IMP 非 grammar 的
+ *  fillMelody 路(NoteChooser 用固定表,已 oracle 验证),grammar-realize 路不消费 → 此处不取。 */
+export function lickGenParamsFrom(params: ReadonlyMap<string, unknown>): LickGenParams {
+    const num = (key: string, dflt: number): number => {
+        const v = params.get(key);                          // ROM grammar 存字符串,fromText 存 number → 都兼容
+        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+        return Number.isFinite(n) ? n : dflt;
+    };
+    return {
+        minPitch: num('min-pitch', DEFAULT_PARAMS.minPitch),
+        maxPitch: num('max-pitch', DEFAULT_PARAMS.maxPitch),
+        minInterval: num('min-interval', DEFAULT_PARAMS.minInterval),
+        maxInterval: num('max-interval', DEFAULT_PARAMS.maxInterval),
+    };
+}
+
 // ------------------------------------------------------------
 // per-family diatonic 级(1-7)→ 半音偏移(LickGen.makeRelativeNote 内联表)
 // 下标 = 级数(1-7);级 1 → 0
@@ -251,6 +269,27 @@ export function makeRelativeNote(item: GList, chord: Chord): { pitch: number; du
     return { pitch, duration };
 }
 
+// APPROACH(`A` 音)= 趋近/包围:落在目标音的上/下半音。忠实 IMP LickGen.fillMelody。
+// 一般路径(LickGen.java:2322-2345):50/50 上下,但避开等于上一音(oldPitch)。
+function generalApproachPitch(target: number, oldPitch: number): number {
+    if (target + 1 === oldPitch) return target - 1;
+    if (target - 1 === oldPitch) return target + 1;
+    return Math.random() < 0.5 ? target + 1 : target - 1;
+}
+// slope 路径(LickGen.java:2069-2101):方向随 slope 轮廓正负;同样避开 oldPitch。
+function slopeApproachPitch(target: number, oldPitch: number, lo: number, hi: number): number {
+    if (target + 1 === oldPitch) return target - 1;
+    if (target - 1 === oldPitch) return target + 1;
+    if (lo === 0 || hi === 0) {
+        if (hi > 0) return target - 1;
+        if (lo < 0) return target + 1;
+        return target - 1;                 // lo==hi==0 兜底(IMP 此处未定义,取下趋近)
+    }
+    if (lo > 0) return target - 1;         // 上行轮廓 → 从下方半音趋近
+    if (hi < 0) return target + 1;         // 下行轮廓 → 从上方半音趋近
+    return target - 1;
+}
+
 // ------------------------------------------------------------
 // 主入口:抽象旋律 → 具体音符
 // ------------------------------------------------------------
@@ -266,7 +305,8 @@ export function realize(abstractMelody: GList, chordPart: ChordPart, params: Lic
     };
     const emitRest = (dur: number) => { out.push({ pitch: REST, startSlot: position, durationSlots: dur }); position += dur; };
 
-    for (const item of abstractMelody) {
+    for (let i = 0; i < abstractMelody.length; i++) {
+        const item = abstractMelody[i]!;
         // scaleDegree (X deg dur)
         if (isScaleDegree(item)) {
             const chord = chordPart.getCurrentChord(position);
@@ -288,6 +328,24 @@ export function realize(abstractMelody: GList, chordPart: ChordPart, params: Lic
                 if (typeof inner !== 'string') continue;
                 const { type, duration } = parseNote(inner);
                 if (type === REST) { emitRest(duration); continue; }
+                // slope 内 APPROACH:消费下一个 inner token 当 target(类型取自该 token),
+                // A 落 target±半音(方向随 slope 轮廓),再依次发 approach + target。忠实 IMP slope/approach。
+                if (type === APPROACH) {
+                    const nextInner = sl[k + 1];
+                    if (typeof nextInner === 'string') {
+                        const tgt = parseNote(nextInner);
+                        if (tgt.type !== REST) {
+                            const targetPitch = chooseNote(position + duration, oldPitch + lo, oldPitch + hi, chordPart, tgt.type, oldPitch, minPitch, maxPitch);
+                            emit(slopeApproachPitch(targetPitch, oldPitch, lo, hi), duration);
+                            emit(targetPitch, tgt.duration); oldPitch = targetPitch;
+                            k++;                              // 已消费 target
+                            continue;
+                        }
+                    }
+                    const pitch = chooseNote(position, oldPitch + lo, oldPitch + hi, chordPart, RANDOM, oldPitch, minPitch, maxPitch);
+                    emit(pitch, duration); oldPitch = pitch;  // 无合法 target → 普通 slope 选音
+                    continue;
+                }
                 const pitch = chooseNote(position, oldPitch + lo, oldPitch + hi, chordPart, type, oldPitch, minPitch, maxPitch);
                 emit(pitch, duration); oldPitch = pitch;
             }
@@ -302,6 +360,24 @@ export function realize(abstractMelody: GList, chordPart: ChordPart, params: Lic
             const { type, duration } = parseNote(item);
             if (type === REST) { emitRest(duration); continue; }
             const chord = chordPart.getCurrentChord(position);
+            // 一般 APPROACH:消费下一个 token 当 target(强制和弦音,贴近上一音),A 落 target±半音(50/50,避开上一音),
+            // 依次发 approach + target。忠实 IMP LickGen.fillMelody APPROACH 分支。
+            if (type === APPROACH) {
+                const next = abstractMelody[i + 1];
+                if (typeof next === 'string') {
+                    const tgt = parseNote(next);
+                    if (tgt.type !== REST) {
+                        const targetPitch = pickValidNote(chord, CHORD, oldPitch, minInterval, maxInterval, minPitch, maxPitch);
+                        emit(generalApproachPitch(targetPitch, oldPitch), duration);
+                        emit(targetPitch, tgt.duration); oldPitch = targetPitch;
+                        i++;                                  // 已消费 target
+                        continue;
+                    }
+                }
+                const pitch = pickValidNote(chord, RANDOM, oldPitch, minInterval, maxInterval, minPitch, maxPitch);
+                emit(pitch, duration); oldPitch = pitch;      // 下一个非普通音/末尾 → 退回随机音(IMP approach->random)
+                continue;
+            }
             const useType = (type === RANDOM || !chord || chord.isNOCHORD()) ? RANDOM : type;
             const pitch = pickValidNote(chord, useType, oldPitch, minInterval, maxInterval, minPitch, maxPitch);
             emit(pitch, duration); oldPitch = pitch;

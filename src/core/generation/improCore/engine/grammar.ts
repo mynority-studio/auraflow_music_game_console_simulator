@@ -37,6 +37,18 @@ const MUSE_SWITCH = 'muse-switch';
 const MUSE_DEFAULT = 'default';
 const NONE = 'none';
 
+// === EXPERIMENT 开关:激活 brick 功能门控 ===
+// 详见 docs/improvisor-brick-grammar-dead-feature.md。
+// IMP commit 91b6607f(2015-08-14)给 brick lick 规则多加了第 5 字段 "1.0"(artificial
+// probability),4 段变 5 段;次日 3bcdb184 用该格式重生成了全部 grammar。findRule 的
+// length==4 守卫从此静默跳过全部 ~12000 条 brick 规则 → 「按和声功能选 lick」从未生效。
+//   true  = 同时接受 5 段 brick 规则(权重 = 第 4 段 = (builtin brick X)),激活 brick 门控。
+//   false = 原版(坏)行为:只认 4 段,brick 失效(= 纯忠实移植)。
+// ⚠️ true 偏离纯忠实移植 + 明显改听感(brick 岔路与"学来乐句"岔路 ~50/50,需 roadmap 才生效;
+//    无 roadmap 时为 no-op:brick 权重=ZERO→不入候选→输出不变)。改回 false 即回退。
+// 必须与 IMP Grammar.ACTIVATE_BRICK_GATING 保持一致(否则 oracle 对照会失配)。
+export const ACTIVATE_BRICK_GATING = true;
+
 // 安全上限(防病态 grammar 死循环)
 const SAFETY = 200000;
 // 连续多少次推导不减少剩余 slot 即判定卡死,提前退出
@@ -308,7 +320,9 @@ export class Grammar {
                 // Java findRule 里 base 的 addToList 被注释 → 不参与
                 continue;
             }
-            if (type === RULE && next.length === 4) {
+            // ACTIVATE_BRICK_GATING:同时接受 5 段 brick 规则
+            // (rule lhs rhs (builtin brick X) 1.0);权重取第 4 段 next[3](brick 条件),第 5 段忽略。
+            if (type === RULE && (next.length === 4 || (ACTIVATE_BRICK_GATING && next.length === 5))) {
                 const rawLHS = next[1]!;
                 const rawRHS = next[2]!;
                 const lhs: GList = isGList(rawLHS) ? rawLHS : [rawLHS];
@@ -412,8 +426,8 @@ export class Grammar {
         if (arg1 === 'brick') {
             if (typeof arg2 !== 'string') return 0;
             const name = this.ctx ? this.ctx.brickNameAtSlot(this.chordSlot) : null;
-            if (name === null) return 0.1;                 // 无 roadmap → 保活权重(= IMP "不匹配" 值)
-            return name === arg2 ? 1 : 0.1;
+            if (name === null) return 0;                   // 无 roadmap block → ZERO(忠实 IMP:currentBlock==null return ZERO)
+            return name === arg2 ? 1 : 0.1;                // 匹配=1,不匹配=0.1(IMP 原版值)
         }
         return 0;                                          // 其它 builtin:Phase 2 暂返 0
     }

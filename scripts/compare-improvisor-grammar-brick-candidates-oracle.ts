@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Grammar, type GrammarChordContext } from '../src/core/generation/improCore/engine/grammar';
+import { Grammar, type GrammarChordContext, ACTIVATE_BRICK_GATING } from '../src/core/generation/improCore/engine/grammar';
 import { type GList, type GVal, isGList } from '../src/core/generation/improCore/engine/terminals';
 import { parseScales, parseVocab, setActiveScales, setActiveVocab } from '../src/core/generation/improCore/engine/vocab';
 
@@ -21,7 +21,19 @@ interface JavaCandidates {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
-const runOracle = join(repo, 'scripts/run-improvisor-oracle.sh');
+const runOracle = process.platform === 'win32'
+  ? join(repo, 'scripts/run-improvisor-oracle.cmd')
+  : join(repo, 'scripts/run-improvisor-oracle.sh');
+const oracleCommand = process.platform === 'win32' ? 'cmd.exe' : runOracle;
+const improvisorRoot = process.env.IMPROVISOR_ROOT ?? 'Z:\\Impro-Visor';
+const oracleBuild = process.env.IMPROVISOR_ORACLE_BUILD ?? join(repo, '.oracle-build/improvisor-java');
+const oracleClasspath = [
+  oracleBuild,
+  join(improvisorRoot, 'src'),
+  join(improvisorRoot, 'src/builtin.jar'),
+  join(improvisorRoot, 'src/lang.jar'),
+  join(improvisorRoot, 'lib/*'),
+].join(process.platform === 'win32' ? ';' : ':');
 const grammarDir = join(repo, 'src/core/generation/improCore/data/grammars');
 const START_SLOTS = 1920;
 const BRICK_SLOT_LENGTH = 480;
@@ -79,7 +91,8 @@ function tsCandidates(grammar: Grammar, token: GList, chordSlot: number, ctx: Gr
   const out: Candidate[] = [];
   for (const next of g.getRules()) {
     if (!isGList(next) || next.length === 0 || typeof next[0] !== 'string') continue;
-    if (next[0] !== 'rule' || next.length !== 4) continue;
+    // Mirror Grammar.findRule: ACTIVATE_BRICK_GATING also accepts 5-field brick rules (weight from next[3]).
+    if (next[0] !== 'rule' || (next.length !== 4 && !(ACTIVATE_BRICK_GATING && next.length === 5))) continue;
     const rawLHS = next[1]!;
     const rawRHS = next[2]!;
     const lhs: GList = isGList(rawLHS) ? rawLHS : [rawLHS];
@@ -105,12 +118,17 @@ function tsCandidates(grammar: Grammar, token: GList, chordSlot: number, ctx: Gr
 function javaCandidatesBatch(grammarFile: string, brickSpec: string, items: Array<{ slot: number; token: GList }>, tmp: string): Map<string, Candidate[]> {
   const tokenFile = join(tmp, `${basename(grammarFile)}.brick.tokens`);
   writeFileSync(tokenFile, items.map(item => `${item.slot}\t${toSexpr(item.token)}`).join('\n'));
-  const out = execFileSync(runOracle, ['grammar-candidates-batch-bricks', grammarFile, String(START_SLOTS), brickSpec, tokenFile], {
+  const args = ['grammar-candidates-batch-bricks', grammarFile, String(START_SLOTS), brickSpec, tokenFile];
+  const out = execFileSync(
+    process.platform === 'win32' ? 'java' : oracleCommand,
+    process.platform === 'win32' ? ['-cp', oracleClasspath, 'ImprovisorOracle', ...args] : args,
+    {
     cwd: repo,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: 256 * 1024 * 1024,
-  }).trim();
+    },
+  ).trim();
   const parsed = JSON.parse(out) as JavaCandidates;
   return new Map(parsed.items.map(item => [itemKey(item.chordSlot, item.token), item.candidates]));
 }

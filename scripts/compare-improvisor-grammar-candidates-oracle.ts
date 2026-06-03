@@ -20,7 +20,10 @@ interface JavaCandidates {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
-const runOracle = join(repo, 'scripts/run-improvisor-oracle.sh');
+const runOracle = process.platform === 'win32'
+  ? join(repo, 'scripts/run-improvisor-oracle.cmd')
+  : join(repo, 'scripts/run-improvisor-oracle.sh');
+const oracleCommand = process.platform === 'win32' ? 'cmd.exe' : runOracle;
 const grammarDir = join(repo, 'src/core/generation/improCore/data/grammars');
 const START_SLOTS = 1920;
 const MAX_TOKENS_PER_GRAMMAR = 2000;
@@ -46,7 +49,8 @@ function toSexpr(value: GVal): string {
 function javaCandidatesBatch(grammarFile: string, tokens: GList[], tmp: string): Map<string, Candidate[]> {
   const tokenFile = join(tmp, `${basename(grammarFile)}.tokens`);
   writeFileSync(tokenFile, tokens.map(toSexpr).join('\n'));
-  const out = execFileSync(runOracle, ['grammar-candidates-batch', grammarFile, String(START_SLOTS), tokenFile], {
+  const args = ['grammar-candidates-batch', grammarFile, String(START_SLOTS), tokenFile];
+  const out = execFileSync(oracleCommand, process.platform === 'win32' ? ['/c', runOracle, ...args] : args, {
     cwd: repo,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],

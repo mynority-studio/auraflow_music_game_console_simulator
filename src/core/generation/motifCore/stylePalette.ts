@@ -35,7 +35,7 @@ export const STYLE_ROUTES: Record<MacroStyle, StyleRoute> = {
     POP:   { source: 'imp', impStyle: 'rock-medium-even', compSwing: 0.5,  melodySwing: 0.5,  usePedal: true,  note: 'straight-8 + backbeat 鼓' },
     JAZZ:  { source: 'imp', impStyle: 'swing', compSwing: 0.67, melodySwing: 0.67, usePedal: false, note: 'swing 0.67 + walking;不踩踏板(靠断奏)' },
     RNB:   { source: 'imp', impStyle: 'rhythm-and-blues', compSwing: 0.5,  melodySwing: 0.5,  usePedal: true,  note: 'funk/soul 切分' },
-    BLUES: { source: 'imp', impStyle: 'shuffle',          compSwing: 0.55, melodySwing: 0.67, usePedal: false, note: 'shuffle;不踩踏板' },
+    BLUES: { source: 'imp', impStyle: 'shuffle',          compSwing: 0.67, melodySwing: 0.67, usePedal: false, note: 'shuffle 三连(整队同比 0.67,旋律/节奏组反拍对齐);不踩踏板' },
     LOFI:  { source: 'mg',                                compSwing: 0.5,  melodySwing: 0.5,  usePedal: true,  note: 'IMP 无真 lofi → mg 宽排织体,踩踏板' },
 };
 

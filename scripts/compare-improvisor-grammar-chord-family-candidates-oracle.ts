@@ -22,7 +22,10 @@ interface JavaCandidates {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
-const runOracle = join(repo, 'scripts/run-improvisor-oracle.sh');
+const runOracle = process.platform === 'win32'
+  ? join(repo, 'scripts/run-improvisor-oracle.cmd')
+  : join(repo, 'scripts/run-improvisor-oracle.sh');
+const oracleCommand = process.platform === 'win32' ? 'cmd.exe' : runOracle;
 const grammarFile = join(repo, 'src/core/generation/improCore/data/grammars/Bergonzi-method.grammar');
 const START_SLOTS = 1920;
 const CHORD_SPEC = 'Cmaj7:480,Dm7:480,G7:480,Bm7b5:480,Cdim7:480,Caug7:480,C7sus4:480';
@@ -70,7 +73,8 @@ function chordPartFromSpec(chordSpec: string): ChordPart {
 function javaCandidatesBatch(items: Array<{ slot: number; token: GList }>, tmp: string): Map<string, Candidate[]> {
   const tokenFile = join(tmp, `${basename(grammarFile)}.chord-family.tokens`);
   writeFileSync(tokenFile, items.map(item => `${item.slot}\t${toSexpr(item.token)}`).join('\n'));
-  const out = execFileSync(runOracle, ['grammar-candidates-batch-chords', grammarFile, String(START_SLOTS), CHORD_SPEC, tokenFile], {
+  const args = ['grammar-candidates-batch-chords', grammarFile, String(START_SLOTS), CHORD_SPEC, tokenFile];
+  const out = execFileSync(oracleCommand, process.platform === 'win32' ? ['/c', runOracle, ...args] : args, {
     cwd: repo,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
