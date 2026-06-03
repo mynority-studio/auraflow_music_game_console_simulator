@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { motion, useDragControls } from 'motion/react';
 import { AudioEngine } from '../core/audio/AudioEngine';
 import { Settings2, X, Music, Piano, Volume2, SlidersHorizontal } from 'lucide-react';
+import { useDevPanelChannel } from './devPanels';
 
 export const VolumeController: React.FC = () => {
     const [isVisible, setIsVisible] = useState(false);
+    // 左侧 DevDock 入口(点击切换 + 高亮同步);Q+E 键盘逻辑仍保留
+    useDevPanelChannel('volume', isVisible, setIsVisible);
     const dragControls = useDragControls();
     const [state, setState] = useState({
         volumes: { master: 14, melody: 0, accomp: 2, bass: 7 },

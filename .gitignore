@@ -13,3 +13,5 @@ scripts/*.h
 # Claude Code 本地设置（机器/会话特定，不应提交）
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+.deps

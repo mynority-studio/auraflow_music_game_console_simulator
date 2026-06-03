@@ -21,6 +21,7 @@ import {
 } from '../engine';
 import { playSlotNotes, playTracks, stopPlayback, type SlotNote } from './audioOut';
 import { smartGen, getMgContext, renderMgTexture } from './smartGen';
+import { useDevPanelChannel } from '../../../../components/devPanels';
 
 // Phase 6:生成 N 条 solo,按 Expectancy 平均期待择优(更平滑连贯)
 const SOLO_CANDIDATES = 4;
@@ -113,6 +114,9 @@ export function ImproCorePanel(): React.ReactElement | null {
     const [status, setStatus] = useState('就绪');
     const heldKeys = useRef<Set<string>>(new Set());
     const lastSmartGenTokens = useRef<string>(''); // 最近一次 SmartGen 填入的串(判断 mg texture 是否仍同源)
+
+    // 左侧 DevDock 入口(点击切换 + 高亮同步);Q+I 键盘逻辑仍保留在下方
+    useDevPanelChannel('improcore', open, setOpen);
 
     // 全局 Q+I 调出 / Esc 关闭
     useEffect(() => {

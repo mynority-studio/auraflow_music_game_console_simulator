@@ -27,6 +27,7 @@ import { BandSelectionStore } from '../state/BandSelectionStore';
 import { MgStyleStore, MG_STYLE_OPTIONS, type MgStyle } from '../state/MgStyleStore';
 import { MgKeyStore, MG_KEY_OPTIONS, type MgKey } from '../state/MgKeyStore';
 import { MgSeedStore, hashSeedToInt } from '../state/MgSeedStore';
+import { useDevPanelChannel } from './devPanels';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -195,6 +196,8 @@ const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
 
 export const PipelineMonitor: React.FC = () => {
     const [isVisible, setIsVisible] = useState(true);
+    // 左侧 DevDock 入口(点击切换 + 高亮同步);Q+H 键盘逻辑仍保留
+    useDevPanelChannel('pipeline', isVisible, setIsVisible);
     const [frame, setFrame] = useState<FrameSnapshot>({
         arranged: null, context: null, beat: 0, seed: 0,
     });
