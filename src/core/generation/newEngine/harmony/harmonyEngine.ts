@@ -128,12 +128,21 @@ export function buildHarmonicPlanFromArrangement(
   const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
   const hrng = rng.substream('harmony');
   const resolved: ResolvedChord[] = [];
+  // ★ 铁律9:同 repeatGroup 共享同一进行(verse1≡verse2)→ 真排比 + 复现 hook 的 global 安全音一致
+  const degreesByGroup = new Map<string, number[]>();
 
   for (const section of arrangement.sections) {
     const chordsPerBar = arrangement.harmonicRhythmTarget.chordsPerBarBySection[section.id] ?? 1;
     const totalChords = section.bars * chordsPerBar;
     const chordDurBeats = beatsPerBar / chordsPerBar;
-    const degrees = pickProgressionDegrees(section.role as SectionRole, hrng);
+    const group = section.repeatGroup;
+    let degrees: number[];
+    if (group && degreesByGroup.has(group)) {
+      degrees = degreesByGroup.get(group)!;
+    } else {
+      degrees = pickProgressionDegrees(section.role as SectionRole, hrng);
+      if (group) degreesByGroup.set(group, degrees);
+    }
 
     for (let j = 0; j < totalChords; j++) {
       const degree = degrees[j % degrees.length];

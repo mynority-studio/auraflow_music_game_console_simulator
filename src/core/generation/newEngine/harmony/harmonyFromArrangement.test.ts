@@ -39,6 +39,12 @@ describe('harmony · Band→Arranger→Harmony 端到端', () => {
     if (v) expect(v.quality).toBe('7');
   });
 
+  it('★ 铁律9 排比:verse1 与 verse2 进行相同;chorus1 与 chorus2 相同', () => {
+    const roots = (sid: string) => plan.chordTimeline.filter((c) => c.sectionId === sid).map((c) => c.rootPc);
+    expect(roots('verse1')).toEqual(roots('verse2'));
+    expect(roots('chorus1')).toEqual(roots('chorus2'));
+  });
+
   it('深不可变 + 每 span 有张力表', () => {
     expect(Object.isFrozen(plan)).toBe(true);
     for (const c of plan.chordTimeline) {
