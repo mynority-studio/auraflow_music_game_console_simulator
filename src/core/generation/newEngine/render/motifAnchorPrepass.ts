@@ -10,16 +10,11 @@
 // Slice 1:motif 内容为占位 shape(scaleDegree [1,3,5,3]);真 grammar 变体后续接。
 // ============================================================
 
-import {
-  beats,
-  midi,
-  type Midi,
-  type PitchClass,
-  type RandomContext,
-} from '../foundation';
+import { beats, type PitchClass, type RandomContext } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
-import type { ArrangementPlan, MotifBinding } from '../arranger/ArrangementPlan';
+import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
+import { pcToMidiInRange } from '../knowledge/pitchPlacement';
 import { commonSafeToneSet, type SafeToneScope } from '../harmony/commonSafeToneQuery';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import { resolveOccurrenceSpans } from './occurrenceResolver';
@@ -42,14 +37,6 @@ export interface PrepassOutput {
 const LEAD_LOW = 67;
 const LEAD_HIGH = 84;
 const WEAK_STRENGTH = 0.3;
-
-/** pc → 落在 [low,high] 的 Midi(对齐到 low 所在八度上方最近)。 */
-function pcToMidiInRange(pc: number, low: number, high: number): Midi {
-  let m = low - (low % 12) + pc;
-  while (m < low) m += 12;
-  while (m > high) m -= 12;
-  return midi(m);
-}
 
 /** 抽象 motif(无 pitch)。Slice 1 占位 shape;identity 在 rhythmCell + head。 */
 function buildMotif(motifId: string, source: SkeletonSource): Motif {

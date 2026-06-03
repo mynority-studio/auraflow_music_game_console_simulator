@@ -3,3 +3,4 @@ export * from './chords';
 export * from './scales';
 export * from './progressions';
 export * from './tensionModel';
+export * from './pitchPlacement';

@@ -7,3 +7,4 @@ export * from './MotifStore';
 export * from './MelodyAnchorPlan';
 export * from './occurrenceResolver';
 export * from './motifAnchorPrepass';
+export * from './melodyRenderer';
