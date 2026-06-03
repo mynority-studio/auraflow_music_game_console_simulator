@@ -1,14 +1,20 @@
 // ============================================================
-// newEngine · harmony · HarmonyEngine(Slice 0 最小实现)
+// newEngine · harmony · HarmonyEngine
 // ------------------------------------------------------------
 // 架构定稿 Part 3.3:把(级数进行 + 调)落成固定 HarmonicPlan + 逐和弦三分类张力表,
-// 交付前 deepFreeze。Slice 0:tonal 大调,输入直接给 degree+quality(diatonic 质推导后续做);
-// 上游 BandSpec/Arranger 尚未建,先用最小输入桩。和声节奏 = 目标已定,这里落实 chord 时长。
+// 交付前 deepFreeze。两个入口:
+//   buildHarmonicPlan            低层:显式 key+级数+品质(测试/桩用)
+//   buildHarmonicPlanFromArrangement  高层:BandSpec + ArrangementPlan(连 Band→Arranger→Harmony)
+// 高层落实 harmonicRhythmTarget 为 chord count/duration;按 rng 子流从 ProgressionLibrary 选进行(确定性)。
 // ============================================================
 
-import { beats, mod12, type PitchClass } from '../foundation';
+import { beats, mod12, type PitchClass, type RandomContext } from '../foundation';
 import { tensionTableFor, type TensionTable } from '../knowledge/tensionModel';
+import { degreeToSemitone } from '../knowledge/scales';
+import { diatonicQuality, pickProgressionDegrees, type SectionRole } from '../knowledge/progressions';
 import type { ChordQuality } from '../knowledge/chords';
+import type { BandSpec } from '../band/BandSpec';
+import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import {
   freezeHarmonicPlan,
   type ChordSpan,
@@ -18,36 +24,25 @@ import {
   type RomanChord,
 } from './HarmonicPlan';
 
-// 大调音阶半音程(度数 1..7 → 半音)
-const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
-
-// 度数 → 功能(大调 T-S-D 粗分,Slice 0)
+// 度数 → 功能(T-S-D 粗分,Slice 1 大小调共用)
 const DEGREE_FUNCTION: Record<number, HarmonicFunction> = {
   1: 'T', 3: 'T', 6: 'T',
   2: 'S', 4: 'S',
   5: 'D', 7: 'D',
 };
 
-export interface ProgressionItem {
-  degree: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+interface ResolvedChord {
+  roman: RomanChord;
+  rootPc: PitchClass;
   quality: ChordQuality;
-  bars: number;
-  func?: HarmonicFunction; // 可覆盖默认功能
+  durationBeats: number;
+  sectionId: string;
+  func: HarmonicFunction;
 }
 
-export interface HarmonyEngineInput {
-  key: PitchClass;         // 主音 pc
-  beatsPerBar: number;
-  progression: ProgressionItem[];
-  sectionId?: string;
-}
-
-export function buildHarmonicPlan(input: HarmonyEngineInput): HarmonicPlan {
-  const { key, beatsPerBar, progression } = input;
-  if (progression.length === 0) {
-    throw new RangeError('buildHarmonicPlan(): 空进行');
-  }
-  const sectionId = input.sectionId ?? 'S0';
+// 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表)
+function assemble(resolved: ResolvedChord[]): HarmonicPlan {
+  if (resolved.length === 0) throw new RangeError('assemble(): 空和弦序列');
 
   const romanProgression: RomanChord[] = [];
   const chordTimeline: ChordSpan[] = [];
@@ -59,34 +54,27 @@ export function buildHarmonicPlan(input: HarmonyEngineInput): HarmonicPlan {
   const avoidNoteMap: Record<string, PitchClass[]> = {};
 
   let beat = 0;
-  progression.forEach((item, i) => {
-    const rootPc = mod12(key + MAJOR_SCALE[item.degree - 1]);
-    const roman: RomanChord = { degree: item.degree, accidental: 'natural', quality: item.quality };
+  resolved.forEach((rc, i) => {
     const id = `c${i}`;
-    const durationBeats = item.bars * beatsPerBar;
-    const tension = tensionTableFor(rootPc, item.quality);
-    const func = item.func ?? DEGREE_FUNCTION[item.degree] ?? 'T';
-
-    romanProgression.push(roman);
+    const tension = tensionTableFor(rc.rootPc, rc.quality);
+    romanProgression.push(rc.roman);
     chordTimeline.push({
       id,
-      roman,
-      rootPc,
-      quality: item.quality,
+      roman: rc.roman,
+      rootPc: rc.rootPc,
+      quality: rc.quality,
       startBeat: beats(beat),
-      durationBeats: beats(durationBeats),
-      sectionId,
+      durationBeats: beats(rc.durationBeats),
+      sectionId: rc.sectionId,
     });
-    chordFunctionTimeline.push(func);
+    chordFunctionTimeline.push(rc.func);
     tensionMap[id] = tension;
     stableToneMap[id] = tension.stable;
     colorToneMap[id] = tension.acceptable;
     avoidNoteMap[id] = tension.avoid;
-    // Slice 0 chordScale 暂用 stable ∪ acceptable 作"可用音"占位;proper chord-scale 后续做
     chordScaleMap[id] = [...new Set<number>([...tension.stable, ...tension.acceptable])]
       .sort((a, b) => a - b) as PitchClass[];
-
-    beat += durationBeats;
+    beat += rc.durationBeats;
   });
 
   const data: HarmonicPlanData = {
@@ -100,4 +88,66 @@ export function buildHarmonicPlan(input: HarmonyEngineInput): HarmonicPlan {
     avoidNoteMap,
   };
   return freezeHarmonicPlan(data);
+}
+
+// —— 低层:显式 key + 级数 + 品质(大调度数解析) ——
+export interface ProgressionItem {
+  degree: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  quality: ChordQuality;
+  bars: number;
+  func?: HarmonicFunction;
+}
+
+export interface HarmonyEngineInput {
+  key: PitchClass;
+  beatsPerBar: number;
+  progression: ProgressionItem[];
+  sectionId?: string;
+}
+
+export function buildHarmonicPlan(input: HarmonyEngineInput): HarmonicPlan {
+  if (input.progression.length === 0) throw new RangeError('buildHarmonicPlan(): 空进行');
+  const sectionId = input.sectionId ?? 'S0';
+  const resolved: ResolvedChord[] = input.progression.map((item) => ({
+    roman: { degree: item.degree, accidental: 'natural', quality: item.quality },
+    rootPc: mod12(input.key + degreeToSemitone(item.degree, 'major')),
+    quality: item.quality,
+    durationBeats: item.bars * input.beatsPerBar,
+    sectionId,
+    func: item.func ?? DEGREE_FUNCTION[item.degree] ?? 'T',
+  }));
+  return assemble(resolved);
+}
+
+// —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
+export function buildHarmonicPlanFromArrangement(
+  band: BandSpec,
+  arrangement: ArrangementPlan,
+  rng: RandomContext,
+): HarmonicPlan {
+  const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
+  const hrng = rng.substream('harmony');
+  const resolved: ResolvedChord[] = [];
+
+  for (const section of arrangement.sections) {
+    const chordsPerBar = arrangement.harmonicRhythmTarget.chordsPerBarBySection[section.id] ?? 1;
+    const totalChords = section.bars * chordsPerBar;
+    const chordDurBeats = beatsPerBar / chordsPerBar;
+    const degrees = pickProgressionDegrees(section.role as SectionRole, hrng);
+
+    for (let j = 0; j < totalChords; j++) {
+      const degree = degrees[j % degrees.length];
+      const quality = diatonicQuality(degree, band.mode);
+      resolved.push({
+        roman: { degree: degree as RomanChord['degree'], accidental: 'natural', quality },
+        rootPc: mod12(band.key + degreeToSemitone(degree, band.mode)),
+        quality,
+        durationBeats: chordDurBeats,
+        sectionId: section.id,
+        func: DEGREE_FUNCTION[degree] ?? 'T',
+      });
+    }
+  }
+
+  return assemble(resolved);
 }
