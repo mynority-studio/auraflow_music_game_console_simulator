@@ -1,19 +1,30 @@
 // ============================================================
-// newEngine · render · AccompanimentRenderer(Slice 0 最小实现)
+// newEngine · render · AccompanimentRenderer
 // ------------------------------------------------------------
-// 架构定稿 Part 8.2 / 3.6:伴奏先生成。Slice 0 不含让位/voicing 阶梯(无 Motif 锚点),
-// 只产基础织体:bass = 每和弦根音;comp = 每和弦稳定音块。pc-correct 配置在低/中音区。
-// 后续 slice 接 MelodyAnchorPlan 后再加让位分流 + voicing 支撑阶梯。
+// 架构定稿 Part 8.2 / 3.6 / 铁律5,16:伴奏先生成,但 melody-aware。
+// bass = 每和弦根音;comp = 每和弦稳定音块(pc-correct,低/中音区)。
+// 让位按织体分流:active 织体段在【主 hook 锚点拍】把 comp 瘦身成 3+7 guide-tone shell
+// (暴露 hook head);floating(pad/柱式)段不让位。
 // ============================================================
 
-import { midi, type Beats, type Timebase } from '../foundation';
+import { midi, mod12, type Beats, type Timebase } from '../foundation';
+import { guideToneShell } from '../knowledge/voicings';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 const BASS_BASE = 36; // C2:bass 根音区 36..47
 const COMP_BASE = 48; // C3:comp 块和弦区 48..59
 
-export function renderAccompaniment(plan: HarmonicPlan, timebase: Timebase): TrackIR[] {
+export interface YieldContext {
+  anchorBeats: Set<number>;      // 主 hook 锚点拍位(active 段在此瘦身让位)
+  activeSectionIds: Set<string>; // active 织体段(comp 让位)
+}
+
+export function renderAccompaniment(
+  plan: HarmonicPlan,
+  timebase: Timebase,
+  yieldCtx?: YieldContext,
+): TrackIR[] {
   const bassNotes: NoteIR[] = [];
   const compNotes: NoteIR[] = [];
 
@@ -21,22 +32,19 @@ export function renderAccompaniment(plan: HarmonicPlan, timebase: Timebase): Tra
     const startTick = timebase.beatToTick(span.startBeat as Beats);
     const durationTicks = timebase.beatToTick(span.durationBeats as Beats);
 
-    // bass:根音
-    bassNotes.push({
-      pitch: midi(BASS_BASE + span.rootPc),
-      startTick,
-      durationTicks,
-      velocity: 90,
-    });
+    bassNotes.push({ pitch: midi(BASS_BASE + span.rootPc), startTick, durationTicks, velocity: 90 });
 
-    // comp:稳定音(和弦音)块
-    for (const tonePc of plan.stableToneMap[span.id]) {
-      compNotes.push({
-        pitch: midi(COMP_BASE + tonePc),
-        startTick,
-        durationTicks,
-        velocity: 70,
-      });
+    const yieldHere =
+      !!yieldCtx &&
+      yieldCtx.activeSectionIds.has(span.sectionId) &&
+      yieldCtx.anchorBeats.has(span.startBeat);
+
+    const tonePcs = yieldHere
+      ? guideToneShell(span.quality).map((iv) => mod12(span.rootPc + iv)) // 瘦身成 3+7 shell
+      : plan.stableToneMap[span.id];
+
+    for (const tonePc of tonePcs) {
+      compNotes.push({ pitch: midi(COMP_BASE + tonePc), startTick, durationTicks, velocity: 70 });
     }
   }
 

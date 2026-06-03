@@ -65,7 +65,18 @@ export function renderSongFull(
   candidateSwap?: CandidateSwap,
 ): RenderResult {
   const { anchorPlan, motifStore } = runPrepass(band, arrangement, plan, rng);
-  const accompaniment = renderAccompaniment(plan, timebase);
+
+  // 让位上下文:active 织体段 + 主 hook 锚点拍(melody-aware accompaniment-first)
+  const activeSectionIds = new Set<string>();
+  for (const [sid, tex] of Object.entries(instrumentation.textureBySection)) {
+    if (instrumentation.textureYieldPolicy[tex] === 'active') activeSectionIds.add(sid);
+  }
+  const anchorBeats = new Set<number>();
+  for (const slot of instrumentation.melodyReservationPlan.hookAnchorSlots) {
+    if (slot.anchorRequired) anchorBeats.add(slot.beatSlot);
+  }
+
+  const accompaniment = renderAccompaniment(plan, timebase, { anchorBeats, activeSectionIds });
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
   const tracks: TrackIR[] = [...accompaniment, lead];
 
