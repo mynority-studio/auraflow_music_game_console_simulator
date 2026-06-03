@@ -4,4 +4,5 @@ export * from './formPlanner';
 export * from './timePlanner';
 export * from './dynamicsPlanner';
 export * from './phrasePlanner';
+export * from './phraseTiming';
 export * from './arranger';

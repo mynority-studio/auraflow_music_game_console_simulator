@@ -6,3 +6,4 @@ export * from './Motif';
 export * from './MotifStore';
 export * from './MelodyAnchorPlan';
 export * from './occurrenceResolver';
+export * from './motifAnchorPrepass';

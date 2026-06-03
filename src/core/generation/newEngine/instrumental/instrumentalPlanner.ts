@@ -9,7 +9,8 @@
 
 import { midi } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
-import type { ArrangementPlan, PhraseId, Section, SectionRole } from '../arranger/ArrangementPlan';
+import type { ArrangementPlan, Section, SectionRole } from '../arranger/ArrangementPlan';
+import { phraseStartBeats } from '../arranger/phraseTiming';
 import {
   freezeInstrumentationPlan,
   type HookAnchorSlot,
@@ -46,23 +47,6 @@ const TEXTURE_YIELD: Record<TextureKind, YieldClass> = {
   pad: 'floating',
   'sustained-block': 'floating',
 };
-
-function phraseStartBeats(arrangement: ArrangementPlan): Record<PhraseId, number> {
-  const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
-  const starts: Record<PhraseId, number> = {};
-  let beat = 0;
-  for (const section of arrangement.sections) {
-    const phrases = arrangement.phrases
-      .filter((p) => p.sectionId === section.id)
-      .slice()
-      .sort((a, b) => a.phraseSlot - b.phraseSlot);
-    for (const p of phrases) {
-      starts[p.id] = beat;
-      beat += p.bars * beatsPerBar;
-    }
-  }
-  return starts;
-}
 
 export function buildInstrumentationPlan(
   band: BandSpec,
