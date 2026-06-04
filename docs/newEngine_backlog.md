@@ -55,7 +55,7 @@
 **Tier E · 表现力 / 纠错环**
 - [x] 5.3 力度 / 微时序人性化(velocity 曲线 + 微 timing)
 - [x] 5.1 Auditor finding → 精确返回点(真用 candidateSwap/restatementOverride)
-- [ ] 5.2 撞音阶梯实战验证(构造难例跑通全阶梯)
+- [x] 5.2 撞音阶梯实战验证(构造难例跑通全阶梯)
 - [ ] 5.4 混音(各轨相对音量 / 声像)
 
 **Tier F · regime / 边界**
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 5.2 — 撞音消解阶梯:escalateOverride 按【已用 rung】单调升级 voicing 支撑(span 瘦身 shell,回卷 accompaniment)→ 降锁深度(binding restatementOverride=0.3 弱档,回卷 melody)→ 候选池换 hook(candidateSwap,回卷 melody)→ render-fallback;★ 三类 overlay 真消费(新增 render/RenderOverlay,renderSongFull 收 overlay;accompaniment 接 voicingSaferSpans 用 shell / melody 接 restatementOverride 降 effStrength 放开刚性复述);nextRetryContext 用 escalateOverride,returnPoint 跟 rung;实测阶梯逐级生效(voicing→降锁→换hook 3 rung)、只换hook 放行=4 attempts 收敛、永撞→耗 budget→failed(ir undefined 不输出非法)、6 seed 端到端仍 pass(overlay 不破正常生成);trace 显示阶梯;+4 用例 + 改 5.1 收敛例(267 绿)。无需耳朵复核(控制流;正常生成不触发)
 - 2026-06-04 5.1 — finding→精确返回点:新增 generation/retryMapping(buildRetryLocator 由 phrase 时段建 binding tick-range + chordTimeline 建 span tick-range + 候选池轮换;findingToOverride:lead→命中 binding 的 candidateSwap 切【冻结池内另一候选】/comp·bass·pad→命中 span 的 voicingSafer);nextRetryContext 接 locator 填精确 override(命中=切候选,未命中=兜底纯 rng 推进保收敛);runGenerationControl 透传 locator,generateSong 从 base prepass 建(melody/resolver/accompaniment 回卷不动 prepass 子流→swap id 跨重跑恒有效);★ 收敛证:注入 lead 撞音→映射对应 binding→2 attempts 修好(非盲推);trace 显示纠错环精确返回点;+5 用例(263 绿)。无需耳朵复核(控制流;正常生成不触发,自愈旋律本就 pass)
 - 2026-06-04 5.3 — 力度/微时序人性化:新增 render/humanize(metricAccentScale 强拍1.06/次强1.02/正拍0.97/反拍0.92 + 微随机±4% → humanizeVelocity 鼓轨跳过保 groove;humanizeTiming 起音±~7tick 有界 clamp≥0);renderSongFull 接 dynamics→humanizeVelocity→swing→【审计】→humanizeTiming(★ 关键:微时序在和声审计之后施加=网格下层,否则±tick 跨和弦边界误暴露 avoid→7 测试红已修);humanize 子流加进 StageName;实测同音力度非网格+强拍>反拍、起音偏网格有界、端到端同 seed IR 逐音一致;+6 用例(258 绿)。**需耳朵复核**(人性化幅度:太大=松垮/太小=听不出)
 - 2026-06-04 3.5 — 曲式多样:formPlanner 由单一固定模板扩为 4 模板池(verse-chorus / +bridge / double-verse / compact),planForm 接 rng → seed 选型 + intro/outro 长度变化(2/4 bar),verse/chorus 保 8 bar+repeatGroup 等长排比;arranger 接 ArrangementOptions{rng,template},generateSong/trace 传 seedRng → 真"不同 seed 不同曲式"(实测 seed0-7 出全部 4 种骨架);不变量【每模板≥1 chorus 高潮锚点】;无 rng=固定 verse-chorus(向后兼容,旧 ~20 测试不动);12 seed 端到端全收敛(非 failed);trace 显示曲式骨架+段数+小节数;+5 用例(252 绿)。**需耳朵复核**(各曲式段落衔接/桥段对比)

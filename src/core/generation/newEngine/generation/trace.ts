@@ -107,7 +107,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`■ AUDITOR    ${audit.findings.length === 0 ? 'PASS ✓(全链无 avoid 暴露)' : audit.findings.length + ' findings'}`);
   if (audit.findings.length > 0) {
     const f = audit.findings[0];
-    log(`   纠错环: finding@${f.location.trackRole}#${f.location.startTick} → 精确返回点(lead→该 binding candidateSwap 切候选 / 伴奏→voicingSafer),非盲推 rng`);
+    log(`   纠错环: finding@${f.location.trackRole}#${f.location.startTick} → 撞音消解阶梯逐级升级(voicing 支撑 → 降锁深度 → 候选池换 hook → fallback),精确定位 binding/span,非盲推 rng`);
   }
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);

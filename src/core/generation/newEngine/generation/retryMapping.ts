@@ -15,7 +15,8 @@ import type { MelodyAnchorPlan } from '../render/MelodyAnchorPlan';
 import type { CandidateSwap, MotifStore } from '../render/MotifStore';
 import type { MotifCandidateId } from '../render/Motif';
 import type { ChordSpanId, HarmonicPlan } from '../harmony/HarmonicPlan';
-import type { AuditFinding } from '../ir/AuditReport';
+import type { AuditFinding, ReturnPoint } from '../ir/AuditReport';
+import type { RetryContext } from './RetryContext';
 
 export interface RetryLocator {
   /** lead 轨某 tick → 覆盖它的 MotifBindingId(其它轨返回 undefined)。 */
@@ -84,9 +85,10 @@ export function buildRetryLocator(
 export interface OverridePatch {
   candidateSwap?: Record<MotifBindingId, MotifCandidateId>;
   voicingSafer?: Record<ChordSpanId, true>;
+  restatementOverride?: Record<MotifBindingId, number>;
 }
 
-/** finding + 上次 swap → 精确 override patch(空 = 该 finding 无可定位修复,退回纯 rng 推进)。 */
+/** finding + 上次 swap → 单步精确 override patch(空 = 无可定位修复)。 */
 export function findingToOverride(
   finding: AuditFinding,
   locator: RetryLocator,
@@ -106,4 +108,49 @@ export function findingToOverride(
     if (span) return { voicingSafer: { [span]: true } };
   }
   return {};
+}
+
+const LADDER_WEAK_STRENGTH = 0.3; // 降锁目标档(< STRONG 0.67 → 放开刚性复述)
+
+export interface Escalation {
+  patch: OverridePatch;
+  returnPoint: ReturnPoint;
+  rung: 'voicing' | 'lower-lock' | 'swap-hook' | 'fallback';
+}
+
+/**
+ * 撞音消解阶梯(架构 Part 3.7):按【已用过哪些 rung】逐级升级,单调前进 → 收敛。
+ *   rung1 voicing 支撑:该 span 还没瘦身 → voicingSafer(回卷 accompaniment,最不伤身份)
+ *   rung2 降锁深度:    该 binding 还没降锁 → restatementOverride=弱(回卷 melody)
+ *   rung3 换 hook:     该 binding 还没换候选 → candidateSwap 池内切(回卷 melody,毁跨段身份=垫底)
+ *   rung4 fallback:    rung 用尽 → render-fallback(回卷整渲染 + guaranteed-safe recipe)
+ * 每 rung 新增一个上次没有的 override → 必有变化(收敛要素1),budget 兜尽头。
+ */
+export function escalateOverride(
+  finding: AuditFinding,
+  locator: RetryLocator,
+  prev: RetryContext | undefined,
+): Escalation {
+  const { startTick } = finding.location;
+  const span = locator.spanAtTick(startTick);
+  const binding = locator.bindingAtTick('lead', startTick);
+  const prevVoicing = prev?.voicingSafer ?? {};
+  const prevRestate = prev?.restatementOverride ?? {};
+  const prevSwap = prev?.candidateSwap ?? {};
+
+  // rung1:voicing 支撑(瘦身该和弦 voicing)
+  if (span && !prevVoicing[span]) {
+    return { patch: { voicingSafer: { [span]: true } }, returnPoint: 'rewind-accompaniment', rung: 'voicing' };
+  }
+  // rung2:降锁深度(仅 lead 命中 binding)
+  if (binding && prevRestate[binding] === undefined) {
+    return { patch: { restatementOverride: { [binding]: LADDER_WEAK_STRENGTH } }, returnPoint: 'rewind-melody', rung: 'lower-lock' };
+  }
+  // rung3:候选池换 hook
+  if (binding && prevSwap[binding] === undefined) {
+    const alt = locator.alternateCandidate(binding, prevSwap);
+    if (alt) return { patch: { candidateSwap: { [binding]: alt } }, returnPoint: 'rewind-melody', rung: 'swap-hook' };
+  }
+  // rung4:兜底重跑
+  return { patch: {}, returnPoint: 'render-fallback', rung: 'fallback' };
 }

@@ -85,7 +85,8 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
   });
 
   const render: RenderFn = (retry) =>
-    renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng, retry?.candidateSwap);
+    renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
+      retry && { candidateSwap: retry.candidateSwap, restatementOverride: retry.restatementOverride, voicingSafer: retry.voicingSafer });
 
   // finding→精确返回点定位器:从 base prepass 建(binding/span 时段 + 候选池)。
   //   melody/resolver/accompaniment 回卷不推进 'prepass' 子流 → 候选池跨重跑稳定 → swap id 恒有效。

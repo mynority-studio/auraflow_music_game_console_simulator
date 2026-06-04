@@ -17,6 +17,7 @@ export interface AccompContext {
   style?: string;
   anchorBeats?: Set<number>;      // 主 hook 锚点拍位(active 段在此瘦身让位)
   activeSectionIds?: Set<string>; // active 织体段
+  voicingSaferSpans?: Set<string>; // 撞音阶梯 rung1:这些 span 强制瘦身 3+7 shell
 }
 
 function spanAtBeat(plan: HarmonicPlan, beat: number): ChordSpan | undefined {
@@ -62,7 +63,8 @@ export function renderAccompaniment(
       if (!span || !inActive(span.sectionId)) continue;
 
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
-      const voiced = yieldHere ? shellBySpan[span.id] : voicedBySpan[span.id];
+      const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id); // 让位 或 撞音阶梯瘦身
+      const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];
 
       const startTick = timebase.beatToTick(beats(beat));
       const durationTicks = timebase.beatToTick(beats(hit.dur));

@@ -27,6 +27,7 @@ import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import type { CandidateSwap } from './MotifStore';
+import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -70,9 +71,11 @@ export function renderSongFull(
   instrumentation: InstrumentationPlan,
   timebase: Timebase,
   rng: RandomContext,
-  candidateSwap?: CandidateSwap,
+  overlay?: RenderOverlay,
 ): RenderResult {
   const { anchorPlan, motifStore } = runPrepass(band, arrangement, plan, rng);
+  const candidateSwap = overlay?.candidateSwap;
+  const voicingSaferSpans = overlay?.voicingSafer ? new Set(Object.keys(overlay.voicingSafer)) : undefined;
 
   // 让位上下文:active 织体段 + 主 hook 锚点拍(melody-aware accompaniment-first)
   const activeSectionIds = new Set<string>();
@@ -97,10 +100,10 @@ export function renderSongFull(
   for (const s of arrangement.sections) if (!activeSectionIds.has(s.id)) floatingSectionIds.add(s.id);
 
   const bass = renderBass(plan, timebase, band.style);
-  const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds });
+  const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans });
   const pad = renderPad(plan, timebase, floatingSectionIds);
   const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars });
-  const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
+  const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride);
   const tracks: TrackIR[] = [bass, ...accompaniment, pad, drums, lead];
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor

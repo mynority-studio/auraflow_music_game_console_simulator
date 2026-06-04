@@ -54,6 +54,7 @@ export function renderMelody(
   band: BandSpec,
   timebase: Timebase,
   candidateSwap?: CandidateSwap,
+  restatementOverride?: Record<string, number>, // 撞音阶梯 rung2:binding 降锁上限
 ): TrackIR {
   const starts = phraseStartBeats(arrangement);
   const bpb = beatsPerBarOf(arrangement.meter);
@@ -69,8 +70,13 @@ export function renderMelody(
 
     const pool = store.bindingCandidates[entry.bindingId];
     // head 音:强档拷贝参照候选,否则用自身锚点
+    //   ★ 撞音阶梯 rung2 降锁:restatementOverride 给该 binding 设锁档上限 → 跌破 STRONG 即放开刚性复述
+    const effStrength =
+      restatementOverride?.[entry.bindingId] !== undefined
+        ? Math.min(entry.effectiveRestatementStrength, restatementOverride[entry.bindingId])
+        : entry.effectiveRestatementStrength;
     let headPitch: Midi = cand.anchorPitches[0].pitch;
-    if (entry.effectiveRestatementStrength >= STRONG && pool.referenceBindingId) {
+    if (effStrength >= STRONG && pool.referenceBindingId) {
       const ref = resolveEffectiveCandidate(pool.referenceBindingId, store, candidateSwap);
       if (ref.realization.pitches.length > 0) headPitch = ref.realization.pitches[0].pitch;
     }

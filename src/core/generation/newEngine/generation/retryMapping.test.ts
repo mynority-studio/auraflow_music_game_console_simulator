@@ -62,22 +62,21 @@ describe('generation · finding→精确返回点 (5.1)', () => {
     expect(findingToOverride(oob, locator, {})).toEqual({});
   });
 
-  it('★ 注入撞音 → controller 映射到对应 binding 的 candidateSwap → 下一轮修好(2 attempts 收敛)', () => {
+  it('★ 注入 lead 撞音(无 span)→ 阶梯首个适用 rung=降锁(restatementOverride)→ 2 attempts 修好', () => {
     const COLLIDE_TICK = 1920;
     const BIND = 'B-hook';
-    const ALT = 'B-hook#alt';
     const fakeLocator: RetryLocator = {
       bindingAtTick: (role, tick) => (role === 'lead' && tick === COLLIDE_TICK ? BIND : undefined),
-      alternateCandidate: (bindingId, swap) => (bindingId === BIND && swap[bindingId] === undefined ? ALT : undefined),
-      spanAtTick: () => undefined,
+      alternateCandidate: () => 'B-hook#alt',
+      spanAtTick: () => undefined, // 无 span → 跳过 voicing rung,降锁为首个适用 rung
     };
     const tb = createTimebase({ meter: { numerator: 4, denominator: 4 }, tempoMap: [{ atBeat: beats(0), bpm: 120 }] });
     const ir = freezeMusicalIR({ tracks: [{ role: 'lead', notes: [] }], timebase: tb, durationTicks: tb.beatToTick(beats(4)) });
 
-    let secondSwap: Record<string, string> | undefined;
+    let appliedRestate: Record<string, number> | undefined;
     const render: RenderFn = (retry) => {
-      if (retry) secondSwap = { ...retry.candidateSwap };
-      const fixed = retry?.candidateSwap?.[BIND] === ALT;
+      if (retry) appliedRestate = { ...retry.restatementOverride };
+      const fixed = retry?.restatementOverride?.[BIND] !== undefined; // 降锁即修好
       return {
         ir,
         audit: fixed
@@ -92,9 +91,9 @@ describe('generation · finding→精确返回点 (5.1)', () => {
     };
 
     const result = runGenerationControl(render, createRandomContext(1), DEFAULT_BUDGET, fakeLocator);
-    expect(result.status).toBe('pass'); // 修好
-    expect(result.attempts).toBe(2); // 一次重跑即收敛(精确 override,非盲推)
-    expect(secondSwap?.[BIND]).toBe(ALT); // ★ 切到了正确 binding 的替代候选
+    expect(result.status).toBe('pass');
+    expect(result.attempts).toBe(2); // 首个适用 rung 即收敛
+    expect(appliedRestate?.[BIND]).toBe(0.3); // ★ 降锁到弱档(精确定位到该 binding)
   });
 
   it('无 locator → 退回纯 rng 推进(candidateSwap 不动,仍收敛兜底)', () => {
