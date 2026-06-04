@@ -138,6 +138,12 @@ describe('pickSpreadMode — 段落/功能驱动的 spread 选择', () => {
   it('VERSE establish T → half_wide 基线(中庸)', () => {
     expect(pickSpreadMode({ func: 'T', cellRole: 'establish', sectionFunction: 'VERSE', isPhraseEnd: false, isLast: false, random: picker() })).toBe('half_wide');
   });
+
+  it('PRECHORUS 被处理(wide/drop2 偏置),返回合法 mode', () => {
+    const m = pickSpreadMode({ func: 'D', cellRole: 'lift', sectionFunction: 'PRECHORUS', isPhraseEnd: false, isLast: false, random: picker() });
+    expect(['close', 'half_wide', 'wide', 'drop2_wide']).toContain(m);
+    expect(m).toBe('wide'); // lift(wide+3,drop2+1)+D(wide+2,drop2+2)+PRECHORUS(wide+1,drop2+1)=wide6 > drop2 4
+  });
 });
 
 describe('buildWidePianoVoicing — prev 声部进行', () => {

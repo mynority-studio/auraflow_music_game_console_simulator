@@ -231,7 +231,7 @@ export function isPianoProgram(program: number | undefined): boolean {
 }
 
 export type SpreadCellRole = 'establish' | 'develop' | 'lift' | 'cadence';
-export type SpreadSectionFunction = 'INTRO' | 'VERSE' | 'CHORUS' | 'BRIDGE' | 'OUTRO';
+export type SpreadSectionFunction = 'INTRO' | 'VERSE' | 'PRECHORUS' | 'CHORUS' | 'BRIDGE' | 'OUTRO';
 /** pickSpreadMode 只用 next()/pick() —— 喂 RandomContext 子流即可。 */
 export interface SpreadPicker {
   next(): number;
@@ -267,6 +267,7 @@ export function pickSpreadMode(args: {
   if (args.func === 'S') { scores.half_wide += 1; scores.wide += 1; }
   if (args.func === 'D') { scores.wide += 2; scores.drop2_wide += 2; }
 
+  if (args.sectionFunction === 'PRECHORUS') { scores.wide += 1; scores.drop2_wide += 1; }
   if (args.sectionFunction === 'CHORUS') scores.wide += 2;
   if (args.sectionFunction === 'BRIDGE') { scores.drop2_wide += 3; scores.wide += 1; }
   if (args.sectionFunction === 'VERSE') scores.half_wide += 1;
