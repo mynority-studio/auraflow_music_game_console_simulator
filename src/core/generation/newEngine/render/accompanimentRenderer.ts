@@ -40,17 +40,18 @@ export function renderAccompaniment(
     totalBeats = Math.max(totalBeats, span.startBeat + span.durationBeats);
   }
 
-  // 预算 per-span voicing(顶音 voice-leading 链)+ 让位 shell voicing
+  // 预算 per-span voicing(全声部 voice-leading 链)+ 让位 shell voicing
   const voicedBySpan: Record<string, number[]> = {};
   const shellBySpan: Record<string, number[]> = {};
   let prevTop: number | undefined;
+  let prevVoicing: number[] | undefined; // 上一组完整 voicing → 全声部贴最近(声部进行)
   for (const span of plan.chordTimeline) {
     if (!inActive(span.sectionId)) continue;
-    const full = voiceComp([...plan.stableToneMap[span.id]], style, prevTop);
+    const full = voiceComp([...plan.stableToneMap[span.id]], style, prevTop, prevVoicing);
     voicedBySpan[span.id] = full;
     const shellPcs = guideToneShell(span.quality).map((iv) => mod12(span.rootPc + iv));
-    shellBySpan[span.id] = voiceComp(shellPcs, style, prevTop);
-    if (full.length) prevTop = full[full.length - 1];
+    shellBySpan[span.id] = voiceComp(shellPcs, style, prevTop, prevVoicing);
+    if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
   }
 
   const bars = Math.ceil(totalBeats / beatsPerBar);

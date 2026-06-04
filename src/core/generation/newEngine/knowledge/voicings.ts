@@ -30,16 +30,37 @@ function nearestMidiOfPc(pc: number, target: number): number {
   return target - below <= above - target ? below : above;
 }
 
+/** 声部进行:每个新和弦音落到【离上一组 voicing 最近声部】的八度 → 总动量最小、声部连贯。 */
+function voiceLed(tones: number[], prevVoicing: number[]): number[] {
+  const out: number[] = [];
+  for (const pc of tones) {
+    let bestMidi = nearestMidiOfPc(pc, prevVoicing[0]);
+    let bestDist = Infinity;
+    for (const pv of prevVoicing) {
+      const m = nearestMidiOfPc(pc, pv);
+      const d = Math.abs(m - pv);
+      if (d < bestDist) { bestDist = d; bestMidi = m; }
+    }
+    while (bestMidi > COMP_TOP_HIGH) bestMidi -= 12;
+    while (bestMidi < COMP_FLOOR) bestMidi += 12;
+    out.push(bestMidi);
+  }
+  return [...new Set(out)].sort((a, b) => a - b);
+}
+
 /**
  * 真 comp voicing:
  *  - jazz 且 ≥4 音 → rootless(去根)。
- *  - 顶音 = 离 prevTop 最近的 chord tone(顶音 voice-leading)。
- *  - 其余音从顶音向下 spread 叠放(非簇);全部落 [COMP_FLOOR, COMP_TOP_HIGH]。
- * 返回升序 midi[](皆 chord tone)。
+ *  - prevVoicing 给定 → 全声部 voice-leading(每音贴最近的上一声部,总动量最小)。
+ *  - 否则:顶音 = 离 prevTop 最近的 chord tone(顶音 voice-leading)+ 其余向下 spread。
+ *  - 全部落 [COMP_FLOOR, COMP_TOP_HIGH]。返回升序 midi[](皆 chord tone)。
  */
-export function voiceComp(tonePcs: number[], style: string, prevTop?: number): number[] {
+export function voiceComp(tonePcs: number[], style: string, prevTop?: number, prevVoicing?: number[]): number[] {
   const tones = style === 'jazz' && tonePcs.length >= 4 ? tonePcs.slice(1) : tonePcs.slice();
   if (tones.length === 0) return [];
+
+  // ★ 声部进行:有上一组完整 voicing → 全声部最近贴(取代逐次向下 spread,声部不跳)
+  if (prevVoicing && prevVoicing.length > 0) return voiceLed(tones, prevVoicing);
 
   const target = prevTop ?? 67; // 默认顶音 ~G4
   let topPc = tones[0];
