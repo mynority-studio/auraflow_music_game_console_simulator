@@ -43,7 +43,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
 
   // —— BAND ——
   const band = buildBandSpec(request);
-  log(`■ BAND       ${band.tonalityKind} · key=${band.key} ${band.mode} · style=${band.style}  (accompDensity=${band.styleProfile.accompDensity} melodyFreedom=${band.styleProfile.melodyFreedom})`);
+  log(`■ BAND       ${band.tonalityKind}${band.modalModeName ? `(${band.modalModeName})` : ''} · key=${band.key} ${band.mode} · style=${band.style}  (accompDensity=${band.styleProfile.accompDensity} melodyFreedom=${band.styleProfile.melodyFreedom})`);
 
   // —— ARRANGER ——
   const arrangement = buildArrangementPlan(band, { rng: seedRng });
@@ -61,7 +61,9 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
 
   // —— HARMONY ——
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
-  log(`■ HARMONY    ${harmonic.chordTimeline.length} 和弦(级数 rng 选+调内解析,段尾 V7-I 终止)${Object.keys(harmonic.borrowedChordMap).length ? ` · 借和弦 iv×${Object.keys(harmonic.borrowedChordMap).length}` : ''}`);
+  log(band.tonalityKind === 'modal'
+    ? `■ HARMONY    ${harmonic.chordTimeline.length} 和弦(modal 静态 vamp:i+特征和弦循环,无功能;约束放松=avoid 空、chord-scale=primaryScale)`
+    : `■ HARMONY    ${harmonic.chordTimeline.length} 和弦(级数 rng 选+调内解析,段尾 V7-I 终止)${Object.keys(harmonic.borrowedChordMap).length ? ` · 借和弦 iv×${Object.keys(harmonic.borrowedChordMap).length}` : ''}`);
   const seenSec = new Set<string>();
   for (const span of harmonic.chordTimeline) {
     if (seenSec.has(span.sectionId)) continue;

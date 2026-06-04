@@ -12,6 +12,7 @@ import { beats, mod12, type PitchClass, type RandomContext } from '../foundation
 import { tensionTableFor, type TensionTable } from '../knowledge/tensionModel';
 import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
 import { realChordScale } from '../knowledge/chordScales';
+import { modalVamp } from '../knowledge/modes';
 import { diatonicQuality, pickProgressionDegrees, type SectionRole } from '../knowledge/progressions';
 import type { ChordQuality } from '../knowledge/chords';
 import type { BandSpec } from '../band/BandSpec';
@@ -44,8 +45,16 @@ interface ResolvedChord {
 }
 
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
-function assemble(resolved: ResolvedChord[], keyPc: PitchClass, keyMode: DiatonicMode): HarmonicPlan {
+//   modalScalePcs 给定(modal regime)→ 逐和弦约束放松:chord-scale = 全局 primaryScale,
+//   avoid 清空(modal 静态 vamp 不设和弦内 avoid),acceptable = primaryScale 去和弦音。
+function assemble(
+  resolved: ResolvedChord[],
+  keyPc: PitchClass,
+  keyMode: DiatonicMode,
+  modalScalePcs?: PitchClass[],
+): HarmonicPlan {
   if (resolved.length === 0) throw new RangeError('assemble(): 空和弦序列');
+  const modalSet = modalScalePcs ? new Set<number>(modalScalePcs) : undefined;
 
   const romanProgression: RomanChord[] = [];
   const chordTimeline: ChordSpan[] = [];
@@ -73,15 +82,26 @@ function assemble(resolved: ResolvedChord[], keyPc: PitchClass, keyMode: Diatoni
       sectionId: rc.sectionId,
     });
     chordFunctionTimeline.push(rc.func);
-    tensionMap[id] = tension;
-    stableToneMap[id] = tension.stable;
-    colorToneMap[id] = tension.acceptable;
-    avoidNoteMap[id] = tension.avoid;
-    // ★ 真 chord-scale:调内→母调音阶;副属→根音 Mixolydian;借和弦→根音 Dorian。
-    chordScaleMap[id] = realChordScale(rc.rootPc, keyPc, keyMode, {
-      isSecondaryDominant: rc.roman.secondaryTarget !== undefined,
-      isBorrowed: rc.borrowed !== undefined,
-    });
+    if (modalSet) {
+      // modal:约束放松 → chord-scale = primaryScale,avoid 清空,acceptable = 音阶去和弦音
+      const stableSet = new Set<number>(tension.stable);
+      const accept = [...modalSet].filter((p) => !stableSet.has(p)) as PitchClass[];
+      tensionMap[id] = { stable: tension.stable, acceptable: accept, avoid: [] };
+      stableToneMap[id] = tension.stable;
+      colorToneMap[id] = accept;
+      avoidNoteMap[id] = [];
+      chordScaleMap[id] = [...modalSet].sort((a, b) => a - b) as PitchClass[];
+    } else {
+      tensionMap[id] = tension;
+      stableToneMap[id] = tension.stable;
+      colorToneMap[id] = tension.acceptable;
+      avoidNoteMap[id] = tension.avoid;
+      // ★ 真 chord-scale:调内→母调音阶;副属→根音 Mixolydian;借和弦→根音 Dorian。
+      chordScaleMap[id] = realChordScale(rc.rootPc, keyPc, keyMode, {
+        isSecondaryDominant: rc.roman.secondaryTarget !== undefined,
+        isBorrowed: rc.borrowed !== undefined,
+      });
+    }
     beat += rc.durationBeats;
   });
 
@@ -128,12 +148,36 @@ export function buildHarmonicPlan(input: HarmonyEngineInput): HarmonicPlan {
   return assemble(resolved, input.key, 'major');
 }
 
+// —— modal regime:静态 vamp(和声宽松,不走功能)——
+//   每小节循环 [主和弦 i, 特征和弦],全段同 → 静态;chord-scale = primaryScale,avoid 放松。
+function buildModalHarmonicPlan(band: BandSpec, arrangement: ArrangementPlan): HarmonicPlan {
+  const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
+  const vamp = modalVamp(band.key, band.modalModeName ?? 'dorian');
+  const resolved: ResolvedChord[] = [];
+  for (const section of arrangement.sections) {
+    for (let bar = 0; bar < section.bars; bar++) {
+      const v = vamp[bar % vamp.length];
+      resolved.push({
+        roman: { degree: v.degree, accidental: v.accidental, quality: v.quality },
+        rootPc: v.rootPc,
+        quality: v.quality,
+        durationBeats: beatsPerBar, // 静态:1 和弦/小节,慢和声节奏
+        sectionId: section.id,
+        func: 'T', // modal 无功能 T-S-D,统一标 T
+      });
+    }
+  }
+  return assemble(resolved, band.key, band.mode, band.primaryScale);
+}
+
 // —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
 export function buildHarmonicPlanFromArrangement(
   band: BandSpec,
   arrangement: ArrangementPlan,
   rng: RandomContext,
 ): HarmonicPlan {
+  if (band.tonalityKind === 'modal') return buildModalHarmonicPlan(band, arrangement); // ★ modal 分支:静态 vamp
+
   const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
   const hrng = rng.substream('harmony');
   const resolved: ResolvedChord[] = [];

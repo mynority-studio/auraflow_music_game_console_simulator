@@ -17,6 +17,7 @@ import { degreeToSemitone } from '../knowledge/scales';
 import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
 import { developBar, pickGrammarName, type DevNote } from '../knowledge/grammarLibrary';
 import { guideToneMidi } from '../knowledge/guideTonePolicies';
+import { nearestInScale } from '../knowledge/modes';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MelodyAnchorPlan } from './MelodyAnchorPlan';
 import {
@@ -60,6 +61,12 @@ export function renderMelody(
   const bpb = beatsPerBarOf(arrangement.meter);
   const phraseById = new Map(arrangement.phrases.map((p) => [p.id, p]));
   const notes: NoteIR[] = [];
+
+  // 选音收口:modal regime → 逐和弦约束松,只约束在全局 primaryScale(自由跑音阶 = 色彩);
+  //           tonal → 落 avoid 就近 snap 到该和弦 stable tone。
+  const isModal = band.tonalityKind === 'modal';
+  const resolvePc = (rawPc: number, span: ChordSpan | undefined): number =>
+    isModal ? nearestInScale(mod12(rawPc), band.primaryScale) : safePc(rawPc, plan, span);
 
   for (const entry of anchorPlan.entries) {
     const phrase = phraseById.get(entry.phraseId);
@@ -135,7 +142,7 @@ export function renderMelody(
           phrase.role === 'cadence'
             ? mod12(band.key + degreeToSemitone(1, band.mode))
             : mod12(headPitch);
-        const pc = safePc(rawPc, plan, spanAtBeat(plan, barStart));
+        const pc = resolvePc(rawPc, spanAtBeat(plan, barStart));
         const pitch = pcToMidiInRange(pc, leadLow, leadHigh);
         const dur = Math.max(0.5, bpb - breath);
         notes.push({
@@ -153,10 +160,12 @@ export function renderMelody(
         const noteBeat = barStart + dn.timeOffset;
         let pitch: Midi;
         if (i === 0 && bar === 0) {
-          pitch = pcToMidiInRange(mod12(headPitch), leadLow, leadHigh); // hook head 锚点(置入弧线音区,pc 不变)
+          // hook head 锚点(置入弧线音区);modal 下也收进 primaryScale
+          const headPc = isModal ? nearestInScale(mod12(headPitch), band.primaryScale) : mod12(headPitch);
+          pitch = pcToMidiInRange(headPc, leadLow, leadHigh);
         } else {
           const rawPc = mod12(band.key + degreeToSemitone(dn.scaleDegree, band.mode));
-          const pc = safePc(rawPc, plan, spanAtBeat(plan, noteBeat));
+          const pc = resolvePc(rawPc, spanAtBeat(plan, noteBeat));
           pitch = pcToMidiInRange(pc, leadLow, leadHigh);
         }
         notes.push({
