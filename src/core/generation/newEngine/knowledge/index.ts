@@ -10,3 +10,4 @@ export * from './grooves';
 export * from './grammarLibrary';
 export * from './guideTonePolicies';
 export * from './chordIntervalRoles';
+export * from './scaleGravity';
