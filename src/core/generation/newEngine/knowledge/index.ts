@@ -7,3 +7,4 @@ export * from './pitchPlacement';
 export * from './voicings';
 export * from './motifShapes';
 export * from './grooves';
+export * from './grammarLibrary';

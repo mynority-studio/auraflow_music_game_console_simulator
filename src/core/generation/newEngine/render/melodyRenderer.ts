@@ -15,6 +15,7 @@ import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf, phraseStartBeats } from '../arranger/phraseTiming';
 import { degreeToSemitone } from '../knowledge/scales';
 import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
+import { developBar, pickGrammarName, type DevNote } from '../knowledge/grammarLibrary';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MelodyAnchorPlan } from './MelodyAnchorPlan';
 import {
@@ -27,11 +28,6 @@ import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 const LEAD_LOW = 67;
 const LEAD_HIGH = 84;
 const STRONG = 0.67;
-const DEV_STEPS = [0, 2, -1, 1]; // 逐小节模进偏移(scale step)→ 旋律发展,不原样重播
-
-function wrapDegree(d: number): number {
-  return (((d - 1) % 7) + 7) % 7 + 1; // → 1..7
-}
 
 function spanAtBeat(plan: HarmonicPlan, beat: number): ChordSpan | undefined {
   return plan.chordTimeline.find(
@@ -80,6 +76,12 @@ export function renderMelody(
 
     const phraseStart = starts[phrase.id] ?? 0;
     const breath = arrangement.phraseBreathing.cadenceBreathBeats;
+    const grammarName = pickGrammarName(motif.id); // 由 motifId 选变体 grammar(不同 motif 不同发展)
+    const baseDev: DevNote[] = motif.noteSlots.map((s) => ({
+      scaleDegree: s.scaleDegree,
+      timeOffset: s.timeOffset,
+      duration: s.duration,
+    }));
     // ★ 轮廓弧线:音区随段落能量抬升,高潮段再加峰(pc 不变,只移八度 → 安全)
     const energy = arrangement.energyBySection[phrase.sectionId] ?? 0.5;
     const isClimax = arrangement.climaxMap.some((c) => c.sectionId === phrase.sectionId);
@@ -111,22 +113,22 @@ export function renderMelody(
         continue;
       }
 
-      const devStep = DEV_STEPS[bar % DEV_STEPS.length];
-      motif.noteSlots.forEach((slot, i) => {
-        const noteBeat = barStart + slot.timeOffset;
+      // ★ grammar 变体:逐小节按 grammar 发展(transform/divide/development),取代手搓常数
+      const devNotes = developBar(baseDev, grammarName, bar);
+      devNotes.forEach((dn, i) => {
+        const noteBeat = barStart + dn.timeOffset;
         let pitch: Midi;
         if (i === 0 && bar === 0) {
           pitch = pcToMidiInRange(mod12(headPitch), leadLow, leadHigh); // hook head 锚点(置入弧线音区,pc 不变)
         } else {
-          const deg = wrapDegree(slot.scaleDegree + devStep);
-          const rawPc = mod12(band.key + degreeToSemitone(deg, band.mode));
+          const rawPc = mod12(band.key + degreeToSemitone(dn.scaleDegree, band.mode));
           const pc = safePc(rawPc, plan, spanAtBeat(plan, noteBeat));
           pitch = pcToMidiInRange(pc, leadLow, leadHigh);
         }
         notes.push({
           pitch,
           startTick: timebase.beatToTick(beats(noteBeat)),
-          durationTicks: timebase.beatToTick(slot.duration),
+          durationTicks: timebase.beatToTick(beats(dn.duration)),
           velocity: 95,
         });
       });

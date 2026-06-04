@@ -41,7 +41,7 @@
 - [x] 2.4 旋律轮廓弧线(音区 / 密度随能量,高潮冲峰)
 
 **Tier C · 真内容引擎**
-- [ ] 2.2 真 grammar 变体(接 grammar 资产 transform/divide/development)
+- [x] 2.2 真 grammar 变体(变体机制:transform/divide/development;85-grammar data-port 留作子步)
 - [ ] 2.3 GuideTone tail(connector/cadence 句按 cadenceTarget 导音解决)
 
 **Tier D · 结构 / 和声起伏**
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 2.2 — 真 grammar 变体:knowledge/grammarLibrary 变体引擎(transform=transpose/invert/retrograde + divide 节奏细分;grammar=逐小节算子序列,develop/sequence/answer);melody 用 developBar 取代手搓 DEV_STEPS;grammar 按 motifId 确定性选(不同 motif 不同发展);实测各 motif grammar 各异、Auditor pass;+7 用例(217 绿)。⚠️ 85-grammar Impro-Visor DSL data-port 留作后续子步(本项是变体【机制】)。**需耳朵复核**(发展是否自然)
 - 2026-06-04 2.4 — 旋律轮廓弧线:lead 音区按段落能量抬升(lift=round(energy*8)+climax3,封顶 14)+ 高潮段冲峰;head/realize/resolve 全置入弧线音区(pc 不变=安全);实测 chorus>verse、chorus2(高潮)≥chorus1;+3 用例(210 绿)。Tier B 完(3/3)。**需耳朵复核**(抬升幅度)
 - 2026-06-04 1.3 — 真 Voicing:voiceComp(jazz rootless / spread,顶音贴 prevTop=voice-leading,落 [52,76])取代 48+pc 簇;comp 预算 per-span voice-led 链 + 让位 shell 同走 voiceComp;全 chord tone→Auditor pass;实测 jazz rootless 顶音稳;+6 用例(207 绿)。**需耳朵复核**(voicing 厚度/连贯)
 - 2026-06-04 1.5 — Pad 铺底轨:floating 段(intro/outro/bridge)长音和弦铺底 [55,79] soft;织体分流(active=comp / floating=pad,comp 受 activeSectionIds 限制不进 floating)→ 出 5 轨 bass/comp/pad/drum/lead;+4 用例(201 绿)。**需耳朵复核**(pad 厚度/与旋律平衡)

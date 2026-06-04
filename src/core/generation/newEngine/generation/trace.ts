@@ -12,6 +12,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { compPattern } from '../knowledge/grooves';
+import { pickGrammarName } from '../knowledge/grammarLibrary';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { runPrepass } from '../render/motifAnchorPrepass';
@@ -74,7 +75,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const { anchorPlan, motifStore } = runPrepass(band, arrangement, harmonic, seedRng);
   log(`■ PREPASS    动机 ${Object.keys(motifStore.motifs).length} 个(种子驱动形状):`);
   for (const [id, m] of Object.entries(motifStore.motifs)) {
-    log(`   ${id}: 节奏[${m.rhythmCell.durations.join(',')}] 音级[${m.noteSlots.map((s) => s.scaleDegree).join(',')}] 源=${m.source}`);
+    log(`   ${id}: 节奏[${m.rhythmCell.durations.join(',')}] 音级[${m.noteSlots.map((s) => s.scaleDegree).join(',')}] 源=${m.source} grammar=${pickGrammarName(id)}`);
   }
   for (const e of anchorPlan.entries) {
     if (e.commonSafeToneScope === 'global' || e.downgradeReason) {
