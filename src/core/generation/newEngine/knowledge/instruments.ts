@@ -25,20 +25,54 @@ const LINEUP_RULES: Record<string, LineupRule> = {
 };
 
 // 各 style 各角色的乐器候选(GM program);随 seed 选一。
+// ★ lead 改为【钢琴 + 舒缓键盘 + 马林巴/颤音琴】路线(删长笛/小号/萨克斯/合成 lead 等高频刺耳)。
+//   comp 本就是舒缓键盘(钢琴/Rhodes/FM),bass/pad 非高频 → 保留。
 const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
-  jazz: { lead: [66, 65, 56, 11], comp: [0, 4], bass: [32], pad: [49], drum: [0] },     // 萨克斯/小号/颤音琴 · 钢琴/Rhodes · 立式贝斯 · 弦乐
-  pop: { lead: [80, 73, 65], comp: [1, 4], bass: [38, 33], pad: [89, 50], drum: [0] },   // 合成 lead/长笛/萨克斯 · 亮钢琴/Rhodes · 合成/指弹贝斯 · 暖/合成弦 pad
-  lofi: { lead: [11, 73, 4], comp: [4, 5], bass: [33, 39], pad: [89, 91], drum: [0] },    // 颤音琴/长笛/EP · Rhodes/FM EP · 软贝斯 · 暖/合唱 pad
-  modal: { lead: [73, 64, 82], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91], drum: [0] }, // 长笛/高音萨克斯/calliope · Rhodes/钢琴 · 立式 · 暖/弦/合唱 pad
-  default: { lead: [73, 65], comp: [0, 4], bass: [33], pad: [89], drum: [0] },
+  jazz: { lead: [11, 4, 12], comp: [0, 4], bass: [32], pad: [49], drum: [0] },       // 颤音琴/Rhodes/马林巴 · 钢琴/Rhodes · 立式贝斯 · 弦乐
+  pop: { lead: [1, 4, 12], comp: [1, 4], bass: [38, 33], pad: [89, 50], drum: [0] }, // 亮钢琴/Rhodes/马林巴 · 亮钢琴/Rhodes · 合成/指弹贝斯 · 暖/合成弦 pad
+  lofi: { lead: [4, 11, 12], comp: [4, 5], bass: [33, 39], pad: [89, 91], drum: [0] }, // Rhodes/颤音琴/马林巴 · Rhodes/FM EP · 软贝斯 · 暖/合唱 pad
+  modal: { lead: [12, 11, 8], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91], drum: [0] }, // 马林巴/颤音琴/Celesta · Rhodes/钢琴 · 立式 · 暖/弦/合唱 pad
+  default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
 
-const FALLBACK_PROGRAM: Record<InstrumentRoleName, number> = { bass: 33, comp: 0, lead: 73, pad: 89, drum: 0 };
+const FALLBACK_PROGRAM: Record<InstrumentRoleName, number> = { bass: 33, comp: 0, lead: 0, pad: 89, drum: 0 };
 const ROLE_ORDER: InstrumentRoleName[] = ['bass', 'comp', 'pad', 'lead', 'drum'];
 
 export interface BandInstrumentation {
   lineup: InstrumentRoleName[];                       // 实际编制(2–5,规范顺序)
   roleProgram: Record<InstrumentRoleName, number>;    // 每件乐器的 GM program(仅 lineup 内)
+}
+
+// —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
+const GM_NAME: Record<number, string> = {
+  0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
+  32: '立式贝斯', 33: '指弹贝斯', 38: '合成贝斯1', 39: '合成贝斯2',
+  48: '弦乐合奏1', 49: '弦乐合奏2', 50: '合成弦乐1',
+  89: '暖 Pad', 91: '合唱 Pad',
+};
+/** GM program → 中文名(未知回退 "GM n")。 */
+export function gmName(program: number): string {
+  return GM_NAME[program] ?? `GM ${program}`;
+}
+
+export interface InstrumentCatalogStyle {
+  style: string;
+  always: InstrumentRoleName[];
+  optional: { role: InstrumentRoleName; prob: number }[];
+  roles: { role: InstrumentRoleName; programs: number[] }[];
+}
+/** view-only:导出编制目录(每 style 的编制规则 + 每角色候选乐器)。不参与生成,供 UI 展示。 */
+export function getInstrumentCatalog(): InstrumentCatalogStyle[] {
+  return Object.keys(LINEUP_RULES).map((style) => {
+    const rule = LINEUP_RULES[style];
+    const inst = INSTRUMENTS[style] ?? {};
+    return {
+      style,
+      always: rule.always,
+      optional: rule.optional,
+      roles: ROLE_ORDER.filter((r) => inst[r] && inst[r]!.length > 0).map((r) => ({ role: r, programs: inst[r]! })),
+    };
+  });
 }
 
 /** 按 style + rng 选编制 + 乐器。确定性(同 seed 同结果);lineup 含 lead + ≥1 和声,最少 2 件。 */
