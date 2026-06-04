@@ -3,7 +3,8 @@
 // ------------------------------------------------------------
 // 走遍每个节点层级,把各 stage 实际产出汇成可读流程日志。
 // 不污染纯引擎(不在纯函数里 console.log);单独走查 → 同样的逐层可见性。
-// 单次 render pass(Slice 1 恒 pass;Controller 重跑只在 error 时触发,另见 GenerationController)。
+// ★ render+audit 走真实控制环(runGenerationControl):含 retry/budget/fallback,
+//   面板试听 = 真实产品路径(generateSong 同款),日志显示真实 attempts/status。
 // ============================================================
 
 import { beats, createRandomContext, createTimebase } from '../foundation';
@@ -19,6 +20,9 @@ import { runPrepass } from '../render/motifAnchorPrepass';
 import { renderSongFull } from '../render/renderCoordinator';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
+import { runGenerationControl, type GenerationStatus, type RenderFn } from './GenerationController';
+import { DEFAULT_BUDGET } from './RetryPolicy';
+import { buildRetryLocator } from './retryMapping';
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 function romanLabel(r: RomanChord): string {
@@ -32,6 +36,8 @@ export interface GenerationTrace {
   ir: MusicalIR;
   audit: AuditReport;
   bpm: number;
+  attempts: number;        // 控制环真实重跑次数
+  status: GenerationStatus; // pass / warning / failed
 }
 
 export function traceGeneration(request: GenerationRequest): GenerationTrace {
@@ -98,9 +104,17 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     }
   }
 
-  // —— RENDER + AUDIT ——
-  const { ir, audit } = renderSongFull(band, arrangement, harmonic, instrumentation, timebase, seedRng);
-  log(`■ RENDER     ${ir.tracks.map((t) => `${t.role}=${t.notes.length}`).join('  ')}`);
+  // —— RENDER + AUDIT(走真实控制环:retry/budget/fallback,与 generateSong 同路径)——
+  const render: RenderFn = (retry) =>
+    renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
+      retry && { candidateSwap: retry.candidateSwap, restatementOverride: retry.restatementOverride, voicingSafer: retry.voicingSafer });
+  const locator = buildRetryLocator(arrangement, anchorPlan, motifStore, harmonic, timebase);
+  const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, locator);
+  const audit = result.report;
+  // failed 时控制环不返回 IR → 补渲一次基础版供面板展示/试听(并明确标 failed)
+  const ir: MusicalIR = result.ir ?? render(undefined).ir;
+
+  log(`■ RENDER     ${ir.tracks.map((t) => `${t.role}=${t.notes.length}`).join('  ')}  [控制环 ${result.status} · ${result.attempts} 次尝试]`);
   log(`   织体分流: active 段=comp / floating 段(pad/sustained)=pad 长音铺底`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)`);
   log(`   bass 行进: ${band.style}(jazz=walking / pop=根-五 / lofi=根音持续)`);
@@ -109,14 +123,17 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   dynamics: 全轨力度随段落能量缩放(chorus 强 / intro 弱 / 高潮峰)`);
   log(`   feel: ${arrangement.feel.kind}(swingRatio ${arrangement.feel.swingRatio}${Math.abs(arrangement.feel.swingRatio - 0.5) < 1e-6 ? ' 直' : ' → offbeat 摆动'})`);
   log(`   humanize: 力度 metric accent(强拍重/反拍软,鼓除外)+ 微随机 + 微时序抖动(±~${Math.max(2, Math.round(480 * 0.015))} tick,审计后施加=网格下层)`);
-  log(`■ AUDITOR    ${audit.findings.length === 0 ? 'PASS ✓(全链无 avoid 暴露)' : audit.findings.length + ' findings'}`);
+  const statusLabel = result.status === 'pass' ? 'PASS ✓(全链无 avoid 暴露)'
+    : result.status === 'warning' ? `WARNING(${audit.findings.length} findings,带警告通过)`
+    : `FAILED(budget 耗尽,${audit.findings.length} findings 未消解 → 不静默输出非法)`;
+  log(`■ AUDITOR    ${statusLabel}`);
   if (audit.findings.length > 0) {
     const f = audit.findings[0];
-    log(`   纠错环: finding@${f.location.trackRole}#${f.location.startTick} → 撞音消解阶梯逐级升级(voicing 支撑 → 降锁深度 → 候选池换 hook → fallback),精确定位 binding/span,非盲推 rng`);
+    log(`   纠错环(${result.attempts} 次尝试): finding@${f.location.trackRole}#${f.location.startTick} → 撞音消解阶梯逐级升级(voicing 支撑 → 降锁深度 → 候选池换 hook → fallback),精确定位 binding/span,非盲推 rng`);
   }
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);
   log(`■ MIX        音量分层 lead120>bass112>drum100>comp90>pad68(CC7)· 声像 comp 偏左/pad 偏右/骨干居中(CC10)`);
 
-  return { lines, ir, audit, bpm: arrangement.tempoBpm };
+  return { lines, ir, audit, bpm: arrangement.tempoBpm, attempts: result.attempts, status: result.status };
 }

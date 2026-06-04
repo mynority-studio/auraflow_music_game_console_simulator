@@ -34,8 +34,7 @@ function deriveReadout(t: GenerationTrace): Readout {
   const ir = t.ir;
   const bars = Math.round(ir.durationTicks / (480 * 4)); // 4/4, ppq 480
   const tracks = ir.tracks.map((tr) => ({ role: tr.role, count: tr.notes.length }));
-  const status = t.audit.findings.length === 0 ? 'pass' : 'warning';
-  return { status, attempts: 1, bpm: t.bpm, bars, tracks };
+  return { status: t.status, attempts: t.attempts, bpm: t.bpm, bars, tracks }; // 真实控制环 status/attempts
 }
 
 export const NewEnginePanel: React.FC = () => {
