@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { traceGeneration } from '../generation';
 import type { GenerationTrace } from '../generation';
 import { playMusicalIR, stopNewEngine } from './audioOut';
+import { buildPianoRoll, ROLE_COLOR, type PianoRoll } from './pianoRoll';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
 const STYLES = ['pop', 'lofi', 'jazz'] as const;
@@ -40,6 +41,7 @@ export const NewEnginePanel: React.FC = () => {
   const [style, setStyle] = useState<(typeof STYLES)[number]>('pop');
   const [status, setStatus] = useState('就绪');
   const [readout, setReadout] = useState<Readout | null>(null);
+  const [roll, setRoll] = useState<PianoRoll | null>(null);
   const lastIR = useRef<GenerationTrace['ir'] | undefined>(undefined);
   const lastBpm = useRef(100);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -77,6 +79,7 @@ export const NewEnginePanel: React.FC = () => {
     lastIR.current = t.ir;
     lastBpm.current = t.bpm;
     setReadout(deriveReadout(t));
+    setRoll(buildPianoRoll(t.ir, { width: 512, height: 168 }));
     setLogLines(t.lines);
     // eslint-disable-next-line no-console
     console.log('%c[newEngine] 生成流程日志（逐层节点）\n%s', 'color:#34d399;font-weight:bold', t.lines.join('\n'));
@@ -201,6 +204,34 @@ export const NewEnginePanel: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Piano-roll(各轨音符可视化)*/}
+          {roll && roll.notes.length > 0 && (
+            <div className="rounded-lg border border-emerald-500/20 bg-black/50">
+              <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5">
+                <span className="text-[10px] uppercase tracking-widest text-emerald-300/70">piano-roll · 各轨音符</span>
+                <span className="flex gap-2 text-[9px] text-zinc-400">
+                  {(['lead', 'comp', 'bass', 'pad', 'drum'] as const).map((r) => (
+                    <span key={r} className="flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ROLE_COLOR[r] }} />{r}
+                    </span>
+                  ))}
+                </span>
+              </div>
+              <svg
+                viewBox={`0 0 ${roll.width} ${roll.height}`}
+                width="100%"
+                className="block"
+                style={{ height: roll.height }}
+                preserveAspectRatio="none"
+              >
+                <rect x={0} y={0} width={roll.width} height={roll.height} fill="#09090b" />
+                {roll.notes.map((n, i) => (
+                  <rect key={i} x={n.x} y={n.y} width={n.w} height={n.h} rx={1} fill={n.color} opacity={0.92} />
+                ))}
+              </svg>
+            </div>
+          )}
 
           {/* 流程日志(逐层节点)*/}
           {logLines.length > 0 && (
