@@ -80,9 +80,17 @@ export function renderSongFull(
     if (slot.anchorRequired) anchorBeats.add(slot.beatSlot);
   }
 
+  // 段落转折 fill:每段(除末段)最后一小节
+  const fillBars = new Set<number>();
+  let barCursor = 0;
+  for (let s = 0; s < arrangement.sections.length; s++) {
+    barCursor += arrangement.sections[s].bars;
+    if (s < arrangement.sections.length - 1) fillBars.add(barCursor - 1);
+  }
+
   const bass = renderBass(plan, timebase, band.style);
   const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds });
-  const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter));
+  const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars });
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
   const tracks: TrackIR[] = [bass, ...accompaniment, drums, lead];
 

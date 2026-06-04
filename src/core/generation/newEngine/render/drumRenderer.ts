@@ -1,19 +1,33 @@
 // ============================================================
-// newEngine · render · DrumRenderer(Slice 1.5 基础律动)
+// newEngine · render · DrumRenderer
 // ------------------------------------------------------------
-// 基础 GM 鼓组律动:kick 拍1/3、snare 拍2/4、closed-hat 八分。给曲子节奏生命。
-// drum 是打击通道(audio 映射到 ch9),不入和声判据:Auditor / OccupationMap 跳过它。
+// per-style groove(pop backbeat / lofi 半拍 / jazz swing ride)+ 力度人性化(确定性抖动,
+// 逐小节不同)+ 段落转折 fill。drum 是打击通道(audio→ch9),不入和声判据。
+// 无 rng:抖动用 (bar,hit) 确定性派生 → 保确定性。
 // ============================================================
 
 import { beats, midi, type Timebase } from '../foundation';
+import { DRUM, drumPattern } from '../knowledge/grooves';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
-const KICK = 36;
-const SNARE = 38;
-const HAT = 42;
+export interface DrumOptions {
+  style?: string;
+  fillBars?: Set<number>; // 该小节末尾加 fill(段落转折)
+}
 
-export function renderDrums(plan: HarmonicPlan, timebase: Timebase, beatsPerBar: number): TrackIR {
+function clampVel(v: number): number {
+  return Math.max(1, Math.min(127, Math.round(v)));
+}
+
+export function renderDrums(
+  plan: HarmonicPlan,
+  timebase: Timebase,
+  beatsPerBar: number,
+  opts: DrumOptions = {},
+): TrackIR {
+  const pattern = drumPattern(opts.style ?? 'default');
+  const fillBars = opts.fillBars ?? new Set<number>();
   const notes: NoteIR[] = [];
 
   let totalBeats = 0;
@@ -22,23 +36,27 @@ export function renderDrums(plan: HarmonicPlan, timebase: Timebase, beatsPerBar:
   }
   const bars = Math.max(1, Math.round(totalBeats / beatsPerBar));
 
-  const hit = (pitch: number, beat: number, vel: number, dur = 0.25) => {
+  const push = (drum: number, beat: number, vel: number, dur = 0.25) => {
     notes.push({
-      pitch: midi(pitch),
+      pitch: midi(drum),
       startTick: timebase.beatToTick(beats(beat)),
       durationTicks: timebase.beatToTick(beats(dur)),
-      velocity: vel,
+      velocity: clampVel(vel),
     });
   };
 
   for (let bar = 0; bar < bars; bar++) {
     const b0 = bar * beatsPerBar;
-    hit(KICK, b0 + 0, 112);
-    if (beatsPerBar > 2) hit(KICK, b0 + 2, 100);
-    hit(SNARE, b0 + 1, 96);
-    if (beatsPerBar > 3) hit(SNARE, b0 + 3, 96);
-    for (let h = 0; h < Math.floor(beatsPerBar * 2); h++) {
-      hit(HAT, b0 + h * 0.5, h % 2 === 0 ? 72 : 54);
+    pattern.forEach((hit, idx) => {
+      // 确定性人性化:逐小节/逐 hit 的 ±3 力度抖动(无 rng)
+      const jitter = (((bar * 31 + idx * 17) % 7) - 3);
+      push(hit.drum, b0 + hit.beat, hit.vel + jitter);
+    });
+    if (fillBars.has(bar)) {
+      // 段落转折 fill:末拍 16 分 snare roll
+      push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.5, 92);
+      push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.75, 104);
+      push(DRUM.OHAT, b0 + beatsPerBar - 0.5, 80);
     }
   }
 

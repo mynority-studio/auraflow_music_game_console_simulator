@@ -38,4 +38,23 @@ describe('render/drumRenderer', () => {
     const again = renderDrums(plan, timebase, 4);
     expect(again.notes.map((n) => n.startTick)).toEqual(drum.notes.map((n) => n.startTick));
   });
+
+  it('per-style:jazz 有 ride(51);pop 有 backbeat snare(38)', () => {
+    const jazz = renderDrums(plan, timebase, 4, { style: 'jazz' });
+    expect(new Set<number>(jazz.notes.map((n) => n.pitch)).has(51)).toBe(true);
+    const pop = renderDrums(plan, timebase, 4, { style: 'pop' });
+    expect(new Set<number>(pop.notes.map((n) => n.pitch)).has(38)).toBe(true);
+  });
+
+  it('力度人性化:相邻小节力度序列不完全相同', () => {
+    const velOf = (lo: number, hi: number) => drum.notes.filter((n) => n.startTick >= lo && n.startTick < hi).map((n) => n.velocity);
+    expect(velOf(0, 1920)).not.toEqual(velOf(1920, 3840)); // bar0 vs bar1
+  });
+
+  it('段落 fill:fillBar 比普通小节音多', () => {
+    const withFill = renderDrums(plan, timebase, 4, { fillBars: new Set([0]) });
+    const bar0 = withFill.notes.filter((n) => n.startTick < 1920).length;
+    const bar1 = withFill.notes.filter((n) => n.startTick >= 1920 && n.startTick < 3840).length;
+    expect(bar0).toBeGreaterThan(bar1);
+  });
 });
