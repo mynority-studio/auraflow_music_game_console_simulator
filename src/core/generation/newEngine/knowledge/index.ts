@@ -6,3 +6,4 @@ export * from './tensionModel';
 export * from './pitchPlacement';
 export * from './voicings';
 export * from './motifShapes';
+export * from './grooves';

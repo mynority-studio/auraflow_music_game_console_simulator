@@ -78,7 +78,7 @@ export function renderSongFull(
     if (slot.anchorRequired) anchorBeats.add(slot.beatSlot);
   }
 
-  const accompaniment = renderAccompaniment(plan, timebase, { anchorBeats, activeSectionIds });
+  const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds });
   const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter));
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
   const tracks: TrackIR[] = [...accompaniment, drums, lead];

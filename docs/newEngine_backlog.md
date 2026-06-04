@@ -29,7 +29,7 @@
 ## 执行顺序(勾选清单 = 循环的下一项来源)
 
 **Tier A · 听感立竿见影**
-- [ ] 1.1 Comp 织体化(风格化 comping 节奏型)
+- [x] 1.1 Comp 织体化(风格化 comping 节奏型)
 - [ ] 1.2 Bass 行进(walking / 根-五-八 / 分解)
 - [ ] 1.4 鼓变化(per-style groove + 段落 fill + 力度人性化)
 - [ ] 2.1 乐句呼吸 / 休止(消费 phraseBreathing)
@@ -122,3 +122,4 @@
 
 ## 进度日志
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
+- 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
