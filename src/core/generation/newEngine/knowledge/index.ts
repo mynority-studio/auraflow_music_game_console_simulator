@@ -13,3 +13,5 @@ export * from './chordIntervalRoles';
 export * from './scaleGravity';
 export * from './melodyChordSemantics';
 export * from './widePianoVoicings';
+export * from './voicingStyles';
+export * from './voicingPlacement';
