@@ -25,6 +25,7 @@ import { renderDrums } from './drumRenderer';
 import { renderPad } from './padRenderer';
 import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
+import { humanizeVelocity, humanizeTiming } from './humanize';
 import type { CandidateSwap } from './MotifStore';
 
 export interface RenderResult {
@@ -125,10 +126,21 @@ export function renderSongFull(
   }
   const dynamicTracks = applyDynamics(resolved.data.tracks, energyRanges, timebase.ppq);
 
-  // feel:swing 落地(全轨统一 onset warp;直则原样)
-  const swungTracks = applySwing(dynamicTracks, timebase.ppq, arrangement.feel.swingRatio);
+  // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
+  const bpbHuman = beatsPerBarOf(arrangement.meter);
+  const humanRng = rng.substream('humanize');
+  const accentedTracks = humanizeVelocity(dynamicTracks, timebase.ppq, bpbHuman, humanRng);
 
-  const ir = freezeMusicalIR({ tracks: swungTracks, timebase, durationTicks: resolved.data.durationTicks });
-  const audit = auditHarmony(ir, plan, timebase);
+  // feel:swing 落地(全轨统一 onset warp;直则原样)
+  const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
+
+  // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
+  //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
+  const auditedIR = freezeMusicalIR({ tracks: swungTracks, timebase, durationTicks: resolved.data.durationTicks });
+  const audit = auditHarmony(auditedIR, plan, timebase);
+
+  // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
+  const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, humanRng);
+  const ir = freezeMusicalIR({ tracks: humanizedTracks, timebase, durationTicks: resolved.data.durationTicks });
   return { ir, audit };
 }
