@@ -152,9 +152,13 @@ export function buildWidePianoVoicing(args: {
   bassMidi: number;
   options: WidePianoOptions;
   prev?: WidePianoVoicing;
+  /** 整合接缝:给定则用它取代 getChordRolePcs(rootPc,chordType)。
+   *  让消费方按【自己引擎已算好的真实和弦音】驱动 zone 排列,而非靠 type 字符串再推导
+   *  —— 避免 getChordRolePcs 对窄三和弦(我们的 'maj'/'min')幻觉出七音。默认行为不变。 */
+  rolePcs?: Partial<Record<VoiceRole, number>>;
 }): WidePianoVoicing {
   const { rootPc, chordType, options, prev } = args;
-  const pcs = getChordRolePcs(rootPc, chordType);
+  const pcs = args.rolePcs ?? getChordRolePcs(rootPc, chordType);
   const notes: PianoVoicingNote[] = [];
 
   const prevAnchor = (lane: PianoVoiceLane, role: VoiceRole, zoneCenter: number): number => {

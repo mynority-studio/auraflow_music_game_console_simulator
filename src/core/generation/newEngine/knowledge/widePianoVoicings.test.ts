@@ -90,6 +90,29 @@ describe('buildWidePianoVoicing — spreadMode 行为', () => {
   });
 });
 
+describe('buildWidePianoVoicing — rolePcs 整合接缝', () => {
+  it('给 rolePcs(窄三和弦真实音)→ 不幻觉七音(纯三和弦 root/3/5 铺开)', () => {
+    // 'maj' 走 getChordRolePcs 会被 startsWith("maj") 误加七音;用 rolePcs override 喂真实三和弦音
+    const triad = { root: 0, third: 4, fifth: 7 }; // C 大三
+    const v = buildWidePianoVoicing({ rootPc: 0, chordType: 'maj', bassMidi: 36, options: opts({ colorLevel: 0 }), rolePcs: triad });
+    const pcs = new Set(v.notes.map((n) => n.pc));
+    expect(pcs.has(11)).toBe(false); // 绝不出现 maj7 的导音(pc 11)
+    expect(pcs.has(0)).toBe(true);
+    expect(pcs.has(4)).toBe(true);
+    expect(pcs.has(7)).toBe(true);
+    // 只含三和弦三个 pc,无第四种音级
+    for (const p of pcs) expect([0, 4, 7]).toContain(p);
+  });
+
+  it('rolePcs 含 seventh → 七音进 inner_mid(宽铺开但不加 9/13)', () => {
+    const v = buildWidePianoVoicing({ rootPc: 0, chordType: '7', bassMidi: 36, options: opts({ colorLevel: 0 }), rolePcs: { root: 0, third: 4, fifth: 7, seventh: 10 } });
+    const pcs = new Set(v.notes.map((n) => n.pc));
+    expect(pcs.has(10)).toBe(true);             // b7 在
+    expect(pcs.has(2)).toBe(false);             // 不加 9
+    for (const p of pcs) expect([0, 4, 7, 10]).toContain(p);
+  });
+});
+
 describe('buildWidePianoVoicing — prev 声部进行', () => {
   it('给 prev → 共同音 midi 保留(最小动量)', () => {
     const c = buildWidePianoVoicing({ rootPc: 0, chordType: 'maj9', bassMidi: 36, options: opts() });
