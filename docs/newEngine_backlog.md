@@ -66,7 +66,7 @@
 **Tier G · 工具 / 观测 / 移植**
 - [x] 6.1 面板 piano-roll(各轨音符可视化)
 - [x] 6.2 MIDI 导出(.mid)
-- [ ] 6.3 A/B seed 对比 + 日志 diff
+- [x] 6.3 A/B seed 对比 + 日志 diff
 - [ ] 6.4 ESP32 C 移植同步(/sync-to-c,远期)
 
 ---
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 6.3 — A/B seed 对比:新增 sandbox/traceDiff(diffLines LCS 行对齐 diff:同/左独/右独;compareTraces 行 diff + 指标 delta bpm/小节/音符/状态);NewEnginePanel 加 ⇄A/B 按钮(seed vs seed+1 → 指标行 + 并排日志 diff,差异行高亮 + changedCount);纯 diff 单测锁(全同/单行变更/增行/两 seed 有同有异/同 seed changedCount 0);+5 用例(304 绿)。**需眼睛复核**(A/B 面板并排可读性)
 - 2026-06-04 6.2 — MIDI 导出:新增 sandbox/midiFile(musicalIRToSMF:format 0 单轨 SMF;复用 musicalIRToMidiEvents 含 program+CC7/CC10 混音;加 tempo meta FF5103;绝对 tick→delta VLQ;同 tick 排序 tempo>program>cc>noteOff>noteOn);vlq 编码器;NewEnginePanel 加 ⬇MIDI 按钮(Blob 下载 newEngine-<style>-seed<n>.mid);纯字节单测锁(MThd format0/division=ppq、tempo 500000us、noteOn/Off、EOT、MTrk 长度自洽、VLQ、确定性);+6 用例(299 绿)。无需耳朵复核(字节格式;可导入 DAW 验证)
 - 2026-06-04 6.1 — piano-roll:新增 sandbox/pianoRoll(buildPianoRoll 纯几何:IR→矩形,x/w∝tick、y 随音高翻转高音在上、角色配色 ROLE_COLOR);NewEnginePanel 加 SVG piano-roll(viewBox 自适应 + 角色图例),生成后渲染各轨音符;纯换算单测锁(x/w 比例、y 翻转、配色、空IR兜底不除零、矩形不溢出画布);+5 用例(293 绿)。**需眼睛复核**(面板 piano-roll 视觉:Q+N 生成后看各轨音符分布)
 - 2026-06-04 4.3 — 转调:HarmonicPlan 加 ModulationInfo + modulationMap(Record<SectionId>);planModulation 可选下(band.allowModulation,默认 false)末段 chorus 升半音"换挡 lift"(确定性);harmony 按段实际调中心 sectionKey 解析根音 + 终止,ResolvedChord 带 sectionKeyPc → chord-scale 按新调中心(不变量保持);melody 读 plan.modulationMap 该段级数解析用 secKey + head 整体移调(随升 key);bass/comp/pad 走 chordTimeline 自动跟;★ opt-in 默认空 map=旧路径不变(283 测试零改);实测开启出末段升半音(进行整体+1、旋律含新调音、chord-tones⊆scale)、默认无转调、5 seed 端到端;trace 显示转调;+5 用例(288 绿)。Tier F 完(3/3)。**需耳朵复核**(lift 衔接是否自然/突兀)

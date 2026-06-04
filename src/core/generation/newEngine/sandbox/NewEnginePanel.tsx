@@ -11,6 +11,7 @@ import type { GenerationTrace } from '../generation';
 import { playMusicalIR, stopNewEngine } from './audioOut';
 import { buildPianoRoll, ROLE_COLOR, type PianoRoll } from './pianoRoll';
 import { musicalIRToSMF } from './midiFile';
+import { compareTraces, type TraceComparison } from './traceDiff';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
 const STYLES = ['pop', 'lofi', 'jazz'] as const;
@@ -43,6 +44,7 @@ export const NewEnginePanel: React.FC = () => {
   const [status, setStatus] = useState('就绪');
   const [readout, setReadout] = useState<Readout | null>(null);
   const [roll, setRoll] = useState<PianoRoll | null>(null);
+  const [cmp, setCmp] = useState<TraceComparison | null>(null);
   const lastIR = useRef<GenerationTrace['ir'] | undefined>(undefined);
   const lastBpm = useRef(100);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -106,6 +108,14 @@ export const NewEnginePanel: React.FC = () => {
   };
 
   const onStop = () => { stopNewEngine(); setStatus('已停止'); };
+
+  const onCompareAB = () => {
+    const req = (s: number) => ({ seed: s, styleHint: style, mood: 'calm-build', targetDuration: 120 });
+    const a = traceGeneration(req(seed));
+    const b = traceGeneration(req(seed + 1));
+    setCmp(compareTraces(a, b));
+    setStatus(`⇄ A/B seed ${seed} vs ${seed + 1}`);
+  };
 
   const onExportMidi = () => {
     const ir = lastIR.current;
@@ -206,6 +216,14 @@ export const NewEnginePanel: React.FC = () => {
             >
               ⬇ MIDI
             </button>
+            <button
+              type="button"
+              onClick={onCompareAB}
+              className="rounded-lg border border-violet-500/40 px-3 py-2 text-sm text-violet-300 hover:bg-violet-500/10"
+              title={`对比 seed ${seed} vs ${seed + 1}`}
+            >
+              ⇄ A/B
+            </button>
           </div>
 
           {/* 状态 + 读出 */}
@@ -227,6 +245,31 @@ export const NewEnginePanel: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* A/B 对比(seed vs seed+1 日志 diff + 指标)*/}
+          {cmp && (
+            <div className="rounded-lg border border-violet-500/20 bg-black/50">
+              <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-widest text-violet-300/70">
+                <span>A/B 对比 · seed {seed} ⇄ {seed + 1}</span>
+                <span className="text-zinc-400">{cmp.changedCount} 行差异</span>
+              </div>
+              <div className="grid grid-cols-4 gap-x-2 gap-y-0.5 px-3 py-2 text-[10px] text-zinc-400">
+                {([['bpm', cmp.metrics.bpm], ['小节', cmp.metrics.bars], ['音符', cmp.metrics.notes], ['状态', cmp.metrics.status]] as const).map(([k, v]) => (
+                  <div key={k} className={v.equal ? '' : 'text-amber-300'}>
+                    {k} <span className="text-zinc-200">{String(v.a)}</span>{v.equal ? '' : ` → ${String(v.b)}`}
+                  </div>
+                ))}
+              </div>
+              <div className="max-h-48 overflow-auto border-t border-white/5 px-2 py-1 font-mono text-[9px] leading-snug">
+                {cmp.rows.map((r, i) => (
+                  <div key={i} className={`grid grid-cols-2 gap-2 ${r.same ? 'text-zinc-500' : 'bg-amber-500/10 text-amber-200'}`}>
+                    <span className="truncate" title={r.left}>{r.left ?? ''}</span>
+                    <span className="truncate" title={r.right}>{r.right ?? ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Piano-roll(各轨音符可视化)*/}
           {roll && roll.notes.length > 0 && (
