@@ -96,10 +96,11 @@ function assemble(
       stableToneMap[id] = tension.stable;
       colorToneMap[id] = tension.acceptable;
       avoidNoteMap[id] = tension.avoid;
-      // ★ 真 chord-scale:调内→母调音阶;副属→根音 Mixolydian;借和弦→根音 Dorian。
+      // ★ 真 chord-scale:调内→母调音阶;属七/副属→根音 Mixolydian;借和弦→根音 Dorian。
       chordScaleMap[id] = realChordScale(rc.rootPc, keyPc, keyMode, {
         isSecondaryDominant: rc.roman.secondaryTarget !== undefined,
         isBorrowed: rc.borrowed !== undefined,
+        isDominant: rc.quality === '7', // 小调 V7(及任何属七)→ 升导音进音阶
       });
     }
     beat += rc.durationBeats;

@@ -60,7 +60,7 @@
 
 **Tier F · regime / 边界**
 - [x] 4.1 modal regime(modal vamp + primaryScale 着色)
-- [ ] 4.2 小调打磨(harmonic minor V7 / 终止)
+- [x] 4.2 小调打磨(harmonic minor V7 / 终止)
 - [ ] 4.3 转调(modulationMap 落地)
 
 **Tier G · 工具 / 观测 / 移植**
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 4.2 — 小调打磨 V7-i:realChordScale 加 isDominant 上下文 + PHRYGIAN_DOMINANT(和声小调第5调式),小调主属 V7 取 Phrygian dominant(含升导音 B♮ + 调内 b6/b3,Mixolydian 会错成自然6)、大调 V7/副属仍 Mixolydian;assemble 传 isDominant=quality'7';修了小调 V7 之前 chord-scale 落自然小调缺升导音(chord-tones⊄scale)的潜伏 bug;3.4 终止已强制 V7,本项补对的 chord-scale + 验证 V7→i 解决(G7→Cm7);实测小调出 V7(根=5度·含升导音)、chord-tones⊆chord-scale 不变量、V7→i 真解决、6 seed 端到端;trace 小调标 Phrygian dominant;+4 用例(283 绿)。无需耳朵复核(chord-scale 数据层 + 已有 V7 听感)
 - 2026-06-04 4.1 — modal regime:新增 knowledge/modes(7 教会调式 + modalScale + modalVamp[i+特征和弦] + nearestInScale);BandSpec 加 primaryScale/modalModeName,bandEngine 加 modal style + styleHint=modal/request.tonalityKind→modal 分支(默认 Dorian,primaryScale=调式音阶,tonal 也填调内音阶);harmony buildModalHarmonicPlan 静态 vamp(每小节循环 i+特征和弦,全段同=静态,无功能 T-S-D),assemble 接 modalScalePcs→约束放松(avoid 空 / chord-scale=primaryScale / acceptable=音阶去和弦音);melody resolvePc modal 分支=nearestInScale 收进 primaryScale(逐和弦约束松=只约束全局音阶);实测 modal 出 ≤2 和弦静态 vamp+verse 静态、lead 全音∈primaryScale、avoid 空 Auditor 必 pass、6 seed 端到端、tonal pop 不受影响(和弦仍多样);trace 显示 modal vamp 分支;+9 用例(279 绿)。**需耳朵复核**(modal vamp 静态感/旋律调式色彩是否到位)
 - 2026-06-04 5.4 — 混音:irToMidi 角色映射加 volume/pan,每轨发 CC7(通道音量)+CC10(声像)在 noteOn 前;音量分层 lead120>bass112>drum100>comp90>pad68(焦点最响→铺底最弱),声像 comp 偏左(50)/pad 偏右(78)展宽立体声场、bass·lead·drum 居中(64);+4 用例(270 绿)。Tier E 完(4/4)。**需耳朵复核**(音量比例/声像宽度是否平衡)
 - 2026-06-04 5.2 — 撞音消解阶梯:escalateOverride 按【已用 rung】单调升级 voicing 支撑(span 瘦身 shell,回卷 accompaniment)→ 降锁深度(binding restatementOverride=0.3 弱档,回卷 melody)→ 候选池换 hook(candidateSwap,回卷 melody)→ render-fallback;★ 三类 overlay 真消费(新增 render/RenderOverlay,renderSongFull 收 overlay;accompaniment 接 voicingSaferSpans 用 shell / melody 接 restatementOverride 降 effStrength 放开刚性复述);nextRetryContext 用 escalateOverride,returnPoint 跟 rung;实测阶梯逐级生效(voicing→降锁→换hook 3 rung)、只换hook 放行=4 attempts 收敛、永撞→耗 budget→failed(ir undefined 不输出非法)、6 seed 端到端仍 pass(overlay 不破正常生成);trace 显示阶梯;+4 用例 + 改 5.1 收敛例(267 绿)。无需耳朵复核(控制流;正常生成不触发)
