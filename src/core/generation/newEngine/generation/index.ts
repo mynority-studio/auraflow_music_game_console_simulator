@@ -2,3 +2,4 @@
 export * from './RetryContext';
 export * from './RetryPolicy';
 export * from './GenerationController';
+export * from './trace';

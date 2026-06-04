@@ -6,8 +6,8 @@
 // ============================================================
 
 import React, { useEffect, useRef, useState } from 'react';
-import { generateSong } from '../generation';
-import type { GenerationResult } from '../generation';
+import { traceGeneration } from '../generation';
+import type { GenerationTrace } from '../generation';
 import { playMusicalIR, stopNewEngine } from './audioOut';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
@@ -26,12 +26,12 @@ interface Readout {
   tracks: { role: string; count: number }[];
 }
 
-function deriveReadout(r: GenerationResult): Readout {
-  const ir = r.ir;
-  const bpm = ir?.timebase.tempoMap[0]?.bpm ?? 100;
-  const bars = ir ? Math.round(ir.durationTicks / (480 * 4)) : 0; // 4/4, ppq 480
-  const tracks = ir ? ir.tracks.map((t) => ({ role: t.role, count: t.notes.length })) : [];
-  return { status: r.status, attempts: r.attempts, bpm, bars, tracks };
+function deriveReadout(t: GenerationTrace): Readout {
+  const ir = t.ir;
+  const bars = Math.round(ir.durationTicks / (480 * 4)); // 4/4, ppq 480
+  const tracks = ir.tracks.map((tr) => ({ role: tr.role, count: tr.notes.length }));
+  const status = t.audit.findings.length === 0 ? 'pass' : 'warning';
+  return { status, attempts: 1, bpm: t.bpm, bars, tracks };
 }
 
 export const NewEnginePanel: React.FC = () => {
@@ -40,8 +40,9 @@ export const NewEnginePanel: React.FC = () => {
   const [style, setStyle] = useState<(typeof STYLES)[number]>('pop');
   const [status, setStatus] = useState('就绪');
   const [readout, setReadout] = useState<Readout | null>(null);
-  const lastIR = useRef<GenerationResult['ir']>(undefined);
+  const lastIR = useRef<GenerationTrace['ir'] | undefined>(undefined);
   const lastBpm = useRef(100);
+  const [logLines, setLogLines] = useState<string[]>([]);
   const heldKeys = useRef<Set<string>>(new Set());
 
   useDevPanelChannel('newengine', open, setOpen);
@@ -71,21 +72,23 @@ export const NewEnginePanel: React.FC = () => {
     };
   }, [open]);
 
-  const generate = (): GenerationResult => {
-    const r = generateSong({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120 });
-    lastIR.current = r.ir;
-    lastBpm.current = r.ir?.timebase.tempoMap[0]?.bpm ?? 100;
-    setReadout(deriveReadout(r));
-    return r;
+  const generate = (): GenerationTrace => {
+    const t = traceGeneration({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120 });
+    lastIR.current = t.ir;
+    lastBpm.current = t.bpm;
+    setReadout(deriveReadout(t));
+    setLogLines(t.lines);
+    // eslint-disable-next-line no-console
+    console.log('%c[newEngine] 生成流程日志（逐层节点）\n%s', 'color:#34d399;font-weight:bold', t.lines.join('\n'));
+    return t;
   };
 
   const onGenerateAndPlay = async () => {
-    const r = generate();
-    if (r.status === 'failed' || !r.ir) { setStatus('生成失败(已拦非法结果)'); return; }
+    const t = generate();
     setStatus('播放中…');
     try {
-      await playMusicalIR(r.ir, lastBpm.current);
-      setStatus(`▶ 播放中 · ${r.status}`);
+      await playMusicalIR(t.ir, t.bpm);
+      setStatus('▶ 播放中');
     } catch (err) {
       setStatus(`音频启动失败:${String(err)}`);
     }
@@ -198,6 +201,18 @@ export const NewEnginePanel: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* 流程日志(逐层节点)*/}
+          {logLines.length > 0 && (
+            <div className="rounded-lg border border-emerald-500/20 bg-black/50">
+              <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-widest text-emerald-300/70">
+                流程日志 · 每层节点产出(同步打到浏览器 console)
+              </div>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 py-2 text-[10px] leading-relaxed text-zinc-300">
+                {logLines.join('\n')}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </div>
