@@ -39,14 +39,17 @@ describe('② 音阶内非和弦音(F=4度)→ 弱拍/经过/邻音', () => {
   it('强拍无前后 → rejected', () => {
     expect(admit(65).admit).toBe(false); // F 强拍裸放
   });
-  it('经过 E-F-G → scale-passing', () => {
-    expect(admit(65, { prevMidi: 64, nextMidi: 67 }).reason).toBe('scale-passing');
+  it('经过 E-F-G(弱位)→ scale-passing', () => {
+    expect(admit(65, { isWeakBeat: true, prevMidi: 64, nextMidi: 67 }).reason).toBe('scale-passing');
   });
-  it('邻音 G-F-G → scale-neighbor', () => {
-    expect(admit(65, { prevMidi: 67, nextMidi: 67 }).reason).toBe('scale-neighbor');
+  it('邻音 G-F-G(弱位)→ scale-neighbor', () => {
+    expect(admit(65, { isWeakBeat: true, prevMidi: 67, nextMidi: 67 }).reason).toBe('scale-neighbor');
   });
   it('弱拍级进接入 → scale-weak', () => {
     expect(admit(65, { isWeakBeat: true, prevMidi: 64 }).reason).toBe('scale-weak');
+  });
+  it('★ 强拍/长音的非合同音(即便有级进邻居)→ rejected(防长暴露)', () => {
+    expect(admit(65, { isWeakBeat: false, prevMidi: 64, nextMidi: 67 }).admit).toBe(false);
   });
 });
 
@@ -54,11 +57,11 @@ describe('③ 半音(非音阶,如 Db)→ 最严', () => {
   it('弱拍单侧级进 → rejected(半音不能弱拍单放)', () => {
     expect(admit(61, { isWeakBeat: true, prevMidi: 60 }).admit).toBe(false); // Db
   });
-  it('两侧和弦音的半音经过 C-Db-D → chromatic-passing', () => {
-    expect(admit(61, { prevMidi: 60, nextMidi: 62 }).reason).toBe('chromatic-passing');
+  it('两侧和弦音的半音经过 C-Db-D(弱位)→ chromatic-passing', () => {
+    expect(admit(61, { isWeakBeat: true, prevMidi: 60, nextMidi: 62 }).reason).toBe('chromatic-passing');
   });
-  it('两侧同和弦音的半音邻音 C-Db-C → chromatic-neighbor', () => {
-    expect(admit(61, { prevMidi: 60, nextMidi: 60 }).reason).toBe('chromatic-neighbor');
+  it('两侧同和弦音的半音邻音 C-Db-C(弱位)→ chromatic-neighbor', () => {
+    expect(admit(61, { isWeakBeat: true, prevMidi: 60, nextMidi: 60 }).reason).toBe('chromatic-neighbor');
   });
   it('强拍裸放 → rejected', () => {
     expect(admit(66).admit).toBe(false); // F#
@@ -67,7 +70,7 @@ describe('③ 半音(非音阶,如 Db)→ 最严', () => {
 
 describe('级进用真实 midi 距离(pc 距1 的 M7 跳进 ≠ 级进)', () => {
   it('Db 前是 D(midi 50,M7 跳进)→ rejected', () => {
-    expect(admit(61, { prevMidi: 50, nextMidi: 62 }).admit).toBe(false);
+    expect(admit(61, { isWeakBeat: true, prevMidi: 50, nextMidi: 62 }).admit).toBe(false);
   });
 });
 

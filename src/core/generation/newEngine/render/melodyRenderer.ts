@@ -9,7 +9,7 @@
 // Slice 1:motif 每小节复述填满 phrase;真 grammar 变体 / GuideTone tail 后续接。
 // ============================================================
 
-import { beats, midi, mod12, type Midi, type Timebase } from '../foundation';
+import { beats, midi, mod12, pc, type Midi, type Timebase } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf, phraseStartBeats } from '../arranger/phraseTiming';
@@ -18,6 +18,7 @@ import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
 import { developBar, pickGrammarName, type DevNote } from '../knowledge/grammarLibrary';
 import { guideToneMidi } from '../knowledge/guideTonePolicies';
 import { nearestInScale } from '../knowledge/modes';
+import { chordContractPcs, chordScalePcs, admitNoteByContract } from './harmonicContract';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MelodyAnchorPlan } from './MelodyAnchorPlan';
 import {
@@ -38,21 +39,12 @@ function spanAtBeat(plan: HarmonicPlan, beat: number): ChordSpan | undefined {
 }
 
 /**
- * pc 收口到该和弦的【安全集 = chord-scale 去 avoid】:
- *   - 落 avoid(如 maj 的 4 度)→ snap;
- *   - 落 chord-scale 之外(离调,尤其 borrowed/副属/转调段的非调内音)→ 也 snap。
- * 就近到安全集成员(保 pc-distance 最近)。安全集空才退回原样(罕见)。
- * ★ 让旋律真正贴【当前和弦的调式音阶】,不止贴 key —— 修 Auditor 抓出的离调暴露。
+ * 拍位强弱(合同 gate 用):主拍(downbeat / 半小节)或长音(≥1 拍)= 强 → 须落合同;
+ * 其余(弱拍、短音、off-beat)= 弱 → 容许级内/半音经过装饰。
  */
-function safePc(pc: number, plan: HarmonicPlan, span: ChordSpan | undefined): number {
-  if (!span) return pc;
-  const avoid = (plan.avoidNoteMap[span.id] ?? []) as readonly number[];
-  const scale = (plan.chordScaleMap[span.id] ?? []) as readonly number[];
-  const inScale = scale.length === 0 || scale.includes(pc as never);
-  if (!avoid.includes(pc) && inScale) return pc; // 已安全
-  const safeSet = (scale.length > 0 ? scale.filter((p) => !avoid.includes(p)) : (plan.stableToneMap[span.id] ?? [])) as readonly number[];
-  if (safeSet.length === 0) return pc;
-  return [...safeSet].sort((a, b) => pcDistance(a, pc) - pcDistance(b, pc))[0];
+function isWeakBeatPos(beatInBar: number, bpb: number, duration: number): boolean {
+  const onStrong = beatInBar === 0 || (bpb % 2 === 0 && beatInBar === bpb / 2);
+  return !(onStrong || duration >= 1);
 }
 
 export function renderMelody(
@@ -70,11 +62,25 @@ export function renderMelody(
   const phraseById = new Map(arrangement.phrases.map((p) => [p.id, p]));
   const notes: NoteIR[] = [];
 
-  // 选音收口:modal regime → 逐和弦约束松,只约束在全局 primaryScale(自由跑音阶 = 色彩);
-  //           tonal → 落 avoid 就近 snap 到该和弦 stable tone。
+  // 选音收口:和声合同 gate(方向A,和弦 ⊥ 音阶三档)——
+  //   tonal:① 合同(stable∪color)=强拍自由 ② 音阶内非和弦=弱拍/经过/邻音 ③ 半音=严;
+  //          rejected → 就近 snap 到合同音(保音区)。modal:合同=整 mode → 自由贴 primaryScale。
   const isModal = band.tonalityKind === 'modal';
-  const resolvePc = (rawPc: number, span: ChordSpan | undefined): number =>
-    isModal ? nearestInScale(mod12(rawPc), band.primaryScale) : safePc(rawPc, plan, span);
+  const resolveGated = (
+    rawMidi: number, span: ChordSpan | undefined, low: number, high: number,
+    isWeakBeat: boolean, prevMidi?: number, nextMidi?: number,
+  ): number => {
+    if (isModal) return pcToMidiInRange(nearestInScale(mod12(rawMidi), band.primaryScale), low, high);
+    if (!span) return rawMidi;
+    const contract = chordContractPcs(plan, span.id);
+    const scale = chordScalePcs(plan, span.id);
+    if (admitNoteByContract({ noteMidi: rawMidi, chordContract: contract, scale, isWeakBeat, prevMidi, nextMidi }).admit) return rawMidi;
+    const rawPc = mod12(rawMidi);
+    let bestPc = rawPc as number;
+    let bestD = 99;
+    for (const p of contract) { const d = pcDistance(pc(p), rawPc); if (d < bestD) { bestD = d; bestPc = p; } }
+    return pcToMidiInRange(pc(bestPc), low, high);
+  };
 
   for (const entry of anchorPlan.entries) {
     const phrase = phraseById.get(entry.phraseId);
@@ -144,19 +150,21 @@ export function renderMelody(
     }
 
     // hook 句:motif 逐小节 grammar 发展;末小节稀疏解决 + 句尾呼吸(留白)
+    let prevMelodyMidi: number | undefined; // 同句旋律前一音(经过/邻音判定的"前")
     for (let bar = 0; bar < phrase.bars; bar++) {
       const barStart = phraseStart + bar * bpb;
       const isLastBar = bar === phrase.bars - 1;
 
       if (isLastBar && phrase.bars > 1) {
         // 句尾:单长音解决(cadence 句落主音,其余回锚点)+ 末 breath 拍留白
-        // ★ 长音必须贴当前和弦安全音(否则主音落属和弦=avoid 11,长暴露被 Auditor 拦)
+        // ★ 长音=强 → 必须落合同(gate isWeakBeat=false,非合同就近 snap 合同音)
         const rawPc =
           phrase.role === 'cadence'
             ? mod12(secKey + degreeToSemitone(1, band.mode))
             : mod12(headPitch);
-        const pc = resolvePc(rawPc, spanAtBeat(plan, barStart));
-        const pitch = pcToMidiInRange(pc, leadLow, leadHigh);
+        const rawMidi = pcToMidiInRange(rawPc, leadLow, leadHigh);
+        const pitch = midi(resolveGated(rawMidi, spanAtBeat(plan, barStart), leadLow, leadHigh, false));
+        prevMelodyMidi = pitch;
         const dur = Math.max(0.5, bpb - breath);
         notes.push({
           pitch,
@@ -173,14 +181,18 @@ export function renderMelody(
         const noteBeat = barStart + dn.timeOffset;
         let pitch: Midi;
         if (i === 0 && bar === 0) {
-          // hook head 锚点(置入弧线音区);modal 下也收进 primaryScale
+          // hook head 锚点 = motif 记忆点身份音,不走 gate(跨段一致性优先);modal 收进 primaryScale
           const headPc = isModal ? nearestInScale(mod12(headPitch), band.primaryScale) : mod12(headPitch);
           pitch = pcToMidiInRange(headPc, leadLow, leadHigh);
         } else {
-          const rawPc = mod12(secKey + degreeToSemitone(dn.scaleDegree, band.mode));
-          const pc = resolvePc(rawPc, spanAtBeat(plan, noteBeat));
-          pitch = pcToMidiInRange(pc, leadLow, leadHigh);
+          // ★ 和声合同 gate:强拍/长音落合同,弱拍/经过/邻音容许级内/半音短音(读相对音阶)
+          const rawMidi = pcToMidiInRange(mod12(secKey + degreeToSemitone(dn.scaleDegree, band.mode)), leadLow, leadHigh);
+          const nextDn = devNotes[i + 1];
+          const nextMidi = nextDn ? pcToMidiInRange(mod12(secKey + degreeToSemitone(nextDn.scaleDegree, band.mode)), leadLow, leadHigh) : undefined;
+          const isWeak = isWeakBeatPos(dn.timeOffset, bpb, dn.duration);
+          pitch = midi(resolveGated(rawMidi, spanAtBeat(plan, noteBeat), leadLow, leadHigh, isWeak, prevMelodyMidi, nextMidi));
         }
+        prevMelodyMidi = pitch;
         notes.push({
           pitch,
           startTick: timebase.beatToTick(beats(noteBeat)),

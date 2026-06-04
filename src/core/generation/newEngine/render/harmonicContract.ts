@@ -62,6 +62,10 @@ export function admitNoteByContract(args: {
   // ① 和弦合同内 → 强拍自由
   if (chordContract.has(note)) return { admit: true, reason: 'in-contract' };
 
+  // ★ 非合同音必须在【弱位】(弱拍 / 短音 / off-beat)—— 经过/邻音/装饰天生是弱位短音。
+  //   强拍或长音的非合同音 → rejected(交给调用方就近 snap 到合同),否则会长暴露撞 Auditor。
+  if (!isWeakBeat) return { admit: false, reason: 'rejected' };
+
   const inScale = scale.size === 0 || scale.has(note);
   const stepFromPrev = prevMidi !== undefined && isStepMidi(prevMidi, noteMidi);
   const stepToNext = nextMidi !== undefined && isStepMidi(noteMidi, nextMidi);
@@ -72,13 +76,13 @@ export function admitNoteByContract(args: {
   const samePc = prevMidi !== undefined && nextMidi !== undefined && mod12(prevMidi) === mod12(nextMidi);
 
   if (inScale) {
-    // ② 音阶内非和弦音 = 自然经过/装饰 → 弱拍/经过/邻音
+    // ② 音阶内非和弦音 = 自然经过/装饰
     if (samePc && supported(prevMidi) && stepFromPrev && stepToNext) return { admit: true, reason: 'scale-neighbor' };
     if (supported(prevMidi) && supported(nextMidi) && stepFromPrev && stepToNext) return { admit: true, reason: 'scale-passing' };
-    if (isWeakBeat && (stepFromPrev || stepToNext)) return { admit: true, reason: 'scale-weak' };
+    if (stepFromPrev || stepToNext) return { admit: true, reason: 'scale-weak' };
     return { admit: false, reason: 'rejected' };
   }
-  // ③ 半音(非音阶)→ 最严:仅两侧为和弦音的真半音经过/邻音(禁弱拍单放)
+  // ③ 半音(非音阶)→ 最严:仅两侧为和弦音的真半音经过/邻音
   if (samePc && chordSup(prevMidi) && stepFromPrev && stepToNext) return { admit: true, reason: 'chromatic-neighbor' };
   if (chordSup(prevMidi) && chordSup(nextMidi) && stepFromPrev && stepToNext) return { admit: true, reason: 'chromatic-passing' };
   return { admit: false, reason: 'rejected' };
