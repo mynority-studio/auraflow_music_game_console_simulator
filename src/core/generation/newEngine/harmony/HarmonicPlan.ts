@@ -34,6 +34,11 @@ export interface ChordSpan {
   sectionId: SectionId;
 }
 
+export interface BorrowInfo {
+  from: 'parallel-minor' | 'parallel-major';
+  label: string; // 如 'iv' / 'bVII'
+}
+
 export interface HarmonicPlanData {
   romanProgression: RomanChord[];
   chordTimeline: ChordSpan[];
@@ -43,6 +48,7 @@ export interface HarmonicPlanData {
   stableToneMap: Record<ChordSpanId, PitchClass[]>;
   colorToneMap: Record<ChordSpanId, PitchClass[]>;
   avoidNoteMap: Record<ChordSpanId, PitchClass[]>;
+  borrowedChordMap: Record<ChordSpanId, BorrowInfo>; // 仅借和弦 span 在此
 }
 
 export type HarmonicPlan = DeepReadonly<HarmonicPlanData>;

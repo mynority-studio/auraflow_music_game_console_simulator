@@ -17,6 +17,7 @@ import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import {
   freezeHarmonicPlan,
+  type BorrowInfo,
   type ChordSpan,
   type HarmonicFunction,
   type HarmonicPlan,
@@ -38,6 +39,7 @@ interface ResolvedChord {
   durationBeats: number;
   sectionId: string;
   func: HarmonicFunction;
+  borrowed?: BorrowInfo;
 }
 
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表)
@@ -52,11 +54,13 @@ function assemble(resolved: ResolvedChord[]): HarmonicPlan {
   const stableToneMap: Record<string, PitchClass[]> = {};
   const colorToneMap: Record<string, PitchClass[]> = {};
   const avoidNoteMap: Record<string, PitchClass[]> = {};
+  const borrowedChordMap: Record<string, BorrowInfo> = {};
 
   let beat = 0;
   resolved.forEach((rc, i) => {
     const id = `c${i}`;
     const tension = tensionTableFor(rc.rootPc, rc.quality);
+    if (rc.borrowed) borrowedChordMap[id] = rc.borrowed;
     romanProgression.push(rc.roman);
     chordTimeline.push({
       id,
@@ -86,6 +90,7 @@ function assemble(resolved: ResolvedChord[]): HarmonicPlan {
     stableToneMap,
     colorToneMap,
     avoidNoteMap,
+    borrowedChordMap,
   };
   return freezeHarmonicPlan(data);
 }
@@ -152,7 +157,7 @@ export function buildHarmonicPlanFromArrangement(
       : undefined;
 
     // 先建逐位 slot(含终止式覆写),再做副属着色 → 最后落 resolved
-    interface Slot { degree: number; quality: ChordQuality; rootPc: PitchClass; func: HarmonicFunction; roman: RomanChord; }
+    interface Slot { degree: number; quality: ChordQuality; rootPc: PitchClass; func: HarmonicFunction; roman: RomanChord; borrowed?: BorrowInfo; }
     const slots: Slot[] = [];
     for (let j = 0; j < totalChords; j++) {
       let degree = degrees[j % degrees.length];
@@ -186,6 +191,22 @@ export function buildHarmonicPlanFromArrangement(
       }
     }
 
+    // ★ 借和弦:大调向同名小调借 iv(IV→iv 小三和弦,Fm 在 C)。colorBudget≥0.3 才加,
+    //   确定性=排比不破;Ab/Eb 离调色彩,melody 对其安全音重 snap。
+    if (band.mode === 'major' && band.styleProfile.colorBudget >= 0.3) {
+      for (let j = 0; j < totalChords - 2; j++) {
+        const s = slots[j];
+        if (s.degree === 4 && s.quality === 'maj7' && !s.borrowed) {
+          slots[j] = {
+            ...s,
+            quality: 'm7', // 小调 iv
+            roman: { degree: 4, accidental: 'natural', quality: 'm7' },
+            borrowed: { from: 'parallel-minor', label: 'iv' },
+          };
+        }
+      }
+    }
+
     for (const s of slots) {
       resolved.push({
         roman: s.roman,
@@ -194,6 +215,7 @@ export function buildHarmonicPlanFromArrangement(
         durationBeats: chordDurBeats,
         sectionId: section.id,
         func: s.func,
+        borrowed: s.borrowed,
       });
     }
   }
