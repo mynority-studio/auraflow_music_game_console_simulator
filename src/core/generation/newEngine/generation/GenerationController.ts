@@ -14,9 +14,11 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
+import { runPrepass } from '../render/motifAnchorPrepass';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import { DEFAULT_BUDGET, nextRetryContext, type RetryBudget } from './RetryPolicy';
+import { buildRetryLocator, type RetryLocator } from './retryMapping';
 import type { RetryContext } from './RetryContext';
 
 export interface RenderAttempt {
@@ -40,6 +42,7 @@ export function runGenerationControl(
   render: RenderFn,
   seedRng: RandomContext,
   budget: RetryBudget = DEFAULT_BUDGET,
+  locator?: RetryLocator,
 ): GenerationResult {
   let retry: RetryContext | undefined;
   let current = render(undefined);
@@ -63,7 +66,7 @@ export function runGenerationControl(
       return { status: 'failed', report: current.audit, attempts };
     }
 
-    retry = nextRetryContext(retry, current.audit, seedRng); // 每次必变
+    retry = nextRetryContext(retry, current.audit, seedRng, locator); // 每次必变 + finding 精确返回点
     current = render(retry);
     attempts += 1;
   }
@@ -84,5 +87,10 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng, retry?.candidateSwap);
 
-  return runGenerationControl(render, seedRng, budget);
+  // finding→精确返回点定位器:从 base prepass 建(binding/span 时段 + 候选池)。
+  //   melody/resolver/accompaniment 回卷不推进 'prepass' 子流 → 候选池跨重跑稳定 → swap id 恒有效。
+  const { anchorPlan, motifStore } = runPrepass(band, arrangement, harmonic, seedRng);
+  const locator = buildRetryLocator(arrangement, anchorPlan, motifStore, harmonic, timebase);
+
+  return runGenerationControl(render, seedRng, budget, locator);
 }
