@@ -23,7 +23,7 @@ export function buildArrangementPlan(
   opts: ArrangementOptions = {},
 ): ArrangementPlan {
   const sections = planForm({ rng: opts.rng?.substream('arranger'), template: opts.template });
-  const time = planTime(band.style);
+  const time = planTime(band.style, opts.rng?.substream('time')); // tempo 随 seed 在风格区间浮动
   const { phrases, motifBindings } = planPhrases(sections, time.phraseBreathing.phraseBars);
   const dynamics = planDynamics(sections);
 

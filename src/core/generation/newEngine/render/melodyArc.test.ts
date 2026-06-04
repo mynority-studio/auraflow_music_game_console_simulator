@@ -5,10 +5,10 @@ import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
-import { createTimebase, createRandomContext } from '../foundation';
+import { createTimebase, createRandomContext, pc } from '../foundation';
 
 describe('render/melody 轮廓弧线 (2.4)', () => {
-  const band = buildBandSpec({ seed: 4, styleHint: 'pop', mood: 'build', targetDuration: 120 });
+  const band = buildBandSpec({ seed: 4, styleHint: 'pop', mood: 'build', targetDuration: 120, key: pc(0), mode: 'major' });
   const arrangement = buildArrangementPlan(band);
   const plan = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(4));
   const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });

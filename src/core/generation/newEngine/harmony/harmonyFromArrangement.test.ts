@@ -5,7 +5,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { createRandomContext, pc } from '../foundation';
 
 describe('harmony · Band→Arranger→Harmony 端到端', () => {
-  const band = buildBandSpec({ seed: 42, styleHint: 'pop', mood: 'build', targetDuration: 120 });
+  const band = buildBandSpec({ seed: 42, styleHint: 'pop', mood: 'build', targetDuration: 120, key: pc(0), mode: 'major' });
   const arrangement = buildArrangementPlan(band);
   const rng = createRandomContext(42);
   const plan = buildHarmonicPlanFromArrangement(band, arrangement, rng);

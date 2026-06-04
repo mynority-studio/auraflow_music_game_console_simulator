@@ -6,10 +6,14 @@
 // 当前为确定性映射,无随机选择(rng 在做风格内随机选项时再接入)。
 // ============================================================
 
-import { pc, type PitchClass } from '../foundation';
+import { createRandomContext, pc, type PitchClass } from '../foundation';
 import { MAJOR_SCALE, NATURAL_MINOR } from '../knowledge/scales';
 import { modalScale, type ChurchMode } from '../knowledge/modes';
 import type { BandSpec, Mode, StyleProfile, TonalityKind } from './BandSpec';
+
+// seed 派生音乐身份的可调参数(都从 'band' 子流取,key/mode 未显式指定才生效)
+const MINOR_PROBABILITY = 0.3;                       // 未指定 mode 时落小调的概率
+const MODAL_MODE_POOL: ChurchMode[] = ['dorian', 'mixolydian', 'aeolian', 'lydian', 'phrygian']; // modal 调式池
 
 export interface GenerationRequest {
   seed: number;
@@ -37,11 +41,16 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
     ? req.styleHint
     : 'default';
   const tonalityKind: TonalityKind = req.tonalityKind ?? (style === 'modal' ? 'modal' : 'tonal');
-  const key = req.key ?? pc(0);
-  const mode = req.mode ?? 'major';
+
+  // ★ seed 派生音乐身份(确定性,独立 'band' 子流):key 缺省 → 12 调随 seed;mode 缺省 → 偶尔小调。
+  //   显式 req.key/req.mode 永远优先(测试/指定调用不受扰)。
+  const brng = createRandomContext(req.seed).substream('band');
+  const key = req.key ?? pc(brng.int(12));
+  const mode: Mode = req.mode ?? (brng.next() < MINOR_PROBABILITY ? 'minor' : 'major');
 
   if (tonalityKind === 'modal') {
-    const modalModeName: ChurchMode = req.modalMode ?? 'dorian'; // 默认 Dorian(最常用 modal vamp)
+    // modal 调式也随 seed(未显式指定)→ 同 styleHint 不同 seed 出不同调式色彩
+    const modalModeName: ChurchMode = req.modalMode ?? MODAL_MODE_POOL[brng.int(MODAL_MODE_POOL.length)];
     return {
       style,
       styleProfile: STYLE_PROFILES[style],

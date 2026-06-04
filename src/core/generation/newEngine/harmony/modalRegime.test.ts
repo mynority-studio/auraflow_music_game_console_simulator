@@ -11,7 +11,7 @@ import { modalScale } from '../knowledge/modes';
 describe('harmony/render · modal regime (4.1)', () => {
   const mk = (seed = 4) => {
     const seedRng = createRandomContext(seed);
-    const band = buildBandSpec({ seed, styleHint: 'modal', mood: 'x', targetDuration: 120, key: pc(0) });
+    const band = buildBandSpec({ seed, styleHint: 'modal', mood: 'x', targetDuration: 120, key: pc(0), modalMode: 'dorian' });
     const arrangement = buildArrangementPlan(band, { rng: seedRng });
     const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
     return { band, arrangement, harmonic, seedRng };

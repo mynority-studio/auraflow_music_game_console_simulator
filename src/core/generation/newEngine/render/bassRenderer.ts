@@ -9,8 +9,8 @@
 // ============================================================
 
 import { beats, mod12, type Timebase } from '../foundation';
-import { pcToMidiInRange } from '../knowledge/pitchPlacement';
-import type { HarmonicPlan } from '../harmony/HarmonicPlan';
+import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
+import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 const BASS_LOW = 36;
@@ -20,9 +20,19 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
   const notes: NoteIR[] = [];
   const spans = plan.chordTimeline;
 
-  const push = (pc: number, beat: number, dur: number, vel: number) => {
+  // bass 也 chord-aware:落 avoid 就近 snap 到该和弦 stable tone(walking 半音接入在某些调里会撞 avoid,
+  //   逐拍≥1 拍会被 Auditor 拦 → 这里预消解,和 melody safePc 同策略)。
+  const safe = (pc: number, span: ChordSpan): number => {
+    const avoid = (plan.avoidNoteMap[span.id] ?? []) as readonly number[];
+    if (!avoid.includes(pc)) return pc;
+    const stable = (plan.stableToneMap[span.id] ?? []) as readonly number[];
+    if (stable.length === 0) return pc;
+    return [...stable].sort((a, b) => pcDistance(a, pc) - pcDistance(b, pc))[0];
+  };
+
+  const push = (pc: number, span: ChordSpan, beat: number, dur: number, vel: number) => {
     notes.push({
-      pitch: pcToMidiInRange(pc, BASS_LOW, BASS_HIGH),
+      pitch: pcToMidiInRange(safe(pc, span), BASS_LOW, BASS_HIGH),
       startTick: timebase.beatToTick(beats(beat)),
       durationTicks: timebase.beatToTick(beats(dur)),
       velocity: vel,
@@ -44,16 +54,16 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
         if (b === 0) pc = root;
         else if (b === nBeats - 1 && nextRoot !== undefined) pc = mod12(nextRoot - 1); // 半音下行接入
         else pc = tones[b % tones.length] as number;
-        push(pc, start + b, 1, 88);
+        push(pc, span, start + b, 1, 88);
       }
     } else if (style === 'pop') {
       for (let b = 0; b < nBeats; b++) {
         const onDown = b % 2 === 0;
-        push(onDown ? root : fifth, start + b, 1, onDown ? 94 : 78);
+        push(onDown ? root : fifth, span, start + b, 1, onDown ? 94 : 78);
       }
     } else {
-      push(root, start, span.durationBeats as number, 90); // 根音持续
-      if (style === 'lofi' && nBeats >= 2) push(fifth, start + nBeats - 1, 1, 68);
+      push(root, span, start, span.durationBeats as number, 90); // 根音持续
+      if (style === 'lofi' && nBeats >= 2) push(fifth, span, start + nBeats - 1, 1, 68);
     }
   }
 
