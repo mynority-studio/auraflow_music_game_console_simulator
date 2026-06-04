@@ -103,3 +103,8 @@ export function getChordPitchClasses(rootPc: PitchClass, chordType: ChordTypeId)
 export function listChordTypes(): readonly ChordTypeId[] {
   return Object.keys(CHORD_TYPES) as ChordTypeId[];
 }
+
+/** 按任意 chordType 字符串取相对根音半音(含 compound 张力);未知 → 大三和弦兜底 [0,4,7]。 */
+export function chordTypeIntervals(chordType: string): readonly number[] {
+  return (CHORD_TYPES as Record<string, readonly number[]>)[chordType] ?? [0, 4, 7];
+}

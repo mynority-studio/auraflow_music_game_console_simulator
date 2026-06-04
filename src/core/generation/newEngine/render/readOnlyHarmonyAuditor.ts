@@ -5,8 +5,9 @@
 // 规则(判据来自共享 KB,铁律21):
 //   R1 avoid-long-exposure   [error]  : avoidNoteMap 命中 + ≥1 拍长暴露 → 触发纠错环
 //   R2 chromatic-exposure    [warning]: 非鼓轨长音落在 chord-scale 之外(离调暴露)
-//   R3 tendency-avoid        [warning]: lead 长音按 TendencyTable(品质×功能)判 'A'(scenario-aware)
-//   R4 dissonant-vert-clash  [warning]: lead vs bass 同时发声且小二度/大七度(浊响撞音)
+//   R3 note-context-avoid    [warning]: lead 持续音走【统一评判器 evaluateNoteInChordContext】判 avoid
+//                                       (Layer A 和弦 + Layer B 调性 max-merge,需 keyCtx;切到统一 KB API)
+//   R4 dissonant-vert-clash  [warning]: lead vs comp 同时发声且实际小二度/小九度(浊响撞音)
 // warning 不阻断(controller 带 warning 通过),作产品级安全网;error 才回卷重跑。
 // ============================================================
 
@@ -14,7 +15,17 @@ import { beats, mod12, type DeepReadonly, type Timebase } from '../foundation';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditFinding, AuditReport } from '../ir/AuditReport';
-import { resolveChordScenario, getMelodyTendency } from '../knowledge/tendencyTable';
+import { evaluateNoteInChordContext } from '../knowledge/melodyChordSemantics';
+import type { KeyMode } from '../knowledge/keyProfiles';
+
+/** 调性上下文(由 band 下发):统一评判器 Layer B / scale 感知需要。 */
+export interface AuditKeyContext {
+  keyRootPc: number;
+  globalMode: KeyMode;
+  isModalContext: boolean;
+  scaleName?: string;                 // modal regime 的教会调式名
+  tonalCharacter: 'tonal' | 'modal';
+}
 
 function findSpanAtTick(
   plan: HarmonicPlan,
@@ -29,14 +40,15 @@ function findSpanAtTick(
   return undefined;
 }
 
-export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timebase): AuditReport {
+export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timebase, keyCtx?: AuditKeyContext): AuditReport {
   const findings: AuditFinding[] = [];
   const oneBeatTicks = timebase.beatToTick(beats(1));
   const twoBeatTicks = oneBeatTicks * 2; // 离调/倾向"持续暴露"门槛:1 拍走音/经过音不算,≥2 拍才是真暴露
 
-  // span → 功能(chordTimeline 与 chordFunctionTimeline 平行对齐)
+  // span → 功能 + 序号(chordTimeline 与 chordFunctionTimeline 平行对齐;序号取下一和弦)
   const funcBySpan: Record<string, HarmonicFunction> = {};
-  plan.chordTimeline.forEach((s, i) => { funcBySpan[s.id] = plan.chordFunctionTimeline[i]; });
+  const idxBySpan: Record<string, number> = {};
+  plan.chordTimeline.forEach((s, i) => { funcBySpan[s.id] = plan.chordFunctionTimeline[i]; idxBySpan[s.id] = i; });
 
   // —— R1/R2/R3:逐音判据 ——
   for (const track of ir.tracks) {
@@ -74,21 +86,32 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
         continue;
       }
 
-      // R3 scenario-aware avoid:lead【持续】音按 TendencyTable(品质×功能)判强 avoid(warning)
-      //   仅高引力(gravity≥0.9)+ ≥2 拍 → 真正该解决却挂住的 avoid 倾向音
-      if (track.role === 'lead' && isSustained) {
-        const scenario = resolveChordScenario(span.quality, funcBySpan[span.id] ?? 'T');
-        if (scenario) {
-          const t = getMelodyTendency(notePc, span.rootPc, scenario);
-          if (t.state === 'A' && t.gravity >= 0.9) {
-            findings.push({
-              severity: 'warning',
-              location: { trackRole: track.role, startTick: note.startTick },
-              ruleId: 'tendency-avoid',
-              reason: `pc ${notePc} 在 ${scenario}(${span.id})为 avoid 倾向音(gravity ${t.gravity},应解决到 ${t.targets.join('/')})`,
-              suggestedReturnPoint: 'rewind-melody',
-            });
-          }
+      // R3 统一评判器:lead【持续】音走 evaluateNoteInChordContext(Layer A 和弦 + Layer B 调性融合)
+      //   判 avoid 且急迫(urgency≥0.9)→ warning。需 keyCtx;无则跳过(向后兼容)。
+      if (track.role === 'lead' && isSustained && keyCtx) {
+        const idx = idxBySpan[span.id];
+        const next = plan.chordTimeline[idx + 1];
+        const modKey = plan.modulationMap[span.sectionId]?.toKey;
+        const a = evaluateNoteInChordContext({
+          notePc, chordType: span.quality, chordRootPc: span.rootPc,
+          effectiveFunc: funcBySpan[span.id] ?? 'T',
+          nextChordType: next ? next.quality : null,
+          nextChordRootPc: next ? next.rootPc : null,
+          keyRootPc: keyCtx.keyRootPc,
+          globalMode: keyCtx.globalMode,
+          isModalContext: keyCtx.isModalContext,
+          scaleNameForBar: keyCtx.scaleName,
+          tonalCharacter: keyCtx.tonalCharacter,
+          localTonalCenterPc: modKey,
+        });
+        if (a.consonance === 'avoid' && a.urgency >= 0.9) {
+          findings.push({
+            severity: 'warning',
+            location: { trackRole: track.role, startTick: note.startTick },
+            ruleId: 'note-context-avoid',
+            reason: `pc ${notePc} 在 ${span.id} 经统一评判器判 avoid(urgency ${a.urgency.toFixed(2)},应解决到 ${a.resolutionTargets.join('/')})`,
+            suggestedReturnPoint: 'rewind-melody',
+          });
         }
       }
     }

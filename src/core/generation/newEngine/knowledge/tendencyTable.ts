@@ -39,21 +39,25 @@ const TENDENCY_TABLE: Record<ChordScenario, readonly TendencyEntry[]> = {
   SUS: [e('CT', 0, []), e('A', 0.95, [0]), e('CT', 0, []), e('T', 0.5, [2, 5]), e('A', 0.8, [5, 2]), e('CT', 0, []), e('T', 0.4, [7, 5]), e('CT', 0, []), e('T', 0.5, [7]), e('T', 0.3, [7, 0]), e('CT', 0.1, []), e('A', 0.85, [10, 0])],
 };
 
-// 我方 ChordQuality → 品质族
-function baseQuality(quality: ChordQuality): 'maj' | 'min' | 'dom' | null {
-  switch (quality) {
-    case 'maj': case 'maj7': return 'maj';
-    case 'min': case 'm7': return 'min';
-    case '7': return 'dom';
-    case 'm7b5': case 'dim7': return null; // 半减/减:无 scenario,退回 tensionModel
-    default: return null;
+/** chordType 字符串 → 品质族(宽和弦,port 自 detectChordBaseQuality,逐条忠实)。 */
+export function detectChordBaseQuality(chordType: string): 'maj' | 'min' | 'dom' | 'sus' | null {
+  if (!chordType) return 'maj';
+  if (chordType.includes('sus') || chordType === '11') return 'sus';
+  if (chordType.startsWith('maj')) return 'maj';
+  if (chordType === '6' || chordType === '6/9' || chordType === 'add9' || chordType === 'add2') return 'maj';
+  if (chordType.startsWith('m') && !chordType.startsWith('maj')) {
+    if (chordType === 'm7b5' || chordType === 'm9b5' || chordType.startsWith('mMaj')) return null;
+    return 'min';
   }
+  if (/^(7|9|13)/.test(chordType) || chordType === '7alt' || /^7[#b]/.test(chordType)) return 'dom';
+  return null; // dim / aug / quartal …
 }
 
-/** (品质 + T/S/D 功能) → scenario;null = 该和弦不在倾向表覆盖(退回基础 avoid 判据)。 */
-export function resolveChordScenario(quality: ChordQuality, func: HarmonicFunction): ChordScenario | null {
-  const base = baseQuality(quality);
+/** (chordType + T/S/D 功能) → scenario;null = 不在倾向表覆盖(退回基础 avoid 判据)。窄 ChordQuality 是 string 子集,兼容。 */
+export function resolveChordScenario(chordType: string, func: HarmonicFunction): ChordScenario | null {
+  const base = detectChordBaseQuality(chordType);
   if (base === null) return null;
+  if (base === 'sus') return 'SUS';
   if (base === 'dom') return '7D';
   if (base === 'maj') return func === 'S' ? 'M7S' : 'M7T';
   return func === 'S' ? 'm7S' : 'm7T'; // min

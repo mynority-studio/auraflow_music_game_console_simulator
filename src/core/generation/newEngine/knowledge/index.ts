@@ -11,3 +11,4 @@ export * from './grammarLibrary';
 export * from './guideTonePolicies';
 export * from './chordIntervalRoles';
 export * from './scaleGravity';
+export * from './melodyChordSemantics';

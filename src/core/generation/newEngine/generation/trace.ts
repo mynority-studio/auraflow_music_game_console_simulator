@@ -137,7 +137,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     if (errs.length > 0) {
       log(`   纠错环(${result.attempts} 次尝试): error@${errs[0].location.trackRole}#${errs[0].location.startTick} → 撞音消解阶梯(voicing→降锁→换hook→fallback)`);
     } else {
-      log(`   (均 warning 级:离调/倾向/撞音安全网,信息性不阻断;来自扩 KB tendencyTable + chord-scale 判据)`);
+      log(`   (均 warning 级:离调/撞音/note-context-avoid 安全网,信息性不阻断;avoid 判据走【统一评判器 evaluateNoteInChordContext】Layer A 和弦+Layer B 调性融合)`);
     }
   }
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));

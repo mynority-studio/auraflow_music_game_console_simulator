@@ -142,7 +142,13 @@ export function renderSongFull(
   // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
   //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
   const auditedIR = freezeMusicalIR({ tracks: swungTracks, timebase, durationTicks: resolved.data.durationTicks });
-  const audit = auditHarmony(auditedIR, plan, timebase);
+  const audit = auditHarmony(auditedIR, plan, timebase, {
+    keyRootPc: band.key,
+    globalMode: band.mode,
+    isModalContext: band.tonalityKind === 'modal',
+    scaleName: band.modalModeName,
+    tonalCharacter: band.tonalityKind === 'modal' ? 'modal' : 'tonal',
+  });
 
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, humanRng);
