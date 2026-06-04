@@ -229,3 +229,49 @@ export function buildWidePianoVoicing(args: {
 export function isPianoProgram(program: number | undefined): boolean {
   return program === 0 || program === 1 || program === 2;
 }
+
+export type SpreadCellRole = 'establish' | 'develop' | 'lift' | 'cadence';
+export type SpreadSectionFunction = 'INTRO' | 'VERSE' | 'CHORUS' | 'BRIDGE' | 'OUTRO';
+/** pickSpreadMode 只用 next()/pick() —— 喂 RandomContext 子流即可。 */
+export interface SpreadPicker {
+  next(): number;
+  pick<T>(xs: readonly T[]): T;
+}
+
+/**
+ * 按【和声功能 + cell 角色 + 段落功能 + 乐句位置】评分选 spread mode(port 忠实)。
+ * 硬规则:末和弦/乐句尾 → close;INTRO/OUTRO 多 close 偶 half_wide。
+ * 评分偏置:develop/lift→开,D→开,CHORUS→wide,BRIDGE→drop2_wide,cadence→close。
+ */
+export function pickSpreadMode(args: {
+  func: 'T' | 'S' | 'D';
+  cellRole: SpreadCellRole;
+  sectionFunction: SpreadSectionFunction;
+  isPhraseEnd: boolean;
+  isLast: boolean;
+  random: SpreadPicker;
+}): SpreadMode {
+  if (args.isLast || args.isPhraseEnd) return 'close';
+  if (args.sectionFunction === 'INTRO' || args.sectionFunction === 'OUTRO') {
+    return args.random.next() < 0.7 ? 'close' : 'half_wide';
+  }
+
+  const scores: Record<SpreadMode, number> = { close: 0, half_wide: 2, wide: 0, drop2_wide: 0 };
+
+  if (args.cellRole === 'establish') scores.half_wide += 1;
+  if (args.cellRole === 'develop') { scores.half_wide += 1; scores.wide += 1; }
+  if (args.cellRole === 'lift') { scores.wide += 3; scores.drop2_wide += 1; }
+  if (args.cellRole === 'cadence') { scores.half_wide += 1; scores.close += 2; }
+
+  if (args.func === 'T') scores.half_wide += 1;
+  if (args.func === 'S') { scores.half_wide += 1; scores.wide += 1; }
+  if (args.func === 'D') { scores.wide += 2; scores.drop2_wide += 2; }
+
+  if (args.sectionFunction === 'CHORUS') scores.wide += 2;
+  if (args.sectionFunction === 'BRIDGE') { scores.drop2_wide += 3; scores.wide += 1; }
+  if (args.sectionFunction === 'VERSE') scores.half_wide += 1;
+
+  const max = Math.max(...Object.values(scores));
+  const top = Object.entries(scores).filter(([, v]) => v === max).map(([k]) => k as SpreadMode);
+  return top.length === 1 ? top[0] : args.random.pick(top);
+}

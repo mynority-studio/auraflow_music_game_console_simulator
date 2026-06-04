@@ -103,7 +103,8 @@ export function renderSongFull(
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style));
-  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp }));
+  const sectionRoleById = Object.fromEntries(arrangement.sections.map((s) => [s.id, s.role]));
+  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment') }));
   if (inLineup('pad')) tracks.push(renderPad(plan, timebase, floatingSectionIds));
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars }));
   tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有

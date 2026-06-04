@@ -6,7 +6,10 @@
 // ============================================================
 
 import { describe, expect, it } from 'vitest';
-import { buildWidePianoVoicing, isPianoProgram, type WidePianoOptions } from './widePianoVoicings';
+import { buildWidePianoVoicing, isPianoProgram, pickSpreadMode, type SpreadPicker, type WidePianoOptions } from './widePianoVoicings';
+
+// 确定性 picker:next 恒返回 fixed,pick 取第一个(tie 时可预测)
+const picker = (fixed = 0.99): SpreadPicker => ({ next: () => fixed, pick: (xs) => xs[0] });
 
 const opts = (over: Partial<WidePianoOptions> = {}): WidePianoOptions => ({
   includeRootInComp: true,
@@ -110,6 +113,30 @@ describe('buildWidePianoVoicing — rolePcs 整合接缝', () => {
     expect(pcs.has(10)).toBe(true);             // b7 在
     expect(pcs.has(2)).toBe(false);             // 不加 9
     for (const p of pcs) expect([0, 4, 7, 10]).toContain(p);
+  });
+});
+
+describe('pickSpreadMode — 段落/功能驱动的 spread 选择', () => {
+  it('硬规则:末和弦 / 乐句尾 → close', () => {
+    expect(pickSpreadMode({ func: 'D', cellRole: 'lift', sectionFunction: 'CHORUS', isPhraseEnd: false, isLast: true, random: picker() })).toBe('close');
+    expect(pickSpreadMode({ func: 'D', cellRole: 'lift', sectionFunction: 'CHORUS', isPhraseEnd: true, isLast: false, random: picker() })).toBe('close');
+  });
+
+  it('INTRO/OUTRO:random<0.7→close,否则 half_wide', () => {
+    expect(pickSpreadMode({ func: 'T', cellRole: 'establish', sectionFunction: 'INTRO', isPhraseEnd: false, isLast: false, random: picker(0.3) })).toBe('close');
+    expect(pickSpreadMode({ func: 'T', cellRole: 'establish', sectionFunction: 'OUTRO', isPhraseEnd: false, isLast: false, random: picker(0.9) })).toBe('half_wide');
+  });
+
+  it('CHORUS + lift + D → wide(开)', () => {
+    expect(pickSpreadMode({ func: 'D', cellRole: 'lift', sectionFunction: 'CHORUS', isPhraseEnd: false, isLast: false, random: picker() })).toBe('wide');
+  });
+
+  it('BRIDGE + D + establish → drop2_wide 占优(drop2 5 > wide 3 > half 3)', () => {
+    expect(pickSpreadMode({ func: 'D', cellRole: 'establish', sectionFunction: 'BRIDGE', isPhraseEnd: false, isLast: false, random: picker() })).toBe('drop2_wide');
+  });
+
+  it('VERSE establish T → half_wide 基线(中庸)', () => {
+    expect(pickSpreadMode({ func: 'T', cellRole: 'establish', sectionFunction: 'VERSE', isPhraseEnd: false, isLast: false, random: picker() })).toBe('half_wide');
   });
 });
 

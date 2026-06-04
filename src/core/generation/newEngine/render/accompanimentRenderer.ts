@@ -11,8 +11,9 @@ import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { compPattern } from '../knowledge/grooves';
 import { guideToneShell, voiceComp } from '../knowledge/voicings';
 import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
-import { buildWidePianoVoicing, isPianoProgram, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
-import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
+import { buildWidePianoVoicing, isPianoProgram, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
+import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
+import type { SectionRole } from '../arranger/ArrangementPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 export interface AccompContext {
@@ -21,7 +22,13 @@ export interface AccompContext {
   activeSectionIds?: Set<string>; // active 织体段
   voicingSaferSpans?: Set<string>; // 撞音阶梯 rung1:这些 span 强制瘦身 3+7 shell
   compProgram?: number;            // ★ comp 实际乐器 GM program:钢琴家族 → 宽排列,否则通用 voiceComp
+  sectionRoleById?: Record<string, SectionRole>; // 段落功能 → 钢琴 spread mode 选择(pickSpreadMode)
+  voicingRng?: SpreadPicker;       // spread mode 选择用的确定性子流('accompaniment')
 }
+
+const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
+  intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
+};
 
 // 把窄 ChordQuality 的【真实和弦音】映射到 wide-voicing 角色(只 root/3/5/7,不加色彩)。
 // 不走 getChordRolePcs(它对窄三和弦会幻觉七音)。dim7 的 bb7(9)归为 seventh。
@@ -67,22 +74,45 @@ export function renderAccompaniment(
   const usePiano = isPianoProgram(ctx.compProgram);
   const includeRootInComp = !/jazz/i.test(style); // jazz:rootless(bass 兜 root),其它含 root
 
+  // spread mode 选择信号:和声功能 + cell 角色(进度四分位)+ 段落功能 + 乐句尾
+  const timeline = plan.chordTimeline;
+  const funcBySpan: Record<string, HarmonicFunction> = {};
+  timeline.forEach((s, i) => { funcBySpan[s.id] = plan.chordFunctionTimeline[i]; });
+  const N = timeline.length;
+  const cellRoleAt = (i: number): SpreadCellRole =>
+    i < N / 4 ? 'establish' : i < N / 2 ? 'develop' : i < (N * 3) / 4 ? 'lift' : 'cadence';
+  const lastOfSection = (i: number): boolean => timeline[i + 1]?.sectionId !== timeline[i].sectionId;
+  const pickPianoSpread = (i: number, span: ChordSpan): SpreadMode => {
+    if (!ctx.voicingRng || !ctx.sectionRoleById) return 'wide';
+    return pickSpreadMode({
+      func: funcBySpan[span.id] ?? 'T',
+      cellRole: cellRoleAt(i),
+      sectionFunction: SECTION_FN[ctx.sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE',
+      isPhraseEnd: lastOfSection(i),
+      isLast: i === N - 1,
+      random: ctx.voicingRng,
+    });
+  };
+
   // 预算 per-span voicing(全声部 voice-leading 链)+ 让位 shell voicing
   const voicedBySpan: Record<string, number[]> = {};
   const shellBySpan: Record<string, number[]> = {};
   let prevTop: number | undefined;
   let prevVoicing: number[] | undefined; // 上一组完整 voicing → 全声部贴最近(声部进行)
   let prevWide: WidePianoVoicing | undefined; // 钢琴宽排列的前一组锚点(共同音保留)
-  for (const span of plan.chordTimeline) {
+  for (let idx = 0; idx < timeline.length; idx++) {
+    const span = timeline[idx];
     if (!inActive(span.sectionId)) continue;
     // comp = 内层骨干/导音(中声部);上层色彩音 9/13 是旋律的领地,有旋律时让渡给旋律,comp 不加色
     //   (折成 2 音会与 root/3 产生声学摩擦 —— 见 feedback;色彩走旋律/宽和弦,不走 comp)
     if (usePiano) {
       // ★ 只宽铺开和弦真实音(root/3/5/7),colorLevel 0 不加 9/13(色彩仍归旋律,守铁律)
+      //   spread mode 随段落功能/和声功能/乐句位置变化(pickSpreadMode),不再固定 wide
       const rolePcs = qualityRolePcs(span.rootPc, span.quality);
       const bassMidi = nominalBassMidi(span.rootPc);
       const wideOpts = { includeRootInComp, colorLevel: 0 as const, style };
-      const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType: span.quality, bassMidi, options: { ...wideOpts, spreadMode: 'wide' }, prev: prevWide, rolePcs });
+      const spreadMode = pickPianoSpread(idx, span);
+      const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType: span.quality, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
       voicedBySpan[span.id] = wide.attackMidi;
       // 让位/瘦身 = close 紧排(从 inner 起,不放外声部),仍是真实和弦音
       const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType: span.quality, bassMidi, options: { ...wideOpts, spreadMode: 'close' }, prev: prevWide, rolePcs });
