@@ -12,4 +12,5 @@ export * from './OccupationMap';
 export * from './interactionResolver';
 export * from './drumRenderer';
 export * from './bassRenderer';
+export * from './padRenderer';
 export * from './swing';

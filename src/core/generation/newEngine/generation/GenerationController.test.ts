@@ -58,10 +58,10 @@ describe('generation/GenerationController · runGenerationControl', () => {
 });
 
 describe('generation/generateSong (顶层 Request→FinalIR 端到端)', () => {
-  it('真实管线 → pass,产出 bass/comp/drum/lead 四轨', () => {
+  it('真实管线 → pass,产出 bass/comp/pad/drum/lead 五轨', () => {
     const r = generateSong({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 });
     expect(r.status).toBe('pass');
-    expect(r.ir!.tracks.map((t) => t.role)).toEqual(['bass', 'comp', 'drum', 'lead']);
+    expect(r.ir!.tracks.map((t) => t.role)).toEqual(['bass', 'comp', 'pad', 'drum', 'lead']);
   });
 
   it('确定性:同 request → 同 lead 音高', () => {

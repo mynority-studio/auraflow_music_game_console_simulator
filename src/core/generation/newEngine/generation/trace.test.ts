@@ -11,8 +11,8 @@ describe('generation/traceGeneration', () => {
     }
   });
 
-  it('产出可播放 IR(4 轨)+ pass', () => {
-    expect(t.ir.tracks.map((tr) => tr.role)).toEqual(['bass', 'comp', 'drum', 'lead']);
+  it('产出可播放 IR(5 轨)+ pass', () => {
+    expect(t.ir.tracks.map((tr) => tr.role)).toEqual(['bass', 'comp', 'pad', 'drum', 'lead']);
     expect(t.audit.findings.length).toBe(0);
     expect(t.bpm).toBeGreaterThan(0);
   });

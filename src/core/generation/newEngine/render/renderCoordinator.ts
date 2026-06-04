@@ -22,6 +22,7 @@ import { renderMelody } from './melodyRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { renderDrums } from './drumRenderer';
+import { renderPad } from './padRenderer';
 import { applySwing } from './swing';
 import type { CandidateSwap } from './MotifStore';
 
@@ -89,11 +90,16 @@ export function renderSongFull(
     if (s < arrangement.sections.length - 1) fillBars.add(barCursor - 1);
   }
 
+  // 织体分流:active 段 comp / floating 段 pad(不重叠)
+  const floatingSectionIds = new Set<string>();
+  for (const s of arrangement.sections) if (!activeSectionIds.has(s.id)) floatingSectionIds.add(s.id);
+
   const bass = renderBass(plan, timebase, band.style);
   const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds });
+  const pad = renderPad(plan, timebase, floatingSectionIds);
   const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars });
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
-  const tracks: TrackIR[] = [bass, ...accompaniment, drums, lead];
+  const tracks: TrackIR[] = [bass, ...accompaniment, pad, drums, lead];
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {

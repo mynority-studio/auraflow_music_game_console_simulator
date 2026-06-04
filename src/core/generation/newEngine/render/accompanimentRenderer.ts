@@ -47,6 +47,8 @@ export function renderAccompaniment(
       if (beat >= totalBeats) continue;
       const span = spanAtBeat(plan, beat);
       if (!span) continue;
+      // 织体分流:提供了 activeSectionIds 时,comp 只在 active 段(floating 段交给 pad)
+      if (ctx.activeSectionIds && !ctx.activeSectionIds.has(span.sectionId)) continue;
 
       const yieldHere =
         !!ctx.activeSectionIds?.has(span.sectionId) && !!ctx.anchorBeats?.has(span.startBeat);
