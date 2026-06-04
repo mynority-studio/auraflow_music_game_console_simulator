@@ -80,6 +80,13 @@ export function renderMelody(
 
     const phraseStart = starts[phrase.id] ?? 0;
     const breath = arrangement.phraseBreathing.cadenceBreathBeats;
+    // ★ 轮廓弧线:音区随段落能量抬升,高潮段再加峰(pc 不变,只移八度 → 安全)
+    const energy = arrangement.energyBySection[phrase.sectionId] ?? 0.5;
+    const isClimax = arrangement.climaxMap.some((c) => c.sectionId === phrase.sectionId);
+    const lift = Math.min(14, Math.round(energy * 8) + (isClimax ? 3 : 0));
+    const leadLow = LEAD_LOW + lift;
+    const leadHigh = leadLow + (LEAD_HIGH - LEAD_LOW);
+
     // motif 逐小节【发展】;末小节稀疏解决 + 句尾呼吸(留白),非每小节填满
     for (let bar = 0; bar < phrase.bars; bar++) {
       const barStart = phraseStart + bar * bpb;
@@ -93,7 +100,7 @@ export function renderMelody(
             ? mod12(band.key + degreeToSemitone(1, band.mode))
             : mod12(headPitch);
         const pc = safePc(rawPc, plan, spanAtBeat(plan, barStart));
-        const pitch = pcToMidiInRange(pc, LEAD_LOW, LEAD_HIGH);
+        const pitch = pcToMidiInRange(pc, leadLow, leadHigh);
         const dur = Math.max(0.5, bpb - breath);
         notes.push({
           pitch,
@@ -109,12 +116,12 @@ export function renderMelody(
         const noteBeat = barStart + slot.timeOffset;
         let pitch: Midi;
         if (i === 0 && bar === 0) {
-          pitch = headPitch; // hook head 锚点
+          pitch = pcToMidiInRange(mod12(headPitch), leadLow, leadHigh); // hook head 锚点(置入弧线音区,pc 不变)
         } else {
           const deg = wrapDegree(slot.scaleDegree + devStep);
           const rawPc = mod12(band.key + degreeToSemitone(deg, band.mode));
           const pc = safePc(rawPc, plan, spanAtBeat(plan, noteBeat));
-          pitch = pcToMidiInRange(pc, LEAD_LOW, LEAD_HIGH);
+          pitch = pcToMidiInRange(pc, leadLow, leadHigh);
         }
         notes.push({
           pitch,

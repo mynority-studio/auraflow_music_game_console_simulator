@@ -19,10 +19,10 @@ describe('render/melodyRenderer', () => {
     expect(lead.notes.length).toBeGreaterThan(0);
   });
 
-  it('所有音落在 lead 区 [67,84]', () => {
+  it('所有音落在 lead 区 [67,98](含能量弧线抬升)', () => {
     for (const n of lead.notes) {
       expect(n.pitch).toBeGreaterThanOrEqual(67);
-      expect(n.pitch).toBeLessThanOrEqual(84);
+      expect(n.pitch).toBeLessThanOrEqual(98);
     }
   });
 

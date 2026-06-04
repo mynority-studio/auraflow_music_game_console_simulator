@@ -41,7 +41,7 @@ describe('render/melody 句尾呼吸 (2.1)', () => {
     expect(lead.notes.length).toBeGreaterThan(0);
     for (const n of lead.notes) {
       expect(n.pitch).toBeGreaterThanOrEqual(67);
-      expect(n.pitch).toBeLessThanOrEqual(84);
+      expect(n.pitch).toBeLessThanOrEqual(98);
     }
     const again = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, undefined);
     expect(again.notes.map((n) => n.pitch)).toEqual(lead.notes.map((n) => n.pitch));
