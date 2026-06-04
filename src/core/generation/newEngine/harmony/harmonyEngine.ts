@@ -8,13 +8,14 @@
 // 高层落实 harmonicRhythmTarget 为 chord count/duration;按 rng 子流从 ProgressionLibrary 选进行(确定性)。
 // ============================================================
 
-import { beats, mod12, type PitchClass, type RandomContext } from '../foundation';
+import { beats, mod12, type PitchClass, type RandomContext, type Rng } from '../foundation';
 import { tensionTableFor, type TensionTable } from '../knowledge/tensionModel';
 import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
 import { realChordScale } from '../knowledge/chordScales';
 import { modalVamp } from '../knowledge/modes';
 import { diatonicQuality, pickProgressionDegrees, type SectionRole } from '../knowledge/progressions';
-import type { ChordQuality } from '../knowledge/chords';
+import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
+import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import {
@@ -201,18 +202,75 @@ function planModulation(band: BandSpec, arrangement: ArrangementPlan): {
   };
 }
 
+// —— 生成时候选择优(用户总纲:同源一次性生成 + 择优,KB=音乐性根源)——
+//   产 N 候选进行 → coherence 打分 → 选最高分。harmony 阶段【还没 voicing】,只评进行逻辑
+//   (终止/倾向解决/bass 动向);和弦字面喂满 → identity/guideTone 不作区分量。
+//   ⚠️ 我方 BorrowInfo 只 parallel-minor/major → 副属/subV/backdoor 暂不映射(那几条不触发);
+//      区分力目前主要来自终止式属解决 + 借和弦 localColor,随 harmony 做厚增强。
+const NUM_HARMONY_CANDIDATES = 6;
+const ROMAN_NUM = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+function romanStr(rc: ResolvedChord): string {
+  const base = ROMAN_NUM[rc.roman.degree] ?? 'I';
+  const minorish = rc.quality === 'min' || rc.quality === 'm7' || rc.quality === 'm7b5' || rc.quality === 'dim7';
+  return minorish ? base.toLowerCase() : base;
+}
+
+/** resolved 进行 → CoherenceChord[](harmony 阶段适配:rootMidi/notesMidi/bassMidi 用和弦字面)。 */
+function resolvedToCoherenceChords(resolved: ResolvedChord[], keyPc: PitchClass): CoherenceChord[] {
+  return resolved.map((rc) => {
+    const rootPc = rc.rootPc as number;
+    return {
+      type: rc.quality,
+      rootMidi: 60 + rootPc,
+      notesMidi: chordToneIntervals(rc.quality).map((iv) => 60 + rootPc + iv),
+      bassMidi: 36 + rootPc,
+      roman: romanStr(rc),
+      chordSymbol: romanStr(rc),
+      duration: rc.durationBeats,
+      effectiveFunc: rc.func,
+      analysisKeyPc: (rc.sectionKeyPc ?? keyPc) as number,
+      borrowedSource: rc.borrowed ? 'modal_interchange' : undefined,
+      mustResolve: rc.func === 'D' && rc.quality === '7',
+    };
+  });
+}
+
 // —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
 export function buildHarmonicPlanFromArrangement(
   band: BandSpec,
   arrangement: ArrangementPlan,
   rng: RandomContext,
 ): HarmonicPlan {
-  if (band.tonalityKind === 'modal') return buildModalHarmonicPlan(band, arrangement); // ★ modal 分支:静态 vamp
+  if (band.tonalityKind === 'modal') return buildModalHarmonicPlan(band, arrangement); // ★ modal 分支:静态 vamp(不走择优)
 
   const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
-  const hrng = rng.substream('harmony');
+  const { sectionKeyOf, modulationMap } = planModulation(band, arrangement); // ★ 转调:段落调中心(确定性,候选间不变)
+  const styleName = band.style.toUpperCase();
+
+  // 产 N 候选 → coherence 择优。advance('harmony') → 每候选不同子流且确定性;
+  // 候选0 = 原 substream(与旧行为同),严格 > 才换 → 单调改进(无更优候选即回旧)。
+  let ctx = rng;
+  let best: { resolved: ResolvedChord[]; score: number } | null = null;
+  for (let k = 0; k < NUM_HARMONY_CANDIDATES; k++) {
+    const cand = buildResolvedProgression(band, arrangement, ctx.substream('harmony'), sectionKeyOf, beatsPerBar);
+    const report = evaluateHarmony(resolvedToCoherenceChords(cand, band.key), styleName, band.key as number);
+    if (!best || report.score > best.score) best = { resolved: cand, score: report.score };
+    ctx = ctx.advance('harmony');
+  }
+
+  return assemble(best!.resolved, band.key, band.mode, undefined, modulationMap);
+}
+
+/** 一条候选进行(给定 harmony 子流)→ resolved 序列(确定性)。 */
+function buildResolvedProgression(
+  band: BandSpec,
+  arrangement: ArrangementPlan,
+  hrng: Rng,
+  sectionKeyOf: (sectionId: string) => PitchClass,
+  beatsPerBar: number,
+): ResolvedChord[] {
   const resolved: ResolvedChord[] = [];
-  const { sectionKeyOf, modulationMap } = planModulation(band, arrangement); // ★ 转调:段落调中心
   // ★ 铁律9:同 repeatGroup 共享同一进行(verse1≡verse2)→ 真排比 + 复现 hook 的 global 安全音一致
   const degreesByGroup = new Map<string, number[]>();
 
@@ -303,5 +361,5 @@ export function buildHarmonicPlanFromArrangement(
     }
   }
 
-  return assemble(resolved, band.key, band.mode, undefined, modulationMap);
+  return resolved;
 }
