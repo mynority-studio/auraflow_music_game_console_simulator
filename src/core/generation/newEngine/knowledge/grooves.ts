@@ -77,12 +77,13 @@ const DRUM_PATTERNS: Record<string, readonly DrumHit[]> = {
   ],
   // jazz:swing ride(三连后位)+ pedal hat 2/4 + 轻 kick
   jazz: [
+    // ride 用直 8 分位置;swing 由 applySwing 全局 warp(避免双重 swing)
     { drum: DRUM.RIDE, beat: 0, vel: 72 },
     { drum: DRUM.RIDE, beat: 1, vel: 62 },
-    { drum: DRUM.RIDE, beat: 1.6667, vel: 56 },
+    { drum: DRUM.RIDE, beat: 1.5, vel: 56 },
     { drum: DRUM.RIDE, beat: 2, vel: 70 },
     { drum: DRUM.RIDE, beat: 3, vel: 62 },
-    { drum: DRUM.RIDE, beat: 3.6667, vel: 56 },
+    { drum: DRUM.RIDE, beat: 3.5, vel: 56 },
     { drum: DRUM.PHAT, beat: 1, vel: 50 },
     { drum: DRUM.PHAT, beat: 3, vel: 50 },
     { drum: DRUM.KICK, beat: 0, vel: 68 },

@@ -22,6 +22,7 @@ import { renderMelody } from './melodyRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { renderDrums } from './drumRenderer';
+import { applySwing } from './swing';
 import type { CandidateSwap } from './MotifStore';
 
 export interface RenderResult {
@@ -107,7 +108,10 @@ export function renderSongFull(
   };
   const resolved = resolveInteractions(draft, occupation);
 
-  const ir = freezeMusicalIR(resolved.data);
+  // feel:swing 落地(全轨统一 onset warp;直则原样)
+  const swungTracks = applySwing(resolved.data.tracks, timebase.ppq, arrangement.feel.swingRatio);
+
+  const ir = freezeMusicalIR({ tracks: swungTracks, timebase, durationTicks: resolved.data.durationTicks });
   const audit = auditHarmony(ir, plan, timebase);
   return { ir, audit };
 }
