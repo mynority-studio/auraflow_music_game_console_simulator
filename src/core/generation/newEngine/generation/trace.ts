@@ -111,6 +111,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   }
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);
+  log(`■ MIX        音量分层 lead120>bass112>drum100>comp90>pad68(CC7)· 声像 comp 偏左/pad 偏右/骨干居中(CC10)`);
 
   return { lines, ir, audit, bpm: arrangement.tempoBpm };
 }

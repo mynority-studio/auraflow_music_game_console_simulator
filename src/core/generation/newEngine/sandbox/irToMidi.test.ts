@@ -41,4 +41,50 @@ describe('newEngine/sandbox/irToMidi', () => {
     const bassOn = events.find((e) => e.type === 'noteOn' && e.data1 === 36)!;
     expect(bassOn.data2).toBe(90);
   });
+
+  // —— 混音 (5.4) ——
+  const mixIR = freezeMusicalIR({
+    tracks: (['bass', 'comp', 'pad', 'lead', 'drum'] as const).map((role) => ({
+      role,
+      notes: [{ pitch: midi(60), startTick: ticks(0), durationTicks: ticks(240), velocity: 80 }],
+    })),
+    timebase,
+    durationTicks: ticks(480),
+  });
+  const mixEvents = musicalIRToMidiEvents(mixIR);
+  const cc = (channel: number, ccNum: number) =>
+    mixEvents.find((e) => e.type === 'cc' && e.channel === channel && e.data1 === ccNum)!;
+  // 角色→通道
+  const CH = { bass: 3, comp: 2, lead: 1, pad: 4, drum: 9 };
+
+  it('每轨发 CC7(音量)+ CC10(声像),ticks=0 且在 noteOn 前', () => {
+    for (const ch of Object.values(CH)) {
+      expect(cc(ch, 7)).toBeDefined();
+      expect(cc(ch, 10)).toBeDefined();
+      expect(cc(ch, 7).ticks).toBe(0);
+    }
+    // CC 在该通道首个 noteOn 之前
+    const firstLeadCCIdx = mixEvents.findIndex((e) => e.type === 'cc' && e.channel === CH.lead);
+    const firstLeadOnIdx = mixEvents.findIndex((e) => e.type === 'noteOn' && e.channel === CH.lead);
+    expect(firstLeadCCIdx).toBeLessThan(firstLeadOnIdx);
+  });
+
+  it('★ 音量分层:lead > bass > drum > comp > pad(各轨相对响度不同)', () => {
+    const vol = (ch: number) => cc(ch, 7).data2;
+    expect(vol(CH.lead)).toBeGreaterThan(vol(CH.bass));
+    expect(vol(CH.bass)).toBeGreaterThan(vol(CH.drum));
+    expect(vol(CH.drum)).toBeGreaterThan(vol(CH.comp));
+    expect(vol(CH.comp)).toBeGreaterThan(vol(CH.pad));
+    // 全在合法 MIDI 范围
+    for (const ch of Object.values(CH)) expect(vol(ch)).toBeGreaterThan(0), expect(vol(ch)).toBeLessThanOrEqual(127);
+  });
+
+  it('声像:comp 偏左(<64)/ pad 偏右(>64)/ bass·lead·drum 居中(=64)', () => {
+    const pan = (ch: number) => cc(ch, 10).data2;
+    expect(pan(CH.comp)).toBeLessThan(64);
+    expect(pan(CH.pad)).toBeGreaterThan(64);
+    expect(pan(CH.bass)).toBe(64);
+    expect(pan(CH.lead)).toBe(64);
+    expect(pan(CH.drum)).toBe(64);
+  });
 });
