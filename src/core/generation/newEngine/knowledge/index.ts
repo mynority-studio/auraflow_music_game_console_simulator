@@ -17,3 +17,5 @@ export * from './voicingStyles';
 export * from './voicingPlacement';
 export * from './basslineRules';
 export * from './textureProfiles';
+export * from './harmonicCoherence';
+export * from './voiceLeadingLedger';
