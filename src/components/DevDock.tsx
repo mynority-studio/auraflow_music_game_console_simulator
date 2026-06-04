@@ -18,7 +18,7 @@ import {
 export const DevDock: React.FC = () => {
     // 初值:PipelineMonitor 默认可见,其余隐藏(挂载后会被各面板回报覆盖)
     const [openMap, setOpenMap] = useState<Record<DevPanelId, boolean>>({
-        improcore: false, pipeline: true, volume: false,
+        newengine: false, improcore: false, pipeline: true, volume: false,
     });
     const [collapsed, setCollapsed] = useState(false);
 

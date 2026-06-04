@@ -8,6 +8,7 @@ import { startAudioContext } from './core/audio/SynthManager';
 import { VolumeController } from './components/VolumeController';
 import { PipelineMonitor } from './components/PipelineMonitor';
 import { ImproCorePanel } from './core/generation/improCore/sandbox';
+import { NewEnginePanel } from './core/generation/newEngine/sandbox';
 import { DevDock } from './components/DevDock';
 
 export default function App() {
@@ -41,6 +42,7 @@ export default function App() {
       <PipelineMonitor />
       {/* ImproCore 移植沙盒 — 同时按 Q+I 调出,独立于主系统 */}
       <ImproCorePanel />
+      <NewEnginePanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"

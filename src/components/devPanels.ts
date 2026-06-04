@@ -15,9 +15,9 @@
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Music, Activity, SlidersHorizontal } from 'lucide-react';
+import { Music, Activity, SlidersHorizontal, Boxes } from 'lucide-react';
 
-export type DevPanelId = 'improcore' | 'pipeline' | 'volume';
+export type DevPanelId = 'improcore' | 'pipeline' | 'volume' | 'newengine';
 
 export interface DevPanelMeta {
     id: DevPanelId;
@@ -32,6 +32,11 @@ export interface DevPanelMeta {
 }
 
 export const DEV_PANELS: DevPanelMeta[] = [
+    {
+        id: 'newengine', label: '新引擎', hint: 'newEngine generate', combo: 'Q+N',
+        icon: Boxes,
+        dot: 'bg-emerald-400', activeRing: 'border-emerald-400/50 bg-emerald-500/10', activeText: 'text-emerald-300',
+    },
     {
         id: 'improcore', label: '即兴沙盒', hint: 'ImproCore solo', combo: 'Q+I',
         icon: Music,
