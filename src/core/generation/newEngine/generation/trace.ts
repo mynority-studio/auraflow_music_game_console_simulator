@@ -128,8 +128,15 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     : `FAILED(budget 耗尽,${audit.findings.length} findings 未消解 → 不静默输出非法)`;
   log(`■ AUDITOR    ${statusLabel}`);
   if (audit.findings.length > 0) {
-    const f = audit.findings[0];
-    log(`   纠错环(${result.attempts} 次尝试): finding@${f.location.trackRole}#${f.location.startTick} → 撞音消解阶梯逐级升级(voicing 支撑 → 降锁深度 → 候选池换 hook → fallback),精确定位 binding/span,非盲推 rng`);
+    const byRule: Record<string, number> = {};
+    for (const f of audit.findings) byRule[f.ruleId] = (byRule[f.ruleId] ?? 0) + 1;
+    const errs = audit.findings.filter((f) => f.severity === 'error' || f.severity === 'fatal');
+    log(`   findings: ${Object.entries(byRule).map(([k, n]) => `${k}×${n}`).join(' / ')}`);
+    if (errs.length > 0) {
+      log(`   纠错环(${result.attempts} 次尝试): error@${errs[0].location.trackRole}#${errs[0].location.startTick} → 撞音消解阶梯(voicing→降锁→换hook→fallback)`);
+    } else {
+      log(`   (均 warning 级:离调/倾向/撞音安全网,信息性不阻断;来自扩 KB tendencyTable + chord-scale 判据)`);
+    }
   }
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);

@@ -37,14 +37,22 @@ function spanAtBeat(plan: HarmonicPlan, beat: number): ChordSpan | undefined {
   );
 }
 
-/** pc 落 avoid → 就近 snap 到该和弦 stable tone;否则原样。 */
+/**
+ * pc 收口到该和弦的【安全集 = chord-scale 去 avoid】:
+ *   - 落 avoid(如 maj 的 4 度)→ snap;
+ *   - 落 chord-scale 之外(离调,尤其 borrowed/副属/转调段的非调内音)→ 也 snap。
+ * 就近到安全集成员(保 pc-distance 最近)。安全集空才退回原样(罕见)。
+ * ★ 让旋律真正贴【当前和弦的调式音阶】,不止贴 key —— 修 Auditor 抓出的离调暴露。
+ */
 function safePc(pc: number, plan: HarmonicPlan, span: ChordSpan | undefined): number {
   if (!span) return pc;
   const avoid = (plan.avoidNoteMap[span.id] ?? []) as readonly number[];
-  if (!avoid.includes(pc)) return pc;
-  const stable = (plan.stableToneMap[span.id] ?? []) as readonly number[];
-  if (stable.length === 0) return pc;
-  return [...stable].sort((a, b) => pcDistance(a, pc) - pcDistance(b, pc))[0];
+  const scale = (plan.chordScaleMap[span.id] ?? []) as readonly number[];
+  const inScale = scale.length === 0 || scale.includes(pc as never);
+  if (!avoid.includes(pc) && inScale) return pc; // 已安全
+  const safeSet = (scale.length > 0 ? scale.filter((p) => !avoid.includes(p)) : (plan.stableToneMap[span.id] ?? [])) as readonly number[];
+  if (safeSet.length === 0) return pc;
+  return [...safeSet].sort((a, b) => pcDistance(a, pc) - pcDistance(b, pc))[0];
 }
 
 export function renderMelody(

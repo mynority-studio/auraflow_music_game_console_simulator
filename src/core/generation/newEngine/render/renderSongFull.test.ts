@@ -4,7 +4,6 @@ import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
-import { isPass } from '../ir/AuditReport';
 import { createTimebase, createRandomContext } from '../foundation';
 
 describe('render/renderSongFull (accompaniment-first 全链)', () => {
@@ -21,8 +20,10 @@ describe('render/renderSongFull (accompaniment-first 全链)', () => {
     for (const t of ir.tracks) expect(t.notes.length).toBeGreaterThan(0);
   });
 
-  it('★ 全链 Auditor pass(选音+snap 保证旋律不暴露 avoid)', () => {
-    expect(isPass(audit)).toBe(true);
+  it('★ 全链无 error 级 finding(选音+snap 保证旋律不暴露 avoid;warning 可接受)', () => {
+    // 扩规则后 Auditor 含 warning 级规则(离调/倾向/撞音);契约是【无 error/fatal 阻断】,非零 finding
+    const blocking = audit.findings.filter((f) => f.severity === 'error' || f.severity === 'fatal');
+    expect(blocking).toEqual([]);
   });
 
   it('IR 深不可变', () => {
