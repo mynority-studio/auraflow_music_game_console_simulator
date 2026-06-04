@@ -151,32 +151,49 @@ export function buildHarmonicPlanFromArrangement(
       ? secPhrases.reduce((a, b) => (b.phraseSlot > a.phraseSlot ? b : a)).cadenceTarget
       : undefined;
 
+    // 先建逐位 slot(含终止式覆写),再做副属着色 → 最后落 resolved
+    interface Slot { degree: number; quality: ChordQuality; rootPc: PitchClass; func: HarmonicFunction; roman: RomanChord; }
+    const slots: Slot[] = [];
     for (let j = 0; j < totalChords; j++) {
       let degree = degrees[j % degrees.length];
       let quality = diatonicQuality(degree, band.mode);
       const isLast = j === totalChords - 1;
       const isSecondLast = j === totalChords - 2;
-
       if (lastCad === 'authentic') {
-        if (isLast) {
-          degree = 1;
-          quality = diatonicQuality(1, band.mode);
-        } else if (isSecondLast && totalChords >= 2) {
-          degree = 5;
-          quality = '7'; // V7(小调也用属七 → 真终止解决)
-        }
-      } else if (lastCad === 'half' && isLast) {
-        degree = 5;
-        quality = '7';
-      }
-
-      resolved.push({
+        if (isLast) { degree = 1; quality = diatonicQuality(1, band.mode); }
+        else if (isSecondLast && totalChords >= 2) { degree = 5; quality = '7'; }
+      } else if (lastCad === 'half' && isLast) { degree = 5; quality = '7'; }
+      const rootPc = mod12(band.key + degreeToSemitone(degree, band.mode));
+      slots.push({
+        degree, quality, rootPc,
+        func: DEGREE_FUNCTION[degree] ?? 'T',
         roman: { degree: degree as RomanChord['degree'], accidental: 'natural', quality },
-        rootPc: mod12(band.key + degreeToSemitone(degree, band.mode)),
-        quality,
+      });
+    }
+
+    // ★ 副属(V7/X):colorBudget 够(jazz)才加;tonicize body 内 V/vi 目标前一和弦(D7→G 等)。
+    //   确定性(无 rng)→ verse1≡verse2 排比不破;chromatic 色彩,melody 对其安全音重 snap。
+    if (band.styleProfile.colorBudget >= 0.5) {
+      for (let j = 0; j < totalChords - 2; j++) {
+        const target = slots[j + 1];
+        if ((target.degree === 5 || target.degree === 6) && slots[j].quality !== '7') {
+          const sdRoot = mod12(target.rootPc + 7); // 目标的属(上方五度)
+          slots[j] = {
+            degree: 5, quality: '7', rootPc: sdRoot, func: 'D',
+            roman: { degree: 5, accidental: 'natural', quality: '7', secondaryTarget: target.roman },
+          };
+        }
+      }
+    }
+
+    for (const s of slots) {
+      resolved.push({
+        roman: s.roman,
+        rootPc: s.rootPc,
+        quality: s.quality,
         durationBeats: chordDurBeats,
         sectionId: section.id,
-        func: DEGREE_FUNCTION[degree] ?? 'T',
+        func: s.func,
       });
     }
   }

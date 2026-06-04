@@ -23,7 +23,8 @@ import type { AuditReport } from '../ir/AuditReport';
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 function romanLabel(r: RomanChord): string {
   const acc = r.accidental === 'b' ? 'b' : r.accidental === '#' ? '#' : '';
-  return `${acc}${ROMAN[r.degree]}${r.quality === 'maj' ? '' : r.quality}`;
+  const sec = r.secondaryTarget ? `/${ROMAN[r.secondaryTarget.degree]}` : '';
+  return `${acc}${ROMAN[r.degree]}${r.quality === 'maj' ? '' : r.quality}${sec}`;
 }
 
 export interface GenerationTrace {
