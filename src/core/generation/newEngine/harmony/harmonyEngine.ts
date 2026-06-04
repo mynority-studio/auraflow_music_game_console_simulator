@@ -10,7 +10,8 @@
 
 import { beats, mod12, type PitchClass, type RandomContext } from '../foundation';
 import { tensionTableFor, type TensionTable } from '../knowledge/tensionModel';
-import { degreeToSemitone } from '../knowledge/scales';
+import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
+import { realChordScale } from '../knowledge/chordScales';
 import { diatonicQuality, pickProgressionDegrees, type SectionRole } from '../knowledge/progressions';
 import type { ChordQuality } from '../knowledge/chords';
 import type { BandSpec } from '../band/BandSpec';
@@ -42,8 +43,8 @@ interface ResolvedChord {
   borrowed?: BorrowInfo;
 }
 
-// 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表)
-function assemble(resolved: ResolvedChord[]): HarmonicPlan {
+// 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
+function assemble(resolved: ResolvedChord[], keyPc: PitchClass, keyMode: DiatonicMode): HarmonicPlan {
   if (resolved.length === 0) throw new RangeError('assemble(): 空和弦序列');
 
   const romanProgression: RomanChord[] = [];
@@ -76,8 +77,11 @@ function assemble(resolved: ResolvedChord[]): HarmonicPlan {
     stableToneMap[id] = tension.stable;
     colorToneMap[id] = tension.acceptable;
     avoidNoteMap[id] = tension.avoid;
-    chordScaleMap[id] = [...new Set<number>([...tension.stable, ...tension.acceptable])]
-      .sort((a, b) => a - b) as PitchClass[];
+    // ★ 真 chord-scale:调内→母调音阶;副属→根音 Mixolydian;借和弦→根音 Dorian。
+    chordScaleMap[id] = realChordScale(rc.rootPc, keyPc, keyMode, {
+      isSecondaryDominant: rc.roman.secondaryTarget !== undefined,
+      isBorrowed: rc.borrowed !== undefined,
+    });
     beat += rc.durationBeats;
   });
 
@@ -121,7 +125,7 @@ export function buildHarmonicPlan(input: HarmonyEngineInput): HarmonicPlan {
     sectionId,
     func: item.func ?? DEGREE_FUNCTION[item.degree] ?? 'T',
   }));
-  return assemble(resolved);
+  return assemble(resolved, input.key, 'major');
 }
 
 // —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
@@ -220,5 +224,5 @@ export function buildHarmonicPlanFromArrangement(
     }
   }
 
-  return assemble(resolved);
+  return assemble(resolved, band.key, band.mode);
 }

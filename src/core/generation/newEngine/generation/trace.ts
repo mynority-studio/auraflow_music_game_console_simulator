@@ -67,6 +67,13 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     const inSec = harmonic.chordTimeline.filter((c) => c.sectionId === span.sectionId);
     log(`   ${span.sectionId}: ${inSec.map((c) => romanLabel(c.roman)).join(' ')}`);
   }
+  // 真 chord-scale 采样:首和弦 + 任一离调和弦(副属/借)的调式音阶(含离调音)
+  const PCN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const scaleLabel = (id: string) => harmonic.chordScaleMap[id].map((p) => PCN[p]).join(' ');
+  const first = harmonic.chordTimeline[0];
+  log(`   chord-scale ${romanLabel(first.roman)} = [${scaleLabel(first.id)}](真调式音阶,取代 stable∪acceptable)`);
+  const chromId = harmonic.chordTimeline.find((c) => c.roman.secondaryTarget || harmonic.borrowedChordMap[c.id]);
+  if (chromId) log(`   chord-scale ${romanLabel(chromId.roman)} = [${scaleLabel(chromId.id)}](离调:根音 ${chromId.roman.secondaryTarget ? 'Mixolydian' : 'Dorian'})`);
 
   // —— PREPASS ——
   const timebase = createTimebase({
