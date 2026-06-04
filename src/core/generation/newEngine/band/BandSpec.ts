@@ -31,5 +31,6 @@ export interface BandSpec {
   mode: Mode;
   primaryScale: PitchClass[];   // 主音阶 pc(modal=调式全局约束 / tonal=调内音阶,身份提示)
   modalModeName?: ChurchMode;   // 仅 modal regime:具体教会调式
+  allowModulation: boolean;     // 可选转调开关(默认 false → 单一调中心)
   instrumentPool: InstrumentRoleName[];
 }

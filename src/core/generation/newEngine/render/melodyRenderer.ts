@@ -75,6 +75,10 @@ export function renderMelody(
     const motif = store.motifs[cand.motifId];
     if (!motif) continue;
 
+    // ★ 转调:该段落实际调中心(modulationMap)→ 旋律级数解析 + head 整体移调,随和声一起升 key
+    const secKey = plan.modulationMap[phrase.sectionId]?.toKey ?? band.key;
+    const keyOffset = mod12(secKey - band.key);
+
     const pool = store.bindingCandidates[entry.bindingId];
     // head 音:强档拷贝参照候选,否则用自身锚点
     //   ★ 撞音阶梯 rung2 降锁:restatementOverride 给该 binding 设锁档上限 → 跌破 STRONG 即放开刚性复述
@@ -87,6 +91,7 @@ export function renderMelody(
       const ref = resolveEffectiveCandidate(pool.referenceBindingId, store, candidateSwap);
       if (ref.realization.pitches.length > 0) headPitch = ref.realization.pitches[0].pitch;
     }
+    if (keyOffset !== 0) headPitch = midi((headPitch + keyOffset)) as Midi; // hook 整体随调中心移
 
     const phraseStart = starts[phrase.id] ?? 0;
     const breath = arrangement.phraseBreathing.cadenceBreathBeats;
@@ -140,7 +145,7 @@ export function renderMelody(
         // ★ 长音必须贴当前和弦安全音(否则主音落属和弦=avoid 11,长暴露被 Auditor 拦)
         const rawPc =
           phrase.role === 'cadence'
-            ? mod12(band.key + degreeToSemitone(1, band.mode))
+            ? mod12(secKey + degreeToSemitone(1, band.mode))
             : mod12(headPitch);
         const pc = resolvePc(rawPc, spanAtBeat(plan, barStart));
         const pitch = pcToMidiInRange(pc, leadLow, leadHigh);
@@ -164,7 +169,7 @@ export function renderMelody(
           const headPc = isModal ? nearestInScale(mod12(headPitch), band.primaryScale) : mod12(headPitch);
           pitch = pcToMidiInRange(headPc, leadLow, leadHigh);
         } else {
-          const rawPc = mod12(band.key + degreeToSemitone(dn.scaleDegree, band.mode));
+          const rawPc = mod12(secKey + degreeToSemitone(dn.scaleDegree, band.mode));
           const pc = resolvePc(rawPc, spanAtBeat(plan, noteBeat));
           pitch = pcToMidiInRange(pc, leadLow, leadHigh);
         }

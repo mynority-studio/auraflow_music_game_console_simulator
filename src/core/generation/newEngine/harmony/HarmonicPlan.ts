@@ -39,6 +39,13 @@ export interface BorrowInfo {
   label: string; // 如 'iv' / 'bVII'
 }
 
+export interface ModulationInfo {
+  fromKey: PitchClass;
+  toKey: PitchClass;   // 该段落实际调中心
+  semitones: number;   // 相对主调的升降(+1 半音 / +2 全音 …)
+  label: string;       // 如 'up-semitone' / 'up-tone'
+}
+
 export interface HarmonicPlanData {
   romanProgression: RomanChord[];
   chordTimeline: ChordSpan[];
@@ -49,6 +56,7 @@ export interface HarmonicPlanData {
   colorToneMap: Record<ChordSpanId, PitchClass[]>;
   avoidNoteMap: Record<ChordSpanId, PitchClass[]>;
   borrowedChordMap: Record<ChordSpanId, BorrowInfo>; // 仅借和弦 span 在此
+  modulationMap: Record<SectionId, ModulationInfo>;  // 仅转调段落在此(空=全曲单一调中心)
 }
 
 export type HarmonicPlan = DeepReadonly<HarmonicPlanData>;

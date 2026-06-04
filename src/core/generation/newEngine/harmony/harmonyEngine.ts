@@ -24,6 +24,7 @@ import {
   type HarmonicFunction,
   type HarmonicPlan,
   type HarmonicPlanData,
+  type ModulationInfo,
   type RomanChord,
 } from './HarmonicPlan';
 
@@ -42,6 +43,7 @@ interface ResolvedChord {
   sectionId: string;
   func: HarmonicFunction;
   borrowed?: BorrowInfo;
+  sectionKeyPc?: PitchClass; // 转调段落的实际调中心(undefined = 主调);chord-scale 据此解析
 }
 
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
@@ -52,6 +54,7 @@ function assemble(
   keyPc: PitchClass,
   keyMode: DiatonicMode,
   modalScalePcs?: PitchClass[],
+  modulationMap: Record<string, ModulationInfo> = {},
 ): HarmonicPlan {
   if (resolved.length === 0) throw new RangeError('assemble(): 空和弦序列');
   const modalSet = modalScalePcs ? new Set<number>(modalScalePcs) : undefined;
@@ -96,8 +99,8 @@ function assemble(
       stableToneMap[id] = tension.stable;
       colorToneMap[id] = tension.acceptable;
       avoidNoteMap[id] = tension.avoid;
-      // ★ 真 chord-scale:调内→母调音阶;属七/副属→根音 Mixolydian;借和弦→根音 Dorian。
-      chordScaleMap[id] = realChordScale(rc.rootPc, keyPc, keyMode, {
+      // ★ 真 chord-scale:调内→母调音阶(转调段落用该段实际调中心);属七/副属→根音 Mixolydian;借和弦→根音 Dorian。
+      chordScaleMap[id] = realChordScale(rc.rootPc, rc.sectionKeyPc ?? keyPc, keyMode, {
         isSecondaryDominant: rc.roman.secondaryTarget !== undefined,
         isBorrowed: rc.borrowed !== undefined,
         isDominant: rc.quality === '7', // 小调 V7(及任何属七)→ 升导音进音阶
@@ -116,6 +119,7 @@ function assemble(
     colorToneMap,
     avoidNoteMap,
     borrowedChordMap,
+    modulationMap,
   };
   return freezeHarmonicPlan(data);
 }
@@ -171,6 +175,32 @@ function buildModalHarmonicPlan(band: BandSpec, arrangement: ArrangementPlan): H
   return assemble(resolved, band.key, band.mode, band.primaryScale);
 }
 
+// —— 转调规划:可选下,末段 chorus 抬 +1 半音(经典"换挡升 key")——
+//   单一调中心(默认)→ 空 map。仅 allowModulation 时启用,确定性(无 rng)。
+function planModulation(band: BandSpec, arrangement: ArrangementPlan): {
+  sectionKeyOf: (sectionId: string) => PitchClass;
+  modulationMap: Record<string, ModulationInfo>;
+} {
+  const modulationMap: Record<string, ModulationInfo> = {};
+  if (band.allowModulation) {
+    const choruses = arrangement.sections.filter((s) => s.role === 'chorus');
+    const lastChorus = choruses[choruses.length - 1];
+    if (lastChorus) {
+      const semitones = 1; // 升半音(最经典的末段 lift)
+      modulationMap[lastChorus.id] = {
+        fromKey: band.key,
+        toKey: mod12(band.key + semitones),
+        semitones,
+        label: 'up-semitone',
+      };
+    }
+  }
+  return {
+    sectionKeyOf: (sectionId) => modulationMap[sectionId]?.toKey ?? band.key,
+    modulationMap,
+  };
+}
+
 // —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
 export function buildHarmonicPlanFromArrangement(
   band: BandSpec,
@@ -182,6 +212,7 @@ export function buildHarmonicPlanFromArrangement(
   const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
   const hrng = rng.substream('harmony');
   const resolved: ResolvedChord[] = [];
+  const { sectionKeyOf, modulationMap } = planModulation(band, arrangement); // ★ 转调:段落调中心
   // ★ 铁律9:同 repeatGroup 共享同一进行(verse1≡verse2)→ 真排比 + 复现 hook 的 global 安全音一致
   const degreesByGroup = new Map<string, number[]>();
 
@@ -189,6 +220,8 @@ export function buildHarmonicPlanFromArrangement(
     const chordsPerBar = arrangement.harmonicRhythmTarget.chordsPerBarBySection[section.id] ?? 1;
     const totalChords = section.bars * chordsPerBar;
     const chordDurBeats = beatsPerBar / chordsPerBar;
+    const sectionKey = sectionKeyOf(section.id); // 转调段落=新调中心,否则=主调
+    const isModulated = sectionKey !== band.key;
     const group = section.repeatGroup;
     let degrees: number[];
     if (group && degreesByGroup.has(group)) {
@@ -217,7 +250,7 @@ export function buildHarmonicPlanFromArrangement(
         if (isLast) { degree = 1; quality = diatonicQuality(1, band.mode); }
         else if (isSecondLast && totalChords >= 2) { degree = 5; quality = '7'; }
       } else if (lastCad === 'half' && isLast) { degree = 5; quality = '7'; }
-      const rootPc = mod12(band.key + degreeToSemitone(degree, band.mode));
+      const rootPc = mod12(sectionKey + degreeToSemitone(degree, band.mode)); // 转调段落用新调中心
       slots.push({
         degree, quality, rootPc,
         func: DEGREE_FUNCTION[degree] ?? 'T',
@@ -265,9 +298,10 @@ export function buildHarmonicPlanFromArrangement(
         sectionId: section.id,
         func: s.func,
         borrowed: s.borrowed,
+        sectionKeyPc: isModulated ? sectionKey : undefined, // 转调段落 chord-scale 按新调中心解析
       });
     }
   }
 
-  return assemble(resolved, band.key, band.mode);
+  return assemble(resolved, band.key, band.mode, undefined, modulationMap);
 }

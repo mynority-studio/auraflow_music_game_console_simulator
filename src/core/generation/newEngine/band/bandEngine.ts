@@ -20,6 +20,7 @@ export interface GenerationRequest {
   mode?: Mode;
   tonalityKind?: TonalityKind; // 可显式请求 modal(否则由 styleHint 推断)
   modalMode?: ChurchMode;      // modal 时指定教会调式(默认 dorian)
+  allowModulation?: boolean;   // 可选:开启段落转调(默认 false)
 }
 
 const STYLE_PROFILES: Record<string, StyleProfile> = {
@@ -49,6 +50,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
       mode,
       primaryScale: modalScale(key, modalModeName),
       modalModeName,
+      allowModulation: false, // modal 静态 vamp 不转调
       instrumentPool: ['bass', 'comp', 'pad', 'lead', 'drum'],
     };
   }
@@ -62,6 +64,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
     key,
     mode,
     primaryScale: diat.map((iv) => pc((key + iv) % 12)),
+    allowModulation: req.allowModulation ?? false,
     instrumentPool: ['bass', 'comp', 'pad', 'lead', 'drum'],
   };
 }

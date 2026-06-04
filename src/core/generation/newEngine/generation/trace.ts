@@ -78,6 +78,9 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   chord-scale ${romanLabel(first.roman)} = [${scaleLabel(first.id)}](真调式音阶,取代 stable∪acceptable)`);
   const chromId = harmonic.chordTimeline.find((c) => c.roman.secondaryTarget || harmonic.borrowedChordMap[c.id]);
   if (chromId) log(`   chord-scale ${romanLabel(chromId.roman)} = [${scaleLabel(chromId.id)}](离调:根音 ${chromId.roman.secondaryTarget ? 'Mixolydian' : 'Dorian'})`);
+  for (const [sid, m] of Object.entries(harmonic.modulationMap)) {
+    log(`   转调 ${sid}: ${PCN[m.fromKey]}→${PCN[m.toKey]}(${m.label} ${m.semitones > 0 ? '+' : ''}${m.semitones}半音,进行整体移调 + 旋律随升)`);
+  }
 
   // —— PREPASS ——
   const timebase = createTimebase({
