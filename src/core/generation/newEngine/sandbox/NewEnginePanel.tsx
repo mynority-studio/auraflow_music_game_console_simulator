@@ -12,6 +12,7 @@ import { playMusicalIR, stopNewEngine } from './audioOut';
 import { buildPianoRoll, ROLE_COLOR, type PianoRoll } from './pianoRoll';
 import { musicalIRToSMF } from './midiFile';
 import { compareTraces, type TraceComparison } from './traceDiff';
+import { PianoRollWindow } from './PianoRollWindow';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
 const STYLES = ['pop', 'lofi', 'jazz', 'modal'] as const;
@@ -46,6 +47,7 @@ export const NewEnginePanel: React.FC = () => {
   const [readout, setReadout] = useState<Readout | null>(null);
   const [roll, setRoll] = useState<PianoRoll | null>(null);
   const [cmp, setCmp] = useState<TraceComparison | null>(null);
+  const [rollWinOpen, setRollWinOpen] = useState(false);
   const lastIR = useRef<GenerationTrace['ir'] | undefined>(undefined);
   const lastBpm = useRef(100);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -135,6 +137,7 @@ export const NewEnginePanel: React.FC = () => {
   if (!open) return null;
 
   return (
+    <>
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onPointerDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
@@ -178,11 +181,11 @@ export const NewEnginePanel: React.FC = () => {
             </label>
             <button
               type="button"
-              onClick={() => setSeed((s) => s + 1)}
+              onClick={() => setSeed(Math.floor(Math.random() * 1_000_000))}
               className="rounded border border-white/10 bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-700"
-              title="换种子"
+              title="随机换种子(同 seed 必出同一首,可手填复现)"
             >
-              🎲 seed+1
+              🎲 随机 seed
             </button>
             <label
               className={`flex items-center gap-1.5 text-[11px] ${style === 'modal' ? 'text-zinc-600' : 'text-zinc-300'}`}
@@ -242,6 +245,14 @@ export const NewEnginePanel: React.FC = () => {
               title={`对比 seed ${seed} vs ${seed + 1}`}
             >
               ⇄ A/B
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!lastIR.current) generate(); setRollWinOpen(true); }}
+              className="rounded-lg border border-sky-500/40 px-3 py-2 text-sm text-sky-300 hover:bg-sky-500/10"
+              title="拆出独立窗口逐轨看音符(可单独开关每轨)"
+            >
+              🎹 音轨视图
             </button>
           </div>
 
@@ -332,5 +343,12 @@ export const NewEnginePanel: React.FC = () => {
         </div>
       </div>
     </div>
+    <PianoRollWindow
+      ir={lastIR.current}
+      open={rollWinOpen}
+      onClose={() => setRollWinOpen(false)}
+      title={`${style} · seed ${seed}`}
+    />
+    </>
   );
 };

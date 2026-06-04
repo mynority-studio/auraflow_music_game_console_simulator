@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPianoRoll, ROLE_COLOR } from './pianoRoll';
+import { buildPianoRoll, buildTrackLanes, midiToNoteName, noteLabel, ROLE_COLOR } from './pianoRoll';
 import { freezeMusicalIR } from '../ir/MusicalIR';
 import { createTimebase, midi, ticks } from '../foundation';
 
@@ -68,6 +68,54 @@ describe('sandbox · piano-roll 几何 (6.1)', () => {
       expect(n.x + n.w).toBeLessThanOrEqual(500 + 0.001);
       expect(n.y).toBeGreaterThanOrEqual(0);
       expect(n.y + n.h).toBeLessThanOrEqual(150 + 0.001);
+    }
+  });
+
+  // —— 逐轨泳道 + 音名(独立弹窗用)——
+  it('midiToNoteName:60=C4 / 72=C5 / 61=C#4 / 57=A3', () => {
+    expect(midiToNoteName(60)).toBe('C4');
+    expect(midiToNoteName(72)).toBe('C5');
+    expect(midiToNoteName(61)).toBe('C#4');
+    expect(midiToNoteName(57)).toBe('A3');
+  });
+
+  it('noteLabel:鼓轨用件名(36=Kick/38=Snare/42=HH),其它用音名', () => {
+    expect(noteLabel(36, true)).toBe('Kick');
+    expect(noteLabel(38, true)).toBe('Snare');
+    expect(noteLabel(42, true)).toBe('HH');
+    expect(noteLabel(60, false)).toBe('C4');
+  });
+
+  it('★ buildTrackLanes:每轨独立泳道 + 分组(lead=melody / 其它=accomp)+ 时间序音名序列', () => {
+    const ir = mkIR([
+      { role: 'lead', notes: [
+        { pitch: midi(67), startTick: ticks(480), durationTicks: ticks(240), velocity: 90 },
+        { pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }, // 故意乱序
+      ] },
+      { role: 'bass', notes: [{ pitch: midi(36), startTick: ticks(0), durationTicks: ticks(480), velocity: 88 }] },
+      { role: 'drum', notes: [{ pitch: midi(36), startTick: ticks(0), durationTicks: ticks(60), velocity: 100 }] },
+      { role: 'pad', notes: [] }, // 空轨跳过
+    ], 1920);
+    const lr = buildTrackLanes(ir, { width: 600, laneHeight: 40 });
+    const roles = lr.lanes.map((l) => l.role);
+    expect(roles).toEqual(['lead', 'bass', 'drum']); // 空 pad 跳过
+    const lead = lr.lanes.find((l) => l.role === 'lead')!;
+    expect(lead.group).toBe('melody');
+    expect(lr.lanes.find((l) => l.role === 'bass')!.group).toBe('accomp');
+    expect(lead.sequence).toEqual(['C5', 'G4']); // 按 startTick 排序:tick0=C5 先,tick480=G4 后
+    expect(lr.lanes.find((l) => l.role === 'drum')!.sequence).toEqual(['Kick']); // 鼓件名
+    expect(lead.color).toBe(ROLE_COLOR.lead);
+  });
+
+  it('泳道音符不溢出 laneHeight,x+w ≤ width', () => {
+    const ir = mkIR([{ role: 'comp', notes: [
+      { pitch: midi(52), startTick: ticks(0), durationTicks: ticks(240), velocity: 70 },
+      { pitch: midi(64), startTick: ticks(1680), durationTicks: ticks(240), velocity: 70 },
+    ] }], 1920);
+    const lr = buildTrackLanes(ir, { width: 400, laneHeight: 50 });
+    for (const lane of lr.lanes) for (const n of lane.notes) {
+      expect(n.x + n.w).toBeLessThanOrEqual(400 + 0.001);
+      expect(n.y + n.h).toBeLessThanOrEqual(50 + 0.001);
     }
   });
 });
