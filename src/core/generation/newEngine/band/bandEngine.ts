@@ -9,6 +9,7 @@
 import { createRandomContext, pc, type PitchClass } from '../foundation';
 import { MAJOR_SCALE, NATURAL_MINOR } from '../knowledge/scales';
 import { modalScale, type ChurchMode } from '../knowledge/modes';
+import { pickBandInstrumentation } from '../knowledge/instruments';
 import type { BandSpec, Mode, StyleProfile, TonalityKind } from './BandSpec';
 
 // seed 派生音乐身份的可调参数(都从 'band' 子流取,key/mode 未显式指定才生效)
@@ -48,6 +49,9 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
   const key = req.key ?? pc(brng.int(12));
   const mode: Mode = req.mode ?? (brng.next() < MINOR_PROBABILITY ? 'minor' : 'major');
 
+  // ★ 乐器要素:独立 'instrumental' 子流(不扰 key/mode)→ 编制(2–5 件)+ 每件 GM program。
+  const { lineup, roleProgram } = pickBandInstrumentation(style, createRandomContext(req.seed).substream('instrumental'));
+
   if (tonalityKind === 'modal') {
     // modal 调式也随 seed(未显式指定)→ 同 styleHint 不同 seed 出不同调式色彩
     const modalModeName: ChurchMode = req.modalMode ?? MODAL_MODE_POOL[brng.int(MODAL_MODE_POOL.length)];
@@ -60,7 +64,8 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
       primaryScale: modalScale(key, modalModeName),
       modalModeName,
       allowModulation: false, // modal 静态 vamp 不转调
-      instrumentPool: ['bass', 'comp', 'pad', 'lead', 'drum'],
+      instrumentPool: lineup,
+      roleProgram,
     };
   }
 
@@ -74,6 +79,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
     mode,
     primaryScale: diat.map((iv) => pc((key + iv) % 12)),
     allowModulation: req.allowModulation ?? false,
-    instrumentPool: ['bass', 'comp', 'pad', 'lead', 'drum'],
+    instrumentPool: lineup,
+    roleProgram,
   };
 }

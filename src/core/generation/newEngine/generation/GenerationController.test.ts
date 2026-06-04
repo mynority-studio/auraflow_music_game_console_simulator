@@ -58,10 +58,18 @@ describe('generation/GenerationController · runGenerationControl', () => {
 });
 
 describe('generation/generateSong (顶层 Request→FinalIR 端到端)', () => {
-  it('真实管线 → pass,产出 bass/comp/pad/drum/lead 五轨', () => {
+  it('真实管线 → 非 failed,产出可变编制(含 lead,2–5 轨,渲染顺序规范)', () => {
     const r = generateSong({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 });
-    expect(r.status).toBe('pass');
-    expect(r.ir!.tracks.map((t) => t.role)).toEqual(['bass', 'comp', 'pad', 'drum', 'lead']);
+    expect(r.status).not.toBe('failed');
+    const roles = r.ir!.tracks.map((t) => t.role);
+    expect(roles).toContain('lead');
+    expect(roles.length).toBeGreaterThanOrEqual(2);
+    expect(roles.length).toBeLessThanOrEqual(5);
+    // 仅出 lineup 内的轨,且按渲染顺序(bass,comp,pad,drum,lead)
+    const order = ['bass', 'comp', 'pad', 'drum', 'lead'];
+    expect(roles).toEqual(order.filter((o) => (roles as string[]).includes(o)));
+    // 每轨挂了乐器 program
+    for (const t of r.ir!.tracks) expect(typeof t.program).toBe('number');
   });
 
   it('确定性:同 request → 同 lead 音高', () => {

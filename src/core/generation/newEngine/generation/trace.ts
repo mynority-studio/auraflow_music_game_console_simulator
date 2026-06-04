@@ -50,6 +50,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   // —— BAND ——
   const band = buildBandSpec(request);
   log(`■ BAND       ${band.tonalityKind}${band.modalModeName ? `(${band.modalModeName})` : ''} · key=${band.key} ${band.mode} · style=${band.style}  (accompDensity=${band.styleProfile.accompDensity} melodyFreedom=${band.styleProfile.melodyFreedom})`);
+  log(`   编制(${band.instrumentPool.length}件): ${band.instrumentPool.map((r) => `${r}=GM${band.roleProgram[r]}`).join(' · ')}`);
 
   // —— ARRANGER ——
   const arrangement = buildArrangementPlan(band, { rng: seedRng });

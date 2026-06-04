@@ -42,6 +42,21 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(bassOn.data2).toBe(90);
   });
 
+  it('★ track.program(BandEngine 选的乐器)优先;缺省走角色默认', () => {
+    const ir2 = freezeMusicalIR({
+      tracks: [
+        { role: 'lead', program: 66, notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }] }, // TenSax
+        { role: 'bass', notes: [{ pitch: midi(40), startTick: ticks(0), durationTicks: ticks(240), velocity: 80 }] }, // 无 program
+      ],
+      timebase, durationTicks: ticks(480),
+    });
+    const ev = musicalIRToMidiEvents(ir2);
+    const leadPc = ev.find((e) => e.type === 'programChange' && e.channel === 1)!;
+    const bassPc = ev.find((e) => e.type === 'programChange' && e.channel === 3)!;
+    expect(leadPc.data1).toBe(66);  // 用 track.program
+    expect(bassPc.data1).toBe(33);  // 缺省 = Finger Bass 默认
+  });
+
   // —— 混音 (5.4) ——
   const mixIR = freezeMusicalIR({
     tracks: (['bass', 'comp', 'pad', 'lead', 'drum'] as const).map((role) => ({

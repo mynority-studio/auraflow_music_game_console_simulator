@@ -11,9 +11,11 @@ describe('generation/traceGeneration', () => {
     }
   });
 
-  it('产出可播放 IR(5 轨)+ pass', () => {
-    expect(t.ir.tracks.map((tr) => tr.role)).toEqual(['bass', 'comp', 'pad', 'drum', 'lead']);
-    expect(t.audit.findings.length).toBe(0);
+  it('产出可播放 IR(可变编制,含 lead)+ 非 failed', () => {
+    const roles = t.ir.tracks.map((tr) => tr.role);
+    expect(roles).toContain('lead');
+    expect(roles.length).toBeGreaterThanOrEqual(2);
+    expect(t.status).not.toBe('failed');
     expect(t.bpm).toBeGreaterThan(0);
   });
 

@@ -99,12 +99,14 @@ export function renderSongFull(
   const floatingSectionIds = new Set<string>();
   for (const s of arrangement.sections) if (!activeSectionIds.has(s.id)) floatingSectionIds.add(s.id);
 
-  const bass = renderBass(plan, timebase, band.style);
-  const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans });
-  const pad = renderPad(plan, timebase, floatingSectionIds);
-  const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars });
-  const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride);
-  const tracks: TrackIR[] = [bass, ...accompaniment, pad, drums, lead];
+  // ★ 只渲染 lineup 内的角色(编制可变 2–5;lead 必有)
+  const inLineup = (r: string) => band.instrumentPool.includes(r as never);
+  const tracks: TrackIR[] = [];
+  if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style));
+  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans }));
+  if (inLineup('pad')) tracks.push(renderPad(plan, timebase, floatingSectionIds));
+  if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars }));
+  tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
@@ -144,6 +146,8 @@ export function renderSongFull(
 
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, humanRng);
-  const ir = freezeMusicalIR({ tracks: humanizedTracks, timebase, durationTicks: resolved.data.durationTicks });
+  // ★ 末步挂乐器(BandEngine 选的 program;各 pass 保 role,此处按 role 贴回)
+  const finalTracks = humanizedTracks.map((t) => ({ ...t, program: band.roleProgram[t.role] }));
+  const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   return { ir, audit };
 }

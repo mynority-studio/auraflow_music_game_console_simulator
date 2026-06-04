@@ -41,7 +41,8 @@ export function musicalIRToMidiEvents(ir: MusicalIR): MidiEvent[] {
 
   for (const track of ir.tracks) {
     const voice = ROLE_VOICE[track.role] ?? DEFAULT_VOICE;
-    events.push({ ticks: 0, type: 'programChange', channel: voice.channel, data1: voice.program, data2: 0 });
+    const program = track.program ?? voice.program; // BandEngine 选的乐器优先,缺省走角色默认
+    events.push({ ticks: 0, type: 'programChange', channel: voice.channel, data1: program, data2: 0 });
     // ★ 混音:通道音量(CC7)+ 声像(CC10),在发音前置好
     events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_VOLUME, data2: voice.volume });
     events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_PAN, data2: voice.pan });

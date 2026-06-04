@@ -36,8 +36,20 @@ describe('band/bandEngine', () => {
     expect(keys.size).toBeGreaterThanOrEqual(6); // 24 seed 至少出 6 个不同调
   });
 
-  it('instrumentPool 含 5 角色', () => {
+  it('编制可变(2–5 件):必含 lead + ≥1 和声(comp/pad/bass);每件有 GM program', () => {
     const spec = buildBandSpec({ seed: 1, styleHint: 'jazz', mood: 'x', targetDuration: 60 });
-    expect(spec.instrumentPool).toEqual(['bass', 'comp', 'pad', 'lead', 'drum']);
+    expect(spec.instrumentPool.length).toBeGreaterThanOrEqual(2);
+    expect(spec.instrumentPool.length).toBeLessThanOrEqual(5);
+    expect(spec.instrumentPool).toContain('lead'); // 旋律必有
+    expect(spec.instrumentPool.some((r) => r === 'comp' || r === 'pad' || r === 'bass')).toBe(true); // 和声承载
+    for (const r of spec.instrumentPool) expect(typeof spec.roleProgram[r]).toBe('number'); // 每件选了乐器
+  });
+
+  it('不同 style/seed → 编制大小或乐器不同(乐器要素随 seed)', () => {
+    const sig = (s: number, style: string) => { const b = buildBandSpec({ seed: s, styleHint: style, mood: 'x', targetDuration: 60 }); return `${b.instrumentPool.join(',')}|${b.instrumentPool.map((r) => b.roleProgram[r]).join(',')}`; };
+    const sigs = new Set<string>();
+    for (let s = 0; s < 12; s++) { sigs.add(sig(s, 'jazz')); sigs.add(sig(s, 'lofi')); }
+    expect(sigs.size).toBeGreaterThanOrEqual(6); // 编制/乐器有多样性
+    expect(sig(3, 'jazz')).toBe(sig(3, 'jazz')); // 确定性
   });
 });
