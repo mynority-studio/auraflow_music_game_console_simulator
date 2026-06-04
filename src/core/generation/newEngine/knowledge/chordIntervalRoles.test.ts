@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { chordIntervalRole, pickColorTones } from './chordIntervalRoles';
-import { renderAccompaniment } from '../render/accompanimentRenderer';
-import { buildHarmonicPlan } from '../harmony/harmonyEngine';
-import { createTimebase, mod12, pc } from '../foundation';
+import { pc } from '../foundation';
 
 describe('knowledge · chordIntervalRoles (KB 港:和弦内音程角色)', () => {
   it('maj:9(2)=可用张力 / 4 度(5)=avoid / b3(3)=avoid / 13(9)=可用张力', () => {
@@ -29,17 +27,6 @@ describe('knowledge · chordIntervalRoles (KB 港:和弦内音程角色)', () =>
     // avoid 候选(4度=5)被滤掉
     expect(pickColorTones('maj7', pc(0), [5], 2)).toEqual([]);
   });
-});
-
-describe('render · comp 彩色 voicing(消费者:accompanimentRenderer 接 colorToneMap)', () => {
-  const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
-  const plan = buildHarmonicPlan({ key: pc(0), beatsPerBar: 4, progression: [{ degree: 1, quality: 'maj7', bars: 1 }] });
-
-  it('★ colorCount>0 → comp 含可用张力(超出骨干 0/4/7/11);colorCount=0 → 纯骨干', () => {
-    const chordTones = new Set([0, 4, 7, 11]);
-    const colored = renderAccompaniment(plan, timebase, { style: 'jazz', colorCount: 2 })[0].notes.map((n) => mod12(n.pitch));
-    const plain = renderAccompaniment(plan, timebase, { style: 'jazz', colorCount: 0 })[0].notes.map((n) => mod12(n.pitch));
-    expect(colored.some((p) => !chordTones.has(p))).toBe(true);  // 出现张力色彩音
-    expect(plain.every((p) => chordTones.has(p))).toBe(true);    // 纯净=只骨干
-  });
+  // 注:pickColorTones 是给【旋律/上层结构 + 宽和弦 producer】参考用的可用张力筛选器,
+  //   不再给 comp 加色(色彩走旋律的上层结构,comp 守内层骨干;9 不折成 2 防摩擦)。
 });
