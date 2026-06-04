@@ -10,6 +10,7 @@ import { traceGeneration } from '../generation';
 import type { GenerationTrace } from '../generation';
 import { playMusicalIR, stopNewEngine } from './audioOut';
 import { buildPianoRoll, ROLE_COLOR, type PianoRoll } from './pianoRoll';
+import { musicalIRToSMF } from './midiFile';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
 const STYLES = ['pop', 'lofi', 'jazz'] as const;
@@ -106,6 +107,20 @@ export const NewEnginePanel: React.FC = () => {
 
   const onStop = () => { stopNewEngine(); setStatus('已停止'); };
 
+  const onExportMidi = () => {
+    const ir = lastIR.current;
+    if (!ir) { setStatus('先生成再导出'); return; }
+    const smf = musicalIRToSMF(ir, lastBpm.current);
+    const blob = new Blob([smf as BlobPart], { type: 'audio/midi' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `newEngine-${style}-seed${seed}.mid`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus('⬇ 已导出 .mid');
+  };
+
   if (!open) return null;
 
   return (
@@ -182,6 +197,14 @@ export const NewEnginePanel: React.FC = () => {
               className="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
             >
               ■ 停止
+            </button>
+            <button
+              type="button"
+              onClick={onExportMidi}
+              className="rounded-lg border border-sky-500/40 px-3 py-2 text-sm text-sky-300 hover:bg-sky-500/10"
+              title="导出当前生成为 .mid"
+            >
+              ⬇ MIDI
             </button>
           </div>
 
