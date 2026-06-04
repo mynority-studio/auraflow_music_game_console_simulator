@@ -24,6 +24,7 @@ import { resolveInteractions } from './interactionResolver';
 import { renderDrums } from './drumRenderer';
 import { renderPad } from './padRenderer';
 import { applySwing } from './swing';
+import { applyDynamics, type EnergyRange } from './dynamics';
 import type { CandidateSwap } from './MotifStore';
 
 export interface RenderResult {
@@ -114,8 +115,18 @@ export function renderSongFull(
   };
   const resolved = resolveInteractions(draft, occupation);
 
+  // dynamics:力度随段落能量(chorus 强 / intro 弱 / 高潮峰)
+  const energyRanges: EnergyRange[] = [];
+  let dynCursor = 0;
+  const bpbDyn = beatsPerBarOf(arrangement.meter);
+  for (const s of arrangement.sections) {
+    energyRanges.push({ lo: dynCursor, hi: dynCursor + s.bars * bpbDyn, energy: arrangement.energyBySection[s.id] ?? 0.5 });
+    dynCursor += s.bars * bpbDyn;
+  }
+  const dynamicTracks = applyDynamics(resolved.data.tracks, energyRanges, timebase.ppq);
+
   // feel:swing 落地(全轨统一 onset warp;直则原样)
-  const swungTracks = applySwing(resolved.data.tracks, timebase.ppq, arrangement.feel.swingRatio);
+  const swungTracks = applySwing(dynamicTracks, timebase.ppq, arrangement.feel.swingRatio);
 
   const ir = freezeMusicalIR({ tracks: swungTracks, timebase, durationTicks: resolved.data.durationTicks });
   const audit = auditHarmony(ir, plan, timebase);

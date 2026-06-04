@@ -14,3 +14,4 @@ export * from './drumRenderer';
 export * from './bassRenderer';
 export * from './padRenderer';
 export * from './swing';
+export * from './dynamics';
