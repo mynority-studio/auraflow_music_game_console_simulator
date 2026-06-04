@@ -79,9 +79,31 @@ export function renderMelody(
     }
 
     const phraseStart = starts[phrase.id] ?? 0;
-    // motif 逐小节【发展】(模进),非原样重播;head(首小节首音)= hook 锚点身份
+    const breath = arrangement.phraseBreathing.cadenceBreathBeats;
+    // motif 逐小节【发展】;末小节稀疏解决 + 句尾呼吸(留白),非每小节填满
     for (let bar = 0; bar < phrase.bars; bar++) {
       const barStart = phraseStart + bar * bpb;
+      const isLastBar = bar === phrase.bars - 1;
+
+      if (isLastBar && phrase.bars > 1) {
+        // 句尾:单长音解决(cadence 句落主音,其余回锚点)+ 末 breath 拍留白
+        // ★ 长音必须贴当前和弦安全音(否则主音落属和弦=avoid 11,长暴露被 Auditor 拦)
+        const rawPc =
+          phrase.role === 'cadence'
+            ? mod12(band.key + degreeToSemitone(1, band.mode))
+            : mod12(headPitch);
+        const pc = safePc(rawPc, plan, spanAtBeat(plan, barStart));
+        const pitch = pcToMidiInRange(pc, LEAD_LOW, LEAD_HIGH);
+        const dur = Math.max(0.5, bpb - breath);
+        notes.push({
+          pitch,
+          startTick: timebase.beatToTick(beats(barStart)),
+          durationTicks: timebase.beatToTick(beats(dur)),
+          velocity: 88,
+        });
+        continue;
+      }
+
       const devStep = DEV_STEPS[bar % DEV_STEPS.length];
       motif.noteSlots.forEach((slot, i) => {
         const noteBeat = barStart + slot.timeOffset;

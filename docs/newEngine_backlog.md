@@ -32,7 +32,7 @@
 - [x] 1.1 Comp 织体化(风格化 comping 节奏型)
 - [x] 1.2 Bass 行进(walking / 根-五-八 / 分解)
 - [x] 1.4 鼓变化(per-style groove + 段落 fill + 力度人性化)
-- [ ] 2.1 乐句呼吸 / 休止(消费 phraseBreathing)
+- [x] 2.1 乐句呼吸 / 休止(消费 phraseBreathing)
 - [ ] 2.5 swing / feel 落地(swingRatio 改 tick)
 
 **Tier B · 伴奏 / 旋律加厚**
@@ -124,4 +124,5 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 2.1 — 旋律句尾呼吸:末小节稀疏单长音解决(cadence 落主音/其余回锚点,贴和弦安全音)+ 末 cadenceBreath 拍留白;消费 phraseBreathing;Auditor 抓出主音落属和弦的 avoid 暴露→已 snap 修;+3 用例(193 绿)。**需耳朵复核**(留白量/解决感)
 - 2026-06-04 1.4 — 鼓变化:per-style groove(pop backbeat/lofi 半拍/jazz swing ride)+ 段落转折 fill(末小节 16 分 roll)+ 确定性力度人性化(逐小节抖动);drumPattern 进 grooves;+3 用例(190 绿)。**需耳朵复核**(groove/fill/抖动幅度)
