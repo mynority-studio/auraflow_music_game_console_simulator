@@ -50,7 +50,7 @@
 - [x] 3.2 副属(V7/V,secondaryTarget 落地)
 - [x] 3.3 借和弦(borrowedChordMap 落地)
 - [x] 3.6 真 chord-scale(取代 stable∪acceptable 占位)
-- [ ] 3.5 曲式多样(seed 选模板 + 段落长度变化)
+- [x] 3.5 曲式多样(seed 选模板 + 段落长度变化)
 
 **Tier E · 表现力 / 纠错环**
 - [ ] 5.3 力度 / 微时序人性化(velocity 曲线 + 微 timing)
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 3.5 — 曲式多样:formPlanner 由单一固定模板扩为 4 模板池(verse-chorus / +bridge / double-verse / compact),planForm 接 rng → seed 选型 + intro/outro 长度变化(2/4 bar),verse/chorus 保 8 bar+repeatGroup 等长排比;arranger 接 ArrangementOptions{rng,template},generateSong/trace 传 seedRng → 真"不同 seed 不同曲式"(实测 seed0-7 出全部 4 种骨架);不变量【每模板≥1 chorus 高潮锚点】;无 rng=固定 verse-chorus(向后兼容,旧 ~20 测试不动);12 seed 端到端全收敛(非 failed);trace 显示曲式骨架+段数+小节数;+5 用例(252 绿)。**需耳朵复核**(各曲式段落衔接/桥段对比)
 - 2026-06-04 3.6 — 真 chord-scale:新增 knowledge/chordScales(realChordScale);调内→母调音阶(大调 Ionian/小调自然小调 7 音,含旧占位漏掉的 avoid 4 度)、副属→根音 Mixolydian(含离调导音)、借和弦→根音 Dorian(含 Ab/Eb);assemble 接 keyPc+keyMode,chordScaleMap 由 stable∪acceptable(6 音残缺)换成真 7 音调式音阶;不变量【和弦音⊆chord-scale】全 style 跑通;无下游消费=零行为回归(为后续 solo/modal 备数据);trace 采样首和弦+离调和弦音阶;+8 用例(247 绿)。无需耳朵复核(纯数据层,不出声变化)
 - 2026-06-04 3.3 — 借和弦:大调 colorBudget≥0.3 → body 内 IV(maj7) 借为同名小调 iv(m7,Fm7 在 C),borrowedChordMap 标记({from:'parallel-minor',label:'iv'});含 Ab/Eb 离调色彩、melody 对其安全音重 snap→Auditor pass;确定性=排比不破(verse1≡verse2);trace 显示借和弦 iv×N;+3 用例(239 绿)。**需耳朵复核**(借和弦色彩/小调忧郁感)
 - 2026-06-04 3.2 — 副属 V7/X:colorBudget≥0.5(jazz)才加;tonicize body 内 V/vi 目标前和弦(根=目标上方五度,属七,func=D,secondaryTarget 标记);确定性=排比不破;melody 对离调和弦重 snap→Auditor pass;实测 jazz 出 V7/V·V7/VI 解决、pop 无;romanLabel 显示 /X;+4 用例(236 绿)。**需耳朵复核**(离调色彩)

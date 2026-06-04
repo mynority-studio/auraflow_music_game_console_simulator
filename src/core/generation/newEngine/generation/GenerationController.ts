@@ -73,7 +73,7 @@ export function runGenerationControl(
 export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
-  const arrangement = buildArrangementPlan(band);
+  const arrangement = buildArrangementPlan(band, { rng: seedRng });
   const instrumentation = buildInstrumentationPlan(band, arrangement);
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
   const timebase = createTimebase({

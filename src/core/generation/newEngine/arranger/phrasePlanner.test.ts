@@ -3,7 +3,7 @@ import { planPhrases } from './phrasePlanner';
 import { planForm } from './formPlanner';
 
 describe('arranger/phrasePlanner', () => {
-  const sections = planForm('verse-chorus');
+  const sections = planForm({ template: 'verse-chorus' });
   const { phrases, motifBindings } = planPhrases(sections, 4);
 
   const bindingOf = (phraseId: string) => motifBindings.find((b) => b.phraseId === phraseId)!;

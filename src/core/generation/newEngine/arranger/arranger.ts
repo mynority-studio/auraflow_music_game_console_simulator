@@ -6,17 +6,23 @@
 // ============================================================
 
 import type { BandSpec } from '../band/BandSpec';
+import type { RandomContext } from '../foundation';
 import { freezeArrangementPlan, type ArrangementPlan, type ArrangementPlanData } from './ArrangementPlan';
 import { planForm, type FormTemplate } from './formPlanner';
 import { planTime } from './timePlanner';
 import { planDynamics } from './dynamicsPlanner';
 import { planPhrases } from './phrasePlanner';
 
+export interface ArrangementOptions {
+  rng?: RandomContext; // 有 → seed 选曲式 + 段落长度变化(不同 seed 不同曲式)
+  template?: FormTemplate; // 显式固定曲式(测试/特化)
+}
+
 export function buildArrangementPlan(
   band: BandSpec,
-  template: FormTemplate = 'verse-chorus',
+  opts: ArrangementOptions = {},
 ): ArrangementPlan {
-  const sections = planForm(template);
+  const sections = planForm({ rng: opts.rng?.substream('arranger'), template: opts.template });
   const time = planTime(band.style);
   const { phrases, motifBindings } = planPhrases(sections, time.phraseBreathing.phraseBars);
   const dynamics = planDynamics(sections);
