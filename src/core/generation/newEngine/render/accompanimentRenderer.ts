@@ -10,6 +10,7 @@ import { beats, midi, mod12, type Timebase } from '../foundation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { compPattern } from '../knowledge/grooves';
 import { guideToneShell, voiceComp } from '../knowledge/voicings';
+import { pickColorTones } from '../knowledge/chordIntervalRoles';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
@@ -18,6 +19,7 @@ export interface AccompContext {
   anchorBeats?: Set<number>;      // 主 hook 锚点拍位(active 段在此瘦身让位)
   activeSectionIds?: Set<string>; // active 织体段
   voicingSaferSpans?: Set<string>; // 撞音阶梯 rung1:这些 span 强制瘦身 3+7 shell
+  colorCount?: number;            // ★ 给 comp 加几个可用张力(9/13)出彩色 voicing(0=纯骨干)
 }
 
 function spanAtBeat(plan: HarmonicPlan, beat: number): ChordSpan | undefined {
@@ -47,7 +49,9 @@ export function renderAccompaniment(
   let prevVoicing: number[] | undefined; // 上一组完整 voicing → 全声部贴最近(声部进行)
   for (const span of plan.chordTimeline) {
     if (!inActive(span.sectionId)) continue;
-    const full = voiceComp([...plan.stableToneMap[span.id]], style, prevTop, prevVoicing);
+    // ★ 彩色 voicing:骨干音 + 按预算从 colorToneMap 挑【可用张力】(参考 chordIntervalRoles 判角色/排序)
+    const colorPcs = pickColorTones(span.quality, span.rootPc, plan.colorToneMap[span.id] ?? [], ctx.colorCount ?? 0);
+    const full = voiceComp([...plan.stableToneMap[span.id], ...colorPcs], style, prevTop, prevVoicing);
     voicedBySpan[span.id] = full;
     const shellPcs = guideToneShell(span.quality).map((iv) => mod12(span.rootPc + iv));
     shellBySpan[span.id] = voiceComp(shellPcs, style, prevTop, prevVoicing);

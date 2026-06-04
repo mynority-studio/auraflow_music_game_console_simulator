@@ -101,9 +101,12 @@ export function renderSongFull(
 
   // ★ 只渲染 lineup 内的角色(编制可变 2–5;lead 必有)
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
+  // 彩色 voicing 预算:colorBudget 高(jazz)→2 张力 / 中(pop·lofi)→1 / 低(modal)→0 纯净
+  const cb = band.styleProfile.colorBudget;
+  const colorCount = cb >= 0.7 ? 2 : cb >= 0.25 ? 1 : 0;
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style));
-  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans }));
+  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, colorCount }));
   if (inLineup('pad')) tracks.push(renderPad(plan, timebase, floatingSectionIds));
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars }));
   tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有

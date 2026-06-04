@@ -9,3 +9,4 @@ export * from './motifShapes';
 export * from './grooves';
 export * from './grammarLibrary';
 export * from './guideTonePolicies';
+export * from './chordIntervalRoles';

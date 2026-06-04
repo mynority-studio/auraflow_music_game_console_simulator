@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { generateSong } from '../generation/GenerationController';
+import { buildBandSpec } from '../band/bandEngine';
+import { buildArrangementPlan } from '../arranger/arranger';
 import type { TrackIR } from '../ir/MusicalIR';
-import { midi, ticks } from '../foundation';
+import { createRandomContext, midi, ticks } from '../foundation';
 
 describe('render/dynamics (3.1)', () => {
   it('按段落能量缩放力度(高能量段更响)', () => {
@@ -30,15 +32,22 @@ describe('render/dynamics (3.1)', () => {
     expect(out[0].notes[0].velocity).toBeLessThanOrEqual(127);
   });
 
-  it('★ 端到端:chorus 平均力度 > verse', () => {
-    const r = generateSong({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 });
-    // 段落 beat 范围(intro4 + verse8 + chorus8 ...)→ tick
-    const ppq = 480;
-    const inRange = (lo: number, hi: number) =>
-      r.ir!.tracks.flatMap((t) => t.notes).filter((n) => { const b = n.startTick / ppq; return b >= lo && b < hi; }).map((n) => n.velocity);
-    const verseVel = inRange(16, 48);   // verse1: bar4..12 = beat 16..48
-    const chorusVel = inRange(48, 80);  // chorus1: bar12..20 = beat 48..80
-    const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-    expect(avg(chorusVel)).toBeGreaterThan(avg(verseVel));
+  it('★ 端到端:同一轨 comp 在【真实 chorus 段】力度 > 【真实 verse 段】(从曲式取段,抗曲式多样)', () => {
+    const req = { seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 };
+    // 曲式随 seed 变(3.5)→ 不能硬编码 beat 范围,从 arrangement 取真实 verse/chorus 段
+    const band = buildBandSpec(req);
+    const arr = buildArrangementPlan(band, { rng: createRandomContext(req.seed) });
+    const bpb = arr.meter.numerator * (4 / arr.meter.denominator);
+    let beat = 0;
+    const ranges = arr.sections.map((s) => { const r = { role: s.role, lo: beat, hi: beat + s.bars * bpb }; beat += s.bars * bpb; return r; });
+    const verse = ranges.find((r) => r.role === 'verse')!;
+    const chorus = ranges.find((r) => r.role === 'chorus')!;
+    const g = generateSong(req);
+    const comp = g.ir!.tracks.find((t) => t.role === 'comp')!.notes;
+    const avgIn = (lo: number, hi: number) => {
+      const v = comp.filter((n) => { const b = (n.startTick as number) / 480; return b >= lo && b < hi; }).map((n) => n.velocity);
+      return v.reduce((a, b) => a + b, 0) / v.length;
+    };
+    expect(avgIn(chorus.lo, chorus.hi)).toBeGreaterThan(avgIn(verse.lo, verse.hi)); // chorus 能量 0.9 > verse 0.6
   });
 });
