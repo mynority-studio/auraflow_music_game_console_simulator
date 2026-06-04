@@ -31,6 +31,11 @@ const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
 
 const DEFAULT_VOICE: ChannelVoice = { channel: 0, program: 0, volume: 100, pan: 64 };
 
+/** 角色 → MIDI 通道(mute/solo 按通道操作)。 */
+export const ROLE_CHANNEL: Record<InstrumentRole, number> = {
+  bass: 3, comp: 2, lead: 1, pad: 4, drum: 9,
+};
+
 export function musicalIRToMidiEvents(ir: MusicalIR): MidiEvent[] {
   const events: MidiEvent[] = [];
 

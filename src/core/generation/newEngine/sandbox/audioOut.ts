@@ -8,8 +8,9 @@
 
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
 import { startAudioContext } from '../../../audio/SynthManager';
-import type { MusicalIR } from '../ir/MusicalIR';
-import { musicalIRToMidiEvents } from './irToMidi';
+import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
+import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
+import { resolveAudibleRoles } from './pianoRoll';
 
 /** 播放一首 newEngine 生成的曲子。会先确保 AudioContext / synth 已启动。 */
 export async function playMusicalIR(ir: MusicalIR, bpm: number): Promise<void> {
@@ -22,4 +23,21 @@ export async function playMusicalIR(ir: MusicalIR, bpm: number): Promise<void> {
 
 export function stopNewEngine(): void {
   globalMidiScheduler.stop();
+}
+
+/** 计算并应用 mute/solo:solo 非空 → 只放 solo 轨;否则放未静音轨。按通道实时 muteChannel,播放中可切。 */
+export function applyMuteSolo(muted: Set<string>, solo: Set<string>): void {
+  const roles = Object.keys(ROLE_CHANNEL) as InstrumentRole[];
+  const audible = resolveAudibleRoles(roles, muted, solo);
+  for (const role of roles) globalMidiScheduler.muteChannel(ROLE_CHANNEL[role], !audible.has(role));
+}
+
+/** 当前播放位置(tick),供 playhead 读取。 */
+export function getPlaybackTick(): number {
+  return globalMidiScheduler.getCurrentTick();
+}
+
+/** 是否正在播放。 */
+export function getIsPlaying(): boolean {
+  return globalMidiScheduler.isPlaying;
 }

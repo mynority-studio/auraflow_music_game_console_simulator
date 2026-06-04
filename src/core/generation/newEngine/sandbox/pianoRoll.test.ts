@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPianoRoll, buildTrackLanes, midiToNoteName, noteLabel, ROLE_COLOR } from './pianoRoll';
+import { buildPianoRoll, buildTrackLanes, midiToNoteName, noteLabel, resolveAudibleRoles, ROLE_COLOR } from './pianoRoll';
 import { freezeMusicalIR } from '../ir/MusicalIR';
 import { createTimebase, midi, ticks } from '../foundation';
 
@@ -105,6 +105,20 @@ describe('sandbox · piano-roll 几何 (6.1)', () => {
     expect(lead.sequence).toEqual(['C5', 'G4']); // 按 startTick 排序:tick0=C5 先,tick480=G4 后
     expect(lr.lanes.find((l) => l.role === 'drum')!.sequence).toEqual(['Kick']); // 鼓件名
     expect(lead.color).toBe(ROLE_COLOR.lead);
+  });
+
+  it('★ resolveAudibleRoles:无 solo→放未 mute 轨;有 solo→只放 solo 轨(mute 被 solo 覆盖)', () => {
+    const roles = ['lead', 'comp', 'bass', 'pad', 'drum'];
+    // 无 solo,mute bass+drum → 其余可听
+    expect(resolveAudibleRoles(roles, new Set(['bass', 'drum']), new Set())).toEqual(new Set(['lead', 'comp', 'pad']));
+    // solo lead → 只 lead(即便没 mute 别的)
+    expect(resolveAudibleRoles(roles, new Set(), new Set(['lead']))).toEqual(new Set(['lead']));
+    // solo 优先级高于 mute:solo lead + mute lead → 仍只 lead 可听
+    expect(resolveAudibleRoles(roles, new Set(['lead']), new Set(['lead']))).toEqual(new Set(['lead']));
+    // solo 多轨
+    expect(resolveAudibleRoles(roles, new Set(), new Set(['lead', 'bass']))).toEqual(new Set(['lead', 'bass']));
+    // 全空 → 全可听
+    expect(resolveAudibleRoles(roles, new Set(), new Set())).toEqual(new Set(roles));
   });
 
   it('泳道音符不溢出 laneHeight,x+w ≤ width', () => {

@@ -40,6 +40,15 @@ export const ROLE_COLOR: Record<InstrumentRole, string> = {
   drum: '#9ca3af', // gray
 };
 
+/** mute/solo 解析:有 solo → 只放 solo 轨;否则放未 mute 轨。纯函数,供音频层 + 面板共用。 */
+export function resolveAudibleRoles(
+  roles: readonly string[],
+  muted: ReadonlySet<string>,
+  solo: ReadonlySet<string>,
+): Set<string> {
+  return new Set(roles.filter((r) => (solo.size > 0 ? solo.has(r) : !muted.has(r))));
+}
+
 // —— 音名 / 鼓名(逐轨视图用)——
 export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 /** MIDI → 音名(60 = C4 中央 C)。 */
@@ -61,6 +70,7 @@ export function noteLabel(pitch: number, isDrum: boolean): string {
 export interface LaneNote {
   x: number; w: number; y: number; h: number;
   startTick: number;
+  durationTicks: number; // playhead 判定正在发声用
   pitch: number;
   label: string;   // 音名 / 鼓件名
   velocity: number;
@@ -108,6 +118,7 @@ export function buildTrackLanes(ir: MusicalIR, opts: { width?: number; laneHeigh
         y: ((pMax - p) / span) * (laneHeight - rowH),
         h: rowH,
         startTick: s,
+        durationTicks: d,
         pitch: p,
         label: noteLabel(p, isDrum),
         velocity: n.velocity,
