@@ -144,9 +144,32 @@ export function buildHarmonicPlanFromArrangement(
       if (group) degreesByGroup.set(group, degrees);
     }
 
+    // ★ 终止式:段尾末乐句的 cadenceTarget 决定段尾和声落点
+    //   authentic → 末两和弦 V7-I;half → 末和弦 V。(verse1≡verse2 同终止 → 排比不破)
+    const secPhrases = arrangement.phrases.filter((p) => p.sectionId === section.id);
+    const lastCad = secPhrases.length
+      ? secPhrases.reduce((a, b) => (b.phraseSlot > a.phraseSlot ? b : a)).cadenceTarget
+      : undefined;
+
     for (let j = 0; j < totalChords; j++) {
-      const degree = degrees[j % degrees.length];
-      const quality = diatonicQuality(degree, band.mode);
+      let degree = degrees[j % degrees.length];
+      let quality = diatonicQuality(degree, band.mode);
+      const isLast = j === totalChords - 1;
+      const isSecondLast = j === totalChords - 2;
+
+      if (lastCad === 'authentic') {
+        if (isLast) {
+          degree = 1;
+          quality = diatonicQuality(1, band.mode);
+        } else if (isSecondLast && totalChords >= 2) {
+          degree = 5;
+          quality = '7'; // V7(小调也用属七 → 真终止解决)
+        }
+      } else if (lastCad === 'half' && isLast) {
+        degree = 5;
+        quality = '7';
+      }
+
       resolved.push({
         roman: { degree: degree as RomanChord['degree'], accidental: 'natural', quality },
         rootPc: mod12(band.key + degreeToSemitone(degree, band.mode)),

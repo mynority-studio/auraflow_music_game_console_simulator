@@ -46,7 +46,7 @@
 
 **Tier D · 结构 / 和声起伏**
 - [x] 3.1 Dynamics 真消费(energy/density/climax 落力度/密度/音区)
-- [ ] 3.4 终止式(乐句尾真 cadence,V-I 落点对齐 cadenceTarget)
+- [x] 3.4 终止式(乐句尾真 cadence,V-I 落点对齐 cadenceTarget)
 - [ ] 3.2 副属(V7/V,secondaryTarget 落地)
 - [ ] 3.3 借和弦(borrowedChordMap 落地)
 - [ ] 3.6 真 chord-scale(取代 stable∪acceptable 占位)
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 3.4 — 终止式:harmony 按段尾末乐句 cadenceTarget 覆写段尾和声(authentic→末两和弦 V7-I / half→末 V7);小调也用属七真解决;排比不破(verse1≡verse2 同终止);功能时间线段尾 D-T;+3 用例(232 绿)。**需耳朵复核**(终止解决感)
 - 2026-06-04 3.1 — Dynamics 真消费:render/dynamics applyDynamics 全轨力度按段落能量缩放(scale=0.6+0.5*energy);renderSongFull 算 energyRanges 在 swing 前应用;音区已在 2.4 消费、此补力度;实测 chorus 均力度>verse;+3 用例(229 绿)。**需耳朵复核**(动态对比强度)
 - 2026-06-04 2.3 — GuideTone tail:knowledge/guideTonePolicies(3/7 导音,voice-led 取离 prev 最近,authentic 强制 3 音解决);melody 中 connector/cadence 句(非 hook)走导音线(一弦一音、sparse、坐音区低端),与 busy hook 对比;实测 connector 全是导音、比 hook 稀疏;Auditor pass;+9 用例(226 绿)。Tier C 完(2/2)。**需耳朵复核**(连接句连贯/对比)
 - 2026-06-04 2.2 — 真 grammar 变体:knowledge/grammarLibrary 变体引擎(transform=transpose/invert/retrograde + divide 节奏细分;grammar=逐小节算子序列,develop/sequence/answer);melody 用 developBar 取代手搓 DEV_STEPS;grammar 按 motifId 确定性选(不同 motif 不同发展);实测各 motif grammar 各异、Auditor pass;+7 用例(217 绿)。⚠️ 85-grammar Impro-Visor DSL data-port 留作后续子步(本项是变体【机制】)。**需耳朵复核**(发展是否自然)

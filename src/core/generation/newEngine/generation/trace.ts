@@ -58,7 +58,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
 
   // —— HARMONY ——
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
-  log(`■ HARMONY    ${harmonic.chordTimeline.length} 和弦(级数 rng 选+调内解析)`);
+  log(`■ HARMONY    ${harmonic.chordTimeline.length} 和弦(级数 rng 选+调内解析,段尾 V7-I 终止)`);
   const seenSec = new Set<string>();
   for (const span of harmonic.chordTimeline) {
     if (seenSec.has(span.sectionId)) continue;
