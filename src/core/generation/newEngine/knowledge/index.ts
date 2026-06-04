@@ -15,3 +15,5 @@ export * from './melodyChordSemantics';
 export * from './widePianoVoicings';
 export * from './voicingStyles';
 export * from './voicingPlacement';
+export * from './basslineRules';
+export * from './textureProfiles';
