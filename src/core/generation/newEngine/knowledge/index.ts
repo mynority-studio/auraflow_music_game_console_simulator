@@ -8,3 +8,4 @@ export * from './voicings';
 export * from './motifShapes';
 export * from './grooves';
 export * from './grammarLibrary';
+export * from './guideTonePolicies';

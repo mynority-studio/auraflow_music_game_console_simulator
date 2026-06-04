@@ -16,6 +16,7 @@ import { beatsPerBarOf, phraseStartBeats } from '../arranger/phraseTiming';
 import { degreeToSemitone } from '../knowledge/scales';
 import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
 import { developBar, pickGrammarName, type DevNote } from '../knowledge/grammarLibrary';
+import { guideToneMidi } from '../knowledge/guideTonePolicies';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MelodyAnchorPlan } from './MelodyAnchorPlan';
 import {
@@ -89,7 +90,34 @@ export function renderMelody(
     const leadLow = LEAD_LOW + lift;
     const leadHigh = leadLow + (LEAD_HIGH - LEAD_LOW);
 
-    // motif 逐小节【发展】;末小节稀疏解决 + 句尾呼吸(留白),非每小节填满
+    // ★ 连接/终止句(非 hook)→ GuideTone 线:贴和弦 3/7,voice-led,sparse(一弦一音),
+    //   authentic 终止落 3 音解决。与 busy 的 hook 句形成对比。
+    if (phrase.skeletonRole !== 'hook') {
+      const phraseEnd = phraseStart + phrase.bars * bpb;
+      const phraseChords = plan.chordTimeline.filter(
+        (c) => c.startBeat < phraseEnd && c.startBeat + c.durationBeats > phraseStart,
+      );
+      let prev = leadLow; // 连接句坐在音区低端(从属于 hook)
+      phraseChords.forEach((c, idx) => {
+        const noteBeat = Math.max(phraseStart, c.startBeat);
+        if (noteBeat >= phraseEnd - breath) return; // 句尾呼吸
+        const isLast = idx === phraseChords.length - 1;
+        const forceThird = isLast && phrase.cadenceTarget === 'authentic';
+        const gt = guideToneMidi(c.rootPc, c.quality, prev, leadLow, leadHigh, forceThird);
+        prev = gt;
+        const noteEnd = Math.min(phraseEnd - (isLast ? breath : 0), c.startBeat + c.durationBeats);
+        const dur = Math.max(0.5, noteEnd - noteBeat);
+        notes.push({
+          pitch: midi(gt),
+          startTick: timebase.beatToTick(beats(noteBeat)),
+          durationTicks: timebase.beatToTick(beats(dur)),
+          velocity: 84,
+        });
+      });
+      continue;
+    }
+
+    // hook 句:motif 逐小节 grammar 发展;末小节稀疏解决 + 句尾呼吸(留白)
     for (let bar = 0; bar < phrase.bars; bar++) {
       const barStart = phraseStart + bar * bpb;
       const isLastBar = bar === phrase.bars - 1;
