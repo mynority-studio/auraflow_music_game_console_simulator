@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   phraseCellRole, densityForCell, energyForCell, TEXTURE_POOL, pickTextureForBar,
+  pickGenericTexture, GENERIC_TEXTURE_YIELD, GENERIC_TEXTURE_PROFILES, ALL_TEXTURE_PROFILES,
 } from './textureProfiles';
 
 const picker = { pick: <T>(xs: readonly T[]): T => xs[0] };
@@ -74,5 +75,30 @@ describe('pickTextureForBar — 过滤选择', () => {
 
   it('无任何该 style → null', () => {
     expect(pickTextureForBar({ style: 'BLUES', phraseRole: 'establish', density: 0.3, energy: 0.3, isDominantChain: false, random: picker })).toBeNull();
+  });
+});
+
+describe('笼统织体已搬进 KB(引擎不再自带偏好)', () => {
+  it('pickGenericTexture 复现原 TEXTURE_BY_ROLE(行为不变)', () => {
+    expect(pickGenericTexture('intro')).toBe('pad');
+    expect(pickGenericTexture('verse')).toBe('arpeggio');
+    expect(pickGenericTexture('chorus')).toBe('active-comp');
+    expect(pickGenericTexture('bridge')).toBe('sustained-block');
+    expect(pickGenericTexture('outro')).toBe('pad');
+  });
+
+  it('让位策略搬进 KB(active-comp/arpeggio/walking-bass=active;pad/sustained-block=floating)', () => {
+    expect(GENERIC_TEXTURE_YIELD['active-comp']).toBe('active');
+    expect(GENERIC_TEXTURE_YIELD.arpeggio).toBe('active');
+    expect(GENERIC_TEXTURE_YIELD['walking-bass']).toBe('active');
+    expect(GENERIC_TEXTURE_YIELD.pad).toBe('floating');
+    expect(GENERIC_TEXTURE_YIELD['sustained-block']).toBe('floating');
+  });
+
+  it('5 笼统 + 17 rich 一起存进 KB 目录', () => {
+    expect(GENERIC_TEXTURE_PROFILES).toHaveLength(5);
+    expect(ALL_TEXTURE_PROFILES).toHaveLength(22); // 5 + 17
+    // 笼统 profile 的 textureCase = 可渲染的 kind 名(render 直接映射)
+    expect(GENERIC_TEXTURE_PROFILES.map((t) => t.textureCase).sort()).toEqual(['active-comp', 'arpeggio', 'pad', 'sustained-block', 'walking-bass']);
   });
 });

@@ -9,8 +9,9 @@
 
 import { midi } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
-import type { ArrangementPlan, Section, SectionRole } from '../arranger/ArrangementPlan';
+import type { ArrangementPlan, Section } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
+import { pickGenericTexture, GENERIC_TEXTURE_YIELD, type TextureSectionRole } from '../knowledge/textureProfiles';
 import {
   freezeInstrumentationPlan,
   type HookAnchorSlot,
@@ -18,7 +19,6 @@ import {
   type InstrumentationPlanData,
   type RegisterRange,
   type TextureKind,
-  type YieldClass,
 } from './InstrumentationPlan';
 
 const rr = (lo: number, hi: number): RegisterRange => ({ lowMidi: midi(lo), highMidi: midi(hi) });
@@ -32,21 +32,7 @@ const REGISTER_BY_ROLE: Record<InstrumentRoleName, RegisterRange> = {
   drum: rr(35, 50),
 };
 
-const TEXTURE_BY_ROLE: Record<SectionRole, TextureKind> = {
-  intro: 'pad',
-  verse: 'arpeggio',
-  chorus: 'active-comp',
-  bridge: 'sustained-block',
-  outro: 'pad',
-};
-
-const TEXTURE_YIELD: Record<TextureKind, YieldClass> = {
-  'active-comp': 'active',
-  arpeggio: 'active',
-  'walking-bass': 'active',
-  pad: 'floating',
-  'sustained-block': 'floating',
-};
+// ★ 织体选择偏好 + 让位策略已搬进 KB(knowledge/textureProfiles)。引擎不再自带,改查 KB。
 
 export function buildInstrumentationPlan(
   band: BandSpec,
@@ -59,7 +45,7 @@ export function buildInstrumentationPlan(
   for (const s of arrangement.sections) {
     sectionById[s.id] = s as Section;
     const e = arrangement.energyBySection[s.id] ?? 0.5;
-    textureBySection[s.id] = TEXTURE_BY_ROLE[s.role as SectionRole];
+    textureBySection[s.id] = pickGenericTexture(s.role as TextureSectionRole); // 查 KB(引擎无偏好)
     activityBySection[s.id] = { bass: e, comp: e, drum: e, lead: e, pad: clamp01(1 - e) };
   }
 
@@ -82,7 +68,7 @@ export function buildInstrumentationPlan(
     activityBySection,
     registerByRole: REGISTER_BY_ROLE,
     textureBySection,
-    textureYieldPolicy: TEXTURE_YIELD,
+    textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     melodyReservationPlan: {
       reservedRegister: REGISTER_BY_ROLE.lead,
       densityCeiling: clamp01(band.styleProfile.accompDensity),

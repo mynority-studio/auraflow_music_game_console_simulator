@@ -11,9 +11,11 @@
 import { deepFreeze, type DeepReadonly, type Midi } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import type { PhraseId, SectionId } from '../arranger/ArrangementPlan';
+import type { GenericTextureKind, GenericTextureYield } from '../knowledge/textureProfiles';
 
-export type TextureKind = 'active-comp' | 'arpeggio' | 'pad' | 'sustained-block' | 'walking-bass';
-export type YieldClass = 'active' | 'floating';
+// ★ 织体种类 / 让位类的真源在 KB(knowledge/textureProfiles);此处仅按契约名复用(用户定:织体归 KB)。
+export type TextureKind = GenericTextureKind;
+export type YieldClass = GenericTextureYield;
 
 export interface RegisterRange {
   lowMidi: Midi;

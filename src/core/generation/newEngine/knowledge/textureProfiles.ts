@@ -122,3 +122,42 @@ export function pickTextureForBar(args: {
   if (pool.length === 0) return null;
   return args.random.pick(pool);
 }
+
+// ============================================================
+// 笼统织体(原 newEngine 引擎自带的 5 种)—— 用户定:搬进 KB 一起保存,
+// 引擎本身不再带织体选择偏好。render 已能弹这 5 种;rich 17 种待 render 升级解析。
+// ============================================================
+
+/** newEngine 可渲染的 5 种笼统织体(原 InstrumentationPlan.TextureKind)。 */
+export type GenericTextureKind = 'active-comp' | 'arpeggio' | 'pad' | 'sustained-block' | 'walking-bass';
+export type GenericTextureYield = 'active' | 'floating';
+
+/** 让位策略(原引擎 TEXTURE_YIELD,搬进 KB)。 */
+export const GENERIC_TEXTURE_YIELD: Record<GenericTextureKind, GenericTextureYield> = {
+  'active-comp': 'active', arpeggio: 'active', 'walking-bass': 'active',
+  pad: 'floating', 'sustained-block': 'floating',
+};
+
+export type TextureSectionRole = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro';
+
+/** 笼统织体按段落功能的选择偏好(原引擎 TEXTURE_BY_ROLE,搬进 KB —— 引擎不再自带)。 */
+const GENERIC_TEXTURE_BY_ROLE: Record<TextureSectionRole, GenericTextureKind> = {
+  intro: 'pad', verse: 'arpeggio', chorus: 'active-comp', bridge: 'sustained-block', outro: 'pad',
+};
+
+/** 引擎查 KB 拿段落织体(取代引擎侧 TEXTURE_BY_ROLE)。阶段2 会换成 density/energy 驱动的 rich 选择。 */
+export function pickGenericTexture(role: TextureSectionRole): GenericTextureKind {
+  return GENERIC_TEXTURE_BY_ROLE[role] ?? 'active-comp';
+}
+
+/** 5 种笼统织体也以 profile 形态存进 KB(与 rich 一起),metadata 取中性宽匹配=通用兜底。 */
+export const GENERIC_TEXTURE_PROFILES: TextureProfile[] = [
+  { id: 'generic_active_comp', textureCase: 'active-comp', styles: ['POP', 'JAZZ', 'RNB', 'BLUES', 'LOFI'], mood: 'groove', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0, 1], energyRange: [0, 1] },
+  { id: 'generic_arpeggio', textureCase: 'arpeggio', styles: ['POP', 'JAZZ', 'RNB', 'BLUES', 'LOFI'], mood: 'lyrical', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0, 1], energyRange: [0, 1] },
+  { id: 'generic_pad', textureCase: 'pad', styles: ['POP', 'JAZZ', 'RNB', 'BLUES', 'LOFI'], mood: 'ambient', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0, 1], energyRange: [0, 1] },
+  { id: 'generic_sustained_block', textureCase: 'sustained-block', styles: ['POP', 'JAZZ', 'RNB', 'BLUES', 'LOFI'], mood: 'ambient', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0, 1], energyRange: [0, 1] },
+  { id: 'generic_walking_bass', textureCase: 'walking-bass', styles: ['POP', 'JAZZ', 'RNB', 'BLUES', 'LOFI'], mood: 'groove', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0, 1], energyRange: [0, 1] },
+];
+
+/** 统一织体目录 = 笼统 5 + rich 17(阶段2 的 per-bar 选择从这里挑;render 解析不了的回退笼统)。 */
+export const ALL_TEXTURE_PROFILES: TextureProfile[] = [...GENERIC_TEXTURE_PROFILES, ...TEXTURE_POOL];
