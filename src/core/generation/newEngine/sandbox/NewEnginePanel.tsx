@@ -14,7 +14,7 @@ import { musicalIRToSMF } from './midiFile';
 import { compareTraces, type TraceComparison } from './traceDiff';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
-const STYLES = ['pop', 'lofi', 'jazz'] as const;
+const STYLES = ['pop', 'lofi', 'jazz', 'modal'] as const;
 const STATUS_COLOR: Record<string, string> = {
   pass: 'text-emerald-300',
   warning: 'text-amber-300',
@@ -41,6 +41,7 @@ export const NewEnginePanel: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [seed, setSeed] = useState(7);
   const [style, setStyle] = useState<(typeof STYLES)[number]>('pop');
+  const [allowModulation, setAllowModulation] = useState(false);
   const [status, setStatus] = useState('就绪');
   const [readout, setReadout] = useState<Readout | null>(null);
   const [roll, setRoll] = useState<PianoRoll | null>(null);
@@ -78,7 +79,7 @@ export const NewEnginePanel: React.FC = () => {
   }, [open]);
 
   const generate = (): GenerationTrace => {
-    const t = traceGeneration({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120 });
+    const t = traceGeneration({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation });
     lastIR.current = t.ir;
     lastBpm.current = t.bpm;
     setReadout(deriveReadout(t));
@@ -110,7 +111,7 @@ export const NewEnginePanel: React.FC = () => {
   const onStop = () => { stopNewEngine(); setStatus('已停止'); };
 
   const onCompareAB = () => {
-    const req = (s: number) => ({ seed: s, styleHint: style, mood: 'calm-build', targetDuration: 120 });
+    const req = (s: number) => ({ seed: s, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation });
     const a = traceGeneration(req(seed));
     const b = traceGeneration(req(seed + 1));
     setCmp(compareTraces(a, b));
@@ -183,7 +184,25 @@ export const NewEnginePanel: React.FC = () => {
             >
               🎲 seed+1
             </button>
+            <label
+              className={`flex items-center gap-1.5 text-[11px] ${style === 'modal' ? 'text-zinc-600' : 'text-zinc-300'}`}
+              title={style === 'modal' ? 'modal 静态 vamp 不转调' : '末段副歌升半音 lift'}
+            >
+              <input
+                type="checkbox"
+                checked={allowModulation && style !== 'modal'}
+                disabled={style === 'modal'}
+                onChange={(e) => setAllowModulation(e.target.checked)}
+                className="accent-violet-500"
+              />
+              转调 lift
+            </label>
           </div>
+          {style === 'modal' && (
+            <p className="-mt-2 text-[10px] text-violet-300/70">
+              modal regime:静态 vamp(i + 特征和弦循环)+ 旋律自由跑 Dorian 音阶,逐和弦约束放松。
+            </p>
+          )}
 
           {/* 操作 */}
           <div className="flex flex-wrap gap-2">
