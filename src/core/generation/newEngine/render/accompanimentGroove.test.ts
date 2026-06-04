@@ -29,11 +29,11 @@ describe('render/accompaniment 织体化 (1.1)', () => {
     expect(hasOffbeat).toBe(true);
   });
 
-  it('comp 仍 pc-correct(48..59)', () => {
+  it('comp 落 comp voicing 区 [52,76]', () => {
     const comp = renderAccompaniment(plan, timebase, { style: 'pop' }).find((t) => t.role === 'comp')!;
     for (const n of comp.notes) {
-      expect(n.pitch).toBeGreaterThanOrEqual(48);
-      expect(n.pitch).toBeLessThanOrEqual(59);
+      expect(n.pitch).toBeGreaterThanOrEqual(52);
+      expect(n.pitch).toBeLessThanOrEqual(76);
     }
   });
 

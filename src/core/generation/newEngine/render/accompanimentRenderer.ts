@@ -1,19 +1,17 @@
 // ============================================================
 // newEngine · render · CompingRenderer(comp 织体)
 // ------------------------------------------------------------
-// 架构定稿 Part 8.2 / 3.6 / 铁律5,16:comp 按 per-style comping 节奏型落 hit(有律动/切分)。
-// bass 见 bassRenderer;drum 见 drumRenderer。
-// 让位按织体分流:active 段在主 hook 锚点拍把该和弦 comp 瘦身成 3+7 shell;floating 段不让位。
+// 架构定稿 Part 8.2 / 3.6 / 铁律5,16:comp 按 per-style comping 节奏型落 hit(有律动/切分),
+// 用真 voicing(jazz rootless / spread,顶音 voice-leading)取代 48+pc 簇。
+// 让位:active 段在主 hook 锚点拍把该和弦 comp 瘦身成 3+7 shell;floating 段交给 pad。
 // ============================================================
 
 import { beats, midi, mod12, type Timebase } from '../foundation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { compPattern } from '../knowledge/grooves';
-import { guideToneShell } from '../knowledge/voicings';
+import { guideToneShell, voiceComp } from '../knowledge/voicings';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
-
-const COMP_BASE = 48; // C3:comp 块和弦区
 
 export interface AccompContext {
   style?: string;
@@ -33,10 +31,25 @@ export function renderAccompaniment(
   const compNotes: NoteIR[] = [];
   const beatsPerBar = beatsPerBarOf(timebase.meter);
   const pattern = compPattern(ctx.style ?? 'default');
+  const style = ctx.style ?? 'default';
+  const inActive = (sid: string) => !ctx.activeSectionIds || ctx.activeSectionIds.has(sid);
 
   let totalBeats = 0;
   for (const span of plan.chordTimeline) {
     totalBeats = Math.max(totalBeats, span.startBeat + span.durationBeats);
+  }
+
+  // 预算 per-span voicing(顶音 voice-leading 链)+ 让位 shell voicing
+  const voicedBySpan: Record<string, number[]> = {};
+  const shellBySpan: Record<string, number[]> = {};
+  let prevTop: number | undefined;
+  for (const span of plan.chordTimeline) {
+    if (!inActive(span.sectionId)) continue;
+    const full = voiceComp([...plan.stableToneMap[span.id]], style, prevTop);
+    voicedBySpan[span.id] = full;
+    const shellPcs = guideToneShell(span.quality).map((iv) => mod12(span.rootPc + iv));
+    shellBySpan[span.id] = voiceComp(shellPcs, style, prevTop);
+    if (full.length) prevTop = full[full.length - 1];
   }
 
   const bars = Math.ceil(totalBeats / beatsPerBar);
@@ -46,20 +59,15 @@ export function renderAccompaniment(
       const beat = barStart + hit.beat;
       if (beat >= totalBeats) continue;
       const span = spanAtBeat(plan, beat);
-      if (!span) continue;
-      // 织体分流:提供了 activeSectionIds 时,comp 只在 active 段(floating 段交给 pad)
-      if (ctx.activeSectionIds && !ctx.activeSectionIds.has(span.sectionId)) continue;
+      if (!span || !inActive(span.sectionId)) continue;
 
-      const yieldHere =
-        !!ctx.activeSectionIds?.has(span.sectionId) && !!ctx.anchorBeats?.has(span.startBeat);
-      const tonePcs = yieldHere
-        ? guideToneShell(span.quality).map((iv) => mod12(span.rootPc + iv)) // 瘦身成 3+7 shell
-        : plan.stableToneMap[span.id];
+      const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
+      const voiced = yieldHere ? shellBySpan[span.id] : voicedBySpan[span.id];
 
       const startTick = timebase.beatToTick(beats(beat));
       const durationTicks = timebase.beatToTick(beats(hit.dur));
-      for (const tonePc of tonePcs) {
-        compNotes.push({ pitch: midi(COMP_BASE + tonePc), startTick, durationTicks, velocity: hit.vel });
+      for (const m of voiced) {
+        compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: hit.vel });
       }
     }
   }

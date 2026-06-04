@@ -21,13 +21,14 @@ describe('render/accompanimentRenderer (comp 织体,bass 见 bassRenderer)', () 
     expect(tracks.map((t) => t.role)).toEqual(['comp']);
   });
 
-  it('comp 稳定音 pc 正确,落在 48..59,首拍 = Cmaj7', () => {
-    // default pattern beat0 hit → Cmaj7 稳定音 C E G B = 48 52 55 59
-    const firstChordComp = comp.notes.filter((n) => n.startTick === 0).map((n) => n.pitch).sort((a, b) => a - b);
-    expect(firstChordComp).toEqual([48, 52, 55, 59]);
+  it('comp 用 chord-tone voicing,落 comp 区 [52,76],首拍皆 Cmaj7 音', () => {
+    const cmaj7 = new Set([0, 4, 7, 11]); // C E G B
+    const firstChordComp = comp.notes.filter((n) => n.startTick === 0);
+    expect(firstChordComp.length).toBeGreaterThan(0);
+    for (const n of firstChordComp) expect(cmaj7.has(n.pitch % 12)).toBe(true);
     for (const n of comp.notes) {
-      expect(n.pitch).toBeGreaterThanOrEqual(48);
-      expect(n.pitch).toBeLessThanOrEqual(59);
+      expect(n.pitch).toBeGreaterThanOrEqual(52);
+      expect(n.pitch).toBeLessThanOrEqual(76);
     }
   });
 });

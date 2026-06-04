@@ -37,7 +37,7 @@
 
 **Tier B · 伴奏 / 旋律加厚**
 - [x] 1.5 Pad / 铺底轨(floating 段长音)
-- [ ] 1.3 真 Voicing(drop2 / rootless / open + 顶音 voice-leading)
+- [x] 1.3 真 Voicing(drop2 / rootless / open + 顶音 voice-leading)
 - [ ] 2.4 旋律轮廓弧线(音区 / 密度随能量,高潮冲峰)
 
 **Tier C · 真内容引擎**
@@ -124,6 +124,7 @@
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
 - 2026-06-04 1.2 db68717 — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)
+- 2026-06-04 1.3 — 真 Voicing:voiceComp(jazz rootless / spread,顶音贴 prevTop=voice-leading,落 [52,76])取代 48+pc 簇;comp 预算 per-span voice-led 链 + 让位 shell 同走 voiceComp;全 chord tone→Auditor pass;实测 jazz rootless 顶音稳;+6 用例(207 绿)。**需耳朵复核**(voicing 厚度/连贯)
 - 2026-06-04 1.5 — Pad 铺底轨:floating 段(intro/outro/bridge)长音和弦铺底 [55,79] soft;织体分流(active=comp / floating=pad,comp 受 activeSectionIds 限制不进 floating)→ 出 5 轨 bass/comp/pad/drum/lead;+4 用例(201 绿)。**需耳朵复核**(pad 厚度/与旋律平衡)
 - 2026-06-04 2.5 — swing/feel:applySwing 全轨 onset warp(piecewise-linear,直则原样);jazz ride 改直 8 分由 swing 统一摆动(避免双重);实测 pop frac=0.5 直 / jazz frac=0.66 摆;+4 用例(197 绿)。Tier A 完(5/5)。**需耳朵复核**(摇摆量)
 - 2026-06-04 2.1 — 旋律句尾呼吸:末小节稀疏单长音解决(cadence 落主音/其余回锚点,贴和弦安全音)+ 末 cadenceBreath 拍留白;消费 phraseBreathing;Auditor 抓出主音落属和弦的 avoid 暴露→已 snap 修;+3 用例(193 绿)。**需耳朵复核**(留白量/解决感)
