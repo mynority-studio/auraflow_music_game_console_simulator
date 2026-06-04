@@ -32,7 +32,7 @@ export function buildOccupationMap(
   const onsets = new Set<number>();
 
   for (const t of tracks) {
-    if (t.role === 'lead' || t.notes.length === 0) continue;
+    if (t.role === 'lead' || t.role === 'drum' || t.notes.length === 0) continue;
     let lo = Infinity;
     let hi = -Infinity;
     for (const n of t.notes) {

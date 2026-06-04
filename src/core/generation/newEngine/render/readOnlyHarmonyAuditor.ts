@@ -29,6 +29,7 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
   const oneBeatTicks = timebase.beatToTick(beats(1));
 
   for (const track of ir.tracks) {
+    if (track.role === 'drum') continue; // 打击通道非和声音,不判
     for (const note of track.notes) {
       const span = findSpanAtTick(plan, timebase, note.startTick);
       if (!span) continue;

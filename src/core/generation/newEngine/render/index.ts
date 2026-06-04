@@ -10,3 +10,4 @@ export * from './motifAnchorPrepass';
 export * from './melodyRenderer';
 export * from './OccupationMap';
 export * from './interactionResolver';
+export * from './drumRenderer';

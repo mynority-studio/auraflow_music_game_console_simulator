@@ -58,10 +58,10 @@ describe('generation/GenerationController · runGenerationControl', () => {
 });
 
 describe('generation/generateSong (顶层 Request→FinalIR 端到端)', () => {
-  it('真实管线 → pass,产出 bass/comp/lead 三轨', () => {
+  it('真实管线 → pass,产出 bass/comp/drum/lead 四轨', () => {
     const r = generateSong({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 });
     expect(r.status).toBe('pass');
-    expect(r.ir!.tracks.map((t) => t.role)).toEqual(['bass', 'comp', 'lead']);
+    expect(r.ir!.tracks.map((t) => t.role)).toEqual(['bass', 'comp', 'drum', 'lead']);
   });
 
   it('确定性:同 request → 同 lead 音高', () => {
@@ -69,5 +69,13 @@ describe('generation/generateSong (顶层 Request→FinalIR 端到端)', () => {
     const b = generateSong({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 });
     const lead = (r: typeof a) => r.ir!.tracks.find((t) => t.role === 'lead')!.notes.map((n) => n.pitch);
     expect(lead(a)).toEqual(lead(b));
+  });
+
+  it('★ seed 真生效:不同 seed → 不同 lead 旋律', () => {
+    const lead = (seed: number) =>
+      generateSong({ seed, styleHint: 'pop', mood: 'build', targetDuration: 120 })
+        .ir!.tracks.find((t) => t.role === 'lead')!.notes.map((n) => n.pitch);
+    expect(lead(7)).not.toEqual(lead(8));
+    expect(lead(7)).not.toEqual(lead(123));
   });
 });

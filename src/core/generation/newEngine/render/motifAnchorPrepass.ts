@@ -15,6 +15,7 @@ import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pcToMidiInRange } from '../knowledge/pitchPlacement';
+import { generateMotifShape, type MotifShape } from '../knowledge/motifShapes';
 import { commonSafeToneSet, type SafeToneScope } from '../harmony/commonSafeToneQuery';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import { resolveOccurrenceSpans } from './occurrenceResolver';
@@ -38,22 +39,27 @@ const LEAD_LOW = 67;
 const LEAD_HIGH = 84;
 const WEAK_STRENGTH = 0.3;
 
-/** 抽象 motif(无 pitch)。Slice 1 占位 shape;identity 在 rhythmCell + head。 */
-function buildMotif(motifId: string, source: SkeletonSource): Motif {
-  const degrees = [1, 3, 5, 3];
+/** 抽象 motif(无 pitch)。由 rng 抽出的 MotifShape 实化:节奏/音级/轮廓皆随种子变。 */
+function buildMotif(motifId: string, source: SkeletonSource, shape: MotifShape): Motif {
+  let t = 0;
+  const noteSlots = shape.scaleDegrees.map((d, i) => {
+    const slot = {
+      slotId: i,
+      timeOffset: beats(t),
+      duration: beats(shape.rhythmCell[i]),
+      scaleDegree: d,
+      lockWeight: i === 0 ? 1 : 0.5,
+      segment: (i === 0 ? 'head' : 'tail') as 'head' | 'tail',
+    };
+    t += shape.rhythmCell[i];
+    return slot;
+  });
   return {
     id: motifId,
     source,
-    rhythmCell: { durations: degrees.map(() => beats(1)) },
-    contourGesture: { directions: [1, 1, -1] },
-    noteSlots: degrees.map((d, i) => ({
-      slotId: i,
-      timeOffset: beats(i),
-      duration: beats(1),
-      scaleDegree: d,
-      lockWeight: i === 0 ? 1 : 0.5,
-      segment: i === 0 ? 'head' : 'tail',
-    })),
+    rhythmCell: { durations: shape.rhythmCell.map((r) => beats(r)) },
+    contourGesture: { directions: shape.contour },
+    noteSlots,
   };
 }
 
@@ -73,8 +79,9 @@ export function runPrepass(
   band: BandSpec,
   arrangement: ArrangementPlan,
   harmonic: HarmonicPlan,
-  _rng: RandomContext,
+  rng: RandomContext,
 ): PrepassOutput {
+  const prng = rng.substream('prepass'); // ★ 种子驱动动机形状
   const phraseById = new Map(arrangement.phrases.map((p) => [p.id, p]));
   const starts = phraseStartBeats(arrangement);
 
@@ -100,7 +107,9 @@ export function runPrepass(
     const scope: SafeToneScope = isHook && recurs ? 'global' : 'local';
     const source: SkeletonSource = isHook ? 'grammar' : 'guidetone';
 
-    if (!motifs[binding.motifId]) motifs[binding.motifId] = buildMotif(binding.motifId, source);
+    if (!motifs[binding.motifId]) {
+      motifs[binding.motifId] = buildMotif(binding.motifId, source, generateMotifShape(prng));
+    }
 
     const spans = resolveOccurrenceSpans(
       binding.motifId,

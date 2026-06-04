@@ -15,9 +15,9 @@ describe('render/renderSongFull (accompaniment-first 全链)', () => {
   const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
   const { ir, audit } = renderSongFull(band, arrangement, plan, instrumentation, timebase, createRandomContext(11));
 
-  it('产出 bass / comp / lead 三轨,均非空', () => {
+  it('产出 bass / comp / drum / lead 四轨,均非空', () => {
     const roles = ir.tracks.map((t) => t.role);
-    expect(roles).toEqual(['bass', 'comp', 'lead']);
+    expect(roles).toEqual(['bass', 'comp', 'drum', 'lead']);
     for (const t of ir.tracks) expect(t.notes.length).toBeGreaterThan(0);
   });
 

@@ -27,6 +27,11 @@ import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 const LEAD_LOW = 67;
 const LEAD_HIGH = 84;
 const STRONG = 0.67;
+const DEV_STEPS = [0, 2, -1, 1]; // 逐小节模进偏移(scale step)→ 旋律发展,不原样重播
+
+function wrapDegree(d: number): number {
+  return (((d - 1) % 7) + 7) % 7 + 1; // → 1..7
+}
 
 function spanAtBeat(plan: HarmonicPlan, beat: number): ChordSpan | undefined {
   return plan.chordTimeline.find(
@@ -74,16 +79,18 @@ export function renderMelody(
     }
 
     const phraseStart = starts[phrase.id] ?? 0;
-    // motif 每小节复述,填满 phrase
+    // motif 逐小节【发展】(模进),非原样重播;head(首小节首音)= hook 锚点身份
     for (let bar = 0; bar < phrase.bars; bar++) {
       const barStart = phraseStart + bar * bpb;
+      const devStep = DEV_STEPS[bar % DEV_STEPS.length];
       motif.noteSlots.forEach((slot, i) => {
         const noteBeat = barStart + slot.timeOffset;
         let pitch: Midi;
-        if (i === 0) {
-          pitch = headPitch;
+        if (i === 0 && bar === 0) {
+          pitch = headPitch; // hook head 锚点
         } else {
-          const rawPc = mod12(band.key + degreeToSemitone(slot.scaleDegree, band.mode));
+          const deg = wrapDegree(slot.scaleDegree + devStep);
+          const rawPc = mod12(band.key + degreeToSemitone(deg, band.mode));
           const pc = safePc(rawPc, plan, spanAtBeat(plan, noteBeat));
           pitch = pcToMidiInRange(pc, LEAD_LOW, LEAD_HIGH);
         }

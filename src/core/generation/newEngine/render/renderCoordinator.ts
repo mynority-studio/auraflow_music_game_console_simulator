@@ -9,6 +9,7 @@
 import { ticks, type RandomContext, type Timebase } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
+import { beatsPerBarOf } from '../arranger/phraseTiming';
 import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR } from '../ir/MusicalIR';
@@ -19,6 +20,7 @@ import { runPrepass } from './motifAnchorPrepass';
 import { renderMelody } from './melodyRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
+import { renderDrums } from './drumRenderer';
 import type { CandidateSwap } from './MotifStore';
 
 export interface RenderResult {
@@ -77,8 +79,9 @@ export function renderSongFull(
   }
 
   const accompaniment = renderAccompaniment(plan, timebase, { anchorBeats, activeSectionIds });
+  const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter));
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
-  const tracks: TrackIR[] = [...accompaniment, lead];
+  const tracks: TrackIR[] = [...accompaniment, drums, lead];
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
