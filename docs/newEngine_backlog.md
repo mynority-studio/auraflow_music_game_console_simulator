@@ -30,7 +30,7 @@
 
 **Tier A · 听感立竿见影**
 - [x] 1.1 Comp 织体化(风格化 comping 节奏型)
-- [ ] 1.2 Bass 行进(walking / 根-五-八 / 分解)
+- [x] 1.2 Bass 行进(walking / 根-五-八 / 分解)
 - [ ] 1.4 鼓变化(per-style groove + 段落 fill + 力度人性化)
 - [ ] 2.1 乐句呼吸 / 休止(消费 phraseBreathing)
 - [ ] 2.5 swing / feel 落地(swingRatio 改 tick)
@@ -123,3 +123,4 @@
 ## 进度日志
 (循环每完成一项追加一行:`YYYY-MM-DD <id> <hash> — 一句话 [需耳朵复核?]`)
 - 2026-06-04 1.1 — Comp 整块→per-style comping 节奏型(lofi疏/pop四分/jazz切分),knowledge/grooves;comp 起音>和弦数、jazz 有 offbeat;Auditor 仍 pass;+8 用例(186 绿)。**需耳朵复核**(切分/律动是否好听)
+- 2026-06-04 1.2 a-pending — Bass 独立 renderer:jazz walking(逐拍+半音接入)/pop 根-五交替/lofi 根音持续+五度;bass 从 comp 渲染器拆出;非纯根音、落 [36,50];+4 用例(187 绿)。**需耳朵复核**(walking 走向是否自然)

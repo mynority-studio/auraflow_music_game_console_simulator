@@ -15,6 +15,7 @@ import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
+import { renderBass } from './bassRenderer';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { runPrepass } from './motifAnchorPrepass';
 import { renderMelody } from './melodyRenderer';
@@ -38,10 +39,11 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
 }
 
 export function renderSong(plan: HarmonicPlan, timebase: Timebase): RenderResult {
+  const bass = renderBass(plan, timebase, 'default');
   const accompaniment = renderAccompaniment(plan, timebase);
   // Slice 0:trivial 旋律占位,后续 slice 接 Prepass/MotifStore + MelodyRenderer
   const lead: TrackIR = { role: 'lead', notes: [] };
-  const tracks = [...accompaniment, lead];
+  const tracks = [bass, ...accompaniment, lead];
 
   const ir = freezeMusicalIR({
     tracks,
@@ -78,10 +80,11 @@ export function renderSongFull(
     if (slot.anchorRequired) anchorBeats.add(slot.beatSlot);
   }
 
+  const bass = renderBass(plan, timebase, band.style);
   const accompaniment = renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds });
   const drums = renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter));
   const lead = renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap);
-  const tracks: TrackIR[] = [...accompaniment, drums, lead];
+  const tracks: TrackIR[] = [bass, ...accompaniment, drums, lead];
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {

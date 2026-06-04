@@ -44,9 +44,4 @@ describe('render/accompaniment 让位 (melody-aware)', () => {
     expect(atAnchor.length).toBeGreaterThan(0);
     expect(atAnchor.length).toBeLessThanOrEqual(2);
   });
-
-  it('bass 不受让位影响(两版同数)', () => {
-    const bass = (tracks: typeof noYield) => tracks.find((t) => t.role === 'bass')!.notes.length;
-    expect(bass(withYield)).toBe(bass(noYield));
-  });
 });

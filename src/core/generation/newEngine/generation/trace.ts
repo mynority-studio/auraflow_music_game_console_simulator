@@ -86,6 +86,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const { ir, audit } = renderSongFull(band, arrangement, harmonic, instrumentation, timebase, seedRng);
   log(`■ RENDER     ${ir.tracks.map((t) => `${t.role}=${t.notes.length}`).join('  ')}`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)`);
+  log(`   bass 行进: ${band.style}(jazz=walking / pop=根-五 / lofi=根音持续)`);
   log(`■ AUDITOR    ${audit.findings.length === 0 ? 'PASS ✓(全链无 avoid 暴露)' : audit.findings.length + ' findings'}`);
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);
