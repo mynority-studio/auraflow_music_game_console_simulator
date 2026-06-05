@@ -9,9 +9,10 @@ import { describe, expect, it } from 'vitest';
 import { buildHarmonicPlanFromArrangement } from './harmonyEngine';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
-import { createRandomContext } from '../foundation';
+import { createRandomContext, mod12 } from '../foundation';
 import { chordToneIntervals } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
+import { evaluateVoiceLeading, type LedgerChord } from '../knowledge/voiceLeadingLedger';
 
 function planFor(seed: number, style: string) {
   const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
@@ -62,6 +63,27 @@ describe('harmony 候选择优', () => {
         expect(report.score).toBeGreaterThanOrEqual(0);
         expect(report.score).toBeLessThanOrEqual(1);
         expect(report.score).toBeGreaterThan(0.5); // 选出来的进行不该是低分垃圾
+      }
+    }
+  });
+
+  // Loop 8:voice-leading 评分已并入择优
+  it('选中的进行 voice-leading 可评分且 ∈[0,1](Loop 8 vl 接入)', () => {
+    const planToLedger = (plan: ReturnType<typeof planFor>['plan']): LedgerChord[] =>
+      plan.chordTimeline.map((c) => ({
+        type: c.chordType ?? c.quality,
+        rootMidi: 60 + (c.rootPc as number),
+        notesMidi: chordToneIntervals(c.quality).map((iv) => 60 + mod12((c.rootPc as number) + iv)),
+        bassMidi: 36 + (c.rootPc as number),
+        borrowedFrom: c.borrowedSource,
+      }));
+    for (const style of ['pop', 'jazz', 'lofi']) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const { plan } = planFor(seed, style);
+        const r = evaluateVoiceLeading(planToLedger(plan));
+        expect(r.overallScore).toBeGreaterThanOrEqual(0);
+        expect(r.overallScore).toBeLessThanOrEqual(1);
+        expect(r.stats.total).toBe(r.obligations.length);
       }
     }
   });

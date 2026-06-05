@@ -18,6 +18,7 @@ import { selectProgressionSlots, toHarmonyStyle } from './progressionSelector';
 import { realizeProgressionSlots } from './progressionRealizer';
 import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
+import { evaluateVoiceLeading, type LedgerChord } from '../knowledge/voiceLeadingLedger';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import {
@@ -243,22 +244,38 @@ function romanStr(rc: ResolvedChord): string {
   return minorish ? base.toLowerCase() : base;
 }
 
-/** resolved 进行 → CoherenceChord[](harmony 阶段适配:rootMidi/notesMidi/bassMidi 用和弦字面)。 */
+/** resolved 进行 → CoherenceChord[](harmony 阶段适配)。Loop 8:用宽 chordType + borrowedSource
+ *  (prototype 的副属/backdoor 现在能被 coherence 检测,补上旧"只 parallel-minor/major"的盲点)。 */
 function resolvedToCoherenceChords(resolved: ResolvedChord[], keyPc: PitchClass): CoherenceChord[] {
   return resolved.map((rc) => {
     const rootPc = rc.rootPc as number;
     return {
-      type: rc.quality,
+      type: rc.chordType ?? rc.quality, // 宽类型 → coherence chordQuality 分族更准
       rootMidi: 60 + rootPc,
-      notesMidi: chordToneIntervals(rc.quality).map((iv) => 60 + rootPc + iv),
+      notesMidi: chordToneIntervals(rc.quality).map((iv) => 60 + rootPc + iv), // 窄字面(进行逻辑评分够用)
       bassMidi: 36 + rootPc,
       roman: romanStr(rc),
       chordSymbol: romanStr(rc),
       duration: rc.durationBeats,
       effectiveFunc: rc.func,
-      analysisKeyPc: (rc.sectionKeyPc ?? keyPc) as number,
-      borrowedSource: rc.borrowed ? 'modal_interchange' : undefined,
-      mustResolve: rc.func === 'D' && rc.quality === '7',
+      analysisKeyPc: (rc.localTonalCenterPc ?? rc.sectionKeyPc ?? keyPc) as number,
+      localTonalCenterPc: rc.localTonalCenterPc as number | undefined,
+      borrowedSource: rc.borrowedSource ?? (rc.borrowed ? 'modal_interchange' : undefined),
+      mustResolve: rc.mustResolve ?? (rc.func === 'D' && rc.quality === '7'),
+    };
+  });
+}
+
+/** resolved 进行 → LedgerChord[](harmony 阶段适配:单八度字面,voice-leading 取最近 voice 评分)。 */
+function resolvedToLedgerChords(resolved: ResolvedChord[]): LedgerChord[] {
+  return resolved.map((rc) => {
+    const rootPc = rc.rootPc as number;
+    return {
+      type: rc.chordType ?? rc.quality,
+      rootMidi: 60 + rootPc,
+      notesMidi: chordToneIntervals(rc.quality).map((iv) => 60 + mod12(rootPc + iv)),
+      bassMidi: 36 + rootPc,
+      borrowedFrom: rc.borrowedSource,
     };
   });
 }
@@ -278,11 +295,14 @@ export function buildHarmonicPlanFromArrangement(
   // 产 N 候选 → coherence 择优。advance('harmony') → 每候选不同子流且确定性;
   // 候选0 = 原 substream(与旧行为同),严格 > 才换 → 单调改进(无更优候选即回旧)。
   let ctx = rng;
+  // Loop 8:择优分 = coherence(进行逻辑)0.75 + voice-leading(导音/属解决)0.25。
   let best: { resolved: ResolvedChord[]; score: number } | null = null;
   for (let k = 0; k < NUM_HARMONY_CANDIDATES; k++) {
     const cand = buildResolvedProgression(band, arrangement, ctx.substream('harmony'), sectionKeyOf, beatsPerBar);
-    const report = evaluateHarmony(resolvedToCoherenceChords(cand, band.key), styleName, band.key as number);
-    if (!best || report.score > best.score) best = { resolved: cand, score: report.score };
+    const coh = evaluateHarmony(resolvedToCoherenceChords(cand, band.key), styleName, band.key as number).score;
+    const vl = evaluateVoiceLeading(resolvedToLedgerChords(cand)).overallScore;
+    const combined = 0.75 * coh + 0.25 * vl;
+    if (!best || combined > best.score) best = { resolved: cand, score: combined };
     ctx = ctx.advance('harmony');
   }
 
