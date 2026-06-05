@@ -29,6 +29,33 @@ export interface AccompContext {
   sectionRoleById?: Record<string, SectionRole>; // 段落功能 → 钢琴 spread mode 选择(pickSpreadMode)
   voicingRng?: SpreadPicker;       // spread mode 选择用的确定性子流('accompaniment')
   textureSchedule?: TextureSchedule; // ★ 中央下发的 spanId→textureCase(bass/comp/drum 共享)
+  melodyFloorMidi?: number;        // ★ 旋律保留区地板(reservedRegister.lowMidi):comp 顶须 < 此 → 让位旋律
+}
+
+/**
+ * comp 让位旋律(voicing-around-melody):任何 ≥ ceiling 的声部【转位下折】八度到 ceiling 之下
+ *   (完整度优先,保住和弦音);下折越界(< floor)或与已有音重复 → 【减法】丢弃。
+ *   ceiling 之下的核心声部原样保留 → comp 始终坐在旋律保留区下方。确定性、纯函数。
+ */
+export function yieldUnderMelody(midis: number[], ceiling: number, floor: number): number[] {
+  const out: number[] = [];
+  for (const m of [...midis].sort((a, b) => a - b)) {
+    if (m < ceiling) { out.push(m); continue; } // 核心声部:留
+    let f = m;
+    while (f >= ceiling) f -= 12;               // 转位:下折到 ceiling 之下
+    if (f >= floor && !out.includes(f)) out.push(f); // 接受转位;否则减法(跳过该声部)
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * 柱式和弦【复音衰减】(equal-power):同 tick N 个声部齐响,瞬时幅度 ~ Σ → 6-7 音密块会撞顶爆音。
+ *   按 √(2/N)(2 音为基准)衰减 per-note velocity → 密块总能量拉回双音水平,而单/双音(及 arp/roll 的 N1 hit)不动。
+ *   这是 render 层【触键动态】(钢琴家弹密集和弦每音本就更轻),非通道音量(CC7)调整。确定性、纯函数。
+ */
+export function polyVelocity(baseVel: number, n: number): number {
+  if (n <= 2) return baseVel;
+  return Math.max(1, Math.round(baseVel * Math.sqrt(2 / n)));
 }
 
 const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
@@ -96,6 +123,11 @@ export function renderAccompaniment(
   const compRange = instrumentInfo(ctx.compProgram ?? 0).range;
   const inRange = (m: number): boolean => m >= compRange[0] && m <= compRange[1];
   const includeRootInComp = !/jazz/i.test(style); // jazz:rootless(bass 兜 root),其它含 root
+  // ★ 让位旋律:comp 顶须 < 旋律保留区地板(契约 comp[48,67]/lead[67,84] 的边界)。
+  //   越界声部转位下折(完整度优先)/ 折不下去再减法。floor 不低于 comp 区底(不折进 bass)。无 floor 信号 → 跳过(向后兼容)。
+  const compFloor = Math.max(compRange[0], 48);
+  const clampUnder = (ms: number[]): number[] =>
+    ctx.melodyFloorMidi === undefined ? ms : yieldUnderMelody(ms, ctx.melodyFloorMidi, compFloor);
 
   // spread mode 选择信号:和声功能 + cell 角色(进度四分位)+ 段落功能 + 乐句尾
   const timeline = plan.chordTimeline;
@@ -139,10 +171,10 @@ export function renderAccompaniment(
       const wideOpts = { includeRootInComp, colorLevel, style };
       const spreadMode = pickPianoSpread(idx, span);
       const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
-      voicedBySpan[span.id] = wide.attackMidi.filter(inRange); // 超域色彩 → 交旋律
+      voicedBySpan[span.id] = clampUnder(wide.attackMidi.filter(inRange)); // 超域色彩 → 交旋律;顶 ≥ 旋律地板 → 转位/减法让位
       // 让位/瘦身 = close 紧排核心(colorLevel 0,让色彩给旋律),仍是真实和弦音
       const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, colorLevel: 0, spreadMode: 'close' }, prev: prevWide, rolePcs });
-      shellBySpan[span.id] = shellWide.attackMidi.filter(inRange);
+      shellBySpan[span.id] = clampUnder(shellWide.attackMidi.filter(inRange));
       prevWide = wide;
     } else {
       // ★ 非键盘 comp:走 melodygenerative voicing 管线 — genre→preset → assembleVoicing(抽象 pc)
@@ -156,9 +188,9 @@ export function renderAccompaniment(
       // 属功能 drop2 拉开 spacing,但仅当不跌出 comp 区(否则 close)→ 不与 bass 抢低区
       const spaced = funcBySpan[span.id] === 'D' ? applyArrangement(close, 'drop2', bassMidi) : close;
       const full = (spaced.length && Math.min(...spaced) >= 48 ? spaced : close).filter(inRange);
-      voicedBySpan[span.id] = full;
+      voicedBySpan[span.id] = clampUnder(full); // 顶 ≥ 旋律地板 → 转位/减法让位
       const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
-      shellBySpan[span.id] = shellClose.filter(inRange);
+      shellBySpan[span.id] = clampUnder(shellClose.filter(inRange));
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
     }
   }
@@ -183,7 +215,8 @@ export function renderAccompaniment(
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
         const vel = Math.max(1, Math.min(115, Math.round((h.vel * 0.92 + 0.3) * 127)));
-        for (const m of h.midis) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: vel });
+        const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
+        for (const m of h.midis) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
       }
     }
     return [{ role: 'comp', notes: compNotes }];
@@ -204,8 +237,9 @@ export function renderAccompaniment(
 
       const startTick = timebase.beatToTick(beats(beat));
       const durationTicks = timebase.beatToTick(beats(hit.dur));
+      const polyVel = polyVelocity(hit.vel, voiced.length); // 柱式块复音衰减(不爆顶)
       for (const m of voiced) {
-        compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: hit.vel });
+        compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
       }
     }
   }

@@ -143,7 +143,7 @@ export function renderSongFull(
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style, textureSchedule));
-  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule }));
+  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi }));
   if (inLineup('pad')) tracks.push(renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, activeSectionIds }));
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule }));
   tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有

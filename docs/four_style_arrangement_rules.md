@@ -1,4 +1,4 @@
-# V4.1 Engine-Audited Minimal Arrangement Rules for Q+N
+# V4.2 Engine-Audited Minimal Arrangement Rules for Q+N
 
 本文档是对 V4 的再次收敛版,依据当前
 `src/core/generation/newEngine/` 代码审计后输出。
@@ -28,9 +28,10 @@ micro-timing、sidechain 或 walking bass 细节。这些都继续交给 KB 和�
 
 1. 让 arranger 输出不同风格的曲式。
 2. 让每个 section 带一个轻量 `harmonyRole`。
-3. 让 harmony selector 优先用 `harmonyRole` 选 prototype。
-4. 让 energy/density 只做段落强弱,不要负责复杂配器。
-5. 让器配和 render 继续用现有 `textureBySection` / `textureSchedule`。
+3. 让 section boundary 带一个轻量 `linkOut`,用于主歌/预副歌/副歌之间的和声骨架链接。
+4. 让 harmony selector 优先用 `harmonyRole` 选 prototype。
+5. 让 energy/density 只做段落强弱,不要负责复杂配器。
+6. 让器配和 render 继续用现有 `textureBySection` / `textureSchedule`。
 
 ## Hard Non-Goals
 
@@ -81,11 +82,20 @@ export type SectionFunctionTag =
   | 'tag'
   | 'outro';
 
+export type HarmonyLinkKind =
+  | 'none'
+  | 'dominantLift'           // IV -> V -> next I/vi
+  | 'secondaryToRelativeMinor' // IV -> III7/V-of-vi -> next vi
+  | 'backdoorToSubdominant'  // v/IV -> I7/IV -> next IV
+  | 'minorIvHold'            // iv hold -> next I/vi
+  | 'stopOnDominant';        // V stop -> next hook impact
+
 export interface Section {
   id: SectionId;
   role: SectionRole;              // existing legacy projection
   harmonyRole?: HarmonySectionRole;
   functionTag?: SectionFunctionTag;
+  linkOut?: HarmonyLinkKind;
   bars: number;
   repeatGroup?: RepeatGroupId;
   hookPolicy: HookPolicy;
@@ -97,6 +107,7 @@ export interface Section {
 - `role`: 给当前 render / texture / trace 用。
 - `harmonyRole`: 给 progression selector 用。
 - `functionTag`: 给 trace、dynamics、phrase planner 做轻量语义,不参与复杂 render。
+- `linkOut`: 给 harmony 在段落尾部做最小和声链接,只改写当前段最后 1-2 个和弦。
 
 ### Selector Change
 
@@ -110,15 +121,69 @@ const functionRole = section.harmonyRole ?? ROLE_MAP[section.role];
 
 不需要新增和声大系统。
 
+## Minimal Harmony Link Skeleton
+
+V4.1 已经能让每段选择正确 `harmonyRole`,但它还不能保证“上一段如何接到下一段”。
+这就是现代流行里 verse/preHook -> chorus 的关键点。
+
+V4.2 增加的能力只有一个:
+
+```text
+current section tail
+  -> linkOut
+  -> next section first harmonic target
+```
+
+它不是新的编配层,也不是复杂和声 AI。它只是让 harmony 在完成 prototype 选择后,
+根据 `linkOut` 改写当前段最后 1-2 个 chord slots。
+
+### Link Kinds
+
+| linkOut | Tail Skeleton | Best Next Start | Example in C | Use |
+| --- | --- | --- | --- | --- |
+| `dominantLift` | IV -> V | I or vi | F -> G -> C/Am | pop/RNB build into hook |
+| `secondaryToRelativeMinor` | IV -> III7 | vi | F -> E7 -> Am | emotional hook into relative minor |
+| `backdoorToSubdominant` | v/IV -> I7/IV | IV | Gm7 -> C7 -> F | silky chorus starting on IV |
+| `minorIvHold` | iv hold | I or vi | Fm -> C/Am | suspended color before hook |
+| `stopOnDominant` | V stop | I or vi | G(stop) -> C/Am | silence/drop before hook |
+| `none` | unchanged | any | - | normal section boundary |
+
+### Minimal Implementation Shape
+
+Arranger only marks the boundary:
+
+```ts
+{ id: 'build1', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', linkOut: 'dominantLift' }
+{ id: 'preHook1', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', linkOut: 'secondaryToRelativeMinor' }
+{ id: 'filterBreak', role: 'bridge', harmonyRole: 'loop', functionTag: 'breakdown', linkOut: 'none' }
+```
+
+Harmony applies it after choosing prototypes:
+
+```ts
+const link = section.linkOut ?? 'none';
+const nextStart = inferNextSectionStartDegree(nextSectionPrototype);
+const linkedSlots = applyTailLink(currentSlots, link, nextStart, band.mode);
+```
+
+Important constraints:
+
+- Only current section tail is rewritten.
+- Do not rewrite the next section prototype unless a future version needs it.
+- If the selected next section does not start on the expected degree, either pick a compatible link
+  or downgrade to `dominantLift`.
+- Lofi defaults to `none`,because loop continuity matters more than functional push.
+- Jazz mostly uses prototype / turnaround; only tag/ending may use `none` or existing jazz turnaround.
+
 ## Minimal Data Flow
 
 ```text
 BandSpec(style)
-  -> FormPlanner(style): sections(role + harmonyRole + functionTag)
+  -> FormPlanner(style): sections(role + harmonyRole + functionTag + linkOut)
   -> TimePlanner(style): tempo / feel
   -> DynamicsPlanner: energyBySection / densityBySection
   -> PhrasePlanner: hook/cadence/motif binding
-  -> Harmony: select prototype by style + mode + harmonyRole + bars
+  -> Harmony: select prototype by style + mode + harmonyRole + bars, then apply linkOut tail
   -> Instrumentation: existing textureBySection
   -> Render: existing textureSchedule + existing renderers
 ```
@@ -175,6 +240,13 @@ Harmonic rhythm:
 - build 可在 fallback 时使用 1 或 2 chords/bar,但不强制。
 - chorus 不再无条件强制 2 chords/bar;优先让 prototype 决定。
 
+Link defaults:
+
+- `build1.linkOut`: `dominantLift`
+- `build2.linkOut`: `secondaryToRelativeMinor` or `dominantLift`
+- `bridge.linkOut`: `stopOnDominant` or `minorIvHold`
+- other sections: `none`
+
 ### RNB
 
 目标:vamp 起势,hook 有落点,breakdown 真正抽离。
@@ -223,6 +295,13 @@ Important:
 - Arranger 不写 snare offset。
 - preHook 是和声/织体准备,不是 pop 式全员加密。
 
+Link defaults:
+
+- `preHook1.linkOut`: `dominantLift`
+- `preHook2.linkOut`: `secondaryToRelativeMinor` when hook starts vi,otherwise `dominantLift`
+- `breakdown.linkOut`: `minorIvHold` or `stopOnDominant`
+- vamp/loop sections: `none`
+
 ### Lofi
 
 目标:短 loop 的 mute / filter / return,不强套传统 chorus。
@@ -266,6 +345,16 @@ Important:
 - 段落差异先靠 energy、texture、pad/comp presence、filter/chop KB 模板。
 - 如果当前 render 还不能 filter/chop,也至少能通过 texture 与 dynamics 听出段落强弱。
 
+Link defaults:
+
+- All loop sections: `none`
+- `filterBreak.linkOut`: `none`
+- `outroFade.linkOut`: `none`
+
+Reason:
+
+- Lofi 的段落衔接靠 loop continuity、mute/filter/chop,不是功能和声强推。
+
 ### Jazz
 
 目标:head / bridge / solo / head-out,不套 pop chorus 爆发。
@@ -308,6 +397,15 @@ Important:
 - `headOut` 可以 legacy project 成 `chorus`,但 hookPolicy 不要强制 `main`。
 - Jazz 的高潮不是 pop final chorus,而是 solo late 或 head-out return。
 - Bass walking、ride、comp 细节继续交给现有 style render / KB。
+
+Link defaults:
+
+- Head/solo boundaries: `none`
+- `tag.linkOut`: `none`
+
+Reason:
+
+- Jazz 需要的是 prototype 内部 turnaround/head form,不优先用 pop pre-chorus 链接。
 
 ## Dynamics Rule
 
@@ -436,24 +534,29 @@ const sectionRoleById = Object.fromEntries(
 
 ## Implementation Order
 
-### Phase 1: Add Harmony Role
+### Phase 1: Add Harmony Role And Link Out
 
 Files:
 
 - `src/core/generation/newEngine/arranger/ArrangementPlan.ts`
 - `src/core/generation/newEngine/harmony/progressionSelector.ts`
+- `src/core/generation/newEngine/harmony/harmonyEngine.ts`
 
 Changes:
 
 1. Add optional `harmonyRole?: HarmonySectionRole` to `Section`。
 2. Add optional `functionTag?: SectionFunctionTag` to `Section`。
-3. `progressionSelector` reads `section.harmonyRole ?? ROLE_MAP[section.role]`。
+3. Add optional `linkOut?: HarmonyLinkKind` to `Section`。
+4. `progressionSelector` reads `section.harmonyRole ?? ROLE_MAP[section.role]`。
+5. Harmony applies `linkOut` after prototype selection by rewriting only current section tail。
 
 Acceptance:
 
 - Lofi sections can request `loop` prototypes.
 - Outro maps to `ending` without depending only on role.
 - Pop build / RNB preHook can request `bridge` harmony without pretending to be chorus。
+- Pop/RNB build can end with IV->V, IV->III7, iv hold, or V stop before hook。
+- If next hook starts on IV, current section can use v/IV->I7/IV style backdoor tail。
 
 ### Phase 2: Style-Specific Form
 
@@ -524,6 +627,7 @@ Do not implement these in the next cut:
 - `microTimingProfile`
 - `dynamicDucking`
 - `transitionTemplateId`
+- full multi-section harmonic planner
 
 They are not wrong ideas, but they are too much for the current objective.
 
@@ -532,6 +636,7 @@ The current objective is:
 ```text
 style-specific sections
   + harmonyRole
+  + linkOut tail skeleton
   + simple energy
   + existing textureSchedule
   = audible section contrast
@@ -543,9 +648,11 @@ The smallest useful implementation is:
 
 1. `Section.harmonyRole`
 2. `Section.functionTag`
-3. style-specific form in `formPlanner`
-4. `progressionSelector` consumes `harmonyRole`
-5. `dynamicsPlanner` uses `functionTag` and stops forcing chorus 2 chords/bar
+3. `Section.linkOut`
+4. style-specific form in `formPlanner`
+5. `progressionSelector` consumes `harmonyRole`
+6. harmony tail rewrite consumes `linkOut`
+7. `dynamicsPlanner` uses `functionTag` and stops forcing chorus 2 chords/bar
 
 After this cut, Q+N should already produce clearer section-to-section contrast:
 
