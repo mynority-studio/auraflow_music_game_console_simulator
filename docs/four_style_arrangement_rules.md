@@ -1,9 +1,17 @@
-# Four-Style Arrangement Rules for Q+N Consumption
+# Producer-Audited Four-Style Arrangement Rules for Q+N
 
 本文档把当前 newEngine 暴露的四个 macro 风格 `pop` / `jazz` / `rnb` / `lofi`
-整理成 arranger 和器配层可以消费的规则范式。目标不是替代
-`melodygenerative` 的 render 织体,而是在 render 之前下发完整歌曲结构、段落功能、
-和声节奏、密度曲线、乐器进出、留白和让位策略。
+整理成 Q+N 管道可以消费的编曲规则范式。它不是替代 `melodygenerative`
+的 render 织体,而是在 render 之前下发完整歌曲结构、段落功能、和声节奏、
+密度曲线、乐器进出、留白、冲击点、动态避让和微时序策略。
+
+本版按一线 producer / beatmaker / jazz rhythm-section 的听觉习惯重新审计:
+
+- 避免“自动伴奏琴式”的全段均匀铺满。
+- 避免把 hook 让位误写成高潮首拍静音。
+- 避免把 R&B/Neo-Soul pocket 降维成“snare late”。
+- 避免给 lofi 强套 pop 的 B 段高潮。
+- 避免把 jazz walking bass 写成 root/5th 上下楼梯。
 
 ## Scope
 
@@ -37,9 +45,11 @@ Q+N 面板走的是 `src/core/generation/newEngine/`。因此本方案升级为
 3. 所有消费者先读 `functionTag`,没有时回退到 `role`。这样 Q+N 可以渐进升级。
 4. `activityBySection` 必须变成可听层的指令,不能只停在 plan 字段里。
 
-## Research Anchors
+## Producer And Tutorial Anchors
 
-这些资料只作为稳定音乐范式依据,具体参数以本引擎可控性为准:
+这些资料只作为稳定音乐范式依据,具体参数以本引擎可控性为准。
+文档里的规则不逐字绑定任何单一视频,而是抽取 producer 教程、song breakdown、
+mixing 教程和 jazz/beatmaking 教学中的共识。
 
 - [Open Music Theory: Verse-Chorus Form](https://viva.pressbooks.pub/openmusictheory/chapter/verse-chorus-form/):
   verse-chorus 是流行/摇滚主流 sectional form; bridge 常在后段出现并引出末次 chorus。
@@ -59,6 +69,26 @@ Q+N 面板走的是 `src/core/generation/newEngine/`。因此本方案升级为
 - [EDMProd Lo-fi Hip Hop](https://www.edmprod.com/lofi-hip-hop/) 与
   [Suno Lo-Fi guide](https://usesuno.com/guide/genre/hip-hop-rap/lofi-hip-hop):
   lo-fi 重点是 dusty/soft drums、jazzy warm chords、swing/off-grid、短 loop 和稀疏编配。
+- [MusicRadar: Max Martin songwriting formula](https://www.musicradar.com/tutorials/music-theory-songwriting/the-verse-and-chorus-of-that-song-are-exactly-the-same-but-you-dont-really-notice-since-the-energy-of-the-chorus-is-completely-different-cracking-open-max-martins-uber-succesful-songwriting-formula):
+  商业 pop 的副歌记忆点常靠重复、能量和编配差异放大,不一定靠完全换和弦。
+- [Reverb: Sampled / gated synth chords](https://reverb.com/featured/sampled-gated-synth-chords-sound-recipes),
+  [Elizabeth Records: Creating loops for lofi tracks](https://www.elizabethrecords.net/blog/creating-loops-for-lofi-tracks-tips-and-techniques):
+  lofi/beatmaking 的 loop、chop、block chord、filter/mute 变化比线性 B 段更重要。
+- [L.Dre official site](https://prodbyldre.com/pages/about-l-dre) 与
+  [Waves: L.Dre beatmaking video](https://www.waves.com/different-sounding-beats-ldre-studioverse):
+  作为 lofi/chill beat producer 工作流参考,强调声音个性、texture 和 beatmaking 操作。
+- [The Jazz Piano Site: Walking Bass-lines](https://www.thejazzpianosite.com/jazz-piano-lessons/jazz-chord-voicings/walking-bass-lines/),
+  [StudyBass: Chromatic Approach Notes](https://www.studybass.com/lessons/common-bass-patterns/chromatic-approach-notes/):
+  walking bass 需要 target note、passing tone、chromatic/diatonic approach,不是 root/5th 映射。
+- [MusicProductionWiki: Sidechain Compression Guide](https://musicproductionwiki.com/articles/sidechain-compression-guide.html),
+  [Avid: Sidechain Compression](https://www.avid.com/pro-tools/user-guide/sidechain-compression):
+  编曲避让应允许冲击点同时出现,再通过 ducking / automation / multiband carving 让出 sustain 空间。
+- [Roast Your Mix: Frequency Masking](https://roastyourmix.com/learn/frequency-masking),
+  [Automatic Minimisation of Masking in Multitrack Audio](https://arxiv.org/abs/1803.09960):
+  频段掩蔽需要动态和编配共同处理,不能只靠固定 MIDI register 分区。
+- [Does it Swing? Microtiming Deviations and Swing Feeling in Jazz](https://arxiv.org/abs/1904.03442),
+  [ISMIR 2019 timing strategies](https://archives.ismir.net/ismir2019/paper/000095.pdf):
+  micro-timing 是风格化、概率化、上下文相关的时间感,不是把某一轨固定拖后。
 
 ## Core Principle
 
@@ -209,12 +239,27 @@ export interface RenderDirective {
   compingMode?: 'full_voicing' | 'shell_only' | 'bass_plus_shell' | 'answer_only';
   padAttackPolicy?: 'noneNearHook' | 'sustainOnly' | 'free';
   bassPocket?: 'kickLock' | 'walkingApproach' | 'syncopated' | 'rootPulse';
+  walkingApproachPolicy?: WalkingApproachPolicy;
   drumPocket?: 'backbeat' | 'rideSwing' | 'latePocket' | 'softSwingHalfTime';
   timingOffsetMs?: { kick?: number; snare?: number; hat?: number; comp?: number };
   downbeatImpactPolicy?: 'stackedAttackThenDuck' | 'subtractiveLoop' | 'jazzTimeKeep' | 'none';
   dynamicDucking?: { targetRole: 'comp' | 'pad' | 'allHarmony'; afterAttackBeats: number; gainDb: number };
   allowSubBass?: boolean;
+  subHarmonicSupport?: 'none' | 'octaveLayer' | 'saturation' | 'octaveLayerAndSaturation';
+  filterPolicy?: 'none' | 'lowpassBed' | 'bandlimitSample' | 'highAirOnly';
   fillPolicy?: 'none' | 'sectionTailLight' | 'sectionTailStrong' | 'phraseTailOnly';
+}
+
+export interface WalkingApproachPolicy {
+  /**
+   * 不是每小节硬塞 chromatic note。概率控制用于避免机械爵士味。
+   */
+  approachProbability: number;
+  chromaticProbability: number;
+  enclosureProbability: number;
+  diatonicStepProbability: number;
+  commonToneOrPedalProbability: number;
+  targetPriority: readonly ('root' | 'third' | 'fifth' | 'seventh')[];
 }
 
 export interface MicroTimingProfile {
@@ -237,11 +282,26 @@ export interface RegisterMaskPolicy {
     | 'off';
 }
 
+export interface ProducerSafetyRules {
+  /**
+   * Wall impact 是稀缺事件。用太多会变成每段都吵,没有峰值。
+   */
+  wallImpactMaxPerSong: number;
+  wallImpactAllowedFunctions: readonly SectionFunctionTag[];
+  microTimingMaxAbsMs: number;
+  microTimingMode: 'probabilisticRange' | 'fixedForbidden';
+  lofiProgressionChangePolicy: 'textureOnly' | 'rareTurnaroundOnly';
+  walkingBassChromaticEveryBar: 'forbidden';
+  subBassRequiresHarmonicSupport: boolean;
+  duckingRequiredWhenPadOverlapsLead: boolean;
+}
+
 export interface StyleArrangementRule {
   style: MacroStyle;
   formTemplates: readonly SectionRecipe[][];
   roleActivityByFunction: Record<SectionFunctionTag, RoleActivityRecipe>;
   textureByFunction: Partial<Record<SectionFunctionTag, TextureRecipe>>;
+  producerSafety: ProducerSafetyRules;
   drumPolicy: DrumPolicy;
   bassPolicy: BassPolicy;
   melodyPolicy: MelodyPolicy;
@@ -285,6 +345,56 @@ export interface InstrumentationPlanData {
 }
 ```
 
+## Style KB Producer Defaults
+
+这些默认值建议直接放进 `styleArrangementRules.ts`。它们是审计后的硬安全阀,
+用于防止风格规则被过度机械化。
+
+```ts
+export const producerSafetyByStyle: Record<MacroStyle, ProducerSafetyRules> = {
+  pop: {
+    wallImpactMaxPerSong: 2,
+    wallImpactAllowedFunctions: ['mainHook', 'postHook', 'return'],
+    microTimingMaxAbsMs: 18,
+    microTimingMode: 'probabilisticRange',
+    lofiProgressionChangePolicy: 'textureOnly',
+    walkingBassChromaticEveryBar: 'forbidden',
+    subBassRequiresHarmonicSupport: true,
+    duckingRequiredWhenPadOverlapsLead: true,
+  },
+  rnb: {
+    wallImpactMaxPerSong: 1,
+    wallImpactAllowedFunctions: ['mainHook', 'return'],
+    microTimingMaxAbsMs: 35,
+    microTimingMode: 'probabilisticRange',
+    lofiProgressionChangePolicy: 'textureOnly',
+    walkingBassChromaticEveryBar: 'forbidden',
+    subBassRequiresHarmonicSupport: true,
+    duckingRequiredWhenPadOverlapsLead: true,
+  },
+  jazz: {
+    wallImpactMaxPerSong: 0,
+    wallImpactAllowedFunctions: [],
+    microTimingMaxAbsMs: 22,
+    microTimingMode: 'probabilisticRange',
+    lofiProgressionChangePolicy: 'textureOnly',
+    walkingBassChromaticEveryBar: 'forbidden',
+    subBassRequiresHarmonicSupport: false,
+    duckingRequiredWhenPadOverlapsLead: true,
+  },
+  lofi: {
+    wallImpactMaxPerSong: 0,
+    wallImpactAllowedFunctions: [],
+    microTimingMaxAbsMs: 28,
+    microTimingMode: 'probabilisticRange',
+    lofiProgressionChangePolicy: 'textureOnly',
+    walkingBassChromaticEveryBar: 'forbidden',
+    subBassRequiresHarmonicSupport: true,
+    duckingRequiredWhenPadOverlapsLead: true,
+  },
+};
+```
+
 ## Layer Parsers
 
 ### Arranger Parser
@@ -303,6 +413,8 @@ export interface InstrumentationPlanData {
 解析规则:
 
 - `role` 用于旧引擎兼容;`functionTag` 用于音乐语义。
+- Arranger 在输出前必须应用 `producerSafety`:限制 wall 次数、限制 lofi progression change、
+  避免把所有 chorus 都标成最高峰。
 - Pop/RNB 的 pre-chorus/preHook 投影为 `role='bridge'`,但 `functionTag='build'`。
 - Jazz 的 head/headOut 投影为 `verse/chorus`,但 hook 语义看 `head/headOut`。
 - Lofi 的 loopA/loopA_muted/return 投影为 `verse`,loopA_open 可投影为 `chorus`
@@ -327,6 +439,8 @@ export interface InstrumentationPlanData {
   但 attack 后必须 duck 或转为 sustain-only。
 - `hookStrength >= 2` 时,首拍允许 full attack;从首拍后 0.25-1.5 拍开始,
   comp/pad density ceiling 降到 0.35-0.45,而不是在首拍静音。
+- 如果 `downbeatImpact='wall'`,Instrumentation 必须同时下发 `dynamicDucking`;
+  如果 pad 与 lead register 重叠,必须下发 `filterPolicy` 或 `padMode`。
 - Jazz 默认 comp shell/rootless,但 solo 段允许更高 answer density。
 - Lofi 的 activity 主要做 mute/unmute,不是把所有轨同时推高。
 
@@ -345,6 +459,7 @@ export interface InstrumentationPlanData {
 - `fillPermission/fillPolicy`: drum renderer 不再每个 section tail 都 fill。
 - `drumPocket/timingOffsetMs`: RNB micro-timing matrix、lofi hat swing/soft late、jazz ride swing。
 - `bassPocket`: pop kickLock,jazz walkingApproach,rnb syncopated,lofi rootPulse。
+- `producerSafety`: render 最后一关要 clamp micro-timing、限制 wall、校验 sub-bass harmonic support。
 
 render fallback:
 
@@ -375,6 +490,29 @@ render fallback:
 7. Drum fill 不是每段尾巴默认出现。fill 必须读 `fillPermission`,并且副歌/drop 前允许强 fill,
    lofi 大多数 transition 只做 mute/filter/noise,不做 showy fill。
 
+## Producer Safety Gate
+
+这些是防止规则被机器过度执行的安全阀。它们比风格偏好优先级更高。
+
+1. `wall` 不是普通 chorus 默认值。每首最多 1-2 次,只允许 final hook/final chorus/drop reveal
+   或 head-out peak。普通 hook 首拍用 `full`,不是 `wall`。
+2. `downbeatImpact='wall'` 必须伴随 `dynamicDucking`。没有 ducking 的 wall 只会制造糊墙,
+   不会制造高级感。
+3. `microTimingProfile` 必须是概率区间。禁止把 kick/snare/hat/comp 写成每个事件固定同一 ms 偏移。
+   固定偏移会从 pocket 变成“错拍”。
+4. RNB/Neo-Soul 的 pocket 需要多轨相互拉扯:
+   kick 可轻微 ahead,snare behind,hat swing/jitter,comp lay-back。单独拖 snare 视为失败。
+5. Jazz walking bass 需要 approach intent,但不能每小节都 chromatic。render 应在
+   chromatic approach、diatonic step、enclosure、common tone/pedal 之间按上下文抽样。
+6. Lofi 禁止靠“明显换到 B 段 progression”制造高潮。允许 melodic fragment、register、
+   filter、mute、noise、drum/bass open 来做变化。
+7. Sub-bass 开放 MIDI 28-43 时必须提供听感支撑:
+   saturation、octave layer 或可感知的 upper harmonic。否则小音箱上会消失。
+8. Pad 与 lead presence 重叠时,必须满足至少一个条件:
+   `airOnly`、`lowpassBed`、`wideDucked`、短 duration、低 velocity。否则判定为 masking risk。
+9. `answer_only` 是 phrase 内让位策略,不是 climax downbeat 策略。
+   main hook 第一拍如果没有 comp/bass/drum 的共同确认,会听起来塌。
+
 ## Pop Rule
 
 音乐目标:清楚的 verse/pre-chorus/chorus 叙事,hook 明确,节奏稳定,和声不过度抢旋律。
@@ -392,7 +530,8 @@ Arranger:
 - Verse: energy 0.40-0.58,density 0.35-0.55,1 chord/bar。
 - Pre-chorus: energy 0.58->0.78,density 0.55->0.75,后半可 2 chords/bar。
 - Chorus: energy 0.78-0.90,density 0.70-0.85,1 chord/bar 为主,高能 seed 可 2 chords/bar。
-  首拍 `downbeatImpact='wall'`,随后 duck harmony sustain。
+  普通 chorus 首拍 `downbeatImpact='full'`;final chorus 或首次 drop reveal 才能升级为 `wall`,
+  且必须随后 duck harmony sustain。
 - Bridge: energy 0.50-0.70,换和声重心或 register,最后 2 小节 build 回 final chorus。
 - Final chorus: chorus2 +0.05 energy,允许 pad/高八度 hook/鼓 crash。
 
@@ -447,8 +586,9 @@ Instrumentation:
 
 - Bass: walking quarter notes 不是 root/5th 映射。它必须是 target-driven:
   beat 1 明确当前和弦 root/3rd/5th 之一,beat 2-3 走 chord tone/scale tone,
-  beat 4 强制趋近下一和弦目标音,优先 chromatic approach/enclosure,
-  其次 diatonic step。没有 beat-4 approach 的 walking bass 视为失败。
+  beat 4 必须有“面向下一和弦目标音”的意图。render 在 chromatic approach、enclosure、
+  diatonic step、common tone/pedal 之间选择;chromatic 是高价值选项,但不能每小节硬塞。
+  连续 4 小节没有任何 beat-4 approach intent 的 walking bass 视为失败。
 - Drum: ride pattern + pedal hat 2/4;snare/kick comp 只作互动。
 - Comp: off-beat/syncopated comping,默认 shell/rootless;melody密时 answer_only。
 - Pad: 极少使用,只在 ballad/chill jazz intro/outro 气氛层。
@@ -488,7 +628,8 @@ Instrumentation:
   与 snare behind 形成前后拉扯。
 - Drum: 不是简单地后拖军鼓。RNB/Neo-Soul 使用 micro-timing matrix:
   kick -8..-2ms ahead,snare +12..+35ms behind,hat swing 0.58..0.65 且有不规则微抖,
-  comp/Rhodes +8..+25ms lay-back。单独拖 snare 会听成节奏不稳。
+  comp/Rhodes +8..+25ms lay-back。所有偏移必须按事件概率抽样并受
+  `microTimingMaxAbsMs` 限制。单独拖 snare 会听成节奏不稳。
 - Pad: warm pad 小音量支撑,不做明显节奏。
 - Melody: conversational,允许 melisma/slide/anticipation;伴奏在尾音后回答。
 
@@ -527,7 +668,8 @@ Instrumentation:
 - Bass: optional pulse,少音符,跟 kick 或 chord roots。
 - Drum: soft boom-bap/half-time,hat swing 0.55-0.62,力度变化更大。
 - Pad/noise: 作为 texture layer,attack 稀少;可在 breakdown 独立出现。
-- Melody: short motif、碎片化、留白多;高密度旋律不应和 comp 同时滚动。
+- Melody: short motif、碎片化、留白多;允许 A/A' 的微型旋律变体,
+  但不允许通过明显 B 段主旋律把 lofi 推成 pop song。高密度旋律不应和 comp 同时滚动。
 
 ## Style Matrix
 

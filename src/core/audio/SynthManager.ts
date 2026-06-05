@@ -59,7 +59,24 @@ export const startAudioContext = async (): Promise<void> => {
         const buffer = await response.arrayBuffer();
         await synth.soundBankManager.addSoundBank(buffer, SF2_BANK_ID, 0);
 
-        synth.connect(ctx.destination);
+        // ★ 母带总线(全局,POP 母带思路:响而受控,全局维持平衡——不靠拉单轨)。
+        //   原来 synth 裸连 destination → 全 band 进来时浮点总和 >1.0 撞 DAC = 削波/刺耳。
+        //   链:留余量(gain staging,-6dB 思路)→ SSL-式 glue 压缩(evens 动态、糊住跳变)
+        //       → makeup(补回响度)→ brickwall limiter(-1.5dB 接住爆顶,绝不削波)。
+        //   参考制作人 master-bus:contained-then-loud(峰值在总线收住,再统一响度)。
+        const headroom = ctx.createGain();
+        headroom.gain.value = 0.6; // 全局留余量,给母带链工作空间(不碰各轨相对平衡)
+        const glue = ctx.createDynamicsCompressor();
+        glue.threshold.value = -16; glue.knee.value = 12; glue.ratio.value = 2.5; glue.attack.value = 0.012; glue.release.value = 0.25;
+        const makeup = ctx.createGain();
+        makeup.gain.value = 1.5; // 补回响度(POP:响)
+        const limiter = ctx.createDynamicsCompressor();
+        limiter.threshold.value = -1.5; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.06;
+        synth.connect(headroom);
+        headroom.connect(glue);
+        glue.connect(makeup);
+        makeup.connect(limiter);
+        limiter.connect(ctx.destination);
 
         spessaSynth = synth;
         isSpessaSynthReady = true;
