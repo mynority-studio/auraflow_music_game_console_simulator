@@ -80,6 +80,36 @@ function buildCompPedal(plan: HarmonicPlan, timebase: Timebase): { atTick: Ticks
   return out;
 }
 
+/**
+ * 编曲密度弧 gate(A2):按 activeRolesBySection 丢掉【该 role 在该段不在场】的音(谁进/出)。
+ *   段落 tick 区间从和声 timeline 聚合;落不到段(边界)→ 保留。lead 在密度表里恒含 → 不被丢(fork1)。
+ *   纯过滤、确定性;在 occupation/auditor 之前施加 → 下游看到的是真实稀疏编曲。
+ */
+function gateByDensity(
+  tracks: TrackIR[],
+  plan: HarmonicPlan,
+  timebase: Timebase,
+  activeRolesBySection: Record<string, readonly string[]>,
+): TrackIR[] {
+  const byId = new Map<string, { start: number; end: number }>();
+  for (const span of plan.chordTimeline) {
+    const s = timebase.beatToTick(span.startBeat) as number;
+    const e = s + (timebase.beatToTick(span.durationBeats) as number);
+    const r = byId.get(span.sectionId);
+    if (!r) byId.set(span.sectionId, { start: s, end: e });
+    else { r.start = Math.min(r.start, s); r.end = Math.max(r.end, e); }
+  }
+  const ranges = [...byId.entries()].map(([id, r]) => ({ id, ...r }));
+  const sectionAt = (tick: number) => ranges.find((r) => tick >= r.start && tick < r.end);
+  return tracks.map((t) => ({
+    role: t.role,
+    notes: t.notes.filter((n) => {
+      const sec = sectionAt(n.startTick as number);
+      return sec ? (activeRolesBySection[sec.id] ?? []).includes(t.role) : true;
+    }),
+  }));
+}
+
 export function renderSong(plan: HarmonicPlan, timebase: Timebase): RenderResult {
   const bass = renderBass(plan, timebase, 'default');
   const accompaniment = renderAccompaniment(plan, timebase);
@@ -148,14 +178,18 @@ export function renderSongFull(
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule }));
   tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有
 
+  // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
+  //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。
+  const gatedTracks = gateByDensity(tracks, plan, timebase, instrumentation.activeRolesBySection);
+
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
     lowMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi,
     highMidi: instrumentation.melodyReservationPlan.reservedRegister.highMidi,
   };
-  const occupation = buildOccupationMap(tracks, reserved);
+  const occupation = buildOccupationMap(gatedTracks, reserved);
   const draft: MusicalIRData = {
-    tracks,
+    tracks: gatedTracks,
     timebase,
     durationTicks: ticks(totalDurationTicks(plan, timebase)),
   };

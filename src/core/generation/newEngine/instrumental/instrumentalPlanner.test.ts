@@ -58,7 +58,7 @@ describe('instrumental/instrumentalPlanner', () => {
   it('★ A1 密度弧:pop intro 稀疏(无 bass/drum)→ chorus 全员同进 → bridge 去 drum;lead 全程;repeatGroup 一致', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
     const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // seed 3 → POP_FULL
-    const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('inst'));
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
 
     expect(roles('intro')).not.toContain('bass');   // intro 稀疏
@@ -68,7 +68,7 @@ describe('instrumental/instrumentalPlanner', () => {
     for (const s of arr.sections) expect(roles(s.id)).toContain('lead'); // lead 全程
     expect(roles('verse1')).toEqual(roles('verse2')); // repeatGroup 一致(同 functionTag)
 
-    const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('inst'));
+    const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection); // 确定性
   });
 
