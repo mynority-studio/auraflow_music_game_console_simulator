@@ -20,6 +20,7 @@ const LINEUP_RULES: Record<string, LineupRule> = {
   jazz: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.85 }, { role: 'pad', prob: 0.15 }] },
   pop: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.9 }, { role: 'pad', prob: 0.6 }] },
   lofi: { always: ['lead', 'comp'], optional: [{ role: 'bass', prob: 0.7 }, { role: 'pad', prob: 0.85 }, { role: 'drum', prob: 0.6 }] },
+  rnb: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.8 }, { role: 'pad', prob: 0.55 }] }, // neo-soul:Rhodes comp + pocket 鼓
   modal: { always: ['lead', 'pad'], optional: [{ role: 'bass', prob: 0.6 }, { role: 'comp', prob: 0.5 }, { role: 'drum', prob: 0.35 }] },
   default: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'drum', prob: 0.7 }, { role: 'pad', prob: 0.5 }] },
 };
@@ -31,6 +32,7 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   jazz: { lead: [11, 4, 12], comp: [0, 4], bass: [32], pad: [49], drum: [0] },       // 颤音琴/Rhodes/马林巴 · 钢琴/Rhodes · 立式贝斯 · 弦乐
   pop: { lead: [1, 4, 12], comp: [1, 4], bass: [38, 33], pad: [89, 50], drum: [0] }, // 亮钢琴/Rhodes/马林巴 · 亮钢琴/Rhodes · 合成/指弹贝斯 · 暖/合成弦 pad
   lofi: { lead: [4, 11, 12], comp: [4, 5], bass: [33, 39], pad: [89, 91], drum: [0] }, // Rhodes/颤音琴/马林巴 · Rhodes/FM EP · 软贝斯 · 暖/合唱 pad
+  rnb: { lead: [4, 5, 11], comp: [4, 5], bass: [33, 39], pad: [89, 91], drum: [0] }, // Rhodes/FM EP/颤音琴 · Rhodes/FM EP · 指弹/合成贝斯 · 暖/合唱 pad
   modal: { lead: [12, 11, 8], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91], drum: [0] }, // 马林巴/颤音琴/Celesta · Rhodes/钢琴 · 立式 · 暖/弦/合唱 pad
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };

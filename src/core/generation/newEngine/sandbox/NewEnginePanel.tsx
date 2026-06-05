@@ -16,7 +16,9 @@ import { PianoRollWindow } from './PianoRollWindow';
 import { getInstrumentCatalog, gmName } from '../knowledge/instruments';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
-const STYLES = ['pop', 'lofi', 'jazz', 'modal'] as const;
+// ★ 4 大 macro 风格(genre 轴);modal 是正交 regime,单独开关。
+const STYLES = ['pop', 'jazz', 'lofi', 'rnb'] as const;
+const STYLE_LABEL: Record<(typeof STYLES)[number], string> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB' };
 const INSTRUMENT_CATALOG = getInstrumentCatalog(); // view-only:编制目录(静态,渲染一次)
 const STATUS_COLOR: Record<string, string> = {
   pass: 'text-emerald-300',
@@ -43,6 +45,7 @@ export const NewEnginePanel: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [seed, setSeed] = useState(7);
   const [style, setStyle] = useState<(typeof STYLES)[number]>('pop');
+  const [modal, setModal] = useState(false); // 正交 regime:modal 静态 vamp
   const [allowModulation, setAllowModulation] = useState(false);
   const [status, setStatus] = useState('就绪');
   const [readout, setReadout] = useState<Readout | null>(null);
@@ -82,7 +85,7 @@ export const NewEnginePanel: React.FC = () => {
   }, [open]);
 
   const generate = (): GenerationTrace => {
-    const t = traceGeneration({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation });
+    const t = traceGeneration({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation: allowModulation && !modal, ...(modal ? { tonalityKind: 'modal' as const } : {}) });
     lastIR.current = t.ir;
     lastBpm.current = t.bpm;
     setReadout(deriveReadout(t));
@@ -114,7 +117,7 @@ export const NewEnginePanel: React.FC = () => {
   const onStop = () => { stopNewEngine(); setStatus('已停止'); };
 
   const onCompareAB = () => {
-    const req = (s: number) => ({ seed: s, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation });
+    const req = (s: number) => ({ seed: s, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation: allowModulation && !modal, ...(modal ? { tonalityKind: 'modal' as const } : {}) });
     const a = traceGeneration(req(seed));
     const b = traceGeneration(req(seed + 1));
     setCmp(compareTraces(a, b));
@@ -159,6 +162,27 @@ export const NewEnginePanel: React.FC = () => {
             端到端 Request→FinalIR,经中立音频层发声(bass+comp+lead)。
           </p>
 
+          {/* 风格 macro:4 大 genre(POP/JAZZ/LOFI/RNB)*/}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] text-zinc-400">风格 macro</span>
+            <div className="flex flex-wrap gap-1.5">
+              {STYLES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStyle(s)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold tracking-wide transition ${
+                    style === s
+                      ? 'bg-emerald-500/90 text-zinc-900'
+                      : 'border border-white/10 bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                  }`}
+                >
+                  {STYLE_LABEL[s]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* 参数 */}
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
@@ -170,16 +194,6 @@ export const NewEnginePanel: React.FC = () => {
                 className="w-24 rounded border border-white/10 bg-zinc-800 px-2 py-1 text-sm text-zinc-100"
               />
             </label>
-            <label className="flex flex-col gap-1 text-[11px] text-zinc-400">
-              style
-              <select
-                value={style}
-                onChange={(e) => setStyle(e.target.value as (typeof STYLES)[number])}
-                className="w-28 rounded border border-white/10 bg-zinc-800 px-2 py-1 text-sm text-zinc-100"
-              >
-                {STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
             <button
               type="button"
               onClick={() => setSeed(Math.floor(Math.random() * 1_000_000))}
@@ -189,22 +203,34 @@ export const NewEnginePanel: React.FC = () => {
               🎲 随机 seed
             </button>
             <label
-              className={`flex items-center gap-1.5 text-[11px] ${style === 'modal' ? 'text-zinc-600' : 'text-zinc-300'}`}
-              title={style === 'modal' ? 'modal 静态 vamp 不转调' : '末段副歌升半音 lift'}
+              className="flex items-center gap-1.5 text-[11px] text-zinc-300"
+              title="正交 regime:静态 vamp(i + 特征和弦循环)+ 旋律自由跑教会调式"
             >
               <input
                 type="checkbox"
-                checked={allowModulation && style !== 'modal'}
-                disabled={style === 'modal'}
+                checked={modal}
+                onChange={(e) => setModal(e.target.checked)}
+                className="accent-violet-500"
+              />
+              modal
+            </label>
+            <label
+              className={`flex items-center gap-1.5 text-[11px] ${modal ? 'text-zinc-600' : 'text-zinc-300'}`}
+              title={modal ? 'modal 静态 vamp 不转调' : '末段副歌升半音 lift'}
+            >
+              <input
+                type="checkbox"
+                checked={allowModulation && !modal}
+                disabled={modal}
                 onChange={(e) => setAllowModulation(e.target.checked)}
                 className="accent-violet-500"
               />
               转调 lift
             </label>
           </div>
-          {style === 'modal' && (
+          {modal && (
             <p className="-mt-2 text-[10px] text-violet-300/70">
-              modal regime:静态 vamp(i + 特征和弦循环)+ 旋律自由跑 Dorian 音阶,逐和弦约束放松。
+              modal regime:静态 vamp(i + 特征和弦循环)+ 旋律自由跑教会调式,逐和弦约束放松(genre 仍取 {STYLE_LABEL[style]} 的乐器/织体)。
             </p>
           )}
 

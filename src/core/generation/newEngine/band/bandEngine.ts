@@ -28,10 +28,13 @@ export interface GenerationRequest {
   allowModulation?: boolean;   // 可选:开启段落转调(默认 false)
 }
 
+// ★ 4 大 macro 风格:POP / JAZZ / LOFI / RNB(UI 暴露这 4 个;modal 是正交 regime,非 genre)。
 const STYLE_PROFILES: Record<string, StyleProfile> = {
   lofi: { accompDensity: 0.4, padDensity: 0.6, melodyFreedom: 0.5, tensionCarrier: 'voicing', colorBudget: 0.4, beatStrictness: 0.4 },
   jazz: { accompDensity: 0.7, padDensity: 0.2, melodyFreedom: 0.8, tensionCarrier: 'both', colorBudget: 0.8, beatStrictness: 0.5 },
   pop: { accompDensity: 0.6, padDensity: 0.4, melodyFreedom: 0.4, tensionCarrier: 'melody', colorBudget: 0.3, beatStrictness: 0.8 },
+  // RNB / neo-soul:色彩丰富(colorBudget 高,接近 jazz)+ 中等密度 + 双 tension carrier + pocket 律动
+  rnb: { accompDensity: 0.6, padDensity: 0.4, melodyFreedom: 0.6, tensionCarrier: 'both', colorBudget: 0.6, beatStrictness: 0.6 },
   // modal:和声静态(低 colorBudget=不加功能离调)+ 旋律自由跑音阶(高 melodyFreedom)
   modal: { accompDensity: 0.45, padDensity: 0.6, melodyFreedom: 0.85, tensionCarrier: 'melody', colorBudget: 0.2, beatStrictness: 0.5 },
   default: { accompDensity: 0.5, padDensity: 0.4, melodyFreedom: 0.5, tensionCarrier: 'both', colorBudget: 0.4, beatStrictness: 0.6 },
