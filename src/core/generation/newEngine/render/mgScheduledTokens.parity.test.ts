@@ -35,7 +35,7 @@ const fixtures: OracleFixture[] = readdirSync(ORACLE_DIR)
 
 describe('render/mgTokenScheduler · MG 移植 scheduled-token parity (Loop 3)', () => {
   it('加载到 9 个 oracle fixture(含 scheduledTokensBuiltin)', () => {
-    expect(fixtures.length).toBe(9);
+    expect(fixtures.length).toBeGreaterThanOrEqual(9);
     for (const fx of fixtures) {
       expect(Array.isArray(fx.scheduledTokensBuiltin)).toBe(true);
       expect(fx.scheduledTokensBuiltin.length).toBeGreaterThan(0);

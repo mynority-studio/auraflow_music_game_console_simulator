@@ -1,5 +1,5 @@
 {
-  "seed": "pop_xm3lg3",
+  "seed": "pop_aa01",
   "style": "POP",
   "key": "C",
   "songKeyPc": 0,
@@ -127,440 +127,21 @@
     {
       "root": "G",
       "rootMidi": 55,
-      "type": "7sus4",
-      "roman": "V",
-      "bass": "G2",
-      "bassMidi": 43,
-      "notes": [
-        "C4",
-        "D4",
-        "F4"
-      ],
-      "notesMidi": [
-        60,
-        62,
-        65
-      ],
-      "duration": 4,
-      "tensionState": "Solid",
-      "effectiveFunc": "D",
-      "chordSymbol": "G7sus4",
-      "localTonalCenterPc": 0,
-      "arrangementMode": "close",
-      "widePianoVoicing": {
-        "notes": [
-          {
-            "midi": 55,
-            "pc": 7,
-            "role": "root",
-            "lane": "low_outer",
-            "hand": "LH",
-            "velocity": 58
-          },
-          {
-            "midi": 62,
-            "pc": 2,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 65,
-            "pc": 5,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 67,
-            "pc": 7,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          }
-        ],
-        "attackMidi": [
-          55,
-          62,
-          65,
-          67
-        ],
-        "innerLanes": [
-          {
-            "midi": 62,
-            "pc": 2,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 65,
-            "pc": 5,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 67,
-            "pc": 7,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          }
-        ],
-        "innerMotion": [],
-        "spreadMode": "half_wide"
-      }
-    },
-    {
-      "root": "A",
-      "rootMidi": 57,
-      "type": "madd9",
-      "roman": "vi",
-      "bass": "A2",
-      "bassMidi": 45,
-      "notes": [
-        "B3",
-        "C4",
-        "E4"
-      ],
-      "notesMidi": [
-        59,
-        60,
-        64
-      ],
-      "duration": 4,
-      "tensionState": "Solid",
-      "effectiveFunc": "T",
-      "chordSymbol": "Amadd9",
-      "localTonalCenterPc": 0,
-      "arrangementMode": "close",
-      "widePianoVoicing": {
-        "notes": [
-          {
-            "midi": 57,
-            "pc": 9,
-            "role": "root",
-            "lane": "low_outer",
-            "hand": "LH",
-            "velocity": 58
-          },
-          {
-            "midi": 60,
-            "pc": 0,
-            "role": "third",
-            "lane": "low_outer",
-            "hand": "LH",
-            "velocity": 54
-          },
-          {
-            "midi": 64,
-            "pc": 4,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 67,
-            "pc": 7,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 69,
-            "pc": 9,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          },
-          {
-            "midi": 71,
-            "pc": 11,
-            "role": "ninth",
-            "lane": "inner_high",
-            "hand": "RH",
-            "velocity": 40
-          }
-        ],
-        "attackMidi": [
-          57,
-          60,
-          64,
-          67,
-          69,
-          71
-        ],
-        "innerLanes": [
-          {
-            "midi": 64,
-            "pc": 4,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 67,
-            "pc": 7,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 69,
-            "pc": 9,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          },
-          {
-            "midi": 71,
-            "pc": 11,
-            "role": "ninth",
-            "lane": "inner_high",
-            "hand": "RH",
-            "velocity": 40
-          }
-        ],
-        "innerMotion": [],
-        "spreadMode": "half_wide"
-      }
-    },
-    {
-      "root": "F",
-      "rootMidi": 53,
-      "type": "maj",
-      "roman": "IV",
-      "bass": "F2",
-      "bassMidi": 41,
-      "notes": [
-        "A3",
-        "C4",
-        "F4"
-      ],
-      "notesMidi": [
-        57,
-        60,
-        65
-      ],
-      "duration": 4,
-      "tensionState": "Solid",
-      "effectiveFunc": "S",
-      "chordSymbol": "F",
-      "localTonalCenterPc": 0,
-      "arrangementMode": "close",
-      "widePianoVoicing": {
-        "notes": [
-          {
-            "midi": 60,
-            "pc": 0,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 64,
-            "pc": 4,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 69,
-            "pc": 9,
-            "role": "third",
-            "lane": "inner_high",
-            "hand": "RH",
-            "velocity": 40
-          }
-        ],
-        "attackMidi": [
-          60,
-          64,
-          69
-        ],
-        "innerLanes": [
-          {
-            "midi": 60,
-            "pc": 0,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 64,
-            "pc": 4,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 69,
-            "pc": 9,
-            "role": "third",
-            "lane": "inner_high",
-            "hand": "RH",
-            "velocity": 40
-          }
-        ],
-        "innerMotion": [],
-        "spreadMode": "close"
-      }
-    },
-    {
-      "root": "C",
-      "rootMidi": 48,
-      "type": "add9",
-      "roman": "I",
-      "bass": "C2",
-      "bassMidi": 36,
-      "notes": [
-        "D4",
-        "E4",
-        "G4"
-      ],
-      "notesMidi": [
-        62,
-        64,
-        67
-      ],
-      "duration": 4,
-      "tensionState": "Solid",
-      "effectiveFunc": "T",
-      "chordSymbol": "Cadd9",
-      "localTonalCenterPc": 0,
-      "arrangementMode": "close",
-      "widePianoVoicing": {
-        "notes": [
-          {
-            "midi": 48,
-            "pc": 0,
-            "role": "root",
-            "lane": "low_outer",
-            "hand": "LH",
-            "velocity": 58
-          },
-          {
-            "midi": 52,
-            "pc": 4,
-            "role": "third",
-            "lane": "low_outer",
-            "hand": "LH",
-            "velocity": 54
-          },
-          {
-            "midi": 55,
-            "pc": 7,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 60,
-            "pc": 0,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          },
-          {
-            "midi": 70,
-            "pc": 10,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 74,
-            "pc": 2,
-            "role": "ninth",
-            "lane": "inner_high",
-            "hand": "RH",
-            "velocity": 40
-          }
-        ],
-        "attackMidi": [
-          48,
-          52,
-          55,
-          60,
-          70,
-          74
-        ],
-        "innerLanes": [
-          {
-            "midi": 55,
-            "pc": 7,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
-            "midi": 60,
-            "pc": 0,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          },
-          {
-            "midi": 70,
-            "pc": 10,
-            "role": "seventh",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 46
-          },
-          {
-            "midi": 74,
-            "pc": 2,
-            "role": "ninth",
-            "lane": "inner_high",
-            "hand": "RH",
-            "velocity": 40
-          }
-        ],
-        "innerMotion": [],
-        "spreadMode": "half_wide"
-      }
-    },
-    {
-      "root": "G",
-      "rootMidi": 55,
       "type": "7",
       "roman": "V",
       "bass": "G2",
       "bassMidi": 43,
       "notes": [
-        "D3",
-        "F3",
         "B3",
-        "G4"
+        "D3",
+        "G3",
+        "F4"
       ],
       "notesMidi": [
-        50,
-        53,
         59,
-        67
+        50,
+        55,
+        65
       ],
       "duration": 4,
       "tensionState": "Solid",
@@ -1000,71 +581,374 @@
       }
     },
     {
-      "root": "B",
-      "rootMidi": 59,
-      "type": "m7b5",
-      "roman": "ii/vi",
-      "bass": "B2",
-      "bassMidi": 47,
+      "root": "G",
+      "rootMidi": 55,
+      "type": "7",
+      "roman": "V",
+      "bass": "G2",
+      "bassMidi": 43,
       "notes": [
-        "A3",
         "B3",
-        "D4",
+        "D3",
+        "G3",
         "F4"
       ],
       "notesMidi": [
-        57,
         59,
-        62,
+        50,
+        55,
         65
       ],
-      "duration": 2,
+      "duration": 4,
       "tensionState": "Solid",
       "effectiveFunc": "D",
-      "chordSymbol": "Bm7b5",
-      "bassPattern": [
-        {
-          "time": 0,
-          "midi": 47,
-          "duration": 1,
-          "velocity": 95
-        },
-        {
-          "time": 1,
-          "midi": 38,
-          "duration": 1,
-          "velocity": 88
-        },
-        {
-          "time": 2,
-          "midi": 41,
-          "duration": 1,
-          "velocity": 90
-        },
-        {
-          "time": 3,
-          "midi": 39,
-          "duration": 1,
-          "velocity": 96
-        }
-      ],
-      "borrowedSource": "secondary_ii_v",
-      "mustResolve": true,
-      "tonicizationPlacement": "iiv_split",
-      "analysisKeyPc": 9,
-      "localRoman": "ii",
-      "localTonalCenterPc": 9,
-      "arrangementMode": "close",
+      "chordSymbol": "G7",
+      "localTonalCenterPc": 0,
+      "arrangementMode": "drop2",
       "widePianoVoicing": {
         "notes": [
           {
-            "midi": 47,
-            "pc": 11,
+            "midi": 55,
+            "pc": 7,
             "role": "root",
             "lane": "low_outer",
             "hand": "LH",
             "velocity": 58
           },
+          {
+            "midi": 59,
+            "pc": 11,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 62,
+            "pc": 2,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          55,
+          59,
+          62,
+          65,
+          67,
+          71,
+          74
+        ],
+        "innerLanes": [
+          {
+            "midi": 62,
+            "pc": 2,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "wide"
+      }
+    },
+    {
+      "root": "A",
+      "rootMidi": 57,
+      "type": "madd9",
+      "roman": "vi",
+      "bass": "A2",
+      "bassMidi": 45,
+      "notes": [
+        "B3",
+        "C4",
+        "E4"
+      ],
+      "notesMidi": [
+        59,
+        60,
+        64
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Amadd9",
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 57,
+            "pc": 9,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 64,
+            "pc": 4,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 69,
+            "pc": 9,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          57,
+          60,
+          64,
+          67,
+          69,
+          71
+        ],
+        "innerLanes": [
+          {
+            "midi": 64,
+            "pc": 4,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 69,
+            "pc": 9,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "half_wide"
+      }
+    },
+    {
+      "root": "F",
+      "rootMidi": 53,
+      "type": "madd9",
+      "roman": "iv",
+      "bass": "F2",
+      "bassMidi": 41,
+      "notes": [
+        "Ab3",
+        "C4",
+        "G4"
+      ],
+      "notesMidi": [
+        56,
+        60,
+        67
+      ],
+      "duration": 2,
+      "tensionState": "Solid",
+      "effectiveFunc": "S",
+      "chordSymbol": "Fmadd9",
+      "borrowedFrom": "iv (parallel minor)",
+      "borrowedSource": "modal_interchange",
+      "mustResolve": false,
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          60,
+          63,
+          67
+        ],
+        "innerLanes": [
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "7",
+      "roman": "bVII7",
+      "bass": "Bb2",
+      "bassMidi": 46,
+      "notes": [
+        "D3",
+        "F3",
+        "Bb3",
+        "Ab4"
+      ],
+      "notesMidi": [
+        50,
+        53,
+        58,
+        68
+      ],
+      "duration": 2,
+      "tensionState": "Solid",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb7",
+      "borrowedFrom": "bVII7 (backdoor cadence)",
+      "borrowedSource": "backdoor_dominant",
+      "mustResolve": true,
+      "localTonalCenterPc": 0,
+      "arrangementMode": "drop2",
+      "widePianoVoicing": {
+        "notes": [
           {
             "midi": 50,
             "pc": 2,
@@ -1072,6 +956,14 @@
             "lane": "low_outer",
             "hand": "LH",
             "velocity": 54
+          },
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
           },
           {
             "midi": 62,
@@ -1090,38 +982,38 @@
             "velocity": 48
           },
           {
-            "midi": 65,
-            "pc": 5,
-            "role": "fifth",
-            "lane": "upper_outer",
-            "hand": "RH",
-            "velocity": 38
-          },
-          {
-            "midi": 69,
-            "pc": 9,
+            "midi": 68,
+            "pc": 8,
             "role": "seventh",
             "lane": "inner_mid",
             "hand": "RH",
             "velocity": 46
           },
           {
-            "midi": 71,
-            "pc": 11,
+            "midi": 70,
+            "pc": 10,
             "role": "doubling",
             "lane": "inner_mid",
             "hand": "RH",
             "velocity": 42
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
           }
         ],
         "attackMidi": [
-          47,
           50,
+          58,
           62,
           65,
-          65,
-          69,
-          71
+          68,
+          70,
+          77
         ],
         "innerLanes": [
           {
@@ -1141,16 +1033,145 @@
             "velocity": 48
           },
           {
-            "midi": 69,
-            "pc": 9,
+            "midi": 68,
+            "pc": 8,
             "role": "seventh",
             "lane": "inner_mid",
             "hand": "RH",
             "velocity": 46
           },
           {
-            "midi": 71,
-            "pc": 11,
+            "midi": 70,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "wide"
+      }
+    },
+    {
+      "root": "C",
+      "rootMidi": 48,
+      "type": "add9",
+      "roman": "I",
+      "bass": "C2",
+      "bassMidi": 36,
+      "notes": [
+        "D4",
+        "E4",
+        "G4"
+      ],
+      "notesMidi": [
+        62,
+        64,
+        67
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Cadd9",
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 52,
+            "pc": 4,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 62,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 79,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          52,
+          60,
+          62,
+          67,
+          70,
+          72,
+          79
+        ],
+        "innerLanes": [
+          {
+            "midi": 62,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
             "role": "doubling",
             "lane": "inner_mid",
             "hand": "RH",
@@ -1169,19 +1190,19 @@
       "bass": "E2",
       "bassMidi": 40,
       "notes": [
-        "B3",
         "D3",
-        "G#3",
-        "E4"
+        "E3",
+        "B3",
+        "G#4"
       ],
       "notesMidi": [
-        59,
         50,
-        56,
-        64
+        52,
+        59,
+        68
       ],
       "forcedScale": "Phrygian Dominant",
-      "duration": 2,
+      "duration": 4,
       "tensionState": "Solid",
       "effectiveFunc": "D",
       "chordSymbol": "E7",
@@ -1189,31 +1210,19 @@
         {
           "time": 0,
           "midi": 40,
-          "duration": 1,
-          "velocity": 95
-        },
-        {
-          "time": 1,
-          "midi": 44,
-          "duration": 1,
-          "velocity": 88
+          "duration": 2,
+          "velocity": 92
         },
         {
           "time": 2,
-          "midi": 47,
-          "duration": 1,
-          "velocity": 90
-        },
-        {
-          "time": 3,
           "midi": 44,
-          "duration": 1,
+          "duration": 2,
           "velocity": 96
         }
       ],
-      "borrowedSource": "secondary_ii_v",
+      "borrowedSource": "secondary_dominant",
       "mustResolve": true,
-      "tonicizationPlacement": "iiv_split",
+      "tonicizationPlacement": "light",
       "analysisKeyPc": 9,
       "localRoman": "V",
       "localTonalCenterPc": 9,
@@ -1237,20 +1246,20 @@
             "velocity": 54
           },
           {
-            "midi": 59,
-            "pc": 11,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
-          {
             "midi": 68,
             "pc": 8,
             "role": "third",
             "lane": "inner_high",
             "hand": "RH",
             "velocity": 40
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
           },
           {
             "midi": 71,
@@ -1280,21 +1289,13 @@
         "attackMidi": [
           52,
           56,
-          59,
           68,
+          71,
           71,
           74,
           76
         ],
         "innerLanes": [
-          {
-            "midi": 59,
-            "pc": 11,
-            "role": "fifth",
-            "lane": "inner_low",
-            "hand": "RH",
-            "velocity": 48
-          },
           {
             "midi": 68,
             "pc": 8,
@@ -1302,6 +1303,14 @@
             "lane": "inner_high",
             "hand": "RH",
             "velocity": 40
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
           },
           {
             "midi": 74,
@@ -1332,14 +1341,14 @@
       "bass": "A2",
       "bassMidi": 45,
       "notes": [
-        "B3",
         "C4",
-        "E4"
+        "E4",
+        "B4"
       ],
       "notesMidi": [
-        59,
         60,
-        64
+        64,
+        71
       ],
       "forcedScale": "Aeolian",
       "duration": 4,
@@ -1415,24 +1424,24 @@
     {
       "root": "F",
       "rootMidi": 53,
-      "type": "add9",
+      "type": "maj",
       "roman": "IV",
       "bass": "F2",
       "bassMidi": 41,
       "notes": [
-        "A3",
         "C4",
-        "G4"
+        "F4",
+        "A4"
       ],
       "notesMidi": [
-        57,
         60,
-        67
+        65,
+        69
       ],
       "duration": 4,
       "tensionState": "Solid",
       "effectiveFunc": "S",
-      "chordSymbol": "Fadd9",
+      "chordSymbol": "F",
       "localTonalCenterPc": 0,
       "arrangementMode": "close",
       "widePianoVoicing": {
@@ -1462,8 +1471,8 @@
             "velocity": 48
           },
           {
-            "midi": 63,
-            "pc": 3,
+            "midi": 64,
+            "pc": 4,
             "role": "seventh",
             "lane": "inner_mid",
             "hand": "RH",
@@ -1478,9 +1487,9 @@
             "velocity": 42
           },
           {
-            "midi": 67,
-            "pc": 7,
-            "role": "ninth",
+            "midi": 69,
+            "pc": 9,
+            "role": "third",
             "lane": "inner_high",
             "hand": "RH",
             "velocity": 40
@@ -1498,9 +1507,9 @@
           53,
           57,
           60,
-          63,
+          64,
           65,
-          67,
+          69,
           72
         ],
         "innerLanes": [
@@ -1513,8 +1522,8 @@
             "velocity": 48
           },
           {
-            "midi": 63,
-            "pc": 3,
+            "midi": 64,
+            "pc": 4,
             "role": "seventh",
             "lane": "inner_mid",
             "hand": "RH",
@@ -1529,9 +1538,9 @@
             "velocity": 42
           },
           {
-            "midi": 67,
-            "pc": 7,
-            "role": "ninth",
+            "midi": 69,
+            "pc": 9,
+            "role": "third",
             "lane": "inner_high",
             "hand": "RH",
             "velocity": 40
@@ -1544,24 +1553,24 @@
     {
       "root": "C",
       "rootMidi": 48,
-      "type": "add9",
+      "type": "maj",
       "roman": "I",
       "bass": "C2",
       "bassMidi": 36,
       "notes": [
-        "D4",
         "E4",
-        "G4"
+        "G4",
+        "C5"
       ],
       "notesMidi": [
-        62,
         64,
-        67
+        67,
+        72
       ],
       "duration": 4,
       "tensionState": "Solid",
       "effectiveFunc": "T",
-      "chordSymbol": "Cadd9",
+      "chordSymbol": "C",
       "localTonalCenterPc": 0,
       "arrangementMode": "close",
       "widePianoVoicing": {
@@ -1591,37 +1600,37 @@
             "velocity": 48
           },
           {
-            "midi": 60,
-            "pc": 0,
-            "role": "doubling",
+            "midi": 59,
+            "pc": 11,
+            "role": "seventh",
             "lane": "inner_mid",
             "hand": "RH",
-            "velocity": 42
+            "velocity": 46
           },
           {
-            "midi": 62,
-            "pc": 2,
-            "role": "ninth",
+            "midi": 64,
+            "pc": 4,
+            "role": "third",
             "lane": "inner_high",
             "hand": "RH",
             "velocity": 40
           },
           {
-            "midi": 70,
-            "pc": 10,
-            "role": "seventh",
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
             "lane": "inner_mid",
             "hand": "RH",
-            "velocity": 46
+            "velocity": 42
           }
         ],
         "attackMidi": [
           48,
           52,
           55,
-          60,
-          62,
-          70
+          59,
+          64,
+          72
         ],
         "innerLanes": [
           {
@@ -1633,28 +1642,28 @@
             "velocity": 48
           },
           {
-            "midi": 60,
-            "pc": 0,
-            "role": "doubling",
+            "midi": 59,
+            "pc": 11,
+            "role": "seventh",
             "lane": "inner_mid",
             "hand": "RH",
-            "velocity": 42
+            "velocity": 46
           },
           {
-            "midi": 62,
-            "pc": 2,
-            "role": "ninth",
+            "midi": 64,
+            "pc": 4,
+            "role": "third",
             "lane": "inner_high",
             "hand": "RH",
             "velocity": 40
           },
           {
-            "midi": 70,
-            "pc": 10,
-            "role": "seventh",
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
             "lane": "inner_mid",
             "hand": "RH",
-            "velocity": 46
+            "velocity": 42
           }
         ],
         "innerMotion": [],
@@ -1664,26 +1673,28 @@
     {
       "root": "G",
       "rootMidi": 55,
-      "type": "7sus4",
+      "type": "7",
       "roman": "V",
       "bass": "G2",
       "bassMidi": 43,
       "notes": [
-        "C4",
+        "F3",
+        "G3",
         "D4",
-        "F4"
+        "B4"
       ],
       "notesMidi": [
-        60,
+        53,
+        55,
         62,
-        65
+        71
       ],
       "duration": 4,
       "tensionState": "Solid",
       "effectiveFunc": "D",
-      "chordSymbol": "G7sus4",
+      "chordSymbol": "G7",
       "localTonalCenterPc": 0,
-      "arrangementMode": "close",
+      "arrangementMode": "drop2",
       "widePianoVoicing": {
         "notes": [
           {
@@ -1695,12 +1706,12 @@
             "velocity": 58
           },
           {
-            "midi": 55,
-            "pc": 7,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
+            "midi": 59,
+            "pc": 11,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
           },
           {
             "midi": 62,
@@ -1717,6 +1728,22 @@
             "lane": "inner_mid",
             "hand": "RH",
             "velocity": 46
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
           },
           {
             "midi": 74,
@@ -1729,20 +1756,14 @@
         ],
         "attackMidi": [
           55,
-          55,
+          59,
           62,
           65,
+          67,
+          71,
           74
         ],
         "innerLanes": [
-          {
-            "midi": 55,
-            "pc": 7,
-            "role": "doubling",
-            "lane": "inner_mid",
-            "hand": "RH",
-            "velocity": 42
-          },
           {
             "midi": 62,
             "pc": 2,
@@ -1758,10 +1779,26 @@
             "lane": "inner_mid",
             "hand": "RH",
             "velocity": 46
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 71,
+            "pc": 11,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
           }
         ],
         "innerMotion": [],
-        "spreadMode": "drop2_wide"
+        "spreadMode": "wide"
       }
     },
     {
@@ -1772,14 +1809,14 @@
       "bass": "A2",
       "bassMidi": 45,
       "notes": [
-        "B3",
         "C4",
-        "E4"
+        "E4",
+        "B4"
       ],
       "notesMidi": [
-        59,
         60,
-        64
+        64,
+        71
       ],
       "duration": 4,
       "tensionState": "Solid",
@@ -1857,14 +1894,14 @@
       "bass": "F2",
       "bassMidi": 41,
       "notes": [
-        "A3",
         "C4",
-        "F4"
+        "F4",
+        "A4"
       ],
       "notesMidi": [
-        57,
         60,
-        65
+        65,
+        69
       ],
       "duration": 4,
       "tensionState": "Solid",
@@ -1952,52 +1989,52 @@
         "cost": 0.55
       },
       {
-        "name": "I-V-vi-IV",
-        "family": "Turnaround",
-        "startBeat": 16,
-        "durationBeats": 16,
-        "chordIndices": [
-          4,
-          5,
-          6,
-          7
-        ],
-        "keyPc": 0,
-        "cost": 0.55
-      },
-      {
         "name": "Borrowed-bVII",
         "family": "Borrowed",
-        "startBeat": 32,
+        "startBeat": 16,
         "durationBeats": 4,
         "chordIndices": [
-          8
+          4
         ],
         "keyPc": 2,
         "cost": 0.7
       },
       {
-        "name": "ii-V",
-        "family": "Launcher",
-        "startBeat": 36,
-        "durationBeats": 4,
+        "name": "Deceptive-Cadence",
+        "family": "Cadence",
+        "startBeat": 20,
+        "durationBeats": 8,
         "chordIndices": [
-          9,
-          10
+          5,
+          6
         ],
-        "keyPc": 9,
+        "keyPc": 0,
         "cost": 0.7
       },
       {
-        "name": "Borrowed-iv",
-        "family": "Borrowed",
-        "startBeat": 40,
-        "durationBeats": 4,
+        "name": "Backdoor-ii-V-I",
+        "family": "Cadence",
+        "startBeat": 28,
+        "durationBeats": 8,
         "chordIndices": [
+          7,
+          8,
+          9
+        ],
+        "keyPc": 0,
+        "cost": 0.55
+      },
+      {
+        "name": "V-of-vi",
+        "family": "GenDom",
+        "startBeat": 36,
+        "durationBeats": 8,
+        "chordIndices": [
+          10,
           11
         ],
-        "keyPc": 4,
-        "cost": 0.7
+        "keyPc": 0,
+        "cost": 0.6
       },
       {
         "name": "Borrowed-bVII",
@@ -2025,30 +2062,24 @@
         "cost": 0.55
       }
     ],
-    "totalCost": 3.85,
+    "totalCost": 4.05,
     "segments": [
       {
         "startBeat": 0,
-        "endBeat": 32,
+        "endBeat": 16,
         "keyRootPc": 0,
         "mode": "Major"
       },
       {
-        "startBeat": 32,
-        "endBeat": 36,
+        "startBeat": 16,
+        "endBeat": 20,
         "keyRootPc": 2,
         "mode": "Major"
       },
       {
-        "startBeat": 36,
-        "endBeat": 40,
-        "keyRootPc": 9,
-        "mode": "Major"
-      },
-      {
-        "startBeat": 40,
+        "startBeat": 20,
         "endBeat": 44,
-        "keyRootPc": 4,
+        "keyRootPc": 0,
         "mode": "Major"
       },
       {
@@ -2152,14 +2183,14 @@
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "L",
         "duration": 0.5
       },
       "startBeat": 16
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "G",
         "duration": 0.5
       },
       "startBeat": 16.5
@@ -2173,126 +2204,161 @@
     },
     {
       "token": {
-        "kind": "S",
+        "kind": "C",
         "duration": 0.5
       },
       "startBeat": 17.5
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "L",
         "duration": 0.5
       },
       "startBeat": 18
     },
     {
       "token": {
-        "kind": "L",
-        "duration": 0.5
+        "kind": "G",
+        "duration": 1
       },
       "startBeat": 18.5
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.5
-      },
-      "startBeat": 19
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 19.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 20
-    },
-    {
-      "token": {
-        "kind": "S",
-        "duration": 0.5
-      },
-      "startBeat": 20.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 21
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 21.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 32
-    },
-    {
-      "token": {
-        "kind": "G",
-        "duration": 0.5
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 33
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 33.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 34
-    },
-    {
-      "token": {
-        "kind": "G",
-        "duration": 1
-      },
-      "startBeat": 34.5
     },
     {
       "token": {
         "kind": "R",
         "duration": 0.5
       },
-      "startBeat": 35.5
+      "startBeat": 19.5
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 20
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 20.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 21
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 36
+      "startBeat": 21.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 22
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 22.5
     },
     {
       "token": {
         "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 23
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1
+      },
+      "startBeat": 24
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 28
+    },
+    {
+      "token": {
+        "kind": "S",
+        "duration": 0.5
+      },
+      "startBeat": 28.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 29
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 29.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 30
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 30.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 31
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 32
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 32.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
         "duration": 0.5
       },
       "startBeat": 36.5
@@ -2306,87 +2372,38 @@
     },
     {
       "token": {
-        "kind": "A",
+        "kind": "C",
         "duration": 0.5
       },
       "startBeat": 37.5
     },
     {
       "token": {
-        "kind": "G",
+        "kind": "L",
         "duration": 0.5
       },
       "startBeat": 38
     },
     {
       "token": {
-        "kind": "R",
+        "kind": "A",
         "duration": 0.5
       },
       "startBeat": 38.5
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "G",
         "duration": 0.5
       },
       "startBeat": 39
     },
     {
       "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 39.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "G",
-        "duration": 0.5
-      },
-      "startBeat": 40.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 41
-    },
-    {
-      "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 41.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 42
-    },
-    {
-      "token": {
-        "kind": "G",
-        "duration": 1
-      },
-      "startBeat": 42.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 43.5
+      "startBeat": 39.5
     },
     {
       "token": {
@@ -2524,292 +2541,257 @@
   ],
   "rawMelodyBuiltin": [
     {
-      "midi": 60,
+      "midi": 67,
       "time": 0,
       "dur": 0.5
     },
     {
-      "midi": 64,
+      "midi": 72,
       "time": 0.5,
       "dur": 0.5
     },
     {
-      "midi": 62,
+      "midi": 66,
       "time": 1,
       "dur": 0.5
     },
     {
-      "midi": 57,
+      "midi": 59,
       "time": 1.5,
       "dur": 0.5
     },
     {
-      "midi": 64,
+      "midi": 67,
       "time": 2,
       "dur": 0.5
     },
     {
-      "midi": 59,
-      "time": 2.5,
-      "dur": 0.5
-    },
-    {
       "midi": 71,
-      "time": 3,
-      "dur": 0.5
+      "time": 2.5,
+      "dur": 1
     },
     {
-      "midi": 60,
+      "midi": 72,
       "time": 3.5,
       "dur": 0.5
     },
     {
-      "midi": 65,
+      "midi": 79,
       "time": 4,
       "dur": 0.5
     },
     {
-      "midi": 74,
+      "midi": 76,
       "time": 4.5,
       "dur": 0.5
     },
     {
-      "midi": 69,
+      "midi": 82,
       "time": 5,
       "dur": 0.5
     },
     {
-      "midi": 60,
+      "midi": 79,
       "time": 5.5,
       "dur": 1
     },
     {
-      "midi": 62,
+      "midi": 83,
       "time": 16,
       "dur": 0.5
     },
     {
-      "midi": 55,
+      "midi": 84,
       "time": 16.5,
       "dur": 0.5
     },
     {
-      "midi": 57,
+      "midi": 78,
       "time": 17,
       "dur": 0.5
     },
     {
-      "midi": 62,
+      "midi": 76,
       "time": 17.5,
       "dur": 0.5
     },
     {
-      "midi": 67,
+      "midi": 71,
       "time": 18,
       "dur": 0.5
     },
     {
-      "midi": 69,
+      "midi": 76,
       "time": 18.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 65,
-      "time": 19,
-      "dur": 0.5
-    },
-    {
-      "midi": 64,
-      "time": 19.5,
-      "dur": 0.5
+      "dur": 1
     },
     {
       "midi": 71,
-      "time": 20,
-      "dur": 0.5
-    },
-    {
-      "midi": 80,
       "time": 20.5,
       "dur": 0.5
     },
     {
-      "midi": 75,
+      "midi": 77,
       "time": 21,
       "dur": 0.5
     },
     {
-      "midi": 83,
+      "midi": 81,
       "time": 21.5,
-      "dur": 1
-    },
-    {
-      "midi": 74,
-      "time": 32,
-      "dur": 0.5
-    },
-    {
-      "midi": 76,
-      "time": 32.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 71,
-      "time": 33,
-      "dur": 0.5
-    },
-    {
-      "midi": 67,
-      "time": 33.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 69,
-      "time": 34,
-      "dur": 0.5
-    },
-    {
-      "midi": 72,
-      "time": 34.5,
-      "dur": 1
-    },
-    {
-      "midi": 67,
-      "time": 36,
-      "dur": 0.5
-    },
-    {
-      "midi": 69,
-      "time": 36.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 64,
-      "time": 37,
-      "dur": 0.5
-    },
-    {
-      "midi": 63,
-      "time": 37.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 62,
-      "time": 38,
-      "dur": 0.5
-    },
-    {
-      "midi": 62,
-      "time": 39,
-      "dur": 0.5
-    },
-    {
-      "midi": 58,
-      "time": 39.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 62,
-      "time": 40,
-      "dur": 0.5
-    },
-    {
-      "midi": 69,
-      "time": 40.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 74,
-      "time": 41,
-      "dur": 0.5
-    },
-    {
-      "midi": 76,
-      "time": 41.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 80,
-      "time": 42,
-      "dur": 0.5
-    },
-    {
-      "midi": 76,
-      "time": 42.5,
-      "dur": 1
-    },
-    {
-      "midi": 74,
-      "time": 44,
-      "dur": 0.5
-    },
-    {
-      "midi": 72,
-      "time": 44.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 74,
-      "time": 45,
-      "dur": 0.5
-    },
-    {
-      "midi": 77,
-      "time": 45.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 74,
-      "time": 46,
       "dur": 0.5
     },
     {
       "midi": 79,
-      "time": 46.5,
-      "dur": 1
+      "time": 22,
+      "dur": 0.5
+    },
+    {
+      "midi": 75,
+      "time": 22.5,
+      "dur": 0.5
     },
     {
       "midi": 74,
-      "time": 48,
+      "time": 23,
+      "dur": 1
+    },
+    {
+      "midi": 79,
+      "time": 28,
+      "dur": 0.5
+    },
+    {
+      "midi": 74,
+      "time": 28.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 82,
+      "time": 29,
+      "dur": 0.5
+    },
+    {
+      "midi": 79,
+      "time": 29.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 71,
+      "time": 30,
+      "dur": 1
+    },
+    {
+      "midi": 70,
+      "time": 31,
+      "dur": 1
+    },
+    {
+      "midi": 79,
+      "time": 32,
+      "dur": 0.5
+    },
+    {
+      "midi": 74,
+      "time": 36,
+      "dur": 0.5
+    },
+    {
+      "midi": 73,
+      "time": 36.5,
       "dur": 0.5
     },
     {
       "midi": 67,
-      "time": 48.5,
+      "time": 37,
+      "dur": 0.5
+    },
+    {
+      "midi": 76,
+      "time": 37.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 72,
+      "time": 38,
       "dur": 0.5
     },
     {
       "midi": 69,
-      "time": 49,
-      "dur": 0.5
-    },
-    {
-      "midi": 62,
-      "time": 49.5,
-      "dur": 0.5
-    },
-    {
-      "midi": 55,
-      "time": 50,
-      "dur": 0.5
-    },
-    {
-      "midi": 57,
-      "time": 50.5,
+      "time": 38.5,
       "dur": 0.5
     },
     {
       "midi": 68,
+      "time": 39,
+      "dur": 0.5
+    },
+    {
+      "midi": 64,
+      "time": 39.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 64,
+      "time": 44,
+      "dur": 0.5
+    },
+    {
+      "midi": 65,
+      "time": 44.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 64,
+      "time": 45,
+      "dur": 0.5
+    },
+    {
+      "midi": 69,
+      "time": 45.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 76,
+      "time": 46,
+      "dur": 0.5
+    },
+    {
+      "midi": 77,
+      "time": 46.5,
+      "dur": 1
+    },
+    {
+      "midi": 84,
+      "time": 48,
+      "dur": 1
+    },
+    {
+      "midi": 78,
+      "time": 49,
+      "dur": 1
+    },
+    {
+      "midi": 72,
+      "time": 50,
+      "dur": 0.5
+    },
+    {
+      "midi": 81,
+      "time": 50.5,
+      "dur": 0.5
+    },
+    {
+      "midi": 77,
       "time": 51,
       "dur": 0.5
     },
     {
-      "midi": 55,
+      "midi": 76,
       "time": 51.5,
       "dur": 0.5
     },
     {
-      "midi": 60,
+      "midi": 71,
       "time": 52,
       "dur": 0.5
     },
@@ -2819,12 +2801,12 @@
       "dur": 0.5
     },
     {
-      "midi": 69,
+      "midi": 70,
       "time": 53,
       "dur": 0.5
     },
     {
-      "midi": 62,
+      "midi": 71,
       "time": 53.5,
       "dur": 1
     }
@@ -2833,23 +2815,17 @@
     {
       "midi": 64,
       "time": 0,
-      "dur": 0.5,
+      "dur": 1,
       "vel": 100
     },
     {
-      "midi": 55,
-      "time": 0.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 59,
+      "midi": 69,
       "time": 1,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 54,
+      "midi": 64,
       "time": 1.5,
       "dur": 0.5,
       "vel": 100
@@ -2875,209 +2851,185 @@
     {
       "midi": 72,
       "time": 3.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 77,
+      "time": 4,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 76,
+      "time": 4.5,
       "dur": 1,
       "vel": 100
     },
     {
-      "midi": 67,
-      "time": 4.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 5,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 72,
+      "midi": 77,
       "time": 5.5,
       "dur": 1,
       "vel": 100
     },
     {
-      "midi": 74,
-      "time": 16,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
       "midi": 76,
-      "time": 16.5,
-      "dur": 0.5,
+      "time": 16,
+      "dur": 1,
       "vel": 100
     },
     {
-      "midi": 81,
+      "midi": 83,
       "time": 17,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 74,
+      "midi": 84,
       "time": 17.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 76,
+      "midi": 79,
       "time": 18,
-      "dur": 0.5,
+      "dur": 1.5,
       "vel": 100
     },
     {
-      "midi": 69,
-      "time": 18.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 19,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 67,
-      "time": 19.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 65,
-      "time": 20,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 66,
+      "midi": 77,
       "time": 20.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 70,
+      "midi": 83,
       "time": 21,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 65,
+      "midi": 80,
       "time": 21.5,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 64,
-      "time": 32,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 66,
-      "time": 33,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 72,
-      "time": 33.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 67,
-      "time": 34,
-      "dur": 1.5,
+      "midi": 83,
+      "time": 22,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 62,
-      "time": 36,
-      "dur": 1,
+      "midi": 84,
+      "time": 22.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 61,
-      "time": 37,
+      "midi": 83,
+      "time": 23,
       "dur": 1,
       "vel": 90
     },
     {
-      "midi": 62,
-      "time": 38,
+      "midi": 80,
+      "time": 28,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 62,
-      "time": 39,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 70,
-      "time": 39.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 72,
-      "time": 40,
+      "midi": 82,
+      "time": 28.5,
       "dur": 1,
       "vel": 100
     },
     {
       "midi": 80,
-      "time": 41,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 72,
-      "time": 41.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 71,
-      "time": 42,
-      "dur": 1.5,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 44,
+      "time": 29.5,
       "dur": 1,
       "vel": 100
     },
     {
+      "midi": 75,
+      "time": 30.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
       "midi": 74,
-      "time": 45,
+      "time": 31,
+      "dur": 1.5,
+      "vel": 90
+    },
+    {
+      "midi": 74,
+      "time": 36,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 73,
+      "time": 36.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 70,
+      "time": 37,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 65,
-      "time": 45.5,
+      "midi": 74,
+      "time": 37.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 68,
+      "time": 38,
       "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 69,
-      "time": 46,
-      "dur": 1.5,
+      "time": 38.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 74,
+      "midi": 68,
+      "time": 39,
+      "dur": 1,
+      "vel": 90
+    },
+    {
+      "midi": 69,
+      "time": 44,
+      "dur": 1,
+      "vel": 100
+    },
+    {
+      "midi": 67,
+      "time": 45,
+      "dur": 0.5,
+      "vel": 90
+    },
+    {
+      "midi": 60,
+      "time": 45.5,
+      "dur": 2,
+      "vel": 100
+    },
+    {
+      "midi": 64,
       "time": 48,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 76,
+      "midi": 67,
       "time": 48.5,
       "dur": 0.5,
       "vel": 100
@@ -3089,55 +3041,49 @@
       "vel": 90
     },
     {
-      "midi": 74,
+      "midi": 67,
       "time": 49.5,
-      "dur": 0.5,
+      "dur": 1,
       "vel": 100
     },
     {
-      "midi": 76,
-      "time": 50,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 69,
+      "midi": 59,
       "time": 50.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 63,
+      "midi": 66,
       "time": 51,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 62,
+      "midi": 67,
       "time": 51.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 60,
+      "midi": 65,
       "time": 52,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 54,
+      "midi": 70,
       "time": 52.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 56,
+      "midi": 64,
       "time": 53,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 60,
+      "midi": 65,
       "time": 53.5,
       "dur": 1,
       "vel": 100
@@ -3354,38 +3300,58 @@
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 0.5
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -1,
+        "duration": 0
       },
       "startBeat": 16
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 0.5
+        "kind": "L",
+        "duration": 2
       },
-      "startBeat": 16.5
+      "startBeat": 16
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 18
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 18
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 17
-    },
-    {
-      "token": {
-        "kind": "S",
-        "duration": 0.5
-      },
-      "startBeat": 17.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
       "startBeat": 18
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 18.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -1,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 18.5
     },
     {
       "token": {
@@ -3396,336 +3362,77 @@
     },
     {
       "token": {
-        "kind": "A",
+        "kind": "C",
         "duration": 0.5
       },
       "startBeat": 19
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "L",
         "duration": 0.5
       },
       "startBeat": 19.5
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 0.5
+        "kind": "SlopeExit",
+        "duration": 0
       },
       "startBeat": 20
     },
     {
       "token": {
-        "kind": "S",
-        "duration": 0.5
-      },
-      "startBeat": 20.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 21
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 21.5
-    },
-    {
-      "token": {
         "kind": "SlopeEnter",
         "dirMin": 0,
         "dirMax": 0,
         "duration": 0
       },
-      "startBeat": 32
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 32
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -4,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 33
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 33.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 2
-      },
-      "startBeat": 34
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 36
+      "startBeat": 20
     },
     {
       "token": {
         "kind": "R",
-        "duration": 1
+        "duration": 2
       },
-      "startBeat": 36
+      "startBeat": 20
     },
     {
       "token": {
-        "kind": "L",
+        "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 37
+      "startBeat": 22
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 37.5
+      "startBeat": 22.5
     },
     {
       "token": {
         "kind": "SlopeEnter",
         "dirMin": 1,
-        "dirMax": 2,
+        "dirMax": 1,
         "duration": 0
       },
-      "startBeat": 37.5
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 37.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 38
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 38.5
+      "startBeat": 22.5
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 39
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 39.5
+      "startBeat": 22.5
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 40.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 3,
-        "duration": 0
-      },
-      "startBeat": 40.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 40.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 41
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 41.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 42
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -4,
-        "dirMax": -4,
-        "duration": 0
-      },
-      "startBeat": 42
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 42
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 42.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 3,
-        "duration": 0
-      },
-      "startBeat": 42.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 42.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 43
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 43.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 44
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 44
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 44
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 44.5
+      "startBeat": 23
     },
     {
       "token": {
@@ -3734,26 +3441,461 @@
         "dirMax": -1,
         "duration": 0
       },
-      "startBeat": 44.5
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.5
-      },
-      "startBeat": 44.5
+      "startBeat": 23
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 45
+      "startBeat": 23
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 23.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 24
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 24.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 24.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 24.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 25
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -4,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 25
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
+      },
+      "startBeat": 25
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 25.5
+    },
+    {
+      "token": {
+        "kind": "X",
+        "duration": 0.5
+      },
+      "startBeat": 26
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 26.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 27
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 2,
+        "dirMax": 2,
+        "duration": 0
+      },
+      "startBeat": 27
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 27
+    },
+    {
+      "token": {
+        "kind": "X",
+        "duration": 0.5
+      },
+      "startBeat": 27.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 28
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 28.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 5,
+        "dirMax": 5,
+        "duration": 0
+      },
+      "startBeat": 28.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 28.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 29.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -5,
+        "dirMax": -5,
+        "duration": 0
+      },
+      "startBeat": 29.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 29.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 30
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 5,
+        "dirMax": 5,
+        "duration": 0
+      },
+      "startBeat": 30
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 30
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 31
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -5,
+        "dirMax": -5,
+        "duration": 0
+      },
+      "startBeat": 31
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 31
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 31.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 5,
+        "dirMax": 5,
+        "duration": 0
+      },
+      "startBeat": 31.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 31.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 32.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -6,
+        "dirMax": -6,
+        "duration": 0
+      },
+      "startBeat": 32.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 32.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 33
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 6,
+        "dirMax": 6,
+        "duration": 0
+      },
+      "startBeat": 33
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 33
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 34
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -6,
+        "dirMax": -6,
+        "duration": 0
+      },
+      "startBeat": 34
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 34
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 34.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 6,
+        "dirMax": 6,
+        "duration": 0
+      },
+      "startBeat": 34.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 34.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 35.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -7,
+        "dirMax": -7,
+        "duration": 0
+      },
+      "startBeat": 35.5
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 35.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 36
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 8
+      },
+      "startBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 2,
+        "dirMax": 4,
+        "duration": 0
+      },
+      "startBeat": 44
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 44.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 44.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 44.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 45.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
       },
       "startBeat": 45.5
     },
@@ -3762,6 +3904,29 @@
         "kind": "C",
         "duration": 0.5
       },
+      "startBeat": 45.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 46
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -1,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 46
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1.5
+      },
       "startBeat": 46
     },
     {
@@ -3769,30 +3934,16 @@
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 46.5
+      "startBeat": 47.5
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 2,
+        "dirMin": 3,
         "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 46.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 46.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 47
+      "startBeat": 47.5
     },
     {
       "token": {
@@ -3819,8 +3970,8 @@
     },
     {
       "token": {
-        "kind": "X",
-        "duration": 0.5
+        "kind": "C",
+        "duration": 2
       },
       "startBeat": 48
     },
@@ -3829,57 +3980,20 @@
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 48.5
+      "startBeat": 50
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 4,
-        "dirMax": 4,
+        "dirMin": 0,
+        "dirMax": 0,
         "duration": 0
       },
-      "startBeat": 48.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 48.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 49
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 49
+      "startBeat": 50
     },
     {
       "token": {
         "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 49
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 49.5
-    },
-    {
-      "token": {
-        "kind": "L",
         "duration": 0.5
       },
       "startBeat": 50
@@ -3893,23 +4007,7 @@
     },
     {
       "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 51
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 3,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 51
-    },
-    {
-      "token": {
-        "kind": "C",
+        "kind": "R",
         "duration": 0.5
       },
       "startBeat": 51
@@ -3917,55 +4015,9 @@
     {
       "token": {
         "kind": "C",
-        "duration": 0.5
+        "duration": 2.5
       },
       "startBeat": 51.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 52
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -6,
-        "dirMax": -6,
-        "duration": 0
-      },
-      "startBeat": 52
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 52
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 53
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 7,
-        "dirMax": 7,
-        "duration": 0
-      },
-      "startBeat": 53
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 53
     },
     {
       "token": {
@@ -3976,47 +4028,84 @@
     },
     {
       "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 54.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 54.5
-    },
-    {
-      "token": {
-        "kind": "C",
+        "kind": "R",
         "duration": 0.5
       },
       "startBeat": 54.5
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 0.5
+        "kind": "L",
+        "duration": 1.5
       },
       "startBeat": 55
     },
     {
       "token": {
+        "kind": "R",
+        "duration": 1.5
+      },
+      "startBeat": 56.5
+    },
+    {
+      "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 55.5
+      "startBeat": 58
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 56
+      "startBeat": 58.5
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -5,
+        "dirMax": -5,
+        "duration": 0
+      },
+      "startBeat": 58.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 58.5
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 59
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 5,
+        "dirMax": 5,
+        "duration": 0
+      },
+      "startBeat": 59
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 59
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 60
     }
   ],
   "styledMelodyEnriched": [
@@ -4047,338 +4136,248 @@
     {
       "midi": 67,
       "time": 2,
-      "dur": 1.5,
+      "dur": 2,
       "vel": 100
     },
     {
-      "midi": 72,
-      "time": 3.5,
-      "dur": 1.5,
+      "midi": 65,
+      "time": 4,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 71,
+      "midi": 62,
+      "time": 4.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 61,
       "time": 5,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 74,
+      "midi": 65,
       "time": 5.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 77,
+      "midi": 71,
       "time": 6,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 75,
+      "midi": 68,
       "time": 6.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 74,
+      "midi": 67,
       "time": 7,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 72,
+      "midi": 65,
       "time": 7.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 74,
+      "midi": 64,
       "time": 16,
-      "dur": 0.5,
+      "dur": 2,
       "vel": 100
     },
     {
-      "midi": 72,
-      "time": 16.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 69,
-      "time": 17,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 72,
-      "time": 17.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 76,
+      "midi": 67,
       "time": 18,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 81,
+      "midi": 66,
       "time": 18.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 75,
+      "midi": 64,
       "time": 19,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 74,
+      "midi": 62,
       "time": 19.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 77,
-      "time": 20,
+      "midi": 71,
+      "time": 22,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 74,
-      "time": 20.5,
+      "midi": 73,
+      "time": 22.5,
       "dur": 0.5,
       "vel": 100
-    },
-    {
-      "midi": 75,
-      "time": 21,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 77,
-      "time": 21.5,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 76,
-      "time": 32,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 74,
-      "time": 32.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 72,
-      "time": 33,
-      "dur": 0.5,
-      "vel": 90
     },
     {
       "midi": 71,
-      "time": 33.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 34,
-      "dur": 2,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 37,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 71,
-      "time": 37.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 74,
-      "time": 38,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 38.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 70,
-      "time": 39,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 72,
-      "time": 40,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 74,
-      "time": 40.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 76,
-      "time": 41,
+      "time": 23,
       "dur": 1,
       "vel": 90
     },
     {
-      "midi": 71,
-      "time": 42,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
       "midi": 72,
-      "time": 42.5,
-      "dur": 0.5,
+      "time": 24,
+      "dur": 1,
       "vel": 100
     },
     {
-      "midi": 76,
-      "time": 43,
+      "midi": 68,
+      "time": 25,
       "dur": 0.5,
       "vel": 90
     },
     {
-      "midi": 81,
-      "time": 43.5,
+      "midi": 64,
+      "time": 25.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 79,
-      "time": 44,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 78,
-      "time": 44.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 77,
-      "time": 45,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 75,
-      "time": 45.5,
+      "midi": 71,
+      "time": 26,
       "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 69,
-      "time": 46,
+      "time": 26.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 72,
-      "time": 46.5,
+      "midi": 71,
+      "time": 27,
+      "dur": 0.5,
+      "vel": 90
+    },
+    {
+      "midi": 76,
+      "time": 27.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 80,
+      "time": 28,
       "dur": 1.5,
       "vel": 100
     },
     {
-      "midi": 74,
-      "time": 48,
+      "midi": 77,
+      "time": 29.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 79,
-      "time": 48.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 76,
-      "time": 49,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 74,
-      "time": 49.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 76,
-      "time": 50,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 74,
-      "time": 50.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 76,
-      "time": 51,
-      "dur": 0.5,
-      "vel": 90
-    },
-    {
-      "midi": 79,
-      "time": 51.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 84,
-      "time": 52,
+      "midi": 80,
+      "time": 30,
       "dur": 1,
       "vel": 100
     },
     {
-      "midi": 77,
+      "midi": 74,
+      "time": 31,
+      "dur": 1.5,
+      "vel": 90
+    },
+    {
+      "midi": 69,
+      "time": 32.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 74,
+      "time": 33,
+      "dur": 1,
+      "vel": 90
+    },
+    {
+      "midi": 76,
+      "time": 34,
+      "dur": 1.5,
+      "vel": 100
+    },
+    {
+      "midi": 81,
+      "time": 44,
+      "dur": 1.5,
+      "vel": 100
+    },
+    {
+      "midi": 84,
+      "time": 45.5,
+      "dur": 2.5,
+      "vel": 100
+    },
+    {
+      "midi": 76,
+      "time": 48,
+      "dur": 2,
+      "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 50,
+      "dur": 1,
+      "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 51.5,
+      "dur": 2.5,
+      "vel": 100
+    },
+    {
+      "midi": 83,
       "time": 54,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 74,
-      "time": 54.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 72,
+      "midi": 83,
       "time": 55,
-      "dur": 0.5,
+      "dur": 1.5,
       "vel": 90
     },
     {
-      "midi": 67,
-      "time": 55.5,
+      "midi": 83,
+      "time": 58,
       "dur": 0.5,
       "vel": 100
+    },
+    {
+      "midi": 78,
+      "time": 58.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 83,
+      "time": 59,
+      "dur": 1,
+      "vel": 90
     }
   ],
   "shaper": {
@@ -4517,440 +4516,21 @@
       {
         "root": "G",
         "rootMidi": 55,
-        "type": "7sus4",
-        "roman": "V",
-        "bass": "G2",
-        "bassMidi": 43,
-        "notes": [
-          "C4",
-          "D4",
-          "F4"
-        ],
-        "notesMidi": [
-          60,
-          62,
-          65
-        ],
-        "duration": 4,
-        "tensionState": "Solid",
-        "effectiveFunc": "D",
-        "chordSymbol": "G7sus4",
-        "localTonalCenterPc": 0,
-        "arrangementMode": "close",
-        "widePianoVoicing": {
-          "notes": [
-            {
-              "midi": 55,
-              "pc": 7,
-              "role": "root",
-              "lane": "low_outer",
-              "hand": "LH",
-              "velocity": 58
-            },
-            {
-              "midi": 62,
-              "pc": 2,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 65,
-              "pc": 5,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 67,
-              "pc": 7,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            }
-          ],
-          "attackMidi": [
-            55,
-            62,
-            65,
-            67
-          ],
-          "innerLanes": [
-            {
-              "midi": 62,
-              "pc": 2,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 65,
-              "pc": 5,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 67,
-              "pc": 7,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            }
-          ],
-          "innerMotion": [],
-          "spreadMode": "half_wide"
-        }
-      },
-      {
-        "root": "A",
-        "rootMidi": 57,
-        "type": "madd9",
-        "roman": "vi",
-        "bass": "A2",
-        "bassMidi": 45,
-        "notes": [
-          "B3",
-          "C4",
-          "E4"
-        ],
-        "notesMidi": [
-          59,
-          60,
-          64
-        ],
-        "duration": 4,
-        "tensionState": "Solid",
-        "effectiveFunc": "T",
-        "chordSymbol": "Amadd9",
-        "localTonalCenterPc": 0,
-        "arrangementMode": "close",
-        "widePianoVoicing": {
-          "notes": [
-            {
-              "midi": 57,
-              "pc": 9,
-              "role": "root",
-              "lane": "low_outer",
-              "hand": "LH",
-              "velocity": 58
-            },
-            {
-              "midi": 60,
-              "pc": 0,
-              "role": "third",
-              "lane": "low_outer",
-              "hand": "LH",
-              "velocity": 54
-            },
-            {
-              "midi": 64,
-              "pc": 4,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 67,
-              "pc": 7,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 69,
-              "pc": 9,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            },
-            {
-              "midi": 71,
-              "pc": 11,
-              "role": "ninth",
-              "lane": "inner_high",
-              "hand": "RH",
-              "velocity": 40
-            }
-          ],
-          "attackMidi": [
-            57,
-            60,
-            64,
-            67,
-            69,
-            71
-          ],
-          "innerLanes": [
-            {
-              "midi": 64,
-              "pc": 4,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 67,
-              "pc": 7,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 69,
-              "pc": 9,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            },
-            {
-              "midi": 71,
-              "pc": 11,
-              "role": "ninth",
-              "lane": "inner_high",
-              "hand": "RH",
-              "velocity": 40
-            }
-          ],
-          "innerMotion": [],
-          "spreadMode": "half_wide"
-        }
-      },
-      {
-        "root": "F",
-        "rootMidi": 53,
-        "type": "maj",
-        "roman": "IV",
-        "bass": "F2",
-        "bassMidi": 41,
-        "notes": [
-          "A3",
-          "C4",
-          "F4"
-        ],
-        "notesMidi": [
-          57,
-          60,
-          65
-        ],
-        "duration": 4,
-        "tensionState": "Solid",
-        "effectiveFunc": "S",
-        "chordSymbol": "F",
-        "localTonalCenterPc": 0,
-        "arrangementMode": "close",
-        "widePianoVoicing": {
-          "notes": [
-            {
-              "midi": 60,
-              "pc": 0,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 64,
-              "pc": 4,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 69,
-              "pc": 9,
-              "role": "third",
-              "lane": "inner_high",
-              "hand": "RH",
-              "velocity": 40
-            }
-          ],
-          "attackMidi": [
-            60,
-            64,
-            69
-          ],
-          "innerLanes": [
-            {
-              "midi": 60,
-              "pc": 0,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 64,
-              "pc": 4,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 69,
-              "pc": 9,
-              "role": "third",
-              "lane": "inner_high",
-              "hand": "RH",
-              "velocity": 40
-            }
-          ],
-          "innerMotion": [],
-          "spreadMode": "close"
-        }
-      },
-      {
-        "root": "C",
-        "rootMidi": 48,
-        "type": "add9",
-        "roman": "I",
-        "bass": "C2",
-        "bassMidi": 36,
-        "notes": [
-          "D4",
-          "E4",
-          "G4"
-        ],
-        "notesMidi": [
-          62,
-          64,
-          67
-        ],
-        "duration": 4,
-        "tensionState": "Solid",
-        "effectiveFunc": "T",
-        "chordSymbol": "Cadd9",
-        "localTonalCenterPc": 0,
-        "arrangementMode": "close",
-        "widePianoVoicing": {
-          "notes": [
-            {
-              "midi": 48,
-              "pc": 0,
-              "role": "root",
-              "lane": "low_outer",
-              "hand": "LH",
-              "velocity": 58
-            },
-            {
-              "midi": 52,
-              "pc": 4,
-              "role": "third",
-              "lane": "low_outer",
-              "hand": "LH",
-              "velocity": 54
-            },
-            {
-              "midi": 55,
-              "pc": 7,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 60,
-              "pc": 0,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            },
-            {
-              "midi": 70,
-              "pc": 10,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 74,
-              "pc": 2,
-              "role": "ninth",
-              "lane": "inner_high",
-              "hand": "RH",
-              "velocity": 40
-            }
-          ],
-          "attackMidi": [
-            48,
-            52,
-            55,
-            60,
-            70,
-            74
-          ],
-          "innerLanes": [
-            {
-              "midi": 55,
-              "pc": 7,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
-              "midi": 60,
-              "pc": 0,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            },
-            {
-              "midi": 70,
-              "pc": 10,
-              "role": "seventh",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 46
-            },
-            {
-              "midi": 74,
-              "pc": 2,
-              "role": "ninth",
-              "lane": "inner_high",
-              "hand": "RH",
-              "velocity": 40
-            }
-          ],
-          "innerMotion": [],
-          "spreadMode": "half_wide"
-        }
-      },
-      {
-        "root": "G",
-        "rootMidi": 55,
         "type": "7",
         "roman": "V",
         "bass": "G2",
         "bassMidi": 43,
         "notes": [
-          "D3",
-          "F3",
           "B3",
-          "G4"
+          "D3",
+          "G3",
+          "F4"
         ],
         "notesMidi": [
-          50,
-          53,
           59,
-          67
+          50,
+          55,
+          65
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -5390,71 +4970,374 @@
         }
       },
       {
-        "root": "B",
-        "rootMidi": 59,
-        "type": "m7b5",
-        "roman": "ii/vi",
-        "bass": "B2",
-        "bassMidi": 47,
+        "root": "G",
+        "rootMidi": 55,
+        "type": "7",
+        "roman": "V",
+        "bass": "G2",
+        "bassMidi": 43,
         "notes": [
-          "A3",
           "B3",
-          "D4",
+          "D3",
+          "G3",
           "F4"
         ],
         "notesMidi": [
-          57,
           59,
-          62,
+          50,
+          55,
           65
         ],
-        "duration": 2,
+        "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "D",
-        "chordSymbol": "Bm7b5",
-        "bassPattern": [
-          {
-            "time": 0,
-            "midi": 47,
-            "duration": 1,
-            "velocity": 95
-          },
-          {
-            "time": 1,
-            "midi": 38,
-            "duration": 1,
-            "velocity": 88
-          },
-          {
-            "time": 2,
-            "midi": 41,
-            "duration": 1,
-            "velocity": 90
-          },
-          {
-            "time": 3,
-            "midi": 39,
-            "duration": 1,
-            "velocity": 96
-          }
-        ],
-        "borrowedSource": "secondary_ii_v",
-        "mustResolve": true,
-        "tonicizationPlacement": "iiv_split",
-        "analysisKeyPc": 9,
-        "localRoman": "ii",
-        "localTonalCenterPc": 9,
-        "arrangementMode": "close",
+        "chordSymbol": "G7",
+        "localTonalCenterPc": 0,
+        "arrangementMode": "drop2",
         "widePianoVoicing": {
           "notes": [
             {
-              "midi": 47,
-              "pc": 11,
+              "midi": 55,
+              "pc": 7,
               "role": "root",
               "lane": "low_outer",
               "hand": "LH",
               "velocity": 58
             },
+            {
+              "midi": 59,
+              "pc": 11,
+              "role": "third",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 54
+            },
+            {
+              "midi": 62,
+              "pc": 2,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 65,
+              "pc": 5,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "third",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            },
+            {
+              "midi": 74,
+              "pc": 2,
+              "role": "fifth",
+              "lane": "upper_outer",
+              "hand": "RH",
+              "velocity": 38
+            }
+          ],
+          "attackMidi": [
+            55,
+            59,
+            62,
+            65,
+            67,
+            71,
+            74
+          ],
+          "innerLanes": [
+            {
+              "midi": 62,
+              "pc": 2,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 65,
+              "pc": 5,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "third",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            }
+          ],
+          "innerMotion": [],
+          "spreadMode": "wide"
+        }
+      },
+      {
+        "root": "A",
+        "rootMidi": 57,
+        "type": "madd9",
+        "roman": "vi",
+        "bass": "A2",
+        "bassMidi": 45,
+        "notes": [
+          "B3",
+          "C4",
+          "E4"
+        ],
+        "notesMidi": [
+          59,
+          60,
+          64
+        ],
+        "duration": 4,
+        "tensionState": "Solid",
+        "effectiveFunc": "T",
+        "chordSymbol": "Amadd9",
+        "localTonalCenterPc": 0,
+        "arrangementMode": "close",
+        "widePianoVoicing": {
+          "notes": [
+            {
+              "midi": 57,
+              "pc": 9,
+              "role": "root",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 58
+            },
+            {
+              "midi": 60,
+              "pc": 0,
+              "role": "third",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 54
+            },
+            {
+              "midi": 64,
+              "pc": 4,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 69,
+              "pc": 9,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "ninth",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            }
+          ],
+          "attackMidi": [
+            57,
+            60,
+            64,
+            67,
+            69,
+            71
+          ],
+          "innerLanes": [
+            {
+              "midi": 64,
+              "pc": 4,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 69,
+              "pc": 9,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "ninth",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            }
+          ],
+          "innerMotion": [],
+          "spreadMode": "half_wide"
+        }
+      },
+      {
+        "root": "F",
+        "rootMidi": 53,
+        "type": "madd9",
+        "roman": "iv",
+        "bass": "F2",
+        "bassMidi": 41,
+        "notes": [
+          "Ab3",
+          "C4",
+          "G4"
+        ],
+        "notesMidi": [
+          56,
+          60,
+          67
+        ],
+        "duration": 2,
+        "tensionState": "Solid",
+        "effectiveFunc": "S",
+        "chordSymbol": "Fmadd9",
+        "borrowedFrom": "iv (parallel minor)",
+        "borrowedSource": "modal_interchange",
+        "mustResolve": false,
+        "localTonalCenterPc": 0,
+        "arrangementMode": "close",
+        "widePianoVoicing": {
+          "notes": [
+            {
+              "midi": 60,
+              "pc": 0,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 63,
+              "pc": 3,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "ninth",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            }
+          ],
+          "attackMidi": [
+            60,
+            63,
+            67
+          ],
+          "innerLanes": [
+            {
+              "midi": 60,
+              "pc": 0,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 63,
+              "pc": 3,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "ninth",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            }
+          ],
+          "innerMotion": [],
+          "spreadMode": "close"
+        }
+      },
+      {
+        "root": "Bb",
+        "rootMidi": 58,
+        "type": "7",
+        "roman": "bVII7",
+        "bass": "Bb2",
+        "bassMidi": 46,
+        "notes": [
+          "D3",
+          "F3",
+          "Bb3",
+          "Ab4"
+        ],
+        "notesMidi": [
+          50,
+          53,
+          58,
+          68
+        ],
+        "duration": 2,
+        "tensionState": "Solid",
+        "effectiveFunc": "D",
+        "chordSymbol": "Bb7",
+        "borrowedFrom": "bVII7 (backdoor cadence)",
+        "borrowedSource": "backdoor_dominant",
+        "mustResolve": true,
+        "localTonalCenterPc": 0,
+        "arrangementMode": "drop2",
+        "widePianoVoicing": {
+          "notes": [
             {
               "midi": 50,
               "pc": 2,
@@ -5462,6 +5345,14 @@
               "lane": "low_outer",
               "hand": "LH",
               "velocity": 54
+            },
+            {
+              "midi": 58,
+              "pc": 10,
+              "role": "root",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 58
             },
             {
               "midi": 62,
@@ -5480,38 +5371,38 @@
               "velocity": 48
             },
             {
-              "midi": 65,
-              "pc": 5,
-              "role": "fifth",
-              "lane": "upper_outer",
-              "hand": "RH",
-              "velocity": 38
-            },
-            {
-              "midi": 69,
-              "pc": 9,
+              "midi": 68,
+              "pc": 8,
               "role": "seventh",
               "lane": "inner_mid",
               "hand": "RH",
               "velocity": 46
             },
             {
-              "midi": 71,
-              "pc": 11,
+              "midi": 70,
+              "pc": 10,
               "role": "doubling",
               "lane": "inner_mid",
               "hand": "RH",
               "velocity": 42
+            },
+            {
+              "midi": 77,
+              "pc": 5,
+              "role": "fifth",
+              "lane": "upper_outer",
+              "hand": "RH",
+              "velocity": 38
             }
           ],
           "attackMidi": [
-            47,
             50,
+            58,
             62,
             65,
-            65,
-            69,
-            71
+            68,
+            70,
+            77
           ],
           "innerLanes": [
             {
@@ -5531,16 +5422,145 @@
               "velocity": 48
             },
             {
-              "midi": 69,
-              "pc": 9,
+              "midi": 68,
+              "pc": 8,
               "role": "seventh",
               "lane": "inner_mid",
               "hand": "RH",
               "velocity": 46
             },
             {
-              "midi": 71,
-              "pc": 11,
+              "midi": 70,
+              "pc": 10,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            }
+          ],
+          "innerMotion": [],
+          "spreadMode": "wide"
+        }
+      },
+      {
+        "root": "C",
+        "rootMidi": 48,
+        "type": "add9",
+        "roman": "I",
+        "bass": "C2",
+        "bassMidi": 36,
+        "notes": [
+          "D4",
+          "E4",
+          "G4"
+        ],
+        "notesMidi": [
+          62,
+          64,
+          67
+        ],
+        "duration": 4,
+        "tensionState": "Solid",
+        "effectiveFunc": "T",
+        "chordSymbol": "Cadd9",
+        "localTonalCenterPc": 0,
+        "arrangementMode": "close",
+        "widePianoVoicing": {
+          "notes": [
+            {
+              "midi": 52,
+              "pc": 4,
+              "role": "third",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 54
+            },
+            {
+              "midi": 60,
+              "pc": 0,
+              "role": "root",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 58
+            },
+            {
+              "midi": 62,
+              "pc": 2,
+              "role": "ninth",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 70,
+              "pc": 10,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 72,
+              "pc": 0,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 79,
+              "pc": 7,
+              "role": "fifth",
+              "lane": "upper_outer",
+              "hand": "RH",
+              "velocity": 38
+            }
+          ],
+          "attackMidi": [
+            52,
+            60,
+            62,
+            67,
+            70,
+            72,
+            79
+          ],
+          "innerLanes": [
+            {
+              "midi": 62,
+              "pc": 2,
+              "role": "ninth",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
+            },
+            {
+              "midi": 70,
+              "pc": 10,
+              "role": "seventh",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 46
+            },
+            {
+              "midi": 72,
+              "pc": 0,
               "role": "doubling",
               "lane": "inner_mid",
               "hand": "RH",
@@ -5559,19 +5579,19 @@
         "bass": "E2",
         "bassMidi": 40,
         "notes": [
-          "B3",
           "D3",
-          "G#3",
-          "E4"
+          "E3",
+          "B3",
+          "G#4"
         ],
         "notesMidi": [
-          59,
           50,
-          56,
-          64
+          52,
+          59,
+          68
         ],
         "forcedScale": "Phrygian Dominant",
-        "duration": 2,
+        "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "D",
         "chordSymbol": "E7",
@@ -5579,31 +5599,19 @@
           {
             "time": 0,
             "midi": 40,
-            "duration": 1,
-            "velocity": 95
-          },
-          {
-            "time": 1,
-            "midi": 44,
-            "duration": 1,
-            "velocity": 88
+            "duration": 2,
+            "velocity": 92
           },
           {
             "time": 2,
-            "midi": 47,
-            "duration": 1,
-            "velocity": 90
-          },
-          {
-            "time": 3,
             "midi": 44,
-            "duration": 1,
+            "duration": 2,
             "velocity": 96
           }
         ],
-        "borrowedSource": "secondary_ii_v",
+        "borrowedSource": "secondary_dominant",
         "mustResolve": true,
-        "tonicizationPlacement": "iiv_split",
+        "tonicizationPlacement": "light",
         "analysisKeyPc": 9,
         "localRoman": "V",
         "localTonalCenterPc": 9,
@@ -5627,20 +5635,20 @@
               "velocity": 54
             },
             {
-              "midi": 59,
-              "pc": 11,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
-            {
               "midi": 68,
               "pc": 8,
               "role": "third",
               "lane": "inner_high",
               "hand": "RH",
               "velocity": 40
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
             },
             {
               "midi": 71,
@@ -5670,21 +5678,13 @@
           "attackMidi": [
             52,
             56,
-            59,
             68,
+            71,
             71,
             74,
             76
           ],
           "innerLanes": [
-            {
-              "midi": 59,
-              "pc": 11,
-              "role": "fifth",
-              "lane": "inner_low",
-              "hand": "RH",
-              "velocity": 48
-            },
             {
               "midi": 68,
               "pc": 8,
@@ -5692,6 +5692,14 @@
               "lane": "inner_high",
               "hand": "RH",
               "velocity": 40
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "fifth",
+              "lane": "inner_low",
+              "hand": "RH",
+              "velocity": 48
             },
             {
               "midi": 74,
@@ -5722,14 +5730,14 @@
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
-          "B3",
           "C4",
-          "E4"
+          "E4",
+          "B4"
         ],
         "notesMidi": [
-          59,
           60,
-          64
+          64,
+          71
         ],
         "forcedScale": "Aeolian",
         "duration": 4,
@@ -5805,24 +5813,24 @@
       {
         "root": "F",
         "rootMidi": 53,
-        "type": "add9",
+        "type": "maj",
         "roman": "IV",
         "bass": "F2",
         "bassMidi": 41,
         "notes": [
-          "A3",
           "C4",
-          "G4"
+          "F4",
+          "A4"
         ],
         "notesMidi": [
-          57,
           60,
-          67
+          65,
+          69
         ],
         "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "S",
-        "chordSymbol": "Fadd9",
+        "chordSymbol": "F",
         "localTonalCenterPc": 0,
         "arrangementMode": "close",
         "widePianoVoicing": {
@@ -5852,8 +5860,8 @@
               "velocity": 48
             },
             {
-              "midi": 63,
-              "pc": 3,
+              "midi": 64,
+              "pc": 4,
               "role": "seventh",
               "lane": "inner_mid",
               "hand": "RH",
@@ -5868,9 +5876,9 @@
               "velocity": 42
             },
             {
-              "midi": 67,
-              "pc": 7,
-              "role": "ninth",
+              "midi": 69,
+              "pc": 9,
+              "role": "third",
               "lane": "inner_high",
               "hand": "RH",
               "velocity": 40
@@ -5888,9 +5896,9 @@
             53,
             57,
             60,
-            63,
+            64,
             65,
-            67,
+            69,
             72
           ],
           "innerLanes": [
@@ -5903,8 +5911,8 @@
               "velocity": 48
             },
             {
-              "midi": 63,
-              "pc": 3,
+              "midi": 64,
+              "pc": 4,
               "role": "seventh",
               "lane": "inner_mid",
               "hand": "RH",
@@ -5919,9 +5927,9 @@
               "velocity": 42
             },
             {
-              "midi": 67,
-              "pc": 7,
-              "role": "ninth",
+              "midi": 69,
+              "pc": 9,
+              "role": "third",
               "lane": "inner_high",
               "hand": "RH",
               "velocity": 40
@@ -5934,24 +5942,24 @@
       {
         "root": "C",
         "rootMidi": 48,
-        "type": "add9",
+        "type": "maj",
         "roman": "I",
         "bass": "C2",
         "bassMidi": 36,
         "notes": [
-          "D4",
           "E4",
-          "G4"
+          "G4",
+          "C5"
         ],
         "notesMidi": [
-          62,
           64,
-          67
+          67,
+          72
         ],
         "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "T",
-        "chordSymbol": "Cadd9",
+        "chordSymbol": "C",
         "localTonalCenterPc": 0,
         "arrangementMode": "close",
         "widePianoVoicing": {
@@ -5981,37 +5989,37 @@
               "velocity": 48
             },
             {
-              "midi": 60,
-              "pc": 0,
-              "role": "doubling",
+              "midi": 59,
+              "pc": 11,
+              "role": "seventh",
               "lane": "inner_mid",
               "hand": "RH",
-              "velocity": 42
+              "velocity": 46
             },
             {
-              "midi": 62,
-              "pc": 2,
-              "role": "ninth",
+              "midi": 64,
+              "pc": 4,
+              "role": "third",
               "lane": "inner_high",
               "hand": "RH",
               "velocity": 40
             },
             {
-              "midi": 70,
-              "pc": 10,
-              "role": "seventh",
+              "midi": 72,
+              "pc": 0,
+              "role": "doubling",
               "lane": "inner_mid",
               "hand": "RH",
-              "velocity": 46
+              "velocity": 42
             }
           ],
           "attackMidi": [
             48,
             52,
             55,
-            60,
-            62,
-            70
+            59,
+            64,
+            72
           ],
           "innerLanes": [
             {
@@ -6023,28 +6031,28 @@
               "velocity": 48
             },
             {
-              "midi": 60,
-              "pc": 0,
-              "role": "doubling",
+              "midi": 59,
+              "pc": 11,
+              "role": "seventh",
               "lane": "inner_mid",
               "hand": "RH",
-              "velocity": 42
+              "velocity": 46
             },
             {
-              "midi": 62,
-              "pc": 2,
-              "role": "ninth",
+              "midi": 64,
+              "pc": 4,
+              "role": "third",
               "lane": "inner_high",
               "hand": "RH",
               "velocity": 40
             },
             {
-              "midi": 70,
-              "pc": 10,
-              "role": "seventh",
+              "midi": 72,
+              "pc": 0,
+              "role": "doubling",
               "lane": "inner_mid",
               "hand": "RH",
-              "velocity": 46
+              "velocity": 42
             }
           ],
           "innerMotion": [],
@@ -6054,26 +6062,28 @@
       {
         "root": "G",
         "rootMidi": 55,
-        "type": "7sus4",
+        "type": "7",
         "roman": "V",
         "bass": "G2",
         "bassMidi": 43,
         "notes": [
-          "C4",
+          "F3",
+          "G3",
           "D4",
-          "F4"
+          "B4"
         ],
         "notesMidi": [
-          60,
+          53,
+          55,
           62,
-          65
+          71
         ],
         "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "D",
-        "chordSymbol": "G7sus4",
+        "chordSymbol": "G7",
         "localTonalCenterPc": 0,
-        "arrangementMode": "close",
+        "arrangementMode": "drop2",
         "widePianoVoicing": {
           "notes": [
             {
@@ -6085,12 +6095,12 @@
               "velocity": 58
             },
             {
-              "midi": 55,
-              "pc": 7,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
+              "midi": 59,
+              "pc": 11,
+              "role": "third",
+              "lane": "low_outer",
+              "hand": "LH",
+              "velocity": 54
             },
             {
               "midi": 62,
@@ -6107,6 +6117,22 @@
               "lane": "inner_mid",
               "hand": "RH",
               "velocity": 46
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "third",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
             },
             {
               "midi": 74,
@@ -6119,20 +6145,14 @@
           ],
           "attackMidi": [
             55,
-            55,
+            59,
             62,
             65,
+            67,
+            71,
             74
           ],
           "innerLanes": [
-            {
-              "midi": 55,
-              "pc": 7,
-              "role": "doubling",
-              "lane": "inner_mid",
-              "hand": "RH",
-              "velocity": 42
-            },
             {
               "midi": 62,
               "pc": 2,
@@ -6148,10 +6168,26 @@
               "lane": "inner_mid",
               "hand": "RH",
               "velocity": 46
+            },
+            {
+              "midi": 67,
+              "pc": 7,
+              "role": "doubling",
+              "lane": "inner_mid",
+              "hand": "RH",
+              "velocity": 42
+            },
+            {
+              "midi": 71,
+              "pc": 11,
+              "role": "third",
+              "lane": "inner_high",
+              "hand": "RH",
+              "velocity": 40
             }
           ],
           "innerMotion": [],
-          "spreadMode": "drop2_wide"
+          "spreadMode": "wide"
         }
       },
       {
@@ -6162,14 +6198,14 @@
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
-          "B3",
           "C4",
-          "E4"
+          "E4",
+          "B4"
         ],
         "notesMidi": [
-          59,
           60,
-          64
+          64,
+          71
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -6247,14 +6283,14 @@
         "bass": "F2",
         "bassMidi": 41,
         "notes": [
-          "A3",
           "C4",
-          "F4"
+          "F4",
+          "A4"
         ],
         "notesMidi": [
-          57,
           60,
-          65
+          65,
+          69
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -6365,23 +6401,32 @@
       {
         "midi": 67,
         "time": 2,
-        "dur": 1.5,
+        "dur": 2,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 72,
-        "time": 3.5,
-        "dur": 1.5,
+        "midi": 65,
+        "time": 4,
+        "dur": 0.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 71,
+        "midi": 62,
+        "time": 4.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 61,
         "time": 5,
         "dur": 0.5,
         "vel": 90,
@@ -6390,7 +6435,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 65,
         "time": 5.5,
         "dur": 0.5,
         "vel": 100,
@@ -6399,7 +6444,7 @@
         "lick": true
       },
       {
-        "midi": 77,
+        "midi": 71,
         "time": 6,
         "dur": 0.5,
         "vel": 100,
@@ -6408,7 +6453,7 @@
         "lick": true
       },
       {
-        "midi": 75,
+        "midi": 68,
         "time": 6.5,
         "dur": 0.5,
         "vel": 100,
@@ -6417,7 +6462,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 67,
         "time": 7,
         "dur": 0.5,
         "vel": 90,
@@ -6426,7 +6471,7 @@
         "lick": true
       },
       {
-        "midi": 72,
+        "midi": 65,
         "time": 7.5,
         "dur": 0.5,
         "vel": 100,
@@ -6435,43 +6480,16 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 64,
         "time": 16,
-        "dur": 0.5,
+        "dur": 2,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 72,
-        "time": 16.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 69,
-        "time": 17,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 17.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
+        "midi": 67,
         "time": 18,
         "dur": 0.5,
         "vel": 100,
@@ -6480,7 +6498,7 @@
         "lick": true
       },
       {
-        "midi": 81,
+        "midi": 66,
         "time": 18.5,
         "dur": 0.5,
         "vel": 100,
@@ -6489,7 +6507,7 @@
         "lick": true
       },
       {
-        "midi": 75,
+        "midi": 64,
         "time": 19,
         "dur": 0.5,
         "vel": 90,
@@ -6498,7 +6516,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 62,
         "time": 19.5,
         "dur": 0.5,
         "vel": 100,
@@ -6507,8 +6525,8 @@
         "lick": true
       },
       {
-        "midi": 77,
-        "time": 20,
+        "midi": 71,
+        "time": 22,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
@@ -6516,143 +6534,17 @@
         "lick": true
       },
       {
-        "midi": 74,
-        "time": 20.5,
+        "midi": 73,
+        "time": 22.5,
         "dur": 0.5,
         "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 75,
-        "time": 21,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 77,
-        "time": 21.5,
-        "dur": 1,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 32,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 32.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 33,
-        "dur": 0.5,
-        "vel": 90,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
         "midi": 71,
-        "time": 33.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 34,
-        "dur": 2,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 68,
-        "time": 37,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 37.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 38,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 68,
-        "time": 38.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 70,
-        "time": 39,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 40,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 40.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 41,
+        "time": 23,
         "dur": 1,
         "vel": 90,
         "part": "melody",
@@ -6660,26 +6552,17 @@
         "lick": true
       },
       {
-        "midi": 71,
-        "time": 42,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
         "midi": 72,
-        "time": 42.5,
-        "dur": 0.5,
+        "time": 24,
+        "dur": 1,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 76,
-        "time": 43,
+        "midi": 68,
+        "time": 25,
         "dur": 0.5,
         "vel": 90,
         "part": "melody",
@@ -6687,8 +6570,8 @@
         "lick": true
       },
       {
-        "midi": 81,
-        "time": 43.5,
+        "midi": 64,
+        "time": 25.5,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
@@ -6696,35 +6579,8 @@
         "lick": true
       },
       {
-        "midi": 79,
-        "time": 44,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 78,
-        "time": 44.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 77,
-        "time": 45,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 75,
-        "time": 45.5,
+        "midi": 71,
+        "time": 26,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
@@ -6733,7 +6589,7 @@
       },
       {
         "midi": 69,
-        "time": 46,
+        "time": 26.5,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
@@ -6741,8 +6597,26 @@
         "lick": true
       },
       {
-        "midi": 72,
-        "time": 46.5,
+        "midi": 71,
+        "time": 27,
+        "dur": 0.5,
+        "vel": 90,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 76,
+        "time": 27.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 80,
+        "time": 28,
         "dur": 1.5,
         "vel": 100,
         "part": "melody",
@@ -6750,8 +6624,8 @@
         "lick": true
       },
       {
-        "midi": 74,
-        "time": 48,
+        "midi": 77,
+        "time": 29.5,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
@@ -6759,71 +6633,8 @@
         "lick": true
       },
       {
-        "midi": 79,
-        "time": 48.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 49,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 49.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 50,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 50.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 51,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 79,
-        "time": 51.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 84,
-        "time": 52,
+        "midi": 80,
+        "time": 30,
         "dur": 1,
         "vel": 100,
         "part": "melody",
@@ -6831,7 +6642,88 @@
         "lick": true
       },
       {
-        "midi": 77,
+        "midi": 74,
+        "time": 31,
+        "dur": 1.5,
+        "vel": 90,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 69,
+        "time": 32.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 74,
+        "time": 33,
+        "dur": 1,
+        "vel": 90,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 76,
+        "time": 34,
+        "dur": 1.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 81,
+        "time": 44,
+        "dur": 1.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 84,
+        "time": 45.5,
+        "dur": 2.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 76,
+        "time": 48,
+        "dur": 2,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 79,
+        "time": 50,
+        "dur": 1,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 79,
+        "time": 51.5,
+        "dur": 2.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 83,
         "time": 54,
         "dur": 0.5,
         "vel": 100,
@@ -6840,28 +6732,37 @@
         "lick": true
       },
       {
-        "midi": 74,
-        "time": 54.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
+        "midi": 83,
         "time": 55,
-        "dur": 0.5,
+        "dur": 1.5,
         "vel": 90,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 67,
-        "time": 55.5,
+        "midi": 83,
+        "time": 58,
         "dur": 0.5,
         "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 78,
+        "time": 58.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 83,
+        "time": 59,
+        "dur": 1,
+        "vel": 90,
         "part": "melody",
         "origin": "develop",
         "lick": true
@@ -6907,23 +6808,32 @@
       {
         "midi": 67,
         "time": 2,
-        "dur": 1.5,
+        "dur": 2,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 72,
-        "time": 3.5,
-        "dur": 1.5,
+        "midi": 65,
+        "time": 4,
+        "dur": 0.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 72,
+        "midi": 62,
+        "time": 4.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 62,
         "time": 5,
         "dur": 0.5,
         "vel": 90,
@@ -6932,7 +6842,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 65,
         "time": 5.5,
         "dur": 0.5,
         "vel": 100,
@@ -6941,7 +6851,7 @@
         "lick": true
       },
       {
-        "midi": 77,
+        "midi": 71,
         "time": 6,
         "dur": 0.5,
         "vel": 100,
@@ -6950,7 +6860,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 67,
         "time": 6.5,
         "dur": 0.5,
         "vel": 100,
@@ -6959,7 +6869,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 67,
         "time": 7,
         "dur": 0.5,
         "vel": 90,
@@ -6968,7 +6878,7 @@
         "lick": true
       },
       {
-        "midi": 72,
+        "midi": 65,
         "time": 7.5,
         "dur": 0.5,
         "vel": 100,
@@ -6977,18 +6887,18 @@
         "lick": true
       },
       {
-        "midi": 74,
-        "time": 16,
-        "dur": 0.5,
+        "midi": 64,
+        "time": 8,
+        "dur": 1,
         "vel": 100,
         "part": "melody",
-        "origin": "develop",
+        "origin": "return",
         "lick": true
       },
       {
-        "midi": 72,
-        "time": 16.5,
-        "dur": 0.5,
+        "midi": 64,
+        "time": 16,
+        "dur": 2,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
@@ -6996,24 +6906,6 @@
       },
       {
         "midi": 67,
-        "time": 17,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 17.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
         "time": 18,
         "dur": 0.5,
         "vel": 100,
@@ -7022,7 +6914,7 @@
         "lick": true
       },
       {
-        "midi": 79,
+        "midi": 67,
         "time": 18.5,
         "dur": 0.5,
         "vel": 100,
@@ -7031,7 +6923,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 64,
         "time": 19,
         "dur": 0.5,
         "vel": 90,
@@ -7040,7 +6932,7 @@
         "lick": true
       },
       {
-        "midi": 74,
+        "midi": 60,
         "time": 19.5,
         "dur": 0.5,
         "vel": 100,
@@ -7049,8 +6941,116 @@
         "lick": true
       },
       {
-        "midi": 79,
-        "time": 20,
+        "midi": 71,
+        "time": 22,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 74,
+        "time": 22.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 71,
+        "time": 23,
+        "dur": 1,
+        "vel": 90,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 72,
+        "time": 24,
+        "dur": 1,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 69,
+        "time": 25,
+        "dur": 0.5,
+        "vel": 90,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 64,
+        "time": 25.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 71,
+        "time": 26,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 69,
+        "time": 26.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 71,
+        "time": 27,
+        "dur": 0.5,
+        "vel": 90,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 76,
+        "time": 27.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 72,
+        "time": 28,
+        "dur": 1.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "return",
+        "lick": true
+      },
+      {
+        "midi": 77,
+        "time": 29.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 80,
+        "time": 30,
         "dur": 1,
         "vel": 100,
         "part": "melody",
@@ -7059,27 +7059,9 @@
       },
       {
         "midi": 74,
-        "time": 20.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 21,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 77,
-        "time": 21.5,
+        "time": 31,
         "dur": 1,
-        "vel": 100,
+        "vel": 90,
         "part": "melody",
         "origin": "develop",
         "lick": true
@@ -7087,114 +7069,15 @@
       {
         "midi": 76,
         "time": 32,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 32.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 33,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 33.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 34,
         "dur": 2,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 69,
-        "time": 37,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 37.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 38,
-        "dur": 1,
         "vel": 100,
         "part": "melody",
         "origin": "return",
         "lick": true
       },
       {
-        "midi": 68,
-        "time": 38.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 39,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 40,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
         "midi": 74,
-        "time": 40.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 41,
+        "time": 33,
         "dur": 1,
         "vel": 90,
         "part": "melody",
@@ -7202,89 +7085,8 @@
         "lick": true
       },
       {
-        "midi": 71,
-        "time": 42,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 42.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
         "midi": 76,
-        "time": 43,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 81,
-        "time": 43.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 79,
-        "time": 44,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 77,
-        "time": 44.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 77,
-        "time": 45,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 77,
-        "time": 45.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 69,
-        "time": 46,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 46.5,
+        "time": 34,
         "dur": 1.5,
         "vel": 100,
         "part": "melody",
@@ -7292,72 +7094,9 @@
         "lick": true
       },
       {
-        "midi": 74,
-        "time": 48,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 79,
-        "time": 48.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 49,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 49.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 50,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 50.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 76,
-        "time": 51,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 79,
-        "time": 51.5,
-        "dur": 0.5,
+        "midi": 81,
+        "time": 44,
+        "dur": 1.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
@@ -7365,7 +7104,25 @@
       },
       {
         "midi": 84,
-        "time": 52,
+        "time": 45.5,
+        "dur": 2.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 76,
+        "time": 48,
+        "dur": 2,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 79,
+        "time": 50,
         "dur": 1,
         "vel": 100,
         "part": "melody",
@@ -7373,7 +7130,16 @@
         "lick": true
       },
       {
-        "midi": 77,
+        "midi": 79,
+        "time": 51.5,
+        "dur": 2.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 83,
         "time": 54,
         "dur": 0.5,
         "vel": 100,
@@ -7382,28 +7148,37 @@
         "lick": true
       },
       {
-        "midi": 74,
-        "time": 54.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
+        "midi": 83,
         "time": 55,
-        "dur": 0.5,
+        "dur": 1,
         "vel": 90,
         "part": "melody",
         "origin": "develop",
         "lick": true
       },
       {
-        "midi": 67,
-        "time": 55.5,
+        "midi": 84,
+        "time": 56,
+        "dur": 2,
+        "vel": 100,
+        "part": "melody",
+        "origin": "return",
+        "lick": true
+      },
+      {
+        "midi": 76,
+        "time": 58.5,
         "dur": 0.5,
         "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true
+      },
+      {
+        "midi": 83,
+        "time": 59,
+        "dur": 1,
+        "vel": 90,
         "part": "melody",
         "origin": "develop",
         "lick": true
@@ -7437,341 +7212,257 @@
     },
     {
       "time": 2,
-      "dur": 1.5,
-      "midi": 67,
-      "vel": 100
-    },
-    {
-      "time": 3.5,
-      "dur": 1.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 5,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 90
-    },
-    {
-      "time": 5.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 6,
-      "dur": 0.5,
-      "midi": 77,
-      "vel": 100
-    },
-    {
-      "time": 6.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 7,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 90
-    },
-    {
-      "time": 7.5,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 16,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 16.5,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 17,
-      "dur": 0.5,
-      "midi": 67,
-      "vel": 90
-    },
-    {
-      "time": 17.5,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 18,
-      "dur": 0.5,
-      "midi": 76,
-      "vel": 100
-    },
-    {
-      "time": 18.5,
-      "dur": 0.5,
-      "midi": 79,
-      "vel": 100
-    },
-    {
-      "time": 19,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 90
-    },
-    {
-      "time": 19.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 20,
-      "dur": 1,
-      "midi": 79,
-      "vel": 100
-    },
-    {
-      "time": 20.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 21,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 90
-    },
-    {
-      "time": 21.5,
-      "dur": 1,
-      "midi": 77,
-      "vel": 100
-    },
-    {
-      "time": 32,
-      "dur": 0.5,
-      "midi": 76,
-      "vel": 100
-    },
-    {
-      "time": 32.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 33,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 90
-    },
-    {
-      "time": 33.5,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 34,
       "dur": 2,
       "midi": 67,
       "vel": 100
     },
     {
-      "time": 37,
+      "time": 4,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 4.5,
+      "dur": 0.5,
+      "midi": 62,
+      "vel": 100
+    },
+    {
+      "time": 5,
+      "dur": 0.5,
+      "midi": 62,
+      "vel": 90
+    },
+    {
+      "time": 5.5,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 6,
+      "dur": 0.5,
+      "midi": 71,
+      "vel": 100
+    },
+    {
+      "time": 6.5,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 7,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 90
+    },
+    {
+      "time": 7.5,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 8,
+      "dur": 1,
+      "midi": 64,
+      "vel": 100
+    },
+    {
+      "time": 16,
+      "dur": 2,
+      "midi": 64,
+      "vel": 100
+    },
+    {
+      "time": 18,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 18.5,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 19,
+      "dur": 0.5,
+      "midi": 64,
+      "vel": 90
+    },
+    {
+      "time": 19.5,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 100
+    },
+    {
+      "time": 22,
+      "dur": 0.5,
+      "midi": 71,
+      "vel": 100
+    },
+    {
+      "time": 22.5,
+      "dur": 0.5,
+      "midi": 74,
+      "vel": 100
+    },
+    {
+      "time": 23,
+      "dur": 1,
+      "midi": 71,
+      "vel": 90
+    },
+    {
+      "time": 24,
+      "dur": 1,
+      "midi": 72,
+      "vel": 100
+    },
+    {
+      "time": 25,
       "dur": 0.5,
       "midi": 69,
       "vel": 90
     },
     {
-      "time": 37.5,
+      "time": 25.5,
+      "dur": 0.5,
+      "midi": 64,
+      "vel": 100
+    },
+    {
+      "time": 26,
       "dur": 0.5,
       "midi": 71,
       "vel": 100
     },
     {
-      "time": 38,
-      "dur": 1,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 38.5,
-      "dur": 0.5,
-      "midi": 68,
-      "vel": 100
-    },
-    {
-      "time": 39,
-      "dur": 0.5,
-      "midi": 71,
-      "vel": 90
-    },
-    {
-      "time": 40,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 40.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 41,
-      "dur": 1,
-      "midi": 76,
-      "vel": 90
-    },
-    {
-      "time": 42,
-      "dur": 0.5,
-      "midi": 71,
-      "vel": 100
-    },
-    {
-      "time": 42.5,
-      "dur": 0.5,
-      "midi": 72,
-      "vel": 100
-    },
-    {
-      "time": 43,
-      "dur": 0.5,
-      "midi": 76,
-      "vel": 90
-    },
-    {
-      "time": 43.5,
-      "dur": 0.5,
-      "midi": 81,
-      "vel": 100
-    },
-    {
-      "time": 44,
-      "dur": 0.5,
-      "midi": 79,
-      "vel": 100
-    },
-    {
-      "time": 44.5,
-      "dur": 0.5,
-      "midi": 77,
-      "vel": 100
-    },
-    {
-      "time": 45,
-      "dur": 0.5,
-      "midi": 77,
-      "vel": 90
-    },
-    {
-      "time": 45.5,
-      "dur": 0.5,
-      "midi": 77,
-      "vel": 100
-    },
-    {
-      "time": 46,
+      "time": 26.5,
       "dur": 0.5,
       "midi": 69,
       "vel": 100
     },
     {
-      "time": 46.5,
+      "time": 27,
+      "dur": 0.5,
+      "midi": 71,
+      "vel": 90
+    },
+    {
+      "time": 27.5,
+      "dur": 0.5,
+      "midi": 76,
+      "vel": 100
+    },
+    {
+      "time": 28,
       "dur": 1.5,
       "midi": 72,
       "vel": 100
     },
     {
-      "time": 48,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 48.5,
-      "dur": 0.5,
-      "midi": 79,
-      "vel": 100
-    },
-    {
-      "time": 49,
-      "dur": 0.5,
-      "midi": 76,
-      "vel": 90
-    },
-    {
-      "time": 49.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 50,
-      "dur": 0.5,
-      "midi": 76,
-      "vel": 100
-    },
-    {
-      "time": 50.5,
-      "dur": 0.5,
-      "midi": 74,
-      "vel": 100
-    },
-    {
-      "time": 51,
-      "dur": 0.5,
-      "midi": 76,
-      "vel": 90
-    },
-    {
-      "time": 51.5,
-      "dur": 0.5,
-      "midi": 79,
-      "vel": 100
-    },
-    {
-      "time": 52,
-      "dur": 1,
-      "midi": 84,
-      "vel": 100
-    },
-    {
-      "time": 54,
+      "time": 29.5,
       "dur": 0.5,
       "midi": 77,
       "vel": 100
     },
     {
-      "time": 54.5,
-      "dur": 0.5,
+      "time": 30,
+      "dur": 1,
+      "midi": 80,
+      "vel": 100
+    },
+    {
+      "time": 31,
+      "dur": 1,
       "midi": 74,
+      "vel": 90
+    },
+    {
+      "time": 32,
+      "dur": 2,
+      "midi": 76,
+      "vel": 100
+    },
+    {
+      "time": 33,
+      "dur": 1,
+      "midi": 74,
+      "vel": 90
+    },
+    {
+      "time": 34,
+      "dur": 1.5,
+      "midi": 76,
+      "vel": 100
+    },
+    {
+      "time": 44,
+      "dur": 1.5,
+      "midi": 81,
+      "vel": 100
+    },
+    {
+      "time": 45.5,
+      "dur": 2.5,
+      "midi": 84,
+      "vel": 100
+    },
+    {
+      "time": 48,
+      "dur": 2,
+      "midi": 76,
+      "vel": 100
+    },
+    {
+      "time": 50,
+      "dur": 1,
+      "midi": 79,
+      "vel": 100
+    },
+    {
+      "time": 51.5,
+      "dur": 2.5,
+      "midi": 79,
+      "vel": 100
+    },
+    {
+      "time": 54,
+      "dur": 0.5,
+      "midi": 83,
       "vel": 100
     },
     {
       "time": 55,
-      "dur": 0.5,
-      "midi": 72,
+      "dur": 1,
+      "midi": 83,
       "vel": 90
     },
     {
-      "time": 55.5,
-      "dur": 0.5,
-      "midi": 67,
+      "time": 56,
+      "dur": 2,
+      "midi": 84,
       "vel": 100
+    },
+    {
+      "time": 58.5,
+      "dur": 0.5,
+      "midi": 76,
+      "vel": 100
+    },
+    {
+      "time": 59,
+      "dur": 1,
+      "midi": 83,
+      "vel": 90
     }
   ],
-  "chordHitCount": 96,
-  "bassHitCount": 34
+  "chordHitCount": 108,
+  "bassHitCount": 18
 }

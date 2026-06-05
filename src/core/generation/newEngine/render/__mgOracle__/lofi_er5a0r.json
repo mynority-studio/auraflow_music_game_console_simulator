@@ -150,7 +150,7 @@
       "root": "E",
       "rootMidi": 52,
       "type": "9sus4",
-      "roman": "V/vi",
+      "roman": "III",
       "bass": "A2",
       "bassMidi": 45,
       "notes": [
@@ -279,8 +279,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "wide"
-      },
-      "originalRoman": "III"
+      }
     },
     {
       "root": "A",
@@ -701,7 +700,7 @@
       "root": "E",
       "rootMidi": 52,
       "type": "9sus4",
-      "roman": "V/vi",
+      "roman": "III",
       "bass": "A2",
       "bassMidi": 45,
       "notes": [
@@ -839,8 +838,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "wide"
-      },
-      "originalRoman": "III"
+      }
     },
     {
       "root": "A",
@@ -1244,7 +1242,7 @@
       "root": "E",
       "rootMidi": 52,
       "type": "9sus4",
-      "roman": "V/vi",
+      "roman": "III",
       "bass": "A2",
       "bassMidi": 45,
       "notes": [
@@ -1382,8 +1380,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "wide"
-      },
-      "originalRoman": "III"
+      }
     },
     {
       "root": "A",
@@ -1822,7 +1819,7 @@
       "root": "E",
       "rootMidi": 52,
       "type": "9sus4",
-      "roman": "V/vi",
+      "roman": "III",
       "bass": "A2",
       "bassMidi": 45,
       "notes": [
@@ -1925,8 +1922,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "close"
-      },
-      "originalRoman": "III"
+      }
     },
     {
       "root": "A",
@@ -4942,7 +4938,7 @@
         "root": "E",
         "rootMidi": 52,
         "type": "9sus4",
-        "roman": "V/vi",
+        "roman": "III",
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
@@ -5071,8 +5067,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "wide"
-        },
-        "originalRoman": "III"
+        }
       },
       {
         "root": "A",
@@ -5493,7 +5488,7 @@
         "root": "E",
         "rootMidi": 52,
         "type": "9sus4",
-        "roman": "V/vi",
+        "roman": "III",
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
@@ -5631,8 +5626,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "wide"
-        },
-        "originalRoman": "III"
+        }
       },
       {
         "root": "A",
@@ -6036,7 +6030,7 @@
         "root": "E",
         "rootMidi": 52,
         "type": "9sus4",
-        "roman": "V/vi",
+        "roman": "III",
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
@@ -6174,8 +6168,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "wide"
-        },
-        "originalRoman": "III"
+        }
       },
       {
         "root": "A",
@@ -6614,7 +6607,7 @@
         "root": "E",
         "rootMidi": 52,
         "type": "9sus4",
-        "roman": "V/vi",
+        "roman": "III",
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
@@ -6717,8 +6710,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
-        },
-        "originalRoman": "III"
+        }
       },
       {
         "root": "A",

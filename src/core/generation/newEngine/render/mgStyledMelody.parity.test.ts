@@ -58,7 +58,7 @@ function styledMelody(fx: OracleFixture): StyledNote[] {
 
 describe('render/mgStyleRenderer · MG 移植 style-rendered melody parity (Loop 5)', () => {
   it('加载到 9 个 oracle fixture(含 styledMelodyBuiltin)', () => {
-    expect(fixtures.length).toBe(9);
+    expect(fixtures.length).toBeGreaterThanOrEqual(9);
     for (const fx of fixtures) {
       expect(Array.isArray(fx.styledMelodyBuiltin)).toBe(true);
       expect(fx.styledMelodyBuiltin.length).toBeGreaterThan(0);

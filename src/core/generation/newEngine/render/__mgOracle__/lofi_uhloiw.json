@@ -722,7 +722,7 @@
       "root": "G",
       "rootMidi": 55,
       "type": "9sus4",
-      "roman": "V/I",
+      "roman": "V",
       "bass": "G2",
       "bassMidi": 43,
       "notes": [
@@ -821,8 +821,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "close"
-      },
-      "originalRoman": "V"
+      }
     },
     {
       "root": "C",
@@ -1637,7 +1636,7 @@
       "root": "G",
       "rootMidi": 55,
       "type": "9sus4",
-      "roman": "V/I",
+      "roman": "V",
       "bass": "G2",
       "bassMidi": 43,
       "notes": [
@@ -1736,8 +1735,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "close"
-      },
-      "originalRoman": "V"
+      }
     },
     {
       "root": "C",
@@ -5062,7 +5060,7 @@
         "root": "G",
         "rootMidi": 55,
         "type": "9sus4",
-        "roman": "V/I",
+        "roman": "V",
         "bass": "G2",
         "bassMidi": 43,
         "notes": [
@@ -5161,8 +5159,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
-        },
-        "originalRoman": "V"
+        }
       },
       {
         "root": "C",
@@ -5977,7 +5974,7 @@
         "root": "G",
         "rootMidi": 55,
         "type": "9sus4",
-        "roman": "V/I",
+        "roman": "V",
         "bass": "G2",
         "bassMidi": 43,
         "notes": [
@@ -6076,8 +6073,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
-        },
-        "originalRoman": "V"
+        }
       },
       {
         "root": "C",

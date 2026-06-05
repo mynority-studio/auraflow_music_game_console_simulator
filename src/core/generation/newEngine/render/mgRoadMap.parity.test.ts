@@ -33,7 +33,7 @@ const fixtures: OracleFixture[] = readdirSync(ORACLE_DIR)
 
 describe('render/mgRoadMapParser · MG 移植 RoadMap parity (Loop 2)', () => {
   it('加载到 9 个 oracle fixture(含 roadMap)', () => {
-    expect(fixtures.length).toBe(9);
+    expect(fixtures.length).toBeGreaterThanOrEqual(9);
     for (const fx of fixtures) {
       expect(fx.roadMap).toBeDefined();
       expect(Array.isArray(fx.roadMap.bricks)).toBe(true);

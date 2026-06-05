@@ -53,7 +53,7 @@ function realizeRaw(fx: OracleFixture): RawNote[] {
 
 describe('render/mgMelodyRealizer · MG 移植 raw-melody parity (Loop 4)', () => {
   it('加载到 9 个 oracle fixture(含 rawMelodyBuiltin)', () => {
-    expect(fixtures.length).toBe(9);
+    expect(fixtures.length).toBeGreaterThanOrEqual(9);
     for (const fx of fixtures) {
       expect(Array.isArray(fx.rawMelodyBuiltin)).toBe(true);
       expect(fx.rawMelodyBuiltin.length).toBeGreaterThan(0);

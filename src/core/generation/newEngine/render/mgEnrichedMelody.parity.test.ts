@@ -84,7 +84,7 @@ describe('render/enriched · MG 移植 生产旋律全链 parity (slope corpus)'
   });
 
   it('fixture 含 enriched 真源 + slope token 真的出现(slope-window 被覆盖)', () => {
-    expect(fixtures.length).toBe(9);
+    expect(fixtures.length).toBeGreaterThanOrEqual(9);
     for (const fx of fixtures) {
       expect(Array.isArray(fx.scheduledTokensEnriched)).toBe(true);
       const slope = fx.scheduledTokensEnriched.filter((s) => s.token.kind === 'SlopeEnter' || s.token.kind === 'SlopeExit' || s.token.kind === 'Slope').length;

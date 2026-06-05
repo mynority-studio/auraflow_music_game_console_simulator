@@ -50,7 +50,7 @@ function ourShaped(s: ShaperCapture): ShaperEvent[] {
 
 describe('render/mgMelodyShaper · MG 移植 shapeMelodyHarmony parity (Loop 6)', () => {
   it('9 个 fixture 都捕获到 shaper I/O(非 null)', () => {
-    expect(fixtures.length).toBe(9);
+    expect(fixtures.length).toBeGreaterThanOrEqual(9);
     for (const fx of fixtures) {
       expect(fx.shaper).not.toBeNull();
       expect(fx.shaper!.shaperIn.length).toBeGreaterThan(0);

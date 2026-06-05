@@ -128,7 +128,7 @@
       "root": "G",
       "rootMidi": 55,
       "type": "13",
-      "roman": "V/I",
+      "roman": "V",
       "bass": "B2",
       "bassMidi": 47,
       "notes": [
@@ -270,8 +270,7 @@
         ],
         "innerMotion": [],
         "spreadMode": "drop2_wide"
-      },
-      "originalRoman": "V"
+      }
     },
     {
       "root": "C",
@@ -5339,7 +5338,7 @@
         "root": "G",
         "rootMidi": 55,
         "type": "13",
-        "roman": "V/I",
+        "roman": "V",
         "bass": "B2",
         "bassMidi": 47,
         "notes": [
@@ -5481,8 +5480,7 @@
           ],
           "innerMotion": [],
           "spreadMode": "drop2_wide"
-        },
-        "originalRoman": "V"
+        }
       },
       {
         "root": "C",

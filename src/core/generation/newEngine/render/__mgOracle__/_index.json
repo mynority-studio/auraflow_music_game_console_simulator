@@ -88,5 +88,145 @@
     "schedEnriched": 167,
     "slopeTokens": 90,
     "styledEnriched": 60
+  },
+  {
+    "seed": "pop_aa01",
+    "style": "POP",
+    "chords": 17,
+    "bricks": 7,
+    "styledBuiltin": 46,
+    "schedEnriched": 135,
+    "slopeTokens": 72,
+    "styledEnriched": 45
+  },
+  {
+    "seed": "pop_bb27",
+    "style": "POP",
+    "chords": 17,
+    "bricks": 8,
+    "styledBuiltin": 51,
+    "schedEnriched": 125,
+    "slopeTokens": 64,
+    "styledEnriched": 49
+  },
+  {
+    "seed": "pop_cc93",
+    "style": "POP",
+    "chords": 16,
+    "bricks": 10,
+    "styledBuiltin": 56,
+    "schedEnriched": 154,
+    "slopeTokens": 76,
+    "styledEnriched": 58
+  },
+  {
+    "seed": "pop_dd55",
+    "style": "POP",
+    "chords": 16,
+    "bricks": 10,
+    "styledBuiltin": 59,
+    "schedEnriched": 132,
+    "slopeTokens": 68,
+    "styledEnriched": 50
+  },
+  {
+    "seed": "lofi_aa11",
+    "style": "LOFI",
+    "chords": 16,
+    "bricks": 10,
+    "styledBuiltin": 53,
+    "schedEnriched": 122,
+    "slopeTokens": 54,
+    "styledEnriched": 50
+  },
+  {
+    "seed": "lofi_bb42",
+    "style": "LOFI",
+    "chords": 16,
+    "bricks": 10,
+    "styledBuiltin": 59,
+    "schedEnriched": 181,
+    "slopeTokens": 94,
+    "styledEnriched": 68
+  },
+  {
+    "seed": "lofi_cc88",
+    "style": "LOFI",
+    "chords": 16,
+    "bricks": 6,
+    "styledBuiltin": 62,
+    "schedEnriched": 122,
+    "slopeTokens": 56,
+    "styledEnriched": 53
+  },
+  {
+    "seed": "lofi_dd19",
+    "style": "LOFI",
+    "chords": 16,
+    "bricks": 14,
+    "styledBuiltin": 62,
+    "schedEnriched": 170,
+    "slopeTokens": 76,
+    "styledEnriched": 76
+  },
+  {
+    "seed": "jazz_aa07",
+    "style": "JAZZ",
+    "chords": 17,
+    "bricks": 10,
+    "styledBuiltin": 54,
+    "schedEnriched": 147,
+    "slopeTokens": 38,
+    "styledEnriched": 91
+  },
+  {
+    "seed": "jazz_bb31",
+    "style": "JAZZ",
+    "chords": 17,
+    "bricks": 15,
+    "styledBuiltin": 68,
+    "schedEnriched": 134,
+    "slopeTokens": 24,
+    "styledEnriched": 87
+  },
+  {
+    "seed": "jazz_cc64",
+    "style": "JAZZ",
+    "chords": 17,
+    "bricks": 10,
+    "styledBuiltin": 52,
+    "schedEnriched": 157,
+    "slopeTokens": 52,
+    "styledEnriched": 82
+  },
+  {
+    "seed": "rnb_aa22",
+    "style": "RNB",
+    "chords": 17,
+    "bricks": 11,
+    "styledBuiltin": 70,
+    "schedEnriched": 176,
+    "slopeTokens": 82,
+    "styledEnriched": 75
+  },
+  {
+    "seed": "rnb_bb58",
+    "style": "RNB",
+    "chords": 16,
+    "bricks": 12,
+    "styledBuiltin": 65,
+    "schedEnriched": 203,
+    "slopeTokens": 102,
+    "styledEnriched": 87
+  },
+  {
+    "seed": "rnb_cc90",
+    "style": "RNB",
+    "chords": 17,
+    "bricks": 13,
+    "styledBuiltin": 59,
+    "schedEnriched": 136,
+    "slopeTokens": 74,
+    "styledEnriched": 43
   }
 ]
