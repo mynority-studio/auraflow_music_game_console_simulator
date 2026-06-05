@@ -33,7 +33,7 @@ describe('narrowQuality 宽 chordType → 窄 ChordQuality', () => {
 
 describe('realizeProgressionSlots', () => {
   it('rootPc = sectionKey + rootOffset · durationBeats · 宽 chordType + borrowedSource 保留', () => {
-    const rc = realizeProgressionSlots({ slots: POP_EPIC.slots, section: sec, sectionKey: pc(0), isModulated: false, beatsPerBar: 4 });
+    const rc = realizeProgressionSlots({ slots: POP_EPIC.slots, section: sec, sectionKey: pc(0), isModulated: false, beatsPerBar: 4, style: 'POP', colorBudget: 0.5, random: createRandomContext(1).substream('harmony') });
     expect(rc.length).toBe(POP_EPIC.slots.length);
     expect(rc[0].durationBeats).toBe(4); // 整小节
     // bVI(rootOffset 8)→ rootPc 8,chordType maj9,borrowedSource modal_interchange
@@ -45,12 +45,12 @@ describe('realizeProgressionSlots', () => {
 
   it('beats=2 → 半小节 span', () => {
     const slots = POP_EPIC.slots.map((s, i) => (i === 0 ? { ...s, beats: 2 } : s));
-    const rc = realizeProgressionSlots({ slots, section: sec, sectionKey: pc(0), isModulated: false, beatsPerBar: 4 });
+    const rc = realizeProgressionSlots({ slots, section: sec, sectionKey: pc(0), isModulated: false, beatsPerBar: 4, style: 'POP', colorBudget: 0.5, random: createRandomContext(1).substream('harmony') });
     expect(rc[0].durationBeats).toBe(2);
   });
 
   it('转调段:isModulated → sectionKeyPc 标记 + 整体移调', () => {
-    const rc = realizeProgressionSlots({ slots: POP_EPIC.slots, section: sec, sectionKey: pc(1), isModulated: true, beatsPerBar: 4 });
+    const rc = realizeProgressionSlots({ slots: POP_EPIC.slots, section: sec, sectionKey: pc(1), isModulated: true, beatsPerBar: 4, style: 'POP', colorBudget: 0.5, random: createRandomContext(1).substream('harmony') });
     expect(rc[0].sectionKeyPc).toBe(1);
     // bVI 在 Db:rootPc = 1 + 8 = 9
     expect(rc.some((c) => c.rootPc === 9 && c.borrowedSource === 'modal_interchange')).toBe(true);

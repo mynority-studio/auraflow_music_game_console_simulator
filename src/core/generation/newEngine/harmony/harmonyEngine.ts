@@ -14,7 +14,7 @@ import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
 import { realChordScale } from '../knowledge/chordScales';
 import { modalVamp } from '../knowledge/modes';
 import { diatonicQuality, pickProgressionDegrees, type SectionRole, type BorrowedSource, type BassRole, type TonicizationPlacement, type ProgressionSlot } from '../knowledge/progressions';
-import { selectProgressionSlots } from './progressionSelector';
+import { selectProgressionSlots, toHarmonyStyle } from './progressionSelector';
 import { realizeProgressionSlots } from './progressionRealizer';
 import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
@@ -304,7 +304,10 @@ function buildResolvedProgression(
     // ★ prototype-first(Loop 2):匹配到 prototype → 实化它(自带终止/borrow/副属),跳过 degree-picker。
     const protoSlots = selectProgressionSlots({ band, section, hrng, protoByGroup });
     if (protoSlots) {
-      resolved.push(...realizeProgressionSlots({ slots: protoSlots, section, sectionKey, isModulated, beatsPerBar }));
+      resolved.push(...realizeProgressionSlots({
+        slots: protoSlots, section, sectionKey, isModulated, beatsPerBar,
+        style: toHarmonyStyle(band.style), colorBudget: band.styleProfile.colorBudget, random: hrng,
+      }));
       continue;
     }
 
