@@ -97,6 +97,21 @@ const TEXTURE_BY_FUNCTION: Record<SectionFunctionTag, TextureKind> = {
 const LEAD_OPTIONAL_TAGS: readonly SectionFunctionTag[] = ['setup', 'breakdown', 'outro', 'tag'];
 const LEAD_DROP_PROB = 0.45;
 
+// ★ intro 先行档(多样性修):intro(setup 段)从这组 per-song 掷一个 → pad/keys/bass/solo/full 轮换,
+//   不再恒定 bass 先行(jazz/lofi)或 pad 先行(pop/rnb)。keys 档把 texture 设 active(arpeggio)→ comp 真渲染
+//   (否则 intro 是 floating pad 段、comp 静默 = "伴奏织体先行"出不来)。∩lineup 空 → 回退密度弧默认。
+interface IntroArchetype { roles: InstrumentRoleName[]; texture: TextureKind }
+const INTRO_ARCHETYPES: readonly IntroArchetype[] = [
+  { roles: ['pad', 'lead'], texture: 'pad' },                         // 暖 pad 铺底 + 旋律
+  { roles: ['pad'], texture: 'pad' },                                 // 纯 ambient pad(器乐 intro)
+  { roles: ['comp', 'lead'], texture: 'arpeggio' },                   // keys/arp 先行 + 旋律(伴奏织体先行)
+  { roles: ['comp'], texture: 'arpeggio' },                          // keys riff(器乐 intro)
+  { roles: ['comp', 'pad', 'lead'], texture: 'arpeggio' },           // keys + pad + 旋律
+  { roles: ['bass', 'lead'], texture: 'pad' },                       // bass 先行
+  { roles: ['lead'], texture: 'pad' },                              // solo 旋律先行
+  { roles: ['comp', 'pad', 'bass', 'lead'], texture: 'active-comp' }, // full(全员起)
+];
+
 /** 该段在场乐手 = (密度弧 mask ± lead)∩ lineup;无 tag/genre → 全 lineup。
  *  lead 默认在场;仅 lead-optional 段且本曲掷中 leadDropTags → 缺席(纯器乐,多样性,gate 落地)。 */
 function activeRolesFor(
@@ -170,6 +185,19 @@ export function buildInstrumentationPlan(
   if (rng) for (const tag of LEAD_OPTIONAL_TAGS) if (rng.next() < LEAD_DROP_PROB) leadDropTags.add(tag);
   for (const s of arrangement.sections) {
     activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool, leadDropTags); // ★ 密度弧 + lead-gating
+  }
+
+  // ★ intro 多样性:setup 段从【先行档】掷一个覆盖(roles + texture)→ 不再恒定 bass/pad 先行。
+  //   rng 在 lead-gating 之后取 → 不扰 timbre/lead-drop;setup 的 lead-drop 决定被本覆盖取代(rng 序不变)。
+  if (rng) {
+    const arch = rng.pick(INTRO_ARCHETYPES);
+    for (const s of arrangement.sections) {
+      if (s.functionTag !== 'setup') continue;
+      const roles = arch.roles.filter((r) => band.instrumentPool.includes(r));
+      if (roles.length === 0) continue; // ∩lineup 空 → 保留密度弧默认(不强塞)
+      activeRolesBySection[s.id] = roles;
+      textureBySection[s.id] = arch.texture; // keys 档 = active(arpeggio)→ comp 真渲染
+    }
   }
 
   const starts = phraseStartBeats(arrangement);

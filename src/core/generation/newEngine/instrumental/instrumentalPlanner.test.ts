@@ -55,21 +55,34 @@ describe('instrumental/instrumentalPlanner', () => {
   });
 
   // —— A1 编曲密度弧 ——
-  it('★ A1 密度弧:pop intro 稀疏(无 bass/drum)→ chorus 全员同进 → bridge 去 drum;lead 全程;repeatGroup 一致', () => {
+  it('★ A1 密度弧:intro 稀疏(无 drum,非全员)→ chorus 全员同进 → bridge 去 drum;core 段含 lead;repeatGroup 一致', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
     const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // seed 3 → POP_FULL
     const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
 
-    expect(roles('intro')).not.toContain('bass');   // intro 稀疏
-    expect(roles('intro')).not.toContain('drum');
+    expect(roles('intro')).not.toContain('drum');                 // intro 无鼓(先行档不含 drum)
+    expect(roles('intro').length).toBeLessThan(b.instrumentPool.length); // intro 稀疏(非全员)
     for (const r of b.instrumentPool) expect(roles('chorus1')).toContain(r); // chorus 全员
-    expect(roles('bridge')).not.toContain('drum');  // breakdown 去 drum
-    for (const s of arr.sections) expect(roles(s.id)).toContain('lead'); // lead 全程
-    expect(roles('verse1')).toEqual(roles('verse2')); // repeatGroup 一致(同 functionTag)
+    expect(roles('bridge')).not.toContain('drum');                // breakdown 去 drum
+    // core 段(story/build/hook)恒含 lead(旋律扛歌;intro/breakdown/outro 可缺席)
+    for (const s of arr.sections) if (['story', 'build', 'hook'].includes(s.functionTag ?? '')) expect(roles(s.id)).toContain('lead');
+    expect(roles('verse1')).toEqual(roles('verse2'));             // repeatGroup 一致(同 functionTag)
 
     const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection); // 确定性
+  });
+
+  it('★ intro 先行档多样性:跨 seed 出 ≥3 种 intro 组合(不再恒定 bass/pad 先行)', () => {
+    const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
+    const shapes = new Set<string>();
+    for (let seed = 0; seed < 16; seed++) {
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(seed) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
+      const introId = arr.sections.find((s) => s.functionTag === 'setup')?.id;
+      if (introId) shapes.add([...(ip.activeRolesBySection[introId] ?? [])].sort().join('+'));
+    }
+    expect(shapes.size).toBeGreaterThanOrEqual(3); // intro 有多样性
   });
 
   it('★ A1 ∩ lineup + 无 functionTag 回退全 lineup(legacy/无 rng)', () => {
