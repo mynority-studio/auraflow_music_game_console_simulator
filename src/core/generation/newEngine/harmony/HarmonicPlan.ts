@@ -40,7 +40,8 @@ export interface ChordSpan {
   mustResolve?: boolean;
   forcedScale?: string;            // ScaleTypeId 串(V/X 用 Mixolydian / Phrygian Dominant…)
   localTonalCenterPc?: PitchClass; // 临时主音(离调);默认=调中心
-  bassRole?: BassRole;             // 转位 intent(render 消费)
+  bassRole?: BassRole;             // 转位 intent(render 消费:3rd/5th/7th 转位、pedal 持续低音)
+  bassPedalPc?: PitchClass;        // bassRole='pedal' 时的持续低音 pc
   tonicizationPlacement?: TonicizationPlacement;
 }
 

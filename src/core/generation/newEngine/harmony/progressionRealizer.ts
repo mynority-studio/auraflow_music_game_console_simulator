@@ -81,6 +81,7 @@ export function realizeProgressionSlots(args: {
       forcedScale: slot.forcedScale,
       localTonalCenterPc: slot.localTonalCenterPc !== undefined ? mod12(slot.localTonalCenterPc) : undefined,
       bassRole: slot.bassRole,
+      bassPedalPc: slot.bassPedalPc !== undefined ? mod12(slot.bassPedalPc) : undefined,
       tonicizationPlacement: slot.tonicizationPlacement,
       sectionKeyPc: isModulated ? sectionKey : undefined,
     };

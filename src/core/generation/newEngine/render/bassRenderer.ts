@@ -10,6 +10,8 @@
 
 import { beats, mod12, type Timebase } from '../foundation';
 import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
+import { resolveBassAnchorPc } from '../knowledge/basslineRules';
+import { chordTypeIntervals } from '../knowledge/chords';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
@@ -41,12 +43,28 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
 
   for (let i = 0; i < spans.length; i++) {
     const span = spans[i];
-    const nextRoot = i + 1 < spans.length ? (spans[i + 1].rootPc as number) : undefined;
-    const root = span.rootPc as number;
-    const tones = plan.stableToneMap[span.id]; // [root,3,5,(7)]
-    const fifth = tones.length > 2 ? (tones[2] as number) : root;
     const start = span.startBeat as number;
     const nBeats = Math.max(1, Math.round(span.durationBeats as number));
+
+    // ★ Loop 7:bass anchor 按 bassRole(转位 3rd/5th/7th / pedal 持续);默认/未设 = root。
+    const intervals = [...chordTypeIntervals(span.chordType ?? span.quality)];
+    const anchorPc = resolveBassAnchorPc(span.bassRole, span.rootPc as number, intervals, span.bassPedalPc as number | undefined);
+
+    // pedal:整 span 持续 pedal pc(不 walking/交替;故意低音,不 snap)
+    if (span.bassRole === 'pedal') {
+      notes.push({
+        pitch: pcToMidiInRange(anchorPc, BASS_LOW, BASS_HIGH),
+        startTick: timebase.beatToTick(beats(start)),
+        durationTicks: timebase.beatToTick(beats(span.durationBeats as number)),
+        velocity: 84,
+      });
+      continue;
+    }
+
+    const nextRoot = i + 1 < spans.length ? (spans[i + 1].rootPc as number) : undefined;
+    const root = anchorPc; // 转位:downbeat 用 bass anchor(slash / 下行 bass)
+    const tones = plan.stableToneMap[span.id]; // [root,3,5,(7)]
+    const fifth = tones.length > 2 ? (tones[2] as number) : root;
 
     if (style === 'jazz') {
       for (let b = 0; b < nBeats; b++) {

@@ -54,6 +54,7 @@ export interface ResolvedChord {
   forcedScale?: string;
   localTonalCenterPc?: PitchClass;
   bassRole?: BassRole;
+  bassPedalPc?: PitchClass;
   tonicizationPlacement?: TonicizationPlacement;
 }
 
@@ -105,6 +106,7 @@ function assemble(
       forcedScale: rc.forcedScale,
       localTonalCenterPc: rc.localTonalCenterPc,
       bassRole: rc.bassRole,
+      bassPedalPc: rc.bassPedalPc,
       tonicizationPlacement: rc.tonicizationPlacement,
     });
     chordFunctionTimeline.push(rc.func);
