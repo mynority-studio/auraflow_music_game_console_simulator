@@ -11,7 +11,7 @@
 // ============================================================
 
 import { mod12, type PitchClass } from '../foundation';
-import { chordToneIntervals, type ChordQuality } from './chords';
+import { chordToneIntervals, chordTypeIntervals, type ChordQuality } from './chords';
 
 export interface TensionTable {
   stable: PitchClass[];
@@ -53,6 +53,31 @@ export function tensionTableFor(rootPc: PitchClass, quality: ChordQuality): Tens
   const avoid = AVOID_INTERVALS[quality]
     .map((iv) => mod12(rootPc + iv))
     .filter((p) => !stableSet.has(p) && !acceptableSet.has(p)); // 互斥
+
+  return { stable, acceptable, avoid };
+}
+
+// ============================================================
+// 和声迁移 Loop 6:宽 chordType 权威化的张力表
+// ------------------------------------------------------------
+// ★ 守 voicing 铁律:stable = 和弦【核心结构音】(interval ≤ 11 = root/3(or sus4)/5/7/6),
+//   延伸色彩音(9/11/13 = compound interval > 11)进 acceptable(=色彩,让渡给旋律,comp 不强voice)。
+// ★ 修窄品质降级 bug:13sus4 narrow→'7' 会错加 3 音;此处 stable=核心 → 正确含 sus4、无 3 音。
+// avoid 仍用窄品质族表(保守,不新增 Auditor 风险);落在 stable 上的 avoid 自动去掉(sus 的 4 不再 avoid)。
+// ============================================================
+export function tensionTableForChordType(rootPc: PitchClass, chordType: string, narrowQuality: ChordQuality): TensionTable {
+  const ivs = chordTypeIntervals(chordType);
+  const stable = [...new Set(ivs.filter((iv) => iv <= 11).map((iv) => mod12(rootPc + iv)))]; // 核心结构音(含 sus4)
+  const stableSet = new Set<number>(stable);
+
+  const extPcs = ivs.filter((iv) => iv > 11).map((iv) => mod12(rootPc + iv)); // 显式延伸 9/11/13
+  const narrowAccept = ACCEPTABLE_INTERVALS[narrowQuality].map((iv) => mod12(rootPc + iv));
+  const acceptable = [...new Set([...extPcs, ...narrowAccept])].filter((p) => !stableSet.has(p)); // 色彩(延伸+族张力)
+  const acceptableSet = new Set<number>(acceptable);
+
+  const avoid = AVOID_INTERVALS[narrowQuality]
+    .map((iv) => mod12(rootPc + iv))
+    .filter((p) => !stableSet.has(p) && !acceptableSet.has(p)); // sus 的 4 在 stable → 不计 avoid
 
   return { stable, acceptable, avoid };
 }

@@ -9,7 +9,7 @@
 // ============================================================
 
 import { beats, mod12, type PitchClass, type RandomContext, type Rng } from '../foundation';
-import { tensionTableFor, type TensionTable } from '../knowledge/tensionModel';
+import { tensionTableFor, tensionTableForChordType, type TensionTable } from '../knowledge/tensionModel';
 import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
 import { realChordScale } from '../knowledge/chordScales';
 import { modalVamp } from '../knowledge/modes';
@@ -83,7 +83,11 @@ function assemble(
   let beat = 0;
   resolved.forEach((rc, i) => {
     const id = `c${i}`;
-    const tension = tensionTableFor(rc.rootPc, rc.quality);
+    // ★ Loop 6:prototype 携带宽 chordType → 张力按宽和弦算(stable=核心,9/13 进 color);
+    //   degree-picker fallback(chordType undefined)→ 旧窄品质表。
+    const tension = rc.chordType !== undefined
+      ? tensionTableForChordType(rc.rootPc, rc.chordType, rc.quality)
+      : tensionTableFor(rc.rootPc, rc.quality);
     if (rc.borrowed) borrowedChordMap[id] = rc.borrowed;
     romanProgression.push(rc.roman);
     chordTimeline.push({
