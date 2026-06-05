@@ -75,7 +75,9 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
 
   // —— INSTRUMENTAL ——
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'));
-  log(`■ INSTRUMENT 织体: ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
+  const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(GM${p.program})`).join(' ');
+  log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
+  log(`   织体: ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
   // ★ 音色切换(同乐手换声音):某角色跨段落用了 >1 种 program → 印 verse↔chorus
   const timbreSwitch = band.instrumentPool.map((r) => {
     const bySec = instrumentation.programByRoleSection[r];

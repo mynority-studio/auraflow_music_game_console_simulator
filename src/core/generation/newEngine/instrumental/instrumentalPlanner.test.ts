@@ -95,6 +95,16 @@ describe('instrumental/instrumentalPlanner', () => {
     expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection);
   });
 
+  it('★ 音色世界:plan 带 timbreWorld(可观测);确定性', () => {
+    const b = buildBandSpec({ seed: 3, styleHint: 'jazz', mood: 'x', targetDuration: 120 });
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) });
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
+    expect(ip.timbreWorld).toBe('jazzCombo'); // jazz → jazzCombo
+    const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
+    expect(ip2.timbreWorld).toBe(ip.timbreWorld);
+    expect(ip2.programByRoleSection).toEqual(ip.programByRoleSection); // repair 不破确定性
+  });
+
   it('★ A3 织体按 functionTag:build→active-comp / breakdown→sustained-block / setup→pad', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
     const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // POP_FULL

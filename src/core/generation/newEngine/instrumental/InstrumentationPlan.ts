@@ -12,6 +12,7 @@ import { deepFreeze, type DeepReadonly, type Midi } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import type { PhraseId, SectionId } from '../arranger/ArrangementPlan';
 import type { GenericTextureKind, GenericTextureYield } from '../knowledge/textureProfiles';
+import type { TimbreWorld } from '../knowledge/instruments';
 
 // ★ 织体种类 / 让位类的真源在 KB(knowledge/textureProfiles);此处仅按契约名复用(用户定:织体归 KB)。
 export type TextureKind = GenericTextureKind;
@@ -49,6 +50,10 @@ export interface InstrumentationPlanData {
   // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
   //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。
   programByRoleSection: Record<InstrumentRoleName, Record<SectionId, number>>;
+  // ★ 音色世界统一性(可观测;不参与避让/render):timbreWorld = 本曲音色世界分类;
+  //   sameInstrumentPairs = 同乐器对(lead==comp 等,记录不拒绝)。GM program 仍由 programByRoleSection 承载。
+  timbreWorld?: TimbreWorld;
+  sameInstrumentPairs?: { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[];
   melodyReservationPlan: MelodyReservationPlan;
 }
 

@@ -114,6 +114,76 @@ export function getInstrumentCatalog(): InstrumentCatalogStyle[] {
   });
 }
 
+// ============================================================
+// ★ 音色世界(TimbreWorld)统一性(CODEX instrumentation_combination_rules 吸纳;只在器配层消费)
+//   器配层据此【理解音色世界】+ 主动防风格错配。当前 per-style INSTRUMENTS 池已隐式守住 hard-reject,
+//   此处把概念显式化:① 分类世界(可观测)② worldMismatches/repair 主动 guard(dormant 但 live,扩库即生效)
+//   ③ sameInstrumentPairs 同乐器对(记录不拒绝,钢琴可同时 lead/comp)。纯函数、确定性。
+// ============================================================
+export type TimbreWorld =
+  | 'acousticPianoBand' | 'brightPopHybrid' | 'electricKeys'
+  | 'lofiTapeKeys' | 'jazzCombo' | 'modalAmbient' | 'syntheticSoft';
+
+export type TimbreSource = 'acoustic' | 'electric' | 'synth';
+const TIMBRE_SOURCE: Record<number, TimbreSource> = {
+  0: 'acoustic', 1: 'acoustic', 8: 'acoustic', 11: 'acoustic', 12: 'acoustic', 32: 'acoustic', 48: 'acoustic', 49: 'acoustic',
+  4: 'electric', 5: 'electric', 33: 'electric',
+  38: 'synth', 39: 'synth', 50: 'synth', 89: 'synth', 91: 'synth',
+};
+/** GM program → 音色来源(acoustic/electric/synth;未知回退 synth)。 */
+export function timbreSource(program: number): TimbreSource {
+  return TIMBRE_SOURCE[program] ?? 'synth';
+}
+
+type RoleProgramView = Partial<Record<InstrumentRoleName, number>>;
+
+/** 据选定 roleProgram + style 分类音色世界(确定性,可观测)。 */
+export function classifyTimbreWorld(rp: RoleProgramView, style: string): TimbreWorld {
+  const cs = rp.comp !== undefined ? timbreSource(rp.comp) : 'electric';
+  const bs = rp.bass !== undefined ? timbreSource(rp.bass) : 'electric';
+  switch (style) {
+    case 'jazz': return 'jazzCombo';
+    case 'modal': return bs === 'synth' ? 'syntheticSoft' : 'modalAmbient';
+    case 'rnb': return bs === 'synth' ? 'syntheticSoft' : 'electricKeys';
+    case 'lofi': return 'lofiTapeKeys';
+    case 'pop':
+    default:
+      if (cs === 'acoustic' && bs === 'acoustic') return 'acousticPianoBand';
+      if (cs === 'acoustic') return 'brightPopHybrid';  // acoustic comp + electric/synth 节奏组
+      return bs === 'synth' ? 'syntheticSoft' : 'brightPopHybrid';
+  }
+}
+
+/** 风格错配检测(hard-reject;当前池已守住 → 多返回空,作主动 guard / 回归网)。 */
+export function worldMismatches(rp: RoleProgramView, style: string): string[] {
+  const out: string[] = [];
+  if (style === 'jazz' && rp.bass !== undefined && [38, 39].includes(rp.bass)) out.push('jazz≠synth-bass');
+  if (style === 'lofi' && rp.comp === 1) out.push('lofi≠bright-piano-comp');
+  if (style === 'jazz' && rp.pad !== undefined && [89, 91].includes(rp.pad)) out.push('jazz≠choir/warm-pad');
+  return out;
+}
+
+/** 修复风格错配:从同 style 池换一个【不错配】候选(确定性,无 rng);无错配 → 原对象返回。 */
+export function repairWorldMismatches(rp: Record<InstrumentRoleName, number>, style: string): Record<InstrumentRoleName, number> {
+  if (worldMismatches(rp, style).length === 0) return rp;
+  const pool = INSTRUMENTS[style] ?? INSTRUMENTS.default;
+  const out = { ...rp };
+  const fix = (role: InstrumentRoleName, bad: (p: number) => boolean, fallback: number) => {
+    if (out[role] === undefined || !bad(out[role])) return;
+    out[role] = (pool[role] ?? []).find((p) => !bad(p)) ?? fallback;
+  };
+  if (style === 'jazz') { fix('bass', (p) => [38, 39].includes(p), 32); fix('pad', (p) => [89, 91].includes(p), 49); }
+  if (style === 'lofi') fix('comp', (p) => p === 1, 4);
+  return out;
+}
+
+/** 同乐器对(lead==comp):记录事实,不拒绝(同一乐器可同时承担多角色)。 */
+export function sameInstrumentPairs(rp: RoleProgramView): { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[] {
+  const out: { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[] = [];
+  if (rp.lead !== undefined && rp.lead === rp.comp) out.push({ a: 'lead', b: 'comp', program: rp.lead });
+  return out;
+}
+
 /** 按 style + rng 选编制 + 乐器。确定性(同 seed 同结果);lineup 含 lead + ≥1 和声,最少 2 件。 */
 export function pickBandInstrumentation(style: string, rng: Rng): BandInstrumentation {
   const rule = LINEUP_RULES[style] ?? LINEUP_RULES.default;

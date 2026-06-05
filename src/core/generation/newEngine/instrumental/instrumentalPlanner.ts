@@ -12,7 +12,7 @@ import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, type TextureSectionRole } from '../knowledge/textureProfiles';
-import { sameFamilyAlternates, isKeyboardFamily } from '../knowledge/instruments';
+import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs } from '../knowledge/instruments';
 import {
   freezeInstrumentationPlan,
   type HookAnchorSlot,
@@ -124,6 +124,12 @@ export function buildInstrumentationPlan(
   arrangement: ArrangementPlan,
   rng?: Rng, // ★ 音色切换决策(确定性子流);缺省 = 不切(全曲 primary,向后兼容)
 ): InstrumentationPlan {
+  // ★ 音色世界统一性:先把 BandEngine 的 provisional roleProgram 过【风格错配修复】(当前池已守住=多为原样,
+  //   family-invariant → comp voicing 决策不受影响),再分类世界 + 记同乐器对。GM program 仍走 programByRoleSection。
+  const roleProgram = repairWorldMismatches(band.roleProgram, band.style);
+  const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
+  const samePairs = sameInstrumentPairs(roleProgram);
+
   const textureBySection: Record<string, TextureKind> = {};
   const activityBySection: Record<string, Partial<Record<InstrumentRoleName, number>>> = {};
   const activeRolesBySection: Record<string, InstrumentRoleName[]> = {};
@@ -141,17 +147,17 @@ export function buildInstrumentationPlan(
   //   repeatGroup 一致:按 section.role 决策 → 所有 chorus 段同备选、verse 段同 primary。确定性。
   // ★ 每首【掷一次骰】:命中 → 选一个【键盘族 comp/lead】乐手,chorus 换同族备选。最多一个乐手切。
   const eligible = band.instrumentPool.filter(
-    (r) => TIMBRE_SWITCH_ROLES.includes(r) && isKeyboardFamily(band.roleProgram[r]) && sameFamilyAlternates(band.style, r, band.roleProgram[r]).length > 0,
+    (r) => TIMBRE_SWITCH_ROLES.includes(r) && isKeyboardFamily(roleProgram[r]) && sameFamilyAlternates(band.style, r, roleProgram[r]).length > 0,
   );
   let switchRole: InstrumentRoleName | undefined;
   let switchAlt: number | undefined;
   if (rng && eligible.length > 0 && rng.next() < TIMBRE_SWITCH_PROB) {
     switchRole = rng.pick(eligible);
-    switchAlt = rng.pick(sameFamilyAlternates(band.style, switchRole, band.roleProgram[switchRole]));
+    switchAlt = rng.pick(sameFamilyAlternates(band.style, switchRole, roleProgram[switchRole]));
   }
   const programByRoleSection: Record<InstrumentRoleName, Record<string, number>> = {} as Record<InstrumentRoleName, Record<string, number>>;
   for (const role of band.instrumentPool) {
-    const primary = band.roleProgram[role];
+    const primary = roleProgram[role];
     programByRoleSection[role] = {};
     for (const s of arrangement.sections) {
       programByRoleSection[role][s.id] = role === switchRole && switchAlt !== undefined && s.role === 'chorus' ? switchAlt : primary;
@@ -188,6 +194,8 @@ export function buildInstrumentationPlan(
     textureBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     programByRoleSection,
+    timbreWorld,
+    sameInstrumentPairs: samePairs.length ? samePairs : undefined,
     melodyReservationPlan: {
       reservedRegister: REGISTER_BY_ROLE.lead,
       densityCeiling: clamp01(band.styleProfile.accompDensity),
