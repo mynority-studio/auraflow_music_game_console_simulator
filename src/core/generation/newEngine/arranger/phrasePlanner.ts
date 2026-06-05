@@ -39,6 +39,16 @@ function cadenceTargetFor(role: PhraseRole): CadenceTarget {
 }
 
 function skeletonRoleFor(section: Section, slot: number): SkeletonRole {
+  // ★ CODEX V4.2:hook scope 按 functionTag 收窄 — hook 段只前 2 句、head/loop/verse 仅首句是 hook,
+  //   其余 connector。修"整段 chorus 全 hook"→ comp 整段过度让位 + 旋律丢 A/A' 记忆对比。
+  const tag = section.functionTag;
+  if (tag) {
+    if (tag === 'hook') return slot <= 1 ? 'hook' : 'connector';          // 副歌:前 2 句 hook
+    if (tag === 'head' || tag === 'headOut' || tag === 'loop' || tag === 'story')
+      return slot === 0 ? 'hook' : 'connector';                          // head/loop/verse:仅首句 hook
+    return 'connector';                                                  // build/breakdown/setup/solo/tag/outro
+  }
+  // 回退 legacy role(template/no-rng 段,无 functionTag)
   if (section.role === 'chorus') return 'hook';           // chorus 全是 hook
   if (section.role === 'verse') return slot === 0 ? 'hook' : 'connector';
   return 'connector';                                     // intro/outro/bridge
