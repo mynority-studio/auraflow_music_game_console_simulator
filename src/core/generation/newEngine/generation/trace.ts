@@ -30,6 +30,18 @@ function romanLabel(r: RomanChord): string {
   const sec = r.secondaryTarget ? `/${ROMAN[r.secondaryTarget.degree]}` : '';
   return `${acc}${ROMAN[r.degree]}${r.quality === 'maj' ? '' : r.quality}${sec}`;
 }
+// ★ Loop 2 后:用【宽 chordType】+ borrowedSource 标记(romanLabel 只印窄品质、不知 borrowed)。
+const BORROW_MARK: Record<string, string> = {
+  secondary_dominant: '↗副属', secondary_ii_v: '↗ii-V', backdoor_dominant: '⤵backdoor',
+  modal_interchange: '◆借', chromatic_color: '◇半音',
+};
+function spanLabel(span: { roman: RomanChord; quality: string; chordType?: string; borrowedSource?: string }): string {
+  const r = span.roman;
+  const acc = r.accidental === 'b' ? 'b' : r.accidental === '#' ? '#' : '';
+  const ct = span.chordType ?? span.quality;
+  const type = ct === 'maj' ? '' : ct; // 宽 chordType(maj9/m9/13sus4…)
+  return `${acc}${ROMAN[r.degree]}${type}${span.borrowedSource ? BORROW_MARK[span.borrowedSource] ?? '◆' : ''}`;
+}
 
 export interface GenerationTrace {
   lines: string[];
@@ -68,23 +80,32 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
 
   // —— HARMONY ——
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
+  // ★ borrowed/离调按 span.borrowedSource 统计(prototype 不填 borrowedChordMap)
+  const borrowedSpans = harmonic.chordTimeline.filter((c) => c.borrowedSource);
   log(band.tonalityKind === 'modal'
     ? `■ HARMONY    ${harmonic.chordTimeline.length} 和弦(modal 静态 vamp:i+特征和弦循环,无功能;约束放松=avoid 空、chord-scale=primaryScale)`
-    : `■ HARMONY    ${harmonic.chordTimeline.length} 和弦(级数 rng 选+调内解析,段尾 V7-${band.mode === 'minor' ? 'i 小调终止(V7=Phrygian dominant 升导音)' : 'I 终止'})${Object.keys(harmonic.borrowedChordMap).length ? ` · 借和弦 iv×${Object.keys(harmonic.borrowedChordMap).length}` : ''}`);
+    : `■ HARMONY    ${harmonic.chordTimeline.length} 和弦(prototype-first 真实编曲进行 + 宽 chordType;不命中回退 degree-picker)${borrowedSpans.length ? ` · 借/离调 ×${borrowedSpans.length}` : ''}`);
   const seenSec = new Set<string>();
   for (const span of harmonic.chordTimeline) {
     if (seenSec.has(span.sectionId)) continue;
     seenSec.add(span.sectionId);
     const inSec = harmonic.chordTimeline.filter((c) => c.sectionId === span.sectionId);
-    log(`   ${span.sectionId}: ${inSec.map((c) => romanLabel(c.roman)).join(' ')}`);
+    log(`   ${span.sectionId}: ${inSec.map((c) => spanLabel(c)).join(' ')}`);
   }
-  // 真 chord-scale 采样:首和弦 + 任一离调和弦(副属/借)的调式音阶(含离调音)
+  // 借/离调和弦明细(根音 + 类型 + 来源)
   const PCN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  if (borrowedSpans.length) {
+    log(`   借/离调: ${borrowedSpans.map((c) => `${c.sectionId} ${PCN[c.rootPc]}${c.chordType ?? c.quality}=${c.borrowedSource}`).join(' · ')}`);
+  }
+  // 真 chord-scale 采样:首和弦 + 任一借/离调和弦的调式音阶(含离调音)
   const scaleLabel = (id: string) => harmonic.chordScaleMap[id].map((p) => PCN[p]).join(' ');
   const first = harmonic.chordTimeline[0];
-  log(`   chord-scale ${romanLabel(first.roman)} = [${scaleLabel(first.id)}](真调式音阶,取代 stable∪acceptable)`);
-  const chromId = harmonic.chordTimeline.find((c) => c.roman.secondaryTarget || harmonic.borrowedChordMap[c.id]);
-  if (chromId) log(`   chord-scale ${romanLabel(chromId.roman)} = [${scaleLabel(chromId.id)}](离调:根音 ${chromId.roman.secondaryTarget ? 'Mixolydian' : 'Dorian'})`);
+  log(`   chord-scale ${spanLabel(first)} = [${scaleLabel(first.id)}](真调式音阶)`);
+  const chromId = borrowedSpans[0];
+  if (chromId) {
+    const sec = chromId.borrowedSource === 'secondary_dominant' || chromId.borrowedSource === 'secondary_ii_v';
+    log(`   chord-scale ${spanLabel(chromId)} = [${scaleLabel(chromId.id)}](离调:根音 ${sec ? 'Mixolydian' : 'Dorian'})`);
+  }
   for (const [sid, m] of Object.entries(harmonic.modulationMap)) {
     log(`   转调 ${sid}: ${PCN[m.fromKey]}→${PCN[m.toKey]}(${m.label} ${m.semitones > 0 ? '+' : ''}${m.semitones}半音,进行整体移调 + 旋律随升)`);
   }
