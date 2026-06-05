@@ -32,12 +32,17 @@ describe('harmony · 小调打磨 V7-i (4.2)', () => {
     const v7s = plan.chordTimeline.filter((c) => c.quality === '7');
     expect(v7s.length).toBeGreaterThan(0);
     const leadingTone = mod12(KEY + 11); // C minor 升导音 B♮
+    // ★ Loop 2:prototype 可含副属(V/V 等)→ 不是所有 '7' 都是 home V。仅 home V(root=G)查升导音。
+    const homeV = v7s.filter((c) => c.rootPc === mod12(KEY + 7));
+    expect(homeV.length).toBeGreaterThan(0);
+    for (const c of homeV) {
+      expect(chordTones(c.rootPc, '7')).toContain(leadingTone); // home V7 含升导音
+      expect(new Set<number>(plan.chordScaleMap[c.id]).has(leadingTone)).toBe(true); // 升导音进音阶
+    }
+    // 不变量:所有 7 和弦(含副属)chord-tones ⊆ chord-scale
     for (const c of v7s) {
-      expect(c.rootPc).toBe(mod12(KEY + 7)); // 属:5 度音上(G)
-      expect(chordTones(c.rootPc, '7')).toContain(leadingTone); // V7 含升导音
       const scale = new Set<number>(plan.chordScaleMap[c.id]);
-      expect(scale.has(leadingTone)).toBe(true); // 升导音进音阶
-      for (const t of chordTones(c.rootPc, c.quality)) expect(scale.has(t)).toBe(true); // 不变量
+      for (const t of chordTones(c.rootPc, c.quality)) expect(scale.has(t)).toBe(true);
     }
   });
 

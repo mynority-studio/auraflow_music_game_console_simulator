@@ -181,9 +181,12 @@ export function renderMelody(
         const noteBeat = barStart + dn.timeOffset;
         let pitch: Midi;
         if (i === 0 && bar === 0) {
-          // hook head 锚点 = motif 记忆点身份音,不走 gate(跨段一致性优先);modal 收进 primaryScale
-          const headPc = isModal ? nearestInScale(mod12(headPitch), band.primaryScale) : mod12(headPitch);
-          pitch = pcToMidiInRange(headPc, leadLow, leadHigh);
+          // hook head 锚点 = motif 记忆点身份音。modal 收进 primaryScale;tonal 走合同 gate
+          //   (强拍/长音,非合同就近 snap 合同音)—— 防 prototype 富和弦下 head 落 avoid 长暴露。
+          //   同 repeatGroup 的 chorus 和弦相同 → snap 一致,跨段记忆点不破。
+          pitch = isModal
+            ? pcToMidiInRange(nearestInScale(mod12(headPitch), band.primaryScale), leadLow, leadHigh)
+            : midi(resolveGated(pcToMidiInRange(mod12(headPitch), leadLow, leadHigh), spanAtBeat(plan, noteBeat), leadLow, leadHigh, false));
         } else {
           // ★ 和声合同 gate:强拍/长音落合同,弱拍/经过/邻音容许级内/半音短音(读相对音阶)
           const rawMidi = pcToMidiInRange(mod12(secKey + degreeToSemitone(dn.scaleDegree, band.mode)), leadLow, leadHigh);

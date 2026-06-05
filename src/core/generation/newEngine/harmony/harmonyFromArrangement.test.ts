@@ -11,19 +11,17 @@ describe('harmony · Band→Arranger→Harmony 端到端', () => {
   const plan = buildHarmonicPlanFromArrangement(band, arrangement, rng);
 
   it('和弦总数 = Σ(section.bars * chordsPerBar)', () => {
+    // ★ Loop 2:prototype 是 1 和弦/小节(忽略 chordsPerBar 加密)→ 总数 = Σ section.bars。
     let expected = 0;
-    for (const s of arrangement.sections) {
-      expected += s.bars * (arrangement.harmonicRhythmTarget.chordsPerBarBySection[s.id] ?? 1);
-    }
+    for (const s of arrangement.sections) expected += s.bars;
     expect(plan.chordTimeline.length).toBe(expected);
   });
 
-  it('chorus 段和声节奏加密(chord 时长 = 半小节)', () => {
+  it('prototype = 1 和弦/小节(verse/chorus 同;chordsPerBar 加密退役)', () => {
     const chorusSpans = plan.chordTimeline.filter((c) => c.sectionId === 'chorus1');
     const verseSpans = plan.chordTimeline.filter((c) => c.sectionId === 'verse1');
-    // pop 4/4:verse 每和弦 4 拍,chorus 每和弦 2 拍
-    expect(verseSpans[0].durationBeats).toBe(4);
-    expect(chorusSpans[0].durationBeats).toBe(2);
+    expect(verseSpans[0].durationBeats).toBe(4);  // pop 4/4 整小节
+    expect(chorusSpans[0].durationBeats).toBe(4);
   });
 
   it('根音是 C 大调 diatonic(全落在大调音阶 pc 上)', () => {

@@ -13,7 +13,9 @@ import { tensionTableFor, type TensionTable } from '../knowledge/tensionModel';
 import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
 import { realChordScale } from '../knowledge/chordScales';
 import { modalVamp } from '../knowledge/modes';
-import { diatonicQuality, pickProgressionDegrees, type SectionRole } from '../knowledge/progressions';
+import { diatonicQuality, pickProgressionDegrees, type SectionRole, type BorrowedSource, type BassRole, type TonicizationPlacement, type ProgressionSlot } from '../knowledge/progressions';
+import { selectProgressionSlots } from './progressionSelector';
+import { realizeProgressionSlots } from './progressionRealizer';
 import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
 import type { BandSpec } from '../band/BandSpec';
@@ -36,7 +38,7 @@ const DEGREE_FUNCTION: Record<number, HarmonicFunction> = {
   5: 'D', 7: 'D',
 };
 
-interface ResolvedChord {
+export interface ResolvedChord {
   roman: RomanChord;
   rootPc: PitchClass;
   quality: ChordQuality;
@@ -45,6 +47,14 @@ interface ResolvedChord {
   func: HarmonicFunction;
   borrowed?: BorrowInfo;
   sectionKeyPc?: PitchClass; // 转调段落的实际调中心(undefined = 主调);chord-scale 据此解析
+  // —— Loop 2:prototype 携带的定义层字段(realizer 填,assemble 落到 ChordSpan)——
+  chordType?: string;
+  borrowedSource?: BorrowedSource;
+  mustResolve?: boolean;
+  forcedScale?: string;
+  localTonalCenterPc?: PitchClass;
+  bassRole?: BassRole;
+  tonicizationPlacement?: TonicizationPlacement;
 }
 
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
@@ -84,6 +94,14 @@ function assemble(
       startBeat: beats(beat),
       durationBeats: beats(rc.durationBeats),
       sectionId: rc.sectionId,
+      // Loop 2 prototype 定义层字段(均可选;degree-picker 路径多为 undefined,chordType 回退 quality)
+      chordType: rc.chordType ?? rc.quality,
+      borrowedSource: rc.borrowedSource,
+      mustResolve: rc.mustResolve,
+      forcedScale: rc.forcedScale,
+      localTonalCenterPc: rc.localTonalCenterPc,
+      bassRole: rc.bassRole,
+      tonicizationPlacement: rc.tonicizationPlacement,
     });
     chordFunctionTimeline.push(rc.func);
     if (modalSet) {
@@ -101,9 +119,12 @@ function assemble(
       colorToneMap[id] = tension.acceptable;
       avoidNoteMap[id] = tension.avoid;
       // ★ 真 chord-scale:调内→母调音阶(转调段落用该段实际调中心);属七/副属→根音 Mixolydian;借和弦→根音 Dorian。
+      //   prototype 的 borrowedSource 也参与判定(secondary_* → 副属;modal_interchange/backdoor → 借)。
+      const isSec = rc.roman.secondaryTarget !== undefined || rc.borrowedSource === 'secondary_dominant' || rc.borrowedSource === 'secondary_ii_v';
+      const isBor = rc.borrowed !== undefined || rc.borrowedSource === 'modal_interchange' || rc.borrowedSource === 'backdoor_dominant';
       chordScaleMap[id] = realChordScale(rc.rootPc, rc.sectionKeyPc ?? keyPc, keyMode, {
-        isSecondaryDominant: rc.roman.secondaryTarget !== undefined,
-        isBorrowed: rc.borrowed !== undefined,
+        isSecondaryDominant: isSec,
+        isBorrowed: isBor,
         isDominant: rc.quality === '7', // 小调 V7(及任何属七)→ 升导音进音阶
       });
     }
@@ -273,14 +294,24 @@ function buildResolvedProgression(
   const resolved: ResolvedChord[] = [];
   // ★ 铁律9:同 repeatGroup 共享同一进行(verse1≡verse2)→ 真排比 + 复现 hook 的 global 安全音一致
   const degreesByGroup = new Map<string, number[]>();
+  const protoByGroup = new Map<string, ProgressionSlot[]>(); // prototype-first 复用(Loop 2)
 
   for (const section of arrangement.sections) {
-    const chordsPerBar = arrangement.harmonicRhythmTarget.chordsPerBarBySection[section.id] ?? 1;
-    const totalChords = section.bars * chordsPerBar;
-    const chordDurBeats = beatsPerBar / chordsPerBar;
     const sectionKey = sectionKeyOf(section.id); // 转调段落=新调中心,否则=主调
     const isModulated = sectionKey !== band.key;
     const group = section.repeatGroup;
+
+    // ★ prototype-first(Loop 2):匹配到 prototype → 实化它(自带终止/borrow/副属),跳过 degree-picker。
+    const protoSlots = selectProgressionSlots({ band, section, hrng, protoByGroup });
+    if (protoSlots) {
+      resolved.push(...realizeProgressionSlots({ slots: protoSlots, section, sectionKey, isModulated, beatsPerBar }));
+      continue;
+    }
+
+    // —— fallback:旧 degree-picker(含终止式强制 + colorBudget 副属/借和弦)——
+    const chordsPerBar = arrangement.harmonicRhythmTarget.chordsPerBarBySection[section.id] ?? 1;
+    const totalChords = section.bars * chordsPerBar;
+    const chordDurBeats = beatsPerBar / chordsPerBar;
     let degrees: number[];
     if (group && degreesByGroup.has(group)) {
       degrees = degreesByGroup.get(group)!;

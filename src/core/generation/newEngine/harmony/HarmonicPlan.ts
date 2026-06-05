@@ -11,6 +11,7 @@
 import { deepFreeze, type Beats, type DeepReadonly, type PitchClass } from '../foundation';
 import type { ChordQuality } from '../knowledge/chords';
 import type { TensionTable } from '../knowledge/tensionModel';
+import type { BorrowedSource, BassRole, TonicizationPlacement } from '../knowledge/progressions';
 
 export type ChordSpanId = string;
 export type SectionId = string;
@@ -28,10 +29,19 @@ export interface ChordSpan {
   id: ChordSpanId;
   roman: RomanChord;
   rootPc: PitchClass;
-  quality: ChordQuality;
+  quality: ChordQuality;           // 窄品质(兼容;tension/chordScale 现读它)
   startBeat: Beats;
   durationBeats: Beats;
   sectionId: SectionId;
+  // —— 和声迁移 Loop 2:prototype 携带的【定义层】字段(可选,deepFreeze 机制不变)——
+  //   chordType 为权威宽类型(Loop 6 起 tension/chordScale 优先读它);其余为 borrow/离调/bass intent。
+  chordType?: string;              // 宽和弦类型(maj9/m9/13sus4/7b13…),对应 ChordTypeId
+  borrowedSource?: BorrowedSource; // secondary_dominant / modal_interchange / backdoor_dominant …
+  mustResolve?: boolean;
+  forcedScale?: string;            // ScaleTypeId 串(V/X 用 Mixolydian / Phrygian Dominant…)
+  localTonalCenterPc?: PitchClass; // 临时主音(离调);默认=调中心
+  bassRole?: BassRole;             // 转位 intent(render 消费)
+  tonicizationPlacement?: TonicizationPlacement;
 }
 
 export interface BorrowInfo {
