@@ -29,9 +29,9 @@ const CC_SUSTAIN = 64;
 //   bass CC7 降(它 velocity 本就高);comp CC7 仍高(补它低 velocity,另在 renderer 抬 body);pad/drum 抬。
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
   bass: { channel: 3, program: 33, volume: 84, pan: 64 },  // 中 · 降 fader(velocity 高、改音区后过热)
-  comp: { channel: 2, program: 0, volume: 116, pan: 50 },  // 偏左 · 补低 velocity(+renderer body)
-  lead: { channel: 1, program: 73, volume: 82, pan: 64 },  // 中 · 不突出,与 comp 平均(原 90 仍偏顶)
-  pad: { channel: 4, program: 89, volume: 106, pan: 78 },  // 偏右 · 抬起铺底(原太埋)
+  comp: { channel: 2, program: 0, volume: 93, pan: 50 },   // 偏左 · −20%(用户:和弦音太厚压旋律,116→93)
+  lead: { channel: 1, program: 73, volume: 82, pan: 64 },  // 中 · 旋律主线(现高于 comp/pad → 不被弦音压)
+  pad: { channel: 4, program: 89, volume: 74, pan: 78 },   // 偏右 · −30%(用户:铺底太厚,106→74)
   drum: { channel: 9, program: 0, volume: 102, pan: 64 },  // 中
 };
 
