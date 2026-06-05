@@ -20,6 +20,7 @@ import { buildTextureSchedule } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { runPrepass } from './motifAnchorPrepass';
 import { renderMelody } from './melodyRenderer';
+import { renderMgMelody } from './mgLeadRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { renderDrums } from './drumRenderer';
@@ -176,7 +177,11 @@ export function renderSongFull(
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi }));
   if (inLineup('pad')) tracks.push(renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, activeSectionIds }));
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule }));
-  tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有
+  // ★ Loop 7 coordinator-swap:lead 主链改为 MG 旋律链(decision C/B/1)。
+  //   旧 renderMelody 保留(其单测仍跑),不再被主链调用。多轨层(gateByDensity/ducking/CC7)原样包住。
+  //   anchorPlan/motifStore/candidateSwap 由 prepass 算出但 lead 不再消费(prepass 保留不动 rng 流)。
+  void renderMelody; void anchorPlan; void motifStore; void candidateSwap;
+  tracks.push(renderMgMelody(plan, band, timebase, rng.substream('melody'))); // lead 必有(MG 链)
 
   // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
   //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。

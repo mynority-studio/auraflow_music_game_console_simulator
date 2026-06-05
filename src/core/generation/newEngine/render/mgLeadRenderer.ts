@@ -1,0 +1,107 @@
+// ============================================================
+// newEngine · render · MgLeadRenderer(MG strict 移植 Loop 7 — coordinator swap)
+// ------------------------------------------------------------
+// 生产 lead:把【我们的 HarmonicPlan】喂 MG 旋律全链(decision B:MG 旋律喂我们和弦),
+// 产出单轨 lead TrackIR。外层 renderCoordinator 的多轨层(mix/ducking/density 弧)原样包住
+// (decision 1:多轨保我们的)。lead 内部用 MG enriched 语法 + 单轨手感(StyleRenderer)+ shapeMelodyHarmony
+// (decision C:塑形全量接收 MG)。确定性:seed 取自 RandomContext 'melody' 子流。
+//
+// ⚠️ repeatGroup:MG 链按【整曲】单次 RNG 扫描生成 → verse2(同和弦)旋律 ≠ verse1
+//   (不再守 newEngine 旧的 verse1≡verse2 记忆点不变量)。这是 MG-faithful 行为;
+//   多轨伴奏仍守 repeatGroup。若要 lead 也重复一致,是后续增强(按 repeatGroup 分组重放)。
+// ============================================================
+
+import type { HarmonicPlan } from '../harmony/HarmonicPlan';
+import type { BandSpec } from '../band/BandSpec';
+import type { Timebase, Rng } from '../foundation';
+import { midi, beats } from '../foundation';
+import type { TrackIR, NoteIR } from '../ir/MusicalIR';
+
+import { harmonicPlanToMgChordDefs } from './mgChordDefAdapter';
+import { buildChordPart } from './mgChordPart';
+import { parseRoadMap } from './mgRoadMapParser';
+import { expandGrammarForRoadMap } from './mgGrammarRuntime';
+import { scheduleBrickExpansions } from './mgTokenScheduler';
+import { fallbackTokensForBrick } from './mgAdvisor';
+import { realizeTokens } from './mgMelodyRealizer';
+import { buildGuideTonePlan } from './mgGuideTonePlanner';
+import { renderStyleFeel, feelForStyle } from './mgStyleRenderer';
+import { shapeMelodyHarmony } from './mgMelodyShaper';
+import {
+  ENRICHED_GRAMMAR, POP_ENRICHED_GRAMMAR, LOFI_ENRICHED_GRAMMAR, RNB_ENRICHED_GRAMMAR,
+} from '../knowledge/melodyStyleGrammarProfiles';
+import { makeSeededRng } from './mgRng';
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI';
+
+/** band.style(任意大小写)→ MG StyleName。未知 → JAZZ(base enriched,无专属 paradigm)。 */
+function toMgStyle(style: string): MgStyle {
+  const s = style.toUpperCase();
+  return (s === 'POP' || s === 'LOFI' || s === 'RNB' || s === 'JAZZ' || s === 'BLUES') ? s : 'JAZZ';
+}
+
+function grammarForStyle(s: MgStyle) {
+  return s === 'LOFI' ? LOFI_ENRICHED_GRAMMAR
+    : s === 'POP' ? POP_ENRICHED_GRAMMAR
+    : s === 'RNB' ? RNB_ENRICHED_GRAMMAR
+    : ENRICHED_GRAMMAR;
+}
+
+/** 生产 lead:HarmonicPlan → MG 全链 → lead TrackIR。 */
+export function renderMgMelody(
+  plan: HarmonicPlan,
+  band: BandSpec,
+  timebase: Timebase,
+  rng: Rng,
+): TrackIR {
+  const program = band.roleProgram.lead;
+  const chords = harmonicPlanToMgChordDefs(plan);
+  if (chords.length === 0) return { role: 'lead', notes: [], program };
+
+  // 确定性 seed:取自 'melody' 子流(同 seed → 同序列)。
+  const seed = rng.int(0x7fffffff);
+  const style = toMgStyle(band.style);
+  const songKeyPc = ((band.key as number) % 12 + 12) % 12;
+  const musicKey = NOTE_NAMES[songKeyPc];
+  // 模式名:modal regime 用具体教会调式(首字母大写);否则 major→Ionian / minor→Aeolian。
+  const cap = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
+  const musicMode = band.modalModeName ? cap(band.modalModeName) : (band.mode === 'minor' ? 'Aeolian' : 'Ionian');
+  const tonalCharacter: 'tonal' | 'modal' = band.tonalityKind === 'modal' ? 'modal' : 'tonal';
+  const meter: [number, number] = [timebase.meter.numerator, timebase.meter.denominator];
+
+  // ── MG 链(镜像 generateImprovisorMelody stage 1-5 + 生产 shapeMelodyHarmony)──
+  const mgRng = makeSeededRng(seed);
+  const part = buildChordPart(chords, meter);
+  const roadMap = parseRoadMap({ part, songKeyPc });
+  const perBrick = expandGrammarForRoadMap(grammarForStyle(style), roadMap.bricks, mgRng);
+  for (let i = 0; i < perBrick.length; i++) {
+    if (perBrick[i].tokens.length === 0) perBrick[i].tokens = fallbackTokensForBrick(perBrick[i].brick);
+  }
+  const scheduled = scheduleBrickExpansions(perBrick);
+  const guideTonePlan = buildGuideTonePlan({ chordPart: part });
+  let melody = realizeTokens({
+    scheduledTokens: scheduled,
+    chordPart: part,
+    rng: mgRng,
+    guideTonePlan,
+    preserveSlopeGrammar: style === 'LOFI',
+  });
+  melody = renderStyleFeel({ events: melody, feel: feelForStyle(style), rng: mgRng });
+  // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
+  const applyLofi = style === 'LOFI';
+  melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);
+
+  // ── MgNoteEvent[](beat)→ NoteIR[](tick)──
+  const notes: NoteIR[] = melody
+    .filter((e) => e.part === 'melody' && e.duration > 0)
+    .map((e) => ({
+      pitch: midi(Math.max(0, Math.min(127, Math.round(e.noteNumber)))),
+      startTick: timebase.beatToTick(beats(e.time)),
+      durationTicks: timebase.beatToTick(beats(Math.max(0.01, e.duration))),
+      velocity: Math.max(1, Math.min(127, Math.round(e.velocity))),
+    }))
+    .sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
+
+  return { role: 'lead', notes, program };
+}
