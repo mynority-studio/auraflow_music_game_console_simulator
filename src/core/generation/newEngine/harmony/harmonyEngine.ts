@@ -10,12 +10,14 @@
 
 import { beats, mod12, type PitchClass, type RandomContext, type Rng } from '../foundation';
 import { tensionTableFor, tensionTableForChordType, type TensionTable } from '../knowledge/tensionModel';
-import { degreeToSemitone, type DiatonicMode } from '../knowledge/scales';
+import { degreeToSemitone, getScalePitchClasses, isKnownScaleType, type DiatonicMode } from '../knowledge/scales';
 import { realChordScale } from '../knowledge/chordScales';
 import { modalVamp } from '../knowledge/modes';
 import { diatonicQuality, pickProgressionDegrees, type SectionRole, type BorrowedSource, type BassRole, type TonicizationPlacement, type ProgressionSlot } from '../knowledge/progressions';
 import { selectProgressionSlots, toHarmonyStyle } from './progressionSelector';
 import { realizeProgressionSlots } from './progressionRealizer';
+import { planTonicization } from './tonicizationPlanner';
+import { STYLE_TONICIZE_MAX_PER_SONG, STYLE_BORROW_SOURCE, type TonicizeStyle } from '../knowledge/tonicizationPolicies';
 import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
 import { evaluateVoiceLeading, type LedgerChord } from '../knowledge/voiceLeadingLedger';
@@ -125,15 +127,19 @@ function assemble(
       stableToneMap[id] = tension.stable;
       colorToneMap[id] = tension.acceptable;
       avoidNoteMap[id] = tension.avoid;
-      // ★ 真 chord-scale:调内→母调音阶(转调段落用该段实际调中心);属七/副属→根音 Mixolydian;借和弦→根音 Dorian。
-      //   prototype 的 borrowedSource 也参与判定(secondary_* → 副属;modal_interchange/backdoor → 借)。
-      const isSec = rc.roman.secondaryTarget !== undefined || rc.borrowedSource === 'secondary_dominant' || rc.borrowedSource === 'secondary_ii_v';
-      const isBor = rc.borrowed !== undefined || rc.borrowedSource === 'modal_interchange' || rc.borrowedSource === 'backdoor_dominant';
-      chordScaleMap[id] = realChordScale(rc.rootPc, rc.sectionKeyPc ?? keyPc, keyMode, {
-        isSecondaryDominant: isSec,
-        isBorrowed: isBor,
-        isDominant: rc.quality === '7', // 小调 V7(及任何属七)→ 升导音进音阶
-      });
+      // ★ 真 chord-scale:forcedScale(离调 V/ii 显式音阶)优先;否则调内→母调音阶(转调段落用该段实际调中心);
+      //   属七/副属→根音 Mixolydian;借和弦→根音 Dorian。prototype 的 borrowedSource 也参与判定。
+      if (rc.forcedScale && isKnownScaleType(rc.forcedScale)) {
+        chordScaleMap[id] = [...getScalePitchClasses(rc.rootPc, rc.forcedScale)].sort((a, b) => a - b) as PitchClass[];
+      } else {
+        const isSec = rc.roman.secondaryTarget !== undefined || rc.borrowedSource === 'secondary_dominant' || rc.borrowedSource === 'secondary_ii_v';
+        const isBor = rc.borrowed !== undefined || rc.borrowedSource === 'modal_interchange' || rc.borrowedSource === 'backdoor_dominant';
+        chordScaleMap[id] = realChordScale(rc.rootPc, rc.sectionKeyPc ?? keyPc, keyMode, {
+          isSecondaryDominant: isSec,
+          isBorrowed: isBor,
+          isDominant: rc.quality === '7', // 小调 V7(及任何属七)→ 升导音进音阶
+        });
+      }
     }
     beat += rc.durationBeats;
   });
@@ -321,6 +327,12 @@ function buildResolvedProgression(
   // ★ 铁律9:同 repeatGroup 共享同一进行(verse1≡verse2)→ 真排比 + 复现 hook 的 global 安全音一致
   const degreesByGroup = new Map<string, number[]>();
   const protoByGroup = new Map<string, ProgressionSlot[]>(); // prototype-first 复用(Loop 2)
+  // ★ 离调(tonicizationPlanner):per-song 预算 + per-group 缓存(repeatGroup 复用不重复消耗)
+  const tonStyle = toHarmonyStyle(band.style) as TonicizeStyle;
+  const tonMaxSong = STYLE_TONICIZE_MAX_PER_SONG[tonStyle] ?? 0;
+  const tonSource = STYLE_BORROW_SOURCE[tonStyle];
+  const tonByGroup = new Map<string, ResolvedChord[]>();
+  let tonFiresUsed = 0;
 
   for (const section of arrangement.sections) {
     const sectionKey = sectionKeyOf(section.id); // 转调段落=新调中心,否则=主调
@@ -376,20 +388,7 @@ function buildResolvedProgression(
       });
     }
 
-    // ★ 副属(V7/X):colorBudget 够(jazz)才加;tonicize body 内 V/vi 目标前一和弦(D7→G 等)。
-    //   确定性(无 rng)→ verse1≡verse2 排比不破;chromatic 色彩,melody 对其安全音重 snap。
-    if (band.styleProfile.colorBudget >= 0.5) {
-      for (let j = 0; j < totalChords - 2; j++) {
-        const target = slots[j + 1];
-        if ((target.degree === 5 || target.degree === 6) && slots[j].quality !== '7') {
-          const sdRoot = mod12(target.rootPc + 7); // 目标的属(上方五度)
-          slots[j] = {
-            degree: 5, quality: '7', rootPc: sdRoot, func: 'D',
-            roman: { degree: 5, accidental: 'natural', quality: '7', secondaryTarget: target.roman },
-          };
-        }
-      }
-    }
+    // ★ 副属/离调改由 tonicizationPlanner 统一处理(下方,resolved 序列上)。这里只留借和弦。
 
     // ★ 借和弦:大调向同名小调借 iv(IV→iv 小三和弦,Fm 在 C)。colorBudget≥0.3 才加,
     //   确定性=排比不破;Ab/Eb 离调色彩,melody 对其安全音重 snap。
@@ -407,18 +406,30 @@ function buildResolvedProgression(
       }
     }
 
-    for (const s of slots) {
-      resolved.push({
-        roman: s.roman,
-        rootPc: s.rootPc,
-        quality: s.quality,
-        durationBeats: chordDurBeats,
-        sectionId: section.id,
-        func: s.func,
-        borrowed: s.borrowed,
-        sectionKeyPc: isModulated ? sectionKey : undefined, // 转调段落 chord-scale 按新调中心解析
-      });
+    const secResolved: ResolvedChord[] = slots.map((s) => ({
+      roman: s.roman,
+      rootPc: s.rootPc,
+      quality: s.quality,
+      durationBeats: chordDurBeats as ResolvedChord['durationBeats'],
+      sectionId: section.id,
+      func: s.func,
+      borrowed: s.borrowed,
+      sectionKeyPc: isModulated ? sectionKey : undefined, // 转调段落 chord-scale 按新调中心解析
+    }));
+
+    // ★ 离调:在 diatonic fallback 段上注入 secondary ii-V / V(确定性,repeatGroup 复用不重复消耗预算)。
+    //   prototype 段不经此(上面 continue 了)。LOFI/BLUES tonMaxSong=0 → 跳过。
+    let finalSec = secResolved;
+    if (group && tonByGroup.has(group)) {
+      finalSec = tonByGroup.get(group)!.map((c) => ({ ...c, sectionId: section.id, sectionKeyPc: isModulated ? sectionKey : undefined }));
+    } else if (tonMaxSong > 0 && tonFiresUsed < tonMaxSong) {
+      const budget = Math.min(tonStyle === 'JAZZ' ? 2 : 1, tonMaxSong - tonFiresUsed);
+      const { chords: ton, fires } = planTonicization({ chords: secResolved, style: tonStyle, borrowSource: tonSource, maxFires: budget });
+      tonFiresUsed += fires;
+      finalSec = ton;
+      if (group) tonByGroup.set(group, ton);
     }
+    resolved.push(...finalSec);
   }
 
   return resolved;

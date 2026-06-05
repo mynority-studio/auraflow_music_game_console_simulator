@@ -119,3 +119,8 @@ export function listScaleTypes(filter?: { family?: ScaleFamily; source?: 'core' 
 export function getScalePitchClasses(rootPc: PitchClass, scaleType: ScaleTypeId): readonly PitchClass[] {
   return SCALE_INTERVALS[scaleType].map((iv) => mod12(rootPc + iv));
 }
+
+/** 运行期判断字符串是否合法音阶名(forcedScale 等 string 字段消费前守卫)。 */
+export function isKnownScaleType(s: string): s is ScaleTypeId {
+  return Object.prototype.hasOwnProperty.call(SCALE_INTERVALS, s);
+}

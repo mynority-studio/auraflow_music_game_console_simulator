@@ -104,7 +104,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const chromId = borrowedSpans[0];
   if (chromId) {
     const sec = chromId.borrowedSource === 'secondary_dominant' || chromId.borrowedSource === 'secondary_ii_v';
-    log(`   chord-scale ${spanLabel(chromId)} = [${scaleLabel(chromId.id)}](离调:根音 ${sec ? 'Mixolydian' : 'Dorian'})`);
+    // 离调和弦优先印 forcedScale(planner 显式设的 Mixolydian/Phrygian Dominant/Dorian/Locrian);否则按推导
+    const scaleName = chromId.forcedScale ?? (sec ? 'Mixolydian' : 'Dorian');
+    const place = chromId.tonicizationPlacement ? ` ${chromId.tonicizationPlacement}` : '';
+    log(`   chord-scale ${spanLabel(chromId)} = [${scaleLabel(chromId.id)}](离调${place}:根音 ${scaleName})`);
   }
   for (const [sid, m] of Object.entries(harmonic.modulationMap)) {
     log(`   转调 ${sid}: ${PCN[m.fromKey]}→${PCN[m.toKey]}(${m.label} ${m.semitones > 0 ? '+' : ''}${m.semitones}半音,进行整体移调 + 旋律随升)`);
