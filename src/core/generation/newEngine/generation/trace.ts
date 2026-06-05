@@ -91,6 +91,15 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   主 hook 让位锚点: ${mainHooks.map((h) => `${h.phraseId}@拍${h.beatSlot}`).join(' ') || '-'}`);
   // ★ 编曲密度弧:每段在场乐手(谁进/出)
   log(`   密度弧: ${arrangement.sections.map((s) => `${s.id}{${(instrumentation.activeRolesBySection[s.id] ?? []).join('+')}}`).join('  ')}`);
+  // ★ 段落重心诊断:中心段(hook/head/loop)占比 + 回归次数 + 末段能量(听感飘 → 看是否中心占比/复现不够)
+  const CENTER_TAGS = ['hook', 'head', 'loop'];
+  const centerSecs = arrangement.sections.filter((s) => CENTER_TAGS.includes(s.functionTag ?? ''));
+  const centerBars = centerSecs.reduce((n, s) => n + s.bars, 0);
+  const allBars = arrangement.sections.reduce((n, s) => n + s.bars, 0);
+  const cnt = (tag: string) => arrangement.sections.filter((s) => s.functionTag === tag).length;
+  const peakE = Math.max(0, ...arrangement.sections.map((s) => arrangement.energyBySection[s.id] ?? 0));
+  const reqAnchors = instrumentation.melodyReservationPlan.hookAnchorSlots.filter((h) => h.anchorRequired).length;
+  log(`   重心: centerBars=${centerBars}/${allBars}(${allBars ? Math.round((centerBars / allBars) * 100) : 0}%) hook×${cnt('hook')} loop×${cnt('loop')} head×${cnt('head')} 主锚×${reqAnchors} 末段energy=${peakE.toFixed(2)}`);
 
   // —— HARMONY ——
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);

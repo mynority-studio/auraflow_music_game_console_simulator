@@ -110,4 +110,13 @@ describe('arranger · 曲式多样 (3.5)', () => {
     // 统一 1 chord/bar(去 chorus 加密)
     for (const s of pop.sections) expect(pop.harmonicRhythmTarget.chordsPerBarBySection[s.id]).toBe(1);
   });
+
+  it('★ 回归 ramp(段落重心):同一中心段每次回归 energy 递增(末段=重心);lofi loop 仍 <0.6', () => {
+    const pop = styleForm('pop', 3); // POP_FULL:chorus1/chorus2/finalChorus
+    const e = (id: string) => pop.energyBySection[id];
+    expect(e('chorus2')).toBeGreaterThan(e('chorus1'));        // 第二次副歌更重
+    expect(e('finalChorus')).toBeGreaterThan(e('chorus2'));    // 末副歌最重 = 重心
+    const lofi = styleForm('lofi', 5);
+    expect(Math.max(...lofi.sections.map((s) => lofi.energyBySection[s.id]))).toBeLessThan(0.6); // loop ramp 仍守 <0.6
+  });
 });

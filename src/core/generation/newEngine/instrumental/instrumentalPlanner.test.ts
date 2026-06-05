@@ -95,6 +95,16 @@ describe('instrumental/instrumentalPlanner', () => {
     expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection);
   });
 
+  it('★ RNB call-response hook 也算主 hook(anchorRequired):重心修', () => {
+    const b = buildBandSpec({ seed: 3, styleHint: 'rnb', mood: 'x', targetDuration: 120 });
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) });
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
+    const req = ip.melodyReservationPlan.hookAnchorSlots.filter((h) => h.anchorRequired);
+    expect(req.length).toBeGreaterThan(0); // RNB hook 现在是主锚(原 call-response → isMain=false → 0)
+    const hookIds = arr.sections.filter((s) => s.functionTag === 'hook').map((s) => s.id);
+    expect(req.every((h) => hookIds.some((id) => h.phraseId.startsWith(id)))).toBe(true); // 主锚都落 hook 段
+  });
+
   it('★ 音色世界:plan 带 timbreWorld(可观测);确定性', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'jazz', mood: 'x', targetDuration: 120 });
     const arr = buildArrangementPlan(b, { rng: createRandomContext(3) });

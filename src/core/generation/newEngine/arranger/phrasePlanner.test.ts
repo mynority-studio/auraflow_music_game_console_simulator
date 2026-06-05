@@ -43,6 +43,15 @@ describe('arranger/phrasePlanner', () => {
     expect(new Set(motifBindings.map((b) => b.id)).size).toBe(motifBindings.length);
   });
 
+  it('★ hook A/A:hook 句共享 motifId(副歌两句=同核心动机的复述);非 hook 句按 slot 区分', () => {
+    // template chorus 两句都是 hook → 共享 m-C-h(A/A',同动机在不同和声上复述)
+    expect(bindingOf('chorus1-p0').motifId).toBe(bindingOf('chorus1-p1').motifId);
+    // verse:antecedent(hook 首句)≠ consequent(connector)→ 不同 motif(保对比)
+    expect(bindingOf('verse1-p0').motifId).not.toBe(bindingOf('verse1-p1').motifId);
+    // 跨段复现仍在:chorus1 与 chorus2 同 slot 共享
+    expect(bindingOf('chorus1-p0').motifId).toBe(bindingOf('chorus2-p0').motifId);
+  });
+
   it('★ T5 hook scope by functionTag:hook 段前 2 句、headOut/head/loop 仅首句、其它 connector', () => {
     const secs: Section[] = [
       { id: 'hk', role: 'chorus', functionTag: 'hook', bars: 16, hookPolicy: 'main' },    // 16/4=4 句

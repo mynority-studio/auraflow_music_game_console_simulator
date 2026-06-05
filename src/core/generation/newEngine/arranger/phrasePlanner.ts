@@ -81,11 +81,15 @@ export function planPhrases(sections: Section[], phraseBars: number): PhrasePlan
         skeletonRole,
       });
 
-      // ★ motifId 按 (repeatGroup 或 section) + slot → 同功能段落同 slot 共享动机(排比)
+      // ★ motifId 按 (repeatGroup 或 section) + slot → 同功能段落同 slot 共享动机(排比)。
+      //   ★ hook 内 A/A'(段落重心修):hook 句(skeletonRole='hook',前 2 句)【共用同一 motif 槽 'h'】→
+      //     副歌两句是【同一核心动机】在不同和声上复述 = 即时记忆点(A/A'),而非两个陌生动机。
+      //     连接句仍按 slot(verse 的 antecedent/consequent 保留对比)。
       const motifKey = section.repeatGroup ?? section.id;
+      const motifSlot = skeletonRole === 'hook' ? 'h' : slot;
       motifBindings.push({
         id: `${id}-b`,
-        motifId: `m-${motifKey}-${slot}`,
+        motifId: `m-${motifKey}-${motifSlot}`,
         phraseId: id,
         repeatGroup: section.repeatGroup,
         requestedRestatementStrength: ROLE_STRENGTH[section.role],

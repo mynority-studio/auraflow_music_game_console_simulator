@@ -41,6 +41,12 @@ const ENERGY_BY_FUNCTION: Record<SectionFunctionTag, number> = {
   outro: 0.30,
 };
 
+// ★ 重复段【回归 ramp】(段落重心修):同一 functionTag 每次回归 energy 略升 → "回归越来越重要"(末段=全曲重心)。
+//   只对【回归型中心段】(hook/head/loop)生效;其余段单次或不需 ramp。cap 守住风格上限
+//   (lofi loop<0.6 · jazz head<0.8)。确定性(occurrence index 纯计数)。
+const RAMP_PER_OCCURRENCE: Partial<Record<SectionFunctionTag, number>> = { hook: 0.06, head: 0.04, loop: 0.05 };
+const RAMP_CAP: Partial<Record<SectionFunctionTag, number>> = { hook: 0.92, head: 0.76, loop: 0.59 };
+
 export interface DynamicsPlan {
   energyBySection: Record<SectionId, number>;
   densityBySection: Record<SectionId, number>;
@@ -53,9 +59,17 @@ export function planDynamics(sections: Section[]): DynamicsPlan {
   const densityBySection: Record<SectionId, number> = {};
   const chordsPerBarBySection: Record<SectionId, number> = {};
 
+  const occByTag: Partial<Record<SectionFunctionTag, number>> = {};
   for (const s of sections) {
     // functionTag 优先(风格级能量轮廓),无则回退 role。
-    const e = s.functionTag ? ENERGY_BY_FUNCTION[s.functionTag] : ROLE_ENERGY[s.role];
+    let e = s.functionTag ? ENERGY_BY_FUNCTION[s.functionTag] : ROLE_ENERGY[s.role];
+    // ★ 回归 ramp:中心段(hook/head/loop)每次回归更重 → 重心推向末段(顺带让 climax 真在 energy 上体现)。
+    const tag = s.functionTag;
+    if (tag && RAMP_PER_OCCURRENCE[tag] !== undefined) {
+      const occ = occByTag[tag] ?? 0;
+      occByTag[tag] = occ + 1;
+      e = Math.min(RAMP_CAP[tag] ?? 1, e + occ * RAMP_PER_OCCURRENCE[tag]!);
+    }
     energyBySection[s.id] = e;
     densityBySection[s.id] = e;
     // ★ 去掉无条件 chorus⇒2:统一 1 chord/bar,段落层次交给 harmonyRole 选 prototype(prototype 自带节奏),

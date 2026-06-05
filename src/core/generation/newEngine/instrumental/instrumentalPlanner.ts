@@ -176,7 +176,10 @@ export function buildInstrumentationPlan(
   const hookAnchorSlots: HookAnchorSlot[] = arrangement.phrases
     .filter((p) => p.skeletonRole === 'hook')
     .map((p): HookAnchorSlot => {
-      const isMain = sectionById[p.sectionId]?.hookPolicy === 'main';
+      // ★ 主 hook = functionTag 'hook'(跨风格:pop chorus / RNB call-response hook 都算)或 legacy hookPolicy 'main'。
+      //   修:RNB hook 用 call-response → 原来 isMain=false 漏判,器配/让位层没把它当重心。
+      const sec = sectionById[p.sectionId];
+      const isMain = sec?.functionTag === 'hook' || sec?.hookPolicy === 'main';
       return {
         phraseId: p.id,
         beatSlot: starts[p.id],
