@@ -44,6 +44,42 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
   return maxEnd;
 }
 
+// CC64 踏板的风格:POP/LOFI/RNB comp 踩踏板(音尾 ring,融合);JAZZ/BLUES 不踩(声部清晰)。
+const PEDAL_STYLES = ['pop', 'lofi', 'rnb'];
+
+/** 伴奏 ducking:comp 撞旋律(lead)时 ×factor(让旋律清晰;旋律留白处 comp 不动=满响)。 */
+function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
+  const lead = tracks.find((t) => t.role === 'lead');
+  if (!lead || lead.notes.length === 0) return tracks;
+  const iv = lead.notes
+    .map((n) => [n.startTick as number, (n.startTick as number) + (n.durationTicks as number)] as const)
+    .sort((a, b) => a[0] - b[0]);
+  const hits = (s: number, e: number) => iv.some(([ls, le]) => s < le && e > ls);
+  return tracks.map((t) => {
+    if (t.role !== 'comp') return t;
+    return {
+      ...t,
+      notes: t.notes.map((n) => {
+        const s = n.startTick as number;
+        return hits(s, s + (n.durationTicks as number)) ? { ...n, velocity: Math.max(1, Math.round(n.velocity * factor)) } : n;
+      }),
+    };
+  });
+}
+
+/** CC64 踏板序列:每和弦踩下、下一和弦前 ~50ms 抬起(comp 音尾 ring 但不糊下一和弦)。 */
+function buildCompPedal(plan: HarmonicPlan, timebase: Timebase): { atTick: Ticks; down: boolean }[] {
+  const lift = timebase.beatToTick(beats(0.06)) as number;
+  const out: { atTick: Ticks; down: boolean }[] = [];
+  for (const span of plan.chordTimeline) {
+    const startT = timebase.beatToTick(span.startBeat) as number;
+    const endT = startT + (timebase.beatToTick(span.durationBeats) as number);
+    out.push({ atTick: ticks(startT), down: true });
+    out.push({ atTick: ticks(Math.max(startT + 1, endT - lift)), down: false });
+  }
+  return out;
+}
+
 export function renderSong(plan: HarmonicPlan, timebase: Timebase): RenderResult {
   const bass = renderBass(plan, timebase, 'default');
   const accompaniment = renderAccompaniment(plan, timebase);
@@ -133,7 +169,10 @@ export function renderSongFull(
     energyRanges.push({ lo: dynCursor, hi: dynCursor + s.bars * bpbDyn, energy: arrangement.energyBySection[s.id] ?? 0.5 });
     dynCursor += s.bars * bpbDyn;
   }
-  const dynamicTracks = applyDynamics(resolved.data.tracks, energyRanges, timebase.ppq);
+  // ★ 伴奏 ducking:comp 撞旋律时轻压 ×0.82(旋律 poke through;留白处满响)。
+  //   不重压(0.7 会把刚抬响的 comp 又埋了 — 旋律覆盖率~96%);轻压 + CC7 108 → comp 仍可听、旋律在上。
+  const duckedTracks = duckUnderLead(resolved.data.tracks, 0.82);
+  const dynamicTracks = applyDynamics(duckedTracks, energyRanges, timebase.ppq);
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
@@ -165,10 +204,13 @@ export function renderSongFull(
     sectionTicks.push({ id: s.id, tick: timebase.beatToTick(beats(secBeatCursor)) as number });
     secBeatCursor += s.bars * bpbProg;
   }
+  // ★ CC64 踏板:POP/LOFI/RNB 的 comp 每和弦踩(音尾 ring 融合);其它风格不踩(清晰)。
+  const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase) : undefined;
   const finalTracks = humanizedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const fallback = band.roleProgram[t.role];
-    if (!bySection) return { ...t, program: fallback };
+    const pedalEvents = t.role === 'comp' ? compPedal : undefined;
+    if (!bySection) return { ...t, program: fallback, pedalEvents };
     let initial = fallback;
     let prev: number | undefined;
     const changes: { atTick: Ticks; program: number }[] = [];
@@ -177,7 +219,7 @@ export function renderSongFull(
       if (prev === undefined) { initial = prog; prev = prog; }
       else if (prog !== prev) { changes.push({ atTick: ticks(tick), program: prog }); prev = prog; }
     }
-    return { ...t, program: initial, programChanges: changes.length ? changes : undefined };
+    return { ...t, program: initial, programChanges: changes.length ? changes : undefined, pedalEvents };
   });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   return { ir, audit };

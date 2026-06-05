@@ -19,6 +19,7 @@ interface ChannelVoice {
 const CC_VOLUME = 7;
 const CC_PAN = 10;
 const CC_REVERB = 91;
+const CC_SUSTAIN = 64;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(对齐 audio/MidiConverter 通道约定)
 // 混音(5.4):音量 lead120 > bass112 > comp108 > drum100 > pad72;声像 comp 偏左 / pad 偏右(宽度)。
@@ -50,6 +51,10 @@ export function musicalIRToMidiEvents(ir: MusicalIR): MidiEvent[] {
     // ★ 段落音色切换:同 channel 中途换 program(同一乐手换声音 / 效果器开关)
     for (const pc of track.programChanges ?? []) {
       events.push({ ticks: pc.atTick, type: 'programChange', channel: voice.channel, data1: pc.program, data2: 0 });
+    }
+    // ★ CC64 延音踏板:踩下(127)→ synth 持音直到抬起(0)→ 音尾 ring(comp 融合)
+    for (const ped of track.pedalEvents ?? []) {
+      events.push({ ticks: ped.atTick, type: 'cc', channel: voice.channel, data1: CC_SUSTAIN, data2: ped.down ? 127 : 0 });
     }
     // ★ 混音:通道音量(CC7)+ 声像(CC10)+ 混响发送(CC91 → 共享混响房间 = 深度),发音前置好
     events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_VOLUME, data2: voice.volume });
