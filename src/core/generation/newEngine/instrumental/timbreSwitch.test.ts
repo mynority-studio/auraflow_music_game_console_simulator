@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from './instrumentalPlanner';
-import { instrumentInfo, sameFamilyAlternates } from '../knowledge/instruments';
+import { instrumentInfo, isKeyboardFamily, sameFamilyAlternates } from '../knowledge/instruments';
 import { generateSong } from '../generation/GenerationController';
 import { createRandomContext, pc } from '../foundation';
 
@@ -50,6 +50,21 @@ describe('器配音色切换', () => {
     expect(chorusProg).not.toBe(primary);                        // chorus 换了
     expect(instrumentInfo(chorusProg).family).toBe(instrumentInfo(primary).family); // 同族
     expect(sameFamilyAlternates('pop', f.role, primary)).toContain(chorusProg);
+  });
+
+  it('★ 只有键盘族切(颤音琴/马林巴等 mallet 不切)+ 每首最多一个乐手切', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const { band, arr, plan } = planWith(seed, 'jazz'); // jazz lead 池含颤音琴/马林巴
+      let switchingRoles = 0;
+      for (const role of band.instrumentPool) {
+        const progs = new Set(arr.sections.map((s) => plan.programByRoleSection[role][s.id]));
+        if (progs.size > 1) {
+          switchingRoles++;
+          expect(isKeyboardFamily(band.roleProgram[role]), `${role} 切了但非键盘族`).toBe(true);
+        }
+      }
+      expect(switchingRoles).toBeLessThanOrEqual(1); // 每首最多一个
+    }
   });
 
   it('repeatGroup 一致:所有 chorus 同音色、所有 verse 同音色', () => {
