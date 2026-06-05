@@ -1,4 +1,4 @@
-# Four-Style Arrangement Rules for Arranger and Instrumentation
+# Four-Style Arrangement Rules for Q+N Consumption
 
 本文档把当前 newEngine 暴露的四个 macro 风格 `pop` / `jazz` / `rnb` / `lofi`
 整理成 arranger 和器配层可以消费的规则范式。目标不是替代
@@ -14,6 +14,28 @@
 
 本方案按 newEngine 注释里的 UI 四风格处理: `pop` / `jazz` / `rnb` / `lofi`。
 `BLUES` 建议继续作为 harmony/groove 资料库和未来第五风格,暂不放进主规则。
+
+## Q+N Upgrade Summary
+
+Q+N 面板走的是 `src/core/generation/newEngine/`。因此本方案升级为
+“分层下发协议”,不再只写风格经验:
+
+- `StyleArrangementRules` 是 KB 真源,只存风格知识和默认策略。
+- `Arranger` 把 KB 解析成结构意图:曲式、段落功能、phrase 功能、bar 级能量/密度、
+  和声节奏目标。
+- `InstrumentationPlanner` 把结构意图解析成编配意图:角色进出、每段/每 phrase 织体、
+  register reservation、hook 让位、pad/comp/bass 的活动上限。
+- `RenderCoordinator` 把编配意图解析成渲染指令:谁静音、谁降密度、comp 用 shell 还是
+  answer、pad 是否允许 attack、drum fill 是否允许、groove 微时序如何偏移。
+
+核心兼容原则:
+
+1. `Section.role` 先不强行扩展。继续保留现有
+   `intro | verse | chorus | bridge | outro`,避免打碎 harmony/render 旧调用。
+2. 新增 `functionTag` 承载音乐语义。`preChorus / preHook / head / solo / breakdown`
+   这类信息都通过 `functionTag` 下发。
+3. 所有消费者先读 `functionTag`,没有时回退到 `role`。这样 Q+N 可以渐进升级。
+4. `activityBySection` 必须变成可听层的指令,不能只停在 plan 字段里。
 
 ## Research Anchors
 
@@ -55,17 +77,23 @@ BandSpec(style)
   -> RenderCoordinator: per-bar texture schedule + role rendering + collision resolver
 ```
 
-## Proposed Contract
+## Layered Contract V2
 
 ```ts
 export type MacroStyle = 'pop' | 'jazz' | 'rnb' | 'lofi';
 
-export type SectionFunction =
+/**
+ * functionTag 是 Q+N 的音乐语义主字段。
+ * role 只保留为 legacy projection,用于现有 harmony/render fallback。
+ */
+export type SectionFunctionTag =
   | 'setup'
   | 'story'
   | 'build'
   | 'mainHook'
   | 'postHook'
+  | 'head'
+  | 'headOut'
   | 'contrast'
   | 'solo'
   | 'breakdown'
@@ -73,24 +101,80 @@ export type SectionFunction =
   | 'cadence'
   | 'fade';
 
+export type LegacySectionRole = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro';
+
 export interface SectionRecipe {
   idHint: string;
-  role: 'intro' | 'verse' | 'preChorus' | 'chorus' | 'bridge' | 'outro';
-  function: SectionFunction;
+  /**
+   * 兼容投影。preChorus/preHook/breakdown/head/solo 都投影到这五类之一。
+   * 真正音乐功能看 functionTag。
+   */
+  role: LegacySectionRole;
+  functionTag: SectionFunctionTag;
   bars: readonly number[];
   hookPolicy: 'none' | 'light' | 'main' | 'call-response';
-  energy: readonly number[];       // per phrase or normalized bar curve
-  density: readonly number[];      // independent from energy
-  harmonicRhythm: readonly number[]; // chords/bar per phrase
-  harmonyTags: readonly string[];  // e.g. popLoop, iiV, neoSoulVamp
+  repeatGroup?: string;
+  /**
+   * normalized bar/phrase shapes. Arranger 会按实际 bars resample 成每小节曲线。
+   */
+  energyShape: readonly number[];
+  densityShape: readonly number[];
+  harmonicRhythmShape: readonly number[]; // chords/bar by phrase or bar
+  harmonyTags: readonly HarmonyTag[];
+  climaxWeight: number; // 0..1,用于 final chorus / head-out / loop-open 等峰值识别
 }
 
-export interface RoleActivityRecipe {
-  bass: number;
-  comp: number;
-  pad: number;
-  drum: number;
-  lead: number;
+export type HarmonyTag =
+  | 'popLoop'
+  | 'preDominantBuild'
+  | 'dominantPedal'
+  | 'hookAnticipation'
+  | 'relativeMinor'
+  | 'iiV'
+  | 'turnaround'
+  | 'rhythmChanges'
+  | 'neoSoulVamp'
+  | 'backdoor'
+  | 'passingTail'
+  | 'lofiLoop'
+  | 'sampleLoop'
+  | 'chromaticApproach'
+  | 'softCadence';
+
+export interface PhraseDirective {
+  sectionId: string;
+  phraseId: string;
+  functionTag: SectionFunctionTag | 'answer' | 'turnaround';
+  hookStrength: 0 | 1 | 2 | 3; // 0 none,1 light,2 main,3 final/restatement
+  restatementStrength: number;
+  melodyDensityCeiling: number;
+  compDensityCeiling: number;
+  cadenceTarget: 'open' | 'half' | 'authentic' | 'loop' | 'tag';
+}
+
+export interface BarDirective {
+  sectionId: string;
+  barIndexGlobal: number;
+  barIndexInSection: number;
+  energy: number;
+  density: number;
+  chordsPerBar: 0.5 | 1 | 2;
+  /**
+   * 和声/织体提前量。0.5 = 在上一小节 beat 4& 提前进入,
+   * 用于 pop/RNB 推背感;lofi 通常 0 或随机 off-grid chop。
+   */
+  anticipationBeats: 0 | 0.25 | 0.5;
+  /**
+   * 首拍冲击策略。高潮首拍默认 full/wall,不允许被 hook 让位规则抽空。
+   */
+  downbeatImpact: 'none' | 'light' | 'full' | 'wall';
+  /**
+   * attack 后的动态避让窗口。替代“首拍不弹”的错误做法。
+   */
+  duckAfterAttackBeats: number;
+  fillPermission: 'none' | 'light' | 'strong';
+  textureCell: 'establish' | 'develop' | 'lift' | 'cadence';
+  loopMutation?: 'none' | 'muteDrum' | 'muteBass' | 'filterDown' | 'filterOpen' | 'vinylStop';
 }
 
 export interface TextureRecipe {
@@ -101,11 +185,63 @@ export interface TextureRecipe {
   padAttackPolicy: 'noneNearHook' | 'sustainOnly' | 'free';
 }
 
+export interface RoleActivityRecipe {
+  bass: number;
+  comp: number;
+  pad: number;
+  drum: number;
+  lead: number;
+}
+
+export interface RoleActivityWindow {
+  sectionId: string;
+  role: 'bass' | 'comp' | 'pad' | 'drum' | 'lead';
+  startBeat: number;
+  endBeat: number;
+  activity: number;  // 0 = mute, <0.25 = ghost/optional, 1 = full
+  velocityScale: number;
+  densityScale: number;
+}
+
+export interface RenderDirective {
+  sectionId: string;
+  role: 'bass' | 'comp' | 'pad' | 'drum' | 'lead';
+  compingMode?: 'full_voicing' | 'shell_only' | 'bass_plus_shell' | 'answer_only';
+  padAttackPolicy?: 'noneNearHook' | 'sustainOnly' | 'free';
+  bassPocket?: 'kickLock' | 'walkingApproach' | 'syncopated' | 'rootPulse';
+  drumPocket?: 'backbeat' | 'rideSwing' | 'latePocket' | 'softSwingHalfTime';
+  timingOffsetMs?: { kick?: number; snare?: number; hat?: number; comp?: number };
+  downbeatImpactPolicy?: 'stackedAttackThenDuck' | 'subtractiveLoop' | 'jazzTimeKeep' | 'none';
+  dynamicDucking?: { targetRole: 'comp' | 'pad' | 'allHarmony'; afterAttackBeats: number; gainDb: number };
+  allowSubBass?: boolean;
+  fillPolicy?: 'none' | 'sectionTailLight' | 'sectionTailStrong' | 'phraseTailOnly';
+}
+
+export interface MicroTimingProfile {
+  kickMs: readonly [number, number];   // negative = ahead
+  snareMs: readonly [number, number];  // positive = behind
+  hatSwingRatio: readonly [number, number];
+  hatRandomMs: readonly [number, number];
+  compMs: readonly [number, number];
+}
+
+export interface RegisterMaskPolicy {
+  bassFundamental: readonly [number, number]; // allow E1/C#1 region when style needs weight
+  bassBody: readonly [number, number];
+  compBody: readonly [number, number];
+  leadPresence: readonly [number, number];
+  padMode:
+    | 'lowMidBed'      // C3-C4 支撑,低通/低速度
+    | 'airOnly'        // C5 以上空气层
+    | 'wideDucked'     // 可重叠,但 attack 后 duck
+    | 'off';
+}
+
 export interface StyleArrangementRule {
   style: MacroStyle;
   formTemplates: readonly SectionRecipe[][];
-  roleActivityByFunction: Record<SectionFunction, RoleActivityRecipe>;
-  textureByFunction: Partial<Record<SectionFunction, TextureRecipe>>;
+  roleActivityByFunction: Record<SectionFunctionTag, RoleActivityRecipe>;
+  textureByFunction: Partial<Record<SectionFunctionTag, TextureRecipe>>;
   drumPolicy: DrumPolicy;
   bassPolicy: BassPolicy;
   melodyPolicy: MelodyPolicy;
@@ -113,26 +249,131 @@ export interface StyleArrangementRule {
 }
 ```
 
-可以先不一次性扩完 TS 类型。MVP 可在 `Section` 上加 `functionTag?: SectionFunction`
-和 `isFinalChorus?: boolean`,把 `preChorus` 临时映射成 role `bridge` 或直接扩展
-`SectionRole`。长期建议扩展 `SectionRole`,否则 harmony/dynamics 很难干净地区分 build。
+Q+N 最小字段升级:
 
-## Global Anti-Clash Rules
+```ts
+// arranger/ArrangementPlan.ts
+export interface Section {
+  id: SectionId;
+  role: SectionRole;                 // legacy projection
+  functionTag?: SectionFunctionTag;   // new semantic function
+  bars: number;
+  repeatGroup?: RepeatGroupId;
+  hookPolicy: HookPolicy;
+  climaxWeight?: number;
+}
 
-所有风格共享这些“不要抢戏”的硬规则:
+export interface Phrase {
+  id: PhraseId;
+  sectionId: SectionId;
+  functionTag?: SectionFunctionTag | 'answer' | 'turnaround';
+  hookStrength?: 0 | 1 | 2 | 3;
+  // existing fields unchanged...
+}
 
-1. Hook 优先级: `lead hook > bass pocket/root > kick/snare time > comp answer > pad/fill`。
-2. `hookPolicy === 'main'` 时,hook 起拍前后 0.25 拍内禁止新 pad attack,comp 只允许
-   `answer_only` 或 `shell_only`,drum fill 只能落在 phrase tail。
-3. 旋律 attack 密度高于阈值时,comp 从 full voicing 降级为 shell/answer;旋律稀疏时,
-   comp 可以用 active comp 或 fill。
-4. Pad 是气氛层,不负责节奏推动。高密度段 pad 只 sustain,低密度段才允许 slow swell。
-5. Bass 和 kick 共享 pocket。pop/rnb/lofi 以 kick alignment 为主;jazz 以 walking
-   quarter-note line 为主,drum ride 保持时间。
-6. 同一频段留白:lead 67-84,comp 48-72,pad 55-84,bass 36-52。RNB/JAZZ 可用宽和弦,
-   但与 lead 同时发生时必须避开 m2/m9 碰撞。
-7. 段落边界 fill 不是每次都满打。intro->verse 可无 fill,pre->chorus 或 bridge->final
-   chorus 才允许强 fill。
+export interface ArrangementPlanData {
+  // existing fields unchanged...
+  barDirectives?: BarDirective[];
+  phraseDirectives?: PhraseDirective[];
+}
+
+// instrumental/InstrumentationPlan.ts
+export interface InstrumentationPlanData {
+  // existing fields unchanged...
+  activityWindows?: RoleActivityWindow[];
+  renderDirectives?: RenderDirective[];
+}
+```
+
+## Layer Parsers
+
+### Arranger Parser
+
+输入: `BandSpec.style` + `StyleArrangementRules[style]`。
+
+输出:
+
+- `sections`: 保持 legacy `role`,新增 `functionTag`。
+- `phrases`: 用 `functionTag` 分配 hook/answer/cadence/solo,不要再把整个 chorus 都标 hook。
+- `barDirectives`: 每小节的 energy/density/chordsPerBar/fillPermission。
+- `harmonicRhythmTarget`: 仍保留旧 `chordsPerBarBySection`,但新增后续字段可从
+  `barDirectives` 读细分值。
+- `climaxMap`: 由 `climaxWeight` 选峰,不是简单最后一个 chorus。
+
+解析规则:
+
+- `role` 用于旧引擎兼容;`functionTag` 用于音乐语义。
+- Pop/RNB 的 pre-chorus/preHook 投影为 `role='bridge'`,但 `functionTag='build'`。
+- Jazz 的 head/headOut 投影为 `verse/chorus`,但 hook 语义看 `head/headOut`。
+- Lofi 的 loopA/loopA_muted/return 投影为 `verse`,loopA_open 可投影为 `chorus`
+  但 `functionTag` 仍是 `return/mainHook` 的轻量 loop-open,不是传统 B 段换和弦。
+
+### Instrumentation Parser
+
+输入: `ArrangementPlan.sections/phrases/barDirectives` + style rule。
+
+输出:
+
+- `activityWindows`: 角色级进出和强弱,render 必须消费。
+- `textureBySection`: 保持旧字段,作为 fallback。
+- `textureByPhrase` 或 future `textureWindows`: 让 verse2/finalHook/loop-open 与第一次不同。
+- `melodyReservationPlan`: 只给 main hook/head-out/final hook 强制 anchor,answer 句不强制。
+- `renderDirectives`: compingMode、padAttackPolicy、bassPocket、drumPocket、fillPolicy。
+
+解析规则:
+
+- activity 不是能量的复制。不同风格同样 energy 下,角色活动不同。
+- pad 的 activity 与 attack policy 分开:可以 sustain,也可以在 impact downbeat attack,
+  但 attack 后必须 duck 或转为 sustain-only。
+- `hookStrength >= 2` 时,首拍允许 full attack;从首拍后 0.25-1.5 拍开始,
+  comp/pad density ceiling 降到 0.35-0.45,而不是在首拍静音。
+- Jazz 默认 comp shell/rootless,但 solo 段允许更高 answer density。
+- Lofi 的 activity 主要做 mute/unmute,不是把所有轨同时推高。
+
+### Render Parser
+
+输入: `InstrumentationPlan.activityWindows/renderDirectives` +
+`ArrangementPlan.barDirectives` + `HarmonicPlan`。
+
+必须新增消费能力:
+
+- `activityWindows`: 每个 renderer 在生成前判断该 beat 的 role activity。
+  `activity=0` 静音,低 activity 降低 hit 数/velocity。
+- `compingMode`: comp renderer 在 span/window 级切换 full/shell/answer。
+- `padAttackPolicy`: pad renderer 只在非 impact 窗口禁止 hook 附近新 attack;
+  impact downbeat 可 attack,随后 duck/sustain-only。
+- `fillPermission/fillPolicy`: drum renderer 不再每个 section tail 都 fill。
+- `drumPocket/timingOffsetMs`: RNB micro-timing matrix、lofi hat swing/soft late、jazz ride swing。
+- `bassPocket`: pop kickLock,jazz walkingApproach,rnb syncopated,lofi rootPulse。
+
+render fallback:
+
+- 没有 `activityWindows` 时,沿用当前 lineup 全轨渲染。
+- 没有 `renderDirectives` 时,沿用当前 style groove + textureSchedule。
+- 没有 `barDirectives` 时,沿用 `energyBySection`。
+
+## Global Impact and Masking Rules
+
+这些规则替换旧版“Anti-Clash”。现代制作里的避让不是把 attack 拿掉,
+而是允许关键瞬间全层下砸,再用时值、速度、register、ducking 把 sustain 让出来。
+
+1. Hook/downbeat 优先级不是“旋律独奏”,而是
+   `impact stack -> transient clear -> sustain duck -> melody readable`。
+   `hookStrength >= 2` 的第一拍必须允许 kick/crash/bass/comp/pad 同时 attack。
+2. 禁止在高潮首拍使用纯 `answer_only` 或纯 `shell_only`。正确策略是
+   `stackedAttackThenDuck`:首拍 full/wide voicing,随后 0.5-1.5 拍内 comp/pad 降 velocity、
+   缩 duration 或掉中高声部。
+3. Pad 不固定占 MIDI 55-84。它只能处于三种模式之一:
+   `lowMidBed`(C3-C4 低速支撑)、`airOnly`(C5 以上空气层)、`wideDucked`
+   (可与 lead 重叠但必须 duck)。默认禁止 pad 在 lead presence 区持续无遮罩。
+4. Bass 必须允许 sub-fundamental。pop/RNB/lofi 的 bass fundamental 范围至少开放
+   MIDI 28-43,body 可在 36-55。Jazz upright 可较高,但也不能机械锁 36-52。
+5. 频段冲突不靠固定 MIDI 窗口解决。应靠 `RegisterMaskPolicy + dynamicDucking +
+   noteDurationShortening`。同 pitch/register 的 m2/m9 clash 仍需 resolver 处理。
+6. 和声推进不应全在小节线。Pop/RNB 可使用 `anticipationBeats=0.5` 在 beat 4& 提前换和弦
+   或提前打 comp/bass pickup;Jazz 可在 bar 4 用趋近音预告下一和弦;Lofi 可用 off-grid chop。
+7. Drum fill 不是每段尾巴默认出现。fill 必须读 `fillPermission`,并且副歌/drop 前允许强 fill,
+   lofi 大多数 transition 只做 mute/filter/noise,不做 showy fill。
 
 ## Pop Rule
 
@@ -151,14 +392,19 @@ Arranger:
 - Verse: energy 0.40-0.58,density 0.35-0.55,1 chord/bar。
 - Pre-chorus: energy 0.58->0.78,density 0.55->0.75,后半可 2 chords/bar。
 - Chorus: energy 0.78-0.90,density 0.70-0.85,1 chord/bar 为主,高能 seed 可 2 chords/bar。
+  首拍 `downbeatImpact='wall'`,随后 duck harmony sustain。
 - Bridge: energy 0.50-0.70,换和声重心或 register,最后 2 小节 build 回 final chorus。
 - Final chorus: chorus2 +0.05 energy,允许 pad/高八度 hook/鼓 crash。
 
 Harmony:
 
 - Verse/chorus 可共享四和弦 schema,但 chorus 靠 register、rhythm、density 变大。
-- Pre-chorus 用 S->D build: IV-V, ii-V, IV-V-iii-vi,或轻 secondary dominant。
+- Pre-chorus 禁止用会提前落地的 `IV-V-iii-vi` 作为结尾。它可以出现在 chorus/hook,
+  但 pre-chorus 尾部必须悬停:长 V、V(sus)、IV pedal、ii-V、V/V->V,
+  或 dominant pedal 不解决。目标是憋住,不是提前给 vi 的假落点。
 - Bridge 可用 relative minor、borrowed iv/bVI/bVII,但 tension carrier 主要给 melody。
+- Pop/RNB hook 可在上一小节 beat 4& 使用 `anticipationBeats=0.5`,
+  让和弦或 bass pickup 提前推入下一小节。
 
 Instrumentation:
 
@@ -166,8 +412,9 @@ Instrumentation:
 - Verse1: lead + sparse comp + bass;drum backbeat 轻。
 - Verse2: 加 pad 或更明确 bass/kick。
 - Pre: comp 八分/切分逐渐加密,pad swell,drum open hat 或 fill tail。
-- Chorus: full backbeat,bass 锁 kick,comp active 但 hook 起拍让位,pad sustain。
-- Melody: chorus phrase 0 才是 main hook;phrase 1 是 answer/post-hook,不要全段满 hook。
+- Chorus: full backbeat,bass 锁 kick,comp/pad 在首拍全层 attack,随后 duck。
+- Melody: chorus phrase 0 和 phrase 1 应高度镜像复读(A/A' 或 A/A),phrase 2 后才 answer、
+  post-hook 或 variation。商业 pop 的 hook 不能只打一遍就让位。
 
 ## Jazz Rule
 
@@ -198,7 +445,10 @@ Harmony:
 
 Instrumentation:
 
-- Bass: walking quarter notes,目标是连接 chord roots/5ths,不是 pop kick lock。
+- Bass: walking quarter notes 不是 root/5th 映射。它必须是 target-driven:
+  beat 1 明确当前和弦 root/3rd/5th 之一,beat 2-3 走 chord tone/scale tone,
+  beat 4 强制趋近下一和弦目标音,优先 chromatic approach/enclosure,
+  其次 diatonic step。没有 beat-4 approach 的 walking bass 视为失败。
 - Drum: ride pattern + pedal hat 2/4;snare/kick comp 只作互动。
 - Comp: off-beat/syncopated comping,默认 shell/rootless;melody密时 answer_only。
 - Pad: 极少使用,只在 ballad/chill jazz intro/outro 气氛层。
@@ -232,9 +482,13 @@ Harmony:
 
 Instrumentation:
 
-- Comp: Rhodes/FM EP/clean guitar 风格,以短句回答旋律;hook 起拍 `answer_only`。
-- Bass: syncopated,可比 pop 更旋律化,但必须保持 pocket。
-- Drum: backbeat 仍在 2/4 框架,但 snare 可略 late;hat ghost/16th variation。
+- Comp: Rhodes/FM EP/clean guitar 风格,以短句回答旋律;但 hook 的 "The One" 必须 full chord
+  或 wide color attack,之后再进入 answer/切分。禁止 hook 第一拍 `answer_only`。
+- Bass: syncopated,可比 pop 更旋律化,但必须保持 pocket。kick 相关低音可微 ahead,
+  与 snare behind 形成前后拉扯。
+- Drum: 不是简单地后拖军鼓。RNB/Neo-Soul 使用 micro-timing matrix:
+  kick -8..-2ms ahead,snare +12..+35ms behind,hat swing 0.58..0.65 且有不规则微抖,
+  comp/Rhodes +8..+25ms lay-back。单独拖 snare 会听成节奏不稳。
 - Pad: warm pad 小音量支撑,不做明显节奏。
 - Melody: conversational,允许 melisma/slide/anticipation;伴奏在尾音后回答。
 
@@ -245,25 +499,31 @@ Instrumentation:
 推荐曲式:
 
 ```text
-introLoop(4/8) -> A(8) -> A'(8) -> B/hook(8)
--> breakdown(4/8) -> returnA(8) -> B2(8) -> outro/fade(4/8)
+loopA(8) -> loopA_muted(8) -> loopA_open(8)
+-> breakdown/filter(4/8) -> loopA_return(8) -> outro/fade(4/8)
 ```
 
 Arranger:
 
-- 不用强 verse-chorus 爆发。结构靠 mute/unmute、滤波、drum/bass 进出、melody fragment 复现。
+- 不用强 verse-chorus 爆发,也不写明显 B 段换和弦高潮。Lofi 是 beat-making /
+  loop culture,结构靠 mute/unmute、滤波、drum/bass 进出、noise/chop 变化、
+  melody fragment 复现。
 - Energy 0.20-0.65,density 0.15-0.55;高潮也不超过 0.75。
-- Harmonic rhythm 多数 0.5-1 chord/bar;循环感优先于强 authentic cadence。
+- Harmonic rhythm 多数 0.5-1 chord/bar;整曲通常复用同一个 4/8 小节 loop。
+  允许 A/A' 变化 voicing 或 mute,不优先换 progression。
 - Phrase cell: establish -> develop -> lift -> cadence,但 lift 是 texture lift,不是 pop build。
 
 Harmony:
 
 - maj7/m7/m9/9sus/common-tone/soft ii-V-I;少用强 V7alt。
 - 允许 unresolved color 和 loop-back;tonicization/borrrowed planner 概率应接近 0。
+- `harmonyTags` 默认 `lofiLoop | sampleLoop | softCadence`。同一 loop 的声部进行和共同音
+  比新和弦数量更重要。
 
 Instrumentation:
 
-- Comp: piano/Rhodes broken 10th、late chord answer、one-shot space。
+- Comp: 优先 block/cluster/chop aesthetic:粘稠柱式和弦、短采样块、off-grid pad-hit。
+  Broken 10th 只能作为少量 lofi-piano 子风格,不能做默认。
 - Bass: optional pulse,少音符,跟 kick 或 chord roots。
 - Drum: soft boom-bap/half-time,hat swing 0.55-0.62,力度变化更大。
 - Pad/noise: 作为 texture layer,attack 稀少;可在 breakdown 独立出现。
@@ -273,45 +533,154 @@ Instrumentation:
 
 | Style | Form Shape | Energy Peak | Harmony Rhythm | Main Texture | Drum Rule | Comp Rule |
 | --- | --- | --- | --- | --- | --- | --- |
-| pop | verse-pre-chorus-chorus | final chorus | verse 1,pre tail 2,chorus 1/2 | active comp + pad sustain | backbeat 2/4,eighth hat | triad/6/9,shell on hook |
-| jazz | AABA/head-solo-head | solo late or head-out | 1-2 chords/bar,turnaround split | walking bass + sync comp | ride swing,pedal hat 2/4 | shell/rootless,answer melody |
-| rnb | vamp-verse-preHook-hook | final hook | 0.5-1 + passing tails | Rhodes/guitar answer + warm pad | late pocket,ghost hats | extended voicings,answer_only |
-| lofi | A/A'/B/breakdown/return | B2 subtle | 0.5-1 loop | sparse EP/piano + dust/pad | soft swing/half-time | sparse broken/one-shot |
+| pop | verse-pre-chorus-chorus | final chorus downbeat | verse 1,pre suspended,chorus anticipates | attack stack + ducked sustain | backbeat 2/4,eighth hat | full hit then duck,no empty hook |
+| jazz | AABA/head-solo-head | solo late or head-out | 1-2 chords/bar,turnaround split | walking approach + sync comp | ride swing,pedal hat 2/4 | shell/rootless,answer melody |
+| rnb | vamp-verse-preHook-hook | final hook The One | 0.5-1 + passing tails | Rhodes/guitar full hit then answer | kick ahead/snare behind/hat swing | extended voicings,not answer on beat 1 |
+| lofi | loop/mute/filter/return | subtle loop-open | same 4/8 loop mostly | block/chop cluster + dust | soft swing/half-time | sparse block/chop,not default broken 10th |
 
-## Implementation Plan
+## Q+N Rollout Plan
 
-1. Add `src/core/generation/newEngine/knowledge/styleArrangementRules.ts`.
-   Store the four `StyleArrangementRule` objects there. Keep it pure data.
-2. Extend arranger:
-   - `formPlanner.ts` selects templates by `band.style`.
-   - Add `functionTag` and `isFinalChorus` to `Section`.
-   - `timePlanner.ts` uses style feel: rnb pocket, lofi soft swing, jazz swing.
-   - `dynamicsPlanner.ts` emits bar/phrase curves, not only section scalar.
-3. Extend harmony:
-   - `harmonicRhythmTarget` becomes per phrase/bar.
-   - Section recipe selects progression tags and cadence policy.
-   - LOFI disables heavy tonicization; JAZZ enables ii-V/full turnaround; RNB enables color/passing tails.
-4. Extend instrumentation:
-   - `activityBySection` comes from `roleActivityByFunction`, not `activity=e` for all roles.
-   - Add `textureByPhrase` or per-bar schedule input so verse2/final chorus can differ from verse1/chorus1.
-   - Hook reservation uses section function and phrase slot, not every chorus phrase.
-5. Extend groove/render:
-   - Add `rnb` comp/drum patterns to `grooves.ts`.
-   - Change lofi feel from straight 0.5 to soft swing 0.55-0.62.
-   - Let `buildTextureSchedule` call rich `pickTextureForBar` with style, phrase cell, density, energy.
-6. Tests/listening:
-   - Snapshot form per style: pop has preChorus, jazz has AABA/head function, rnb has preHook/breakdown, lofi has loop/breakdown/return.
-   - Assert role activity: e.g. lofi chorus/B never full 1.0 all roles; jazz pad mostly low; pop final chorus denser than chorus1.
-   - Render smoke tests per style with no fatal auditor finding and nonempty expected roles.
+### Phase 1: Arranger understands form semantics
 
-## MVP Cut
+Files:
 
-If we want the fastest audible gain:
+- `src/core/generation/newEngine/knowledge/styleArrangementRules.ts`
+- `src/core/generation/newEngine/arranger/ArrangementPlan.ts`
+- `src/core/generation/newEngine/arranger/formPlanner.ts`
+- `src/core/generation/newEngine/arranger/phrasePlanner.ts`
+- `src/core/generation/newEngine/arranger/dynamicsPlanner.ts`
 
-1. Add style-specific form templates and `preChorus` for pop/rnb.
-2. Make `dynamicsPlanner` style-aware and final-chorus-aware.
-3. Make `instrumentalPlanner` use role activity tables.
-4. Add rnb groove and lofi swing.
-5. Keep render's existing five generic textures as fallback, then later wire rich texture profiles.
+Changes:
 
-This gives the user immediate song-level structure without waiting for full rich render support.
+1. Add pure KB file `styleArrangementRules.ts`.
+2. Add `functionTag?: SectionFunctionTag`, `climaxWeight?: number` to `Section`.
+3. Add `functionTag?`, `hookStrength?` to `Phrase`.
+4. Add optional `barDirectives` and `phraseDirectives` to `ArrangementPlanData`.
+5. Change `planForm(style)` to choose style-specific templates.
+6. Change `phrasePlanner`:
+   - Pop: phrase 0 and 1 of main hook are mirrored hook statements(A/A' or A/A);
+     phrase 2+ becomes answer/post-hook/variation.
+   - RNB: hook phrase 0 lands "The One" with full color attack; later phrases answer/call-response.
+   - Jazz: head/headOut phrases can be hook-like,solo phrases are not hook.
+   - Lofi: all sections reuse the same loop motif; loop-open may expose melody fragment,
+     but no pop-style B hook.
+7. Change `dynamicsPlanner`:
+   - Build `barDirectives` from recipe shapes.
+   - Keep old `energyBySection` and `chordsPerBarBySection` as averaged fallback.
+
+Acceptance:
+
+- Q+N trace shows `functionTag` beside section ids.
+- Pop/RNB output contains build/preHook semantics.
+- Jazz output has head/bridge/headOut or equivalent function tags.
+- Lofi output has loop/mute/filter/return semantics without chorus energy = 0.9.
+
+### Phase 2: Instrumentation understands role activity
+
+Files:
+
+- `src/core/generation/newEngine/instrumental/InstrumentationPlan.ts`
+- `src/core/generation/newEngine/instrumental/instrumentalPlanner.ts`
+- `src/core/generation/newEngine/generation/trace.ts`
+
+Changes:
+
+1. Add `activityWindows?: RoleActivityWindow[]`.
+2. Add `renderDirectives?: RenderDirective[]`.
+3. `buildInstrumentationPlan` reads section/phrase function tags,not only section role.
+4. Keep old `activityBySection`,but compute it from activity windows average.
+5. Hook reservation:
+   - force only `hookStrength >= 2`;
+   - answer/postHook only light reservation;
+   - jazz solo has no forced hook anchor.
+6. Trace prints role activity per section,not just texture.
+
+Acceptance:
+
+- Lofi breakdown can mute drum or bass through activity window.
+- Jazz pad is mostly inactive except intro/outro/ballad-like setup.
+- Pop final chorus adds pad/drum/comp activity relative to chorus1.
+- RNB hook does not make every role max activity; comp/pad stay supportive.
+
+### Phase 3: Render consumes directives
+
+Files:
+
+- `src/core/generation/newEngine/render/renderCoordinator.ts`
+- `src/core/generation/newEngine/render/accompanimentRenderer.ts`
+- `src/core/generation/newEngine/render/bassRenderer.ts`
+- `src/core/generation/newEngine/render/drumRenderer.ts`
+- `src/core/generation/newEngine/render/padRenderer.ts`
+- `src/core/generation/newEngine/render/textureSchedule.ts`
+- `src/core/generation/newEngine/knowledge/grooves.ts`
+
+Changes:
+
+1. Add a small runtime query:
+
+```ts
+function roleActivityAt(
+  instrumentation: InstrumentationPlan,
+  role: InstrumentRoleName,
+  beat: number,
+): RoleActivityState
+```
+
+2. All renderers call it before emitting notes:
+   - `activity <= 0`: skip;
+   - `activity < 0.25`: emit sparse/ghost only;
+   - otherwise scale velocity and density.
+3. `renderCoordinator` builds fill bars from `barDirectives.fillPermission`,not every section tail.
+4. `buildTextureSchedule` uses `barDirectives.energy/density/textureCell` instead of recomputing
+   from section role only.
+5. `accompanimentRenderer` accepts span/window compingMode:
+   - `full_voicing`: current full/wide;
+   - `shell_only`: current shell;
+   - `answer_only`: skip attacks during melody windows,except bars whose `downbeatImpact`
+     is `full/wall`;
+   - `bass_plus_shell`: only one/two guide tones.
+6. `padRenderer` consumes `padAttackPolicy`.
+7. `grooves.ts` adds `rnb` comp/drum patterns and lofi soft swing policy.
+
+Acceptance:
+
+- Activity window changes are audible in MIDI note count and velocity.
+- `hookStrength >= 2` produces stacked downbeat attack,then audible comp/pad ducking.
+- Lofi has fewer notes than pop at comparable duration.
+- RNB has its own groove path,not default groove.
+
+### Phase 4: Harmony consumes section intent
+
+Files:
+
+- `src/core/generation/newEngine/knowledge/progressions.ts`
+- `src/core/generation/newEngine/harmony/progressionSelector.ts`
+- `src/core/generation/newEngine/harmony/harmonyEngine.ts`
+
+Changes:
+
+1. Add `functionTag` and `harmonyTags` to progression selection input.
+2. Let `barDirectives.chordsPerBar` override section average when assembling spans.
+3. Pop/RNB build sections prefer `preDominantBuild`.
+4. Jazz head/bridge/headOut prefer AABA/rhythm/iiV/turnaround prototypes.
+5. Lofi sections prefer `lofiLoop`,soft cadence,and low tonicization budget.
+
+Acceptance:
+
+- Pop pre/build resolves into chorus with stronger D/T setup.
+- Jazz bridge uses contrasting cycle/ii-V behavior.
+- RNB has passing tails/backdoor without overfiring full jazz tonicization.
+- Lofi does not get forced chorus `2 chords/bar`.
+
+## Minimum Audible Cut
+
+最快能让 Q+N 听到结构提升的切片:
+
+1. `functionTag` + style-specific forms。
+2. `barDirectives` with energy/density/chordsPerBar/fillPermission。
+3. `activityWindows` consumed by renderers。
+4. `downbeatImpact + dynamicDucking + anticipationBeats` consumed by renderers。
+5. RNB micro-timing matrix + lofi loop/mute behavior。
+6. Hook phrase 改成 pop A/A' 镜像复读,不是只让第一 phrase 做 main hook。
+
+这些完成后,本方案就不是文档级建议,而是 Q+N 管道可解析、可下发、可听见的编曲规则。

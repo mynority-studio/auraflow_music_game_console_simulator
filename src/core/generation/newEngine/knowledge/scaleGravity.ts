@@ -93,3 +93,10 @@ export function getScaleGravity(scaleType: ScaleTypeId): Readonly<Record<number,
   }
   return out;
 }
+
+/** 每风格【引力严格度】(忠实 port mg STYLE_DICTIONARY.gravityStrictness)。
+ *  控制旋律多大程度遵守引力解决:soft score ×strictness(各风格都有);hard filter 仅 ≥0.45 启用。 */
+export const GRAVITY_STRICTNESS: Record<string, number> = { POP: 0.85, JAZZ: 0.35, BLUES: 0.55, RNB: 0.50, LOFI: 0.25 };
+export function gravityStrictnessFor(style: string): number {
+  return GRAVITY_STRICTNESS[style.toUpperCase()] ?? 0.5;
+}

@@ -18,6 +18,8 @@ import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
 import { developBar, pickGrammarName, type DevNote } from '../knowledge/grammarLibrary';
 import { guideToneMidi } from '../knowledge/guideTonePolicies';
 import { nearestInScale } from '../knowledge/modes';
+import { getScaleGravity, gravityStrictnessFor } from '../knowledge/scaleGravity';
+import { newGravityState, gravitySteer, gravityUpdate } from './melodyGravity';
 import { chordContractPcs, chordScalePcs, admitNoteByContract } from './harmonicContract';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MelodyAnchorPlan } from './MelodyAnchorPlan';
@@ -151,6 +153,11 @@ export function renderMelody(
 
     // hook 句:motif 逐小节 grammar 发展;末小节稀疏解决 + 句尾呼吸(留白)
     let prevMelodyMidi: number | undefined; // 同句旋律前一音(经过/邻音判定的"前")
+    // ★ scaleGravity 解决状态机(忠实 mg):不稳定音 arm 解决目标,后续音引向解决。modal 旁路。
+    const gravRules = isModal ? {} : getScaleGravity(band.mode === 'minor' ? 'Aeolian' : 'Ionian');
+    const gravStrict = gravityStrictnessFor(band.style);
+    const gravRootPc = secKey as number;
+    const gst = newGravityState();
     for (let bar = 0; bar < phrase.bars; bar++) {
       const barStart = phraseStart + bar * bpb;
       const isLastBar = bar === phrase.bars - 1;
@@ -165,6 +172,7 @@ export function renderMelody(
         const rawMidi = pcToMidiInRange(rawPc, leadLow, leadHigh);
         const pitch = midi(resolveGated(rawMidi, spanAtBeat(plan, barStart), leadLow, leadHigh, false));
         prevMelodyMidi = pitch;
+        gravityUpdate(gst, pitch as number, barStart, gravRules, gravRootPc); // 末长音也更新解决状态
         const dur = Math.max(0.5, bpb - breath);
         notes.push({
           pitch,
@@ -189,13 +197,16 @@ export function renderMelody(
             : midi(resolveGated(pcToMidiInRange(mod12(headPitch), leadLow, leadHigh), spanAtBeat(plan, noteBeat), leadLow, leadHigh, false));
         } else {
           // ★ 和声合同 gate:强拍/长音落合同,弱拍/经过/邻音容许级内/半音短音(读相对音阶)
-          const rawMidi = pcToMidiInRange(mod12(secKey + degreeToSemitone(dn.scaleDegree, band.mode)), leadLow, leadHigh);
+          //   先经 scaleGravity 引向解决(强规则+严格风格→ hard-steer),再过合同 gate(gate 最高权威)。
+          let rawMidi: number = pcToMidiInRange(mod12(secKey + degreeToSemitone(dn.scaleDegree, band.mode)), leadLow, leadHigh);
+          rawMidi = gravitySteer(rawMidi, noteBeat, gst, gravStrict, leadLow, leadHigh);
           const nextDn = devNotes[i + 1];
           const nextMidi = nextDn ? pcToMidiInRange(mod12(secKey + degreeToSemitone(nextDn.scaleDegree, band.mode)), leadLow, leadHigh) : undefined;
           const isWeak = isWeakBeatPos(dn.timeOffset, bpb, dn.duration);
           pitch = midi(resolveGated(rawMidi, spanAtBeat(plan, noteBeat), leadLow, leadHigh, isWeak, prevMelodyMidi, nextMidi));
         }
         prevMelodyMidi = pitch;
+        gravityUpdate(gst, pitch as number, noteBeat, gravRules, gravRootPc); // ★ 每音后更新解决状态
         notes.push({
           pitch,
           startTick: timebase.beatToTick(beats(noteBeat)),
