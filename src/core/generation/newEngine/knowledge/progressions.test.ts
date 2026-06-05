@@ -38,10 +38,10 @@ describe('knowledge/progressions', () => {
 });
 
 describe('progression prototype registry (harmony 迁移 Loop 1)', () => {
-  it('POOL = modern15 + lofi16 = 31,不含 legacy,id 唯一', () => {
-    expect(PROGRESSION_POOL).toHaveLength(31);
+  it('POOL = modern18 + lofi16 = 34,不含 legacy,id 唯一', () => {
+    expect(PROGRESSION_POOL).toHaveLength(34);
     expect(PROGRESSION_POOL.some((p) => p.id.startsWith('legacy_'))).toBe(false);
-    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(31);
+    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(34);
   });
 
   it('POP major 能选到 pop_canon_8 / pop_4536251_8', () => {

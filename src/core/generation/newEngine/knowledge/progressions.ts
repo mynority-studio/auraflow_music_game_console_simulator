@@ -151,6 +151,27 @@ const JAZZ_1625_8: ProgressionSlot[] = [ch('I', 'maj7', 0), ch('VI', '7alt', 9, 
 const JAZZ_MINOR_251_8: ProgressionSlot[] = [ch('ii', 'm7b5', 2), ch('V', '7alt', 7), ch('i', 'm9', 0), ch('i', 'm9', 0), ch('iv', 'm9', 5), ch('VII', '13', 10), ch('III', 'maj9', 3), ch('VI', '7alt', 8)];
 const BLUES_12BAR_DOMINANT: ProgressionSlot[] = [ch('I', '7', 0), ch('I', '7', 0), ch('I', '7', 0), ch('I', '7', 0), ch('IV', '7', 5), ch('IV', '7', 5), ch('I', '7', 0), ch('I', '7', 0), ch('V', '9', 7), ch('IV', '9', 5), ch('I', '7', 0), ch('V', '9', 7)];
 
+// —— 联网补足(2026-06-05,web 研究:Wikipedia Rhythm Changes + 爵士标准)—— 给薄的 jazz 加 3 条权威进行 ——
+// rhythm changes bridge:III7-VI7-II7-V7 五度循环属链(各 2 小节 → 2 slot)。
+const JAZZ_RHYTHM_BRIDGE_8: ProgressionSlot[] = [
+  ch('III', '13', 4, { borrowedSource: 'secondary_dominant', mustResolve: true }), ch('III', '13', 4, { borrowedSource: 'secondary_dominant', mustResolve: true }),
+  ch('VI', '13', 9, { borrowedSource: 'secondary_dominant', mustResolve: true }), ch('VI', '13', 9, { borrowedSource: 'secondary_dominant', mustResolve: true }),
+  ch('II', '9', 2, { borrowedSource: 'secondary_dominant', mustResolve: true }), ch('II', '9', 2, { borrowedSource: 'secondary_dominant', mustResolve: true }),
+  ch('V', '13', 7), ch('V', '7b9', 7),
+];
+// Autumn Leaves A:ii-V-I(关系大调 bIII)+ ii-V-i(小调)—— 小调爵士标准。
+const JAZZ_AUTUMN_LEAVES_8: ProgressionSlot[] = [
+  ch('iv', 'm7', 5), ch('bVII', '7', 10, { borrowedSource: 'secondary_dominant', mustResolve: true }),
+  ch('bIII', 'maj7', 3), ch('bVI', 'maj7', 8),
+  ch('ii', 'm7b5', 2), ch('V', '7alt', 7), ch('i', 'm9', 0), ch('i', 'm9', 0),
+];
+// 爵士 12-bar blues:含 #IV 替代位的 VI7 副属 + ii-V turnaround(比 BLUES_12BAR 更爵士)。
+const JAZZ_BLUES_12: ProgressionSlot[] = [
+  ch('I', '9', 0), ch('IV', '9', 5), ch('I', '7', 0), ch('I', '7', 0),
+  ch('IV', '9', 5), ch('IV', '9', 5), ch('I', '7', 0), ch('VI', '7#9', 9, { borrowedSource: 'secondary_dominant', mustResolve: true }),
+  ch('ii', 'm9', 2), ch('V', '13', 7), ch('I', '9', 0), ch('VI', '7alt', 9, { borrowedSource: 'secondary_dominant', mustResolve: true }),
+];
+
 const _MODERN_PROGRESSION_PROTOTYPES: ProgressionPrototype[] = [
   { id: 'pop_canon_8', style: 'POP', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: POP_CANON_8 },
   { id: 'pop_4536251_8', style: 'POP', mode: 'Major', sectionRoles: ['chorus', 'ending'], lengthBars: 8, slots: POP_4536251_8 },
@@ -166,6 +187,10 @@ const _MODERN_PROGRESSION_PROTOTYPES: ProgressionPrototype[] = [
   { id: 'rnb_backdoor_8', style: 'RNB', mode: 'Major', sectionRoles: ['chorus', 'ending'], lengthBars: 8, slots: RNB_BACKDOOR_8 },
   { id: 'jazz_1625_8', style: 'JAZZ', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: JAZZ_1625_8 },
   { id: 'jazz_min_251_8', style: 'JAZZ', mode: 'Minor', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: JAZZ_MINOR_251_8 },
+  // —— 联网补足(2026-06-05):3 条权威 jazz 进行,jazz 从 2 → 5 ——
+  { id: 'jazz_rhythm_bridge_8', style: 'JAZZ', mode: 'Major', sectionRoles: ['bridge'], lengthBars: 8, slots: JAZZ_RHYTHM_BRIDGE_8 },
+  { id: 'jazz_autumn_leaves_8', style: 'JAZZ', mode: 'Minor', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: JAZZ_AUTUMN_LEAVES_8 },
+  { id: 'jazz_blues_12', style: 'JAZZ', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 12, slots: JAZZ_BLUES_12 },
   { id: 'blues_12bar_dom', style: 'BLUES', mode: 'Major', sectionRoles: ['verse', 'chorus', 'intro', 'ending'], lengthBars: 12, slots: BLUES_12BAR_DOMINANT, weight: 3 },
 ];
 
