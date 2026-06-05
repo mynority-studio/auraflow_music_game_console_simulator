@@ -78,4 +78,14 @@ describe('instrumental/instrumentalPlanner', () => {
       expect([...plan.activeRolesBySection[s.id]].sort()).toEqual([...band.instrumentPool].sort());
     }
   });
+
+  it('★ A3 织体按 functionTag:build→active-comp / breakdown→sustained-block / setup→pad', () => {
+    const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // POP_FULL
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
+    expect(ip.textureBySection.build1).toBe('active-comp');      // 推进富织体(原 bridge role→sustained-block)
+    expect(ip.textureBySection.bridge).toBe('sustained-block');  // breakdown 抽离
+    expect(ip.textureBySection.intro).toBe('pad');               // setup 铺底
+    // legacy(无 functionTag)仍走 role(上方'织体按段落功能'用例已覆盖 chorus1=active-comp)
+  });
 });

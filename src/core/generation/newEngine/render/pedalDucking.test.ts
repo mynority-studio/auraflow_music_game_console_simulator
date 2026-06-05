@@ -8,6 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import { traceGeneration } from '../generation';
 import { musicalIRToMidiEvents } from '../sandbox/irToMidi';
+import { duckUnderLead } from './renderCoordinator';
+import { midi, ticks } from '../foundation';
+import type { TrackIR } from '../ir/MusicalIR';
 
 const gen = (style: string, seed = 7) => traceGeneration({ seed, styleHint: style, mood: 'x', targetDuration: 120 });
 const pedalEvents = (style: string) => musicalIRToMidiEvents(gen(style).ir).filter((e) => e.type === 'cc' && e.data1 === 64);
@@ -29,20 +32,19 @@ describe('CC64 踏板 + 伴奏 ducking', () => {
     for (let i = 0; i < ped.length - 1; i++) expect(ped[i].data2).not.toBe(ped[i + 1].data2);
   });
 
-  it('ducking:comp 撞旋律比留白处软,但仍可听(轻压,未被埋)', () => {
-    const t = gen('pop');
-    const comp = t.ir.tracks.find((x) => x.role === 'comp')!;
-    const lead = t.ir.tracks.find((x) => x.role === 'lead')!;
-    const iv = lead.notes.map((n) => [n.startTick as number, (n.startTick as number) + (n.durationTicks as number)] as const);
-    const hits = (n: { startTick: number; durationTicks: number }) => {
-      const s = n.startTick as number; const e = s + (n.durationTicks as number);
-      return iv.some(([a, b]) => s < b && e > a);
-    };
-    const ducked = comp.notes.filter((n) => hits(n as never));
-    const free = comp.notes.filter((n) => !hits(n as never));
-    const avg = (a: typeof comp.notes) => (a.length ? Math.round(a.reduce((x, n) => x + (n.velocity as number), 0) / a.length) : 0);
-    if (ducked.length && free.length) expect(avg(ducked)).toBeLessThan(avg(free)); // 撞旋律更软
-    expect(avg(ducked)).toBeGreaterThanOrEqual(50); // 但仍可听(没压回'听不见')
+  it('ducking 机制:comp 撞旋律 ×factor 变软,留白处不变(直接单测,稳于全局平均)', () => {
+    // ★ 改为机制单测:A3 后各段织体 velocity 差异大,全局 ducked/free 平均比较失真
+    //   (active 段 ducked 仍可能 > breakdown 段 free)。ducking 本身是 per-note ×factor,在此直接验。
+    const lead: TrackIR = { role: 'lead', notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }] };
+    const comp: TrackIR = { role: 'comp', notes: [
+      { pitch: midi(60), startTick: ticks(0), durationTicks: ticks(240), velocity: 80 },   // 撞 lead [0,240]
+      { pitch: midi(62), startTick: ticks(480), durationTicks: ticks(240), velocity: 80 }, // 留白处
+    ] };
+    const out = duckUnderLead([comp, lead], 0.9).find((t) => t.role === 'comp')!;
+    expect(out.notes[0].velocity).toBe(Math.round(80 * 0.9)); // 撞旋律 → ×0.9 = 72
+    expect(out.notes[1].velocity).toBe(80);                    // 留白 → 不变
+    expect(out.notes[0].velocity).toBeLessThan(out.notes[1].velocity); // 撞处更软
+    expect(out.notes[0].velocity).toBeGreaterThanOrEqual(50);  // 仍可听
   });
 
   it('确定性:同 seed 两次 lead/comp 一致', () => {

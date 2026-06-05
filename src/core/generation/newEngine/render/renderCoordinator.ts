@@ -48,7 +48,7 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
 const PEDAL_STYLES = ['pop', 'lofi', 'rnb'];
 
 /** 伴奏 ducking:comp 撞旋律(lead)时 ×factor(让旋律清晰;旋律留白处 comp 不动=满响)。 */
-function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
+export function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
   const lead = tracks.find((t) => t.role === 'lead');
   if (!lead || lead.notes.length === 0) return tracks;
   const iv = lead.notes

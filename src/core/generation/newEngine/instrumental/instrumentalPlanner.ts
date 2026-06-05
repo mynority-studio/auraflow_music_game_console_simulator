@@ -74,6 +74,24 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
   },
 };
 
+// ★ 织体按 functionTag(A3):取代纯 5-role 选择,让 build/breakdown/loop/head/solo/tag 各有专属织体。
+//   值域 = GenericTextureKind(active-comp/arpeggio/pad/sustained-block/walking-bass);
+//   texture→yield(active/floating)决定 render 的 activeSectionIds(active=comp 富织体)。
+//   映射放消费层(instrumentalPlanner 已知 functionTag)→ 不让 knowledge 反依赖 arranger。
+const TEXTURE_BY_FUNCTION: Record<SectionFunctionTag, TextureKind> = {
+  setup: 'pad',                  // intro 铺底
+  story: 'arpeggio',             // verse 分解(留空间)
+  build: 'active-comp',          // 推进(富织体)
+  hook: 'active-comp',           // 副歌满
+  breakdown: 'sustained-block',  // 抽离(floating=让位)
+  loop: 'arpeggio',              // lofi loop 分解
+  head: 'active-comp',           // jazz comping
+  solo: 'active-comp',           // solo 下 comping
+  headOut: 'active-comp',
+  tag: 'sustained-block',        // 收束持音
+  outro: 'pad',                  // 淡出铺底
+};
+
 /** 该段在场乐手 = (密度弧 mask ∪ lead)∩ lineup;无 tag/genre → 全 lineup。 */
 function activeRolesFor(style: string, section: Section, lineup: readonly InstrumentRoleName[]): InstrumentRoleName[] {
   const genre = DENSITY_ARC[style.toLowerCase()];
@@ -102,7 +120,8 @@ export function buildInstrumentationPlan(
   for (const s of arrangement.sections) {
     sectionById[s.id] = s as Section;
     const e = arrangement.energyBySection[s.id] ?? 0.5;
-    textureBySection[s.id] = pickGenericTexture(s.role as TextureSectionRole); // 查 KB(引擎无偏好)
+    // 织体:functionTag 优先(A3),无则回退 legacy role(template/无 rng 段)。
+    textureBySection[s.id] = s.functionTag ? TEXTURE_BY_FUNCTION[s.functionTag] : pickGenericTexture(s.role as TextureSectionRole);
     activityBySection[s.id] = { bass: e, comp: e, drum: e, lead: e, pad: clamp01(1 - e) };
     activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool); // ★ 密度弧
   }
