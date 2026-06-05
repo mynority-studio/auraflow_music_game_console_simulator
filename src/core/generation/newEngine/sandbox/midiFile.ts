@@ -9,6 +9,7 @@
 import type { MidiEvent } from '../../../audio/MidiScheduler';
 import type { MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents } from './irToMidi';
+import { roomWetFor } from './mixProfile';
 
 /** variable-length quantity:7 位一组,大端,非末组高位置 1。 */
 export function vlq(n: number): number[] {
@@ -42,10 +43,10 @@ function eventBytes(ev: MidiEvent): number[] | null {
 
 interface TimedBytes { tick: number; order: number; bytes: number[]; }
 
-/** MusicalIR + bpm → SMF(.mid)字节。format 0 单轨,division=ppq。 */
-export function musicalIRToSMF(ir: MusicalIR, bpm: number): Uint8Array {
+/** MusicalIR + bpm → SMF(.mid)字节。format 0 单轨,division=ppq。style → 共享房间混响。 */
+export function musicalIRToSMF(ir: MusicalIR, bpm: number, style?: string): Uint8Array {
   const ppq = ir.timebase.ppq;
-  const events = musicalIRToMidiEvents(ir);
+  const events = musicalIRToMidiEvents(ir, roomWetFor(style ?? 'default'));
 
   const timed: TimedBytes[] = [];
   // tempo meta @ tick0:FF 51 03 + 微秒/四分音符

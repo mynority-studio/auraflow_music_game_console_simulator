@@ -105,7 +105,7 @@ export const NewEnginePanel: React.FC = () => {
     const t = generate();
     setStatus('播放中…');
     try {
-      await playMusicalIR(t.ir, t.bpm);
+      await playMusicalIR(t.ir, t.bpm, style);
       setStatus('▶ 播放中');
     } catch (err) {
       setStatus(`音频启动失败:${String(err)}`);
@@ -115,7 +115,7 @@ export const NewEnginePanel: React.FC = () => {
   const onReplay = async () => {
     if (!lastIR.current) return;
     setStatus('播放中…');
-    try { await playMusicalIR(lastIR.current, lastBpm.current); setStatus('▶ 重播'); }
+    try { await playMusicalIR(lastIR.current, lastBpm.current, style); setStatus('▶ 重播'); }
     catch (err) { setStatus(`音频失败:${String(err)}`); }
   };
 
@@ -132,7 +132,7 @@ export const NewEnginePanel: React.FC = () => {
   const onExportMidi = () => {
     const ir = lastIR.current;
     if (!ir) { setStatus('先生成再导出'); return; }
-    const smf = musicalIRToSMF(ir, lastBpm.current);
+    const smf = musicalIRToSMF(ir, lastBpm.current, style);
     const blob = new Blob([smf as BlobPart], { type: 'audio/midi' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

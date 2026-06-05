@@ -10,12 +10,13 @@ import { globalMidiScheduler } from '../../../audio/MidiScheduler';
 import { startAudioContext } from '../../../audio/SynthManager';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
+import { roomWetFor } from './mixProfile';
 import { resolveAudibleRoles } from './pianoRoll';
 
-/** 播放一首 newEngine 生成的曲子。会先确保 AudioContext / synth 已启动。 */
-export async function playMusicalIR(ir: MusicalIR, bpm: number): Promise<void> {
+/** 播放一首 newEngine 生成的曲子。会先确保 AudioContext / synth 已启动。style → 共享房间混响湿度。 */
+export async function playMusicalIR(ir: MusicalIR, bpm: number, style?: string): Promise<void> {
   await startAudioContext();
-  const events = musicalIRToMidiEvents(ir);
+  const events = musicalIRToMidiEvents(ir, roomWetFor(style ?? 'default'));
   globalMidiScheduler.stop();
   globalMidiScheduler.loadTrack(events, bpm);
   globalMidiScheduler.start();
