@@ -17,9 +17,28 @@ export type RepeatGroupId = string;
 export type SectionRole = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro';
 export type HookPolicy = 'none' | 'light' | 'main' | 'call-response';
 
+// ★ 风格编排吸纳(CODEX V4.2,分层加字段,不动管道):
+//   harmonyRole → progressionSelector 选 prototype(值集 = KB ProtoSectionRole,直接可传);
+//   functionTag → dynamics 能量 / phrase hook scope 的轻量语义;
+//   linkOut    → harmony 段尾骨架链接(标意图;T6 才落实,当前 inert)。三者皆可选,向后兼容。
+export type HarmonySectionRole = 'intro' | 'verse' | 'chorus' | 'bridge' | 'ending' | 'loop';
+export type SectionFunctionTag =
+  | 'setup' | 'story' | 'build' | 'hook' | 'breakdown'
+  | 'loop' | 'head' | 'solo' | 'headOut' | 'tag' | 'outro';
+export type HarmonyLinkKind =
+  | 'none'
+  | 'dominantLift'              // IV -> V -> next I/vi
+  | 'secondaryToRelativeMinor' // IV -> III7 -> next vi
+  | 'backdoorToSubdominant'    // v/IV -> I7/IV -> next IV
+  | 'minorIvHold'              // iv hold -> next I/vi
+  | 'stopOnDominant';          // V stop -> next hook impact
+
 export interface Section {
   id: SectionId;
-  role: SectionRole;
+  role: SectionRole;              // legacy 投影(render/texture/trace),五类不变
+  harmonyRole?: HarmonySectionRole; // 给 progressionSelector(可选;缺省回退 role 映射)
+  functionTag?: SectionFunctionTag; // 给 dynamics / phrase(可选;缺省回退 role)
+  linkOut?: HarmonyLinkKind;        // 段尾和声链接意图(T6 落实;当前未消费)
   bars: number;
   repeatGroup?: RepeatGroupId;
   hookPolicy: HookPolicy;

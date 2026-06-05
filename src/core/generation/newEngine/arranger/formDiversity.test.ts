@@ -46,4 +46,45 @@ describe('arranger · 曲式多样 (3.5)', () => {
       expect(result.status).not.toBe('failed');
     }
   });
+
+  // —— 风格曲式池(CODEX V4.2 吸纳)——
+  const styleForm = (style: string, seed: number) => {
+    const band = buildBandSpec({ seed, styleHint: style, mood: 'x', targetDuration: 120, key: pc(0) });
+    return buildArrangementPlan(band, { rng: createRandomContext(seed) });
+  };
+
+  it('★ 风格曲式:lofi 无 chorus + 全 harmonyRole=loop;jazz 有 solo/headOut;rnb 有 preHook/breakdown', () => {
+    const lofi = styleForm('lofi', 5);
+    expect(lofi.sections.some((s) => s.role === 'chorus')).toBe(false); // lofi 不套 chorus
+    expect(lofi.sections.filter((s) => s.functionTag === 'loop').every((s) => s.harmonyRole === 'loop')).toBe(true);
+
+    const jazz = styleForm('jazz', 5);
+    expect(jazz.sections.some((s) => s.functionTag === 'solo')).toBe(true);
+    expect(jazz.sections.some((s) => s.functionTag === 'headOut')).toBe(true);
+
+    const rnb = styleForm('rnb', 5);
+    expect(rnb.sections.some((s) => s.id === 'preHook1')).toBe(true);
+    expect(rnb.sections.some((s) => s.functionTag === 'breakdown')).toBe(true);
+  });
+
+  it('★ 风格曲式确定性 + harmonyRole/functionTag 落位', () => {
+    expect(styleForm('jazz', 7).sections.map((s) => s.id)).toEqual(styleForm('jazz', 7).sections.map((s) => s.id));
+    const pop = styleForm('pop', 3);
+    const ch = pop.sections.find((s) => s.role === 'chorus')!;
+    expect(ch.harmonyRole).toBe('chorus');
+    expect(ch.functionTag).toBe('hook');
+    expect(pop.sections.find((s) => s.role === 'outro')!.harmonyRole).toBe('ending');
+  });
+
+  it('★ 风格曲式各段 repeatGroup 必同 bars(引擎按 group 复用 prototype,混 bars 会错配)', () => {
+    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+      const secs = styleForm(style, 5).sections;
+      const barsByGroup = new Map<string, number>();
+      for (const s of secs) {
+        if (!s.repeatGroup) continue;
+        if (barsByGroup.has(s.repeatGroup)) expect(s.bars).toBe(barsByGroup.get(s.repeatGroup));
+        else barsByGroup.set(s.repeatGroup, s.bars);
+      }
+    }
+  });
 });
