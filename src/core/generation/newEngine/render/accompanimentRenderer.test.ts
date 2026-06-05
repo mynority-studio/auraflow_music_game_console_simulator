@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderAccompaniment, yieldUnderMelody, polyVelocity } from './accompanimentRenderer';
+import { renderAccompaniment, yieldUnderMelody, polyVelocity, pocketizeBeat } from './accompanimentRenderer';
 import { buildHarmonicPlan } from '../harmony/harmonyEngine';
 import { createTimebase, pc } from '../foundation';
 
@@ -49,6 +49,13 @@ describe('render/accompanimentRenderer (comp 织体,bass 见 bassRenderer)', () 
     expect(new Set(out).size).toBe(out.length);    // 无重复(重复 → 减法)
     // 全部在 ceiling 之下、floor 之上
     for (const m of out) { expect(m).toBeLessThan(74); expect(m).toBeGreaterThanOrEqual(48); }
+  });
+
+  it('★ pocketizeBeat:小 lay-back 朝 8 分格收紧入袋;明显切分(>window)与 on-grid 不动', () => {
+    expect(pocketizeBeat(0.15, 0.6)).toBeCloseTo(0.06, 2); // 0.15 lay-back → 收 60% → 0.06
+    expect(pocketizeBeat(2.0, 0.6)).toBeCloseTo(2.0, 5);   // on-grid 不动
+    expect(pocketizeBeat(0.25, 0.6)).toBeCloseTo(0.25, 5); // 离 8 分格 0.25 > window 0.18 → 切分保留
+    expect(pocketizeBeat(0.66, 0.2)).toBeGreaterThan(0.6); // lofi 轻收(strength 0.2)→ 几乎保留 dusty
   });
 
   it('★ polyVelocity:单/双音不衰减,密块按 √(2/N) 衰减且单调递减', () => {

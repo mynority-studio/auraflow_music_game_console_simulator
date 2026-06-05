@@ -58,6 +58,23 @@ export function polyVelocity(baseVel: number, n: number): number {
   return Math.max(1, Math.round(baseVel * Math.sqrt(2 / n)));
 }
 
+/**
+ * comp 入袋(pocketize):texture 的小 lay-back(0.05/0.15 拍)在独奏钢琴里是性格,但在紧实节奏组旁 = 飘、对拍不齐。
+ *   把音头朝最近的【8 分格】拉 strength(保留相对律动);|偏移| > window(明显切分/swing 位)不动。
+ *   → comp 坐回与 bass/drum 同一拍格的口袋里。确定性、纯函数(beat→beat)。
+ */
+export function pocketizeBeat(beatPos: number, strength = 0.6, window = 0.18): number {
+  const EIGHTH = 0.5;
+  const q = Math.round(beatPos / EIGHTH) * EIGHTH; // 最近 8 分格
+  const d = beatPos - q;
+  if (Math.abs(d) > window) return beatPos;        // 明显切分 → 保留
+  return q + d * (1 - strength);                    // 朝 8 分格拉(lay-back 收紧入袋)
+}
+
+// ★ pocketize 强度【按风格】:pop/rnb 须紧实(以 POP 为主)→ 强收;lofi 的 dusty-behind / jazz 的 swung comping
+//   是【genre 性格】不是 flaw → 轻收(几乎保留)。同样的 lay-back 在 pop 是毛病、在 lofi 是味道。
+const POCKET_STRENGTH: Record<string, number> = { pop: 0.65, rnb: 0.6, jazz: 0.3, lofi: 0.2 };
+
 const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
   intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
 };
@@ -110,6 +127,7 @@ export function renderAccompaniment(
   const beatsPerBar = beatsPerBarOf(timebase.meter);
   const pattern = compPattern(ctx.style ?? 'default');
   const style = ctx.style ?? 'default';
+  const pocketStrength = POCKET_STRENGTH[style.toLowerCase()] ?? 0.45; // comp 柱式入袋强度(按风格)
   const inActive = (sid: string) => !ctx.activeSectionIds || ctx.activeSectionIds.has(sid);
 
   let totalBeats = 0;
@@ -210,11 +228,14 @@ export function renderAccompaniment(
 
       const base = span.startBeat as number;
       for (const h of renderTextureChordHits(tc, voiced, span.durationBeats as number)) {
-        const startTick = timebase.beatToTick(beats(base + h.tRel));
+        // ★ 入袋:仅【柱式块(h.midis≥2)】收 lay-back 与节奏组对拍;arp/roll(单音 hit)是有意 stagger,不动。
+        //   强度按风格(pop/rnb 紧、lofi/jazz 留性格)。
+        const tRel = h.midis.length >= 2 ? pocketizeBeat(base + h.tRel, pocketStrength) : base + h.tRel;
+        const startTick = timebase.beatToTick(beats(tRel));
         const durationTicks = timebase.beatToTick(beats(h.dur));
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
-        const vel = Math.max(1, Math.min(115, Math.round((h.vel * 0.92 + 0.3) * 127)));
+        const vel = Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
         for (const m of h.midis) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
       }

@@ -84,12 +84,15 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(firstLeadCCIdx).toBeLessThan(firstLeadOnIdx);
   });
 
-  it('★ 音量【适中均衡】:lead/bass/comp 接近(不突出 lead),pad 最弱', () => {
+  it('★ 音量均衡 = CC7 补偿各轨 velocity(非 CC7 相等):comp fader 最高(velocity 最低),lead 不顶', () => {
     const vol = (ch: number) => cc(ch, 7).data2;
-    const core = [vol(CH.lead), vol(CH.bass), vol(CH.comp)];
-    expect(Math.max(...core) - Math.min(...core)).toBeLessThanOrEqual(16); // 三者 CC7 接近 = 均衡
-    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.lead)); // comp 补它较低的 velocity → CC7 ≥ lead
-    expect(vol(CH.pad)).toBeLessThan(vol(CH.comp));            // pad 铺底最弱
+    // 均衡看【有效响度 = CC7 × velocity】,不是 CC7 相等:comp 源 velocity 最低 → fader 最高补偿
+    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.lead));
+    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.bass));
+    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.pad));
+    // lead velocity 高 → fader 拉低,不再最响(用户:lead 不突出、与 comp 平均)
+    expect(vol(CH.lead)).toBeLessThanOrEqual(vol(CH.comp));
+    expect(vol(CH.lead)).toBeLessThanOrEqual(vol(CH.pad));
     // 全在合法 MIDI 范围
     for (const ch of Object.values(CH)) expect(vol(ch)).toBeGreaterThan(0), expect(vol(ch)).toBeLessThanOrEqual(127);
   });

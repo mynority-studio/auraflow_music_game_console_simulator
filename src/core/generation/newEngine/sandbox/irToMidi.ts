@@ -24,12 +24,15 @@ const CC_SUSTAIN = 64;
 // ★ 混音【适中均衡】(2026-06-05):lead 不再突出,与伴奏平均坐在一起(单一方案,不分风格)。
 //   CC7 推子压平 spread;comp 偏高补它较低的 velocity → lead/bass/comp 有效响度接近;pad 抬起(原太埋)。
 //   有效响度 ≈ CC7 × velocity:lead vel 高(90)→ CC7 拉低;comp vel 低(~67)→ CC7 拉高 → 二者打平。
+// ★ 均衡按【有效响度 = CC7 × velocity】设(2026-06-05 再平衡):测得 bass 过热(改音区后 μ90+)、
+//   comp 被复音衰减拖低、pad 偏埋 → 目标把旋律层/节奏组拉到 ~同一响度带,pad 作铺底。
+//   bass CC7 降(它 velocity 本就高);comp CC7 仍高(补它低 velocity,另在 renderer 抬 body);pad/drum 抬。
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
-  bass: { channel: 3, program: 33, volume: 106, pan: 64 }, // 中
-  comp: { channel: 2, program: 0, volume: 116, pan: 50 },  // 偏左 · 补低 velocity → 与 lead 平均
-  lead: { channel: 1, program: 73, volume: 102, pan: 64 }, // 中 · 不再最响,坐进伴奏里
-  pad: { channel: 4, program: 89, volume: 94, pan: 78 },   // 偏右 · 抬起(原 72 太埋)
-  drum: { channel: 9, program: 0, volume: 100, pan: 64 },  // 中
+  bass: { channel: 3, program: 33, volume: 84, pan: 64 },  // 中 · 降 fader(velocity 高、改音区后过热)
+  comp: { channel: 2, program: 0, volume: 116, pan: 50 },  // 偏左 · 补低 velocity(+renderer body)
+  lead: { channel: 1, program: 73, volume: 82, pan: 64 },  // 中 · 不突出,与 comp 平均(原 90 仍偏顶)
+  pad: { channel: 4, program: 89, volume: 106, pan: 78 },  // 偏右 · 抬起铺底(原太埋)
+  drum: { channel: 9, program: 0, volume: 102, pan: 64 },  // 中
 };
 
 const DEFAULT_VOICE: ChannelVoice = { channel: 0, program: 0, volume: 100, pan: 64 };
