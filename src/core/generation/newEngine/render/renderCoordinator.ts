@@ -96,9 +96,7 @@ export function renderSongFull(
     if (s < arrangement.sections.length - 1) fillBars.add(barCursor - 1);
   }
 
-  // 织体分流:active 段 comp / floating 段 pad(不重叠)
-  const floatingSectionIds = new Set<string>();
-  for (const s of arrangement.sections) if (!activeSectionIds.has(s.id)) floatingSectionIds.add(s.id);
+  // ★ pad 改为独立常驻轨(全段落铺底,见 padRenderer);不再与 comp 二选一(去掉 floating XOR)。
 
   // ★ 多声部节奏【中央下发】:纹理 schedule 一次性建好,bass/comp/drum 共享同一 textureCase →
   //   同一时钟对拍/复调(纹理全权,忠实 mg)。需 harmony(dominant-chain)→ 在此协调层算。
@@ -110,7 +108,7 @@ export function renderSongFull(
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style, textureSchedule));
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule }));
-  if (inLineup('pad')) tracks.push(renderPad(plan, timebase, floatingSectionIds));
+  if (inLineup('pad')) tracks.push(renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, activeSectionIds }));
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule }));
   tracks.push(renderMelody(anchorPlan, motifStore, plan, arrangement, band, timebase, candidateSwap, overlay?.restatementOverride)); // lead 必有
 
