@@ -36,10 +36,12 @@ export function selectProgressionSlots(args: {
   const group = section.repeatGroup;
   if (group && protoByGroup.has(group)) return protoByGroup.get(group)!;
 
+  // ★ harmonyRole(CODEX V4.2)优先:lofi 段请求 'loop' prototype、outro→'ending' 等显式语义;
+  //   缺省回退 legacy role 映射。harmonyRole 值集 ≡ ProtoSectionRole,直接可传。
   const slots = pickProgressionPrototype({
     style: toHarmonyStyle(band.style),
     mode: band.mode === 'minor' ? 'Minor' : 'Major',
-    functionRole: ROLE_MAP[section.role as SectionRole] ?? 'verse',
+    functionRole: section.harmonyRole ?? ROLE_MAP[section.role as SectionRole] ?? 'verse',
     bars: section.bars,
     random: hrng,
   });
