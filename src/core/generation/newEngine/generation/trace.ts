@@ -70,7 +70,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const formShape = arrangement.sections.map((s) => s.role).join('-'); // seed 选型曲式骨架
   const totalBars = arrangement.sections.reduce((n, s) => n + s.bars, 0);
   log(`■ ARRANGER   ${arrangement.tempoBpm}bpm ${arrangement.meter.numerator}/${arrangement.meter.denominator} ${arrangement.feel.kind} · 曲式=${formShape}(${arrangement.sections.length}段/${totalBars}小节,seed 选) · 高潮=${arrangement.climaxMap.map((c) => c.sectionId).join(',') || '-'}`);
-  log(`   段落: ${arrangement.sections.map((s) => `${s.id}[${s.bars}b${s.repeatGroup ? '·' + s.repeatGroup : ''}·${s.hookPolicy}${s.functionTag ? '·' + s.functionTag : ''}${s.harmonyRole ? '·H:' + s.harmonyRole : ''}]`).join('  ')}`);
+  log(`   段落: ${arrangement.sections.map((s) => `${s.id}[${s.bars}b${s.repeatGroup ? '·' + s.repeatGroup : ''}·${s.hookPolicy}${s.functionTag ? '·' + s.functionTag : ''}${s.harmonyRole ? '·H:' + s.harmonyRole : ''}${s.linkOut && s.linkOut !== 'none' ? '·→' + s.linkOut : ''}]`).join('  ')}`);
   log(`   乐句 ${arrangement.phrases.length} · 动机绑定 ${arrangement.motifBindings.length}(同 motifId 跨段=排比)`);
 
   // —— INSTRUMENTAL ——

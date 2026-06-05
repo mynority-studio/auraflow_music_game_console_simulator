@@ -22,7 +22,7 @@ import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
 import { evaluateVoiceLeading, type LedgerChord } from '../knowledge/voiceLeadingLedger';
 import type { BandSpec } from '../band/BandSpec';
-import type { ArrangementPlan } from '../arranger/ArrangementPlan';
+import type { ArrangementPlan, HarmonyLinkKind } from '../arranger/ArrangementPlan';
 import {
   freezeHarmonicPlan,
   type BorrowInfo,
@@ -286,6 +286,70 @@ function resolvedToLedgerChords(resolved: ResolvedChord[]): LedgerChord[] {
   });
 }
 
+// ============================================================
+// linkOut 段尾骨架链接(CODEX V4.2 T6):按 section.linkOut 改写【当前段尾 1-2 和弦】,
+//   形成 verse/preHook → chorus 的功能推进。只改尾、不动段体(repeatGroup 段体不变,配对段同 link → 仍一致);
+//   next-start 守卫:secondaryToRelativeMinor 需下一段起 vi、major 调,否则降级 dominantLift;backdoor 首版降级。
+//   确定性,无 rng。chord-scale 由 assemble 据新和弦重算(清空旧 forcedScale/bassRole 等)。
+// ============================================================
+interface TailOpts { borrowed?: BorrowInfo; borrowedSource?: BorrowedSource; secondaryTarget?: RomanChord; mustResolve?: boolean; }
+function overwriteChord(c: ResolvedChord, degree: number, quality: ChordQuality, func: HarmonicFunction, secKey: number, mode: DiatonicMode, opts: TailOpts = {}): void {
+  c.rootPc = mod12(secKey + degreeToSemitone(degree, mode)) as PitchClass;
+  c.quality = quality;
+  c.chordType = quality;
+  c.func = func;
+  c.roman = { degree: degree as RomanChord['degree'], accidental: 'natural', quality, secondaryTarget: opts.secondaryTarget };
+  c.borrowed = opts.borrowed;
+  c.borrowedSource = opts.borrowedSource;
+  c.mustResolve = opts.mustResolve;
+  // 清空旧 prototype 携带的派生字段(避免与新和弦矛盾;chord-scale 在 assemble 重算)
+  c.forcedScale = undefined; c.bassRole = undefined; c.bassPedalPc = undefined;
+  c.tonicizationPlacement = undefined; c.localTonalCenterPc = undefined;
+}
+
+function applyTailLinks(resolved: ResolvedChord[], arrangement: ArrangementPlan, keyPc: PitchClass, mode: DiatonicMode): ResolvedChord[] {
+  const out = resolved.map((c) => ({ ...c }));
+  const idxBySection = new Map<string, { first: number; last: number }>();
+  out.forEach((c, i) => {
+    const r = idxBySection.get(c.sectionId);
+    if (!r) idxBySection.set(c.sectionId, { first: i, last: i }); else r.last = i;
+  });
+  const sections = arrangement.sections;
+  for (let s = 0; s < sections.length - 1; s++) {
+    const link = sections[s].linkOut as HarmonyLinkKind | undefined;
+    if (!link || link === 'none') continue;
+    const range = idxBySection.get(sections[s].id);
+    if (!range) continue;
+    const nextRange = idxBySection.get(sections[s + 1].id);
+    const nextStartDeg = nextRange ? (out[nextRange.first].roman.degree as number) : 1;
+    const secKey = (out[range.last].sectionKeyPc ?? keyPc) as number;
+    const has2 = range.last > range.first; // 段内 ≥2 和弦 → 可做双和弦尾
+
+    // 守卫降级
+    let kind: HarmonyLinkKind = link;
+    if (kind === 'secondaryToRelativeMinor' && (mode !== 'major' || nextStartDeg !== 6)) kind = 'dominantLift';
+    if (kind === 'backdoorToSubdominant') kind = 'dominantLift'; // 首版未实现 backdoor → 降级
+
+    switch (kind) {
+      case 'dominantLift': // IV -> V(入 I/vi)
+        if (has2) overwriteChord(out[range.last - 1], 4, diatonicQuality(4, mode), 'S', secKey, mode);
+        overwriteChord(out[range.last], 5, '7', 'D', secKey, mode, { mustResolve: true });
+        break;
+      case 'stopOnDominant': // V(停顿,落 hook 冲击)
+        overwriteChord(out[range.last], 5, '7', 'D', secKey, mode, { mustResolve: true });
+        break;
+      case 'minorIvHold': // iv hold(悬色入 hook)
+        overwriteChord(out[range.last], 4, 'm7', 'S', secKey, mode, { borrowed: { from: 'parallel-minor', label: 'iv' }, borrowedSource: 'modal_interchange' });
+        break;
+      case 'secondaryToRelativeMinor': // IV -> III7(V7/vi,入 vi)
+        if (has2) overwriteChord(out[range.last - 1], 4, diatonicQuality(4, mode), 'S', secKey, mode);
+        overwriteChord(out[range.last], 3, '7', 'D', secKey, mode, { borrowedSource: 'secondary_dominant', secondaryTarget: { degree: 6, accidental: 'natural', quality: 'min' }, mustResolve: true });
+        break;
+    }
+  }
+  return out;
+}
+
 // —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
 export function buildHarmonicPlanFromArrangement(
   band: BandSpec,
@@ -432,5 +496,6 @@ function buildResolvedProgression(
     resolved.push(...finalSec);
   }
 
-  return resolved;
+  // ★ T6:段尾 linkOut 链接(每候选都链接 → coherence/voice-leading 择优看到真实段衔接)。
+  return applyTailLinks(resolved, arrangement, band.key, band.mode);
 }
