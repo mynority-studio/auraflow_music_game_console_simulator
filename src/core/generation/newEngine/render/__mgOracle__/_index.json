@@ -8,7 +8,8 @@
     "bassHits": 38,
     "bricks": 9,
     "schedTokens": 70,
-    "rawMelody": 62
+    "rawMelody": 62,
+    "styled": 60
   },
   {
     "seed": "lofi_bneeok",
@@ -19,7 +20,8 @@
     "bassHits": 42,
     "bricks": 12,
     "schedTokens": 97,
-    "rawMelody": 85
+    "rawMelody": 85,
+    "styled": 67
   },
   {
     "seed": "lofi_uhloiw",
@@ -30,7 +32,8 @@
     "bassHits": 38,
     "bricks": 6,
     "schedTokens": 50,
-    "rawMelody": 45
+    "rawMelody": 45,
+    "styled": 43
   },
   {
     "seed": "lofi_er5a0r",
@@ -41,7 +44,8 @@
     "bassHits": 38,
     "bricks": 9,
     "schedTokens": 70,
-    "rawMelody": 60
+    "rawMelody": 60,
+    "styled": 54
   },
   {
     "seed": "pop_cztjju",
@@ -52,7 +56,8 @@
     "bassHits": 17,
     "bricks": 8,
     "schedTokens": 66,
-    "rawMelody": 62
+    "rawMelody": 62,
+    "styled": 54
   },
   {
     "seed": "pop_xm3lg3",
@@ -63,7 +68,8 @@
     "bassHits": 34,
     "bricks": 7,
     "schedTokens": 65,
-    "rawMelody": 61
+    "rawMelody": 61,
+    "styled": 52
   },
   {
     "seed": "pop_7b44e5",
@@ -74,7 +80,8 @@
     "bassHits": 19,
     "bricks": 9,
     "schedTokens": 73,
-    "rawMelody": 69
+    "rawMelody": 69,
+    "styled": 60
   },
   {
     "seed": "jazz_music_probe",
@@ -85,7 +92,8 @@
     "bassHits": 53,
     "bricks": 10,
     "schedTokens": 76,
-    "rawMelody": 71
+    "rawMelody": 71,
+    "styled": 60
   },
   {
     "seed": "rnb_music_probe",
@@ -96,6 +104,7 @@
     "bassHits": 45,
     "bricks": 13,
     "schedTokens": 96,
-    "rawMelody": 82
+    "rawMelody": 82,
+    "styled": 64
   }
 ]

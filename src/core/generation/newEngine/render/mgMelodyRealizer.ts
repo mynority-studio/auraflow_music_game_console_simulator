@@ -18,6 +18,7 @@ import { getCurrentChordAtBeat, getNextChordAtBeat } from './mgChordPart';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 import { buildPitchSets } from './mgPitchClassSets';
 import { chooseNote, type ChoiceResult, type NoteChooserContext } from './mgNoteChooser';
+import { guideToneAtBeat, materializeGuideTone, type GuideTonePlan } from './mgGuideTonePlanner';
 
 /** MG NoteEvent 的窄等价物(realizeTokens 实际写入字段)。完整 MG NoteEvent 另含
  *  chordSymbol/pitchOffset/pitchEnvelope/instrument —— realizeTokens 不写,故省。 */
@@ -34,26 +35,10 @@ export interface MgNoteEvent {
 // body(LickGen 忠实区段)用 NoteEvent;在本模块即 MgNoteEvent。
 type NoteEvent = MgNoteEvent;
 
-// ── Guide-tone stub(Loop 5 用 mgGuideTonePlanner 接真 plan)─────────────
-// MG guideToneAtBeat(null/undefined) 返回 null;Loop 4 始终传 guideTonePlan=undefined,
-// 故 stub 恒返 null,materializeGuideTone 分支不可达。raw melody 与 MG(同 guideTonePlan=undefined)严格一致。
-export type GuideTonePlan = unknown;
-type GuideTonePoint = { pc: number };
-function guideToneAtBeat(
-  _plan: GuideTonePlan | null | undefined,
-  _chord: unknown,
-  _beat: number,
-): GuideTonePoint | null {
-  return null; // Loop 5: 查真 plan.byChordIndex
-}
-function materializeGuideTone(
-  _point: GuideTonePoint,
-  _prevMidi: number | null,
-  _registerCenter?: number,
-): number {
-  // Loop 4 永不触达(guideToneAtBeat 恒 null);Loop 5 接真实现。
-  throw new Error('materializeGuideTone: guide-tone plan deferred to Loop 5');
-}
+// ── Guide-tone(Loop 5 已接真 mgGuideTonePlanner)────────────────────────
+// guideToneAtBeat/materializeGuideTone/GuideTonePlan 由 ./mgGuideTonePlanner import(见顶部)。
+// guideTonePlan=undefined(Loop 4 raw)时 guideToneAtBeat 仍返 null → raw melody 不变;
+// 传真 plan(Loop 5)时结构音绑 guide-tone 骨架。两路径均与 MG 一致。
 
 // ============================================================
 // 以下为 LickGen.ts:23-278 忠实区段(import/NoteEvent/guide-tone 由上方接管)
