@@ -169,9 +169,9 @@ export function renderSongFull(
     energyRanges.push({ lo: dynCursor, hi: dynCursor + s.bars * bpbDyn, energy: arrangement.energyBySection[s.id] ?? 0.5 });
     dynCursor += s.bars * bpbDyn;
   }
-  // ★ 伴奏 ducking:comp 撞旋律时轻压 ×0.82(旋律 poke through;留白处满响)。
-  //   不重压(0.7 会把刚抬响的 comp 又埋了 — 旋律覆盖率~96%);轻压 + CC7 108 → comp 仍可听、旋律在上。
-  const duckedTracks = duckUnderLead(resolved.data.tracks, 0.82);
+  // ★ 伴奏 ducking:comp 撞旋律时【极轻压 ×0.9】(只给旋律一点空间,不把 comp 压下去)。
+  //   用户要 lead/伴奏均衡 → ducking 放轻(重压会和'均衡'相反);均衡主要靠 CC7 推子压平。
+  const duckedTracks = duckUnderLead(resolved.data.tracks, 0.9);
   const dynamicTracks = applyDynamics(duckedTracks, energyRanges, timebase.ppq);
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动

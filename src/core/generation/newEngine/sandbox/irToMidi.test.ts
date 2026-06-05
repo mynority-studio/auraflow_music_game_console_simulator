@@ -84,12 +84,12 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(firstLeadCCIdx).toBeLessThan(firstLeadOnIdx);
   });
 
-  it('★ 音量分层:lead > bass > comp > drum > pad(comp 抬到 drum 之上,伴奏织体可听)', () => {
+  it('★ 音量【适中均衡】:lead/bass/comp 接近(不突出 lead),pad 最弱', () => {
     const vol = (ch: number) => cc(ch, 7).data2;
-    expect(vol(CH.lead)).toBeGreaterThan(vol(CH.bass));
-    expect(vol(CH.bass)).toBeGreaterThan(vol(CH.comp));
-    expect(vol(CH.comp)).toBeGreaterThan(vol(CH.drum));
-    expect(vol(CH.drum)).toBeGreaterThan(vol(CH.pad));
+    const core = [vol(CH.lead), vol(CH.bass), vol(CH.comp)];
+    expect(Math.max(...core) - Math.min(...core)).toBeLessThanOrEqual(16); // 三者 CC7 接近 = 均衡
+    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.lead)); // comp 补它较低的 velocity → CC7 ≥ lead
+    expect(vol(CH.pad)).toBeLessThan(vol(CH.comp));            // pad 铺底最弱
     // 全在合法 MIDI 范围
     for (const ch of Object.values(CH)) expect(vol(ch)).toBeGreaterThan(0), expect(vol(ch)).toBeLessThanOrEqual(127);
   });

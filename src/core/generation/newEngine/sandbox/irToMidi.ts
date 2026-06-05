@@ -21,12 +21,14 @@ const CC_REVERB = 91;
 const CC_SUSTAIN = 64;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(对齐 audio/MidiConverter 通道约定)
-// 混音(5.4):音量 lead120 > bass112 > comp108 > drum100 > pad72;声像 comp 偏左 / pad 偏右(宽度)。
+// ★ 混音【适中均衡】(2026-06-05):lead 不再突出,与伴奏平均坐在一起(单一方案,不分风格)。
+//   CC7 推子压平 spread;comp 偏高补它较低的 velocity → lead/bass/comp 有效响度接近;pad 抬起(原太埋)。
+//   有效响度 ≈ CC7 × velocity:lead vel 高(90)→ CC7 拉低;comp vel 低(~67)→ CC7 拉高 → 二者打平。
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
-  bass: { channel: 3, program: 33, volume: 112, pan: 64 }, // 中
-  comp: { channel: 2, program: 0, volume: 108, pan: 50 },  // 偏左
-  lead: { channel: 1, program: 73, volume: 120, pan: 64 }, // 中 · 焦点最响
-  pad: { channel: 4, program: 89, volume: 72, pan: 78 },   // 偏右 · 铺底
+  bass: { channel: 3, program: 33, volume: 106, pan: 64 }, // 中
+  comp: { channel: 2, program: 0, volume: 116, pan: 50 },  // 偏左 · 补低 velocity → 与 lead 平均
+  lead: { channel: 1, program: 73, volume: 102, pan: 64 }, // 中 · 不再最响,坐进伴奏里
+  pad: { channel: 4, program: 89, volume: 94, pan: 78 },   // 偏右 · 抬起(原 72 太埋)
   drum: { channel: 9, program: 0, volume: 100, pan: 64 },  // 中
 };
 
