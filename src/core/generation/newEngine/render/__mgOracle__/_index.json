@@ -6,7 +6,8 @@
     "melody": 62,
     "chordHits": 108,
     "bassHits": 38,
-    "bricks": 9
+    "bricks": 9,
+    "schedTokens": 70
   },
   {
     "seed": "lofi_bneeok",
@@ -15,7 +16,8 @@
     "melody": 80,
     "chordHits": 121,
     "bassHits": 42,
-    "bricks": 12
+    "bricks": 12,
+    "schedTokens": 97
   },
   {
     "seed": "lofi_uhloiw",
@@ -24,7 +26,8 @@
     "melody": 72,
     "chordHits": 120,
     "bassHits": 38,
-    "bricks": 6
+    "bricks": 6,
+    "schedTokens": 50
   },
   {
     "seed": "lofi_er5a0r",
@@ -33,7 +36,8 @@
     "melody": 65,
     "chordHits": 126,
     "bassHits": 38,
-    "bricks": 9
+    "bricks": 9,
+    "schedTokens": 70
   },
   {
     "seed": "pop_cztjju",
@@ -42,7 +46,8 @@
     "melody": 51,
     "chordHits": 128,
     "bassHits": 17,
-    "bricks": 8
+    "bricks": 8,
+    "schedTokens": 66
   },
   {
     "seed": "pop_xm3lg3",
@@ -51,7 +56,8 @@
     "melody": 60,
     "chordHits": 96,
     "bassHits": 34,
-    "bricks": 7
+    "bricks": 7,
+    "schedTokens": 65
   },
   {
     "seed": "pop_7b44e5",
@@ -60,7 +66,8 @@
     "melody": 48,
     "chordHits": 128,
     "bassHits": 19,
-    "bricks": 9
+    "bricks": 9,
+    "schedTokens": 73
   },
   {
     "seed": "jazz_music_probe",
@@ -69,7 +76,8 @@
     "melody": 64,
     "chordHits": 218,
     "bassHits": 53,
-    "bricks": 10
+    "bricks": 10,
+    "schedTokens": 76
   },
   {
     "seed": "rnb_music_probe",
@@ -78,6 +86,7 @@
     "melody": 62,
     "chordHits": 111,
     "bassHits": 45,
-    "bricks": 13
+    "bricks": 13,
+    "schedTokens": 96
   }
 ]

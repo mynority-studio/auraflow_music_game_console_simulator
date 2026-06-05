@@ -1948,6 +1948,358 @@
       }
     ]
   },
+  "scheduledTokensBuiltin": [
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 0
+    },
+    {
+      "token": {
+        "kind": "S",
+        "duration": 0.5
+      },
+      "startBeat": 0.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 1
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 1.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 2
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 2.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 3
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 4
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 4.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 8
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 8.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 9
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 9.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 10
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 10.5
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 11
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 11.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 16
+    },
+    {
+      "token": {
+        "kind": "S",
+        "duration": 0.5
+      },
+      "startBeat": 16.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 17
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 17.5
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 18
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 18.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 19
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 20
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 20.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 32
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 32.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 33
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 33.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 34
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 34.5
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 35
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 35.5
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 40
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 40.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 41
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 41.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 42
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 42.5
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 43
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1
+      },
+      "startBeat": 44
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 0.5
+      },
+      "startBeat": 48
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 48.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 49
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 49.5
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 50
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 50.5
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 51
+    },
+    {
+      "token": {
+        "kind": "G",
+        "duration": 1
+      },
+      "startBeat": 51.5
+    }
+  ],
   "melody": [
     {
       "time": 0,
