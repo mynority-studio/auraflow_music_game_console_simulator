@@ -160,14 +160,19 @@ const BLUES_12BAR_DOMINANT: ProgressionSlot[] = [ch('I', '7', 0), ch('I', '7', 0
 //   留给 Stage2 装饰【自由变体】(色彩可换 maj9/6-9 等)。32 拍 = 8 小节,beat-aware 扩 64。
 //   forcedScale 给每个离调和弦显式局部音阶(含其和弦音 → 守"和弦音 ⊆ chord-scale"不变量):
 //   ii/X=Locrian/Dorian·V/vi(→小调)=Phrygian Dominant·V/IV(→大调)=Mixolydian。melody 也据此解析。
+// JPOP canon 变体策略:允许引擎在已实化和弦上叠加副属/二五离调(自由变体);I/IV 保 add9 j-pop 色彩(锁)。
+const JPOP_VARIATION: ProgressionTransformPolicy = {
+  allowTonicization: true, maxTonicizePer16: 2, allowBorrowed: true, maxBorrowedPer16: 1,
+  allowFullTwoFive: true, allowSubV: false, preferSusDominant: false,
+};
 const POP_JPOP_CANON_251_BAR_REPLACE_8: ProgressionSlot[] = [
-  ch('I', 'add9', 0, { lockType: false }),                                                                                    // Cadd9 (4) 可变体
+  ch('I', 'add9', 0),                                                                                                         // Cadd9 (4) 保 add9 色彩
   ch('ii/vi', 'm7b5', 11, { beats: 2, preserveType: true, borrowedSource: 'secondary_ii_v', borrowedFrom: 'ii/vi', forcedScale: 'Locrian' }),         // Bm7b5 (2)
   ch('V/vi', '7', 4, { beats: 2, preserveType: true, borrowedSource: 'secondary_dominant', mustResolve: true, borrowedFrom: 'V/vi', forcedScale: 'Phrygian Dominant' }), // E7 (2)
   ch('vi', 'm7', 9, { preserveType: true }),                                                                                  // Am7 (4)
   ch('ii/IV', 'm7', 7, { beats: 2, preserveType: true, borrowedSource: 'secondary_ii_v', borrowedFrom: 'ii/IV', forcedScale: 'Dorian' }),            // Gm7 (2)
   ch('V/IV', '7', 0, { beats: 2, preserveType: true, borrowedSource: 'secondary_dominant', mustResolve: true, borrowedFrom: 'V/IV', forcedScale: 'Mixolydian' }), // C7 (2)
-  ch('IV', 'add9', 5, { lockType: false }),                                                                                   // Fadd9 (4) 可变体
+  ch('IV', 'add9', 5),                                                                                                        // Fadd9 (4) 保 add9 色彩
   ch('V/vi', '7', 4, { beats: 2, preserveType: true, borrowedSource: 'secondary_dominant', mustResolve: true, borrowedFrom: 'V/vi', forcedScale: 'Phrygian Dominant' }), // E7 (2)
   ch('vi', 'm7', 9, { beats: 2, preserveType: true }),                                                                        // Am7 (2)
   ch('ii', 'm7', 2, { preserveType: true }),                                                                                  // Dm7 (4)
@@ -202,8 +207,8 @@ const _MODERN_PROGRESSION_PROTOTYPES: ProgressionPrototype[] = [
   { id: 'pop_long_1645_4536_16', style: 'POP', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 16, slots: POP_LONG_1645_TO_4536251_16 },
   { id: 'pop_minor_iv_sigh_8', style: 'POP', mode: 'Major', sectionRoles: ['verse', 'intro'], lengthBars: 8, slots: POP_MINOR_IV_SIGH_8 },
   { id: 'pop_epic_cadence_8', style: 'POP', mode: 'Major', sectionRoles: ['ending', 'bridge'], lengthBars: 8, slots: POP_EPIC_CADENCE_8 },
-  // ★ JPOP canon ii-V(follow MG):weight=2.5 提高 POP 权重(canon 更易出);自由变体(主和弦 lockType:false)+ 离调借用(内置副属/二五)。
-  { id: 'pop_jpop_canon_251_bar_replace_8', style: 'POP', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 8, weight: 2.5, slots: POP_JPOP_CANON_251_BAR_REPLACE_8, subStyles: ['JPOP Canon', 'JPOP Piano'], emotionTags: ['nostalgic', 'emo'] },
+  // ★ JPOP canon ii-V(follow MG):weight=1.5 提高 POP 权重(canon 更常出,不独占);自由变体=transformPolicy 引擎叠加离调;离调借用=内置副属/二五。
+  { id: 'pop_jpop_canon_251_bar_replace_8', style: 'POP', mode: 'Major', sectionRoles: ['verse', 'chorus'], lengthBars: 8, weight: 1.5, slots: POP_JPOP_CANON_251_BAR_REPLACE_8, transformPolicy: JPOP_VARIATION, subStyles: ['JPOP Canon', 'JPOP Piano'], emotionTags: ['nostalgic', 'emo'] },
   { id: 'pop_min_aeolian_8', style: 'POP', mode: 'Minor', sectionRoles: ['verse', 'chorus'], lengthBars: 8, slots: MINOR_AEOLIAN_POP_8 },
   { id: 'pop_min_modal_cad_8', style: 'POP', mode: 'Minor', sectionRoles: ['chorus', 'bridge'], lengthBars: 8, slots: MINOR_MODAL_CADENCE_8 },
   { id: 'pop_min_dorian_lift_8', style: 'POP', mode: 'Minor', sectionRoles: ['bridge', 'chorus'], lengthBars: 8, slots: MINOR_DORIAN_LIFT_8 },
@@ -296,6 +301,22 @@ export function pickProgressionPrototype(args: {
   const relaxed = PROGRESSION_POOL.filter((p) => p.style === args.style && p.lengthBars <= args.bars && p.sectionRoles.includes(args.functionRole));
   if (relaxed.length === 0) return null;
   return fitProgressionToBars(weightedPickPrototype(relaxed, args.random).slots, args.bars);
+}
+
+/** 同 pickProgressionPrototype,但返回选中 prototype 的 transformPolicy(供 prototype 段离调变体门控)。 */
+export function pickProgressionPrototypeWithPolicy(args: {
+  style: HarmonyStyleName;
+  mode: ProtoMode;
+  functionRole: ProtoSectionRole;
+  bars: number;
+  random: ProtoRandom;
+}): { slots: ProgressionSlot[]; transformPolicy?: ProgressionTransformPolicy } | null {
+  const strict = listProgressionPrototypes({ style: args.style, mode: args.mode, functionRole: args.functionRole, maxBars: args.bars });
+  const pool = strict.length > 0 ? strict
+    : PROGRESSION_POOL.filter((p) => p.style === args.style && p.lengthBars <= args.bars && p.sectionRoles.includes(args.functionRole));
+  if (pool.length === 0) return null;
+  const proto = weightedPickPrototype(pool, args.random);
+  return { slots: fitProgressionToBars(proto.slots, args.bars), transformPolicy: proto.transformPolicy };
 }
 
 /** 把 N-bar 模板展开填满 bars;第 2 遍起末 V 和弦换 7sus4 作 cadence 变化(避免纯重复)。 */

@@ -7,10 +7,10 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { createTimebase, createRandomContext } from '../foundation';
 
 describe('render/accompaniment 让位 (melody-aware)', () => {
-  const band = buildBandSpec({ seed: 8, styleHint: 'pop', mood: 'x', targetDuration: 120 });
+  const band = buildBandSpec({ seed: 1, styleHint: 'pop', mood: 'x', targetDuration: 120 });
   const arrangement = buildArrangementPlan(band);
   const instrumentation = buildInstrumentationPlan(band, arrangement);
-  const plan = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(8));
+  const plan = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(1));
   const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
 
   // 复现 renderSongFull 的让位上下文构造

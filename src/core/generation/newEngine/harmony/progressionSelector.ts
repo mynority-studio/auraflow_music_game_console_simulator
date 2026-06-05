@@ -9,7 +9,13 @@
 import type { Rng } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { Section, SectionRole } from '../arranger/ArrangementPlan';
-import { pickProgressionPrototype, type HarmonyStyleName, type ProtoSectionRole, type ProgressionSlot } from '../knowledge/progressions';
+import { pickProgressionPrototypeWithPolicy, type HarmonyStyleName, type ProtoSectionRole, type ProgressionSlot, type ProgressionTransformPolicy } from '../knowledge/progressions';
+
+/** prototype 选择结果:slots + 该 prototype 的 transformPolicy(prototype 段离调变体门控)。 */
+export interface SelectedProgression {
+  slots: ProgressionSlot[];
+  transformPolicy?: ProgressionTransformPolicy;
+}
 
 // band.style(小写)→ HarmonyStyleName。modal 旁路不进这里;未知/default → POP。
 const STYLE_MAP: Record<string, HarmonyStyleName> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', blues: 'BLUES' };
@@ -30,21 +36,21 @@ export function selectProgressionSlots(args: {
   band: BandSpec;
   section: Section;
   hrng: Rng;
-  protoByGroup: Map<string, ProgressionSlot[]>;
-}): ProgressionSlot[] | null {
+  protoByGroup: Map<string, SelectedProgression>;
+}): SelectedProgression | null {
   const { band, section, hrng, protoByGroup } = args;
   const group = section.repeatGroup;
   if (group && protoByGroup.has(group)) return protoByGroup.get(group)!;
 
   // ★ harmonyRole(CODEX V4.2)优先:lofi 段请求 'loop' prototype、outro→'ending' 等显式语义;
   //   缺省回退 legacy role 映射。harmonyRole 值集 ≡ ProtoSectionRole,直接可传。
-  const slots = pickProgressionPrototype({
+  const picked = pickProgressionPrototypeWithPolicy({
     style: toHarmonyStyle(band.style),
     mode: band.mode === 'minor' ? 'Minor' : 'Major',
     functionRole: section.harmonyRole ?? ROLE_MAP[section.role as SectionRole] ?? 'verse',
     bars: section.bars,
     random: hrng,
   });
-  if (group && slots) protoByGroup.set(group, slots);
-  return slots;
+  if (group && picked) protoByGroup.set(group, picked);
+  return picked;
 }

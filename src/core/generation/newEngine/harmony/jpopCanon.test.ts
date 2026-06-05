@@ -12,12 +12,12 @@ import { createRandomContext, pc } from '../foundation';
 describe('harmony · JPOP canon 模板结构', () => {
   const proto = PROGRESSION_POOL.find((p) => p.id === 'pop_jpop_canon_251_bar_replace_8')!;
 
-  it('已注册:POP / Major / 8 bars / weight 2.5(提高权重)', () => {
+  it('已注册:POP / Major / 8 bars / weight 1.5(提高 POP 权重)', () => {
     expect(proto).toBeDefined();
     expect(proto.style).toBe('POP');
     expect(proto.mode).toBe('Major');
     expect(proto.lengthBars).toBe(8);
-    expect(proto.weight).toBe(2.5);
+    expect(proto.weight).toBe(1.5);
   });
 
   it('★ 32 拍 = 8 小节(ii-V cell 各 2+2)', () => {
@@ -41,9 +41,12 @@ describe('harmony · JPOP canon 模板结构', () => {
     expect(preserved.some((s) => s.type === '7')).toBe(true);
   });
 
-  it('自由变体:主和弦 I/IV lockType:false(留 Stage2 装饰)', () => {
-    const unlocked = proto.slots.filter((s) => s.lockType === false);
-    expect(unlocked.length).toBe(2); // I add9, IV add9
+  it('★ 自由变体:transformPolicy.allowTonicization(引擎在卡农上叠加离调变体)', () => {
+    expect(proto.transformPolicy?.allowTonicization).toBe(true);
+    expect(proto.transformPolicy?.allowBorrowed).toBe(true);
+    // I/IV 保 add9 色彩(锁,不被折成三和弦)
+    const tonicAdd9 = proto.slots.filter((s) => (s.rootOffset === 0 || s.rootOffset === 5) && s.type === 'add9');
+    expect(tonicAdd9.length).toBe(2);
   });
 });
 

@@ -14,7 +14,7 @@ import { degreeToSemitone, getScalePitchClasses, isKnownScaleType, type Diatonic
 import { realChordScale } from '../knowledge/chordScales';
 import { modalVamp } from '../knowledge/modes';
 import { diatonicQuality, pickProgressionDegrees, type SectionRole, type BorrowedSource, type BassRole, type TonicizationPlacement, type ProgressionSlot } from '../knowledge/progressions';
-import { selectProgressionSlots, toHarmonyStyle } from './progressionSelector';
+import { selectProgressionSlots, toHarmonyStyle, type SelectedProgression } from './progressionSelector';
 import { realizeProgressionSlots } from './progressionRealizer';
 import { planTonicization } from './tonicizationPlanner';
 import { STYLE_TONICIZE_MAX_PER_SONG, STYLE_BORROW_SOURCE, type TonicizeStyle } from '../knowledge/tonicizationPolicies';
@@ -391,7 +391,7 @@ function buildResolvedProgression(
   const resolved: ResolvedChord[] = [];
   // ★ 铁律9:同 repeatGroup 共享同一进行(verse1≡verse2)→ 真排比 + 复现 hook 的 global 安全音一致
   const degreesByGroup = new Map<string, number[]>();
-  const protoByGroup = new Map<string, ProgressionSlot[]>(); // prototype-first 复用(Loop 2)
+  const protoByGroup = new Map<string, SelectedProgression>(); // prototype-first 复用(Loop 2)
   // ★ 离调(tonicizationPlanner):per-song 预算 + per-group 缓存(repeatGroup 复用不重复消耗)
   const tonStyle = toHarmonyStyle(band.style) as TonicizeStyle;
   const tonMaxSong = STYLE_TONICIZE_MAX_PER_SONG[tonStyle] ?? 0;
@@ -405,12 +405,26 @@ function buildResolvedProgression(
     const group = section.repeatGroup;
 
     // ★ prototype-first(Loop 2):匹配到 prototype → 实化它(自带终止/borrow/副属),跳过 degree-picker。
-    const protoSlots = selectProgressionSlots({ band, section, hrng, protoByGroup });
-    if (protoSlots) {
-      resolved.push(...realizeProgressionSlots({
-        slots: protoSlots, section, sectionKey, isModulated, beatsPerBar,
+    const picked = selectProgressionSlots({ band, section, hrng, protoByGroup });
+    if (picked) {
+      let protoChords = realizeProgressionSlots({
+        slots: picked.slots, section, sectionKey, isModulated, beatsPerBar,
         style: toHarmonyStyle(band.style), colorBudget: band.styleProfile.colorBudget, random: hrng,
-      }));
+      });
+      // ★ 卡农变体(JPOP):prototype 显式 transformPolicy.allowTonicization → 在已实化和弦上叠加 secondary ii-V/V
+      //   (per-song 预算 + per-group 缓存,repeatGroup 复用不重复消耗;planner 给离调和弦 forcedScale 守不变量)。
+      if (picked.transformPolicy?.allowTonicization && tonMaxSong > 0) {
+        if (group && tonByGroup.has(group)) {
+          protoChords = tonByGroup.get(group)!.map((c) => ({ ...c, sectionId: section.id, sectionKeyPc: isModulated ? sectionKey : undefined }));
+        } else if (tonFiresUsed < tonMaxSong) {
+          const budget = Math.min(tonStyle === 'JAZZ' ? 2 : 1, tonMaxSong - tonFiresUsed);
+          const { chords: ton, fires } = planTonicization({ chords: protoChords, style: tonStyle, borrowSource: tonSource, maxFires: budget });
+          tonFiresUsed += fires;
+          protoChords = ton;
+          if (group) tonByGroup.set(group, ton);
+        }
+      }
+      resolved.push(...protoChords);
       continue;
     }
 
