@@ -2,6 +2,7 @@
   "seed": "pop_xm3lg3",
   "style": "POP",
   "key": "C",
+  "songKeyPc": 0,
   "chords": [
     {
       "root": "C",
@@ -1935,6 +1936,136 @@
       }
     }
   ],
+  "roadMap": {
+    "bricks": [
+      {
+        "name": "I-V-vi-IV",
+        "family": "Turnaround",
+        "startBeat": 0,
+        "durationBeats": 16,
+        "chordIndices": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "keyPc": 0,
+        "cost": 0.55
+      },
+      {
+        "name": "I-V-vi-IV",
+        "family": "Turnaround",
+        "startBeat": 16,
+        "durationBeats": 16,
+        "chordIndices": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "keyPc": 0,
+        "cost": 0.55
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 32,
+        "durationBeats": 4,
+        "chordIndices": [
+          8
+        ],
+        "keyPc": 2,
+        "cost": 0.7
+      },
+      {
+        "name": "ii-V",
+        "family": "Launcher",
+        "startBeat": 36,
+        "durationBeats": 4,
+        "chordIndices": [
+          9,
+          10
+        ],
+        "keyPc": 9,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-iv",
+        "family": "Borrowed",
+        "startBeat": 40,
+        "durationBeats": 4,
+        "chordIndices": [
+          11
+        ],
+        "keyPc": 4,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 44,
+        "durationBeats": 4,
+        "chordIndices": [
+          12
+        ],
+        "keyPc": 7,
+        "cost": 0.7
+      },
+      {
+        "name": "I-V-vi-IV",
+        "family": "Turnaround",
+        "startBeat": 48,
+        "durationBeats": 16,
+        "chordIndices": [
+          13,
+          14,
+          15,
+          16
+        ],
+        "keyPc": 0,
+        "cost": 0.55
+      }
+    ],
+    "totalCost": 3.85,
+    "segments": [
+      {
+        "startBeat": 0,
+        "endBeat": 32,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 32,
+        "endBeat": 36,
+        "keyRootPc": 2,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 36,
+        "endBeat": 40,
+        "keyRootPc": 9,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 40,
+        "endBeat": 44,
+        "keyRootPc": 4,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 44,
+        "endBeat": 48,
+        "keyRootPc": 7,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 48,
+        "endBeat": 64,
+        "keyRootPc": 0,
+        "mode": "Major"
+      }
+    ]
+  },
   "melody": [
     {
       "time": 0,

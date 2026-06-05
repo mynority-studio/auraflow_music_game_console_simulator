@@ -2,6 +2,7 @@
   "seed": "lofi_bneeok",
   "style": "LOFI",
   "key": "C",
+  "songKeyPc": 0,
   "chords": [
     {
       "root": "C",
@@ -1970,6 +1971,191 @@
       }
     }
   ],
+  "roadMap": {
+    "bricks": [
+      {
+        "name": "Borrowed-i",
+        "family": "Borrowed",
+        "startBeat": 0,
+        "durationBeats": 4,
+        "chordIndices": [
+          0
+        ],
+        "keyPc": 0,
+        "cost": 0.75
+      },
+      {
+        "name": "Dropback-simple",
+        "family": "Dropback",
+        "startBeat": 4,
+        "durationBeats": 8,
+        "chordIndices": [
+          1,
+          2
+        ],
+        "keyPc": 1,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 12,
+        "durationBeats": 4,
+        "chordIndices": [
+          3
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-i",
+        "family": "Borrowed",
+        "startBeat": 16,
+        "durationBeats": 4,
+        "chordIndices": [
+          4
+        ],
+        "keyPc": 0,
+        "cost": 0.75
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 20,
+        "durationBeats": 4,
+        "chordIndices": [
+          5
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 24,
+        "durationBeats": 4,
+        "chordIndices": [
+          6
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Deceptive-Cadence",
+        "family": "Cadence",
+        "startBeat": 28,
+        "durationBeats": 8,
+        "chordIndices": [
+          7,
+          8
+        ],
+        "keyPc": 3,
+        "cost": 0.7
+      },
+      {
+        "name": "Dropback-simple",
+        "family": "Dropback",
+        "startBeat": 36,
+        "durationBeats": 8,
+        "chordIndices": [
+          9,
+          10
+        ],
+        "keyPc": 1,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 44,
+        "durationBeats": 4,
+        "chordIndices": [
+          11
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-i",
+        "family": "Borrowed",
+        "startBeat": 48,
+        "durationBeats": 4,
+        "chordIndices": [
+          12
+        ],
+        "keyPc": 0,
+        "cost": 0.75
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 52,
+        "durationBeats": 4,
+        "chordIndices": [
+          13
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "IV-V",
+        "family": "GenDom",
+        "startBeat": 56,
+        "durationBeats": 8,
+        "chordIndices": [
+          14,
+          15
+        ],
+        "keyPc": 3,
+        "cost": 0.75
+      }
+    ],
+    "totalCost": 7,
+    "segments": [
+      {
+        "startBeat": 0,
+        "endBeat": 4,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 4,
+        "endBeat": 12,
+        "keyRootPc": 1,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 12,
+        "endBeat": 28,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 28,
+        "endBeat": 36,
+        "keyRootPc": 3,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 36,
+        "endBeat": 44,
+        "keyRootPc": 1,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 44,
+        "endBeat": 56,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 56,
+        "endBeat": 64,
+        "keyRootPc": 3,
+        "mode": "Major"
+      }
+    ]
+  },
   "melody": [
     {
       "time": 0,

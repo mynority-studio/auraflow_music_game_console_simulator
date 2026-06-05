@@ -2,6 +2,7 @@
   "seed": "pop_cztjju",
   "style": "POP",
   "key": "C",
+  "songKeyPc": 0,
   "chords": [
     {
       "root": "C",
@@ -1931,6 +1932,152 @@
       }
     }
   ],
+  "roadMap": {
+    "bricks": [
+      {
+        "name": "I-V-vi-IV",
+        "family": "Turnaround",
+        "startBeat": 0,
+        "durationBeats": 16,
+        "chordIndices": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "keyPc": 0,
+        "cost": 0.55
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 16,
+        "durationBeats": 4,
+        "chordIndices": [
+          4
+        ],
+        "keyPc": 2,
+        "cost": 0.7
+      },
+      {
+        "name": "Deceptive-Cadence",
+        "family": "Cadence",
+        "startBeat": 20,
+        "durationBeats": 8,
+        "chordIndices": [
+          5,
+          6
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Plagal-Cadence",
+        "family": "Cadence",
+        "startBeat": 28,
+        "durationBeats": 8,
+        "chordIndices": [
+          7,
+          8
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 36,
+        "durationBeats": 2,
+        "chordIndices": [
+          9
+        ],
+        "keyPc": 9,
+        "cost": 0.7
+      },
+      {
+        "name": "V-of-vi",
+        "family": "GenDom",
+        "startBeat": 38,
+        "durationBeats": 6,
+        "chordIndices": [
+          10,
+          11
+        ],
+        "keyPc": 0,
+        "cost": 0.6
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 44,
+        "durationBeats": 4,
+        "chordIndices": [
+          12
+        ],
+        "keyPc": 7,
+        "cost": 0.7
+      },
+      {
+        "name": "I-V-vi-IV",
+        "family": "Turnaround",
+        "startBeat": 48,
+        "durationBeats": 16,
+        "chordIndices": [
+          13,
+          14,
+          15,
+          16
+        ],
+        "keyPc": 0,
+        "cost": 0.55
+      }
+    ],
+    "totalCost": 4.666666666666666,
+    "segments": [
+      {
+        "startBeat": 0,
+        "endBeat": 16,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 16,
+        "endBeat": 20,
+        "keyRootPc": 2,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 20,
+        "endBeat": 36,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 36,
+        "endBeat": 38,
+        "keyRootPc": 9,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 38,
+        "endBeat": 44,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 44,
+        "endBeat": 48,
+        "keyRootPc": 7,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 48,
+        "endBeat": 64,
+        "keyRootPc": 0,
+        "mode": "Major"
+      }
+    ]
+  },
   "melody": [
     {
       "time": 2.5,

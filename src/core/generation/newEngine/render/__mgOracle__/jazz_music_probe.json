@@ -2,6 +2,7 @@
   "seed": "jazz_music_probe",
   "style": "JAZZ",
   "key": "C",
+  "songKeyPc": 0,
   "chords": [
     {
       "root": "D",
@@ -2285,6 +2286,185 @@
       }
     }
   ],
+  "roadMap": {
+    "bricks": [
+      {
+        "name": "ii-V-I",
+        "family": "Cadence",
+        "startBeat": 0,
+        "durationBeats": 12,
+        "chordIndices": [
+          0,
+          1,
+          2
+        ],
+        "keyPc": 0,
+        "cost": 0.5
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 12,
+        "durationBeats": 4,
+        "chordIndices": [
+          3
+        ],
+        "keyPc": 11,
+        "cost": 0.7
+      },
+      {
+        "name": "ii-V",
+        "family": "Launcher",
+        "startBeat": 16,
+        "durationBeats": 8,
+        "chordIndices": [
+          4,
+          5
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "ii-V",
+        "family": "Launcher",
+        "startBeat": 24,
+        "durationBeats": 4,
+        "chordIndices": [
+          6,
+          7
+        ],
+        "keyPc": 9,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 28,
+        "durationBeats": 4,
+        "chordIndices": [
+          8
+        ],
+        "keyPc": 11,
+        "cost": 0.7
+      },
+      {
+        "name": "ii-V",
+        "family": "Launcher",
+        "startBeat": 32,
+        "durationBeats": 8,
+        "chordIndices": [
+          9,
+          10
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "ii-V",
+        "family": "Launcher",
+        "startBeat": 40,
+        "durationBeats": 4,
+        "chordIndices": [
+          11,
+          12
+        ],
+        "keyPc": 9,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 44,
+        "durationBeats": 4,
+        "chordIndices": [
+          13
+        ],
+        "keyPc": 11,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-iv",
+        "family": "Borrowed",
+        "startBeat": 48,
+        "durationBeats": 4,
+        "chordIndices": [
+          14
+        ],
+        "keyPc": 9,
+        "cost": 0.7
+      },
+      {
+        "name": "ii-V-I",
+        "family": "Cadence",
+        "startBeat": 52,
+        "durationBeats": 12,
+        "chordIndices": [
+          15,
+          16,
+          17
+        ],
+        "keyPc": 9,
+        "cost": 0.5
+      }
+    ],
+    "totalCost": 6.000000000000001,
+    "segments": [
+      {
+        "startBeat": 0,
+        "endBeat": 12,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 12,
+        "endBeat": 16,
+        "keyRootPc": 11,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 16,
+        "endBeat": 24,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 24,
+        "endBeat": 28,
+        "keyRootPc": 9,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 28,
+        "endBeat": 32,
+        "keyRootPc": 11,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 32,
+        "endBeat": 40,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 40,
+        "endBeat": 44,
+        "keyRootPc": 9,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 44,
+        "endBeat": 48,
+        "keyRootPc": 11,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 48,
+        "endBeat": 64,
+        "keyRootPc": 9,
+        "mode": "Major"
+      }
+    ]
+  },
   "melody": [
     {
       "time": 4,

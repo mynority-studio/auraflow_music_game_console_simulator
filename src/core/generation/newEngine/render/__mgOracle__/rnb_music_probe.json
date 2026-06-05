@@ -2,6 +2,7 @@
   "seed": "rnb_music_probe",
   "style": "RNB",
   "key": "C",
+  "songKeyPc": 0,
   "chords": [
     {
       "root": "C",
@@ -2181,6 +2182,184 @@
       }
     }
   ],
+  "roadMap": {
+    "bricks": [
+      {
+        "name": "Borrowed-i",
+        "family": "Borrowed",
+        "startBeat": 0,
+        "durationBeats": 4,
+        "chordIndices": [
+          0
+        ],
+        "keyPc": 0,
+        "cost": 0.75
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 4,
+        "durationBeats": 4,
+        "chordIndices": [
+          1
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 8,
+        "durationBeats": 4,
+        "chordIndices": [
+          2
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Minor-i-V",
+        "family": "Cadence",
+        "startBeat": 12,
+        "durationBeats": 8,
+        "chordIndices": [
+          3,
+          4
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 20,
+        "durationBeats": 4,
+        "chordIndices": [
+          5
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 24,
+        "durationBeats": 4,
+        "chordIndices": [
+          6
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "subV-i",
+        "family": "Cadence",
+        "startBeat": 28,
+        "durationBeats": 8,
+        "chordIndices": [
+          7,
+          8
+        ],
+        "keyPc": 0,
+        "cost": 0.65
+      },
+      {
+        "name": "ii-V",
+        "family": "Launcher",
+        "startBeat": 36,
+        "durationBeats": 4,
+        "chordIndices": [
+          9,
+          10
+        ],
+        "keyPc": 8,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 40,
+        "durationBeats": 4,
+        "chordIndices": [
+          11
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Minor-i-V",
+        "family": "Cadence",
+        "startBeat": 44,
+        "durationBeats": 8,
+        "chordIndices": [
+          12,
+          13
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 52,
+        "durationBeats": 4,
+        "chordIndices": [
+          14
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVI",
+        "family": "Borrowed",
+        "startBeat": 56,
+        "durationBeats": 4,
+        "chordIndices": [
+          15
+        ],
+        "keyPc": 0,
+        "cost": 0.7
+      },
+      {
+        "name": "Borrowed-bVII",
+        "family": "Borrowed",
+        "startBeat": 60,
+        "durationBeats": 4,
+        "chordIndices": [
+          16
+        ],
+        "keyPc": 9,
+        "cost": 0.7
+      }
+    ],
+    "totalCost": 6.9,
+    "segments": [
+      {
+        "startBeat": 0,
+        "endBeat": 36,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 36,
+        "endBeat": 40,
+        "keyRootPc": 8,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 40,
+        "endBeat": 60,
+        "keyRootPc": 0,
+        "mode": "Major"
+      },
+      {
+        "startBeat": 60,
+        "endBeat": 64,
+        "keyRootPc": 9,
+        "mode": "Major"
+      }
+    ]
+  },
   "melody": [
     {
       "time": 0,
