@@ -1,7 +1,7 @@
 // ============================================================
 // newEngine · render · MgPitchClassSets(MG strict 移植 Loop 4)
 // Provenance: ../melodygenerative/src/lib/improvisor/PitchClassSets.ts 忠实港。
-// 改动:import CHORD_TYPES/SCALE_TYPES←knowledge/mgMusicTheoryTables·
+// 改动:import CHORD_TYPES/SCALE_TYPES←knowledge/mgMusicTheory·
 //       lookupChordDef/ImprovisorChordDef←knowledge/improvisorChordVocab·ChordBlock←./mgChordPart。
 // 每和弦 pc 调色板(chordTones/colorTones/scaleTones/approachTargets/outsideTones/priorityPcs)。
 // ============================================================
@@ -23,7 +23,7 @@
 // (CHORD_TYPES literal intervals + family-aware scale picking), NOT
 // from any external chord dictionary.
 
-import { CHORD_TYPES, SCALE_TYPES } from '../knowledge/mgMusicTheoryTables';
+import { CHORD_TYPES, SCALE_TYPES } from '../knowledge/mgMusicTheory';
 import { lookupChordDef, type ImprovisorChordDef } from '../knowledge/improvisorChordVocab';
 import type { ChordBlock } from './mgChordPart';
 

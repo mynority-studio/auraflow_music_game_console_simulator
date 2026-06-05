@@ -10,7 +10,7 @@
 // before lick realization. LickGen can then bind structural melody
 // positions to this backbone while leaving passing/color notes free.
 
-import { CHORD_TYPES, MELODY_RANGE } from '../knowledge/mgMusicTheoryTables';
+import { CHORD_TYPES, MELODY_RANGE } from '../knowledge/mgMusicTheory';
 import type { ChordPart, ChordBlock } from './mgChordPart';
 import { buildPitchSets, type ChordPitchSets } from './mgPitchClassSets';
 

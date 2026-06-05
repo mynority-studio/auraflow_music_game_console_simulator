@@ -1,7 +1,7 @@
 // ============================================================
 // newEngine · render · MgNoteChooser(MG strict 移植 Loop 4)
 // Provenance: ../melodygenerative/src/lib/improvisor/NoteChooser.ts 忠实港。
-// 改动:import MELODY_RANGE/resolveDegree/CHORD_TYPES←knowledge/mgMusicTheoryTables·
+// 改动:import MELODY_RANGE/resolveDegree/CHORD_TYPES←knowledge/mgMusicTheory·
 //       AbstractMelodyToken←knowledge/melodyGrammarTypes·ChordPitchSets←./mgPitchClassSets。
 // 每 token → MIDI:IV 概率表窗口分类 + GOAL 权重 + APPROACH lookahead + slope window。
 // ============================================================
@@ -33,7 +33,7 @@
 //      - register-fit penalty when too far from comfort zone
 //      - small bias toward distinct from prev pc (avoid repetition)
 
-import { MELODY_RANGE, resolveDegree, CHORD_TYPES } from '../knowledge/mgMusicTheoryTables';
+import { MELODY_RANGE, resolveDegree, CHORD_TYPES } from '../knowledge/mgMusicTheory';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 import type { ChordPitchSets } from './mgPitchClassSets';
 

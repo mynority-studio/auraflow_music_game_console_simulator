@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildPitchSets } from './mgPitchClassSets';
 import { chooseNote } from './mgNoteChooser';
-import { resolveDegree, CHORD_TYPES, MELODY_RANGE } from '../knowledge/mgMusicTheoryTables';
+import { resolveDegree, CHORD_TYPES, MELODY_RANGE } from '../knowledge/mgMusicTheory';
 import type { ChordBlock } from './mgChordPart';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 
@@ -14,7 +14,7 @@ const mkBlock = (rootPc: number, type: string, index = 0): ChordBlock => ({
   durationBeats: 4, startBeat: index * 4, endBeat: index * 4 + 4,
 });
 
-describe('knowledge/mgMusicTheoryTables · resolveDegree(family-aware)', () => {
+describe('knowledge/mgMusicTheory · resolveDegree(family-aware)', () => {
   it('major 家族:3=4 半音、7=11', () => {
     expect(resolveDegree('3', 'maj7')).toBe(4);
     expect(resolveDegree('7', 'maj7')).toBe(11);
