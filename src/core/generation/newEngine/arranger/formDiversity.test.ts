@@ -87,4 +87,27 @@ describe('arranger · 曲式多样 (3.5)', () => {
       }
     }
   });
+
+  it('★ T4 dynamics:lofi 峰值<0.6 且 < pop hook;jazz 不吃 0.9;breakdown 显著低于邻段;统一 1 chord/bar', () => {
+    const peak = (p: ReturnType<typeof styleForm>) => Math.max(...p.sections.map((s) => p.energyBySection[s.id]));
+    const lofi = styleForm('lofi', 5);
+    const pop = styleForm('pop', 3);
+    const jazz = styleForm('jazz', 5);
+    const rnb = styleForm('rnb', 5);
+
+    const lofiPeak = peak(lofi);
+    expect(lofiPeak).toBeLessThan(0.6);                       // lofi 不到 chorus 能量
+    const popHook = pop.sections.find((s) => s.functionTag === 'hook')!;
+    expect(pop.energyBySection[popHook.id]).toBeGreaterThan(lofiPeak); // pop hook > lofi 峰
+    expect(peak(jazz)).toBeLessThan(0.8);                     // jazz 不吃 pop 0.9 chorus
+
+    // breakdown 显著低于前后段
+    const i = rnb.sections.findIndex((s) => s.functionTag === 'breakdown');
+    const bd = rnb.energyBySection[rnb.sections[i].id];
+    expect(bd).toBeLessThan(rnb.energyBySection[rnb.sections[i - 1].id]);
+    expect(bd).toBeLessThan(rnb.energyBySection[rnb.sections[i + 1].id]);
+
+    // 统一 1 chord/bar(去 chorus 加密)
+    for (const s of pop.sections) expect(pop.harmonicRhythmTarget.chordsPerBarBySection[s.id]).toBe(1);
+  });
 });

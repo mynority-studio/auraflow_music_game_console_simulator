@@ -16,11 +16,12 @@ describe('arranger/arranger (composed ArrangementPlan)', () => {
     expect(plan.feel.kind).toBe('straight');
   });
 
-  it('动力:chorus 能量最高 + 和声节奏加密(2 chord/bar)', () => {
+  it('动力:chorus 能量最高 + 统一 1 chord/bar(去 chorus 加密,层次交 prototype)', () => {
     const chorusId = plan.sections.find((s) => s.role === 'chorus')!.id;
     const verseId = plan.sections.find((s) => s.role === 'verse')!.id;
     expect(plan.energyBySection[chorusId]).toBeGreaterThan(plan.energyBySection[verseId]);
-    expect(plan.harmonicRhythmTarget.chordsPerBarBySection[chorusId]).toBe(2);
+    // ★ T4:不再无条件 chorus⇒2;统一 1 chord/bar(prototype 自带节奏)
+    expect(plan.harmonicRhythmTarget.chordsPerBarBySection[chorusId]).toBe(1);
     expect(plan.harmonicRhythmTarget.chordsPerBarBySection[verseId]).toBe(1);
   });
 
