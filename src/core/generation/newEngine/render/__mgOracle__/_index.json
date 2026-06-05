@@ -3,108 +3,90 @@
     "seed": "lofi_3xyhma",
     "style": "LOFI",
     "chords": 16,
-    "melody": 62,
-    "chordHits": 108,
-    "bassHits": 38,
     "bricks": 9,
-    "schedTokens": 70,
-    "rawMelody": 62,
-    "styled": 60
+    "styledBuiltin": 60,
+    "schedEnriched": 157,
+    "slopeTokens": 82,
+    "styledEnriched": 61
   },
   {
     "seed": "lofi_bneeok",
     "style": "LOFI",
     "chords": 16,
-    "melody": 80,
-    "chordHits": 121,
-    "bassHits": 42,
     "bricks": 12,
-    "schedTokens": 97,
-    "rawMelody": 85,
-    "styled": 67
+    "styledBuiltin": 67,
+    "schedEnriched": 182,
+    "slopeTokens": 86,
+    "styledEnriched": 80
   },
   {
     "seed": "lofi_uhloiw",
     "style": "LOFI",
     "chords": 16,
-    "melody": 72,
-    "chordHits": 120,
-    "bassHits": 38,
     "bricks": 6,
-    "schedTokens": 50,
-    "rawMelody": 45,
-    "styled": 43
+    "styledBuiltin": 43,
+    "schedEnriched": 150,
+    "slopeTokens": 70,
+    "styledEnriched": 70
   },
   {
     "seed": "lofi_er5a0r",
     "style": "LOFI",
     "chords": 16,
-    "melody": 65,
-    "chordHits": 126,
-    "bassHits": 38,
     "bricks": 9,
-    "schedTokens": 70,
-    "rawMelody": 60,
-    "styled": 54
+    "styledBuiltin": 54,
+    "schedEnriched": 131,
+    "slopeTokens": 58,
+    "styledEnriched": 63
   },
   {
     "seed": "pop_cztjju",
     "style": "POP",
     "chords": 17,
-    "melody": 51,
-    "chordHits": 128,
-    "bassHits": 17,
     "bricks": 8,
-    "schedTokens": 66,
-    "rawMelody": 62,
-    "styled": 54
+    "styledBuiltin": 54,
+    "schedEnriched": 132,
+    "slopeTokens": 68,
+    "styledEnriched": 50
   },
   {
     "seed": "pop_xm3lg3",
     "style": "POP",
     "chords": 17,
-    "melody": 60,
-    "chordHits": 96,
-    "bassHits": 34,
     "bricks": 7,
-    "schedTokens": 65,
-    "rawMelody": 61,
-    "styled": 52
+    "styledBuiltin": 52,
+    "schedEnriched": 118,
+    "slopeTokens": 48,
+    "styledEnriched": 60
   },
   {
     "seed": "pop_7b44e5",
     "style": "POP",
     "chords": 16,
-    "melody": 48,
-    "chordHits": 128,
-    "bassHits": 19,
     "bricks": 9,
-    "schedTokens": 73,
-    "rawMelody": 69,
-    "styled": 60
+    "styledBuiltin": 60,
+    "schedEnriched": 126,
+    "slopeTokens": 68,
+    "styledEnriched": 45
   },
   {
     "seed": "jazz_music_probe",
     "style": "JAZZ",
     "chords": 18,
-    "melody": 64,
-    "chordHits": 218,
-    "bassHits": 53,
     "bricks": 10,
-    "schedTokens": 76,
-    "rawMelody": 71,
-    "styled": 60
+    "styledBuiltin": 60,
+    "schedEnriched": 144,
+    "slopeTokens": 66,
+    "styledEnriched": 63
   },
   {
     "seed": "rnb_music_probe",
     "style": "RNB",
     "chords": 17,
-    "melody": 62,
-    "chordHits": 111,
-    "bassHits": 45,
     "bricks": 13,
-    "schedTokens": 96,
-    "rawMelody": 82,
-    "styled": 64
+    "styledBuiltin": 64,
+    "schedEnriched": 167,
+    "slopeTokens": 90,
+    "styledEnriched": 60
   }
 ]
