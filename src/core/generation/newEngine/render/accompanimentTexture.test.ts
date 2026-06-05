@@ -7,21 +7,30 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderAccompaniment } from './accompanimentRenderer';
+import { buildTextureSchedule } from './textureSchedule';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
+import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { generateSong } from '../generation/GenerationController';
 import { createRandomContext, createTimebase, beats, pc } from '../foundation';
 
 function compFor(seed: number, style: string, withTexture = true) {
   const band = buildBandSpec({ seed, styleHint: style, mood: 'x', targetDuration: 150, key: pc(0) });
-  const plan = buildHarmonicPlanFromArrangement(band, buildArrangementPlan(band), createRandomContext(seed));
+  const arr = buildArrangementPlan(band);
+  const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
   const tb = createTimebase({ meter: { numerator: 4, denominator: 4 }, tempoMap: [{ atBeat: beats(0), bpm: 90 }] });
-  const sectionRoleById = Object.fromEntries(buildArrangementPlan(band).sections.map((s) => [s.id, s.role]));
+  const sectionRoleById = Object.fromEntries(arr.sections.map((s) => [s.id, s.role]));
+  const instr = buildInstrumentationPlan(band, arr);
+  const active = new Set<string>();
+  for (const [sid, tex] of Object.entries(instr.textureBySection)) if (instr.textureYieldPolicy[tex] === 'active') active.add(sid);
+  const schedule = withTexture
+    ? buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds: active, textureRng: createRandomContext(seed).substream('compTexture') })
+    : undefined;
   const ctx: Parameters<typeof renderAccompaniment>[2] = {
-    style: band.style, compProgram: band.roleProgram.comp, sectionRoleById,
+    style: band.style, compProgram: band.roleProgram.comp, sectionRoleById, activeSectionIds: active,
     voicingRng: createRandomContext(seed).substream('accompaniment'),
-    ...(withTexture ? { textureRng: createRandomContext(seed).substream('compTexture') } : {}),
+    textureSchedule: schedule,
   };
   return renderAccompaniment(plan, tb, ctx)[0];
 }

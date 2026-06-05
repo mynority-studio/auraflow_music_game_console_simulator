@@ -13,8 +13,8 @@ import { guideToneShell, voiceComp } from '../knowledge/voicings';
 import { chordToneIntervals, chordTypeIntervals, isKnownChordType, type ChordQuality } from '../knowledge/chords';
 import { isKeyboardFamily, instrumentInfo } from '../knowledge/instruments';
 import { buildWidePianoVoicing, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
-import { pickTextureForBar, phraseCellRole, densityForCell, energyForCell, type TextureStyleName, type SectionLabel } from '../knowledge/textureProfiles';
-import { renderTextureChordHits, hasTextureRenderer } from './textureRenderer';
+import { renderTextureChordHits } from './textureRenderer';
+import type { TextureSchedule } from './textureSchedule';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
@@ -27,19 +27,12 @@ export interface AccompContext {
   compProgram?: number;            // ★ comp 实际乐器 GM program:钢琴家族 → 宽排列,否则通用 voiceComp
   sectionRoleById?: Record<string, SectionRole>; // 段落功能 → 钢琴 spread mode 选择(pickSpreadMode)
   voicingRng?: SpreadPicker;       // spread mode 选择用的确定性子流('accompaniment')
-  textureRng?: { pick<T>(xs: readonly T[]): T }; // ★ rich texture 选择确定性子流('compTexture')
+  textureSchedule?: TextureSchedule; // ★ 中央下发的 spanId→textureCase(bass/comp/drum 共享)
 }
 
 const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
   intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
 };
-
-// 段落功能 → texture profile 的段落标签(无 PRECHORUS)。
-const SECTION_LABEL: Record<SectionRole, SectionLabel> = {
-  intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
-};
-// style → texture style 名;非 rich(blues/default)→ undefined,comp 回退 compPattern。
-const TEXTURE_STYLE: Record<string, TextureStyleName> = { pop: 'POP', lofi: 'LOFI', rnb: 'RNB', jazz: 'JAZZ' };
 
 // 把和弦【真实音】映射到 wide-voicing 角色。宽 chordType → 核心(含 sus4、修窄降级)+ 延伸色彩(9/11/13);
 // 窄三和弦('maj'/'min')走 chordToneIntervals(避免 getChordRolePcs 幻觉七音 / chordTypeIntervals 误判 min)。
@@ -150,33 +143,13 @@ export function renderAccompaniment(
     }
   }
 
-  // ★ rich texture 渲染:POP/RNB/JAZZ/LOFI 按 per-span 选 rich textureCase 出 comp 织体
-  //   (voicing 仍是上面那套真 voicing = 源 cM,只是【节奏/articulation】走 texture)。
-  //   BLUES/default 无 rich profile → 落下面 compPattern 老路。
-  const txStyle = TEXTURE_STYLE[style.toLowerCase()];
-  if (txStyle && ctx.textureRng) {
-    // 段内 span 序号/计数 → cell 角色(近似 bar index;1 和弦/bar 时精确)
-    const countInSec: Record<string, number> = {};
-    timeline.forEach((s) => { countInSec[s.sectionId] = (countInSec[s.sectionId] ?? 0) + 1; });
-    const idxInSec: Record<string, number> = {};
-    const seenSec: Record<string, number> = {};
-    timeline.forEach((s) => { idxInSec[s.id] = seenSec[s.sectionId] ?? 0; seenSec[s.sectionId] = (seenSec[s.sectionId] ?? 0) + 1; });
-
-    let prevTex: string | undefined;
-    let rep = 0;
-    for (let i = 0; i < timeline.length; i++) {
-      const span = timeline[i];
-      if (!inActive(span.sectionId)) continue;
-      const role = ctx.sectionRoleById?.[span.sectionId] ?? 'verse';
-      const cellRole = phraseCellRole(idxInSec[span.id], countInSec[span.sectionId]);
-      const label = SECTION_LABEL[role] ?? 'VERSE';
-      const prof = pickTextureForBar({
-        style: txStyle, phraseRole: cellRole, density: densityForCell(cellRole, label), energy: energyForCell(cellRole, label),
-        isDominantChain: funcBySpan[span.id] === 'D', prevTextureId: prevTex, repeatCount: rep, random: ctx.textureRng,
-      });
-      const tc = prof?.textureCase;
-      if (tc && tc === prevTex) rep += 1; else { rep = 0; prevTex = tc; }
-      if (!tc || !hasTextureRenderer(tc)) continue;
+  // ★ rich texture 渲染:消费中央下发的 textureSchedule(bass/comp/drum 共享同一 textureCase →
+  //   同一时钟对拍/复调)。voicing 仍是上面那套真 voicing,只【节奏/articulation】走 texture。
+  //   schedule 内无该 span(BLUES/default 或 floating 段)→ 落下面 compPattern 老路。
+  if (ctx.textureSchedule && Object.keys(ctx.textureSchedule).length > 0) {
+    for (const span of timeline) {
+      const tc = ctx.textureSchedule[span.id];
+      if (!tc) continue;
 
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
       const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id);

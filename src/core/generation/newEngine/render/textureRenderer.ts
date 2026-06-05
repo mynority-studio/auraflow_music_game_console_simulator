@@ -16,6 +16,26 @@ export interface TextureChordHit {
   vel: number; // 0..1(comp renderer 映射到 0..127)
 }
 
+// ★ 纹理的 bass 声部 = 节奏 only(onset/dur/vel + voice 提示);音高由 bassRenderer 按 bassRole/anchor 填。
+//   忠实源:同一 textureCase 的 bass 与 chord 合谱 → bass+comp 对拍/复调由作者写死在相对拍 t 上。
+export interface TextureBassHit {
+  tRel: number;
+  dur: number;
+  vel: number; // 0..1(bassRenderer 映射)
+  voice: 'root' | 'fifth' | 'tenth'; // root=anchor pc / fifth=五度 / tenth=三度(bass 区)
+}
+
+/** 纹理的律动口袋(给 drum 跟):halftime=半拍重 / sparse=留白多 / normal。 */
+export type TexturePocket = 'normal' | 'halftime' | 'sparse';
+const POCKET_BY_CASE: Record<string, TexturePocket> = {
+  HalfTime_Emotional_Pulse: 'halftime', Piano_HalfTime_Soft_Pulse: 'halftime',
+  Ambient_Pad_Breath: 'sparse', Low_Pedal_Color_Wash: 'sparse', Ambient_Reverse_Swell: 'sparse',
+  Lyrical_Felt_Piano_Sparse: 'sparse', Piano_Lofi_OneShot_Space: 'sparse', Piano_Ambient_Sustain_Wash: 'sparse',
+};
+export function texturePocket(textureCase: string): TexturePocket {
+  return POCKET_BY_CASE[textureCase] ?? 'normal';
+}
+
 /** modern(POP/RNB/JAZZ)rich textureCase。 */
 const MODERN_TEXTURE_CASES = new Set<string>([
   'Lyrical_Felt_Piano_Sparse', 'Lyrical_10th_Broken', 'Ambient_Pad_Breath', 'Ambient_Reverse_Swell',
@@ -128,6 +148,38 @@ export function renderTextureChordHits(
         cM.forEach((m, idx) => push([m], beat + 0.05 + idx * 0.03, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
       });
       break;
+  }
+  return hits;
+}
+
+/**
+ * rich textureCase → bass hit 序列(忠实源每个 case 的 bass pushEvent)。节奏 only,音高 bassRenderer 填。
+ * 多数 = 根音持音;HalfTime 系列在 0+2 双脉冲;10th 系列中段补三度(tenth)。
+ */
+export function renderTextureBassHits(textureCase: string, durationBeats: number): TextureBassHit[] {
+  const dur = durationBeats;
+  const hits: TextureBassHit[] = [];
+  const b = (tRel: number, d: number, vel: number, voice: TextureBassHit['voice'] = 'root') => {
+    if (tRel < dur) hits.push({ tRel, dur: Math.min(d, dur - tRel), vel, voice });
+  };
+  switch (textureCase) {
+    case 'Lyrical_Felt_Piano_Sparse': b(0, Math.min(dur, 3.8), 0.62); break;
+    case 'Lyrical_10th_Broken': b(0, 1.5, 0.72); if (dur > 2) b(1.5, 0.6, 0.45, 'tenth'); break;
+    case 'Ambient_Pad_Breath': b(0, dur, 0.48); break;
+    case 'Ambient_Reverse_Swell': b(0, dur, 0.45); break;
+    case 'Soft_Guitar_Pluck_8ths': b(0, 1.8, 0.58); break;
+    case 'Piano_Question_Answer': b(0, Math.min(dur, 2.0), 0.65); break;
+    case 'Low_Pedal_Color_Wash': b(0, dur, 0.58); break;
+    case 'HalfTime_Emotional_Pulse': b(0, 2.0, 0.82); if (dur >= 4) b(2.0, 2.0, 0.70); break;
+    case 'Piano_Lofi_OneShot_Space': b(0, dur, 0.55); break;
+    case 'Piano_Lofi_Late_Chord_Answer': b(0, Math.min(dur, 2.0), 0.60); break;
+    case 'Piano_Emo_Broken_10th': b(0, 1.5, 0.68); if (dur > 2) b(1.5, 0.55, 0.42, 'tenth'); break;
+    case 'Piano_Ambient_Sustain_Wash': b(0, dur, 0.42); break;
+    case 'Piano_HalfTime_Soft_Pulse': b(0, 1.85, 0.72); if (dur >= 4) b(2.0, 1.85, 0.62); break;
+    case 'Piano_Lofi_Dusty_Chops': b(0, dur, 0.62); break;
+    case 'Piano_Lofi_Tape_Wobble_Arp': b(0, dur, 0.55); break;
+    case 'Piano_Wide_Color_Motion': b(0, Math.min(dur, 2.4), 0.58); break;
+    case 'Piano_CommonTone_Soft_Roll': b(0, dur, 0.65); break;
   }
   return hits;
 }

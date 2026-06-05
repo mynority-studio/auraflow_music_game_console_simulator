@@ -12,13 +12,15 @@ import { beats, mod12, type Timebase } from '../foundation';
 import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
 import { resolveBassAnchorPc } from '../knowledge/basslineRules';
 import { chordTypeIntervals } from '../knowledge/chords';
+import { renderTextureBassHits } from './textureRenderer';
+import type { TextureSchedule } from './textureSchedule';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 const BASS_LOW = 36;
 const BASS_HIGH = 50;
 
-export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string): TrackIR {
+export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string, textureSchedule?: TextureSchedule): TrackIR {
   const notes: NoteIR[] = [];
   const spans = plan.chordTimeline;
 
@@ -58,6 +60,21 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
         durationTicks: timebase.beatToTick(beats(span.durationBeats as number)),
         velocity: 84,
       });
+      continue;
+    }
+
+    // ★ 纹理段(纹理全权):bass 走纹理的 bass 节奏(与 comp 同 textureCase = 对拍/复调),
+    //   音高用 bassRole anchor(root)/ 五度 / 三度;旁路 per-style walking。
+    const tc = textureSchedule?.[span.id];
+    if (tc) {
+      const rootPc = span.rootPc as number;
+      const thirdPc = mod12(rootPc + (intervals[1] ?? 4));
+      const fifthPc = mod12(rootPc + (intervals[2] ?? 7));
+      const voicePc = (v: 'root' | 'fifth' | 'tenth') => (v === 'fifth' ? fifthPc : v === 'tenth' ? thirdPc : anchorPc);
+      for (const h of renderTextureBassHits(tc, span.durationBeats as number)) {
+        const vel = Math.max(1, Math.min(108, Math.round((h.vel * 0.85 + 0.2) * 127)));
+        push(voicePc(h.voice), span, start + h.tRel, h.dur, vel);
+      }
       continue;
     }
 
