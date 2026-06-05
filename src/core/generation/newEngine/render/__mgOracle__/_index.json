@@ -1,0 +1,74 @@
+[
+  {
+    "seed": "lofi_3xyhma",
+    "style": "LOFI",
+    "chords": 16,
+    "melody": 62,
+    "chordHits": 108,
+    "bassHits": 38
+  },
+  {
+    "seed": "lofi_bneeok",
+    "style": "LOFI",
+    "chords": 16,
+    "melody": 80,
+    "chordHits": 121,
+    "bassHits": 42
+  },
+  {
+    "seed": "lofi_uhloiw",
+    "style": "LOFI",
+    "chords": 16,
+    "melody": 72,
+    "chordHits": 120,
+    "bassHits": 38
+  },
+  {
+    "seed": "lofi_er5a0r",
+    "style": "LOFI",
+    "chords": 16,
+    "melody": 65,
+    "chordHits": 126,
+    "bassHits": 38
+  },
+  {
+    "seed": "pop_cztjju",
+    "style": "POP",
+    "chords": 17,
+    "melody": 51,
+    "chordHits": 128,
+    "bassHits": 17
+  },
+  {
+    "seed": "pop_xm3lg3",
+    "style": "POP",
+    "chords": 17,
+    "melody": 60,
+    "chordHits": 96,
+    "bassHits": 34
+  },
+  {
+    "seed": "pop_7b44e5",
+    "style": "POP",
+    "chords": 16,
+    "melody": 48,
+    "chordHits": 128,
+    "bassHits": 19
+  },
+  {
+    "seed": "jazz_music_probe",
+    "style": "JAZZ",
+    "chords": 18,
+    "melody": 64,
+    "chordHits": 218,
+    "bassHits": 53
+  },
+  {
+    "seed": "rnb_music_probe",
+    "style": "RNB",
+    "chords": 17,
+    "melody": 62,
+    "chordHits": 111,
+    "bassHits": 45
+  }
+]

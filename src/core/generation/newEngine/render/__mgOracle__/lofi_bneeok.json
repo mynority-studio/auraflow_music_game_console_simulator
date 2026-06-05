@@ -1,0 +1,2457 @@
+{
+  "seed": "lofi_bneeok",
+  "style": "LOFI",
+  "key": "C",
+  "chords": [
+    {
+      "root": "C",
+      "rootMidi": 48,
+      "type": "m9",
+      "roman": "i",
+      "bass": "C2",
+      "bassMidi": 36,
+      "notes": [
+        "Eb3",
+        "Bb3",
+        "D4",
+        "G4"
+      ],
+      "notesMidi": [
+        51,
+        58,
+        62,
+        67
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Cm9",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 36,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 43,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 36,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 48,
+            "pc": 0,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 51,
+            "pc": 3,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          48,
+          51,
+          67,
+          70,
+          72,
+          74
+        ],
+        "innerLanes": [
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "half_wide"
+      }
+    },
+    {
+      "root": "Db",
+      "rootMidi": 49,
+      "type": "maj7",
+      "roman": "bII",
+      "bass": "Ab2",
+      "bassMidi": 44,
+      "notes": [
+        "F3",
+        "C4",
+        "Ab4"
+      ],
+      "notesMidi": [
+        53,
+        60,
+        68
+      ],
+      "duration": 4,
+      "tensionState": "SecondInversion",
+      "effectiveFunc": "T",
+      "chordSymbol": "Dbmaj7/Ab",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 44,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 37,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 44,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "borrowedFrom": "Phrygian bII color",
+      "borrowedSource": "modal_interchange",
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 49,
+            "pc": 1,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 53,
+            "pc": 5,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 73,
+            "pc": 1,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          49,
+          53,
+          68,
+          72,
+          73,
+          77
+        ],
+        "innerLanes": [
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 73,
+            "pc": 1,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "half_wide"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "13sus4",
+      "roman": "VII",
+      "bass": "F2",
+      "bassMidi": 41,
+      "notes": [
+        "Ab3",
+        "C4",
+        "Eb4",
+        "G4"
+      ],
+      "notesMidi": [
+        56,
+        60,
+        63,
+        67
+      ],
+      "duration": 4,
+      "tensionState": "SlashChord",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb13sus4/F",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 41,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 46,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 41,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "attackMidi": [
+          65,
+          68
+        ],
+        "innerLanes": [
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    },
+    {
+      "root": "Ab",
+      "rootMidi": 56,
+      "type": "maj9",
+      "roman": "VI",
+      "bass": "Ab2",
+      "bassMidi": 44,
+      "notes": [
+        "Eb3",
+        "G3",
+        "C4",
+        "Bb4"
+      ],
+      "notesMidi": [
+        51,
+        55,
+        60,
+        70
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Abmaj9",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 44,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 39,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 44,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "spread",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 56,
+            "pc": 8,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          56,
+          60,
+          63,
+          67,
+          68,
+          70
+        ],
+        "innerLanes": [
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "half_wide"
+      }
+    },
+    {
+      "root": "C",
+      "rootMidi": 48,
+      "type": "m9",
+      "roman": "i",
+      "bass": "G2",
+      "bassMidi": 43,
+      "notes": [
+        "Eb4",
+        "G4",
+        "Bb4",
+        "D5"
+      ],
+      "notesMidi": [
+        63,
+        67,
+        70,
+        74
+      ],
+      "duration": 4,
+      "tensionState": "Cadential64",
+      "effectiveFunc": "D",
+      "chordSymbol": "Cm9/G",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 43,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 36,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 43,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 62,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 75,
+            "pc": 3,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 79,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          60,
+          62,
+          67,
+          70,
+          72,
+          75,
+          79
+        ],
+        "innerLanes": [
+          {
+            "midi": 62,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "drop2_wide"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "13sus4",
+      "roman": "VII",
+      "bass": "Eb2",
+      "bassMidi": 39,
+      "notes": [
+        "Ab4",
+        "C5",
+        "Eb5",
+        "G5"
+      ],
+      "notesMidi": [
+        68,
+        72,
+        75,
+        79
+      ],
+      "duration": 4,
+      "tensionState": "FirstInversion",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb13sus4/Eb",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 39,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 41,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 39,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "attackMidi": [
+          65,
+          68
+        ],
+        "innerLanes": [
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    },
+    {
+      "root": "Ab",
+      "rootMidi": 56,
+      "type": "maj9",
+      "roman": "VI",
+      "bass": "Ab2",
+      "bassMidi": 44,
+      "notes": [
+        "G4",
+        "Bb4",
+        "C5",
+        "Eb5"
+      ],
+      "notesMidi": [
+        67,
+        70,
+        72,
+        75
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Abmaj9",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 44,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 39,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 44,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 56,
+            "pc": 8,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 60,
+            "pc": 0,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          56,
+          60,
+          63,
+          67,
+          68,
+          70
+        ],
+        "innerLanes": [
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "half_wide"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "13sus4",
+      "roman": "VII",
+      "bass": "F2",
+      "bassMidi": 41,
+      "notes": [
+        "C4",
+        "Ab4",
+        "Eb5",
+        "G5"
+      ],
+      "notesMidi": [
+        60,
+        68,
+        75,
+        79
+      ],
+      "duration": 4,
+      "tensionState": "SlashChord",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb13sus4/F",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 41,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 46,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 41,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "drop2",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          58,
+          58,
+          65,
+          68,
+          77
+        ],
+        "innerLanes": [
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "drop2_wide"
+      }
+    },
+    {
+      "root": "C",
+      "rootMidi": 48,
+      "type": "m9",
+      "roman": "i",
+      "bass": "Eb2",
+      "bassMidi": 39,
+      "notes": [
+        "Eb4",
+        "Bb4",
+        "D5",
+        "G5"
+      ],
+      "notesMidi": [
+        63,
+        70,
+        74,
+        79
+      ],
+      "duration": 4,
+      "tensionState": "FirstInversion",
+      "effectiveFunc": "T",
+      "chordSymbol": "Cm9/Eb",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 39,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 43,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 39,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          67,
+          70,
+          74
+        ],
+        "innerLanes": [
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    },
+    {
+      "root": "Db",
+      "rootMidi": 49,
+      "type": "maj7",
+      "roman": "bII",
+      "bass": "Db2",
+      "bassMidi": 37,
+      "notes": [
+        "F4",
+        "C5",
+        "Ab5"
+      ],
+      "notesMidi": [
+        65,
+        72,
+        80
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Dbmaj7",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 37,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 44,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 37,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "borrowedFrom": "Phrygian bII color",
+      "borrowedSource": "modal_interchange",
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 53,
+            "pc": 5,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 61,
+            "pc": 1,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 73,
+            "pc": 1,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          },
+          {
+            "midi": 80,
+            "pc": 8,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          53,
+          61,
+          68,
+          72,
+          73,
+          77,
+          80
+        ],
+        "innerLanes": [
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 73,
+            "pc": 1,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "third",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "wide"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "13sus4",
+      "roman": "VII",
+      "bass": "Bb2",
+      "bassMidi": 46,
+      "notes": [
+        "Ab3",
+        "Eb4",
+        "C5",
+        "G5"
+      ],
+      "notesMidi": [
+        56,
+        63,
+        72,
+        79
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb13sus4",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 46,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 41,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 46,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "spread",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          58,
+          58,
+          65,
+          68,
+          77
+        ],
+        "innerLanes": [
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "drop2_wide"
+      }
+    },
+    {
+      "root": "Ab",
+      "rootMidi": 56,
+      "type": "maj9",
+      "roman": "VI",
+      "bass": "Ab2",
+      "bassMidi": 44,
+      "notes": [
+        "G4",
+        "Bb4",
+        "C5",
+        "Eb5"
+      ],
+      "notesMidi": [
+        67,
+        70,
+        72,
+        75
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Abmaj9",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 44,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 39,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 44,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          63,
+          67,
+          70
+        ],
+        "innerLanes": [
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    },
+    {
+      "root": "C",
+      "rootMidi": 48,
+      "type": "m9",
+      "roman": "i",
+      "bass": "C2",
+      "bassMidi": 36,
+      "notes": [
+        "G3",
+        "Bb3",
+        "D4",
+        "Eb5"
+      ],
+      "notesMidi": [
+        55,
+        58,
+        62,
+        75
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Cm9",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 36,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 43,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 36,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "spread",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 48,
+            "pc": 0,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 51,
+            "pc": 3,
+            "role": "third",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 54
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          48,
+          51,
+          67,
+          70,
+          72,
+          74
+        ],
+        "innerLanes": [
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 72,
+            "pc": 0,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 74,
+            "pc": 2,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "half_wide"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "13sus4",
+      "roman": "VII",
+      "bass": "Bb2",
+      "bassMidi": 46,
+      "notes": [
+        "G3",
+        "C4",
+        "Ab4",
+        "Eb5"
+      ],
+      "notesMidi": [
+        55,
+        60,
+        68,
+        75
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb13sus4",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 46,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 41,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 46,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "spread",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "root",
+            "lane": "low_outer",
+            "hand": "LH",
+            "velocity": 58
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 77,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "upper_outer",
+            "hand": "RH",
+            "velocity": 38
+          }
+        ],
+        "attackMidi": [
+          58,
+          58,
+          65,
+          68,
+          77
+        ],
+        "innerLanes": [
+          {
+            "midi": 58,
+            "pc": 10,
+            "role": "doubling",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 42
+          },
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "drop2_wide"
+      }
+    },
+    {
+      "root": "Ab",
+      "rootMidi": 56,
+      "type": "maj9",
+      "roman": "VI",
+      "bass": "Ab2",
+      "bassMidi": 44,
+      "notes": [
+        "C4",
+        "G4",
+        "Bb4",
+        "Eb5"
+      ],
+      "notesMidi": [
+        60,
+        67,
+        70,
+        75
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "T",
+      "chordSymbol": "Abmaj9",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 44,
+          "duration": 2.5,
+          "velocity": 100
+        },
+        {
+          "time": 2.75,
+          "midi": 39,
+          "duration": 0.5,
+          "velocity": 80
+        },
+        {
+          "time": 3.5,
+          "midi": 44,
+          "duration": 0.5,
+          "velocity": 88
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "attackMidi": [
+          63,
+          67,
+          70
+        ],
+        "innerLanes": [
+          {
+            "midi": 63,
+            "pc": 3,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 67,
+            "pc": 7,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          },
+          {
+            "midi": 70,
+            "pc": 10,
+            "role": "ninth",
+            "lane": "inner_high",
+            "hand": "RH",
+            "velocity": 40
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    },
+    {
+      "root": "Bb",
+      "rootMidi": 58,
+      "type": "13sus4",
+      "roman": "VII",
+      "bass": "Bb2",
+      "bassMidi": 46,
+      "notes": [
+        "Ab4",
+        "C5",
+        "Eb5",
+        "G5"
+      ],
+      "notesMidi": [
+        68,
+        72,
+        75,
+        79
+      ],
+      "duration": 4,
+      "tensionState": "Solid",
+      "effectiveFunc": "D",
+      "chordSymbol": "Bb13sus4",
+      "bassPattern": [
+        {
+          "time": 0,
+          "midi": 46,
+          "duration": 4,
+          "velocity": 95
+        }
+      ],
+      "localTonalCenterPc": 0,
+      "arrangementMode": "close",
+      "widePianoVoicing": {
+        "notes": [
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "attackMidi": [
+          65,
+          68
+        ],
+        "innerLanes": [
+          {
+            "midi": 65,
+            "pc": 5,
+            "role": "fifth",
+            "lane": "inner_low",
+            "hand": "RH",
+            "velocity": 48
+          },
+          {
+            "midi": 68,
+            "pc": 8,
+            "role": "seventh",
+            "lane": "inner_mid",
+            "hand": "RH",
+            "velocity": 46
+          }
+        ],
+        "innerMotion": [],
+        "spreadMode": "close"
+      }
+    }
+  ],
+  "melody": [
+    {
+      "time": 0,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 0.5,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 100
+    },
+    {
+      "time": 1,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 85
+    },
+    {
+      "time": 1.5,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 4,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 5,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 85
+    },
+    {
+      "time": 6,
+      "dur": 1.5,
+      "midi": 60,
+      "vel": 95
+    },
+    {
+      "time": 7.5,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 8,
+      "dur": 1,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 9,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 85
+    },
+    {
+      "time": 10,
+      "dur": 2,
+      "midi": 60,
+      "vel": 95
+    },
+    {
+      "time": 12,
+      "dur": 2,
+      "midi": 60,
+      "vel": 100
+    },
+    {
+      "time": 13.5,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 14,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 95
+    },
+    {
+      "time": 14.5,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 15,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 85
+    },
+    {
+      "time": 15.5,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 16,
+      "dur": 1.5,
+      "midi": 60,
+      "vel": 100
+    },
+    {
+      "time": 17.5,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 100
+    },
+    {
+      "time": 18,
+      "dur": 4,
+      "midi": 70,
+      "vel": 95
+    },
+    {
+      "time": 22,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 95
+    },
+    {
+      "time": 22.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 23,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 85
+    },
+    {
+      "time": 23.5,
+      "dur": 0.5,
+      "midi": 62,
+      "vel": 100
+    },
+    {
+      "time": 24,
+      "dur": 1,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 24.5,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 25,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 85
+    },
+    {
+      "time": 25.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 26,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 95
+    },
+    {
+      "time": 26.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 27,
+      "dur": 0.5,
+      "midi": 72,
+      "vel": 85
+    },
+    {
+      "time": 27.5,
+      "dur": 0.5,
+      "midi": 74,
+      "vel": 100
+    },
+    {
+      "time": 28,
+      "dur": 1,
+      "midi": 75,
+      "vel": 100
+    },
+    {
+      "time": 28.5,
+      "dur": 0.5,
+      "midi": 72,
+      "vel": 100
+    },
+    {
+      "time": 29,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 85
+    },
+    {
+      "time": 29.5,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 100
+    },
+    {
+      "time": 30,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 95
+    },
+    {
+      "time": 30.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 31,
+      "dur": 0.5,
+      "midi": 72,
+      "vel": 85
+    },
+    {
+      "time": 31.5,
+      "dur": 0.5,
+      "midi": 75,
+      "vel": 100
+    },
+    {
+      "time": 32,
+      "dur": 2,
+      "midi": 77,
+      "vel": 100
+    },
+    {
+      "time": 34,
+      "dur": 1.5,
+      "midi": 74,
+      "vel": 95
+    },
+    {
+      "time": 35.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 36,
+      "dur": 1,
+      "midi": 72,
+      "vel": 100
+    },
+    {
+      "time": 37.5,
+      "dur": 0.5,
+      "midi": 77,
+      "vel": 100
+    },
+    {
+      "time": 38,
+      "dur": 0.5,
+      "midi": 80,
+      "vel": 95
+    },
+    {
+      "time": 38.5,
+      "dur": 0.5,
+      "midi": 77,
+      "vel": 100
+    },
+    {
+      "time": 39,
+      "dur": 0.5,
+      "midi": 77,
+      "vel": 85
+    },
+    {
+      "time": 39.5,
+      "dur": 0.5,
+      "midi": 75,
+      "vel": 100
+    },
+    {
+      "time": 40,
+      "dur": 0.6666666666666666,
+      "midi": 79,
+      "vel": 100
+    },
+    {
+      "time": 40.666666666666664,
+      "dur": 0.6666666666666666,
+      "midi": 80,
+      "vel": 100
+    },
+    {
+      "time": 41.33333333333333,
+      "dur": 0.6666666666666666,
+      "midi": 80,
+      "vel": 100
+    },
+    {
+      "time": 41.99999999999999,
+      "dur": 0.6666666666666666,
+      "midi": 77,
+      "vel": 95
+    },
+    {
+      "time": 42.66666666666666,
+      "dur": 1,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 43.66666666666666,
+      "dur": 0.3333333333333333,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 44,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 44.5,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 45,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 85
+    },
+    {
+      "time": 45.5,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 100
+    },
+    {
+      "time": 46,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 95
+    },
+    {
+      "time": 46.5,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 100
+    },
+    {
+      "time": 47,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 85
+    },
+    {
+      "time": 47.5,
+      "dur": 0.5,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 48.5,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 49,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 85
+    },
+    {
+      "time": 49.5,
+      "dur": 1,
+      "midi": 67,
+      "vel": 100
+    },
+    {
+      "time": 50.5,
+      "dur": 0.5,
+      "midi": 68,
+      "vel": 100
+    },
+    {
+      "time": 51,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 85
+    },
+    {
+      "time": 51.5,
+      "dur": 0.5,
+      "midi": 65,
+      "vel": 100
+    },
+    {
+      "time": 52,
+      "dur": 1,
+      "midi": 63,
+      "vel": 100
+    },
+    {
+      "time": 53,
+      "dur": 0.5,
+      "midi": 67,
+      "vel": 85
+    },
+    {
+      "time": 53.5,
+      "dur": 0.5,
+      "midi": 60,
+      "vel": 100
+    },
+    {
+      "time": 54,
+      "dur": 1.5,
+      "midi": 68,
+      "vel": 95
+    },
+    {
+      "time": 56.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 57,
+      "dur": 0.5,
+      "midi": 72,
+      "vel": 85
+    },
+    {
+      "time": 57.5,
+      "dur": 1,
+      "midi": 74,
+      "vel": 100
+    },
+    {
+      "time": 58.5,
+      "dur": 1,
+      "midi": 75,
+      "vel": 100
+    },
+    {
+      "time": 59.5,
+      "dur": 0.5,
+      "midi": 70,
+      "vel": 100
+    },
+    {
+      "time": 60,
+      "dur": 1,
+      "midi": 68,
+      "vel": 100
+    },
+    {
+      "time": 61.5,
+      "dur": 1,
+      "midi": 67,
+      "vel": 100
+    }
+  ],
+  "chordHitCount": 121,
+  "bassHitCount": 42
+}
