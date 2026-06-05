@@ -62,6 +62,62 @@ function melodyContractPcsForStyle(style: StyleName, chord: ChordDef, chordRootP
   return sharedMelodyContractPcsForStyle(style, chord, chordRootPc);
 }
 
+// ── re-sync(MG 活跃开发追加):LOFI Phrygian bII shadow ──────────────
+// 原 musicEngine.ts isPhrygianBiiShadowSource(1165)+ applyLofiPhrygianBiiShadowMelody(shaper 新增方法)。
+// shapeMelodyHarmony 在 anchored 后、lateResolved 前插一步(仅 applyLofiParadigm)。
+// 注:仅当 chord.borrowedSource='modal_interchange' + roman bII + borrowedFrom 含 Phrygian/bII 才触发。
+function isPhrygianBiiShadowSource(chord: ChordDef): boolean {
+  return chord.borrowedSource === 'modal_interchange'
+    && /^bII\b/.test(chord.roman ?? '')
+    && /Phrygian|bII/i.test(chord.borrowedFrom ?? '');
+}
+
+export function applyLofiPhrygianBiiShadowMelody(
+  melody: NoteEvent[],
+  chords: ChordDef[],
+  starts: number[],
+): NoteEvent[] {
+  const out = melody.map(e => ({ ...e }));
+  for (let i = 0; i < chords.length; i++) {
+    const chord = chords[i];
+    if (!isPhrygianBiiShadowSource(chord)) continue;
+    const start = starts[i] ?? i * 4;
+    const end = start + (chord.duration ?? 4);
+    const rootPc = ((chord.rootMidi % 12) + 12) % 12;
+    const barMelody = out
+      .filter(e => e.part === 'melody' && e.time >= start - 0.001 && e.time < end - 0.001)
+      .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+    if (barMelody.some(e => e.time < start + 1.01 && ((e.noteNumber % 12) + 12) % 12 === rootPc)) {
+      continue;
+    }
+    const first = barMelody.find(e => e.time <= start + 0.08 && e.duration >= 0.75) ?? null;
+    const seedMidi = first?.noteNumber ?? 72;
+    const rootMidi = snapMidiToNearestPcSet(seedMidi, new Set([rootPc]), 9);
+    if (((rootMidi % 12) + 12) % 12 !== rootPc) continue;
+    if (rootMidi < MELODY_RANGE.LOW || rootMidi > MELODY_RANGE.HIGH) continue;
+    if (first && first.duration >= 1.0) {
+      first.time = start + 0.5;
+      first.duration = Math.max(0.25, first.duration - 0.5);
+    } else if (first) {
+      first.noteNumber = rootMidi;
+      first.velocity = Math.max(first.velocity, 98);
+      first.origin = 'develop';
+      first.lickSource = true;
+      continue;
+    }
+    out.push({
+      noteNumber: rootMidi,
+      time: start,
+      duration: 0.5,
+      velocity: first ? Math.max(first.velocity, 98) : 98,
+      part: 'melody',
+      origin: 'develop',
+      lickSource: true,
+    });
+  }
+  return out.sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+}
+
 // ============================================================
 // 以下为 musicEngine.ts 区段忠实提取 + 机械改写(this./strongBeats/private)
 // ============================================================
@@ -951,6 +1007,9 @@ function melodyContractPcsForStyle(style: StyleName, chord: ChordDef, chordRootP
         const anchored = applyLofiParadigm
             ? applyLofiTonicizationColorAnchors(bassThinned, chords, starts, musicKey, musicMode)
             : bassThinned;
-        const lateResolved = applyMelodicResolutionParadigm(style, anchored, chords, starts, musicKey, musicMode, tonalCharacter);
+        const shadowed = applyLofiParadigm
+            ? applyLofiPhrygianBiiShadowMelody(anchored, chords, starts)
+            : anchored;
+        const lateResolved = applyMelodicResolutionParadigm(style, shadowed, chords, starts, musicKey, musicMode, tonalCharacter);
         return consumeReturnLandings(tightenHarmonyDecorations(thinSlashBassMelodyDoubles(lateResolved)));
     }

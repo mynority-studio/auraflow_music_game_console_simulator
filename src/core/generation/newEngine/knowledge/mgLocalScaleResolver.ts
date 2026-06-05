@@ -1,7 +1,7 @@
 // ============================================================
-// newEngine · knowledge · MgLocalScaleResolver(MG strict 移植 Loop 6 · re-sync)
+// newEngine · knowledge · MgLocalScaleResolver(MG strict 移植 Loop 6 · re-sync 2)
 // Provenance: ../melodygenerative/src/lib/localScaleResolver.ts 逐字节复制(cp + 改 import)。
-// ⚠️ MG 活跃开发中:此文件 melodyContractPcsForStyle 上游有简化,已 re-sync 到当前 MG。
+// ⚠️ MG 活跃开发:re-sync 到含 borrowedImpliesPhrygianScale(bII roman 才切 Phrygian,防 VII 回归误解析)。
 // ============================================================
 
 import type { StyleName } from './mgMusicTheory';
@@ -165,6 +165,12 @@ function chordContractFitsKeyMode(ctx: LocalScaleContext, chord: LocalScaleChord
   return true;
 }
 
+function borrowedImpliesPhrygianScale(chord: LocalScaleChordLike, borrowedFrom: string): boolean {
+  const roman = chord.roman ?? '';
+  return /^bII\b/.test(roman)
+    && /Phrygian|bII/i.test(borrowedFrom);
+}
+
 function declaredChordPcs(type: string, rootPc: number): Set<number> {
   const literal = CHORD_TYPES[type] ?? CHORD_TYPES.maj;
   return new Set(literal.map(iv => pcOf(rootPc + iv)));
@@ -310,7 +316,7 @@ export function resolveLocalScale(ctx: LocalScaleContext, chord: LocalScaleChord
   const borrowedFrom = chord.borrowedFrom ?? '';
   if (chord.borrowedSource === 'modal_interchange' || chord.borrowedSource === 'backdoor_dominant') {
     if (/Dorian/i.test(borrowedFrom)) return resolved('Dorian', keyRootPc, 'modal-interchange');
-    if (/Phrygian|bII/i.test(borrowedFrom)) return resolved('Phrygian', keyRootPc, 'modal-interchange');
+    if (borrowedImpliesPhrygianScale(chord, borrowedFrom)) return resolved('Phrygian', keyRootPc, 'modal-interchange');
     if (/Mixolydian/i.test(borrowedFrom)) return resolved('Mixolydian', keyRootPc, 'modal-interchange');
     if (/bVII/i.test(borrowedFrom) && majorLike(type)) return resolved('Mixolydian', keyRootPc, 'modal-interchange');
     if (/parallel minor|Aeolian|iv|bVI|bVII|backdoor/i.test(borrowedFrom)
@@ -330,7 +336,7 @@ export function resolveLocalScale(ctx: LocalScaleContext, chord: LocalScaleChord
 
   if (borrowedFrom) {
     if (/Dorian/i.test(borrowedFrom)) return resolved('Dorian', keyRootPc, 'modal-interchange');
-    if (/Phrygian|bII/i.test(borrowedFrom)) return resolved('Phrygian', keyRootPc, 'modal-interchange');
+    if (borrowedImpliesPhrygianScale(chord, borrowedFrom)) return resolved('Phrygian', keyRootPc, 'modal-interchange');
     if (/bVII/i.test(borrowedFrom) && majorLike(type)) return resolved('Mixolydian', keyRootPc, 'modal-interchange');
     if (/parallel minor|Aeolian|i |iv|bVI|bVII/i.test(borrowedFrom)) return resolved('Aeolian', keyRootPc, 'modal-interchange');
   }

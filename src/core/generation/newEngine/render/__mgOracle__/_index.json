@@ -13,11 +13,11 @@
     "seed": "lofi_bneeok",
     "style": "LOFI",
     "chords": 16,
-    "bricks": 12,
-    "styledBuiltin": 67,
-    "schedEnriched": 182,
-    "slopeTokens": 86,
-    "styledEnriched": 80
+    "bricks": 14,
+    "styledBuiltin": 61,
+    "schedEnriched": 155,
+    "slopeTokens": 70,
+    "styledEnriched": 67
   },
   {
     "seed": "lofi_uhloiw",
