@@ -5,12 +5,13 @@
 //   jazz = walking(逐拍:根→和弦音→半音接入下个和弦根)
 //   pop  = 根-五交替(逐拍)
 //   lofi/default = 根音持续(lofi 末拍补五度)
-// 全落 bass 音区 [36,50],贴和弦音/导音。无 rng → 确定性。
+// ★ 音区 [E1,G3]=[28,55],重心 C2–G2:八度由 placeBassMidi 按【声部进行 + 软重心井】定
+//   (取代旧 36+音级 单八度死锁;根音可下探 E1–B1 拿低端,line 平滑不乱跳)。贴和弦音/导音。无 rng → 确定性。
 // ============================================================
 
 import { beats, mod12, type Timebase } from '../foundation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
-import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
+import { placeBassMidi, pcDistance } from '../knowledge/pitchPlacement';
 import { resolveBassAnchorPc } from '../knowledge/basslineRules';
 import { chordTypeIntervals } from '../knowledge/chords';
 import { renderTextureBassHits } from './textureRenderer';
@@ -18,8 +19,9 @@ import type { TextureSchedule } from './textureSchedule';
 import type { ChordSpan, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
-const BASS_LOW = 36;
-const BASS_HIGH = 50;
+const BASS_LOW = 28;  // E1(给低端,roots 可下探)
+const BASS_HIGH = 55; // G3(walking/上行空间)
+const BASS_HOME = 40; // E2:line 起点锚(无 prev 时的虚拟前音 → 首音落重心)
 
 /** 朝 targetPc 方向(dir=-1 下 / +1 上)找最近的【在阶】音(≤2 半音);无 → undefined。 */
 function scaleStepToward(targetPc: number, scalePcs: readonly number[], dir: 1 | -1): number | undefined {
@@ -45,9 +47,13 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
     return [...stable].sort((a, b) => pcDistance(a, pc) - pcDistance(b, pc))[0];
   };
 
+  // 声部进行:跨 span 串 prevMidi → 八度选择平滑(line 不乱跳、重心落 C2–G2、根音可下探 E1–B1)。
+  let prevMidi = BASS_HOME;
   const push = (pc: number, span: ChordSpan, beat: number, dur: number, vel: number) => {
+    const m = placeBassMidi(safe(pc, span), prevMidi, BASS_LOW, BASS_HIGH);
+    prevMidi = m as number;
     notes.push({
-      pitch: pcToMidiInRange(safe(pc, span), BASS_LOW, BASS_HIGH),
+      pitch: m,
       startTick: timebase.beatToTick(beats(beat)),
       durationTicks: timebase.beatToTick(beats(dur)),
       velocity: vel,
@@ -65,8 +71,10 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
 
     // pedal:整 span 持续 pedal pc(不 walking/交替;故意低音,不 snap)
     if (span.bassRole === 'pedal') {
+      const m = placeBassMidi(anchorPc, prevMidi, BASS_LOW, BASS_HIGH);
+      prevMidi = m as number;
       notes.push({
-        pitch: pcToMidiInRange(anchorPc, BASS_LOW, BASS_HIGH),
+        pitch: m,
         startTick: timebase.beatToTick(beats(start)),
         durationTicks: timebase.beatToTick(beats(span.durationBeats as number)),
         velocity: 84,

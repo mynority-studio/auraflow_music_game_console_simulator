@@ -37,13 +37,22 @@ describe('render/bassRenderer (1.2)', () => {
     expect(lofi.notes.length).toBeGreaterThanOrEqual(def.notes.length); // lofi 加五度铺垫
   });
 
-  it('全落 bass 音区 [36,50],确定性', () => {
+  it('全落 bass 音区 [28,55]=E1–G3,确定性', () => {
     const bass = renderBass(plan, timebase, 'jazz');
     for (const n of bass.notes) {
-      expect(n.pitch).toBeGreaterThanOrEqual(36);
-      expect(n.pitch).toBeLessThanOrEqual(50);
+      expect(n.pitch).toBeGreaterThanOrEqual(28); // E1
+      expect(n.pitch).toBeLessThanOrEqual(55);    // G3
     }
     const again = renderBass(plan, timebase, 'jazz');
     expect(again.notes.map((n) => n.pitch)).toEqual(bass.notes.map((n) => n.pitch));
+  });
+
+  it('★ 音区不再单八度死锁:跨度 > 12(有八度起伏),重心落 C2–G2', () => {
+    const bass = renderBass(plan, timebase, 'jazz');
+    const ps = bass.notes.map((n) => n.pitch as number);
+    expect(Math.max(...ps) - Math.min(...ps)).toBeGreaterThan(12); // 不再压在一个八度
+    const mean = ps.reduce((a, b) => a + b, 0) / ps.length;
+    expect(mean).toBeGreaterThanOrEqual(33); // 重心 ~C2–G2(不飘高、不沉底)
+    expect(mean).toBeLessThanOrEqual(47);
   });
 });
