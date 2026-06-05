@@ -92,12 +92,24 @@ const TEXTURE_BY_FUNCTION: Record<SectionFunctionTag, TextureKind> = {
   outro: 'pad',                  // 淡出铺底
 };
 
-/** 该段在场乐手 = (密度弧 mask ∪ lead)∩ lineup;无 tag/genre → 全 lineup。 */
-function activeRolesFor(style: string, section: Section, lineup: readonly InstrumentRoleName[]): InstrumentRoleName[] {
+// ★ A4 lead-gating(多样性):仅这些 framing/transition 段 lead【可缺席】(纯器乐 intro / 人声抽离 breakdown);
+//   core 段(story/build/hook/loop/head/solo/headOut)lead 恒在(旋律必须扛歌)。per-song 掷骰 → 两种都出现。
+const LEAD_OPTIONAL_TAGS: readonly SectionFunctionTag[] = ['setup', 'breakdown', 'outro', 'tag'];
+const LEAD_DROP_PROB = 0.45;
+
+/** 该段在场乐手 = (密度弧 mask ± lead)∩ lineup;无 tag/genre → 全 lineup。
+ *  lead 默认在场;仅 lead-optional 段且本曲掷中 leadDropTags → 缺席(纯器乐,多样性,gate 落地)。 */
+function activeRolesFor(
+  style: string,
+  section: Section,
+  lineup: readonly InstrumentRoleName[],
+  leadDropTags?: ReadonlySet<SectionFunctionTag>,
+): InstrumentRoleName[] {
   const genre = DENSITY_ARC[style.toLowerCase()];
   const mask = genre && section.functionTag ? genre[section.functionTag] : undefined;
   const want = new Set<InstrumentRoleName>(mask ?? ALL_ROLES);
-  want.add('lead'); // lead 全程在场
+  if (section.functionTag && leadDropTags?.has(section.functionTag)) want.delete('lead');
+  else want.add('lead');
   return lineup.filter((r) => want.has(r));
 }
 
@@ -123,7 +135,6 @@ export function buildInstrumentationPlan(
     // 织体:functionTag 优先(A3),无则回退 legacy role(template/无 rng 段)。
     textureBySection[s.id] = s.functionTag ? TEXTURE_BY_FUNCTION[s.functionTag] : pickGenericTexture(s.role as TextureSectionRole);
     activityBySection[s.id] = { bass: e, comp: e, drum: e, lead: e, pad: clamp01(1 - e) };
-    activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool); // ★ 密度弧
   }
 
   // ★ 器配音色:每角色 × 每段落。默认全 primary;comp/lead 掷骰命中 → chorus 段换【同族】备选(段落对比)。
@@ -145,6 +156,14 @@ export function buildInstrumentationPlan(
     for (const s of arrangement.sections) {
       programByRoleSection[role][s.id] = role === switchRole && switchAlt !== undefined && s.role === 'chorus' ? switchAlt : primary;
     }
+  }
+
+  // ★ A4 lead-gating(多样性):lead-optional 段(intro/breakdown/outro/tag)本曲掷骰 → 纯器乐 or 含 lead。
+  //   rng 在 timbre 决策【之后】取 → 不扰 timbre 确定性。无 rng → 不 drop(lead 全程,向后兼容)。
+  const leadDropTags = new Set<SectionFunctionTag>();
+  if (rng) for (const tag of LEAD_OPTIONAL_TAGS) if (rng.next() < LEAD_DROP_PROB) leadDropTags.add(tag);
+  for (const s of arrangement.sections) {
+    activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool, leadDropTags); // ★ 密度弧 + lead-gating
   }
 
   const starts = phraseStartBeats(arrangement);

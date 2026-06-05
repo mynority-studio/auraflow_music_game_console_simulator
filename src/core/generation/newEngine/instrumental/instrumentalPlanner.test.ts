@@ -79,6 +79,22 @@ describe('instrumental/instrumentalPlanner', () => {
     }
   });
 
+  it('★ A4 lead-gating:core 段(story/build/hook)恒含 lead;framing 段可缺席(多样性);确定性', () => {
+    const b = buildBandSpec({ seed: 5, styleHint: 'pop', mood: 'x', targetDuration: 120 });
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(5) });
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(5).substream('timbre'));
+    const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
+    // core 段恒含 lead(旋律扛歌)
+    for (const s of arr.sections) {
+      if (['story', 'build', 'hook'].includes(s.functionTag ?? '')) expect(roles(s.id)).toContain('lead');
+    }
+    // seed 5:bridge(breakdown)本曲纯器乐(lead 缺席)→ gate 会丢该段 lead 音
+    expect(roles('bridge')).not.toContain('lead');
+    // 确定性
+    const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(5).substream('timbre'));
+    expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection);
+  });
+
   it('★ A3 织体按 functionTag:build→active-comp / breakdown→sustained-block / setup→pad', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
     const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // POP_FULL
