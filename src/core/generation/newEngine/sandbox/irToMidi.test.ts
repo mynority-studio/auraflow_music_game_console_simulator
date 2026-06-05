@@ -84,12 +84,12 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(firstLeadCCIdx).toBeLessThan(firstLeadOnIdx);
   });
 
-  it('★ 音量分层:lead > bass > drum > comp > pad(各轨相对响度不同)', () => {
+  it('★ 音量分层:lead > bass > comp > drum > pad(comp 抬到 drum 之上,伴奏织体可听)', () => {
     const vol = (ch: number) => cc(ch, 7).data2;
     expect(vol(CH.lead)).toBeGreaterThan(vol(CH.bass));
-    expect(vol(CH.bass)).toBeGreaterThan(vol(CH.drum));
-    expect(vol(CH.drum)).toBeGreaterThan(vol(CH.comp));
-    expect(vol(CH.comp)).toBeGreaterThan(vol(CH.pad));
+    expect(vol(CH.bass)).toBeGreaterThan(vol(CH.comp));
+    expect(vol(CH.comp)).toBeGreaterThan(vol(CH.drum));
+    expect(vol(CH.drum)).toBeGreaterThan(vol(CH.pad));
     // 全在合法 MIDI 范围
     for (const ch of Object.values(CH)) expect(vol(ch)).toBeGreaterThan(0), expect(vol(ch)).toBeLessThanOrEqual(127);
   });

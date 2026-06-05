@@ -13,13 +13,12 @@ import { buildPianoRoll, ROLE_COLOR, type PianoRoll } from './pianoRoll';
 import { musicalIRToSMF } from './midiFile';
 import { compareTraces, type TraceComparison } from './traceDiff';
 import { PianoRollWindow } from './PianoRollWindow';
-import { getInstrumentCatalog, gmName } from '../knowledge/instruments';
+import { gmName } from '../knowledge/instruments';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
 // ★ 4 大 macro 风格(genre 轴);modal 是正交 regime,单独开关。
 const STYLES = ['pop', 'jazz', 'lofi', 'rnb'] as const;
 const STYLE_LABEL: Record<(typeof STYLES)[number], string> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB' };
-const INSTRUMENT_CATALOG = getInstrumentCatalog(); // view-only:编制目录(静态,渲染一次)
 const STATUS_COLOR: Record<string, string> = {
   pass: 'text-emerald-300',
   warning: 'text-amber-300',
@@ -31,14 +30,20 @@ interface Readout {
   attempts: number;
   bpm: number;
   bars: number;
-  tracks: { role: string; count: number }[];
+  tracks: { role: string; count: number; instrument: string; switchTo?: string }[];
 }
 
 function deriveReadout(t: GenerationTrace): Readout {
   const ir = t.ir;
   const bars = Math.round(ir.durationTicks / (480 * 4)); // 4/4, ppq 480
-  const tracks = ir.tracks.map((tr) => ({ role: tr.role, count: tr.notes.length }));
-  return { status: t.status, attempts: t.attempts, bpm: t.bpm, bars, tracks }; // 真实控制环 status/attempts
+  // ★ 当前歌【实际】乐器:program=BandEngine 选的;programChanges=段落音色切换(同乐手换声)
+  const tracks = ir.tracks.map((tr) => ({
+    role: tr.role,
+    count: tr.notes.length,
+    instrument: tr.program !== undefined ? gmName(tr.program) : '默认音色',
+    switchTo: tr.programChanges && tr.programChanges.length ? gmName(tr.programChanges[tr.programChanges.length - 1].program) : undefined,
+  }));
+  return { status: t.status, attempts: t.attempts, bpm: t.bpm, bars, tracks };
 }
 
 export const NewEnginePanel: React.FC = () => {
@@ -303,35 +308,23 @@ export const NewEnginePanel: React.FC = () => {
             )}
           </div>
 
-          {/* 乐器表(view-only:每 style 的编制 + 各角色候选乐器)*/}
-          <details className="rounded-lg border border-white/10 bg-zinc-950/60">
-            <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-semibold text-sky-300">
-              乐器表 · 当前可用乐器(仅查看)
-            </summary>
-            <div className="space-y-2 px-3 pb-3">
-              {INSTRUMENT_CATALOG.map((s) => (
-                <div key={s.style} className="rounded border border-white/5 bg-black/40 p-2">
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <span className="rounded bg-sky-500/15 px-2 py-0.5 text-[11px] font-semibold text-sky-300">{s.style}</span>
-                    <span className="text-[10px] text-zinc-500">
-                      必有 {s.always.join('/')} · 可选 {s.optional.map((o) => `${o.role}(${Math.round(o.prob * 100)}%)`).join(' ')}
-                    </span>
+          {/* 当前乐器:本首【实际】编制 + 音色(含段落音色切换),非候选池 */}
+          {readout && (
+            <div className="rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2">
+              <div className="mb-1.5 text-[11px] font-semibold text-sky-300">当前乐器 · 本首实际编制（{readout.tracks.length} 件）</div>
+              <div className="space-y-0.5">
+                {readout.tracks.map((t) => (
+                  <div key={t.role} className="flex items-center gap-2 text-[11px]">
+                    <span className="w-10 shrink-0 text-zinc-400">{t.role}</span>
+                    <span className="text-zinc-100">{t.role === 'drum' ? '标准鼓组' : t.instrument}</span>
+                    {t.switchTo && <span className="text-violet-300">→ chorus {t.switchTo}</span>}
+                    <span className="ml-auto text-[10px] text-zinc-500">{t.count} 音</span>
                   </div>
-                  <div className="space-y-0.5">
-                    {s.roles.map((r) => (
-                      <div key={r.role} className="flex gap-2 text-[10px]">
-                        <span className="w-9 shrink-0 text-zinc-400">{r.role}</span>
-                        <span className="text-zinc-200">
-                          {r.role === 'drum' ? '标准鼓组' : r.programs.map((p) => gmName(p)).join(' · ')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <p className="text-[9px] text-zinc-500">候选随 seed 确定性挑一件;lead 必有 + ≥1 和声承载,编制 2–5 件。</p>
+                ))}
+              </div>
+              <p className="mt-1 text-[9px] text-zinc-500">乐器随 seed 确定性挑;紫色=同乐手段落换音色(效果器/电钢)。</p>
             </div>
-          </details>
+          )}
 
           {/* A/B 对比(seed vs seed+1 日志 diff + 指标)*/}
           {cmp && (

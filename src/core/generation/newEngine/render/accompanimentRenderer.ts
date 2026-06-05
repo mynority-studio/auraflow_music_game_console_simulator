@@ -181,8 +181,8 @@ export function renderAccompaniment(
         const startTick = timebase.beatToTick(beats(base + h.tRel));
         const durationTicks = timebase.beatToTick(beats(h.dur));
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
-        //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。
-        const vel = Math.max(1, Math.min(112, Math.round((h.vel * 0.9 + 0.24) * 127)));
+        //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
+        const vel = Math.max(1, Math.min(115, Math.round((h.vel * 0.92 + 0.3) * 127)));
         for (const m of h.midis) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: vel });
       }
     }

@@ -19,13 +19,14 @@ const CC_VOLUME = 7;
 const CC_PAN = 10;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(对齐 audio/MidiConverter 通道约定)
-// 混音(5.4):相对音量分层 lead120 > bass112 > drum100 > comp90 > pad68;
+// 混音(5.4):相对音量分层 lead120 > bass112 > comp108 > drum100 > pad72;
 //           声像 comp 偏左 / pad 偏右(展宽立体声场),节奏-旋律骨干(bass/lead/drum)居中。
+//   ★ comp 抬到 108(原 90 太埋,伴奏织体听不见)+ pad 72(铺底但可感)。
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
   bass: { channel: 3, program: 33, volume: 112, pan: 64 }, // Finger Bass · 中
-  comp: { channel: 2, program: 0, volume: 90, pan: 50 },   // Acoustic Piano · 偏左
+  comp: { channel: 2, program: 0, volume: 108, pan: 50 },  // 伴奏织体 · 偏左 · 抬响(原 90 听不见)
   lead: { channel: 1, program: 73, volume: 120, pan: 64 }, // Flute · 中 · 焦点最响
-  pad: { channel: 4, program: 89, volume: 68, pan: 78 },   // Warm Pad · 偏右 · 铺底最弱
+  pad: { channel: 4, program: 89, volume: 72, pan: 78 },   // Warm Pad · 偏右 · 铺底
   drum: { channel: 9, program: 0, volume: 100, pan: 64 },  // Standard Kit · 中
 };
 
