@@ -21,14 +21,14 @@ describe('render/accompanimentRenderer (comp 织体,bass 见 bassRenderer)', () 
     expect(tracks.map((t) => t.role)).toEqual(['comp']);
   });
 
-  it('comp 用 chord-tone voicing,落 comp 区 [52,76],首拍皆 Cmaj7 音', () => {
-    const cmaj7 = new Set([0, 4, 7, 11]); // C E G B
+  it('comp 用 chord-tone voicing,落 comp 区 [48,81],首拍皆 Cmaj7 音', () => {
+    const cmaj7 = new Set([0, 4, 7, 11]); // C E G B(核心,无色彩)
     const firstChordComp = comp.notes.filter((n) => n.startTick === 0);
     expect(firstChordComp.length).toBeGreaterThan(0);
     for (const n of firstChordComp) expect(cmaj7.has(n.pitch % 12)).toBe(true);
     for (const n of comp.notes) {
-      expect(n.pitch).toBeGreaterThanOrEqual(52);
-      expect(n.pitch).toBeLessThanOrEqual(76);
+      expect(n.pitch).toBeGreaterThanOrEqual(48);
+      expect(n.pitch).toBeLessThanOrEqual(81);
     }
   });
 });

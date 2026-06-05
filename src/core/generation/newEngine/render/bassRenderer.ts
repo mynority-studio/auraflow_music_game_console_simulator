@@ -9,6 +9,7 @@
 // ============================================================
 
 import { beats, mod12, type Timebase } from '../foundation';
+import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { pcToMidiInRange, pcDistance } from '../knowledge/pitchPlacement';
 import { resolveBassAnchorPc } from '../knowledge/basslineRules';
 import { chordTypeIntervals } from '../knowledge/chords';
@@ -20,9 +21,19 @@ import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 const BASS_LOW = 36;
 const BASS_HIGH = 50;
 
+/** 朝 targetPc 方向(dir=-1 下 / +1 上)找最近的【在阶】音(≤2 半音);无 → undefined。 */
+function scaleStepToward(targetPc: number, scalePcs: readonly number[], dir: 1 | -1): number | undefined {
+  for (const d of [1, 2]) {
+    const c = mod12(targetPc + dir * d);
+    if (scalePcs.includes(c)) return c;
+  }
+  return undefined;
+}
+
 export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string, textureSchedule?: TextureSchedule): TrackIR {
   const notes: NoteIR[] = [];
   const spans = plan.chordTimeline;
+  const beatsPerBar = beatsPerBarOf(timebase.meter);
 
   // bass 也 chord-aware:落 avoid 就近 snap 到该和弦 stable tone(walking 半音接入在某些调里会撞 avoid,
   //   逐拍≥1 拍会被 Auditor 拦 → 这里预消解,和 melody safePc 同策略)。
@@ -84,13 +95,32 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
     const fifth = tones.length > 2 ? (tones[2] as number) : root;
 
     if (style === 'jazz') {
-      for (let b = 0; b < nBeats; b++) {
-        let pc: number;
-        if (b === 0) pc = root;
-        else if (b === nBeats - 1 && nextRoot !== undefined) pc = mod12(nextRoot - 1); // 半音下行接入
-        else pc = tones[b % tones.length] as number;
-        push(pc, span, start + b, 1, 88);
+      // ★ walking bass 末拍接入【解决到位】:tension 引入必须解决到下一重音(下一和弦根)。
+      //   解决法多样(确定性按 span 序轮换):半音(弱拍/在阶)· 音阶级进 · 留白 · 环绕。
+      //   关键修:强拍绝不漏裸半音外音(原 bug — 奇数拍长 span 末拍落强拍)。
+      const scalePcs = (plan.chordScaleMap[span.id] ?? []) as readonly number[];
+      const seq: (number | null)[] = [];
+      for (let b = 0; b < nBeats; b++) seq.push(b === 0 ? root : (tones[b % tones.length] as number));
+      if (nextRoot !== undefined && nBeats >= 2) {
+        const lastPos = (start + nBeats - 1) % beatsPerBar;
+        const lastStrong = lastPos === 0 || lastPos === Math.floor(beatsPerBar / 2);
+        const chromatic = mod12(nextRoot - 1);
+        const method = i % 3;
+        if (!lastStrong || scalePcs.includes(chromatic)) {
+          // 弱拍 或 半音在阶 → 半音引入(下一个音解决);method2 + 有空间 → 环绕(上邻音+下半音)
+          if (method === 2 && nBeats >= 3) {
+            seq[nBeats - 2] = scaleStepToward(nextRoot, scalePcs, 1) ?? mod12(nextRoot + 2); // 环绕:上邻音
+            seq[nBeats - 1] = chromatic; // 下半音(落弱拍)
+          } else {
+            seq[nBeats - 1] = chromatic;
+          }
+        } else {
+          // 强拍 + 半音外音 → 必须音乐性解决:音阶级进 或 留白(绝不裸半音落强拍)
+          const ss = scaleStepToward(nextRoot, scalePcs, -1);
+          seq[nBeats - 1] = method === 1 || ss === undefined ? null : ss;
+        }
       }
+      for (let b = 0; b < nBeats; b++) { const pcv = seq[b]; if (pcv !== null) push(pcv, span, start + b, 1, 88); }
     } else if (style === 'pop') {
       for (let b = 0; b < nBeats; b++) {
         const onDown = b % 2 === 0;

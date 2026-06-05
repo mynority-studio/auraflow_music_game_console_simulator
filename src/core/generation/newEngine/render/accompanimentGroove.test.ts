@@ -29,11 +29,11 @@ describe('render/accompaniment 织体化 (1.1)', () => {
     expect(hasOffbeat).toBe(true);
   });
 
-  it('comp 落 comp voicing 区 [52,76]', () => {
+  it('comp 落 comp voicing 区 [48,81](mg CHORD_RANGE)', () => {
     const comp = renderAccompaniment(plan, timebase, { style: 'pop' }).find((t) => t.role === 'comp')!;
     for (const n of comp.notes) {
-      expect(n.pitch).toBeGreaterThanOrEqual(52);
-      expect(n.pitch).toBeLessThanOrEqual(76);
+      expect(n.pitch).toBeGreaterThanOrEqual(48);
+      expect(n.pitch).toBeLessThanOrEqual(81);
     }
   });
 

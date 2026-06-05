@@ -9,7 +9,8 @@
 import { beats, midi, mod12, type Timebase } from '../foundation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { compPattern } from '../knowledge/grooves';
-import { guideToneShell, voiceComp } from '../knowledge/voicings';
+import { assembleVoicing, applyArrangement, STYLE_SHELL, STYLE_FULL, STYLE_BLUES, type VoicingStylePreference } from '../knowledge/voicingStyles';
+import { placeVoicingMidi } from '../knowledge/voicingPlacement';
 import { chordToneIntervals, chordTypeIntervals, isKnownChordType, type ChordQuality } from '../knowledge/chords';
 import { isKeyboardFamily, instrumentInfo } from '../knowledge/instruments';
 import { buildWidePianoVoicing, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
@@ -32,6 +33,15 @@ export interface AccompContext {
 
 const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
   intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
+};
+
+// 非键盘 comp 的 voicing 风格(参考 mg compingVoicingMode:jazz/rnb/lofi→rootless · blues→blues · pop→full)。
+// ★ 遵守 comp 铁律(色彩 9/11/13 归旋律)→ addColorOnTriad 一律 false(comp 只留核心,不加 9)。
+//   rootless = omit root(bass 兜 root);voice-leading/clash/placement/spacing 由 mg 引擎负责。
+const COMP_ROOTLESS_CORE: VoicingStylePreference = { rootPolicy: 'omit', density: 4, addColorOnTriad: false };
+const COMP_SHELL: VoicingStylePreference = { rootPolicy: 'omit', density: 2, addColorOnTriad: false }; // 让位:3+7 guide-tone
+const VOICING_PREF: Record<string, VoicingStylePreference> = {
+  jazz: COMP_ROOTLESS_CORE, blues: STYLE_BLUES, pop: STYLE_FULL, rnb: COMP_ROOTLESS_CORE, lofi: COMP_ROOTLESS_CORE,
 };
 
 // 把和弦【真实音】映射到 wide-voicing 角色。宽 chordType → 核心(含 sus4、修窄降级)+ 延伸色彩(9/11/13);
@@ -135,10 +145,20 @@ export function renderAccompaniment(
       shellBySpan[span.id] = shellWide.attackMidi.filter(inRange);
       prevWide = wide;
     } else {
-      const full = voiceComp([...plan.stableToneMap[span.id]], style, prevTop, prevVoicing);
+      // ★ 非键盘 comp:走 melodygenerative voicing 管线 — genre→preset → assembleVoicing(抽象 pc)
+      //   → placeVoicingMidi(声部进行贴上一组) → applyArrangement(spacing)。复活 §7 voicingStyles/placement。
+      //   voiceType = 窄核心品质(1-3-5-7),色彩 9/11/13 不进 comp(归旋律,铁律)。
+      const voiceType = span.quality;
+      const pref = VOICING_PREF[style.toLowerCase()] ?? STYLE_SHELL;
+      const bassMidi = nominalBassMidi(span.rootPc);
+      const prev = prevVoicing ?? [];
+      const close = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, pref), prev, bassMidi, voiceType, span.rootPc);
+      // 属功能 drop2 拉开 spacing,但仅当不跌出 comp 区(否则 close)→ 不与 bass 抢低区
+      const spaced = funcBySpan[span.id] === 'D' ? applyArrangement(close, 'drop2', bassMidi) : close;
+      const full = (spaced.length && Math.min(...spaced) >= 48 ? spaced : close).filter(inRange);
       voicedBySpan[span.id] = full;
-      const shellPcs = guideToneShell(span.quality).map((iv) => mod12(span.rootPc + iv));
-      shellBySpan[span.id] = voiceComp(shellPcs, style, prevTop, prevVoicing);
+      const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
+      shellBySpan[span.id] = shellClose.filter(inRange);
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
     }
   }
