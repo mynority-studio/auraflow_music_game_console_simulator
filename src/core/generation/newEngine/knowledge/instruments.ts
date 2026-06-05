@@ -43,6 +43,34 @@ export interface BandInstrumentation {
   roleProgram: Record<InstrumentRoleName, number>;    // 每件乐器的 GM program(仅 lineup 内)
 }
 
+// —— 乐器类型 + 真实音域(MIDI)——
+//   ★ comp 色彩决策按此分流:keyboard 族(钢琴/电钢/Celesta)可 voice 宽和弦色彩(9/13);
+//     非键盘 / 超出该乐器音域的色彩 → 交给旋律承载(见 accompanimentRenderer)。
+export type InstrumentFamily = 'keyboard' | 'mallet' | 'bass' | 'pad' | 'wind' | 'percussion' | 'other';
+export interface InstrumentInfo { family: InstrumentFamily; range: readonly [number, number]; }
+
+const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
+  0: { family: 'keyboard', range: [21, 108] }, 1: { family: 'keyboard', range: [21, 108] }, 2: { family: 'keyboard', range: [21, 108] },
+  4: { family: 'keyboard', range: [28, 103] }, 5: { family: 'keyboard', range: [28, 103] }, // Rhodes / FM-EP
+  8: { family: 'keyboard', range: [60, 108] }, // Celesta(高音区键盘)
+  11: { family: 'mallet', range: [53, 89] },   // 颤音琴
+  12: { family: 'mallet', range: [45, 96] },   // 马林巴
+  32: { family: 'bass', range: [28, 67] }, 33: { family: 'bass', range: [28, 67] },
+  38: { family: 'bass', range: [24, 60] }, 39: { family: 'bass', range: [24, 60] },
+  48: { family: 'pad', range: [40, 100] }, 49: { family: 'pad', range: [40, 100] }, 50: { family: 'pad', range: [36, 100] },
+  89: { family: 'pad', range: [36, 96] }, 91: { family: 'pad', range: [36, 96] },
+};
+const DEFAULT_INFO: InstrumentInfo = { family: 'other', range: [36, 96] };
+
+/** GM program → 类型 + 音域(未知回退 other/[36,96])。 */
+export function instrumentInfo(program: number): InstrumentInfo {
+  return INSTRUMENT_INFO[program] ?? DEFAULT_INFO;
+}
+/** 是否键盘族(钢琴/电钢/Celesta)→ comp 可 voice 宽和弦色彩。 */
+export function isKeyboardFamily(program: number | undefined): boolean {
+  return program !== undefined && instrumentInfo(program).family === 'keyboard';
+}
+
 // —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
 const GM_NAME: Record<number, string> = {
   0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',

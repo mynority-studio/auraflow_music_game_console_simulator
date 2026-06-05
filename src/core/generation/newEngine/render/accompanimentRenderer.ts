@@ -10,8 +10,9 @@ import { beats, midi, mod12, type Timebase } from '../foundation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { compPattern } from '../knowledge/grooves';
 import { guideToneShell, voiceComp } from '../knowledge/voicings';
-import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
-import { buildWidePianoVoicing, isPianoProgram, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
+import { chordToneIntervals, chordTypeIntervals, isKnownChordType, type ChordQuality } from '../knowledge/chords';
+import { isKeyboardFamily, instrumentInfo } from '../knowledge/instruments';
+import { buildWidePianoVoicing, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
@@ -30,16 +31,22 @@ const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
   intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
 };
 
-// 把窄 ChordQuality 的【真实和弦音】映射到 wide-voicing 角色(只 root/3/5/7,不加色彩)。
-// 不走 getChordRolePcs(它对窄三和弦会幻觉七音)。dim7 的 bb7(9)归为 seventh。
-function qualityRolePcs(rootPc: number, quality: ChordQuality): Partial<Record<VoiceRole, number>> {
+// 把和弦【真实音】映射到 wide-voicing 角色。宽 chordType → 核心(含 sus4、修窄降级)+ 延伸色彩(9/11/13);
+// 窄三和弦('maj'/'min')走 chordToneIntervals(避免 getChordRolePcs 幻觉七音 / chordTypeIntervals 误判 min)。
+function chordTypeRolePcs(rootPc: number, chordType: string, narrowQ: ChordQuality): Partial<Record<VoiceRole, number>> {
   const out: Partial<Record<VoiceRole, number>> = {};
-  for (const iv of chordToneIntervals(quality)) {
+  const ivs = isKnownChordType(chordType) ? chordTypeIntervals(chordType) : chordToneIntervals(narrowQ);
+  for (const iv of ivs) {
     const p = mod12(rootPc + iv);
     if (iv === 0) out.root = p;
-    else if (iv === 3 || iv === 4) out.third = p;
+    else if (iv === 3 || iv === 4 || iv === 5) out.third = p; // sus4(iv5)占结构 3 度位 = 无大三
     else if (iv === 6 || iv === 7 || iv === 8) out.fifth = p;
-    else if (iv === 9 || iv === 10 || iv === 11) out.seventh = p;
+    else if (iv === 9) out.sixth = p;
+    else if (iv === 10 || iv === 11) out.seventh = p;
+    else if (iv === 14) out.ninth = p;        // 9
+    else if (iv === 17) out.eleventh = p;      // 11
+    else if (iv === 21) out.thirteenth = p;    // 13
+    else if (iv === 13 || iv === 15 || iv === 18 || iv === 20) out.color = p; // b9/#9/#11/b13
   }
   return out;
 }
@@ -70,8 +77,11 @@ export function renderAccompaniment(
     totalBeats = Math.max(totalBeats, span.startBeat + span.durationBeats);
   }
 
-  // 伴奏乐器是钢琴(GM 0/1/2)→ 调钢琴宽排列;否则 → 通用 voiceComp(见 feedback)。
-  const usePiano = isPianoProgram(ctx.compProgram);
+  // ★ comp 乐器按【类型 + 音域】分流(见 feedback):键盘族(钢琴/电钢/Celesta)→ 宽排列且 voice 宽和弦色彩;
+  //   其它乐器 → 通用 voiceComp。超出该乐器音域的色彩音 → 丢弃(交给旋律承载)。
+  const useKeyboard = isKeyboardFamily(ctx.compProgram);
+  const compRange = instrumentInfo(ctx.compProgram ?? 0).range;
+  const inRange = (m: number): boolean => m >= compRange[0] && m <= compRange[1];
   const includeRootInComp = !/jazz/i.test(style); // jazz:rootless(bass 兜 root),其它含 root
 
   // spread mode 选择信号:和声功能 + cell 角色(进度四分位)+ 段落功能 + 乐句尾
@@ -105,18 +115,21 @@ export function renderAccompaniment(
     if (!inActive(span.sectionId)) continue;
     // comp = 内层骨干/导音(中声部);上层色彩音 9/13 是旋律的领地,有旋律时让渡给旋律,comp 不加色
     //   (折成 2 音会与 root/3 产生声学摩擦 —— 见 feedback;色彩走旋律/宽和弦,不走 comp)
-    if (usePiano) {
-      // ★ 只宽铺开和弦真实音(root/3/5/7),colorLevel 0 不加 9/13(色彩仍归旋律,守铁律)
-      //   spread mode 随段落功能/和声功能/乐句位置变化(pickSpreadMode),不再固定 wide
-      const rolePcs = qualityRolePcs(span.rootPc, span.quality);
+    if (useKeyboard) {
+      // ★ 键盘:voice 宽和弦【核心 + 显式色彩】(9/13 来自 chordType);色彩走 inner_high/upper(compound 高位,
+      //   避开 pc-2 中低区摩擦)。无延伸的和弦 colorLevel 0。spread 随段落/功能/乐句位置变化。
+      const chordType = span.chordType ?? span.quality;
+      const rolePcs = chordTypeRolePcs(span.rootPc, chordType, span.quality);
+      const hasColor = rolePcs.ninth !== undefined || rolePcs.eleventh !== undefined || rolePcs.thirteenth !== undefined || rolePcs.color !== undefined;
+      const colorLevel = (hasColor ? 2 : 0) as 0 | 2;
       const bassMidi = nominalBassMidi(span.rootPc);
-      const wideOpts = { includeRootInComp, colorLevel: 0 as const, style };
+      const wideOpts = { includeRootInComp, colorLevel, style };
       const spreadMode = pickPianoSpread(idx, span);
-      const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType: span.quality, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
-      voicedBySpan[span.id] = wide.attackMidi;
-      // 让位/瘦身 = close 紧排(从 inner 起,不放外声部),仍是真实和弦音
-      const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType: span.quality, bassMidi, options: { ...wideOpts, spreadMode: 'close' }, prev: prevWide, rolePcs });
-      shellBySpan[span.id] = shellWide.attackMidi;
+      const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
+      voicedBySpan[span.id] = wide.attackMidi.filter(inRange); // 超域色彩 → 交旋律
+      // 让位/瘦身 = close 紧排核心(colorLevel 0,让色彩给旋律),仍是真实和弦音
+      const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, colorLevel: 0, spreadMode: 'close' }, prev: prevWide, rolePcs });
+      shellBySpan[span.id] = shellWide.attackMidi.filter(inRange);
       prevWide = wide;
     } else {
       const full = voiceComp([...plan.stableToneMap[span.id]], style, prevTop, prevVoicing);

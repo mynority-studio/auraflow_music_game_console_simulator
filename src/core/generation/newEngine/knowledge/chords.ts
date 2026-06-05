@@ -108,3 +108,8 @@ export function listChordTypes(): readonly ChordTypeId[] {
 export function chordTypeIntervals(chordType: string): readonly number[] {
   return (CHORD_TYPES as Record<string, readonly number[]>)[chordType] ?? [0, 4, 7];
 }
+
+/** chordType 是否在宽和弦表内(用于区分宽类型 vs 窄三和弦 'maj'/'min')。 */
+export function isKnownChordType(chordType: string): boolean {
+  return chordType in CHORD_TYPES;
+}
