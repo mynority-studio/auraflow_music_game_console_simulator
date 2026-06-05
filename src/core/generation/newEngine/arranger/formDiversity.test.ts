@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildArrangementPlan } from './arranger';
 import { planForm } from './formPlanner';
+import { planDynamics } from './dynamicsPlanner';
+import type { Section } from './ArrangementPlan';
 import { buildBandSpec } from '../band/bandEngine';
 import { generateSong } from '../generation/GenerationController';
 import { createRandomContext, pc } from '../foundation';
@@ -53,7 +55,10 @@ describe('arranger · 曲式多样 (3.5)', () => {
     return buildArrangementPlan(band, { rng: createRandomContext(seed) });
   };
 
-  it('★ 风格曲式:lofi 无 chorus + 全 harmonyRole=loop;jazz 有 solo/headOut;rnb 有 preHook/breakdown', () => {
+  it('★ 风格曲式【≤5 段 + verse×2 记忆点】:lofi 无 chorus;jazz solo/headOut;rnb verse×2+hook×2', () => {
+    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+      expect(styleForm(style, 5).sections.length).toBeLessThanOrEqual(5); // ★ 最多 5 段
+    }
     const lofi = styleForm('lofi', 5);
     expect(lofi.sections.some((s) => s.role === 'chorus')).toBe(false); // lofi 不套 chorus
     expect(lofi.sections.filter((s) => s.functionTag === 'loop').every((s) => s.harmonyRole === 'loop')).toBe(true);
@@ -63,8 +68,18 @@ describe('arranger · 曲式多样 (3.5)', () => {
     expect(jazz.sections.some((s) => s.functionTag === 'headOut')).toBe(true);
 
     const rnb = styleForm('rnb', 5);
-    expect(rnb.sections.some((s) => s.id === 'preHook1')).toBe(true);
-    expect(rnb.sections.some((s) => s.functionTag === 'breakdown')).toBe(true);
+    expect(rnb.sections.filter((s) => s.functionTag === 'story').length).toBe(2); // verse×2
+    expect(rnb.sections.filter((s) => s.functionTag === 'hook').length).toBe(2);  // hook×2
+  });
+
+  it('★ verse 连续×2 记忆点:相邻两 verse(同 repeatGroup)成对出现', () => {
+    for (const [style, tag] of [['pop', 'story'], ['rnb', 'story'], ['lofi', 'loop'], ['jazz', 'head']] as const) {
+      const secs = styleForm(style, 5).sections;
+      const idx = secs.findIndex((s) => s.functionTag === tag);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(secs[idx + 1]?.functionTag).toBe(tag);               // 紧邻下一段同功能(连续×2)
+      expect(secs[idx + 1]?.repeatGroup).toBe(secs[idx].repeatGroup); // 同 repeatGroup = 记忆点
+    }
   });
 
   it('★ 风格曲式确定性 + harmonyRole/functionTag 落位', () => {
@@ -73,7 +88,8 @@ describe('arranger · 曲式多样 (3.5)', () => {
     const ch = pop.sections.find((s) => s.role === 'chorus')!;
     expect(ch.harmonyRole).toBe('chorus');
     expect(ch.functionTag).toBe('hook');
-    expect(pop.sections.find((s) => s.role === 'outro')!.harmonyRole).toBe('ending');
+    const outro = pop.sections.find((s) => s.role === 'outro');
+    if (outro) expect(outro.harmonyRole).toBe('ending'); // POP_A 无 outro(末段 chorus),POP_B 有
   });
 
   it('★ 风格曲式各段 repeatGroup 必同 bars(引擎按 group 复用 prototype,混 bars 会错配)', () => {
@@ -100,22 +116,25 @@ describe('arranger · 曲式多样 (3.5)', () => {
     const popHook = pop.sections.find((s) => s.functionTag === 'hook')!;
     expect(pop.energyBySection[popHook.id]).toBeGreaterThan(lofiPeak); // pop hook > lofi 峰
     expect(peak(jazz)).toBeLessThan(0.8);                     // jazz 不吃 pop 0.9 chorus
+    void rnb;
 
-    // breakdown 显著低于前后段
-    const i = rnb.sections.findIndex((s) => s.functionTag === 'breakdown');
-    const bd = rnb.energyBySection[rnb.sections[i].id];
-    expect(bd).toBeLessThan(rnb.energyBySection[rnb.sections[i - 1].id]);
-    expect(bd).toBeLessThan(rnb.energyBySection[rnb.sections[i + 1].id]);
+    // breakdown 能量显著低于邻段(directly 测 planDynamics;简化后曲式已无 breakdown 段,故合成验)
+    const synth: Section[] = [
+      { id: 'h1', role: 'chorus', functionTag: 'hook', bars: 8, hookPolicy: 'main' },
+      { id: 'bd', role: 'bridge', functionTag: 'breakdown', bars: 8, hookPolicy: 'none' },
+      { id: 'h2', role: 'chorus', functionTag: 'hook', bars: 8, hookPolicy: 'main' },
+    ];
+    const dyn = planDynamics(synth);
+    expect(dyn.energyBySection.bd).toBeLessThan(dyn.energyBySection.h1);
+    expect(dyn.energyBySection.bd).toBeLessThan(dyn.energyBySection.h2);
 
     // 统一 1 chord/bar(去 chorus 加密)
     for (const s of pop.sections) expect(pop.harmonicRhythmTarget.chordsPerBarBySection[s.id]).toBe(1);
   });
 
-  it('★ 回归 ramp(段落重心):同一中心段每次回归 energy 递增(末段=重心);lofi loop 仍 <0.6', () => {
-    const pop = styleForm('pop', 3); // POP_FULL:chorus1/chorus2/finalChorus
-    const e = (id: string) => pop.energyBySection[id];
-    expect(e('chorus2')).toBeGreaterThan(e('chorus1'));        // 第二次副歌更重
-    expect(e('finalChorus')).toBeGreaterThan(e('chorus2'));    // 末副歌最重 = 重心
+  it('★ 回归 ramp(段落重心):同一中心段每次回归 energy 递增;lofi loop 仍 <0.6', () => {
+    const rnb = styleForm('rnb', 5); // RNB:hook1/hook2(回归 ramp)
+    expect(rnb.energyBySection.hook2).toBeGreaterThan(rnb.energyBySection.hook1); // 第二次 hook 更重
     const lofi = styleForm('lofi', 5);
     expect(Math.max(...lofi.sections.map((s) => lofi.energyBySection[s.id]))).toBeLessThan(0.6); // loop ramp 仍守 <0.6
   });

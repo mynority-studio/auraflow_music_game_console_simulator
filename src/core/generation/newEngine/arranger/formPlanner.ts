@@ -63,68 +63,55 @@ const FORM_POOL: readonly FormTemplate[] = ['verse-chorus', 'verse-chorus-bridge
 // ============================================================
 type StyleKey = 'pop' | 'rnb' | 'lofi' | 'jazz';
 
-// Pop:story → build → hook → 终段 hook 线性推进(完整版 + 紧凑版,供 seed 多样)。
-const POP_FULL: Section[] = [
+// ★ 用户:结构太碎(原 10 段)→ 收敛到【最多 4-5 段 + verse 连续×2 做记忆点】。
+//   verse×2 同 repeatGroup(同进行+同动机=记忆点,旋律/段体一致);verse2 linkOut 推进入 hook(段尾 IV→V)。
+//   去掉 build/breakdown 等碎段;linkOut 机制保留(挂在 verse2 → hook 的推进)。
+
+// Pop:intro - verse×2 - 副歌(A=双副歌带回归 ramp / B=单副歌带 outro,供 seed 多样)。
+const POP_A: Section[] = [
   { id: 'intro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 2, hookPolicy: 'none' },
   { id: 'verse1', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light' },
-  { id: 'build1', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, repeatGroup: 'BLD', hookPolicy: 'none', linkOut: 'dominantLift' },
+  { id: 'verse2', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light', linkOut: 'dominantLift' },
   { id: 'chorus1', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'C', hookPolicy: 'main' },
-  { id: 'verse2', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light' },
-  { id: 'build2', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, repeatGroup: 'BLD', hookPolicy: 'none', linkOut: 'dominantLift' },
   { id: 'chorus2', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'C', hookPolicy: 'main' },
-  { id: 'bridge', role: 'bridge', harmonyRole: 'bridge', functionTag: 'breakdown', bars: 8, hookPolicy: 'none', linkOut: 'stopOnDominant' },
-  { id: 'finalChorus', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'C', hookPolicy: 'main' },
-  { id: 'outro', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: 2, hookPolicy: 'none' },
 ];
-const POP_COMPACT: Section[] = [
+const POP_B: Section[] = [
   { id: 'intro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 2, hookPolicy: 'none' },
   { id: 'verse1', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light' },
-  { id: 'build1', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, repeatGroup: 'BLD', hookPolicy: 'none', linkOut: 'dominantLift' },
+  { id: 'verse2', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light', linkOut: 'dominantLift' },
   { id: 'chorus1', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'C', hookPolicy: 'main' },
-  { id: 'verse2', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light' },
-  { id: 'chorus2', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'C', hookPolicy: 'main' },
   { id: 'outro', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: 2, hookPolicy: 'none' },
 ];
 
-// RNB:vamp 起势 → preHook 准备 → hook(call-response) → breakdown 真抽离。
+// RNB:vamp - verse×2 - hook×2(call-response,回归 ramp)。
 const RNB_FORM: Section[] = [
-  { id: 'introVamp', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 4, repeatGroup: 'VAMP', hookPolicy: 'light' },
+  { id: 'introVamp', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'light' },
   { id: 'verse1', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light' },
-  { id: 'preHook1', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, repeatGroup: 'PRE', hookPolicy: 'none', linkOut: 'dominantLift' },
+  { id: 'verse2', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light', linkOut: 'dominantLift' },
   { id: 'hook1', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'H', hookPolicy: 'call-response' },
-  { id: 'verse2', role: 'verse', harmonyRole: 'verse', functionTag: 'story', bars: 8, repeatGroup: 'V', hookPolicy: 'light' },
-  { id: 'preHook2', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 4, repeatGroup: 'PRE', hookPolicy: 'none', linkOut: 'dominantLift' },
   { id: 'hook2', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'H', hookPolicy: 'call-response' },
-  { id: 'breakdown', role: 'bridge', harmonyRole: 'bridge', functionTag: 'breakdown', bars: 8, hookPolicy: 'none', linkOut: 'stopOnDominant' },
-  { id: 'finalHook', role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: 8, repeatGroup: 'H', hookPolicy: 'call-response' },
-  { id: 'outroVamp', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: 4, repeatGroup: 'VAMP', hookPolicy: 'light' },
 ];
 
-// Lofi:短 loop 的 mute/filter/return,不套 chorus(harmonyRole=loop → KB loop prototype)。无 chorus role。
+// Lofi:loopIntro - loop×2(记忆点)- loopOpen - fade(不套 chorus)。
 const LOFI_FORM: Section[] = [
   { id: 'loopIntro', role: 'intro', harmonyRole: 'loop', functionTag: 'setup', bars: 4, hookPolicy: 'none' },
   { id: 'loopA', role: 'verse', harmonyRole: 'loop', functionTag: 'loop', bars: 8, repeatGroup: 'L', hookPolicy: 'light' },
   { id: 'loopA2', role: 'verse', harmonyRole: 'loop', functionTag: 'loop', bars: 8, repeatGroup: 'L', hookPolicy: 'light' },
-  { id: 'filterBreak', role: 'bridge', harmonyRole: 'loop', functionTag: 'breakdown', bars: 4, hookPolicy: 'none' },
   { id: 'loopOpen', role: 'verse', harmonyRole: 'loop', functionTag: 'loop', bars: 8, repeatGroup: 'L', hookPolicy: 'light' },
-  { id: 'loopReturn', role: 'verse', harmonyRole: 'loop', functionTag: 'loop', bars: 8, repeatGroup: 'L', hookPolicy: 'light' },
   { id: 'outroFade', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: 4, hookPolicy: 'none' },
 ];
 
-// Jazz:AABA head + bridge + solo + head-out(高潮 = solo late / head-out,不套 pop chorus 爆发)。
+// Jazz:intro - head×2(记忆点)- solo - head-out。
 const JAZZ_FORM: Section[] = [
   { id: 'intro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'none' },
   { id: 'headA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 8, repeatGroup: 'A', hookPolicy: 'light' },
   { id: 'headA2', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 8, repeatGroup: 'A', hookPolicy: 'light' },
-  { id: 'bridgeB', role: 'bridge', harmonyRole: 'bridge', functionTag: 'build', bars: 8, repeatGroup: 'B', hookPolicy: 'none' },
-  { id: 'headA3', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: 8, repeatGroup: 'A', hookPolicy: 'light' },
   { id: 'solo', role: 'bridge', harmonyRole: 'bridge', functionTag: 'solo', bars: 16, hookPolicy: 'none' },
   { id: 'headOut', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars: 8, repeatGroup: 'A', hookPolicy: 'light' },
-  { id: 'tag', role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars: 4, hookPolicy: 'none' },
 ];
 
 const STYLE_FORMS: Record<StyleKey, Section[][]> = {
-  pop: [POP_FULL, POP_COMPACT],
+  pop: [POP_A, POP_B],
   rnb: [RNB_FORM],
   lofi: [LOFI_FORM],
   jazz: [JAZZ_FORM],

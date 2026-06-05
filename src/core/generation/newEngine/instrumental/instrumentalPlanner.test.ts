@@ -55,19 +55,18 @@ describe('instrumental/instrumentalPlanner', () => {
   });
 
   // —— A1 编曲密度弧 ——
-  it('★ A1 密度弧:intro 稀疏(无 drum,非全员)→ chorus 全员同进 → bridge 去 drum;core 段含 lead;repeatGroup 一致', () => {
+  it('★ A1 密度弧:intro 稀疏(无 drum,非全员)→ chorus 全员同进;core 段含 lead;verse1≡verse2', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
-    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // seed 3 → POP_FULL
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) });
     const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
 
     expect(roles('intro')).not.toContain('drum');                 // intro 无鼓(先行档不含 drum)
     expect(roles('intro').length).toBeLessThan(b.instrumentPool.length); // intro 稀疏(非全员)
     for (const r of b.instrumentPool) expect(roles('chorus1')).toContain(r); // chorus 全员
-    expect(roles('bridge')).not.toContain('drum');                // breakdown 去 drum
-    // core 段(story/build/hook)恒含 lead(旋律扛歌;intro/breakdown/outro 可缺席)
-    for (const s of arr.sections) if (['story', 'build', 'hook'].includes(s.functionTag ?? '')) expect(roles(s.id)).toContain('lead');
-    expect(roles('verse1')).toEqual(roles('verse2'));             // repeatGroup 一致(同 functionTag)
+    // core 段(story/hook)恒含 lead(旋律扛歌;intro/outro 可缺席)
+    for (const s of arr.sections) if (['story', 'hook'].includes(s.functionTag ?? '')) expect(roles(s.id)).toContain('lead');
+    expect(roles('verse1')).toEqual(roles('verse2'));             // repeatGroup 一致(verse×2 同活动 = 记忆点)
 
     const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection); // 确定性
@@ -92,20 +91,22 @@ describe('instrumental/instrumentalPlanner', () => {
     }
   });
 
-  it('★ A4 lead-gating:core 段(story/build/hook)恒含 lead;framing 段可缺席(多样性);确定性', () => {
+  it('★ A4 lead-gating:core 段(story/hook)恒含 lead;framing 段(intro/outro)跨 seed 可缺席(多样性)', () => {
     const b = buildBandSpec({ seed: 5, styleHint: 'pop', mood: 'x', targetDuration: 120 });
-    const arr = buildArrangementPlan(b, { rng: createRandomContext(5) });
-    const ip = buildInstrumentationPlan(b, arr, createRandomContext(5).substream('timbre'));
-    const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
-    // core 段恒含 lead(旋律扛歌)
-    for (const s of arr.sections) {
-      if (['story', 'build', 'hook'].includes(s.functionTag ?? '')) expect(roles(s.id)).toContain('lead');
+    let sawLeadlessFraming = false;
+    for (let seed = 0; seed < 16; seed++) {
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(seed) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
+      const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
+      for (const s of arr.sections) {
+        if (['story', 'hook'].includes(s.functionTag ?? '')) expect(roles(s.id)).toContain('lead'); // core 恒含
+        if (['setup', 'outro'].includes(s.functionTag ?? '') && !roles(s.id).includes('lead')) sawLeadlessFraming = true;
+      }
+      // 确定性
+      const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
+      expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection);
     }
-    // seed 5:bridge(breakdown)本曲纯器乐(lead 缺席)→ gate 会丢该段 lead 音
-    expect(roles('bridge')).not.toContain('lead');
-    // 确定性
-    const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(5).substream('timbre'));
-    expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection);
+    expect(sawLeadlessFraming).toBe(true); // 至少一首 intro/outro 纯器乐(先行档 solo/pad 或 lead-drop)
   });
 
   it('★ RNB call-response hook 也算主 hook(anchorRequired):重心修', () => {
@@ -128,13 +129,13 @@ describe('instrumental/instrumentalPlanner', () => {
     expect(ip2.programByRoleSection).toEqual(ip.programByRoleSection); // repair 不破确定性
   });
 
-  it('★ A3 织体按 functionTag:build→active-comp / breakdown→sustained-block / setup→pad', () => {
+  it('★ A3 织体按 functionTag:story→arpeggio / hook→active-comp / setup→pad(或 intro 先行档覆盖)', () => {
     const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
-    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // POP_FULL
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) });
     const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
-    expect(ip.textureBySection.build1).toBe('active-comp');      // 推进富织体(原 bridge role→sustained-block)
-    expect(ip.textureBySection.bridge).toBe('sustained-block');  // breakdown 抽离
-    expect(ip.textureBySection.intro).toBe('pad');               // setup 铺底
-    // legacy(无 functionTag)仍走 role(上方'织体按段落功能'用例已覆盖 chorus1=active-comp)
+    expect(ip.textureBySection.verse1).toBe('arpeggio');     // story → 分解
+    expect(ip.textureBySection.chorus1).toBe('active-comp'); // hook → 富织体
+    // intro texture 由先行档掷定(pad / arpeggio / active-comp 之一)
+    expect(['pad', 'arpeggio', 'active-comp']).toContain(ip.textureBySection.intro);
   });
 });
