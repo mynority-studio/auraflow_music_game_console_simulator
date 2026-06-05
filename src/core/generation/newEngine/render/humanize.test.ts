@@ -51,7 +51,7 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
     const rng = createRandomContext(2).substream('humanize');
     const max = Math.max(2, Math.round(PPQ * 0.015));
     // 反拍(beat 1.5/2.5/3.5)= 全幅抖动,确保"至少一个被抖"
-    const track: TrackIR = { role: 'lead', notes: [note(0), note(720), note(1200), note(1680)] };
+    const track: TrackIR = { role: 'comp', notes: [note(0), note(720), note(1200), note(1680)] };
     const grid = [0, 720, 1200, 1680];
     const out = humanizeTiming([track], PPQ, 4, rng)[0];
     const onsets = out.notes.map((n) => n.startTick as number);
@@ -60,6 +60,15 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
       expect(Math.abs(onsets[i] - grid[i])).toBeLessThanOrEqual(max); // 有界
       expect(onsets[i]).toBeGreaterThanOrEqual(0); // clamp
     }
+  });
+
+  it('★ Loop 9:lead 跳过全局力度/时序人性化(保 MG StyleRenderer 纯净)', () => {
+    const rng = createRandomContext(2).substream('humanize');
+    const lead: TrackIR = { role: 'lead', notes: [note(0, 100), note(720, 100), note(1200, 100)] };
+    const vOut = humanizeVelocity([lead], PPQ, 4, rng)[0];
+    expect(vOut.notes.map((n) => n.velocity)).toEqual([100, 100, 100]); // 力度不被改
+    const tOut = humanizeTiming([lead], PPQ, 4, rng)[0];
+    expect(tOut.notes.map((n) => n.startTick)).toEqual([0, 720, 1200]); // 时序不被抖
   });
 
   it('★ 槽位共享:同 tick 的多声部拿同一偏移 → 一起移动(对拍/复调不被打散)', () => {
@@ -75,8 +84,8 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
   });
 
   it('★ 重心锚定:下拍位移幅度 ≪ 反拍(下拍稳、off-beat 才松)', () => {
-    const downTrack: TrackIR = { role: 'lead', notes: Array.from({ length: 16 }, (_, i) => note(i * 1920)) }; // 各小节下拍
-    const offTrack: TrackIR = { role: 'lead', notes: Array.from({ length: 16 }, (_, i) => note(i * 1920 + 720)) }; // 各小节反拍
+    const downTrack: TrackIR = { role: 'comp', notes: Array.from({ length: 16 }, (_, i) => note(i * 1920)) }; // 各小节下拍
+    const offTrack: TrackIR = { role: 'comp', notes: Array.from({ length: 16 }, (_, i) => note(i * 1920 + 720)) }; // 各小节反拍
     const down = humanizeTiming([downTrack], PPQ, 4, createRandomContext(11).substream('humanize'))[0];
     const off = humanizeTiming([offTrack], PPQ, 4, createRandomContext(11).substream('humanize'))[0];
     const dev = (out: TrackIR, grid: (n: number) => number) =>

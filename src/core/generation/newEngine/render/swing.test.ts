@@ -11,8 +11,8 @@ const note = (tick: number): TrackIR['notes'][number] => ({
 });
 
 describe('render/swing', () => {
-  // 直 8 分:beat 0(0),0.5(240),1(480) @ ppq 480
-  const tracks: TrackIR[] = [{ role: 'lead', notes: [note(0), note(240), note(480)] }];
+  // 直 8 分:beat 0(0),0.5(240),1(480) @ ppq 480。用 comp(lead 已跳过全局 swing)。
+  const tracks: TrackIR[] = [{ role: 'comp', notes: [note(0), note(240), note(480)] }];
 
   it('swingFrac:ratio=0.5 恒等;0.66 后移 offbeat', () => {
     expect(swingFrac(0.5, 0.5)).toBeCloseTo(0.5, 6);
@@ -40,5 +40,11 @@ describe('render/swing', () => {
     expect(out[0].notes[1].durationTicks).toBe(240);
     const again = applySwing(tracks, 480, 0.6667);
     expect(again[0].notes.map((n) => n.startTick)).toEqual(out[0].notes.map((n) => n.startTick));
+  });
+
+  it('★ Loop 9:lead 跳过全局 swing(MG StyleRenderer 已上单轨 swing,不双 swing)', () => {
+    const lead: TrackIR[] = [{ role: 'lead', notes: [note(0), note(240), note(480)] }];
+    const out = applySwing(lead, 480, 0.6667);
+    expect(out[0].notes.map((n) => n.startTick)).toEqual([0, 240, 480]); // offbeat 不被后移
   });
 });

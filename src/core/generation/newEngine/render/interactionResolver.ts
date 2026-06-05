@@ -25,24 +25,10 @@ const overlapTicks = (a: NoteIR, b: NoteIR): number =>
 export function resolveInteractions(draft: MusicalIRData, occupation: OccupationMap): ResolveResult {
   let adjustments = 0;
 
-  // —— Pass 1:lead 音域碰撞 → 上移八度 ——
-  let tracks = draft.tracks.map((t) => {
-    if (t.role !== 'lead') return t;
-    const notes = t.notes.map((n) => {
-      const collides = occupation.occupiedRegisters.some(
-        (o) => n.pitch >= o.lowMidi && n.pitch <= o.highMidi,
-      );
-      if (collides) {
-        const up = (n.pitch as number) + 12; // 上移八度(pc 不变)
-        if (up <= occupation.reservedMelodyRegister.highMidi) {
-          adjustments += 1;
-          return { ...n, pitch: midi(up) };
-        }
-      }
-      return n;
-    });
-    return { role: t.role, notes };
-  });
+  // —— Pass 1(★ Loop 9 起 no-op):MG 旋律是权威(Loop 7 coordinator-swap),resolver 不再上移 lead 八度
+  //   改变其音高/轮廓 —— 音域碰撞改由 comp 让位(Pass 2 下方:comp 撞 lead 丢音)。lead 原样保留。
+  void occupation; void midi;
+  let tracks = draft.tracks;
 
   // —— Pass 2:voicing-around-melody —— comp 与(已消解的)lead 撞 m2/m9 → 丢该 comp 音 ——
   const leadNotes = tracks.find((t) => t.role === 'lead')?.notes ?? [];

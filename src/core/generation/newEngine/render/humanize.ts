@@ -35,7 +35,7 @@ export function metricAccentScale(beatInBar: number, beatsPerBar: number): numbe
  */
 export function humanizeVelocity(tracks: TrackIR[], ppq: number, beatsPerBar: number, rng: Rng): TrackIR[] {
   return tracks.map((t) => {
-    if (t.role === 'drum') return t;
+    if (t.role === 'drum' || t.role === 'lead') return t; // ★ Loop 9:lead = MG StyleRenderer 已上 accent,跳过全局力度人性化(避免双 accent)
     return {
       role: t.role,
       notes: t.notes.map((n) => {
@@ -76,12 +76,15 @@ export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: numb
     const off = Math.round((rng.next() * 2 - 1) * maxJitterTicks * jitterScale(tick, ppq, beatsPerBar));
     offsetBySlot.set(tick, off);
   }
-  return tracks.map((t) => ({
+  return tracks.map((t) => {
+    if (t.role === 'lead') return t; // ★ Loop 9:lead = MG StyleRenderer 已定时序,跳过全局微抖动(保 MG 旋律纯净)
+    return {
     role: t.role,
     notes: t.notes.map((n) => {
       const off = offsetBySlot.get(n.startTick as number) ?? 0;
       const st = Math.max(0, (n.startTick as number) + off);
       return { ...n, startTick: ticks(st) };
     }),
-  }));
+    };
+  });
 }

@@ -18,7 +18,9 @@ export function swingFrac(frac: number, ratio: number): number {
 /** 对全部音轨 onset 做 swing warp。直(ratio≈0.5)则原样返回。 */
 export function applySwing(tracks: TrackIR[], ppq: number, swingRatio: number): TrackIR[] {
   if (Math.abs(swingRatio - 0.5) < 1e-6) return tracks;
-  return tracks.map((t) => ({
+  return tracks.map((t) => {
+    if (t.role === 'lead') return t; // ★ Loop 9:lead = MG StyleRenderer 已上单轨 swing,跳过全局 swing(避免 jazz 双 swing)
+    return {
     role: t.role,
     notes: t.notes.map((n) => {
       const beat = (n.startTick as number) / ppq;
@@ -26,5 +28,6 @@ export function applySwing(tracks: TrackIR[], ppq: number, swingRatio: number): 
       const swung = whole + swingFrac(beat - whole, swingRatio);
       return { ...n, startTick: ticks(Math.round(swung * ppq)) };
     }),
-  }));
+    };
+  });
 }

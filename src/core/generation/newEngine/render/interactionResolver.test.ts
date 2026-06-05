@@ -24,11 +24,11 @@ describe('render/interactionResolver', () => {
     expect(r.data.tracks[0].notes[0].pitch).toBe(72);
   });
 
-  it('lead 落进 comp 音域 → 上移八度(pc 不变),adjustments=1', () => {
+  it('★ Loop 9:lead 落进 comp 音域 → 不上移(MG 旋律权威,resolver 保留;碰撞改由 comp 让位)', () => {
     const draft: MusicalIRData = { tracks: [{ role: 'lead', notes: [note(55)] }], timebase, durationTicks: ticks(480) };
     const r = resolveInteractions(draft, occupation);
-    expect(r.adjustments).toBe(1);
-    expect(r.data.tracks[0].notes[0].pitch).toBe(67); // 55 + 12,落进预留区,pc 不变
+    expect(r.adjustments).toBe(0);
+    expect(r.data.tracks[0].notes[0].pitch).toBe(55); // lead 原样保留(不再上移八度)
   });
 
   it('非 lead 轨不动', () => {
