@@ -113,3 +113,44 @@ export function chordTypeIntervals(chordType: string): readonly number[] {
 export function isKnownChordType(chordType: string): boolean {
   return chordType in CHORD_TYPES;
 }
+
+// ============================================================
+// ★ MG 风格和弦词汇对齐(用户:全部对齐 MG)。审计发现我们的和弦比 MG 系统性更延伸,尤其
+//   POP(MG 是 min/maj 三和弦为主 + add9/7/7sus4 色彩,我们全是 m7/m9/maj9)。按【家族分类器】把
+//   过度延伸映射到该 style 的 MG 主流类型,propagate 到张力/chord-scale/voicing(都读 chordType)。
+//   LOFI 已贴 MG(延伸)→ 不动;JAZZ/RNB 轻削最非 MG 的(7alt/7#5 → 7b13)。确定性、纯函数。
+// ============================================================
+type AlignResult = { chordType: string; quality: ChordQuality };
+
+/** POP:折回三和弦纯度。保留 {maj/min/add9/madd9/7/7sus4/sus2/sus4/m7b5/dim7/5};其余按家族折。 */
+function alignPop(ct: string): AlignResult {
+  if (ct === 'm7b5' || ct === 'm9b5') return { chordType: 'm7b5', quality: 'm7b5' };
+  if (ct === 'dim' || ct === 'dim7') return { chordType: 'dim7', quality: 'dim7' };
+  if (/sus/.test(ct)) {                                  // sus 家族
+    const dom = /^(7|9|11|13)/.test(ct);
+    return ct.includes('sus2') ? { chordType: 'sus2', quality: 'maj' } : { chordType: dom ? '7sus4' : 'sus4', quality: dom ? '7' : 'maj' };
+  }
+  if (ct === 'add9' || ct === 'madd9') return { chordType: ct, quality: ct === 'madd9' ? 'min' : 'maj' };
+  if (ct === '6' || ct === '6/9') return { chordType: 'add9', quality: 'maj' };        // 6/9 → add9(三和弦底 + 色彩)
+  if (ct === 'm6/9' || ct === 'm6') return { chordType: 'madd9', quality: 'min' };
+  if (/^m(?!aj)/.test(ct)) return { chordType: 'min', quality: 'min' };                // 小调家族(m7/m9/m11/m13/mMaj9…)→ min
+  if (/^maj/.test(ct)) return { chordType: 'maj', quality: 'maj' };                    // 大调家族(maj7/maj9/maj13…)→ maj
+  if (/^(7|9|11|13)/.test(ct)) return { chordType: '7', quality: '7' };                // 属家族(含 7alt/7b9/7#9…)→ 7
+  if (ct === 'min' || ct === '5' || ct === 'quartal') return { chordType: ct === 'min' ? 'min' : ct === '5' ? '5' : 'maj', quality: ct === 'min' ? 'min' : 'maj' };
+  return { chordType: 'maj', quality: 'maj' };           // maj / 兜底
+}
+
+/** JAZZ/RNB:已基本贴 MG(延伸),只把最非 MG 的 altered 收成 7b13(MG 用 7b13/7#11 而非 7alt/7#5)。 */
+function alignJazzRnb(ct: string, q: ChordQuality): AlignResult {
+  if (ct === '7alt' || ct === '7#5' || ct === '9#5' || ct === '7#9#11') return { chordType: '7b13', quality: '7' };
+  return { chordType: ct, quality: q };
+}
+
+/** 按 style 把和弦类型对齐 MG 主流词汇。LOFI/BLUES/未知 → 原样。 */
+export function alignChordTypeToMgStyle(chordType: string, quality: ChordQuality, style: string): AlignResult {
+  switch (style.toUpperCase()) {
+    case 'POP': return alignPop(chordType);
+    case 'JAZZ': case 'RNB': return alignJazzRnb(chordType, quality);
+    default: return { chordType, quality };
+  }
+}

@@ -774,10 +774,24 @@ bassMidi 必须从 slash/inversion/bassRole 还原
 - `_legacyTexturesAsPool()` 输出与 MG 一致。
 - `pickTextureForBar()` 对同 seed / style / phraseRole / density / energy / dominantChain 输出一致。
 - `textureCase per bar` 与 MG 一致。
-- rich 17 texture 的 chord/bass hit 相对时间、时值、velocity 一致。
-- legacy texture switch cases 的事件行为一致。
-- LOFI `timing.chordLateMs / bassLateMs / velocityHumanize` 使用 MG 当前数值,不能保留 newEngine 旧数值。
-- bass/comp/drum 共享同一 texture schedule,保证段落 groove 是同一个作者意图。
+- rich 17 texture 和 legacy texture switch cases 都必须覆盖到 renderer/interpreter。
+- dry texture oracle 可以检查 MG 原始 hit 语义:相对 onset、duration、voice subset、bass/chord 分工。
+- final split-track output 不要求与 MG texture bit-exact。MG 是单事件流,newEngine 是 bass/comp/pad/drum 分轨产品化输出。
+- newEngine 已调好的 pocketize lay-back、polyVelocity、CC7 均衡、pad/comp 电平、bass 音区属于产品化 render/mix feel 层,不应被 MG bit-clone 回退。
+- LOFI `timing.chordLateMs / bassLateMs / velocityHumanize` 以 MG 作为 profile/语义参考,但最终落地可经过 newEngine pocket/balance 适配器。
+- bass/comp/drum 共享同一 texture schedule,保证段落 groove 来自同一个 texture 意图。
+
+分层原则:
+
+```text
+MG TEXTURE_POOL / textureCase / applyTexture case
+  -> 定义织体词汇、段落选择、节奏语义、声部分工
+
+newEngine split-track renderer / pocket / polyVelocity / CC7 balance
+  -> 定义最终产品手感、分轨平衡、旋律让位、音区管理
+```
+
+因此,texture 验收不是最终 MIDI bit parity,而是 **semantic + dry-render parity + productized feel preservation**。
 
 #### I. Post-processing exclusion 测试
 
@@ -805,7 +819,7 @@ audit 只读,不改 lead
 | NoteChooser | raw melody exact | 修 pitch sets / degree semantics |
 | Shaper | final melody exact | 修 resolution/crawl/tonicization |
 | Coordinator | final lead exact | 禁止 newEngine 后处理改 lead |
-| Texture | per-bar textureCase + hit exact | 修 texture KB/render |
+| Texture | per-bar textureCase exact + dry hit semantic parity + final feel preservation | 修 texture KB/render 或 pocket/balance adapter |
 | Post-mix | LOFI dense comping exact | 修 post-mix shaper |
 | Audit | 只读 finding | 不得用 audit 改 melody |
 
@@ -970,7 +984,8 @@ audit 只读,不改 lead
 newEngine 当前旋律生成是 legacy,不要继承,不要折中,不要补丁式接入。
 MG 当前仓库是行为真源。用户要接入的是当前最强 melodygenerative/musicgenerative 旋律引擎和伴奏引擎。
 MG melody system 是新主旋律引擎。
-MG TEXTURE_POOL + musicEngine texture switch + dense comping 是新伴奏/织体真源。
+MG TEXTURE_POOL + musicEngine texture switch + dense comping 是新伴奏/织体的词汇、选择和语义真源。
+但 newEngine 是分轨产品化引擎,最终伴奏手感保留 newEngine 近期修好的 pocketize lay-back、polyVelocity、CC7 均衡、pad/comp 电平和 bass 音区。
 
 保留:
 - newEngine 的 Band/Arrangement/Harmony/Instrumentation 契约
@@ -994,9 +1009,10 @@ MG TEXTURE_POOL + musicEngine texture switch + dense comping 是新伴奏/织体
 6. newEngine 的 swing/dynamics/humanize/resolver 不得改 lead。
 7. LOFI shapeLofiDenseMelodyComping 必须实际 post-mix 改 comp/bass。
 8. 验收按 strict event parity,pitch/time/duration/velocity/order 全一致。
-9. 伴奏必须以 MG TEXTURE_POOL 为准,包含 modern + LOFI + legacy。
-10. texture renderer 必须覆盖 MG musicEngine.ts 里的 rich 17 + legacy switch cases。
-11. 迁移后必须跑 MG oracle parity tests,不能只跑 newEngine 旧测试。
+9. 伴奏词汇/选择必须以 MG TEXTURE_POOL 为准,包含 modern + LOFI + legacy。
+10. texture renderer/interpreter 必须覆盖 MG musicEngine.ts 里的 rich 17 + legacy switch cases。
+11. texture 验收分两层:dry-render 语义对齐 MG,final split-track 保留 newEngine pocket/balance 手感。
+12. 迁移后必须跑 MG oracle parity tests,不能只跑 newEngine 旧测试。
 
 任何与 newEngine 旧旋律逻辑冲突的地方,follow MG。
 任何 parity 失败,不得用听感接近关闭,必须定位漂移来源。

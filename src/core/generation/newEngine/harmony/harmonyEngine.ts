@@ -18,7 +18,7 @@ import { selectProgressionSlots, toHarmonyStyle } from './progressionSelector';
 import { realizeProgressionSlots } from './progressionRealizer';
 import { planTonicization } from './tonicizationPlanner';
 import { STYLE_TONICIZE_MAX_PER_SONG, STYLE_BORROW_SOURCE, type TonicizeStyle } from '../knowledge/tonicizationPolicies';
-import { chordToneIntervals, type ChordQuality } from '../knowledge/chords';
+import { chordToneIntervals, alignChordTypeToMgStyle, type ChordQuality } from '../knowledge/chords';
 import { evaluateHarmony, type CoherenceChord } from '../knowledge/harmonicCoherence';
 import { evaluateVoiceLeading, type LedgerChord } from '../knowledge/voiceLeadingLedger';
 import type { BandSpec } from '../band/BandSpec';
@@ -497,5 +497,10 @@ function buildResolvedProgression(
   }
 
   // ★ T6:段尾 linkOut 链接(每候选都链接 → coherence/voice-leading 择优看到真实段衔接)。
-  return applyTailLinks(resolved, arrangement, band.key, band.mode);
+  const linked = applyTailLinks(resolved, arrangement, band.key, band.mode);
+  // ★ MG 风格和弦词汇对齐(POP 折回三和弦纯度等)→ chordType/quality 一并改,propagate 到张力/chord-scale/voicing。
+  return linked.map((rc) => {
+    const a = alignChordTypeToMgStyle(rc.chordType ?? rc.quality, rc.quality, band.style);
+    return { ...rc, chordType: a.chordType, quality: a.quality };
+  });
 }
