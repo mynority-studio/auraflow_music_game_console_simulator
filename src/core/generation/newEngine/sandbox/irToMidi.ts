@@ -43,6 +43,10 @@ export function musicalIRToMidiEvents(ir: MusicalIR): MidiEvent[] {
     const voice = ROLE_VOICE[track.role] ?? DEFAULT_VOICE;
     const program = track.program ?? voice.program; // BandEngine 选的乐器优先,缺省走角色默认
     events.push({ ticks: 0, type: 'programChange', channel: voice.channel, data1: program, data2: 0 });
+    // ★ 段落音色切换:同 channel 中途换 program(同一乐手换声音 / 效果器开关)
+    for (const pc of track.programChanges ?? []) {
+      events.push({ ticks: pc.atTick, type: 'programChange', channel: voice.channel, data1: pc.program, data2: 0 });
+    }
     // ★ 混音:通道音量(CC7)+ 声像(CC10),在发音前置好
     events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_VOLUME, data2: voice.volume });
     events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_PAN, data2: voice.pan });

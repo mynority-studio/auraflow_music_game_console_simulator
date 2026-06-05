@@ -77,7 +77,7 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
   const arrangement = buildArrangementPlan(band, { rng: seedRng });
-  const instrumentation = buildInstrumentationPlan(band, arrangement);
+  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'));
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
   const timebase = createTimebase({
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },

@@ -6,7 +6,7 @@
 // Melody、Resolver 后续 slice 接入。lead 轨先留空占位。
 // ============================================================
 
-import { ticks, type RandomContext, type Timebase } from '../foundation';
+import { beats, ticks, type RandomContext, type Timebase, type Ticks } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
@@ -156,8 +156,29 @@ export function renderSongFull(
 
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, humanRng);
-  // ★ 末步挂乐器(BandEngine 选的 program;各 pass 保 role,此处按 role 贴回)
-  const finalTracks = humanizedTracks.map((t) => ({ ...t, program: band.roleProgram[t.role] }));
+  // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
+  //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
+  const bpbProg = beatsPerBarOf(arrangement.meter);
+  const sectionTicks: { id: string; tick: number }[] = [];
+  let secBeatCursor = 0;
+  for (const s of arrangement.sections) {
+    sectionTicks.push({ id: s.id, tick: timebase.beatToTick(beats(secBeatCursor)) as number });
+    secBeatCursor += s.bars * bpbProg;
+  }
+  const finalTracks = humanizedTracks.map((t) => {
+    const bySection = instrumentation.programByRoleSection[t.role];
+    const fallback = band.roleProgram[t.role];
+    if (!bySection) return { ...t, program: fallback };
+    let initial = fallback;
+    let prev: number | undefined;
+    const changes: { atTick: Ticks; program: number }[] = [];
+    for (const { id, tick } of sectionTicks) {
+      const prog = bySection[id] ?? fallback;
+      if (prev === undefined) { initial = prog; prev = prog; }
+      else if (prog !== prev) { changes.push({ atTick: ticks(tick), program: prog }); prev = prog; }
+    }
+    return { ...t, program: initial, programChanges: changes.length ? changes : undefined };
+  });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   return { ir, audit };
 }

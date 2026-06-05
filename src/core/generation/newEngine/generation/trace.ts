@@ -14,6 +14,7 @@ import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { compPattern } from '../knowledge/grooves';
 import { pickGrammarName } from '../knowledge/grammarLibrary';
+import { gmName } from '../knowledge/instruments';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { runPrepass } from '../render/motifAnchorPrepass';
@@ -73,8 +74,17 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   乐句 ${arrangement.phrases.length} · 动机绑定 ${arrangement.motifBindings.length}(同 motifId 跨段=排比)`);
 
   // —— INSTRUMENTAL ——
-  const instrumentation = buildInstrumentationPlan(band, arrangement);
+  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'));
   log(`■ INSTRUMENT 织体: ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
+  // ★ 音色切换(同乐手换声音):某角色跨段落用了 >1 种 program → 印 verse↔chorus
+  const timbreSwitch = band.instrumentPool.map((r) => {
+    const bySec = instrumentation.programByRoleSection[r];
+    if (new Set(arrangement.sections.map((s) => bySec[s.id])).size <= 1) return null;
+    const cho = arrangement.sections.find((s) => s.role === 'chorus');
+    const oth = arrangement.sections.find((s) => s.role !== 'chorus');
+    return cho && oth ? `${r} ${gmName(bySec[oth.id])}↔chorus ${gmName(bySec[cho.id])}` : null;
+  }).filter(Boolean);
+  if (timbreSwitch.length) log(`   ★ 音色切换(同乐手换声): ${timbreSwitch.join(' · ')}`);
   const mainHooks = instrumentation.melodyReservationPlan.hookAnchorSlots.filter((h) => h.anchorRequired);
   log(`   主 hook 让位锚点: ${mainHooks.map((h) => `${h.phraseId}@拍${h.beatSlot}`).join(' ') || '-'}`);
 

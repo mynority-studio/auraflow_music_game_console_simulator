@@ -73,6 +73,15 @@ export function isKeyboardFamily(program: number | undefined): boolean {
   return program !== undefined && instrumentInfo(program).family === 'keyboard';
 }
 
+/** 同族备选音色(供器配层 per-段落切音色):池里与 primary【同族】且 ≠primary 的 program。
+ *  同族 = 同一个乐手换声音(键盘 Rhodes↔钢琴 / 效果器开关),非换乐手 → 不影响 voicing 分流。 */
+export function sameFamilyAlternates(style: string, role: InstrumentRoleName, primary: number): number[] {
+  const inst = INSTRUMENTS[style] ?? INSTRUMENTS.default;
+  const pool = inst[role] ?? [];
+  const fam = instrumentInfo(primary).family;
+  return pool.filter((p) => p !== primary && instrumentInfo(p).family === fam);
+}
+
 // —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
 const GM_NAME: Record<number, string> = {
   0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',

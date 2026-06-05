@@ -8,7 +8,7 @@
 // ============================================================
 
 export type StageName =
-  | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental'
+  | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental' | 'timbre'
   | 'prepass' | 'accompaniment' | 'compTexture' | 'melody' | 'resolver' | 'humanize';
 
 export interface Rng {

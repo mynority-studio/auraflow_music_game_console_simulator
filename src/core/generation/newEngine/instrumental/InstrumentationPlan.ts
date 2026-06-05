@@ -42,6 +42,9 @@ export interface InstrumentationPlanData {
   registerByRole: Record<InstrumentRoleName, RegisterRange>;
   textureBySection: Record<SectionId, TextureKind>;
   textureYieldPolicy: Record<TextureKind, YieldClass>;
+  // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
+  //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。
+  programByRoleSection: Record<InstrumentRoleName, Record<SectionId, number>>;
   melodyReservationPlan: MelodyReservationPlan;
 }
 

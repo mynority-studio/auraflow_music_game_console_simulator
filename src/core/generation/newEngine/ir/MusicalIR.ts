@@ -20,7 +20,8 @@ export interface NoteIR {
 export interface TrackIR {
   role: InstrumentRole;
   notes: NoteIR[];
-  program?: number; // GM 乐器号(BandEngine 选);irToMidi 读它发声,缺省走角色默认音色
+  program?: number; // GM 乐器号(初始/tick0;BandEngine 选);irToMidi 读它发声,缺省走角色默认音色
+  programChanges?: { atTick: Ticks; program: number }[]; // ★ 段落音色切换(同 channel,中途 programChange)
 }
 
 export interface MusicalIRData {
