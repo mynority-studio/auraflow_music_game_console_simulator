@@ -163,7 +163,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const ir: MusicalIR = result.ir ?? render(undefined).ir;
 
   log(`■ RENDER     ${ir.tracks.map((t) => `${t.role}=${t.notes.length}`).join('  ')}  [控制环 ${result.status} · ${result.attempts} 次尝试]`);
-  log(`   织体分流: active 段=comp / floating 段(pad/sustained)=pad 长音铺底`);
+  log(`   pad↔comp 分工: comp 主奏(GM 织体)· pad=sustain/air 层(comp active 段退 guide-tone 3/7 ≤2 音·省 root/5th·避同绝对音高;pad-only 段 full-support ≤3 音)`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);
   log(`   resolver: voicing-around-melody(comp 与旋律撞小二度/小九度→丢该 comp 声部)+ lead 音域碰撞上移`);
   log(`   bass 行进: ${band.style}(jazz=walking / pop=根-五 / lofi=根音持续)`);

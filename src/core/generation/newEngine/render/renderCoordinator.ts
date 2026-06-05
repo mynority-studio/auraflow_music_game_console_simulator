@@ -25,6 +25,7 @@ import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { renderDrums } from './drumRenderer';
 import { renderPad } from './padRenderer';
+import { decidePadComp, type PadCompDecision } from './padCompPolicy';
 import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { humanizeVelocity, humanizeTiming } from './humanize';
@@ -172,10 +173,46 @@ export function renderSongFull(
 
   // ★ 只渲染 lineup 内的角色(编制可变 2–5;lead 必有)
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
+
+  // ★ pad-comp 分工(docs/pad_comp_interaction_directive.md):每段算 PadCompDecision。
+  //   pad 不再复制完整和弦 → comp active 段退成 guide-tone/drone(thin),pad-only 段才 full-support。
+  //   render 顺序:bass → pad → comp(comp 拿 pad 占用音高避同绝对音)→ drum → lead。lead > bass > comp > pad。
+  const reservedReg = instrumentation.melodyReservationPlan.reservedRegister;
+  const activeRoles = instrumentation.activeRolesBySection;
+  const roleInArr = (sid: string, role: string) => ((activeRoles[sid] as readonly string[] | undefined)?.includes(role) ?? true);
+  const padDecisionBySection: Record<string, PadCompDecision> = {};
+  for (const s of arrangement.sections) {
+    padDecisionBySection[s.id] = decidePadComp({
+      style: band.style,
+      sectionId: s.id,
+      sectionRole: s.role,
+      padDensity: band.styleProfile.padDensity,
+      padActive: inLineup('pad') && roleInArr(s.id, 'pad'),
+      compActive: inLineup('comp') && activeSectionIds.has(s.id) && roleInArr(s.id, 'comp'),
+      bassActive: inLineup('bass') && roleInArr(s.id, 'bass'),
+      leadReservedLow: reservedReg.lowMidi,
+      leadReservedHigh: reservedReg.highMidi,
+    });
+  }
+
+  // pad 先于 comp【渲染】:收每 span 占用绝对音高 → comp 据此让位(避 unison)。
+  //   但【输出轨序】仍为 bass/comp/pad/drum/lead(顺序仅装饰,通道按 role 分配)。
+  const padOccupiedPitchesBySpan: Record<string, number[]> = {};
+  let padTrack: TrackIR | undefined;
+  if (inLineup('pad')) {
+    padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: reservedReg.lowMidi });
+    const spanStartToId = new Map<number, string>();
+    for (const span of plan.chordTimeline) spanStartToId.set(timebase.beatToTick(span.startBeat) as number, span.id);
+    for (const n of padTrack.notes) {
+      const sid = spanStartToId.get(n.startTick as number);
+      if (sid) (padOccupiedPitchesBySpan[sid] ??= []).push(n.pitch as number);
+    }
+  }
+
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style, textureSchedule));
-  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: instrumentation.melodyReservationPlan.reservedRegister.lowMidi }));
-  if (inLineup('pad')) tracks.push(renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, activeSectionIds }));
+  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: reservedReg.lowMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan }));
+  if (padTrack) tracks.push(padTrack);
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule }));
   // ★ Loop 7 coordinator-swap:lead 主链改为 MG 旋律链(decision C/B/1)。
   //   旧 renderMelody 保留(其单测仍跑),不再被主链调用。多轨层(gateByDensity/ducking/CC7)原样包住。

@@ -19,6 +19,7 @@ import type { TextureSchedule } from './textureSchedule';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
+import type { PadCompDecision } from './padCompPolicy';
 
 export interface AccompContext {
   style?: string;
@@ -30,6 +31,9 @@ export interface AccompContext {
   voicingRng?: SpreadPicker;       // spread mode 选择用的确定性子流('accompaniment')
   textureSchedule?: TextureSchedule; // ★ 中央下发的 spanId→textureCase(bass/comp/drum 共享)
   melodyFloorMidi?: number;        // ★ 旋律保留区地板(reservedRegister.lowMidi):comp 顶须 < 此 → 让位旋律
+  // —— pad-comp 分工(pad-aware thinning,仅在 pad-active span 生效,保 GM 手感)——
+  padCompDecisionBySection?: Record<string, PadCompDecision>; // 每段 pad↔comp 决策
+  padOccupiedPitchesBySpan?: Record<string, number[]>;        // pad 各 span 已占绝对 MIDI(comp 让 pad)
 }
 
 /**
@@ -78,6 +82,8 @@ const POCKET_STRENGTH: Record<string, number> = { pop: 0.65, rnb: 0.6, jazz: 0.3
 const SECTION_FN: Record<SectionRole, SpreadSectionFunction> = {
   intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
 };
+
+const EMPTY_AVOID: ReadonlySet<number> = new Set(); // 无 pad 让位时复用(零分配,行为字节不变)
 
 // 非键盘 comp 的 voicing 风格(参考 mg compingVoicingMode:jazz/rnb/lofi→rootless · blues→blues · pop→full)。
 // ★ 遵守 comp 铁律(色彩 9/11/13 归旋律)→ addColorOnTriad 一律 false(comp 只留核心,不加 9)。
@@ -129,6 +135,18 @@ export function renderAccompaniment(
   const style = ctx.style ?? 'default';
   const pocketStrength = POCKET_STRENGTH[style.toLowerCase()] ?? 0.45; // comp 柱式入袋强度(按风格)
   const inActive = (sid: string) => !ctx.activeSectionIds || ctx.activeSectionIds.has(sid);
+
+  // ★ pad-comp 分工:pad active(且 avoidExactPitchOverlap)的 span,comp 让 pad —— 丢掉与 pad 同绝对
+  //   MIDI 的音(消"齐奏 unison" mud 主因)+ 按 compDurationScale 缩时值。仅此最轻干预 → GM/texture/
+  //   pocketize/polyVelocity 全保留(scale 缺省 1 = 字节不变);无 pad / silent 段一律不动。确定性。
+  const padAvoidFor = (span: ChordSpan): { avoid: ReadonlySet<number>; durScale: number } => {
+    const dec = ctx.padCompDecisionBySection?.[span.sectionId];
+    const occ = ctx.padOccupiedPitchesBySpan?.[span.id];
+    if (!dec || !dec.avoidExactPitchOverlap || !occ || occ.length === 0) {
+      return { avoid: EMPTY_AVOID, durScale: 1 };
+    }
+    return { avoid: new Set(occ), durScale: dec.compDurationScale ?? 1 };
+  };
 
   let totalBeats = 0;
   for (const span of plan.chordTimeline) {
@@ -226,18 +244,22 @@ export function renderAccompaniment(
       const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];
       if (!voiced || voiced.length === 0) continue;
 
+      const { avoid: padAvoid, durScale } = padAvoidFor(span); // pad-active span 才非空,否则零干预
       const base = span.startBeat as number;
       for (const h of renderTextureChordHits(tc, voiced, span.durationBeats as number)) {
         // ★ 入袋:仅【柱式块(h.midis≥2)】收 lay-back 与节奏组对拍;arp/roll(单音 hit)是有意 stagger,不动。
         //   强度按风格(pop/rnb 紧、lofi/jazz 留性格)。
         const tRel = h.midis.length >= 2 ? pocketizeBeat(base + h.tRel, pocketStrength) : base + h.tRel;
         const startTick = timebase.beatToTick(beats(tRel));
-        const durationTicks = timebase.beatToTick(beats(h.dur));
+        const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
         const vel = Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
-        for (const m of h.midis) compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
+        for (const m of h.midis) {
+          if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音(消 unison mud)
+          compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
+        }
       }
     }
     return [{ role: 'comp', notes: compNotes }];
@@ -256,10 +278,12 @@ export function renderAccompaniment(
       const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id); // 让位 或 撞音阶梯瘦身
       const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];
 
+      const { avoid: padAvoid, durScale } = padAvoidFor(span); // pad-active span 才非空
       const startTick = timebase.beatToTick(beats(beat));
-      const durationTicks = timebase.beatToTick(beats(hit.dur));
+      const durationTicks = timebase.beatToTick(beats(hit.dur * durScale));
       const polyVel = polyVelocity(hit.vel, voiced.length); // 柱式块复音衰减(不爆顶)
       for (const m of voiced) {
+        if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音
         compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
       }
     }
