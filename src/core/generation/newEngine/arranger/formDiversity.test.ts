@@ -55,30 +55,38 @@ describe('arranger · 曲式多样 (3.5)', () => {
     return buildArrangementPlan(band, { rng: createRandomContext(seed) });
   };
 
-  it('★ 风格曲式【≤5 段 + verse×2 记忆点】:lofi 无 chorus;jazz solo/headOut;rnb verse×2+hook×2', () => {
+  it('★ 程序化曲式【≤5 段 + 记忆点】:每首 ≤5 段;每首有 ×2 连续记忆点;lofi 无 chorus;jazz head×2+headOut', () => {
+    const cnt = (secs: readonly { functionTag?: string }[], t: string) => secs.filter((s) => s.functionTag === t).length;
     for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
-      expect(styleForm(style, 5).sections.length).toBeLessThanOrEqual(5); // ★ 最多 5 段
+      for (let seed = 0; seed < 12; seed++) {
+        const secs = styleForm(style, seed).sections;
+        expect(secs.length).toBeLessThanOrEqual(5);          // ★ 最多 5 段
+        expect(secs.length).toBeGreaterThanOrEqual(2);
+        // 记忆点:story/hook/loop/head 之一 ≥2(连续重复)
+        expect(cnt(secs, 'story') >= 2 || cnt(secs, 'hook') >= 2 || cnt(secs, 'loop') >= 2 || cnt(secs, 'head') >= 2).toBe(true);
+      }
     }
-    const lofi = styleForm('lofi', 5);
-    expect(lofi.sections.some((s) => s.role === 'chorus')).toBe(false); // lofi 不套 chorus
-    expect(lofi.sections.filter((s) => s.functionTag === 'loop').every((s) => s.harmonyRole === 'loop')).toBe(true);
-
-    const jazz = styleForm('jazz', 5);
-    expect(jazz.sections.some((s) => s.functionTag === 'solo')).toBe(true);
-    expect(jazz.sections.some((s) => s.functionTag === 'headOut')).toBe(true);
-
-    const rnb = styleForm('rnb', 5);
-    expect(rnb.sections.filter((s) => s.functionTag === 'story').length).toBe(2); // verse×2
-    expect(rnb.sections.filter((s) => s.functionTag === 'hook').length).toBe(2);  // hook×2
+    for (let seed = 0; seed < 8; seed++) {
+      expect(styleForm('lofi', seed).sections.some((s) => s.role === 'chorus')).toBe(false); // lofi 不套 chorus
+      const jazz = styleForm('jazz', seed).sections;
+      expect(cnt(jazz, 'head')).toBe(2);                     // jazz head×2(记忆点)
+      expect(jazz.some((s) => s.functionTag === 'headOut')).toBe(true);
+    }
   });
 
-  it('★ verse 连续×2 记忆点:相邻两 verse(同 repeatGroup)成对出现', () => {
+  it('★ 连续×2 记忆点:同功能相邻段共享 repeatGroup(verse/loop/head ×2 时)', () => {
     for (const [style, tag] of [['pop', 'story'], ['rnb', 'story'], ['lofi', 'loop'], ['jazz', 'head']] as const) {
-      const secs = styleForm(style, 5).sections;
-      const idx = secs.findIndex((s) => s.functionTag === tag);
-      expect(idx).toBeGreaterThanOrEqual(0);
-      expect(secs[idx + 1]?.functionTag).toBe(tag);               // 紧邻下一段同功能(连续×2)
-      expect(secs[idx + 1]?.repeatGroup).toBe(secs[idx].repeatGroup); // 同 repeatGroup = 记忆点
+      let sawPair = false;
+      for (let seed = 0; seed < 12; seed++) {
+        const secs = styleForm(style, seed).sections;
+        for (let i = 0; i < secs.length - 1; i++) {
+          if (secs[i].functionTag === tag && secs[i + 1].functionTag === tag) {
+            sawPair = true;
+            expect(secs[i + 1].repeatGroup).toBe(secs[i].repeatGroup); // 连续同功能 → 同 group = 记忆点
+          }
+        }
+      }
+      expect(sawPair).toBe(true); // 该风格跨 seed 至少出现一次连续×2
     }
   });
 
@@ -132,10 +140,16 @@ describe('arranger · 曲式多样 (3.5)', () => {
     for (const s of pop.sections) expect(pop.harmonicRhythmTarget.chordsPerBarBySection[s.id]).toBe(1);
   });
 
-  it('★ 回归 ramp(段落重心):同一中心段每次回归 energy 递增;lofi loop 仍 <0.6', () => {
-    const rnb = styleForm('rnb', 5); // RNB:hook1/hook2(回归 ramp)
-    expect(rnb.energyBySection.hook2).toBeGreaterThan(rnb.energyBySection.hook1); // 第二次 hook 更重
-    const lofi = styleForm('lofi', 5);
-    expect(Math.max(...lofi.sections.map((s) => lofi.energyBySection[s.id]))).toBeLessThan(0.6); // loop ramp 仍守 <0.6
+  it('★ 回归 ramp(段落重心):同一中心段每次回归 energy 递增;lofi loop 跨 seed 仍 <0.6', () => {
+    // 直测 planDynamics:两个 hook → 第二次更重(程序化曲式 hook 数可变,故合成验)
+    const dyn = planDynamics([
+      { id: 'h1', role: 'chorus', functionTag: 'hook', bars: 8, hookPolicy: 'main' },
+      { id: 'h2', role: 'chorus', functionTag: 'hook', bars: 8, hookPolicy: 'main' },
+    ]);
+    expect(dyn.energyBySection.h2).toBeGreaterThan(dyn.energyBySection.h1);
+    for (let seed = 0; seed < 8; seed++) {
+      const lofi = styleForm('lofi', seed);
+      expect(Math.max(...lofi.sections.map((s) => lofi.energyBySection[s.id]))).toBeLessThan(0.6); // loop ramp 仍守 <0.6
+    }
   });
 });
