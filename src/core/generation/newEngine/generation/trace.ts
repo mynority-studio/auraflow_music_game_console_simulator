@@ -87,6 +87,8 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   if (timbreSwitch.length) log(`   ★ 音色切换(同乐手换声): ${timbreSwitch.join(' · ')}`);
   const mainHooks = instrumentation.melodyReservationPlan.hookAnchorSlots.filter((h) => h.anchorRequired);
   log(`   主 hook 让位锚点: ${mainHooks.map((h) => `${h.phraseId}@拍${h.beatSlot}`).join(' ') || '-'}`);
+  // ★ 编曲密度弧:每段在场乐手(谁进/出)
+  log(`   密度弧: ${arrangement.sections.map((s) => `${s.id}{${(instrumentation.activeRolesBySection[s.id] ?? []).join('+')}}`).join('  ')}`);
 
   // —— HARMONY ——
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);

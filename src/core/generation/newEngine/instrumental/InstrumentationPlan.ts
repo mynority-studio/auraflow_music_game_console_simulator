@@ -39,6 +39,10 @@ export interface MelodyReservationPlan {
 
 export interface InstrumentationPlanData {
   activityBySection: Record<SectionId, Partial<Record<InstrumentRoleName, number>>>;
+  // ★ 编曲密度弧(A1):每段【在场的乐手子集】(genre×functionTag×lineup 确定性推出)。
+  //   render 按此 gate(谁在哪段进/出)→ intro 稀疏 / chorus 全员同进 / breakdown 抽离。
+  //   无 functionTag/genre 的段 = 全 lineup(向后兼容)。lead 当前全程在场(gating 留后续)。
+  activeRolesBySection: Record<SectionId, InstrumentRoleName[]>;
   registerByRole: Record<InstrumentRoleName, RegisterRange>;
   textureBySection: Record<SectionId, TextureKind>;
   textureYieldPolicy: Record<TextureKind, YieldClass>;

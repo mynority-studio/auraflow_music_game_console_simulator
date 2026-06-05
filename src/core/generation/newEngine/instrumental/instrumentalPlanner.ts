@@ -9,7 +9,7 @@
 
 import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
-import type { ArrangementPlan, Section } from '../arranger/ArrangementPlan';
+import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, type TextureSectionRole } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily } from '../knowledge/instruments';
@@ -33,6 +33,56 @@ const REGISTER_BY_ROLE: Record<InstrumentRoleName, RegisterRange> = {
   drum: rr(35, 50),
 };
 
+// ============================================================
+// ★ 编曲密度弧(A1):genre × functionTag → 该段【期望在场的乐手】(再 ∩ lineup)。
+//   原则(联网编曲实践):能量=在场元素多少随时间变化。POP 走加法弧(intro 稀疏→chorus 全员同进=release)、
+//   RNB minimal、LOFI 近恒定 loop(filterBreak 去鼓)、JAZZ 四件常驻(变化在 solo/comp 密度,不靠乐器进出)。
+//   lead 当前全程在场(fork1 默认,gating 留后续);无 functionTag/genre 的段 → 全 lineup(向后兼容)。
+//   确定性(纯 genre×tag×lineup);同 functionTag → 同活动 → repeatGroup 一致(verse1≡verse2)。
+// ============================================================
+const ALL_ROLES: readonly InstrumentRoleName[] = ['bass', 'comp', 'pad', 'drum', 'lead'];
+const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentRoleName[]>>> = {
+  pop: {
+    setup: ['pad', 'comp', 'lead'],
+    story: ['bass', 'drum', 'comp', 'lead'],                 // core,去 pad 留空间
+    build: ['bass', 'drum', 'comp', 'pad', 'lead'],          // +pad 加厚(推)
+    hook: ['bass', 'drum', 'comp', 'pad', 'lead'],           // 全员同进(downbeat=release)
+    breakdown: ['bass', 'comp', 'pad', 'lead'],              // 去 drum(掉拍)
+    outro: ['pad', 'bass', 'lead'],
+  },
+  rnb: {
+    setup: ['pad', 'comp', 'lead'],
+    story: ['bass', 'comp', 'drum', 'lead'],
+    build: ['bass', 'comp', 'drum', 'pad', 'lead'],
+    hook: ['bass', 'comp', 'drum', 'pad', 'lead'],
+    breakdown: ['comp', 'lead'],                             // 真抽离 keys+vocal
+    outro: ['pad', 'comp', 'lead'],
+  },
+  lofi: {
+    setup: ['comp', 'bass', 'lead'],
+    loop: ['bass', 'comp', 'drum', 'pad', 'lead'],           // 近恒定 full loop
+    breakdown: ['bass', 'comp', 'pad', 'lead'],              // filterBreak 去 drum
+    outro: ['comp', 'pad', 'lead'],
+  },
+  jazz: {
+    setup: ['comp', 'bass', 'lead'],
+    head: ['bass', 'comp', 'drum', 'lead'],
+    build: ['bass', 'comp', 'drum', 'lead'],
+    solo: ['bass', 'comp', 'drum', 'lead'],
+    headOut: ['bass', 'comp', 'drum', 'lead'],
+    tag: ['comp', 'bass', 'lead'],
+  },
+};
+
+/** 该段在场乐手 = (密度弧 mask ∪ lead)∩ lineup;无 tag/genre → 全 lineup。 */
+function activeRolesFor(style: string, section: Section, lineup: readonly InstrumentRoleName[]): InstrumentRoleName[] {
+  const genre = DENSITY_ARC[style.toLowerCase()];
+  const mask = genre && section.functionTag ? genre[section.functionTag] : undefined;
+  const want = new Set<InstrumentRoleName>(mask ?? ALL_ROLES);
+  want.add('lead'); // lead 全程在场
+  return lineup.filter((r) => want.has(r));
+}
+
 // ★ 织体选择偏好 + 让位策略已搬进 KB(knowledge/textureProfiles)。引擎不再自带,改查 KB。
 
 // 会切音色的乐手:仅 comp/lead,且【仅键盘族】(效果器/电钢能切;颤音琴/马林巴是物理乐器,不切)。
@@ -46,6 +96,7 @@ export function buildInstrumentationPlan(
 ): InstrumentationPlan {
   const textureBySection: Record<string, TextureKind> = {};
   const activityBySection: Record<string, Partial<Record<InstrumentRoleName, number>>> = {};
+  const activeRolesBySection: Record<string, InstrumentRoleName[]> = {};
   const sectionById: Record<string, Section> = {};
 
   for (const s of arrangement.sections) {
@@ -53,6 +104,7 @@ export function buildInstrumentationPlan(
     const e = arrangement.energyBySection[s.id] ?? 0.5;
     textureBySection[s.id] = pickGenericTexture(s.role as TextureSectionRole); // 查 KB(引擎无偏好)
     activityBySection[s.id] = { bass: e, comp: e, drum: e, lead: e, pad: clamp01(1 - e) };
+    activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool); // ★ 密度弧
   }
 
   // ★ 器配音色:每角色 × 每段落。默认全 primary;comp/lead 掷骰命中 → chorus 段换【同族】备选(段落对比)。
@@ -93,6 +145,7 @@ export function buildInstrumentationPlan(
 
   const data: InstrumentationPlanData = {
     activityBySection,
+    activeRolesBySection,
     registerByRole: REGISTER_BY_ROLE,
     textureBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,

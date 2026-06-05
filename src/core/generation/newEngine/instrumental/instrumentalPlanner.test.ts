@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildInstrumentationPlan } from './instrumentalPlanner';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
+import { createRandomContext } from '../foundation';
 
 describe('instrumental/instrumentalPlanner', () => {
   const band = buildBandSpec({ seed: 1, styleHint: 'pop', mood: 'build', targetDuration: 120 });
@@ -51,5 +52,30 @@ describe('instrumental/instrumentalPlanner', () => {
     const again = buildInstrumentationPlan(band, arrangement);
     expect(again.melodyReservationPlan.hookAnchorSlots.map((s) => s.beatSlot))
       .toEqual(plan.melodyReservationPlan.hookAnchorSlots.map((s) => s.beatSlot));
+  });
+
+  // —— A1 编曲密度弧 ——
+  it('★ A1 密度弧:pop intro 稀疏(无 bass/drum)→ chorus 全员同进 → bridge 去 drum;lead 全程;repeatGroup 一致', () => {
+    const b = buildBandSpec({ seed: 3, styleHint: 'pop', mood: 'x', targetDuration: 120 });
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(3) }); // seed 3 → POP_FULL
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('inst'));
+    const roles = (id: string) => ip.activeRolesBySection[id] ?? [];
+
+    expect(roles('intro')).not.toContain('bass');   // intro 稀疏
+    expect(roles('intro')).not.toContain('drum');
+    for (const r of b.instrumentPool) expect(roles('chorus1')).toContain(r); // chorus 全员
+    expect(roles('bridge')).not.toContain('drum');  // breakdown 去 drum
+    for (const s of arr.sections) expect(roles(s.id)).toContain('lead'); // lead 全程
+    expect(roles('verse1')).toEqual(roles('verse2')); // repeatGroup 一致(同 functionTag)
+
+    const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('inst'));
+    expect(ip2.activeRolesBySection).toEqual(ip.activeRolesBySection); // 确定性
+  });
+
+  it('★ A1 ∩ lineup + 无 functionTag 回退全 lineup(legacy/无 rng)', () => {
+    // 无 rng = legacy verse-chorus 无 functionTag → 每段 = 全 lineup(向后兼容)
+    for (const s of arrangement.sections) {
+      expect([...plan.activeRolesBySection[s.id]].sort()).toEqual([...band.instrumentPool].sort());
+    }
   });
 });
