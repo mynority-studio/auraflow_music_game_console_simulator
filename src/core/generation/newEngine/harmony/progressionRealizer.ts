@@ -83,6 +83,7 @@ export function realizeProgressionSlots(args: {
       bassRole: slot.bassRole,
       bassPedalPc: slot.bassPedalPc !== undefined ? mod12(slot.bassPedalPc) : undefined,
       tonicizationPlacement: slot.tonicizationPlacement,
+      preserveType: slot.preserveType,
       sectionKeyPc: isModulated ? sectionKey : undefined,
     };
   });

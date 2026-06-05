@@ -48,10 +48,10 @@ describe('bassRole 消费(手搭 plan)', () => {
   });
 });
 
-describe('bassRole 端到端(pop seed5 真选到 POP_CANON_8 的转位)', () => {
+describe('bassRole 端到端(pop seed6 真选到带转位的 POP 进行)', () => {
   it('有 bassRole span,且 bass 在该 span downbeat 落转位音(≠ root)', () => {
-    const band = buildBandSpec({ seed: 5, styleHint: 'pop', mood: 'x', targetDuration: 120, key: pc(0) });
-    const plan = buildHarmonicPlanFromArrangement(band, buildArrangementPlan(band), createRandomContext(5));
+    const band = buildBandSpec({ seed: 6, styleHint: 'pop', mood: 'x', targetDuration: 120, key: pc(0) });
+    const plan = buildHarmonicPlanFromArrangement(band, buildArrangementPlan(band), createRandomContext(6));
     const inv = plan.chordTimeline.find((c) => c.bassRole === '3rd' || c.bassRole === '5th');
     expect(inv).toBeDefined();
     const bass = renderBass(plan, tb, 'pop');

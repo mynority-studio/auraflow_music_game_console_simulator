@@ -59,6 +59,7 @@ export interface ResolvedChord {
   bassRole?: BassRole;
   bassPedalPc?: PitchClass;
   tonicizationPlacement?: TonicizationPlacement;
+  preserveType?: boolean; // ★ 跳过 alignChordTypeToMgStyle 折叠(JPOP ii-V 精确品质)
 }
 
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
@@ -500,6 +501,7 @@ function buildResolvedProgression(
   const linked = applyTailLinks(resolved, arrangement, band.key, band.mode);
   // ★ MG 风格和弦词汇对齐(POP 折回三和弦纯度等)→ chordType/quality 一并改,propagate 到张力/chord-scale/voicing。
   return linked.map((rc) => {
+    if (rc.preserveType) return rc; // ★ preserveType:保留作者品质(JPOP ii-V 依赖精确 m7b5/m7/7),跳过 POP 折叠
     const a = alignChordTypeToMgStyle(rc.chordType ?? rc.quality, rc.quality, band.style);
     return { ...rc, chordType: a.chordType, quality: a.quality };
   });
