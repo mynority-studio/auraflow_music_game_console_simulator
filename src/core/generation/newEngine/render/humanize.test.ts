@@ -50,14 +50,40 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
   it('★ humanizeTiming:起音偏离网格但有界;clamp ≥0', () => {
     const rng = createRandomContext(2).substream('humanize');
     const max = Math.max(2, Math.round(PPQ * 0.015));
-    const track: TrackIR = { role: 'lead', notes: [note(0), note(480), note(960), note(1440)] };
-    const out = humanizeTiming([track], PPQ, rng)[0];
+    // 反拍(beat 1.5/2.5/3.5)= 全幅抖动,确保"至少一个被抖"
+    const track: TrackIR = { role: 'lead', notes: [note(0), note(720), note(1200), note(1680)] };
+    const grid = [0, 720, 1200, 1680];
+    const out = humanizeTiming([track], PPQ, 4, rng)[0];
     const onsets = out.notes.map((n) => n.startTick as number);
-    expect(onsets.some((t, i) => t !== [0, 480, 960, 1440][i])).toBe(true); // 至少一个被抖
+    expect(onsets.some((t, i) => t !== grid[i])).toBe(true); // 至少一个被抖
     for (let i = 0; i < onsets.length; i++) {
-      expect(Math.abs(onsets[i] - [0, 480, 960, 1440][i])).toBeLessThanOrEqual(max); // 有界
+      expect(Math.abs(onsets[i] - grid[i])).toBeLessThanOrEqual(max); // 有界
       expect(onsets[i]).toBeGreaterThanOrEqual(0); // clamp
     }
+  });
+
+  it('★ 槽位共享:同 tick 的多声部拿同一偏移 → 一起移动(对拍/复调不被打散)', () => {
+    const rng = createRandomContext(4).substream('humanize');
+    // bass 根音 + kick + comp 都落在反拍 tick 720(全幅抖,最容易暴露分散)
+    const bass: TrackIR = { role: 'bass', notes: [note(720, 90, 36)] };
+    const drum: TrackIR = { role: 'drum', notes: [note(720, 100, 36)] };
+    const comp: TrackIR = { role: 'comp', notes: [note(720, 70, 60)] };
+    const out = humanizeTiming([bass, drum, comp], PPQ, 4, rng);
+    const t0 = out[0].notes[0].startTick as number;
+    expect(out[1].notes[0].startTick).toBe(t0); // kick 与 bass 同步移动
+    expect(out[2].notes[0].startTick).toBe(t0); // comp 与 bass 同步移动
+  });
+
+  it('★ 重心锚定:下拍位移幅度 ≪ 反拍(下拍稳、off-beat 才松)', () => {
+    const downTrack: TrackIR = { role: 'lead', notes: Array.from({ length: 16 }, (_, i) => note(i * 1920)) }; // 各小节下拍
+    const offTrack: TrackIR = { role: 'lead', notes: Array.from({ length: 16 }, (_, i) => note(i * 1920 + 720)) }; // 各小节反拍
+    const down = humanizeTiming([downTrack], PPQ, 4, createRandomContext(11).substream('humanize'))[0];
+    const off = humanizeTiming([offTrack], PPQ, 4, createRandomContext(11).substream('humanize'))[0];
+    const dev = (out: TrackIR, grid: (n: number) => number) =>
+      out.notes.reduce((s, n, i) => s + Math.abs((n.startTick as number) - grid(i)), 0) / out.notes.length;
+    const downDev = dev(down, (i) => i * 1920);
+    const offDev = dev(off, (i) => i * 1920 + 720);
+    expect(downDev).toBeLessThan(offDev); // 下拍平均位移 < 反拍 → 重心稳
   });
 
   it('确定性:同 seed 两次 humanize 完全一致', () => {
@@ -65,7 +91,7 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
       const rng = createRandomContext(9).substream('humanize');
       const t: TrackIR = { role: 'comp', notes: [note(0), note(240), note(480)] };
       const v = humanizeVelocity([t], PPQ, 4, rng);
-      return humanizeTiming(v, PPQ, rng);
+      return humanizeTiming(v, PPQ, 4, rng);
     };
     expect(mk()).toEqual(mk());
   });

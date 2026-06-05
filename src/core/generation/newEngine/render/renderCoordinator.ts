@@ -194,7 +194,8 @@ export function renderSongFull(
   });
 
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
-  const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, humanRng);
+  // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。
+  const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng);
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
