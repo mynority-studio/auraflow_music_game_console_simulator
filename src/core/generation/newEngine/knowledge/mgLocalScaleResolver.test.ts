@@ -25,12 +25,13 @@ interface Golden {
 const GOLDEN: Golden[] = [
   { label: 'POP I Cmaj7', ctx: { style: 'POP', key: 'C', mode: 'major' }, chord: chord(48, 'maj7', 'I'),
     name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 4, 7, 11], runLen: 30 },
+  // ⚠️ MG 活跃开发:melodyContractPcsForStyle 上游简化为 declaredChordPcs;contract 已 re-sync 到当前 MG。
   { label: 'LOFI ii Dm7', ctx: { style: 'LOFI', key: 'C', mode: 'major' }, chord: chord(50, 'm7', 'ii'),
-    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 2, 4, 5, 7, 9, 11], runLen: 30 },
+    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 2, 5, 9], runLen: 30 },
   { label: 'JAZZ V G7', ctx: { style: 'JAZZ', key: 'C', mode: 'major' }, chord: chord(55, '7', 'V'),
-    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [1, 2, 3, 4, 5, 7, 8, 9, 10, 11], runLen: 30 },
+    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [2, 5, 7, 11], runLen: 30 },
   { label: 'RNB vi Am9', ctx: { style: 'RNB', key: 'C', mode: 'major' }, chord: chord(57, 'm9', 'vi'),
-    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 2, 4, 6, 7, 9, 11], runLen: 30 },
+    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 4, 7, 9, 11], runLen: 30 },
 ];
 
 describe('knowledge/mgLocalScaleResolver · MG golden (Loop 6 依赖层)', () => {

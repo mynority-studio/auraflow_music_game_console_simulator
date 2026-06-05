@@ -1,8 +1,7 @@
 // ============================================================
-// newEngine · knowledge · MgLocalScaleResolver(MG strict 移植 Loop 6)
+// newEngine · knowledge · MgLocalScaleResolver(MG strict 移植 Loop 6 · re-sync)
 // Provenance: ../melodygenerative/src/lib/localScaleResolver.ts 逐字节复制(cp + 改 import)。
-// 改动:StyleName + musicTheory 符号 import 均改指 ./mgMusicTheory。
-// 局部音阶决策树(resolveLocalScale)+ melodyContractPcsForStyle/buildRunScale —— melody shaper 消费。
+// ⚠️ MG 活跃开发中:此文件 melodyContractPcsForStyle 上游有简化,已 re-sync 到当前 MG。
 // ============================================================
 
 import type { StyleName } from './mgMusicTheory';
@@ -10,7 +9,6 @@ import {
   CHORD_TYPES,
   MELODY_RANGE,
   SCALE_TYPES,
-  computeGlobalContract,
   modeToKeyFamily,
   noteToMidi,
   normalizeChordType,
@@ -75,14 +73,7 @@ export function melodyContractPcsForStyle(
   rootPc: number,
 ): Set<number> {
   const canonicalType = normalizeChordType(chord.type) ?? chord.type;
-  if (style === 'LOFI'
-    && chord.borrowedSource === 'modal_interchange'
-    && (/^bII\b/.test(chord.roman ?? '') || /Phrygian|bII/i.test(chord.borrowedFrom ?? ''))) {
-    return declaredChordPcs(canonicalType, rootPc);
-  }
-  if (style !== 'POP') return computeGlobalContract(canonicalType, rootPc).pcs;
-  const literal = CHORD_TYPES[canonicalType] ?? CHORD_TYPES.maj;
-  return new Set(literal.map(iv => pcOf(rootPc + iv)));
+  return declaredChordPcs(canonicalType, rootPc);
 }
 
 export function resolveMelodyAdmissionContext(
