@@ -26,6 +26,27 @@
 
 ---
 
+## 待用户决断(架构项 · ⚠️ 不进 /loop 自动执行)
+
+> 这些是需要**用户拍板方向**的架构决策,**不属于「执行顺序」清单,/loop 不得自动挑选**。
+
+### D-1 · MG 旋律 ↔ Motif 子系统:再耦合 or 正式退役(2026-06-06 提出)
+
+**背景**:MG 旋律迁移(decision C 全量接收 MG)后,旋律改走 MG 链(`renderMgMelody`,读 HarmonicPlan 不读 MotifStore)。架构原 **Motif/撞音消解/重跑环子系统**(`newEngine_architecture.md` Part 7「audit 命根」)在**旋律侧被有意旁路**:
+- Prepass 仍跑、MotifStore 仍建,但旋律不消费(`renderCoordinator` `void anchorPlan/motifStore`)= **死重**(每首跑、输出没人用)。
+- retry 旋律杠杆(`candidateSwap`/`restatementOverride`)被 `void`,只 `voicingSafer`(comp 瘦身)活 = **旋律撞音 retry 改不动**(只能瘦 comp),安全押在 MG `shapeMelodyHarmony` 上游预防。
+
+承重不变量全 HOLD(权威链/和声不可变/accompaniment-first/确定性/只读 Auditor/render-only retry),偏离只在这一个支柱。文档已回写对齐现状(顶部「现状对齐」+ Part 1/5/7 内联 ⚠️)。
+
+**三条候选路线(择一,用户定)**:
+- **(a) 维持现状 + 只回写文档**(已做):承认 MG 链是旋律真理源,Motif 子系统作原意参考留存。**最省**。代价:死重 + 旋律 retry 网薄(押 shapeMelodyHarmony 够稳)。
+- **(b) 再耦合**:让 MG 旋律消费 Prepass 候选池 / 接回 `candidateSwap`,把 C 重跑环的旋律杠杆接回。**最贵**,恢复架构原意的"出错可纠正"。需设计 MG token 链与 MotifBindingId 候选池的映射。
+- **(c) 正式退役**:删 Prepass/MotifStore/retry-locator 的旋律分支 + `void` 死字段,减死重。**中等**。前置核查:retry locator 的 `voicingSafer` 是否依赖 motifStore(若依赖需解耦)。
+
+**验收(等方向定后再写)**:(b) 注入旋律撞音 → retry 用候选切换修好;(c) 删除后 304+ 测试仍绿、生成 bit 不变(死码删除应零行为变化)。
+
+---
+
 ## 执行顺序(勾选清单 = 循环的下一项来源)
 
 **Tier A · 听感立竿见影**
