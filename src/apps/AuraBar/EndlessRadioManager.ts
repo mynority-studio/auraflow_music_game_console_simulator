@@ -1,23 +1,31 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
-import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
-// MelodyEngine 已删(2026-05-24)
-import { runPipeline } from '../../core/generation/pipeline';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
-import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
-import { BandSelectionStore } from '../../state/BandSelectionStore';
+// ★ newEngine 接入(2026-06-06):AuraBar 双击 bar → newEngine 随机 seed → 播放(无限电台)。
+import { traceGeneration } from '../../core/generation/newEngine/generation';
+import { playMusicalIR, stopNewEngine } from '../../core/generation/newEngine/sandbox/audioOut';
+import type { MusicalIR } from '../../core/generation/newEngine/ir/MusicalIR';
 
 export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING' | 'PREPARING_JAM' | 'JAMMING_DRUMS' | 'JAMMING_MELODY';
 
+// bar 主题(旧 StyleId)→ newEngine styleHint 映射。多风格 bar 随机选其一。
+const STYLE_HINT_BY_ID: Partial<Record<StyleId, string>> = {
+  [StyleId.ModernPop]: 'pop',
+  [StyleId.ChillJazz]: 'jazz',
+  [StyleId.NeoSoul]: 'rnb',
+};
+
 export class EndlessRadioManager {
   private state: AppState = 'IDLE';
-  private history: { track: GeneratedTrack, context: MusicContext, style: StyleConfig }[] = [];
+  // history 存 newEngine 产物(MusicalIR + bpm + styleHint),供 prev/next 导航。
+  private history: { ir: MusicalIR, bpm: number, styleHint: string, styleName: string }[] = [];
   private historyIndex: number = -1;
   private generationId: number = 0;
-  
-  public currentTrack?: GeneratedTrack;
+
+  public currentStyleHint?: string;
+  public currentTrack?: GeneratedTrack;  // 旧引擎 jam 用(本期 jam 禁用 → 常 undefined)
   public currentStyle?: StyleConfig;
 
   private stateChangeCallback?: (state: AppState) => void;
@@ -86,6 +94,7 @@ export class EndlessRadioManager {
     AudioEngine.muteChannel(9, false);
     AudioEngine.muteChannel(0, false);
     AudioEngine.stop();
+    stopNewEngine(); // 停 newEngine 的 globalMidiScheduler
     this.setState('IDLE');
   }
 
@@ -404,21 +413,19 @@ export class EndlessRadioManager {
       }
   }
 
-  private async playTrack(track: GeneratedTrack, context: MusicContext, style: StyleConfig, genId: number) {
-    this.currentTrack = track;
-    this.currentStyle = style;
-
+  private async playNewEngine(ir: MusicalIR, bpm: number, styleHint: string, styleName: string, genId: number) {
+    this.currentStyleHint = styleHint;
     if (this.onStyleChange) {
-      this.onStyleChange(style.name);
+      this.onStyleChange(styleName);
     }
 
-    await AudioEngine.playSong(track, style.id, context);
-    
+    await playMusicalIR(ir, bpm, styleHint);
+
     if (genId !== this.generationId) return;
-    
+
     this.setState('PLAYING');
 
-    // Schedule next song using MidiScheduler's onTrackEnd
+    // 一首播完 → 自动续下一首(无限电台);复用 globalMidiScheduler.onTrackEnd。
     globalMidiScheduler.onTrackEnd(() => {
       if (genId === this.generationId) {
         this.playNext();
@@ -426,54 +433,44 @@ export class EndlessRadioManager {
     });
   }
 
+  // bar 的 styleIds → newEngine styleHint(多风格随机选一;空则回退 pop)。
+  private resolveStyleHints(): string[] {
+    const hints = (this.allowedStyleIds ?? [])
+      .map((id) => STYLE_HINT_BY_ID[id])
+      .filter((h): h is string => !!h);
+    return hints.length > 0 ? hints : ['pop'];
+  }
+
   public triggerGeneration = async () => {
     const currentGenId = ++this.generationId;
 
     AudioEngine.stop();
+    stopNewEngine();
     this.setState('GENERATING');
 
     try {
       // Simulate slight delay for UI to catch up
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       if (currentGenId !== this.generationId) return;
 
-      // §1.4 step 0: 每次生成前重新播种
-      // Date.now() 提供毫秒级种子，Math.random()*1e6 补充额外熵（防止浏览器降低 Date 精度）
+      // 随机 seed:毫秒 ^ 随机熵 → newEngine 内部由该 seed 驱动确定性 RNG(同 seed 同曲,可复现)。
       const seed = (Date.now() ^ Math.floor(Math.random() * 1000000)) >>> 0;
-      PRNGManager.setSeed(seed);
-      // ACVE §5.1 — 入口快照点 A
-      PRNGManager.recordSnapshot('A');
-      console.log(`[Radio] New seed: ${seed}`);
+      // 按 bar 主题映射 styleHint(ModernPop→pop / ChillJazz→jazz / NeoSoul→rnb),多风格 bar 随机选一。
+      const hints = this.resolveStyleHints();
+      const styleHint = hints[Math.floor(Math.random() * hints.length)];
+      console.log(`[Radio/newEngine] seed=${seed} style=${styleHint}`);
 
-      // 从所有已注册的风格中随机选择（PRNG 驱动，确定性）
-      const allStyleIds = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
-      const pool = (this.allowedStyleIds && this.allowedStyleIds.length > 0) ? this.allowedStyleIds : allStyleIds;
-      const randomStyleId = pool[Math.floor(PRNGManager.next() * pool.length)];
-
-      // 直接调 runPipeline + 透传 BandSelectionStore committed 状态(Q+H Apply 后的乐队)
-      // MelodyEngine.generateFullSong 是 thin wrapper 不接 forcedBand,跳过用 runPipeline 直调
-      const rawTrack = runPipeline({
-        forcedStyleId: randomStyleId,
-        forcedBand: BandSelectionStore.getBand(),
-        forcedGmPrograms: BandSelectionStore.getInstruments(),
-      });
-
-      console.log('[Radio] forcedBand=', JSON.stringify(BandSelectionStore.getBand()),
-                  ' forcedGmPrograms=', JSON.stringify(BandSelectionStore.getInstruments()));
-
-      const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
-      const randomStyle = StyleRegistry[randomStyleId] || AcgStyleConfig;
-      
+      const trace = traceGeneration({ seed, styleHint, mood: 'calm-build', targetDuration: 120 });
       if (currentGenId !== this.generationId) return;
 
+      const styleName = styleHint.toUpperCase();
       this.history = this.history.slice(0, this.historyIndex + 1);
-      this.history.push({ track: rawTrack.track, context: rawTrack.context, style: randomStyle });
+      this.history.push({ ir: trace.ir, bpm: trace.bpm, styleHint, styleName });
       this.historyIndex++;
 
-      await this.playTrack(rawTrack.track, rawTrack.context, randomStyle, currentGenId);
-
+      await this.playNewEngine(trace.ir, trace.bpm, styleHint, styleName, currentGenId);
     } catch (error) {
-      console.error("Generation failed:", error);
+      console.error('newEngine generation failed:', error);
       if (currentGenId === this.generationId) {
         this.setState('IDLE');
       }
@@ -484,13 +481,14 @@ export class EndlessRadioManager {
     if (this.historyIndex < this.history.length - 1) {
       const currentGenId = ++this.generationId;
       AudioEngine.stop();
+      stopNewEngine();
       this.setState('GENERATING');
-      
+
       this.historyIndex++;
-      const { track, context, style } = this.history[this.historyIndex];
-      
-      await this.playTrack(track, context, style, currentGenId);
+      const h = this.history[this.historyIndex];
+      await this.playNewEngine(h.ir, h.bpm, h.styleHint, h.styleName, currentGenId);
     } else {
+      // 无限电台:历史到头 → 生成新随机 seed
       this.triggerGeneration();
     }
   }
@@ -499,12 +497,12 @@ export class EndlessRadioManager {
     if (this.historyIndex > 0) {
       const currentGenId = ++this.generationId;
       AudioEngine.stop();
-      this.setState('GENERATING'); 
-      
+      stopNewEngine();
+      this.setState('GENERATING');
+
       this.historyIndex--;
-      const { track, context, style } = this.history[this.historyIndex];
-      
-      await this.playTrack(track, context, style, currentGenId);
+      const h = this.history[this.historyIndex];
+      await this.playNewEngine(h.ir, h.bpm, h.styleHint, h.styleName, currentGenId);
     }
   }
 }
