@@ -40,10 +40,20 @@
 
 **三条候选路线(择一,用户定)**:
 - **(a) 维持现状 + 只回写文档**(已做):承认 MG 链是旋律真理源,Motif 子系统作原意参考留存。**最省**。代价:死重 + 旋律 retry 网薄(押 shapeMelodyHarmony 够稳)。
-- **(b) 再耦合**:让 MG 旋律消费 Prepass 候选池 / 接回 `candidateSwap`,把 C 重跑环的旋律杠杆接回。**最贵**,恢复架构原意的"出错可纠正"。需设计 MG token 链与 MotifBindingId 候选池的映射。
-- **(c) 正式退役**:删 Prepass/MotifStore/retry-locator 的旋律分支 + `void` 死字段,减死重。**中等**。前置核查:retry locator 的 `voicingSafer` 是否依赖 motifStore(若依赖需解耦)。
+- **(b) 再耦合**:让 MG 旋律消费 Prepass 候选池 / 接回 `candidateSwap`,把 C 重跑环的旋律杠杆接回。**最贵**(范式桥接:Motif 实例 ↔ MG token 流;需给 MG 造 per-乐句变体池供切换)。恢复"出错可纠正"。
+- **(c) 正式退役**:删 Prepass/MotifStore/locator 旋律分支 + escalateOverride rung2/rung3 + RetryContext 的 candidateSwap/restatementOverride + 旧 renderMelody + void 死行;locator 瘦成只 spanAtTick。保留 rung1 voicingSafer。**低-中**。
 
-**验收(等方向定后再写)**:(b) 注入旋律撞音 → retry 用候选切换修好;(c) 删除后 304+ 测试仍绿、生成 bit 不变(死码删除应零行为变化)。
+**已核实的关键事实(2026-06-06,降低 (c) 成本/风险)**:
+- ✅ `voicingSafer`(rung1)只依赖 `HarmonicPlan.chordTimeline + Timebase`(`retryMapping.spanAtTick`),**不依赖 motifStore** → (c) 删 Motif 不动唯一活着的 retry 杠杆。
+- ✅ `runPrepass` 用 `rng.substream('prepass')`,而 substream 按名纯派生、不扰动其它子流(`randomContext.ts`)→ **删 Prepass 生成结果 bit 不变**(原"保 rng 流"注释过度保守)。
+
+**实测数据(50 seed × 4 风格 = 200 次,2026-06-06)**:
+- 首次渲染 **lead error/fatal = 1/200(0.5%)**;那 1 次终态也收敛(终残留 lead error=0)。
+- lead warning 104(非阻塞,不触发 retry)= MG shapeMelodyHarmony 上游预防够稳。
+- 真正干活的 retry 是 rung1 voicingSafer(10 个 comp/bass/pad error 全 lofi;1 首靠它收敛、1 首 budget 耗尽 failed)——(c) 保留。
+- → **数据支持 (c) 退役**:旋律候选机器触发率 0.5% 且非决定性 = 纯死重;(b) 为 0.5% 场景做范式桥接不划算。
+
+**验收(等方向定后再写)**:(b) 注入旋律撞音 → retry 用候选切换修好;(c) 删除后 844+ 测试仍绿、200 seed 生成 bit 不变(死码删除=零行为变化)、rung1 voicingSafer 实战仍生效。
 
 ---
 
