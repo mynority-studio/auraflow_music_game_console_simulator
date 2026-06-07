@@ -1,14 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { buildRetryLocator, findingToOverride, type RetryLocator } from './retryMapping';
+import { buildRetryLocator, findingToOverride, escalateOverride } from './retryMapping';
 import { runGenerationControl, type RenderFn } from './GenerationController';
 import { nextRetryContext, DEFAULT_BUDGET } from './RetryPolicy';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
-import { runPrepass } from '../render/motifAnchorPrepass';
 import { freezeMusicalIR } from '../ir/MusicalIR';
 import { beats, createRandomContext, createTimebase, pc } from '../foundation';
 import type { AuditFinding } from '../ir/AuditReport';
+import type { RetryContext } from './RetryContext';
+
+// ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):locator 瘦成只 spanAtTick,
+//   撞音消解阶梯收为 voicing→fallback(无 binding/candidateSwap/降锁)。
 
 function realPieces(seed = 5) {
   const seedRng = createRandomContext(seed);
@@ -19,89 +22,72 @@ function realPieces(seed = 5) {
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
-  const { anchorPlan, motifStore } = runPrepass(band, arrangement, harmonic, seedRng);
-  const locator = buildRetryLocator(arrangement, anchorPlan, motifStore, harmonic, timebase);
-  return { arrangement, harmonic, timebase, anchorPlan, motifStore, locator };
+  const locator = buildRetryLocator(harmonic, timebase);
+  return { harmonic, timebase, locator };
 }
 
-describe('generation · finding→精确返回点 (5.1)', () => {
-  it('buildRetryLocator:lead tick → 命中 binding;非 lead → undefined;span 命中 c0', () => {
-    const { harmonic, timebase, anchorPlan, locator } = realPieces();
-    // 第一个 chord span 起点 tick 落在第一个 binding 的 phrase 内
-    const firstChordTick = timebase.beatToTick(harmonic.chordTimeline[0].startBeat) as number;
-    const binding = locator.bindingAtTick('lead', firstChordTick);
-    expect(binding).toBeDefined();
-    expect(anchorPlan.entries.some((e) => e.bindingId === binding)).toBe(true);
-    expect(locator.bindingAtTick('comp', firstChordTick)).toBeUndefined(); // 非 lead 不映射 binding
-    expect(locator.spanAtTick(firstChordTick)).toBe(harmonic.chordTimeline[0].id);
+describe('generation · finding→精确返回点 (5.1,退役 Motif 后)', () => {
+  it('buildRetryLocator.spanAtTick:tick → 命中 ChordSpan;越界 → undefined', () => {
+    const { harmonic, timebase, locator } = realPieces();
+    const firstTick = timebase.beatToTick(harmonic.chordTimeline[0].startBeat) as number;
+    expect(locator.spanAtTick(firstTick)).toBe(harmonic.chordTimeline[0].id);
+    expect(locator.spanAtTick(9_999_999)).toBeUndefined();
   });
 
-  it('alternateCandidate:池>1 → 返回 ≠ 当前的候选;命中后再问(swap 已占)→ 继续轮换', () => {
-    const { motifStore, locator } = realPieces();
-    const multi = Object.values(motifStore.bindingCandidates).find((p) => p.candidateOrder.length > 1);
-    if (!multi) return; // 该 seed 无多候选池 → 跳过(其它断言已覆盖)
-    const alt = locator.alternateCandidate(multi.bindingId, {});
-    expect(alt).toBeDefined();
-    expect(alt).not.toBe(multi.selectedCandidateId);
-    expect(multi.candidateOrder).toContain(alt); // 必在冻结池内(不越界)
-  });
-
-  it('findingToOverride:comp 轨 finding → voicingSafer[span];lead 无定位 → 空 patch', () => {
+  it('findingToOverride:任意轨 finding 命中 span → voicingSafer[span];越界 → 空', () => {
     const { harmonic, timebase, locator } = realPieces();
     const tick = timebase.beatToTick(harmonic.chordTimeline[1].startBeat) as number;
-    const compFinding: AuditFinding = {
-      severity: 'error', location: { trackRole: 'comp', startTick: tick },
-      ruleId: 'x', reason: 'x', suggestedReturnPoint: 'rewind-accompaniment',
-    };
-    expect(findingToOverride(compFinding, locator, {}).voicingSafer).toEqual({ [harmonic.chordTimeline[1].id]: true });
-    // lead 轨但 tick 越界(超出全曲)→ 无 binding → 空
-    const oob: AuditFinding = {
-      severity: 'error', location: { trackRole: 'lead', startTick: 9_999_999 },
-      ruleId: 'x', reason: 'x', suggestedReturnPoint: 'rewind-melody',
-    };
-    expect(findingToOverride(oob, locator, {})).toEqual({});
+    for (const role of ['comp', 'lead', 'bass', 'pad']) {
+      const f: AuditFinding = { severity: 'error', location: { trackRole: role, startTick: tick }, ruleId: 'x', reason: 'x', suggestedReturnPoint: 'rewind-accompaniment' };
+      expect(findingToOverride(f, locator).voicingSafer).toEqual({ [harmonic.chordTimeline[1].id]: true });
+    }
+    const oob: AuditFinding = { severity: 'error', location: { trackRole: 'lead', startTick: 9_999_999 }, ruleId: 'x', reason: 'x', suggestedReturnPoint: 'rewind-melody' };
+    expect(findingToOverride(oob, locator)).toEqual({});
   });
 
-  it('★ 注入 lead 撞音(无 span)→ 阶梯首个适用 rung=降锁(restatementOverride)→ 2 attempts 修好', () => {
+  it('★ 阶梯 2 级:span 未瘦 → rung1 voicing;span 已瘦 → rung4 fallback(单调前进)', () => {
+    const { harmonic, timebase, locator } = realPieces();
+    const span = harmonic.chordTimeline[0].id;
+    const tick = timebase.beatToTick(harmonic.chordTimeline[0].startBeat) as number;
+    const finding: AuditFinding = { severity: 'error', location: { trackRole: 'lead', startTick: tick }, ruleId: 'avoid', reason: 'hard', suggestedReturnPoint: 'rewind-melody' };
+
+    const e1 = escalateOverride(finding, locator, undefined);
+    expect(e1.rung).toBe('voicing');
+    expect(e1.returnPoint).toBe('rewind-accompaniment');
+    expect(e1.patch.voicingSafer).toEqual({ [span]: true });
+
+    const prev = { voicingSafer: { [span]: true } } as unknown as RetryContext;
+    const e2 = escalateOverride(finding, locator, prev);
+    expect(e2.rung).toBe('fallback');
+    expect(e2.returnPoint).toBe('render-fallback');
+    expect(e2.patch).toEqual({}); // fallback 无新 override,靠 advance melody 子流重掷
+  });
+
+  it('★ 注入撞音 → rung1 voicingSafer 修好 → 2 attempts pass', () => {
     const COLLIDE_TICK = 1920;
-    const BIND = 'B-hook';
-    const fakeLocator: RetryLocator = {
-      bindingAtTick: (role, tick) => (role === 'lead' && tick === COLLIDE_TICK ? BIND : undefined),
-      alternateCandidate: () => 'B-hook#alt',
-      spanAtTick: () => undefined, // 无 span → 跳过 voicing rung,降锁为首个适用 rung
-    };
+    const SPAN = 'S-collide';
+    const fakeLocator = { spanAtTick: (tick: number) => (tick === COLLIDE_TICK ? SPAN : undefined) };
     const tb = createTimebase({ meter: { numerator: 4, denominator: 4 }, tempoMap: [{ atBeat: beats(0), bpm: 120 }] });
     const ir = freezeMusicalIR({ tracks: [{ role: 'lead', notes: [] }], timebase: tb, durationTicks: tb.beatToTick(beats(4)) });
 
-    let appliedRestate: Record<string, number> | undefined;
+    let appliedVoicing: Record<string, true> | undefined;
     const render: RenderFn = (retry) => {
-      if (retry) appliedRestate = { ...retry.restatementOverride };
-      const fixed = retry?.restatementOverride?.[BIND] !== undefined; // 降锁即修好
+      if (retry) appliedVoicing = { ...retry.voicingSafer };
+      const fixed = retry?.voicingSafer?.[SPAN] !== undefined; // 瘦该 span 即修好
       return {
         ir,
-        audit: fixed
-          ? { findings: [] }
-          : {
-              findings: [{
-                severity: 'error', location: { trackRole: 'lead', startTick: COLLIDE_TICK },
-                ruleId: 'avoid-exposed', reason: 'injected', suggestedReturnPoint: 'rewind-melody',
-              }],
-            },
+        audit: fixed ? { findings: [] } : { findings: [{ severity: 'error', location: { trackRole: 'lead', startTick: COLLIDE_TICK }, ruleId: 'avoid-exposed', reason: 'injected', suggestedReturnPoint: 'rewind-melody' }] },
       };
     };
-
     const result = runGenerationControl(render, createRandomContext(1), DEFAULT_BUDGET, fakeLocator);
     expect(result.status).toBe('pass');
-    expect(result.attempts).toBe(2); // 首个适用 rung 即收敛
-    expect(appliedRestate?.[BIND]).toBe(0.3); // ★ 降锁到弱档(精确定位到该 binding)
+    expect(result.attempts).toBe(2);
+    expect(appliedVoicing?.[SPAN]).toBe(true);
   });
 
-  it('无 locator → 退回纯 rng 推进(candidateSwap 不动,仍收敛兜底)', () => {
-    const finding: AuditFinding = {
-      severity: 'error', location: { trackRole: 'lead', startTick: 0 },
-      ruleId: 'x', reason: 'x', suggestedReturnPoint: 'rewind-melody',
-    };
+  it('无 locator → 退回纯 rng 推进(voicingSafer 不填,仍收敛兜底)', () => {
+    const finding: AuditFinding = { severity: 'error', location: { trackRole: 'lead', startTick: 0 }, ruleId: 'x', reason: 'x', suggestedReturnPoint: 'rewind-melody' };
     const ctx = nextRetryContext(undefined, { findings: [finding] }, createRandomContext(2));
-    expect(ctx.candidateSwap).toEqual({}); // 无 locator → 不填 override
+    expect(ctx.voicingSafer).toEqual({});
   });
 });

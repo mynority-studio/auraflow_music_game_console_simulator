@@ -6,7 +6,8 @@ describe('generation/traceGeneration', () => {
   const text = t.lines.join('\n');
 
   it('每层节点都有日志行', () => {
-    for (const marker of ['REQUEST', 'BAND', 'ARRANGER', 'INSTRUMENT', 'HARMONY', 'PREPASS', 'RENDER', 'AUDITOR']) {
+    // ★ 2026-06-07:退役 Motif 旋律子系统 → 无 PREPASS 段(旋律=MG 链)
+    for (const marker of ['REQUEST', 'BAND', 'ARRANGER', 'INSTRUMENT', 'HARMONY', 'RENDER', 'AUDITOR']) {
       expect(text).toContain(marker);
     }
   });

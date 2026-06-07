@@ -8,7 +8,7 @@
 import type { RandomContext, StageName } from '../foundation';
 import type { AuditReport, ReturnPoint } from '../ir/AuditReport';
 import type { RetryContext } from './RetryContext';
-import { escalateOverride, type RetryLocator } from './retryMapping';
+import { escalateOverride, type OverridePatch, type RetryLocator } from './retryMapping';
 
 export interface RetryBudget {
   perBinding: number;
@@ -27,8 +27,8 @@ const RETURN_STAGE: Record<ReturnPoint, StageName> = {
 
 /**
  * 由上次 context + 本轮 AuditReport 造出【已变化】的 RetryContext。
- * 有 locator → 撞音消解阶梯逐级升级(voicing→降锁→换hook→fallback,见 escalateOverride),
- *   returnPoint 跟当前 rung 走(voicing 回卷 accompaniment / 降锁·换hook 回卷 melody / fallback)。
+ * 有 locator → 撞音消解阶梯逐级升级(voicing→fallback,见 escalateOverride),
+ *   returnPoint 跟当前 rung 走(voicing 回卷 accompaniment / fallback 回卷 + 重掷 melody 子流)。
  * 无 locator(或无 finding)→ 退回 finding.suggestedReturnPoint + 纯 rng 推进(兜底收敛)。
  */
 export function nextRetryContext(
@@ -39,7 +39,7 @@ export function nextRetryContext(
 ): RetryContext {
   const finding = audit.findings[0];
   let returnPoint: ReturnPoint = finding?.suggestedReturnPoint ?? 'rewind-melody';
-  let patch: Partial<Pick<RetryContext, 'candidateSwap' | 'voicingSafer' | 'restatementOverride'>> = {};
+  let patch: OverridePatch = {};
   if (finding && locator) {
     const esc = escalateOverride(finding, locator, prev);
     patch = esc.patch;
@@ -49,13 +49,8 @@ export function nextRetryContext(
   const baseRng = prev?.rng ?? seedRng;
 
   return {
-    rng: baseRng.advance(stage), // ★ 每次必变:推进对应 stage 子流
+    rng: baseRng.advance(stage), // ★ 每次必变:推进对应 stage 子流(fallback→melody 子流=重掷旋律)
     returnPoint,
-    candidateIndex: prev?.candidateIndex ?? {},
-    restatementOverride: { ...(prev?.restatementOverride ?? {}), ...(patch.restatementOverride ?? {}) }, // rung2 降锁
-    candidateSwap: { ...(prev?.candidateSwap ?? {}), ...(patch.candidateSwap ?? {}) }, // rung3 换 hook
-    tailRegenerate: prev?.tailRegenerate ?? {},
     voicingSafer: { ...(prev?.voicingSafer ?? {}), ...(patch.voicingSafer ?? {}) }, // rung1 voicing 支撑
-    accompDensityReduction: prev?.accompDensityReduction ?? {},
   };
 }

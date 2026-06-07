@@ -13,11 +13,9 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { compPattern } from '../knowledge/grooves';
-import { pickGrammarName } from '../knowledge/grammarLibrary';
 import { gmName } from '../knowledge/instruments';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
-import { runPrepass } from '../render/motifAnchorPrepass';
 import { renderSongFull } from '../render/renderCoordinator';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
@@ -136,27 +134,16 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     log(`   转调 ${sid}: ${PCN[m.fromKey]}→${PCN[m.toKey]}(${m.label} ${m.semitones > 0 ? '+' : ''}${m.semitones}半音,进行整体移调 + 旋律随升)`);
   }
 
-  // —— PREPASS ——
+  // —— RENDER + AUDIT(走真实控制环:retry/budget/fallback,与 generateSong 同路径)——
+  // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律=MG 链,不再跑 Prepass/MotifStore。
   const timebase = createTimebase({
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
-  const { anchorPlan, motifStore } = runPrepass(band, arrangement, harmonic, seedRng);
-  log(`■ PREPASS    动机 ${Object.keys(motifStore.motifs).length} 个(种子驱动形状):`);
-  for (const [id, m] of Object.entries(motifStore.motifs)) {
-    log(`   ${id}: 节奏[${m.rhythmCell.durations.join(',')}] 音级[${m.noteSlots.map((s) => s.scaleDegree).join(',')}] 源=${m.source} grammar=${pickGrammarName(id)}`);
-  }
-  for (const e of anchorPlan.entries) {
-    if (e.commonSafeToneScope === 'global' || e.downgradeReason) {
-      log(`   ${e.phraseId}: scope=${e.commonSafeToneScope} 安全音[${e.commonSafeToneSet.join(',')}] 强度 ${e.requestedRestatementStrength}→${e.effectiveRestatementStrength}${e.downgradeReason ? ' (' + e.downgradeReason + ')' : ''}`);
-    }
-  }
-
-  // —— RENDER + AUDIT(走真实控制环:retry/budget/fallback,与 generateSong 同路径)——
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { candidateSwap: retry.candidateSwap, restatementOverride: retry.restatementOverride, voicingSafer: retry.voicingSafer });
-  const locator = buildRetryLocator(arrangement, anchorPlan, motifStore, harmonic, timebase);
+      retry && { voicingSafer: retry.voicingSafer });
+  const locator = buildRetryLocator(harmonic, timebase);
   const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, locator);
   const audit = result.report;
   // failed 时控制环不返回 IR → 补渲一次基础版供面板展示/试听(并明确标 failed)

@@ -30,7 +30,14 @@
 
 > 这些是需要**用户拍板方向**的架构决策,**不属于「执行顺序」清单,/loop 不得自动挑选**。
 
-### D-1 · MG 旋律 ↔ Motif 子系统:再耦合 or 正式退役(2026-06-06 提出)
+### D-1 · MG 旋律 ↔ Motif 子系统:再耦合 or 正式退役 — ✅ **已执行 option (c) 退役(2026-06-07)**
+
+> **用户拍板 (c) 退役。** 删 `motifAnchorPrepass`/`MotifStore`/`Motif`/`MelodyAnchorPlan`/`occurrenceResolver`/
+> 旧 `melodyRenderer`(6 源 + 7 测试)+ escalateOverride rung2/rung3 + RetryContext/RenderOverlay 的
+> `candidateSwap`/`restatementOverride`/`candidateIndex`/`tailRegenerate`/`accompDensityReduction` 字段;
+> locator 瘦成只 `spanAtTick`,撞音阶梯收为 **rung1 voicingSafer → rung4 fallback(重掷 melody 子流)**。
+> **验收全过**:tsc/build 净;809 vitest 绿;**200 seed×风格生成逐字节完全一致(零行为变化)**;rung1
+> voicingSafer 实战仍生效(lofi comp error 仍被处理)。架构文档「现状对齐」横幅 + Part 1/5/7 已同步为"已删"。
 
 **背景**:MG 旋律迁移(decision C 全量接收 MG)后,旋律改走 MG 链(`renderMgMelody`,读 HarmonicPlan 不读 MotifStore)。架构原 **Motif/撞音消解/重跑环子系统**(`newEngine_architecture.md` Part 7「audit 命根」)在**旋律侧被有意旁路**:
 - Prepass 仍跑、MotifStore 仍建,但旋律不消费(`renderCoordinator` `void anchorPlan/motifStore`)= **死重**(每首跑、输出没人用)。

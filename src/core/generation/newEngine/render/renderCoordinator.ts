@@ -18,8 +18,6 @@ import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
 import { buildTextureSchedule } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
-import { runPrepass } from './motifAnchorPrepass';
-import { renderMelody } from './melodyRenderer';
 import { renderMgMelody } from './mgLeadRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
@@ -29,7 +27,6 @@ import { decidePadComp, type PadCompDecision } from './padCompPolicy';
 import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { humanizeVelocity, humanizeTiming } from './humanize';
-import type { CandidateSwap } from './MotifStore';
 import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
@@ -142,8 +139,8 @@ export function renderSongFull(
   rng: RandomContext,
   overlay?: RenderOverlay,
 ): RenderResult {
-  const { anchorPlan, motifStore } = runPrepass(band, arrangement, plan, rng);
-  const candidateSwap = overlay?.candidateSwap;
+  // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律走 MG 链,不再跑 Prepass/MotifStore/
+  //   candidateSwap。撞音消解只剩 voicingSafer(comp 瘦身)+ 兜底重掷(advance melody 子流)。
   const voicingSaferSpans = overlay?.voicingSafer ? new Set(Object.keys(overlay.voicingSafer)) : undefined;
 
   // 让位上下文:active 织体段 + 主 hook 锚点拍(melody-aware accompaniment-first)
@@ -214,10 +211,8 @@ export function renderSongFull(
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: reservedReg.lowMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan }));
   if (padTrack) tracks.push(padTrack);
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule }));
-  // ★ Loop 7 coordinator-swap:lead 主链改为 MG 旋律链(decision C/B/1)。
-  //   旧 renderMelody 保留(其单测仍跑),不再被主链调用。多轨层(gateByDensity/ducking/CC7)原样包住。
-  //   anchorPlan/motifStore/candidateSwap 由 prepass 算出但 lead 不再消费(prepass 保留不动 rng 流)。
-  void renderMelody; void anchorPlan; void motifStore; void candidateSwap;
+  // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
+  //   多轨层(gateByDensity/ducking/CC7)原样包住。
   tracks.push(renderMgMelody(plan, band, timebase, rng.substream('melody'))); // lead 必有(MG 链)
 
   // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。

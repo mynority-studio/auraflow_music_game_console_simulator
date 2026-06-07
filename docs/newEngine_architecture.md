@@ -7,21 +7,22 @@
 
 ---
 
-## ⚠️ 现状对齐(2026-06-06,MG 旋律迁移后)
+## ⚠️ 现状对齐(2026-06-06 起,2026-06-07 更新:Motif 子系统已退役)
 
-> 本文是 **2026-06-03 的架构原意**。之后的 **MG 旋律引擎迁移**(见 `docs/mg_melody_strict_newengine_migration_directive.md`,用户 decision C「全量接收 MG 旋律」)**有意替换了旋律子系统**,代码因此与本文偏离。下列偏离是**已知、有意**的,不是事故性腐烂。**承重不变量(权威链 / HarmonicPlan 深不可变 / accompaniment-first 单路径 / 确定性 / 只读 Auditor / render-only retry)全部仍 HOLD**;偏离集中在 **Motif/旋律这一个支柱**。再耦合或正式退役由 backlog 决断项(`docs/newEngine_backlog.md` 的「MG 旋律 ↔ Motif 子系统」)定夺。
+> 本文是 **2026-06-03 的架构原意**。之后的 **MG 旋律引擎迁移**(decision C「全量接收 MG 旋律」)替换了旋律子系统;**2026-06-07 用户拍板 backlog D-1 option (c),正式退役 Motif/旋律候选/重跑环旋律杠杆**(实测触发率 0.5% 且非决定性 = 死重)。代码因此与本文 Part 2.7/6/7/附录 D 偏离,**均为已知、有意**。**承重不变量(权威链 / HarmonicPlan 深不可变 / accompaniment-first 单路径 / 确定性 / 只读 Auditor / render-only retry)全部仍 HOLD**;偏离集中在 **Motif/旋律这一个支柱**,且 200 seed 退役前后生成逐字节一致。
 
 ```text
 代码现状 ≠ 本文原意(逐条,详见 Part 1 / Part 5 / Part 7 内联 ⚠️):
 
 D1  MelodyRenderer 被换:lead = MG 链(render/mgLeadRenderer.renderMgMelody,读 HarmonicPlan,
     不读 MotifStore)。凝聚力(记忆点/排比)改由 MG repeatGroup 机制,不走 Motif 复述(原 Part 2.7/附录 D)。
-D2  Prepass 输出 dead:runPrepass 仍跑(保 rng 流确定性)+ MotifStore 仍喂 retry locator,
-    但旋律不消费 anchorPlan/motifStore(renderCoordinator `void anchorPlan; void motifStore`)。
-    comp 的 melody-aware 让位改从 instrumentation.melodyReservationPlan.hookAnchorSlots 取锚点。
-D3  retry 旋律杠杆 dead:candidateSwap / restatementOverride 被 void;只有 voicingSafer(comp 瘦身)活。
-    → Auditor 仍能「感知」旋律撞音,但 retry 在旋律侧「执行不了」(只能瘦 comp);
-      安全性现押在 MG shapeMelodyHarmony 的上游预防(原 Part 5 rewind-melody / 附录 E4 melody 防撞阶梯退役)。
+D2  ✅ Prepass 已删(2026-06-07):runPrepass / MotifStore / Motif / MelodyAnchorPlan /
+    occurrenceResolver / 旧 melodyRenderer 全部删除。旋律=MG 链;comp 的 melody-aware 让位
+    从 instrumentation.melodyReservationPlan.hookAnchorSlots 取锚点(始终如此,不经 Prepass)。
+D3  ✅ retry 旋律杠杆已删(2026-06-07):candidateSwap / restatementOverride / candidateIndex /
+    tailRegenerate / accompDensityReduction 字段删除;撞音阶梯收为 rung1 voicingSafer(comp 瘦身)→
+    rung4 fallback(advance 'melody' 子流 = 重掷 MG 旋律)。locator 瘦成只 spanAtTick。
+    Auditor 仍只读感知旋律撞音;旋律侧纠错 = 兜底重掷 + 上游 MG shapeMelodyHarmony 预防(原附录 E4 旋律阶梯退役)。
 D4  lead 旁路全局后处理(Loop 9):lead 跳过 swing / 力度人性化 / 时序抖动 / resolver 八度上移
     (MG StyleRenderer 自带 feel,避免双 swing/双 accent)。本文原意是全轨统一后处理。
 D5  次要:代码里 Instrumental 跑在 Harmony 之前(本文脊柱是 Harmony→Instrumental)。
@@ -109,7 +110,7 @@ KB
 
 ## Part 1 · 管线脊柱
 
-> ⚠️ **现状(2026-06-06)**:脊柱形态仍成立,但 `MR`(Melody Renderer)节点实际是 **MG 链**(`renderMgMelody`,读 HarmonicPlan 不读 MotifStore);`MA`(Prepass)仍跑但输出对旋律 dead;控制环回边的旋律杠杆(candidateSwap)dead,只 voicingSafer 活。详见顶部「现状对齐」D1–D3。下文 mermaid/契约链是 **2026-06-03 原意**。
+> ⚠️ **现状(2026-06-07)**:脊柱形态仍成立,但 `MR`(Melody Renderer)节点实际是 **MG 链**(`renderMgMelody`,读 HarmonicPlan);`MA`(Motif/Anchor Prepass)节点**已删**(2026-06-07 退役);控制环回边的旋律杠杆(candidateSwap)**已删**,只剩 voicingSafer(comp)+ fallback 重掷旋律。详见顶部「现状对齐」D1–D3。下文 mermaid/契约链是 **2026-06-03 原意**。
 
 单链 + 唯一回边。每个箭头命名其契约(详见 Part 2)。
 
@@ -858,7 +859,7 @@ Engine 绑(按 seed/energy/section role 选并实化):
 
 ## Part 5 · 控制环(唯一回边)
 
-> ⚠️ **现状(2026-06-06)**:控制环骨架(回卷重跑下游 / budget / 收敛 / fatal→failed)仍按本文跑,但 **rewind-melody 的杠杆全 dead**:`candidateSwap` / `restatementOverride` 被 `void`,代码里只有 `voicingSafer`(rewind-accompaniment 的 comp 瘦身)真正生效。旋律对同 seed 确定 → retry 改不动旋律,只能瘦 comp。详见顶部「现状对齐」D3。下文是 **2026-06-03 原意**(旋律杠杆待 backlog 决断:再耦合 or 退役)。
+> ⚠️ **现状(2026-06-07)**:控制环骨架(回卷重跑下游 / budget / 收敛 / fatal→failed)仍按本文跑,但 **rewind-melody 的旋律杠杆已删**(2026-06-07 退役):`candidateSwap` / `restatementOverride` / `candidateIndex` / `tailRegenerate` / `accompDensityReduction` 字段移除。撞音阶梯收为 **rung1 voicingSafer(comp 瘦身)→ rung4 fallback(advance 'melody' 子流 = 重掷 MG 旋律)**。详见顶部「现状对齐」D3。下文是 **2026-06-03 原意**。
 
 `GenerationController` 是控制回路 owner,持 `RandomContext`。
 
@@ -944,7 +945,7 @@ src/core/generation/newEngine/
 
 ## Part 7 · 子系统 A/B/C(audit 命根:别拆建)+ 建设次序
 
-> ⚠️ **现状(2026-06-06)**:这套 A/B/C 子系统**已建成**,但 **MG 旋律迁移把它在旋律侧旁路了**:旋律不再走 Motif 复述(B)、撞音消解的旋律阶梯(A 的 E4)退役、重跑环(C)的旋律杠杆 dead——三者退化成 MG 上游预防 + comp 侧瘦身。子系统代码**仍在**(未拆),但对 lead 是死重(每首跑、输出没人用)。本文原话「别拆建」仍是原则;当前是**有意旁路而非拆建**,再耦合 or 正式退役见 backlog 决断项。下文是 **2026-06-03 原意**。
+> ⚠️ **现状(2026-06-07)**:这套 A/B/C 子系统的 **B 动机复述 + C 旋律重跑杠杆已删除**(2026-06-07 退役 backlog D-1/c):删 `motifAnchorPrepass`/`MotifStore`/`Motif`/`MelodyAnchorPlan`/`occurrenceResolver`/旧 `melodyRenderer`。实测旋律候选机器触发率 0.5% 且非决定性 = 死重。**保留**:A 的 comp 侧 voicing 瘦身(rung1 voicingSafer)+ C 的 budget/收敛/fallback 骨架(fallback 重掷 MG 旋律)。旋律凝聚力现由 MG repeatGroup 机制承担、旋律撞音由 MG shapeMelodyHarmony 上游预防。下文是 **2026-06-03 原意**。
 
 **Motif(B)× 撞音消解(A)× 重跑环(C)是同一个子系统的三个面**,跨 `Prepass + MelodyRenderer + MotifStore + Auditor + Controller` 五个文件,必须一起设计、一起建。
 
