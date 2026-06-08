@@ -45,7 +45,11 @@ export interface InstrumentationPlanData {
   //   无 functionTag/genre 的段 = 全 lineup(向后兼容)。lead 当前全程在场(gating 留后续)。
   activeRolesBySection: Record<SectionId, InstrumentRoleName[]>;
   registerByRole: Record<InstrumentRoleName, RegisterRange>;
-  textureBySection: Record<SectionId, TextureKind>;
+  textureBySection: Record<SectionId, TextureKind>; // 笼统让位类织体(active-comp/pad…),管谁让位
+  // ★ rich textureCase 段级下发(2026-06-08,texture-switch 修复):非 LOFI 每段一个具体 textureCase
+  //   (同 role/repeatGroup 复用、同曲 ≤2、排除 delayed-entry)→ render 按段 projection,不再逐 span 随机切。
+  //   LOFI 不在此(空)→ render 回退逐 span 老路(LOFI phrase-variation 留后续)。
+  richTextureBySection: Record<SectionId, string>;
   textureYieldPolicy: Record<TextureKind, YieldClass>;
   // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
   //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。

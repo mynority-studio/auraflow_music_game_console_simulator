@@ -84,19 +84,24 @@ const _MODERN_TEXTURE_PROFILES: TextureProfile[] = [
 
 // LOFI 显式 profile(含 partPolicy/timing/subStyles 元数据 + wide-color-motion 引用)。
 const _LOFI_TEXTURE_PROFILES: TextureProfile[] = [
-  { id: 'lofi_piano_oneshot_space', textureCase: 'Piano_Lofi_OneShot_Space', styles: ['LOFI'], mood: 'dusty', phraseRoles: ['establish', 'cadence'], densityRange: [0.08, 0.42], energyRange: [0.10, 0.55], maxRepeatBars: 8, preferOnLoopBack: true, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [20, 65], bassLateMs: [-8, 12], velocityHumanize: 0.12 }, subStyles: ['Lofi Warm Piano', 'Lofi Study Loop', 'Lofi Piano Hiphop'] },
-  { id: 'lofi_late_chord_answer', textureCase: 'Piano_Lofi_Late_Chord_Answer', styles: ['LOFI'], mood: 'lyrical', phraseRoles: ['develop', 'cadence'], densityRange: [0.12, 0.45], energyRange: [0.15, 0.65], maxRepeatBars: 6, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [35, 80], bassLateMs: [-5, 15], velocityHumanize: 0.14 }, subStyles: ['Lofi Emo Piano', 'Lofi Bedroom Pop', 'Lofi Rainy Rhodes'] },
-  { id: 'lofi_emo_broken_10th', textureCase: 'Piano_Emo_Broken_10th', styles: ['LOFI'], mood: 'emo', phraseRoles: ['develop', 'lift'], densityRange: [0.25, 0.62], energyRange: [0.25, 0.72], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [10, 35], bassLateMs: [-4, 10], velocityHumanize: 0.10 }, subStyles: ['Lofi Emo Piano', 'Lofi Soft Canon', 'Lofi Melancholy Minor'] },
-  { id: 'lofi_ambient_sustain_wash', textureCase: 'Piano_Ambient_Sustain_Wash', styles: ['LOFI'], mood: 'ambient', phraseRoles: ['establish', 'cadence'], densityRange: [0.05, 0.30], energyRange: [0.05, 0.45], maxRepeatBars: 4, avoidOnDominantChain: true, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 35], bassLateMs: [-5, 10], velocityHumanize: 0.08 }, subStyles: ['Lofi Ambient Intro', 'Lofi Modal Float', 'Lofi Night Drive'] },
-  { id: 'lofi_halftime_soft_pulse', textureCase: 'Piano_HalfTime_Soft_Pulse', styles: ['LOFI'], mood: 'pocket', phraseRoles: ['lift'], densityRange: [0.28, 0.65], energyRange: [0.45, 0.82], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [25, 55], bassLateMs: [-10, 8], velocityHumanize: 0.13 }, subStyles: ['Lofi Piano Hiphop', 'Lofi Night Drive', 'Lofi Bedroom Pop'] },
-  { id: 'lofi_dusty_chops', textureCase: 'Piano_Lofi_Dusty_Chops', styles: ['LOFI'], mood: 'dusty', phraseRoles: ['establish', 'develop'], densityRange: [0.15, 0.52], energyRange: [0.18, 0.60], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [30, 75], bassLateMs: [-8, 12], velocityHumanize: 0.15 }, subStyles: ['Lofi Rainy Rhodes', 'Lofi Piano Hiphop', 'Lofi Warm Piano'] },
-  { id: 'lofi_tape_wobble_arp_sparse', textureCase: 'Piano_Lofi_Tape_Wobble_Arp', styles: ['LOFI'], mood: 'ambient', phraseRoles: ['develop', 'lift'], densityRange: [0.25, 0.58], energyRange: [0.25, 0.70], maxRepeatBars: 4, avoidOnDominantChain: true, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [10, 45], bassLateMs: [-6, 10], velocityHumanize: 0.16 }, subStyles: ['Lofi Minor Tape', 'Lofi Rainy Rhodes'] },
-  { id: 'lofi_common_tone_soft_roll', textureCase: 'Piano_CommonTone_Soft_Roll', styles: ['LOFI'], mood: 'lyrical', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.22, 0.60], energyRange: [0.25, 0.70], maxRepeatBars: 6, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [30, 70], bassLateMs: [-8, 12], velocityHumanize: 0.13 }, subStyles: ['Lofi Neo Soul Soft', 'Lofi Rainy Rhodes', 'Lofi Dorian Chill'] },
-  { id: 'wide_color_motion_lofi_pop', textureCase: 'Piano_Wide_Color_Motion', styles: ['LOFI', 'POP'], mood: 'lyrical', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.30, 0.75], energyRange: [0.30, 0.75], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [10, 30], bassLateMs: [-5, 8], velocityHumanize: 0.10 }, subStyles: ['Lofi Warm Piano', 'Lofi Emo Piano', 'Lofi Rainy Rhodes', 'Lofi Neo Soul Soft', 'Lofi Soft Canon', 'Pop Ballad', 'Max Martin Pop'] },
+  { id: 'lofi_piano_oneshot_space', textureCase: 'Piano_Lofi_OneShot_Space', styles: ['LOFI'], mood: 'dusty', phraseRoles: ['establish', 'cadence'], densityRange: [0.08, 0.42], energyRange: [0.10, 0.55], maxRepeatBars: 8, preferOnLoopBack: true, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [8, 30], bassLateMs: [-2, 6], velocityHumanize: 0.12 }, subStyles: ['Lofi Warm Piano', 'Lofi Study Loop', 'Lofi Piano Hiphop'] },
+  { id: 'lofi_late_chord_answer', textureCase: 'Piano_Lofi_Late_Chord_Answer', styles: ['LOFI'], mood: 'lyrical', phraseRoles: ['develop', 'cadence'], densityRange: [0.12, 0.45], energyRange: [0.15, 0.65], maxRepeatBars: 6, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [12, 40], bassLateMs: [-2, 6], velocityHumanize: 0.14 }, subStyles: ['Lofi Emo Piano', 'Lofi Bedroom Pop', 'Lofi Rainy Rhodes'] },
+  { id: 'lofi_emo_broken_10th', textureCase: 'Piano_Emo_Broken_10th', styles: ['LOFI'], mood: 'emo', phraseRoles: ['develop', 'lift'], densityRange: [0.25, 0.62], energyRange: [0.25, 0.72], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [6, 24], bassLateMs: [-2, 6], velocityHumanize: 0.10 }, subStyles: ['Lofi Emo Piano', 'Lofi Soft Canon', 'Lofi Melancholy Minor'] },
+  { id: 'lofi_ambient_sustain_wash', textureCase: 'Piano_Ambient_Sustain_Wash', styles: ['LOFI'], mood: 'ambient', phraseRoles: ['establish', 'cadence'], densityRange: [0.05, 0.30], energyRange: [0.05, 0.45], maxRepeatBars: 4, avoidOnDominantChain: true, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 22], bassLateMs: [-2, 5], velocityHumanize: 0.08 }, subStyles: ['Lofi Ambient Intro', 'Lofi Modal Float', 'Lofi Night Drive'] },
+  { id: 'lofi_halftime_soft_pulse', textureCase: 'Piano_HalfTime_Soft_Pulse', styles: ['LOFI'], mood: 'pocket', phraseRoles: ['lift'], densityRange: [0.28, 0.65], energyRange: [0.45, 0.82], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [8, 28], bassLateMs: [-4, 5], velocityHumanize: 0.13 }, subStyles: ['Lofi Piano Hiphop', 'Lofi Night Drive', 'Lofi Bedroom Pop'] },
+  { id: 'lofi_dusty_chops', textureCase: 'Piano_Lofi_Dusty_Chops', styles: ['LOFI'], mood: 'dusty', phraseRoles: ['establish', 'develop'], densityRange: [0.15, 0.52], energyRange: [0.18, 0.60], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [8, 32], bassLateMs: [-3, 6], velocityHumanize: 0.15 }, subStyles: ['Lofi Rainy Rhodes', 'Lofi Piano Hiphop', 'Lofi Warm Piano'] },
+  { id: 'lofi_tape_wobble_arp_sparse', textureCase: 'Piano_Lofi_Tape_Wobble_Arp', styles: ['LOFI'], mood: 'ambient', phraseRoles: ['develop', 'lift'], densityRange: [0.25, 0.58], energyRange: [0.25, 0.70], maxRepeatBars: 4, avoidOnDominantChain: true, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [6, 28], bassLateMs: [-3, 6], velocityHumanize: 0.16 }, subStyles: ['Lofi Minor Tape', 'Lofi Rainy Rhodes'] },
+  { id: 'lofi_common_tone_soft_roll', textureCase: 'Piano_CommonTone_Soft_Roll', styles: ['LOFI'], mood: 'lyrical', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.22, 0.60], energyRange: [0.25, 0.70], maxRepeatBars: 6, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [8, 30], bassLateMs: [-3, 6], velocityHumanize: 0.13 }, subStyles: ['Lofi Neo Soul Soft', 'Lofi Rainy Rhodes', 'Lofi Dorian Chill'] },
+  { id: 'wide_color_motion_lofi_pop', textureCase: 'Piano_Wide_Color_Motion', styles: ['LOFI', 'POP'], mood: 'lyrical', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.30, 0.75], energyRange: [0.30, 0.75], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [6, 24], bassLateMs: [-3, 6], velocityHumanize: 0.10 }, subStyles: ['Lofi Warm Piano', 'Lofi Emo Piano', 'Lofi Rainy Rhodes', 'Lofi Neo Soul Soft', 'Lofi Soft Canon', 'Pop Ballad', 'Max Martin Pop'] },
 ];
 
 /** 公开池 = modern + LOFI(★ 不含 legacy,见 §9)。 */
 export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES];
+
+// ★ delayed-entry / 留白型织体:首击晚(如 Piano_Question_Answer firstOnset=2.0)→ 段级常驻会每小节留洞。
+//   段级 texture(器配层下发,整段沿用)必须排除它们,否则非 breakdown 段会出 >1 拍 comp 空隙。
+//   (这是第一期最小标记;第二期的 TextureBehaviorProfile.firstOnsetBeat 会把全 16 种正式量化。)
+export const DELAYED_ENTRY_TEXTURES: ReadonlySet<string> = new Set(['Piano_Question_Answer']);
 
 /** 按 style·cell 角色·density·energy·dominant chain·repeat 过滤选织体;无匹配回退同 style 全集,再无 → null。 */
 export function pickTextureForBar(args: {
@@ -107,9 +112,12 @@ export function pickTextureForBar(args: {
   isDominantChain: boolean;
   prevTextureId?: string;
   repeatCount?: number;
+  exclude?: ReadonlySet<string>; // 排除的 textureCase(段级下发排除 delayed-entry)
   random: { pick<T>(xs: readonly T[]): T };
 }): TextureProfile | null {
+  const allowed = (t: TextureProfile) => !args.exclude || !args.exclude.has(t.textureCase);
   const candidates = TEXTURE_POOL.filter((t) => {
+    if (!allowed(t)) return false;
     if (!t.styles.includes(args.style)) return false;
     if (!t.phraseRoles.includes(args.phraseRole)) return false;
     if (args.density < t.densityRange[0] || args.density > t.densityRange[1]) return false;
@@ -118,7 +126,7 @@ export function pickTextureForBar(args: {
     if (t.id === args.prevTextureId && (args.repeatCount ?? 0) >= (t.maxRepeatBars ?? 8)) return false;
     return true;
   });
-  const pool = candidates.length > 0 ? candidates : TEXTURE_POOL.filter((t) => t.styles.includes(args.style));
+  const pool = candidates.length > 0 ? candidates : TEXTURE_POOL.filter((t) => t.styles.includes(args.style) && allowed(t));
   if (pool.length === 0) return null;
   return args.random.pick(pool);
 }

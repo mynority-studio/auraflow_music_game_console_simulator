@@ -86,4 +86,22 @@ describe('generation/generateSong (顶层 Request→FinalIR 端到端)', () => {
     expect(lead(7)).not.toEqual(lead(8));
     expect(lead(7)).not.toEqual(lead(123));
   });
+
+  it('LOFI seed 64062: bass:required texture 不应因分轨编制丢失低频托底', () => {
+    const r = generateSong({ seed: 64062, styleHint: 'lofi', mood: 'x', targetDuration: 120 });
+    expect(r.status).not.toBe('failed');
+    const bass = r.ir!.tracks.find((t) => t.role === 'bass');
+    expect(bass).toBeDefined();
+
+    const ppq = r.ir!.timebase.ppq;
+    const overlaps = (loBeat: number, hiBeat: number): boolean =>
+      bass!.notes.some((n) => {
+        const start = (n.startTick as number) / ppq;
+        const end = start + (n.durationTicks as number) / ppq;
+        return start < hiBeat && end > loBeat;
+      });
+
+    expect(overlaps(4, 8)).toBe(true);  // bar2: OneShot comp leaves space, bass must carry it
+    expect(overlaps(8, 12)).toBe(true); // bar3: Dusty chops are sparse, bass must carry it
+  });
 });

@@ -50,12 +50,12 @@ describe('textureRenderer · articulation 各不相同(结构性)', () => {
     expect(n('Lyrical_10th_Broken')).toBe(8); // dur*2
     expect(n('Piano_CommonTone_Soft_Roll')).toBe(VOICED.length * 2); // 两个强拍各 roll 全声部
   });
-  it('OneShot 单 hit 落 0.05、整块和弦;Dusty 落 off-beat 0.66 起', () => {
+  it('OneShot 单 hit 落 0.025、整块和弦;Dusty 落 MG off-beat 0.58 起', () => {
     const one = renderTextureChordHits('Piano_Lofi_OneShot_Space', VOICED, DUR);
-    expect(one[0].tRel).toBeCloseTo(0.05);
+    expect(one[0].tRel).toBeCloseTo(0.025);
     expect(one[0].midis).toEqual([...VOICED].sort((a, b) => a - b));
     const dusty = renderTextureChordHits('Piano_Lofi_Dusty_Chops', VOICED, DUR);
-    expect(dusty[0].tRel).toBeCloseTo(0.66);
+    expect(dusty[0].tRel).toBeCloseTo(0.58);
   });
   it('Tape_Wobble 交替力度 dip(偶 0.32 / 奇 0.24)', () => {
     const w = renderTextureChordHits('Piano_Lofi_Tape_Wobble_Arp', VOICED, DUR);

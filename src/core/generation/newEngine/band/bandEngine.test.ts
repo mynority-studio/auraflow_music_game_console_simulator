@@ -45,6 +45,13 @@ describe('band/bandEngine', () => {
     for (const r of spec.instrumentPool) expect(typeof spec.roleProgram[r]).toBe('number'); // 每件选了乐器
   });
 
+  it('LOFI 固定含 bass,避免 bass:required texture 被分轨丢失', () => {
+    for (let seed = 0; seed < 32; seed++) {
+      const spec = buildBandSpec({ seed, styleHint: 'lofi', mood: 'x', targetDuration: 60 });
+      expect(spec.instrumentPool).toContain('bass');
+    }
+  });
+
   it('不同 style/seed → 编制大小或乐器不同(乐器要素随 seed)', () => {
     const sig = (s: number, style: string) => { const b = buildBandSpec({ seed: s, styleHint: style, mood: 'x', targetDuration: 60 }); return `${b.instrumentPool.join(',')}|${b.instrumentPool.map((r) => b.roleProgram[r]).join(',')}`; };
     const sigs = new Set<string>();

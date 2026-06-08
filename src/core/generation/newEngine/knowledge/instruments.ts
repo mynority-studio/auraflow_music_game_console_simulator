@@ -19,7 +19,9 @@ interface LineupRule {
 const LINEUP_RULES: Record<string, LineupRule> = {
   jazz: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.85 }, { role: 'pad', prob: 0.15 }] },
   pop: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.9 }, { role: 'pad', prob: 0.6 }] },
-  lofi: { always: ['lead', 'comp'], optional: [{ role: 'bass', prob: 0.7 }, { role: 'pad', prob: 0.85 }, { role: 'drum', prob: 0.6 }] },
+  // LOFI rich textures in MG all declare bass:required; keeping bass optional can
+  // drop the sustaining anchor and make one-shot/chop bars feel like playback stalls.
+  lofi: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'pad', prob: 0.85 }, { role: 'drum', prob: 0.6 }] },
   rnb: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.8 }, { role: 'pad', prob: 0.55 }] }, // neo-soul:Rhodes comp + pocket 鼓
   modal: { always: ['lead', 'pad'], optional: [{ role: 'bass', prob: 0.6 }, { role: 'comp', prob: 0.5 }, { role: 'drum', prob: 0.35 }] },
   default: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'drum', prob: 0.7 }, { role: 'pad', prob: 0.5 }] },

@@ -21,18 +21,25 @@ export const SECTION_LABEL: Record<SectionRole, SectionLabel> = {
 /** spanId → 选中的 rich textureCase(仅 rich 风格的 active 段;其余 span 不在表内)。 */
 export type TextureSchedule = Record<string, string>;
 
-/** 中央下发:per-span 选 rich textureCase(cell 角色 + density/energy + dominant-chain 门控,确定性)。 */
+/**
+ * 中央下发:spanId → rich textureCase。
+ *   ★ 2026-06-08(texture-switch 修复):优先消费器配层的【段级】richTextureBySection
+ *     —— 整段沿用同一 textureCase,不再逐 span 随机切(消"伴奏自己断掉")。
+ *   无段级下发的段(LOFI / blues / default)→ 回退逐 span 选(老路,确定性不变)。
+ */
 export function buildTextureSchedule(args: {
   plan: HarmonicPlan;
   style: string;
   sectionRoleById: Record<string, SectionRole>;
   activeSectionIds: Set<string>;
   textureRng: { pick<T>(xs: readonly T[]): T };
+  richTextureBySection?: Record<string, string>; // 器配层段级下发(非 LOFI);空 = 逐 span 回退
 }): TextureSchedule {
-  const { plan, style, sectionRoleById, activeSectionIds, textureRng } = args;
+  const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection } = args;
   const txStyle = TEXTURE_STYLE[style.toLowerCase()];
   const schedule: TextureSchedule = {};
   if (!txStyle) return schedule;
+  const rich = richTextureBySection ?? {};
 
   const timeline = plan.chordTimeline;
   const funcBySpan: Record<string, HarmonicFunction> = {};
@@ -47,6 +54,13 @@ export function buildTextureSchedule(args: {
   let rep = 0;
   for (const span of timeline) {
     if (!activeSectionIds.has(span.sectionId)) continue;
+    // ★ 器配层段级下发优先:整段沿用,projection + 渲染器存在性校验(render 只做投影/校验,不做决策)。
+    const planned = rich[span.sectionId];
+    if (planned) {
+      if (hasTextureRenderer(planned)) schedule[span.id] = planned;
+      continue;
+    }
+    // 回退:逐 span 选(LOFI / blues / 无段级下发)
     const role = sectionRoleById[span.sectionId] ?? 'verse';
     const cellRole = phraseCellRole(idxInSec[span.id], countInSec[span.sectionId]);
     const label = SECTION_LABEL[role] ?? 'VERSE';

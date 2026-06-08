@@ -84,7 +84,11 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'));
   const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(GM${p.program})`).join(' ');
   log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
-  log(`   织体: ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
+  log(`   织体(让位类): ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
+  // ★ rich textureCase 段级下发(非 LOFI):器配层定,整段沿用,不逐 span 乱切(texture-switch 修复)
+  const richTex = Object.entries(instrumentation.richTextureBySection);
+  if (richTex.length) log(`   rich 织体(段级,器配下发): ${richTex.map(([s, tc]) => `${s}=${tc.replace('Piano_', '')}`).join(' ')}`);
+  else log(`   rich 织体: 逐 span 回退(LOFI/blues/default)`);
   // ★ 音色切换(同乐手换声音):某角色跨段落用了 >1 种 program → 印 verse↔chorus
   const timbreSwitch = band.instrumentPool.map((r) => {
     const bySec = instrumentation.programByRoleSection[r];

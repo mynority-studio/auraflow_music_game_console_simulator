@@ -116,29 +116,29 @@ export function renderTextureChordHits(
 
     // ——— LOFI piano-only ———
     case 'Piano_Lofi_OneShot_Space':
-      push(cM, 0.05, Math.min(dur * 0.5, 2.0), 0.38);
+      push(cM, 0.025, Math.min(dur * 0.5, 2.0), 0.38);
       break;
     case 'Piano_Lofi_Late_Chord_Answer':
-      if (dur >= 4) { push(cM, 2.15, 0.65, 0.42); push(cM.slice(-2), 3.1, 0.4, 0.32); }
+      if (dur >= 4) { push(cM, 2.04, 0.65, 0.42); push(cM.slice(-2), 3.03, 0.4, 0.32); }
       else push(cM, dur * 0.55, 0.4, 0.38);
       break;
     case 'Piano_Emo_Broken_10th':
-      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5 + 0.04, 0.30, 0.32 + (i % 4 === 0 ? 0.06 : 0));
+      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5 + 0.02, 0.30, 0.32 + (i % 4 === 0 ? 0.06 : 0));
       break;
     case 'Piano_Ambient_Sustain_Wash':
-      push(cM, 0.04, Math.min(dur, 3.5), 0.30);
+      push(cM, 0.02, Math.min(dur, 3.5), 0.30);
       if (dur >= 4) push(cM.slice(1), 3.0, 0.95, 0.24);
       break;
     case 'Piano_HalfTime_Soft_Pulse':
-      push(cM, 0.05, 0.75, 0.42);
-      if (dur >= 4) push(cM, 2.05, 0.75, 0.38);
+      push(cM, 0.025, 0.75, 0.42);
+      if (dur >= 4) push(cM, 2.025, 0.75, 0.38);
       break;
     case 'Piano_Lofi_Dusty_Chops':
-      [0.66, 1.66, 2.66, 3.66].filter((t) => t < dur).forEach((t, i) => push(cM, t, 0.30, 0.35 + (i % 2 === 0 ? 0.08 : 0)));
+      [0.58, 1.58, 2.58, 3.58].filter((t) => t < dur).forEach((t, i) => push(cM, t, 0.30, 0.35 + (i % 2 === 0 ? 0.08 : 0)));
       break;
     case 'Piano_Lofi_Tape_Wobble_Arp': {
       const arp = cM.slice(0, Math.min(cM.length, 4));
-      for (let i = 0; i < dur * 2 && i < 8; i++) push([arp[i % arp.length]], i * 0.5 + 0.03, 0.35, i % 2 === 0 ? 0.32 : 0.24);
+      for (let i = 0; i < dur * 2 && i < 8; i++) push([arp[i % arp.length]], i * 0.5 + 0.02, 0.35, i % 2 === 0 ? 0.32 : 0.24);
       break;
     }
     case 'Piano_Wide_Color_Motion': // 源 roll widePianoVoicing;voiced 即宽排列 → 强拍轻 roll

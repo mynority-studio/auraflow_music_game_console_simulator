@@ -11,7 +11,7 @@ import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
-import { pickGenericTexture, GENERIC_TEXTURE_YIELD, type TextureSectionRole } from '../knowledge/textureProfiles';
+import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs } from '../knowledge/instruments';
 import {
   freezeInstrumentationPlan,
@@ -218,11 +218,30 @@ export function buildInstrumentationPlan(
       };
     });
 
+  // ★ rich textureCase 段级下发(texture-switch 修复,第一期 = 非 LOFI):2 槽 low/high,
+  //   按 role 分配(chorus/bridge→high,其余→low)→ verse↔verse 同、chorus↔chorus 同(repeatGroup 一致)、
+  //   同曲 ≤2 核心、排除 delayed-entry(段级常驻不留洞)。LOFI/blues/default 空 → render 回退逐 span 老路。
+  //   rng 在所有前置决策【之后】取(+2 draw)→ 不扰 timbre/lead/intro 确定性。
+  const RICH_STYLE: Record<string, TextureStyleName> = { pop: 'POP', rnb: 'RNB', jazz: 'JAZZ' };
+  const richTextureBySection: Record<string, string> = {};
+  const richStyle = RICH_STYLE[band.style.toLowerCase()];
+  if (rng && richStyle) {
+    const low = pickTextureForBar({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: false, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+    const high = pickTextureForBar({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: false, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+    const lowTc = low?.textureCase ?? high?.textureCase;
+    const highTc = high?.textureCase ?? lowTc;
+    for (const s of arrangement.sections) {
+      const tc = (s.role === 'chorus' || s.role === 'bridge') ? highTc : lowTc;
+      if (tc) richTextureBySection[s.id] = tc;
+    }
+  }
+
   const data: InstrumentationPlanData = {
     activityBySection,
     activeRolesBySection,
     registerByRole: REGISTER_BY_ROLE,
     textureBySection,
+    richTextureBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     programByRoleSection,
     timbreWorld,
