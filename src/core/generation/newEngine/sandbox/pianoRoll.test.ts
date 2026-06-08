@@ -1,11 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { buildPianoRoll, buildTrackLanes, midiToNoteName, noteLabel, resolveAudibleRoles, ROLE_COLOR } from './pianoRoll';
+import { buildPianoRoll, buildTrackLanes, buildSectionBands, midiToNoteName, noteLabel, resolveAudibleRoles, ROLE_COLOR, SECTION_COLOR } from './pianoRoll';
 import { freezeMusicalIR } from '../ir/MusicalIR';
 import { createTimebase, midi, ticks } from '../foundation';
 
 const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
 const mkIR = (tracks: Parameters<typeof freezeMusicalIR>[0]['tracks'], dur = 1920) =>
   freezeMusicalIR({ tracks, timebase, durationTicks: ticks(dur) });
+
+describe('sandbox · 段落条几何 (DAW 段落标尺)', () => {
+  const secs = [
+    { id: 's0', role: 'intro', startTick: 0, endTick: 1000 },
+    { id: 's1', role: 'chorus', startTick: 1000, endTick: 4000 },
+  ];
+  it('x/w ∝ tick;与泳道共享时间轴;配色按 role', () => {
+    const bands = buildSectionBands(secs, 4000, 800);
+    expect(bands).toHaveLength(2);
+    expect(bands[0].x).toBe(0);
+    expect(bands[0].w).toBeCloseTo((1000 / 4000) * 800); // 200
+    expect(bands[1].x).toBeCloseTo((1000 / 4000) * 800);  // chorus 接 intro 末
+    expect(bands[1].w).toBeCloseTo((3000 / 4000) * 800);  // 600
+    expect(bands[0].color).toBe(SECTION_COLOR.intro);
+    expect(bands[1].color).toBe(SECTION_COLOR.chorus);
+    expect(bands[1].label).toBe('chorus');
+  });
+  it('totalTicks=0 不除零;未知 role 有兜底色', () => {
+    const b = buildSectionBands([{ id: 'x', role: 'weird', startTick: 0, endTick: 1 }], 0, 100);
+    expect(Number.isFinite(b[0].x)).toBe(true);
+    expect(b[0].color).toBe('#52525b');
+  });
+});
 
 describe('sandbox · piano-roll 几何 (6.1)', () => {
   it('每音符一矩形;x/w ∝ tick', () => {

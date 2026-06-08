@@ -40,6 +40,41 @@ export const ROLE_COLOR: Record<InstrumentRole, string> = {
   drum: '#9ca3af', // gray
 };
 
+// —— 段落配色(piano-roll DAW 段落标尺;chorus=暖色突出 hook)——
+export const SECTION_COLOR: Record<string, string> = {
+  intro: '#0e7490',  // cyan
+  verse: '#4338ca',  // indigo
+  chorus: '#b45309', // amber(hook 段落,暖色最显)
+  bridge: '#7e22ce', // purple
+  outro: '#475569',  // slate
+};
+
+export interface SectionBand {
+  id: string;
+  role: string;
+  label: string;
+  x: number;     // 起点(像素,与泳道同 x 轴)
+  w: number;
+  color: string;
+}
+
+/** 段落 tick 区间 → 段落条几何(与泳道共享 totalTicks/width 时间轴)。 */
+export function buildSectionBands(
+  sections: readonly { id: string; role: string; startTick: number; endTick: number }[],
+  totalTicks: number,
+  width: number,
+): SectionBand[] {
+  const tt = Math.max(1, totalTicks);
+  return sections.map((s) => ({
+    id: s.id,
+    role: s.role,
+    label: s.role,
+    x: (s.startTick / tt) * width,
+    w: Math.max(1, ((s.endTick - s.startTick) / tt) * width),
+    color: SECTION_COLOR[s.role] ?? '#52525b',
+  }));
+}
+
 /** mute/solo 解析:有 solo → 只放 solo 轨;否则放未 mute 轨。纯函数,供音频层 + 面板共用。 */
 export function resolveAudibleRoles(
   roles: readonly string[],

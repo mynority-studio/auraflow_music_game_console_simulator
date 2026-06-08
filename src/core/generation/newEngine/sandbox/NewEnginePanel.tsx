@@ -58,6 +58,7 @@ export const NewEnginePanel: React.FC = () => {
   const [cmp, setCmp] = useState<TraceComparison | null>(null);
   const [rollWinOpen, setRollWinOpen] = useState(false);
   const lastIR = useRef<GenerationTrace['ir'] | undefined>(undefined);
+  const lastSections = useRef<GenerationTrace['sections']>([]);
   const lastBpm = useRef(100);
   const [logLines, setLogLines] = useState<string[]>([]);
   const heldKeys = useRef<Set<string>>(new Set());
@@ -92,6 +93,7 @@ export const NewEnginePanel: React.FC = () => {
   const generate = (): GenerationTrace => {
     const t = traceGeneration({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation: allowModulation && !modal, ...(modal ? { tonalityKind: 'modal' as const } : {}) });
     lastIR.current = t.ir;
+    lastSections.current = t.sections;
     lastBpm.current = t.bpm;
     setReadout(deriveReadout(t));
     setRoll(buildPianoRoll(t.ir, { width: 512, height: 168 }));
@@ -395,6 +397,7 @@ export const NewEnginePanel: React.FC = () => {
     </div>
     <PianoRollWindow
       ir={lastIR.current}
+      sections={lastSections.current}
       open={rollWinOpen}
       onClose={() => setRollWinOpen(false)}
       title={`${style} · seed ${seed}`}

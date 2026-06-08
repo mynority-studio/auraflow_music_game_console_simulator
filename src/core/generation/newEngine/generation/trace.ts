@@ -42,6 +42,14 @@ function spanLabel(span: { roman: RomanChord; quality: string; chordType?: strin
   return `${acc}${ROMAN[r.degree]}${type}${span.borrowedSource ? BORROW_MARK[span.borrowedSource] ?? '◆' : ''}`;
 }
 
+export interface TraceSection {
+  id: string;
+  role: string;       // intro | verse | chorus | bridge | outro
+  startTick: number;
+  endTick: number;
+  bars: number;
+}
+
 export interface GenerationTrace {
   lines: string[];
   ir: MusicalIR;
@@ -49,6 +57,7 @@ export interface GenerationTrace {
   bpm: number;
   attempts: number;        // 控制环真实重跑次数
   status: GenerationStatus; // pass / warning / failed
+  sections: TraceSection[]; // 段落骨架(piano-roll DAW 视图段落标尺用)
 }
 
 export function traceGeneration(request: GenerationRequest): GenerationTrace {
@@ -140,6 +149,15 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
+  // 段落骨架 → tick 区间(piano-roll DAW 段落标尺消费)
+  const bpbSec = beatsPerBarOf(arrangement.meter);
+  const sections: TraceSection[] = [];
+  let secBeatCursor = 0;
+  for (const s of arrangement.sections) {
+    const startTick = timebase.beatToTick(beats(secBeatCursor)) as number;
+    secBeatCursor += s.bars * bpbSec;
+    sections.push({ id: s.id, role: s.role, startTick, endTick: timebase.beatToTick(beats(secBeatCursor)) as number, bars: s.bars });
+  }
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
       retry && { voicingSafer: retry.voicingSafer });
@@ -179,5 +197,5 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);
   log(`■ MIX        音量分层 lead120>bass112>drum100>comp90>pad68(CC7)· 声像 comp 偏左/pad 偏右/骨干居中(CC10)`);
 
-  return { lines, ir, audit, bpm: arrangement.tempoBpm, attempts: result.attempts, status: result.status };
+  return { lines, ir, audit, bpm: arrangement.tempoBpm, attempts: result.attempts, status: result.status, sections };
 }
