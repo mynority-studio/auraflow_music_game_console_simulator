@@ -74,6 +74,19 @@ describe('progression prototype registry (harmony 迁移 Loop 1)', () => {
     expect(fitProgressionToBars(phrase, 4)).toHaveLength(4);
   });
 
+  it('fitProgressionToBars 含半小节槽(beats:2)→ 按【拍】铺满,非按 slot 数(修 outro 被挤掉)', () => {
+    // 2-bar phrase = 整小节 I + 半小节 ii + 半小节 V(共 8 拍 = 2 小节)。
+    const split = [
+      { roman: 'I', type: 'maj7', rootOffset: 0, scaleDegree: 1 },
+      { roman: 'ii', type: 'm7', rootOffset: 2, scaleDegree: 2, beats: 2 },
+      { roman: 'V', type: '7', rootOffset: 7, scaleDegree: 5, beats: 2 },
+    ] as never[];
+    const fit = fitProgressionToBars(split, 4); // 4 小节 = 16 拍
+    const totalBeats = fit.reduce((n, s: { beats?: number }) => n + (s.beats ?? 4), 0);
+    expect(totalBeats).toBe(16);              // ★ 恰好铺满 4 小节(旧实现按 slot 数 → 只有 ~3 小节)
+    expect(fit.length).toBeGreaterThan(4);    // split 槽 ⇒ 槽数 > 小节数
+  });
+
   it('pickProgressionPrototype:确定性 + fit 到 bars', () => {
     const a = pickProgressionPrototype({ style: 'POP', mode: 'Major', functionRole: 'chorus', bars: 8, random: createRandomContext(5).substream('harmony') });
     const b = pickProgressionPrototype({ style: 'POP', mode: 'Major', functionRole: 'chorus', bars: 8, random: createRandomContext(5).substream('harmony') });

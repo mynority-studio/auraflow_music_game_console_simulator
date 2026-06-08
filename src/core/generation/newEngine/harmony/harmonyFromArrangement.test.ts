@@ -10,11 +10,19 @@ describe('harmony · Band→Arranger→Harmony 端到端', () => {
   const rng = createRandomContext(42);
   const plan = buildHarmonicPlanFromArrangement(band, arrangement, rng);
 
-  it('和弦总数 = Σ(section.bars * chordsPerBar)', () => {
-    // ★ Loop 2:prototype 是 1 和弦/小节(忽略 chordsPerBar 加密)→ 总数 = Σ section.bars。
-    let expected = 0;
-    for (const s of arrangement.sections) expected += s.bars;
-    expect(plan.chordTimeline.length).toBe(expected);
+  it('和声时长恰好铺满曲式(Σ durationBeats = Σ bars × beatsPerBar;split-bar 槽 ⇒ 和弦数 ≥ 小节数)', () => {
+    // ★ 修(2026-06-08):prototype 可含半小节槽(beats:2,如副属 ii-V)→ 和弦数 > 小节数是正常的;
+    //   真正的不变量 = 时长铺满(每段 cov = bars × beatsPerBar)→ 时间线与 arrangement 对齐(否则 outro 被挤掉)。
+    const beatsPerBar = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
+    const totalBars = arrangement.sections.reduce((n, s) => n + s.bars, 0);
+    const totalBeats = plan.chordTimeline.reduce((n, c) => n + (c.durationBeats as number), 0);
+    expect(totalBeats).toBe(totalBars * beatsPerBar);
+    // 每段都恰好铺满(无短缺)
+    for (const s of arrangement.sections) {
+      const cov = plan.chordTimeline.filter((c) => c.sectionId === s.id).reduce((n, c) => n + (c.durationBeats as number), 0);
+      expect(cov).toBe(s.bars * beatsPerBar);
+    }
+    expect(plan.chordTimeline.length).toBeGreaterThanOrEqual(totalBars); // split 槽 ⇒ ≥
   });
 
   it('prototype = 1 和弦/小节(verse/chorus 同;chordsPerBar 加密退役)', () => {

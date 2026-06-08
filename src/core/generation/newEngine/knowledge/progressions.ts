@@ -334,13 +334,23 @@ export function pickProgressionPrototypeWithPolicy(args: {
   return { slots: fitProgressionToBars(proto.slots, args.bars), transformPolicy: proto.transformPolicy };
 }
 
-/** 把 N-bar 模板展开填满 bars;第 2 遍起末 V 和弦换 7sus4 作 cadence 变化(避免纯重复)。 */
+// KB prototype 约定:整小节 = 4 拍;slot.beats=2 = 半小节(两个拼一小节)。全曲皆 4/4,故此常量精确。
+const FULL_BAR_BEATS = 4;
+const slotBeats = (s: ProgressionSlot): number => s.beats ?? FULL_BAR_BEATS;
+
+/** 把模板展开【按拍】填满 bars 小节;第 2 遍起末 V 和弦换 7sus4 作 cadence 变化(避免纯重复)。
+ *  ★ 修(2026-06-08):按【拍】累计而非 slot 个数 —— 含半小节槽(beats:2,如副属 ii-V)的模板,
+ *    bars 个 slot ≠ bars 小节,会让段落和声短缺、时间线整体前移、outro 被挤掉(戛然而止)。
+ *    末槽按需截断到刚好填满 → 每段和声恰好 = bars × 4 拍,与 arrangement 对齐。 */
 export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number): ProgressionSlot[] {
   if (phrase.length === 0) return [];
-  if (phrase.length === bars) return phrase.map((x) => ({ ...x }));
+  const target = bars * FULL_BAR_BEATS; // 目标总拍
+  const phraseBeats = phrase.reduce((n, s) => n + slotBeats(s), 0);
+  if (phraseBeats === target) return phrase.map((x) => ({ ...x }));
   const out: ProgressionSlot[] = [];
+  let acc = 0;
   let pass = 0;
-  while (out.length < bars) {
+  while (acc < target) {
     const copy = phrase.map((x) => ({ ...x }));
     if (pass >= 1) {
       let lastVIdx = -1;
@@ -350,8 +360,13 @@ export function fitProgressionToBars(phrase: ProgressionSlot[], bars: number): P
         copy[lastVIdx] = { ...copy[lastVIdx], type: newType };
       }
     }
-    out.push(...copy);
+    for (const s of copy) {
+      if (acc >= target) break;
+      const b = slotBeats(s);
+      if (acc + b <= target) { out.push(s); acc += b; }
+      else { out.push({ ...s, beats: target - acc }); acc = target; } // 末槽截断到刚好填满
+    }
     pass++;
   }
-  return out.slice(0, bars);
+  return out;
 }

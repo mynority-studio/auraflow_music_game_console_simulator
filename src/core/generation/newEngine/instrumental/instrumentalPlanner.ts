@@ -59,13 +59,13 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
     build: ['bass', 'comp', 'drum', 'pad', 'lead'],
     hook: ['bass', 'comp', 'drum', 'pad', 'lead'],
     breakdown: ['comp', 'lead'],                             // 真抽离 keys+vocal
-    outro: ['pad', 'comp', 'lead'],
+    outro: ['pad', 'comp', 'bass', 'lead'],                  // ★ +bass:接地落终止根音(无 pad 的编制下 outro 才不空)
   },
   lofi: {
     setup: ['comp', 'bass', 'lead'],
     loop: ['bass', 'comp', 'drum', 'pad', 'lead'],           // 近恒定 full loop
     breakdown: ['bass', 'comp', 'pad', 'lead'],              // filterBreak 去 drum
-    outro: ['comp', 'pad', 'lead'],
+    outro: ['comp', 'pad', 'bass', 'lead'],                  // ★ +bass:同上,outro 接地
   },
   jazz: {
     setup: ['comp', 'bass', 'lead'],
