@@ -204,6 +204,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     for (const f of audit.findings) byRule[f.ruleId] = (byRule[f.ruleId] ?? 0) + 1;
     const errs = audit.findings.filter((f) => f.severity === 'error' || f.severity === 'fatal');
     log(`   findings: ${Object.entries(byRule).map(([k, n]) => `${k}×${n}`).join(' / ')}`);
+    // ★ Loop H 音乐性审计(只读 warning,不重跑):衔接/收尾/comp 断层
+    const MUSICALITY_RULES = new Set(['transition-pickup-missing', 'section-downbeat-anchor-missing', 'song-start-abrupt', 'outro-harmonic-support-missing', 'comp-continuity-gap', 'lead-groove-desync']);
+    const mus = audit.findings.filter((f) => MUSICALITY_RULES.has(f.ruleId));
+    log(`   音乐性(Loop H): ${mus.length ? mus.map((f) => `${f.ruleId}@${f.location.trackRole}`).join(' / ') : '无(衔接/收尾/comp 连续性 OK)'}`);
     if (errs.length > 0) {
       log(`   纠错环(${result.attempts} 次尝试): error@${errs[0].location.trackRole}#${errs[0].location.startTick} → 撞音消解阶梯(voicing→降锁→换hook→fallback)`);
     } else {

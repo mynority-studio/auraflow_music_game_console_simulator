@@ -18,6 +18,7 @@ import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
 import { buildTextureSchedule } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
+import { auditMusicality } from './musicalityAuditor';
 import { renderMgMelody } from './mgLeadRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
@@ -342,5 +343,7 @@ export function renderSongFull(
     return { ...t, program: initial, programChanges: changes.length ? changes : undefined, pedalEvents };
   });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
-  return { ir, audit };
+  // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。
+  const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style);
+  return { ir, audit: { findings: [...audit.findings, ...musicality.findings] } };
 }
