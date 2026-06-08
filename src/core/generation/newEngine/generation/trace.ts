@@ -111,6 +111,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const ep = instrumentation.endingPlan;
   const exits = Object.entries(ep.exitBarByRole).map(([r, b]) => `${r}@bar${b}`).join(',') || (ep.coldStop ? '齐停' : '响到末');
   log(`   段落衔接: lead-in→[${leadIns.join(' ') || '-'}] · 收尾=${arrangement.endingStyle}(退出 ${exits}${ep.holdFinalChord ? ' · 末和弦延留' : ''})`);
+  // ★ Loop C 衔接计划:song entry 方式 + 各 lead-in 边界的 pickup 角色
+  const tp = instrumentation.transitionPlan;
+  const pickups = tp.boundaries.filter((b) => b.pickupRoles.length).map((b) => `${b.toSectionId}<${b.pickupRoles.join('/')}`).join(' ') || '-';
+  log(`   衔接计划: entry=${tp.songEntry.mode}(anchor ${tp.songEntry.downbeatAnchorRoles.join('+') || '-'}${tp.songEntry.delayedRoles.length ? ` 延后 ${tp.songEntry.delayedRoles.join('+')}` : ''}) · pickup→ ${pickups}`);
   // ★ 段落重心诊断:中心段(hook/head/loop)占比 + 回归次数 + 末段能量(听感飘 → 看是否中心占比/复现不够)
   const CENTER_TAGS = ['hook', 'head', 'loop'];
   const centerSecs = arrangement.sections.filter((s) => CENTER_TAGS.includes(s.functionTag ?? ''));

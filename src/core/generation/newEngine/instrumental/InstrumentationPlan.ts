@@ -10,7 +10,7 @@
 
 import { deepFreeze, type DeepReadonly, type Midi } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
-import type { EndingStyle, PhraseId, SectionId } from '../arranger/ArrangementPlan';
+import type { EndingStyle, PhraseId, SectionEntry, SectionId } from '../arranger/ArrangementPlan';
 import type { GenericTextureKind, GenericTextureYield } from '../knowledge/textureProfiles';
 import type { TimbreWorld } from '../knowledge/instruments';
 import type { DrumHit } from '../knowledge/grooves';
@@ -82,6 +82,35 @@ export interface InstrumentationPlanData {
   melodyReservationPlan: MelodyReservationPlan;
   // ★ 收尾乐器进出计划(器配据 arrangement.endingStyle 排,render 投影出手势)。
   endingPlan: EndingPlan;
+  // ★ 段落边界衔接计划(Loop C):lead-in pickup / downbeat anchor / song entry(render gate / humanize 消费)。
+  transitionPlan: TransitionPlan;
+}
+
+// ============================================================
+// ★ Loop C(2026-06-08):段落边界【器配计划】(器配层把 Arranger 的 entryBySection 宏观意图变成可执行衔接计划)。
+//   render(Loop E gate / Loop F humanize)消费;不在此生成 NoteIR。确定性、boundary 行为(与 repeatGroup 无关)。
+// ============================================================
+export interface BoundaryGesturePlan {
+  fromSectionId: SectionId;
+  toSectionId: SectionId;
+  boundaryBar: number;          // 下一段开始的绝对小节序号
+  prepBar: number;              // 上一段最后一小节序号(= boundaryBar - 1)
+  entry: SectionEntry;          // downbeat | lead-in
+  pickupRoles: InstrumentRoleName[];        // lead-in:允许在 prepBar 预进入的角色(drum/comp/bass)
+  releaseRoles: InstrumentRoleName[];        // 在 to 段下拍【新进入】的角色(release 感)
+  downbeatAnchorRoles: InstrumentRoleName[]; // to 段下拍必须落地的接地/和声支撑角色
+  protectPickupFromGate: boolean;            // pickup 音符不被上一段 activeRoles gate 删除(Loop E)
+}
+export interface SongEntryPlan {
+  firstSectionId: SectionId;
+  hasIntro: boolean;
+  mode: 'normal-intro' | 'staged-first-bar' | 'direct-anchor';
+  downbeatAnchorRoles: InstrumentRoleName[]; // 第一小节必须落地的下拍锚点
+  delayedRoles: InstrumentRoleName[];        // staged 进入:延后一拍/一小节的非核心角色
+}
+export interface TransitionPlan {
+  boundaries: BoundaryGesturePlan[];
+  songEntry: SongEntryPlan;
 }
 
 export type InstrumentationPlan = DeepReadonly<InstrumentationPlanData>;

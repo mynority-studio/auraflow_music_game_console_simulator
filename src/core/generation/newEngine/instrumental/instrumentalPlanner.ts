@@ -16,12 +16,15 @@ import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorl
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import {
   freezeInstrumentationPlan,
+  type BoundaryGesturePlan,
   type EndingPlan,
   type HookAnchorSlot,
   type InstrumentationPlan,
   type InstrumentationPlanData,
   type RegisterRange,
+  type SongEntryPlan,
   type TextureKind,
+  type TransitionPlan,
 } from './InstrumentationPlan';
 import type { EndingStyle } from '../arranger/ArrangementPlan';
 
@@ -173,6 +176,58 @@ function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineu
   };
 }
 
+// ★ Loop C(2026-06-08):段落边界衔接计划。纯派生(arrangement.entryBySection + activeRolesBySection + lineup),
+//   无 rng、确定性。pickup 优先 drum>comp>bass;接地 grounding 优先 bass/drum + 一个和声支撑。
+const PICKUP_PREF: readonly InstrumentRoleName[] = ['drum', 'comp', 'bass'];
+const GROUNDING_PREF: readonly InstrumentRoleName[] = ['bass', 'drum'];
+const HARMONIC_SUPPORT_PREF: readonly InstrumentRoleName[] = ['comp', 'pad'];
+
+function buildTransitionPlan(
+  arrangement: ArrangementPlan,
+  activeRolesBySection: Record<string, InstrumentRoleName[]>,
+  lineup: readonly InstrumentRoleName[],
+): TransitionPlan {
+  const sections = arrangement.sections;
+  const startBar: number[] = [];
+  let cum = 0;
+  for (const s of sections) { startBar.push(cum); cum += s.bars; }
+  const has = (r: InstrumentRoleName) => lineup.includes(r);
+  const anchorFor = (active: ReadonlySet<InstrumentRoleName>): InstrumentRoleName[] => {
+    const grounding = GROUNDING_PREF.filter((r) => active.has(r) && has(r));
+    const harm = HARMONIC_SUPPORT_PREF.find((r) => active.has(r) && has(r));
+    return [...grounding, ...(harm ? [harm] : [])];
+  };
+
+  const boundaries: BoundaryGesturePlan[] = [];
+  for (let i = 0; i < sections.length - 1; i++) {
+    const from = sections[i], to = sections[i + 1];
+    const entry = (arrangement.entryBySection[to.id] ?? 'downbeat');
+    const toActive = new Set<InstrumentRoleName>(activeRolesBySection[to.id] ?? []);
+    const fromActive = new Set<InstrumentRoleName>(activeRolesBySection[from.id] ?? []);
+    const pickupRoles = entry === 'lead-in' ? PICKUP_PREF.filter((r) => toActive.has(r) && has(r)) : [];
+    const releaseRoles = [...toActive].filter((r) => !fromActive.has(r)); // to 段下拍新进入
+    boundaries.push({
+      fromSectionId: from.id, toSectionId: to.id,
+      boundaryBar: startBar[i + 1], prepBar: startBar[i + 1] - 1, entry,
+      pickupRoles, releaseRoles, downbeatAnchorRoles: anchorFor(toActive),
+      protectPickupFromGate: pickupRoles.length > 0,
+    });
+  }
+
+  const first = sections[0];
+  const hasIntro = first.functionTag === 'setup' || first.role === 'intro';
+  const firstActive = new Set<InstrumentRoleName>(activeRolesBySection[first.id] ?? []);
+  const downbeatAnchorRoles = anchorFor(firstActive);
+  // staged-first-bar:无 intro 直入 → 非锚点非 lead 的角色延后进入(避免全员戛然同起)。
+  const delayedRoles = hasIntro ? [] : [...firstActive].filter((r) => !downbeatAnchorRoles.includes(r) && r !== 'lead');
+  const songEntry: SongEntryPlan = {
+    firstSectionId: first.id, hasIntro,
+    mode: hasIntro ? 'normal-intro' : 'staged-first-bar',
+    downbeatAnchorRoles, delayedRoles,
+  };
+  return { boundaries, songEntry };
+}
+
 export function buildInstrumentationPlan(
   band: BandSpec,
   arrangement: ArrangementPlan,
@@ -308,6 +363,17 @@ export function buildInstrumentationPlan(
     drumPatternBySection[s.id] = variants[variantByGroove[gk] ?? 0] ?? variants[0];
   }
 
+  // ★ Loop D(2026-06-08):lineup-aware 修复 —— floating / 收尾(outro/tag/setup)段若【pad 不在场】但 lineup 有 comp,
+  //   则 comp 必须 active(和声托底)。把"无 pad 编制下谁铺和声"的授权放器配层(activeRolesBySection),
+  //   不靠 render fallback 偷渲染再被 gateByDensity 删(directive §1.2/D.2)。在 transitionPlan/endingPlan 之前修。
+  for (const s of arrangement.sections) {
+    const roles = activeRolesBySection[s.id];
+    if (!roles || roles.includes('pad') || roles.includes('comp') || !band.instrumentPool.includes('comp')) continue;
+    const floating = GENERIC_TEXTURE_YIELD[textureBySection[s.id]] === 'floating';
+    const isEnding = s.functionTag === 'outro' || s.functionTag === 'tag' || s.functionTag === 'setup';
+    if (floating || isEnding) roles.push('comp');
+  }
+
   const data: InstrumentationPlanData = {
     activityBySection,
     activeRolesBySection,
@@ -326,6 +392,7 @@ export function buildInstrumentationPlan(
       hookAnchorSlots,
     },
     endingPlan: buildEndingPlan(arrangement.endingStyle as EndingStyle, arrangement.sections, band.instrumentPool),
+    transitionPlan: buildTransitionPlan(arrangement, activeRolesBySection, band.instrumentPool),
   };
 
   return freezeInstrumentationPlan(data);
