@@ -30,6 +30,10 @@ export interface PadOptions {
   padDensity: number;                                  // styleProfile.padDensity → 整体存在感(0..1)
   decisionBySection: Record<string, PadCompDecision>;  // 每段 pad↔comp 决策(coordinator 算)
   leadReservedLow?: number;                            // 旋律保留区地板:pad 顶须 < 此(避让 lead)
+  // ★ pedal anchor 铺法(二选一,coordinator 按概率一首一掷):整段一条 anchor 长 pedal(严格共同音,
+  //   无则主音)+ 一条随和弦走的 guide tone。off = 现有逐和弦选音。tonicPc = 主音 pc(pedal 兜底,总在音阶内)。
+  pedalAnchor?: boolean;
+  tonicPc?: number;
 }
 
 interface RolePcs { root?: number; third?: number; fifth?: number; seventh?: number }
@@ -159,12 +163,36 @@ function clusterMidis(span: ChordSpan, plan: HarmonicPlan, roles: RolePcs, low: 
   return neighborMidi <= high ? [anchorMidi, neighborMidi].sort((a, b) => a - b) : [anchorMidi];
 }
 
-interface SpanPad { startTick: number; endTick: number; startBeat: number; durBeats: number; midis: number[]; vel: number; gated: boolean }
+/** 每段 pedal anchor pc:整段所有和弦稳定音的【严格共同音】(优先主音);无共同音 → 主音 pedal(总在音阶内)。 */
+function pedalAnchorBySection(
+  timeline: HarmonicPlan['chordTimeline'],
+  stableToneMap: HarmonicPlan['stableToneMap'],
+  tonicPc: number,
+): Record<string, number> {
+  const spansBySec: Record<string, string[]> = {};
+  for (const s of timeline) (spansBySec[s.sectionId] ??= []).push(s.id);
+  const out: Record<string, number> = {};
+  for (const sid of Object.keys(spansBySec)) {
+    let inter: Set<number> | null = null;
+    for (const id of spansBySec[sid]) {
+      const st = new Set<number>(stableToneMap[id] ?? []);
+      inter = inter === null ? st : new Set<number>([...inter].filter((x) => st.has(x)));
+    }
+    const common = inter ? [...inter] : [];
+    out[sid] = common.length ? (common.includes(tonicPc) ? tonicPc : common.sort((a, b) => a - b)[0]) : tonicPc;
+  }
+  return out;
+}
+
+interface SpanPad { startTick: number; endTick: number; startBeat: number; durBeats: number; sectionId: string; midis: number[]; vel: number; gated: boolean }
 
 export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptions): TrackIR {
   const { padDensity, decisionBySection } = opts;
   const leadLow = opts.leadReservedLow ?? DEFAULT_LEAD_LOW;
   const timeline = plan.chordTimeline;
+  // ★ pedal anchor 铺法(coordinator 按概率开):每段一条 anchor 长 pedal + 一条动 guide tone。
+  const anchorBySection = (opts.pedalAnchor && opts.tonicPc !== undefined)
+    ? pedalAnchorBySection(timeline, plan.stableToneMap, opts.tonicPc) : undefined;
   let prevTop: number | undefined;       // inner-line 线条记忆
   let prevSection: string | undefined;   // 段落边界 → 重置 prevTop(守 repeatGroup)
 
@@ -176,7 +204,7 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
     if (span.sectionId !== prevSection) { prevTop = undefined; prevSection = span.sectionId; }
     const startTick = timebase.beatToTick(span.startBeat) as number;
     const endTick = startTick + (timebase.beatToTick(span.durationBeats) as number);
-    const slot: SpanPad = { startTick, endTick, startBeat: span.startBeat as number, durBeats: span.durationBeats as number, midis: [], vel: 0, gated: false };
+    const slot: SpanPad = { startTick, endTick, startBeat: span.startBeat as number, durBeats: span.durationBeats as number, sectionId: span.sectionId, midis: [], vel: 0, gated: false };
     if (!dec || dec.padMode === 'silent' || dec.padMaxVoices < 1) { perSpan.push(slot); continue; } // 静默(fail-closed)
 
     const compActive = dec.interactionMode === 'pad-under-comp' || dec.interactionMode === 'breath-space' || dec.interactionMode === 'gated-pad-drives';
@@ -191,6 +219,16 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
       if (midis.length) prevTop = midis[midis.length - 1];
     } else if (dec.padMode === 'cluster-mist') {
       midis = clusterMidis(span, plan, roles, low, hi).slice(0, dec.padMaxVoices);
+    } else if (anchorBySection?.[span.sectionId] !== undefined) {
+      // ★ pedal anchor 铺法:anchor 长 pedal(整段同 pc 同窗口 → tie 连成长音)+ 动 guide tone(随和弦走)。
+      const anchorPc = anchorBySection[span.sectionId];
+      const anchorMidi = pcToMidiInRange(anchorPc, low, hi) as number;
+      midis = [anchorMidi];
+      if (dec.padMaxVoices >= 2) {
+        const moveCands = [roles.third, roles.seventh, ...legalTensions(span, plan, roles)].filter((p): p is number => p !== undefined && p !== anchorPc);
+        for (const pc of moveCands) { const m = pcToMidiInRange(pc, low, hi) as number; if (m !== anchorMidi) { midis.push(m); break; } }
+      }
+      midis = [...new Set(midis)].sort((a, b) => a - b);
     } else {
       midis = placePadMidis(selectStaticPcs(span, timeline[i - 1], timeline[i + 1], dec, plan, roles), low, hi);
     }
@@ -225,7 +263,7 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
         const runStart = perSpan[i].startTick;
         const vel = perSpan[i].vel; // run 取首 span 力度
         let j = i;
-        while (j + 1 < perSpan.length && perSpan[j + 1].startTick === perSpan[j].endTick && has(j + 1)) j++;
+        while (j + 1 < perSpan.length && perSpan[j + 1].startTick === perSpan[j].endTick && perSpan[j + 1].sectionId === perSpan[j].sectionId && has(j + 1)) j++; // ★ 段边界断开 tie:pad 每段重新起音(pedal/共同音不跨段连成全曲 drone)
         notes.push({ pitch: midi(p), startTick: ticks(runStart), durationTicks: ticks(perSpan[j].endTick - runStart), velocity: vel });
         i = j + 1;
       } else i++;

@@ -145,6 +145,46 @@ describe('render/padModes · 共同音 tie(链接连续:相邻和弦共同音合
   });
 });
 
+describe('render/padModes · pedal anchor(二选一:整段共同音/主音长 pedal + 动声部)', () => {
+  // C-F-G(无严格共同音)→ anchor = 主音 C(pc0)pedal,整段持续。
+  const plan = makePlan([
+    { root: 0, type: 'maj', stable: [0, 4, 7], scale: [0, 2, 4, 5, 7, 9, 11], section: 'intro' },
+    { root: 5, type: 'maj', stable: [5, 9, 0], scale: [5, 7, 9, 10, 0, 2, 4], section: 'intro' },
+    { root: 7, type: 'maj', stable: [7, 11, 2], scale: [7, 9, 11, 0, 2, 4, 6], section: 'intro' },
+  ]);
+  const dec = { intro: mkDec('full-support', 'pad-only', 2, false) };
+  const spanTick = timebase.beatToTick(beats(4)) as number;
+  const padOn = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection: dec, leadReservedLow: 67, pedalAnchor: true, tonicPc: 0 });
+  const padOff = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection: dec, leadReservedLow: 67 });
+
+  it('pedalAnchor on:主音 C 长 pedal 横跨整段(3 span)', () => {
+    const cNotes = padOn.notes.filter((n) => (((n.pitch as number) % 12) + 12) % 12 === 0); // pc C
+    expect(cNotes.length).toBe(1);                          // 一条 C pedal
+    expect(cNotes[0].durationTicks).toBe(spanTick * 3);     // 横跨整段 3 个和弦
+  });
+
+  it('off:无主音长 pedal(回逐和弦选音,最长音 < 整段)', () => {
+    const maxOff = Math.max(...padOff.notes.map((n) => n.durationTicks as number));
+    expect(maxOff).toBeLessThan(spanTick * 3); // 逐和弦,不横跨整段
+  });
+
+  it('pedal 仍和声合法(anchor + 动声部都在 chordScale 内、≤2 音/瞬时)', () => {
+    for (const n of padOn.notes) {
+      // 该音覆盖的某个和弦的音阶内
+      const ns = n.startTick as number, ne = ns + (n.durationTicks as number);
+      const pcv = (((n.pitch as number) % 12) + 12) % 12;
+      const covered = plan.chordTimeline.filter((c) => {
+        const lo = timebase.beatToTick(c.startBeat) as number;
+        return ns < lo + (timebase.beatToTick(c.durationBeats) as number) && ne > lo;
+      });
+      for (const c of covered) {
+        const sc = new Set<number>([...(plan.chordScaleMap[c.id] ?? []), ...(plan.stableToneMap[c.id] ?? [])]);
+        expect(sc.has(pcv)).toBe(true);
+      }
+    }
+  });
+});
+
 describe('render/padModes · 正交音阶锁(真实管线:pad 永在 chordScale 内、不碰 avoid)', () => {
   for (const [seed, style] of [[3, 'lofi'], [7, 'rnb'], [11, 'pop'], [9, 'lofi']] as const) {
     const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });

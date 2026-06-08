@@ -9,7 +9,7 @@
 
 export type StageName =
   | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental' | 'timbre'
-  | 'prepass' | 'accompaniment' | 'compTexture' | 'melody' | 'resolver' | 'humanize';
+  | 'prepass' | 'accompaniment' | 'compTexture' | 'padStyle' | 'melody' | 'resolver' | 'humanize';
 
 export interface Rng {
   next(): number;                       // [0,1)

@@ -45,6 +45,8 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
 
 // CC64 踏板的风格:POP/LOFI/RNB comp 踩踏板(音尾 ring,融合);JAZZ/BLUES 不踩(声部清晰)。
 const PEDAL_STYLES = ['pop', 'lofi', 'rnb'];
+// pad 铺法二选一:~40% 歌走 pedal anchor(整段长 pedal + 动声部),其余逐和弦选音。
+const PAD_PEDAL_ANCHOR_PROB = 0.4;
 
 /** 伴奏 ducking:comp 撞旋律(lead)时 ×factor(让旋律清晰;旋律留白处 comp 不动=满响)。 */
 export function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
@@ -197,8 +199,13 @@ export function renderSongFull(
   const padOccupiedPitchesBySpan: Record<string, number[]> = {};
   let padTrack: TrackIR | undefined;
   if (inLineup('pad')) {
-    padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: reservedReg.lowMidi });
-    // ★ 按【时间区间重叠】映射(pad tie 后长音跨多 span)→ comp 在所有被覆盖的 span 都避让该 pad 音高。
+    // ★ pad 铺法二选一(一首一掷,确定性):~40% 走 pedal anchor(整段共同音/主音长 pedal + 动声部),
+    //   ~60% 现有逐和弦选音。padStyle 子流独立 → 不扰其它决策。
+    const pedalAnchor = rng.substream('padStyle').next() < PAD_PEDAL_ANCHOR_PROB;
+    padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: reservedReg.lowMidi, pedalAnchor, tonicPc: band.key as number });
+    // ★ comp 避同绝对音高:只针对 pad 的【逐和弦音】(覆盖正好 1 span,会随和弦重新起音 → 可能与 comp hit 撞 unison)。
+    //   一切【持续音】(tie 共同音 / pedal anchor,覆盖 ≥2 span)不让 comp 避——软持续 pad 上叠 comp 是加厚不是
+    //   mud,且强行避会让 comp 整段/稀疏段丢掉该音高 = 过稀(实测 intro pedal 掏空 comp)。
     const spanRanges = plan.chordTimeline.map((span) => {
       const lo = timebase.beatToTick(span.startBeat) as number;
       return { id: span.id, lo, hi: lo + (timebase.beatToTick(span.durationBeats) as number) };
@@ -206,7 +213,8 @@ export function renderSongFull(
     for (const n of padTrack.notes) {
       const ns = n.startTick as number;
       const ne = ns + (n.durationTicks as number);
-      for (const r of spanRanges) if (ns < r.hi && ne > r.lo) (padOccupiedPitchesBySpan[r.id] ??= []).push(n.pitch as number);
+      const covered = spanRanges.filter((r) => ns < r.hi && ne > r.lo);
+      if (covered.length === 1) (padOccupiedPitchesBySpan[covered[0].id] ??= []).push(n.pitch as number); // 仅逐和弦音
     }
   }
 
