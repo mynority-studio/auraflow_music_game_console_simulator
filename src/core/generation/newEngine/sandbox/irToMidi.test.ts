@@ -84,17 +84,17 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(firstLeadCCIdx).toBeLessThan(firstLeadOnIdx);
   });
 
-  it('★ 音量:comp fader 仍最高(补低 velocity);pad 最弱铺底;伴奏弦音不压旋律(pad < lead)', () => {
+  it('★ 音量:bass 最弱(−25%)· pad 抬起(+30%,用户)· comp fader 补低 velocity · 全合法范围', () => {
     const vol = (ch: number) => cc(ch, 7).data2;
-    // comp 源 velocity 最低 → fader 最高补偿(但已 −20% 收弦音)
+    // bass 降到旋律之下、现为骨干最弱(用户 −25%)
+    expect(vol(CH.bass)).toBeLessThan(vol(CH.lead));
+    expect(vol(CH.bass)).toBeLessThan(vol(CH.pad));
+    // comp fader 高(补它最低的 source velocity)
     expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.lead));
-    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.bass));
-    expect(vol(CH.comp)).toBeGreaterThanOrEqual(vol(CH.pad));
-    // ★ pad 铺底最弱(−30%),且降到旋律之下 → 和弦不压旋律(用户)
-    expect(vol(CH.pad)).toBeLessThan(vol(CH.lead));
-    expect(vol(CH.pad)).toBeLessThan(vol(CH.comp));
-    // 全在合法 MIDI 范围
-    for (const ch of Object.values(CH)) expect(vol(ch)).toBeGreaterThan(0), expect(vol(ch)).toBeLessThanOrEqual(127);
+    // ★ pad CC7 抬起(+30%)即便高于 lead 的【通道音量】,有效响度=CC7×velocity 仍低于 lead
+    //   (pad velocity ~35 远低于 lead ~85)→ 软 pad 抬亮但不埋旋律。
+    expect(vol(CH.pad)).toBeGreaterThan(vol(CH.bass));
+    for (const ch of Object.values(CH)) { expect(vol(ch)).toBeGreaterThan(0); expect(vol(ch)).toBeLessThanOrEqual(127); }
   });
 
   it('声像:comp 偏左(<64)/ pad 偏右(>64)/ bass·lead·drum 居中(=64)', () => {

@@ -28,10 +28,10 @@ const CC_SUSTAIN = 64;
 //   comp 被复音衰减拖低、pad 偏埋 → 目标把旋律层/节奏组拉到 ~同一响度带,pad 作铺底。
 //   bass CC7 降(它 velocity 本就高);comp CC7 仍高(补它低 velocity,另在 renderer 抬 body);pad/drum 抬。
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
-  bass: { channel: 3, program: 33, volume: 84, pan: 64 },  // 中 · 降 fader(velocity 高、改音区后过热)
+  bass: { channel: 3, program: 33, volume: 63, pan: 64 },  // 中 · −25%(用户:bass 再降,84→63)
   comp: { channel: 2, program: 0, volume: 93, pan: 50 },   // 偏左 · −20%(用户:和弦音太厚压旋律,116→93)
   lead: { channel: 1, program: 73, volume: 82, pan: 64 },  // 中 · 旋律主线(现高于 comp/pad → 不被弦音压)
-  pad: { channel: 4, program: 89, volume: 74, pan: 78 },   // 偏右 · −30%(用户:铺底太厚,106→74)
+  pad: { channel: 4, program: 89, volume: 96, pan: 78 },   // 偏右 · +30%(用户:铺底抬起,74→96)
   drum: { channel: 9, program: 0, volume: 102, pan: 64 },  // 中
 };
 
