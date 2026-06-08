@@ -67,13 +67,16 @@ function jitterScale(tick: number, ppq: number, beatsPerBar: number): number {
  *   多声部对拍/复调由织体写定后不被抖散;只在不同槽位之间引入人味。下拍槽近锚定 → 重心不漂。
  * 确定性:distinct tick 升序消费 rng(顺序稳定 → 同 seed 同结果)。
  */
-export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: number, rng: Rng, maxJitterTicks = Math.max(2, Math.round(ppq * 0.015))): TrackIR[] {
+export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: number, rng: Rng, maxJitterTicks = Math.max(2, Math.round(ppq * 0.015)), anchorTicks: ReadonlySet<number> = new Set()): TrackIR[] {
   // 收集全轨 distinct 起音 tick → 升序,每个槽位下发一个(缩放后)偏移。
   const slots = new Set<number>();
   for (const t of tracks) for (const n of t.notes) slots.add(n.startTick as number);
   const offsetBySlot = new Map<number, number>();
   for (const tick of [...slots].sort((a, b) => a - b)) {
-    const off = Math.round((rng.next() * 2 - 1) * maxJitterTicks * jitterScale(tick, ppq, beatsPerBar));
+    let off = Math.round((rng.next() * 2 - 1) * maxJitterTicks * jitterScale(tick, ppq, beatsPerBar));
+    // ★ Loop F(2026-06-08):结构锚点(段落起始 / 曲首 / 末主音下拍)不做【负向】jitter →
+    //   核心 downbeat 不被拉到上一段(新段有明确 release;末主音不被拉出 songEnd)。仍允许微正偏(不全禁 humanize)。
+    if (anchorTicks.has(tick)) off = Math.max(0, off);
     offsetBySlot.set(tick, off);
   }
   return tracks.map((t) => {

@@ -303,9 +303,18 @@ export function renderSongFull(
     tonalCharacter: band.tonalityKind === 'modal' ? 'modal' : 'tonal',
   });
 
+  // ★ Loop F 结构锚点:段落起始 tick + 曲首 0 + 末主音下拍(末和弦起) → humanizeTiming 对这些 tick 不做负向 jitter。
+  const anchorTicks = new Set<number>([0]);
+  let anchorCursor = 0;
+  for (const s of arrangement.sections) {
+    anchorTicks.add(timebase.beatToTick(beats(anchorCursor)) as number);
+    anchorCursor += s.bars * bpbHuman;
+  }
+  if (plan.chordTimeline.length) anchorTicks.add(timebase.beatToTick(plan.chordTimeline[plan.chordTimeline.length - 1].startBeat) as number);
+
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
-  // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。
-  const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng);
+  // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
+  const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks);
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);

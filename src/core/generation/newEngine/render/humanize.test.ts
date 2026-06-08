@@ -112,4 +112,30 @@ describe('render · 人性化力度/微时序 (5.3)', () => {
     expect(a.status).not.toBe('failed');
     expect(a.ir!.tracks).toEqual(b.ir!.tracks);
   });
+
+  // ★ Loop F:结构锚点不做负向 jitter(段落下拍不被拉到上一段)
+  it('anchor 槽位:有 anchor → downbeat 不被负偏(>= 锚点);无 anchor → 会有负偏', () => {
+    const ANCHOR = 1920; // 某段落起始下拍
+    let minWith = Infinity, minWithout = Infinity;
+    for (let seed = 0; seed < 60; seed++) {
+      const mk = (): TrackIR[] => [{ role: 'bass', notes: [note(ANCHOR, 80, 40)] }];
+      const withA = humanizeTiming(mk(), PPQ, 4, createRandomContext(seed).substream('humanize'), undefined, new Set([ANCHOR]));
+      const without = humanizeTiming(mk(), PPQ, 4, createRandomContext(seed).substream('humanize'), undefined, new Set());
+      minWith = Math.min(minWith, withA[0].notes[0].startTick as number);
+      minWithout = Math.min(minWithout, without[0].notes[0].startTick as number);
+    }
+    expect(minWith).toBeGreaterThanOrEqual(ANCHOR);  // anchor → 永不早于下拍
+    expect(minWithout).toBeLessThan(ANCHOR);          // 无 anchor → 存在负偏(证明 clamp 真起作用)
+  });
+
+  it('anchor 不冻结普通 offbeat:非锚点反拍仍能 humanize', () => {
+    const OFF = 240; // 反拍 8 分(frac=0.5)
+    const ticksSeen = new Set<number>();
+    for (let seed = 0; seed < 30; seed++) {
+      const t: TrackIR[] = [{ role: 'comp', notes: [note(OFF)] }];
+      const out = humanizeTiming(t, PPQ, 4, createRandomContext(seed).substream('humanize'), undefined, new Set([1920]));
+      ticksSeen.add(out[0].notes[0].startTick as number);
+    }
+    expect(ticksSeen.size).toBeGreaterThan(1); // offbeat 仍被抖动(非锚点不受保护)
+  });
 });
