@@ -89,6 +89,8 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const richTex = Object.entries(instrumentation.richTextureBySection);
   if (richTex.length) log(`   rich 织体(段级,器配下发): ${richTex.map(([s, tc]) => `${s}=${tc.replace('Piano_', '')}`).join(' ')}`);
   else log(`   rich 织体: 逐 span 回退(LOFI/blues/default)`);
+  const richSw = Object.entries(instrumentation.richTextureSwitchBySection);
+  if (richSw.length) log(`   ★ 段内变化(verse 中段,≤2/段,所有 verse 一致): ${richSw.map(([s, v]) => `${s}@${v.atFraction}→${v.toTexture.replace('Piano_', '')}`).join(' ')}`);
   // ★ 音色切换(同乐手换声音):某角色跨段落用了 >1 种 program → 印 verse↔chorus
   const timbreSwitch = band.instrumentPool.map((r) => {
     const bySec = instrumentation.programByRoleSection[r];

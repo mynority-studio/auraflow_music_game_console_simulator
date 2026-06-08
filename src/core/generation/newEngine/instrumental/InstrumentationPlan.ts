@@ -50,6 +50,9 @@ export interface InstrumentationPlanData {
   //   (同 role/repeatGroup 复用、同曲 ≤2、排除 delayed-entry)→ render 按段 projection,不再逐 span 随机切。
   //   LOFI 不在此(空)→ render 回退逐 span 老路(LOFI phrase-variation 留后续)。
   richTextureBySection: Record<SectionId, string>;
+  // ★ 段内受控变化(第二期):verse 中段(atFraction)切到【兼容连续】变体,同曲 ≤2/段、所有同 role 段一致
+  //   (repeatGroup)、低概率。render 按 idxInSec/count ≥ atFraction 投影。无此项的段 = 全段单一织体。
+  richTextureSwitchBySection: Record<SectionId, { atFraction: number; toTexture: string }>;
   textureYieldPolicy: Record<TextureKind, YieldClass>;
   // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
   //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。

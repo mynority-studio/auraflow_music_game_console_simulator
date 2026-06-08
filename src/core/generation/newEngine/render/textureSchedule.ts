@@ -34,12 +34,14 @@ export function buildTextureSchedule(args: {
   activeSectionIds: Set<string>;
   textureRng: { pick<T>(xs: readonly T[]): T };
   richTextureBySection?: Record<string, string>; // 器配层段级下发(非 LOFI);空 = 逐 span 回退
+  richTextureSwitchBySection?: Record<string, { atFraction: number; toTexture: string }>; // 段内受控变化(verse 中段)
 }): TextureSchedule {
-  const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection } = args;
+  const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection, richTextureSwitchBySection } = args;
   const txStyle = TEXTURE_STYLE[style.toLowerCase()];
   const schedule: TextureSchedule = {};
   if (!txStyle) return schedule;
   const rich = richTextureBySection ?? {};
+  const richSwitch = richTextureSwitchBySection ?? {};
 
   const timeline = plan.chordTimeline;
   const funcBySpan: Record<string, HarmonicFunction> = {};
@@ -55,9 +57,13 @@ export function buildTextureSchedule(args: {
   for (const span of timeline) {
     if (!activeSectionIds.has(span.sectionId)) continue;
     // ★ 器配层段级下发优先:整段沿用,projection + 渲染器存在性校验(render 只做投影/校验,不做决策)。
+    //   含段内受控变化:idxInSec/count ≥ atFraction → 切到 variant(verse 中段,兼容连续,不留洞)。
     const planned = rich[span.sectionId];
     if (planned) {
-      if (hasTextureRenderer(planned)) schedule[span.id] = planned;
+      const sw = richSwitch[span.sectionId];
+      const cnt = countInSec[span.sectionId] || 1;
+      const tc = (sw && idxInSec[span.id] / cnt >= sw.atFraction) ? sw.toTexture : planned;
+      if (hasTextureRenderer(tc)) schedule[span.id] = tc;
       continue;
     }
     // 回退:逐 span 选(LOFI / blues / 无段级下发)

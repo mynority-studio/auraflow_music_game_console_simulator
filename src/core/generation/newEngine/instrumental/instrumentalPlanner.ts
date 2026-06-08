@@ -11,7 +11,7 @@ import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
-import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
+import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs } from '../knowledge/instruments';
 import {
   freezeInstrumentationPlan,
@@ -133,6 +133,7 @@ function activeRolesFor(
 // 会切音色的乐手:仅 comp/lead,且【仅键盘族】(效果器/电钢能切;颤音琴/马林巴是物理乐器,不切)。
 const TIMBRE_SWITCH_ROLES: InstrumentRoleName[] = ['comp', 'lead'];
 const TIMBRE_SWITCH_PROB = 0.12; // 偶尔(每首掷一次):~12% 歌切,88% 全曲单音色
+const VERSE_VARIATION_PROB = 0.35; // verse 段内织体变化(每首掷一次):~35% 歌的 verse 中段切兼容变体,其余全段一致
 
 export function buildInstrumentationPlan(
   band: BandSpec,
@@ -224,6 +225,7 @@ export function buildInstrumentationPlan(
   //   rng 在所有前置决策【之后】取(+2 draw)→ 不扰 timbre/lead/intro 确定性。
   const RICH_STYLE: Record<string, TextureStyleName> = { pop: 'POP', rnb: 'RNB', jazz: 'JAZZ' };
   const richTextureBySection: Record<string, string> = {};
+  const richTextureSwitchBySection: Record<string, { atFraction: number; toTexture: string }> = {};
   const richStyle = RICH_STYLE[band.style.toLowerCase()];
   if (rng && richStyle) {
     const low = pickTextureForBar({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: false, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
@@ -234,6 +236,19 @@ export function buildInstrumentationPlan(
       const tc = (s.role === 'chorus' || s.role === 'bridge') ? highTc : lowTc;
       if (tc) richTextureBySection[s.id] = tc;
     }
+
+    // ★ verse 段内受控变化(≤2/段):低概率,中段切到【兼容连续 ≠base】变体;所有 verse 段一致(repeatGroup)。
+    //   只切 rate='allow'(连续兼容,无需 bridge)→ 段内不留洞。rng 在 low/high 之后取(不扰前置)。
+    if (lowTc && rng.next() < VERSE_VARIATION_PROB) {
+      const variant = pickTextureForBar({
+        style: richStyle, phraseRole: 'develop', density: densityForCell('develop', 'VERSE'), energy: energyForCell('develop', 'VERSE'),
+        isDominantChain: false, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
+      });
+      const vtc = variant?.textureCase;
+      if (vtc && rateTextureTransition(lowTc, vtc).rating === 'allow') {
+        for (const s of arrangement.sections) if (s.role === 'verse') richTextureSwitchBySection[s.id] = { atFraction: 0.5, toTexture: vtc };
+      }
+    }
   }
 
   const data: InstrumentationPlanData = {
@@ -242,6 +257,7 @@ export function buildInstrumentationPlan(
     registerByRole: REGISTER_BY_ROLE,
     textureBySection,
     richTextureBySection,
+    richTextureSwitchBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     programByRoleSection,
     timbreWorld,

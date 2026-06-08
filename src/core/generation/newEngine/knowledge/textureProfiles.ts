@@ -98,10 +98,81 @@ const _LOFI_TEXTURE_PROFILES: TextureProfile[] = [
 /** 公开池 = modern + LOFI(★ 不含 legacy,见 §9)。 */
 export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES];
 
-// ★ delayed-entry / 留白型织体:首击晚(如 Piano_Question_Answer firstOnset=2.0)→ 段级常驻会每小节留洞。
-//   段级 texture(器配层下发,整段沿用)必须排除它们,否则非 breakdown 段会出 >1 拍 comp 空隙。
-//   (这是第一期最小标记;第二期的 TextureBehaviorProfile.firstOnsetBeat 会把全 16 种正式量化。)
-export const DELAYED_ENTRY_TEXTURES: ReadonlySet<string> = new Set(['Piano_Question_Answer']);
+// ============================================================
+// 织体行为元数据(第二期:texture-switch 兼容性判据,docs/texture_switch_musicality_directive §3.1)
+//   family/continuity/firstOnsetBeat 量化自 textureRenderer 的真实 hit 序列。
+//   段级下发用 isDelayedEntryTexture 排除(首击 > 0.75 拍 = 段级常驻会每小节留洞)。
+//   transition gate 用 rateTextureTransition(切换是否兼容 + 需要哪种 bridge)。
+// ============================================================
+export type TextureFamily = 'block' | 'arp' | 'pluck' | 'sustain' | 'answer' | 'chop' | 'roll' | 'wash';
+export type TextureContinuity = 'continuous' | 'semiContinuous' | 'sparse' | 'delayedEntry';
+
+export interface TextureBehaviorProfile {
+  textureCase: string;
+  family: TextureFamily;
+  continuity: TextureContinuity;
+  firstOnsetBeat: number; // 该织体在每个 span 内的首击拍(量化自 textureRenderer)
+}
+
+export const TEXTURE_BEHAVIOR: Record<string, TextureBehaviorProfile> = {
+  // —— modern(POP/RNB/JAZZ)——
+  Lyrical_Felt_Piano_Sparse: { textureCase: 'Lyrical_Felt_Piano_Sparse', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.15 },
+  Lyrical_10th_Broken: { textureCase: 'Lyrical_10th_Broken', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.05 },
+  Ambient_Pad_Breath: { textureCase: 'Ambient_Pad_Breath', family: 'wash', continuity: 'continuous', firstOnsetBeat: 0.05 },
+  Ambient_Reverse_Swell: { textureCase: 'Ambient_Reverse_Swell', family: 'wash', continuity: 'delayedEntry', firstOnsetBeat: 1.75 },
+  Soft_Guitar_Pluck_8ths: { textureCase: 'Soft_Guitar_Pluck_8ths', family: 'pluck', continuity: 'semiContinuous', firstOnsetBeat: 0.02 },
+  Piano_Question_Answer: { textureCase: 'Piano_Question_Answer', family: 'answer', continuity: 'delayedEntry', firstOnsetBeat: 2.0 },
+  Low_Pedal_Color_Wash: { textureCase: 'Low_Pedal_Color_Wash', family: 'wash', continuity: 'continuous', firstOnsetBeat: 0.25 },
+  HalfTime_Emotional_Pulse: { textureCase: 'HalfTime_Emotional_Pulse', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  // —— LOFI ——
+  Piano_Lofi_OneShot_Space: { textureCase: 'Piano_Lofi_OneShot_Space', family: 'sustain', continuity: 'sparse', firstOnsetBeat: 0.025 },
+  Piano_Lofi_Late_Chord_Answer: { textureCase: 'Piano_Lofi_Late_Chord_Answer', family: 'answer', continuity: 'delayedEntry', firstOnsetBeat: 2.04 },
+  Piano_Emo_Broken_10th: { textureCase: 'Piano_Emo_Broken_10th', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.02 },
+  Piano_Ambient_Sustain_Wash: { textureCase: 'Piano_Ambient_Sustain_Wash', family: 'wash', continuity: 'continuous', firstOnsetBeat: 0.02 },
+  Piano_HalfTime_Soft_Pulse: { textureCase: 'Piano_HalfTime_Soft_Pulse', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.025 },
+  Piano_Lofi_Dusty_Chops: { textureCase: 'Piano_Lofi_Dusty_Chops', family: 'chop', continuity: 'sparse', firstOnsetBeat: 0.58 },
+  Piano_Lofi_Tape_Wobble_Arp: { textureCase: 'Piano_Lofi_Tape_Wobble_Arp', family: 'arp', continuity: 'semiContinuous', firstOnsetBeat: 0.02 },
+  Piano_Wide_Color_Motion: { textureCase: 'Piano_Wide_Color_Motion', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
+  Piano_CommonTone_Soft_Roll: { textureCase: 'Piano_CommonTone_Soft_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
+};
+
+export function textureBehavior(textureCase: string): TextureBehaviorProfile | undefined {
+  return TEXTURE_BEHAVIOR[textureCase];
+}
+export function firstOnsetBeat(textureCase: string): number {
+  return TEXTURE_BEHAVIOR[textureCase]?.firstOnsetBeat ?? 0;
+}
+/** 首击 > 0.75 拍 = delayed-entry:段级常驻会每小节留洞 → 器配层段级下发排除。 */
+export function isDelayedEntryTexture(textureCase: string): boolean {
+  return firstOnsetBeat(textureCase) > 0.75;
+}
+
+// delayed-entry 织体集(从 behavior 派生:含 Q&A / Reverse_Swell / Lofi_Late_Chord_Answer)。
+export const DELAYED_ENTRY_TEXTURES: ReadonlySet<string> = new Set(
+  Object.values(TEXTURE_BEHAVIOR).filter((b) => b.firstOnsetBeat > 0.75).map((b) => b.textureCase),
+);
+
+export type TextureTransitionRating = 'allow' | 'allowWithBridge' | 'avoid';
+export type TextureBridge = 'none' | 'carryTail' | 'pickupChord' | 'downbeatAnchor';
+export interface TextureTransitionVerdict { rating: TextureTransitionRating; bridge: TextureBridge }
+
+/**
+ * 织体切换兼容性(directive §3.1 硬规则):
+ *   · → delayedEntry:首击晚 → allowWithBridge(downbeatAnchor 在新段首拍补轻 shell)。
+ *   · wash/sustain → chop/pluck:断点风险 → allowWithBridge(carryTail 延上一击到边界)。
+ *   · 其余(continuous↔continuous / arp→arp/roll …)→ allow。
+ */
+export function rateTextureTransition(from: string, to: string): TextureTransitionVerdict {
+  const bf = textureBehavior(from);
+  const bt = textureBehavior(to);
+  if (!bf || !bt) return { rating: 'allow', bridge: 'none' };
+  if (from === to) return { rating: 'allow', bridge: 'none' };
+  if (bt.continuity === 'delayedEntry') return { rating: 'allowWithBridge', bridge: 'downbeatAnchor' };
+  if ((bf.family === 'wash' || bf.family === 'sustain') && (bt.family === 'chop' || bt.family === 'pluck')) {
+    return { rating: 'allowWithBridge', bridge: 'carryTail' };
+  }
+  return { rating: 'allow', bridge: 'none' };
+}
 
 /** 按 style·cell 角色·density·energy·dominant chain·repeat 过滤选织体;无匹配回退同 style 全集,再无 → null。 */
 export function pickTextureForBar(args: {
