@@ -13,6 +13,7 @@ import { planTime } from './timePlanner';
 import { planDynamics } from './dynamicsPlanner';
 import { planPhrases } from './phrasePlanner';
 import { planGroove } from './groovePlanner';
+import { planEdges } from './edgePlanner';
 
 export interface ArrangementOptions {
   rng?: RandomContext; // 有 → seed 选曲式 + 段落长度变化(不同 seed 不同曲式)
@@ -28,6 +29,7 @@ export function buildArrangementPlan(
   const { phrases, motifBindings } = planPhrases(sections, time.phraseBreathing.phraseBars);
   const dynamics = planDynamics(sections);
   const grooveBySection = planGroove(sections, band.style); // 鼓 groove 下发(纯 functionTag/role 派生,不抽 rng)
+  const edges = planEdges(sections, dynamics.energyBySection, band.style); // 段落边界:进入方式 + 收尾(纯 energy/style 派生)
 
   const data: ArrangementPlanData = {
     sections,
@@ -42,6 +44,8 @@ export function buildArrangementPlan(
     climaxMap: dynamics.climaxMap,
     harmonicRhythmTarget: dynamics.harmonicRhythmTarget,
     grooveBySection,
+    entryBySection: edges.entryBySection,
+    endingStyle: edges.endingStyle,
   };
 
   return freezeArrangementPlan(data);

@@ -10,7 +10,7 @@
 
 import { deepFreeze, type DeepReadonly, type Midi } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
-import type { PhraseId, SectionId } from '../arranger/ArrangementPlan';
+import type { EndingStyle, PhraseId, SectionId } from '../arranger/ArrangementPlan';
 import type { GenericTextureKind, GenericTextureYield } from '../knowledge/textureProfiles';
 import type { TimbreWorld } from '../knowledge/instruments';
 import type { DrumHit } from '../knowledge/grooves';
@@ -37,6 +37,19 @@ export interface MelodyReservationPlan {
   reservedRegister: RegisterRange;
   densityCeiling: number;
   hookAnchorSlots: HookAnchorSlot[];
+}
+
+// ★ 收尾【乐器进出计划】(2026-06-08,器配据 arrangement.endingStyle 编写):render 据此出收尾手势。
+//   exitBarByRole = 该 role 在 outro 内【撑过头几个相对小节后静音】(undefined = 响到末);
+//   holdFinalChord = 末和弦延留(tag);fadeOut = outro 力度渐弱(fade);coldStop = 末小节齐停 + button 重音(cold)。
+export interface EndingPlan {
+  style: EndingStyle;
+  outroSectionId: SectionId | null;
+  outroBars: number;
+  exitBarByRole: Partial<Record<InstrumentRoleName, number>>;
+  holdFinalChord: boolean;
+  fadeOut: boolean;
+  coldStop: boolean;
 }
 
 export interface InstrumentationPlanData {
@@ -67,6 +80,8 @@ export interface InstrumentationPlanData {
   timbreWorld?: TimbreWorld;
   sameInstrumentPairs?: { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[];
   melodyReservationPlan: MelodyReservationPlan;
+  // ★ 收尾乐器进出计划(器配据 arrangement.endingStyle 排,render 投影出手势)。
+  endingPlan: EndingPlan;
 }
 
 export type InstrumentationPlan = DeepReadonly<InstrumentationPlanData>;

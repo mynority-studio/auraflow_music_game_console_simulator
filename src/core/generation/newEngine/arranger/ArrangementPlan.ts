@@ -34,6 +34,12 @@ export type HarmonyLinkKind =
   | 'minorIvHold'              // iv hold -> next I/vi
   | 'stopOnDominant';          // V stop -> next hook impact
 
+// ★ 段落【边界行为】(2026-06-08,修 intro→verse 衔接 / outro 收尾):
+//   entry = 本段乐器【怎么进来】:'lead-in'=上一段末小节铺垫推进到本段下拍(release,能量跃升处);'downbeat'=直入(重复段/无跃升)。
+//   ending = 全曲【怎么收尾】(风格定制,不改 tempo):'cold'=末和弦干净停(button);'fade'=逐件抽离+音量渐弱;'tag'=末和弦延留+节奏件先退(渐慢感)。
+export type SectionEntry = 'downbeat' | 'lead-in';
+export type EndingStyle = 'cold' | 'fade' | 'tag';
+
 export interface Section {
   id: SectionId;
   role: SectionRole;              // legacy 投影(render/texture/trace),五类不变
@@ -102,6 +108,10 @@ export interface ArrangementPlanData {
   harmonicRhythmTarget: HarmonicRhythmTarget;
   /** ★ 每段鼓 groove 性格(Arranger 下发,器配层据此匹配具体 drum pattern 变体)。swing 不在此,走 feel.swingRatio。 */
   grooveBySection: Record<SectionId, GrooveKind>;
+  /** ★ 每段乐器【进入方式】(Arranger 下发,修 intro→verse 衔接):能量跃升处=lead-in(上段末小节铺垫推进),其余=downbeat 直入。 */
+  entryBySection: Record<SectionId, SectionEntry>;
+  /** ★ 全曲【收尾方式】(Arranger 下发,风格定制,修戛然而止):器配据此排乐器退出、render 出渐弱/延留/冷收手势。 */
+  endingStyle: EndingStyle;
 }
 
 export type ArrangementPlan = DeepReadonly<ArrangementPlanData>;

@@ -16,12 +16,14 @@ import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorl
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import {
   freezeInstrumentationPlan,
+  type EndingPlan,
   type HookAnchorSlot,
   type InstrumentationPlan,
   type InstrumentationPlanData,
   type RegisterRange,
   type TextureKind,
 } from './InstrumentationPlan';
+import type { EndingStyle } from '../arranger/ArrangementPlan';
 
 const rr = (lo: number, hi: number): RegisterRange => ({ lowMidi: midi(lo), highMidi: midi(hi) });
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -136,6 +138,35 @@ const TIMBRE_SWITCH_ROLES: InstrumentRoleName[] = ['comp', 'lead'];
 const TIMBRE_SWITCH_PROB = 0.12; // 偶尔(每首掷一次):~12% 歌切,88% 全曲单音色
 // verse 段内织体变化概率(每首掷一次):LOFI 段内变化是风格的一部分(高)、现代风格保守(低)。
 const VERSE_VARIATION_PROB: Record<string, number> = { POP: 0.35, RNB: 0.35, JAZZ: 0.2, LOFI: 0.6 };
+
+/** ★ 收尾乐器进出计划(器配据 arrangement.endingStyle 排;render 投影成手势)。
+ *  退出次序原则:鼓/comp/bass = 节奏-能量件先退;pad/lead = 和声-气氛件后留承接收束。纯派生、确定性。 */
+function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineup: readonly InstrumentRoleName[]): EndingPlan {
+  const outro = sections[sections.length - 1];
+  const outroBars = outro?.bars ?? 0;
+  const has = (r: InstrumentRoleName) => lineup.includes(r);
+  const exitBarByRole: Partial<Record<InstrumentRoleName, number>> = {};
+  if (style === 'fade' && outroBars >= 2) {
+    // 渐隐:节奏件错开退出(先 drum,再 comp,再 bass),pad/lead 响到末(尾音收束)。
+    if (has('drum')) exitBarByRole.drum = Math.max(1, Math.round(outroBars * 0.34));
+    if (has('comp')) exitBarByRole.comp = Math.max(1, Math.round(outroBars * 0.6));
+    if (has('bass')) exitBarByRole.bass = Math.max(1, Math.round(outroBars * 0.8));
+  } else if (style === 'tag' && outroBars >= 1) {
+    // 延留:节奏件(鼓/bass)末小节退出,和声件(comp/pad/lead)延留末和弦 → 渐慢/收束感(不改 tempo)。
+    if (has('drum')) exitBarByRole.drum = Math.max(1, outroBars - 1);
+    if (has('bass')) exitBarByRole.bass = Math.max(1, outroBars - 1);
+  }
+  // cold:无早退(全员撑到末下拍齐停 + button 重音,由 render coldStop 投影)。
+  return {
+    style,
+    outroSectionId: outro?.id ?? null,
+    outroBars,
+    exitBarByRole,
+    holdFinalChord: style === 'tag',
+    fadeOut: style === 'fade',
+    coldStop: style === 'cold',
+  };
+}
 
 export function buildInstrumentationPlan(
   band: BandSpec,
@@ -289,6 +320,7 @@ export function buildInstrumentationPlan(
       densityCeiling: clamp01(band.styleProfile.accompDensity),
       hookAnchorSlots,
     },
+    endingPlan: buildEndingPlan(arrangement.endingStyle as EndingStyle, arrangement.sections, band.instrumentPool),
   };
 
   return freezeInstrumentationPlan(data);

@@ -16,6 +16,7 @@ import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 export interface DrumOptions {
   style?: string;
   fillBars?: Set<number>;        // 该小节末尾加 fill(段落转折)
+  bigFillBars?: ReadonlySet<number>; // ★ lead-in 边界:更密 16 分 roll 推进(跃升段前末小节)
   textureSchedule?: TextureSchedule; // ★ 跟纹理 pocket:halftime/sparse 段换鼓型(对拍/同律动)
   patternBySection?: Record<string, readonly DrumHit[]>; // ★ groove 下发(主权威):器配按段匹配的鼓型,逐段换
 }
@@ -85,10 +86,21 @@ export function renderDrums(
       push(hit.drum, b0 + hit.beat, hit.vel + jitter);
     });
     if (fillBars.has(bar)) {
-      // 段落转折 fill:末拍 16 分 snare roll
-      push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.5, 92);
-      push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.75, 104);
-      push(DRUM.OHAT, b0 + beatsPerBar - 0.5, 80);
+      if (opts.bigFillBars?.has(bar)) {
+        // ★ lead-in 更密 16 分 snare roll(末两拍 crescendo)→ 推进下一段下拍
+        push(DRUM.SNARE, b0 + beatsPerBar - 2 + 0.5, 68);
+        push(DRUM.SNARE, b0 + beatsPerBar - 2 + 0.75, 76);
+        push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.0, 84);
+        push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.25, 90);
+        push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.5, 98);
+        push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.75, 110);
+        push(DRUM.OHAT, b0 + beatsPerBar - 0.5, 90);
+      } else {
+        // 段落转折 fill:末拍 16 分 snare roll
+        push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.5, 92);
+        push(DRUM.SNARE, b0 + beatsPerBar - 1 + 0.75, 104);
+        push(DRUM.OHAT, b0 + beatsPerBar - 0.5, 80);
+      }
     }
   }
 

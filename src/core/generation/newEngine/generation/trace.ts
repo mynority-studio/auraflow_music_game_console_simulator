@@ -106,6 +106,11 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   密度弧: ${arrangement.sections.map((s) => `${s.id}{${(instrumentation.activeRolesBySection[s.id] ?? []).join('+')}}`).join('  ')}`);
   // ★ 鼓 groove 下发(Arranger)+ 器配匹配变体(逐段鼓型 hit 数):取代单一 drumPattern
   log(`   鼓 groove: ${arrangement.sections.map((s) => `${s.id}=${arrangement.grooveBySection[s.id]}(${instrumentation.drumPatternBySection[s.id]?.length ?? 0}hit)`).join('  ')}`);
+  // ★ 段落边界(Arranger 下发):进入方式(lead-in=末小节铺垫推进)+ 收尾方式(cold/fade/tag)+ 器配退出排布
+  const leadIns = arrangement.sections.filter((s) => arrangement.entryBySection[s.id] === 'lead-in').map((s) => s.id);
+  const ep = instrumentation.endingPlan;
+  const exits = Object.entries(ep.exitBarByRole).map(([r, b]) => `${r}@bar${b}`).join(',') || (ep.coldStop ? '齐停' : '响到末');
+  log(`   段落衔接: lead-in→[${leadIns.join(' ') || '-'}] · 收尾=${arrangement.endingStyle}(退出 ${exits}${ep.holdFinalChord ? ' · 末和弦延留' : ''})`);
   // ★ 段落重心诊断:中心段(hook/head/loop)占比 + 回归次数 + 末段能量(听感飘 → 看是否中心占比/复现不够)
   const CENTER_TAGS = ['hook', 'head', 'loop'];
   const centerSecs = arrangement.sections.filter((s) => CENTER_TAGS.includes(s.functionTag ?? ''));

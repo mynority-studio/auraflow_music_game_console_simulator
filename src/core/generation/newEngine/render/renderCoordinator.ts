@@ -26,6 +26,7 @@ import { renderPad } from './padRenderer';
 import { decidePadComp, type PadCompDecision } from './padCompPolicy';
 import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
+import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import type { RenderOverlay } from './RenderOverlay';
 
@@ -155,12 +156,17 @@ export function renderSongFull(
     if (slot.anchorRequired) anchorBeats.add(slot.beatSlot);
   }
 
-  // 段落转折 fill:每段(除末段)最后一小节
+  // 段落转折 fill:每段(除末段)最后一小节。lead-in 边界(下一段=能量跃升 entry='lead-in')额外标记 → 更大 fill + crescendo。
   const fillBars = new Set<number>();
+  const leadInBars = new Set<number>(); // 跃升段【前一段末小节】绝对序号(衔接推进)
   let barCursor = 0;
   for (let s = 0; s < arrangement.sections.length; s++) {
     barCursor += arrangement.sections[s].bars;
-    if (s < arrangement.sections.length - 1) fillBars.add(barCursor - 1);
+    const next = arrangement.sections[s + 1];
+    if (next) {
+      fillBars.add(barCursor - 1);
+      if (arrangement.entryBySection[next.id] === 'lead-in') leadInBars.add(barCursor - 1);
+    }
   }
 
   // ★ pad 改为独立常驻轨(全段落铺底,见 padRenderer);不再与 comp 二选一(去掉 floating XOR)。
@@ -222,7 +228,7 @@ export function renderSongFull(
   if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style, textureSchedule));
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: band.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: reservedReg.lowMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan }));
   if (padTrack) tracks.push(padTrack);
-  if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
+  if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, bigFillBars: leadInBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
   tracks.push(renderMgMelody(plan, band, timebase, rng.substream('melody'))); // lead 必有(MG 链)
@@ -257,10 +263,16 @@ export function renderSongFull(
   const duckedTracks = duckUnderLead(resolved.data.tracks, 0.9);
   const dynamicTracks = applyDynamics(duckedTracks, energyRanges, timebase.ppq);
 
+  // ★ 段落边界手势(Arranger 下发 → 器配 endingPlan / entryBySection 投影):
+  //   收尾 cold button / fade 渐弱+错退 / tag 末和弦延留;lead-in 跃升段前末小节 crescendo 推进下拍。
+  const bpbEdge = beatsPerBarOf(arrangement.meter);
+  const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
+  const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
+
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
   const humanRng = rng.substream('humanize');
-  const accentedTracks = humanizeVelocity(dynamicTracks, timebase.ppq, bpbHuman, humanRng);
+  const accentedTracks = humanizeVelocity(ledTracks, timebase.ppq, bpbHuman, humanRng);
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
