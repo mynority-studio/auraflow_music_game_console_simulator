@@ -17,6 +17,7 @@ export interface DrumOptions {
   style?: string;
   fillBars?: Set<number>;        // 该小节末尾加 fill(段落转折)
   textureSchedule?: TextureSchedule; // ★ 跟纹理 pocket:halftime/sparse 段换鼓型(对拍/同律动)
+  patternBySection?: Record<string, readonly DrumHit[]>; // ★ groove 下发(主权威):器配按段匹配的鼓型,逐段换
 }
 
 // ★ 纹理 pocket 鼓型(跟 bass/comp 的纹理走):half-time = 慢一倍重拍;sparse = 留白。
@@ -58,11 +59,18 @@ export function renderDrums(
   };
 
   const sched = opts.textureSchedule;
+  const bySection = opts.patternBySection;
   const spanAtBeat = (beat: number): ChordSpan | undefined =>
     plan.chordTimeline.find((c) => beat >= c.startBeat && beat < c.startBeat + c.durationBeats);
-  const kitForBar = (b0: number): DrumHit[] => {
-    if (!sched) return pattern;
+  const kitForBar = (b0: number): readonly DrumHit[] => {
     const span = spanAtBeat(b0);
+    // ★ groove 下发 = 鼓节奏【主权威】:器配按段匹配的鼓型逐段换(取代单一 pattern)。
+    if (bySection && span) {
+      const p = bySection[span.sectionId];
+      if (p) return p;
+    }
+    // texturePocket 退成【次要兜底】(只在没显式 groove 下发的段):halftime/sparse 纹理换鼓型。
+    if (!sched) return pattern;
     const tc = span ? sched[span.id] : undefined;
     if (!tc) return pattern;
     const pocket = texturePocket(tc);

@@ -104,6 +104,8 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   主 hook 让位锚点: ${mainHooks.map((h) => `${h.phraseId}@拍${h.beatSlot}`).join(' ') || '-'}`);
   // ★ 编曲密度弧:每段在场乐手(谁进/出)
   log(`   密度弧: ${arrangement.sections.map((s) => `${s.id}{${(instrumentation.activeRolesBySection[s.id] ?? []).join('+')}}`).join('  ')}`);
+  // ★ 鼓 groove 下发(Arranger)+ 器配匹配变体(逐段鼓型 hit 数):取代单一 drumPattern
+  log(`   鼓 groove: ${arrangement.sections.map((s) => `${s.id}=${arrangement.grooveBySection[s.id]}(${instrumentation.drumPatternBySection[s.id]?.length ?? 0}hit)`).join('  ')}`);
   // ★ 段落重心诊断:中心段(hook/head/loop)占比 + 回归次数 + 末段能量(听感飘 → 看是否中心占比/复现不够)
   const CENTER_TAGS = ['hook', 'head', 'loop'];
   const centerSecs = arrangement.sections.filter((s) => CENTER_TAGS.includes(s.functionTag ?? ''));
@@ -179,7 +181,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);
   log(`   resolver: voicing-around-melody(comp 与旋律撞小二度/小九度→丢该 comp 声部)+ lead 音域碰撞上移`);
   log(`   bass 行进: ${band.style}(jazz=walking / pop=根-五 / lofi=根音持续)`);
-  log(`   drum: ${band.style} groove + 段落转折 fill + 力度人性化`);
+  log(`   drum: ${band.style} per-段 groove 变体(主权威)+ 段落转折 fill + 力度人性化`);
   log(`   melody: hook 句=grammar 变体发展 / connector·cadence 句=GuideTone 导音线(贴 3/7,authentic 落 3 音);句尾呼吸 + 音区随能量抬升(高潮冲峰)`);
   log(`   dynamics: 全轨力度随段落能量缩放(chorus 强 / intro 弱 / 高潮峰)`);
   log(`   feel: ${arrangement.feel.kind}(swingRatio ${arrangement.feel.swingRatio}${Math.abs(arrangement.feel.swingRatio - 0.5) < 1e-6 ? ' 直' : ' → offbeat 摆动'})`);

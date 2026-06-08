@@ -13,6 +13,7 @@ import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/A
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs } from '../knowledge/instruments';
+import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import {
   freezeInstrumentationPlan,
   type HookAnchorSlot,
@@ -253,6 +254,24 @@ export function buildInstrumentationPlan(
     }
   }
 
+  // ★ 鼓型变体匹配(器配层,2026-06-08):Arranger 已按段下发 GrooveKind(arrangement.grooveBySection)。
+  //   这里按 (style × groove) 从 KB 词汇确定性挑【一个变体】→ drumPatternBySection。
+  //   repeatGroup 一致:同 grooveKind → 同变体(per-song 掷一次,所有同 groove 段共用)→ verse1≡verse2。
+  //   rng 在所有前置决策【之后】取(append 在序列尾)→ 不扰 timbre/lead/intro/richTexture 既有序列(bit 不变)。
+  //   无 rng → 变体 0(确定性,向后兼容)。
+  const GROOVE_KINDS: readonly GrooveKind[] = ['sparse', 'laidback', 'straight', 'driving'];
+  const variantByGroove: Partial<Record<GrooveKind, number>> = {};
+  for (const gk of GROOVE_KINDS) {
+    const n = drumGrooveVariants(band.style, gk).length;
+    variantByGroove[gk] = rng && n > 1 ? rng.int(n) : 0;
+  }
+  const drumPatternBySection: Record<string, DrumHit[]> = {};
+  for (const s of arrangement.sections) {
+    const gk = (arrangement.grooveBySection[s.id] ?? 'straight') as GrooveKind;
+    const variants = drumGrooveVariants(band.style, gk);
+    drumPatternBySection[s.id] = variants[variantByGroove[gk] ?? 0] ?? variants[0];
+  }
+
   const data: InstrumentationPlanData = {
     activityBySection,
     activeRolesBySection,
@@ -262,6 +281,7 @@ export function buildInstrumentationPlan(
     richTextureSwitchBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     programByRoleSection,
+    drumPatternBySection,
     timbreWorld,
     sameInstrumentPairs: samePairs.length ? samePairs : undefined,
     melodyReservationPlan: {

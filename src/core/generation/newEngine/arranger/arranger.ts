@@ -12,6 +12,7 @@ import { planForm, type FormTemplate } from './formPlanner';
 import { planTime } from './timePlanner';
 import { planDynamics } from './dynamicsPlanner';
 import { planPhrases } from './phrasePlanner';
+import { planGroove } from './groovePlanner';
 
 export interface ArrangementOptions {
   rng?: RandomContext; // 有 → seed 选曲式 + 段落长度变化(不同 seed 不同曲式)
@@ -26,6 +27,7 @@ export function buildArrangementPlan(
   const time = planTime(band.style, opts.rng?.substream('time')); // tempo 随 seed 在风格区间浮动
   const { phrases, motifBindings } = planPhrases(sections, time.phraseBreathing.phraseBars);
   const dynamics = planDynamics(sections);
+  const grooveBySection = planGroove(sections, band.style); // 鼓 groove 下发(纯 functionTag/role 派生,不抽 rng)
 
   const data: ArrangementPlanData = {
     sections,
@@ -39,6 +41,7 @@ export function buildArrangementPlan(
     densityBySection: dynamics.densityBySection,
     climaxMap: dynamics.climaxMap,
     harmonicRhythmTarget: dynamics.harmonicRhythmTarget,
+    grooveBySection,
   };
 
   return freezeArrangementPlan(data);

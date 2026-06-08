@@ -7,6 +7,7 @@
 // ============================================================
 
 import { deepFreeze, type DeepReadonly, type Meter } from '../foundation';
+import type { GrooveKind } from '../knowledge/grooves';
 
 export type SectionId = string;
 export type PhraseId = string;
@@ -99,6 +100,8 @@ export interface ArrangementPlanData {
   densityBySection: Record<SectionId, number>;
   climaxMap: ClimaxPoint[];
   harmonicRhythmTarget: HarmonicRhythmTarget;
+  /** ★ 每段鼓 groove 性格(Arranger 下发,器配层据此匹配具体 drum pattern 变体)。swing 不在此,走 feel.swingRatio。 */
+  grooveBySection: Record<SectionId, GrooveKind>;
 }
 
 export type ArrangementPlan = DeepReadonly<ArrangementPlanData>;
