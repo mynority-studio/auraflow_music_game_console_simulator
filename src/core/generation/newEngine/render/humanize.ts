@@ -78,6 +78,7 @@ export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: numb
   }
   return tracks.map((t) => {
     if (t.role === 'lead') return t; // ★ Loop 9:lead = MG StyleRenderer 已定时序,跳过全局微抖动(保 MG 旋律纯净)
+    if (t.role === 'pad') return t;  // ★ pad = sustain 铺底层:跳过微时序抖动(长音起点不齐=细微重起,毁连续铺底感)
     return {
     role: t.role,
     notes: t.notes.map((n) => {

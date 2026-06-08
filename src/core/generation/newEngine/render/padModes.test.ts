@@ -111,6 +111,40 @@ describe('render/padModes · 上层结构(full-support 用合法色彩张力)', 
   });
 });
 
+describe('render/padModes · 共同音 tie(链接连续:相邻和弦共同音合并成长音)', () => {
+  // Am7 → Dm7 共享 C(Am7 的 3rd · Dm7 的 7th)→ pad 该音应 tie 成一个跨 2 span 的长音。
+  const plan = makePlan([
+    { root: 9, type: 'm7', stable: [9, 0, 4, 7], scale: [9, 11, 0, 2, 4, 5, 7], section: 'intro' },
+    { root: 2, type: 'm7', stable: [2, 5, 9, 0], scale: [2, 4, 5, 7, 9, 11, 0], section: 'intro' },
+  ]);
+  const dec = { intro: mkDec('full-support', 'pad-only', 2, false) };
+  const pad = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection: dec, leadReservedLow: 67 });
+  const spanTick = timebase.beatToTick(beats(4)) as number;
+
+  it('共同音 C 合并成 1 个跨 2 span 长音(非两次重击)', () => {
+    const cNotes = pad.notes.filter((n) => (((n.pitch as number) % 12) + 12) % 12 === 0); // pc C
+    expect(cNotes.length).toBe(1);                              // tie:一个音,不是两个
+    expect(cNotes[0].durationTicks).toBe(spanTick * 2);         // 横跨两个 span
+    expect(cNotes[0].startTick).toBe(0);
+  });
+
+  it('每 span ≤ 2 音(pad 做减法);整体时间覆盖连续无空洞', () => {
+    const byStart = new Map<number, number>();
+    for (const n of pad.notes) byStart.set(n.startTick as number, (byStart.get(n.startTick as number) ?? 0) + 1);
+    // 任意时刻同时音数 ≤ 2
+    const ev: [number, number][] = [];
+    for (const n of pad.notes) { ev.push([n.startTick as number, 1]); ev.push([(n.startTick as number) + (n.durationTicks as number), -1]); }
+    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let cur = 0, maxSim = 0;
+    for (const [, d] of ev) { cur += d; maxSim = Math.max(maxSim, cur); }
+    expect(maxSim).toBeLessThanOrEqual(2);
+    // 覆盖 [0, 2*span] 连续
+    const iv = pad.notes.map((n) => [n.startTick as number, (n.startTick as number) + (n.durationTicks as number)]).sort((a, b) => a[0] - b[0]);
+    expect(iv[0][0]).toBe(0);
+    expect(Math.max(...iv.map((x) => x[1]))).toBe(spanTick * 2);
+  });
+});
+
 describe('render/padModes · 正交音阶锁(真实管线:pad 永在 chordScale 内、不碰 avoid)', () => {
   for (const [seed, style] of [[3, 'lofi'], [7, 'rnb'], [11, 'pop'], [9, 'lofi']] as const) {
     const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });

@@ -90,7 +90,8 @@ export function decidePadComp(ctx: PadCompContext): PadCompDecision {
       };
     }
     return {
-      padMode: 'full-support', interactionMode: 'pad-only', padMaxVoices: 3,
+      // ★ 用户:PAD 做减法、最多两个音(配合 COMP);pad-only 段也 ≤2(3rd+7th 或 +一个上层张力)。
+      padMode: 'full-support', interactionMode: 'pad-only', padMaxVoices: 2,
       compAllowPedal: true, padOmitRoot: omitRoot, padOmitFifth: false, avoidExactPitchOverlap: false,
     };
   }

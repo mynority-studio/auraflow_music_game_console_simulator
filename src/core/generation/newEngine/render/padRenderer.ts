@@ -14,7 +14,7 @@
 //   纯函数、确定性、深不可变安全。pad→audio ch4。
 // ============================================================
 
-import { beats, midi, mod12, type Timebase } from '../foundation';
+import { beats, midi, mod12, ticks, type Timebase } from '../foundation';
 import { pcToMidiInRange } from '../knowledge/pitchPlacement';
 import type { HarmonicPlan, ChordSpan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
@@ -159,19 +159,25 @@ function clusterMidis(span: ChordSpan, plan: HarmonicPlan, roles: RolePcs, low: 
   return neighborMidi <= high ? [anchorMidi, neighborMidi].sort((a, b) => a - b) : [anchorMidi];
 }
 
+interface SpanPad { startTick: number; endTick: number; startBeat: number; durBeats: number; midis: number[]; vel: number; gated: boolean }
+
 export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptions): TrackIR {
-  const notes: NoteIR[] = [];
   const { padDensity, decisionBySection } = opts;
   const leadLow = opts.leadReservedLow ?? DEFAULT_LEAD_LOW;
   const timeline = plan.chordTimeline;
   let prevTop: number | undefined;       // inner-line 线条记忆
   let prevSection: string | undefined;   // 段落边界 → 重置 prevTop(守 repeatGroup)
 
+  // —— 第一遍:逐 span 算 pad voicing + 力度 + 是否 gated(inner-line 线条记忆在此推进)——
+  const perSpan: SpanPad[] = [];
   for (let i = 0; i < timeline.length; i++) {
     const span = timeline[i];
     const dec = decisionBySection[span.sectionId];
     if (span.sectionId !== prevSection) { prevTop = undefined; prevSection = span.sectionId; }
-    if (!dec || dec.padMode === 'silent' || dec.padMaxVoices < 1) continue; // 缺决策 = 静默(fail-closed)
+    const startTick = timebase.beatToTick(span.startBeat) as number;
+    const endTick = startTick + (timebase.beatToTick(span.durationBeats) as number);
+    const slot: SpanPad = { startTick, endTick, startBeat: span.startBeat as number, durBeats: span.durationBeats as number, midis: [], vel: 0, gated: false };
+    if (!dec || dec.padMode === 'silent' || dec.padMaxVoices < 1) { perSpan.push(slot); continue; } // 静默(fail-closed)
 
     const compActive = dec.interactionMode === 'pad-under-comp' || dec.interactionMode === 'breath-space' || dec.interactionMode === 'gated-pad-drives';
     const high = Math.min(PAD_HIGH, leadLow - 1);         // 顶须 < 旋律保留区(避让 lead)
@@ -188,27 +194,42 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
     } else {
       midis = placePadMidis(selectStaticPcs(span, timeline[i - 1], timeline[i + 1], dec, plan, roles), low, hi);
     }
-    if (midis.length === 0) continue;
+    if (midis.length === 0) { perSpan.push(slot); continue; }
 
     // 力度:pad 是背景层 → 整体软;comp active 更软;drone/cluster/gated 再软一档(留白/雾/shimmer)。
     const recede = compActive ? 0.7 : 0.92;
     const modeSoft = dec.padMode === 'drone' ? 0.88 : (dec.padMode === 'cluster-mist' ? 0.78 : (dec.padMode === 'gated-pad' ? 0.82 : 1));
     const vel = Math.max(1, Math.min(127, Math.round((30 + padDensity * 16) * recede * modeSoft)));
+    perSpan.push({ ...slot, midis, vel, gated: dec.padMode === 'gated-pad' });
+  }
 
-    const startBeat = span.startBeat as number;
-    if (dec.padMode === 'gated-pad') {
-      // 节奏化 gate:8 分脉冲铺满整段,每音 gate 长 0.4 拍(shimmer,pad 单轨自律动)。
-      const dur = span.durationBeats as number;
-      const gateLen = timebase.beatToTick(beats(0.4));
-      for (let b = 0; b + 0.5 <= dur + 1e-9; b += 0.5) {
-        const at = timebase.beatToTick(beats(startBeat + b));
-        for (const m of midis) notes.push({ pitch: midi(m), startTick: at, durationTicks: gateLen, velocity: vel });
-      }
-    } else {
-      const startTick = timebase.beatToTick(span.startBeat);
-      const durationTicks = timebase.beatToTick(span.durationBeats); // 长 sustain
-      for (const m of midis) notes.push({ pitch: midi(m), startTick, durationTicks, velocity: vel });
+  // —— 第二遍:① gated span 各自节奏 emit(dormant);② 非 gated:共同音【tie】成跨 span 长音 ——
+  //   只对【变化的声部】重新击发,持续的同一音高合并成一个长音 → 铺底连续(链接完整),不再每和弦重拍。
+  const notes: NoteIR[] = [];
+  for (const s of perSpan) {
+    if (!s.gated || s.midis.length === 0) continue;
+    const gateLen = timebase.beatToTick(beats(0.4)); // 8 分脉冲铺满整段
+    for (let b = 0; b + 0.5 <= s.durBeats + 1e-9; b += 0.5) {
+      const at = timebase.beatToTick(beats(s.startBeat + b));
+      for (const m of s.midis) notes.push({ pitch: midi(m), startTick: at, durationTicks: gateLen, velocity: s.vel });
     }
   }
+  const pitches = new Set<number>();
+  for (const s of perSpan) if (!s.gated) for (const m of s.midis) pitches.add(m);
+  for (const p of pitches) {
+    const has = (k: number) => !perSpan[k].gated && perSpan[k].midis.includes(p);
+    let i = 0;
+    while (i < perSpan.length) {
+      if (has(i)) {
+        const runStart = perSpan[i].startTick;
+        const vel = perSpan[i].vel; // run 取首 span 力度
+        let j = i;
+        while (j + 1 < perSpan.length && perSpan[j + 1].startTick === perSpan[j].endTick && has(j + 1)) j++;
+        notes.push({ pitch: midi(p), startTick: ticks(runStart), durationTicks: ticks(perSpan[j].endTick - runStart), velocity: vel });
+        i = j + 1;
+      } else i++;
+    }
+  }
+  notes.sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
   return { role: 'pad', notes };
 }

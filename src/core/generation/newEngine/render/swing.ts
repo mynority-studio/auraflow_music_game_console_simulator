@@ -20,6 +20,7 @@ export function applySwing(tracks: TrackIR[], ppq: number, swingRatio: number): 
   if (Math.abs(swingRatio - 0.5) < 1e-6) return tracks;
   return tracks.map((t) => {
     if (t.role === 'lead') return t; // ★ Loop 9:lead = MG StyleRenderer 已上单轨 swing,跳过全局 swing(避免 jazz 双 swing)
+    if (t.role === 'pad') return t;  // ★ pad = sustain 铺底层:跳过 swing(长音 onset 不应被 swing 移位,保连续平铺)
     return {
     role: t.role,
     notes: t.notes.map((n) => {

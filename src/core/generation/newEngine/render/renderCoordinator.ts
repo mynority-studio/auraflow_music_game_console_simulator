@@ -198,11 +198,15 @@ export function renderSongFull(
   let padTrack: TrackIR | undefined;
   if (inLineup('pad')) {
     padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: reservedReg.lowMidi });
-    const spanStartToId = new Map<number, string>();
-    for (const span of plan.chordTimeline) spanStartToId.set(timebase.beatToTick(span.startBeat) as number, span.id);
+    // ★ 按【时间区间重叠】映射(pad tie 后长音跨多 span)→ comp 在所有被覆盖的 span 都避让该 pad 音高。
+    const spanRanges = plan.chordTimeline.map((span) => {
+      const lo = timebase.beatToTick(span.startBeat) as number;
+      return { id: span.id, lo, hi: lo + (timebase.beatToTick(span.durationBeats) as number) };
+    });
     for (const n of padTrack.notes) {
-      const sid = spanStartToId.get(n.startTick as number);
-      if (sid) (padOccupiedPitchesBySpan[sid] ??= []).push(n.pitch as number);
+      const ns = n.startTick as number;
+      const ne = ns + (n.durationTicks as number);
+      for (const r of spanRanges) if (ns < r.hi && ne > r.lo) (padOccupiedPitchesBySpan[r.id] ??= []).push(n.pitch as number);
     }
   }
 
