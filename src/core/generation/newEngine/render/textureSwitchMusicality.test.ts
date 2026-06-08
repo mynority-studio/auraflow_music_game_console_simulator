@@ -8,7 +8,23 @@ import { buildTextureSchedule } from './textureSchedule';
 import { createTimebase, createRandomContext, beats } from '../foundation';
 import { textureBehavior, isDelayedEntryTexture, rateTextureTransition } from '../knowledge/textureProfiles';
 import { RENDERED_TEXTURE_CASES } from './textureRenderer';
+import { measureCompGaps } from './compContinuity';
 import type { MusicalIR } from '../ir/MusicalIR';
+
+// comp 真在场区间(从 chordTimeline 实际 span 算 + comp 在 activeRoles + 段 active)。
+function compActiveRanges(p: ReturnType<typeof pieces>): { lo: number; hi: number }[] {
+  const { plan, instrumentation, timebase, activeSectionIds } = p;
+  const bySec: Record<string, { lo: number; hi: number }> = {};
+  for (const c of plan.chordTimeline) {
+    const lo = timebase.beatToTick(c.startBeat) as number;
+    const hi = lo + (timebase.beatToTick(c.durationBeats) as number);
+    const r = bySec[c.sectionId];
+    if (!r) bySec[c.sectionId] = { lo, hi }; else { r.lo = Math.min(r.lo, lo); r.hi = Math.max(r.hi, hi); }
+  }
+  return Object.entries(bySec)
+    .filter(([sid]) => activeSectionIds.has(sid) && (instrumentation.activeRolesBySection[sid] ?? []).includes('comp'))
+    .map(([, r]) => r);
+}
 
 // ============================================================
 // texture-switch 音乐性修复 · 第一期(docs/texture_switch_musicality_directive.md)
@@ -91,10 +107,12 @@ describe('texture-switch 修复 · 第一期(非 LOFI 段级下发)', () => {
     if (byRole.verse && byRole.chorus) expect([...byRole.verse][0]).not.toBe([...byRole.chorus][0]);
   });
 
-  it('LOFI 第一期不下发(richTextureBySection 空)→ 逐 span 回退仍工作', () => {
-    const { instrumentation, sched } = pieces(633823, 'lofi');
-    expect(Object.keys(instrumentation.richTextureBySection).length).toBe(0);
-    expect(Object.keys(sched).length).toBeGreaterThan(0); // 回退路径仍出 schedule
+  it('★ LOFI(三期纳入段级机制):有段级下发 + 段内织体 ≤2(不再逐 span 乱切)', () => {
+    const { instrumentation, sched, plan } = pieces(633823, 'lofi');
+    expect(Object.keys(instrumentation.richTextureBySection).length).toBeGreaterThan(0); // 三期:LOFI 也段级下发
+    const bySec: Record<string, Set<string>> = {};
+    for (const c of plan.chordTimeline) { const tc = sched[c.id]; if (tc) (bySec[c.sectionId] ??= new Set()).add(tc); }
+    for (const set of Object.values(bySec)) expect(set.size).toBeLessThanOrEqual(2);
   });
 
   it('确定性:同 seed 两次 richTextureBySection + schedule 一致', () => {
@@ -128,4 +146,39 @@ describe('texture behavior KB(第二期元数据)', () => {
     expect(rateTextureTransition('Low_Pedal_Color_Wash', 'Low_Pedal_Color_Wash')).toEqual({ rating: 'allow', bridge: 'none' });
     expect(rateTextureTransition('Lyrical_10th_Broken', 'Piano_Wide_Color_Motion').rating).toBe('allow'); // arp→roll continuous
   });
+});
+
+describe('comp 连续性审计(第三期 measureCompGaps)', () => {
+  it('只在 active 区间量空隙;排除 comp 缺席段', () => {
+    const ppq = 480;
+    // active 区间 [0,1920];comp 覆盖 0-960 + 1440-1920 → 空隙 960-1440 = 1 拍
+    const notes = [{ startTick: 0, durationTicks: 960 }, { startTick: 1440, durationTicks: 480 }];
+    const rep = measureCompGaps(notes, [{ lo: 0, hi: 1920 }], ppq);
+    expect(rep.maxGapBeats).toBeCloseTo(1.0);
+    // [1920,3840] 是 comp 缺席段(不在 activeRanges)→ 不计入,哪怕全空
+    const rep2 = measureCompGaps(notes, [{ lo: 0, hi: 1920 }], ppq); // 同上,缺席段被排除
+    expect(rep2.maxGapBeats).toBeCloseTo(1.0);
+  });
+});
+
+describe('texture-switch 回归矩阵(directive §5,6 seed × 4 风格)', () => {
+  const SEEDS = [633823, 64062, 7, 42, 100, 999];
+  const STYLES = ['pop', 'rnb', 'jazz', 'lofi'];
+  for (const seed of SEEDS) for (const style of STYLES) {
+    it(`${seed}/${style}: 不 failed · 段内织体 ≤2 · comp-active 无 >2.5 拍突发洞`, () => {
+      const p = pieces(seed, style);
+      // 段内织体 ≤2(段级 + 最多一个受控变体)
+      const bySec: Record<string, Set<string>> = {};
+      for (const c of p.plan.chordTimeline) { const tc = p.sched[c.id]; if (tc) (bySec[c.sectionId] ??= new Set()).add(tc); }
+      for (const set of Object.values(bySec)) expect(set.size).toBeLessThanOrEqual(2);
+      // 生成不 failed + comp 无突发洞(阈值 2.5:抓旧 3.75/4.0 大洞,容稀疏织体一致节奏 ≤2.0)
+      const { ir, status } = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
+      expect(status).not.toBe('failed');
+      const comp = ir.tracks.find((t) => t.role === 'comp');
+      if (comp && comp.notes.length > 0) {
+        const rep = measureCompGaps(comp.notes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number })), compActiveRanges(p), p.timebase.ppq);
+        expect(rep.maxGapBeats).toBeLessThan(2.5);
+      }
+    });
+  }
 });

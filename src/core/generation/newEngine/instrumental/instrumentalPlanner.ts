@@ -133,7 +133,8 @@ function activeRolesFor(
 // 会切音色的乐手:仅 comp/lead,且【仅键盘族】(效果器/电钢能切;颤音琴/马林巴是物理乐器,不切)。
 const TIMBRE_SWITCH_ROLES: InstrumentRoleName[] = ['comp', 'lead'];
 const TIMBRE_SWITCH_PROB = 0.12; // 偶尔(每首掷一次):~12% 歌切,88% 全曲单音色
-const VERSE_VARIATION_PROB = 0.35; // verse 段内织体变化(每首掷一次):~35% 歌的 verse 中段切兼容变体,其余全段一致
+// verse 段内织体变化概率(每首掷一次):LOFI 段内变化是风格的一部分(高)、现代风格保守(低)。
+const VERSE_VARIATION_PROB: Record<string, number> = { POP: 0.35, RNB: 0.35, JAZZ: 0.2, LOFI: 0.6 };
 
 export function buildInstrumentationPlan(
   band: BandSpec,
@@ -223,7 +224,8 @@ export function buildInstrumentationPlan(
   //   按 role 分配(chorus/bridge→high,其余→low)→ verse↔verse 同、chorus↔chorus 同(repeatGroup 一致)、
   //   同曲 ≤2 核心、排除 delayed-entry(段级常驻不留洞)。LOFI/blues/default 空 → render 回退逐 span 老路。
   //   rng 在所有前置决策【之后】取(+2 draw)→ 不扰 timbre/lead/intro 确定性。
-  const RICH_STYLE: Record<string, TextureStyleName> = { pop: 'POP', rnb: 'RNB', jazz: 'JAZZ' };
+  // ★ 三期:LOFI 也纳入段级机制(LOFI 池 + 更高变化概率)→ 去掉 LOFI 的逐 span 乱切。
+  const RICH_STYLE: Record<string, TextureStyleName> = { pop: 'POP', rnb: 'RNB', jazz: 'JAZZ', lofi: 'LOFI' };
   const richTextureBySection: Record<string, string> = {};
   const richTextureSwitchBySection: Record<string, { atFraction: number; toTexture: string }> = {};
   const richStyle = RICH_STYLE[band.style.toLowerCase()];
@@ -239,7 +241,7 @@ export function buildInstrumentationPlan(
 
     // ★ verse 段内受控变化(≤2/段):低概率,中段切到【兼容连续 ≠base】变体;所有 verse 段一致(repeatGroup)。
     //   只切 rate='allow'(连续兼容,无需 bridge)→ 段内不留洞。rng 在 low/high 之后取(不扰前置)。
-    if (lowTc && rng.next() < VERSE_VARIATION_PROB) {
+    if (lowTc && rng.next() < (VERSE_VARIATION_PROB[richStyle] ?? 0.35)) {
       const variant = pickTextureForBar({
         style: richStyle, phraseRole: 'develop', density: densityForCell('develop', 'VERSE'), energy: energyForCell('develop', 'VERSE'),
         isDominantChain: false, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
