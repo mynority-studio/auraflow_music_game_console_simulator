@@ -164,23 +164,33 @@ export interface FormOptions {
  *   4) 无 rng → 固定 verse-chorus(向后兼容默认)。
  */
 export function planForm(opts: FormOptions = {}): Section[] {
-  if (opts.template) return TEMPLATES[opts.template].map((s) => ({ ...s }));
-
+  let sections: Section[];
   const styleKey = opts.style?.toLowerCase();
-  if (opts.rng && styleKey && PROCEDURAL_STYLES.has(styleKey)) {
-    return assembleForm(styleKey, opts.rng); // ★ 程序化拼接(取代写死模板池)
+  if (opts.template) {
+    sections = TEMPLATES[opts.template].map((s) => ({ ...s }));
+  } else if (opts.rng && styleKey && PROCEDURAL_STYLES.has(styleKey)) {
+    sections = assembleForm(styleKey, opts.rng); // ★ 程序化拼接(取代写死模板池)
+  } else {
+    const chosen = opts.rng ? opts.rng.pick(FORM_POOL) : 'verse-chorus';
+    sections = TEMPLATES[chosen].map((s) => ({ ...s }));
+    if (opts.rng) {
+      // 段落长度变化:intro/outro bars ∈ {2,4}(确定性自 rng;verse/chorus 保持 8 → repeatGroup 等长排比)
+      const introBars = opts.rng.pick([2, 4]);
+      const outroBars = opts.rng.pick([2, 4]);
+      for (const s of sections) {
+        if (s.role === 'intro') s.bars = introBars;
+        else if (s.role === 'outro') s.bars = outroBars;
+      }
+    }
   }
 
-  const chosen = opts.rng ? opts.rng.pick(FORM_POOL) : 'verse-chorus';
-  const sections = TEMPLATES[chosen].map((s) => ({ ...s }));
-  if (opts.rng) {
-    // 段落长度变化:intro/outro bars ∈ {2,4}(确定性自 rng;verse/chorus 保持 8 → repeatGroup 等长排比)
-    const introBars = opts.rng.pick([2, 4]);
-    const outroBars = opts.rng.pick([2, 4]);
-    for (const s of sections) {
-      if (s.role === 'intro') s.bars = introBars;
-      else if (s.role === 'outro') s.bars = outroBars;
-    }
+  // ★ 统一保证收尾段(修戛然而止,覆盖所有路径:procedural 已有=no-op / legacy 缺 ending / compact 无 outro /
+  //   modal·default·blues 走 legacy / 显式 template)。末段是 outro → 补 harmonyRole 'ending';否则追加 outro。
+  const last = sections[sections.length - 1];
+  if (last && last.role === 'outro') {
+    last.harmonyRole = 'ending'; // 终止式回归;能量回落由 role 'outro'(ROLE_ENERGY 0.30)给,不动 functionTag(保 legacy 全 lineup 回退)
+  } else {
+    sections.push({ id: 'outro', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: 4, hookPolicy: 'none' });
   }
   return sections;
 }
