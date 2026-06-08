@@ -196,10 +196,11 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
     }
     if (midis.length === 0) { perSpan.push(slot); continue; }
 
-    // 力度:pad 是背景层 → 整体软;comp active 更软;drone/cluster/gated 再软一档(留白/雾/shimmer)。
+    // 力度:pad 是背景层,相对软(comp active 更软;drone/cluster/gated 再软一档)。
+    //   ★ 用户:pad 实际响度(CC7 96 × velocity)控制在 ~4500 → 抬基底使均值 velocity ≈ 47(原 ~27)。
     const recede = compActive ? 0.7 : 0.92;
     const modeSoft = dec.padMode === 'drone' ? 0.88 : (dec.padMode === 'cluster-mist' ? 0.78 : (dec.padMode === 'gated-pad' ? 0.82 : 1));
-    const vel = Math.max(1, Math.min(127, Math.round((30 + padDensity * 16) * recede * modeSoft)));
+    const vel = Math.max(1, Math.min(127, Math.round((52 + padDensity * 28) * recede * modeSoft)));
     perSpan.push({ ...slot, midis, vel, gated: dec.padMode === 'gated-pad' });
   }
 
