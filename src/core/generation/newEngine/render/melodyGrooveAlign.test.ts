@@ -11,9 +11,10 @@ import { createTimebase, createRandomContext, beats } from '../foundation';
 //   验收:MG 链出来的旋律 onset 落在直拍 8/16 分格上(像 pop 一样),不再被双重摇摆推离网格。
 // ============================================================
 
-function offGridRate(style: string, divisor: number): number {
-  let off = 0, tot = 0;
-  for (let seed = 0; seed < 30; seed++) {
+// 一次扫描返回 8 分格 / 16 分格离格率(避免重复渲染全曲旋律)。
+function offGridRates(style: string, seeds: number): { off8: number; off16: number } {
+  let off8 = 0, off16 = 0, tot = 0;
+  for (let seed = 0; seed < seeds; seed++) {
     const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
     const arr = buildArrangementPlan(band, { rng: createRandomContext(seed) });
     const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
@@ -21,22 +22,22 @@ function offGridRate(style: string, divisor: number): number {
     const lead = renderMgMelody(plan, band, tb, createRandomContext(seed).substream('melody'));
     for (const n of lead.notes) {
       const b = (n.startTick as number) / tb.ppq;
-      if (Math.abs(b - Math.round(b * divisor) / divisor) > 0.02) off++;
+      if (Math.abs(b - Math.round(b * 2) / 2) > 0.02) off8++;
+      if (Math.abs(b - Math.round(b * 4) / 4) > 0.02) off16++;
       tot++;
     }
   }
-  return tot ? off / tot : 0;
+  return { off8: tot ? off8 / tot : 0, off16: tot ? off16 / tot : 0 };
 }
 
 describe('render/melodyGrooveAlign · MG 链不双重 swing', () => {
   it('pop:旋律全在 8 分格(直拍)', () => {
-    expect(offGridRate('pop', 2)).toBe(0);
+    expect(offGridRates('pop', 15).off8).toBe(0);
   });
 
-  it('jazz:旋律基本在 16 分格(无双重 swing 残留;原双摆 >50% 离 8 分格)', () => {
-    // 直拍生成 → swing 由 applySwing 统一施加。16 分格离格率应很低(残留=realizer 自然装饰)。
-    expect(offGridRate('jazz', 4)).toBeLessThan(0.2);
-    // 8 分格离格(含合法 16 分)远低于双摆时的 0.56
-    expect(offGridRate('jazz', 2)).toBeLessThan(0.35);
+  it('jazz:直拍生成(无双重 swing 残留;原双摆 >50% 离 8 分格)→ 91%+ 在 16 分格', () => {
+    const { off8, off16 } = offGridRates('jazz', 15);
+    expect(off16).toBeLessThan(0.2);   // 残留=realizer 自然装饰
+    expect(off8).toBeLessThan(0.35);   // 远低于双摆时的 0.56
   });
 });

@@ -99,6 +99,9 @@ const TEXTURE_BY_FUNCTION: Record<SectionFunctionTag, TextureKind> = {
 //   core 段(story/build/hook/loop/head/solo/headOut)lead 恒在(旋律必须扛歌)。per-song 掷骰 → 两种都出现。
 const LEAD_OPTIONAL_TAGS: readonly SectionFunctionTag[] = ['setup', 'breakdown', 'outro', 'tag'];
 const LEAD_DROP_PROB = 0.45;
+// ★ 收尾段(outro/tag)旋律【不能缺席】(2026-06-08,用户:outro 可以有旋律但要回归主音)→ 即便掷中也不丢 lead。
+//   仍对它们掷骰(保 rng 抽取对齐 → intro 先行档/rich texture 决策 bit 不变),只是结果不采用。
+const LEAD_NEVER_DROP_TAGS: ReadonlySet<SectionFunctionTag> = new Set(['outro', 'tag']);
 
 // ★ intro 先行档(多样性修):intro(setup 段)从这组 per-song 掷一个 → pad/keys/bass/solo/full 轮换,
 //   不再恒定 bass 先行(jazz/lofi)或 pad 先行(pop/rnb)。keys 档把 texture 设 active(arpeggio)→ comp 真渲染
@@ -218,7 +221,7 @@ export function buildInstrumentationPlan(
   // ★ A4 lead-gating(多样性):lead-optional 段(intro/breakdown/outro/tag)本曲掷骰 → 纯器乐 or 含 lead。
   //   rng 在 timbre 决策【之后】取 → 不扰 timbre 确定性。无 rng → 不 drop(lead 全程,向后兼容)。
   const leadDropTags = new Set<SectionFunctionTag>();
-  if (rng) for (const tag of LEAD_OPTIONAL_TAGS) if (rng.next() < LEAD_DROP_PROB) leadDropTags.add(tag);
+  if (rng) for (const tag of LEAD_OPTIONAL_TAGS) { const drop = rng.next() < LEAD_DROP_PROB; if (drop && !LEAD_NEVER_DROP_TAGS.has(tag)) leadDropTags.add(tag); }
   for (const s of arrangement.sections) {
     activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool, leadDropTags); // ★ 密度弧 + lead-gating
   }

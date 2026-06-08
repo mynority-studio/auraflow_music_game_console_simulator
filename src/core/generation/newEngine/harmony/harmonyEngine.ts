@@ -351,6 +351,28 @@ function applyTailLinks(resolved: ResolvedChord[], arrangement: ArrangementPlan,
   return out;
 }
 
+// ============================================================
+// ★ 收尾真终止(2026-06-08):tonal 收尾段(harmonyRole='ending')末两和弦 → V7→I(authentic cadence)。
+//   修「outro 和声没回归 T、戛然而止」:末和弦本就落 I,但缺【属→主】的解决动力 → 加 V7 前导 = 听感落家。
+//   段内 ≥2 和弦才放 V7(否则只保末和弦=I);secKey 跟该段实际调中心(转调段);chord-scale 由 assemble 重算。
+//   modal 旁路(落调式中心,不强加功能 V-I)。确定性、无 rng;每候选都做 → 择优看到真实终止。
+// ============================================================
+function ensureAuthenticEnding(resolved: ResolvedChord[], arrangement: ArrangementPlan, band: BandSpec): ResolvedChord[] {
+  if (band.tonalityKind === 'modal') return resolved;
+  const sections = arrangement.sections;
+  const lastSec = sections[sections.length - 1];
+  if (!lastSec || lastSec.harmonyRole !== 'ending') return resolved;
+  const out = resolved.map((c) => ({ ...c }));
+  let first = -1, last = -1;
+  out.forEach((c, i) => { if (c.sectionId === lastSec.id) { if (first < 0) first = i; last = i; } });
+  if (last < 0) return out;
+  const mode = band.mode;
+  const secKey = (out[last].sectionKeyPc ?? band.key) as number;
+  overwriteChord(out[last], 1, diatonicQuality(1, mode), 'T', secKey, mode);              // 末和弦 = I(落家)
+  if (last > first) overwriteChord(out[last - 1], 5, '7', 'D', secKey, mode, { mustResolve: true }); // 倒二 = V7(属解决)
+  return out;
+}
+
 // —— 高层:BandSpec + ArrangementPlan → HarmonicPlan(连 Band→Arranger→Harmony) ——
 export function buildHarmonicPlanFromArrangement(
   band: BandSpec,
@@ -513,8 +535,11 @@ function buildResolvedProgression(
 
   // ★ T6:段尾 linkOut 链接(每候选都链接 → coherence/voice-leading 择优看到真实段衔接)。
   const linked = applyTailLinks(resolved, arrangement, band.key, band.mode);
+  // ★ 收尾真终止(2026-06-08 修「outro 戛然而止/和声没回归 T」):tonal 收尾段(harmonyRole='ending')
+  //   末两和弦强制 V7→I(authentic cadence)→ 落家有解决感。modal 不加(落调式中心,无功能 V-I)。
+  const cadenced = ensureAuthenticEnding(linked, arrangement, band);
   // ★ MG 风格和弦词汇对齐(POP 折回三和弦纯度等)→ chordType/quality 一并改,propagate 到张力/chord-scale/voicing。
-  return linked.map((rc) => {
+  return cadenced.map((rc) => {
     if (rc.preserveType) return rc; // ★ preserveType:保留作者品质(JPOP ii-V 依赖精确 m7b5/m7/7),跳过 POP 折叠
     const a = alignChordTypeToMgStyle(rc.chordType ?? rc.quality, rc.quality, band.style);
     return { ...rc, chordType: a.chordType, quality: a.quality };
