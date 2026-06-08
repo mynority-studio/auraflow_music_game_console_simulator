@@ -73,18 +73,19 @@ const sizeContent = (budget: number, count: number): number =>
 // Pop / RNB:[intro?] - verse×{1,2} - 副歌×{1,2} - [outro?]。verse×2 同 'V' 记忆点;末 verse 推进副歌。
 function assemblePopRnb(rnb: boolean, rng: Rng): Section[] {
   let hasIntro = rng.next() < (rnb ? 0.7 : 0.55);
-  let hasOutro = rng.next() < (rnb ? 0.55 : 0.4);
+  rng.next(); // ★ 占位:旧 hasOutro 掷点,保 rng 流对齐(各 seed 的 verse/chorus 决策不变);outro 现必有,结果弃用。
+  // ★ 收尾段【必有】(修戛然而止):outro 不再可选/不被砍 → 保证能量回落 + 终止式回归(harmonyRole 'ending')。
   let verses = rng.pick([1, 2, 2]);   // 偏 2(记忆点)
   let choruses = rng.pick([1, 2, 2]);
   if (verses === 1 && choruses === 1) choruses = 2; // 保证 ≥1 处 ×2(记忆点)
-  const over = () => Math.max(0, (hasIntro ? 1 : 0) + verses + choruses + (hasOutro ? 1 : 0) - 5);
-  if (over() && hasOutro) hasOutro = false;          // ≤5:先砍 outro
-  if (over() && hasIntro) hasIntro = false;          // 再砍 intro(保 verse×2 / chorus)
+  // ≤6(放宽:intro + verse×2 + chorus×2 + outro = 标准流行曲式,不砍 intro 也不砍 outro)。
+  const over = () => Math.max(0, (hasIntro ? 1 : 0) + verses + choruses + 1 - 6); // outro 固定占 1 槽
+  if (over() && hasIntro) hasIntro = false;          // 仍超(content 太多)→ 先砍 intro(收尾比开场重要)
   while (over() && choruses > 1) choruses--;
   while (over() && verses > 1) verses--;
 
   const introBars = hasIntro ? (rnb ? 4 : 2) : 0;
-  const outroBars = hasOutro ? (rnb ? 4 : 2) : 0;
+  const outroBars = 4; // 4 小节收尾乐句(够走 V-I 终止 + 能量回落)
   const per = sizeContent(TARGET_BARS - introBars - outroBars, verses + choruses);
 
   const out: Section[] = [];
@@ -95,26 +96,26 @@ function assemblePopRnb(rnb: boolean, rng: Rng): Section[] {
   for (let i = 1; i <= choruses; i++) {
     out.push({ id: rnb ? `hook${i}` : `chorus${i}`, role: 'chorus', harmonyRole: 'chorus', functionTag: 'hook', bars: per, repeatGroup: rnb ? 'H' : 'C', hookPolicy: rnb ? 'call-response' : 'main' });
   }
-  if (hasOutro) out.push({ id: rnb ? 'outroVamp' : 'outro', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: outroBars, hookPolicy: rnb ? 'light' : 'none' });
+  out.push({ id: rnb ? 'outroVamp' : 'outro', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: outroBars, hookPolicy: rnb ? 'light' : 'none' });
   return out;
 }
 
 // Lofi:[loopIntro?] - loop×{2,3}(连续记忆点)- [outroFade?]。不套 chorus(全 harmonyRole=loop)。
 function assembleLofi(rng: Rng): Section[] {
   let hasIntro = rng.next() < 0.6;
-  let hasOutro = rng.next() < 0.6;
+  rng.next(); // ★ 占位:旧 hasOutro 掷点,保 rng 流对齐;outroFade 现必有,结果弃用。
+  // ★ outroFade 必有(修戛然而止):lofi 也要回落收尾(harmonyRole 'ending' → 终止 + 能量落)。
   let loops = rng.pick([2, 2, 3]);
-  const over = () => Math.max(0, (hasIntro ? 1 : 0) + loops + (hasOutro ? 1 : 0) - 5);
-  if (over() && hasOutro) hasOutro = false;
+  const over = () => Math.max(0, (hasIntro ? 1 : 0) + loops + 1 - 6); // ≤6;outro 固定占 1 槽
   if (over() && hasIntro) hasIntro = false;
   while (over() && loops > 2) loops--;
   const introBars = hasIntro ? 4 : 0;
-  const outroBars = hasOutro ? 4 : 0;
+  const outroBars = 4;
   const per = sizeContent(TARGET_BARS - introBars - outroBars, loops);
   const out: Section[] = [];
   if (hasIntro) out.push({ id: 'loopIntro', role: 'intro', harmonyRole: 'loop', functionTag: 'setup', bars: introBars, hookPolicy: 'none' });
   for (let i = 1; i <= loops; i++) out.push({ id: `loop${i}`, role: 'verse', harmonyRole: 'loop', functionTag: 'loop', bars: per, repeatGroup: 'L', hookPolicy: 'light' });
-  if (hasOutro) out.push({ id: 'outroFade', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: outroBars, hookPolicy: 'none' });
+  out.push({ id: 'outroFade', role: 'outro', harmonyRole: 'ending', functionTag: 'outro', bars: outroBars, hookPolicy: 'none' });
   return out;
 }
 
@@ -122,18 +123,22 @@ function assembleLofi(rng: Rng): Section[] {
 function assembleJazz(rng: Rng): Section[] {
   let hasIntro = rng.next() < 0.6;
   let hasSolo = rng.next() < 0.7;
-  let n = (hasIntro ? 1 : 0) + 2 + (hasSolo ? 1 : 0) + 1; // intro? + head×2 + solo? + headOut
-  if (n > 5 && hasIntro) { hasIntro = false; n--; }
-  if (n > 5 && hasSolo) { hasSolo = false; n--; }
+  // ★ 收尾 tag【必有】(修戛然而止):headOut(recap 回归头部)后接一段终止 tag(harmonyRole 'ending' → V-I 落家 + 能量回落)。
+  //   固定 head×2 + headOut + tag = 4;intro?/solo? 砍到 ≤5(solo 优先于 intro 保留)。
+  let n = (hasIntro ? 1 : 0) + 2 + (hasSolo ? 1 : 0) + 1 + 1; // intro? + head×2 + solo? + headOut + tag
+  if (n > 6 && hasIntro) { hasIntro = false; n--; } // ≤6
+  if (n > 6 && hasSolo) { hasSolo = false; n--; }
   const introBars = hasIntro ? 4 : 0;
   const soloBars = hasSolo ? 16 : 0;
-  const per = sizeContent(TARGET_BARS - introBars - soloBars, 3); // head×2 + headOut
+  const tagBars = 4;
+  const per = sizeContent(TARGET_BARS - introBars - soloBars - tagBars, 3); // head×2 + headOut
   const out: Section[] = [];
   if (hasIntro) out.push({ id: 'intro', role: 'intro', harmonyRole: 'intro', functionTag: 'setup', bars: introBars, hookPolicy: 'none' });
   out.push({ id: 'headA', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: per, repeatGroup: 'A', hookPolicy: 'light' });
   out.push({ id: 'headA2', role: 'verse', harmonyRole: 'verse', functionTag: 'head', bars: per, repeatGroup: 'A', hookPolicy: 'light' });
   if (hasSolo) out.push({ id: 'solo', role: 'bridge', harmonyRole: 'bridge', functionTag: 'solo', bars: soloBars, hookPolicy: 'none' });
   out.push({ id: 'headOut', role: 'chorus', harmonyRole: 'chorus', functionTag: 'headOut', bars: per, repeatGroup: 'A', hookPolicy: 'light' });
+  out.push({ id: 'tag', role: 'outro', harmonyRole: 'ending', functionTag: 'tag', bars: tagBars, hookPolicy: 'none' });
   return out;
 }
 

@@ -55,15 +55,17 @@ describe('arranger · 曲式多样 (3.5)', () => {
     return buildArrangementPlan(band, { rng: createRandomContext(seed) });
   };
 
-  it('★ 程序化曲式【≤5 段 + 记忆点】:每首 ≤5 段;每首有 ×2 连续记忆点;lofi 无 chorus;jazz head×2+headOut', () => {
+  it('★ 程序化曲式【≤6 段 + 记忆点 + 必有收尾】:每首 ≤6 段;有 ×2 连续记忆点;★ 每首末段=收尾(harmonyRole ending,修戛然而止);lofi 无 chorus;jazz head×2+headOut', () => {
     const cnt = (secs: readonly { functionTag?: string }[], t: string) => secs.filter((s) => s.functionTag === t).length;
     for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
       for (let seed = 0; seed < 12; seed++) {
         const secs = styleForm(style, seed).sections;
-        expect(secs.length).toBeLessThanOrEqual(5);          // ★ 最多 5 段
+        expect(secs.length).toBeLessThanOrEqual(6);          // ★ 放宽到 6(intro+verse×2+chorus×2+outro 标准曲式)
         expect(secs.length).toBeGreaterThanOrEqual(2);
         // 记忆点:story/hook/loop/head 之一 ≥2(连续重复)
         expect(cnt(secs, 'story') >= 2 || cnt(secs, 'hook') >= 2 || cnt(secs, 'loop') >= 2 || cnt(secs, 'head') >= 2).toBe(true);
+        // ★ 必有收尾段(修戛然而止):末段 harmonyRole='ending'(→ 终止式回归 + 能量回落)
+        expect(secs[secs.length - 1].harmonyRole).toBe('ending');
       }
     }
     for (let seed = 0; seed < 8; seed++) {
@@ -97,7 +99,8 @@ describe('arranger · 曲式多样 (3.5)', () => {
     expect(ch.harmonyRole).toBe('chorus');
     expect(ch.functionTag).toBe('hook');
     const outro = pop.sections.find((s) => s.role === 'outro');
-    if (outro) expect(outro.harmonyRole).toBe('ending'); // POP_A 无 outro(末段 chorus),POP_B 有
+    expect(outro).toBeDefined();                  // ★ 收尾段现必有
+    expect(outro!.harmonyRole).toBe('ending');
   });
 
   it('★ 风格曲式各段 repeatGroup 必同 bars(引擎按 group 复用 prototype,混 bars 会错配)', () => {
