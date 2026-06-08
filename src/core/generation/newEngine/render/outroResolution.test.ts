@@ -20,7 +20,7 @@ function pieces(seed: number, style: string) {
   const plan = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(seed));
   const timebase = createTimebase({ meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }] });
   const res = renderSongFull(band, arrangement, plan, instrumentation, timebase, createRandomContext(seed));
-  return { band, arrangement, plan, timebase, ...res };
+  return { band, arrangement, instrumentation, plan, timebase, ...res };
 }
 
 describe('harmony · 收尾真终止 V7→I(tonal)', () => {
@@ -71,5 +71,34 @@ describe('render · 收尾旋律回主音', () => {
     // outro 基本都有旋律(不再 ~半数纯器乐),且绝大多数落主音(原仅 ~7%)
     expect(noLead).toBeLessThanOrEqual(2);
     expect(tonic / checked).toBeGreaterThan(0.8);
+  });
+});
+
+describe('Loop G · EndingPlan cadence orchestration', () => {
+  it('sustainRoles = pad优先/无pad用comp(不含 lead);protectLeadTiming=true', () => {
+    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+      for (let seed = 0; seed < 12; seed++) {
+        const { band, instrumentation } = pieces(seed, style);
+        const ep = instrumentation.endingPlan;
+        expect(ep.protectLeadTiming).toBe(true);
+        expect(ep.sustainRoles).not.toContain('lead');             // lead 不默认延留
+        if (band.instrumentPool.includes('pad')) expect(ep.sustainRoles).toContain('pad');
+        else if (band.instrumentPool.includes('comp')) expect(ep.sustainRoles).toContain('comp');
+      }
+    }
+  });
+
+  it('末小节有声由 sustainRole(非 lead)承担:tag/cold/fade 末小节去掉 lead 仍有音', () => {
+    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+      for (let seed = 0; seed < 12; seed++) {
+        const { arrangement, ir, timebase } = pieces(seed, style);
+        const bpb = arrangement.meter.numerator;
+        const total = arrangement.sections.reduce((n, s) => n + s.bars, 0) * bpb;
+        const lo = timebase.beatToTick(beats(total - bpb)) as number, hi = timebase.beatToTick(beats(total)) as number;
+        // 排除 lead 后,末小节仍有 overlap 音(comp/pad/bass 承担收尾)
+        const nonLead = ir.tracks.filter((t) => t.role !== 'lead').reduce((n, tr) => n + tr.notes.filter((x) => (x.startTick as number) < hi && ((x.startTick as number) + (x.durationTicks as number)) > lo).length, 0);
+        expect(nonLead, `${style}/${seed} 末小节仅靠 lead`).toBeGreaterThan(0);
+      }
+    }
   });
 });

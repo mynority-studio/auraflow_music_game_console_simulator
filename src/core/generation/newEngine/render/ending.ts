@@ -16,8 +16,9 @@ import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 const clampVel = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
-// 末小节延留末和弦的角色(和声/气氛件;节奏件不延留)。
-const HOLD_ROLES = new Set<string>(['comp', 'pad', 'lead']);
+// ★ Loop G:末和弦延留角色默认 = 和声件 comp/pad(不含 lead;lead 落主音由 mgLeadRenderer snap 管,时值不被强拉)。
+//   实际用 endingPlan.sustainRoles 覆盖(器配定:pad 优先/无 pad 用 comp)。
+const DEFAULT_SUSTAIN = new Set<string>(['comp', 'pad']);
 
 /** outro 段的 tick 窗口(从段落累加小节算,与 durationTicks 自洽)。无 outro → null。 */
 function outroWindow(arrangement: ArrangementPlan, outroId: string | null, barTicks: number): { start: number; end: number } | null {
@@ -52,7 +53,10 @@ export function applyEnding(
     const exitTick = exitN !== undefined ? outroStart + exitN * barTicks : Infinity;
     // ★ 末和弦延留(tag):延留【真正最后一个和弦】到曲末,即便它起在末小节之前
     //   (否则末小节可能空 = tag 收不住)。先扫该 hold 声部在 outro 内的最晚起音作为延留起点。
-    const isHold = endingPlan.holdFinalChord && HOLD_ROLES.has(t.role);
+    // ★ Loop G:延留角色 = endingPlan.sustainRoles(默认 comp/pad);protectLeadTiming → lead 永不被延留。
+    const sustainSet = endingPlan.sustainRoles ? new Set<string>(endingPlan.sustainRoles) : DEFAULT_SUSTAIN;
+    const leadProtected = endingPlan.protectLeadTiming !== false && t.role === 'lead';
+    const isHold = endingPlan.holdFinalChord && sustainSet.has(t.role) && !leadProtected;
     let holdFrom = lastBarStart;
     if (isHold) {
       let maxStart = -1;

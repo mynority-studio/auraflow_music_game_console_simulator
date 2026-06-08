@@ -165,6 +165,13 @@ function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineu
     if (has('bass')) exitBarByRole.bass = Math.max(1, outroBars - 1);
   }
   // cold:无早退(全员撑到末下拍齐停 + button 重音,由 render coldStop 投影)。
+  // ★ Loop G cadence orchestration:sustain=pad 优先 / 无 pad 用 comp(lead 不延留);
+  //   finalAnchor=接地(bass) + 一个和声支撑(pad/comp);protectLeadTiming → lead 时值不被强拉(snap 管落主音)。
+  const sustainRoles: InstrumentRoleName[] = has('pad') ? ['pad'] : has('comp') ? ['comp'] : [];
+  const finalAnchorRoles: InstrumentRoleName[] = [];
+  if (has('bass')) finalAnchorRoles.push('bass');
+  if (has('pad')) finalAnchorRoles.push('pad');
+  else if (has('comp')) finalAnchorRoles.push('comp');
   return {
     style,
     outroSectionId: outro?.id ?? null,
@@ -173,6 +180,9 @@ function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineu
     holdFinalChord: style === 'tag',
     fadeOut: style === 'fade',
     coldStop: style === 'cold',
+    finalAnchorRoles,
+    sustainRoles,
+    protectLeadTiming: true,
   };
 }
 

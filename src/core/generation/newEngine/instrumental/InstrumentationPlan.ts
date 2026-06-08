@@ -50,6 +50,10 @@ export interface EndingPlan {
   holdFinalChord: boolean;
   fadeOut: boolean;
   coldStop: boolean;
+  // ★ Loop G(2026-06-08)cadence orchestration:谁延留末和弦 / 谁给末 I anchor / 是否保护 lead 时值。
+  finalAnchorRoles?: readonly InstrumentRoleName[]; // 末 I 落地锚点(接地 + 和声支撑;cold 尤其需要)
+  sustainRoles?: readonly InstrumentRoleName[];     // 延留末和弦的角色(pad 优先,无 pad 用 comp;lead 不默认延留)
+  protectLeadTiming?: boolean;             // true → applyEnding 不强行延长 lead(末音落主音由 mgLeadRenderer snap 负责)
 }
 
 export interface InstrumentationPlanData {
