@@ -94,10 +94,11 @@ export function renderMgMelody(
     guideTonePlan,
     preserveSlopeGrammar: style === 'LOFI',
   });
-  // ★ swing 不在 MG 链内施加(2026-06-08 修「旋律没对上 groove」):renderStyleFeel 原把 jazz/blues 摆到 0.67,
-  //   而 renderCoordinator 末尾的 applySwing 又对【全轨】摆一次 → 旋律被【双重摇摆】偏离 groove 网格(实测 jazz 56% 离 8 分格)。
-  //   这里把 swingRatio 压回 0.5(只保留 articulation/accent),swing 交给 applySwing 对全轨统一施加 → 旋律与 comp/bass/drum 同摆同对拍。
-  melody = renderStyleFeel({ events: melody, feel: { ...feelForStyle(style), swingRatio: 0.5 }, rng: mgRng });
+  // ★ 旋律 timing owner = MG StyleRenderer(单一所有权,Loop A 校正):lead 在此用 MG style feel 的 swing
+  //   (jazz/blues 0.67 摆动;pop/rnb/lofi 0.5 直)。renderCoordinator 末尾的 applySwing【跳过 lead】(swing.ts:22),
+  //   所以不会双重摆动 —— lead 的 swing 由这里独占,伴奏(comp/bass/drum)的 swing 由 arranger feel + 全局 applySwing 负责。
+  //   ⚠️ 不要把这里压成 0.5:applySwing 既跳过 lead,压直会让 jazz lead 变直而伴奏仍摆 → lead/groove 错位(2026-06-08 实测教训)。
+  melody = renderStyleFeel({ events: melody, feel: feelForStyle(style), rng: mgRng });
   // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
   const applyLofi = style === 'LOFI';
   melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);

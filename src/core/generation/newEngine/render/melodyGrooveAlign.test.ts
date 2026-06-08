@@ -3,17 +3,20 @@ import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
-import { createTimebase, createRandomContext, beats } from '../foundation';
+import { applySwing } from './swing';
+import { createTimebase, createRandomContext, beats, ticks } from '../foundation';
+import type { TrackIR } from '../ir/MusicalIR';
 
 // ============================================================
-// 旋律 ↔ groove 对拍(2026-06-08):MG 链不再自带 swing(原 jazz/blues 摆到 0.67),
-//   swing 交给 renderCoordinator.applySwing 对【全轨统一】施加 → 旋律与 comp/bass/drum 同摆同对拍。
-//   验收:MG 链出来的旋律 onset 落在直拍 8/16 分格上(像 pop 一样),不再被双重摇摆推离网格。
+// 旋律 timing 单一所有权(Loop A,2026-06-08 校正):
+//   lead 的 swing owner = MG StyleRenderer(renderMgMelody 内 feelForStyle);
+//   applySwing【跳过 lead】(swing.ts) → 不二次作用 → 不会双重 swing。
+//   伴奏 owner = arranger feel + 全局 applySwing。
+//   ⚠️ 之前误把 MG swing 压成 0.5,导致 jazz lead 直、伴奏摆 → 错位;此测试锁住"lead 自带 MG swing"。
 // ============================================================
 
-// 一次扫描返回 8 分格 / 16 分格离格率(避免重复渲染全曲旋律)。
-function offGridRates(style: string, seeds: number): { off8: number; off16: number } {
-  let off8 = 0, off16 = 0, tot = 0;
+function rawLead(style: string, seeds: number) {
+  let off8 = 0, nearSwung = 0, tot = 0;
   for (let seed = 0; seed < seeds; seed++) {
     const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
     const arr = buildArrangementPlan(band, { rng: createRandomContext(seed) });
@@ -21,23 +24,31 @@ function offGridRates(style: string, seeds: number): { off8: number; off16: numb
     const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
     const lead = renderMgMelody(plan, band, tb, createRandomContext(seed).substream('melody'));
     for (const n of lead.notes) {
-      const b = (n.startTick as number) / tb.ppq;
-      if (Math.abs(b - Math.round(b * 2) / 2) > 0.02) off8++;
-      if (Math.abs(b - Math.round(b * 4) / 4) > 0.02) off16++;
-      tot++;
+      const b = (n.startTick as number) / tb.ppq; const frac = b - Math.floor(b); tot++;
+      if (Math.abs(frac - Math.round(frac * 2) / 2) > 0.02) off8++; // 距【最近 8 分格】(含下拍 frac=0)
+      if (Math.abs(frac - 0.66) < 0.06) nearSwung++; // 落在 MG swing 后位
     }
   }
-  return { off8: tot ? off8 / tot : 0, off16: tot ? off16 / tot : 0 };
+  return { off8: tot ? off8 / tot : 0, nearSwung: tot ? nearSwung / tot : 0 };
 }
 
-describe('render/melodyGrooveAlign · MG 链不双重 swing', () => {
-  it('pop:旋律全在 8 分格(直拍)', () => {
-    expect(offGridRates('pop', 15).off8).toBe(0);
+describe('render/melodyGrooveAlign · lead timing 单一所有权', () => {
+  it('pop:lead 直拍(MG feel 0.5)→ onset 全在 8 分格,无摆动后位', () => {
+    const { off8, nearSwung } = rawLead('pop', 15);
+    expect(off8).toBe(0);
+    expect(nearSwung).toBe(0);
   });
 
-  it('jazz:直拍生成(无双重 swing 残留;原双摆 >50% 离 8 分格)→ 91%+ 在 16 分格', () => {
-    const { off8, off16 } = offGridRates('jazz', 15);
-    expect(off16).toBeLessThan(0.2);   // 残留=realizer 自然装饰
-    expect(off8).toBeLessThan(0.35);   // 远低于双摆时的 0.56
+  it('jazz:lead 自带 MG swing(摆动后位 0.66 有显著占比)→ 不是被压直', () => {
+    const { nearSwung } = rawLead('jazz', 15);
+    expect(nearSwung).toBeGreaterThan(0.1); // 有真摆动(若被压成 0.5 → ≈0)
+  });
+
+  it('applySwing 不二次作用于 lead(单一所有权):lead 轨 onset 原样返回', () => {
+    const lead: TrackIR = { role: 'lead', notes: [{ pitch: 60 as never, startTick: ticks(240), durationTicks: ticks(240), velocity: 80 }] }; // 反拍 8 分(0.5 拍)
+    const comp: TrackIR = { role: 'comp', notes: [{ pitch: 60 as never, startTick: ticks(240), durationTicks: ticks(240), velocity: 80 }] };
+    const [outLead, outComp] = applySwing([lead, comp], 480, 0.66);
+    expect(outLead.notes[0].startTick).toBe(240);                 // lead 跳过 swing → 不变
+    expect(outComp.notes[0].startTick as number).toBeGreaterThan(240); // comp 被 swing 后移
   });
 });
