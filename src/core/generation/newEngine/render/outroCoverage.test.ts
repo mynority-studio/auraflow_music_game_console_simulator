@@ -44,7 +44,7 @@ describe('harmony 时间线铺满曲式(无段落短缺)', () => {
 
 describe('outro 段不空(有音落终止)', () => {
   for (const style of STYLES) {
-    it(`${style}:末段(outro)tick 区间内有音`, () => {
+    it(`${style}:末段(outro)有音 + 末小节有声(overlap;held 末和弦也算)`, () => {
       for (let seed = 0; seed < 25; seed++) {
         const { arrangement, ir, timebase } = pieces(seed, style);
         const bpb = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
@@ -53,8 +53,13 @@ describe('outro 段不空(有音落终止)', () => {
         for (const s of arrangement.sections) { if (s.id === last.id) break; cur += s.bars * bpb; }
         const lo = timebase.beatToTick(beats(cur)) as number;
         const hi = timebase.beatToTick(beats(cur + last.bars * bpb)) as number;
-        const notes = ir.tracks.reduce((n, tr) => n + tr.notes.filter((x) => (x.startTick as number) >= lo && (x.startTick as number) < hi).length, 0);
-        expect(notes, `${style}/${seed} outro=${last.id} 空了`).toBeGreaterThan(0);
+        // 整段不空(起音计数)
+        const inOutro = ir.tracks.reduce((n, tr) => n + tr.notes.filter((x) => (x.startTick as number) >= lo && (x.startTick as number) < hi).length, 0);
+        expect(inOutro, `${style}/${seed} outro=${last.id} 空了`).toBeGreaterThan(0);
+        // ★ 末小节有声(overlap 计数 → held/延留的末和弦也算)→ 不会末小节戛然而止
+        const fbLo = hi - bpb * timebase.ppq;
+        const sounding = ir.tracks.reduce((n, tr) => n + tr.notes.filter((x) => (x.startTick as number) < hi && ((x.startTick as number) + (x.durationTicks as number)) > fbLo).length, 0);
+        expect(sounding, `${style}/${seed} 末小节静音(${arrangement.endingStyle})`).toBeGreaterThan(0);
       }
     });
   }

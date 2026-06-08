@@ -50,6 +50,15 @@ export function applyEnding(
   return tracks.map((t) => {
     const exitN = endingPlan.exitBarByRole[t.role as InstrumentRoleName];
     const exitTick = exitN !== undefined ? outroStart + exitN * barTicks : Infinity;
+    // ★ 末和弦延留(tag):延留【真正最后一个和弦】到曲末,即便它起在末小节之前
+    //   (否则末小节可能空 = tag 收不住)。先扫该 hold 声部在 outro 内的最晚起音作为延留起点。
+    const isHold = endingPlan.holdFinalChord && HOLD_ROLES.has(t.role);
+    let holdFrom = lastBarStart;
+    if (isHold) {
+      let maxStart = -1;
+      for (const n of t.notes) { const st = n.startTick as number; if (st >= outroStart && st < Math.min(outroEnd, exitTick) && st > maxStart) maxStart = st; }
+      if (maxStart >= 0) holdFrom = Math.min(lastBarStart, maxStart);
+    }
     const notes: NoteIR[] = [];
     for (const n of t.notes) {
       const st = n.startTick as number;
@@ -61,8 +70,8 @@ export function applyEnding(
           const pos = clamp01((st - outroStart) / span);
           vel = vel * (1 - 0.82 * pos); // 1.0 → 0.18 线性渐弱
         }
-        if (endingPlan.holdFinalChord && st >= lastBarStart && HOLD_ROLES.has(t.role)) {
-          dur = Math.max(dur, outroEnd - st); // 末和弦延留到曲末
+        if (isHold && st >= holdFrom) {
+          dur = Math.max(dur, outroEnd - st); // 末和弦延留到曲末(含起在末小节前的最后一个和弦)
         }
         if (endingPlan.coldStop) {
           if (st >= lastBarStart) vel = vel * 1.25;          // button 重音

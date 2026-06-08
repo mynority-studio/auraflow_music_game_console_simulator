@@ -148,8 +148,10 @@ function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineu
   const exitBarByRole: Partial<Record<InstrumentRoleName, number>> = {};
   if (style === 'fade' && outroBars >= 2) {
     // 渐隐:节奏件错开退出(先 drum,再 comp,再 bass),pad/lead 响到末(尾音收束)。
+    // ★ comp 只在【有 pad】时早退(pad 接渐隐尾音);无 pad 编制 → comp 留作尾音声部(靠力度 ramp 渐隐到末),
+    //   否则 fade 末两小节会空(pad 缺、lead 常被 gate)= 仍像戛然而止。
     if (has('drum')) exitBarByRole.drum = Math.max(1, Math.round(outroBars * 0.34));
-    if (has('comp')) exitBarByRole.comp = Math.max(1, Math.round(outroBars * 0.6));
+    if (has('comp') && has('pad')) exitBarByRole.comp = Math.max(1, Math.round(outroBars * 0.6));
     if (has('bass')) exitBarByRole.bass = Math.max(1, Math.round(outroBars * 0.8));
   } else if (style === 'tag' && outroBars >= 1) {
     // 延留:节奏件(鼓/bass)末小节退出,和声件(comp/pad/lead)延留末和弦 → 渐慢/收束感(不改 tempo)。

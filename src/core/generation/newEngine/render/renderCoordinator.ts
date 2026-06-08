@@ -147,9 +147,15 @@ export function renderSongFull(
   const voicingSaferSpans = overlay?.voicingSafer ? new Set(Object.keys(overlay.voicingSafer)) : undefined;
 
   // 让位上下文:active 织体段 + 主 hook 锚点拍(melody-aware accompaniment-first)
+  // ★ pad 不在场兜底(2026-06-08):floating 段(intro/outro/bridge/tag)本由 pad 承担和声;若该段【pad 未在场】
+  //   (无 pad 编制 / 或 jazz 这类 pad 从不进 density-arc),floating 段会无和弦(只剩 bass+lead,lead 还常被 gate)
+  //   → outro/tag 末小节空 = 戛然而止。此时让 comp 在该 floating 段也渲染 → 兜底铺和声。
+  //   pad 在场的段不变(bit 不变);comp 不在 lineup 时此项无效(空操作)。
+  const activeRolesForFill = instrumentation.activeRolesBySection;
   const activeSectionIds = new Set<string>();
   for (const [sid, tex] of Object.entries(instrumentation.textureBySection)) {
-    if (instrumentation.textureYieldPolicy[tex] === 'active') activeSectionIds.add(sid);
+    const padActiveHere = ((activeRolesForFill[sid] as readonly string[] | undefined) ?? []).includes('pad');
+    if (instrumentation.textureYieldPolicy[tex] === 'active' || !padActiveHere) activeSectionIds.add(sid);
   }
   const anchorBeats = new Set<number>();
   for (const slot of instrumentation.melodyReservationPlan.hookAnchorSlots) {
