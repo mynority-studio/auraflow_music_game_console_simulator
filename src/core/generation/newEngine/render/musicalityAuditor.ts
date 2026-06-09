@@ -116,5 +116,28 @@ export function auditMusicality(
     if (lead >= 0 && comp > 0.15 && lead < 0.03) warn('lead', 0, 'lead-groove-desync', `swing 风格 lead 几乎不摆(${(lead * 100).toFixed(0)}%)而 comp 摆(${(comp * 100).toFixed(0)}%)`);
   }
 
+  // —— Loop I.4: texture-clock-drift —— LOFI comp【柱式块(同 tick ≥2 音)】离 8 分格 > 0.055 拍(roll 单音豁免)。
+  if (s === 'lofi') {
+    const blockTick: Record<number, number> = {};
+    for (const n of ir.tracks.find((t) => t.role === 'comp')?.notes ?? []) blockTick[n.startTick as number] = (blockTick[n.startTick as number] ?? 0) + 1;
+    for (const [tickStr, count] of Object.entries(blockTick)) {
+      if (count < 2) continue; // 单音 = roll voice(装饰 stagger),豁免
+      const b = Number(tickStr) / ppq;
+      const res = Math.abs(b - Math.round(b * 2) / 2);
+      if (res > 0.055) { warn('comp', Number(tickStr), 'texture-clock-drift', `LOFI comp 柱式块离 8 分格 ${res.toFixed(3)} 拍 > 0.055`); break; }
+    }
+  }
+
+  // —— Loop I.4: structural-comp-anchor-late —— no-pad comp 支撑段,section 下拍 0.08 拍内无 comp 起音/延留。
+  for (let i = 0; i < arrangement.sections.length; i++) {
+    const sec = arrangement.sections[i];
+    if (!instrumentation.needsDownbeatCompAnchorBySection[sec.id]) continue;
+    const st = sectionStartTick(i);
+    const eps = 0.08 * ppq;
+    if (!(onsetIn('comp', st - eps, st + eps) || soundingIn('comp', st, st + 1))) {
+      warn('comp', st, 'structural-comp-anchor-late', `${sec.id} no-pad comp 支撑但下拍 0.08 拍内无 comp anchor`);
+    }
+  }
+
   return { findings };
 }

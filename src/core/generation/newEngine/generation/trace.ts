@@ -205,7 +205,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     const errs = audit.findings.filter((f) => f.severity === 'error' || f.severity === 'fatal');
     log(`   findings: ${Object.entries(byRule).map(([k, n]) => `${k}×${n}`).join(' / ')}`);
     // ★ Loop H 音乐性审计(只读 warning,不重跑):衔接/收尾/comp 断层
-    const MUSICALITY_RULES = new Set(['transition-pickup-missing', 'section-downbeat-anchor-missing', 'song-start-abrupt', 'outro-harmonic-support-missing', 'comp-continuity-gap', 'lead-groove-desync']);
+    const MUSICALITY_RULES = new Set(['transition-pickup-missing', 'section-downbeat-anchor-missing', 'song-start-abrupt', 'outro-harmonic-support-missing', 'comp-continuity-gap', 'lead-groove-desync', 'texture-clock-drift', 'structural-comp-anchor-late', 'roll-spread-too-wide']);
     const mus = audit.findings.filter((f) => MUSICALITY_RULES.has(f.ruleId));
     log(`   音乐性(Loop H): ${mus.length ? mus.map((f) => `${f.ruleId}@${f.location.trackRole}`).join(' / ') : '无(衔接/收尾/comp 连续性 OK)'}`);
     if (errs.length > 0) {

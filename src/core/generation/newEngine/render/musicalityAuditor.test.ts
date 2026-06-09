@@ -31,6 +31,7 @@ function fixtures(opts: { drumNotes?: ReturnType<typeof note>[]; compNotes?: Ret
     activeRolesBySection: { intro: ['comp', 'lead'], verse1: ['bass', 'comp', 'drum', 'lead'] },
     textureBySection: { intro: 'pad', verse1: 'active-comp' },
     textureYieldPolicy: { 'active-comp': 'active', pad: 'floating', 'sustained-block': 'floating', arpeggio: 'active', 'walking-bass': 'active' },
+    needsDownbeatCompAnchorBySection: { intro: false, verse1: false },
   } as unknown as InstrumentationPlan;
   return { ir, arrangement, instrumentation };
 }
@@ -53,6 +54,22 @@ describe('Loop H · 规则触发', () => {
     const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: [note(BAR * 2, 80, 240)] });
     const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'pop').findings.map((f) => f.ruleId);
     expect(ids).toContain('comp-continuity-gap');
+  });
+
+  it('texture-clock-drift(Loop I):LOFI comp 柱式块离 8 分格远 → 报', () => {
+    // 两个 comp 同 tick(柱式块)落在 0.58 拍(离 8 分格 0.08 > 0.055)
+    const driftTick = Math.round(BAR + 0.58 * PPQ);
+    const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: [note(driftTick, 60, 240), { pitch: 64 as never, startTick: driftTick as never, durationTicks: 240 as never, velocity: 60 }] });
+    const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'lofi').findings.map((f) => f.ruleId);
+    expect(ids).toContain('texture-clock-drift');
+  });
+
+  it('structural-comp-anchor-late(Loop I):no-pad comp 支撑段下拍无 comp → 报', () => {
+    // verse1 标 needsDownbeatCompAnchor;comp 只在段中(BAR*3)无段首(BAR*2)anchor
+    const f = fixtures({ drumNotes: [note(BAR + 240)], compNotes: [note(BAR * 3, 60, 240)] });
+    (f.instrumentation as unknown as { needsDownbeatCompAnchorBySection: Record<string, boolean> }).needsDownbeatCompAnchorBySection = { intro: false, verse1: true };
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'pop').findings.map((x) => x.ruleId);
+    expect(ids).toContain('structural-comp-anchor-late');
   });
 });
 
