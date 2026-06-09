@@ -19,6 +19,7 @@ import { renderBass } from './bassRenderer';
 import { buildTextureSchedule } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
+import { applyMgLofiDenseMelodyComping, denseMelodySpanRanges } from './mgPostMixShaper';
 import { renderMgMelody } from './mgLeadRenderer';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
@@ -247,6 +248,10 @@ export function renderSongFull(
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
   tracks.push(renderMgMelody(plan, band, timebase, rng.seed)); // lead 必有(MG 链);★ Loop 1:MG seed = song seed 直通
 
+  // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
+  //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
+  const postMixTracks = band.style.toLowerCase() === 'lofi' ? applyMgLofiDenseMelodyComping(tracks, plan, timebase) : tracks;
+
   // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
   //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。
   // ★ Loop E:transitionPlan 的 lead-in pickup → prepBar 内授权角色保护窗口(不被上一段 gate 删除)。
@@ -254,7 +259,7 @@ export function renderSongFull(
   const pickupWindows = instrumentation.transitionPlan.boundaries
     .filter((b) => b.protectPickupFromGate && b.pickupRoles.length > 0)
     .map((b) => ({ lo: b.prepBar * barTicksGate, hi: (b.prepBar + 1) * barTicksGate, roles: new Set<string>(b.pickupRoles as readonly string[]) }));
-  const gatedTracks = gateByDensity(tracks, plan, timebase, instrumentation.activeRolesBySection, pickupWindows);
+  const gatedTracks = gateByDensity(postMixTracks, plan, timebase, instrumentation.activeRolesBySection, pickupWindows);
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
@@ -347,6 +352,8 @@ export function renderSongFull(
   });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。
-  const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style);
+  // dense 区间用【pre-shaper tracks】算(post-shaper comp 已删→comp-path 检不到);comp-continuity 审计据此排除。
+  const denseExclude = band.style.toLowerCase() === 'lofi' ? denseMelodySpanRanges(tracks, plan, timebase) : [];
+  const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
   return { ir, audit: { findings: [...audit.findings, ...musicality.findings] } };
 }

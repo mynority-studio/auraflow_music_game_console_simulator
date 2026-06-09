@@ -19,12 +19,28 @@ const COMP_GAP_BEATS: Record<string, number> = { pop: 1.5, rnb: 1.5, lofi: 2.5, 
 const ANCHOR_WINDOW_BEAT = 1.0; // 段起首拍内出现 anchor 即视为落地
 const SWUNG_POS = 0.66;
 
+/** 区间集合减去 holes(返回剩余子区间)。Loop 5:comp 应在场区间 − dense-melody 区间。 */
+function subtractRanges(ranges: readonly { lo: number; hi: number }[], holes: readonly { lo: number; hi: number }[]): { lo: number; hi: number }[] {
+  let out = ranges.map((r) => ({ ...r }));
+  for (const h of holes) {
+    const next: { lo: number; hi: number }[] = [];
+    for (const r of out) {
+      if (h.hi <= r.lo || h.lo >= r.hi) { next.push(r); continue; } // 不相交
+      if (h.lo > r.lo) next.push({ lo: r.lo, hi: Math.min(h.lo, r.hi) }); // 左残段
+      if (h.hi < r.hi) next.push({ lo: Math.max(h.hi, r.lo), hi: r.hi }); // 右残段
+    }
+    out = next;
+  }
+  return out.filter((r) => r.hi > r.lo);
+}
+
 export function auditMusicality(
   ir: MusicalIR,
   arrangement: ArrangementPlan,
   instrumentation: InstrumentationPlan,
   timebase: Timebase,
   style: string,
+  compGapExclude: readonly { lo: number; hi: number }[] = [], // ★ Loop 5:LOFI dense 区间 comp 被有意删,排除出 comp-continuity
 ): AuditReport {
   const findings: AuditFinding[] = [];
   const ppq = timebase.ppq;
@@ -96,9 +112,11 @@ export function auditMusicality(
       const busy = roles.includes('comp') && instrumentation.textureYieldPolicy[tex] === 'active';
       if (busy) activeRanges.push({ lo: sectionStartTick(i), hi: sectionStartTick(i) + s.bars * barTicks });
     });
-    if (activeRanges.length) {
+    // ★ Loop 5:从 comp 应在场区间里【减去 dense-melody 区间】(那里 comp 被有意删,不算断层)。
+    const effRanges = compGapExclude.length ? subtractRanges(activeRanges, compGapExclude) : activeRanges;
+    if (effRanges.length) {
       const thresh = COMP_GAP_BEATS[style.toLowerCase()] ?? COMP_GAP_BEATS.default;
-      const rep = measureCompGaps(compNotes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number })), activeRanges, ppq);
+      const rep = measureCompGaps(compNotes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number })), effRanges, ppq);
       const big = rep.gaps.find((g) => g.gapBeats > thresh);
       if (big) warn('comp', Math.round(big.startBeat * ppq), 'comp-continuity-gap', `comp active 区间空洞 ${big.gapBeats.toFixed(2)} 拍 > ${thresh}`);
     }

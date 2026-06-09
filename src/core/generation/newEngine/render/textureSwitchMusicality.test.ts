@@ -9,6 +9,7 @@ import { createTimebase, createRandomContext, beats } from '../foundation';
 import { textureBehavior, isDelayedEntryTexture, rateTextureTransition } from '../knowledge/textureProfiles';
 import { RENDERED_TEXTURE_CASES } from './textureRenderer';
 import { measureCompGaps } from './compContinuity';
+import { denseMelodySpanRanges } from './mgPostMixShaper';
 import type { MusicalIR } from '../ir/MusicalIR';
 
 // comp 真在场区间(从 chordTimeline 实际 span 算 + comp 在 activeRoles + 段 active)。
@@ -171,14 +172,11 @@ describe('texture-switch 回归矩阵(directive §5,6 seed × 4 风格)', () => 
       const bySec: Record<string, Set<string>> = {};
       for (const c of p.plan.chordTimeline) { const tc = p.sched[c.id]; if (tc) (bySec[c.sectionId] ??= new Set()).add(tc); }
       for (const set of Object.values(bySec)) expect(set.size).toBeLessThanOrEqual(2);
-      // 生成不 failed + comp 无突发洞(阈值 2.5:抓旧 3.75/4.0 大洞,容稀疏织体一致节奏 ≤2.0)
-      const { ir, status } = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
+      // 生成不 failed + comp 无突发洞(用生产 auditor 的 comp-continuity-gap finding:per-style 阈值 +
+      //   ★ Loop 5 已从"comp 应在场区间"排除 LOFI dense-melody 区间[那里 comp 被有意删],故不误报)。
+      const { status, report } = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
       expect(status).not.toBe('failed');
-      const comp = ir.tracks.find((t) => t.role === 'comp');
-      if (comp && comp.notes.length > 0) {
-        const rep = measureCompGaps(comp.notes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number })), compActiveRanges(p), p.timebase.ppq);
-        expect(rep.maxGapBeats).toBeLessThan(2.5);
-      }
+      expect(report.findings.some((f) => f.ruleId === 'comp-continuity-gap')).toBe(false);
     });
   }
 });
