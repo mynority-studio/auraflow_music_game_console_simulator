@@ -127,6 +127,57 @@ Ending 需要器配层计划：谁先退、谁延留、谁给最后 I 的 anchor
 需要新增只读 `musicalityAuditor`，并把 findings 追加进现有 `AuditReport`。  
 全部先用 `warning`，不触发 retry，避免改变控制环语义。
 
+### 1.8 追加审计：多轨 clock / texture pocket 仍未对齐
+
+用户最新听感反馈：
+
+- `seed=7 / lofi`：仍有错拍感，多轨线像不在同一时钟。
+- `seed=396040 / pop`：仍有错拍感，多轨线像不在同一时钟。
+- `★ seed=777870 / rnb`：VERSE 非常好听，旋律线标星，作为正向 golden seed，不允许修坏。
+
+实测摘要：
+
+```text
+7 / lofi:
+  feel=straight, sections=loopIntro -> loop1 -> loop2 -> outroFade
+  bass/drum/lead 在 loop1@16.000、loop2@80.000 有明确 anchor
+  comp 主体长期在 0.56~0.58 beat 进入：
+    first comp = 0.577, 1.567, 2.575, 3.567...
+  audit=none，但听感仍像 comp 与 rhythm section 分脚走
+
+396040 / pop:
+  no pad lineup, comp 是主要和声支撑
+  verse 使用 Low_Pedal_Color_Wash，comp 首击固定 +0.25 beat：
+    verse1@8: bass/drum=8.000, comp=8.250
+  chorus 使用 Wide_Color_Motion roll，comp 首声部 +0.05 beat、后续 roll 到 +0.13 beat
+  audit=none，但无 pad 时这些 late/wash texture 会被听成 comp 错拍
+
+★ 777870 / rnb:
+  verse1@16: bass/drum=16.000, comp=16.023, lead=16.000
+  verse lead notes=60, restMax≈2.00 beats，旋律线好听
+  这个 seed 是正向 golden；修 clock 时不能把 RNB verse 量化成机械直拍
+```
+
+根因：
+
+1. newEngine 只搬了 MG 的 raw `textureCase` 事件时间，没有完整搬 MG 后置的 LOFI pocket 整形。
+   - newEngine `Piano_Lofi_Dusty_Chops` 仍直接输出 `0.58 / 1.58 / 2.58 / 3.58`。
+   - MG 原逻辑在 `shapeLofiArrangement()` 中会先把事件吸附到 16 分网格，再加毫秒级 pocket。
+   - 所以 MG 中 `0.58` 不是最终可听时间；newEngine 把中间态当最终态。
+
+2. `pocketizeBeat()` 目前只对 comp 柱式块做轻量拉回，LOFI 强度仅 `0.2`，无法替代 MG 的 `shapeLofiArrangement()`。
+   - `0.58` 只会被拉到约 `0.564`，再加 humanize 后仍是明显偏后的半拍。
+   - MG 的结果应更接近 `0.50 + pocketMs`，pocket 是毫秒级，不是 `0.08 beat` 级。
+
+3. POP no-pad 时，wash / late texture 被当作 comp 主支撑使用。
+   - `Low_Pedal_Color_Wash` 的 `firstOnsetBeat=0.25`，在有 pad 或低能 ambient 时可接受。
+   - 但当 lineup 无 pad、comp 是主要 harmonic support，它不能承担 structural downbeat anchor。
+   - 不能只按 `DELAYED_ENTRY_TEXTURES(firstOnset > 0.75)` 排除；`0.25` 对主 comp 已经太晚。
+
+4. `musicalityAuditor` 目前不审跨轨 clock。
+   - 它只审 transition/outro/comp gap/jazz lead swing。
+   - `7 / lofi`、`396040 / pop` 都可以 `audit=none`，但用户能听出错拍。
+
 ## 2. 修复总原则
 
 ### 2.1 决策层级
@@ -482,6 +533,151 @@ lead-groove-desync:
 - 修复后核心 golden seeds 不应出现上述 warning。
 - 即便出现 warning，GenerationController 不重跑，不 failed。
 
+### Loop I: 新增 texture clock policy，修跨轨时钟对齐
+
+文件：
+
+- `src/core/generation/newEngine/knowledge/textureProfiles.ts`
+- `src/core/generation/newEngine/render/textureRenderer.ts`
+- `src/core/generation/newEngine/render/accompanimentRenderer.ts`
+- `src/core/generation/newEngine/render/bassRenderer.ts`
+- `src/core/generation/newEngine/render/textureSchedule.ts`
+- `src/core/generation/newEngine/render/musicalityAuditor.ts`
+- 新增测试：`src/core/generation/newEngine/render/textureClockAlignment.test.ts`
+
+#### I.1 权责边界
+
+不要改大管道。
+
+```text
+Instrumentation:
+  选择 textureCase
+  标记该 texture 在本段是否需要 downbeat anchor / no-pad repair
+
+TextureSchedule / Render:
+  统一投影 texture event 的 clock
+  bass / comp / drum 共享同一 texture clock policy
+
+musicalityAuditor:
+  只读检查 clock drift / anchor late
+```
+
+不要让每个 renderer 各自偷偷修 timing。  
+texture 的时间归一个中央 policy，否则 bass/comp/drum 会再次分裂。
+
+#### I.2 一比一补回 MG 的 LOFI timing post-process
+
+必须参考 `../melodygenerative/src/lib/musicEngine.ts` 的：
+
+- `shapeLofiArrangement()`
+- `lofiPocketMs()`
+- `beatsFromMsAtStyleTempo()`
+
+MG 关键逻辑：
+
+```ts
+const relTime = Math.max(0, next.time - barStart);
+const gridTime = Math.round(relTime * 4) / 4;
+const pocketMs = lofiPocketMs(textureProfile, role, part, beatInBar, barIndex, relTime);
+next.time = barStart + gridTime + beatsFromMsAtStyleTempo('LOFI', pocketMs);
+```
+
+迁移要求：
+
+1. LOFI rich texture events 不再把 raw `tRel` 直接落 tick。
+2. 对 LOFI chord/bass event：
+   - 先吸附到 16 分网格：`round(relTime * 4) / 4`。
+   - 再加 MG 同款 `pocketMs`。
+   - pocket 范围使用 MG 原始 `styleDictionary.ts` 的 timing，不要继续扩大。
+3. `Piano_Lofi_Dusty_Chops`：
+   - raw `0.58` 是 texture 中间态。
+   - 最终应接近 `0.50 + small pocket`，不是 `0.58 + humanize`。
+4. `Piano_CommonTone_Soft_Roll`：
+   - 对齐 MG：`beat + 0.02 + idx * 0.015`。
+   - 当前 newEngine 是 `beat + 0.05 + idx * 0.03`，roll 被拉得更迟更散，容易听成错拍。
+5. 该 post-process 放在 texture event projection 层，不要放进 Harmony / Arranger。
+
+#### I.3 POP/RNB no-pad 的 comp structural anchor repair
+
+问题 texture：
+
+- `Low_Pedal_Color_Wash`：`firstOnsetBeat=0.25`
+- `Ambient_Pad_Breath`：wash 类，适合 pad/air，不适合无 pad 的唯一 comp 下拍
+- `Piano_Wide_Color_Motion` / `Piano_CommonTone_Soft_Roll`：roll 类，首声部必须靠近 grid，roll spread 不能过宽
+
+规则：
+
+1. 当 `pad` 不在 lineup 或该段 pad inactive，且 `comp` 是 active harmonic support：
+   - 若 texture 的 `firstOnsetBeat > 0.08`，它不能作为唯一 comp structural anchor。
+   - Instrumentation 层应二选一：
+     - 重新选择 `firstOnsetBeat <= 0.08` 的 textureCase；
+     - 或标记 `needsDownbeatCompAnchor=true`，由 render 在每个 structural span 首拍补一个很轻的 guide-tone shell。
+
+2. 补 anchor 时必须满足：
+   - 音符是短 guide-tone / shell，不要完整大柱式。
+   - velocity 低于主 comp texture。
+   - duration 短，避免把 wash 变成厚柱式。
+   - 只在 structural downbeat / section boundary / no-pad support span 使用。
+
+3. 不允许的修法：
+   - 不要全局把所有 POP/RNB comp 强拉到 grid。
+   - 不要删除 wash texture。
+   - 不要为了对齐把 `★ 777870 / rnb` 的 verse 旋律或 comp pocket 改直。
+
+#### I.4 多轨 clock 审计规则
+
+在 `musicalityAuditor` 增加 warning，不触发 retry：
+
+```text
+texture-clock-drift:
+  textureCase 标记为 grid/pocket 类，但事件离目标 grid 过远。
+  LOFI dusty/chop: 到最近 8 分格的残差应 <= 0.055 beat。
+  roll first voice: 距 structural grid 应 <= 0.04 beat。
+
+structural-comp-anchor-late:
+  no-pad + comp 是 harmonic support 时，section boundary 或 span downbeat 后
+  0.08 beat 内没有 comp onset/sustain anchor。
+
+roll-spread-too-wide:
+  roll 类 texture 在 structural anchor 上，首声部到末声部 spread 过宽。
+  建议阈值 <= 0.10 beat；超过则 warning。
+```
+
+注意：
+
+- decorative offbeat 可以存在，但必须有 bass/drum/pad/comp 中至少一个 structural anchor。
+- LOFI 可以 laid-back，但 laid-back 是毫秒级 pocket，不是半拍级主时钟偏移。
+- RNB `comp=+0.02 beat` 这种 pocket 是好手感，不应 warning。
+
+#### I.5 新增 issue / golden 用例
+
+必须新增 tests 或诊断断言：
+
+```text
+Issue seeds:
+  7 / lofi
+    - comp dusty chop 不再长期落在 +0.56~+0.58 beat。
+    - 到最近 8 分格残差 <= 0.055 beat。
+    - loop1@16、loop2@80 有清楚 structural anchor。
+
+  396040 / pop
+    - no-pad lineup 下，Low_Pedal_Color_Wash 不得作为唯一 comp anchor。
+    - verse1@8、verse2@56、chorus1@104、chorus2@152、outro@200：
+      bass/drum/lead anchor 不被 comp 的 +0.25 late wash 拖歪。
+    - 如果仍选 wash，必须有 render 补的 guide-tone downbeat anchor。
+
+Positive golden:
+  ★ 777870 / rnb / verse
+    - verse1 lead 必须保留 MG 高中生旋律手感。
+    - 允许 comp 约 +0.02 beat pocket。
+    - 不允许为了修 POP/LOFI，把 RNB verse 全量化成机械直拍。
+    - 建议保留 snapshot/summary：
+      verse1 notes >= 50
+      verse1 restMax <= 2.25 beats
+      verse1 first lead onset == section start
+      verse1 boundary comp delta <= 0.05 beat
+```
+
 ## 4. 测试矩阵
 
 必须新增或更新以下测试。
@@ -563,6 +759,25 @@ lead-groove-desync:
    - `633823 pop`
    - `633823 lofi`
 
+### 4.7 Texture Clock Alignment Tests
+
+用例：
+
+1. `seed=7 / lofi`
+   - `Piano_Lofi_Dusty_Chops` 经过 LOFI clock policy 后，不再把 raw `0.58` 当最终时间。
+   - comp 到最近 8 分格残差不得大于 `0.055 beat`。
+   - `texture-clock-drift` 不应出现。
+
+2. `seed=396040 / pop`
+   - no-pad + comp active support 时，`Low_Pedal_Color_Wash` 不能只有 `+0.25 beat` 的 comp 首击。
+   - 若仍使用 wash，必须有 `needsDownbeatCompAnchor` 产生的 guide-tone anchor。
+   - `structural-comp-anchor-late` 不应出现。
+
+3. `★ seed=777870 / rnb`
+   - verse1 旋律线作为正向 golden。
+   - 修 clock 不得改变 MG lead 时值手感。
+   - comp pocket 可保留在 `0.00~0.05 beat`。
+
 ## 5. Golden Seed 听感验收
 
 跑以下诊断，并保存摘要到测试输出或 trace 注释。
@@ -585,6 +800,17 @@ seed=64062:
 
 seed=633823:
   pop / rnb / lofi / jazz
+
+追加 issue / golden:
+
+seed=7:
+  lofi  # 多轨 clock issue seed
+
+seed=396040:
+  pop   # no-pad wash/comp anchor issue seed
+
+★ seed=777870:
+  rnb   # VERSE 旋律线正向 golden，标星保护
 ```
 
 重点人工听：
@@ -597,6 +823,8 @@ seed=633823:
 - no-pad 编制不出现只有 bass+lead 的空尾。
 - lead 与 accompaniment groove 一致。
 - comp 织体切换不出现突发空洞。
+- 多轨 clock 不漂：structural anchor 必须同一时钟；decorative offbeat 必须被标为装饰，不能顶替主 anchor。
+- `★777870 / rnb / verse` 的旋律线不能被修复动作破坏。
 
 ## 6. 终止条件
 
@@ -628,10 +856,12 @@ Claude 完成循环的条件：
 5. 修 Loop F：section boundary humanize anchor。
 6. 修 Loop G：EndingPlan cadence orchestration。
 7. 接 Loop H：musicalityAuditor warning。
-8. 跑 golden seeds 和测试矩阵。
+8. 接 Loop I：texture clock policy + clock audit。
+9. 跑 golden seeds 和测试矩阵。
 
 这个顺序的原因：
 
 - 先修 timing owner，否则后面听感判断会被 lead/groove 错位污染。
 - 先让器配层拥有 transitionPlan，再改 render gate。
 - 先修真实生成，再接 audit，否则 audit 会只是在报告已知坏结果。
+- 最后修 texture clock，因为它依赖前面的 transition/activeRoles 已经能告诉 render：哪一段谁是 structural support，谁只是 decorative texture。

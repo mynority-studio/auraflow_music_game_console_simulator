@@ -88,6 +88,9 @@ export interface InstrumentationPlanData {
   endingPlan: EndingPlan;
   // ★ 段落边界衔接计划(Loop C):lead-in pickup / downbeat anchor / song entry(render gate / humanize 消费)。
   transitionPlan: TransitionPlan;
+  // ★ Loop I.3:该段【comp 是唯一和声支撑(无 pad 在场)】→ 若 texture 首击太晚(firstOnsetBeat>0.08),
+  //   render 在 structural 下拍补一个轻 guide-tone shell anchor(不让 wash/late texture 当唯一 comp 下拍锚)。
+  needsDownbeatCompAnchorBySection: Record<SectionId, boolean>;
 }
 
 // ============================================================

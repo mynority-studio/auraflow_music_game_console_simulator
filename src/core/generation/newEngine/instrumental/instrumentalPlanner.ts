@@ -403,6 +403,10 @@ export function buildInstrumentationPlan(
     },
     endingPlan: buildEndingPlan(arrangement.endingStyle as EndingStyle, arrangement.sections, band.instrumentPool),
     transitionPlan: buildTransitionPlan(arrangement, activeRolesBySection, band.instrumentPool),
+    needsDownbeatCompAnchorBySection: Object.fromEntries(arrangement.sections.map((s) => {
+      const roles = activeRolesBySection[s.id] ?? [];
+      return [s.id, roles.includes('comp') && !roles.includes('pad')]; // comp 唯一和声支撑(无 pad)
+    })),
   };
 
   return freezeInstrumentationPlan(data);

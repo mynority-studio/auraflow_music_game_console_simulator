@@ -143,9 +143,10 @@ export function renderTextureChordHits(
     }
     case 'Piano_Wide_Color_Motion': // 源 roll widePianoVoicing;voiced 即宽排列 → 强拍轻 roll
     case 'Piano_CommonTone_Soft_Roll':
+      // ★ Loop I:roll 首声部贴 grid、spread 收窄(对齐 MG beat+0.02+idx*0.015;原 0.05+idx*0.03 太迟太散=听成错拍)。
       [0, 2].forEach((beat) => {
         if (beat >= dur) return;
-        cM.forEach((m, idx) => push([m], beat + 0.05 + idx * 0.03, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
+        cM.forEach((m, idx) => push([m], beat + 0.02 + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
       });
       break;
   }

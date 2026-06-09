@@ -15,6 +15,8 @@ import { chordToneIntervals, chordTypeIntervals, isKnownChordType, type ChordQua
 import { isKeyboardFamily, instrumentInfo } from '../knowledge/instruments';
 import { buildWidePianoVoicing, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
 import { renderTextureChordHits } from './textureRenderer';
+import { lofiTextureClockBeat } from './textureClock';
+import { textureBehavior } from '../knowledge/textureProfiles';
 import type { TextureSchedule } from './textureSchedule';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
@@ -34,6 +36,7 @@ export interface AccompContext {
   // —— pad-comp 分工(pad-aware thinning,仅在 pad-active span 生效,保 GM 手感)——
   padCompDecisionBySection?: Record<string, PadCompDecision>; // 每段 pad↔comp 决策
   padOccupiedPitchesBySpan?: Record<string, number[]>;        // pad 各 span 已占绝对 MIDI(comp 让 pad)
+  needsDownbeatCompAnchorBySection?: Record<string, boolean>; // ★ Loop I.3:no-pad comp 支撑段 → late texture 补下拍 anchor
 }
 
 /**
@@ -134,6 +137,8 @@ export function renderAccompaniment(
   const pattern = compPattern(ctx.style ?? 'default');
   const style = ctx.style ?? 'default';
   const pocketStrength = POCKET_STRENGTH[style.toLowerCase()] ?? 0.45; // comp 柱式入袋强度(按风格)
+  const isLofi = style.toLowerCase() === 'lofi';                       // ★ Loop I:LOFI 走中央 texture clock
+  const tempoBpm = timebase.tempoMap[0]?.bpm ?? 78;                    // pocket ms→拍 换算用
   const inActive = (sid: string) => !ctx.activeSectionIds || ctx.activeSectionIds.has(sid);
 
   // ★ pad-comp 分工:pad active(且 avoidExactPitchOverlap)的 span,comp 让 pad —— 丢掉与 pad 同绝对
@@ -248,9 +253,13 @@ export function renderAccompaniment(
       const base = span.startBeat as number;
       for (const h of renderTextureChordHits(tc, voiced, span.durationBeats as number)) {
         // ★ 入袋:仅【柱式块(h.midis≥2)】收 lay-back 与节奏组对拍;arp/roll(单音 hit)是有意 stagger,不动。
-        //   强度按风格(pop/rnb 紧、lofi/jazz 留性格)。
-        const tRel = h.midis.length >= 2 ? pocketizeBeat(base + h.tRel, pocketStrength) : base + h.tRel;
-        const startTick = timebase.beatToTick(beats(tRel));
+        //   ★ Loop I:LOFI 柱式块走【中央 texture clock】(16 分格吸附 + 毫秒 pocket,取代 0.2 强度 pocketize)
+        //     → dusty chop 0.58→0.50+毫秒,与 bass/drum 同时钟;非 LOFI 仍按风格 pocketize。
+        const abs = base + h.tRel;
+        const onset = h.midis.length >= 2
+          ? (isLofi ? lofiTextureClockBeat(abs, beatsPerBar, tempoBpm, 'chord', 'establish', `${tc}|${span.id}`) : pocketizeBeat(abs, pocketStrength))
+          : abs;
+        const startTick = timebase.beatToTick(beats(onset));
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
@@ -259,6 +268,17 @@ export function renderAccompaniment(
         for (const m of h.midis) {
           if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音(消 unison mud)
           compNotes.push({ pitch: midi(m), startTick, durationTicks, velocity: polyVel });
+        }
+      }
+      // ★ Loop I.3:no-pad + comp 是唯一和声支撑,且 texture 首击太晚(firstOnsetBeat>0.08,如 wash 0.25)→
+      //   在 structural 下拍补一个【轻、短】guide-tone shell anchor(不让 late wash 当唯一 comp 下拍锚)。
+      if (ctx.needsDownbeatCompAnchorBySection?.[span.sectionId] && textureBehavior(tc).firstOnsetBeat > 0.08) {
+        const anchorShell = shellBySpan[span.id] ?? voiced;
+        const anchorTick = timebase.beatToTick(beats(span.startBeat as number));
+        const anchorDur = timebase.beatToTick(beats(0.5));
+        for (const m of anchorShell) {
+          if (padAvoid.has(m)) continue;
+          compNotes.push({ pitch: midi(m), startTick: anchorTick, durationTicks: anchorDur, velocity: 44 }); // 轻于主 comp
         }
       }
     }

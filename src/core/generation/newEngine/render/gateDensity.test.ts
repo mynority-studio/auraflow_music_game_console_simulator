@@ -8,7 +8,9 @@ const firstOnset = (notes: readonly { startTick: number }[]) =>
 const gen = (seed: number) => generateSong({ seed, styleHint: 'pop', mood: 'x', targetDuration: 120, key: pc(0) });
 const BAR = PPQ * 4;
 const introEnd = BAR * 2;       // POP_FULL intro = 2 小节
-const introBodyEnd = introEnd - BAR; // intro 主体(末小节之前)= Loop E lead-in pickup 区之前
+// intro 主体(末小节之前)= Loop E lead-in pickup 区之前。留 ~微抖动容差:bar-1 pickup 下拍可能被
+// humanize 拉前 1-2 tick 越过 bar 边界,不应被判成"intro 主体有音"。
+const introBodyEnd = introEnd - BAR - 40;
 
 describe('render · A2 编曲密度弧 gate', () => {
   const r = gen(3);

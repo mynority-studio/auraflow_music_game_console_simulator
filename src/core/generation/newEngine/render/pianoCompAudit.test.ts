@@ -38,7 +38,7 @@ describe('钢琴 comp 宽排列 · 只读 Auditor 不新增 error', () => {
     expect(failures).toEqual([]);
     expect(pianoComp).toBeGreaterThan(0);   // 真的演练过钢琴宽排列
     expect(nonPianoComp).toBeGreaterThan(0); // 也演练过通用排列(Rhodes/EP)
-  });
+  }, 15000); // 多 seed×风格端到端:并行负载下放宽超时(单跑 ~4s)
 
   it('同 seed 钢琴 comp 可复现(确定性)', () => {
     const req: GenerationRequest = { seed: 5, styleHint: 'pop', mood: 'build', targetDuration: 120 };
