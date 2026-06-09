@@ -70,6 +70,8 @@ const LEGACY_TEXTURE_CASES = new Set<string>([
   'Single_Root', 'Slap_Bass_Line', 'Stabs', 'Syncopated_Stabs',
 ]);
 
+import { hasMgCompProfile, renderTextureCompDryStrictMg } from './mgTextureCompDry';
+
 type LegacyFamily = 'block' | 'arp' | 'stab' | 'roll' | 'pulse' | 'comp' | 'bass';
 
 /** legacy textureCase → 演绎 family(名字模式;顺序敏感:bass 名先于 arp/comp)。 */
@@ -118,10 +120,11 @@ export function renderTextureChordHits(
     return arp[i % arp.length];
   };
 
-  // ★ Loop 6:legacy textureCase → family interpreter(非 bit-MG,按 family 重演绎、对拍贴格)。
+  // ★ Gap B(2026-06-09):legacy comp/chord 走 MG 严格 dry(oracle 驱动)—— MG 的 onset 栅格/时值策略/
+  //   力度比/每击音数语义,取代 Loop 6 的 family interpreter(产品手感版)。pitch 用我们的 voicing(Option B)。
+  //   bass-only 织体(MG comp/chord=0)→ 空(comp 不发声,和声交 bass renderer)。product 贴格/pocket 在下游叠。
   if (LEGACY_TEXTURE_CASES.has(textureCase)) {
-    renderLegacyChordHits(classifyLegacyFamily(textureCase), cM, dur, push, arpAt);
-    return hits;
+    return hasMgCompProfile(textureCase) ? renderTextureCompDryStrictMg(textureCase, cM, dur) : [];
   }
 
   switch (textureCase) {
@@ -248,44 +251,9 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
 //   渲染全 span)→ 无 comp-continuity 空洞。每【拍位】落在 8 分格上(对拍)。
 const BAR_BEATS = 4;
 
-/** legacy family → chord hit(铺满 span;空 cM 由调用方保证 length>0)。 */
-function renderLegacyChordHits(
-  family: LegacyFamily,
-  cM: number[],
-  dur: number,
-  push: (midis: number[], tRel: number, d: number, vel: number) => void,
-  arpAt: (i: number) => number,
-): void {
-  switch (family) {
-    case 'block': // 柱式块:每 2 拍半音符,锁强拍,铺满
-      for (let t = 0; t < dur; t += 2) push(cM, t, Math.min(2, dur - t), t % BAR_BEATS < 0.01 ? 0.46 : 0.42);
-      break;
-    case 'pulse': // 8 分脉冲贴格(anthem/ostinato/wave),强拍加重,铺满
-      for (let i = 0; i < dur * 2; i++) push(cM, i * 0.5, 0.42, 0.34 + (i % 2 === 0 ? 0.08 : 0));
-      break;
-    case 'arp': // 上行 arp 8 分贴格(整拍音锚 → 对拍),铺满
-      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5, 0.32, 0.34 + (i % 4 === 0 ? 0.08 : 0));
-      break;
-    case 'stab': // 16 分 funk 短切:每拍反拍 staccato,铺满
-      for (let t = 0.5; t < dur; t += 1) push(cM, t, 0.18, 0.42);
-      break;
-    case 'comp': // charleston/comp:每小节 beat 0 + and-of-2 + and-of-3,贴 8 分格,铺满
-      for (let off = 0; off < dur; off += BAR_BEATS) {
-        push(cM, off, 0.6, 0.44);
-        if (off + 1.5 < dur) push(cM, off + 1.5, 0.5, 0.38);
-        if (off + 2.5 < dur) push(cM, off + 2.5, 0.5, 0.40);
-      }
-      break;
-    case 'roll': // 共同音柔 roll:每 2 拍首声部落强拍、余声部向上 roll,铺满
-      for (let beat = 0; beat < dur; beat += 2) {
-        cM.forEach((m, idx) => push([m], beat + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
-      }
-      break;
-    case 'bass': // bass-pattern 织体:comp 只留低位轻 shell(主声部由 bass 担纲),每小节重击、铺满
-      for (let off = 0; off < dur; off += BAR_BEATS) push([cM[0], cM[1] ?? cM[0]], off, Math.min(BAR_BEATS, dur - off), 0.26);
-      break;
-  }
-}
+// ★ Gap B(2026-06-09):legacy comp/chord 的 family interpreter 已退役 —— comp 改走 MG 严格 dry
+//   (mgTextureCompDry.renderTextureCompDryStrictMg,oracle 驱动)。此处只保留 bass family interpreter
+//   (renderTextureBassHits 用;bass 不在 Gap B 范围,用户:只 comp/chord)。
 
 /** legacy family → bass hit(节奏 only,音高 bassRenderer 填;铺满 span)。 */
 function renderLegacyBassHits(

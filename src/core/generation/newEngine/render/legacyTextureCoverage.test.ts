@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { TEXTURE_POOL, TEXTURE_BEHAVIOR } from '../knowledge/textureProfiles';
+import { hasMgCompProfile } from './mgTextureCompDry';
 import {
   hasTextureRenderer,
   RENDERED_TEXTURE_CASES,
@@ -74,13 +75,14 @@ describe('Loop 6 — legacy texture coverage', () => {
     for (const tc of ALL_MG_LEGACY) expect(hasTextureRenderer(tc), `${tc} 无 renderer`).toBe(true);
   });
 
-  it('④ family interpreter:每个 legacy case 出 ≥1 chord hit + ≥1 bass hit(无静默漏渲染)', () => {
+  it('④ legacy 渲染:有 MG comp profile 的出 ≥1 chord hit(bass-only=MG comp 0 → 空,正确);bass 都 ≥1', () => {
     for (const tc of ALL_MG_LEGACY) {
       const chords = renderTextureChordHits(tc, SAMPLE_VOICED, DUR);
       const basses = renderTextureBassHits(tc, DUR);
-      expect(chords.length, `${tc} chord 漏渲染`).toBeGreaterThan(0);
+      // ★ Gap B:bass-only 织体(MG comp/chord=0)comp 渲染为空 = 忠实;其余出 ≥1 chord。
+      if (hasMgCompProfile(tc)) expect(chords.length, `${tc} chord 漏渲染`).toBeGreaterThan(0);
+      else expect(chords.length, `${tc} bass-only 应空 comp`).toBe(0);
       expect(basses.length, `${tc} bass 漏渲染`).toBeGreaterThan(0);
-      // 所有 hit 在 span 内、力度归一
       for (const h of chords) { expect(h.tRel).toBeLessThan(DUR); expect(h.vel).toBeGreaterThan(0); expect(h.vel).toBeLessThanOrEqual(1); }
       for (const h of basses) { expect(h.tRel).toBeLessThan(DUR); expect(h.dur).toBeGreaterThan(0); }
     }
@@ -100,11 +102,13 @@ describe('Loop 6 — legacy texture coverage', () => {
     }
   });
 
-  it('TEXTURE_BEHAVIOR 覆盖 20 个 pool legacy(首击 ≤ 0.5 拍,非 delayed-entry → 段级常驻不留洞)', () => {
+  it('TEXTURE_BEHAVIOR 覆盖 20 个 pool legacy;首击 ≤ 0.5(段级常驻不留洞)或标 delayedEntry(MG 实采晚启 → 段级排除)', () => {
     for (const tc of POOL_LEGACY) {
       const beh = TEXTURE_BEHAVIOR[tc];
       expect(beh, `${tc} 缺 behavior`).toBeTruthy();
-      expect(beh.firstOnsetBeat, `${tc} 首击应 ≤ 0.5`).toBeLessThanOrEqual(0.5);
+      // ★ Gap B:firstOnsetBeat 已同步 MG oracle 实采。晚启织体(如 Pop_Ballad_158_Sweep 首击 1.5)
+      //   标 delayedEntry → DELAYED_ENTRY_TEXTURES 把它排除出段级常驻下发,不会留洞。
+      if (beh.firstOnsetBeat > 0.5) expect(beh.continuity, `${tc} 晚启应标 delayedEntry`).toBe('delayedEntry');
     }
   });
 });

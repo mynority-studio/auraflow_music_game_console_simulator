@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderTextureChordHits, hasTextureRenderer, RENDERED_TEXTURE_CASES } from './textureRenderer';
+import { hasMgCompProfile } from './mgTextureCompDry';
 
 const VOICED = [60, 64, 67, 71]; // Cmaj7 mid voicing
 const DUR = 4;
@@ -20,9 +21,11 @@ describe('textureRenderer · 覆盖与基本不变量', () => {
     expect(hasTextureRenderer('nope')).toBe(false);
     expect(renderTextureChordHits('nope', VOICED, DUR)).toEqual([]);
   });
-  it('每个 rich case 都产出 ≥1 hit,且 tRel<dur、vel∈(0,1]、midis 非空', () => {
+  it('每个 rich case 都产出 ≥1 hit(bass-only legacy 除外=MG comp 0),且 tRel<dur、vel∈(0,1]、midis 非空', () => {
     for (const tc of RENDERED_TEXTURE_CASES) {
       const hits = renderTextureChordHits(tc, VOICED, DUR);
+      // ★ Gap B:bass-only legacy 织体 comp 渲染为空(忠实 MG comp=0);modern/lofi+其余 legacy 有 profile → ≥1。
+      if (!hasMgCompProfile(tc)) { expect(hits.length, `${tc} bass-only 应空`).toBe(0); continue; }
       expect(hits.length, tc).toBeGreaterThan(0);
       for (const h of hits) {
         expect(h.tRel, tc).toBeLessThan(DUR);
