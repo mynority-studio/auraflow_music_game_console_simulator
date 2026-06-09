@@ -173,8 +173,10 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     ];
     const dSparse = renderDrums(plan, timebase, 4, { patternBySection: { [sid]: sparse } });
     const dDense = renderDrums(plan, timebase, 4, { patternBySection: { [sid]: dense } });
-    expect(dSparse.notes.length).toBe(2 * 2);  // 2 bars × 2 hits
-    expect(dDense.notes.length).toBe(2 * 6);   // 2 bars × 6 hits
+    // ★ base 密度用 KICK 计(per-bar 装饰只加 snare/tom/hat,不加 kick)→ robust 锁底层鼓型。
+    expect(dSparse.notes.filter((n) => n.pitch === DRUM.KICK).length).toBe(2);  // 2 bars × 1 kick
+    expect(dDense.notes.filter((n) => n.pitch === DRUM.KICK).length).toBe(8);   // 2 bars × 4 kicks
+    expect(dDense.notes.length).toBeGreaterThan(dSparse.notes.length);          // 密度逐段不同
   });
 
   it('patternBySection 缺该段 → 回退 style pattern(向后兼容)', () => {
@@ -188,8 +190,9 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     // 即便给一个会触发 pocket 的 textureSchedule,patternBySection 仍优先
     const sched = { [plan.chordTimeline[0].id]: 'Halftime_Pocket', [plan.chordTimeline[1].id]: 'Halftime_Pocket' } as never;
     const d = renderDrums(plan, timebase, 4, { patternBySection: { [sid]: onlyKick }, textureSchedule: sched });
-    expect(d.notes.length).toBe(2); // 2 bars × 1 kick(pocket 被 groove 覆盖)
-    expect(d.notes.every((n) => n.pitch === DRUM.KICK)).toBe(true);
+    // groove(onlyKick=1 kick/bar)优先于 pocket(halftime kit=2 kick/bar)→ KICK 计=2 证明 groove 覆盖。
+    expect(d.notes.filter((n) => n.pitch === DRUM.KICK).length).toBe(2);
+    expect(d.notes.filter((n) => n.pitch === DRUM.KICK).every((n) => (n.startTick as number) % (timebase.ppq * 4) === 0)).toBe(true); // kick 都在小节下拍
   });
 });
 

@@ -49,6 +49,15 @@ export const DRUM = {
   OHAT: 46, // open hi-hat
   RIDE: 51,
   PHAT: 44, // pedal hi-hat
+  // ★ 2026-06-09 扩库(联网研究 genre 鼓色):
+  SIDESTICK: 37, // 边击/rim(lofi/ballad verse 的轻军鼓替身)
+  CLAP: 39,      // 拍手(pop/rnb backbeat 叠层加厚)
+  TOM_LO: 45, TOM_MID: 47, TOM_HI: 50, // 嗵鼓(fill / tom roll)
+  CRASH: 49,     // 吊镲(段落/乐句下拍重音落点)
+  RIDE_BELL: 53, // ride 铃(jazz 加重)
+  TAMB: 54,      // 铃鼓(pop 16 分亮色)
+  SHAKER: 70,    // 沙锤(rnb/neo-soul 16 分律动)
+  CONGA_HI: 62, CONGA_LO: 63, // 康加(latin/rnb 副打击)
 } as const;
 
 export interface DrumHit {
@@ -115,6 +124,11 @@ const S = (beat: number, vel: number): DrumHit => ({ drum: DRUM.SNARE, beat, vel
 const R = (beat: number, vel: number): DrumHit => ({ drum: DRUM.RIDE, beat, vel });
 const PH = (beat: number, vel: number): DrumHit => ({ drum: DRUM.PHAT, beat, vel });
 const OH = (beat: number, vel: number): DrumHit => ({ drum: DRUM.OHAT, beat, vel });
+// ★ 扩库副打击构造器(genre 鼓色)
+const CL = (beat: number, vel: number): DrumHit => ({ drum: DRUM.CLAP, beat, vel });       // 拍手
+const SK = (beat: number, vel: number): DrumHit => ({ drum: DRUM.SIDESTICK, beat, vel });   // 边击
+const RB = (beat: number, vel: number): DrumHit => ({ drum: DRUM.RIDE_BELL, beat, vel });   // ride 铃
+const shaker16 = (vel: number): DrumHit[] => HAT8.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel })); // 沙锤 16 分
 
 // 每 (style × groove) = 2-3 个变体(DrumHit[][])。
 const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
@@ -127,10 +141,13 @@ const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
     straight: [
       [K(0, 112), K(2, 104), S(1, 96), S(3, 100), ...hats8(58)],
       [K(0, 110), K(2, 100), K(2.5, 80), S(1, 96), S(3, 100), ...hats8(56), OH(1.5, 50)],
+      // ★ clap 叠 backbeat(加厚)
+      [K(0, 112), K(2, 104), S(1, 96), S(3, 100), CL(1, 78), CL(3, 82), ...hats8(56)],
     ],
     driving: [
       [K(0, 112), K(1, 92), K(2, 104), K(3, 92), S(1, 100), S(3, 104), ...hats8(62), OH(1.5, 56), OH(3.5, 56)],
       [K(0, 112), K(2, 104), K(2.5, 84), S(1, 100), S(3, 104), S(1.5, 42), S(3.5, 42), ...hats8(64)],
+      [K(0, 112), K(1, 92), K(2, 104), K(3, 92), S(1, 100), S(3, 104), CL(1, 84), CL(3, 88), ...hats8(60)],
     ],
   },
   rnb: {
@@ -138,10 +155,13 @@ const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
     laidback: [
       [K(0, 96), K(2.5, 80), S(2, 82), S(2.5, 38), ...hats8(42)],
       [K(0, 96), K(1.5, 70), K(2.5, 78), S(2, 80), S(3.5, 36), ...hats8(40)],
+      // ★ neo-soul 沙锤 16 分 + clap rim(conversational)
+      [K(0, 96), K(2.5, 80), S(2, 82), S(2.5, 36), CL(2, 60), ...shaker16(34)],
     ],
     straight: [
       [K(0, 96), K(2, 84), S(1, 82), S(3, 84), ...hats8(46)],
       [K(0, 96), K(2, 84), S(1, 82), S(3, 84), S(1.5, 38), ...hats8(44)],
+      [K(0, 96), K(2, 84), S(1, 82), S(3, 84), CL(1, 64), CL(3, 66), ...shaker16(36)],
     ],
     driving: [
       [K(0, 100), K(2, 90), K(2.5, 74), S(1, 92), S(3, 96), S(3.5, 40), ...hats8(50), OH(1.5, 52)],
@@ -153,10 +173,13 @@ const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
     laidback: [
       [K(0, 100), K(2.5, 84), S(2, 82), ...hats8(44)],
       [K(0, 98), K(1.5, 72), S(2, 80), S(2.5, 36), ...hats8(42)],
+      // ★ dusty sidestick(rim 替军鼓,更慵懒)
+      [K(0, 98), K(2.5, 82), SK(2, 70), SK(3.5, 34), ...hats8(40)],
     ],
     straight: [
       [K(0, 98), K(2, 86), S(2, 80), ...hats8(44)],
       [K(0, 98), K(2, 84), S(1, 76), S(3, 78), ...hats8(42)],
+      [K(0, 98), K(2, 86), SK(2, 72), ...hats8(42)],
     ],
     driving: [
       [K(0, 100), K(1.5, 74), K(2, 88), S(2, 82), S(2.5, 38), S(3.5, 38), ...hats8(48)],
@@ -177,6 +200,8 @@ const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
     driving: [
       [R(0, 78), R(1, 68), R(1.5, 60), R(2, 76), R(3, 68), R(3.5, 60), PH(1, 52), PH(3, 52), K(0, 64), K(2, 60), S(1.5, 50), S(3.5, 50)],
       [R(0, 78), R(1, 68), R(1.5, 62), R(2, 76), R(3, 68), R(3.5, 62), PH(1, 54), PH(3, 54), K(0, 64), S(1.5, 52), S(2.5, 48), S(3.5, 52)],
+      // ★ ride 铃加重(comping kicks/snare 对话)
+      [RB(0, 74), R(1, 64), R(1.5, 56), RB(2, 72), R(3, 64), R(3.5, 56), PH(1, 52), PH(3, 52), K(0, 64), K(2.5, 58), S(1.5, 50), S(3.5, 52)],
     ],
   },
 };
