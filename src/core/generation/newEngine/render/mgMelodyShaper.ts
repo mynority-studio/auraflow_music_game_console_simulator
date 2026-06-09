@@ -38,6 +38,11 @@ export interface ShaperChord {
   notesMidi?: number[];
   notes?: string[];
   chordSymbol?: string;
+  // ★ Gap A(2026-06-09):全字段路径 —— 携带分析/离调上下文(shaper 不全读,字段完整性 + 下游可用)。
+  bass?: string;                  // bass 音名(slash/pedal 时 ≠ root)
+  analysisKeyPc?: number;         // 该和弦分析所在调中心(离调区=localTonalCenterPc,否则 undefined)
+  localRoman?: string;            // 离调区内的局部 roman(仅 localTonalCenterPc 存在时)
+  tonicizationPlacement?: string; // 离调放置(prologue/payoff…)
 }
 type ChordDef = ShaperChord;
 

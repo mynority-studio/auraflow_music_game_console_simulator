@@ -27,6 +27,22 @@ function realChordToneIntervals(chordType: string, quality: ChordQuality): reado
   return isKnownChordType(chordType) ? chordTypeIntervals(chordType) : chordToneIntervals(quality);
 }
 
+/**
+ * ★ Gap A(2026-06-09):borrowedFrom 不再用【裸 roman】凑(那会让 mgLocalScaleResolver 的调式启发式
+ *   拿不到调式名 → Dorian/Mixolydian/Phrygian 借用退化成默认 Aeolian)。改为把【真实调式意图】编进标签:
+ *   - 有 forcedScale(显式调式)→ "<scale> <roman>"(如 "Dorian IV";与 resolver forcedScale 分支一致)。
+ *   - 无 forcedScale 的 modal_interchange/backdoor → "parallel minor <roman>"(平行小调借用意图 → Aeolian)。
+ *   - 副属类(secondary_dominant/secondary_ii_v)→ roman 足够(resolver 走 borrowedSource/tonicization 分支)。
+ *   非借用 → null。这样 resolver 能看到原始借用/调式来源标签,而不是被 roman 文本覆盖。
+ */
+function deriveBorrowedFrom(span: ChordSpan): string | null {
+  if (!span.borrowedSource) return null;
+  const roman = romanToString(span.roman);
+  if (span.forcedScale) return `${span.forcedScale} ${roman}`;
+  if (span.borrowedSource === 'modal_interchange' || span.borrowedSource === 'backdoor_dominant') return `parallel minor ${roman}`;
+  return roman;
+}
+
 /** RomanChord(结构化)→ roman 字符串(shaper getHarmonicFunction / lofi paradigm 读)。
  *  Option B:这是【我们的】roman,只需功能正确(V/IV/ii 等大小写),非 bit-match MG。 */
 function romanToString(rc: RomanChord): string {
@@ -59,19 +75,24 @@ export function chordSpanToMgChordDef(span: ChordSpan): ProductionChord {
   const notesMidi = tones.map((iv) => 60 + (mod12(rootPc + iv) as number));
   const notes = tones.map((iv) => SHARP_NAMES[mod12(rootPc + iv) as number]);
   const effectiveFunc: 'T' | 'S' | 'D' = span.mustResolve ? 'D' : (DEGREE_FUNCTION[span.roman.degree] ?? 'T');
+  const isLocal = span.localTonalCenterPc !== undefined; // 离调区:analysisKeyPc/localRoman 才有意义
   return {
     root: SHARP_NAMES[rootPc],
     rootMidi: 48 + rootPc,
     type,
+    bass: SHARP_NAMES[bassPc],
     bassMidi: 48 + bassPc,
     duration: span.durationBeats,
     roman: romanToString(span.roman),
     effectiveFunc,
     mustResolve: span.mustResolve,
     borrowedSource: span.borrowedSource,
-    borrowedFrom: span.borrowedSource ? romanToString(span.roman) : null,
+    borrowedFrom: deriveBorrowedFrom(span), // ★ Gap A:真实调式/借用来源标签,非裸 roman
     localTonalCenterPc: span.localTonalCenterPc,
     forcedScale: span.forcedScale,
+    tonicizationPlacement: span.tonicizationPlacement as string | undefined,
+    analysisKeyPc: isLocal ? (span.localTonalCenterPc as number) : undefined,
+    localRoman: isLocal ? romanToString(span.roman) : undefined,
     notesMidi,
     notes,
     chordSymbol: `${SHARP_NAMES[rootPc]}${type === 'maj' ? '' : type}`,
