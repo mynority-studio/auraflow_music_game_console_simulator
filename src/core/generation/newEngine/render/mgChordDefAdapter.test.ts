@@ -41,11 +41,29 @@ describe('render/mgChordDefAdapter · HarmonicPlan → MgChordDef (Loop 2)', () 
     expect(chordSpanToMgChordDef(span).type).toBe('7');
   });
 
-  it('pedal bass → bassMidi 取 bassPedalPc;否则根位', () => {
-    const pedal = { id: 'x', roman: 'I', rootPc: pc(7), quality: 'maj', startBeat: 0, durationBeats: 4, sectionId: 's', bassRole: 'pedal', bassPedalPc: pc(0) } as never;
-    expect(((chordSpanToMgChordDef(pedal).bassMidi % 12) + 12) % 12).toBe(0); // C pedal under G
-    const root = { id: 'y', roman: 'I', rootPc: pc(7), quality: 'maj', startBeat: 0, durationBeats: 4, sectionId: 's', bassRole: '3rd' } as never;
-    expect(((chordSpanToMgChordDef(root).bassMidi % 12) + 12) % 12).toBe(7); // 转位真实 bass 由 render bass 轨处理,此处根位
+  it('bass:pedal / 转位 3rd·5th·7th 取真实和弦音(slash bass);否则根位', () => {
+    const bpc = (s: object) => ((chordSpanToMgChordDef(s as never).bassMidi % 12) + 12) % 12;
+    const base = { id: 'x', roman: { degree: 1, accidental: 'natural', quality: 'maj' }, rootPc: pc(7), quality: 'maj', startBeat: 0, durationBeats: 4, sectionId: 's' };
+    expect(bpc({ ...base, bassRole: 'pedal', bassPedalPc: pc(0) })).toBe(0); // C pedal under G
+    expect(bpc({ ...base, bassRole: '3rd' })).toBe(11);                       // G maj 3rd = B(转位真实 bass)
+    expect(bpc({ ...base, bassRole: '5th' })).toBe(2);                        // G maj 5th = D
+    expect(bpc({ ...base })).toBe(7);                                         // 无 bassRole → 根位 G
+  });
+
+  it('★ Loop 2 全字段:effectiveFunc(度数 TSD)/ 真实 notesMidi / borrowedFrom / chordSymbol', () => {
+    const I = chordSpanToMgChordDef({ id: 'a', roman: { degree: 1, accidental: 'natural', quality: 'maj7' }, rootPc: pc(0), quality: 'maj7', chordType: 'maj7', startBeat: 0, durationBeats: 4, sectionId: 's' } as never);
+    expect(I.effectiveFunc).toBe('T');
+    expect(I.notesMidi!.map((m) => m % 12)).toEqual([0, 4, 7, 11]); // Cmaj7 真实和弦音(非 stableTones 凑数)
+    expect(I.notes).toEqual(['C', 'E', 'G', 'B']);
+    expect(I.chordSymbol).toBe('Cmaj7');
+    expect(I.borrowedFrom).toBe(null);
+    // V7(mustResolve)→ D
+    const V = chordSpanToMgChordDef({ id: 'b', roman: { degree: 5, accidental: 'natural', quality: '7' }, rootPc: pc(7), quality: '7', chordType: '7', startBeat: 0, durationBeats: 4, sectionId: 's', mustResolve: true } as never);
+    expect(V.effectiveFunc).toBe('D');
+    // 借和弦 → borrowedFrom 非空
+    const iv = chordSpanToMgChordDef({ id: 'c', roman: { degree: 4, accidental: 'natural', quality: 'm7' }, rootPc: pc(5), quality: 'm7', chordType: 'm7', startBeat: 0, durationBeats: 4, sectionId: 's', borrowedSource: 'modal_interchange' } as never);
+    expect(iv.effectiveFunc).toBe('S');
+    expect(iv.borrowedFrom).not.toBeNull();
   });
 
   it('★ 真 HarmonicPlan 端到端:adapter → buildChordPart → parseRoadMap 不 crash、覆盖完整', () => {
