@@ -167,6 +167,12 @@ export function renderAccompaniment(
   const useKeyboard = isKeyboardFamily(ctx.compProgram);
   const compRange = instrumentInfo(ctx.compProgram ?? 0).range;
   const inRange = (m: number): boolean => m >= compRange[0] && m <= compRange[1];
+  // ★ 非键盘 comp(吉他/弦/木琴,音域窄):超域声部【八度折入】音域而非丢弃 —— 丢弃会掏空 span 造成
+  //   comp-continuity 空洞(键盘 21-108 几乎不触发,窄音域乐器才暴露)。折入后去重升序,保和声完整。
+  const foldToRange = (ms: number[]): number[] => {
+    const out = ms.map((m) => { let x = m; while (x < compRange[0]) x += 12; while (x > compRange[1]) x -= 12; return x; });
+    return [...new Set(out)].sort((a, b) => a - b);
+  };
   const includeRootInComp = !/jazz/i.test(style); // jazz:rootless(bass 兜 root),其它含 root
   // ★ 让位旋律:comp 顶须 < 旋律保留区地板(契约 comp[48,67]/lead[67,84] 的边界)。
   //   越界声部转位下折(完整度优先)/ 折不下去再减法。floor 不低于 comp 区底(不折进 bass)。无 floor 信号 → 跳过(向后兼容)。
@@ -232,10 +238,10 @@ export function renderAccompaniment(
       const close = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, pref), prev, bassMidi, voiceType, span.rootPc);
       // 属功能 drop2 拉开 spacing,但仅当不跌出 comp 区(否则 close)→ 不与 bass 抢低区
       const spaced = funcBySpan[span.id] === 'D' ? applyArrangement(close, 'drop2', bassMidi) : close;
-      const full = (spaced.length && Math.min(...spaced) >= 48 ? spaced : close).filter(inRange);
+      const full = foldToRange(spaced.length && Math.min(...spaced) >= 48 ? spaced : close); // 超域折入(非丢弃)→ 不掏空
       voicedBySpan[span.id] = clampUnder(full); // 顶 ≥ 旋律地板 → 转位/减法让位
       const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
-      shellBySpan[span.id] = clampUnder(shellClose.filter(inRange));
+      shellBySpan[span.id] = clampUnder(foldToRange(shellClose));
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
     }
   }

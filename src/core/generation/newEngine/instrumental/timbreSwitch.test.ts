@@ -43,10 +43,10 @@ describe('器配音色切换', () => {
   it('切换 = 同族 + 落在 chorus(verse 保持 primary)', () => {
     const f = firstSwitching('pop')!;
     const bySec = f.plan.programByRoleSection[f.role];
-    const primary = f.band.roleProgram[f.role];
     const chorusProg = bySec[f.arr.sections.find((s) => s.role === 'chorus')!.id];
     const verseProg = bySec[f.arr.sections.find((s) => s.role === 'verse')!.id];
-    expect(verseProg).toBe(primary);                              // verse 仍 primary
+    // ★ primary = 非切段(verse)实际用的基底 —— 器配层 coherentLeadComp 后的 program(可能≠band.roleProgram)。
+    const primary = verseProg;
     expect(chorusProg).not.toBe(primary);                        // chorus 换了
     expect(instrumentInfo(chorusProg).family).toBe(instrumentInfo(primary).family); // 同族
     expect(sameFamilyAlternates('pop', f.role, primary)).toContain(chorusProg);

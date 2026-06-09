@@ -12,7 +12,7 @@ import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
-import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs } from '../knowledge/instruments';
+import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp } from '../knowledge/instruments';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import {
   freezeInstrumentationPlan,
@@ -244,8 +244,9 @@ export function buildInstrumentationPlan(
   rng?: Rng, // ★ 音色切换决策(确定性子流);缺省 = 不切(全曲 primary,向后兼容)
 ): InstrumentationPlan {
   // ★ 音色世界统一性:先把 BandEngine 的 provisional roleProgram 过【风格错配修复】(当前池已守住=多为原样,
-  //   family-invariant → comp voicing 决策不受影响),再分类世界 + 记同乐器对。GM program 仍走 programByRoleSection。
-  const roleProgram = repairWorldMismatches(band.roleProgram, band.style);
+  //   family-invariant → comp voicing 决策不受影响),再【lead↔comp 配对一致性】修不搭对(电钢配电钢、
+  //   马林巴解绑电钢),最后分类世界 + 记同乐器对。GM program 仍走 programByRoleSection。
+  const roleProgram = coherentLeadComp(repairWorldMismatches(band.roleProgram, band.style), band.style);
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
 

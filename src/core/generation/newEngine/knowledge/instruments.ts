@@ -28,14 +28,16 @@ const LINEUP_RULES: Record<string, LineupRule> = {
 };
 
 // 各 style 各角色的乐器候选(GM program);随 seed 选一。
-// ★ lead 改为【钢琴 + 舒缓键盘 + 马林巴/颤音琴】路线(删长笛/小号/萨克斯/合成 lead 等高频刺耳)。
-//   comp 本就是舒缓键盘(钢琴/Rhodes/FM),bass/pad 非高频 → 保留。
+// ★ lead 走【钢琴 + 舒缓键盘 + 马林巴/颤音琴】路线(删长笛/小号/萨克斯/合成 lead 等高频刺耳)。
+//   2026-06-09 暖路线扩充:在【不刺耳】前提下加宽调色板 —— 尼龙/爵士/clean 吉他(24/26/27)、
+//   哈蒙德管风琴(16)、大提琴(42)、更多暖 pad(88 New Age / 94 Halo)、古筝(107)/卡林巴(108)。
+//   仍不加铜管/萨克斯/合成 lead(守"不刺耳")。配对一致性由 coherentLeadComp() 在器配层补充规则保证。
 const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
-  jazz: { lead: [11, 4, 12], comp: [0, 4], bass: [32], pad: [49], drum: [0] },       // 颤音琴/Rhodes/马林巴 · 钢琴/Rhodes · 立式贝斯 · 弦乐
-  pop: { lead: [1, 4, 12], comp: [1, 4], bass: [38, 33], pad: [89, 50], drum: [0] }, // 亮钢琴/Rhodes/马林巴 · 亮钢琴/Rhodes · 合成/指弹贝斯 · 暖/合成弦 pad
-  lofi: { lead: [4, 11, 12], comp: [4, 5], bass: [33, 39], pad: [89, 91], drum: [0] }, // Rhodes/颤音琴/马林巴 · Rhodes/FM EP · 软贝斯 · 暖/合唱 pad
-  rnb: { lead: [4, 5, 11], comp: [4, 5], bass: [33, 39], pad: [89, 91], drum: [0] }, // Rhodes/FM EP/颤音琴 · Rhodes/FM EP · 指弹/合成贝斯 · 暖/合唱 pad
-  modal: { lead: [12, 11, 8], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91], drum: [0] }, // 马林巴/颤音琴/Celesta · Rhodes/钢琴 · 立式 · 暖/弦/合唱 pad
+  jazz: { lead: [11, 4, 12, 26], comp: [0, 4, 16], bass: [32], pad: [49, 16], drum: [0] },       // +爵士吉他 lead · +哈蒙德 comp/pad
+  pop: { lead: [1, 4, 12], comp: [1, 4], bass: [38, 33], pad: [89, 50, 88], drum: [0] },         // +New Age pad
+  lofi: { lead: [4, 11, 12, 108], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94], drum: [0] },  // +卡林巴 lead · +Halo pad
+  rnb: { lead: [4, 5, 11], comp: [4, 5, 16], bass: [33, 39], pad: [89, 91, 16], drum: [0] },     // +哈蒙德 comp/pad(neo-soul)
+  modal: { lead: [12, 11, 8, 107], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94], drum: [0] }, // +古筝 lead · +Halo pad
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
 
@@ -50,18 +52,23 @@ export interface BandInstrumentation {
 // —— 乐器类型 + 真实音域(MIDI)——
 //   ★ comp 色彩决策按此分流:keyboard 族(钢琴/电钢/Celesta)可 voice 宽和弦色彩(9/13);
 //     非键盘 / 超出该乐器音域的色彩 → 交给旋律承载(见 accompanimentRenderer)。
-export type InstrumentFamily = 'keyboard' | 'mallet' | 'bass' | 'pad' | 'wind' | 'percussion' | 'other';
+export type InstrumentFamily = 'keyboard' | 'mallet' | 'bass' | 'pad' | 'guitar' | 'strings' | 'wind' | 'percussion' | 'other';
 export interface InstrumentInfo { family: InstrumentFamily; range: readonly [number, number]; }
 
 const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
   0: { family: 'keyboard', range: [21, 108] }, 1: { family: 'keyboard', range: [21, 108] }, 2: { family: 'keyboard', range: [21, 108] },
   4: { family: 'keyboard', range: [28, 103] }, 5: { family: 'keyboard', range: [28, 103] }, // Rhodes / FM-EP
   8: { family: 'keyboard', range: [60, 108] }, // Celesta(高音区键盘)
+  16: { family: 'keyboard', range: [36, 96] }, // 哈蒙德管风琴(可 voice 和弦色彩)
   11: { family: 'mallet', range: [53, 89] },   // 颤音琴
   12: { family: 'mallet', range: [45, 96] },   // 马林巴
+  107: { family: 'mallet', range: [48, 84] }, 108: { family: 'mallet', range: [60, 96] }, // 古筝 / 卡林巴(gentle 拨/击)
+  24: { family: 'guitar', range: [40, 84] }, 26: { family: 'guitar', range: [40, 86] }, 27: { family: 'guitar', range: [40, 88] }, // 尼龙 / 爵士 / clean
+  42: { family: 'strings', range: [36, 76] },  // 大提琴(暖音区独奏)
   32: { family: 'bass', range: [28, 67] }, 33: { family: 'bass', range: [28, 67] },
   38: { family: 'bass', range: [24, 60] }, 39: { family: 'bass', range: [24, 60] },
   48: { family: 'pad', range: [40, 100] }, 49: { family: 'pad', range: [40, 100] }, 50: { family: 'pad', range: [36, 100] },
+  88: { family: 'pad', range: [36, 96] }, 94: { family: 'pad', range: [36, 96] }, // New Age / Halo(暖 pad)
   89: { family: 'pad', range: [36, 96] }, 91: { family: 'pad', range: [36, 96] },
 };
 const DEFAULT_INFO: InstrumentInfo = { family: 'other', range: [36, 96] };
@@ -87,9 +94,11 @@ export function sameFamilyAlternates(style: string, role: InstrumentRoleName, pr
 // —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
 const GM_NAME: Record<number, string> = {
   0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
+  16: '哈蒙德管风琴', 24: '尼龙吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 42: '大提琴',
+  107: '古筝', 108: '卡林巴',
   32: '立式贝斯', 33: '指弹贝斯', 38: '合成贝斯1', 39: '合成贝斯2',
   48: '弦乐合奏1', 49: '弦乐合奏2', 50: '合成弦乐1',
-  89: '暖 Pad', 91: '合唱 Pad',
+  88: 'New Age Pad', 94: 'Halo Pad', 89: '暖 Pad', 91: '合唱 Pad',
 };
 /** GM program → 中文名(未知回退 "GM n")。 */
 export function gmName(program: number): string {
@@ -129,8 +138,9 @@ export type TimbreWorld =
 export type TimbreSource = 'acoustic' | 'electric' | 'synth';
 const TIMBRE_SOURCE: Record<number, TimbreSource> = {
   0: 'acoustic', 1: 'acoustic', 8: 'acoustic', 11: 'acoustic', 12: 'acoustic', 32: 'acoustic', 48: 'acoustic', 49: 'acoustic',
-  4: 'electric', 5: 'electric', 33: 'electric',
-  38: 'synth', 39: 'synth', 50: 'synth', 89: 'synth', 91: 'synth',
+  24: 'acoustic', 42: 'acoustic', 107: 'acoustic', 108: 'acoustic', // 尼龙吉他/大提琴/古筝/卡林巴
+  4: 'electric', 5: 'electric', 33: 'electric', 16: 'electric', 26: 'electric', 27: 'electric', // 哈蒙德/爵士&clean 吉他
+  38: 'synth', 39: 'synth', 50: 'synth', 88: 'synth', 94: 'synth', 89: 'synth', 91: 'synth',
 };
 /** GM program → 音色来源(acoustic/electric/synth;未知回退 synth)。 */
 export function timbreSource(program: number): TimbreSource {
@@ -184,6 +194,40 @@ export function sameInstrumentPairs(rp: RoleProgramView): { a: InstrumentRoleNam
   const out: { a: InstrumentRoleName; b: InstrumentRoleName; program: number }[] = [];
   if (rp.lead !== undefined && rp.lead === rp.comp) out.push({ a: 'lead', b: 'comp', program: rp.lead });
   return out;
+}
+
+// ============================================================
+// ★ lead↔comp 配对一致性(器配层补充规则,2026-06-09)
+//   联网研究(orchestration/arrangement):同族 or 同音色来源 = cohesive("Rhodes melts into layers,
+//   随同奏乐器变形");跨族跨源(如 acoustic 木琴 lead + electric 电钢 comp)在同音区竞争 = 糊/不搭。
+//   原声钢琴 comp 是百搭暖底(木琴/吉他/弦在其上是经典叠加,register 分离即可)。
+//   策略:只修【不搭】对,已和谐的保留(保多样性);优先改 lead(comp=和声床更该稳),
+//   lead 池无相配 → 退而改 comp;都没招 → 原样(fail-open)。确定性、无 rng。
+//   ⇒ 用户诉求:电钢(electric kbd)comp 自动配电钢/键盘 lead;马林巴与电钢解绑(马林巴改配原声暖底)。
+// ============================================================
+
+/** lead 与 comp 音色是否相配(同族 · 或同音色来源 · 或 comp 原声钢琴百搭)。 */
+export function leadCompCompatible(lead: number, comp: number): boolean {
+  if (lead === comp) return true;
+  const lf = instrumentInfo(lead).family, cf = instrumentInfo(comp).family;
+  if (lf === cf) return true;                       // 同族(键盘+键盘 / 木琴+木琴 / 吉他+吉他)
+  if (comp === 0 || comp === 1) return true;        // 原声钢琴 comp = 百搭暖底
+  return timbreSource(lead) === timbreSource(comp); // 同音色来源(都 acoustic / 都 electric / 都 synth)
+}
+
+/** 修不搭的 lead↔comp 对(器配层补充规则)。无 lead/comp 或已和谐 → 原对象返回。 */
+export function coherentLeadComp(rp: Record<InstrumentRoleName, number>, style: string): Record<InstrumentRoleName, number> {
+  const lead = rp.lead, comp = rp.comp;
+  if (lead === undefined || comp === undefined) return rp;   // 缺角 → 无需配对
+  if (leadCompCompatible(lead, comp)) return rp;             // 已和谐 → 保留多样性
+  const pool = INSTRUMENTS[style] ?? INSTRUMENTS.default;
+  // 1) 优先把 lead 换成与 comp 相配的同 style 候选(保 comp=和声床;池里若含同 comp 电钢 → 得"电钢配电钢")
+  const leadFix = (pool.lead ?? []).find((p) => p !== lead && leadCompCompatible(p, comp));
+  if (leadFix !== undefined) return { ...rp, lead: leadFix };
+  // 2) lead 池无相配 → 把 comp 换成与 lead 相配的候选
+  const compFix = (pool.comp ?? []).find((p) => p !== comp && leadCompCompatible(lead, p));
+  if (compFix !== undefined) return { ...rp, comp: compFix };
+  return rp;                                                 // 都没招 → 原样(fail-open)
 }
 
 /** 按 style + rng 选编制 + 乐器。确定性(同 seed 同结果);lineup 含 lead + ≥1 和声,最少 2 件。 */
