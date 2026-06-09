@@ -123,10 +123,17 @@ function gateByDensity(
   });
 }
 
+/**
+ * @deprecated ★【LEGACY / 仅测试用,产线/UI 绝不调用】(P2,musicgenerative_remaining_strict_migration_gaps.md)。
+ *   这是 Slice 0 早期占位:lead 恒空(无 MG 旋律链),bass/comp 走 default。产品路径是 `renderSongFull`
+ *   (band/arrangement/instrumentation/MG lead 全链)。保留仅为 renderCoordinator.test 的最小冒烟;
+ *   缺 BandSpec/ArrangementPlan/InstrumentationPlan,【不要】把它接进任何 MG 链或产线生成。
+ *   产线唯一入口 = GenerationController.generateSong → renderSongFull。
+ */
 export function renderSong(plan: HarmonicPlan, timebase: Timebase): RenderResult {
   const bass = renderBass(plan, timebase, 'default');
   const accompaniment = renderAccompaniment(plan, timebase);
-  // Slice 0:trivial 旋律占位,后续 slice 接 Prepass/MotifStore + MelodyRenderer
+  // ★ LEGACY 占位:lead 恒空(产品 lead 走 renderSongFull 的 MG 链 renderMgMelody)。
   const lead: TrackIR = { role: 'lead', notes: [] };
   const tracks = [bass, ...accompaniment, lead];
 
