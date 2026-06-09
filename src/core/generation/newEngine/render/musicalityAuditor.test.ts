@@ -56,10 +56,14 @@ describe('Loop H · 规则触发', () => {
     expect(ids).toContain('comp-continuity-gap');
   });
 
-  it('texture-clock-drift(Loop I):LOFI comp 柱式块离 8 分格远 → 报', () => {
-    // 两个 comp 同 tick(柱式块)落在 0.58 拍(离 8 分格 0.08 > 0.055)
-    const driftTick = Math.round(BAR + 0.58 * PPQ);
-    const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: [note(driftTick, 60, 240), { pitch: 64 as never, startTick: driftTick as never, durationTicks: 240 as never, velocity: 60 }] });
+  it('texture-clock-drift(Loop I):LOFI comp 柱式块【系统性】离 8 分格远 → 报', () => {
+    // 4 个柱式块全落在 +0.58(dusty chop 整体漂)→ 100% drift > 15% 阈值
+    const blocks: ReturnType<typeof note>[] = [];
+    for (const beat of [4, 5, 6, 7]) {
+      const t = Math.round((beat + 0.58) * PPQ);
+      blocks.push(note(t, 60), { pitch: 64 as never, startTick: t as never, durationTicks: 240 as never, velocity: 60 });
+    }
+    const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: blocks });
     const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'lofi').findings.map((f) => f.ruleId);
     expect(ids).toContain('texture-clock-drift');
   });

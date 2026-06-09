@@ -87,7 +87,8 @@ export function renderTextureChordHits(
       if (dur >= 4) { push(cM.slice(-2), 2.25, 0.45, 0.36); push(cM.slice(0, 2), 3.25, 0.35, 0.30); }
       break;
     case 'Lyrical_10th_Broken':
-      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5 + 0.05, 0.32, 0.34 + (i % 4 === 0 ? 0.08 : 0));
+      // ★ 重音对拍:arp 贴 8 分格(去掉 +0.05 统一晚拍 → 整拍上的音与 bass/drum 锁拍)
+      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5, 0.32, 0.34 + (i % 4 === 0 ? 0.08 : 0));
       break;
     case 'Ambient_Pad_Breath':
       push(cM, 0.05, Math.min(dur, 2.8), 0.34);
@@ -98,7 +99,7 @@ export function renderTextureChordHits(
       break;
     case 'Soft_Guitar_Pluck_8ths': {
       const notes = [cM[0], cM[1], cM[2], cM[1], cM[3] ?? cM[2], cM[1]];
-      [0.0, 0.5, 1.0, 1.5, 2.5, 3.0].forEach((t, i) => push([notes[i % notes.length]], t + 0.02, 0.28, 0.34));
+      [0.0, 0.5, 1.0, 1.5, 2.5, 3.0].forEach((t, i) => push([notes[i % notes.length]], t, 0.28, 0.34)); // ★ 重音对拍:8 分拨贴格
       break;
     }
     case 'Piano_Question_Answer':
@@ -123,7 +124,7 @@ export function renderTextureChordHits(
       else push(cM, dur * 0.55, 0.4, 0.38);
       break;
     case 'Piano_Emo_Broken_10th':
-      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5 + 0.02, 0.30, 0.32 + (i % 4 === 0 ? 0.06 : 0));
+      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5, 0.30, 0.32 + (i % 4 === 0 ? 0.06 : 0)); // ★ 重音对拍:arp 贴 8 分格
       break;
     case 'Piano_Ambient_Sustain_Wash':
       push(cM, 0.02, Math.min(dur, 3.5), 0.30);
@@ -143,10 +144,10 @@ export function renderTextureChordHits(
     }
     case 'Piano_Wide_Color_Motion': // 源 roll widePianoVoicing;voiced 即宽排列 → 强拍轻 roll
     case 'Piano_CommonTone_Soft_Roll':
-      // ★ Loop I:roll 首声部贴 grid、spread 收窄(对齐 MG beat+0.02+idx*0.015;原 0.05+idx*0.03 太迟太散=听成错拍)。
+      // ★ 重音对拍:roll 首声部【落在强拍上】(idx0=beat),其余声部向上 roll(spread 0.015);整个 roll 从拍点起,不再整体晚拍。
       [0, 2].forEach((beat) => {
         if (beat >= dur) return;
-        cM.forEach((m, idx) => push([m], beat + 0.02 + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
+        cM.forEach((m, idx) => push([m], beat + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
       });
       break;
   }

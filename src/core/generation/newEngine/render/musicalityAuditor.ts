@@ -116,15 +116,15 @@ export function auditMusicality(
     if (lead >= 0 && comp > 0.15 && lead < 0.03) warn('lead', 0, 'lead-groove-desync', `swing 风格 lead 几乎不摆(${(lead * 100).toFixed(0)}%)而 comp 摆(${(comp * 100).toFixed(0)}%)`);
   }
 
-  // —— Loop I.4: texture-clock-drift —— LOFI comp【柱式块(同 tick ≥2 音)】离 8 分格 > 0.055 拍(roll 单音豁免)。
+  // —— Loop I.4: texture-clock-drift —— LOFI comp【柱式块】【系统性】离 8 分格 > 0.055(roll 单音豁免;
+  //   按比例判,容个别 off-grid span 锚点 → 只在 dusty chop 整体漂[如原 0.58]时报)。
   if (s === 'lofi') {
     const blockTick: Record<number, number> = {};
     for (const n of ir.tracks.find((t) => t.role === 'comp')?.notes ?? []) blockTick[n.startTick as number] = (blockTick[n.startTick as number] ?? 0) + 1;
-    for (const [tickStr, count] of Object.entries(blockTick)) {
-      if (count < 2) continue; // 单音 = roll voice(装饰 stagger),豁免
-      const b = Number(tickStr) / ppq;
-      const res = Math.abs(b - Math.round(b * 2) / 2);
-      if (res > 0.055) { warn('comp', Number(tickStr), 'texture-clock-drift', `LOFI comp 柱式块离 8 分格 ${res.toFixed(3)} 拍 > 0.055`); break; }
+    const blocks = Object.entries(blockTick).filter(([, c]) => c >= 2);
+    const drift = blocks.filter(([tickStr]) => { const b = Number(tickStr) / ppq; return Math.abs(b - Math.round(b * 2) / 2) > 0.055; });
+    if (blocks.length >= 4 && drift.length / blocks.length > 0.15) {
+      warn('comp', Number(drift[0][0]), 'texture-clock-drift', `LOFI comp 柱式块 ${(100 * drift.length / blocks.length).toFixed(0)}% 离 8 分格 > 0.055(系统性漂)`);
     }
   }
 

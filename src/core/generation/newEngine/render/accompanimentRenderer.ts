@@ -75,7 +75,11 @@ export function pocketizeBeat(beatPos: number, strength = 0.6, window = 0.18): n
   const q = Math.round(beatPos / EIGHTH) * EIGHTH; // 最近 8 分格
   const d = beatPos - q;
   if (Math.abs(d) > window) return beatPos;        // 明显切分 → 保留
-  return q + d * (1 - strength);                    // 朝 8 分格拉(lay-back 收紧入袋)
+  // ★ 强拍位锁紧(2026-06-09 修「重音对拍/复调错拍」):落在整拍(强拍)的 comp 必须与 bass/drum 同拍锁死
+  //   (否则 comp 系统性晚 0.02-0.05 拍 = 与重音错拍/flam);offbeat 仍按风格 strength 保 groove pocket。
+  const isStrong = Math.abs(q - Math.round(q)) < 1e-6;
+  const s = isStrong ? Math.max(strength, 0.85) : strength;
+  return q + d * (1 - s);
 }
 
 // ★ pocketize 强度【按风格】:pop/rnb 须紧实(以 POP 为主)→ 强收;lofi 的 dusty-behind / jazz 的 swung comping
@@ -256,9 +260,12 @@ export function renderAccompaniment(
         //   ★ Loop I:LOFI 柱式块走【中央 texture clock】(16 分格吸附 + 毫秒 pocket,取代 0.2 强度 pocketize)
         //     → dusty chop 0.58→0.50+毫秒,与 bass/drum 同时钟;非 LOFI 仍按风格 pocketize。
         const abs = base + h.tRel;
-        const onset = h.midis.length >= 2
+        let onset = h.midis.length >= 2
           ? (isLofi ? lofiTextureClockBeat(abs, beatsPerBar, tempoBpm, 'chord', 'establish', `${tc}|${span.id}`) : pocketizeBeat(abs, pocketStrength))
           : abs;
+        // ★ 强拍位硬锁(2026-06-09 修「重音对拍/复调错拍」):comp【柱式块】落在整拍 ±0.06 拍内 → 锁到整拍,
+        //   与 bass/drum 同拍咬合(消系统性晚 0.02-0.05=flam/错拍);offbeat(0.5/1.5…)与 arp/roll 单音不锁,保 groove。
+        if (h.midis.length >= 2) { const ni = Math.round(onset); if (Math.abs(onset - ni) < 0.06) onset = ni; }
         const startTick = timebase.beatToTick(beats(onset));
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
