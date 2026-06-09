@@ -279,7 +279,7 @@ export function renderAccompaniment(
       }
       // ★ Loop I.3:no-pad + comp 是唯一和声支撑,且 texture 首击太晚(firstOnsetBeat>0.08,如 wash 0.25)→
       //   在 structural 下拍补一个【轻、短】guide-tone shell anchor(不让 late wash 当唯一 comp 下拍锚)。
-      if (ctx.needsDownbeatCompAnchorBySection?.[span.sectionId] && textureBehavior(tc).firstOnsetBeat > 0.08) {
+      if (ctx.needsDownbeatCompAnchorBySection?.[span.sectionId] && (textureBehavior(tc)?.firstOnsetBeat ?? 0) > 0.08) {
         const anchorShell = shellBySpan[span.id] ?? voiced;
         const anchorTick = timebase.beatToTick(beats(span.startBeat as number));
         const anchorDur = timebase.beatToTick(beats(0.5));

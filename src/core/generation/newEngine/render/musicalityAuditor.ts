@@ -155,10 +155,14 @@ export function auditMusicality(
   }
 
   // —— Loop I.4: structural-comp-anchor-late —— no-pad comp 支撑段,section 下拍 0.08 拍内无 comp 起音/延留。
+  //   ★ Loop 8:若段下拍落在 dense-melody 区间(LOFI comp 被 applyMgLofiDenseMelodyComping 有意删、bass 兜 root)→
+  //     不报(comp 缺席是设计内,和 comp-continuity-gap 同样排除;此处旋律密集+bass 已托住下拍)。
+  const inExclude = (tick: number) => compGapExclude.some((r) => tick >= r.lo && tick < r.hi);
   for (let i = 0; i < arrangement.sections.length; i++) {
     const sec = arrangement.sections[i];
     if (!instrumentation.needsDownbeatCompAnchorBySection[sec.id]) continue;
     const st = sectionStartTick(i);
+    if (inExclude(st)) continue; // dense-melody 段下拍 comp 被有意删 → bass+melody 托底,不报
     const eps = 0.08 * ppq;
     if (!(onsetIn('comp', st - eps, st + eps) || soundingIn('comp', st, st + 1))) {
       warn('comp', st, 'structural-comp-anchor-late', `${sec.id} no-pad comp 支撑但下拍 0.08 拍内无 comp anchor`);
