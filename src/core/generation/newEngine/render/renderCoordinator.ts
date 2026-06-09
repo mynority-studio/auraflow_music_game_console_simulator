@@ -242,7 +242,7 @@ export function renderSongFull(
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, bigFillBars: leadInBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
-  tracks.push(renderMgMelody(plan, band, timebase, rng.substream('melody'))); // lead 必有(MG 链)
+  tracks.push(renderMgMelody(plan, band, timebase, rng.seed)); // lead 必有(MG 链);★ Loop 1:MG seed = song seed 直通
 
   // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
   //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。

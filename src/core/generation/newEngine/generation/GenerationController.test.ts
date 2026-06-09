@@ -8,11 +8,16 @@ import { createRandomContext, createTimebase, ticks } from '../foundation';
 const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
 const fakeIR = freezeMusicalIR({ tracks: [], timebase, durationTicks: ticks(0) });
 const PASS: AuditReport = { findings: [] };
+// ★ Loop 3(strict parity):驱动 retry 的是【非-lead】error/fatal(comp/bass,retry 能改 voicing);lead 不驱动 retry。
 const ERROR: AuditReport = {
-  findings: [{ severity: 'error', location: { trackRole: 'lead', startTick: 0 }, ruleId: 'x', reason: 'r', suggestedReturnPoint: 'rewind-melody' }],
+  findings: [{ severity: 'error', location: { trackRole: 'comp', startTick: 0 }, ruleId: 'x', reason: 'r', suggestedReturnPoint: 'rewind-accompaniment' }],
 };
 const WARN: AuditReport = {
   findings: [{ severity: 'warning', location: { trackRole: 'comp', startTick: 0 }, ruleId: 'w', reason: 'r', suggestedReturnPoint: 'rewind-resolver' }],
+};
+// lead 的 error → 不 blocking(MG 真源不可改);带 warning 通过,不重跑。
+const LEAD_ERROR: AuditReport = {
+  findings: [{ severity: 'error', location: { trackRole: 'lead', startTick: 0 }, ruleId: 'avoid-long-exposure', reason: 'MG truth', suggestedReturnPoint: 'rewind-melody' }],
 };
 
 describe('generation/RetryPolicy · nextRetryContext', () => {
@@ -20,8 +25,8 @@ describe('generation/RetryPolicy · nextRetryContext', () => {
     const seed = createRandomContext(1);
     const a = nextRetryContext(undefined, ERROR, seed);
     const b = nextRetryContext(a, ERROR, seed);
-    expect(a.rng.substream('melody').next()).not.toBe(b.rng.substream('melody').next());
-    expect(a.returnPoint).toBe('rewind-melody');
+    expect(a.rng.substream('accompaniment').next()).not.toBe(b.rng.substream('accompaniment').next());
+    expect(a.returnPoint).toBe('rewind-accompaniment'); // comp finding → 回卷伴奏
   });
 });
 
@@ -52,6 +57,13 @@ describe('generation/GenerationController · runGenerationControl', () => {
   it('仅 warning → 带 warning 通过,不重跑', () => {
     const r = runGenerationControl(() => ({ ir: fakeIR, audit: WARN }), rng);
     expect(r.status).toBe('warning');
+    expect(r.attempts).toBe(1);
+    expect(r.ir).toBeDefined();
+  });
+
+  it('★ Loop 3:lead 的 error 不驱动 retry → 带 warning 通过(MG 真源不可改)', () => {
+    const r = runGenerationControl(() => ({ ir: fakeIR, audit: LEAD_ERROR }), rng);
+    expect(r.status).toBe('warning'); // 不 failed、不重跑
     expect(r.attempts).toBe(1);
     expect(r.ir).toBeDefined();
   });

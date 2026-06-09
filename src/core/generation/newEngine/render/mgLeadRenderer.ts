@@ -13,7 +13,7 @@
 
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { BandSpec } from '../band/BandSpec';
-import type { Timebase, Rng } from '../foundation';
+import type { Timebase } from '../foundation';
 import { midi, beats } from '../foundation';
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 
@@ -55,19 +55,21 @@ function grammarForStyle(s: MgStyle) {
     : ENRICHED_GRAMMAR;
 }
 
-/** 生产 lead:HarmonicPlan → MG 全链 → lead TrackIR。 */
+/** 生产 lead:HarmonicPlan → MG 全链 → lead TrackIR。
+ *  ★ Loop 1(2026-06-09,strict parity):MG seed = 【song seed 直通】(makeSeededRng(songSeed)),
+ *    不再经 RandomContext 的 melody 子流 int() 派生 → 与 MG oracle 同 seed 同旋律(事件级可比)。
+ *    newEngine 其它模块(伴奏/人性化/器配)仍用 RandomContext 子流。 */
 export function renderMgMelody(
   plan: HarmonicPlan,
   band: BandSpec,
   timebase: Timebase,
-  rng: Rng,
+  songSeed: number,
 ): TrackIR {
   const program = band.roleProgram.lead;
   const chords = harmonicPlanToMgChordDefs(plan);
   if (chords.length === 0) return { role: 'lead', notes: [], program };
 
-  // 确定性 seed:取自 'melody' 子流(同 seed → 同序列)。
-  const seed = rng.int(0x7fffffff);
+  const seed = songSeed; // MG seed = song seed 直通(strict parity)
   const style = toMgStyle(band.style);
   const songKeyPc = ((band.key as number) % 12 + 12) % 12;
   const musicKey = NOTE_NAMES[songKeyPc];

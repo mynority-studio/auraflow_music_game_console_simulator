@@ -72,7 +72,8 @@ describe('★ Loop I · 777870/rnb verse 正向 golden(不被修坏)', () => {
     for (const n of lead) { const gap = ((n.startTick as number) - cursor) / timebase.ppq; if (gap > restMax) restMax = gap; cursor = Math.max(cursor, (n.startTick as number) + (n.durationTicks as number)); }
     expect(lead.length).toBeGreaterThanOrEqual(50);                                  // 旋律密度(directive >=50)
     expect(restMax).toBeLessThanOrEqual(2.25);                                       // 不被量化撕碎
-    expect((lead[0].startTick as number) - lo).toBe(0);                              // 首 lead 落段首
+    // ★ Option A(strict parity):lead = MG 真源,首音由 MG 决定(可弱起/pickup,不再 pin 落段首);只验在段首 1 拍内。
+    expect((lead[0].startTick as number) - lo).toBeLessThanOrEqual(timebase.ppq);
     const compDelta = Math.min(...comp.map((n) => Math.abs(((n.startTick as number) - lo) / timebase.ppq)));
     expect(compDelta).toBeLessThanOrEqual(0.05);                                     // comp 边界 pocket 保留(非机械直拍/非晚 wash)
   });

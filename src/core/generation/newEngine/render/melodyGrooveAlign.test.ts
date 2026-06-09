@@ -22,7 +22,7 @@ function rawLead(style: string, seeds: number) {
     const arr = buildArrangementPlan(band, { rng: createRandomContext(seed) });
     const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
     const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
-    const lead = renderMgMelody(plan, band, tb, createRandomContext(seed).substream('melody'));
+    const lead = renderMgMelody(plan, band, tb, seed); // ★ Loop 1:song seed 直通
     for (const n of lead.notes) {
       const b = (n.startTick as number) / tb.ppq; const frac = b - Math.floor(b); tot++;
       if (Math.abs(frac - Math.round(frac * 2) / 2) > 0.02) off8++; // 距【最近 8 分格】(含下拍 frac=0)

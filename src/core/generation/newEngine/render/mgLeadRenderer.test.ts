@@ -17,8 +17,7 @@ function buildLead(style: string, seed: number) {
   const arrangement = buildArrangementPlan(band);
   const plan = buildHarmonicPlanFromArrangement(band, arrangement, createRandomContext(seed));
   const timebase = createTimebase({ meter: arrangement.meter });
-  const rng = createRandomContext(seed).substream('melody');
-  return renderMgMelody(plan, band, timebase, rng);
+  return renderMgMelody(plan, band, timebase, seed); // ★ Loop 1:song seed 直通
 }
 
 describe('render/mgLeadRenderer · renderMgMelody (Loop 7)', () => {

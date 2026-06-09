@@ -76,7 +76,7 @@ describe('generation · finding→精确返回点 (5.1,退役 Motif 后)', () =>
       const fixed = retry?.voicingSafer?.[SPAN] !== undefined; // 瘦该 span 即修好
       return {
         ir,
-        audit: fixed ? { findings: [] } : { findings: [{ severity: 'error', location: { trackRole: 'lead', startTick: COLLIDE_TICK }, ruleId: 'avoid-exposed', reason: 'injected', suggestedReturnPoint: 'rewind-melody' }] },
+        audit: fixed ? { findings: [] } : { findings: [{ severity: 'error', location: { trackRole: 'comp', startTick: COLLIDE_TICK }, ruleId: 'avoid-exposed', reason: 'injected', suggestedReturnPoint: 'rewind-accompaniment' }] }, // ★ Loop 3:非-lead finding 才驱动 voicingSafer retry(lead 不重跑)
       };
     };
     const result = runGenerationControl(render, createRandomContext(1), DEFAULT_BUDGET, fakeLocator);

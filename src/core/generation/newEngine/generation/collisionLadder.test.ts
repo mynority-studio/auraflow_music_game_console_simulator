@@ -12,22 +12,23 @@ import type { RetryContext } from './RetryContext';
 const TICK = 1920;
 const SPAN = 'S0';
 const hardLocator: RetryLocator = { spanAtTick: (tick) => (tick === TICK ? SPAN : undefined) };
-const leadFinding: AuditFinding = {
-  severity: 'error', location: { trackRole: 'lead', startTick: TICK },
-  ruleId: 'avoid', reason: 'hard', suggestedReturnPoint: 'rewind-melody',
+// ★ Loop 3(strict parity):阶梯由【非-lead】finding 驱动(comp 撞音 → 瘦 voicing → fallback);lead 不重跑。
+const compFinding: AuditFinding = {
+  severity: 'error', location: { trackRole: 'comp', startTick: TICK },
+  ruleId: 'avoid', reason: 'hard', suggestedReturnPoint: 'rewind-accompaniment',
 };
-const report: AuditReport = { findings: [leadFinding] };
+const report: AuditReport = { findings: [compFinding] };
 
 describe('generation · 撞音消解阶梯 (5.2,退役 Motif 后 = 2 级)', () => {
   it('★ 阶梯 2 级:rung1 voicing(span 未瘦)→ rung4 fallback(span 已瘦),单调前进', () => {
-    const e1 = escalateOverride(leadFinding, hardLocator, undefined);
+    const e1 = escalateOverride(compFinding, hardLocator, undefined);
     expect(e1.rung).toBe('voicing');
     expect(e1.patch.voicingSafer).toEqual({ [SPAN]: true });
     expect(e1.returnPoint).toBe('rewind-accompaniment');
     const c1 = nextRetryContext(undefined, report, createRandomContext(1), hardLocator);
     expect(c1.voicingSafer[SPAN]).toBe(true);
 
-    const e2 = escalateOverride(leadFinding, hardLocator, c1);
+    const e2 = escalateOverride(compFinding, hardLocator, c1);
     expect(e2.rung).toBe('fallback');
     expect(e2.returnPoint).toBe('render-fallback');
     expect(e2.patch).toEqual({}); // fallback 无新 override
