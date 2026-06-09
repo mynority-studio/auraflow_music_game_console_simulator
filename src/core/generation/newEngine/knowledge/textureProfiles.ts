@@ -4,8 +4,10 @@
 // Provenance:port 自 melodygenerative/src/lib/styleDictionary.ts 织体段:
 //   PhraseCellRole / phraseCellRole(密度曲线)/ densityForCell / energyForCell /
 //   TextureProfile / _MODERN_+_LOFI_ profiles / pickTextureForBar。
-// ★ 计划 §9 明示:只迁 explicit modern/lofi profile,**不迁 legacy**
-//   → TEXTURE_POOL 不含 _legacyTexturesAsPool()(源里有,此处删)。
+// ★ Loop 6(2026-06-09,用户决策「全量进可选择池/strict MG」):TEXTURE_POOL 现含
+//   _legacyTexturesAsPool()(忠实 port 自源同名函数)→ legacy 与 modern/lofi 同权重参与
+//   pickTextureForBar,每首歌织体随之变化(curated 集被 legacy 稀释,用户已确认接受)。
+//   render 侧由 textureRenderer 的 family interpreter 覆盖全部 legacy case(CODEX「renderer/fallback contract」)。
 // render 层按 pickTextureForBar 结果选织体,不在此写事件。
 // ============================================================
 
@@ -95,8 +97,84 @@ const _LOFI_TEXTURE_PROFILES: TextureProfile[] = [
   { id: 'wide_color_motion_lofi_pop', textureCase: 'Piano_Wide_Color_Motion', styles: ['LOFI', 'POP'], mood: 'lyrical', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.30, 0.75], energyRange: [0.30, 0.75], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [6, 24], bassLateMs: [-3, 6], velocityHumanize: 0.10 }, subStyles: ['Lofi Warm Piano', 'Lofi Emo Piano', 'Lofi Rainy Rhodes', 'Lofi Neo Soul Soft', 'Lofi Soft Canon', 'Pop Ballad', 'Max Martin Pop'] },
 ];
 
-/** 公开池 = modern + LOFI(★ 不含 legacy,见 §9)。 */
-export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES];
+// ============================================================
+// Legacy 织体池(Loop 6,2026-06-09)—— 忠实 port 自 styleDictionary._legacyTexturesAsPool()。
+//   源:STYLE_DICTIONARY[POP/JAZZ/LOFI/RNB].primaryTextures 里【未被 modern profile 覆盖】的
+//   legacy textureCase,每个派生 1 个 broad-metadata TextureProfile(任意 phraseRole / density[0,1] /
+//   energy[0,1] / maxRepeatBars 16)→ 永远过 pickTextureForBar 的 filter。
+//   ★ 源只迭代 POP/JAZZ/LOFI/RNB(不含 BLUES)→ Blues_* 不进池(仅由 textureRenderer 覆盖)。
+//   ★ styles:各 legacy textureCase 在源 primaryTextures 里均属【单一 macro】(prefix-specific
+//     或 generic-但只被一个 sub-style 引用),故各 → 单一 style(与源 merge 行为一致)。
+//   mood 由名字模式近似(忠实源 _legacyTexturesAsPool 的同款判据)。
+// ============================================================
+
+/** legacy textureCase → 出现的 macro 风格(源 STYLE_DICTIONARY[*].primaryTextures 派生)。 */
+const _LEGACY_TEXTURE_STYLES: Record<string, TextureStyleName[]> = {
+  Pop_Alberti_Lyrical: ['POP'], Pop_Anthem_Pulse: ['POP'], Pop_Ballad_158_Sweep: ['POP'],
+  Pop_Broken_8ths_Sync: ['POP'], Pop_Half_Arp_Sweep: ['POP'], Pop_Piano_Arp_16ths: ['POP'],
+  Pop_Wave_16ths: ['POP'], Block_Chord: ['POP'], Broken_Chord: ['POP'], Arpeggio_Flow: ['POP'],
+  Jazz_Charleston_Comp: ['JAZZ'], Jazz_Drop_2_Comp: ['JAZZ'], Jazz_Red_Garland_Block: ['JAZZ'],
+  Jazz_Waltz_Hemiola: ['JAZZ'], Bossa_Piano_Arp: ['JAZZ'],
+  RnB_16th_Funk_Stabs: ['RNB'], RnB_Classic_Soul_Arp: ['RNB'], RnB_Gospel_Triplets: ['RNB'],
+  RnB_Laid_Back_Groove: ['RNB'], RnB_Neo_Soul_Roll: ['RNB'],
+};
+
+/** 忠实 port:源 _legacyTexturesAsPool() —— 每个 legacy textureCase 派生 broad-metadata profile。 */
+function _legacyTexturesAsPool(): TextureProfile[] {
+  const modernCases = new Set([..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES].map((p) => p.textureCase));
+  const out: TextureProfile[] = [];
+  for (const [textureCase, styles] of Object.entries(_LEGACY_TEXTURE_STYLES)) {
+    if (modernCases.has(textureCase)) continue; // 已被 modern profile 覆盖 → 跳过
+    const mood: TextureProfile['mood'] =
+      /^Ambient_|^Pad_|Pedal/i.test(textureCase) ? 'ambient' :
+      /Stab|Funk|Boogie|Walking/i.test(textureCase) ? 'groove' :
+      /Block|Arp|Piano|Roll/i.test(textureCase) ? 'lyrical' :
+      'groove';
+    out.push({
+      id: `legacy_${textureCase.toLowerCase()}`,
+      textureCase,
+      styles,
+      mood,
+      phraseRoles: ['establish', 'develop', 'lift', 'cadence'], // broad
+      densityRange: [0, 1],
+      energyRange: [0, 1],
+      maxRepeatBars: 16,
+    });
+  }
+  return out;
+}
+
+const _LEGACY_TEXTURE_PROFILES: TextureProfile[] = _legacyTexturesAsPool();
+
+/** 公开池 = modern + LOFI + legacy(★ Loop 6:全量 strict MG,见顶部横幅)。 */
+export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES, ..._LEGACY_TEXTURE_PROFILES];
+
+/**
+ * 该 textureCase 是否【设计内稀疏】(comp 连续性审计据此放宽阈值:稀疏织体的呼吸不算断层)。
+ *   判据:mood ∈ {ambient, dusty}(留白型)或 densityRange 上限 ≤ 0.5(本就疏)。
+ *   ★ 用于 musicalityAuditor Rule 5:稀疏织体段(如 Lyrical_Felt_Piano_Sparse / Ambient_*)
+ *     的固有 1.5–2.5 拍呼吸是作者意图,不应误报 comp-continuity-gap。
+ */
+const _SPARSE_TEXTURE_MOODS: ReadonlySet<string> = new Set(['ambient', 'dusty']);
+export function isSparseTexture(textureCase: string | undefined): boolean {
+  if (!textureCase) return false;
+  const p = TEXTURE_POOL.find((x) => x.textureCase === textureCase);
+  if (!p) return false;
+  return _SPARSE_TEXTURE_MOODS.has(p.mood) || p.densityRange[1] <= 0.5;
+}
+
+/**
+ * 该 textureCase 是否【固有呼吸型】(comp 连续性放宽:稀疏 or 单音织体)。
+ *   = isSparseTexture(留白/低密度) ∪ arp/roll family(逐音呼吸 —— 单音织体一次一音,
+ *     pad 在场时与 pad-avoid 让位叠加 → 固有 ≤2.5 拍间隙是织体本性,非 comp 断层)。
+ *   ★ 只【放宽】不收紧:block/comp/pulse/stab 等密集织体仍按基础阈值严判。
+ */
+export function isBreathingTexture(textureCase: string | undefined): boolean {
+  if (!textureCase) return false;
+  if (isSparseTexture(textureCase)) return true;
+  const fam = TEXTURE_BEHAVIOR[textureCase]?.family;
+  return fam === 'arp' || fam === 'roll';
+}
 
 // ============================================================
 // 织体行为元数据(第二期:texture-switch 兼容性判据,docs/texture_switch_musicality_directive §3.1)
@@ -134,6 +212,28 @@ export const TEXTURE_BEHAVIOR: Record<string, TextureBehaviorProfile> = {
   Piano_Lofi_Tape_Wobble_Arp: { textureCase: 'Piano_Lofi_Tape_Wobble_Arp', family: 'arp', continuity: 'semiContinuous', firstOnsetBeat: 0.02 },
   Piano_Wide_Color_Motion: { textureCase: 'Piano_Wide_Color_Motion', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
   Piano_CommonTone_Soft_Roll: { textureCase: 'Piano_CommonTone_Soft_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
+  // —— legacy(Loop 6,2026-06-09):family/firstOnset 量化自 textureRenderer 的 family interpreter;
+  //    全部首击 ≤ 0.5 拍(非 delayed-entry)→ 段级常驻不留洞,可与 modern/lofi 同样下发。 ——
+  Pop_Alberti_Lyrical: { textureCase: 'Pop_Alberti_Lyrical', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Pop_Anthem_Pulse: { textureCase: 'Pop_Anthem_Pulse', family: 'block', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Pop_Ballad_158_Sweep: { textureCase: 'Pop_Ballad_158_Sweep', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Pop_Broken_8ths_Sync: { textureCase: 'Pop_Broken_8ths_Sync', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Pop_Half_Arp_Sweep: { textureCase: 'Pop_Half_Arp_Sweep', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Pop_Piano_Arp_16ths: { textureCase: 'Pop_Piano_Arp_16ths', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Pop_Wave_16ths: { textureCase: 'Pop_Wave_16ths', family: 'block', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Block_Chord: { textureCase: 'Block_Chord', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  Broken_Chord: { textureCase: 'Broken_Chord', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Arpeggio_Flow: { textureCase: 'Arpeggio_Flow', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  Jazz_Charleston_Comp: { textureCase: 'Jazz_Charleston_Comp', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  Jazz_Drop_2_Comp: { textureCase: 'Jazz_Drop_2_Comp', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  Jazz_Red_Garland_Block: { textureCase: 'Jazz_Red_Garland_Block', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  Jazz_Waltz_Hemiola: { textureCase: 'Jazz_Waltz_Hemiola', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  Bossa_Piano_Arp: { textureCase: 'Bossa_Piano_Arp', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  RnB_16th_Funk_Stabs: { textureCase: 'RnB_16th_Funk_Stabs', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.5 },
+  RnB_Classic_Soul_Arp: { textureCase: 'RnB_Classic_Soul_Arp', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  RnB_Gospel_Triplets: { textureCase: 'RnB_Gospel_Triplets', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  RnB_Laid_Back_Groove: { textureCase: 'RnB_Laid_Back_Groove', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  RnB_Neo_Soul_Roll: { textureCase: 'RnB_Neo_Soul_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
 };
 
 export function textureBehavior(textureCase: string): TextureBehaviorProfile | undefined {

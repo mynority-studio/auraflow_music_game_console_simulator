@@ -9,6 +9,7 @@
 
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { measureCompGaps } from './compContinuity';
+import { isBreathingTexture } from '../knowledge/textureProfiles';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import type { MusicalIR } from '../ir/MusicalIR';
@@ -16,6 +17,7 @@ import type { AuditFinding, AuditReport } from '../ir/AuditReport';
 import type { Timebase } from '../foundation';
 
 const COMP_GAP_BEATS: Record<string, number> = { pop: 1.5, rnb: 1.5, lofi: 2.5, jazz: 2.0, default: 2.0 };
+const SPARSE_COMP_GAP_BEATS = 2.5; // 稀疏 rich 织体段:固有呼吸放宽到此(Loop 6)
 const ANCHOR_WINDOW_BEAT = 1.0; // 段起首拍内出现 anchor 即视为落地
 const SWUNG_POS = 0.66;
 
@@ -102,23 +104,29 @@ export function auditMusicality(
     }
   }
 
-  // —— Rule 5: comp-continuity-gap —— comp 应在场区间内空隙超阈值。
+  // —— Rule 5: comp-continuity-gap —— comp 应在场区间内空隙超阈值(★ per-section 阈值:稀疏织体放宽)。
   const compNotes = ir.tracks.find((t) => t.role === 'comp')?.notes ?? [];
   if (compNotes.length) {
-    const activeRanges: { lo: number; hi: number }[] = [];
-    arrangement.sections.forEach((s, i) => {
+    const baseThresh = COMP_GAP_BEATS[style.toLowerCase()] ?? COMP_GAP_BEATS.default;
+    const compTicks = compNotes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number }));
+    for (let i = 0; i < arrangement.sections.length; i++) {
+      const s = arrangement.sections[i];
       const roles = (instrumentation.activeRolesBySection[s.id] as readonly string[] | undefined) ?? [];
       const tex = instrumentation.textureBySection[s.id];
       const busy = roles.includes('comp') && instrumentation.textureYieldPolicy[tex] === 'active';
-      if (busy) activeRanges.push({ lo: sectionStartTick(i), hi: sectionStartTick(i) + s.bars * barTicks });
-    });
-    // ★ Loop 5:从 comp 应在场区间里【减去 dense-melody 区间】(那里 comp 被有意删,不算断层)。
-    const effRanges = compGapExclude.length ? subtractRanges(activeRanges, compGapExclude) : activeRanges;
-    if (effRanges.length) {
-      const thresh = COMP_GAP_BEATS[style.toLowerCase()] ?? COMP_GAP_BEATS.default;
-      const rep = measureCompGaps(compNotes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number })), effRanges, ppq);
+      if (!busy) continue;
+      let ranges: { lo: number; hi: number }[] = [{ lo: sectionStartTick(i), hi: sectionStartTick(i) + s.bars * barTicks }];
+      // ★ Loop 5:从 comp 应在场区间里【减去 dense-melody 区间】(那里 comp 被有意删,不算断层)。
+      if (compGapExclude.length) ranges = subtractRanges(ranges, compGapExclude);
+      if (!ranges.length) continue;
+      // ★ Loop 6:固有呼吸型 rich 织体(稀疏 Lyrical_Felt/Ambient,或单音 arp/roll + pad 让位)的
+      //   设计内间隙是作者意图 → 放宽阈值(段内任一织体呼吸即放宽整段:密集那半本就不会断)。
+      const breathing = isBreathingTexture(instrumentation.richTextureBySection?.[s.id])
+        || isBreathingTexture(instrumentation.richTextureSwitchBySection?.[s.id]?.toTexture);
+      const thresh = breathing ? Math.max(baseThresh, SPARSE_COMP_GAP_BEATS) : baseThresh;
+      const rep = measureCompGaps(compTicks, ranges, ppq);
       const big = rep.gaps.find((g) => g.gapBeats > thresh);
-      if (big) warn('comp', Math.round(big.startBeat * ppq), 'comp-continuity-gap', `comp active 区间空洞 ${big.gapBeats.toFixed(2)} 拍 > ${thresh}`);
+      if (big) { warn('comp', Math.round(big.startBeat * ppq), 'comp-continuity-gap', `comp active 区间空洞 ${big.gapBeats.toFixed(2)} 拍 > ${thresh}`); break; }
     }
   }
 

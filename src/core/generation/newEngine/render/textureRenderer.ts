@@ -48,13 +48,51 @@ const LOFI_TEXTURE_CASES = new Set<string>([
   'Piano_CommonTone_Soft_Roll',
 ]);
 
+/**
+ * Legacy textureCase 全量覆盖集(Loop 6,2026-06-09 用户决策「全量进可选择池/strict MG」)。
+ *   = 源 musicEngine.applyTexture 的全部 legacy case。前 20 个进 TEXTURE_POOL(可选择,见 textureProfiles
+ *     ._LEGACY_TEXTURE_STYLES);其余(Blues_* + bass/stab generics)仅【render 覆盖】(源里有但不在 pool)。
+ *   渲染走 family interpreter(classifyLegacyFamily)→ CODEX「renderer/interpreter 或明确 fallback contract」。
+ *   ★ 非 bit-MG:按 texture-decision②「采纳 MG 词汇但保留手感」,按 family 重新演绎(对拍贴格)。
+ */
+const LEGACY_TEXTURE_CASES = new Set<string>([
+  // —— pool(可选择,源 primaryTextures)——
+  'Pop_Alberti_Lyrical', 'Pop_Anthem_Pulse', 'Pop_Ballad_158_Sweep', 'Pop_Broken_8ths_Sync',
+  'Pop_Half_Arp_Sweep', 'Pop_Piano_Arp_16ths', 'Pop_Wave_16ths', 'Block_Chord', 'Broken_Chord', 'Arpeggio_Flow',
+  'Jazz_Charleston_Comp', 'Jazz_Drop_2_Comp', 'Jazz_Red_Garland_Block', 'Jazz_Waltz_Hemiola', 'Bossa_Piano_Arp',
+  'RnB_16th_Funk_Stabs', 'RnB_Classic_Soul_Arp', 'RnB_Gospel_Triplets', 'RnB_Laid_Back_Groove', 'RnB_Neo_Soul_Roll',
+  // —— render-only(源 applyTexture 有、不在 pool):BLUES + bass/stab generics ——
+  'Blues_Boogie_Woogie', 'Blues_Chicago_Shuffle', 'Blues_Shuffle_Bass', 'Blues_Slow_12_8_Arp',
+  'Blues_Slow_Chops', 'Blues_Stabs', 'Blues_Tremolo_Comp',
+  'Arp_Seq', 'Block_Chord_Staccato', 'Bossa_Clave_Comping', 'Call_And_Response', 'Funk_Guitar_Scratch',
+  'Jazz_Comping', 'Jazz_Walking_Bass', 'Ostinato_16s', 'Pop_Ostinato_Rock',
+  'Root_5_7_5', 'Root_5_8', 'Root_7_5_8', 'Root_Fifth_Bass', 'Root_Octave_Pulse', 'Root_Octave',
+  'Single_Root', 'Slap_Bass_Line', 'Stabs', 'Syncopated_Stabs',
+]);
+
+type LegacyFamily = 'block' | 'arp' | 'stab' | 'roll' | 'pulse' | 'comp' | 'bass';
+
+/** legacy textureCase → 演绎 family(名字模式;顺序敏感:bass 名先于 arp/comp)。 */
+function classifyLegacyFamily(tc: string): LegacyFamily {
+  if (/Single_Root|^Root_|Slap_Bass|Walking_Bass|Boogie|Shuffle_Bass/i.test(tc)) return 'bass';
+  if (/Stab|Scratch/i.test(tc)) return 'stab';
+  if (/Roll/i.test(tc)) return 'roll';
+  if (/Pulse|Ostinato|Anthem|Wave/i.test(tc)) return 'pulse';
+  if (/Arp|Broken|Sweep|Alberti|158|Flow/i.test(tc)) return 'arp';
+  if (/Comp|Charleston|Clave|Triplet|Laid_Back|Hemiola|Tremolo|Chops|Gospel|Shuffle/i.test(tc)) return 'comp';
+  return 'block'; // Block_Chord / Red_Garland_Block / Drop_2 / Staccato / Call_And_Response / 兜底
+}
+
 /** 该 textureCase 有 render 实现吗(否则 comp 回退 compPattern)。 */
 export function hasTextureRenderer(textureCase: string): boolean {
-  return MODERN_TEXTURE_CASES.has(textureCase) || LOFI_TEXTURE_CASES.has(textureCase);
+  return MODERN_TEXTURE_CASES.has(textureCase) || LOFI_TEXTURE_CASES.has(textureCase) || LEGACY_TEXTURE_CASES.has(textureCase);
 }
 
 /** 全部已实现的 rich textureCase(测试遍历用)。 */
-export const RENDERED_TEXTURE_CASES: readonly string[] = [...MODERN_TEXTURE_CASES, ...LOFI_TEXTURE_CASES];
+export const RENDERED_TEXTURE_CASES: readonly string[] = [...MODERN_TEXTURE_CASES, ...LOFI_TEXTURE_CASES, ...LEGACY_TEXTURE_CASES];
+
+/** legacy 全量 case(测试用:pool 覆盖 + 渲染覆盖)。 */
+export const LEGACY_RENDERED_TEXTURE_CASES: readonly string[] = [...LEGACY_TEXTURE_CASES];
 
 /**
  * rich textureCase → chord hit 序列(忠实源每个 case 的 chord pushEvent)。
@@ -79,6 +117,12 @@ export function renderTextureChordHits(
     const arp = [cM[0], cM[1] ?? cM[0], cM[2] ?? cM[cM.length - 1], cM[1] ?? cM[0]];
     return arp[i % arp.length];
   };
+
+  // ★ Loop 6:legacy textureCase → family interpreter(非 bit-MG,按 family 重演绎、对拍贴格)。
+  if (LEGACY_TEXTURE_CASES.has(textureCase)) {
+    renderLegacyChordHits(classifyLegacyFamily(textureCase), cM, dur, push, arpAt);
+    return hits;
+  }
 
   switch (textureCase) {
     // ——— modern lyrical / ambient ———
@@ -164,6 +208,13 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
   const b = (tRel: number, d: number, vel: number, voice: TextureBassHit['voice'] = 'root') => {
     if (tRel < dur) hits.push({ tRel, dur: Math.min(d, dur - tRel), vel, voice });
   };
+
+  // ★ Loop 6:legacy textureCase → family interpreter 的 bass 部分。
+  if (LEGACY_TEXTURE_CASES.has(textureCase)) {
+    renderLegacyBassHits(classifyLegacyFamily(textureCase), textureCase, dur, b);
+    return hits;
+  }
+
   switch (textureCase) {
     case 'Lyrical_Felt_Piano_Sparse': b(0, Math.min(dur, 3.8), 0.62); break;
     case 'Lyrical_10th_Broken': b(0, 1.5, 0.72); if (dur > 2) b(1.5, 0.6, 0.45, 'tenth'); break;
@@ -184,4 +235,77 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
     case 'Piano_CommonTone_Soft_Roll': b(0, dur, 0.65); break;
   }
   return hits;
+}
+
+// ============================================================
+// Legacy family interpreter(Loop 6,2026-06-09)
+// ------------------------------------------------------------
+// 7 family × {chord, bass} 演绎。CODEX「renderer/interpreter 或明确 fallback contract」=此即 interpreter。
+// 非 bit-MG:对拍贴 8 分格(强拍音锚),保留我们手感(texture-decision②)。纯函数无 rng → 确定性。
+// ============================================================
+
+// ★ 全部 family 按整拍网格【铺满整个 span】(span 可达 2+ 小节 = 8+ 拍;renderTextureChordHits 一次性
+//   渲染全 span)→ 无 comp-continuity 空洞。每【拍位】落在 8 分格上(对拍)。
+const BAR_BEATS = 4;
+
+/** legacy family → chord hit(铺满 span;空 cM 由调用方保证 length>0)。 */
+function renderLegacyChordHits(
+  family: LegacyFamily,
+  cM: number[],
+  dur: number,
+  push: (midis: number[], tRel: number, d: number, vel: number) => void,
+  arpAt: (i: number) => number,
+): void {
+  switch (family) {
+    case 'block': // 柱式块:每 2 拍半音符,锁强拍,铺满
+      for (let t = 0; t < dur; t += 2) push(cM, t, Math.min(2, dur - t), t % BAR_BEATS < 0.01 ? 0.46 : 0.42);
+      break;
+    case 'pulse': // 8 分脉冲贴格(anthem/ostinato/wave),强拍加重,铺满
+      for (let i = 0; i < dur * 2; i++) push(cM, i * 0.5, 0.42, 0.34 + (i % 2 === 0 ? 0.08 : 0));
+      break;
+    case 'arp': // 上行 arp 8 分贴格(整拍音锚 → 对拍),铺满
+      for (let i = 0; i < dur * 2; i++) push([arpAt(i)], i * 0.5, 0.32, 0.34 + (i % 4 === 0 ? 0.08 : 0));
+      break;
+    case 'stab': // 16 分 funk 短切:每拍反拍 staccato,铺满
+      for (let t = 0.5; t < dur; t += 1) push(cM, t, 0.18, 0.42);
+      break;
+    case 'comp': // charleston/comp:每小节 beat 0 + and-of-2 + and-of-3,贴 8 分格,铺满
+      for (let off = 0; off < dur; off += BAR_BEATS) {
+        push(cM, off, 0.6, 0.44);
+        if (off + 1.5 < dur) push(cM, off + 1.5, 0.5, 0.38);
+        if (off + 2.5 < dur) push(cM, off + 2.5, 0.5, 0.40);
+      }
+      break;
+    case 'roll': // 共同音柔 roll:每 2 拍首声部落强拍、余声部向上 roll,铺满
+      for (let beat = 0; beat < dur; beat += 2) {
+        cM.forEach((m, idx) => push([m], beat + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
+      }
+      break;
+    case 'bass': // bass-pattern 织体:comp 只留低位轻 shell(主声部由 bass 担纲),每小节重击、铺满
+      for (let off = 0; off < dur; off += BAR_BEATS) push([cM[0], cM[1] ?? cM[0]], off, Math.min(BAR_BEATS, dur - off), 0.26);
+      break;
+  }
+}
+
+/** legacy family → bass hit(节奏 only,音高 bassRenderer 填;铺满 span)。 */
+function renderLegacyBassHits(
+  family: LegacyFamily,
+  textureCase: string,
+  dur: number,
+  b: (tRel: number, d: number, vel: number, voice?: TextureBassHit['voice']) => void,
+): void {
+  if (family === 'bass') {
+    if (/Single_Root/i.test(textureCase)) { // 单音根音:每小节一击,铺满
+      for (let off = 0; off < dur; off += BAR_BEATS) b(off, Math.min(BAR_BEATS, dur - off), 0.72);
+      return;
+    }
+    // root/fifth 四分律动(root_octave / 5_8 / walking / boogie / slap / shuffle 等),铺满
+    for (let i = 0; i < Math.ceil(dur); i++) {
+      const onBeat = i % 2 === 0;
+      b(i, 1, onBeat ? (i % BAR_BEATS === 0 ? 0.72 : 0.64) : 0.56, onBeat ? 'root' : 'fifth');
+    }
+    return;
+  }
+  // chord-families:根音锚(每 2 拍半音符),给 bass 托底、与强拍锁,铺满
+  for (let t = 0; t < dur; t += 2) b(t, Math.min(2, dur - t), t % BAR_BEATS < 0.01 ? 0.62 : 0.56, 'root');
 }

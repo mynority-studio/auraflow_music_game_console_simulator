@@ -43,16 +43,20 @@ describe('densityForCell — 段落调制', () => {
   });
 });
 
-describe('TEXTURE_POOL — 只含 modern + lofi(无 legacy)', () => {
-  it('池大小 = 8 modern + 9 lofi = 17,且无 legacy 派生项', () => {
-    expect(TEXTURE_POOL).toHaveLength(17);
-    // 所有 profile 都有显式 mood + 非空 styles(legacy 派生项是 'groove' 兜底 + 宽匹配,这里全是显式作者元数据)
+describe('TEXTURE_POOL — modern + lofi + legacy(Loop 6:strict MG 全量进可选择池)', () => {
+  it('池大小 = 8 modern + 9 lofi + 20 legacy = 37', () => {
+    expect(TEXTURE_POOL).toHaveLength(37);
+    // 所有 profile 都有合法 mood + 非空 styles + 合法 densityRange(legacy 派生项 mood/broad-range 也满足)
     for (const t of TEXTURE_POOL) {
       expect(t.styles.length).toBeGreaterThan(0);
       expect(t.densityRange[0]).toBeLessThanOrEqual(t.densityRange[1]);
     }
     // id 唯一
-    expect(new Set(TEXTURE_POOL.map((t) => t.id)).size).toBe(17);
+    expect(new Set(TEXTURE_POOL.map((t) => t.id)).size).toBe(37);
+    // legacy 派生项确实在池里(legacy_ 前缀,broad metadata)
+    const legacy = TEXTURE_POOL.filter((t) => t.id.startsWith('legacy_'));
+    expect(legacy).toHaveLength(20);
+    for (const t of legacy) { expect(t.densityRange).toEqual([0, 1]); expect(t.energyRange).toEqual([0, 1]); }
   });
 });
 
@@ -95,9 +99,9 @@ describe('笼统织体已搬进 KB(引擎不再自带偏好)', () => {
     expect(GENERIC_TEXTURE_YIELD['sustained-block']).toBe('floating');
   });
 
-  it('5 笼统 + 17 rich 一起存进 KB 目录', () => {
+  it('5 笼统 + 37 rich(含 legacy)一起存进 KB 目录', () => {
     expect(GENERIC_TEXTURE_PROFILES).toHaveLength(5);
-    expect(ALL_TEXTURE_PROFILES).toHaveLength(22); // 5 + 17
+    expect(ALL_TEXTURE_PROFILES).toHaveLength(42); // 5 + 37(8 modern + 9 lofi + 20 legacy)
     // 笼统 profile 的 textureCase = 可渲染的 kind 名(render 直接映射)
     expect(GENERIC_TEXTURE_PROFILES.map((t) => t.textureCase).sort()).toEqual(['active-comp', 'arpeggio', 'pad', 'sustained-block', 'walking-bass']);
   });

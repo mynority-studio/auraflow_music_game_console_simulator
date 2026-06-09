@@ -11,8 +11,8 @@ const VOICED = [60, 64, 67, 71]; // Cmaj7 mid voicing
 const DUR = 4;
 
 describe('textureRenderer · 覆盖与基本不变量', () => {
-  it('17 个 rich textureCase 全部有渲染实现', () => {
-    expect(RENDERED_TEXTURE_CASES).toHaveLength(17);
+  it('63 个 rich textureCase 全部有渲染实现(17 modern/lofi + 46 legacy,Loop 6)', () => {
+    expect(RENDERED_TEXTURE_CASES).toHaveLength(63);
     for (const tc of RENDERED_TEXTURE_CASES) expect(hasTextureRenderer(tc)).toBe(true);
   });
   it('未知/generic textureCase 无渲染', () => {

@@ -6,7 +6,7 @@ import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { buildTextureSchedule } from './textureSchedule';
 import { createTimebase, createRandomContext, beats } from '../foundation';
-import { textureBehavior, isDelayedEntryTexture, rateTextureTransition } from '../knowledge/textureProfiles';
+import { textureBehavior, isDelayedEntryTexture, rateTextureTransition, TEXTURE_POOL } from '../knowledge/textureProfiles';
 import { RENDERED_TEXTURE_CASES } from './textureRenderer';
 import { measureCompGaps } from './compContinuity';
 import { denseMelodySpanRanges } from './mgPostMixShaper';
@@ -126,11 +126,18 @@ describe('texture-switch 修复 · 第一期(非 LOFI 段级下发)', () => {
 });
 
 describe('texture behavior KB(第二期元数据)', () => {
-  it('全 16 rich 织体都有 behavior + firstOnsetBeat', () => {
-    for (const tc of RENDERED_TEXTURE_CASES) {
+  it('全可选 rich 织体(TEXTURE_POOL = 17 modern/lofi + 20 legacy)都有 behavior + firstOnsetBeat', () => {
+    // ★ Loop 6:只有【可被 pickTextureForBar 选中】的织体需要 behavior(texture-switch 层据此推理);
+    //   render-only legacy(Blues_* / bass / stab,源有但不进 pool)不会被选中 → 不要求 behavior。
+    for (const p of TEXTURE_POOL) {
+      const tc = p.textureCase;
       expect(textureBehavior(tc), tc).toBeDefined();
       expect(typeof textureBehavior(tc)!.firstOnsetBeat).toBe('number');
     }
+    // render-only legacy 确有渲染但无需 behavior(确认豁免合理:它们不在 pool)
+    const poolCases = new Set(TEXTURE_POOL.map((x) => x.textureCase));
+    const renderOnly = RENDERED_TEXTURE_CASES.filter((tc) => !poolCases.has(tc));
+    expect(renderOnly.length).toBeGreaterThan(0); // 存在 render-only(Blues/bass/stab)
   });
 
   it('isDelayedEntryTexture:含 Q&A / Reverse_Swell / Lofi_Late_Chord_Answer(一期硬编码漏的)', () => {
