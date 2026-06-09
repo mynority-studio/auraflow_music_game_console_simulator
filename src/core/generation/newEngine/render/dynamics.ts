@@ -17,12 +17,15 @@ export interface EnergyRange {
 export function applyDynamics(tracks: TrackIR[], ranges: EnergyRange[], ppq: number): TrackIR[] {
   const energyAt = (beat: number): number =>
     ranges.find((r) => beat >= r.lo && beat < r.hi)?.energy ?? 0.5;
-  return tracks.map((t) => ({
-    role: t.role,
-    notes: t.notes.map((n) => {
-      const e = energyAt((n.startTick as number) / ppq);
-      const scale = 0.6 + 0.5 * e;
-      return { ...n, velocity: Math.max(1, Math.min(127, Math.round(n.velocity * scale))) };
-    }),
-  }));
+  return tracks.map((t) => {
+    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,力度不被段落能量缩放(MG StyleRenderer 已定)
+    return {
+      role: t.role,
+      notes: t.notes.map((n) => {
+        const e = energyAt((n.startTick as number) / ppq);
+        const scale = 0.6 + 0.5 * e;
+        return { ...n, velocity: Math.max(1, Math.min(127, Math.round(n.velocity * scale))) };
+      }),
+    };
+  });
 }

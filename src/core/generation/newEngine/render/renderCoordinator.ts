@@ -108,15 +108,18 @@ function gateByDensity(
   const ranges = [...byId.entries()].map(([id, r]) => ({ id, ...r }));
   const sectionAt = (tick: number) => ranges.find((r) => tick >= r.start && tick < r.end);
   const isPickup = (tick: number, role: string) => pickupWindows.some((w) => tick >= w.lo && tick < w.hi && w.roles.has(role));
-  return tracks.map((t) => ({
-    role: t.role,
-    notes: t.notes.filter((n) => {
-      const tick = n.startTick as number;
-      if (isPickup(tick, t.role)) return true; // ★ Loop E:下一段授权 pickup → 保留
-      const sec = sectionAt(tick);
-      return sec ? (activeRolesBySection[sec.id] ?? []).includes(t.role) : true;
-    }),
-  }));
+  return tracks.map((t) => {
+    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,永不被密度弧 gate 删除
+    return {
+      role: t.role,
+      notes: t.notes.filter((n) => {
+        const tick = n.startTick as number;
+        if (isPickup(tick, t.role)) return true; // ★ Loop E:下一段授权 pickup → 保留
+        const sec = sectionAt(tick);
+        return sec ? (activeRolesBySection[sec.id] ?? []).includes(t.role) : true;
+      }),
+    };
+  });
 }
 
 export function renderSong(plan: HarmonicPlan, timebase: Timebase): RenderResult {

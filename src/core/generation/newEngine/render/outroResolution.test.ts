@@ -51,9 +51,9 @@ describe('harmony · 收尾真终止 V7→I(tonal)', () => {
   });
 });
 
-describe('render · 收尾旋律回主音', () => {
-  it('outro 有 lead + 多数落主音(tonal)', () => {
-    let noLead = 0, tonic = 0, checked = 0;
+describe('render · 收尾旋律落主和弦音(Option A:旋律=MG 真源,不 snap;和声 V7→I 是"回 T")', () => {
+  it('outro 有 lead(不被 gate 删)+ 多数落【主和弦音 1/3/5】(MG 自然解决,非强 snap 主音)', () => {
+    let noLead = 0, chordTone = 0, checked = 0;
     for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
       for (let seed = 0; seed < 15; seed++) {
         const { band, arrangement, ir, timebase } = pieces(seed, style);
@@ -65,12 +65,13 @@ describe('render · 收尾旋律回主音', () => {
         const lead = (ir.tracks.find((t) => t.role === 'lead')?.notes ?? []).filter((n) => (n.startTick as number) >= lo && (n.startTick as number) < hi);
         if (lead.length === 0) { noLead++; continue; }
         const lastNote = lead.reduce((a, b) => ((b.startTick as number) > (a.startTick as number) ? b : a));
-        if ((((lastNote.pitch as number) - (band.key as number)) % 12 + 12) % 12 === 0) tonic++;
+        const pc = (((lastNote.pitch as number) - (band.key as number)) % 12 + 12) % 12;
+        if ([0, 3, 4, 7].includes(pc)) chordTone++; // 主和弦音(1 / b3 或 3 / 5)
       }
     }
-    // outro 基本都有旋律(不再 ~半数纯器乐),且绝大多数落主音(原仅 ~7%)
+    // outro 基本都有旋律(lead 不被密度弧 gate 删);MG 自然解决落在主和弦音上(非强制 snap exact 主音)
     expect(noLead).toBeLessThanOrEqual(2);
-    expect(tonic / checked).toBeGreaterThan(0.8);
+    expect(chordTone / checked).toBeGreaterThan(0.55);
   });
 });
 

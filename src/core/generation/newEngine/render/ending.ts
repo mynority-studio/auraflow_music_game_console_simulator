@@ -49,14 +49,14 @@ export function applyEnding(
   const span = Math.max(1, outroEnd - outroStart);
 
   return tracks.map((t) => {
+    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,收尾 fade/退出/重音一律不碰 lead
     const exitN = endingPlan.exitBarByRole[t.role as InstrumentRoleName];
     const exitTick = exitN !== undefined ? outroStart + exitN * barTicks : Infinity;
     // ★ 末和弦延留(tag):延留【真正最后一个和弦】到曲末,即便它起在末小节之前
     //   (否则末小节可能空 = tag 收不住)。先扫该 hold 声部在 outro 内的最晚起音作为延留起点。
-    // ★ Loop G:延留角色 = endingPlan.sustainRoles(默认 comp/pad);protectLeadTiming → lead 永不被延留。
+    // ★ Loop G:延留角色 = endingPlan.sustainRoles(默认 comp/pad;lead 已在上方 early-return,永不延留)。
     const sustainSet = endingPlan.sustainRoles ? new Set<string>(endingPlan.sustainRoles) : DEFAULT_SUSTAIN;
-    const leadProtected = endingPlan.protectLeadTiming !== false && t.role === 'lead';
-    const isHold = endingPlan.holdFinalChord && sustainSet.has(t.role) && !leadProtected;
+    const isHold = endingPlan.holdFinalChord && sustainSet.has(t.role);
     let holdFrom = lastBarStart;
     if (isHold) {
       let maxStart = -1;
@@ -92,14 +92,17 @@ export function applyEnding(
 export function applyLeadIns(tracks: TrackIR[], leadInBars: ReadonlySet<number>, ppq: number, bpb: number): TrackIR[] {
   if (leadInBars.size === 0) return tracks;
   const barTicks = bpb * ppq;
-  return tracks.map((t) => ({
-    role: t.role,
-    notes: t.notes.map((n) => {
-      const st = n.startTick as number;
-      const bar = Math.floor(st / barTicks);
-      if (!leadInBars.has(bar)) return n;
-      const pos = clamp01((st - bar * barTicks) / barTicks);
-      return { ...n, velocity: clampVel(n.velocity * (0.82 + 0.36 * pos)) };
-    }),
-  }));
+  return tracks.map((t) => {
+    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,lead-in crescendo 不碰 lead
+    return {
+      role: t.role,
+      notes: t.notes.map((n) => {
+        const st = n.startTick as number;
+        const bar = Math.floor(st / barTicks);
+        if (!leadInBars.has(bar)) return n;
+        const pos = clamp01((st - bar * barTicks) / barTicks);
+        return { ...n, velocity: clampVel(n.velocity * (0.82 + 0.36 * pos)) };
+      }),
+    };
+  });
 }

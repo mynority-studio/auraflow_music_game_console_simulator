@@ -35,13 +35,6 @@ import { makeSeededRng } from './mgRng';
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI';
 
-/** 离 fromMidi 最近的、pitchclass=pc 的 MIDI(收尾旋律落主音用)。 */
-function nearestPcMidi(fromMidi: number, pc: number): number {
-  const lower = fromMidi - (((fromMidi - pc) % 12 + 12) % 12); // ≤ fromMidi 的同 pc
-  const upper = lower + 12;
-  return (fromMidi - lower <= upper - fromMidi) ? lower : upper;
-}
-
 /** band.style(任意大小写)→ MG StyleName。未知 → JAZZ(base enriched,无专属 paradigm)。 */
 function toMgStyle(style: string): MgStyle {
   const s = style.toUpperCase();
@@ -116,17 +109,9 @@ export function renderMgMelody(
     }))
     .sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
 
-  // ★ 收尾旋律落主音(2026-06-08,配合 ensureAuthenticEnding 的 V7→I):tonal 时把【末和弦区间内最后一个旋律音】
-  //   snap 到最近八度主音 → 旋律回归主音、与和声一起"落家"(modal 旁路:落调式中心,不强改)。
-  if (tonalCharacter === 'tonal' && notes.length > 0 && plan.chordTimeline.length > 0) {
-    const finalSpan = plan.chordTimeline[plan.chordTimeline.length - 1];
-    const finalStart = timebase.beatToTick(finalSpan.startBeat) as number;
-    const lastNote = notes[notes.length - 1]; // 已按 startTick 升序 → 末音 = 最晚起音
-    if ((lastNote.startTick as number) >= finalStart) {
-      const snapped = Math.max(0, Math.min(127, nearestPcMidi(lastNote.pitch as number, songKeyPc)));
-      notes[notes.length - 1] = { ...lastNote, pitch: midi(snapped) };
-    }
-  }
+  // ★ Loop 3(Option A strict parity,2026-06-09):撤掉旧"末音 snap 落主音"——lead = MG 真源,音高/时序/力度
+  //   一律不被 newEngine 后处理改写。收尾的"回主音"是【和声】回 T(harmony.ensureAuthenticEnding 的 V7→I),
+  //   不是旋律;旋律的解决/落音交回 MG shapeMelodyHarmony(applyMelodicResolutionParadigm 等,读 effectiveFunc)。
 
   return { role: 'lead', notes, program };
 }
