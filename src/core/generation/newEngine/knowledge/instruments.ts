@@ -43,7 +43,7 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   jazz: { lead: [11, 4, 12, 6], comp: [0, 4], bass: [32, 35], pad: [49, 16], drum: [0] },                                  // +羽管键琴 lead · +无品贝斯
   pop: { lead: [1, 4, 12, 2, 3, 75], comp: [1, 4, 2], bass: [38, 33, 34], pad: [89, 50, 88, 90, 95, 99, 100], drum: [0] }, // +电子大钢琴/酒吧/排箫 lead · 拨片贝斯 · Polysynth/Sweep/Atmosphere/Brightness pad
   lofi: { lead: [4, 11, 12, 108, 6, 75, 77], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +羽管/排箫/尺八 lead · Bowed/Crystal/Echoes pad
-  rnb: { lead: [4, 5, 11, 2], comp: [4, 5, 7], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },             // +Clav comp(funk 键盘) · 无品/slap 贝斯 · Atmosphere pad
+  rnb: { lead: [4, 5, 11, 2], comp: [4, 5], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },               // 无品/slap 贝斯 · Atmosphere pad(★ Clav 7 撤出 comp:亮/打击 funk 音色在 arp 织体+高力度下炸裂、刺耳)
   modal: { lead: [12, 11, 8, 107, 6, 75, 77], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94, 92, 93, 97, 98, 102], drum: [0] }, // +羽管/排箫/尺八 lead · synthFX 氛围 pad
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
