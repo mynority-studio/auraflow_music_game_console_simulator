@@ -239,9 +239,13 @@ export function renderAccompaniment(
       // 属功能 drop2 拉开 spacing,但仅当不跌出 comp 区(否则 close)→ 不与 bass 抢低区
       const spaced = funcBySpan[span.id] === 'D' ? applyArrangement(close, 'drop2', bassMidi) : close;
       const full = foldToRange(spaced.length && Math.min(...spaced) >= 48 ? spaced : close); // 超域折入(非丢弃)→ 不掏空
-      voicedBySpan[span.id] = clampUnder(full); // 顶 ≥ 旋律地板 → 转位/减法让位
+      // ★ 2026-06-10:非键盘 comp(吉他等窄音域)空轨兜底 —— clampUnder/fold 后若 <2 音,用【真实和弦音】
+      //   root+3rd+5th(按 span.quality,小三和弦给小三度,绝不凭空塞大三度=avoid 音)折入 comp 区,不掏空。
+      const guard = (v: number[]): number[] => v.length >= 2 ? v
+        : foldToRange(chordToneIntervals(span.quality).slice(0, 3).map((iv) => 48 + ((span.rootPc + iv) % 12)));
+      voicedBySpan[span.id] = guard(clampUnder(full)); // 顶 ≥ 旋律地板 → 转位/减法让位;空 → 兜底三和弦
       const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
-      shellBySpan[span.id] = clampUnder(foldToRange(shellClose));
+      shellBySpan[span.id] = guard(clampUnder(foldToRange(shellClose)));
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
     }
   }

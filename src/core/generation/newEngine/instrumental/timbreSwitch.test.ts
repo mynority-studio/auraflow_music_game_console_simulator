@@ -57,10 +57,12 @@ describe('器配音色切换', () => {
       const { band, arr, plan } = planWith(seed, 'jazz'); // jazz lead 池含颤音琴/马林巴
       let switchingRoles = 0;
       for (const role of band.instrumentPool) {
-        const progs = new Set(arr.sections.map((s) => plan.programByRoleSection[role][s.id]));
-        if (progs.size > 1) {
+        const progs = [...new Set(arr.sections.map((s) => plan.programByRoleSection[role][s.id]))];
+        if (progs.length > 1) {
           switchingRoles++;
-          expect(isKeyboardFamily(band.roleProgram[role]), `${role} 切了但非键盘族`).toBe(true);
+          // ★ 切换=键盘→同族键盘 → 该角色【所有段程序】都键盘族(用器配层有效程序判,非 band.roleProgram ——
+          //   coherentLeadComp 可能把 lead 从 mallet 改成键盘后才切)。
+          expect(progs.every((p) => isKeyboardFamily(p)), `${role} 切了但有非键盘程序 ${progs}`).toBe(true);
         }
       }
       expect(switchingRoles).toBeLessThanOrEqual(1); // 每首最多一个

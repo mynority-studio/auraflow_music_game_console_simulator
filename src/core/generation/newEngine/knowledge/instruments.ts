@@ -36,11 +36,15 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   // ★ 2026-06-10:管风琴(16)从 comp 移到【仅 pad】—— Hammond 是【持续音 + 无力度】乐器,我们的 comp 是
   //   衰减型节奏切分 + 力度人性化,吹三音 stab 脱离现实(联网核对:organ comping 少音/持续/无 velocity)。
   //   持续乐器归 pad(持续渲染天然合适);comp 只放【可衰减/拨奏的多音乐器】。capability 见 canPlayComp()。
-  jazz: { lead: [11, 4, 12, 26], comp: [0, 4], bass: [32], pad: [49, 16], drum: [0] },           // +爵士吉他 lead · 哈蒙德 → pad
-  pop: { lead: [1, 4, 12], comp: [1, 4], bass: [38, 33], pad: [89, 50, 88], drum: [0] },         // +New Age pad
-  lofi: { lead: [4, 11, 12, 108], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94], drum: [0] },  // +卡林巴 lead · +Halo pad
-  rnb: { lead: [4, 5, 11], comp: [4, 5], bass: [33, 39], pad: [89, 91, 16], drum: [0] },         // 哈蒙德 → pad(neo-soul 持续垫)
-  modal: { lead: [12, 11, 8, 107], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94], drum: [0] }, // +古筝 lead · +Halo pad
+  // ★ 2026-06-10:暖路线全族扩(用户:钢琴/bass/吉他/pad/synthFX 全加,暖子集 = 跳过失真/过载吉他 + 刺耳 FX)。
+  //   按风格 + 能力分配:comp 只放可 comp(键盘/吉他);synthFX(持续)→ pad;吉他 lead+comp;slap/fretless → bass。
+  // ★ 吉他暂【只做 lead】:吉他 comp(非键盘窄音域)在约 3% 歌出现整段 comp 空洞(5 拍洞)—— 需专门的
+  //   非键盘 comping 引擎(folded voicing + 织体),非快速 voicing guard 能解。Clav(7,键盘)可 comp。
+  jazz: { lead: [11, 4, 12, 26, 6], comp: [0, 4], bass: [32, 35], pad: [49, 16], drum: [0] },                              // +羽管键琴/爵士吉他 lead · +无品贝斯
+  pop: { lead: [1, 4, 12, 2, 3, 25, 27], comp: [1, 4, 2], bass: [38, 33, 34], pad: [89, 50, 88, 90, 95, 99, 100], drum: [0] }, // +电子大钢琴/酒吧/钢弦&clean吉他 lead · 拨片贝斯 · Polysynth/Sweep/Atmosphere/Brightness pad
+  lofi: { lead: [4, 11, 12, 108, 24, 6, 31], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +尼龙/羽管/泛音 lead · Bowed/Crystal/Echoes pad
+  rnb: { lead: [4, 5, 11, 2, 27, 28], comp: [4, 5, 7], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },     // +Clav comp(funk 键盘) · 闷音吉他 lead · 无品/slap 贝斯 · Atmosphere pad
+  modal: { lead: [12, 11, 8, 107, 6, 24, 31], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94, 92, 93, 97, 98, 102], drum: [0] }, // +羽管/泛音 lead · synthFX 氛围 pad
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
 
@@ -60,19 +64,27 @@ export interface InstrumentInfo { family: InstrumentFamily; range: readonly [num
 
 const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
   0: { family: 'keyboard', range: [21, 108] }, 1: { family: 'keyboard', range: [21, 108] }, 2: { family: 'keyboard', range: [21, 108] },
+  3: { family: 'keyboard', range: [21, 108] }, // 酒吧钢琴(Honky-tonk)
   4: { family: 'keyboard', range: [28, 103] }, 5: { family: 'keyboard', range: [28, 103] }, // Rhodes / FM-EP
+  6: { family: 'keyboard', range: [29, 89] },  // 羽管键琴(Harpsichord,拨弦键盘)
+  7: { family: 'keyboard', range: [36, 96] },  // Clavinet(funk 电翼)
   8: { family: 'keyboard', range: [60, 108] }, // Celesta(高音区键盘)
   16: { family: 'keyboard', range: [36, 96] }, // 哈蒙德管风琴(可 voice 和弦色彩)
   11: { family: 'mallet', range: [53, 89] },   // 颤音琴
   12: { family: 'mallet', range: [45, 96] },   // 马林巴
   107: { family: 'mallet', range: [48, 84] }, 108: { family: 'mallet', range: [60, 96] }, // 古筝 / 卡林巴(gentle 拨/击)
-  24: { family: 'guitar', range: [40, 84] }, 26: { family: 'guitar', range: [40, 86] }, 27: { family: 'guitar', range: [40, 88] }, // 尼龙 / 爵士 / clean
+  24: { family: 'guitar', range: [40, 84] }, 25: { family: 'guitar', range: [40, 86] }, 26: { family: 'guitar', range: [40, 86] }, // 尼龙 / 钢弦 / 爵士
+  27: { family: 'guitar', range: [40, 88] }, 28: { family: 'guitar', range: [40, 86] }, 31: { family: 'guitar', range: [55, 96] }, // clean / 闷音 / 泛音
   42: { family: 'strings', range: [36, 76] },  // 大提琴(暖音区独奏)
   32: { family: 'bass', range: [28, 67] }, 33: { family: 'bass', range: [28, 67] },
+  34: { family: 'bass', range: [28, 60] }, 35: { family: 'bass', range: [28, 67] }, // 拨片 / 无品
+  36: { family: 'bass', range: [28, 60] }, 37: { family: 'bass', range: [28, 60] }, // 击弦(slap)1/2
   38: { family: 'bass', range: [24, 60] }, 39: { family: 'bass', range: [24, 60] },
   48: { family: 'pad', range: [40, 100] }, 49: { family: 'pad', range: [40, 100] }, 50: { family: 'pad', range: [36, 100] },
   88: { family: 'pad', range: [36, 96] }, 94: { family: 'pad', range: [36, 96] }, // New Age / Halo(暖 pad)
   89: { family: 'pad', range: [36, 96] }, 91: { family: 'pad', range: [36, 96] },
+  90: { family: 'pad', range: [36, 96] }, 92: { family: 'pad', range: [36, 96] }, 93: { family: 'pad', range: [36, 96] }, 95: { family: 'pad', range: [36, 96] }, // Polysynth/Bowed/Metallic/Sweep
+  97: { family: 'pad', range: [36, 96] }, 98: { family: 'pad', range: [48, 108] }, 99: { family: 'pad', range: [36, 96] }, 100: { family: 'pad', range: [48, 108] }, 102: { family: 'pad', range: [36, 96] }, // Soundtrack/Crystal/Atmosphere/Brightness/Echoes
 };
 const DEFAULT_INFO: InstrumentInfo = { family: 'other', range: [36, 96] };
 
@@ -123,12 +135,13 @@ export function sameFamilyAlternates(style: string, role: InstrumentRoleName, pr
 
 // —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
 const GM_NAME: Record<number, string> = {
-  0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
-  16: '哈蒙德管风琴', 24: '尼龙吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 42: '大提琴',
+  0: '大钢琴', 1: '亮钢琴', 2: '电子大钢琴', 3: '酒吧钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 6: '羽管键琴', 7: 'Clavinet', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
+  16: '哈蒙德管风琴', 24: '尼龙吉他', 25: '钢弦吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 28: '闷音电吉他', 31: '吉他泛音', 42: '大提琴',
   107: '古筝', 108: '卡林巴',
-  32: '立式贝斯', 33: '指弹贝斯', 38: '合成贝斯1', 39: '合成贝斯2',
+  32: '立式贝斯', 33: '指弹贝斯', 34: '拨片贝斯', 35: '无品贝斯', 36: '击弦贝斯1', 37: '击弦贝斯2', 38: '合成贝斯1', 39: '合成贝斯2',
   48: '弦乐合奏1', 49: '弦乐合奏2', 50: '合成弦乐1',
-  88: 'New Age Pad', 94: 'Halo Pad', 89: '暖 Pad', 91: '合唱 Pad',
+  88: 'New Age Pad', 89: '暖 Pad', 90: 'Polysynth Pad', 91: '合唱 Pad', 92: 'Bowed Pad', 93: 'Metallic Pad', 94: 'Halo Pad', 95: 'Sweep Pad',
+  97: 'Soundtrack FX', 98: 'Crystal FX', 99: 'Atmosphere FX', 100: 'Brightness FX', 102: 'Echoes FX',
 };
 /** GM program → 中文名(未知回退 "GM n")。 */
 export function gmName(program: number): string {
@@ -167,10 +180,12 @@ export type TimbreWorld =
 
 export type TimbreSource = 'acoustic' | 'electric' | 'synth';
 const TIMBRE_SOURCE: Record<number, TimbreSource> = {
-  0: 'acoustic', 1: 'acoustic', 8: 'acoustic', 11: 'acoustic', 12: 'acoustic', 32: 'acoustic', 48: 'acoustic', 49: 'acoustic',
-  24: 'acoustic', 42: 'acoustic', 107: 'acoustic', 108: 'acoustic', // 尼龙吉他/大提琴/古筝/卡林巴
-  4: 'electric', 5: 'electric', 33: 'electric', 16: 'electric', 26: 'electric', 27: 'electric', // 哈蒙德/爵士&clean 吉他
-  38: 'synth', 39: 'synth', 50: 'synth', 88: 'synth', 94: 'synth', 89: 'synth', 91: 'synth',
+  0: 'acoustic', 1: 'acoustic', 2: 'acoustic', 3: 'acoustic', 6: 'acoustic', 8: 'acoustic', 11: 'acoustic', 12: 'acoustic', 32: 'acoustic', 48: 'acoustic', 49: 'acoustic',
+  24: 'acoustic', 25: 'acoustic', 42: 'acoustic', 107: 'acoustic', 108: 'acoustic', // 尼龙/钢弦吉他/大提琴/古筝/卡林巴
+  4: 'electric', 5: 'electric', 7: 'electric', 33: 'electric', 16: 'electric', 26: 'electric', 27: 'electric', 28: 'electric', 31: 'electric', // 电钢/Clav/哈蒙德/爵士&clean&闷音&泛音吉他
+  34: 'electric', 35: 'electric', 36: 'electric', 37: 'electric', // 拨片/无品/slap 贝斯
+  38: 'synth', 39: 'synth', 50: 'synth', 88: 'synth', 89: 'synth', 90: 'synth', 91: 'synth', 92: 'synth', 93: 'synth', 94: 'synth', 95: 'synth',
+  97: 'synth', 98: 'synth', 99: 'synth', 100: 'synth', 102: 'synth', // synth FX(氛围/水晶/配乐/明亮/回声)
 };
 /** GM program → 音色来源(acoustic/electric/synth;未知回退 synth)。 */
 export function timbreSource(program: number): TimbreSource {
