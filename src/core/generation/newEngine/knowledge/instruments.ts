@@ -33,10 +33,13 @@ const LINEUP_RULES: Record<string, LineupRule> = {
 //   哈蒙德管风琴(16)、大提琴(42)、更多暖 pad(88 New Age / 94 Halo)、古筝(107)/卡林巴(108)。
 //   仍不加铜管/萨克斯/合成 lead(守"不刺耳")。配对一致性由 coherentLeadComp() 在器配层补充规则保证。
 const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
-  jazz: { lead: [11, 4, 12, 26], comp: [0, 4, 16], bass: [32], pad: [49, 16], drum: [0] },       // +爵士吉他 lead · +哈蒙德 comp/pad
+  // ★ 2026-06-10:管风琴(16)从 comp 移到【仅 pad】—— Hammond 是【持续音 + 无力度】乐器,我们的 comp 是
+  //   衰减型节奏切分 + 力度人性化,吹三音 stab 脱离现实(联网核对:organ comping 少音/持续/无 velocity)。
+  //   持续乐器归 pad(持续渲染天然合适);comp 只放【可衰减/拨奏的多音乐器】。capability 见 canPlayComp()。
+  jazz: { lead: [11, 4, 12, 26], comp: [0, 4], bass: [32], pad: [49, 16], drum: [0] },           // +爵士吉他 lead · 哈蒙德 → pad
   pop: { lead: [1, 4, 12], comp: [1, 4], bass: [38, 33], pad: [89, 50, 88], drum: [0] },         // +New Age pad
   lofi: { lead: [4, 11, 12, 108], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94], drum: [0] },  // +卡林巴 lead · +Halo pad
-  rnb: { lead: [4, 5, 11], comp: [4, 5, 16], bass: [33, 39], pad: [89, 91, 16], drum: [0] },     // +哈蒙德 comp/pad(neo-soul)
+  rnb: { lead: [4, 5, 11], comp: [4, 5], bass: [33, 39], pad: [89, 91, 16], drum: [0] },         // 哈蒙德 → pad(neo-soul 持续垫)
   modal: { lead: [12, 11, 8, 107], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94], drum: [0] }, // +古筝 lead · +Halo pad
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
@@ -80,6 +83,33 @@ export function instrumentInfo(program: number): InstrumentInfo {
 /** 是否键盘族(钢琴/电钢/Celesta)→ comp 可 voice 宽和弦色彩。 */
 export function isKeyboardFamily(program: number | undefined): boolean {
   return program !== undefined && instrumentInfo(program).family === 'keyboard';
+}
+
+// ============================================================
+// ★ 乐器演奏能力(器配层据此判角色适配性,2026-06-10;联网核对配器实务)
+//   ① 单音 vs 多音:单音乐器(管乐/铜管/独奏弓弦)物理上一次一音 → 不能做 comp/pad(和弦)。
+//   ② 持续 vs 衰减:持续乐器(管风琴/合奏弦/合成 pad)无衰减、按住才响、多无 velocity →
+//      我们的 comp(衰减型节奏切分 + 力度人性化)在其上脱离现实 → 归 pad(持续渲染天然合适)。
+//   ⇒ comp 角色只接【多音 + 可衰减/拨奏】乐器;持续/单音乐器不进 comp。
+// ============================================================
+function gmRange(a: number, b: number): number[] { const r: number[] = []; for (let i = a; i <= b; i++) r.push(i); return r; }
+/** 单音乐器(GM):铜管 56-63 · 簧片+管乐 64-79 · 独奏弓弦 40-42(旋律弓弦,非和弦)。当前池未用,作 guard + 扩库防错。 */
+const MONOPHONIC_PROGRAMS: ReadonlySet<number> = new Set([...gmRange(56, 79), 40, 41, 42]);
+/** 持续音乐器(无衰减,节奏 comp 不自然 → 归 pad):管风琴 16-23 · 合奏弦/合唱 48-55 · 合成 pad/效果 88-103。 */
+const SUSTAINED_PROGRAMS: ReadonlySet<number> = new Set([...gmRange(16, 23), ...gmRange(48, 55), ...gmRange(88, 103)]);
+
+/** 多音乐器(能弹和弦 → 可承担 comp/pad)。单音乐器只能 lead。 */
+export function isPolyphonic(program: number): boolean { return !MONOPHONIC_PROGRAMS.has(program); }
+/** 持续音乐器(管风琴/合奏弦/合成 pad)= 无衰减、按住才响。 */
+export function isSustainedInstrument(program: number): boolean { return SUSTAINED_PROGRAMS.has(program); }
+/** 适合做 comp 吗(衰减型节奏和弦 comping)= 多音 + 非持续(钢琴/电钢/吉他/木琴 ✓;管风琴/弦/pad ✗;单音 ✗)。 */
+export function canPlayComp(program: number): boolean { return isPolyphonic(program) && !isSustainedInstrument(program); }
+
+/** comp 能力修复(器配层 guard):comp 程序若不可 comp(单音 or 持续)→ 从同 style comp 池换可 comp 的(无则 Rhodes 4)。确定性、无 rng。 */
+export function repairCompCapability(rp: Record<InstrumentRoleName, number>, style: string): Record<InstrumentRoleName, number> {
+  if (rp.comp === undefined || canPlayComp(rp.comp)) return rp;
+  const pool = (INSTRUMENTS[style] ?? INSTRUMENTS.default).comp ?? [];
+  return { ...rp, comp: pool.find(canPlayComp) ?? 4 };
 }
 
 /** 同族备选音色(供器配层 per-段落切音色):池里与 primary【同族】且 ≠primary 的 program。
