@@ -1,0 +1,146 @@
+import { describe, it, expect } from 'vitest';
+import {
+  pickSpaceProfile,
+  mixForProgram,
+  enforceRelationalMix,
+  type RoleMix,
+  type SpaceProfile,
+} from '../knowledge/gmMixProfile';
+import type { InstrumentRoleName } from '../band/BandSpec';
+import type { TimbreWorld } from '../knowledge/instruments';
+
+// 各风格【代表性】角色 → 生效 program(暖路线池内,与 instruments.ts 一致)。
+const PALETTE: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
+  pop:  { bass: [33, 38], comp: [0, 4, 5], lead: [0, 4, 73], pad: [89, 90, 49], drum: [0] },
+  lofi: { bass: [32, 33], comp: [4, 5, 0], lead: [4, 11, 12], pad: [89, 88, 48], drum: [0] },
+  rnb:  { bass: [33, 35], comp: [4, 5, 0], lead: [4, 5, 73], pad: [89, 90, 98], drum: [0] },
+  jazz: { bass: [32, 33], comp: [0, 4], lead: [0, 11, 73], pad: [48, 49, 89], drum: [0] },
+};
+
+const isInt = (v: number) => Number.isInteger(v);
+const inRange = (v: number) => v >= 0 && v <= 127;
+
+function eachRoleProgram(fn: (style: string, role: InstrumentRoleName, program: number) => void): void {
+  for (const [style, roles] of Object.entries(PALETTE)) {
+    for (const [role, programs] of Object.entries(roles)) {
+      for (const p of programs!) fn(style, role as InstrumentRoleName, p);
+    }
+  }
+}
+
+describe('knowledge/gmMixProfile — pickSpaceProfile', () => {
+  it('风格 / timbreWorld / 有无 pad → 空间', () => {
+    expect(pickSpaceProfile('jazz', undefined, true)).toBe('jazzClub');
+    expect(pickSpaceProfile('blues', undefined, true)).toBe('jazzClub');
+    expect(pickSpaceProfile('lofi', undefined, true)).toBe('lofiTapeRoom');
+    expect(pickSpaceProfile('rnb', undefined, true)).toBe('rnbPlateRoom');
+    expect(pickSpaceProfile('pop', 'syntheticSoft' as TimbreWorld, true)).toBe('syntheticSoftRoom');
+    expect(pickSpaceProfile('pop', undefined, false)).toBe('dryFront');
+    expect(pickSpaceProfile('pop', undefined, true)).toBe('popWarmRoom');
+  });
+});
+
+describe('knowledge/gmMixProfile — mixForProgram CC 合法性', () => {
+  it('每个 style×role×program 都拿到 RoleMix(4 个 CC 全整数 0..127)', () => {
+    eachRoleProgram((style, role, program) => {
+      const space = pickSpaceProfile(style, undefined, role !== 'drum');
+      const m = mixForProgram({ style, timbreWorld: undefined, role, program, hasPad: true, space });
+      for (const v of [m.volume, m.pan, m.reverb, m.chorus]) {
+        expect(isInt(v), `${style}/${role}/${program} CC 非整数: ${v}`).toBe(true);
+        expect(inRange(v), `${style}/${role}/${program} CC 越界: ${v}`).toBe(true);
+      }
+    });
+  });
+});
+
+describe('knowledge/gmMixProfile — 单角色护栏', () => {
+  const space: SpaceProfile = 'popWarmRoom';
+  const mk = (role: InstrumentRoleName, program: number, hasPad = true) =>
+    mixForProgram({ style: 'pop', timbreWorld: undefined, role, program, hasPad, space });
+
+  it('bass.reverb ≤ 8(全 bass program)', () => {
+    for (const p of [32, 33, 34, 35, 36, 37, 38, 39]) expect(mk('bass', p).reverb).toBeLessThanOrEqual(8);
+  });
+
+  it('drum.chorus == 0', () => {
+    expect(mk('drum', 0).chorus).toBe(0);
+  });
+
+  it('FX pad 98/99/100/102:volume ≤ 72 且 reverb ≥ 84(各空间)', () => {
+    for (const sp of ['popWarmRoom', 'lofiTapeRoom', 'rnbPlateRoom', 'jazzClub', 'dryFront', 'syntheticSoftRoom'] as SpaceProfile[]) {
+      for (const p of [98, 99, 100, 102]) {
+        const m = mixForProgram({ style: 'pop', timbreWorld: undefined, role: 'pad', program: p, hasPad: true, space: sp });
+        expect(m.volume, `FX pad ${p}@${sp} vol`).toBeLessThanOrEqual(72);
+        expect(m.reverb, `FX pad ${p}@${sp} rev`).toBeGreaterThanOrEqual(84);
+      }
+    }
+  });
+
+  it('电钢 4/5 作 lead/comp:chorus ≥ 38', () => {
+    expect(mk('comp', 4).chorus).toBeGreaterThanOrEqual(38);
+    expect(mk('comp', 5).chorus).toBeGreaterThanOrEqual(38);
+    expect(mk('lead', 4).chorus).toBeGreaterThanOrEqual(38);
+    expect(mk('lead', 5).chorus).toBeGreaterThanOrEqual(38);
+  });
+
+  it('Clav 7:reverb ≤ 30(各空间)', () => {
+    for (const sp of ['popWarmRoom', 'rnbPlateRoom', 'syntheticSoftRoom'] as SpaceProfile[]) {
+      const m = mixForProgram({ style: 'rnb', timbreWorld: undefined, role: 'comp', program: 7, hasPad: true, space: sp });
+      expect(m.reverb).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it('马林巴/卡林巴 12/108:chorus ≤ 16', () => {
+    expect(mk('lead', 12).chorus).toBeLessThanOrEqual(16);
+    expect(mk('lead', 108).chorus).toBeLessThanOrEqual(16);
+  });
+
+  it('lead pan 居中 58..70(各 program)', () => {
+    for (const p of [0, 4, 11, 12, 73, 75]) {
+      const m = mk('lead', p);
+      expect(m.pan).toBeGreaterThanOrEqual(58);
+      expect(m.pan).toBeLessThanOrEqual(70);
+    }
+  });
+
+  it('bass/drum 居中 pan=64', () => {
+    expect(mk('bass', 33).pan).toBe(64);
+    expect(mk('drum', 0).pan).toBe(64);
+  });
+});
+
+describe('knowledge/gmMixProfile — enforceRelationalMix(comp↔pad)', () => {
+  const space: SpaceProfile = 'popWarmRoom';
+  const buildSet = (compProg: number, padProg: number): Partial<Record<InstrumentRoleName, RoleMix>> => ({
+    comp: mixForProgram({ style: 'pop', timbreWorld: undefined, role: 'comp', program: compProg, hasPad: true, space }),
+    pad: mixForProgram({ style: 'pop', timbreWorld: undefined, role: 'pad', program: padProg, hasPad: true, space }),
+  });
+
+  it('pad.reverb ≥ comp.reverb + 20(两者在场)', () => {
+    const fixed = enforceRelationalMix(buildSet(0, 89));
+    expect(fixed.pad!.reverb).toBeGreaterThanOrEqual(fixed.comp!.reverb + 20);
+  });
+
+  it('pad.volume ≤ comp.volume(非唯一和声)', () => {
+    const fixed = enforceRelationalMix(buildSet(4, 89), { padIsOnlyHarmony: false });
+    expect(fixed.pad!.volume).toBeLessThanOrEqual(fixed.comp!.volume);
+  });
+
+  it('pad 唯一和声 → 不被压响度', () => {
+    const set = buildSet(4, 90);
+    // 人为把 pad 抬到比 comp 响,验证 padIsOnlyHarmony 时不压
+    set.pad = { ...set.pad!, volume: set.comp!.volume + 10 };
+    const fixed = enforceRelationalMix(set, { padIsOnlyHarmony: true });
+    expect(fixed.pad!.volume).toBe(set.comp!.volume + 10);
+  });
+
+  it('|comp.pan − pad.pan| ≥ 22(两者在场)', () => {
+    const fixed = enforceRelationalMix(buildSet(0, 89));
+    expect(Math.abs(fixed.comp!.pan - fixed.pad!.pan)).toBeGreaterThanOrEqual(22);
+  });
+
+  it('缺 comp 或 pad → 原样返回', () => {
+    const only = { comp: mixForProgram({ style: 'pop', timbreWorld: undefined, role: 'comp', program: 0, hasPad: false, space }) };
+    expect(enforceRelationalMix(only)).toBe(only);
+  });
+});

@@ -1,8 +1,9 @@
 // ============================================================
-// newEngine · sandbox · 共享房间混响(render 层下面的音频混音,2026-06-05)
+// newEngine · sandbox · 混响(2026-06-05 → 2026-06-10 ESP32 改制)
 // ------------------------------------------------------------
-// 锁:per-genre 房间湿度(LOFI>POP>JAZZ)· bass 干(高通等效)· lead 比 comp/pad 略干靠前 ·
-//   comp/pad 进共享房间(同量)· 确定性。混响不进 IR/render,在 sandbox 音频层。
+// ★ 2026-06-10(esp32s2_gm128_instrument_mix_directive):CC91 混响【已上移到器配层 mix】并随 IR 携带,
+//   不再由 irToMidi.reverbSend(roomWet) 硬算。roomWetFor 退成【缺 mix 时】的回退湿度(per-genre,仍 LOFI>POP>JAZZ)。
+// 新承重不变量:bass 干(高通等效)· pad 比 comp 更湿(关系型护栏 ≥+20)· lead 不过湿 · 确定性。
 // ============================================================
 
 import { describe, expect, it } from 'vitest';
@@ -27,12 +28,12 @@ describe('共享房间混响(混音层)', () => {
     expect(roomWetFor('pop')).toBeGreaterThan(roomWetFor('jazz'));
   });
 
-  it('bass 干(高通等效,低频不进房间)+ lead 比 comp 略干靠前 + comp=pad 进共享房间', () => {
+  it('★ 混响由器配层 mix 决定(IR 携带):bass 干 + pad 比 comp 更湿(≥+20)+ lead 不过湿', () => {
     const r = reverbByRole('pop'); // pop seed7 含 bass/comp/pad/lead
-    expect(r.bass).toBeLessThanOrEqual(10);           // 近干
-    expect(r.comp).toBe(roomWetFor('pop'));           // 进满房间
-    if (r.pad !== undefined) expect(r.pad).toBe(roomWetFor('pop')); // 同一个房间
-    if (r.lead !== undefined) expect(r.lead).toBeLessThan(r.comp);  // 旋律略干靠前
+    expect(r.bass).toBeLessThanOrEqual(8);            // 干(高通等效,guardrail bass.reverb≤8)
+    if (r.pad !== undefined && r.comp !== undefined)
+      expect(r.pad).toBeGreaterThanOrEqual(r.comp + 20); // pad 更湿(关系型护栏)
+    if (r.lead !== undefined) expect(r.lead).toBeLessThanOrEqual(65); // lead 不过湿(directive lead reverb ≤65)
   });
 
   it('确定性:同 style 两次混响一致', () => {

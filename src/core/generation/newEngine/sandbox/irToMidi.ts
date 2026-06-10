@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { MidiEvent } from '../../../audio/MidiScheduler';
-import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
+import type { InstrumentRole, MusicalIR, TrackMix } from '../ir/MusicalIR';
 
 interface ChannelVoice {
   channel: number;
@@ -18,6 +18,8 @@ interface ChannelVoice {
 const CC_VOLUME = 7;
 const CC_PAN = 10;
 const CC_REVERB = 91;
+const CC_CHORUS = 93;     // ★ ESP32 混音:合唱/宽度(电钢/pad 厚度)
+const CC_EXPRESSION = 11; // ★ ESP32 混音:表情(静态,可选)
 const CC_SUSTAIN = 64;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(对齐 audio/MidiConverter 通道约定)
@@ -55,6 +57,22 @@ export const ROLE_CHANNEL: Record<InstrumentRole, number> = {
   bass: 3, comp: 2, lead: 1, pad: 4, drum: 9,
 };
 
+const clampCC = (v: number): number => Math.max(0, Math.min(127, Math.round(v)));
+
+// ★ ESP32 混音:在某 tick 把一组 mix CC 写齐(CC7/10/91/93 + 可选 CC11)。器配层产的 TrackMix 优先,
+//   缺省回退角色默认(CC7/10 走 voice,CC91 走 reverbSend,CC93=0)。programChange 之后、noteOn 之前发好。
+function pushMixCC(events: MidiEvent[], channel: number, tick: number, role: InstrumentRole, mix: TrackMix | undefined, voice: ChannelVoice, roomWet: number): void {
+  const volume = mix ? clampCC(mix.volume) : voice.volume;
+  const pan = mix ? clampCC(mix.pan) : voice.pan;
+  const reverb = mix ? clampCC(mix.reverb) : reverbSend(role, roomWet);
+  const chorus = mix ? clampCC(mix.chorus) : 0;
+  events.push({ ticks: tick, type: 'cc', channel, data1: CC_VOLUME, data2: volume });
+  events.push({ ticks: tick, type: 'cc', channel, data1: CC_PAN, data2: pan });
+  events.push({ ticks: tick, type: 'cc', channel, data1: CC_REVERB, data2: reverb });
+  events.push({ ticks: tick, type: 'cc', channel, data1: CC_CHORUS, data2: chorus });
+  if (mix && mix.expression !== undefined) events.push({ ticks: tick, type: 'cc', channel, data1: CC_EXPRESSION, data2: clampCC(mix.expression) });
+}
+
 export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] {
   const events: MidiEvent[] = [];
 
@@ -70,10 +88,12 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] 
     for (const ped of track.pedalEvents ?? []) {
       events.push({ ticks: ped.atTick, type: 'cc', channel: voice.channel, data1: CC_SUSTAIN, data2: ped.down ? 127 : 0 });
     }
-    // ★ 混音:通道音量(CC7)+ 声像(CC10)+ 混响发送(CC91 → 共享混响房间 = 深度),发音前置好
-    events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_VOLUME, data2: voice.volume });
-    events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_PAN, data2: voice.pan });
-    events.push({ ticks: 0, type: 'cc', channel: voice.channel, data1: CC_REVERB, data2: reverbSend(track.role, roomWet) });
+    // ★ 混音(ESP32):tick0 写齐 CC7/10/91/93(+可选 CC11);随后每个段落混音刷新点再写齐一组(稀疏)。
+    //   器配层 track.mix 优先,缺省回退角色默认(向后兼容旧 IR)。programChange 已先发 → noteOn 前混音就位。
+    pushMixCC(events, voice.channel, 0, track.role, track.mix, voice, roomWet);
+    for (const mc of track.mixChanges ?? []) {
+      pushMixCC(events, voice.channel, mc.atTick, track.role, mc.mix, voice, roomWet);
+    }
 
     for (const n of track.notes) {
       events.push({ ticks: n.startTick, type: 'noteOn', channel: voice.channel, data1: n.pitch, data2: n.velocity });

@@ -13,6 +13,7 @@ import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/A
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability } from '../knowledge/instruments';
+import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import {
   freezeInstrumentationPlan,
@@ -404,6 +405,26 @@ export function buildInstrumentationPlan(
     if (floating || isEnding) roles.push('comp');
   }
 
+  // ★ ESP32 混音(esp32s2_gm128_instrument_mix_directive):据 style+timbreWorld+role+【每段生效 program】算
+  //   CC7/10/91/93。activeRolesBySection 已终态(Loop D 后)→ 关系型护栏知道"该段 pad 是否唯一和声"。确定性。
+  const hasPad = band.instrumentPool.includes('pad');
+  const spaceProfile = pickSpaceProfile(band.style, timbreWorld, hasPad);
+  const mixByRoleSection = {} as Record<InstrumentRoleName, Record<string, RoleMix>>;
+  for (const role of band.instrumentPool) {
+    mixByRoleSection[role] = {};
+    for (const s of arrangement.sections) {
+      mixByRoleSection[role][s.id] = mixForProgram({ style: band.style, timbreWorld, role, program: programByRoleSection[role][s.id], hasPad, space: spaceProfile });
+    }
+  }
+  // 关系型护栏(逐段:pad vs comp 混响差/响度/声像距离;该段无 comp 在场 → pad 是唯一和声,不压其响度)。
+  for (const s of arrangement.sections) {
+    const padOnlyHarmony = !((activeRolesBySection[s.id] as readonly InstrumentRoleName[] | undefined)?.includes('comp'));
+    const sec: Partial<Record<InstrumentRoleName, RoleMix>> = {};
+    for (const role of band.instrumentPool) sec[role] = mixByRoleSection[role]?.[s.id];
+    const fixed = enforceRelationalMix(sec, { padIsOnlyHarmony: padOnlyHarmony });
+    for (const role of band.instrumentPool) if (fixed[role] && mixByRoleSection[role]) mixByRoleSection[role][s.id] = fixed[role]!;
+  }
+
   const data: InstrumentationPlanData = {
     activityBySection,
     activeRolesBySection,
@@ -414,6 +435,8 @@ export function buildInstrumentationPlan(
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     roleProgram, // ★ 生效基底 program(repair 后)→ render 单一真源
     programByRoleSection,
+    mixByRoleSection, // ★ ESP32 混音(CC7/10/91/93;随段程序变)
+    spaceProfile,
     drumPatternBySection,
     timbreWorld,
     sameInstrumentPairs: samePairs.length ? samePairs : undefined,

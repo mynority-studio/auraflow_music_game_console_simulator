@@ -17,12 +17,23 @@ export interface NoteIR {
   velocity: number;
 }
 
+/** ★ ESP32 混音(CC7/10/91/93 + 可选 CC11);器配层产、irToMidi 读。IR 自带,irToMidi 不查 InstrumentationPlan。 */
+export interface TrackMix {
+  volume: number;      // CC7
+  pan: number;         // CC10
+  reverb: number;      // CC91
+  chorus: number;      // CC93
+  expression?: number; // CC11(静态,可选)
+}
+
 export interface TrackIR {
   role: InstrumentRole;
   notes: NoteIR[];
   program?: number; // GM 乐器号(初始/tick0;BandEngine 选);irToMidi 读它发声,缺省走角色默认音色
   programChanges?: { atTick: Ticks; program: number }[]; // ★ 段落音色切换(同 channel,中途 programChange)
   pedalEvents?: { atTick: Ticks; down: boolean }[];      // ★ CC64 延音踏板(comp 每和弦踩,音尾 ring)
+  mix?: TrackMix;                                          // ★ tick0 混音(随生效 program 定)
+  mixChanges?: { atTick: Ticks; mix: TrackMix }[];         // ★ 段落程序切换处的混音刷新(与 programChanges 同 tick)
 }
 
 export interface MusicalIRData {

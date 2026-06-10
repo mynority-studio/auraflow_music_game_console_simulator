@@ -13,6 +13,7 @@ import type { InstrumentRoleName } from '../band/BandSpec';
 import type { EndingStyle, PhraseId, SectionEntry, SectionId } from '../arranger/ArrangementPlan';
 import type { GenericTextureKind, GenericTextureYield } from '../knowledge/textureProfiles';
 import type { TimbreWorld } from '../knowledge/instruments';
+import type { RoleMix, SpaceProfile } from '../knowledge/gmMixProfile';
 import type { DrumHit } from '../knowledge/grooves';
 
 // ★ 织体种类 / 让位类的真源在 KB(knowledge/textureProfiles);此处仅按契约名复用(用户定:织体归 KB)。
@@ -78,6 +79,10 @@ export interface InstrumentationPlanData {
   // ★ 2026-06-10:器配层【最终生效】基底 program(band.roleProgram 过 repairWorld/repairCompCapability/
   //   coherentLeadComp 后)。render 一律读这个 + programByRoleSection,不再回头读 band.roleProgram(消双真源)。
   roleProgram: Record<InstrumentRoleName, number>;
+  // ★ ESP32 混音(esp32s2_gm128_instrument_mix_directive):器配层据 style+timbreWorld+role+生效 program
+  //   决定 CC7/10/91/93(+可选 CC11)。随段程序变(programByRoleSection 切换 → mix 也切)。render 落 IR,irToMidi 读。
+  mixByRoleSection: Record<InstrumentRoleName, Record<SectionId, RoleMix>>;
+  spaceProfile: SpaceProfile;
   // ★ 每段鼓型(2026-06-08,groove 下发):Arranger 给 GrooveKind → 器配按 (style×groove) 从 KB 词汇
   //   确定性挑变体(同 groove → 同变体,repeatGroup 一致)。render 据此逐段换鼓型(取代单一 drumPattern);
   //   texturePocket 退成次要兜底(仅无此项的段)。空 = render 回退 drumPattern(style)(向后兼容)。

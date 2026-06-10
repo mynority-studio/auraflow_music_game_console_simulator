@@ -12,7 +12,8 @@ import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
-import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR } from '../ir/MusicalIR';
+import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR, type TrackMix } from '../ir/MusicalIR';
+import type { RoleMix } from '../knowledge/gmMixProfile';
 import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
@@ -35,6 +36,12 @@ import type { RenderOverlay } from './RenderOverlay';
 export interface RenderResult {
   ir: MusicalIR;
   audit: AuditReport;
+}
+
+// ★ ESP32 混音:两段 mix 是否一致(决定段边界是否落 mixChanges;省 CC 流量,只在变化时刷新)。
+function sameMix(a: RoleMix, b: RoleMix): boolean {
+  return a.volume === b.volume && a.pan === b.pan && a.reverb === b.reverb && a.chorus === b.chorus
+    && (a.expression ?? -1) === (b.expression ?? -1);
 }
 
 function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
@@ -344,18 +351,38 @@ export function renderSongFull(
   const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase) : undefined;
   const finalTracks = humanizedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
+    const mixBySection = instrumentation.mixByRoleSection?.[t.role];
     const fallback = instrumentation.roleProgram[t.role] ?? band.roleProgram[t.role]; // ★ 单一真源:器配生效 program
     const pedalEvents = t.role === 'comp' ? compPedal : undefined;
-    if (!bySection) return { ...t, program: fallback, pedalEvents };
-    let initial = fallback;
-    let prev: number | undefined;
-    const changes: { atTick: Ticks; program: number }[] = [];
+    // ★ program + 混音【单遍】投影(段边界):程序变 → 必带 CC 刷新(directive:每个 programChange 边界发匹配 CC);
+    //   或混音本身变(关系型护栏 per-section 差异)→ 也刷新。二者同 tick 耦合 → irToMidi 只读 IR。
+    let initialProgram = fallback;
+    let initialMix: TrackMix | undefined;
+    let prevProgram: number | undefined;
+    let prevMix: RoleMix | undefined;
+    const programChanges: { atTick: Ticks; program: number }[] = [];
+    const mixChanges: { atTick: Ticks; mix: TrackMix }[] = [];
     for (const { id, tick } of sectionTicks) {
-      const prog = bySection[id] ?? fallback;
-      if (prev === undefined) { initial = prog; prev = prog; }
-      else if (prog !== prev) { changes.push({ atTick: ticks(tick), program: prog }); prev = prog; }
+      const prog = bySection?.[id] ?? fallback;
+      const m = mixBySection?.[id];
+      if (prevProgram === undefined) {
+        initialProgram = prog; prevProgram = prog;
+        initialMix = m; prevMix = m;
+        continue;
+      }
+      const progChanged = prog !== prevProgram;
+      const mixChanged = !!m && (!prevMix || !sameMix(m, prevMix));
+      if (progChanged) { programChanges.push({ atTick: ticks(tick), program: prog }); prevProgram = prog; }
+      if (m && (progChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
     }
-    return { ...t, program: initial, programChanges: changes.length ? changes : undefined, pedalEvents };
+    return {
+      ...t,
+      program: initialProgram,
+      programChanges: programChanges.length ? programChanges : undefined,
+      pedalEvents,
+      mix: initialMix,
+      mixChanges: mixChanges.length ? mixChanges : undefined,
+    };
   });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。

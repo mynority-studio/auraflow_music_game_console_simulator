@@ -87,6 +87,12 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic);
   const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(GM${p.program})`).join(' ');
   log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
+  // ★ ESP32 混音(器配层 mix:CC7 音量/CC10 声像/CC91 混响/CC93 合唱;印各角色首段代表值)
+  const firstSec = arrangement.sections[0]?.id;
+  log(`   混音空间=${instrumentation.spaceProfile} · ${band.instrumentPool.map((r) => {
+    const m = firstSec ? instrumentation.mixByRoleSection[r]?.[firstSec] : undefined;
+    return m ? `${r}GM${instrumentation.roleProgram[r]}[V${m.volume} P${m.pan} R${m.reverb} C${m.chorus}]` : `${r}-`;
+  }).join(' ')}`);
   log(`   织体(让位类): ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
   // ★ rich textureCase 段级下发(非 LOFI):器配层定,整段沿用,不逐 span 乱切(texture-switch 修复)
   const richTex = Object.entries(instrumentation.richTextureBySection);
