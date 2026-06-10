@@ -60,6 +60,12 @@ export interface ResolvedChord {
   bassPedalPc?: PitchClass;
   tonicizationPlacement?: TonicizationPlacement;
   preserveType?: boolean; // ★ 跳过 alignChordTypeToMgStyle 折叠(JPOP ii-V 精确品质)
+  // —— Gap A 全字段透传(2026-06-10):slot 作者语义标签携带到 assemble → ChordSpan(不在 render 重建)——
+  borrowedFrom?: string;
+  effectiveFunc?: HarmonicFunction;
+  analysisKeyPc?: PitchClass;
+  localRoman?: string;
+  widePianoVoicing?: readonly number[];
 }
 
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
@@ -112,6 +118,12 @@ function assemble(
       bassRole: rc.bassRole,
       bassPedalPc: rc.bassPedalPc,
       tonicizationPlacement: rc.tonicizationPlacement,
+      // ★ Gap A:全字段透传(borrowedFrom 等在 harmony 层定,render 只读)。
+      borrowedFrom: resolveBorrowedFrom(rc),
+      effectiveFunc: rc.effectiveFunc ?? rc.func,
+      analysisKeyPc: rc.analysisKeyPc ?? rc.localTonalCenterPc ?? rc.sectionKeyPc ?? keyPc,
+      localRoman: rc.localRoman ?? (rc.localTonalCenterPc !== undefined ? romanStr(rc) : undefined),
+      widePianoVoicing: rc.widePianoVoicing,
     });
     chordFunctionTimeline.push(rc.func);
     if (modalSet) {
@@ -249,6 +261,22 @@ function romanStr(rc: ResolvedChord): string {
   const base = ROMAN_NUM[rc.roman.degree] ?? 'I';
   const minorish = rc.quality === 'min' || rc.quality === 'm7' || rc.quality === 'm7b5' || rc.quality === 'dim7';
   return minorish ? base.toLowerCase() : base;
+}
+
+/**
+ * ★ Gap A(2026-06-10):borrowedFrom 来源标签【全在 harmony 层确定】,render adapter 只 passthrough。
+ *   优先级:① slot 作者标签(rc.borrowedFrom,如 'soft V/vi'/'Dorian IV (raised 6)'/'V/ii' —— 精确保留)
+ *   ② 计划注入借和弦的原始 BorrowInfo(from+label,如 'parallel minor iv')
+ *   ③ 据 forcedScale/borrowedSource/roman 推导(无作者标签的兜底,仍在 harmony 不在 render)。
+ */
+function resolveBorrowedFrom(rc: ResolvedChord): string | undefined {
+  if (rc.borrowedFrom) return rc.borrowedFrom;
+  if (rc.borrowed) return `${rc.borrowed.from === 'parallel-minor' ? 'parallel minor' : 'parallel major'} ${rc.borrowed.label}`;
+  if (!rc.borrowedSource) return undefined;
+  const roman = romanStr(rc);
+  if (rc.forcedScale) return `${rc.forcedScale} ${roman}`;
+  if (rc.borrowedSource === 'modal_interchange' || rc.borrowedSource === 'backdoor_dominant') return `parallel minor ${roman}`;
+  return roman; // secondary:roman(V/vi 等)即标签
 }
 
 /** resolved 进行 → CoherenceChord[](harmony 阶段适配)。Loop 8:用宽 chordType + borrowedSource

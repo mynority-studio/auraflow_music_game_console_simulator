@@ -43,6 +43,7 @@ export interface ShaperChord {
   analysisKeyPc?: number;         // 该和弦分析所在调中心(离调区=localTonalCenterPc,否则 undefined)
   localRoman?: string;            // 离调区内的局部 roman(仅 localTonalCenterPc 存在时)
   tonicizationPlacement?: string; // 离调放置(prologue/payoff…)
+  widePianoVoicing?: readonly number[]; // 宽钢琴 voicing(voicing 层附着时;passthrough 不丢)
 }
 type ChordDef = ShaperChord;
 

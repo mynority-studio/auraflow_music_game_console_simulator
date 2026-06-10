@@ -50,14 +50,18 @@ describe('Gap B — legacy comp 严格 dry parity(MG oracle)', () => {
     }
   });
 
-  it('modern/lofi(忠实手港):renderTextureChordHits onset 数与 MG oracle 一致(±1 容贴格)', () => {
+  it('modern/lofi(忠实手港):onset 数【精确】== MG,且逐 onset tRel 贴 MG(≤0.12 拍贴格手感容差)', () => {
     for (const tc of MODERN_LOFI) {
       const o = dur4[tc]; if (!o || o.onsets.length === 0) continue;
       const ne = renderTextureChordHits(tc, VOICED, 4);
-      const neOnsets = new Set(ne.map((h) => Math.round(h.tRel * 100) / 100)).size;
-      // Wide_Color_Motion 是 roll(MG 聚成 1 onset-time,我们展开声部)→ 宽容
-      if (tc === 'Piano_Wide_Color_Motion') { expect(ne.length).toBeGreaterThan(0); continue; }
-      expect(Math.abs(neOnsets - o.onsets.length), `${tc} onset ${neOnsets} vs MG ${o.onsets.length}`).toBeLessThanOrEqual(1);
+      const neOnsets = [...new Set(ne.map((h) => +h.tRel.toFixed(3)))].sort((a, b) => a - b);
+      // Wide_Color_Motion 是 roll(MG 把整块聚成 1 onset-time,我们逐声部展开)→ 语义同(roll),onset-time 数不可比 → 宽容。
+      if (tc === 'Piano_Wide_Color_Motion') { expect(ne.length, tc).toBeGreaterThan(0); continue; }
+      const mgOnsets = o.onsets.map((x) => x.t).sort((a, b) => a - b);
+      // ① onset 数精确一致(非 ±1)
+      expect(neOnsets.length, `${tc} onset 数 ${neOnsets.length} vs MG ${mgOnsets.length}`).toBe(mgOnsets.length);
+      // ② 逐 onset tRel 贴 MG(差 ≤0.12 = 我们贴 8 分格 vs MG 微晚启的手感差,属"同 tRel 栅格")
+      neOnsets.forEach((t, i) => expect(Math.abs(t - mgOnsets[i]), `${tc}@${i}: NE ${t} vs MG ${mgOnsets[i]}`).toBeLessThanOrEqual(0.12));
     }
   });
 

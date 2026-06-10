@@ -60,10 +60,11 @@ describe('render/mgChordDefAdapter · HarmonicPlan → MgChordDef (Loop 2)', () 
     // V7(mustResolve)→ D
     const V = chordSpanToMgChordDef({ id: 'b', roman: { degree: 5, accidental: 'natural', quality: '7' }, rootPc: pc(7), quality: '7', chordType: '7', startBeat: 0, durationBeats: 4, sectionId: 's', mustResolve: true } as never);
     expect(V.effectiveFunc).toBe('D');
-    // 借和弦 → borrowedFrom 非空
-    const iv = chordSpanToMgChordDef({ id: 'c', roman: { degree: 4, accidental: 'natural', quality: 'm7' }, rootPc: pc(5), quality: 'm7', chordType: 'm7', startBeat: 0, durationBeats: 4, sectionId: 's', borrowedSource: 'modal_interchange' } as never);
+    // ★ Gap A:borrowedFrom 现为 harmony 层透传(span.borrowedFrom);render 不推导 →
+    //   span 带 borrowedFrom 即原样输出,不带则 null(下面测 passthrough)。
+    const iv = chordSpanToMgChordDef({ id: 'c', roman: { degree: 4, accidental: 'natural', quality: 'm7' }, rootPc: pc(5), quality: 'm7', chordType: 'm7', startBeat: 0, durationBeats: 4, sectionId: 's', borrowedSource: 'modal_interchange', borrowedFrom: 'parallel minor iv' } as never);
     expect(iv.effectiveFunc).toBe('S');
-    expect(iv.borrowedFrom).not.toBeNull();
+    expect(iv.borrowedFrom).toBe('parallel minor iv'); // 作者标签精确 passthrough
   });
 
   it('★ 真 HarmonicPlan 端到端:adapter → buildChordPart → parseRoadMap 不 crash、覆盖完整', () => {

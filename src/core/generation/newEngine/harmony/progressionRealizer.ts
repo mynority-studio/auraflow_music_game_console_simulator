@@ -84,6 +84,11 @@ export function realizeProgressionSlots(args: {
       bassPedalPc: slot.bassPedalPc !== undefined ? mod12(slot.bassPedalPc) : undefined,
       tonicizationPlacement: slot.tonicizationPlacement,
       preserveType: slot.preserveType,
+      // ★ Gap A:slot 作者语义标签透传(borrowedFrom='soft V/vi'/'Dorian IV (raised 6)' 等精确保留)。
+      borrowedFrom: slot.borrowedFrom,
+      effectiveFunc: slot.effectiveFunc,
+      analysisKeyPc: slot.analysisKeyPc !== undefined ? mod12(slot.analysisKeyPc) : undefined,
+      localRoman: slot.localRoman,
       sectionKeyPc: isModulated ? sectionKey : undefined,
     };
   });
