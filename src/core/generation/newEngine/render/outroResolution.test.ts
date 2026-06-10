@@ -76,15 +76,20 @@ describe('render · 收尾旋律落主和弦音(Option A:旋律=MG 真源,不 sn
 });
 
 describe('Loop G · EndingPlan cadence orchestration', () => {
-  it('sustainRoles = pad优先/无pad用comp(不含 lead);protectLeadTiming=true', () => {
+  it('sustainRoles = 末段实际在场角色(pad优先/无pad用comp;不含 lead);protectLeadTiming=true', () => {
     for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
       for (let seed = 0; seed < 12; seed++) {
-        const { band, instrumentation } = pieces(seed, style);
+        const { band, arrangement, instrumentation } = pieces(seed, style);
         const ep = instrumentation.endingPlan;
         expect(ep.protectLeadTiming).toBe(true);
         expect(ep.sustainRoles).not.toContain('lead');             // lead 不默认延留
-        if (band.instrumentPool.includes('pad')) expect(ep.sustainRoles).toContain('pad');
-        else if (band.instrumentPool.includes('comp')) expect(ep.sustainRoles).toContain('comp');
+        // ★ 2026-06-10:sustain 据【末段实际在场角色】(activeRolesBySection[outro]),非整首 lineup
+        //   → jazz 等静默 pad 不写进 sustain(修复双真源:不引用不发声的角色)。
+        const outroId = arrangement.sections[arrangement.sections.length - 1].id;
+        const outroActive = (instrumentation.activeRolesBySection[outroId] as readonly string[] | undefined) ?? [];
+        if (outroActive.includes('pad')) expect(ep.sustainRoles).toContain('pad');
+        else if (outroActive.includes('comp')) expect(ep.sustainRoles).toContain('comp');
+        for (const r of ep.sustainRoles ?? []) expect(outroActive.includes(r), `${style}/${seed} sustain ${r} 应在末段在场`).toBe(true);
       }
     }
   });

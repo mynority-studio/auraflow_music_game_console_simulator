@@ -147,10 +147,12 @@ const VERSE_VARIATION_PROB: Record<string, number> = { POP: 0.35, RNB: 0.35, JAZ
 
 /** ★ 收尾乐器进出计划(器配据 arrangement.endingStyle 排;render 投影成手势)。
  *  退出次序原则:鼓/comp/bass = 节奏-能量件先退;pad/lead = 和声-气氛件后留承接收束。纯派生、确定性。 */
-function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineup: readonly InstrumentRoleName[]): EndingPlan {
+// ★ 2026-06-10:收尾计划据【末段实际在场角色】(activeRolesBySection[outro] —— 已含密度弧/lead-gating/
+//   Loop D comp 托底,且不含静默 pad)而非整首 lineup → 不再把 jazz 等静默 pad 写进 sustain/anchor。
+function buildEndingPlan(style: EndingStyle, sections: readonly Section[], outroActiveRoles: readonly InstrumentRoleName[]): EndingPlan {
   const outro = sections[sections.length - 1];
   const outroBars = outro?.bars ?? 0;
-  const has = (r: InstrumentRoleName) => lineup.includes(r);
+  const has = (r: InstrumentRoleName) => outroActiveRoles.includes(r);
   const exitBarByRole: Partial<Record<InstrumentRoleName, number>> = {};
   if (style === 'fade' && outroBars >= 2) {
     // 渐隐:节奏件错开退出(先 drum,再 comp,再 bass),pad/lead 响到末(尾音收束)。
@@ -165,13 +167,10 @@ function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineu
     if (has('bass')) exitBarByRole.bass = Math.max(1, outroBars - 1);
   }
   // cold:无早退(全员撑到末下拍齐停 + button 重音,由 render coldStop 投影)。
-  // ★ Loop G cadence orchestration:sustain=pad 优先 / 无 pad 用 comp(lead 不延留);
-  //   finalAnchor=接地(bass) + 一个和声支撑(pad/comp);protectLeadTiming → lead 时值不被强拉(snap 管落主音)。
+  // ★ Loop G cadence orchestration:sustain=pad 优先 / 无 pad 用 comp(lead 不延留;末段实际在场角色据上)。
+  //   protectLeadTiming → lead 时值不被强拉(snap 管落主音)。(finalAnchorRoles 已删:render 侧从未消费=死字段,
+  //   末 I 接地由 sustainRoles 延留 + coldStop/hold + musicalityAuditor outro-harmonic-support 覆盖。)
   const sustainRoles: InstrumentRoleName[] = has('pad') ? ['pad'] : has('comp') ? ['comp'] : [];
-  const finalAnchorRoles: InstrumentRoleName[] = [];
-  if (has('bass')) finalAnchorRoles.push('bass');
-  if (has('pad')) finalAnchorRoles.push('pad');
-  else if (has('comp')) finalAnchorRoles.push('comp');
   return {
     style,
     outroSectionId: outro?.id ?? null,
@@ -180,7 +179,6 @@ function buildEndingPlan(style: EndingStyle, sections: readonly Section[], lineu
     holdFinalChord: style === 'tag',
     fadeOut: style === 'fade',
     coldStop: style === 'cold',
-    finalAnchorRoles,
     sustainRoles,
     protectLeadTiming: true,
   };
@@ -395,6 +393,7 @@ export function buildInstrumentationPlan(
     richTextureBySection,
     richTextureSwitchBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
+    roleProgram, // ★ 生效基底 program(repair 后)→ render 单一真源
     programByRoleSection,
     drumPatternBySection,
     timbreWorld,
@@ -404,7 +403,8 @@ export function buildInstrumentationPlan(
       densityCeiling: clamp01(band.styleProfile.accompDensity),
       hookAnchorSlots,
     },
-    endingPlan: buildEndingPlan(arrangement.endingStyle as EndingStyle, arrangement.sections, band.instrumentPool),
+    endingPlan: buildEndingPlan(arrangement.endingStyle as EndingStyle, arrangement.sections,
+      activeRolesBySection[arrangement.sections[arrangement.sections.length - 1]?.id] ?? band.instrumentPool),
     transitionPlan: buildTransitionPlan(arrangement, activeRolesBySection, band.instrumentPool),
     needsDownbeatCompAnchorBySection: Object.fromEntries(arrangement.sections.map((s) => {
       const roles = activeRolesBySection[s.id] ?? [];

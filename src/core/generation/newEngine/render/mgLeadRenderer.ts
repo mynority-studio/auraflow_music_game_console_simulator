@@ -57,8 +57,9 @@ export function renderMgMelody(
   band: BandSpec,
   timebase: Timebase,
   songSeed: number,
+  leadProgram?: number, // ★ 2026-06-10:器配生效 lead program(单一真源);缺省回退 band.roleProgram(测试/向后兼容)
 ): TrackIR {
-  const program = band.roleProgram.lead;
+  const program = leadProgram ?? band.roleProgram.lead;
   const chords = harmonicPlanToMgChordDefs(plan);
   if (chords.length === 0) return { role: 'lead', notes: [], program };
 

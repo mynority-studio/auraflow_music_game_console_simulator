@@ -50,9 +50,9 @@ export interface EndingPlan {
   holdFinalChord: boolean;
   fadeOut: boolean;
   coldStop: boolean;
-  // ★ Loop G(2026-06-08)cadence orchestration:谁延留末和弦 / 谁给末 I anchor / 是否保护 lead 时值。
-  finalAnchorRoles?: readonly InstrumentRoleName[]; // 末 I 落地锚点(接地 + 和声支撑;cold 尤其需要)
-  sustainRoles?: readonly InstrumentRoleName[];     // 延留末和弦的角色(pad 优先,无 pad 用 comp;lead 不默认延留)
+  // ★ Loop G(2026-06-08)cadence orchestration:谁延留末和弦 / 是否保护 lead 时值。
+  //   (finalAnchorRoles 已删 2026-06-10:render 侧从未消费=死字段;末 I 接地由 sustainRoles + coldStop/hold 覆盖。)
+  sustainRoles?: readonly InstrumentRoleName[];     // 延留末和弦的角色(末段实际在场:pad 优先,无 pad 用 comp;lead 不默认延留)
   protectLeadTiming?: boolean;             // true → applyEnding 不强行延长 lead(末音落主音由 mgLeadRenderer snap 负责)
 }
 
@@ -75,6 +75,9 @@ export interface InstrumentationPlanData {
   // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
   //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。
   programByRoleSection: Record<InstrumentRoleName, Record<SectionId, number>>;
+  // ★ 2026-06-10:器配层【最终生效】基底 program(band.roleProgram 过 repairWorld/repairCompCapability/
+  //   coherentLeadComp 后)。render 一律读这个 + programByRoleSection,不再回头读 band.roleProgram(消双真源)。
+  roleProgram: Record<InstrumentRoleName, number>;
   // ★ 每段鼓型(2026-06-08,groove 下发):Arranger 给 GrooveKind → 器配按 (style×groove) 从 KB 词汇
   //   确定性挑变体(同 groove → 同变体,repeatGroup 一致)。render 据此逐段换鼓型(取代单一 drumPattern);
   //   texturePocket 退成次要兜底(仅无此项的段)。空 = render 回退 drumPattern(style)(向后兼容)。
