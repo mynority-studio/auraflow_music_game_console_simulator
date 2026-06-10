@@ -53,6 +53,9 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
   const mode: Mode = req.mode ?? (brng.next() < MINOR_PROBABILITY ? 'minor' : 'major');
 
   // ★ 乐器要素:独立 'instrumental' 子流(不扰 key/mode)→ 编制(2–5 件)+ 每件 GM program。
+  // ★ 2026-06-10(gm128_chain_orchestration):此处 roleProgram 仅为 **provisional 候选**(seed 多样性来源)。
+  //   【最终生效】GM 选择由器配层链式协同拥有(orchestrateRolePrograms,见 instrumentalPlanner);
+  //   render 一律读 instrumentation.roleProgram,不把 band.roleProgram 当最终发声 program。
   const { lineup, roleProgram } = pickBandInstrumentation(style, createRandomContext(req.seed).substream('instrumental'));
 
   if (tonalityKind === 'modal') {

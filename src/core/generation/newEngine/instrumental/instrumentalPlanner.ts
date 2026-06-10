@@ -13,6 +13,7 @@ import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/A
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability } from '../knowledge/instruments';
+import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import {
@@ -261,7 +262,12 @@ export function buildInstrumentationPlan(
   //   马林巴解绑电钢),最后分类世界 + 记同乐器对。GM program 仍走 programByRoleSection。
   //   ★ 2026-06-10:链中加【comp 能力修复】—— comp 必须是多音 + 非持续乐器(单音/持续如管风琴不能做衰减节奏 comp);
   //     先修 comp 能力,再 lead↔comp 配对(lead 贴到已合法的 comp)。
-  const roleProgram = coherentLeadComp(repairCompCapability(repairWorldMismatches(band.roleProgram, band.style), band.style), band.style);
+  // ★ 链式协同(gm128_chain_orchestration,2026-06-10):器配层【拥有】最终 GM 选择 —— 用 BandEngine 的
+  //   provisional(band.roleProgram,已 seed-变化)当候选,链按 comp→lead→bass→pad 顺序协同(兼容则保留=守
+  //   多样性;不兼容链表赢=同族/可兼容)。世界由 provisional 推导→不抽 rng,不洗 timbre 序列。然后过既有安全网
+  //   (repairWorld/repairCompCapability/coherentLeadComp,链后多为 no-op)。
+  const orch = orchestrateRolePrograms({ style: band.style, lineup: band.instrumentPool, rng, provisional: band.roleProgram });
+  const roleProgram = coherentLeadComp(repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style), band.style);
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
 
@@ -433,7 +439,13 @@ export function buildInstrumentationPlan(
     richTextureBySection,
     richTextureSwitchBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
-    roleProgram, // ★ 生效基底 program(repair 后)→ render 单一真源
+    roleProgram, // ★ 生效基底 program(链式协同 + repair 后)→ render 单一真源
+    orchestrationChain: {
+      world: orch.world, profileId: orch.profileId,
+      compProgram: roleProgram.comp, leadProgram: roleProgram.lead, bassProgram: roleProgram.bass,
+      padProgram: roleProgram.pad, drumProgram: roleProgram.drum,
+      decisions: orch.decisions,
+    },
     programByRoleSection,
     mixByRoleSection, // ★ ESP32 混音(CC7/10/91/93;随段程序变)
     spaceProfile,

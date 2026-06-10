@@ -139,3 +139,63 @@ describe('instrumental/instrumentalPlanner', () => {
     expect(['pad', 'arpeggio', 'active-comp']).toContain(ip.textureBySection.intro);
   });
 });
+
+// ============================================================
+// ★ 链式协同(gm128_chain_orchestration):器配层【拥有】最终 GM 选择
+// ============================================================
+import { canPlayComp, instrumentInfo, isSustainedInstrument } from '../knowledge/instruments';
+
+describe('instrumental/instrumentalPlanner — 链式协同 GM 选择', () => {
+  const styles = ['pop', 'lofi', 'rnb', 'jazz'];
+
+  it('InstrumentationPlan.roleProgram 存在且为最终生效;orchestrationChain 诊断齐全', () => {
+    for (const style of styles) {
+      const b = buildBandSpec({ seed: 5, styleHint: style, mood: 'build', targetDuration: 120 });
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(5) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(5).substream('timbre'));
+      for (const r of b.instrumentPool) expect(ip.roleProgram[r], `${style} ${r}`).toBeTypeOf('number');
+      expect(ip.orchestrationChain.world).toBeTruthy();
+      expect(ip.orchestrationChain.profileId).toBeTruthy();
+      expect(ip.orchestrationChain.decisions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('programByRoleSection 派生自 InstrumentationPlan.roleProgram(非 band.roleProgram)', () => {
+    for (const style of styles) {
+      const b = buildBandSpec({ seed: 7, styleHint: style, mood: 'build', targetDuration: 120 });
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(7) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(7).substream('timbre'));
+      // 每个非 chorus 段(无音色切换)的 program == 生效 roleProgram
+      const baseSec = arr.sections.find((s) => s.role !== 'chorus') ?? arr.sections[0];
+      for (const r of b.instrumentPool) {
+        expect(ip.programByRoleSection[r][baseSec.id]).toBe(ip.roleProgram[r]);
+      }
+    }
+  });
+
+  it('所有在场角色都有最终 program;comp 必 canPlayComp;bass 必 bass 族;pad 必 pad/持续', () => {
+    for (let seed = 1; seed <= 40; seed++) for (const style of styles) {
+      const b = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(seed) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
+      for (const r of b.instrumentPool) expect(ip.roleProgram[r]).toBeTypeOf('number');
+      if (b.instrumentPool.includes('comp')) expect(canPlayComp(ip.roleProgram.comp), `${seed}/${style} comp`).toBe(true);
+      if (b.instrumentPool.includes('bass')) expect(instrumentInfo(ip.roleProgram.bass).family, `${seed}/${style} bass`).toBe('bass');
+      if (b.instrumentPool.includes('pad')) {
+        const p = ip.roleProgram.pad;
+        const okPad = isSustainedInstrument(p) || ['pad', 'strings'].includes(instrumentInfo(p).family);
+        expect(okPad, `${seed}/${style} pad GM${p}`).toBe(true);
+      }
+    }
+  });
+
+  it('jazz 永不合成贝斯(链 hard-reject)', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const b = buildBandSpec({ seed, styleHint: 'jazz', mood: 'build', targetDuration: 120 });
+      if (!b.instrumentPool.includes('bass')) continue;
+      const arr = buildArrangementPlan(b, { rng: createRandomContext(seed) });
+      const ip = buildInstrumentationPlan(b, arr, createRandomContext(seed).substream('timbre'));
+      expect([38, 39]).not.toContain(ip.roleProgram.bass);
+    }
+  });
+});

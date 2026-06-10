@@ -76,9 +76,21 @@ export interface InstrumentationPlanData {
   // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
   //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。
   programByRoleSection: Record<InstrumentRoleName, Record<SectionId, number>>;
-  // ★ 2026-06-10:器配层【最终生效】基底 program(band.roleProgram 过 repairWorld/repairCompCapability/
+  // ★ 2026-06-10:器配层【最终生效】基底 program(band.roleProgram 过链式协同 + repairWorld/repairCompCapability/
   //   coherentLeadComp 后)。render 一律读这个 + programByRoleSection,不再回头读 band.roleProgram(消双真源)。
   roleProgram: Record<InstrumentRoleName, number>;
+  // ★ 链式协同诊断(gm128_chain_orchestration):本曲选定的音色世界/链 profile + 各角色生效 program + 决策轨迹。
+  //   器配层【拥有】GM 选择:band.roleProgram 仅作 provisional 候选,链按 comp→lead→bass→pad 协同。trace/调试用。
+  orchestrationChain: {
+    world: TimbreWorld;
+    profileId: string;
+    compProgram?: number;
+    leadProgram?: number;
+    bassProgram?: number;
+    padProgram?: number;
+    drumProgram?: number;
+    decisions: string[];
+  };
   // ★ ESP32 混音(esp32s2_gm128_instrument_mix_directive):器配层据 style+timbreWorld+role+生效 program
   //   决定 CC7/10/91/93(+可选 CC11)。随段程序变(programByRoleSection 切换 → mix 也切)。render 落 IR,irToMidi 读。
   mixByRoleSection: Record<InstrumentRoleName, Record<SectionId, RoleMix>>;

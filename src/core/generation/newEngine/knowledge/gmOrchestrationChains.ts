@@ -1,0 +1,226 @@
+// ============================================================
+// newEngine · knowledge · GM128 链式协同器配(gm128_chain_orchestration_directive,2026-06-10)
+// ------------------------------------------------------------
+// 器配层【拥有】最终 GM program 选择:不再让 BandEngine 逐角色独立抽。链优先级:
+//   选音色世界 → comp 先定 → lead 按 comp 兼容 → bass 按世界 → pad 按世界+pair → drum kit。
+//   目标 = 一个房间里的一支乐队(同族/可兼容),不是 5 个角色各自乱抽不相干的 GM patch。
+// ★ provisional-优先策略(directive `provisional` 契约):用 BandEngine 已 seed-变化的抽签当候选,
+//   兼容则保留(守多样性),不兼容才让链表赢(comp 取首个合法 → 永远落 EP4,Clav/羽管 comp 不被选中)。
+//   纯函数、确定性(不抽 rng;世界由 provisional 推导)。GM 家族分类是 KB 数据,兼容性是我们的编配规则。
+// ============================================================
+
+import type { InstrumentRoleName } from '../band/BandSpec';
+import type { Rng } from '../foundation';
+import {
+  instrumentInfo, isSustainedInstrument, canPlayComp, leadCompCompatible, timbreSource,
+  type TimbreWorld,
+} from './instruments';
+
+export interface ChainProfile {
+  id: string;
+  world: TimbreWorld;
+  compPriority: number[];                  // comp 候选(优先序;取首个 canPlayComp)
+  leadByComp: Record<number, number[]>;    // 给定 comp → lead 优先序(同族/同源最佳配对)
+  bassPriority: number[];
+  padPriority: number[];
+  drumPriority: number[];                  // 通道10 鼓 kit program(0=标准,40=brush)
+}
+
+// —— 6 条链表(directive Chain Profiles,忠实保留;0-based GM)——
+export const CHAIN_PROFILES: Record<string, ChainProfile> = {
+  // RNB / neo-soul / city-pop / 暖 pop
+  electricKeys: {
+    id: 'electricKeys', world: 'electricKeys',
+    compPriority: [4, 5, 7],
+    leadByComp: { 4: [4, 5, 11, 2], 5: [5, 4, 11, 2], 7: [4, 5, 11] },
+    bassPriority: [33, 35, 39], padPriority: [89, 94, 16, 99], drumPriority: [0, 40],
+  },
+  // LOFI / chill
+  lofiTapeKeys: {
+    id: 'lofiTapeKeys', world: 'lofiTapeKeys',
+    compPriority: [4, 5, 6],
+    leadByComp: { 4: [4, 11, 12, 108, 6], 5: [4, 5, 11, 12, 108], 6: [11, 12, 108, 4] },
+    bassPriority: [33, 35, 39], padPriority: [89, 94, 88, 92, 98, 102], drumPriority: [0, 40],
+  },
+  // pop 抒情 / 简单原声乐队
+  acousticPianoBand: {
+    id: 'acousticPianoBand', world: 'acousticPianoBand',
+    compPriority: [0, 1, 2],
+    leadByComp: { 0: [11, 12, 4, 6, 2], 1: [11, 12, 2, 4], 2: [2, 4, 11, 12] },
+    bassPriority: [32, 33, 35], padPriority: [48, 49, 89], drumPriority: [0, 40],
+  },
+  // jazz
+  jazzCombo: {
+    id: 'jazzCombo', world: 'jazzCombo',
+    compPriority: [0, 4],
+    leadByComp: { 0: [11, 4, 6], 4: [4, 11, 6] },
+    bassPriority: [32, 35], padPriority: [49, 16], drumPriority: [40, 0],
+  },
+  // 软 synth-pop / modal synthetic
+  syntheticSoft: {
+    id: 'syntheticSoft', world: 'syntheticSoft',
+    compPriority: [5, 4, 2],
+    leadByComp: { 5: [5, 4, 11], 4: [4, 5, 11], 2: [2, 4, 11] },
+    bassPriority: [38, 39, 33], padPriority: [88, 89, 94, 95, 99, 102], drumPriority: [0],
+  },
+  // modal / static / ambient
+  modalAmbient: {
+    id: 'modalAmbient', world: 'modalAmbient',
+    compPriority: [4, 0, 6],
+    leadByComp: { 4: [11, 12, 107, 108, 4], 0: [11, 12, 107, 108], 6: [11, 12, 108] },
+    bassPriority: [32, 33, 39], padPriority: [89, 48, 91, 94, 92, 97, 98, 102], drumPriority: [0],
+  },
+};
+
+// 7 个 TimbreWorld → 6 条 profile(brightPopHybrid 折进 acousticPianoBand:其 comp 多为原声暖底)。
+const PROFILE_BY_WORLD: Record<TimbreWorld, string> = {
+  acousticPianoBand: 'acousticPianoBand', brightPopHybrid: 'acousticPianoBand',
+  electricKeys: 'electricKeys', lofiTapeKeys: 'lofiTapeKeys', jazzCombo: 'jazzCombo',
+  modalAmbient: 'modalAmbient', syntheticSoft: 'syntheticSoft',
+};
+
+// —— 合法性谓词(链表给优先序,谓词给合法性;两者解耦)——
+// 默认刺耳 lead 家族(directive hard-reject;暖路线本就不含,作 guard):铜管/簧片 56-71 · 独奏小提琴 40 ·
+//   失真/过载吉他 29-30 · 合唱 52 · 激进合成 lead 80-87。★ 排箫/尺八 72-79 是暖气声,不在此列。
+function inRange(p: number, a: number, b: number): boolean { return p >= a && p <= b; }
+export function isHarshLead(program: number): boolean {
+  return inRange(program, 56, 71) || program === 40 || program === 29 || program === 30
+    || program === 52 || inRange(program, 80, 87);
+}
+function isBassFamily(p: number): boolean { return instrumentInfo(p).family === 'bass'; }
+function isSynthBass(p: number): boolean { return p === 38 || p === 39; }
+/** pad 角色合法 = 持续音(管风琴/弦/合成 pad)或 pad/strings 家族。 */
+function canPlayPad(p: number): boolean {
+  const fam = instrumentInfo(p).family;
+  return isSustainedInstrument(p) || fam === 'pad' || fam === 'strings';
+}
+/** 该世界是否排斥此 pad(jazz 拒暖/合唱 pad 89/91)。 */
+function worldRejectsPad(world: TimbreWorld, p: number): boolean {
+  return world === 'jazzCombo' && (p === 89 || p === 91);
+}
+
+/**
+ * 选链 profile:requested(由 provisional 推导的世界)优先;否则按 style 表 + rng(pop 分支)。
+ * directive World Selection;`requested` 给定时确定性、不抽 rng。
+ */
+export function chooseOrchestrationChain(style: string, rng: Rng, requested?: TimbreWorld): ChainProfile {
+  if (requested) return CHAIN_PROFILES[PROFILE_BY_WORLD[requested]];
+  const s = style.toLowerCase();
+  if (s === 'jazz' || s === 'blues') return CHAIN_PROFILES.jazzCombo;
+  if (s === 'lofi') return CHAIN_PROFILES.lofiTapeKeys;
+  if (s === 'rnb') return CHAIN_PROFILES.electricKeys;
+  if (s === 'modal') return CHAIN_PROFILES.modalAmbient;
+  if (s === 'pop') return rng.pick([CHAIN_PROFILES.acousticPianoBand, CHAIN_PROFILES.electricKeys, CHAIN_PROFILES.syntheticSoft]);
+  return CHAIN_PROFILES.acousticPianoBand;
+}
+
+/** 据 style + provisional【确定性】推导链世界(器配集成用;不抽 rng → 不洗 timbre 序列)。 */
+export function deriveChainWorld(style: string, provisional: Partial<Record<InstrumentRoleName, number>>): TimbreWorld {
+  const s = style.toLowerCase();
+  if (s === 'jazz' || s === 'blues') return 'jazzCombo';
+  if (s === 'lofi') return 'lofiTapeKeys';
+  const bassSynth = provisional.bass !== undefined && timbreSource(provisional.bass) === 'synth';
+  if (s === 'modal') return bassSynth ? 'syntheticSoft' : 'modalAmbient';
+  if (s === 'rnb') return bassSynth ? 'syntheticSoft' : 'electricKeys';
+  // pop / default:comp 原声 → acousticPianoBand;bass 合成 → syntheticSoft;否则电钢世界
+  if (provisional.comp !== undefined && timbreSource(provisional.comp) === 'acoustic') return 'acousticPianoBand';
+  if (bassSynth) return 'syntheticSoft';
+  return 'electricKeys';
+}
+
+/**
+ * 兼容性评分(tie-breaker / 校验用)。relation = lead-comp | pad-comp | bass-comp。
+ *   同程序 > 同族 > 同音色来源 > 原声钢琴百搭;带具体加成/惩罚。越高越搭。
+ */
+export function scoreProgramPair(a: number, b: number, relation: 'lead-comp' | 'pad-comp' | 'bass-comp'): number {
+  let s = 0;
+  if (a === b) s += 100;
+  const fa = instrumentInfo(a).family, fb = instrumentInfo(b).family;
+  if (fa === fb) s += 60;
+  if (timbreSource(a) === timbreSource(b)) s += 40;
+  if (relation === 'lead-comp') {
+    if (b === 0 || b === 1) s += 30;                                   // 原声钢琴 comp 百搭
+    if ((b === 4 || b === 5) && (a === 4 || a === 5 || a === 11)) s += 25; // Rhodes/FM + Rhodes/FM/颤音
+    if (b === 6 && (a === 11 || a === 12 || a === 108)) s += 25;        // 羽管键琴 + 颤音/马林巴/卡林巴
+    if ((b === 0 || b === 1) && (a === 11 || a === 12)) s += 15;        // 原声钢琴 + 木琴
+    if ((a === 11 || a === 12 || a === 107 || a === 108) && (b === 4 || b === 5 || b === 7)) s -= 20; // 木琴 lead + 电钢 comp(除非世界允许)
+    if (isHarshLead(a)) s -= 200;                                       // 刺耳 lead 默认重罚
+  } else if (relation === 'pad-comp') {
+    if (!canPlayPad(a)) s -= 200;
+  } else if (relation === 'bass-comp') {
+    if (!isBassFamily(a)) s -= 200;
+  }
+  return s;
+}
+
+export interface OrchestrationResult {
+  world: TimbreWorld;
+  profileId: string;
+  roleProgram: Record<InstrumentRoleName, number>;
+  decisions: string[];
+}
+
+// 占位 Rng:orchestrate 总会推导/传入 requestedWorld → chooseOrchestrationChain 不抽 rng,此占位仅满足类型。
+const FALLBACK_RNG: Rng = { next: () => 0, int: () => 0, pick: <T>(xs: readonly T[]): T => xs[0] };
+
+/**
+ * 链式协同选 program(器配层拥有)。provisional 兼容则保留(守 seed 多样性),否则链表赢。
+ *   comp 先定 → lead 按 comp → bass 按世界 → pad 按世界+pair → drum。确定性:除非显式传 rng 且某角色无 provisional,
+ *   否则不抽 rng(provisional/首个合法即定)→ 不扰 timbre 子流序列。
+ */
+export function orchestrateRolePrograms(args: {
+  style: string;
+  lineup: readonly InstrumentRoleName[];
+  rng?: Rng;
+  requestedWorld?: TimbreWorld;
+  provisional?: Partial<Record<InstrumentRoleName, number>>;
+}): OrchestrationResult {
+  const { style, lineup, provisional = {} } = args;
+  const requested = args.requestedWorld ?? deriveChainWorld(style, provisional);
+  const profile = chooseOrchestrationChain(style, args.rng ?? FALLBACK_RNG, requested);
+  const has = (r: InstrumentRoleName): boolean => lineup.includes(r);
+  const decisions: string[] = [`world=${profile.world} profile=${profile.id}`];
+  const rp = {} as Record<InstrumentRoleName, number>;
+
+  // comp 先定(衰减节奏和弦能力 = canPlayComp;且须属本世界 compPriority —— comp 定义世界,故必须世界内)
+  if (has('comp')) {
+    const pv = provisional.comp;
+    if (pv !== undefined && canPlayComp(pv) && profile.compPriority.includes(pv)) { rp.comp = pv; decisions.push(`comp keep GM${pv}`); }
+    else { rp.comp = profile.compPriority.find(canPlayComp) ?? pv ?? 4; decisions.push(`comp chain GM${rp.comp}`); }
+  }
+
+  // lead 按 comp 兼容(同族/同源最佳配对;拒刺耳)
+  if (has('lead')) {
+    const comp = rp.comp;
+    const cands = (comp !== undefined && profile.leadByComp[comp]) ? profile.leadByComp[comp]
+      : (comp !== undefined ? [comp, 11, 12] : profile.compPriority);
+    const ok = (p: number): boolean => !isHarshLead(p) && (comp === undefined || leadCompCompatible(p, comp));
+    const pv = provisional.lead;
+    if (pv !== undefined && ok(pv)) { rp.lead = pv; decisions.push(`lead keep GM${pv}`); }
+    else { rp.lead = cands.find(ok) ?? cands[0] ?? pv ?? 0; decisions.push(`lead chain GM${rp.lead}`); }
+  }
+
+  // bass 按世界(jazz 拒合成贝斯)
+  if (has('bass')) {
+    const ok = (p: number): boolean => isBassFamily(p) && !(profile.world === 'jazzCombo' && isSynthBass(p));
+    const pv = provisional.bass;
+    if (pv !== undefined && ok(pv)) { rp.bass = pv; decisions.push(`bass keep GM${pv}`); }
+    else { rp.bass = profile.bassPriority.find(ok) ?? pv ?? 33; decisions.push(`bass chain GM${rp.bass}`); }
+  }
+
+  // pad 按世界 + comp/lead pair(持续/pad 家族;世界排斥则换)
+  if (has('pad')) {
+    const ok = (p: number): boolean => canPlayPad(p) && !worldRejectsPad(profile.world, p);
+    const pv = provisional.pad;
+    if (pv !== undefined && ok(pv)) { rp.pad = pv; decisions.push(`pad keep GM${pv}`); }
+    else { rp.pad = profile.padPriority.find(ok) ?? pv ?? 89; decisions.push(`pad chain GM${rp.pad}`); }
+  }
+
+  // drum kit:保 provisional(标准 0),无则链首(jazz=brush 40)
+  if (has('drum')) {
+    rp.drum = provisional.drum ?? profile.drumPriority[0] ?? 0;
+    decisions.push(`drum kit GM${rp.drum}`);
+  }
+
+  return { world: profile.world, profileId: profile.id, roleProgram: rp, decisions };
+}
