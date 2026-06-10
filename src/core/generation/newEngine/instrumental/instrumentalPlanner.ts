@@ -27,6 +27,7 @@ import {
   type TransitionPlan,
 } from './InstrumentationPlan';
 import type { EndingStyle } from '../arranger/ArrangementPlan';
+import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 
 const rr = (lo: number, hi: number): RegisterRange => ({ lowMidi: midi(lo), highMidi: midi(hi) });
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -236,10 +237,23 @@ function buildTransitionPlan(
   return { boundaries, songEntry };
 }
 
+// ★ #6(2026-06-10):某段落是否【属和弦链】(≥2 连续 D 功能)→ 段级 rich texture 选择据此避让
+//   avoidOnDominantChain 织体(ambient/pedal 在属链上糊/悬而不决)。harmony 缺省 → false(向后兼容)。
+function sectionIsDominantChain(harmonic: HarmonicPlan | undefined, sectionId: string): boolean {
+  if (!harmonic) return false;
+  let run = 0;
+  for (let i = 0; i < harmonic.chordTimeline.length; i++) {
+    if (harmonic.chordTimeline[i].sectionId !== sectionId) continue;
+    if (harmonic.chordFunctionTimeline[i] === 'D') { run += 1; if (run >= 2) return true; } else run = 0;
+  }
+  return false;
+}
+
 export function buildInstrumentationPlan(
   band: BandSpec,
   arrangement: ArrangementPlan,
   rng?: Rng, // ★ 音色切换决策(确定性子流);缺省 = 不切(全曲 primary,向后兼容)
+  harmonic?: HarmonicPlan, // ★ #6:吃 HarmonicPlan → 段级 texture 选择用真 dominant-chain(缺省 false,向后兼容)
 ): InstrumentationPlan {
   // ★ 音色世界统一性:先把 BandEngine 的 provisional roleProgram 过【风格错配修复】(当前池已守住=多为原样,
   //   family-invariant → comp voicing 决策不受影响),再【lead↔comp 配对一致性】修不搭对(电钢配电钢、
@@ -333,8 +347,13 @@ export function buildInstrumentationPlan(
   const richTextureSwitchBySection: Record<string, { atFraction: number; toTexture: string }> = {};
   const richStyle = RICH_STYLE[band.style.toLowerCase()];
   if (rng && richStyle) {
-    const low = pickTextureForBar({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: false, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
-    const high = pickTextureForBar({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: false, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+    // ★ #6:低槽(非 chorus/bridge 段,各风格通用)/高槽(chorus·bridge)若【任一所属段是属链】→ 避让
+    //   ambient/pedal 织体(否则糊在属动机上)。pickTextureForBar 仍只掷一次 → rng 序列不变,只换更合适织体。
+    const isHigh = (r: string) => r === 'chorus' || r === 'bridge';
+    const lowDom = arrangement.sections.some((s) => !isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
+    const highDom = arrangement.sections.some((s) => isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
+    const low = pickTextureForBar({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+    const high = pickTextureForBar({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: highDom, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
     const lowTc = low?.textureCase ?? high?.textureCase;
     const highTc = high?.textureCase ?? lowTc;
     for (const s of arrangement.sections) {

@@ -80,8 +80,11 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   段落: ${arrangement.sections.map((s) => `${s.id}[${s.bars}b${s.repeatGroup ? '·' + s.repeatGroup : ''}·${s.hookPolicy}${s.functionTag ? '·' + s.functionTag : ''}${s.harmonyRole ? '·H:' + s.harmonyRole : ''}${s.linkOut && s.linkOut !== 'none' ? '·→' + s.linkOut : ''}]`).join('  ')}`);
   log(`   乐句 ${arrangement.phrases.length} · 动机绑定 ${arrangement.motifBindings.length}(同 motifId 跨段=排比)`);
 
+  // —— HARMONY(★ #6:先于 instrumental 构建,与 generateSong 同序;instrumental 吃 harmonic 做 dominant-chain texture)——
+  const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
+
   // —— INSTRUMENTAL ——
-  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'));
+  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic);
   const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(GM${p.program})`).join(' ');
   log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
   log(`   织体(让位类): ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
@@ -125,8 +128,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const reqAnchors = instrumentation.melodyReservationPlan.hookAnchorSlots.filter((h) => h.anchorRequired).length;
   log(`   重心: centerBars=${centerBars}/${allBars}(${allBars ? Math.round((centerBars / allBars) * 100) : 0}%) hook×${cnt('hook')} loop×${cnt('loop')} head×${cnt('head')} 主锚×${reqAnchors} 末段energy=${peakE.toFixed(2)}`);
 
-  // —— HARMONY ——
-  const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
+  // —— HARMONY(上面已构建 harmonic;此处仅日志)——
   // ★ borrowed/离调按 span.borrowedSource 统计(prototype 不填 borrowedChordMap)
   const borrowedSpans = harmonic.chordTimeline.filter((c) => c.borrowedSource);
   log(band.tonalityKind === 'modal'
