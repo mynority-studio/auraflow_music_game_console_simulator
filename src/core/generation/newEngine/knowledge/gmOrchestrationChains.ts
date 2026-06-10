@@ -216,9 +216,10 @@ export function orchestrateRolePrograms(args: {
     else { rp.pad = profile.padPriority.find(ok) ?? pv ?? 89; decisions.push(`pad chain GM${rp.pad}`); }
   }
 
-  // drum kit:保 provisional(标准 0),无则链首(jazz=brush 40)
+  // drum kit:链表权威(世界定 kit)—— jazzCombo=brush(40),其余=Standard(0)。
+  //   (provisional.drum 恒 0 → 若沿用 provisional 则 jazz 永远拿不到 brush;故 drum kit 由链直接定。)
   if (has('drum')) {
-    rp.drum = provisional.drum ?? profile.drumPriority[0] ?? 0;
+    rp.drum = profile.drumPriority[0] ?? provisional.drum ?? 0;
     decisions.push(`drum kit GM${rp.drum}`);
   }
 

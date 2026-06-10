@@ -88,11 +88,11 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     }
   });
 
-  it('drum:保 provisional(标准 0),无则链首(jazz=brush 40)', () => {
-    const kept = orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: { drum: 0 } });
-    expect(kept.roleProgram.drum).toBe(0);
-    const chain = orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: {} });
-    expect(chain.roleProgram.drum).toBe(40); // jazzCombo drumPriority[0]=brush
+  it('drum kit 链权威:jazz=brush(40),pop/lofi/rnb=Standard(0)', () => {
+    // jazz 即便 provisional drum=0(恒 0),也由链定为 brush 40
+    expect(orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: { drum: 0 } }).roleProgram.drum).toBe(40);
+    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 0 } }).roleProgram.drum).toBe(0);
+    expect(orchestrateRolePrograms({ style: 'lofi', lineup: ['drum'], provisional: { drum: 0 } }).roleProgram.drum).toBe(0);
   });
 
   it('确定性:同 style/lineup/provisional → 同 roleProgram', () => {
