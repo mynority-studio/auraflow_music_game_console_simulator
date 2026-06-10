@@ -12,7 +12,7 @@ import {
 } from './instruments';
 
 const WARM_META = [16, 24, 26, 27, 42, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
-const WARM_POOLED = [16, 26, 88, 94, 107, 108]; // 实际进 style 池的(吉他/弦在 comp 需 voicing 升级,暂留元数据)
+const WARM_POOLED = [16, 88, 94, 107, 108, 75, 77]; // 实际进 style 池的(吉他全撤=只留元数据;+排箫/尺八 管乐 lead)
 const WARM_ADDED = WARM_META;
 
 describe('暖路线 GM 调色板扩充', () => {

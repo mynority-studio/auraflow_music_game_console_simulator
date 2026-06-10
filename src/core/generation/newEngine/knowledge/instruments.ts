@@ -38,13 +38,13 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   //   持续乐器归 pad(持续渲染天然合适);comp 只放【可衰减/拨奏的多音乐器】。capability 见 canPlayComp()。
   // ★ 2026-06-10:暖路线全族扩(用户:钢琴/bass/吉他/pad/synthFX 全加,暖子集 = 跳过失真/过载吉他 + 刺耳 FX)。
   //   按风格 + 能力分配:comp 只放可 comp(键盘/吉他);synthFX(持续)→ pad;吉他 lead+comp;slap/fretless → bass。
-  // ★ 吉他暂【只做 lead】:吉他 comp(非键盘窄音域)在约 3% 歌出现整段 comp 空洞(5 拍洞)—— 需专门的
-  //   非键盘 comping 引擎(folded voicing + 织体),非快速 voicing guard 能解。Clav(7,键盘)可 comp。
-  jazz: { lead: [11, 4, 12, 26, 6], comp: [0, 4], bass: [32, 35], pad: [49, 16], drum: [0] },                              // +羽管键琴/爵士吉他 lead · +无品贝斯
-  pop: { lead: [1, 4, 12, 2, 3, 25, 27], comp: [1, 4, 2], bass: [38, 33, 34], pad: [89, 50, 88, 90, 95, 99, 100], drum: [0] }, // +电子大钢琴/酒吧/钢弦&clean吉他 lead · 拨片贝斯 · Polysynth/Sweep/Atmosphere/Brightness pad
-  lofi: { lead: [4, 11, 12, 108, 24, 6, 31], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +尼龙/羽管/泛音 lead · Bowed/Crystal/Echoes pad
-  rnb: { lead: [4, 5, 11, 2, 27, 28], comp: [4, 5, 7], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },     // +Clav comp(funk 键盘) · 闷音吉他 lead · 无品/slap 贝斯 · Atmosphere pad
-  modal: { lead: [12, 11, 8, 107, 6, 24, 31], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94, 92, 93, 97, 98, 102], drum: [0] }, // +羽管/泛音 lead · synthFX 氛围 pad
+  // ★ 2026-06-10:吉他全撤(用户:先不要了)—— 吉他 comp 有空洞问题、lead 也撤。元数据保留(随时可回)。
+  //   +排箫(75)/尺八(77)暖气声管乐 lead(单音 → 仅 lead;暖、配古筝/卡林巴/lofi 氛围世界)。Clav(7,键盘)留 rnb comp。
+  jazz: { lead: [11, 4, 12, 6], comp: [0, 4], bass: [32, 35], pad: [49, 16], drum: [0] },                                  // +羽管键琴 lead · +无品贝斯
+  pop: { lead: [1, 4, 12, 2, 3, 75], comp: [1, 4, 2], bass: [38, 33, 34], pad: [89, 50, 88, 90, 95, 99, 100], drum: [0] }, // +电子大钢琴/酒吧/排箫 lead · 拨片贝斯 · Polysynth/Sweep/Atmosphere/Brightness pad
+  lofi: { lead: [4, 11, 12, 108, 6, 75, 77], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +羽管/排箫/尺八 lead · Bowed/Crystal/Echoes pad
+  rnb: { lead: [4, 5, 11, 2], comp: [4, 5, 7], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },             // +Clav comp(funk 键盘) · 无品/slap 贝斯 · Atmosphere pad
+  modal: { lead: [12, 11, 8, 107, 6, 75, 77], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94, 92, 93, 97, 98, 102], drum: [0] }, // +羽管/排箫/尺八 lead · synthFX 氛围 pad
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
 
@@ -76,6 +76,7 @@ const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
   24: { family: 'guitar', range: [40, 84] }, 25: { family: 'guitar', range: [40, 86] }, 26: { family: 'guitar', range: [40, 86] }, // 尼龙 / 钢弦 / 爵士
   27: { family: 'guitar', range: [40, 88] }, 28: { family: 'guitar', range: [40, 86] }, 31: { family: 'guitar', range: [55, 96] }, // clean / 闷音 / 泛音
   42: { family: 'strings', range: [36, 76] },  // 大提琴(暖音区独奏)
+  75: { family: 'wind', range: [60, 96] }, 77: { family: 'wind', range: [55, 86] }, // 排箫 / 尺八(暖气声管乐,单音 → 仅 lead)
   32: { family: 'bass', range: [28, 67] }, 33: { family: 'bass', range: [28, 67] },
   34: { family: 'bass', range: [28, 60] }, 35: { family: 'bass', range: [28, 67] }, // 拨片 / 无品
   36: { family: 'bass', range: [28, 60] }, 37: { family: 'bass', range: [28, 60] }, // 击弦(slap)1/2
@@ -137,7 +138,7 @@ export function sameFamilyAlternates(style: string, role: InstrumentRoleName, pr
 const GM_NAME: Record<number, string> = {
   0: '大钢琴', 1: '亮钢琴', 2: '电子大钢琴', 3: '酒吧钢琴', 4: '电钢 Rhodes', 5: '电钢 FM', 6: '羽管键琴', 7: 'Clavinet', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
   16: '哈蒙德管风琴', 24: '尼龙吉他', 25: '钢弦吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 28: '闷音电吉他', 31: '吉他泛音', 42: '大提琴',
-  107: '古筝', 108: '卡林巴',
+  75: '排箫', 77: '尺八', 107: '古筝', 108: '卡林巴',
   32: '立式贝斯', 33: '指弹贝斯', 34: '拨片贝斯', 35: '无品贝斯', 36: '击弦贝斯1', 37: '击弦贝斯2', 38: '合成贝斯1', 39: '合成贝斯2',
   48: '弦乐合奏1', 49: '弦乐合奏2', 50: '合成弦乐1',
   88: 'New Age Pad', 89: '暖 Pad', 90: 'Polysynth Pad', 91: '合唱 Pad', 92: 'Bowed Pad', 93: 'Metallic Pad', 94: 'Halo Pad', 95: 'Sweep Pad',
@@ -181,7 +182,7 @@ export type TimbreWorld =
 export type TimbreSource = 'acoustic' | 'electric' | 'synth';
 const TIMBRE_SOURCE: Record<number, TimbreSource> = {
   0: 'acoustic', 1: 'acoustic', 2: 'acoustic', 3: 'acoustic', 6: 'acoustic', 8: 'acoustic', 11: 'acoustic', 12: 'acoustic', 32: 'acoustic', 48: 'acoustic', 49: 'acoustic',
-  24: 'acoustic', 25: 'acoustic', 42: 'acoustic', 107: 'acoustic', 108: 'acoustic', // 尼龙/钢弦吉他/大提琴/古筝/卡林巴
+  24: 'acoustic', 25: 'acoustic', 42: 'acoustic', 75: 'acoustic', 77: 'acoustic', 107: 'acoustic', 108: 'acoustic', // 尼龙/钢弦吉他/大提琴/排箫/尺八/古筝/卡林巴
   4: 'electric', 5: 'electric', 7: 'electric', 33: 'electric', 16: 'electric', 26: 'electric', 27: 'electric', 28: 'electric', 31: 'electric', // 电钢/Clav/哈蒙德/爵士&clean&闷音&泛音吉他
   34: 'electric', 35: 'electric', 36: 'electric', 37: 'electric', // 拨片/无品/slap 贝斯
   38: 'synth', 39: 'synth', 50: 'synth', 88: 'synth', 89: 'synth', 90: 'synth', 91: 'synth', 92: 'synth', 93: 'synth', 94: 'synth', 95: 'synth',
