@@ -13,7 +13,13 @@ import type { NoteIR } from '../ir/MusicalIR';
 
 const CC_EXPRESSION = 11;
 const FULL = 112; // 满气
-const SOFT = 70;  // 气口减弱到的气息底
+// ★ 2026-06-11(用户:release 太快 → 减慢 ~40% + hold 加长):
+//   SOFT 70→88(减弱深度 ~−43% → 同窗口里掉得更慢更柔);release 窗口 0.5→0.4 拍占比、cap 1.0→0.9 拍(尾窗变短=hold 更长);
+//   steps 4→6(更平滑不阶梯)。
+const SOFT = 88;  // 气口减弱到的气息底(柔,掉得慢)
+const TAPER_FRACTION = 0.4;   // release 窗口占音长比例(越小 hold 越长)
+const TAPER_CAP_BEATS = 0.9;  // release 窗口上限(拍)
+const TAPER_STEPS = 6;        // 渐弱步数(越多越平滑)
 
 /** GM Pipe 家族(72-79):长笛/排箫/尺八/口哨/陶笛等气声管乐(都靠气、长音气息会减弱)。 */
 export function isWindFamily(program: number): boolean {
@@ -34,7 +40,7 @@ export interface WindBreathOptions {
 export function windBreathCcEvents(notes: readonly NoteIR[], timebase: Timebase, opts: WindBreathOptions = {}): CcEvent[] {
   const ppq = timebase.ppq;
   const breathMin = Math.round((opts.breathMinBeats ?? 1.25) * ppq);
-  const steps = Math.max(1, opts.steps ?? 4);
+  const steps = Math.max(1, opts.steps ?? TAPER_STEPS);
   const sorted = [...notes].sort((a, b) => (a.startTick as number) - (b.startTick as number));
   const raw: CcEvent[] = [];
   for (const n of sorted) {
@@ -43,7 +49,7 @@ export function windBreathCcEvents(notes: readonly NoteIR[], timebase: Timebase,
     raw.push({ atTick: start, controller: CC_EXPRESSION, value: FULL }); // 每音起点复位满气(连奏不掉)
     const dur = end - start;
     if (dur < breathMin) continue;                       // 短音:不减弱,保 legato
-    const taperLen = Math.min(Math.round(dur * 0.5), ppq); // 尾部最多 1 拍渐弱
+    const taperLen = Math.min(Math.round(dur * TAPER_FRACTION), Math.round(ppq * TAPER_CAP_BEATS)); // 尾窗(短=hold 长)
     const taperStart = end - taperLen;
     for (let s = 1; s <= steps; s++) {
       const frac = (s - 0.5) / steps;                    // 严格落在 (taperStart, end) 内,避开 note-off tick
