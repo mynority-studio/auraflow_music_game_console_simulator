@@ -22,7 +22,8 @@ export interface GapFillRecord {
   oldEnd: number;
   newEnd: number;
   barEnd: number;
-  chordClamped: boolean;
+  chordClamped: boolean;  // 历史字段(2026-06-11 起恒 false:用户要补到 bar 末,接受撞和弦)
+  crossesChord: boolean;  // 延长是否越过当前和弦(撞和弦);wind 气口减弱缓解
 }
 
 /** 计算空拍补全记录(纯计算;trace/测试复用)。 */
@@ -53,10 +54,11 @@ export function planLeadGapFills(
     if (end % barTicks === 0) continue;           // 已落 bar 线 → 不算戛然而止(完整完成了上一 bar)
     const barEnd = (Math.floor(end / barTicks) + 1) * barTicks;
     if (nextStart < barEnd) continue;             // 本 bar 余下还有后续音 → 旋律未断,不补
+    // ★ 2026-06-11(用户):补到 bar 末【四拍全部结束】,接受可能的撞和弦(撞和弦由 wind 气口减弱缓解)。
+    const target = barEnd;
+    if (target <= end) continue;                  // 已经够长(已到 bar 末)
     const chordEnd = chordEndContaining(start);
-    const target = Math.min(barEnd, chordEnd);    // 补到 bar 末,但不越当前和弦
-    if (target <= end) continue;                  // 已经够长(已跨到和弦末/bar 末)
-    out.push({ startTick: start, oldEnd: end, newEnd: target, barEnd, chordClamped: target < barEnd });
+    out.push({ startTick: start, oldEnd: end, newEnd: target, barEnd, chordClamped: false, crossesChord: target > chordEnd });
   }
   return out;
 }

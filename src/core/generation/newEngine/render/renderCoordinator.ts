@@ -33,6 +33,7 @@ import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
+import { isWindFamily, windBreathCcEvents } from './windBreath';
 import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
@@ -388,6 +389,10 @@ export function renderSongFull(
       if (progChanged) { programChanges.push({ atTick: ticks(tick), program: prog }); prevProgram = prog; }
       if (m && (progChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
     }
+    // ★ 气声 lead 气口减弱(2026-06-11,用户):wind 家族(72-79)lead → CC11 包络(每音满气,长音尾减弱),
+    //   补"管乐长音戛然而止/一个音切另一个音不自然"。lead 单音 → 通道级 CC11 安全;SpessaSynth 实时应用。
+    const breath = t.role === 'lead' && isWindFamily(initialProgram) ? windBreathCcEvents(t.notes, timebase) : undefined;
+    const ccEvents = breath && breath.length ? breath.map((e) => ({ atTick: ticks(e.atTick), controller: e.controller, value: e.value })) : undefined;
     return {
       ...t,
       program: initialProgram,
@@ -395,6 +400,7 @@ export function renderSongFull(
       pedalEvents,
       mix: initialMix,
       mixChanges: mixChanges.length ? mixChanges : undefined,
+      ccEvents,
     };
   });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });

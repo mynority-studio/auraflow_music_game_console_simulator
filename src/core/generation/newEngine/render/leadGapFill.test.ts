@@ -54,8 +54,8 @@ describe('render/leadGapFill — 单元', () => {
     expect(fills.length).toBe(0);
   });
 
-  it('★ 和弦钳位:2 和弦/bar,末音落 chord1 边界 → 不越界补到 bar 末', () => {
-    // bar0: chord1@0-960, chord2@960-1920;音@0..480(beat0-1),空到 bar2 → 补,但钳到 chord1 末=960
+  it('★ 2 和弦/bar:仍补到 bar 末(用户:接受撞和弦),crossesChord=true', () => {
+    // bar0: chord1@0-960, chord2@960-1920;音@0..480,空到 bar2 → 补到 bar 末 1920(越过 chord1)
     const chords: ChordSpan[] = [
       { id: 'a' as never, roman: { degree: 1 } as never, rootPc: 0 as never, quality: 'maj' as never, startBeat: beats(0), durationBeats: beats(2), sectionId: 's' as never },
       { id: 'b' as never, roman: { degree: 5 } as never, rootPc: 7 as never, quality: 'dom7' as never, startBeat: beats(2), durationBeats: beats(2), sectionId: 's' as never },
@@ -63,8 +63,8 @@ describe('render/leadGapFill — 单元', () => {
     const notes = [note(0, 480), note(3840, 480)];
     const fills = planLeadGapFills(notes, chords, tb, 4);
     expect(fills.length).toBe(1);
-    expect(fills[0].newEnd).toBe(960);        // 钳到 chord1 末(不到 bar 末 1920)
-    expect(fills[0].chordClamped).toBe(true);
+    expect(fills[0].newEnd).toBe(1920);        // 补到 bar 末(不钳和弦)
+    expect(fills[0].crossesChord).toBe(true);  // 越过 chord1(960)→ 撞和弦(由 wind 气口减弱缓解)
   });
 
   it('深不可变 / 只动 lead / onset 不变', () => {
@@ -89,8 +89,7 @@ describe('render/leadGapFill — 75528/pop(用户报告)', () => {
     const barTicks = beatsPerBarOf(arr.meter) * t.ppq;
     for (const f of fills) {
       expect(f.newEnd).toBeGreaterThan(f.oldEnd);
-      const onBarEnd = f.newEnd % barTicks === 0;
-      expect(onBarEnd || f.chordClamped).toBe(true);   // bar 末 或 和弦钳位
+      expect(f.newEnd % barTicks).toBe(0);   // 一律补到 bar 末(2026-06-11:不再和弦钳位)
     }
     expect(planLeadGapFills(raw.notes, harm.chordTimeline, t, beatsPerBarOf(arr.meter))).toEqual(fills); // 确定性
   });

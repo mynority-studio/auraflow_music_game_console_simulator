@@ -94,6 +94,10 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] 
     for (const mc of track.mixChanges ?? []) {
       pushMixCC(events, voice.channel, mc.atTick, track.role, mc.mix, voice, roomWet);
     }
+    // ★ 通用 CC 自动化(气声 lead 气口减弱=CC11 包络);在 notes 之前 push → 同 tick CC 先于 noteOn(稳定排序)
+    for (const cc of track.ccEvents ?? []) {
+      events.push({ ticks: cc.atTick, type: 'cc', channel: voice.channel, data1: cc.controller, data2: clampCC(cc.value) });
+    }
 
     for (const n of track.notes) {
       events.push({ ticks: n.startTick, type: 'noteOn', channel: voice.channel, data1: n.pitch, data2: n.velocity });

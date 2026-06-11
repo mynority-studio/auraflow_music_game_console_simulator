@@ -34,6 +34,7 @@ export interface TrackIR {
   pedalEvents?: { atTick: Ticks; down: boolean }[];      // ★ CC64 延音踏板(comp 每和弦踩,音尾 ring)
   mix?: TrackMix;                                          // ★ tick0 混音(随生效 program 定)
   mixChanges?: { atTick: Ticks; mix: TrackMix }[];         // ★ 段落程序切换处的混音刷新(与 programChanges 同 tick)
+  ccEvents?: { atTick: Ticks; controller: number; value: number }[]; // ★ 通用 CC 自动化(气声 lead 气口减弱=CC11 包络)
 }
 
 export interface MusicalIRData {

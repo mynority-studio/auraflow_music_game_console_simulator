@@ -209,7 +209,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   //   (在【原始 MG lead】上算补全计划展示,production lead 已补全)
   const rawLeadForGaps = renderMgMelody(harmonic, band, timebase, request.seed);
   const gapFills = planLeadGapFills(rawLeadForGaps.notes, harmonic.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
-  if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末/和弦末,补"和弦未完成戛然而止";${gapFills.filter((f) => f.chordClamped).length} 处和弦钳位)`);
+  if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末,补"和弦未完成戛然而止";${gapFills.filter((f) => f.crossesChord).length} 处跨和弦,由气口减弱缓解)`);
+  // ★ 气声 lead 气口减弱(2026-06-11):wind 家族(72-79)lead → CC11 包络(每音满气,长音尾减弱)
+  const leadTrack = ir.tracks.find((t) => t.role === 'lead');
+  if (leadTrack?.ccEvents?.length) log(`   气声 lead 气口减弱(GM${leadTrack.program}):CC11 包络 ×${leadTrack.ccEvents.length}(每音满气·长音尾渐弱,补管乐戛然而止)`);
   log(`   pad↔comp 分工: comp 主奏(GM 织体)· pad=sustain/air 层(单轨优化,不碰伴奏/旋律/和声合同)`);
   log(`     pad mode: guide-tone(POP 3/7)· drone(LOFI/verse 留白)· inner-line(RNB 慢内声部级进)· cluster-mist(LOFI 暗段高区二度雾)· gated-pad(高密 pop chorus shimmer)· full-support(pad-only 段+上层结构张力)· 全在正交音阶内·避同绝对音高`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);
