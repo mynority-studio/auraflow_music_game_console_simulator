@@ -16,6 +16,7 @@ import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
 import { renderSongFull } from './renderCoordinator';
+import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { auditMusicality } from './musicalityAuditor';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { runGenerationControl, type RenderFn } from '../generation/GenerationController';
@@ -41,14 +42,16 @@ const snap = (ir: MusicalIR) => JSON.stringify(ir.tracks.map((t) => ({ role: t.r
 const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
 
 describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
-  // ① production lead === raw MG lead(audit/swing/dynamics/humanize/ending 全不改 lead)。
+  // ① production lead === raw MG lead 经 repeatGroup 重放(audit/swing/dynamics/humanize/ending 全不改 lead;
+  //   ★ 2026-06-11:lead 仅多一道 repeatGroup 重放 —— 首次出现==MG,重复出现==首次重放,lead 不 humanize → 逐字节相等)。
   for (const [seed, style] of MATRIX) {
-    it(`${seed}/${style}: production lead 事件级 === raw MG lead`, () => {
+    it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
       const raw = renderMgMelody(plan, band, tb, seed);
+      const expected = applyRepeatGroupReplay([raw], arr, plan.chordTimeline, tb)[0];
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
-      expect(final.notes.length, `${seed}/${style} lead count`).toBe(raw.notes.length);
-      expect(ev(final.notes as never), `${seed}/${style} lead events`).toBe(ev(raw.notes as never));
+      expect(final.notes.length, `${seed}/${style} lead count`).toBe(expected.notes.length);
+      expect(ev(final.notes as never), `${seed}/${style} lead events`).toBe(ev(expected.notes as never));
     });
   }
 
@@ -82,7 +85,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, buildRetryLocator(plan, tb));
     expect(result.attempts, '确实发生重跑').toBeGreaterThanOrEqual(3);
     expect(result.ir, 'retry 后有 IR').toBeDefined();
-    expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == raw MG').toBe(ev(raw.notes as never));
+    const expected = applyRepeatGroupReplay([raw], arr, plan.chordTimeline, tb)[0]; // ★ 重放后的预期(retry 不改 lead 重放)
+    expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == replay(raw MG)').toBe(ev(expected.notes as never));
   });
 
   // ④ rng.advance(comp 子流)不改 lead:lead 只依赖 song seed,advance 保持 seed 不变。

@@ -17,6 +17,7 @@ import { gmName } from '../knowledge/instruments';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { renderSongFull } from '../render/renderCoordinator';
+import { planRepeatGroupReplays } from '../render/repeatGroupReplay';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import { runGenerationControl, type GenerationStatus, type RenderFn } from './GenerationController';
@@ -197,6 +198,11 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const ir: MusicalIR = result.ir ?? render(undefined).ir;
 
   log(`■ RENDER     ${ir.tracks.map((t) => `${t.role}=${t.notes.length}`).join('  ')}  [控制环 ${result.status} · ${result.attempts} 次尝试]`);
+  // ★ repeatGroup 重放(2026-06-11):重复段 body 复用首段(全轨同音符),链接尾巴各自(发散点之后)。
+  const replays = planRepeatGroupReplays(arrangement, harmonic.chordTimeline, timebase);
+  if (replays.length) {
+    log(`   重复段重放(body 同音符·lead 逐字节·伴奏各自人性化): ${replays.map((p) => `${p.sourceId}→${p.targetId}(前缀${(p.prefixTicks / timebase.ppq).toFixed(0)}拍)`).join(' · ')}`);
+  }
   log(`   pad↔comp 分工: comp 主奏(GM 织体)· pad=sustain/air 层(单轨优化,不碰伴奏/旋律/和声合同)`);
   log(`     pad mode: guide-tone(POP 3/7)· drone(LOFI/verse 留白)· inner-line(RNB 慢内声部级进)· cluster-mist(LOFI 暗段高区二度雾)· gated-pad(高密 pop chorus shimmer)· full-support(pad-only 段+上层结构张力)· 全在正交音阶内·避同绝对音高`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);

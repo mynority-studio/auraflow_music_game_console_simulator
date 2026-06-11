@@ -31,6 +31,7 @@ import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
+import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
@@ -307,10 +308,16 @@ export function renderSongFull(
   const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
   const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
 
+  // ★ repeatGroup 重放(2026-06-11):同 group 后续段(verse2/chorus2…)复用首段【和声一致前缀(body)】,
+  //   保留各自【发散尾巴(link bar)】。放在 humanize 之前 → body 同音符,humanize/swing 各段跑出自然微差
+  //   (lead 不 humanize → 逐字节一致)。在 resolveInteractions 之后 → 复制的是已消解撞音的首段,内部自洽。
+  //   打破 strict MG lead parity:首次出现==raw MG,重复出现==首次重放(用户决策,2026-06-11)。
+  const replayedTracks = applyRepeatGroupReplay(ledTracks, arrangement, plan.chordTimeline, timebase);
+
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
   const humanRng = rng.substream('humanize');
-  const accentedTracks = humanizeVelocity(ledTracks, timebase.ppq, bpbHuman, humanRng);
+  const accentedTracks = humanizeVelocity(replayedTracks, timebase.ppq, bpbHuman, humanRng);
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
@@ -387,7 +394,11 @@ export function renderSongFull(
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。
   // dense 区间用【pre-shaper tracks】算(post-shaper comp 已删→comp-path 检不到);comp-continuity 审计据此排除。
-  const denseExclude = band.style.toLowerCase() === 'lofi' ? denseMelodySpanRanges(tracks, plan, timebase) : [];
+  // ★ repeatGroup 重放后:dense-melody 排除区也要按【重放后】的 lead 位置算(重复段 lead=首段 → dense 区随之搬到首段位置;
+  //   否则用原始 through-composed lead 的旧 dense 区会与重放后的 comp 删除区错位 → 误报 comp 突发洞)。
+  const denseExclude = band.style.toLowerCase() === 'lofi'
+    ? denseMelodySpanRanges(applyRepeatGroupReplay(tracks, arrangement, plan.chordTimeline, timebase), plan, timebase)
+    : [];
   const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
   return { ir, audit: { findings: [...audit.findings, ...musicality.findings] } };
 }
