@@ -17,7 +17,9 @@ import { gmName } from '../knowledge/instruments';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { renderSongFull } from '../render/renderCoordinator';
+import { renderMgMelody } from '../render/mgLeadRenderer';
 import { planRepeatGroupReplays } from '../render/repeatGroupReplay';
+import { planLeadGapFills } from '../render/leadGapFill';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import { runGenerationControl, type GenerationStatus, type RenderFn } from './GenerationController';
@@ -203,6 +205,11 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   if (replays.length) {
     log(`   重复段重放(body 同音符·lead 逐字节·伴奏各自人性化): ${replays.map((p) => `${p.sourceId}→${p.targetId}(前缀${(p.prefixTicks / timebase.ppq).toFixed(0)}拍)`).join(' · ')}`);
   }
+  // ★ lead 空拍补全(2026-06-11):末音后大空拍 → 延长末音到 bar 末(钳位和弦),不和弦未完成戛然而止
+  //   (在【原始 MG lead】上算补全计划展示,production lead 已补全)
+  const rawLeadForGaps = renderMgMelody(harmonic, band, timebase, request.seed);
+  const gapFills = planLeadGapFills(rawLeadForGaps.notes, harmonic.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
+  if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末/和弦末,补"和弦未完成戛然而止";${gapFills.filter((f) => f.chordClamped).length} 处和弦钳位)`);
   log(`   pad↔comp 分工: comp 主奏(GM 织体)· pad=sustain/air 层(单轨优化,不碰伴奏/旋律/和声合同)`);
   log(`     pad mode: guide-tone(POP 3/7)· drone(LOFI/verse 留白)· inner-line(RNB 慢内声部级进)· cluster-mist(LOFI 暗段高区二度雾)· gated-pad(高密 pop chorus shimmer)· full-support(pad-only 段+上层结构张力)· 全在正交音阶内·避同绝对音高`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);

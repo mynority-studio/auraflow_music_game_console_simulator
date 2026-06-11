@@ -17,6 +17,8 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
 import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
+import { fillLeadBarGaps } from './leadGapFill';
+import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { auditMusicality } from './musicalityAuditor';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { runGenerationControl, type RenderFn } from '../generation/GenerationController';
@@ -48,7 +50,7 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
       const raw = renderMgMelody(plan, band, tb, seed);
-      const expected = applyRepeatGroupReplay([raw], arr, plan.chordTimeline, tb)[0];
+      const expected = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0];
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
       expect(final.notes.length, `${seed}/${style} lead count`).toBe(expected.notes.length);
       expect(ev(final.notes as never), `${seed}/${style} lead events`).toBe(ev(expected.notes as never));
@@ -85,8 +87,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, buildRetryLocator(plan, tb));
     expect(result.attempts, '确实发生重跑').toBeGreaterThanOrEqual(3);
     expect(result.ir, 'retry 后有 IR').toBeDefined();
-    const expected = applyRepeatGroupReplay([raw], arr, plan.chordTimeline, tb)[0]; // ★ 重放后的预期(retry 不改 lead 重放)
-    expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == replay(raw MG)').toBe(ev(expected.notes as never));
+    const expected = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0]; // ★ 重放 + 空拍补全后的预期(retry 不改 lead)
+    expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == fill(replay(raw MG))').toBe(ev(expected.notes as never));
   });
 
   // ④ rng.advance(comp 子流)不改 lead:lead 只依赖 song seed,advance 保持 seed 不变。

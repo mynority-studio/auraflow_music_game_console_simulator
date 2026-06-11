@@ -32,6 +32,7 @@ import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
+import { fillLeadBarGaps } from './leadGapFill';
 import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
@@ -308,11 +309,16 @@ export function renderSongFull(
   const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
   const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
 
+  // ★ lead 空拍补全(2026-06-11,用户):末音后若有【很大空拍】(≥2拍且本 bar 余下全空)→ 延长该末音到 bar 末
+  //   (钳位当前和弦,不越界撞下一和弦)。避免"和弦未完成戛然而止"。只动 lead 时值,不碰 onset/其它轨。
+  //   ★ 放在 repeatGroup 重放【之前】→ 重放复制【已补全】的首段 body → 重复段 lead 仍逐字节一致。
+  const gapFilledTracks = fillLeadBarGaps(ledTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
+
   // ★ repeatGroup 重放(2026-06-11):同 group 后续段(verse2/chorus2…)复用首段【和声一致前缀(body)】,
   //   保留各自【发散尾巴(link bar)】。放在 humanize 之前 → body 同音符,humanize/swing 各段跑出自然微差
-  //   (lead 不 humanize → 逐字节一致)。在 resolveInteractions 之后 → 复制的是已消解撞音的首段,内部自洽。
-  //   打破 strict MG lead parity:首次出现==raw MG,重复出现==首次重放(用户决策,2026-06-11)。
-  const replayedTracks = applyRepeatGroupReplay(ledTracks, arrangement, plan.chordTimeline, timebase);
+  //   (lead 不 humanize → 逐字节一致)。在 resolveInteractions 之后 → 复制已消解撞音的首段,内部自洽。
+  //   打破 strict MG lead parity:首次出现==raw MG(经空拍补全),重复出现==首次重放(用户决策)。
+  const replayedTracks = applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
