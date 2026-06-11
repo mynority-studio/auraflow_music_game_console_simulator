@@ -44,7 +44,6 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
       const { ir, plans } = pipeline(seed, style);
       for (const p of plans) {
         exercised++;
-        const shift = p.targetStartTick - p.sourceStartTick;
         for (const role of ROLES) {
           const src = win(ir, role, p.sourceStartTick, p.sourceStartTick + p.prefixTicks);
           const tgt = win(ir, role, p.targetStartTick, p.targetStartTick + p.prefixTicks);
@@ -55,7 +54,6 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
             expect(exact(tgt, p.targetStartTick), `${seed}/${style} ${p.targetId} lead exact`).toBe(exact(src, p.sourceStartTick));
           }
         }
-        void shift;
       }
     }
     expect(exercised, '至少有重放发生(机制被实际触发)').toBeGreaterThan(0);
