@@ -31,15 +31,23 @@ export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: 
     tempoMap: [{ atBeat: beats(0), bpm }],
   });
   const prog = program ?? LEAD_PROGRAM_BY_STYLE[style];
-  const notes: NoteIR[] = [...lead]
-    .sort((a, b) => a.onsetBeat - b.onsetBeat)
-    .filter((n) => n.durationBeat > 0 && n.onsetBeat < TOTAL_BEATS)
-    .map((n) => ({
-      pitch: midi(Math.round(n.midi)),
+  const src = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat).filter((n) => n.durationBeat > 0 && n.onsetBeat < TOTAL_BEATS);
+  const notes: NoteIR[] = src.map((n, i) => {
+    const p = Math.round(n.midi);
+    // 播放安全:仅当后续【同音高】音在本音结束前起 → 截到它前面(避免 noteOff 撞掉重复音);
+    //   异音高的真实时值【保留】(legato 叠响 = 还原录入)。
+    let durBeat = Math.min(n.durationBeat, TOTAL_BEATS - n.onsetBeat);
+    for (let j = i + 1; j < src.length; j++) {
+      if (src[j].onsetBeat >= n.onsetBeat + durBeat) break;
+      if (Math.round(src[j].midi) === p) { durBeat = Math.max(0.03, src[j].onsetBeat - n.onsetBeat - 0.01); break; }
+    }
+    return {
+      pitch: midi(p),
       startTick: timebase.beatToTick(beats(n.onsetBeat)),
-      durationTicks: timebase.beatToTick(beats(Math.min(n.durationBeat, TOTAL_BEATS - n.onsetBeat))),
+      durationTicks: timebase.beatToTick(beats(durBeat)),
       velocity: clampVel(n.velocity || 0.78),
-    }));
+    };
+  });
   return freezeMusicalIR({
     tracks: [{ role: 'lead', notes, program: prog, mix: leadMix(prog) }],
     timebase,

@@ -54,11 +54,8 @@ export function analyzeAndNormalize(
   }
   notes = [...byBucket.values()].sort((a, b) => a.onset - b.onset);
 
-  // 3) 单旋律安全:只在【真的越过下一音起点】时截(保留录入时值;留白音不动)。
-  for (let i = 0; i < notes.length - 1; i++) {
-    const gap = notes[i + 1].onset - notes[i].onset;
-    if (gap > 0 && notes[i].dur > gap) notes[i].dur = gap;
-  }
+  // 3)(2026-06-12 用户:完全还原录入时值)—— 不再把时值截到下一音起点(那会把 legato 时值吸到网格)。
+  //    单旋律性由【同 onset 取最高音】保证;legato 叠音的真实时值保留,播放时再做【仅同音高】安全裁剪(leadOnlyIr)。
 
   // 4) scale snap
   for (const n of notes) n.midi = snapMidiToScale(n.midi, keyPc, mode);

@@ -42,9 +42,20 @@ describe('motifSandbox/motifAnalysis', () => {
     const atZero = motif.notes.filter((n) => n.onsetBeat === 0);
     expect(atZero.length).toBe(1);
     expect(atZero[0].midi).toBe(64);
-    // 无重叠
+    // 单旋律:onset 互不相同(无同起音和弦);时值可叠(legato 保留,不强制非重叠)
     const s = [...motif.notes].sort((a, b) => a.onsetBeat - b.onsetBeat);
-    for (let i = 0; i < s.length - 1; i++) expect(s[i].onsetBeat + s[i].durationBeat).toBeLessThanOrEqual(s[i + 1].onsetBeat + 1e-6);
+    for (let i = 0; i < s.length - 1; i++) expect(s[i].onsetBeat).toBeLessThan(s[i + 1].onsetBeat);
+  });
+
+  it('★ legato 输入:时值完全还原,不被网格/下一音裁剪(异音高)', () => {
+    const cap: CapturedMidiNote[] = [
+      { midi: 60, velocity: 100, onsetMs: 0, durationMs: 700 },   // 700/625=1.12 beat,越过下一音
+      { midi: 64, velocity: 90, onsetMs: 640, durationMs: 700 },
+      { midi: 67, velocity: 90, onsetMs: 1260, durationMs: 900 },
+    ];
+    const { motif } = analyzeAndNormalize(cap, 0, 'major', 96);
+    expect(motif.notes[0].durationBeat).toBeCloseTo(700 / 625, 3); // 1.12,未被裁到 1.0 网格
+    expect(motif.notes[1].durationBeat).toBeCloseTo(700 / 625, 3);
   });
 
   it('质量门:< 2 音抛错', () => {
