@@ -16,9 +16,9 @@
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Boxes } from 'lucide-react';
+import { Activity, Boxes, Piano } from 'lucide-react';
 
-export type DevPanelId = 'pipeline' | 'newengine';
+export type DevPanelId = 'pipeline' | 'newengine' | 'motif';
 
 export interface DevPanelMeta {
     id: DevPanelId;
@@ -42,6 +42,11 @@ export const DEV_PANELS: DevPanelMeta[] = [
         id: 'pipeline', label: '管道监视', hint: 'Pipeline monitor', combo: 'Q+H',
         icon: Activity,
         dot: 'bg-sky-400', activeRing: 'border-sky-400/50 bg-sky-500/10', activeText: 'text-sky-300',
+    },
+    {
+        id: 'motif', label: 'Motif 沙盒', hint: 'Motif weaver', combo: 'Q+R',
+        icon: Piano,
+        dot: 'bg-fuchsia-400', activeRing: 'border-fuchsia-400/50 bg-fuchsia-500/10', activeText: 'text-fuchsia-300',
     },
 ];
 
