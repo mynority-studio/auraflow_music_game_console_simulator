@@ -9,7 +9,8 @@
 import type { CapturedMidiNote, MotifNote, ScaleMode, UserMotif } from './types';
 import { midiToScaleDegree, midiToOctave, snapMidiToScale, degreeOctaveToMidi } from './scale';
 
-const GRID = 0.25; // 1/16 = 0.25 beat
+const GRID = 0.25; // 1/16 = 0.25 beat(onset 量化网格)
+const MIN_DUR_BEAT = 0.05; // duration 不量化,仅兜底防 0(保留录入原本时值)
 const quantize = (beat: number): number => Math.round(beat / GRID) * GRID;
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
@@ -36,10 +37,12 @@ export function analyzeAndNormalize(
   const sorted = [...captured].sort((a, b) => a.onsetMs - b.onsetMs);
   const t0 = sorted[0].onsetMs;
   type Tmp = { midi: number; onset: number; dur: number; vel: number };
+  // ★ 2026-06-12(用户:不要改录入原本时值)—— 只量化 onset(quote 要落网格),
+  //   duration 【保留录入原值】(ms→beat,不量化),仅 min 兜底防 0。
   let notes: Tmp[] = sorted.map((c) => ({
     midi: c.midi,
     onset: quantize((c.onsetMs - t0) / msPerBeat),
-    dur: Math.max(GRID, quantize(c.durationMs / msPerBeat)),
+    dur: Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat),
     vel: clamp01(c.velocity / 127),
   }));
 
@@ -51,7 +54,7 @@ export function analyzeAndNormalize(
   }
   notes = [...byBucket.values()].sort((a, b) => a.onset - b.onset);
 
-  // 3) 防重叠:每音 dur 截到下一音 onset
+  // 3) 单旋律安全:只在【真的越过下一音起点】时截(保留录入时值;留白音不动)。
   for (let i = 0; i < notes.length - 1; i++) {
     const gap = notes[i + 1].onset - notes[i].onset;
     if (gap > 0 && notes[i].dur > gap) notes[i].dur = gap;

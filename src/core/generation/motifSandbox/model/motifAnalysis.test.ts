@@ -4,13 +4,15 @@ import { isInScale } from './scale';
 import type { CapturedMidiNote } from './types';
 
 describe('motifSandbox/motifAnalysis', () => {
-  it('量化:onset/dur 落 1/16 网格(0.25 倍数)', () => {
+  it('onset 落 1/16 网格;duration 保留录入原本时值(不量化)', () => {
     const cap = generateSampleCaptured(96, 0, 'major', 1);
     const { motif } = analyzeAndNormalize(cap, 0, 'major', 96);
     for (const n of motif.notes) {
-      expect(Math.abs(n.onsetBeat / 0.25 - Math.round(n.onsetBeat / 0.25))).toBeLessThan(1e-6);
-      expect(n.durationBeat).toBeGreaterThanOrEqual(0.25);
+      expect(Math.abs(n.onsetBeat / 0.25 - Math.round(n.onsetBeat / 0.25))).toBeLessThan(1e-6); // onset 在网格
+      expect(n.durationBeat).toBeGreaterThan(0);
     }
+    // ★ 至少一个 duration 不是 0.25 的整数倍 → 证明 duration 未被量化(保留录入原值)
+    expect(motif.notes.some((n) => Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25)) > 1e-3)).toBe(true);
   });
 
   it('snap:含离调音的输入 → 输出全在调内(major 与 minor)', () => {
