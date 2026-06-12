@@ -146,10 +146,37 @@ function buildL1Case(seed: number, styleHint: string) {
     },
     harmonic: {
       chordCount: harmonic.chordTimeline.length,
-      chords: harmonic.chordTimeline.map((c: Record<string, unknown>) => ({
-        roman: c.roman ?? null, startBeat: c.startBeat, durationBeats: c.durationBeats,
-        rootPc: c.rootPc ?? null, type: c.type ?? c.chordType ?? null,
+      chords: harmonic.chordTimeline.map((c, i) => ({
+        id: c.id,
+        sectionId: c.sectionId,
+        roman: {
+          degree: c.roman.degree, accidental: c.roman.accidental, quality: c.roman.quality,
+          secondaryTarget: c.roman.secondaryTarget
+            ? { degree: c.roman.secondaryTarget.degree, accidental: c.roman.secondaryTarget.accidental, quality: c.roman.secondaryTarget.quality }
+            : null,
+        },
+        rootPc: c.rootPc, quality: c.quality,
+        startBeat: c.startBeat, durationBeats: c.durationBeats,
+        chordType: c.chordType ?? null,
+        borrowedSource: c.borrowedSource ?? null,
+        mustResolve: c.mustResolve ?? false,
+        forcedScale: c.forcedScale ?? null,
+        localTonalCenterPc: c.localTonalCenterPc ?? null,
+        bassRole: c.bassRole ?? null,
+        bassPedalPc: c.bassPedalPc ?? null,
+        tonicizationPlacement: c.tonicizationPlacement ?? null,
+        borrowedFrom: c.borrowedFrom ?? null,
+        effectiveFunc: c.effectiveFunc ?? null,
+        analysisKeyPc: c.analysisKeyPc ?? null,
+        localRoman: c.localRoman ?? null,
+        func: harmonic.chordFunctionTimeline[i],
+        scale: harmonic.chordScaleMap[c.id],
+        stable: harmonic.stableToneMap[c.id],
+        color: harmonic.colorToneMap[c.id],
+        avoid: harmonic.avoidNoteMap[c.id],
+        borrow: harmonic.borrowedChordMap[c.id] ?? null,
       })),
+      modulationMap: harmonic.modulationMap,
       hash: fnv1a(stableStringify(harmonic)),
     },
     instrumentation: {
