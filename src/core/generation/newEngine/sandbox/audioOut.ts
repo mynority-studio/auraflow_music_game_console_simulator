@@ -2,7 +2,7 @@
 // newEngine · sandbox · 发声出口
 // ------------------------------------------------------------
 // 沙盒唯一与音频系统接触的点:MusicalIR → MidiEvent[] → globalMidiScheduler → 发声。
-// 复用【中立】音频回放层(src/core/audio),不碰 improCore/mgEngine。
+// 复用【中立】音频回放层(src/core/audio),不碰任何旧引擎(自包含)。
 // newEngine 引擎核心仍 0 import 音频;只有这个 sandbox 文件 import 它(harness)。
 // ============================================================
 

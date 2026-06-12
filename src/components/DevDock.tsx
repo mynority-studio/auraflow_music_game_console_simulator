@@ -2,7 +2,7 @@
 // DevDock — 左侧竖排开发面板入口
 // ============================================================
 //
-// 把原本只能靠 Q+I / Q+H / Q+E 组合键调出的隐藏沙盒做成可见菜单。
+// 把原本只能靠 Q+H / Q+N 组合键调出的隐藏沙盒做成可见菜单。
 // 点击某项 = 翻转对应面板;面板用键盘组合键开关时,这里高亮也会同步
 // (经 devPanels.ts 的 state 广播)。可折叠成左缘细 tab。
 // ============================================================
@@ -18,7 +18,7 @@ import {
 export const DevDock: React.FC = () => {
     // 初值:PipelineMonitor 默认可见,其余隐藏(挂载后会被各面板回报覆盖)
     const [openMap, setOpenMap] = useState<Record<DevPanelId, boolean>>({
-        newengine: false, improcore: false, pipeline: true, volume: false,
+        newengine: false, pipeline: true,
     });
     const [collapsed, setCollapsed] = useState(false);
 
