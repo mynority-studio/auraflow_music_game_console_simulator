@@ -66,7 +66,8 @@ function buildL0(): L0Stream[] {
 // ---------- L1 ----------
 
 const L1_SEEDS = [12345, 7, 42, 1001, 20260612, 31415926, 271828182, 999999937];
-const L1_STYLES = ['pop', 'jazz', 'lofi', 'rnb'];
+/* T1 复核扩充: +modal(modal regime 分支)/default(自身命中)/__unknown__(回退语义) */
+const L1_STYLES = ['pop', 'jazz', 'lofi', 'rnb', 'modal', 'default', '__unknown__'];
 
 /** 键序稳定的 stringify（哈希输入必须与实现无关地确定） */
 function stableStringify(v: unknown): string {
