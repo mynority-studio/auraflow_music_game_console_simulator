@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
-import { analyzeAndNormalize, generateSampleCaptured, MotifAnalysisError, type AnalyzeResult } from '../model/motifAnalysis';
+import { analyzeAndNormalize, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildLeadOnlyIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, ScaleMode } from '../model/types';
@@ -71,6 +71,21 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   const stopPlayback = useCallback(() => { stopNewEngine(); setPlaying(false); }, []);
 
+  // 录到/注入 raw → 据长度识别整 bar + 调 bpm → 走完整 analyze(不绕过 analyzer)
+  const applyCaptured = useCallback((cap: CapturedMidiNote[], label: string) => {
+    setCaptured(cap);
+    setResult(null);
+    if (cap.length === 0) { setAnalysis(null); setStatus('未录到音符'); return; }
+    const { keyPc: k, mode: md, bpm: b, seed: s } = liveCfg.current;
+    const fit = fitRecordingToBars(cap, b);
+    setBpm(fit.adjustedBpm); // 调 bpm 让这段正好整 bar
+    try {
+      const a = analyzeAndNormalize(cap, k, md, fit.adjustedBpm, s);
+      setAnalysis(a);
+      setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· BPM ${b}→${fit.adjustedBpm} · raw ${a.rawCount}→norm ${a.normalizedCount}`);
+    } catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
+  }, []);
+
   // —— Web MIDI 接入 ——
   const enableMidi = useCallback(async () => {
     const onMessage = (m: ParsedMidiMessage) => {
@@ -90,41 +105,30 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     if (timer.current != null) { clearInterval(timer.current); timer.current = null; }
     const notes = recorder.current.stop();
     setRecording(false);
-    setCaptured(notes);
-    setResult(null);
-    const { keyPc: k, mode: md, bpm: b, seed: s } = liveCfg.current;
-    try { const r = analyzeAndNormalize(notes, k, md, b, s); setAnalysis(r); setStatus(`录到 raw ${r.rawCount} → normalized ${r.normalizedCount} 音`); }
-    catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '音符太少,重录'); }
-  }, []);
+    applyCaptured(notes, '录制'); // 据长度识别整 bar + 调 bpm
+  }, [applyCaptured]);
 
   const startRecord = useCallback(() => {
     if (!access.current) { setStatus('先 Enable MIDI'); return; }
     stopPlayback();
-    recorder.current.start({ maxMs: 4000 });
-    setRecording(true); setElapsed(0); setCaptured([]); setResult(null); setStatus('● 录制中…(≤4s)');
+    recorder.current.start(); // 手动起止,不固定秒数(30s 安全上限)
+    setRecording(true); setElapsed(0); setCaptured([]); setResult(null); setStatus('● 录制中…(手动停止)');
     timer.current = window.setInterval(() => {
       const e = recorder.current.elapsedMs();
       setElapsed(e);
-      if (e >= 4000 || !recorder.current.isActive()) finishRecord();
+      if (e >= 30000 || !recorder.current.isActive()) finishRecord(); // 30s 安全兜底
     }, 80);
   }, [stopPlayback, finishRecord]);
 
   // 卸载清理
   useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); access.current?.dispose(); }, []);
 
-  // 注入示例 motif:生成 raw → 走完整 analyze(不绕过)
+  // 注入示例 motif:生成 raw → applyCaptured(同录制路径)
   const injectSample = useCallback(() => {
     stopPlayback();
-    const variant = (seed % 4 + 4) % 4;
-    const cap = generateSampleCaptured(bpm, keyPc, mode, variant);
-    setCaptured(cap);
-    setResult(null);
-    try {
-      const a = analyzeAndNormalize(cap, keyPc, mode, bpm, seed);
-      setAnalysis(a);
-      setStatus(`注入示例:raw ${a.rawCount} → normalized ${a.normalizedCount} 音`);
-    } catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
-  }, [bpm, keyPc, mode, seed, stopPlayback]);
+    const { keyPc: k, mode: md, bpm: b, seed: s } = liveCfg.current;
+    applyCaptured(generateSampleCaptured(b, k, md, (s % 4 + 4) % 4), '注入示例');
+  }, [applyCaptured, stopPlayback]);
 
   const generate = useCallback(() => {
     if (captured.length === 0) { setStatus('先注入/录入 motif'); return; }
@@ -189,7 +193,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             ? <button type="button" onClick={startRecord} disabled={midiStatus !== 'ready'} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">● 录制</button>
             : <button type="button" onClick={finishRecord} className="rounded-lg bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
           <button type="button" onClick={injectSample} className="rounded-lg bg-fuchsia-600/80 hover:bg-fuchsia-500 px-2.5 py-1 text-[12px] text-white">注入示例</button>
-          <span className="text-[11px] text-zinc-400">{recording ? `${(elapsed / 1000).toFixed(1)}s / 4.0s` : `raw ${captured.length}${a ? ` → norm ${a.normalizedCount}` : ''}`}</span>
+          <span className="text-[11px] text-zinc-400">{recording ? `${(elapsed / 1000).toFixed(1)}s ≈ ${(elapsed / (240000 / bpm)).toFixed(1)} bar` : `raw ${captured.length}${a ? ` → ${a.normalizedCount}音 / ${a.motif.lengthBeats / 4} bar` : ''}`}</span>
           {captured.length > 0 && !recording && <button type="button" onClick={() => { setCaptured([]); setAnalysis(null); setResult(null); setStatus('已清空'); }} className="ml-auto text-[10px] text-zinc-500 hover:text-zinc-300">清空</button>}
         </div>
       </div>

@@ -1,17 +1,19 @@
 // ============================================================
-// motifSandbox · capture · 4 秒 motif 录制器
+// motifSandbox · capture · motif 录制器(手动起止)
 // ------------------------------------------------------------
-// noteOn/noteOff → CapturedMidiNote[]。≤4 秒自动 stop;未关音符 stop 时补 duration;最小时值 clamp。
-// 时钟可注入(now)→ 可测。raw 保留重叠;归一化交 analyzeAndNormalize。
+// noteOn/noteOff → CapturedMidiNote[]。★ 2026-06-15:手动 start/stop,不再固定 4 秒
+//   (默认 30s 安全上限防忘记停);未关音符 stop 时补 duration;最小时值 clamp。
+//   录后由 fitRecordingToBars 据 bpm 识别整 bar 并调 bpm。时钟可注入(now)→ 可测。
 // ============================================================
 
 import type { CapturedMidiNote } from '../model/types';
 
 const MIN_DUR_MS = 60;
+const SAFETY_MAX_MS = 30000;
 
 export class MidiMotifRecorder {
   private startMs = 0;
-  private maxMs = 4000;
+  private maxMs = SAFETY_MAX_MS;
   private active = false;
   private open = new Map<number, { onsetMs: number; velocity: number }>();
   private notes: CapturedMidiNote[] = [];
@@ -26,7 +28,7 @@ export class MidiMotifRecorder {
 
   start(opts: { maxMs?: number } = {}): void {
     this.startMs = this.now();
-    this.maxMs = opts.maxMs ?? 4000;
+    this.maxMs = opts.maxMs ?? SAFETY_MAX_MS;
     this.active = true;
     this.open.clear();
     this.notes = [];

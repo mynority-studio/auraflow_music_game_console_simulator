@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeAndNormalize, generateSampleCaptured, MotifAnalysisError } from './motifAnalysis';
+import { analyzeAndNormalize, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError } from './motifAnalysis';
 import { isInScale } from './scale';
 import type { CapturedMidiNote } from './types';
 
@@ -27,7 +27,38 @@ describe('motifSandbox/motifAnalysis', () => {
     const cap = generateSampleCaptured(96, 0, 'major', 0);
     const { motif } = analyzeAndNormalize(cap, 0, 'major', 96);
     for (const n of motif.notes) { expect(n.scaleDegree).toBeGreaterThanOrEqual(1); expect(n.scaleDegree).toBeLessThanOrEqual(7); }
-    expect([1, 2, 4, 8]).toContain(motif.lengthBeats);
+    expect([4, 8, 12, 16]).toContain(motif.lengthBeats); // 整 bar(1..4 bar)
+  });
+
+  it('★ fitRecordingToBars:据长度识别整 bar + 反算 bpm 让它正好整 bar', () => {
+    // 96bpm,msPerBar=2500;录 ~2 bar 略快(4800ms)→ targetBars=2,bpm 调到 100(2bar=4800ms)
+    const cap = [
+      { midi: 60, velocity: 100, onsetMs: 0, durationMs: 400 },
+      { midi: 64, velocity: 90, onsetMs: 4400, durationMs: 400 }, // span = 4800ms
+    ];
+    const fit = fitRecordingToBars(cap, 96);
+    expect(fit.targetBars).toBe(2);
+    expect(fit.adjustedBpm).toBeCloseTo(100, 1);
+    // 用调整后的 bpm,这段正好 2 bar:span(beats) = 8
+    const msPerBeat = 60000 / fit.adjustedBpm;
+    expect((4800 / msPerBeat)).toBeCloseTo(8, 1);
+  });
+
+  it('fitRecordingToBars:不整拍 → 缩/拉到最近整 bar', () => {
+    // 100bpm,msPerBar=2400;录 3.1 bar(7440ms)→ round=3 bar,bpm 反算
+    const cap = [{ midi: 60, velocity: 100, onsetMs: 0, durationMs: 300 }, { midi: 67, velocity: 90, onsetMs: 7200, durationMs: 240 }];
+    const fit = fitRecordingToBars(cap, 100);
+    expect(fit.targetBars).toBe(3);
+    const msPerBeat = 60000 / fit.adjustedBpm;
+    expect(fit.spanMs / msPerBeat).toBeCloseTo(12, 1); // 正好 3 bar = 12 拍
+  });
+
+  it('录制路径:调 bpm 后 motif 长度落整 bar(4/8/12/16 拍)', () => {
+    const cap = [{ midi: 60, velocity: 100, onsetMs: 0, durationMs: 400 }, { midi: 64, velocity: 90, onsetMs: 4400, durationMs: 400 }];
+    const fit = fitRecordingToBars(cap, 96);
+    const { motif } = analyzeAndNormalize(cap, 0, 'major', fit.adjustedBpm);
+    expect(motif.lengthBeats % 4).toBe(0);            // 整 bar
+    expect(motif.lengthBeats).toBe(fit.targetBars * 4); // = 识别的 bar 数
   });
 
   it('单旋律化:同 onset 的和音只留最高音,无重叠', () => {

@@ -62,11 +62,12 @@ export function analyzeAndNormalize(
 
   // 5) 质量门
   if (notes.length < 2) throw new MotifAnalysisError('音符太少(<2),请重录一段更完整的 motif。');
-  if (notes.length > 24) notes = notes.slice(0, 16); // 太密 → 取前 16
+  if (notes.length > 96) notes = notes.slice(0, 96); // 极端密度兜底
 
-  // 6) motif 长度:span 向上补齐到 1/2/4/8(≤8)
+  // 6) motif 长度:span 四舍五入到【整 bar】(4 拍倍数),1..4 bar = 4/8/12/16 拍。
+  //    (录制路径已先用 fitRecordingToBars 调 bpm 把 span 拉到整 bar,这里只是落定。)
   const span = Math.max(...notes.map((n) => n.onset + n.dur));
-  const lengthBeats = [1, 2, 4, 8].find((b) => b >= span) ?? 8;
+  const lengthBeats = Math.max(4, Math.min(16, Math.round(span / 4) * 4));
 
   // 7) 转 MotifNote(度/八度/accent)
   const lastIdx = notes.length - 1;
@@ -103,6 +104,39 @@ export function analyzeAndNormalize(
     createdAt,
   };
   return { motif, rawCount, normalizedCount: motifNotes.length };
+}
+
+// ============================================================
+// 录制长度 → 整 bar 自动识别 + BPM 调整(2026-06-15,用户)
+//   手动起止录制 → 据当前 bpm 算这段是几 bar → 四舍五入到 1..4 bar →
+//   反算 bpm,让这段【正好 = 整数 bar】(不整拍就靠调 bpm 缩/拉到整 bar)。
+// ============================================================
+export interface BarFit {
+  adjustedBpm: number; // 调整后 bpm(让 span 正好 = targetBars 个整 bar)
+  targetBars: number;  // 识别出的整 bar 数(1..maxBars)
+  rawBars: number;     // 调整前的非整数 bar 数
+  spanMs: number;      // 首音到末音结束的时长
+}
+
+/** 据录制时长 + 当前 bpm 识别整 bar 数,并反算让它正好整 bar 的 bpm。 */
+export function fitRecordingToBars(
+  captured: readonly CapturedMidiNote[],
+  bpm: number,
+  beatsPerBar = 4,
+  maxBars = 4,
+): BarFit {
+  if (captured.length === 0) return { adjustedBpm: bpm, targetBars: 1, rawBars: 0, spanMs: 0 };
+  const sorted = [...captured].sort((a, b) => a.onsetMs - b.onsetMs);
+  const first = sorted[0].onsetMs;
+  const lastEnd = Math.max(...sorted.map((c) => c.onsetMs + c.durationMs));
+  const spanMs = Math.max(1, lastEnd - first);
+  const msPerBar = (beatsPerBar * 60000) / bpm;
+  const rawBars = spanMs / msPerBar;
+  const targetBars = Math.max(1, Math.min(maxBars, Math.round(rawBars)));
+  // span = targetBars 个 bar → msPerBeat = spanMs/(targetBars*beatsPerBar) → bpm = 60000/msPerBeat
+  const exactBpm = (beatsPerBar * targetBars * 60000) / spanMs;
+  const adjustedBpm = Math.round(Math.max(40, Math.min(240, exactBpm)) * 10) / 10;
+  return { adjustedBpm, targetBars, rawBars, spanMs };
 }
 
 // ============================================================
