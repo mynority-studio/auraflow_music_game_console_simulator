@@ -24,7 +24,7 @@ const BASS_PROGRAM: Record<SandboxStyle, number> = { pop: 33, lofi: 33, rnb: 33,
 
 // 某小节旋律稀疏(无结构点)时回退的默认织体击点(≈ 老固定 pattern)。
 const DEFAULT_STRUCT: Record<SandboxStyle, number[]> = { pop: [2], lofi: [], rnb: [1.5, 2.5], jazz: [] };
-const ACCENT_MIN = 0.58; // 视为【骨干/重音】的 accent 阈值
+const SUPPORT_MIN = 0.58; // 视为【骨干/重音】的支点阈值(取 accent 与 structuralToneScore 的较大者)
 
 /** 三和弦闭合排列(root 落 comp 音区底,三/五度叠上);comp 区 ≈ [48,67]。 */
 function triadVoicing(chord: SandboxChord): number[] {
@@ -47,7 +47,9 @@ function barStructPoints(lead: readonly MotifNote[] | undefined, bar: number, fa
   const offs = new Set<number>();
   for (const n of lead) {
     if (Math.floor(n.onsetBeat / 4) !== bar) continue;
-    if (n.accent < ACCENT_MIN) continue;
+    // §5:支点 = 力度重音【或】结构音(节拍/时值/相位)。响亮的弱拍经过音可驱动 comp 重音;
+    //   安静的下拍长音也能驱动 bass/和声支撑 —— 伴奏支撑隐形节拍,不盲跟每个音。
+    if (Math.max(n.accent, n.structuralToneScore ?? 0) < SUPPORT_MIN) continue;
     const off = +(n.onsetBeat - bar * 4).toFixed(3);
     if (off >= 1.0 && off <= 3.9) offs.add(off);
   }

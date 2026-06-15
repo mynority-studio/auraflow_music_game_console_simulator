@@ -243,9 +243,12 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
 
   const motifBars = Math.max(1, Math.min(PHRASE_BARS, Math.round(motif.lengthBeats / BAR)));
-  const motifBeats = motifBars * BAR;            // 陈述长度(相位锁定到乐句头)
+  // §4:quote 单元 = 排比陈述长度。motif 满 4 小节会吃光乐句(应答区=0,退化成 4 段死复制)→
+  //   缩到前 2 小节【子动机】,保证每个和弦循环【既有原样再现、又有续写】。≤2 小节 motif 整段 quote。
+  const quoteBars = motifBars >= PHRASE_BARS ? 2 : motifBars;
+  const motifBeats = quoteBars * BAR;            // 陈述/quote 长度(相位锁定到乐句头)
   const phraseBeats = PHRASE_BARS * BAR;         // 一个和弦进行乐句 = 16 拍
-  const answerBeats = phraseBeats - motifBeats;  // 乐句里 motif 之后的应答区(0 = motif 占满乐句)
+  const answerBeats = phraseBeats - motifBeats;  // 乐句里 quote 之后的应答区 —— 恒 > 0(留发展空间)
   const numPhrases = Math.max(1, Math.round(TARGET_BEATS / phraseBeats));
   const progression = buildProgression(motif, keyPc, mode, TARGET_BARS);
 

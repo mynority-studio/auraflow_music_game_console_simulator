@@ -1,9 +1,12 @@
 // ============================================================
-// motifSandbox · capture · motif 录制器(手动起止)
+// motifSandbox · capture · motif 录制器(手动起止,原始 ms 时间戳)
 // ------------------------------------------------------------
-// noteOn/noteOff → CapturedMidiNote[]。★ 2026-06-15:手动 start/stop,不再固定 4 秒
-//   (默认 30s 安全上限防忘记停);未关音符 stop 时补 duration;最小时值 clamp。
-//   录后由 fitRecordingToBars 据 bpm 识别整 bar 并调 bpm。时钟可注入(now)→ 可测。
+// noteOn/noteOff → CapturedMidiNote[](onsetMs 相对 start)。未关音符 stop 时补 duration;最小时值 clamp。
+//   ★ 下游分两路:
+//     · hiddenGrid(默认)—— capturedToGridNotes(对着【隐形时钟】把 ms 映射到网格,数拍 click 起);
+//       【不调 fitRecordingToBars、不推断 BPM】。
+//     · freeFallback(回退/调试)—— fitRecordingToBars 据 bpm 识别整 bar 并调 bpm(时序置信较低)。
+//   时钟可注入(now)→ 可测。
 // ============================================================
 
 import type { CapturedMidiNote } from '../model/types';

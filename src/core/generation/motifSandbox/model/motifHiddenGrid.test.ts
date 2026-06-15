@@ -45,6 +45,18 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     expect(analyzeHiddenGridMotif(g, c).motif.lengthBeats).toBe(16);
   });
 
+  it('★ §4:4 小节 motif 不退化成 4 段死复制(quote 缩子动机 + 每和弦循环有发展)', () => {
+    const c = ctxOf({ desiredBars: 4 });
+    const g = [note(c, 60, 100, 0, 1), note(c, 64, 90, 2, 1), note(c, 67, 100, 4, 1), note(c, 72, 90, 8, 1), note(c, 69, 90, 12, 1), note(c, 67, 100, 14, 1)];
+    const { motif } = analyzeHiddenGridMotif(g, c);
+    expect(motif.lengthBeats).toBe(16); // 真 4 小节
+    const r = generateMotifWeave({ capturedNotes: [], motif, style: 'pop', keyPc: 0, mode: 'major', bpm: c.bpm, seed: 7 });
+    const quoteHeads = r.occurrences.filter((o) => o.kind === 'quote').map((o) => o.startBeat);
+    for (const b of [0, 16, 32, 48]) expect(quoteHeads, `循环头@${b} 有 quote`).toContain(b); // 每和弦循环头都再现
+    expect(r.occurrences.some((o) => o.kind === 'develop'), '有发展/续写').toBe(true);   // 不是死复制
+    expect(r.lead.some((n) => n.occurrenceKind === 'develop')).toBe(true);
+  });
+
   it('★ 结构音:下拍上的【安静长音】结构分 > 弱拍 16 分上的【响亮短音】(directive §12)', () => {
     const c = ctxOf();
     const g = [

@@ -20,13 +20,13 @@ The main direction is correct:
 
 This follow-up clarifies the remaining product requirements and fixes implementation drift.
 
-## 2. Non-negotiable Requirement: User Input Is Within 4 Seconds
+## 2. Updated Requirement: Cancel The 4-Second Input Limit
 
-The user motif input window must be within 4 seconds.
+The previous 4-second user-input limit is canceled by user decision.
 
-This is not a debug preference. It is a product requirement.
+This is not a bug in the current implementation. The Q+R sandbox may allow a longer hidden-grid capture window so the user can play a more complete motif.
 
-Current issue:
+Current status:
 
 - `MotifWeaverSandboxPanel.tsx` calls `createHiddenGridContext(... desiredBars: 4)`.
 - `hiddenGridClock.ts` accepts `desiredBars = 4` directly.
@@ -34,40 +34,38 @@ Current issue:
 
 Required behavior:
 
-- Normal hidden-grid capture must never exceed 4 seconds.
-- The capture context must compute allowed bars from BPM.
-- If requested bars exceed the 4-second limit, clamp down automatically.
-- Debug mode may request longer capture only if explicitly named as debug and not used by the normal Q+R flow.
+- Normal hidden-grid capture may request up to 4 bars.
+- Do not clamp capture duration to 4 seconds.
+- Count-in still defines the hidden clock start.
+- The recorder must still stop automatically at the configured capture window end.
+- The UI should communicate capture in musical bars, not in "within 4 seconds" language.
 
 Suggested implementation:
 
 ```ts
-const MAX_USER_INPUT_MS = 4000;
+const MAX_CAPTURE_BARS = 4;
 
-function clampCaptureBarsToFourSeconds(
+function clampCaptureBars(
   requestedBars: 1 | 2 | 3 | 4,
-  bpm: number,
-  beatsPerBar = 4,
 ): 1 | 2 | 3 | 4 {
-  const msPerBar = beatsPerBar * 60000 / bpm;
-  const maxBars = Math.max(1, Math.floor(MAX_USER_INPUT_MS / msPerBar));
-  return Math.max(1, Math.min(requestedBars, maxBars, 4)) as 1 | 2 | 3 | 4;
+  return Math.max(1, Math.min(requestedBars, MAX_CAPTURE_BARS)) as 1 | 2 | 3 | 4;
 }
 ```
 
 Default product behavior:
 
-- `desiredBars = 1`
+- `desiredBars = 4`
 - `countInBars = 1`
-- pop/rnb/lofi usually capture 1 bar.
-- jazz may allow 2 bars only when `2 * 4 * 60000 / bpm <= 4000`.
+- The user may stop early.
+- Motif length should still be derived from the actual played material inside the hidden grid.
 
 Acceptance:
 
-- For pop 98 BPM, capture window is 1 bar, about 2.45 seconds.
-- For lofi 80 BPM, capture window is 1 bar, about 3 seconds.
-- For jazz 140 BPM, 2 bars may be allowed, about 3.43 seconds, only if requested.
-- No normal hidden-grid capture window is longer than 4.0 seconds.
+- For pop 98 BPM and `desiredBars = 4`, capture window may be about 9.8 seconds.
+- `captureBars` can be 1, 2, 3, or 4.
+- Count-in notes are still filtered out.
+- Notes after the capture window are still ignored.
+- No test or UI copy should assert a 4-second maximum.
 
 ## 3. Formalize New Decision: Repeat Motif After One Harmonic Cycle
 
@@ -103,9 +101,9 @@ Acceptance:
 - Verse 2 contains motif quotes at bars 9 and 13.
 - The generated melody still has development material after the quote in each harmonic cycle.
 
-## 4. Prevent Long Motifs From Removing Continuation Space
+## 4. Keep Continuation Space Even With Longer Capture
 
-The motif input is short by design.
+The capture window may be longer than 4 seconds, but the generated melody still needs quote + development.
 
 Current issue:
 
@@ -114,23 +112,28 @@ Current issue:
 
 Required behavior:
 
-- Normal Q+R capture should produce a motif length of 1 bar by default.
-- A 2-bar motif is allowed only when it fits the 4-second window and still leaves at least 2 bars of answer space in a 4-bar harmonic cycle.
-- A 3- or 4-bar motif should not be produced by normal Q+R capture.
+- Normal Q+R capture may use a 4-bar window.
+- If the user only plays in the first 1 or 2 bars, derive motif length from the actual played material.
+- If the analyzed motif consumes the full 4-bar harmonic cycle, the weaver must still create continuation by using one of these strategies:
+  - quote only the motif head or strongest sub-motif at the next cycle head;
+  - use a shortened quote for cycle repetition;
+  - create answer/development in the following cycle while preserving a recognizable motif recurrence.
+- Do not let a long captured motif collapse the whole 16-bar result into four literal copies.
 
 Implementation rule:
 
 ```txt
-normal motif length <= 2 bars
-normal capture duration <= 4 seconds
-preferred motif length = 1 bar
+normal capture window <= 4 bars
+normal capture duration may exceed 4 seconds
+preferred motif quote unit = 1-2 bars when a full 4-bar capture leaves no answer space
+motif recurrence remains required after each harmonic cycle
 ```
-
-If the user plays only in the first bar of a longer debug window, motif length can still derive to 1 bar. But the normal product path should not offer a 4-bar capture window.
 
 Acceptance:
 
-- For default pop hidden-grid capture, motif length is 4 beats unless the user plays into a valid second bar.
+- For default pop hidden-grid capture, a 4-bar window is allowed.
+- If the user plays only in bar 1, motif length is 4 beats.
+- If the user plays across bars 1-4, the generated melody still contains development and is not just four literal copies.
 - `answerBeats` in `motifWeaver.ts` is normally greater than 0.
 - A default generated 16-bar lead contains both exact motif quotes and developed continuation.
 
@@ -210,14 +213,15 @@ Acceptance:
 
 Add or update tests for:
 
-1. `createHiddenGridContext` clamps normal capture bars to <= 4 seconds.
-2. Default pop hidden-grid capture is 1 bar and <= 4 seconds.
-3. Jazz can allow 2 bars only when duration <= 4 seconds.
-4. UI hidden-grid path no longer passes `desiredBars: 4` for normal capture.
+1. `createHiddenGridContext` allows normal capture bars up to 4.
+2. Default Q+R hidden-grid capture may pass `desiredBars: 4`.
+3. A 4-bar pop capture window is allowed even when it exceeds 4 seconds.
+4. Count-in and post-window notes are still filtered correctly.
 5. Default `quotePlan` is `phraseHeads`.
 6. Exact motif quotes occur at beats `0, 16, 32, 48`.
 7. With a 1-bar motif, each 4-bar cycle has answer/development material after the quote.
-8. Accompaniment support points use `structuralToneScore` as well as `accent`.
+8. With a 4-bar captured motif, the result still has recognizable recurrence and development rather than four literal copies only.
+9. Accompaniment support points use `structuralToneScore` as well as `accent`.
 
 Command:
 
@@ -229,7 +233,7 @@ npm run test -- motifSandbox
 
 The follow-up is complete when:
 
-- Q+R hidden-grid capture stays within 4 seconds.
+- Q+R hidden-grid capture supports up to 4 bars and is not capped at 4 seconds.
 - The default motif is short enough to leave continuation space.
 - The motif repeats after each 4-bar harmonic cycle.
 - Verse 1 and Verse 2 both clearly contain the user motif.
@@ -238,4 +242,3 @@ The follow-up is complete when:
 - Accompaniment supports both rhythmic accents and structural tones.
 - Free fallback remains available but is not the normal path.
 - `npm run test -- motifSandbox` passes.
-

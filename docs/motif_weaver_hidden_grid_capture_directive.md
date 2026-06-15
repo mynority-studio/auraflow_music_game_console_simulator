@@ -10,6 +10,8 @@ Status: implementation directive for the next Claude coding pass
 
 Upgrade the Q+R motif sandbox so user MIDI input is recorded against a hidden musical clock instead of trying to infer true BPM from an arbitrary free-timed melody.
 
+Update from follow-up directive: the earlier "within 4 seconds" capture constraint is canceled by user decision. Normal hidden-grid capture may use up to a 4-bar musical window.
+
 The user experience should still feel simple: choose or receive a scale, press record, play a short motif, hear a completed melody continuation. The grid, bars, and beat math should stay hidden from the normal user. Internally, however, the system must have a tempo, meter, capture window, metrical phase, and accent model before motif analysis and continuation run.
 
 This follows the core Impro-Visor lesson: Impro-Visor does not solve motif timing by guessing BPM from raw free input. It records or selects material inside an existing score/leadsheet timeline with known tempo, meter, chord progression, and slot grid.
@@ -32,7 +34,7 @@ Current issue summary:
 - `analyzeAndNormalize` assumes a BPM, aligns the first note to beat 0, quantizes to a 1/16 grid, and computes accent from velocity/on-beat/edge/duration.
 - If the user plays a pickup, late first note, or loose phrase, the system treats the first note as the downbeat.
 - Harmony and accompaniment depend on accent/structure; wrong metrical phase causes wrong chord choice and wrong comp/bass hits.
-- A 4-second raw melody by itself cannot uniquely determine BPM, bar count, pickup, or strong beats. The data is underdetermined.
+- A short raw melody by itself cannot uniquely determine BPM, bar count, pickup, or strong beats. The data is underdetermined.
 
 ## 3. Decision
 
@@ -126,7 +128,7 @@ export interface HiddenGridCaptureContext {
   meterDenominator: 4;
   beatsPerBar: 4;
   gridStepsPerBeat: 4; // 1/16 grid
-  captureBars: 1 | 2;
+  captureBars: 1 | 2 | 3 | 4;
   countInBars: 1 | 2;
   pickupBeats: 0 | 0.5 | 1;
   captureStartMs: number;
@@ -153,8 +155,9 @@ export interface GridCapturedNote {
 
 Notes:
 
-- `captureBars` should default to 1. Allow 2 bars only when the chosen BPM keeps the total capture window within the user promise of "within 4 seconds".
-- Keep 4-bar motif capture out of the default hidden-grid path for now. Four bars exceeds the original "within 4 seconds" promise at most pop tempos and increases ambiguity.
+- Superseded by `docs/motif_weaver_hidden_grid_followup_directive.md`: the 4-second capture limit is canceled.
+- `captureBars` may be 1-4 bars. A 4-bar hidden-grid window is allowed in the normal Q+R path.
+- If a long captured motif leaves no answer space inside a 4-bar harmonic cycle, the weaver should quote a recognizable head/sub-motif and still create development.
 - `pickupBeats` can be 0 in Phase 1, but the type should allow adding pickup support cleanly.
 
 ## 8. BPM And Window Selection
@@ -172,16 +175,17 @@ For non-jazz/default sandbox, prefer:
 
 - `style = pop`
 - `bpm = deterministic random 96-108`
-- `captureBars = 1`
+- `captureBars = 4` unless a debug/test mode explicitly requests fewer bars
 - `countInBars = 1`
 - `gridStepsPerBeat = 4`
 
-2-bar capture rule:
+Capture-length rule:
 
-- Allow `captureBars = 2` only if `captureBars * 4 * 60 / bpm <= 4.0`.
-- Otherwise clamp to 1 bar.
+- Superseded by follow-up directive: do not clamp to 4 seconds.
+- Allow `captureBars = 1 | 2 | 3 | 4`.
+- The musical window is bar-based; users may stop early.
 
-The user does not need to see this as "1 bar" or "BPM 104" in normal mode. Debug mode can show it.
+The user does not need to see raw timing math in normal mode. Debug mode can show BPM, bar count, and capture-window details.
 
 ## 9. Count-In And Hidden Pulse
 

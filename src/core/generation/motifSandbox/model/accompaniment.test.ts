@@ -68,6 +68,17 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
     for (let bar = 0; bar < 16; bar++) expect(has(a.bass, bar * 4), `bar${bar} 下拍`).toBe(true);
   });
 
+  it('★ §5:伴奏支点用 structuralToneScore —— 安静下拍长音(低 accent / 高结构分)也成支点', () => {
+    const prog = buildProgression(motifOf(), 0, 'major', 16);
+    const lead = [
+      { midi: 72, onsetBeat: 0, durationBeat: 1, velocity: 0.9, scaleDegree: 1, octave: 5, accent: 0.9, structuralToneScore: 0.9, occurrenceKind: 'quote' as const },
+      // bar0 beat3:安静(accent 0.35 < 0.58)但结构分高(0.72 ≥ 0.58)→ 旧逻辑会漏,新逻辑应成支点
+      { midi: 74, onsetBeat: 3, durationBeat: 1, velocity: 0.3, scaleDegree: 2, octave: 5, accent: 0.35, structuralToneScore: 0.72, occurrenceKind: 'quote' as const },
+    ];
+    const a = buildAccompaniment(prog, 'pop', 7, lead);
+    expect(a.bass.some((n) => Math.abs(n.onsetBeat - 3) < 1e-6), 'bass 落在结构音 beat3').toBe(true);
+  });
+
   it('风格织体差异:jazz bass 走音(每小节≈4)> lofi 稀疏 bass', () => {
     const prog = buildProgression(motifOf(), 0, 'major', 16);
     const jazz = buildAccompaniment(prog, 'jazz', 7);

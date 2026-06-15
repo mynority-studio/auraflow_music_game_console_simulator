@@ -325,7 +325,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           {recording && <span className="ml-auto text-[10px] text-rose-300">● {(elapsed / 1000).toFixed(1)}s</span>}
         </div>
         <PadKeyboard noteMap={scaleNoteMap(keyPc, tonality)} recording={recording} activeNotes={activeNotes} onPadDown={handlePadDown} onPadUp={handlePadUp} />
-        <div className="text-[10px] text-zinc-600">点 pad 试听;按【● 录制】后点 pad 即记录,【■ 停止】完成 → 自动识别整 bar。底行低音 → 顶行高音。</div>
+        <div className="text-[10px] text-zinc-600">{captureMode === 'hiddenGrid' ? '点 pad/弹 MIDI 试听;数拍后演奏 → 对着隐形时钟落格(不猜 BPM)。' : 'free 回退:停止后据 bpm 自动识别整 bar(时序置信较低)。'}底行低音 → 顶行高音。</div>
       </div>
 
       {/* Generate */}
