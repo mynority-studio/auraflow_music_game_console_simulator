@@ -13,7 +13,7 @@ import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fi
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
 import { buildAccompaniment } from '../model/accompaniment';
-import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, type SandboxTonality } from '../model/sandboxScales';
+import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
 import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick } from '../../newEngine/sandbox/audioOut';
@@ -59,8 +59,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
   const timer = useRef<number | null>(null);
-  const liveCfg = useRef({ keyPc, tonality, bpm, seed });
-  liveCfg.current = { keyPc, tonality, bpm, seed };
+  const liveCfg = useRef({ keyPc, tonality, bpm, seed, style });
+  liveCfg.current = { keyPc, tonality, bpm, seed, style };
 
   useDevPanelChannel('motif', open, setOpen);
 
@@ -104,8 +104,19 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   // —— Web MIDI 接入 ——
   const enableMidi = useCallback(async () => {
     const onMessage = (m: ParsedMidiMessage) => {
-      if (m.type === 'noteOn') { setLastNote(`note ${m.note} · vel ${m.velocity}`); recorder.current.noteOn(m.note, m.velocity); }
-      else if (m.type === 'noteOff') recorder.current.noteOff(m.note);
+      if (m.type === 'noteOn') {
+        const { keyPc: k, tonality: t, style: st } = liveCfg.current;
+        if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
+          setLastNote(`note ${m.note} · vel ${m.velocity}`);
+          void auditionNoteOn(m.note, LEAD_PROGRAM_BY_STYLE[st], m.velocity);
+          if (recorder.current.isActive()) recorder.current.noteOn(m.note, m.velocity);
+        } else {
+          setLastNote(`note ${m.note} · 离调 → 静音`); // 不在音阶内 → 不发声、不记录
+        }
+      } else if (m.type === 'noteOff') {
+        auditionNoteOff(m.note);
+        if (recorder.current.isActive()) recorder.current.noteOff(m.note);
+      }
     };
     const onDevices = (d: MidiDeviceInfo[]) => { setDevices(d); setDeviceId((prev) => prev ?? (d[0]?.id ?? null)); };
     const { status: st, handle } = await requestMidiAccess(onMessage, onDevices);
