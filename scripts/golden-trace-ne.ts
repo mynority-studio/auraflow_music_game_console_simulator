@@ -304,7 +304,14 @@ const l1 = { meta, cases: l1Cases };
 writeFileSync(join(outDir, 'ne_golden_l1.json'), JSON.stringify(l1, null, 1));
 console.log(`L1: ${l1Cases.length} cases (${L1_SEEDS.length} seeds × ${L1_STYLES.length} styles)`);
 
-// L2/L3：产品路径 generateSong 全矩阵（与 L1 同 seed/style）。P1a 入仓只 codegen 小样本子集，全量入仓 = P1b。
+// L2/L3：产品路径 generateSong。标准矩阵（与 L1 同 seed/style，8×7=56）+ 特征 case（扫描得，
+// 覆盖标准矩阵不出现的 timbre-switch / retry 路径，见 scan-feature-seeds.ts）。全量入仓 = P1b（P1a 只 codegen 小样本子集）。
+// 特征 seed 沿用 buildL2L3Case 同 request（mood/duration/allowModulation），仅变 seed/style，保持与标准例同生成路径。
+const L2L3_FEATURE_CASES: { seed: number; style: string; note: string }[] = [
+  { seed: 3, style: 'modal', note: 'timbre-switch pc=6/mc=6（跨段音色切换最多）' },
+  { seed: 3, style: 'pop', note: 'timbre-switch pc=2/mc=2' },
+  { seed: 4, style: 'lofi', note: 'retry attempts=12 → failed（ir=null，retry 环耗尽 wholeSong budget）' },
+];
 const l2Cases: ReturnType<typeof buildL2L3Case>['l2'][] = [];
 const l3Cases: ReturnType<typeof buildL2L3Case>['l3'][] = [];
 for (const seed of L1_SEEDS) for (const style of L1_STYLES) {
@@ -312,7 +319,12 @@ for (const seed of L1_SEEDS) for (const style of L1_STYLES) {
   l2Cases.push(l2);
   l3Cases.push(l3);
 }
+for (const fc of L2L3_FEATURE_CASES) {
+  const { l2, l3 } = buildL2L3Case(fc.seed, fc.style);
+  l2Cases.push(l2);
+  l3Cases.push(l3);
+}
 writeFileSync(join(outDir, 'ne_golden_l2.json'), JSON.stringify({ meta, cases: l2Cases }, null, 1));
 writeFileSync(join(outDir, 'ne_golden_l3.json'), JSON.stringify({ meta, cases: l3Cases }, null, 1));
 const l3evTotal = l3Cases.reduce((n, c) => n + c.events.length, 0);
-console.log(`L2/L3: ${l2Cases.length} cases (full render via generateSong); L3 events total ${l3evTotal}`);
+console.log(`L2/L3: ${l2Cases.length} cases (${L1_SEEDS.length}×${L1_STYLES.length} 标准 + ${L2L3_FEATURE_CASES.length} 特征); L3 events total ${l3evTotal}`);
