@@ -9,6 +9,24 @@
 import type { CapturedMidiNote, MotifNote, ScaleMode, UserMotif } from './types';
 import { midiToScaleDegree, midiToOctave, snapMidiToScale, degreeOctaveToMidi } from './scale';
 import { snapMidiToTonality, type SandboxTonality } from './sandboxScales';
+import { metricalWeight, type HiddenGridCaptureContext, type GridCapturedNote, type CaptureMode } from '../capture/hiddenGridClock';
+
+/** 力度/能量重音(comp/bass 击点)+ 结构音分(配和声/乐句身份)。directive §12。 */
+function scoreNote(velNorm: number, metWeight: number, durNorm: number, isEdge: boolean, isTurn: boolean): { accent: number; structuralToneScore: number } {
+  const e = isEdge ? 1 : 0, t = isTurn ? 1 : 0;
+  return {
+    accent: Math.max(0, Math.min(1, 0.40 * velNorm + 0.30 * metWeight + 0.15 * durNorm + 0.15 * e)),
+    structuralToneScore: Math.max(0, Math.min(1, 0.35 * metWeight + 0.25 * durNorm + 0.20 * velNorm + 0.15 * e + 0.05 * t)),
+  };
+}
+/** 轮廓转折(峰/谷):相邻方向反转 = true(首尾 false)。 */
+function contourTurns(midis: number[]): boolean[] {
+  return midis.map((_, i) => {
+    if (i === 0 || i === midis.length - 1) return false;
+    const d1 = Math.sign(midis[i] - midis[i - 1]), d2 = Math.sign(midis[i + 1] - midis[i]);
+    return d1 !== 0 && d2 !== 0 && d1 !== d2;
+  });
+}
 
 const GRID = 0.25; // 1/16 = 0.25 beat(onset 量化网格)
 const MIN_DUR_BEAT = 0.05; // duration 不量化,仅兜底防 0(保留录入原本时值)
@@ -71,12 +89,13 @@ export function analyzeAndNormalize(
   const span = Math.max(...notes.map((n) => n.onset + n.dur));
   const lengthBeats = Math.max(4, Math.min(16, Math.round(span / 4) * 4));
 
-  // 7) 转 MotifNote(度/八度/accent)
+  // 7) 转 MotifNote(度/八度/accent + structuralToneScore;directive §12 节拍权重模型)
   const lastIdx = notes.length - 1;
+  const turns = contourTurns(notes.map((n) => n.midi));
   const motifNotes: MotifNote[] = notes.map((n, i) => {
-    const onBeat = Math.abs(n.onset - Math.round(n.onset)) < 1e-6;
+    const beatInBar = ((n.onset % 4) + 4) % 4;
     const edge = i === 0 || i === lastIdx;
-    const accent = clamp01(0.45 * n.vel + 0.3 * (onBeat ? 1 : 0) + 0.25 * (edge ? 1 : 0) + 0.15 * Math.min(1, n.dur));
+    const { accent, structuralToneScore } = scoreNote(n.vel, metricalWeight(beatInBar), Math.min(1, n.dur), edge, turns[i]);
     return {
       midi: n.midi,
       onsetBeat: n.onset,
@@ -85,6 +104,7 @@ export function analyzeAndNormalize(
       scaleDegree: midiToScaleDegree(n.midi, keyPc, mode),
       octave: midiToOctave(n.midi),
       accent,
+      structuralToneScore,
     };
   });
 
@@ -106,6 +126,86 @@ export function analyzeAndNormalize(
     createdAt,
   };
   return { motif, rawCount, normalizedCount: motifNotes.length };
+}
+
+// ============================================================
+// 隐形时钟分析(directive Phase C)—— GridCapturedNote[] → UserMotif
+//   关键差异(对比 free 路径):用网格量化位、【不减首音】(保前导休止)、
+//   长度 = captureBars*4(不靠 span)、先存 raw 再吸 tonality(记 snap 改动)。
+// ============================================================
+export interface MotifTimingAnalysis {
+  captureMode: CaptureMode;
+  bpm: number;
+  captureBars: number;
+  lengthBeats: number;
+  phaseConfidence: number;   // 隐形时钟 = 1(相位已知)
+  quantizeErrorMean: number;
+  quantizeErrorMax: number;
+  hasPickup: boolean;
+  leadingRestBeats: number;  // 首音前的休止(不被减成 0)
+}
+
+export interface HiddenGridAnalysis {
+  motif: UserMotif;
+  timing: MotifTimingAnalysis;
+  snapChanges: number;       // 被 tonality 吸附改动的音数(审计;调内输入应=0)
+}
+
+export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], ctx: HiddenGridCaptureContext): HiddenGridAnalysis {
+  const lengthBeats = ctx.captureBars * ctx.beatsPerBar;
+  // 1) 只取捕获窗内(数拍 pre-roll 已被 recorder 滤;这里防御)
+  let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -1e-6 && n.quantizedOnsetBeat < lengthBeats - 1e-6);
+  if (g.length === 0) throw new MotifAnalysisError('数拍后没有录到音符,请在数拍结束后开始弹。');
+  // 2) 单旋律化:同量化位取最高音
+  const byOnset = new Map<number, GridCapturedNote>();
+  for (const n of g) { const ex = byOnset.get(n.quantizedOnsetBeat); if (!ex || n.midi > ex.midi) byOnset.set(n.quantizedOnsetBeat, n); }
+  g = [...byOnset.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
+  if (g.length > 96) g = g.slice(0, 96);
+
+  // 3) 音高:存 raw → 吸 tonality(记改动);accent/structuralTone 用网格的节拍权重
+  const turns = contourTurns(g.map((n) => n.midi));
+  const lastIdx = g.length - 1;
+  let snapChanges = 0;
+  const motifNotes: MotifNote[] = g.map((n, i) => {
+    const snapped = snapMidiToTonality(n.midi, ctx.keyPc, ctx.tonality);
+    if (snapped !== n.midi) snapChanges++;
+    const velNorm = clamp01(n.velocity / 127);
+    const edge = i === 0 || i === lastIdx;
+    const { accent, structuralToneScore } = scoreNote(velNorm, n.metricalWeight, Math.min(1, n.quantizedDurationBeat), edge, turns[i]);
+    return {
+      midi: snapped,
+      onsetBeat: n.quantizedOnsetBeat,        // 不减首音 → 前导休止保留
+      durationBeat: n.quantizedDurationBeat,
+      velocity: velNorm,
+      scaleDegree: midiToScaleDegree(snapped, ctx.keyPc, ctx.scaleMode),
+      octave: midiToOctave(snapped),
+      accent, structuralToneScore,
+    };
+  });
+
+  // 4) contour + rhythmCell
+  const contour: number[] = [];
+  for (let i = 1; i < motifNotes.length; i++) {
+    const d = (motifNotes[i].octave * 7 + motifNotes[i].scaleDegree) - (motifNotes[i - 1].octave * 7 + motifNotes[i - 1].scaleDegree);
+    contour.push(Math.sign(d));
+  }
+  const rhythmCell = motifNotes.map((n) => n.durationBeat);
+
+  const errs = g.map((n) => Math.abs(n.timingErrorBeat));
+  const timing: MotifTimingAnalysis = {
+    captureMode: 'hiddenGrid', bpm: ctx.bpm, captureBars: ctx.captureBars, lengthBeats,
+    phaseConfidence: 1.0,
+    quantizeErrorMean: errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length),
+    quantizeErrorMax: errs.length ? Math.max(...errs) : 0,
+    hasPickup: ctx.pickupBeats > 0,
+    leadingRestBeats: motifNotes[0].onsetBeat,
+  };
+  const motif: UserMotif = {
+    id: `motif-hg-${ctx.seed}-${motifNotes.length}`,
+    keyPc: ctx.keyPc, mode: ctx.scaleMode, bpm: ctx.bpm,
+    notes: motifNotes, lengthBeats, contour, rhythmCell, createdAt: ctx.seed,
+  };
+  return { motif, timing, snapChanges };
 }
 
 // ============================================================

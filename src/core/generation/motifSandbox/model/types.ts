@@ -25,7 +25,8 @@ export interface MotifNote {
   velocity: number;      // 0..1
   scaleDegree: number;   // 1..7
   octave: number;
-  accent: number;        // 0..1
+  accent: number;        // 0..1(力度/能量重音 → comp/bass 击点)
+  structuralToneScore?: number; // 0..1(节拍/时值/相位 = 和声/乐句重要性 → 配和声、乐句身份)
   /** quote=原样陈述(head/recap);develop=变形发展(移位/倒影/片段/扩张/位移);connect=连接留白 */
   occurrenceKind?: 'quote' | 'develop' | 'connect';
   slotIndex?: number;
@@ -76,12 +77,16 @@ export interface MotifWeaverResult {
   audit: MotifWeaveAudit;
 }
 
+export type QuotePlan = 'verseHeadsOnly' | 'phraseHeads';
+
 export interface MotifWeaverInput {
-  capturedNotes: CapturedMidiNote[]; // raw 输入(必走 analyze→normalize,不绕过)
+  capturedNotes: CapturedMidiNote[]; // raw 输入(free 路径走 analyze→normalize)
+  motif?: UserMotif;                 // 给定则【直接用】(hidden-grid 已分析好的 motif,跳过 capturedNotes)
   style: SandboxStyle;
   keyPc: number;
   mode: ScaleMode;                   // 续写/配和声用的大/小调母调
   bpm: number;
   seed: number;
   inputTonality?: import('./sandboxScales').SandboxTonality; // 给定则输入吸到该音阶(保 blues b5/五声特征)
+  quotePlan?: QuotePlan;             // 默认 phraseHeads(排比:每乐句头);verseHeadsOnly = 只 bar1/bar9
 }

@@ -27,7 +27,8 @@ export function harmonizeMotif(motif: UserMotif, keyPc: number, mode: ScaleMode)
       let score = 0;
       for (const n of inBar) {
         const sd = n.scaleDegree;
-        const w = (n.accent + Math.min(1, n.durationBeat)) + (Math.abs(n.onsetBeat - Math.round(n.onsetBeat)) < 1e-6 ? 0.5 : 0);
+        // 按【结构音分】(节拍/时值/相位)给和弦打分,而非裸 accent(directive §13):强拍长音主导和声、弱拍经过音不喧宾夺主
+        const w = (n.structuralToneScore ?? n.accent) + Math.min(1, n.durationBeat) + (Math.abs(n.onsetBeat - Math.round(n.onsetBeat)) < 1e-6 ? 0.5 : 0);
         if (ch.toneDegrees.includes(sd)) score += w;
         else score -= 0.25 * w; // 非和弦音轻罚
       }

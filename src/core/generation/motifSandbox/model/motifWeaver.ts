@@ -12,7 +12,7 @@
 // 参考:ThemeWeaver.myGenerateSolo / adjustTheme / connectSections / RectifyPitchesCommand。
 // ============================================================
 
-import type { MotifNote, MotifOccurrence, MotifWeaverInput, MotifWeaverResult, ScaleMode, UserMotif } from './types';
+import type { MotifNote, MotifOccurrence, MotifWeaverInput, MotifWeaverResult, QuotePlan, ScaleMode, UserMotif } from './types';
 import { analyzeAndNormalize } from './motifAnalysis';
 import {
   identity, fitRange, transposeDiatonicMotif, invertAroundMidi, retrogradePitchOnly,
@@ -237,7 +237,9 @@ function smoothAndResolve(lead: MotifNote[], bandLo: number, bandHi: number, key
 // ============================================================
 export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const { keyPc, mode } = input;
-  const { motif } = analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality);
+  // hidden-grid 已分析好的 motif 直接用;否则走 free 路径分析(向后兼容)
+  const motif = input.motif ?? analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality).motif;
+  const quotePlan: QuotePlan = input.quotePlan ?? 'phraseHeads'; // 默认排比(每乐句头原样)
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
 
   const motifBars = Math.max(1, Math.min(PHRASE_BARS, Math.round(motif.lengthBeats / BAR)));
@@ -259,18 +261,33 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const arc: string[] = [];
   let prevLastMidi = base[0].midi;
   let avoidLabel = '';
+  const verseHeads = new Set([0, Math.floor(numPhrases / 2)]); // verse1/verse2 头(verseHeadsOnly 用)
 
-  // 逐【和弦进行乐句】:① 乐句头【相位锁定原样陈述】(排比:每句同位置出现 motif)② 应答区【发展/续写】。
+  // 逐【和弦进行乐句】:① 乐句头陈述(排比=每句原样 / verseHeadsOnly=只 verse 头原样,其余发展)② 应答区【发展/续写】。
   for (let p = 0; p < numPhrases; p++) {
     const phraseStart = p * phraseBeats;
     if (phraseStart >= TARGET_BEATS - 1e-6) break;
-    // ① 陈述(每个乐句【同一相对位置】都出现原样 motif)
-    const stmt = placeQuoteVerbatim(base, phraseStart, Math.min(motifBeats, TARGET_BEATS - phraseStart), p);
+    const span = Math.min(motifBeats, TARGET_BEATS - phraseStart);
+    // ① 乐句头陈述
+    const verbatim = quotePlan === 'phraseHeads' || verseHeads.has(p);
+    let stmt: MotifNote[];
+    let stmtKind: MotifOccurrence['kind'];
+    let stmtLabel: string;
+    if (verbatim) {
+      stmt = placeQuoteVerbatim(base, phraseStart, span, p); // 相位锁定原样(排比)
+      stmtKind = 'quote';
+      stmtLabel = p === 0 ? 'head' : verseHeads.has(p) ? 'verse2' : p === numPhrases - 1 ? 'recap' : 'restate';
+    } else {
+      const dev = pickDevOps(rng, avoidLabel); avoidLabel = dev.label; // 非 verse 头 → 发展陈述
+      stmt = placeStatement(base, dev.ops, phraseStart, span, p, 'develop', prevLastMidi, bandLo, bandHi, keyPc, mode);
+      adaptToHarmony(stmt, progression);
+      stmtKind = 'develop';
+      stmtLabel = `head:${dev.label}`;
+    }
     if (stmt.length) {
       lead.push(...stmt);
-      const label = p === 0 ? 'head' : p === numPhrases - 1 ? 'recap' : 'restate';
-      occurrences.push({ motifId: motif.id, startBeat: phraseStart, slotIndex: p, kind: 'quote', label, chordRoman: (chordAtBeat(progression, phraseStart) ?? progression[0]).roman });
-      arc.push(label);
+      occurrences.push({ motifId: motif.id, startBeat: phraseStart, slotIndex: p, kind: stmtKind, label: stmtLabel, chordRoman: (chordAtBeat(progression, phraseStart) ?? progression[0]).roman });
+      arc.push(stmtLabel);
       prevLastMidi = stmt[stmt.length - 1].midi;
     }
     // ② 应答(乐句里 motif 之后那段,每句变化 = 续写)
