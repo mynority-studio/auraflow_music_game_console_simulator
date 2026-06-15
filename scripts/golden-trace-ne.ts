@@ -1,17 +1,18 @@
 // ============================================================
-// golden-trace-ne.ts — newEngine C 移植黄金对账导出器（L0 / L1）
+// golden-trace-ne.ts — newEngine C 移植黄金对账导出器（L0 / L1 / L2 / L3）
 // ------------------------------------------------------------
 // 用法: npx tsx scripts/golden-trace-ne.ts <outDir>
 //
-// 范围（docs/transplant/esp32s3.md §7 A0，GPL 隔离）:
-//   只调四个规划层 build 函数 + RandomContext，【不调 renderSongFull】
-//   —— slope 语料(GPL-2)只被 MG 旋律链消费，本导出与其完全解耦。
-//   L2/3（MusicalIR/irToMidi 全量）等 GPL 决策通过后再补录。
+// 范围（docs/transplant/esp32s3.md §9 P1a；GPL 决策已出 = 项目走整固件 GPLv3）:
+//   L0/L1 = 四规划层（band/arranger/harmony/instrumental）+ RandomContext（与 GPL 解耦）。
+//   L2/L3 = 产品路径 generateSong（含 audit + retry 环）→ MusicalIR + irToMidi 事件流；
+//     经 renderSongFull/MG 链消费 GPLv2+ 语料 → 仅在整固件 GPLv3 决策后导出（见 §5#19-23）。
 //
 // L0: RandomContext raw uint32 序列（mulberry32 除法前状态，由
-//     next()*2^32 精确恢复——u32/2^32 在 double 中可精确表示）。
-//     覆盖: 13 子流 × 多 seed × advance(0/1/2) 语义。
-// L1: 四层规划产物关键字段摘要 + FNV-1a 哈希（供 L1-L4 C 移植期对账）。
+//     next()*2^32 精确恢复——u32/2^32 在 double 中可精确表示）。13 子流 × 多 seed × advance。
+// L1: 四层规划产物关键字段摘要 + FNV-1a 哈希（L1-L4 对账）。
+// L2: generateSong → {status,attempts,findings} + MusicalIR（tracks[] 可变 2-5，全字段）。
+// L3: musicalIRToMidiEvents → 稳定序事件流（tick↑ → noteOff 优先 → 原 push seq）。
 // ============================================================
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,6 +22,9 @@ import { buildBandSpec, type GenerationRequest } from '../src/core/generation/ne
 import { buildArrangementPlan } from '../src/core/generation/newEngine/arranger/arranger';
 import { buildHarmonicPlanFromArrangement } from '../src/core/generation/newEngine/harmony/harmonyEngine';
 import { buildInstrumentationPlan } from '../src/core/generation/newEngine/instrumental/instrumentalPlanner';
+import { generateSong } from '../src/core/generation/newEngine/generation/GenerationController';
+import { musicalIRToMidiEvents } from '../src/core/generation/newEngine/sandbox/irToMidi';
+import type { MusicalIR } from '../src/core/generation/newEngine/ir/MusicalIR';
 
 const ALL_STAGES: StageName[] = [
   'band', 'time', 'arranger', 'harmony', 'instrumental', 'timbre',
@@ -210,6 +214,71 @@ function buildL1Case(seed: number, styleHint: string) {
   };
 }
 
+// ---------- L2 / L3（full render，产品路径 generateSong）----------
+
+function serializeIR(ir: MusicalIR) {
+  return {
+    durationTicks: ir.durationTicks,
+    timebase: {
+      ppq: ir.timebase.ppq,
+      meterNum: ir.timebase.meter.numerator,
+      meterDen: ir.timebase.meter.denominator,
+      tempoBpm: ir.timebase.tempoMap[0]?.bpm ?? 0,
+    },
+    // tracks 可变（2-5，lead 必有；顺序 = renderSongFull 条件序 bass→comp→pad→drum→lead）
+    tracks: ir.tracks.map((t) => ({
+      role: t.role,
+      program: t.program ?? null,
+      notes: t.notes.map((n) => ({
+        pitch: n.pitch, startTick: n.startTick, durationTicks: n.durationTicks, velocity: n.velocity,
+      })),
+      programChanges: (t.programChanges ?? []).map((p) => ({ atTick: p.atTick, program: p.program })),
+      pedalEvents: (t.pedalEvents ?? []).map((p) => ({ atTick: p.atTick, down: p.down })),
+      mix: t.mix
+        ? { volume: t.mix.volume, pan: t.mix.pan, reverb: t.mix.reverb, chorus: t.mix.chorus, expression: t.mix.expression ?? null }
+        : null,
+      mixChanges: (t.mixChanges ?? []).map((mc) => ({
+        atTick: mc.atTick,
+        mix: { volume: mc.mix.volume, pan: mc.mix.pan, reverb: mc.mix.reverb, chorus: mc.mix.chorus, expression: mc.mix.expression ?? null },
+      })),
+      ccEvents: (t.ccEvents ?? []).map((c) => ({ atTick: c.atTick, controller: c.controller, value: c.value })),
+    })),
+  };
+}
+
+const L3_ROOM_WET = 50;
+const noteOffRank = (type: string): number => (type === 'noteOff' ? 0 : 1);
+
+function buildL2L3Case(seed: number, styleHint: string) {
+  const request: GenerationRequest = { seed, styleHint, mood: 'calm-build', targetDuration: 120, allowModulation: true };
+  const result = generateSong(request);
+  const l2 = {
+    seed, styleHint,
+    status: result.status,
+    attempts: result.attempts,
+    // 控制环 metadata：非-lead 的 error/fatal 才 blocking（见 GenerationController），全 finding 入档
+    // 字段对齐 AuditFinding（ir/AuditReport.ts）：severity/location{trackRole,startTick}/ruleId/reason/suggestedReturnPoint
+    findings: result.report.findings.map((f) => ({
+      severity: f.severity,
+      trackRole: f.location.trackRole,
+      startTick: f.location.startTick,
+      ruleId: f.ruleId,
+      suggestedReturnPoint: f.suggestedReturnPoint,
+      reason: f.reason,
+    })),
+    ir: result.ir ? serializeIR(result.ir) : null, // failed 时无 ir
+  };
+  // L3：raw events 加递增 seq → 稳定排序 tick↑ → noteOff 优先 → seq（对齐 §1.4 调度序）
+  let l3events: { seq: number; tick: number; type: string; channel: number; data1: number; data2: number }[] = [];
+  if (result.ir) {
+    const raw = musicalIRToMidiEvents(result.ir, L3_ROOM_WET).map((e, i) => ({ ...e, seq: i }));
+    raw.sort((a, b) => (a.ticks - b.ticks) || (noteOffRank(a.type) - noteOffRank(b.type)) || (a.seq - b.seq));
+    l3events = raw.map((e) => ({ seq: e.seq, tick: e.ticks, type: e.type, channel: e.channel, data1: e.data1, data2: e.data2 }));
+  }
+  const l3 = { seed, styleHint, roomWet: L3_ROOM_WET, hasIr: result.ir != null, events: l3events };
+  return { l2, l3 };
+}
+
 // ---------- main ----------
 
 const outDir = process.argv[2];
@@ -222,7 +291,7 @@ mkdirSync(outDir, { recursive: true });
 const meta = {
   generator: 'scripts/golden-trace-ne.ts',
   engineCommit: 'dd5e4eb7d6d0c308dd5fc4e04ba9e66ad82f7221',
-  note: 'L0/L1 only — renderSongFull (MG/GPL corpus) intentionally NOT executed',
+  note: 'L0-L3 — L2/L3 = generateSong full render（整固件 GPLv3 决策后导出，见 docs/transplant/esp32s3.md §5#19-23 / §9）',
 };
 
 const l0 = { meta, streams: buildL0() };
@@ -234,3 +303,16 @@ for (const seed of L1_SEEDS) for (const style of L1_STYLES) l1Cases.push(buildL1
 const l1 = { meta, cases: l1Cases };
 writeFileSync(join(outDir, 'ne_golden_l1.json'), JSON.stringify(l1, null, 1));
 console.log(`L1: ${l1Cases.length} cases (${L1_SEEDS.length} seeds × ${L1_STYLES.length} styles)`);
+
+// L2/L3：产品路径 generateSong 全矩阵（与 L1 同 seed/style）。P1a 入仓只 codegen 小样本子集，全量入仓 = P1b。
+const l2Cases: ReturnType<typeof buildL2L3Case>['l2'][] = [];
+const l3Cases: ReturnType<typeof buildL2L3Case>['l3'][] = [];
+for (const seed of L1_SEEDS) for (const style of L1_STYLES) {
+  const { l2, l3 } = buildL2L3Case(seed, style);
+  l2Cases.push(l2);
+  l3Cases.push(l3);
+}
+writeFileSync(join(outDir, 'ne_golden_l2.json'), JSON.stringify({ meta, cases: l2Cases }, null, 1));
+writeFileSync(join(outDir, 'ne_golden_l3.json'), JSON.stringify({ meta, cases: l3Cases }, null, 1));
+const l3evTotal = l3Cases.reduce((n, c) => n + c.events.length, 0);
+console.log(`L2/L3: ${l2Cases.length} cases (full render via generateSong); L3 events total ${l3evTotal}`);
