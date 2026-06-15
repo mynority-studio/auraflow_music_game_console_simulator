@@ -30,6 +30,7 @@ const TARGET_BEATS = TARGET_BARS * BAR; // 64
 const LEAD_LOW = 60, LEAD_HIGH = 84;
 const MAX_LEAP = 8;     // 小六度;> 此值八度收拢(作曲原则:级进为主、跳进≤小六度)
 const PROB_THEME = 0.6; // Impro-Visor probTheme:每槽陈述 vs 发展/连接
+const ONSET_GRID = 0.25; // 1/16 拍 —— 输出 onset 吸到此网格 → 与伴奏稳稳对拍(divide 装饰音不再落网格外)
 
 // ============================================================
 // 发展手法(diatonic-safe;Impro-Visor adjustTheme 的轻量复现)
@@ -277,6 +278,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   }
 
   const finalLead = smoothAndResolve(lead, bandLo, bandHi, keyPc, mode, progression)
+    .map((n) => ({ ...n, onsetBeat: Math.min(Math.round(n.onsetBeat / ONSET_GRID) * ONSET_GRID, TARGET_BEATS - ONSET_GRID) })) // onset 吸 1/16 网格 = 稳稳对拍
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS });

@@ -72,7 +72,7 @@ export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: 
   const prog = program ?? LEAD_PROGRAM_BY_STYLE[style];
   const totalBeats = spanOf(lead);
   return freezeMusicalIR({
-    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: prog, mix: leadMix(prog), pedalEvents: barPedal(timebase, totalBeats) }],
+    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: prog, mix: leadMix(prog) }], // lead 不踩踏板 = 旋律发音清晰、稳稳对拍
     timebase,
     durationTicks: timebase.beatToTick(beats(totalBeats)),
   });
@@ -87,11 +87,10 @@ export function buildSandboxIr(lead: readonly MotifNote[], accomp: Accompaniment
   const ep = accomp.compProgram === 4 || accomp.compProgram === 5;
   const compMix: TrackMix = { volume: 70, pan: 54, reverb: 52, chorus: ep ? 36 : 14 };
   const bassMix: TrackMix = { volume: 86, pan: 64, reverb: 12, chorus: 0 };
-  const pedal = barPedal(timebase, totalBeats);
   return freezeMusicalIR({
     tracks: [
-      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: leadProg, mix: leadMix(leadProg), pedalEvents: pedal },
-      { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46), program: accomp.compProgram, mix: compMix, pedalEvents: pedal },
+      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: leadProg, mix: leadMix(leadProg) }, // lead 不踩 → 旋律清晰对拍(踏板会糊成一片听着"飘")
+      { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46), program: accomp.compProgram, mix: compMix, pedalEvents: barPedal(timebase, totalBeats) }, // 只 comp 踩 → 和声铺底 ring
       { role: 'bass', notes: toNoteIR(accomp.bass, timebase, totalBeats, 0.6), program: accomp.bassProgram, mix: bassMix }, // bass 不踩 → 保清晰发音
     ],
     timebase,
