@@ -159,19 +159,19 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const startHiddenGridRecord = useCallback(() => {
     stopPlayback(); clearRecTimers();
     const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
-    const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 2, desiredBars: 2 });
+    const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
     ctxRef.current = ctx;
     setBpm(ctx.bpm);
     setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null);
     recorder.current.start({ maxMs: ctx.captureEndMs + 300 });
     setRecording(true); setRecordPhase('count-in'); setElapsed(0);
-    setStatus(`数拍中…(${ctx.countInBars} 小节 · BPM ${ctx.bpm} · ${ctx.captureBars}bar 窗)`);
+    setStatus(`◔ 数拍预备(1 小节 · BPM ${ctx.bpm})…听完 4 下开始弹`);
     const mpb = msPerBeat(ctx);
-    const totalBeats = (ctx.countInBars + ctx.captureBars) * ctx.beatsPerBar;
-    for (let b = 0; b < totalBeats; b++) { // 每拍一下 click(数拍期 + 捕获期暗拍;强拍重)
+    const countInBeats = ctx.countInBars * ctx.beatsPerBar;
+    for (let b = 0; b < countInBeats; b++) { // ★ 节拍器只响数拍这 1 小节,之后隐形静音(拍子继续跑=隐形时钟)
       recTimers.current.push(window.setTimeout(() => { void playClick(b % ctx.beatsPerBar === 0); }, b * mpb));
     }
-    recTimers.current.push(window.setTimeout(() => setRecordPhase('recording'), ctx.captureStartMs));
+    recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 演奏中…(自由弹,最多 ${ctx.captureBars} 小节;可点 ■ 早停)`); }, ctx.captureStartMs));
     recTimers.current.push(window.setTimeout(() => finishHiddenGridRecord(), ctx.captureEndMs + 80));
     timer.current = window.setInterval(() => setElapsed(recorder.current.elapsedMs()), 80);
   }, [style, stopPlayback, clearRecTimers, finishHiddenGridRecord]);
@@ -194,7 +194,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     stopPlayback();
     const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
     if (captureMode === 'hiddenGrid') {
-      const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 2, desiredBars: 2 });
+      const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
       ctxRef.current = ctx; setBpm(ctx.bpm); setResult(null);
       const raw = generateSampleCaptured(ctx.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4).map((n) => ({ ...n, onsetMs: n.onsetMs + ctx.captureStartMs }));
       try {

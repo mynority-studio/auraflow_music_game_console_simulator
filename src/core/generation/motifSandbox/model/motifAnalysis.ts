@@ -152,15 +152,19 @@ export interface HiddenGridAnalysis {
 }
 
 export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], ctx: HiddenGridCaptureContext): HiddenGridAnalysis {
-  const lengthBeats = ctx.captureBars * ctx.beatsPerBar;
+  const windowBeats = ctx.captureBars * ctx.beatsPerBar; // 捕获窗(最多 4 小节)
   // 1) 只取捕获窗内(数拍 pre-roll 已被 recorder 滤;这里防御)
-  let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -1e-6 && n.quantizedOnsetBeat < lengthBeats - 1e-6);
+  let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -1e-6 && n.quantizedOnsetBeat < windowBeats - 1e-6);
   if (g.length === 0) throw new MotifAnalysisError('数拍后没有录到音符,请在数拍结束后开始弹。');
   // 2) 单旋律化:同量化位取最高音
   const byOnset = new Map<number, GridCapturedNote>();
   for (const n of g) { const ex = byOnset.get(n.quantizedOnsetBeat); if (!ex || n.midi > ex.midi) byOnset.set(n.quantizedOnsetBeat, n); }
   g = [...byOnset.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
   if (g.length > 96) g = g.slice(0, 96);
+  // ★ 真 motif 长度 = 实际演奏到的小节数(网格上的末音 → 取整 bar),1..captureBars。
+  //   有隐形时钟 = 这是可靠的(不是 free 路径那种无时钟 span 猜测)。
+  const lastEnd = Math.max(...g.map((n) => n.quantizedOnsetBeat + n.quantizedDurationBeat));
+  const lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(lastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
 
   // 3) 音高:存 raw → 吸 tonality(记改动);accent/structuralTone 用网格的节拍权重
   const turns = contourTurns(g.map((n) => n.midi));

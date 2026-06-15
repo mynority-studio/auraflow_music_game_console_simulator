@@ -23,11 +23,26 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     expect(timing.captureMode).toBe('hiddenGrid');
   });
 
-  it('2-bar 捕获(jazz,≤4s)→ lengthBeats=8', () => {
+  it('2-bar 捕获 → lengthBeats=8', () => {
     const c = ctxOf({ style: 'jazz', desiredBars: 2 });
     expect(c.captureBars).toBe(2);
     const g = [note(c, 60, 100, 0, 1), note(c, 62, 90, 2, 1), note(c, 64, 90, 5, 1), note(c, 67, 100, 7, 1)];
     expect(analyzeHiddenGridMotif(g, c).motif.lengthBeats).toBe(8);
+  });
+
+  it('★ 真 motif 长度 = 实际演奏小节数(4bar 窗里只弹到第 2 小节 → lengthBeats=8,非 16)', () => {
+    const c = ctxOf({ desiredBars: 4 });
+    expect(c.captureBars).toBe(4);
+    const g = [note(c, 60, 100, 0, 1), note(c, 62, 90, 2, 1), note(c, 64, 90, 5, 1), note(c, 67, 100, 7, 1)]; // 末音落第 8 拍
+    const { motif, timing } = analyzeHiddenGridMotif(g, c);
+    expect(motif.lengthBeats).toBe(8);   // 派生 = 2 小节
+    expect(timing.captureBars).toBe(4);  // 窗仍是 4(最多)
+  });
+
+  it('4bar 窗弹满 4 小节 → lengthBeats=16', () => {
+    const c = ctxOf({ desiredBars: 4 });
+    const g = [note(c, 60, 100, 0, 1), note(c, 67, 90, 12, 1), note(c, 64, 90, 14, 1)]; // 末音落第 15 拍(第 4 小节)
+    expect(analyzeHiddenGridMotif(g, c).motif.lengthBeats).toBe(16);
   });
 
   it('★ 结构音:下拍上的【安静长音】结构分 > 弱拍 16 分上的【响亮短音】(directive §12)', () => {
