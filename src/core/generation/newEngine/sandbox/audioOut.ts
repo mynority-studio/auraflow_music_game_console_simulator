@@ -46,17 +46,21 @@ export function getIsPlaying(): boolean {
 // —— 实时单音试听(Q+R 3×5 键盘点击用)——
 // 用一条专用通道(不与曲子 5 轨抢),按下 noteOn、松开 noteOff;失败(synth 未就绪)静默降级。
 const AUDITION_CHANNEL = 15;
+const CC_SUSTAIN = 64;
+const SUSTAIN_LIGHT = 64; // 微微踩下(半踏板量级;松手后留一点音尾 ring)
 let auditionProgram = -1;
 
-/** 试听单音 on:确保 AudioContext 就绪 → 设音色 → noteOn。 */
+/** 试听单音 on:确保就绪 → 设音色 → 先抬踏板清上一音余音 → noteOn → 微微踩下(松手后 ring,不糊)。 */
 export async function auditionNoteOn(midiNote: number, program: number, velocity = 100): Promise<void> {
   await startAudioContext();
   if (!spessaSynth) return;
   if (program !== auditionProgram) { spessaSynth.programChange(AUDITION_CHANNEL, program); auditionProgram = program; }
+  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, 0);            // 抬:清掉上一个音的余音(避免越叠越糊)
   spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), velocity);
+  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, SUSTAIN_LIGHT); // 微微踩下:这个音松手后留一点 ring
 }
 
-/** 试听单音 off。 */
+/** 试听单音 off(踏板踩着 → 音尾微微 ring 到下次按键)。 */
 export function auditionNoteOff(midiNote: number): void {
   if (!spessaSynth) return;
   spessaSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));

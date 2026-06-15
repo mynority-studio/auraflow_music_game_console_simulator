@@ -5,7 +5,7 @@
 //   但不进生产链。试听音色【暖】(用户决策:不要 GM80;pop=GM4 电钢优先)。
 // ============================================================
 
-import { createTimebase, midi, beats, type Timebase } from '../../newEngine/foundation';
+import { createTimebase, midi, beats, type Timebase, type Ticks } from '../../newEngine/foundation';
 import { freezeMusicalIR, type MusicalIR, type NoteIR, type TrackMix } from '../../newEngine/ir/MusicalIR';
 import type { MotifNote, SandboxStyle } from './types';
 import type { Accompaniment } from './accompaniment';
@@ -56,12 +56,23 @@ function timebaseOf(bpm: number): Timebase {
   return createTimebase({ meter: { numerator: 4, denominator: 4 }, tempoMap: [{ atBeat: beats(0), bpm }] });
 }
 
+/** 每小节一脚【延音踏板】(微微):小节头踩下、下一小节前略抬 → 音尾 ring、换小节干净不糊。 */
+function barPedal(timebase: Timebase, totalBeats: number): { atTick: Ticks; down: boolean }[] {
+  const out: { atTick: Ticks; down: boolean }[] = [];
+  const bars = Math.max(1, Math.round(totalBeats / 4));
+  for (let b = 0; b < bars; b++) {
+    out.push({ atTick: timebase.beatToTick(beats(b * 4)), down: true });
+    out.push({ atTick: timebase.beatToTick(beats((b + 1) * 4 - 0.12)), down: false }); // 略早抬起 = 换小节干净
+  }
+  return out;
+}
+
 export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: SandboxStyle, program?: number): MusicalIR {
   const timebase = timebaseOf(bpm);
   const prog = program ?? LEAD_PROGRAM_BY_STYLE[style];
   const totalBeats = spanOf(lead);
   return freezeMusicalIR({
-    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: prog, mix: leadMix(prog) }],
+    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: prog, mix: leadMix(prog), pedalEvents: barPedal(timebase, totalBeats) }],
     timebase,
     durationTicks: timebase.beatToTick(beats(totalBeats)),
   });
@@ -76,11 +87,12 @@ export function buildSandboxIr(lead: readonly MotifNote[], accomp: Accompaniment
   const ep = accomp.compProgram === 4 || accomp.compProgram === 5;
   const compMix: TrackMix = { volume: 70, pan: 54, reverb: 52, chorus: ep ? 36 : 14 };
   const bassMix: TrackMix = { volume: 86, pan: 64, reverb: 12, chorus: 0 };
+  const pedal = barPedal(timebase, totalBeats);
   return freezeMusicalIR({
     tracks: [
-      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: leadProg, mix: leadMix(leadProg) },
-      { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46), program: accomp.compProgram, mix: compMix },
-      { role: 'bass', notes: toNoteIR(accomp.bass, timebase, totalBeats, 0.6), program: accomp.bassProgram, mix: bassMix },
+      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: leadProg, mix: leadMix(leadProg), pedalEvents: pedal },
+      { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46), program: accomp.compProgram, mix: compMix, pedalEvents: pedal },
+      { role: 'bass', notes: toNoteIR(accomp.bass, timebase, totalBeats, 0.6), program: accomp.bassProgram, mix: bassMix }, // bass 不踩 → 保清晰发音
     ],
     timebase,
     durationTicks: timebase.beatToTick(beats(totalBeats)),
