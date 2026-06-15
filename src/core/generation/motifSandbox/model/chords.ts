@@ -64,6 +64,22 @@ export function nearestChordTone(midiNote: number, chord: SandboxChord): number 
   return best;
 }
 
+/** 朝指定方向(dir:+1 上 / -1 下 / 0 就近)取最近的和弦音(限一个八度内;超则退就近)。 */
+export function chordToneInDirection(fromMidi: number, chord: SandboxChord, dir: number): number {
+  if (dir === 0) return nearestChordTone(fromMidi, chord);
+  let best = fromMidi, bestD = 999;
+  for (const pc of chord.tonePcs) {
+    const base = fromMidi - mod(fromMidi, 12) + pc;
+    for (const cand of [base - 24, base - 12, base, base + 12, base + 24]) {
+      if ((dir > 0 && cand > fromMidi) || (dir < 0 && cand < fromMidi)) {
+        const d = Math.abs(cand - fromMidi);
+        if (d >= 1 && d < bestD) { bestD = d; best = cand; }
+      }
+    }
+  }
+  return bestD > 12 ? nearestChordTone(fromMidi, chord) : best; // 该方向太远 → 就近(任意方向)
+}
+
 /** 在和弦序列里取覆盖某 beat 的和弦。 */
 export function chordAtBeat(progression: readonly SandboxChord[], beat: number): SandboxChord | undefined {
   return progression.find((c) => beat >= c.startBeat - 1e-6 && beat < c.startBeat + c.durationBeats - 1e-6)

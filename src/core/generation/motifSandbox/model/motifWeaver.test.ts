@@ -58,6 +58,20 @@ describe('motifSandbox/motifWeaver(和弦进行 × motif 复现)', () => {
     for (const n of r.lead) expect(n.durationBeat).toBeGreaterThan(0);
   });
 
+  it('★ 续写旋律线平滑:相邻跳进 ≤ 小六度(8 半音),音域 ≤ 十度(作曲原则)', () => {
+    for (const style of ['pop', 'lofi', 'rnb'] as const) {
+      for (let seed = 1; seed <= 24; seed++) {
+        const r = generateMotifWeave(baseInput({ style, seed }));
+        const lead = [...r.lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
+        let maxLeap = 0;
+        for (let i = 1; i < lead.length; i++) maxLeap = Math.max(maxLeap, Math.abs(lead[i].midi - lead[i - 1].midi));
+        expect(maxLeap, `${style} seed${seed} 跳进`).toBeLessThanOrEqual(8); // 无大跳(≤ 小六度)
+        const range = Math.max(...lead.map((n) => n.midi)) - Math.min(...lead.map((n) => n.midi));
+        expect(range, `${style} seed${seed} 音域`).toBeLessThanOrEqual(19); // ≤ 十二度内(含 motif 自身音域)
+      }
+    }
+  });
+
   it('minor key 全在调内;1-4 bar motif 都不崩', () => {
     for (const lenVariant of [0, 1, 2, 3]) {
       const r = generateMotifWeave(baseInput({ capturedNotes: generateSampleCaptured(96, 9, 'minor', lenVariant), keyPc: 9, mode: 'minor' }));
