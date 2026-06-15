@@ -26,9 +26,9 @@ export interface MotifNote {
   scaleDegree: number;   // 1..7
   octave: number;
   accent: number;        // 0..1
-  /** 续写时标记此音属于哪次 motif 复现(quote)/发展;quote 音带 occurrence 元数据 */
-  occurrenceKind?: 'quote' | 'answer' | 'continuation';
-  sectionId?: SandboxSectionId;
+  /** quote=轮首原样 motif;adapted=后半段和声适配变体;fill=续接填充 */
+  occurrenceKind?: 'quote' | 'adapted' | 'fill';
+  cycleIndex?: number;
 }
 
 export interface UserMotif {
@@ -45,24 +45,29 @@ export interface UserMotif {
 
 export interface MotifOccurrence {
   motifId: string;
-  sectionId: SandboxSectionId;
   startBeat: number;
-  kind: 'quote' | 'variation';
-  transform: 'identity' | 'transpose' | 'invert' | 'retrograde' | 'rhythmDivide' | 'tailAnswer';
+  kind: 'quote' | 'adapted';   // quote=原样;adapted=和声适配变体
+  cycleIndex: number;
+  chordRoman: string;          // 落在哪个和弦(起和弦)
 }
 
 export interface MotifWeaveAudit {
-  motifQuotedInVerse1: boolean;
-  motifQuotedInVerse2: boolean;
-  maxLeap: number;        // 最大相邻半音跳
-  chromaticRatio: number; // 离调音占比(POP/LOFI/RNB 应为 0)
-  jazzinessScore: number; // 0..1(越高越 jazz)
+  motifQuotedFirstCycle: boolean; // 第一轮轮首有原样 motif
+  placementsPerCycle: number;     // 1 或 2(每轮 motif 出现次数)
+  cyclesConsistent: boolean;      // 各轮复制一致(进行重复→复制第一遍)
+  maxLeap: number;
+  chromaticRatio: number;
+  jazzinessScore: number;
 }
 
 export interface MotifWeaverResult {
   motif: UserMotif;
+  progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(多轮)
   occurrences: MotifOccurrence[];
   lead: MotifNote[];
+  cycleBeats: number;
+  numCycles: number;
+  placeTwice: boolean;
   audit: MotifWeaveAudit;
 }
 

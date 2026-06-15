@@ -1,20 +1,21 @@
 // ============================================================
-// motifSandbox · model · jazziness 审计 + quote 校验
+// motifSandbox · model · 审计 + quote/cycle 校验
 // ------------------------------------------------------------
-// 非 jazz(POP/LOFI/RNB)目标:chromaticRatio=0、大跳少、密度适中 → jazzinessScore 低。
+// 校验:第一轮轮首原样 motif、各轮复制一致、非 jazz diatonic、跳进/jazziness。
 // ============================================================
 
 import type { MotifNote, MotifOccurrence, MotifWeaveAudit, ScaleMode, UserMotif } from './types';
 import { isInScale } from './scale';
+import { fitRange, identity } from './motifTransform';
 
 const EPS = 1e-6;
+const LEAD_LOW = 60, LEAD_HIGH = 84;
 
-/** 某 startBeat 处是否存在 motif 的原样复现(逐音 onset 相对 + pitch 匹配)。 */
-export function isMotifQuotedAt(lead: readonly MotifNote[], motif: UserMotif, startBeat: number): boolean {
-  for (const m of motif.notes) {
+/** 某 startBeat 处是否原样复现 refNotes(逐音 onset 相对 + pitch)。 */
+function quotedAt(lead: readonly MotifNote[], refNotes: readonly MotifNote[], startBeat: number): boolean {
+  for (const m of refNotes) {
     const want = startBeat + m.onsetBeat;
-    const hit = lead.find((n) => Math.abs(n.onsetBeat - want) < EPS && n.midi === m.midi);
-    if (!hit) return false;
+    if (!lead.find((n) => Math.abs(n.onsetBeat - want) < EPS && n.midi === m.midi)) return false;
   }
   return true;
 }
@@ -25,22 +26,33 @@ export function auditMotifWeave(
   occurrences: readonly MotifOccurrence[],
   keyPc: number,
   mode: ScaleMode,
+  ctx: { numCycles: number; cycleBeats: number; placeTwice: boolean },
 ): MotifWeaveAudit {
   const sorted = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
   let maxLeap = 0;
   for (let i = 1; i < sorted.length; i++) maxLeap = Math.max(maxLeap, Math.abs(sorted[i].midi - sorted[i - 1].midi));
   const chromatic = sorted.filter((n) => !isInScale(n.midi, keyPc, mode)).length;
   const chromaticRatio = sorted.length ? chromatic / sorted.length : 0;
-  const sixteenths = sorted.filter((n) => n.durationBeat <= 0.25 + EPS).length;
-  const denseRatio = sorted.length ? sixteenths / sorted.length : 0;
-  const leapPenalty = Math.min(1, Math.max(0, maxLeap - 9) / 8); // >9 半音才扣
-  const jazzinessScore = Math.min(1, chromaticRatio * 0.6 + denseRatio * 0.3 + leapPenalty * 0.1);
+  const dense = sorted.filter((n) => n.durationBeat <= 0.25 + EPS).length;
+  const jazzinessScore = Math.min(1, chromaticRatio * 0.6 + (sorted.length ? dense / sorted.length : 0) * 0.3 + Math.min(1, Math.max(0, maxLeap - 9) / 8) * 0.1);
 
-  const v1 = occurrences.find((o) => o.sectionId === 'verse1' && o.kind === 'quote');
-  const v2 = occurrences.find((o) => o.sectionId === 'verse2' && o.kind === 'quote');
+  const refQuote = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
+  const motifQuotedFirstCycle = quotedAt(lead, refQuote, 0);
+
+  // 各轮复制一致:cycle c 的音 == cycle 0 平移
+  let cyclesConsistent = true;
+  if (ctx.numCycles >= 2) {
+    const cyc = (c: number) => sorted.filter((n) => n.cycleIndex === c).map((n) => `${n.midi}@${(n.onsetBeat - c * ctx.cycleBeats).toFixed(3)}+${n.durationBeat.toFixed(3)}`).join(',');
+    const c0 = cyc(0);
+    for (let c = 1; c < ctx.numCycles; c++) if (cyc(c) !== c0) { cyclesConsistent = false; break; }
+  }
+
   return {
-    motifQuotedInVerse1: !!v1 && isMotifQuotedAt(lead, motif, v1.startBeat),
-    motifQuotedInVerse2: !!v2 && isMotifQuotedAt(lead, motif, v2.startBeat),
+    motifQuotedFirstCycle,
+    placementsPerCycle: ctx.placeTwice ? 2 : 1,
+    cyclesConsistent,
     maxLeap, chromaticRatio, jazzinessScore,
   };
 }
+
+export { quotedAt };

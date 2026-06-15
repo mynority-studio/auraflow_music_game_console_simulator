@@ -16,7 +16,6 @@ export const LEAD_PROGRAM_BY_STYLE: Record<SandboxStyle, number> = {
 /** pop 可选钢琴。 */
 export const POP_PIANO_PROGRAM = 0;
 
-const TOTAL_BEATS = 64;
 const clampVel = (v: number): number => Math.max(1, Math.min(127, Math.round(v * 127)));
 
 /** 暖 lead 混音(电钢带一点 chorus + 中等空间)。 */
@@ -31,12 +30,14 @@ export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: 
     tempoMap: [{ atBeat: beats(0), bpm }],
   });
   const prog = program ?? LEAD_PROGRAM_BY_STYLE[style];
-  const src = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat).filter((n) => n.durationBeat > 0 && n.onsetBeat < TOTAL_BEATS);
+  const span = lead.length ? Math.max(...lead.map((n) => n.onsetBeat + n.durationBeat)) : 4;
+  const totalBeats = Math.max(4, Math.ceil(span / 4) * 4); // 补到整 bar
+  const src = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat).filter((n) => n.durationBeat > 0 && n.onsetBeat < totalBeats);
   const notes: NoteIR[] = src.map((n, i) => {
     const p = Math.round(n.midi);
     // 播放安全:仅当后续【同音高】音在本音结束前起 → 截到它前面(避免 noteOff 撞掉重复音);
     //   异音高的真实时值【保留】(legato 叠响 = 还原录入)。
-    let durBeat = Math.min(n.durationBeat, TOTAL_BEATS - n.onsetBeat);
+    let durBeat = Math.min(n.durationBeat, totalBeats - n.onsetBeat);
     for (let j = i + 1; j < src.length; j++) {
       if (src[j].onsetBeat >= n.onsetBeat + durBeat) break;
       if (Math.round(src[j].midi) === p) { durBeat = Math.max(0.03, src[j].onsetBeat - n.onsetBeat - 0.01); break; }
@@ -51,6 +52,6 @@ export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: 
   return freezeMusicalIR({
     tracks: [{ role: 'lead', notes, program: prog, mix: leadMix(prog) }],
     timebase,
-    durationTicks: timebase.beatToTick(beats(TOTAL_BEATS)),
+    durationTicks: timebase.beatToTick(beats(totalBeats)),
   });
 }
