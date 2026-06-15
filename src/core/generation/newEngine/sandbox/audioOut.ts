@@ -49,10 +49,10 @@ const AUDITION_CHANNEL = 15;
 const CC_SUSTAIN = 64;
 let auditionProgram = -1;
 
-/** 试听单音 on:确保就绪 → 设音色/音量(踏板关=干净不糊)→ noteOn。音只在按住时响,松手即停。 */
-export async function auditionNoteOn(midiNote: number, program: number, velocity = 100): Promise<void> {
-  await startAudioContext();
-  if (!spessaSynth) return;
+/** 试听单音 on:【同步】发声(无 await → noteOn 直接在 MIDI 事件里送进 worklet,延迟最低)。
+ *  未就绪则后台启动音频(这一下可能没声,下一下就有);音只在按住时响,松手即停。 */
+export function auditionNoteOn(midiNote: number, program: number, velocity = 100): void {
+  if (!spessaSynth) { void startAudioContext(); return; }
   if (program !== auditionProgram) {
     spessaSynth.programChange(AUDITION_CHANNEL, program);
     spessaSynth.controllerChange(AUDITION_CHANNEL, 7, 127);   // CC7 音量拉满
