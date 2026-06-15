@@ -80,7 +80,8 @@ export interface MotifWeaverInput {
   capturedNotes: CapturedMidiNote[]; // raw 输入(必走 analyze→normalize,不绕过)
   style: SandboxStyle;
   keyPc: number;
-  mode: ScaleMode;
+  mode: ScaleMode;                   // 续写/配和声用的大/小调母调
   bpm: number;
   seed: number;
+  inputTonality?: import('./sandboxScales').SandboxTonality; // 给定则输入吸到该音阶(保 blues b5/五声特征)
 }

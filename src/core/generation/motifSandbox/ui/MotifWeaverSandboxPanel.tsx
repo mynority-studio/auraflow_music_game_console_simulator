@@ -13,10 +13,12 @@ import { analyzeAndNormalize, generateSampleCaptured, fitRecordingToBars, MotifA
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
 import { buildAccompaniment } from '../model/accompaniment';
-import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, ScaleMode } from '../model/types';
-import { playMusicalIR, stopNewEngine } from '../../newEngine/sandbox/audioOut';
+import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, type SandboxTonality } from '../model/sandboxScales';
+import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle } from '../model/types';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
+import { PadKeyboard } from './PadKeyboard';
 
 const STYLES: SandboxStyle[] = ['pop', 'lofi', 'rnb', 'jazz'];
 const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -25,7 +27,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [style, setStyle] = useState<SandboxStyle>('pop');
   const [keyPc, setKeyPc] = useState(0);
-  const [mode, setMode] = useState<ScaleMode>('major');
+  const [tonality, setTonality] = useState<SandboxTonality>('major');
   const [bpm, setBpm] = useState(96);
   const [seed, setSeed] = useState(7);
   const [withAccomp, setWithAccomp] = useState(true);
@@ -46,8 +48,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
   const timer = useRef<number | null>(null);
-  const liveCfg = useRef({ keyPc, mode, bpm, seed });
-  liveCfg.current = { keyPc, mode, bpm, seed };
+  const liveCfg = useRef({ keyPc, tonality, bpm, seed });
+  liveCfg.current = { keyPc, tonality, bpm, seed };
 
   useDevPanelChannel('motif', open, setOpen);
 
@@ -78,11 +80,11 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     setCaptured(cap);
     setResult(null);
     if (cap.length === 0) { setAnalysis(null); setStatus('未录到音符'); return; }
-    const { keyPc: k, mode: md, bpm: b, seed: s } = liveCfg.current;
+    const { keyPc: k, tonality: t, bpm: b, seed: s } = liveCfg.current;
     const fit = fitRecordingToBars(cap, b);
     setBpm(fit.adjustedBpm); // 调 bpm 让这段正好整 bar
     try {
-      const a = analyzeAndNormalize(cap, k, md, fit.adjustedBpm, s);
+      const a = analyzeAndNormalize(cap, k, tonalityParentMode(t), fit.adjustedBpm, s, t); // 吸到选定音阶(保 blues/五声特征)
       setAnalysis(a);
       setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· BPM ${b}→${fit.adjustedBpm} · raw ${a.rawCount}→norm ${a.normalizedCount}`);
     } catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
@@ -111,10 +113,10 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   }, [applyCaptured]);
 
   const startRecord = useCallback(() => {
-    if (!access.current) { setStatus('先 Enable MIDI'); return; }
     stopPlayback();
-    recorder.current.start(); // 手动起止,不固定秒数(30s 安全上限)
-    setRecording(true); setElapsed(0); setCaptured([]); setResult(null); setStatus('● 录制中…(手动停止)');
+    recorder.current.start(); // 手动起止,不固定秒数(30s 安全上限)。MIDI 或 3×5 键盘都可录
+    setRecording(true); setElapsed(0); setCaptured([]); setResult(null);
+    setStatus(access.current ? '● 录制中…(MIDI / 点 3×5 键盘,手动停止)' : '● 录制中…(点 3×5 键盘,手动停止)');
     timer.current = window.setInterval(() => {
       const e = recorder.current.elapsedMs();
       setElapsed(e);
@@ -122,26 +124,42 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     }, 80);
   }, [stopPlayback, finishRecord]);
 
+  // —— 3×5 键盘:按下=试听(+录制中则记音),松开=停音 ——
+  const handlePadDown = useCallback((_idx: number, midi: number) => {
+    void auditionNoteOn(midi, LEAD_PROGRAM_BY_STYLE[style], 100);
+    if (recording) recorder.current.noteOn(midi, 100);
+  }, [recording, style]);
+  const handlePadUp = useCallback((_idx: number, midi: number) => {
+    auditionNoteOff(midi);
+    if (recording) recorder.current.noteOff(midi);
+  }, [recording]);
+
+  // 随机下发音阶(调 + tonality)
+  const randomScale = useCallback(() => {
+    setKeyPc(Math.floor(Math.random() * 12));
+    setTonality(SANDBOX_TONALITIES[Math.floor(Math.random() * SANDBOX_TONALITIES.length)]);
+  }, []);
+
   // 卸载清理
   useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); access.current?.dispose(); }, []);
 
   // 注入示例 motif:生成 raw → applyCaptured(同录制路径)
   const injectSample = useCallback(() => {
     stopPlayback();
-    const { keyPc: k, mode: md, bpm: b, seed: s } = liveCfg.current;
-    applyCaptured(generateSampleCaptured(b, k, md, (s % 4 + 4) % 4), '注入示例');
+    const { keyPc: k, tonality: t, bpm: b, seed: s } = liveCfg.current;
+    applyCaptured(generateSampleCaptured(b, k, tonalityParentMode(t), (s % 4 + 4) % 4), '注入示例');
   }, [applyCaptured, stopPlayback]);
 
   const generate = useCallback(() => {
     if (captured.length === 0) { setStatus('先注入/录入 motif'); return; }
     stopPlayback();
     try {
-      const r = generateMotifWeave({ capturedNotes: captured, style, keyPc, mode, bpm, seed });
+      const r = generateMotifWeave({ capturedNotes: captured, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality });
       setResult(r);
       setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
       setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展手法 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
-  }, [captured, style, keyPc, mode, bpm, seed, stopPlayback]);
+  }, [captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
 
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
@@ -193,7 +211,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5">Capture</div>
         <div className="flex items-center gap-2">
           {!recording
-            ? <button type="button" onClick={startRecord} disabled={midiStatus !== 'ready'} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">● 录制</button>
+            ? <button type="button" onClick={startRecord} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">● 录制</button>
             : <button type="button" onClick={finishRecord} className="rounded-lg bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
           <button type="button" onClick={injectSample} className="rounded-lg bg-fuchsia-600/80 hover:bg-fuchsia-500 px-2.5 py-1 text-[12px] text-white">注入示例</button>
           <span className="text-[11px] text-zinc-400">{recording ? `${(elapsed / 1000).toFixed(1)}s ≈ ${(elapsed / (240000 / bpm)).toFixed(1)} bar` : `raw ${captured.length}${a ? ` → ${a.normalizedCount}音 / ${a.motif.lengthBeats / 4} bar` : ''}`}</span>
@@ -201,13 +219,25 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         </div>
       </div>
 
+      {/* 音阶 + 3×5 键盘输入 */}
+      <div className="px-3 py-2 border-b border-zinc-900 space-y-1.5">
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <span className="text-[10px] uppercase tracking-widest text-zinc-500">音阶</span>
+          <select className={sel} value={keyPc} onChange={(e) => setKeyPc(Number(e.target.value))}>{KEY_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}</select>
+          <select className={sel} value={tonality} onChange={(e) => setTonality(e.target.value as SandboxTonality)}>{SANDBOX_TONALITIES.map((t) => <option key={t} value={t}>{TONALITY_LABEL[t]}</option>)}</select>
+          <button type="button" onClick={randomScale} title="随机下发音阶" className="rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-1.5 py-0.5 text-[12px]">🎲</button>
+          {recording && <span className="ml-auto text-[10px] text-rose-300">● {(elapsed / 1000).toFixed(1)}s</span>}
+        </div>
+        <PadKeyboard noteMap={scaleNoteMap(keyPc, tonality)} recording={recording} onPadDown={handlePadDown} onPadUp={handlePadUp} />
+        <div className="text-[10px] text-zinc-600">点 pad 试听;按【● 录制】后点 pad 即记录,【■ 停止】完成 → 自动识别整 bar。底行低音 → 顶行高音。</div>
+      </div>
+
       {/* Generate */}
       <div className="px-3 py-2 border-b border-zinc-900 space-y-1.5">
         <div className="text-[10px] uppercase tracking-widest text-zinc-500">Generate</div>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
           <label>风格<select className={sel} value={style} onChange={(e) => setStyle(e.target.value as SandboxStyle)}>{STYLES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select></label>
-          <label>调<select className={sel} value={keyPc} onChange={(e) => setKeyPc(Number(e.target.value))}>{KEY_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}</select></label>
-          <select className={sel} value={mode} onChange={(e) => setMode(e.target.value as ScaleMode)}><option value="major">major</option><option value="minor">minor</option></select>
+          <span className="text-zinc-500">{KEY_NAMES[keyPc]} {TONALITY_LABEL[tonality]} → 母调 {tonalityParentMode(tonality)}</span>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
           <label>bpm<input type="number" className={`${sel} w-14`} value={bpm} min={50} max={200} onChange={(e) => setBpm(Math.max(50, Math.min(200, Number(e.target.value) || 96)))} /></label>
@@ -239,7 +269,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             <Row k="第一槽 head 原样" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
             <Row k="陈述 / 发展手法 / 连接" v={`${result.audit.themeStatements} · ${result.audit.developVariants} 种 · ${result.audit.connectSlots}`} good={result.audit.developVariants >= 2} />
             <Row k="密度 / 留白" v={`${result.audit.notesPerBar.toFixed(1)} 音·bar / 留白 ${(result.audit.restRatio * 100).toFixed(0)}%`} good={result.audit.restRatio > 0.1} />
-            <Row k="chromaticRatio" v={result.audit.chromaticRatio.toFixed(2)} good={result.audit.chromaticRatio === 0 || style === 'jazz'} />
+            <Row k="chromaticRatio" v={result.audit.chromaticRatio.toFixed(2)} good={result.audit.chromaticRatio === 0 || style === 'jazz' || tonality === 'blues'} />
             <Row k="maxLeap / jazziness" v={`${result.audit.maxLeap} 半音 · ${result.audit.jazzinessScore.toFixed(2)}`} good={result.audit.jazzinessScore < 0.35 || style === 'jazz'} />
             <div className="text-[10px] text-zinc-500 pt-1">前 16 音(fuchsia=原样陈述 · cyan=变形发展 · 灰=连接留白):</div>
             <div className="text-[10px] text-zinc-400 leading-snug break-words">

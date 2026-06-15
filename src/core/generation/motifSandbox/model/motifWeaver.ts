@@ -230,7 +230,7 @@ function smoothAndResolve(lead: MotifNote[], bandLo: number, bandHi: number, key
 // ============================================================
 export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const { keyPc, mode } = input;
-  const { motif } = analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed);
+  const { motif } = analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality);
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
 
   const slotBars = Math.max(1, Math.min(TARGET_BARS, Math.round(motif.lengthBeats / BAR)));

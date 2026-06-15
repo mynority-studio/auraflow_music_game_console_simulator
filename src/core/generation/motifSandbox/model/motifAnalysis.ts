@@ -8,6 +8,7 @@
 
 import type { CapturedMidiNote, MotifNote, ScaleMode, UserMotif } from './types';
 import { midiToScaleDegree, midiToOctave, snapMidiToScale, degreeOctaveToMidi } from './scale';
+import { snapMidiToTonality, type SandboxTonality } from './sandboxScales';
 
 const GRID = 0.25; // 1/16 = 0.25 beat(onset 量化网格)
 const MIN_DUR_BEAT = 0.05; // duration 不量化,仅兜底防 0(保留录入原本时值)
@@ -28,6 +29,7 @@ export function analyzeAndNormalize(
   mode: ScaleMode,
   bpm: number,
   createdAt = 0,
+  inputTonality?: SandboxTonality, // 给定则吸到该音阶(布鲁斯 b5/五声等特征保留);否则吸大/小调母调
 ): AnalyzeResult {
   const rawCount = captured.length;
   if (rawCount === 0) throw new MotifAnalysisError('没有录到音符。');
@@ -57,8 +59,8 @@ export function analyzeAndNormalize(
   // 3)(2026-06-12 用户:完全还原录入时值)—— 不再把时值截到下一音起点(那会把 legato 时值吸到网格)。
   //    单旋律性由【同 onset 取最高音】保证;legato 叠音的真实时值保留,播放时再做【仅同音高】安全裁剪(leadOnlyIr)。
 
-  // 4) scale snap
-  for (const n of notes) n.midi = snapMidiToScale(n.midi, keyPc, mode);
+  // 4) scale snap — 有 inputTonality 走【该音阶】(保留 blues b5/五声特征),否则吸大/小调母调
+  for (const n of notes) n.midi = inputTonality ? snapMidiToTonality(n.midi, keyPc, inputTonality) : snapMidiToScale(n.midi, keyPc, mode);
 
   // 5) 质量门
   if (notes.length < 2) throw new MotifAnalysisError('音符太少(<2),请重录一段更完整的 motif。');

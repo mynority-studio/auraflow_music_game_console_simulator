@@ -7,7 +7,7 @@
 // ============================================================
 
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
-import { startAudioContext } from '../../../audio/SynthManager';
+import { startAudioContext, spessaSynth } from '../../../audio/SynthManager';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -41,4 +41,23 @@ export function getPlaybackTick(): number {
 /** 是否正在播放。 */
 export function getIsPlaying(): boolean {
   return globalMidiScheduler.isPlaying;
+}
+
+// —— 实时单音试听(Q+R 3×5 键盘点击用)——
+// 用一条专用通道(不与曲子 5 轨抢),按下 noteOn、松开 noteOff;失败(synth 未就绪)静默降级。
+const AUDITION_CHANNEL = 15;
+let auditionProgram = -1;
+
+/** 试听单音 on:确保 AudioContext 就绪 → 设音色 → noteOn。 */
+export async function auditionNoteOn(midiNote: number, program: number, velocity = 100): Promise<void> {
+  await startAudioContext();
+  if (!spessaSynth) return;
+  if (program !== auditionProgram) { spessaSynth.programChange(AUDITION_CHANNEL, program); auditionProgram = program; }
+  spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), velocity);
+}
+
+/** 试听单音 off。 */
+export function auditionNoteOff(midiNote: number): void {
+  if (!spessaSynth) return;
+  spessaSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
 }
