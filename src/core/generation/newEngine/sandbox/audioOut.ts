@@ -47,28 +47,26 @@ export function getIsPlaying(): boolean {
 // 用一条专用通道(不与曲子 5 轨抢),按下 noteOn、松开 noteOff;失败(synth 未就绪)静默降级。
 const AUDITION_CHANNEL = 15;
 const CC_SUSTAIN = 64;
-const SUSTAIN_LIGHT = 64; // 微微踩下(半踏板量级;松手后留一点音尾 ring)
 let auditionProgram = -1;
 
-/** 试听单音 on:确保就绪 → 设音色/音量 → 先抬踏板清上一音余音 → noteOn → 微微踩下(松手后 ring,不糊)。 */
+/** 试听单音 on:确保就绪 → 设音色/音量(踏板关=干净不糊)→ noteOn。音只在按住时响,松手即停。 */
 export async function auditionNoteOn(midiNote: number, program: number, velocity = 100): Promise<void> {
   await startAudioContext();
   if (!spessaSynth) return;
   if (program !== auditionProgram) {
     spessaSynth.programChange(AUDITION_CHANNEL, program);
-    spessaSynth.controllerChange(AUDITION_CHANNEL, 7, 127);  // CC7 音量拉满(原默认 ~100 太小)
-    spessaSynth.controllerChange(AUDITION_CHANNEL, 11, 127); // CC11 表情拉满
-    spessaSynth.controllerChange(AUDITION_CHANNEL, 91, 14);  // CC91 混响压低 → 干声更近、更响
-    spessaSynth.controllerChange(AUDITION_CHANNEL, 10, 64);  // CC10 居中
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 7, 127);   // CC7 音量拉满
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 11, 127);  // CC11 表情拉满
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 91, 14);   // CC91 混响压低 → 干声更近
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 10, 64);   // CC10 居中
+    spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, 0); // ★ 踏板关:按起来不糊(用户:CC64 太多)
     auditionProgram = program;
   }
-  const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入的真力度不变)
-  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, 0);            // 抬:清掉上一个音的余音
+  const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入真力度不变)
   spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v);
-  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, SUSTAIN_LIGHT); // 微微踩下:松手后留一点 ring
 }
 
-/** 试听单音 off(踏板踩着 → 音尾微微 ring 到下次按键)。 */
+/** 试听单音 off(无踏板 → 松手即停,发音干净)。 */
 export function auditionNoteOff(midiNote: number): void {
   if (!spessaSynth) return;
   spessaSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
