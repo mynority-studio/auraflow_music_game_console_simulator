@@ -72,17 +72,22 @@ export function buildMotifCycle(motif: UserMotif, keyPc: number, mode: ScaleMode
   return { motifChords, contChords, all, cycleBeats, motifBeats: motifChords.length * BAR };
 }
 
-/** 整曲(totalBars 小节)和弦进行 = 把一轮 cycle 平铺到 totalBars,末两小节收尾终止式(V→I)。
- *  和声【循环】是常态(vamp/turnaround);发展落在【旋律】上,不在和声上 → 不算"重复"。 */
+/** 4 小节乐句 = motif 自己的和弦(前段,保留)+ 终止式填充(vi/VI–IV/iv–V)凑到 4 小节。 */
+export function buildPhrase(motif: UserMotif, keyPc: number, mode: ScaleMode): number[] {
+  const PHRASE = 4;
+  const degs = harmonizeMotif(motif, keyPc, mode).slice(0, PHRASE).map((c) => c.degree); // 保 motif 配出的和弦
+  const FILL = [6, 4, 5]; // vi/VI → IV/iv → V(romanOf 自动处理大小调记号)
+  for (let i = 0; degs.length < PHRASE; i++) degs.push(FILL[i % FILL.length]);
+  return degs;
+}
+
+/** 整曲(totalBars)和弦进行 = 4 小节乐句平铺,末两小节收尾终止式(V→I)。
+ *  和声【循环】是常态(乐句/turnaround);发展落在【旋律】上,不在和声上 → 不算"重复"。 */
 export function buildProgression(motif: UserMotif, keyPc: number, mode: ScaleMode, totalBars: number): SandboxChord[] {
-  const cycle = buildMotifCycle(motif, keyPc, mode).all;
-  const cycleBars = Math.max(1, cycle.length);
+  const phrase = buildPhrase(motif, keyPc, mode);
   const out: SandboxChord[] = [];
-  for (let b = 0; b < totalBars; b++) {
-    const proto = cycle[b % cycleBars];
-    out.push(makeChord(proto.degree, keyPc, mode, b * BAR, BAR));
-  }
-  if (totalBars >= 2) { // 收尾真终止式:倒数第二小节 V、末小节 I(给曲式闭合感)
+  for (let b = 0; b < totalBars; b++) out.push(makeChord(phrase[b % phrase.length], keyPc, mode, b * BAR, BAR));
+  if (totalBars >= 2) { // 收尾真终止式:倒数第二小节 V、末小节 I
     out[totalBars - 2] = makeChord(5, keyPc, mode, (totalBars - 2) * BAR, BAR);
     out[totalBars - 1] = makeChord(1, keyPc, mode, (totalBars - 1) * BAR, BAR);
   }

@@ -11,7 +11,8 @@ import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 import { analyzeAndNormalize, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
-import { buildLeadOnlyIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
+import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
+import { buildAccompaniment } from '../model/accompaniment';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, ScaleMode } from '../model/types';
 import { playMusicalIR, stopNewEngine } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
@@ -27,6 +28,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [mode, setMode] = useState<ScaleMode>('major');
   const [bpm, setBpm] = useState(96);
   const [seed, setSeed] = useState(7);
+  const [withAccomp, setWithAccomp] = useState(true);
   const [captured, setCaptured] = useState<CapturedMidiNote[]>([]);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
   const [result, setResult] = useState<MotifWeaverResult | null>(null);
@@ -144,11 +146,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
     stopNewEngine();
-    const ir = buildLeadOnlyIr(result.lead, bpm, style);
+    const accomp = withAccomp ? buildAccompaniment(result.progression, style, seed) : null;
+    const ir = buildSandboxIr(result.lead, accomp, bpm, style);
     setPlaying(true);
-    setStatus('▶ 播放 lead…');
+    setStatus(withAccomp ? '▶ 播放 lead + 伴奏…' : '▶ 播放 lead…');
     try { await playMusicalIR(ir, bpm, style); } catch { /* 静默 */ }
-  }, [result, bpm, style]);
+  }, [result, bpm, style, seed, withAccomp]);
 
   if (!open) return null;
 
@@ -215,6 +218,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           {!playing
             ? <button type="button" onClick={play} disabled={!result} className="rounded-lg bg-sky-600/80 hover:bg-sky-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 播放</button>
             : <button type="button" onClick={stopPlayback} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
+          <button type="button" onClick={() => setWithAccomp((v) => !v)} className={`rounded-lg px-2 py-1 text-[11px] border ${withAccomp ? 'bg-amber-600/30 border-amber-500/50 text-amber-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>伴奏 {withAccomp ? 'on' : 'off'}</button>
           <span className="ml-auto text-[10px] text-zinc-500">lead=GM{LEAD_PROGRAM_BY_STYLE[style]}</span>
         </div>
       </div>
