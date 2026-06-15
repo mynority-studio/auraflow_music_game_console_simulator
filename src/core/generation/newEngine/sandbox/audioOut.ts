@@ -7,7 +7,7 @@
 // ============================================================
 
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
-import { startAudioContext, spessaSynth } from '../../../audio/SynthManager';
+import { startAudioContext, getAudioContext, spessaSynth } from '../../../audio/SynthManager';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -64,6 +64,14 @@ export async function auditionNoteOn(midiNote: number, program: number, velocity
 export function auditionNoteOff(midiNote: number): void {
   if (!spessaSynth) return;
   spessaSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
+}
+
+/** 在用户手势(按钮点击 / 按键)里先解锁 AudioContext。
+ *  ★ MIDI 输入【不算手势】,浏览器会保持 AudioContext 挂起 → 试听无声;
+ *  必须在真手势里先调一次,之后 MIDI 输入才能即时发声。多次调用安全(SynthManager 串行)。 */
+export async function ensureAudio(): Promise<void> {
+  await startAudioContext();
+  try { const ctx = getAudioContext(); if (ctx && ctx.state === 'suspended') await ctx.resume(); } catch { /* ignore */ }
 }
 
 // —— 隐形时钟数拍 click(节拍器,GM 打击通道 9)——

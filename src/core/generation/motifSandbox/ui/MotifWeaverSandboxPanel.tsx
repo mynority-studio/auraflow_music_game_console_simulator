@@ -16,7 +16,7 @@ import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick } from '../../newEngine/sandbox/audioOut';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
@@ -76,6 +76,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       if (!open && heldKeys.current.has('q') && heldKeys.current.has('r') && !isTyping()) {
         e.preventDefault();
         setOpen(true);
+        void ensureAudio(); // 按键是手势 → 趁机解锁音频(MIDI 输入才能即时发声)
       } else if (open && k === 'escape') setOpen(false);
     };
     const onKeyUp = (e: KeyboardEvent) => heldKeys.current.delete(e.key.toLowerCase());
@@ -103,6 +104,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   // —— Web MIDI 接入 ——
   const enableMidi = useCallback(async () => {
+    await ensureAudio(); // 点击是手势 → 解锁 AudioContext,之后 MIDI 输入即时发声
     const onMessage = (m: ParsedMidiMessage) => {
       if (m.type === 'noteOn') {
         const { keyPc: k, tonality: t, style: st } = liveCfg.current;
