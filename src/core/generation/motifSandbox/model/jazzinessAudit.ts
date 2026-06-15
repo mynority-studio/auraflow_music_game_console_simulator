@@ -1,7 +1,8 @@
 // ============================================================
-// motifSandbox · model · 审计 + quote/cycle 校验
+// motifSandbox · model · 审计 + quote 校验
 // ------------------------------------------------------------
-// 校验:第一轮轮首原样 motif、各轮复制一致、非 jazz diatonic、跳进/jazziness。
+// 校验:第一槽原样 motif(head)、真有发展(developVariants>1 不是复制)、密度/留白、
+//   非 jazz diatonic、跳进/jazziness。
 // ============================================================
 
 import type { MotifNote, MotifOccurrence, MotifWeaveAudit, ScaleMode, UserMotif } from './types';
@@ -9,6 +10,7 @@ import { isInScale } from './scale';
 import { fitRange, identity } from './motifTransform';
 
 const EPS = 1e-6;
+const BAR = 4;
 const LEAD_LOW = 60, LEAD_HIGH = 84;
 
 /** 某 startBeat 处是否原样复现 refNotes(逐音 onset 相对 + pitch)。 */
@@ -26,7 +28,7 @@ export function auditMotifWeave(
   occurrences: readonly MotifOccurrence[],
   keyPc: number,
   mode: ScaleMode,
-  ctx: { numCycles: number; cycleBeats: number; placeTwice: boolean },
+  ctx: { totalBars: number },
 ): MotifWeaveAudit {
   const sorted = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
   let maxLeap = 0;
@@ -39,19 +41,23 @@ export function auditMotifWeave(
   const refQuote = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
   const motifQuotedFirstCycle = quotedAt(lead, refQuote, 0);
 
-  // 各轮复制一致:cycle c 的音 == cycle 0 平移
-  let cyclesConsistent = true;
-  if (ctx.numCycles >= 2) {
-    const cyc = (c: number) => sorted.filter((n) => n.cycleIndex === c).map((n) => `${n.midi}@${(n.onsetBeat - c * ctx.cycleBeats).toFixed(3)}+${n.durationBeat.toFixed(3)}`).join(',');
-    const c0 = cyc(0);
-    for (let c = 1; c < ctx.numCycles; c++) if (cyc(c) !== c0) { cyclesConsistent = false; break; }
-  }
+  const themeStatements = occurrences.filter((o) => o.kind === 'quote' || o.kind === 'develop').length;
+  const developVariants = new Set(occurrences.filter((o) => o.kind === 'develop').map((o) => o.label)).size;
+  const connectSlots = occurrences.filter((o) => o.kind === 'connect').length;
+  const notesPerBar = ctx.totalBars ? sorted.length / ctx.totalBars : 0;
+  const sounding = sorted.reduce((a, n) => a + n.durationBeat, 0);
+  const restRatio = Math.max(0, 1 - sounding / (ctx.totalBars * BAR));
 
   return {
     motifQuotedFirstCycle,
-    placementsPerCycle: ctx.placeTwice ? 2 : 1,
-    cyclesConsistent,
-    maxLeap, chromaticRatio, jazzinessScore,
+    themeStatements,
+    developVariants,
+    connectSlots,
+    notesPerBar,
+    restRatio,
+    maxLeap,
+    chromaticRatio,
+    jazzinessScore,
   };
 }
 

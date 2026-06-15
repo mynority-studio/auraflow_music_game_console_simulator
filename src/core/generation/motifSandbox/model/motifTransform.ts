@@ -64,3 +64,20 @@ export function fitRange(notes: readonly MotifNote[], lowMidi: number, highMidi:
 export function snapMotifToScale(notes: readonly MotifNote[], keyPc: number, mode: ScaleMode): MotifNote[] {
   return notes.map((n) => refresh(n, snapMidiToScale(n.midi, keyPc, mode), keyPc, mode));
 }
+
+/** 节奏扩张(augmentation):onset/dur 整体 ×factor —— 把动机拉长,音变少变长(降密度)。 */
+export function augmentMotif(notes: readonly MotifNote[], factor: number): MotifNote[] {
+  return notes.map((n) => ({ ...n, onsetBeat: n.onsetBeat * factor, durationBeat: n.durationBeat * factor }));
+}
+
+/** 片段化(fragmentation):只取前 keep 比例的音(其余=留白),= motivic 发展的常用手法(降密度)。 */
+export function fragmentMotif(notes: readonly MotifNote[], keep: number): MotifNote[] {
+  if (notes.length === 0) return [];
+  const k = Math.max(1, Math.round(notes.length * keep));
+  return notes.slice(0, k).map((n) => ({ ...n }));
+}
+
+/** 小节线位移(barLineShift):整体后移 beats 拍 → 切分/错位(调用方按槽长裁剪)。 */
+export function displaceMotif(notes: readonly MotifNote[], beats: number): MotifNote[] {
+  return notes.map((n) => ({ ...n, onsetBeat: n.onsetBeat + beats }));
+}

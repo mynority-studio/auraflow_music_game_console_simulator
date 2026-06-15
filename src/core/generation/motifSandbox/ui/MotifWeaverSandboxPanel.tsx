@@ -137,7 +137,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       const r = generateMotifWeave({ capturedNotes: captured, style, keyPc, mode, bpm, seed });
       setResult(r);
       setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
-      setStatus(`生成 ${r.lead.length} 音 · 每轮 motif ${r.audit.placementsPerCycle} 次 × ${r.numCycles} 轮 · 一致=${r.audit.cyclesConsistent ? '✓' : '✗'}`);
+      setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展手法 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
   }, [captured, style, keyPc, mode, bpm, seed, stopPlayback]);
 
@@ -230,15 +230,16 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <Row k="contour" v={a.motif.contour.map((c) => (c > 0 ? '↑' : c < 0 ? '↓' : '→')).join('')} />
           <Row k="rhythm cell" v={a.motif.rhythmCell.map((d) => d.toFixed(2)).join(' ')} />
           {result && <>
-            <Row k="配和弦(一轮)" v={(() => { const per = Math.max(1, Math.round(result.progression.length / result.numCycles)); return result.progression.slice(0, per).map((c) => c.roman).join('-'); })()} />
-            <Row k="每轮 motif" v={`${result.audit.placementsPerCycle} 次(${result.audit.placementsPerCycle === 2 ? '轮首原样 + 后半适配' : '仅轮首原样'})· ${result.numCycles} 轮`} />
-            <Row k="轮首原样 motif" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
-            <Row k="各轮复制一致" v={result.audit.cyclesConsistent ? '✓' : '✗'} good={result.audit.cyclesConsistent} />
+            <Row k="和弦进行(16 bar)" v={result.progression.map((c) => c.roman).join('-')} />
+            <Row k="发展弧(每槽)" v={result.arc.join(' · ')} />
+            <Row k="第一槽 head 原样" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
+            <Row k="陈述 / 发展手法 / 连接" v={`${result.audit.themeStatements} · ${result.audit.developVariants} 种 · ${result.audit.connectSlots}`} good={result.audit.developVariants >= 2} />
+            <Row k="密度 / 留白" v={`${result.audit.notesPerBar.toFixed(1)} 音·bar / 留白 ${(result.audit.restRatio * 100).toFixed(0)}%`} good={result.audit.restRatio > 0.1} />
             <Row k="chromaticRatio" v={result.audit.chromaticRatio.toFixed(2)} good={result.audit.chromaticRatio === 0 || style === 'jazz'} />
             <Row k="maxLeap / jazziness" v={`${result.audit.maxLeap} 半音 · ${result.audit.jazzinessScore.toFixed(2)}`} good={result.audit.jazzinessScore < 0.35 || style === 'jazz'} />
-            <div className="text-[10px] text-zinc-500 pt-1">前 16 音(fuchsia=原样 motif · cyan=适配):</div>
+            <div className="text-[10px] text-zinc-500 pt-1">前 16 音(fuchsia=原样陈述 · cyan=变形发展 · 灰=连接留白):</div>
             <div className="text-[10px] text-zinc-400 leading-snug break-words">
-              {result.lead.slice(0, 16).map((n, i) => <span key={i} className={n.occurrenceKind === 'quote' ? 'text-fuchsia-300' : n.occurrenceKind === 'adapted' ? 'text-cyan-300' : ''}>{n.midi}@{n.onsetBeat.toFixed(1)} </span>)}
+              {result.lead.slice(0, 16).map((n, i) => <span key={i} className={n.occurrenceKind === 'quote' ? 'text-fuchsia-300' : n.occurrenceKind === 'develop' ? 'text-cyan-300' : 'text-zinc-500'}>{n.midi}@{n.onsetBeat.toFixed(1)} </span>)}
             </div>
           </>}
         </div>

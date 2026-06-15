@@ -1,166 +1,284 @@
 // ============================================================
-// motifSandbox · model · Motif Weaver(和弦进行 × motif 复现,2026-06-15 重写)
+// motifSandbox · model · Motif Weaver(Impro-Visor ThemeWeaver 复现办法,2026-06-15 重写)
 // ------------------------------------------------------------
-// 用户方案:给 motif 配和弦 → 一轮进行内 motif 出现 1 次(轮首原样)或 2 次
-//   (前半段原样 + 后半段【和声适配变体】:间距/时值/轮廓不变,落新和弦,尾音解决,+ 一点邻音/节奏微变)。
-//   进行重复 → 复制第一轮的结果(确定性)。非 jazz 全 diatonic。
+// 不再"复制第一轮"(用户:重复性太高/太密/没续写)。改用 Impro-Visor 的【陈述 + 发展】结构:
+//   ① 16 小节曲式切成若干【theme-interval 槽】(槽长 = motif 小节数)。
+//   ② 每槽掷骰(probTheme):陈述主题 vs 发展/连接 —— 主题在结构锚点【再现】(head/return/recap),
+//      锚点之间【发展】(diatonic 移位=模进 / 倒影 / 逆行 / 片段 / 扩张 / 小节线位移),
+//      连接槽【每小节一长音】= 稀疏留白透气(降密度)。
+//   ③ 发展/连接落新和弦 → 和声适配(强拍/长音吸到和弦音,RectifyPitches 后处理)。
+//   ④ 连接平滑(connectSections + 作曲原则:级进为主、跳进≤小六度、音域带、末音解决到主和弦)。
+//   ⑤ 确定性(seeded rng)、非 jazz 全 diatonic。主题【可辨】但不再是逐拍复制。
+// 参考:ThemeWeaver.myGenerateSolo / adjustTheme / connectSections / RectifyPitchesCommand。
 // ============================================================
 
-import type { MotifNote, MotifOccurrence, MotifWeaverInput, MotifWeaverResult, SandboxStyle, ScaleMode, UserMotif } from './types';
+import type { MotifNote, MotifOccurrence, MotifWeaverInput, MotifWeaverResult, ScaleMode, UserMotif } from './types';
 import { analyzeAndNormalize } from './motifAnalysis';
-import { identity, fitRange } from './motifTransform';
-import { transposeDiatonic, snapMidiToScale } from './scale';
-import { buildMotifCycle } from './motifHarmony';
-import { chordAtBeat, nearestChordTone, chordToneInDirection, type SandboxChord } from './chords';
+import {
+  identity, fitRange, transposeDiatonicMotif, invertAroundMidi, retrogradePitchOnly,
+  rhythmDivide, augmentMotif, fragmentMotif, displaceMotif,
+} from './motifTransform';
+import { snapMidiToScale, isInScale } from './scale';
+import { buildProgression } from './motifHarmony';
+import { chordAtBeat, nearestChordTone, isChordTone, type SandboxChord } from './chords';
 import { auditMotifWeave } from './jazzinessAudit';
 import { makeRng, type SeededRng } from './rng';
 
-const TARGET_BEATS = 64;
+const TARGET_BARS = 16;
+const BAR = 4;
+const TARGET_BEATS = TARGET_BARS * BAR; // 64
 const LEAD_LOW = 60, LEAD_HIGH = 84;
+const MAX_LEAP = 8;     // 小六度;> 此值八度收拢(作曲原则:级进为主、跳进≤小六度)
+const PROB_THEME = 0.6; // Impro-Visor probTheme:每槽陈述 vs 发展/连接
 
-const STYLE_RHYTHM: Record<SandboxStyle, number[]> = {
-  pop: [0, 1, 2, 3], lofi: [0, 2], rnb: [0, 1, 1.5, 2.5, 3], jazz: [0, 0.5, 1, 1.5, 2, 3],
-};
+// ============================================================
+// 发展手法(diatonic-safe;Impro-Visor adjustTheme 的轻量复现)
+// ============================================================
+type DevOp =
+  | { t: 'transpose'; steps: number }   // diatonic 移位 = 模进(sequence)
+  | { t: 'invert' }                     // 倒影(围绕首音)
+  | { t: 'retro' }                      // 逆行(只逆 pitch)
+  | { t: 'divide' }                     // 长音裂解(加花)
+  | { t: 'fragment'; keep: number }     // 片段化(只取前段 → 留白,降密度)
+  | { t: 'augment'; factor: number }    // 节奏扩张(拉长,降密度)
+  | { t: 'displace'; beats: number };   // 小节线位移(切分/错位)
 
-/** 轮首原样 motif(identity,fitRange 到 lead 音区)。 */
-function placeExact(motif: UserMotif, atBeat: number, cycleIndex: number): MotifNote[] {
-  return fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH).map((n) => ({ ...n, onsetBeat: atBeat + n.onsetBeat, occurrenceKind: 'quote' as const, cycleIndex }));
+interface SlotPlan { role: 'state' | 'develop' | 'connect'; ops: DevOp[]; label: string; }
+
+const PRIMARIES: { ops: DevOp[]; label: string }[] = [
+  { ops: [{ t: 'transpose', steps: 2 }], label: 'transpose+2' },  // 上行三度模进
+  { ops: [{ t: 'transpose', steps: 1 }], label: 'transpose+1' },  // 上行二度模进
+  { ops: [{ t: 'transpose', steps: -2 }], label: 'transpose-2' }, // 下行三度模进
+  { ops: [{ t: 'transpose', steps: -1 }], label: 'transpose-1' }, // 下行二度模进
+  { ops: [{ t: 'invert' }], label: 'invert' },
+  { ops: [{ t: 'retro' }], label: 'retro' },
+];
+// 主手法权重:移位(模进)多,倒影/逆行少。
+const PRIMARY_BAG = [0, 0, 1, 1, 2, 3, 4, 5];
+const RHYTHM_OPS: { op: DevOp; tag: string }[] = [
+  { op: { t: 'divide' }, tag: '+div' },
+  { op: { t: 'fragment', keep: 0.5 }, tag: '+frag' },
+  { op: { t: 'augment', factor: 2 }, tag: '+aug' },
+  { op: { t: 'displace', beats: 1 }, tag: '+shift' },
+];
+
+/** 抽一个发展手法(主手法 + 概率叠一个节奏手法),尽量不与上一发展槽同主手法。 */
+function pickDevOps(rng: SeededRng, avoidLabel: string): { ops: DevOp[]; label: string } {
+  let chosen = PRIMARIES[rng.pick(PRIMARY_BAG)];
+  for (let tries = 0; chosen.label === avoidLabel && tries < 4; tries++) chosen = PRIMARIES[rng.pick(PRIMARY_BAG)];
+  const ops = [...chosen.ops];
+  let label = chosen.label;
+  if (rng.chance(0.5)) { const r = rng.pick(RHYTHM_OPS); ops.push(r.op); label += r.tag; }
+  return { ops, label };
 }
 
-const MAX_LEAP = 7; // 旋律线最大跳进 = 纯五度(>5th 算大跳,尽量避免);超则八度收拢
-/** 朝 target 走【一个 diatonic 度】,但若已在 ≤2 度内则直接到 target(避免来回)。 */
-function stepTo(fromMidi: number, targetMidi: number, keyPc: number, mode: ScaleMode): number {
-  const d = targetMidi - fromMidi;
-  if (Math.abs(d) <= 2) return targetMidi;
-  return transposeDiatonic(fromMidi, d > 0 ? 1 : -1, keyPc, mode);
-}
-
-/** 后半段【和声适配变体】:沿 motif 的【轮廓方向 + 时值】重落到续接和弦的【和弦音】上 ——
- *  保轮廓/节奏(可辨),音程随就近和弦音(小跳=平滑),首音接 quote 末音,尾音朝下一轮 quote 首音解决,
- *  短音小概率邻音微变(Q2)。不再 rigid 平移(避免整块上飘 + 大跳)。 */
-function placeAdapted(motif: UserMotif, atBeat: number, contChords: readonly SandboxChord[], cycleIndex: number, rng: SeededRng, keyPc: number, mode: ScaleMode, peakMidi: number, resolveToMidi: number, refLow: number, refHigh: number): MotifNote[] {
-  const out: MotifNote[] = [];
-  const lastBarStart = (contChords.length - 1) * 4; // 末 bar 起点(相对) → 此后【渐降】lead-in 进入复述
-  let prev = peakMidi;
-  for (let i = 0; i < motif.notes.length; i++) {
-    const n = motif.notes[i];
-    const ch = chordAtBeat(contChords, n.onsetBeat) ?? contChords[0];
-    let midi: number;
-    if (i === 0) midi = chordToneInDirection(prev, ch, -1); // 从 quote 峰音【下行】recovery(跳后反向)
-    else if (n.onsetBeat >= lastBarStart - 1e-6) midi = chordToneInDirection(prev, ch, Math.sign(resolveToMidi - prev) || -1); // 末 bar:朝下一轮 quote 首音【渐降】(voice-leading 进复述)
-    else {
-      let dir = Math.sign(motif.notes[i].midi - motif.notes[i - 1].midi); // motif 轮廓方向
-      if (prev >= refHigh) dir = -1; else if (prev <= refLow) dir = 1;    // 触顶/底 → 反向(arch,不上飘)
-      midi = chordToneInDirection(prev, ch, dir);
+/** 规划 16 小节【发展弧】(确定性):head 起、结构锚点 return/recap 再现主题,其余掷骰发展/连接。 */
+function planSlots(numSlots: number, rng: SeededRng): SlotPlan[] {
+  const plans: SlotPlan[] = [];
+  const recap = numSlots - 1;
+  const midReturn = numSlots >= 6 ? Math.floor(numSlots / 2) : -1; // 中段主题再现(够长才放,且不与 recap 相邻)
+  let prevDevLabel = '';
+  for (let s = 0; s < numSlots; s++) {
+    if (s === 0) { plans.push({ role: 'state', ops: [], label: 'head' }); continue; }
+    if (s === recap) { plans.push({ role: 'state', ops: [], label: 'recap' }); continue; }
+    if (s === midReturn && midReturn !== recap - 1) { plans.push({ role: 'state', ops: [], label: 'return' }); continue; }
+    if (rng.chance(PROB_THEME)) {
+      const { ops, label } = pickDevOps(rng, prevDevLabel);
+      prevDevLabel = label;
+      plans.push({ role: 'develop', ops, label });
+    } else {
+      plans.push({ role: 'connect', ops: [], label: 'connect' });
     }
-    while (midi > refHigh && midi - 12 >= refLow - 2) midi -= 12;          // 音域带约束
-    while (midi < refLow && midi + 12 <= refHigh + 2) midi += 12;
-    if (n.durationBeat < 1 && rng.chance(0.15)) midi = transposeDiatonic(midi, rng.pick([1, -1]), keyPc, mode); // 短音邻音微变(Q2)
-    out.push({ ...n, midi, onsetBeat: atBeat + n.onsetBeat, occurrenceKind: 'adapted' as const, cycleIndex });
+  }
+  // 兜底:整曲至少 2 种不同发展手法(锁"真有发展,不是复制")。
+  const variants = new Set(plans.filter((p) => p.role === 'develop').map((p) => p.label));
+  for (let s = 1; s < numSlots && variants.size < 2; s++) {
+    if (plans[s].role === 'state') continue;
+    for (const prim of PRIMARIES) {
+      if (!variants.has(prim.label)) { plans[s] = { role: 'develop', ops: [...prim.ops], label: prim.label }; variants.add(prim.label); break; }
+    }
+  }
+  return plans;
+}
+
+// ============================================================
+// 槽落子
+// ============================================================
+function applyOps(base: readonly MotifNote[], ops: readonly DevOp[], keyPc: number, mode: ScaleMode): MotifNote[] {
+  let notes = base.map((n) => ({ ...n }));
+  for (const op of ops) {
+    switch (op.t) {
+      case 'transpose': notes = transposeDiatonicMotif(notes, op.steps, keyPc, mode); break;
+      case 'invert': notes = invertAroundMidi(notes, notes[0]?.midi ?? 72, keyPc, mode); break;
+      case 'retro': notes = retrogradePitchOnly(notes); break;
+      case 'divide': notes = rhythmDivide(notes, keyPc, mode); break;
+      case 'fragment': notes = fragmentMotif(notes, op.keep); break;
+      case 'augment': notes = augmentMotif(notes, op.factor); break;
+      case 'displace': notes = displaceMotif(notes, op.beats); break;
+    }
+  }
+  return notes;
+}
+
+/** 把整槽统一八度对齐:首音就近 context(上一音),整体再回拉进音域带(保内部音程 = 主题可辨)。 */
+function octaveAlign(notes: MotifNote[], targetMidi: number, bandLo: number, bandHi: number): MotifNote[] {
+  if (!notes.length) return notes;
+  let shift = 0, bestD = Math.abs(notes[0].midi - targetMidi);
+  for (const cand of [-24, -12, 12, 24]) { const d = Math.abs(notes[0].midi + cand - targetMidi); if (d < bestD) { bestD = d; shift = cand; } }
+  let lo = Math.min(...notes.map((n) => n.midi)) + shift;
+  let hi = Math.max(...notes.map((n) => n.midi)) + shift;
+  while (hi > bandHi && lo - 12 >= bandLo) { shift -= 12; lo -= 12; hi -= 12; }
+  while (lo < bandLo && hi + 12 <= bandHi) { shift += 12; lo += 12; hi += 12; }
+  return shift === 0 ? notes : notes.map((n) => ({ ...n, midi: n.midi + shift }));
+}
+
+/** 陈述槽(state=原样 quote / develop=变形):落 atBeat,按槽长裁剪,八度对齐到 context。 */
+function placeStatement(base: readonly MotifNote[], ops: readonly DevOp[], atBeat: number, slotBeats: number, slotIndex: number, kind: 'quote' | 'develop', prevMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode): MotifNote[] {
+  let v = applyOps(base, ops, keyPc, mode);
+  v = octaveAlign(v, prevMidi, bandLo, bandHi);
+  const out: MotifNote[] = [];
+  for (const n of v) {
+    if (n.onsetBeat >= slotBeats - 1e-6) continue;
+    out.push({ ...n, onsetBeat: atBeat + n.onsetBeat, durationBeat: Math.min(n.durationBeat, slotBeats - n.onsetBeat), occurrenceKind: kind, slotIndex });
+  }
+  return out;
+}
+
+/** 连接槽:每小节一个【就近和弦音长音】(半拍留白)= 稀疏透气,接住前音、引向下一陈述。 */
+function placeConnect(atBeat: number, slotBeats: number, slotIndex: number, progression: readonly SandboxChord[], fromMidi: number): MotifNote[] {
+  const out: MotifNote[] = [];
+  const bars = Math.max(1, Math.round(slotBeats / BAR));
+  let prev = fromMidi;
+  for (let b = 0; b < bars; b++) {
+    const at = atBeat + b * BAR;
+    if (at >= atBeat + slotBeats - 1e-6) break;
+    const ch = chordAtBeat(progression, at) ?? progression[0];
+    const midi = nearestChordTone(prev, ch);
+    out.push({ midi, onsetBeat: at, durationBeat: 2.5, velocity: 0.58, scaleDegree: 0, octave: 0, accent: 0.45, occurrenceKind: 'connect', slotIndex });
     prev = midi;
   }
-  if (out.length) { // 尾音解决:落【离下一轮 quote 首音最近】的末和弦和弦音
-    out[out.length - 1].midi = nearestChordTone(resolveToMidi, contChords[contChords.length - 1]);
-  }
   return out;
 }
 
-/** once 情形:后半段级进填充 —— 起于 quote 末音,逐 bar【渐降】朝下一轮 quote 首音,强拍落和弦音,末音回授。 */
-function fillTowardChords(start: number, end: number, contChords: readonly SandboxChord[], style: SandboxStyle, rng: SeededRng, keyPc: number, mode: ScaleMode, startMidi: number, resolveToMidi: number): MotifNote[] {
-  const out: MotifNote[] = [];
-  const rhythm = STYLE_RHYTHM[style];
-  let prev = startMidi;
-  const bars = Math.max(1, Math.round((end - start) / 4));
-  for (let b = 0; b < bars; b++) {
-    const barStart = start + b * 4;
-    const ch = contChords[Math.min(b, contChords.length - 1)];
-    const isLast = b === bars - 1;
-    const onsets = isLast ? [0, 2] : rhythm;
-    const barTarget = Math.round(startMidi + (resolveToMidi - startMidi) * ((b + 1) / bars)); // 起→止【渐变】落点 → 平滑回授
-    for (let j = 0; j < onsets.length; j++) {
-      const at = barStart + onsets[j];
-      if (at >= end - 1e-6) break;
-      const dur = (j < onsets.length - 1 ? onsets[j + 1] : 4) - onsets[j];
-      const dir = Math.sign(barTarget - prev);
-      let midi: number;
-      if (isLast && j === onsets.length - 1) midi = nearestChordTone(resolveToMidi, ch); // 末:落离 quote 首音最近的和弦音(回授)
-      else if (j % 2 === 0) midi = chordToneInDirection(prev, ch, dir);                  // 强拍:朝目标方向的最近和弦音
-      else { midi = stepTo(prev, barTarget, keyPc, mode); midi = snapMidiToScale(midi, keyPc, mode); } // 反拍:级进经过音
-      out.push({ midi, onsetBeat: at, durationBeat: isLast && j === onsets.length - 1 ? Math.max(dur, 1.5) : dur, velocity: 0.68, scaleDegree: 0, octave: 0, accent: j === 0 ? 0.8 : 0.5, occurrenceKind: 'fill' });
-      prev = midi;
-    }
+/** 和声适配(Impro-Visor RectifyPitches 后处理):强拍/长音的非和弦音吸到就近和弦音;不碰 quote。 */
+function adaptToHarmony(notes: MotifNote[], progression: readonly SandboxChord[]): void {
+  for (const n of notes) {
+    const ch = chordAtBeat(progression, n.onsetBeat);
+    if (!ch) continue;
+    const onBeat = Math.abs(n.onsetBeat - Math.round(n.onsetBeat)) < 1e-6;
+    if ((onBeat || n.durationBeat >= 1) && !isChordTone(n.midi, ch)) n.midi = nearestChordTone(n.midi, ch);
   }
-  return out;
 }
 
-/** 旋律线平滑(作曲原则:级进为主、跳进≤纯五度、音域带约束、末段级进回授到下一轮 quote 首音、不碰 quote)。 */
-function smoothMelodicLine(lead: MotifNote[], bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode, loopTargetMidi: number, lastChord: SandboxChord): MotifNote[] {
+// ============================================================
+// 连接平滑(级进为主、跳进≤小六度、音域带、末音解决)
+// ============================================================
+/** 把 m 折叠到 anchor 的 ≤ 小六度内(优先八度收拢,再吸进音域带,兜底拉到四度内)。 */
+function foldToward(m: number, anchor: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode): number {
+  while (m - anchor > MAX_LEAP && m - 12 >= bandLo) m -= 12;
+  while (anchor - m > MAX_LEAP && m + 12 <= bandHi) m += 12;
+  while (m > bandHi && m - 12 >= bandLo) m -= 12;
+  while (m < bandLo && m + 12 <= bandHi) m += 12;
+  if (Math.abs(m - anchor) > MAX_LEAP) m = snapMidiToScale(anchor + (m > anchor ? 5 : -5), keyPc, mode); // 还大跳 → 拉到四度内(diatonic)
+  return m;
+}
+
+/** 双向夹紧:取同时 ≤ 小六度于【前音 a】与【后音 b】的 diatonic 音,离 cur 最近(进入 quote 锚点用)。 */
+function reconcile(cur: number, a: number, b: number, keyPc: number, mode: ScaleMode): number {
+  const lo = Math.ceil(Math.max(a, b) - MAX_LEAP);
+  const hi = Math.floor(Math.min(a, b) + MAX_LEAP);
+  let best = cur, bestD = Infinity;
+  for (let m = lo; m <= hi; m++) {
+    if (!isInScale(m, keyPc, mode)) continue;
+    const d = Math.abs(m - cur);
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return bestD === Infinity ? snapMidiToScale(Math.round((a + b) / 2), keyPc, mode) : best; // 窗空(两锚 >2×小六度,band 保证不发生)→ 中点
+}
+
+/** 末音解决到主和弦:落就近和弦音;若与前音成大跳则改落【离前音最近】的和弦音(保平滑)。 */
+function resolveNote(cur: number, prev: number, ch: SandboxChord): number {
+  const cand = nearestChordTone(cur, ch);
+  return Math.abs(cand - prev) <= MAX_LEAP ? cand : nearestChordTone(prev, ch);
+}
+
+function smoothAndResolve(lead: MotifNote[], bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode, progression: readonly SandboxChord[]): MotifNote[] {
   const s = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
-  // 前向:把跳进 > 纯五度的续写音八度收拢到 prev 附近(消大跳);音域带约束。
+  // 前向:非 quote 音折叠到 ≤ 小六度(quote = 固定锚点,不动)。
   for (let i = 1; i < s.length; i++) {
     if (s[i].occurrenceKind === 'quote') continue;
-    let m = s[i].midi; const prev = s[i - 1].midi;
-    while (m - prev > MAX_LEAP && m - 12 >= bandLo) m -= 12;
-    while (prev - m > MAX_LEAP && m + 12 <= bandHi) m += 12;
-    while (m > bandHi && m - 12 >= bandLo) m -= 12;
-    while (m < bandLo && m + 12 <= bandHi) m += 12;
-    s[i].midi = m;
+    s[i].midi = foldToward(s[i].midi, s[i - 1].midi, bandLo, bandHi, keyPc, mode);
   }
-  // 后向【级进回授】:末续写音落 loopTarget(下一轮 quote 首音)附近;向前逐个保证 ≤ 纯五度(用 scale 音,不八度跳)。
-  let li = s.length - 1;
-  while (li >= 0 && s[li].occurrenceKind === 'quote') li--;
-  if (li >= 1) {
-    s[li].midi = nearestChordTone(loopTargetMidi, lastChord); // 末音回授(级进进入复述)
-    for (let i = li - 1; i >= 1 && s[i].occurrenceKind !== 'quote'; i--) {
-      const next = s[i + 1].midi;
-      if (Math.abs(s[i].midi - next) > MAX_LEAP) {
-        const dir = s[i].midi > next ? 1 : -1; // 保持原本在 next 的上/下方,但拉到 ≤ 三度
-        s[i].midi = snapMidiToScale(next + dir * 4, keyPc, mode);
-      }
-    }
+  // 进入 quote 的【前一个非 quote 音】双向夹紧(同时顾及其前音 + quote 首音,避免单向夹紧反弹出大跳)。
+  for (let i = 1; i < s.length; i++) {
+    if (s[i].occurrenceKind !== 'quote') continue;
+    const p = s[i - 1];
+    if (p.occurrenceKind === 'quote') continue;
+    p.midi = reconcile(p.midi, i >= 2 ? s[i - 2].midi : s[i].midi, s[i].midi, keyPc, mode);
+  }
+  // 末音解决到主和弦(曲式闭合,保平滑)。
+  if (s.length) {
+    const last = s[s.length - 1];
+    const ch = chordAtBeat(progression, last.onsetBeat) ?? progression[progression.length - 1];
+    last.midi = resolveNote(last.midi, s.length >= 2 ? s[s.length - 2].midi : last.midi, ch);
   }
   return s;
 }
 
+// ============================================================
+// 主入口
+// ============================================================
 export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
-  const { keyPc, mode, style } = input;
+  const { keyPc, mode } = input;
   const { motif } = analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed);
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
-  const cycle = buildMotifCycle(motif, keyPc, mode);
-  const cycleBeats = cycle.cycleBeats;
-  const motifBeats = cycle.motifBeats;
-  const numCycles = Math.max(2, Math.min(8, Math.round(TARGET_BEATS / cycleBeats)));
-  const placeTwice = rng.chance(0.55); // 概率 once / twice(整曲一致)
 
-  // —— motif 寄存器(决定续写音域带 + 回授目标)——
-  const exact0 = placeExact(motif, 0, 0);
-  const refLow = Math.min(...exact0.map((n) => n.midi));
-  const refHigh = Math.max(...exact0.map((n) => n.midi));
-  const firstMidi = exact0[0].midi;                    // 下一轮 quote 首音 → 续写末音回授到它(平滑复述)
-  const lastMidi = exact0[exact0.length - 1].midi;     // quote 末音 → 续写起点(平滑接续)
-  const bandLo = refLow - 2, bandHi = refHigh + 5;     // 音域带(≈十度内)
+  const slotBars = Math.max(1, Math.min(TARGET_BARS, Math.round(motif.lengthBeats / BAR)));
+  const slotBeats = slotBars * BAR;
+  const numSlots = Math.max(2, Math.ceil(TARGET_BARS / slotBars));
+  const progression = buildProgression(motif, keyPc, mode, TARGET_BARS);
 
-  // —— 生成【第一轮】(beat 0..cycleBeats):前半段 exact + (twice ? 后半段 adapted : 填充)——
-  const cycle0: MotifNote[] = [];
-  cycle0.push(...exact0);
-  if (placeTwice) cycle0.push(...placeAdapted(motif, motifBeats, cycle.contChords, 0, rng, keyPc, mode, lastMidi, firstMidi, refLow, refHigh));
-  else cycle0.push(...fillTowardChords(motifBeats, cycleBeats, cycle.contChords, style, rng, keyPc, mode, lastMidi, firstMidi));
-  // 旋律线平滑(级进为主/跳进≤五度/跳后反向/音域带);只在第一轮做 → 复制后各轮一致 + 轮间复述平滑(末音≈首音)
-  const cycle0Smooth = smoothMelodicLine(cycle0, bandLo, bandHi, keyPc, mode, firstMidi, cycle.contChords[cycle.contChords.length - 1]);
+  // base = 原样 motif 落 lead 音区(发展从它出发);音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
+  const base = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
+  const refLow = Math.min(...base.map((n) => n.midi));
+  const refHigh = Math.max(...base.map((n) => n.midi));
+  const bandLo = Math.max(LEAD_LOW - 1, refLow - 1);
+  const bandHi = Math.min(LEAD_HIGH + 2, refHigh + 4);
 
-  // —— 复制第一轮到所有轮(进行重复 → 复制第一遍)——
+  const plans = planSlots(numSlots, rng);
   const lead: MotifNote[] = [];
-  const progression: SandboxChord[] = [];
   const occurrences: MotifOccurrence[] = [];
-  for (let c = 0; c < numCycles; c++) {
-    const shift = c * cycleBeats;
-    for (const n of cycle0Smooth) lead.push({ ...n, onsetBeat: n.onsetBeat + shift, cycleIndex: c });
-    for (const ch of cycle.all) progression.push({ ...ch, startBeat: ch.startBeat + shift });
-    occurrences.push({ motifId: motif.id, startBeat: shift, kind: 'quote', cycleIndex: c, chordRoman: cycle.motifChords[0].roman });
-    if (placeTwice) occurrences.push({ motifId: motif.id, startBeat: shift + motifBeats, kind: 'adapted', cycleIndex: c, chordRoman: cycle.contChords[0].roman });
+  const arc: string[] = [];
+  let prevLastMidi = base[0].midi;
+
+  for (let s = 0; s < numSlots; s++) {
+    const plan = plans[s];
+    const atBeat = s * slotBeats;
+    if (atBeat >= TARGET_BEATS - 1e-6) break;
+    const span = Math.min(slotBeats, TARGET_BEATS - atBeat);
+    const ch0 = chordAtBeat(progression, atBeat) ?? progression[0];
+    let notes: MotifNote[];
+    let kind: MotifOccurrence['kind'];
+    if (plan.role === 'connect') {
+      notes = placeConnect(atBeat, span, s, progression, prevLastMidi);
+      kind = 'connect';
+    } else {
+      const isState = plan.role === 'state';
+      notes = placeStatement(base, plan.ops, atBeat, span, s, isState ? 'quote' : 'develop', prevLastMidi, bandLo, bandHi, keyPc, mode);
+      if (!isState) adaptToHarmony(notes, progression);
+      kind = isState ? 'quote' : 'develop';
+    }
+    if (notes.length) {
+      lead.push(...notes);
+      occurrences.push({ motifId: motif.id, startBeat: atBeat, slotIndex: s, kind, label: plan.label, chordRoman: ch0.roman });
+      arc.push(plan.label);
+      prevLastMidi = notes[notes.length - 1].midi;
+    }
   }
 
-  const finalLead = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat).filter((n) => n.durationBeat > 0);
-  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { numCycles, cycleBeats, placeTwice });
-  return { motif, progression, occurrences, lead: finalLead, cycleBeats, numCycles, placeTwice, audit };
+  const finalLead = smoothAndResolve(lead, bandLo, bandHi, keyPc, mode, progression)
+    .sort((a, b) => a.onsetBeat - b.onsetBeat)
+    .filter((n) => n.durationBeat > 0);
+  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS });
+  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, slotBars, numSlots, arc, audit };
 }

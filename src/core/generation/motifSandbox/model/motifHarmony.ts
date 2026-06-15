@@ -71,3 +71,20 @@ export function buildMotifCycle(motif: UserMotif, keyPc: number, mode: ScaleMode
   const cycleBeats = all.length * BAR;
   return { motifChords, contChords, all, cycleBeats, motifBeats: motifChords.length * BAR };
 }
+
+/** 整曲(totalBars 小节)和弦进行 = 把一轮 cycle 平铺到 totalBars,末两小节收尾终止式(V→I)。
+ *  和声【循环】是常态(vamp/turnaround);发展落在【旋律】上,不在和声上 → 不算"重复"。 */
+export function buildProgression(motif: UserMotif, keyPc: number, mode: ScaleMode, totalBars: number): SandboxChord[] {
+  const cycle = buildMotifCycle(motif, keyPc, mode).all;
+  const cycleBars = Math.max(1, cycle.length);
+  const out: SandboxChord[] = [];
+  for (let b = 0; b < totalBars; b++) {
+    const proto = cycle[b % cycleBars];
+    out.push(makeChord(proto.degree, keyPc, mode, b * BAR, BAR));
+  }
+  if (totalBars >= 2) { // 收尾真终止式:倒数第二小节 V、末小节 I(给曲式闭合感)
+    out[totalBars - 2] = makeChord(5, keyPc, mode, (totalBars - 2) * BAR, BAR);
+    out[totalBars - 1] = makeChord(1, keyPc, mode, (totalBars - 1) * BAR, BAR);
+  }
+  return out;
+}

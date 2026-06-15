@@ -26,9 +26,9 @@ export interface MotifNote {
   scaleDegree: number;   // 1..7
   octave: number;
   accent: number;        // 0..1
-  /** quote=轮首原样 motif;adapted=后半段和声适配变体;fill=续接填充 */
-  occurrenceKind?: 'quote' | 'adapted' | 'fill';
-  cycleIndex?: number;
+  /** quote=原样陈述(head/recap);develop=变形发展(移位/倒影/片段/扩张/位移);connect=连接留白 */
+  occurrenceKind?: 'quote' | 'develop' | 'connect';
+  slotIndex?: number;
 }
 
 export interface UserMotif {
@@ -46,15 +46,19 @@ export interface UserMotif {
 export interface MotifOccurrence {
   motifId: string;
   startBeat: number;
-  kind: 'quote' | 'adapted';   // quote=原样;adapted=和声适配变体
-  cycleIndex: number;
+  slotIndex: number;
+  kind: 'quote' | 'develop' | 'connect'; // 原样陈述 / 变形发展 / 连接留白
+  label: string;               // 'head' / 'transpose+2' / 'invert' / 'fragment×2' / 'recap' / 'connect'
   chordRoman: string;          // 落在哪个和弦(起和弦)
 }
 
 export interface MotifWeaveAudit {
-  motifQuotedFirstCycle: boolean; // 第一轮轮首有原样 motif
-  placementsPerCycle: number;     // 1 或 2(每轮 motif 出现次数)
-  cyclesConsistent: boolean;      // 各轮复制一致(进行重复→复制第一遍)
+  motifQuotedFirstCycle: boolean; // 第一槽 = 原样 motif(head 陈述)
+  themeStatements: number;        // 陈述槽数(原样 + 变形)
+  developVariants: number;        // 不同变形手法数(去重;>1 = 真有发展不是复制)
+  connectSlots: number;           // 连接/留白槽数
+  notesPerBar: number;            // 密度(音/bar)
+  restRatio: number;              // 空拍占比(0..1,越大越透气)
   maxLeap: number;
   chromaticRatio: number;
   jazzinessScore: number;
@@ -62,12 +66,13 @@ export interface MotifWeaveAudit {
 
 export interface MotifWeaverResult {
   motif: UserMotif;
-  progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(多轮)
+  progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(16 bar)
   occurrences: MotifOccurrence[];
   lead: MotifNote[];
-  cycleBeats: number;
-  numCycles: number;
-  placeTwice: boolean;
+  totalBars: number;             // 16
+  slotBars: number;              // theme interval(= motif 小节数)
+  numSlots: number;
+  arc: string[];                 // 每槽角色/手法(发展弧,UI 展示)
   audit: MotifWeaveAudit;
 }
 

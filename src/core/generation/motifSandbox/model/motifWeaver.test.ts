@@ -12,30 +12,37 @@ const baseInput = (over: Partial<MotifWeaverInput> = {}): MotifWeaverInput => ({
 });
 const sig = (lead: { midi: number; onsetBeat: number }[]) => lead.map((n) => `${n.midi}@${n.onsetBeat.toFixed(2)}`).join(',');
 
-describe('motifSandbox/motifWeaver(和弦进行 × motif 复现)', () => {
-  it('配出和弦进行;第一轮轮首原样 motif', () => {
+describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
+  it('16 小节进行;第一槽 head = 原样 motif', () => {
     const r = generateMotifWeave(baseInput());
-    expect(r.progression.length).toBeGreaterThan(0);
+    expect(r.totalBars).toBe(16);
+    expect(r.progression.length).toBe(16);
     expect(r.audit.motifQuotedFirstCycle).toBe(true);
     const ref = fitRange(identity(r.motif.notes), 60, 84);
-    expect(quotedAt(r.lead, ref, 0)).toBe(true); // 轮首 = 原样 motif
+    expect(quotedAt(r.lead, ref, 0)).toBe(true);       // 第一槽 = 原样 motif
+    expect(r.occurrences[0].kind).toBe('quote');
+    expect(r.occurrences[0].label).toBe('head');
   });
 
-  it('各轮复制一致(进行重复 → 复制第一遍)', () => {
-    const r = generateMotifWeave(baseInput());
-    expect(r.numCycles).toBeGreaterThanOrEqual(2);
-    expect(r.audit.cyclesConsistent).toBe(true);
-  });
-
-  it('每轮 motif 出现 1 或 2 次;2 次时后半段有 adapted', () => {
-    let sawOnce = false, sawTwice = false;
+  it('★ 真有发展(不是复制):≥2 种发展手法 + 含 develop 槽,且变体音与原样不同', () => {
     for (let s = 1; s <= 20; s++) {
       const r = generateMotifWeave(baseInput({ seed: s }));
-      expect([1, 2]).toContain(r.audit.placementsPerCycle);
-      if (r.audit.placementsPerCycle === 1) sawOnce = true;
-      if (r.audit.placementsPerCycle === 2) { sawTwice = true; expect(r.lead.some((n) => n.occurrenceKind === 'adapted')).toBe(true); }
+      expect(r.audit.developVariants, `seed${s}`).toBeGreaterThanOrEqual(2);
+      expect(r.occurrences.some((o) => o.kind === 'develop'), `seed${s}`).toBe(true);
+      // develop 槽产出的音确实出现(否则只剩复制)
+      expect(r.lead.some((n) => n.occurrenceKind === 'develop'), `seed${s}`).toBe(true);
     }
-    expect(sawOnce && sawTwice).toBe(true); // 概率 once/twice 都出现过
+  });
+
+  it('★ 透气(不再太密):有留白 + 整体密度受控 + 存在连接槽', () => {
+    let sawConnect = false;
+    for (let s = 1; s <= 20; s++) {
+      const r = generateMotifWeave(baseInput({ seed: s }));
+      expect(r.audit.restRatio, `seed${s} rest`).toBeGreaterThan(0.05); // 真有空拍
+      expect(r.audit.notesPerBar, `seed${s} 密度`).toBeLessThanOrEqual(8);
+      if (r.audit.connectSlots > 0) sawConnect = true;
+    }
+    expect(sawConnect).toBe(true); // 概率上出现过连接/留白槽
   });
 
   it('确定性:同 seed 同结果', () => {
@@ -58,18 +65,25 @@ describe('motifSandbox/motifWeaver(和弦进行 × motif 复现)', () => {
     for (const n of r.lead) expect(n.durationBeat).toBeGreaterThan(0);
   });
 
-  it('★ 续写旋律线平滑:相邻跳进 ≤ 小六度(8 半音),音域 ≤ 十度(作曲原则)', () => {
+  it('★ 续写旋律线平滑:相邻跳进 ≤ 小六度(8 半音),音域 ≤ 十二度内(作曲原则)', () => {
     for (const style of ['pop', 'lofi', 'rnb'] as const) {
       for (let seed = 1; seed <= 24; seed++) {
         const r = generateMotifWeave(baseInput({ style, seed }));
         const lead = [...r.lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
         let maxLeap = 0;
         for (let i = 1; i < lead.length; i++) maxLeap = Math.max(maxLeap, Math.abs(lead[i].midi - lead[i - 1].midi));
-        expect(maxLeap, `${style} seed${seed} 跳进`).toBeLessThanOrEqual(8); // 无大跳(≤ 小六度)
+        expect(maxLeap, `${style} seed${seed} 跳进`).toBeLessThanOrEqual(8);
         const range = Math.max(...lead.map((n) => n.midi)) - Math.min(...lead.map((n) => n.midi));
-        expect(range, `${style} seed${seed} 音域`).toBeLessThanOrEqual(19); // ≤ 十二度内(含 motif 自身音域)
+        expect(range, `${style} seed${seed} 音域`).toBeLessThanOrEqual(19);
       }
     }
+  });
+
+  it('覆盖 16 小节:lead 铺到曲尾(末音 onset 落在后段)', () => {
+    const r = generateMotifWeave(baseInput());
+    const lastOnset = Math.max(...r.lead.map((n) => n.onsetBeat));
+    expect(lastOnset, '末音应落在后段(≥ 第 13 小节)').toBeGreaterThanOrEqual(48);
+    expect(lastOnset).toBeLessThan(64);
   });
 
   it('minor key 全在调内;1-4 bar motif 都不崩', () => {
