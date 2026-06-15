@@ -29,8 +29,9 @@ const BAR = 4;
 const TARGET_BEATS = TARGET_BARS * BAR; // 64
 const LEAD_LOW = 60, LEAD_HIGH = 84;
 const MAX_LEAP = 8;     // 小六度;> 此值八度收拢(作曲原则:级进为主、跳进≤小六度)
-const PROB_THEME = 0.6; // Impro-Visor probTheme:每槽陈述 vs 发展/连接
 const ONSET_GRID = 0.25; // 1/16 拍 —— 输出 onset 吸到此网格 → 与伴奏稳稳对拍(divide 装饰音不再落网格外)
+const PHRASE_BARS = 4;              // 和弦进行乐句长度(= buildProgression 乐句);motif 陈述【相位锁定】到每个乐句头 = 排比
+const ANSWER_CONNECT_CHANCE = 0.35; // 应答区里偶尔用连接留白(透气);首个实例恒为发展
 
 // ============================================================
 // 发展手法(diatonic-safe;Impro-Visor adjustTheme 的轻量复现)
@@ -44,7 +45,6 @@ type DevOp =
   | { t: 'augment'; factor: number }    // 节奏扩张(拉长,降密度)
   | { t: 'displace'; beats: number };   // 小节线位移(切分/错位)
 
-interface SlotPlan { role: 'state' | 'develop' | 'connect'; ops: DevOp[]; label: string; }
 
 const PRIMARIES: { ops: DevOp[]; label: string }[] = [
   { ops: [{ t: 'transpose', steps: 2 }], label: 'transpose+2' },  // 上行三度模进
@@ -73,33 +73,15 @@ function pickDevOps(rng: SeededRng, avoidLabel: string): { ops: DevOp[]; label: 
   return { ops, label };
 }
 
-/** 规划 16 小节【发展弧】(确定性):head 起、结构锚点 return/recap 再现主题,其余掷骰发展/连接。 */
-function planSlots(numSlots: number, rng: SeededRng): SlotPlan[] {
-  const plans: SlotPlan[] = [];
-  const recap = numSlots - 1;
-  const midReturn = numSlots >= 6 ? Math.floor(numSlots / 2) : -1; // 中段主题再现(够长才放,且不与 recap 相邻)
-  let prevDevLabel = '';
-  for (let s = 0; s < numSlots; s++) {
-    if (s === 0) { plans.push({ role: 'state', ops: [], label: 'head' }); continue; }
-    if (s === recap) { plans.push({ role: 'state', ops: [], label: 'recap' }); continue; }
-    if (s === midReturn && midReturn !== recap - 1) { plans.push({ role: 'state', ops: [], label: 'return' }); continue; }
-    if (rng.chance(PROB_THEME)) {
-      const { ops, label } = pickDevOps(rng, prevDevLabel);
-      prevDevLabel = label;
-      plans.push({ role: 'develop', ops, label });
-    } else {
-      plans.push({ role: 'connect', ops: [], label: 'connect' });
-    }
+/** 相位锁定的【原样陈述】:把 base 原样落 atBeat(不 octave-align → 每个和弦进行乐句的同一相对位置
+ *  出现【完全相同】的 motif = 排比/anaphora)。head/restate/recap 都走它。 */
+function placeQuoteVerbatim(base: readonly MotifNote[], atBeat: number, span: number, slotIndex: number): MotifNote[] {
+  const out: MotifNote[] = [];
+  for (const n of base) {
+    if (n.onsetBeat >= span - 1e-6) continue;
+    out.push({ ...n, onsetBeat: atBeat + n.onsetBeat, durationBeat: Math.min(n.durationBeat, span - n.onsetBeat), occurrenceKind: 'quote', slotIndex });
   }
-  // 兜底:整曲至少 2 种不同发展手法(锁"真有发展,不是复制")。
-  const variants = new Set(plans.filter((p) => p.role === 'develop').map((p) => p.label));
-  for (let s = 1; s < numSlots && variants.size < 2; s++) {
-    if (plans[s].role === 'state') continue;
-    for (const prim of PRIMARIES) {
-      if (!variants.has(prim.label)) { plans[s] = { role: 'develop', ops: [...prim.ops], label: prim.label }; variants.add(prim.label); break; }
-    }
-  }
-  return plans;
+  return out;
 }
 
 // ============================================================
@@ -171,6 +153,30 @@ function adaptToHarmony(notes: MotifNote[], progression: readonly SandboxChord[]
   }
 }
 
+/** 应答区(乐句里 motif 之后那段):铺【developed motif 序列】(模进/倒影… → 续写),偶尔连接留白(透气)。
+ *  首个实例恒为发展(保证每乐句都有发展),其余按概率 develop/connect。 */
+function fillAnswer(base: readonly MotifNote[], startBeat: number, span: number, motifBeats: number, progression: readonly SandboxChord[], rng: SeededRng, avoidLabel: string, fromMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode, slotIndex: number): { notes: MotifNote[]; label: string; lastMidi: number; avoid: string } {
+  const out: MotifNote[] = [];
+  const labels: string[] = [];
+  let cursor = startBeat, prev = fromMidi, avoid = avoidLabel, k = 0;
+  while (cursor < startBeat + span - 1e-6 && k < 8) {
+    const instSpan = Math.min(motifBeats, startBeat + span - cursor);
+    if (k > 0 && instSpan >= BAR - 1e-6 && rng.chance(ANSWER_CONNECT_CHANCE)) {
+      const c = placeConnect(cursor, instSpan, slotIndex, progression, prev);
+      out.push(...c); labels.push('connect');
+      if (c.length) prev = c[c.length - 1].midi;
+    } else {
+      const { ops, label } = pickDevOps(rng, avoid); avoid = label;
+      const notes = placeStatement(base, ops, cursor, instSpan, slotIndex, 'develop', prev, bandLo, bandHi, keyPc, mode);
+      adaptToHarmony(notes, progression);
+      out.push(...notes); labels.push(label);
+      if (notes.length) prev = notes[notes.length - 1].midi;
+    }
+    cursor += motifBeats; k++;
+  }
+  return { notes: out, label: labels.join('+') || 'connect', lastMidi: prev, avoid };
+}
+
 // ============================================================
 // 连接平滑(级进为主、跳进≤小六度、音域带、末音解决)
 // ============================================================
@@ -234,46 +240,51 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const { motif } = analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality);
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
 
-  const slotBars = Math.max(1, Math.min(TARGET_BARS, Math.round(motif.lengthBeats / BAR)));
-  const slotBeats = slotBars * BAR;
-  const numSlots = Math.max(2, Math.ceil(TARGET_BARS / slotBars));
+  const motifBars = Math.max(1, Math.min(PHRASE_BARS, Math.round(motif.lengthBeats / BAR)));
+  const motifBeats = motifBars * BAR;            // 陈述长度(相位锁定到乐句头)
+  const phraseBeats = PHRASE_BARS * BAR;         // 一个和弦进行乐句 = 16 拍
+  const answerBeats = phraseBeats - motifBeats;  // 乐句里 motif 之后的应答区(0 = motif 占满乐句)
+  const numPhrases = Math.max(1, Math.round(TARGET_BEATS / phraseBeats));
   const progression = buildProgression(motif, keyPc, mode, TARGET_BARS);
 
-  // base = 原样 motif 落 lead 音区(发展从它出发);音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
+  // base = 原样 motif 落 lead 音区;音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
   const base = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
   const refLow = Math.min(...base.map((n) => n.midi));
   const refHigh = Math.max(...base.map((n) => n.midi));
   const bandLo = Math.max(LEAD_LOW - 1, refLow - 1);
   const bandHi = Math.min(LEAD_HIGH + 2, refHigh + 4);
 
-  const plans = planSlots(numSlots, rng);
   const lead: MotifNote[] = [];
   const occurrences: MotifOccurrence[] = [];
   const arc: string[] = [];
   let prevLastMidi = base[0].midi;
+  let avoidLabel = '';
 
-  for (let s = 0; s < numSlots; s++) {
-    const plan = plans[s];
-    const atBeat = s * slotBeats;
-    if (atBeat >= TARGET_BEATS - 1e-6) break;
-    const span = Math.min(slotBeats, TARGET_BEATS - atBeat);
-    const ch0 = chordAtBeat(progression, atBeat) ?? progression[0];
-    let notes: MotifNote[];
-    let kind: MotifOccurrence['kind'];
-    if (plan.role === 'connect') {
-      notes = placeConnect(atBeat, span, s, progression, prevLastMidi);
-      kind = 'connect';
-    } else {
-      const isState = plan.role === 'state';
-      notes = placeStatement(base, plan.ops, atBeat, span, s, isState ? 'quote' : 'develop', prevLastMidi, bandLo, bandHi, keyPc, mode);
-      if (!isState) adaptToHarmony(notes, progression);
-      kind = isState ? 'quote' : 'develop';
+  // 逐【和弦进行乐句】:① 乐句头【相位锁定原样陈述】(排比:每句同位置出现 motif)② 应答区【发展/续写】。
+  for (let p = 0; p < numPhrases; p++) {
+    const phraseStart = p * phraseBeats;
+    if (phraseStart >= TARGET_BEATS - 1e-6) break;
+    // ① 陈述(每个乐句【同一相对位置】都出现原样 motif)
+    const stmt = placeQuoteVerbatim(base, phraseStart, Math.min(motifBeats, TARGET_BEATS - phraseStart), p);
+    if (stmt.length) {
+      lead.push(...stmt);
+      const label = p === 0 ? 'head' : p === numPhrases - 1 ? 'recap' : 'restate';
+      occurrences.push({ motifId: motif.id, startBeat: phraseStart, slotIndex: p, kind: 'quote', label, chordRoman: (chordAtBeat(progression, phraseStart) ?? progression[0]).roman });
+      arc.push(label);
+      prevLastMidi = stmt[stmt.length - 1].midi;
     }
-    if (notes.length) {
-      lead.push(...notes);
-      occurrences.push({ motifId: motif.id, startBeat: atBeat, slotIndex: s, kind, label: plan.label, chordRoman: ch0.roman });
-      arc.push(plan.label);
-      prevLastMidi = notes[notes.length - 1].midi;
+    // ② 应答(乐句里 motif 之后那段,每句变化 = 续写)
+    const ansStart = phraseStart + motifBeats;
+    if (answerBeats > 0 && ansStart < TARGET_BEATS - 1e-6) {
+      const ans = fillAnswer(base, ansStart, Math.min(answerBeats, TARGET_BEATS - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p);
+      if (ans.notes.length) {
+        lead.push(...ans.notes);
+        const hasDev = ans.notes.some((n) => n.occurrenceKind === 'develop');
+        occurrences.push({ motifId: motif.id, startBeat: ansStart, slotIndex: p, kind: hasDev ? 'develop' : 'connect', label: ans.label, chordRoman: (chordAtBeat(progression, ansStart) ?? progression[0]).roman });
+        arc.push(ans.label);
+        prevLastMidi = ans.lastMidi;
+        avoidLabel = ans.avoid;
+      }
     }
   }
 
@@ -282,5 +293,5 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS });
-  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, slotBars, numSlots, arc, audit };
+  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, slotBars: motifBars, numSlots: numPhrases, arc, audit };
 }

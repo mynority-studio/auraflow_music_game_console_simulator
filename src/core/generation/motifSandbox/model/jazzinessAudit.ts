@@ -43,7 +43,7 @@ export function auditMotifWeave(
 
   const themeStatements = occurrences.filter((o) => o.kind === 'quote' || o.kind === 'develop').length;
   const developVariants = new Set(occurrences.filter((o) => o.kind === 'develop').map((o) => o.label)).size;
-  const connectSlots = occurrences.filter((o) => o.kind === 'connect').length;
+  const connectSlots = sorted.filter((n) => n.occurrenceKind === 'connect').length; // 连接留白音数(透气)
   const notesPerBar = ctx.totalBars ? sorted.length / ctx.totalBars : 0;
   const sounding = sorted.reduce((a, n) => a + n.durationBeat, 0);
   const restRatio = Math.max(0, 1 - sounding / (ctx.totalBars * BAR));

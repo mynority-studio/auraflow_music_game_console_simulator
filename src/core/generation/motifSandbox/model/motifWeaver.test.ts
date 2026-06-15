@@ -24,6 +24,22 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     expect(r.occurrences[0].label).toBe('head');
   });
 
+  it('★ 排比:原样 motif 在每个和弦进行乐句的【同一相对位置】(乐句头)都出现', () => {
+    for (let s = 1; s <= 12; s++) {
+      const r = generateMotifWeave(baseInput({ seed: s }));
+      const ref = fitRange(identity(r.motif.notes), 60, 84);
+      const motifBeats = r.motif.lengthBeats;            // sample = 4 拍(1 bar)
+      const phraseBeats = 16;                            // 乐句 = 4 bar
+      // 每个乐句头(0,16,32,48)都应原样复现 motif
+      for (let p = 0; p * phraseBeats < 64; p++) {
+        expect(quotedAt(r.lead, ref, p * phraseBeats), `seed${s} 乐句${p}`).toBe(true);
+      }
+      // 应答区(乐句头 motif 之后)应有【发展】音,而非又一个原样复制
+      expect(r.occurrences.some((o) => o.kind === 'develop'), `seed${s} 有应答发展`).toBe(true);
+      expect(motifBeats).toBeLessThanOrEqual(phraseBeats);
+    }
+  });
+
   it('★ 真有发展(不是复制):≥2 种发展手法 + 含 develop 槽,且变体音与原样不同', () => {
     for (let s = 1; s <= 20; s++) {
       const r = generateMotifWeave(baseInput({ seed: s }));
@@ -40,9 +56,9 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
       const r = generateMotifWeave(baseInput({ seed: s }));
       expect(r.audit.restRatio, `seed${s} rest`).toBeGreaterThan(0.05); // 真有空拍
       expect(r.audit.notesPerBar, `seed${s} 密度`).toBeLessThanOrEqual(8);
-      if (r.audit.connectSlots > 0) sawConnect = true;
+      if (r.lead.some((n) => n.occurrenceKind === 'connect')) sawConnect = true;
     }
-    expect(sawConnect).toBe(true); // 概率上出现过连接/留白槽
+    expect(sawConnect).toBe(true); // 概率上出现过连接/留白音
   });
 
   it('确定性:同 seed 同结果', () => {
