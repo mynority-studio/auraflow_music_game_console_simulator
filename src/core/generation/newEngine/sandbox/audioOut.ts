@@ -65,3 +65,15 @@ export function auditionNoteOff(midiNote: number): void {
   if (!spessaSynth) return;
   spessaSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
 }
+
+// —— 隐形时钟数拍/暗拍 click(GM 打击通道 9)——
+const DRUM_CHANNEL = 9;
+/** 数拍 click:强拍(beat1)= side stick 重、弱拍 = 闭镲轻。打击乐一击即衰减。 */
+export async function playClick(strong: boolean): Promise<void> {
+  await startAudioContext();
+  if (!spessaSynth) return;
+  const note = strong ? 37 : 42;            // 37=side stick / 42=closed hi-hat
+  const vel = strong ? 104 : 64;
+  spessaSynth.noteOn(DRUM_CHANNEL, note, vel);
+  spessaSynth.noteOff(DRUM_CHANNEL, note);  // 打击乐 noteOff 不切尾,只防挂音
+}

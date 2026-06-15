@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createHiddenGridContext, mapRawNoteToGrid, isWithinCapture,
+  createHiddenGridContext, mapRawNoteToGrid, isWithinCapture, capturedToGridNotes,
   metricalWeight, quantizeBeat, msPerBeat,
 } from './hiddenGridClock';
+import type { CapturedMidiNote } from '../model/types';
 
 const ctxOf = (over: Partial<Parameters<typeof createHiddenGridContext>[0]> = {}) =>
   createHiddenGridContext({ seed: 7, keyPc: 0, scaleMode: 'major', tonality: 'major', style: 'pop', startMs: 1000, ...over });
@@ -71,5 +72,19 @@ describe('motifSandbox/hiddenGridClock(隐形时钟)', () => {
   it('quantizeBeat', () => {
     expect(quantizeBeat(0.66, 4)).toBe(0.75);
     expect(quantizeBeat(2.33, 4)).toBe(2.25);
+  });
+
+  it('★ count-in 不进 motif:数拍期(start=0 相对帧,onsetMs<captureStart)的音被滤掉', () => {
+    const c = createHiddenGridContext({ seed: 7, keyPc: 0, scaleMode: 'major', tonality: 'major', style: 'pop', startMs: 0 });
+    const mpb = msPerBeat(c);
+    const captured: CapturedMidiNote[] = [
+      { midi: 60, velocity: 100, onsetMs: mpb * 1, durationMs: mpb }, // 数拍期(< captureStart=4拍)→ 滤
+      { midi: 62, velocity: 100, onsetMs: c.captureStartMs + mpb * 0, durationMs: mpb }, // 窗内 beat0
+      { midi: 64, velocity: 100, onsetMs: c.captureStartMs + mpb * 2, durationMs: mpb }, // 窗内 beat2
+    ];
+    const g = capturedToGridNotes(captured, c);
+    expect(g.length).toBe(2); // 数拍那一个被滤
+    expect(g[0].midi).toBe(62);
+    expect(g[0].quantizedOnsetBeat).toBeCloseTo(0, 6);
   });
 });

@@ -9,16 +9,19 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
-import { analyzeAndNormalize, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult } from '../model/motifAnalysis';
+import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, type SandboxTonality } from '../model/sandboxScales';
-import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff } from '../../newEngine/sandbox/audioOut';
+import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext } from '../capture/hiddenGridClock';
+import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
+
+type RecordPhase = 'idle' | 'count-in' | 'recording' | 'analyzing' | 'ready';
 
 const STYLES: SandboxStyle[] = ['pop', 'lofi', 'rnb', 'jazz'];
 const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -45,6 +48,14 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [lastNote, setLastNote] = useState('');
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  // —— 隐形时钟(默认捕获模式)——
+  const [captureMode, setCaptureMode] = useState<'hiddenGrid' | 'freeFallback'>('hiddenGrid');
+  const [recordPhase, setRecordPhase] = useState<RecordPhase>('idle');
+  const [hiddenMotif, setHiddenMotif] = useState<UserMotif | null>(null);
+  const [timing, setTiming] = useState<MotifTimingAnalysis | null>(null);
+  const [snapChanges, setSnapChanges] = useState(0);
+  const ctxRef = useRef<HiddenGridCaptureContext | null>(null);
+  const recTimers = useRef<number[]>([]);
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
   const timer = useRef<number | null>(null);
@@ -124,36 +135,94 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     }, 80);
   }, [stopPlayback, finishRecord]);
 
-  // —— 3×5 键盘:按下=试听(+录制中则记音),松开=停音 ——
+  // —— 隐形时钟录制(默认):预选 BPM + 数拍 → 捕获窗内收音 → 映射回网格 → 分析 ——
+  const clearRecTimers = useCallback(() => { recTimers.current.forEach((t) => clearTimeout(t)); recTimers.current = []; }, []);
+
+  const finishHiddenGridRecord = useCallback(() => {
+    clearRecTimers();
+    if (timer.current != null) { clearInterval(timer.current); timer.current = null; }
+    const ctx = ctxRef.current;
+    const cap = recorder.current.stop();
+    setRecording(false);
+    if (!ctx) { setRecordPhase('idle'); return; }
+    setRecordPhase('analyzing');
+    try {
+      const g = capturedToGridNotes(cap, ctx);
+      const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx);
+      setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
+      setAnalysis({ motif, rawCount: cap.length, normalizedCount: motif.notes.length });
+      setRecordPhase('ready');
+      setStatus(`隐形时钟:${tm.captureBars}bar @ BPM ${tm.bpm} · ${motif.notes.length}音 · 量化误差 ${tm.quantizeErrorMean.toFixed(2)}拍 · 吸附改 ${sc}`);
+    } catch (err) { setRecordPhase('idle'); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
+  }, [clearRecTimers]);
+
+  const startHiddenGridRecord = useCallback(() => {
+    stopPlayback(); clearRecTimers();
+    const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
+    const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0 });
+    ctxRef.current = ctx;
+    setBpm(ctx.bpm);
+    setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null);
+    recorder.current.start({ maxMs: ctx.captureEndMs + 300 });
+    setRecording(true); setRecordPhase('count-in'); setElapsed(0);
+    setStatus(`数拍中…(${ctx.countInBars} 小节 · BPM ${ctx.bpm} · ${ctx.captureBars}bar 窗)`);
+    const mpb = msPerBeat(ctx);
+    const totalBeats = (ctx.countInBars + ctx.captureBars) * ctx.beatsPerBar;
+    for (let b = 0; b < totalBeats; b++) { // 每拍一下 click(数拍期 + 捕获期暗拍;强拍重)
+      recTimers.current.push(window.setTimeout(() => { void playClick(b % ctx.beatsPerBar === 0); }, b * mpb));
+    }
+    recTimers.current.push(window.setTimeout(() => setRecordPhase('recording'), ctx.captureStartMs));
+    recTimers.current.push(window.setTimeout(() => finishHiddenGridRecord(), ctx.captureEndMs + 80));
+    timer.current = window.setInterval(() => setElapsed(recorder.current.elapsedMs()), 80);
+  }, [style, stopPlayback, clearRecTimers, finishHiddenGridRecord]);
+
+  // —— 3×5 键盘:按下=试听(+录音器活跃时记音,数拍期会被滤掉),松开=停音 ——
   const handlePadDown = useCallback((_idx: number, midi: number) => {
     void auditionNoteOn(midi, LEAD_PROGRAM_BY_STYLE[style], 100);
-    if (recording) recorder.current.noteOn(midi, 100);
-  }, [recording, style]);
+    if (recorder.current.isActive()) recorder.current.noteOn(midi, 100);
+  }, [style]);
   const handlePadUp = useCallback((_idx: number, midi: number) => {
     auditionNoteOff(midi);
-    if (recording) recorder.current.noteOff(midi);
-  }, [recording]);
+    if (recorder.current.isActive()) recorder.current.noteOff(midi);
+  }, []);
 
   // 卸载清理
-  useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); access.current?.dispose(); }, []);
+  useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); recTimers.current.forEach((t) => clearTimeout(t)); access.current?.dispose(); }, []);
 
-  // 注入示例 motif:生成 raw → applyCaptured(同录制路径)
+  // 注入示例 motif:隐形时钟模式 → 平移进捕获窗走 hidden 分析;free 模式 → 老路径
   const injectSample = useCallback(() => {
     stopPlayback();
-    const { keyPc: k, tonality: t, bpm: b, seed: s } = liveCfg.current;
-    applyCaptured(generateSampleCaptured(b, k, tonalityParentMode(t), (s % 4 + 4) % 4), '注入示例');
-  }, [applyCaptured, stopPlayback]);
+    const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
+    if (captureMode === 'hiddenGrid') {
+      const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0 });
+      ctxRef.current = ctx; setBpm(ctx.bpm); setResult(null);
+      const raw = generateSampleCaptured(ctx.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4).map((n) => ({ ...n, onsetMs: n.onsetMs + ctx.captureStartMs }));
+      try {
+        const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(capturedToGridNotes(raw, ctx), ctx);
+        setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc); setCaptured([]);
+        setAnalysis({ motif, rawCount: raw.length, normalizedCount: motif.notes.length });
+        setRecordPhase('ready');
+        setStatus(`注入(隐形时钟):${tm.captureBars}bar @ BPM ${tm.bpm} · ${motif.notes.length}音`);
+      } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
+    } else {
+      setHiddenMotif(null);
+      applyCaptured(generateSampleCaptured(liveCfg.current.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4), '注入示例');
+    }
+  }, [captureMode, style, applyCaptured, stopPlayback]);
 
   const generate = useCallback(() => {
-    if (captured.length === 0) { setStatus('先注入/录入 motif'); return; }
+    const motif = captureMode === 'hiddenGrid' ? hiddenMotif : null;
+    if (!motif && captured.length === 0) { setStatus('先录入/注入 motif'); return; }
     stopPlayback();
     try {
-      const r = generateMotifWeave({ capturedNotes: captured, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality });
+      const r = generateMotifWeave(motif
+        ? { capturedNotes: [], motif, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads' }
+        : { capturedNotes: captured, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads' });
       setResult(r);
       setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
-      setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展手法 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
+      setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
-  }, [captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
+  }, [captureMode, hiddenMotif, captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
 
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
@@ -201,15 +270,29 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       </div>
 
       {/* Capture */}
-      <div className="px-3 py-2 border-b border-zinc-900">
-        <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5">Capture</div>
+      <div className="px-3 py-2 border-b border-zinc-900 space-y-1.5">
         <div className="flex items-center gap-2">
-          {!recording
-            ? <button type="button" onClick={startRecord} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">● 录制</button>
-            : <button type="button" onClick={finishRecord} className="rounded-lg bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
+          <span className="text-[10px] uppercase tracking-widest text-zinc-500">Capture</span>
+          <button type="button" onClick={() => setCaptureMode((m) => (m === 'hiddenGrid' ? 'freeFallback' : 'hiddenGrid'))}
+            className={`rounded px-1.5 py-0.5 text-[10px] border ${captureMode === 'hiddenGrid' ? 'bg-sky-600/30 border-sky-500/50 text-sky-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
+            {captureMode === 'hiddenGrid' ? '隐形时钟' : 'free 回退'}
+          </button>
+          {captureMode === 'hiddenGrid' && recordPhase !== 'idle' && (
+            <span className={`text-[10px] ${recordPhase === 'count-in' ? 'text-amber-300' : recordPhase === 'recording' ? 'text-rose-300' : 'text-zinc-400'}`}>
+              {recordPhase === 'count-in' ? '◔ 数拍…' : recordPhase === 'recording' ? '● 演奏中…' : recordPhase === 'analyzing' ? '… 分析' : '✓ 就绪'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {captureMode === 'hiddenGrid'
+            ? (recording
+                ? <button type="button" onClick={finishHiddenGridRecord} className="rounded-lg bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>
+                : <button type="button" onClick={startHiddenGridRecord} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">● 数拍录制</button>)
+            : (!recording
+                ? <button type="button" onClick={startRecord} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">● 录制</button>
+                : <button type="button" onClick={finishRecord} className="rounded-lg bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>)}
           <button type="button" onClick={injectSample} className="rounded-lg bg-fuchsia-600/80 hover:bg-fuchsia-500 px-2.5 py-1 text-[12px] text-white">注入示例</button>
-          <span className="text-[11px] text-zinc-400">{recording ? `${(elapsed / 1000).toFixed(1)}s ≈ ${(elapsed / (240000 / bpm)).toFixed(1)} bar` : `raw ${captured.length}${a ? ` → ${a.normalizedCount}音 / ${a.motif.lengthBeats / 4} bar` : ''}`}</span>
-          {captured.length > 0 && !recording && <button type="button" onClick={() => { setCaptured([]); setAnalysis(null); setResult(null); setStatus('已清空'); }} className="ml-auto text-[10px] text-zinc-500 hover:text-zinc-300">清空</button>}
+          <span className="text-[11px] text-zinc-400">{recording ? `${(elapsed / 1000).toFixed(1)}s` : a ? `${a.normalizedCount}音 / ${a.motif.lengthBeats / 4} bar` : '—'}</span>
         </div>
       </div>
 
@@ -237,7 +320,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <label>seed<input type="number" className={`${sel} w-16`} value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} /></label>
         </div>
         <div className="flex items-center gap-2 pt-0.5">
-          <button type="button" onClick={generate} disabled={captured.length === 0} className="rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">生成 Lead</button>
+          <button type="button" onClick={generate} disabled={captureMode === 'hiddenGrid' ? !hiddenMotif : captured.length === 0} className="rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">生成 Lead</button>
           {!playing
             ? <button type="button" onClick={play} disabled={!result} className="rounded-lg bg-sky-600/80 hover:bg-sky-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 播放</button>
             : <button type="button" onClick={stopPlayback} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
@@ -252,7 +335,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       {/* Analysis readout */}
       {a && (
         <div className="px-3 py-2 space-y-1 text-[11px]">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Analysis</div>
+          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Analysis{timing ? ' · 隐形时钟' : ''}</div>
+          {timing && <>
+            <Row k="BPM / 捕获" v={`${timing.bpm} · ${timing.captureBars}bar · 数拍${1}小节`} />
+            <Row k="量化误差 / 相位" v={`均 ${timing.quantizeErrorMean.toFixed(3)} · 最大 ${timing.quantizeErrorMax.toFixed(3)} 拍 · 相位置信 ${timing.phaseConfidence.toFixed(1)}`} good={timing.quantizeErrorMax < 0.15} />
+            <Row k="前导休止 / 吸附改" v={`${timing.leadingRestBeats.toFixed(2)} 拍 · ${snapChanges} 音`} good={snapChanges === 0} />
+          </>}
           <Row k="motif 长度" v={`${a.motif.lengthBeats} beats · ${a.motif.notes.length} 音(raw ${a.rawCount})`} />
           <Row k="contour" v={a.motif.contour.map((c) => (c > 0 ? '↑' : c < 0 ? '↓' : '→')).join('')} />
           <Row k="rhythm cell" v={a.motif.rhythmCell.map((d) => d.toFixed(2)).join(' ')} />

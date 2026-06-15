@@ -8,7 +8,7 @@
 // 本文件只做【时钟数学】(确定性、纯函数);数拍发声/录音在 Phase B。
 // ============================================================
 
-import type { ScaleMode, SandboxStyle } from '../model/types';
+import type { CapturedMidiNote, ScaleMode, SandboxStyle } from '../model/types';
 import type { SandboxTonality } from '../model/sandboxScales';
 import { makeRng } from '../model/rng';
 
@@ -127,4 +127,13 @@ export function mapRawNoteToGrid(
 /** 某 ms 是否落在【捕获窗】内(数拍期/窗后 = 不收)。 */
 export function isWithinCapture(ms: number, ctx: HiddenGridCaptureContext): boolean {
   return ms >= ctx.captureStartMs - 1e-6 && ms < ctx.captureEndMs - 1e-6;
+}
+
+/** recorder 录到的 CapturedMidiNote[](onsetMs 相对【数拍开始】= recorder.start)→ 网格音。
+ *  ★ 数拍期(onsetMs < captureStart)与窗后的音被滤掉 = count-in 不进 motif。
+ *  注:context 用 startMs=0(与 recorder 同相对帧)。不调 fitRecordingToBars。 */
+export function capturedToGridNotes(captured: readonly CapturedMidiNote[], ctx: HiddenGridCaptureContext): GridCapturedNote[] {
+  return captured
+    .filter((c) => isWithinCapture(c.onsetMs, ctx))
+    .map((c) => mapRawNoteToGrid({ midi: c.midi, velocity: c.velocity, onMs: c.onsetMs, offMs: c.onsetMs + c.durationMs }, ctx));
 }
