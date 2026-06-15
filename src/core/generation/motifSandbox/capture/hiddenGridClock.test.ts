@@ -26,9 +26,13 @@ describe('motifSandbox/hiddenGridClock(隐形时钟)', () => {
     expect(c.captureEndMs).toBeCloseTo(c.captureStartMs + mpbar, 3);
   });
 
-  it('2-bar 仅当 ≤4s:pop(慢)被钳到 1 bar,jazz(快)可 2 bar', () => {
-    expect(ctxOf({ style: 'pop', desiredBars: 2 }).captureBars).toBe(1);   // pop 96-108 → 2bar>4s → 钳 1
-    expect(ctxOf({ style: 'jazz', desiredBars: 2 }).captureBars).toBe(2);  // jazz ≥120 → 2bar≤4s
+  it('captureBars = desiredBars(放开 ≤4s 钳制,用户要更长窗);countInBars 可配 2', () => {
+    expect(ctxOf({ desiredBars: 2 }).captureBars).toBe(2);
+    expect(ctxOf({ desiredBars: 1 }).captureBars).toBe(1);
+    const c2 = ctxOf({ countInBars: 2, desiredBars: 2 });
+    expect(c2.countInBars).toBe(2);
+    const mpbar = (4 * 60000) / c2.bpm;
+    expect(c2.captureStartMs).toBeCloseTo(1000 + 2 * mpbar, 3); // start(1000) + 2 小节数拍后才开始捕获
   });
 
   it('★ ms→beat:captureStart = 隐形 beat 0;迟到的首音保留为正(不强制成 0)', () => {

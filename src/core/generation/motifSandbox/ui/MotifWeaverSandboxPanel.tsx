@@ -159,7 +159,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const startHiddenGridRecord = useCallback(() => {
     stopPlayback(); clearRecTimers();
     const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
-    const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0 });
+    const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 2, desiredBars: 2 });
     ctxRef.current = ctx;
     setBpm(ctx.bpm);
     setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null);
@@ -194,7 +194,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     stopPlayback();
     const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
     if (captureMode === 'hiddenGrid') {
-      const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0 });
+      const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 2, desiredBars: 2 });
       ctxRef.current = ctx; setBpm(ctx.bpm); setResult(null);
       const raw = generateSampleCaptured(ctx.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4).map((n) => ({ ...n, onsetMs: n.onsetMs + ctx.captureStartMs }));
       try {

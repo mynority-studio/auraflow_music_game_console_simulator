@@ -82,18 +82,18 @@ export function createHiddenGridContext(opts: {
   tonality: SandboxTonality;
   style: SandboxStyle;
   startMs: number;
-  desiredBars?: 1 | 2;
+  desiredBars?: 1 | 2;   // 捕获窗小节数(默认 1;用户要更长 → 放开 ≤4s 钳制)
+  countInBars?: 1 | 2;   // 数拍小节数(默认 1)
   clockSource?: 'audioContext' | 'performance';
 }): HiddenGridCaptureContext {
-  const { seed, keyPc, scaleMode, tonality, style, startMs, desiredBars = 1, clockSource = 'performance' } = opts;
+  const { seed, keyPc, scaleMode, tonality, style, startMs, desiredBars = 1, countInBars: ci = 1, clockSource = 'performance' } = opts;
   const rng = makeRng((seed ^ 0x4d2b1a7f) >>> 0);
   const [lo, hi] = BPM_RANGE[style];
   const bpm = Math.round(lo + rng.next() * (hi - lo));
   const beatsPerBar = 4 as const;
   const mpb = 60000 / bpm;
-  // 2-bar 仅当总捕获窗 ≤ 4 秒(directive §8):captureBars*4*60/bpm <= 4
-  const captureBars: 1 | 2 = desiredBars === 2 && (2 * beatsPerBar * 60) / bpm <= 4.0 ? 2 : 1;
-  const countInBars = 1 as const;
+  const captureBars: 1 | 2 = desiredBars;   // 放开钳制(用户:演奏窗太短)
+  const countInBars: 1 | 2 = ci;
   const captureStartMs = startMs + countInBars * beatsPerBar * mpb;
   const captureEndMs = captureStartMs + captureBars * beatsPerBar * mpb;
   return {
