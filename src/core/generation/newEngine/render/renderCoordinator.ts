@@ -265,6 +265,11 @@ export function renderSongFull(
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
   tracks.push(renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead)); // lead 必有(MG 链);★ MG seed=song seed · lead program=器配生效值
 
+  // ★ P2 stage trace：renderer raw 输出快照（所有后处理之前），供 C 移植各 renderer 逐位对账。
+  //   仅 golden 导出注入回调；产品/retry 路径 overlay.trace 为空 → 零开销。回调内须立即深拷贝/序列化
+  //   （tracks 数组下游会被后处理 pass 原地或替换修改）。
+  overlay?.trace?.('raw', tracks);
+
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
   const postMixTracks = band.style.toLowerCase() === 'lofi' ? applyMgLofiDenseMelodyComping(tracks, plan, timebase) : tracks;

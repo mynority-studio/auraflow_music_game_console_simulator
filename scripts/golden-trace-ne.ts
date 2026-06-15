@@ -23,6 +23,7 @@ import { buildArrangementPlan } from '../src/core/generation/newEngine/arranger/
 import { buildHarmonicPlanFromArrangement } from '../src/core/generation/newEngine/harmony/harmonyEngine';
 import { buildInstrumentationPlan } from '../src/core/generation/newEngine/instrumental/instrumentalPlanner';
 import { generateSong } from '../src/core/generation/newEngine/generation/GenerationController';
+import type { RenderTraceFn } from '../src/core/generation/newEngine/render/RenderOverlay';
 import { musicalIRToMidiEvents } from '../src/core/generation/newEngine/sandbox/irToMidi';
 import type { MusicalIR } from '../src/core/generation/newEngine/ir/MusicalIR';
 
@@ -251,7 +252,19 @@ const noteOffRank = (type: string): number => (type === 'noteOff' ? 0 : 1);
 
 function buildL2L3Case(seed: number, styleHint: string) {
   const request: GenerationRequest = { seed, styleHint, mood: 'calm-build', targetDuration: 120, allowModulation: true };
-  const result = generateSong(request);
+  // P2 raw stage：renderer 后处理前快照（C 各 renderer 逐位对账源；lead=MG/P3，C 侧只取 non-lead）
+  let rawStageTracks: { role: string; notes: { pitch: number; startTick: number; durationTicks: number; velocity: number }[] }[] = [];
+  const trace: RenderTraceFn = (stage, tracks) => {
+    if (stage !== 'raw') return;
+    rawStageTracks = tracks.map((t) => ({
+      role: t.role,
+      notes: t.notes.map((n) => ({
+        pitch: n.pitch as number, startTick: n.startTick as number,
+        durationTicks: n.durationTicks as number, velocity: n.velocity,
+      })),
+    }));
+  };
+  const result = generateSong(request, undefined, trace);
   const l2 = {
     seed, styleHint,
     status: result.status,
@@ -276,7 +289,8 @@ function buildL2L3Case(seed: number, styleHint: string) {
     l3events = raw.map((e) => ({ seq: e.seq, tick: e.ticks, type: e.type, channel: e.channel, data1: e.data1, data2: e.data2 }));
   }
   const l3 = { seed, styleHint, roomWet: L3_ROOM_WET, hasIr: result.ir != null, events: l3events };
-  return { l2, l3 };
+  const rawStage = { seed, styleHint, status: result.status, tracks: rawStageTracks };
+  return { l2, l3, rawStage };
 }
 
 // ---------- main ----------
@@ -314,17 +328,23 @@ const L2L3_FEATURE_CASES: { seed: number; style: string; note: string }[] = [
 ];
 const l2Cases: ReturnType<typeof buildL2L3Case>['l2'][] = [];
 const l3Cases: ReturnType<typeof buildL2L3Case>['l3'][] = [];
+const rawCases: ReturnType<typeof buildL2L3Case>['rawStage'][] = [];
 for (const seed of L1_SEEDS) for (const style of L1_STYLES) {
-  const { l2, l3 } = buildL2L3Case(seed, style);
+  const { l2, l3, rawStage } = buildL2L3Case(seed, style);
   l2Cases.push(l2);
   l3Cases.push(l3);
+  rawCases.push(rawStage);
 }
 for (const fc of L2L3_FEATURE_CASES) {
-  const { l2, l3 } = buildL2L3Case(fc.seed, fc.style);
+  const { l2, l3, rawStage } = buildL2L3Case(fc.seed, fc.style);
   l2Cases.push(l2);
   l3Cases.push(l3);
+  rawCases.push(rawStage);
 }
 writeFileSync(join(outDir, 'ne_golden_l2.json'), JSON.stringify({ meta, cases: l2Cases }, null, 1));
 writeFileSync(join(outDir, 'ne_golden_l3.json'), JSON.stringify({ meta, cases: l3Cases }, null, 1));
+writeFileSync(join(outDir, 'ne_golden_raw.json'), JSON.stringify({ meta, cases: rawCases }, null, 1));
 const l3evTotal = l3Cases.reduce((n, c) => n + c.events.length, 0);
+const rawNoteTotal = rawCases.reduce((n, c) => n + c.tracks.reduce((m, t) => m + t.notes.length, 0), 0);
 console.log(`L2/L3: ${l2Cases.length} cases (${L1_SEEDS.length}×${L1_STYLES.length} 标准 + ${L2L3_FEATURE_CASES.length} 特征); L3 events total ${l3evTotal}`);
+console.log(`Raw stage: ${rawCases.length} cases; raw notes total ${rawNoteTotal}`);

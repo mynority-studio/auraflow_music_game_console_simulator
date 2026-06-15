@@ -14,6 +14,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
+import type { RenderTraceFn } from '../render/RenderOverlay';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import { DEFAULT_BUDGET, nextRetryContext, type RetryBudget } from './RetryPolicy';
@@ -75,7 +76,7 @@ export function runGenerationControl(
 }
 
 /** 顶层:Request → FinalIR(Slice 1 端到端;Resolver/OccupationMap 让位后续接)。 */
-export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
+export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET, trace?: RenderTraceFn): GenerationResult {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
   const arrangement = buildArrangementPlan(band, { rng: seedRng });
@@ -88,9 +89,10 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
 
+  // P2 stage trace 仅首轮（retry===undefined）注入；retry 轮不 trace（避免多轮快照覆盖）。
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer });
+      retry ? { voicingSafer: retry.voicingSafer } : (trace ? { trace } : undefined));
 
   // finding→精确返回点定位器:tick→ChordSpan(voicingSafer 瘦身目标)。
   const locator = buildRetryLocator(harmonic, timebase);

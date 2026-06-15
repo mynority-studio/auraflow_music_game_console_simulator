@@ -8,7 +8,13 @@
 // ============================================================
 
 import type { ChordSpanId } from '../harmony/HarmonicPlan';
+import type { TrackIR } from '../ir/MusicalIR';
+
+/** stage trace 回调（P2 C 移植对账用）：renderSongFull 在各 pass 后回传该阶段的轨道快照
+ *  （深拷贝由调用方负责，回调只读）。仅 golden 导出注入；产品/retry 路径不传 → 零开销。 */
+export type RenderTraceFn = (stage: string, tracks: readonly TrackIR[]) => void;
 
 export interface RenderOverlay {
   voicingSafer?: Record<ChordSpanId, true>; // span → 瘦身 shell
+  trace?: RenderTraceFn;                      // P2 stage trace（可选，仅 golden 导出用）
 }
