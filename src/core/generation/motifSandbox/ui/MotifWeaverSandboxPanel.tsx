@@ -158,7 +158,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
     stopNewEngine();
-    const accomp = withAccomp ? buildAccompaniment(result.progression, style, seed) : null;
+    const accomp = withAccomp ? buildAccompaniment(result.progression, style, seed, result.lead) : null; // 传 lead → 伴奏锁旋律重音/结构点
     const ir = buildSandboxIr(result.lead, accomp, bpm, style);
     setPlaying(true);
     setStatus(withAccomp ? '▶ 播放 lead + 伴奏…' : '▶ 播放 lead…');

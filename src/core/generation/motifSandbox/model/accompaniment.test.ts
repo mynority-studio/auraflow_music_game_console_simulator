@@ -49,6 +49,25 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
     }
   });
 
+  it('★ 感知旋律:传 lead → bass 锚每小节下拍 + 击点落在旋律结构点上(对拍)', () => {
+    const motif = motifOf();
+    const prog = buildProgression(motif, 0, 'major', 16);
+    // 造一段已知重音落点的 lead(bar0 重音在 1.5;bar1 重音在 2.5)
+    const lead = [
+      { midi: 72, onsetBeat: 0, durationBeat: 1, velocity: 1, scaleDegree: 1, octave: 5, accent: 0.9, occurrenceKind: 'quote' as const },
+      { midi: 74, onsetBeat: 1.5, durationBeat: 1, velocity: 0.9, scaleDegree: 2, octave: 5, accent: 0.8, occurrenceKind: 'quote' as const },
+      { midi: 76, onsetBeat: 6.5, durationBeat: 1, velocity: 0.9, scaleDegree: 3, octave: 5, accent: 0.8, occurrenceKind: 'develop' as const },
+    ];
+    const a = buildAccompaniment(prog, 'pop', 7, lead);
+    const has = (arr: { onsetBeat: number }[], b: number) => arr.some((n) => Math.abs(n.onsetBeat - b) < 1e-6);
+    expect(has(a.bass, 0), 'bar0 下拍锚').toBe(true);
+    expect(has(a.bass, 1.5), 'bar0 bass 落旋律重音 1.5').toBe(true);   // 锁结构点(非固定 beat2)
+    expect(has(a.bass, 4), 'bar1 下拍锚').toBe(true);
+    expect(has(a.bass, 6.5), 'bar1 bass 落旋律重音 2.5(=beat6.5)').toBe(true);
+    // 每小节都有下拍 root
+    for (let bar = 0; bar < 16; bar++) expect(has(a.bass, bar * 4), `bar${bar} 下拍`).toBe(true);
+  });
+
   it('风格织体差异:jazz bass 走音(每小节≈4)> lofi 稀疏 bass', () => {
     const prog = buildProgression(motifOf(), 0, 'major', 16);
     const jazz = buildAccompaniment(prog, 'jazz', 7);
