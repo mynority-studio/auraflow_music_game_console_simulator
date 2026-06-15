@@ -33,21 +33,24 @@ describe('motifSandbox/sandboxScales(音阶词汇 + 3×5 键盘)', () => {
     for (const m of scaleNoteMap(0, 'majorPent')) expect(isInScale(m, 0, 'major')).toBe(true);
   });
 
-  it('scaleNoteMap:14 音升序、都在该音阶内', () => {
+  it('scaleNoteMap:15 音升序、都在该音阶内', () => {
     for (const t of SANDBOX_TONALITIES) {
       const notes = scaleNoteMap(0, t);
-      expect(notes.length).toBe(14);
+      expect(notes.length).toBe(15);
       for (let i = 1; i < notes.length; i++) expect(notes[i]).toBeGreaterThan(notes[i - 1]); // 升序
       const ivs = TONALITY_INTERVALS[t];
       for (const m of notes) expect(ivs.includes(((m % 12) + 12) % 12)).toBe(true);
     }
   });
 
-  it('padIndex:底行 0-4 / 中行 5-9 / 顶行 10-13 / 右上 FN=-1', () => {
-    expect(padIndex(0, 2)).toBe(0); expect(padIndex(4, 2)).toBe(4);   // 底行
+  it('padIndex:阅读顺序(顶行最左=0 → 底行最右=14),15 键全填无 FN', () => {
+    expect(padIndex(0, 0)).toBe(0); expect(padIndex(4, 0)).toBe(4);   // 顶行(低)
     expect(padIndex(0, 1)).toBe(5); expect(padIndex(4, 1)).toBe(9);   // 中行
-    expect(padIndex(0, 0)).toBe(10); expect(padIndex(3, 0)).toBe(13); // 顶行
-    expect(padIndex(4, 0)).toBe(-1);                                  // FN
+    expect(padIndex(0, 2)).toBe(10); expect(padIndex(4, 2)).toBe(14); // 底行(高)
+    const all = new Set<number>();
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) all.add(padIndex(c, r));
+    expect(all.size).toBe(15); // 15 个互异、无 -1
+    expect(all.has(-1)).toBe(false);
   });
 
   it('midiName', () => {

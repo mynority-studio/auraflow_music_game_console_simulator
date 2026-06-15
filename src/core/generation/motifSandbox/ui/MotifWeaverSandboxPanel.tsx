@@ -134,12 +134,6 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     if (recording) recorder.current.noteOff(midi);
   }, [recording]);
 
-  // 随机下发音阶(调 + tonality)
-  const randomScale = useCallback(() => {
-    setKeyPc(Math.floor(Math.random() * 12));
-    setTonality(SANDBOX_TONALITIES[Math.floor(Math.random() * SANDBOX_TONALITIES.length)]);
-  }, []);
-
   // 卸载清理
   useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); access.current?.dispose(); }, []);
 
@@ -225,7 +219,6 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <span className="text-[10px] uppercase tracking-widest text-zinc-500">音阶</span>
           <select className={sel} value={keyPc} onChange={(e) => setKeyPc(Number(e.target.value))}>{KEY_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}</select>
           <select className={sel} value={tonality} onChange={(e) => setTonality(e.target.value as SandboxTonality)}>{SANDBOX_TONALITIES.map((t) => <option key={t} value={t}>{TONALITY_LABEL[t]}</option>)}</select>
-          <button type="button" onClick={randomScale} title="随机下发音阶" className="rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-1.5 py-0.5 text-[12px]">🎲</button>
           {recording && <span className="ml-auto text-[10px] text-rose-300">● {(elapsed / 1000).toFixed(1)}s</span>}
         </div>
         <PadKeyboard noteMap={scaleNoteMap(keyPc, tonality)} recording={recording} onPadDown={handlePadDown} onPadUp={handlePadUp} />

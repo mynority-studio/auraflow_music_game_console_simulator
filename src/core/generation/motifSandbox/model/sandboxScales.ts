@@ -45,8 +45,8 @@ export function snapMidiToTonality(midiNote: number, keyPc: number, tonality: Sa
   return midiNote - (rel - best);
 }
 
-/** 3×5 键盘音表:count 个音升序(C3 附近起,跨 tonality 循环)。镜像 ScaleEngine.generateScaleNotes。 */
-export function scaleNoteMap(keyPc: number, tonality: SandboxTonality, count = 14): number[] {
+/** 3×5 键盘音表:count 个音升序(C3 附近起,跨 tonality 循环)。15 键全填(阅读顺序排列)。 */
+export function scaleNoteMap(keyPc: number, tonality: SandboxTonality, count = 15): number[] {
   const ivs = TONALITY_INTERVALS[tonality];
   const out: number[] = [];
   let octave = Math.floor((keyPc + 48) / 12);
@@ -58,14 +58,10 @@ export function scaleNoteMap(keyPc: number, tonality: SandboxTonality, count = 1
   return out;
 }
 
-/** (c,r) → pad 索引(0-13),FN 键(右上 c=4,r=0)返回 -1。镜像 ScaleEngine.padIndex。
- *  底行 r=2 → 0-4(低)· 中行 r=1 → 5-9 · 顶行 r=0 c<4 → 10-13(高)。 */
+/** (c,r) → pad 索引(0-14),【阅读顺序】:顶行左→右 = 0-4(低),中行 5-9,底行 10-14(高)。
+ *  15 键全填、无 FN 空位 —— 从顶行最左到底行最右顺序排列音阶。 */
 export function padIndex(c: number, r: number): number {
-  if (c === 4 && r === 0) return -1;
-  if (r === 2) return c;
-  if (r === 1) return 5 + c;
-  if (r === 0 && c < 4) return 10 + c;
-  return -1;
+  return r * 5 + c;
 }
 
 const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
