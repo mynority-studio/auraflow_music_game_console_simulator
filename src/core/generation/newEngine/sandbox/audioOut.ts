@@ -50,14 +50,22 @@ const CC_SUSTAIN = 64;
 const SUSTAIN_LIGHT = 64; // 微微踩下(半踏板量级;松手后留一点音尾 ring)
 let auditionProgram = -1;
 
-/** 试听单音 on:确保就绪 → 设音色 → 先抬踏板清上一音余音 → noteOn → 微微踩下(松手后 ring,不糊)。 */
+/** 试听单音 on:确保就绪 → 设音色/音量 → 先抬踏板清上一音余音 → noteOn → 微微踩下(松手后 ring,不糊)。 */
 export async function auditionNoteOn(midiNote: number, program: number, velocity = 100): Promise<void> {
   await startAudioContext();
   if (!spessaSynth) return;
-  if (program !== auditionProgram) { spessaSynth.programChange(AUDITION_CHANNEL, program); auditionProgram = program; }
-  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, 0);            // 抬:清掉上一个音的余音(避免越叠越糊)
-  spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), velocity);
-  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, SUSTAIN_LIGHT); // 微微踩下:这个音松手后留一点 ring
+  if (program !== auditionProgram) {
+    spessaSynth.programChange(AUDITION_CHANNEL, program);
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 7, 127);  // CC7 音量拉满(原默认 ~100 太小)
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 11, 127); // CC11 表情拉满
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 91, 14);  // CC91 混响压低 → 干声更近、更响
+    spessaSynth.controllerChange(AUDITION_CHANNEL, 10, 64);  // CC10 居中
+    auditionProgram = program;
+  }
+  const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入的真力度不变)
+  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, 0);            // 抬:清掉上一个音的余音
+  spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v);
+  spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, SUSTAIN_LIGHT); // 微微踩下:松手后留一点 ring
 }
 
 /** 试听单音 off(踏板踩着 → 音尾微微 ring 到下次按键)。 */

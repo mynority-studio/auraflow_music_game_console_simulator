@@ -39,7 +39,10 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [result, setResult] = useState<MotifWeaverResult | null>(null);
   const [status, setStatus] = useState('注入或录入一段 motif');
   const [playing, setPlaying] = useState(false);
+  const [activeNotes, setActiveNotes] = useState<Set<number>>(() => new Set()); // 当前按住的音(pad 点击 + MIDI)→ 点亮对应 pad
   const heldKeys = useRef<Set<string>>(new Set());
+  const noteOnVis = useCallback((m: number) => setActiveNotes((p) => new Set(p).add(m)), []);
+  const noteOffVis = useCallback((m: number) => setActiveNotes((p) => { const n = new Set(p); n.delete(m); return n; }), []);
 
   // —— Web MIDI ——
   const [midiStatus, setMidiStatus] = useState<MidiSupport | 'idle'>('idle');
@@ -111,12 +114,14 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
           setLastNote(`note ${m.note} · vel ${m.velocity}`);
           void auditionNoteOn(m.note, LEAD_PROGRAM_BY_STYLE[st], m.velocity);
+          noteOnVis(m.note); // 点亮对应 pad
           if (recorder.current.isActive()) recorder.current.noteOn(m.note, m.velocity);
         } else {
           setLastNote(`note ${m.note} · 离调 → 静音`); // 不在音阶内 → 不发声、不记录
         }
       } else if (m.type === 'noteOff') {
         auditionNoteOff(m.note);
+        noteOffVis(m.note);
         if (recorder.current.isActive()) recorder.current.noteOff(m.note);
       }
     };
@@ -191,13 +196,15 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   // —— 3×5 键盘:按下=试听(+录音器活跃时记音,数拍期会被滤掉),松开=停音 ——
   const handlePadDown = useCallback((_idx: number, midi: number) => {
-    void auditionNoteOn(midi, LEAD_PROGRAM_BY_STYLE[style], 100);
-    if (recorder.current.isActive()) recorder.current.noteOn(midi, 100);
-  }, [style]);
+    void auditionNoteOn(midi, LEAD_PROGRAM_BY_STYLE[style], 110);
+    noteOnVis(midi);
+    if (recorder.current.isActive()) recorder.current.noteOn(midi, 110);
+  }, [style, noteOnVis]);
   const handlePadUp = useCallback((_idx: number, midi: number) => {
     auditionNoteOff(midi);
+    noteOffVis(midi);
     if (recorder.current.isActive()) recorder.current.noteOff(midi);
-  }, []);
+  }, [noteOffVis]);
 
   // 卸载清理
   useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); recTimers.current.forEach((t) => clearTimeout(t)); access.current?.dispose(); }, []);
@@ -317,7 +324,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <select className={sel} value={tonality} onChange={(e) => setTonality(e.target.value as SandboxTonality)}>{SANDBOX_TONALITIES.map((t) => <option key={t} value={t}>{TONALITY_LABEL[t]}</option>)}</select>
           {recording && <span className="ml-auto text-[10px] text-rose-300">● {(elapsed / 1000).toFixed(1)}s</span>}
         </div>
-        <PadKeyboard noteMap={scaleNoteMap(keyPc, tonality)} recording={recording} onPadDown={handlePadDown} onPadUp={handlePadUp} />
+        <PadKeyboard noteMap={scaleNoteMap(keyPc, tonality)} recording={recording} activeNotes={activeNotes} onPadDown={handlePadDown} onPadUp={handlePadUp} />
         <div className="text-[10px] text-zinc-600">点 pad 试听;按【● 录制】后点 pad 即记录,【■ 停止】完成 → 自动识别整 bar。底行低音 → 顶行高音。</div>
       </div>
 
