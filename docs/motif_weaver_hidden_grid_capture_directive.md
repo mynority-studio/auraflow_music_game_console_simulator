@@ -355,6 +355,8 @@ quotePlan: 'verseHeadsOnly' | 'phraseHeads'
 
 Default should be `verseHeadsOnly` for product UX. Keep `phraseHeads` as debug/regression option if existing tests depend on it.
 
+> ⚠️ **SUPERSEDED** by the follow-up directive §3 (`motif_weaver_hidden_grid_followup_directive.md`): the product **default is now `phraseHeads`** (motif repeats after each 4-bar harmonic cycle = 排比). `verseHeadsOnly` is the optional debug/comparison mode, not the default.
+
 ## 15. Free Fallback Mode
 
 Keep free capture as a fallback, with honest confidence.

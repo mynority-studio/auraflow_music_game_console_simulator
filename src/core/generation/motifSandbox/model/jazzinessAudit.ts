@@ -28,7 +28,7 @@ export function auditMotifWeave(
   occurrences: readonly MotifOccurrence[],
   keyPc: number,
   mode: ScaleMode,
-  ctx: { totalBars: number },
+  ctx: { totalBars: number; quoteBeats?: number },
 ): MotifWeaveAudit {
   const sorted = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
   let maxLeap = 0;
@@ -38,7 +38,9 @@ export function auditMotifWeave(
   const dense = sorted.filter((n) => n.durationBeat <= 0.25 + EPS).length;
   const jazzinessScore = Math.min(1, chromaticRatio * 0.6 + (sorted.length ? dense / sorted.length : 0) * 0.3 + Math.min(1, Math.max(0, maxLeap - 9) / 8) * 0.1);
 
-  const refQuote = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
+  // ★ 按【实际 quote 单元】校验(长 motif 会缩成 ≤2 小节子动机)—— 否则用完整 motif 会误报 ✗。
+  const qBeats = ctx.quoteBeats ?? Infinity;
+  const refQuote = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH).filter((n) => n.onsetBeat < qBeats - 1e-6);
   const motifQuotedFirstCycle = quotedAt(lead, refQuote, 0);
 
   const themeStatements = occurrences.filter((o) => o.kind === 'quote' || o.kind === 'develop').length;

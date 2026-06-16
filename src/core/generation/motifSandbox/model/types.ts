@@ -71,7 +71,8 @@ export interface MotifWeaverResult {
   occurrences: MotifOccurrence[];
   lead: MotifNote[];
   totalBars: number;             // 16
-  slotBars: number;              // theme interval(= motif 小节数)
+  motifBars: number;             // 分析出的 motif 小节数(1..4)
+  quoteBars: number;             // 实际排比 quote 单元小节数(长 motif 缩为 ≤2 子动机;≤2 小节时 = motifBars)
   numSlots: number;
   arc: string[];                 // 每槽角色/手法(发展弧,UI 展示)
   audit: MotifWeaveAudit;

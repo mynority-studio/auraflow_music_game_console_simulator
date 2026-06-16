@@ -312,6 +312,6 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .map((n) => ({ ...n, onsetBeat: Math.min(Math.round(n.onsetBeat / ONSET_GRID) * ONSET_GRID, TARGET_BEATS - ONSET_GRID) })) // onset 吸 1/16 网格 = 稳稳对拍
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
-  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS });
-  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, slotBars: motifBars, numSlots: numPhrases, arc, audit };
+  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS, quoteBeats: motifBeats });
+  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit };
 }

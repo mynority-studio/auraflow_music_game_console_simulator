@@ -74,7 +74,7 @@ export function quantizeBeat(beat: number, gridStepsPerBeat: number): number {
   return Math.round(beat * gridStepsPerBeat) / gridStepsPerBeat;
 }
 
-/** 录音前建隐形捕获上下文:预选 BPM(确定性随机)、数拍/捕获窗(≤4s 才给 2 bar)。 */
+/** 录音前建隐形捕获上下文:预选 BPM(确定性随机)、数拍小节、捕获窗(最多 4 小节,不按 4 秒钳制)。 */
 export function createHiddenGridContext(opts: {
   seed: number;
   keyPc: number;

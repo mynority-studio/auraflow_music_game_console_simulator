@@ -366,8 +366,9 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <Row k="rhythm cell" v={a.motif.rhythmCell.map((d) => d.toFixed(2)).join(' ')} />
           {result && <>
             <Row k="和弦进行(16 bar)" v={result.progression.map((c) => c.roman).join('-')} />
+            <Row k="motif / quote 单元" v={`${result.motifBars} bar → quote ${result.quoteBars} bar${result.quoteBars < result.motifBars ? '(缩子动机留发展空间)' : ''}`} />
             <Row k="发展弧(每槽)" v={result.arc.join(' · ')} />
-            <Row k="第一槽 head 原样" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
+            <Row k="head 原样(quote 单元)" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
             <Row k="陈述 / 发展手法 / 连接" v={`${result.audit.themeStatements} · ${result.audit.developVariants} 种 · ${result.audit.connectSlots}`} good={result.audit.developVariants >= 2} />
             <Row k="密度 / 留白" v={`${result.audit.notesPerBar.toFixed(1)} 音·bar / 留白 ${(result.audit.restRatio * 100).toFixed(0)}%`} good={result.audit.restRatio > 0.1} />
             <Row k="chromaticRatio" v={result.audit.chromaticRatio.toFixed(2)} good={result.audit.chromaticRatio === 0 || style === 'jazz' || tonality === 'blues'} />
