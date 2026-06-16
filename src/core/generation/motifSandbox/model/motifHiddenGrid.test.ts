@@ -70,12 +70,13 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     const r = generateMotifWeave({ capturedNotes: [], motif, style: 'pop', keyPc: 0, mode: 'major', bpm: c.bpm, seed: 7 });
     expect(r.motifBars).toBe(4);   // 显式返回:分析长度
     expect(r.quoteBars).toBe(2);   // 显式返回:实际 quote 单元(缩到子动机)
-    const quoteHeads = r.occurrences.filter((o) => o.kind === 'quote').map((o) => o.startBeat);
-    for (const b of [0, 16, 32, 48]) expect(quoteHeads, `循环头@${b} 有 quote`).toContain(b); // 每和弦循环头都再现
+    // slot-plan 驱动:quote 落 plan slot(≥1),有发展,非死复制
+    expect(r.melodicSlotPlan!.userQuoteSlotIds.length, '≥1 quote slot').toBeGreaterThanOrEqual(1);
+    expect(r.occurrences.some((o) => o.kind === 'quote'), '有原样 quote').toBe(true);
     expect(r.occurrences.some((o) => o.kind === 'develop'), '有发展/续写').toBe(true);   // 不是死复制
     expect(r.lead.some((n) => n.occurrenceKind === 'develop')).toBe(true);
-    // ★ 审计按【quote 单元】校验 → head 原样 = ✓(不再因完整 motif 误报 ✗)
-    expect(r.audit.motifQuotedFirstCycle, 'head(quote 单元)原样').toBe(true);
+    // ★ 审计按【quote 单元】校验 → 第一个 quote slot 原样 = ✓
+    expect(r.audit.motifQuotedFirstCycle, 'quote 单元原样').toBe(true);
   });
 
   it('★ 结构音:下拍上的【安静长音】结构分 > 弱拍 16 分上的【响亮短音】(directive §12)', () => {
@@ -103,25 +104,27 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     expect(snapChanges).toBe(0); // C/E/G 都在 C 大调内
   });
 
-  it('★ quotePlan=phraseHeads(排比,默认):原样 motif 在 0/16/32/48 都出现', () => {
+  it('★ slot-plan 驱动:原样 motif 落在 plan 的 quote slot;无不证成离调', () => {
     const c = ctxOf();
     const g = [note(c, 60, 100, 0, 1), note(c, 62, 90, 1, 1), note(c, 64, 90, 2, 1), note(c, 67, 100, 3, 1)];
     const { motif } = analyzeHiddenGridMotif(g, c);
     const r = generateMotifWeave({ capturedNotes: [], motif, style: 'pop', keyPc: 0, mode: 'major', bpm: c.bpm, seed: 7 });
     const ref = fitRange(identity(motif.notes), 60, 84);
-    for (const b of [0, 16, 32, 48]) expect(quotedAt(r.lead, ref, b), `bar@${b}`).toBe(true);
+    const qs = r.melodicSlotPlan!.userQuoteSlotIds.map((id) => r.melodicSlotPlan!.slots.find((s) => s.id === id)!.startBeat);
+    expect(qs.length).toBeGreaterThanOrEqual(1);
+    for (const b of qs) expect(quotedAt(r.lead, ref, b), `quote@${b}`).toBe(true);
     expect(r.audit.unjustifiedChromatic).toBe(0); // 离调音都由真实和声/quote 证成(非 jazz 无"乱"离调)
   });
 
-  it('★ quotePlan=verseHeadsOnly:原样只在 bar1(0)/bar9(32),bar5(16)是发展不是原样', () => {
+  it('★ slot-plan 模式下 quotePlan 失效(被 RoadMap 计划取代):verseHeadsOnly 与 phraseHeads 同结果', () => {
+    // Phase 5 后 motif 落位由 RoadMap slot plan 驱动,quotePlan 仅旧乐句循环 fallback 才用 → 此处应等价。
     const c = ctxOf();
     const g = [note(c, 60, 100, 0, 1), note(c, 62, 90, 1, 1), note(c, 64, 90, 2, 1), note(c, 67, 100, 3, 1)];
     const { motif } = analyzeHiddenGridMotif(g, c);
-    const r = generateMotifWeave({ capturedNotes: [], motif, style: 'pop', keyPc: 0, mode: 'major', bpm: c.bpm, seed: 7, quotePlan: 'verseHeadsOnly' });
-    const ref = fitRange(identity(motif.notes), 60, 84);
-    expect(quotedAt(r.lead, ref, 0), 'verse1 头').toBe(true);
-    expect(quotedAt(r.lead, ref, 32), 'verse2 头').toBe(true);
-    expect(quotedAt(r.lead, ref, 16), 'bar5 应为发展非原样').toBe(false);
-    expect(r.occurrences.some((o) => o.startBeat === 16 && o.kind === 'develop')).toBe(true);
+    const base = { capturedNotes: [], motif, style: 'pop' as const, keyPc: 0, mode: 'major' as const, bpm: c.bpm, seed: 7 };
+    const a = generateMotifWeave({ ...base, quotePlan: 'verseHeadsOnly' });
+    const b = generateMotifWeave({ ...base, quotePlan: 'phraseHeads' });
+    const sig = (r: typeof a) => r.lead.map((n) => `${n.midi}@${n.onsetBeat.toFixed(2)}`).join(',');
+    expect(sig(a)).toBe(sig(b)); // slot-plan 驱动 → quotePlan 不影响
   });
 });

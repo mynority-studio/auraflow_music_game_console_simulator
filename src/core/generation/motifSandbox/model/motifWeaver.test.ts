@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateMotifWeave } from './motifWeaver';
+import { generateMotifWeave, renderMelodicSlot } from './motifWeaver';
+import type { MelodicSlot, MelodicSlotFunction, UserMotifPolicy } from './melodicBrickTypes';
 import { generateSampleCaptured } from './motifAnalysis';
 import { isInScale } from './scale';
 import { quotedAt } from './jazzinessAudit';
@@ -12,17 +13,44 @@ const baseInput = (over: Partial<MotifWeaverInput> = {}): MotifWeaverInput => ({
   style: 'pop', keyPc: 0, mode: 'major', bpm: 96, seed: 7, ...over,
 });
 const sig = (lead: { midi: number; onsetBeat: number }[]) => lead.map((n) => `${n.midi}@${n.onsetBeat.toFixed(2)}`).join(',');
+// slot-plan 的 quote slot 起点(motif 原样落点;非固定 0/16/32/48)
+const quoteStarts = (r: ReturnType<typeof generateMotifWeave>): number[] =>
+  r.melodicSlotPlan!.userQuoteSlotIds.map((id) => r.melodicSlotPlan!.slots.find((s) => s.id === id)!.startBeat).sort((a, b) => a - b);
 
 describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
-  it('16 小节进行;第一槽 head = 原样 motif', () => {
+  it('16 小节进行;motif 原样落在 plan 的 quote slot(slot-plan 驱动)', () => {
     const r = generateMotifWeave(baseInput());
     expect(r.totalBars).toBe(16);
     expect(r.progression.reduce((n, c) => n + c.durationBeats, 0)).toBe(64); // 覆盖 16 bar(模板可含半小节 beats)
-    expect(r.audit.motifQuotedFirstCycle).toBe(true);
+    expect(r.audit.motifQuotedFirstCycle).toBe(true);  // 第一个 quote slot = 原样 motif
     const ref = fitRange(identity(r.motif.notes), 60, 84);
-    expect(quotedAt(r.lead, ref, 0)).toBe(true);       // 第一槽 = 原样 motif
-    expect(r.occurrences[0].kind).toBe('quote');
-    expect(r.occurrences[0].label).toBe('head');
+    const qs = quoteStarts(r);
+    expect(qs.length).toBeGreaterThanOrEqual(1);
+    for (const b of qs) expect(quotedAt(r.lead, ref, b), `quote@${b}`).toBe(true); // motif 原样落在每个 quote slot
+    expect(r.occurrences.some((o) => o.kind === 'quote')).toBe(true);
+  });
+
+  it('★ Phase5 renderMelodicSlot:mustQuote 原样 / mustDevelop 变形 / generatedOnly 跟和声(§8)', () => {
+    const r = generateMotifWeave(baseInput());
+    const motif = r.motif, prog = r.progression, brick = r.brick!;
+    const mkSlot = (policy: UserMotifPolicy, fn: MelodicSlotFunction, start = 0, dur = 8): MelodicSlot =>
+      ({ id: `s@${start}`, roadmapBrickId: 'b', startBeat: start, durationBeats: dur, requiredFunction: fn, userMotifPolicy: policy, lineage: {}, reason: '' });
+    const common = { userMotif: motif, userBrick: brick, progression: prog, previousNotes: [] as never[], seed: 7, keyPc: 0, mode: 'major' as const };
+    const base = fitRange(identity(motif.notes), 60, 84);
+    // mustQuote → 原样(occurrenceKind=quote,首音 = base 首音)
+    const q = renderMelodicSlot({ slot: mkSlot('mustQuote', 'opening'), ...common });
+    expect(q.notes.length).toBeGreaterThan(0);
+    expect(q.notes.every((n) => n.occurrenceKind === 'quote')).toBe(true);
+    expect(q.notes[0].midi).toBe(base[0].midi);
+    // mustDevelop → 变形(occurrenceKind=develop)
+    const d = renderMelodicSlot({ slot: mkSlot('mustDevelop', 'approach'), ...common });
+    expect(d.notes.length).toBeGreaterThan(0);
+    expect(d.notes.every((n) => n.occurrenceKind === 'develop')).toBe(true);
+    // generatedOnly → 连接(occurrenceKind=connect)且每音是当拍真实和声音(跟和声,不乱)
+    const g = renderMelodicSlot({ slot: mkSlot('generatedOnly', 'cadence'), ...common });
+    expect(g.notes.length).toBeGreaterThan(0);
+    expect(g.notes.every((n) => n.occurrenceKind === 'connect')).toBe(true);
+    for (const n of g.notes) expect(effectiveTonePcs(chordAtBeat(prog, n.onsetBeat)).includes(((n.midi % 12) + 12) % 12), `gen GM${n.midi}@${n.onsetBeat}`).toBe(true);
   });
 
   it('★ Phase4:weaver result 带 melodicSlotPlan(RoadMap 驱动,≥1 quote slot,每 slot 有 roadmapBrickId)', () => {
@@ -48,30 +76,25 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     expect(generateMotifWeave(baseInput()).progressionBeats).toBe(64);
   });
 
-  it('★ Phase1 无固定锚:24 bar 曲 quote 落点来自动态乐句头(0..80),非硬编 0/16/32/48', () => {
+  it('★ 无固定锚:24 bar 曲 quote 落点来自 RoadMap slot(非硬编 0/16/32/48),lead 不越界', () => {
     const r = generateMotifWeave(baseInput({ form: defaultSandboxForm(24) }));
     const ref = fitRange(identity(r.motif.notes), 60, 84);
-    // 24 bar = 6 乐句 → 乐句头 0,16,32,48,64,80 都应有原样复现(超出旧 16-bar 的 48)
-    for (const head of [0, 16, 32, 48, 64, 80]) {
-      expect(quotedAt(r.lead, ref, head), `乐句头@${head}`).toBe(true);
-    }
-    // 没有任何 lead 音越界(全在 96 拍内)
+    const qs = quoteStarts(r);
+    expect(qs.length).toBeGreaterThanOrEqual(1);
+    for (const b of qs) expect(quotedAt(r.lead, ref, b), `quote@${b}`).toBe(true);   // motif 落 plan slot
+    const brickStarts = new Set(r.roadmap!.brickSlots.map((b) => b.startBeat));
+    for (const b of qs) expect(brickStarts.has(b), `quote@${b} 来自 RoadMap brick`).toBe(true); // 来自 RoadMap,非固定锚
     expect(r.lead.every((n) => n.onsetBeat < 96)).toBe(true);
   });
 
-  it('★ 排比:原样 motif 在每个和弦进行乐句的【同一相对位置】(乐句头)都出现', () => {
+  it('★ 排比(结构性复现):motif 原样落在 plan 所有 quote slot;有发展', () => {
     for (let s = 1; s <= 12; s++) {
       const r = generateMotifWeave(baseInput({ seed: s }));
       const ref = fitRange(identity(r.motif.notes), 60, 84);
-      const motifBeats = r.motif.lengthBeats;            // sample = 4 拍(1 bar)
-      const phraseBeats = 16;                            // 乐句 = 4 bar
-      // 每个乐句头(0,16,32,48)都应原样复现 motif
-      for (let p = 0; p * phraseBeats < 64; p++) {
-        expect(quotedAt(r.lead, ref, p * phraseBeats), `seed${s} 乐句${p}`).toBe(true);
-      }
-      // 应答区(乐句头 motif 之后)应有【发展】音,而非又一个原样复制
-      expect(r.occurrences.some((o) => o.kind === 'develop'), `seed${s} 有应答发展`).toBe(true);
-      expect(motifBeats).toBeLessThanOrEqual(phraseBeats);
+      const qs = quoteStarts(r);
+      expect(qs.length, `seed${s} ≥1 quote`).toBeGreaterThanOrEqual(1);
+      for (const b of qs) expect(quotedAt(r.lead, ref, b), `seed${s} quote@${b}`).toBe(true); // 结构等价 brick 上再现
+      expect(r.occurrences.some((o) => o.kind === 'develop'), `seed${s} 有发展`).toBe(true);
     }
   });
 

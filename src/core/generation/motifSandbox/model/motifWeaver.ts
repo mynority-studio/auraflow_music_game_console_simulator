@@ -26,7 +26,7 @@ import { inferHarmonyIntent } from './melodicBrickHarmonyIntent';
 import { selectProgressionForMotif } from './motifProgressionSelector';
 import { realizeToSandboxChords, buildMotifRoadmap } from './motifRoadmap';
 import { buildMelodicSlotPlanFromRoadMap } from './melodicSlotPlanner';
-import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap, MelodicSlotPlan } from './melodicBrickTypes';
+import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap, MelodicSlotPlan, MelodicSlot } from './melodicBrickTypes';
 import { chordAtBeat, nearestChordTone, isChordTone, type SandboxChord } from './chords';
 import { auditMotifWeave } from './jazzinessAudit';
 import { makeRng, type SeededRng } from './rng';
@@ -158,6 +158,72 @@ function adaptToHarmony(notes: MotifNote[], progression: readonly SandboxChord[]
   }
 }
 
+// ============================================================
+// Phase 5:slot-plan 驱动渲染(renderMelodicSlot)—— weaver 从"自己排乐句"变成"填 RoadMap 派生的 slot"
+// ============================================================
+const LEAD_BAND = (base: readonly MotifNote[]): { lo: number; hi: number } => {
+  const refLow = Math.min(...base.map((n) => n.midi));
+  const refHigh = Math.max(...base.map((n) => n.midi));
+  return { lo: Math.max(LEAD_LOW - 1, refLow - 1), hi: Math.min(LEAD_HIGH + 2, refHigh + 4) };
+};
+const hashId = (s: string): number => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+
+/** cadence slot 且 motif 比 slot 长 → 取 motif【结构尾片段】(末 span 拍),re-anchor 到 slot(§8)。 */
+function placeMotifTail(base: readonly MotifNote[], atBeat: number, span: number, motifBeats: number, slotIndex: number): MotifNote[] {
+  const from = motifBeats - span;
+  const out: MotifNote[] = [];
+  for (const n of base) {
+    if (n.onsetBeat < from - 1e-6) continue;
+    const off = n.onsetBeat - from;
+    out.push({ ...n, onsetBeat: atBeat + off, durationBeat: Math.min(n.durationBeat, span - off), occurrenceKind: 'quote', slotIndex });
+  }
+  return out;
+}
+
+/** 渲染单个旋律 slot(directive §8)。返回音符 + 发展标签(供 occurrence/审计统计发展手法多样性)。
+ *  mustQuote=原样(过长且 cadence 取尾) · mustDevelop=变形 · mayReference=节奏轮廓片段 · generatedOnly=按功能生成。 */
+export function renderMelodicSlot(args: {
+  slot: MelodicSlot;
+  userMotif: UserMotif;
+  userBrick: UserMelodicBrick;
+  progression: readonly SandboxChord[];
+  previousNotes: readonly MotifNote[];
+  seed: number;
+  keyPc: number;
+  mode: ScaleMode;
+  avoidLabel?: string;
+}): { notes: MotifNote[]; label: string } {
+  const { slot, userMotif, progression, previousNotes, keyPc, mode } = args;
+  const base = fitRange(identity(userMotif.notes), LEAD_LOW, LEAD_HIGH);
+  if (!base.length) return { notes: [], label: 'empty' };
+  const { lo: bandLo, hi: bandHi } = LEAD_BAND(base);
+  const motifBeats = Math.max(...base.map((n) => n.onsetBeat + n.durationBeat));
+  const prevMidi = previousNotes.length ? previousNotes[previousNotes.length - 1].midi : base[0].midi;
+  const rng = makeRng((args.seed ^ hashId(slot.id)) >>> 0);
+  const at = slot.startBeat, span = slot.durationBeats, idx = Math.round(at / BAR);
+
+  switch (slot.userMotifPolicy) {
+    case 'mustQuote': {
+      if (slot.requiredFunction === 'cadence' && motifBeats > span + 1e-6) return { notes: placeMotifTail(base, at, span, motifBeats, idx), label: 'quote:tail' };
+      return { notes: placeQuoteVerbatim(base, at, Math.min(motifBeats, span), idx), label: 'quote' };
+    }
+    case 'mustDevelop': {
+      const { ops, label } = pickDevOps(rng, args.avoidLabel ?? ''); // 复用现有发展手法(模进/倒影/逆行 + 节奏)
+      const notes = placeStatement(base, ops, at, span, idx, 'develop', prevMidi, bandLo, bandHi, keyPc, mode);
+      adaptToHarmony(notes, progression);
+      return { notes, label };
+    }
+    case 'mayReference': {
+      const notes = placeStatement(base, [{ t: 'fragment', keep: 0.5 }], at, span, idx, 'develop', prevMidi, bandLo, bandHi, keyPc, mode); // 节奏/轮廓片段(轻引用)
+      adaptToHarmony(notes, progression);
+      return { notes, label: 'ref:frag' };
+    }
+    case 'generatedOnly':
+    default:
+      return { notes: placeConnect(at, span, idx, progression, prevMidi), label: `gen:${slot.requiredFunction}` }; // 按功能生成(连接长音,跟和声)
+  }
+}
+
 /** 应答区(乐句里 motif 之后那段):铺【developed motif 序列】(模进/倒影… → 续写),偶尔连接留白(透气)。
  *  首个实例恒为发展(保证每乐句都有发展),其余按概率 develop/connect。 */
 function fillAnswer(base: readonly MotifNote[], startBeat: number, span: number, motifBeats: number, progression: readonly SandboxChord[], rng: SeededRng, avoidLabel: string, fromMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode, slotIndex: number): { notes: MotifNote[]; label: string; lastMidi: number; avoid: string } {
@@ -279,7 +345,6 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   }
 
   // ★ Phase 4:RoadMap brick slots → 旋律 slot 计划(motif 按功能落位 + 结构性复现)。
-  //   此 PR 仅【产出 + 暴露给 UI/result】供检阅;Phase 5 才让 weaver 据它填充(现仍走乐句循环)。
   let melodicSlotPlan: MelodicSlotPlan | undefined;
   if (roadmap) melodicSlotPlan = buildMelodicSlotPlanFromRoadMap({ form, roadmapBricks: roadmap.brickSlots, userBrick: brick, seed: input.seed });
 
@@ -293,48 +358,60 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const lead: MotifNote[] = [];
   const occurrences: MotifOccurrence[] = [];
   const arc: string[] = [];
-  let prevLastMidi = base[0].midi;
-  let avoidLabel = '';
-  const verseHeads = new Set([0, Math.floor(numPhrases / 2)]); // verse1/verse2 头(verseHeadsOnly 用)
 
-  // 逐【和弦进行乐句】:① 乐句头陈述(排比=每句原样 / verseHeadsOnly=只 verse 头原样,其余发展)② 应答区【发展/续写】。
-  for (let p = 0; p < numPhrases; p++) {
-    const phraseStart = p * phraseBeats;
-    if (phraseStart >= targetBeats - 1e-6) break;
-    const span = Math.min(motifBeats, targetBeats - phraseStart);
-    // ① 乐句头陈述
-    const verbatim = quotePlan === 'phraseHeads' || verseHeads.has(p);
-    let stmt: MotifNote[];
-    let stmtKind: MotifOccurrence['kind'];
-    let stmtLabel: string;
-    if (verbatim) {
-      stmt = placeQuoteVerbatim(base, phraseStart, span, p); // 相位锁定原样(排比)
-      stmtKind = 'quote';
-      stmtLabel = p === 0 ? 'head' : verseHeads.has(p) ? 'verse2' : p === numPhrases - 1 ? 'recap' : 'restate';
-    } else {
-      const dev = pickDevOps(rng, avoidLabel); avoidLabel = dev.label; // 非 verse 头 → 发展陈述
-      stmt = placeStatement(base, dev.ops, phraseStart, span, p, 'develop', prevLastMidi, bandLo, bandHi, keyPc, mode);
-      adaptToHarmony(stmt, progression);
-      stmtKind = 'develop';
-      stmtLabel = `head:${dev.label}`;
+  if (melodicSlotPlan && melodicSlotPlan.slots.length) {
+    // ★ Phase 5:slot-plan 驱动 —— 遍历 RoadMap 派生的旋律 slot,逐 slot 填充(motif 按功能落位)。
+    let avoidLabel = '';
+    for (const slot of melodicSlotPlan.slots) {
+      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel });
+      if (!notes.length) continue;
+      if (slot.userMotifPolicy === 'mustDevelop') avoidLabel = label; // 发展手法尽量不连同
+      const kind: MotifOccurrence['kind'] = slot.userMotifPolicy === 'mustQuote' ? 'quote' : slot.userMotifPolicy === 'generatedOnly' ? 'connect' : 'develop';
+      lead.push(...notes);
+      occurrences.push({ motifId: motif.id, startBeat: slot.startBeat, slotIndex: Math.round(slot.startBeat / BAR), kind, label, chordRoman: (chordAtBeat(progression, slot.startBeat) ?? progression[0]).roman });
+      arc.push(label);
     }
-    if (stmt.length) {
-      lead.push(...stmt);
-      occurrences.push({ motifId: motif.id, startBeat: phraseStart, slotIndex: p, kind: stmtKind, label: stmtLabel, chordRoman: (chordAtBeat(progression, phraseStart) ?? progression[0]).roman });
-      arc.push(stmtLabel);
-      prevLastMidi = stmt[stmt.length - 1].midi;
-    }
-    // ② 应答(乐句里 motif 之后那段,每句变化 = 续写)
-    const ansStart = phraseStart + motifBeats;
-    if (answerBeats > 0 && ansStart < targetBeats - 1e-6) {
-      const ans = fillAnswer(base, ansStart, Math.min(answerBeats, targetBeats - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p);
-      if (ans.notes.length) {
-        lead.push(...ans.notes);
-        const hasDev = ans.notes.some((n) => n.occurrenceKind === 'develop');
-        occurrences.push({ motifId: motif.id, startBeat: ansStart, slotIndex: p, kind: hasDev ? 'develop' : 'connect', label: ans.label, chordRoman: (chordAtBeat(progression, ansStart) ?? progression[0]).roman });
-        arc.push(ans.label);
-        prevLastMidi = ans.lastMidi;
-        avoidLabel = ans.avoid;
+  } else {
+    // —— Fallback:旧【乐句循环】(无 slot plan / 和声兜底时)——
+    let prevLastMidi = base[0].midi;
+    let avoidLabel = '';
+    const verseHeads = new Set([0, Math.floor(numPhrases / 2)]); // verse1/verse2 头(verseHeadsOnly 用)
+    for (let p = 0; p < numPhrases; p++) {
+      const phraseStart = p * phraseBeats;
+      if (phraseStart >= targetBeats - 1e-6) break;
+      const span = Math.min(motifBeats, targetBeats - phraseStart);
+      const verbatim = quotePlan === 'phraseHeads' || verseHeads.has(p);
+      let stmt: MotifNote[];
+      let stmtKind: MotifOccurrence['kind'];
+      let stmtLabel: string;
+      if (verbatim) {
+        stmt = placeQuoteVerbatim(base, phraseStart, span, p);
+        stmtKind = 'quote';
+        stmtLabel = p === 0 ? 'head' : verseHeads.has(p) ? 'verse2' : p === numPhrases - 1 ? 'recap' : 'restate';
+      } else {
+        const dev = pickDevOps(rng, avoidLabel); avoidLabel = dev.label;
+        stmt = placeStatement(base, dev.ops, phraseStart, span, p, 'develop', prevLastMidi, bandLo, bandHi, keyPc, mode);
+        adaptToHarmony(stmt, progression);
+        stmtKind = 'develop';
+        stmtLabel = `head:${dev.label}`;
+      }
+      if (stmt.length) {
+        lead.push(...stmt);
+        occurrences.push({ motifId: motif.id, startBeat: phraseStart, slotIndex: p, kind: stmtKind, label: stmtLabel, chordRoman: (chordAtBeat(progression, phraseStart) ?? progression[0]).roman });
+        arc.push(stmtLabel);
+        prevLastMidi = stmt[stmt.length - 1].midi;
+      }
+      const ansStart = phraseStart + motifBeats;
+      if (answerBeats > 0 && ansStart < targetBeats - 1e-6) {
+        const ans = fillAnswer(base, ansStart, Math.min(answerBeats, targetBeats - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p);
+        if (ans.notes.length) {
+          lead.push(...ans.notes);
+          const hasDev = ans.notes.some((n) => n.occurrenceKind === 'develop');
+          occurrences.push({ motifId: motif.id, startBeat: ansStart, slotIndex: p, kind: hasDev ? 'develop' : 'connect', label: ans.label, chordRoman: (chordAtBeat(progression, ansStart) ?? progression[0]).roman });
+          arc.push(ans.label);
+          prevLastMidi = ans.lastMidi;
+          avoidLabel = ans.avoid;
+        }
       }
     }
   }

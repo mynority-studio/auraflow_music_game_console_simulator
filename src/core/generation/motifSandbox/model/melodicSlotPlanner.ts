@@ -97,25 +97,29 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
     warnings.push('RoadMap 无复现 brick → motif 回退句头排比(保记忆点)');
   }
 
-  // ⑤ 逐 slot 定策略 + lineage + reason。
+  // ⑤ 逐 slot 定策略 + lineage + reason。directive:generatedOnly 是【例外】(只在 motif 会抵触
+  //   RoadMap 功能时)—— 即【曲尾终止】要干净解决;其余非 quote slot 一律发展/引用 motif(续写主体)。
+  const lastBrickId = pairs[pairs.length - 1].brick.id;
   for (const p of pairs) {
-    const isQuote = quoteIds.has(p.brick.id);
-    if (isQuote) {
+    const fn = p.slot.requiredFunction;
+    if (quoteIds.has(p.brick.id)) {
       p.slot.userMotifPolicy = 'mustQuote';
       p.slot.lineage = { sourceMotifId: userBrick.sourceMotifId, transform: 'quote' };
       p.slot.reason = `quote@${p.brick.type}${recurringIds.size >= 2 ? '(recur)' : '(phraseHead)'}`;
-    } else if (p.brick.type === best.brick.type) {
-      p.slot.userMotifPolicy = 'mustDevelop';
-      p.slot.lineage = { sourceMotifId: userBrick.sourceMotifId, parentSlotId: best.slot.id, transform: devTransform(p.slot.requiredFunction) };
-      p.slot.reason = `develop@${p.brick.type}`;
-    } else if (p.slot.requiredFunction === 'answer' || p.slot.requiredFunction === 'continuation') {
+    } else if (fn === 'cadence' && p.brick.id === lastBrickId) {
+      // 仅【曲尾终止】不接 motif → 干净生成解决(motif 强行落最终终止会抵触收束)。
+      p.slot.userMotifPolicy = 'generatedOnly';
+      p.slot.lineage = { transform: 'none' };
+      p.slot.reason = `generated@${p.brick.type}`;
+    } else if (fn === 'answer' || fn === 'continuation') {
       p.slot.userMotifPolicy = 'mayReference';
       p.slot.lineage = { sourceMotifId: userBrick.sourceMotifId, parentSlotId: best.slot.id, transform: 'answer' };
       p.slot.reason = `reference@${p.brick.type}`;
     } else {
-      p.slot.userMotifPolicy = 'generatedOnly';
-      p.slot.lineage = { transform: 'none' };
-      p.slot.reason = `generated@${p.brick.type}`;
+      // 其余(opening/approach/fill/中段 cadence)→ 发展 motif(模进/倒影/片段/cadenceTail)= 续写主体。
+      p.slot.userMotifPolicy = 'mustDevelop';
+      p.slot.lineage = { sourceMotifId: userBrick.sourceMotifId, parentSlotId: best.slot.id, transform: devTransform(fn) };
+      p.slot.reason = `develop@${p.brick.type}`;
     }
   }
 

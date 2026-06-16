@@ -50,9 +50,11 @@ export function auditMotifWeave(
   const jazzinessScore = Math.min(1, (sorted.length ? unjustifiedChromatic / sorted.length : 0) * 0.6 + (sorted.length ? dense / sorted.length : 0) * 0.3 + Math.min(1, Math.max(0, maxLeap - 9) / 8) * 0.1);
 
   // ★ 按【实际 quote 单元】校验(长 motif 会缩成 ≤2 小节子动机)—— 否则用完整 motif 会误报 ✗。
+  //   slot-plan 驱动后 quote 落点来自 RoadMap(不一定 beat0;短 brick 会裁剪)→ 只要【某个 quote
+  //   occurrence】原样含完整 quote 单元即算成立(旧乐句循环=beat0 也满足)。
   const qBeats = ctx.quoteBeats ?? Infinity;
   const refQuote = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH).filter((n) => n.onsetBeat < qBeats - 1e-6);
-  const motifQuotedFirstCycle = quotedAt(lead, refQuote, 0);
+  const motifQuotedFirstCycle = occurrences.filter((o) => o.kind === 'quote').some((o) => quotedAt(lead, refQuote, o.startBeat));
 
   const themeStatements = occurrences.filter((o) => o.kind === 'quote' || o.kind === 'develop').length;
   const developVariants = new Set(occurrences.filter((o) => o.kind === 'develop').map((o) => o.label)).size;
