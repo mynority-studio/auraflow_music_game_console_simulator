@@ -58,7 +58,10 @@ export function scoreProgressionAgainstMelodicBrick(
     if (frac < 0.5 && t.weight >= 0.6) strongNonChord += t.weight * (1 - frac); // 多数锚点撞和弦
   }
 
-  const headFit = brick.head && slotRealPcs(slotAtBeat(slots, 0), keyPc).includes(mod12(brick.head.midi)) ? 0.5 : 0;
+  // head/tail 现在恒为【结构音骨架】首尾(melodicBrickAnalyzer P1)→ 不会是经过音;再按结构权重降权
+  //   (低结构分 head/tail 影响小,高结构分主导)。
+  const headFit = brick.head && slotRealPcs(slotAtBeat(slots, 0), keyPc).includes(mod12(brick.head.midi))
+    ? 0.5 * Math.max(0.3, brick.head.weight) : 0;
 
   let tailFit = 0;
   if (brick.tail) {

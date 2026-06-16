@@ -37,7 +37,8 @@ function roleOf(i: number, last: number, n: UserMotif['notes'][number], midis: n
   return 'long';
 }
 
-function cadenceMotionOf(notes: UserMotif['notes']): CadenceMotion | null {
+/** cadence motion 从【结构音骨架】末两音算(P1:不被末尾短弱经过音翻盘)。接受 MotifNote 或 StructuralMelodyTone。 */
+function cadenceMotionOf(notes: readonly { scaleDegree: number; midi: number }[]): CadenceMotion | null {
   if (notes.length < 2) return null;
   const a = notes[notes.length - 2].scaleDegree, b = notes[notes.length - 1].scaleDegree;
   const interval = Math.abs(notes[notes.length - 1].midi - notes[notes.length - 2].midi);
@@ -130,19 +131,24 @@ export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): 
   }));
   const isStructural = (n: UserMotif['notes'][number]): boolean => (n.structuralToneScore ?? n.accent) >= STRUCTURAL_TONE_MIN;
   let structuralTones = allTones.filter((_, i) => isStructural(notes[i]));
-  // 兜底:结构音太少 → 至少保留 head + tail,再按 toneWeight 补到 2(避免 cadence/head/tail 逻辑失效)。
+  // 兜底(P2):从【已有结构音】起步(绝不丢真实结构音),再补 head + tail,按 toneWeight 顶到 ≥2。
   if (structuralTones.length < 2 && allTones.length) {
-    const keep = new Set<StructuralMelodyTone>([allTones[0], allTones[allTones.length - 1]]);
+    const keep = new Set<StructuralMelodyTone>(structuralTones);     // 先保住已过滤出的真实结构音
+    keep.add(allTones[0]); keep.add(allTones[allTones.length - 1]);  // 再补旋律首尾
     for (const t of [...allTones].sort((a, b) => b.weight - a.weight)) { if (keep.size >= 2) break; keep.add(t); }
     structuralTones = allTones.filter((t) => keep.has(t)); // 保持 onset 顺序
   }
-  const head = allTones[0] ?? null;                       // 真实旋律首音(始终保留为结构候选)
-  const tail = allTones[allTones.length - 1] ?? null;     // 真实旋律尾音
-  const cadenceMotion = cadenceMotionOf(notes);
+  // ★ P1:head/tail/cadence/功能分类全用【结构音骨架】—— 经过音(尤其末尾短弱音)不主导分类,
+  //   已解决的 motif 不被误判成 opening/approach。allTones 仅供轮廓/节奏/调试。
+  const head = structuralTones[0] ?? null;
+  const tail = structuralTones[structuralTones.length - 1] ?? null;
+  const cadenceMotion = cadenceMotionOf(structuralTones);
+  const structContour: number[] = [];
+  for (let i = 1; i < structuralTones.length; i++) structContour.push(Math.sign(structuralTones[i].midi - structuralTones[i - 1].midi));
+  const functions = scoreFunctions(structuralTones, head, tail, cadenceMotion, structContour);
+  // 存储的 contour/rhythm = 完整旋律(轮廓身份/调试用),不受结构过滤影响。
   const contour: number[] = [];
   for (let i = 1; i < notes.length; i++) contour.push(Math.sign(notes[i].midi - notes[i - 1].midi));
-  // 功能分类看【旋律形状】用 allTones(轮廓/琶音身份不因结构过滤而变);和声贴合在 scorer 里只看 structuralTones。
-  const functions = scoreFunctions(allTones, head, tail, cadenceMotion, contour);
 
   return {
     id: `brick-${motif.id}`,

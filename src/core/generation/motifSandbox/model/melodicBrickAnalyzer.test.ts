@@ -80,6 +80,31 @@ describe('motifSandbox/melodicBrickAnalyzer(brick 功能分类)', () => {
     expect(b.structuralTones.length).toBe(2);
   });
 
+  it('★ P1:末尾短弱经过音不翻盘 —— 已解决 motif 仍判 cadence(分类用结构音骨架,不用 allTones 末音)', () => {
+    const keyPc = 0;
+    const mk = (d: number, on: number, du: number, sts: number) => ({ midi: degreeOctaveToMidi(d, 5, keyPc, 'major' as const), onsetBeat: on, durationBeat: du, velocity: 0.6, scaleDegree: d, octave: 5, accent: 0.5, structuralToneScore: sts });
+    const notes = [mk(3, 0, 1, 0.7), mk(2, 1, 1, 0.7), mk(1, 2, 1.5, 0.95), mk(2, 3.5, 0.5, 0.30)]; // 3-2-1 解决 + 末 deg2 短弱经过音
+    const contour = notes.slice(1).map((n, i) => Math.sign(n.midi - notes[i].midi));
+    const m: UserMotif = { id: 'm', keyPc, mode: 'major', bpm: 96, notes, lengthBeats: 4, contour, rhythmCell: notes.map((n) => n.durationBeat), createdAt: 0 };
+    const b = analyzeUserMelodicBrick(m);
+    expect(b.tail?.scaleDegree).toBe(1);                 // 结构尾 = 解决音 1(非末尾经过音 2)
+    expect(b.tail?.onsetBeat).toBe(2);
+    expect(b.cadenceMotion?.pattern).toBe('2-1');        // cadence 来自结构骨架 3-2-1
+    expect(['cadence', 'resolution']).toContain(b.primaryFunction);
+    expect(b.allTones.length).toBe(4);                   // allTones 仍保全部(含经过音)
+  });
+
+  it('★ P2 兜底:唯一的中间强结构音不被 head/tail 挤掉(从已有结构音起步)', () => {
+    const keyPc = 0;
+    const mk = (d: number, on: number, du: number, sts: number) => ({ midi: degreeOctaveToMidi(d, 5, keyPc, 'major' as const), onsetBeat: on, durationBeat: du, velocity: 0.5, scaleDegree: d, octave: 5, accent: 0.4, structuralToneScore: sts });
+    const notes = [mk(1, 0, 1, 0.45), mk(5, 1, 2, 0.9), mk(3, 3, 1, 0.42)]; // 首尾弱(经过),中间 deg5 唯一强结构
+    const m: UserMotif = { id: 'm', keyPc, mode: 'major', bpm: 96, notes, lengthBeats: 4, contour: [1, -1], rhythmCell: [1, 2, 1], createdAt: 0 };
+    const b = analyzeUserMelodicBrick(m);
+    expect(b.structuralTones.some((t) => t.scaleDegree === 5 && t.onsetBeat === 1)).toBe(true); // 真实结构音保留(旧逻辑会挤掉)
+    expect(b.structuralTones.some((t) => t.onsetBeat === 0)).toBe(true); // head 补入
+    expect(b.structuralTones.some((t) => t.onsetBeat === 3)).toBe(true); // tail 补入
+  });
+
   it('★ directive#5 兜底:结构音不足 → 至少保留 head + tail(补到 2)', () => {
     const keyPc = 0;
     const mk = (d: number, on: number, du: number, sts: number) => ({
