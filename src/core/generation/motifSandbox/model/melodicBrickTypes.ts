@@ -104,6 +104,7 @@ export interface MotifMelodicSlot {
 
 export interface MotifMelodicRoadmap {
   totalBars: number;
-  harmonicRomans: string[];     // 每和弦槽的 roman(选中模板,调试用)
+  harmonicRomans: string[];     // 每小节 roman(选中模板真 roman,调试用)
+  harmonicBricks?: import('../../newEngine/render/mgRoadMapParser').BrickMatch[]; // 真 RoadMap(slots→ChordPart→parseRoadMap)
   melodicSlots: MotifMelodicSlot[];
 }

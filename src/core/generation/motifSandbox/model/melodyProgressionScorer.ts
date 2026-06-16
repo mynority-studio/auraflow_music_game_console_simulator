@@ -62,8 +62,13 @@ export function scoreProgressionAgainstMelodicBrick(
   if (intent.cadenceNeed === 'none' && (cad === 'open' || cad === 'loop')) cadenceFit += 0.3;
   if (intent.cadenceNeed === 'strong' && (cad === 'open' || cad === 'loop')) cadenceFit -= 0.35; // 要强收却给开放
 
-  // 功能弧:进行含 S 和 D(不全 T)
-  const funcs = new Set(slots.map((s) => s.effectiveFunc).filter(Boolean));
+  // 功能弧:进行含 S 和 D(不全 T)。多数 slot 无 effectiveFunc → 从级数推(1/3/6=T,2/4=S,5/7=D)。
+  const slotFunc = (s: ProgressionSlot): 'T' | 'S' | 'D' => {
+    if (s.effectiveFunc) return s.effectiveFunc;
+    const d = deg17(s.scaleDegree);
+    return d === 5 || d === 7 ? 'D' : d === 2 || d === 4 ? 'S' : 'T';
+  };
+  const funcs = new Set(slots.map(slotFunc));
   const functionArcFit = (funcs.has('S') ? 0.25 : 0) + (funcs.has('D') ? 0.35 : 0);
 
   // 乐句循环:lengthBars 整除 16 → 干净 4/8/16 循环

@@ -9,12 +9,19 @@ import { SCALE_INTERVALS } from './scale';
 
 export interface SandboxChord {
   degree: number;          // 1..7(调内级)
-  rootPc: number;          // 0..11
+  rootPc: number;          // 0..11(调内三和弦根)
   toneDegrees: number[];   // 三和弦的 scale degree(如 I=[1,3,5])
-  tonePcs: number[];       // 三和弦音的 pc
-  roman: string;           // 'I' / 'vi' / 'IV' / 'V' / 'ii°'…
+  tonePcs: number[];       // 调内三和弦音的 pc —— ★ 旋律 adapt/nearestChordTone 用它(保调内)
+  roman: string;           // 调内 roman 'I' / 'vi' / 'IV' / 'V' / 'ii°'…
   startBeat: number;
   durationBeats: number;
+  // —— 选中模板的【真实和声】(保留 rootOffset/type/borrowed/secondary;伴奏 + RoadMap + UI 用)——
+  realRoman?: string;      // 真 roman(如 'V/vi')
+  realType?: string;       // 和弦类型串(如 '7b9' / 'm7')
+  realRootPc?: number;     // 真根 pc(含 rootOffset 的半音)
+  realTonePcs?: number[];  // 真和弦音 pc(含七/九/borrowed)
+  borrowedSource?: string; // secondary_dominant / modal_interchange …
+  effectiveFunc?: 'T' | 'S' | 'D';
 }
 
 const mod = (n: number, m: number): number => ((n % m) + m) % m;

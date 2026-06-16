@@ -26,15 +26,20 @@ const BASS_PROGRAM: Record<SandboxStyle, number> = { pop: 33, lofi: 33, rnb: 33,
 const DEFAULT_STRUCT: Record<SandboxStyle, number[]> = { pop: [2], lofi: [], rnb: [1.5, 2.5], jazz: [] };
 const SUPPORT_MIN = 0.58; // 视为【骨干/重音】的支点阈值(取 accent 与 structuralToneScore 的较大者)
 
-/** 三和弦闭合排列(root 落 comp 音区底,三/五度叠上);comp 区 ≈ [48,67]。 */
+// ★ 伴奏奏【真实和声】(realRootPc/realTonePcs;含 secondary/borrowed)。缺真字段(老 buildProgression)→ 回退调内。
+const chRootPc = (c: SandboxChord): number => c.realRootPc ?? c.rootPc;
+const chTonePcs = (c: SandboxChord): readonly number[] => c.realTonePcs ?? c.tonePcs;
+
+/** 闭合排列(root 落 comp 音区底,3/5/(7) 叠上;comp 不堆满张力 → 取前 4 音);comp 区 ≈ [48,67]。 */
 function triadVoicing(chord: SandboxChord): number[] {
-  const rootBase = 48 + mod(chord.rootPc, 12);
-  const tones = chord.tonePcs.map((pc) => rootBase + mod(pc - chord.rootPc, 12));
+  const rootPc = chRootPc(chord);
+  const rootBase = 48 + mod(rootPc, 12);
+  const tones = chTonePcs(chord).slice(0, 4).map((pc) => rootBase + mod(pc - rootPc, 12));
   return Array.from(new Set(tones)).sort((a, b) => a - b);
 }
 
 /** 低音根音(bass 区 ≈ [36,47])。 */
-function bassRoot(chord: SandboxChord): number { return 36 + mod(chord.rootPc, 12); }
+function bassRoot(chord: SandboxChord): number { return 36 + mod(chRootPc(chord), 12); }
 
 function compChord(voicing: number[], onsetBeat: number, durationBeat: number, vel: number): AccompNote[] {
   return voicing.map((midi) => ({ midi, onsetBeat, durationBeat, velocity: vel }));
@@ -76,8 +81,9 @@ export function buildAccompaniment(progression: readonly SandboxChord[], style: 
 
     if (style === 'jazz') {
       comp.push(...compChord(v, start, 0.7, jit(0.46)), ...compChord(v, start + 1.5, 1.2, jit(0.42))); // Charleston
-      const third = root + mod(ch.tonePcs[1] - ch.rootPc, 12);
-      const fifthB = root + mod(ch.tonePcs[2] - ch.rootPc, 12);
+      const real = chTonePcs(ch), rpc = chRootPc(ch);
+      const third = root + mod((real[1] ?? rpc + 4) - rpc, 12);  // 本和弦真实三度
+      const fifthB = root + mod((real[2] ?? rpc + 7) - rpc, 12); // 真实五度
       const walk = [root, third, fifthB, nextRoot - 1]; // 四分走音覆盖全拍 → 天然对齐
       for (let b = 0; b < 4; b++) bass.push({ midi: walk[b], onsetBeat: start + b, durationBeat: 0.95, velocity: jit(0.6) });
       continue;

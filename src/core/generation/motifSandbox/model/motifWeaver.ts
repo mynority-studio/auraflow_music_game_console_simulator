@@ -260,13 +260,17 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const brick: UserMelodicBrick = analyzeUserMelodicBrick(motif, motifBeats);
   let selected: SelectedMotifProgression | null = null;
   let roadmap: MotifMelodicRoadmap | null = null;
+  let harmonySource: 'template' | 'fallback' = 'fallback';
+  let harmonyError: string | undefined;
   let progression: SandboxChord[];
   try {
     selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars: TARGET_BARS });
-    progression = realizeToSandboxChords(selected.slots, keyPc, mode, TARGET_BARS);
-    roadmap = buildMotifRoadmap(selected, brick, motifBeats, TARGET_BARS);
-  } catch {
-    progression = buildProgression(motif, keyPc, mode, TARGET_BARS);
+    progression = realizeToSandboxChords(selected.slots, keyPc, mode);
+    roadmap = buildMotifRoadmap(selected, brick, motifBeats, keyPc, mode, TARGET_BARS);
+    harmonySource = 'template';
+  } catch (err) {
+    progression = buildProgression(motif, keyPc, mode, TARGET_BARS); // 兜底(不静默:harmonySource=fallback + error 暴露给 UI)
+    harmonyError = err instanceof Error ? err.message : String(err);
   }
 
   // base = 原样 motif 落 lead 音区;音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
@@ -330,5 +334,5 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS, quoteBeats: motifBeats });
-  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap };
+  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError };
 }

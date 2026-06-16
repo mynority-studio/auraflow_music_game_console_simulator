@@ -21,15 +21,17 @@ describe('motifSandbox/motifRoadmap(实现 + 旋律 roadmap)', () => {
   const brick = analyzeUserMelodicBrick(motif([3, 2, 1], [1, 1, 2]));
   const selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: 'pop', mode: 'major', keyPc: 0, seed: 7 });
 
-  it('realizeToSandboxChords:16 个和弦、每小节一个、startBeat 对齐', () => {
-    const chords = realizeToSandboxChords(selected.slots, 0, 'major', 16);
-    expect(chords.length).toBe(16);
-    for (let i = 0; i < 16; i++) { expect(chords[i].startBeat).toBe(i * 4); expect(chords[i].durationBeats).toBe(4); }
+  it('realizeToSandboxChords:覆盖 16 bar(64 拍)、保真实和声、非退化', () => {
+    const chords = realizeToSandboxChords(selected.slots, 0, 'major');
+    expect(chords.reduce((n, c) => n + c.durationBeats, 0)).toBe(64); // 覆盖满 16 bar(含半小节 beats)
+    expect(chords[0].startBeat).toBe(0);
     expect(new Set(chords.map((c) => c.degree)).size).toBeGreaterThanOrEqual(3); // 非退化
+    for (const c of chords) { expect(c.realRoman).toBeTruthy(); expect(c.realTonePcs?.length).toBeGreaterThanOrEqual(2); } // 真实和声保留
   });
 
-  it('buildMotifRoadmap:userBrick 锚 0/16/32/48 + 之后应答槽、不重叠、16 bar', () => {
-    const rm = buildMotifRoadmap(selected, brick, 4, 16);
+  it('buildMotifRoadmap:真 RoadMap(harmonicBricks)+ userBrick 锚 0/16/32/48 + 应答槽、不重叠', () => {
+    const rm = buildMotifRoadmap(selected, brick, 4, 0, 'major', 16);
+    expect(Array.isArray(rm.harmonicBricks)).toBe(true); // parseRoadMap 出真 BrickMatch
     expect(rm.totalBars).toBe(16);
     expect(rm.harmonicRomans.length).toBe(16);
     const anchors = rm.melodicSlots.filter((s) => s.role === 'userBrick').map((s) => s.startBeat);

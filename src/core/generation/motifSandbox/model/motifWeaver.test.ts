@@ -16,7 +16,7 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
   it('16 小节进行;第一槽 head = 原样 motif', () => {
     const r = generateMotifWeave(baseInput());
     expect(r.totalBars).toBe(16);
-    expect(r.progression.length).toBe(16);
+    expect(r.progression.reduce((n, c) => n + c.durationBeats, 0)).toBe(64); // 覆盖 16 bar(模板可含半小节 beats)
     expect(r.audit.motifQuotedFirstCycle).toBe(true);
     const ref = fitRange(identity(r.motif.notes), 60, 84);
     expect(quotedAt(r.lead, ref, 0)).toBe(true);       // 第一槽 = 原样 motif
@@ -100,6 +100,16 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     const lastOnset = Math.max(...r.lead.map((n) => n.onsetBeat));
     expect(lastOnset, '末音应落在后段(≥ 第 13 小节)').toBeGreaterThanOrEqual(48);
     expect(lastOnset).toBeLessThan(64);
+  });
+
+  it('★ brick 驱动和声:模板路径 + 保真实和声(realRoman/realTonePcs)+ 真 RoadMap bricks', () => {
+    const r = generateMotifWeave(baseInput());
+    expect(r.harmonySource).toBe('template');        // 走模板,不静默兜底
+    expect(r.harmonyError).toBeUndefined();
+    expect(r.selectedProgression?.prototypeId).toBeTruthy();
+    for (const c of r.progression) { expect(c.realRoman).toBeTruthy(); expect(c.realTonePcs?.length).toBeGreaterThanOrEqual(2); } // 真和弦数据保留
+    expect((r.roadmap?.harmonicBricks?.length ?? 0)).toBeGreaterThan(0); // parseRoadMap 出真 bricks
+    expect(r.roadmap?.melodicSlots.filter((s) => s.role === 'userBrick').map((s) => s.startBeat)).toEqual([0, 16, 32, 48]);
   });
 
   it('minor key 全在调内;1-4 bar motif 都不崩', () => {

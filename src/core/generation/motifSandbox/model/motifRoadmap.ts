@@ -1,41 +1,70 @@
 // ============================================================
 // motifSandbox · model · 实现 + 旋律 RoadMap(directive §10/D)
 // ------------------------------------------------------------
-// realizeToSandboxChords:选中模板的 slots → 每小节一个【调内三和弦】(保 16-chord 形状,
-//   与现有 weaver/伴奏一致;半小节和声节奏 Phase 1 先折成整小节)。
-// buildMotifRoadmap:每和弦循环头预留 userBrick 锚点 + 应答/续写/终止占位(调试)。
+// realizeToSandboxChords:选中模板 slots → SandboxChord[](保半小节 beats);每和弦带:
+//   ① 调内三和弦(degree/tonePcs)—— 旋律 adapt 用,保调内;
+//   ② 真实和声(realRoman/realType/realRootPc/realTonePcs/borrowed/func)—— 伴奏 + RoadMap + UI 用。
+// buildMotifRoadmap:slots → ChordPart → parseRoadMap 出【真 BrickMatch】+ userBrick 锚点槽。
 // ============================================================
 
 import type { ProgressionSlot } from '../../newEngine/knowledge/progressions';
+import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
+import { buildChordPart, type MgChordDef } from '../../newEngine/render/mgChordPart';
+import { parseRoadMap } from '../../newEngine/render/mgRoadMapParser';
 import { makeChord, type SandboxChord } from './chords';
 import type { ScaleMode } from './types';
 import type { SelectedMotifProgression, MotifMelodicRoadmap, MotifMelodicSlot, UserMelodicBrick } from './melodicBrickTypes';
 
 const BAR = 4;
+const m12 = (n: number): number => ((n % 12) + 12) % 12;
 const deg17 = (d: number): number => ((d - 1) % 7 + 7) % 7 + 1;
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-function slotAtBeat(slots: readonly ProgressionSlot[], beat: number): ProgressionSlot {
-  let acc = 0;
-  for (const s of slots) { const b = s.beats ?? BAR; if (beat >= acc - 1e-6 && beat < acc + b - 1e-6) return s; acc += b; }
-  return slots[slots.length - 1];
+function slotAtBeat(chords: readonly SandboxChord[], beat: number): SandboxChord {
+  return chords.find((c) => beat >= c.startBeat - 1e-6 && beat < c.startBeat + c.durationBeats - 1e-6) ?? chords[chords.length - 1];
 }
 
-/** 选中模板 slots → 每小节一个调内三和弦(取该小节下拍的 slot 级数)。totalBars 个和弦。 */
-export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc: number, mode: ScaleMode, totalBars = 16): SandboxChord[] {
+/** 选中模板 slots → SandboxChord[]:逐 slot(保半小节 beats),带【调内三和弦 + 真实和声】。 */
+export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc: number, mode: ScaleMode): SandboxChord[] {
   const out: SandboxChord[] = [];
-  for (let bar = 0; bar < totalBars; bar++) {
-    out.push(makeChord(deg17(slotAtBeat(slots, bar * BAR).scaleDegree), keyPc, mode, bar * BAR, BAR));
+  let beat = 0;
+  for (const s of slots) {
+    const beats = s.beats ?? BAR;
+    const diatonic = makeChord(deg17(s.scaleDegree), keyPc, mode, beat, beats); // 旋律用(保调内)
+    const realRootPc = m12(keyPc + s.rootOffset);
+    const ivs = chordTypeIntervals(normalizeChordType(s.type) ?? 'maj');
+    out.push({
+      ...diatonic,
+      realRoman: s.roman, realType: s.type, realRootPc,
+      realTonePcs: [...new Set(ivs.map((iv) => m12(realRootPc + iv)))],
+      borrowedSource: s.borrowedSource, effectiveFunc: s.effectiveFunc,
+    });
+    beat += beats;
   }
   return out;
 }
 
-/** 旋律 roadmap:userBrick 锚 0/16/32/48 + 之后应答/续写/终止占位(Phase 1 sandbox-local)。 */
-export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: UserMelodicBrick, quoteBeats: number, totalBars = 16): MotifMelodicRoadmap {
+/** 旋律 roadmap:真 harmonicBricks(slots→ChordPart→parseRoadMap)+ userBrick 锚 0/16/32/48 + 应答槽。 */
+export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: UserMelodicBrick, quoteBeats: number, keyPc: number, mode: ScaleMode, totalBars = 16): MotifMelodicRoadmap {
+  const chords = realizeToSandboxChords(selected.slots, keyPc, mode);
   const harmonicRomans: string[] = [];
-  for (let bar = 0; bar < totalBars; bar++) harmonicRomans.push(ROMAN[deg17(slotAtBeat(selected.slots, bar * BAR).scaleDegree) - 1]);
+  for (let bar = 0; bar < totalBars; bar++) {
+    const c = slotAtBeat(chords, bar * BAR);
+    harmonicRomans.push(c.realRoman ?? ROMAN[deg17(c.degree) - 1]);
+  }
 
-  const cycleBeats = 4 * BAR; // 4 小节循环
+  // 真 RoadMap:realized chords → MgChordDef[] → ChordPart → parseRoadMap(best-effort)。
+  let harmonicBricks: MotifMelodicRoadmap['harmonicBricks'];
+  try {
+    const defs: MgChordDef[] = chords.map((c) => {
+      const rootPc = c.realRootPc ?? c.rootPc;
+      return { roman: c.realRoman ?? c.roman, root: PC_NAMES[rootPc], rootMidi: rootPc + 48, type: normalizeChordType(c.realType ?? 'maj') ?? 'maj', bassMidi: rootPc + 48, duration: c.durationBeats, effectiveFunc: c.effectiveFunc };
+    });
+    harmonicBricks = parseRoadMap({ part: buildChordPart(defs), songKeyPc: keyPc }).bricks;
+  } catch { harmonicBricks = undefined; }
+
+  const cycleBeats = 4 * BAR;
   const numCycles = Math.max(1, Math.round((totalBars * BAR) / cycleBeats));
   const melodicSlots: MotifMelodicSlot[] = [];
   for (let c = 0; c < numCycles; c++) {
@@ -47,5 +76,5 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
       melodicSlots.push({ id: `answer-${c}`, startBeat: start + quoteBeats, durationBeats: ansLen, role, source: 'generated', requiredFunction: role === 'cadence' ? 'cadence' : 'answer' });
     }
   }
-  return { totalBars, harmonicRomans, melodicSlots };
+  return { totalBars, harmonicRomans, harmonicBricks, melodicSlots };
 }

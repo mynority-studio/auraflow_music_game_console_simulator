@@ -80,6 +80,8 @@ export interface MotifWeaverResult {
   brick?: import('./melodicBrickTypes').UserMelodicBrick;
   selectedProgression?: import('./melodicBrickTypes').SelectedMotifProgression | null;
   roadmap?: import('./melodicBrickTypes').MotifMelodicRoadmap | null;
+  harmonySource?: 'template' | 'fallback'; // 模板选择成功 / 兜底回 buildProgression(不静默)
+  harmonyError?: string;                    // fallback 时的错误(UI 暴露)
 }
 
 export type QuotePlan = 'verseHeadsOnly' | 'phraseHeads';
