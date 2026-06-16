@@ -63,7 +63,9 @@ export function auditionNoteOn(midiNote: number, program: number, velocity = 100
     auditionProgram = program;
   }
   const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入真力度不变)
-  spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v);
+  // ★ 显式 time=currentTime → 立即执行(消除任何默认调度延迟,worklet 下一 quantum 即发声)。
+  try { spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v, { time: getAudioContext().currentTime }); }
+  catch { spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v); }
 }
 
 /** 试听单音 off(无踏板 → 松手即停,发音干净)。 */
@@ -78,6 +80,17 @@ export function auditionNoteOff(midiNote: number): void {
 export async function ensureAudio(): Promise<void> {
   await startAudioContext();
   try { const ctx = getAudioContext(); if (ctx && ctx.state === 'suspended') await ctx.resume(); } catch { /* ignore */ }
+}
+
+/** 音频系统延迟诊断:base=worklet 处理、output=OS/输出缓冲(含蓝牙)。判断"延迟来自系统还是代码"。 */
+export function getAudioLatencyMs(): { base: number; output: number; total: number; sampleRate: number; state: string } | null {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return null;
+    const base = (ctx.baseLatency || 0) * 1000;
+    const output = ((ctx as unknown as { outputLatency?: number }).outputLatency || 0) * 1000;
+    return { base, output, total: base + output, sampleRate: ctx.sampleRate, state: ctx.state };
+  } catch { return null; }
 }
 
 // —— 隐形时钟数拍 click(节拍器,GM 打击通道 9)——

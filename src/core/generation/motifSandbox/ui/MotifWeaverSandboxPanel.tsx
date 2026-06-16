@@ -16,7 +16,7 @@ import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio } from '../../newEngine/sandbox/audioOut';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio, getAudioLatencyMs } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
@@ -49,6 +49,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [devices, setDevices] = useState<MidiDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [lastNote, setLastNote] = useState('');
+  const [audioLat, setAudioLat] = useState<ReturnType<typeof getAudioLatencyMs>>(null);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   // —— 隐形时钟(默认捕获模式)——
@@ -110,6 +111,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   // —— Web MIDI 接入 ——
   const enableMidi = useCallback(async () => {
     await ensureAudio(); // 点击是手势 → 解锁 AudioContext,之后 MIDI 输入即时发声
+    setAudioLat(getAudioLatencyMs()); // 诊断:audio 系统延迟(base=worklet / output=OS 缓冲含蓝牙)
     const onMessage = (m: ParsedMidiMessage) => {
       if (m.type === 'noteOn') {
         const { keyPc: k, tonality: t, style: st } = liveCfg.current;
@@ -311,6 +313,15 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
               ? <span className="text-amber-300">未检测到 MIDI 输入设备</span>
               : <select className={sel} value={deviceId ?? ''} onChange={(e) => setDeviceId(e.target.value || null)}>{devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>}
             <span className="text-zinc-500">last: {lastNote || '—'}</span>
+            <button type="button" onClick={() => setAudioLat(getAudioLatencyMs())} className="ml-auto rounded px-1.5 py-0.5 text-[10px] border bg-zinc-800 border-zinc-700 text-zinc-400">测延迟</button>
+          </div>
+        )}
+        {audioLat && (
+          <div className="mt-1 text-[10px]">
+            <span className={audioLat.total > 60 ? 'text-rose-300' : audioLat.total > 30 ? 'text-amber-300' : 'text-emerald-300'}>
+              音频延迟 ≈ {audioLat.total.toFixed(1)}ms(worklet {audioLat.base.toFixed(1)} + 输出 {audioLat.output.toFixed(1)})· {audioLat.sampleRate}Hz · {audioLat.state}
+            </span>
+            {audioLat.output > 40 && <span className="text-rose-300"> ← 输出缓冲大(蓝牙/驱动?)= 系统级,代码改不动;换有线设备</span>}
           </div>
         )}
       </div>
