@@ -7,6 +7,7 @@
 
 import { makeRng } from './rng';
 import type { ScaleMode, SandboxStyle } from './types';
+import type { ProtoSectionRole } from '../../newEngine/knowledge/progressions';
 import type { UserMelodicBrick, MotifHarmonyIntent, SelectedMotifProgression } from './melodicBrickTypes';
 import { getProgressionCandidatesForMotif } from './progressionCandidateProvider';
 import { scoreProgressionAgainstMelodicBrick } from './melodyProgressionScorer';
@@ -19,11 +20,12 @@ export function selectProgressionForMotif(args: {
   keyPc: number;
   seed: number;
   targetBars?: number;
+  sectionRole?: ProtoSectionRole; // form 主段落角色(软权重;默认 verse)
 }): SelectedMotifProgression {
   const targetBars = args.targetBars ?? 16;
   const { candidates, modeName } = getProgressionCandidatesForMotif({ style: args.style, mode: args.mode, targetBars });
 
-  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc) }));
+  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc, { sectionRole: args.sectionRole, seed: args.seed }) }));
   scored.sort((a, b) => b.total - a.total);
 
   const top = scored[0].total;

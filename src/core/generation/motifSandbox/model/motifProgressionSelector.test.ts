@@ -21,7 +21,7 @@ function motif(degrees: number[], durs: number[]): UserMotif {
 const slot = (roman: string, deg: number, func?: 'T' | 'S' | 'D'): ProgressionSlot => ({ roman, type: 'maj', scaleDegree: deg, rootOffset: 0, effectiveFunc: func });
 const fakeCandidate = (id: string, romans: Array<[string, number, ('T' | 'S' | 'D')?]>, cadence?: ProgressionPrototype['cadence']): ProgressionCandidate => {
   const slots = romans.map(([r, d, f]) => slot(r, d, f));
-  return { prototype: { id, style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 4, slots, cadence }, fittedSlots: slots };
+  return { prototype: { id, style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 4, slots, cadence }, fittedSlots: slots, modeMatch: true };
 };
 
 describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
@@ -31,8 +31,11 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
     const sel = selectProgressionForMotif({ brick, intent, style: 'pop', mode: 'major', keyPc: 0, seed: 7 });
     expect(sel.style).toBe('POP');
     expect(sel.slots.reduce((n, s) => n + (s.beats ?? 4), 0)).toBe(64); // fit 满 16 bar
-    const cycleDegs = new Set(sel.slots.slice(0, 4).map((s) => s.scaleDegree));
-    expect(cycleDegs.size, '一个循环里 ≥3 个不同级(非 V-I-I-I)').toBeGreaterThanOrEqual(3);
+    // 非退化:引擎自判 degeneratePenalty=0(I-I-I-I/V-I-I-I 类)+ 一个循环 ≥2 个不同和弦(roman 计,
+    //   含借和弦如 I-IV-iv-I:scaleDegree 只 2 但 roman 3 个 → 不算退化)。
+    expect(sel.scoreBreakdown.degeneratePenalty, '非退化进行').toBe(0);
+    const cycleRomans = new Set(sel.slots.slice(0, 4).map((s) => s.roman));
+    expect(cycleRomans.size, '一个循环里 ≥2 个不同和弦').toBeGreaterThanOrEqual(2);
     const sel2 = selectProgressionForMotif({ brick, intent, style: 'pop', mode: 'major', keyPc: 0, seed: 7 });
     expect(sel.prototypeId).toBe(sel2.prototypeId); // 确定性
     expect(sel.topCandidates.length).toBeGreaterThan(0);
@@ -65,7 +68,7 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
     const intent = inferHarmonyIntent(brick);
     const realI = fakeCandidate('I', [['I', 1, 'T'], ['vi', 6, 'T'], ['IV', 4, 'S'], ['V', 5, 'D']]); // I=C-E-G,含 C/E
     const slotsB: ProgressionSlot[] = [0, 0, 0, 0].map(() => ({ roman: 'bII', type: 'maj', scaleDegree: 1, rootOffset: 1 })); // 同级数但 rootOffset=1(Db)
-    const fakeB: ProgressionCandidate = { prototype: { id: 'bII', style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 4, slots: slotsB }, fittedSlots: slotsB };
+    const fakeB: ProgressionCandidate = { prototype: { id: 'bII', style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 4, slots: slotsB }, fittedSlots: slotsB, modeMatch: true };
     const sI = scoreProgressionAgainstMelodicBrick(brick, intent, realI, 0);
     const sB = scoreProgressionAgainstMelodicBrick(brick, intent, fakeB, 0);
     expect(sI.breakdown.structuralToneSupport).not.toBe(sB.breakdown.structuralToneSupport); // 不再"得分完全一样"
@@ -78,7 +81,7 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
     const ds = (roman: string, deg: number, rootOffset: number, type = 'maj'): ProgressionSlot => ({ roman, type, scaleDegree: deg, rootOffset });
     const cand8 = (id: string, bar5: ProgressionSlot): ProgressionCandidate => {
       const base = [ds('I', 1, 0), ds('V', 5, 7), ds('vi', 6, 9, 'min'), ds('IV', 4, 5), bar5, ds('V', 5, 7), ds('vi', 6, 9, 'min'), ds('IV', 4, 5)];
-      return { prototype: { id, style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 8, slots: base }, fittedSlots: [...base, ...base] };
+      return { prototype: { id, style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 8, slots: base }, fittedSlots: [...base, ...base], modeMatch: true };
     };
     const good = cand8('good', ds('vi', 6, 9, 'min')); // bar5 = vi(A-C-E,含 C)
     const bad = cand8('bad', ds('ii', 2, 2, 'min'));   // bar5 = ii(D-F-A,无 C)

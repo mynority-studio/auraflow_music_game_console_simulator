@@ -268,7 +268,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   let harmonyError: string | undefined;
   let progression: SandboxChord[];
   try {
-    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars });
+    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars, sectionRole: form.sections[0]?.role ?? 'verse' });
     progression = realizeToSandboxChords(selected.slots, keyPc, mode);
     roadmap = buildMotifRoadmap(selected, brick, motifBeats, keyPc, mode, targetBars);
     harmonySource = 'template';

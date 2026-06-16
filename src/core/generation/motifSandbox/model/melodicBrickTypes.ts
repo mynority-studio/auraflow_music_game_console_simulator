@@ -74,12 +74,14 @@ export interface MotifHarmonyIntent {
 
 // —— 模板选择结果(含调试分解)——
 export interface ProgressionScoreBreakdown {
-  templatePrior: number;
+  templatePrior: number;        // 含 opposite-mode 降权(modeMatch=false → 弱先验)
   structuralToneSupport: number;
   headFit: number;
   tailFit: number;
   cadenceFit: number;
   functionArcFit: number;
+  sectionRoleFit: number;       // 段落角色软奖励(命中 form 段落角色 → 加分,不命中=0,从不排除)
+  diversityBonus: number;       // seed 相关小抖动 → 跨 seed 保持多模板可达
   phraseCycleFit: number;
   degeneratePenalty: number;
   strongNonChordPenalty: number;

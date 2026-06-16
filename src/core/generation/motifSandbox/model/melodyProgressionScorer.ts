@@ -5,10 +5,19 @@
 //   重罚退化进行(I-I-I-I / V-I-I-I / I-V-I-I)。
 // ============================================================
 
-import type { ProgressionSlot } from '../../newEngine/knowledge/progressions';
+import type { ProgressionSlot, ProtoSectionRole } from '../../newEngine/knowledge/progressions';
 import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
+import { makeRng } from './rng';
 import type { UserMelodicBrick, MotifHarmonyIntent, ProgressionScoreBreakdown } from './melodicBrickTypes';
 import type { ProgressionCandidate } from './progressionCandidateProvider';
+
+const MODE_MISMATCH = 0.5; // opposite-mode 模板的先验降权(scored fallback:同调式好模板在时它赢不了)
+/** prototypeId × seed → [0,1) 确定性小抖动(diversityBonus:跨 seed 保持多模板可达,不盖过真实贴合)。 */
+function diversityJitter(protoId: string, seed: number): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < protoId.length; i++) { h ^= protoId.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return makeRng((h ^ (seed >>> 0)) >>> 0).next();
+}
 
 const mod12 = (n: number): number => ((n % 12) + 12) % 12;
 const deg17 = (d: number): number => ((d - 1) % 7 + 7) % 7 + 1;
@@ -35,11 +44,15 @@ function cycleRomanKey(slots: readonly ProgressionSlot[]): string {
 
 export function scoreProgressionAgainstMelodicBrick(
   brick: UserMelodicBrick, intent: MotifHarmonyIntent, candidate: ProgressionCandidate, keyPc: number,
+  opts: { sectionRole?: ProtoSectionRole; seed?: number } = {},
 ): { total: number; breakdown: ProgressionScoreBreakdown } {
   const slots = candidate.fittedSlots;
   const proto = candidate.prototype;
+  const sectionRole = opts.sectionRole ?? 'verse';
+  const seed = opts.seed ?? 0;
 
-  const templatePrior = (proto.weight ?? 1) * 0.4;
+  // 先验:模板自带权重;opposite-mode(反调回退)扣固定项 → 同调式好模板在时它赢不了(scored fallback)。
+  const templatePrior = (proto.weight ?? 1) * 0.4 - (candidate.modeMatch ? 0 : MODE_MISMATCH);
 
   // 结构音支撑:motif 在【乐句头锚点】循环再现 → 在所有锚点判贴合(各循环和弦不同,只看第一处会
   //   在后续乐句撞和弦)。结构音在越多锚点是和弦音 → 越贴合。
@@ -93,10 +106,15 @@ export function scoreProgressionAgainstMelodicBrick(
   const totalBars = Math.max(1, Math.round(totalBeats / 4));
   const phraseCycleFit = totalBars % Math.max(1, proto.lengthBars) === 0 ? 0.2 : 0;
 
+  // 段落角色:命中 form 段落角色 → 软奖励(reward but not exclude;不命中=0,从不踢出模板)。
+  const sectionRoleFit = proto.sectionRoles.includes(sectionRole) ? 0.25 : 0;
+  // 多样性:seed 相关小抖动 → 跨 seed 不同 valid 模板都可达,但盖不过真实音乐贴合(幅度 ≤0.06)。
+  const diversityBonus = diversityJitter(proto.id, seed) * 0.06;
+
   const degeneratePenalty = intent.avoidDegenerateProgressions.includes(cycleRomanKey(slots)) ? 2.0 : 0;
   const strongNonChordPenalty = strongNonChord * 0.5;
 
-  const breakdown: ProgressionScoreBreakdown = { templatePrior, structuralToneSupport, headFit, tailFit, cadenceFit, functionArcFit, phraseCycleFit, degeneratePenalty, strongNonChordPenalty };
-  const total = templatePrior + structuralToneSupport + headFit + tailFit + cadenceFit + functionArcFit + phraseCycleFit - degeneratePenalty - strongNonChordPenalty;
+  const breakdown: ProgressionScoreBreakdown = { templatePrior, structuralToneSupport, headFit, tailFit, cadenceFit, functionArcFit, sectionRoleFit, diversityBonus, phraseCycleFit, degeneratePenalty, strongNonChordPenalty };
+  const total = templatePrior + structuralToneSupport + headFit + tailFit + cadenceFit + functionArcFit + sectionRoleFit + diversityBonus + phraseCycleFit - degeneratePenalty - strongNonChordPenalty;
   return { total, breakdown };
 }

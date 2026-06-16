@@ -1,8 +1,10 @@
 // ============================================================
-// motifSandbox · model · 进行模板候选(directive §8)—— 复用 newEngine knowledge/progressions
+// motifSandbox · model · 进行模板候选(directive roadmap_slot_fusion §6)—— 复用 newEngine knowledge/progressions
 // ------------------------------------------------------------
-// getProgressionCandidatesForMotif:据 style/mode 从 newEngine 进行模板库取候选,fit 到 16 bar。
-//   非 jazz 不退化到 JAZZ。只读知识层,不碰生产链。
+// getProgressionCandidatesForMotif:据 style 取【该风格全部模板】(两调式都进 → 所有 Q+R 风格模板可达)。
+//   ★ 不再用 functionRole:'verse' 硬过滤(那把 chorus/bridge/intro/ending 模板全挡掉);段落角色改成
+//     打分软权重(scorer.sectionRoleFit)。opposite-mode 标 modeMatch=false 进池,scorer 降权(scored
+//     fallback,不是无声惊喜)。BLUES 不进 Q+R;非 jazz 不退化到 JAZZ。只读知识层,不碰生产链。
 // ============================================================
 
 import { listProgressionPrototypes, fitProgressionToBars, type ProgressionPrototype, type ProgressionSlot, type HarmonyStyleName, type ProtoMode } from '../../newEngine/knowledge/progressions';
@@ -14,6 +16,7 @@ const MODE_MAP: Record<ScaleMode, ProtoMode> = { major: 'Major', minor: 'Minor' 
 export interface ProgressionCandidate {
   prototype: ProgressionPrototype;
   fittedSlots: ProgressionSlot[]; // 已 fit 到 targetBars
+  modeMatch: boolean;             // 模板调式 == 目标调式(false = 同风格反调回退,scorer 降权)
 }
 
 export interface CandidatePool {
@@ -22,18 +25,20 @@ export interface CandidatePool {
   modeName: ProtoMode;
 }
 
-/** 取 motif 的进行模板候选(verse 优先;逐级放宽但【非 jazz 不退到 jazz】)。 */
+const notBlues = (p: ProgressionPrototype): boolean => p.style !== 'BLUES';
+
+/** 取 motif 的进行模板候选 = 该风格【全部】模板(两调式;opposite-mode 标记后降权)。BLUES 不进。 */
 export function getProgressionCandidatesForMotif(args: { style: SandboxStyle; mode: ScaleMode; targetBars?: number }): CandidatePool {
   const styleName = STYLE_MAP[args.style];
   const modeName = MODE_MAP[args.mode];
   const targetBars = args.targetBars ?? 16;
 
-  let pool = listProgressionPrototypes({ style: styleName, mode: modeName, functionRole: 'verse' });
-  if (pool.length === 0) pool = listProgressionPrototypes({ style: styleName, mode: modeName });
-  if (pool.length === 0) pool = listProgressionPrototypes({ style: styleName });
-  if (pool.length === 0) pool = listProgressionPrototypes({ mode: modeName }).filter((p) => styleName === 'JAZZ' || p.style !== 'JAZZ'); // 非 jazz 不退到 jazz
-  if (pool.length === 0) pool = listProgressionPrototypes({}).filter((p) => styleName === 'JAZZ' || p.style !== 'JAZZ');
+  // 全部该风格模板(不按 functionRole / 单调式硬过滤 → 全可达;BLUES 是独立风格,天然不在 POP/LOFI/RNB/JAZZ 池里)。
+  let pool = listProgressionPrototypes({ style: styleName });
+  // 兜底(风格池空,不该发生)→ 同调式、排除 BLUES、非 jazz 不退到 jazz。
+  if (pool.length === 0) pool = listProgressionPrototypes({ mode: modeName }).filter((p) => notBlues(p) && (styleName === 'JAZZ' || p.style !== 'JAZZ'));
+  if (pool.length === 0) pool = listProgressionPrototypes({}).filter((p) => notBlues(p) && (styleName === 'JAZZ' || p.style !== 'JAZZ'));
 
-  const candidates = pool.map((p) => ({ prototype: p, fittedSlots: fitProgressionToBars(p.slots, targetBars) }));
+  const candidates = pool.map((p) => ({ prototype: p, fittedSlots: fitProgressionToBars(p.slots, targetBars), modeMatch: p.mode === modeName }));
   return { candidates, styleName, modeName };
 }
