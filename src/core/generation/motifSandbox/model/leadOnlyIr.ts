@@ -21,14 +21,28 @@ interface PlayNote { midi: number; onsetBeat: number; durationBeat: number; velo
 
 const clampVel = (v: number): number => Math.max(1, Math.min(127, Math.round(v * 127)));
 
+// ★ 摆动(swing):jazz 把每拍的【第一个八分】拉长占 swingFirst(0.5=直、0.667=三连摆动)。
+//   在【播放/吸附层】施加 —— 生成层保持直拍网格(干净排比/对齐),播放时给 jazz 摇摆律动。
+//   下拍(整数拍)不动 → 走音 bass 仍踩稳;八分/十六分反拍按拍内连续映射推后 → lead/comp 摇摆。
+const JAZZ_SWING_FIRST = 0.62;
+const SWING_BY_STYLE: Record<SandboxStyle, number> = { pop: 0.5, lofi: 0.5, rnb: 0.5, jazz: JAZZ_SWING_FIRST };
+function swungBeat(beat: number, swingFirst: number): number {
+  if (swingFirst <= 0.5 + 1e-6) return beat;
+  const whole = Math.floor(beat);
+  const f = beat - whole; // 拍内位置 [0,1)
+  const sf = f < 0.5 ? f * (swingFirst / 0.5) : swingFirst + (f - 0.5) * ((1 - swingFirst) / 0.5);
+  return whole + sf;
+}
+
 /** 暖 lead 混音(电钢带一点 chorus + 中等空间)。 */
 function leadMix(program: number): TrackMix {
   const ep = program === 4 || program === 5;
   return { volume: 96, pan: 64, reverb: 40, chorus: ep ? 48 : 12 };
 }
 
-/** PlayNote[] → NoteIR[](onset 排序 + 裁到曲尾;仅同音高重叠时截短,避免 noteOff 撞掉重复音)。 */
-function toNoteIR(notes: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number): NoteIR[] {
+/** PlayNote[] → NoteIR[](onset 排序 + 裁到曲尾;仅同音高重叠时截短,避免 noteOff 撞掉重复音)。
+ *  swingFirst>0.5 → 播放层施加摆动(下拍稳、反拍推后);单调映射不改音序/不撞重叠裁剪逻辑。 */
+function toNoteIR(notes: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number, swingFirst = 0.5): NoteIR[] {
   const src = [...notes].sort((a, b) => a.onsetBeat - b.onsetBeat).filter((n) => n.durationBeat > 0 && n.onsetBeat < totalBeats);
   return src.map((n, i) => {
     const p = Math.round(n.midi);
@@ -37,10 +51,12 @@ function toNoteIR(notes: readonly PlayNote[], timebase: Timebase, totalBeats: nu
       if (src[j].onsetBeat >= n.onsetBeat + durBeat) break;
       if (Math.round(src[j].midi) === p) { durBeat = Math.max(0.03, src[j].onsetBeat - n.onsetBeat - 0.01); break; }
     }
+    const onB = swungBeat(n.onsetBeat, swingFirst);                         // 摆动后起点(直拍时=原值)
+    const swungDur = Math.max(0.03, swungBeat(n.onsetBeat + durBeat, swingFirst) - onB); // 时值跟摆动时间线
     return {
       pitch: midi(p),
-      startTick: timebase.beatToTick(beats(n.onsetBeat)),
-      durationTicks: timebase.beatToTick(beats(durBeat)),
+      startTick: timebase.beatToTick(beats(onB)),
+      durationTicks: timebase.beatToTick(beats(swungDur)),
       velocity: clampVel(n.velocity || defaultVel),
     };
   });
@@ -71,8 +87,9 @@ export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: 
   const timebase = timebaseOf(bpm);
   const prog = program ?? LEAD_PROGRAM_BY_STYLE[style];
   const totalBeats = spanOf(lead);
+  const swing = SWING_BY_STYLE[style];
   return freezeMusicalIR({
-    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: prog, mix: leadMix(prog) }], // lead 不踩踏板 = 旋律发音清晰、稳稳对拍
+    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78, swing), program: prog, mix: leadMix(prog) }], // lead 不踩踏板 = 旋律发音清晰、稳稳对拍
     timebase,
     durationTicks: timebase.beatToTick(beats(totalBeats)),
   });
@@ -87,11 +104,12 @@ export function buildSandboxIr(lead: readonly MotifNote[], accomp: Accompaniment
   const ep = accomp.compProgram === 4 || accomp.compProgram === 5;
   const compMix: TrackMix = { volume: 70, pan: 54, reverb: 52, chorus: ep ? 36 : 14 };
   const bassMix: TrackMix = { volume: 86, pan: 64, reverb: 12, chorus: 0 };
+  const swing = SWING_BY_STYLE[style]; // jazz 摆动:三轨同一摆动时间线 → 律动一致(下拍稳、反拍 lilt)
   return freezeMusicalIR({
     tracks: [
-      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78), program: leadProg, mix: leadMix(leadProg) }, // lead 不踩 → 旋律清晰对拍(踏板会糊成一片听着"飘")
-      { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46), program: accomp.compProgram, mix: compMix, pedalEvents: barPedal(timebase, totalBeats) }, // 只 comp 踩 → 和声铺底 ring
-      { role: 'bass', notes: toNoteIR(accomp.bass, timebase, totalBeats, 0.6), program: accomp.bassProgram, mix: bassMix }, // bass 不踩 → 保清晰发音
+      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78, swing), program: leadProg, mix: leadMix(leadProg) }, // lead 不踩 → 旋律清晰对拍(踏板会糊成一片听着"飘")
+      { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46, swing), program: accomp.compProgram, mix: compMix, pedalEvents: barPedal(timebase, totalBeats) }, // 只 comp 踩 → 和声铺底 ring
+      { role: 'bass', notes: toNoteIR(accomp.bass, timebase, totalBeats, 0.6, swing), program: accomp.bassProgram, mix: bassMix }, // bass 不踩 → 保清晰发音
     ],
     timebase,
     durationTicks: timebase.beatToTick(beats(totalBeats)),
