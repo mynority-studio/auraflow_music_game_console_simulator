@@ -99,6 +99,24 @@ export interface SelectedMotifProgression {
   topCandidates: Array<{ prototypeId: string; score: number }>;
 }
 
+// —— RoadMap brick slot(directive roadmap_slot_fusion §5.2):parseRoadMap 的 BrickMatch 规范化成
+//   Q+R 友好结构 —— RoadMap 不再只是 debug 文本,而是旋律 slot 计划的结构真源(Phase 4 消费)。——
+export type RoadmapBrickType = 'Approach' | 'Cadence' | 'Launcher' | 'Tonic' | 'Cycle' | 'Turnaround' | 'Other';
+
+export interface RoadmapBrickSlot {
+  id: string;
+  name: string;                 // parser brick 名(如 "Straight-Approach"/"I-V-vi-IV")
+  type: RoadmapBrickType;       // family → 粗类型
+  startBeat: number;
+  durationBeats: number;
+  sectionId?: string;
+  chordIds: string[];           // 覆盖的 SandboxChord id(startBeat 键)
+  entryFunction?: 'T' | 'S' | 'D';
+  exitFunction?: 'T' | 'S' | 'D';
+  cadenceStrength?: 'none' | 'weak' | 'strong';
+  recurrenceKey: string;        // 结构等价键(同 key 的 brick 可接 motif 复用)
+}
+
 // —— 旋律 roadmap(锚点槽 + 真 harmonicBricks:slots→ChordPart→parseRoadMap)——
 export interface MotifMelodicSlot {
   id: string;
@@ -114,6 +132,8 @@ export interface MotifMelodicRoadmap {
   totalBars: number;
   harmonicRomans: string[];     // 每小节 roman(选中模板真 roman,调试用)
   harmonicBricks?: import('../../newEngine/render/mgRoadMapParser').BrickMatch[]; // 真 RoadMap(slots→ChordPart→parseRoadMap)
+  brickSlots: RoadmapBrickSlot[]; // ★ 规范化 brick slots(Phase 3;Phase 4 据此排旋律 slot)
+  brickSlotsFromFallback: boolean; // true = parse 失败,逐和弦 span 兜底(非静默回退到固定 phrase loop)
   roadmapError?: string;        // parseRoadMap 失败时的错误(不静默吞;UI 暴露)
   melodicSlots: MotifMelodicSlot[];
 }

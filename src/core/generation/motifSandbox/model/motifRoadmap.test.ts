@@ -45,4 +45,28 @@ describe('motifSandbox/motifRoadmap(实现 + 旋律 roadmap)', () => {
     const sorted = [...rm.melodicSlots].sort((a, b) => a.startBeat - b.startBeat);
     for (let i = 1; i < sorted.length; i++) expect(sorted[i].startBeat).toBeGreaterThanOrEqual(sorted[i - 1].startBeat + sorted[i - 1].durationBeats - 1e-6);
   });
+
+  it('★ Phase3:RoadMap → 规范化 brickSlots(beat 范围 / chordIds / entry-exit func / recurrenceKey)', () => {
+    const rm = buildMotifRoadmap(selected, brick, 4, 0, 'major', 16);
+    expect(rm.brickSlots.length).toBeGreaterThan(0);
+    expect(rm.brickSlotsFromFallback).toBe(false); // 正常 parse 成功(非逐和弦兜底)
+    for (const s of rm.brickSlots) {
+      expect(s.startBeat).toBeGreaterThanOrEqual(0);
+      expect(s.durationBeats).toBeGreaterThan(0);
+      expect(s.startBeat + s.durationBeats).toBeLessThanOrEqual(64 + 1e-6); // 落在曲长内
+      expect(s.chordIds.length).toBeGreaterThan(0);
+      expect(s.recurrenceKey).toBeTruthy();
+      expect(['Approach', 'Cadence', 'Launcher', 'Tonic', 'Cycle', 'Turnaround', 'Other']).toContain(s.type);
+    }
+    // brickSlots 按 startBeat 覆盖整条进行(从 0 起)
+    const byStart = [...rm.brickSlots].sort((a, b) => a.startBeat - b.startBeat);
+    expect(byStart[0].startBeat).toBe(0);
+  });
+
+  it('★ Phase3 复现:16-bar 进行的 brick 结构复现(≥1 个 recurrenceKey 出现 ≥2 次)= Phase4 可接 motif 复用', () => {
+    const rm = buildMotifRoadmap(selected, brick, 4, 0, 'major', 16);
+    const counts = new Map<string, number>();
+    for (const s of rm.brickSlots) counts.set(s.recurrenceKey, (counts.get(s.recurrenceKey) ?? 0) + 1);
+    expect([...counts.values()].some((v) => v >= 2), 'brick 结构应复现(供 motif 结构性再现)').toBe(true);
+  });
 });

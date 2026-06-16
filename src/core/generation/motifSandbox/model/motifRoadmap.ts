@@ -10,10 +10,10 @@
 import type { ProgressionSlot } from '../../newEngine/knowledge/progressions';
 import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
 import { buildChordPart, type MgChordDef } from '../../newEngine/render/mgChordPart';
-import { parseRoadMap } from '../../newEngine/render/mgRoadMapParser';
+import { parseRoadMap, type BrickMatch } from '../../newEngine/render/mgRoadMapParser';
 import { makeChord, type SandboxChord } from './chords';
 import type { ScaleMode } from './types';
-import type { SelectedMotifProgression, MotifMelodicRoadmap, MotifMelodicSlot, UserMelodicBrick } from './melodicBrickTypes';
+import type { SelectedMotifProgression, MotifMelodicRoadmap, MotifMelodicSlot, RoadmapBrickSlot, RoadmapBrickType, UserMelodicBrick } from './melodicBrickTypes';
 
 const BAR = 4;
 const m12 = (n: number): number => ((n % 12) + 12) % 12;
@@ -23,6 +23,64 @@ const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B
 
 function slotAtBeat(chords: readonly SandboxChord[], beat: number): SandboxChord {
   return chords.find((c) => beat >= c.startBeat - 1e-6 && beat < c.startBeat + c.durationBeats - 1e-6) ?? chords[chords.length - 1];
+}
+
+// —— Phase 3:BrickMatch → RoadmapBrickSlot 规范化 ——
+const FAMILY_TYPE: Record<string, RoadmapBrickType> = {
+  'Major-On': 'Tonic', 'Minor-On': 'Tonic',
+  'Cadence': 'Cadence', 'Launcher': 'Launcher', 'Turnaround': 'Turnaround',
+  'GenDom': 'Approach', 'GenII': 'Approach',
+  'GenVI': 'Cycle', 'Dropback': 'Cycle',
+  'Blues': 'Other', 'Borrowed': 'Other', 'Unknown': 'Other',
+};
+const chordId = (c: SandboxChord): string => `ch@${c.startBeat}`;
+/** SandboxChord 功能:effectiveFunc 优先,否则从级数推(5/7=D,2/4=S,余 T)。 */
+function chordFunc(c: SandboxChord): 'T' | 'S' | 'D' {
+  if (c.effectiveFunc) return c.effectiveFunc;
+  const d = deg17(c.degree);
+  return d === 5 || d === 7 ? 'D' : d === 2 || d === 4 ? 'S' : 'T';
+}
+function coveredChords(chords: readonly SandboxChord[], startBeat: number, durationBeats: number): SandboxChord[] {
+  return chords.filter((c) => c.startBeat >= startBeat - 1e-6 && c.startBeat < startBeat + durationBeats - 1e-6);
+}
+/** 真 BrickMatch[] → RoadmapBrickSlot[](type/beat范围/chordIds/entry-exit func/recurrenceKey)。 */
+function bricksToSlots(bricks: readonly BrickMatch[], chords: readonly SandboxChord[], sectionId?: string): RoadmapBrickSlot[] {
+  return bricks.map((b, i) => {
+    const cov = coveredChords(chords, b.startBeat, b.durationBeats);
+    const romans = cov.map((c) => c.realRoman ?? c.roman);
+    const type = FAMILY_TYPE[b.family] ?? 'Other';
+    const endsOnTonic = cov.length > 0 && deg17(cov[cov.length - 1].degree) === 1;
+    return {
+      id: `rb-${i}-${b.startBeat}`,
+      name: b.name,
+      type,
+      startBeat: b.startBeat,
+      durationBeats: b.durationBeats,
+      sectionId,
+      chordIds: cov.map(chordId),
+      entryFunction: cov.length ? chordFunc(cov[0]) : undefined,
+      exitFunction: cov.length ? chordFunc(cov[cov.length - 1]) : undefined,
+      cadenceStrength: type === 'Cadence' ? (endsOnTonic ? 'strong' : 'weak') : 'none',
+      // 结构等价键:粗类型 + 覆盖和弦的真 roman 序列(同序列 = 可接 motif 复用)。
+      recurrenceKey: `${type}|${romans.join('-')}`,
+    };
+  });
+}
+/** parse 失败兜底:逐和弦一个 slot(非静默回退到固定 phrase loop;UI 报 warning)。 */
+function fallbackSlotsPerChord(chords: readonly SandboxChord[], sectionId?: string): RoadmapBrickSlot[] {
+  return chords.map((c, i) => ({
+    id: `rb-fb-${i}-${c.startBeat}`,
+    name: c.realRoman ?? c.roman,
+    type: 'Other' as RoadmapBrickType,
+    startBeat: c.startBeat,
+    durationBeats: c.durationBeats,
+    sectionId,
+    chordIds: [chordId(c)],
+    entryFunction: chordFunc(c),
+    exitFunction: chordFunc(c),
+    cadenceStrength: 'none' as const,
+    recurrenceKey: `chord|${c.realRoman ?? c.roman}`,
+  }));
 }
 
 /** 选中模板 slots → SandboxChord[]:逐 slot(保半小节 beats),带【调内三和弦 + 真实和声】。 */
@@ -56,6 +114,8 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
 
   // 真 RoadMap:realized chords → MgChordDef[] → ChordPart → parseRoadMap(失败不静默吞 → roadmapError)。
   let harmonicBricks: MotifMelodicRoadmap['harmonicBricks'];
+  let brickSlots: RoadmapBrickSlot[];
+  let brickSlotsFromFallback = false;
   let roadmapError: string | undefined;
   try {
     const defs: MgChordDef[] = chords.map((c) => {
@@ -63,7 +123,13 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
       return { roman: c.realRoman ?? c.roman, root: PC_NAMES[rootPc], rootMidi: rootPc + 48, type: normalizeChordType(c.realType ?? 'maj') ?? 'maj', bassMidi: rootPc + 48, duration: c.durationBeats, effectiveFunc: c.effectiveFunc };
     });
     harmonicBricks = parseRoadMap({ part: buildChordPart(defs), songKeyPc: keyPc }).bricks;
-  } catch (err) { roadmapError = err instanceof Error ? err.message : String(err); }
+    brickSlots = (harmonicBricks && harmonicBricks.length) ? bricksToSlots(harmonicBricks, chords) : fallbackSlotsPerChord(chords);
+    brickSlotsFromFallback = !(harmonicBricks && harmonicBricks.length);
+  } catch (err) {
+    roadmapError = err instanceof Error ? err.message : String(err);
+    brickSlots = fallbackSlotsPerChord(chords); // 非静默:逐和弦 span + brickSlotsFromFallback=true + roadmapError 暴露 UI
+    brickSlotsFromFallback = true;
+  }
 
   const cycleBeats = 4 * BAR;
   const numCycles = Math.max(1, Math.round((totalBars * BAR) / cycleBeats));
@@ -77,5 +143,5 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
       melodicSlots.push({ id: `answer-${c}`, startBeat: start + quoteBeats, durationBeats: ansLen, role, source: 'generated', requiredFunction: role === 'cadence' ? 'cadence' : 'answer' });
     }
   }
-  return { totalBars, harmonicRomans, harmonicBricks, roadmapError, melodicSlots };
+  return { totalBars, harmonicRomans, harmonicBricks, brickSlots, brickSlotsFromFallback, roadmapError, melodicSlots };
 }

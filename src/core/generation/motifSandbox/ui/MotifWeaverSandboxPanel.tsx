@@ -404,6 +404,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             {result.selectedProgression && <Row k="候选 top" v={result.selectedProgression.topCandidates.slice(0, 3).map((c) => `${c.prototypeId.replace(/^(pop|lofi|rnb|jazz)_/, '')}:${c.score.toFixed(1)}`).join('  ')} />}
             <Row k="和弦进行(真 roman)" v={(() => { const seen = new Set<number>(); return result.progression.filter((c) => !seen.has(c.startBeat) && seen.add(c.startBeat)).map((c) => c.realRoman ?? c.roman).join('-'); })()} />
             {result.roadmap?.harmonicBricks && result.roadmap.harmonicBricks.length > 0 && <Row k="RoadMap bricks" v={result.roadmap.harmonicBricks.map((b) => b.name).join(' · ')} />}
+            {result.roadmap && (() => {
+              const bs = result.roadmap.brickSlots;
+              const counts = new Map<string, number>(); bs.forEach((s) => counts.set(s.recurrenceKey, (counts.get(s.recurrenceKey) ?? 0) + 1));
+              const recur = [...counts.values()].filter((v) => v >= 2).length;
+              return <Row k="brick slots(复现)" v={`${bs.length} 槽 · ${counts.size} 异 · ${recur} 复现键${result.roadmap.brickSlotsFromFallback ? ' · ⚠兜底逐和弦' : ''} · ${bs.slice(0, 6).map((s) => `${s.startBeat.toFixed(0)}:${s.type}`).join(' ')}`} good={!result.roadmap.brickSlotsFromFallback && recur >= 1} />;
+            })()}
             {result.roadmap?.roadmapError && <Row k="RoadMap 解析失败" v={result.roadmap.roadmapError} good={false} />}
             <Row k="motif / quote 单元" v={`${result.motifBars} bar → quote ${result.quoteBars} bar${result.quoteBars < result.motifBars ? '(缩子动机留发展空间)' : ''}`} />
             <Row k="发展弧(每槽)" v={result.arc.join(' · ')} />
