@@ -334,5 +334,5 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS, quoteBeats: motifBeats, progression });
-  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError };
+  return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError };
 }

@@ -45,21 +45,20 @@ function compChord(voicing: number[], onsetBeat: number, durationBeat: number, v
   return voicing.map((midi) => ({ midi, onsetBeat, durationBeat, velocity: vel }));
 }
 
-/** 某小节【旋律结构点】= 该小节里骨干/重音音的相对拍位(下拍 0 单独锚,这里取中后段 ≥1 拍);
- *  ≤2 个(铺开取首尾,不挤);旋律稀疏 → 风格默认击点。不改旋律,只读它的 onset。 */
-function barStructPoints(lead: readonly MotifNote[] | undefined, bar: number, fallback: number[]): number[] {
-  if (!lead) return fallback;
+/** 某【和弦跨度】内的旋律结构点 = 落在 [startBeat, startBeat+durBeats) 中后段的骨干/重音音,
+ *  返回【相对和弦起点】的拍位(下拍 0 单独锚)。★ 按和弦 span(非 bar)算 → 半小节 slot 模板不错位。
+ *  ≤2 个(铺开取首尾);旋律稀疏 → 风格默认击点(也钳在 span 内)。不改旋律,只读它的 onset。 */
+function chordStructPoints(lead: readonly MotifNote[] | undefined, startBeat: number, durBeats: number, fallback: number[]): number[] {
+  if (!lead) return fallback.filter((o) => o < durBeats);
   const offs = new Set<number>();
   for (const n of lead) {
-    if (Math.floor(n.onsetBeat / 4) !== bar) continue;
-    // §5:支点 = 力度重音【或】结构音(节拍/时值/相位)。响亮的弱拍经过音可驱动 comp 重音;
-    //   安静的下拍长音也能驱动 bass/和声支撑 —— 伴奏支撑隐形节拍,不盲跟每个音。
+    // §5:支点 = 力度重音【或】结构音(节拍/时值/相位)—— 伴奏支撑隐形节拍,不盲跟每个音。
     if (Math.max(n.accent, n.structuralToneScore ?? 0) < SUPPORT_MIN) continue;
-    const off = +(n.onsetBeat - bar * 4).toFixed(3);
-    if (off >= 1.0 && off <= 3.9) offs.add(off);
+    const off = +(n.onsetBeat - startBeat).toFixed(3); // 相对【本和弦起点】
+    if (off >= 1.0 && off <= durBeats - 0.1) offs.add(off);
   }
   const pts = [...offs].sort((a, b) => a - b);
-  if (pts.length === 0) return fallback;
+  if (pts.length === 0) return fallback.filter((o) => o < durBeats);
   return pts.length <= 2 ? pts : [pts[0], pts[pts.length - 1]];
 }
 
@@ -76,8 +75,8 @@ export function buildAccompaniment(progression: readonly SandboxChord[], style: 
     const fifth = root + 7;
     const start = ch.startBeat;
     const nextRoot = bassRoot(progression[Math.min(i + 1, progression.length - 1)]);
-    const sp = barStructPoints(lead, i, DEFAULT_STRUCT[style]); // 旋律结构点(对拍落点)
-    const durTo = (o: number, k: number, cap: number): number => Math.min(cap, (sp[k + 1] ?? 4) - o); // 到下一击点/小节末
+    const sp = chordStructPoints(lead, start, ch.durationBeats, DEFAULT_STRUCT[style]); // ★ 按和弦 span(非 slot index/bar)—— 半小节 slot 不错位
+    const durTo = (o: number, k: number, cap: number): number => Math.min(cap, (sp[k + 1] ?? ch.durationBeats) - o); // 到下一击点/和弦末
 
     if (style === 'jazz') {
       comp.push(...compChord(v, start, 0.7, jit(0.46)), ...compChord(v, start + 1.5, 1.2, jit(0.42))); // Charleston

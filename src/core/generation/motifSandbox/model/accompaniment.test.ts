@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildAccompaniment } from './accompaniment';
 import { buildProgression } from './motifHarmony';
 import { analyzeAndNormalize, generateSampleCaptured } from './motifAnalysis';
+import { makeChord, type SandboxChord } from './chords';
 import { isInScale } from './scale';
 import type { SandboxStyle } from './types';
 
@@ -77,6 +78,18 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
     ];
     const a = buildAccompaniment(prog, 'pop', 7, lead);
     expect(a.bass.some((n) => Math.abs(n.onsetBeat - 3) < 1e-6), 'bass 落在结构音 beat3').toBe(true);
+  });
+
+  it('★ §5 半小节 slot:伴奏按【和弦 span】取结构点(非 bar index)→ 不错位', () => {
+    // bar0 两个半小节和弦:I@0-2,V@2-4;bar1+ 整小节
+    const prog: SandboxChord[] = [makeChord(1, 0, 'major', 0, 2), makeChord(5, 0, 'major', 2, 2)];
+    for (let bar = 1; bar < 16; bar++) prog.push(makeChord((bar % 6) + 1, 0, 'major', bar * 4, 4));
+    const lead = [{ midi: 74, onsetBeat: 3, durationBeat: 1, velocity: 0.9, scaleDegree: 5, octave: 5, accent: 0.9, structuralToneScore: 0.9, occurrenceKind: 'quote' as const }]; // 重音落 V 和弦跨度内(beat3)
+    const a = buildAccompaniment(prog, 'pop', 7, lead);
+    const has = (b: number) => a.bass.some((n) => Math.abs(n.onsetBeat - b) < 1e-6);
+    expect(has(0), 'I 半小节下拍锚').toBe(true);
+    expect(has(2), 'V 半小节下拍锚').toBe(true);
+    expect(has(3), 'V 跨度内的旋律重音(off=1)→ bass 准确落 beat3,非误算').toBe(true);
   });
 
   it('风格织体差异:jazz bass 走音(每小节≈4)> lofi 稀疏 bass', () => {

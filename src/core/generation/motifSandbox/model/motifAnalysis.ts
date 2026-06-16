@@ -212,6 +212,14 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
   return { motif, timing, snapChanges };
 }
 
+/** 把 motif 整体前移使首音落 beat 0(消除前导休止 = 数拍/音频延迟造成的整段偏后)。
+ *  ★ 用户真要 pickup(故意空起)时,关掉调用方的"对齐首音"即可。纯函数,不改时值/音高。 */
+export function alignLeadingRest(motif: UserMotif): UserMotif {
+  const first = motif.notes[0]?.onsetBeat ?? 0;
+  if (Math.abs(first) < 1e-6) return motif;
+  return { ...motif, notes: motif.notes.map((n) => ({ ...n, onsetBeat: Math.max(0, n.onsetBeat - first) })) };
+}
+
 // ============================================================
 // 录制长度 → 整 bar 自动识别 + BPM 调整(2026-06-15,用户)
 //   手动起止录制 → 据当前 bpm 算这段是几 bar → 四舍五入到 1..4 bar →

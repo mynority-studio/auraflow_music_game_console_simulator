@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
-import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
+import { analyzeAndNormalize, analyzeHiddenGridMotif, alignLeadingRest, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
 import { buildAccompaniment } from '../model/accompaniment';
@@ -55,6 +55,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [captureMode, setCaptureMode] = useState<'hiddenGrid' | 'freeFallback'>('hiddenGrid');
   const [recordPhase, setRecordPhase] = useState<RecordPhase>('idle');
   const [hiddenMotif, setHiddenMotif] = useState<UserMotif | null>(null);
+  const [alignFirst, setAlignFirst] = useState(true); // 对齐首音(消数拍/音频延迟造成的偏后);要 pickup 时关掉
   const [timing, setTiming] = useState<MotifTimingAnalysis | null>(null);
   const [snapChanges, setSnapChanges] = useState(0);
   const ctxRef = useRef<HiddenGridCaptureContext | null>(null);
@@ -174,20 +175,24 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     } catch (err) { setRecordPhase('idle'); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
   }, [clearRecTimers]);
 
-  const startHiddenGridRecord = useCallback(() => {
+  const startHiddenGridRecord = useCallback(async () => {
     stopPlayback(); clearRecTimers();
     const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
     const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
     ctxRef.current = ctx;
     setBpm(ctx.bpm);
     setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null);
-    recorder.current.start({ maxMs: ctx.captureEndMs + 300 });
     setRecording(true); setRecordPhase('count-in'); setElapsed(0);
-    setStatus(`◔ 数拍预备(1 小节 · BPM ${ctx.bpm})…听完 4 下开始弹`);
+    setStatus(`◔ 数拍预备(1 小节 · BPM ${ctx.bpm})…暖音频中`);
+    // ★ 先把音频时钟暖起来:否则首拍 click 因 AudioContext 启动晚响 → 用户跟着晚弹 → 整段偏后。
+    await ensureAudio();
+    recorder.current.start({ maxMs: ctx.captureEndMs + 300 }); // 录音起点 = 暖好这一刻 = click-0 同源
+    setStatus(`◔ 数拍(BPM ${ctx.bpm})…听完 4 下开始弹`);
     const mpb = msPerBeat(ctx);
     const countInBeats = ctx.countInBars * ctx.beatsPerBar;
-    for (let b = 0; b < countInBeats; b++) { // ★ 节拍器只响数拍这 1 小节,之后隐形静音(拍子继续跑=隐形时钟)
-      recTimers.current.push(window.setTimeout(() => { void playClick(b % ctx.beatsPerBar === 0); }, b * mpb));
+    void playClick(true); // 第 0 拍立即响(已暖,无启动延迟),与 recorder.start 同源
+    for (let b = 1; b < countInBeats; b++) {
+      recTimers.current.push(window.setTimeout(() => { void playClick(false); }, b * mpb));
     }
     recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 演奏中…(自由弹,最多 ${ctx.captureBars} 小节;可点 ■ 早停)`); }, ctx.captureStartMs));
     recTimers.current.push(window.setTimeout(() => finishHiddenGridRecord(), ctx.captureEndMs + 80));
@@ -231,7 +236,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   }, [captureMode, style, applyCaptured, stopPlayback]);
 
   const generate = useCallback(() => {
-    const motif = captureMode === 'hiddenGrid' ? hiddenMotif : null;
+    const baseMotif = captureMode === 'hiddenGrid' ? hiddenMotif : null;
+    const motif = baseMotif && alignFirst ? alignLeadingRest(baseMotif) : baseMotif; // 对齐首音(消延迟偏后)
     if (!motif && captured.length === 0) { setStatus('先录入/注入 motif'); return; }
     stopPlayback();
     try {
@@ -242,17 +248,18 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
       setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
-  }, [captureMode, hiddenMotif, captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
+  }, [captureMode, hiddenMotif, alignFirst, captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
 
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
     stopNewEngine();
+    const pbpm = result.playbackBpm; // ★ 永远用捕获时钟,不用 UI bpm state(录后改 bpm / state 时序差都不影响)
     const accomp = withAccomp ? buildAccompaniment(result.progression, style, seed, result.lead) : null; // 传 lead → 伴奏锁旋律重音/结构点
-    const ir = buildSandboxIr(result.lead, accomp, bpm, style);
+    const ir = buildSandboxIr(result.lead, accomp, pbpm, style);
     setPlaying(true);
-    setStatus(withAccomp ? '▶ 播放 lead + 伴奏…' : '▶ 播放 lead…');
-    try { await playMusicalIR(ir, bpm, style); } catch { /* 静默 */ }
-  }, [result, bpm, style, seed, withAccomp]);
+    setStatus(withAccomp ? `▶ 播放 lead + 伴奏(BPM ${pbpm})…` : `▶ 播放 lead(BPM ${pbpm})…`);
+    try { await playMusicalIR(ir, pbpm, style); } catch { /* 静默 */ }
+  }, [result, style, seed, withAccomp]);
 
   if (!open) return null;
 
@@ -359,7 +366,13 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           {timing && <>
             <Row k="BPM / 捕获" v={`${timing.bpm} · ${timing.captureBars}bar · 数拍${1}小节`} />
             <Row k="量化误差 / 相位" v={`均 ${timing.quantizeErrorMean.toFixed(3)} · 最大 ${timing.quantizeErrorMax.toFixed(3)} 拍 · 相位置信 ${timing.phaseConfidence.toFixed(1)}`} good={timing.quantizeErrorMax < 0.15} />
-            <Row k="前导休止 / 吸附改" v={`${timing.leadingRestBeats.toFixed(2)} 拍 · ${snapChanges} 音`} good={snapChanges === 0} />
+            <div className="flex items-baseline gap-2">
+              <span className="text-zinc-500 w-[120px] shrink-0">前导休止 / 吸附改</span>
+              <span className={snapChanges === 0 ? 'text-emerald-300' : 'text-rose-300'}>{timing.leadingRestBeats.toFixed(2)} 拍 · {snapChanges} 音</span>
+              <button type="button" onClick={() => setAlignFirst((v) => !v)} className={`ml-auto rounded px-1.5 py-0.5 text-[10px] border ${alignFirst ? 'bg-sky-600/30 border-sky-500/50 text-sky-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
+                对齐首音 {alignFirst ? 'on' : 'off'}
+              </button>
+            </div>
           </>}
           <Row k="motif 长度" v={`${a.motif.lengthBeats} beats · ${a.motif.notes.length} 音(raw ${a.rawCount})`} />
           <Row k="contour" v={a.motif.contour.map((c) => (c > 0 ? '↑' : c < 0 ? '↓' : '→')).join('')} />

@@ -71,6 +71,7 @@ export interface MotifWeaverResult {
   progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(16 bar)
   occurrences: MotifOccurrence[];
   lead: MotifNote[];
+  playbackBpm: number;           // = motif.bpm(捕获时钟)—— 播放永远用它,不用 UI bpm state
   totalBars: number;             // 16
   motifBars: number;             // 分析出的 motif 小节数(1..4)
   quoteBars: number;             // 实际排比 quote 单元小节数(长 motif 缩为 ≤2 子动机;≤2 小节时 = motifBars)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeHiddenGridMotif } from './motifAnalysis';
+import { analyzeHiddenGridMotif, alignLeadingRest } from './motifAnalysis';
 import { generateMotifWeave } from './motifWeaver';
 import { createHiddenGridContext, mapRawNoteToGrid, msPerBeat, type HiddenGridCaptureContext } from '../capture/hiddenGridClock';
 import { fitRange, identity } from './motifTransform';
@@ -72,6 +72,17 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     const down = motif.notes.find((n) => Math.abs(n.onsetBeat) < 1e-6)!;
     const passing = motif.notes.find((n) => Math.abs(n.onsetBeat - 1.25) < 1e-6)!;
     expect(down.structuralToneScore!).toBeGreaterThan(passing.structuralToneScore!); // 安静下拍长音更"结构"
+  });
+
+  it('★ alignLeadingRest:晚到首音(延迟造成的前导休止)可对齐到 beat 0,整体前移不改时值', () => {
+    const c = ctxOf();
+    const g = [note(c, 60, 100, 0.5, 1), note(c, 62, 90, 1.5, 1), note(c, 64, 90, 2.5, 1)]; // 首音晚半拍
+    const { motif, timing } = analyzeHiddenGridMotif(g, c);
+    expect(timing.leadingRestBeats).toBeCloseTo(0.5, 6); // 数据层默认保留
+    const aligned = alignLeadingRest(motif);
+    expect(aligned.notes[0].onsetBeat).toBe(0);             // 对齐后首音 = 0
+    expect(aligned.notes[1].onsetBeat).toBeCloseTo(1.0, 6); // 整体前移 0.5
+    expect(aligned.notes.map((n) => n.durationBeat)).toEqual(motif.notes.map((n) => n.durationBeat)); // 时值不变
   });
 
   it('量化误差被报告;调内输入 snapChanges=0', () => {
