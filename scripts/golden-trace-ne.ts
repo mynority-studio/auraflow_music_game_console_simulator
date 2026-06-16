@@ -254,15 +254,29 @@ function buildL2L3Case(seed: number, styleHint: string) {
   const request: GenerationRequest = { seed, styleHint, mood: 'calm-build', targetDuration: 120, allowModulation: true };
   // P2 raw stage：renderer 后处理前快照（C 各 renderer 逐位对账源；lead=MG/P3，C 侧只取 non-lead）
   let rawStageTracks: { role: string; notes: { pitch: number; startTick: number; durationTicks: number; velocity: number }[] }[] = [];
+  // P2f 后处理 stage trace：每 stage 各轨 {role,count,hash} 摘要（轻量隔离门；最终 note-exact 门 = L2 IR）。
+  //   ★ trace 仅【首轮 attempt】注入（GenerationController：retry 轮 overlay 只带 voicingSafer 不带 trace）
+  //     → 与 rawStageTracks 同源（首轮）。'raw' 时 reset 是防御性（trace 单次触发）；failed 例 post stages
+  //     = 首轮 attempt（非末次）。retry 轮 stage gate 留 P2g synthetic 覆盖。
+  let postStages: { stage: string; tracks: { role: string; count: number; hash: number }[] }[] = [];
+  const noteHash = (notes: readonly { pitch: number; startTick: number; durationTicks: number; velocity: number }[]): number =>
+    fnv1a(notes.map((n) => `${n.pitch as number},${n.startTick as number},${n.durationTicks as number},${n.velocity}`).join(';'));
   const trace: RenderTraceFn = (stage, tracks) => {
-    if (stage !== 'raw') return;
-    rawStageTracks = tracks.map((t) => ({
-      role: t.role,
-      notes: t.notes.map((n) => ({
-        pitch: n.pitch as number, startTick: n.startTick as number,
-        durationTicks: n.durationTicks as number, velocity: n.velocity,
-      })),
-    }));
+    if (stage === 'raw') {
+      rawStageTracks = tracks.map((t) => ({
+        role: t.role,
+        notes: t.notes.map((n) => ({
+          pitch: n.pitch as number, startTick: n.startTick as number,
+          durationTicks: n.durationTicks as number, velocity: n.velocity,
+        })),
+      }));
+      postStages = []; // 新 attempt 起始：重置后处理链摘要
+      return;
+    }
+    postStages.push({
+      stage,
+      tracks: tracks.map((t) => ({ role: t.role, count: t.notes.length, hash: noteHash(t.notes) })),
+    });
   };
   const result = generateSong(request, undefined, trace);
   const l2 = {
@@ -290,7 +304,8 @@ function buildL2L3Case(seed: number, styleHint: string) {
   }
   const l3 = { seed, styleHint, roomWet: L3_ROOM_WET, hasIr: result.ir != null, events: l3events };
   const rawStage = { seed, styleHint, status: result.status, tracks: rawStageTracks };
-  return { l2, l3, rawStage };
+  const postStage = { seed, styleHint, status: result.status, hasIr: result.ir != null, stages: postStages };
+  return { l2, l3, rawStage, postStage };
 }
 
 // ---------- main ----------
@@ -329,22 +344,28 @@ const L2L3_FEATURE_CASES: { seed: number; style: string; note: string }[] = [
 const l2Cases: ReturnType<typeof buildL2L3Case>['l2'][] = [];
 const l3Cases: ReturnType<typeof buildL2L3Case>['l3'][] = [];
 const rawCases: ReturnType<typeof buildL2L3Case>['rawStage'][] = [];
+const postCases: ReturnType<typeof buildL2L3Case>['postStage'][] = [];
 for (const seed of L1_SEEDS) for (const style of L1_STYLES) {
-  const { l2, l3, rawStage } = buildL2L3Case(seed, style);
+  const { l2, l3, rawStage, postStage } = buildL2L3Case(seed, style);
   l2Cases.push(l2);
   l3Cases.push(l3);
   rawCases.push(rawStage);
+  postCases.push(postStage);
 }
 for (const fc of L2L3_FEATURE_CASES) {
-  const { l2, l3, rawStage } = buildL2L3Case(fc.seed, fc.style);
+  const { l2, l3, rawStage, postStage } = buildL2L3Case(fc.seed, fc.style);
   l2Cases.push(l2);
   l3Cases.push(l3);
   rawCases.push(rawStage);
+  postCases.push(postStage);
 }
 writeFileSync(join(outDir, 'ne_golden_l2.json'), JSON.stringify({ meta, cases: l2Cases }, null, 1));
 writeFileSync(join(outDir, 'ne_golden_l3.json'), JSON.stringify({ meta, cases: l3Cases }, null, 1));
 writeFileSync(join(outDir, 'ne_golden_raw.json'), JSON.stringify({ meta, cases: rawCases }, null, 1));
+writeFileSync(join(outDir, 'ne_golden_post.json'), JSON.stringify({ meta, cases: postCases }, null, 1));
 const l3evTotal = l3Cases.reduce((n, c) => n + c.events.length, 0);
 const rawNoteTotal = rawCases.reduce((n, c) => n + c.tracks.reduce((m, t) => m + t.notes.length, 0), 0);
 console.log(`L2/L3: ${l2Cases.length} cases (${L1_SEEDS.length}×${L1_STYLES.length} 标准 + ${L2L3_FEATURE_CASES.length} 特征); L3 events total ${l3evTotal}`);
 console.log(`Raw stage: ${rawCases.length} cases; raw notes total ${rawNoteTotal}`);
+const postStageTotal = postCases.reduce((n, c) => n + c.stages.length, 0);
+console.log(`Post stage: ${postCases.length} cases; stage snapshots total ${postStageTotal}`);

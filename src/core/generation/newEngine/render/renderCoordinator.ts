@@ -273,6 +273,7 @@ export function renderSongFull(
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
   const postMixTracks = band.style.toLowerCase() === 'lofi' ? applyMgLofiDenseMelodyComping(tracks, plan, timebase) : tracks;
+  overlay?.trace?.('postmix', postMixTracks); // P2f stage trace
 
   // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
   //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。
@@ -282,6 +283,7 @@ export function renderSongFull(
     .filter((b) => b.protectPickupFromGate && b.pickupRoles.length > 0)
     .map((b) => ({ lo: b.prepBar * barTicksGate, hi: (b.prepBar + 1) * barTicksGate, roles: new Set<string>(b.pickupRoles as readonly string[]) }));
   const gatedTracks = gateByDensity(postMixTracks, plan, timebase, instrumentation.activeRolesBySection, pickupWindows);
+  overlay?.trace?.('gated', gatedTracks); // P2f stage trace
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
@@ -295,6 +297,7 @@ export function renderSongFull(
     durationTicks: ticks(totalDurationTicks(plan, timebase)),
   };
   const resolved = resolveInteractions(draft, occupation);
+  overlay?.trace?.('resolved', resolved.data.tracks); // P2f stage trace
 
   // dynamics:力度随段落能量(chorus 强 / intro 弱 / 高潮峰)
   const energyRanges: EnergyRange[] = [];
@@ -307,32 +310,40 @@ export function renderSongFull(
   // ★ 伴奏 ducking:comp 撞旋律时【极轻压 ×0.9】(只给旋律一点空间,不把 comp 压下去)。
   //   用户要 lead/伴奏均衡 → ducking 放轻(重压会和'均衡'相反);均衡主要靠 CC7 推子压平。
   const duckedTracks = duckUnderLead(resolved.data.tracks, 0.9);
+  overlay?.trace?.('ducked', duckedTracks); // P2f stage trace
   const dynamicTracks = applyDynamics(duckedTracks, energyRanges, timebase.ppq);
+  overlay?.trace?.('dynamics', dynamicTracks); // P2f stage trace
 
   // ★ 段落边界手势(Arranger 下发 → 器配 endingPlan / entryBySection 投影):
   //   收尾 cold button / fade 渐弱+错退 / tag 末和弦延留;lead-in 跃升段前末小节 crescendo 推进下拍。
   const bpbEdge = beatsPerBarOf(arrangement.meter);
   const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
+  overlay?.trace?.('ending', endedTracks); // P2f stage trace
   const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
+  overlay?.trace?.('leadins', ledTracks); // P2f stage trace
 
   // ★ lead 空拍补全(2026-06-11,用户):末音后若有【很大空拍】(≥2拍且本 bar 余下全空)→ 延长该末音到 bar 末
   //   (钳位当前和弦,不越界撞下一和弦)。避免"和弦未完成戛然而止"。只动 lead 时值,不碰 onset/其它轨。
   //   ★ 放在 repeatGroup 重放【之前】→ 重放复制【已补全】的首段 body → 重复段 lead 仍逐字节一致。
   const gapFilledTracks = fillLeadBarGaps(ledTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
+  overlay?.trace?.('gapfill', gapFilledTracks); // P2f stage trace（lead 空拍补全后）
 
   // ★ repeatGroup 重放(2026-06-11):同 group 后续段(verse2/chorus2…)复用首段【和声一致前缀(body)】,
   //   保留各自【发散尾巴(link bar)】。放在 humanize 之前 → body 同音符,humanize/swing 各段跑出自然微差
   //   (lead 不 humanize → 逐字节一致)。在 resolveInteractions 之后 → 复制已消解撞音的首段,内部自洽。
   //   打破 strict MG lead parity:首次出现==raw MG(经空拍补全),重复出现==首次重放(用户决策)。
   const replayedTracks = applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
+  overlay?.trace?.('replay', replayedTracks); // P2f stage trace（repeatGroup 重放后）
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
   const humanRng = rng.substream('humanize');
   const accentedTracks = humanizeVelocity(replayedTracks, timebase.ppq, bpbHuman, humanRng);
+  overlay?.trace?.('humanvel', accentedTracks); // P2f stage trace
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
+  overlay?.trace?.('swing', swungTracks); // P2f stage trace
 
   // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
   //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
@@ -357,6 +368,7 @@ export function renderSongFull(
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks);
+  overlay?.trace?.('humantime', humanizedTracks); // P2f stage trace（最终轨道，program/mix 投影前）
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
