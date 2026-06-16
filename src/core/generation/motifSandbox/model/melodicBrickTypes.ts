@@ -91,7 +91,7 @@ export interface SelectedMotifProgression {
   topCandidates: Array<{ prototypeId: string; score: number }>;
 }
 
-// —— 旋律 roadmap(锚点槽;Phase 1 = sandbox-local,parseRoadMap BrickMatch 留后续 PR)——
+// —— 旋律 roadmap(锚点槽 + 真 harmonicBricks:slots→ChordPart→parseRoadMap)——
 export interface MotifMelodicSlot {
   id: string;
   startBeat: number;
@@ -106,5 +106,6 @@ export interface MotifMelodicRoadmap {
   totalBars: number;
   harmonicRomans: string[];     // 每小节 roman(选中模板真 roman,调试用)
   harmonicBricks?: import('../../newEngine/render/mgRoadMapParser').BrickMatch[]; // 真 RoadMap(slots→ChordPart→parseRoadMap)
+  roadmapError?: string;        // parseRoadMap 失败时的错误(不静默吞;UI 暴露)
   melodicSlots: MotifMelodicSlot[];
 }

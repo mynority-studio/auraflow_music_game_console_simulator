@@ -43,8 +43,8 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
     const intent = inferHarmonyIntent(brick);
     const degenerate = fakeCandidate('deg', [['V', 5, 'D'], ['I', 1, 'T'], ['I', 1, 'T'], ['I', 1, 'T']], 'soft_authentic');
     const rich = fakeCandidate('rich', [['I', 1, 'T'], ['vi', 6, 'T'], ['IV', 4, 'S'], ['V', 5, 'D']], 'soft_authentic');
-    const dScore = scoreProgressionAgainstMelodicBrick(brick, intent, degenerate, 0, 'major');
-    const rScore = scoreProgressionAgainstMelodicBrick(brick, intent, rich, 0, 'major');
+    const dScore = scoreProgressionAgainstMelodicBrick(brick, intent, degenerate, 0);
+    const rScore = scoreProgressionAgainstMelodicBrick(brick, intent, rich, 0);
     expect(dScore.breakdown.degeneratePenalty).toBeGreaterThan(0);
     expect(rScore.breakdown.degeneratePenalty).toBe(0);
     expect(rScore.total).toBeGreaterThan(dScore.total);
@@ -55,9 +55,21 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
     const intent = inferHarmonyIntent(brick);
     const authentic = fakeCandidate('a', [['I', 1, 'T'], ['IV', 4, 'S'], ['V', 5, 'D'], ['I', 1, 'T']], 'soft_authentic');
     const open = fakeCandidate('o', [['I', 1, 'T'], ['IV', 4, 'S'], ['vi', 6, 'T'], ['V', 5, 'D']], 'open');
-    const a = scoreProgressionAgainstMelodicBrick(brick, intent, authentic, 0, 'major');
-    const o = scoreProgressionAgainstMelodicBrick(brick, intent, open, 0, 'major');
+    const a = scoreProgressionAgainstMelodicBrick(brick, intent, authentic, 0);
+    const o = scoreProgressionAgainstMelodicBrick(brick, intent, open, 0);
     expect(a.breakdown.cadenceFit).toBeGreaterThan(o.breakdown.cadenceFit);
+  });
+
+  it('★ P1:scorer 按【真实和弦】判贴合 —— 同 scaleDegree 但 rootOffset 不同 → 得分不同', () => {
+    const brick = analyzeUserMelodicBrick(motif([3, 2, 1], [1, 1, 2])); // 结构音 E/D/C(C 大调)
+    const intent = inferHarmonyIntent(brick);
+    const realI = fakeCandidate('I', [['I', 1, 'T'], ['vi', 6, 'T'], ['IV', 4, 'S'], ['V', 5, 'D']]); // I=C-E-G,含 C/E
+    const slotsB: ProgressionSlot[] = [0, 0, 0, 0].map(() => ({ roman: 'bII', type: 'maj', scaleDegree: 1, rootOffset: 1 })); // 同级数但 rootOffset=1(Db)
+    const fakeB: ProgressionCandidate = { prototype: { id: 'bII', style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 4, slots: slotsB }, fittedSlots: slotsB };
+    const sI = scoreProgressionAgainstMelodicBrick(brick, intent, realI, 0);
+    const sB = scoreProgressionAgainstMelodicBrick(brick, intent, fakeB, 0);
+    expect(sI.breakdown.structuralToneSupport).not.toBe(sB.breakdown.structuralToneSupport); // 不再"得分完全一样"
+    expect(sI.breakdown.structuralToneSupport).toBeGreaterThan(sB.breakdown.structuralToneSupport); // I 更贴 C 大调 motif 骨干音
   });
 
   it('④ 非 jazz 不选 jazz', () => {

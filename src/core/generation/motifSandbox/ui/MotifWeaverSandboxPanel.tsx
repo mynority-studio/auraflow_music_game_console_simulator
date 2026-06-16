@@ -371,12 +371,13 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             {result.selectedProgression && <Row k="候选 top" v={result.selectedProgression.topCandidates.slice(0, 3).map((c) => `${c.prototypeId.replace(/^(pop|lofi|rnb|jazz)_/, '')}:${c.score.toFixed(1)}`).join('  ')} />}
             <Row k="和弦进行(真 roman)" v={(() => { const seen = new Set<number>(); return result.progression.filter((c) => !seen.has(c.startBeat) && seen.add(c.startBeat)).map((c) => c.realRoman ?? c.roman).join('-'); })()} />
             {result.roadmap?.harmonicBricks && result.roadmap.harmonicBricks.length > 0 && <Row k="RoadMap bricks" v={result.roadmap.harmonicBricks.map((b) => b.name).join(' · ')} />}
+            {result.roadmap?.roadmapError && <Row k="RoadMap 解析失败" v={result.roadmap.roadmapError} good={false} />}
             <Row k="motif / quote 单元" v={`${result.motifBars} bar → quote ${result.quoteBars} bar${result.quoteBars < result.motifBars ? '(缩子动机留发展空间)' : ''}`} />
             <Row k="发展弧(每槽)" v={result.arc.join(' · ')} />
             <Row k="head 原样(quote 单元)" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
             <Row k="陈述 / 发展手法 / 连接" v={`${result.audit.themeStatements} · ${result.audit.developVariants} 种 · ${result.audit.connectSlots}`} good={result.audit.developVariants >= 2} />
             <Row k="密度 / 留白" v={`${result.audit.notesPerBar.toFixed(1)} 音·bar / 留白 ${(result.audit.restRatio * 100).toFixed(0)}%`} good={result.audit.restRatio > 0.1} />
-            <Row k="chromaticRatio" v={result.audit.chromaticRatio.toFixed(2)} good={result.audit.chromaticRatio === 0 || style === 'jazz' || tonality === 'blues'} />
+            <Row k="离调(全 / 不证成)" v={`${result.audit.chromaticRatio.toFixed(2)} / 不证成 ${result.audit.unjustifiedChromatic}`} good={result.audit.unjustifiedChromatic === 0 || style === 'jazz' || tonality === 'blues'} />
             <Row k="maxLeap / jazziness" v={`${result.audit.maxLeap} 半音 · ${result.audit.jazzinessScore.toFixed(2)}`} good={result.audit.jazzinessScore < 0.35 || style === 'jazz'} />
             <div className="text-[10px] text-zinc-500 pt-1">前 16 音(fuchsia=原样陈述 · cyan=变形发展 · 灰=连接留白):</div>
             <div className="text-[10px] text-zinc-400 leading-snug break-words">

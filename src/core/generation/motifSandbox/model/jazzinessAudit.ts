@@ -8,10 +8,12 @@
 import type { MotifNote, MotifOccurrence, MotifWeaveAudit, ScaleMode, UserMotif } from './types';
 import { isInScale } from './scale';
 import { fitRange, identity } from './motifTransform';
+import { chordAtBeat, effectiveTonePcs, type SandboxChord } from './chords';
 
 const EPS = 1e-6;
 const BAR = 4;
 const LEAD_LOW = 60, LEAD_HIGH = 84;
+const mod12 = (n: number): number => ((n % 12) + 12) % 12;
 
 /** 某 startBeat 处是否原样复现 refNotes(逐音 onset 相对 + pitch)。 */
 function quotedAt(lead: readonly MotifNote[], refNotes: readonly MotifNote[], startBeat: number): boolean {
@@ -28,15 +30,24 @@ export function auditMotifWeave(
   occurrences: readonly MotifOccurrence[],
   keyPc: number,
   mode: ScaleMode,
-  ctx: { totalBars: number; quoteBeats?: number },
+  ctx: { totalBars: number; quoteBeats?: number; progression?: readonly SandboxChord[] },
 ): MotifWeaveAudit {
   const sorted = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
   let maxLeap = 0;
   for (let i = 1; i < sorted.length; i++) maxLeap = Math.max(maxLeap, Math.abs(sorted[i].midi - sorted[i - 1].midi));
   const chromatic = sorted.filter((n) => !isInScale(n.midi, keyPc, mode)).length;
   const chromaticRatio = sorted.length ? chromatic / sorted.length : 0;
+  // ★ 不【证成】的离调音:既不在调内、也不是用户原样陈述(quote 含 blues/五声特征)、也不是
+  //   当拍【真实和声】(选中模板的 realTonePcs,含次属/借)的和弦音 → 才算"真离调"。非 jazz 应=0。
+  const unjustifiedChromatic = sorted.filter((n) => {
+    if (n.occurrenceKind === 'quote') return false;
+    if (isInScale(n.midi, keyPc, mode)) return false;
+    const ch = ctx.progression ? chordAtBeat(ctx.progression, n.onsetBeat) : undefined;
+    return !(ch && effectiveTonePcs(ch).includes(mod12(n.midi)));
+  }).length;
   const dense = sorted.filter((n) => n.durationBeat <= 0.25 + EPS).length;
-  const jazzinessScore = Math.min(1, chromaticRatio * 0.6 + (sorted.length ? dense / sorted.length : 0) * 0.3 + Math.min(1, Math.max(0, maxLeap - 9) / 8) * 0.1);
+  // jazziness 用【不证成】的离调比,而非全部离调 —— 和声证成的色彩(次属/七和弦)不算 jazzy。
+  const jazzinessScore = Math.min(1, (sorted.length ? unjustifiedChromatic / sorted.length : 0) * 0.6 + (sorted.length ? dense / sorted.length : 0) * 0.3 + Math.min(1, Math.max(0, maxLeap - 9) / 8) * 0.1);
 
   // ★ 按【实际 quote 单元】校验(长 motif 会缩成 ≤2 小节子动机)—— 否则用完整 motif 会误报 ✗。
   const qBeats = ctx.quoteBeats ?? Infinity;
@@ -59,6 +70,7 @@ export function auditMotifWeave(
     restRatio,
     maxLeap,
     chromaticRatio,
+    unjustifiedChromatic,
     jazzinessScore,
   };
 }

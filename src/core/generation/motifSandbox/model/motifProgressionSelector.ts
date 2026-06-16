@@ -23,7 +23,7 @@ export function selectProgressionForMotif(args: {
   const targetBars = args.targetBars ?? 16;
   const { candidates, modeName } = getProgressionCandidatesForMotif({ style: args.style, mode: args.mode, targetBars });
 
-  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc, args.mode) }));
+  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc) }));
   scored.sort((a, b) => b.total - a.total);
 
   const top = scored[0].total;

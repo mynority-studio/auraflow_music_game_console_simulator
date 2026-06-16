@@ -54,15 +54,16 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
     harmonicRomans.push(c.realRoman ?? ROMAN[deg17(c.degree) - 1]);
   }
 
-  // 真 RoadMap:realized chords → MgChordDef[] → ChordPart → parseRoadMap(best-effort)。
+  // 真 RoadMap:realized chords → MgChordDef[] → ChordPart → parseRoadMap(失败不静默吞 → roadmapError)。
   let harmonicBricks: MotifMelodicRoadmap['harmonicBricks'];
+  let roadmapError: string | undefined;
   try {
     const defs: MgChordDef[] = chords.map((c) => {
       const rootPc = c.realRootPc ?? c.rootPc;
       return { roman: c.realRoman ?? c.roman, root: PC_NAMES[rootPc], rootMidi: rootPc + 48, type: normalizeChordType(c.realType ?? 'maj') ?? 'maj', bassMidi: rootPc + 48, duration: c.durationBeats, effectiveFunc: c.effectiveFunc };
     });
     harmonicBricks = parseRoadMap({ part: buildChordPart(defs), songKeyPc: keyPc }).bricks;
-  } catch { harmonicBricks = undefined; }
+  } catch (err) { roadmapError = err instanceof Error ? err.message : String(err); }
 
   const cycleBeats = 4 * BAR;
   const numCycles = Math.max(1, Math.round((totalBars * BAR) / cycleBeats));
@@ -76,5 +77,5 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
       melodicSlots.push({ id: `answer-${c}`, startBeat: start + quoteBeats, durationBeats: ansLen, role, source: 'generated', requiredFunction: role === 'cadence' ? 'cadence' : 'answer' });
     }
   }
-  return { totalBars, harmonicRomans, harmonicBricks, melodicSlots };
+  return { totalBars, harmonicRomans, harmonicBricks, roadmapError, melodicSlots };
 }

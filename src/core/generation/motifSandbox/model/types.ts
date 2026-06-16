@@ -38,7 +38,7 @@ export interface UserMotif {
   mode: ScaleMode;
   bpm: number;
   notes: MotifNote[];    // normalized
-  lengthBeats: number;   // 1/2/4/8(≤8)
+  lengthBeats: number;   // 整 bar 拍数(hidden-grid 最多 4 小节=16 拍;free fallback 1-4 bar)
   contour: number[];     // 相邻 scaleDegree delta 的符号
   rhythmCell: number[];  // onset 差 + 时值模式
   createdAt: number;
@@ -61,7 +61,8 @@ export interface MotifWeaveAudit {
   notesPerBar: number;            // 密度(音/bar)
   restRatio: number;              // 空拍占比(0..1,越大越透气)
   maxLeap: number;
-  chromaticRatio: number;
+  chromaticRatio: number;          // 全部离调比(含和声证成的色彩,informational)
+  unjustifiedChromatic: number;    // 【不证成】离调音数(既非调内、非 quote、非真实和声音)→ 非 jazz 应=0
   jazzinessScore: number;
 }
 

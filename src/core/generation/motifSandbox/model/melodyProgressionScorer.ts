@@ -6,8 +6,7 @@
 // ============================================================
 
 import type { ProgressionSlot } from '../../newEngine/knowledge/progressions';
-import { makeChord, type SandboxChord } from './chords';
-import type { ScaleMode } from './types';
+import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
 import type { UserMelodicBrick, MotifHarmonyIntent, ProgressionScoreBreakdown } from './melodicBrickTypes';
 import type { ProgressionCandidate } from './progressionCandidateProvider';
 
@@ -20,8 +19,11 @@ function slotAtBeat(slots: readonly ProgressionSlot[], beat: number): Progressio
   for (const s of slots) { const b = s.beats ?? 4; if (beat >= acc - 1e-6 && beat < acc + b - 1e-6) return s; acc += b; }
   return slots[slots.length - 1];
 }
-function slotTriad(slot: ProgressionSlot, keyPc: number, mode: ScaleMode): SandboxChord {
-  return makeChord(deg17(slot.scaleDegree), keyPc, mode, 0, 4);
+/** ★ slot 的【真实和弦音】pc(rootOffset + type;含七/九/borrowed/secondary)—— 旋律贴合度按真和弦判,
+ *  而非 scaleDegree 调内三和弦(否则 I 与 rootOffset=1 的假和弦得分相同 = 区分不出)。 */
+function slotRealPcs(slot: ProgressionSlot, keyPc: number): number[] {
+  const rootPc = mod12(keyPc + slot.rootOffset);
+  return [...new Set(chordTypeIntervals(normalizeChordType(slot.type) ?? 'maj').map((iv) => mod12(rootPc + iv)))];
 }
 /** 前 4 小节(一个和弦循环)的 roman-per-bar key,用于退化检测。 */
 function cycleRomanKey(slots: readonly ProgressionSlot[]): string {
@@ -31,7 +33,7 @@ function cycleRomanKey(slots: readonly ProgressionSlot[]): string {
 }
 
 export function scoreProgressionAgainstMelodicBrick(
-  brick: UserMelodicBrick, intent: MotifHarmonyIntent, candidate: ProgressionCandidate, keyPc: number, mode: ScaleMode,
+  brick: UserMelodicBrick, intent: MotifHarmonyIntent, candidate: ProgressionCandidate, keyPc: number,
 ): { total: number; breakdown: ProgressionScoreBreakdown } {
   const slots = candidate.fittedSlots;
   const proto = candidate.prototype;
@@ -42,17 +44,17 @@ export function scoreProgressionAgainstMelodicBrick(
   let structuralToneSupport = 0, strongNonChord = 0;
   for (const t of brick.structuralTones) {
     if (t.onsetBeat >= brick.quoteBeats - 1e-6) continue;
-    const isCt = slotTriad(slotAtBeat(slots, t.onsetBeat), keyPc, mode).tonePcs.includes(mod12(t.midi));
+    const isCt = slotRealPcs(slotAtBeat(slots, t.onsetBeat), keyPc).includes(mod12(t.midi));
     structuralToneSupport += t.weight * (isCt ? 1 : -0.25);
     if (!isCt && t.weight >= 0.6) strongNonChord += t.weight; // 长/强音撞和弦
   }
 
-  const headFit = brick.head && slotTriad(slotAtBeat(slots, 0), keyPc, mode).tonePcs.includes(mod12(brick.head.midi)) ? 0.5 : 0;
+  const headFit = brick.head && slotRealPcs(slotAtBeat(slots, 0), keyPc).includes(mod12(brick.head.midi)) ? 0.5 : 0;
 
   let tailFit = 0;
   if (brick.tail) {
     const tb = Math.min(brick.tail.onsetBeat, brick.quoteBeats - 0.01);
-    tailFit = (slotTriad(slotAtBeat(slots, tb), keyPc, mode).tonePcs.includes(mod12(brick.tail.midi)) ? 0.5 : -0.2) * Math.max(0.3, brick.tail.weight);
+    tailFit = (slotRealPcs(slotAtBeat(slots, tb), keyPc).includes(mod12(brick.tail.midi)) ? 0.5 : -0.2) * Math.max(0.3, brick.tail.weight);
   }
 
   // cadence 适配:候选 cadence vs intent 偏好

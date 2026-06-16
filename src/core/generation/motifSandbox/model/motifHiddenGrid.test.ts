@@ -93,7 +93,7 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     const r = generateMotifWeave({ capturedNotes: [], motif, style: 'pop', keyPc: 0, mode: 'major', bpm: c.bpm, seed: 7 });
     const ref = fitRange(identity(motif.notes), 60, 84);
     for (const b of [0, 16, 32, 48]) expect(quotedAt(r.lead, ref, b), `bar@${b}`).toBe(true);
-    for (const n of r.lead) expect(isInScale(n.midi, 0, 'major')).toBe(true); // 非 jazz 全 diatonic
+    expect(r.audit.unjustifiedChromatic).toBe(0); // 离调音都由真实和声/quote 证成(非 jazz 无"乱"离调)
   });
 
   it('★ quotePlan=verseHeadsOnly:原样只在 bar1(0)/bar9(32),bar5(16)是发展不是原样', () => {

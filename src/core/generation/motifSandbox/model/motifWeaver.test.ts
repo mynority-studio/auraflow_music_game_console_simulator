@@ -4,6 +4,7 @@ import { generateSampleCaptured } from './motifAnalysis';
 import { isInScale } from './scale';
 import { quotedAt } from './jazzinessAudit';
 import { fitRange, identity } from './motifTransform';
+import { chordAtBeat, effectiveTonePcs } from './chords';
 import type { MotifWeaverInput } from './types';
 
 const baseInput = (over: Partial<MotifWeaverInput> = {}): MotifWeaverInput => ({
@@ -65,11 +66,15 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     expect(sig(generateMotifWeave(baseInput({ seed: 11 })).lead)).toBe(sig(generateMotifWeave(baseInput({ seed: 11 })).lead));
   });
 
-  it('POP/LOFI/RNB:chromaticRatio = 0(全 diatonic);jazziness < 0.4', () => {
+  it('POP/LOFI/RNB:无【不证成】离调音(离调必须是真实和声音 / 用户 quote);jazziness < 0.4', () => {
     for (const style of ['pop', 'lofi', 'rnb'] as const) {
       const r = generateMotifWeave(baseInput({ style }));
-      expect(r.audit.chromaticRatio, style).toBe(0);
-      for (const n of r.lead) expect(isInScale(n.midi, 0, 'major'), `${style} GM${n.midi}`).toBe(true);
+      expect(r.audit.unjustifiedChromatic, style).toBe(0); // 续写的色彩音都由选中模板真实和声证成
+      for (const n of r.lead) { // 每音:调内 / quote / 当拍真实和声音 之一
+        const ok = isInScale(n.midi, 0, 'major') || n.occurrenceKind === 'quote'
+          || (effectiveTonePcs(chordAtBeat(r.progression, n.onsetBeat)).includes(((n.midi % 12) + 12) % 12));
+        expect(ok, `${style} GM${n.midi}@${n.onsetBeat}`).toBe(true);
+      }
       expect(r.audit.jazzinessScore, style).toBeLessThan(0.4);
     }
   });
@@ -115,7 +120,7 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
   it('minor key 全在调内;1-4 bar motif 都不崩', () => {
     for (const lenVariant of [0, 1, 2, 3]) {
       const r = generateMotifWeave(baseInput({ capturedNotes: generateSampleCaptured(96, 9, 'minor', lenVariant), keyPc: 9, mode: 'minor' }));
-      for (const n of r.lead) expect(isInScale(n.midi, 9, 'minor')).toBe(true);
+      expect(r.audit.unjustifiedChromatic).toBe(0); // 离调音都由真实和声/quote 证成
       expect(r.lead.length).toBeGreaterThan(4);
     }
   });

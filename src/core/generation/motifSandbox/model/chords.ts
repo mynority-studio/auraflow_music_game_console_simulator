@@ -53,15 +53,21 @@ export function makeChord(degree: number, keyPc: number, mode: ScaleMode, startB
   };
 }
 
-/** 某 midi 是否该和弦的和弦音(按 pc)。 */
-export function isChordTone(midiNote: number, chord: SandboxChord): boolean {
-  return chord.tonePcs.includes(mod(midiNote, 12));
+/** 该和弦【生效】的和弦音 pc:有真实和声(选中模板)→ 真和弦音(含七/九/borrowed/secondary);
+ *  否则调内三和弦。★ 旋律 adapt 用它 = 真实模板和弦语义驱动续写(非"调内三和弦近似")。 */
+export function effectiveTonePcs(chord: SandboxChord): readonly number[] {
+  return chord.realTonePcs ?? chord.tonePcs;
 }
 
-/** 把 midi 吸到该和弦【最近的和弦音】(保持就近八度)。 */
+/** 某 midi 是否该和弦的和弦音(按 pc;走真实和声音)。 */
+export function isChordTone(midiNote: number, chord: SandboxChord): boolean {
+  return effectiveTonePcs(chord).includes(mod(midiNote, 12));
+}
+
+/** 把 midi 吸到该和弦【最近的和弦音】(走真实和声音,保持就近八度)。 */
 export function nearestChordTone(midiNote: number, chord: SandboxChord): number {
   let best = midiNote, bestD = 99;
-  for (const pc of chord.tonePcs) {
+  for (const pc of effectiveTonePcs(chord)) {
     const base = midiNote - mod(midiNote, 12) + pc;
     for (const cand of [base - 12, base, base + 12]) {
       const d = Math.abs(cand - midiNote);
