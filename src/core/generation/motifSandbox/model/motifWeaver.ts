@@ -192,31 +192,49 @@ export function renderMelodicSlot(args: {
   keyPc: number;
   mode: ScaleMode;
   avoidLabel?: string;
+  quoteBeats?: number; // 排比一致长度(子动机);默认整段 motif。quote 裁到 min(quoteBeats, slot span)
 }): { notes: MotifNote[]; label: string } {
   const { slot, userMotif, progression, previousNotes, keyPc, mode } = args;
   const base = fitRange(identity(userMotif.notes), LEAD_LOW, LEAD_HIGH);
   if (!base.length) return { notes: [], label: 'empty' };
   const { lo: bandLo, hi: bandHi } = LEAD_BAND(base);
   const motifBeats = Math.max(...base.map((n) => n.onsetBeat + n.durationBeat));
+  const quoteLen = Math.min(args.quoteBeats ?? motifBeats, motifBeats); // 排比单元长度(子动机)
   const prevMidi = previousNotes.length ? previousNotes[previousNotes.length - 1].midi : base[0].midi;
   const rng = makeRng((args.seed ^ hashId(slot.id)) >>> 0);
   const at = slot.startBeat, span = slot.durationBeats, idx = Math.round(at / BAR);
 
   switch (slot.userMotifPolicy) {
     case 'mustQuote': {
-      if (slot.requiredFunction === 'cadence' && motifBeats > span + 1e-6) return { notes: placeMotifTail(base, at, span, motifBeats, idx), label: 'quote:tail' };
-      return { notes: placeQuoteVerbatim(base, at, Math.min(motifBeats, span), idx), label: 'quote' };
+      // cadence slot 且子动机比 slot 长 → 取结构尾片段(填满 slot,不留死寂)。
+      if (slot.requiredFunction === 'cadence' && quoteLen > span + 1e-6) return { notes: placeMotifTail(base, at, span, quoteLen, idx), label: 'quote:tail' };
+      // 否则:曲首/再现【原样陈述子动机】+ 槽内剩余空间【继续发展】填充(陈述后不留大段死寂)。
+      const qLen = Math.min(quoteLen, span);
+      const q = placeQuoteVerbatim(base, at, qLen, idx);
+      const tailSpan = span - qLen;
+      let tail: MotifNote[] = [];
+      if (tailSpan >= BAR - 1e-6) {
+        const last = q.length ? q[q.length - 1].midi : prevMidi;
+        tail = fillAnswer(base, at + qLen, tailSpan, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx).notes;
+      }
+      return { notes: [...q, ...tail], label: 'quote' };
     }
     case 'mustDevelop': {
-      const { ops, label } = pickDevOps(rng, args.avoidLabel ?? ''); // 复用现有发展手法(模进/倒影/逆行 + 节奏)
-      const notes = placeStatement(base, ops, at, span, idx, 'develop', prevMidi, bandLo, bandHi, keyPc, mode);
-      adaptToHarmony(notes, progression);
-      return { notes, label };
+      // 填满整个 slot(模进/倒影/逆行 + 偶尔连接留白),避免长 brick 留大段空拍。
+      const r = fillAnswer(base, at, span, quoteLen, progression, rng, args.avoidLabel ?? '', prevMidi, bandLo, bandHi, keyPc, mode, idx);
+      return { notes: r.notes, label: r.label || 'develop' };
     }
     case 'mayReference': {
-      const notes = placeStatement(base, [{ t: 'fragment', keep: 0.5 }], at, span, idx, 'develop', prevMidi, bandLo, bandHi, keyPc, mode); // 节奏/轮廓片段(轻引用)
-      adaptToHarmony(notes, progression);
-      return { notes, label: 'ref:frag' };
+      // 轻引用:片段化开头 + 填满剩余(节奏/轮廓延续,不留死寂)。
+      const frag = placeStatement(base, [{ t: 'fragment', keep: 0.5 }], at, Math.min(quoteLen, span), idx, 'develop', prevMidi, bandLo, bandHi, keyPc, mode);
+      adaptToHarmony(frag, progression);
+      const used = Math.min(quoteLen, span);
+      let tail: MotifNote[] = [];
+      if (span - used >= BAR - 1e-6) {
+        const last = frag.length ? frag[frag.length - 1].midi : prevMidi;
+        tail = fillAnswer(base, at + used, span - used, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx).notes;
+      }
+      return { notes: [...frag, ...tail], label: 'ref:frag' };
     }
     case 'generatedOnly':
     default:
@@ -294,8 +312,8 @@ function smoothAndResolve(lead: MotifNote[], bandLo: number, bandHi: number, key
     if (p.occurrenceKind === 'quote') continue;
     p.midi = reconcile(p.midi, i >= 2 ? s[i - 2].midi : s[i].midi, s[i].midi, keyPc, mode);
   }
-  // 末音解决到主和弦(曲式闭合,保平滑)。
-  if (s.length) {
+  // 末音解决到主和弦(曲式闭合,保平滑)—— ★ 不动 quote 音(保原样陈述完整,曲尾正好是 quote 时不破坏)。
+  if (s.length && s[s.length - 1].occurrenceKind !== 'quote') {
     const last = s[s.length - 1];
     const ch = chordAtBeat(progression, last.onsetBeat) ?? progression[progression.length - 1];
     last.midi = resolveNote(last.midi, s.length >= 2 ? s[s.length - 2].midi : last.midi, ch);
@@ -363,7 +381,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     // ★ Phase 5:slot-plan 驱动 —— 遍历 RoadMap 派生的旋律 slot,逐 slot 填充(motif 按功能落位)。
     let avoidLabel = '';
     for (const slot of melodicSlotPlan.slots) {
-      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel });
+      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel, quoteBeats: motifBeats });
       if (!notes.length) continue;
       if (slot.userMotifPolicy === 'mustDevelop') avoidLabel = label; // 发展手法尽量不连同
       const kind: MotifOccurrence['kind'] = slot.userMotifPolicy === 'mustQuote' ? 'quote' : slot.userMotifPolicy === 'generatedOnly' ? 'connect' : 'develop';

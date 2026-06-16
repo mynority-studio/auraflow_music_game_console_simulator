@@ -37,11 +37,12 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
       ({ id: `s@${start}`, roadmapBrickId: 'b', startBeat: start, durationBeats: dur, requiredFunction: fn, userMotifPolicy: policy, lineage: {}, reason: '' });
     const common = { userMotif: motif, userBrick: brick, progression: prog, previousNotes: [] as never[], seed: 7, keyPc: 0, mode: 'major' as const };
     const base = fitRange(identity(motif.notes), 60, 84);
-    // mustQuote → 原样(occurrenceKind=quote,首音 = base 首音)
+    // mustQuote → 槽以【原样陈述】开头(首音 quote = base 首音),陈述后槽内继续发展填充(不留死寂)
     const q = renderMelodicSlot({ slot: mkSlot('mustQuote', 'opening'), ...common });
     expect(q.notes.length).toBeGreaterThan(0);
-    expect(q.notes.every((n) => n.occurrenceKind === 'quote')).toBe(true);
+    expect(q.notes[0].occurrenceKind).toBe('quote');
     expect(q.notes[0].midi).toBe(base[0].midi);
+    expect(q.notes.some((n) => n.occurrenceKind === 'quote')).toBe(true);
     // mustDevelop → 变形(occurrenceKind=develop)
     const d = renderMelodicSlot({ slot: mkSlot('mustDevelop', 'approach'), ...common });
     expect(d.notes.length).toBeGreaterThan(0);
@@ -95,6 +96,18 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
       expect(qs.length, `seed${s} ≥1 quote`).toBeGreaterThanOrEqual(1);
       for (const b of qs) expect(quotedAt(r.lead, ref, b), `seed${s} quote@${b}`).toBe(true); // 结构等价 brick 上再现
       expect(r.occurrences.some((o) => o.kind === 'develop'), `seed${s} 有发展`).toBe(true);
+    }
+  });
+
+  it('★ 动机不丢:motif 永远在曲首(beat0)原样陈述(回归:slot-plan 纯功能落位会让动机不在开头)', () => {
+    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+      for (let seed = 1; seed <= 8; seed++) {
+        for (const variant of [0, 1, 2, 3]) {
+          const r = generateMotifWeave(baseInput({ style, seed, capturedNotes: generateSampleCaptured(96, 0, 'major', variant) }));
+          const ref = fitRange(identity(r.motif.notes), 60, 84).filter((n) => n.onsetBeat < r.quoteBars * 4 - 1e-6);
+          expect(quotedAt(r.lead, ref, 0), `${style} seed${seed} v${variant} 曲首陈述`).toBe(true);
+        }
+      }
     }
   });
 

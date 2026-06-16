@@ -9,6 +9,8 @@ const rb = (id: string, type: RoadmapBrickType, startBeat: number, recurrenceKey
   id, name: id, type, startBeat, durationBeats, chordIds: [`ch@${startBeat}`], recurrenceKey,
 });
 const slotById = (plan: ReturnType<typeof buildMelodicSlotPlanFromRoadMap>, id: string) => plan.slots.find((s) => s.id === id)!;
+const quoteFns = (plan: ReturnType<typeof buildMelodicSlotPlanFromRoadMap>) => plan.userQuoteSlotIds.map((id) => slotById(plan, id).requiredFunction);
+const quoteStartsOf = (plan: ReturnType<typeof buildMelodicSlotPlanFromRoadMap>) => plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat).sort((a, b) => a - b);
 
 describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4)', () => {
   it('★ 每 slot 有 roadmapBrickId;至少一个 mustQuote', () => {
@@ -18,24 +20,35 @@ describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4
     expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('★ directive#4:approach motif → quote 落在 Approach slot', () => {
+  it('★ exposition:motif 永远在曲首(beat0)原样陈述(否则听感上"动机丢了")', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Cadence', 4, 'Cadence|V-I'), rb('c', 'Approach', 8, 'Approach|ii-V'), rb('d', 'Cadence', 12, 'Cadence|V-I')];
+    // 即便 motif 是 cadence 功能,曲首 slot 也必 quote(主题陈述)
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('cadence'), seed: 5 });
+    expect(quoteStartsOf(plan)).toContain(0);          // 曲首陈述
+    expect(slotById(plan, plan.slots[0].id).userMotifPolicy).toBe('mustQuote');
+  });
+
+  it('★ directive#4:approach motif → quote 落在 Approach slot(+ 曲首陈述)', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|V-I'), rb('d', 'Approach', 12, 'Approach|ii-V')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 3 });
-    expect(slotById(plan, plan.userQuoteSlotIds[0]).requiredFunction).toBe('approach');
+    expect(quoteFns(plan)).toContain('approach'); // motif 落在 Approach slot(among quotes)
+    expect(quoteStartsOf(plan)).toContain(0);     // 同时曲首陈述
   });
 
-  it('★ directive#5:cadence motif → quote 落在 Cadence/resolution slot', () => {
+  it('★ directive#5:cadence motif → quote 落在 Cadence/resolution slot(+ 曲首陈述)', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Cadence', 4, 'Cadence|V-I'), rb('c', 'Approach', 8, 'Approach|ii-V'), rb('d', 'Cadence', 12, 'Cadence|V-I')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('cadence'), seed: 5 });
-    expect(['cadence', 'resolution']).toContain(slotById(plan, plan.userQuoteSlotIds[0]).requiredFunction);
+    expect(quoteFns(plan).some((f) => f === 'cadence' || f === 'resolution')).toBe(true);
+    expect(quoteStartsOf(plan)).toContain(0);
   });
 
-  it('★ 结构性复现:同 recurrenceKey 的 brick 都 mustQuote(motif 在等价 brick 再现)', () => {
+  it('★ 结构性复现:同 recurrenceKey 的 brick 都 mustQuote(motif 在等价 brick 再现)+ 曲首陈述', () => {
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 6, 'Approach|ii-V'), rb('c', 'Approach', 18, 'Approach|ii-V')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(24), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 1 });
-    const quoteStarts = plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat).sort((a, b) => a - b);
-    expect(quoteStarts).toEqual([6, 18]);          // quote 落点来自 RoadMap brick(6/18),非固定 0/16/32/48
-    expect(plan.warnings.some((w) => w.includes('回退句头'))).toBe(false); // 走结构性复现,非句头回退
+    const qs = quoteStartsOf(plan);
+    expect(qs).toContain(6); expect(qs).toContain(18);  // 结构性复现落 RoadMap brick(6/18),非固定锚
+    expect(qs).toContain(0);                            // + 曲首陈述
+    expect(plan.warnings.some((w) => w.includes('回退句头'))).toBe(false); // 走结构性复现
   });
 
   it('★ 无复现 → 回退句头排比(用户决策;warning 标记,且最佳匹配仍被 quote)', () => {

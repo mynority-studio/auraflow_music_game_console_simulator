@@ -96,6 +96,10 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
     quoteIds.add(best.brick.id);                      // 至少含最佳匹配
     warnings.push('RoadMap 无复现 brick → motif 回退句头排比(保记忆点)');
   }
+  // ★ 主题陈述(exposition):motif 永远在【曲首 slot】原样出现 —— 否则听感上"动机丢了"(开头听不到主题)。
+  //   功能匹配决定 motif 还在哪里【再现】,但开头一定先【陈述】主题(Impro-Visor: state-then-develop)。
+  const openingId = pairs[0].brick.id;
+  quoteIds.add(openingId);
 
   // ⑤ 逐 slot 定策略 + lineage + reason。directive:generatedOnly 是【例外】(只在 motif 会抵触
   //   RoadMap 功能时)—— 即【曲尾终止】要干净解决;其余非 quote slot 一律发展/引用 motif(续写主体)。
@@ -105,7 +109,7 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
     if (quoteIds.has(p.brick.id)) {
       p.slot.userMotifPolicy = 'mustQuote';
       p.slot.lineage = { sourceMotifId: userBrick.sourceMotifId, transform: 'quote' };
-      p.slot.reason = `quote@${p.brick.type}${recurringIds.size >= 2 ? '(recur)' : '(phraseHead)'}`;
+      p.slot.reason = p.brick.id === openingId ? 'quote@exposition(曲首陈述)' : `quote@${p.brick.type}${recurringIds.size >= 2 ? '(recur)' : '(phraseHead)'}`;
     } else if (fn === 'cadence' && p.brick.id === lastBrickId) {
       // 仅【曲尾终止】不接 motif → 干净生成解决(motif 强行落最终终止会抵触收束)。
       p.slot.userMotifPolicy = 'generatedOnly';
