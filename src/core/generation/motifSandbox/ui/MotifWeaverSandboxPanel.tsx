@@ -411,6 +411,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
               return <Row k="brick slots(复现)" v={`${bs.length} 槽 · ${counts.size} 异 · ${recur} 复现键${result.roadmap.brickSlotsFromFallback ? ' · ⚠兜底逐和弦' : ''} · ${bs.slice(0, 6).map((s) => `${s.startBeat.toFixed(0)}:${s.type}`).join(' ')}`} good={!result.roadmap.brickSlotsFromFallback && recur >= 1} />;
             })()}
             {result.roadmap?.roadmapError && <Row k="RoadMap 解析失败" v={result.roadmap.roadmapError} good={false} />}
+            {result.melodicSlotPlan && <Row k="旋律 slot 计划" v={`${result.melodicSlotPlan.slots.length} 槽 · quote ${result.melodicSlotPlan.userQuoteSlotIds.length} · dev/ref ${result.melodicSlotPlan.userDevelopSlotIds.length}${result.melodicSlotPlan.warnings.length ? ' · ⚠' + result.melodicSlotPlan.warnings[0] : ''}`} good={result.melodicSlotPlan.userQuoteSlotIds.length >= 1} />}
+            {result.melodicSlotPlan && <div className="text-[10px] text-zinc-400 leading-snug break-words">{result.melodicSlotPlan.slots.slice(0, 6).map((s) => <span key={s.id} className={s.userMotifPolicy === 'mustQuote' ? 'text-fuchsia-300' : s.userMotifPolicy === 'mustDevelop' ? 'text-cyan-300' : s.userMotifPolicy === 'mayReference' ? 'text-sky-300' : 'text-zinc-500'}>{s.startBeat.toFixed(0)}:{s.requiredFunction}/{s.userMotifPolicy.replace('must', '').replace('Only', '')} </span>)}</div>}
             <Row k="motif / quote 单元" v={`${result.motifBars} bar → quote ${result.quoteBars} bar${result.quoteBars < result.motifBars ? '(缩子动机留发展空间)' : ''}`} />
             <Row k="发展弧(每槽)" v={result.arc.join(' · ')} />
             <Row k="head 原样(quote 单元)" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />

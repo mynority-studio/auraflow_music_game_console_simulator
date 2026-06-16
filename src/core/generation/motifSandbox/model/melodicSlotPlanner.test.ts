@@ -1,0 +1,69 @@
+import { describe, it, expect } from 'vitest';
+import { buildMelodicSlotPlanFromRoadMap } from './melodicSlotPlanner';
+import { defaultSandboxForm } from './types';
+import type { RoadmapBrickSlot, RoadmapBrickType, UserMelodicBrick, UserMelodicBrickFunction } from './melodicBrickTypes';
+
+// planner 只读 userBrick.primaryFunction + sourceMotifId → 用最小 fake brick 聚焦 planner 逻辑。
+const userBrickAs = (fn: UserMelodicBrickFunction): UserMelodicBrick => ({ primaryFunction: fn, sourceMotifId: 'motif-x' } as UserMelodicBrick);
+const rb = (id: string, type: RoadmapBrickType, startBeat: number, recurrenceKey: string, durationBeats = 4): RoadmapBrickSlot => ({
+  id, name: id, type, startBeat, durationBeats, chordIds: [`ch@${startBeat}`], recurrenceKey,
+});
+const slotById = (plan: ReturnType<typeof buildMelodicSlotPlanFromRoadMap>, id: string) => plan.slots.find((s) => s.id === id)!;
+
+describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4)', () => {
+  it('★ 每 slot 有 roadmapBrickId;至少一个 mustQuote', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|V-I')];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('opening'), seed: 7 });
+    expect(plan.slots.every((s) => s.roadmapBrickId)).toBe(true);
+    expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('★ directive#4:approach motif → quote 落在 Approach slot', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|V-I'), rb('d', 'Approach', 12, 'Approach|ii-V')];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 3 });
+    expect(slotById(plan, plan.userQuoteSlotIds[0]).requiredFunction).toBe('approach');
+  });
+
+  it('★ directive#5:cadence motif → quote 落在 Cadence/resolution slot', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Cadence', 4, 'Cadence|V-I'), rb('c', 'Approach', 8, 'Approach|ii-V'), rb('d', 'Cadence', 12, 'Cadence|V-I')];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('cadence'), seed: 5 });
+    expect(['cadence', 'resolution']).toContain(slotById(plan, plan.userQuoteSlotIds[0]).requiredFunction);
+  });
+
+  it('★ 结构性复现:同 recurrenceKey 的 brick 都 mustQuote(motif 在等价 brick 再现)', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 6, 'Approach|ii-V'), rb('c', 'Approach', 18, 'Approach|ii-V')];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(24), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 1 });
+    const quoteStarts = plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat).sort((a, b) => a - b);
+    expect(quoteStarts).toEqual([6, 18]);          // quote 落点来自 RoadMap brick(6/18),非固定 0/16/32/48
+    expect(plan.warnings.length).toBe(0);          // 走结构性复现,非句头回退
+  });
+
+  it('★ 无复现 → 回退句头排比(用户决策;warning 标记,且最佳匹配仍被 quote)', () => {
+    // 全唯一 recurrenceKey → 无结构复现
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|IV-V'), rb('d', 'Turnaround', 12, 'Turnaround|vi-IV')];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 2 });
+    expect(plan.warnings.some((w) => w.includes('回退句头'))).toBe(true);
+    expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
+    // 最佳匹配(Approach@4)一定在 quote 集合里
+    expect(plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat)).toContain(4);
+  });
+
+  it('★ 非 quote slot:同类型→mustDevelop / 答句区→mayReference / 抵触→generatedOnly,带 lineage', () => {
+    const bricks = [rb('a', 'Approach', 0, 'Approach|ii-V'), rb('b', 'Approach', 8, 'Approach|ii-V'), rb('c', 'Cycle', 4, 'Cycle|vi'), rb('d', 'Cadence', 12, 'Cadence|V-I')];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 4 });
+    const cycle = plan.slots.find((s) => s.requiredFunction === 'continuation')!;
+    expect(cycle.userMotifPolicy).toBe('mayReference');           // Cycle = 答句/延续区
+    expect(cycle.lineage.sourceMotifId).toBe('motif-x');
+    const cadence = plan.slots.find((s) => s.requiredFunction === 'cadence')!;
+    expect(cadence.userMotifPolicy).toBe('generatedOnly');         // 与 approach motif 抵触
+    for (const s of plan.slots) expect(s.reason).toBeTruthy();
+  });
+
+  it('确定性:同输入 → 同 plan', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Approach', 12, 'Approach|ii-V')];
+    const a = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 9 });
+    const b = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 9 });
+    expect(a.userQuoteSlotIds).toEqual(b.userQuoteSlotIds);
+    expect(a.slots.map((s) => s.userMotifPolicy)).toEqual(b.slots.map((s) => s.userMotifPolicy));
+  });
+});

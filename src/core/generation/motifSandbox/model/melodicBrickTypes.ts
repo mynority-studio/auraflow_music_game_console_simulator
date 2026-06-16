@@ -117,6 +117,33 @@ export interface RoadmapBrickSlot {
   recurrenceKey: string;        // 结构等价键(同 key 的 brick 可接 motif 复用)
 }
 
+// —— Melodic Slot Plan(directive roadmap_slot_fusion §5.3/5.4):RoadMap brick slot → 旋律 slot 计划。
+//   motif 按【功能匹配】落进 slot,结构性复现按 recurrenceKey(无复现回退句头);Phase 5 weaver 据此填充。——
+export type MelodicSlotFunction = 'opening' | 'approach' | 'cadence' | 'resolution' | 'continuation' | 'answer' | 'fill';
+export type UserMotifPolicy = 'mustQuote' | 'mustDevelop' | 'mayReference' | 'generatedOnly';
+export type MelodicSlotTransform = 'quote' | 'transpose' | 'invert' | 'sequence' | 'rhythmicShift' | 'answer' | 'cadenceTail' | 'none';
+
+export interface MelodicSlot {
+  id: string;
+  roadmapBrickId: string;
+  startBeat: number;
+  durationBeats: number;
+  sectionId?: string;
+  requiredFunction: MelodicSlotFunction;
+  userMotifPolicy: UserMotifPolicy;
+  lineage: { sourceMotifId?: string; parentSlotId?: string; transform?: MelodicSlotTransform };
+  reason: string;               // UI 调试证据
+}
+
+export interface MelodicSlotPlan {
+  totalBars: number;
+  beatsPerBar: number;
+  slots: MelodicSlot[];
+  userQuoteSlotIds: string[];   // motif 原样出现的 slot
+  userDevelopSlotIds: string[]; // motif 发展/引用的 slot
+  warnings: string[];
+}
+
 // —— 旋律 roadmap(锚点槽 + 真 harmonicBricks:slots→ChordPart→parseRoadMap)——
 export interface MotifMelodicSlot {
   id: string;

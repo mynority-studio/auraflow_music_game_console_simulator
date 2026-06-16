@@ -25,6 +25,18 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     expect(r.occurrences[0].label).toBe('head');
   });
 
+  it('★ Phase4:weaver result 带 melodicSlotPlan(RoadMap 驱动,≥1 quote slot,每 slot 有 roadmapBrickId)', () => {
+    const r = generateMotifWeave(baseInput());
+    expect(r.melodicSlotPlan).toBeDefined();
+    const plan = r.melodicSlotPlan!;
+    expect(plan.slots.length).toBeGreaterThan(0);
+    expect(plan.slots.every((s) => s.roadmapBrickId)).toBe(true);
+    expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
+    // quote 落点来自 RoadMap slot(brickSlots 的 startBeat),非硬编锚点
+    const brickStarts = new Set(r.roadmap!.brickSlots.map((b) => b.startBeat));
+    for (const id of plan.userQuoteSlotIds) expect(brickStarts.has(plan.slots.find((s) => s.id === id)!.startBeat)).toBe(true);
+  });
+
   it('★ Phase1 动态曲长:8 bar → progressionBeats=32;24 bar → 96(无需改代码,form context 驱动)', () => {
     const r8 = generateMotifWeave(baseInput({ form: defaultSandboxForm(8) }));
     expect(r8.totalBars).toBe(8);

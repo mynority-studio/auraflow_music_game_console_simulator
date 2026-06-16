@@ -99,6 +99,7 @@ export interface MotifWeaverResult {
   roadmap?: import('./melodicBrickTypes').MotifMelodicRoadmap | null;
   harmonySource?: 'template' | 'fallback'; // 模板选择成功 / 兜底回 buildProgression(不静默)
   harmonyError?: string;                    // fallback 时的错误(UI 暴露)
+  melodicSlotPlan?: import('./melodicBrickTypes').MelodicSlotPlan; // RoadMap 驱动旋律 slot 计划(Phase 4;Phase 5 消费)
 }
 
 export type QuotePlan = 'verseHeadsOnly' | 'phraseHeads';

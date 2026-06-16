@@ -25,7 +25,8 @@ import { analyzeUserMelodicBrick } from './melodicBrickAnalyzer';
 import { inferHarmonyIntent } from './melodicBrickHarmonyIntent';
 import { selectProgressionForMotif } from './motifProgressionSelector';
 import { realizeToSandboxChords, buildMotifRoadmap } from './motifRoadmap';
-import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap } from './melodicBrickTypes';
+import { buildMelodicSlotPlanFromRoadMap } from './melodicSlotPlanner';
+import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap, MelodicSlotPlan } from './melodicBrickTypes';
 import { chordAtBeat, nearestChordTone, isChordTone, type SandboxChord } from './chords';
 import { auditMotifWeave } from './jazzinessAudit';
 import { makeRng, type SeededRng } from './rng';
@@ -277,6 +278,11 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     harmonyError = err instanceof Error ? err.message : String(err);
   }
 
+  // ★ Phase 4:RoadMap brick slots → 旋律 slot 计划(motif 按功能落位 + 结构性复现)。
+  //   此 PR 仅【产出 + 暴露给 UI/result】供检阅;Phase 5 才让 weaver 据它填充(现仍走乐句循环)。
+  let melodicSlotPlan: MelodicSlotPlan | undefined;
+  if (roadmap) melodicSlotPlan = buildMelodicSlotPlanFromRoadMap({ form, roadmapBricks: roadmap.brickSlots, userBrick: brick, seed: input.seed });
+
   // base = 原样 motif 落 lead 音区;音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
   const base = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
   const refLow = Math.min(...base.map((n) => n.midi));
@@ -339,5 +345,5 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .filter((n) => n.durationBeat > 0);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression });
   const progressionBeats = progression.reduce((n, c) => n + c.durationBeats, 0);
-  return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: targetBars, progressionBeats, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError };
+  return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: targetBars, progressionBeats, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError, melodicSlotPlan };
 }
