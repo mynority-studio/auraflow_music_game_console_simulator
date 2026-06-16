@@ -9,12 +9,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
-import { analyzeAndNormalize, analyzeHiddenGridMotif, alignLeadingRest, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
+import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
-import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext } from '../capture/hiddenGridClock';
+import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
 import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
@@ -59,6 +59,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [timing, setTiming] = useState<MotifTimingAnalysis | null>(null);
   const [snapChanges, setSnapChanges] = useState(0);
   const ctxRef = useRef<HiddenGridCaptureContext | null>(null);
+  const gridRef = useRef<{ g: GridCapturedNote[]; ctx: HiddenGridCaptureContext } | null>(null); // 末次分析输入 → pickup 开关重分析
   const recTimers = useRef<number[]>([]);
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
@@ -167,7 +168,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     setRecordPhase('analyzing');
     try {
       const g = capturedToGridNotes(cap, ctx);
-      const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx);
+      gridRef.current = { g, ctx };
+      const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx); // 默认切头对齐(allowPickup=false)
       setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
       setAnalysis({ motif, rawCount: cap.length, normalizedCount: motif.notes.length });
       setRecordPhase('ready');
@@ -181,7 +183,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
     ctxRef.current = ctx;
     setBpm(ctx.bpm);
-    setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null);
+    setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null); setAlignFirst(true); // 新录默认切头对齐
     setRecording(true); setRecordPhase('count-in'); setElapsed(0);
     setStatus(`◔ 数拍预备(1 小节 · BPM ${ctx.bpm})…暖音频中`);
     // ★ 先把音频时钟暖起来:否则首拍 click 因 AudioContext 启动晚响 → 用户跟着晚弹 → 整段偏后。
@@ -220,10 +222,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
     if (captureMode === 'hiddenGrid') {
       const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
-      ctxRef.current = ctx; setBpm(ctx.bpm); setResult(null);
+      ctxRef.current = ctx; setBpm(ctx.bpm); setResult(null); setAlignFirst(true);
       const raw = generateSampleCaptured(ctx.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4).map((n) => ({ ...n, onsetMs: n.onsetMs + ctx.captureStartMs }));
       try {
-        const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(capturedToGridNotes(raw, ctx), ctx);
+        const g = capturedToGridNotes(raw, ctx);
+        gridRef.current = { g, ctx };
+        const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx);
         setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc); setCaptured([]);
         setAnalysis({ motif, rawCount: raw.length, normalizedCount: motif.notes.length });
         setRecordPhase('ready');
@@ -235,9 +239,24 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     }
   }, [captureMode, style, applyCaptured, stopPlayback]);
 
+  // pickup 开关:重跑分析(切头 vs 保留前导休止);motif 由数据层产出,不在 generate() 再对齐。
+  const togglePickup = useCallback(() => {
+    setAlignFirst((prev) => {
+      const nextAlign = !prev;
+      const last = gridRef.current;
+      if (last) {
+        try {
+          const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(last.g, last.ctx, { allowPickup: !nextAlign });
+          setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
+          setAnalysis((a0) => (a0 ? { ...a0, motif, normalizedCount: motif.notes.length } : a0));
+        } catch { /* 保留旧分析 */ }
+      }
+      return nextAlign;
+    });
+  }, []);
+
   const generate = useCallback(() => {
-    const baseMotif = captureMode === 'hiddenGrid' ? hiddenMotif : null;
-    const motif = baseMotif && alignFirst ? alignLeadingRest(baseMotif) : baseMotif; // 对齐首音(消延迟偏后)
+    const motif = captureMode === 'hiddenGrid' ? hiddenMotif : null; // 数据层已切头对齐(allowPickup 控制)
     if (!motif && captured.length === 0) { setStatus('先录入/注入 motif'); return; }
     stopPlayback();
     try {
@@ -248,7 +267,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
       setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
-  }, [captureMode, hiddenMotif, alignFirst, captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
+  }, [captureMode, hiddenMotif, captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
 
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
@@ -367,9 +386,9 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             <Row k="BPM / 捕获" v={`${timing.bpm} · ${timing.captureBars}bar · 数拍${1}小节`} />
             <Row k="量化误差 / 相位" v={`均 ${timing.quantizeErrorMean.toFixed(3)} · 最大 ${timing.quantizeErrorMax.toFixed(3)} 拍 · 相位置信 ${timing.phaseConfidence.toFixed(1)}`} good={timing.quantizeErrorMax < 0.15} />
             <div className="flex items-baseline gap-2">
-              <span className="text-zinc-500 w-[120px] shrink-0">前导休止 / 吸附改</span>
-              <span className={snapChanges === 0 ? 'text-emerald-300' : 'text-rose-300'}>{timing.leadingRestBeats.toFixed(2)} 拍 · {snapChanges} 音</span>
-              <button type="button" onClick={() => setAlignFirst((v) => !v)} className={`ml-auto rounded px-1.5 py-0.5 text-[10px] border ${alignFirst ? 'bg-sky-600/30 border-sky-500/50 text-sky-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
+              <span className="text-zinc-500 w-[120px] shrink-0">晚进 / 吸附改</span>
+              <span className={snapChanges === 0 ? 'text-emerald-300' : 'text-rose-300'}>{timing.leadingRestBeats.toFixed(2)} 拍 · {snapChanges} 音 {timing.aligned ? '· 首音已对齐 beat0' : '· 保留前导休止'}</span>
+              <button type="button" onClick={togglePickup} className={`ml-auto rounded px-1.5 py-0.5 text-[10px] border ${alignFirst ? 'bg-sky-600/30 border-sky-500/50 text-sky-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
                 对齐首音 {alignFirst ? 'on' : 'off'}
               </button>
             </div>
@@ -379,6 +398,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <Row k="rhythm cell" v={a.motif.rhythmCell.map((d) => d.toFixed(2)).join(' ')} />
           {result && <>
             {result.brick && <Row k="旋律 brick(功能)" v={`${result.brick.primaryFunction} · ${result.brick.evidence.slice(0, 2).join('; ')}`} />}
+            {result.brick && <Row k="结构音 / 总音" v={`${result.brick.structuralTones.length} / ${result.brick.allTones.length} · ${result.brick.structuralTones.slice(0, 4).map((t) => `${t.midi}@${t.onsetBeat.toFixed(1)}`).join(' ')}`} good={result.brick.structuralTones.length >= 1} />}
             <Row k="和声来源" v={result.harmonySource === 'template' ? `模板选择 ✓` : `兜底 buildProgression ⚠ ${result.harmonyError ?? ''}`} good={result.harmonySource === 'template'} />
             {result.selectedProgression && <Row k="选中进行模板" v={`${result.selectedProgression.prototypeId} · cad=${result.selectedProgression.cadence} · 分 ${result.selectedProgression.score.toFixed(1)}`} good />}
             {result.selectedProgression && <Row k="候选 top" v={result.selectedProgression.topCandidates.slice(0, 3).map((c) => `${c.prototypeId.replace(/^(pop|lofi|rnb|jazz)_/, '')}:${c.score.toFixed(1)}`).join('  ')} />}

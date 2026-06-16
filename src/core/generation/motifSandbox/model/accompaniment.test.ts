@@ -53,11 +53,11 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
   it('★ 感知旋律:传 lead → bass 锚每小节下拍 + 击点落在旋律结构点上(对拍)', () => {
     const motif = motifOf();
     const prog = buildProgression(motif, 0, 'major', 16);
-    // 造一段已知重音落点的 lead(bar0 重音在 1.5;bar1 重音在 2.5)
+    // 造一段已知结构点的 lead(bar0 结构音在 1.5;bar1 结构音在 2.5);§7 支点只看 structuralToneScore
     const lead = [
-      { midi: 72, onsetBeat: 0, durationBeat: 1, velocity: 1, scaleDegree: 1, octave: 5, accent: 0.9, occurrenceKind: 'quote' as const },
-      { midi: 74, onsetBeat: 1.5, durationBeat: 1, velocity: 0.9, scaleDegree: 2, octave: 5, accent: 0.8, occurrenceKind: 'quote' as const },
-      { midi: 76, onsetBeat: 6.5, durationBeat: 1, velocity: 0.9, scaleDegree: 3, octave: 5, accent: 0.8, occurrenceKind: 'develop' as const },
+      { midi: 72, onsetBeat: 0, durationBeat: 1, velocity: 1, scaleDegree: 1, octave: 5, accent: 0.9, structuralToneScore: 0.9, occurrenceKind: 'quote' as const },
+      { midi: 74, onsetBeat: 1.5, durationBeat: 1, velocity: 0.9, scaleDegree: 2, octave: 5, accent: 0.8, structuralToneScore: 0.8, occurrenceKind: 'quote' as const },
+      { midi: 76, onsetBeat: 6.5, durationBeat: 1, velocity: 0.9, scaleDegree: 3, octave: 5, accent: 0.8, structuralToneScore: 0.8, occurrenceKind: 'develop' as const },
     ];
     const a = buildAccompaniment(prog, 'pop', 7, lead);
     const has = (arr: { onsetBeat: number }[], b: number) => arr.some((n) => Math.abs(n.onsetBeat - b) < 1e-6);
@@ -90,6 +90,21 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
     expect(has(0), 'I 半小节下拍锚').toBe(true);
     expect(has(2), 'V 半小节下拍锚').toBe(true);
     expect(has(3), 'V 跨度内的旋律重音(off=1)→ bass 准确落 beat3,非误算').toBe(true);
+  });
+
+  it('★ §7 directive#4:伴奏只跟结构音 —— 响亮弱拍经过音(高 accent / 低结构分)不触发额外重拍', () => {
+    const prog = buildProgression(motifOf(), 0, 'major', 16);
+    const lead = [
+      { midi: 72, onsetBeat: 0, durationBeat: 1, velocity: 0.9, scaleDegree: 1, octave: 5, accent: 0.9, structuralToneScore: 0.85, occurrenceKind: 'quote' as const },
+      { midi: 74, onsetBeat: 1.25, durationBeat: 0.25, velocity: 1, scaleDegree: 2, octave: 5, accent: 0.95, structuralToneScore: 0.30, occurrenceKind: 'develop' as const }, // 响亮弱拍经过音
+      { midi: 76, onsetBeat: 2, durationBeat: 1, velocity: 0.8, scaleDegree: 3, octave: 5, accent: 0.7, structuralToneScore: 0.8, occurrenceKind: 'quote' as const },
+    ];
+    const a = buildAccompaniment(prog, 'pop', 7, lead);
+    const hit = (b: number) => a.bass.some((n) => Math.abs(n.onsetBeat - b) < 1e-6) || a.comp.some((n) => Math.abs(n.onsetBeat - b) < 1e-6);
+    expect(hit(0), '结构音下拍').toBe(true);
+    expect(hit(2), '结构音 beat2(结构分 0.8)→ 支点').toBe(true);
+    expect(a.bass.some((n) => Math.abs(n.onsetBeat - 1.25) < 1e-6), '经过音(accent 0.95 但结构 0.30)→ 不打 bass').toBe(false);
+    expect(a.comp.some((n) => Math.abs(n.onsetBeat - 1.25) < 1e-6), '经过音 → 不打 comp').toBe(false);
   });
 
   it('风格织体差异:jazz bass 走音(每小节≈4)> lofi 稀疏 bass', () => {

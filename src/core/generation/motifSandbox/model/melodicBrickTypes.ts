@@ -8,6 +8,11 @@
 
 import type { ProgressionSlot } from '../../newEngine/knowledge/progressions';
 
+/** 结构音/经过音边界(directive grid_alignment_structural_tone Phase 4):
+ *  structuralToneScore >= 0.58 = 骨干结构音(主导和声定位/重拍伴奏);< 0.58 = 经过音/装饰音(弱影响)。
+ *  brick 分类、和声模板选择、伴奏对拍统一用这条线。 */
+export const STRUCTURAL_TONE_MIN = 0.58;
+
 export type UserMelodicBrickFunction =
   | 'opening' | 'approach' | 'cadence' | 'resolution' | 'launcher'
   | 'answer' | 'passing' | 'neighbor' | 'arpeggio' | 'sequence' | 'ambiguous';
@@ -45,7 +50,8 @@ export interface UserMelodicBrick {
   quoteBeats: number;        // 实际复现的 quote 单元长度(长 motif 缩子动机)
   head: StructuralMelodyTone | null;
   tail: StructuralMelodyTone | null;
-  structuralTones: StructuralMelodyTone[];
+  allTones: StructuralMelodyTone[];         // 全部 quote 音(contour/rhythm/debug)
+  structuralTones: StructuralMelodyTone[];  // 仅骨干结构音(>= STRUCTURAL_TONE_MIN;经过音不入)→ 主导和声定位
   contour: number[];
   rhythmSignature: number[];
   cadenceMotion: CadenceMotion | null;

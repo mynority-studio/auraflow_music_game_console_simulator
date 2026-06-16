@@ -7,9 +7,10 @@
 
 import type { UserMotif } from './types';
 import { metricalWeight } from '../capture/hiddenGridClock';
-import type {
-  UserMelodicBrick, StructuralMelodyTone, CadenceMotion, CadencePattern,
-  UserMelodicBrickFunction, UserMelodicBrickFunctionScore,
+import {
+  STRUCTURAL_TONE_MIN,
+  type UserMelodicBrick, type StructuralMelodyTone, type CadenceMotion, type CadencePattern,
+  type UserMelodicBrickFunction, type UserMelodicBrickFunctionScore,
 } from './melodicBrickTypes';
 
 const STABLE = new Set([1, 3, 5]);
@@ -122,16 +123,26 @@ export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): 
   const notes = quoteNotes.length >= 2 ? quoteNotes : allSorted; // 防御:quote 太短退回全 motif
   const midis = notes.map((n) => n.midi);
   const last = notes.length - 1;
-  const structuralTones: StructuralMelodyTone[] = notes.map((n, i) => ({
+  // §5:两层 —— allTones = 全部音(轮廓/节奏/调试);structuralTones = 骨干结构音(>= MIN,主导和声)。
+  const allTones: StructuralMelodyTone[] = notes.map((n, i) => ({
     midi: n.midi, scaleDegree: n.scaleDegree, onsetBeat: n.onsetBeat, durationBeat: n.durationBeat,
     weight: toneWeight(n), role: roleOf(i, last, n, midis),
   }));
-  const head = structuralTones[0] ?? null;
-  const tail = structuralTones[structuralTones.length - 1] ?? null;
+  const isStructural = (n: UserMotif['notes'][number]): boolean => (n.structuralToneScore ?? n.accent) >= STRUCTURAL_TONE_MIN;
+  let structuralTones = allTones.filter((_, i) => isStructural(notes[i]));
+  // 兜底:结构音太少 → 至少保留 head + tail,再按 toneWeight 补到 2(避免 cadence/head/tail 逻辑失效)。
+  if (structuralTones.length < 2 && allTones.length) {
+    const keep = new Set<StructuralMelodyTone>([allTones[0], allTones[allTones.length - 1]]);
+    for (const t of [...allTones].sort((a, b) => b.weight - a.weight)) { if (keep.size >= 2) break; keep.add(t); }
+    structuralTones = allTones.filter((t) => keep.has(t)); // 保持 onset 顺序
+  }
+  const head = allTones[0] ?? null;                       // 真实旋律首音(始终保留为结构候选)
+  const tail = allTones[allTones.length - 1] ?? null;     // 真实旋律尾音
   const cadenceMotion = cadenceMotionOf(notes);
   const contour: number[] = [];
   for (let i = 1; i < notes.length; i++) contour.push(Math.sign(notes[i].midi - notes[i - 1].midi));
-  const functions = scoreFunctions(structuralTones, head, tail, cadenceMotion, contour);
+  // 功能分类看【旋律形状】用 allTones(轮廓/琶音身份不因结构过滤而变);和声贴合在 scorer 里只看 structuralTones。
+  const functions = scoreFunctions(allTones, head, tail, cadenceMotion, contour);
 
   return {
     id: `brick-${motif.id}`,
@@ -140,7 +151,7 @@ export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): 
     lengthBeats: motif.lengthBeats,
     lengthBars: Math.max(1, Math.round(motif.lengthBeats / 4)),
     quoteBeats: qBeats,
-    head, tail, structuralTones,
+    head, tail, allTones, structuralTones,
     contour, rhythmSignature: notes.map((n) => n.durationBeat),
     cadenceMotion,
     functions, primaryFunction: functions[0].function,

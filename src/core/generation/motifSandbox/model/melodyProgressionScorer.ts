@@ -42,6 +42,7 @@ export function scoreProgressionAgainstMelodicBrick(
 
   // 结构音支撑:motif 锚在 0/16/32/48 → 在【所有锚点】判贴合(8/16-bar 模板各循环和弦不同,
   //   只看第一处会在 bar 5/9/13 撞和弦)。结构音在越多锚点是和弦音 → 越贴合。
+  //   §6:brick.structuralTones 已过滤(只含 >= MIN 的骨干音)→ 经过音天然不参与支撑/strongNonChord。
   const ANCHORS = [0, 16, 32, 48];
   let structuralToneSupport = 0, strongNonChord = 0;
   for (const t of brick.structuralTones) {

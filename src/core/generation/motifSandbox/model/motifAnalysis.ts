@@ -129,9 +129,11 @@ export function analyzeAndNormalize(
 }
 
 // ============================================================
-// 隐形时钟分析(directive Phase C)—— GridCapturedNote[] → UserMotif
-//   关键差异(对比 free 路径):用网格量化位、【不减首音】(保前导休止)、
-//   长度 = captureBars*4(不靠 span)、先存 raw 再吸 tonality(记 snap 改动)。
+// 隐形时钟分析(directive Phase C + grid_alignment_structural_tone)—— GridCapturedNote[] → UserMotif
+//   关键差异(对比 free 路径):用网格量化位、长度由实际演奏小节数派生、先存 raw 再吸 tonality。
+//   ★ 默认【切头重对齐】(2026-06-16 directive Phase 1):首颗有效音 = motif-local beat 0,
+//     整段前移(localOnsetBeat = quantizedOnsetBeat − firstBeat),禁止空拍开始。raw 晚进量
+//     存进 leadingRestBeats(诊断,不进生成)。allowPickup=true 才保留前导休止(未来高级选项)。
 // ============================================================
 export interface MotifTimingAnalysis {
   captureMode: CaptureMode;
@@ -142,7 +144,12 @@ export interface MotifTimingAnalysis {
   quantizeErrorMean: number;
   quantizeErrorMax: number;
   hasPickup: boolean;
-  leadingRestBeats: number;  // 首音前的休止(不被减成 0)
+  leadingRestBeats: number;  // 用户首音相对 captureStart 的【晚进量】(诊断;motif 已切头,首音 onset=0)
+  aligned: boolean;          // 是否已切头对齐(allowPickup=false → true)
+}
+
+export interface HiddenGridAnalyzeOptions {
+  allowPickup?: boolean;     // true=保留前导休止(故意空起的 pickup);默认 false=切头对齐
 }
 
 export interface HiddenGridAnalysis {
@@ -151,7 +158,7 @@ export interface HiddenGridAnalysis {
   snapChanges: number;       // 被 tonality 吸附改动的音数(审计;调内输入应=0)
 }
 
-export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], ctx: HiddenGridCaptureContext): HiddenGridAnalysis {
+export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], ctx: HiddenGridCaptureContext, opts: HiddenGridAnalyzeOptions = {}): HiddenGridAnalysis {
   const windowBeats = ctx.captureBars * ctx.beatsPerBar; // 捕获窗(最多 4 小节)
   // 1) 只取捕获窗内(数拍 pre-roll 已被 recorder 滤;这里防御)
   let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -1e-6 && n.quantizedOnsetBeat < windowBeats - 1e-6);
@@ -161,12 +168,19 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
   for (const n of g) { const ex = byOnset.get(n.quantizedOnsetBeat); if (!ex || n.midi > ex.midi) byOnset.set(n.quantizedOnsetBeat, n); }
   g = [...byOnset.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
   if (g.length > 96) g = g.slice(0, 96);
-  // ★ 真 motif 长度 = 实际演奏到的小节数(网格上的末音 → 取整 bar),1..captureBars。
-  //   有隐形时钟 = 这是可靠的(不是 free 路径那种无时钟 span 猜测)。
-  const lastEnd = Math.max(...g.map((n) => n.quantizedOnsetBeat + n.quantizedDurationBeat));
-  const lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(lastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
 
-  // 3) 音高:存 raw → 吸 tonality(记改动);accent/structuralTone 用网格的节拍权重
+  // ★ Phase 1:切头重对齐 —— 首颗有效音 → motif-local beat 0(禁止空拍开始;allowPickup 才保留)。
+  const allowPickup = opts.allowPickup ?? false;
+  const firstBeat = g[0].quantizedOnsetBeat;        // 用户首音相对 captureStart 的晚进量(诊断)
+  const shift = allowPickup ? 0 : firstBeat;        // 切头量(pickup 时不切)
+  const localOnset = (n: GridCapturedNote): number => Math.max(0, n.quantizedOnsetBeat - shift);
+
+  // ★ 真 motif 长度 = 实际演奏到的小节数(切头后的 local 末音 → 取整 bar),1..captureBars。
+  const localLastEnd = Math.max(...g.map((n) => localOnset(n) + n.quantizedDurationBeat));
+  const lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(localLastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
+
+  // 3) 音高:存 raw → 吸 tonality(记改动);accent/structuralTone 用【切头后 local 相位】的节拍权重
+  //    (Phase 3:不能用 GridCapturedNote.metricalWeight = 旧相位权重,否则结构音整体错相)。
   const turns = contourTurns(g.map((n) => n.midi));
   const lastIdx = g.length - 1;
   let snapChanges = 0;
@@ -175,10 +189,12 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     if (snapped !== n.midi) snapChanges++;
     const velNorm = clamp01(n.velocity / 127);
     const edge = i === 0 || i === lastIdx;
-    const { accent, structuralToneScore } = scoreNote(velNorm, n.metricalWeight, Math.min(1, n.quantizedDurationBeat), edge, turns[i]);
+    const onset = localOnset(n);
+    const localBeatInBar = ((onset % ctx.beatsPerBar) + ctx.beatsPerBar) % ctx.beatsPerBar; // 切头后相位
+    const { accent, structuralToneScore } = scoreNote(velNorm, metricalWeight(localBeatInBar), Math.min(1, n.quantizedDurationBeat), edge, turns[i]);
     return {
       midi: snapped,
-      onsetBeat: n.quantizedOnsetBeat,        // 不减首音 → 前导休止保留
+      onsetBeat: onset,                       // 切头后 → 首音 = 0(禁止空拍开始)
       durationBeat: n.quantizedDurationBeat,
       velocity: velNorm,
       scaleDegree: midiToScaleDegree(snapped, ctx.keyPc, ctx.scaleMode),
@@ -201,8 +217,9 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     phaseConfidence: 1.0,
     quantizeErrorMean: errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length),
     quantizeErrorMax: errs.length ? Math.max(...errs) : 0,
-    hasPickup: ctx.pickupBeats > 0,
-    leadingRestBeats: motifNotes[0].onsetBeat,
+    hasPickup: allowPickup && firstBeat > 1e-6,
+    leadingRestBeats: firstBeat,          // 用户晚进量(诊断;切头后 motif 首音已=0)
+    aligned: !allowPickup,
   };
   const motif: UserMotif = {
     id: `motif-hg-${ctx.seed}-${motifNotes.length}`,
@@ -210,14 +227,6 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     notes: motifNotes, lengthBeats, contour, rhythmCell, createdAt: ctx.seed,
   };
   return { motif, timing, snapChanges };
-}
-
-/** 把 motif 整体前移使首音落 beat 0(消除前导休止 = 数拍/音频延迟造成的整段偏后)。
- *  ★ 用户真要 pickup(故意空起)时,关掉调用方的"对齐首音"即可。纯函数,不改时值/音高。 */
-export function alignLeadingRest(motif: UserMotif): UserMotif {
-  const first = motif.notes[0]?.onsetBeat ?? 0;
-  if (Math.abs(first) < 1e-6) return motif;
-  return { ...motif, notes: motif.notes.map((n) => ({ ...n, onsetBeat: Math.max(0, n.onsetBeat - first) })) };
 }
 
 // ============================================================

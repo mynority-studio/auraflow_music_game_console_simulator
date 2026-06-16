@@ -62,6 +62,38 @@ describe('motifSandbox/melodicBrickAnalyzer(brick 功能分类)', () => {
     expect(['cadence', 'resolution']).toContain(b.primaryFunction);
   });
 
+  it('★ directive#3:弱拍短音(高 velocity)= 经过音 → 进 allTones、不进 structuralTones(Phase 5)', () => {
+    // C 下拍长安静(结构)/ D 弱拍 16 分响亮(经过)/ G 下拍(结构)
+    const keyPc = 0;
+    const mk = (d: number, on: number, du: number, vel: number, sts: number) => ({
+      midi: degreeOctaveToMidi(d, 5, keyPc, 'major' as const), onsetBeat: on, durationBeat: du, velocity: vel,
+      scaleDegree: d, octave: 5, accent: vel, structuralToneScore: sts,
+    });
+    const notes = [mk(1, 0, 1.5, 0.4, 0.85), mk(2, 0.75, 0.25, 0.95, 0.30), mk(5, 2, 1, 0.7, 0.8)];
+    const m: UserMotif = { id: 'm', keyPc, mode: 'major', bpm: 96, notes, lengthBeats: 4, contour: [1, 1], rhythmCell: notes.map((n) => n.durationBeat), createdAt: 0 };
+    const b = analyzeUserMelodicBrick(m);
+    expect(b.allTones.length).toBe(3);                                  // allTones 保留全部
+    const sDeg = b.structuralTones.map((t) => t.scaleDegree);
+    expect(sDeg).toContain(1);                                          // C 结构
+    expect(sDeg).toContain(5);                                          // G 结构
+    expect(sDeg).not.toContain(2);                                      // D 经过音被过滤 → 不主导和声
+    expect(b.structuralTones.length).toBe(2);
+  });
+
+  it('★ directive#5 兜底:结构音不足 → 至少保留 head + tail(补到 2)', () => {
+    const keyPc = 0;
+    const mk = (d: number, on: number, du: number, sts: number) => ({
+      midi: degreeOctaveToMidi(d, 5, keyPc, 'major' as const), onsetBeat: on, durationBeat: du, velocity: 0.5,
+      scaleDegree: d, octave: 5, accent: 0.4, structuralToneScore: sts,
+    });
+    const notes = [mk(1, 0, 1, 0.45), mk(3, 1, 1, 0.40), mk(5, 2, 1, 0.42)]; // 全 < 0.58
+    const m: UserMotif = { id: 'm', keyPc, mode: 'major', bpm: 96, notes, lengthBeats: 4, contour: [1, 1], rhythmCell: [1, 1, 1], createdAt: 0 };
+    const b = analyzeUserMelodicBrick(m);
+    expect(b.structuralTones.length).toBe(2);                           // 补到 2
+    expect(b.head?.scaleDegree).toBe(1);                               // head 保留
+    expect(b.tail?.scaleDegree).toBe(5);                               // tail 保留
+  });
+
   it('★ A:按 quote 单元判功能 —— 4 小节 motif,quote(前2小节)落开放音 2 → opening,而非完整 motif 末尾的 1', () => {
     const seq: [number, number, number][] = [[1, 0, 1], [3, 2, 1], [5, 4, 1], [2, 6, 2], [4, 8, 1], [1, 12, 2]]; // [deg, onset, dur]:前 2 小节落 2、后 2 小节落 1
     const notes = seq.map(([d, on, du]) => ({ midi: degreeOctaveToMidi(d, 5, 0, 'major' as const), onsetBeat: on, durationBeat: du, velocity: 0.85, scaleDegree: d, octave: 5, accent: 0.7, structuralToneScore: Math.min(1, 0.4 + du * 0.3) }));

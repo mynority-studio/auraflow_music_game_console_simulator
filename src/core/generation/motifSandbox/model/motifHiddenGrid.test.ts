@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeHiddenGridMotif, alignLeadingRest } from './motifAnalysis';
+import { analyzeHiddenGridMotif } from './motifAnalysis';
 import { generateMotifWeave } from './motifWeaver';
 import { createHiddenGridContext, mapRawNoteToGrid, msPerBeat, type HiddenGridCaptureContext } from '../capture/hiddenGridClock';
 import { fitRange, identity } from './motifTransform';
@@ -12,15 +12,32 @@ const note = (ctx: HiddenGridCaptureContext, midi: number, vel: number, onBeat: 
   mapRawNoteToGrid({ midi, velocity: vel, onMs: ctx.captureStartMs + onBeat * msPerBeat(ctx), offMs: ctx.captureStartMs + (onBeat + durBeat) * msPerBeat(ctx) }, ctx);
 
 describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', () => {
-  it('★ 1-bar 捕获 → lengthBeats=4;迟到首音保留前导休止(不被减成 beat0)', () => {
+  it('★ 1-bar 捕获 → lengthBeats=4;迟到首音【切头对齐】到 beat0(禁止空拍开始,directive Phase 1)', () => {
     const c = ctxOf();
     const g = [note(c, 60, 100, 0.5, 0.5), note(c, 62, 90, 1, 1), note(c, 64, 90, 2, 1), note(c, 67, 100, 3, 1)];
     const { motif, timing } = analyzeHiddenGridMotif(g, c);
     expect(timing.lengthBeats).toBe(4);
     expect(motif.lengthBeats).toBe(4);
-    expect(motif.notes[0].onsetBeat).toBeCloseTo(0.5, 6); // 迟到=迟到,前面 0.5 拍休止保留
-    expect(timing.leadingRestBeats).toBeCloseTo(0.5, 6);
+    expect(motif.notes[0].onsetBeat).toBe(0);              // 切头 → 首音 = beat 0(禁止空拍)
+    expect(motif.notes[1].onsetBeat).toBeCloseTo(0.5, 6);  // 整段前移 0.5(1 − 0.5)
+    expect(timing.leadingRestBeats).toBeCloseTo(0.5, 6);   // 晚进量仍报告(诊断)
+    expect(timing.aligned).toBe(true);
     expect(timing.captureMode).toBe('hiddenGrid');
+  });
+
+  it('★ directive #1+#2:首音 0.5 → 切头 onset=0/次音=0.5;allowPickup 保留 + 切头使首音落下拍权重更高', () => {
+    const c = ctxOf();
+    const g = [note(c, 60, 100, 0.5, 1), note(c, 62, 90, 1.5, 1), note(c, 64, 90, 2.5, 1)]; // raw 0.5/1.5/2.5 → local 0/1/2
+    const aligned = analyzeHiddenGridMotif(g, c);                          // 默认切头
+    const pickup = analyzeHiddenGridMotif(g, c, { allowPickup: true });    // 保留前导休止
+    expect(aligned.timing.leadingRestBeats).toBeCloseTo(0.5, 6);
+    expect(aligned.motif.notes[0].onsetBeat).toBe(0);                      // #1:切头 beat0
+    expect(aligned.motif.notes[1].onsetBeat).toBeCloseTo(1.0, 6);          // #2:raw 1.5 → local 1
+    expect(aligned.motif.notes[2].onsetBeat).toBeCloseTo(2.0, 6);          // #2:raw 2.5 → local 2
+    expect(pickup.motif.notes[0].onsetBeat).toBeCloseTo(0.5, 6);           // allowPickup → 保留
+    expect(pickup.timing.aligned).toBe(false);
+    // #2:切头后首音落下拍(weight 1.0),保留前导则落八分反拍(weight 0.35)→ 结构分更高
+    expect(aligned.motif.notes[0].structuralToneScore!).toBeGreaterThan(pickup.motif.notes[0].structuralToneScore!);
   });
 
   it('2-bar 捕获 → lengthBeats=8', () => {
@@ -72,17 +89,6 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     const down = motif.notes.find((n) => Math.abs(n.onsetBeat) < 1e-6)!;
     const passing = motif.notes.find((n) => Math.abs(n.onsetBeat - 1.25) < 1e-6)!;
     expect(down.structuralToneScore!).toBeGreaterThan(passing.structuralToneScore!); // 安静下拍长音更"结构"
-  });
-
-  it('★ alignLeadingRest:晚到首音(延迟造成的前导休止)可对齐到 beat 0,整体前移不改时值', () => {
-    const c = ctxOf();
-    const g = [note(c, 60, 100, 0.5, 1), note(c, 62, 90, 1.5, 1), note(c, 64, 90, 2.5, 1)]; // 首音晚半拍
-    const { motif, timing } = analyzeHiddenGridMotif(g, c);
-    expect(timing.leadingRestBeats).toBeCloseTo(0.5, 6); // 数据层默认保留
-    const aligned = alignLeadingRest(motif);
-    expect(aligned.notes[0].onsetBeat).toBe(0);             // 对齐后首音 = 0
-    expect(aligned.notes[1].onsetBeat).toBeCloseTo(1.0, 6); // 整体前移 0.5
-    expect(aligned.notes.map((n) => n.durationBeat)).toEqual(motif.notes.map((n) => n.durationBeat)); // 时值不变
   });
 
   it('量化误差被报告;调内输入 snapChanges=0', () => {

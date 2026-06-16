@@ -12,6 +12,7 @@
 
 import type { SandboxChord } from './chords';
 import type { MotifNote, SandboxStyle } from './types';
+import { STRUCTURAL_TONE_MIN } from './melodicBrickTypes';
 import { makeRng, type SeededRng } from './rng';
 
 export interface AccompNote { midi: number; onsetBeat: number; durationBeat: number; velocity: number; }
@@ -24,7 +25,6 @@ const BASS_PROGRAM: Record<SandboxStyle, number> = { pop: 33, lofi: 33, rnb: 33,
 
 // 某小节旋律稀疏(无结构点)时回退的默认织体击点(≈ 老固定 pattern)。
 const DEFAULT_STRUCT: Record<SandboxStyle, number[]> = { pop: [2], lofi: [], rnb: [1.5, 2.5], jazz: [] };
-const SUPPORT_MIN = 0.58; // 视为【骨干/重音】的支点阈值(取 accent 与 structuralToneScore 的较大者)
 
 // ★ 伴奏奏【真实和声】(realRootPc/realTonePcs;含 secondary/borrowed)。缺真字段(老 buildProgression)→ 回退调内。
 const chRootPc = (c: SandboxChord): number => c.realRootPc ?? c.rootPc;
@@ -52,8 +52,9 @@ function chordStructPoints(lead: readonly MotifNote[] | undefined, startBeat: nu
   if (!lead) return fallback.filter((o) => o < durBeats);
   const offs = new Set<number>();
   for (const n of lead) {
-    // §5:支点 = 力度重音【或】结构音(节拍/时值/相位)—— 伴奏支撑隐形节拍,不盲跟每个音。
-    if (Math.max(n.accent, n.structuralToneScore ?? 0) < SUPPORT_MIN) continue;
+    // §7:支点【只跟骨干结构音】—— 响亮弱拍经过音(高 accent / 低结构分)不触发 comp/bass,
+    //   伴奏支撑隐形节拍的骨架,不盲跟每个音(directive grid_alignment_structural_tone Phase 7)。
+    if ((n.structuralToneScore ?? 0) < STRUCTURAL_TONE_MIN) continue;
     const off = +(n.onsetBeat - startBeat).toFixed(3); // 相对【本和弦起点】
     if (off >= 1.0 && off <= durBeats - 0.1) offs.add(off);
   }
