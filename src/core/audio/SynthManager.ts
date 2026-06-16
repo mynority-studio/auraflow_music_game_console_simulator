@@ -33,7 +33,7 @@ export const getAudioContext = (): AudioContext => {
         const Ctor =
             (window as unknown as { AudioContext: typeof AudioContext }).AudioContext ??
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        w.globalAudioContext = new Ctor();
+        w.globalAudioContext = new Ctor({ latencyHint: 'interactive' }); // 实时试听/弹奏:最低输出延迟
     }
     return w.globalAudioContext;
 };

@@ -114,12 +114,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       if (m.type === 'noteOn') {
         const { keyPc: k, tonality: t, style: st } = liveCfg.current;
         if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
-          setLastNote(`note ${m.note} · vel ${m.velocity}`);
-          void auditionNoteOn(m.note, LEAD_PROGRAM_BY_STYLE[st], m.velocity);
-          noteOnVis(m.note); // 点亮对应 pad
+          void auditionNoteOn(m.note, LEAD_PROGRAM_BY_STYLE[st], m.velocity); // ★ 先发声(最低延迟,不让 React 状态更新挡在前面)
           if (recorder.current.isActive()) recorder.current.noteOn(m.note, m.velocity);
+          noteOnVis(m.note);            // 点亮对应 pad(重面板已 memo → 不连带重渲染)
+          setLastNote(`note ${m.note} · vel ${m.velocity}`);
         } else {
-          setLastNote(`note ${m.note} · 离调 → 静音`); // 不在音阶内 → 不发声、不记录
+          setLastNote(`note ${m.note} · 离调 → 静音`);
         }
       } else if (m.type === 'noteOff') {
         auditionNoteOff(m.note);
@@ -378,8 +378,20 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       {/* Status */}
       <div className="px-3 py-1.5 text-[11px] text-amber-200/90 border-b border-zinc-900">{status}</div>
 
-      {/* Analysis readout */}
-      {a && (
+      {/* Analysis readout —— 独立 memo:MIDI 试听的 activeNotes/lastNote 变化不重渲染这块重面板 = 降输入延迟 */}
+      {a && <AnalysisReadout a={a} timing={timing} snapChanges={snapChanges} result={result} style={style} tonality={tonality} alignFirst={alignFirst} onTogglePickup={togglePickup} />}
+    </motion.div>
+  );
+};
+
+interface AnalysisReadoutProps {
+  a: AnalyzeResult; timing: MotifTimingAnalysis | null; snapChanges: number;
+  result: MotifWeaverResult | null; style: SandboxStyle; tonality: SandboxTonality;
+  alignFirst: boolean; onTogglePickup: () => void;
+}
+const AnalysisReadout: React.FC<AnalysisReadoutProps> = React.memo(({ a, timing, snapChanges, result, style, tonality, alignFirst, onTogglePickup }) => {
+  const togglePickup = onTogglePickup;
+  return (
         <div className="px-3 py-2 space-y-1 text-[11px]">
           <div className="text-[10px] uppercase tracking-widest text-zinc-500">Analysis{timing ? ' · 隐形时钟' : ''}</div>
           {timing && <>
@@ -426,10 +438,9 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             </div>
           </>}
         </div>
-      )}
-    </motion.div>
   );
-};
+});
+AnalysisReadout.displayName = 'AnalysisReadout';
 
 const Row: React.FC<{ k: string; v: string; good?: boolean }> = ({ k, v, good }) => (
   <div className="flex items-baseline gap-2">
