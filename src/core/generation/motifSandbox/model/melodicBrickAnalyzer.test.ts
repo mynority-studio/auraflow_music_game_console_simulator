@@ -62,6 +62,18 @@ describe('motifSandbox/melodicBrickAnalyzer(brick 功能分类)', () => {
     expect(['cadence', 'resolution']).toContain(b.primaryFunction);
   });
 
+  it('★ A:按 quote 单元判功能 —— 4 小节 motif,quote(前2小节)落开放音 2 → opening,而非完整 motif 末尾的 1', () => {
+    const seq: [number, number, number][] = [[1, 0, 1], [3, 2, 1], [5, 4, 1], [2, 6, 2], [4, 8, 1], [1, 12, 2]]; // [deg, onset, dur]:前 2 小节落 2、后 2 小节落 1
+    const notes = seq.map(([d, on, du]) => ({ midi: degreeOctaveToMidi(d, 5, 0, 'major' as const), onsetBeat: on, durationBeat: du, velocity: 0.85, scaleDegree: d, octave: 5, accent: 0.7, structuralToneScore: Math.min(1, 0.4 + du * 0.3) }));
+    const contour: number[] = [];
+    for (let i = 1; i < notes.length; i++) contour.push(Math.sign(notes[i].midi - notes[i - 1].midi));
+    const m: UserMotif = { id: 'm', keyPc: 0, mode: 'major', bpm: 96, notes, lengthBeats: 16, contour, rhythmCell: seq.map((s) => s[2]), createdAt: 0 };
+    const brick = analyzeUserMelodicBrick(m, 8); // quote = 前 2 小节(8 拍)
+    expect(brick.tail?.scaleDegree).toBe(2); // quote 尾音是开放音 2(不是完整 motif 的 1)
+    expect(['opening', 'launcher']).toContain(brick.primaryFunction);
+    expect(brick.lengthBeats).toBe(16); // 仍记完整长度
+  });
+
   it('确定性 + 带 evidence', () => {
     const a = analyzeUserMelodicBrick(motif([3, 2, 1], [1, 1, 2]));
     const b = analyzeUserMelodicBrick(motif([3, 2, 1], [1, 1, 2]));

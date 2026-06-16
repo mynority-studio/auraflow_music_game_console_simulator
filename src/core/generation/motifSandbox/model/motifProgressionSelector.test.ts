@@ -72,6 +72,21 @@ describe('motifSandbox/motifProgressionSelector(brick 驱动选模板)', () => {
     expect(sI.breakdown.structuralToneSupport).toBeGreaterThan(sB.breakdown.structuralToneSupport); // I 更贴 C 大调 motif 骨干音
   });
 
+  it('★ B:多锚点判贴合 —— 8-bar 模板 bar5 撞和弦(motif 在 bar5 非和弦音)得分 < bar1/5 都贴合', () => {
+    const brick = analyzeUserMelodicBrick(motif([1, 1], [2, 2])); // 强 C(deg1)结构音
+    const intent = inferHarmonyIntent(brick);
+    const ds = (roman: string, deg: number, rootOffset: number, type = 'maj'): ProgressionSlot => ({ roman, type, scaleDegree: deg, rootOffset });
+    const cand8 = (id: string, bar5: ProgressionSlot): ProgressionCandidate => {
+      const base = [ds('I', 1, 0), ds('V', 5, 7), ds('vi', 6, 9, 'min'), ds('IV', 4, 5), bar5, ds('V', 5, 7), ds('vi', 6, 9, 'min'), ds('IV', 4, 5)];
+      return { prototype: { id, style: 'POP', mode: 'Major', sectionRoles: ['verse'], lengthBars: 8, slots: base }, fittedSlots: [...base, ...base] };
+    };
+    const good = cand8('good', ds('vi', 6, 9, 'min')); // bar5 = vi(A-C-E,含 C)
+    const bad = cand8('bad', ds('ii', 2, 2, 'min'));   // bar5 = ii(D-F-A,无 C)
+    const sGood = scoreProgressionAgainstMelodicBrick(brick, intent, good, 0);
+    const sBad = scoreProgressionAgainstMelodicBrick(brick, intent, bad, 0);
+    expect(sGood.breakdown.structuralToneSupport).toBeGreaterThan(sBad.breakdown.structuralToneSupport);
+  });
+
   it('④ 非 jazz 不选 jazz', () => {
     const brick = analyzeUserMelodicBrick(motif([1, 3, 5, 4], [1, 1, 1, 1]));
     const intent = inferHarmonyIntent(brick);

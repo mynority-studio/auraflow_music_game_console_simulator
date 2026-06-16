@@ -112,9 +112,14 @@ function scoreFunctions(tones: StructuralMelodyTone[], head: StructuralMelodyTon
   return entries;
 }
 
-/** UserMotif → UserMelodicBrick(纯函数,确定性)。quoteBeats 可选(长 motif 的子动机长度)。 */
+/** UserMotif → UserMelodicBrick(纯函数,确定性)。quoteBeats 可选(长 motif 的子动机长度)。
+ *  ★ 头/尾/cadence/轮廓按【quote 单元】(实际复现的子动机)算,而非完整 motif —— 否则长 motif
+ *  的功能判断错位(用 4 小节末尾,但循环出现的是前 2 小节)。lengthBeats 仍记完整 motif 长度。 */
 export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): UserMelodicBrick {
-  const notes = [...motif.notes].sort((a, b) => a.onsetBeat - b.onsetBeat);
+  const qBeats = quoteBeats ?? motif.lengthBeats;
+  const allSorted = [...motif.notes].sort((a, b) => a.onsetBeat - b.onsetBeat);
+  const quoteNotes = allSorted.filter((n) => n.onsetBeat < qBeats - 1e-6);
+  const notes = quoteNotes.length >= 2 ? quoteNotes : allSorted; // 防御:quote 太短退回全 motif
   const midis = notes.map((n) => n.midi);
   const last = notes.length - 1;
   const structuralTones: StructuralMelodyTone[] = notes.map((n, i) => ({
@@ -124,8 +129,9 @@ export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): 
   const head = structuralTones[0] ?? null;
   const tail = structuralTones[structuralTones.length - 1] ?? null;
   const cadenceMotion = cadenceMotionOf(notes);
-  const functions = scoreFunctions(structuralTones, head, tail, cadenceMotion, motif.contour);
-  const qBeats = quoteBeats ?? motif.lengthBeats;
+  const contour: number[] = [];
+  for (let i = 1; i < notes.length; i++) contour.push(Math.sign(notes[i].midi - notes[i - 1].midi));
+  const functions = scoreFunctions(structuralTones, head, tail, cadenceMotion, contour);
 
   return {
     id: `brick-${motif.id}`,
@@ -135,7 +141,7 @@ export function analyzeUserMelodicBrick(motif: UserMotif, quoteBeats?: number): 
     lengthBars: Math.max(1, Math.round(motif.lengthBeats / 4)),
     quoteBeats: qBeats,
     head, tail, structuralTones,
-    contour: motif.contour, rhythmSignature: motif.rhythmCell,
+    contour, rhythmSignature: notes.map((n) => n.durationBeat),
     cadenceMotion,
     functions, primaryFunction: functions[0].function,
     evidence: functions[0].evidence,

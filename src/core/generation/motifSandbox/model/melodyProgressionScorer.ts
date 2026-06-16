@@ -40,13 +40,21 @@ export function scoreProgressionAgainstMelodicBrick(
 
   const templatePrior = (proto.weight ?? 1) * 0.4;
 
-  // 结构音支撑:brick 的结构音(在 quote 单元内)对齐候选同拍和弦 → 和弦音奖、非和弦音轻罚
+  // 结构音支撑:motif 锚在 0/16/32/48 → 在【所有锚点】判贴合(8/16-bar 模板各循环和弦不同,
+  //   只看第一处会在 bar 5/9/13 撞和弦)。结构音在越多锚点是和弦音 → 越贴合。
+  const ANCHORS = [0, 16, 32, 48];
   let structuralToneSupport = 0, strongNonChord = 0;
   for (const t of brick.structuralTones) {
     if (t.onsetBeat >= brick.quoteBeats - 1e-6) continue;
-    const isCt = slotRealPcs(slotAtBeat(slots, t.onsetBeat), keyPc).includes(mod12(t.midi));
-    structuralToneSupport += t.weight * (isCt ? 1 : -0.25);
-    if (!isCt && t.weight >= 0.6) strongNonChord += t.weight; // 长/强音撞和弦
+    let ct = 0, n = 0;
+    for (const a of ANCHORS) {
+      if (a + t.onsetBeat >= 64 - 1e-6) continue;
+      n++;
+      if (slotRealPcs(slotAtBeat(slots, a + t.onsetBeat), keyPc).includes(mod12(t.midi))) ct++;
+    }
+    const frac = n ? ct / n : 0; // 在几个锚点处是和弦音(0..1)
+    structuralToneSupport += t.weight * (frac * 1.25 - 0.25); // 全锚点和弦音 → +1·w;全非 → −0.25·w
+    if (frac < 0.5 && t.weight >= 0.6) strongNonChord += t.weight * (1 - frac); // 多数锚点撞和弦
   }
 
   const headFit = brick.head && slotRealPcs(slotAtBeat(slots, 0), keyPc).includes(mod12(brick.head.midi)) ? 0.5 : 0;
