@@ -365,6 +365,9 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           <Row k="contour" v={a.motif.contour.map((c) => (c > 0 ? '↑' : c < 0 ? '↓' : '→')).join('')} />
           <Row k="rhythm cell" v={a.motif.rhythmCell.map((d) => d.toFixed(2)).join(' ')} />
           {result && <>
+            {result.brick && <Row k="旋律 brick(功能)" v={`${result.brick.primaryFunction} · ${result.brick.evidence.slice(0, 2).join('; ')}`} />}
+            {result.selectedProgression && <Row k="选中进行模板" v={`${result.selectedProgression.prototypeId} · cad=${result.selectedProgression.cadence} · 分 ${result.selectedProgression.score.toFixed(1)}`} good />}
+            {result.selectedProgression && <Row k="候选 top" v={result.selectedProgression.topCandidates.slice(0, 3).map((c) => `${c.prototypeId.replace(/^(pop|lofi|rnb|jazz)_/, '')}:${c.score.toFixed(1)}`).join('  ')} />}
             <Row k="和弦进行(16 bar)" v={result.progression.map((c) => c.roman).join('-')} />
             <Row k="motif / quote 单元" v={`${result.motifBars} bar → quote ${result.quoteBars} bar${result.quoteBars < result.motifBars ? '(缩子动机留发展空间)' : ''}`} />
             <Row k="发展弧(每槽)" v={result.arc.join(' · ')} />

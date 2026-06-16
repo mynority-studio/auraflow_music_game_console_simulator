@@ -20,6 +20,11 @@ import {
 } from './motifTransform';
 import { snapMidiToScale, isInScale } from './scale';
 import { buildProgression } from './motifHarmony';
+import { analyzeUserMelodicBrick } from './melodicBrickAnalyzer';
+import { inferHarmonyIntent } from './melodicBrickHarmonyIntent';
+import { selectProgressionForMotif } from './motifProgressionSelector';
+import { realizeToSandboxChords, buildMotifRoadmap } from './motifRoadmap';
+import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap } from './melodicBrickTypes';
 import { chordAtBeat, nearestChordTone, isChordTone, type SandboxChord } from './chords';
 import { auditMotifWeave } from './jazzinessAudit';
 import { makeRng, type SeededRng } from './rng';
@@ -250,7 +255,19 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const phraseBeats = PHRASE_BARS * BAR;         // 一个和弦进行乐句 = 16 拍
   const answerBeats = phraseBeats - motifBeats;  // 乐句里 quote 之后的应答区 —— 恒 > 0(留发展空间)
   const numPhrases = Math.max(1, Math.round(TARGET_BEATS / phraseBeats));
-  const progression = buildProgression(motif, keyPc, mode, TARGET_BARS);
+  // ★ 和声:旋律 brick 驱动【从 newEngine 进行模板库选模板】(替换逐 bar 贪心 buildProgression)。
+  //   选不出(模板库空等)→ 兜底回老 buildProgression。只读知识层,不碰生产链。
+  const brick: UserMelodicBrick = analyzeUserMelodicBrick(motif, motifBeats);
+  let selected: SelectedMotifProgression | null = null;
+  let roadmap: MotifMelodicRoadmap | null = null;
+  let progression: SandboxChord[];
+  try {
+    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars: TARGET_BARS });
+    progression = realizeToSandboxChords(selected.slots, keyPc, mode, TARGET_BARS);
+    roadmap = buildMotifRoadmap(selected, brick, motifBeats, TARGET_BARS);
+  } catch {
+    progression = buildProgression(motif, keyPc, mode, TARGET_BARS);
+  }
 
   // base = 原样 motif 落 lead 音区;音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
   const base = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
@@ -313,5 +330,5 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS, quoteBeats: motifBeats });
-  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit };
+  return { motif, progression, occurrences, lead: finalLead, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap };
 }

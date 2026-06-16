@@ -76,6 +76,10 @@ export interface MotifWeaverResult {
   numSlots: number;
   arc: string[];                 // 每槽角色/手法(发展弧,UI 展示)
   audit: MotifWeaveAudit;
+  // —— brick 驱动和声(调试/UI)——
+  brick?: import('./melodicBrickTypes').UserMelodicBrick;
+  selectedProgression?: import('./melodicBrickTypes').SelectedMotifProgression | null;
+  roadmap?: import('./melodicBrickTypes').MotifMelodicRoadmap | null;
 }
 
 export type QuotePlan = 'verseHeadsOnly' | 'phraseHeads';
