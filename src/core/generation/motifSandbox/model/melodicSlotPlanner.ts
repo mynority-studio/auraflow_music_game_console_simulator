@@ -126,5 +126,22 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
   const slots = pairs.map((p) => p.slot);
   const userQuoteSlotIds = slots.filter((s) => s.userMotifPolicy === 'mustQuote').map((s) => s.id);
   const userDevelopSlotIds = slots.filter((s) => s.userMotifPolicy === 'mustDevelop' || s.userMotifPolicy === 'mayReference').map((s) => s.id);
+  validateMelodicSlotPlan(slots, userQuoteSlotIds, totalBeats, warnings); // Phase 6:覆盖/重叠/有 quote 健康检查
   return { totalBars: form.totalBars, beatsPerBar, slots, userQuoteSlotIds, userDevelopSlotIds, warnings };
+}
+
+/** Phase 6:校验 slot plan(≥1 quote / 从 0 起 / 无 gap / 无 overlap / 铺满曲长)→ 追加 warning。
+ *  正常 RoadMap(brick 连续铺满)不触发;只在结构异常时报。 */
+function validateMelodicSlotPlan(slots: readonly MelodicSlot[], quoteIds: readonly string[], totalBeats: number, warnings: string[]): void {
+  if (quoteIds.length === 0) warnings.push('plan 无 mustQuote slot(motif 不会原样出现)');
+  if (slots.length === 0) return;
+  const sorted = [...slots].sort((a, b) => a.startBeat - b.startBeat);
+  if (Math.abs(sorted[0].startBeat) > 1e-6) warnings.push(`首 slot 不从 beat0 起(@${sorted[0].startBeat})`);
+  for (let i = 1; i < sorted.length; i++) {
+    const prevEnd = sorted[i - 1].startBeat + sorted[i - 1].durationBeats;
+    if (sorted[i].startBeat > prevEnd + 1e-6) warnings.push(`覆盖空洞 @${prevEnd.toFixed(0)}-${sorted[i].startBeat.toFixed(0)}`);
+    else if (sorted[i].startBeat < prevEnd - 1e-6) warnings.push(`slot 重叠 @${sorted[i].startBeat.toFixed(0)}`);
+  }
+  const end = sorted[sorted.length - 1].startBeat + sorted[sorted.length - 1].durationBeats;
+  if (end < totalBeats - 1e-6) warnings.push(`末端未铺满(${end.toFixed(0)}/${totalBeats})`);
 }

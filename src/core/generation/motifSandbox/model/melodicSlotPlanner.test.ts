@@ -35,7 +35,7 @@ describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(24), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 1 });
     const quoteStarts = plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat).sort((a, b) => a - b);
     expect(quoteStarts).toEqual([6, 18]);          // quote 落点来自 RoadMap brick(6/18),非固定 0/16/32/48
-    expect(plan.warnings.length).toBe(0);          // 走结构性复现,非句头回退
+    expect(plan.warnings.some((w) => w.includes('回退句头'))).toBe(false); // 走结构性复现,非句头回退
   });
 
   it('★ 无复现 → 回退句头排比(用户决策;warning 标记,且最佳匹配仍被 quote)', () => {
@@ -57,6 +57,20 @@ describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4
     const cadence = plan.slots.find((s) => s.requiredFunction === 'cadence')!;
     expect(cadence.userMotifPolicy).toBe('generatedOnly');         // 与 approach motif 抵触
     for (const s of plan.slots) expect(s.reason).toBeTruthy();
+  });
+
+  it('★ Phase6 校验:连续铺满的 plan 无结构 warning;有 quote', () => {
+    // 4 brick × 16 拍 = 64 拍,连续铺满 16 bar(模拟真实 brick tiling)
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I', 16), rb('b', 'Approach', 16, 'Approach|ii-V', 16), rb('c', 'Tonic', 32, 'Tonic|I', 16), rb('d', 'Cadence', 48, 'Cadence|V-I', 16)];
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('opening'), seed: 6 });
+    expect(plan.warnings.filter((w) => w.includes('空洞') || w.includes('重叠') || w.includes('未铺满') || w.includes('beat0'))).toEqual([]);
+    expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('★ Phase6 校验:覆盖空洞被报告', () => {
+    const bricks = [rb('a', 'Tonic', 0, 'Tonic|I', 4), rb('b', 'Cadence', 12, 'Cadence|V-I', 4)]; // 4-12 空洞
+    const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('opening'), seed: 1 });
+    expect(plan.warnings.some((w) => w.includes('空洞'))).toBe(true);
   });
 
   it('确定性:同输入 → 同 plan', () => {
