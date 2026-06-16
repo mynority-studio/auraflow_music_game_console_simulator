@@ -5,7 +5,7 @@ import { isInScale } from './scale';
 import { quotedAt } from './jazzinessAudit';
 import { fitRange, identity } from './motifTransform';
 import { chordAtBeat, effectiveTonePcs } from './chords';
-import type { MotifWeaverInput } from './types';
+import { defaultSandboxForm, type MotifWeaverInput } from './types';
 
 const baseInput = (over: Partial<MotifWeaverInput> = {}): MotifWeaverInput => ({
   capturedNotes: generateSampleCaptured(96, 0, 'major', 0),
@@ -23,6 +23,28 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     expect(quotedAt(r.lead, ref, 0)).toBe(true);       // 第一槽 = 原样 motif
     expect(r.occurrences[0].kind).toBe('quote');
     expect(r.occurrences[0].label).toBe('head');
+  });
+
+  it('★ Phase1 动态曲长:8 bar → progressionBeats=32;24 bar → 96(无需改代码,form context 驱动)', () => {
+    const r8 = generateMotifWeave(baseInput({ form: defaultSandboxForm(8) }));
+    expect(r8.totalBars).toBe(8);
+    expect(r8.progressionBeats).toBe(32);
+    const r24 = generateMotifWeave(baseInput({ form: defaultSandboxForm(24) }));
+    expect(r24.totalBars).toBe(24);
+    expect(r24.progressionBeats).toBe(96);
+    // 默认(不传 form)= 16 bar
+    expect(generateMotifWeave(baseInput()).progressionBeats).toBe(64);
+  });
+
+  it('★ Phase1 无固定锚:24 bar 曲 quote 落点来自动态乐句头(0..80),非硬编 0/16/32/48', () => {
+    const r = generateMotifWeave(baseInput({ form: defaultSandboxForm(24) }));
+    const ref = fitRange(identity(r.motif.notes), 60, 84);
+    // 24 bar = 6 乐句 → 乐句头 0,16,32,48,64,80 都应有原样复现(超出旧 16-bar 的 48)
+    for (const head of [0, 16, 32, 48, 64, 80]) {
+      expect(quotedAt(r.lead, ref, head), `乐句头@${head}`).toBe(true);
+    }
+    // 没有任何 lead 音越界(全在 96 拍内)
+    expect(r.lead.every((n) => n.onsetBeat < 96)).toBe(true);
   });
 
   it('★ 排比:原样 motif 在每个和弦进行乐句的【同一相对位置】(乐句头)都出现', () => {

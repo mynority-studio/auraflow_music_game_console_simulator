@@ -13,6 +13,7 @@ import type { ProgressionCandidate } from './progressionCandidateProvider';
 const mod12 = (n: number): number => ((n % 12) + 12) % 12;
 const deg17 = (d: number): number => ((d - 1) % 7 + 7) % 7 + 1;
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const PHRASE_BEATS = 16; // 乐句头循环长度(4 小节)—— motif quote 单元相位锁定到乐句头
 
 function slotAtBeat(slots: readonly ProgressionSlot[], beat: number): ProgressionSlot {
   let acc = 0;
@@ -40,16 +41,19 @@ export function scoreProgressionAgainstMelodicBrick(
 
   const templatePrior = (proto.weight ?? 1) * 0.4;
 
-  // 结构音支撑:motif 锚在 0/16/32/48 → 在【所有锚点】判贴合(8/16-bar 模板各循环和弦不同,
-  //   只看第一处会在 bar 5/9/13 撞和弦)。结构音在越多锚点是和弦音 → 越贴合。
+  // 结构音支撑:motif 在【乐句头锚点】循环再现 → 在所有锚点判贴合(各循环和弦不同,只看第一处会
+  //   在后续乐句撞和弦)。结构音在越多锚点是和弦音 → 越贴合。
   //   §6:brick.structuralTones 已过滤(只含 >= MIN 的骨干音)→ 经过音天然不参与支撑/strongNonChord。
-  const ANCHORS = [0, 16, 32, 48];
+  //   ★ 锚点从【实际进行总长】派生(每 PHRASE_BEATS 一个乐句头),不再硬编 0/16/32/48(directive Phase 1)。
+  const totalBeats = slots.reduce((s, sl) => s + (sl.beats ?? 4), 0);
+  const ANCHORS: number[] = [];
+  for (let a = 0; a < totalBeats - 1e-6; a += PHRASE_BEATS) ANCHORS.push(a);
   let structuralToneSupport = 0, strongNonChord = 0;
   for (const t of brick.structuralTones) {
     if (t.onsetBeat >= brick.quoteBeats - 1e-6) continue;
     let ct = 0, n = 0;
     for (const a of ANCHORS) {
-      if (a + t.onsetBeat >= 64 - 1e-6) continue;
+      if (a + t.onsetBeat >= totalBeats - 1e-6) continue;
       n++;
       if (slotRealPcs(slotAtBeat(slots, a + t.onsetBeat), keyPc).includes(mod12(t.midi))) ct++;
     }
@@ -85,8 +89,9 @@ export function scoreProgressionAgainstMelodicBrick(
   const funcs = new Set(slots.map(slotFunc));
   const functionArcFit = (funcs.has('S') ? 0.25 : 0) + (funcs.has('D') ? 0.35 : 0);
 
-  // 乐句循环:lengthBars 整除 16 → 干净 4/8/16 循环
-  const phraseCycleFit = 16 % Math.max(1, proto.lengthBars) === 0 ? 0.2 : 0;
+  // 乐句循环:prototype 长度整除【总曲长(bar)】→ 干净循环铺满(动态曲长,不再硬编 16)
+  const totalBars = Math.max(1, Math.round(totalBeats / 4));
+  const phraseCycleFit = totalBars % Math.max(1, proto.lengthBars) === 0 ? 0.2 : 0;
 
   const degeneratePenalty = intent.avoidDegenerateProgressions.includes(cycleRomanKey(slots)) ? 2.0 : 0;
   const strongNonChordPenalty = strongNonChord * 0.5;

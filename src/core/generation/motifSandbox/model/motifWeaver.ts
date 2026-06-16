@@ -14,6 +14,7 @@
 
 import type { MotifNote, MotifOccurrence, MotifWeaverInput, MotifWeaverResult, QuotePlan, ScaleMode, UserMotif } from './types';
 import { analyzeAndNormalize } from './motifAnalysis';
+import { defaultSandboxForm } from './types';
 import {
   identity, fitRange, transposeDiatonicMotif, invertAroundMidi, retrogradePitchOnly,
   rhythmDivide, augmentMotif, fragmentMotif, displaceMotif,
@@ -29,9 +30,7 @@ import { chordAtBeat, nearestChordTone, isChordTone, type SandboxChord } from '.
 import { auditMotifWeave } from './jazzinessAudit';
 import { makeRng, type SeededRng } from './rng';
 
-const TARGET_BARS = 16;
 const BAR = 4;
-const TARGET_BEATS = TARGET_BARS * BAR; // 64
 const LEAD_LOW = 60, LEAD_HIGH = 84;
 const MAX_LEAP = 8;     // 小六度;> 此值八度收拢(作曲原则:级进为主、跳进≤小六度)
 const ONSET_GRID = 0.25; // 1/16 拍 —— 输出 onset 吸到此网格 → 与伴奏稳稳对拍(divide 装饰音不再落网格外)
@@ -247,6 +246,11 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const quotePlan: QuotePlan = input.quotePlan ?? 'phraseHeads'; // 默认排比(每乐句头原样)
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
 
+  // ★ 曲长来自 form context(默认 16 bar)—— 不再是 weaver 内的隐藏常量(directive Phase 1)。
+  const form = input.form ?? defaultSandboxForm();
+  const targetBars = Math.max(1, Math.round(form.totalBars));
+  const targetBeats = targetBars * BAR;
+
   const motifBars = Math.max(1, Math.min(PHRASE_BARS, Math.round(motif.lengthBeats / BAR)));
   // §4:quote 单元 = 排比陈述长度。motif 满 4 小节会吃光乐句(应答区=0,退化成 4 段死复制)→
   //   缩到前 2 小节【子动机】,保证每个和弦循环【既有原样再现、又有续写】。≤2 小节 motif 整段 quote。
@@ -254,7 +258,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const motifBeats = quoteBars * BAR;            // 陈述/quote 长度(相位锁定到乐句头)
   const phraseBeats = PHRASE_BARS * BAR;         // 一个和弦进行乐句 = 16 拍
   const answerBeats = phraseBeats - motifBeats;  // 乐句里 quote 之后的应答区 —— 恒 > 0(留发展空间)
-  const numPhrases = Math.max(1, Math.round(TARGET_BEATS / phraseBeats));
+  const numPhrases = Math.max(1, Math.round(targetBeats / phraseBeats));
   // ★ 和声:旋律 brick 驱动【从 newEngine 进行模板库选模板】(替换逐 bar 贪心 buildProgression)。
   //   选不出(模板库空等)→ 兜底回老 buildProgression。只读知识层,不碰生产链。
   const brick: UserMelodicBrick = analyzeUserMelodicBrick(motif, motifBeats);
@@ -264,12 +268,12 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   let harmonyError: string | undefined;
   let progression: SandboxChord[];
   try {
-    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars: TARGET_BARS });
+    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars });
     progression = realizeToSandboxChords(selected.slots, keyPc, mode);
-    roadmap = buildMotifRoadmap(selected, brick, motifBeats, keyPc, mode, TARGET_BARS);
+    roadmap = buildMotifRoadmap(selected, brick, motifBeats, keyPc, mode, targetBars);
     harmonySource = 'template';
   } catch (err) {
-    progression = buildProgression(motif, keyPc, mode, TARGET_BARS); // 兜底(不静默:harmonySource=fallback + error 暴露给 UI)
+    progression = buildProgression(motif, keyPc, mode, targetBars); // 兜底(不静默:harmonySource=fallback + error 暴露给 UI)
     harmonyError = err instanceof Error ? err.message : String(err);
   }
 
@@ -290,8 +294,8 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   // 逐【和弦进行乐句】:① 乐句头陈述(排比=每句原样 / verseHeadsOnly=只 verse 头原样,其余发展)② 应答区【发展/续写】。
   for (let p = 0; p < numPhrases; p++) {
     const phraseStart = p * phraseBeats;
-    if (phraseStart >= TARGET_BEATS - 1e-6) break;
-    const span = Math.min(motifBeats, TARGET_BEATS - phraseStart);
+    if (phraseStart >= targetBeats - 1e-6) break;
+    const span = Math.min(motifBeats, targetBeats - phraseStart);
     // ① 乐句头陈述
     const verbatim = quotePlan === 'phraseHeads' || verseHeads.has(p);
     let stmt: MotifNote[];
@@ -316,8 +320,8 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     }
     // ② 应答(乐句里 motif 之后那段,每句变化 = 续写)
     const ansStart = phraseStart + motifBeats;
-    if (answerBeats > 0 && ansStart < TARGET_BEATS - 1e-6) {
-      const ans = fillAnswer(base, ansStart, Math.min(answerBeats, TARGET_BEATS - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p);
+    if (answerBeats > 0 && ansStart < targetBeats - 1e-6) {
+      const ans = fillAnswer(base, ansStart, Math.min(answerBeats, targetBeats - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p);
       if (ans.notes.length) {
         lead.push(...ans.notes);
         const hasDev = ans.notes.some((n) => n.occurrenceKind === 'develop');
@@ -330,9 +334,10 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   }
 
   const finalLead = smoothAndResolve(lead, bandLo, bandHi, keyPc, mode, progression)
-    .map((n) => ({ ...n, onsetBeat: Math.min(Math.round(n.onsetBeat / ONSET_GRID) * ONSET_GRID, TARGET_BEATS - ONSET_GRID) })) // onset 吸 1/16 网格 = 稳稳对拍
+    .map((n) => ({ ...n, onsetBeat: Math.min(Math.round(n.onsetBeat / ONSET_GRID) * ONSET_GRID, targetBeats - ONSET_GRID) })) // onset 吸 1/16 网格 = 稳稳对拍
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
-  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: TARGET_BARS, quoteBeats: motifBeats, progression });
-  return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: TARGET_BARS, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError };
+  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression });
+  const progressionBeats = progression.reduce((n, c) => n + c.durationBeats, 0);
+  return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: targetBars, progressionBeats, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError };
 }

@@ -66,13 +66,28 @@ export interface MotifWeaveAudit {
   jazzinessScore: number;
 }
 
+// —— 曲式上下文(directive roadmap_slot_fusion §5.1):曲长不再是 weaver 内的隐藏常量,
+//   显式从外部传入(sandbox 默认 16 bar 也走 context)。未来 Q+N 传真实段落。——
+export interface MotifSandboxSection {
+  id: string;
+  role: 'intro' | 'verse' | 'chorus' | 'bridge' | 'ending' | 'loop';
+  startBeat: number;
+  durationBeats: number;
+}
+export interface MotifSandboxFormContext {
+  totalBars: number;
+  beatsPerBar: number;
+  sections: MotifSandboxSection[];
+}
+
 export interface MotifWeaverResult {
   motif: UserMotif;
-  progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(16 bar)
+  progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(长度 = form.totalBars)
   occurrences: MotifOccurrence[];
   lead: MotifNote[];
   playbackBpm: number;           // = motif.bpm(捕获时钟)—— 播放永远用它,不用 UI bpm state
-  totalBars: number;             // 16
+  totalBars: number;             // = form.totalBars
+  progressionBeats: number;      // 配出的和弦进行总拍数(= totalBars × beatsPerBar;动态曲长验证)
   motifBars: number;             // 分析出的 motif 小节数(1..4)
   quoteBars: number;             // 实际排比 quote 单元小节数(长 motif 缩为 ≤2 子动机;≤2 小节时 = motifBars)
   numSlots: number;
@@ -98,4 +113,10 @@ export interface MotifWeaverInput {
   seed: number;
   inputTonality?: import('./sandboxScales').SandboxTonality; // 给定则输入吸到该音阶(保 blues b5/五声特征)
   quotePlan?: QuotePlan;             // 默认 phraseHeads(排比:每乐句头);verseHeadsOnly = 只 bar1/bar9
+  form?: MotifSandboxFormContext;    // 曲式上下文(默认 16 bar);决定曲长,不再由 weaver 隐藏常量拥有
+}
+
+/** sandbox 默认曲式(16 bar 单 verse 段)—— 显式当 context 传,不在链路里硬编。 */
+export function defaultSandboxForm(totalBars = 16, beatsPerBar = 4): MotifSandboxFormContext {
+  return { totalBars, beatsPerBar, sections: [{ id: 'sandbox-main', role: 'verse', startBeat: 0, durationBeats: totalBars * beatsPerBar }] };
 }
