@@ -4,6 +4,7 @@ import { generateMotifWeave } from '../model/motifWeaver';
 import { generateSampleCaptured } from '../model/motifAnalysis';
 import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
 import { generateSong } from '../../newEngine/generation/GenerationController';
+import { beats } from '../../newEngine/foundation';
 
 const m12 = (n: number) => ((n % 12) + 12) % 12;
 const weave = (style: 'pop' | 'jazz' = 'pop', seed = 7) =>
@@ -66,6 +67,18 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
       expect(lead.notes[0].pitch, `${style} lead 首音`).toBe(ov.lead![0].pitch);                 // 首音 == motif 首音
       expect(song.ir!.tracks.find((t) => t.role === 'bass')!.notes.length, `${style} bass`).toBeGreaterThan(0);
       expect(song.ir!.tracks.find((t) => t.role === 'comp')!.notes.length, `${style} comp`).toBeGreaterThan(0);
+    }
+  });
+
+  it('★ PR6 收口:motif lead 原样不被改(首份 lead 音 pitch + startTick 逐音 == sandbox lead;无 humanize/swing)', () => {
+    const r = weave('pop', 7);
+    const ov = buildMotifSongOverride(r, 0, 'major');
+    const song = generateSongFromMotif({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 96 }, ov);
+    const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
+    const tb = song.ir!.timebase;
+    for (let i = 0; i < ov.lead!.length; i++) {
+      expect(lead.notes[i].pitch, `lead[${i}] pitch`).toBe(ov.lead![i].pitch);
+      expect(lead.notes[i].startTick, `lead[${i}] startTick`).toBe(tb.beatToTick(beats(ov.lead![i].onsetBeat))); // 时序原样
     }
   });
 
