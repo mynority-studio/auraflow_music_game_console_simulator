@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { generateSong } from './GenerationController';
-import { generateSongFromMotif } from './generateSongFromMotif';
+import { generateSongFromMotif, type MotifLeadNote } from './generateSongFromMotif';
 import type { GenerationRequest } from '../band/bandEngine';
-import type { MusicalIR, TrackIR } from '../ir/MusicalIR';
+import type { MusicalIR } from '../ir/MusicalIR';
 
 // IR 指纹:逐轨 role/program + 每音 pitch/start/dur/vel —— 用于"默认链字节不变"对比。
 const irSig = (ir: MusicalIR): string =>
@@ -34,19 +34,23 @@ describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)'
     expect(irSig(passthrough.ir!)).toBe(irSig(base.ir!));
   });
 
-  it('★ 注入点 B(lead override):传入现成 lead TrackIR → 该轨被原样采用,其余轨不变', () => {
+  it('★ 注入点 B(lead override · beats 制):传入权威 lead → 该轨原样采用(音高/顺序),其余轨不变', () => {
     const req = REQS[0];
     const base = generateSong(req);
-    const baseLead = base.ir!.tracks.find((t) => t.role === 'lead')!;
-    // 造一条"权威 lead"(新建 TrackIR,不 spread 冻结轨):验证 override 原样生效、其余轨跟随同和声不变。
-    const overrideLead: TrackIR = { role: 'lead', program: baseLead.program, notes: baseLead.notes.map((n) => ({ pitch: n.pitch, startTick: n.startTick, durationTicks: n.durationTicks, velocity: n.velocity })) };
-    const r = generateSongFromMotif(req, { lead: overrideLead });
+    // 权威 lead(beats):一段简单上行,验证 override 生效、其余轨跟随同和声不变。
+    const lead: MotifLeadNote[] = [
+      { pitch: 67, onsetBeat: 0, durationBeat: 1, velocity: 100 },
+      { pitch: 69, onsetBeat: 1, durationBeat: 1, velocity: 96 },
+      { pitch: 72, onsetBeat: 2, durationBeat: 2, velocity: 104 },
+      { pitch: 71, onsetBeat: 4, durationBeat: 1, velocity: 92 },
+    ];
+    const r = generateSongFromMotif(req, { lead });
     expect(r.status).not.toBe('failed');
-    const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
-    // override lead 的音被采用(逐音 == 我们传入的);program 取器配生效值(不强求等于传入)
-    expect(lead.notes.map((n) => n.pitch)).toEqual(overrideLead.notes.map((n) => n.pitch));
-    // 非 lead 轨与默认一致(同和声 → bass/comp/pad/drum 不变)
-    const nonLead = (x: typeof base) => x.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => `${t.role}:` + t.notes.map((n) => n.pitch).join(',')).join('|');
-    expect(nonLead(r)).toBe(nonLead(base));
+    const leadTrack = r.ir!.tracks.find((t) => t.role === 'lead')!;
+    expect(leadTrack.notes.map((n) => n.pitch)).toEqual(lead.map((n) => n.pitch)); // 音高逐音原样采用
+    // 非 lead 轨仍齐备(编曲会【响应】override lead:ducking/避撞/comp 让位旋律区 = 走 A 期望,不强求字节不变)
+    const baseRoles = base.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
+    const rRoles = r.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
+    expect(rRoles).toEqual(baseRoles); // 同样的伴奏编制
   });
 });

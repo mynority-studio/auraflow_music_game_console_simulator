@@ -11,24 +11,47 @@
 //   PR1 scaffold:转换器(sandbox→HarmonicPlan / sandbox→lead TrackIR)留后续 PR,本入口先把【接缝】立住。
 // ============================================================
 
-import { beats, createRandomContext, createTimebase } from '../foundation';
+import { beats, midi, createRandomContext, createTimebase, type Timebase } from '../foundation';
 import { buildBandSpec, type GenerationRequest } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
 import type { HarmonicPlan } from '../harmony/HarmonicPlan';
-import type { TrackIR } from '../ir/MusicalIR';
+import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 import { DEFAULT_BUDGET, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
 import { runGenerationControl, type GenerationResult, type RenderFn } from './GenerationController';
+
+/** 权威 lead 音(beats 制,timebase-无关):Q+R 把 MotifNote[] 映射成它,generateSongFromMotif 用 Q+N
+ *  timebase 转 tick。pitch 0..127、velocity 1..127、时间用拍。 */
+export interface MotifLeadNote {
+  pitch: number;
+  onsetBeat: number;
+  durationBeat: number;
+  velocity: number;
+}
 
 /** 走 A 注入合同:sandbox 权威和声 + 权威 lead。两者均可选;缺省 → 退回 Q+N 默认生成(== generateSong)。 */
 export interface MotifSongOverride {
   /** MotifHarmonyOverride:整曲权威和声(Q+R selectedProgression/RoadMap → HarmonicPlan)。下游 bass/comp/pad/drum/lead 自动跟随。 */
   harmony?: HarmonicPlan;
-  /** MotifLeadOverride:整曲权威 lead 轨(Q+R motif slot weaver → TrackIR),跳过 renderMgMelody。 */
-  lead?: TrackIR;
+  /** MotifLeadOverride:整曲权威 lead(Q+R motif slot weaver,beats 制),内部转 TrackIR 跳过 renderMgMelody。 */
+  lead?: readonly MotifLeadNote[];
+}
+
+/** 权威 lead(beats)→ lead TrackIR(用 Q+N timebase 转 tick;钳音高/力度;onset 排序)。 */
+function motifLeadToTrackIR(notes: readonly MotifLeadNote[], timebase: Timebase): TrackIR {
+  const irNotes: NoteIR[] = [...notes]
+    .filter((n) => n.durationBeat > 0)
+    .sort((a, b) => a.onsetBeat - b.onsetBeat)
+    .map((n) => ({
+      pitch: midi(Math.max(0, Math.min(127, Math.round(n.pitch)))),
+      startTick: timebase.beatToTick(beats(n.onsetBeat)),
+      durationTicks: timebase.beatToTick(beats(Math.max(0.05, n.durationBeat))),
+      velocity: Math.max(1, Math.min(127, Math.round(n.velocity))),
+    }));
+  return { role: 'lead', notes: irNotes };
 }
 
 /** 走 A 并行入口:Q+R 产物注入 Q+N 成曲生产链。override 缺省时行为与 generateSong 完全一致。 */
@@ -48,10 +71,11 @@ export function generateSongFromMotif(
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
 
-  // 注入点 B:lead override 经 renderSongFull 末参数透传(默认 undefined → 走 MG 链)。
+  // 注入点 B:权威 lead(beats)→ TrackIR(本 timebase),经 renderSongFull 末参数透传(缺省 → 走 MG 链)。
+  const overrideLeadTrack = override.lead && override.lead.length ? motifLeadToTrackIR(override.lead, timebase) : undefined;
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, override.lead);
+      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack);
 
   const locator = buildRetryLocator(harmonic, timebase);
   return runGenerationControl(render, seedRng, budget, locator);
