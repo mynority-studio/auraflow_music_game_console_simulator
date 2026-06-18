@@ -34,6 +34,7 @@ import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { isWindFamily, windBreathCcEvents } from './windBreath';
+import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
@@ -356,6 +357,13 @@ export function renderSongFull(
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks);
+  // ★ 快速 lead 连音 legato【最终安全闸】(CODEX directive 2026-06-18,jazz/blues):renderMgMelody 里已按干净
+  //   时序连过一遍,但 humanizeTiming 抖动 onset 会把触碰的快速音重新撞出微重叠 → 这里按【最终时序】再连一遍,
+  //   保证末态触碰 + 同音高无 noteOff 撞。只改 lead durationTicks(不动 pitch/start/数量);comp/bass/pad/drum 不碰。
+  const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, timebase.ppq);
+  const articulatedTracks = legatoOpts.enabled
+    ? humanizedTracks.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
+    : humanizedTracks;
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
@@ -367,7 +375,7 @@ export function renderSongFull(
   }
   // ★ CC64 踏板:POP/LOFI/RNB 的 comp 每和弦踩(音尾 ring 融合);其它风格不踩(清晰)。
   const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase) : undefined;
-  const finalTracks = humanizedTracks.map((t) => {
+  const finalTracks = articulatedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
     const fallback = instrumentation.roleProgram[t.role] ?? band.roleProgram[t.role]; // ★ 单一真源:器配生效 program

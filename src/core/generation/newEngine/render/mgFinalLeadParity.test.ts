@@ -7,6 +7,7 @@ import { renderMgMelody } from './mgLeadRenderer';
 import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
+import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { createTimebase, createRandomContext, beats } from '../foundation';
 
@@ -29,12 +30,15 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
       const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
       const raw = renderMgMelody(plan, band, tb, seed);
-      // ★ 契约:原始 MG lead 经【空拍补全 → repeatGroup 重放】= production lead 的预期(lead 不 humanize → 逐字节相等)
+      // ★ 契约:原始 MG lead 经【空拍补全 → repeatGroup 重放 →(jazz/blues)快速连音 legato】= production lead 的预期。
+      //   lead 不 humanize;jazz/blues 末步 legato 只改 duration(directive 2026-06-18)→ pitch/start/count 仍逐字节相等。
       const filled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
-      const expected = applyRepeatGroupReplay(filled, arr, plan.chordTimeline, tb)[0];
+      const replayed = applyRepeatGroupReplay(filled, arr, plan.chordTimeline, tb)[0];
+      const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
+      const expected = legatoOpts.enabled ? { ...replayed, notes: connectFastLeadNoteIR(replayed.notes, legatoOpts) } : replayed;
       const final = renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir.tracks.find((t) => t.role === 'lead')!;
       expect(final.notes.length).toBe(expected.notes.length);
-      expect(ev(final.notes as never)).toBe(ev(expected.notes as never)); // pitch/start/dur/velocity 全等
+      expect(ev(final.notes as never)).toBe(ev(expected.notes as never)); // pitch/start/dur/velocity 全等(jazz 含末步 legato)
     });
   }
 });

@@ -16,6 +16,7 @@ import type { BandSpec } from '../band/BandSpec';
 import type { Timebase } from '../foundation';
 import { midi, beats } from '../foundation';
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
+import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 
 import { harmonicPlanToMgChordDefs } from './mgChordDefAdapter';
 import { buildChordPart } from './mgChordPart';
@@ -114,5 +115,8 @@ export function renderMgMelody(
   //   一律不被 newEngine 后处理改写。收尾的"回主音"是【和声】回 T(harmony.ensureAuthenticEnding 的 V7→I),
   //   不是旋律;旋律的解决/落音交回 MG shapeMelodyHarmony(applyMelodicResolutionParadigm 等,读 effectiveFunc)。
 
-  return { role: 'lead', notes, program };
+  // ★ 快速 lead 连音 legato(jazz/blues;CODEX directive 2026-06-18):swing 后把快速线条的音连到下一起音,
+  //   消除 0.85 articulation 重开的"机关枪"断点。只改 durationTicks,不动 pitch/start/数量;非 jazz 风格 enabled=false 零改动。
+  const legatoNotes = connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
+  return { role: 'lead', notes: legatoNotes, program };
 }

@@ -18,6 +18,7 @@ import { renderMgMelody } from './mgLeadRenderer';
 import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
+import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { auditMusicality } from './musicalityAuditor';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
@@ -50,7 +51,10 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
       const raw = renderMgMelody(plan, band, tb, seed);
-      const expected = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0];
+      const replayed = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0];
+      // jazz/blues 末步快速连音 legato(只改 duration;directive 2026-06-18);非 jazz enabled=false → 原样
+      const lo = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
+      const expected = lo.enabled ? { ...replayed, notes: connectFastLeadNoteIR(replayed.notes, lo) } : replayed;
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
       expect(final.notes.length, `${seed}/${style} lead count`).toBe(expected.notes.length);
       expect(ev(final.notes as never), `${seed}/${style} lead events`).toBe(ev(expected.notes as never));

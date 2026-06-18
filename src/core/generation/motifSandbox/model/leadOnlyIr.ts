@@ -7,6 +7,7 @@
 
 import { createTimebase, midi, beats, type Timebase, type Ticks } from '../../newEngine/foundation';
 import { freezeMusicalIR, type MusicalIR, type NoteIR, type TrackMix } from '../../newEngine/ir/MusicalIR';
+import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from '../../newEngine/render/leadArticulation';
 import type { MotifNote, SandboxStyle } from './types';
 import type { Accompaniment } from './accompaniment';
 
@@ -74,6 +75,13 @@ function timebaseOf(bpm: number): Timebase {
   return createTimebase({ meter: { numerator: 4, denominator: 4 }, tempoMap: [{ atBeat: beats(0), bpm }] });
 }
 
+/** ★ lead 轨建谱:toNoteIR(含 swing)后做【快速连音 legato】(CODEX directive 2026-06-18,jazz/blues 启用)。
+ *  只动 lead durationTicks(swing 不变、pitch/start/数量不变);comp/bass 不调(伴奏发音职责不同)。 */
+function buildLeadNotes(lead: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number, style: SandboxStyle, swing: number): NoteIR[] {
+  const notes = toNoteIR(lead, timebase, totalBeats, defaultVel, swing);
+  return connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
+}
+
 /** 每小节一脚【延音踏板】(微微):小节头踩下、下一小节前略抬 → 音尾 ring、换小节干净不糊。 */
 function barPedal(timebase: Timebase, totalBeats: number): { atTick: Ticks; down: boolean }[] {
   const out: { atTick: Ticks; down: boolean }[] = [];
@@ -91,7 +99,7 @@ export function buildLeadOnlyIr(lead: readonly MotifNote[], bpm: number, style: 
   const totalBeats = spanOf(lead);
   const swing = SWING_BY_STYLE[style];
   return freezeMusicalIR({
-    tracks: [{ role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78, swing), program: prog, mix: leadMix(prog) }], // lead 不踩踏板 = 旋律发音清晰、稳稳对拍
+    tracks: [{ role: 'lead', notes: buildLeadNotes(lead, timebase, totalBeats, 0.78, style, swing), program: prog, mix: leadMix(prog) }], // lead 不踩踏板 = 旋律发音清晰、稳稳对拍;jazz 快速连音 legato
     timebase,
     durationTicks: timebase.beatToTick(beats(totalBeats)),
   });
@@ -109,7 +117,7 @@ export function buildSandboxIr(lead: readonly MotifNote[], accomp: Accompaniment
   const swing = SWING_BY_STYLE[style]; // jazz 摆动:三轨同一摆动时间线 → 律动一致(下拍稳、反拍 lilt)
   return freezeMusicalIR({
     tracks: [
-      { role: 'lead', notes: toNoteIR(lead, timebase, totalBeats, 0.78, swing), program: leadProg, mix: leadMix(leadProg) }, // lead 不踩 → 旋律清晰对拍(踏板会糊成一片听着"飘")
+      { role: 'lead', notes: buildLeadNotes(lead, timebase, totalBeats, 0.78, style, swing), program: leadProg, mix: leadMix(leadProg) }, // lead 不踩 → 旋律清晰对拍;jazz 快速连音 legato(comp/bass 不调)
       { role: 'comp', notes: toNoteIR(accomp.comp, timebase, totalBeats, 0.46, swing), program: accomp.compProgram, mix: compMix, pedalEvents: barPedal(timebase, totalBeats) }, // 只 comp 踩 → 和声铺底 ring
       { role: 'bass', notes: toNoteIR(accomp.bass, timebase, totalBeats, 0.6, swing), program: accomp.bassProgram, mix: bassMix }, // bass 不踩 → 保清晰发音
     ],
