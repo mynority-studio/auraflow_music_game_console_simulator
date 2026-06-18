@@ -48,14 +48,14 @@ describe('motifSandbox/melodicSlotPlanner(RoadMap → 旋律 slot 计划,Phase 4
     const qs = quoteStartsOf(plan);
     expect(qs).toContain(6); expect(qs).toContain(18);  // 结构性复现落 RoadMap brick(6/18),非固定锚
     expect(qs).toContain(0);                            // + 曲首陈述
-    expect(plan.warnings.some((w) => w.includes('回退句头'))).toBe(false); // 走结构性复现
+    expect(plan.warnings.some((w) => w.includes('结构再现点') || w.includes('段落开头'))).toBe(false); // 走结构性复现,非回退
   });
 
-  it('★ 无复现 → 回退句头排比(用户决策;warning 标记,且最佳匹配仍被 quote)', () => {
+  it('★ 无复现 → 回退段落开头 + 后半段结构再现点(用户决策;warning 标记,最佳匹配仍被 quote)', () => {
     // 全唯一 recurrenceKey → 无结构复现
     const bricks = [rb('a', 'Tonic', 0, 'Tonic|I'), rb('b', 'Approach', 4, 'Approach|ii-V'), rb('c', 'Cadence', 8, 'Cadence|IV-V'), rb('d', 'Turnaround', 12, 'Turnaround|vi-IV')];
     const plan = buildMelodicSlotPlanFromRoadMap({ form: defaultSandboxForm(16), roadmapBricks: bricks, userBrick: userBrickAs('approach'), seed: 2 });
-    expect(plan.warnings.some((w) => w.includes('回退句头'))).toBe(true);
+    expect(plan.warnings.some((w) => w.includes('结构再现点') || w.includes('段落开头'))).toBe(true);
     expect(plan.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1);
     // 最佳匹配(Approach@4)一定在 quote 集合里
     expect(plan.userQuoteSlotIds.map((id) => slotById(plan, id).startBeat)).toContain(4);

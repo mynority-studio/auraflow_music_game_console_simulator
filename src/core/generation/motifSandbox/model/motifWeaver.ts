@@ -27,7 +27,7 @@ import { selectProgressionForMotif } from './motifProgressionSelector';
 import { realizeToSandboxChords, buildMotifRoadmap } from './motifRoadmap';
 import { buildMelodicSlotPlanFromRoadMap } from './melodicSlotPlanner';
 import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap, MelodicSlotPlan, MelodicSlot } from './melodicBrickTypes';
-import { chordAtBeat, nearestChordTone, isChordTone, type SandboxChord } from './chords';
+import { chordAtBeat, nearestChordTone, isChordTone, effectiveTonePcs, type SandboxChord } from './chords';
 import { auditMotifWeave } from './jazzinessAudit';
 import { makeRng, type SeededRng } from './rng';
 
@@ -180,6 +180,44 @@ function placeMotifTail(base: readonly MotifNote[], atBeat: number, span: number
   return out;
 }
 
+/** 和弦音升序序列(从 ≥ floor 的最低和弦音起,取 count 个,不越 ceil)。 */
+function arpUp(ch: SandboxChord, floor: number, count: number, ceil: number): number[] {
+  const pcs = effectiveTonePcs(ch);
+  const inChord = (m: number): boolean => pcs.includes(((m % 12) + 12) % 12);
+  const out: number[] = [];
+  let m = Math.max(36, Math.round(floor));
+  while (!inChord(m) && m < ceil) m++;
+  for (let i = 0; i < count && m <= ceil; i++) { out.push(m); let n = m + 1; while (!inChord(n) && n <= ceil) n++; m = n; }
+  return out.length ? out : [nearestChordTone(floor, ch)];
+}
+
+/** generatedOnly 槽:按 requiredFunction 生成【不同音乐行为】(directive §8)——
+ *  opening=和弦音升序琶音(建立调性)· approach=级进趋近下个和弦根· cadence/resolution=下行解决到主和弦音·
+ *  continuation/answer/fill=连接长音。全部跟和声(和弦音/调内),末由 smoothAndResolve 收平滑。 */
+function generateForFunction(slot: MelodicSlot, at: number, span: number, idx: number, progression: readonly SandboxChord[], prevMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode): MotifNote[] {
+  const fn = slot.requiredFunction;
+  const ch = chordAtBeat(progression, at) ?? progression[0];
+  const mk = (midi: number, on: number, dur: number, acc: number): MotifNote => ({ midi, onsetBeat: on, durationBeat: dur, velocity: 0.56, scaleDegree: 0, octave: 0, accent: acc, occurrenceKind: 'connect', slotIndex: idx });
+  const within = (ns: MotifNote[]): MotifNote[] => ns.filter((n) => n.onsetBeat < at + span - 1e-6);
+
+  if (fn === 'opening') {
+    const n = Math.max(2, Math.min(4, Math.round(span)));
+    const arp = arpUp(ch, Math.max(bandLo, prevMidi - 5), n, bandHi);
+    return within(arp.map((m, i) => mk(m, at + i, i === arp.length - 1 ? Math.min(2, span - i) : 0.9, i === 0 ? 0.6 : 0.45)));
+  }
+  if (fn === 'approach') {
+    const nextCh = chordAtBeat(progression, at + span + 0.01) ?? ch;
+    const target = nearestChordTone(prevMidi, nextCh);
+    const start = Math.max(at, at + span - 2);
+    return within([mk(snapMidiToScale(target - 2, keyPc, mode), start, 0.9, 0.45), mk(snapMidiToScale(target - 1, keyPc, mode), start + 1, 0.9, 0.5)]); // 级进趋近(导音式)
+  }
+  if (fn === 'cadence' || fn === 'resolution') {
+    const land = nearestChordTone(prevMidi, ch); // 解决到当拍和弦音(末音长)
+    return within([mk(snapMidiToScale(land + 2, keyPc, mode), at, 0.9, 0.45), mk(snapMidiToScale(land + 1, keyPc, mode), at + 1, 0.9, 0.45), mk(land, at + 2, Math.max(1, span - 2), 0.58)]);
+  }
+  return placeConnect(at, span, idx, progression, prevMidi); // continuation / answer / fill
+}
+
 /** 渲染单个旋律 slot(directive §8)。返回音符 + 发展标签(供 occurrence/审计统计发展手法多样性)。
  *  mustQuote=原样(过长且 cadence 取尾) · mustDevelop=变形 · mayReference=节奏轮廓片段 · generatedOnly=按功能生成。 */
 export function renderMelodicSlot(args: {
@@ -238,7 +276,7 @@ export function renderMelodicSlot(args: {
     }
     case 'generatedOnly':
     default:
-      return { notes: placeConnect(at, span, idx, progression, prevMidi), label: `gen:${slot.requiredFunction}` }; // 按功能生成(连接长音,跟和声)
+      return { notes: generateForFunction(slot, at, span, idx, progression, prevMidi, bandLo, bandHi, keyPc, mode), label: `gen:${slot.requiredFunction}` }; // 按 requiredFunction 生成不同音乐行为
   }
 }
 
@@ -355,7 +393,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   try {
     selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars, sectionRole: form.sections[0]?.role ?? 'verse' });
     progression = realizeToSandboxChords(selected.slots, keyPc, mode);
-    roadmap = buildMotifRoadmap(selected, brick, motifBeats, keyPc, mode, targetBars);
+    roadmap = buildMotifRoadmap(selected, keyPc, mode, targetBars);
     harmonySource = 'template';
   } catch (err) {
     progression = buildProgression(motif, keyPc, mode, targetBars); // 兜底(不静默:harmonySource=fallback + error 暴露给 UI)

@@ -47,11 +47,35 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     const d = renderMelodicSlot({ slot: mkSlot('mustDevelop', 'approach'), ...common });
     expect(d.notes.length).toBeGreaterThan(0);
     expect(d.notes.every((n) => n.occurrenceKind === 'develop')).toBe(true);
-    // generatedOnly → 连接(occurrenceKind=connect)且每音是当拍真实和声音(跟和声,不乱)
+    // generatedOnly → 连接(occurrenceKind=connect)且每音【跟和声】(当拍和弦音 或 调内,不乱离调)
     const g = renderMelodicSlot({ slot: mkSlot('generatedOnly', 'cadence'), ...common });
     expect(g.notes.length).toBeGreaterThan(0);
     expect(g.notes.every((n) => n.occurrenceKind === 'connect')).toBe(true);
-    for (const n of g.notes) expect(effectiveTonePcs(chordAtBeat(prog, n.onsetBeat)).includes(((n.midi % 12) + 12) % 12), `gen GM${n.midi}@${n.onsetBeat}`).toBe(true);
+    for (const n of g.notes) {
+      const pc = ((n.midi % 12) + 12) % 12;
+      const ok = isInScale(n.midi, 0, 'major') || effectiveTonePcs(chordAtBeat(prog, n.onsetBeat)).includes(pc);
+      expect(ok, `gen GM${n.midi}@${n.onsetBeat}`).toBe(true);
+    }
+  });
+
+  it('★ Gap4:generatedOnly 按 requiredFunction 生成不同行为(opening 升序建立 / cadence 解决到和弦音)', () => {
+    const r = generateMotifWeave(baseInput());
+    const motif = r.motif, prog = r.progression, brick = r.brick!;
+    const mkSlot = (fn: MelodicSlotFunction): MelodicSlot => ({ id: `g-${fn}`, roadmapBrickId: 'b', startBeat: 0, durationBeats: 4, requiredFunction: fn, userMotifPolicy: 'generatedOnly', lineage: {}, reason: '' });
+    const common = { userMotif: motif, userBrick: brick, progression: prog, previousNotes: [] as never[], seed: 7, keyPc: 0, mode: 'major' as const };
+    const op = renderMelodicSlot({ slot: mkSlot('opening'), ...common }).notes;
+    const cad = renderMelodicSlot({ slot: mkSlot('cadence'), ...common }).notes;
+    const cont = renderMelodicSlot({ slot: mkSlot('continuation'), ...common }).notes;
+    // 不同功能 → 不同音符序列(不再一律 placeConnect)
+    expect(op.map((n) => `${n.midi}@${n.onsetBeat}`).join()).not.toBe(cad.map((n) => `${n.midi}@${n.onsetBeat}`).join());
+    expect(op.map((n) => n.midi).join()).not.toBe(cont.map((n) => n.midi).join());
+    // opening = 升序(琶音建立调性)
+    expect(op.length).toBeGreaterThanOrEqual(2);
+    expect(op[op.length - 1].midi).toBeGreaterThan(op[0].midi);
+    // cadence = 末音落当拍和弦音(解决)、时值更长
+    const land = cad[cad.length - 1];
+    expect(effectiveTonePcs(chordAtBeat(prog, land.onsetBeat)).includes(((land.midi % 12) + 12) % 12)).toBe(true);
+    expect(land.durationBeat).toBeGreaterThanOrEqual(cad[0].durationBeat);
   });
 
   it('★ Phase4:weaver result 带 melodicSlotPlan(RoadMap 驱动,≥1 quote slot,每 slot 有 roadmapBrickId)', () => {
@@ -125,7 +149,7 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     let sawConnect = false;
     for (let s = 1; s <= 20; s++) {
       const r = generateMotifWeave(baseInput({ seed: s }));
-      expect(r.audit.restRatio, `seed${s} rest`).toBeGreaterThan(0.05); // 真有空拍
+      expect(r.audit.restRatio, `seed${s} rest`).toBeGreaterThan(0.03); // 真有空拍(slot 填充后更连续,留白下限放宽)
       expect(r.audit.notesPerBar, `seed${s} 密度`).toBeLessThanOrEqual(8);
       if (r.lead.some((n) => n.occurrenceKind === 'connect')) sawConnect = true;
     }
@@ -184,7 +208,8 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     expect(r.selectedProgression?.prototypeId).toBeTruthy();
     for (const c of r.progression) { expect(c.realRoman).toBeTruthy(); expect(c.realTonePcs?.length).toBeGreaterThanOrEqual(2); } // 真和弦数据保留
     expect((r.roadmap?.harmonicBricks?.length ?? 0)).toBeGreaterThan(0); // parseRoadMap 出真 bricks
-    expect(r.roadmap?.melodicSlots.filter((s) => s.role === 'userBrick').map((s) => s.startBeat)).toEqual([0, 16, 32, 48]);
+    expect((r.roadmap?.brickSlots.length ?? 0)).toBeGreaterThan(0);       // 规范化 brickSlots(取代固定锚点)
+    expect(r.melodicSlotPlan?.userQuoteSlotIds.length).toBeGreaterThanOrEqual(1); // motif 落点来自 RoadMap slot
   });
 
   it('minor key 全在调内;1-4 bar motif 都不崩', () => {

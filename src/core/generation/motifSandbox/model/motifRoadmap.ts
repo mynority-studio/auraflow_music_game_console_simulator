@@ -13,7 +13,7 @@ import { buildChordPart, type MgChordDef } from '../../newEngine/render/mgChordP
 import { parseRoadMap, type BrickMatch } from '../../newEngine/render/mgRoadMapParser';
 import { makeChord, type SandboxChord } from './chords';
 import type { ScaleMode } from './types';
-import type { SelectedMotifProgression, MotifMelodicRoadmap, MotifMelodicSlot, RoadmapBrickSlot, RoadmapBrickType, UserMelodicBrick } from './melodicBrickTypes';
+import type { SelectedMotifProgression, MotifMelodicRoadmap, RoadmapBrickSlot, RoadmapBrickType } from './melodicBrickTypes';
 
 const BAR = 4;
 const m12 = (n: number): number => ((n % 12) + 12) % 12;
@@ -103,8 +103,9 @@ export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc:
   return out;
 }
 
-/** 旋律 roadmap:真 harmonicBricks(slots→ChordPart→parseRoadMap)+ userBrick 锚 0/16/32/48 + 应答槽。 */
-export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: UserMelodicBrick, quoteBeats: number, keyPc: number, mode: ScaleMode, totalBars = 16): MotifMelodicRoadmap {
+/** 旋律 roadmap:真 harmonicBricks(slots→ChordPart→parseRoadMap)→ 规范化 brickSlots(供 Phase 4
+ *  melodicSlotPlanner 按【RoadMap 结构】排 motif,无固定 0/16/32/48 假设)。 */
+export function buildMotifRoadmap(selected: SelectedMotifProgression, keyPc: number, mode: ScaleMode, totalBars = 16): MotifMelodicRoadmap {
   const chords = realizeToSandboxChords(selected.slots, keyPc, mode);
   const harmonicRomans: string[] = [];
   for (let bar = 0; bar < totalBars; bar++) {
@@ -131,17 +132,5 @@ export function buildMotifRoadmap(selected: SelectedMotifProgression, brick: Use
     brickSlotsFromFallback = true;
   }
 
-  const cycleBeats = 4 * BAR;
-  const numCycles = Math.max(1, Math.round((totalBars * BAR) / cycleBeats));
-  const melodicSlots: MotifMelodicSlot[] = [];
-  for (let c = 0; c < numCycles; c++) {
-    const start = c * cycleBeats;
-    melodicSlots.push({ id: `userBrick-${c}`, startBeat: start, durationBeats: quoteBeats, role: 'userBrick', source: 'user', anchorMotifId: brick.sourceMotifId });
-    const ansLen = cycleBeats - quoteBeats;
-    if (ansLen > 0) {
-      const role: MotifMelodicSlot['role'] = c === numCycles - 1 ? 'cadence' : c % 2 === 1 ? 'cadence' : 'continuation';
-      melodicSlots.push({ id: `answer-${c}`, startBeat: start + quoteBeats, durationBeats: ansLen, role, source: 'generated', requiredFunction: role === 'cadence' ? 'cadence' : 'answer' });
-    }
-  }
-  return { totalBars, harmonicRomans, harmonicBricks, brickSlots, brickSlotsFromFallback, roadmapError, melodicSlots };
+  return { totalBars, harmonicRomans, harmonicBricks, brickSlots, brickSlotsFromFallback, roadmapError };
 }

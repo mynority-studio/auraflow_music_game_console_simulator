@@ -25,29 +25,26 @@ describe('motifSandbox/motifRoadmap(实现 + 旋律 roadmap)', () => {
     const chords = realizeToSandboxChords(selected.slots, 0, 'major');
     expect(chords.reduce((n, c) => n + c.durationBeats, 0)).toBe(64); // 覆盖满 16 bar(含半小节 beats)
     expect(chords[0].startBeat).toBe(0);
-    expect(new Set(chords.map((c) => c.degree)).size).toBeGreaterThanOrEqual(3); // 非退化
+    expect(new Set(chords.map((c) => c.realRoman ?? c.roman)).size).toBeGreaterThanOrEqual(2); // 非退化(roman 计,含借和弦)
+    expect(selected.scoreBreakdown.degeneratePenalty).toBe(0);
     for (const c of chords) { expect(c.realRoman).toBeTruthy(); expect(c.realTonePcs?.length).toBeGreaterThanOrEqual(2); } // 真实和声保留
   });
 
-  it('buildMotifRoadmap:真 RoadMap(harmonicBricks)+ userBrick 锚 0/16/32/48 + 应答槽、不重叠', () => {
-    const rm = buildMotifRoadmap(selected, brick, 4, 0, 'major', 16);
+  it('buildMotifRoadmap:真 RoadMap(harmonicBricks)+ 规范化 brickSlots(无固定 0/16/32/48 锚点模型)', () => {
+    const rm = buildMotifRoadmap(selected, 0, 'major', 16);
     expect(Array.isArray(rm.harmonicBricks)).toBe(true); // parseRoadMap 出真 BrickMatch
     expect(rm.totalBars).toBe(16);
     expect(rm.harmonicRomans.length).toBe(16);
-    const anchors = rm.melodicSlots.filter((s) => s.role === 'userBrick').map((s) => s.startBeat);
-    expect(anchors).toEqual([0, 16, 32, 48]);
-    for (const s of rm.melodicSlots.filter((s) => s.role === 'userBrick')) {
-      expect(s.source).toBe('user');
-      expect(s.anchorMotifId).toBe(brick.sourceMotifId);
-    }
-    // 每个 userBrick 之后有非重叠的应答槽
-    expect(rm.melodicSlots.some((s) => s.role !== 'userBrick' && s.source === 'generated')).toBe(true);
-    const sorted = [...rm.melodicSlots].sort((a, b) => a.startBeat - b.startBeat);
-    for (let i = 1; i < sorted.length; i++) expect(sorted[i].startBeat).toBeGreaterThanOrEqual(sorted[i - 1].startBeat + sorted[i - 1].durationBeats - 1e-6);
+    // brickSlots 从 0 起、连续覆盖、非空(取代旧 userBrick-0/1/2/3 固定锚点)
+    expect(rm.brickSlots.length).toBeGreaterThan(0);
+    const sorted = [...rm.brickSlots].sort((a, b) => a.startBeat - b.startBeat);
+    expect(sorted[0].startBeat).toBe(0);
+    for (let i = 1; i < sorted.length; i++) expect(sorted[i].startBeat).toBeGreaterThanOrEqual(sorted[i - 1].startBeat - 1e-6);
+    expect('melodicSlots' in rm).toBe(false); // 旧固定锚点字段已删
   });
 
   it('★ Phase3:RoadMap → 规范化 brickSlots(beat 范围 / chordIds / entry-exit func / recurrenceKey)', () => {
-    const rm = buildMotifRoadmap(selected, brick, 4, 0, 'major', 16);
+    const rm = buildMotifRoadmap(selected, 0, 'major', 16);
     expect(rm.brickSlots.length).toBeGreaterThan(0);
     expect(rm.brickSlotsFromFallback).toBe(false); // 正常 parse 成功(非逐和弦兜底)
     for (const s of rm.brickSlots) {
@@ -64,7 +61,7 @@ describe('motifSandbox/motifRoadmap(实现 + 旋律 roadmap)', () => {
   });
 
   it('★ Phase3 复现:16-bar 进行的 brick 结构复现(≥1 个 recurrenceKey 出现 ≥2 次)= Phase4 可接 motif 复用', () => {
-    const rm = buildMotifRoadmap(selected, brick, 4, 0, 'major', 16);
+    const rm = buildMotifRoadmap(selected, 0, 'major', 16);
     const counts = new Map<string, number>();
     for (const s of rm.brickSlots) counts.set(s.recurrenceKey, (counts.get(s.recurrenceKey) ?? 0) + 1);
     expect([...counts.values()].some((v) => v >= 2), 'brick 结构应复现(供 motif 结构性再现)').toBe(true);

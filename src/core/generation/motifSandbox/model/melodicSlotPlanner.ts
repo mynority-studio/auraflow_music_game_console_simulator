@@ -16,8 +16,6 @@ import type {
   MelodicSlot, MelodicSlotPlan, MelodicSlotFunction, MelodicSlotTransform,
 } from './melodicBrickTypes';
 
-const PHRASE_BEATS = 16; // 句头排比回退用(4 小节)
-
 /** brick type → 该区域要求的旋律功能。 */
 const TYPE_FUNCTION: Record<RoadmapBrickType, MelodicSlotFunction> = {
   Launcher: 'opening', Tonic: 'opening', Approach: 'approach',
@@ -41,14 +39,20 @@ function devTransform(fn: MelodicSlotFunction): MelodicSlotTransform {
 
 interface Pair { brick: RoadmapBrickSlot; slot: MelodicSlot; }
 
-/** 找句头(0/16/32…)覆盖的 slot —— RoadMap 无复现时的排比回退。 */
-function phraseHeadBrickIds(pairs: readonly Pair[], totalBeats: number): Set<string> {
+const brickCovering = (pairs: readonly Pair[], beat: number): Pair | undefined =>
+  pairs.find((p) => beat >= p.brick.startBeat - 1e-6 && beat < p.brick.startBeat + p.brick.durationBeats - 1e-6)
+  ?? [...pairs].sort((a, b) => Math.abs(a.brick.startBeat - beat) - Math.abs(b.brick.startBeat - beat))[0];
+
+/** RoadMap 无复现时的结构性再现点(directive §7:段落开头 / 后半段主和弦再确立)—— 不假设 0/16/32/48。
+ *  ① form 各段落开头(默认单段 = 仅曲首)② 单段时补【后半段第一个 Tonic/Launcher 再确立点】(结构性
+ *  "第二陈述",从 RoadMap brick 派生)。曲首陈述由调用方另加。 */
+function structuralRestatementBrickIds(pairs: readonly Pair[], form: MotifSandboxFormContext, totalBeats: number): Set<string> {
   const ids = new Set<string>();
-  for (let h = 0; h < totalBeats - 1e-6; h += PHRASE_BEATS) {
-    // 句头落在哪个 brick 跨度内(否则取起点最接近的)
-    let pick = pairs.find((p) => h >= p.brick.startBeat - 1e-6 && h < p.brick.startBeat + p.brick.durationBeats - 1e-6);
-    if (!pick) pick = [...pairs].sort((a, b) => Math.abs(a.brick.startBeat - h) - Math.abs(b.brick.startBeat - h))[0];
-    if (pick) ids.add(pick.brick.id);
+  for (const sec of form.sections) { const p = brickCovering(pairs, sec.startBeat); if (p) ids.add(p.brick.id); }
+  if (form.sections.length <= 1) {
+    const mid = totalBeats / 2;
+    const restate = pairs.find((p) => p.brick.startBeat >= mid - 1e-6 && (p.brick.type === 'Tonic' || p.brick.type === 'Launcher'));
+    if (restate) ids.add(restate.brick.id);
   }
   return ids;
 }
@@ -92,9 +96,9 @@ export function buildMelodicSlotPlanFromRoadMap(args: {
   if (recurringIds.size >= 2) {
     quoteIds = recurringIds; // motif 落在所有结构等价 brick(结构性复现)
   } else {
-    quoteIds = phraseHeadBrickIds(pairs, totalBeats); // 回退:句头排比
-    quoteIds.add(best.brick.id);                      // 至少含最佳匹配
-    warnings.push('RoadMap 无复现 brick → motif 回退句头排比(保记忆点)');
+    quoteIds = structuralRestatementBrickIds(pairs, form, totalBeats); // 回退:段落开头 + 后半段再确立(非 0/16/32/48)
+    quoteIds.add(best.brick.id);                                       // 至少含最佳匹配
+    warnings.push('RoadMap 无复现 brick → motif 落段落开头 + 后半段结构再现点(保记忆点)');
   }
   // ★ 主题陈述(exposition):motif 永远在【曲首 slot】原样出现 —— 否则听感上"动机丢了"(开头听不到主题)。
   //   功能匹配决定 motif 还在哪里【再现】,但开头一定先【陈述】主题(Impro-Visor: state-then-develop)。

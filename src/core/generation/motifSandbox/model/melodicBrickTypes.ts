@@ -144,23 +144,12 @@ export interface MelodicSlotPlan {
   warnings: string[];
 }
 
-// —— 旋律 roadmap(锚点槽 + 真 harmonicBricks:slots→ChordPart→parseRoadMap)——
-export interface MotifMelodicSlot {
-  id: string;
-  startBeat: number;
-  durationBeats: number;
-  role: 'userBrick' | 'answer' | 'connector' | 'cadence' | 'continuation';
-  source: 'user' | 'generated' | 'placeholder';
-  requiredFunction?: UserMelodicBrickFunction;
-  anchorMotifId?: string;
-}
-
+// —— 旋律 roadmap(真 harmonicBricks → 规范化 brickSlots;无固定 0/16/32/48 锚点模型)——
 export interface MotifMelodicRoadmap {
   totalBars: number;
   harmonicRomans: string[];     // 每小节 roman(选中模板真 roman,调试用)
   harmonicBricks?: import('../../newEngine/render/mgRoadMapParser').BrickMatch[]; // 真 RoadMap(slots→ChordPart→parseRoadMap)
-  brickSlots: RoadmapBrickSlot[]; // ★ 规范化 brick slots(Phase 3;Phase 4 据此排旋律 slot)
-  brickSlotsFromFallback: boolean; // true = parse 失败,逐和弦 span 兜底(非静默回退到固定 phrase loop)
+  brickSlots: RoadmapBrickSlot[]; // ★ 规范化 brick slots(Phase 3;Phase 4 melodicSlotPlanner 据此排旋律 slot)
+  brickSlotsFromFallback: boolean; // true = parse 失败,逐和弦 span 兜底(非静默回退)
   roadmapError?: string;        // parseRoadMap 失败时的错误(不静默吞;UI 暴露)
-  melodicSlots: MotifMelodicSlot[];
 }

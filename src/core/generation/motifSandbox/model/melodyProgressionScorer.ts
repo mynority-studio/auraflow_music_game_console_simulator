@@ -22,7 +22,6 @@ function diversityJitter(protoId: string, seed: number): number {
 const mod12 = (n: number): number => ((n % 12) + 12) % 12;
 const deg17 = (d: number): number => ((d - 1) % 7 + 7) % 7 + 1;
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-const PHRASE_BEATS = 16; // 乐句头循环长度(4 小节)—— motif quote 单元相位锁定到乐句头
 
 function slotAtBeat(slots: readonly ProgressionSlot[], beat: number): ProgressionSlot {
   let acc = 0;
@@ -57,10 +56,12 @@ export function scoreProgressionAgainstMelodicBrick(
   // 结构音支撑:motif 在【乐句头锚点】循环再现 → 在所有锚点判贴合(各循环和弦不同,只看第一处会
   //   在后续乐句撞和弦)。结构音在越多锚点是和弦音 → 越贴合。
   //   §6:brick.structuralTones 已过滤(只含 >= MIN 的骨干音)→ 经过音天然不参与支撑/strongNonChord。
-  //   ★ 锚点从【实际进行总长】派生(每 PHRASE_BEATS 一个乐句头),不再硬编 0/16/32/48(directive Phase 1)。
+  //   ★ 锚点从【候选 prototype 自身循环周期】派生(模板每 lengthBars 小节重复一次和声 → motif 在这些
+  //     周期头再现),不再硬编 16(directive §12:无固定 0/16/32/48)。
   const totalBeats = slots.reduce((s, sl) => s + (sl.beats ?? 4), 0);
+  const cycleBeats = Math.max(4, (proto.lengthBars ?? 4) * 4); // 模板循环周期
   const ANCHORS: number[] = [];
-  for (let a = 0; a < totalBeats - 1e-6; a += PHRASE_BEATS) ANCHORS.push(a);
+  for (let a = 0; a < totalBeats - 1e-6; a += cycleBeats) ANCHORS.push(a);
   let structuralToneSupport = 0, strongNonChord = 0;
   for (const t of brick.structuralTones) {
     if (t.onsetBeat >= brick.quoteBeats - 1e-6) continue;
