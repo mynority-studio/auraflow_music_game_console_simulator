@@ -92,12 +92,21 @@ function preFitStructural(notes: readonly FitInputNote[]): boolean[] {
  *  阶段一:等比缩放 s(∈[0.5,2]) + 选 brick 小节数 N → 骨干音落强拍(下拍/半小节优先);
  *  阶段二:骨干音吸最近四分拍,经过音就近吸 16分/三连;时值规整;同拍位取最高音;钳在 brick 末。 */
 export function fitMotifToBricks(raw: readonly FitInputNote[], beatsPerBar = 4): MotifFit {
-  const notes = [...raw].sort((a, b) => a.onset - b.onset);
-  const n = notes.length;
-  if (n === 0) return { notes: [], lengthBeats: beatsPerBar, scale: 1, barCount: 1 };
-  const span = Math.max(...notes.map((x) => x.onset + x.dur), GRID);
-  const struct = preFitStructural(notes);
-  const structOnsets = notes.filter((_, i) => struct[i]).map((x) => x.onset);
+  const sorted = [...raw].sort((a, b) => a.onset - b.onset);
+  if (sorted.length === 0) return { notes: [], lengthBeats: beatsPerBar, scale: 1, barCount: 1 };
+  // 0) 真和音单音化:仅【真同时按下】(raw onset 差 < CHORD_EPS ≈ 同弹)取最高音(单旋律 = 顶声部)。
+  //    ★ 阈值要紧(0.04 拍):快速旋律音(32 分 ≈0.125 拍间距)绝不能被当和音合并 → 否则又吞音。
+  //    不同 onset 的音【一律保留】(对拍后撞位靠前推解决,绝不吞音)。
+  const CHORD_EPS = 0.04;
+  const mono: FitInputNote[] = [];
+  for (const x of sorted) {
+    const prev = mono[mono.length - 1];
+    if (prev && Math.abs(x.onset - prev.onset) < CHORD_EPS) { if (x.midi > prev.midi) mono[mono.length - 1] = x; }
+    else mono.push(x);
+  }
+  const span = Math.max(...mono.map((x) => x.onset + x.dur), GRID);
+  const struct = preFitStructural(mono);
+  const structOnsets = mono.filter((_, i) => struct[i]).map((x) => x.onset);
 
   // 候选 brick 小节数 N:基准缩放 baseS=beatsPerBar*N/span 落在 [0.5,2] 内才算(否则缩放离谱)
   const cand: number[] = [];
@@ -128,23 +137,19 @@ export function fitMotifToBricks(raw: readonly FitInputNote[], beatsPerBar = 4):
   const { N, s } = best!;
   const lengthBeats = beatsPerBar * N;
 
-  // 应用:骨干→brick 内最近四分拍;经过→就近 16分/三连(钳进 brick 末);时值规整;钳进 brick 末
-  const placed = notes.map((x, i) => {
+  // 应用 + 撞位【前推不丢音】:骨干→brick 内四分拍;经过→就近 16 分;落点已被占 → 推到下一个空 16 分位
+  //   → 单旋律每 onset 唯一,绝不"同位取最高吞音"+不留错误音。只有推到 brick 末仍无位才丢(极端密度,罕见)。
+  const out: MotifFitNote[] = [];
+  let last = -1;
+  mono.forEach((x, i) => {
     const pos = s * x.onset;
-    const onset = struct[i] ? placeStrong(pos, lengthBeats) : Math.max(0, Math.min(lengthBeats - GRID, snapPassing(pos)));
-    const dur = Math.min(regularDur(s * x.dur), Math.max(GRID, lengthBeats - onset)); // 钳在 brick 末(非内部 barline)
-    return { onset, dur, vel: x.vel, midi: x.midi, structural: struct[i] };
-  }).filter((x) => x.onset < lengthBeats - 1e-9);
-
-  // 同 onset 取最高音(单旋律化);结构音优先保留
-  const byOnset = new Map<number, MotifFitNote>();
-  for (const x of placed) {
-    const key = +x.onset.toFixed(6);
-    const ex = byOnset.get(key);
-    if (!ex) byOnset.set(key, x);
-    else if ((x.structural && !ex.structural) || (x.structural === ex.structural && x.midi > ex.midi)) byOnset.set(key, x);
-  }
-  const out = [...byOnset.values()].sort((a, b) => a.onset - b.onset);
+    let onset = struct[i] ? placeStrong(pos, lengthBeats) : Math.max(0, Math.min(lengthBeats - GRID, snapPassing(pos)));
+    if (onset <= last + 1e-9) onset = +(last + GRID).toFixed(6); // 撞位 → 下一个空 16 分位(保音、保序)
+    if (onset > lengthBeats - GRID + 1e-9) return;               // 实在塞不下 brick 才丢(极端密度,罕见)
+    const dur = Math.min(regularDur(s * x.dur), Math.max(GRID, lengthBeats - onset));
+    out.push({ onset, dur, vel: x.vel, midi: x.midi, structural: struct[i] });
+    last = onset;
+  });
   return { notes: out, lengthBeats, scale: s, barCount: N };
 }
 

@@ -49,6 +49,25 @@ describe('motifSandbox/tempoFit · 两阶段对拍(用户 2026-06-18)', () => {
     expect(last.onset + last.dur).toBeLessThanOrEqual(fit.lengthBeats + 1e-9);
   });
 
+  it('★ 不吞音(用户 2026-06-18):对拍后撞位前推不丢音;非和音输入逐音保留、pitch 序列不变', () => {
+    // 8 音旋律,onset 紧凑(对拍后会有撞位);全不同 onset(非和音)→ 必须 8 进 8 出
+    const seq = [60, 62, 64, 65, 67, 65, 64, 62];
+    const ons = [0, 0.45, 1.0, 1.4, 2.0, 2.45, 3.0, 3.4];
+    const fit = fitMotifToBricks(ons.map((o, i) => N(o, 0.35, 0.8, seq[i])));
+    expect(fit.notes.length).toBe(seq.length);                 // 不吞音
+    expect(fit.notes.map((x) => x.midi)).toEqual(seq);         // pitch 序列原样(不留错误音)
+    for (let i = 1; i < fit.notes.length; i++) expect(fit.notes[i].onset).toBeGreaterThan(fit.notes[i - 1].onset); // onset 唯一递增
+  });
+
+  it('★ 真和音(同 raw onset)单音化取最高 → 不被前推误当旋律', () => {
+    // 3 音同 onset = 和音;后跟 2 个旋律音 → 输出 = 1(顶音) + 2
+    const fit = fitMotifToBricks([N(0, 1, 0.8, 60), N(0, 1, 0.8, 64), N(0, 1, 0.8, 67), N(1, 0.5, 0.7, 69), N(2, 1, 0.8, 71)]);
+    const atZero = fit.notes.filter((x) => Math.abs(x.onset) < 1e-9);
+    expect(atZero.length).toBe(1);          // 和音 → 单音
+    expect(atZero[0].midi).toBe(67);        // 取最高(顶声部)
+    expect(fit.notes.length).toBe(3);       // 和音1 + 旋律2
+  });
+
   it('空输入 → 安全返回 1 bar 空 motif', () => {
     const fit = fitMotifToBricks([]);
     expect(fit.notes).toEqual([]);
