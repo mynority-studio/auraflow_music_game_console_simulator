@@ -71,7 +71,9 @@ export interface ResolvedChord {
 // 共享装配:已解析和弦序列 → 深不可变 HarmonicPlan(填三分类张力表 + 真 chord-scale)
 //   modalScalePcs 给定(modal regime)→ 逐和弦约束放松:chord-scale = 全局 primaryScale,
 //   avoid 清空(modal 静态 vamp 不设和弦内 avoid),acceptable = primaryScale 去和弦音。
-function assemble(
+// ★ 走 A:export 供 Q+R sandbox 把【已解析和弦序列】装配成完整 HarmonicPlan(自动算 tension/stable/
+//   color/avoid/chord-scale 全套 map)。纯函数,不改原行为。
+export function assemble(
   resolved: ResolvedChord[],
   keyPc: PitchClass,
   keyMode: DiatonicMode,
