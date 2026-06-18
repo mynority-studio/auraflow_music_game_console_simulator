@@ -28,10 +28,19 @@ function contourTurns(midis: number[]): boolean[] {
   });
 }
 
-const GRID = 0.25; // 1/16 = 0.25 beat(onset 量化网格)
-const MIN_DUR_BEAT = 0.05; // duration 不量化,仅兜底防 0(保留录入原本时值)
+const GRID = 0.25; // 1/16 = 0.25 beat(量化网格)
+const MIN_DUR_BEAT = 0.05; // ms→beat 时的防 0 兜底
 const quantize = (beat: number): number => Math.round(beat / GRID) * GRID;
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+
+/** ★ 规整音值 + 钳在 bar 内(2026-06-18 用户):时值吸 1/16(= 2/4/8/16 分整分音符),且【不响过本 bar 末】
+ *  —— 避免"响一个不规则拍数然后溢进下个 bar"糊掉重拍(尤其 2+ bar motif / 喂 Q+N 前要干净)。
+ *  注:这取代旧"保留录入原值"——走 A(motif 喂 Q+N 生产链)要求 motif 节奏先规整,downbeat 才干净。 */
+function regularDurWithinBar(onsetBeat: number, durBeat: number, beatsPerBar = 4): number {
+  const q = Math.max(GRID, Math.round(durBeat / GRID) * GRID);     // 吸 1/16 → 整分音值
+  const barEnd = (Math.floor(onsetBeat / beatsPerBar + 1e-6) + 1) * beatsPerBar;
+  return Math.max(GRID, Math.min(q, barEnd - onsetBeat));          // 不越本 bar 末(1/16 onset → 余量 ≥ GRID)
+}
 
 export interface AnalyzeResult {
   motif: UserMotif;
@@ -57,14 +66,12 @@ export function analyzeAndNormalize(
   const sorted = [...captured].sort((a, b) => a.onsetMs - b.onsetMs);
   const t0 = sorted[0].onsetMs;
   type Tmp = { midi: number; onset: number; dur: number; vel: number };
-  // ★ 2026-06-12(用户:不要改录入原本时值)—— 只量化 onset(quote 要落网格),
-  //   duration 【保留录入原值】(ms→beat,不量化),仅 min 兜底防 0。
-  let notes: Tmp[] = sorted.map((c) => ({
-    midi: c.midi,
-    onset: quantize((c.onsetMs - t0) / msPerBeat),
-    dur: Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat),
-    vel: clamp01(c.velocity / 127),
-  }));
+  // ★ onset 吸 1/16;时值【规整音值 + 钳在 bar 内】(regularDurWithinBar)—— 不再保留录入原始不规则时值,
+  //   否则跨 bar 溢出糊重拍(用户 2026-06-18),且喂 Q+N 前节奏要干净。
+  let notes: Tmp[] = sorted.map((c) => {
+    const onset = quantize((c.onsetMs - t0) / msPerBeat);
+    return { midi: c.midi, onset, dur: regularDurWithinBar(onset, Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat)), vel: clamp01(c.velocity / 127) };
+  });
 
   // 2) 单旋律化:同一 onset bucket 取最高音;再去重同 pitch(保留较早/较长已隐含 sort)
   const byBucket = new Map<number, Tmp>();
@@ -195,7 +202,7 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     return {
       midi: snapped,
       onsetBeat: onset,                       // 切头后 → 首音 = 0(禁止空拍开始)
-      durationBeat: n.quantizedDurationBeat,
+      durationBeat: regularDurWithinBar(onset, n.quantizedDurationBeat, ctx.beatsPerBar), // 规整音值 + 钳在 bar 内
       velocity: velNorm,
       scaleDegree: midiToScaleDegree(snapped, ctx.keyPc, ctx.scaleMode),
       octave: midiToOctave(snapped),
