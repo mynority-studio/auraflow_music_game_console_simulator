@@ -16,6 +16,8 @@ export const LEAD_PROGRAM_BY_STYLE: Record<SandboxStyle, number> = {
 };
 /** pop 可选钢琴。 */
 export const POP_PIANO_PROGRAM = 0;
+/** ★ MIDI 录入默认音色 = 大钢琴(GM0 Acoustic Grand)+ 随 CC64 延音踏板。键盘手现场弹更自然。 */
+export const MIDI_INPUT_PROGRAM = 0;
 
 interface PlayNote { midi: number; onsetBeat: number; durationBeat: number; velocity: number; }
 

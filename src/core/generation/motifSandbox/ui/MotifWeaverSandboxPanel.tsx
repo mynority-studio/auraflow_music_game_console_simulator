@@ -11,12 +11,12 @@ import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
-import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE } from '../model/leadOnlyIr';
+import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../model/leadOnlyIr';
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
@@ -114,9 +114,9 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     setAudioLat(getAudioLatencyMs()); // 诊断:audio 系统延迟(base=worklet / output=OS 缓冲含蓝牙)
     const onMessage = (m: ParsedMidiMessage) => {
       if (m.type === 'noteOn') {
-        const { keyPc: k, tonality: t, style: st } = liveCfg.current;
+        const { keyPc: k, tonality: t } = liveCfg.current;
         if (snapMidiToTonality(m.note, k, t) === m.note) { // 在选定音阶内(= 3×5 词汇)→ 1:1 原音高发声 + 记录
-          void auditionNoteOn(m.note, LEAD_PROGRAM_BY_STYLE[st], m.velocity); // ★ 先发声(最低延迟,不让 React 状态更新挡在前面)
+          void auditionNoteOn(m.note, MIDI_INPUT_PROGRAM, m.velocity); // ★ MIDI 录入默认音色 = 大钢琴(随踏板延音);先发声=最低延迟
           if (recorder.current.isActive()) recorder.current.noteOn(m.note, m.velocity);
           noteOnVis(m.note);            // 点亮对应 pad(重面板已 memo → 不连带重渲染)
           setLastNote(`note ${m.note} · vel ${m.velocity}`);
@@ -127,6 +127,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         auditionNoteOff(m.note);
         noteOffVis(m.note);
         if (recorder.current.isActive()) recorder.current.noteOff(m.note);
+      } else if (m.type === 'controlChange') {
+        auditionControlChange(m.note, m.velocity); // 踏板 CC64 等 → 大钢琴随延音踏板(m.note=controller,m.velocity=value)
       }
     };
     const onDevices = (d: MidiDeviceInfo[]) => { setDevices(d); setDeviceId((prev) => prev ?? (d[0]?.id ?? null)); };

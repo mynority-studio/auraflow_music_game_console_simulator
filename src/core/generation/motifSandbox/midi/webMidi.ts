@@ -8,13 +8,13 @@
 export type MidiSupport = 'unsupported' | 'denied' | 'ready';
 export interface MidiDeviceInfo { id: string; name: string; manufacturer: string; }
 export interface ParsedMidiMessage {
-  type: 'noteOn' | 'noteOff' | 'other';
+  type: 'noteOn' | 'noteOff' | 'controlChange' | 'other';
   channel: number;
-  note: number;
-  velocity: number;
+  note: number;        // CC 消息时 = controller number
+  velocity: number;    // CC 消息时 = controller value
 }
 
-/** 解析 MIDI 三字节消息。velocity=0 的 noteon 视作 noteoff。纯函数。 */
+/** 解析 MIDI 三字节消息。velocity=0 的 noteon 视作 noteoff;0xB0 = controlChange(踏板 CC64 等)。纯函数。 */
 export function parseMidiMessage(data: Uint8Array | readonly number[]): ParsedMidiMessage {
   const status = (data[0] ?? 0) & 0xf0;
   const channel = (data[0] ?? 0) & 0x0f;
@@ -22,6 +22,7 @@ export function parseMidiMessage(data: Uint8Array | readonly number[]): ParsedMi
   const velocity = data[2] ?? 0;
   if (status === 0x90 && velocity > 0) return { type: 'noteOn', channel, note, velocity };
   if (status === 0x80 || (status === 0x90 && velocity === 0)) return { type: 'noteOff', channel, note, velocity: 0 };
+  if (status === 0xb0) return { type: 'controlChange', channel, note, velocity }; // note=controller, velocity=value(CC64=延音踏板)
   return { type: 'other', channel, note, velocity };
 }
 

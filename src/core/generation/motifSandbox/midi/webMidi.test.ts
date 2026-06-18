@@ -13,8 +13,12 @@ describe('motifSandbox/webMidi parseMidiMessage', () => {
   it('velocity-0 note on 视作 note off', () => {
     expect(parseMidiMessage([0x90, 60, 0]).type).toBe('noteOff');
   });
-  it('其它消息(CC/clock)= other', () => {
-    expect(parseMidiMessage([0xb0, 7, 100]).type).toBe('other');
+  it('★ CC(0xB0)= controlChange:踏板 CC64 等(note=controller,velocity=value)', () => {
+    expect(parseMidiMessage([0xb0, 64, 127])).toEqual({ type: 'controlChange', channel: 0, note: 64, velocity: 127 }); // 踏板踩下
+    expect(parseMidiMessage([0xb0, 64, 0]).type).toBe('controlChange'); // 踏板抬起
+    expect(parseMidiMessage([0xb3, 7, 100]).channel).toBe(3);
+  });
+  it('其它消息(clock 等)= other', () => {
     expect(parseMidiMessage([0xf8]).type).toBe('other');
   });
 });

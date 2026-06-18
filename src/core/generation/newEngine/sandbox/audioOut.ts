@@ -47,7 +47,6 @@ export function getIsPlaying(): boolean {
 // —— 实时单音试听(Q+R 3×5 键盘点击用)——
 // 用一条专用通道(不与曲子 5 轨抢),按下 noteOn、松开 noteOff;失败(synth 未就绪)静默降级。
 const AUDITION_CHANNEL = 15;
-const CC_SUSTAIN = 64;
 let auditionProgram = -1;
 
 /** 试听单音 on:【同步】发声(无 await → noteOn 直接在 MIDI 事件里送进 worklet,延迟最低)。
@@ -61,8 +60,8 @@ export function auditionNoteOn(midiNote: number, program: number, velocity = 100
     spessaSynth.controllerChange(AUDITION_CHANNEL, 11, 127);  // CC11 表情拉满
     spessaSynth.controllerChange(AUDITION_CHANNEL, 91, 14);   // CC91 混响压低 → 干声更近
     spessaSynth.controllerChange(AUDITION_CHANNEL, 10, 64);   // CC10 居中
-    spessaSynth.controllerChange(AUDITION_CHANNEL, CC_SUSTAIN, 0); // ★ 踏板关:按起来不糊(用户:CC64 太多)
     auditionProgram = program;
+    // ★ 不再强制 CC64=0 —— 延音踏板由 MIDI 输入的 CC64 实时控制(大钢琴随踏板延音),不踩=不糊。
   }
   const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入真力度不变)
   // ★ 显式 time=currentTime → 立即执行(消除任何默认调度延迟,worklet 下一 quantum 即发声)。
@@ -70,10 +69,17 @@ export function auditionNoteOn(midiNote: number, program: number, velocity = 100
   catch { spessaSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v); }
 }
 
-/** 试听单音 off(无踏板 → 松手即停,发音干净)。 */
+/** 试听单音 off(踏板抬起时即停;踩下时由合成器延音)。 */
 export function auditionNoteOff(midiNote: number): void {
   if (!spessaSynth) return;
   spessaSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
+}
+
+/** 试听通道收 CC(MIDI 输入的踏板 CC64 等)→ 大钢琴随【延音踏板】延音。同步、最低延迟。 */
+export function auditionControlChange(controller: number, value: number): void {
+  if (!spessaSynth) return;
+  type CC = Parameters<typeof spessaSynth.controllerChange>[1];
+  try { spessaSynth.controllerChange(AUDITION_CHANNEL, Math.round(controller) as CC, Math.round(value)); } catch { /* ignore */ }
 }
 
 /** 在用户手势(按钮点击 / 按键)里先解锁 AudioContext。
