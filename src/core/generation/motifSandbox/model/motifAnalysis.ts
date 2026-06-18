@@ -42,6 +42,105 @@ function regularDur(durBeat: number): number {
   return Math.max(GRID, Math.round(durBeat / GRID) * GRID);        // 吸 1/16 → 整分音值(不钳 bar)
 }
 
+// ============================================================
+// ★ 两阶段对拍(2026-06-18 用户):固定 song BPM 下,把 motif【整体等比缩放】令骨干音落强拍,
+//   再把经过音就近吸到 16 分 / 三连音位。缩放限 ×0.5–×2(8分↔16分↔4分),自动选 1/2/.. bar。
+//   —— "用改速度对拍,不用挪音符对拍":相对位置由缩放保持,只有骨干音锚强拍 + 经过音轻吸附。
+// ============================================================
+const TRI_STEP = 1 / 3;        // 8 分三连步长(1/3 拍)
+const SCALE_MIN = 0.5, SCALE_MAX = 2.0; // 等比缩放上下限(8分↔16分↔4分)
+const snap16 = (x: number): number => Math.round(x / GRID) * GRID;
+const snapTri = (x: number): number => Math.round(x / TRI_STEP) * TRI_STEP;
+/** 经过音就近吸附:直 16 分 vs 8 分三连,取更近的形状(用户:"浮点形状 / 三连音形状")。 */
+const snapPassing = (x: number): number => {
+  const a = snap16(x), b = snapTri(x);
+  return Math.abs(x - a) <= Math.abs(x - b) ? a : b;
+};
+const distQuarter = (x: number): number => Math.abs(x - Math.round(x));
+/** 四分拍的节拍强度:下拍 1.0 > 半小节 0.7 > 弱四分 0.4;非四分位 = 0(不是落拍点)。 */
+function quarterStrength(pos: number, beatsPerBar: number): number {
+  const b = ((pos % beatsPerBar) + beatsPerBar) % beatsPerBar;
+  const q = Math.round(b);
+  if (Math.abs(b - q) > 0.12) return 0;
+  if (q === 0) return 1.0;
+  if (q * 2 === beatsPerBar) return 0.7;
+  return 0.4;
+}
+
+export interface FitInputNote { onset: number; dur: number; vel: number; midi: number; }
+export interface MotifFitNote extends FitInputNote { structural: boolean; }
+export interface MotifFit { notes: MotifFitNote[]; lengthBeats: number; scale: number; barCount: number; }
+
+/** 结构音【先验估计】(与节拍无关 → 打破"骨干音定 onset / onset 定骨干音"的循环):
+ *  力度 / 时长 / 首尾 / 轮廓拐点。head 永远结构音;相对阈值(≥ 峰值 0.7),保证 ≥ 2。 */
+function preFitStructural(notes: readonly FitInputNote[]): boolean[] {
+  const n = notes.length;
+  if (n === 0) return [];
+  const turns = contourTurns(notes.map((x) => x.midi));
+  const maxDur = Math.max(...notes.map((x) => x.dur), 1e-6);
+  const score = notes.map((x, i) =>
+    0.40 * Math.min(1, x.vel) + 0.30 * (x.dur / maxDur) + 0.20 * (i === 0 || i === n - 1 ? 1 : 0) + 0.10 * (turns[i] ? 1 : 0));
+  const peak = Math.max(...score);
+  const flags = score.map((s, i) => i === 0 || s >= peak * 0.7);
+  if (flags.filter(Boolean).length < 2) { // 兜底:补最高的非 head 音
+    let bi = -1, bv = -1;
+    for (let i = 1; i < n; i++) if (!flags[i] && score[i] > bv) { bv = score[i]; bi = i; }
+    if (bi >= 0) flags[bi] = true;
+  }
+  return flags;
+}
+
+/** ★ 两阶段对拍主函数。输入须【首音已对齐到 onset 0】(free=t0 对齐 / hidden-grid=切头)。
+ *  阶段一:等比缩放 s(∈[0.5,2]) + 选 brick 小节数 N → 骨干音落强拍(下拍/半小节优先);
+ *  阶段二:骨干音吸最近四分拍,经过音就近吸 16分/三连;时值规整;同拍位取最高音;钳在 brick 末。 */
+export function fitMotifToBricks(raw: readonly FitInputNote[], beatsPerBar = 4): MotifFit {
+  const notes = [...raw].sort((a, b) => a.onset - b.onset);
+  const n = notes.length;
+  if (n === 0) return { notes: [], lengthBeats: beatsPerBar, scale: 1, barCount: 1 };
+  const span = Math.max(...notes.map((x) => x.onset + x.dur), GRID);
+  const struct = preFitStructural(notes);
+  const structOnsets = notes.filter((_, i) => struct[i]).map((x) => x.onset);
+
+  // 候选 brick 小节数 N:基准缩放 baseS=beatsPerBar*N/span 落在 [0.5,2] 内才算(否则缩放离谱)
+  const cand: number[] = [];
+  for (let N = 1; N <= 4; N++) { const bs = (beatsPerBar * N) / span; if (bs >= SCALE_MIN - 1e-9 && bs <= SCALE_MAX + 1e-9) cand.push(N); }
+  if (cand.length === 0) cand.push(Math.max(1, Math.min(4, Math.round(span / beatsPerBar)))); // span 极端 → 就近取整 bar
+
+  let best: { N: number; s: number; cost: number } | null = null;
+  for (const N of cand) {
+    const baseS = (beatsPerBar * N) / span;
+    for (let k = -40; k <= 40; k++) {
+      const s = baseS * (1 + k * 0.01);
+      if (s < SCALE_MIN || s > SCALE_MAX) continue;
+      let sc = 0;
+      for (const on of structOnsets) sc += distQuarter(s * on) + 0.25 * (1 - quarterStrength(Math.round(s * on), beatsPerBar));
+      const cost = sc / Math.max(1, structOnsets.length) + 0.30 * Math.abs(Math.log(s)); // 归一 + 抗过度缩放(s=1→0)
+      if (!best || cost < best.cost - 1e-12) best = { N, s, cost };
+    }
+  }
+  const { N, s } = best!;
+  const lengthBeats = beatsPerBar * N;
+
+  // 应用:骨干→最近四分拍;经过→就近 16分/三连;时值规整;钳进 brick 末
+  const placed = notes.map((x, i) => {
+    const pos = s * x.onset;
+    const onset = struct[i] ? Math.max(0, Math.round(pos)) : Math.max(0, snapPassing(pos));
+    const dur = Math.min(regularDur(s * x.dur), Math.max(GRID, lengthBeats - onset)); // 钳在 brick 末(非内部 barline)
+    return { onset, dur, vel: x.vel, midi: x.midi, structural: struct[i] };
+  }).filter((x) => x.onset < lengthBeats - 1e-9);
+
+  // 同 onset 取最高音(单旋律化);结构音优先保留
+  const byOnset = new Map<number, MotifFitNote>();
+  for (const x of placed) {
+    const key = +x.onset.toFixed(6);
+    const ex = byOnset.get(key);
+    if (!ex) byOnset.set(key, x);
+    else if ((x.structural && !ex.structural) || (x.structural === ex.structural && x.midi > ex.midi)) byOnset.set(key, x);
+  }
+  const out = [...byOnset.values()].sort((a, b) => a.onset - b.onset);
+  return { notes: out, lengthBeats, scale: s, barCount: N };
+}
+
 export interface AnalyzeResult {
   motif: UserMotif;
   rawCount: number;
