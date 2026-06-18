@@ -12,6 +12,8 @@ import { useDevPanelChannel } from '../../../../components/devPanels';
 import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../model/leadOnlyIr';
+import { buildMotifSongOverride } from '../bridge/sandboxToOverride';
+import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
@@ -284,6 +286,23 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     try { await playMusicalIR(ir, pbpm, style); } catch { /* 静默 */ }
   }, [result, style, seed, withAccomp]);
 
+  // ★ 走 A:full arrangement preview —— motif/slot 结果 → Q+N 成曲(器配/鼓/bass/comp/pad/mix)。
+  //   不替换上面的 lead-only 试听;这里听【整编成曲】。
+  const playFull = useCallback(async () => {
+    if (!result) { setStatus('先生成'); return; }
+    stopNewEngine();
+    try {
+      const override = buildMotifSongOverride(result, keyPc, tonalityParentMode(tonality));
+      const song = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 96 }, override);
+      if (!song.ir) { setStatus(`整编失败(${song.report.findings.length} findings)`); return; }
+      const bpm = song.ir.timebase.tempoMap[0]?.bpm ?? result.playbackBpm;
+      const roles = song.ir.tracks.map((t) => t.role).join('+');
+      setPlaying(true);
+      setStatus(`▶ 整编成曲(${song.status} · ${roles} · BPM ${bpm})…`);
+      await playMusicalIR(song.ir, bpm, style); // 成曲走压缩母带
+    } catch (err) { setStatus(err instanceof Error ? `整编出错:${err.message}` : '整编出错'); }
+  }, [result, style, seed, keyPc, tonality]);
+
   if (!open) return null;
 
   const sel = 'bg-zinc-800 text-zinc-100 rounded px-1.5 py-0.5 text-[11px] border border-zinc-700';
@@ -381,7 +400,10 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         <div className="flex items-center gap-2 pt-0.5">
           <button type="button" onClick={generate} disabled={captureMode === 'hiddenGrid' ? !hiddenMotif : captured.length === 0} className="rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">生成 Lead</button>
           {!playing
-            ? <button type="button" onClick={play} disabled={!result} className="rounded-lg bg-sky-600/80 hover:bg-sky-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 播放</button>
+            ? <>
+                <button type="button" onClick={play} disabled={!result} className="rounded-lg bg-sky-600/80 hover:bg-sky-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 试听</button>
+                <button type="button" onClick={playFull} disabled={!result} title="走 A:motif → Q+N 全编制成曲" className="rounded-lg bg-violet-600/80 hover:bg-violet-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 整编成曲</button>
+              </>
             : <button type="button" onClick={stopPlayback} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
           <button type="button" onClick={() => setWithAccomp((v) => !v)} className={`rounded-lg px-2 py-1 text-[11px] border ${withAccomp ? 'bg-amber-600/30 border-amber-500/50 text-amber-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>伴奏 {withAccomp ? 'on' : 'off'}</button>
           <span className="ml-auto text-[10px] text-zinc-500">lead=GM{LEAD_PROGRAM_BY_STYLE[style]}</span>
