@@ -4,7 +4,7 @@ import { isInScale } from './scale';
 import type { CapturedMidiNote } from './types';
 
 describe('motifSandbox/motifAnalysis', () => {
-  it('★ onset + duration 都落 1/16 网格(规整音值 2/4/8/16 分);音符不溢出本 bar(2026-06-18 用户)', () => {
+  it('★ onset + duration 都落 1/16 网格(规整音值 2/4/8/16 分);只吸到整分值,不钳 bar(2026-06-18 用户修订)', () => {
     for (const variant of [0, 1, 2, 3]) {
       const cap = generateSampleCaptured(96, 0, 'major', variant);
       const { motif } = analyzeAndNormalize(cap, 0, 'major', 96);
@@ -12,29 +12,42 @@ describe('motifSandbox/motifAnalysis', () => {
         expect(Math.abs(n.onsetBeat / 0.25 - Math.round(n.onsetBeat / 0.25)), `onset@${n.onsetBeat}`).toBeLessThan(1e-6);       // onset 规整
         expect(Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25)), `dur@${n.durationBeat}`).toBeLessThan(1e-6); // ★ duration 规整(整分音值)
         expect(n.durationBeat).toBeGreaterThanOrEqual(0.25);                                                                     // ≥ 16 分
-        expect(Math.floor((n.onsetBeat + n.durationBeat - 1e-6) / 4)).toBe(Math.floor(n.onsetBeat / 4));                          // ★ 不溢出本 bar
       }
     }
   });
 
-  it('★ 2-bar motif:不规则跨 bar 音被规整 + 钳回本 bar(downbeat 干净,用户场景)', () => {
+  it('★ 形状保留:onset 间距按输入(只吸最近整分位,displacement ≤ 1/32);时值规整但跨 bar 整音不被砍(2026-06-18 修订)', () => {
+    const bpm = 100, mpb = 60000 / bpm;
+    // 输入(beats):最后一音 onset 3.5 + 干净 1.0 拍 = 4.5(跨 barline 的合法连音)
+    const inB: [number, number][] = [[0, 0.5], [0.5, 0.5], [1.0, 1.0], [2.0, 0.5], [2.5, 0.5], [3.0, 0.5], [3.5, 1.0]];
+    const cap: CapturedMidiNote[] = inB.map(([on, du], i) => ({ midi: 60 + i, velocity: 90, onsetMs: on * mpb, durationMs: du * mpb }));
+    const { motif } = analyzeAndNormalize(cap, 0, 'major', bpm);
+    // onset 间距逐对保留(输入已在整分网格 → 0 displacement)
+    const inGaps = inB.slice(1).map(([on], i) => on - inB[i][0]);
+    const outGaps = motif.notes.slice(1).map((n, i) => n.onsetBeat - motif.notes[i].onsetBeat);
+    expect(outGaps).toEqual(inGaps); // ★ 音符之间的距离不被过量改变
+    // ★ 跨 bar 的整分音值(3.5 + 1.0 → 4.5)【保留】,不再被钳到 bar 末(旧版砍成 0.5)
+    const crossing = motif.notes.find((n) => Math.abs(n.onsetBeat - 3.5) < 1e-6)!;
+    expect(crossing.durationBeat).toBeCloseTo(1.0, 6);
+    expect(crossing.onsetBeat + crossing.durationBeat).toBeCloseTo(4.5, 6); // 落在干净 8 分位(跨 barline OK)
+  });
+
+  it('★ 不规则跨 bar 音被【规整成整分值】(downbeat 干净),但不被钳半(2026-06-18 修订)', () => {
     const bpm = 120, mpb = 60000 / bpm; // 8 拍 = 2 bar
     const cap: CapturedMidiNote[] = [
-      { midi: 60, velocity: 100, onsetMs: 0, durationMs: mpb * 0.87 },        // 不规则 0.87 拍
-      { midi: 62, velocity: 90, onsetMs: mpb * 2, durationMs: mpb * 1.4 },
-      { midi: 64, velocity: 90, onsetMs: mpb * 3.5, durationMs: mpb * 1.3 },  // 3.5 + 1.3 = 4.8 → 旧:溢进 bar2;新:钳到 4.0
+      { midi: 60, velocity: 100, onsetMs: 0, durationMs: mpb * 0.87 },        // 不规则 0.87 → 0.75
+      { midi: 62, velocity: 90, onsetMs: mpb * 2, durationMs: mpb * 1.4 },    // 1.4 → 1.5
+      { midi: 64, velocity: 90, onsetMs: mpb * 3.5, durationMs: mpb * 1.3 },  // 3.5 + 1.3 → 规整 1.25 = 落 4.75(跨 bar 但整分位,不砍)
       { midi: 65, velocity: 90, onsetMs: mpb * 6, durationMs: mpb * 2.0 },
     ];
     const { motif } = analyzeAndNormalize(cap, 0, 'major', bpm);
     expect(motif.lengthBeats).toBe(8); // 2 bar
     for (const n of motif.notes) {
       expect(Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25)), `dur@${n.durationBeat}`).toBeLessThan(1e-6); // 整分音值
-      const startBar = Math.floor(n.onsetBeat / 4);
-      expect(Math.floor((n.onsetBeat + n.durationBeat - 1e-6) / 4), `note@${n.onsetBeat} 溢出 bar`).toBe(startBar); // 不溢进下个 bar
     }
-    // 那个跨 bar 的音(onset 3.5)被钳到本 bar 末(dur ≤ 0.5)
+    // 跨 bar 的音(onset 3.5)规整成 1.25(不再被钳到 ≤0.5)→ 时值近似保留,形状在
     const crossing = motif.notes.find((n) => Math.abs(n.onsetBeat - 3.5) < 1e-6)!;
-    expect(crossing.durationBeat).toBeLessThanOrEqual(0.5 + 1e-6);
+    expect(crossing.durationBeat).toBeCloseTo(1.25, 6);
   });
 
   it('snap:含离调音的输入 → 输出全在调内(major 与 minor)', () => {
@@ -100,7 +113,7 @@ describe('motifSandbox/motifAnalysis', () => {
     for (let i = 0; i < s.length - 1; i++) expect(s[i].onsetBeat).toBeLessThan(s[i + 1].onsetBeat);
   });
 
-  it('★ 不规则/legato 录入 → 时值吸成整分音值 + 钳在 bar 内(取代旧"完全还原原始时值")', () => {
+  it('★ 不规则/legato 录入 → 时值吸成整分音值(只规整,不钳 bar;取代旧"完全还原原始时值")', () => {
     const cap: CapturedMidiNote[] = [
       { midi: 60, velocity: 100, onsetMs: 0, durationMs: 700 },   // 1.12 拍 → 规整 1.0
       { midi: 64, velocity: 90, onsetMs: 640, durationMs: 700 },
@@ -109,9 +122,8 @@ describe('motifSandbox/motifAnalysis', () => {
     const { motif } = analyzeAndNormalize(cap, 0, 'major', 96);
     for (const n of motif.notes) {
       expect(Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25)), `dur@${n.durationBeat}`).toBeLessThan(1e-6); // 整分音值
-      expect(Math.floor((n.onsetBeat + n.durationBeat - 1e-6) / 4)).toBe(Math.floor(n.onsetBeat / 4));                          // 不溢出本 bar
     }
-    expect(motif.notes[0].durationBeat).toBeCloseTo(1.0, 6); // 1.12 → 1.0(不再是原始 1.12)
+    expect(motif.notes[0].durationBeat).toBeCloseTo(1.0, 6); // 1.12 → 1.0(只吸最近整分值,不还原原始 1.12)
   });
 
   it('质量门:< 2 音抛错', () => {

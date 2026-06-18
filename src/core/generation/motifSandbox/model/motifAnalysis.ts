@@ -33,13 +33,13 @@ const MIN_DUR_BEAT = 0.05; // ms→beat 时的防 0 兜底
 const quantize = (beat: number): number => Math.round(beat / GRID) * GRID;
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
-/** ★ 规整音值 + 钳在 bar 内(2026-06-18 用户):时值吸 1/16(= 2/4/8/16 分整分音符),且【不响过本 bar 末】
- *  —— 避免"响一个不规则拍数然后溢进下个 bar"糊掉重拍(尤其 2+ bar motif / 喂 Q+N 前要干净)。
- *  注:这取代旧"保留录入原值"——走 A(motif 喂 Q+N 生产链)要求 motif 节奏先规整,downbeat 才干净。 */
-function regularDurWithinBar(onsetBeat: number, durBeat: number, beatsPerBar = 4): number {
-  const q = Math.max(GRID, Math.round(durBeat / GRID) * GRID);     // 吸 1/16 → 整分音值
-  const barEnd = (Math.floor(onsetBeat / beatsPerBar + 1e-6) + 1) * beatsPerBar;
-  return Math.max(GRID, Math.min(q, barEnd - onsetBeat));          // 不越本 bar 末(1/16 onset → 余量 ≥ GRID)
+/** ★ 时值规整成整分音值(2026-06-18 用户修订):时值吸 1/16(= 2/4/8/16 分整分音符),【仅此一步】。
+ *  —— 只把不规则时值吸到最近的整分音值(2/4/8/16 分),displacement ≤ 1/32 拍,**保留 motif 形状**。
+ *  ⚠️ 不再【钳在 bar 内】:整分音值即便跨 barline(如 onset 3.5 + 1.0 拍 = 干净的 8 分位 4.5),也是合法的连音/
+ *     tie,落点已在整分网格上,downbeat 不糊;旧版钳到 bar 末会把跨 bar 的整音砍半(1.0→0.5)= 过大改变音符
+ *     距离、听感丢形状(用户 2026-06-18 报告)。单旋律叠音安全在播放层 leadOnlyIr 做【仅同音高】裁剪。 */
+function regularDur(durBeat: number): number {
+  return Math.max(GRID, Math.round(durBeat / GRID) * GRID);        // 吸 1/16 → 整分音值(不钳 bar)
 }
 
 export interface AnalyzeResult {
@@ -66,11 +66,11 @@ export function analyzeAndNormalize(
   const sorted = [...captured].sort((a, b) => a.onsetMs - b.onsetMs);
   const t0 = sorted[0].onsetMs;
   type Tmp = { midi: number; onset: number; dur: number; vel: number };
-  // ★ onset 吸 1/16;时值【规整音值 + 钳在 bar 内】(regularDurWithinBar)—— 不再保留录入原始不规则时值,
-  //   否则跨 bar 溢出糊重拍(用户 2026-06-18),且喂 Q+N 前节奏要干净。
+  // ★ onset 吸 1/16(最近整分位,displacement ≤ 1/32 拍 → 保形状);时值【规整音值】(regularDur,不钳 bar)
+  //   —— 只把不规则时值吸到 2/4/8/16 分,不砍跨 bar 的整音,不过量改变音符距离(用户 2026-06-18 修订)。
   let notes: Tmp[] = sorted.map((c) => {
     const onset = quantize((c.onsetMs - t0) / msPerBeat);
-    return { midi: c.midi, onset, dur: regularDurWithinBar(onset, Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat)), vel: clamp01(c.velocity / 127) };
+    return { midi: c.midi, onset, dur: regularDur(Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat)), vel: clamp01(c.velocity / 127) };
   });
 
   // 2) 单旋律化:同一 onset bucket 取最高音;再去重同 pitch(保留较早/较长已隐含 sort)
@@ -202,7 +202,7 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     return {
       midi: snapped,
       onsetBeat: onset,                       // 切头后 → 首音 = 0(禁止空拍开始)
-      durationBeat: regularDurWithinBar(onset, n.quantizedDurationBeat, ctx.beatsPerBar), // 规整音值 + 钳在 bar 内
+      durationBeat: regularDur(n.quantizedDurationBeat), // 规整成整分音值(不钳 bar,保形状)
       velocity: velNorm,
       scaleDegree: midiToScaleDegree(snapped, ctx.keyPc, ctx.scaleMode),
       octave: midiToOctave(snapped),
