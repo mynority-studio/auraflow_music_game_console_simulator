@@ -74,8 +74,10 @@ function preFitStructural(notes: readonly FitInputNote[]): boolean[] {
   if (n === 0) return [];
   const turns = contourTurns(notes.map((x) => x.midi));
   const maxDur = Math.max(...notes.map((x) => x.dur), 1e-6);
+  // ★ 时长主导(非力度):结构音=长音 + 首尾 + 轮廓拐点;响亮短音=经过重音,不算骨干(对齐 §12 结构音原则,
+  //   否则 loud 弱拍短音会被当骨干拉到强拍 → 毁掉用户切分)。力度仅次权重。
   const score = notes.map((x, i) =>
-    0.40 * Math.min(1, x.vel) + 0.30 * (x.dur / maxDur) + 0.20 * (i === 0 || i === n - 1 ? 1 : 0) + 0.10 * (turns[i] ? 1 : 0));
+    0.45 * (x.dur / maxDur) + 0.20 * Math.min(1, x.vel) + 0.25 * (i === 0 || i === n - 1 ? 1 : 0) + 0.10 * (turns[i] ? 1 : 0));
   const peak = Math.max(...score);
   const flags = score.map((s, i) => i === 0 || s >= peak * 0.7);
   if (flags.filter(Boolean).length < 2) { // 兜底:补最高的非 head 音
@@ -266,34 +268,43 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
   g = [...byOnset.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
   if (g.length > 96) g = g.slice(0, 96);
 
-  // ★ Phase 1:切头重对齐 —— 首颗有效音 → motif-local beat 0(禁止空拍开始;allowPickup 才保留)。
   const allowPickup = opts.allowPickup ?? false;
   const firstBeat = g[0].quantizedOnsetBeat;        // 用户首音相对 captureStart 的晚进量(诊断)
-  const shift = allowPickup ? 0 : firstBeat;        // 切头量(pickup 时不切)
-  const localOnset = (n: GridCapturedNote): number => Math.max(0, n.quantizedOnsetBeat - shift);
 
-  // ★ 真 motif 长度 = 实际演奏到的小节数(切头后的 local 末音 → 取整 bar),1..captureBars。
-  const localLastEnd = Math.max(...g.map((n) => localOnset(n) + n.quantizedDurationBeat));
-  const lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(localLastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
+  // ★ 两阶段对拍(2026-06-18 用户):默认路径(切头)用 RAW onset 喂 fitMotifToBricks —— 等比变速锚骨干音
+  //   落强拍 + 经过音吸 16 分 + 选 brick(1..captureBars)。allowPickup(保留前导休止)走旧 quantize 路径不变速。
+  type Placed = { onset: number; dur: number; vel: number; midi: number };
+  let placed: Placed[];
+  let lengthBeats: number;
+  if (!allowPickup) {
+    const raw0 = g[0].onsetBeat;                     // 首音 raw onset(切头基准)
+    const fit = fitMotifToBricks(
+      g.map((n) => ({ onset: Math.max(0, n.onsetBeat - raw0), dur: Math.max(MIN_DUR_BEAT, n.durationBeat), vel: clamp01(n.velocity / 127), midi: n.midi })),
+      ctx.beatsPerBar,
+    );
+    placed = fit.notes.map((x) => ({ onset: x.onset, dur: x.dur, vel: x.vel, midi: x.midi }));
+    lengthBeats = Math.min(windowBeats, fit.lengthBeats); // 不超捕获窗
+  } else {
+    placed = g.map((n) => ({ onset: Math.max(0, n.quantizedOnsetBeat), dur: regularDur(n.quantizedDurationBeat), vel: clamp01(n.velocity / 127), midi: n.midi }));
+    const localLastEnd = Math.max(...placed.map((x) => x.onset + x.dur));
+    lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(localLastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
+  }
 
-  // 3) 音高:存 raw → 吸 tonality(记改动);accent/structuralTone 用【切头后 local 相位】的节拍权重
-  //    (Phase 3:不能用 GridCapturedNote.metricalWeight = 旧相位权重,否则结构音整体错相)。
-  const turns = contourTurns(g.map((n) => n.midi));
-  const lastIdx = g.length - 1;
+  // 3) 音高:存 raw → 吸 tonality(记改动);accent/structuralTone 用【对拍后 local 相位】的节拍权重
+  const turns = contourTurns(placed.map((x) => x.midi));
+  const lastIdx = placed.length - 1;
   let snapChanges = 0;
-  const motifNotes: MotifNote[] = g.map((n, i) => {
-    const snapped = snapMidiToTonality(n.midi, ctx.keyPc, ctx.tonality);
-    if (snapped !== n.midi) snapChanges++;
-    const velNorm = clamp01(n.velocity / 127);
+  const motifNotes: MotifNote[] = placed.map((x, i) => {
+    const snapped = snapMidiToTonality(x.midi, ctx.keyPc, ctx.tonality);
+    if (snapped !== x.midi) snapChanges++;
     const edge = i === 0 || i === lastIdx;
-    const onset = localOnset(n);
-    const localBeatInBar = ((onset % ctx.beatsPerBar) + ctx.beatsPerBar) % ctx.beatsPerBar; // 切头后相位
-    const { accent, structuralToneScore } = scoreNote(velNorm, metricalWeight(localBeatInBar), Math.min(1, n.quantizedDurationBeat), edge, turns[i]);
+    const localBeatInBar = ((x.onset % ctx.beatsPerBar) + ctx.beatsPerBar) % ctx.beatsPerBar; // 对拍后相位
+    const { accent, structuralToneScore } = scoreNote(x.vel, metricalWeight(localBeatInBar), Math.min(1, x.dur), edge, turns[i]);
     return {
       midi: snapped,
-      onsetBeat: onset,                       // 切头后 → 首音 = 0(禁止空拍开始)
-      durationBeat: regularDur(n.quantizedDurationBeat), // 规整成整分音值(不钳 bar,保形状)
-      velocity: velNorm,
+      onsetBeat: x.onset,                     // 切头 + 对拍 → 首音 = 0(禁止空拍开始)
+      durationBeat: x.dur,
+      velocity: x.vel,
       scaleDegree: midiToScaleDegree(snapped, ctx.keyPc, ctx.scaleMode),
       octave: midiToOctave(snapped),
       accent, structuralToneScore,

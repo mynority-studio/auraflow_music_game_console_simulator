@@ -12,14 +12,15 @@ const note = (ctx: HiddenGridCaptureContext, midi: number, vel: number, onBeat: 
   mapRawNoteToGrid({ midi, velocity: vel, onMs: ctx.captureStartMs + onBeat * msPerBeat(ctx), offMs: ctx.captureStartMs + (onBeat + durBeat) * msPerBeat(ctx) }, ctx);
 
 describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', () => {
-  it('★ 1-bar 捕获 → lengthBeats=4;迟到首音【切头对齐】到 beat0(禁止空拍开始,directive Phase 1)', () => {
+  it('★ 1-bar 捕获 → lengthBeats=4;迟到首音【切头对齐】到 beat0;对拍后全落 16 分(2026-06-18 接 fit)', () => {
     const c = ctxOf();
     const g = [note(c, 60, 100, 0.5, 0.5), note(c, 62, 90, 1, 1), note(c, 64, 90, 2, 1), note(c, 67, 100, 3, 1)];
     const { motif, timing } = analyzeHiddenGridMotif(g, c);
     expect(timing.lengthBeats).toBe(4);
     expect(motif.lengthBeats).toBe(4);
     expect(motif.notes[0].onsetBeat).toBe(0);              // 切头 → 首音 = beat 0(禁止空拍)
-    expect(motif.notes[1].onsetBeat).toBeCloseTo(0.5, 6);  // 整段前移 0.5(1 − 0.5)
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat); // 顺序保持
+    for (const n of motif.notes) { const g16 = n.onsetBeat * 4; expect(Math.abs(g16 - Math.round(g16)), `onset@${n.onsetBeat}`).toBeLessThan(1e-6); } // 落 16 分
     expect(timing.leadingRestBeats).toBeCloseTo(0.5, 6);   // 晚进量仍报告(诊断)
     expect(timing.aligned).toBe(true);
     expect(timing.captureMode).toBe('hiddenGrid');
@@ -40,22 +41,22 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     expect(aligned.motif.notes[0].structuralToneScore!).toBeGreaterThan(pickup.motif.notes[0].structuralToneScore!);
   });
 
-  it('★ 形状保真(默认路径 · 2026-06-18):onset 间距逐对保留;跨 barline 的整分音值不被砍(只规整,不钳 bar)', () => {
+  it('★ 对拍(默认路径 · 2026-06-18 接 fit):骨干音落整数拍、经过音落 16 分、顺序保持、不越 brick', () => {
     const c = ctxOf({ desiredBars: 2 });
-    // 首音落 beat0(无切头),含一个跨 barline 的干净四分音符:3.5 + 1.0 → 4.5
-    const inB: [number, number][] = [[0, 0.5], [0.5, 0.5], [1, 1], [3.5, 1], [4.5, 0.5], [6, 1]];
+    // 想弹 2-bar:骨干(长)在 0/2/4/6,经过(短)穿插;弹得略不准
+    const inB: [number, number][] = [[0, 1.9], [1.1, 0.4], [2.0, 1.9], [4.05, 1.9], [5.1, 0.4], [5.95, 1.9]];
     const g = inB.map(([on, du], i) => note(c, 60 + i, 90, on, du));
     const { motif } = analyzeHiddenGridMotif(g, c);
-    // onset 间距逐对 == 输入(切头量=0 → 完全保留;音符之间的距离不被过量改变)
-    const inGaps = inB.slice(1).map(([on], i) => on - inB[i][0]);
-    const outGaps = motif.notes.slice(1).map((n, i) => n.onsetBeat - motif.notes[i].onsetBeat);
-    expect(outGaps.map((x) => +x.toFixed(6))).toEqual(inGaps.map((x) => +x.toFixed(6)));
-    // 时值全整分音值
-    for (const n of motif.notes) expect(Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25))).toBeLessThan(1e-6);
-    // ★ 跨 barline 的四分音符(3.5+1.0→4.5)保留,不再被钳到 bar 末(旧版砍成 0.5)
-    const crossing = motif.notes.find((n) => Math.abs(n.onsetBeat - 3.5) < 1e-6)!;
-    expect(crossing.durationBeat).toBeCloseTo(1.0, 6);
-    expect(crossing.onsetBeat + crossing.durationBeat).toBeCloseTo(4.5, 6);
+    expect(motif.notes[0].onsetBeat).toBe(0);                                                  // 切头 → beat0
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat); // 顺序保持
+    for (const n of motif.notes) {
+      const g16 = n.onsetBeat * 4;
+      expect(Math.abs(g16 - Math.round(g16)), `onset@${n.onsetBeat} 落 16 分`).toBeLessThan(1e-6);
+      expect(n.onsetBeat + n.durationBeat).toBeLessThanOrEqual(motif.lengthBeats + 1e-9);        // 不越 brick 末
+    }
+    // 长音(骨干)落到整数拍(对拍成立)
+    const onInt = motif.notes.filter((n) => Math.abs(n.onsetBeat - Math.round(n.onsetBeat)) < 1e-6).length;
+    expect(onInt).toBeGreaterThanOrEqual(3);
   });
 
   it('2-bar 捕获 → lengthBeats=8', () => {
