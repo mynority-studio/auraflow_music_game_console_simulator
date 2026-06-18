@@ -169,6 +169,7 @@ export function renderSongFull(
   timebase: Timebase,
   rng: RandomContext,
   overlay?: RenderOverlay,
+  overrideLeadTrack?: TrackIR, // ★ 走 A:Q+R sandbox 权威 lead 注入 → 跳过 renderMgMelody(默认 undefined = 不变)
 ): RenderResult {
   // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律走 MG 链,不再跑 Prepass/MotifStore/
   //   candidateSwap。撞音消解只剩 voicingSafer(comp 瘦身)+ 兜底重掷(advance melody 子流)。
@@ -263,7 +264,10 @@ export function renderSongFull(
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, bigFillBars: leadInBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
-  tracks.push(renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead)); // lead 必有(MG 链);★ MG seed=song seed · lead program=器配生效值
+  // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
+  tracks.push(overrideLeadTrack
+    ? { ...overrideLeadTrack, role: 'lead', program: instrumentation.roleProgram.lead }
+    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead)); // MG seed=song seed · lead program=器配生效值
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
