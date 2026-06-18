@@ -40,6 +40,24 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     expect(aligned.motif.notes[0].structuralToneScore!).toBeGreaterThan(pickup.motif.notes[0].structuralToneScore!);
   });
 
+  it('★ 形状保真(默认路径 · 2026-06-18):onset 间距逐对保留;跨 barline 的整分音值不被砍(只规整,不钳 bar)', () => {
+    const c = ctxOf({ desiredBars: 2 });
+    // 首音落 beat0(无切头),含一个跨 barline 的干净四分音符:3.5 + 1.0 → 4.5
+    const inB: [number, number][] = [[0, 0.5], [0.5, 0.5], [1, 1], [3.5, 1], [4.5, 0.5], [6, 1]];
+    const g = inB.map(([on, du], i) => note(c, 60 + i, 90, on, du));
+    const { motif } = analyzeHiddenGridMotif(g, c);
+    // onset 间距逐对 == 输入(切头量=0 → 完全保留;音符之间的距离不被过量改变)
+    const inGaps = inB.slice(1).map(([on], i) => on - inB[i][0]);
+    const outGaps = motif.notes.slice(1).map((n, i) => n.onsetBeat - motif.notes[i].onsetBeat);
+    expect(outGaps.map((x) => +x.toFixed(6))).toEqual(inGaps.map((x) => +x.toFixed(6)));
+    // 时值全整分音值
+    for (const n of motif.notes) expect(Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25))).toBeLessThan(1e-6);
+    // ★ 跨 barline 的四分音符(3.5+1.0→4.5)保留,不再被钳到 bar 末(旧版砍成 0.5)
+    const crossing = motif.notes.find((n) => Math.abs(n.onsetBeat - 3.5) < 1e-6)!;
+    expect(crossing.durationBeat).toBeCloseTo(1.0, 6);
+    expect(crossing.onsetBeat + crossing.durationBeat).toBeCloseTo(4.5, 6);
+  });
+
   it('2-bar 捕获 → lengthBeats=8', () => {
     const c = ctxOf({ style: 'jazz', desiredBars: 2 });
     expect(c.captureBars).toBe(2);
