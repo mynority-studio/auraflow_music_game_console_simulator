@@ -16,7 +16,7 @@ import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio, getAudioLatencyMs } from '../../newEngine/sandbox/audioOut';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, playClick, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
@@ -215,8 +215,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     if (recorder.current.isActive()) recorder.current.noteOff(midi);
   }, [noteOffVis]);
 
-  // 卸载清理
-  useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); recTimers.current.forEach((t) => clearTimeout(t)); access.current?.dispose(); }, []);
+  // 卸载清理(含还原压缩母带 → 离开 Q+R 后全局音频不残留软削波)
+  useEffect(() => () => { if (timer.current != null) clearInterval(timer.current); recTimers.current.forEach((t) => clearTimeout(t)); access.current?.dispose(); setSandboxAuditionMaster(false); }, []);
 
   // 注入示例 motif:隐形时钟模式 → 平移进捕获窗走 hidden 分析;free 模式 → 老路径
   const injectSample = useCallback(() => {

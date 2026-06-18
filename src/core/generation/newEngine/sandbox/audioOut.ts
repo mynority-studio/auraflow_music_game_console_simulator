@@ -7,7 +7,7 @@
 // ============================================================
 
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
-import { startAudioContext, getAudioContext, spessaSynth } from '../../../audio/SynthManager';
+import { startAudioContext, getAudioContext, spessaSynth, setSandboxAuditionMaster } from '../../../audio/SynthManager';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -16,6 +16,7 @@ import { resolveAudibleRoles } from './pianoRoll';
 /** 播放一首 newEngine 生成的曲子。会先确保 AudioContext / synth 已启动。style → 共享房间混响湿度。 */
 export async function playMusicalIR(ir: MusicalIR, bpm: number, style?: string): Promise<void> {
   await startAudioContext();
+  setSandboxAuditionMaster(false); // 成品播放 → 压缩母带(响而受控)
   const events = musicalIRToMidiEvents(ir, roomWetFor(style ?? 'default'));
   globalMidiScheduler.stop();
   globalMidiScheduler.loadTrack(events, bpm);
@@ -53,6 +54,7 @@ let auditionProgram = -1;
  *  未就绪则后台启动音频(这一下可能没声,下一下就有);音只在按住时响,松手即停。 */
 export function auditionNoteOn(midiNote: number, program: number, velocity = 100): void {
   if (!spessaSynth) { void startAudioContext(); return; }
+  setSandboxAuditionMaster(true); // 试听/录入 → 零延迟软削波母带(仅模式变化时换接,无 glitch)
   if (program !== auditionProgram) {
     spessaSynth.programChange(AUDITION_CHANNEL, program);
     spessaSynth.controllerChange(AUDITION_CHANNEL, 7, 127);   // CC7 音量拉满
@@ -82,6 +84,8 @@ export async function ensureAudio(): Promise<void> {
   try { const ctx = getAudioContext(); if (ctx && ctx.state === 'suspended') await ctx.resume(); } catch { /* ignore */ }
 }
 
+export { setSandboxAuditionMaster } from '../../../audio/SynthManager'; // 离开 Q+R / 成品播放时还原压缩母带
+
 /** 音频系统延迟诊断:base=worklet 处理、output=OS/输出缓冲(含蓝牙)。判断"延迟来自系统还是代码"。 */
 export function getAudioLatencyMs(): { base: number; output: number; total: number; sampleRate: number; state: string } | null {
   try {
@@ -99,6 +103,7 @@ const DRUM_CHANNEL = 9;
 export async function playClick(strong: boolean): Promise<void> {
   await startAudioContext();
   if (!spessaSynth) return;
+  setSandboxAuditionMaster(true); // 数拍 click 也走低延迟母带(录入语境)
   const note = strong ? 76 : 77;            // 76=Hi Wood Block / 77=Low Wood Block = 节拍器
   const vel = strong ? 118 : 80;
   spessaSynth.noteOn(DRUM_CHANNEL, note, vel);

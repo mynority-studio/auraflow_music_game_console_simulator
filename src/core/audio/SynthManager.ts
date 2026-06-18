@@ -25,6 +25,29 @@ const SF2_BANK_ID = 'gm128';
 export let spessaSynth: WorkletSynthesizer | null = null;
 export let isSpessaSynthReady = false;
 
+// ★ 双母带:成品播放走【压缩母带】(响而受控),Q+R MIDI 录入/试听走【零延迟软削波母带】
+//   (省掉两级压缩器的 ~12ms lookahead → 现场弹更跟手)。synth 同一时刻只接一条,模式切换时换接。
+let _compMasterIn: AudioNode | null = null;   // 压缩母带入口(成品)
+let _scMasterIn: AudioNode | null = null;     // 软削波母带入口(试听,零延迟)
+let _masterMode: 'comp' | 'softclip' = 'comp';
+
+/** 软饱和曲线(tanh,归一化到 ±1)—— 当场磨圆过冲,零 lookahead。 */
+const softClipCurve = (): Float32Array => {
+    const n = 1024, c = new Float32Array(n), k = 1.6, norm = Math.tanh(k);
+    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(x * k) / norm; }
+    return c;
+};
+
+/** 切换 synth 母带:low=true → 零延迟软削波(Q+R 试听/录入);low=false → 压缩母带(成品播放)。
+ *  仅在模式真正变化时换接(不在每个音上 disconnect → 无 glitch)。 */
+export const setSandboxAuditionMaster = (low: boolean): void => {
+    const target: 'comp' | 'softclip' = low ? 'softclip' : 'comp';
+    if (target === _masterMode || !spessaSynth || !_compMasterIn || !_scMasterIn) return;
+    try { spessaSynth.disconnect(); } catch { /* ignore */ }
+    spessaSynth.connect(low ? _scMasterIn : _compMasterIn);
+    _masterMode = target;
+};
+
 let _startPromise: Promise<void> | null = null;
 
 export const getAudioContext = (): AudioContext => {
@@ -72,11 +95,29 @@ export const startAudioContext = async (): Promise<void> => {
         makeup.gain.value = 1.5; // 补回响度(POP:响)
         const limiter = ctx.createDynamicsCompressor();
         limiter.threshold.value = -1.5; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.06;
-        synth.connect(headroom);
         headroom.connect(glue);
         glue.connect(makeup);
         makeup.connect(limiter);
         limiter.connect(ctx.destination);
+
+        // ★ 平行【零延迟软削波母带】(Q+R 试听用):入口 gain → WaveShaper(oversample none = 零 lookahead)
+        //   → makeup → destination。不含压缩器 → 省 ~12ms。成品播放仍走上面的压缩母带。
+        const scIn = ctx.createGain();
+        scIn.gain.value = 0.85;
+        const shaper = ctx.createWaveShaper();
+        shaper.curve = softClipCurve();
+        shaper.oversample = 'none'; // ★ 零延迟(2x/4x 会引入重采样延迟)
+        const scMakeup = ctx.createGain();
+        scMakeup.gain.value = 1.05;
+        scIn.connect(shaper);
+        shaper.connect(scMakeup);
+        scMakeup.connect(ctx.destination);
+
+        // 默认接压缩母带(成品/全局安全);Q+R 试听时再切到软削波。
+        synth.connect(headroom);
+        _compMasterIn = headroom;
+        _scMasterIn = scIn;
+        _masterMode = 'comp';
 
         spessaSynth = synth;
         isSpessaSynthReady = true;
