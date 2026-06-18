@@ -47,7 +47,9 @@ describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)'
     const r = generateSongFromMotif(req, { lead });
     expect(r.status).not.toBe('failed');
     const leadTrack = r.ir!.tracks.find((t) => t.role === 'lead')!;
-    expect(leadTrack.notes.map((n) => n.pitch)).toEqual(lead.map((n) => n.pitch)); // 音高逐音原样采用
+    // lead 被 tile 满全曲;首份逐音原样采用(motif lead 权威,renderMgMelody 让位)
+    expect(leadTrack.notes.length).toBeGreaterThanOrEqual(lead.length);
+    expect(leadTrack.notes.slice(0, lead.length).map((n) => n.pitch)).toEqual(lead.map((n) => n.pitch));
     // 非 lead 轨仍齐备(编曲会【响应】override lead:ducking/避撞/comp 让位旋律区 = 走 A 期望,不强求字节不变)
     const baseRoles = base.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
     const rRoles = r.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);

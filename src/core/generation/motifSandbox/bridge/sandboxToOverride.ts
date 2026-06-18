@@ -20,5 +20,6 @@ export function buildMotifSongOverride(result: MotifWeaverResult, keyPc: number,
   return {
     harmony: sandboxProgressionToHarmonicPlan(result.progression, keyPc, mode),
     lead: result.lead.map(motifNoteToLeadNote),
+    key: { keyPc: ((keyPc % 12) + 12) % 12, mode }, // 供 generateSongFromMotif 把 16-bar 和声 tile 满 arrangement 时重装配
   };
 }

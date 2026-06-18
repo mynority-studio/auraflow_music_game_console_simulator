@@ -42,6 +42,7 @@ export function runGenerationControl(
   seedRng: RandomContext,
   budget: RetryBudget = DEFAULT_BUDGET,
   locator?: RetryLocator,
+  acceptNonLeadErrors = false, // ★ 走 A:和声=用户权威 → 伴奏的 avoid 暴露等 error 降为 warning(只 fatal 阻断)。默认 false=不变。
 ): GenerationResult {
   let retry: RetryContext | undefined;
   let current = render(undefined);
@@ -52,7 +53,8 @@ export function runGenerationControl(
     // ★ Loop 3(strict parity):lead = MG 真源,不可被 newEngine 改 → lead 的 error/fatal 不驱动重跑
     //   (retry 只能调 comp voicing/texture,改不了 lead;否则只会耗 budget 到 failed)。lead finding 仍在
     //   report 里(降级为 warning 语义,§1.5/§9:audit 只报告 lead、不改);非-lead 的 error/fatal 才 blocking。
-    const blocking = findings.filter((f) => (f.severity === 'error' || f.severity === 'fatal') && f.location.trackRole !== 'lead');
+    // ★ 走 A:override 和声是用户权威、retry 改不动 pad/bass → acceptNonLeadErrors 时只 fatal 阻断。
+    const blocking = findings.filter((f) => (f.severity === 'fatal' || (f.severity === 'error' && !acceptNonLeadErrors)) && f.location.trackRole !== 'lead');
 
     if (blocking.length === 0) {
       return {

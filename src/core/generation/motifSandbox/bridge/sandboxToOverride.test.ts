@@ -3,6 +3,7 @@ import { buildMotifSongOverride, motifNoteToLeadNote } from './sandboxToOverride
 import { generateMotifWeave } from '../model/motifWeaver';
 import { generateSampleCaptured } from '../model/motifAnalysis';
 import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
+import { generateSong } from '../../newEngine/generation/GenerationController';
 
 const m12 = (n: number) => ((n % 12) + 12) % 12;
 const weave = (style: 'pop' | 'jazz' = 'pop', seed = 7) =>
@@ -31,9 +32,10 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     const song = generateSongFromMotif({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 }, ov);
     expect(song.status).not.toBe('failed');
 
-    // lead 轨 = 我们的 motif lead(音高逐音原样,证明 renderMgMelody 让位)
+    // lead 轨 = 我们的 motif lead(tile 满全曲;首份逐音原样,证明 renderMgMelody 让位)
     const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
-    expect(lead.notes.map((n) => n.pitch)).toEqual(ov.lead!.map((n) => n.pitch));
+    expect(lead.notes.length).toBeGreaterThanOrEqual(ov.lead!.length);
+    expect(lead.notes.slice(0, ov.lead!.length).map((n) => n.pitch)).toEqual(ov.lead!.map((n) => n.pitch));
 
     // bass 轨吃 sandbox 和声(首音根/三/五)
     const bass = song.ir!.tracks.find((t) => t.role === 'bass');
@@ -47,5 +49,43 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     const r = weave('jazz', 3);
     const ov = buildMotifSongOverride(r, 0, 'major');
     expect(() => generateSongFromMotif({ seed: 3, styleHint: 'jazz', mood: 'x', targetDuration: 120 }, ov)).not.toThrow();
+  });
+
+  // —— PR4 端到端验收:曲长对齐(tile)+ 各轨覆盖全曲 + 不 failed ——
+  const STYLES = [['pop', 7], ['lofi', 3], ['rnb', 5], ['jazz', 9]] as const;
+
+  it('★ PR4:4 风格走 A 成曲不 failed,lead=tile 的 motif lead(首音对齐),bass/comp 非空', () => {
+    for (const [style, seed] of STYLES) {
+      const r = weave(style as 'pop' | 'jazz', seed);
+      const ov = buildMotifSongOverride(r, 0, 'major');
+      const song = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 120 }, ov);
+      expect(song.status, `${style} status`).not.toBe('failed');
+      expect(song.ir, `${style} ir`).toBeDefined();
+      const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
+      expect(lead.notes.length, `${style} lead≥motif`).toBeGreaterThanOrEqual(ov.lead!.length); // tile ≥ 1 份
+      expect(lead.notes[0].pitch, `${style} lead 首音`).toBe(ov.lead![0].pitch);                 // 首音 == motif 首音
+      expect(song.ir!.tracks.find((t) => t.role === 'bass')!.notes.length, `${style} bass`).toBeGreaterThan(0);
+      expect(song.ir!.tracks.find((t) => t.role === 'comp')!.notes.length, `${style} comp`).toBeGreaterThan(0);
+    }
+  });
+
+  it('★ PR4:走 A 编制与默认 generateSong 一致(不丢轨);bass/comp 末音覆盖全曲后段', () => {
+    for (const [style, seed] of STYLES) {
+      const def = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
+      const r = weave(style as 'pop' | 'jazz', seed);
+      const ov = buildMotifSongOverride(r, 0, 'major');
+      const mot = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 120 }, ov);
+      const roles = (x: typeof def) => x.ir!.tracks.map((t) => t.role).sort();
+      expect(roles(mot), `${style} 编制`).toEqual(roles(def)); // 同编制(走 A 不丢轨)
+      // bass/comp 覆盖全曲后段(末音 ≥ 75% 曲长)→ tile 填满,无大段空轨
+      const dur = mot.ir!.durationTicks as unknown as number;
+      for (const role of ['bass', 'comp'] as const) {
+        const t = mot.ir!.tracks.find((x) => x.role === role);
+        if (t && t.notes.length) {
+          const end = Math.max(...t.notes.map((n) => (n.startTick as unknown as number) + (n.durationTicks as unknown as number)));
+          expect(end / dur, `${style} ${role} 覆盖`).toBeGreaterThan(0.75);
+        }
+      }
+    }
   });
 });
