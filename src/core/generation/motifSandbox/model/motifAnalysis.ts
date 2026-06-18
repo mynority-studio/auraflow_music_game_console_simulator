@@ -30,7 +30,6 @@ function contourTurns(midis: number[]): boolean[] {
 
 const GRID = 0.25; // 1/16 = 0.25 beat(量化网格)
 const MIN_DUR_BEAT = 0.05; // ms→beat 时的防 0 兜底
-const quantize = (beat: number): number => Math.round(beat / GRID) * GRID;
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
 /** ★ 时值规整成整分音值(2026-06-18 用户修订):时值吸 1/16(= 2/4/8/16 分整分音符),【仅此一步】。
@@ -47,16 +46,13 @@ function regularDur(durBeat: number): number {
 //   再把经过音就近吸到 16 分 / 三连音位。缩放限 ×0.5–×2(8分↔16分↔4分),自动选 1/2/.. bar。
 //   —— "用改速度对拍,不用挪音符对拍":相对位置由缩放保持,只有骨干音锚强拍 + 经过音轻吸附。
 // ============================================================
-const TRI_STEP = 1 / 3;        // 8 分三连步长(1/3 拍)
 const SCALE_MIN = 0.5, SCALE_MAX = 2.0; // 等比缩放上下限(8分↔16分↔4分)
 const snap16 = (x: number): number => Math.round(x / GRID) * GRID;
-const snapTri = (x: number): number => Math.round(x / TRI_STEP) * TRI_STEP;
-/** 经过音就近吸附:直 16 分 vs 8 分三连,取更近的形状(用户:"浮点形状 / 三连音形状")。 */
-const snapPassing = (x: number): number => {
-  const a = snap16(x), b = snapTri(x);
-  return Math.abs(x - a) <= Math.abs(x - b) ? a : b;
-};
-const distQuarter = (x: number): number => Math.abs(x - Math.round(x));
+/** 经过音就近吸附 → 16 分网格。
+ *  ⚠️ 三连音吸附(用户 2026-06-18 "三连音形状")【暂缓】:weaver 输出层 line 476 把 lead onset 硬吸 1/16
+ *  (ONSET_GRID,与伴奏稳稳对拍),伴奏击点也按 1/16 → motif 出现三连位会被下游重吸成 1/16、毁掉 verbatim quote。
+ *  接三连需让 weaver/伴奏/IR 全链三连感知(单独工程)。当前先做核心 16 分对拍。 */
+const snapPassing = (x: number): number => snap16(x);
 /** 四分拍的节拍强度:下拍 1.0 > 半小节 0.7 > 弱四分 0.4;非四分位 = 0(不是落拍点)。 */
 function quarterStrength(pos: number, beatsPerBar: number): number {
   const b = ((pos % beatsPerBar) + beatsPerBar) % beatsPerBar;
@@ -106,25 +102,34 @@ export function fitMotifToBricks(raw: readonly FitInputNote[], beatsPerBar = 4):
   for (let N = 1; N <= 4; N++) { const bs = (beatsPerBar * N) / span; if (bs >= SCALE_MIN - 1e-9 && bs <= SCALE_MAX + 1e-9) cand.push(N); }
   if (cand.length === 0) cand.push(Math.max(1, Math.min(4, Math.round(span / beatsPerBar)))); // span 极端 → 就近取整 bar
 
+  // 骨干音落点 = 【brick 内】最近四分拍(0..lengthBeats-1);lengthBeats 本身=下个 brick 下拍,不是合法落点
+  const placeStrong = (pos: number, lenN: number): number => Math.max(0, Math.min(lenN - 1, Math.round(pos)));
+  const clampS = (x: number): number => Math.min(SCALE_MAX, Math.max(SCALE_MIN, x));
+  const naturalN = Math.max(1, Math.min(4, Math.round(span / beatsPerBar))); // motif 自然小节数(只在对拍强烈更优时才偏离)
   let best: { N: number; s: number; cost: number } | null = null;
   for (const N of cand) {
-    const baseS = (beatsPerBar * N) / span;
+    const lenN = beatsPerBar * N;
+    const baseS = clampS(lenN / span); // span 极端 → 基准已钳进 [0.5,2]
     for (let k = -40; k <= 40; k++) {
-      const s = baseS * (1 + k * 0.01);
-      if (s < SCALE_MIN || s > SCALE_MAX) continue;
+      const s = clampS(baseS * (1 + k * 0.01)); // 钳进幅度限内(不丢候选 → best 必有解)
       let sc = 0;
-      for (const on of structOnsets) sc += distQuarter(s * on) + 0.25 * (1 - quarterStrength(Math.round(s * on), beatsPerBar));
-      const cost = sc / Math.max(1, structOnsets.length) + 0.30 * Math.abs(Math.log(s)); // 归一 + 抗过度缩放(s=1→0)
+      for (const on of structOnsets) {
+        const target = placeStrong(s * on, lenN); // 只瞄 brick 内四分拍(不奖励落到 brick 外下拍)
+        sc += Math.abs(s * on - target) + 0.25 * (1 - quarterStrength(target, beatsPerBar));
+      }
+      const cost = sc / Math.max(1, structOnsets.length)
+        + 0.30 * Math.abs(Math.log(s))         // 抗过度缩放(s=1→0)
+        + 0.12 * Math.abs(N - naturalN);        // 偏好自然小节数(防为追下拍硬摊成更长 brick)
       if (!best || cost < best.cost - 1e-12) best = { N, s, cost };
     }
   }
   const { N, s } = best!;
   const lengthBeats = beatsPerBar * N;
 
-  // 应用:骨干→最近四分拍;经过→就近 16分/三连;时值规整;钳进 brick 末
+  // 应用:骨干→brick 内最近四分拍;经过→就近 16分/三连(钳进 brick 末);时值规整;钳进 brick 末
   const placed = notes.map((x, i) => {
     const pos = s * x.onset;
-    const onset = struct[i] ? Math.max(0, Math.round(pos)) : Math.max(0, snapPassing(pos));
+    const onset = struct[i] ? placeStrong(pos, lengthBeats) : Math.max(0, Math.min(lengthBeats - GRID, snapPassing(pos)));
     const dur = Math.min(regularDur(s * x.dur), Math.max(GRID, lengthBeats - onset)); // 钳在 brick 末(非内部 barline)
     return { onset, dur, vel: x.vel, midi: x.midi, structural: struct[i] };
   }).filter((x) => x.onset < lengthBeats - 1e-9);
@@ -161,39 +166,25 @@ export function analyzeAndNormalize(
   if (rawCount === 0) throw new MotifAnalysisError('没有录到音符。');
 
   const msPerBeat = 60000 / bpm;
-  // 1) ms → beat,首音对齐到 0
+  // 1) ms → beat(首音对齐到 0)→ ★【两阶段对拍】(2026-06-18 用户):固定 song BPM 下,把 motif 整体等比缩放
+  //    令骨干音落强拍,经过音就近吸 16分/三连,自动选 1/2/.. bar。取代旧"逐音吸 1/16 + round 到整 bar"。
   const sorted = [...captured].sort((a, b) => a.onsetMs - b.onsetMs);
   const t0 = sorted[0].onsetMs;
   type Tmp = { midi: number; onset: number; dur: number; vel: number };
-  // ★ onset 吸 1/16(最近整分位,displacement ≤ 1/32 拍 → 保形状);时值【规整音值】(regularDur,不钳 bar)
-  //   —— 只把不规则时值吸到 2/4/8/16 分,不砍跨 bar 的整音,不过量改变音符距离(用户 2026-06-18 修订)。
-  let notes: Tmp[] = sorted.map((c) => {
-    const onset = quantize((c.onsetMs - t0) / msPerBeat);
-    return { midi: c.midi, onset, dur: regularDur(Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat)), vel: clamp01(c.velocity / 127) };
-  });
+  const fit = fitMotifToBricks(
+    sorted.map((c) => ({ onset: (c.onsetMs - t0) / msPerBeat, dur: Math.max(MIN_DUR_BEAT, c.durationMs / msPerBeat), vel: clamp01(c.velocity / 127), midi: c.midi })),
+  );
+  let notes: Tmp[] = fit.notes.map((x) => ({ midi: x.midi, onset: x.onset, dur: x.dur, vel: x.vel }));
 
-  // 2) 单旋律化:同一 onset bucket 取最高音;再去重同 pitch(保留较早/较长已隐含 sort)
-  const byBucket = new Map<number, Tmp>();
-  for (const n of notes) {
-    const ex = byBucket.get(n.onset);
-    if (!ex || n.midi > ex.midi) byBucket.set(n.onset, ex && ex.midi > n.midi ? ex : n);
-  }
-  notes = [...byBucket.values()].sort((a, b) => a.onset - b.onset);
-
-  // 3)(2026-06-12 用户:完全还原录入时值)—— 不再把时值截到下一音起点(那会把 legato 时值吸到网格)。
-  //    单旋律性由【同 onset 取最高音】保证;legato 叠音的真实时值保留,播放时再做【仅同音高】安全裁剪(leadOnlyIr)。
-
-  // 4) scale snap — 有 inputTonality 走【该音阶】(保留 blues b5/五声特征),否则吸大/小调母调
+  // 2) scale snap — 有 inputTonality 走【该音阶】(保留 blues b5/五声特征),否则吸大/小调母调
   for (const n of notes) n.midi = inputTonality ? snapMidiToTonality(n.midi, keyPc, inputTonality) : snapMidiToScale(n.midi, keyPc, mode);
 
-  // 5) 质量门
+  // 3) 质量门
   if (notes.length < 2) throw new MotifAnalysisError('音符太少(<2),请重录一段更完整的 motif。');
   if (notes.length > 96) notes = notes.slice(0, 96); // 极端密度兜底
 
-  // 6) motif 长度:span 四舍五入到【整 bar】(4 拍倍数),1..4 bar = 4/8/12/16 拍。
-  //    (录制路径已先用 fitRecordingToBars 调 bpm 把 span 拉到整 bar,这里只是落定。)
-  const span = Math.max(...notes.map((n) => n.onset + n.dur));
-  const lengthBeats = Math.max(4, Math.min(16, Math.round(span / 4) * 4));
+  // 4) motif 长度 = fit 选定的 brick(1/2/.. bar);(单旋律化 + 时值规整已在 fit 内做)
+  const lengthBeats = fit.lengthBeats;
 
   // 7) 转 MotifNote(度/八度/accent + structuralToneScore;directive §12 节拍权重模型)
   const lastIdx = notes.length - 1;

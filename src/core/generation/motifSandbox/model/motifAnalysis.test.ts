@@ -4,32 +4,35 @@ import { isInScale } from './scale';
 import type { CapturedMidiNote } from './types';
 
 describe('motifSandbox/motifAnalysis', () => {
-  it('★ onset + duration 都落 1/16 网格(规整音值 2/4/8/16 分);只吸到整分值,不钳 bar(2026-06-18 用户修订)', () => {
+  const onGrid16OrTriplet = (b: number): boolean => {
+    const g16 = b * 4, g3 = b * 3;
+    return Math.abs(g16 - Math.round(g16)) < 1e-6 || Math.abs(g3 - Math.round(g3)) < 1e-6;
+  };
+
+  it('★ 两阶段对拍后:onset 落 16分 或 三连位;dur ≥ 16分;音不越 brick 末(2026-06-18 用户)', () => {
     for (const variant of [0, 1, 2, 3]) {
       const cap = generateSampleCaptured(96, 0, 'major', variant);
       const { motif } = analyzeAndNormalize(cap, 0, 'major', 96);
       for (const n of motif.notes) {
-        expect(Math.abs(n.onsetBeat / 0.25 - Math.round(n.onsetBeat / 0.25)), `onset@${n.onsetBeat}`).toBeLessThan(1e-6);       // onset 规整
-        expect(Math.abs(n.durationBeat / 0.25 - Math.round(n.durationBeat / 0.25)), `dur@${n.durationBeat}`).toBeLessThan(1e-6); // ★ duration 规整(整分音值)
-        expect(n.durationBeat).toBeGreaterThanOrEqual(0.25);                                                                     // ≥ 16 分
+        expect(onGrid16OrTriplet(n.onsetBeat), `onset@${n.onsetBeat}`).toBe(true);            // 16 分 或 三连
+        expect(n.durationBeat).toBeGreaterThanOrEqual(0.25);                                   // ≥ 16 分
+        expect(n.onsetBeat + n.durationBeat).toBeLessThanOrEqual(motif.lengthBeats + 1e-9);    // 不越 brick 末
       }
     }
   });
 
-  it('★ 形状保留:onset 间距按输入(只吸最近整分位,displacement ≤ 1/32);时值规整但跨 bar 整音不被砍(2026-06-18 修订)', () => {
+  it('★ 对拍(2026-06-18):骨干音(强力度/长音)→ 整数拍,经过音就近吸,首音=0、顺序保持', () => {
     const bpm = 100, mpb = 60000 / bpm;
-    // 输入(beats):最后一音 onset 3.5 + 干净 1.0 拍 = 4.5(跨 barline 的合法连音)
-    const inB: [number, number][] = [[0, 0.5], [0.5, 0.5], [1.0, 1.0], [2.0, 0.5], [2.5, 0.5], [3.0, 0.5], [3.5, 1.0]];
-    const cap: CapturedMidiNote[] = inB.map(([on, du], i) => ({ midi: 60 + i, velocity: 90, onsetMs: on * mpb, durationMs: du * mpb }));
+    // 想弹 1-bar:骨干(响+长)在 0/2,经过(轻)在 1/3;弹得略不准(1.05 / 1.95 / 3.0)
+    const rows: [number, number, number][] = [[0, 0.9, 112], [1.05, 0.4, 72], [1.95, 0.9, 112], [3.0, 0.4, 72]];
+    const cap: CapturedMidiNote[] = rows.map(([on, du, vel], i) => ({ midi: 60 + i * 2, velocity: vel, onsetMs: on * mpb, durationMs: du * mpb }));
     const { motif } = analyzeAndNormalize(cap, 0, 'major', bpm);
-    // onset 间距逐对保留(输入已在整分网格 → 0 displacement)
-    const inGaps = inB.slice(1).map(([on], i) => on - inB[i][0]);
-    const outGaps = motif.notes.slice(1).map((n, i) => n.onsetBeat - motif.notes[i].onsetBeat);
-    expect(outGaps).toEqual(inGaps); // ★ 音符之间的距离不被过量改变
-    // ★ 跨 bar 的整分音值(3.5 + 1.0 → 4.5)【保留】,不再被钳到 bar 末(旧版砍成 0.5)
-    const crossing = motif.notes.find((n) => Math.abs(n.onsetBeat - 3.5) < 1e-6)!;
-    expect(crossing.durationBeat).toBeCloseTo(1.0, 6);
-    expect(crossing.onsetBeat + crossing.durationBeat).toBeCloseTo(4.5, 6); // 落在干净 8 分位(跨 barline OK)
+    expect(motif.notes[0].onsetBeat).toBe(0);                                                  // 首音对齐 beat0
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat); // 顺序保持
+    for (const n of motif.notes) expect(onGrid16OrTriplet(n.onsetBeat), `onset@${n.onsetBeat}`).toBe(true);                       // 全落等分/三连
+    // 至少骨干那两个落到整数拍(对拍成立)
+    const onInt = motif.notes.filter((n) => Math.abs(n.onsetBeat - Math.round(n.onsetBeat)) < 1e-6).length;
+    expect(onInt).toBeGreaterThanOrEqual(2);
   });
 
   it('★ 不规则跨 bar 音被【规整成整分值】(downbeat 干净),但不被钳半(2026-06-18 修订)', () => {

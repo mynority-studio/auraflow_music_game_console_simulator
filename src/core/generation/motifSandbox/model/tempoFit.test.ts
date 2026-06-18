@@ -35,15 +35,12 @@ describe('motifSandbox/tempoFit · 两阶段对拍(用户 2026-06-18)', () => {
     for (let i = 1; i < fit.notes.length; i++) expect(fit.notes[i].onset).toBeGreaterThan(fit.notes[i - 1].onset);
   });
 
-  it('★ 经过音可吸到三连音位(更接近三连的形状)', () => {
-    // 三连感:0 / 0.33 / 0.66(8 分三连),骨干在 0;span 小 → 放大到 1 bar
-    const fit = fitMotifToBricks([N(0, 0.9, 1.0), N(0.33, 0.3, 0.5), N(0.66, 0.3, 0.5), N(1.0, 0.9, 1.0)]);
-    // 至少一个经过音落在三连位(x*3 接近整数,但非 16 分位)
-    const onTriplet = fit.notes.some((x) => {
-      const t = x.onset * 3, g = x.onset * 4;
-      return Math.abs(t - Math.round(t)) < 1e-6 && Math.abs(g - Math.round(g)) > 1e-6;
-    });
-    expect(onTriplet).toBe(true);
+  it('★ 经过音落 16 分网格(三连音吸附暂缓 — weaver/伴奏输出层为 1/16)', () => {
+    const fit = fitMotifToBricks([N(0, 0.9, 1.0), N(0.4, 0.3, 0.5), N(0.9, 0.3, 0.5), N(1.0, 0.9, 1.0)]);
+    for (const x of fit.notes) {
+      const g = x.onset * 4;
+      expect(Math.abs(g - Math.round(g)), `onset@${x.onset} 落 16 分`).toBeLessThan(1e-6);
+    }
   });
 
   it('★ 时值不越 brick 末(tiling 安全),但内部不钳 barline', () => {
