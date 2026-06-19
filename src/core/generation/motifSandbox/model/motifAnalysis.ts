@@ -248,7 +248,7 @@ export interface MotifTimingAnalysis {
   quantizeErrorMean: number;
   quantizeErrorMax: number;
   hasPickup: boolean;
-  leadingRestBeats: number;  // 用户首音相对 captureStart 的【晚进量】(诊断;motif 已切头,首音 onset=0)
+  leadingRestBeats: number;  // 【signed entry offset】(诊断):>0 晚进 / =0 正好 / <0 抢进被 grace 接住(motif 已切头,首音 onset=0)
   aligned: boolean;          // 是否已切头对齐(allowPickup=false → true)
 }
 
@@ -264,8 +264,10 @@ export interface HiddenGridAnalysis {
 
 export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], ctx: HiddenGridCaptureContext, opts: HiddenGridAnalyzeOptions = {}): HiddenGridAnalysis {
   const windowBeats = ctx.captureBars * ctx.beatsPerBar; // 捕获窗(最多 4 小节)
-  // 1) 只取捕获窗内(数拍 pre-roll 已被 recorder 滤;这里防御)
-  let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -1e-6 && n.quantizedOnsetBeat < windowBeats - 1e-6);
+  // 1) 取捕获窗内 + 抢拍宽容窗(directive 2026-06-19):接受 captureStart 前 preCaptureGraceBeats 拍内的早进音
+  //    (负 quantizedOnsetBeat);更早的 count-in 仍滤。★ quantizedOnsetBeat 仅做窗口过滤,不做旋律合并 key。
+  const grace = ctx.preCaptureGraceBeats ?? 0;
+  let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -grace - 1e-6 && n.quantizedOnsetBeat < windowBeats - 1e-6);
   if (g.length === 0) throw new MotifAnalysisError('数拍后没有录到音符,请在数拍结束后开始弹。');
   // 2) 按 raw onsetBeat 排序(★ directive Phase 2:【不再】按 quantizedOnsetBeat 合并旋律音 —— 那会把落同一
   //    16 分格的真实旋律音吞掉。真同时按下的单旋律化交给 fitMotifToBricks 的 raw-onset CHORD_EPS + 撞位前推不丢音)。
@@ -273,7 +275,8 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
   if (g.length > 96) g = g.slice(0, 96);
 
   const allowPickup = opts.allowPickup ?? false;
-  const firstBeat = g[0].quantizedOnsetBeat;        // 用户首音相对 captureStart 的晚进量(诊断)
+  // ★ signed entry offset(directive 2026-06-19):>0 用户晚进 / =0 正好 / <0 用户抢进(被 grace 接住)。不止"晚进量"。
+  const firstBeat = g[0].quantizedOnsetBeat;
 
   // ★ 两阶段对拍(2026-06-18 用户):默认路径(切头)用 RAW onset 喂 fitMotifToBricks —— 等比变速锚骨干音
   //   落强拍 + 经过音吸 16 分 + 选 brick(1..captureBars)。allowPickup(保留前导休止)走旧 quantize 路径不变速。
@@ -348,7 +351,7 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     quantizeErrorMean: errs.reduce((a, b) => a + b, 0) / Math.max(1, errs.length),
     quantizeErrorMax: errs.length ? Math.max(...errs) : 0,
     hasPickup: allowPickup && firstBeat > 1e-6,
-    leadingRestBeats: firstBeat,          // 用户晚进量(诊断;切头后 motif 首音已=0)
+    leadingRestBeats: firstBeat,          // signed entry offset(诊断;>0 晚进/<0 抢进;切头后 motif 首音已=0)
     aligned: !allowPickup,
   };
   const motif: UserMotif = {

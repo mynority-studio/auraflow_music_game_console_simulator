@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createHiddenGridContext, mapRawNoteToGrid, isWithinCapture, capturedToGridNotes,
+  createHiddenGridContext, mapRawNoteToGrid, isWithinCapture, isWithinCaptureWithGrace, capturedToGridNotes,
   metricalWeight, quantizeBeat, msPerBeat,
 } from './hiddenGridClock';
 import type { CapturedMidiNote } from '../model/types';
@@ -90,5 +90,29 @@ describe('motifSandbox/hiddenGridClock(隐形时钟)', () => {
     expect(g.length).toBe(2); // 数拍那一个被滤
     expect(g[0].midi).toBe(62);
     expect(g[0].quantizedOnsetBeat).toBeCloseTo(0, 6);
+  });
+
+  it('★ 抢拍宽容(directive 2026-06-19):默认 preCaptureGraceBeats=1.0;isWithinCapture 严格 / WithGrace 接早进', () => {
+    const c = ctxOf({ startMs: 0 });
+    const mpb = msPerBeat(c);
+    expect(c.preCaptureGraceBeats).toBe(1.0);
+    expect(isWithinCapture(c.captureStartMs - 0.5 * mpb, c)).toBe(false);          // 严格:窗外
+    expect(isWithinCaptureWithGrace(c.captureStartMs - 0.5 * mpb, c)).toBe(true);  // grace:接住
+    expect(isWithinCaptureWithGrace(c.captureStartMs - 1.25 * mpb, c)).toBe(false); // 超 grace → 外
+    expect(isWithinCaptureWithGrace(c.captureEndMs, c)).toBe(false);               // 窗后 → 外
+  });
+
+  it('★ capturedToGridNotes:收 captureStart-0.5 拍早进(负 quantized);排除 -1.25 拍与窗后', () => {
+    const c = ctxOf({ startMs: 0, desiredBars: 1 });
+    const mpb = msPerBeat(c);
+    const captured: CapturedMidiNote[] = [
+      { midi: 60, velocity: 100, onsetMs: c.captureStartMs - 1.25 * mpb, durationMs: mpb }, // 超 grace → 滤
+      { midi: 62, velocity: 100, onsetMs: c.captureStartMs - 0.5 * mpb, durationMs: mpb },  // grace 内 → 收
+      { midi: 64, velocity: 100, onsetMs: c.captureStartMs + 0.5 * mpb, durationMs: mpb },  // 窗内
+      { midi: 65, velocity: 100, onsetMs: c.captureEndMs + mpb, durationMs: mpb },          // 窗后 → 滤
+    ];
+    const g = capturedToGridNotes(captured, c);
+    expect(g.map((n) => n.midi)).toEqual([62, 64]);          // 60(超 grace)、65(窗后)被滤
+    expect(g[0].quantizedOnsetBeat).toBeLessThan(0);          // 早进 → 负 quantized
   });
 });

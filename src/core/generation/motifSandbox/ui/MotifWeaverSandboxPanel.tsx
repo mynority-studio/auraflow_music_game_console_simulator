@@ -195,7 +195,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     // ★ 先把音频时钟暖起来:否则首拍 click 因 AudioContext 启动晚响 → 用户跟着晚弹 → 整段偏后。
     await ensureAudio();
     recorder.current.start({ maxMs: ctx.captureEndMs + 300 }); // 录音起点 = 暖好这一刻 = click-0 同源
-    setStatus(`◔ 数拍(BPM ${ctx.bpm})…听完 4 下开始弹`);
+    setStatus(`◔ 数拍(BPM ${ctx.bpm})…第 4 下后进;抢早 1 拍内会保留`);
     const mpb = msPerBeat(ctx);
     const countInBeats = ctx.countInBars * ctx.beatsPerBar;
     void playClick(true); // 第 0 拍立即响(已暖,无启动延迟),与 recorder.start 同源

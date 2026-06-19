@@ -31,6 +31,7 @@ export interface HiddenGridCaptureContext {
   pickupBeats: 0 | 0.5 | 1;   // Phase 1 = 0,类型预留
   captureStartMs: number;     // 数拍结束 = 隐形 beat 0
   captureEndMs: number;
+  preCaptureGraceBeats: number; // ★ 抢拍宽容窗(directive 2026-06-19):captureStart 前最多这么多拍内的早进音仍收
   clockSource: 'audioContext' | 'performance';
 }
 
@@ -84,9 +85,10 @@ export function createHiddenGridContext(opts: {
   startMs: number;
   desiredBars?: 1 | 2 | 3 | 4;   // 捕获窗最多小节数(默认 1;用户:给到 4)
   countInBars?: 1 | 2;           // 数拍小节数(默认 1)
+  preCaptureGraceBeats?: number; // 抢拍宽容窗(默认 1.0 拍;第一版不低于 0.75)
   clockSource?: 'audioContext' | 'performance';
 }): HiddenGridCaptureContext {
-  const { seed, keyPc, scaleMode, tonality, style, startMs, desiredBars = 1, countInBars: ci = 1, clockSource = 'performance' } = opts;
+  const { seed, keyPc, scaleMode, tonality, style, startMs, desiredBars = 1, countInBars: ci = 1, preCaptureGraceBeats = 1.0, clockSource = 'performance' } = opts;
   const rng = makeRng((seed ^ 0x4d2b1a7f) >>> 0);
   const [lo, hi] = BPM_RANGE[style];
   const bpm = Math.round(lo + rng.next() * (hi - lo));
@@ -99,7 +101,7 @@ export function createHiddenGridContext(opts: {
   return {
     mode: 'hiddenGrid', seed, keyPc, scaleMode, tonality, style, bpm,
     meterNumerator: 4, meterDenominator: 4, beatsPerBar: 4, gridStepsPerBeat: 4,
-    captureBars, countInBars, pickupBeats: 0, captureStartMs, captureEndMs, clockSource,
+    captureBars, countInBars, pickupBeats: 0, captureStartMs, captureEndMs, preCaptureGraceBeats, clockSource,
   };
 }
 
@@ -124,16 +126,23 @@ export function mapRawNoteToGrid(
   };
 }
 
-/** 某 ms 是否落在【捕获窗】内(数拍期/窗后 = 不收)。 */
+/** 某 ms 是否落在【严格捕获窗】内(数拍期/窗后 = 不收)。语义保持严格(测试/语义用),不要加 grace。 */
 export function isWithinCapture(ms: number, ctx: HiddenGridCaptureContext): boolean {
   return ms >= ctx.captureStartMs - 1e-6 && ms < ctx.captureEndMs - 1e-6;
 }
 
+/** ★ 抢拍宽容窗(directive 2026-06-19):captureStart 前最多 preCaptureGraceBeats 拍内的早进音也收
+ *  (用户听完第 4 下马上弹易抢进);窗后仍不收;更早的 count-in 乱弹仍被滤。 */
+export function isWithinCaptureWithGrace(ms: number, ctx: HiddenGridCaptureContext): boolean {
+  const graceMs = msPerBeat(ctx) * ctx.preCaptureGraceBeats;
+  return ms >= ctx.captureStartMs - graceMs - 1e-6 && ms < ctx.captureEndMs - 1e-6;
+}
+
 /** recorder 录到的 CapturedMidiNote[](onsetMs 相对【数拍开始】= recorder.start)→ 网格音。
- *  ★ 数拍期(onsetMs < captureStart)与窗后的音被滤掉 = count-in 不进 motif。
+ *  ★ 抢拍宽容:captureStart 前 1 拍内的早进首音仍收(grace);更早的 count-in 与窗后的音滤掉 = count-in 不整段进 motif。
  *  注:context 用 startMs=0(与 recorder 同相对帧)。不调 fitRecordingToBars。 */
 export function capturedToGridNotes(captured: readonly CapturedMidiNote[], ctx: HiddenGridCaptureContext): GridCapturedNote[] {
   return captured
-    .filter((c) => isWithinCapture(c.onsetMs, ctx))
+    .filter((c) => isWithinCaptureWithGrace(c.onsetMs, ctx))
     .map((c) => mapRawNoteToGrid({ midi: c.midi, velocity: c.velocity, onMs: c.onsetMs, offMs: c.onsetMs + c.durationMs }, ctx));
 }

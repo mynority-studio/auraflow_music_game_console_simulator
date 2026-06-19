@@ -70,6 +70,35 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat);
   });
 
+  it('★ 抢拍宽容 default(directive 2026-06-19):早进首音(cap-0.75)进 motif → 首音=60、切头 onset=0、leadingRest<0', () => {
+    const c = ctxOf();
+    const g = [note(c, 60, 100, -0.75, 0.5), note(c, 64, 95, 0, 0.5), note(c, 67, 90, 0.5, 0.5)];
+    const { motif, timing } = analyzeHiddenGridMotif(g, c);
+    expect(motif.notes.length).toBe(3);
+    expect(motif.notes[0].midi).toBe(60);          // 早进首音保留为 motif 第一音
+    expect(motif.notes[0].onsetBeat).toBe(0);       // 切头 → 0
+    expect(timing.leadingRestBeats).toBeLessThan(0); // signed:抢进为负
+    for (const n of motif.notes) expect(n.onsetBeat).toBeGreaterThanOrEqual(0); // 无负 onset
+  });
+
+  it('★ 抢拍宽容 too-early:cap-1.25(超 grace)被滤,首音=64', () => {
+    const c = ctxOf();
+    const g = [note(c, 60, 100, -1.25, 0.5), note(c, 64, 95, 0, 0.5)]; // -1.25 < -grace(1.0)→ 滤
+    const { motif } = analyzeHiddenGridMotif(g, c);
+    expect(motif.notes[0].midi).toBe(64);
+    expect(motif.notes.every((n) => n.midi !== 60)).toBe(true);
+  });
+
+  it('★ 抢拍宽容 allowPickup:早进音不丢、无负 onset、递增、首音=60', () => {
+    const c = ctxOf();
+    const g = [note(c, 60, 100, -0.75, 0.5), note(c, 64, 95, -0.5, 0.5), note(c, 67, 90, 0, 0.5)];
+    const { motif } = analyzeHiddenGridMotif(g, c, { allowPickup: true });
+    expect(motif.notes.length).toBe(3);                                   // 不丢
+    expect(motif.notes[0].midi).toBe(60);                                 // 首音=用户第一音
+    for (const n of motif.notes) expect(n.onsetBeat).toBeGreaterThanOrEqual(0); // 无负 onset
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat);
+  });
+
   it('★ Phase 2 边界(allowPickup=true,2026-06-19):同 16 分格不吞音 + 保前导休止(不切头)', () => {
     const c = ctxOf({ desiredBars: 1 });
     const g = [note(c, 60, 100, 0.13, 0.25), note(c, 64, 95, 0.18, 0.25), note(c, 67, 90, 0.5, 0.25), note(c, 69, 90, 0.75, 0.25)];
