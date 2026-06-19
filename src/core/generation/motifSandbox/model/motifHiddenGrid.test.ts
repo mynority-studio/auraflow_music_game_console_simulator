@@ -70,6 +70,16 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat);
   });
 
+  it('★ Phase 2 边界(allowPickup=true,2026-06-19):同 16 分格不吞音 + 保前导休止(不切头)', () => {
+    const c = ctxOf({ desiredBars: 1 });
+    const g = [note(c, 60, 100, 0.13, 0.25), note(c, 64, 95, 0.18, 0.25), note(c, 67, 90, 0.5, 0.25), note(c, 69, 90, 0.75, 0.25)];
+    const { motif } = analyzeHiddenGridMotif(g, c, { allowPickup: true });
+    expect(motif.notes.length, 'pickup 也不吞 → 4 音').toBe(4);
+    expect(motif.notes[0].midi, '首音=用户真实第一音 60').toBe(60);
+    expect(motif.notes[0].onsetBeat, 'pickup 保前导休止 → 首音 0.25(非切头 0)').toBeCloseTo(0.25, 6);
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat);
+  });
+
   it('★ Phase 2:密集(部分同量化格)不因 quantizedOnsetBeat 相同丢音 — onset 唯一递增', () => {
     const c = ctxOf({ desiredBars: 1 });
     const onsets = [0, 0.1, 0.22, 0.33, 0.45, 0.55, 0.7, 0.85]; // 相邻间隔均 > CHORD_EPS(0.04)→ 非和音,全保留

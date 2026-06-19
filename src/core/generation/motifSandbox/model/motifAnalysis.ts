@@ -29,6 +29,7 @@ function contourTurns(midis: number[]): boolean[] {
 }
 
 const GRID = 0.25; // 1/16 = 0.25 beat(量化网格)
+const CHORD_EPS = 0.04; // 真和音判定:raw onset 差 < 此 = 同时按下(比 16/32 分旋律间隔严;两路径共用)
 const MIN_DUR_BEAT = 0.05; // ms→beat 时的防 0 兜底
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
@@ -97,7 +98,6 @@ export function fitMotifToBricks(raw: readonly FitInputNote[], beatsPerBar = 4):
   // 0) 真和音单音化:仅【真同时按下】(raw onset 差 < CHORD_EPS ≈ 同弹)取最高音(单旋律 = 顶声部)。
   //    ★ 阈值要紧(0.04 拍):快速旋律音(32 分 ≈0.125 拍间距)绝不能被当和音合并 → 否则又吞音。
   //    不同 onset 的音【一律保留】(对拍后撞位靠前推解决,绝不吞音)。
-  const CHORD_EPS = 0.04;
   const mono: FitInputNote[] = [];
   for (const x of sorted) {
     const prev = mono[mono.length - 1];
@@ -289,12 +289,26 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     placed = fit.notes.map((x) => ({ onset: x.onset, dur: x.dur, vel: x.vel, midi: x.midi }));
     lengthBeats = Math.min(windowBeats, fit.lengthBeats); // 不超捕获窗
   } else {
-    // pickup(保留前导休止,不变速、不走 fit)→ 此分支仍按 quantizedOnsetBeat 单旋律化(局部,保旧语义)
-    const byQ = new Map<number, GridCapturedNote>();
-    for (const n of g) { const ex = byQ.get(n.quantizedOnsetBeat); if (!ex || n.midi > ex.midi) byQ.set(n.quantizedOnsetBeat, n); }
-    const gp = [...byQ.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
-    placed = gp.map((n) => ({ onset: Math.max(0, n.quantizedOnsetBeat), dur: regularDur(n.quantizedDurationBeat), vel: clamp01(n.velocity / 127), midi: n.midi }));
-    const localLastEnd = Math.max(...placed.map((x) => x.onset + x.dur));
+    // pickup(保留前导休止,不变速、不走 fit)→ ★ 同样【不按 quantizedOnsetBeat 合并吞音】(directive 2026-06-19
+    //   边界补全,UI pickup toggle 可达):真同时按下(raw onset 差 < CHORD_EPS)单旋律化取最高;其余各自落
+    //   quantized 16 分位(保前导休止,不切头),撞位前推到下一个空格【不丢音】。
+    const mono: GridCapturedNote[] = [];
+    for (const nn of g) {
+      const prev = mono[mono.length - 1];
+      if (prev && Math.abs(nn.onsetBeat - prev.onsetBeat) < CHORD_EPS) { if (nn.midi > prev.midi) mono[mono.length - 1] = nn; }
+      else mono.push(nn);
+    }
+    placed = [];
+    let last = -1;
+    for (const nn of mono) {
+      let onset = Math.max(0, nn.quantizedOnsetBeat);
+      if (onset <= last + 1e-9) onset = +(last + GRID).toFixed(6); // 撞位 → 下一个空 16 分位(保音、保序)
+      if (onset >= windowBeats - 1e-9) break;                       // 超捕获窗才丢(极端密度,罕见)
+      const dur = Math.min(regularDur(nn.quantizedDurationBeat), Math.max(GRID, windowBeats - onset));
+      placed.push({ onset, dur, vel: clamp01(nn.velocity / 127), midi: nn.midi });
+      last = onset;
+    }
+    const localLastEnd = Math.max(...placed.map((x) => x.onset + x.dur), GRID);
     lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(localLastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
   }
 
