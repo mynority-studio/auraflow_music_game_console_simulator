@@ -22,6 +22,7 @@
 //     duration scaling
 
 import type { MgNoteEvent as NoteEvent } from './mgMelodyRealizer';
+import { shouldSwingAsEighthOffbeat } from './leadGridTiming';
 
 export interface ImprovisorStyleFeel {
   /** 0.5 = straight, 0.67 = swung (jazz default), 0.75 = shuffle */
@@ -60,6 +61,9 @@ export interface RenderArgs {
   /** Optional RNG for push decisions; if omitted, push fires deterministically
    *  based on event index. */
   rng?: () => number;
+  /** ★ 快速线条网格保护(CODEX 2026-06-19):true → 连续 16 分 run 内的 .5 onset 不被当八分反拍摆动
+   *  (避免 .5→.67 与 .75 挤成 micro-IOI)。默认 false = 旧严格行为(保 MG oracle parity)。生产 jazz/blues 传 true。 */
+  protectFastRuns?: boolean;
 }
 
 /** Render style feel onto a melody event list. Returns a NEW array. */
@@ -92,7 +96,12 @@ export function renderStyleFeel(args: RenderArgs): NoteEvent[] {
     if (feel.articulation !== 'ballad') {
       const beatInMeasure = ((time % feel.beatsPerMeasure) + feel.beatsPerMeasure) % feel.beatsPerMeasure;
       const beatFrac = beatInMeasure - Math.floor(beatInMeasure);
-      if (Math.abs(beatFrac - 0.5) < 0.05 && feel.swingRatio !== 0.5) {
+      // ★ 网格所有者(2026-06-19):protectFastRuns 时用 context-aware 门 —— 16 分 run 内的 .5 不摆动;
+      //   否则保旧严格行为(任意 .5 反拍摆动,MG oracle parity)。
+      const swingThisOffbeat = args.protectFastRuns
+        ? shouldSwingAsEighthOffbeat(args.events, i, feel.swingRatio, feel.beatsPerMeasure)
+        : (Math.abs(beatFrac - 0.5) < 0.05 && feel.swingRatio !== 0.5);
+      if (swingThisOffbeat) {
         const offset = feel.swingRatio - 0.5;
         time = time + offset;
         // Shorten this offbeat to maintain beat-1 alignment for the

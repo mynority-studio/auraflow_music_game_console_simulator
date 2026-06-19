@@ -95,7 +95,8 @@ export function renderMgMelody(
   //   (jazz/blues 0.67 摆动;pop/rnb/lofi 0.5 直)。renderCoordinator 末尾的 applySwing【跳过 lead】(swing.ts:22),
   //   所以不会双重摆动 —— lead 的 swing 由这里独占,伴奏(comp/bass/drum)的 swing 由 arranger feel + 全局 applySwing 负责。
   //   ⚠️ 不要把这里压成 0.5:applySwing 既跳过 lead,压直会让 jazz lead 变直而伴奏仍摆 → lead/groove 错位(2026-06-08 实测教训)。
-  melody = renderStyleFeel({ events: melody, feel: feelForStyle(style), rng: mgRng });
+  //   ★ protectFastRuns(2026-06-19):jazz/blues 连续 16 分 run 内的 .5 不被当八分反拍摆动(防 .5→.67 挤压 micro-IOI)。
+  melody = renderStyleFeel({ events: melody, feel: feelForStyle(style), rng: mgRng, protectFastRuns: style === 'JAZZ' || style === 'BLUES' });
   // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
   const applyLofi = style === 'LOFI';
   melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);

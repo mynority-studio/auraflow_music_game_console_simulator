@@ -8,6 +8,7 @@
 import { createTimebase, midi, beats, type Timebase, type Ticks } from '../../newEngine/foundation';
 import { freezeMusicalIR, type MusicalIR, type NoteIR, type TrackMix } from '../../newEngine/ir/MusicalIR';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from '../../newEngine/render/leadArticulation';
+import { isInProtectedFastRun } from '../../newEngine/render/leadGridTiming';
 import type { MotifNote, SandboxStyle } from './types';
 import type { Accompaniment } from './accompaniment';
 
@@ -45,8 +46,11 @@ function leadMix(program: number): TrackMix {
 
 /** PlayNote[] → NoteIR[](onset 排序 + 裁到曲尾;仅同音高重叠时截短,避免 noteOff 撞掉重复音)。
  *  swingFirst>0.5 → 播放层施加摆动(下拍稳、反拍推后);单调映射不改音序/不撞重叠裁剪逻辑。 */
-function toNoteIR(notes: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number, swingFirst = 0.5): NoteIR[] {
+function toNoteIR(notes: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number, swingFirst = 0.5, protectFastRuns = false): NoteIR[] {
   const src = [...notes].sort((a, b) => a.onsetBeat - b.onsetBeat).filter((n) => n.durationBeat > 0 && n.onsetBeat < totalBeats);
+  // ★ 网格所有者(CODEX 2026-06-19):protectFastRuns 时,16 分/快速 run 内的音不施加 swungBeat(保持笔直,
+  //   防 .5→.62 与 .75 挤成 micro-IOI)。只对 lead 开;comp/bass 仍走整段 swungBeat。
+  const timed = protectFastRuns ? src.map((n) => ({ time: n.onsetBeat, duration: n.durationBeat })) : null;
   return src.map((n, i) => {
     const p = Math.round(n.midi);
     let durBeat = Math.min(n.durationBeat, totalBeats - n.onsetBeat);
@@ -54,8 +58,9 @@ function toNoteIR(notes: readonly PlayNote[], timebase: Timebase, totalBeats: nu
       if (src[j].onsetBeat >= n.onsetBeat + durBeat) break;
       if (Math.round(src[j].midi) === p) { durBeat = Math.max(0.03, src[j].onsetBeat - n.onsetBeat - 0.01); break; }
     }
-    const onB = swungBeat(n.onsetBeat, swingFirst);                         // 摆动后起点(直拍时=原值)
-    const swungDur = Math.max(0.03, swungBeat(n.onsetBeat + durBeat, swingFirst) - onB); // 时值跟摆动时间线
+    const sf = timed && swingFirst > 0.5 && isInProtectedFastRun(timed, i, 4) ? 0.5 : swingFirst; // 快速 run → 不摆
+    const onB = swungBeat(n.onsetBeat, sf);                                 // 摆动后起点(直拍/保护 run 时=原值)
+    const swungDur = Math.max(0.03, swungBeat(n.onsetBeat + durBeat, sf) - onB); // 时值跟摆动时间线
     return {
       pitch: midi(p),
       startTick: timebase.beatToTick(beats(onB)),
@@ -78,7 +83,7 @@ function timebaseOf(bpm: number): Timebase {
 /** ★ lead 轨建谱:toNoteIR(含 swing)后做【快速连音 legato】(CODEX directive 2026-06-18,jazz/blues 启用)。
  *  只动 lead durationTicks(swing 不变、pitch/start/数量不变);comp/bass 不调(伴奏发音职责不同)。 */
 function buildLeadNotes(lead: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number, style: SandboxStyle, swing: number): NoteIR[] {
-  const notes = toNoteIR(lead, timebase, totalBeats, defaultVel, swing);
+  const notes = toNoteIR(lead, timebase, totalBeats, defaultVel, swing, true); // ★ lead 开网格保护(快速 run 不摆动)
   return connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
 }
 

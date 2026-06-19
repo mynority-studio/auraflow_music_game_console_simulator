@@ -4,6 +4,7 @@ import { generateMotifWeave } from './motifWeaver';
 import { generateSampleCaptured } from './motifAnalysis';
 import { buildAccompaniment } from './accompaniment';
 import { leadLegatoMetrics, connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from '../../newEngine/render/leadArticulation';
+import type { MotifNote } from './types';
 
 const weave = (style: 'jazz' | 'pop', seed: number) =>
   generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', seed % 4), style, keyPc: 0, mode: 'major', bpm: 96, seed });
@@ -38,6 +39,23 @@ describe('motifSandbox/leadOnlyIr · 快速 lead 连音 legato(CODEX directive �
     //   而 comp/bass 走各自 toNoteIR(代码上只有 buildLeadNotes 接 legato)。
     const leadOnly = buildLeadOnlyIr(r.lead, 120, 'jazz').tracks[0];
     expect(lead.notes.map((n) => n.durationTicks)).toEqual(leadOnly.notes.map((n) => n.durationTicks));
+  });
+
+  it('§9.3 网格保护:jazz preview 的 16 分 run(0/.25/.5/.75/1)不被摆成挤压 — 无 IOI < ppq*0.12,连音仍触碰', () => {
+    // 手搓一条全 16 分 lead(2 bar)
+    const lead: MotifNote[] = Array.from({ length: 8 }, (_, i) => ({
+      midi: 60 + (i % 4), onsetBeat: i * 0.25, durationBeat: 0.25, velocity: 0.8,
+      scaleDegree: 1, octave: 5, accent: 0.5, structuralToneScore: 0.5,
+    }));
+    const ir = buildLeadOnlyIr(lead, 140, 'jazz');
+    const notes = ir.tracks[0].notes;
+    const ppq = ir.timebase.ppq;
+    // 无相邻 IOI < ppq*0.12(挤压消失)
+    const ns = [...notes].sort((a, b) => (a.startTick as number) - (b.startTick as number));
+    let minGap = Infinity;
+    for (let i = 1; i < ns.length; i++) minGap = Math.min(minGap, (ns[i].startTick as number) - (ns[i - 1].startTick as number));
+    expect(minGap, 'jazz 16分 run 无 micro-IOI').toBeGreaterThanOrEqual(ppq * 0.12);
+    expect(leadLegatoMetrics(notes, ppq).samePitchCollisionCount).toBe(0);
   });
 
   it('非 jazz(pop)preview lead 不被 legato 改:再跑 jazz legato 会改(证明 pop 没连过)', () => {
