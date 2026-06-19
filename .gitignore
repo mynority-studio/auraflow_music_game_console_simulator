@@ -15,3 +15,6 @@ scripts/*.h
 .claude/scheduled_tasks.lock
 
 .deps
+
+# 本地分析产物（MIDI 导出、A/B 对比等，不提交 — 见 directive §10）
+tmp/
