@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle, leadLegatoMetrics } from './leadArticulation';
 import { generateSong } from '../generation/GenerationController';
-import { midi, ticks } from '../foundation';
-import type { NoteIR } from '../ir/MusicalIR';
+import { buildBandSpec } from '../band/bandEngine';
+import { buildArrangementPlan } from '../arranger/arranger';
+import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
+import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
+import { renderSongFull } from './renderCoordinator';
+import { midi, ticks, createTimebase, createRandomContext, beats } from '../foundation';
+import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 const PPQ = 480;
 const n = (pitch: number, startTick: number, durationTicks: number, velocity = 85): NoteIR =>
@@ -67,5 +72,34 @@ describe('render/leadArticulation · 快速 lead 连音 legato(CODEX directive 2
       const song = generateSong({ seed: 5, styleHint: style, mood: 'build', targetDuration: 96 });
       expect(song.status).not.toBe('failed');
     }
+  });
+
+  // 走 A:override(motif)lead 也接 legato —— renderCoordinator 末步安全闸对【所有 lead 轨】生效(不分 MG/override)。
+  function setup(seed: number, style: string) {
+    const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
+    const arr = buildArrangementPlan(band, { rng: createRandomContext(seed) });
+    const instr = buildInstrumentationPlan(band, arr, createRandomContext(seed).substream('timbre'));
+    const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
+    const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
+    return { band, arr, instr, plan, tb };
+  }
+  // 故意 staccato 的快速 lead(dur 60 << IOI 240)→ jazz 应被连起来,pop 不连
+  const staccatoOverride = (): TrackIR => ({
+    role: 'lead',
+    notes: Array.from({ length: 16 }, (_, i) => ({ pitch: midi(72 + (i % 2) * 2), startTick: ticks(i * 240), durationTicks: ticks(60), velocity: 90 })),
+  });
+
+  it('★ 走 A:override(motif)lead 也接 legato — jazz 连起来(触碰率≥0.8)、pop 不连(staccato 留空)', () => {
+    const ov = staccatoOverride();
+    const j = setup(3, 'jazz');
+    const jLead = renderSongFull(j.band, j.arr, j.plan, j.instr, j.tb, createRandomContext(3), undefined, ov).ir.tracks.find((t) => t.role === 'lead')!;
+    const jm = leadLegatoMetrics(jLead.notes, j.tb.ppq);
+    const p = setup(3, 'pop');
+    const pLead = renderSongFull(p.band, p.arr, p.plan, p.instr, p.tb, createRandomContext(3), undefined, ov).ir.tracks.find((t) => t.role === 'lead')!;
+    const pm = leadLegatoMetrics(pLead.notes, p.tb.ppq);
+    expect(jm.touchOrTinyGapRate, 'jazz override 连起来').toBeGreaterThanOrEqual(0.8);
+    expect(pm.touchOrTinyGapRate, 'pop override 不连(staccato)').toBeLessThan(0.5);
+    expect(jm.touchOrTinyGapRate, 'jazz 比 pop 更连').toBeGreaterThan(pm.touchOrTinyGapRate);
+    expect(jm.samePitchCollisionCount, 'jazz override 同音撞=0').toBe(0);
   });
 });

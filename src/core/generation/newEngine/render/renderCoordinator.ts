@@ -358,8 +358,9 @@ export function renderSongFull(
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks);
   // ★ 快速 lead 连音 legato【最终安全闸】(CODEX directive 2026-06-18,jazz/blues):renderMgMelody 里已按干净
-  //   时序连过一遍,但 humanizeTiming 抖动 onset 会把触碰的快速音重新撞出微重叠 → 这里按【最终时序】再连一遍,
+  //   时序连过一遍,但 humanizeTiming/fillLeadBarGaps 会把触碰的快速音重新撞出微重叠 → 这里按【最终时序】再连一遍,
   //   保证末态触碰 + 同音高无 noteOff 撞。只改 lead durationTicks(不动 pitch/start/数量);comp/bass/pad/drum 不碰。
+  //   ★ 对【所有 lead 轨】生效,不分来源 —— 既覆盖 MG lead,也覆盖【走 A override lead】(Q+R motif 整编,用户 2026-06-19)。
   const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, timebase.ppq);
   const articulatedTracks = legatoOpts.enabled
     ? humanizedTracks.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
