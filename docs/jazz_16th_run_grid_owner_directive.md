@@ -145,6 +145,38 @@ PlayNote[]
 
 Q+R has a different swing implementation, but it still needs the same fast-line protection policy so a user motif / weaver-generated 16th run is not mangled at preview render time.
 
+### 2.1 Boundary: Q+R -> Q+N "Route A" Override Lead
+
+There is one important boundary that should not be mistaken for a missing integration.
+
+The Route A full-arrangement path:
+
+```text
+motifSandbox user motif / weaver lead
+-> sandboxToOverride
+-> renderSongFull(..., overrideLeadTrack)
+```
+
+does not go through:
+
+- `renderMgMelody()`
+- `mgStyleRenderer.ts`
+- `leadOnlyIr.ts`
+
+Therefore this grid-owner fix will not automatically run on the Route A override lead.
+
+That is expected for Phase 1.
+
+Reason:
+
+- Route A lead is already snapped by the motif hidden-grid / two-stage alignment flow.
+- It does not pass through the MG `.5 -> .67` swing transform.
+- It already receives the final `connectFastLeadNoteIR()` safety gate in `renderCoordinator.ts`.
+
+So Route A currently has the legato safety fix, but it should not need this specific MG/Q+R swing squeeze fix unless a future change adds swing timing to override leads.
+
+Do not add a new Route A timing pass in this task unless a failing test proves the same `0.25 -> 0.67 -> 0.75` squeeze exists there.
+
 ## 3. Design Decision
 
 Keep the existing fast-note legato utility.

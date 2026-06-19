@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { renderStyleFeel, feelForStyle } from './mgStyleRenderer';
-import { isInProtectedFastRun, shouldSwingAsEighthOffbeat, beatFracOf } from './leadGridTiming';
+import { isInProtectedFastRun, shouldSwingAsEighthOffbeat, beatFracOf, leadGridMetrics } from './leadGridTiming';
 import { generateSong } from '../generation/GenerationController';
+import { generateSongFromMotif } from '../generation/generateSongFromMotif';
+import { buildMotifSongOverride } from '../../motifSandbox/bridge/sandboxToOverride';
+import { generateMotifWeave } from '../../motifSandbox/model/motifWeaver';
+import { generateSampleCaptured } from '../../motifSandbox/model/motifAnalysis';
 import { leadLegatoMetrics } from './leadArticulation';
 import type { MgNoteEvent } from './mgMelodyRealizer';
 
@@ -74,5 +78,20 @@ describe('render/leadGridTiming · 快速线条网格所有者(CODEX directive 2
     let minGap = Infinity;
     for (let i = 1; i < ns.length; i++) minGap = Math.min(minGap, (ns[i].startTick as number) - (ns[i - 1].startTick as number));
     expect(minGap, 'min adjacent IOI ticks').toBeGreaterThanOrEqual(ppq * 0.12);
+  });
+
+  // §2.1 边界守卫:走 A(override lead)本就无挤压 —— 已 16 分对齐 + 不过 MG/Q+R swing 变换 →【无需】Route A timing pass。
+  //   若未来给 override lead 加 swing 而重现 .25→.67→.75 挤压,此测会失败 → 提示按 directive §2.1 末句补 Route A pass。
+  it('§2.1 边界:走 A jazz override lead 无 micro-IOI / 无挤压(确认无需 Route A timing pass)', () => {
+    for (const seed of [3, 7, 564417]) {
+      const r = generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', seed % 4), style: 'jazz', keyPc: 0, mode: 'major', bpm: 96, seed });
+      const ov = buildMotifSongOverride(r, 0, 'major');
+      const song = generateSongFromMotif({ seed, styleHint: 'jazz', mood: 'build', targetDuration: 120 }, ov);
+      const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
+      const ppq = song.ir!.timebase.ppq;
+      expect(leadLegatoMetrics(lead.notes, ppq).microIoiCount, `seed${seed} 走A microIoi`).toBe(0);
+      const ev = lead.notes.map((n) => ({ time: (n.startTick as number) / ppq, duration: (n.durationTicks as number) / ppq }));
+      expect(leadGridMetrics(ev, 4).squeezedSwing16thCount, `seed${seed} 走A squeeze`).toBe(0);
+    }
   });
 });
