@@ -9,6 +9,7 @@ import { createTimebase, midi, beats, type Timebase, type Ticks } from '../../ne
 import { freezeMusicalIR, type MusicalIR, type NoteIR, type TrackMix } from '../../newEngine/ir/MusicalIR';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from '../../newEngine/render/leadArticulation';
 import { isInProtectedFastRun } from '../../newEngine/render/leadGridTiming';
+import { sanitizeLeadNoteIR } from '../../newEngine/render/leadSanitizer';
 import type { MotifNote, SandboxStyle } from './types';
 import type { Accompaniment } from './accompaniment';
 
@@ -84,7 +85,10 @@ function timebaseOf(bpm: number): Timebase {
  *  只动 lead durationTicks(swing 不变、pitch/start/数量不变);comp/bass 不调(伴奏发音职责不同)。 */
 function buildLeadNotes(lead: readonly PlayNote[], timebase: Timebase, totalBeats: number, defaultVel: number, style: SandboxStyle, swing: number): NoteIR[] {
   const notes = toNoteIR(lead, timebase, totalBeats, defaultVel, swing, true); // ★ lead 开网格保护(快速 run 不摆动)
-  return connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
+  // ★ 单声部 tick 域清洗(directive Phase 4):同 start+pitch 合并、同 pitch overlap 消解 —— 必须在 legato【之前】
+  //   (legato 用 IOI=next−cur 算,同 start 两音 IOI=0 会被跳过 → 必须先 sanitize 合并)。
+  const clean = sanitizeLeadNoteIR(notes);
+  return connectFastLeadNoteIR(clean, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
 }
 
 /** 每小节一脚【延音踏板】(微微):小节头踩下、下一小节前略抬 → 音尾 ring、换小节干净不糊。 */

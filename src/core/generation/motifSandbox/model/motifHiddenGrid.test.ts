@@ -59,6 +59,26 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     expect(onInt).toBeGreaterThanOrEqual(3);
   });
 
+  it('★ Phase 2(directive 2026-06-19):首音落同 16 分格不被吞 — raw 60@.13/64@.18/67@.5/69@.75 → 4 音、首音=60@0', () => {
+    const c = ctxOf({ desiredBars: 1 });
+    // 0.13 与 0.18 都量化到 0.25(同格);旧版按 quantizedOnsetBeat 合并会吞掉 60 或 64
+    const g = [note(c, 60, 100, 0.13, 0.25), note(c, 64, 95, 0.18, 0.25), note(c, 67, 90, 0.5, 0.25), note(c, 69, 90, 0.75, 0.25)];
+    const { motif } = analyzeHiddenGridMotif(g, c);
+    expect(motif.notes.length, '4 音都在(不吞)').toBe(4);
+    expect(motif.notes[0].midi, '首音=用户真实第一音 60').toBe(60);
+    expect(motif.notes[0].onsetBeat, '切头 → beat0').toBe(0);
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat);
+  });
+
+  it('★ Phase 2:密集(部分同量化格)不因 quantizedOnsetBeat 相同丢音 — onset 唯一递增', () => {
+    const c = ctxOf({ desiredBars: 1 });
+    const onsets = [0, 0.1, 0.22, 0.33, 0.45, 0.55, 0.7, 0.85]; // 相邻间隔均 > CHORD_EPS(0.04)→ 非和音,全保留
+    const g = onsets.map((o, i) => note(c, 60 + i, 90, o, 0.12));
+    const { motif } = analyzeHiddenGridMotif(g, c);
+    expect(motif.notes.length, '密集音不被同格吞').toBe(onsets.length);
+    for (let i = 1; i < motif.notes.length; i++) expect(motif.notes[i].onsetBeat).toBeGreaterThan(motif.notes[i - 1].onsetBeat);
+  });
+
   it('2-bar 捕获 → lengthBeats=8', () => {
     const c = ctxOf({ style: 'jazz', desiredBars: 2 });
     expect(c.captureBars).toBe(2);

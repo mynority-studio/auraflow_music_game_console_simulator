@@ -267,10 +267,9 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
   // 1) 只取捕获窗内(数拍 pre-roll 已被 recorder 滤;这里防御)
   let g = gridNotes.filter((n) => n.quantizedOnsetBeat >= -1e-6 && n.quantizedOnsetBeat < windowBeats - 1e-6);
   if (g.length === 0) throw new MotifAnalysisError('数拍后没有录到音符,请在数拍结束后开始弹。');
-  // 2) 单旋律化:同量化位取最高音
-  const byOnset = new Map<number, GridCapturedNote>();
-  for (const n of g) { const ex = byOnset.get(n.quantizedOnsetBeat); if (!ex || n.midi > ex.midi) byOnset.set(n.quantizedOnsetBeat, n); }
-  g = [...byOnset.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
+  // 2) 按 raw onsetBeat 排序(★ directive Phase 2:【不再】按 quantizedOnsetBeat 合并旋律音 —— 那会把落同一
+  //    16 分格的真实旋律音吞掉。真同时按下的单旋律化交给 fitMotifToBricks 的 raw-onset CHORD_EPS + 撞位前推不丢音)。
+  g = [...g].sort((a, b) => a.onsetBeat - b.onsetBeat);
   if (g.length > 96) g = g.slice(0, 96);
 
   const allowPickup = opts.allowPickup ?? false;
@@ -290,7 +289,11 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     placed = fit.notes.map((x) => ({ onset: x.onset, dur: x.dur, vel: x.vel, midi: x.midi }));
     lengthBeats = Math.min(windowBeats, fit.lengthBeats); // 不超捕获窗
   } else {
-    placed = g.map((n) => ({ onset: Math.max(0, n.quantizedOnsetBeat), dur: regularDur(n.quantizedDurationBeat), vel: clamp01(n.velocity / 127), midi: n.midi }));
+    // pickup(保留前导休止,不变速、不走 fit)→ 此分支仍按 quantizedOnsetBeat 单旋律化(局部,保旧语义)
+    const byQ = new Map<number, GridCapturedNote>();
+    for (const n of g) { const ex = byQ.get(n.quantizedOnsetBeat); if (!ex || n.midi > ex.midi) byQ.set(n.quantizedOnsetBeat, n); }
+    const gp = [...byQ.values()].sort((a, b) => a.quantizedOnsetBeat - b.quantizedOnsetBeat);
+    placed = gp.map((n) => ({ onset: Math.max(0, n.quantizedOnsetBeat), dur: regularDur(n.quantizedDurationBeat), vel: clamp01(n.velocity / 127), midi: n.midi }));
     const localLastEnd = Math.max(...placed.map((x) => x.onset + x.dur));
     lengthBeats = Math.max(ctx.beatsPerBar, Math.min(windowBeats, Math.ceil(localLastEnd / ctx.beatsPerBar - 1e-6) * ctx.beatsPerBar));
   }

@@ -42,6 +42,10 @@ export class MidiMotifRecorder {
     if (!this.active) return false;
     const t = this.elapsedMs();
     if (t >= this.maxMs) { this.stop(); return true; }
+    // ★ 同 pitch 重触发 = 【重触发,不是覆盖】(directive Phase 1):该 pitch 已 open → 先把旧 note commit 到现在
+    //   (保留为独立 captured note,不静默吞),再开新 note。
+    const prev = this.open.get(midi);
+    if (prev) this.commit(midi, prev.onsetMs, prev.velocity, t);
     this.open.set(midi, { onsetMs: t, velocity: Math.max(1, Math.min(127, velocity)) });
     return false;
   }

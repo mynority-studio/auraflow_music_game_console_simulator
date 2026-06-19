@@ -25,6 +25,7 @@ import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 import { DEFAULT_BUDGET, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
 import { runGenerationControl, type GenerationResult, type RenderFn } from './GenerationController';
+import { sanitizeLeadNoteIR } from '../render/leadSanitizer';
 
 /** 权威 lead 音(beats 制,timebase-无关):Q+R 把 MotifNote[] 映射成它,generateSongFromMotif 用 Q+N
  *  timebase 转 tick。pitch 0..127、velocity 1..127、时间用拍。 */
@@ -114,7 +115,8 @@ function motifLeadToTrackIR(notes: readonly MotifLeadNote[], timebase: Timebase)
       durationTicks: timebase.beatToTick(beats(Math.max(0.05, n.durationBeat))),
       velocity: Math.max(1, Math.min(127, Math.round(n.velocity))),
     }));
-  return { role: 'lead', notes: irNotes };
+  // ★ tick 域单声部清洗(directive Phase 4):走 A lead 进 Q+N 前消除同 pitch overlap(否则 noteOff 撞掉 noteOn)
+  return { role: 'lead', notes: sanitizeLeadNoteIR(irNotes) };
 }
 
 /** 走 A 并行入口:Q+R 产物注入 Q+N 成曲生产链。override 缺省时行为与 generateSong 完全一致。 */

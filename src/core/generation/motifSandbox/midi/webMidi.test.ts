@@ -49,6 +49,21 @@ describe('motifSandbox/MidiMotifRecorder', () => {
     expect(notes[0].durationMs).toBe(700); // 补到 stop
   });
 
+  it('★ 同 pitch 重触发不覆盖旧音(directive Phase 1):noteOn 60@0 / noteOn 60@80 / noteOff 60@160 → 2 个音', () => {
+    let t = 0;
+    const rec = new MidiMotifRecorder(() => t);
+    rec.start();
+    t = 0; rec.noteOn(60, 100);
+    t = 80; rec.noteOn(60, 90);   // 同 pitch 重触发 → 先 commit 旧音(onset0)再开新音(onset80)
+    t = 160; rec.noteOff(60);
+    const notes = rec.stop();
+    expect(notes.length).toBe(2);
+    expect(notes[0]).toMatchObject({ midi: 60, onsetMs: 0 });   // 旧音保留(onset 0)
+    expect(notes[1]).toMatchObject({ midi: 60, onsetMs: 80 });  // 新音(onset 80)
+    expect(notes[0].durationMs).toBeGreaterThanOrEqual(60);     // 旧音 ≥ MIN_DUR
+    expect(notes[1].durationMs).toBeGreaterThanOrEqual(60);
+  });
+
   it('超过 4 秒的 noteOn 自动停止', () => {
     let t = 0;
     const rec = new MidiMotifRecorder(() => t);
