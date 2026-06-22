@@ -43,26 +43,17 @@ function regularDur(durBeat: number): number {
 }
 
 // ============================================================
-// ★ 两阶段对拍(2026-06-18 用户):固定 song BPM 下,把 motif【整体等比缩放】令骨干音落强拍,
-//   再把经过音就近吸到 16 分 / 三连音位。缩放限 ×0.5–×2(8分↔16分↔4分),自动选 1/2/.. bar。
-//   —— "用改速度对拍,不用挪音符对拍":相对位置由缩放保持,只有骨干音锚强拍 + 经过音轻吸附。
+// ★ 贴 16 分网格(2026-06-22 用户重写):取代旧"两阶段对拍/整体变速+骨干锚强拍"——后者把均匀节奏挤成"每拍贴俩"
+//   还偶尔掉音。新法:轻微整体缩放贴合 bar(s≈1)+ 逐音吸最近 16 分(不锚强拍)+ 保所有音(撞位前推/扩 grid)。
+//   旧"用改速度对拍"思路【作废】(均匀输入下几乎每个音被判骨干 → 抢拍位 → 级联挤压,实测均匀八分→0/0.25 堆叠)。
 // ============================================================
-const SCALE_MIN = 0.5, SCALE_MAX = 2.0; // 等比缩放上下限(8分↔16分↔4分)
+const SCALE_MIN = 0.85, SCALE_MAX = 1.0; // ★ 轻微贴合 bar = 【只压不拉】(2026-06-22):span 稍超一个 bar → 轻压收进整 bar;
+//   span 不足一个 bar 一律 s=1(不拉伸)—— 拉伸会把用户【弹在拍上】的音推离拍(末音落 beat3 时尤甚)。s≈1 → 节奏保真。
 const snap16 = (x: number): number => Math.round(x / GRID) * GRID;
-/** 经过音就近吸附 → 16 分网格。
- *  ⚠️ 三连音吸附(用户 2026-06-18 "三连音形状")【暂缓】:weaver 输出层 line 476 把 lead onset 硬吸 1/16
- *  (ONSET_GRID,与伴奏稳稳对拍),伴奏击点也按 1/16 → motif 出现三连位会被下游重吸成 1/16、毁掉 verbatim quote。
- *  接三连需让 weaver/伴奏/IR 全链三连感知(单独工程)。当前先做核心 16 分对拍。 */
+/** 逐音就近吸附 → 16 分网格。
+ *  ⚠️ 三连音吸附【暂缓】:weaver 输出层 line 476 把 lead onset 硬吸 1/16(伴奏击点也 1/16)→ motif 三连位会被
+ *  下游重吸成 1/16、毁掉 verbatim quote。接三连需 weaver/伴奏/IR 全链三连感知(单独工程)。当前 16 分网格。 */
 const snapPassing = (x: number): number => snap16(x);
-/** 四分拍的节拍强度:下拍 1.0 > 半小节 0.7 > 弱四分 0.4;非四分位 = 0(不是落拍点)。 */
-function quarterStrength(pos: number, beatsPerBar: number): number {
-  const b = ((pos % beatsPerBar) + beatsPerBar) % beatsPerBar;
-  const q = Math.round(b);
-  if (Math.abs(b - q) > 0.12) return 0;
-  if (q === 0) return 1.0;
-  if (q * 2 === beatsPerBar) return 0.7;
-  return 0.4;
-}
 
 export interface FitInputNote { onset: number; dur: number; vel: number; midi: number; }
 export interface MotifFitNote extends FitInputNote { structural: boolean; }
@@ -89,63 +80,36 @@ function preFitStructural(notes: readonly FitInputNote[]): boolean[] {
   return flags;
 }
 
-/** ★ 两阶段对拍主函数。输入须【首音已对齐到 onset 0】(free=t0 对齐 / hidden-grid=切头)。
- *  阶段一:等比缩放 s(∈[0.5,2]) + 选 brick 小节数 N → 骨干音落强拍(下拍/半小节优先);
- *  阶段二:骨干音吸最近四分拍,经过音就近吸 16分/三连;时值规整;同拍位取最高音;钳在 brick 末。 */
+/** ★ 贴 16 分网格(用户 2026-06-22 重写 · Option B「轻微贴合 bar + 逐音贴 16 分」):
+ *  ① 真和音单音化(CHORD_EPS);② bar 数 = 自然长度(span 取整 bar,1..4),【轻微整体缩放】令 span 正好填满
+ *     N bar(s≈1,不挤压均匀节奏,只把稍长/稍短收进整 bar);③ 逐音吸最近 16 分 —— ★【不再骨干锚强拍】
+ *     (旧版把均匀节奏挤成"每拍贴俩"的根因:均匀输入下几乎每个音都被判骨干 → 全抢四分拍位 → 撞位级联);
+ *     撞位前推不丢音,超末则扩 grid(≤4 bar)绝不丢音。时值贴 16 分(钳在 grid 末,内部不钳 barline)。
+ *  输入须【首音已对齐到 onset 0】(free=t0 对齐 / hidden-grid=切头)。 */
 export function fitMotifToBricks(raw: readonly FitInputNote[], beatsPerBar = 4): MotifFit {
   const sorted = [...raw].sort((a, b) => a.onset - b.onset);
   if (sorted.length === 0) return { notes: [], lengthBeats: beatsPerBar, scale: 1, barCount: 1 };
-  // 0) 真和音单音化:仅【真同时按下】(raw onset 差 < CHORD_EPS ≈ 同弹)取最高音(单旋律 = 顶声部)。
-  //    ★ 阈值要紧(0.04 拍):快速旋律音(32 分 ≈0.125 拍间距)绝不能被当和音合并 → 否则又吞音。
-  //    不同 onset 的音【一律保留】(对拍后撞位靠前推解决,绝不吞音)。
+  // ① 真和音单音化:仅【真同时按下】(raw onset 差 < CHORD_EPS)取最高音;不同 onset 一律保留(撞位前推不丢音)
   const mono: FitInputNote[] = [];
   for (const x of sorted) {
     const prev = mono[mono.length - 1];
     if (prev && Math.abs(x.onset - prev.onset) < CHORD_EPS) { if (x.midi > prev.midi) mono[mono.length - 1] = x; }
     else mono.push(x);
   }
-  const span = Math.max(...mono.map((x) => x.onset + x.dur), GRID);
   const struct = preFitStructural(mono);
-  const structOnsets = mono.filter((_, i) => struct[i]).map((x) => x.onset);
-
-  // 候选 brick 小节数 N:基准缩放 baseS=beatsPerBar*N/span 落在 [0.5,2] 内才算(否则缩放离谱)
-  const cand: number[] = [];
-  for (let N = 1; N <= 4; N++) { const bs = (beatsPerBar * N) / span; if (bs >= SCALE_MIN - 1e-9 && bs <= SCALE_MAX + 1e-9) cand.push(N); }
-  if (cand.length === 0) cand.push(Math.max(1, Math.min(4, Math.round(span / beatsPerBar)))); // span 极端 → 就近取整 bar
-
-  // 骨干音落点 = 【brick 内】最近四分拍(0..lengthBeats-1);lengthBeats 本身=下个 brick 下拍,不是合法落点
-  const placeStrong = (pos: number, lenN: number): number => Math.max(0, Math.min(lenN - 1, Math.round(pos)));
-  const clampS = (x: number): number => Math.min(SCALE_MAX, Math.max(SCALE_MIN, x));
-  const naturalN = Math.max(1, Math.min(4, Math.round(span / beatsPerBar))); // motif 自然小节数(只在对拍强烈更优时才偏离)
-  let best: { N: number; s: number; cost: number } | null = null;
-  for (const N of cand) {
-    const lenN = beatsPerBar * N;
-    const baseS = clampS(lenN / span); // span 极端 → 基准已钳进 [0.5,2]
-    for (let k = -40; k <= 40; k++) {
-      const s = clampS(baseS * (1 + k * 0.01)); // 钳进幅度限内(不丢候选 → best 必有解)
-      let sc = 0;
-      for (const on of structOnsets) {
-        const target = placeStrong(s * on, lenN); // 只瞄 brick 内四分拍(不奖励落到 brick 外下拍)
-        sc += Math.abs(s * on - target) + 0.25 * (1 - quarterStrength(target, beatsPerBar));
-      }
-      const cost = sc / Math.max(1, structOnsets.length)
-        + 0.30 * Math.abs(Math.log(s))         // 抗过度缩放(s=1→0)
-        + 0.12 * Math.abs(N - naturalN);        // 偏好自然小节数(防为追下拍硬摊成更长 brick)
-      if (!best || cost < best.cost - 1e-12) best = { N, s, cost };
-    }
-  }
-  const { N, s } = best!;
-  const lengthBeats = beatsPerBar * N;
-
-  // 应用 + 撞位【前推不丢音】:骨干→brick 内四分拍;经过→就近 16 分;落点已被占 → 推到下一个空 16 分位
-  //   → 单旋律每 onset 唯一,绝不"同位取最高吞音"+不留错误音。只有推到 brick 末仍无位才丢(极端密度,罕见)。
+  const span = Math.max(...mono.map((x) => x.onset + x.dur), GRID);
+  // ② bar 数 = 自然长度;轻微整体缩放让 span 正好填满 N bar(s≈1 → 不挤压均匀节奏)
+  let N = Math.max(1, Math.min(4, Math.round(span / beatsPerBar)));
+  let lengthBeats = beatsPerBar * N;
+  const s = Math.min(SCALE_MAX, Math.max(SCALE_MIN, lengthBeats / span));
+  // ③ 逐音吸最近 16 分(无骨干锚强拍 → 均匀节奏保真);撞位前推不丢音;超末扩 grid;时值贴 16 分钳 grid 末
   const out: MotifFitNote[] = [];
   let last = -1;
   mono.forEach((x, i) => {
-    const pos = s * x.onset;
-    let onset = struct[i] ? placeStrong(pos, lengthBeats) : Math.max(0, Math.min(lengthBeats - GRID, snapPassing(pos)));
-    if (onset <= last + 1e-9) onset = +(last + GRID).toFixed(6); // 撞位 → 下一个空 16 分位(保音、保序)
-    if (onset > lengthBeats - GRID + 1e-9) return;               // 实在塞不下 brick 才丢(极端密度,罕见)
+    let onset = Math.max(0, snapPassing(s * x.onset));
+    if (onset <= last + 1e-9) onset = +(last + GRID).toFixed(6);                       // 撞位 → 下一个空 16 分位
+    while (onset >= lengthBeats - 1e-9 && N < 4) { N++; lengthBeats = beatsPerBar * N; } // 超末 → 扩 grid 不丢音
+    if (onset >= lengthBeats - 1e-9) return;                                            // 4 bar 仍放不下(>64 个 16 分)→ 丢(极端)
     const dur = Math.min(regularDur(s * x.dur), Math.max(GRID, lengthBeats - onset));
     out.push({ onset, dur, vel: x.vel, midi: x.midi, structural: struct[i] });
     last = onset;
