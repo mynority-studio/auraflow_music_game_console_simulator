@@ -12,6 +12,7 @@ import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledg
 import { buildChordPart, type MgChordDef } from '../../newEngine/render/mgChordPart';
 import { parseRoadMap, type BrickMatch } from '../../newEngine/render/mgRoadMapParser';
 import { makeChord, type SandboxChord } from './chords';
+import { isInScale } from './scale';
 import type { ScaleMode } from './types';
 import type { SelectedMotifProgression, MotifMelodicRoadmap, RoadmapBrickSlot, RoadmapBrickType } from './melodicBrickTypes';
 
@@ -83,21 +84,40 @@ function fallbackSlotsPerChord(chords: readonly SandboxChord[], sectionId?: stri
   }));
 }
 
-/** 选中模板 slots → SandboxChord[]:逐 slot(保半小节 beats),带【调内三和弦 + 真实和声】。 */
+/** 调内 chordType 串(由【根→各和弦音】音程推):走 A narrowQuality 用,保 7 窄品质可分类。 */
+function typeFromTones(rootPc: number, tonePcs: readonly number[]): string {
+  const ivs = new Set(tonePcs.map((pc) => m12(pc - rootPc)));
+  const dim = ivs.has(3) && ivs.has(6), maj7 = ivs.has(11), dom7 = ivs.has(10);
+  if (dim) return dom7 ? 'm7b5' : 'dim';
+  if (ivs.has(3)) return dom7 ? 'm7' : maj7 ? 'mMaj7' : 'min';
+  return maj7 ? 'maj7' : dom7 ? '7' : 'maj';
+}
+
+/** 选中模板 slots → SandboxChord[]:逐 slot(保半小节 beats),带【调内三和弦 + 真实和声】。
+ *  ★ 约束在旋律调内(用户 2026-06-22):真实和声若带调外音(副属/借和弦/7b13/7b9/m9…)→ 退到调内三和弦
+ *  + 保留【调内延伸(七/九)】,丢调外音;effectiveTonePcs/realRootPc/realRoman/realType 全部回调内,
+ *  → 旋律/伴奏/bass/走A 与旋律音阶【正交】。全调内的真实和声(如 V7/IVmaj7)原样保留色彩。 */
 export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc: number, mode: ScaleMode): SandboxChord[] {
   const out: SandboxChord[] = [];
   let beat = 0;
+  const inKey = (pc: number): boolean => isInScale(60 + pc, keyPc, mode);
   for (const s of slots) {
     const beats = s.beats ?? BAR;
     const diatonic = makeChord(deg17(s.scaleDegree), keyPc, mode, beat, beats); // 旋律用(保调内)
-    const realRootPc = m12(keyPc + s.rootOffset);
+    const realRootRaw = m12(keyPc + s.rootOffset);
     const ivs = chordTypeIntervals(normalizeChordType(s.type) ?? 'maj');
-    out.push({
-      ...diatonic,
-      realRoman: s.roman, realType: s.type, realRootPc,
-      realTonePcs: [...new Set(ivs.map((iv) => m12(realRootPc + iv)))],
-      borrowedSource: s.borrowedSource, effectiveFunc: s.effectiveFunc,
-    });
+    const rawReal = [...new Set(ivs.map((iv) => m12(realRootRaw + iv)))];
+    const outOfKey = !inKey(realRootRaw) || rawReal.some((pc) => !inKey(pc));
+    if (!outOfKey) {
+      // 全调内 → 原样保留真实和声色彩(V7 / IVmaj7 / ii9 等)
+      out.push({ ...diatonic, realRoman: s.roman, realType: s.type, realRootPc: realRootRaw, realTonePcs: rawReal, borrowedSource: s.borrowedSource, effectiveFunc: s.effectiveFunc });
+    } else {
+      // ★ 退到调内:调内三和弦 + 调内延伸(七/九);根/roman/type 全回调内,丢 borrowed/secondary
+      const hasExt = /(7|9|11|13)/.test(s.type ?? '');
+      const inKeyExt = rawReal.filter((pc) => inKey(pc) && !diatonic.tonePcs.includes(pc)); // 调内的延伸(七/九)音
+      const realTonePcs = hasExt ? [...new Set([...diatonic.tonePcs, ...inKeyExt])] : [...diatonic.tonePcs];
+      out.push({ ...diatonic, realRoman: diatonic.roman, realType: typeFromTones(diatonic.rootPc, realTonePcs), realRootPc: diatonic.rootPc, realTonePcs, borrowedSource: undefined, effectiveFunc: s.effectiveFunc });
+    }
     beat += beats;
   }
   return out;
