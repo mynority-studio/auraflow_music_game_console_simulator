@@ -188,9 +188,14 @@ describe('motifSandbox/hidden-grid 分析 + quote plan(directive Phase C/E)', ()
     const { motif } = analyzeHiddenGridMotif(g, c);
     const r = generateMotifWeave({ capturedNotes: [], motif, style: 'pop', keyPc: 0, mode: 'major', bpm: c.bpm, seed: 7 });
     const ref = fitRange(identity(motif.notes), 60, 84);
-    const qs = r.melodicSlotPlan!.userQuoteSlotIds.map((id) => r.melodicSlotPlan!.slots.find((s) => s.id === id)!.startBeat);
+    const qs = r.melodicSlotPlan!.userQuoteSlotIds.map((id) => r.melodicSlotPlan!.slots.find((s) => s.id === id)!.startBeat).sort((a, b) => a - b);
     expect(qs.length).toBeGreaterThanOrEqual(1);
-    for (const b of qs) expect(quotedAt(r.lead, ref, b), `quote@${b}`).toBe(true);
+    // ★ A B A B(2026-06-22):偶数遍原样;奇数遍微变化(≤3 音不同,仍可辨认)
+    const matchN = (b: number) => ref.filter((m) => r.lead.some((n) => Math.abs(n.onsetBeat - (b + m.onsetBeat)) < 1e-3 && n.midi === m.midi)).length;
+    qs.forEach((b, i) => {
+      if (i % 2 === 0) expect(quotedAt(r.lead, ref, b), `quote@${b} 原样`).toBe(true);
+      else expect(matchN(b), `quote@${b} 可辨认变奏`).toBeGreaterThanOrEqual(ref.length - 3);
+    });
     expect(r.audit.unjustifiedChromatic).toBe(0); // 离调音都由真实和声/quote 证成(非 jazz 无"乱"离调)
   });
 

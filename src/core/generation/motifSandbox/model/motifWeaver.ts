@@ -19,7 +19,7 @@ import {
   identity, fitRange, transposeDiatonicMotif, invertAroundMidi, retrogradePitchOnly,
   rhythmDivide, augmentMotif, fragmentMotif, displaceMotif,
 } from './motifTransform';
-import { snapMidiToScale, isInScale } from './scale';
+import { snapMidiToScale, isInScale, transposeDiatonic } from './scale';
 import { buildProgression } from './motifHarmony';
 import { analyzeUserMelodicBrick } from './melodicBrickAnalyzer';
 import { inferHarmonyIntent } from './melodicBrickHarmonyIntent';
@@ -219,8 +219,93 @@ function generateForFunction(slot: MelodicSlot, at: number, span: number, idx: n
   return placeConnect(at, span, idx, progression, prevMidi); // continuation / answer / fill
 }
 
+// ============================================================
+// ★ 排比微变化(用户 2026-06-22):A B A B —— 第 1/3/5… 遍 quote 原样陈述;第 2/4/6… 遍加【微变化】。
+//   手法(seeded 随机组合,改 ≤3 音,保可辨认):① 空拍插经过音(音阶就近)② 重拍音加倍(同音再击)
+//   ③ 改尾 1-2 音(当前和弦 ∩ 音阶【正交集】里 ≠ 原音、就近)。seed 固定 → B 维持一致(同一变体)。
+// ============================================================
+const VARY_MAX_NOTES = 3; // 改动处封顶(超过就不像原 motif)
+
+/** 和弦 ∩ 音阶【正交集】里离 cur 最近、且 ≠ cur 的音(改尾/结构音用)。无解 → null。 */
+function pickOrthogonalDifferent(cur: number, chord: SandboxChord, keyPc: number, mode: ScaleMode, lo: number, hi: number): number | null {
+  const pcs = effectiveTonePcs(chord).filter((pc) => isInScale(60 + pc, keyPc, mode)); // 和弦音 ∩ 音阶
+  if (!pcs.length) return null;
+  let best: number | null = null, bestD = Infinity;
+  for (let m = Math.max(0, lo); m <= Math.min(127, hi); m++) {
+    if (m === cur || !pcs.includes(((m % 12) + 12) % 12)) continue;
+    const d = Math.abs(m - cur);
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return best;
+}
+
+/** 两音 a→b 之间的【音阶就近经过音】(放宽到音阶,可非和弦音)。跨度够 → 取中间音阶音;否则取 a 朝 b 的邻音。 */
+function passingScaleTone(a: number, b: number, keyPc: number, mode: ScaleMode): number {
+  if (Math.abs(a - b) >= 3) return snapMidiToScale(Math.round((a + b) / 2), keyPc, mode);
+  const dir = b >= a ? 1 : -1;
+  const step = transposeDiatonic(a, dir, keyPc, mode);
+  return step !== a ? step : snapMidiToScale(a + dir, keyPc, mode);
+}
+
+/** 排比第 2/4/… 遍 quote 的【微变化】:seeded、改 ≤3 音、保可辨认。第一遍(偶数次)不调此函数。 */
+function varyMotifQuote(quote: readonly MotifNote[], progression: readonly SandboxChord[], keyPc: number, mode: ScaleMode, seed: number, lo: number, hi: number): MotifNote[] {
+  const out = quote.map((n) => ({ ...n }));
+  if (out.length < 2) return out;
+  const rng = makeRng((seed ^ 0x5ec0ded1) >>> 0); // 固定派生 → 所有 B 同一变体(A B A B 一致)
+  let changed = 0;
+  // ③ 改尾 1-2 音(和弦 ∩ 音阶正交)—— 不动首音,保陈述识别
+  if (rng.next() < 0.75) {
+    const k = rng.next() < 0.45 ? 2 : 1;
+    for (let j = 0; j < k && changed < VARY_MAX_NOTES; j++) {
+      const idx = out.length - 1 - j;
+      if (idx < 1) break;
+      const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
+      const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi);
+      if (alt != null) { out[idx] = { ...out[idx], midi: alt }; changed++; }
+    }
+  }
+  // ① 空拍(音后空拍 ≥ 0.5 拍)插一个就近音阶经过音
+  if (changed < VARY_MAX_NOTES && rng.next() < 0.6) {
+    for (let i = 0; i < out.length - 1; i++) {
+      const gap = out[i + 1].onsetBeat - (out[i].onsetBeat + out[i].durationBeat);
+      if (gap >= 0.5 - 1e-6) {
+        const at = Math.round((out[i].onsetBeat + out[i].durationBeat) / ONSET_GRID) * ONSET_GRID;
+        out.push({ ...out[i], midi: passingScaleTone(out[i].midi, out[i + 1].midi, keyPc, mode), onsetBeat: at, durationBeat: Math.min(0.25, gap), velocity: Math.max(0.3, out[i].velocity * 0.85), occurrenceKind: 'quote' });
+        changed++;
+        break;
+      }
+    }
+  }
+  // ② 重拍音加倍(落整数拍 + 时值 ≥0.5 → 拆两击同音)
+  if (changed < VARY_MAX_NOTES && rng.next() < 0.5) {
+    for (let i = 0; i < out.length; i++) {
+      const bp = ((out[i].onsetBeat % 4) + 4) % 4;
+      if (Math.abs(bp - Math.round(bp)) < 1e-6 && out[i].durationBeat >= 0.5) {
+        const half = out[i].durationBeat / 2;
+        const at2 = Math.round((out[i].onsetBeat + half) / ONSET_GRID) * ONSET_GRID;
+        if (at2 > out[i].onsetBeat + 1e-6) {
+          out.push({ ...out[i], onsetBeat: at2, durationBeat: half, velocity: Math.max(0.3, out[i].velocity * 0.9) });
+          out[i] = { ...out[i], durationBeat: half };
+          changed++;
+        }
+        break;
+      }
+    }
+  }
+  // 兜底:seeded 手法都没改成 → 强制改尾音(保证 B ≠ A,排比第 2 遍必有变化)
+  if (changed === 0 && out.length >= 2) {
+    const idx = out.length - 1;
+    const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
+    const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi)
+      ?? (() => { const t = transposeDiatonic(out[idx].midi, out[idx].midi >= out[idx - 1].midi ? -1 : 1, keyPc, mode); return t !== out[idx].midi ? t : null; })();
+    if (alt != null) { out[idx] = { ...out[idx], midi: alt }; changed++; }
+  }
+  return changed === 0 ? out : out.sort((a, b) => a.onsetBeat - b.onsetBeat || b.midi - a.midi);
+}
+
 /** 渲染单个旋律 slot(directive §8)。返回音符 + 发展标签(供 occurrence/审计统计发展手法多样性)。
- *  mustQuote=原样(过长且 cadence 取尾) · mustDevelop=变形 · mayReference=节奏轮廓片段 · generatedOnly=按功能生成。 */
+ *  mustQuote=原样(过长且 cadence 取尾) · mustDevelop=变形 · mayReference=节奏轮廓片段 · generatedOnly=按功能生成。
+ *  ★ quoteOccurrence:mustQuote 的第几遍(0-based);奇数遍(第 2/4/…)加微变化(A B A B 排比)。 */
 export function renderMelodicSlot(args: {
   slot: MelodicSlot;
   userMotif: UserMotif;
@@ -232,6 +317,7 @@ export function renderMelodicSlot(args: {
   mode: ScaleMode;
   avoidLabel?: string;
   quoteBeats?: number; // 排比一致长度(子动机);默认整段 motif。quote 裁到 min(quoteBeats, slot span)
+  quoteOccurrence?: number; // mustQuote 的第几遍(0-based);奇数遍加微变化(A B A B)
 }): { notes: MotifNote[]; label: string } {
   const { slot, userMotif, progression, previousNotes, keyPc, mode } = args;
   const base = fitRange(identity(userMotif.notes), LEAD_LOW, LEAD_HIGH);
@@ -249,14 +335,17 @@ export function renderMelodicSlot(args: {
       if (slot.requiredFunction === 'cadence' && quoteLen > span + 1e-6) return { notes: placeMotifTail(base, at, span, quoteLen, idx), label: 'quote:tail' };
       // 否则:曲首/再现【原样陈述子动机】+ 槽内剩余空间【继续发展】填充(陈述后不留大段死寂)。
       const qLen = Math.min(quoteLen, span);
-      const q = placeQuoteVerbatim(base, at, qLen, idx);
+      const q0 = placeQuoteVerbatim(base, at, qLen, idx);
+      // ★ A B A B(用户 2026-06-22):偶数遍原样;奇数遍(第 2/4/…)加微变化(≤3 音,seeded,可辨认)
+      const odd = ((args.quoteOccurrence ?? 0) % 2) === 1;
+      const q = odd ? varyMotifQuote(q0, progression, keyPc, mode, args.seed, bandLo, bandHi) : q0;
       const tailSpan = span - qLen;
       let tail: MotifNote[] = [];
       if (tailSpan >= BAR - 1e-6) {
         const last = q.length ? q[q.length - 1].midi : prevMidi;
         tail = fillAnswer(base, at + qLen, tailSpan, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx).notes;
       }
-      return { notes: [...q, ...tail], label: 'quote' };
+      return { notes: [...q, ...tail], label: odd ? 'quote:vary' : 'quote' };
     }
     case 'mustDevelop': {
       // 填满整个 slot(模进/倒影/逆行 + 偶尔连接留白),避免长 brick 留大段空拍。
@@ -419,8 +508,11 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   if (melodicSlotPlan && melodicSlotPlan.slots.length) {
     // ★ Phase 5:slot-plan 驱动 —— 遍历 RoadMap 派生的旋律 slot,逐 slot 填充(motif 按功能落位)。
     let avoidLabel = '';
+    let quoteOcc = 0; // ★ mustQuote 第几遍(A B A B:偶数原样/奇数微变化)
     for (const slot of melodicSlotPlan.slots) {
-      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel, quoteBeats: motifBeats });
+      const isQuote = slot.userMotifPolicy === 'mustQuote';
+      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel, quoteBeats: motifBeats, quoteOccurrence: isQuote ? quoteOcc : 0 });
+      if (isQuote) quoteOcc++;
       if (!notes.length) continue;
       if (slot.userMotifPolicy === 'mustDevelop') avoidLabel = label; // 发展手法尽量不连同
       const kind: MotifOccurrence['kind'] = slot.userMotifPolicy === 'mustQuote' ? 'quote' : slot.userMotifPolicy === 'generatedOnly' ? 'connect' : 'develop';

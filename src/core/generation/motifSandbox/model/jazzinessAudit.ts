@@ -24,6 +24,19 @@ function quotedAt(lead: readonly MotifNote[], refNotes: readonly MotifNote[], st
   return true;
 }
 
+/** 最早 quote occurrence 原样陈述 motif【前缀】(放多少匹配多少;slot 截断 → 前缀到此;A B A B 变奏遍不查此)。
+ *  —— 主题陈述只要 exposition 把 motif 头原样唱出即成立,不要求整段;变奏遍(改音)在头部出现即判否(故只查最早遍)。 */
+function quotedPrefixAt(lead: readonly MotifNote[], refNotes: readonly MotifNote[], startBeat: number): boolean {
+  let matched = 0;
+  for (const m of refNotes) {
+    const found = lead.find((n) => Math.abs(n.onsetBeat - (startBeat + m.onsetBeat)) < EPS && n.occurrenceKind === 'quote');
+    if (!found) break;                 // slot 截断 → 前缀到此为止
+    if (found.midi !== m.midi) return false; // quote 音必须原样(变奏遍头部就会 ≠)
+    matched++;
+  }
+  return matched >= 1;                  // 至少把主题头原样唱出
+}
+
 export function auditMotifWeave(
   lead: readonly MotifNote[],
   motif: UserMotif,
@@ -54,7 +67,10 @@ export function auditMotifWeave(
   //   occurrence】原样含完整 quote 单元即算成立(旧乐句循环=beat0 也满足)。
   const qBeats = ctx.quoteBeats ?? Infinity;
   const refQuote = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH).filter((n) => n.onsetBeat < qBeats - 1e-6);
-  const motifQuotedFirstCycle = occurrences.filter((o) => o.kind === 'quote').some((o) => quotedAt(lead, refQuote, o.startBeat));
+  // ★ A B A B(2026-06-22):只查【最早】quote occurrence(= exposition,永远原样);它原样唱出 motif 前缀即成立。
+  //   (后续偶数遍也原样、奇数遍微变化;不能用 some(quotedAt) —— 变奏遍会让"全原样"判否。)
+  const firstQuote = occurrences.filter((o) => o.kind === 'quote').sort((a, b) => a.startBeat - b.startBeat)[0];
+  const motifQuotedFirstCycle = firstQuote ? quotedPrefixAt(lead, refQuote, firstQuote.startBeat) : false;
 
   const themeStatements = occurrences.filter((o) => o.kind === 'quote' || o.kind === 'develop').length;
   const developVariants = new Set(occurrences.filter((o) => o.kind === 'develop').map((o) => o.label)).size;

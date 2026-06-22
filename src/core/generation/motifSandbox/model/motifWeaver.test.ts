@@ -16,6 +16,15 @@ const sig = (lead: { midi: number; onsetBeat: number }[]) => lead.map((n) => `${
 // slot-plan 的 quote slot 起点(motif 原样落点;非固定 0/16/32/48)
 const quoteStarts = (r: ReturnType<typeof generateMotifWeave>): number[] =>
   r.melodicSlotPlan!.userQuoteSlotIds.map((id) => r.melodicSlotPlan!.slots.find((s) => s.id === id)!.startBeat).sort((a, b) => a - b);
+// ★ 排比 A B A B(2026-06-22):偶数遍(0,2,…)原样 quote;奇数遍(1,3,…)微变化(≤3 音不同,仍可辨认)。
+const refMatch = (lead: readonly { midi: number; onsetBeat: number }[], ref: readonly { midi: number; onsetBeat: number }[], startBeat: number): number =>
+  ref.filter((m) => lead.some((n) => Math.abs(n.onsetBeat - (startBeat + m.onsetBeat)) < 1e-3 && n.midi === m.midi)).length;
+const expectQuoteABAB = (lead: readonly { midi: number; onsetBeat: number }[], ref: readonly { midi: number; onsetBeat: number }[], qs: number[], tag = ''): void => {
+  qs.forEach((b, i) => {
+    if (i % 2 === 0) expect(quotedAt(lead as never, ref as never, b), `${tag}quote@${b} 偶数遍原样`).toBe(true);
+    else expect(refMatch(lead, ref, b), `${tag}quote@${b} 奇数遍可辨认变奏`).toBeGreaterThanOrEqual(ref.length - 3);
+  });
+};
 
 describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
   it('16 小节进行;motif 原样落在 plan 的 quote slot(slot-plan 驱动)', () => {
@@ -26,7 +35,7 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     const ref = fitRange(identity(r.motif.notes), 60, 84);
     const qs = quoteStarts(r);
     expect(qs.length).toBeGreaterThanOrEqual(1);
-    for (const b of qs) expect(quotedAt(r.lead, ref, b), `quote@${b}`).toBe(true); // motif 原样落在每个 quote slot
+    expectQuoteABAB(r.lead, ref, qs);
     expect(r.occurrences.some((o) => o.kind === 'quote')).toBe(true);
   });
 
@@ -106,7 +115,7 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
     const ref = fitRange(identity(r.motif.notes), 60, 84);
     const qs = quoteStarts(r);
     expect(qs.length).toBeGreaterThanOrEqual(1);
-    for (const b of qs) expect(quotedAt(r.lead, ref, b), `quote@${b}`).toBe(true);   // motif 落 plan slot
+    expectQuoteABAB(r.lead, ref, qs);
     const brickStarts = new Set(r.roadmap!.brickSlots.map((b) => b.startBeat));
     for (const b of qs) expect(brickStarts.has(b), `quote@${b} 来自 RoadMap brick`).toBe(true); // 来自 RoadMap,非固定锚
     expect(r.lead.every((n) => n.onsetBeat < 96)).toBe(true);
@@ -118,9 +127,26 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
       const ref = fitRange(identity(r.motif.notes), 60, 84);
       const qs = quoteStarts(r);
       expect(qs.length, `seed${s} ≥1 quote`).toBeGreaterThanOrEqual(1);
-      for (const b of qs) expect(quotedAt(r.lead, ref, b), `seed${s} quote@${b}`).toBe(true); // 结构等价 brick 上再现
+      expectQuoteABAB(r.lead, ref, qs, `seed${s} `);
       expect(r.occurrences.some((o) => o.kind === 'develop'), `seed${s} 有发展`).toBe(true);
     }
+  });
+
+  it('★ 排比 A B A B 微变化(2026-06-22):第2遍 quote ≠ 第1遍但可辨认(≤3 音);确定性', () => {
+    for (const seed of [2, 5, 1, 3, 7]) {
+      const r = generateMotifWeave(baseInput({ seed }));
+      const ref = fitRange(identity(r.motif.notes), 60, 84);
+      const qs = quoteStarts(r);
+      if (qs.length < 2) continue;
+      expect(refMatch(r.lead, ref, qs[0]), `seed${seed} 第1遍原样`).toBe(ref.length);          // 第1遍(偶)全原样
+      const m1 = refMatch(r.lead, ref, qs[1]);
+      expect(m1, `seed${seed} 第2遍有变化`).toBeLessThan(ref.length);                            // 第2遍确有变化
+      expect(m1, `seed${seed} 第2遍 ≤3 音不同`).toBeGreaterThanOrEqual(ref.length - 3);          // ≤3 音不同(可辨认)
+      // 确定性:同 seed 再跑逐音一致
+      expect(sig(generateMotifWeave(baseInput({ seed })).lead)).toBe(sig(r.lead));
+      return;
+    }
+    throw new Error('no seed with ≥2 quote occurrences');
   });
 
   it('★ 动机不丢:motif 永远在曲首(beat0)原样陈述(回归:slot-plan 纯功能落位会让动机不在开头)', () => {
