@@ -292,13 +292,27 @@ function varyMotifQuote(quote: readonly MotifNote[], progression: readonly Sandb
       }
     }
   }
-  // 兜底:seeded 手法都没改成 → 强制改尾音(保证 B ≠ A,排比第 2 遍必有变化)
+  // 兜底:seeded 手法都没改成 → 强制变化(保证 B ≠ A)。★ 改尾【严格守和弦∩音阶正交】:末尾往前找第一个
+  //   能在正交集里换到 ≠ 原音的尾音(不退 diatonic 级进);实在没有(罕见:和弦∩音阶仅剩本音)→ 退而把末长音
+  //   【加倍】(同音重复,不改音高 = 不涉正交),仍守原则。
   if (changed === 0 && out.length >= 2) {
-    const idx = out.length - 1;
-    const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
-    const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi)
-      ?? (() => { const t = transposeDiatonic(out[idx].midi, out[idx].midi >= out[idx - 1].midi ? -1 : 1, keyPc, mode); return t !== out[idx].midi ? t : null; })();
-    if (alt != null) { out[idx] = { ...out[idx], midi: alt }; changed++; }
+    for (let j = 0; j < Math.min(2, out.length - 1) && changed === 0; j++) {
+      const idx = out.length - 1 - j;
+      if (idx < 1) break; // 不动首音
+      const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
+      const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi);
+      if (alt != null) { out[idx] = { ...out[idx], midi: alt }; changed++; }
+    }
+    if (changed === 0) { // 正交集真无 ≠ 原音可换 → 末长音加倍(同音,不破坏正交原则)
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i].durationBeat >= 0.5) {
+          const half = out[i].durationBeat / 2;
+          const at2 = Math.round((out[i].onsetBeat + half) / ONSET_GRID) * ONSET_GRID;
+          if (at2 > out[i].onsetBeat + 1e-6) { out.push({ ...out[i], onsetBeat: at2, durationBeat: half, velocity: Math.max(0.3, out[i].velocity * 0.9) }); out[i] = { ...out[i], durationBeat: half }; changed++; }
+          break;
+        }
+      }
+    }
   }
   return changed === 0 ? out : out.sort((a, b) => a.onsetBeat - b.onsetBeat || b.midi - a.midi);
 }
