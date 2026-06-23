@@ -15,7 +15,7 @@ import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../mo
 import { buildMotifSongOverride } from '../bridge/sandboxToOverride';
 import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
 import { buildAccompaniment } from '../model/accompaniment';
-import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, type SandboxTonality } from '../model/sandboxScales';
+import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
 import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
@@ -465,7 +465,7 @@ const AnalysisReadout: React.FC<AnalysisReadoutProps> = React.memo(({ a, timing,
             <Row k="head 原样(quote 单元)" v={result.audit.motifQuotedFirstCycle ? '✓' : '✗'} good={result.audit.motifQuotedFirstCycle} />
             <Row k="陈述 / 发展手法 / 连接" v={`${result.audit.themeStatements} · ${result.audit.developVariants} 种 · ${result.audit.connectSlots}`} good={result.audit.developVariants >= 2} />
             <Row k="密度 / 留白" v={`${result.audit.notesPerBar.toFixed(1)} 音·bar / 留白 ${(result.audit.restRatio * 100).toFixed(0)}%`} good={result.audit.restRatio > 0.1} />
-            <Row k="离调(全 / 不证成)" v={`${result.audit.chromaticRatio.toFixed(2)} / 不证成 ${result.audit.unjustifiedChromatic}`} good={result.audit.unjustifiedChromatic === 0 || style === 'jazz' || tonality === 'blues'} />
+            <Row k="离调(全 / 不证成)" v={`${result.audit.chromaticRatio.toFixed(2)} / 不证成 ${result.audit.unjustifiedChromatic}`} good={result.audit.unjustifiedChromatic === 0 || style === 'jazz' || isBluesTonality(tonality)} />
             <Row k="maxLeap / jazziness" v={`${result.audit.maxLeap} 半音 · ${result.audit.jazzinessScore.toFixed(2)}`} good={result.audit.jazzinessScore < 0.35 || style === 'jazz'} />
             <div className="text-[10px] text-zinc-500 pt-1">前 16 音(fuchsia=原样陈述 · cyan=变形发展 · 灰=连接留白):</div>
             <div className="text-[10px] text-zinc-400 leading-snug break-words">
