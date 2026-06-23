@@ -107,6 +107,16 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('bass', 33).pan).toBe(64);
     expect(mk('drum', 0).pan).toBe(64);
   });
+
+  // ★ melody-forward(2026-06-23,用户:走 A 整编旋律声音小):lead CC7 抬高 → 旋律明显坐在 comp 之上。
+  it('★ lead.volume > comp.volume(同 program,旋律在 comp 之上)且 ≥ 92', () => {
+    for (const p of [0, 4, 11, 12, 6]) { // jazz/暖路线代表 lead program
+      const lead = mk('lead', p).volume;
+      const comp = mk('comp', p).volume;
+      expect(lead, `gm${p} lead 比 comp 响`).toBeGreaterThan(comp);
+      expect(lead, `gm${p} lead CC7 ≥ 92`).toBeGreaterThanOrEqual(92);
+    }
+  });
 });
 
 describe('knowledge/gmMixProfile — enforceRelationalMix(comp↔pad)', () => {

@@ -47,6 +47,12 @@ const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
   drum: { volume: 100, pan: 64, reverb: 20, chorus: 0 },
 };
 
+// ★ melody-forward(2026-06-23,用户:走 A 整编里 motif/旋律声音小)。lead = 主奏,应明显坐在 comp/鼓之上,
+//   但原 lead CC7(79-83)反而低于 comp(85-90)→ 旋律被埋。统一抬高 lead CC7,让有效响度(CC7×velocity)
+//   回到与【试听(用户认可的平衡)】相当(实测 试听 lead eff≈69 vs 整编 59;+14 把整编拉回 ~69)。
+//   作用于所有 Q+N 歌(非仅走 A);确定性,clampCC 兜 127 不溢出。
+const LEAD_PRESENCE_BOOST = 14;
+
 // 程序专属覆盖(directive 各 GM 族代表值;只填该 program 在该 role 的 reverb/chorus/volume,pan 走规则)。
 //   key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
 type ProgOverride = Partial<Record<InstrumentRoleName, Partial<RoleMix>>>;
@@ -120,6 +126,9 @@ export function mixForProgram(args: {
   if (program === 7) base.reverb = Math.min(base.reverb, 30);          // Clav 干
   if (program === 12 || program === 108) base.chorus = Math.min(base.chorus, 16); // 马林巴/卡林巴 少 chorus
   if (role === 'pad' && isFxPad(program)) { base.volume = Math.min(base.volume, 72); base.reverb = Math.max(base.reverb, 84); }
+
+  // ★ melody-forward:lead 抬 CC7 让旋律明显在场(放最后 → 覆盖所有 program 基底 + 覆盖值)。clampCC 兜 127。
+  if (role === 'lead') base.volume = base.volume + LEAD_PRESENCE_BOOST;
 
   return { volume: clampCC(base.volume), pan: clampCC(base.pan), reverb: clampCC(base.reverb), chorus: clampCC(base.chorus) };
 }
