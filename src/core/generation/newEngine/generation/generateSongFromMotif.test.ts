@@ -55,4 +55,36 @@ describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)'
     const rRoles = r.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
     expect(rRoles).toEqual(baseRoles); // 同样的伴奏编制
   });
+
+  // ★ 走 A jazz 律动一致(2026-06-23,用户:整编缺 jazz 感、试听有)。根因=override lead 是直拍 motif,而全局
+  //   applySwing 跳过 lead(假设 MG 已摆)→ 整编里旋律不摆、压在摇摆节奏上。修=override lead 预摆动(对齐
+  //   comp/bass/drum 同摆),快速 run 保护笔直。
+  it('★ 走 A jazz:override lead 预摆动 —— 八分反拍 onset 后移(>0.58);pop 保持直拍(~0.5);只改 onset 不改音高', () => {
+    const eighths: MotifLeadNote[] = Array.from({ length: 16 }, (_, i) => ({ pitch: 60 + (i % 5), onsetBeat: i * 0.5, durationBeat: 0.5, velocity: 96 })); // span=8.0 拍(整数)→ tile 不漂移
+    const offPhases = (style: string): number[] => {
+      const r = generateSongFromMotif({ seed: 9, styleHint: style, mood: 'build', targetDuration: 48 }, { lead: eighths });
+      const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
+      const ppq = r.ir!.timebase.ppq;
+      return lead.notes.map((n) => (((n.startTick as number) / ppq) % 1 + 1) % 1).filter((ph) => ph > 0.3 && ph < 0.95);
+    };
+    const jazzOff = offPhases('jazz');
+    const popOff = offPhases('pop');
+    expect(jazzOff.filter((p) => p > 0.58).length / Math.max(1, jazzOff.length), 'jazz 反拍多数被摆动').toBeGreaterThan(0.5);
+    expect(popOff.filter((p) => Math.abs(p - 0.5) < 0.08).length / Math.max(1, popOff.length), 'pop 反拍多数保持直拍').toBeGreaterThan(0.6);
+    // 音高序列不被摆动改变(只移 onset)
+    const rj = generateSongFromMotif({ seed: 9, styleHint: 'jazz', mood: 'build', targetDuration: 48 }, { lead: eighths });
+    const lj = rj.ir!.tracks.find((t) => t.role === 'lead')!;
+    expect(lj.notes.slice(0, eighths.length).map((n) => n.pitch)).toEqual(eighths.map((n) => n.pitch));
+  });
+
+  it('★ 快速 16 分 run 不被预摆动(jazz_16th_run_grid_owner):连续 .25 IOI 的 .5 相位保持笔直', () => {
+    // 连续 16 分(IOI 0.25)= 快速 run → isInProtectedFastRun 命中 → 不摆;其中落 .5 相位的音应仍 ≈ .5
+    const run: MotifLeadNote[] = Array.from({ length: 16 }, (_, i) => ({ pitch: 60 + (i % 4), onsetBeat: i * 0.25, durationBeat: 0.25, velocity: 92 })); // span=4.0 拍(整数)→ tile 不漂移
+    const r = generateSongFromMotif({ seed: 9, styleHint: 'jazz', mood: 'build', targetDuration: 48 }, { lead: run });
+    const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
+    const ppq = r.ir!.timebase.ppq;
+    const halfPhase = lead.notes.map((n) => (((n.startTick as number) / ppq) % 1 + 1) % 1).filter((ph) => Math.abs(ph - 0.5) < 0.12);
+    // run 内的 .5 不应被摆到 .66(否则与 .75 挤成 micro-IOI)
+    expect(halfPhase.every((p) => p < 0.6), '快速 run 内 .5 保持笔直').toBe(true);
+  });
 });

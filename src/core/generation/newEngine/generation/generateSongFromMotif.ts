@@ -26,6 +26,8 @@ import { DEFAULT_BUDGET, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
 import { runGenerationControl, type GenerationResult, type RenderFn } from './GenerationController';
 import { sanitizeLeadNoteIR } from '../render/leadSanitizer';
+import { swingFrac } from '../render/swing';
+import { isInProtectedFastRun } from '../render/leadGridTiming';
 
 /** 权威 lead 音(beats 制,timebase-无关):Q+R 把 MotifNote[] 映射成它,generateSongFromMotif 用 Q+N
  *  timebase 转 tick。pitch 0..127、velocity 1..127、时间用拍。 */
@@ -104,6 +106,23 @@ function fitLeadToBeats(lead: readonly MotifLeadNote[], totalBeats: number): Mot
   return out;
 }
 
+/** ★ 走 A 专属预摆动:override lead 是 sandbox 的【直拍网格 motif】;而 generateSong 默认 lead 来自 MG
+ *  StyleRenderer(已自带单轨 swing,故 renderCoordinator 的全局 applySwing 跳过 lead)。若直接把直拍 motif 喂进
+ *  去,整编里【旋律不摆动、压在摇摆的 comp/bass/drum 上】= 丢 jazz 感(试听层 buildLeadNotes 摆了、整编没摆,
+ *  两者听感分叉的主因)。这里把 override lead 按 arrangement.feel.swingRatio 预摆动(对齐三轨同一摆动时间线),
+ *  并保护快速 16 分/三连 run 笔直(jazz_16th_run_grid_owner)。预摆动后全局 applySwing 仍跳过 lead = 单次摆动、
+ *  不双摆。只改 onset:不动 pitch/数量/时值(legato 仍在 timing 之后跑)。直拍风格(ratio≤0.5)原样返回。 */
+function swingMotifLead(notes: readonly MotifLeadNote[], swingRatio: number, beatsPerBar: number): MotifLeadNote[] {
+  if (swingRatio <= 0.5 + 1e-6) return [...notes];
+  const sorted = [...notes].sort((a, b) => a.onsetBeat - b.onsetBeat);
+  const events = sorted.map((n) => ({ time: n.onsetBeat, duration: n.durationBeat }));
+  return sorted.map((n, i) => {
+    if (isInProtectedFastRun(events, i, beatsPerBar)) return n; // 快速 run 内 onset 不摆(否则挤成 micro-IOI)
+    const whole = Math.floor(n.onsetBeat);
+    return { ...n, onsetBeat: whole + swingFrac(n.onsetBeat - whole, swingRatio) };
+  });
+}
+
 /** 权威 lead(beats)→ lead TrackIR(用 Q+N timebase 转 tick;钳音高/力度;onset 排序)。 */
 function motifLeadToTrackIR(notes: readonly MotifLeadNote[], timebase: Timebase): TrackIR {
   const irNotes: NoteIR[] = [...notes]
@@ -140,9 +159,11 @@ export function generateSongFromMotif(
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
 
-  // 注入点 B:权威 lead(beats)→ tile 满曲长 → TrackIR(本 timebase),经 renderSongFull 末参数透传(缺省 → MG 链)。
+  // 注入点 B:权威 lead(beats)→ tile 满曲长 →【预摆动(走 A 直拍 motif 对齐 jazz swing)】→ TrackIR(本 timebase),
+  //   经 renderSongFull 末参数透传(缺省 → MG 链)。预摆动让旋律与 comp/bass/drum 同摆,补回整编缺失的 jazz 律动。
   const fittedLead = override.lead && override.lead.length ? fitLeadToBeats(override.lead, totalBeats) : undefined;
-  const overrideLeadTrack = fittedLead && fittedLead.length ? motifLeadToTrackIR(fittedLead, timebase) : undefined;
+  const swungLead = fittedLead ? swingMotifLead(fittedLead, arrangement.feel.swingRatio, beatsPerBar) : undefined;
+  const overrideLeadTrack = swungLead && swungLead.length ? motifLeadToTrackIR(swungLead, timebase) : undefined;
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
       retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack);
