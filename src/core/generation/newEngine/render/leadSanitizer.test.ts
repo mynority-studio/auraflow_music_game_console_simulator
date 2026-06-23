@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { generateSongFromMotif } from '../generation/generateSongFromMotif';
+import { generateSong } from '../generation/GenerationController';
 import { buildMotifSongOverride } from '../../motifSandbox/bridge/sandboxToOverride';
 import { generateMotifWeave } from '../../motifSandbox/model/motifWeaver';
 import { generateSampleCaptured } from '../../motifSandbox/model/motifAnalysis';
@@ -54,5 +55,38 @@ describe('render/leadSanitizer · 单声部 tick 域清洗(directive Phase 4)', 
     const song = generateSongFromMotif({ seed: 2, styleHint: 'pop', mood: 'build', targetDuration: 120 }, ov);
     const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
     expect(samePitchOverlap(lead.notes), 'lead 同 pitch overlap=0').toBe(0);
+  });
+});
+
+// ★ renderCoordinator 末端安全闸(directive q_n_final_lead_sanitizer 2026-06-23):humanize/fill/swing/replay 后重新撞出的
+//   同 pitch overlap 必须在进 IR 前清掉 —— 对【所有 style】+【所有 lead 来源】生效(此前只 jazz/blues legato 分支顺带保护)。
+describe('render/leadSanitizer · renderCoordinator final safety(directive q_n_final_lead_sanitizer)', () => {
+  const routeA = (style: 'pop' | 'lofi' | 'rnb' | 'jazz', seed: number, variant: number): readonly NoteIR[] => {
+    const r = generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', variant), style, keyPc: 0, mode: 'major', bpm: 96, seed });
+    const song = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 120 }, buildMotifSongOverride(r, 0, 'major'));
+    return song.ir!.tracks.find((t) => t.role === 'lead')!.notes;
+  };
+
+  it('★ Phase 2 确定性复现:走 A pop seed=10 variant=1 full arrangement lead 无同 pitch overlap', () => {
+    expect(samePitchOverlap(routeA('pop', 10, 1)), 'pop seed=10 v=1 overlap').toBe(0);
+  });
+
+  it('★ Phase 3 走 A fuzz:pop/lofi/rnb/jazz × seed 1..20 × variant 0..2 → 全 0 同 pitch overlap', () => {
+    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+      for (let seed = 1; seed <= 20; seed++) {
+        for (const v of [0, 1, 2]) {
+          expect(samePitchOverlap(routeA(style, seed, v)), `${style} seed=${seed} v=${v}`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it('★ Phase 4 默认 Q+N 不变量:generateSong(无 override)lead 也无同 pitch overlap', () => {
+    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+      for (const seed of [1, 2, 3, 7, 10, 17, 31]) {
+        const lead = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 120 }).ir!.tracks.find((t) => t.role === 'lead');
+        if (lead) expect(samePitchOverlap(lead.notes), `default ${style} seed=${seed}`).toBe(0);
+      }
+    }
   });
 });

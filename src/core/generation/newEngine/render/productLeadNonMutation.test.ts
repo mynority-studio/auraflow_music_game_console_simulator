@@ -19,6 +19,7 @@ import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
+import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { auditMusicality } from './musicalityAuditor';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
@@ -40,6 +41,7 @@ function setup(seed: number, style: string) {
 const ev = (notes: readonly { pitch: number; startTick: number; durationTicks: number; velocity: number }[]) =>
   notes.map((n) => `${n.pitch as number}@${n.startTick as number}:${n.durationTicks as number}:${n.velocity}`).join('|');
 const leadOf = (ir: MusicalIR) => ir.tracks.find((t) => t.role === 'lead')!;
+const SAN = { gapTicks: 1, minDurTicks: 1 };
 const snap = (ir: MusicalIR) => JSON.stringify(ir.tracks.map((t) => ({ role: t.role, n: t.notes.map((x) => [x.pitch, x.startTick as number, x.durationTicks as number, x.velocity]) })));
 
 const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
@@ -52,9 +54,12 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
       const raw = renderMgMelody(plan, band, tb, seed);
       const replayed = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0];
-      // jazz/blues 末步快速连音 legato(只改 duration;directive 2026-06-18);非 jazz enabled=false → 原样
+      // 末端安全闸(sanitize → (jazz/blues)legato → sanitize;directive q_n_final_lead_sanitizer 2026-06-23):
+      //   sanitize 只裁同 pitch collision(无重叠=no-op),legato 只改 duration → 多数 seed 仍逐字节相等。
       const lo = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
-      const expected = lo.enabled ? { ...replayed, notes: connectFastLeadNoteIR(replayed.notes, lo) } : replayed;
+      const preSan = { ...replayed, notes: sanitizeLeadNoteIR(replayed.notes, SAN) };
+      const legato = lo.enabled ? { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, lo) } : preSan;
+      const expected = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
       expect(final.notes.length, `${seed}/${style} lead count`).toBe(expected.notes.length);
       expect(ev(final.notes as never), `${seed}/${style} lead events`).toBe(ev(expected.notes as never));
@@ -91,8 +96,9 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     const result = runGenerationControl(render, seedRng, DEFAULT_BUDGET, buildRetryLocator(plan, tb));
     expect(result.attempts, '确实发生重跑').toBeGreaterThanOrEqual(3);
     expect(result.ir, 'retry 后有 IR').toBeDefined();
-    const expected = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0]; // ★ 重放 + 空拍补全后的预期(retry 不改 lead)
-    expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == fill(replay(raw MG))').toBe(ev(expected.notes as never));
+    const replayedExp = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0]; // ★ 重放 + 空拍补全(retry 不改 lead)
+    const expected = { ...replayedExp, notes: sanitizeLeadNoteIR(replayedExp.notes, SAN) }; // pop 无 legato → 末端安全闸 = 一道 sanitize
+    expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == sanitize(fill(replay(raw MG)))').toBe(ev(expected.notes as never));
   });
 
   // ④ rng.advance(comp 子流)不改 lead:lead 只依赖 song seed,advance 保持 seed 不变。

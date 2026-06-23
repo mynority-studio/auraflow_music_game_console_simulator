@@ -8,8 +8,11 @@ import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
+import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { createTimebase, createRandomContext, beats } from '../foundation';
+
+const SAN = { gapTicks: 1, minDurTicks: 1 };
 
 // ============================================================
 // Loop 3/4(Option A strict parity)+ repeatGroup 重放(2026-06-11):
@@ -30,12 +33,16 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
       const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
       const raw = renderMgMelody(plan, band, tb, seed);
-      // ★ 契约:原始 MG lead 经【空拍补全 → repeatGroup 重放 →(jazz/blues)快速连音 legato】= production lead 的预期。
-      //   lead 不 humanize;jazz/blues 末步 legato 只改 duration(directive 2026-06-18)→ pitch/start/count 仍逐字节相等。
+      // ★ 契约:原始 MG lead 经【空拍补全 → repeatGroup 重放 → 末端安全闸(sanitize → (jazz/blues)legato → sanitize)】
+      //   = production lead 的预期。lead 不 humanize;legato 只改 duration;sanitize 只裁同 pitch collision(无 overlap 时
+      //   为 no-op)→ 多数 seed 仍逐字节相等,仅含同 pitch overlap 的 seed(raw MG 自身重叠)被安全闸裁短(directive
+      //   q_n_final_lead_sanitizer 2026-06-23)。
       const filled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
       const replayed = applyRepeatGroupReplay(filled, arr, plan.chordTimeline, tb)[0];
+      const preSan = { ...replayed, notes: sanitizeLeadNoteIR(replayed.notes, SAN) };
       const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
-      const expected = legatoOpts.enabled ? { ...replayed, notes: connectFastLeadNoteIR(replayed.notes, legatoOpts) } : replayed;
+      const legato = legatoOpts.enabled ? { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, legatoOpts) } : preSan;
+      const expected = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
       const final = renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir.tracks.find((t) => t.role === 'lead')!;
       expect(final.notes.length).toBe(expected.notes.length);
       expect(ev(final.notes as never)).toBe(ev(expected.notes as never)); // pitch/start/dur/velocity 全等(jazz 含末步 legato)

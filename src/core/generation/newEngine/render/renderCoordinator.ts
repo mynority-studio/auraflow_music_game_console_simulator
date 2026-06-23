@@ -35,6 +35,7 @@ import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
+import { sanitizeLeadNoteIR } from './leadSanitizer';
 import type { RenderOverlay } from './RenderOverlay';
 
 export interface RenderResult {
@@ -384,14 +385,21 @@ export function renderSongFull(
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
   const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks);
-  // ★ 快速 lead 连音 legato【最终安全闸】(CODEX directive 2026-06-18,jazz/blues):renderMgMelody 里已按干净
-  //   时序连过一遍,但 humanizeTiming/fillLeadBarGaps 会把触碰的快速音重新撞出微重叠 → 这里按【最终时序】再连一遍,
-  //   保证末态触碰 + 同音高无 noteOff 撞。只改 lead durationTicks(不动 pitch/start/数量);comp/bass/pad/drum 不碰。
-  //   ★ 对【所有 lead 轨】生效,不分来源 —— 既覆盖 MG lead,也覆盖【走 A override lead】(Q+R motif 整编,用户 2026-06-19)。
+  // ★ Lead 最终安全闸(CODEX directive q_n_final_lead_sanitizer 2026-06-23):humanizeTiming/fillLeadBarGaps/swing/
+  //   repeatReplay 这些末端变换会把上游已清洗的 lead 重新撞出【同 pitch overlap / 同 tick 重触发】→ 导出 MIDI 时
+  //   旧 noteOff 提前关掉后一个同 pitch note(听感=motif/旋律突然断音或消失)。此前只有 jazz/blues 的 legato 分支顺带
+  //   保护了,pop/lofi/rnb 完全跳过(实测 default pop 6/7 seed 有 overlap、走 A pop/lofi/rnb 也中招)。
+  //   三步:① 全风格先 sanitize(给 legato 干净输入)② jazz/blues 接快速连音 legato ③ 全风格再 sanitize 作真正最终闸。
+  //   sanitize 只裁【同 pitch】collision(不同 pitch overlap / legato 连奏保留),不改 pitch/start/数量(同 tick 同 pitch
+  //   duplicate 合并除外)。对【所有 lead 轨】生效,不分来源(MG lead / 走 A override lead / 未来注入 lead)。
+  const SANITIZE_OPTS = { gapTicks: 1, minDurTicks: 1 };
+  const sanitizeLead = (tracks: TrackIR[]): TrackIR[] => tracks.map((t) => (t.role === 'lead' ? { ...t, notes: sanitizeLeadNoteIR(t.notes, SANITIZE_OPTS) } : t));
+  const preSanitized = sanitizeLead(humanizedTracks);
   const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, timebase.ppq);
-  const articulatedTracks = legatoOpts.enabled
-    ? humanizedTracks.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
-    : humanizedTracks;
+  const legatoTracks = legatoOpts.enabled
+    ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
+    : preSanitized;
+  const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
