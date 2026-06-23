@@ -220,11 +220,10 @@ function generateForFunction(slot: MelodicSlot, at: number, span: number, idx: n
 }
 
 // ============================================================
-// ★ 排比微变化(用户 2026-06-22):A B A B —— 第 1/3/5… 遍 quote 原样陈述;第 2/4/6… 遍加【微变化】。
-//   手法(seeded 随机组合,改 ≤3 音,保可辨认):① 空拍插经过音(音阶就近)② 重拍音加倍(同音再击)
-//   ③ 改尾 1-2 音(当前和弦 ∩ 音阶【正交集】里 ≠ 原音、就近)。seed 固定 → B 维持一致(同一变体)。
+// ★ 排比微变化(用户 2026-06-22 → 06-23 收紧):A B A B —— 第 1/3/5… 遍 quote 原样陈述;第 2/4/6… 遍加【微变化】。
+//   ★ 只动【尾部(后半部分)】、共 2 处:① 改尾部一处音(当前和弦 ∩ 音阶【正交集】里 ≠ 原音、就近)
+//   ② 加尾部一处音(后半空拍插经过音 / 加倍尾部长音)。改太多就听不出是用户弹奏。seed 固定 → B 维持一致。
 // ============================================================
-const VARY_MAX_NOTES = 3; // 改动处封顶(超过就不像原 motif)
 
 /** 和弦 ∩ 音阶【正交集】里离 cur 最近、且 ≠ cur 的音(改尾/结构音用)。无解 → null。 */
 function pickOrthogonalDifferent(cur: number, chord: SandboxChord, keyPc: number, mode: ScaleMode, lo: number, hi: number): number | null {
@@ -247,74 +246,55 @@ function passingScaleTone(a: number, b: number, keyPc: number, mode: ScaleMode):
   return step !== a ? step : snapMidiToScale(a + dir, keyPc, mode);
 }
 
-/** 排比第 2/4/… 遍 quote 的【微变化】:seeded、改 ≤3 音、保可辨认。第一遍(偶数次)不调此函数。 */
+/** 排比第 2/4/… 遍 quote 的【微变化】(2026-06-23 用户:只动尾部,1 处改音 + 1 处加音 —— 改太多就听不出是
+ *  用户弹奏)。★ 都在【后半部分(尾部)】:① 改尾部一处音(和弦∩音阶正交,≠原,不动首音)② 加尾部一处音
+ *  (后半空拍插经过音 / 加倍尾部长音)。seeded(主 seed 固定 → B 维持一致);第一遍(偶数次)不调此函数。 */
 function varyMotifQuote(quote: readonly MotifNote[], progression: readonly SandboxChord[], keyPc: number, mode: ScaleMode, seed: number, lo: number, hi: number): MotifNote[] {
   const out = quote.map((n) => ({ ...n }));
   if (out.length < 2) return out;
-  const rng = makeRng((seed ^ 0x5ec0ded1) >>> 0); // 固定派生 → 所有 B 同一变体(A B A B 一致)
-  let changed = 0;
-  // ③ 改尾 1-2 音(和弦 ∩ 音阶正交)—— 不动首音,保陈述识别
-  if (rng.next() < 0.75) {
-    const k = rng.next() < 0.45 ? 2 : 1;
-    for (let j = 0; j < k && changed < VARY_MAX_NOTES; j++) {
-      const idx = out.length - 1 - j;
-      if (idx < 1) break;
-      const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
-      const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi);
-      if (alt != null) { out[idx] = { ...out[idx], midi: alt }; changed++; }
-    }
+  const rng = makeRng((seed ^ 0x5ec0ded1) >>> 0);
+  // 后半部分(尾部)= onset ≥ 范围中点;不动首音(idx≥1,保陈述识别)
+  const minOn = Math.min(...out.map((n) => n.onsetBeat));
+  const maxEnd = Math.max(...out.map((n) => n.onsetBeat + n.durationBeat));
+  const mid = minOn + (maxEnd - minOn) / 2;
+  const tail = out.map((_, i) => i).filter((i) => i >= 1 && out[i].onsetBeat >= mid - 1e-6);
+  if (!tail.length) return out; // 极短 motif 无后半音 → 不变(罕见)
+
+  // ① 改尾部【一处】音(和弦∩音阶正交,≠原):末尾往前找第一个能换的
+  for (let k = tail.length - 1; k >= 0; k--) {
+    const idx = tail[k];
+    const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
+    const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi);
+    if (alt != null) { out[idx] = { ...out[idx], midi: alt }; break; }
   }
-  // ① 空拍(音后空拍 ≥ 0.5 拍)插一个就近音阶经过音
-  if (changed < VARY_MAX_NOTES && rng.next() < 0.6) {
-    for (let i = 0; i < out.length - 1; i++) {
-      const gap = out[i + 1].onsetBeat - (out[i].onsetBeat + out[i].durationBeat);
+
+  // ② 加尾部【一处】音:后半空拍 ≥0.5 拍 → 插经过音;否则加倍后半一个 ≥0.5 拍的音。seed 定先试哪种(留点变化)。
+  const tryPassing = (): boolean => {
+    for (let k = 0; k < tail.length - 1; k++) {
+      const i = tail[k], j = tail[k + 1];
+      const gap = out[j].onsetBeat - (out[i].onsetBeat + out[i].durationBeat);
       if (gap >= 0.5 - 1e-6) {
         const at = Math.round((out[i].onsetBeat + out[i].durationBeat) / ONSET_GRID) * ONSET_GRID;
-        out.push({ ...out[i], midi: passingScaleTone(out[i].midi, out[i + 1].midi, keyPc, mode), onsetBeat: at, durationBeat: Math.min(0.25, gap), velocity: Math.max(0.3, out[i].velocity * 0.85), occurrenceKind: 'quote' });
-        changed++;
-        break;
+        out.push({ ...out[i], midi: passingScaleTone(out[i].midi, out[j].midi, keyPc, mode), onsetBeat: at, durationBeat: Math.min(0.25, gap), velocity: Math.max(0.3, out[i].velocity * 0.85), occurrenceKind: 'quote' });
+        return true;
       }
     }
-  }
-  // ② 重拍音加倍(落整数拍 + 时值 ≥0.5 → 拆两击同音)
-  if (changed < VARY_MAX_NOTES && rng.next() < 0.5) {
-    for (let i = 0; i < out.length; i++) {
-      const bp = ((out[i].onsetBeat % 4) + 4) % 4;
-      if (Math.abs(bp - Math.round(bp)) < 1e-6 && out[i].durationBeat >= 0.5) {
-        const half = out[i].durationBeat / 2;
-        const at2 = Math.round((out[i].onsetBeat + half) / ONSET_GRID) * ONSET_GRID;
-        if (at2 > out[i].onsetBeat + 1e-6) {
-          out.push({ ...out[i], onsetBeat: at2, durationBeat: half, velocity: Math.max(0.3, out[i].velocity * 0.9) });
-          out[i] = { ...out[i], durationBeat: half };
-          changed++;
-        }
-        break;
+    return false;
+  };
+  const tryDouble = (): boolean => {
+    for (let k = tail.length - 1; k >= 0; k--) {
+      const idx = tail[k];
+      if (out[idx].durationBeat >= 0.5) {
+        const half = out[idx].durationBeat / 2;
+        const at2 = Math.round((out[idx].onsetBeat + half) / ONSET_GRID) * ONSET_GRID;
+        if (at2 > out[idx].onsetBeat + 1e-6) { out.push({ ...out[idx], onsetBeat: at2, durationBeat: half, velocity: Math.max(0.3, out[idx].velocity * 0.9) }); out[idx] = { ...out[idx], durationBeat: half }; return true; }
       }
     }
-  }
-  // 兜底:seeded 手法都没改成 → 强制变化(保证 B ≠ A)。★ 改尾【严格守和弦∩音阶正交】:末尾往前找第一个
-  //   能在正交集里换到 ≠ 原音的尾音(不退 diatonic 级进);实在没有(罕见:和弦∩音阶仅剩本音)→ 退而把末长音
-  //   【加倍】(同音重复,不改音高 = 不涉正交),仍守原则。
-  if (changed === 0 && out.length >= 2) {
-    for (let j = 0; j < Math.min(2, out.length - 1) && changed === 0; j++) {
-      const idx = out.length - 1 - j;
-      if (idx < 1) break; // 不动首音
-      const chord = chordAtBeat(progression, out[idx].onsetBeat) ?? progression[0];
-      const alt = pickOrthogonalDifferent(out[idx].midi, chord, keyPc, mode, lo, hi);
-      if (alt != null) { out[idx] = { ...out[idx], midi: alt }; changed++; }
-    }
-    if (changed === 0) { // 正交集真无 ≠ 原音可换 → 末长音加倍(同音,不破坏正交原则)
-      for (let i = out.length - 1; i >= 0; i--) {
-        if (out[i].durationBeat >= 0.5) {
-          const half = out[i].durationBeat / 2;
-          const at2 = Math.round((out[i].onsetBeat + half) / ONSET_GRID) * ONSET_GRID;
-          if (at2 > out[i].onsetBeat + 1e-6) { out.push({ ...out[i], onsetBeat: at2, durationBeat: half, velocity: Math.max(0.3, out[i].velocity * 0.9) }); out[i] = { ...out[i], durationBeat: half }; changed++; }
-          break;
-        }
-      }
-    }
-  }
-  return changed === 0 ? out : out.sort((a, b) => a.onsetBeat - b.onsetBeat || b.midi - a.midi);
+    return false;
+  };
+  if (rng.next() < 0.55) { if (!tryPassing()) tryDouble(); } else { if (!tryDouble()) tryPassing(); }
+
+  return out.sort((a, b) => a.onsetBeat - b.onsetBeat || b.midi - a.midi);
 }
 
 /** 渲染单个旋律 slot(directive §8)。返回音符 + 发展标签(供 occurrence/审计统计发展手法多样性)。
