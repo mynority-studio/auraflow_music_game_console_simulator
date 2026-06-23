@@ -95,6 +95,27 @@ function buildCompPedal(plan: HarmonicPlan, timebase: Timebase): { atTick: Ticks
   return out;
 }
 
+/** ★ comp 去拖拍(2026-06-23,用户):把 comp 落在【拍内弱 16 分 .25/.75(拖在八分 groove 后)】的 onset 吸回
+ *  【前一个八分】(去拖拍,锁鼓/bass);.0(beat)/.5(and)等有意切分位不动。同 onset 的和弦音一起移(保 voicing),
+ *  时值补回 delta 保末点。只对 comp 调用;swung 风格不调(loose 是 feel)。 */
+function snapCompLaidback(track: TrackIR, ppq: number): TrackIR {
+  const eighth = ppq / 2, tol = ppq * 0.06;
+  const isWeak16 = (tick: number): boolean => {
+    const ph = ((tick % ppq) + ppq) % ppq; // 拍内相位
+    return Math.abs(ph - ppq * 0.25) < tol || Math.abs(ph - ppq * 0.75) < tol;
+  };
+  return {
+    ...track,
+    notes: track.notes.map((n) => {
+      const tick = n.startTick as number;
+      if (!isWeak16(tick)) return n;
+      const snapped = Math.floor(tick / eighth) * eighth; // 吸回前一个八分(去拖拍,不向后挪)
+      const delta = tick - snapped;
+      return { ...n, startTick: ticks(snapped), durationTicks: ticks(Math.max(1, (n.durationTicks as number) + delta)) };
+    }),
+  };
+}
+
 /**
  * 编曲密度弧 gate(A2):按 activeRolesBySection 丢掉【该 role 在该段不在场】的音(谁进/出)。
  *   段落 tick 区间从和声 timeline 聚合;落不到段(边界)→ 保留。lead 在密度表里恒含 → 不被丢(fork1)。
@@ -326,10 +347,16 @@ export function renderSongFull(
   //   打破 strict MG lead parity:首次出现==raw MG(经空拍补全),重复出现==首次重放(用户决策)。
   const replayedTracks = applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
 
+  // ★ comp 去拖拍(2026-06-23,用户:632219 verse comp 比 bass/drum 八分 groove 滞后):直拍风格下,把 comp 落在
+  //   【拍内弱 16 分 .25/.75(拖在八分后)】的 onset 吸回前一个八分(去拖拍,锁鼓/bass 强弱);.0(beat)/.5(and)
+  //   等【有意切分】不动。只 comp;swung 风格(jazz/blues)整轨跳过(loose 是 feel)。
+  const straightFeel = arrangement.feel.swingRatio <= 0.5 + 1e-6;
+  const grooveTracks = straightFeel ? replayedTracks.map((t) => (t.role === 'comp' ? snapCompLaidback(t, timebase.ppq) : t)) : replayedTracks;
+
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
   const humanRng = rng.substream('humanize');
-  const accentedTracks = humanizeVelocity(replayedTracks, timebase.ppq, bpbHuman, humanRng);
+  const accentedTracks = humanizeVelocity(grooveTracks, timebase.ppq, bpbHuman, humanRng);
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
