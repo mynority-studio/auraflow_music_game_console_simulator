@@ -40,7 +40,7 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   //   按风格 + 能力分配:comp 只放可 comp(键盘/吉他);synthFX(持续)→ pad;吉他 lead+comp;slap/fretless → bass。
   // ★ 2026-06-10:吉他全撤(用户:先不要了)—— 吉他 comp 有空洞问题、lead 也撤。元数据保留(随时可回)。
   //   +排箫(75)/尺八(77)暖气声管乐 lead(单音 → 仅 lead;暖、配古筝/卡林巴/lofi 氛围世界)。Clav(7,键盘)留 rnb comp。
-  jazz: { lead: [11, 4, 12, 6], comp: [0, 4], bass: [32, 35], pad: [49, 16], drum: [0] },                                  // +羽管键琴 lead · +无品贝斯
+  jazz: { lead: [0, 4, 26, 11, 12, 6], comp: [0, 4], bass: [32, 35], pad: [49, 16], drum: [0] },                          // ★ 2026-06-23 +大钢琴(三重奏 lead)+爵士吉他;权重见 INSTRUMENT_WEIGHTS · 无品贝斯
   pop: { lead: [1, 4, 12, 2, 3, 75], comp: [1, 4, 2], bass: [38, 33, 34], pad: [89, 50, 88, 90, 95, 99, 100], drum: [0] }, // +电子大钢琴/酒吧/排箫 lead · 拨片贝斯 · Polysynth/Sweep/Atmosphere/Brightness pad
   lofi: { lead: [4, 11, 12, 108, 6, 75, 77], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +羽管/排箫/尺八 lead · Bowed/Crystal/Echoes pad
   rnb: { lead: [4, 5, 11, 2], comp: [4, 5], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },               // 无品/slap 贝斯 · Atmosphere pad(★ Clav 7 撤出 comp:亮/打击 funk 音色在 arp 织体+高力度下炸裂、刺耳)
@@ -50,6 +50,29 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
 
 const FALLBACK_PROGRAM: Record<InstrumentRoleName, number> = { bass: 33, comp: 0, lead: 0, pad: 89, drum: 0 };
 const ROLE_ORDER: InstrumentRoleName[] = ['bass', 'comp', 'pad', 'lead', 'drum'];
+
+// ★ 2026-06-23(用户:JAZZ 整编"是乐器问题,不要缩,做更高优先级"):候选池全保留(不缩),给地道音色【更高
+//   选中权重】。缺省权重=1;现仅 jazz lead/bass 配权重 —— 钢琴三重奏(piano≫Rhodes>爵士吉他>颤音琴≫marimba/
+//   harpsi)、bass upright≫fretless。**权重只改被选中概率,不改 rng 消耗步数(仍每角色一次抽样)** → 同 seed
+//   确定性、非加权风格/角色字节不变;jazz lead/bass 值改变(本意),其余角色因 stream 对齐而不变。
+const INSTRUMENT_WEIGHTS: Record<string, Partial<Record<InstrumentRoleName, Record<number, number>>>> = {
+  jazz: {
+    lead: { 0: 8, 4: 5, 26: 4, 11: 2, 12: 0.5, 6: 0.5 }, // 钢琴为主(三重奏感)
+    bass: { 32: 6, 35: 1.5 },                            // 原声 upright 为主
+  },
+};
+
+/** 加权挑 program:无权重表 → 退 `rng.pick`(字节不变路径);有 → 按权重(缺省 1)挑,消耗【一次 `rng.next()`】
+ *  (与 pick 同步进度 → 不扰后续角色抽样)。total≤0 兜底退 pick。 */
+function pickWeightedProgram(rng: Rng, cands: readonly number[], weights?: Record<number, number>): number {
+  if (!weights) return rng.pick(cands);
+  const w = cands.map((p) => weights[p] ?? 1);
+  const total = w.reduce((a, b) => a + b, 0);
+  if (total <= 0) return rng.pick(cands);
+  let r = rng.next() * total;
+  for (let i = 0; i < cands.length; i++) { r -= w[i]; if (r < 0) return cands[i]; }
+  return cands[cands.length - 1];
+}
 
 export interface BandInstrumentation {
   lineup: InstrumentRoleName[];                       // 实际编制(2–5,规范顺序)
@@ -287,7 +310,7 @@ export function pickBandInstrumentation(style: string, rng: Rng): BandInstrument
   const roleProgram = {} as Record<InstrumentRoleName, number>;
   for (const r of lineup) {
     const cands = inst[r] ?? [FALLBACK_PROGRAM[r]];
-    roleProgram[r] = rng.pick(cands);
+    roleProgram[r] = pickWeightedProgram(rng, cands, INSTRUMENT_WEIGHTS[style]?.[r]);
   }
   return { lineup, roleProgram };
 }

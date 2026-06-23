@@ -53,7 +53,7 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
   jazzCombo: {
     id: 'jazzCombo', world: 'jazzCombo',
     compPriority: [0, 4],
-    leadByComp: { 0: [11, 4, 6], 4: [4, 11, 6] },
+    leadByComp: { 0: [0, 4, 26, 11, 6], 4: [4, 0, 26, 11, 6] }, // ★ 2026-06-23 钢琴三重奏优先:piano lead 居首(原 vibe 居首)
     bassPriority: [32, 35], padPriority: [49, 16], drumPriority: [40, 0],
   },
   // 软 synth-pop / modal synthetic
