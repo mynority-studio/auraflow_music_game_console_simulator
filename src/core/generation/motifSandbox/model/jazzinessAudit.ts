@@ -45,7 +45,7 @@ export function auditMotifWeave(
   occurrences: readonly MotifOccurrence[],
   keyPc: number,
   mode: ScaleMode,
-  ctx: { totalBars: number; quoteBeats?: number; progression?: readonly SandboxChord[]; inputTonality?: SandboxTonality },
+  ctx: { totalBars: number; quoteBeats?: number; progression?: readonly SandboxChord[]; inputTonality?: SandboxTonality; frictionAudit?: { frictionPairsScanned: number; frictionPairsFlagged: number; frictionPairsRepaired: number; frictionRepairsSkippedByStyleScale: number; protectedQuoteFrictionCount: number } },
 ): MotifWeaveAudit {
   const sorted = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
   let maxLeap = 0;
@@ -126,6 +126,11 @@ export function auditMotifWeave(
     articulationGapsHealed,
     intentionalRepeatStaccatoCount,
     captureBpmUsedForTimingOnly: true, // ★ playbackBpm = generation snapshot;capture BPM 仅 ms→beat
+    frictionPairsScanned: ctx.frictionAudit?.frictionPairsScanned ?? 0,
+    frictionPairsFlagged: ctx.frictionAudit?.frictionPairsFlagged ?? 0,
+    frictionPairsRepaired: ctx.frictionAudit?.frictionPairsRepaired ?? 0,
+    frictionRepairsSkippedByStyleScale: ctx.frictionAudit?.frictionRepairsSkippedByStyleScale ?? 0,
+    protectedQuoteFrictionCount: ctx.frictionAudit?.protectedQuoteFrictionCount ?? 0,
   };
 }
 

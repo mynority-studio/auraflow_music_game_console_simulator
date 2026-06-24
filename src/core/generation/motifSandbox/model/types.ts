@@ -85,6 +85,12 @@ export interface MotifWeaveAudit {
   articulationGapsHealed: number;        // 不同音高短空拍被补连的音数
   intentionalRepeatStaccatoCount: number;// 被识别为【有意同音断奏】的音数(不延长)
   captureBpmUsedForTimingOnly: boolean;  // ★ capture BPM 仅用于 ms→beat;playbackBpm = generation snapshot
+  // —— 摩擦修复审计(beginner healing Phase 2)——
+  frictionPairsScanned: number;          // 扫描的相邻音对数
+  frictionPairsFlagged: number;          // 高风险强调摩擦对数
+  frictionPairsRepaired: number;         // 第 3 次起被修的对数(只 develop/connect)
+  frictionRepairsSkippedByStyleScale: number; // 被 blues/jazz 风格/音阶豁免免修的数
+  protectedQuoteFrictionCount: number;   // exact/varied quote 里的摩擦(计数但永不修)
 }
 
 // —— 曲式上下文(directive roadmap_slot_fusion §5.1):曲长不再是 weaver 内的隐藏常量,

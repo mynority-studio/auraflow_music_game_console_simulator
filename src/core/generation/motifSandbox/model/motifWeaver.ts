@@ -19,7 +19,9 @@ import {
   identity, fitRange, transposeDiatonicMotif, invertAroundMidi, retrogradePitchOnly,
   rhythmDivide, augmentMotif, fragmentMotif, displaceMotif,
 } from './motifTransform';
-import { snapMidiToScale, isInScale, transposeDiatonic } from './scale';
+import { snapMidiToScale, isInScale, transposeDiatonic, SCALE_INTERVALS } from './scale';
+import { TONALITY_INTERVALS } from './sandboxScales';
+import { repairRepeatedMelodicFriction } from './motifFrictionRepair';
 import { buildProgression } from './motifHarmony';
 import { analyzeUserMelodicBrick } from './melodicBrickAnalyzer';
 import { inferHarmonyIntent } from './melodicBrickHarmonyIntent';
@@ -581,10 +583,14 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   // ★ blues contract Phase 4 末端安全闸:在【onset 吸网格后】rectify(结构状态按最终落点重判 —— smoothAndResolve 的
   //   leap-fold 与网格吸附都可能把音挪到非和弦 scale 落点)。保 quote;确保生成/发展结构音落在合同 stable∪color。
   if (pitchCtx.isBluesInput) rectifyToPitchContract(snappedLead, pitchCtx, { preserveQuote: true });
+  // ★ Phase 2 摩擦修复(beginner healing):重复强调的风格/音阶不合法相邻摩擦,第 3 次起修第二音(exact/varied
+  //   quote 永不修,只计 protectedQuoteFrictionCount);在合同 rectify 之后、sanitize 之前。不与 smoothAndResolve 抢职责。
+  const frictionScalePcs = (inputTonality ? TONALITY_INTERVALS[inputTonality] : SCALE_INTERVALS[mode]).map((iv) => (((keyPc + iv) % 12) + 12) % 12);
+  const fr = repairRepeatedMelodicFriction(snappedLead, { pitchCtx, style: input.style, tonality: inputTonality, keyPc, scalePcs: frictionScalePcs, mode: input.healingMode });
   // ★ 单声部安全闸(directive Phase 3,2026-06-19):吸 1/16 后前 slot 尾音可能被推到下一 slot 起点 → 同 onset+同
   //   pitch 双音 / 同 pitch overlap → 短音 noteOff 提前关掉长音。合并(quote 优先,不吞用户 motif 音)+ 消解 overlap。
-  const finalLead = sanitizeMotifLeadNotes(snappedLead);
-  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression, inputTonality });
+  const finalLead = sanitizeMotifLeadNotes(fr.notes);
+  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression, inputTonality, frictionAudit: fr.audit });
   const progressionBeats = progression.reduce((n, c) => n + c.durationBeats, 0);
   // ★ BPM snapshot(beginner healing directive §10.3,用户拍板):playbackBpm = 本次 generation 的 input.bpm
   //   (= 选定/输出 BPM 快照),【不再】用 motif.bpm(capture 时钟)当播放权威;motif.bpm 降级为 capture 元数据。

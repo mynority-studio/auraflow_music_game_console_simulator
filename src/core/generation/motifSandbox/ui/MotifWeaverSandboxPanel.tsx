@@ -507,6 +507,7 @@ const AnalysisReadout: React.FC<AnalysisReadoutProps> = React.memo(({ a, timing,
             <Row k="maxLeap / jazziness" v={`${result.audit.maxLeap} 半音 · ${result.audit.jazzinessScore.toFixed(2)}`} good={result.audit.jazzinessScore < 0.35 || style === 'jazz'} />
             <Row k="合同(强不支持/弱/quote)" v={`${result.audit.structuralUnsupported} / ${result.audit.weakUnsupported} / ${result.audit.quoteStructuralUnsupported} · 通过 ${(result.audit.contractPassRatio * 100).toFixed(0)}%`} good={result.audit.structuralUnsupported === 0} />
             {isBluesTonality(tonality) && <Row k="布鲁斯(调味和弦/结构蓝音落地)" v={`${result.audit.bluesSeasonedChordCount} 和弦 · ${result.audit.blueColorStructuralSupported} 蓝音`} good={result.audit.bluesSeasonedChordCount > 0} />}
+            <Row k="修饰(补连/断奏 · 摩擦修/护quote)" v={`补 ${result.audit.articulationGapsHealed} · 断奏 ${result.audit.intentionalRepeatStaccatoCount} · 摩擦修 ${result.audit.frictionPairsRepaired}/${result.audit.frictionPairsFlagged} · 护quote ${result.audit.protectedQuoteFrictionCount}`} good />
             <div className="text-[10px] text-zinc-500 pt-1">前 16 音(fuchsia=原样陈述 · cyan=变形发展 · 灰=连接留白):</div>
             <div className="text-[10px] text-zinc-400 leading-snug break-words">
               {result.lead.slice(0, 16).map((n, i) => <span key={i} className={n.occurrenceKind === 'quote' ? 'text-fuchsia-300' : n.occurrenceKind === 'develop' ? 'text-cyan-300' : 'text-zinc-500'}>{n.midi}@{n.onsetBeat.toFixed(1)} </span>)}
