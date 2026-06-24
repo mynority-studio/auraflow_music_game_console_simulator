@@ -49,12 +49,26 @@ describe('motifSandbox/pitchContract', () => {
     expect(classifyMelodyNoteAgainstContract({ note: weakBlue, contract: c, isBlue: true })).toBe('scale-passing');
   });
 
-  it('quote 蓝调音:occurrenceKind=quote 的不支持蓝音 → quote-blue(保留,不算 unsupported)', () => {
+  it('quote 蓝调音(followup 2.3):弱 quote 蓝音=quote-blue(放行);结构 quote 蓝音不支持=unsupported-structural(审计计 quoteStructuralUnsupported,不 mutate)', () => {
     const tonic = { ...cMajTonic(), effectiveFunc: 'T' as const };
     const ctx = buildPitchContractContext({ progression: [tonic], keyPc: 0, mode: 'major', inputTonality: 'majorBlues' });
     const c = ctx.contracts[0];
-    const q = note(63, 0, 1.5, { structuralToneScore: 0.7, occurrenceKind: 'quote' });
-    expect(classifyMelodyNoteAgainstContract({ note: q, contract: c, isBlue: true })).toBe('quote-blue');
+    const weakQ = note(63, 0.75, 0.25, { structuralToneScore: 0.2, occurrenceKind: 'quote' }); // 弱
+    expect(classifyMelodyNoteAgainstContract({ note: weakQ, contract: c, isBlue: true })).toBe('quote-blue');
+    const strongQ = note(63, 0, 1.5, { structuralToneScore: 0.7, occurrenceKind: 'quote' }); // 强(结构)
+    expect(classifyMelodyNoteAgainstContract({ note: strongQ, contract: c, isBlue: true })).toBe('unsupported-structural');
+  });
+
+  it('approach 解决校验(followup 2.2):弱短半音接 supported 邻音=approach;孤立/跳离=unsupported-weak', () => {
+    const ctx = buildPitchContractContext({ progression: [cMajTonic()], keyPc: 0, mode: 'major' });
+    const c = ctx.contracts[0]; // C 大三:stable C/E/G,scale F
+    // C#(61)弱短,接到 D... D 是 color(9th)→ supported;C#→D 级进 → approach
+    const cs = note(61, 0.75, 0.25, { structuralToneScore: 0.2 });
+    expect(classifyMelodyNoteAgainstContract({ note: cs, next: note(62, 1, 0.5), contract: c, isBlue: false })).toBe('approach');
+    // 孤立 C#(无邻音)→ unsupported-weak
+    expect(classifyMelodyNoteAgainstContract({ note: cs, contract: c, isBlue: false })).toBe('unsupported-weak');
+    // C#(61)跳到 A(69,>2 半音)→ 不是级进解决 → unsupported-weak
+    expect(classifyMelodyNoteAgainstContract({ note: cs, next: note(69, 1, 0.5), contract: c, isBlue: false })).toBe('unsupported-weak');
   });
 
   it('nearestContractTone:结构音吸到 stable∪color 最近;非结构吸到含 scale', () => {

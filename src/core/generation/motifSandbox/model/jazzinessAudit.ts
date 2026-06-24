@@ -85,11 +85,15 @@ export function auditMotifWeave(
   let structuralUnsupported = 0, weakUnsupported = 0, quoteStructuralUnsupported = 0, blueColorStructuralSupported = 0, supported = 0;
   if (ctx.progression && ctx.progression.length) {
     const pctx = buildPitchContractContext({ progression: ctx.progression, keyPc, mode, inputTonality: ctx.inputTonality });
-    for (const n of sorted) {
+    for (let i = 0; i < sorted.length; i++) {
+      const n = sorted[i];
       const contract = contractAtBeat(pctx, n.onsetBeat);
       const isBlue = ctx.inputTonality ? isBlueColorPc(mod12(n.midi), keyPc, ctx.inputTonality) : false;
-      const cls = classifyMelodyNoteAgainstContract({ note: n, contract, isBlue });
+      // ★ followup 2.2:传 prev/next(approach 解决校验)。
+      const cls = classifyMelodyNoteAgainstContract({ note: n, prev: sorted[i - 1], next: sorted[i + 1], contract, isBlue });
       const struct = isStructuralMelodyNote(n);
+      // ★ followup 2.3:quote 的结构音不被支持 → 记 quoteStructuralUnsupported(和声没接住用户 motif,不 mutate quote);
+      //   非 quote 结构不支持 → structuralUnsupported(全风格 fail)。
       if (cls === 'unsupported-structural') { if (n.occurrenceKind === 'quote') quoteStructuralUnsupported++; else structuralUnsupported++; }
       else if (cls === 'unsupported-weak') weakUnsupported++;
       else { supported++; if (isBlue && struct && (cls === 'structural-supported' || cls === 'color-supported')) blueColorStructuralSupported++; }

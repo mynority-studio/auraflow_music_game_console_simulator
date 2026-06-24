@@ -178,16 +178,22 @@ export function classifyMelodyNoteAgainstContract(args: {
   contract: ChordPitchContract;
   isBlue?: boolean; // 该音是否当前 key 的蓝调色音(调用方据 ctx 算)
 }): NoteContractClass {
-  const { note, contract } = args;
+  const { note, prev, next, contract } = args;
   const pc = m12(note.midi);
   const structural = isStructuralMelodyNote(note);
-  // quote 蓝调音:原样保留,单独归类(不当 unsupported,但审计可见)
-  if (note.occurrenceKind === 'quote' && args.isBlue && !contract.stablePcs.includes(pc) && !contract.colorPcs.includes(pc)) return 'quote-blue';
+  const supported = (m: number): boolean => { const p = m12(m); return contract.stablePcs.includes(p) || contract.colorPcs.includes(p) || contract.scalePcs.includes(p); };
+  // quote 蓝调音:原样保留,单独归类。★ followup 2.3:仅【弱】quote 蓝音算 quote-blue(放行);
+  //   【结构】quote 蓝音不被支持 → 落 unsupported-structural(审计计 quoteStructuralUnsupported,但不 mutate quote)。
+  if (note.occurrenceKind === 'quote' && args.isBlue && !contract.stablePcs.includes(pc) && !contract.colorPcs.includes(pc) && !structural) return 'quote-blue';
   if (contract.stablePcs.includes(pc)) return 'structural-supported';
   if (contract.colorPcs.includes(pc)) return 'color-supported';
   if (structural) return 'unsupported-structural';
   if (contract.scalePcs.includes(pc)) return 'scale-passing';
-  if (contract.approachPcs.includes(pc)) return 'approach';
+  // ★ followup 2.2:approach 仅当【弱 + 短(≤0.5)+ 级进(≤2 半音)接到 supported 邻音】才合法;否则 unsupported-weak。
+  const isWeakShort = note.durationBeat <= 0.5 + 1e-6;
+  const stepToNext = !!next && Math.abs(note.midi - next.midi) <= 2 && supported(next.midi);
+  const stepToPrev = !!prev && Math.abs(note.midi - prev.midi) <= 2 && supported(prev.midi);
+  if (contract.approachPcs.includes(pc) && isWeakShort && (stepToNext || stepToPrev)) return 'approach';
   return 'unsupported-weak';
 }
 
@@ -195,11 +201,15 @@ export function classifyMelodyNoteAgainstContract(args: {
  *  结构音不被合同支持 → 吸到 stable∪color;弱音不被支持 → 吸到含 scale;已支持/quote/scale-passing/approach → 留。
  *  preserveQuote=true 时 occurrenceKind='quote' 一律不动(保用户原样陈述)。 */
 export function rectifyToPitchContract(notes: MotifNote[], ctx: PitchContractContext, opts: { preserveQuote?: boolean } = {}): void {
+  const ordered = [...notes].sort((a, b) => a.onsetBeat - b.onsetBeat); // 旋律邻音用 onset 序(approach 解决校验用)
+  const idx = new Map(ordered.map((n, i) => [n, i]));
   for (const n of notes) {
     if (opts.preserveQuote && n.occurrenceKind === 'quote') continue;
+    const i = idx.get(n)!;
     const contract = contractAtBeat(ctx, n.onsetBeat);
     const isBlue = ctx.inputTonality ? isBlueColorPc(m12(n.midi), ctx.keyPc, ctx.inputTonality) : false;
-    const cls = classifyMelodyNoteAgainstContract({ note: n, contract, isBlue });
+    const cls = classifyMelodyNoteAgainstContract({ note: n, prev: ordered[i - 1], next: ordered[i + 1], contract, isBlue });
+    // ★ followup 2.2:弱不支持 → 吸到 stable∪color∪scale(nearestContractTone 非 structural 不含 approach)。
     if (cls === 'unsupported-structural') n.midi = nearestContractTone(n.midi, contract, { structural: true });
     else if (cls === 'unsupported-weak') n.midi = nearestContractTone(n.midi, contract, { structural: false });
   }
