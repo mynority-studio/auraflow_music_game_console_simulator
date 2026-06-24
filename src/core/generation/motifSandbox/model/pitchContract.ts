@@ -161,9 +161,11 @@ export function contractAtBeat(ctx: PitchContractContext, beat: number): ChordPi
   return cs.find((c) => beat >= c.startBeat - 1e-6 && beat < c.startBeat + c.durationBeats - 1e-6) ?? cs[cs.length - 1];
 }
 
-/** 结构音判定:有 structuralToneScore 用阈值;否则退【下拍 或 时长 ≥1 拍】。 */
+/** 结构音判定(blues contract,按【最终 onset/duration】重判 —— directive §7.2:transform 后结构性须按落点重算,
+ *  不信继承自原 motif 的 stale 分)。规则:① 生成器【显式低分】(标注的弱经过/导音,< 阈值半)→ 非结构,即使落
+ *  强拍;② 否则按位置 —— 下拍 或 时长 ≥1 拍 = 结构(与 adaptToHarmony 旧 gate 一致)。 */
 export function isStructuralMelodyNote(note: MotifNote): boolean {
-  if (typeof note.structuralToneScore === 'number') return note.structuralToneScore >= STRUCTURAL_TONE_MIN;
+  if (typeof note.structuralToneScore === 'number' && note.structuralToneScore < STRUCTURAL_TONE_MIN * 0.6) return false;
   const onBeat = Math.abs(note.onsetBeat - Math.round(note.onsetBeat)) < 1e-6;
   return onBeat || note.durationBeat >= 1;
 }
@@ -186,6 +188,20 @@ export function classifyMelodyNoteAgainstContract(args: {
   if (contract.scalePcs.includes(pc)) return 'scale-passing';
   if (contract.approachPcs.includes(pc)) return 'approach';
   return 'unsupported-weak';
+}
+
+/** 合同感知 rectify(blues contract Phase 4):就地修正 develop/generated 音 ——
+ *  结构音不被合同支持 → 吸到 stable∪color;弱音不被支持 → 吸到含 scale;已支持/quote/scale-passing/approach → 留。
+ *  preserveQuote=true 时 occurrenceKind='quote' 一律不动(保用户原样陈述)。 */
+export function rectifyToPitchContract(notes: MotifNote[], ctx: PitchContractContext, opts: { preserveQuote?: boolean } = {}): void {
+  for (const n of notes) {
+    if (opts.preserveQuote && n.occurrenceKind === 'quote') continue;
+    const contract = contractAtBeat(ctx, n.onsetBeat);
+    const isBlue = ctx.inputTonality ? isBlueColorPc(m12(n.midi), ctx.keyPc, ctx.inputTonality) : false;
+    const cls = classifyMelodyNoteAgainstContract({ note: n, contract, isBlue });
+    if (cls === 'unsupported-structural') n.midi = nearestContractTone(n.midi, contract, { structural: true });
+    else if (cls === 'unsupported-weak') n.midi = nearestContractTone(n.midi, contract, { structural: false });
+  }
 }
 
 /** 把 midi 吸到合同允许集里最近的音(保八度,平手按 preferDirection)。

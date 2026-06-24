@@ -68,9 +68,10 @@ describe('motifSandbox/pitchContract', () => {
     expect(nearestContractTone(65, c, { structural: false })).toBe(65);
   });
 
-  it('isStructuralMelodyNote:有分用阈值,无分退下拍/长音', () => {
-    expect(isStructuralMelodyNote(note(60, 0, 0.5, { structuralToneScore: 0.7 }))).toBe(true);
-    expect(isStructuralMelodyNote(note(60, 0, 0.25, { structuralToneScore: 0.3 }))).toBe(false);
+  it('isStructuralMelodyNote:按落点重判(显式低分=弱经过即使强拍;否则下拍/长音=结构)', () => {
+    expect(isStructuralMelodyNote(note(60, 0, 0.5, { structuralToneScore: 0.7 }))).toBe(true);   // 下拍 → 结构
+    expect(isStructuralMelodyNote(note(60, 0, 0.25, { structuralToneScore: 0.2 }))).toBe(false); // 显式低分(生成器标注弱经过)→ 非结构
+    expect(isStructuralMelodyNote(note(60, 0.75, 0.75, { structuralToneScore: 0.86 }))).toBe(false); // ★ transform 后 stale 高分不信 → 弱拍短音=弱
     expect(isStructuralMelodyNote(note(60, 0, 0.25))).toBe(true);  // 下拍(无分)
     expect(isStructuralMelodyNote(note(60, 0.75, 0.25))).toBe(false); // 弱拍短音(无分)
   });

@@ -30,6 +30,7 @@ import type { SelectedMotifProgression, UserMelodicBrick, MotifMelodicRoadmap, M
 import { chordAtBeat, nearestChordTone, isChordTone, effectiveTonePcs, type SandboxChord } from './chords';
 import { auditMotifWeave } from './jazzinessAudit';
 import { sanitizeMotifLeadNotes } from './leadSanitizer';
+import { buildPitchContractContext, rectifyToPitchContract, type PitchContractContext } from './pitchContract';
 import { makeRng, type SeededRng } from './rng';
 
 const BAR = 4;
@@ -149,8 +150,11 @@ function placeConnect(atBeat: number, slotBeats: number, slotIndex: number, prog
   return out;
 }
 
-/** 和声适配(Impro-Visor RectifyPitches 后处理):强拍/长音的非和弦音吸到就近和弦音;不碰 quote。 */
-function adaptToHarmony(notes: MotifNote[], progression: readonly SandboxChord[]): void {
+/** 和声适配(Impro-Visor RectifyPitches 后处理):强拍/长音的非和弦音吸到就近和弦音;不碰 quote。
+ *  ★ blues contract Phase 4:布鲁斯输入走【合同感知 rectify】(结构音→stable∪color、弱音留 scale/approach,
+ *  蓝调音由 seasoned 和弦容纳);非布鲁斯保持旧逻辑(directive §10:非布鲁斯不放松,字节不变)。 */
+function adaptToHarmony(notes: MotifNote[], progression: readonly SandboxChord[], pitchCtx?: PitchContractContext): void {
+  if (pitchCtx?.isBluesInput) { rectifyToPitchContract(notes, pitchCtx, { preserveQuote: true }); return; }
   for (const n of notes) {
     const ch = chordAtBeat(progression, n.onsetBeat);
     if (!ch) continue;
@@ -198,7 +202,9 @@ function arpUp(ch: SandboxChord, floor: number, count: number, ceil: number): nu
 function generateForFunction(slot: MelodicSlot, at: number, span: number, idx: number, progression: readonly SandboxChord[], prevMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode): MotifNote[] {
   const fn = slot.requiredFunction;
   const ch = chordAtBeat(progression, at) ?? progression[0];
-  const mk = (midi: number, on: number, dur: number, acc: number): MotifNote => ({ midi, onsetBeat: on, durationBeat: dur, velocity: 0.56, scaleDegree: 0, octave: 0, accent: acc, occurrenceKind: 'connect', slotIndex: idx });
+  // ★ str = structuralToneScore:级进趋近/导音是【弱经过音】(低 str)→ 合同按弱经过判、comp/bass 不锚它;
+  //   落点(和弦音)给高 str = 结构音。无 str(opening 琶音和弦音)→ 退 onBeat/长音判(本就是和弦音)。
+  const mk = (midi: number, on: number, dur: number, acc: number, str?: number): MotifNote => ({ midi, onsetBeat: on, durationBeat: dur, velocity: 0.56, scaleDegree: 0, octave: 0, accent: acc, structuralToneScore: str, occurrenceKind: 'connect', slotIndex: idx });
   const within = (ns: MotifNote[]): MotifNote[] => ns.filter((n) => n.onsetBeat < at + span - 1e-6);
 
   if (fn === 'opening') {
@@ -210,11 +216,11 @@ function generateForFunction(slot: MelodicSlot, at: number, span: number, idx: n
     const nextCh = chordAtBeat(progression, at + span + 0.01) ?? ch;
     const target = nearestChordTone(prevMidi, nextCh);
     const start = Math.max(at, at + span - 2);
-    return within([mk(snapMidiToScale(target - 2, keyPc, mode), start, 0.9, 0.45), mk(snapMidiToScale(target - 1, keyPc, mode), start + 1, 0.9, 0.5)]); // 级进趋近(导音式)
+    return within([mk(snapMidiToScale(target - 2, keyPc, mode), start, 0.9, 0.45, 0.25), mk(snapMidiToScale(target - 1, keyPc, mode), start + 1, 0.9, 0.5, 0.25)]); // 级进趋近(导音式,弱经过)
   }
   if (fn === 'cadence' || fn === 'resolution') {
-    const land = nearestChordTone(prevMidi, ch); // 解决到当拍和弦音(末音长)
-    return within([mk(snapMidiToScale(land + 2, keyPc, mode), at, 0.9, 0.45), mk(snapMidiToScale(land + 1, keyPc, mode), at + 1, 0.9, 0.45), mk(land, at + 2, Math.max(1, span - 2), 0.58)]);
+    const land = nearestChordTone(prevMidi, ch); // 解决到当拍和弦音(末音长;本就是和弦音 → 不标 str,保 accompaniment 旧行为)
+    return within([mk(snapMidiToScale(land + 2, keyPc, mode), at, 0.9, 0.45, 0.25), mk(snapMidiToScale(land + 1, keyPc, mode), at + 1, 0.9, 0.45, 0.25), mk(land, at + 2, Math.max(1, span - 2), 0.58)]);
   }
   return placeConnect(at, span, idx, progression, prevMidi); // continuation / answer / fill
 }
@@ -312,8 +318,9 @@ export function renderMelodicSlot(args: {
   avoidLabel?: string;
   quoteBeats?: number; // 排比一致长度(子动机);默认整段 motif。quote 裁到 min(quoteBeats, slot span)
   quoteOccurrence?: number; // mustQuote 的第几遍(0-based);奇数遍加微变化(A B A B)
+  pitchCtx?: PitchContractContext; // ★ blues contract Phase 4:布鲁斯输入下合同感知 rectify
 }): { notes: MotifNote[]; label: string } {
-  const { slot, userMotif, progression, previousNotes, keyPc, mode } = args;
+  const { slot, userMotif, progression, previousNotes, keyPc, mode, pitchCtx } = args;
   const base = fitRange(identity(userMotif.notes), LEAD_LOW, LEAD_HIGH);
   if (!base.length) return { notes: [], label: 'empty' };
   const { lo: bandLo, hi: bandHi } = LEAD_BAND(base);
@@ -337,36 +344,36 @@ export function renderMelodicSlot(args: {
       let tail: MotifNote[] = [];
       if (tailSpan >= BAR - 1e-6) {
         const last = q.length ? q[q.length - 1].midi : prevMidi;
-        tail = fillAnswer(base, at + qLen, tailSpan, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx).notes;
+        tail = fillAnswer(base, at + qLen, tailSpan, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx, pitchCtx).notes;
       }
       return { notes: [...q, ...tail], label: odd ? 'quote:vary' : 'quote' };
     }
     case 'mustDevelop': {
       // 填满整个 slot(模进/倒影/逆行 + 偶尔连接留白),避免长 brick 留大段空拍。
-      const r = fillAnswer(base, at, span, quoteLen, progression, rng, args.avoidLabel ?? '', prevMidi, bandLo, bandHi, keyPc, mode, idx);
+      const r = fillAnswer(base, at, span, quoteLen, progression, rng, args.avoidLabel ?? '', prevMidi, bandLo, bandHi, keyPc, mode, idx, pitchCtx);
       return { notes: r.notes, label: r.label || 'develop' };
     }
     case 'mayReference': {
       // 轻引用:片段化开头 + 填满剩余(节奏/轮廓延续,不留死寂)。
       const frag = placeStatement(base, [{ t: 'fragment', keep: 0.5 }], at, Math.min(quoteLen, span), idx, 'develop', prevMidi, bandLo, bandHi, keyPc, mode);
-      adaptToHarmony(frag, progression);
+      adaptToHarmony(frag, progression, pitchCtx);
       const used = Math.min(quoteLen, span);
       let tail: MotifNote[] = [];
       if (span - used >= BAR - 1e-6) {
         const last = frag.length ? frag[frag.length - 1].midi : prevMidi;
-        tail = fillAnswer(base, at + used, span - used, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx).notes;
+        tail = fillAnswer(base, at + used, span - used, quoteLen, progression, rng, '', last, bandLo, bandHi, keyPc, mode, idx, pitchCtx).notes;
       }
       return { notes: [...frag, ...tail], label: 'ref:frag' };
     }
     case 'generatedOnly':
     default:
-      return { notes: generateForFunction(slot, at, span, idx, progression, prevMidi, bandLo, bandHi, keyPc, mode), label: `gen:${slot.requiredFunction}` }; // 按 requiredFunction 生成不同音乐行为
+      return { notes: generateForFunction(slot, at, span, idx, progression, prevMidi, bandLo, bandHi, keyPc, mode), label: `gen:${slot.requiredFunction}` }; // 按 requiredFunction 生成不同音乐行为(seasoned 和弦 effectiveTonePcs 已含蓝调色)
   }
 }
 
 /** 应答区(乐句里 motif 之后那段):铺【developed motif 序列】(模进/倒影… → 续写),偶尔连接留白(透气)。
  *  首个实例恒为发展(保证每乐句都有发展),其余按概率 develop/connect。 */
-function fillAnswer(base: readonly MotifNote[], startBeat: number, span: number, motifBeats: number, progression: readonly SandboxChord[], rng: SeededRng, avoidLabel: string, fromMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode, slotIndex: number): { notes: MotifNote[]; label: string; lastMidi: number; avoid: string } {
+function fillAnswer(base: readonly MotifNote[], startBeat: number, span: number, motifBeats: number, progression: readonly SandboxChord[], rng: SeededRng, avoidLabel: string, fromMidi: number, bandLo: number, bandHi: number, keyPc: number, mode: ScaleMode, slotIndex: number, pitchCtx?: PitchContractContext): { notes: MotifNote[]; label: string; lastMidi: number; avoid: string } {
   const out: MotifNote[] = [];
   const labels: string[] = [];
   let cursor = startBeat, prev = fromMidi, avoid = avoidLabel, k = 0;
@@ -379,7 +386,7 @@ function fillAnswer(base: readonly MotifNote[], startBeat: number, span: number,
     } else {
       const { ops, label } = pickDevOps(rng, avoid); avoid = label;
       const notes = placeStatement(base, ops, cursor, instSpan, slotIndex, 'develop', prev, bandLo, bandHi, keyPc, mode);
-      adaptToHarmony(notes, progression);
+      adaptToHarmony(notes, progression, pitchCtx);
       out.push(...notes); labels.push(label);
       if (notes.length) prev = notes[notes.length - 1].midi;
     }
@@ -492,6 +499,10 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   let melodicSlotPlan: MelodicSlotPlan | undefined;
   if (roadmap) melodicSlotPlan = buildMelodicSlotPlanFromRoadMap({ form, roadmapBricks: roadmap.brickSlots, userBrick: brick, seed: input.seed });
 
+  // ★ blues contract Phase 4:从【最终 progression】建每和弦音高合同 → develop/generated 音 rectify 用。
+  //   非布鲁斯输入 isBluesInput=false → adaptToHarmony 走旧逻辑(字节不变)。
+  const pitchCtx = buildPitchContractContext({ progression, keyPc, mode, inputTonality });
+
   // base = 原样 motif 落 lead 音区;音域带 ≈ 主题音域 + 头尾余量(控制总音域)。
   const base = fitRange(identity(motif.notes), LEAD_LOW, LEAD_HIGH);
   const refLow = Math.min(...base.map((n) => n.midi));
@@ -509,7 +520,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     let quoteOcc = 0; // ★ mustQuote 第几遍(A B A B:偶数原样/奇数微变化)
     for (const slot of melodicSlotPlan.slots) {
       const isQuote = slot.userMotifPolicy === 'mustQuote';
-      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel, quoteBeats: motifBeats, quoteOccurrence: isQuote ? quoteOcc : 0 });
+      const { notes, label } = renderMelodicSlot({ slot, userMotif: motif, userBrick: brick, progression, previousNotes: lead, seed: input.seed, keyPc, mode, avoidLabel, quoteBeats: motifBeats, quoteOccurrence: isQuote ? quoteOcc : 0, pitchCtx });
       if (isQuote) quoteOcc++;
       if (!notes.length) continue;
       if (slot.userMotifPolicy === 'mustDevelop') avoidLabel = label; // 发展手法尽量不连同
@@ -538,7 +549,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
       } else {
         const dev = pickDevOps(rng, avoidLabel); avoidLabel = dev.label;
         stmt = placeStatement(base, dev.ops, phraseStart, span, p, 'develop', prevLastMidi, bandLo, bandHi, keyPc, mode);
-        adaptToHarmony(stmt, progression);
+        adaptToHarmony(stmt, progression, pitchCtx);
         stmtKind = 'develop';
         stmtLabel = `head:${dev.label}`;
       }
@@ -550,7 +561,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
       }
       const ansStart = phraseStart + motifBeats;
       if (answerBeats > 0 && ansStart < targetBeats - 1e-6) {
-        const ans = fillAnswer(base, ansStart, Math.min(answerBeats, targetBeats - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p);
+        const ans = fillAnswer(base, ansStart, Math.min(answerBeats, targetBeats - ansStart), motifBeats, progression, rng, avoidLabel, prevLastMidi, bandLo, bandHi, keyPc, mode, p, pitchCtx);
         if (ans.notes.length) {
           lead.push(...ans.notes);
           const hasDev = ans.notes.some((n) => n.occurrenceKind === 'develop');
@@ -567,6 +578,9 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
     .map((n) => ({ ...n, onsetBeat: Math.min(Math.round(n.onsetBeat / ONSET_GRID) * ONSET_GRID, targetBeats - ONSET_GRID) })) // onset 吸 1/16 网格 = 稳稳对拍
     .sort((a, b) => a.onsetBeat - b.onsetBeat)
     .filter((n) => n.durationBeat > 0);
+  // ★ blues contract Phase 4 末端安全闸:在【onset 吸网格后】rectify(结构状态按最终落点重判 —— smoothAndResolve 的
+  //   leap-fold 与网格吸附都可能把音挪到非和弦 scale 落点)。保 quote;确保生成/发展结构音落在合同 stable∪color。
+  if (pitchCtx.isBluesInput) rectifyToPitchContract(snappedLead, pitchCtx, { preserveQuote: true });
   // ★ 单声部安全闸(directive Phase 3,2026-06-19):吸 1/16 后前 slot 尾音可能被推到下一 slot 起点 → 同 onset+同
   //   pitch 双音 / 同 pitch overlap → 短音 noteOff 提前关掉长音。合并(quote 优先,不吞用户 motif 音)+ 消解 overlap。
   const finalLead = sanitizeMotifLeadNotes(snappedLead);
