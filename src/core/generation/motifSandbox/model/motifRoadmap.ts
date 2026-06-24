@@ -86,13 +86,17 @@ function fallbackSlotsPerChord(chords: readonly SandboxChord[], sectionId?: stri
   }));
 }
 
-/** 调内 chordType 串(由【根→各和弦音】音程推):走 A narrowQuality 用,保 7 窄品质可分类。 */
+/** 调内 chordType 串(由【根→各和弦音】音程推):走 A narrowQuality 用,保 7 窄品质可分类。
+ *  ★ 大三优先(blues contract Phase 6):seasoned 和弦可同含【大三 + b3(#9)】(C7#9 蓝调)——
+ *  须判 dom7('7'),不可因先见 b3 误判 'm7'(否则桥把它当小调,Q+N 建错 chord-scale)。非 seasoned
+ *  和弦不会同含 3/4 度 → 行为不变。 */
 function typeFromTones(rootPc: number, tonePcs: readonly number[]): string {
   const ivs = new Set(tonePcs.map((pc) => m12(pc - rootPc)));
-  const dim = ivs.has(3) && ivs.has(6), maj7 = ivs.has(11), dom7 = ivs.has(10);
-  if (dim) return dom7 ? 'm7b5' : 'dim';
-  if (ivs.has(3)) return dom7 ? 'm7' : maj7 ? 'mMaj7' : 'min';
-  return maj7 ? 'maj7' : dom7 ? '7' : 'maj';
+  const min3 = ivs.has(3), maj3 = ivs.has(4), dim5 = ivs.has(6), maj7 = ivs.has(11), dom7 = ivs.has(10);
+  if (maj3) return dom7 ? '7' : maj7 ? 'maj7' : 'maj';          // 大三(含 #9 蓝调)→ 属/大
+  if (min3 && dim5) return dom7 ? 'm7b5' : 'dim';
+  if (min3) return dom7 ? 'm7' : maj7 ? 'mMaj7' : 'min';
+  return dom7 ? '7' : 'maj';                                     // 无三度(sus/power)
 }
 
 /** realize 选项(blues contract Phase 3):布鲁斯输入下做有界调味。缺省 = 旧行为(纯调内,字节不变)。 */
