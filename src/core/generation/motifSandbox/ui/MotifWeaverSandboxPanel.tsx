@@ -27,6 +27,7 @@ type RecordPhase = 'idle' | 'count-in' | 'recording' | 'analyzing' | 'ready';
 
 const STYLES: SandboxStyle[] = ['pop', 'lofi', 'rnb', 'jazz'];
 const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const HIDDEN_GRID_MAX_MS = 60000; // 持续录音安全上限(节拍器不停;录到手动 ■ 停,超 60s 自动收尾)
 
 export const MotifWeaverSandboxPanel: React.FC = () => {
   const [open, setOpen] = useState(false);
@@ -194,17 +195,31 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     setStatus(`◔ 数拍预备(1 小节 · BPM ${ctx.bpm})…暖音频中`);
     // ★ 先把音频时钟暖起来:否则首拍 click 因 AudioContext 启动晚响 → 用户跟着晚弹 → 整段偏后。
     await ensureAudio();
-    recorder.current.start({ maxMs: ctx.captureEndMs + 300 }); // 录音起点 = 暖好这一刻 = click-0 同源
+    // ★ 持续录音(用户:节拍器不停 → 改持续记录):录到【手动 ■ 停】;HIDDEN_GRID_MAX_MS 安全上限兜底。
+    recorder.current.start({ maxMs: HIDDEN_GRID_MAX_MS });
     setStatus(`◔ 数拍(BPM ${ctx.bpm})…第 4 下后进;抢早 1 拍内会保留`);
     const mpb = msPerBeat(ctx);
-    const countInBeats = ctx.countInBars * ctx.beatsPerBar;
-    void playClick(true); // 第 0 拍立即响(已暖,无启动延迟),与 recorder.start 同源
-    for (let b = 1; b < countInBeats; b++) {
-      recTimers.current.push(window.setTimeout(() => { void playClick(false); }, b * mpb));
-    }
-    recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 演奏中…(自由弹,最多 ${ctx.captureBars} 小节;可点 ■ 早停)`); }, ctx.captureStartMs));
-    recTimers.current.push(window.setTimeout(() => finishHiddenGridRecord(), ctx.captureEndMs + 80));
-    timer.current = window.setInterval(() => setElapsed(recorder.current.elapsedMs()), 80);
+    const beatsPerBar = ctx.beatsPerBar;
+    // ★ 连续节拍器(数拍 + 演奏全程不停):drift-corrected 调度 —— 每拍按【绝对目标 beat×mpb(相对 record start)】
+    //   重算延迟,不累积漂移 → click 永远锁在隐形网格上(用户跟着弹不偏)。下拍重音,其余轻;停止/上限时自然结束。
+    void playClick(true); // 第 0 拍(数拍 beat0)立即响,与 recorder.start 同源
+    const scheduleBeat = (beatIndex: number): void => {
+      const delay = Math.max(0, beatIndex * mpb - recorder.current.elapsedMs());
+      recTimers.current.push(window.setTimeout(() => {
+        if (!recorder.current.isActive()) return;          // 已停/到上限 → 不再响
+        void playClick(beatIndex % beatsPerBar === 0);      // 下拍重音
+        scheduleBeat(beatIndex + 1);
+      }, delay));
+    };
+    scheduleBeat(1); // beat0 已立即响,从 beat1 起滚动调度(到停止前一直响)
+    // 数拍结束 → 进演奏(★ 不再自动停;用户点 ■ 停)
+    recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 演奏中…(节拍器持续;motif 取前 ${ctx.captureBars} 小节;弹完点 ■ 停)`); }, ctx.captureStartMs));
+    // 过了 4 小节捕获窗:节拍器继续响、可继续弹(但 motif 只取这前 4 小节)
+    recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 已满 ${ctx.captureBars} 小节(motif 取这前 ${ctx.captureBars} 小节);节拍器继续,弹完点 ■ 停`); }, ctx.captureEndMs));
+    timer.current = window.setInterval(() => {
+      setElapsed(recorder.current.elapsedMs());
+      if (!recorder.current.isActive()) finishHiddenGridRecord(); // 到安全上限 → 自动收尾分析
+    }, 80);
   }, [style, stopPlayback, clearRecTimers, finishHiddenGridRecord]);
 
   // —— 3×5 键盘:按下=试听(+录音器活跃时记音,数拍期会被滤掉),松开=停音 ——
