@@ -18,7 +18,7 @@ import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
+import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
@@ -214,8 +214,13 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     scheduleBeat(1); // beat0 已立即响,从 beat1 起滚动调度(到停止前一直响)
     // 数拍结束 → 进演奏(★ 不再自动停;用户点 ■ 停)
     recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 演奏中…(节拍器持续;motif 取前 ${ctx.captureBars} 小节;弹完点 ■ 停)`); }, ctx.captureStartMs));
-    // 过了 4 小节捕获窗:节拍器继续响、可继续弹(但 motif 只取这前 4 小节)
-    recTimers.current.push(window.setTimeout(() => { setRecordPhase('recording'); setStatus(`● 已满 ${ctx.captureBars} 小节(motif 取这前 ${ctx.captureBars} 小节);节拍器继续,弹完点 ■ 停`); }, ctx.captureEndMs));
+    // 过了 4 小节捕获窗:★ 给个【三角铁提示音】(区别于 wood block click)标边界 + 节拍器继续响、可继续弹(但 motif 只取这前 4 小节)
+    recTimers.current.push(window.setTimeout(() => {
+      if (!recorder.current.isActive()) return; // 已手动停 → 不响
+      void playCue();
+      setRecordPhase('recording');
+      setStatus(`● 已满 ${ctx.captureBars} 小节(motif 取这前 ${ctx.captureBars} 小节);节拍器继续,弹完点 ■ 停`);
+    }, ctx.captureEndMs));
     timer.current = window.setInterval(() => {
       setElapsed(recorder.current.elapsedMs());
       if (!recorder.current.isActive()) finishHiddenGridRecord(); // 到安全上限 → 自动收尾分析

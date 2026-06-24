@@ -115,3 +115,13 @@ export async function playClick(strong: boolean): Promise<void> {
   spessaSynth.noteOn(DRUM_CHANNEL, note, vel);
   spessaSynth.noteOff(DRUM_CHANNEL, note);  // 打击乐 noteOff 不切尾,只防挂音
 }
+
+/** ★ 录入捕获窗满(4 小节)提示音:三角铁 ding(亮、金属、ring → 区别于 wood block click),
+ *  让用户听到"motif 取这前 4 小节"的边界。打击乐 noteOff 不切尾 → 自然 ring。 */
+export async function playCue(): Promise<void> {
+  await startAudioContext();
+  if (!spessaSynth) return;
+  setSandboxAuditionMaster(true);
+  spessaSynth.noteOn(DRUM_CHANNEL, 81, 122);  // 81 = Open Triangle(三角铁,bell ding)
+  spessaSynth.noteOff(DRUM_CHANNEL, 81);
+}
