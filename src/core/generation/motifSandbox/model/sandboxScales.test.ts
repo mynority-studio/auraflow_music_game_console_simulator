@@ -8,20 +8,31 @@ import { isInScale } from './scale';
 import type { CapturedMidiNote } from './types';
 
 describe('motifSandbox/sandboxScales(音阶词汇 + 3×5 键盘)', () => {
-  it('6 种音阶 + 母调推断', () => {
-    expect(SANDBOX_TONALITIES).toEqual(['major', 'minor', 'majorPent', 'minorPent', 'majorBlues', 'minorBlues']);
+  it('8 种音阶 + 母调推断', () => {
+    expect(SANDBOX_TONALITIES).toEqual(['major', 'minor', 'majorPent', 'minorPent', 'majorBlues', 'minorBlues', 'majorBluesPent', 'minorBluesPent']);
     expect(tonalityParentMode('major')).toBe('major');
     expect(tonalityParentMode('majorPent')).toBe('major');
     expect(tonalityParentMode('majorBlues')).toBe('major'); // 大调布鲁斯 → 大调母调
+    expect(tonalityParentMode('majorBluesPent')).toBe('major'); // 大调布鲁斯五声 → 大调母调
     expect(tonalityParentMode('minor')).toBe('minor');
     expect(tonalityParentMode('minorPent')).toBe('minor');
     expect(tonalityParentMode('minorBlues')).toBe('minor');
+    expect(tonalityParentMode('minorBluesPent')).toBe('minor');
   });
 
-  it('isBluesTonality:仅大/小调布鲁斯为真', () => {
-    expect(isBluesTonality('majorBlues')).toBe(true);
-    expect(isBluesTonality('minorBlues')).toBe(true);
+  it('isBluesTonality:大/小调布鲁斯 + 大/小调布鲁斯五声为真', () => {
+    for (const t of ['majorBlues', 'minorBlues', 'majorBluesPent', 'minorBluesPent'] as const) expect(isBluesTonality(t)).toBe(true);
     for (const t of ['major', 'minor', 'majorPent', 'minorPent'] as const) expect(isBluesTonality(t)).toBe(false);
+  });
+
+  it('布鲁斯五声(5 音含蓝调音)区别于纯五声与 6 音布鲁斯', () => {
+    expect(TONALITY_INTERVALS.minorBluesPent).toEqual([0, 3, 5, 6, 10]); // 1 b3 4 b5 b7(含 b5)
+    expect(TONALITY_INTERVALS.majorBluesPent).toEqual([0, 3, 4, 7, 9]);  // 1 b3 3 5 6(b3→3 滑音)
+    expect(TONALITY_INTERVALS.minorBluesPent).toContain(6);  // b5 蓝调音
+    expect(TONALITY_INTERVALS.majorBluesPent).toContain(3);  // b3 蓝调音
+    // C 小调布鲁斯五声:b5=Gb(66)snap 保留;C 大调布鲁斯五声:b3=Eb(63)snap 保留
+    expect(snapMidiToTonality(66, 0, 'minorBluesPent')).toBe(66);
+    expect(snapMidiToTonality(63, 0, 'majorBluesPent')).toBe(63);
   });
 
   it('小调布鲁斯含 b5 蓝调音(相对根 +6 半音);大调布鲁斯含 b3(+3 半音)', () => {

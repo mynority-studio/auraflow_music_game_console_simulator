@@ -10,9 +10,9 @@
 
 import type { ScaleMode } from './types';
 
-export type SandboxTonality = 'major' | 'minor' | 'majorPent' | 'minorPent' | 'majorBlues' | 'minorBlues';
+export type SandboxTonality = 'major' | 'minor' | 'majorPent' | 'minorPent' | 'majorBlues' | 'minorBlues' | 'majorBluesPent' | 'minorBluesPent';
 
-export const SANDBOX_TONALITIES: SandboxTonality[] = ['major', 'minor', 'majorPent', 'minorPent', 'majorBlues', 'minorBlues'];
+export const SANDBOX_TONALITIES: SandboxTonality[] = ['major', 'minor', 'majorPent', 'minorPent', 'majorBlues', 'minorBlues', 'majorBluesPent', 'minorBluesPent'];
 
 export const TONALITY_INTERVALS: Record<SandboxTonality, readonly number[]> = {
   major: [0, 2, 4, 5, 7, 9, 11],   // Ionian
@@ -21,15 +21,18 @@ export const TONALITY_INTERVALS: Record<SandboxTonality, readonly number[]> = {
   minorPent: [0, 3, 5, 7, 10],     // 小调五声
   majorBlues: [0, 2, 3, 4, 7, 9],  // 大调五声 + b3 蓝调音(1 2 b3 3 5 6)
   minorBlues: [0, 3, 5, 6, 7, 10], // 小调五声 + b5 蓝调音(1 b3 4 b5 5 b7)
+  majorBluesPent: [0, 3, 4, 7, 9], // 大调布鲁斯五声(1 b3 3 5 6;b3→3 蓝调滑音)
+  minorBluesPent: [0, 3, 5, 6, 10],// 小调布鲁斯五声(1 b3 4 b5 b7;含 b5 蓝调音)
 };
 
 export const TONALITY_LABEL: Record<SandboxTonality, string> = {
-  major: '大调', minor: '小调', majorPent: '大五声', minorPent: '小五声', majorBlues: '大调布鲁斯', minorBlues: '小调布鲁斯',
+  major: '大调', minor: '小调', majorPent: '大五声', minorPent: '小五声',
+  majorBlues: '大调布鲁斯', minorBlues: '小调布鲁斯', majorBluesPent: '大调布鲁斯五声', minorBluesPent: '小调布鲁斯五声',
 };
 
-/** 是否布鲁斯音阶(蓝调音相对母调为离调 → chromaticRatio 审计应放行)。 */
+/** 是否布鲁斯音阶(蓝调音相对母调为离调 → chromaticRatio 审计应放行 + 走 blues 合同/调味管线)。 */
 export function isBluesTonality(t: SandboxTonality): boolean {
-  return t === 'majorBlues' || t === 'minorBlues';
+  return t === 'majorBlues' || t === 'minorBlues' || t === 'majorBluesPent' || t === 'minorBluesPent';
 }
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -39,7 +42,7 @@ const mod = (n: number, m: number): number => ((n % m) + m) % m;
 
 /** 续写/配和声用的 7 音母调(大/小调框架)。 */
 export function tonalityParentMode(t: SandboxTonality): ScaleMode {
-  return t === 'major' || t === 'majorPent' || t === 'majorBlues' ? 'major' : 'minor';
+  return t === 'major' || t === 'majorPent' || t === 'majorBlues' || t === 'majorBluesPent' ? 'major' : 'minor';
 }
 
 /** 把 midi 吸到该 tonality 最近音(保留特征音,如 blues b5)。 */

@@ -57,14 +57,14 @@ function inputScalePcs(keyPc: number, tonality?: SandboxTonality): number[] {
   if (!tonality) return [];
   return TONALITY_INTERVALS[tonality].map((iv) => m12(keyPc + iv));
 }
-/** 该 key+tonality 的【特征蓝调音】pc:大调布鲁斯 = b3(key+3);小调布鲁斯 = b5(key+6);否则 null。 */
+/** 该 key+tonality 的【特征蓝调音】pc:大调布鲁斯(含五声)= b3(key+3);小调布鲁斯(含五声)= b5(key+6);否则 null。 */
 export function keyBlueNotePc(keyPc: number, tonality?: SandboxTonality): number | null {
-  if (tonality === 'majorBlues') return m12(keyPc + 3);
-  if (tonality === 'minorBlues') return m12(keyPc + 6);
+  if (tonality === 'majorBlues' || tonality === 'majorBluesPent') return m12(keyPc + 3);
+  if (tonality === 'minorBlues' || tonality === 'minorBluesPent') return m12(keyPc + 6);
   return null;
 }
 export function isBluesTonalityInput(tonality?: SandboxTonality): boolean {
-  return tonality === 'majorBlues' || tonality === 'minorBlues';
+  return tonality === 'majorBlues' || tonality === 'minorBlues' || tonality === 'majorBluesPent' || tonality === 'minorBluesPent';
 }
 /** 某 pc 是否当前 key/tonality 的蓝调色音。 */
 export function isBlueColorPc(pc: number, keyPc: number, tonality: SandboxTonality): boolean {

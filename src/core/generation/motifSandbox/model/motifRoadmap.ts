@@ -15,7 +15,7 @@ import { makeChord, type SandboxChord } from './chords';
 import { isInScale } from './scale';
 import type { ScaleMode } from './types';
 import type { SandboxTonality } from './sandboxScales';
-import { keyBlueNotePc } from './pitchContract';
+import { keyBlueNotePc, isBluesTonalityInput } from './pitchContract';
 import type { SelectedMotifProgression, MotifMelodicRoadmap, RoadmapBrickSlot, RoadmapBrickType, UserMelodicBrick } from './melodicBrickTypes';
 
 const BAR = 4;
@@ -180,8 +180,8 @@ export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc:
     }
     beat += beats;
   }
-  if (opts.inputTonality === 'majorBlues' || opts.inputTonality === 'minorBlues') {
-    return applyBluesSeasoning(out, keyPc, opts.inputTonality, opts.userBrick, opts.seed ?? 0);
+  if (isBluesTonalityInput(opts.inputTonality)) {
+    return applyBluesSeasoning(out, keyPc, opts.inputTonality!, opts.userBrick, opts.seed ?? 0);
   }
   return out;
 }
