@@ -30,11 +30,19 @@ const DEFAULT_STRUCT: Record<SandboxStyle, number[]> = { pop: [2], lofi: [], rnb
 const chRootPc = (c: SandboxChord): number => c.realRootPc ?? c.rootPc;
 const chTonePcs = (c: SandboxChord): readonly number[] => c.realTonePcs ?? c.tonePcs;
 
-/** 闭合排列(root 落 comp 音区底,3/5/(7) 叠上;comp 不堆满张力 → 取前 4 音);comp 区 ≈ [48,67]。 */
+/** 闭合排列(root 落 comp 音区底,3/5/(7) 叠上;comp 不堆满张力 → 取前 4 音);comp 区 ≈ [48,67]。
+ *  ★ blues contract Phase 7:seasoned 和弦【同含大三 + b3(#9)】时,comp 走【no-3 shell】(去掉大三 E,
+ *  保 root/5/b7)—— 让 lead 独占 3/b3 蓝调摇摆,不与 comp 的硬大三撞(directive §8 的核心避让)。 */
 function triadVoicing(chord: SandboxChord): number[] {
   const rootPc = chRootPc(chord);
   const rootBase = 48 + mod(rootPc, 12);
-  const tones = chTonePcs(chord).slice(0, 4).map((pc) => rootBase + mod(pc - rootPc, 12));
+  let pcs = [...chTonePcs(chord)];
+  if (chord.bluesSeasoned) {
+    const rel = (pc: number): number => mod(pc - rootPc, 12);
+    const hasMaj3 = pcs.some((pc) => rel(pc) === 4), hasMin3 = pcs.some((pc) => rel(pc) === 3);
+    if (hasMaj3 && hasMin3) pcs = pcs.filter((pc) => rel(pc) !== 4 && rel(pc) !== 3); // 去双三度 → no-3 shell,lead 主蓝音
+  }
+  const tones = pcs.slice(0, 4).map((pc) => rootBase + mod(pc - rootPc, 12));
   return Array.from(new Set(tones)).sort((a, b) => a - b);
 }
 
