@@ -14,7 +14,9 @@ import { parseRoadMap, type BrickMatch } from '../../newEngine/render/mgRoadMapP
 import { makeChord, type SandboxChord } from './chords';
 import { isInScale } from './scale';
 import type { ScaleMode } from './types';
-import type { SelectedMotifProgression, MotifMelodicRoadmap, RoadmapBrickSlot, RoadmapBrickType } from './melodicBrickTypes';
+import type { SandboxTonality } from './sandboxScales';
+import { keyBlueNotePc } from './pitchContract';
+import type { SelectedMotifProgression, MotifMelodicRoadmap, RoadmapBrickSlot, RoadmapBrickType, UserMelodicBrick } from './melodicBrickTypes';
 
 const BAR = 4;
 const m12 = (n: number): number => ((n % 12) + 12) % 12;
@@ -93,11 +95,62 @@ function typeFromTones(rootPc: number, tonePcs: readonly number[]): string {
   return maj7 ? 'maj7' : dom7 ? '7' : 'maj';
 }
 
+/** realize 选项(blues contract Phase 3):布鲁斯输入下做有界调味。缺省 = 旧行为(纯调内,字节不变)。 */
+export interface RealizeOpts {
+  inputTonality?: SandboxTonality;
+  userBrick?: UserMelodicBrick;
+  seed?: number;
+}
+
+/** 把单个和弦【布鲁斯调味】:加 b7(dom 色)+ 把 key 蓝调音作可接张力(与根成 nice tension 时)。 */
+function seasonChord(c: SandboxChord, blue: number): SandboxChord {
+  const root = c.realRootPc ?? c.rootPc;
+  const base = c.realTonePcs ?? c.tonePcs;
+  const add: number[] = [m12(root + 10)];                  // b7 → 属/布鲁斯 dom 色
+  const blueInterval = m12(blue - root);
+  const NICE = new Set([2, 3, 6, 8, 9, 10]);               // 9/#9/#11(b5)/b13/13/b7 相对根的可接张力
+  if (NICE.has(blueInterval)) add.push(blue);              // 容纳结构蓝调音
+  const realTonePcs = [...new Set([...base, ...add])];
+  return { ...c, realTonePcs, realType: typeFromTones(root, realTonePcs), realRoman: `${c.realRoman ?? c.roman}7`, realRootPc: root, bluesSeasoned: true };
+}
+
+/** 有界 blues 调味:选中 S/D(+ phrase-head tonic 且其上有结构蓝音)槽 → seasonChord。
+ *  预算 ≈ 总和弦 20%(2..4),不连续调味,优先 D>S>tonic-blue + motif 放了结构蓝音处。确定性(seed jitter,无 rng)。 */
+function applyBluesSeasoning(chords: SandboxChord[], keyPc: number, tonality: SandboxTonality, userBrick: UserMelodicBrick | undefined, seed: number): SandboxChord[] {
+  const blue = keyBlueNotePc(keyPc, tonality);
+  if (blue === null || !chords.length) return chords;
+  const hasStructBlue = (c: SandboxChord): boolean =>
+    !!userBrick && userBrick.structuralTones.some((t) => m12(t.midi) === blue && t.onsetBeat >= c.startBeat - 1e-6 && t.onsetBeat < c.startBeat + c.durationBeats - 1e-6);
+  const cand: { i: number; prio: number }[] = [];
+  chords.forEach((c, i) => {
+    const f = chordFunc(c);
+    const phraseHead = Math.abs(c.startBeat % 16) < 1e-6;
+    const blueHere = hasStructBlue(c);
+    let prio = -1;
+    if (f === 'D') prio = 3; else if (f === 'S') prio = 2; else if (f === 'T' && phraseHead && blueHere) prio = 2.5;
+    if (prio < 0) return;
+    if (blueHere) prio += 1.5;
+    const j = (((seed >>> 0) * 2654435761 + i * 40503) >>> 0) / 2 ** 32; // 确定性抖动(跨 seed 换被调味的重复 copy)
+    cand.push({ i, prio: prio + j * 0.4 });
+  });
+  cand.sort((a, b) => b.prio - a.prio || a.i - b.i);
+  const budget = Math.max(1, Math.min(4, Math.round(chords.length * 0.2)));
+  const seasoned = new Set<number>();
+  for (const { i } of cand) {
+    if (seasoned.size >= budget) break;
+    if (seasoned.has(i - 1) || seasoned.has(i + 1)) continue; // maxConsecutiveAltered=1
+    seasoned.add(i);
+  }
+  return chords.map((c, i) => (seasoned.has(i) ? seasonChord(c, blue) : c));
+}
+
 /** 选中模板 slots → SandboxChord[]:逐 slot(保半小节 beats),带【调内三和弦 + 真实和声】。
  *  ★ 约束在旋律调内(用户 2026-06-22):真实和声若带调外音(副属/借和弦/7b13/7b9/m9…)→ 退到调内三和弦
  *  + 保留【调内延伸(七/九)】,丢调外音;effectiveTonePcs/realRootPc/realRoman/realType 全部回调内,
- *  → 旋律/伴奏/bass/走A 与旋律音阶【正交】。全调内的真实和声(如 V7/IVmaj7)原样保留色彩。 */
-export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc: number, mode: ScaleMode): SandboxChord[] {
+ *  → 旋律/伴奏/bass/走A 与旋律音阶【正交】。全调内的真实和声(如 V7/IVmaj7)原样保留色彩。
+ *  ★ blues contract Phase 3:opts.inputTonality 为布鲁斯 → 在【调内基底】上做有界调味(dom7 + 容纳蓝调音),
+ *  扩大合法正交空间但不变成全曲 12-bar blues。缺省 opts → 旧行为字节不变(非布鲁斯不动)。 */
+export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc: number, mode: ScaleMode, opts: RealizeOpts = {}): SandboxChord[] {
   const out: SandboxChord[] = [];
   let beat = 0;
   const inKey = (pc: number): boolean => isInScale(60 + pc, keyPc, mode);
@@ -120,13 +173,16 @@ export function realizeToSandboxChords(slots: readonly ProgressionSlot[], keyPc:
     }
     beat += beats;
   }
+  if (opts.inputTonality === 'majorBlues' || opts.inputTonality === 'minorBlues') {
+    return applyBluesSeasoning(out, keyPc, opts.inputTonality, opts.userBrick, opts.seed ?? 0);
+  }
   return out;
 }
 
 /** 旋律 roadmap:真 harmonicBricks(slots→ChordPart→parseRoadMap)→ 规范化 brickSlots(供 Phase 4
  *  melodicSlotPlanner 按【RoadMap 结构】排 motif,无固定 0/16/32/48 假设)。 */
-export function buildMotifRoadmap(selected: SelectedMotifProgression, keyPc: number, mode: ScaleMode, totalBars = 16): MotifMelodicRoadmap {
-  const chords = realizeToSandboxChords(selected.slots, keyPc, mode);
+export function buildMotifRoadmap(selected: SelectedMotifProgression, keyPc: number, mode: ScaleMode, totalBars = 16, opts: RealizeOpts = {}): MotifMelodicRoadmap {
+  const chords = realizeToSandboxChords(selected.slots, keyPc, mode, opts); // ★ 与 weaver 用同套 opts → seasoned 一致
   const harmonicRomans: string[] = [];
   for (let bar = 0; bar < totalBars; bar++) {
     const c = slotAtBeat(chords, bar * BAR);

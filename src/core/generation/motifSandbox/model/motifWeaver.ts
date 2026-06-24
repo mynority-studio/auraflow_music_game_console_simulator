@@ -478,8 +478,10 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   let progression: SandboxChord[];
   try {
     selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars, sectionRole: form.sections[0]?.role ?? 'verse' });
-    progression = realizeToSandboxChords(selected.slots, keyPc, mode);
-    roadmap = buildMotifRoadmap(selected, keyPc, mode, targetBars);
+    // ★ blues contract Phase 3:布鲁斯输入 → realize 时做有界调味(dom7 + 容纳结构蓝音);两调用同套 opts → 一致。
+    const realizeOpts = { inputTonality, userBrick: brick, seed: input.seed };
+    progression = realizeToSandboxChords(selected.slots, keyPc, mode, realizeOpts);
+    roadmap = buildMotifRoadmap(selected, keyPc, mode, targetBars, realizeOpts);
     harmonySource = 'template';
   } catch (err) {
     progression = buildProgression(motif, keyPc, mode, targetBars); // 兜底(不静默:harmonySource=fallback + error 暴露给 UI)

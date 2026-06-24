@@ -22,6 +22,7 @@ export interface SandboxChord {
   realTonePcs?: number[];  // 真和弦音 pc(含七/九/borrowed)
   borrowedSource?: string; // secondary_dominant / modal_interchange …
   effectiveFunc?: 'T' | 'S' | 'D';
+  bluesSeasoned?: boolean; // ★ blues contract Phase 3:被布鲁斯调味(dom7/admit 蓝调音)→ 审计/comp/UI 用
 }
 
 const mod = (n: number, m: number): number => ((n % m) + m) % m;
