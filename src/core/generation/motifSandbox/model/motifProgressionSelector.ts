@@ -23,11 +23,12 @@ export function selectProgressionForMotif(args: {
   seed: number;
   targetBars?: number;
   sectionRole?: ProtoSectionRole; // form 主段落角色(软权重;默认 verse)
+  inputTonality?: import('./sandboxScales').SandboxTonality; // ★ followup 2.4:布鲁斯 → 评分 blues-aware
 }): SelectedMotifProgression {
   const targetBars = args.targetBars ?? 16;
   const { candidates, modeName } = getProgressionCandidatesForMotif({ style: args.style, mode: args.mode, targetBars });
 
-  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc, { sectionRole: args.sectionRole, seed: args.seed }) }));
+  const scored = candidates.map((c) => ({ c, ...scoreProgressionAgainstMelodicBrick(args.brick, args.intent, c, args.keyPc, { sectionRole: args.sectionRole, seed: args.seed, inputTonality: args.inputTonality }) }));
   // 评分降序 + id 稳定排序(确定性);轮换池据此索引。
   scored.sort((a, b) => b.total - a.total || a.c.prototype.id.localeCompare(b.c.prototype.id));
 

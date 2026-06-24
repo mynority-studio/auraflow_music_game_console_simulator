@@ -85,6 +85,10 @@ export interface ProgressionScoreBreakdown {
   phraseCycleFit: number;
   degeneratePenalty: number;
   strongNonChordPenalty: number;
+  // —— blues-aware(followup 2.4;仅布鲁斯输入非 0)——
+  bluesStructuralSupport?: number;     // 结构蓝音落点有可调味槽 → 结构上能被支持(奖励)
+  bluesSeasoningOpportunity?: number;  // 结构蓝音落在 S/D/borrowed 槽(可调味)→ 奖励
+  bluesPassingTolerance?: number;      // 因蓝调容忍而【免掉】的 strongNonChord 罚(informational)
 }
 
 export interface SelectedMotifProgression {

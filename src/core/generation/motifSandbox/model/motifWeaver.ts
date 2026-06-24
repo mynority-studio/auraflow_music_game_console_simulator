@@ -484,7 +484,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   let harmonyError: string | undefined;
   let progression: SandboxChord[];
   try {
-    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars, sectionRole: form.sections[0]?.role ?? 'verse' });
+    selected = selectProgressionForMotif({ brick, intent: inferHarmonyIntent(brick), style: input.style, mode, keyPc, seed: input.seed, targetBars, sectionRole: form.sections[0]?.role ?? 'verse', inputTonality });
     // ★ blues contract Phase 3:布鲁斯输入 → realize 时做有界调味(dom7 + 容纳结构蓝音);两调用同套 opts → 一致。
     const realizeOpts = { inputTonality, userBrick: brick, seed: input.seed };
     progression = realizeToSandboxChords(selected.slots, keyPc, mode, realizeOpts);

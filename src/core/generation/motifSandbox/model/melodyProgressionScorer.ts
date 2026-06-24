@@ -10,6 +10,8 @@ import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledg
 import { makeRng } from './rng';
 import type { UserMelodicBrick, MotifHarmonyIntent, ProgressionScoreBreakdown } from './melodicBrickTypes';
 import type { ProgressionCandidate } from './progressionCandidateProvider';
+import type { SandboxTonality } from './sandboxScales';
+import { keyBlueNotePc } from './pitchContract';
 
 const MODE_MISMATCH = 0.5; // opposite-mode 模板的先验降权(scored fallback:同调式好模板在时它赢不了)
 /** prototypeId × seed → [0,1) 确定性小抖动(diversityBonus:跨 seed 保持多模板可达,不盖过真实贴合)。 */
@@ -43,12 +45,14 @@ function cycleRomanKey(slots: readonly ProgressionSlot[]): string {
 
 export function scoreProgressionAgainstMelodicBrick(
   brick: UserMelodicBrick, intent: MotifHarmonyIntent, candidate: ProgressionCandidate, keyPc: number,
-  opts: { sectionRole?: ProtoSectionRole; seed?: number } = {},
+  opts: { sectionRole?: ProtoSectionRole; seed?: number; inputTonality?: SandboxTonality } = {},
 ): { total: number; breakdown: ProgressionScoreBreakdown } {
   const slots = candidate.fittedSlots;
   const proto = candidate.prototype;
   const sectionRole = opts.sectionRole ?? 'verse';
   const seed = opts.seed ?? 0;
+  // ★ followup 2.4:布鲁斯输入 → 结构蓝音(key blue pc)不当 strongNonChord 罚;改看落点能否调味(S/D/borrowed)→ 奖励。
+  const bluePc = keyBlueNotePc(keyPc, opts.inputTonality); // 非布鲁斯 = null → 全程旧行为(非 0 字段全 0,total 不变)
 
   // 先验:模板自带权重;opposite-mode(反调回退)扣固定项 → 同调式好模板在时它赢不了(scored fallback)。
   const templatePrior = (proto.weight ?? 1) * 0.4 - (candidate.modeMatch ? 0 : MODE_MISMATCH);
@@ -62,7 +66,7 @@ export function scoreProgressionAgainstMelodicBrick(
   const cycleBeats = Math.max(4, (proto.lengthBars ?? 4) * 4); // 模板循环周期
   const ANCHORS: number[] = [];
   for (let a = 0; a < totalBeats - 1e-6; a += cycleBeats) ANCHORS.push(a);
-  let structuralToneSupport = 0, strongNonChord = 0;
+  let structuralToneSupport = 0, strongNonChord = 0, bluesPassingTolerance = 0;
   for (const t of brick.structuralTones) {
     if (t.onsetBeat >= brick.quoteBeats - 1e-6) continue;
     let ct = 0, n = 0;
@@ -72,8 +76,12 @@ export function scoreProgressionAgainstMelodicBrick(
       if (slotRealPcs(slotAtBeat(slots, a + t.onsetBeat), keyPc).includes(mod12(t.midi))) ct++;
     }
     const frac = n ? ct / n : 0; // 在几个锚点处是和弦音(0..1)
+    const isBlueTone = bluePc !== null && mod12(t.midi) === bluePc;
     structuralToneSupport += t.weight * (frac * 1.25 - 0.25); // 全锚点和弦音 → +1·w;全非 → −0.25·w
-    if (frac < 0.5 && t.weight >= 0.6) strongNonChord += t.weight * (1 - frac); // 多数锚点撞和弦
+    if (frac < 0.5 && t.weight >= 0.6) {
+      if (isBlueTone) bluesPassingTolerance += t.weight * (1 - frac); // ★ 蓝调容忍:免 strongNonChord 罚(seasoning 会接)
+      else strongNonChord += t.weight * (1 - frac);                  // 多数锚点撞和弦
+    }
   }
 
   // head/tail 现在恒为【结构音骨架】首尾(melodicBrickAnalyzer P1)→ 不会是经过音;再按结构权重降权
@@ -103,6 +111,20 @@ export function scoreProgressionAgainstMelodicBrick(
   const funcs = new Set(slots.map(slotFunc));
   const functionArcFit = (funcs.has('S') ? 0.25 : 0) + (funcs.has('D') ? 0.35 : 0);
 
+  // ★ followup 2.4:结构蓝音落点能否调味 —— S/D/borrowed 槽 = seasoning 机会 → 奖励(偏向能接住蓝音的候选)。
+  let bluesSeasoningOpportunity = 0, bluesStructuralSupport = 0;
+  if (bluePc !== null) {
+    const seasonable = (s: ProgressionSlot): boolean => slotFunc(s) === 'S' || slotFunc(s) === 'D' || !!s.borrowedFrom || !!s.borrowedSource;
+    for (const t of brick.structuralTones) {
+      if (t.onsetBeat >= brick.quoteBeats - 1e-6 || mod12(t.midi) !== bluePc) continue;
+      let sea = 0, na = 0;
+      for (const a of ANCHORS) { if (a + t.onsetBeat >= totalBeats - 1e-6) continue; na++; if (seasonable(slotAtBeat(slots, a + t.onsetBeat))) sea++; }
+      const op = na ? sea / na : 0;
+      bluesSeasoningOpportunity += t.weight * op * 0.6;
+      bluesStructuralSupport += t.weight * op * 0.3;
+    }
+  }
+
   // 乐句循环:prototype 长度整除【总曲长(bar)】→ 干净循环铺满(动态曲长,不再硬编 16)
   const totalBars = Math.max(1, Math.round(totalBeats / 4));
   const phraseCycleFit = totalBars % Math.max(1, proto.lengthBars) === 0 ? 0.2 : 0;
@@ -115,7 +137,7 @@ export function scoreProgressionAgainstMelodicBrick(
   const degeneratePenalty = intent.avoidDegenerateProgressions.includes(cycleRomanKey(slots)) ? 2.0 : 0;
   const strongNonChordPenalty = strongNonChord * 0.5;
 
-  const breakdown: ProgressionScoreBreakdown = { templatePrior, structuralToneSupport, headFit, tailFit, cadenceFit, functionArcFit, sectionRoleFit, diversityBonus, phraseCycleFit, degeneratePenalty, strongNonChordPenalty };
-  const total = templatePrior + structuralToneSupport + headFit + tailFit + cadenceFit + functionArcFit + sectionRoleFit + diversityBonus + phraseCycleFit - degeneratePenalty - strongNonChordPenalty;
+  const breakdown: ProgressionScoreBreakdown = { templatePrior, structuralToneSupport, headFit, tailFit, cadenceFit, functionArcFit, sectionRoleFit, diversityBonus, phraseCycleFit, degeneratePenalty, strongNonChordPenalty, bluesStructuralSupport, bluesSeasoningOpportunity, bluesPassingTolerance };
+  const total = templatePrior + structuralToneSupport + headFit + tailFit + cadenceFit + functionArcFit + sectionRoleFit + diversityBonus + phraseCycleFit - degeneratePenalty - strongNonChordPenalty + bluesStructuralSupport + bluesSeasoningOpportunity;
   return { total, breakdown };
 }
