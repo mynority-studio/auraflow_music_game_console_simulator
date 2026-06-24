@@ -42,6 +42,9 @@ export interface UserMotif {
   contour: number[];     // 相邻 scaleDegree delta 的符号
   rhythmCell: number[];  // onset 差 + 时值模式
   createdAt: number;
+  /** ★ 输入预设音阶(blues chord contract directive Phase 1):分析后保留 → 续写/和声合同识别布鲁斯输入。
+   *  缺省 = 未指定(走母调 mode)。两条分析路径(free / hidden-grid)都写入。 */
+  inputTonality?: import('./sandboxScales').SandboxTonality;
 }
 
 export interface MotifOccurrence {

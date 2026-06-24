@@ -450,6 +450,8 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const { keyPc, mode } = input;
   // hidden-grid 已分析好的 motif 直接用;否则走 free 路径分析(向后兼容)
   const motif = input.motif ?? analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality).motif;
+  // ★ 输入音阶(blues contract Phase 1):input 优先,否则取 motif 自带(hidden-grid 预分析时写入)。
+  const inputTonality = input.inputTonality ?? motif.inputTonality;
   const quotePlan: QuotePlan = input.quotePlan ?? 'phraseHeads'; // 默认排比(每乐句头原样)
   const rng = makeRng((input.seed ^ 0x9e3779b9) >>> 0);
 

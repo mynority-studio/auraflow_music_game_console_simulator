@@ -192,6 +192,7 @@ export function analyzeAndNormalize(
     contour,
     rhythmCell,
     createdAt,
+    inputTonality, // ★ 保留输入音阶(blues contract Phase 1)
   };
   return { motif, rawCount, normalizedCount: motifNotes.length };
 }
@@ -322,6 +323,7 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     id: `motif-hg-${ctx.seed}-${motifNotes.length}`,
     keyPc: ctx.keyPc, mode: ctx.scaleMode, bpm: ctx.bpm,
     notes: motifNotes, lengthBeats, contour, rhythmCell, createdAt: ctx.seed,
+    inputTonality: ctx.tonality, // ★ 隐形网格路径也保留输入音阶(blues contract Phase 1)
   };
   return { motif, timing, snapChanges };
 }

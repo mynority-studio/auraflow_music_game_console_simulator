@@ -76,6 +76,8 @@ describe('motifSandbox/sandboxScales(音阶词汇 + 3×5 键盘)', () => {
       midi, velocity: 90, onsetMs: i * msPerBeat, durationMs: msPerBeat * 0.8,
     }));
     const a = analyzeAndNormalize(captured, 0, 'minor', 96, 0, 'minorBlues');
+    // ★ Phase 1:inputTonality 保留在 motif 上(续写/和声合同识别布鲁斯输入)
+    expect(a.motif.inputTonality).toBe('minorBlues');
     // b5(66 的 pc=6)应保留在 motif 里
     expect(a.motif.notes.some((n) => ((n.midi % 12) + 12) % 12 === 6)).toBe(true);
     // 不给 inputTonality → 吸到小调母调,b5 被吸走
