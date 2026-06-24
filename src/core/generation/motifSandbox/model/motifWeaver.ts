@@ -584,7 +584,7 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   // ★ 单声部安全闸(directive Phase 3,2026-06-19):吸 1/16 后前 slot 尾音可能被推到下一 slot 起点 → 同 onset+同
   //   pitch 双音 / 同 pitch overlap → 短音 noteOff 提前关掉长音。合并(quote 优先,不吞用户 motif 音)+ 消解 overlap。
   const finalLead = sanitizeMotifLeadNotes(snappedLead);
-  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression });
+  const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression, inputTonality });
   const progressionBeats = progression.reduce((n, c) => n + c.durationBeats, 0);
   return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: targetBars, progressionBeats, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError, melodicSlotPlan };
 }

@@ -6,9 +6,11 @@
 // ============================================================
 
 import type { MotifNote, MotifOccurrence, MotifWeaveAudit, ScaleMode, UserMotif } from './types';
+import type { SandboxTonality } from './sandboxScales';
 import { isInScale } from './scale';
 import { fitRange, identity } from './motifTransform';
 import { chordAtBeat, effectiveTonePcs, type SandboxChord } from './chords';
+import { buildPitchContractContext, contractAtBeat, classifyMelodyNoteAgainstContract, isStructuralMelodyNote, isBlueColorPc } from './pitchContract';
 
 const EPS = 1e-6;
 const BAR = 4;
@@ -43,7 +45,7 @@ export function auditMotifWeave(
   occurrences: readonly MotifOccurrence[],
   keyPc: number,
   mode: ScaleMode,
-  ctx: { totalBars: number; quoteBeats?: number; progression?: readonly SandboxChord[] },
+  ctx: { totalBars: number; quoteBeats?: number; progression?: readonly SandboxChord[]; inputTonality?: SandboxTonality },
 ): MotifWeaveAudit {
   const sorted = [...lead].sort((a, b) => a.onsetBeat - b.onsetBeat);
   let maxLeap = 0;
@@ -79,6 +81,23 @@ export function auditMotifWeave(
   const sounding = sorted.reduce((a, n) => a + n.durationBeat, 0);
   const restRatio = Math.max(0, 1 - sounding / (ctx.totalBars * BAR));
 
+  // —— 音高合同审计(blues contract Phase 5):逐音对【每和弦合同】分类,统计支持/不支持 ——
+  let structuralUnsupported = 0, weakUnsupported = 0, quoteStructuralUnsupported = 0, blueColorStructuralSupported = 0, supported = 0;
+  if (ctx.progression && ctx.progression.length) {
+    const pctx = buildPitchContractContext({ progression: ctx.progression, keyPc, mode, inputTonality: ctx.inputTonality });
+    for (const n of sorted) {
+      const contract = contractAtBeat(pctx, n.onsetBeat);
+      const isBlue = ctx.inputTonality ? isBlueColorPc(mod12(n.midi), keyPc, ctx.inputTonality) : false;
+      const cls = classifyMelodyNoteAgainstContract({ note: n, contract, isBlue });
+      const struct = isStructuralMelodyNote(n);
+      if (cls === 'unsupported-structural') { if (n.occurrenceKind === 'quote') quoteStructuralUnsupported++; else structuralUnsupported++; }
+      else if (cls === 'unsupported-weak') weakUnsupported++;
+      else { supported++; if (isBlue && struct && (cls === 'structural-supported' || cls === 'color-supported')) blueColorStructuralSupported++; }
+    }
+  }
+  const bluesSeasonedChordCount = (ctx.progression ?? []).filter((c) => c.bluesSeasoned).length;
+  const contractPassRatio = sorted.length ? supported / sorted.length : 1;
+
   return {
     motifQuotedFirstCycle,
     themeStatements,
@@ -90,6 +109,12 @@ export function auditMotifWeave(
     chromaticRatio,
     unjustifiedChromatic,
     jazzinessScore,
+    structuralUnsupported,
+    weakUnsupported,
+    quoteStructuralUnsupported,
+    blueColorStructuralSupported,
+    bluesSeasonedChordCount,
+    contractPassRatio,
   };
 }
 

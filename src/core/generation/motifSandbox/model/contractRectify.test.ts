@@ -42,4 +42,17 @@ describe('motifSandbox/contract rectify(Phase 4)', () => {
     const r = generateMotifWeave({ capturedNotes: cap, style: 'pop', keyPc: 0, mode: 'major', bpm: 96, seed: 7, inputTonality: 'majorBlues' });
     expect(r.audit.motifQuotedFirstCycle).toBe(true); // 第一个 quote = 原样陈述
   });
+
+  it('★ Phase 5 审计:合同计数(structuralUnsupported=0、contractPassRatio 高、布鲁斯有调味)', () => {
+    for (const [seed, ton] of [[7, 'majorBlues'], [11, 'minorBlues'], [42, undefined]] as const) {
+      const parent = ton === 'minorBlues' ? 'minor' : 'major';
+      let cap = generateSampleCaptured(96, 0, parent, seed % 4);
+      if (ton) cap = cap.map((n) => ({ ...n, midi: snapMidiToTonality(n.midi, 0, ton) }));
+      const r = generateMotifWeave({ capturedNotes: cap, style: 'pop', keyPc: 0, mode: parent, bpm: 96, seed, inputTonality: ton });
+      expect(r.audit.structuralUnsupported, `${ton} seed${seed} 强不支持`).toBe(0);
+      expect(r.audit.contractPassRatio, `${ton} seed${seed} 通过率`).toBeGreaterThan(0.8);
+      expect(r.audit.bluesSeasonedChordCount, `${ton} seed${seed} 调味数`).toBe(ton ? r.progression.filter((c) => c.bluesSeasoned).length : 0);
+      if (!ton) expect(r.audit.bluesSeasonedChordCount).toBe(0); // 非布鲁斯不调味
+    }
+  });
 });

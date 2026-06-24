@@ -67,6 +67,13 @@ export interface MotifWeaveAudit {
   chromaticRatio: number;          // 全部离调比(含和声证成的色彩,informational)
   unjustifiedChromatic: number;    // 【不证成】离调音数(既非调内、非 quote、非真实和声音)→ 非 jazz 应=0
   jazzinessScore: number;
+  // —— 音高合同审计(blues contract Phase 5)——
+  structuralUnsupported: number;       // 生成/发展的结构音不被和弦合同支持 → 全风格应=0(fail)
+  weakUnsupported: number;             // 弱音不被支持(非 scale/approach)→ warning
+  quoteStructuralUnsupported: number;  // quote 结构音不被支持 = 和声没接住用户 motif(warning,不改 quote)
+  blueColorStructuralSupported: number;// 被合同支持的结构蓝调音数(blues 色彩落地)
+  bluesSeasonedChordCount: number;     // 被布鲁斯调味的和弦数
+  contractPassRatio: number;           // 被合同支持(含弱经过/approach/quote-blue)的音占比 0..1
 }
 
 // —— 曲式上下文(directive roadmap_slot_fusion §5.1):曲长不再是 weaver 内的隐藏常量,
