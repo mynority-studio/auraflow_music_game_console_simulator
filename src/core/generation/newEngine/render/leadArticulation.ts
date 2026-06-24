@@ -48,14 +48,15 @@ function computeLegatoDurations(
     const samePitch = notes[i].pitch === notes[j].pitch;
     // 安全上限:绝不越过下一起音(同音高再留 gap 防 noteOff 撞掉 noteOn);此上限【始终】优先于 minDuration 软下限。
     const cap = samePitch ? ioi - options.samePitchGapTicks : ioi;
-    if (ioi <= options.maxConnectIoiTicks) {
-      // 快速线条 → 连音(延到下一起音 / 同音触碰留 gap)。minDuration 为软下限,被 cap 覆盖时以安全为准。
+    if (samePitch) {
+      // ★ 同音重复 = re-attack 断奏(beginner healing §9.1,用户拍板):render legato【不连接/不延长】,
+      //   保 staccato 手势;仅当原本就重叠 → 安全裁剪(只缩短,防 noteOff 撞掉重复音)。
+      if (notes[i].startTick + dur[i] > notes[i].startTick + cap) dur[i] = Math.max(1, cap);
+    } else if (ioi <= options.maxConnectIoiTicks) {
+      // 不同音快速线条 → 连音(延到下一起音)。minDuration 为软下限,被 cap(=ioi)覆盖时以安全为准。
       let target = Math.max(options.minDurationTicks, cap);
       if (options.maxExtensionTicks != null) target = Math.min(target, notes[i].durationTicks + options.maxExtensionTicks);
       dur[i] = Math.max(1, Math.min(target, cap));
-    } else if (samePitch && notes[i].startTick + dur[i] >= notes[j].startTick) {
-      // 乐句断点【不延长】,但若同音高原本就重叠 → 仅做安全裁剪(只缩短,防 noteOff 撞掉重复音)
-      dur[i] = Math.max(1, cap);
     }
   }
   return dur;

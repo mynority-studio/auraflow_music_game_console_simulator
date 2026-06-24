@@ -102,6 +102,10 @@ export function auditMotifWeave(
   const bluesSeasonedChordCount = (ctx.progression ?? []).filter((c) => c.bluesSeasoned).length;
   const contractPassRatio = sorted.length ? supported / sorted.length : 1;
 
+  // —— 新手治愈审计(beginner healing Phase 1):从 motif 音的标签统计(治愈在分析层做) ——
+  const articulationGapsHealed = motif.notes.filter((n) => n.healingTags?.includes('gap-healed-legato')).length;
+  const intentionalRepeatStaccatoCount = motif.notes.filter((n) => n.healingTags?.includes('intentional-repeat-staccato')).length;
+
   return {
     motifQuotedFirstCycle,
     themeStatements,
@@ -119,6 +123,9 @@ export function auditMotifWeave(
     blueColorStructuralSupported,
     bluesSeasonedChordCount,
     contractPassRatio,
+    articulationGapsHealed,
+    intentionalRepeatStaccatoCount,
+    captureBpmUsedForTimingOnly: true, // ★ playbackBpm = generation snapshot;capture BPM 仅 ms→beat
   };
 }
 

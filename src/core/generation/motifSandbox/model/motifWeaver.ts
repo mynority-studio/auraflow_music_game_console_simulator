@@ -456,7 +456,7 @@ function smoothAndResolve(lead: MotifNote[], bandLo: number, bandHi: number, key
 export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const { keyPc, mode } = input;
   // hidden-grid 已分析好的 motif 直接用;否则走 free 路径分析(向后兼容)
-  const motif = input.motif ?? analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality).motif;
+  const motif = input.motif ?? analyzeAndNormalize(input.capturedNotes, keyPc, mode, input.bpm, input.seed, input.inputTonality, input.healingMode).motif;
   // ★ 输入音阶(blues contract Phase 1):input 优先,否则取 motif 自带(hidden-grid 预分析时写入)。
   const inputTonality = input.inputTonality ?? motif.inputTonality;
   const quotePlan: QuotePlan = input.quotePlan ?? 'phraseHeads'; // 默认排比(每乐句头原样)
@@ -586,5 +586,8 @@ export function generateMotifWeave(input: MotifWeaverInput): MotifWeaverResult {
   const finalLead = sanitizeMotifLeadNotes(snappedLead);
   const audit = auditMotifWeave(finalLead, motif, occurrences, keyPc, mode, { totalBars: targetBars, quoteBeats: motifBeats, progression, inputTonality });
   const progressionBeats = progression.reduce((n, c) => n + c.durationBeats, 0);
-  return { motif, progression, occurrences, lead: finalLead, playbackBpm: motif.bpm, totalBars: targetBars, progressionBeats, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError, melodicSlotPlan };
+  // ★ BPM snapshot(beginner healing directive §10.3,用户拍板):playbackBpm = 本次 generation 的 input.bpm
+  //   (= 选定/输出 BPM 快照),【不再】用 motif.bpm(capture 时钟)当播放权威;motif.bpm 降级为 capture 元数据。
+  //   UI 仍只读 result.playbackBpm(非 live slider);用户改 BPM 后须重新 generate 出新 snapshot。
+  return { motif, progression, occurrences, lead: finalLead, playbackBpm: input.bpm, totalBars: targetBars, progressionBeats, motifBars, quoteBars, numSlots: numPhrases, arc, audit, brick, selectedProgression: selected, roadmap, harmonySource, harmonyError, melodicSlotPlan };
 }

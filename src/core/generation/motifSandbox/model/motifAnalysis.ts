@@ -6,7 +6,8 @@
 // ★ raw 与 normalized 都保留:raw 仅 UI/debug,normalized 进生成。
 // ============================================================
 
-import type { CapturedMidiNote, MotifNote, ScaleMode, UserMotif } from './types';
+import type { CapturedMidiNote, MotifNote, ScaleMode, UserMotif, HealingMode } from './types';
+import { healMotifArticulation } from './motifArticulationHealer';
 import { midiToScaleDegree, midiToOctave, snapMidiToScale, degreeOctaveToMidi } from './scale';
 import { snapMidiToTonality, type SandboxTonality } from './sandboxScales';
 import { metricalWeight, type HiddenGridCaptureContext, type GridCapturedNote, type CaptureMode } from '../capture/hiddenGridClock';
@@ -132,6 +133,7 @@ export function analyzeAndNormalize(
   bpm: number,
   createdAt = 0,
   inputTonality?: SandboxTonality, // 给定则吸到该音阶(布鲁斯 b5/五声等特征保留);否则吸大/小调母调
+  healingMode: HealingMode = 'beginner', // 新手治愈(默认开;off=不修)
 ): AnalyzeResult {
   const rawCount = captured.length;
   if (rawCount === 0) throw new MotifAnalysisError('没有录到音符。');
@@ -176,18 +178,27 @@ export function analyzeAndNormalize(
     };
   });
 
+  // ★ 新手治愈:补不同音高短空拍 + 锁同音断奏(不动 onset/pitch/数量);时值变 → 重算 accent/structuralToneScore。
+  const healed = healMotifArticulation(motifNotes, { mode: healingMode });
+  const turnsH = contourTurns(healed.notes.map((n) => n.midi));
+  const lastH = healed.notes.length - 1;
+  const healedNotes: MotifNote[] = healed.notes.map((n, i) => {
+    const { accent, structuralToneScore } = scoreNote(n.velocity, metricalWeight(((n.onsetBeat % 4) + 4) % 4), Math.min(1, n.durationBeat), i === 0 || i === lastH, turnsH[i]);
+    return { ...n, accent, structuralToneScore };
+  });
+
   // 8) contour(相邻 scaleDegree delta 符号)+ rhythmCell(onset 差 + 时值)
   const contour: number[] = [];
-  for (let i = 1; i < motifNotes.length; i++) {
-    const d = (motifNotes[i].octave * 7 + motifNotes[i].scaleDegree) - (motifNotes[i - 1].octave * 7 + motifNotes[i - 1].scaleDegree);
+  for (let i = 1; i < healedNotes.length; i++) {
+    const d = (healedNotes[i].octave * 7 + healedNotes[i].scaleDegree) - (healedNotes[i - 1].octave * 7 + healedNotes[i - 1].scaleDegree);
     contour.push(Math.sign(d));
   }
-  const rhythmCell: number[] = motifNotes.map((n) => n.durationBeat);
+  const rhythmCell: number[] = healedNotes.map((n) => n.durationBeat);
 
   const motif: UserMotif = {
     id: `motif-${createdAt}-${notes.length}`,
     keyPc, mode, bpm,
-    notes: motifNotes,
+    notes: healedNotes,
     lengthBeats,
     contour,
     rhythmCell,
@@ -219,6 +230,7 @@ export interface MotifTimingAnalysis {
 
 export interface HiddenGridAnalyzeOptions {
   allowPickup?: boolean;     // true=保留前导休止(故意空起的 pickup);默认 false=切头对齐
+  healingMode?: HealingMode; // 新手治愈(默认 beginner;off=不修)
 }
 
 export interface HiddenGridAnalysis {
@@ -301,13 +313,23 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
     };
   });
 
+  // ★ 新手治愈:补不同音高短空拍 + 锁同音断奏(不动 onset/pitch/数量);时值变 → 重算 score(local 相位)。
+  const healed = healMotifArticulation(motifNotes, { mode: opts.healingMode ?? 'beginner' });
+  const turnsH = contourTurns(healed.notes.map((n) => n.midi));
+  const lastH = healed.notes.length - 1;
+  const healedNotes: MotifNote[] = healed.notes.map((n, i) => {
+    const localBeatInBar = ((n.onsetBeat % ctx.beatsPerBar) + ctx.beatsPerBar) % ctx.beatsPerBar;
+    const { accent, structuralToneScore } = scoreNote(n.velocity, metricalWeight(localBeatInBar), Math.min(1, n.durationBeat), i === 0 || i === lastH, turnsH[i]);
+    return { ...n, accent, structuralToneScore };
+  });
+
   // 4) contour + rhythmCell
   const contour: number[] = [];
-  for (let i = 1; i < motifNotes.length; i++) {
-    const d = (motifNotes[i].octave * 7 + motifNotes[i].scaleDegree) - (motifNotes[i - 1].octave * 7 + motifNotes[i - 1].scaleDegree);
+  for (let i = 1; i < healedNotes.length; i++) {
+    const d = (healedNotes[i].octave * 7 + healedNotes[i].scaleDegree) - (healedNotes[i - 1].octave * 7 + healedNotes[i - 1].scaleDegree);
     contour.push(Math.sign(d));
   }
-  const rhythmCell = motifNotes.map((n) => n.durationBeat);
+  const rhythmCell = healedNotes.map((n) => n.durationBeat);
 
   const errs = g.map((n) => Math.abs(n.timingErrorBeat));
   const timing: MotifTimingAnalysis = {
@@ -322,7 +344,7 @@ export function analyzeHiddenGridMotif(gridNotes: readonly GridCapturedNote[], c
   const motif: UserMotif = {
     id: `motif-hg-${ctx.seed}-${motifNotes.length}`,
     keyPc: ctx.keyPc, mode: ctx.scaleMode, bpm: ctx.bpm,
-    notes: motifNotes, lengthBeats, contour, rhythmCell, createdAt: ctx.seed,
+    notes: healedNotes, lengthBeats, contour, rhythmCell, createdAt: ctx.seed,
     inputTonality: ctx.tonality, // ★ 隐形网格路径也保留输入音阶(blues contract Phase 1)
   };
   return { motif, timing, snapChanges };

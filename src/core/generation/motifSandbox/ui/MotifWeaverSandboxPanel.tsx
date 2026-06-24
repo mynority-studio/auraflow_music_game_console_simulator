@@ -17,7 +17,7 @@ import { generateSongFromMotif } from '../../newEngine/generation/generateSongFr
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
-import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif } from '../model/types';
+import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif, HealingMode } from '../model/types';
 import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
@@ -37,6 +37,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const [bpm, setBpm] = useState(96);
   const [seed, setSeed] = useState(7);
   const [withAccomp, setWithAccomp] = useState(true);
+  const [healingMode, setHealingMode] = useState<HealingMode>('beginner'); // 新手修饰(默认开;高级用户可关)
   const [captured, setCaptured] = useState<CapturedMidiNote[]>([]);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
   const [result, setResult] = useState<MotifWeaverResult | null>(null);
@@ -68,8 +69,8 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
   const timer = useRef<number | null>(null);
-  const liveCfg = useRef({ keyPc, tonality, bpm, seed, style });
-  liveCfg.current = { keyPc, tonality, bpm, seed, style };
+  const liveCfg = useRef({ keyPc, tonality, bpm, seed, style, healingMode });
+  liveCfg.current = { keyPc, tonality, bpm, seed, style, healingMode };
 
   useDevPanelChannel('motif', open, setOpen);
 
@@ -105,7 +106,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     const fit = fitRecordingToBars(cap, b);
     setBpm(fit.adjustedBpm); // 调 bpm 让这段正好整 bar
     try {
-      const a = analyzeAndNormalize(cap, k, tonalityParentMode(t), fit.adjustedBpm, s, t); // 吸到选定音阶(保 blues/五声特征)
+      const a = analyzeAndNormalize(cap, k, tonalityParentMode(t), fit.adjustedBpm, s, t, liveCfg.current.healingMode); // 吸到选定音阶(保 blues/五声特征)+ 新手治愈
       setAnalysis(a);
       setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· BPM ${b}→${fit.adjustedBpm} · raw ${a.rawCount}→norm ${a.normalizedCount}`);
     } catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
@@ -176,7 +177,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     try {
       const g = capturedToGridNotes(cap, ctx);
       gridRef.current = { g, ctx };
-      const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx); // 默认切头对齐(allowPickup=false)
+      const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx, { healingMode: liveCfg.current.healingMode }); // 默认切头对齐(allowPickup=false)+ 新手治愈
       setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
       setAnalysis({ motif, rawCount: cap.length, normalizedCount: motif.notes.length });
       setRecordPhase('ready');
@@ -253,7 +254,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       try {
         const g = capturedToGridNotes(raw, ctx);
         gridRef.current = { g, ctx };
-        const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx);
+        const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(g, ctx, { healingMode: liveCfg.current.healingMode });
         setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc); setCaptured([]);
         setAnalysis({ motif, rawCount: raw.length, normalizedCount: motif.notes.length });
         setRecordPhase('ready');
@@ -272,7 +273,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       const last = gridRef.current;
       if (last) {
         try {
-          const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(last.g, last.ctx, { allowPickup: !nextAlign });
+          const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(last.g, last.ctx, { allowPickup: !nextAlign, healingMode: liveCfg.current.healingMode });
           setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
           setAnalysis((a0) => (a0 ? { ...a0, motif, normalizedCount: motif.notes.length } : a0));
         } catch { /* 保留旧分析 */ }
@@ -281,24 +282,40 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     });
   }, []);
 
+  // 新手修饰开关:切换 beginner/off,并对已录入的 grid motif 立即重分析(补短断点/护同音断奏)。
+  const toggleHealing = useCallback(() => {
+    setHealingMode((prev) => {
+      const next: HealingMode = prev === 'beginner' ? 'off' : 'beginner';
+      const last = gridRef.current;
+      if (last) {
+        try {
+          const { motif, timing: tm, snapChanges: sc } = analyzeHiddenGridMotif(last.g, last.ctx, { allowPickup: !alignFirst, healingMode: next });
+          setHiddenMotif(motif); setTiming(tm); setSnapChanges(sc);
+          setAnalysis((a0) => (a0 ? { ...a0, motif, normalizedCount: motif.notes.length } : a0));
+        } catch { /* 保留旧分析 */ }
+      }
+      return next;
+    });
+  }, [alignFirst]);
+
   const generate = useCallback(() => {
     const motif = captureMode === 'hiddenGrid' ? hiddenMotif : null; // 数据层已切头对齐(allowPickup 控制)
     if (!motif && captured.length === 0) { setStatus('先录入/注入 motif'); return; }
     stopPlayback();
     try {
       const r = generateMotifWeave(motif
-        ? { capturedNotes: [], motif, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads' }
-        : { capturedNotes: captured, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads' });
+        ? { capturedNotes: [], motif, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads', healingMode }
+        : { capturedNotes: captured, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads', healingMode });
       setResult(r);
       setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
       setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
     } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
-  }, [captureMode, hiddenMotif, captured, style, keyPc, tonality, bpm, seed, stopPlayback]);
+  }, [captureMode, hiddenMotif, captured, style, keyPc, tonality, bpm, seed, healingMode, stopPlayback]);
 
   const play = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
     stopNewEngine();
-    const pbpm = result.playbackBpm; // ★ 永远用捕获时钟,不用 UI bpm state(录后改 bpm / state 时序差都不影响)
+    const pbpm = result.playbackBpm; // ★ = 本次 generation 的 input.bpm 快照(不读 live slider;改 BPM 须重新 生成);capture BPM 只用于 ms→beat
     const accomp = withAccomp ? buildAccompaniment(result.progression, style, seed, result.lead) : null; // 传 lead → 伴奏锁旋律重音/结构点
     const ir = buildSandboxIr(result.lead, accomp, pbpm, style);
     setPlaying(true);
@@ -426,6 +443,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
               </>
             : <button type="button" onClick={stopPlayback} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
           <button type="button" onClick={() => setWithAccomp((v) => !v)} className={`rounded-lg px-2 py-1 text-[11px] border ${withAccomp ? 'bg-amber-600/30 border-amber-500/50 text-amber-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>伴奏 {withAccomp ? 'on' : 'off'}</button>
+          <button type="button" onClick={toggleHealing} title="新手修饰:补意外短断点 + 护同音断奏(Phase 2 软化重复刺耳摩擦);高级用户可关" className={`rounded-lg px-2 py-1 text-[11px] border ${healingMode === 'beginner' ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>修饰 {healingMode === 'beginner' ? 'on' : 'off'}</button>
           <span className="ml-auto text-[10px] text-zinc-500">lead=GM{LEAD_PROGRAM_BY_STYLE[style]}</span>
         </div>
       </div>

@@ -30,13 +30,20 @@ export interface MotifNote {
   /** quote=原样陈述(head/recap);develop=变形发展(移位/倒影/片段/扩张/位移);connect=连接留白 */
   occurrenceKind?: 'quote' | 'develop' | 'connect';
   slotIndex?: number;
+  // —— 新手 motif 治愈(beginner healing directive,2026-06-24)——
+  /** 治愈标签(调试/审计/render 守护):同音断奏锁、空拍补连、摩擦修复、quote 保护。 */
+  healingTags?: Array<'intentional-repeat-staccato' | 'gap-healed-legato' | 'friction-repaired' | 'protected-user-quote'>;
+  originalMidi?: number;         // friction-repaired 前的原音高(审计/可逆)
+  originalDurationBeat?: number; // gap-healed 前的原时值
+  /** 同音重复断奏锁:render legato 不得连接、healer 不得延长(真演奏手势,非新手失误)。 */
+  articulationLock?: 'staccato-repeat';
 }
 
 export interface UserMotif {
   id: string;
   keyPc: number;         // 0..11
   mode: ScaleMode;
-  bpm: number;
+  bpm: number;           // ★ capture/analysis 元数据(ms→beat 用);【非】最终播放 BPM(见 playbackBpm snapshot)
   notes: MotifNote[];    // normalized
   lengthBeats: number;   // 整 bar 拍数(hidden-grid 最多 4 小节=16 拍;free fallback 1-4 bar)
   contour: number[];     // 相邻 scaleDegree delta 的符号
@@ -74,6 +81,10 @@ export interface MotifWeaveAudit {
   blueColorStructuralSupported: number;// 被合同支持的结构蓝调音数(blues 色彩落地)
   bluesSeasonedChordCount: number;     // 被布鲁斯调味的和弦数
   contractPassRatio: number;           // 被合同支持(含弱经过/approach/quote-blue)的音占比 0..1
+  // —— 新手治愈审计(beginner healing directive Phase 1)——
+  articulationGapsHealed: number;        // 不同音高短空拍被补连的音数
+  intentionalRepeatStaccatoCount: number;// 被识别为【有意同音断奏】的音数(不延长)
+  captureBpmUsedForTimingOnly: boolean;  // ★ capture BPM 仅用于 ms→beat;playbackBpm = generation snapshot
 }
 
 // —— 曲式上下文(directive roadmap_slot_fusion §5.1):曲长不再是 weaver 内的隐藏常量,
@@ -95,7 +106,7 @@ export interface MotifWeaverResult {
   progression: import('./chords').SandboxChord[]; // 配出的整曲和弦进行(长度 = form.totalBars)
   occurrences: MotifOccurrence[];
   lead: MotifNote[];
-  playbackBpm: number;           // = motif.bpm(捕获时钟)—— 播放永远用它,不用 UI bpm state
+  playbackBpm: number;           // ★ = 本次 generation 的 input.bpm(选定/输出 BPM 快照);UI 只读它(非 live slider),改 BPM 须重新 generate。capture BPM(motif.bpm)仅 ms→beat 元数据
   totalBars: number;             // = form.totalBars
   progressionBeats: number;      // 配出的和弦进行总拍数(= totalBars × beatsPerBar;动态曲长验证)
   motifBars: number;             // 分析出的 motif 小节数(1..4)
@@ -125,7 +136,11 @@ export interface MotifWeaverInput {
   inputTonality?: import('./sandboxScales').SandboxTonality; // 给定则输入吸到该音阶(保 blues b5/五声特征)
   quotePlan?: QuotePlan;             // 默认 phraseHeads(排比:每乐句头);verseHeadsOnly = 只 bar1/bar9
   form?: MotifSandboxFormContext;    // 曲式上下文(默认 16 bar);决定曲长,不再由 weaver 隐藏常量拥有
+  healingMode?: HealingMode;         // 新手 motif 治愈(默认 beginner;off=高级用户不修)
 }
+
+/** 新手 motif 治愈模式:beginner=补短空拍/护同音断奏(+ Phase 2 摩擦软化);off=不修(高级用户故意 dissonance)。 */
+export type HealingMode = 'off' | 'beginner';
 
 /** sandbox 默认曲式(16 bar 单 verse 段)—— 显式当 context 传,不在链路里硬编。 */
 export function defaultSandboxForm(totalBars = 16, beatsPerBar = 4): MotifSandboxFormContext {
