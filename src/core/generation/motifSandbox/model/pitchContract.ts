@@ -114,6 +114,7 @@ function buildChordContract(c: SandboxChord, index: number, keyPc: number, mode:
     if (ksc.includes(pc) && !stable.includes(pc)) color.add(pc);
   }
   if (blue !== null && !stable.includes(blue) && chordAdmitsBlueColor(c)) color.add(blue);
+  for (const pc of c.bluesColorPcs ?? []) color.add(m12(pc)); // ★ followup 2.1:seasoned 和弦显式蓝调色 → color
   for (const s of stable) color.delete(s);
 
   // scale:母调 ∪ 输入音阶(布鲁斯),减 stable∪color = 弱经过/邻音候选。

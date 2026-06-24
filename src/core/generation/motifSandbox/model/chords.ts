@@ -23,6 +23,9 @@ export interface SandboxChord {
   borrowedSource?: string; // secondary_dominant / modal_interchange …
   effectiveFunc?: 'T' | 'S' | 'D';
   bluesSeasoned?: boolean; // ★ blues contract Phase 3:被布鲁斯调味(dom7/admit 蓝调音)→ 审计/comp/UI 用
+  /** ★ followup 2.1:旋律/chord-scale 容纳的【蓝调色音 pc】(与 realTonePcs=comp 核心和弦音分离)。
+   *  合同把它并入 colorPcs;桥据它给 Q+N 设 forcedScale → Q+N chordScaleMap 也含此蓝色。 */
+  bluesColorPcs?: number[];
 }
 
 const mod = (n: number, m: number): number => ((n % m) + m) % m;

@@ -25,6 +25,23 @@ describe('Q+R→Q+N 桥保留 blues realization(Phase 6)', () => {
     }
   });
 
+  it('★ followup 2.1:seasoned 和弦的蓝调色音进 Q+N chordScaleMap(不只 song.ir 存在)', () => {
+    // 用 index 对齐 span(assemble id=c${i});逐 seasoned 和弦比对 Q+R bluesColorPcs ⊂ Q+N chordScaleMap[span]
+    const cap = generateSampleCaptured(96, 0, 'major', 0).map((n) => ({ ...n, midi: snapMidiToTonality(n.midi, 0, 'majorBlues') }));
+    const r = generateMotifWeave({ capturedNotes: cap, style: 'pop', keyPc: 0, mode: 'major', bpm: 96, seed: 7, inputTonality: 'majorBlues' });
+    const plan = sandboxProgressionToHarmonicPlan(r.progression, 0, 'major');
+    let checked = 0;
+    r.progression.forEach((c, i) => {
+      const blues = c.bluesColorPcs ?? [];
+      if (!blues.length) return;
+      const span = plan.chordTimeline[i]; // assemble id=c${i},与 progression 同序
+      const scale = new Set(plan.chordScaleMap[span.id].map(m12));
+      for (const pc of blues) expect(scale.has(m12(pc)), `seasoned[${i}] 蓝音 ${m12(pc)} ∈ chordScaleMap[${span.id}]`).toBe(true);
+      checked++;
+    });
+    expect(checked, '至少校验一个 seasoned 和弦的蓝色音').toBeGreaterThan(0);
+  });
+
   it('★ 端到端 majorBlues 走 A 整编:出 IR 不 failed,和声跨度数 = progression 数,lead override 仍非空', () => {
     const cap = generateSampleCaptured(96, 0, 'major', 0).map((n) => ({ ...n, midi: snapMidiToTonality(n.midi, 0, 'majorBlues') }));
     const r = generateMotifWeave({ capturedNotes: cap, style: 'pop', keyPc: 0, mode: 'major', bpm: 96, seed: 7, inputTonality: 'majorBlues' });

@@ -106,16 +106,19 @@ export interface RealizeOpts {
   seed?: number;
 }
 
-/** 把单个和弦【布鲁斯调味】:加 b7(dom 色)+ 把 key 蓝调音作可接张力(与根成 nice tension 时)。 */
+/** 把单个和弦【布鲁斯调味】:加 b7(dom 色)+ 把 key 蓝调音作可接张力(与根成 nice tension 时)。
+ *  ★ followup 2.1:蓝调音另记 bluesColorPcs(melody/chord-scale 色,与 realTonePcs=comp 核心音分离;桥用它设
+ *  forcedScale → Q+N chordScaleMap 含蓝色)。realTonePcs 仍含蓝音(兼容现有合同/comp,directive 允许不删)。 */
 function seasonChord(c: SandboxChord, blue: number): SandboxChord {
   const root = c.realRootPc ?? c.rootPc;
   const base = c.realTonePcs ?? c.tonePcs;
-  const add: number[] = [m12(root + 10)];                  // b7 → 属/布鲁斯 dom 色
+  const add: number[] = [m12(root + 10)];                  // b7 → 属/布鲁斯 dom 色(comp 核心音)
   const blueInterval = m12(blue - root);
   const NICE = new Set([2, 3, 6, 8, 9, 10]);               // 9/#9/#11(b5)/b13/13/b7 相对根的可接张力
-  if (NICE.has(blueInterval)) add.push(blue);              // 容纳结构蓝调音
+  const bluesColorPcs = NICE.has(blueInterval) ? [blue] : [];
+  if (bluesColorPcs.length) add.push(blue);               // 容纳结构蓝调音(同时进 realTonePcs 兼容)
   const realTonePcs = [...new Set([...base, ...add])];
-  return { ...c, realTonePcs, realType: typeFromTones(root, realTonePcs), realRoman: `${c.realRoman ?? c.roman}7`, realRootPc: root, bluesSeasoned: true };
+  return { ...c, realTonePcs, bluesColorPcs, realType: typeFromTones(root, realTonePcs), realRoman: `${c.realRoman ?? c.roman}7`, realRootPc: root, bluesSeasoned: true };
 }
 
 /** 有界 blues 调味:选中 S/D(+ phrase-head tonic 且其上有结构蓝音)槽 → seasonChord。

@@ -10,6 +10,7 @@
 import { assemble, type ResolvedChord } from '../../newEngine/harmony/harmonyEngine';
 import type { HarmonicPlan, HarmonicFunction, RomanChord } from '../../newEngine/harmony/HarmonicPlan';
 import { chordTypeIntervals, normalizeChordType, type ChordQuality } from '../../newEngine/knowledge/chords';
+import { getScalePitchClasses, type ScaleTypeId } from '../../newEngine/knowledge/scales';
 import type { PitchClass } from '../../newEngine/foundation';
 import type { SandboxChord } from '../model/chords';
 import type { ScaleMode } from '../model/types';
@@ -40,6 +41,20 @@ function funcOf(c: SandboxChord): HarmonicFunction {
 
 const BORROW_SOURCES = new Set(['secondary_dominant', 'modal_interchange', 'backdoor_dominant', 'neapolitan', 'tritone_sub', 'chromatic_mediant']);
 
+// ★ followup 2.1:布鲁斯调味和弦 → 选一条【含蓝调色音(相对根)】的已知音阶,作 forcedScale → Q+N
+//   chordScaleMap 据它建,蓝色音落地。按张力协和度排序取首个命中(tonic b3/IV b7 → Composite Blues;
+//   V b13 → Mixolydian b6;13 → Half-Whole;余 → Altered)。assemble 用 forcedScale 整体替换 chord-scale。
+const BLUES_SCALE_CANDIDATES: ScaleTypeId[] = ['Composite Blues', 'Mixolydian b6', 'Half-Whole Diminished', 'Altered'];
+function bluesForcedScale(rootPc: number, bluesColorPcs: readonly number[]): ScaleTypeId | undefined {
+  if (!bluesColorPcs.length) return undefined;
+  const intervals = bluesColorPcs.map((pc) => m12(pc - rootPc)); // 蓝调音相对根的音程
+  for (const scale of BLUES_SCALE_CANDIDATES) {
+    const sc = new Set(getScalePitchClasses(0 as PitchClass, scale)); // 相对根(0)的音阶音程集
+    if (intervals.every((iv) => sc.has(iv as PitchClass))) return scale;
+  }
+  return undefined;
+}
+
 /** SandboxChord → ResolvedChord(harmony 引擎装配输入)。 */
 function toResolvedChord(c: SandboxChord, sectionId: string): ResolvedChord {
   const rootPc = m12(c.realRootPc ?? c.rootPc) as PitchClass;
@@ -47,6 +62,8 @@ function toResolvedChord(c: SandboxChord, sectionId: string): ResolvedChord {
   const chordType = normalizeChordType(c.realType ?? quality) ?? undefined;
   const func = funcOf(c);
   const borrowedSource = c.borrowedSource && BORROW_SOURCES.has(c.borrowedSource) ? (c.borrowedSource as ResolvedChord['borrowedSource']) : undefined;
+  // ★ followup 2.1:seasoned 和弦的蓝调色音 → forcedScale(Q+N chordScaleMap 含蓝色,不丢 Q+R 蓝调和声)。
+  const forcedScale = bluesForcedScale(rootPc, c.bluesColorPcs ?? []);
   return {
     roman: { degree: clampDegree(c.degree), accidental: 'natural', quality },
     rootPc,
@@ -55,6 +72,7 @@ function toResolvedChord(c: SandboxChord, sectionId: string): ResolvedChord {
     sectionId,
     func,
     chordType,            // 宽权威类型 → assemble 据它算张力(9/13 进 color)
+    forcedScale,          // ★ 蓝调音阶 → chordScaleMap 含蓝色音
     borrowedSource,
     effectiveFunc: func,
     borrowedFrom: c.realRoman, // 保留作者 roman 标签(render 只读;display/trace 用)
