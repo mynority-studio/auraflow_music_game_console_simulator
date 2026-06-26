@@ -12,7 +12,7 @@ import { planForm, type FormTemplate } from './formPlanner';
 import { planTime } from './timePlanner';
 import { planDynamics } from './dynamicsPlanner';
 import { planPhrases } from './phrasePlanner';
-import { planGroove } from './groovePlanner';
+import { planGroove, planGrooveContract } from './groovePlanner';
 import { planEdges } from './edgePlanner';
 
 export interface ArrangementOptions {
@@ -30,6 +30,9 @@ export function buildArrangementPlan(
   const dynamics = planDynamics(sections);
   const grooveBySection = planGroove(sections, band.style); // 鼓 groove 下发(纯 functionTag/role 派生,不抽 rng)
   const edges = planEdges(sections, dynamics.energyBySection, band.style); // 段落边界:进入方式 + 收尾(纯 energy/style 派生)
+  // ★ MG 升级 Phase 1:GrooveContract(arranger 拥有)。ACG 走新 pool(独立 grooveContract 子流);非 ACG 派生
+  //   legacy(零洗牌,swing=feel.swingRatio/pocket=0)。feel.swingRatio 改从 contract.compSwingRatio 派生(非 ACG 等值不变)。
+  const groove = planGrooveContract(sections, band.style, time.feel, opts.rng);
 
   const data: ArrangementPlanData = {
     sections,
@@ -37,13 +40,16 @@ export function buildArrangementPlan(
     motifBindings,
     tempoBpm: time.tempoBpm,
     meter: time.meter,
-    feel: time.feel,
+    feel: { ...time.feel, swingRatio: groove.song.compSwingRatio },
     phraseBreathing: time.phraseBreathing,
     energyBySection: dynamics.energyBySection,
     densityBySection: dynamics.densityBySection,
     climaxMap: dynamics.climaxMap,
     harmonicRhythmTarget: dynamics.harmonicRhythmTarget,
     grooveBySection,
+    songGrooveContract: groove.song,
+    songGrooveContractId: groove.song.id,
+    grooveContractBySection: groove.bySection,
     entryBySection: edges.entryBySection,
     endingStyle: edges.endingStyle,
   };

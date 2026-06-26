@@ -108,6 +108,11 @@ export interface ArrangementPlanData {
   harmonicRhythmTarget: HarmonicRhythmTarget;
   /** ★ 每段鼓 groove 性格(Arranger 下发,器配层据此匹配具体 drum pattern 变体)。swing 不在此,走 feel.swingRatio。 */
   grooveBySection: Record<SectionId, GrooveKind>;
+  // ★ MG 升级 Phase 1:GrooveContract(comp/melody 分开 swing + ms pocket + texture 偏好);arranger 拥有,render 消费。
+  //   非 ACG = legacy 派生(零洗牌);grooveBySection(GrooveKind)保留作 drum 兼容字段。
+  songGrooveContract: import('../knowledge/grooveContracts').GrooveContract;
+  songGrooveContractId: string;
+  grooveContractBySection: Record<SectionId, import('../knowledge/grooveContracts').GrooveContract>;
   /** ★ 每段乐器【进入方式】(Arranger 下发,修 intro→verse 衔接):能量跃升处=lead-in(上段末小节铺垫推进),其余=downbeat 直入。 */
   entryBySection: Record<SectionId, SectionEntry>;
   /** ★ 全曲【收尾方式】(Arranger 下发,风格定制,修戛然而止):器配据此排乐器退出、render 出渐弱/延留/冷收手势。 */

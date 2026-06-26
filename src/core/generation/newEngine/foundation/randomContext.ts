@@ -9,7 +9,8 @@
 
 export type StageName =
   | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental' | 'timbre'
-  | 'prepass' | 'accompaniment' | 'compTexture' | 'padStyle' | 'melody' | 'resolver' | 'humanize';
+  | 'prepass' | 'accompaniment' | 'compTexture' | 'padStyle' | 'melody' | 'resolver' | 'humanize'
+  | 'grooveContract'; // ★ MG 升级:GrooveContract 选择(独立子流,非 ACG 不调 → 零洗牌主流)
 
 export interface Rng {
   next(): number;                       // [0,1)

@@ -7,10 +7,41 @@
 // ============================================================
 
 import type { GrooveKind } from '../knowledge/grooves';
-import type { Section, SectionId } from './ArrangementPlan';
+import type { Section, SectionId, Feel } from './ArrangementPlan';
+import type { RandomContext } from '../foundation/randomContext';
+import { pickGrooveContract, type GrooveContract, type GrooveStyleName } from '../knowledge/grooveContracts';
 
 // 风格基底 groove(content 段 story/loop/head 用):pop 稳 backbeat / rnb·lofi 慵懒 / jazz swing 直拍。
 const STYLE_BASE: Record<string, GrooveKind> = { pop: 'straight', rnb: 'laidback', lofi: 'laidback', jazz: 'straight', default: 'straight' };
+
+// simulator 小写 style → MG 大写 GrooveStyleName(未知 → POP,grooveContractsForStyle 也回退 POP)。
+const STYLE_TO_GROOVE: Record<string, GrooveStyleName> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', blues: 'BLUES', acg: 'ACG' };
+function grooveStyleOf(style: string): GrooveStyleName { return STYLE_TO_GROOVE[style.toLowerCase()] ?? 'POP'; }
+
+/** ★ MG 升级零洗牌(§7.2):非 ACG 风格【派生 legacy-compatible contract】—— swing=现 feel.swingRatio、
+ *  pocket 全 0、velocityHumanize 0 → render 消费后输出与现状一致(旧歌/旧测试不漂)。 */
+function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
+  const gs = grooveStyleOf(style);
+  const grid = feel.kind === 'swing' ? 'swing' : feel.kind === 'shuffle' ? 'shuffle' : 'straight';
+  return {
+    id: `legacy_${style.toLowerCase()}`, name: `legacy ${gs}`, style: gs, weight: 1, grid, density: 'medium',
+    compSwingRatio: feel.swingRatio, melodySwingRatio: feel.swingRatio,
+    bassPocketMs: [0, 0], chordPocketMs: [0, 0], melodyStrongPocketMs: [0, 0], melodyWeakPocketMs: [0, 0],
+    velocityHumanize: 0, accentPattern: [1.0, 0.85, 0.95, 0.85], articulation: 'legato',
+  };
+}
+
+/** ★ 选/派生 GrooveContract(§7.2 零洗牌):ACG → 新 pool 加权(独立 `grooveContract` 子流,不扰主流);
+ *  非 ACG → legacy 派生(无 rng)。section-level 暂全曲同 contract(段级变化留后续)。 */
+export function planGrooveContract(
+  sections: readonly Section[], style: string, feel: Feel, rng?: RandomContext,
+): { song: GrooveContract; bySection: Record<SectionId, GrooveContract> } {
+  const isACG = style.toLowerCase() === 'acg';
+  const song = isACG && rng ? pickGrooveContract('ACG', rng.substream('grooveContract')) : legacyContractForStyle(style, feel);
+  const bySection: Record<SectionId, GrooveContract> = {};
+  for (const s of sections) bySection[s.id] = song;
+  return { song, bySection };
+}
 
 /** 每段 GrooveKind:framing/收尾 → sparse;hook/solo → driving;build → straight;content → 风格基底。 */
 export function planGroove(sections: readonly Section[], style: string): Record<SectionId, GrooveKind> {
