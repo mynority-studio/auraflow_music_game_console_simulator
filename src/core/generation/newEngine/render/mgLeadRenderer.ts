@@ -26,7 +26,7 @@ import { scheduleBrickExpansions } from './mgTokenScheduler';
 import { fallbackTokensForBrick } from './mgAdvisor';
 import { realizeTokens } from './mgMelodyRealizer';
 import { buildGuideTonePlan } from './mgGuideTonePlanner';
-import { renderStyleFeel, feelForStyle } from './mgStyleRenderer';
+import { renderStyleFeel, feelForStyle, feelFromGrooveContract, type ImprovisorStyleFeel } from './mgStyleRenderer';
 import { shapeMelodyHarmony } from './mgMelodyShaper';
 import {
   ENRICHED_GRAMMAR, POP_ENRICHED_GRAMMAR, LOFI_ENRICHED_GRAMMAR, RNB_ENRICHED_GRAMMAR,
@@ -59,6 +59,7 @@ export function renderMgMelody(
   timebase: Timebase,
   songSeed: number,
   leadProgram?: number, // ★ 2026-06-10:器配生效 lead program(单一真源);缺省回退 band.roleProgram(测试/向后兼容)
+  grooveContract?: { style: string; melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[] }, // ★ MG 升级 1c:lead swing 真源(仅 ACG 走;非 ACG 门控回退 feelForStyle → 零洗牌)
 ): TrackIR {
   const program = leadProgram ?? band.roleProgram.lead;
   const chords = harmonicPlanToMgChordDefs(plan);
@@ -96,7 +97,10 @@ export function renderMgMelody(
   //   所以不会双重摆动 —— lead 的 swing 由这里独占,伴奏(comp/bass/drum)的 swing 由 arranger feel + 全局 applySwing 负责。
   //   ⚠️ 不要把这里压成 0.5:applySwing 既跳过 lead,压直会让 jazz lead 变直而伴奏仍摆 → lead/groove 错位(2026-06-08 实测教训)。
   //   ★ protectFastRuns(2026-06-19):jazz/blues 连续 16 分 run 内的 .5 不被当八分反拍摆动(防 .5→.67 挤压 micro-IOI)。
-  melody = renderStyleFeel({ events: melody, feel: feelForStyle(style), rng: mgRng, protectFastRuns: style === 'JAZZ' || style === 'BLUES' });
+  // ★ MG 升级 1c:lead feel 真源 = GrooveContract.melodySwingRatio —— 但【仅 ACG】走 contract(新 pool);
+  //   非 ACG 门控回退 feelForStyle(style)= 现状,保证零洗牌(jazz 16分 run/走A 预摆/legato/双摆测试不漂)。
+  const leadFeel = grooveContract && grooveContract.style === 'ACG' ? feelFromGrooveContract(grooveContract) : feelForStyle(style);
+  melody = renderStyleFeel({ events: melody, feel: leadFeel, rng: mgRng, protectFastRuns: style === 'JAZZ' || style === 'BLUES' });
   // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
   const applyLofi = style === 'LOFI';
   melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);

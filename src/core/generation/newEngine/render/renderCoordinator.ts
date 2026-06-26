@@ -290,7 +290,7 @@ export function renderSongFull(
   // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
   tracks.push(overrideLeadTrack
     ? { ...overrideLeadTrack, role: 'lead', program: instrumentation.roleProgram.lead }
-    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead)); // MG seed=song seed · lead program=器配生效值
+    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract)); // MG seed=song seed · lead program=器配生效值 · ★ 1c:lead swing 真源(仅 ACG 走;非 ACG 门控回退现状)
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
