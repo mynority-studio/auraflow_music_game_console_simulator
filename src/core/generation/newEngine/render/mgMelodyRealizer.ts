@@ -16,6 +16,7 @@
 import type { ChordPart } from './mgChordPart';
 import { getCurrentChordAtBeat, getNextChordAtBeat } from './mgChordPart';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
+import type { ScheduledToken } from './mgTokenScheduler';
 import { buildPitchSets } from './mgPitchClassSets';
 import type { LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
 import { chooseNote, type ChoiceResult, type NoteChooserContext } from './mgNoteChooser';
@@ -53,7 +54,7 @@ type NoteEvent = MgNoteEvent;
 
 export interface LickGenArgs {
   /** Tokens already laid out with their start beats. */
-  scheduledTokens: Array<{ token: AbstractMelodyToken; startBeat: number }>;
+  scheduledTokens: ScheduledToken[];
   /** Chord context. */
   chordPart: ChordPart;
   /** Initial prev-emit MIDI (null at song start). */
@@ -83,12 +84,26 @@ export interface LickGenArgs {
  *  staccato hits and instead glides them into a single sustained note.
  *  Default-on per IV (the only invocation in the LickGen pipeline
  *  passes avoidRepeats=true). */
+// ★ MG full-parity Phase 3·D:从 ScheduledToken 取 brick 元数据盖到 NoteEvent(shaper 边界 guard 用)。
+function brickEventMeta(entry: ScheduledToken): Pick<MgNoteEvent, 'brickIndex' | 'brickStartBeat' | 'brickEndBeat'> {
+  return {
+    brickIndex: entry.brickIndex,
+    brickStartBeat: entry.brickStartBeat,
+    brickEndBeat: entry.brickEndBeat,
+  };
+}
+
 function pushOrMergeRepeat(events: NoteEvent[], ev: NoteEvent): void {
   if (events.length > 0 && ev.part === 'melody') {
     const last = events[events.length - 1];
+    // ★ MG full-parity:仅同 brick(或任一无 brick meta)才合并重复音 —— 不跨 brick 边界粘连。
+    const sameBrick = last.brickIndex === ev.brickIndex
+      || last.brickIndex === undefined
+      || ev.brickIndex === undefined;
     if (last.part === 'melody'
         && last.noteNumber === ev.noteNumber
-        && Math.abs(last.time + last.duration - ev.time) < 1e-4) {
+        && Math.abs(last.time + last.duration - ev.time) < 1e-4
+        && sameBrick) {
       last.duration += ev.duration;
       return;
     }
@@ -107,7 +122,8 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
   let activeSlope: { dirMin: number; dirMax: number } | null = null;
 
   for (let i = 0; i < scheduledTokens.length; i++) {
-    const { token, startBeat } = scheduledTokens[i];
+    const entry = scheduledTokens[i];
+    const { token, startBeat } = entry;
 
     // Slope markers toggle state, emit no audio.
     if (token.kind === 'SlopeEnter') {
@@ -177,6 +193,7 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
                 // P2-3: mark provenance so audit scripts can identify
                 // improvisor-pipeline emissions vs other paths.
                 lickSource: true,
+                ...brickEventMeta(entry),
               });
               prevMidi = approachChoice.midi;
             }
@@ -193,6 +210,7 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
               // X-token degree carries lick author's intent (e.g. 'b3').
               degree: targetTok.kind === 'X' && targetTok.degree !== undefined
                 ? String(targetTok.degree) : undefined,
+              ...brickEventMeta(targetEntry),
             });
             prevMidi = targetChoice.midi;
             triadicState = targetChoice.triadicState;
@@ -242,6 +260,7 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
         lickSource: true,
         degree: token.kind === 'X' && token.degree !== undefined
           ? String(token.degree) : undefined,
+        ...brickEventMeta(entry),
       });
       prevMidi = choice.midi;
     }

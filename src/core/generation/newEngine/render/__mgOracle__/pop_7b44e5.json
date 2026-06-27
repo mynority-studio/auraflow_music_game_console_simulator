@@ -1827,511 +1827,730 @@
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 0
+      "startBeat": 0,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 0.5
+      "startBeat": 0.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 1
+      "startBeat": 1,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 1.5
+      "startBeat": 1.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 2
+      "startBeat": 2,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "G",
         "duration": 1
       },
-      "startBeat": 2.5
+      "startBeat": 2.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "R",
         "duration": 0.5
       },
-      "startBeat": 3.5
+      "startBeat": 3.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 4
+      "startBeat": 4,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 4.5
+      "startBeat": 4.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 5
+      "startBeat": 5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 5.5
+      "startBeat": 5.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 6
+      "startBeat": 6,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 6.5
+      "startBeat": 6.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "G",
         "duration": 1
       },
-      "startBeat": 7
+      "startBeat": 7,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 12
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 12
+      "startBeat": 12,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 12.5
+      "startBeat": 12.5,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 13
+      "startBeat": 13,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 13.5
+      "startBeat": 13.5,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 14
+      "startBeat": 14,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 14.5
+      "startBeat": 14.5,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "A",
         "duration": 0.5
       },
-      "startBeat": 15
+      "startBeat": 15,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 15.5
+      "startBeat": 15.5,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 16
+      "startBeat": 16,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 16.5
+      "startBeat": 16.5,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 17
+      "startBeat": 17,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 1
       },
-      "startBeat": 17.5
+      "startBeat": 17.5,
+      "brickIndex": 2,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 20
+      "startBeat": 20,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 20.5
+      "startBeat": 20.5,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 21
+      "startBeat": 21,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 21.5
+      "startBeat": 21.5,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 22
+      "startBeat": 22,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 22.5
+      "startBeat": 22.5,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "G",
         "duration": 1
       },
-      "startBeat": 23
+      "startBeat": 23,
+      "brickIndex": 3,
+      "brickStartBeat": 20,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 28
+      "startBeat": 28,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 28.5
+      "startBeat": 28.5,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 29
+      "startBeat": 29,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "A",
         "duration": 0.5
       },
-      "startBeat": 29.5
+      "startBeat": 29.5,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 30
+      "startBeat": 30,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "R",
         "duration": 0.5
       },
-      "startBeat": 30.5
+      "startBeat": 30.5,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 31
+      "startBeat": 31,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 31.5
+      "startBeat": 31.5,
+      "brickIndex": 4,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "G",
         "duration": 1
       },
-      "startBeat": 36
+      "startBeat": 36,
+      "brickIndex": 5,
+      "brickStartBeat": 36,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 37
+      "startBeat": 37,
+      "brickIndex": 5,
+      "brickStartBeat": 36,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 37.5
+      "startBeat": 37.5,
+      "brickIndex": 5,
+      "brickStartBeat": 36,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 38
+      "startBeat": 38,
+      "brickIndex": 5,
+      "brickStartBeat": 36,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 38.5
+      "startBeat": 38.5,
+      "brickIndex": 5,
+      "brickStartBeat": 36,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 39
+      "startBeat": 39,
+      "brickIndex": 5,
+      "brickStartBeat": 36,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 44
+      "startBeat": 44,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 44.5
+      "startBeat": 44.5,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 45
+      "startBeat": 45,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 45.5
+      "startBeat": 45.5,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 46
+      "startBeat": 46,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 46.5
+      "startBeat": 46.5,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "A",
         "duration": 0.5
       },
-      "startBeat": 47
+      "startBeat": 47,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 47.5
+      "startBeat": 47.5,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 48
+      "startBeat": 48,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 48.5
+      "startBeat": 48.5,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 49
+      "startBeat": 49,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "C",
         "duration": 1
       },
-      "startBeat": 49.5
+      "startBeat": 49.5,
+      "brickIndex": 6,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 52
+      "startBeat": 52,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 52.5
+      "startBeat": 52.5,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 53
+      "startBeat": 53,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 53.5
+      "startBeat": 53.5,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 54
+      "startBeat": 54,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "S",
         "duration": 0.5
       },
-      "startBeat": 54.5
+      "startBeat": 54.5,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "G",
         "duration": 1
       },
-      "startBeat": 55
+      "startBeat": 55,
+      "brickIndex": 7,
+      "brickStartBeat": 52,
+      "brickEndBeat": 60
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 60
+      "startBeat": 60,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "G",
         "duration": 0.5
       },
-      "startBeat": 60.5
+      "startBeat": 60.5,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 61
+      "startBeat": 61,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 61.5
+      "startBeat": 61.5,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 62
+      "startBeat": 62,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "G",
         "duration": 1
       },
-      "startBeat": 62.5
+      "startBeat": 62.5,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "R",
         "duration": 0.5
       },
-      "startBeat": 63.5
+      "startBeat": 63.5,
+      "brickIndex": 8,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     }
   ],
   "rawMelodyBuiltin": [

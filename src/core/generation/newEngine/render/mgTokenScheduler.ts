@@ -11,10 +11,15 @@
 
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 
-/** 一个已落拍的 token:token 本体 + 绝对起拍。 */
+/** 一个已落拍的 token:token 本体 + 绝对起拍。
+ *  ★ MG full-parity Phase 3·D:brick 元数据(scheduleBrickExpansions 盖,realizeTokens 透到 NoteEvent)。
+ *    缺省 undefined(如 scheduleTokens 直出 / ACG 调度)→ shapeMelodyHarmony 的 eventBrickSpansBoundary no-op。 */
 export interface ScheduledToken {
   token: AbstractMelodyToken;
   startBeat: number;
+  brickIndex?: number;
+  brickStartBeat?: number;
+  brickEndBeat?: number;
 }
 
 /** Lay out a flat token list onto consecutive start beats, starting
@@ -90,7 +95,15 @@ export function scheduleBrickExpansions(
   const all: ScheduledToken[] = [];
   for (const ex of expansions) {
     const scheduled = scheduleTokens(ex.tokens, ex.brick.startBeat, ex.brick.durationBeats);
-    all.push(...scheduled);
+    const brickEndBeat = ex.brick.durationBeats !== undefined
+      ? ex.brick.startBeat + ex.brick.durationBeats
+      : undefined;
+    all.push(...scheduled.map(entry => ({
+      ...entry,
+      brickIndex: ex.brickIndex,
+      brickStartBeat: ex.brick.startBeat,
+      brickEndBeat,
+    })));
   }
   return all;
 }
