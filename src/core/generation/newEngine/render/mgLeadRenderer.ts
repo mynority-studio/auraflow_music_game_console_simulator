@@ -23,6 +23,7 @@ import { buildChordPart } from './mgChordPart';
 import { parseRoadMap } from './mgRoadMapParser';
 import { expandGrammarForRoadMap } from './mgGrammarRuntime';
 import { scheduleBrickExpansions } from './mgTokenScheduler';
+import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
 import { fallbackTokensForBrick } from './mgAdvisor';
 import { realizeTokens } from './mgMelodyRealizer';
 import { buildGuideTonePlan } from './mgGuideTonePlanner';
@@ -85,7 +86,8 @@ export function renderMgMelody(
   for (let i = 0; i < perBrick.length; i++) {
     if (perBrick[i].tokens.length === 0) perBrick[i].tokens = fallbackTokensForBrick(perBrick[i].brick);
   }
-  const scheduled = scheduleBrickExpansions(perBrick);
+  // ★ MG full-parity G4:ACG 走 cycle-cadence 调度(一条长句铺满和声 cycle,钢琴呼吸),非 brick-by-brick lick chain。
+  const scheduled = style === 'ACG' ? scheduleAcgCycleCadencePhrases(perBrick, part) : scheduleBrickExpansions(perBrick);
   const guideTonePlan = buildGuideTonePlan({ chordPart: part });
   let melody = realizeTokens({
     scheduledTokens: scheduled,
