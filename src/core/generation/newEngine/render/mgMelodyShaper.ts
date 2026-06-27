@@ -470,25 +470,11 @@ export function applyLofiPhrygianBiiShadowMelody(
         return neighbor || passing;
     }
 
-    export function lofiCrawlPitchForTarget(
-        sourceMidi: number,
-        targetTime: number,
-        chord: ChordDef,
-        func: 'T' | 'S' | 'D',
-        musicKey: string,
-        musicMode: string,
-    ): number {
+    export function lofiDominantLandingPc(chord: ChordDef): number | null {
         const rootPc = ((chord.rootMidi % 12) + 12) % 12;
-        const sourcePc = ((sourceMidi % 12) + 12) % 12;
-        const contractPcs = melodyContractPcsForStyle('LOFI', chord, rootPc);
-        const runScale = runScaleForChordContext('LOFI', chord, func, musicKey, musicMode);
-        const runScalePcs = new Set(runScale.map(m => ((m % 12) + 12) % 12));
-        const beatInChord = targetTime % (chord.duration ?? 4);
-        const strongBeat = _strongBeats.some(sb => Math.abs(beatInChord - sb) < 0.08);
-        if (contractPcs.has(sourcePc)) return sourceMidi;
-        if (!strongBeat && runScalePcs.has(sourcePc)) return sourceMidi;
-        const scaleContract = new Set([...contractPcs].filter(pc => runScalePcs.has(pc)));
-        return snapMidiToNearestPcSet(sourceMidi, scaleContract.size > 0 ? scaleContract : contractPcs, 5);
+        const intervals = CHORD_TYPES[chord.type] ?? [];
+        if (intervals.includes(10)) return (rootPc + 10) % 12;
+        return null;
     }
 
     export function lofiSoftLandingPc(chord: ChordDef): number | null {
@@ -503,51 +489,13 @@ export function applyLofiPhrygianBiiShadowMelody(
         return preferred.length > 0 ? (rootPc + preferred[0]) % 12 : null;
     }
 
-    export function synthesizeLofiAscendingCrawl(
-        chord: ChordDef,
-        startTime: number,
-        func: 'T' | 'S' | 'D',
-        musicKey: string,
-        musicMode: string,
-    ): NoteEvent[] {
-        const rootPc = ((chord.rootMidi % 12) + 12) % 12;
-        const contract = melodyContractPcsForStyle('LOFI', chord, rootPc);
-        const runScale = runScaleForChordContext('LOFI', chord, func, musicKey, musicMode)
-            .filter(m => m >= MELODY_RANGE.LOW && m <= MELODY_RANGE.HIGH);
-        let best: number[] | null = null;
-        let bestScore = Infinity;
-        for (let i = 0; i <= runScale.length - 4; i++) {
-            const cell = runScale.slice(i, i + 4);
-            if (!cell.slice(1).every((m, idx) => m > cell[idx] && m - cell[idx] <= 4)) continue;
-            const firstPc = ((cell[0] % 12) + 12) % 12;
-            const lastPc = ((cell[3] % 12) + 12) % 12;
-            const score = Math.abs(cell[0] - 67)
-                + (contract.has(firstPc) ? -4 : 2)
-                + (contract.has(lastPc) ? -6 : 4)
-                + (cell[3] > 79 ? 4 : 0);
-            if (score < bestScore) {
-                bestScore = score;
-                best = cell;
-            }
-        }
-        const pitches = best ?? [64, 65, 67, 69];
-        return pitches.map((noteNumber, idx) => ({
-            noteNumber,
-            time: startTime + idx * 0.5,
-            duration: 0.5,
-            velocity: 96,
-            part: 'melody' as const,
-            origin: 'develop' as const,
-            lickSource: true,
-        }));
-    }
-
     export function applyLofiCrawlHoldParadigm(
         melody: NoteEvent[],
         chords: ChordDef[],
         starts: number[],
         musicKey: string,
         musicMode: string,
+        tonalCharacter: 'tonal' | 'modal',
     ): NoteEvent[] {
         const out = melody.map(e => ({ ...e }));
         const baseRoman = (roman: string): string =>
@@ -556,35 +504,29 @@ export function applyLofiPhrygianBiiShadowMelody(
             .filter(e => e.part === 'melody' && e.time >= start - 0.001 && e.time < end - 0.001)
             .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
 
-        for (let i = 0; i <= chords.length - 4; i++) {
+        for (let i = 0; i <= chords.length - 3; i++) {
             const c0 = chords[i];
             const c1 = chords[i + 1];
             const c2 = chords[i + 2];
-            const c3 = chords[i + 3];
             const r0 = baseRoman(c0.roman);
             const r1 = baseRoman(c1.roman);
             const r2 = baseRoman(c2.roman);
-            const r3 = baseRoman(c3.roman);
             const f0 = c0.effectiveFunc ?? getHarmonicFunction(c0.roman);
             const f1 = c1.effectiveFunc ?? getHarmonicFunction(c1.roman);
             const f2 = c2.effectiveFunc ?? getHarmonicFunction(c2.roman);
-            const f3 = c3.effectiveFunc ?? getHarmonicFunction(c3.roman);
-            const isCadenceFrame = (r0 === 'vi' && r1 === 'ii' && ['V', 'v'].includes(r2) && ['I', 'i'].includes(r3))
-                || ((f0 === 'T' || ['I', 'i', 'vi'].includes(r0))
-                    && (f1 === 'S' || ['ii', 'iv'].includes(r1))
-                    && f2 === 'D'
-                    && f3 === 'T');
+            const isCadenceFrame = (r0 === 'ii' || r0 === 'iiø')
+                && (f0 === 'S' || r0 === 'ii' || r0 === 'iiø')
+                && (f1 === 'D' || ['V', 'v'].includes(r1))
+                && (f2 === 'T' || ['I', 'i'].includes(r2));
             if (!isCadenceFrame) continue;
 
             const sourceStart = starts[i];
             const sourceEnd = starts[i] + (c0.duration ?? 4);
-            const answerStart = starts[i + 2];
-            const answerEnd = answerStart + (c2.duration ?? 4);
             const sourceWindowStart = sourceStart + (c0.duration ?? 4) * 0.5;
-            let sourceTail = melodyIn(sourceWindowStart, sourceEnd)
+            const sourceTail = melodyIn(sourceWindowStart, sourceEnd)
                 .filter(e => e.duration <= 0.75)
                 .slice(-4);
-            const hasUsableSource = sourceTail.length >= 4
+            const hasUsableSource = sourceTail.length >= 3
                 && sourceTail[sourceTail.length - 1].noteNumber > sourceTail[0].noteNumber
                 && sourceTail.slice(1).every((e, idx) => {
                     const delta = e.noteNumber - sourceTail[idx].noteNumber;
@@ -594,29 +536,26 @@ export function applyLofiPhrygianBiiShadowMelody(
                 && sourceTail[0].noteNumber >= 65
                 && sourceTail[sourceTail.length - 1].noteNumber >= 71;
             if (!hasUsableSource || !hasFavoriteRegister) {
-                const sourceFunc = c0.effectiveFunc ?? getHarmonicFunction(c0.roman);
-                sourceTail = synthesizeLofiAscendingCrawl(c0, sourceWindowStart, sourceFunc, musicKey, musicMode);
-                for (let k = out.length - 1; k >= 0; k--) {
-                    const e = out[k];
-                    if (e.part === 'melody' && e.time >= sourceWindowStart - 0.001 && e.time < sourceEnd - 0.001) {
-                        out.splice(k, 1);
-                    }
-                }
-                out.push(...sourceTail);
+                continue;
             }
-            const shapeDeltas = sourceTail.map(e => e.noteNumber - sourceTail[0].noteNumber);
 
-            const sourceLandingPc = lofiSoftLandingPc(c1);
+            const sourceLandingPc = lofiDominantLandingPc(c1) ?? lofiSoftLandingPc(c1);
             if (sourceLandingPc !== null) {
                 const sourceLandingStart = starts[i + 1];
                 const sourceLandingEnd = sourceLandingStart + (c1.duration ?? 4);
-                const sourceLandingSeed = sourceTail[sourceTail.length - 1].noteNumber + 5;
-                const sourceLandingMidi = snapMidiToNearestPcSet(
-                    sourceLandingSeed,
-                    new Set([sourceLandingPc]),
-                    7,
+                const sourceLanding = chooseLongResolutionTarget(
+                    'LOFI',
+                    sourceTail[sourceTail.length - 1].noteNumber,
+                    c0,
+                    f0,
+                    c1,
+                    f1,
+                    musicKey,
+                    musicMode,
+                    tonalCharacter,
+                    { maxDistance: 9, preferredPc: sourceLandingPc },
                 );
-                if (((sourceLandingMidi % 12) + 12) % 12 === sourceLandingPc) {
+                if (sourceLanding) {
                     for (let k = out.length - 1; k >= 0; k--) {
                         const e = out[k];
                         if (e.part === 'melody'
@@ -626,7 +565,7 @@ export function applyLofiPhrygianBiiShadowMelody(
                         }
                     }
                     out.push({
-                        noteNumber: sourceLandingMidi,
+                        noteNumber: sourceLanding.midi,
                         time: sourceLandingStart,
                         duration: Math.min(2, sourceLandingEnd - sourceLandingStart),
                         velocity: 100,
@@ -637,37 +576,9 @@ export function applyLofiPhrygianBiiShadowMelody(
                 }
             }
 
-            const answerWindowStart = answerStart + (c2.duration ?? 4) * 0.5;
-            const answerWindowEnd = Math.min(answerEnd, answerWindowStart + (sourceEnd - (sourceStart + (c0.duration ?? 4) * 0.5)));
-            for (let k = out.length - 1; k >= 0; k--) {
-                const e = out[k];
-                if (e.part === 'melody' && e.time >= answerWindowStart - 0.001 && e.time < answerWindowEnd - 0.001) {
-                    out.splice(k, 1);
-                }
-            }
-
-            const answerFunc = c2.effectiveFunc ?? getHarmonicFunction(c2.roman);
-            const answerBase = sourceTail[0].noteNumber;
-            for (let srcIdx = 0; srcIdx < sourceTail.length; srcIdx++) {
-                const src = sourceTail[srcIdx];
-                const rel = src.time - (sourceStart + (c0.duration ?? 4) * 0.5);
-                const targetTime = answerWindowStart + rel;
-                if (targetTime >= answerEnd - 0.001) continue;
-                const shapedMidi = answerBase + shapeDeltas[srcIdx];
-                out.push({
-                    ...src,
-                    noteNumber: lofiCrawlPitchForTarget(shapedMidi, targetTime - answerStart, c2, answerFunc, musicKey, musicMode),
-                    time: targetTime,
-                    duration: Math.min(src.duration, answerEnd - targetTime),
-                    origin: src.origin ?? 'develop',
-                    lickSource: true,
-                });
-            }
-
-            const landingPc = lofiSoftLandingPc(c3);
-            if (landingPc === null) continue;
-            const targetStart = starts[i + 3];
-            const targetEnd = targetStart + (c3.duration ?? 4);
+            const landingPc = lofiSoftLandingPc(c2);
+            const targetStart = starts[i + 2];
+            const targetEnd = targetStart + (c2.duration ?? 4);
             const sourceHold = melodyIn(starts[i + 1], starts[i + 1] + (c1.duration ?? 4))
                 .filter(e => e.duration >= 1.5)
                 .sort((a, b) => b.duration - a.duration || b.noteNumber - a.noteNumber)[0];
@@ -675,12 +586,19 @@ export function applyLofiPhrygianBiiShadowMelody(
             const landingSeed = sourceHold && sourceHold.noteNumber >= crawlUpperNeighborSeed - 2
                 ? sourceHold.noteNumber
                 : crawlUpperNeighborSeed;
-            const landingMidi = snapMidiToNearestPcSet(
-                landingSeed - 1,
-                new Set([landingPc]),
-                14,
+            const landing = chooseLongResolutionTarget(
+                'LOFI',
+                landingSeed,
+                c1,
+                f1,
+                c2,
+                f2,
+                musicKey,
+                musicMode,
+                tonalCharacter,
+                { maxDistance: 14, preferredPc: landingPc },
             );
-            if (((landingMidi % 12) + 12) % 12 !== landingPc) continue;
+            if (!landing) continue;
             for (let k = out.length - 1; k >= 0; k--) {
                 const e = out[k];
                 if (e.part === 'melody' && e.time >= targetStart - 0.001 && e.time < Math.min(targetEnd, targetStart + 2.0) - 0.001) {
@@ -688,7 +606,7 @@ export function applyLofiPhrygianBiiShadowMelody(
                 }
             }
             out.push({
-                noteNumber: landingMidi,
+                noteNumber: landing.midi,
                 time: targetStart,
                 duration: Math.min(2, targetEnd - targetStart),
                 velocity: sourceHold ? Math.max(92, Math.min(105, sourceHold.velocity)) : 98,
@@ -697,7 +615,71 @@ export function applyLofiPhrygianBiiShadowMelody(
                 lickSource: true,
             });
         }
-        return out.sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+
+        if (chords.length >= 3) {
+            for (let i = 0; i <= chords.length - 3; i++) {
+                const c0 = chords[i];
+                const c1 = chords[i + 1];
+                const c2 = chords[i + 2];
+                const r0 = baseRoman(c0.roman);
+                const r1 = baseRoman(c1.roman);
+                const r2 = baseRoman(c2.roman);
+                const f0 = c0.effectiveFunc ?? getHarmonicFunction(c0.roman);
+                const f1 = c1.effectiveFunc ?? getHarmonicFunction(c1.roman);
+                const f2 = c2.effectiveFunc ?? getHarmonicFunction(c2.roman);
+                const isCadenceFrame = (r0 === 'ii' || r0 === 'iiø')
+                    && (f0 === 'S' || r0 === 'ii' || r0 === 'iiø')
+                    && (f1 === 'D' || ['V', 'v'].includes(r1))
+                    && (f2 === 'T' || ['I', 'i'].includes(r2));
+                if (!isCadenceFrame) continue;
+
+                const targetThirdPc = chordThirdPc(c2);
+                if (targetThirdPc === null) continue;
+                const targetStart = starts[i + 2];
+                const targetEnd = targetStart + (c2.duration ?? 4);
+
+                const earlyWindowEnd = Math.min(targetEnd, targetStart + 2.0);
+                const existing = melodyIn(targetStart, earlyWindowEnd)[0] ?? null;
+                const existingPc = existing ? ((existing.noteNumber % 12) + 12) % 12 : null;
+                if (existing && existingPc === targetThirdPc && existing.duration >= 1.5) continue;
+
+                for (let k = out.length - 1; k >= 0; k--) {
+                    const e = out[k];
+                    if (e.part === 'melody'
+                        && e.time >= targetStart - 0.001
+                        && e.time < earlyWindowEnd - 0.001) {
+                        out.splice(k, 1);
+                    }
+                }
+
+                const targetMidi = snapMidiToNearestPcSet(76, new Set([targetThirdPc]), 12);
+                if (((targetMidi % 12) + 12) % 12 !== targetThirdPc) continue;
+                out.push({
+                    noteNumber: targetMidi,
+                    time: targetStart,
+                    duration: Math.min(2, targetEnd - targetStart),
+                    velocity: 98,
+                    part: 'melody',
+                    origin: 'return',
+                    lickSource: true,
+                });
+            }
+        }
+        const finalActiveMelodyAt = (time: number): NoteEvent | null =>
+            out
+                .filter(event => event.part === 'melody'
+                    && event.time <= time + 0.025
+                    && event.time + event.duration > time - 0.025)
+                .sort((a, b) => b.noteNumber - a.noteNumber)[0] ?? null;
+
+        return out
+            .filter(event => {
+                if (event.part !== 'chord') return true;
+                const melody = finalActiveMelodyAt(event.time);
+                if (!melody) return true;
+                return event.noteNumber < melody.noteNumber;
+            })
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
     }
 
     export function applyMelodicResolutionParadigm(
@@ -1543,7 +1525,7 @@ export function applyLofiPhrygianBiiShadowMelody(
 
         const tightened = tightenHarmonyDecorations(shaped);
         const paradigmed = applyLofiParadigm
-            ? applyLofiCrawlHoldParadigm(tightened, chords, starts, musicKey, musicMode)
+            ? applyLofiCrawlHoldParadigm(tightened, chords, starts, musicKey, musicMode, tonalCharacter)
             : tightened;
         const resolved = applyMelodicResolutionParadigm(style, paradigmed, chords, starts, musicKey, musicMode, tonalCharacter);
         const finalTightened = tightenHarmonyDecorations(consumeReturnLandings(resolved));

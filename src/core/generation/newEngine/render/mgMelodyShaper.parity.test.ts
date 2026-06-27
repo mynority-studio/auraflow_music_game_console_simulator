@@ -58,20 +58,15 @@ describe('render/mgMelodyShaper · MG 移植 shapeMelodyHarmony parity (Loop 6)'
     }
   });
 
-  // ★ MG full-parity G9·B+C 收口(applyMelodicResolutionParadigm 忠实港当前 MG 515 行版 + 13 helper
-  //   + brick 元数据穿透 oracle):全 23 oracle 的 shaper 字段【外科式刷新】到当前 MG(brick meta 已纳入
-  //   shaperIn/shaperOut 序列化)。**实测 11/23 seed 现 byte-exact 匹配当前 MG**(含原 G9 诊断失败的
-  //   jazz_aa07 / rnb_bb58 —— 证明 applyMelodicResolutionParadigm 港忠实)。
-  //   剩 12 seed 仍差,根因【非】applyMelodicResolutionParadigm,而是 shaper 链上【其它未港子函数】对当前 MG 陈旧:
-  //   ① 7 LOFI:LOFI paradigm 子函数(applyLofiCrawlHoldParadigm / synthesizeLofiAscendingCrawl /
-  //      applyLofiTonicizationColorAnchors)未港 → 大幅增音(cc88 ours=55/exp=41)。
-  //   ② 非 LOFI 段尾 develop 簇 = consumeReturnLandings 陈旧 → 已港当前 MG 版(reverse-loop splice:
-  //      移除落在长 return-landing(≥1.25, lickSource)span 内的 develop 音)→ **20/23 byte-exact**
-  //      (全部 POP/JAZZ/RNB + 5/8 LOFI)。
-  //   剩 3 LOFI(lofi_bb42 / lofi_cc88 / lofi_uhloiw)仍差(大幅增音)= LOFI crawl-hold paradigm
-  //      子函数(applyLofiCrawlHoldParadigm / synthesizeLofiAscendingCrawl)未港当前 MG → 待 re-sync。
-  //   → 这 3 暂按 invariant-parity 验收;港 LOFI paradigm 后清出此 set 回 strict byte-parity。
-  const G9_PENDING = new Set(['lofi_bb42', 'lofi_cc88', 'lofi_uhloiw']);
+  // ★ MG full-parity G9 全收口(2026-06-28):shapeMelodyHarmony 链已逐函数忠实港到【当前 MG】——
+  //   ① applyMelodicResolutionParadigm 港 515 行版(applyTargetChordSuspensionBoundary + cadentialLookback
+  //      candidateMap 评分 + chooseLong/Target/Connector + loop-tail 环回)+ 13 helper + brick 元数据穿透。
+  //   ② consumeReturnLandings 港 reverse-loop splice(移除长 return-landing span 内 develop 音)。
+  //   ③ applyLofiCrawlHoldParadigm 港当前 MG 3-chord ii-V-I 版(+ lofiDominantLandingPc + chooseLongResolutionTarget
+  //      + 二段 cadence-frame third-resolution),弃旧 synthesizeLofiAscendingCrawl/lofiCrawlPitchForTarget 算法。
+  //   全 23 oracle 的 shaper 字段已外科式刷新到当前 MG(含 brick meta)→ **23/23 全 seed byte-exact**。
+  //   G9_PENDING 清空 = 全部回 strict byte-parity。
+  const G9_PENDING = new Set<string>([]);
   for (const fx of fixtures) {
     if (G9_PENDING.has(fx.seed)) {
       it(`★ ${fx.seed} [${fx.style}] shaper invariant(G5 已 sync;exact byte-parity 待 G9)`, () => {
