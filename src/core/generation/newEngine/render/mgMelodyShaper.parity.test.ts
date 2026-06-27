@@ -63,6 +63,11 @@ describe('render/mgMelodyShaper · MG 移植 shapeMelodyHarmony parity (Loop 6)'
   //   本身对当前 MG ground truth 正确(见 mgLocalScaleResolver.test JAZZ G7 = Bebop Dominant)。这些 seed 的
   //   shaper EXACT byte-parity 还差【shaper 规则级】re-sync(G9,directive §8,待做)→ 现按 invariant-parity 验收。
   //   POP/LOFI(resolver 路径未变)仍 strict byte-match。oracle 待 G9 时随 shaper 一起刷新到当前 MG。
+  // ★ G9 待做:这 5 个 JAZZ/RNB seed 的 shaper oracle 已刷新到【当前 MG】(目标就位),但 simulator
+  //   shapeMelodyHarmony(1021 行)对当前 MG 有【多条规则级】偏离 —— 实测首发散:① 音高 snap 差
+  //   (jazz_aa07[8] ours 把 83 snap 到 79,MG 留 83)② 长音/gap 处增删音(rnb_bb58 ours 多 2 音)。
+  //   疑含 shaper 本地 melodyContractPcsForStyle(line 67)与 resolver 版偏离。需逐规则 re-sync(directive §8)。
+  //   暂按 invariant 验收;G9 完成后清空此 set 回 strict byte-parity。
   const G9_PENDING = new Set(['jazz_aa07', 'jazz_cc64', 'rnb_aa22', 'rnb_bb58', 'rnb_music_probe']);
   for (const fx of fixtures) {
     if (G9_PENDING.has(fx.seed)) {
