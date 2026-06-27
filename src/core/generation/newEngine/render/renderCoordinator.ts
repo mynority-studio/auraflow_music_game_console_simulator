@@ -31,6 +31,7 @@ import { applySwing } from './swing';
 import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
+import { applyGroovePocket, pocketedRoles } from './groovePocket';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { isWindFamily, windBreathCcEvents } from './windBreath';
@@ -384,7 +385,11 @@ export function renderSongFull(
 
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
-  const humanizedTracks = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks);
+  // ★ MG 升级 2c-2(§7.4):ACG GrooveContract 有 ms pocket → pocket-handled 角色(bass;lead 本就跳)
+  //   跳 humanizeTiming,改由 applyGroovePocket 拥有时序(不双重)。legacy pocket=0 → pocketSkip 空 → 不变(零洗牌)。
+  const pocketSkip = pocketedRoles(arrangement.songGrooveContract);
+  const humanizedRaw = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
+  const humanizedTracks = applyGroovePocket(humanizedRaw, arrangement.songGrooveContract, arrangement.tempoBpm, timebase.ppq, bpbHuman);
   // ★ Lead 最终安全闸(CODEX directive q_n_final_lead_sanitizer 2026-06-23):humanizeTiming/fillLeadBarGaps/swing/
   //   repeatReplay 这些末端变换会把上游已清洗的 lead 重新撞出【同 pitch overlap / 同 tick 重触发】→ 导出 MIDI 时
   //   旧 noteOff 提前关掉后一个同 pitch note(听感=motif/旋律突然断音或消失)。此前只有 jazz/blues 的 legato 分支顺带

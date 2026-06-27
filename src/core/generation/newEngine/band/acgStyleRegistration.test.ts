@@ -6,6 +6,7 @@ import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { toHarmonyStyle } from '../harmony/progressionSelector';
 import { PROGRESSION_POOL } from '../knowledge/progressions';
 import { ACG_RENDERED_TEXTURE_CASES } from '../render/textureRenderer';
+import { pocketedRoles } from '../render/groovePocket';
 import { pc, createRandomContext } from '../foundation';
 
 // ============================================================
@@ -52,6 +53,16 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
       const tcs = Object.values(ip.richTextureBySection);
       expect(tcs.length, `seed ${seed}`).toBeGreaterThan(0); // ACG 进 RICH_STYLE → 段级下发
       for (const tc of tcs) expect(ACG_RENDERED_TEXTURE_CASES, `seed ${seed}: ${tc}`).toContain(tc);
+    }
+  });
+
+  it('★ ACG songGrooveContract 有非零 pocket(2c-2 rubato 生效)·非 ACG pocket 全 0(零洗牌)', () => {
+    const acgArr = buildArrangementPlan(buildBandSpec({ seed: 7, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' }), { rng: createRandomContext(7) });
+    expect(acgArr.songGrooveContract.style).toBe('ACG');
+    expect(pocketedRoles(acgArr.songGrooveContract).size).toBeGreaterThan(0); // lead/bass 至少一个有 pocket
+    for (const style of ['pop', 'jazz', 'lofi', 'rnb']) {
+      const arr = buildArrangementPlan(buildBandSpec({ seed: 7, styleHint: style, mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' }), { rng: createRandomContext(7) });
+      expect(pocketedRoles(arr.songGrooveContract).size, `${style} legacy pocket=0`).toBe(0);
     }
   });
 

@@ -67,7 +67,7 @@ function jitterScale(tick: number, ppq: number, beatsPerBar: number): number {
  *   多声部对拍/复调由织体写定后不被抖散;只在不同槽位之间引入人味。下拍槽近锚定 → 重心不漂。
  * 确定性:distinct tick 升序消费 rng(顺序稳定 → 同 seed 同结果)。
  */
-export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: number, rng: Rng, maxJitterTicks = Math.max(2, Math.round(ppq * 0.015)), anchorTicks: ReadonlySet<number> = new Set()): TrackIR[] {
+export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: number, rng: Rng, maxJitterTicks = Math.max(2, Math.round(ppq * 0.015)), anchorTicks: ReadonlySet<number> = new Set(), skipRoles: ReadonlySet<string> = new Set()): TrackIR[] {
   // 收集全轨 distinct 起音 tick → 升序,每个槽位下发一个(缩放后)偏移。
   const slots = new Set<number>();
   for (const t of tracks) for (const n of t.notes) slots.add(n.startTick as number);
@@ -82,6 +82,7 @@ export function humanizeTiming(tracks: TrackIR[], ppq: number, beatsPerBar: numb
   return tracks.map((t) => {
     if (t.role === 'lead') return t; // ★ Loop 9:lead = MG StyleRenderer 已定时序,跳过全局微抖动(保 MG 旋律纯净)
     if (t.role === 'pad') return t;  // ★ pad = sustain 铺底层:跳过微时序抖动(长音起点不齐=细微重起,毁连续铺底感)
+    if (skipRoles.has(t.role)) return t; // ★ MG 升级 2c-2(§7.4):pocket-handled 角色(ACG bass)跳 humanize,改由 groovePocket 拥有时序(不双重)
     return {
     role: t.role,
     notes: t.notes.map((n) => {
