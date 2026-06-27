@@ -25,14 +25,14 @@ function acgComp(seed: number, forceCase: string, needsDownbeat: boolean) {
 }
 
 // ============================================================
-// ACG comp air — directive §5.1 / §3.3 高位色音(★ 2026-06-28 用户耳朵复核后【生产已关闭】)
+// ACG comp air — acg_music_fidelity_repair_directive §2.5(★ 2026-06-28 用户按 B:恢复 MG 高空气,反 round1)
 // ------------------------------------------------------------
-// 原设计:ACG 织体 = bass gesture + 高位色音/air(>67)+ 软力度 + 有意留白。
-// ★ 用户复核:高位 air 越过旋律 → 与旋律打架、伴奏听不清。决策 = ACG 做成【MG 久石让钢琴左手】:
-//   comp 坐旋律保留区下方(yieldUnderMelody)、不再保高 air、不再给 textureRenderer 上方色音语境。
-//   → 生产 accompanimentRenderer 已【不传 acgCtx】(高 air 接线关闭)。
-//   renderTextureChordHits 仍保留【高位色音能力】(给 ctx 时可产 >67),作 dormant 能力 + 单元测保留;
-//   端到端(§5.1)则验【新设计】:ACG comp 坐旋律地板之下(无高 air 抢旋律)。
+// 设计(MG 久石让钢琴):ACG 织体 = bass gesture + 高位色音/air(>67)+ 软力度 + 有意留白。
+// ★ round1(af103f4)曾因「听不见 + 打架」反转成钳到旋律下方 + 大音量;但 fidelity directive §0/§2.5 指出
+//   那是【掩盖】上游错配(family/grammar/contract),且 round1 在 D/E/F 修上游【之前】做的。
+// ★ 现按 B 恢复:生产 accompanimentRenderer 走【未钳 air voicing】+ 传真和弦 acgCtx(高位色音)+ 软力度;
+//   听得见靠 register/mix 分离(soft air halo)非大音量(若仍埋 → ACG 专属 mix 分离,留耳朵复核)。
+//   端到端(§5.1)验:ACG comp 保 > 67 高位色音 air;§2.5 非 ACG case 不受影响(门控 isAcgTextureCase)。
 // ============================================================
 
 const DUR = 4;
@@ -91,13 +91,23 @@ describe('render/acgCompAir(ACG comp air 回归修复)', () => {
     expect(maxVel, '仍软:generic comp 可到 100-120').toBeLessThanOrEqual(96);
   });
 
-  it('★ §5.1 端到端(新设计):ACG comp 坐旋律地板(67)之下 —— 无 > 67 高 air 抢旋律(MG 钢琴左手)', () => {
-    // ★ 2026-06-28 用户复核反转:生产不再传 acgCtx → ACG comp 走已钳 voicing(yieldUnderMelody 到 67 下)。
-    //   旋律在上、伴奏在下,互不抢。端到端断言:comp 所有音 ≤ 67(旋律保留区地板之下)。
+  it('★ §5.1 端到端(§2.5 fidelity directive B):ACG comp 保高位色音 air(含 > 67 的高 air,不全钳到旋律下方)', () => {
+    // ★ 2026-06-28 fidelity directive B(反 round1):ACG 走【未钳】air voicing + 真和弦 acgCtx 上方色音 →
+    //   高位色音 halo 在旋律区/之上(MG 久石让钢琴的空气感),不再坐旋律地板下。端到端断言:comp 含 > 67 高 air 音。
     const comp = acgComp(7, 'ACG_Quartal_Arp_Wave', false);
     expect(comp.notes.length).toBeGreaterThan(0);
     const maxPitch = Math.max(...comp.notes.map((n) => n.pitch as number));
-    expect(maxPitch, 'comp 顶须坐旋律地板(67)之下,不抢旋律').toBeLessThanOrEqual(67);
+    expect(maxPitch, 'ACG comp 保高位色音 air(> 67),不全坐旋律下方').toBeGreaterThan(67);
+  });
+
+  it('★ §2.5:air 改动【只影响 ACG 织体 case】—— 非 ACG case(同 setup)仍走 clamp,顶低于 ACG air', () => {
+    // 守 directive §2.5 bullet 5「keep generic band-comp unchanged for non-ACG」:air voicing 由 isAcgTextureCase(tc)
+    //   门控(键 texture case,非 band style)→ 非 ACG 织体 case 仍走 clampUnder 路径,顶不冲到 ACG 高位色音区。
+    const acgTop = Math.max(...acgComp(7, 'ACG_Quartal_Arp_Wave', false).notes.map((n) => n.pitch as number));
+    const nonAcg = acgComp(7, 'Piano_Lofi_Late_Chord_Answer', false); // 非 ACG case → isAcgTextureCase=false → clamp
+    expect(nonAcg.notes.length).toBeGreaterThan(0);
+    const nonAcgTop = Math.max(...nonAcg.notes.map((n) => n.pitch as number));
+    expect(nonAcgTop, '非 ACG 织体 case 不走 air voicing → 顶低于 ACG air').toBeLessThan(acgTop);
   });
 
   it('★ 三和弦(无写入扩展)允许无 >67 air(不强造色音)', () => {
