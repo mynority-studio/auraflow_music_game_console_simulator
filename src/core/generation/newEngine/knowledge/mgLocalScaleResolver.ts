@@ -199,6 +199,17 @@ function contractScaleCandidateNames(style: StyleName): string[] {
     'Phrygian Dominant',
     'Harmonic Major',
   ];
+  // ★ MG full-parity Phase C(directive 3.5):RNB 候选加五声/blues 家族(neo-soul fill/run 色彩)。
+  if (style === 'RNB') {
+    return [
+      ...common,
+      'Major Pentatonic',
+      'Minor Pentatonic',
+      'Major Blues',
+      'Minor Blues',
+      'Blues',
+    ];
+  }
   if (style !== 'JAZZ') return common;
   return [
     ...common,

@@ -34,6 +34,12 @@ const GOLDEN: Golden[] = [
     name: 'Bebop Dominant', rootPc: 7, source: 'jazz-chord-scale', scalePcs: [0, 2, 4, 5, 6, 7, 9, 11], strict: true, contract: [2, 5, 7, 11], runLen: 34 },
   { label: 'RNB vi Am9', ctx: { style: 'RNB', key: 'C', mode: 'major' }, chord: chord(57, 'm9', 'vi'),
     name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 4, 7, 9, 11], runLen: 30 },
+  // ★ MG full-parity Phase C(directive 3.5):RNB 五声/blues 家族候选已补齐(contractScaleCandidateNames RNB 分支)。
+  //   forcedScale 'Major Blues' → resolver 返 Major Blues(旧 sim 缺 RNB 候选时此类色彩 scale 不在 candidate 框内)。
+  //   golden 由当前 MG resolveLocalScale 真跑导出(逐值)。
+  { label: 'RNB I forced Major Blues', ctx: { style: 'RNB', key: 'C', mode: 'major' },
+    chord: { rootMidi: 60, type: 'maj', roman: 'I', bassMidi: 60, duration: 4, forcedScale: 'Major Blues', effectiveFunc: 'T' } as never,
+    name: 'Major Blues', rootPc: 0, source: 'forced', scalePcs: [0, 2, 3, 4, 7, 9], strict: true, contract: [0, 4, 7], runLen: 26 },
 ];
 
 describe('knowledge/mgLocalScaleResolver · MG golden (Loop 6 依赖层)', () => {
