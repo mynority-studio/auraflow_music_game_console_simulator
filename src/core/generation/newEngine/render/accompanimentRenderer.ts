@@ -292,12 +292,11 @@ export function renderAccompaniment(
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
-        // ★ §2.5(2026-06-28 fidelity directive,按 B 反 round1):ACG = 比 generic comp【更软更空】的高位色音 halo。
-        //   directive 明令「soft air notes remain soft」「别用 velocity 掩盖结构」→ 还原温和 lift:floor≈40、顶≈70,
-        //   明显软于 generic(同 hit 到 77-102),保 airy 相对动态(色音 drop < 柱式块)。audibility 靠 register/mix
-        //   分离 + comp CC7 补偿(gmMixProfile),非大音量;若仍被埋 → 下一手是 ACG 专属 mix 分离(留耳朵复核定)。
+        // ★ §2.5 + 大小声平衡(2026-06-28 用户:ACG comp「一轨很小声」)。保 air voicing/真色音(directive B 结构),
+        //   但 velocity 从过软(B floor≈40)抬到【可听又仍软于 generic】的中档(floor≈50/顶≈80);audibility 主靠
+        //   gmMixProfile 的 ACG comp CC7 抬(98)+ lead 减压(77),非纯靠 velocity → soft-but-present 久石让钢琴。
         const vel = acg
-          ? Math.max(1, Math.min(96, Math.round((h.vel * 0.7 + 0.26) * 127)))
+          ? Math.max(1, Math.min(96, Math.round((h.vel * 0.82 + 0.38) * 127)))
           : Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
         for (const m of h.midis) {

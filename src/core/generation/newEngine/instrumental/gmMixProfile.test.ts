@@ -154,3 +154,29 @@ describe('knowledge/gmMixProfile — enforceRelationalMix(comp↔pad)', () => {
     expect(enforceRelationalMix(only)).toBe(only);
   });
 });
+
+describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lead 碾全队/一轨很小声)', () => {
+  const space: SpaceProfile = 'dryFront';
+  const mAcg = (role: InstrumentRoleName, program: number) => mixForProgram({ style: 'acg', timbreWorld: undefined, role, program, hasPad: true, space });
+  const mPop = (role: InstrumentRoleName, program: number) => mixForProgram({ style: 'pop', timbreWorld: undefined, role, program, hasPad: true, space });
+
+  it('★ ACG lead 减压(< 非 ACG lead;solo piano 的 RH 不碾 LH)', () => {
+    expect(mAcg('lead', 0).volume, 'ACG lead < POP lead').toBeLessThan(mPop('lead', 0).volume);
+  });
+
+  it('★ ACG comp 抬高(> 非 ACG comp;高空气 comp 可听)', () => {
+    expect(mAcg('comp', 0).volume, 'ACG comp > POP comp').toBeGreaterThan(mPop('comp', 0).volume);
+  });
+
+  it('★ ACG comp CC7 > lead CC7(有效响度模型:comp velocity 低 → CC7 补偿;lead velocity 高 → CC7 拉低)', () => {
+    expect(mAcg('comp', 0).volume).toBeGreaterThan(mAcg('lead', 0).volume);
+  });
+
+  it('★ ACG bass 略抬(LH 托底,> 非 ACG bass)', () => {
+    expect(mAcg('bass', 32).volume, 'ACG bass > POP bass').toBeGreaterThan(mPop('bass', 32).volume);
+  });
+
+  it('★ 非 ACG 不受影响(POP lead 仍走 melody-forward,≥ 92)', () => {
+    expect(mPop('lead', 0).volume).toBeGreaterThanOrEqual(92);
+  });
+});

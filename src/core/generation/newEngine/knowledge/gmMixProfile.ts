@@ -52,6 +52,12 @@ const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
 //   回到与【试听(用户认可的平衡)】相当(实测 试听 lead eff≈69 vs 整编 59;+14 把整编拉回 ~69)。
 //   作用于所有 Q+N 歌(非仅走 A);确定性,clampCC 兜 127 不溢出。
 const LEAD_PRESENCE_BOOST = 14;
+// ★ ACG 平衡(2026-06-28 用户:ACG lead eff≈9500 碾全队 eff≈3700 → 一轨很小声)。ACG=solo piano,
+//   RH 旋律不该碾 LH 伴奏。lead 减压(present 但不碾)+ comp 抬(高空气 comp 可听)+ bass 略抬(LH 托底)。
+//   按有效响度 CC7×velocity 设:lead vel 高(~98)→ CC7 拉低;comp/bass vel 低 → CC7 拉高。
+const ACG_LEAD_BOOST = -6;   // 83−6=77 · lead eff≈77×98=7546(仍最响=旋律在上,但不再 3×)
+const ACG_COMP_LIFT = 13;    // 85+13=98 · comp 高空气抬可听
+const ACG_BASS_LIFT = 8;     // 66+8=74 · LH bass 托底
 
 // 程序专属覆盖(directive 各 GM 族代表值;只填该 program 在该 role 的 reverb/chorus/volume,pan 走规则)。
 //   key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
@@ -128,7 +134,11 @@ export function mixForProgram(args: {
   if (role === 'pad' && isFxPad(program)) { base.volume = Math.min(base.volume, 72); base.reverb = Math.max(base.reverb, 84); }
 
   // ★ melody-forward:lead 抬 CC7 让旋律明显在场(放最后 → 覆盖所有 program 基底 + 覆盖值)。clampCC 兜 127。
-  if (role === 'lead') base.volume = base.volume + LEAD_PRESENCE_BOOST;
+  //   ★ ACG 例外:solo piano 的 lead 减压 + comp/bass 抬(见 ACG_* 常量),让 RH 不碾 LH(有效响度均衡)。
+  const isAcg = args.style.toLowerCase() === 'acg';
+  if (role === 'lead') base.volume = base.volume + (isAcg ? ACG_LEAD_BOOST : LEAD_PRESENCE_BOOST);
+  if (isAcg && role === 'comp') base.volume = base.volume + ACG_COMP_LIFT;
+  if (isAcg && role === 'bass') base.volume = base.volume + ACG_BASS_LIFT;
 
   return { volume: clampCC(base.volume), pan: clampCC(base.pan), reverb: clampCC(base.reverb), chorus: clampCC(base.chorus) };
 }
