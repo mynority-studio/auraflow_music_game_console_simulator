@@ -14,7 +14,8 @@
     "golden-seed": "tsx scripts/golden-seed.ts",
     "precompile-grammars": "node scripts/precompile-grammars.mjs",
     "verify-grammars-rom": "node scripts/verify-grammars-rom.mjs",
-    "fuzz-grammar-rom": "node scripts/fuzz-grammar-rom.mjs"
+    "fuzz-grammar-rom": "node scripts/fuzz-grammar-rom.mjs",
+    "audit:mg-current": "tsx scripts/audit-mg-current-parity.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
