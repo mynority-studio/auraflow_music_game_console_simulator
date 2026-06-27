@@ -5253,4 +5253,4 @@ export function snapMidiToNearestPc(mNoteMidi: number, targetPcs: Set<number>, r
 }
 
 // —— Loop 6 港追加:StyleName(原在 styleDictionary.ts:372)——
-export type StyleName = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI';
+export type StyleName = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI' | 'ACG';

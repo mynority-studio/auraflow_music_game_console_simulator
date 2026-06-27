@@ -24,6 +24,8 @@ const LINEUP_RULES: Record<string, LineupRule> = {
   lofi: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'pad', prob: 0.85 }, { role: 'drum', prob: 0.6 }] },
   rnb: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.8 }, { role: 'pad', prob: 0.55 }] }, // neo-soul:Rhodes comp + pocket 鼓
   modal: { always: ['lead', 'pad'], optional: [{ role: 'bass', prob: 0.6 }, { role: 'comp', prob: 0.5 }, { role: 'drum', prob: 0.35 }] },
+  // ★ ACG 钢琴主导多轨(MG 升级 Phase 2a):钢琴 lead+comp+原声 bass 常驻;暖弦 pad 多在场;鼓极稀疏(Hisaishi 多无鼓,jpop 变体偶有)。
+  acg: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'pad', prob: 0.7 }, { role: 'drum', prob: 0.35 }] },
   default: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'drum', prob: 0.7 }, { role: 'pad', prob: 0.5 }] },
 };
 
@@ -45,6 +47,9 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   lofi: { lead: [4, 11, 12, 108, 6, 75, 77], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +羽管/排箫/尺八 lead · Bowed/Crystal/Echoes pad
   rnb: { lead: [4, 5, 11, 2], comp: [4, 5], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },               // 无品/slap 贝斯 · Atmosphere pad(★ Clav 7 撤出 comp:亮/打击 funk 音色在 arp 织体+高力度下炸裂、刺耳)
   modal: { lead: [12, 11, 8, 107, 6, 75, 77], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94, 92, 93, 97, 98, 102], drum: [0] }, // +羽管/排箫/尺八 lead · synthFX 氛围 pad
+  // ★ ACG 钢琴主导多轨(MG 升级 Phase 2a):lead/comp = 大钢琴(0)+电钢(4)双钢琴(守 Hisaishi 钢琴本体);
+  //   bass = 原声/低音提琴(32 acoustic bass / 43 contrabass,upright 暖);pad = 电影暖弦(49 慢弦/48 弦组/50 合成弦/89 暖垫)。
+  acg: { lead: [0, 4], comp: [0, 4], bass: [32, 43], pad: [49, 48, 50, 89], drum: [0] },
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
 

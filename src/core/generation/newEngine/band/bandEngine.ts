@@ -37,6 +37,9 @@ const STYLE_PROFILES: Record<string, StyleProfile> = {
   rnb: { accompDensity: 0.6, padDensity: 0.4, melodyFreedom: 0.6, tensionCarrier: 'both', colorBudget: 0.6, beatStrictness: 0.6 },
   // modal:和声静态(低 colorBudget=不加功能离调)+ 旋律自由跑音阶(高 melodyFreedom)
   modal: { accompDensity: 0.45, padDensity: 0.6, melodyFreedom: 0.85, tensionCarrier: 'melody', colorBudget: 0.2, beatStrictness: 0.5 },
+  // ★ ACG(久石让/坂本电影钢琴;MG 升级 Phase 2a):钢琴主导多轨。高 colorBudget(quartal/maj9/maj13 色彩,近 jazz)
+  //   + 暖弦 pad 在场 + cantabile topVoice 旋律(melodyFreedom 中)+ rubato 倾向(beatStrictness 偏低,jpop 变体直)。
+  acg: { accompDensity: 0.5, padDensity: 0.55, melodyFreedom: 0.6, tensionCarrier: 'both', colorBudget: 0.75, beatStrictness: 0.55 },
   default: { accompDensity: 0.5, padDensity: 0.4, melodyFreedom: 0.5, tensionCarrier: 'both', colorBudget: 0.4, beatStrictness: 0.6 },
 };
 

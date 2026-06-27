@@ -11,7 +11,7 @@
 // render 层按 pickTextureForBar 结果选织体,不在此写事件。
 // ============================================================
 
-export type TextureStyleName = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI';
+export type TextureStyleName = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI' | 'ACG';
 export type SectionLabel = 'INTRO' | 'VERSE' | 'PRECHORUS' | 'CHORUS' | 'BRIDGE' | 'OUTRO';
 
 export type PhraseCellRole = 'establish' | 'develop' | 'lift' | 'cadence';

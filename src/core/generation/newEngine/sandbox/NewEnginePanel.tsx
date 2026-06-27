@@ -17,8 +17,8 @@ import { gmName } from '../knowledge/instruments';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 
 // ★ 4 大 macro 风格(genre 轴);modal 是正交 regime,单独开关。
-const STYLES = ['pop', 'jazz', 'lofi', 'rnb'] as const;
-const STYLE_LABEL: Record<(typeof STYLES)[number], string> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB' };
+const STYLES = ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const;
+const STYLE_LABEL: Record<(typeof STYLES)[number], string> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', acg: 'ACG' };
 const STATUS_COLOR: Record<string, string> = {
   pass: 'text-emerald-300',
   warning: 'text-amber-300',

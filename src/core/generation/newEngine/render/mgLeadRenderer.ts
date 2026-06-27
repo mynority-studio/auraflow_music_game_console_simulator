@@ -34,12 +34,12 @@ import {
 import { makeSeededRng } from './mgRng';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI';
+type MgStyle = 'POP' | 'JAZZ' | 'BLUES' | 'RNB' | 'LOFI' | 'ACG';
 
 /** band.style(任意大小写)→ MG StyleName。未知 → JAZZ(base enriched,无专属 paradigm)。 */
 function toMgStyle(style: string): MgStyle {
   const s = style.toUpperCase();
-  return (s === 'POP' || s === 'LOFI' || s === 'RNB' || s === 'JAZZ' || s === 'BLUES') ? s : 'JAZZ';
+  return (s === 'POP' || s === 'LOFI' || s === 'RNB' || s === 'JAZZ' || s === 'BLUES' || s === 'ACG') ? s : 'JAZZ';
 }
 
 function grammarForStyle(s: MgStyle) {

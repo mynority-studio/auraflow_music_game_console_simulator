@@ -18,7 +18,7 @@ export interface SelectedProgression {
 }
 
 // band.style(小写)→ HarmonyStyleName。modal 旁路不进这里;未知/default → POP。
-const STYLE_MAP: Record<string, HarmonyStyleName> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', blues: 'BLUES' };
+const STYLE_MAP: Record<string, HarmonyStyleName> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', blues: 'BLUES', acg: 'ACG' };
 export function toHarmonyStyle(style: string): HarmonyStyleName {
   return STYLE_MAP[style.toLowerCase()] ?? 'POP';
 }

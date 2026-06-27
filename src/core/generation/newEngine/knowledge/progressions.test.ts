@@ -38,10 +38,11 @@ describe('knowledge/progressions', () => {
 });
 
 describe('progression prototype registry (harmony 迁移 Loop 1)', () => {
-  it('POOL = modern20 + lofi16 = 36,不含 legacy,id 唯一(+JPOP canon + walkdown)', () => {
-    expect(PROGRESSION_POOL).toHaveLength(36);
+  it('POOL = modern20 + lofi16 + acg7 = 43,不含 legacy,id 唯一(+JPOP canon + walkdown + ACG Phase 2a)', () => {
+    expect(PROGRESSION_POOL).toHaveLength(43);
     expect(PROGRESSION_POOL.some((p) => p.id.startsWith('legacy_'))).toBe(false);
-    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(36);
+    expect(new Set(PROGRESSION_POOL.map((p) => p.id)).size).toBe(43);
+    expect(PROGRESSION_POOL.filter((p) => p.style === 'ACG')).toHaveLength(7); // ACG 7 基底进行
   });
 
   it('POP major 能选到 pop_canon_8 / pop_4536251_8', () => {
