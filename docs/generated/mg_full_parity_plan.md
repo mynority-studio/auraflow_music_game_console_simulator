@@ -105,4 +105,14 @@ slope protection; injected feel). Invariant-only acceptance must be justified in
     contract (no prefs) → uniform = old behavior (BLUES/zero-shuffle safe). `richTextureBySection` on the plan
     = audit-traceable selected texture.
   - 1481 vitest green · tsc/build clean. **needs ear-check** (POP/JAZZ/RNB/LOFI/ACG comp texture now contract-biased).
-- **F** — re-capture final-lead oracle from MG; expand audit to 30-seed all-stages; ear-check. **todo**
+- **F** — full validation: **in progress (ear-check pending)**.
+  - Unit tests: 1481 vitest green · tsc/build clean.
+  - `npm run audit:mg-current --full`: **30/30 seeds pass** roadMap stage LIVE vs MG @ 24dfd6f (CI-mode exit 0
+    = directive §6 script-level smoke test green). Report `docs/generated/mg_current_parity_audit_report.md`
+    now has a **Verification coverage** section documenting the live/oracle/invariant split (roadMap=live;
+    melody stages=re-captured `__mgOracle__` parity suite from current MG; final-lead/texture=§10 invariant).
+  - Inline live melody-stage re-run in the runner = documented optional (redundant with re-captured oracles +
+    RNG-alignment risk; `makeSeededRng` already = MG `Random` per G7/G8/G9 byte parity).
+  - **Remaining = USER ear-check** (directive Phase F.3 listening/export spot check: 2 ACG · 1 RNB · 1 JAZZ · 1 LOFI).
+    All structural changes from D/E land here for audible review: POP/JAZZ/LOFI/RNB lead feel + lead/bass groove
+    pocket + contract-biased comp texture; ACG spacious texture + comp air preserved.
