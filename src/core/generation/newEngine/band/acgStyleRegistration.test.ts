@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { generateSong } from '../generation/GenerationController';
 import { buildBandSpec } from './bandEngine';
+import { buildArrangementPlan } from '../arranger/arranger';
+import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { toHarmonyStyle } from '../harmony/progressionSelector';
 import { PROGRESSION_POOL } from '../knowledge/progressions';
-import { pc } from '../foundation';
+import { ACG_RENDERED_TEXTURE_CASES } from '../render/textureRenderer';
+import { pc, createRandomContext } from '../foundation';
 
 // ============================================================
 // MG 升级 Phase 2a — ACG 风格注册端到端验收(久石让/坂本电影钢琴,钢琴主导多轨)
@@ -39,6 +42,17 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
     expect(lead!.program, 'lead 钢琴族').toBeLessThanOrEqual(5);   // 大钢琴(0)/电钢(4)
     expect(comp!.program, 'comp 钢琴族').toBeLessThanOrEqual(5);
     expect([32, 43], 'bass 原声/低音提琴').toContain(bass!.program);
+  });
+
+  it('★ ACG 段级 richTextureBySection 用 ACG 钢琴织体(Phase 2b 端到端接线)', () => {
+    for (const seed of [7, 42]) {
+      const band = buildBandSpec({ seed, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' });
+      const arrangement = buildArrangementPlan(band, { rng: createRandomContext(seed) });
+      const ip = buildInstrumentationPlan(band, arrangement, createRandomContext(seed).substream('timbre'));
+      const tcs = Object.values(ip.richTextureBySection);
+      expect(tcs.length, `seed ${seed}`).toBeGreaterThan(0); // ACG 进 RICH_STYLE → 段级下发
+      for (const tc of tcs) expect(ACG_RENDERED_TEXTURE_CASES, `seed ${seed}: ${tc}`).toContain(tc);
+    }
   });
 
   it('★ ACG 确定性:同 seed 同 style 两次产物字节一致', () => {

@@ -44,15 +44,17 @@ describe('densityForCell — 段落调制', () => {
 });
 
 describe('TEXTURE_POOL — modern + lofi + legacy(Loop 6:strict MG 全量进可选择池)', () => {
-  it('池大小 = 8 modern + 9 lofi + 20 legacy = 37', () => {
-    expect(TEXTURE_POOL).toHaveLength(37);
+  it('池大小 = 8 modern + 9 lofi + 10 ACG + 20 legacy = 47', () => {
+    expect(TEXTURE_POOL).toHaveLength(47);
     // 所有 profile 都有合法 mood + 非空 styles + 合法 densityRange(legacy 派生项 mood/broad-range 也满足)
     for (const t of TEXTURE_POOL) {
       expect(t.styles.length).toBeGreaterThan(0);
       expect(t.densityRange[0]).toBeLessThanOrEqual(t.densityRange[1]);
     }
     // id 唯一
-    expect(new Set(TEXTURE_POOL.map((t) => t.id)).size).toBe(37);
+    expect(new Set(TEXTURE_POOL.map((t) => t.id)).size).toBe(47);
+    // ACG profile 确实在池里(Phase 2b:10 个钢琴手势 texture)
+    expect(TEXTURE_POOL.filter((t) => t.styles.includes('ACG'))).toHaveLength(10);
     // legacy 派生项确实在池里(legacy_ 前缀,broad metadata)
     const legacy = TEXTURE_POOL.filter((t) => t.id.startsWith('legacy_'));
     expect(legacy).toHaveLength(20);
@@ -99,9 +101,9 @@ describe('笼统织体已搬进 KB(引擎不再自带偏好)', () => {
     expect(GENERIC_TEXTURE_YIELD['sustained-block']).toBe('floating');
   });
 
-  it('5 笼统 + 37 rich(含 legacy)一起存进 KB 目录', () => {
+  it('5 笼统 + 47 rich(含 ACG + legacy)一起存进 KB 目录', () => {
     expect(GENERIC_TEXTURE_PROFILES).toHaveLength(5);
-    expect(ALL_TEXTURE_PROFILES).toHaveLength(42); // 5 + 37(8 modern + 9 lofi + 20 legacy)
+    expect(ALL_TEXTURE_PROFILES).toHaveLength(52); // 5 + 47(8 modern + 9 lofi + 10 ACG + 20 legacy)
     // 笼统 profile 的 textureCase = 可渲染的 kind 名(render 直接映射)
     expect(GENERIC_TEXTURE_PROFILES.map((t) => t.textureCase).sort()).toEqual(['active-comp', 'arpeggio', 'pad', 'sustained-block', 'walking-bass']);
   });

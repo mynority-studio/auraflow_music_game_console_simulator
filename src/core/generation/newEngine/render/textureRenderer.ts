@@ -31,6 +31,8 @@ const POCKET_BY_CASE: Record<string, TexturePocket> = {
   HalfTime_Emotional_Pulse: 'halftime', Piano_HalfTime_Soft_Pulse: 'halftime',
   Ambient_Pad_Breath: 'sparse', Low_Pedal_Color_Wash: 'sparse', Ambient_Reverse_Swell: 'sparse',
   Lyrical_Felt_Piano_Sparse: 'sparse', Piano_Lofi_OneShot_Space: 'sparse', Piano_Ambient_Sustain_Wash: 'sparse',
+  // ACG 留白系(电影钢琴氛围)
+  Piano_TopVoice_Planing: 'sparse', ACG_Pedal_Wash_Color_Drops: 'sparse', ACG_Sakamoto_LH_Arp_RH_Penta: 'sparse',
 };
 export function texturePocket(textureCase: string): TexturePocket {
   return POCKET_BY_CASE[textureCase] ?? 'normal';
@@ -46,6 +48,13 @@ const LOFI_TEXTURE_CASES = new Set<string>([
   'Piano_Lofi_OneShot_Space', 'Piano_Lofi_Late_Chord_Answer', 'Piano_Emo_Broken_10th', 'Piano_Ambient_Sustain_Wash',
   'Piano_HalfTime_Soft_Pulse', 'Piano_Lofi_Dusty_Chops', 'Piano_Lofi_Tape_Wobble_Arp', 'Piano_Wide_Color_Motion',
   'Piano_CommonTone_Soft_Roll',
+]);
+/** ★ ACG rich textureCase(久石让/坂本钢琴手势;MG 升级 Phase 2b)。10 个 case 走专属 acgChordHits/acgBassHits。
+ *  忠实源【手势包络】(timing/velocity/bass shape),pitch 取我们的 voicing(voicing-first,非 bit-MG;贴 texture-decision②)。 */
+const ACG_TEXTURE_CASES = new Set<string>([
+  'Piano_TopVoice_Planing', 'ACG_Quartal_Arp_Wave', 'ACG_Sakamoto_LH_Arp_RH_Penta', 'ACG_Ostinato_Hook_Pulse',
+  'ACG_Stride_Cantabile_Ballad', 'ACG_Anthem_Block_Push', 'ACG_Open_Broken_10th', 'ACG_Suspended_Block_Arrival',
+  'ACG_Bass_Tremolo_Color', 'ACG_Pedal_Wash_Color_Drops',
 ]);
 
 /**
@@ -87,11 +96,14 @@ function classifyLegacyFamily(tc: string): LegacyFamily {
 
 /** 该 textureCase 有 render 实现吗(否则 comp 回退 compPattern)。 */
 export function hasTextureRenderer(textureCase: string): boolean {
-  return MODERN_TEXTURE_CASES.has(textureCase) || LOFI_TEXTURE_CASES.has(textureCase) || LEGACY_TEXTURE_CASES.has(textureCase);
+  return MODERN_TEXTURE_CASES.has(textureCase) || LOFI_TEXTURE_CASES.has(textureCase)
+    || ACG_TEXTURE_CASES.has(textureCase) || LEGACY_TEXTURE_CASES.has(textureCase);
 }
 
 /** 全部已实现的 rich textureCase(测试遍历用)。 */
-export const RENDERED_TEXTURE_CASES: readonly string[] = [...MODERN_TEXTURE_CASES, ...LOFI_TEXTURE_CASES, ...LEGACY_TEXTURE_CASES];
+export const RENDERED_TEXTURE_CASES: readonly string[] = [...MODERN_TEXTURE_CASES, ...LOFI_TEXTURE_CASES, ...ACG_TEXTURE_CASES, ...LEGACY_TEXTURE_CASES];
+/** ACG rich textureCase(测试遍历用)。 */
+export const ACG_RENDERED_TEXTURE_CASES: readonly string[] = [...ACG_TEXTURE_CASES];
 
 /** legacy 全量 case(测试用:pool 覆盖 + 渲染覆盖)。 */
 export const LEGACY_RENDERED_TEXTURE_CASES: readonly string[] = [...LEGACY_TEXTURE_CASES];
@@ -126,6 +138,8 @@ export function renderTextureChordHits(
   if (LEGACY_TEXTURE_CASES.has(textureCase)) {
     return hasMgCompProfile(textureCase) ? renderTextureCompDryStrictMg(textureCase, cM, dur) : [];
   }
+  // ★ ACG 钢琴手势(Phase 2b):专属 chord-hit 演绎(忠实 MG 包络,pitch 取我们 voicing)。
+  if (ACG_TEXTURE_CASES.has(textureCase)) return acgChordHits(cM, dur, textureCase);
 
   switch (textureCase) {
     // ——— modern lyrical / ambient ———
@@ -217,6 +231,8 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
     renderLegacyBassHits(classifyLegacyFamily(textureCase), textureCase, dur, b);
     return hits;
   }
+  // ★ ACG 钢琴手势(Phase 2b):专属 bass shape(pedal/ripple/arrival/stride/LH-arp/motif),voice 提示 root/fifth/tenth。
+  if (ACG_TEXTURE_CASES.has(textureCase)) { acgBassHits(dur, textureCase, b); return hits; }
 
   switch (textureCase) {
     case 'Lyrical_Felt_Piano_Sparse': b(0, Math.min(dur, 3.8), 0.62); break;
@@ -238,6 +254,168 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
     case 'Piano_CommonTone_Soft_Roll': b(0, dur, 0.65); break;
   }
   return hits;
+}
+
+// ============================================================
+// ACG 钢琴手势演绎(MG 升级 Phase 2b)
+// ------------------------------------------------------------
+// 忠实源 musicEngine applyTexture 的 10 个 ACG case【手势包络】(相对拍 timing / velocity / bass shape /
+//   long-color-roll 上行绽放 + 下行回声)。★ pitch 取我们 voicing(voicing-first,非 bit-MG):
+//   源的 acgUpperColorMidis(target)(和弦相对色音)在此【从 voicing 顶部取色音】,因 ACG 和弦=maj9/maj13
+//   富色彩 voicing,顶部已含 9/11/13 色音 → 听感等价。bass shape 映射到 root/fifth/tenth voice 提示。
+//   纯函数无 rng → 确定性。
+// ============================================================
+function acgChordHits(cMRaw: readonly number[], dur: number, tc: string): TextureChordHit[] {
+  const cM = [...cMRaw].sort((a, b) => a - b);
+  const n = cM.length;
+  const hits: TextureChordHit[] = [];
+  if (n === 0) return hits;
+  const uniqSorted = (xs: number[]) => Array.from(new Set(xs.filter((m) => Number.isFinite(m)))).sort((a, b) => a - b);
+  const push = (midis: number[], tRel: number, d: number, vel: number) => {
+    const ms = midis.filter((m) => Number.isFinite(m));
+    if (ms.length === 0 || tRel < 0 || tRel >= dur) return;
+    hits.push({ tRel, dur: Math.max(0.05, Math.min(d, dur - tRel - 0.02)), midis: ms, vel: Math.max(0.08, Math.min(0.95, vel)) });
+  };
+  // 顶部 count 个 voicing 音 = 色音层(ACG maj9/maj13 voicing 把 9/11/13 排在上方)。
+  const colorTop = (count: number) => uniqSorted(cM.slice(Math.max(0, n - count)));
+  const top = cM[n - 1];
+  const hiReach = Math.min(93, top < 74 ? top + 12 : top); // 高位绽放够亮(源 acgUpperColorMidis(81))
+  // long-color-roll:升序铺开 + 顶音加亮 + 可选中段下行回声(源 pushAcgLongColorRoll)。
+  const longColorRoll = (midisIn: number[], startT: number, span: number, vol: number, down: boolean) => {
+    const ns = uniqSorted(midisIn);
+    if (ns.length === 0) return;
+    const availSpan = Math.max(0.22, Math.min(span, dur - startT - 0.25));
+    const step = ns.length <= 1 ? 0 : availSpan / Math.max(1, ns.length - 1);
+    ns.forEach((m, idx) => {
+      const t = startT + idx * step;
+      if (t >= dur - 0.18) return;
+      const isTop = idx === ns.length - 1;
+      push([m], t, isTop ? 0.88 : 0.58, isTop ? vol + 0.05 : Math.max(0.1, vol - idx * 0.012));
+    });
+    if (!down || dur < startT + availSpan + 0.80) return;
+    ns.slice(1, -1).reverse().slice(0, 3).forEach((m, idx) => {
+      const t = startT + availSpan + 0.48 + idx * 0.24;
+      if (t >= dur - 0.20) return;
+      push([m], t, 0.42, Math.max(0.16, vol - 0.08 - idx * 0.025));
+    });
+  };
+
+  switch (tc) {
+    case 'Piano_TopVoice_Planing': {
+      const inner = uniqSorted(cM.slice(0, Math.min(3, n)));
+      const support = cM.slice(3, Math.min(4, n));
+      const colorTopArr = uniqSorted([top, hiReach]).slice(-2);
+      const open = uniqSorted([...support, ...colorTopArr]).filter((m) => !inner.includes(m));
+      longColorRoll(uniqSorted([...inner, ...open]), 0.10, 1.28, 0.27, true); // 上行绽放
+      const echo = uniqSorted([...open, ...inner.slice(1)]).reverse().slice(0, 4); // 高→低回落
+      echo.forEach((m, idx) => { const t = 2.5 + idx * 0.16; if (t < dur - 0.18) push([m], t, Math.min(0.55, dur - t), Math.max(0.1, 0.22 - idx * 0.025)); });
+      if (dur > 3.7 && open.length > 0) { const t = Math.min(dur - 0.48, 3.20); push([open[open.length - 1]], t, Math.min(0.42, dur - t), 0.20); }
+      break;
+    }
+    case 'ACG_Quartal_Arp_Wave': {
+      const support = uniqSorted(cM.slice(0, Math.min(4, n)));
+      const colors = colorTop(3);
+      const wave = uniqSorted([...support.slice(0, 2), ...colors, ...support.slice(2, 3)]);
+      longColorRoll(wave, 0.12, 1.64, 0.25, true);
+      if (dur > 3.1 && colors.length > 0) push([colors[colors.length - 1]], 3.04, 0.44, 0.22);
+      break;
+    }
+    case 'ACG_Sakamoto_LH_Arp_RH_Penta': { // 右手只落几颗五声色影,留旋律空间(左手 arp 在 bass)
+      const shadow = colorTop(3);
+      [1.18, 2.74, 3.34].forEach((t, idx) => { if (t < dur - 0.20 && shadow.length) push([shadow[idx % shadow.length]], t, 0.42, 0.20); });
+      break;
+    }
+    case 'ACG_Ostinato_Hook_Pulse': { // 上方 hook 双音(motif 在 bass)
+      const hook = uniqSorted([...cM.slice(0, Math.min(2, n)), ...colorTop(2)]).slice(0, 4);
+      [0.74, 1.74, 2.74, 3.26].forEach((t, idx) => {
+        if (t >= dur - 0.18 || hook.length === 0) return;
+        push(uniqSorted([hook[idx % hook.length], hook[(idx + 1) % hook.length]]), t, 0.34, 0.20 + idx * 0.012);
+      });
+      break;
+    }
+    case 'ACG_Stride_Cantabile_Ballad': { // 上方和弦应答(bass 走 stride)
+      const upperA = uniqSorted([...cM.slice(0, Math.min(3, n)), ...colorTop(1)]).slice(0, 4);
+      const upperB = uniqSorted([...cM.slice(1, Math.min(4, n)), ...colorTop(2).slice(-1)]).slice(0, 4);
+      if (upperA.length) push(upperA, 0.84, Math.min(1.0, dur - 0.86), 0.24);
+      if (dur > 2.72) push(upperB.length ? upperB : upperA, 2.72, Math.min(0.86, dur - 2.74), 0.22);
+      const highAnswer = colorTop(1)[0] ?? upperA[upperA.length - 1];
+      if (Number.isFinite(highAnswer) && dur > 3.36) push([highAnswer], 3.36, 0.38, 0.19);
+      break;
+    }
+    case 'ACG_Anthem_Block_Push': {
+      const block = uniqSorted([...cM.slice(0, Math.min(3, n)), ...colorTop(1)]).slice(0, 4);
+      const pushed = uniqSorted([...block.slice(1), ...colorTop(2).slice(-1)]).slice(0, 4);
+      [0.00, 1.46, 2.00, 2.72, 3.46].forEach((t, idx) => {
+        if (t >= dur - 0.16 || block.length === 0) return;
+        push((idx % 2 === 0 || pushed.length === 0) ? block : pushed, t, 0.42, 0.25 + Math.min(0.05, idx * 0.012));
+      });
+      break;
+    }
+    case 'ACG_Open_Broken_10th': {
+      const upper = uniqSorted([...cM.slice(0, Math.min(2, n)), ...colorTop(3)]);
+      longColorRoll(upper, 0.20, 1.46, 0.25, true);
+      if (dur > 3.2 && upper.length > 2) push([upper[1]], 3.18, 0.40, 0.19);
+      break;
+    }
+    case 'ACG_Suspended_Block_Arrival': {
+      const arrival = uniqSorted([...cM.slice(0, Math.min(3, n)), ...colorTop(3)]).slice(0, 5);
+      longColorRoll(arrival, 0.08, 1.24, 0.28, false);
+      const colorArr = colorTop(3);
+      const topC = colorArr[colorArr.length - 1];
+      const support = arrival[Math.max(0, arrival.length - 2)];
+      if (Number.isFinite(support) && dur > 2.3) push([support], 2.32, 0.52, 0.21);
+      if (Number.isFinite(topC) && dur > 3.2) push([topC], 3.24, 0.44, 0.25);
+      break;
+    }
+    case 'ACG_Bass_Tremolo_Color': {
+      const upper = colorTop(3);
+      const bed = uniqSorted(cM.slice(0, Math.min(2, n)));
+      longColorRoll(uniqSorted([...bed, ...upper]), 0.14, 1.22, 0.23, false);
+      [2.18, 2.92, 3.46].forEach((t, idx) => { if (t < dur - 0.16 && upper.length) push([upper[idx % upper.length]], t, 0.36, 0.22); });
+      break;
+    }
+    case 'ACG_Pedal_Wash_Color_Drops': {
+      const bed = uniqSorted(cM.slice(0, Math.min(2, n)));
+      if (bed.length) push(bed, 0.28, Math.min(1.60, dur - 0.32), 0.18);
+      const colors = colorTop(3);
+      [1.96, 2.94, 3.48].forEach((t, idx) => { if (t < dur - 0.18 && colors.length) push([colors[idx % colors.length]], t, 0.42, 0.20 + idx * 0.018); });
+      break;
+    }
+  }
+  return hits;
+}
+
+/** ACG bass shape → TextureBassHit(voice 提示 root/fifth/tenth;音高由 bassRenderer 落)。忠实源 pushAcgBrokenBass 等。 */
+function acgBassHits(dur: number, tc: string, b: (tRel: number, d: number, vel: number, voice?: TextureBassHit['voice']) => void): void {
+  switch (tc) {
+    case 'Piano_TopVoice_Planing': // pedal
+    case 'ACG_Pedal_Wash_Color_Drops':
+      b(0, Math.max(0.5, dur - 0.08), 0.39); if (dur > 1.0) b(0.82, 0.74, 0.24, 'fifth'); if (dur > 2.7) b(2.46, 0.62, 0.22, 'tenth'); break;
+    case 'ACG_Suspended_Block_Arrival': // arrival
+      b(0, Math.max(0.5, dur - 0.08), 0.43); if (dur > 1.2) b(0.96, 0.78, 0.25, 'fifth'); if (dur > 3.0) b(2.72, 0.58, 0.21, 'fifth'); break;
+    case 'ACG_Quartal_Arp_Wave': // ripple
+    case 'ACG_Bass_Tremolo_Color': {
+      const voices: TextureBassHit['voice'][] = ['root', 'fifth', 'fifth', 'fifth', 'tenth'];
+      [0.00, 0.68, 1.34, 2.14, 3.02].forEach((t, idx) => { if (t >= dur - 0.18) return; b(t, idx === 0 ? 0.82 : 0.52, idx === 0 ? 0.47 : Math.max(0.16, 0.25 - idx * 0.015), voices[idx]); });
+      break;
+    }
+    case 'ACG_Sakamoto_LH_Arp_RH_Penta': { // 左手法式印象派 arp
+      const voices: TextureBassHit['voice'][] = ['root', 'fifth', 'root', 'tenth', 'fifth', 'root'];
+      [0.00, 0.70, 1.36, 2.04, 2.74, 3.34].forEach((t, idx) => { if (t >= dur - 0.16) return; b(t, idx === 0 ? 0.62 : 0.44, idx === 0 ? 0.46 : 0.25, voices[idx]); });
+      break;
+    }
+    case 'ACG_Ostinato_Hook_Pulse': { // 短重复 motif cell
+      const voices: TextureBassHit['voice'][] = ['root', 'fifth', 'root', 'fifth', 'tenth'];
+      [0.00, 0.50, 1.00, 1.50, 2.00, 2.50, 3.00, 3.50].forEach((t, idx) => { if (t >= dur - 0.12) return; b(t, idx === 0 ? 0.42 : 0.24, idx === 0 ? 0.44 : 0.24, voices[idx % voices.length]); });
+      break;
+    }
+    case 'ACG_Stride_Cantabile_Ballad': // 微型 stride:bass 应答上方和弦
+      b(0, 0.74, 0.45); if (dur > 2.05) b(2.0, 0.62, 0.34, 'fifth'); break;
+    case 'ACG_Anthem_Block_Push':
+      b(0, Math.min(1.48, dur), 0.48); if (dur > 2.0) b(2.0, Math.min(1.25, dur - 2.02), 0.34); break;
+    case 'ACG_Open_Broken_10th': // root/10th 左手开放
+      b(0, 0.82, 0.46); b(1.42, 0.58, 0.25, 'tenth'); if (dur > 2.8) b(2.78, 0.54, 0.26); break;
+  }
 }
 
 // ============================================================

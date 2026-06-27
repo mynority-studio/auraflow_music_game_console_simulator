@@ -349,7 +349,7 @@ export function buildInstrumentationPlan(
   //   同曲 ≤2 核心、排除 delayed-entry(段级常驻不留洞)。LOFI/blues/default 空 → render 回退逐 span 老路。
   //   rng 在所有前置决策【之后】取(+2 draw)→ 不扰 timbre/lead/intro 确定性。
   // ★ 三期:LOFI 也纳入段级机制(LOFI 池 + 更高变化概率)→ 去掉 LOFI 的逐 span 乱切。
-  const RICH_STYLE: Record<string, TextureStyleName> = { pop: 'POP', rnb: 'RNB', jazz: 'JAZZ', lofi: 'LOFI' };
+  const RICH_STYLE: Record<string, TextureStyleName> = { pop: 'POP', rnb: 'RNB', jazz: 'JAZZ', lofi: 'LOFI', acg: 'ACG' };
   const richTextureBySection: Record<string, string> = {};
   const richTextureSwitchBySection: Record<string, { atFraction: number; toTexture: string }> = {};
   const richStyle = RICH_STYLE[band.style.toLowerCase()];

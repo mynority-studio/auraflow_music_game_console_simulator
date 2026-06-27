@@ -13,7 +13,7 @@ import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
 
 // style → texture style 名;非 rich(blues/default)→ undefined,各 renderer 回退老逻辑。
-export const TEXTURE_STYLE: Record<string, TextureStyleName> = { pop: 'POP', lofi: 'LOFI', rnb: 'RNB', jazz: 'JAZZ' };
+export const TEXTURE_STYLE: Record<string, TextureStyleName> = { pop: 'POP', lofi: 'LOFI', rnb: 'RNB', jazz: 'JAZZ', acg: 'ACG' };
 export const SECTION_LABEL: Record<SectionRole, SectionLabel> = {
   intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', bridge: 'BRIDGE', outro: 'OUTRO',
 };

@@ -97,6 +97,20 @@ const _LOFI_TEXTURE_PROFILES: TextureProfile[] = [
   { id: 'wide_color_motion_lofi_pop', textureCase: 'Piano_Wide_Color_Motion', styles: ['LOFI', 'POP'], mood: 'lyrical', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.30, 0.75], energyRange: [0.30, 0.75], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [6, 24], bassLateMs: [-3, 6], velocityHumanize: 0.10 }, subStyles: ['Lofi Warm Piano', 'Lofi Emo Piano', 'Lofi Rainy Rhodes', 'Lofi Neo Soul Soft', 'Lofi Soft Canon', 'Pop Ballad', 'Max Martin Pop'] },
 ];
 
+// ★ ACG 显式 profile(久石让/坂本电影钢琴;MG 升级 Phase 2b。10 个钢琴手势 texture,忠实源 styleDictionary ACG profiles)。
+const _ACG_TEXTURE_PROFILES: TextureProfile[] = [
+  { id: 'topvoice_planing_roll', textureCase: 'Piano_TopVoice_Planing', styles: ['ACG'], mood: 'ambient', phraseRoles: ['establish', 'develop'], densityRange: [0.05, 0.45], energyRange: [0.05, 0.55], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [0, 18], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+  { id: 'acg_quartal_arp_wave', textureCase: 'ACG_Quartal_Arp_Wave', styles: ['ACG'], mood: 'lyrical', phraseRoles: ['develop', 'lift'], densityRange: [0.28, 0.78], energyRange: [0.25, 0.80], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [0, 16], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+  { id: 'acg_sakamoto_lh_arp_rh_penta', textureCase: 'ACG_Sakamoto_LH_Arp_RH_Penta', styles: ['ACG'], mood: 'lyrical', phraseRoles: ['establish', 'develop'], densityRange: [0.18, 0.62], energyRange: [0.15, 0.65], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 14], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+  { id: 'acg_ostinato_hook_pulse', textureCase: 'ACG_Ostinato_Hook_Pulse', styles: ['ACG'], mood: 'groove', phraseRoles: ['establish', 'develop', 'lift'], densityRange: [0.18, 0.78], energyRange: [0.18, 0.85], maxRepeatBars: 3, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 12], bassLateMs: [0, 4], velocityHumanize: 0.07 } },
+  { id: 'acg_stride_cantabile_ballad', textureCase: 'ACG_Stride_Cantabile_Ballad', styles: ['ACG'], mood: 'lyrical', phraseRoles: ['establish', 'develop', 'cadence'], densityRange: [0.12, 0.70], energyRange: [0.12, 0.72], maxRepeatBars: 3, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [0, 18], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+  { id: 'acg_anthem_block_push', textureCase: 'ACG_Anthem_Block_Push', styles: ['ACG'], mood: 'drive', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.38, 0.95], energyRange: [0.42, 0.98], maxRepeatBars: 3, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [0, 10], bassLateMs: [0, 3], velocityHumanize: 0.06 } },
+  { id: 'acg_open_broken_10th', textureCase: 'ACG_Open_Broken_10th', styles: ['ACG'], mood: 'lyrical', phraseRoles: ['develop', 'lift'], densityRange: [0.35, 0.82], energyRange: [0.35, 0.82], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [0, 14], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+  { id: 'acg_suspended_block_arrival', textureCase: 'ACG_Suspended_Block_Arrival', styles: ['ACG'], mood: 'cadence', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.35, 0.88], energyRange: [0.35, 0.90], preferOnCadence: true, maxRepeatBars: 3, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [0, 18], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+  { id: 'acg_bass_tremolo_color', textureCase: 'ACG_Bass_Tremolo_Color', styles: ['ACG'], mood: 'drive', phraseRoles: ['develop', 'lift', 'cadence'], densityRange: [0.48, 0.95], energyRange: [0.50, 0.95], preferOnLoopBack: true, maxRepeatBars: 3, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 12], bassLateMs: [-1, 4], velocityHumanize: 0.07 } },
+  { id: 'acg_pedal_wash_color_drops', textureCase: 'ACG_Pedal_Wash_Color_Drops', styles: ['ACG'], mood: 'ambient', phraseRoles: ['establish', 'develop', 'cadence'], densityRange: [0.10, 0.58], energyRange: [0.10, 0.62], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 18], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
+];
+
 // ============================================================
 // Legacy 织体池(Loop 6,2026-06-09)—— 忠实 port 自 styleDictionary._legacyTexturesAsPool()。
 //   源:STYLE_DICTIONARY[POP/JAZZ/LOFI/RNB].primaryTextures 里【未被 modern profile 覆盖】的
@@ -146,8 +160,8 @@ function _legacyTexturesAsPool(): TextureProfile[] {
 
 const _LEGACY_TEXTURE_PROFILES: TextureProfile[] = _legacyTexturesAsPool();
 
-/** 公开池 = modern + LOFI + legacy(★ Loop 6:全量 strict MG,见顶部横幅)。 */
-export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES, ..._LEGACY_TEXTURE_PROFILES];
+/** 公开池 = modern + LOFI + ACG + legacy(★ Loop 6:全量 strict MG,见顶部横幅;Phase 2b 加 ACG)。 */
+export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES, ..._ACG_TEXTURE_PROFILES, ..._LEGACY_TEXTURE_PROFILES];
 
 /**
  * 该 textureCase 是否【设计内稀疏】(comp 连续性审计据此放宽阈值:稀疏织体的呼吸不算断层)。
@@ -235,6 +249,18 @@ export const TEXTURE_BEHAVIOR: Record<string, TextureBehaviorProfile> = {
   RnB_Gospel_Triplets: { textureCase: 'RnB_Gospel_Triplets', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
   RnB_Laid_Back_Groove: { textureCase: 'RnB_Laid_Back_Groove', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
   RnB_Neo_Soul_Roll: { textureCase: 'RnB_Neo_Soul_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
+  // —— ACG(MG 升级 Phase 2b):firstOnset = 织体最早出声(bass 全从 0 起 → 无 delayed-entry 留洞);
+  //    稀疏型靠 mood/density 走 isSparseTexture 放宽 comp 连续性审计。 ——
+  Piano_TopVoice_Planing: { textureCase: 'Piano_TopVoice_Planing', family: 'roll', continuity: 'sparse', firstOnsetBeat: 0.10 },
+  ACG_Quartal_Arp_Wave: { textureCase: 'ACG_Quartal_Arp_Wave', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.12 },
+  ACG_Sakamoto_LH_Arp_RH_Penta: { textureCase: 'ACG_Sakamoto_LH_Arp_RH_Penta', family: 'arp', continuity: 'sparse', firstOnsetBeat: 0.0 },
+  ACG_Ostinato_Hook_Pulse: { textureCase: 'ACG_Ostinato_Hook_Pulse', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  ACG_Stride_Cantabile_Ballad: { textureCase: 'ACG_Stride_Cantabile_Ballad', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  ACG_Anthem_Block_Push: { textureCase: 'ACG_Anthem_Block_Push', family: 'block', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  ACG_Open_Broken_10th: { textureCase: 'ACG_Open_Broken_10th', family: 'arp', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  ACG_Suspended_Block_Arrival: { textureCase: 'ACG_Suspended_Block_Arrival', family: 'block', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  ACG_Bass_Tremolo_Color: { textureCase: 'ACG_Bass_Tremolo_Color', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  ACG_Pedal_Wash_Color_Drops: { textureCase: 'ACG_Pedal_Wash_Color_Drops', family: 'wash', continuity: 'sparse', firstOnsetBeat: 0.0 },
 };
 
 export function textureBehavior(textureCase: string): TextureBehaviorProfile | undefined {
