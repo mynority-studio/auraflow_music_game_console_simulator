@@ -1522,11 +1522,19 @@ export function applyLofiPhrygianBiiShadowMelody(
                 .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
 
             for (const landing of returns) {
-                for (const event of out) {
+                for (let i = out.length - 1; i >= 0; i--) {
+                    const event = out[i];
                     if (event === landing || event.part !== 'melody') continue;
-                    if (event.time >= landing.time - 0.001) continue;
-                    if (event.time + event.duration <= landing.time + 0.08) continue;
-                    event.duration = Math.max(0.25, landing.time - event.time);
+                    if (event.time < landing.time - 0.001) {
+                        if (event.time + event.duration <= landing.time + 0.08) continue;
+                        event.duration = Math.max(0.25, landing.time - event.time);
+                        continue;
+                    }
+                    if (!landing.lickSource || landing.duration < 1.25) continue;
+                    if (event.origin === 'return') continue;
+                    if (event.time <= landing.time + 0.001) continue;
+                    if (event.time >= landing.time + landing.duration - 0.08) continue;
+                    out.splice(i, 1);
                 }
             }
 

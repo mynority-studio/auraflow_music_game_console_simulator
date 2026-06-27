@@ -65,14 +65,13 @@ describe('render/mgMelodyShaper · MG 移植 shapeMelodyHarmony parity (Loop 6)'
   //   剩 12 seed 仍差,根因【非】applyMelodicResolutionParadigm,而是 shaper 链上【其它未港子函数】对当前 MG 陈旧:
   //   ① 7 LOFI:LOFI paradigm 子函数(applyLofiCrawlHoldParadigm / synthesizeLofiAscendingCrawl /
   //      applyLofiTonicizationColorAnchors)未港 → 大幅增音(cc88 ours=55/exp=41)。
-  //   ② 5 非 LOFI(jazz_cc64 / jazz_music_probe / pop_cztjju / rnb_aa22 / rnb_music_probe):multiset diff =
-  //      ONLY-EXP=0(MG 输出 ⊂ ours),ours 多留 2-4 个【develop】音(段尾边界簇)→ 当前 MG 的【删除类】
-  //      子函数(consumeReturnLandings / tightenHarmonyDecorations)更激进,simulator 版陈旧。
-  //   → 这 12 暂按 invariant-parity 验收;逐个 re-sync 子函数到当前 MG 后清出此 set 回 strict byte-parity。
-  const G9_PENDING = new Set([
-    'lofi_3xyhma', 'lofi_bb42', 'lofi_bneeok', 'lofi_cc88', 'lofi_dd19', 'lofi_er5a0r', 'lofi_uhloiw',
-    'jazz_cc64', 'jazz_music_probe', 'pop_cztjju', 'rnb_aa22', 'rnb_music_probe',
-  ]);
+  //   ② 非 LOFI 段尾 develop 簇 = consumeReturnLandings 陈旧 → 已港当前 MG 版(reverse-loop splice:
+  //      移除落在长 return-landing(≥1.25, lickSource)span 内的 develop 音)→ **20/23 byte-exact**
+  //      (全部 POP/JAZZ/RNB + 5/8 LOFI)。
+  //   剩 3 LOFI(lofi_bb42 / lofi_cc88 / lofi_uhloiw)仍差(大幅增音)= LOFI crawl-hold paradigm
+  //      子函数(applyLofiCrawlHoldParadigm / synthesizeLofiAscendingCrawl)未港当前 MG → 待 re-sync。
+  //   → 这 3 暂按 invariant-parity 验收;港 LOFI paradigm 后清出此 set 回 strict byte-parity。
+  const G9_PENDING = new Set(['lofi_bb42', 'lofi_cc88', 'lofi_uhloiw']);
   for (const fx of fixtures) {
     if (G9_PENDING.has(fx.seed)) {
       it(`★ ${fx.seed} [${fx.style}] shaper invariant(G5 已 sync;exact byte-parity 待 G9)`, () => {
