@@ -20,11 +20,11 @@ export default defineConfig(({mode}) => {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify — file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // SharedArrayBuffer（SpessaSynth AudioWorklet 依赖）在非 localhost 源需要跨域隔离头
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'credentialless',
-      },
+      // ⚠️ 2026-06-28:移除 COOP/COEP 跨域隔离头。当前 spessasynth(lib 4.2.10 / core 4.2.8)的
+      //   AudioWorklet 处理器【不再依赖 SharedArrayBuffer】(全仓 grep SharedArrayBuffer = 0)。
+      //   COEP 'credentialless' 是已知会让 AudioWorklet.addModule 失败("Unable to load a worklet's module"
+      //   AbortError)的诱因。既然无 SAB 依赖,这两个头是历史残留 → 删除以恢复音频 worklet 加载。
+      //   (若将来某 spessasynth 版本重新需要 SAB,再按需加回 COOP same-origin + COEP require-corp。)
     },
   };
 });
