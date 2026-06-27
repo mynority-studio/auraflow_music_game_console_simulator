@@ -48,9 +48,10 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   lofi: { lead: [4, 11, 12, 108, 6, 75, 77], comp: [4, 5], bass: [33, 39], pad: [89, 91, 94, 92, 98, 102], drum: [0] },     // +羽管/排箫/尺八 lead · Bowed/Crystal/Echoes pad
   rnb: { lead: [4, 5, 11, 2], comp: [4, 5], bass: [33, 39, 35, 36, 37], pad: [89, 91, 16, 99], drum: [0] },               // 无品/slap 贝斯 · Atmosphere pad(★ Clav 7 撤出 comp:亮/打击 funk 音色在 arp 织体+高力度下炸裂、刺耳)
   modal: { lead: [12, 11, 8, 107, 6, 75, 77], comp: [4, 0], bass: [32, 33], pad: [89, 48, 91, 94, 92, 93, 97, 98, 102], drum: [0] }, // +羽管/排箫/尺八 lead · synthFX 氛围 pad
-  // ★ ACG 钢琴主导多轨(MG 升级 Phase 2a):lead/comp = 大钢琴(0)+电钢(4)双钢琴(守 Hisaishi 钢琴本体);
-  //   bass = 原声/低音提琴(32 acoustic bass / 43 contrabass,upright 暖);pad = 电影暖弦(49 慢弦/48 弦组/50 合成弦/89 暖垫)。
-  acg: { lead: [0, 4], comp: [0, 4], bass: [32, 43], pad: [49, 48, 50, 89], drum: [0] },
+  // ★ ACG 钢琴主导(MG 久石让/坂本电影钢琴):★ 2026-06-28 用户复核「做成纯 solo piano」→ lead/comp 都【只大钢琴 0】
+  //   (旋律+伴奏同一台钢琴,不再 lead 电钢/comp 大钢琴的双钢琴错位);bass = 原声/低音提琴(32/43 upright 暖);
+  //   pad = 电影暖弦(49 慢弦/48 弦组/50 合成弦/89 暖垫)。
+  acg: { lead: [0], comp: [0], bass: [32, 43], pad: [49, 48, 50, 89], drum: [0] },
   default: { lead: [0, 4, 12], comp: [0, 4], bass: [33], pad: [89], drum: [0] },     // 大钢琴/Rhodes/马林巴
 };
 
