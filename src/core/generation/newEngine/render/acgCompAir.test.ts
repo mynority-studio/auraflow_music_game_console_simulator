@@ -25,11 +25,14 @@ function acgComp(seed: number, forceCase: string, needsDownbeat: boolean) {
 }
 
 // ============================================================
-// ACG comp air 回归修复 — directive §5.1 / §3.3 高位色音保留
+// ACG comp air — directive §5.1 / §3.3 高位色音(★ 2026-06-28 用户耳朵复核后【生产已关闭】)
 // ------------------------------------------------------------
-// ACG 织体身份 = bass gesture + 高位色音/air + 软力度 + 有意留白。
-// 修前:colorTop 从【已钳到 lead 地板(67)下】的 voicing 取 → 无高 air。
-// 修后:有和弦语境 → 真上方色音(target~78,>67)。
+// 原设计:ACG 织体 = bass gesture + 高位色音/air(>67)+ 软力度 + 有意留白。
+// ★ 用户复核:高位 air 越过旋律 → 与旋律打架、伴奏听不清。决策 = ACG 做成【MG 久石让钢琴左手】:
+//   comp 坐旋律保留区下方(yieldUnderMelody)、不再保高 air、不再给 textureRenderer 上方色音语境。
+//   → 生产 accompanimentRenderer 已【不传 acgCtx】(高 air 接线关闭)。
+//   renderTextureChordHits 仍保留【高位色音能力】(给 ctx 时可产 >67),作 dormant 能力 + 单元测保留;
+//   端到端(§5.1)则验【新设计】:ACG comp 坐旋律地板之下(无高 air 抢旋律)。
 // ============================================================
 
 const DUR = 4;
@@ -88,10 +91,13 @@ describe('render/acgCompAir(ACG comp air 回归修复)', () => {
     expect(maxVel, '仍软:generic comp 可到 100-120').toBeLessThanOrEqual(96);
   });
 
-  it('★ §5.1 端到端:ACG comp 端到端含 > 67 高 air 音(真和弦语境接线)', () => {
+  it('★ §5.1 端到端(新设计):ACG comp 坐旋律地板(67)之下 —— 无 > 67 高 air 抢旋律(MG 钢琴左手)', () => {
+    // ★ 2026-06-28 用户复核反转:生产不再传 acgCtx → ACG comp 走已钳 voicing(yieldUnderMelody 到 67 下)。
+    //   旋律在上、伴奏在下,互不抢。端到端断言:comp 所有音 ≤ 67(旋律保留区地板之下)。
     const comp = acgComp(7, 'ACG_Quartal_Arp_Wave', false);
-    const hiAir = comp.notes.some((n) => (n.pitch as number) > 67);
-    expect(hiAir).toBe(true);
+    expect(comp.notes.length).toBeGreaterThan(0);
+    const maxPitch = Math.max(...comp.notes.map((n) => n.pitch as number));
+    expect(maxPitch, 'comp 顶须坐旋律地板(67)之下,不抢旋律').toBeLessThanOrEqual(67);
   });
 
   it('★ 三和弦(无写入扩展)允许无 >67 air(不强造色音)', () => {

@@ -24,8 +24,9 @@ const LINEUP_RULES: Record<string, LineupRule> = {
   lofi: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'pad', prob: 0.85 }, { role: 'drum', prob: 0.6 }] },
   rnb: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.8 }, { role: 'pad', prob: 0.55 }] }, // neo-soul:Rhodes comp + pocket 鼓
   modal: { always: ['lead', 'pad'], optional: [{ role: 'bass', prob: 0.6 }, { role: 'comp', prob: 0.5 }, { role: 'drum', prob: 0.35 }] },
-  // ★ ACG 钢琴主导多轨(MG 升级 Phase 2a):钢琴 lead+comp+原声 bass 常驻;暖弦 pad 多在场;鼓极稀疏(Hisaishi 多无鼓,jpop 变体偶有)。
-  acg: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'pad', prob: 0.7 }, { role: 'drum', prob: 0.35 }] },
+  // ★ ACG 钢琴主导(MG 久石让/坂本电影钢琴):钢琴 lead+comp+原声 bass 常驻;暖弦 pad 一点点铺垫。
+  //   ★ 2026-06-28 用户决策:ACG 暂【无鼓】(没有对应织体/编配)→ 不进 drum,先做成 MG 那样的纯钢琴音乐。
+  acg: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'pad', prob: 0.7 }] },
   default: { always: ['lead', 'comp', 'bass'], optional: [{ role: 'drum', prob: 0.7 }, { role: 'pad', prob: 0.5 }] },
 };
 

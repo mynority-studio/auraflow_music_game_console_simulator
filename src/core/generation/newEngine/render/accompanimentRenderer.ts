@@ -203,8 +203,6 @@ export function renderAccompaniment(
   // 预算 per-span voicing(全声部 voice-leading 链)+ 让位 shell voicing
   const voicedBySpan: Record<string, number[]> = {};
   const shellBySpan: Record<string, number[]> = {};
-  // ★ ACG comp-air §3.2:【未钳】宽 voicing(不 yieldUnderMelody 到 lead 地板下)→ 保高位色音 air,仅 ACG 织体消费。
-  const airVoicedBySpan: Record<string, number[]> = {};
   let prevTop: number | undefined;
   let prevVoicing: number[] | undefined; // 上一组完整 voicing → 全声部贴最近(声部进行)
   let prevWide: WidePianoVoicing | undefined; // 钢琴宽排列的前一组锚点(共同音保留)
@@ -225,7 +223,6 @@ export function renderAccompaniment(
       const spreadMode = pickPianoSpread(idx, span);
       const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
       voicedBySpan[span.id] = clampUnder(wide.attackMidi.filter(inRange)); // 超域色彩 → 交旋律;顶 ≥ 旋律地板 → 转位/减法让位
-      airVoicedBySpan[span.id] = wide.attackMidi.filter(inRange); // ★ §3.2:未钳(保 >67 高位色音)→ ACG 织体用
       // 让位/瘦身 = close 紧排核心(colorLevel 0,让色彩给旋律),仍是真实和弦音
       const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, colorLevel: 0, spreadMode: 'close' }, prev: prevWide, rolePcs });
       shellBySpan[span.id] = clampUnder(shellWide.attackMidi.filter(inRange));
@@ -247,7 +244,6 @@ export function renderAccompaniment(
       const guard = (v: number[]): number[] => v.length >= 2 ? v
         : foldToRange(chordToneIntervals(span.quality).slice(0, 3).map((iv) => 48 + ((span.rootPc + iv) % 12)));
       voicedBySpan[span.id] = guard(clampUnder(full)); // 顶 ≥ 旋律地板 → 转位/减法让位;空 → 兜底三和弦
-      airVoicedBySpan[span.id] = voicedBySpan[span.id]; // 非键盘(ACG 不走此支)→ air = 钳后值(ACG comp 恒键盘)
       const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
       shellBySpan[span.id] = guard(clampUnder(foldToRange(shellClose)));
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
@@ -262,14 +258,15 @@ export function renderAccompaniment(
       const tc = ctx.textureSchedule[span.id];
       if (!tc) continue;
 
-      // ★ ACG comp-air §3.2:ACG 钢琴织体用【未钳】air voicing(保高位色音)+ 不 thin(高 air 越 lead 区是有意空间)。
+      // ★ ACG comp(2026-06-28 用户耳朵复核:旧 §3.2「未钳 air voicing + 上方真色音」让 comp 高位色音越过旋律 →
+      //   与旋律打架、听不清伴奏)。改成【MG 久石让钢琴左手】思路:comp 用【已钳 voicing】(yieldUnderMelody 坐到
+      //   旋律保留区地板之下)、不再保高位色音、不再给 textureRenderer 上方色音语境 → 旋律在上、伴奏在下,互不抢。
       const acg = isAcgTextureCase(tc);
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
-      const thin = !acg && (yieldHere || !!ctx.voicingSaferSpans?.has(span.id));
-      const voiced = acg ? (airVoicedBySpan[span.id] ?? voicedBySpan[span.id]) : (thin ? shellBySpan[span.id] : voicedBySpan[span.id]);
+      const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id);
+      const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];
       if (!voiced || voiced.length === 0) continue;
-      // ★ §3.3:ACG 给 textureRenderer 真和弦语境 → 真上方色音(非从已钳 voicing 顶部取)。
-      const acgCtx = acg ? { rootPc: span.rootPc as number, chordType: (span.chordType ?? span.quality) as string } : undefined;
+      const acgCtx = undefined;
 
       const { avoid: padAvoid, durScale } = padAvoidFor(span); // pad-active span 才非空,否则零干预
       const base = span.startBeat as number;
@@ -288,12 +285,11 @@ export function renderAccompaniment(
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
-        // ★ §3.4:ACG = 比 generic comp【更软更空】,但仍要【可听】—— 混音是 CC7×velocity 模型(comp CC7≈85
-        //   补偿 comp 低 velocity;lead/bass velocity 80-90)。源 h.vel 仅 0.10-0.33,若直 round(h.vel*127)=13-42
-        //   则有效响度被 lead/bass 埋掉(实测 comp 听不见)。故 ACG 用【温和】lift:floor≈40、顶≈70,仍明显软于
-        //   generic(generic 同 hit 到 77-102),保留 airy 相对动态(色音 drop < 柱式块)。
+        // ★ §3.4(2026-06-28 用户复核:旧 ACG comp lift floor≈40/顶≈70 太软 → lead 96-100 把它埋了「听不见」)。
+        //   现 comp 已坐旋律下方(register 分离),audibility 主要靠 velocity 抬到可听区:floor≈59、顶≈84,
+        //   仍比 generic(65-92)略软(钢琴左手伴奏托旋律,不抢),但不再被埋。
         const vel = acg
-          ? Math.max(1, Math.min(96, Math.round((h.vel * 0.7 + 0.26) * 127)))
+          ? Math.max(1, Math.min(100, Math.round((h.vel * 0.85 + 0.38) * 127)))
           : Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
         for (const m of h.midis) {
