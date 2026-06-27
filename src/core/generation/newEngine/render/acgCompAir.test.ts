@@ -80,11 +80,12 @@ describe('render/acgCompAir(ACG comp air 回归修复)', () => {
     expect(withN).toBe(without); // §3.5:ACG 跳 shell 注入 → needsDownbeat 无影响
   });
 
-  it('★ §5.3:ACG 色音 drop 软力度(min vel < 40,远低于 body-lift 下限 ~53)', () => {
+  it('★ §5.3:ACG comp 软但【可听】(max vel ∈ [40,96]:airy 软于 generic,又不被 lead/bass 埋)', () => {
     const comp = acgComp(7, 'ACG_Pedal_Wash_Color_Drops', false);
     expect(comp.notes.length).toBeGreaterThan(0);
-    const minVel = Math.min(...comp.notes.map((n) => n.velocity as number));
-    expect(minVel).toBeLessThan(40); // 通用 body-lift 下限=round((0+0.42)*127)=53 → <40 证明软映射
+    const maxVel = Math.max(...comp.notes.map((n) => n.velocity as number));
+    expect(maxVel, '可听:不被 lead/bass(vel 80-90)埋').toBeGreaterThanOrEqual(40);
+    expect(maxVel, '仍软:generic comp 可到 100-120').toBeLessThanOrEqual(96);
   });
 
   it('★ §5.1 端到端:ACG comp 端到端含 > 67 高 air 音(真和弦语境接线)', () => {

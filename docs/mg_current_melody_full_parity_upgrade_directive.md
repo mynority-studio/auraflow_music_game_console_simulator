@@ -20,6 +20,26 @@ If current MG output changes existing simulator POP/JAZZ/LOFI/RNB seeds, accept
 the change and rebaseline tests. Do not preserve old seed output by adding
 legacy gates, stale parser branches, or partial compatibility modes.
 
+## Ownership Boundary
+
+Melody generation/render behavior should come from current MG. The simulator
+should not re-invent family matching, token scheduling, pitch pools,
+voice-leading, melody feel rendering, or melody harmony shaping when MG already
+owns that decision.
+
+GrooveContract selection is the exception. In simulator, the GrooveContract
+layer belongs to arranger. The renderer consumes the already-selected contract
+or an equivalent normalized feel object; it must not run its own independent
+GrooveContract picker. For parity testing, inject/freeze the same contract into
+both sides where groove affects melody timing, so the audit measures melody
+render parity rather than arranger RNG drift.
+
+Drums and PAD are not MG-backed parity targets. Do not block this upgrade on
+drum/PAD differences. All shared MG-backed outputs should still be audited:
+melody, chord/comp events, bass events, harmony/chord metadata, local-scale
+metadata, grammar/brick metadata, feel/groove values consumed by melody, and
+final timing after simulator conversion.
+
 ## Claude Must Read First
 
 Claude must read both sides before editing. Do not copy blind.
@@ -309,9 +329,87 @@ Add or refresh:
      no negative duration, no out-of-order notes, no invalid MIDI, no dropped
      melody track.
 
+7. Automated 30-seed cross-engine audit
+   - add a script/test runner that executes at least 30 deterministic cases
+     across POP, JAZZ, LOFI, RNB, ACG, and any currently active macro style.
+   - distribute cases across multiple keys, major/minor/modal regimes when
+     available, and short/long forms.
+   - for each case, run current MG and simulator with the same seed, style,
+     key/mode, harmony input, and injected GrooveContract or normalized melody
+     feel.
+   - compare shared outputs only. Exclude drums and PAD because MG does not
+     provide those parity tracks.
+   - compare exact event output where the pipeline is expected to be fully
+     mirrored:
+     - melody note number, start, duration, velocity, origin, degree, grammar
+       metadata where preserved
+     - chord/comp note events when generated from MG-equivalent renderer logic
+     - bass note events when generated from MG-equivalent renderer logic
+     - chord symbols, roman labels, function labels, borrowed/tonicized fields,
+       forced scale, local tonal center
+     - RoadMap brick name/family/key pc/covered chord indices
+     - selected local scale name/root/source/strict flag
+     - structural pitch-set pcs and priority pcs
+   - normalize harmless representation differences before comparing:
+     - ticks vs beats
+     - integer MIDI wrappers vs numbers
+     - floating point timing within a tiny epsilon
+     - simulator-only container IDs
+
+8. Fallback logic audit when exact output cannot yet match
+   - if exact cross-engine output differs, the runner must automatically emit
+     a diagnostic report rather than stopping at "diff failed".
+   - the report must classify each mismatch into one of these buckets:
+     - RoadMap/family mismatch
+     - grammar token mismatch
+     - scheduler/timing mismatch
+     - local-scale mismatch
+     - chord-contract/intersection mismatch
+     - voice-leading/candidate-choice mismatch
+     - guide-tone mismatch
+     - harmony-shaper mismatch
+     - GrooveContract/feel injection mismatch
+     - simulator adapter/conversion mismatch
+   - for each failing seed, include the first divergent stage, the expected MG
+     value, the simulator value, and the likely file(s) to inspect.
+   - write the report as markdown under `docs/generated/` or another committed
+     audit-output location agreed by the repo.
+
+9. Automatic task extraction
+   - the audit runner must produce an implementation task list from its
+     mismatch buckets.
+   - each task should name:
+     - failing seed/style/key
+     - stage that first diverged
+     - source MG file/function
+     - simulator target file/function
+     - expected repair
+     - whether exact parity is required or only invariant parity is acceptable
+   - Claude must implement tasks in dependency order: RoadMap before grammar,
+     grammar before scheduler, scheduler before pitch sets, pitch sets before
+     NoteChooser, NoteChooser before shaper, shaper before NoteIR conversion.
+
+10. Invariant audit when exact parity is intentionally impossible
+   - if a simulator integration layer makes byte-for-byte equality impossible,
+     the audit must still assert the musical invariants:
+     - structural melody notes are within chord contract intersected with
+       resolved local scale, or use the MG fallback when the intersection is
+       empty
+     - avoid notes are treated the same way as current MG
+     - secondary dominants and tonicizations use the same local tonal center
+     - modal-interchange chords resolve to the same local scale source
+     - voice-leading leaps obey current MG clamp/nearest-midi behavior
+     - ACG cycle phrases span the same harmonic cycle as MG
+     - LOFI/ACG slope grammar protection is preserved
+     - melody timing uses the same injected melody feel/GrooveContract values
+   - invariant-only acceptance must be explicitly justified in the generated
+     report; it is not the default.
+
 ## Acceptance Criteria
 
 - Simulator `mgLeadRenderer` mirrors the current MG stage order.
+- GrooveContract selection is owned by arranger; melody render consumes an
+  injected/frozen contract or normalized feel and does not repick it.
 - Simulator uses current functional family matching, not the older RoadMap
   parser, for melody generation.
 - ACG melody uses long-cycle cadence scheduling and no longer sounds like
@@ -322,6 +420,10 @@ Add or refresh:
 - Jazz/RNB local scale choices match current MG.
 - Voice-leading is verified after pitch-set parity, not before.
 - ACG is present in melody parity/oracle coverage.
+- A 30-seed cross-engine audit runs automatically and compares all shared
+  MG-backed outputs, excluding only drums and PAD.
+- When exact parity fails, the audit generates a classified markdown report and
+  an ordered implementation task list.
 - Old non-ACG simulator melody seeds may change; tests are rebaselined to
   current MG rather than preserved through compatibility gates.
 
@@ -335,5 +437,7 @@ Add or refresh:
 6. Restore orthogonal `PitchClassSets`.
 7. Port ACG cycle scheduler.
 8. Re-audit NoteChooser and MelodyShaper against current MG.
-9. Add parity tests and refresh oracles from current MG.
-10. Run full test suite and manually inspect ACG/Jazz/RNB seed output.
+9. Add the 30-seed cross-engine audit runner and mismatch-report generator.
+10. Add parity tests and refresh oracles from current MG.
+11. Run full test suite, the 30-seed audit, and manually inspect ACG/Jazz/RNB
+    seed output.

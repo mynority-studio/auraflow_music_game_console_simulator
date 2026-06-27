@@ -288,11 +288,13 @@ export function renderAccompaniment(
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
-        // ★ §3.4:ACG air/roll 用源【软】力度(不 body-lift,单音色音不抬进普通 comp 响度带);柱式块给薄 floor。
-        let vel = acg
-          ? Math.max(1, Math.min(110, Math.round(h.vel * 127)))
+        // ★ §3.4:ACG = 比 generic comp【更软更空】,但仍要【可听】—— 混音是 CC7×velocity 模型(comp CC7≈85
+        //   补偿 comp 低 velocity;lead/bass velocity 80-90)。源 h.vel 仅 0.10-0.33,若直 round(h.vel*127)=13-42
+        //   则有效响度被 lead/bass 埋掉(实测 comp 听不见)。故 ACG 用【温和】lift:floor≈40、顶≈70,仍明显软于
+        //   generic(generic 同 hit 到 77-102),保留 airy 相对动态(色音 drop < 柱式块)。
+        const vel = acg
+          ? Math.max(1, Math.min(96, Math.round((h.vel * 0.7 + 0.26) * 127)))
           : Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
-        if (acg && h.midis.length >= 3) vel = Math.max(vel, 34); // 仅整块给薄底,单音色音 drop 保软
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
         for (const m of h.midis) {
           if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音(消 unison mud)
