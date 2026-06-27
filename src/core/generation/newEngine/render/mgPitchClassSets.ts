@@ -26,6 +26,11 @@
 import { CHORD_TYPES, SCALE_TYPES } from '../knowledge/mgMusicTheory';
 import { lookupChordDef, type ImprovisorChordDef } from '../knowledge/improvisorChordVocab';
 import type { ChordBlock } from './mgChordPart';
+// ★ MG full-parity G2/G3:localScaleContext-aware orthogonal pitch sets(chord contract ∩ resolved local scale)。
+import {
+  resolveMelodyAdmissionContext, resolveLocalScale, melodyContractPcsForStyle,
+  type LocalScaleContext, type LocalScaleChordLike,
+} from '../knowledge/mgLocalScaleResolver';
 
 export interface ChordPitchSets {
   /** Chord root pc (0-11). */
@@ -146,10 +151,19 @@ function hardAvoidPcsForMelodyPool(chordType: string, rootPc: number): Set<numbe
 export interface BuildPitchSetsArgs {
   chord: ChordBlock;
   nextChord?: ChordBlock | null;
+  /** ★ MG full-parity G2:本地音阶语境(style/key/mode)。给定 → 走 orthogonal admission
+   *  (结构音 = chord contract ∩ resolved local scale,空则回退 contract,忠实当前 MG);
+   *  缺省 → 旧 vocab/fallback 路径(逐字节不变,opt-in)。 */
+  localScaleContext?: LocalScaleContext;
 }
 
 export function buildPitchSets(args: BuildPitchSetsArgs): ChordPitchSets {
-  const { chord, nextChord } = args;
+  const { chord, nextChord, localScaleContext } = args;
+
+  // ★ MG full-parity G3:有 localScaleContext → orthogonal pitch sets(当前 MG 行为)。
+  if (localScaleContext) {
+    return buildOrthogonalPitchSets(chord, nextChord ?? null, localScaleContext);
+  }
 
   // PRIMARY: query IV vocab for hand-curated data. Vocab pcs are stored
   // C-relative — transpose to chord.rootPc here.
@@ -181,6 +195,76 @@ export function buildPitchSets(args: BuildPitchSetsArgs): ChordPitchSets {
   for (let pc = 0; pc < 12; pc++) if (!union.has(pc)) outsideTones.push(pc);
 
   return { rootPc: chord.rootPc, bassPc: chord.bassPc, chordType: chord.type, chordTones, colorTones, scaleTones, approachTargets, outsideTones, priorityPcs: chordTones };
+}
+
+// ============================================================
+// ★ MG full-parity G3:orthogonal pitch sets(忠实 port 当前 ../melodygenerative
+//   PitchClassSets buildOrthogonalPitchSets + chordLikeFromBlock + isDeclaredColorPc +
+//   priorityPcsForOrthogonalContract)。结构音 = written chord contract ∩ resolved local scale;
+//   交集空 → 回退 contract(同 MG)。
+//   ★ 适配:simulator ChordBlock 无 roman/borrowedFrom/borrowedSource(rootMidi 用 rootPc,pcOf 等价)→
+//     这些 chord-level 标签缺省;jazz-chord-scale(type+func)/tonicization(localKeyPc)/altered(type)仍准,
+//     borrowed/modal 退化到 type/global(invariant 仍立)。后续可把 roman/borrowed* 经 ChordBlock 补上提精度。
+// ============================================================
+function chordLikeFromBlock(chord: ChordBlock): LocalScaleChordLike {
+  return {
+    rootMidi: chord.rootPc, // pcOf(rootPc) === rootPc;无 rootMidi 字段,用 pc 等价
+    type: chord.type,
+    roman: chord.roman ?? '',
+    effectiveFunc: chord.functionHint,
+    forcedScale: chord.forcedScale,
+    localTonalCenterPc: chord.localKeyPc,
+    borrowedFrom: chord.borrowedFrom,
+    borrowedSource: chord.borrowedSource,
+  } as LocalScaleChordLike;
+}
+
+function isDeclaredColorPc(chordType: string, rootPc: number, pc: number): boolean {
+  const literal = CHORD_TYPES[chordType] ?? CHORD_TYPES.maj;
+  const interval = ((pc - rootPc) % 12 + 12) % 12;
+  const basic = new Set([0, 3, 4, 5, 7, 10, 11]);
+  return literal.some((iv) => ((iv % 12) + 12) % 12 === interval) && !basic.has(interval);
+}
+
+function priorityPcsForOrthogonalContract(chordType: string, rootPc: number, pcs: number[]): number[] {
+  const literal = CHORD_TYPES[chordType] ?? CHORD_TYPES.maj;
+  const wantedIntervals = [3, 4, 10, 11, 2, 9, 7, 0, 5, 6, 8, 1];
+  const wanted: number[] = [];
+  for (const interval of wantedIntervals) {
+    if (!literal.some((iv) => ((iv % 12) + 12) % 12 === interval)) continue;
+    const pc = (rootPc + interval) % 12;
+    if (pcs.includes(pc) && !wanted.includes(pc)) wanted.push(pc);
+  }
+  for (const pc of pcs) if (!wanted.includes(pc)) wanted.push(pc);
+  return wanted;
+}
+
+function buildOrthogonalPitchSets(chord: ChordBlock, nextChord: ChordBlock | null, ctx: LocalScaleContext): ChordPitchSets {
+  const chordLike = chordLikeFromBlock(chord);
+  const admission = resolveMelodyAdmissionContext(ctx, chordLike);
+  const structural = admission.intersectionPcs.size > 0 ? admission.intersectionPcs : admission.contractPcs;
+  const chordTones = [...structural].sort((a, b) => a - b);
+  const colorTones = chordTones.filter((pc) => isDeclaredColorPc(chord.type, chord.rootPc, pc)).sort((a, b) => a - b);
+  const scaleTones = [...admission.localScale.pcs].filter((pc) => !structural.has(pc)).sort((a, b) => a - b);
+
+  let nextStructural: number[] | null = null;
+  if (nextChord) {
+    const nextLike = chordLikeFromBlock(nextChord);
+    const nextScale = resolveLocalScale(ctx, nextLike);
+    const nextContract = melodyContractPcsForStyle(ctx.style, nextLike, nextChord.rootPc);
+    const nextIntersection = [...nextContract].filter((pc) => nextScale.pcs.has(pc));
+    nextStructural = (nextIntersection.length > 0 ? nextIntersection : [...nextContract]).sort((a, b) => a - b);
+  }
+  const approachTargets = buildApproachTargets(chordTones, nextStructural);
+  const union = new Set<number>([...chordTones, ...scaleTones, ...approachTargets]);
+  const outsideTones: number[] = [];
+  for (let pc = 0; pc < 12; pc++) if (!union.has(pc)) outsideTones.push(pc);
+
+  return {
+    rootPc: chord.rootPc, bassPc: chord.bassPc, chordType: chord.type,
+    chordTones, colorTones, scaleTones, approachTargets, outsideTones,
+    priorityPcs: priorityPcsForOrthogonalContract(chord.type, chord.rootPc, chordTones),
+  };
 }
 
 // Build sets from an IV vocab definition. The vocab provides:

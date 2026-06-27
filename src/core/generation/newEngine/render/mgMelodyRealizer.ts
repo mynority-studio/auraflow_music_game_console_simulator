@@ -17,6 +17,7 @@ import type { ChordPart } from './mgChordPart';
 import { getCurrentChordAtBeat, getNextChordAtBeat } from './mgChordPart';
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
 import { buildPitchSets } from './mgPitchClassSets';
+import type { LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
 import { chooseNote, type ChoiceResult, type NoteChooserContext } from './mgNoteChooser';
 import { guideToneAtBeat, materializeGuideTone, type GuideTonePlan } from './mgGuideTonePlanner';
 
@@ -63,6 +64,9 @@ export interface LickGenArgs {
    *  Guide tones still bind explicit G tokens, but C/L/S/X inside the
    *  slope keep the grammar-authored contour. */
   preserveSlopeGrammar?: boolean;
+  /** ★ MG full-parity G2:本地音阶语境(style/key/mode)。给定 → 每个 buildPitchSets 走
+   *  orthogonal admission(候选池 = contract ∩ local scale);缺省 → 旧 vocab 路径(parity 测试不变)。 */
+  localScaleContext?: LocalScaleContext;
 }
 
 /** IV LickGen.java:1833-1861 avoidRepeats. When the new event has the
@@ -87,7 +91,7 @@ function pushOrMergeRepeat(events: NoteEvent[], ev: NoteEvent): void {
 }
 
 export function realizeTokens(args: LickGenArgs): NoteEvent[] {
-  const { scheduledTokens, chordPart, initialPrevMidi, registerCenter, rng, guideTonePlan, preserveSlopeGrammar } = args;
+  const { scheduledTokens, chordPart, initialPrevMidi, registerCenter, rng, guideTonePlan, preserveSlopeGrammar, localScaleContext } = args;
   const events: NoteEvent[] = [];
   let prevMidi: number | null = initialPrevMidi ?? null;
   let triadicState: NoteChooserContext['triadicState'] = undefined;
@@ -113,7 +117,7 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
     if (!chord) continue;  // beyond song end; drop
     const nextChord = getNextChordAtBeat(chordPart, startBeat);
 
-    const sets = buildPitchSets({ chord, nextChord });
+    const sets = buildPitchSets({ chord, nextChord, localScaleContext });
 
     // APPROACH + target as a locked pair per IV LickGen.java:2052+.
     // IV's APPROACH consumes the IMMEDIATELY-NEXT rhythm-string entry
@@ -134,7 +138,7 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
         const targetChord = getCurrentChordAtBeat(chordPart, targetEntry.startBeat);
         if (targetChord) {
           const targetNext = getNextChordAtBeat(chordPart, targetEntry.startBeat);
-          const targetSets = buildPitchSets({ chord: targetChord, nextChord: targetNext });
+          const targetSets = buildPitchSets({ chord: targetChord, nextChord: targetNext, localScaleContext });
           const targetChoice = chooseNoteWithGuideTone({
             token: targetEntry.token,
             chord: targetChord,

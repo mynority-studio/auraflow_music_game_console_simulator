@@ -31,6 +31,10 @@ export interface MgChordDef {
   localTonalCenterPc?: number;
   /** Explicit chord-scale override from the harmony layer. */
   forcedScale?: string;
+  // ★ MG full-parity G2/G3:roman / borrowed 标签(orthogonal local-scale 路由用;adapter 可填,parser 不读)。
+  roman?: string;
+  borrowedFrom?: string;
+  borrowedSource?: string;
 }
 
 export interface ChordBlock {
@@ -60,6 +64,10 @@ export interface ChordBlock {
   localKeyPc?: number;
   /** Explicit chord-scale override from the harmony layer. */
   forcedScale?: string;
+  // ★ MG full-parity G2/G3:roman / borrowed 标签(orthogonal local-scale 路由用;缺省 undefined → 退化到 type/global,invariant 仍立)。
+  roman?: string;
+  borrowedFrom?: string;
+  borrowedSource?: string;
 }
 
 export interface ChordPart {
@@ -93,6 +101,9 @@ export function buildChordPart(
       functionHint: c.effectiveFunc,
       localKeyPc: c.localTonalCenterPc,
       forcedScale: c.forcedScale,
+      roman: c.roman,
+      borrowedFrom: c.borrowedFrom,
+      borrowedSource: c.borrowedSource,
     });
     cursor += dur;
   }

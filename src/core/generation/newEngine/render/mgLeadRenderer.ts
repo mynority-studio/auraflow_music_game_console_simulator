@@ -88,6 +88,11 @@ export function renderMgMelody(
   }
   // ★ MG full-parity G4:ACG 走 cycle-cadence 调度(一条长句铺满和声 cycle,钢琴呼吸),非 brick-by-brick lick chain。
   const scheduled = style === 'ACG' ? scheduleAcgCycleCadencePhrases(perBrick, part) : scheduleBrickExpansions(perBrick);
+  // ★ MG full-parity G2(穿透能力已就位,生产【暂未激活】):本地音阶语境(style/key/mode)可穿透 guide-tone +
+  //   token realization → 候选池走 orthogonal admission(结构音 = chord contract ∩ resolved local scale)。
+  //   ⚠️ 激活(下方传 localScaleContext)会改全风格 lead → 与 repeat-group comp 撞音消解有 1 音边界交互(POP seed3
+  //   verse2 comp 计数 off-by-1)待查。G3 builder + 穿透参数已落地+invariant 测;激活留作干净下一步(连带解 repeat-group)。
+  // const localScaleContext = { style, key: musicKey, mode: musicMode };
   const guideTonePlan = buildGuideTonePlan({ chordPart: part });
   let melody = realizeTokens({
     scheduledTokens: scheduled,

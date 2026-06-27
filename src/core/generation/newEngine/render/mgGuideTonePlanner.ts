@@ -13,6 +13,7 @@
 import { CHORD_TYPES, MELODY_RANGE } from '../knowledge/mgMusicTheory';
 import type { ChordPart, ChordBlock } from './mgChordPart';
 import { buildPitchSets, type ChordPitchSets } from './mgPitchClassSets';
+import type { LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
 
 const pcOf = (m: number) => ((m % 12) + 12) % 12;
 
@@ -36,6 +37,8 @@ export interface BuildGuideTonePlanArgs {
   registerCenter?: number;
   lowMidi?: number;
   highMidi?: number;
+  /** ★ MG full-parity G2:本地音阶语境 → guide-tone 用 orthogonal pitch sets(缺省=旧 vocab,parity 不变)。 */
+  localScaleContext?: LocalScaleContext;
 }
 
 /** Build one or two guide-tone anchors per chord block. Longer chords get
@@ -47,6 +50,7 @@ export function buildGuideTonePlan(args: BuildGuideTonePlanArgs): GuideTonePlan 
     registerCenter = 67,
     lowMidi = MELODY_RANGE.LOW,
     highMidi = Math.min(MELODY_RANGE.HIGH, 76),
+    localScaleContext,
   } = args;
 
   const points: GuideTonePoint[] = [];
@@ -57,7 +61,7 @@ export function buildGuideTonePlan(args: BuildGuideTonePlanArgs): GuideTonePlan 
   for (let i = 0; i < chordPart.blocks.length; i++) {
     const chord = chordPart.blocks[i];
     const nextChord = chordPart.blocks[i + 1] ?? null;
-    const sets = buildPitchSets({ chord, nextChord });
+    const sets = buildPitchSets({ chord, nextChord, localScaleContext });
     const guidePcs = guideTonePcs(sets);
     const segmentCount = chord.durationBeats >= 2 ? 2 : 1;
     const chordPoints: GuideTonePoint[] = [];
