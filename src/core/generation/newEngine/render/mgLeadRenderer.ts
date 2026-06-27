@@ -43,7 +43,9 @@ function toMgStyle(style: string): MgStyle {
 }
 
 function grammarForStyle(s: MgStyle) {
-  return s === 'LOFI' ? LOFI_ENRICHED_GRAMMAR
+  // ★ MG 升级 Phase 2c:ACG 复用 LOFI 旋律 grammar(忠实源 improvisorFunctionalGrammarForStyle('ACG')→LOFI)
+  //   —— 软、尊重约束、偏简单乐句形(无 bebop 跑动),贴电影钢琴 cantabile。
+  return s === 'LOFI' || s === 'ACG' ? LOFI_ENRICHED_GRAMMAR
     : s === 'POP' ? POP_ENRICHED_GRAMMAR
     : s === 'RNB' ? RNB_ENRICHED_GRAMMAR
     : ENRICHED_GRAMMAR;
@@ -90,7 +92,7 @@ export function renderMgMelody(
     chordPart: part,
     rng: mgRng,
     guideTonePlan,
-    preserveSlopeGrammar: style === 'LOFI',
+    preserveSlopeGrammar: style === 'LOFI' || style === 'ACG', // ★ Phase 2c:ACG 保留作者旋律斜率(忠实源,乐句内不乱跳)
   });
   // ★ 旋律 timing owner = MG StyleRenderer(单一所有权,Loop A 校正):lead 在此用 MG style feel 的 swing
   //   (jazz/blues 0.67 摆动;pop/rnb/lofi 0.5 直)。renderCoordinator 末尾的 applySwing【跳过 lead】(swing.ts:22),

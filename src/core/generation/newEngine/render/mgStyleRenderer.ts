@@ -161,6 +161,9 @@ export function feelForStyle(styleName: string): ImprovisorStyleFeel {
   if (s === 'BLUES') return { swingRatio: 0.67, articulation: 'bebop', accentPattern: [1.0, 0.9, 1.05, 0.9] };
   if (s === 'POP') return { swingRatio: 0.5, articulation: 'legato', accentPattern: [1.0, 0.9, 1.0, 0.9] };
   if (s === 'RNB') return { swingRatio: 0.5, articulation: 'legato', accentPattern: [1.0, 0.92, 1.0, 0.92] };
+  // ★ MG 升级 Phase 2c:ACG 电影钢琴 = 直拍(0.5)+ ballad 连奏 + 轻弱拍(cantabile)。
+  //   注:ACG 生产链的 lead swing 真源 = ACG GrooveContract.melodySwingRatio(见 1c 门控);此为无 contract 的兜底。
+  if (s === 'ACG') return { swingRatio: 0.5, articulation: 'ballad', accentPattern: [1.0, 0.9, 0.96, 0.88] };
   return {};  // straight 8th defaults
 }
 
