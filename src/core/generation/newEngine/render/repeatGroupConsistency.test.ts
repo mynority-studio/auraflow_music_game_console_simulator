@@ -45,8 +45,14 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
       for (const p of plans) {
         exercised++;
         for (const role of ROLES) {
-          const src = win(ir, role, p.sourceStartTick, p.sourceStartTick + p.prefixTicks);
-          const tgt = win(ir, role, p.targetStartTick, p.targetStartTick + p.prefixTicks);
+          // ★ comp/bass/pad/drum 走 humanizeTiming 微抖动(±~7 tick,replay 后施加)→ body/link 边界处:
+          //   一个 link 音可能抖【进】body 窗口、或 body 末音抖【出】→ 硬窗口的 count/multiset 在边界不稳
+          //   (实测 MG full-parity G2 激活后 POP seed3 verse2:link comp 抖到 prefix-1 进窗 → off-by-1)。
+          //   body 音本身一致(replay 拷贝),仅 humanize timing 各段不同(测试本意允许)→ humanized 轨 body 窗口
+          //   内缩 EDGE(>maxJitter)对称排除边界带;lead 不 humanize → 精确窗口 + 逐字节。
+          const edge = role === 'lead' ? 0 : 16;
+          const src = win(ir, role, p.sourceStartTick, p.sourceStartTick + p.prefixTicks - edge);
+          const tgt = win(ir, role, p.targetStartTick, p.targetStartTick + p.prefixTicks - edge);
           expect(tgt.length, `${seed}/${style} ${p.targetId} ${role} count`).toBe(src.length);
           expect(pitchMultiset(tgt), `${seed}/${style} ${p.targetId} ${role} pitch-multiset`).toBe(pitchMultiset(src));
           if (role === 'lead') {

@@ -92,14 +92,15 @@ export function renderMgMelody(
   //   token realization → 候选池走 orthogonal admission(结构音 = chord contract ∩ resolved local scale)。
   //   ⚠️ 激活(下方传 localScaleContext)会改全风格 lead → 与 repeat-group comp 撞音消解有 1 音边界交互(POP seed3
   //   verse2 comp 计数 off-by-1)待查。G3 builder + 穿透参数已落地+invariant 测;激活留作干净下一步(连带解 repeat-group)。
-  // const localScaleContext = { style, key: musicKey, mode: musicMode };
-  const guideTonePlan = buildGuideTonePlan({ chordPart: part });
+  const localScaleContext = { style, key: musicKey, mode: musicMode };
+  const guideTonePlan = buildGuideTonePlan({ chordPart: part, localScaleContext });
   let melody = realizeTokens({
     scheduledTokens: scheduled,
     chordPart: part,
     rng: mgRng,
     guideTonePlan,
     preserveSlopeGrammar: style === 'LOFI' || style === 'ACG', // ★ Phase 2c:ACG 保留作者旋律斜率(忠实源,乐句内不乱跳)
+    localScaleContext,
   });
   // ★ 旋律 timing owner = MG StyleRenderer(单一所有权,Loop A 校正):lead 在此用 MG style feel 的 swing
   //   (jazz/blues 0.67 摆动;pop/rnb/lofi 0.5 直)。renderCoordinator 末尾的 applySwing【跳过 lead】(swing.ts:22),
