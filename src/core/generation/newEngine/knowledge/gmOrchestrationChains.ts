@@ -110,6 +110,8 @@ export function chooseOrchestrationChain(style: string, rng: Rng, requested?: Ti
   if (s === 'lofi') return CHAIN_PROFILES.lofiTapeKeys;
   if (s === 'rnb') return CHAIN_PROFILES.electricKeys;
   if (s === 'modal') return CHAIN_PROFILES.modalAmbient;
+  // ★ 2026-06-28 ACG = MG 久石让/坂本【原声钢琴】世界:钢琴 comp/lead + 原声 bass(32/33/35,绝不合成贝斯)+ 弦 pad。
+  if (s === 'acg') return CHAIN_PROFILES.acousticPianoBand;
   if (s === 'pop') return rng.pick([CHAIN_PROFILES.acousticPianoBand, CHAIN_PROFILES.electricKeys, CHAIN_PROFILES.syntheticSoft]);
   return CHAIN_PROFILES.acousticPianoBand;
 }
@@ -122,6 +124,8 @@ export function deriveChainWorld(style: string, provisional: Partial<Record<Inst
   const bassSynth = provisional.bass !== undefined && timbreSource(provisional.bass) === 'synth';
   if (s === 'modal') return bassSynth ? 'syntheticSoft' : 'modalAmbient';
   if (s === 'rnb') return bassSynth ? 'syntheticSoft' : 'electricKeys';
+  // ★ 2026-06-28 ACG 恒原声钢琴世界(MG 久石让/坂本):钢琴 comp/lead + 原声 bass + 弦 pad;绝不合成贝斯。
+  if (s === 'acg') return 'acousticPianoBand';
   // pop / default:comp 原声 → acousticPianoBand;bass 合成 → syntheticSoft;否则电钢世界
   if (provisional.comp !== undefined && timbreSource(provisional.comp) === 'acoustic') return 'acousticPianoBand';
   if (bassSynth) return 'syntheticSoft';
