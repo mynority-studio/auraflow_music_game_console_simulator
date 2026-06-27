@@ -18,7 +18,7 @@ describe('pipeline contract · warning 不重跑', () => {
   });
 
   it('golden seeds 端到端不 failed,且产出 IR', () => {
-    const golden: [number, string][] = [[3, 'pop'], [3, 'rnb'], [3, 'lofi'], [3, 'jazz'], [7, 'pop'], [42, 'pop'], [77, 'jazz'], [64062, 'pop'], [633823, 'pop'], [633823, 'lofi']];
+    const golden: [number, string][] = [[3, 'pop'], [3, 'rnb'], [3, 'lofi'], [3, 'jazz'], [7, 'pop'], [42, 'pop'], [77, 'jazz'], [64062, 'pop'], [633823, 'pop'], [633823, 'lofi'], [361134, 'pop']];
     for (const [seed, styleHint] of golden) {
       const r = generateSong({ seed, styleHint, mood: 'build', targetDuration: 120, key: pc(0) });
       expect(r.status, `${seed}/${styleHint}`).not.toBe('failed');

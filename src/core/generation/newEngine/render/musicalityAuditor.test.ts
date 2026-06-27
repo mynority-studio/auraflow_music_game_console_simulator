@@ -79,7 +79,7 @@ describe('Loop H · 规则触发', () => {
 
 describe('Loop H · golden seeds 不触发音乐性 warning', () => {
   const MUS = ['transition-pickup-missing', 'section-downbeat-anchor-missing', 'song-start-abrupt', 'outro-harmonic-support-missing', 'comp-continuity-gap', 'lead-groove-desync'];
-  const golden: [number, string][] = [[3, 'pop'], [3, 'rnb'], [3, 'lofi'], [7, 'pop'], [42, 'pop'], [77, 'jazz'], [64062, 'pop'], [633823, 'pop'], [633823, 'lofi']];
+  const golden: [number, string][] = [[3, 'pop'], [3, 'rnb'], [3, 'lofi'], [7, 'pop'], [42, 'pop'], [77, 'jazz'], [64062, 'pop'], [633823, 'pop'], [633823, 'lofi'], [361134, 'pop']];
   for (const [seed, style] of golden) {
     it(`${seed}/${style}:无衔接/收尾/comp 音乐性 warning`, () => {
       const t = traceGeneration({ seed, styleHint: style, mood: 'build', targetDuration: 120 } as never);

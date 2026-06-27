@@ -41,6 +41,7 @@ export interface ResolvedLocalScale {
     | 'tonicization'
     | 'modal-interchange'
     | 'minor-dominant'
+    | 'jazz-chord-scale' // ★ MG full-parity G5:JAZZ 每和弦 chord-scale 路由
     | 'contract-fit'
     | 'chord-root'
     | 'global';
@@ -285,19 +286,90 @@ function resolved(name: string, rootPc: number, source: ResolvedLocalScale['sour
   };
 }
 
+// ★ MG full-parity G5(忠实 port 当前 ../melodygenerative localScaleResolver):
+//   RNB 普通 bar 留在歌的 pitch 框(五声/blues 色彩属 fill/run,不做 per-chord 结构 scale 框,免每 bar 像新调中心)。
+function rnbDefaultBarScale(ctx: LocalScaleContext, chord: LocalScaleChordLike, _type: string): ResolvedLocalScale | null {
+  if (ctx.style !== 'RNB') return null;
+  if (chord.roman.includes('/') || chord.borrowedSource || chord.borrowedFrom || chord.forcedScale) return null;
+  const keyRootPc = keyToPc(ctx.key);
+  const name = SCALE_TYPES[ctx.mode] ? ctx.mode : 'Ionian';
+  return resolved(name, keyRootPc, 'global');
+}
+
+// 确定性 tie-break(FNV-1a hash;同 MG 逐值一致)。
+function stableChoice<T>(items: T[], label: string): T {
+  let h = 2166136261;
+  for (let i = 0; i < label.length; i++) {
+    h ^= label.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return items[(h >>> 0) % items.length];
+}
+
+function jazzDominantScale(ctx: LocalScaleContext, chord: LocalScaleChordLike, type: string): string {
+  if (/alt/.test(type)) return 'Altered';
+  if (/#11/.test(type)) return 'Lydian Dominant';
+  if (/b13|#5/.test(type)) return 'Whole Tone';
+  if (/b9|#9/.test(type)) return 'Half-Whole Diminished';
+  if (/13/.test(type)) return 'Bebop Dominant';
+  if (/sus/.test(type)) return 'Mixolydian';
+  const func = chord.effectiveFunc ?? harmonicFunctionFromRomanLike(chord.roman);
+  if (func !== 'D') return stableChoice(['Mixolydian', 'Lydian Dominant'], `${ctx.key}|${ctx.mode}|${chord.roman}|${type}|${pcOf(chord.rootMidi)}`);
+  return stableChoice(
+    ['Mixolydian', 'Bebop Dominant', 'Lydian Dominant', 'Altered', 'Half-Whole Diminished'],
+    `${ctx.key}|${ctx.mode}|${chord.roman}|${type}|${pcOf(chord.rootMidi)}`,
+  );
+}
+
+function jazzChordScale(ctx: LocalScaleContext, chord: LocalScaleChordLike, type: string): ResolvedLocalScale | null {
+  if (ctx.style !== 'JAZZ') return null;
+  if (chord.forcedScale || chord.borrowedSource || chord.borrowedFrom) return null;
+  const chordRootPc = pcOf(chord.rootMidi);
+  const func = chord.effectiveFunc ?? harmonicFunctionFromRomanLike(chord.roman);
+  const head = romanHead(chord.roman);
+  if (domLike(type)) return resolved(jazzDominantScale(ctx, chord, type), chordRootPc, 'jazz-chord-scale');
+  if (type === 'm7b5' || type === 'm9b5' || type.includes('dim')) return resolved('Locrian', chordRootPc, 'jazz-chord-scale');
+  if (minorLike(type)) {
+    if (/mmaj|mMaj|minor-major/i.test(type)) return resolved('Melodic Minor', chordRootPc, 'jazz-chord-scale');
+    return resolved('Dorian', chordRootPc, 'jazz-chord-scale');
+  }
+  if (majorLike(type) || type.includes('maj')) {
+    if (/#11/.test(type) || func === 'S' || head === 'IV') return resolved('Lydian', chordRootPc, 'jazz-chord-scale');
+    if (type === '6' || type === '6/9') return resolved('Bebop Major', chordRootPc, 'jazz-chord-scale');
+    return resolved('Ionian', chordRootPc, 'jazz-chord-scale');
+  }
+  return null;
+}
+
 export function resolveLocalScale(ctx: LocalScaleContext, chord: LocalScaleChordLike): ResolvedLocalScale {
   const keyRootPc = keyToPc(ctx.key);
   const chordRootPc = pcOf(chord.rootMidi);
   const type = normalizeChordType(chord.type) ?? chord.type;
 
+  // ★ MG full-parity G5:逐步对齐当前 MG resolveLocalScale 的 10 步 cascade(顺序敏感)。
+  // 1. forced
   if (chord.forcedScale && SCALE_TYPES[chord.forcedScale]) {
     return resolved(chord.forcedScale, chordRootPc, 'forced');
   }
 
-  if (domLike(type) && /alt|#9|b9|#11|b13/.test(type)) {
-    return resolved(chordRootScaleName(ctx, { ...chord, type }), chordRootPc, 'altered-dominant');
+  // 2. minor-dominant —— 小调 home V(在 altered 之前:小调 V7(alt) → Harmonic Minor)
+  const modeFamily = modeToKeyFamily(ctx.mode);
+  const func = chord.effectiveFunc ?? harmonicFunctionFromRomanLike(chord.roman);
+  const head = romanHead(chord.roman);
+  const isHomeDominant = head === 'V' || head.startsWith('subV') || chord.borrowedSource === 'secondary_dominant';
+  if (modeFamily === 'minor' && func === 'D' && domLike(type) && isHomeDominant) {
+    return resolved('Harmonic Minor', keyRootPc, 'minor-dominant');
   }
 
+  // 3. altered-dominant(含 #5;JAZZ → jazzDominantScale,否则 chordRootScaleName)
+  if (domLike(type) && /alt|#9|b9|#11|b13|#5/.test(type)) {
+    const alteredName = ctx.style === 'JAZZ'
+      ? jazzDominantScale(ctx, { ...chord, type }, type)
+      : chordRootScaleName(ctx, { ...chord, type });
+    return resolved(alteredName, chordRootPc, 'altered-dominant');
+  }
+
+  // 4. tonicization
   const localTarget = chord.localTonalCenterPc;
   if (localTarget !== undefined && localTarget !== keyRootPc) {
     if (chord.roman.startsWith('subV')) {
@@ -313,6 +385,7 @@ export function resolveLocalScale(ctx: LocalScaleContext, chord: LocalScaleChord
     return resolved(name, pcOf(localTarget), 'tonicization');
   }
 
+  // 5. modal-interchange(modal_interchange / backdoor_dominant)
   const borrowedFrom = chord.borrowedFrom ?? '';
   if (chord.borrowedSource === 'modal_interchange' || chord.borrowedSource === 'backdoor_dominant') {
     if (/Dorian/i.test(borrowedFrom)) return resolved('Dorian', keyRootPc, 'modal-interchange');
@@ -326,14 +399,11 @@ export function resolveLocalScale(ctx: LocalScaleContext, chord: LocalScaleChord
     }
   }
 
-  const modeFamily = modeToKeyFamily(ctx.mode);
-  const func = chord.effectiveFunc ?? harmonicFunctionFromRomanLike(chord.roman);
-  const head = romanHead(chord.roman);
-  const isHomeDominant = head === 'V' || head.startsWith('subV') || chord.borrowedSource === 'secondary_dominant';
-  if (modeFamily === 'minor' && func === 'D' && domLike(type) && isHomeDominant) {
-    return resolved('Harmonic Minor', keyRootPc, 'minor-dominant');
-  }
+  // 6. RNB default bar scale(普通 bar 留歌 pitch 框)
+  const rnbBarScale = rnbDefaultBarScale(ctx, { ...chord, type }, type);
+  if (rnbBarScale) return rnbBarScale;
 
+  // 7. borrowedFrom fallback(无 borrowedSource 标签的 modal-interchange)
   if (borrowedFrom) {
     if (/Dorian/i.test(borrowedFrom)) return resolved('Dorian', keyRootPc, 'modal-interchange');
     if (borrowedImpliesPhrygianScale(chord, borrowedFrom)) return resolved('Phrygian', keyRootPc, 'modal-interchange');
@@ -341,6 +411,11 @@ export function resolveLocalScale(ctx: LocalScaleContext, chord: LocalScaleChord
     if (/parallel minor|Aeolian|i |iv|bVI|bVII/i.test(borrowedFrom)) return resolved('Aeolian', keyRootPc, 'modal-interchange');
   }
 
+  // 8. jazz chord-scale(JAZZ 每和弦 idiom)
+  const jazzScale = jazzChordScale(ctx, { ...chord, type }, type);
+  if (jazzScale) return jazzScale;
+
+  // 9. contract-fit / chord-root
   if (!chordContractFitsKeyMode(ctx, { ...chord, type })) {
     const contractFit = closestContractPreservingScale(ctx, { ...chord, type });
     if (contractFit) return contractFit;

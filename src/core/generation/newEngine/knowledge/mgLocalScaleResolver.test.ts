@@ -28,8 +28,10 @@ const GOLDEN: Golden[] = [
   // ⚠️ MG 活跃开发:melodyContractPcsForStyle 上游简化为 declaredChordPcs;contract 已 re-sync 到当前 MG。
   { label: 'LOFI ii Dm7', ctx: { style: 'LOFI', key: 'C', mode: 'major' }, chord: chord(50, 'm7', 'ii'),
     name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 2, 5, 9], runLen: 30 },
+  // ★ MG full-parity G5 rebaseline:JAZZ 属和弦走 jazzChordScale→jazzDominantScale(当前 MG ground truth:
+  //   G7 func D → stableChoice → Bebop Dominant / 根 7 / jazz-chord-scale)。旧 Ionian/global 是陈旧 old-port 值。
   { label: 'JAZZ V G7', ctx: { style: 'JAZZ', key: 'C', mode: 'major' }, chord: chord(55, '7', 'V'),
-    name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [2, 5, 7, 11], runLen: 30 },
+    name: 'Bebop Dominant', rootPc: 7, source: 'jazz-chord-scale', scalePcs: [0, 2, 4, 5, 6, 7, 9, 11], strict: true, contract: [2, 5, 7, 11], runLen: 34 },
   { label: 'RNB vi Am9', ctx: { style: 'RNB', key: 'C', mode: 'major' }, chord: chord(57, 'm9', 'vi'),
     name: 'Ionian', rootPc: 0, source: 'global', scalePcs: [0, 2, 4, 5, 7, 9, 11], strict: false, contract: [0, 4, 7, 9, 11], runLen: 30 },
 ];
