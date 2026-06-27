@@ -56,8 +56,11 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
           expect(tgt.length, `${seed}/${style} ${p.targetId} ${role} count`).toBe(src.length);
           expect(pitchMultiset(tgt), `${seed}/${style} ${p.targetId} ${role} pitch-multiset`).toBe(pitchMultiset(src));
           if (role === 'lead') {
-            // lead 不 humanize → 前缀逐字节一致(相对各自段起点)
-            expect(exact(tgt, p.targetStartTick), `${seed}/${style} ${p.targetId} lead exact`).toBe(exact(src, p.sourceStartTick));
+            // lead 不 humanize → 前缀逐字节一致(相对各自段起点)。
+            // ★ G7 后:body 末音的【时长】由 leadGapFill 延伸到下一音(落在【各段发散的 link】里)→ 各段不同;
+            //   末音 pitch/time 仍逐字节一致(replay 拷贝),仅 gap-fill 时长依赖 link → 排除末音再逐字节比对。
+            const dropTail = (ns: NoteIR[]) => [...ns].sort((a, b) => (a.startTick as number) - (b.startTick as number)).slice(0, -1);
+            expect(exact(dropTail(tgt), p.targetStartTick), `${seed}/${style} ${p.targetId} lead exact`).toBe(exact(dropTail(src), p.sourceStartTick));
           }
         }
       }

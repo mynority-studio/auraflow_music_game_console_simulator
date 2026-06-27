@@ -45,6 +45,7 @@ export interface GrammarRule {
   metadata?: {
     sourceRuleId?: string;
     sourceBrickType?: string;
+    authoredDurationBeats?: number; // ★ MG full-parity G7:slope rule 作者标注时长(SlopeAdapter 用)
     lofiTags?: string[];
     styleTags?: string[];
   };

@@ -1,9 +1,3 @@
-// ============================================================
-// newEngine · knowledge · MelodySlopeAdapter(MG strict 移植:slope 语料)
-// Provenance: ../melodygenerative/src/lib/improvisor/SlopeAdapter.ts 忠实港(cp + 改 import)。
-// IMPROVISOR_SLOPES → GrammarRule[](per-style:jazz/lofi/pop/rnb/softParallel)。KB 合规:纯转换。
-// ============================================================
-
 // SlopeAdapter.ts — Convert imported IV slope rules (improvisorSlopes.ts) into
 // GrammarRule[] consumable by GrammarRuntime.
 //
@@ -18,15 +12,9 @@
 //   G → G (goal — chord 3 + 7 guide tones)
 //   B → B (bass — chord root)
 //
-// brickType → BrickFamily mapping:
-//   *Cadence* → Cadence
-//   Dominant* (non-cadence) → GenDom
-//   *Approach* → GenDom
-//   Q-fragment / POT → Major-On + Minor-On + Unknown (generic fill)
-//   *Launcher / Dropback / Turnaround → Turnaround
-//   *Blues* → Blues
-//   *Color / Borrowed* → Borrowed
-//   otherwise → Unknown
+// brickType → BrickFamily mapping follows IV's broad brick roles, with
+// named jazz turnarounds/cadences routed before generic dominant/color
+// tests so imported rules fire in the same harmonic neighborhood.
 //
 // Token duration matching: each slope rule has an authored total duration
 // (sum of token d's). Rule fires only when brick.durationBeats is roughly
@@ -47,6 +35,43 @@ export interface SlopeRuleConversionOptions {
 
 function isBebopSourceRule(rule: ImprovisorSlopeRule): boolean {
   return /CharlieParker/i.test(rule.source) || /CharlieParker/i.test(rule.id);
+}
+
+function isJazzSpecialSourceRule(rule: ImprovisorSlopeRule): boolean {
+  return /(CharlieParker|JohnColtrane)/i.test(rule.source)
+    || /(CharlieParker|JohnColtrane)/i.test(rule.id);
+}
+
+function isJazzOnlyBrickType(brickType: string): boolean {
+  return /(Giant|Donna|Yardbird|Dominant-Cycle|Rhythm-Bridge|SPOT|Tension|Supertension|Side-Slips|Dizzy|Dogleg|Stablemates|Starlight|Bauble|Nowhere)/i
+    .test(brickType);
+}
+
+function isDenseJazzRunRule(rule: ImprovisorSlopeRule): boolean {
+  const features = extractLofiSlopeFeatures(rule);
+  const audibleDensity = features.audibleDuration > 0
+    ? features.audibleTokenCount / features.audibleDuration
+    : features.audibleTokenCount;
+  const hasTripletOrSubSixteenth = features.shortestDuration > 0 && features.shortestDuration < 0.25;
+  const longUnbrokenSixteenthRun = features.maxConsecutiveShortAudibleCount > 4;
+  const denseChromaticRun = features.chromaticTokenCount >= 3 && audibleDensity >= 2.0;
+  const denseNoLandingRun = audibleDensity > 2.45 && features.longToneCount === 0;
+  const denseJazzNamedBrick = isJazzOnlyBrickType(rule.brickType) && audibleDensity > 1.75;
+  return hasTripletOrSubSixteenth
+    || longUnbrokenSixteenthRun
+    || denseChromaticRun
+    || denseNoLandingRun
+    || denseJazzNamedBrick;
+}
+
+function hasAudibleBody(rule: ImprovisorSlopeRule): boolean {
+  if (rule.bodyKind === 'slope') {
+    return rule.slopes.some(group => group.notes.some(note => note.type !== 'R' && note.type !== 'N'));
+  }
+  return rule.flatTokens.some(token =>
+    token.kind === 'scaleDegree'
+    || (token.kind === 'abstract' && token.type !== 'R' && token.type !== 'N')
+  );
 }
 
 function slopeNoteToToken(note: SlopeNote): AbstractMelodyToken {
@@ -80,22 +105,25 @@ function flatTokenToToken(ft: FlatToken): AbstractMelodyToken {
 }
 
 function brickTypeToFamilies(brickType: string): BrickFamily[] {
-  // Most specific first
-  if (/Cadence/i.test(brickType)) return ['Cadence'];
-  if (/Blues/i.test(brickType)) return ['Blues'];
-  if (/Color|Borrowed/i.test(brickType)) return ['Borrowed'];
-  if (/Dominant/i.test(brickType)) return ['GenDom'];
-  if (/Approach/i.test(brickType)) return ['GenDom'];
-  // G1-1: Dropback now its own family (was bundled with Turnaround)
-  if (/Dropback/i.test(brickType)) return ['Dropback'];
-  // G1-2: Launcher (ii-V indicating motion) distinct from Turnaround
-  if (/Launcher/i.test(brickType)) return ['Launcher'];
-  if (/Turnaround/i.test(brickType)) return ['Turnaround'];
-  // Generic interior fill rules
-  if (brickType === 'Q-fragment' || brickType === 'POT') {
-    return ['Major-On', 'Minor-On', 'Borrowed', 'Unknown'];
+  const name = brickType.trim();
+  if (/^Major-On$/i.test(name)) return ['Major-On'];
+  if (/^Minor-On$/i.test(name)) return ['Minor-On'];
+  if (/Blues/i.test(name)) return ['Blues'];
+  if (
+    /Cadence|Ending|Amen|Plagal/i.test(name)
+    || /^Giant-Steps$/i.test(name)
+    || /^IV-n-Back$/i.test(name)
+    || /\+On$/i.test(name)
+  ) return ['Cadence'];
+  if (/Launcher/i.test(name)) return ['Launcher'];
+  if (/Dropback|Pullback/i.test(name)) return ['Dropback'];
+  if (/Turnaround|On-Off|Off-On|(?:^|-)SPOT(?:$|-)|(?:^|-)POT(?:$|-)/i.test(name)) return ['Turnaround'];
+  if (/Side-Slip|Side-Slips/i.test(name)) return ['GenDom', 'Borrowed'];
+  if (/Dominant|Approach|Cycle|GenDom|SuperGenDom|Tension/i.test(name)) return ['GenDom'];
+  if (/Surge|Color|Borrowed|CESH|Chromatic|Misc/i.test(name)) return ['Borrowed'];
+  if (name === 'Q-fragment') {
+    return ['Major-On', 'Minor-On', 'Borrowed'];
   }
-  // Fallback — anything else is "Unknown" filler
   return ['Unknown'];
 }
 
@@ -150,6 +178,7 @@ export function slopeRuleToGrammarRule(ivRule: ImprovisorSlopeRule, options: Slo
     metadata: {
       sourceRuleId: ivRule.id,
       sourceBrickType: ivRule.brickType,
+      authoredDurationBeats: totalDur,
       ...(lofiTags ? { lofiTags } : {}),
       ...(options.styleTags ? { styleTags: options.styleTags } : {}),
     },
@@ -169,16 +198,23 @@ export function slopeRuleToGrammarRule(ivRule: ImprovisorSlopeRule, options: Slo
 
 /** Build the full slope-rule grammar from all imported IV slope rules. */
 export function slopeRulesToGrammarRules(options: SlopeRuleConversionOptions = {}): GrammarRule[] {
-  return IMPROVISOR_SLOPES.map(rule => slopeRuleToGrammarRule(rule, options));
+  return IMPROVISOR_SLOPES
+    .filter(hasAudibleBody)
+    .map(rule => slopeRuleToGrammarRule(rule, options));
 }
 
 function lofiStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
-  if (isBebopSourceRule(rule)) return false;
+  if (!hasAudibleBody(rule)) return false;
+  if (isJazzSpecialSourceRule(rule)) return false;
+  if (isJazzOnlyBrickType(rule.brickType)) return false;
   const tags = tagImprovisorSlopeRule(rule);
   if (tags.includes('lofi_star_crawl')) return true;
+  if (isDenseJazzRunRule(rule)) return false;
   if (tags.includes('lofi_avoid_busy') || tags.includes('lofi_avoid_large_leap')) return false;
 
   const features = extractLofiSlopeFeatures(rule);
+  if (features.shortestDuration <= 0.25 && features.maxConsecutiveShortAudibleCount >= 4) return false;
+  if (rule.brickType === 'Q-fragment' && features.shortestDuration <= 0.25) return false;
   const audibleDensity = features.audibleDuration > 0
     ? features.audibleTokenCount / features.audibleDuration
     : features.tokenCount;
@@ -223,8 +259,9 @@ function isSoftParallelFavoriteCrawlRule(rule: ImprovisorSlopeRule): boolean {
 }
 
 /** Cross-style favorite: short crawl into long color/chord-tone holds.
- *  This is the soft-parallel rule shape behind the `lofi_uhloiw`
- *  bar 5-6 line; useful beyond LOFI whenever a vi-ii-V-I brick appears. */
+ *  This is an imported Impro-Visor `Surprise-Major-Cadence` slope. Keep
+ *  it in 2-5-1 cadence territory; do not promote it onto locally-created
+ *  longer cycle bricks. */
 export function softParallelFavoriteSlopeRulesToGrammarRules(boost = 256): GrammarRule[] {
   return IMPROVISOR_SLOPES
     .filter(isSoftParallelFavoriteCrawlRule)
@@ -233,10 +270,6 @@ export function softParallelFavoriteSlopeRulesToGrammarRules(boost = 256): Gramm
       return {
         ...grammarRule,
         weight: grammarRule.weight * boost,
-        conditions: {
-          ...grammarRule.conditions,
-          brickName: ['vi-ii-V-I'],
-        },
       };
     });
 }
@@ -245,7 +278,10 @@ export function softParallelFavoriteSlopeRulesToGrammarRules(boost = 256): Gramm
 export const lofiFavoriteSlopeRulesToGrammarRules = softParallelFavoriteSlopeRulesToGrammarRules;
 
 function popStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
-  if (isBebopSourceRule(rule)) return false;
+  if (!hasAudibleBody(rule)) return false;
+  if (isJazzSpecialSourceRule(rule)) return false;
+  if (isJazzOnlyBrickType(rule.brickType)) return false;
+  if (isDenseJazzRunRule(rule)) return false;
   if (rule.bodyKind !== 'slope') return false;
   const notes = rule.slopes.flatMap(group => group.notes);
   if (notes.length === 0) return false;
@@ -265,6 +301,7 @@ function popStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
 
   const totalDuration = notes.reduce((sum, note) => sum + note.d, 0);
   const audibleNotes = notes.filter(note => note.type !== 'R' && note.type !== 'N');
+  if (audibleNotes.length === 0) return false;
   const audibleDensity = audibleNotes.length / Math.max(1, totalDuration);
   return audibleDensity <= 2.05;
 }
@@ -311,7 +348,10 @@ export function popStableSlopeRulesToGrammarRules(): GrammarRule[] {
 }
 
 function rnbSoulSlopeRule(rule: ImprovisorSlopeRule): boolean {
-  if (isBebopSourceRule(rule)) return false;
+  if (!hasAudibleBody(rule)) return false;
+  if (isJazzSpecialSourceRule(rule)) return false;
+  if (isJazzOnlyBrickType(rule.brickType)) return false;
+  if (isDenseJazzRunRule(rule)) return false;
   if (rule.bodyKind !== 'slope') return false;
   const features = extractLofiSlopeFeatures(rule);
   if (features.shortestDuration > 0 && features.shortestDuration < 0.25) return false;
@@ -384,11 +424,13 @@ function jazzSlopeWeightMultiplier(rule: ImprovisorSlopeRule): number {
  *  including bebop-specific sources. The multiplier nudges those rules
  *  toward functional dominant/cadence contexts without hiding others. */
 export function jazzSlopeRulesToGrammarRules(): GrammarRule[] {
-  return IMPROVISOR_SLOPES.map(rule => slopeRuleToGrammarRule(rule, {
-    includeLofiMetadata: false,
-    styleTags: jazzSlopeTags(rule),
-    weightMultiplier: jazzSlopeWeightMultiplier(rule),
-  }));
+  return IMPROVISOR_SLOPES
+    .filter(hasAudibleBody)
+    .map(rule => slopeRuleToGrammarRule(rule, {
+      includeLofiMetadata: false,
+      styleTags: jazzSlopeTags(rule),
+      weightMultiplier: jazzSlopeWeightMultiplier(rule),
+    }));
 }
 
 /** Diagnostic — count slope rules per target family. */

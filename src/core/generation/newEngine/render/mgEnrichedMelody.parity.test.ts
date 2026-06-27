@@ -76,11 +76,13 @@ function enrichedChain(fx: OracleFixture) {
 }
 
 describe('render/enriched · MG 移植 生产旋律全链 parity (slope corpus)', () => {
-  it('enriched 语法计数 = MG(ENRICHED 6100 / POP 1261 / LOFI 2065 / RNB 1920)', () => {
-    expect(ENRICHED_GRAMMAR_RULE_COUNT).toBe(6100);
-    expect(POP_ENRICHED_GRAMMAR_RULE_COUNT).toBe(1261);
-    expect(LOFI_ENRICHED_GRAMMAR_RULE_COUNT).toBe(2065);
-    expect(RNB_ENRICHED_GRAMMAR_RULE_COUNT).toBe(1920);
+  // ★ MG full-parity G7(2026-06-28):对齐当前 MG FunctionalGrammar(softParallel boost=4096·去 LOFI_VAMP)→
+  //   rule count = 当前 MG improvisorFunctionalGrammarRuleCountForStyle(JAZZ 5923 / POP 800 / LOFI 1223 / RNB 1177)。
+  it('enriched 语法计数 = 当前 MG(JAZZ 5923 / POP 800 / LOFI 1223 / RNB 1177)', () => {
+    expect(ENRICHED_GRAMMAR_RULE_COUNT).toBe(5923);
+    expect(POP_ENRICHED_GRAMMAR_RULE_COUNT).toBe(800);
+    expect(LOFI_ENRICHED_GRAMMAR_RULE_COUNT).toBe(1223);
+    expect(RNB_ENRICHED_GRAMMAR_RULE_COUNT).toBe(1177);
   });
 
   it('fixture 含 enriched 真源 + slope token 真的出现(slope-window 被覆盖)', () => {
@@ -92,41 +94,16 @@ describe('render/enriched · MG 移植 生产旋律全链 parity (slope corpus)'
     }
   });
 
-  // ★ MG full-parity Phase 3·D:enriched grammar(improvisorFunctionalGrammarForStyle)在【当前 MG】已与
-  //   simulator(stale,= 旧 MG)偏离(G7,待做)→ enriched oracle 仍钉在【旧 MG 契约】。Phase 3·D 给
-  //   realizeTokens 加了 brick 元数据 + sameBrick merge guard:
-  //   ① scheduledTokensEnriched:simulator 现带 3 个 brick 边界字段(brick meta 由 builtin scheduled 测验真),
-  //      此处剥离再对比 → 仍验【grammar+schedule】对旧 MG byte-parity。
-  //   ② styledMelodyEnriched:sameBrick guard 把跨-brick 同音合并拆开 → 下列 9 seed 的 styled 与【旧无-guard
-  //      oracle】偏离(= 旧 grammar token + 当前 guard 的 hybrid,不字节匹配任一单一 MG 版,待 G7 重港 enriched
-  //      grammar 后可刷新到当前 MG)→ 暂按 invariant 验收;其余 14 seed guard no-op,仍 strict byte-parity。
-  const stripBrick = (s: { scheduled: Array<{ token: unknown; startBeat: number }> }) =>
-    s.scheduled.map((e) => ({ token: e.token, startBeat: e.startBeat }));
-  const ENRICHED_GUARD_SPLIT = new Set([
-    'jazz_aa07', 'jazz_cc64', 'lofi_3xyhma', 'lofi_bb42', 'lofi_bneeok', 'lofi_cc88', 'lofi_dd19', 'lofi_er5a0r', 'rnb_bb58',
-  ]);
+  // ★ MG full-parity G7+Phase3·D:enriched grammar 已对齐当前 MG(SlopeAdapter 重港·softParallel 4096·去 LOFI_VAMP),
+  //   enriched oracle 已刷新到当前 MG(scheduledTokensEnriched 带 3 brick 边界字段·styledMelodyEnriched 反映 sameBrick
+  //   guard）→ 全 seed 回 strict byte-parity(含 brick meta)。
   for (const fx of fixtures) {
-    it(`★ ${fx.seed} [${fx.style}] enriched scheduled tokens 与 MG 精确一致(剥 brick meta)`, () => {
-      expect(stripBrick(enrichedChain(fx))).toEqual(fx.scheduledTokensEnriched);
+    it(`★ ${fx.seed} [${fx.style}] enriched scheduled tokens 与当前 MG 精确一致`, () => {
+      expect(enrichedChain(fx).scheduled).toEqual(fx.scheduledTokensEnriched);
     });
-    if (ENRICHED_GUARD_SPLIT.has(fx.seed)) {
-      it(`★ ${fx.seed} [${fx.style}] enriched 生产旋律 invariant(sameBrick guard 拆合并;exact 待 G7)`, () => {
-        const styled = enrichedChain(fx).styled;
-        expect(styled.length).toBeGreaterThan(0);
-        for (let i = 0; i < styled.length; i++) {
-          expect(styled[i].midi, `${fx.seed}[${i}] midi`).toBeGreaterThanOrEqual(24);
-          expect(styled[i].midi, `${fx.seed}[${i}] midi`).toBeLessThanOrEqual(108);
-          expect(styled[i].dur, `${fx.seed}[${i}] dur>0`).toBeGreaterThan(0);
-        }
-        // 注:不查严格时间升序 —— renderStyleFeel 的 swing 可让近同时音(Δ<0.01)微换序。
-        // 确定性才是关键不变量:
-        expect(enrichedChain(fx).styled).toEqual(styled);
-      });
-    } else {
-      it(`★ ${fx.seed} [${fx.style}] enriched 生产旋律与 MG 精确一致`, () => {
-        expect(enrichedChain(fx).styled).toEqual(fx.styledMelodyEnriched);
-      });
-    }
+    it(`★ ${fx.seed} [${fx.style}] enriched 生产旋律与当前 MG 精确一致`, () => {
+      expect(enrichedChain(fx).styled).toEqual(fx.styledMelodyEnriched);
+    });
   }
 
   it('确定性:同 fixture 两次 enriched 全链一致', () => {

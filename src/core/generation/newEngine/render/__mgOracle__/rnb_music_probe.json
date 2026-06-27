@@ -4126,782 +4126,30 @@
         "dirMax": 6,
         "duration": 0
       },
-      "startBeat": 0
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 0
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 0.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 0.5
+      "startBeat": 0,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 0.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 1
+      "startBeat": 0,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 1.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 3,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 1.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 1.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 2
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 2.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 2.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 2.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 3
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 4
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 7,
-        "dirMax": 9,
-        "duration": 0
-      },
-      "startBeat": 4
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.75
-      },
-      "startBeat": 4
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 4.75
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -3,
-        "duration": 0
-      },
-      "startBeat": 4.75
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.25
-      },
-      "startBeat": 4.75
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 3,
-        "dirMax": 3,
-        "duration": 0
-      },
-      "startBeat": 5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.75
-      },
-      "startBeat": 5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 5.75
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 5.75
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.25
-      },
-      "startBeat": 5.75
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 6
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -3,
-        "duration": 0
-      },
-      "startBeat": 6
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 6
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 7
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 8
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 8
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.25
-      },
-      "startBeat": 8
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 8.25
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 8.25
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 8.25
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 8.75
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 8.75
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.25
-      },
-      "startBeat": 8.75
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 9
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -3,
-        "duration": 0
-      },
-      "startBeat": 9
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 9
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 10
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 9,
-        "duration": 0
-      },
-      "startBeat": 10
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 2
-      },
-      "startBeat": 10
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 12
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 12
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 12
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 12.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 2,
-        "duration": 0
-      },
-      "startBeat": 12.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.25
-      },
-      "startBeat": 12.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 12.75
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 12.75
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.25
-      },
-      "startBeat": 12.75
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.5
-      },
-      "startBeat": 13
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 13.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 14.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 15
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 15.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 16
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 20
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 20
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 3.5
-      },
-      "startBeat": 20.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 24
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 24
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 24
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 24.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 3,
-        "duration": 0
-      },
-      "startBeat": 24.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 24.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 25
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 25.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -3,
-        "duration": 0
-      },
-      "startBeat": 25.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 25.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 26
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 5,
-        "dirMax": 5,
-        "duration": 0
-      },
-      "startBeat": 26
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 1
-      },
-      "startBeat": 26
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 27
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 27
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 27
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 27.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 28
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 28
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 28
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 29
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 29.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 3,
-        "dirMax": 5,
-        "duration": 0
-      },
-      "startBeat": 29.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 29.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 30
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 30.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 31
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 31.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 4
-      },
-      "startBeat": 32
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 2.5
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 38.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 39
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 2,
-        "duration": 0
-      },
-      "startBeat": 39
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 39
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 41
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 41.5
+      "startBeat": 0.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
@@ -4910,58 +4158,112 @@
         "dirMax": -1,
         "duration": 0
       },
-      "startBeat": 41.5
+      "startBeat": 0.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 41.5
+      "startBeat": 0.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 42
+      "startBeat": 1,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "C",
-        "duration": 1.5
+        "duration": 0.5
       },
-      "startBeat": 42.5
+      "startBeat": 1.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 44
+      "startBeat": 2,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
+        "dirMin": 1,
+        "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 44
+      "startBeat": 2,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 2,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 2.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "L",
-        "duration": 0.6666666666666666
+        "duration": 0.5
       },
-      "startBeat": 44
+      "startBeat": 3,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 3.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 44.666666666666664
+      "startBeat": 4,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
@@ -4970,70 +4272,382 @@
         "dirMax": -1,
         "duration": 0
       },
-      "startBeat": 44.666666666666664
+      "startBeat": 4,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
     },
     {
       "token": {
         "kind": "C",
-        "duration": 0.6666666666666666
+        "duration": 0.5
       },
-      "startBeat": 44.666666666666664
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 45.33333333333333
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 45.666666666666664
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.6666666666666666
-      },
-      "startBeat": 46
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.6666666666666666
-      },
-      "startBeat": 46.666666666666664
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 47.33333333333333
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 47.666666666666664
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.6666666666666666
-      },
-      "startBeat": 48
+      "startBeat": 4,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 48.666666666666664
+      "startBeat": 4.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 4.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 4.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 5.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 6,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 6.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 2,
+        "dirMax": 5,
+        "duration": 0
+      },
+      "startBeat": 6.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 6.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 7,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 7.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 8,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 8,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 8,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 8.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 8.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 8.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 9,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "X",
+        "duration": 0.5
+      },
+      "startBeat": 9.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 10,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 11,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 12,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 12,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 12,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 12.666666666666666,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 12.666666666666666,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 12.666666666666666,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 13.333333333333332,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 13.666666666666666,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 14,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 14.666666666666666,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 15.333333333333332,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 15.666666666666666,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 16,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 16.666666666666668,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5042,21 +4656,30 @@
         "dirMax": 9,
         "duration": 0
       },
-      "startBeat": 48.666666666666664
+      "startBeat": 16.666666666666668,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.6666666666666666
       },
-      "startBeat": 48.666666666666664
+      "startBeat": 16.666666666666668,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 49.33333333333333
+      "startBeat": 17.333333333333336,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5065,21 +4688,30 @@
         "dirMax": -2,
         "duration": 0
       },
-      "startBeat": 49.33333333333333
+      "startBeat": 17.333333333333336,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "A",
         "duration": 0.6666666666666666
       },
-      "startBeat": 49.33333333333333
+      "startBeat": 17.333333333333336,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 49.99999999999999
+      "startBeat": 18.000000000000004,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5088,21 +4720,30 @@
         "dirMax": 1,
         "duration": 0
       },
-      "startBeat": 49.99999999999999
+      "startBeat": 18.000000000000004,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.6666666666666666
       },
-      "startBeat": 49.99999999999999
+      "startBeat": 18.000000000000004,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 50.66666666666666
+      "startBeat": 18.66666666666667,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5111,21 +4752,30 @@
         "dirMax": -5,
         "duration": 0
       },
-      "startBeat": 50.66666666666666
+      "startBeat": 18.66666666666667,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.6666666666666666
       },
-      "startBeat": 50.66666666666666
+      "startBeat": 18.66666666666667,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 51.33333333333332
+      "startBeat": 19.33333333333334,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5134,21 +4784,30 @@
         "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 51.33333333333332
+      "startBeat": 19.33333333333334,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.3333333333333333
       },
-      "startBeat": 51.33333333333332
+      "startBeat": 19.33333333333334,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 51.66666666666666
+      "startBeat": 19.66666666666667,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5157,21 +4816,30 @@
         "dirMax": -2,
         "duration": 0
       },
-      "startBeat": 51.66666666666666
+      "startBeat": 19.66666666666667,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.3333333333333333
       },
-      "startBeat": 51.66666666666666
+      "startBeat": 19.66666666666667,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 51.99999999999999
+      "startBeat": 20.000000000000004,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
@@ -5180,104 +4848,168 @@
         "dirMax": 4,
         "duration": 0
       },
-      "startBeat": 51.99999999999999
+      "startBeat": 20.000000000000004,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 51.99999999999999
+      "startBeat": 20.000000000000004,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 20
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
+        "dirMin": 1,
+        "dirMax": 2,
         "duration": 0
       },
-      "startBeat": 52
+      "startBeat": 20,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 52
+      "startBeat": 20,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 52.5
+      "startBeat": 20.5,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": -4,
+        "dirMin": 2,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 20.5,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 20.5,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 3
+      },
+      "startBeat": 21,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 24,
+      "brickIndex": 4,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
         "dirMax": -1,
         "duration": 0
       },
-      "startBeat": 52.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 52.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 53
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 53.5
+      "startBeat": 24,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "C",
         "duration": 2
       },
-      "startBeat": 54
+      "startBeat": 24,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 56
+      "startBeat": 26,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
+        "dirMin": 3,
+        "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 56
+      "startBeat": 26,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 26,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "R",
-        "duration": 4
+        "duration": 1
       },
-      "startBeat": 56
+      "startBeat": 27,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 60
+      "startBeat": 28,
+      "brickIndex": 5,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
     },
     {
       "token": {
@@ -5286,51 +5018,430 @@
         "dirMax": 0,
         "duration": 0
       },
-      "startBeat": 60
+      "startBeat": 28,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 1
+        "kind": "X",
+        "duration": 0.5
       },
-      "startBeat": 60
+      "startBeat": 28,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 61
+      "startBeat": 28.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": -5,
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 28.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 28.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 29,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 29,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 29,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 29.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 30,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 30.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 30.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 30.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 31,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 31.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 2
+      },
+      "startBeat": 32,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 34,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -9,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 34,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1.5
+      },
+      "startBeat": 34,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 35.5,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 36,
+      "brickIndex": 6,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 36,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 2.5
+      },
+      "startBeat": 36,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 38.5,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 39,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 2,
+        "dirMax": 2,
+        "duration": 0
+      },
+      "startBeat": 39,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 39,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 40,
+      "brickIndex": 7,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 40,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 40,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 40.5,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 2,
+        "dirMax": 2,
+        "duration": 0
+      },
+      "startBeat": 40.5,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 40.5,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 41,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -4,
         "dirMax": -3,
         "duration": 0
       },
-      "startBeat": 61
+      "startBeat": 41,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 61
+      "startBeat": 41,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 1
+        "kind": "L",
+        "duration": 1.5
       },
-      "startBeat": 61.5
+      "startBeat": 41.5,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 62.5
+      "startBeat": 43,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 1,
+        "duration": 0
+      },
+      "startBeat": 43,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 43,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 44,
+      "brickIndex": 8,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
@@ -5339,21 +5450,292 @@
         "dirMax": 0,
         "duration": 0
       },
-      "startBeat": 62.5
+      "startBeat": 44,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "X",
         "duration": 0.5
       },
-      "startBeat": 62.5
+      "startBeat": 44,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 63
+      "startBeat": 44.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 44.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 44.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 45,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 45,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 45,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 45.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 46,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 46.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 46.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 46.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 47,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 47.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 2
+      },
+      "startBeat": 48,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 50,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -9,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 50,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1.5
+      },
+      "startBeat": 50,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 51.5,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 52,
+      "brickIndex": 9,
+      "brickStartBeat": 44,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 52,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 52,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 53,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 2,
+        "dirMax": 2,
+        "duration": 0
+      },
+      "startBeat": 53,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1.5
+      },
+      "startBeat": 53,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 54.5,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 55.5,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
@@ -5362,21 +5744,380 @@
         "dirMax": -2,
         "duration": 0
       },
-      "startBeat": 63
+      "startBeat": 55.5,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
-        "kind": "L",
-        "duration": 1
+        "kind": "C",
+        "duration": 0.5
       },
-      "startBeat": 63
+      "startBeat": 55.5,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 64
+      "startBeat": 56,
+      "brickIndex": 10,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 56,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 56,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 56.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 2,
+        "duration": 0
+      },
+      "startBeat": 56.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 56.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 57,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 57.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 57.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 57.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 58,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 58,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 58,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 58.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -4,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 58.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 58.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 59,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 59.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 1,
+        "duration": 0
+      },
+      "startBeat": 59.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "X",
+        "duration": 0.5
+      },
+      "startBeat": 59.5,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 60,
+      "brickIndex": 11,
+      "brickStartBeat": 56,
+      "brickEndBeat": 60
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 60,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 60,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 60.5,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 60.5,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 60.5,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 61,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 61,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1
+      },
+      "startBeat": 61,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 62,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 63,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 63,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 63,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 64,
+      "brickIndex": 12,
+      "brickStartBeat": 60,
+      "brickEndBeat": 64
     }
   ],
   "styledMelodyEnriched": [
@@ -5393,16 +6134,10 @@
       "vel": 100
     },
     {
-      "midi": 57,
+      "midi": 55,
       "time": 1,
-      "dur": 0.5,
+      "dur": 1,
       "vel": 92
-    },
-    {
-      "midi": 60,
-      "time": 1.5,
-      "dur": 0.5,
-      "vel": 100
     },
     {
       "midi": 67,
@@ -5411,148 +6146,220 @@
       "vel": 100
     },
     {
-      "midi": 63,
-      "time": 4,
-      "dur": 0.75,
-      "vel": 100
-    },
-    {
-      "midi": 60,
-      "time": 4.75,
-      "dur": 0.25,
-      "vel": 100
-    },
-    {
-      "midi": 63,
-      "time": 5,
-      "dur": 1,
+      "midi": 68,
+      "time": 3,
+      "dur": 0.5,
       "vel": 92
+    },
+    {
+      "midi": 70,
+      "time": 3.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 75,
+      "time": 4,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 73,
+      "time": 4.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 72,
+      "time": 5,
+      "dur": 0.5,
+      "vel": 92
+    },
+    {
+      "midi": 70,
+      "time": 5.5,
+      "dur": 0.5,
+      "vel": 100
     },
     {
       "midi": 68,
       "time": 6,
-      "dur": 1,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 67,
+      "midi": 72,
+      "time": 6.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 75,
+      "time": 7,
+      "dur": 0.5,
+      "vel": 92
+    },
+    {
+      "midi": 77,
+      "time": 7.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 79,
       "time": 8,
-      "dur": 0.25,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 65,
-      "time": 8.25,
-      "dur": 0.75,
-      "vel": 100
-    },
-    {
-      "midi": 67,
+      "midi": 77,
       "time": 9,
-      "dur": 1,
+      "dur": 0.5,
       "vel": 92
     },
     {
-      "midi": 65,
-      "time": 12,
+      "midi": 75,
+      "time": 9.5,
       "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 72,
+      "time": 10,
+      "dur": 2,
+      "vel": 100
+    },
+    {
+      "midi": 77,
+      "time": 12,
+      "dur": 1.3333333333333333,
+      "vel": 100
+    },
+    {
+      "midi": 75,
+      "time": 13.333333333333332,
+      "dur": 0.3333333333333333,
+      "vel": 100
+    },
+    {
+      "midi": 72,
+      "time": 13.666666666666666,
+      "dur": 0.3333333333333333,
+      "vel": 100
+    },
+    {
+      "midi": 71,
+      "time": 14,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 70,
+      "time": 14.666666666666666,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 68,
+      "time": 15.333333333333332,
+      "dur": 0.3333333333333333,
       "vel": 100
     },
     {
       "midi": 67,
-      "time": 12.5,
-      "dur": 0.25,
-      "vel": 100
-    },
-    {
-      "midi": 64,
-      "time": 12.75,
-      "dur": 0.25,
-      "vel": 100
-    },
-    {
-      "midi": 66,
-      "time": 13,
-      "dur": 0.5,
-      "vel": 92
-    },
-    {
-      "midi": 65,
-      "time": 13.5,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 62,
-      "time": 14.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 61,
-      "time": 15,
-      "dur": 0.5,
-      "vel": 92
-    },
-    {
-      "midi": 59,
-      "time": 15.5,
-      "dur": 0.5,
+      "time": 15.666666666666666,
+      "dur": 0.3333333333333333,
       "vel": 100
     },
     {
       "midi": 63,
+      "time": 16,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 70,
+      "time": 16.666666666666668,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 74,
+      "time": 17.333333333333336,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 18.000000000000004,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 74,
+      "time": 18.66666666666667,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 19.33333333333334,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 75,
+      "time": 20,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 77,
       "time": 20.5,
-      "dur": 3.5,
-      "vel": 100
-    },
-    {
-      "midi": 60,
-      "time": 24,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 62,
-      "time": 24.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 65,
-      "time": 25,
-      "dur": 0.5,
+      "midi": 75,
+      "time": 21,
+      "dur": 3,
       "vel": 92
     },
     {
-      "midi": 62,
-      "time": 25.5,
-      "dur": 0.5,
+      "midi": 72,
+      "time": 24,
+      "dur": 2,
       "vel": 100
     },
     {
-      "midi": 65,
+      "midi": 77,
       "time": 26,
       "dur": 1,
       "vel": 100
     },
     {
-      "midi": 62,
-      "time": 27,
-      "dur": 0.5,
-      "vel": 92
-    },
-    {
-      "midi": 60,
-      "time": 27.5,
+      "midi": 71,
+      "time": 28,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 59,
+      "midi": 75,
+      "time": 28.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 73,
       "time": 29,
       "dur": 0.5,
       "vel": 92
+    },
+    {
+      "midi": 71,
+      "time": 29.5,
+      "dur": 0.5,
+      "vel": 100
     },
     {
       "midi": 65,
@@ -5561,15 +6368,39 @@
       "vel": 100
     },
     {
-      "midi": 70,
+      "midi": 68,
+      "time": 30.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 69,
       "time": 31,
       "dur": 0.5,
       "vel": 92
     },
     {
+      "midi": 71,
+      "time": 31.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
       "midi": 75,
       "time": 32,
-      "dur": 4,
+      "dur": 2,
+      "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 34,
+      "dur": 1.5,
+      "vel": 100
+    },
+    {
+      "midi": 75,
+      "time": 35.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
@@ -5586,159 +6417,171 @@
     },
     {
       "midi": 79,
+      "time": 40,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 80,
+      "time": 40.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 75,
       "time": 41,
       "dur": 0.5,
       "vel": 92
     },
     {
-      "midi": 75,
+      "midi": 79,
       "time": 41.5,
-      "dur": 0.5,
+      "dur": 1.5,
       "vel": 100
     },
     {
-      "midi": 72,
-      "time": 42,
-      "dur": 2,
-      "vel": 100
+      "midi": 84,
+      "time": 43,
+      "dur": 1,
+      "vel": 92
     },
     {
       "midi": 77,
       "time": 44,
-      "dur": 0.6666666666666666,
+      "dur": 0.5,
       "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 44.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 77,
+      "time": 45,
+      "dur": 0.5,
+      "vel": 92
     },
     {
       "midi": 75,
-      "time": 44.666666666666664,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 73,
-      "time": 45.33333333333333,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 72,
-      "time": 45.666666666666664,
-      "dur": 0.3333333333333333,
+      "time": 45.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 71,
       "time": 46,
-      "dur": 0.6666666666666666,
+      "dur": 1,
       "vel": 100
     },
     {
-      "midi": 70,
-      "time": 46.666666666666664,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 47.33333333333333,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 47.666666666666664,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 63,
-      "time": 48,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 70,
-      "time": 48.666666666666664,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 69,
-      "time": 49.33333333333333,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 49.99999999999999,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 62,
-      "time": 50.66666666666666,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 51.33333333333332,
-      "dur": 0.6666666666666666,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 52,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 64,
-      "time": 52.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 60,
-      "time": 53,
+      "midi": 73,
+      "time": 47,
       "dur": 0.5,
       "vel": 92
     },
     {
-      "midi": 59,
-      "time": 53.5,
+      "midi": 75,
+      "time": 47.5,
+      "dur": 2.5,
+      "vel": 100
+    },
+    {
+      "midi": 79,
+      "time": 50,
+      "dur": 1.5,
+      "vel": 100
+    },
+    {
+      "midi": 75,
+      "time": 51.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 62,
-      "time": 54,
-      "dur": 2,
+      "midi": 80,
+      "time": 52,
+      "dur": 1,
+      "vel": 100
+    },
+    {
+      "midi": 74,
+      "time": 54.5,
+      "dur": 1,
+      "vel": 100
+    },
+    {
+      "midi": 72,
+      "time": 55.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 67,
+      "time": 56,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 68,
+      "time": 56.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 70,
+      "time": 57,
+      "dur": 0.5,
+      "vel": 92
+    },
+    {
+      "midi": 67,
+      "time": 57.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 72,
+      "time": 58,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 68,
+      "time": 58.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 63,
+      "time": 59,
+      "dur": 0.5,
+      "vel": 92
+    },
+    {
+      "midi": 60,
+      "time": 59.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 65,
       "time": 60,
-      "dur": 1,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 63,
-      "time": 61,
+      "midi": 67,
+      "time": 60.5,
       "dur": 0.5,
-      "vel": 92
-    },
-    {
-      "midi": 65,
-      "time": 61.5,
-      "dur": 1.5,
       "vel": 100
     },
     {
       "midi": 71,
-      "time": 63,
-      "dur": 1,
-      "vel": 92
+      "time": 62,
+      "dur": 2,
+      "vel": 100
     }
   ],
   "shaper": {

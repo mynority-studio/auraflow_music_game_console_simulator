@@ -20,66 +20,19 @@
 // when their window fits.
 
 import { makeGrammar } from './melodyGrammarTypes';
-import type { GrammarRule } from './melodyGrammarTypes';
 import { BUILTIN_RULES } from './melodyBuiltinGrammar';
 import { jazzSlopeRulesToGrammarRules, lofiStableSlopeRulesToGrammarRules, popStableSlopeRulesToGrammarRules, rnbSoulSlopeRulesToGrammarRules, softParallelFavoriteSlopeRulesToGrammarRules } from './melodySlopeAdapter';
-
-const LOFI_VAMP_RULES: GrammarRule[] = [
-  {
-    lhs: 'Phrase',
-    weight: 96,
-    conditions: { brickFamily: ['Borrowed', 'Minor-On', 'Major-On'] },
-    rhs: ['LofiVampLine'],
-    metadata: { styleTags: ['lofi_pool', 'lofi_vamp_friendly', 'lofi_rest_space', 'lofi_color_hold'] },
-  },
-  {
-    lhs: 'LofiVampLine',
-    weight: 3,
-    rhs: [
-      { kind: 'C', duration: 1.0 },
-      { kind: 'R', duration: 0.5 },
-      { kind: 'L', duration: 0.5 },
-      { kind: 'C', duration: 1.5 },
-      { kind: 'R', duration: 0.5 },
-    ],
-    metadata: { styleTags: ['lofi_pool', 'lofi_vamp_friendly', 'lofi_rest_space'] },
-  },
-  {
-    lhs: 'LofiVampLine',
-    weight: 2,
-    rhs: [
-      { kind: 'C', duration: 1.0 },
-      { kind: 'L', duration: 0.5 },
-      { kind: 'C', duration: 0.5 },
-      { kind: 'R', duration: 0.5 },
-      { kind: 'L', duration: 1.0 },
-      { kind: 'R', duration: 0.5 },
-    ],
-    metadata: { styleTags: ['lofi_pool', 'lofi_vamp_friendly', 'lofi_color_hold'] },
-  },
-  {
-    lhs: 'LofiVampLine',
-    weight: 2,
-    rhs: [
-      { kind: 'R', duration: 0.5 },
-      { kind: 'C', duration: 0.5 },
-      { kind: 'L', duration: 0.5 },
-      { kind: 'C', duration: 0.5 },
-      { kind: 'L', duration: 1.5 },
-      { kind: 'R', duration: 0.5 },
-    ],
-    metadata: { styleTags: ['lofi_pool', 'lofi_vamp_friendly', 'lofi_rest_space', 'lofi_color_hold'] },
-  },
-];
 
 const JAZZ_SLOPE_RULES = jazzSlopeRulesToGrammarRules();
 const LOFI_SLOPE_RULES = lofiStableSlopeRulesToGrammarRules();
 const POP_SLOPE_RULES = popStableSlopeRulesToGrammarRules();
 const RNB_SLOPE_RULES = rnbSoulSlopeRulesToGrammarRules();
-const SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRules();
+// ★ MG full-parity G7(2026-06-28):对齐当前 MG FunctionalGrammar.ts —— softParallel boost=4096(原默认 256)、
+//   LOFI 不再注入 LOFI_VAMP_RULES(当前 MG LOFI_FUNCTIONAL_RULES = softParallel+BUILTIN+lofiStableSlope)。
+const SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRules(4096);
 const ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...JAZZ_SLOPE_RULES];
 const POP_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...POP_SLOPE_RULES];
-const LOFI_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...LOFI_VAMP_RULES, ...BUILTIN_RULES, ...LOFI_SLOPE_RULES];
+const LOFI_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...LOFI_SLOPE_RULES];
 const RNB_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...RNB_SLOPE_RULES];
 
 export const ENRICHED_GRAMMAR = makeGrammar(ALL_RULES, 'Phrase');

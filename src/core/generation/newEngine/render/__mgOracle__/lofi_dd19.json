@@ -3951,315 +3951,45 @@
   "scheduledTokensEnriched": [
     {
       "token": {
-        "kind": "R",
-        "duration": 0.5
+        "kind": "SlopeEnter",
+        "dirMin": 11,
+        "dirMax": 13,
+        "duration": 0
       },
-      "startBeat": 0
+      "startBeat": 0,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
-        "kind": "C",
-        "duration": 0.5
+        "kind": "R",
+        "duration": 2
       },
-      "startBeat": 0.5
+      "startBeat": 0,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 1
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 1.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 1.5
-      },
-      "startBeat": 2
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 3.5
-    },
-    {
-      "token": {
-        "kind": "X",
-        "degree": "1",
-        "duration": 1
-      },
-      "startBeat": 4
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 5
-    },
-    {
-      "token": {
-        "kind": "X",
-        "degree": "1",
-        "duration": 1
-      },
-      "startBeat": 6
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 7
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 8
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 8
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.5
-      },
-      "startBeat": 8.5
+      "startBeat": 2,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 9
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -9,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 9
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 9
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 9.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 10
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 5,
-        "dirMax": 5,
-        "duration": 0
-      },
-      "startBeat": 10
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 10
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 10.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 11
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 11
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 11
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.5
-      },
-      "startBeat": 11.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 12
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 4
-      },
-      "startBeat": 12
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 4
-      },
-      "startBeat": 16
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 20
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 20
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 20.333333333333332
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 2,
-        "duration": 0
-      },
-      "startBeat": 20.333333333333332
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 20.333333333333332
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 20.666666666666664
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 20.666666666666664
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 20.666666666666664
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 20.999999999999996
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 21.499999999999996
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 1,
-        "dirMax": 2,
-        "duration": 0
-      },
-      "startBeat": 21.499999999999996
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 21.499999999999996
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 21.999999999999996
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 22.499999999999996
+      "startBeat": 2.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
@@ -4268,21 +3998,770 @@
         "dirMax": -3,
         "duration": 0
       },
-      "startBeat": 22.499999999999996
+      "startBeat": 2.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 2.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 22.499999999999996
+      "startBeat": 3,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 3.5,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 22.999999999999996
+      "startBeat": 4,
+      "brickIndex": 0,
+      "brickStartBeat": 0,
+      "brickEndBeat": 4
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 4,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1.5
+      },
+      "startBeat": 4,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1.1666666666666667
+      },
+      "startBeat": 5.5,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 6.666666666666667,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -1,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 6.666666666666667,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 6.666666666666667,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 7.333333333333334,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 1,
+        "duration": 0
+      },
+      "startBeat": 7.333333333333334,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 7.333333333333334,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 8,
+      "brickIndex": 1,
+      "brickStartBeat": 4,
+      "brickEndBeat": 8
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 8,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 8,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 9,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 9,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 9,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 9.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 9.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 9.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 10,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 10,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 10,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 10.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 10.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 10.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 11.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 11.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 11.5,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 12,
+      "brickIndex": 2,
+      "brickStartBeat": 8,
+      "brickEndBeat": 12
+    },
+    {
+      "token": {
+        "kind": "X",
+        "degree": "#4",
+        "duration": 1.5
+      },
+      "startBeat": 12,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 16
+    },
+    {
+      "token": {
+        "kind": "X",
+        "degree": "#4",
+        "duration": 0.5
+      },
+      "startBeat": 13.5,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 16
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 2
+      },
+      "startBeat": 14,
+      "brickIndex": 3,
+      "brickStartBeat": 12,
+      "brickEndBeat": 16
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 6,
+        "dirMax": 8,
+        "duration": 0
+      },
+      "startBeat": 16,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 2.6666666666666665
+      },
+      "startBeat": 16,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 18.666666666666668,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 19.333333333333336,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 19.333333333333336,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 19.333333333333336,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 20.000000000000004,
+      "brickIndex": 4,
+      "brickStartBeat": 16,
+      "brickEndBeat": 20
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 2.6666666666666665
+      },
+      "startBeat": 20,
+      "brickIndex": 5,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "X",
+        "degree": "6",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 22.666666666666668,
+      "brickIndex": 5,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "X",
+        "degree": "5",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 23.333333333333336,
+      "brickIndex": 5,
+      "brickStartBeat": 20,
+      "brickEndBeat": 24
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 24,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 24,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 24.333333333333332,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -4,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 24.333333333333332,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 24.333333333333332,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "X",
+        "duration": 0.3333333333333333
+      },
+      "startBeat": 24.666666666666664,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 24.999999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 25.499999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 1,
+        "duration": 0
+      },
+      "startBeat": 25.499999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 25.499999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 25.999999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 26.499999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 26.499999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 26.499999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 26.999999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 27.999999999999996,
+      "brickIndex": 6,
+      "brickStartBeat": 24,
+      "brickEndBeat": 28
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 28,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "X",
+        "duration": 0.5
+      },
+      "startBeat": 28,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 28.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 3,
+        "dirMax": 3,
+        "duration": 0
+      },
+      "startBeat": 28.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 28.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 29,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 29,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 29,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 29.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 30,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 30.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
@@ -4291,100 +4770,60 @@
         "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 22.999999999999996
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 22.999999999999996
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 23.33333333333333
+      "startBeat": 30.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "C",
-        "duration": 0.3333333333333333
+        "duration": 0.5
       },
-      "startBeat": 23.66666666666666
+      "startBeat": 30.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 31,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 31.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 2
+      },
+      "startBeat": 32,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 23.999999999999993
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 24
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 25
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 25.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 26
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 1
-      },
-      "startBeat": 26.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 27.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 28
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 28
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 28.333333333333332
+      "startBeat": 34,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
@@ -4393,351 +4832,598 @@
         "dirMax": -1,
         "duration": 0
       },
-      "startBeat": 28.333333333333332
+      "startBeat": 34,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "C",
-        "duration": 0.3333333333333333
+        "duration": 1.5
       },
-      "startBeat": 28.333333333333332
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.3333333333333333
-      },
-      "startBeat": 28.666666666666664
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 28.999999999999996
+      "startBeat": 34,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 29.499999999999996
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 29.999999999999996
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 30.499999999999996
+      "startBeat": 35.5,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 30.999999999999996
+      "startBeat": 36,
+      "brickIndex": 7,
+      "brickStartBeat": 28,
+      "brickEndBeat": 36
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 5,
+        "dirMin": 0,
+        "dirMax": 0,
         "duration": 0
       },
-      "startBeat": 30.999999999999996
+      "startBeat": 36,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
     },
     {
       "token": {
-        "kind": "L",
+        "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 30.999999999999996
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 31.499999999999996
+      "startBeat": 36,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 31.999999999999996
+      "startBeat": 36.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -3,
+        "dirMin": 3,
+        "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 31.999999999999996
-    },
-    {
-      "token": {
-        "kind": "A",
-        "duration": 0.5
-      },
-      "startBeat": 31.999999999999996
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 1,
-        "dirMax": 5,
-        "duration": 0
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 32.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 33
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 33.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 34
+      "startBeat": 36.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 34.5
+      "startBeat": 36.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 35
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -3,
-        "duration": 0
-      },
-      "startBeat": 35
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 35
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 35.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 2,
-        "duration": 0
-      },
-      "startBeat": 35.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 35.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -3,
-        "dirMax": -1,
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -5,
-        "dirMax": -3,
-        "duration": 0
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 36
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 36.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -5,
-        "dirMax": -5,
-        "duration": 0
-      },
-      "startBeat": 36.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 36.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 37
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 4,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 37
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 37
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 37.5
+      "startBeat": 37,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
     },
     {
       "token": {
         "kind": "SlopeEnter",
         "dirMin": -4,
+        "dirMax": -3,
+        "duration": 0
+      },
+      "startBeat": 37,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 37,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 37.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 38,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 38.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 38.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 38.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 39,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 39.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -4,
+        "dirMax": -4,
+        "duration": 0
+      },
+      "startBeat": 39.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 39.5,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 40,
+      "brickIndex": 8,
+      "brickStartBeat": 36,
+      "brickEndBeat": 40
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 4,
+        "dirMax": 6,
+        "duration": 0
+      },
+      "startBeat": 40,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 40,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 40.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -3,
         "dirMax": -2,
         "duration": 0
       },
-      "startBeat": 37.5
+      "startBeat": 40.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 37.5
+      "startBeat": 40.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 38
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 38.5
+      "startBeat": 41,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 39
+      "startBeat": 41.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": 2,
-        "dirMax": 2,
+        "dirMin": 3,
+        "dirMax": 4,
         "duration": 0
       },
-      "startBeat": 39
+      "startBeat": 41.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
-        "kind": "C",
+        "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 39
+      "startBeat": 41.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 42,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 39.5
+      "startBeat": 42.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 42.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 42.5,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1
+      },
+      "startBeat": 43,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 44,
+      "brickIndex": 9,
+      "brickStartBeat": 40,
+      "brickEndBeat": 44
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 44,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 1
+      },
+      "startBeat": 44,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 45,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 45,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 45,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 45.5,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 45.5,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 45.5,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 46,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 1
+      },
+      "startBeat": 47,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 48,
+      "brickIndex": 10,
+      "brickStartBeat": 44,
+      "brickEndBeat": 48
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 2,
+        "duration": 0
+      },
+      "startBeat": 48,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 48,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 48.666666666666664,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 1,
+        "dirMax": 8,
+        "duration": 0
+      },
+      "startBeat": 48.666666666666664,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 48.666666666666664,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 49.33333333333333,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 49.99999999999999,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.6666666666666666
+      },
+      "startBeat": 50.66666666666666,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 51.33333333333332,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
     },
     {
       "token": {
@@ -4746,116 +5432,30 @@
         "dirMax": -5,
         "duration": 0
       },
-      "startBeat": 39.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 39.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 40
+      "startBeat": 51.33333333333332,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "C",
-        "duration": 1
+        "duration": 0.6666666666666666
       },
-      "startBeat": 40
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 41
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 41.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 42
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 1
-      },
-      "startBeat": 42.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 43.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 3,
-        "dirMax": 5,
-        "duration": 0
-      },
-      "startBeat": 44
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1.5
-      },
-      "startBeat": 44
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 2
-      },
-      "startBeat": 45.5
+      "startBeat": 51.33333333333332,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 47.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 47.5
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 47.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 48
+      "startBeat": 51.999999999999986,
+      "brickIndex": 11,
+      "brickStartBeat": 48,
+      "brickEndBeat": 52
     },
     {
       "token": {
@@ -4864,403 +5464,319 @@
         "dirMax": 0,
         "duration": 0
       },
-      "startBeat": 48
+      "startBeat": 52,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
         "kind": "C",
-        "duration": 0.5
+        "duration": 1
       },
-      "startBeat": 48
+      "startBeat": 52,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 48.5
+      "startBeat": 53,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
         "kind": "SlopeEnter",
-        "dirMin": -9,
-        "dirMax": -9,
+        "dirMin": 1,
+        "dirMax": 2,
         "duration": 0
       },
-      "startBeat": 48.5
+      "startBeat": 53,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 53,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 48.5
+      "startBeat": 53.5,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 1
+      },
+      "startBeat": 54,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 49
+      "startBeat": 55,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -2,
+        "duration": 0
+      },
+      "startBeat": 55,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 55,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "R",
+        "duration": 0.5
+      },
+      "startBeat": 55.5,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 56,
+      "brickIndex": 12,
+      "brickStartBeat": 52,
+      "brickEndBeat": 56
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": 0,
+        "dirMax": 0,
+        "duration": 0
+      },
+      "startBeat": 56,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 56,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 56.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeEnter",
+        "dirMin": -2,
+        "dirMax": -1,
+        "duration": 0
+      },
+      "startBeat": 56.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "A",
+        "duration": 0.5
+      },
+      "startBeat": 56.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 57,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "C",
+        "duration": 0.5
+      },
+      "startBeat": 57.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "L",
+        "duration": 0.5
+      },
+      "startBeat": 58,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
+    },
+    {
+      "token": {
+        "kind": "SlopeExit",
+        "duration": 0
+      },
+      "startBeat": 58.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "SlopeEnter",
         "dirMin": 2,
-        "dirMax": 5,
+        "dirMax": 3,
         "duration": 0
       },
-      "startBeat": 49
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 49
+      "startBeat": 58.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "L",
         "duration": 0.5
       },
-      "startBeat": 49.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 2
-      },
-      "startBeat": 50
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 52
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 52
+      "startBeat": 58.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 52
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 52.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -5,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 52.5
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 52.5
+      "startBeat": 59,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "C",
         "duration": 0.5
       },
-      "startBeat": 53
+      "startBeat": 59.5,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
     },
     {
       "token": {
         "kind": "SlopeExit",
         "duration": 0
       },
-      "startBeat": 53.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 3,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 53.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1.5
-      },
-      "startBeat": 53.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 55
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 56
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 0,
-        "dirMax": 0,
-        "duration": 0
-      },
-      "startBeat": 56
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 56
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 56.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 1,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 56.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 56.5
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 57
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 57.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 57.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 57.5
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 1
-      },
-      "startBeat": 58
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 59
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 4,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 59
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 1
-      },
-      "startBeat": 59
-    },
-    {
-      "token": {
-        "kind": "X",
-        "duration": 0.5
-      },
-      "startBeat": 60
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 60.5
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": -2,
-        "dirMax": -2,
-        "duration": 0
-      },
-      "startBeat": 60.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 60.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 61
-    },
-    {
-      "token": {
-        "kind": "SlopeEnter",
-        "dirMin": 1,
-        "dirMax": 4,
-        "duration": 0
-      },
-      "startBeat": 61
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 61
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 61.5
-    },
-    {
-      "token": {
-        "kind": "R",
-        "duration": 0.5
-      },
-      "startBeat": 62
-    },
-    {
-      "token": {
-        "kind": "C",
-        "duration": 0.5
-      },
-      "startBeat": 62.5
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 63
-    },
-    {
-      "token": {
-        "kind": "L",
-        "duration": 0.5
-      },
-      "startBeat": 63.5
-    },
-    {
-      "token": {
-        "kind": "SlopeExit",
-        "duration": 0
-      },
-      "startBeat": 64
+      "startBeat": 60,
+      "brickIndex": 13,
+      "brickStartBeat": 56,
+      "brickEndBeat": 64
     }
   ],
   "styledMelodyEnriched": [
     {
-      "midi": 62,
-      "time": 0.5,
+      "midi": 77,
+      "time": 2,
+      "dur": 0.5,
+      "vel": 95
+    },
+    {
+      "midi": 74,
+      "time": 2.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 69,
-      "time": 1,
+      "midi": 72,
+      "time": 3,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 60,
-      "time": 1.5,
+      "midi": 69,
+      "time": 3.5,
       "dur": 0.5,
       "vel": 100
     },
     {
+      "midi": 68,
+      "time": 5.5,
+      "dur": 1.1666666666666667,
+      "vel": 100
+    },
+    {
+      "midi": 67,
+      "time": 6.666666666666667,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 68,
+      "time": 7.333333333333334,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
       "midi": 70,
-      "time": 2,
-      "dur": 1.5,
-      "vel": 95
-    },
-    {
-      "midi": 72,
-      "time": 4,
+      "time": 8,
       "dur": 1,
-      "vel": 100,
-      "deg": "1"
-    },
-    {
-      "midi": 77,
-      "time": 6,
-      "dur": 1,
-      "vel": 95,
-      "deg": "1"
-    },
-    {
-      "midi": 73,
-      "time": 8.5,
-      "dur": 0.5,
       "vel": 100
     },
     {
@@ -5270,410 +5786,378 @@
       "vel": 85
     },
     {
-      "midi": 65,
+      "midi": 70,
       "time": 9.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 70,
+      "midi": 72,
       "time": 10,
       "dur": 0.5,
       "vel": 95
     },
     {
-      "midi": 74,
+      "midi": 70,
       "time": 10.5,
-      "dur": 0.5,
+      "dur": 1,
       "vel": 100
     },
     {
       "midi": 72,
-      "time": 11,
-      "dur": 0.5,
-      "vel": 85
-    },
-    {
-      "midi": 66,
       "time": 11.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 65,
-      "time": 20,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 20.333333333333332,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
       "midi": 67,
-      "time": 20.666666666666664,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 65,
-      "time": 20.999999999999996,
-      "dur": 0.5,
-      "vel": 85
-    },
-    {
-      "midi": 67,
-      "time": 21.499999999999996,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 21.999999999999996,
-      "dur": 0.5,
-      "vel": 95
-    },
-    {
-      "midi": 65,
-      "time": 22.499999999999996,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 68,
-      "time": 22.999999999999996,
-      "dur": 0.3333333333333333,
-      "vel": 85
-    },
-    {
-      "midi": 70,
-      "time": 23.33333333333333,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 72,
-      "time": 23.66666666666666,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 24,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 74,
-      "time": 25,
-      "dur": 0.5,
-      "vel": 85
-    },
-    {
-      "midi": 82,
-      "time": 25.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 84,
-      "time": 26.5,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 76,
-      "time": 28,
-      "dur": 0.3333333333333333,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 28.333333333333332,
-      "dur": 0.3333333333333333,
-      "vel": 100
+      "time": 12,
+      "dur": 1.5,
+      "vel": 100,
+      "deg": "#4"
     },
     {
       "midi": 62,
-      "time": 28.666666666666664,
+      "time": 13.5,
+      "dur": 0.5,
+      "vel": 100,
+      "deg": "#4"
+    },
+    {
+      "midi": 69,
+      "time": 18.666666666666668,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 67,
+      "time": 19.333333333333336,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 67,
+      "time": 22.666666666666668,
+      "dur": 0.6666666666666666,
+      "vel": 100,
+      "deg": "6"
+    },
+    {
+      "midi": 65,
+      "time": 23.333333333333336,
+      "dur": 0.6666666666666666,
+      "vel": 100,
+      "deg": "5"
+    },
+    {
+      "midi": 63,
+      "time": 24,
       "dur": 0.3333333333333333,
       "vel": 100
     },
     {
-      "midi": 56,
-      "time": 28.999999999999996,
+      "midi": 60,
+      "time": 24.333333333333332,
+      "dur": 0.3333333333333333,
+      "vel": 100
+    },
+    {
+      "midi": 68,
+      "time": 24.666666666666664,
+      "dur": 0.3333333333333333,
+      "vel": 100
+    },
+    {
+      "midi": 63,
+      "time": 24.999999999999996,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 55,
-      "time": 29.499999999999996,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 54,
-      "time": 29.999999999999996,
+      "midi": 65,
+      "time": 25.999999999999996,
       "dur": 0.5,
       "vel": 95
     },
     {
-      "midi": 53,
-      "time": 30.499999999999996,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 56,
-      "time": 30.999999999999996,
-      "dur": 0.5,
+      "midi": 62,
+      "time": 26.999999999999996,
+      "dur": 1,
       "vel": 85
     },
     {
-      "midi": 64,
-      "time": 31.499999999999996,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 66,
-      "time": 31.999999999999996,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 70,
-      "time": 32.5,
+      "midi": 69,
+      "time": 28,
       "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 72,
-      "time": 33,
-      "dur": 0.5,
-      "vel": 85
-    },
-    {
-      "midi": 74,
-      "time": 33.5,
+      "time": 28.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 79,
-      "time": 34,
+      "midi": 70,
+      "time": 29,
+      "dur": 0.5,
+      "vel": 85
+    },
+    {
+      "midi": 68,
+      "time": 29.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 67,
+      "time": 30,
       "dur": 0.5,
       "vel": 95
     },
     {
-      "midi": 81,
-      "time": 34.5,
+      "midi": 70,
+      "time": 30.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 79,
-      "time": 35,
+      "midi": 72,
+      "time": 31,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 81,
+      "midi": 75,
+      "time": 31.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 77,
+      "time": 32,
+      "dur": 2,
+      "vel": 100
+    },
+    {
+      "midi": 74,
+      "time": 34,
+      "dur": 1.5,
+      "vel": 95
+    },
+    {
+      "midi": 70,
       "time": 35.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 77,
+      "midi": 72,
       "time": 36,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 73,
+      "midi": 75,
       "time": 36.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 77,
+      "midi": 72,
       "time": 37,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 75,
+      "midi": 68,
       "time": 37.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 73,
+      "midi": 65,
       "time": 38,
       "dur": 0.5,
       "vel": 95
     },
     {
-      "midi": 68,
-      "time": 38.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 72,
+      "midi": 65,
       "time": 39,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 67,
+      "midi": 61,
       "time": 39.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 72,
+      "midi": 65,
       "time": 40,
-      "dur": 1,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 79,
+      "midi": 62,
+      "time": 40.5,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 59,
       "time": 41,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 74,
+      "midi": 62,
       "time": 41.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 74,
+      "midi": 65,
+      "time": 42,
+      "dur": 0.5,
+      "vel": 95
+    },
+    {
+      "midi": 62,
       "time": 42.5,
-      "dur": 1,
-      "vel": 100
-    },
-    {
-      "midi": 77,
-      "time": 45.5,
-      "dur": 2,
-      "vel": 100
-    },
-    {
-      "midi": 72,
-      "time": 47.5,
-      "dur": 1,
+      "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 63,
-      "time": 48.5,
-      "dur": 0.5,
+      "time": 44,
+      "dur": 1,
       "vel": 100
     },
     {
-      "midi": 67,
-      "time": 49,
+      "midi": 62,
+      "time": 45,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 69,
-      "time": 49.5,
-      "dur": 0.5,
+      "midi": 62,
+      "time": 46,
+      "dur": 1,
+      "vel": 95
+    },
+    {
+      "midi": 63,
+      "time": 48,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 64,
+      "time": 48.666666666666664,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 65,
+      "time": 49.33333333333333,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 72,
+      "time": 49.99999999999999,
+      "dur": 0.6666666666666666,
+      "vel": 95
+    },
+    {
+      "midi": 74,
+      "time": 50.66666666666666,
+      "dur": 0.6666666666666666,
+      "vel": 100
+    },
+    {
+      "midi": 70,
+      "time": 51.33333333333332,
+      "dur": 0.6666666666666666,
       "vel": 100
     },
     {
       "midi": 70,
       "time": 52,
-      "dur": 0.5,
+      "dur": 1,
       "vel": 100
     },
     {
       "midi": 72,
-      "time": 52.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 67,
       "time": 53,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 70,
+      "midi": 75,
       "time": 53.5,
-      "dur": 1.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 72,
+      "midi": 77,
+      "time": 54,
+      "dur": 1,
+      "vel": 95
+    },
+    {
+      "midi": 75,
       "time": 55,
-      "dur": 1.5,
+      "dur": 0.5,
       "vel": 85
     },
     {
       "midi": 75,
+      "time": 56,
+      "dur": 0.5,
+      "vel": 100
+    },
+    {
+      "midi": 73,
       "time": 56.5,
       "dur": 0.5,
       "vel": 100
     },
     {
-      "midi": 70,
+      "midi": 72,
       "time": 57,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 67,
+      "midi": 70,
       "time": 57.5,
-      "dur": 1.5,
+      "dur": 0.5,
       "vel": 100
     },
     {
       "midi": 68,
-      "time": 60,
+      "time": 58,
       "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 67,
-      "time": 60.5,
-      "dur": 0.5,
-      "vel": 100
+      "vel": 95
     },
     {
       "midi": 70,
-      "time": 61,
+      "time": 58.5,
       "dur": 0.5,
-      "vel": 85
+      "vel": 100
     },
     {
       "midi": 72,
-      "time": 61.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 75,
-      "time": 62.5,
-      "dur": 0.5,
-      "vel": 100
-    },
-    {
-      "midi": 79,
-      "time": 63,
+      "time": 59,
       "dur": 0.5,
       "vel": 85
     },
     {
-      "midi": 82,
-      "time": 63.5,
+      "midi": 75,
+      "time": 59.5,
       "dur": 0.5,
       "vel": 100
     }
