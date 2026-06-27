@@ -1547,3 +1547,1298 @@ export function applyLofiPhrygianBiiShadowMelody(
         const lateResolved = applyMelodicResolutionParadigm(style, shadowed, chords, starts, musicKey, musicMode, tonalCharacter);
         return consumeReturnLandings(tightenHarmonyDecorations(thinSlashBassMelodyDoubles(lateResolved)));
     }
+// ============================================================
+// ★ MG full-parity Phase C-2(2026-06-28):post-shaper 生产链 + boundary VL helper 港自当前 MG musicEngine.ts
+//   (3516-3762 helper · 5045-6078 4 主函数)。机械改写:X→X · private→function · songMeterContext.beatsPerMeasure→4。
+//   复用本模块已有 G9 helper(getHarmonicFunction/chordThirdPc/snapMidiToNearestPcSet/chooseLongResolutionTarget/…)。
+// ============================================================
+
+    function isBoundaryMetaphorDissonance(fromMidi: number, toMidi: number): boolean {
+        const ic = melodicIntervalClass(fromMidi, toMidi);
+        return ic === 1 || ic === 6;
+    }
+
+    function boundaryLeapLimit(style: StyleName): number {
+        if (style === 'JAZZ') return 10;
+        if (style === 'ACG') return 12;
+        if (style === 'RNB') return 7;
+        if (style === 'POP' || style === 'LOFI') return 8;
+        return 9;
+    }
+
+    function boundaryConnectorSegmentLimit(style: StyleName): number {
+        if (style === 'JAZZ') return 8;
+        if (style === 'ACG') return 9;
+        return 7;
+    }
+
+    function melodyBrickBoundaryInfos(events: NoteEvent[], songEnd: number): MelodyBrickBoundaryInfo[] {
+        const audibleMelody = events
+            .filter(event => event.part === 'melody' && event.duration > 0)
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        const melody = events
+            .filter(event => event.part === 'melody'
+                && event.duration > 0
+                && event.brickIndex !== undefined)
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        if (melody.length <= 1) return [];
+
+        const segments: Array<{ brickIndex: number; events: NoteEvent[] }> = [];
+        for (const event of melody) {
+            const brickIndex = event.brickIndex;
+            if (brickIndex === undefined) continue;
+            const last = segments[segments.length - 1];
+            if (!last || last.brickIndex !== brickIndex) {
+                segments.push({ brickIndex, events: [event] });
+            } else {
+                last.events.push(event);
+            }
+        }
+
+        const out: MelodyBrickBoundaryInfo[] = [];
+        for (let i = 1; i < segments.length; i++) {
+            const sourceEvents = segments[i - 1].events;
+            const targetEvents = segments[i].events;
+            const brickPrev = sourceEvents[sourceEvents.length - 1];
+            const next = targetEvents[0];
+            if (!brickPrev || !next) continue;
+            const boundary = next.time;
+            if (boundary <= 0.001 || boundary >= songEnd - 0.001) continue;
+            const sourceStart = sourceEvents[0]?.brickStartBeat
+                ?? sourceEvents[0]?.time
+                ?? Math.max(0, boundary - 4);
+            const prev = audibleMelody
+                .filter(event => event.time < boundary - 0.001
+                    && event.time >= Math.max(sourceStart, brickPrev.time) - 0.001)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0]
+                ?? brickPrev;
+            const sourceEnd = brickPrev.brickEndBeat ?? boundary;
+            const targetStart = next.brickStartBeat ?? next.time;
+            const lastTarget = targetEvents[targetEvents.length - 1];
+            const targetEnd = next.brickEndBeat
+                ?? (lastTarget ? lastTarget.time + lastTarget.duration : next.time + next.duration);
+            out.push({
+                boundary,
+                prev,
+                next,
+                sourceStart: Math.max(0, sourceStart),
+                sourceEnd: Math.max(sourceEnd, boundary),
+                targetStart,
+                targetEnd: Math.min(songEnd, Math.max(targetEnd, next.time + next.duration)),
+            });
+        }
+        return out;
+    }
+
+    function candidateMidisForPcNear(pc: number, idealMidi: number, radius = 18): number[] {
+        const normalizedPc = ((pc % 12) + 12) % 12;
+        const out: number[] = [];
+        for (let midi = MELODY_RANGE.LOW; midi <= MELODY_RANGE.HIGH; midi++) {
+            if (((midi % 12) + 12) % 12 !== normalizedPc) continue;
+            if (Math.abs(midi - idealMidi) > radius) continue;
+            out.push(midi);
+        }
+        return out.sort((a, b) => Math.abs(a - idealMidi) - Math.abs(b - idealMidi)).slice(0, 4);
+    }
+
+    function chooseBoundarySourceMidi(
+        originalMidi: number,
+        landingMidi: number,
+        legalSourcePcs: Set<number>,
+        style: StyleName,
+    ): number | null {
+        const maxSourceMove = style === 'JAZZ' ? 8 : style === 'ACG' ? 8 : 12;
+        const candidates = [...legalSourcePcs]
+            .flatMap(pc => candidateMidisForPcNear(pc, originalMidi, maxSourceMove))
+            .filter((midi, idx, arr) => arr.indexOf(midi) === idx);
+        let best: { midi: number; score: number } | null = null;
+        for (const midi of candidates) {
+            const sourceMove = Math.abs(midi - originalMidi);
+            if (sourceMove > maxSourceMove) continue;
+            const landingDistance = Math.abs(landingMidi - midi);
+            const ic = melodicIntervalClass(midi, landingMidi);
+            let score = sourceMove * 2 + landingDistance * 1.4;
+            score += Math.max(0, landingDistance - boundaryLeapLimit(style)) * 8;
+            if (landingDistance <= boundaryLeapLimit(style)) score -= 10;
+            if (ic === 6) score += 1000;
+            if (ic === 1) score += 500;
+            if (landingDistance <= 4 && ic !== 1 && ic !== 6) score -= 12;
+            if (midi === originalMidi && ic !== 1 && ic !== 6) score -= 3;
+            if (!best || score < best.score) best = { midi, score };
+        }
+        if (!best) return null;
+        return best.midi;
+    }
+
+    function chooseBoundaryLandingMidi(
+        originalLandingMidi: number,
+        sourceMidi: number,
+        legalLandingPcs: Set<number>,
+        style: StyleName,
+        targetChord?: ChordDef,
+        label: string = 'boundary-landing',
+    ): number | null {
+        const maxLandingMove = style === 'JAZZ' || style === 'ACG' ? 8 : 12;
+        const candidates = [...legalLandingPcs]
+            .flatMap(pc => candidateMidisForPcNear(pc, originalLandingMidi, maxLandingMove))
+            .filter((midi, idx, arr) => arr.indexOf(midi) === idx);
+        const targetThirdPc = targetChord ? chordThirdPc(targetChord) : null;
+        const targetSeventhPc = targetChord ? chordSeventhPc(targetChord) : null;
+        const guideTonePc = targetChord
+            ? styleGuideToneTargetPc(style, targetChord, sourceMidi, label)
+            : null;
+        const guideTonePcs = new Set([targetThirdPc, targetSeventhPc].filter((pc): pc is number => pc !== null));
+        let best: { midi: number; score: number } | null = null;
+        for (const midi of candidates) {
+            const landingMove = Math.abs(midi - originalLandingMidi);
+            if (landingMove > maxLandingMove) continue;
+            const sourceDistance = Math.abs(midi - sourceMidi);
+            const ic = melodicIntervalClass(sourceMidi, midi);
+            const midiPc = ((midi % 12) + 12) % 12;
+            let score = landingMove * 2.2 + sourceDistance * 1.4;
+            score += guideTonePreferenceScore(
+                style,
+                midiPc,
+                midi,
+                guideTonePc,
+                guideTonePcs,
+                originalLandingMidi,
+            );
+            score += Math.max(0, sourceDistance - boundaryLeapLimit(style)) * 8;
+            if (sourceDistance <= boundaryLeapLimit(style)) score -= 10;
+            if (ic === 6) score += 1000;
+            if (ic === 1) score += 500;
+            if (sourceDistance <= 4 && ic !== 1 && ic !== 6) score -= 12;
+            if (midi === originalLandingMidi && ic !== 1 && ic !== 6) score -= 3;
+            if (!best || score < best.score) best = { midi, score };
+        }
+        return best?.midi ?? null;
+    }
+
+    function chooseBoundaryVoiceLeadingConnectors(
+        sourceMidi: number,
+        landingMidi: number,
+        sourceLegalPcs: Set<number>,
+        landingLegalPcs: Set<number>,
+        style: StyleName,
+    ): number[] {
+        const direct = landingMidi - sourceMidi;
+        const directDistance = Math.abs(direct);
+        const leapLimit = boundaryLeapLimit(style);
+        const needsBridge = directDistance > leapLimit || isBoundaryMetaphorDissonance(sourceMidi, landingMidi);
+        if (!needsBridge || directDistance === 0 || sourceLegalPcs.size === 0) return [];
+
+        const segmentLimit = boundaryConnectorSegmentLimit(style);
+        const commonPcs = [...sourceLegalPcs].filter(pc => landingLegalPcs.has(pc));
+        const connectorPcs = [...new Set([...commonPcs, ...sourceLegalPcs])];
+        const pathLengths = directDistance > leapLimit + 4 ? [2, 1] : [1, 2];
+        const direction = Math.sign(direct);
+        let best: { path: number[]; score: number } | null = null;
+
+        const evaluatePath = (path: number[]): number | null => {
+            const seq = [sourceMidi, ...path, landingMidi];
+            let score = 0;
+            for (let i = 1; i < seq.length; i++) {
+                const prev = seq[i - 1];
+                const curr = seq[i];
+                const interval = curr - prev;
+                const distance = Math.abs(interval);
+                if (distance === 0 && i < seq.length - 1) return null;
+                if (distance > segmentLimit) return null;
+                if (melodicIntervalClass(prev, curr) === 6) return null;
+                if (melodicIntervalClass(prev, curr) === 1 && i === seq.length - 1) return null;
+                if (directDistance > leapLimit && Math.sign(interval) !== direction) score += 18;
+                if (distance >= directDistance && directDistance > leapLimit) return null;
+                score += distance * (i === seq.length - 1 ? 2.2 : 1.5);
+                if (distance <= 2) score -= 6;
+                if (distance <= 4) score -= 2;
+                if (melodicIntervalClass(prev, curr) === 1) score += 14;
+            }
+            for (const midi of path) {
+                const pc = ((midi % 12) + 12) % 12;
+                if (landingLegalPcs.has(pc)) score -= 12;
+                if (commonPcs.includes(pc)) score -= 10;
+            }
+            const lastToLanding = Math.abs(landingMidi - path[path.length - 1]);
+            if (lastToLanding <= 2) score -= 10;
+            return score;
+        };
+
+        for (const pathLength of pathLengths) {
+            const positions: number[][] = [];
+            for (let i = 0; i < pathLength; i++) {
+                const ideal = sourceMidi + (direct * (i + 1)) / (pathLength + 1);
+                const candidates = connectorPcs
+                    .flatMap(pc => candidateMidisForPcNear(pc, ideal))
+                    .filter((midi, idx, arr) => arr.indexOf(midi) === idx)
+                    .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal))
+                    .slice(0, 14);
+                if (candidates.length === 0) {
+                    positions.length = 0;
+                    break;
+                }
+                positions.push(candidates);
+            }
+            if (positions.length !== pathLength) continue;
+
+            const visit = (idx: number, path: number[]) => {
+                if (idx === positions.length) {
+                    const score = evaluatePath(path);
+                    if (score === null) return;
+                    if (!best || score < best.score) best = { path: [...path], score };
+                    return;
+                }
+                for (const midi of positions[idx]) {
+                    if (path.includes(midi)) continue;
+                    visit(idx + 1, [...path, midi]);
+                }
+            };
+            visit(0, []);
+        }
+
+        return best?.path ?? [];
+    }
+
+
+interface MelodyBrickBoundaryInfo {
+  boundary: number;
+  prev: NoteEvent;
+  next: NoteEvent;
+  sourceStart: number;
+  sourceEnd: number;
+  targetStart: number;
+  targetEnd: number;
+}
+    export function enforceMonophonicMelody(melody: NoteEvent[]): NoteEvent[] {
+        const sorted = melody
+            .filter(event => event.part === 'melody')
+            .map(event => ({ ...event }))
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        const out: NoteEvent[] = [];
+        const eventPriority = (event: NoteEvent) =>
+            (event.origin === 'return' ? 4 : 0)
+            + Math.min(2, event.duration)
+            + event.velocity / 127;
+
+        for (const event of sorted) {
+            if (event.duration <= 0) continue;
+            const last = out[out.length - 1];
+            if (!last) {
+                out.push(event);
+                continue;
+            }
+
+            if (Math.abs(event.time - last.time) < 0.001) {
+                if (eventPriority(event) >= eventPriority(last)) {
+                    out[out.length - 1] = event;
+                }
+                continue;
+            }
+
+            const lastEnd = last.time + last.duration;
+            if (event.time < lastEnd - 0.001) {
+                const clipped = event.time - last.time;
+                if (clipped >= 0.05) {
+                    last.duration = clipped;
+                } else if (eventPriority(event) > eventPriority(last)) {
+                    out[out.length - 1] = event;
+                    continue;
+                } else {
+                    continue;
+                }
+            }
+
+            out.push(event);
+        }
+
+        return out;
+    }
+
+    export function applyMelodyBoundaryVoiceLeadingContract(
+        events: NoteEvent[],
+        chords: ChordDef[],
+        style: StyleName,
+        musicKey: string,
+        musicMode: string,
+        tonalCharacter: 'tonal' | 'modal',
+    ): NoteEvent[] {
+        if (chords.length <= 1) return events;
+        const beatsPerMeasure = 4;
+        const starts: number[] = [];
+        let songEnd = 0;
+        for (const chord of chords) {
+            starts.push(songEnd);
+            songEnd += chord.duration ?? beatsPerMeasure;
+        }
+
+        const pcOf = (midi: number): number => ((midi % 12) + 12) % 12;
+        const chordIndexAt = (time: number): number => {
+            const clamped = Math.max(0, Math.min(songEnd - 0.001, time));
+            for (let i = starts.length - 1; i >= 0; i--) {
+                if (clamped >= starts[i] - 0.001) return i;
+            }
+            return 0;
+        };
+        const legalMelodyPcs = (chord: ChordDef): Set<number> => {
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            const rootPc = pcOf(chord.rootMidi);
+            const contract = melodyContractPcsForStyle(style, chord, rootPc);
+            const localScale = localScaleForChordContext(style, chord, func, musicKey, musicMode);
+            const strict = new Set([...contract].filter(pc => localScale.pcs.has(pc)));
+            return strict.size > 0 ? strict : contract;
+        };
+        const sourceHoldDuration = (): number => {
+            if (style === 'RNB') return 2.0;
+            if (style === 'LOFI') return 1.75;
+            if (style === 'POP') return 1.5;
+            if (style === 'ACG') return 2.25;
+            if (style === 'JAZZ') return 1.0;
+            return 1.5;
+        };
+        const landingHoldDuration = (): number => {
+            if (style === 'RNB') return 1.0;
+            if (style === 'LOFI') return 1.25;
+            if (style === 'POP') return 1.0;
+            if (style === 'ACG') return 1.5;
+            if (style === 'JAZZ') return 0.67;
+            return 1.0;
+        };
+        const melodyAt = (list: NoteEvent[], start: number, end: number): NoteEvent[] =>
+            list
+                .filter(event => event.part === 'melody'
+                    && event.time >= start - 0.001
+                    && event.time < end - 0.001
+                    && event.duration > 0)
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        let out = events.map(event => ({ ...event }));
+        const isRecognizedBoundaryResolution = (
+            sourceMidi: number,
+            landingMidi: number,
+            sourceChord: ChordDef,
+            sourceFunc: 'T' | 'S' | 'D',
+            targetChord: ChordDef,
+            targetFunc: 'T' | 'S' | 'D',
+        ): boolean => {
+            if (melodicIntervalClass(sourceMidi, landingMidi) !== 1) return false;
+            const keyRootPc = pcOf(noteToMidi(musicKey + '0'));
+            const modeFamily = modeToKeyFamily(musicMode);
+            const sourceRootPc = pcOf(sourceChord.rootMidi);
+            const targetRootPc = pcOf(targetChord.rootMidi);
+            const sourceScale = localScaleForChordContext(style, sourceChord, sourceFunc, musicKey, musicMode);
+            const assessment = evaluateNoteInChordContext(
+                pcOf(sourceMidi),
+                sourceChord.type,
+                sourceRootPc,
+                sourceFunc,
+                targetChord.type,
+                targetRootPc,
+                keyRootPc,
+                sourceChord.forcedScale,
+                tonalCharacter === 'modal',
+                sourceScale.pcs,
+                tonalCharacter,
+                sourceChord.localTonalCenterPc,
+                modeFamily,
+            );
+            return assessment.urgency >= boundaryResolutionThreshold(style)
+                && assessment.resolutionTargets.includes(pcOf(landingMidi));
+        };
+
+        for (const boundaryInfo of melodyBrickBoundaryInfos(out, songEnd)) {
+            const boundary = boundaryInfo.boundary;
+            const prevIndex = chordIndexAt(boundaryInfo.prev.time + 0.001);
+            const nextIndex = chordIndexAt(boundaryInfo.next.time + 0.001);
+            const prevChord = chords[prevIndex];
+            const nextChord = chords[nextIndex];
+            if (!prevChord || !nextChord) continue;
+
+            const prevFunc = prevChord.effectiveFunc ?? getHarmonicFunction(prevChord.roman);
+            const nextFunc = nextChord.effectiveFunc ?? getHarmonicFunction(nextChord.roman);
+            const nextStart = starts[nextIndex] ?? boundary;
+            const chordNextEnd = nextStart + (nextChord.duration ?? beatsPerMeasure);
+            const nextEnd = Math.min(chordNextEnd, Math.max(boundaryInfo.targetEnd, boundary + 0.25));
+            const sourceWindowStart = boundaryInfo.sourceStart;
+            const prevLegal = legalMelodyPcs(prevChord);
+            const nextLegal = legalMelodyPcs(nextChord);
+            if (prevLegal.size === 0 || nextLegal.size === 0) continue;
+
+            const currentMelody = out
+                .filter(event => event.part === 'melody')
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+            const sourceEvents = melodyAt(currentMelody, sourceWindowStart, boundary);
+            const existingTail = sourceEvents[sourceEvents.length - 1] ?? null;
+            if (!existingTail) continue;
+            if (existingTail.origin === 'motif') continue;
+            const isBrickBoundaryTail = existingTail === boundaryInfo.prev
+                || (existingTail.brickIndex !== undefined
+                    && existingTail.brickIndex === boundaryInfo.prev.brickIndex
+                    && Math.abs(existingTail.time - boundaryInfo.prev.time) < 0.001);
+            const canMutateSource = existingTail.origin === 'return'
+                || existingTail.grammarSlopeRole === 'last'
+                || (isBrickBoundaryTail && existingTail.grammarSlopeRole !== 'inside');
+
+            const protectedLanding = melodyAt(out, boundary, Math.min(nextEnd, boundary + 0.12))
+                .find(event => event.origin === 'return'
+                    && event.duration >= (style === 'JAZZ' ? 0.67 : 1.0)
+                    && nextLegal.has(pcOf(event.noteNumber))) ?? null;
+            const protectedTarget = protectedLanding
+                ? { pc: pcOf(protectedLanding.noteNumber), midi: protectedLanding.noteNumber }
+                : null;
+            const early = melodyAt(out, boundary, Math.min(nextEnd, boundary + 1.01))[0] ?? null;
+            const passiveTarget = early && nextLegal.has(pcOf(early.noteNumber))
+                ? { pc: pcOf(early.noteNumber), midi: early.noteNumber }
+                : null;
+            let targetIsExistingMelody = protectedTarget !== null || passiveTarget !== null;
+            let sourceMidi = existingTail.noteNumber;
+            if (!prevLegal.has(pcOf(sourceMidi))) {
+                const snapped = snapMidiToNearestPcSet(sourceMidi, prevLegal, 14);
+                if (canMutateSource && prevLegal.has(pcOf(snapped))) {
+                    sourceMidi = snapped;
+                }
+            }
+            if (!prevLegal.has(pcOf(sourceMidi))) continue;
+
+            const forcedResolutionTarget = chooseTargetChordSuspensionResolution(
+                style,
+                sourceMidi,
+                nextChord,
+                nextFunc,
+                musicKey,
+                musicMode,
+                tonalCharacter,
+                {
+                    maxDistance: style === 'LOFI' ? 16 : style === 'JAZZ' ? 12 : 14,
+                    preferredPc: chordThirdPc(nextChord),
+                    minUrgency: boundaryResolutionThreshold(style),
+                    guideReferenceMidi: early?.noteNumber ?? boundaryInfo.next.noteNumber,
+                },
+            );
+            const earlyCanRetarget = early
+                && Math.abs(early.time - boundary) < 0.12
+                && early.origin !== 'motif'
+                && ((early.origin === 'return' && early.grammarSlopeRole !== 'inside') || early.grammarSlopeRole === 'last');
+            let retargetedEarlyTarget: { pc: number; midi: number } | null = null;
+            if (
+                forcedResolutionTarget
+                && early
+                && pcOf(early.noteNumber) !== forcedResolutionTarget.pc
+                && earlyCanRetarget
+            ) {
+                early.noteNumber = forcedResolutionTarget.midi;
+                early.origin = 'return';
+                early.lickSource = true;
+                early.duration = Math.max(
+                    early.duration,
+                    Math.max(0.25, Math.min(landingHoldDuration(), nextEnd - boundary)),
+                );
+                targetIsExistingMelody = true;
+                retargetedEarlyTarget = { pc: forcedResolutionTarget.pc, midi: forcedResolutionTarget.midi };
+            }
+
+            let target = retargetedEarlyTarget
+                ?? protectedTarget
+                ?? (forcedResolutionTarget ? { pc: forcedResolutionTarget.pc, midi: forcedResolutionTarget.midi } : null)
+                ?? passiveTarget
+                ?? chooseLongResolutionTarget(
+                style,
+                sourceMidi,
+                prevChord,
+                prevFunc,
+                nextChord,
+                nextFunc,
+                musicKey,
+                musicMode,
+                tonalCharacter,
+                {
+                    maxDistance: style === 'JAZZ' ? 7 : 9,
+                    preferredPc: chordThirdPc(nextChord),
+                    guideReferenceMidi: early?.noteNumber ?? boundaryInfo.next.noteNumber,
+                },
+            );
+            if (!target) {
+                target = chooseLongResolutionTarget(
+                    style,
+                    sourceMidi,
+                    prevChord,
+                    prevFunc,
+                    nextChord,
+                    nextFunc,
+                    musicKey,
+                    musicMode,
+                    tonalCharacter,
+                    {
+                        maxDistance: 14,
+                        preferredPc: chordThirdPc(nextChord),
+                        guideReferenceMidi: early?.noteNumber ?? boundaryInfo.next.noteNumber,
+                    },
+                );
+            }
+            if (!target) continue;
+
+            let directDistance = Math.abs(target.midi - sourceMidi);
+            let directMetaphorBad = isBoundaryMetaphorDissonance(sourceMidi, target.midi)
+                && !isRecognizedBoundaryResolution(sourceMidi, target.midi, prevChord, prevFunc, nextChord, nextFunc);
+            if (canMutateSource && (directDistance > boundaryLeapLimit(style) || directMetaphorBad)) {
+                const smootherSource = chooseBoundarySourceMidi(sourceMidi, target.midi, prevLegal, style)
+                    ?? snapMidiToNearestPcSet(target.midi, prevLegal, 12);
+                if (prevLegal.has(pcOf(smootherSource))) {
+                    sourceMidi = smootherSource;
+                    const smootherTarget = retargetedEarlyTarget ?? protectedTarget ?? chooseLongResolutionTarget(
+                        style,
+                        sourceMidi,
+                        prevChord,
+                        prevFunc,
+                        nextChord,
+                        nextFunc,
+                        musicKey,
+                        musicMode,
+                        tonalCharacter,
+                        {
+                            maxDistance: style === 'JAZZ' ? 7 : 9,
+                            preferredPc: chordThirdPc(nextChord),
+                            guideReferenceMidi: early?.noteNumber ?? boundaryInfo.next.noteNumber,
+                        },
+                    );
+                    if (smootherTarget) target = smootherTarget;
+                    directDistance = Math.abs(target.midi - sourceMidi);
+                    directMetaphorBad = isBoundaryMetaphorDissonance(sourceMidi, target.midi)
+                        && !isRecognizedBoundaryResolution(sourceMidi, target.midi, prevChord, prevFunc, nextChord, nextFunc);
+                }
+            }
+
+            const desiredSource = Math.min(sourceHoldDuration(), boundary - sourceWindowStart);
+            if (desiredSource < 0.5) continue;
+            const connectors = (!directMetaphorBad && directDistance <= boundaryLeapLimit(style))
+                ? []
+                : chooseBoundaryVoiceLeadingConnectors(sourceMidi, target.midi, prevLegal, nextLegal, style);
+            const connectorDuration = style === 'JAZZ' ? 0.18 : 0.24;
+            const connectorTimes = connectors.length === 2
+                ? [boundary - (style === 'JAZZ' ? 0.52 : 0.62), boundary - (style === 'JAZZ' ? 0.28 : 0.32)]
+                : connectors.length === 1
+                    ? [boundary - (style === 'JAZZ' ? 0.28 : 0.34)]
+                    : [];
+            const firstConnectorTime = connectorTimes[0] ?? null;
+            const canPlaceConnectors = connectors.length > 0
+                && firstConnectorTime !== null
+                && firstConnectorTime > sourceWindowStart + 0.08
+                && firstConnectorTime > existingTail.time + 0.16
+                && (
+                    canMutateSource
+                    || existingTail.time + existingTail.duration <= firstConnectorTime - 0.035
+                );
+
+            if (canMutateSource) {
+                existingTail.noteNumber = sourceMidi;
+            }
+
+            const maxSourceEnd = canPlaceConnectors && firstConnectorTime !== null
+                ? firstConnectorTime - 0.035
+                : boundary;
+            const desiredEnd = Math.min(maxSourceEnd, existingTail.time + desiredSource);
+            if (canMutateSource && desiredEnd > existingTail.time + existingTail.duration + 0.05) {
+                existingTail.duration = desiredEnd - existingTail.time;
+            }
+            if (canMutateSource && existingTail.time + existingTail.duration > maxSourceEnd + 0.001) {
+                existingTail.duration = Math.max(0.12, maxSourceEnd - existingTail.time);
+            }
+            if (canPlaceConnectors) {
+                connectors.forEach((midi, idx) => {
+                    const t = connectorTimes[idx];
+                    const nextT = connectorTimes[idx + 1] ?? boundary;
+                    const d = Math.max(0.12, Math.min(connectorDuration, nextT - t - 0.035));
+                    if (d <= 0.08) return;
+                    out.push({
+                        noteNumber: midi,
+                        time: t,
+                        duration: d,
+                        velocity: Math.max(58, Math.min(96, existingTail.velocity - 8 + idx * 2)),
+                        part: 'melody',
+                        origin: 'return',
+                        lickSource: true,
+                        brickIndex: boundaryInfo.prev.brickIndex,
+                        brickStartBeat: boundaryInfo.prev.brickStartBeat,
+                        brickEndBeat: boundaryInfo.prev.brickEndBeat,
+                        brickName: boundaryInfo.prev.brickName,
+                        brickFamily: boundaryInfo.prev.brickFamily,
+                    });
+                });
+            }
+            if (!targetIsExistingMelody && !early) {
+                const d = Math.max(0.25, Math.min(landingHoldDuration(), nextEnd - boundary));
+                out.push({
+                    noteNumber: target.midi,
+                    time: boundary,
+                    duration: d,
+                    velocity: Math.max(72, Math.min(104, existingTail.velocity)),
+                    part: 'melody',
+                    origin: 'return',
+                    lickSource: true,
+                    brickIndex: boundaryInfo.next.brickIndex,
+                    brickStartBeat: boundaryInfo.next.brickStartBeat,
+                    brickEndBeat: boundaryInfo.next.brickEndBeat,
+                    brickName: boundaryInfo.next.brickName,
+                    brickFamily: boundaryInfo.next.brickFamily,
+                });
+            }
+            if (protectedLanding) {
+                const maxLandingDuration = Math.max(0.25, Math.min(landingHoldDuration(), nextEnd - boundary));
+                protectedLanding.duration = Math.max(protectedLanding.duration, maxLandingDuration);
+            }
+        }
+
+        const chordAtForDecoration = (time: number): { chord: ChordDef; start: number } => {
+            const index = chordIndexAt(time);
+            return { chord: chords[index], start: starts[index] ?? 0 };
+        };
+        const melodyBeforeTighten = out
+            .filter(event => event.part === 'melody')
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        out = out.map(event => {
+            if (event.part !== 'melody') return event;
+            const { chord } = chordAtForDecoration(event.time);
+            const legal = legalMelodyPcs(chord);
+            const notePc = pcOf(event.noteNumber);
+            if (legal.has(notePc)) return event;
+            if (event.origin !== 'return' && event.grammarSlopeRole !== 'last') return event;
+
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            const localScale = localScaleForChordContext(style, chord, func, musicKey, musicMode);
+            const melodyIndex = melodyBeforeTighten.findIndex(candidate => candidate === event);
+            const prev = melodyIndex > 0 ? melodyBeforeTighten[melodyIndex - 1] : null;
+            const next = melodyIndex >= 0 && melodyIndex < melodyBeforeTighten.length - 1
+                ? melodyBeforeTighten[melodyIndex + 1]
+                : null;
+            const weakScaleDecoration = isLofiWeakScaleDecoration(
+                event,
+                prev,
+                next,
+                localScale.pcs,
+                chordAtForDecoration,
+                style,
+                style === 'JAZZ' ? 3 : 2,
+                style === 'POP' || style === 'LOFI' || style === 'RNB',
+            );
+            const fastChromaticDecoration = isLofiFastChromaticDecoration(
+                event,
+                prev,
+                next,
+                chordAtForDecoration,
+                style,
+            );
+            if (weakScaleDecoration || fastChromaticDecoration) return event;
+
+            const snapped = snapMidiToNearestPcSet(event.noteNumber, legal, style === 'JAZZ' ? 7 : 12);
+            return legal.has(pcOf(snapped)) ? { ...event, noteNumber: snapped } : event;
+        });
+
+        for (const boundaryInfo of melodyBrickBoundaryInfos(out, songEnd)) {
+            const boundary = boundaryInfo.boundary;
+            const prevIndex = chordIndexAt(boundaryInfo.prev.time + 0.001);
+            const nextIndex = chordIndexAt(boundaryInfo.next.time + 0.001);
+            const prevChord = chords[prevIndex];
+            const nextChord = chords[nextIndex];
+            if (!prevChord || !nextChord) continue;
+            const prevFunc = prevChord.effectiveFunc ?? getHarmonicFunction(prevChord.roman);
+            const nextFunc = nextChord.effectiveFunc ?? getHarmonicFunction(nextChord.roman);
+            const nextStart = starts[nextIndex] ?? boundary;
+            const chordNextEnd = nextStart + (nextChord.duration ?? beatsPerMeasure);
+            const nextEnd = Math.min(chordNextEnd, Math.max(boundaryInfo.targetEnd, boundary + 0.25));
+            const currentMelody = out
+                .filter(event => event.part === 'melody')
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+            const prev = melodyAt(currentMelody, boundaryInfo.sourceStart, boundary)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0] ?? null;
+            const next = melodyAt(currentMelody, boundary, Math.min(nextEnd, boundary + 1.01))[0] ?? null;
+            if (!prev || !next || prev.origin === 'motif') continue;
+            const badRelation = isBoundaryMetaphorDissonance(prev.noteNumber, next.noteNumber)
+                && !isRecognizedBoundaryResolution(prev.noteNumber, next.noteNumber, prevChord, prevFunc, nextChord, nextFunc);
+            const largeLeap = Math.abs(next.noteNumber - prev.noteNumber) > boundaryLeapLimit(style);
+            if (!badRelation && !largeLeap) continue;
+
+            const isBoundaryTail = prev === boundaryInfo.prev
+                || (prev.brickIndex !== undefined
+                    && prev.brickIndex === boundaryInfo.prev.brickIndex
+                    && Math.abs(prev.time - boundaryInfo.prev.time) < 0.001);
+            const canMutate = prev.origin === 'return'
+                || prev.grammarSlopeRole === 'last'
+                || (isBoundaryTail && prev.grammarSlopeRole !== 'inside');
+            if (!canMutate) continue;
+
+            const prevLegal = legalMelodyPcs(prevChord);
+            const replacement = chooseBoundarySourceMidi(prev.noteNumber, next.noteNumber, prevLegal, style);
+            if (replacement === null) continue;
+            if (!prevLegal.has(pcOf(replacement))) continue;
+            if (largeLeap && Math.abs(next.noteNumber - replacement) >= Math.abs(next.noteNumber - prev.noteNumber)) continue;
+            if (isBoundaryMetaphorDissonance(replacement, next.noteNumber)
+                && !isRecognizedBoundaryResolution(replacement, next.noteNumber, prevChord, prevFunc, nextChord, nextFunc)) {
+                continue;
+            }
+            prev.noteNumber = replacement;
+        }
+
+        const melody = enforceMonophonicMelody(out.filter(event => event.part === 'melody'));
+        for (const boundaryInfo of melodyBrickBoundaryInfos(melody, songEnd)) {
+            const boundary = boundaryInfo.boundary;
+            const prevIndex = chordIndexAt(boundaryInfo.prev.time + 0.001);
+            const nextIndex = chordIndexAt(boundaryInfo.next.time + 0.001);
+            const prevChord = chords[prevIndex];
+            const nextChord = chords[nextIndex];
+            if (!prevChord || !nextChord) continue;
+            const prevFunc = prevChord.effectiveFunc ?? getHarmonicFunction(prevChord.roman);
+            const nextFunc = nextChord.effectiveFunc ?? getHarmonicFunction(nextChord.roman);
+            const nextStart = starts[nextIndex] ?? boundary;
+            const chordNextEnd = nextStart + (nextChord.duration ?? beatsPerMeasure);
+            const nextEnd = Math.min(chordNextEnd, Math.max(boundaryInfo.targetEnd, boundary + 0.25));
+            const prev = melodyAt(melody, boundaryInfo.sourceStart, boundary)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0] ?? null;
+            const next = melodyAt(melody, boundary, Math.min(nextEnd, boundary + 1.01))[0] ?? null;
+            if (!prev || !next || prev.origin === 'motif') continue;
+            let forcedResolutionTarget = chooseTargetChordSuspensionResolution(
+                style,
+                prev.noteNumber,
+                nextChord,
+                nextFunc,
+                musicKey,
+                musicMode,
+                tonalCharacter,
+                {
+                    maxDistance: style === 'LOFI' ? 16 : style === 'JAZZ' ? 12 : 14,
+                    preferredPc: chordThirdPc(nextChord),
+                    minUrgency: boundaryResolutionThreshold(style),
+                    guideReferenceMidi: next?.noteNumber ?? boundaryInfo.next.noteNumber,
+                },
+            );
+            if (!forcedResolutionTarget) {
+                const keyRootPc = pcOf(noteToMidi(musicKey + '0'));
+                const modeFamily = modeToKeyFamily(musicMode);
+                const prevScale = localScaleForChordContext(style, prevChord, prevFunc, musicKey, musicMode);
+                const assessment = evaluateNoteInChordContext(
+                    pcOf(prev.noteNumber),
+                    prevChord.type,
+                    pcOf(prevChord.rootMidi),
+                    prevFunc,
+                    nextChord.type,
+                    pcOf(nextChord.rootMidi),
+                    keyRootPc,
+                    prevChord.forcedScale,
+                    tonalCharacter === 'modal',
+                    prevScale.pcs,
+                    tonalCharacter,
+                    prevChord.localTonalCenterPc,
+                    modeFamily,
+                );
+                const nextLegal = legalMelodyPcs(nextChord);
+                const targetPcs = assessment.resolutionTargets.filter(pc => nextLegal.has(pc));
+                if (assessment.urgency >= boundaryResolutionThreshold(style) && targetPcs.length > 0) {
+                    let best: { pc: number; midi: number; score: number } | null = null;
+                    for (const pc of targetPcs) {
+                        const midi = snapMidiToNearestPcSet(next.noteNumber, new Set([pc]), 14);
+                        if (pcOf(midi) !== pc) continue;
+                        const score = Math.abs(midi - next.noteNumber) * 2
+                            + Math.abs(midi - prev.noteNumber) * 0.5
+                            + (pc === chordThirdPc(nextChord) ? -8 : 0);
+                        if (!best || score < best.score) best = { pc, midi, score };
+                    }
+                    if (best) forcedResolutionTarget = { pc: best.pc, midi: best.midi, urgency: assessment.urgency };
+                }
+            }
+            const nextCanRetarget = Math.abs(next.time - boundary) < 0.12
+                && next.origin !== 'motif'
+                && ((next.origin === 'return' && next.grammarSlopeRole !== 'inside') || next.grammarSlopeRole === 'last');
+            if (forcedResolutionTarget && pcOf(next.noteNumber) !== forcedResolutionTarget.pc && nextCanRetarget) {
+                next.noteNumber = forcedResolutionTarget.midi;
+                next.origin = 'return';
+                next.lickSource = true;
+                next.duration = Math.max(
+                    next.duration,
+                    Math.max(0.25, Math.min(landingHoldDuration(), nextEnd - boundary)),
+                );
+            }
+            const badRelation = isBoundaryMetaphorDissonance(prev.noteNumber, next.noteNumber)
+                && !isRecognizedBoundaryResolution(prev.noteNumber, next.noteNumber, prevChord, prevFunc, nextChord, nextFunc);
+            const largeLeap = Math.abs(next.noteNumber - prev.noteNumber) > boundaryLeapLimit(style);
+            if (!badRelation && !largeLeap) continue;
+            const isBoundaryTail = prev === boundaryInfo.prev
+                || (prev.brickIndex !== undefined
+                    && prev.brickIndex === boundaryInfo.prev.brickIndex
+                    && Math.abs(prev.time - boundaryInfo.prev.time) < 0.001);
+            const canMutate = prev.origin === 'return'
+                || prev.grammarSlopeRole === 'last'
+                || (isBoundaryTail && prev.grammarSlopeRole !== 'inside');
+            if (!canMutate) continue;
+            const prevLegal = legalMelodyPcs(prevChord);
+            const replacement = chooseBoundarySourceMidi(prev.noteNumber, next.noteNumber, prevLegal, style);
+            if (replacement === null || !prevLegal.has(pcOf(replacement))) continue;
+            if (largeLeap && Math.abs(next.noteNumber - replacement) >= Math.abs(next.noteNumber - prev.noteNumber)) continue;
+            if (isBoundaryMetaphorDissonance(replacement, next.noteNumber)
+                && !isRecognizedBoundaryResolution(replacement, next.noteNumber, prevChord, prevFunc, nextChord, nextFunc)) {
+                continue;
+            }
+            prev.noteNumber = replacement;
+        }
+        const others = out.filter(event => event.part !== 'melody');
+        return [...others, ...melody].sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+    }
+
+    export function extendMelodyTailHolds(
+        events: NoteEvent[],
+        chords: ChordDef[],
+        style: StyleName,
+        musicKey: string,
+        musicMode: string,
+    ): NoteEvent[] {
+        const starts: number[] = [];
+        let acc = 0;
+        for (const chord of chords) {
+            starts.push(acc);
+            acc += chord.duration ?? 4;
+        }
+        const songEnd = acc;
+        const chordIndexAt = (time: number): number => {
+            for (let i = starts.length - 1; i >= 0; i--) {
+                if (time >= starts[i] - 0.001) return i;
+            }
+            return 0;
+        };
+        const stableOnChord = (event: NoteEvent, chord: ChordDef): boolean => {
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            const rootPc = ((chord.rootMidi % 12) + 12) % 12;
+            const notePc = ((event.noteNumber % 12) + 12) % 12;
+            const contract = melodyContractPcsForStyle(style, chord, rootPc);
+            const localScale = localScaleForChordContext(style, chord, func, musicKey, musicMode);
+            return contract.has(notePc) && localScale.pcs.has(notePc);
+        };
+        const desiredTailDuration = (event: NoteEvent): number => {
+            if (event.origin === 'return') {
+                if (style === 'RNB') return 2.5;
+                if (style === 'POP' || style === 'LOFI') return 2.0;
+                if (style === 'ACG') return 3.0;
+                if (style === 'JAZZ') return 1.5;
+            }
+            if (style === 'RNB' || style === 'LOFI') return 2.0;
+            if (style === 'POP') return 1.75;
+            if (style === 'ACG') return 2.5;
+            if (style === 'JAZZ') return 1.25;
+            return 1.5;
+        };
+        const legalSustainEnd = (event: NoteEvent, fromIndex: number, maxEnd: number): number => {
+            let legalEnd = maxEnd;
+            for (let i = fromIndex; i < chords.length; i++) {
+                const chordStart = starts[i] ?? 0;
+                const chordEnd = chordStart + (chords[i].duration ?? 4);
+                if (chordStart >= maxEnd - 0.001) break;
+                if (!stableOnChord(event, chords[i])) {
+                    legalEnd = Math.max(event.time + event.duration, chordStart);
+                    break;
+                }
+                if (chordEnd >= maxEnd - 0.001) break;
+            }
+            return legalEnd;
+        };
+
+        const out = events.map(event => ({ ...event }));
+        const melody = out
+            .filter(event => event.part === 'melody')
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+
+        for (let i = 0; i < melody.length; i++) {
+            const event = melody[i];
+            if (event.duration <= 0) continue;
+            const chordIndex = chordIndexAt(event.time);
+            const chord = chords[chordIndex];
+            if (!chord || !stableOnChord(event, chord)) continue;
+
+            const chordStart = starts[chordIndex] ?? 0;
+            const chordEnd = chordStart + (chord.duration ?? 4);
+            const next = melody[i + 1] ?? null;
+            const eventEnd = event.time + event.duration;
+            const nextTime = next?.time ?? songEnd;
+            const gapToNext = nextTime - eventEnd;
+            const gapToChordEnd = chordEnd - eventEnd;
+            const isReturn = event.origin === 'return';
+            const isSlopeTail = event.grammarSlopeRole === 'last';
+            const isShortTail = isSlopeTail && event.duration <= 1.01 && (gapToNext >= 0.72 || gapToChordEnd >= 0.72);
+            if (!isReturn && !isShortTail) continue;
+
+            const desired = desiredTailDuration(event);
+            if (event.duration >= desired - 0.05) continue;
+            const maxEndByNext = next ? Math.max(eventEnd, next.time - 0.035) : songEnd;
+            const maxEnd = Math.min(event.time + desired, maxEndByNext);
+            const sustainEnd = legalSustainEnd(event, chordIndex, maxEnd);
+            const newDuration = Math.max(event.duration, sustainEnd - event.time);
+            if (newDuration < Math.min(desired, 1.45) && gapToNext < 1.0) continue;
+            if (newDuration > event.duration + 0.20) {
+                event.duration = newDuration;
+            }
+        }
+
+        return out.sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+    }
+
+    export function finalizeMelodyBoundaryVoiceLeading(
+        events: NoteEvent[],
+        chords: ChordDef[],
+        style: StyleName,
+        musicKey: string,
+        musicMode: string,
+        tonalCharacter: 'tonal' | 'modal',
+    ): NoteEvent[] {
+        if (chords.length <= 1) return events;
+        const beatsPerMeasure = 4;
+        const starts: number[] = [];
+        let songEnd = 0;
+        for (const chord of chords) {
+            starts.push(songEnd);
+            songEnd += chord.duration ?? beatsPerMeasure;
+        }
+
+        const pcOf = (midi: number): number => ((midi % 12) + 12) % 12;
+        const keyRootPc = pcOf(noteToMidi(musicKey + '0'));
+        const modeFamily = modeToKeyFamily(musicMode);
+        const chordIndexAt = (time: number): number => {
+            const clamped = Math.max(0, Math.min(songEnd - 0.001, time));
+            for (let i = starts.length - 1; i >= 0; i--) {
+                if (clamped >= starts[i] - 0.001) return i;
+            }
+            return 0;
+        };
+        const legalMelodyPcs = (chord: ChordDef): Set<number> => {
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            const rootPc = pcOf(chord.rootMidi);
+            const contract = melodyContractPcsForStyle(style, chord, rootPc);
+            const localScale = localScaleForChordContext(style, chord, func, musicKey, musicMode);
+            const strict = new Set([...contract].filter(pc => localScale.pcs.has(pc)));
+            return strict.size > 0 ? strict : contract;
+        };
+        const melodyAt = (list: NoteEvent[], start: number, end: number): NoteEvent[] =>
+            list
+                .filter(event => event.part === 'melody'
+                    && event.time >= start - 0.001
+                    && event.time < end - 0.001
+                    && event.duration > 0)
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        const landingHoldDuration = (): number => {
+            if (style === 'RNB') return 2.0;
+            if (style === 'LOFI') return 1.5;
+            if (style === 'POP') return 1.5;
+            if (style === 'ACG') return 1.5;
+            if (style === 'JAZZ') return 0.67;
+            return 1.0;
+        };
+        const sourceAssessment = (
+            sourceMidi: number,
+            sourceChord: ChordDef,
+            sourceFunc: 'T' | 'S' | 'D',
+            targetChord: ChordDef,
+            targetFunc: 'T' | 'S' | 'D',
+        ) => {
+            const sourceScale = localScaleForChordContext(style, sourceChord, sourceFunc, musicKey, musicMode);
+            return evaluateNoteInChordContext(
+                pcOf(sourceMidi),
+                sourceChord.type,
+                pcOf(sourceChord.rootMidi),
+                sourceFunc,
+                targetChord.type,
+                pcOf(targetChord.rootMidi),
+                keyRootPc,
+                sourceChord.forcedScale,
+                tonalCharacter === 'modal',
+                sourceScale.pcs,
+                tonalCharacter,
+                sourceChord.localTonalCenterPc,
+                modeFamily,
+            );
+        };
+        const chooseSourceContextResolution = (
+            sourceMidi: number,
+            referenceMidi: number,
+            sourceChord: ChordDef,
+            sourceFunc: 'T' | 'S' | 'D',
+            targetChord: ChordDef,
+            targetFunc: 'T' | 'S' | 'D',
+            targetLegal: Set<number>,
+        ): { pc: number; midi: number; urgency: number } | null => {
+            const assessment = sourceAssessment(sourceMidi, sourceChord, sourceFunc, targetChord, targetFunc);
+            if (assessment.urgency < boundaryResolutionThreshold(style)) return null;
+            const targetPcs = assessment.resolutionTargets.filter(pc => targetLegal.has(pc));
+            if (targetPcs.length === 0) return null;
+            const targetThirdPc = chordThirdPc(targetChord);
+            const targetSeventhPc = chordSeventhPc(targetChord);
+            const guideTonePc = styleGuideToneTargetPc(
+                style,
+                targetChord,
+                sourceMidi,
+                `source-context|${sourceFunc}->${targetFunc}|${targetPcs.join(',')}`,
+            );
+            const guideTonePcs = new Set([targetThirdPc, targetSeventhPc].filter((pc): pc is number => pc !== null));
+            let best: { pc: number; midi: number; score: number } | null = null;
+            for (const pc of targetPcs) {
+                const midi = snapMidiToNearestPcSet(referenceMidi, new Set([pc]), 14);
+                if (pcOf(midi) !== pc) continue;
+                if (midi < MELODY_RANGE.LOW || midi > MELODY_RANGE.HIGH) continue;
+                const intervalClass = melodicIntervalClass(sourceMidi, midi);
+                let score = assessment.resolutionTargets.indexOf(pc) * 10
+                    + Math.abs(midi - referenceMidi) * 2.0
+                    + Math.abs(midi - sourceMidi) * 0.8;
+                score += guideTonePreferenceScore(
+                    style,
+                    pc,
+                    midi,
+                    guideTonePc,
+                    guideTonePcs,
+                    referenceMidi,
+                );
+                if (Math.abs(midi - sourceMidi) <= 2) score -= 8;
+                if (intervalClass === 6) score += 80;
+                if (!best || score < best.score) best = { pc, midi, score };
+            }
+            return best ? { pc: best.pc, midi: best.midi, urgency: assessment.urgency } : null;
+        };
+        const isRecognizedBoundaryResolution = (
+            sourceMidi: number,
+            landingMidi: number,
+            sourceChord: ChordDef,
+            sourceFunc: 'T' | 'S' | 'D',
+            targetChord: ChordDef,
+            targetFunc: 'T' | 'S' | 'D',
+        ): boolean => {
+            if (melodicIntervalClass(sourceMidi, landingMidi) !== 1) return false;
+            const assessment = sourceAssessment(sourceMidi, sourceChord, sourceFunc, targetChord, targetFunc);
+            return assessment.urgency >= boundaryResolutionThreshold(style)
+                && assessment.resolutionTargets.includes(pcOf(landingMidi));
+        };
+        const canMutateBoundaryTail = (event: NoteEvent, boundaryInfo: MelodyBrickBoundaryInfo): boolean => {
+            if (event.origin === 'motif') return false;
+            const lickBoundaryTail = event === boundaryInfo.prev
+                || (event.brickIndex !== undefined
+                    && event.brickIndex === boundaryInfo.prev.brickIndex
+                    && Math.abs(event.time - boundaryInfo.prev.time) < 0.001);
+            return event.origin === 'return'
+                || event.grammarSlopeRole === 'last'
+                || (lickBoundaryTail && event.grammarSlopeRole !== 'inside');
+        };
+        const canRetargetBoundaryLanding = (event: NoteEvent, boundary: number): boolean =>
+            event.origin !== 'motif'
+            && Math.abs(event.time - boundary) < 0.16
+            && ((event.origin === 'return' && event.grammarSlopeRole !== 'inside') || event.grammarSlopeRole === 'last');
+
+        const out = events.map(event => ({ ...event }));
+        for (const boundaryInfo of melodyBrickBoundaryInfos(out, songEnd)) {
+            const boundary = boundaryInfo.boundary;
+            const prevIndex = chordIndexAt(boundaryInfo.prev.time + 0.001);
+            const nextIndex = chordIndexAt(boundaryInfo.next.time + 0.001);
+            const prevChord = chords[prevIndex];
+            const nextChord = chords[nextIndex];
+            if (!prevChord || !nextChord) continue;
+            const prevFunc = prevChord.effectiveFunc ?? getHarmonicFunction(prevChord.roman);
+            const nextFunc = nextChord.effectiveFunc ?? getHarmonicFunction(nextChord.roman);
+            const nextStart = starts[nextIndex] ?? boundary;
+            const chordNextEnd = nextStart + (nextChord.duration ?? beatsPerMeasure);
+            const nextEnd = Math.min(chordNextEnd, Math.max(boundaryInfo.targetEnd, boundary + 0.25));
+            const prevLegal = legalMelodyPcs(prevChord);
+            const nextLegal = legalMelodyPcs(nextChord);
+            if (prevLegal.size === 0 || nextLegal.size === 0) continue;
+
+            let currentMelody = out
+                .filter(event => event.part === 'melody')
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+            let prev = melodyAt(currentMelody, boundaryInfo.sourceStart, boundary)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0] ?? null;
+            let next = melodyAt(currentMelody, boundary, Math.min(nextEnd, boundary + 1.01))[0] ?? null;
+            if (!prev) continue;
+
+            if (style !== 'ACG') {
+                const referenceMidi = next?.noteNumber ?? prev.noteNumber;
+                const sourceTarget = chooseSourceContextResolution(
+                    prev.noteNumber,
+                    referenceMidi,
+                    prevChord,
+                    prevFunc,
+                    nextChord,
+                    nextFunc,
+                    nextLegal,
+                );
+                const suspensionTarget = sourceTarget ?? chooseTargetChordSuspensionResolution(
+                    style,
+                    prev.noteNumber,
+                    nextChord,
+                    nextFunc,
+                    musicKey,
+                    musicMode,
+                    tonalCharacter,
+                    {
+                        maxDistance: style === 'LOFI' ? 16 : style === 'JAZZ' ? 12 : 14,
+                        preferredPc: chordThirdPc(nextChord),
+                        minUrgency: boundaryResolutionThreshold(style),
+                        guideReferenceMidi: next?.noteNumber ?? boundaryInfo.next.noteNumber,
+                    },
+                );
+
+                if (suspensionTarget && (!next || pcOf(next.noteNumber) !== suspensionTarget.pc)) {
+                    if (next && canRetargetBoundaryLanding(next, boundary)) {
+                        next.noteNumber = suspensionTarget.midi;
+                        next.origin = 'return';
+                        next.lickSource = true;
+                        next.duration = Math.max(
+                            next.duration,
+                            Math.max(0.25, Math.min(landingHoldDuration(), nextEnd - boundary)),
+                        );
+                    } else if (!next || next.time > boundary + 0.18) {
+                        out.push({
+                            noteNumber: suspensionTarget.midi,
+                            time: boundary,
+                            duration: Math.max(0.25, Math.min(landingHoldDuration(), nextEnd - boundary)),
+                            velocity: Math.max(70, Math.min(104, prev.velocity)),
+                            part: 'melody',
+                            origin: 'return',
+                            lickSource: true,
+                            brickIndex: boundaryInfo.next.brickIndex,
+                            brickStartBeat: boundaryInfo.next.brickStartBeat,
+                            brickEndBeat: boundaryInfo.next.brickEndBeat,
+                            brickName: boundaryInfo.next.brickName,
+                            brickFamily: boundaryInfo.next.brickFamily,
+                        });
+                    }
+                }
+            }
+
+            currentMelody = out
+                .filter(event => event.part === 'melody')
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+            prev = melodyAt(currentMelody, boundaryInfo.sourceStart, boundary)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0] ?? null;
+            next = melodyAt(currentMelody, boundary, Math.min(nextEnd, boundary + 1.01))[0] ?? null;
+            if (!prev || !next) continue;
+
+            const gap = Math.max(0, next.time - (prev.time + prev.duration));
+            const recognizedResolution = isRecognizedBoundaryResolution(
+                prev.noteNumber,
+                next.noteNumber,
+                prevChord,
+                prevFunc,
+                nextChord,
+                nextFunc,
+            );
+            const badRelation = isBoundaryMetaphorDissonance(prev.noteNumber, next.noteNumber)
+                && !recognizedResolution
+                && gap < 0.90;
+            const largeLeap = Math.abs(next.noteNumber - prev.noteNumber) > boundaryLeapLimit(style)
+                && gap < 0.75;
+            if ((!badRelation && !largeLeap) || !canMutateBoundaryTail(prev, boundaryInfo)) continue;
+
+            let repaired = false;
+            const replacement = chooseBoundarySourceMidi(prev.noteNumber, next.noteNumber, prevLegal, style);
+            if (replacement !== null && prevLegal.has(pcOf(replacement))) {
+                const replacementRecognized = isRecognizedBoundaryResolution(
+                    replacement,
+                    next.noteNumber,
+                    prevChord,
+                    prevFunc,
+                    nextChord,
+                    nextFunc,
+                );
+                const replacementBad = isBoundaryMetaphorDissonance(replacement, next.noteNumber)
+                    && !replacementRecognized;
+                const replacementLarge = Math.abs(next.noteNumber - replacement) > boundaryLeapLimit(style);
+                if (!replacementBad && (!largeLeap || !replacementLarge || Math.abs(next.noteNumber - replacement) < Math.abs(next.noteNumber - prev.noteNumber))) {
+                    prev.noteNumber = replacement;
+                    repaired = true;
+                }
+            }
+
+            const afterSourceBad = isBoundaryMetaphorDissonance(prev.noteNumber, next.noteNumber)
+                && !isRecognizedBoundaryResolution(prev.noteNumber, next.noteNumber, prevChord, prevFunc, nextChord, nextFunc);
+            const afterSourceLarge = Math.abs(next.noteNumber - prev.noteNumber) > boundaryLeapLimit(style);
+            if (repaired && !afterSourceBad && !afterSourceLarge) continue;
+            if (!canRetargetBoundaryLanding(next, boundary)) continue;
+
+            const landing = chooseBoundaryLandingMidi(
+                next.noteNumber,
+                prev.noteNumber,
+                nextLegal,
+                style,
+                nextChord,
+                `finalize|${prevChord.chordSymbol ?? prevChord.roman}->${nextChord.chordSymbol ?? nextChord.roman}|${boundary.toFixed(2)}`,
+            );
+            if (landing === null || !nextLegal.has(pcOf(landing))) continue;
+            const landingRecognized = isRecognizedBoundaryResolution(
+                prev.noteNumber,
+                landing,
+                prevChord,
+                prevFunc,
+                nextChord,
+                nextFunc,
+            );
+            if (isBoundaryMetaphorDissonance(prev.noteNumber, landing) && !landingRecognized) continue;
+            if (afterSourceLarge && Math.abs(landing - prev.noteNumber) >= Math.abs(next.noteNumber - prev.noteNumber)) continue;
+            next.noteNumber = landing;
+            next.origin = 'return';
+            next.lickSource = true;
+        }
+
+        if (style === 'POP' || style === 'LOFI' || style === 'RNB') {
+            const chordAtForDecoration = (time: number): { chord: ChordDef; start: number } => {
+                const index = chordIndexAt(time);
+                return { chord: chords[index], start: starts[index] ?? 0 };
+            };
+            const melody = out
+                .filter(event => event.part === 'melody')
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+            for (let i = 0; i < melody.length; i++) {
+                const event = melody[i];
+                if (event.origin === 'motif') continue;
+                if (event.origin !== 'return' && event.grammarSlopeRole !== 'last') continue;
+                if (event.duration > 0.55) continue;
+                const { chord } = chordAtForDecoration(event.time);
+                const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+                const rootPc = pcOf(chord.rootMidi);
+                const contract = melodyContractPcsForStyle(style, chord, rootPc);
+                const localScale = localScaleForChordContext(style, chord, func, musicKey, musicMode);
+                const legal = new Set([...contract].filter(pc => localScale.pcs.has(pc)));
+                const targetPcs = legal.size > 0 ? legal : contract;
+                const notePc = pcOf(event.noteNumber);
+                if (targetPcs.has(notePc) || !localScale.pcs.has(notePc)) continue;
+                const prev = melody[i - 1] ?? null;
+                const next = melody[i + 1] ?? null;
+                const weakScaleDecoration = isLofiWeakScaleDecoration(
+                    event,
+                    prev,
+                    next,
+                    localScale.pcs,
+                    chordAtForDecoration,
+                    style,
+                    2,
+                    true,
+                );
+                if (weakScaleDecoration) continue;
+
+                let best: { midi: number; score: number } | null = null;
+                for (const pc of targetPcs) {
+                    for (const midi of candidateMidisForPcNear(pc, event.noteNumber, 8)) {
+                        if (pcOf(midi) !== pc) continue;
+                        let score = Math.abs(midi - event.noteNumber) * 1.5;
+                        if (prev) {
+                            const into = Math.abs(midi - prev.noteNumber);
+                            score += into * 0.8;
+                            if (into > boundaryLeapLimit(style)) score += 20;
+                            if (melodicIntervalClass(prev.noteNumber, midi) === 6) score += 20;
+                        }
+                        if (next) {
+                            const outDistance = Math.abs(next.noteNumber - midi);
+                            score += outDistance * 1.1;
+                            if (outDistance > boundaryLeapLimit(style)) score += 20;
+                            if (melodicIntervalClass(midi, next.noteNumber) === 6) score += 20;
+                        }
+                        if (Math.abs(midi - event.noteNumber) <= 3) score -= 4;
+                        if (!best || score < best.score) best = { midi, score };
+                    }
+                }
+                if (best) event.noteNumber = best.midi;
+            }
+        }
+
+        const melody = enforceMonophonicMelody(out.filter(event => event.part === 'melody'));
+        const others = out.filter(event => event.part !== 'melody');
+        return [...others, ...melody].sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+    }
+

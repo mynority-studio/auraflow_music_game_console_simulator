@@ -30,7 +30,11 @@ import { fallbackTokensForBrick } from './mgAdvisor';
 import { realizeTokens } from './mgMelodyRealizer';
 import { buildGuideTonePlan } from './mgGuideTonePlanner';
 import { renderStyleFeel, feelForStyle, feelFromGrooveContract, type ImprovisorStyleFeel } from './mgStyleRenderer';
-import { shapeMelodyHarmony } from './mgMelodyShaper';
+import {
+  shapeMelodyHarmony,
+  // ★ Phase C-2(directive 3.4):post-shaper 生产链(shapeMelodyHarmony 之后的最终 lead 整形)。
+  enforceMonophonicMelody, applyMelodyBoundaryVoiceLeadingContract, extendMelodyTailHolds, finalizeMelodyBoundaryVoiceLeading,
+} from './mgMelodyShaper';
 import {
   ENRICHED_GRAMMAR, POP_ENRICHED_GRAMMAR, LOFI_ENRICHED_GRAMMAR, RNB_ENRICHED_GRAMMAR,
 } from '../knowledge/melodyStyleGrammarProfiles';
@@ -117,6 +121,14 @@ export function renderMgMelody(
   // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
   const applyLofi = style === 'LOFI';
   melody = shapeMelodyHarmony(style, melody, chords, musicKey, musicMode, tonalCharacter, applyLofi);
+  // ★ Phase C-2(directive 3.4):post-shaper 生产链 = 当前 MG 最终 lead 整形(musicEngine 8099/8123-8125)。
+  //   shapeMelodyHarmony byte-exact ≠ final lead —— MG 在其后还跑:enforceMonophonic → applyMelodyBoundaryVoiceLeadingContract
+  //   → extendMelodyTailHolds → finalizeMelodyBoundaryVoiceLeading(grammarSlopeRole/brick 边界感知)。
+  //   ⚠️ MG 在 boundaryVL 前还有 style-specific groove/register/topvoice 整形(用 grooveContract/texture)→ Phase D/E,此处暂跳。
+  melody = enforceMonophonicMelody(melody);
+  melody = applyMelodyBoundaryVoiceLeadingContract(melody, chords, style, musicKey, musicMode, tonalCharacter);
+  melody = extendMelodyTailHolds(melody, chords, style, musicKey, musicMode);
+  melody = finalizeMelodyBoundaryVoiceLeading(melody, chords, style, musicKey, musicMode, tonalCharacter);
 
   // ── MgNoteEvent[](beat)→ NoteIR[](tick)──
   const notes: NoteIR[] = melody
