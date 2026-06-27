@@ -57,11 +57,12 @@ export function applyGroovePocket(
   tempoBpm: number,
   ppq: number,
   beatsPerBar: number,
+  excludeRoles?: ReadonlySet<string>,
 ): TrackIR[] {
   const roles = pocketedRoles(c);
   if (roles.size === 0) return tracks; // legacy pocket=0 → no-op
   return tracks.map((t) => {
-    if (!roles.has(t.role)) return t;
+    if (!roles.has(t.role) || excludeRoles?.has(t.role)) return t; // ★ excludeRoles:走A override lead 自带权威 timing,不被 band pocket 覆盖
     return {
       ...t,
       notes: t.notes.map((n) => {

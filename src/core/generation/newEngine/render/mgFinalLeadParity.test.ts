@@ -6,6 +6,7 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
 import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
+import { applyGroovePocket } from './groovePocket';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
@@ -32,14 +33,18 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       const instr = buildInstrumentationPlan(band, arr, createRandomContext(seed).substream('timbre'));
       const plan = buildHarmonicPlanFromArrangement(band, arr, createRandomContext(seed));
       const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
-      const raw = renderMgMelody(plan, band, tb, seed);
+      // ★ Phase D:baseline 喂 arranger 选中的 GrooveContract(+lead program),与生产一致
+      //   (生产 lead feel/pocket 真源 = contract;不喂则 baseline 走 feelForStyle → 与生产 contract feel 漂 1-9 tick)。
+      const raw = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
       // ★ 契约:原始 MG lead 经【空拍补全 → repeatGroup 重放 → 末端安全闸(sanitize → (jazz/blues)legato → sanitize)】
       //   = production lead 的预期。lead 不 humanize;legato 只改 duration;sanitize 只裁同 pitch collision(无 overlap 时
       //   为 no-op)→ 多数 seed 仍逐字节相等,仅含同 pitch overlap 的 seed(raw MG 自身重叠)被安全闸裁短(directive
       //   q_n_final_lead_sanitizer 2026-06-23)。
       const filled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
       const replayed = applyRepeatGroupReplay(filled, arr, plan.chordTimeline, tb)[0];
-      const preSan = { ...replayed, notes: sanitizeLeadNoteIR(replayed.notes, SAN) };
+      // ★ Phase D(directive 3.2):真 GrooveContract 的 ms melody-pocket → applyGroovePocket lay-back(humanizeTiming 之后)。
+      const pocketed = applyGroovePocket([replayed], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0];
+      const preSan = { ...pocketed, notes: sanitizeLeadNoteIR(pocketed.notes, SAN) };
       const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
       const legato = legatoOpts.enabled ? { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, legatoOpts) } : preSan;
       const expected = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };

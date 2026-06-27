@@ -389,7 +389,10 @@ export function renderSongFull(
   //   跳 humanizeTiming,改由 applyGroovePocket 拥有时序(不双重)。legacy pocket=0 → pocketSkip 空 → 不变(零洗牌)。
   const pocketSkip = pocketedRoles(arrangement.songGrooveContract);
   const humanizedRaw = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
-  const humanizedTracks = applyGroovePocket(humanizedRaw, arrangement.songGrooveContract, arrangement.tempoBpm, timebase.ppq, bpbHuman);
+  // ★ MG full-parity Phase D:band 的 melody-pocket 只施给 MG 生成的 lead;走 A(motif sandbox override)lead 自带
+  //   权威 hand-played timing(directive §2.1:无 micro-IOI),不被 band groove pocket 覆盖 → excludeRoles 含 'lead'。
+  const pocketExclude = overrideLeadTrack ? new Set(['lead']) : undefined;
+  const humanizedTracks = applyGroovePocket(humanizedRaw, arrangement.songGrooveContract, arrangement.tempoBpm, timebase.ppq, bpbHuman, pocketExclude);
   // ★ Lead 最终安全闸(CODEX directive q_n_final_lead_sanitizer 2026-06-23):humanizeTiming/fillLeadBarGaps/swing/
   //   repeatReplay 这些末端变换会把上游已清洗的 lead 重新撞出【同 pitch overlap / 同 tick 重触发】→ 导出 MIDI 时
   //   旧 noteOff 提前关掉后一个同 pitch note(听感=motif/旋律突然断音或消失)。此前只有 jazz/blues 的 legato 分支顺带

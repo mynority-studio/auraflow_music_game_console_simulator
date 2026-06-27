@@ -56,13 +56,14 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
     }
   });
 
-  it('★ ACG songGrooveContract 有非零 pocket(2c-2 rubato 生效)·非 ACG pocket 全 0(零洗牌)', () => {
+  // ★ MG full-parity Phase D(directive 3.2,推翻 Phase 1 零洗牌):全 MG-backed 风格走真 pool contract,
+  //   都携带真 pocket(lead/bass 至少一个非 0)→ render lay-back 全风格生效(POP/JAZZ/LOFI/RNB 输出会变,已接受)。
+  it('★ Phase D:全 MG-backed contract 有非零 pocket(ACG=rubato,POP/JAZZ/LOFI/RNB=真 lay-back)', () => {
     const acgArr = buildArrangementPlan(buildBandSpec({ seed: 7, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' }), { rng: createRandomContext(7) });
     expect(acgArr.songGrooveContract.style).toBe('ACG');
-    expect(pocketedRoles(acgArr.songGrooveContract).size).toBeGreaterThan(0); // lead/bass 至少一个有 pocket
-    for (const style of ['pop', 'jazz', 'lofi', 'rnb']) {
+    for (const style of ['acg', 'pop', 'jazz', 'lofi', 'rnb']) {
       const arr = buildArrangementPlan(buildBandSpec({ seed: 7, styleHint: style, mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' }), { rng: createRandomContext(7) });
-      expect(pocketedRoles(arr.songGrooveContract).size, `${style} legacy pocket=0`).toBe(0);
+      expect(pocketedRoles(arr.songGrooveContract).size, `${style} 真 pocket(lead/bass 至少一个)`).toBeGreaterThan(0);
     }
   });
 

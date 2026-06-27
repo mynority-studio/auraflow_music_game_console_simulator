@@ -17,6 +17,7 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
 import { renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
+import { applyGroovePocket } from './groovePocket';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
@@ -52,12 +53,15 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
   for (const [seed, style] of MATRIX) {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
-      const raw = renderMgMelody(plan, band, tb, seed);
+      const raw = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
       const replayed = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0];
+      // ★ Phase D(directive 3.2,推翻零洗牌):真 GrooveContract 的 ms melody-pocket 由 applyGroovePocket 在
+      //   humanizeTiming(lead 本就跳)之后落地 → lead onset lay-back。legacy pocket=0 时 no-op(零洗牌兼容)。
+      const pocketed = applyGroovePocket([replayed], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0];
       // 末端安全闸(sanitize → (jazz/blues)legato → sanitize;directive q_n_final_lead_sanitizer 2026-06-23):
       //   sanitize 只裁同 pitch collision(无重叠=no-op),legato 只改 duration → 多数 seed 仍逐字节相等。
       const lo = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
-      const preSan = { ...replayed, notes: sanitizeLeadNoteIR(replayed.notes, SAN) };
+      const preSan = { ...pocketed, notes: sanitizeLeadNoteIR(pocketed.notes, SAN) };
       const legato = lo.enabled ? { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, lo) } : preSan;
       const expected = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
@@ -84,7 +88,7 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     const seed = 633823;
     const { band, arr, instr, plan, tb } = setup(seed, 'pop');
     const seedRng = createRandomContext(seed);
-    const raw = renderMgMelody(plan, band, tb, seed);
+    const raw = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
     const blocking: AuditFinding = { severity: 'error', location: { trackRole: 'comp', startTick: 0 }, ruleId: 'forced-retry-test', reason: 'force retry', suggestedReturnPoint: 'render-fallback' };
     let calls = 0;
     const render: RenderFn = (retry) => {
@@ -97,7 +101,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     expect(result.attempts, '确实发生重跑').toBeGreaterThanOrEqual(3);
     expect(result.ir, 'retry 后有 IR').toBeDefined();
     const replayedExp = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0]; // ★ 重放 + 空拍补全(retry 不改 lead)
-    const expected = { ...replayedExp, notes: sanitizeLeadNoteIR(replayedExp.notes, SAN) }; // pop 无 legato → 末端安全闸 = 一道 sanitize
+    const pocketedExp = applyGroovePocket([replayedExp], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0]; // ★ Phase D:真 contract 的 melody-pocket lay-back
+    const expected = { ...pocketedExp, notes: sanitizeLeadNoteIR(pocketedExp.notes, SAN) }; // pop 无 legato → 末端安全闸 = 一道 sanitize
     expect(ev(leadOf(result.ir!).notes as never), 'retry 后 lead == sanitize(fill(replay(raw MG)))').toBe(ev(expected.notes as never));
   });
 

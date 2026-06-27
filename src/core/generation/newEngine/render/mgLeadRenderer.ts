@@ -114,9 +114,11 @@ export function renderMgMelody(
   //   所以不会双重摆动 —— lead 的 swing 由这里独占,伴奏(comp/bass/drum)的 swing 由 arranger feel + 全局 applySwing 负责。
   //   ⚠️ 不要把这里压成 0.5:applySwing 既跳过 lead,压直会让 jazz lead 变直而伴奏仍摆 → lead/groove 错位(2026-06-08 实测教训)。
   //   ★ protectFastRuns(2026-06-19):jazz/blues 连续 16 分 run 内的 .5 不被当八分反拍摆动(防 .5→.67 挤压 micro-IOI)。
-  // ★ MG 升级 1c:lead feel 真源 = GrooveContract.melodySwingRatio —— 但【仅 ACG】走 contract(新 pool);
-  //   非 ACG 门控回退 feelForStyle(style)= 现状,保证零洗牌(jazz 16分 run/走A 预摆/legato/双摆测试不漂)。
-  const leadFeel = grooveContract && grooveContract.style === 'ACG' ? feelFromGrooveContract(grooveContract) : feelForStyle(style);
+  // ★ MG full-parity Phase D(directive 3.2,推翻 1c 零洗牌门控):所有 MG-backed 风格 lead feel 真源 =
+  //   arranger 选中的 GrooveContract(melodySwingRatio/articulation/accentPattern,全风格真消费,不再仅 ACG)。
+  //   缺省(无 contract,如单元测试直调)→ feelForStyle 兜底。render 只消费,不重 pick。
+  //   ⚠️ 输出相对零洗牌时代会变(POP/JAZZ/LOFI/RNB lead feel 漂)= 已接受,Phase F rebaseline oracle。
+  const leadFeel = grooveContract ? feelFromGrooveContract(grooveContract) : feelForStyle(style);
   melody = renderStyleFeel({ events: melody, feel: leadFeel, rng: mgRng, protectFastRuns: style === 'JAZZ' || style === 'BLUES' });
   // shapeMelodyHarmony(decision C 全量接收;per-style,镜像 musicEngine 4109-4117)。
   const applyLofi = style === 'LOFI';

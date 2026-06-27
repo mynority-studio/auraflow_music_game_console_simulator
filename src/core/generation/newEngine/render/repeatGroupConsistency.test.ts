@@ -2,7 +2,9 @@
 // newEngine · render · repeatGroup 重放一致性(2026-06-11)
 // ------------------------------------------------------------
 // 用户诉求验收:重复段落(verse1≡verse2 / chorus1≡chorus2)body 全轨【同音符】;
-//   lead 逐字节一致(不 humanize);comp/bass/pad/drum 同音符(pitch/count)+ 各自人性化(timing/velocity 可不同);
+//   ★ MG full-parity Phase D(directive 3.2):lead 现也被 GrooveContract melody-pocket lay-back(per-section
+//     独立 = decision ② '各自人性化');故 lead body = 同 pitch/duration/velocity 序列,onset 容许 pocket 微差
+//     (不再逐字节锁绝对 onset)。comp/bass/pad/drum 同音符(pitch/count)+ 各自人性化(timing/velocity 可不同);
 //   链接尾巴(发散点之后)允许各自不同;确定性;深不可变。
 // ============================================================
 import { describe, it, expect } from 'vitest';
@@ -29,9 +31,6 @@ function pipeline(seed: number, style: string) {
 const win = (ir: MusicalIR, role: string, lo: number, hi: number): NoteIR[] =>
   (ir.tracks.find((t) => t.role === role)?.notes ?? []).filter((n) => (n.startTick as number) >= lo && (n.startTick as number) < hi);
 const pitchMultiset = (ns: NoteIR[]) => ns.map((n) => n.pitch as number).sort((a, b) => a - b).join(',');
-const exact = (ns: NoteIR[], base: number) =>
-  [...ns].sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number))
-    .map((n) => `${n.pitch as number}@${(n.startTick as number) - base}+${n.durationTicks as number}v${n.velocity}`).join('|');
 
 const ROLES = ['lead', 'comp', 'bass', 'pad', 'drum'];
 
@@ -50,17 +49,21 @@ describe('render/repeatGroupConsistency — 重复段 body 同音符,尾巴各�
           //   (实测 MG full-parity G2 激活后 POP seed3 verse2:link comp 抖到 prefix-1 进窗 → off-by-1)。
           //   body 音本身一致(replay 拷贝),仅 humanize timing 各段不同(测试本意允许)→ humanized 轨 body 窗口
           //   内缩 EDGE(>maxJitter)对称排除边界带;lead 不 humanize → 精确窗口 + 逐字节。
-          const edge = role === 'lead' ? 0 : 16;
-          const src = win(ir, role, p.sourceStartTick, p.sourceStartTick + p.prefixTicks - edge);
-          const tgt = win(ir, role, p.targetStartTick, p.targetStartTick + p.prefixTicks - edge);
+          // ★ Phase D:lead/bass 都被 pocket lay-back(可正可负 ms)→ body 首/末音可能抖出窗口任一侧 →
+          //   【对称】内缩 EDGE(humanizeTiming ±7 / pocket 也含负偏)→ 排除两端不稳边界带,比对稳定中段。
+          const edge = 16;
+          const src = win(ir, role, p.sourceStartTick + edge, p.sourceStartTick + p.prefixTicks - edge);
+          const tgt = win(ir, role, p.targetStartTick + edge, p.targetStartTick + p.prefixTicks - edge);
           expect(tgt.length, `${seed}/${style} ${p.targetId} ${role} count`).toBe(src.length);
           expect(pitchMultiset(tgt), `${seed}/${style} ${p.targetId} ${role} pitch-multiset`).toBe(pitchMultiset(src));
           if (role === 'lead') {
-            // lead 不 humanize → 前缀逐字节一致(相对各自段起点)。
-            // ★ G7 后:body 末音的【时长】由 leadGapFill 延伸到下一音(落在【各段发散的 link】里)→ 各段不同;
-            //   末音 pitch/time 仍逐字节一致(replay 拷贝),仅 gap-fill 时长依赖 link → 排除末音再逐字节比对。
-            const dropTail = (ns: NoteIR[]) => [...ns].sort((a, b) => (a.startTick as number) - (b.startTick as number)).slice(0, -1);
-            expect(exact(dropTail(tgt), p.targetStartTick), `${seed}/${style} ${p.targetId} lead exact`).toBe(exact(dropTail(src), p.sourceStartTick));
+            // ★ Phase D(directive 3.2):lead body = 同【pitch+velocity 序列】(replay 拷贝同音符 + renderStyleFeel
+            //   力度,均不被 pocket 改);onset 被 per-section melody-pocket lay-back 微移,duration 随之被末端
+            //   sanitize/legato 按各自 onset 微调 → 两者各段微差(decision ② '各自人性化',±几 tick 不可闻)。
+            //   故比对 pitch+velocity 序列(丢 onset/duration)。★ G7:末音时长依赖各段发散 link → 排除末音。
+            const shape = (ns: NoteIR[]) => [...ns].sort((a, b) => (a.startTick as number) - (b.startTick as number))
+              .slice(0, -1).map((n) => `${n.pitch as number}v${n.velocity}`).join('|');
+            expect(shape(tgt), `${seed}/${style} ${p.targetId} lead shape`).toBe(shape(src));
           }
         }
       }

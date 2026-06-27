@@ -36,8 +36,12 @@ function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
 export function planGrooveContract(
   sections: readonly Section[], style: string, feel: Feel, rng?: RandomContext,
 ): { song: GrooveContract; bySection: Record<SectionId, GrooveContract> } {
-  const isACG = style.toLowerCase() === 'acg';
-  const song = isACG && rng ? pickGrooveContract('ACG', rng.substream('grooveContract')) : legacyContractForStyle(style, feel);
+  // ★ MG full-parity Phase D(directive 3.2,推翻零洗牌):所有 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)
+  //   都从真 pool 选 GrooveContract(独立 grooveContract 子流,确定性)。BLUES(archived)/ 无 rng → legacy 派生兜底。
+  //   render 只消费选中的 contract(pocket 由 applyGroovePocket 消费;feel 由 mgLeadRenderer 消费),不重 pick。
+  const gs = grooveStyleOf(style);
+  const isMgBacked = gs === 'POP' || gs === 'JAZZ' || gs === 'RNB' || gs === 'LOFI' || gs === 'ACG';
+  const song = isMgBacked && rng ? pickGrooveContract(gs, rng.substream('grooveContract')) : legacyContractForStyle(style, feel);
   const bySection: Record<SectionId, GrooveContract> = {};
   for (const s of sections) bySection[s.id] = song;
   return { song, bySection };

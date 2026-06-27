@@ -77,3 +77,20 @@ Where a simulator integration boundary makes byte-parity impossible, assert musi
 instead (structural notes ∈ contract ∩ local scale or MG empty-intersection fallback; avoid-note
 parity; tonicization/modal local-center parity; VL clamp/nearest-midi; ACG cycle span; LOFI/ACG
 slope protection; injected feel). Invariant-only acceptance must be justified in the audit report.
+
+## 6. Followup-repair progress (directive `mg_current_full_parity_followup_repair_directive.md`, A–F)
+
+- **A** — live cross-engine audit runner (`scripts/audit-mg-current-parity.ts`, 5-seed; `--full`=30). **done**
+- **B** — G1 functional RoadMap: copied `melodyBrickCatalog.ts` (554, verbatim) + ported `mgFunctionalRoadMap.ts`
+  (7/7 byte-exact); full ScheduledToken→MgNoteEvent metadata thread (brickName/family/grammarTokenKind/slopeRole). **done**
+- **C** — G5 resolver RNB pentatonic/blues candidates; ported post-shaper chain (enforceMonophonic /
+  boundaryVL / tailHolds / finalizeVL) into production `renderMgMelody`; oracle re-capture. **done**
+- **D** — GrooveContract **all MG-backed styles** (directive 3.2, reverse zero-shuffle): `groovePlanner`
+  picks real pool for POP/JAZZ/RNB/LOFI/ACG (was ACG-only); `mgLeadRenderer` lead feel = injected contract
+  for all styles (ACG gate removed); `applyGroovePocket` lay-back on lead+bass (excludeRoles skips 走A
+  override lead — keeps directive §2.1 no-micro-IOI). Parity expected chains now mirror production
+  `fill→replay→pocket→sanitize→legato→sanitize`; repeatGroup lead invariant relaxed to pitch+velocity
+  sequence (decision ② 各自人性化, pocket per-section). 1469 green · tsc/build clean. **done — needs ear-check**
+  (POP/JAZZ/LOFI/RNB lead feel + lead/bass pocket all changed vs zero-shuffle era; Phase F rebaselines oracle).
+- **E** — texture: 4 POP/RNB cases + render + contract-aware `pickTextureForBarWithGroove` + ACG comp density. **todo**
+- **F** — re-capture final-lead oracle from MG; expand audit to 30-seed all-stages; ear-check. **todo**
