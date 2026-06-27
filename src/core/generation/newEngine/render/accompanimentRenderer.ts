@@ -14,7 +14,7 @@ import { placeVoicingMidi } from '../knowledge/voicingPlacement';
 import { chordToneIntervals, chordTypeIntervals, isKnownChordType, type ChordQuality } from '../knowledge/chords';
 import { isKeyboardFamily, instrumentInfo } from '../knowledge/instruments';
 import { buildWidePianoVoicing, pickSpreadMode, type SpreadCellRole, type SpreadMode, type SpreadPicker, type SpreadSectionFunction, type VoiceRole, type WidePianoVoicing } from '../knowledge/widePianoVoicings';
-import { renderTextureChordHits } from './textureRenderer';
+import { renderTextureChordHits, isAcgTextureCase } from './textureRenderer';
 import { lofiTextureClockBeat } from './textureClock';
 import { textureBehavior } from '../knowledge/textureProfiles';
 import type { TextureSchedule } from './textureSchedule';
@@ -203,6 +203,8 @@ export function renderAccompaniment(
   // 预算 per-span voicing(全声部 voice-leading 链)+ 让位 shell voicing
   const voicedBySpan: Record<string, number[]> = {};
   const shellBySpan: Record<string, number[]> = {};
+  // ★ ACG comp-air §3.2:【未钳】宽 voicing(不 yieldUnderMelody 到 lead 地板下)→ 保高位色音 air,仅 ACG 织体消费。
+  const airVoicedBySpan: Record<string, number[]> = {};
   let prevTop: number | undefined;
   let prevVoicing: number[] | undefined; // 上一组完整 voicing → 全声部贴最近(声部进行)
   let prevWide: WidePianoVoicing | undefined; // 钢琴宽排列的前一组锚点(共同音保留)
@@ -223,6 +225,7 @@ export function renderAccompaniment(
       const spreadMode = pickPianoSpread(idx, span);
       const wide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, spreadMode }, prev: prevWide, rolePcs });
       voicedBySpan[span.id] = clampUnder(wide.attackMidi.filter(inRange)); // 超域色彩 → 交旋律;顶 ≥ 旋律地板 → 转位/减法让位
+      airVoicedBySpan[span.id] = wide.attackMidi.filter(inRange); // ★ §3.2:未钳(保 >67 高位色音)→ ACG 织体用
       // 让位/瘦身 = close 紧排核心(colorLevel 0,让色彩给旋律),仍是真实和弦音
       const shellWide = buildWidePianoVoicing({ rootPc: span.rootPc, chordType, bassMidi, options: { ...wideOpts, colorLevel: 0, spreadMode: 'close' }, prev: prevWide, rolePcs });
       shellBySpan[span.id] = clampUnder(shellWide.attackMidi.filter(inRange));
@@ -244,6 +247,7 @@ export function renderAccompaniment(
       const guard = (v: number[]): number[] => v.length >= 2 ? v
         : foldToRange(chordToneIntervals(span.quality).slice(0, 3).map((iv) => 48 + ((span.rootPc + iv) % 12)));
       voicedBySpan[span.id] = guard(clampUnder(full)); // 顶 ≥ 旋律地板 → 转位/减法让位;空 → 兜底三和弦
+      airVoicedBySpan[span.id] = voicedBySpan[span.id]; // 非键盘(ACG 不走此支)→ air = 钳后值(ACG comp 恒键盘)
       const shellClose = placeVoicingMidi(assembleVoicing(voiceType, span.rootPc, COMP_SHELL), prev, bassMidi, voiceType, span.rootPc);
       shellBySpan[span.id] = guard(clampUnder(foldToRange(shellClose)));
       if (full.length) { prevTop = full[full.length - 1]; prevVoicing = full; }
@@ -258,14 +262,18 @@ export function renderAccompaniment(
       const tc = ctx.textureSchedule[span.id];
       if (!tc) continue;
 
+      // ★ ACG comp-air §3.2:ACG 钢琴织体用【未钳】air voicing(保高位色音)+ 不 thin(高 air 越 lead 区是有意空间)。
+      const acg = isAcgTextureCase(tc);
       const yieldHere = !!ctx.anchorBeats?.has(span.startBeat) && !!ctx.activeSectionIds?.has(span.sectionId);
-      const thin = yieldHere || !!ctx.voicingSaferSpans?.has(span.id);
-      const voiced = thin ? shellBySpan[span.id] : voicedBySpan[span.id];
+      const thin = !acg && (yieldHere || !!ctx.voicingSaferSpans?.has(span.id));
+      const voiced = acg ? (airVoicedBySpan[span.id] ?? voicedBySpan[span.id]) : (thin ? shellBySpan[span.id] : voicedBySpan[span.id]);
       if (!voiced || voiced.length === 0) continue;
+      // ★ §3.3:ACG 给 textureRenderer 真和弦语境 → 真上方色音(非从已钳 voicing 顶部取)。
+      const acgCtx = acg ? { rootPc: span.rootPc as number, chordType: (span.chordType ?? span.quality) as string } : undefined;
 
       const { avoid: padAvoid, durScale } = padAvoidFor(span); // pad-active span 才非空,否则零干预
       const base = span.startBeat as number;
-      for (const h of renderTextureChordHits(tc, voiced, span.durationBeats as number)) {
+      for (const h of renderTextureChordHits(tc, voiced, span.durationBeats as number, acgCtx)) {
         // ★ 入袋:仅【柱式块(h.midis≥2)】收 lay-back 与节奏组对拍;arp/roll(单音 hit)是有意 stagger,不动。
         //   ★ Loop I:LOFI 柱式块走【中央 texture clock】(16 分格吸附 + 毫秒 pocket,取代 0.2 强度 pocketize)
         //     → dusty chop 0.58→0.50+毫秒,与 bass/drum 同时钟;非 LOFI 仍按风格 pocketize。
@@ -280,7 +288,11 @@ export function renderAccompaniment(
         const durationTicks = timebase.beatToTick(beats(h.dur * durScale)); // pad active → 略缩(缺省 1=不变)
         // ★ texture 源 velocity(0.3-0.48)为源 mix 调,偏软;newEngine bass/lead 在 80-90 →
         //   抬进可听的伴奏层(gain+floor 保留 texture 内部相对强弱/accent,只整体提亮)。floor 再抬一档。
-        const vel = Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
+        // ★ §3.4:ACG air/roll 用源【软】力度(不 body-lift,单音色音不抬进普通 comp 响度带);柱式块给薄 floor。
+        let vel = acg
+          ? Math.max(1, Math.min(110, Math.round(h.vel * 127)))
+          : Math.max(1, Math.min(120, Math.round((h.vel * 0.92 + 0.42) * 127))); // body 抬一档(均衡:comp 原太低)
+        if (acg && h.midis.length >= 3) vel = Math.max(vel, 34); // 仅整块给薄底,单音色音 drop 保软
         const polyVel = polyVelocity(vel, h.midis.length); // 柱式块(N≥3)复音衰减;arp/roll 的 N1 hit 不动
         for (const m of h.midis) {
           if (padAvoid.has(m)) continue; // ★ pad 让位:丢与 pad 同绝对 MIDI 的音(消 unison mud)
@@ -289,7 +301,8 @@ export function renderAccompaniment(
       }
       // ★ Loop I.3:no-pad + comp 是唯一和声支撑,且 texture 首击太晚(firstOnsetBeat>0.08,如 wash 0.25)→
       //   在 structural 下拍补一个【轻、短】guide-tone shell anchor(不让 late wash 当唯一 comp 下拍锚)。
-      if (ctx.needsDownbeatCompAnchorBySection?.[span.sectionId] && (textureBehavior(tc)?.firstOnsetBeat ?? 0) > 0.08) {
+      // ★ §3.5:ACG 稀疏/wash/planing 织体【不】注入 downbeat guide shell —— 缺的下拍 shell 往往就是织体本身(bass/pedal 已托底)。
+      if (!acg && ctx.needsDownbeatCompAnchorBySection?.[span.sectionId] && (textureBehavior(tc)?.firstOnsetBeat ?? 0) > 0.08) {
         const anchorShell = shellBySpan[span.id] ?? voiced;
         const anchorTick = timebase.beatToTick(beats(span.startBeat as number));
         const anchorDur = timebase.beatToTick(beats(0.5));

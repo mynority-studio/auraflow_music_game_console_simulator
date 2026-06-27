@@ -57,6 +57,14 @@ const ACG_TEXTURE_CASES = new Set<string>([
   'ACG_Bass_Tremolo_Color', 'ACG_Pedal_Wash_Color_Drops',
 ]);
 
+/** ★ ACG comp-air 修复(directive §3.1):是否 ACG 钢琴织体 case(键具体 textureCase,不键 style — 未来 ACG 也可复用非 ACG 织体)。 */
+export function isAcgTextureCase(tc: string | undefined): boolean {
+  return !!tc && ACG_TEXTURE_CASES.has(tc);
+}
+
+/** ★ ACG 和弦语境(directive §3.3):给 textureRenderer 真和弦根/类型 → 算真上方色音(非从已钳 voicing 顶部取)。 */
+export interface AcgChordContext { rootPc: number; chordType: string; }
+
 /**
  * Legacy textureCase 全量覆盖集(Loop 6,2026-06-09 用户决策「全量进可选择池/strict MG」)。
  *   = 源 musicEngine.applyTexture 的全部 legacy case。前 20 个进 TEXTURE_POOL(可选择,见 textureProfiles
@@ -80,6 +88,7 @@ const LEGACY_TEXTURE_CASES = new Set<string>([
 ]);
 
 import { hasMgCompProfile, renderTextureCompDryStrictMg } from './mgTextureCompDry';
+import { chordTypeIntervals, isKnownChordType } from '../knowledge/chords';
 
 type LegacyFamily = 'block' | 'arp' | 'stab' | 'roll' | 'pulse' | 'comp' | 'bass';
 
@@ -117,6 +126,7 @@ export function renderTextureChordHits(
   textureCase: string,
   voicedRaw: readonly number[],
   durationBeats: number,
+  acgChord?: AcgChordContext, // ★ ACG comp-air §3.3:仅 ACG case 用 → 真和弦上方色音(缺省=旧行为,从 voicing 取)
 ): TextureChordHit[] {
   const cM = [...voicedRaw].sort((a, b) => a - b);
   if (cM.length === 0) return [];
@@ -138,8 +148,8 @@ export function renderTextureChordHits(
   if (LEGACY_TEXTURE_CASES.has(textureCase)) {
     return hasMgCompProfile(textureCase) ? renderTextureCompDryStrictMg(textureCase, cM, dur) : [];
   }
-  // ★ ACG 钢琴手势(Phase 2b):专属 chord-hit 演绎(忠实 MG 包络,pitch 取我们 voicing)。
-  if (ACG_TEXTURE_CASES.has(textureCase)) return acgChordHits(cM, dur, textureCase);
+  // ★ ACG 钢琴手势(Phase 2b):专属 chord-hit 演绎(忠实 MG 包络)。§3.3:有和弦语境 → 真上方色音。
+  if (ACG_TEXTURE_CASES.has(textureCase)) return acgChordHits(cM, dur, textureCase, acgChord);
 
   switch (textureCase) {
     // ——— modern lyrical / ambient ———
@@ -265,7 +275,34 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
 //   富色彩 voicing,顶部已含 9/11/13 色音 → 听感等价。bass shape 映射到 root/fifth/tenth voice 提示。
 //   纯函数无 rng → 确定性。
 // ============================================================
-function acgChordHits(cMRaw: readonly number[], dur: number, tc: string): TextureChordHit[] {
+// ★ ACG comp-air §3.3:真和弦【上方色音】(adapt 自 musicEngine acgUpperColorMidis)。
+//   chord 含该色音(9/maj7/b7/6/#11/5/3/root)→ 取近 target(高空气区 ~78)的八度 → 真高位 air,非从已钳 voicing 顶部取。
+const ACG_COLOR_INTERVALS = [2, 11, 10, 9, 6, 7, 4, 3, 0]; // 9th/maj7/b7/6/#11/5/3/b3/root(色彩优先序)
+function acgChordPcs(rootPc: number, chordType: string): Set<number> {
+  const ivs = isKnownChordType(chordType) ? chordTypeIntervals(chordType) : [0, 4, 7];
+  return new Set(ivs.map((iv) => (((rootPc + iv) % 12) + 12) % 12));
+}
+function acgMidiForPcNear(pc: number, target: number, low: number, high: number): number | null {
+  let best: number | null = null;
+  for (let m = (((pc % 12) + 12) % 12); m <= high; m += 12) {
+    if (m < low) continue;
+    if (best === null || Math.abs(m - target) < Math.abs(best - target)) best = m;
+  }
+  return best;
+}
+function acgUpperColorMidis(rootPc: number, chordType: string, target = 78, low = 62, high = 93): number[] {
+  const pcs = acgChordPcs(rootPc, chordType);
+  const out: number[] = [];
+  for (const iv of ACG_COLOR_INTERVALS) {
+    const pc = (((rootPc + iv) % 12) + 12) % 12;
+    if (!pcs.has(pc)) continue;
+    const m = acgMidiForPcNear(pc, target, low, high);
+    if (m !== null) out.push(m);
+  }
+  return [...new Set(out)];
+}
+
+function acgChordHits(cMRaw: readonly number[], dur: number, tc: string, ctx?: AcgChordContext): TextureChordHit[] {
   const cM = [...cMRaw].sort((a, b) => a - b);
   const n = cM.length;
   const hits: TextureChordHit[] = [];
@@ -276,8 +313,11 @@ function acgChordHits(cMRaw: readonly number[], dur: number, tc: string): Textur
     if (ms.length === 0 || tRel < 0 || tRel >= dur) return;
     hits.push({ tRel, dur: Math.max(0.05, Math.min(d, dur - tRel - 0.02)), midis: ms, vel: Math.max(0.08, Math.min(0.95, vel)) });
   };
-  // 顶部 count 个 voicing 音 = 色音层(ACG maj9/maj13 voicing 把 9/11/13 排在上方)。
-  const colorTop = (count: number) => uniqSorted(cM.slice(Math.max(0, n - count)));
+  // ★ §3.3:有和弦语境 → 真上方色音(高 air);否则回退从 voicing 顶部取(旧行为,无 ctx 的单测/兜底)。
+  const airColor = ctx ? acgUpperColorMidis(ctx.rootPc, ctx.chordType, 78) : [];
+  // 色音层:优先真 air 色音(>67 高空气);无 ctx → voicing 顶部 count 个。
+  const colorTop = (count: number): number[] =>
+    airColor.length > 0 ? airColor.slice(0, count) : uniqSorted(cM.slice(Math.max(0, n - count)));
   const top = cM[n - 1];
   const hiReach = Math.min(93, top < 74 ? top + 12 : top); // 高位绽放够亮(源 acgUpperColorMidis(81))
   // long-color-roll:升序铺开 + 顶音加亮 + 可选中段下行回声(源 pushAcgLongColorRoll)。
@@ -304,7 +344,8 @@ function acgChordHits(cMRaw: readonly number[], dur: number, tc: string): Textur
     case 'Piano_TopVoice_Planing': {
       const inner = uniqSorted(cM.slice(0, Math.min(3, n)));
       const support = cM.slice(3, Math.min(4, n));
-      const colorTopArr = uniqSorted([top, hiReach]).slice(-2);
+      const colorTopArr = airColor.length > 0 ? airColor.slice(0, 2) : uniqSorted([top, hiReach]).slice(-2); // ★ §3.3:真高位 air
+
       const open = uniqSorted([...support, ...colorTopArr]).filter((m) => !inner.includes(m));
       longColorRoll(uniqSorted([...inner, ...open]), 0.10, 1.28, 0.27, true); // 上行绽放
       const echo = uniqSorted([...open, ...inner.slice(1)]).reverse().slice(0, 4); // 高→低回落
