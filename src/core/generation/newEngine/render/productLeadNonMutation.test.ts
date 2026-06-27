@@ -45,7 +45,8 @@ const leadOf = (ir: MusicalIR) => ir.tracks.find((t) => t.role === 'lead')!;
 const SAN = { gapTicks: 1, minDurTicks: 1 };
 const snap = (ir: MusicalIR) => JSON.stringify(ir.tracks.map((t) => ({ role: t.role, n: t.notes.map((x) => [x.pitch, x.startTick as number, x.durationTicks as number, x.velocity]) })));
 
-const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
+// ★ ACG fidelity directive §2.3/§4(2026-06-28):补 ACG seed(此前 MATRIX 无 ACG → ACG retry 不变性/final lead 未锁)。
+const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz'], [7, 'acg'], [42, 'acg']];
 
 describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
   // ① production lead === raw MG lead 经 repeatGroup 重放(audit/swing/dynamics/humanize/ending 全不改 lead;

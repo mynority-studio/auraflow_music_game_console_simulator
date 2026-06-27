@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildChordPart, type MgChordDef } from './mgChordPart';
-import { parseRoadMap } from './mgRoadMapParser';
+import { parseFunctionalRoadMap } from './mgFunctionalRoadMap';
 import { expandGrammarForRoadMap } from './mgGrammarRuntime';
 import { scheduleBrickExpansions } from './mgTokenScheduler';
 import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
@@ -20,7 +20,9 @@ const SHORT = [ch('C', 60, 'maj9'), ch('F', 53, 'maj9'), ch('G', 55, '9sus4'), c
 
 function perBrickFor(chords: MgChordDef[]) {
   const part = buildChordPart(chords);
-  const roadMap = parseRoadMap({ part, songKeyPc: 0 });
+  // ★ ACG fidelity directive §2.1(2026-06-28):ACG 生产走 parseFunctionalRoadMap(style 感知)→ 测试同源,
+  //   不再喂旧 parseRoadMap 的 brick(否则 scheduler 测的是生产【不喂】的 brick)。
+  const roadMap = parseFunctionalRoadMap({ part, songKeyPc: 0, style: 'ACG' });
   const perBrick = expandGrammarForRoadMap(LOFI_ENRICHED_GRAMMAR, roadMap.bricks, makeSeededRng('acg_test'));
   return { part, perBrick };
 }

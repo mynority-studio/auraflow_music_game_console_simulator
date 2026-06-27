@@ -26,7 +26,9 @@ function ev(notes: readonly { pitch: number; startTick: number; durationTicks: n
 }
 
 describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () => {
-  for (const [seed, style] of [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [64062, 'lofi'], [633823, 'pop'], [3, 'jazz']] as const) {
+  // ★ ACG fidelity directive §2.3/§4(2026-06-28):此前无 ACG seed → ACG final lead 未被 parity 锁。补 ACG seed,
+  //   ACG lead 走同一渲染链(renderMgMelody → fill → replay → pocket → sanitize → legato)→ 同不变量。
+  for (const [seed, style] of [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [64062, 'lofi'], [633823, 'pop'], [3, 'jazz'], [7, 'acg'], [42, 'acg']] as const) {
     it(`${seed}/${style}:final lead 事件级 == raw MG lead 经 repeatGroup 重放`, () => {
       const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
       const arr = buildArrangementPlan(band, { rng: createRandomContext(seed) });

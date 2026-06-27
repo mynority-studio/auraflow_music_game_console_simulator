@@ -8,7 +8,7 @@ import { scheduleBrickExpansions } from './mgTokenScheduler';
 import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
 import { realizeTokens } from './mgMelodyRealizer';
 import { buildChordPart, type MgChordDef } from './mgChordPart';
-import { parseRoadMap } from './mgRoadMapParser';
+import { parseFunctionalRoadMap } from './mgFunctionalRoadMap';
 import { ENRICHED_GRAMMAR } from '../knowledge/melodyStyleGrammarProfiles';
 import { BUILTIN_GRAMMAR } from '../knowledge/melodyBuiltinGrammar';
 
@@ -77,7 +77,7 @@ describe('render/mgMelodyMetadata — full metadata 标准形状(Phase B-2)', ()
     const ch = (root: string, rootMidi: number, type: string): MgChordDef => ({ root, rootMidi, type, bassMidi: rootMidi, duration: 4 } as never);
     const LONG = [ch('C', 60, 'maj9'), ch('A', 57, 'm9'), ch('F', 53, 'maj9'), ch('G', 55, '9sus4'), ch('E', 64, 'm9'), ch('A', 57, 'maj9'), ch('D', 62, 'm9'), ch('G', 55, '13sus4')];
     const part = buildChordPart(LONG);
-    const roadMap = parseRoadMap({ part, songKeyPc: 0 });
+    const roadMap = parseFunctionalRoadMap({ part, songKeyPc: 0, style: 'ACG' }); // ★ ACG fidelity §2.1:同生产(functional roadmap)
     const perBrick = expandGrammarForRoadMap(ENRICHED_GRAMMAR, roadMap.bricks, makeSeededRng('acg_meta'));
     const sched = scheduleAcgCycleCadencePhrases(perBrick, part);
     expect(sched.length).toBeGreaterThan(0);
