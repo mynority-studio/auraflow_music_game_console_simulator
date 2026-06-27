@@ -20,6 +20,9 @@ export interface ScheduledToken {
   brickIndex?: number;
   brickStartBeat?: number;
   brickEndBeat?: number;
+  // ★ Phase B-2:full metadata 标准形状 —— brick name/family(post-shaper 链 + audit 需要)。
+  brickName?: string;
+  brickFamily?: string;
 }
 
 /** Lay out a flat token list onto consecutive start beats, starting
@@ -81,7 +84,7 @@ export function scheduleTokens(
 /** Convenience: schedule a per-brick expansion into absolute beats. */
 export interface BrickExpansionInput {
   brickIndex: number;
-  brick: { startBeat: number; durationBeats?: number };
+  brick: { startBeat: number; durationBeats?: number; name?: string; family?: string };
   tokens: AbstractMelodyToken[];
 }
 
@@ -103,6 +106,8 @@ export function scheduleBrickExpansions(
       brickIndex: ex.brickIndex,
       brickStartBeat: ex.brick.startBeat,
       brickEndBeat,
+      brickName: ex.brick.name,
+      brickFamily: ex.brick.family,
     })));
   }
   return all;

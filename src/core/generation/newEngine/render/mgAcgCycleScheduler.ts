@@ -6,8 +6,9 @@
 //   pickAcgCadenceExpansion / scoreAcgCadenceSource / spreadTokensAcrossAcgCycle / 等。
 // ACG 旋律【不是】brick-by-brick lick chain —— 它把一条 cadence 式上行长句【铺满一个和声 cycle】,
 // 让钢琴织体呼吸。ACG 风格【不走】scheduleBrickExpansions,走此 cycle scheduler。
-// ★ 适配边界:simulator 的 ScheduledToken = {token, startBeat}(无 brick meta;realizeTokens 不消费)→
-//   port 不带 brickMeta;其余逐函数对齐当前 MG。纯函数无 rng → 确定性。
+// ★ Phase B-2(2026-06-28):ScheduledToken 现带 full brick 元数据 —— ACG stretched cycle 的 brick identity
+//   (name/family/index)来自选中的 cadence expansion,brickStart/EndBeat 反映 stretched cycle(directive 3.3)。
+//   其余逐函数对齐当前 MG。纯函数无 rng → 确定性。
 // ============================================================
 
 import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
@@ -26,7 +27,8 @@ export function scheduleAcgCycleCadencePhrases(expansions: BrickExpansion[], cho
     const local = pickAcgCadenceExpansion(expansions, cycle.startBeat, cycle.endBeat);
     const source = local ?? globalCadence;
     const tokens = source?.tokens?.length ? source.tokens : fallbackAcgCycleCadenceTokens();
-    out.push(...spreadTokensAcrossAcgCycle(tokens, cycle.startBeat, cycle.endBeat));
+    const brickMeta = source ? { brickIndex: source.brickIndex, name: source.brick.name, family: source.brick.family } : {};
+    out.push(...spreadTokensAcrossAcgCycle(tokens, cycle.startBeat, cycle.endBeat, brickMeta));
   }
   return out.sort((a, b) => a.startBeat - b.startBeat);
 }
@@ -94,7 +96,14 @@ function scoreAcgCadenceSource(brick: BrickMatch, tokens: AbstractMelodyToken[])
   return score - densityPenalty;
 }
 
-function spreadTokensAcrossAcgCycle(tokens: AbstractMelodyToken[], cycleStart: number, cycleEnd: number): ScheduledToken[] {
+// ★ Phase B-2(directive 3.3):ACG stretched cycle 的 brick 元数据 —— source brick identity(name/family/index)
+//   来自选中的 cadence expansion;brickStartBeat/EndBeat 反映【stretched cycle】(非 brick 原始 span)。
+function spreadTokensAcrossAcgCycle(
+  tokens: AbstractMelodyToken[],
+  cycleStart: number,
+  cycleEnd: number,
+  brick: { brickIndex?: number; name?: string; family?: string } = {},
+): ScheduledToken[] {
   const sourceTotal = tokenDurationTotal(tokens);
   const cycleDuration = Math.max(0, cycleEnd - cycleStart);
   if (sourceTotal <= 0 || cycleDuration <= 0) return [];
@@ -120,7 +129,15 @@ function spreadTokensAcrossAcgCycle(tokens: AbstractMelodyToken[], cycleStart: n
     if (startBeat < cycleEnd - 0.01) out.push({ token: shaped, startBeat });
     cursor += token.duration;
   }
-  return closeOpenSlopeGroups(out);
+  // ★ Phase B-2:盖 full brick 元数据(含 closeOpenSlopeGroups 补的合成 SlopeExit);start/end = stretched cycle。
+  return closeOpenSlopeGroups(out).map((st) => ({
+    ...st,
+    brickIndex: brick.brickIndex,
+    brickStartBeat: cycleStart,
+    brickEndBeat: cycleEnd,
+    brickName: brick.name,
+    brickFamily: brick.family,
+  }));
 }
 
 function tokenDurationTotal(tokens: AbstractMelodyToken[]): number {

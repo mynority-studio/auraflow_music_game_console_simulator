@@ -34,6 +34,41 @@ the simulator faithfully consume current MG melody, family matching, grammar,
 texture, and GrooveContract semantics while preserving simulator layer
 ownership.
 
+## 0.1 Why ACG Sounds Different Today
+
+The current audible mismatch between `../melodygenerative` ACG and simulator ACG
+is not expected to be solved by one velocity tweak or one texture-case patch.
+It is a stacked pipeline divergence:
+
+1. **Family matching starts from a different answer.** Current MG uses
+   style-aware `parseFunctionalRoadMap`, while simulator production still uses
+   the older `parseRoadMap` path. The same chord span can therefore expand into
+   a different brick family, which changes grammar choice, phrase contour, and
+   later resolution behavior.
+2. **ACG melody breath depends on cycle scheduling plus metadata.** MG stretches
+   a cadence-like phrase across a harmonic cycle and carries source brick
+   metadata forward. Simulator has an ACG scheduler, but missing metadata means
+   downstream boundary and post-shaper rules cannot make the same decisions.
+3. **The final MG production lead includes post-shaper processing.** Exact
+   parity for `shapeMelodyHarmony` alone is not enough. MG's production path also
+   applies monophonic cleanup, boundary voice-leading, tail extension, and final
+   boundary voice-leading rules that rely on grammar and brick metadata.
+4. **ACG comp air is erased by generic simulator comp policy.** MG ACG textures
+   intentionally use sparse high-register color/air notes with soft velocity and
+   gaps. Simulator's generic band-comp policy can clamp comp below the lead
+   floor, add downbeat guide-shell anchors, and boost texture velocity, turning
+   cinematic piano air into denser mid-register support.
+5. **GrooveContract is not yet the single timing/texture contract.** ACG feel is
+   the combination of melody swing, comp swing, pocket, accent, articulation,
+   bass pattern, and preferred/forbidden textures. If arranger selects a
+   contract but texture planning/render does not consume it consistently, the
+   case name may look ACG while the musical behavior is not MG-equivalent.
+
+Therefore, do not "fix ACG sound" by only adjusting render velocity, reverb, or
+one arpeggio pattern. The repair must first align the source family/grammar
+chain, metadata/post-shaper chain, GrooveContract consumption, and ACG air
+render policy. Ear tuning comes after those structural layers are current.
+
 ## 1. Non-Negotiable Design Decisions
 
 ### 1.1 Current MG is the source of truth

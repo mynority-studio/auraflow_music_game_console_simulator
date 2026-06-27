@@ -15,7 +15,7 @@
 
 import type { ChordPart } from './mgChordPart';
 import { getCurrentChordAtBeat, getNextChordAtBeat } from './mgChordPart';
-import type { AbstractMelodyToken } from '../knowledge/melodyGrammarTypes';
+import type { AbstractMelodyToken, TokenKind } from '../knowledge/melodyGrammarTypes';
 import type { ScheduledToken } from './mgTokenScheduler';
 import { buildPitchSets } from './mgPitchClassSets';
 import type { LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
@@ -33,12 +33,19 @@ export interface MgNoteEvent {
   origin?: 'motif' | 'develop' | 'return';
   lickSource?: boolean;
   degree?: string;
-  // ★ MG full-parity G9·C:brick 元数据(穿透 ScheduledToken→scheduleBrickExpansions)。
+  // ★ MG full-parity G9·C:brick 边界元数据(穿透 ScheduledToken→scheduleBrickExpansions)。
   //   shapeMelodyHarmony 的 applyTargetChordSuspensionBoundary/eventBrickSpansBoundary 读它;
   //   缺省 undefined → eventBrickSpansBoundary 恒 false(MG 无 brick meta 时的优雅 no-op)。
   brickIndex?: number;
   brickStartBeat?: number;
   brickEndBeat?: number;
+  // ★ MG full-parity Phase B-2(2026-06-28):full metadata 标准形状。grammar token kind + slope role +
+  //   brick name/family —— post-shaper 生产链(enforceMonophonic/boundaryVL/tailHolds/finalizeVL,Phase C)
+  //   据 grammarSlopeRole(inside/last)/grammarTokenKind 做边界/解决决策。additive:不改 pitch/time/dur/vel。
+  grammarTokenKind?: TokenKind;
+  grammarSlopeRole?: 'inside' | 'last';
+  brickName?: string;
+  brickFamily?: string;
 }
 // body(LickGen 忠实区段)用 NoteEvent;在本模块即 MgNoteEvent。
 type NoteEvent = MgNoteEvent;
@@ -84,12 +91,15 @@ export interface LickGenArgs {
  *  staccato hits and instead glides them into a single sustained note.
  *  Default-on per IV (the only invocation in the LickGen pipeline
  *  passes avoidRepeats=true). */
-// ★ MG full-parity Phase 3·D:从 ScheduledToken 取 brick 元数据盖到 NoteEvent(shaper 边界 guard 用)。
-function brickEventMeta(entry: ScheduledToken): Pick<MgNoteEvent, 'brickIndex' | 'brickStartBeat' | 'brickEndBeat'> {
+// ★ MG full-parity Phase 3·D + B-2:从 ScheduledToken 取 full brick 元数据盖到 NoteEvent
+//   (shaper 边界 guard + post-shaper 链 boundary VL 读它)。
+function brickEventMeta(entry: ScheduledToken): Pick<MgNoteEvent, 'brickIndex' | 'brickStartBeat' | 'brickEndBeat' | 'brickName' | 'brickFamily'> {
   return {
     brickIndex: entry.brickIndex,
     brickStartBeat: entry.brickStartBeat,
     brickEndBeat: entry.brickEndBeat,
+    brickName: entry.brickName,
+    brickFamily: entry.brickFamily,
   };
 }
 
@@ -105,6 +115,9 @@ function pushOrMergeRepeat(events: NoteEvent[], ev: NoteEvent): void {
         && Math.abs(last.time + last.duration - ev.time) < 1e-4
         && sameBrick) {
       last.duration += ev.duration;
+      // ★ Phase B-2(MG LickGen 77-78):合并时传递 grammar 元数据(last 取最强 slope role + 首个 token kind)。
+      if (ev.grammarSlopeRole === 'last') last.grammarSlopeRole = 'last';
+      if (!last.grammarTokenKind) last.grammarTokenKind = ev.grammarTokenKind;
       return;
     }
   }
@@ -120,6 +133,20 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
   // SlopeEnter marker, cleared by SlopeExit. While active, each note's
   // candidate MIDIs are constrained to [prev + dirMin, prev + dirMax].
   let activeSlope: { dirMin: number; dirMax: number } | null = null;
+
+  // ★ Phase B-2(MG LickGen 106-115):slope role —— slope 内:若 SlopeExit 前还有可发声 token → 'inside',
+  //   否则(下一个就是 SlopeExit / 已无音)→ 'last'。非 slope 内 → undefined。post-shaper 链据此保护 inside 音、
+  //   只在 last 处做边界改写。
+  const slopeRoleAt = (index: number): 'inside' | 'last' | undefined => {
+    if (!activeSlope) return undefined;
+    for (let j = index + 1; j < scheduledTokens.length; j++) {
+      const next = scheduledTokens[j].token;
+      if (next.kind === 'SlopeExit') return 'last';
+      if (next.kind === 'SlopeEnter') return 'inside';
+      if (next.kind !== 'R' && next.duration > 0) return 'inside';
+    }
+    return 'last';
+  };
 
   for (let i = 0; i < scheduledTokens.length; i++) {
     const entry = scheduledTokens[i];
@@ -193,6 +220,8 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
                 // P2-3: mark provenance so audit scripts can identify
                 // improvisor-pipeline emissions vs other paths.
                 lickSource: true,
+                grammarTokenKind: token.kind,
+                grammarSlopeRole: slopeRoleAt(i),
                 ...brickEventMeta(entry),
               });
               prevMidi = approachChoice.midi;
@@ -210,6 +239,8 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
               // X-token degree carries lick author's intent (e.g. 'b3').
               degree: targetTok.kind === 'X' && targetTok.degree !== undefined
                 ? String(targetTok.degree) : undefined,
+              grammarTokenKind: targetTok.kind,
+              grammarSlopeRole: slopeRoleAt(targetIdx),
               ...brickEventMeta(targetEntry),
             });
             prevMidi = targetChoice.midi;
@@ -260,6 +291,8 @@ export function realizeTokens(args: LickGenArgs): NoteEvent[] {
         lickSource: true,
         degree: token.kind === 'X' && token.degree !== undefined
           ? String(token.degree) : undefined,
+        grammarTokenKind: token.kind,
+        grammarSlopeRole: slopeRoleAt(i),
         ...brickEventMeta(entry),
       });
       prevMidi = choice.midi;

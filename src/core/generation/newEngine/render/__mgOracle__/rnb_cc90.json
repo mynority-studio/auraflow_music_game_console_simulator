@@ -2250,7 +2250,9 @@
       "startBeat": 0,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2260,7 +2262,9 @@
       "startBeat": 0.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2270,7 +2274,9 @@
       "startBeat": 1,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2280,7 +2286,9 @@
       "startBeat": 1.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2290,7 +2298,9 @@
       "startBeat": 2,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2300,7 +2310,9 @@
       "startBeat": 2.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2310,7 +2322,9 @@
       "startBeat": 3.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2320,7 +2334,9 @@
       "startBeat": 4,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2330,7 +2346,9 @@
       "startBeat": 4.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2340,7 +2358,9 @@
       "startBeat": 5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2350,7 +2370,9 @@
       "startBeat": 5.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2360,7 +2382,9 @@
       "startBeat": 6,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2370,7 +2394,9 @@
       "startBeat": 6.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2380,7 +2406,9 @@
       "startBeat": 7.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2390,7 +2418,9 @@
       "startBeat": 8,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2400,7 +2430,9 @@
       "startBeat": 8.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2410,7 +2442,9 @@
       "startBeat": 9,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2420,7 +2454,9 @@
       "startBeat": 9.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2430,7 +2466,9 @@
       "startBeat": 10,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2440,7 +2478,9 @@
       "startBeat": 10.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2450,7 +2490,9 @@
       "startBeat": 11.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2460,7 +2502,9 @@
       "startBeat": 12,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2470,7 +2514,9 @@
       "startBeat": 13,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2480,7 +2526,9 @@
       "startBeat": 13.5,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2490,7 +2538,9 @@
       "startBeat": 14,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2500,7 +2550,9 @@
       "startBeat": 14.5,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2510,7 +2562,9 @@
       "startBeat": 15,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2520,7 +2574,9 @@
       "startBeat": 20,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2530,7 +2586,9 @@
       "startBeat": 20.5,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2540,7 +2598,9 @@
       "startBeat": 21,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2550,7 +2610,9 @@
       "startBeat": 21.5,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2560,7 +2622,9 @@
       "startBeat": 22,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2570,7 +2634,9 @@
       "startBeat": 22.5,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2580,7 +2646,9 @@
       "startBeat": 23.5,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2590,7 +2658,9 @@
       "startBeat": 24,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2600,7 +2670,9 @@
       "startBeat": 24.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2610,7 +2682,9 @@
       "startBeat": 25,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2620,7 +2694,9 @@
       "startBeat": 25.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2630,7 +2706,9 @@
       "startBeat": 26,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2640,7 +2718,9 @@
       "startBeat": 26.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2650,7 +2730,9 @@
       "startBeat": 27.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2660,7 +2742,9 @@
       "startBeat": 28,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2670,7 +2754,9 @@
       "startBeat": 28.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2680,7 +2766,9 @@
       "startBeat": 29,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2690,7 +2778,9 @@
       "startBeat": 29.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2700,7 +2790,9 @@
       "startBeat": 30,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2710,7 +2802,9 @@
       "startBeat": 30.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2720,7 +2814,9 @@
       "startBeat": 31,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2730,7 +2826,9 @@
       "startBeat": 36,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2740,7 +2838,9 @@
       "startBeat": 36.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2750,7 +2850,9 @@
       "startBeat": 37,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2760,7 +2862,9 @@
       "startBeat": 37.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2770,7 +2874,9 @@
       "startBeat": 38,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2780,7 +2886,9 @@
       "startBeat": 38.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2790,7 +2898,9 @@
       "startBeat": 39,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2800,7 +2910,9 @@
       "startBeat": 39.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -2810,7 +2922,9 @@
       "startBeat": 40,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2820,7 +2934,9 @@
       "startBeat": 40.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2830,7 +2946,9 @@
       "startBeat": 41,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2840,7 +2958,9 @@
       "startBeat": 41.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2850,7 +2970,9 @@
       "startBeat": 42,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2860,7 +2982,9 @@
       "startBeat": 42.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2870,7 +2994,9 @@
       "startBeat": 43.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2880,7 +3006,9 @@
       "startBeat": 44,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2890,7 +3018,9 @@
       "startBeat": 45,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2900,7 +3030,9 @@
       "startBeat": 45.5,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2910,7 +3042,9 @@
       "startBeat": 46,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2920,7 +3054,9 @@
       "startBeat": 46.5,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2930,7 +3066,9 @@
       "startBeat": 47,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -2940,7 +3078,9 @@
       "startBeat": 52,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2950,7 +3090,9 @@
       "startBeat": 52.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2960,7 +3102,9 @@
       "startBeat": 53,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2970,7 +3114,9 @@
       "startBeat": 53.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2980,7 +3126,9 @@
       "startBeat": 54,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -2990,7 +3138,9 @@
       "startBeat": 54.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3000,7 +3150,9 @@
       "startBeat": 55.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3010,7 +3162,9 @@
       "startBeat": 56,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3020,7 +3174,9 @@
       "startBeat": 56.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3030,7 +3186,9 @@
       "startBeat": 57,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3040,7 +3198,9 @@
       "startBeat": 57.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3050,7 +3210,9 @@
       "startBeat": 58,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3060,7 +3222,9 @@
       "startBeat": 58.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3070,7 +3234,9 @@
       "startBeat": 59.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3080,7 +3246,9 @@
       "startBeat": 60,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3090,7 +3258,9 @@
       "startBeat": 60.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3100,7 +3270,9 @@
       "startBeat": 61,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3110,7 +3282,9 @@
       "startBeat": 61.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3120,7 +3294,9 @@
       "startBeat": 62,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3130,7 +3306,9 @@
       "startBeat": 62.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3140,7 +3318,9 @@
       "startBeat": 63.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     }
   ],
   "rawMelodyBuiltin": [
@@ -3907,7 +4087,9 @@
       "startBeat": 0,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3917,7 +4099,9 @@
       "startBeat": 0,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3927,7 +4111,9 @@
       "startBeat": 0.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3939,7 +4125,9 @@
       "startBeat": 0.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3949,7 +4137,9 @@
       "startBeat": 0.5,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3959,7 +4149,9 @@
       "startBeat": 1,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3969,7 +4161,9 @@
       "startBeat": 2,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3979,7 +4173,9 @@
       "startBeat": 4,
       "brickIndex": 0,
       "brickStartBeat": 0,
-      "brickEndBeat": 4
+      "brickEndBeat": 4,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -3991,7 +4187,9 @@
       "startBeat": 4,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4001,7 +4199,9 @@
       "startBeat": 4,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4011,7 +4211,9 @@
       "startBeat": 4.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4021,7 +4223,9 @@
       "startBeat": 5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4033,7 +4237,9 @@
       "startBeat": 5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4043,7 +4249,9 @@
       "startBeat": 5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4053,7 +4261,9 @@
       "startBeat": 5.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4063,7 +4273,9 @@
       "startBeat": 6,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4075,7 +4287,9 @@
       "startBeat": 6,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4085,7 +4299,9 @@
       "startBeat": 6,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4095,7 +4311,9 @@
       "startBeat": 7.5,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4105,7 +4323,9 @@
       "startBeat": 8,
       "brickIndex": 1,
       "brickStartBeat": 4,
-      "brickEndBeat": 8
+      "brickEndBeat": 8,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4117,7 +4337,9 @@
       "startBeat": 8,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4127,7 +4349,9 @@
       "startBeat": 8,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4137,7 +4361,9 @@
       "startBeat": 9.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4149,7 +4375,9 @@
       "startBeat": 9.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4159,7 +4387,9 @@
       "startBeat": 9.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4169,7 +4399,9 @@
       "startBeat": 10,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4181,7 +4413,9 @@
       "startBeat": 10,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4191,7 +4425,9 @@
       "startBeat": 10,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4201,7 +4437,9 @@
       "startBeat": 10.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4213,7 +4451,9 @@
       "startBeat": 10.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4223,7 +4463,9 @@
       "startBeat": 10.5,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4233,7 +4475,9 @@
       "startBeat": 11,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4243,7 +4487,9 @@
       "startBeat": 12,
       "brickIndex": 2,
       "brickStartBeat": 8,
-      "brickEndBeat": 12
+      "brickEndBeat": 12,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4255,7 +4501,9 @@
       "startBeat": 12,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4265,7 +4513,9 @@
       "startBeat": 12,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4275,7 +4525,9 @@
       "startBeat": 13.5,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4287,7 +4539,9 @@
       "startBeat": 13.5,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4297,7 +4551,9 @@
       "startBeat": 13.5,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4307,7 +4563,9 @@
       "startBeat": 14,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4317,7 +4575,9 @@
       "startBeat": 16,
       "brickIndex": 3,
       "brickStartBeat": 12,
-      "brickEndBeat": 20
+      "brickEndBeat": 20,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4329,7 +4589,9 @@
       "startBeat": 20,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4339,7 +4601,9 @@
       "startBeat": 20,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4349,7 +4613,9 @@
       "startBeat": 21,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4361,7 +4627,9 @@
       "startBeat": 21,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4371,7 +4639,9 @@
       "startBeat": 21,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4381,7 +4651,9 @@
       "startBeat": 21.5,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4391,7 +4663,9 @@
       "startBeat": 24,
       "brickIndex": 4,
       "brickStartBeat": 20,
-      "brickEndBeat": 24
+      "brickEndBeat": 24,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4403,7 +4677,9 @@
       "startBeat": 24,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4413,7 +4689,9 @@
       "startBeat": 24,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4423,7 +4701,9 @@
       "startBeat": 24.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4435,7 +4715,9 @@
       "startBeat": 24.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4445,7 +4727,9 @@
       "startBeat": 24.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4455,7 +4739,9 @@
       "startBeat": 25,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4467,7 +4753,9 @@
       "startBeat": 25,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4477,7 +4765,9 @@
       "startBeat": 25,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4487,7 +4777,9 @@
       "startBeat": 25.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4499,7 +4791,9 @@
       "startBeat": 25.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4509,7 +4803,9 @@
       "startBeat": 25.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4519,7 +4815,9 @@
       "startBeat": 26,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4531,7 +4829,9 @@
       "startBeat": 26,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4541,7 +4841,9 @@
       "startBeat": 26,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4551,7 +4853,9 @@
       "startBeat": 26.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4563,7 +4867,9 @@
       "startBeat": 26.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4573,7 +4879,9 @@
       "startBeat": 26.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4583,7 +4891,9 @@
       "startBeat": 27,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4593,7 +4903,9 @@
       "startBeat": 27.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4605,7 +4917,9 @@
       "startBeat": 27.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4615,7 +4929,9 @@
       "startBeat": 27.5,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4625,7 +4941,9 @@
       "startBeat": 28,
       "brickIndex": 5,
       "brickStartBeat": 24,
-      "brickEndBeat": 28
+      "brickEndBeat": 28,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4637,7 +4955,9 @@
       "startBeat": 28,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4647,7 +4967,9 @@
       "startBeat": 28,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4657,7 +4979,9 @@
       "startBeat": 29.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4669,7 +4993,9 @@
       "startBeat": 29.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4679,7 +5005,9 @@
       "startBeat": 29.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4689,7 +5017,9 @@
       "startBeat": 29.75,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4699,7 +5029,9 @@
       "startBeat": 30,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4709,7 +5041,9 @@
       "startBeat": 30.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4719,7 +5053,9 @@
       "startBeat": 31,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4729,7 +5065,9 @@
       "startBeat": 31.5,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4739,7 +5077,9 @@
       "startBeat": 32,
       "brickIndex": 6,
       "brickStartBeat": 28,
-      "brickEndBeat": 36
+      "brickEndBeat": 36,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -4751,7 +5091,9 @@
       "startBeat": 36,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4761,7 +5103,9 @@
       "startBeat": 36,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4771,7 +5115,9 @@
       "startBeat": 36.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4783,7 +5129,9 @@
       "startBeat": 36.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4793,7 +5141,9 @@
       "startBeat": 36.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4803,7 +5153,9 @@
       "startBeat": 37,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4813,7 +5165,9 @@
       "startBeat": 37.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4823,7 +5177,9 @@
       "startBeat": 38,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4835,7 +5191,9 @@
       "startBeat": 38,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4845,7 +5203,9 @@
       "startBeat": 38,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4855,7 +5215,9 @@
       "startBeat": 38.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4867,7 +5229,9 @@
       "startBeat": 38.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4877,7 +5241,9 @@
       "startBeat": 38.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4887,7 +5253,9 @@
       "startBeat": 39,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4897,7 +5265,9 @@
       "startBeat": 39.5,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4907,7 +5277,9 @@
       "startBeat": 40,
       "brickIndex": 7,
       "brickStartBeat": 36,
-      "brickEndBeat": 40
+      "brickEndBeat": 40,
+      "brickName": "ii-V",
+      "brickFamily": "Launcher"
     },
     {
       "token": {
@@ -4919,7 +5291,9 @@
       "startBeat": 40,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4929,7 +5303,9 @@
       "startBeat": 40,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4939,7 +5315,9 @@
       "startBeat": 40.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4951,7 +5329,9 @@
       "startBeat": 40.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4961,7 +5341,9 @@
       "startBeat": 40.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4971,7 +5353,9 @@
       "startBeat": 41,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4981,7 +5365,9 @@
       "startBeat": 41.5,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -4991,7 +5377,9 @@
       "startBeat": 42,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5003,7 +5391,9 @@
       "startBeat": 42,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5013,7 +5403,9 @@
       "startBeat": 42,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5023,7 +5415,9 @@
       "startBeat": 42.333333333333336,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5033,7 +5427,9 @@
       "startBeat": 42.66666666666667,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5045,7 +5441,9 @@
       "startBeat": 42.66666666666667,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5055,7 +5453,9 @@
       "startBeat": 42.66666666666667,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5065,7 +5465,9 @@
       "startBeat": 43.00000000000001,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5075,7 +5477,9 @@
       "startBeat": 43.50000000000001,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5087,7 +5491,9 @@
       "startBeat": 43.50000000000001,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5097,7 +5503,9 @@
       "startBeat": 43.50000000000001,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5107,7 +5515,9 @@
       "startBeat": 44.00000000000001,
       "brickIndex": 8,
       "brickStartBeat": 40,
-      "brickEndBeat": 44
+      "brickEndBeat": 44,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5119,7 +5529,9 @@
       "startBeat": 44,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5129,7 +5541,9 @@
       "startBeat": 44,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5139,7 +5553,9 @@
       "startBeat": 45,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5151,7 +5567,9 @@
       "startBeat": 45,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5161,7 +5579,9 @@
       "startBeat": 45,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5171,7 +5591,9 @@
       "startBeat": 45.5,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5181,7 +5603,9 @@
       "startBeat": 46,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5191,7 +5615,9 @@
       "startBeat": 47.5,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5201,7 +5627,9 @@
       "startBeat": 48,
       "brickIndex": 9,
       "brickStartBeat": 44,
-      "brickEndBeat": 52
+      "brickEndBeat": 52,
+      "brickName": "i-iv",
+      "brickFamily": "Minor-On"
     },
     {
       "token": {
@@ -5213,7 +5641,9 @@
       "startBeat": 52,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5223,7 +5653,9 @@
       "startBeat": 52,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5233,7 +5665,9 @@
       "startBeat": 52.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5245,7 +5679,9 @@
       "startBeat": 52.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5255,7 +5691,9 @@
       "startBeat": 52.5,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5265,7 +5703,9 @@
       "startBeat": 53.333333333333336,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5275,7 +5715,9 @@
       "startBeat": 53.66666666666667,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5287,7 +5729,9 @@
       "startBeat": 53.66666666666667,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5297,7 +5741,9 @@
       "startBeat": 53.66666666666667,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5307,7 +5753,9 @@
       "startBeat": 54.00000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5317,7 +5765,9 @@
       "startBeat": 54.50000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5329,7 +5779,9 @@
       "startBeat": 54.50000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5339,7 +5791,9 @@
       "startBeat": 54.50000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5349,7 +5803,9 @@
       "startBeat": 55.00000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5361,7 +5817,9 @@
       "startBeat": 55.00000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5371,7 +5829,9 @@
       "startBeat": 55.00000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5381,7 +5841,9 @@
       "startBeat": 55.50000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5391,7 +5853,9 @@
       "startBeat": 56.00000000000001,
       "brickIndex": 10,
       "brickStartBeat": 52,
-      "brickEndBeat": 56
+      "brickEndBeat": 56,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5403,7 +5867,9 @@
       "startBeat": 56,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5413,7 +5879,9 @@
       "startBeat": 56,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5423,7 +5891,9 @@
       "startBeat": 58.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5433,7 +5903,9 @@
       "startBeat": 59.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5445,7 +5917,9 @@
       "startBeat": 59.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5455,7 +5929,9 @@
       "startBeat": 59.5,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5465,7 +5941,9 @@
       "startBeat": 60,
       "brickIndex": 11,
       "brickStartBeat": 56,
-      "brickEndBeat": 60
+      "brickEndBeat": 60,
+      "brickName": "Borrowed-bVII",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5477,7 +5955,9 @@
       "startBeat": 60,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5487,7 +5967,9 @@
       "startBeat": 60,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5497,7 +5979,9 @@
       "startBeat": 60.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5509,7 +5993,9 @@
       "startBeat": 60.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5519,7 +6005,9 @@
       "startBeat": 60.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5529,7 +6017,9 @@
       "startBeat": 61,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5539,7 +6029,9 @@
       "startBeat": 62,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5549,7 +6041,9 @@
       "startBeat": 63.5,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     },
     {
       "token": {
@@ -5559,7 +6053,9 @@
       "startBeat": 64,
       "brickIndex": 12,
       "brickStartBeat": 60,
-      "brickEndBeat": 64
+      "brickEndBeat": 64,
+      "brickName": "Borrowed-iv",
+      "brickFamily": "Borrowed"
     }
   ],
   "styledMelodyEnriched": [
