@@ -186,6 +186,213 @@ export function applyLofiPhrygianBiiShadowMelody(
         return (((chord.rootMidi % 12) + third) % 12 + 12) % 12;
     }
 
+    // ★ MG full-parity G9:旋律解决子系统 helper(忠实 port 当前 ../melodygenerative musicEngine,
+    //   private 方法 → 本命名空间 function;this.X → X)。供 applyMelodicResolutionParadigm 当前 MG 版用。
+    function melodicIntervalClass(fromMidi: number, toMidi: number): number {
+        const semitones = Math.abs(toMidi - fromMidi) % 12;
+        return Math.min(semitones, 12 - semitones);
+    }
+    function chordSeventhPc(chord: ChordDef): number | null {
+        const intervals = CHORD_TYPES[chord.type] ?? [];
+        const seventh = intervals.includes(11) ? 11 : intervals.includes(10) ? 10 : null;
+        if (seventh === null) return null;
+        return (((chord.rootMidi % 12) + seventh) % 12 + 12) % 12;
+    }
+    function chordFifthPc(chord: ChordDef): number | null {
+        const intervals = CHORD_TYPES[chord.type] ?? [];
+        const fifth = intervals.includes(7) ? 7 : null;
+        if (fifth === null) return null;
+        return (((chord.rootMidi % 12) + fifth) % 12 + 12) % 12;
+    }
+    function isJpop456DeceptiveResolution(style: StyleName, sourceChord: ChordDef, sourceFunc: 'T' | 'S' | 'D', targetChord: ChordDef): boolean {
+        if (style !== 'ACG' || sourceFunc !== 'D') return false;
+        const sourceBase = sourceChord.roman.split('/')[0].replace(/^[b#n]+/, '');
+        const targetBase = targetChord.roman.split('/')[0].replace(/^[b#n]+/, '');
+        if (sourceBase !== 'V' || targetBase !== 'vi') return false;
+        const sourceRootPc = ((sourceChord.rootMidi % 12) + 12) % 12;
+        const targetRootPc = ((targetChord.rootMidi % 12) + 12) % 12;
+        return ((targetRootPc - sourceRootPc + 12) % 12) === 2;
+    }
+    function isRnbFloatingTonicNinth(style: StyleName, notePc: number, chord: ChordDef, func: 'T' | 'S' | 'D'): boolean {
+        if (style !== 'RNB' || func !== 'T') return false;
+        const baseRoman = chord.roman.split('/')[0].replace(/^[b#n]+/, '');
+        if (baseRoman !== 'I' && baseRoman !== 'i') return false;
+        const rootPc = ((chord.rootMidi % 12) + 12) % 12;
+        if (((notePc - rootPc + 12) % 12) !== 2) return false;
+        const intervals = CHORD_TYPES[chord.type] ?? [];
+        return intervals.some((iv) => ((iv % 12) + 12) % 12 === 2);
+    }
+    function boundaryResolutionThreshold(style: StyleName): number {
+        if (style === 'LOFI') return 0.40;
+        if (style === 'POP') return 0.45;
+        if (style === 'RNB') return 0.50;
+        if (style === 'JAZZ') return 0.50;
+        return UNRESOLVED_TENSION_THRESHOLD;
+    }
+    function guideToneThirdProbability(style: StyleName): number {
+        if (style === 'POP') return 0.80;
+        if (style === 'LOFI') return 0.65;
+        if (style === 'JAZZ') return 0.50;
+        if (style === 'RNB') return 0.40;
+        if (style === 'ACG') return 0.25;
+        return 0.60;
+    }
+    function styleGuideToneTargetPc(style: StyleName, targetChord: ChordDef, referenceMidi: number, label: string): number | null {
+        const thirdPc = chordThirdPc(targetChord);
+        const seventhPc = chordSeventhPc(targetChord);
+        if (thirdPc === null) return seventhPc;
+        if (seventhPc === null) return thirdPc;
+        const roll = stableUnitInterval(`voiceleading-guide-tone|${style}|${targetChord.chordSymbol ?? targetChord.roman}|${referenceMidi}|${label}`);
+        return roll < guideToneThirdProbability(style) ? thirdPc : seventhPc;
+    }
+    function isGuideToneCompatibleWithNextBrickFirst(candidateMidi: number, nextBrickFirstMidi?: number | null): boolean {
+        if (nextBrickFirstMidi === undefined || nextBrickFirstMidi === null) return true;
+        const distance = Math.abs(candidateMidi - nextBrickFirstMidi);
+        if (distance <= 2) return true;
+        const intervalClass = melodicIntervalClass(candidateMidi, nextBrickFirstMidi);
+        return intervalClass === 0 || intervalClass === 3 || intervalClass === 4 || intervalClass === 5;
+    }
+    function guideTonePreferenceScore(style: StyleName, candidatePc: number, candidateMidi: number, selectedGuideTonePc: number | null, guideTonePcs: Set<number>, nextBrickFirstMidi?: number | null): number {
+        if (!guideTonePcs.has(candidatePc)) return 0;
+        if (!isGuideToneCompatibleWithNextBrickFirst(candidateMidi, nextBrickFirstMidi)) return 0;
+        const selectedBonusByStyle: Record<StyleName, number> = { POP: -10, JAZZ: -5, LOFI: -7, RNB: -6, ACG: -3, BLUES: -4 };
+        const selected = selectedGuideTonePc !== null && candidatePc === selectedGuideTonePc;
+        const hasBrickReference = nextBrickFirstMidi !== undefined && nextBrickFirstMidi !== null;
+        const scale = hasBrickReference ? 1 : 0.45;
+        const base = selected ? selectedBonusByStyle[style] ?? -5 : Math.round((selectedBonusByStyle[style] ?? -5) * 0.45);
+        return base * scale;
+    }
+    function chooseTargetChordSuspensionResolution(
+        style: StyleName, sourceMidi: number, targetChord: ChordDef, targetFunc: 'T' | 'S' | 'D',
+        musicKey: string, musicMode: string, tonalCharacter: 'tonal' | 'modal',
+        options: { maxDistance?: number; preferredPc?: number | null; minUrgency?: number; guideReferenceMidi?: number | null } = {},
+    ): { pc: number; midi: number; urgency: number } | null {
+        const keyRootPc = ((noteToMidi(musicKey + '0') % 12) + 12) % 12;
+        const modeFamily = modeToKeyFamily(musicMode);
+        const targetRootPc = ((targetChord.rootMidi % 12) + 12) % 12;
+        const targetRunScale = runScaleForChordContext(style, targetChord, targetFunc, musicKey, musicMode);
+        const targetRunScalePcs = new Set(targetRunScale.map((m) => ((m % 12) + 12) % 12));
+        const sourcePc = ((sourceMidi % 12) + 12) % 12;
+        const targetAssessment = evaluateNoteInChordContext(sourcePc, targetChord.type, targetRootPc, targetFunc, null, null, keyRootPc, targetChord.forcedScale, tonalCharacter === 'modal', targetRunScalePcs, tonalCharacter, targetChord.localTonalCenterPc, modeFamily);
+        const minUrgency = options.minUrgency ?? boundaryResolutionThreshold(style);
+        if (targetAssessment.urgency < minUrgency) return null;
+        const targetContract = melodyContractPcsForStyle(style, targetChord, targetRootPc);
+        const strictTargets = targetAssessment.resolutionTargets.filter((pc) => targetContract.has(pc) && targetRunScalePcs.has(pc));
+        const fallbackTargets = targetAssessment.resolutionTargets.filter((pc) => targetContract.has(pc));
+        const candidatePcs = strictTargets.length > 0 ? strictTargets : fallbackTargets;
+        if (candidatePcs.length === 0) return null;
+        const targetThirdPc = chordThirdPc(targetChord);
+        const targetSeventhPc = chordSeventhPc(targetChord);
+        const guideTonePc = styleGuideToneTargetPc(style, targetChord, sourceMidi, `suspension|${targetFunc}|${candidatePcs.join(',')}`);
+        const guideTonePcs = new Set([targetThirdPc, targetSeventhPc].filter((pc): pc is number => pc !== null));
+        const preferredPc = options.preferredPc ?? null;
+        const maxDistance = options.maxDistance ?? 14;
+        let best: { pc: number; midi: number; score: number } | null = null;
+        for (const pc of candidatePcs) {
+            const midi = snapMidiToNearestPcSet(sourceMidi, new Set([pc]), maxDistance);
+            if (((midi % 12) + 12) % 12 !== pc) continue;
+            if (midi < MELODY_RANGE.LOW || midi > MELODY_RANGE.HIGH) continue;
+            const targetIndex = targetAssessment.resolutionTargets.indexOf(pc);
+            const interval = midi - sourceMidi;
+            const distance = Math.abs(interval);
+            let score = targetIndex * 30 + distance * 3;
+            if (preferredPc !== null && pc === preferredPc) score -= 4;
+            score += guideTonePreferenceScore(style, pc, midi, guideTonePc, guideTonePcs, options.guideReferenceMidi);
+            if (interval === -1) score -= 24;
+            if (interval === 1) score -= 12;
+            if (!targetRunScalePcs.has(pc)) score += 30;
+            if (!best || score < best.score) best = { pc, midi, score };
+        }
+        return best ? { pc: best.pc, midi: best.midi, urgency: targetAssessment.urgency } : null;
+    }
+    function chooseLongResolutionTarget(
+        style: StyleName, sourceMidi: number, sourceChord: ChordDef, sourceFunc: 'T' | 'S' | 'D',
+        targetChord: ChordDef, targetFunc: 'T' | 'S' | 'D', musicKey: string, musicMode: string, tonalCharacter: 'tonal' | 'modal',
+        options: { maxDistance?: number; preferredPc?: number | null; guideReferenceMidi?: number | null } = {},
+    ): { pc: number; midi: number } | null {
+        const keyRootPc = ((noteToMidi(musicKey + '0') % 12) + 12) % 12;
+        const modeFamily = modeToKeyFamily(musicMode);
+        const sourceRootPc = ((sourceChord.rootMidi % 12) + 12) % 12;
+        const targetRootPc = ((targetChord.rootMidi % 12) + 12) % 12;
+        const sourcePc = ((sourceMidi % 12) + 12) % 12;
+        const sourceRunScale = runScaleForChordContext(style, sourceChord, sourceFunc, musicKey, musicMode);
+        const sourceRunScalePcs = new Set(sourceRunScale.map((m) => ((m % 12) + 12) % 12));
+        const targetRunScale = runScaleForChordContext(style, targetChord, targetFunc, musicKey, musicMode);
+        const targetRunScalePcs = new Set(targetRunScale.map((m) => ((m % 12) + 12) % 12));
+        const sourceAssessment = evaluateNoteInChordContext(sourcePc, sourceChord.type, sourceRootPc, sourceFunc, targetChord.type, targetRootPc, keyRootPc, sourceChord.forcedScale, tonalCharacter === 'modal', sourceRunScalePcs, tonalCharacter, sourceChord.localTonalCenterPc, modeFamily);
+        const targetContract = melodyContractPcsForStyle(style, targetChord, targetRootPc);
+        const strictCandidates = [...targetContract].filter((pc) => targetRunScalePcs.has(pc));
+        const candidates = strictCandidates.length > 0 ? strictCandidates : [...targetContract];
+        const targetThirdPc = chordThirdPc(targetChord);
+        const targetSeventhPc = chordSeventhPc(targetChord);
+        const targetFifthPc = chordFifthPc(targetChord);
+        const guideTonePc = styleGuideToneTargetPc(style, targetChord, sourceMidi, `long|${sourceFunc}->${targetFunc}|${sourceChord.chordSymbol ?? sourceChord.roman}`);
+        const guideTonePcs = new Set([targetThirdPc, targetSeventhPc].filter((pc): pc is number => pc !== null));
+        const preferredPc = options.preferredPc ?? null;
+        const maxDistance = options.maxDistance ?? 7;
+        const isJpop456Deceptive = isJpop456DeceptiveResolution(style, sourceChord, sourceFunc, targetChord);
+        const consonanceRank = { consonant: 0, colortone: 1, tension: 2, avoid: 4 } as const;
+        let best: { pc: number; midi: number; score: number } | null = null;
+        for (const pc of candidates) {
+            const midi = snapMidiToNearestPcSet(sourceMidi, new Set([pc]), maxDistance);
+            if (((midi % 12) + 12) % 12 !== pc) continue;
+            if (midi < MELODY_RANGE.LOW || midi > MELODY_RANGE.HIGH) continue;
+            const candidateAssessment = evaluateNoteInChordContext(pc, targetChord.type, targetRootPc, targetFunc, null, null, keyRootPc, targetChord.forcedScale, tonalCharacter === 'modal', targetRunScalePcs, tonalCharacter, targetChord.localTonalCenterPc, modeFamily);
+            if (candidateAssessment.consonance === 'avoid') continue;
+            const interval = midi - sourceMidi;
+            const distance = Math.abs(interval);
+            const targetIndex = sourceAssessment.resolutionTargets.indexOf(pc);
+            let score = candidateAssessment.urgency * 100 + consonanceRank[candidateAssessment.consonance as keyof typeof consonanceRank] * 15 + distance * 3 - Math.max(0, sourceAssessment.urgency - candidateAssessment.urgency) * 30;
+            if (targetIndex >= 0) score -= targetIndex === 0 ? 85 : targetIndex === 1 ? 60 : 40;
+            if (preferredPc !== null && pc === preferredPc) score -= 4;
+            score += guideTonePreferenceScore(style, pc, midi, guideTonePc, guideTonePcs, options.guideReferenceMidi);
+            if (isJpop456Deceptive) {
+                const targetRoot = ((targetChord.rootMidi % 12) + 12) % 12;
+                if (targetThirdPc !== null && pc === targetThirdPc) score -= 32;
+                if (targetFifthPc !== null && pc === targetFifthPc) score -= 22;
+                if (pc === targetRoot) score += 18;
+                if (interval === 1) score -= 18;
+                if (interval === -1) score -= 18;
+                if (interval === 2) score -= 10;
+                if (distance <= 2) score -= 8;
+            }
+            if (style === 'LOFI' && candidateAssessment.consonance === 'colortone') score -= 6;
+            if (distance === 1) score -= 12;
+            if (interval === -1) score -= 8;
+            if (interval === 0 && sourceAssessment.urgency >= 0.4) score += 20;
+            if (!targetRunScalePcs.has(pc)) score += 25;
+            if (!best || score < best.score) best = { pc, midi, score };
+        }
+        return best ? { pc: best.pc, midi: best.midi } : null;
+    }
+    function chooseMelodicResolutionConnector(sourceMidi: number, targetMidi: number, targetPc: number, legalTargetPcs: Set<number>, style: StyleName): number | null {
+        const direct = targetMidi - sourceMidi;
+        const directDistance = Math.abs(direct);
+        if (directDistance < 3 || directDistance > 9) return null;
+        const direction = Math.sign(direct);
+        const maxInto = style === 'JAZZ' ? 6 : 5;
+        const maxOut = style === 'POP' ? 3 : 4;
+        let best: { midi: number; score: number } | null = null;
+        for (const pc of legalTargetPcs) {
+            if (pc === targetPc) continue;
+            const midi = snapMidiToNearestPcSet(sourceMidi, new Set([pc]), Math.max(3, directDistance - 1));
+            if (((midi % 12) + 12) % 12 !== pc) continue;
+            if (midi < MELODY_RANGE.LOW || midi > MELODY_RANGE.HIGH) continue;
+            if (midi === sourceMidi || midi === targetMidi) continue;
+            const into = midi - sourceMidi;
+            const out = targetMidi - midi;
+            if (Math.sign(into) !== direction || Math.sign(out) !== direction) continue;
+            if (Math.abs(into) >= directDistance || Math.abs(out) >= directDistance) continue;
+            if (Math.abs(into) > maxInto || Math.abs(out) > maxOut) continue;
+            let score = Math.abs(into) * 1.2 + Math.abs(out) * 1.8;
+            if (Math.abs(out) <= 2) score -= 8;
+            if (Math.abs(into) <= 2) score -= 4;
+            if (style === 'RNB' && Math.abs(out) <= 3) score -= 3;
+            if (!best || score < best.score) best = { midi, score };
+        }
+        return best?.midi ?? null;
+    }
+
 
     export function isLofiWeakScaleDecoration(
         event: NoteEvent,
