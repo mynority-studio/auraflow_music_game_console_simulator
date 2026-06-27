@@ -24,7 +24,7 @@ import type { StyleName } from '../../melodygenerative/src/lib/styleDictionary';
 
 // —— simulator newEngine ——
 import { buildChordPart as simBuildChordPart } from '../src/core/generation/newEngine/render/mgChordPart';
-import { parseRoadMap as simParseRoadMap } from '../src/core/generation/newEngine/render/mgRoadMapParser';
+import { parseFunctionalRoadMap as simParseFunctionalRoadMap } from '../src/core/generation/newEngine/render/mgFunctionalRoadMap';
 
 const KEY_TO_PC: Record<string, number> = { C: 0, 'C#': 1, Db: 1, D: 2, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
 
@@ -49,12 +49,12 @@ const FULL_EXTRA: SeedCase[] = [
 // —— stage 框架:每 stage 给两侧产物 + 比对 ——
 interface StageResult { stage: string; exact: boolean; kind: 'exact' | 'invariant'; detail: string; firstDiff?: string }
 
-type BrickLike = { name: string; family: string; startBeat: number; durationBeats: number };
-const brickKey = (b: BrickLike) => `${b.name}/${b.family}@${b.startBeat}+${b.durationBeats}`;
+type BrickLike = { name: string; family: string; startBeat: number; durationBeats: number; chordIndices?: number[]; keyPc?: number };
+const brickKey = (b: BrickLike) => `${b.name}/${b.family}@${b.startBeat}+${b.durationBeats}#${(b.chordIndices ?? []).join(',')}~${b.keyPc ?? '∅'}`;
 
 function compareRoadMap(chords: unknown[], songKeyPc: number, style: StyleName): StageResult {
   const mg = parseFunctionalRoadMap({ part: mgBuildChordPart(chords as never), songKeyPc, style });
-  const sim = simParseRoadMap({ part: simBuildChordPart(chords as never), songKeyPc });
+  const sim = simParseFunctionalRoadMap({ part: simBuildChordPart(chords as never), songKeyPc, style });
   const mgB = mg.bricks as unknown as BrickLike[];
   const simB = sim.bricks as unknown as BrickLike[];
   let firstDiff: string | undefined;

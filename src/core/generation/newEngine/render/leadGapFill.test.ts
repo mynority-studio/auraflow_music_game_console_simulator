@@ -84,7 +84,10 @@ describe('render/leadGapFill — 75528/pop(用户报告)', () => {
     const t = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
     const raw = renderMgMelody(harm, band, t, 75528);
     const fills = planLeadGapFills(raw.notes, harm.chordTimeline, t, beatsPerBarOf(arr.meter));
-    expect(fills.length).toBeGreaterThan(5);            // 确有多处大空拍被补
+    // ⚠️ Phase B(2026-06-28):生产 RoadMap 改 functional(554-brick)→ 75528 lead 结构变(空拍变少,
+    //   现仅 1 处大空拍)。gap-fill 机制仍生效(≥1 触发);原阈 >5 是旧 stale-RoadMap 的密 lead 特征。
+    //   生产 lead 真值 rebaseline 留 Phase F(post-shaper 还会再动);此处仅验机制存活。
+    expect(fills.length).toBeGreaterThanOrEqual(1);     // gap-fill 机制仍生效(EAR-CHECK / Phase F rebaseline)
     // 每个补全:newEnd 落在 bar 末 或 和弦末,且 > oldEnd
     const barTicks = beatsPerBarOf(arr.meter) * t.ppq;
     for (const f of fills) {

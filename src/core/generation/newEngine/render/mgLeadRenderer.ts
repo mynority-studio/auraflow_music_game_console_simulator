@@ -20,7 +20,9 @@ import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArti
 
 import { harmonicPlanToMgChordDefs } from './mgChordDefAdapter';
 import { buildChordPart } from './mgChordPart';
-import { parseRoadMap } from './mgRoadMapParser';
+// ★ MG full-parity Phase B(2026-06-28):生产 RoadMap 真源 = 当前 MG style-aware functional RoadMap(554-brick catalog DP),
+//   取代旧 parseRoadMap(无 style)。旧 parseRoadMap 留作 legacy 测试用,不再进生产。
+import { parseFunctionalRoadMap } from './mgFunctionalRoadMap';
 import { expandGrammarForRoadMap } from './mgGrammarRuntime';
 import { scheduleBrickExpansions } from './mgTokenScheduler';
 import { scheduleAcgCycleCadencePhrases } from './mgAcgCycleScheduler';
@@ -81,7 +83,8 @@ export function renderMgMelody(
   // ── MG 链(镜像 generateImprovisorMelody stage 1-5 + 生产 shapeMelodyHarmony)──
   const mgRng = makeSeededRng(seed);
   const part = buildChordPart(chords, meter);
-  const roadMap = parseRoadMap({ part, songKeyPc });
+  // ★ Phase B:style-aware functional RoadMap(当前 MG 真源,554-brick catalog DP cover)。
+  const roadMap = parseFunctionalRoadMap({ part, songKeyPc, style });
   const perBrick = expandGrammarForRoadMap(grammarForStyle(style), roadMap.bricks, mgRng);
   for (let i = 0; i < perBrick.length; i++) {
     if (perBrick[i].tokens.length === 0) perBrick[i].tokens = fallbackTokensForBrick(perBrick[i].brick);

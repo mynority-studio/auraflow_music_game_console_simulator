@@ -59,6 +59,9 @@ export interface BrickStep {
   rootDegreePc: number;
   /** Permitted chord-quality categories at this step */
   qualities: BrickQuality[];
+  /** ★ Phase B(functional RoadMap):可选 slash-bass 要求(相对和弦根)。RoadMap 用它防 IV slash-chord
+   *  brick 误配其不带 slash 的同名和弦。 */
+  slashBassDegreePc?: number;
 }
 
 export type BrickQuality =
@@ -94,6 +97,13 @@ export interface BrickPattern {
    *  duration in My.dictionary (e.g., Dropback(simple) is `(chord C *)
    *  (chord A7 1)` — tonic can be held any length). */
   arbitraryDurations?: boolean;
+  /** ★ Phase B(functional RoadMap):压缩 one-bar 功能 cell 的 total-span 守卫(roman 骨架同长式 cadence,
+   *  但旋律 grammar 须短得多)。 */
+  minTotalBeats?: number;
+  maxTotalBeats?: number;
+  /** ★ Phase B:和弦 span 显式处于 tonicization 区时,parser 可在 local center 下重读同 brick;
+   *  此时 signature 须信 materialized steps 而非 brick 的 global applied-dominant override。 */
+  forceInferredSignature?: boolean;
 }
 
 /** Classify a chord type into a BrickQuality category. */
