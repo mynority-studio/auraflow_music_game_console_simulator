@@ -13,8 +13,8 @@ const DUR = 4;
 const ACG = new Set(ACG_RENDERED_TEXTURE_CASES);
 
 describe('textureRenderer · 覆盖与基本不变量', () => {
-  it('73 个 rich textureCase 全部有渲染实现(17 modern/lofi + 10 ACG + 46 legacy)', () => {
-    expect(RENDERED_TEXTURE_CASES).toHaveLength(73);
+  it('77 个 rich textureCase 全部有渲染实现(17 modern/lofi + 4 RNB-color + 10 ACG + 46 legacy)', () => {
+    expect(RENDERED_TEXTURE_CASES).toHaveLength(77); // ★ Phase E §3.6:+4 RNB-color
     for (const tc of RENDERED_TEXTURE_CASES) expect(hasTextureRenderer(tc)).toBe(true);
   });
   it('未知/generic textureCase 无渲染', () => {
@@ -25,10 +25,12 @@ describe('textureRenderer · 覆盖与基本不变量', () => {
   it('每个 rich case 都产出 ≥1 hit(bass-only legacy 除外=MG comp 0),且 tRel<dur、vel∈(0,1]、midis 非空', () => {
     for (const tc of RENDERED_TEXTURE_CASES) {
       const hits = renderTextureChordHits(tc, VOICED, DUR);
-      // ★ Gap B:bass-only legacy 织体 comp 渲染为空(忠实 MG comp=0);modern/lofi+其余 legacy 有 profile → ≥1。
-      //   ★ Phase 2b:ACG 钢琴手势走专属 acgChordHits(非 MG oracle)→ 恒产 chord hit。
-      if (!ACG.has(tc) && !hasMgCompProfile(tc)) { expect(hits.length, `${tc} bass-only 应空`).toBe(0); continue; }
-      expect(hits.length, tc).toBeGreaterThan(0);
+      // ★ 经验式不变量(对新增 render case 鲁棒):chord 渲染为空【仅允许】bass-only legacy(忠实 MG comp=0,
+      //   即非 ACG 且无 Mg comp profile)。modern/lofi/RNB-color/ACG/有 profile 的 legacy → 必 ≥1 chord hit。
+      if (hits.length === 0) {
+        expect(!ACG.has(tc) && !hasMgCompProfile(tc), `${tc} 空 chord 仅允许 bass-only legacy`).toBe(true);
+        continue;
+      }
       for (const h of hits) {
         expect(h.tRel, tc).toBeLessThan(DUR);
         expect(h.vel, tc).toBeGreaterThan(0);

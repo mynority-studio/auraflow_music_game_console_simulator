@@ -62,6 +62,12 @@ export function isAcgTextureCase(tc: string | undefined): boolean {
   return !!tc && ACG_TEXTURE_CASES.has(tc);
 }
 
+/** ★ MG full-parity Phase E(directive §3.6):当前 MG 的 POP/RNB 色彩织体(simulator 之前缺 → 渲染落空)。
+ *  voicing-first 演绎(从我们 voicing 派生 bottom/inner/topColor,贴 texture-decision②),忠实源 hit timing/velocity 包络。 */
+const RNB_COLOR_TEXTURE_CASES = new Set<string>([
+  'Pop_Rnb_Expensive_Add9_Quartal', 'RnB_Drop2_Color_Answer', 'RnB_InnerTight_Wide_Color', 'RnB_Quartal_Breath_Roll',
+]);
+
 /** ★ ACG 和弦语境(directive §3.3):给 textureRenderer 真和弦根/类型 → 算真上方色音(非从已钳 voicing 顶部取)。 */
 export interface AcgChordContext { rootPc: number; chordType: string; }
 
@@ -106,11 +112,11 @@ function classifyLegacyFamily(tc: string): LegacyFamily {
 /** 该 textureCase 有 render 实现吗(否则 comp 回退 compPattern)。 */
 export function hasTextureRenderer(textureCase: string): boolean {
   return MODERN_TEXTURE_CASES.has(textureCase) || LOFI_TEXTURE_CASES.has(textureCase)
-    || ACG_TEXTURE_CASES.has(textureCase) || LEGACY_TEXTURE_CASES.has(textureCase);
+    || ACG_TEXTURE_CASES.has(textureCase) || RNB_COLOR_TEXTURE_CASES.has(textureCase) || LEGACY_TEXTURE_CASES.has(textureCase);
 }
 
 /** 全部已实现的 rich textureCase(测试遍历用)。 */
-export const RENDERED_TEXTURE_CASES: readonly string[] = [...MODERN_TEXTURE_CASES, ...LOFI_TEXTURE_CASES, ...ACG_TEXTURE_CASES, ...LEGACY_TEXTURE_CASES];
+export const RENDERED_TEXTURE_CASES: readonly string[] = [...MODERN_TEXTURE_CASES, ...LOFI_TEXTURE_CASES, ...ACG_TEXTURE_CASES, ...RNB_COLOR_TEXTURE_CASES, ...LEGACY_TEXTURE_CASES];
 /** ACG rich textureCase(测试遍历用)。 */
 export const ACG_RENDERED_TEXTURE_CASES: readonly string[] = [...ACG_TEXTURE_CASES];
 
@@ -221,8 +227,54 @@ export function renderTextureChordHits(
         cM.forEach((m, idx) => push([m], beat + idx * 0.015, Math.min(1.6, dur - beat - 0.1), 0.36 + idx * 0.02));
       });
       break;
+
+    // ——— RNB-color(Phase E §3.6):voicing-first wide-inner 演绎,忠实 MG hit timing/velocity 包络 ———
+    case 'Pop_Rnb_Expensive_Add9_Quartal': {
+      // 富色 add9/quartal 宽叠块:上方 voicing 落拍铺底,长曲补两次内层色音(源 expensiveAdd9QuartalShape upper)。
+      const upper = cM.length > 2 ? cM.slice(1) : cM;
+      push(upper, 0, Math.min(dur, 1.85), 0.58);
+      if (dur >= 4) { push(upper.slice(1), 2.0, 0.95, 0.46); push(upper.slice(-2), 3.25, 0.55, 0.38); }
+      break;
+    }
+    case 'RnB_Drop2_Color_Answer': {
+      // drop2 宽框 + 内层色音「应答」(tight 前两击 → 中段补内层 → 末端 topColor 回声)。
+      const { bottom, inner, topColor } = rnbWideInnerShape(cM);
+      push([bottom, topColor], 0.0, Math.max(0.45, Math.min(1.85, dur - 0.10)), 0.44);
+      inner.slice(0, 3).forEach((m, i) => push([m], i < 2 ? 0.045 + i * 0.030 : 0.18, 0.62, 0.36 - i * 0.025));
+      if (dur > 1.35) push([topColor], 1.34, 0.46, 0.33);
+      if (dur > 2.20 && inner.length > 0) { push([bottom, topColor], 2.0, 0.42, 0.30); push(inner.slice(-2), 2.22, 0.52, 0.32); }
+      if (dur > 3.10) push([topColor], 3.03, 0.42, 0.30);
+      break;
+    }
+    case 'RnB_InnerTight_Wide_Color': {
+      // 宽外框持音 + 内层 tight 答句(0.72/1.42/2.46/3.18 拍循环内层声部)。
+      const { bottom, inner, topColor } = rnbWideInnerShape(cM);
+      push([bottom, topColor], 0.0, Math.max(0.5, dur - 0.14), 0.40);
+      [0.72, 1.42, 2.46, 3.18].forEach((t, i) => {
+        if (t >= dur - 0.16 || inner.length === 0) return;
+        push([inner[i % inner.length]], t, 0.42, 0.28 + (i % 2) * 0.03);
+      });
+      if (dur > 2.60) push([topColor], 2.58, 0.74, 0.31);
+      break;
+    }
+    case 'RnB_Quartal_Breath_Roll': {
+      // 呼吸式上行 roll(内层+topColor 去重升序绽放)+ 中段再呼吸 + 末端下行回声。
+      const { bottom, inner, topColor } = rnbWideInnerShape(cM);
+      const roll = Array.from(new Set([...inner, topColor])).sort((a, b) => a - b);
+      push([bottom, topColor], 0.0, 0.72, 0.33);
+      roll.forEach((m, i) => push([m], i < 2 ? 0.045 + i * 0.030 : 0.18 + (i - 2) * 0.075, 0.92, 0.32 + i * 0.025));
+      if (dur > 1.55) push([bottom, topColor], 1.48, 0.74, 0.35);
+      if (dur > 2.45 && roll.length > 0) roll.slice().reverse().slice(0, 3).forEach((m, i) => push([m], 2.36 + i * 0.11, 0.44, 0.28 - i * 0.02));
+      break;
+    }
   }
   return hits;
+}
+
+/** ★ Phase E §3.6:从我们 voicing(cM 升序)派生 RNB wide-inner shape(bottom/inner/topColor)。
+ *  voicing-first:不重算 MG rnbWideInnerShape voicing,直接取 comp 真 voicing 的低/中/高声部(听感等价,贴 texture-decision②)。 */
+function rnbWideInnerShape(cM: readonly number[]): { bottom: number; inner: number[]; topColor: number } {
+  return { bottom: cM[0], inner: cM.length > 2 ? cM.slice(1, -1) : [], topColor: cM[cM.length - 1] };
 }
 
 /**
@@ -262,6 +314,11 @@ export function renderTextureBassHits(textureCase: string, durationBeats: number
     case 'Piano_Lofi_Tape_Wobble_Arp': b(0, dur, 0.55); break;
     case 'Piano_Wide_Color_Motion': b(0, Math.min(dur, 2.4), 0.58); break;
     case 'Piano_CommonTone_Soft_Roll': b(0, dur, 0.65); break;
+    // ——— RNB-color(Phase E §3.6):根音持音 + 长曲中段 color 再触发(忠实 MG bass 包络)———
+    case 'Pop_Rnb_Expensive_Add9_Quartal': b(0, Math.max(0.5, dur - 0.08), 0.82); break;
+    case 'RnB_Drop2_Color_Answer': b(0, Math.max(0.5, dur - 0.08), 0.58); if (dur >= 3.2) b(2.72, 0.68, 0.34, 'fifth'); break;
+    case 'RnB_InnerTight_Wide_Color': b(0, Math.max(0.5, dur - 0.08), 0.54); break;
+    case 'RnB_Quartal_Breath_Roll': b(0, Math.max(0.5, Math.min(dur - 0.08, 2.40)), 0.56); if (dur >= 3.0) b(2.64, 0.80, 0.33, 'fifth'); break;
   }
   return hits;
 }

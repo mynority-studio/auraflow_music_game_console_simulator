@@ -111,6 +111,17 @@ const _ACG_TEXTURE_PROFILES: TextureProfile[] = [
   { id: 'acg_pedal_wash_color_drops', textureCase: 'ACG_Pedal_Wash_Color_Drops', styles: ['ACG'], mood: 'ambient', phraseRoles: ['establish', 'develop', 'cadence'], densityRange: [0.10, 0.58], energyRange: [0.10, 0.62], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [0, 18], bassLateMs: [-1, 4], velocityHumanize: 0.08 } },
 ];
 
+// ★ MG full-parity Phase E(directive §3.6):当前 MG 有、simulator 缺的 POP/RNB 色彩织体 profile
+//   (源 styleDictionary.ts:3340 expensive add9/quartal + drop2 color answer + inner-tight wide + quartal breath roll)。
+//   metadata 忠实源(styles/mood/phraseRoles/density/energy/maxRepeatBars);partPolicy/timing 为 simulator 侧补全
+//   (源无,按同类 RNB/LOFI 织体约定派生)。render 见 textureRenderer RNB_COLOR_TEXTURE_CASES(voicing-first 演绎)。
+const _RNB_COLOR_TEXTURE_PROFILES: TextureProfile[] = [
+  { id: 'expensive_add9_quartal_stack', textureCase: 'Pop_Rnb_Expensive_Add9_Quartal', styles: ['POP', 'RNB'], mood: 'lyrical', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0.20, 0.85], energyRange: [0.20, 0.85], maxRepeatBars: 8, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'medium' }, timing: { chordLateMs: [0, 16], bassLateMs: [-1, 5], velocityHumanize: 0.09 } },
+  { id: 'rnb_drop2_color_answer', textureCase: 'RnB_Drop2_Color_Answer', styles: ['RNB'], mood: 'pocket', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0.18, 0.72], energyRange: [0.18, 0.78], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [4, 20], bassLateMs: [-1, 5], velocityHumanize: 0.10 } },
+  { id: 'rnb_inner_tight_wide_color', textureCase: 'RnB_InnerTight_Wide_Color', styles: ['RNB'], mood: 'lyrical', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0.12, 0.62], energyRange: [0.12, 0.70], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'sparse', melodySpace: 'high' }, timing: { chordLateMs: [4, 22], bassLateMs: [-1, 5], velocityHumanize: 0.10 } },
+  { id: 'rnb_quartal_breath_roll', textureCase: 'RnB_Quartal_Breath_Roll', styles: ['RNB'], mood: 'pocket', phraseRoles: ['establish', 'develop', 'lift', 'cadence'], densityRange: [0.20, 0.80], energyRange: [0.18, 0.82], maxRepeatBars: 4, partPolicy: { bass: 'required', chord: 'required', melodySpace: 'high' }, timing: { chordLateMs: [4, 18], bassLateMs: [-1, 5], velocityHumanize: 0.10 } },
+];
+
 // ============================================================
 // Legacy 织体池(Loop 6,2026-06-09)—— 忠实 port 自 styleDictionary._legacyTexturesAsPool()。
 //   源:STYLE_DICTIONARY[POP/JAZZ/LOFI/RNB].primaryTextures 里【未被 modern profile 覆盖】的
@@ -160,8 +171,8 @@ function _legacyTexturesAsPool(): TextureProfile[] {
 
 const _LEGACY_TEXTURE_PROFILES: TextureProfile[] = _legacyTexturesAsPool();
 
-/** 公开池 = modern + LOFI + ACG + legacy(★ Loop 6:全量 strict MG,见顶部横幅;Phase 2b 加 ACG)。 */
-export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES, ..._ACG_TEXTURE_PROFILES, ..._LEGACY_TEXTURE_PROFILES];
+/** 公开池 = modern + LOFI + ACG + RNB-color + legacy(★ Loop 6:全量 strict MG,见顶部横幅;Phase 2b 加 ACG;Phase E 加 RNB-color)。 */
+export const TEXTURE_POOL: TextureProfile[] = [..._MODERN_TEXTURE_PROFILES, ..._LOFI_TEXTURE_PROFILES, ..._ACG_TEXTURE_PROFILES, ..._RNB_COLOR_TEXTURE_PROFILES, ..._LEGACY_TEXTURE_PROFILES];
 
 /**
  * 该 textureCase 是否【设计内稀疏】(comp 连续性审计据此放宽阈值:稀疏织体的呼吸不算断层)。
@@ -249,6 +260,11 @@ export const TEXTURE_BEHAVIOR: Record<string, TextureBehaviorProfile> = {
   RnB_Gospel_Triplets: { textureCase: 'RnB_Gospel_Triplets', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
   RnB_Laid_Back_Groove: { textureCase: 'RnB_Laid_Back_Groove', family: 'chop', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
   RnB_Neo_Soul_Roll: { textureCase: 'RnB_Neo_Soul_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.05 },
+  // —— RNB-color(Phase E,directive §3.6):firstOnset=0(chord 从拍点起,非 delayed-entry)→ 可段级常驻。 ——
+  Pop_Rnb_Expensive_Add9_Quartal: { textureCase: 'Pop_Rnb_Expensive_Add9_Quartal', family: 'block', continuity: 'continuous', firstOnsetBeat: 0.0 },
+  RnB_Drop2_Color_Answer: { textureCase: 'RnB_Drop2_Color_Answer', family: 'answer', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  RnB_InnerTight_Wide_Color: { textureCase: 'RnB_InnerTight_Wide_Color', family: 'answer', continuity: 'semiContinuous', firstOnsetBeat: 0.0 },
+  RnB_Quartal_Breath_Roll: { textureCase: 'RnB_Quartal_Breath_Roll', family: 'roll', continuity: 'continuous', firstOnsetBeat: 0.0 },
   // —— ACG(MG 升级 Phase 2b):firstOnset = 织体最早出声(bass 全从 0 起 → 无 delayed-entry 留洞);
   //    稀疏型靠 mood/density 走 isSparseTexture 放宽 comp 连续性审计。 ——
   Piano_TopVoice_Planing: { textureCase: 'Piano_TopVoice_Planing', family: 'roll', continuity: 'sparse', firstOnsetBeat: 0.10 },
