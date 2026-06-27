@@ -11,7 +11,7 @@ import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
-import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBar, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
+import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability } from '../knowledge/instruments';
 import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
@@ -355,12 +355,15 @@ export function buildInstrumentationPlan(
   const richStyle = RICH_STYLE[band.style.toLowerCase()];
   if (rng && richStyle) {
     // ★ #6:低槽(非 chorus/bridge 段,各风格通用)/高槽(chorus·bridge)若【任一所属段是属链】→ 避让
-    //   ambient/pedal 织体(否则糊在属动机上)。pickTextureForBar 仍只掷一次 → rng 序列不变,只换更合适织体。
+    //   ambient/pedal 织体(否则糊在属动机上)。pickTextureForBarWithGroove 仍只掷一次 → rng 序列不变,只换更合适织体。
+    // ★ Phase E §3.7:texture 选择消费 arranger 下发的 GrooveContract(preferred/allowed/forbidden + density/grid)→
+    //   选中织体契合 groove(POP/JAZZ/RNB/LOFI/ACG);ACG 天然限制在 spacious 集。legacy contract 无偏好 → uniform=旧行为。
+    const grooveContract = arrangement.songGrooveContract;
     const isHigh = (r: string) => r === 'chorus' || r === 'bridge';
     const lowDom = arrangement.sections.some((s) => !isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
     const highDom = arrangement.sections.some((s) => isHigh(s.role) && sectionIsDominantChain(harmonic, s.id));
-    const low = pickTextureForBar({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
-    const high = pickTextureForBar({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: highDom, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+    const low = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'establish', density: densityForCell('establish', 'VERSE'), energy: energyForCell('establish', 'VERSE'), isDominantChain: lowDom, contract: grooveContract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
+    const high = pickTextureForBarWithGroove({ style: richStyle, phraseRole: 'lift', density: densityForCell('lift', 'CHORUS'), energy: energyForCell('lift', 'CHORUS'), isDominantChain: highDom, contract: grooveContract, exclude: DELAYED_ENTRY_TEXTURES, random: rng });
     const lowTc = low?.textureCase ?? high?.textureCase;
     const highTc = high?.textureCase ?? lowTc;
     for (const s of arrangement.sections) {
@@ -371,9 +374,9 @@ export function buildInstrumentationPlan(
     // ★ verse 段内受控变化(≤2/段):低概率,中段切到【兼容连续 ≠base】变体;所有 verse 段一致(repeatGroup)。
     //   只切 rate='allow'(连续兼容,无需 bridge)→ 段内不留洞。rng 在 low/high 之后取(不扰前置)。
     if (lowTc && rng.next() < (VERSE_VARIATION_PROB[richStyle] ?? 0.35)) {
-      const variant = pickTextureForBar({
+      const variant = pickTextureForBarWithGroove({
         style: richStyle, phraseRole: 'develop', density: densityForCell('develop', 'VERSE'), energy: energyForCell('develop', 'VERSE'),
-        isDominantChain: false, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
+        isDominantChain: false, contract: grooveContract, exclude: new Set([...DELAYED_ENTRY_TEXTURES, lowTc]), random: rng,
       });
       const vtc = variant?.textureCase;
       if (vtc && rateTextureTransition(lowTc, vtc).rating === 'allow') {

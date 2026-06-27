@@ -346,6 +346,88 @@ export function pickTextureForBar(args: {
 }
 
 // ============================================================
+// ★ MG full-parity Phase E(directive §3.7)— GrooveContract-aware texture 选择
+// ------------------------------------------------------------
+// 当前 MG 用 pickTextureForBarWithGroove / pickAcgTextureForBar 让 texture 选择消费 GrooveContract 的
+//   preferred/allowed/forbidden + density/grid 偏好。simulator 段级 texture 选择此前走 plain pickTextureForBar
+//   (忽略 contract → 选中可能违背偏好甚至撞 forbidden)。这里港 MG contract-aware 打分 + 加权抽样:
+//   · 非 allowed → 0;forbidden → 0;preferred → +3;density/grid×mood 匹配 → +1。
+//   · 加权抽样【恰一次 .next() draw】(与 pickTextureForBar 的 .pick 同为一步 gen)→ 不扰下游 rng 序列,只改选中织体。
+//   ★ ACG 走同一 API(非 ACG-only):ACG GrooveContract 的 allowed 集 = 久石让/坂本宽松钢琴织体 →
+//     contract-aware 天然把 ACG 限制在 spacious 集,不回退 generic dense comp(§3.7 验收)。
+//     MG 的 per-bar pickAcgTextureForBar(逐和弦功能偏好)在 simulator【段级】texture 架构下折叠进
+//     contract preferred/allowed + 段级 isDominantChain(架构差异:simulator 段级非逐 bar)。
+//   ★ legacy contract(BLUES/无 rng,无 preferred/allowed)→ 全 score=1 → uniform = 旧行为(零洗牌兼容)。
+// ============================================================
+
+/** GrooveContract 中 texture 选择需要的字段(结构化,避免 knowledge 内循环 import;GrooveContract 结构兼容)。 */
+export interface GrooveTextureContract {
+  preferredTextureCases?: readonly string[];
+  allowedTextureCases?: readonly string[];
+  forbiddenTextureCases?: readonly string[];
+  density?: string; // 'sparse' | 'medium' | 'active'
+  grid?: string;    // GrooveGrid('straight'|'swing'|'shuffle'|'dilla'|'rubato'…)
+}
+
+/** texture 对 contract 的契合分(忠实 MG grooveTextureScore):非 allowed/forbidden=0;preferred +3;density/grid×mood +1。 */
+export function grooveTextureScore(contract: GrooveTextureContract, texture: Pick<TextureProfile, 'textureCase' | 'mood'>): number {
+  if (contract.allowedTextureCases && !contract.allowedTextureCases.includes(texture.textureCase)) return 0;
+  if (contract.forbiddenTextureCases?.includes(texture.textureCase)) return 0;
+  let score = 1;
+  if (contract.preferredTextureCases?.includes(texture.textureCase)) score += 3;
+  if (contract.density === 'sparse' && (texture.mood === 'ambient' || texture.mood === 'lyrical')) score += 1;
+  if (contract.density === 'active' && (texture.mood === 'drive' || texture.mood === 'groove' || texture.mood === 'pocket')) score += 1;
+  if (contract.grid === 'dilla' && texture.mood === 'pocket') score += 1;
+  if (contract.grid === 'rubato' && (texture.mood === 'ambient' || texture.mood === 'lyrical')) score += 1;
+  return score;
+}
+
+/** contract 加权抽样【恰一次 .next() draw】;全 0(都非 allowed/被 forbidden)→ uniform 兜底(仍一次 draw)。 */
+export function pickGrooveTexture(
+  pool: readonly TextureProfile[],
+  contract: GrooveTextureContract,
+  random: { next(): number },
+): TextureProfile | null {
+  if (pool.length === 0) return null;
+  const scored = pool.map((t) => ({ t, s: grooveTextureScore(contract, t) })).filter((x) => x.s > 0);
+  if (scored.length === 0) return pool[Math.floor(random.next() * pool.length)]; // 全被排除 → uniform(1 draw)
+  const total = scored.reduce((sum, x) => sum + x.s, 0);
+  let roll = random.next() * total; // ★ 恰一次 draw(与 pickTextureForBar .pick 同步)
+  for (const x of scored) { roll -= x.s; if (roll <= 0) return x.t; }
+  return scored[scored.length - 1].t;
+}
+
+/** contract-aware texture 选择(同 pickTextureForBar 的 strict 过滤 + 同 style 回退,但用 contract 加权抽样)。
+ *  无 contract → 退回 plain pickTextureForBar(向后兼容)。恰一次 rng draw,不扰下游序列。 */
+export function pickTextureForBarWithGroove(args: {
+  style: TextureStyleName;
+  phraseRole: PhraseCellRole;
+  density: number;
+  energy: number;
+  isDominantChain: boolean;
+  contract?: GrooveTextureContract;
+  prevTextureId?: string;
+  repeatCount?: number;
+  exclude?: ReadonlySet<string>;
+  random: { next(): number; pick<T>(xs: readonly T[]): T };
+}): TextureProfile | null {
+  if (!args.contract) return pickTextureForBar(args);
+  const allowed = (t: TextureProfile) => !args.exclude || !args.exclude.has(t.textureCase);
+  const candidates = TEXTURE_POOL.filter((t) => {
+    if (!allowed(t)) return false;
+    if (!t.styles.includes(args.style)) return false;
+    if (!t.phraseRoles.includes(args.phraseRole)) return false;
+    if (args.density < t.densityRange[0] || args.density > t.densityRange[1]) return false;
+    if (args.energy < t.energyRange[0] || args.energy > t.energyRange[1]) return false;
+    if (t.avoidOnDominantChain && args.isDominantChain) return false;
+    if (t.id === args.prevTextureId && (args.repeatCount ?? 0) >= (t.maxRepeatBars ?? 8)) return false;
+    return true;
+  });
+  const pool = candidates.length > 0 ? candidates : TEXTURE_POOL.filter((t) => t.styles.includes(args.style) && allowed(t));
+  return pickGrooveTexture(pool, args.contract, args.random);
+}
+
+// ============================================================
 // 笼统织体(原 newEngine 引擎自带的 5 种)—— 用户定:搬进 KB 一起保存,
 // 引擎本身不再带织体选择偏好。render 已能弹这 5 种;rich 17 种待 render 升级解析。
 // ============================================================

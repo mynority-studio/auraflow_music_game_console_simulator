@@ -92,5 +92,17 @@ slope protection; injected feel). Invariant-only acceptance must be justified in
   `fill→replay→pocket→sanitize→legato→sanitize`; repeatGroup lead invariant relaxed to pitch+velocity
   sequence (decision ② 各自人性化, pocket per-section). 1469 green · tsc/build clean. **done — needs ear-check**
   (POP/JAZZ/LOFI/RNB lead feel + lead/bass pocket all changed vs zero-shuffle era; Phase F rebaselines oracle).
-- **E** — texture: 4 POP/RNB cases + render + contract-aware `pickTextureForBarWithGroove` + ACG comp density. **todo**
+- **E** — texture (§3.6+§3.7): **done**.
+  - §3.6: 4 missing POP/RNB color cases (`Pop_Rnb_Expensive_Add9_Quartal` / `RnB_Drop2_Color_Answer` /
+    `RnB_InnerTight_Wide_Color` / `RnB_Quartal_Breath_Roll`) → `textureProfiles.ts` TEXTURE_POOL + TEXTURE_BEHAVIOR
+    + `textureRenderer.ts` voicing-first render (derive bottom/inner/topColor from our voicing); coverage test
+    asserts every contract preferred/allowed case ∈ TEXTURE_POOL + has render (no dangling refs).
+  - §3.7: `pickTextureForBarWithGroove` + `grooveTextureScore` + `pickGrooveTexture` (KB) — contract-aware
+    weighted pick (preferred +3 / forbidden,non-allowed → 0 / density·grid×mood +1), **exactly 1 rng draw**
+    (rng sequence preserved). Wired into `instrumentalPlanner` 3 call sites (passes `arrangement.songGrooveContract`).
+    ACG uses the same API; its contract's allowed set = spacious piano textures (folds MG's per-bar
+    `pickAcgTextureForBar` into segment-level contract constraints — architecture diff documented). legacy
+    contract (no prefs) → uniform = old behavior (BLUES/zero-shuffle safe). `richTextureBySection` on the plan
+    = audit-traceable selected texture.
+  - 1481 vitest green · tsc/build clean. **needs ear-check** (POP/JAZZ/RNB/LOFI/ACG comp texture now contract-biased).
 - **F** — re-capture final-lead oracle from MG; expand audit to 30-seed all-stages; ear-check. **todo**
