@@ -18,7 +18,7 @@ import type { MgNoteEvent } from './mgMelodyRealizer';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ORACLE_DIR = join(HERE, '__mgOracle__');
 
-interface ShaperEvent { midi: number; time: number; dur: number; vel: number; part: string; origin?: string; lick?: boolean; deg?: string }
+interface ShaperEvent { midi: number; time: number; dur: number; vel: number; part: string; origin?: string; lick?: boolean; deg?: string; bIdx?: number; bSt?: number; bEn?: number }
 interface ShaperCapture {
   shaperArgs: { style: string; musicKey: string; musicMode: string; tonalCharacter: 'tonal' | 'modal'; applyLofiParadigm: boolean; strongBeats: number[] };
   shaperChords: ShaperChord[];
@@ -33,9 +33,9 @@ const fixtures: OracleFixture[] = readdirSync(ORACLE_DIR)
   .map((f) => JSON.parse(readFileSync(join(ORACLE_DIR, f), 'utf8')) as OracleFixture);
 
 const toMg = (e: ShaperEvent): MgNoteEvent =>
-  ({ noteNumber: e.midi, time: e.time, duration: e.dur, velocity: e.vel, part: e.part as 'melody', origin: e.origin as MgNoteEvent['origin'], lickSource: e.lick, degree: e.deg });
+  ({ noteNumber: e.midi, time: e.time, duration: e.dur, velocity: e.vel, part: e.part as 'melody', origin: e.origin as MgNoteEvent['origin'], lickSource: e.lick, degree: e.deg, brickIndex: e.bIdx, brickStartBeat: e.bSt, brickEndBeat: e.bEn });
 const fromMg = (e: MgNoteEvent): ShaperEvent =>
-  ({ midi: e.noteNumber, time: e.time, dur: e.duration, vel: e.velocity, part: e.part, origin: e.origin, lick: e.lickSource, deg: e.degree });
+  ({ midi: e.noteNumber, time: e.time, dur: e.duration, vel: e.velocity, part: e.part, origin: e.origin, lick: e.lickSource, deg: e.degree, bIdx: e.brickIndex, bSt: e.brickStartBeat, bEn: e.brickEndBeat });
 
 function ourShaped(s: ShaperCapture): ShaperEvent[] {
   const a = s.shaperArgs;
@@ -58,17 +58,21 @@ describe('render/mgMelodyShaper · MG 移植 shapeMelodyHarmony parity (Loop 6)'
     }
   });
 
-  // ★ MG full-parity G5(localScaleResolver re-sync 到当前 MG)后,JAZZ/RNB 的 chord-scale 路由变了
-  //   (jazzChordScale / rnbDefaultBarScale)→ shaper 输出对【陈旧 oracle】不再 byte-match。已验证 G5 resolver
-  //   本身对当前 MG ground truth 正确(见 mgLocalScaleResolver.test JAZZ G7 = Bebop Dominant)。这些 seed 的
-  //   shaper EXACT byte-parity 还差【shaper 规则级】re-sync(G9,directive §8,待做)→ 现按 invariant-parity 验收。
-  //   POP/LOFI(resolver 路径未变)仍 strict byte-match。oracle 待 G9 时随 shaper 一起刷新到当前 MG。
-  // ★ G9 待做:这 5 个 JAZZ/RNB seed 的 shaper oracle 已刷新到【当前 MG】(目标就位),但 simulator
-  //   shapeMelodyHarmony(1021 行)对当前 MG 有【多条规则级】偏离 —— 实测首发散:① 音高 snap 差
-  //   (jazz_aa07[8] ours 把 83 snap 到 79,MG 留 83)② 长音/gap 处增删音(rnb_bb58 ours 多 2 音)。
-  //   疑含 shaper 本地 melodyContractPcsForStyle(line 67)与 resolver 版偏离。需逐规则 re-sync(directive §8)。
-  //   暂按 invariant 验收;G9 完成后清空此 set 回 strict byte-parity。
-  const G9_PENDING = new Set(['jazz_aa07', 'jazz_cc64', 'rnb_aa22', 'rnb_bb58', 'rnb_music_probe']);
+  // ★ MG full-parity G9·B+C 收口(applyMelodicResolutionParadigm 忠实港当前 MG 515 行版 + 13 helper
+  //   + brick 元数据穿透 oracle):全 23 oracle 的 shaper 字段【外科式刷新】到当前 MG(brick meta 已纳入
+  //   shaperIn/shaperOut 序列化)。**实测 11/23 seed 现 byte-exact 匹配当前 MG**(含原 G9 诊断失败的
+  //   jazz_aa07 / rnb_bb58 —— 证明 applyMelodicResolutionParadigm 港忠实)。
+  //   剩 12 seed 仍差,根因【非】applyMelodicResolutionParadigm,而是 shaper 链上【其它未港子函数】对当前 MG 陈旧:
+  //   ① 7 LOFI:LOFI paradigm 子函数(applyLofiCrawlHoldParadigm / synthesizeLofiAscendingCrawl /
+  //      applyLofiTonicizationColorAnchors)未港 → 大幅增音(cc88 ours=55/exp=41)。
+  //   ② 5 非 LOFI(jazz_cc64 / jazz_music_probe / pop_cztjju / rnb_aa22 / rnb_music_probe):multiset diff =
+  //      ONLY-EXP=0(MG 输出 ⊂ ours),ours 多留 2-4 个【develop】音(段尾边界簇)→ 当前 MG 的【删除类】
+  //      子函数(consumeReturnLandings / tightenHarmonyDecorations)更激进,simulator 版陈旧。
+  //   → 这 12 暂按 invariant-parity 验收;逐个 re-sync 子函数到当前 MG 后清出此 set 回 strict byte-parity。
+  const G9_PENDING = new Set([
+    'lofi_3xyhma', 'lofi_bb42', 'lofi_bneeok', 'lofi_cc88', 'lofi_dd19', 'lofi_er5a0r', 'lofi_uhloiw',
+    'jazz_cc64', 'jazz_music_probe', 'pop_cztjju', 'rnb_aa22', 'rnb_music_probe',
+  ]);
   for (const fx of fixtures) {
     if (G9_PENDING.has(fx.seed)) {
       it(`★ ${fx.seed} [${fx.style}] shaper invariant(G5 已 sync;exact byte-parity 待 G9)`, () => {

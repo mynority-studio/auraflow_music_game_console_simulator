@@ -712,6 +712,142 @@ export function applyLofiPhrygianBiiShadowMelody(
         const out = melody.map(e => ({ ...e }));
         const baseRoman = (roman: string): string =>
             roman.split('/')[0].replace(/^[b#n]+/, '');
+        const isTonicArrival = (chord: ChordDef): boolean => {
+            const roman = baseRoman(chord.roman);
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            return func === 'T' || roman === 'I' || roman === 'i';
+        };
+        const melodyInWindow = (start: number, end: number): NoteEvent[] =>
+            out
+                .filter(e => e.part === 'melody' && e.time >= start - 0.001 && e.time < end - 0.001)
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+        const eventBrickSpansBoundary = (event: NoteEvent, boundary: number): boolean =>
+            event.brickIndex !== undefined
+            && event.brickStartBeat !== undefined
+            && event.brickEndBeat !== undefined
+            && event.brickStartBeat < boundary - 0.001
+            && event.brickEndBeat > boundary + 0.001;
+        const applyTargetChordSuspensionBoundary = (targetIndex: number): void => {
+            if (tonalCharacter !== 'tonal') return;
+            if (targetIndex <= 0 || targetIndex >= chords.length) return;
+
+            const targetChord = chords[targetIndex];
+            const prevChord = chords[targetIndex - 1];
+            const targetFunc = targetChord.effectiveFunc ?? getHarmonicFunction(targetChord.roman);
+            const prevFunc = prevChord.effectiveFunc ?? getHarmonicFunction(prevChord.roman);
+            const targetStart = starts[targetIndex];
+            const targetEnd = targetStart + (targetChord.duration ?? 4);
+            const prevStart = starts[targetIndex - 1];
+            const prevEnd = prevStart + (prevChord.duration ?? 4);
+            const targetThirdPc = chordThirdPc(targetChord);
+            const threshold = boundaryResolutionThreshold(style);
+            const candidateMap = new Map<NoteEvent, number>();
+            const cadentialLookback = isTonicArrival(targetChord) && prevFunc === 'D';
+
+            const addCandidate = (event: NoteEvent, scoreBias: number): void => {
+                if (event.part !== 'melody') return;
+                if (event.time >= targetStart - 0.001) return;
+                if (event.duration < 0.25) return;
+                if (eventBrickSpansBoundary(event, targetStart)) return;
+                const prev = candidateMap.get(event);
+                if (prev === undefined || scoreBias < prev) candidateMap.set(event, scoreBias);
+            };
+
+            const prevTail = melodyInWindow(prevStart, prevEnd)
+                .filter(e => e.time >= prevEnd - 0.76 && e.time + e.duration >= prevEnd - 0.08)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0] ?? null;
+            if (prevTail) addCandidate(prevTail, cadentialLookback ? -8 : -32);
+
+            if (cadentialLookback) {
+                const lookbackStartIndex = targetIndex >= 2
+                    && ((chords[targetIndex - 2].effectiveFunc ?? getHarmonicFunction(chords[targetIndex - 2].roman)) === 'S')
+                    ? targetIndex - 2
+                    : targetIndex - 1;
+                for (let idx = lookbackStartIndex; idx < targetIndex; idx++) {
+                    const start = starts[idx];
+                    const end = start + (chords[idx].duration ?? 4);
+                    for (const event of melodyInWindow(start, end)) {
+                        const beatInChord = event.time - start;
+                        const strongBeat = _strongBeats.some(sb => Math.abs(beatInChord - sb) < 0.08);
+                        const structuralBias = strongBeat || event.duration >= 0.75 ? -8 : 0;
+                        const recencyPenalty = Math.max(0, Math.min(24, (targetStart - event.time) * 1.25));
+                        const highRegisterBonus = style === 'LOFI' && event.noteNumber >= 72 ? -8 : 0;
+                        addCandidate(event, recencyPenalty + structuralBias + highRegisterBonus);
+                    }
+                }
+            }
+
+            let best: { event: NoteEvent; target: { pc: number; midi: number; urgency: number }; score: number } | null = null;
+            for (const [event, scoreBias] of candidateMap.entries()) {
+                if (isRnbFloatingTonicNinth(style, ((event.noteNumber % 12) + 12) % 12, prevChord, prevFunc)) continue;
+                const target = chooseTargetChordSuspensionResolution(
+                    style,
+                    event.noteNumber,
+                    targetChord,
+                    targetFunc,
+                    musicKey,
+                    musicMode,
+                    tonalCharacter,
+                    { maxDistance: style === 'LOFI' ? 16 : 12, preferredPc: targetThirdPc, minUrgency: threshold },
+                );
+                if (!target) continue;
+                const interval = target.midi - event.noteNumber;
+                const distance = Math.abs(interval);
+                let score = scoreBias - target.urgency * 100 + distance * 2;
+                if (targetThirdPc !== null && target.pc === targetThirdPc) score -= 18;
+                const targetRootPc = ((targetChord.rootMidi % 12) + 12) % 12;
+                const eventPc = ((event.noteNumber % 12) + 12) % 12;
+                const lofiFourToThree = style === 'LOFI'
+                    && cadentialLookback
+                    && targetThirdPc !== null
+                    && target.pc === targetThirdPc
+                    && ((eventPc - targetRootPc + 12) % 12) === 5;
+                if (lofiFourToThree) score -= 120;
+                if (interval === -1) score -= 24;
+                if (event.time + event.duration >= targetStart - 0.08) score -= 18;
+                if (style === 'LOFI' && cadentialLookback && event.noteNumber < 72) score += 36;
+                if (!best || score < best.score) best = { event, target, score };
+            }
+            if (!best) return;
+
+            if (best.event.time + best.event.duration > targetStart + 0.08) {
+                best.event.duration = Math.max(0.25, targetStart - best.event.time);
+            }
+
+            const desiredDuration = style === 'LOFI' && best.target.urgency >= 0.7
+                ? Math.min(2, targetEnd - targetStart)
+                : Math.min(1, targetEnd - targetStart);
+            const earlyWindowEnd = Math.min(targetEnd, targetStart + Math.max(1.01, desiredDuration + 0.01));
+            const existing = out
+                .filter(e => e.part === 'melody'
+                    && e.time >= targetStart - 0.001
+                    && e.time < earlyWindowEnd)
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber)[0] ?? null;
+
+            if (existing) {
+                existing.noteNumber = best.target.midi;
+                existing.time = targetStart;
+                existing.duration = Math.max(existing.duration, desiredDuration);
+                existing.velocity = Math.max(existing.velocity, Math.min(105, best.event.velocity));
+                existing.origin = 'return';
+                existing.lickSource = true;
+                return;
+            }
+
+            const nextLater = out
+                .filter(e => e.part === 'melody' && e.time >= earlyWindowEnd && e.time < targetEnd)
+                .sort((a, b) => a.time - b.time)[0] ?? null;
+            const maxDurByNext = nextLater ? Math.max(0.25, nextLater.time - targetStart) : targetEnd - targetStart;
+            out.push({
+                noteNumber: best.target.midi,
+                time: targetStart,
+                duration: Math.min(desiredDuration, maxDurByNext),
+                velocity: Math.max(92, Math.min(105, best.event.velocity)),
+                part: 'melody',
+                origin: 'return',
+                lickSource: true,
+            });
+        };
 
         for (let targetIndex = 1; targetIndex < chords.length; targetIndex++) {
             const targetChord = chords[targetIndex];
@@ -736,26 +872,50 @@ export function applyLofiPhrygianBiiShadowMelody(
             const sourceIndex = !resolvesSecondaryDominant && preDominantChord && (preDominantFunc === 'S' || ['ii', 'iv', 'vi'].includes(preDominantRoman))
                 ? preDominantIndex
                 : targetIndex - 1;
-            const sourceChord = chords[sourceIndex];
 
-            const targetPc = chordThirdPc(targetChord);
-            if (targetPc === null) continue;
-
-            const sourceStart = starts[sourceIndex];
-            const sourceEnd = sourceStart + (sourceChord.duration ?? 4);
             const tonicStart = starts[targetIndex];
             const tonicEnd = tonicStart + (targetChord.duration ?? 4);
-            const sourceHold = out
-                .filter(e => e.part === 'melody'
-                    && e.time >= sourceStart - 0.001
-                    && e.time < sourceEnd - 0.001
-                    && e.duration >= 1.5)
-                .sort((a, b) => b.duration - a.duration || b.noteNumber - a.noteNumber)[0];
+            const sourceHoldMinDuration = style === 'LOFI' ? 1.0 : 1.25;
+            const sourceCandidateIndexes = sourceIndex === targetIndex - 1
+                ? [sourceIndex]
+                : [sourceIndex, targetIndex - 1];
+            let sourceChord = chords[sourceIndex];
+            let sourceFunc = sourceChord.effectiveFunc ?? getHarmonicFunction(sourceChord.roman);
+            let sourceHold: NoteEvent | null = null;
+            for (const candidateIndex of sourceCandidateIndexes) {
+                const candidateChord = chords[candidateIndex];
+                const candidateStart = starts[candidateIndex];
+                const candidateEnd = candidateStart + (candidateChord.duration ?? 4);
+                const candidateHold = out
+                    .filter(e => e.part === 'melody'
+                        && e.time >= candidateStart - 0.001
+                        && e.time < candidateEnd - 0.001
+                        && e.duration >= sourceHoldMinDuration)
+                    .sort((a, b) => b.duration - a.duration || b.noteNumber - a.noteNumber)[0];
+                if (!candidateHold) continue;
+                if (eventBrickSpansBoundary(candidateHold, tonicStart)) continue;
+                if (!sourceHold || candidateHold.duration > sourceHold.duration || candidateIndex === sourceIndex) {
+                    sourceChord = candidateChord;
+                    sourceFunc = sourceChord.effectiveFunc ?? getHarmonicFunction(sourceChord.roman);
+                    sourceHold = candidateHold;
+                }
+            }
             if (!sourceHold) continue;
 
-            const targetMidi = snapMidiToNearestPcSet(sourceHold.noteNumber, new Set([targetPc]), 3);
-            if (((targetMidi % 12) + 12) % 12 !== targetPc) continue;
-            if (targetMidi < MELODY_RANGE.LOW || targetMidi > MELODY_RANGE.HIGH) continue;
+            const target = chooseLongResolutionTarget(
+                style,
+                sourceHold.noteNumber,
+                sourceChord,
+                sourceFunc,
+                targetChord,
+                targetFunc,
+                musicKey,
+                musicMode,
+                tonalCharacter,
+                { maxDistance: 7, preferredPc: chordThirdPc(targetChord) },
+            );
+            if (!target) continue;
+            const targetMidi = target.midi;
 
             if (sourceHold.time + sourceHold.duration > tonicStart + 0.08) {
                 sourceHold.duration = Math.max(0.25, tonicStart - sourceHold.time);
@@ -771,6 +931,7 @@ export function applyLofiPhrygianBiiShadowMelody(
                 existing.time = tonicStart;
                 existing.duration = Math.max(existing.duration, Math.min(2, tonicEnd - tonicStart));
                 existing.origin = 'return';
+                existing.lickSource = true;
             } else {
                 out.push({
                     noteNumber: targetMidi,
@@ -782,6 +943,10 @@ export function applyLofiPhrygianBiiShadowMelody(
                     lickSource: true,
                 });
             }
+        }
+
+        for (let targetIndex = 1; targetIndex < chords.length; targetIndex++) {
+            applyTargetChordSuspensionBoundary(targetIndex);
         }
 
         if (tonalCharacter !== 'tonal') {
@@ -807,11 +972,13 @@ export function applyLofiPhrygianBiiShadowMelody(
                     && e.time >= end - 0.76)
                 .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber)[0];
             if (!tail) continue;
+            if (eventBrickSpansBoundary(tail, nextStart)) continue;
             if (tail.time + tail.duration < end - 0.08) continue;
 
             const rootPc = ((chord.rootMidi % 12) + 12) % 12;
             const nextRootPc = ((nextChord.rootMidi % 12) + 12) % 12;
             const notePc = ((tail.noteNumber % 12) + 12) % 12;
+            if (isRnbFloatingTonicNinth(style, notePc, chord, func)) continue;
             const runScale = runScaleForChordContext(style, chord, func, musicKey, musicMode);
             const runScalePcs = new Set(runScale.map(m => ((m % 12) + 12) % 12));
             const assessment = evaluateNoteInChordContext(
@@ -853,18 +1020,82 @@ export function applyLofiPhrygianBiiShadowMelody(
             }
 
             const earlyWindowEnd = Math.min(nextEnd, nextStart + 1.01);
+            const legalTargetPcs = new Set(targetPcs.length > 0 ? targetPcs : [...nextContract].filter(pc => nextRunScalePcs.has(pc)));
+            const connectorMidi = chooseMelodicResolutionConnector(
+                tail.noteNumber,
+                targetMidi,
+                targetPc,
+                legalTargetPcs,
+                style,
+            );
+            if (connectorMidi !== null) {
+                const connectorDuration = style === 'JAZZ' ? 0.33 : 0.5;
+                const landingTime = nextStart + connectorDuration;
+                if (landingTime < Math.min(nextEnd, nextStart + 0.95)) {
+                    for (let k = out.length - 1; k >= 0; k--) {
+                        const event = out[k];
+                        if (event.part === 'melody'
+                            && event.time >= nextStart - 0.001
+                            && event.time < landingTime - 0.001) {
+                            out.splice(k, 1);
+                        }
+                    }
+
+                    out.push({
+                        noteNumber: connectorMidi,
+                        time: nextStart,
+                        duration: connectorDuration,
+                        velocity: Math.max(82, Math.min(98, tail.velocity - 4)),
+                        part: 'melody',
+                        origin: 'develop',
+                        lickSource: true,
+                    });
+
+                    const targetExisting = out
+                        .filter(e => e.part === 'melody'
+                            && e.time >= landingTime - 0.001
+                            && e.time < earlyWindowEnd)
+                        .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber)[0] ?? null;
+                    if (targetExisting) {
+                        targetExisting.noteNumber = targetMidi;
+                        targetExisting.time = landingTime;
+                        targetExisting.duration = Math.max(targetExisting.duration, Math.min(0.75, nextEnd - landingTime));
+                        targetExisting.velocity = Math.max(targetExisting.velocity, Math.min(104, tail.velocity));
+                        targetExisting.origin = 'return';
+                        targetExisting.lickSource = true;
+                    } else {
+                        const nextLater = out
+                            .filter(e => e.part === 'melody' && e.time >= earlyWindowEnd && e.time < nextEnd)
+                            .sort((a, b) => a.time - b.time)[0] ?? null;
+                        const maxDurByNext = nextLater ? Math.max(0.25, nextLater.time - landingTime) : nextEnd - landingTime;
+                        out.push({
+                            noteNumber: targetMidi,
+                            time: landingTime,
+                            duration: Math.min(0.75, maxDurByNext),
+                            velocity: Math.max(92, Math.min(104, tail.velocity)),
+                            part: 'melody',
+                            origin: 'return',
+                            lickSource: true,
+                        });
+                    }
+                    continue;
+                }
+            }
+
             const existing = out
                 .filter(e => e.part === 'melody'
                     && e.time >= nextStart - 0.001
                     && e.time < earlyWindowEnd)
                 .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber)[0];
             if (existing) {
-                if (existing.origin === 'return') continue;
+                const existingPc = ((existing.noteNumber % 12) + 12) % 12;
+                if (existing.origin === 'return' && targetPcs.includes(existingPc)) continue;
                 existing.noteNumber = targetMidi;
                 existing.time = nextStart;
                 existing.duration = Math.max(existing.duration, Math.min(1, nextEnd - nextStart));
                 existing.velocity = Math.max(existing.velocity, Math.min(104, tail.velocity));
                 existing.origin = 'return';
+                existing.lickSource = true;
                 continue;
             }
 
@@ -881,6 +1112,106 @@ export function applyLofiPhrygianBiiShadowMelody(
                 origin: 'return',
                 lickSource: true,
             });
+        }
+
+        if (chords.length > 1) {
+            const chord = chords[chords.length - 1];
+            const nextChord = chords[0];
+            const start = starts[chords.length - 1] ?? 0;
+            const end = start + (chord.duration ?? 4);
+            const nextStart = starts[0] ?? 0;
+            const nextEnd = nextStart + (nextChord.duration ?? 4);
+            const func = chord.effectiveFunc ?? getHarmonicFunction(chord.roman);
+            const nextFunc = nextChord.effectiveFunc ?? getHarmonicFunction(nextChord.roman);
+            const loopTailCandidates = out
+                .filter(e => e.part === 'melody'
+                    && e.time >= start - 0.001
+                    && e.time < end - 0.001)
+                .sort((a, b) => b.time - a.time || b.noteNumber - a.noteNumber);
+            const nearEndTail = loopTailCandidates
+                .filter(e => e.time >= end - 0.76 && e.time + e.duration >= end - 0.08)[0];
+            const structuralLastTail = loopTailCandidates
+                .filter(e => e.duration >= 0.5)[0];
+            const tail = nearEndTail ?? structuralLastTail ?? null;
+
+            if (tail) {
+                const rootPc = ((chord.rootMidi % 12) + 12) % 12;
+                const nextRootPc = ((nextChord.rootMidi % 12) + 12) % 12;
+                const notePc = ((tail.noteNumber % 12) + 12) % 12;
+                if (isRnbFloatingTonicNinth(style, notePc, chord, func)) {
+                    return out.sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
+                }
+                const runScale = runScaleForChordContext(style, chord, func, musicKey, musicMode);
+                const runScalePcs = new Set(runScale.map(m => ((m % 12) + 12) % 12));
+                const assessment = evaluateNoteInChordContext(
+                    notePc,
+                    chord.type,
+                    rootPc,
+                    func,
+                    nextChord.type,
+                    nextRootPc,
+                    keyRootPc,
+                    chord.forcedScale,
+                    false,
+                    runScalePcs,
+                    tonalCharacter,
+                    chord.localTonalCenterPc,
+                    modeFamily,
+                );
+                const loopTailResolutionThreshold = style === 'JAZZ' ? 0.62 : 0.50;
+                if (assessment.urgency >= loopTailResolutionThreshold) {
+                    const nextContract = melodyContractPcsForStyle(style, nextChord, nextRootPc);
+                    const nextRunScale = runScaleForChordContext(style, nextChord, nextFunc, musicKey, musicMode);
+                    const nextRunScalePcs = new Set(nextRunScale.map(m => ((m % 12) + 12) % 12));
+                    const targetPcs = assessment.resolutionTargets
+                        .filter(pc => nextContract.has(pc) && nextRunScalePcs.has(pc));
+                    const targetPc = targetPcs[0] ?? assessment.resolutionTargets.find(pc => nextContract.has(pc));
+                    if (targetPc !== undefined) {
+                        const targetMidi = snapMidiToNearestPcSet(tail.noteNumber, new Set([targetPc]), 14);
+                        if (
+                            ((targetMidi % 12) + 12) % 12 === targetPc
+                            && targetMidi >= MELODY_RANGE.LOW
+                            && targetMidi <= MELODY_RANGE.HIGH
+                        ) {
+                            if (tail.time + tail.duration > end + 0.08) {
+                                tail.duration = Math.max(0.25, end - tail.time);
+                            }
+
+                            const earlyWindowEnd = Math.min(nextEnd, nextStart + 1.01);
+                            const existing = out
+                                .filter(e => e.part === 'melody'
+                                    && e.time >= nextStart - 0.001
+                                    && e.time < earlyWindowEnd)
+                                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber)[0];
+                            if (existing) {
+                                const existingPc = ((existing.noteNumber % 12) + 12) % 12;
+                                if (!(existing.origin === 'return' && targetPcs.includes(existingPc))) {
+                                    existing.noteNumber = targetMidi;
+                                    existing.time = nextStart;
+                                    existing.duration = Math.max(existing.duration, Math.min(1, nextEnd - nextStart));
+                                    existing.velocity = Math.max(existing.velocity, Math.min(104, tail.velocity));
+                                    existing.origin = 'return';
+                                    existing.lickSource = true;
+                                }
+                            } else if (!existing) {
+                                const nextLater = out
+                                    .filter(e => e.part === 'melody' && e.time >= earlyWindowEnd && e.time < nextEnd)
+                                    .sort((a, b) => a.time - b.time)[0];
+                                const maxDurByNext = nextLater ? Math.max(0.25, nextLater.time - nextStart) : nextEnd - nextStart;
+                                out.push({
+                                    noteNumber: targetMidi,
+                                    time: nextStart,
+                                    duration: Math.min(1, maxDurByNext),
+                                    velocity: Math.max(92, Math.min(104, tail.velocity)),
+                                    part: 'melody',
+                                    origin: 'return',
+                                    lickSource: true,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         return out.sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);

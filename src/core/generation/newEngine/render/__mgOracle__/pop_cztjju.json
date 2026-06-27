@@ -4497,14 +4497,18 @@
         "bass": "C2",
         "bassMidi": 36,
         "notes": [
+          "E3",
           "G3",
           "C4",
-          "E4"
+          "E4",
+          "G4"
         ],
         "notesMidi": [
+          52,
           55,
           60,
-          64
+          64,
+          67
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -4607,6 +4611,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -4617,16 +4627,16 @@
         "bass": "G2",
         "bassMidi": 43,
         "notes": [
-          "B3",
           "D3",
-          "G3",
-          "F4"
+          "F3",
+          "B3",
+          "G4"
         ],
         "notesMidi": [
-          59,
           50,
-          55,
-          65
+          53,
+          59,
+          67
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -4729,6 +4739,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -4739,13 +4755,13 @@
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
+          "C3",
           "B3",
-          "C4",
           "E4"
         ],
         "notesMidi": [
+          48,
           59,
-          60,
           64
         ],
         "duration": 4,
@@ -4849,6 +4865,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -4860,20 +4882,22 @@
         "bassMidi": 41,
         "notes": [
           "A3",
-          "C4",
-          "F4"
+          "C3",
+          "F3",
+          "C4"
         ],
         "notesMidi": [
           57,
-          60,
-          65
+          48,
+          53,
+          60
         ],
         "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "S",
         "chordSymbol": "F",
         "localTonalCenterPc": 0,
-        "arrangementMode": "close",
+        "arrangementMode": "drop2",
         "widePianoVoicing": {
           "notes": [
             {
@@ -4969,6 +4993,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -4979,14 +5009,16 @@
         "bass": "C2",
         "bassMidi": 36,
         "notes": [
-          "D4",
-          "E4",
-          "G4"
+          "E3",
+          "C3",
+          "D3",
+          "G3"
         ],
         "notesMidi": [
-          62,
-          64,
-          67
+          52,
+          48,
+          50,
+          55
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -5054,6 +5086,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -5064,14 +5102,14 @@
         "bass": "G2",
         "bassMidi": 43,
         "notes": [
-          "C4",
-          "D4",
-          "F4"
+          "D3",
+          "F3",
+          "C4"
         ],
         "notesMidi": [
-          60,
-          62,
-          65
+          50,
+          53,
+          60
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -5148,6 +5186,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -5158,13 +5202,13 @@
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
+          "C3",
           "B3",
-          "C4",
           "E4"
         ],
         "notesMidi": [
+          48,
           59,
-          60,
           64
         ],
         "duration": 4,
@@ -5268,6 +5312,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -5279,13 +5329,13 @@
         "bassMidi": 41,
         "notes": [
           "Ab3",
-          "C4",
-          "G4"
+          "G3",
+          "C4"
         ],
         "notesMidi": [
           56,
-          60,
-          67
+          55,
+          60
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -5391,6 +5441,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Aeolian",
+          "rootPc": 0,
+          "source": "modal-interchange",
+          "strict": true
         }
       },
       {
@@ -5401,14 +5457,16 @@
         "bass": "C2",
         "bassMidi": 36,
         "notes": [
-          "D4",
-          "E4",
-          "G4"
+          "E3",
+          "C3",
+          "D3",
+          "G3"
         ],
         "notesMidi": [
-          62,
-          64,
-          67
+          52,
+          48,
+          50,
+          55
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -5511,6 +5569,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -5523,14 +5587,14 @@
         "notes": [
           "F3",
           "B3",
-          "D4",
-          "G4"
+          "D3",
+          "G3"
         ],
         "notesMidi": [
           53,
           59,
-          62,
-          67
+          50,
+          55
         ],
         "duration": 2,
         "tensionState": "Solid",
@@ -5599,6 +5663,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -5609,16 +5679,16 @@
         "bass": "E2",
         "bassMidi": 40,
         "notes": [
+          "G#3",
           "D3",
           "E3",
-          "B3",
-          "G#4"
+          "B3"
         ],
         "notesMidi": [
+          56,
           50,
           52,
-          59,
-          68
+          59
         ],
         "forcedScale": "Phrygian Dominant",
         "duration": 2,
@@ -5645,7 +5715,7 @@
         "analysisKeyPc": 9,
         "localRoman": "V",
         "localTonalCenterPc": 9,
-        "arrangementMode": "drop2",
+        "arrangementMode": "close",
         "widePianoVoicing": {
           "notes": [
             {
@@ -5750,6 +5820,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "wide"
+        },
+        "localScale": {
+          "name": "Phrygian Dominant",
+          "rootPc": 4,
+          "source": "forced",
+          "strict": true
         }
       },
       {
@@ -5760,14 +5836,14 @@
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
-          "C4",
-          "E4",
-          "B4"
+          "C3",
+          "B3",
+          "E4"
         ],
         "notesMidi": [
-          60,
-          64,
-          71
+          48,
+          59,
+          64
         ],
         "forcedScale": "Aeolian",
         "duration": 4,
@@ -5873,6 +5949,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Aeolian",
+          "rootPc": 9,
+          "source": "forced",
+          "strict": true
         }
       },
       {
@@ -5883,21 +5965,23 @@
         "bass": "F2",
         "bassMidi": 41,
         "notes": [
-          "C4",
-          "F4",
-          "A4"
+          "A3",
+          "C3",
+          "F3",
+          "C4"
         ],
         "notesMidi": [
-          60,
-          65,
-          69
+          57,
+          48,
+          53,
+          60
         ],
         "duration": 4,
         "tensionState": "Solid",
         "effectiveFunc": "S",
         "chordSymbol": "F",
         "localTonalCenterPc": 0,
-        "arrangementMode": "close",
+        "arrangementMode": "drop2",
         "widePianoVoicing": {
           "notes": [
             {
@@ -6002,6 +6086,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -6012,14 +6102,16 @@
         "bass": "C2",
         "bassMidi": 36,
         "notes": [
-          "D4",
-          "E4",
-          "G4"
+          "E3",
+          "C3",
+          "D3",
+          "G3"
         ],
         "notesMidi": [
-          62,
-          64,
-          67
+          52,
+          48,
+          50,
+          55
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -6122,6 +6214,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -6134,14 +6232,14 @@
         "notes": [
           "F3",
           "B3",
-          "D4",
-          "G4"
+          "D3",
+          "G3"
         ],
         "notesMidi": [
           53,
           59,
-          62,
-          67
+          50,
+          55
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -6209,6 +6307,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -6219,13 +6323,13 @@
         "bass": "A2",
         "bassMidi": 45,
         "notes": [
+          "C3",
           "B3",
-          "C4",
           "E4"
         ],
         "notesMidi": [
+          48,
           59,
-          60,
           64
         ],
         "duration": 4,
@@ -6329,6 +6433,12 @@
           ],
           "innerMotion": [],
           "spreadMode": "half_wide"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       },
       {
@@ -6340,13 +6450,15 @@
         "bassMidi": 41,
         "notes": [
           "A3",
-          "C4",
-          "F4"
+          "C3",
+          "F3",
+          "C4"
         ],
         "notesMidi": [
           57,
-          60,
-          65
+          48,
+          53,
+          60
         ],
         "duration": 4,
         "tensionState": "Solid",
@@ -6414,920 +6526,1157 @@
           ],
           "innerMotion": [],
           "spreadMode": "close"
+        },
+        "localScale": {
+          "name": "Ionian",
+          "rootPc": 0,
+          "source": "global",
+          "strict": false
         }
       }
     ],
     "shaperIn": [
       {
+        "midi": 64,
+        "time": 0,
+        "dur": 0.5,
+        "vel": 101,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
+      },
+      {
+        "midi": 60,
+        "time": 0.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
+      },
+      {
         "midi": 67,
         "time": 2.5,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 1.5,
+        "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 66,
-        "time": 3,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 3.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 65,
-        "time": 4,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 63,
-        "time": 4.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 62,
-        "time": 5,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 59,
-        "time": 5.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
         "midi": 71,
-        "time": 6,
-        "dur": 0.5,
-        "vel": 100,
+        "time": 4,
+        "dur": 1,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 73,
-        "time": 6.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
         "midi": 74,
-        "time": 7,
+        "time": 5,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
-        "midi": 73,
-        "time": 7.5,
-        "dur": 0.5,
-        "vel": 100,
+        "midi": 71,
+        "time": 5.5,
+        "dur": 1.5,
+        "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 16,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 16.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
         "midi": 67,
-        "time": 17,
+        "time": 7.5,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
-        "midi": 65,
-        "time": 17.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 18,
-        "dur": 2,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 65,
-        "time": 21.5,
+        "midi": 67,
+        "time": 16.5,
         "dur": 1,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 62,
+        "time": 17.5,
+        "dur": 1,
+        "vel": 102,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
       },
       {
         "midi": 60,
-        "time": 23,
+        "time": 18.5,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 55,
+        "time": 19,
+        "dur": 0.5,
+        "vel": 91,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 53,
+        "time": 19.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 65,
+        "time": 20,
+        "dur": 1,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 65,
+        "time": 21.5,
+        "dur": 1.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 63,
+        "time": 23.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
       },
       {
         "midi": 60,
         "time": 24,
         "dur": 0.5,
+        "vel": 103,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 57,
+        "time": 24.5,
+        "dur": 0.5,
+        "vel": 102,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 61,
+        "time": 25,
+        "dur": 0.5,
+        "vel": 88,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 64,
+        "time": 25.5,
+        "dur": 0.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 55,
-        "time": 25,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
       },
       {
         "midi": 71,
         "time": 26,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
       },
       {
-        "midi": 66,
+        "midi": 72,
+        "time": 26.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 71,
         "time": 27,
+        "dur": 1,
+        "vel": 91,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 68,
+        "time": 28,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 72,
+        "time": 28.5,
+        "dur": 1.5,
+        "vel": 101,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 67,
+        "time": 30,
+        "dur": 0.5,
+        "vel": 99,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 68,
+        "time": 30.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 71,
+        "time": 31,
         "dur": 0.5,
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
       },
       {
-        "midi": 62,
+        "midi": 72,
+        "time": 31.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 76,
+        "time": 32,
+        "dur": 2,
+        "vel": 97,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 74,
+        "time": 34,
+        "dur": 1.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 72,
+        "time": 35.5,
+        "dur": 0.5,
+        "vel": 102,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 71,
+        "time": 36.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 36,
+        "bEn": 38
+      },
+      {
+        "midi": 65,
+        "time": 37,
+        "dur": 1,
+        "vel": 89,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 36,
+        "bEn": 38
+      },
+      {
+        "midi": 68,
         "time": 38,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 65,
+        "midi": 71,
         "time": 38.5,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 1,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 66,
-        "time": 39,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
+        "midi": 68,
         "time": 39.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
         "midi": 72,
         "time": 40,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 68,
+        "midi": 76,
         "time": 40.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 71,
+        "midi": 78,
         "time": 41,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 89,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 69,
+        "midi": 81,
         "time": 41.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 71,
+        "midi": 83,
         "time": 42,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 2,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 69,
+        "midi": 81,
         "time": 44,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
-        "midi": 71,
+        "midi": 84,
         "time": 44.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
-        "midi": 69,
+        "midi": 81,
         "time": 45,
-        "dur": 0.5,
-        "vel": 90,
+        "dur": 2.5,
+        "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
-        "midi": 65,
-        "time": 45.5,
+        "midi": 76,
+        "time": 48,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 60,
-        "time": 46,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 65,
-        "time": 46.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 69,
-        "time": 47,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 47.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
         "midi": 74,
-        "time": 48,
+        "time": 48.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
         "midi": 72,
-        "time": 48.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
         "time": 49,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
-        "midi": 67,
+        "midi": 70,
         "time": 49.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 50,
-        "dur": 1,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 51,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 62,
-        "time": 51.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 65,
-        "time": 52,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 52.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 53,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
         "midi": 74,
-        "time": 53.5,
+        "time": 50,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       }
     ],
     "shaperOut": [
       {
+        "midi": 64,
+        "time": 0,
+        "dur": 0.5,
+        "vel": 101,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
+      },
+      {
+        "midi": 60,
+        "time": 0.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
+      },
+      {
         "midi": 67,
         "time": 2.5,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 1.5,
+        "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
-        "midi": 67,
-        "time": 3,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 3.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
+        "midi": 71,
         "time": 4,
         "dur": 1,
-        "vel": 100,
-        "part": "melody",
-        "origin": "return",
-        "lick": true
-      },
-      {
-        "midi": 62,
-        "time": 4.5,
-        "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
-        "midi": 62,
+        "midi": 74,
         "time": 5,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
         "midi": 71,
         "time": 5.5,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 1.5,
+        "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 6,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 6.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 7,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 7.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 8,
-        "dur": 1,
-        "vel": 100,
-        "part": "melody",
-        "origin": "return",
-        "lick": true
-      },
-      {
-        "midi": 74,
-        "time": 16,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 16.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
       },
       {
         "midi": 67,
-        "time": 17,
+        "time": 7.5,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 16
+      },
+      {
+        "midi": 67,
+        "time": 16.5,
+        "dur": 1,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 62,
+        "time": 17.5,
+        "dur": 1,
+        "vel": 102,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 60,
+        "time": 18.5,
+        "dur": 0.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 67,
+        "time": 19,
+        "dur": 0.5,
+        "vel": 91,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 60,
+        "time": 19.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
       },
       {
         "midi": 65,
-        "time": 17.5,
-        "dur": 0.5,
-        "vel": 100,
+        "time": 20,
+        "dur": 1,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 18,
-        "dur": 2,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
       },
       {
         "midi": 65,
         "time": 21.5,
-        "dur": 1,
+        "dur": 1.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
+      },
+      {
+        "midi": 62,
+        "time": 23.5,
+        "dur": 0.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 60,
-        "time": 23,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 16,
+        "bEn": 24
       },
       {
         "midi": 60,
         "time": 24,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 2,
+        "vel": 103,
         "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 60,
-        "time": 25,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "origin": "return",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
       },
       {
         "midi": 71,
         "time": 26,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
       },
       {
-        "midi": 64,
+        "midi": 72,
+        "time": 26.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 71,
         "time": 27,
+        "dur": 1,
+        "vel": 91,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 24,
+        "bEn": 28
+      },
+      {
+        "midi": 68,
+        "time": 28,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 72,
+        "time": 28.5,
+        "dur": 1.5,
+        "vel": 101,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 67,
+        "time": 30,
+        "dur": 0.5,
+        "vel": 99,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 68,
+        "time": 30.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 72,
+        "time": 31,
         "dur": 0.5,
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
       },
       {
-        "midi": 62,
+        "midi": 72,
+        "time": 31.5,
+        "dur": 0.5,
+        "vel": 98,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 76,
+        "time": 32,
+        "dur": 2,
+        "vel": 97,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 74,
+        "time": 34,
+        "dur": 1.5,
+        "vel": 100,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 72,
+        "time": 35.5,
+        "dur": 0.5,
+        "vel": 102,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 28,
+        "bEn": 36
+      },
+      {
+        "midi": 71,
+        "time": 36,
+        "dur": 1,
+        "vel": 102,
+        "part": "melody",
+        "origin": "return",
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 36,
+        "bEn": 38
+      },
+      {
+        "midi": 65,
+        "time": 37,
+        "dur": 1,
+        "vel": 89,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 36,
+        "bEn": 38
+      },
+      {
+        "midi": 68,
         "time": 38,
         "dur": 0.5,
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 64,
+        "midi": 71,
         "time": 38.5,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 1,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 39,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
         "midi": 68,
         "time": 39.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 69,
+        "midi": 72,
         "time": 40,
-        "dur": 1,
-        "vel": 100,
+        "dur": 0.5,
+        "vel": 102,
         "part": "melody",
-        "origin": "return",
-        "lick": true
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 69,
+        "midi": 76,
         "time": 40.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 71,
+        "midi": 76,
         "time": 41,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 89,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 69,
+        "midi": 81,
         "time": 41.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 71,
+        "midi": 83,
         "time": 42,
-        "dur": 0.5,
-        "vel": 100,
+        "dur": 2,
+        "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 38,
+        "bEn": 44
       },
       {
-        "midi": 69,
+        "midi": 81,
         "time": 44,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
-        "midi": 71,
+        "midi": 84,
         "time": 44.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
-        "midi": 69,
+        "midi": 81,
         "time": 45,
-        "dur": 0.5,
-        "vel": 90,
+        "dur": 2.5,
+        "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
-        "midi": 65,
-        "time": 45.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 60,
-        "time": 46,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 65,
-        "time": 46.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 69,
-        "time": 47,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 72,
-        "time": 47.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
+        "midi": 76,
         "time": 48,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
+      },
+      {
+        "midi": 74,
+        "time": 48.5,
+        "dur": 0.5,
+        "vel": 99,
+        "part": "melody",
+        "origin": "develop",
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
         "midi": 72,
-        "time": 48.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 74,
         "time": 49,
         "dur": 0.5,
-        "vel": 90,
+        "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
-        "midi": 67,
+        "midi": 72,
         "time": 49.5,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 64,
-        "time": 50,
-        "dur": 1,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 51,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 62,
-        "time": 51.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 52,
-        "dur": 1,
-        "vel": 100,
-        "part": "melody",
-        "origin": "return",
-        "lick": true
-      },
-      {
-        "midi": 67,
-        "time": 52.5,
-        "dur": 0.5,
-        "vel": 100,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
-      },
-      {
-        "midi": 71,
-        "time": 53,
-        "dur": 0.5,
-        "vel": 90,
-        "part": "melody",
-        "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       },
       {
         "midi": 74,
-        "time": 53.5,
+        "time": 50,
         "dur": 0.5,
-        "vel": 100,
+        "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 64
       }
     ]
   },

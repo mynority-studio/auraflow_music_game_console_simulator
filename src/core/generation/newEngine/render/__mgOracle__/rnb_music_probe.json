@@ -7807,7 +7807,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 60,
@@ -7816,7 +7819,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 58,
@@ -7825,7 +7831,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 55,
@@ -7834,7 +7843,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 70,
@@ -7843,7 +7855,10 @@
         "vel": 109,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 67,
@@ -7852,7 +7867,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 70,
@@ -7861,7 +7879,10 @@
         "vel": 81,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 75,
@@ -7870,7 +7891,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 72,
@@ -7879,7 +7903,10 @@
         "vel": 106,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 68,
@@ -7888,7 +7915,10 @@
         "vel": 89,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 70,
@@ -7897,7 +7927,10 @@
         "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 72,
@@ -7906,7 +7939,10 @@
         "vel": 105,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 67,
@@ -7915,7 +7951,10 @@
         "vel": 96,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 70,
@@ -7924,7 +7963,10 @@
         "vel": 87,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 72,
@@ -7933,7 +7975,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 75,
@@ -7942,7 +7987,10 @@
         "vel": 111,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 71,
@@ -7951,7 +7999,10 @@
         "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 74,
@@ -7960,7 +8011,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 71,
@@ -7969,7 +8023,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 65,
@@ -7978,7 +8035,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 67,
@@ -7987,7 +8047,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 69,
@@ -7996,7 +8059,10 @@
         "vel": 85,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 71,
@@ -8005,7 +8071,10 @@
         "vel": 104,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 75,
@@ -8014,7 +8083,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 70,
@@ -8023,7 +8095,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 62,
@@ -8032,7 +8107,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 60,
@@ -8041,7 +8119,10 @@
         "vel": 94,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 20,
+        "bEn": 24
       },
       {
         "midi": 65,
@@ -8050,7 +8131,10 @@
         "vel": 92,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 20,
+        "bEn": 24
       },
       {
         "midi": 63,
@@ -8059,7 +8143,10 @@
         "vel": 94,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 20,
+        "bEn": 24
       },
       {
         "midi": 66,
@@ -8068,7 +8155,10 @@
         "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 69,
@@ -8077,7 +8167,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 66,
@@ -8086,7 +8179,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 60,
@@ -8095,7 +8191,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 62,
@@ -8104,7 +8203,10 @@
         "vel": 108,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 64,
@@ -8113,7 +8215,10 @@
         "vel": 86,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 66,
@@ -8122,7 +8227,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 71,
@@ -8131,7 +8239,10 @@
         "vel": 85,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 65,
@@ -8140,7 +8251,10 @@
         "vel": 103,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 59,
@@ -8149,7 +8263,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 63,
@@ -8158,7 +8275,10 @@
         "vel": 92,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 55,
@@ -8167,7 +8287,10 @@
         "vel": 109,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 58,
@@ -8176,7 +8299,10 @@
         "vel": 83,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 60,
@@ -8185,7 +8311,10 @@
         "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 70,
@@ -8194,7 +8323,10 @@
         "vel": 93,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 67,
@@ -8203,7 +8335,10 @@
         "vel": 112,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 70,
@@ -8212,7 +8347,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 72,
@@ -8221,7 +8359,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 72,
@@ -8230,7 +8371,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 70,
@@ -8239,7 +8383,10 @@
         "vel": 96,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 66,
@@ -8248,7 +8395,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 63,
@@ -8257,7 +8407,10 @@
         "vel": 93,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 67,
@@ -8266,7 +8419,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 70,
@@ -8275,7 +8431,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 71,
@@ -8284,7 +8443,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
         "midi": 74,
@@ -8293,7 +8455,10 @@
         "vel": 89,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
         "midi": 74,
@@ -8302,7 +8467,10 @@
         "vel": 96,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
         "midi": 75,
@@ -8311,7 +8479,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 52
       },
       {
         "midi": 72,
@@ -8320,7 +8491,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 52
       },
       {
         "midi": 75,
@@ -8329,7 +8503,10 @@
         "vel": 103,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 52
       },
       {
         "midi": 72,
@@ -8338,7 +8515,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 8,
+        "bSt": 52,
+        "bEn": 60
       },
       {
         "midi": 75,
@@ -8347,7 +8527,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 8,
+        "bSt": 52,
+        "bEn": 60
       },
       {
         "midi": 72,
@@ -8356,7 +8539,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 8,
+        "bSt": 52,
+        "bEn": 60
       },
       {
         "midi": 67,
@@ -8365,7 +8551,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 8,
+        "bSt": 52,
+        "bEn": 60
       },
       {
         "midi": 71,
@@ -8374,7 +8563,10 @@
         "vel": 104,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 67,
@@ -8383,7 +8575,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 72,
@@ -8392,7 +8587,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 77,
@@ -8401,7 +8599,10 @@
         "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 74,
@@ -8410,7 +8611,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 73,
@@ -8419,7 +8623,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 75,
@@ -8428,7 +8635,10 @@
         "vel": 105,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       }
     ],
     "shaperOut": [
@@ -8439,7 +8649,10 @@
         "vel": 104,
         "part": "melody",
         "origin": "return",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 60,
@@ -8448,7 +8661,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 70,
@@ -8457,7 +8673,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 67,
@@ -8466,7 +8685,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 70,
@@ -8475,7 +8697,10 @@
         "vel": 109,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 67,
@@ -8484,7 +8709,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 70,
@@ -8493,7 +8721,10 @@
         "vel": 81,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 75,
@@ -8502,7 +8733,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 0,
+        "bSt": 0,
+        "bEn": 4
       },
       {
         "midi": 70,
@@ -8511,7 +8745,10 @@
         "vel": 106,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 68,
@@ -8520,7 +8757,10 @@
         "vel": 89,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 70,
@@ -8529,7 +8769,10 @@
         "vel": 101,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 72,
@@ -8538,7 +8781,10 @@
         "vel": 105,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 67,
@@ -8547,7 +8793,10 @@
         "vel": 96,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 70,
@@ -8556,7 +8805,10 @@
         "vel": 87,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 72,
@@ -8565,7 +8817,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 75,
@@ -8574,7 +8829,10 @@
         "vel": 111,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 1,
+        "bSt": 4,
+        "bEn": 12
       },
       {
         "midi": 71,
@@ -8583,7 +8841,10 @@
         "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 74,
@@ -8592,7 +8853,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 71,
@@ -8601,7 +8865,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 65,
@@ -8610,7 +8877,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 67,
@@ -8619,7 +8889,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 67,
@@ -8628,7 +8901,10 @@
         "vel": 85,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 71,
@@ -8637,7 +8913,10 @@
         "vel": 104,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 75,
@@ -8646,7 +8925,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 70,
@@ -8655,7 +8937,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 62,
@@ -8664,7 +8949,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 2,
+        "bSt": 12,
+        "bEn": 20
       },
       {
         "midi": 60,
@@ -8673,7 +8961,10 @@
         "vel": 94,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 20,
+        "bEn": 24
       },
       {
         "midi": 65,
@@ -8682,7 +8973,10 @@
         "vel": 92,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 20,
+        "bEn": 24
       },
       {
         "midi": 63,
@@ -8691,7 +8985,10 @@
         "vel": 94,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 3,
+        "bSt": 20,
+        "bEn": 24
       },
       {
         "midi": 62,
@@ -8700,7 +8997,10 @@
         "vel": 101,
         "part": "melody",
         "origin": "return",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 69,
@@ -8709,7 +9009,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 66,
@@ -8718,7 +9021,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 64,
@@ -8727,7 +9033,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 62,
@@ -8736,7 +9045,10 @@
         "vel": 108,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 64,
@@ -8745,7 +9057,10 @@
         "vel": 86,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 66,
@@ -8754,7 +9069,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 71,
@@ -8763,7 +9081,10 @@
         "vel": 85,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 65,
@@ -8772,7 +9093,10 @@
         "vel": 103,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 71,
@@ -8781,7 +9105,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 63,
@@ -8790,7 +9117,10 @@
         "vel": 92,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 67,
@@ -8799,7 +9129,10 @@
         "vel": 109,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 70,
@@ -8808,7 +9141,10 @@
         "vel": 83,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 60,
@@ -8817,7 +9153,10 @@
         "vel": 99,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 70,
@@ -8826,7 +9165,10 @@
         "vel": 93,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 67,
@@ -8835,7 +9177,10 @@
         "vel": 112,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 70,
@@ -8844,7 +9189,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 72,
@@ -8853,7 +9201,10 @@
         "vel": 90,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 4,
+        "bSt": 24,
+        "bEn": 36
       },
       {
         "midi": 70,
@@ -8862,7 +9213,10 @@
         "vel": 100,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 70,
@@ -8871,7 +9225,10 @@
         "vel": 96,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 67,
@@ -8880,7 +9237,10 @@
         "vel": 88,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 63,
@@ -8889,7 +9249,10 @@
         "vel": 93,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 67,
@@ -8898,7 +9261,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 70,
@@ -8907,7 +9273,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 5,
+        "bSt": 36,
+        "bEn": 44
       },
       {
         "midi": 71,
@@ -8916,7 +9285,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
         "midi": 74,
@@ -8925,7 +9297,10 @@
         "vel": 89,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
         "midi": 74,
@@ -8934,7 +9309,10 @@
         "vel": 96,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 6,
+        "bSt": 44,
+        "bEn": 48
       },
       {
         "midi": 75,
@@ -8943,7 +9321,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 52
       },
       {
         "midi": 72,
@@ -8952,7 +9333,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 52
       },
       {
         "midi": 75,
@@ -8961,7 +9345,10 @@
         "vel": 103,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 7,
+        "bSt": 48,
+        "bEn": 52
       },
       {
         "midi": 75,
@@ -8970,7 +9357,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "return",
-        "lick": true
+        "lick": true,
+        "bIdx": 8,
+        "bSt": 52,
+        "bEn": 60
       },
       {
         "midi": 67,
@@ -8979,7 +9369,10 @@
         "vel": 97,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 8,
+        "bSt": 52,
+        "bEn": 60
       },
       {
         "midi": 71,
@@ -8988,7 +9381,10 @@
         "vel": 104,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 67,
@@ -8997,7 +9393,10 @@
         "vel": 107,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 71,
@@ -9006,7 +9405,10 @@
         "vel": 95,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 77,
@@ -9015,7 +9417,10 @@
         "vel": 102,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 74,
@@ -9024,7 +9429,10 @@
         "vel": 98,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 74,
@@ -9033,7 +9441,10 @@
         "vel": 91,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       },
       {
         "midi": 74,
@@ -9042,7 +9453,10 @@
         "vel": 105,
         "part": "melody",
         "origin": "develop",
-        "lick": true
+        "lick": true,
+        "bIdx": 9,
+        "bSt": 60,
+        "bEn": 64
       }
     ]
   },

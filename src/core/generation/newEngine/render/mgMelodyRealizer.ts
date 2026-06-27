@@ -32,6 +32,12 @@ export interface MgNoteEvent {
   origin?: 'motif' | 'develop' | 'return';
   lickSource?: boolean;
   degree?: string;
+  // ★ MG full-parity G9·C:brick 元数据(穿透 ScheduledToken→scheduleBrickExpansions)。
+  //   shapeMelodyHarmony 的 applyTargetChordSuspensionBoundary/eventBrickSpansBoundary 读它;
+  //   缺省 undefined → eventBrickSpansBoundary 恒 false(MG 无 brick meta 时的优雅 no-op)。
+  brickIndex?: number;
+  brickStartBeat?: number;
+  brickEndBeat?: number;
 }
 // body(LickGen 忠实区段)用 NoteEvent;在本模块即 MgNoteEvent。
 type NoteEvent = MgNoteEvent;
