@@ -15,6 +15,7 @@ import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
 import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
+import type { RenderTraceFn } from '../render/RenderOverlay';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
 import type { BandSpec } from '../band/BandSpec';
@@ -112,18 +113,19 @@ export function buildSongBundle(request: GenerationRequest): SongBundle {
 }
 
 /** bundle → FinalIR(render + 控制环)。与原 generateSong 渲染段 byte-identical。 */
-export function generateSongFromBundle(bundle: SongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
+export function generateSongFromBundle(bundle: SongBundle, budget: RetryBudget = DEFAULT_BUDGET, trace?: RenderTraceFn): GenerationResult {
   const { band, arrangement, harmonic, instrumentation, timebase, seedRng } = bundle;
   // ★ Phase 2:上游派生 musical intent(纯函数,不抽 RNG)传入 render —— intent 所有权在 arranger,render 只消费(bass enforce)。
   const intentPlan = deriveMusicIntentPlan(band.style, arrangement);
+  // V3-P0 stage trace 仅首轮（retry===undefined）注入；retry 轮不 trace（避免多轮快照覆盖）。
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, undefined, intentPlan);
+      retry ? { voicingSafer: retry.voicingSafer } : (trace ? { trace } : undefined), undefined, intentPlan);
   const locator = buildRetryLocator(harmonic, timebase);
   return runGenerationControl(render, seedRng, budget, locator);
 }
 
 /** 顶层:Request → FinalIR(Slice 1 端到端;Resolver/OccupationMap 让位后续接)。 */
-export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
-  return generateSongFromBundle(buildSongBundle(request), budget);
+export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET, trace?: RenderTraceFn): GenerationResult {
+  return generateSongFromBundle(buildSongBundle(request), budget, trace);
 }

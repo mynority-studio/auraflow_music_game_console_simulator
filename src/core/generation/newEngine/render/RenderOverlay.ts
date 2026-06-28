@@ -8,7 +8,24 @@
 // ============================================================
 
 import type { ChordSpanId } from '../harmony/HarmonicPlan';
+import type { TrackIR } from '../ir/MusicalIR';
+
+/** V3-P0 stage trace 序列单一真源（raw 单列；以下为 raw 之后的后处理 stage）。
+ *  导出器 emit + ne_json2c 解析 + 验收共用此序列；写进 ne_golden_post.json.meta。
+ *  v3 相对 v1 新增：snapcomp / groovepocket / articulate。 */
+export const POST_STAGES = [
+  'postmix', 'gated', 'resolved', 'ducked', 'dynamics', 'ending', 'leadins',
+  'gapfill', 'replay', 'snapcomp', 'humanvel', 'swing', 'humantime', 'groovepocket', 'articulate',
+] as const;
+
+export type PostStage = typeof POST_STAGES[number];
+
+/** stage trace 回调（V3-P0 C 移植对账用）：renderSongFull 在各 pass 后回传该阶段轨道快照
+ *  （回调只读，深拷贝/序列化由调用方负责）。仅 golden 导出注入；产品/retry 路径不传 → 零开销。
+ *  ★ stage 类型收窄到 'raw' | PostStage → renderCoordinator 拼错/漏插被 TS 提前抓。 */
+export type RenderTraceFn = (stage: 'raw' | PostStage, tracks: readonly TrackIR[]) => void;
 
 export interface RenderOverlay {
   voicingSafer?: Record<ChordSpanId, true>; // span → 瘦身 shell
+  trace?: RenderTraceFn;                      // V3-P0 stage trace（可选，仅 golden 导出用）
 }
