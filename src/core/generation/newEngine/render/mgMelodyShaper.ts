@@ -188,23 +188,23 @@ export function applyLofiPhrygianBiiShadowMelody(
 
     // ★ MG full-parity G9:旋律解决子系统 helper(忠实 port 当前 ../melodygenerative musicEngine,
     //   private 方法 → 本命名空间 function;this.X → X)。供 applyMelodicResolutionParadigm 当前 MG 版用。
-    function melodicIntervalClass(fromMidi: number, toMidi: number): number {
+    export function melodicIntervalClass(fromMidi: number, toMidi: number): number {
         const semitones = Math.abs(toMidi - fromMidi) % 12;
         return Math.min(semitones, 12 - semitones);
     }
-    function chordSeventhPc(chord: ChordDef): number | null {
+    export function chordSeventhPc(chord: ChordDef): number | null {
         const intervals = CHORD_TYPES[chord.type] ?? [];
         const seventh = intervals.includes(11) ? 11 : intervals.includes(10) ? 10 : null;
         if (seventh === null) return null;
         return (((chord.rootMidi % 12) + seventh) % 12 + 12) % 12;
     }
-    function chordFifthPc(chord: ChordDef): number | null {
+    export function chordFifthPc(chord: ChordDef): number | null {
         const intervals = CHORD_TYPES[chord.type] ?? [];
         const fifth = intervals.includes(7) ? 7 : null;
         if (fifth === null) return null;
         return (((chord.rootMidi % 12) + fifth) % 12 + 12) % 12;
     }
-    function isJpop456DeceptiveResolution(style: StyleName, sourceChord: ChordDef, sourceFunc: 'T' | 'S' | 'D', targetChord: ChordDef): boolean {
+    export function isJpop456DeceptiveResolution(style: StyleName, sourceChord: ChordDef, sourceFunc: 'T' | 'S' | 'D', targetChord: ChordDef): boolean {
         if (style !== 'ACG' || sourceFunc !== 'D') return false;
         const sourceBase = sourceChord.roman.split('/')[0].replace(/^[b#n]+/, '');
         const targetBase = targetChord.roman.split('/')[0].replace(/^[b#n]+/, '');
@@ -213,7 +213,7 @@ export function applyLofiPhrygianBiiShadowMelody(
         const targetRootPc = ((targetChord.rootMidi % 12) + 12) % 12;
         return ((targetRootPc - sourceRootPc + 12) % 12) === 2;
     }
-    function isRnbFloatingTonicNinth(style: StyleName, notePc: number, chord: ChordDef, func: 'T' | 'S' | 'D'): boolean {
+    export function isRnbFloatingTonicNinth(style: StyleName, notePc: number, chord: ChordDef, func: 'T' | 'S' | 'D'): boolean {
         if (style !== 'RNB' || func !== 'T') return false;
         const baseRoman = chord.roman.split('/')[0].replace(/^[b#n]+/, '');
         if (baseRoman !== 'I' && baseRoman !== 'i') return false;
@@ -222,14 +222,14 @@ export function applyLofiPhrygianBiiShadowMelody(
         const intervals = CHORD_TYPES[chord.type] ?? [];
         return intervals.some((iv) => ((iv % 12) + 12) % 12 === 2);
     }
-    function boundaryResolutionThreshold(style: StyleName): number {
+    export function boundaryResolutionThreshold(style: StyleName): number {
         if (style === 'LOFI') return 0.40;
         if (style === 'POP') return 0.45;
         if (style === 'RNB') return 0.50;
         if (style === 'JAZZ') return 0.50;
         return UNRESOLVED_TENSION_THRESHOLD;
     }
-    function guideToneThirdProbability(style: StyleName): number {
+    export function guideToneThirdProbability(style: StyleName): number {
         if (style === 'POP') return 0.80;
         if (style === 'LOFI') return 0.65;
         if (style === 'JAZZ') return 0.50;
@@ -237,7 +237,7 @@ export function applyLofiPhrygianBiiShadowMelody(
         if (style === 'ACG') return 0.25;
         return 0.60;
     }
-    function styleGuideToneTargetPc(style: StyleName, targetChord: ChordDef, referenceMidi: number, label: string): number | null {
+    export function styleGuideToneTargetPc(style: StyleName, targetChord: ChordDef, referenceMidi: number, label: string): number | null {
         const thirdPc = chordThirdPc(targetChord);
         const seventhPc = chordSeventhPc(targetChord);
         if (thirdPc === null) return seventhPc;
@@ -245,14 +245,14 @@ export function applyLofiPhrygianBiiShadowMelody(
         const roll = stableUnitInterval(`voiceleading-guide-tone|${style}|${targetChord.chordSymbol ?? targetChord.roman}|${referenceMidi}|${label}`);
         return roll < guideToneThirdProbability(style) ? thirdPc : seventhPc;
     }
-    function isGuideToneCompatibleWithNextBrickFirst(candidateMidi: number, nextBrickFirstMidi?: number | null): boolean {
+    export function isGuideToneCompatibleWithNextBrickFirst(candidateMidi: number, nextBrickFirstMidi?: number | null): boolean {
         if (nextBrickFirstMidi === undefined || nextBrickFirstMidi === null) return true;
         const distance = Math.abs(candidateMidi - nextBrickFirstMidi);
         if (distance <= 2) return true;
         const intervalClass = melodicIntervalClass(candidateMidi, nextBrickFirstMidi);
         return intervalClass === 0 || intervalClass === 3 || intervalClass === 4 || intervalClass === 5;
     }
-    function guideTonePreferenceScore(style: StyleName, candidatePc: number, candidateMidi: number, selectedGuideTonePc: number | null, guideTonePcs: Set<number>, nextBrickFirstMidi?: number | null): number {
+    export function guideTonePreferenceScore(style: StyleName, candidatePc: number, candidateMidi: number, selectedGuideTonePc: number | null, guideTonePcs: Set<number>, nextBrickFirstMidi?: number | null): number {
         if (!guideTonePcs.has(candidatePc)) return 0;
         if (!isGuideToneCompatibleWithNextBrickFirst(candidateMidi, nextBrickFirstMidi)) return 0;
         const selectedBonusByStyle: Record<StyleName, number> = { POP: -10, JAZZ: -5, LOFI: -7, RNB: -6, ACG: -3, BLUES: -4 };
@@ -262,7 +262,7 @@ export function applyLofiPhrygianBiiShadowMelody(
         const base = selected ? selectedBonusByStyle[style] ?? -5 : Math.round((selectedBonusByStyle[style] ?? -5) * 0.45);
         return base * scale;
     }
-    function chooseTargetChordSuspensionResolution(
+    export function chooseTargetChordSuspensionResolution(
         style: StyleName, sourceMidi: number, targetChord: ChordDef, targetFunc: 'T' | 'S' | 'D',
         musicKey: string, musicMode: string, tonalCharacter: 'tonal' | 'modal',
         options: { maxDistance?: number; preferredPc?: number | null; minUrgency?: number; guideReferenceMidi?: number | null } = {},
@@ -305,7 +305,7 @@ export function applyLofiPhrygianBiiShadowMelody(
         }
         return best ? { pc: best.pc, midi: best.midi, urgency: targetAssessment.urgency } : null;
     }
-    function chooseLongResolutionTarget(
+    export function chooseLongResolutionTarget(
         style: StyleName, sourceMidi: number, sourceChord: ChordDef, sourceFunc: 'T' | 'S' | 'D',
         targetChord: ChordDef, targetFunc: 'T' | 'S' | 'D', musicKey: string, musicMode: string, tonalCharacter: 'tonal' | 'modal',
         options: { maxDistance?: number; preferredPc?: number | null; guideReferenceMidi?: number | null } = {},
@@ -365,7 +365,7 @@ export function applyLofiPhrygianBiiShadowMelody(
         }
         return best ? { pc: best.pc, midi: best.midi } : null;
     }
-    function chooseMelodicResolutionConnector(sourceMidi: number, targetMidi: number, targetPc: number, legalTargetPcs: Set<number>, style: StyleName): number | null {
+    export function chooseMelodicResolutionConnector(sourceMidi: number, targetMidi: number, targetPc: number, legalTargetPcs: Set<number>, style: StyleName): number | null {
         const direct = targetMidi - sourceMidi;
         const directDistance = Math.abs(direct);
         if (directDistance < 3 || directDistance > 9) return null;
