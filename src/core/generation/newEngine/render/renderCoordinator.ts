@@ -485,7 +485,9 @@ export function renderSongFull(
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
+  overlay?.trace?.('raw', tracks); // V3-P0 raw：renderer 原始输出（后处理前），C 各 renderer 逐位对账源
   const postMixTracks = band.style.toLowerCase() === 'lofi' ? applyMgLofiDenseMelodyComping(tracks, plan, timebase) : tracks;
+  overlay?.trace?.('postmix', postMixTracks);
 
   // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
   //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。
@@ -495,6 +497,7 @@ export function renderSongFull(
     .filter((b) => b.protectPickupFromGate && b.pickupRoles.length > 0)
     .map((b) => ({ lo: b.prepBar * barTicksGate, hi: (b.prepBar + 1) * barTicksGate, roles: new Set<string>(b.pickupRoles as readonly string[]) }));
   const gatedTracks = gateByDensity(postMixTracks, plan, timebase, instrumentation.activeRolesBySection, pickupWindows);
+  overlay?.trace?.('gated', gatedTracks);
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
@@ -508,6 +511,7 @@ export function renderSongFull(
     durationTicks: ticks(totalDurationTicks(plan, timebase)),
   };
   const resolved = resolveInteractions(draft, occupation);
+  overlay?.trace?.('resolved', resolved.data.tracks);
 
   // dynamics:力度随段落能量(chorus 强 / intro 弱 / 高潮峰)
   const energyRanges: EnergyRange[] = [];
@@ -520,13 +524,17 @@ export function renderSongFull(
   // ★ 伴奏 ducking:comp 撞旋律时【极轻压 ×0.9】(只给旋律一点空间,不把 comp 压下去)。
   //   用户要 lead/伴奏均衡 → ducking 放轻(重压会和'均衡'相反);均衡主要靠 CC7 推子压平。
   const duckedTracks = duckUnderLead(resolved.data.tracks, 0.9);
+  overlay?.trace?.('ducked', duckedTracks);
   const dynamicTracks = applyDynamics(duckedTracks, energyRanges, timebase.ppq);
+  overlay?.trace?.('dynamics', dynamicTracks);
 
   // ★ 段落边界手势(Arranger 下发 → 器配 endingPlan / entryBySection 投影):
   //   收尾 cold button / fade 渐弱+错退 / tag 末和弦延留;lead-in 跃升段前末小节 crescendo 推进下拍。
   const bpbEdge = beatsPerBarOf(arrangement.meter);
   const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
+  overlay?.trace?.('ending', endedTracks);
   const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
+  overlay?.trace?.('leadins', ledTracks);
 
   // ★ lead 空拍补全(2026-06-11,用户):末音后若有【很大空拍】(≥2拍且本 bar 余下全空)→ 延长该末音到 bar 末
   //   (钳位当前和弦,不越界撞下一和弦)。避免"和弦未完成戛然而止"。只动 lead 时值,不碰 onset/其它轨。
@@ -537,26 +545,31 @@ export function renderSongFull(
   const gapFilledTracks = band.style.toLowerCase() === 'acg'
     ? ledTracks
     : fillLeadBarGaps(ledTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
+  overlay?.trace?.('gapfill', gapFilledTracks);
 
   // ★ repeatGroup 重放(2026-06-11):同 group 后续段(verse2/chorus2…)复用首段【和声一致前缀(body)】,
   //   保留各自【发散尾巴(link bar)】。放在 humanize 之前 → body 同音符,humanize/swing 各段跑出自然微差
   //   (lead 不 humanize → 逐字节一致)。在 resolveInteractions 之后 → 复制已消解撞音的首段,内部自洽。
   //   打破 strict MG lead parity:首次出现==raw MG(经空拍补全),重复出现==首次重放(用户决策)。
   const replayedTracks = applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
+  overlay?.trace?.('replay', replayedTracks);
 
   // ★ comp 去拖拍(2026-06-23,用户:632219 verse comp 比 bass/drum 八分 groove 滞后):直拍风格下,把 comp 落在
   //   【拍内弱 16 分 .25/.75(拖在八分后)】的 onset 吸回前一个八分(去拖拍,锁鼓/bass 强弱);.0(beat)/.5(and)
   //   等【有意切分】不动。只 comp;swung 风格(jazz/blues)整轨跳过(loose 是 feel)。
   const straightFeel = arrangement.feel.swingRatio <= 0.5 + 1e-6;
   const grooveTracks = straightFeel ? replayedTracks.map((t) => (t.role === 'comp' ? snapCompLaidback(t, timebase.ppq) : t)) : replayedTracks;
+  overlay?.trace?.('snapcomp', grooveTracks);
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
   const humanRng = rng.substream('humanize');
   const accentedTracks = humanizeVelocity(grooveTracks, timebase.ppq, bpbHuman, humanRng);
+  overlay?.trace?.('humanvel', accentedTracks);
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
+  overlay?.trace?.('swing', swungTracks);
   const leadProgramForSection = (sectionId: string): number | undefined =>
     instrumentation.programByRoleSection.lead?.[sectionId] ?? instrumentation.roleProgram.lead ?? band.roleProgram.lead;
   const auditKeyCtx: AuditKeyContext = {
@@ -593,10 +606,12 @@ export function renderSongFull(
   //   applyGroovePocket 拥有时序(不双重)。Phase D 起全 MG-backed 风格 contract 有真 pocket;legacy(BLUES/无 rng)pocket=0 → pocketSkip 空 → 不变。
   const pocketSkip = pocketedRoles(arrangement.songGrooveContract);
   const humanizedRaw = humanizeTiming(harmonySafeTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
+  overlay?.trace?.('humantime', humanizedRaw);
   // ★ MG full-parity Phase D:band 的 melody-pocket 只施给 MG 生成的 lead;走 A(motif sandbox override)lead 自带
   //   权威 hand-played timing(directive §2.1:无 micro-IOI),不被 band groove pocket 覆盖 → excludeRoles 含 'lead'。
   const pocketExclude = overrideLeadTrack ? new Set(['lead']) : undefined;
   const humanizedTracks = applyGroovePocket(humanizedRaw, arrangement.songGrooveContract, arrangement.tempoBpm, timebase.ppq, bpbHuman, pocketExclude);
+  overlay?.trace?.('groovepocket', humanizedTracks);
   // ★ Lead 最终安全闸(CODEX directive q_n_final_lead_sanitizer 2026-06-23):humanizeTiming/fillLeadBarGaps/swing/
   //   repeatReplay 这些末端变换会把上游已清洗的 lead 重新撞出【同 pitch overlap / 同 tick 重触发】→ 导出 MIDI 时
   //   旧 noteOff 提前关掉后一个同 pitch note(听感=motif/旋律突然断音或消失)。此前只有 jazz/blues 的 legato 分支顺带
@@ -612,6 +627,7 @@ export function renderSongFull(
     ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
     : preSanitized;
   const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
+  overlay?.trace?.('articulate', articulatedTracks);
   // ★ ACG piano touch(late,忠实 MG shapeTopVoicePianoTouch 顺序:tuck → tailResolve → spaceBass → shape comp → normalize)。
   //   ① tuckAcgLead:旋律落点重定位到 comp 琶音 apex 之后 + 音域上浮 + 瘦身。
   //   ② resolveAcgTailExpectations:旋律尾音撞下一和弦 → 移除/把下个落点 snap 到解决音。
