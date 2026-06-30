@@ -27,7 +27,9 @@ import { BandSelectionStore } from '../state/BandSelectionStore';
 import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationKeyStore, MUSIC_GEN_KEY_OPTIONS, type MusicGenKey } from '../state/MusicGenerationKeyStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
-import type { MusicGenerationResult } from '../core/generation/musicGeneration/types';
+import type { MusicGenerationResult, QnBandSelection, QnRole, QnRoleSelection } from '../core/generation/musicGeneration/types';
+import { QnBandSelectionStore, QN_ROLE_ORDER } from '../state/QnBandSelectionStore';
+import { gmName } from '../core/generation/musicGeneration/qnUiProjection';
 import { useDevPanelChannel } from './devPanels';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -196,6 +198,52 @@ const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
     // 2026-05-27 mgEngine:Bass / Drums / Atmosphere 槽位无对应 musician,下拉自动空
 };
 
+// ★ Q+N Band Selection 面板(§8):5 角色 × 三态(自动/选乐器/禁用)。每角色一条 GM 候选(按家族)。
+const QN_ROLE_DISPLAY: Record<QnRole, string> = { lead: 'Lead', comp: 'Comp', bass: 'Bass', pad: 'Pad', drum: 'Drum' };
+const QN_ROLE_PROGRAMS: Record<QnRole, number[]> = {
+    lead: [0, 1, 4, 11, 12, 24, 26, 73, 75],
+    comp: [0, 1, 4, 5, 16],
+    bass: [32, 33, 35, 38, 43],
+    pad: [48, 49, 50, 89, 91, 94],
+    drum: [],
+};
+const QnBandPanel: React.FC<{ band: QnBandSelection; onSetRole: (role: QnRole, sel: QnRoleSelection) => void }> = ({ band, onSetRole }) => {
+    const valueFor = (role: QnRole): string => {
+        const sel = band[role];
+        if (!sel || sel.kind === 'auto') return 'auto';
+        if (sel.kind === 'disabled') return 'disabled';
+        return `p${sel.program}`;
+    };
+    const onChange = (role: QnRole, v: string) => {
+        if (v === 'auto') onSetRole(role, { kind: 'auto' });
+        else if (v === 'disabled') onSetRole(role, { kind: 'disabled' });
+        else onSetRole(role, { kind: 'selected', program: parseInt(v.slice(1), 10) });
+    };
+    return (
+        <div className="px-4 py-2 border-b border-zinc-800/60">
+            <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
+            <div className="mt-2 grid grid-cols-1 gap-1">
+                {QN_ROLE_ORDER.map((role) => (
+                    <div key={role} className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono text-zinc-400 w-10">{QN_ROLE_DISPLAY[role]}</span>
+                        <select
+                            value={valueFor(role)}
+                            onChange={(e) => onChange(role, e.target.value)}
+                            className="flex-1 bg-black/60 border border-zinc-700 rounded px-2 py-0.5 text-[10px] font-mono text-zinc-200 focus:outline-none focus:border-fuchsia-400/50"
+                        >
+                            <option value="auto">自动(Q+N 默认)</option>
+                            <option value="disabled">禁用(不出声)</option>
+                            {QN_ROLE_PROGRAMS[role].map((p) => (
+                                <option key={p} value={`p${p}`}>{gmName(p)}</option>
+                            ))}
+                        </select>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 export const PipelineMonitor: React.FC = () => {
     const [isVisible, setIsVisible] = useState(true);
     // 左侧 DevDock 入口(点击切换 + 高亮同步);Q+H 键盘逻辑仍保留
@@ -224,6 +272,12 @@ export const PipelineMonitor: React.FC = () => {
     // Committed(Apply 后)— Play / Tap 实际消费的快照
     const [committedBand, setCommittedBand] = useState<BandSelection>(() => ({ ...BandSelectionStore.getBand() }));
     const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
+    // ★ Q+N Band Selection 三态(QnBandSelectionStore;立即生效,下次 Play 用)。
+    const [qnBand, setQnBand] = useState<QnBandSelection>(() => QnBandSelectionStore.getSelection());
+    const setQnRole = useCallback((role: QnRole, sel: QnRoleSelection) => {
+        QnBandSelectionStore.setRole(role, sel);
+        setQnBand(QnBandSelectionStore.getSelection());
+    }, []);
     // 2026-05-24 删 AF/MG 后:engine 常量 'AF2'(保留变量名供后续 JSX 引用,
     // 但不再有切换 UI)
     // POP-only(2026-05-25 删 JAZZ/BLUES/RNB)— mgStyle 选择 UI 移除
@@ -558,20 +612,9 @@ export const PipelineMonitor: React.FC = () => {
                 )}
             </div>
 
-            {/* BandSelection — 6 BandRole 槽位(Vocal/MainInst/Accomp/Bass/Drums/Atmosphere)+ 各自 Instr 下拉。
-                MG 模式:整面板 disable(无乐手概念)。
-                AF2 模式(Phase 2a):仅 Vocal 单槽 disable(mg 不生成 vocal)。
-                Drums / Atmosphere 已解锁 — AF2 端 PadGenerator / DrumGenerator 自生成。 */}
-            <BandSelectionPanel
-                selection={bandSelection}
-                onChange={setBandSelection}
-                instrumentSelection={instrumentSelection}
-                onInstrumentChange={setInstrumentSelection}
-                isDirty={isBandDirty}
-                onApply={applyBandSelection}
-                disabled={false}
-                disabledSlots={[BandRole.Vocal]}
-            />
+            {/* ★ Q+N Band Selection(qn_main_engine_takeover §8):5 角色 lead/comp/bass/pad/drum,三态 自动/选乐器/禁用。
+                立即写 QnBandSelectionStore,下次 Play 生效(auto=Q+N 默认 · selected=覆盖 program · disabled=不出声)。 */}
+            <QnBandPanel band={qnBand} onSetRole={setQnRole} />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
             <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -581,6 +624,7 @@ export const PipelineMonitor: React.FC = () => {
                         bpm={ui?.bpm}
                         keyName={ui?.key}
                         tonality={context?.tonality}
+                        tonalityLabel={ui?.tonality}
                         seed={seed}
                         styleName={ui?.styleHint?.toUpperCase()}
                         currentChord={currentChord}
@@ -798,14 +842,17 @@ interface Stage1Props {
     bpm: number | undefined;
     keyName: string | undefined;
     tonality: Tonality | undefined;
+    tonalityLabel?: string; // ★ Q+N:uiSnapshot.tonality 字符串('major'|'minor'|教会调式)— 优先直显,不走 enum 降级
     seed: number;
     styleName: string | undefined;
     currentChord: GeneratedChord | null;
 }
 
-const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, styleName, currentChord }) => {
+const capWord = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, tonalityLabel, seed, styleName, currentChord }) => {
     const tonicLabel = keyName ?? '—';
-    const modeLabel = tonalityToShortMode(tonality);
+    const modeLabel = tonalityLabel ? capWord(tonalityLabel) : tonalityToShortMode(tonality);
     return (
         <section className="px-4 pt-4 pb-3 border-b border-zinc-800/60">
             <StageBadge label="Stage 01: Meta & Form" color="rgb(45, 212, 191)" />
@@ -842,7 +889,7 @@ const Stage1MetaForm: React.FC<Stage1Props> = ({ bpm, keyName, tonality, seed, s
             <div className="mt-3">
                 <FieldLabel>Melody Scale</FieldLabel>
                 <div className="text-white text-sm">
-                    {tonalityToHumanScale(tonality)}
+                    {tonalityLabel ? `${tonicLabel} ${capWord(tonalityLabel)}` : tonalityToHumanScale(tonality)}
                     {currentChord !== null && (
                         <span className="text-zinc-500 ml-2">
                             (Local: <span className="text-cyan-300">{getLocalScaleName(currentChord, tonality)}</span>)

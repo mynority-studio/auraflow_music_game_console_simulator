@@ -2,15 +2,18 @@ import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
 import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
-// MelodyEngine 已删(2026-05-24)— Apps 直接 import runPipeline,AudioEngine.playSong 不再需 generator 参数
-import { runPipeline } from '../../core/generation/pipeline';
-import { BandSelectionStore } from '../../state/BandSelectionStore';
+// ★ Q+N 主链路(qn_main_engine_takeover §10):AuraJam 录制 motif → generateMotifMusic(override.lead)→ playMusicGeneration。
+import { generateMotifMusic } from '../../core/generation/musicGeneration/MusicGenerationService';
+import { pcToKey } from '../../core/generation/musicGeneration/qnUiProjection';
 import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 import { ScaleEngine, ScaleState } from './ScaleEngine';
 import { MotifRecorder } from './MotifRecorder';
-import { preprocessMotif } from './MotifPreprocessor';
+// bar 主题 styleId → Q+N styleHint。
+const JAM_STYLE_HINT: Partial<Record<StyleId, string>> = {
+    [StyleId.ModernPop]: 'pop', [StyleId.ChillJazz]: 'jazz', [StyleId.NeoSoul]: 'rnb',
+};
 // getStyleStage5Bundle 已不需要(motif 预处理 topologyConfig 已删 2026-05-24)
 
 export type JamAppState =
@@ -134,51 +137,45 @@ export class JamSessionManager {
 
             const scaleState = this.scaleEngine.getState();
 
-            // 🌟 关键：用户录制的是绝对 MIDI 音高（如 Bb3=58），
-            // 但生成管道在 C-相对空间工作，最后 AbsoluteTransposer.applyOffset 会加 keyOffset。
-            // 所以必须先减去 keyOffset 转为 C-相对音高，否则会被 double-offset。
             const keyOffset = scaleState.key;
-            const cRelativeMotif: NoteData[] = [];
-            for (let i = 0; i < motifNotes.length; i++) {
-                cRelativeMotif.push({
-                    ...motifNotes[i],
-                    pitch: motifNotes[i].pitch - keyOffset
-                });
-            }
 
-            // Style 随机选一个 — 必须在 preprocessMotif 之前完成，以便注入 Lead 拓扑配置
+            // Style 随机选一个 → Q+N styleHint。
             const allStyleIds = [StyleId.ModernPop, StyleId.ChillJazz, StyleId.NeoSoul];
             const randomStyleId = allStyleIds[Math.floor(PRNGManager.next() * allStyleIds.length)];
+            const styleHint = JAM_STYLE_HINT[randomStyleId] ?? 'pop';
 
-            // 2026-05-24:topologyConfig persona 字段已删,motif 预处理走内置默认 TopologyConfig
-            //   (preprocessMotif 第 3 参 undefined 时 fallback 到 expandMotif 内 configToUse 默认)
-            const { motif: processedMotif, role: motifRole } = preprocessMotif(cRelativeMotif, scaleState.tonality);
-
-            // Single Pipeline 原则:所有 app 走同一个 runPipeline,共享 BandSelectionStore 状态
-            const rawTrack = runPipeline({
-                forcedStyleId: randomStyleId,
-                forcedBand: BandSelectionStore.getBand(),
-                forcedGmPrograms: BandSelectionStore.getInstruments(),
-                generation: {
-                    processedUserMotif: processedMotif || undefined,
-                    motifRole,
-                    userMotifRoot: scaleState.key,
-                    detectedTonality: scaleState.tonality,
-                },
-            });
+            // ★ Q+N 续写(§10):用户录制 motif(绝对 MIDI)→ MotifLeadNote[](beats)→ override.lead。Q+N tile 满曲长
+            //   + 预摆动 → 成为整编 lead;harmony/comp/bass/drum/pad/mix 由 Q+N 按 key/style 生成。空 motif → 普通 Q+N 曲。
+            const motifLead = motifNotes
+                .filter((n) => n.duration > 0)
+                .map((n) => ({
+                    pitch: Math.round(n.pitch),
+                    onsetBeat: n.onset,
+                    durationBeat: Math.max(0.1, n.duration),
+                    velocity: Math.max(1, Math.min(127, Math.round(n.velocity <= 1 ? n.velocity * 127 : n.velocity))),
+                }));
+            const result = await generateMotifMusic(
+                { seed, styleHint, mood: 'build', targetDuration: 96, key: pcToKey(keyOffset) },
+                motifLead.length ? { lead: motifLead } : {},
+            );
 
             const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
             const style = StyleRegistry[randomStyleId] || AcgStyleConfig;
 
             if (currentGenId !== this.generationId) return;
+            if (result.status === 'failed' || !result.ir) throw new Error('Q+N motif 成曲失败');
 
-            this.currentTrack = rawTrack.track;
+            // currentTrack 兼容投影:带 sections(prepareJam 用其 startBeat/endBeat 定时,jam-over-song 不破)。
+            const tsBpb = result.uiSnapshot.timeSignature[0] || 4;
+            this.currentTrack = {
+                bpm: result.bpm, key: result.uiSnapshot.key, keyOffset: 0, absoluteStartBeat: 0,
+                melody: [], chords: [], blockIndex: 0, hasIntro: false,
+                timeSignature: result.uiSnapshot.timeSignature,
+                sections: result.uiSnapshot.sections.map((s) => ({ name: s.role, startBeat: s.startBeat, endBeat: s.startBeat + s.bars * tsBpb })),
+            } as unknown as GeneratedTrack;
             this.currentStyle = style;
 
-            // ★ Q+N 主链路(qn_main_engine_takeover §10):runPipeline 现是 Q+N 服务外观 → 走 playMusicGeneration(MusicalIR),
-            //   不再 playSong(mg track)。(用户 motif → 完整 override 续写留后续:接 generateMotifMusic + buildMotifSongOverride。)
-            if (rawTrack.result.status === 'failed' || !rawTrack.result.ir) throw new Error('Q+N 生成失败');
-            await AudioEngine.playMusicGeneration(rawTrack.result);
+            await AudioEngine.playMusicGeneration(result);
 
             if (currentGenId !== this.generationId) return;
             this.setState('PLAYING');

@@ -4,6 +4,7 @@ import { BandRole } from '../types';
 import { musicalIRToMidiEvents } from '../../audio/musicalIrToMidi';
 import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
+import { QnBandSelectionStore } from '../../../state/QnBandSelectionStore';
 
 // ============================================================
 // qn_main_engine_takeover §6/§14 — 生产主链路端到端(runPipeline 外观 → Q+N → MusicalIR → MIDI)
@@ -41,6 +42,18 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     const bass = result.ir!.tracks.find((t) => t.role === 'bass');
     expect(bass, 'bass track 在场').toBeTruthy();
     expect(bass!.program, 'BandRole.Bass override → bass program').toBe(35);
+  });
+
+  it('★ QnBandSelectionStore 三态 → runPipeline IR 反映(disabled 丢轨 · selected 覆盖 program)', () => {
+    MusicGenerationStyleStore.setStyle('POP');
+    MusicGenerationSeedStore.setSuffix('42');
+    QnBandSelectionStore.setRole('comp', { kind: 'disabled' });
+    QnBandSelectionStore.setRole('bass', { kind: 'selected', program: 35 });
+    const { result } = runPipeline({});
+    expect(result.ir!.tracks.some((t) => t.role === 'comp'), 'comp disabled 丢轨').toBe(false);
+    expect(result.ir!.tracks.find((t) => t.role === 'bass')?.program, 'bass selected program').toBe(35);
+    expect(result.uiSnapshot.roster.find((p) => p.role === 'comp')?.state).toBe('disabled');
+    QnBandSelectionStore.setSelection({}); // reset(singleton,勿污染其它测试)
   });
 
   it('★ 不同 style/seed → 不同曲(确定性 + 可变)', () => {

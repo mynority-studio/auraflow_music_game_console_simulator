@@ -16,9 +16,9 @@
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Boxes, Piano } from 'lucide-react';
+import { Activity, Boxes, Hand, Piano } from 'lucide-react';
 
-export type DevPanelId = 'pipeline' | 'newengine' | 'motif';
+export type DevPanelId = 'pipeline' | 'newengine' | 'motif' | 'takeover';
 
 export interface DevPanelMeta {
     id: DevPanelId;
@@ -47,6 +47,11 @@ export const DEV_PANELS: DevPanelMeta[] = [
         id: 'motif', label: 'Motif 沙盒', hint: 'Motif weaver', combo: 'Q+R',
         icon: Piano,
         dot: 'bg-fuchsia-400', activeRing: 'border-fuchsia-400/50 bg-fuchsia-500/10', activeText: 'text-fuchsia-300',
+    },
+    {
+        id: 'takeover', label: '用户接管沙盒', hint: 'Lead takeover', combo: 'Q+T',
+        icon: Hand,
+        dot: 'bg-teal-400', activeRing: 'border-teal-400/50 bg-teal-500/10', activeText: 'text-teal-300',
     },
 ];
 

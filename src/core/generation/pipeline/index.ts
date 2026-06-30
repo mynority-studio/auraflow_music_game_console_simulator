@@ -14,6 +14,7 @@ import type { MusicGenerationResult, QnBandSelection, QnGmOverrides, QnRole } fr
 import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
 import { MusicGenerationKeyStore } from '../../../state/MusicGenerationKeyStore';
 import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
+import { QnBandSelectionStore } from '../../../state/QnBandSelectionStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
@@ -53,7 +54,8 @@ export function runPipeline(options: PipelineRunOptions = {}): PipelineResult {
         targetDuration: 120,
         key: MusicGenerationKeyStore.getKey(),
         gmOverrides: toGmOverrides(options.forcedGmPrograms),
-        bandSelection: undefined as QnBandSelection | undefined,
+        // ★ Q+N Band Selection 三态(QnBandSelectionStore;§8.4):auto/selected/disabled per role。
+        bandSelection: QnBandSelectionStore.getSelection() as QnBandSelection,
     });
     const ui = result.uiSnapshot;
     // 兼容投影(UI/Jam only,非音频源):标量字段来自 uiSnapshot,音符轨留空(音频走 playMusicGeneration)。

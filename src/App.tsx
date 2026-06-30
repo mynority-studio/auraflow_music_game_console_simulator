@@ -8,6 +8,7 @@ import { startAudioContext } from './core/audio/SynthManager';
 import { PipelineMonitor } from './components/PipelineMonitor';
 import { NewEnginePanel } from './core/generation/newEngine/sandbox';
 import { MotifWeaverSandboxPanel } from './core/generation/motifSandbox';
+import { LeadTakeoverSandboxPanel } from './core/generation/leadTakeoverSandbox';
 import { DevDock } from './components/DevDock';
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
         className="relative w-full max-w-[70vh] translate-y-[5vh]"
         style={{ aspectRatio: '1537 / 1410' }}
       >
+        <LeadTakeoverSandboxPanel activeKeys={activeKeys} />
         {/* Layer 1: Device Base (Z-index: 1) */}
         <div 
           className="absolute inset-0 z-10"
