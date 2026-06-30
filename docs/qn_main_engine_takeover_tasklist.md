@@ -3,6 +3,8 @@
 > 执行对象：Claude / 自动化开发代理  
 > 目标：让 Q+N 新引擎正式接管主链路，产品 UI 显示为“音乐生成”，完全放弃 mg/旧主引擎生产路径；保留现有主 UI、3x5 键盘、机器渲染视觉、管道监视、Band Selection；Motif 续写模式作为沙盒入口调用同一套 Q+N 音乐生成逻辑管道。
 
+> 2026-06-30 补充：Band Selection 的语义已更新，详见 `docs/qn_takeover_followup_seed_band_cleanup_directive.md`。后续执行以该补充为准：Band Selection 只能选择参与乐手/职能，不允许用户选择 GM 乐器音色；音色由 Q+N 器配层按规则随机决定。本文件中关于 `gmOverrides` / GM program 下拉的描述视为旧阶段要求，不能继续作为产品 UI 目标。
+
 ## 0. 总原则
 
 - Q+N 核心只能作为新主生成核心升格，不能把 `newEngine/sandbox/NewEnginePanel.tsx` 整个搬成产品主 UI。

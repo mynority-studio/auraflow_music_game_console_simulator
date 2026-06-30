@@ -16,14 +16,9 @@ import {
     Tonality,
     InstrumentRole,
     ChordQuality,
-    BandRole,
-    Musician,
     CHORD_SCALE_NAME,
 } from '../core/generation/types';
-import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
-import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
-import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
-import { BandSelectionStore } from '../state/BandSelectionStore';
+// ★ Q+N 接管:旧 MusicianRegistry / GMSoundMap / BandSelectionStore / StyleFlags 已不再被本组件使用(Band Selection 走 Q+N)。
 import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationKeyStore, MUSIC_GEN_KEY_OPTIONS, type MusicGenKey } from '../state/MusicGenerationKeyStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
@@ -171,32 +166,8 @@ interface FrameSnapshot {
     seed: number;
 }
 
-// 6 个 BandRole 槽位顺序（Q+H BandSelection 面板按此顺序渲染）
-const BAND_SLOT_ORDER: { role: BandRole; label: string }[] = [
-    { role: BandRole.Vocal,      label: 'Vocal' },
-    { role: BandRole.MainInst,   label: 'Main Inst' },
-    { role: BandRole.Accomp,     label: 'Accomp' },
-    { role: BandRole.Bass,       label: 'Bass' },
-    { role: BandRole.Drums,      label: 'Drums' },
-    { role: BandRole.Atmosphere, label: 'Atmosphere' },
-];
-
-type BandSelection = Partial<Record<BandRole, string | null>>;
-/** B2：每 BandRole 的乐器(GM program number)选择。undefined = 用 BandEngine 默认 */
-type InstrumentSelection = Partial<Record<BandRole, number>>;
-
-/**
- * B2：BandRole → 默认 musician id（与 pipeline/index.ts buildDefaultRoster 一致）。
- *   UI 侧需要这个映射来：当用户没选 musician（默认状态）时，依然能根据
- *   "系统将使用的默认 musician 的 instrumentRef" 给 Instr. 下拉提供合适选项。
- *
- * 若 buildDefaultRoster 默认值变更，本表需同步更新。
- */
-const DEFAULT_MUSICIAN_BY_ROLE: Partial<Record<BandRole, string>> = {
-    [BandRole.MainInst]: 'alex_piano',
-    [BandRole.Accomp]:   'chloe_piano',
-    // 2026-05-27 mgEngine:Bass / Drums / Atmosphere 槽位无对应 musician,下拉自动空
-};
+// ★ Q+N 接管(qn_main_engine_takeover §8):旧 BandRole 槽位顺序 / BandSelection 类型 / DEFAULT_MUSICIAN_BY_ROLE
+//   已删(Band Selection 改走 QnBandSelectionStore + QnBandPanel,见下)。
 
 // ★ Q+N Band Selection 面板(§8):5 角色 × 三态(自动/选乐器/禁用)。每角色一条 GM 候选(按家族)。
 const QN_ROLE_DISPLAY: Record<QnRole, string> = { lead: 'Lead', comp: 'Comp', bass: 'Bass', pad: 'Pad', drum: 'Drum' };
@@ -265,50 +236,19 @@ export const PipelineMonitor: React.FC = () => {
     }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
-    // Pending(UI 编辑中)— 用户在下拉框选乐手时即时变,但**不影响 Play**
-    // 初值从 BandSelectionStore 拿(Phase A 后 store 含 DEFAULT_BAND,保证不是全空)
-    const [bandSelection, setBandSelection] = useState<BandSelection>(() => ({ ...BandSelectionStore.getBand() }));
-    const [instrumentSelection, setInstrumentSelection] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
-    // Committed(Apply 后)— Play / Tap 实际消费的快照
-    const [committedBand, setCommittedBand] = useState<BandSelection>(() => ({ ...BandSelectionStore.getBand() }));
-    const [committedInstruments, setCommittedInstruments] = useState<InstrumentSelection>(() => ({ ...BandSelectionStore.getInstruments() }));
     // ★ Q+N Band Selection 三态(QnBandSelectionStore;立即生效,下次 Play 用)。
     const [qnBand, setQnBand] = useState<QnBandSelection>(() => QnBandSelectionStore.getSelection());
     const setQnRole = useCallback((role: QnRole, sel: QnRoleSelection) => {
         QnBandSelectionStore.setRole(role, sel);
         setQnBand(QnBandSelectionStore.getSelection());
     }, []);
-    // 2026-05-24 删 AF/MG 后:engine 常量 'AF2'(保留变量名供后续 JSX 引用,
-    // 但不再有切换 UI)
-    // POP-only(2026-05-25 删 JAZZ/BLUES/RNB)— mgStyle 选择 UI 移除
-    // 错误提示(MG 模式抛错时显示)
+    // 错误提示
     const [playError, setPlayError] = useState<string | null>(null);
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
     playStateRef.current = playState;
     const activeSeedRef = useRef<number | null>(null);
-    // refs 指向 **committed**(不是 pending),Play / Tap 通过 ref 拿乐队
-    const bandSelectionRef = useRef<BandSelection>({});
-    bandSelectionRef.current = committedBand;
-    const instrumentSelectionRef = useRef<InstrumentSelection>({});
-    instrumentSelectionRef.current = committedInstruments;
-
-    // dirty 检测 — pending !== committed 时按钮高亮提示
-    const isBandDirty = useMemo(() => {
-        return JSON.stringify(bandSelection) !== JSON.stringify(committedBand)
-            || JSON.stringify(instrumentSelection) !== JSON.stringify(committedInstruments);
-    }, [bandSelection, instrumentSelection, committedBand, committedInstruments]);
-
-    // Apply 按钮:pending → committed 一次性提交
-    // 同步写到全局 BandSelectionStore — AuraBar TapArea 双击触发也读这个
-    const applyBandSelection = useCallback(() => {
-        setCommittedBand({ ...bandSelection });
-        setCommittedInstruments({ ...instrumentSelection });
-        BandSelectionStore.setBand(bandSelection, instrumentSelection);
-    }, [bandSelection, instrumentSelection]);
-
-    // 2026-05-25 大瘦身后:POP-only,mgStyle 选择/UI 全部移除
 
     // Q+H 快捷键 — 输入框聚焦时不触发
     useEffect(() => {
@@ -383,12 +323,9 @@ export const PipelineMonitor: React.FC = () => {
             PRNGManager.setSeed(seed);
             PRNGManager.recordSnapshot('A');
 
-            // ★ Q+N 主链路:runPipeline 现是 Q+N 服务外观,返回完整 MusicGenerationResult。
+            // ★ Q+N 主链路:runPipeline 现是 Q+N 服务外观,返回完整 MusicGenerationResult(Band Selection 走 QnBandSelectionStore)。
             //   真正播放走 AudioEngine.playMusicGeneration(result)(MusicalIR 正式音频合同),不再 playSong(mg track)。
-            const { result } = runPipeline({
-                forcedBand: bandSelectionRef.current,
-                forcedGmPrograms: instrumentSelectionRef.current,
-            });
+            const { result } = runPipeline({});
 
             if (activeSeedRef.current !== seed) return;
             if (result.status === 'failed' || !result.ir) throw new Error('音乐生成失败(audit fatal)');
@@ -670,160 +607,6 @@ export const PipelineMonitor: React.FC = () => {
     );
 };
 
-// ============================================================
-// BandSelection — 6 BandRole 下拉，PRNG 抽随机为兜底
-// ============================================================
-interface BandSelectionPanelProps {
-    selection: BandSelection;
-    onChange: (next: BandSelection) => void;
-    /** B2：per-role GM program 选择（来自 Instr. 下拉） */
-    instrumentSelection: InstrumentSelection;
-    onInstrumentChange: (next: InstrumentSelection) => void;
-    /** 编辑状态与已 apply 状态有差异时高亮 Apply 按钮 */
-    isDirty: boolean;
-    /** Apply 按钮点击 — 把当前编辑提交为 committed,Play 才会用 */
-    onApply: () => void;
-    /** Engine === 'MG' 时整面板灰显 disable(MG 无乐手概念) */
-    disabled?: boolean;
-    /**
-     * 单槽位 disable 列表。Engine === 'AF2' 时把 Vocal/Drums/Atmosphere 加入
-     * 此列表 — AF2 Phase 1 这 3 个槽位无效(mg 不生成 vocal/drums/atmosphere)。
-     */
-    disabledSlots?: ReadonlyArray<BandRole>;
-}
-
-/** B1 哨兵值：UI dropdown "— 留空 —" 选项的 value，区别于"使用默认乐手"（value=""） */
-const BAND_SLOT_EMPTY_VALUE = '__empty__';
-
-const BandSelectionPanel: React.FC<BandSelectionPanelProps> = ({
-    selection, onChange, instrumentSelection, onInstrumentChange, isDirty, onApply,
-    disabled: panelDisabled = false,
-    disabledSlots,
-}) => {
-    const isSlotDisabled = (role: BandRole): boolean =>
-        disabledSlots != null && disabledSlots.includes(role);
-    const totalPersonas = MUSICIAN_POOL.length;
-    return (
-        <div className={`px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/30 shrink-0 ${panelDisabled ? 'opacity-40 pointer-events-none select-none' : ''}`}>
-            <div className="flex items-baseline justify-between mb-1">
-                <div className="flex items-center gap-2">
-                    <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
-                    {/* Apply 按钮:dirty 时高亮提示用户"有未应用变更",clean 时灰色 */}
-                    <button
-                        type="button"
-                        onClick={onApply}
-                        disabled={!isDirty || panelDisabled}
-                        className={`text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded transition-all ${
-                            isDirty && !panelDisabled
-                                ? 'bg-fuchsia-500/80 text-white hover:bg-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.5)] animate-pulse'
-                                : 'bg-zinc-800 text-zinc-600 cursor-default'
-                        }`}
-                        title={panelDisabled ? 'MG 引擎无乐手概念,Band Selection 不可用' : (isDirty ? '应用本次乐队选择,下次 Play / Tap 将使用' : '当前选择已应用')}
-                    >
-                        {isDirty ? '⚡ Apply' : '✓ Applied'}
-                    </button>
-                </div>
-                <span className="text-[9px] text-zinc-600">
-                    {panelDisabled
-                        ? 'MG mode · band disabled'
-                        : `${totalPersonas} personas · 🎲 default · ⊘ empty`}
-                </span>
-            </div>
-            <div className="grid grid-cols-6 gap-1.5">
-                {BAND_SLOT_ORDER.map(({ role, label }) => {
-                    const candidates: Musician[] = getMusiciansByRole(role);
-                    // B1：三态显示 — undefined/缺省 → ""；null（留空）→ '__empty__'；string → 该 id
-                    const cur = selection[role];
-                    const value = cur === null ? BAND_SLOT_EMPTY_VALUE : (cur ?? '');
-                    const slotForcedEmpty = isSlotDisabled(role);
-                    const disabled = candidates.length === 0 || slotForcedEmpty;
-                    // AF2 模式下 Vocal/Drums/Atmosphere 强制视为空槽(实际生成时也会被忽略)
-                    const slotEmpty = value === BAND_SLOT_EMPTY_VALUE || slotForcedEmpty;
-
-                    // B2：定位 "活动 musician" 用于推 instrumentRef
-                    //   string id → 该乐手；undefined → DEFAULT_MUSICIAN_BY_ROLE[role]；null → 无
-                    let activeMusicianId: string | undefined;
-                    if (typeof cur === 'string') activeMusicianId = cur;
-                    else if (cur === undefined) activeMusicianId = DEFAULT_MUSICIAN_BY_ROLE[role];
-                    // null → activeMusicianId undefined → instr dropdown disabled
-                    const activeMusician = activeMusicianId ? getMusicianById(activeMusicianId) : undefined;
-                    const instrOptions: ReadonlyArray<GMSlotOption> = activeMusician
-                        ? getInstrumentFamily(activeMusician.instrumentRef)
-                        : [];
-                    const instrValue = instrumentSelection[role];
-                    const instrDropdownDisabled = disabled || slotEmpty || instrOptions.length === 0;
-
-                    return (
-                        <div key={role} className="flex flex-col gap-0.5">
-                            <span className="text-[8px] uppercase tracking-wider text-zinc-500 mb-0.5">{label}</span>
-                            {/* Musician 下拉 */}
-                            <select
-                                value={value}
-                                disabled={disabled}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    const next: BandSelection = { ...selection };
-                                    if (v === BAND_SLOT_EMPTY_VALUE) next[role] = null;
-                                    else if (v === '') delete next[role];
-                                    else next[role] = v;
-                                    onChange(next);
-                                    // musician 切换 → 清掉旧 instr override（家族可能不同）
-                                    if (instrumentSelection[role] !== undefined) {
-                                        const nextInstr: InstrumentSelection = { ...instrumentSelection };
-                                        delete nextInstr[role];
-                                        onInstrumentChange(nextInstr);
-                                    }
-                                }}
-                                className={
-                                    'bg-black/60 border rounded px-1 py-1 text-[10px] font-mono ' +
-                                    (disabled
-                                        ? 'border-zinc-800 text-zinc-700 cursor-not-allowed'
-                                        : slotEmpty
-                                            ? 'border-amber-500/40 text-amber-300'
-                                            : value
-                                                ? 'border-fuchsia-500/40 text-fuchsia-300'
-                                                : 'border-zinc-700 text-zinc-400')
-                                }
-                            >
-                                <option value="">{disabled ? '—' : '🎲 Default'}</option>
-                                <option value={BAND_SLOT_EMPTY_VALUE}>⊘ Empty</option>
-                                {candidates.map((m) => (
-                                    <option key={m.id} value={m.id}>{m.name}</option>
-                                ))}
-                            </select>
-                            {/* B2：Instrument 下拉（基于 active musician 的 instrumentRef） */}
-                            <select
-                                value={instrValue !== undefined ? String(instrValue) : ''}
-                                disabled={instrDropdownDisabled}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    const next: InstrumentSelection = { ...instrumentSelection };
-                                    if (v === '') delete next[role];
-                                    else next[role] = parseInt(v, 10);
-                                    onInstrumentChange(next);
-                                }}
-                                title={activeMusician ? `${activeMusician.name} · ${activeMusician.instrumentRef}` : ''}
-                                className={
-                                    'bg-black/60 border rounded px-1 py-0.5 text-[9px] font-mono ' +
-                                    (instrDropdownDisabled
-                                        ? 'border-zinc-800 text-zinc-700 cursor-not-allowed'
-                                        : instrValue !== undefined
-                                            ? 'border-cyan-500/40 text-cyan-300'
-                                            : 'border-zinc-700/60 text-zinc-500')
-                                }
-                            >
-                                <option value="">Instr. default</option>
-                                {instrOptions.map((opt) => (
-                                    <option key={opt.id} value={opt.id}>{opt.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
 
 const StageBadge: React.FC<{ label: string; color: string }> = ({ label, color }) => (
     <div

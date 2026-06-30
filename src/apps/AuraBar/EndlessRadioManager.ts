@@ -92,7 +92,7 @@ export class EndlessRadioManager {
         this.jamCheckInterval = null;
     }
     AudioEngine.muteChannel(9, false);
-    AudioEngine.muteChannel(0, false);
+    AudioEngine.muteChannel(1, false);
     AudioEngine.stop(); // ★ Q+N:统一停(内部停 globalMidiScheduler)
     this.setState('IDLE');
   }
@@ -131,7 +131,7 @@ export class EndlessRadioManager {
         this.jamStartTick = jamStartTick;
         
         // Increase drum channel volume to max
-        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'controlChange', channel: 9, data1: 7, data2: 127 });
+        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'cc', channel: 9, data1: 7, data2: 127 });
         
         // 1. Inject Count-in events (4 Crashes + Drum Fill)
         const ticksPerBeat = ppq * 4 / timeSignature[1];
@@ -203,7 +203,7 @@ export class EndlessRadioManager {
             } else {
                 // Mute melody channels (assuming channel 0 for lead, maybe others)
                 // For now, let's mute channel 0
-                AudioEngine.muteChannel(0, true); 
+                AudioEngine.muteChannel(1, true); 
                 this.setState('JAMMING_MELODY');
             }
         }
@@ -219,10 +219,10 @@ export class EndlessRadioManager {
         }
         
         AudioEngine.muteChannel(9, false);
-        AudioEngine.muteChannel(0, false);
+        AudioEngine.muteChannel(1, false);
         
         // Restore drum channel volume to normal
-        AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'controlChange', channel: 9, data1: 7, data2: 100 });
+        AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'cc', channel: 9, data1: 7, data2: 100 });
         
         if (this.state === 'PREPARING_JAM' && this.originalDrumEvents) {
             console.log(`[Jam Mode] Exited during preparation. Resuming original drums.`);
@@ -417,6 +417,17 @@ export class EndlessRadioManager {
     if (this.onStyleChange) {
       this.onStyleChange(styleName);
     }
+
+    // ★ Jam 兼容投影(P2 修复):从 uiSnapshot 构 currentTrack(带 sections,prepareJam 定时用)+ currentStyle(guard 用),
+    //   否则长按 Jam → prepareJam 直接 return(currentTrack/currentStyle 空)。
+    const tsBpb = result.uiSnapshot.timeSignature[0] || 4;
+    this.currentTrack = {
+      bpm: result.bpm, key: result.uiSnapshot.key, keyOffset: 0, absoluteStartBeat: 0,
+      melody: [], chords: [], blockIndex: 0, hasIntro: false,
+      timeSignature: result.uiSnapshot.timeSignature,
+      sections: result.uiSnapshot.sections.map((s) => ({ name: s.role, startBeat: s.startBeat, endBeat: s.startBeat + s.bars * tsBpb })),
+    } as unknown as GeneratedTrack;
+    this.currentStyle = { id: StyleId.ModernPop } as unknown as StyleConfig;
 
     // ★ Q+N 正式播放:走 AudioEngine.playMusicGeneration(保 currentArrangedTrack/Context + uiSnapshot + 视觉)。
     await AudioEngine.playMusicGeneration(result);

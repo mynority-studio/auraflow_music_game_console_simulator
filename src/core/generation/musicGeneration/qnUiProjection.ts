@@ -88,11 +88,15 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
     sectionId: String(c.sectionId),
   }));
 
-  // roster(乐手 = instrumentation.roleProgram 的角色;state 由 selection 标注)
+  // roster(乐手 = instrumentation.roleProgram 的角色;state 由 selection 标注)。
+  // ★ program 优先取【最终 IR 实际 program】(用户 selected/gmOverride 后处理覆盖在 IR 上),回退 roleProgram;
+  //   否则选乐器后 UI 仍显示 render 前的旧 program(P1 修复)。
+  const irProgramByRole = new Map<string, number>();
+  for (const t of ir?.tracks ?? []) if (t.program !== undefined) irProgramByRole.set(t.role, t.program);
   const roster: UiPlayer[] = ROLE_ORDER
     .filter((role) => instrumentation.roleProgram[role] !== undefined)
     .map((role) => {
-      const program = instrumentation.roleProgram[role];
+      const program = irProgramByRole.get(role) ?? instrumentation.roleProgram[role];
       const sel = selection?.[role];
       const state: UiPlayer['state'] = sel?.kind === 'disabled' ? 'disabled' : sel?.kind === 'selected' ? 'selected' : 'auto';
       return { role, program, instrumentName: gmName(program), family: gmFamily(program), state };

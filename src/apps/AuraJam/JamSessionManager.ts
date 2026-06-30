@@ -200,7 +200,7 @@ export class JamSessionManager {
             this.jamCheckInterval = null;
         }
         AudioEngine.muteChannel(9, false);
-        AudioEngine.muteChannel(0, false);
+        AudioEngine.muteChannel(1, false);
         AudioEngine.stop();
         this.setState('SCALE_VIEW');
     }
@@ -246,7 +246,7 @@ export class JamSessionManager {
 
         this.jamStartTick = jamStartTick;
 
-        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'controlChange', channel: 9, data1: 7, data2: 127 });
+        AudioEngine.injectMidiEvent({ ticks: currentTick, type: 'cc', channel: 9, data1: 7, data2: 127 });
 
         // Count-in: Crash + Kick + Snare roll
         const beatsPerMeasure = timeSignature[0];
@@ -303,7 +303,7 @@ export class JamSessionManager {
                 if (type === 'drums') {
                     this.setState('JAMMING_DRUMS');
                 } else {
-                    AudioEngine.muteChannel(0, true);
+                    AudioEngine.muteChannel(1, true);
                     this.setState('JAMMING_MELODY');
                 }
             }
@@ -318,8 +318,8 @@ export class JamSessionManager {
             }
 
             AudioEngine.muteChannel(9, false);
-            AudioEngine.muteChannel(0, false);
-            AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'controlChange', channel: 9, data1: 7, data2: 100 });
+            AudioEngine.muteChannel(1, false);
+            AudioEngine.injectMidiEvent({ ticks: AudioEngine.getCurrentTick(), type: 'cc', channel: 9, data1: 7, data2: 100 });
 
             if (this.state === 'PREPARING_JAM' && this.originalDrumEvents) {
                 const restore = this.originalDrumEvents.filter((e: any) => e.ticks >= this.jamStartTick);

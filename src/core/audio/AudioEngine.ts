@@ -213,20 +213,26 @@ class AudioEngineSystem {
         return globalMidiScheduler.isChannelMuted(channel);
     }
 
+    // ★ Q+N PartName → channel(对齐 musicalIrToMidi ROLE_CHANNEL:lead=1/comp=2/bass=3/drum=9)。
+    //   Q+N 路径不经 PlaybackEngine.partChannels(直装 globalMidiScheduler),故单轨 mute 走此 map。
+    private qnPartChannel(partName: PartName): number | null {
+        const map: Partial<Record<PartName, number>> = { melody: 1, chord: 2, bass: 3, drums: 9 };
+        return map[partName] ?? null;
+    }
+
     public getPartChannels(): Partial<Record<PartName, number>> {
+        if (this.currentMusicGeneration) return { melody: 1, chord: 2, bass: 3, drums: 9 };
         if (!this.playback) return {};
         return this.playback.getPartChannels();
     }
 
     public setPartMute(partName: PartName, mute: boolean): void {
-        if (!this.playback) return;
-        const channel = this.playback.getPartChannel(partName);
+        const channel = this.currentMusicGeneration ? this.qnPartChannel(partName) : (this.playback ? this.playback.getPartChannel(partName) : null);
         if (channel !== null) globalMidiScheduler.muteChannel(channel, mute);
     }
 
     public isPartMuted(partName: PartName): boolean {
-        if (!this.playback) return false;
-        const channel = this.playback.getPartChannel(partName);
+        const channel = this.currentMusicGeneration ? this.qnPartChannel(partName) : (this.playback ? this.playback.getPartChannel(partName) : null);
         if (channel === null) return false;
         return globalMidiScheduler.isChannelMuted(channel);
     }
