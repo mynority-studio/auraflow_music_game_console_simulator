@@ -18,8 +18,9 @@ const STYLE_BASE: Record<string, GrooveKind> = { pop: 'straight', rnb: 'laidback
 const STYLE_TO_GROOVE: Record<string, GrooveStyleName> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', blues: 'BLUES', acg: 'ACG' };
 function grooveStyleOf(style: string): GrooveStyleName { return STYLE_TO_GROOVE[style.toLowerCase()] ?? 'POP'; }
 
-/** ★ MG 升级零洗牌(§7.2):非 ACG 风格【派生 legacy-compatible contract】—— swing=现 feel.swingRatio、
- *  pocket 全 0、velocityHumanize 0 → render 消费后输出与现状一致(旧歌/旧测试不漂)。 */
+/** ★ legacy-compatible contract(兜底):BLUES(archived)/ 无 rng 时用 —— swing=feel.swingRatio、pocket 全 0、
+ *  velocityHumanize 0 → render 消费后输出=该 style 的 feel 基线(不漂)。
+ *  ⚠️ Phase D 起【不再是非 ACG 主路径】:全 MG-backed 风格走真 pool(见 planGrooveContract),此函数仅兜底。 */
 function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
   const gs = grooveStyleOf(style);
   const grid = feel.kind === 'swing' ? 'swing' : feel.kind === 'shuffle' ? 'shuffle' : 'straight';
@@ -31,8 +32,8 @@ function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
   };
 }
 
-/** ★ 选/派生 GrooveContract(§7.2 零洗牌):ACG → 新 pool 加权(独立 `grooveContract` 子流,不扰主流);
- *  非 ACG → legacy 派生(无 rng)。section-level 暂全曲同 contract(段级变化留后续)。 */
+/** ★ 选 GrooveContract(Phase D):全 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)→ 真 pool 加权(独立
+ *  `grooveContract` 子流,确定性);BLUES/无 rng → legacy 派生兜底。section-level 暂全曲同 contract(段级变化留后续)。 */
 export function planGrooveContract(
   sections: readonly Section[], style: string, feel: Feel, rng?: RandomContext,
 ): { song: GrooveContract; bySection: Record<SectionId, GrooveContract> } {

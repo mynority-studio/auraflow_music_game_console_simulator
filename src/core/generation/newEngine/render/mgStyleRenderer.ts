@@ -161,16 +161,16 @@ export function feelForStyle(styleName: string): ImprovisorStyleFeel {
   if (s === 'BLUES') return { swingRatio: 0.67, articulation: 'bebop', accentPattern: [1.0, 0.9, 1.05, 0.9] };
   if (s === 'POP') return { swingRatio: 0.5, articulation: 'legato', accentPattern: [1.0, 0.9, 1.0, 0.9] };
   if (s === 'RNB') return { swingRatio: 0.5, articulation: 'legato', accentPattern: [1.0, 0.92, 1.0, 0.92] };
-  // ★ MG 升级 Phase 2c:ACG 电影钢琴 = 直拍(0.5)+ ballad 连奏 + 轻弱拍(cantabile)。
-  //   注:ACG 生产链的 lead swing 真源 = ACG GrooveContract.melodySwingRatio(见 1c 门控);此为无 contract 的兜底。
+  // ★ ACG 电影钢琴 = 直拍(0.5)+ ballad 连奏 + 轻弱拍(cantabile)。
+  //   注:生产链 lead feel 真源 = 选中的 GrooveContract.melodySwingRatio(全风格);feelForStyle 仅【无 contract】兜底。
   if (s === 'ACG') return { swingRatio: 0.5, articulation: 'ballad', accentPattern: [1.0, 0.9, 0.96, 0.88] };
   return {};  // straight 8th defaults
 }
 
-// ★ MG 升级 Phase 1c:GrooveContract → lead 的 ImprovisorStyleFeel 桥。
+// ★ GrooveContract → lead 的 ImprovisorStyleFeel 桥。
 //   lead 的 swing 真源 = contract.melodySwingRatio(与 comp/bass 的 compSwingRatio 分开)。
 //   GrooveArticulation 与 ImprovisorStyleFeel.articulation 值域全同 → 直传。
-//   ⚠️ 仅 ACG(新 pool)走此桥;非 ACG 仍走 feelForStyle(style)→ 零洗牌(见 mgLeadRenderer 门控)。
+//   ★ Phase D:全 MG-backed 风格(有 contract)走此桥;feelForStyle 仅【无 contract】兜底(见 mgLeadRenderer)。
 export function feelFromGrooveContract(c: { melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[] }): ImprovisorStyleFeel {
   return { swingRatio: c.melodySwingRatio, articulation: c.articulation, accentPattern: [...c.accentPattern] };
 }

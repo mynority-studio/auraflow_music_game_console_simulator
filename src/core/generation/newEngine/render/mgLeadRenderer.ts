@@ -68,7 +68,7 @@ export function renderMgMelody(
   timebase: Timebase,
   songSeed: number,
   leadProgram?: number, // ★ 2026-06-10:器配生效 lead program(单一真源);缺省回退 band.roleProgram(测试/向后兼容)
-  grooveContract?: { style: string; melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[] }, // ★ MG 升级 1c:lead swing 真源(仅 ACG 走;非 ACG 门控回退 feelForStyle → 零洗牌)
+  grooveContract?: { style: string; melodySwingRatio: number; articulation: ImprovisorStyleFeel['articulation']; accentPattern: readonly number[] }, // ★ lead feel 真源(Phase D:全风格真消费;缺省=无 contract 时 feelForStyle 兜底)
 ): TrackIR {
   const program = leadProgram ?? band.roleProgram.lead;
   const chords = harmonicPlanToMgChordDefs(plan);

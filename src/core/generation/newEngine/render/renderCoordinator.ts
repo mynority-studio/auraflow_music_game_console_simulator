@@ -291,7 +291,7 @@ export function renderSongFull(
   // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
   tracks.push(overrideLeadTrack
     ? { ...overrideLeadTrack, role: 'lead', program: instrumentation.roleProgram.lead }
-    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract)); // MG seed=song seed · lead program=器配生效值 · ★ 1c:lead swing 真源(仅 ACG 走;非 ACG 门控回退现状)
+    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract)); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
@@ -385,8 +385,8 @@ export function renderSongFull(
 
   // 微时序抖动:swing/审计之后,人手不踩死网格(±少量 tick)→ 最终可听 IR
   // ★ 槽位共享 + metric 缩放:同 tick 跨声部同偏移(对拍不散)、下拍近锚定(重心稳)。结构锚点不负偏(Loop F)。
-  // ★ MG 升级 2c-2(§7.4):ACG GrooveContract 有 ms pocket → pocket-handled 角色(bass;lead 本就跳)
-  //   跳 humanizeTiming,改由 applyGroovePocket 拥有时序(不双重)。legacy pocket=0 → pocketSkip 空 → 不变(零洗牌)。
+  // ★ §7.4:GrooveContract 有 ms pocket → pocket-handled 角色(bass;lead 本就跳 humanizeTiming)改由
+  //   applyGroovePocket 拥有时序(不双重)。Phase D 起全 MG-backed 风格 contract 有真 pocket;legacy(BLUES/无 rng)pocket=0 → pocketSkip 空 → 不变。
   const pocketSkip = pocketedRoles(arrangement.songGrooveContract);
   const humanizedRaw = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
   // ★ MG full-parity Phase D:band 的 melody-pocket 只施给 MG 生成的 lead;走 A(motif sandbox override)lead 自带

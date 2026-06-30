@@ -30,8 +30,8 @@ export function buildArrangementPlan(
   const dynamics = planDynamics(sections);
   const grooveBySection = planGroove(sections, band.style); // 鼓 groove 下发(纯 functionTag/role 派生,不抽 rng)
   const edges = planEdges(sections, dynamics.energyBySection, band.style); // 段落边界:进入方式 + 收尾(纯 energy/style 派生)
-  // ★ MG 升级 Phase 1:GrooveContract(arranger 拥有)。ACG 走新 pool(独立 grooveContract 子流);非 ACG 派生
-  //   legacy(零洗牌,swing=feel.swingRatio/pocket=0)。feel.swingRatio 改从 contract.compSwingRatio 派生(非 ACG 等值不变)。
+  // ★ GrooveContract(arranger 拥有)。Phase D 起全 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)走真 pool
+  //   (独立 grooveContract 子流);BLUES/无 rng → legacy 派生兜底。feel.swingRatio 从 contract.compSwingRatio 派生。
   const groove = planGrooveContract(sections, band.style, time.feel, opts.rng);
 
   const data: ArrangementPlanData = {

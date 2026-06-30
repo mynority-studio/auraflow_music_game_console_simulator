@@ -6,7 +6,7 @@
 //   这里不再叠 chordPocket → 避免 comp 双重 humanize(§7.4)。
 // ★ pocket-handled 角色(此处 bass)在 renderCoordinator【跳过 humanizeTiming】(lead 本就被 humanizeTiming 跳)
 //   → pocket 是这些角色的唯一时序主(§7.4 不双重)。
-// ★ legacy contract pocket 全 [0,0] → pocketedRoles 空 → applyGroovePocket no-op(非 ACG 零洗牌)。
+// ★ legacy contract(BLUES/无 rng 兜底)pocket 全 [0,0] → pocketedRoles 空 → applyGroovePocket no-op(无漂)。
 // 纯函数 + 稳定哈希(无 rng) → 确定性。
 // ============================================================
 

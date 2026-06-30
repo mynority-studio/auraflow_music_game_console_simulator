@@ -108,8 +108,8 @@ export interface ArrangementPlanData {
   harmonicRhythmTarget: HarmonicRhythmTarget;
   /** ★ 每段鼓 groove 性格(Arranger 下发,器配层据此匹配具体 drum pattern 变体)。swing 不在此,走 feel.swingRatio。 */
   grooveBySection: Record<SectionId, GrooveKind>;
-  // ★ MG 升级 Phase 1:GrooveContract(comp/melody 分开 swing + ms pocket + texture 偏好);arranger 拥有,render 消费。
-  //   非 ACG = legacy 派生(零洗牌);grooveBySection(GrooveKind)保留作 drum 兼容字段。
+  // ★ GrooveContract(comp/melody 分开 swing + ms pocket + texture 偏好);arranger 拥有,render 消费。
+  //   Phase D:全 MG-backed 风格走真 pool;BLUES/无 rng = legacy 派生兜底。grooveBySection(GrooveKind)保留作 drum 兼容字段。
   songGrooveContract: import('../knowledge/grooveContracts').GrooveContract;
   songGrooveContractId: string;
   grooveContractBySection: Record<SectionId, import('../knowledge/grooveContracts').GrooveContract>;
