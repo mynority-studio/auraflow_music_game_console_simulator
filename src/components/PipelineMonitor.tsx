@@ -24,9 +24,10 @@ import { StyleId, StyleIdName } from '../core/generation/config/StyleFlags';
 import { MUSICIAN_POOL, getMusiciansByRole, getMusicianById } from '../core/generation/idioms/MusicianRegistry';
 import { getInstrumentFamily, GMSlotOption } from '../core/generation/data/GMSoundMap';
 import { BandSelectionStore } from '../state/BandSelectionStore';
-import { MgStyleStore, MG_STYLE_OPTIONS, type MgStyle } from '../state/MgStyleStore';
-import { MgKeyStore, MG_KEY_OPTIONS, type MgKey } from '../state/MgKeyStore';
-import { MgSeedStore, hashSeedToInt } from '../state/MgSeedStore';
+import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
+import { MusicGenerationKeyStore, MUSIC_GEN_KEY_OPTIONS, type MusicGenKey } from '../state/MusicGenerationKeyStore';
+import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
+import type { MusicGenerationResult } from '../core/generation/musicGeneration/types';
 import { useDevPanelChannel } from './devPanels';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -163,6 +164,7 @@ function getLocalScaleName(
 interface FrameSnapshot {
     arranged: ArrangedTrack | null;
     context: MusicContext | null;
+    musicGen: MusicGenerationResult | null; // ★ Q+N:UI 显示真源(uiSnapshot)
     beat: number;
     seed: number;
 }
@@ -199,18 +201,18 @@ export const PipelineMonitor: React.FC = () => {
     // 左侧 DevDock 入口(点击切换 + 高亮同步);Q+H 键盘逻辑仍保留
     useDevPanelChannel('pipeline', isVisible, setIsVisible);
     const [frame, setFrame] = useState<FrameSnapshot>({
-        arranged: null, context: null, beat: 0, seed: 0,
+        arranged: null, context: null, musicGen: null, beat: 0, seed: 0,
     });
     const [seedInput, setSeedInput] = useState('42');
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
-    const [mgStyle, setMgStyleState] = useState<MgStyle>(() => MgStyleStore.getStyle());
-    const switchMgStyle = useCallback((next: MgStyle) => {
-        MgStyleStore.setStyle(next);
+    const [mgStyle, setMgStyleState] = useState<MusicGenStyle>(() => MusicGenerationStyleStore.getStyle());
+    const switchMgStyle = useCallback((next: MusicGenStyle) => {
+        MusicGenerationStyleStore.setStyle(next);
         setMgStyleState(next);
     }, []);
-    const [mgKey, setMgKeyState] = useState<MgKey>(() => MgKeyStore.getKey());
-    const switchMgKey = useCallback((next: MgKey) => {
-        MgKeyStore.setKey(next);
+    const [mgKey, setMgKeyState] = useState<MusicGenKey>(() => MusicGenerationKeyStore.getKey());
+    const switchMgKey = useCallback((next: MusicGenKey) => {
+        MusicGenerationKeyStore.setKey(next);
         setMgKeyState(next);
     }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
@@ -280,16 +282,18 @@ export const PipelineMonitor: React.FC = () => {
         const tick = () => {
             const arranged = AudioEngine.getCurrentArrangedTrack();
             const context = AudioEngine.getCurrentContext();
+            const musicGen = AudioEngine.getCurrentMusicGeneration();
             const beat = AudioEngine.getCurrentBeat();
             const seed = PRNGManager.getInitialSeed();
             setFrame((prev) => {
                 if (prev.arranged === arranged
                     && prev.context === context
+                    && prev.musicGen === musicGen
                     && Math.abs(prev.beat - beat) < 0.01
                     && prev.seed === seed) {
                     return prev;
                 }
-                return { arranged, context, beat, seed };
+                return { arranged, context, musicGen, beat, seed };
             });
             rafRef.current = requestAnimationFrame(tick);
         };
@@ -325,24 +329,17 @@ export const PipelineMonitor: React.FC = () => {
             PRNGManager.setSeed(seed);
             PRNGManager.recordSnapshot('A');
 
-            // [TEMP DIAG] 诊断 forcedBand / forcedGmPrograms 是否真传到 runPipeline
-            console.log('[playSeed] seed=', seed,
-                ' forcedBand=', JSON.parse(JSON.stringify(bandSelectionRef.current)),
-                ' forcedGmPrograms=', JSON.parse(JSON.stringify(instrumentSelectionRef.current)));
-
-            // 2026-05-27 mgEngine 接管:runPipeline 调 mg.Engine.generateArrangement,
-            // forcedBand 决定 melody / accompaniment 哪个轨剪掉(null = 该槽空)。
-            const { track, context } = runPipeline({
+            // ★ Q+N 主链路:runPipeline 现是 Q+N 服务外观,返回完整 MusicGenerationResult。
+            //   真正播放走 AudioEngine.playMusicGeneration(result)(MusicalIR 正式音频合同),不再 playSong(mg track)。
+            const { result } = runPipeline({
                 forcedBand: bandSelectionRef.current,
                 forcedGmPrograms: instrumentSelectionRef.current,
             });
-            console.log('[playSeed] melody.length=', track.melody?.length,
-                ' first=', track.melody?.[0]?.pitch, '@', track.melody?.[0]?.onset);
 
             if (activeSeedRef.current !== seed) return;
+            if (result.status === 'failed' || !result.ir) throw new Error('音乐生成失败(audit fatal)');
 
-            const styleId = context.style?.id ?? StyleId.ModernPop;
-            await AudioEngine.playSong(track, styleId, context);
+            await AudioEngine.playMusicGeneration(result);
             reapplyMutes();
             setPlayState('PLAYING');
 
@@ -361,11 +358,8 @@ export const PipelineMonitor: React.FC = () => {
     }, [reapplyMutes]);
 
     const handlePlay = useCallback(async () => {
-        // mg 接受 alphanumeric seed(`42` / `4f9a2b` / `mySeed01`)。把原字符串写
-        // MgSeedStore → runPipeline 内部按 style 拼 `pop_42` 喂 mg。
-        // PRNGManager 仍要 numeric,用 djb2 hash 转 uint32 给它消费(只影响我们
-        // 内部 snapshot 机制,不影响 mg 输出)。
-        MgSeedStore.setSuffix(seedInput || '0');
+        // ★ Q+N:把字符串 seed 写 MusicGenerationSeedStore → runPipeline 内部 getSeedNumber() 哈希成 number 喂 Q+N。
+        MusicGenerationSeedStore.setSuffix(seedInput || '0');
         const numHash = hashSeedToInt(seedInput || '0');
         await playSeed(numHash);
     }, [seedInput, playSeed]);
@@ -397,10 +391,20 @@ export const PipelineMonitor: React.FC = () => {
 
     if (!isVisible) return null;
 
-    const { arranged, context, beat, seed } = frame;
+    const { context, beat, seed, musicGen } = frame;
+    const ui = musicGen?.uiSnapshot ?? null;
 
-    const sections: SectionMetadata[] = arranged?.sections ?? [];
-    const chords: GeneratedChord[] = arranged?.chords ?? [];
+    // ★ Q+N:展示数据来自 uiSnapshot(结构化投影),转成现有 Stage 组件期望的 GeneratedChord/SectionMetadata 形状。
+    const bpb = ui?.timeSignature?.[0] ?? 4;
+    const sections: SectionMetadata[] = (ui?.sections ?? []).map((s) => ({
+        name: s.role, label: s.functionTag ?? s.role, role: s.role,
+        startBeat: s.startBeat, endBeat: s.startBeat + s.bars * bpb, bars: s.bars,
+    } as unknown as SectionMetadata));
+    const chords: GeneratedChord[] = (ui?.chords ?? []).map((c) => ({
+        root: c.rootPc, keyOffset: 0,
+        extensions: [c.label.replace(/^[A-G][b#x]?/, '')].filter(Boolean),
+        numeral: c.roman, startBeat: c.startBeat, endBeat: c.startBeat + c.durationBeats,
+    } as unknown as GeneratedChord));
 
     let currentSectionIdx = -1;
     for (let i = 0; i < sections.length; i++) {
@@ -445,7 +449,7 @@ export const PipelineMonitor: React.FC = () => {
                 <div className="flex items-center gap-2">
                     <Activity className="w-4 h-4 text-zinc-400" />
                     <h3 className="text-zinc-300 font-bold tracking-widest text-xs uppercase">
-                        Pipeline Monitor
+                        音乐生成
                     </h3>
                 </div>
                 <button
@@ -460,26 +464,26 @@ export const PipelineMonitor: React.FC = () => {
             {/* Engine slot — mg 唯一引擎 */}
             <div className="px-4 py-2 border-b border-zinc-800/80 bg-zinc-900/50 shrink-0 flex items-center gap-3">
                 <span className="text-[9px] uppercase tracking-widest text-orange-400/80 font-bold w-12 shrink-0">Engine</span>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">mg</span>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">Q+N</span>
                 <span className="text-[9px] uppercase tracking-wider text-zinc-500">style</span>
                 <select
                     value={mgStyle}
-                    onChange={(e) => switchMgStyle(e.target.value as MgStyle)}
+                    onChange={(e) => switchMgStyle(e.target.value as MusicGenStyle)}
                     className="bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60"
-                    title="mg 风格选择 — 下次 Play 生效"
+                    title="风格选择 — 下次 Play 生效"
                 >
-                    {MG_STYLE_OPTIONS.map((s) => (
+                    {MUSIC_GEN_STYLE_OPTIONS.map((s) => (
                         <option key={s} value={s}>{s}</option>
                     ))}
                 </select>
                 <span className="text-[9px] uppercase tracking-wider text-zinc-500 ml-1">key</span>
                 <select
                     value={mgKey}
-                    onChange={(e) => switchMgKey(e.target.value as MgKey)}
+                    onChange={(e) => switchMgKey(e.target.value as MusicGenKey)}
                     className="bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60"
-                    title="mg key 选择 — 下次 Play 生效"
+                    title="key 选择 — 下次 Play 生效"
                 >
-                    {MG_KEY_OPTIONS.map((k) => (
+                    {MUSIC_GEN_KEY_OPTIONS.map((k) => (
                         <option key={k} value={k}>{k}</option>
                     ))}
                 </select>
@@ -574,11 +578,11 @@ export const PipelineMonitor: React.FC = () => {
                 {/* 左栏：Stage 01-02 */}
                 <div className="w-1/2 overflow-y-auto custom-pipeline-scroll border-r border-zinc-800/60">
                     <Stage1MetaForm
-                        bpm={arranged?.bpm}
-                        keyName={arranged?.key}
+                        bpm={ui?.bpm}
+                        keyName={ui?.key}
                         tonality={context?.tonality}
                         seed={seed}
-                        styleName={context?.style ? StyleIdName[context.style.id] : undefined}
+                        styleName={ui?.styleHint?.toUpperCase()}
                         currentChord={currentChord}
                     />
                     <Stage2Harmony
@@ -593,11 +597,12 @@ export const PipelineMonitor: React.FC = () => {
                     <Stage3Structure
                         sections={sections}
                         currentSectionIdx={currentSectionIdx}
-                        beatsPerBar={arranged?.timeSignature?.[0]}
+                        beatsPerBar={ui?.timeSignature?.[0]}
                     />
                     <Stage5Ensemble
-                        palette={arranged?.palette}
-                        roster={context?.ensemble?.roster}
+                        palette={undefined}
+                        roster={undefined}
+                        qnRoster={ui?.roster}
                         mutedParts={mutedParts}
                         onToggleMute={togglePartMute}
                     />
@@ -970,9 +975,13 @@ const EnergyBar: React.FC<{ level: number; active: boolean }> = ({ level, active
 interface Stage5Props {
     palette: ArrangedTrack['palette'] | undefined;
     roster: import('../core/generation/types').BandRoster | undefined;
+    qnRoster?: import('../core/generation/musicGeneration/types').UiPlayer[]; // ★ Q+N ensemble/roster
     mutedParts: Set<PartName>;
     onToggleMute: (partName: PartName) => void;
 }
+
+const QN_ROLE_LABEL: Record<string, string> = { lead: 'Lead', comp: 'Comping', bass: 'Bass', pad: 'Atmosphere', drum: 'Drum' };
+const QN_ROLE_COLOR: Record<string, string> = { lead: 'text-emerald-300', comp: 'text-amber-300', bass: 'text-blue-300', pad: 'text-violet-300', drum: 'text-fuchsia-300' };
 
 const ROLE_TO_PALETTE_KEY: Record<InstrumentRole, keyof NonNullable<ArrangedTrack['palette']>> = {
     melody: 'melodySound',
@@ -986,7 +995,25 @@ const ROLE_TO_PALETTE_KEY: Record<InstrumentRole, keyof NonNullable<ArrangedTrac
 
 const ALL_ROLES: InstrumentRole[] = ['melody', 'vocal', 'chord', 'bass', 'drums', 'counter', 'secondary'];
 
-const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, mutedParts, onToggleMute }) => {
+const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, qnRoster, mutedParts, onToggleMute }) => {
+    // ★ Q+N ensemble:有 qnRoster 时直接展示乐手/乐器/状态(取代旧 palette 路径)。
+    if (qnRoster && qnRoster.length > 0) {
+        return (
+            <section className="px-4 pt-4 pb-4">
+                <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
+                <div className="mt-3 space-y-1.5">
+                    {qnRoster.map((p) => (
+                        <div key={p.role} className="flex items-center justify-between text-xs">
+                            <span className={QN_ROLE_COLOR[p.role] ?? 'text-zinc-300'}>{QN_ROLE_LABEL[p.role] ?? p.role}</span>
+                            <span className="font-mono text-zinc-400">{p.instrumentName}
+                                {p.state !== 'auto' && <span className="ml-1 text-[9px] text-zinc-600">({p.state})</span>}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </section>
+        );
+    }
     if (!palette) {
         return (
             <section className="px-4 pt-4 pb-4">

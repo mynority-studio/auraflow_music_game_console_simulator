@@ -1,111 +1,69 @@
 // ============================================================
-// runPipeline — mgEngine 接管(2026-05-27)
+// runPipeline — Q+N 兼容外观(qn_main_engine_takeover §6)
 // ============================================================
-//
-// 当前架构(极简):
-//   - 唯一引擎 = mgEngine(钢琴独奏:melody + chord + bass 三轨)
-//   - 乐手系统精简为 1 钢琴手,五槽 4 个常为空,只用 MainInst + Accomp
-//   - MainInst 槽消费 mg melody;Accomp 槽消费 mg chord
-//   - 槽 = null → 对应轨被剪枝,不出声
-//
-// 调用方契约保持与历史一致:
-//   App / PipelineMonitor import runPipeline 不改;
-//   返回 { track, context } 仍是 RELATIVE 空间,AudioEngine.playSong 接管。
+// ★ Q+N 升格为主引擎:runPipeline 不再调 mgEngine/runMgEngine,内部改调 MusicGenerationService。
+//   - 返回值带【完整 MusicGenerationResult】(result):真正播放走 AudioEngine.playMusicGeneration(result)。
+//   - {track, context} 仅【UI/Jam 兼容投影】(来自 uiSnapshot),不再是音频事实来源。
+//   - 新开发代码优先直接调 MusicGenerationService.generateMusic();本外观只服务尚未迁移的旧调用方。
 // ============================================================
 
 import { GeneratedTrack, GenerationOptions, MusicContext, BandRole } from '../types';
 import { StyleId } from '../config/StyleFlags';
-import { runMgEngine } from '../mgEngine/adapter';
-import { MgStyleStore } from '../../../state/MgStyleStore';
-import { MgKeyStore } from '../../../state/MgKeyStore';
-import { MgSeedStore } from '../../../state/MgSeedStore';
+import { generateMusicSync } from '../musicGeneration/MusicGenerationService';
+import type { MusicGenerationResult, QnBandSelection, QnGmOverrides, QnRole } from '../musicGeneration/types';
+import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
+import { MusicGenerationKeyStore } from '../../../state/MusicGenerationKeyStore';
+import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
 
 export interface PipelineRunOptions {
     allowedStyleIds?: StyleId[];
     forcedStyleId?: StyleId;
     forcedBand?: Partial<Record<BandRole, string | null>>;
-    /**
-     * Per-role GM 程式号覆盖(0~127)。
-     *   优先级:forcedGmPrograms > musician.gmProgramOverride > 默认
-     */
     forcedGmPrograms?: Partial<Record<BandRole, number>>;
     generation?: GenerationOptions;
 }
 
-/**
- * mg 期待 string seed,格式 `${stylePrefix}_${suffix}`。stylePrefix 必须跟当前
- * MgStyle 一致(否则 mg 端 PREFIX_TO_STYLE 解析后样式不匹配)。
- *
- * 用户输入策略(MgSeedStore.getSuffix() 来源,跟 mg App.tsx 一致):
- *   - 含下划线 → 用户输入了完整 mg seed(如 `pop_42`)→ 原样使用
- *   - 不含下划线 → 用户只输入 suffix(如 `42` / `4f9a2b`)→ 当前 style 前缀拼上去
- */
-const MG_STYLE_PREFIX: Record<string, string> = {
-    POP:   'pop',
-    JAZZ:  'jazz',
-    BLUES: 'blues',
-    RNB:   'rnb',
-    LOFI:  'lofi',
+/** 旧 BandRole → Q+N role(§8.2)。Vocal 无 Q+N 对应(禁用)。 */
+const BANDROLE_TO_QN: Partial<Record<BandRole, QnRole>> = {
+    [BandRole.MainInst]: 'lead',
+    [BandRole.Accomp]: 'comp',
+    [BandRole.Bass]: 'bass',
+    [BandRole.Drums]: 'drum',
+    [BandRole.Atmosphere]: 'pad',
 };
 
-function deriveMgSeed(suffix: string, style: string): string {
-    if (suffix.includes('_')) return suffix;
-    const prefix = MG_STYLE_PREFIX[style] ?? 'pop';
-    return `${prefix}_${suffix}`;
+/** forcedGmPrograms(BandRole→program)→ Q+N gmOverrides(QnRole→program)。 */
+function toGmOverrides(forced?: Partial<Record<BandRole, number>>): QnGmOverrides | undefined {
+    if (!forced) return undefined;
+    const out: QnGmOverrides = {};
+    for (const [role, prog] of Object.entries(forced)) {
+        const qn = BANDROLE_TO_QN[role as unknown as BandRole];
+        if (qn && typeof prog === 'number') out[qn] = prog;
+    }
+    return Object.keys(out).length ? out : undefined;
 }
 
-export function runPipeline(
-    options: PipelineRunOptions = {},
-): { track: GeneratedTrack; context: MusicContext } {
-    // 从 MgSeedStore 读用户输入的 raw alphanumeric seed,跟 mg App.tsx 完全
-    // 对齐(支持字母数字下划线,如 `42` / `4f9a2b` / `pop_42`)。
-    const seedSuffix = MgSeedStore.getSuffix();
-    const mgStyle = MgStyleStore.getStyle();
-    const mgKey = MgKeyStore.getKey();
-    const mgSeed = deriveMgSeed(seedSuffix, mgStyle);
+export interface PipelineResult { track: GeneratedTrack; context: MusicContext; result: MusicGenerationResult; }
 
-    const { track, context } = runMgEngine({ seed: mgSeed, style: mgStyle, key: mgKey });
-
-    // ========================================================================
-    // 2026-05-27 mg 2-Layer 分轨路由
-    // ========================================================================
-    // 按 mg App.tsx 的逻辑分组(line 488-489):
-    //   - Melody Layer  = events.filter(part === 'melody')           → MainInst (ch1)
-    //   - Harmony Layer = events.filter(part === 'chord' || 'bass')  → Accomp   (ch2)
-    //
-    // adapter 已经拆好 melody / accompaniment / bass 三轨,这里把 bass 合并进
-    // accompaniment(mg 的 Harmony Layer 就是这两个加在一起,且 mg 自己一个
-    // Salamander sampler 同时弹 — 我们等价用同一个 GM piano 在同 channel)。
-    // Bass / Drums / Atmosphere 槽永远空。
-    // ========================================================================
-    const forcedBand = options.forcedBand ?? {};
-
-    if (forcedBand[BandRole.MainInst] == null) {
-        track.melody = [];
-    }
-
-    if (forcedBand[BandRole.Accomp] == null) {
-        track.accompaniment = [];
-    } else {
-        // 合并 chord + bass 到 accompaniment(mg Harmony Layer)
-        const harmony = [
-            ...(track.accompaniment ?? []),
-            ...(track.bass ?? []),
-        ];
-        harmony.sort((a, b) => a.onset - b.onset);
-        track.accompaniment = harmony;
-    }
-
-    track.bass = undefined;
-    track.drums = undefined;
-    track.atmosphere = undefined;
-
-    // GM 程式号覆盖(MidiConverter 消费)— 两通道分别覆盖
-    const gm = options.forcedGmPrograms ?? {};
-    context.gmProgramOverrides = {
-        melody: gm[BandRole.MainInst],
-        accomp: gm[BandRole.Accomp],
-    };
-
-    return { track, context };
+export function runPipeline(options: PipelineRunOptions = {}): PipelineResult {
+    const result = generateMusicSync({
+        seed: MusicGenerationSeedStore.getSeedNumber(),
+        styleHint: MusicGenerationStyleStore.getStyleHint(),
+        mood: 'build',
+        targetDuration: 120,
+        key: MusicGenerationKeyStore.getKey(),
+        gmOverrides: toGmOverrides(options.forcedGmPrograms),
+        bandSelection: undefined as QnBandSelection | undefined,
+    });
+    const ui = result.uiSnapshot;
+    // 兼容投影(UI/Jam only,非音频源):标量字段来自 uiSnapshot,音符轨留空(音频走 playMusicGeneration)。
+    const track = {
+        chords: [], melody: [], bpm: result.bpm, key: ui.key, keyOffset: 0,
+        tonality: ui.tonality, timeSignature: ui.timeSignature, sections: [],
+        blockIndex: 0, absoluteStartBeat: 0, hasIntro: false,
+    } as unknown as GeneratedTrack;
+    const context = {
+        keyOffset: 0, tonality: ui.tonality, bpm: result.bpm, timeSignature: ui.timeSignature, grooveDNA: [],
+    } as unknown as MusicContext;
+    return { track, context, result };
 }

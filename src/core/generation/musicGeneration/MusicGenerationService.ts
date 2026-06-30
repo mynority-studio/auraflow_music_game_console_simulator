@@ -55,16 +55,26 @@ function buildResult(req: MusicGenerationRequest, bundle: SongBundle, ir: Musica
   };
 }
 
-/** 普通音乐生成(主链路核心入口)。 */
-export async function generateMusic(request: MusicGenerationRequest): Promise<MusicGenerationResult> {
+/** 普通音乐生成(同步核心)。Q+N 生成本就同步;async 版只是包装,供 await 调用方。 */
+export function generateMusicSync(request: MusicGenerationRequest): MusicGenerationResult {
   const bundle = buildSongBundle(toQnRequest(request));
   const result = generateSongFromBundle(bundle);
   return buildResult(request, bundle, result.ir ?? null, result.status, result.report, result.attempts);
 }
 
-/** Motif 续写成曲入口(完整成曲必走此,不用 leadOnlyIr)。 */
-export async function generateMotifMusic(request: MusicGenerationRequest, override: MotifSongOverride): Promise<MusicGenerationResult> {
+/** Motif 续写成曲(同步核心)。 */
+export function generateMotifMusicSync(request: MusicGenerationRequest, override: MotifSongOverride): MusicGenerationResult {
   const mb = buildMotifSongBundle(toQnRequest(request), override);
   const result = generateSongFromMotifBundle(mb);
   return buildResult(request, mb.bundle, result.ir ?? null, result.status, result.report, result.attempts);
+}
+
+/** 普通音乐生成(主链路核心入口)。 */
+export async function generateMusic(request: MusicGenerationRequest): Promise<MusicGenerationResult> {
+  return generateMusicSync(request);
+}
+
+/** Motif 续写成曲入口(完整成曲必走此,不用 leadOnlyIr)。 */
+export async function generateMotifMusic(request: MusicGenerationRequest, override: MotifSongOverride): Promise<MusicGenerationResult> {
+  return generateMotifMusicSync(request, override);
 }
