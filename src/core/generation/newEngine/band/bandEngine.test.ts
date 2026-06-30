@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildBandSpec } from './bandEngine';
 import { pc } from '../foundation';
+import { instrumentInfo } from '../knowledge/instruments';
+import type { InstrumentRoleName } from './BandSpec';
 
 describe('band/bandEngine', () => {
   it('已知 style 取对应 styleProfile', () => {
@@ -58,5 +60,69 @@ describe('band/bandEngine', () => {
     for (let s = 0; s < 12; s++) { sigs.add(sig(s, 'jazz')); sigs.add(sig(s, 'lofi')); }
     expect(sigs.size).toBeGreaterThanOrEqual(6); // 编制/乐器有多样性
     expect(sig(3, 'jazz')).toBe(sig(3, 'jazz')); // 确定性
+  });
+});
+
+// ★ 阶段2-A:Band Selection「参与乐手/职能」→ lineup/家族约束(音色仍器配层 rng 选)
+describe('band/bandEngine · participant lineup 约束', () => {
+  const roleSet = (...rs: InstrumentRoleName[]) => new Set<InstrumentRoleName>(rs);
+
+  it('allowedRoles 只保留被选职能(贝斯手+鼓手 → 无 lead/comp → 自动补 lead)', () => {
+    for (let seed = 0; seed < 16; seed++) {
+      const spec = buildBandSpec({
+        seed, styleHint: 'pop', mood: 'x', targetDuration: 60,
+        bandConstraint: { allowedRoles: roleSet('bass', 'drum') },
+      });
+      // 只含 bass / drum / 自动补的 lead —— comp / pad 永不出现
+      for (const r of spec.instrumentPool) expect(['bass', 'drum', 'lead']).toContain(r);
+      expect(spec.instrumentPool).toContain('bass');
+      // 没有任何旋律/和声 role 被选 → §4.4 自动补 lead
+      expect(spec.instrumentPool).toContain('lead');
+      expect(spec.autoFilledRoles).toEqual(['lead']);
+    }
+  });
+
+  it('选中 comp(键盘手)时不自动补位:lineup ⊆ 被选职能,autoFilledRoles 为空', () => {
+    for (let seed = 0; seed < 16; seed++) {
+      const spec = buildBandSpec({
+        seed, styleHint: 'pop', mood: 'x', targetDuration: 60,
+        bandConstraint: { allowedRoles: roleSet('comp', 'bass', 'drum') },
+      });
+      for (const r of spec.instrumentPool) expect(['comp', 'bass', 'drum']).toContain(r);
+      expect(spec.instrumentPool).toContain('comp'); // 键盘手在场
+      expect(spec.autoFilledRoles).toBeUndefined();  // 有 comp → 不补位
+    }
+  });
+
+  it('familyByRole 限定候选家族(lead=mallet → 只木琴;音色仍 rng 在家族内选)', () => {
+    // pop lead 候选跨 keyboard/mallet/wind;约束到 mallet → 家族恒为 mallet
+    for (let seed = 0; seed < 24; seed++) {
+      const spec = buildBandSpec({
+        seed, styleHint: 'pop', mood: 'x', targetDuration: 60,
+        bandConstraint: { familyByRole: { lead: ['mallet'] } },
+      });
+      expect(instrumentInfo(spec.roleProgram.lead).family).toBe('mallet');
+    }
+  });
+
+  it('空交集家族 → 回退不过滤(仍出合法音色,不致 lineup 失声)', () => {
+    // pop lead 无 strings 家族候选 → 回退全候选,程序仍合法
+    const spec = buildBandSpec({
+      seed: 5, styleHint: 'pop', mood: 'x', targetDuration: 60,
+      bandConstraint: { familyByRole: { lead: ['strings'] } },
+    });
+    expect(typeof spec.roleProgram.lead).toBe('number');
+    expect(spec.instrumentPool).toContain('lead');
+  });
+
+  it('无约束 → 与不传 bandConstraint 字节一致(确定性不被约束机制扰动)', () => {
+    const sig = (req: Parameters<typeof buildBandSpec>[0]) => {
+      const b = buildBandSpec(req);
+      return `${b.instrumentPool.join(',')}|${b.instrumentPool.map((r) => b.roleProgram[r]).join(',')}`;
+    };
+    for (let seed = 0; seed < 12; seed++) {
+      const base = { seed, styleHint: 'pop', mood: 'x', targetDuration: 60 } as const;
+      expect(sig({ ...base, bandConstraint: {} })).toBe(sig(base));
+    }
   });
 });

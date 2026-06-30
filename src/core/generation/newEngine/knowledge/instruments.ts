@@ -84,6 +84,14 @@ function pickWeightedProgram(rng: Rng, cands: readonly number[], weights?: Recor
 export interface BandInstrumentation {
   lineup: InstrumentRoleName[];                       // 实际编制(2–5,规范顺序)
   roleProgram: Record<InstrumentRoleName, number>;    // 每件乐器的 GM program(仅 lineup 内)
+  autoFilledRoles?: InstrumentRoleName[];             // ★ §4.4:participant 约束无法覆盖必要职责时自动补位的 role(UI 标明)
+}
+
+/** ★ participant lineup 约束(qn_takeover 二阶段 §4):由 Band Selection 的「参与乐手/职能」推导。
+ *  只约束【哪些 role 入 lineup】+【该 role 限定哪些乐器家族】;具体 GM program 仍由 rng/器配层随机选(§5)。 */
+export interface LineupConstraint {
+  allowedRoles?: ReadonlySet<InstrumentRoleName>;                              // 只这些 role 可入 lineup(undefined=全默认)
+  familyByRole?: Partial<Record<InstrumentRoleName, readonly InstrumentFamily[]>>; // 该 role 候选限定家族(空交集回退不过滤)
 }
 
 // —— 乐器类型 + 真实音域(MIDI)——
@@ -307,17 +315,39 @@ export function coherentLeadComp(rp: Record<InstrumentRoleName, number>, style: 
 }
 
 /** 按 style + rng 选编制 + 乐器。确定性(同 seed 同结果);lineup 含 lead + ≥1 和声,最少 2 件。 */
-export function pickBandInstrumentation(style: string, rng: Rng): BandInstrumentation {
+function programFamily(program: number): InstrumentFamily {
+  return INSTRUMENT_INFO[program]?.family ?? 'other';
+}
+
+export function pickBandInstrumentation(style: string, rng: Rng, constraint?: LineupConstraint): BandInstrumentation {
   const rule = LINEUP_RULES[style] ?? LINEUP_RULES.default;
   const chosen = new Set<InstrumentRoleName>(rule.always);
   for (const o of rule.optional) if (rng.next() < o.prob) chosen.add(o.role);
-  const lineup = ROLE_ORDER.filter((r) => chosen.has(r)); // 规范顺序
+  let lineup = ROLE_ORDER.filter((r) => chosen.has(r)); // 规范顺序
+
+  // ★ participant 约束(§4):只保留 participant 覆盖的 role。无约束 → 字节不变(下面 rng 序列一致)。
+  const autoFilled: InstrumentRoleName[] = [];
+  if (constraint?.allowedRoles) {
+    let kept = lineup.filter((r) => constraint.allowedRoles!.has(r));
+    // 最小乐队(§4.4):约束后无任何旋律/和声 role(lead/comp)→ 自动补 lead 并标记。
+    if (!kept.includes('lead') && !kept.includes('comp')) {
+      kept = ROLE_ORDER.filter((r) => kept.includes(r) || r === 'lead');
+      autoFilled.push('lead');
+    }
+    lineup = kept;
+  }
 
   const inst = INSTRUMENTS[style] ?? INSTRUMENTS.default;
   const roleProgram = {} as Record<InstrumentRoleName, number>;
   for (const r of lineup) {
-    const cands = inst[r] ?? [FALLBACK_PROGRAM[r]];
+    let cands = inst[r] ?? [FALLBACK_PROGRAM[r]];
+    // ★ 家族约束:participant 的乐器家族过滤候选(空交集 → 回退全候选)。auto-fill 的 role 不约束家族。
+    const fams = constraint?.familyByRole?.[r];
+    if (fams && fams.length && !autoFilled.includes(r)) {
+      const filtered = cands.filter((p) => fams.includes(programFamily(p)));
+      if (filtered.length) cands = filtered;
+    }
     roleProgram[r] = pickWeightedProgram(rng, cands, INSTRUMENT_WEIGHTS[style]?.[r]);
   }
-  return { lineup, roleProgram };
+  return { lineup, roleProgram, autoFilledRoles: autoFilled.length ? autoFilled : undefined };
 }

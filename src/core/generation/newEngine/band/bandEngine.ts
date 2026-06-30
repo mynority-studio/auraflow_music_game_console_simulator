@@ -9,7 +9,7 @@
 import { createRandomContext, pc, type PitchClass } from '../foundation';
 import { MAJOR_SCALE, NATURAL_MINOR } from '../knowledge/scales';
 import { modalScale, type ChurchMode } from '../knowledge/modes';
-import { pickBandInstrumentation } from '../knowledge/instruments';
+import { pickBandInstrumentation, type LineupConstraint } from '../knowledge/instruments';
 import type { BandSpec, Mode, StyleProfile, TonalityKind } from './BandSpec';
 
 // seed 派生音乐身份的可调参数(都从 'band' 子流取,key/mode 未显式指定才生效)
@@ -26,6 +26,7 @@ export interface GenerationRequest {
   tonalityKind?: TonalityKind; // 可显式请求 modal(否则由 styleHint 推断)
   modalMode?: ChurchMode;      // modal 时指定教会调式(默认 dorian)
   allowModulation?: boolean;   // 可选:开启段落转调(默认 false)
+  bandConstraint?: LineupConstraint; // ★ Band Selection「参与乐手/职能」推导的 lineup/家族约束(音色仍 rng 选)
 }
 
 // ★ 4 大 macro 风格:POP / JAZZ / LOFI / RNB(UI 暴露这 4 个;modal 是正交 regime,非 genre)。
@@ -59,7 +60,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
   // ★ 2026-06-10(gm128_chain_orchestration):此处 roleProgram 仅为 **provisional 候选**(seed 多样性来源)。
   //   【最终生效】GM 选择由器配层链式协同拥有(orchestrateRolePrograms,见 instrumentalPlanner);
   //   render 一律读 instrumentation.roleProgram,不把 band.roleProgram 当最终发声 program。
-  const { lineup, roleProgram } = pickBandInstrumentation(style, createRandomContext(req.seed).substream('instrumental'));
+  const { lineup, roleProgram, autoFilledRoles } = pickBandInstrumentation(style, createRandomContext(req.seed).substream('instrumental'), req.bandConstraint);
 
   if (tonalityKind === 'modal') {
     // modal 调式也随 seed(未显式指定)→ 同 styleHint 不同 seed 出不同调式色彩
@@ -75,6 +76,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
       allowModulation: false, // modal 静态 vamp 不转调
       instrumentPool: lineup,
       roleProgram,
+      autoFilledRoles,
     };
   }
 
@@ -90,5 +92,6 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
     allowModulation: req.allowModulation ?? false,
     instrumentPool: lineup,
     roleProgram,
+    autoFilledRoles,
   };
 }

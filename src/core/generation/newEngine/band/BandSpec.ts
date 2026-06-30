@@ -34,4 +34,5 @@ export interface BandSpec {
   allowModulation: boolean;     // 可选转调开关(默认 false → 单一调中心)
   instrumentPool: InstrumentRoleName[];              // ★ 实际编制(可变 2–5 件,lead+≥1 和声,style+seed 选)
   roleProgram: Record<InstrumentRoleName, number>;   // ★ 每件乐器 GM program(仅 lineup 内)
+  autoFilledRoles?: InstrumentRoleName[];            // ★ participant 约束下必要职责被自动补位的 role(UI 标明,可选)
 }
