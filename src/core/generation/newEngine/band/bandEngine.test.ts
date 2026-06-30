@@ -82,6 +82,32 @@ describe('band/bandEngine · participant lineup 约束', () => {
     }
   });
 
+  it('★ requiredRoles → 该 role 必须出现(默认 lineup 没随机到也补上;P1 修复)', () => {
+    // drum 在 POP 是 optional(0.9)→ 总有 seed 漏掉;requiredRoles 保证它一定在 lineup。
+    for (let seed = 0; seed < 32; seed++) {
+      const spec = buildBandSpec({
+        seed, styleHint: 'pop', mood: 'x', targetDuration: 60,
+        bandConstraint: { allowedRoles: roleSet('comp', 'bass', 'drum'), requiredRoles: roleSet('comp', 'bass', 'drum') },
+      });
+      expect(spec.instrumentPool, `seed ${seed} 必含 drum`).toContain('drum');
+      expect(spec.instrumentPool).toContain('bass');
+      expect(spec.instrumentPool).toContain('comp');
+    }
+  });
+
+  it('★ requiredRoles 只含 drum + 自动补 lead(仅选鼓手场景)', () => {
+    for (let seed = 0; seed < 16; seed++) {
+      const spec = buildBandSpec({
+        seed, styleHint: 'pop', mood: 'x', targetDuration: 60,
+        bandConstraint: { allowedRoles: roleSet('drum'), requiredRoles: roleSet('drum') },
+      });
+      expect(spec.instrumentPool).toContain('drum');     // 鼓手一定有鼓
+      expect(spec.instrumentPool).toContain('lead');     // §4.4 自动补旋律
+      expect(spec.autoFilledRoles).toEqual(['lead']);
+      for (const r of spec.instrumentPool) expect(['drum', 'lead']).toContain(r);
+    }
+  });
+
   it('选中 comp(键盘手)时不自动补位:lineup ⊆ 被选职能,autoFilledRoles 为空', () => {
     for (let seed = 0; seed < 16; seed++) {
       const spec = buildBandSpec({

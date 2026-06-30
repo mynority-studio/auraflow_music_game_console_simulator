@@ -103,7 +103,11 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
       const participant = participantForRole(role, participants);
       const isAutoFilled = autoFilled.has(role);
       const state: BandParticipantState = isAutoFilled ? 'auto' : (participant && selectedParticipant.has(participant)) ? 'selected' : 'auto';
-      return { role, program, instrumentName: gmName(program), family: gmFamily(program), state, participant, autoFilled: isAutoFilled || undefined };
+      // ★ P2:drum 走 ch9 打击,program=0 不是 Acoustic Grand → 显示成 Drum Kit(别用 melodic GM 表翻译)。
+      const isDrum = role === 'drum';
+      const instrumentName = isDrum ? 'Drum Kit' : gmName(program);
+      const family = isDrum ? 'percussion' : gmFamily(program);
+      return { role, program, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined };
     });
 
   // tracks(实际 IR 轨 → channel/noteCount;给 Jam/可视化)

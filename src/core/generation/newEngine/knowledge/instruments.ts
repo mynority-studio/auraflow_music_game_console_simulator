@@ -91,6 +91,7 @@ export interface BandInstrumentation {
  *  只约束【哪些 role 入 lineup】+【该 role 限定哪些乐器家族】;具体 GM program 仍由 rng/器配层随机选(§5)。 */
 export interface LineupConstraint {
   allowedRoles?: ReadonlySet<InstrumentRoleName>;                              // 只这些 role 可入 lineup(undefined=全默认)
+  requiredRoles?: ReadonlySet<InstrumentRoleName>;                             // ★ 这些 role 【必须】出现(selected 乐手保证出声,不被随机掉)
   familyByRole?: Partial<Record<InstrumentRoleName, readonly InstrumentFamily[]>>; // 该 role 候选限定家族(空交集回退不过滤)
 }
 
@@ -319,6 +320,28 @@ function programFamily(program: number): InstrumentFamily {
   return INSTRUMENT_INFO[program]?.family ?? 'other';
 }
 
+/** ★ 最终音色家族守卫(qn_takeover §5,P1/P2 修复):器配层 orchestration/repair 后,把 participant 家族约束
+ *  闭环到【最终 program】—— 某 role 的最终 program 若不在约束家族内,从该 style 的 role 池换一个同家族的(确定性、
+ *  无 rng;池里无该家族 → 尽力保持,best-effort)。这是器配层【拥有音色】的一部分,不是生成后 service 覆盖。 */
+export function enforceRoleFamilies(
+  rp: Record<InstrumentRoleName, number>,
+  familyByRole: Partial<Record<InstrumentRoleName, readonly InstrumentFamily[]>> | undefined,
+  style: string,
+): Record<InstrumentRoleName, number> {
+  if (!familyByRole) return rp;
+  const inst = INSTRUMENTS[style] ?? INSTRUMENTS.default;
+  let out = rp;
+  for (const role of Object.keys(familyByRole) as InstrumentRoleName[]) {
+    const fams = familyByRole[role];
+    const prog = out[role];
+    if (!fams || !fams.length || prog === undefined) continue;
+    if (fams.includes(programFamily(prog))) continue;          // 已合规
+    const match = (inst[role] ?? []).find((p) => fams.includes(programFamily(p)));
+    if (match !== undefined) out = out === rp ? { ...rp, [role]: match } : { ...out, [role]: match };
+  }
+  return out;
+}
+
 export function pickBandInstrumentation(style: string, rng: Rng, constraint?: LineupConstraint): BandInstrumentation {
   const rule = LINEUP_RULES[style] ?? LINEUP_RULES.default;
   const chosen = new Set<InstrumentRoleName>(rule.always);
@@ -327,14 +350,14 @@ export function pickBandInstrumentation(style: string, rng: Rng, constraint?: Li
 
   // ★ participant 约束(§4):只保留 participant 覆盖的 role。无约束 → 字节不变(下面 rng 序列一致)。
   const autoFilled: InstrumentRoleName[] = [];
-  if (constraint?.allowedRoles) {
-    let kept = lineup.filter((r) => constraint.allowedRoles!.has(r));
+  if (constraint?.allowedRoles || constraint?.requiredRoles) {
+    const allowed = constraint.allowedRoles;
+    const kept = new Set<InstrumentRoleName>(allowed ? lineup.filter((r) => allowed.has(r)) : lineup);
+    // ★ requiredRoles:selected 乐手【必须】出现 —— 默认 lineup 没随机到也补上(P1 修复:选了鼓手一定有 drum)。
+    if (constraint.requiredRoles) for (const r of constraint.requiredRoles) kept.add(r);
     // 最小乐队(§4.4):约束后无任何旋律/和声 role(lead/comp)→ 自动补 lead 并标记。
-    if (!kept.includes('lead') && !kept.includes('comp')) {
-      kept = ROLE_ORDER.filter((r) => kept.includes(r) || r === 'lead');
-      autoFilled.push('lead');
-    }
-    lineup = kept;
+    if (!kept.has('lead') && !kept.has('comp')) { kept.add('lead'); autoFilled.push('lead'); }
+    lineup = ROLE_ORDER.filter((r) => kept.has(r)); // 规范顺序
   }
 
   const inst = INSTRUMENTS[style] ?? INSTRUMENTS.default;

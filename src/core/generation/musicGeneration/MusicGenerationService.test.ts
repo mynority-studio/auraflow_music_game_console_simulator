@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateMusic, generateMotifMusic } from './MusicGenerationService';
+import { instrumentInfo } from '../newEngine/knowledge/instruments';
 
 // ============================================================
 // musicGeneration · MusicGenerationService(Q+N 主链路服务层验收)
@@ -37,15 +38,9 @@ describe('musicGeneration/MusicGenerationService', () => {
     expect(a.ir!.tracks.length).toBe(b.ir!.tracks.length);
   });
 
-  it('★ Band Selection 新语义:participant 限 lineup,不写 TrackIR.program override(§4/§5/§8.3)', async () => {
-    const base = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 });
+  it('★ P1:selected 乐手【必出声】—— seed=7 键盘手+贝斯手+鼓手 必含 drum;鼓手 only 必含 drum+自动 lead', async () => {
     const req = { seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 } as const;
 
-    // disabled drummer → IR 无 drum 轨(职责不生成,非后处理丢轨)
-    const noDrum = await generateMusic({ ...req, bandParticipants: [{ role: 'drummer', state: 'disabled' }] });
-    expect(noDrum.ir!.tracks.some((t) => t.role === 'drum'), 'disabled drummer → 无 drum').toBe(false);
-
-    // 选 键盘手+贝斯手+鼓手 → 仅这些乐手覆盖的职责;音色仍由器配层定(program 不被锁成用户值)
     const trio = await generateMusic({
       ...req,
       bandParticipants: [
@@ -54,17 +49,48 @@ describe('musicGeneration/MusicGenerationService', () => {
         { role: 'drummer', state: 'selected' },
       ],
     });
-    for (const t of trio.ir!.tracks) expect(['lead', 'comp', 'pad', 'bass', 'drum']).toContain(t.role);
-    // bass 音色由器配层 rng 选 → 与默认 base 的 bass program 一致(participant 不改音色,只限 lineup)
-    const trioBass = trio.ir!.tracks.find((t) => t.role === 'bass')?.program;
-    const baseBass = base.ir!.tracks.find((t) => t.role === 'bass')?.program;
-    expect(trioBass, 'participant 不写 program override → 与器配层默认一致').toBe(baseBass);
+    const trioRoles = new Set(trio.ir!.tracks.map((t) => t.role));
+    expect(trioRoles.has('drum'), 'seed=7 选了鼓手 → 必有 drum').toBe(true);
+    expect(trioRoles.has('bass')).toBe(true);
+    expect(trioRoles.has('comp')).toBe(true);
 
-    // roster 音色 = IR 实际 program(只读),非用户指定
-    for (const p of trio.uiSnapshot.roster) {
-      const irTrack = trio.ir!.tracks.find((t) => t.role === p.role);
-      if (irTrack) expect(p.program).toBe(irTrack.program);
+    const drumOnly = await generateMusic({ ...req, bandParticipants: [{ role: 'drummer', state: 'selected' }] });
+    const drumRoles = new Set(drumOnly.ir!.tracks.map((t) => t.role));
+    expect(drumRoles.has('drum'), '鼓手 only → 必有 drum').toBe(true);
+    expect(drumRoles.has('lead'), '鼓手 only → 自动补 lead').toBe(true);
+  });
+
+  it('★ disabled 乐手职责不生成;不写 TrackIR.program override(roster 只读=IR program)', async () => {
+    const req = { seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 } as const;
+    const noDrum = await generateMusic({ ...req, bandParticipants: [{ role: 'drummer', state: 'disabled' }] });
+    expect(noDrum.ir!.tracks.some((t) => t.role === 'drum'), 'disabled drummer → 无 drum').toBe(false);
+    for (const p of noDrum.uiSnapshot.roster) {
+      const irTrack = noDrum.ir!.tracks.find((t) => t.role === p.role);
+      if (irTrack) expect(p.program).toBe(irTrack.program); // roster 音色 = IR 实际 program(无后处理覆盖)
     }
+  });
+
+  it('★ P1/P2:participant 家族闭环到【最终发声音色】—— 合成氛围→pad 族,键盘手→keyboard 族(§5)', async () => {
+    for (let seed = 0; seed < 12; seed++) {
+      // 合成/氛围乐手 → pad 必在 pad 家族
+      const synth = await generateMusic({ seed, styleHint: 'pop', mood: 'build', targetDuration: 90, bandParticipants: [{ role: 'synthPlayer', state: 'selected' }, { role: 'leadPlayer', state: 'selected' }] });
+      const pad = synth.ir!.tracks.find((t) => t.role === 'pad');
+      if (pad) expect(instrumentInfo(pad.program).family, `seed ${seed} pad 家族`).toBe('pad');
+      // 键盘手 → comp/lead 必在 keyboard 家族(最终 program,经 orchestration+守卫)
+      const kb = await generateMusic({ seed, styleHint: 'pop', mood: 'build', targetDuration: 90, bandParticipants: [{ role: 'keyboardist', state: 'selected' }, { role: 'bassist', state: 'selected' }, { role: 'drummer', state: 'selected' }] });
+      for (const role of ['comp', 'lead'] as const) {
+        const t = kb.ir!.tracks.find((x) => x.role === role);
+        if (t) expect(instrumentInfo(t.program).family, `seed ${seed} ${role} 家族`).toBe('keyboard');
+      }
+    }
+  });
+
+  it('★ P2:drum roster 不显示成 Acoustic Grand(role=drum → Drum Kit)', async () => {
+    const r = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, bandParticipants: [{ role: 'drummer', state: 'selected' }] });
+    const drumRow = r.uiSnapshot.roster.find((p) => p.role === 'drum');
+    expect(drumRow, 'drum roster 行存在').toBeTruthy();
+    expect(drumRow!.instrumentName).not.toBe('Acoustic Grand');
+    expect(drumRow!.instrumentName).toBe('Drum Kit');
   });
 
   it('★ 器配层音色随机性保留:同 participants 不同 seed → 可得不同 GM program(§5.2)', async () => {

@@ -12,7 +12,7 @@ import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
-import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability } from '../knowledge/instruments';
+import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies } from '../knowledge/instruments';
 import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
@@ -267,7 +267,12 @@ export function buildInstrumentationPlan(
   //   多样性;不兼容链表赢=同族/可兼容)。世界由 provisional 推导→不抽 rng,不洗 timbre 序列。然后过既有安全网
   //   (repairWorld/repairCompCapability/coherentLeadComp,链后多为 no-op)。
   const orch = orchestrateRolePrograms({ style: band.style, lineup: band.instrumentPool, rng, provisional: band.roleProgram });
-  const roleProgram = coherentLeadComp(repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style), band.style);
+  // ★ participant 家族守卫(P1/P2 修复):orchestration/repair 后,把 Band Selection 的乐手家族约束
+  //   闭环到【最终发声 program】—— 选了合成氛围(pad)/键盘手(keyboard)等,最终音色一定在该家族内。
+  const roleProgram = enforceRoleFamilies(
+    coherentLeadComp(repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style), band.style),
+    band.familyByRole, band.style,
+  );
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
 

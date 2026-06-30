@@ -77,6 +77,7 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
       instrumentPool: lineup,
       roleProgram,
       autoFilledRoles,
+      familyByRole: req.bandConstraint?.familyByRole,
     };
   }
 
@@ -93,5 +94,6 @@ export function buildBandSpec(req: GenerationRequest): BandSpec {
     instrumentPool: lineup,
     roleProgram,
     autoFilledRoles,
+    familyByRole: req.bandConstraint?.familyByRole,
   };
 }

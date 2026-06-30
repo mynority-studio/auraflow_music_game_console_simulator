@@ -18,13 +18,15 @@ export type QnRole = 'lead' | 'comp' | 'bass' | 'drum' | 'pad';
 //   音色仍由 Q+N 器配层按 style/seed/音色世界规则随机决定(participant 只限 lineup/role/family)。
 // ============================================================
 
-/** 参与乐手/职能(产品 Band Selection 暴露这些;非 GM 音色)。 */
+/** 参与乐手/职能(产品 Band Selection 暴露这些;非 GM 音色)。
+ *  ★ 2026-06-29 用户决策(裁到可兑现):只 offer 引擎能真出对应家族的乐手 ——
+ *    guitar 已从 POP/LOFI/RNB 池撤掉、synth-lead/comp 不在池里 → 去掉 guitarist;
+ *    keyboardist 只承担 lead/comp(pad 非键盘族),synthPlayer 只承担 pad(=合成氛围)。 */
 export type BandParticipantRole =
-  | 'keyboardist'   // 键盘手 → lead/comp/pad 中的键盘职责
+  | 'keyboardist'   // 键盘手 → lead/comp 中的键盘职责
   | 'bassist'       // 贝斯手 → bass
   | 'drummer'       // 鼓手   → drum
-  | 'guitarist'     // 吉他手 → lead/comp 中的吉他职责
-  | 'synthPlayer'   // 合成/氛围乐手 → pad/lead/comp 中的合成职责
+  | 'synthPlayer'   // 合成/氛围乐手 → pad
   | 'leadPlayer';   // 主奏乐手 → 旋律主奏(不限家族)
 
 /** 参与三态:auto=Q+N 默认(未表态) / selected=明确加入(白名单) / disabled=明确排除。

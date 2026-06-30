@@ -1,11 +1,18 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { runPipeline } from './index';
 import { musicalIRToMidiEvents } from '../../audio/musicalIrToMidi';
+import { generateMusicSync } from '../musicGeneration/MusicGenerationService';
 import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
+import { MusicGenerationKeyStore } from '../../../state/MusicGenerationKeyStore';
 import { QnBandSelectionStore } from '../../../state/QnBandSelectionStore';
 
-afterEach(() => QnBandSelectionStore.reset()); // singleton:勿污染其它测试
+afterEach(() => {
+  QnBandSelectionStore.reset();
+  MusicGenerationStyleStore.setStyle('POP');
+  MusicGenerationKeyStore.setKey('C');
+  MusicGenerationSeedStore.setSuffix('42');
+}); // singleton:勿污染其它测试
 
 // ============================================================
 // qn_main_engine_takeover §6/§14 — 生产主链路端到端(runPipeline 外观 → Q+N → MusicalIR → MIDI)
@@ -28,6 +35,31 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     expect(context.bpm).toBe(result.bpm);
   });
 
+  it('★ Q+H facade 与直接 Q+N service 同链路:同 seed/style/key 得到同一结构化结果', () => {
+    MusicGenerationStyleStore.setStyle('RNB');
+    MusicGenerationKeyStore.setKey('D');
+    MusicGenerationSeedStore.setSuffix('qh-qn-closure');
+    const seed = MusicGenerationSeedStore.getSeedNumber();
+
+    const direct = generateMusicSync({
+      seed,
+      styleHint: 'rnb',
+      mood: 'build',
+      targetDuration: 120,
+      key: 'D',
+      bandParticipants: QnBandSelectionStore.getParticipants(),
+    });
+    const { result } = runPipeline({});
+
+    expect(result.status).toBe(direct.status);
+    expect(result.seed).toBe(direct.seed);
+    expect(result.styleHint).toBe(direct.styleHint);
+    expect(result.bpm).toBe(direct.bpm);
+    expect(JSON.stringify(result.uiSnapshot)).toBe(JSON.stringify(direct.uiSnapshot));
+    expect(result.ir?.tracks.map((t) => `${t.role}:${t.program}:${t.notes.length}`))
+      .toEqual(direct.ir?.tracks.map((t) => `${t.role}:${t.program}:${t.notes.length}`));
+  });
+
   it('★ result.ir → musicalIRToMidiEvents 产可播 MIDI(noteOn/programChange/CC 齐全)', () => {
     const { result } = runPipeline({});
     const ev = musicalIRToMidiEvents(result.ir!, 50);
@@ -44,10 +76,10 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     QnBandSelectionStore.setState('drummer', 'selected');
     const { result } = runPipeline({});
     const roles = new Set(result.ir!.tracks.map((t) => t.role));
-    // 键盘手承担 lead/comp/pad,贝斯手 bass,鼓手 drum → 不会出现这些以外的职责(本例已覆盖全部)
-    for (const r of roles) expect(['lead', 'comp', 'pad', 'bass', 'drum']).toContain(r);
+    // 键盘手承担 lead/comp,贝斯手 bass,鼓手 drum(pad 由合成乐手承担,本例未选 → 不出 pad)
+    for (const r of roles) expect(['lead', 'comp', 'bass', 'drum']).toContain(r);
     expect(roles.has('bass')).toBe(true);
-    expect(roles.has('drum')).toBe(true);
+    expect(roles.has('drum'), '选了鼓手 → 必有 drum(P1)').toBe(true);
     // 音色仍由器配层定(非用户指定);bass program 合法但不被锁死成某值
     expect(typeof result.ir!.tracks.find((t) => t.role === 'bass')?.program).toBe('number');
   });
