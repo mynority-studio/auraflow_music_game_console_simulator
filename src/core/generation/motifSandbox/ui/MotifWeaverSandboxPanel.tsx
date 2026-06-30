@@ -13,7 +13,10 @@ import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fi
 import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../model/leadOnlyIr';
 import { buildMotifSongOverride } from '../bridge/sandboxToOverride';
-import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
+// ★ Q+N 主链路(qn_main_engine_takeover §10):完整成曲走 service + AudioEngine.playMusicGeneration;
+//   lead-only 试听仍留 sandbox(playMusicalIR / leadOnlyIr,trial-only)。
+import { generateMotifMusic } from '../../musicGeneration/MusicGenerationService';
+import { AudioEngine } from '../../../audio/AudioEngine';
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
@@ -327,16 +330,16 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   //   不替换上面的 lead-only 试听;这里听【整编成曲】。
   const playFull = useCallback(async () => {
     if (!result) { setStatus('先生成'); return; }
-    stopNewEngine();
+    AudioEngine.stop();
     try {
       const override = buildMotifSongOverride(result, keyPc, tonalityParentMode(tonality));
-      const song = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 96 }, override);
-      if (!song.ir) { setStatus(`整编失败(${song.report.findings.length} findings)`); return; }
-      const bpm = song.ir.timebase.tempoMap[0]?.bpm ?? result.playbackBpm;
+      // ★ 完整成曲走 Q+N 正式管道(generateMotifMusic → MusicalIR),不再 sandbox playMusicalIR / leadOnlyIr。
+      const song = await generateMotifMusic({ seed, styleHint: style, mood: 'build', targetDuration: 96 }, override);
+      if (song.status === 'failed' || !song.ir) { setStatus('整编失败(audit)'); return; }
       const roles = song.ir.tracks.map((t) => t.role).join('+');
       setPlaying(true);
-      setStatus(`▶ 整编成曲(${song.status} · ${roles} · BPM ${bpm})…`);
-      await playMusicalIR(song.ir, bpm, style); // 成曲走压缩母带
+      setStatus(`▶ 整编成曲(${song.status} · ${roles} · BPM ${song.bpm})…`);
+      await AudioEngine.playMusicGeneration(song); // Q+N 正式播放
     } catch (err) { setStatus(err instanceof Error ? `整编出错:${err.message}` : '整编出错'); }
   }, [result, style, seed, keyPc, tonality]);
 

@@ -34,12 +34,12 @@ export interface DevPanelMeta {
 
 export const DEV_PANELS: DevPanelMeta[] = [
     {
-        id: 'newengine', label: '新引擎', hint: 'newEngine generate', combo: 'Q+N',
+        id: 'newengine', label: 'Q+N 诊断', hint: 'Q+N diagnostic (sandbox)', combo: 'Q+N',
         icon: Boxes,
         dot: 'bg-emerald-400', activeRing: 'border-emerald-400/50 bg-emerald-500/10', activeText: 'text-emerald-300',
     },
     {
-        id: 'pipeline', label: '管道监视', hint: 'Pipeline monitor', combo: 'Q+H',
+        id: 'pipeline', label: '音乐生成', hint: 'Music generation', combo: 'Q+H',
         icon: Activity,
         dot: 'bg-sky-400', activeRing: 'border-sky-400/50 bg-sky-500/10', activeText: 'text-sky-300',
     },

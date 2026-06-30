@@ -3,10 +3,10 @@ import { StyleId } from '../../core/generation/config/StyleFlags';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
-// ★ newEngine 接入(2026-06-06):AuraBar 双击 bar → newEngine 随机 seed → 播放(无限电台)。
-import { traceGeneration } from '../../core/generation/newEngine/generation';
-import { playMusicalIR, stopNewEngine } from '../../core/generation/newEngine/sandbox/audioOut';
-import type { MusicalIR } from '../../core/generation/newEngine/ir/MusicalIR';
+// ★ Q+N 主链路(qn_main_engine_takeover §9):AuraBar 走 MusicGenerationService + AudioEngine.playMusicGeneration,
+//   不再直接调 sandbox audioOut / traceGeneration。
+import { generateMusic } from '../../core/generation/musicGeneration/MusicGenerationService';
+import type { MusicGenerationResult } from '../../core/generation/musicGeneration/types';
 
 export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING' | 'PREPARING_JAM' | 'JAMMING_DRUMS' | 'JAMMING_MELODY';
 
@@ -19,8 +19,8 @@ const STYLE_HINT_BY_ID: Partial<Record<StyleId, string>> = {
 
 export class EndlessRadioManager {
   private state: AppState = 'IDLE';
-  // history 存 newEngine 产物(MusicalIR + bpm + styleHint),供 prev/next 导航。
-  private history: { ir: MusicalIR, bpm: number, styleHint: string, styleName: string }[] = [];
+  // history 存 Q+N 产物(MusicGenerationResult + styleName),供 prev/next 导航。
+  private history: { result: MusicGenerationResult, styleName: string }[] = [];
   private historyIndex: number = -1;
   private generationId: number = 0;
 
@@ -93,8 +93,7 @@ export class EndlessRadioManager {
     }
     AudioEngine.muteChannel(9, false);
     AudioEngine.muteChannel(0, false);
-    AudioEngine.stop();
-    stopNewEngine(); // 停 newEngine 的 globalMidiScheduler
+    AudioEngine.stop(); // ★ Q+N:统一停(内部停 globalMidiScheduler)
     this.setState('IDLE');
   }
 
@@ -413,13 +412,14 @@ export class EndlessRadioManager {
       }
   }
 
-  private async playNewEngine(ir: MusicalIR, bpm: number, styleHint: string, styleName: string, genId: number) {
-    this.currentStyleHint = styleHint;
+  private async playNewEngine(result: MusicGenerationResult, styleName: string, genId: number) {
+    this.currentStyleHint = result.styleHint;
     if (this.onStyleChange) {
       this.onStyleChange(styleName);
     }
 
-    await playMusicalIR(ir, bpm, styleHint);
+    // ★ Q+N 正式播放:走 AudioEngine.playMusicGeneration(保 currentArrangedTrack/Context + uiSnapshot + 视觉)。
+    await AudioEngine.playMusicGeneration(result);
 
     if (genId !== this.generationId) return;
 
@@ -445,7 +445,6 @@ export class EndlessRadioManager {
     const currentGenId = ++this.generationId;
 
     AudioEngine.stop();
-    stopNewEngine();
     this.setState('GENERATING');
 
     try {
@@ -460,15 +459,16 @@ export class EndlessRadioManager {
       const styleHint = hints[Math.floor(Math.random() * hints.length)];
       console.log(`[Radio/newEngine] seed=${seed} style=${styleHint}`);
 
-      const trace = traceGeneration({ seed, styleHint, mood: 'calm-build', targetDuration: 120 });
+      const result = await generateMusic({ seed, styleHint, mood: 'calm-build', targetDuration: 120 });
       if (currentGenId !== this.generationId) return;
+      if (result.status === 'failed' || !result.ir) throw new Error('Q+N 生成失败');
 
       const styleName = styleHint.toUpperCase();
       this.history = this.history.slice(0, this.historyIndex + 1);
-      this.history.push({ ir: trace.ir, bpm: trace.bpm, styleHint, styleName });
+      this.history.push({ result, styleName });
       this.historyIndex++;
 
-      await this.playNewEngine(trace.ir, trace.bpm, styleHint, styleName, currentGenId);
+      await this.playNewEngine(result, styleName, currentGenId);
     } catch (error) {
       console.error('newEngine generation failed:', error);
       if (currentGenId === this.generationId) {
@@ -481,12 +481,11 @@ export class EndlessRadioManager {
     if (this.historyIndex < this.history.length - 1) {
       const currentGenId = ++this.generationId;
       AudioEngine.stop();
-      stopNewEngine();
       this.setState('GENERATING');
 
       this.historyIndex++;
       const h = this.history[this.historyIndex];
-      await this.playNewEngine(h.ir, h.bpm, h.styleHint, h.styleName, currentGenId);
+      await this.playNewEngine(h.result, h.styleName, currentGenId);
     } else {
       // 无限电台:历史到头 → 生成新随机 seed
       this.triggerGeneration();
@@ -497,12 +496,11 @@ export class EndlessRadioManager {
     if (this.historyIndex > 0) {
       const currentGenId = ++this.generationId;
       AudioEngine.stop();
-      stopNewEngine();
       this.setState('GENERATING');
 
       this.historyIndex--;
       const h = this.history[this.historyIndex];
-      await this.playNewEngine(h.ir, h.bpm, h.styleHint, h.styleName, currentGenId);
+      await this.playNewEngine(h.result, h.styleName, currentGenId);
     }
   }
 }

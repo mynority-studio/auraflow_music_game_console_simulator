@@ -175,7 +175,10 @@ export class JamSessionManager {
             this.currentTrack = rawTrack.track;
             this.currentStyle = style;
 
-            await AudioEngine.playSong(rawTrack.track, style.id, rawTrack.context);
+            // ★ Q+N 主链路(qn_main_engine_takeover §10):runPipeline 现是 Q+N 服务外观 → 走 playMusicGeneration(MusicalIR),
+            //   不再 playSong(mg track)。(用户 motif → 完整 override 续写留后续:接 generateMotifMusic + buildMotifSongOverride。)
+            if (rawTrack.result.status === 'failed' || !rawTrack.result.ir) throw new Error('Q+N 生成失败');
+            await AudioEngine.playMusicGeneration(rawTrack.result);
 
             if (currentGenId !== this.generationId) return;
             this.setState('PLAYING');
