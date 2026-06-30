@@ -8,7 +8,7 @@
 // generateSong = 顶层 Request→FinalIR 编排(聚合所有 stage)。
 // ============================================================
 
-import { beats, createRandomContext, createTimebase, type RandomContext } from '../foundation';
+import { beats, createRandomContext, createTimebase, type RandomContext, type Timebase } from '../foundation';
 import { buildBandSpec, type GenerationRequest } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
@@ -16,6 +16,10 @@ import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditReport } from '../ir/AuditReport';
+import type { BandSpec } from '../band/BandSpec';
+import type { ArrangementPlan } from '../arranger/ArrangementPlan';
+import type { HarmonicPlan } from '../harmony/HarmonicPlan';
+import type { InstrumentationPlan } from '../instrumental/InstrumentationPlan';
 import { DEFAULT_BUDGET, nextRetryContext, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator, type RetryLocator } from './retryMapping';
 import type { RetryContext } from './RetryContext';
@@ -76,8 +80,22 @@ export function runGenerationControl(
   }
 }
 
-/** 顶层:Request → FinalIR(Slice 1 端到端;Resolver/OccupationMap 让位后续接)。 */
-export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
+/**
+ * ★ 共享结构化 bundle(qn_main_engine_takeover §4.3):生成的全部中间结构(band/arrangement/harmonic/
+ *   instrumentation/timebase + seedRng)。generateSong / trace / 生产 service 共用此函数构建,不复制平行生成逻辑。
+ *   seedRng 是不可变 RandomContext(substream 派生不 mutate)→ 线程同一对象给 render 与原 generateSong byte-identical。
+ */
+export interface SongBundle {
+  band: BandSpec;
+  arrangement: ArrangementPlan;
+  harmonic: HarmonicPlan;
+  instrumentation: InstrumentationPlan;
+  timebase: Timebase;
+  seedRng: RandomContext;
+}
+
+/** Request → 全部中间结构(不渲染)。供 generateSong + UI 投影 + trace 复用。 */
+export function buildSongBundle(request: GenerationRequest): SongBundle {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
   const arrangement = buildArrangementPlan(band, { rng: seedRng });
@@ -89,13 +107,20 @@ export function generateSong(request: GenerationRequest, budget: RetryBudget = D
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
+  return { band, arrangement, harmonic, instrumentation, timebase, seedRng };
+}
 
+/** bundle → FinalIR(render + 控制环)。与原 generateSong 渲染段 byte-identical。 */
+export function generateSongFromBundle(bundle: SongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
+  const { band, arrangement, harmonic, instrumentation, timebase, seedRng } = bundle;
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
       retry && { voicingSafer: retry.voicingSafer });
-
-  // finding→精确返回点定位器:tick→ChordSpan(voicingSafer 瘦身目标)。
   const locator = buildRetryLocator(harmonic, timebase);
-
   return runGenerationControl(render, seedRng, budget, locator);
+}
+
+/** 顶层:Request → FinalIR(Slice 1 端到端;Resolver/OccupationMap 让位后续接)。 */
+export function generateSong(request: GenerationRequest, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
+  return generateSongFromBundle(buildSongBundle(request), budget);
 }

@@ -24,7 +24,7 @@ import type { PitchClass } from '../foundation';
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 import { DEFAULT_BUDGET, type RetryBudget } from './RetryPolicy';
 import { buildRetryLocator } from './retryMapping';
-import { runGenerationControl, type GenerationResult, type RenderFn } from './GenerationController';
+import { runGenerationControl, type GenerationResult, type RenderFn, type SongBundle } from './GenerationController';
 import { sanitizeLeadNoteIR } from '../render/leadSanitizer';
 import { swingFrac } from '../render/swing';
 import { isInProtectedFastRun } from '../render/leadGridTiming';
@@ -139,11 +139,11 @@ function motifLeadToTrackIR(notes: readonly MotifLeadNote[], timebase: Timebase)
 }
 
 /** 走 A 并行入口:Q+R 产物注入 Q+N 成曲生产链。override 缺省时行为与 generateSong 完全一致。 */
-export function generateSongFromMotif(
-  request: GenerationRequest,
-  override: MotifSongOverride = {},
-  budget: RetryBudget = DEFAULT_BUDGET,
-): GenerationResult {
+/** ★ 共享 motif bundle(qn_main_engine_takeover §4.3):暴露 override 注入后的全部中间结构 + overrideLeadTrack,
+ *  供 generateSongFromMotif + 生产 service 的 motif uiSnapshot 复用(不复制平行生成逻辑)。 */
+export interface MotifSongBundle { bundle: SongBundle; overrideLeadTrack?: TrackIR; lenient: boolean; }
+
+export function buildMotifSongBundle(request: GenerationRequest, override: MotifSongOverride = {}): MotifSongBundle {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
   const arrangement = buildArrangementPlan(band, { rng: seedRng });
@@ -158,19 +158,30 @@ export function generateSongFromMotif(
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
-
-  // 注入点 B:权威 lead(beats)→ tile 满曲长 →【预摆动(走 A 直拍 motif 对齐 jazz swing)】→ TrackIR(本 timebase),
-  //   经 renderSongFull 末参数透传(缺省 → MG 链)。预摆动让旋律与 comp/bass/drum 同摆,补回整编缺失的 jazz 律动。
+  // 注入点 B:权威 lead(beats)→ tile 满曲长 →【预摆动】→ TrackIR(本 timebase),经 renderSongFull 末参数透传。
   const fittedLead = override.lead && override.lead.length ? fitLeadToBeats(override.lead, totalBeats) : undefined;
   const swungLead = fittedLead ? swingMotifLead(fittedLead, arrangement.feel.swingRatio, beatsPerBar) : undefined;
   const overrideLeadTrack = swungLead && swungLead.length ? motifLeadToTrackIR(swungLead, timebase) : undefined;
+  const lenient = Boolean(override.harmony || (override.lead && override.lead.length));
+  return { bundle: { band, arrangement, harmonic, instrumentation, timebase, seedRng }, overrideLeadTrack, lenient };
+}
+
+/** motif bundle → FinalIR(render + 控制环)。供 generateSongFromMotif + service 复用(避免重复 build bundle)。 */
+export function generateSongFromMotifBundle(mb: MotifSongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
+  const { bundle, overrideLeadTrack, lenient } = mb;
+  const { band, arrangement, harmonic, instrumentation, timebase, seedRng } = bundle;
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
       retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack);
-
   const locator = buildRetryLocator(harmonic, timebase);
-  // 有 override 时:和声/lead 是用户权威,Q+N 尽力渲染 → 非 lead 的 error(pad/comp avoid 暴露等)降为 warning,
-  //   只 fatal 阻断(否则 retry 改不动 pad/bass → 永远 failed)。无 override → 与 generateSong 同(严格)。
-  const lenient = Boolean(override.harmony || (override.lead && override.lead.length));
+  // 有 override 时:和声/lead 是用户权威 → 非 lead 的 error 降为 warning,只 fatal 阻断。无 override → 与 generateSong 同(严格)。
   return runGenerationControl(render, seedRng, budget, locator, lenient);
+}
+
+export function generateSongFromMotif(
+  request: GenerationRequest,
+  override: MotifSongOverride = {},
+  budget: RetryBudget = DEFAULT_BUDGET,
+): GenerationResult {
+  return generateSongFromMotifBundle(buildMotifSongBundle(request, override), budget);
 }
