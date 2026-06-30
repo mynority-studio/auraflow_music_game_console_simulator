@@ -10,8 +10,20 @@
 //   npx tsx scripts/audit-mg-current-parity.ts --write-report-only   # 总是 exit 0,只写报告
 //   npx tsx scripts/audit-mg-current-parity.ts --full       # 30 seed(6/style),缺省 5 seed(1/style)打通
 //
-// ★ Phase A 现实现 stage:RoadMap(parseFunctionalRoadMap vs simulator parseRoadMap)。
-//   后续 Phase B/C 逐步加:scheduled tokens / raw / styled / shaped / final lead / texture(见 STAGES 扩展点)。
+// ★ 现实现 live stage:RoadMap(simulator mgFunctionalRoadMap vs MG FunctionalRoadMap,同一 normalized chords)。
+//
+// ★★ 设计决定(2026-06-30,CODEX 复核「是否扩 live 到 scheduled/raw/styled/shaped」后定):
+//   【只 RoadMap 走 live,旋律各 stage 留 oracle-based】—— 不是疏漏,是有意。理由:
+//   1. RoadMap 是 simulator【自有 ported parser】(mgFunctionalRoadMap.ts)可能漂离 MG → live 对比有真价值。
+//   2. scheduled/raw/styled:MG 虽 export 了 expandGrammarForRoadMap/scheduleBrickExpansions/realizeTokens/
+//      renderStyleFeel standalone(improvisor/*),live 技术可行;但 live 重跑产出 = 用同一 fresh seed 跑同一
+//      MG 代码 → 与【Phase B/C 从【当前 pinned MG @ 24dfd6f】重捕的 __mgOracle__】逐字节相同 → 零额外验证价值,
+//      只移除缓存 + 引入 RNG 对齐脆弱性。MG 已 pin 不动 → oracle 不会陈旧。故 oracle-based 是等价且更稳的选择。
+//   3. shaped/final:shapeMelodyHarmony + post-shaper(shapeMelodyGrooveCohesion/RegisterAgainstComp)是 MG
+//      【Engine 私有方法】(musicEngine.ts:4697/8210/8272),live 需实例化整个 Engine = 大搬运(明确不做)。
+//   → 旋律链 byte-parity 由重捕 oracle 单测覆盖(mgScheduledTokens/mgEnrichedMelody/mgMelodyShaper/
+//      mgPostShaperChain/mgMelodyMetadata);final-lead/texture 按 §10 invariant。见报告 Verification coverage。
+//   若将来 MG 解 pin(变成移动目标),再把 scheduled/styled 接成 live(STAGES 扩展点已留)。
 // ============================================================
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -163,7 +175,10 @@ lines.push('');
 const divStages = new Set(failed.map((r) => r.firstDivergence).filter((s): s is string => !!s && s !== 'ERROR'));
 if (divStages.has('roadMap')) lines.push('- [ ] (3.1 P0) Production RoadMap diverges from current MG `parseFunctionalRoadMap`. Port functional RoadMap + ImprovisorBrickCatalog; pass `style`; retire stale `parseRoadMap` from production.');
 if (results.some((r) => r.error)) lines.push('- [ ] Some seeds errored (likely MG style/seed support). Fix audit harness seed compatibility.');
-lines.push('- (optional) Inline live melody-stage re-run here (scheduled/realized/shaped) — currently covered by re-captured `__mgOracle__` parity tests; see Verification coverage above.');
+lines.push('- **Decided (2026-06-30, not a TODO):** melody stages stay oracle-based, only RoadMap is live. A live re-run');
+lines.push('  reproduces the identical fresh-seed output of the re-captured pinned-MG (`@24dfd6f`) oracles → zero added');
+lines.push('  verification value + RNG-alignment fragility; `shapeMelodyHarmony`/post-shaper are private MG Engine methods');
+lines.push('  (live would need instantiating the Engine). Revisit only if MG un-pins. See runner header for full rationale.');
 lines.push('');
 
 mkdirSync('docs/generated', { recursive: true });

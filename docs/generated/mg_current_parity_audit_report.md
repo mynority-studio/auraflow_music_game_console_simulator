@@ -67,4 +67,7 @@
 
 ## Auto follow-up tasks
 
-- (optional) Inline live melody-stage re-run here (scheduled/realized/shaped) — currently covered by re-captured `__mgOracle__` parity tests; see Verification coverage above.
+- **Decided (2026-06-30, not a TODO):** melody stages stay oracle-based, only RoadMap is live. A live re-run
+  reproduces the identical fresh-seed output of the re-captured pinned-MG (`@24dfd6f`) oracles → zero added
+  verification value + RNG-alignment fragility; `shapeMelodyHarmony`/post-shaper are private MG Engine methods
+  (live would need instantiating the Engine). Revisit only if MG un-pins. See runner header for full rationale.
