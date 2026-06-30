@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { runPipeline } from './index';
-import { BandRole } from '../types';
 import { musicalIRToMidiEvents } from '../../audio/musicalIrToMidi';
 import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
 import { QnBandSelectionStore } from '../../../state/QnBandSelectionStore';
+
+afterEach(() => QnBandSelectionStore.reset()); // singleton:勿污染其它测试
 
 // ============================================================
 // qn_main_engine_takeover §6/§14 — 生产主链路端到端(runPipeline 外观 → Q+N → MusicalIR → MIDI)
@@ -35,25 +36,28 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     expect(ev.filter((e) => e.type === 'cc' && e.data1 === 7).length).toBeGreaterThan(0); // CC7 volume
   });
 
-  it('★ gmOverrides(forcedGmPrograms BandRole.Bass)→ bass TrackIR.program', () => {
+  it('★ Band Selection 参与乐手 → 限制 lineup(选 键盘手+贝斯手+鼓手 → 仅这些职责出轨,无 GM 音色 override)', () => {
     MusicGenerationStyleStore.setStyle('POP');
     MusicGenerationSeedStore.setSuffix('42');
-    const { result } = runPipeline({ forcedGmPrograms: { [BandRole.Bass]: 35 } });
-    const bass = result.ir!.tracks.find((t) => t.role === 'bass');
-    expect(bass, 'bass track 在场').toBeTruthy();
-    expect(bass!.program, 'BandRole.Bass override → bass program').toBe(35);
+    QnBandSelectionStore.setState('keyboardist', 'selected');
+    QnBandSelectionStore.setState('bassist', 'selected');
+    QnBandSelectionStore.setState('drummer', 'selected');
+    const { result } = runPipeline({});
+    const roles = new Set(result.ir!.tracks.map((t) => t.role));
+    // 键盘手承担 lead/comp/pad,贝斯手 bass,鼓手 drum → 不会出现这些以外的职责(本例已覆盖全部)
+    for (const r of roles) expect(['lead', 'comp', 'pad', 'bass', 'drum']).toContain(r);
+    expect(roles.has('bass')).toBe(true);
+    expect(roles.has('drum')).toBe(true);
+    // 音色仍由器配层定(非用户指定);bass program 合法但不被锁死成某值
+    expect(typeof result.ir!.tracks.find((t) => t.role === 'bass')?.program).toBe('number');
   });
 
-  it('★ QnBandSelectionStore 三态 → runPipeline IR 反映(disabled 丢轨 · selected 覆盖 program)', () => {
+  it('★ disabled participant → 该职责不生成(禁用鼓手 → 无 drum 轨,无 program 后处理)', () => {
     MusicGenerationStyleStore.setStyle('POP');
     MusicGenerationSeedStore.setSuffix('42');
-    QnBandSelectionStore.setRole('comp', { kind: 'disabled' });
-    QnBandSelectionStore.setRole('bass', { kind: 'selected', program: 35 });
+    QnBandSelectionStore.setState('drummer', 'disabled');
     const { result } = runPipeline({});
-    expect(result.ir!.tracks.some((t) => t.role === 'comp'), 'comp disabled 丢轨').toBe(false);
-    expect(result.ir!.tracks.find((t) => t.role === 'bass')?.program, 'bass selected program').toBe(35);
-    expect(result.uiSnapshot.roster.find((p) => p.role === 'comp')?.state).toBe('disabled');
-    QnBandSelectionStore.setSelection({}); // reset(singleton,勿污染其它测试)
+    expect(result.ir!.tracks.some((t) => t.role === 'drum'), 'drummer disabled → 无 drum 轨').toBe(false);
   });
 
   it('★ 不同 style/seed → 不同曲(确定性 + 可变)', () => {

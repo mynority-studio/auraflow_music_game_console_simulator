@@ -37,26 +37,47 @@ describe('musicGeneration/MusicGenerationService', () => {
     expect(a.ir!.tracks.length).toBe(b.ir!.tracks.length);
   });
 
-  it('★ Band Selection §8.4:disabled 丢轨;selected/gmOverride 覆盖 TrackIR.program;auto 不变', async () => {
+  it('★ Band Selection 新语义:participant 限 lineup,不写 TrackIR.program override(§4/§5/§8.3)', async () => {
     const base = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 });
-    const baseRoles = base.ir!.tracks.map((t) => t.role);
-    expect(baseRoles).toContain('comp');
+    const req = { seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 } as const;
 
-    // disabled comp → IR 无 comp 轨
-    const noComp = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, bandSelection: { comp: { kind: 'disabled' } } });
-    expect(noComp.ir!.tracks.some((t) => t.role === 'comp'), 'disabled comp 丢轨').toBe(false);
-    expect(noComp.uiSnapshot.roster.find((p) => p.role === 'comp')?.state).toBe('disabled');
+    // disabled drummer → IR 无 drum 轨(职责不生成,非后处理丢轨)
+    const noDrum = await generateMusic({ ...req, bandParticipants: [{ role: 'drummer', state: 'disabled' }] });
+    expect(noDrum.ir!.tracks.some((t) => t.role === 'drum'), 'disabled drummer → 无 drum').toBe(false);
 
-    // gmOverride lead=24(nylon guitar)→ lead track.program=24
-    const ovLead = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, gmOverrides: { lead: 24 } });
-    expect(ovLead.ir!.tracks.find((t) => t.role === 'lead')?.program, 'gmOverride lead program').toBe(24);
+    // 选 键盘手+贝斯手+鼓手 → 仅这些乐手覆盖的职责;音色仍由器配层定(program 不被锁成用户值)
+    const trio = await generateMusic({
+      ...req,
+      bandParticipants: [
+        { role: 'keyboardist', state: 'selected' },
+        { role: 'bassist', state: 'selected' },
+        { role: 'drummer', state: 'selected' },
+      ],
+    });
+    for (const t of trio.ir!.tracks) expect(['lead', 'comp', 'pad', 'bass', 'drum']).toContain(t.role);
+    // bass 音色由器配层 rng 选 → 与默认 base 的 bass program 一致(participant 不改音色,只限 lineup)
+    const trioBass = trio.ir!.tracks.find((t) => t.role === 'bass')?.program;
+    const baseBass = base.ir!.tracks.find((t) => t.role === 'bass')?.program;
+    expect(trioBass, 'participant 不写 program override → 与器配层默认一致').toBe(baseBass);
 
-    // selected bass program
-    const selBass = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, bandSelection: { bass: { kind: 'selected', program: 35 } } });
-    expect(selBass.ir!.tracks.find((t) => t.role === 'bass')?.program, 'selected bass program').toBe(35);
+    // roster 音色 = IR 实际 program(只读),非用户指定
+    for (const p of trio.uiSnapshot.roster) {
+      const irTrack = trio.ir!.tracks.find((t) => t.role === p.role);
+      if (irTrack) expect(p.program).toBe(irTrack.program);
+    }
+  });
 
-    // auto (无 selection) → 与 base 同
-    expect(base.ir!.tracks.find((t) => t.role === 'lead')?.program).toBe(base.uiSnapshot.tracks.find((t) => t.role === 'lead')?.program);
+  it('★ 器配层音色随机性保留:同 participants 不同 seed → 可得不同 GM program(§5.2)', async () => {
+    const participants = [
+      { role: 'keyboardist' as const, state: 'selected' as const },
+      { role: 'bassist' as const, state: 'selected' as const },
+    ];
+    const programs = new Set<string>();
+    for (let seed = 0; seed < 16; seed++) {
+      const r = await generateMusic({ seed, styleHint: 'pop', mood: 'build', targetDuration: 90, bandParticipants: participants });
+      programs.add(r.ir!.tracks.map((t) => `${t.role}:${t.program}`).sort().join('|'));
+    }
+    expect(programs.size, '不同 seed → 音色世界/GM 有多样性').toBeGreaterThanOrEqual(3);
   });
 
   it('★ key/mode 字符串 → Q+N:请求 key="D" → uiSnapshot.key 反映', async () => {

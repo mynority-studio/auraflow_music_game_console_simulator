@@ -22,9 +22,8 @@ import {
 import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationKeyStore, MUSIC_GEN_KEY_OPTIONS, type MusicGenKey } from '../state/MusicGenerationKeyStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
-import type { MusicGenerationResult, QnBandSelection, QnRole, QnRoleSelection } from '../core/generation/musicGeneration/types';
-import { QnBandSelectionStore, QN_ROLE_ORDER } from '../state/QnBandSelectionStore';
-import { gmName } from '../core/generation/musicGeneration/qnUiProjection';
+import type { MusicGenerationResult, QnRole, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
+import { QnBandSelectionStore, QN_PARTICIPANT_ORDER, QN_PARTICIPANT_LABEL } from '../state/QnBandSelectionStore';
 import { useDevPanelChannel } from './devPanels';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -169,51 +168,43 @@ interface FrameSnapshot {
 // ★ Q+N 接管(qn_main_engine_takeover §8):旧 BandRole 槽位顺序 / BandSelection 类型 / DEFAULT_MUSICIAN_BY_ROLE
 //   已删(Band Selection 改走 QnBandSelectionStore + QnBandPanel,见下)。
 
-// ★ Q+N Band Selection 面板(§8):5 角色 × 三态(自动/选乐器/禁用)。每角色一条 GM 候选(按家族)。
-const QN_ROLE_DISPLAY: Record<QnRole, string> = { lead: 'Lead', comp: 'Comp', bass: 'Bass', pad: 'Pad', drum: 'Drum' };
-const QN_ROLE_PROGRAMS: Record<QnRole, number[]> = {
-    lead: [0, 1, 4, 11, 12, 24, 26, 73, 75],
-    comp: [0, 1, 4, 5, 16],
-    bass: [32, 33, 35, 38, 43],
-    pad: [48, 49, 50, 89, 91, 94],
-    drum: [],
-};
-const QnBandPanel: React.FC<{ band: QnBandSelection; onSetRole: (role: QnRole, sel: QnRoleSelection) => void }> = ({ band, onSetRole }) => {
-    const valueFor = (role: QnRole): string => {
-        const sel = band[role];
-        if (!sel || sel.kind === 'auto') return 'auto';
-        if (sel.kind === 'disabled') return 'disabled';
-        return `p${sel.program}`;
-    };
-    const onChange = (role: QnRole, v: string) => {
-        if (v === 'auto') onSetRole(role, { kind: 'auto' });
-        else if (v === 'disabled') onSetRole(role, { kind: 'disabled' });
-        else onSetRole(role, { kind: 'selected', program: parseInt(v.slice(1), 10) });
-    };
-    return (
-        <div className="px-4 py-2 border-b border-zinc-800/60">
-            <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection</span>
-            <div className="mt-2 grid grid-cols-1 gap-1">
-                {QN_ROLE_ORDER.map((role) => (
+// ★ Band Selection 面板(qn_takeover_followup §3):选「参与乐手/职能」,**不选 GM 音色**。
+//   每个乐手三态:自动(Q+N 默认)/ 参与(白名单)/ 禁用。具体音色由 Q+N 器配层按 style/seed 随机决定。
+const PARTICIPANT_STATES: { value: BandParticipantState; label: string; cls: string }[] = [
+    { value: 'auto', label: '自动', cls: 'text-zinc-400 border-zinc-700' },
+    { value: 'selected', label: '参与', cls: 'text-fuchsia-300 border-fuchsia-500/60 bg-fuchsia-500/10' },
+    { value: 'disabled', label: '禁用', cls: 'text-zinc-500 border-zinc-800 line-through' },
+];
+const QnBandPanel: React.FC<{
+    states: Partial<Record<BandParticipantRole, BandParticipantState>>;
+    onSet: (role: BandParticipantRole, state: BandParticipantState) => void;
+}> = ({ states, onSet }) => (
+    <div className="px-4 py-2 border-b border-zinc-800/60">
+        <span className="text-[9px] uppercase tracking-widest text-fuchsia-400/80 font-bold">Band Selection · 参与乐手</span>
+        <span className="ml-2 text-[8px] text-zinc-600">音色由器配层随机决定</span>
+        <div className="mt-2 grid grid-cols-1 gap-1">
+            {QN_PARTICIPANT_ORDER.map((role) => {
+                const cur = states[role] ?? 'auto';
+                return (
                     <div key={role} className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-mono text-zinc-400 w-10">{QN_ROLE_DISPLAY[role]}</span>
-                        <select
-                            value={valueFor(role)}
-                            onChange={(e) => onChange(role, e.target.value)}
-                            className="flex-1 bg-black/60 border border-zinc-700 rounded px-2 py-0.5 text-[10px] font-mono text-zinc-200 focus:outline-none focus:border-fuchsia-400/50"
-                        >
-                            <option value="auto">自动(Q+N 默认)</option>
-                            <option value="disabled">禁用(不出声)</option>
-                            {QN_ROLE_PROGRAMS[role].map((p) => (
-                                <option key={p} value={`p${p}`}>{gmName(p)}</option>
+                        <span className="text-[10px] font-mono text-zinc-400 w-16">{QN_PARTICIPANT_LABEL[role]}</span>
+                        <div className="flex gap-1">
+                            {PARTICIPANT_STATES.map((s) => (
+                                <button
+                                    key={s.value}
+                                    onClick={() => onSet(role, s.value)}
+                                    className={`px-2 py-0.5 rounded text-[9px] font-mono border transition-colors ${cur === s.value ? s.cls : 'text-zinc-600 border-zinc-800/60 hover:border-zinc-700'}`}
+                                >
+                                    {s.label}
+                                </button>
                             ))}
-                        </select>
+                        </div>
                     </div>
-                ))}
-            </div>
+                );
+            })}
         </div>
-    );
-};
+    </div>
+);
 
 export const PipelineMonitor: React.FC = () => {
     const [isVisible, setIsVisible] = useState(true);
@@ -224,23 +215,23 @@ export const PipelineMonitor: React.FC = () => {
     });
     const [seedInput, setSeedInput] = useState('42');
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
-    const [mgStyle, setMgStyleState] = useState<MusicGenStyle>(() => MusicGenerationStyleStore.getStyle());
-    const switchMgStyle = useCallback((next: MusicGenStyle) => {
+    const [musicStyle, setMusicStyleState] = useState<MusicGenStyle>(() => MusicGenerationStyleStore.getStyle());
+    const switchMusicStyle = useCallback((next: MusicGenStyle) => {
         MusicGenerationStyleStore.setStyle(next);
-        setMgStyleState(next);
+        setMusicStyleState(next);
     }, []);
-    const [mgKey, setMgKeyState] = useState<MusicGenKey>(() => MusicGenerationKeyStore.getKey());
-    const switchMgKey = useCallback((next: MusicGenKey) => {
+    const [musicKey, setMusicKeyState] = useState<MusicGenKey>(() => MusicGenerationKeyStore.getKey());
+    const switchMusicKey = useCallback((next: MusicGenKey) => {
         MusicGenerationKeyStore.setKey(next);
-        setMgKeyState(next);
+        setMusicKeyState(next);
     }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
-    // ★ Q+N Band Selection 三态(QnBandSelectionStore;立即生效,下次 Play 用)。
-    const [qnBand, setQnBand] = useState<QnBandSelection>(() => QnBandSelectionStore.getSelection());
-    const setQnRole = useCallback((role: QnRole, sel: QnRoleSelection) => {
-        QnBandSelectionStore.setRole(role, sel);
-        setQnBand(QnBandSelectionStore.getSelection());
+    // ★ Band Selection 参与乐手三态(QnBandSelectionStore;立即生效,下次 Play 用)。
+    const [qnParticipants, setQnParticipants] = useState<Partial<Record<BandParticipantRole, BandParticipantState>>>(() => QnBandSelectionStore.getStates());
+    const setQnParticipant = useCallback((role: BandParticipantRole, state: BandParticipantState) => {
+        QnBandSelectionStore.setState(role, state);
+        setQnParticipants(QnBandSelectionStore.getStates());
     }, []);
     // 错误提示
     const [playError, setPlayError] = useState<string | null>(null);
@@ -458,8 +449,8 @@ export const PipelineMonitor: React.FC = () => {
                 <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">Q+N</span>
                 <span className="text-[9px] uppercase tracking-wider text-zinc-500">style</span>
                 <select
-                    value={mgStyle}
-                    onChange={(e) => switchMgStyle(e.target.value as MusicGenStyle)}
+                    value={musicStyle}
+                    onChange={(e) => switchMusicStyle(e.target.value as MusicGenStyle)}
                     className="bg-black/60 border border-cyan-500/30 rounded px-2 py-1 text-[10px] font-mono text-cyan-300 focus:outline-none focus:border-cyan-400/60"
                     title="风格选择 — 下次 Play 生效"
                 >
@@ -469,8 +460,8 @@ export const PipelineMonitor: React.FC = () => {
                 </select>
                 <span className="text-[9px] uppercase tracking-wider text-zinc-500 ml-1">key</span>
                 <select
-                    value={mgKey}
-                    onChange={(e) => switchMgKey(e.target.value as MusicGenKey)}
+                    value={musicKey}
+                    onChange={(e) => switchMusicKey(e.target.value as MusicGenKey)}
                     className="bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60"
                     title="key 选择 — 下次 Play 生效"
                 >
@@ -549,9 +540,9 @@ export const PipelineMonitor: React.FC = () => {
                 )}
             </div>
 
-            {/* ★ Q+N Band Selection(qn_main_engine_takeover §8):5 角色 lead/comp/bass/pad/drum,三态 自动/选乐器/禁用。
-                立即写 QnBandSelectionStore,下次 Play 生效(auto=Q+N 默认 · selected=覆盖 program · disabled=不出声)。 */}
-            <QnBandPanel band={qnBand} onSetRole={setQnRole} />
+            {/* ★ Band Selection(qn_takeover_followup §3):选「参与乐手/职能」,不选 GM 音色。
+                立即写 QnBandSelectionStore,下次 Play 生效(auto=Q+N 默认 · selected=白名单参与 · disabled=不生成)。 */}
+            <QnBandPanel states={qnParticipants} onSet={setQnParticipant} />
 
             {/* 双栏内容区（按 header 之外的剩余空间分配） */}
             <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -835,8 +826,10 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, qnRoster, mute
                     {qnRoster.map((p) => (
                         <div key={p.role} className="flex items-center justify-between text-xs">
                             <span className={QN_ROLE_COLOR[p.role] ?? 'text-zinc-300'}>{QN_ROLE_LABEL[p.role] ?? p.role}</span>
+                            {/* 音色只读(器配层随机选);标 参与/自动补位 */}
                             <span className="font-mono text-zinc-400">{p.instrumentName}
-                                {p.state !== 'auto' && <span className="ml-1 text-[9px] text-zinc-600">({p.state})</span>}
+                                {p.autoFilled && <span className="ml-1 text-[9px] text-amber-500/80">(自动补位)</span>}
+                                {!p.autoFilled && p.state === 'selected' && <span className="ml-1 text-[9px] text-fuchsia-400/70">(参与)</span>}
                             </span>
                         </div>
                     ))}

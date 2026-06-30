@@ -9,8 +9,9 @@ import type { SongBundle } from '../newEngine/generation/GenerationController';
 import type { MusicalIR } from '../newEngine/ir/MusicalIR';
 import { beatsPerBarOf } from '../newEngine/arranger/phraseTiming';
 import type {
-  MusicGenerationUiSnapshot, UiSection, UiChord, UiPlayer, UiTrack, QnRole, QnBandSelection,
+  MusicGenerationUiSnapshot, UiSection, UiChord, UiPlayer, UiTrack, QnRole, BandParticipantSelection, BandParticipantState,
 } from './types';
+import { participantForRole } from './participantConstraint';
 
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const ROLE_CHANNEL: Record<QnRole, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
@@ -65,7 +66,7 @@ function chordLabel(rootPc: number, chordType: string | undefined, quality: stri
 }
 
 /** band/arrangement/harmonic/instrumentation + IR → 结构化 UI 投影(不碰 trace)。 */
-export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: number, selection?: QnBandSelection): MusicGenerationUiSnapshot {
+export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: number, participants?: BandParticipantSelection[]): MusicGenerationUiSnapshot {
   const { band, arrangement, harmonic, instrumentation } = bundle;
   const bpb = beatsPerBarOf(arrangement.meter);
 
@@ -88,18 +89,21 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
     sectionId: String(c.sectionId),
   }));
 
-  // roster(乐手 = instrumentation.roleProgram 的角色;state 由 selection 标注)。
-  // ★ program 优先取【最终 IR 实际 program】(用户 selected/gmOverride 后处理覆盖在 IR 上),回退 roleProgram;
-  //   否则选乐器后 UI 仍显示 render 前的旧 program(P1 修复)。
+  // roster(乐手 = instrumentation.roleProgram 的角色;音色只读取自【最终 IR program】)。
+  // ★ program 取【最终 IR 实际 program】(器配层选中,只读),回退 roleProgram。Band Selection 不再写 program。
   const irProgramByRole = new Map<string, number>();
   for (const t of ir?.tracks ?? []) if (t.program !== undefined) irProgramByRole.set(t.role, t.program);
+  const autoFilled = new Set<string>((band.autoFilledRoles ?? []).map(String));
+  // participant 是否明确 selected(白名单态)→ roster state 标 selected;否则 auto。
+  const selectedParticipant = new Set((participants ?? []).filter((p) => p.state === 'selected').map((p) => p.role));
   const roster: UiPlayer[] = ROLE_ORDER
     .filter((role) => instrumentation.roleProgram[role] !== undefined)
     .map((role) => {
       const program = irProgramByRole.get(role) ?? instrumentation.roleProgram[role];
-      const sel = selection?.[role];
-      const state: UiPlayer['state'] = sel?.kind === 'disabled' ? 'disabled' : sel?.kind === 'selected' ? 'selected' : 'auto';
-      return { role, program, instrumentName: gmName(program), family: gmFamily(program), state };
+      const participant = participantForRole(role, participants);
+      const isAutoFilled = autoFilled.has(role);
+      const state: BandParticipantState = isAutoFilled ? 'auto' : (participant && selectedParticipant.has(participant)) ? 'selected' : 'auto';
+      return { role, program, instrumentName: gmName(program), family: gmFamily(program), state, participant, autoFilled: isAutoFilled || undefined };
     });
 
   // tracks(实际 IR 轨 → channel/noteCount;给 Jam/可视化)

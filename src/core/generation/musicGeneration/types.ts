@@ -10,19 +10,32 @@
 
 import type { MusicalIR } from '../newEngine/ir/MusicalIR';
 
-/** Q+N 5 角色(产品 Band Selection 暴露这 5 个;旧 Vocal 暂禁)。 */
+/** Q+N 5 角色(内部 lineup/IR 轨标识;旧 Vocal 暂禁)。 */
 export type QnRole = 'lead' | 'comp' | 'bass' | 'drum' | 'pad';
 
-/** Band Selection 三态(§8.4):auto=Q+N 默认 / selected=用户指定 program / disabled=用户关闭(不出声)。
- *  ★ 关键:别把「缺 selection」误解为「disabled」—— 缺=auto。 */
-export type QnRoleSelection =
-  | { kind: 'auto' }
-  | { kind: 'selected'; program: number; musicianId?: string }
-  | { kind: 'disabled' };
+// ============================================================
+// ★ Band Selection 新语义(qn_takeover_followup §3/§4):选「参与乐手/职能」,不选 GM 音色。
+//   音色仍由 Q+N 器配层按 style/seed/音色世界规则随机决定(participant 只限 lineup/role/family)。
+// ============================================================
 
-export type QnBandSelection = Partial<Record<QnRole, QnRoleSelection>>;
-/** 角色 → GM program 覆盖(0..127);影响最终 TrackIR.program。 */
-export type QnGmOverrides = Partial<Record<QnRole, number>>;
+/** 参与乐手/职能(产品 Band Selection 暴露这些;非 GM 音色)。 */
+export type BandParticipantRole =
+  | 'keyboardist'   // 键盘手 → lead/comp/pad 中的键盘职责
+  | 'bassist'       // 贝斯手 → bass
+  | 'drummer'       // 鼓手   → drum
+  | 'guitarist'     // 吉他手 → lead/comp 中的吉他职责
+  | 'synthPlayer'   // 合成/氛围乐手 → pad/lead/comp 中的合成职责
+  | 'leadPlayer';   // 主奏乐手 → 旋律主奏(不限家族)
+
+/** 参与三态:auto=Q+N 默认(未表态) / selected=明确加入(白名单) / disabled=明确排除。
+ *  ★ 别把「缺/auto」误解为「disabled」—— 全 auto = Q+N 默认完整乐队。 */
+export type BandParticipantState = 'auto' | 'selected' | 'disabled';
+
+export interface BandParticipantSelection {
+  role: BandParticipantRole;
+  state: BandParticipantState;
+  musicianId?: string;       // 可选:具体乐手卡(不携带 GM program)
+}
 
 export interface MusicGenerationRequest {
   seed: number;
@@ -31,14 +44,22 @@ export interface MusicGenerationRequest {
   targetDuration: number;   // 秒
   key?: string;             // UI 字符串('C'|'Db'|…);服务转 PitchClass
   mode?: string;            // 'major'|'minor'|教会调式
-  bandSelection?: QnBandSelection;
-  gmOverrides?: QnGmOverrides;
+  bandParticipants?: BandParticipantSelection[]; // ★ 参与乐手/职能(不含 GM 音色;音色仍器配层定)
 }
 
 // —— UI 结构化投影 ——
 export interface UiSection { id: string; role: string; functionTag?: string; bars: number; startBeat: number; }
 export interface UiChord { roman: string; label: string; rootPc: number; quality: string; startBeat: number; durationBeats: number; sectionId: string; }
-export interface UiPlayer { role: QnRole; program: number; instrumentName: string; family: string; state: 'auto' | 'selected' | 'disabled'; }
+// roster 行:职能 + Q+N 实际随机音色(只读,不可手选)+ participant 归属 + 是否自动补位。
+export interface UiPlayer {
+  role: QnRole;
+  program: number;            // Q+N 器配层实际选中的 GM program(只读显示)
+  instrumentName: string;     // 该 program 的乐器名(只读)
+  family: string;
+  state: BandParticipantState; // auto / selected / disabled(来自 participant)
+  participant?: BandParticipantRole; // 承担该 role 的乐手职能
+  autoFilled?: boolean;       // ★ §4.4:用户选择未覆盖 → Q+N 自动补位(UI 标明)
+}
 export interface UiTrack { role: QnRole; channel: number; program: number; instrumentName: string; noteCount: number; }
 
 export interface MusicGenerationUiSnapshot {

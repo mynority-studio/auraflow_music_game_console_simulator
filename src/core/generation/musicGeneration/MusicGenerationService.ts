@@ -2,19 +2,22 @@
 // musicGeneration · MusicGenerationService(产品 ↔ Q+N 唯一边界;qn_main_engine_takeover §4)
 // ------------------------------------------------------------
 // generateMusic / generateMotifMusic 包 Q+N 正式生成核心(generateSong / generateSongFromMotif),
-//   产 MusicalIR(正式音频合同)+ 结构化 uiSnapshot。Band Selection 三态(auto/selected/disabled)在此落地:
-//   gmOverrides/selected → 覆盖最终 TrackIR.program;disabled → 该轨不出现在 IR。
+//   产 MusicalIR(正式音频合同)+ 结构化 uiSnapshot。
+// ★ Band Selection 新语义(qn_takeover_followup §3/§4):req.bandParticipants(选「参与乐手/职能」)
+//   → deriveLineupConstraint → Q+N band 层 bandConstraint(限 lineup/role/家族)。
+//   【禁止】生成后后处理覆盖 TrackIR.program(§5.3):音色一律由器配层按 style/seed/音色世界 rng 决定。
 // ★ 本层可 import Q+N;Q+N 核心【不得】反向 import 本层 / AudioEngine。播放由调用方交给 AudioEngine。
 // ============================================================
 
 import { buildSongBundle, generateSongFromBundle, type SongBundle } from '../newEngine/generation/GenerationController';
 import { buildMotifSongBundle, generateSongFromMotifBundle, type MotifSongOverride } from '../newEngine/generation/generateSongFromMotif';
 import type { GenerationRequest } from '../newEngine/band/bandEngine';
-import { freezeMusicalIR, type MusicalIR, type MusicalIRData, type TrackIR } from '../newEngine/ir/MusicalIR';
+import type { MusicalIR } from '../newEngine/ir/MusicalIR';
 import { buildUiSnapshot, keyToPc } from './qnUiProjection';
-import type { MusicGenerationRequest, MusicGenerationResult, QnBandSelection, QnGmOverrides, QnRole } from './types';
+import { deriveLineupConstraint } from './participantConstraint';
+import type { MusicGenerationRequest, MusicGenerationResult } from './types';
 
-/** MusicGenerationRequest → Q+N GenerationRequest(UI 字符串 key/mode 转 Q+N 类型)。 */
+/** MusicGenerationRequest → Q+N GenerationRequest(UI 字符串 key/mode 转 Q+N 类型;participant → 约束)。 */
 function toQnRequest(req: MusicGenerationRequest): GenerationRequest {
   const out: GenerationRequest = {
     seed: req.seed,
@@ -24,34 +27,22 @@ function toQnRequest(req: MusicGenerationRequest): GenerationRequest {
   };
   if (req.key) (out as { key?: number }).key = keyToPc(req.key);
   if (req.mode) (out as { mode?: string }).mode = req.mode.toLowerCase() === 'minor' ? 'minor' : 'major';
+  const constraint = deriveLineupConstraint(req.bandParticipants);
+  if (constraint) (out as { bandConstraint?: unknown }).bandConstraint = constraint;
   return out;
 }
 
-/** Band Selection 三态落地:disabled → 丢轨;selected/gmOverride → 覆盖 TrackIR.program。无改动则原样返回。 */
-function applyBandSelection(ir: MusicalIR, selection?: QnBandSelection, gmOverrides?: QnGmOverrides): MusicalIR {
-  if (!selection && !gmOverrides) return ir;
-  const kept = ir.tracks.filter((t) => selection?.[t.role as QnRole]?.kind !== 'disabled');
-  const mapped = kept.map((t) => {
-    const sel = selection?.[t.role as QnRole];
-    const override = gmOverrides?.[t.role as QnRole] ?? (sel?.kind === 'selected' ? sel.program : undefined);
-    return override !== undefined && override !== t.program ? { ...t, program: override } : t;
-  });
-  const changed = mapped.length !== ir.tracks.length || mapped.some((t, i) => t !== ir.tracks[i]);
-  if (!changed) return ir;
-  return freezeMusicalIR({ tracks: mapped as TrackIR[], timebase: ir.timebase, durationTicks: ir.durationTicks } as unknown as MusicalIRData);
-}
-
 function buildResult(req: MusicGenerationRequest, bundle: SongBundle, ir: MusicalIR | null, status: string, report: unknown, attempts: number): MusicGenerationResult {
-  const finalIr = ir ? applyBandSelection(ir, req.bandSelection, req.gmOverrides) : null;
+  // ★ 不再后处理覆盖 program:IR 直用,音色已是器配层最终真源。
   return {
-    status: status === 'failed' || !finalIr ? 'failed' : 'ok',
-    ir: finalIr,
+    status: status === 'failed' || !ir ? 'failed' : 'ok',
+    ir,
     bpm: bundle.arrangement.tempoBpm,
     seed: req.seed,
     styleHint: req.styleHint,
     report,
     attempts,
-    uiSnapshot: buildUiSnapshot(bundle, finalIr, req.seed, req.bandSelection),
+    uiSnapshot: buildUiSnapshot(bundle, ir, req.seed, req.bandParticipants),
   };
 }
 
