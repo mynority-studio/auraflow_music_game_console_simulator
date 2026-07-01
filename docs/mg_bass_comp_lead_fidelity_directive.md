@@ -452,3 +452,27 @@ The task is fidelity:
 Make simulator bass / comp / lead obey MG because MG is the current musical
 quality target.
 ```
+
+## Implementation status (2026-07-01)
+
+- **§3 ACG lead+comp+bass hard contract** — done (earlier, `bb1fc70`/`e61f99c`).
+- **§4 ACG per-bar comp texture** — **DELIVERED** (`e0d2c90`). SIM ACG texture
+  variety 2 → 8-10 (MG 6-7). `pickAcgTextureForBar` ported; `textureSchedule` ACG
+  branch routes per-span. Verify by ear (comp gesture per bar now changes).
+- **§4 LOFI per-bar texture** — **DEFERRED, split to a separate directive:**
+  `docs/lofi_texture_bridge_fidelity_directive.md`. A naive per-bar wire-up (same
+  as ACG) was tried and reverted (`bda16dd`): LOFI textures are intentionally
+  sparse, so per-bar switching produces `comp-continuity-gap` (comp silent > 2.5
+  beats) — exactly what the section-level architecture was built to prevent. LOFI
+  "MG-like" needs variety **and** continuity bridging (allowWithBridge /
+  downbeatAnchor / carryTail) together. **⚠️ LOFI must NOT copy the ACG per-bar
+  strategy without bridging first. LOFI stays section-level until that directive is
+  done.**
+- **§5 cross-engine audit** — done (`scripts/audit-mg-bass-comp-lead-fidelity.ts`
+  + `docs/generated/mg_bass_comp_lead_fidelity_report.md`).
+- **§6 bass** — audit shows no threshold breach (per-bar densities in range); not
+  changed.
+- **§8 lead** — untouched (byte-exact MG parity preserved).
+- **§9 mix (renderMixBalance, volume-only)** — present.
+- **§10 tests** — `render/mgBassCompLeadFidelity.test.ts` +
+  `acgCompHardContract.test.ts`.
