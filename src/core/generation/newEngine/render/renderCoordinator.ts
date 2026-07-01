@@ -60,8 +60,10 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
   return maxEnd;
 }
 
-// CC64 踏板的风格:POP/LOFI/RNB comp 踩踏板(音尾 ring,融合);JAZZ/BLUES 不踩(声部清晰)。
-const PEDAL_STYLES = ['pop', 'lofi', 'rnb'];
+// CC64 踏板的风格(忠实 MG generatePedalEvents:只排除 JAZZ/BLUES,其余钢琴风格都踩)。
+//   ★ ACG 必须踩(P0,mg_bass_comp_lead 审计):MG ACG 每和弦踩踏板→钢琴"空旷/尾音托住和弦"的融合感;
+//     SIM 此前漏了 ACG → 延音/尾音/连接感全丢。ACG 用 MG 的 ~30ms 换踏板(非通用 0.06 beat),见 buildCompPedal。
+const PEDAL_STYLES = ['pop', 'lofi', 'rnb', 'acg'];
 // pad 铺法二选一:~40% 歌走 pedal anchor(整段长 pedal + 动声部),其余逐和弦选音。
 const PAD_PEDAL_ANCHOR_PROB = 0.4;
 
@@ -85,16 +87,21 @@ export function duckUnderLead(tracks: TrackIR[], factor: number): TrackIR[] {
   });
 }
 
-/** CC64 踏板序列:每和弦踩下、下一和弦前 ~50ms 抬起(comp 音尾 ring 但不糊下一和弦)。 */
-function buildCompPedal(plan: HarmonicPlan, timebase: Timebase): { atTick: Ticks; down: boolean }[] {
-  const lift = timebase.beatToTick(beats(0.06)) as number;
+/** CC64 踏板序列(忠实 MG generatePedalEvents):每和弦踩下、下一和弦前抬起(音尾 ring 但不糊下一和弦);
+ *  ★ 末和弦踏板 hold 到曲末(MG:isLast → 不抬)。抬起提前量 = ACG 用 MG 30ms 换踏板;其它风格 0.06 beat。 */
+function buildCompPedal(plan: HarmonicPlan, timebase: Timebase, style: string, bpm: number): { atTick: Ticks; down: boolean }[] {
+  // ACG:30ms → beat(= 30 * bpm / 60000,忠实 MG RELEASE_LEAD);其它钢琴风格保留 0.06 beat。
+  const liftBeats = style.toLowerCase() === 'acg' ? (30 * bpm / 60000) : 0.06;
+  const lift = timebase.beatToTick(beats(liftBeats)) as number;
   const out: { atTick: Ticks; down: boolean }[] = [];
-  for (const span of plan.chordTimeline) {
+  const spans = plan.chordTimeline;
+  spans.forEach((span, i) => {
     const startT = timebase.beatToTick(span.startBeat) as number;
     const endT = startT + (timebase.beatToTick(span.durationBeats) as number);
     out.push({ atTick: ticks(startT), down: true });
-    out.push({ atTick: ticks(Math.max(startT + 1, endT - lift)), down: false });
-  }
+    const off = i === spans.length - 1 ? endT : Math.max(startT + 1, endT - lift); // ★ 末和弦 hold 到曲末
+    out.push({ atTick: ticks(off), down: false });
+  });
   return out;
 }
 
@@ -418,8 +425,8 @@ export function renderSongFull(
     sectionTicks.push({ id: s.id, tick: timebase.beatToTick(beats(secBeatCursor)) as number });
     secBeatCursor += s.bars * bpbProg;
   }
-  // ★ CC64 踏板:POP/LOFI/RNB 的 comp 每和弦踩(音尾 ring 融合);其它风格不踩(清晰)。
-  const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase) : undefined;
+  // ★ CC64 踏板:POP/LOFI/RNB/ACG 的 comp 每和弦踩(音尾 ring 融合);JAZZ/BLUES 不踩(清晰)。
+  const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
   const mixAttachedTracks = articulatedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];

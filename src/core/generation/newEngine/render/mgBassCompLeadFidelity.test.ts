@@ -62,6 +62,16 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
+  it('★ P0-1:ACG comp 有 CC64 踏板(延音/尾音/融合感,忠实 MG 每和弦踩)', () => {
+    for (const seed of SEEDS) {
+      const comp = trk(acg(seed), 'comp');
+      const ped = comp?.pedalEvents ?? [];
+      expect(ped.length, `seed ${seed} ACG comp 踏板`).toBeGreaterThan(0);
+      expect(ped.some((p) => p.down), `seed ${seed} 有踩下`).toBe(true);
+      expect(ped.some((p) => !p.down), `seed ${seed} 有抬起`).toBe(true);
+    }
+  });
+
   it('家族合法:ACG lead/comp=keyboard,bass=bass', () => {
     for (const seed of SEEDS) {
       const r = acg(seed);
