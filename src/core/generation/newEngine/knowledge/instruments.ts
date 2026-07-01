@@ -342,6 +342,14 @@ export function enforceRoleFamilies(
   return out;
 }
 
+/** ★ 风格级【硬核心 role】(ACG comp 硬合同 P0):某些风格无论 Band Selection 选什么都必须保留这些 role。
+ *  ACG = 钢琴写作模型:lead(旋律/topline)+ comp(独立钢琴伴奏:琶音/空气色彩/和声主体)+ bass。
+ *  即便 lead/comp 同用 GM0 Acoustic Grand 也是两个音乐角色、两条轨,不能塌成 lead-only。
+ *  drum 不属 MG-faithful ACG 核心(P0 不加鼓,留作单独产品决策)。 */
+export function hardRequiredRolesForStyle(style: string): InstrumentRoleName[] {
+  return style.toLowerCase() === 'acg' ? ['lead', 'comp', 'bass'] : [];
+}
+
 export function pickBandInstrumentation(style: string, rng: Rng, constraint?: LineupConstraint): BandInstrumentation {
   const rule = LINEUP_RULES[style] ?? LINEUP_RULES.default;
   const chosen = new Set<InstrumentRoleName>(rule.always);
@@ -358,6 +366,16 @@ export function pickBandInstrumentation(style: string, rng: Rng, constraint?: Li
     // 最小乐队(§4.4):约束后无任何旋律/和声 role(lead/comp)→ 自动补 lead 并标记。
     if (!kept.has('lead') && !kept.has('comp')) { kept.add('lead'); autoFilled.push('lead'); }
     lineup = ROLE_ORDER.filter((r) => kept.has(r)); // 规范顺序
+  }
+
+  // ★ 风格硬核心(ACG P0):Band Selection 不能删掉 lead/comp/bass;ACG 排除 drum(不产 drum+lead 而缺 comp)。
+  //   缺省 ACG 已含 lead/comp/bass → 无改动(字节不变);被约束删掉时在此无条件补回并标 autoFilled。
+  const hardRoles = hardRequiredRolesForStyle(style);
+  if (hardRoles.length) {
+    const set = new Set<InstrumentRoleName>(lineup);
+    for (const r of hardRoles) if (!set.has(r)) { set.add(r); if (!autoFilled.includes(r)) autoFilled.push(r); }
+    if (style.toLowerCase() === 'acg') set.delete('drum'); // ACG 核心不含 drum(P0)
+    lineup = ROLE_ORDER.filter((r) => set.has(r));
   }
 
   const inst = INSTRUMENTS[style] ?? INSTRUMENTS.default;

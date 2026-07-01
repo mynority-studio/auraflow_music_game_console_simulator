@@ -460,6 +460,16 @@ export function renderSongFull(
     };
   });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
+  // ★ ACG comp 硬合同(acg_comp_track_hard_contract §5.2,fail-closed):ACG 必须有独立 lead + comp(有音符)
+  //   两条轨,即便同用 GM0 也不能塌成 lead-only。band 层 hardRequiredRolesForStyle 已保证 comp 入 lineup;
+  //   此处是最后防线 —— 若 ACG 到 render 仍缺 comp,抛不变量(宁失败也不静默降级)。
+  if (band.style.toLowerCase() === 'acg') {
+    const compT = ir.tracks.find((t) => t.role === 'comp');
+    const leadT = ir.tracks.find((t) => t.role === 'lead');
+    if (!leadT || !compT || compT.notes.length === 0) {
+      throw new Error(`ACG comp hard-contract violated: lead=${!!leadT} comp=${!!compT} compNotes=${compT?.notes.length ?? 0}`);
+    }
+  }
   // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。
   // dense 区间用【pre-shaper tracks】算(post-shaper comp 已删→comp-path 检不到);comp-continuity 审计据此排除。
   // ★ repeatGroup 重放后:dense-melody 排除区也要按【重放后】的 lead 位置算(重复段 lead=首段 → dense 区随之搬到首段位置;
