@@ -30,6 +30,8 @@ import type { GenerationRequest } from '../core/generation/newEngine/band/bandEn
 import { pc } from '../core/generation/newEngine/foundation';
 import { buildPianoRoll, type PianoRoll } from '../core/generation/newEngine/sandbox/pianoRoll';
 import { PianoRollWindow } from '../core/generation/newEngine/sandbox/PianoRollWindow';
+import { musicalIRToSMF } from '../core/generation/newEngine/sandbox/midiFile';
+import { compareTraces, type TraceComparison } from '../core/generation/newEngine/sandbox/traceDiff';
 import { deriveLineupConstraint } from '../core/generation/musicGeneration/participantConstraint';
 import { keyToPc } from '../core/generation/musicGeneration/qnUiProjection';
 import {
@@ -254,6 +256,9 @@ export const PipelineMonitor: React.FC = () => {
     const [monitorSections, setMonitorSections] = useState<TraceSection[]>([]);
     const [monitorIr, setMonitorIr] = useState<MusicGenerationResult['ir']>(null);
     const [rollWinOpen, setRollWinOpen] = useState(false);
+    // ★ Debug/Diagnostics 区(诊断能力从旧 NewEnginePanel 收口进 Q+H):A/B seed diff · MIDI 导出 · 音轨视图。
+    const [showDebug, setShowDebug] = useState(false);
+    const [abCmp, setAbCmp] = useState<TraceComparison | null>(null);
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
@@ -318,6 +323,20 @@ export const PipelineMonitor: React.FC = () => {
         }
     }, [mutedParts]);
 
+    // ★ 与 playSeed 同源的 Q+N 生成请求(seed + 当前 style/key + participant 约束);诊断/监控/A-B 共用。
+    const buildTraceRequest = useCallback((seed: number): GenerationRequest => {
+        const bandConstraint = deriveLineupConstraint(QnBandSelectionStore.getParticipants());
+        const req: GenerationRequest = {
+            seed,
+            styleHint: MusicGenerationStyleStore.getStyleHint(),
+            mood: 'build',
+            targetDuration: 120,
+            key: pc(keyToPc(MusicGenerationKeyStore.getKey())),
+        };
+        if (bandConstraint) req.bandConstraint = bandConstraint;
+        return req;
+    }, []);
+
     const refreshQnMonitor = useCallback((result: MusicGenerationResult, seed: number) => {
         if (!result.ir) return;
         const fallbackStatus = result.status === 'failed' ? 'failed' : 'pass';
@@ -334,16 +353,7 @@ export const PipelineMonitor: React.FC = () => {
         };
 
         try {
-            const bandConstraint = deriveLineupConstraint(QnBandSelectionStore.getParticipants());
-            const traceRequest: GenerationRequest = {
-                seed,
-                styleHint: MusicGenerationStyleStore.getStyleHint(),
-                mood: 'build',
-                targetDuration: 120,
-                key: pc(keyToPc(MusicGenerationKeyStore.getKey())),
-            };
-            if (bandConstraint) traceRequest.bandConstraint = bandConstraint;
-            const trace = traceGeneration(traceRequest);
+            const trace = traceGeneration(buildTraceRequest(seed));
             setMonitorIr(trace.ir);
             setMonitorReadout(deriveQnMonitorReadout({
                 ir: trace.ir,
@@ -362,7 +372,7 @@ export const PipelineMonitor: React.FC = () => {
             setMonitorLogLines([`■ MONITOR    traceGeneration failed: ${msg}`]);
             console.warn('[PipelineMonitor] Q+N trace monitor failed:', err);
         }
-    }, []);
+    }, [buildTraceRequest]);
 
     const playSeed = useCallback(async (seed: number) => {
         await startAudioContext();
@@ -440,6 +450,55 @@ export const PipelineMonitor: React.FC = () => {
             return next;
         });
     }, []);
+
+    // ==========================================================
+    // Debug/Diagnostics — 诊断能力收口进 Q+H(不另开播放入口:播放仍走上方 Play=playMusicGeneration)
+    // ==========================================================
+    const effectiveSeed = useCallback(() => currentSeed ?? hashSeedToInt(seedInput || '0'), [currentSeed, seedInput]);
+
+    // ⬇ MIDI:导出当前 seed/style 的成曲为 .mid(与播放同源 traceGeneration → 同一首)。
+    const exportMidi = useCallback(() => {
+        try {
+            const s = effectiveSeed();
+            const trace = traceGeneration(buildTraceRequest(s));
+            const smf = musicalIRToSMF(trace.ir, trace.bpm, MusicGenerationStyleStore.getStyleHint());
+            const blob = new Blob([smf as BlobPart], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `qh-${MusicGenerationStyleStore.getStyleHint()}-seed${s}.mid`;
+            a.click();
+            URL.revokeObjectURL(url);
+            setMonitorStatus('⬇ 已导出 .mid');
+        } catch (err) {
+            setMonitorStatus(`导出失败:${err instanceof Error ? err.message : String(err)}`);
+        }
+    }, [effectiveSeed, buildTraceRequest]);
+
+    // ⇄ A/B:同 style/key 下 seed vs seed+1 的结构化 trace diff(诊断确定性/多样性)。
+    const compareAB = useCallback(() => {
+        try {
+            const s = effectiveSeed();
+            const a = traceGeneration(buildTraceRequest(s));
+            const b = traceGeneration(buildTraceRequest(s + 1));
+            setAbCmp(compareTraces(a, b));
+            setMonitorStatus(`⇄ A/B seed ${s} vs ${s + 1}`);
+        } catch (err) {
+            setMonitorStatus(`A/B 失败:${err instanceof Error ? err.message : String(err)}`);
+        }
+    }, [effectiveSeed, buildTraceRequest]);
+
+    // 🎹 音轨视图:没生成过先跑一次 trace 填充,再开窗。
+    const openRollWindow = useCallback(() => {
+        if (!monitorIr) {
+            try {
+                const trace = traceGeneration(buildTraceRequest(effectiveSeed()));
+                setMonitorIr(trace.ir);
+                setMonitorSections(trace.sections);
+            } catch { /* 空窗兜底 */ }
+        }
+        setRollWinOpen(true);
+    }, [monitorIr, effectiveSeed, buildTraceRequest]);
 
     if (!isVisible) return null;
 
@@ -636,6 +695,52 @@ export const PipelineMonitor: React.FC = () => {
                         roll={monitorRoll}
                         logLines={monitorLogLines}
                     />
+                </div>
+
+                {/* ★ Debug/Diagnostics(诊断能力从旧 NewEnginePanel 收口进 Q+H;播放仍走上方 Play=playMusicGeneration)*/}
+                <div className="px-4 py-2 border-b border-zinc-800/60">
+                    <button
+                        type="button"
+                        onClick={() => setShowDebug((v) => !v)}
+                        className="flex items-center gap-1.5 text-[9px] uppercase tracking-widest text-sky-400/80 font-bold hover:text-sky-300"
+                    >
+                        <span>{showDebug ? '▾' : '▸'}</span> Debug · 诊断
+                    </button>
+                    {showDebug && (
+                        <div className="mt-2 space-y-2">
+                            <div className="flex flex-wrap gap-1.5">
+                                <button type="button" onClick={openRollWindow} title="逐轨看音符(独立窗口)"
+                                    className="rounded border border-sky-500/40 px-2 py-1 text-[10px] text-sky-300 hover:bg-sky-500/10">🎹 音轨视图</button>
+                                <button type="button" onClick={exportMidi} title="导出当前 seed/style 成曲为 .mid"
+                                    className="rounded border border-sky-500/40 px-2 py-1 text-[10px] text-sky-300 hover:bg-sky-500/10">⬇ MIDI</button>
+                                <button type="button" onClick={compareAB} title="seed vs seed+1 结构化 trace diff"
+                                    className="rounded border border-violet-500/40 px-2 py-1 text-[10px] text-violet-300 hover:bg-violet-500/10">⇄ A/B</button>
+                            </div>
+                            {abCmp && (
+                                <div className="rounded border border-violet-500/20 bg-black/50">
+                                    <div className="flex items-center justify-between border-b border-white/5 px-2 py-1 text-[9px] uppercase tracking-widest text-violet-300/70">
+                                        <span>A/B diff</span>
+                                        <span className="text-zinc-400">{abCmp.changedCount} 行差异</span>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-x-2 gap-y-0.5 px-2 py-1.5 text-[9px] text-zinc-400">
+                                        {([['bpm', abCmp.metrics.bpm], ['小节', abCmp.metrics.bars], ['音符', abCmp.metrics.notes], ['状态', abCmp.metrics.status]] as const).map(([k, v]) => (
+                                            <div key={k} className={v.equal ? '' : 'text-amber-300'}>
+                                                {k} <span className="text-zinc-200">{String(v.a)}</span>{v.equal ? '' : ` → ${String(v.b)}`}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="max-h-40 overflow-auto border-t border-white/5 px-2 py-1 font-mono text-[9px] leading-snug">
+                                        {abCmp.rows.map((r, i) => (
+                                            <div key={i} className={`grid grid-cols-2 gap-2 ${r.same ? 'text-zinc-500' : 'bg-amber-500/10 text-amber-200'}`}>
+                                                <span className="truncate" title={r.left}>{r.left ?? ''}</span>
+                                                <span className="truncate" title={r.right}>{r.right ?? ''}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* 双栏内容区 */}

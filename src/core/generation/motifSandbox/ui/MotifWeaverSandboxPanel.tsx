@@ -14,14 +14,14 @@ import { generateMotifWeave } from '../model/motifWeaver';
 import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../model/leadOnlyIr';
 import { buildMotifSongOverride } from '../bridge/sandboxToOverride';
 // ★ Q+N 主链路(qn_main_engine_takeover §10):完整成曲走 service + AudioEngine.playMusicGeneration;
-//   lead-only 试听仍留 sandbox(playMusicalIR / leadOnlyIr,trial-only)。
+//   lead-only 试听仍留 sandbox(auditionMusicalIR / leadOnlyIr,预听 trial-only)。
 import { generateMotifMusic } from '../../musicGeneration/MusicGenerationService';
 import { AudioEngine } from '../../../audio/AudioEngine';
 import { buildAccompaniment } from '../model/accompaniment';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif, HealingMode } from '../model/types';
-import { playMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
+import { auditionMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
@@ -323,7 +323,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     const ir = buildSandboxIr(result.lead, accomp, pbpm, style);
     setPlaying(true);
     setStatus(withAccomp ? `▶ 播放 lead + 伴奏(BPM ${pbpm})…` : `▶ 播放 lead(BPM ${pbpm})…`);
-    try { await playMusicalIR(ir, pbpm, style); } catch { /* 静默 */ }
+    try { await auditionMusicalIR(ir, pbpm, style); } catch { /* 静默 */ }
   }, [result, style, seed, withAccomp]);
 
   // ★ 走 A:full arrangement preview —— motif/slot 结果 → Q+N 成曲(器配/鼓/bass/comp/pad/mix)。
@@ -333,7 +333,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     AudioEngine.stop();
     try {
       const override = buildMotifSongOverride(result, keyPc, tonalityParentMode(tonality));
-      // ★ 完整成曲走 Q+N 正式管道(generateMotifMusic → MusicalIR),不再 sandbox playMusicalIR / leadOnlyIr。
+      // ★ 完整成曲走 Q+N 正式管道(generateMotifMusic → MusicalIR),不走 sandbox auditionMusicalIR / leadOnlyIr 预听。
       const song = await generateMotifMusic({ seed, styleHint: style, mood: 'build', targetDuration: 96 }, override);
       if (song.status === 'failed' || !song.ir) { setStatus('整编失败(audit)'); return; }
       const roles = song.ir.tracks.map((t) => t.role).join('+');

@@ -1,4 +1,3 @@
-// newEngine · sandbox — Q+N 出声控制板入口
-export { NewEnginePanel } from './NewEnginePanel';
-export { playMusicalIR, stopNewEngine } from './audioOut';
+// newEngine · sandbox — Q+N 出声/预听工具(NewEnginePanel 已退役,诊断收口进 Q+H PipelineMonitor)
+export { auditionMusicalIR, stopNewEngine } from './audioOut';
 export { musicalIRToMidiEvents } from './irToMidi';

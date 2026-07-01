@@ -13,10 +13,12 @@ import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
 import { resolveAudibleRoles } from './pianoRoll';
 
-/** 播放一首 newEngine 生成的曲子。会先确保 AudioContext / synth 已启动。style → 共享房间混响湿度。 */
-export async function playMusicalIR(ir: MusicalIR, bpm: number, style?: string): Promise<void> {
+/** ★ sandbox 试听/预听出口(audition/preview,非成品主链路)。成品完整成曲统一走
+ *  AudioEngine.playMusicGeneration;此函数仅供 Motif 沙盒 lead-only 预听等诊断预听。
+ *  会先确保 AudioContext / synth 已启动。style → 共享房间混响湿度。 */
+export async function auditionMusicalIR(ir: MusicalIR, bpm: number, style?: string): Promise<void> {
   await startAudioContext();
-  setSandboxAuditionMaster(false); // 成品播放 → 压缩母带(响而受控)
+  setSandboxAuditionMaster(false); // 预听也走压缩母带(响而受控)
   const events = musicalIRToMidiEvents(ir, roomWetFor(style ?? 'default'));
   globalMidiScheduler.stop();
   globalMidiScheduler.loadTrack(events, bpm);
