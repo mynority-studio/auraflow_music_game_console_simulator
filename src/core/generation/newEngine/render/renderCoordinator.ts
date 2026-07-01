@@ -37,6 +37,7 @@ import { fillLeadBarGaps } from './leadGapFill';
 import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
+import { normalizeAcgDynamics } from './acgDynamics';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 
@@ -421,6 +422,11 @@ export function renderSongFull(
     ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
     : preSanitized;
   const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
+  // ★ ACG 响度秩序(P1,忠实 MG normalizeAcgDynamics):恢复 melody-first(lead 86 / comp 29-32 pp / bass 37)。
+  //   放全部力度塑形(comp gain/duck/dynamics/humanizeVelocity)之后 = ACG 力度最终权威。只 ACG、只改 velocity。
+  const balancedTracks = band.style.toLowerCase() === 'acg'
+    ? normalizeAcgDynamics(articulatedTracks, beatsPerBarOf(arrangement.meter) * timebase.ppq)
+    : articulatedTracks;
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
@@ -432,7 +438,7 @@ export function renderSongFull(
   }
   // ★ CC64 踏板:POP/LOFI/RNB/ACG 的 comp 每和弦踩(音尾 ring 融合);JAZZ/BLUES 不踩(清晰)。
   const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
-  const mixAttachedTracks = articulatedTracks.map((t) => {
+  const mixAttachedTracks = balancedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
     const fallback = instrumentation.roleProgram[t.role] ?? band.roleProgram[t.role]; // ★ 单一真源:器配生效 program

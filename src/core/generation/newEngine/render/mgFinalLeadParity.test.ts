@@ -10,6 +10,7 @@ import { applyGroovePocket } from './groovePocket';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
+import { normalizeAcgDynamics } from './acgDynamics';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { createTimebase, createRandomContext, beats } from '../foundation';
 
@@ -50,7 +51,11 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       const preSan = { ...pocketed, notes: sanitizeLeadNoteIR(pocketed.notes, SAN) };
       const legatoOpts = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
       const legato = legatoOpts.enabled ? { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, legatoOpts) } : preSan;
-      const expected = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
+      const sanitizedExp = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
+      // ★ ACG(P1 mg fidelity):生产末步 normalizeAcgDynamics 把 lead velocity 归一到 MG 目标(86)→ 预期也归一。
+      const expected = band.style.toLowerCase() === 'acg'
+        ? normalizeAcgDynamics([sanitizedExp], beatsPerBarOf(arr.meter) * tb.ppq)[0]
+        : sanitizedExp;
       const final = renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir.tracks.find((t) => t.role === 'lead')!;
       expect(final.notes.length).toBe(expected.notes.length);
       expect(ev(final.notes as never)).toBe(ev(expected.notes as never)); // pitch/start/dur/velocity 全等(jazz 含末步 legato)
