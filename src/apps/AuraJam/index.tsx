@@ -255,7 +255,7 @@ export function AuraJam({ activeKeys, onExit }: AuraJamProps) {
 
             // --- JAMMING_MELODY ---
             if (appState === 'JAMMING_MELODY') {
-                const track = managerRef.current?.currentTrack;
+                const track = managerRef.current?.currentSong;
                 if (track) {
                     let idx = -1;
                     if (r === 2) idx = c;
@@ -284,7 +284,7 @@ export function AuraJam({ activeKeys, onExit }: AuraJamProps) {
                             arpStateRef.current.intervalId = setInterval(() => {
                                 const state = arpStateRef.current;
                                 if (state.heldIndices.size === 0) return;
-                                const t = managerRef.current?.currentTrack;
+                                const t = managerRef.current?.currentSong;
                                 if (!t) return;
                                 const ch = managerRef.current?.getCurrentChord();
                                 const ns = getJamMelodyNotes(ch, t.tonality, t.keyOffset);
@@ -387,13 +387,13 @@ export function AuraJam({ activeKeys, onExit }: AuraJamProps) {
             )}
 
             {/* Playing State */}
-            {appState === 'PLAYING' && managerRef.current?.currentTrack && (
+            {appState === 'PLAYING' && managerRef.current?.currentSong && (
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
                     <div className="text-2xl font-bold text-green-400" style={{ textShadow: '0 0 20px rgba(34,197,94,0.4)' }}>
                         Playing
                     </div>
                     <div className="text-xs text-white/50 mt-1">
-                        {managerRef.current.currentTrack.key} | {managerRef.current.currentTrack.bpm} BPM
+                        {managerRef.current.currentSong.key} | {managerRef.current.currentSong.bpm} BPM
                     </div>
                 </div>
             )}

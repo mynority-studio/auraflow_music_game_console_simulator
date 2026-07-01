@@ -1,11 +1,11 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
-import { AcgStyleConfig } from '../../core/generation/config/StyleRegistry';
 import { GlobalContext } from '../../core/generation/GlobalContext';
 // ★ Q+N 主链路(qn_main_engine_takeover §10):AuraJam 录制 motif → generateMotifMusic(override.lead)→ playMusicGeneration。
 import { generateMotifMusic } from '../../core/generation/musicGeneration/MusicGenerationService';
 import { pcToKey } from '../../core/generation/musicGeneration/qnUiProjection';
-import { GeneratedTrack, StyleConfig, MusicContext, NoteData } from '../../core/generation/types';
+import { toPlaybackSong, type PlaybackSong } from '../../core/generation/musicGeneration/playbackView';
+import { NoteData } from '../../core/generation/types';
 import { PRNGManager } from '../../core/utils/PRNG';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 import { ScaleEngine, ScaleState } from './ScaleEngine';
@@ -30,8 +30,7 @@ export class JamSessionManager {
     private stateChangeCallback?: (state: JamAppState) => void;
     private generationId: number = 0;
 
-    public currentTrack?: GeneratedTrack;
-    public currentStyle?: StyleConfig;
+    public currentSong?: PlaybackSong;  // ★ Q+N 播放视图(取代旧 GeneratedTrack + StyleConfig 兼容投影)
 
     private scaleEngine: ScaleEngine;
     private recorder: MotifRecorder;
@@ -159,21 +158,11 @@ export class JamSessionManager {
                 motifLead.length ? { lead: motifLead } : {},
             );
 
-            const { StyleRegistry } = await import('../../core/generation/config/StyleRegistry');
-            const style = StyleRegistry[randomStyleId] || AcgStyleConfig;
-
             if (currentGenId !== this.generationId) return;
             if (result.status === 'failed' || !result.ir) throw new Error('Q+N motif 成曲失败');
 
-            // currentTrack 兼容投影:带 sections(prepareJam 用其 startBeat/endBeat 定时,jam-over-song 不破)。
-            const tsBpb = result.uiSnapshot.timeSignature[0] || 4;
-            this.currentTrack = {
-                bpm: result.bpm, key: result.uiSnapshot.key, keyOffset: 0, absoluteStartBeat: 0,
-                melody: [], chords: [], blockIndex: 0, hasIntro: false,
-                timeSignature: result.uiSnapshot.timeSignature,
-                sections: result.uiSnapshot.sections.map((s) => ({ name: s.role, startBeat: s.startBeat, endBeat: s.startBeat + s.bars * tsBpb })),
-            } as unknown as GeneratedTrack;
-            this.currentStyle = style;
+            // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot;不再假 GeneratedTrack/StyleConfig。
+            this.currentSong = toPlaybackSong(result);
 
             await AudioEngine.playMusicGeneration(result);
 
@@ -210,20 +199,12 @@ export class JamSessionManager {
     // ================================================================
 
     public getCurrentChord(): any {
-        if (!this.currentTrack || !this.currentTrack.chords) return null;
-        const currentTick = AudioEngine.getCurrentTick();
-        const ppq = AudioEngine.getPpq();
-        const currentBeat = currentTick / ppq;
-        for (const chord of this.currentTrack.chords) {
-            if (currentBeat >= chord.startBeat && currentBeat < chord.endBeat) {
-                return chord;
-            }
-        }
+        // 旧兼容投影从不填 chords → 本方法历来恒返回 null(和弦显示当前惰性)。迁移保持此行为。
         return null;
     }
 
     public prepareJam(type: 'drums' | 'melody') {
-        if (this.state !== 'PLAYING' || !this.currentTrack || !this.currentStyle) return;
+        if (this.state !== 'PLAYING' || !this.currentSong) return;
 
         this.setState('PREPARING_JAM');
 
@@ -272,7 +253,7 @@ export class JamSessionManager {
         AudioEngine.replaceChannelEvents(9, countInMeasureStartTick, fillEvents, jamStartTick);
 
         if (type === 'drums') {
-            const lastSection = this.currentTrack.sections[this.currentTrack.sections.length - 1];
+            const lastSection = this.currentSong.sections[this.currentSong.sections.length - 1];
             const totalTicks = lastSection ? lastSection.endBeat * ppq : 0;
             const hihatEvents: any[] = [];
 
@@ -358,7 +339,7 @@ export class JamSessionManager {
     }
 
     private applyUserDrumLoop() {
-        if (!this.currentTrack || !this.currentStyle) return;
+        if (!this.currentSong) return;
 
         if (this.userDrumPattern.length === 0) {
             const restore = this.originalDrumEvents.filter((e: any) => e.ticks >= this.jamStartTick);
@@ -374,14 +355,14 @@ export class JamSessionManager {
         }
 
         const ppq = AudioEngine.getPpq();
-        const lastSection = this.currentTrack.sections[this.currentTrack.sections.length - 1];
+        const lastSection = this.currentSong.sections[this.currentSong.sections.length - 1];
         const totalTicks = lastSection ? lastSection.endBeat * ppq : 0;
         const loopStartTick = this.jamStartTick;
         const newDrumEvents: any[] = [];
 
         for (let tick = loopStartTick; tick < totalTicks; tick += this.jamLengthTicks) {
             // Crash at chorus starts
-            for (const s of this.currentTrack.sections) {
+            for (const s of this.currentSong.sections) {
                 const isChorus = s.energyLevel >= 8 || s.name.toLowerCase().includes('chorus');
                 if (isChorus) {
                     const sTick = s.startBeat * ppq;
@@ -401,7 +382,7 @@ export class JamSessionManager {
                 if (hitTick >= totalTicks) continue;
 
                 const hitBeat = hitTick / ppq;
-                const hitSection = this.currentTrack.sections.find(s => hitBeat >= s.startBeat && hitBeat < s.endBeat) || this.currentTrack.sections[0];
+                const hitSection = this.currentSong.sections.find(s => hitBeat >= s.startBeat && hitBeat < s.endBeat) || this.currentSong.sections[0];
                 const hitIsBreakdown = hitSection.energyLevel < 5;
                 const hitIsChorus = hitSection.energyLevel >= 8 || hitSection.name.toLowerCase().includes('chorus');
                 const hitIsBuild = hitSection.name.toLowerCase().includes('build');
@@ -428,7 +409,7 @@ export class JamSessionManager {
 
             // Build-up snare roll
             const currentBeat = tick / ppq;
-            const section = this.currentTrack.sections.find(s => currentBeat >= s.startBeat && currentBeat < s.endBeat);
+            const section = this.currentSong.sections.find(s => currentBeat >= s.startBeat && currentBeat < s.endBeat);
             if (section && section.name.toLowerCase().includes('build')) {
                 const lastBeatTick = tick + this.jamLengthTicks - ppq;
                 for (let i = 0; i < 4; i++) {
