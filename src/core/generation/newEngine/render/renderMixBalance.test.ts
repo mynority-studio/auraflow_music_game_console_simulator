@@ -52,7 +52,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
       { style: 'jazz', seed: 7, lo: 0.95, hi: 1.65 },
       { style: 'lofi', seed: 7, lo: 0.75, hi: 1.45 },
       { style: 'rnb', seed: 7, lo: 0.75, hi: 1.35 },
-      { style: 'acg', seed: 7, lo: 0.65, hi: 1.60 }, // ★ P1:normalizeAcgDynamics 恢复 MG pp-comp(vel~30)→ lead 合理更前置(melody-first ACG),放宽上界
+      { style: 'acg', seed: 7, lo: 1.20, hi: 6.50 }, // ★ P2:ACG = melody-first(MG pp-comp vel~29,comp CC7 高保可闻)→ lead 明显前置(比率天然高),只保 lead≥comp,不再 balance
     ];
 
     for (const c of cases) {

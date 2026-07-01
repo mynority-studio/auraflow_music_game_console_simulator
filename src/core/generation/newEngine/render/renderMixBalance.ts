@@ -34,7 +34,10 @@ const POLICY: Record<string, LeadCompPolicy> = {
   jazz: { targetRatio: 1.18, minRatio: 0.90, maxRatio: 1.60, leadRange: [80, 100], compRange: [72, 90] },
   lofi: { targetRatio: 1.00, minRatio: 0.70, maxRatio: 1.45, leadRange: [70, 96], compRange: [68, 94] },
   rnb:  { targetRatio: 1.00, minRatio: 0.75, maxRatio: 1.35, leadRange: [82, 100], compRange: [54, 78] },
-  acg:  { targetRatio: 0.90, minRatio: 0.60, maxRatio: 1.35, leadRange: [68, 84], compRange: [80, 98] },
+  // ★ P2 mg fidelity:ACG = melody-first(旋律浮上,comp 是空气 pp)。旧策略 comp-forward(0.90/comp CC7 80-98)
+  //   与 normalizeAcgDynamics(lead86/comp29)直接矛盾 → 会 boost comp CC7 抢回,抵消 pp 意图。改成 lead-forward:
+  //   lead CC7 高、comp CC7 中(air 但仍可闻),ratio 允许强 lead-forward(velocity 秩序天然使 lead≫comp)。
+  acg:  { targetRatio: 1.80, minRatio: 1.20, maxRatio: 4.50, leadRange: [80, 96], compRange: [80, 98] },
 };
 
 const DEFAULT_POLICY: LeadCompPolicy = {

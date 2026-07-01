@@ -39,6 +39,7 @@ import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArti
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
 import { tuckAcgLeadRegister } from './acgLeadShape';
+import { shapeAcgComp } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 
@@ -426,11 +427,16 @@ export function renderSongFull(
     ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
     : preSanitized;
   const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
-  // ★ ACG 响度秩序(P1,忠实 MG normalizeAcgDynamics):恢复 melody-first(lead 86 / comp 29-32 pp / bass 37)。
-  //   放全部力度塑形(comp gain/duck/dynamics/humanizeVelocity)之后 = ACG 力度最终权威。只 ACG、只改 velocity。
-  const balancedTracks = band.style.toLowerCase() === 'acg'
-    ? normalizeAcgDynamics(articulatedTracks, beatsPerBarOf(arrangement.meter) * timebase.ppq)
+  // ★ ACG melody-first cantabile shaping(P2 + P1,忠实 MG 末段 shaping 顺序)。只 ACG,lead 已 tuck。
+  //   ① shapeAcgComp:inner voice(旋律下方软歌唱内声部)→ carve(comp 高位色音让旋律)→ floor(稀疏 bar 补低位托底)。
+  //   ② normalizeAcgDynamics:每-bar 三轨力度归一(lead86/comp29-32/bass37)= ACG 力度最终权威。
+  const isAcg = band.style.toLowerCase() === 'acg';
+  const acgBarTicks = beatsPerBarOf(arrangement.meter) * timebase.ppq;
+  const acgLead = isAcg ? articulatedTracks.find((t) => t.role === 'lead') : undefined;
+  const carvedTracks = isAcg && acgLead
+    ? articulatedTracks.map((t) => (t.role === 'comp' ? shapeAcgComp(t, acgLead, plan.chordTimeline, acgBarTicks, timebase.ppq, arrangement.tempoBpm, rng.seed) : t))
     : articulatedTracks;
+  const balancedTracks = isAcg ? normalizeAcgDynamics(carvedTracks, acgBarTicks) : carvedTracks;
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);

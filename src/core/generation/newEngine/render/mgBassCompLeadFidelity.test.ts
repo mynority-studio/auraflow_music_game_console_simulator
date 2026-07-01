@@ -54,11 +54,18 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('ACG comp 密度不失控(per-bar 有上界,防退化成 generic dense comp)', () => {
+  it('★ P2 ACG comp 密度 MG-aligned(carve 让路后不过密;MG≈3.8-6.2/bar)', () => {
     for (const seed of SEEDS) {
       const r = acg(seed);
       const compPerBar = trk(r, 'comp')!.notes.length / bars(r);
-      expect(compPerBar, `seed ${seed} comp/bar=${compPerBar.toFixed(1)}`).toBeLessThanOrEqual(16);
+      expect(compPerBar, `seed ${seed} comp/bar=${compPerBar.toFixed(1)}`).toBeLessThanOrEqual(8);
+    }
+  });
+
+  it('★ P2 ACG comp 有低位 cantabile 托底(inner voice/floor 在旋律下方)', () => {
+    for (const seed of SEEDS) {
+      const comp = trk(acg(seed), 'comp')!;
+      expect(comp.notes.some((n) => (n.pitch as number) < 64), `seed ${seed} comp 低位支撑`).toBe(true);
     }
   });
 
