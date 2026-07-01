@@ -1,13 +1,12 @@
 // ============================================================
-// runPipeline — Q+N 兼容外观(qn_main_engine_takeover §6)
+// runPipeline — Q+N 外观(qn_main_engine_takeover §6)
 // ============================================================
-// ★ Q+N 升格为主引擎:runPipeline 不再调 mgEngine/runMgEngine,内部改调 MusicGenerationService。
-//   - 返回值带【完整 MusicGenerationResult】(result):真正播放走 AudioEngine.playMusicGeneration(result)。
-//   - {track, context} 仅【UI/Jam 兼容投影】(来自 uiSnapshot),不再是音频事实来源。
-//   - 新开发代码优先直接调 MusicGenerationService.generateMusic();本外观只服务尚未迁移的旧调用方。
+// ★ Q+N 主引擎:runPipeline 内部调 MusicGenerationService,返回【完整 MusicGenerationResult】。
+//   - 播放走 AudioEngine.playMusicGeneration(result);UI 读 result.uiSnapshot。
+//   - 已删旧 {track, context} 兼容投影(GeneratedTrack/MusicContext);新代码可直接调 generateMusic()。
 // ============================================================
 
-import { GeneratedTrack, GenerationOptions, MusicContext } from '../types';
+import { GenerationOptions } from '../types';
 import { StyleId } from '../config/StyleFlags';
 import { generateMusicSync } from '../musicGeneration/MusicGenerationService';
 import type { MusicGenerationResult } from '../musicGeneration/types';
@@ -23,7 +22,7 @@ export interface PipelineRunOptions {
     generation?: GenerationOptions;
 }
 
-export interface PipelineResult { track: GeneratedTrack; context: MusicContext; result: MusicGenerationResult; }
+export interface PipelineResult { result: MusicGenerationResult; }
 
 export function runPipeline(_options: PipelineRunOptions = {}): PipelineResult {
     const result = generateMusicSync({
@@ -35,15 +34,5 @@ export function runPipeline(_options: PipelineRunOptions = {}): PipelineResult {
         // ★ Band Selection 新语义:参与乐手/职能(QnBandSelectionStore;不含 GM 音色,音色由器配层定)。
         bandParticipants: QnBandSelectionStore.getParticipants(),
     });
-    const ui = result.uiSnapshot;
-    // 兼容投影(UI/Jam only,非音频源):标量字段来自 uiSnapshot,音符轨留空(音频走 playMusicGeneration)。
-    const track = {
-        chords: [], melody: [], bpm: result.bpm, key: ui.key, keyOffset: 0,
-        tonality: ui.tonality, timeSignature: ui.timeSignature, sections: [],
-        blockIndex: 0, absoluteStartBeat: 0, hasIntro: false,
-    } as unknown as GeneratedTrack;
-    const context = {
-        keyOffset: 0, tonality: ui.tonality, bpm: result.bpm, timeSignature: ui.timeSignature, grooveDNA: [],
-    } as unknown as MusicContext;
-    return { track, context, result };
+    return { result };
 }

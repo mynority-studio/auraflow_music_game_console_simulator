@@ -10,7 +10,6 @@ import { runPipeline } from '../core/generation/pipeline';
 import {
     ArrangedTrack,
     GeneratedChord,
-    MusicContext,
     SectionMetadata,
     TonalityName,
     Tonality,
@@ -172,9 +171,7 @@ function getLocalScaleName(
 }
 
 interface FrameSnapshot {
-    arranged: ArrangedTrack | null;
-    context: MusicContext | null;
-    musicGen: MusicGenerationResult | null; // ★ Q+N:UI 显示真源(uiSnapshot)
+    musicGen: MusicGenerationResult | null; // ★ Q+N:UI 显示唯一真源(uiSnapshot)
     beat: number;
     seed: number;
 }
@@ -225,7 +222,7 @@ export const PipelineMonitor: React.FC = () => {
     // 左侧 DevDock 入口(点击切换 + 高亮同步);Q+H 键盘逻辑仍保留
     useDevPanelChannel('pipeline', isVisible, setIsVisible);
     const [frame, setFrame] = useState<FrameSnapshot>({
-        arranged: null, context: null, musicGen: null, beat: 0, seed: 0,
+        musicGen: null, beat: 0, seed: 0,
     });
     const [seedInput, setSeedInput] = useState('42');
     const [currentSeed, setCurrentSeed] = useState<number | null>(null);
@@ -289,20 +286,16 @@ export const PipelineMonitor: React.FC = () => {
     useEffect(() => {
         if (!isVisible) return;
         const tick = () => {
-            const arranged = AudioEngine.getCurrentArrangedTrack();
-            const context = AudioEngine.getCurrentContext();
             const musicGen = AudioEngine.getCurrentMusicGeneration();
             const beat = AudioEngine.getCurrentBeat();
             const seed = PRNGManager.getInitialSeed();
             setFrame((prev) => {
-                if (prev.arranged === arranged
-                    && prev.context === context
-                    && prev.musicGen === musicGen
+                if (prev.musicGen === musicGen
                     && Math.abs(prev.beat - beat) < 0.01
                     && prev.seed === seed) {
                     return prev;
                 }
-                return { arranged, context, musicGen, beat, seed };
+                return { musicGen, beat, seed };
             });
             rafRef.current = requestAnimationFrame(tick);
         };
@@ -502,7 +495,7 @@ export const PipelineMonitor: React.FC = () => {
 
     if (!isVisible) return null;
 
-    const { context, beat, seed, musicGen } = frame;
+    const { beat, seed, musicGen } = frame;
     const ui = musicGen?.uiSnapshot ?? null;
 
     // ★ Q+N:展示数据来自 uiSnapshot(结构化投影),转成现有 Stage 组件期望的 GeneratedChord/SectionMetadata 形状。
@@ -750,7 +743,6 @@ export const PipelineMonitor: React.FC = () => {
                         <Stage1MetaForm
                             bpm={ui?.bpm}
                             keyName={ui?.key}
-                            tonality={context?.tonality}
                             tonalityLabel={ui?.tonality}
                             seed={seed}
                             styleName={ui?.styleHint?.toUpperCase()}
@@ -823,7 +815,7 @@ const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 interface Stage1Props {
     bpm: number | undefined;
     keyName: string | undefined;
-    tonality: Tonality | undefined;
+    tonality?: Tonality; // legacy enum 降级(仅无 chord 的局部音阶名兜底);Q+N 主显示走 tonalityLabel
     tonalityLabel?: string; // ★ Q+N:uiSnapshot.tonality 字符串('major'|'minor'|教会调式)— 优先直显,不走 enum 降级
     seed: number;
     styleName: string | undefined;

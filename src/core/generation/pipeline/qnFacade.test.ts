@@ -24,15 +24,14 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
   it('★ runPipeline 返回 Q+N result(ok + 非空 IR + uiSnapshot),不再 mg track', () => {
     MusicGenerationStyleStore.setStyle('POP');
     MusicGenerationSeedStore.setSuffix('42');
-    const { result, track, context } = runPipeline({});
+    const { result } = runPipeline({});
     expect(result.status).toBe('ok');
     expect(result.ir).toBeTruthy();
     expect(result.ir!.tracks.length).toBeGreaterThan(0);
     expect(result.uiSnapshot.sections.length).toBeGreaterThan(0);
     expect(result.uiSnapshot.chords.length).toBeGreaterThan(0);
-    // {track, context} 仅兼容投影(非音频源):melody 空,标量来自 uiSnapshot
-    expect(track.melody).toEqual([]);
-    expect(context.bpm).toBe(result.bpm);
+    // ★ runPipeline 只返回 { result }(已删旧 {track, context} 兼容投影);UI 读 result.uiSnapshot。
+    expect((runPipeline({}) as unknown as Record<string, unknown>).track).toBeUndefined();
   });
 
   it('★ Q+H facade 与直接 Q+N service 同链路:同 seed/style/key 得到同一结构化结果', () => {

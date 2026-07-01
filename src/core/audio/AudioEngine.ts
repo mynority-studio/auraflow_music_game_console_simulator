@@ -45,9 +45,7 @@ const ROLE_CHANNEL_VIS: Record<string, number> = { lead: 1, comp: 2, bass: 3, pa
 class AudioEngineSystem {
     private playback: PlaybackEngine | null = null;
     private visualsMode: 'all' | 'gameplay-only' = 'all';
-    private currentArrangedTrack: ArrangedTrack | null = null;
-    private currentContext: MusicContext | null = null;
-    // ★ Q+N 主链路:当前音乐生成结果(正式 state;PipelineMonitor/AuraJam 读 uiSnapshot)。
+    // ★ Q+N 主链路:当前音乐生成结果(唯一正式 state;PipelineMonitor/AuraBar/AuraJam 读 uiSnapshot)。
     private currentMusicGeneration: MusicGenerationResult | null = null;
     private schedulerVisualWired = false;
 
@@ -95,10 +93,7 @@ class AudioEngineSystem {
         globalMidiScheduler.loadTrack([...events, ...visuals], result.bpm);
         globalMidiScheduler.start();
 
-        this.currentMusicGeneration = result;
-        // 兼容投影(§5.2/§12.3:getCurrentArrangedTrack/Context 仍非空可用)。详细 UI 数据走 getCurrentMusicGeneration().uiSnapshot。
-        this.currentArrangedTrack = { bpm: result.bpm, key: result.uiSnapshot.key, absoluteStartBeat: 0, timeSignature: result.uiSnapshot.timeSignature, melody: [] } as ArrangedTrack;
-        this.currentContext = { keyOffset: 0, tonality: result.uiSnapshot.tonality, bpm: result.bpm, timeSignature: result.uiSnapshot.timeSignature, grooveDNA: [] } as unknown as MusicContext;
+        this.currentMusicGeneration = result; // UI 读 getCurrentMusicGeneration().uiSnapshot(不再造 GeneratedTrack/MusicContext 投影)
     }
 
     /** 低层:直接播 MusicalIR(无 MusicGenerationResult 包装;诊断/特殊路径用)。 */
@@ -151,10 +146,6 @@ class AudioEngineSystem {
 
         // K-2：AbsoluteTransposer 是 RELATIVE→ABSOLUTE 的唯一转换点
         const arranged: ArrangedTrack = AbsoluteTransposer.arrange(initialTrack, styleId, context);
-
-        this.currentArrangedTrack = arranged;
-        this.currentContext = context;
-
         await this.playback!.loadSong(arranged);
         this.playback!.play();
     }
@@ -162,13 +153,8 @@ class AudioEngineSystem {
     public stop(): void {
         if (this.playback) this.playback.stop();
         else globalMidiScheduler.stop(); // Q+N 路径可能未初始化 PlaybackEngine
-        this.currentArrangedTrack = null;
-        this.currentContext = null;
         this.currentMusicGeneration = null;
     }
-
-    public getCurrentArrangedTrack(): ArrangedTrack | null { return this.currentArrangedTrack; }
-    public getCurrentContext(): MusicContext | null { return this.currentContext; }
 
     public getCurrentBeat(): number {
         const tick = globalMidiScheduler.getCurrentTick();
