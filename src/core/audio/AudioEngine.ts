@@ -1,28 +1,17 @@
 /**
- * AudioEngine — 音频引擎单例（Phase 4 实装版）
+ * AudioEngine — 音频引擎单例(Q+N 主链路)
  *
- * App 层与音频后端的总入口：
- *   ① 管理 PlaybackEngine 生命周期 + 转发 visualListener / rawVisualListener
- *   ② playSong(track, styleId, context, generator) 调 AbsoluteTransposer.arrange → playback.loadSong
- *   ③ 暴露 getCurrentArrangedTrack / getCurrentContext / getCurrentBeat / getCurrentTick / getBpm / getPpq
- *   ④ MIDI 通道工具：muteChannel / setPartMute / injectMidiEvent / get|replaceChannelEvents
- *   ⑤ 实时演奏：playNote / noteOn / noteOff / pitchBend（暂保 no-op，Phase 5 实装）
- *   ⑥ Mixer 状态读写 + Focus Track / Drum Ducking 等播放策略开关
+ * App 层与音频后端的总入口:
+ *   ① 正式播放:playMusicGeneration(result) —— MusicalIR → musicalIrToMidi → globalMidiScheduler(+ 视觉事件驱动 LedMatrix)
+ *   ② 当前状态:getCurrentMusicGeneration()(唯一真源,UI 读 uiSnapshot)+ getCurrentBeat/Tick/Bpm/Ppq
+ *   ③ MIDI 通道工具:muteChannel / setPartMute(Q+N PartName→channel)/ injectMidiEvent / get|replaceChannelEvents
+ *   ④ 实时演奏 + 视觉监听转发(gameplay / LedMatrix)
  *
- * Phase 4 关键改动：
- *   - 移除 expandVoicingsToNoteData — 老的 chord.voicing 展开逻辑被 Stage 5
- *     accompaniment 轨取代。
- *   - playSong 现在调用 AbsoluteTransposer.arrange 把 RELATIVE 空间 GeneratedTrack 转成
- *     ABSOLUTE 空间 ArrangedTrack，再交给 PlaybackEngine.loadSong（内部跑
- *     MidiConverter.convert）。
- *   - K-2 唯一加 keyOffset 的位置：AbsoluteTransposer。本类**不再**触碰 keyOffset。
+ * ★ 旧 mg 播放壳(playSong / PlaybackEngine / MidiConverter / AbsoluteTransposer / GeneratedTrack·MusicContext 投影)
+ *   已删除;播放不再经 keyOffset 转置(MusicalIR 音符即绝对空间)。
  */
 
-import { PlaybackEngine, VisualEvent, PartName } from './PlaybackEngine';
-import { ArrangedTrack, GeneratedTrack, MusicContext } from '../generation/types';
-import { StyleId } from '../generation/config/StyleFlags';
-import { AbsoluteTransposer } from '../generation/pipeline/AbsoluteTransposer';
-
+import { VisualEvent, PartName } from './playbackTypes';
 import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
 import { musicalIRToMidiEvents, roomWetFor } from './musicalIrToMidi';
 import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
@@ -43,7 +32,6 @@ const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
 const ROLE_CHANNEL_VIS: Record<string, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
 
 class AudioEngineSystem {
-    private playback: PlaybackEngine | null = null;
     private visualsMode: 'all' | 'gameplay-only' = 'all';
     // ★ Q+N 主链路:当前音乐生成结果(唯一正式 state;PipelineMonitor/AuraBar/AuraJam 读 uiSnapshot)。
     private currentMusicGeneration: MusicGenerationResult | null = null;
@@ -56,14 +44,6 @@ class AudioEngineSystem {
     private rawVisualListeners: Set<VisualEventListener> = new Set();
 
     public init(): void {
-        if (!this.playback) {
-            this.playback = new PlaybackEngine();
-            this.playback.addVisualListener((event: VisualEvent) => {
-                this.rawVisualListeners.forEach(l => l(event));
-                if (this.visualsMode === 'gameplay-only' && event.source === 'playback') return;
-                this.visualListeners.forEach(l => l(event));
-            });
-        }
         // ★ Q+N 播放视觉:scheduler 派发的 'visual' MidiEvent → AudioEngine 视觉监听(LedMatrix)。只接一次。
         if (!this.schedulerVisualWired) {
             this.schedulerVisualWired = true;
@@ -124,35 +104,8 @@ class AudioEngineSystem {
 
     public getCurrentMusicGeneration(): MusicGenerationResult | null { return this.currentMusicGeneration; }
 
-    /**
-     * @deprecated Legacy 兼容壳(旧 mg 主链路播放,基于 GeneratedTrack + AbsoluteTransposer + PlaybackEngine)。
-     * Q+N 主链路正式播放走 {@link playMusicGeneration}(MusicalIR 音频合同)。正式 app 路径已不调用本方法
-     * (qnMainChainGuards.test 锁死);保留仅为过渡兼容,后续 legacy 壳清理 phase 移除。
-     */
-    public async playSong(
-        initialTrack: GeneratedTrack,
-        styleId: StyleId,
-        context: MusicContext,
-        _options?: { withCountIn?: boolean; loopStart?: number; loopEnd?: number },
-    ): Promise<void> {
-        if (!this.playback) this.init();
-
-        // 并发互斥：每次调用领取一个新 session id；仅在 startAudioContext 后检查一次
-        const currentSession = ++this.playSessionId;
-
-        // 确保 SpessaSynth 已就绪（用户手势后第一次播放才会真正加载 SF2）
-        await startAudioContext();
-        if (currentSession !== this.playSessionId) return;
-
-        // K-2：AbsoluteTransposer 是 RELATIVE→ABSOLUTE 的唯一转换点
-        const arranged: ArrangedTrack = AbsoluteTransposer.arrange(initialTrack, styleId, context);
-        await this.playback!.loadSong(arranged);
-        this.playback!.play();
-    }
-
     public stop(): void {
-        if (this.playback) this.playback.stop();
-        else globalMidiScheduler.stop(); // Q+N 路径可能未初始化 PlaybackEngine
+        globalMidiScheduler.stop();
         this.currentMusicGeneration = null;
     }
 
@@ -173,25 +126,10 @@ class AudioEngineSystem {
     public setDrumDucking(_enabled: boolean): void { /* no-op */ }
 
     public emitVisualEvent(event: VisualEvent): void {
-        if (!this.playback) this.init();
+        this.init();
         this.rawVisualListeners.forEach(l => l(event));
         if (this.visualsMode === 'gameplay-only' && event.source === 'playback') return;
         this.visualListeners.forEach(l => l(event));
-    }
-
-    public getMixerState() {
-        if (!this.playback) this.init();
-        return this.playback!.getMixerState();
-    }
-
-    public getDuration(): number {
-        if (!this.playback) return 0;
-        return this.playback.getDuration();
-    }
-
-    public setMixerParam(category: string, param: string, value: number): void {
-        if (!this.playback) this.init();
-        this.playback!.setMixerParam(category, param, value);
     }
 
     public setFocusTrack(_trackType: 'RHYTHM' | 'MELODY' | 'ATMOSPHERE' | 'NONE'): void { /* no-op */ }
@@ -205,25 +143,19 @@ class AudioEngineSystem {
     }
 
     // ★ Q+N PartName → channel(对齐 musicalIrToMidi ROLE_CHANNEL:lead=1/comp=2/bass=3/drum=9)。
-    //   Q+N 路径不经 PlaybackEngine.partChannels(直装 globalMidiScheduler),故单轨 mute 走此 map。
+    //   Q+N 直装 globalMidiScheduler(无旧 PlaybackEngine.partChannels),故单轨 mute 走此 map。
     private qnPartChannel(partName: PartName): number | null {
         const map: Partial<Record<PartName, number>> = { melody: 1, chord: 2, bass: 3, drums: 9 };
         return map[partName] ?? null;
     }
 
-    public getPartChannels(): Partial<Record<PartName, number>> {
-        if (this.currentMusicGeneration) return { melody: 1, chord: 2, bass: 3, drums: 9 };
-        if (!this.playback) return {};
-        return this.playback.getPartChannels();
-    }
-
     public setPartMute(partName: PartName, mute: boolean): void {
-        const channel = this.currentMusicGeneration ? this.qnPartChannel(partName) : (this.playback ? this.playback.getPartChannel(partName) : null);
+        const channel = this.currentMusicGeneration ? this.qnPartChannel(partName) : null;
         if (channel !== null) globalMidiScheduler.muteChannel(channel, mute);
     }
 
     public isPartMuted(partName: PartName): boolean {
-        const channel = this.currentMusicGeneration ? this.qnPartChannel(partName) : (this.playback ? this.playback.getPartChannel(partName) : null);
+        const channel = this.currentMusicGeneration ? this.qnPartChannel(partName) : null;
         if (channel === null) return false;
         return globalMidiScheduler.isChannelMuted(channel);
     }

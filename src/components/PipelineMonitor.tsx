@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { motion, useDragControls } from 'motion/react';
 import { Activity, Play, Square, X, Dice5, Volume2, VolumeX, Piano } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
-import { PartName } from '../core/audio/PlaybackEngine';
+import { PartName } from '../core/audio/playbackTypes';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
 import { PRNGManager } from '../core/utils/PRNG';
 // MelodyEngine 已删(2026-05-24)

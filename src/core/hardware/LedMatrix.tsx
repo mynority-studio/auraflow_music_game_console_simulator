@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { AudioEngine } from '../audio/AudioEngine';
-import { VisualEvent } from '../audio/PlaybackEngine';
+import { VisualEvent } from '../audio/playbackTypes';
 
 interface LedMatrixProps {
   activeKeys: Set<string>;
