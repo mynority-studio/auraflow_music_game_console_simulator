@@ -39,6 +39,7 @@ export interface TakeoverPadCell {
   midi: number;
   name: string;
   pc: number;
+  degreeLabel: string;
   classRole: 'chord' | 'scale' | 'approach' | 'fallback';
 }
 
@@ -55,6 +56,7 @@ export type LeadTakeoverMode = 'idle' | 'pending-handoff' | 'takeover';
 export interface LeadTakeoverState {
   mode: LeadTakeoverMode;
   inputCount: number;
+  firstInputBeat: number | null;
   lastInputBeat: number | null;
   muteAtBeat: number | null;
   leadMuted: boolean;

@@ -1,13 +1,19 @@
 import React, { useEffect } from 'react';
 
-const KEYBOARD_MAP: Record<string, {c: number, r: number}> = {
-  // Bottom Row (r=2)
-  'z': { c: 0, r: 2 }, 'x': { c: 1, r: 2 }, 'c': { c: 2, r: 2 }, 'v': { c: 3, r: 2 }, 'b': { c: 4, r: 2 },
-  // Middle Row (r=1)
-  'a': { c: 0, r: 1 }, 's': { c: 1, r: 1 }, 'd': { c: 2, r: 1 }, 'f': { c: 3, r: 1 }, 'g': { c: 4, r: 1 },
-  // Top Row (r=0)
-  'q': { c: 0, r: 0 }, 'w': { c: 1, r: 0 }, 'e': { c: 2, r: 0 }, 'r': { c: 3, r: 0 }, 't': { c: 4, r: 0 },
+export const KEYBOARD_MAP: Record<string, {c: number, r: number}> = {
+  // Top Row (r=0): E R T Y U
+  'e': { c: 0, r: 0 }, 'r': { c: 1, r: 0 }, 't': { c: 2, r: 0 }, 'y': { c: 3, r: 0 }, 'u': { c: 4, r: 0 },
+  // Middle Row (r=1): D F G H J
+  'd': { c: 0, r: 1 }, 'f': { c: 1, r: 1 }, 'g': { c: 2, r: 1 }, 'h': { c: 3, r: 1 }, 'j': { c: 4, r: 1 },
+  // Bottom Row (r=2): C V B N M
+  'c': { c: 0, r: 2 }, 'v': { c: 1, r: 2 }, 'b': { c: 2, r: 2 }, 'n': { c: 3, r: 2 }, 'm': { c: 4, r: 2 },
 };
+
+export const PANEL_HOTKEY_PAD_KEYS = new Set(['h', 'r', 't', 'n']);
+
+export function isPanelHotkeyPadChord(key: string, heldKeys: ReadonlySet<string>): boolean {
+  return key !== 'q' && PANEL_HOTKEY_PAD_KEYS.has(key) && heldKeys.has('q');
+}
 
 interface TapAreaProps {
   onKeyDown: (c: number, r: number) => void;
@@ -15,9 +21,18 @@ interface TapAreaProps {
 }
 
 export function TapArea({ onKeyDown, onKeyUp }: TapAreaProps) {
+  const heldKeyboardKeys = React.useRef<Set<string>>(new Set());
+  const suppressedKeyboardKeys = React.useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      const suppressForPanelHotkey = isPanelHotkeyPadChord(key, heldKeyboardKeys.current);
+      heldKeyboardKeys.current.add(key);
+      if (suppressForPanelHotkey) {
+        suppressedKeyboardKeys.current.add(key);
+        return;
+      }
       const mapped = KEYBOARD_MAP[key];
       if (mapped && !e.repeat) {
         onKeyDown(mapped.c, mapped.r);
@@ -25,6 +40,10 @@ export function TapArea({ onKeyDown, onKeyUp }: TapAreaProps) {
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      const wasSuppressed = suppressedKeyboardKeys.current.delete(key);
+      heldKeyboardKeys.current.delete(key);
+      if (wasSuppressed) return;
+
       const mapped = KEYBOARD_MAP[key];
       if (mapped) {
         onKeyUp(mapped.c, mapped.r);

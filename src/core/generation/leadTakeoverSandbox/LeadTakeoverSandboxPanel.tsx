@@ -1,16 +1,23 @@
 // ============================================================
 // leadTakeoverSandbox · UI panel
 // ------------------------------------------------------------
-// Q+T user takeover sandbox panel. This is intentionally display-only
-// and dry-run for now: no AudioEngine import, no main playback consumer.
+// Q+T user takeover sandbox panel. It consumes the current Q+H
+// MusicGenerationResult when available, without modifying the Q+H pipeline.
 // ============================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Hand, RotateCcw, StepForward, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../components/devPanels';
+import { AudioEngine } from '../../audio/AudioEngine';
 import { buildTakeoverPadMap } from './harmonicNoteMap';
 import { LeadTakeoverController } from './leadTakeoverController';
+import {
+  executeLeadTakeoverActions,
+  resetLeadTakeoverRuntimeState,
+  takeoverSnapshotFromMusicGeneration,
+} from './qhTakeoverConsumer';
+import type { MusicGenerationResult } from '../musicGeneration/types';
 import type { LeadTakeoverAction, LeadTakeoverState, TakeoverMusicSnapshot, TakeoverPadCell } from './types';
 
 const DEMO_SNAPSHOT: TakeoverMusicSnapshot = {
@@ -33,6 +40,8 @@ const ROLE_STYLE: Record<TakeoverPadCell['classRole'], string> = {
   approach: 'border-amber-400/50 bg-amber-500/15 text-amber-100',
   fallback: 'border-zinc-600 bg-zinc-800 text-zinc-300',
 };
+
+const LIVE_POLL_INTERVAL_MS = 125;
 
 function formatAction(a: LeadTakeoverAction): string {
   if (a.type === 'lead-note-on') return `noteOn ch${a.channel} ${a.midi} v${a.velocity}`;
@@ -57,31 +66,72 @@ function padIndexFromKeyId(keyId: string): number | null {
 export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> = ({ activeKeys }) => {
   const [open, setOpen] = useState(false);
   const [beat, setBeat] = useState(0);
+  const [connected, setConnected] = useState(false);
+  const [snapshot, setSnapshot] = useState<TakeoverMusicSnapshot>(DEMO_SNAPSHOT);
   const [state, setState] = useState<LeadTakeoverState>(() => new LeadTakeoverController().getState());
   const [held, setHeld] = useState<Set<number>>(() => new Set());
   const [log, setLog] = useState<string[]>([]);
   const controllerRef = useRef(new LeadTakeoverController());
   const heldKeys = useRef<Set<string>>(new Set());
   const previousNativeKeys = useRef<Set<string>>(new Set());
+  const lastResultRef = useRef<MusicGenerationResult | null>(null);
+  const wasOpenRef = useRef(false);
 
   useDevPanelChannel('takeover', open, setOpen);
 
-  const padMap = useMemo(() => buildTakeoverPadMap(DEMO_SNAPSHOT, beat), [beat]);
+  const padMap = useMemo(() => buildTakeoverPadMap(snapshot, beat), [beat, snapshot]);
 
   const syncState = useCallback(() => {
     setState(controllerRef.current.getState());
   }, []);
 
-  const pushActions = useCallback((actions: LeadTakeoverAction[]) => {
+  const pushActions = useCallback((actions: readonly LeadTakeoverAction[]) => {
     if (actions.length === 0) return;
-    setLog((prev) => [...actions.map(formatAction), ...prev].slice(0, 8));
+    const current = AudioEngine.getCurrentMusicGeneration();
+    const lines = current
+      ? executeLeadTakeoverActions(AudioEngine, actions)
+      : actions.map((a) => `monitor ${formatAction(a)}`);
+    setLog((prev) => [...lines, ...prev].slice(0, 8));
   }, []);
 
   useEffect(() => {
-    controllerRef.current.setSnapshot(DEMO_SNAPSHOT, beat);
+    controllerRef.current.setSnapshot(snapshot, beat);
     pushActions(controllerRef.current.tick(beat));
     syncState();
-  }, [beat, pushActions, syncState]);
+  }, [beat, pushActions, snapshot, syncState]);
+
+  useEffect(() => {
+    if (!open) return;
+    const pollQhState = () => {
+      const result = AudioEngine.getCurrentMusicGeneration();
+      if (result !== lastResultRef.current) {
+        resetLeadTakeoverRuntimeState(AudioEngine);
+        pushActions(controllerRef.current.reset());
+        controllerRef.current = new LeadTakeoverController();
+        syncState();
+        setHeld(new Set());
+        lastResultRef.current = result;
+        setConnected(result !== null);
+        setSnapshot(result ? takeoverSnapshotFromMusicGeneration(result) : DEMO_SNAPSHOT);
+        setLog((prev) => [result ? 'connected Q+H musicGeneration' : 'disconnected: demo monitor', ...prev].slice(0, 8));
+      }
+      if (result) setBeat(AudioEngine.getCurrentBeat());
+    };
+    pollQhState();
+    const interval = window.setInterval(pollQhState, LIVE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [open, pushActions, syncState]);
+
+  useEffect(() => {
+    if (wasOpenRef.current && !open) {
+      resetLeadTakeoverRuntimeState(AudioEngine);
+      pushActions(controllerRef.current.reset());
+      controllerRef.current = new LeadTakeoverController();
+      syncState();
+      setHeld(new Set());
+    }
+    wasOpenRef.current = open;
+  }, [open, pushActions, syncState]);
 
   useEffect(() => {
     const isTyping = () => {
@@ -108,9 +158,11 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
   }, [open]);
 
   const nativeNoteDown = useCallback((idx: number) => {
-    pushActions(controllerRef.current.noteOn(idx, beat));
+    const liveBeat = connected ? AudioEngine.getCurrentBeat() : beat;
+    if (connected) setBeat(liveBeat);
+    pushActions(controllerRef.current.noteOn(idx, liveBeat));
     syncState();
-  }, [beat, pushActions, syncState]);
+  }, [beat, connected, pushActions, syncState]);
 
   const nativeNoteUp = useCallback((idx: number) => {
     pushActions(controllerRef.current.noteOff(idx));
@@ -149,8 +201,9 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
   }, [pushActions, syncState]);
 
   const stepBeat = useCallback(() => {
+    if (connected) return;
     setBeat((b) => Math.min(16, Math.round((b + 0.5) * 2) / 2));
-  }, []);
+  }, [connected]);
 
   if (!open) return null;
 
@@ -171,6 +224,9 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
         <Hand size={15} className="text-teal-300" />
         <span className="text-[12px] font-semibold tracking-wide text-teal-200">用户接管沙盒</span>
         <span className="text-[10px] text-zinc-500">Q+T</span>
+        <span className={connected ? 'text-[10px] text-emerald-300' : 'text-[10px] text-zinc-600'}>
+          {connected ? 'Q+H live' : 'demo'}
+        </span>
         <button type="button" onClick={() => setOpen(false)} className="ml-auto text-zinc-500 hover:text-zinc-200" aria-label="关闭">
           <X size={15} />
         </button>
@@ -182,14 +238,21 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
           <input
             type="range"
             min={0}
-            max={15.75}
+            max={connected ? Math.max(15.75, Math.ceil(beat)) : 15.75}
             step={0.25}
             value={beat}
-            onChange={(e) => setBeat(Number(e.target.value))}
-            className="min-w-0 flex-1 accent-teal-400"
+            disabled={connected}
+            onChange={(e) => { if (!connected) setBeat(Number(e.target.value)); }}
+            className="min-w-0 flex-1 accent-teal-400 disabled:opacity-40"
           />
           <span className="w-10 text-right text-teal-200">{beat.toFixed(2)}</span>
-          <button type="button" onClick={stepBeat} className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-1 text-zinc-300 hover:bg-zinc-700" title="步进半拍">
+          <button
+            type="button"
+            onClick={stepBeat}
+            disabled={connected}
+            className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-1 text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+            title={connected ? 'Q+H live beat' : '步进半拍'}
+          >
             <StepForward size={13} />
           </button>
         </div>
@@ -204,7 +267,7 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
       <div className="border-b border-zinc-900 px-3 py-2">
         <div className="mb-1.5 flex items-center gap-2 text-[10px] uppercase tracking-widest text-zinc-500">
           Native 3x5 Monitor
-          <span className="ml-auto normal-case tracking-normal text-zinc-600">{padMap.source}</span>
+          <span className="ml-auto normal-case tracking-normal text-zinc-600">{connected ? 'Q+H' : padMap.source} · C3-C5</span>
         </div>
         <div className="grid select-none gap-1" style={{ gridTemplateColumns: 'repeat(5, 1fr)', touchAction: 'none' }}>
           {padMap.cells.map((cell) => {
@@ -214,16 +277,16 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
                 key={cell.index}
                 className={`rounded-md border px-1 py-2 text-center text-[10px] leading-tight transition-all duration-75
                   ${ROLE_STYLE[cell.classRole]} ${on ? 'scale-95 shadow-[0_0_12px_rgba(45,212,191,0.65)] ring-1 ring-teal-200/70' : ''}`}
-                title={`${cell.name} · ${cell.classRole}`}
+                title={`${cell.name} · ${cell.degreeLabel} · ${cell.classRole}`}
               >
                 <span className="block font-semibold">{cell.name}</span>
-                <span className="text-[9px] opacity-70">{cell.classRole}</span>
+                <span className="text-[9px] opacity-80">{cell.degreeLabel}</span>
               </div>
             );
           })}
         </div>
         <div className="mt-1.5 text-[10px] leading-snug text-zinc-600">
-          只读监控：真实输入来自设备主 3x5 按键；这里仅显示每个原生键当前映射的安全音。
+          真实输入来自设备主 3x5 按键；Q+H live 时会用接管通道发声并软静音原生 lead。
         </div>
       </div>
 
@@ -239,7 +302,9 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
           {state.muteAtBeat !== null && <span className="ml-auto text-[10px] text-teal-300">handoff @{state.muteAtBeat.toFixed(2)}</span>}
         </div>
         <div className="rounded-lg border border-zinc-800 bg-black/30 px-2 py-1.5">
-          <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">Native Input Dry Actions</div>
+          <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">
+            {connected ? 'Native Input Consumed Actions' : 'Native Input Monitor Actions'}
+          </div>
           {log.length === 0
             ? <div className="text-[11px] text-zinc-600">--</div>
             : log.map((line, idx) => <div key={`${line}-${idx}`} className="text-[11px] text-zinc-300">{line}</div>)}

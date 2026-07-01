@@ -9,42 +9,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { traceGeneration } from '../generation';
 import type { GenerationTrace } from '../generation';
 import { playMusicalIR, stopNewEngine } from './audioOut';
-import { buildPianoRoll, ROLE_COLOR, type PianoRoll } from './pianoRoll';
+import { buildPianoRoll, type PianoRoll } from './pianoRoll';
 import { musicalIRToSMF } from './midiFile';
 import { compareTraces, type TraceComparison } from './traceDiff';
 import { PianoRollWindow } from './PianoRollWindow';
-import { gmName } from '../knowledge/instruments';
 import { useDevPanelChannel } from '../../../../components/devPanels';
+import { QnGenerationMonitorView, deriveQnMonitorReadout, type QnMonitorReadout } from '../../../../components/QnGenerationMonitorView';
 
 // ★ 4 大 macro 风格(genre 轴);modal 是正交 regime,单独开关。
 const STYLES = ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const;
 const STYLE_LABEL: Record<(typeof STYLES)[number], string> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', acg: 'ACG' };
-const STATUS_COLOR: Record<string, string> = {
-  pass: 'text-emerald-300',
-  warning: 'text-amber-300',
-  failed: 'text-rose-300',
-};
-
-interface Readout {
-  status: string;
-  attempts: number;
-  bpm: number;
-  bars: number;
-  tracks: { role: string; count: number; instrument: string; switchTo?: string }[];
-}
-
-function deriveReadout(t: GenerationTrace): Readout {
-  const ir = t.ir;
-  const bars = Math.round(ir.durationTicks / (480 * 4)); // 4/4, ppq 480
-  // ★ 当前歌【实际】乐器:program=BandEngine 选的;programChanges=段落音色切换(同乐手换声)
-  const tracks = ir.tracks.map((tr) => ({
-    role: tr.role,
-    count: tr.notes.length,
-    instrument: tr.program !== undefined ? gmName(tr.program) : '默认音色',
-    switchTo: tr.programChanges && tr.programChanges.length ? gmName(tr.programChanges[tr.programChanges.length - 1].program) : undefined,
-  }));
-  return { status: t.status, attempts: t.attempts, bpm: t.bpm, bars, tracks };
-}
 
 export const NewEnginePanel: React.FC = () => {
   const [open, setOpen] = useState(false);
@@ -53,7 +27,7 @@ export const NewEnginePanel: React.FC = () => {
   const [modal, setModal] = useState(false); // 正交 regime:modal 静态 vamp
   const [allowModulation, setAllowModulation] = useState(false);
   const [status, setStatus] = useState('就绪');
-  const [readout, setReadout] = useState<Readout | null>(null);
+  const [readout, setReadout] = useState<QnMonitorReadout | null>(null);
   const [roll, setRoll] = useState<PianoRoll | null>(null);
   const [cmp, setCmp] = useState<TraceComparison | null>(null);
   const [rollWinOpen, setRollWinOpen] = useState(false);
@@ -95,7 +69,7 @@ export const NewEnginePanel: React.FC = () => {
     lastIR.current = t.ir;
     lastSections.current = t.sections;
     lastBpm.current = t.bpm;
-    setReadout(deriveReadout(t));
+    setReadout(deriveQnMonitorReadout({ ir: t.ir, status: t.status, attempts: t.attempts, bpm: t.bpm }));
     setRoll(buildPianoRoll(t.ir, { width: 512, height: 168 }));
     setLogLines(t.lines);
     // eslint-disable-next-line no-console
@@ -290,43 +264,7 @@ export const NewEnginePanel: React.FC = () => {
             </button>
           </div>
 
-          {/* 状态 + 读出 */}
-          <div className="rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2 text-[12px]">
-            <div className="text-zinc-300">{status}</div>
-            {readout && (
-              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-zinc-400">
-                <div>状态 <span className={STATUS_COLOR[readout.status] ?? 'text-zinc-200'}>{readout.status}</span></div>
-                <div>尝试次数 <span className="text-zinc-200">{readout.attempts}</span></div>
-                <div>tempo <span className="text-zinc-200">{readout.bpm} bpm</span></div>
-                <div>长度 <span className="text-zinc-200">{readout.bars} 小节</span></div>
-                <div className="col-span-2 mt-1 flex flex-wrap gap-2">
-                  {readout.tracks.map((t) => (
-                    <span key={t.role} className="rounded bg-zinc-800 px-2 py-0.5">
-                      {t.role}:{t.count}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 当前乐器:本首【实际】编制 + 音色(含段落音色切换),非候选池 */}
-          {readout && (
-            <div className="rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2">
-              <div className="mb-1.5 text-[11px] font-semibold text-sky-300">当前乐器 · 本首实际编制（{readout.tracks.length} 件）</div>
-              <div className="space-y-0.5">
-                {readout.tracks.map((t) => (
-                  <div key={t.role} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-10 shrink-0 text-zinc-400">{t.role}</span>
-                    <span className="text-zinc-100">{t.role === 'drum' ? '标准鼓组' : t.instrument}</span>
-                    {t.switchTo && <span className="text-violet-300">→ chorus {t.switchTo}</span>}
-                    <span className="ml-auto text-[10px] text-zinc-500">{t.count} 音</span>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-1 text-[9px] text-zinc-500">乐器随 seed 确定性挑;紫色=同乐手段落换音色(效果器/电钢)。</p>
-            </div>
-          )}
+          <QnGenerationMonitorView status={status} readout={readout} roll={roll} logLines={logLines} />
 
           {/* A/B 对比(seed vs seed+1 日志 diff + 指标)*/}
           {cmp && (
@@ -353,45 +291,6 @@ export const NewEnginePanel: React.FC = () => {
             </div>
           )}
 
-          {/* Piano-roll(各轨音符可视化)*/}
-          {roll && roll.notes.length > 0 && (
-            <div className="rounded-lg border border-emerald-500/20 bg-black/50">
-              <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-emerald-300/70">piano-roll · 各轨音符</span>
-                <span className="flex gap-2 text-[9px] text-zinc-400">
-                  {(['lead', 'comp', 'bass', 'pad', 'drum'] as const).map((r) => (
-                    <span key={r} className="flex items-center gap-1">
-                      <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ROLE_COLOR[r] }} />{r}
-                    </span>
-                  ))}
-                </span>
-              </div>
-              <svg
-                viewBox={`0 0 ${roll.width} ${roll.height}`}
-                width="100%"
-                className="block"
-                style={{ height: roll.height }}
-                preserveAspectRatio="none"
-              >
-                <rect x={0} y={0} width={roll.width} height={roll.height} fill="#09090b" />
-                {roll.notes.map((n, i) => (
-                  <rect key={i} x={n.x} y={n.y} width={n.w} height={n.h} rx={1} fill={n.color} opacity={0.92} />
-                ))}
-              </svg>
-            </div>
-          )}
-
-          {/* 流程日志(逐层节点)*/}
-          {logLines.length > 0 && (
-            <div className="rounded-lg border border-emerald-500/20 bg-black/50">
-              <div className="border-b border-white/5 px-3 py-1.5 text-[10px] uppercase tracking-widest text-emerald-300/70">
-                流程日志 · 每层节点产出(同步打到浏览器 console)
-              </div>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 py-2 text-[10px] leading-relaxed text-zinc-300">
-                {logLines.join('\n')}
-              </pre>
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { AudioEngine } from '../core/audio/AudioEngine';
 import { startAudioContext } from '../core/audio/SynthManager';
 import { systemLeadSynth, systemAudio } from './SystemAudio';
 import { APPS } from '../apps/AppRegistry';
+import { menuGesturesEnabled } from '../core/hardware/menuGestureGuards';
 
 interface AuraSystemProps {
   activeKeys: Set<string>;
@@ -140,6 +141,19 @@ export function AuraSystem({ activeKeys, onAppSelect }: AuraSystemProps) {
         const pitch = pentatonic[c] !== undefined ? pentatonic[c] + (2 - r) * 12 : 60;
         if (!isNaN(pitch)) {
           systemLeadSynth.triggerAttackRelease(pitch, '8n', 0, 0.15);
+        }
+
+        if (!menuGesturesEnabled('system')) {
+          swipeState.current.path = [];
+          tapCount.current = 0;
+          lastTapKey.current = null;
+          longPressTimeouts.current.forEach(timeout => clearTimeout(timeout));
+          longPressTimeouts.current.clear();
+          if (tapTimeout.current) {
+            clearTimeout(tapTimeout.current);
+            tapTimeout.current = null;
+          }
+          return;
         }
 
         // 2.4 长按琶音 (Long Press Arpeggiator)

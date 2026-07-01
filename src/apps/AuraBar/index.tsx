@@ -6,6 +6,7 @@ import { systemAudio } from '../../system/SystemAudio';
 import { EndlessRadioManager, AppState } from './EndlessRadioManager';
 import { ALL_BARS, BarConfig } from './BarData';
 import { PRNGManager } from '../../core/utils/PRNG';
+import { menuGesturesEnabled } from '../../core/hardware/menuGestureGuards';
 // Old types: chord.quality is a string ('Minor', 'Diminished', etc.), tonality is a string
 
 interface AuraBarProps {
@@ -348,7 +349,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
 
         // --- Swipe Detection ---
         let swiped = false;
-        if (appState === 'IDLE') {
+        if (menuGesturesEnabled('aurabar') && appState === 'IDLE') {
             if (now - swipeState.current.lastActionTime > 400) {
               swipeState.current.path = [];
             }
@@ -393,7 +394,14 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
         // --- Tap Detection ---
         const isFunctionKey = c === 4 && r === 0;
         
-        if (!swiped && !isFunctionKey && !isFnPressed) {
+        if (!menuGesturesEnabled('aurabar')) {
+          tapCount.current = 0;
+          lastTapKey.current = null;
+          if (tapTimeout.current) {
+            clearTimeout(tapTimeout.current);
+            tapTimeout.current = null;
+          }
+        } else if (!swiped && !isFunctionKey && !isFnPressed) {
           if (lastTapKey.current && lastTapKey.current.c === c && lastTapKey.current.r === r) {
             tapCount.current += 1;
           } else {

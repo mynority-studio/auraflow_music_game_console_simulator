@@ -16,7 +16,7 @@ const snapshot: TakeoverMusicSnapshot = {
 };
 
 describe('leadTakeoverSandbox/LeadTakeoverController', () => {
-  it('arms after three note-ons and mutes lead after current bar plus next bar', () => {
+  it('arms after three note-ons and mutes lead one bar after first input', () => {
     const c = new LeadTakeoverController();
     c.setSnapshot(snapshot, 1.2);
 
@@ -25,9 +25,10 @@ describe('leadTakeoverSandbox/LeadTakeoverController', () => {
     c.noteOn(2, 1.6);
 
     expect(c.getState().mode).toBe('pending-handoff');
-    expect(c.getState().muteAtBeat).toBe(8);
-    expect(c.tick(7.9)).toEqual([]);
-    expect(c.tick(8)).toEqual([{ type: 'lead-mute', channel: 1, muted: true }]);
+    expect(c.getState().firstInputBeat).toBe(1.2);
+    expect(c.getState().muteAtBeat).toBeCloseTo(5.2);
+    expect(c.tick(5.19)).toEqual([]);
+    expect(c.tick(5.2)).toEqual([{ type: 'lead-mute', channel: 1, muted: true }]);
     expect(c.getState().mode).toBe('takeover');
   });
 
@@ -37,16 +38,16 @@ describe('leadTakeoverSandbox/LeadTakeoverController', () => {
     c.noteOn(0, 1);
     c.noteOn(1, 1.1);
     c.noteOn(2, 1.2);
-    c.tick(8);
+    c.tick(5);
 
-    expect(c.tick(11.99)).toEqual([]);
-    const actions = c.tick(12);
+    expect(c.tick(8.99)).toEqual([]);
+    const actions = c.tick(9);
     expect(actions).toContainEqual({ type: 'lead-mute', channel: 1, muted: false });
     expect(actions).toContainEqual({ type: 'panic', channel: 1 });
     expect(c.getState().mode).toBe('idle');
   });
 
-  it('keeps pending handoff until the scheduled bar boundary', () => {
+  it('keeps pending handoff until one bar after the first input', () => {
     const c = new LeadTakeoverController();
     c.setSnapshot(snapshot, 0.1);
     c.noteOn(0, 0.1);
@@ -54,9 +55,9 @@ describe('leadTakeoverSandbox/LeadTakeoverController', () => {
     c.noteOn(2, 0.3);
     expect(c.getState().mode).toBe('pending-handoff');
 
-    expect(c.tick(4.3)).toEqual([]);
+    expect(c.tick(4.09)).toEqual([]);
     expect(c.getState().mode).toBe('pending-handoff');
-    expect(c.tick(8)).toEqual([{ type: 'lead-mute', channel: 1, muted: true }]);
+    expect(c.tick(4.1)).toEqual([{ type: 'lead-mute', channel: 1, muted: true }]);
   });
 
   it('returns note-off actions for held pads and reset cleanup actions', () => {

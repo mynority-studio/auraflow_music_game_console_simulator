@@ -243,9 +243,40 @@ class AudioEngineSystem {
         globalMidiScheduler.replaceChannelEvents(channel, startTick, newEvents, endTick);
     }
 
-    public playNote(_channel: number, _note: number, _velocity: number = 100, _durationMs: number = 200): void { /* no-op */ }
-    public noteOn(_channel: number, _note: number, _velocity: number = 100): void { /* no-op */ }
-    public noteOff(_channel: number, _note: number): void { /* no-op */ }
+    public playNote(channel: number, note: number, velocity: number = 100, durationMs: number = 200): void {
+        this.noteOn(channel, note, velocity);
+        window.setTimeout(() => this.noteOff(channel, note), Math.max(1, durationMs));
+    }
+    public noteOn(channel: number, note: number, velocity: number = 100): void {
+        if (!spessaSynth) return;
+        const ch = Math.max(0, Math.min(15, Math.round(channel)));
+        const midi = Math.max(0, Math.min(127, Math.round(note)));
+        const vel = Math.max(0, Math.min(127, Math.round(velocity)));
+        try { spessaSynth.noteOn(ch, midi, vel, { time: getAudioContext().currentTime }); }
+        catch { try { spessaSynth.noteOn(ch, midi, vel); } catch { /* ignore */ } }
+    }
+    public noteOff(channel: number, note: number): void {
+        if (!spessaSynth) return;
+        const ch = Math.max(0, Math.min(15, Math.round(channel)));
+        const midi = Math.max(0, Math.min(127, Math.round(note)));
+        try { spessaSynth.noteOff(ch, midi, { time: getAudioContext().currentTime }); }
+        catch { try { spessaSynth.noteOff(ch, midi); } catch { /* ignore */ } }
+    }
+    public programChange(channel: number, program: number): void {
+        if (!spessaSynth) return;
+        try { spessaSynth.programChange(Math.round(channel), Math.max(0, Math.min(127, Math.round(program)))); }
+        catch { /* ignore */ }
+    }
+    public controllerChange(channel: number, controller: number, value: number): void {
+        if (!spessaSynth) return;
+        try {
+            (spessaSynth as any).controllerChange?.(
+                Math.round(channel),
+                Math.round(controller),
+                Math.max(0, Math.min(127, Math.round(value))),
+            );
+        } catch { /* ignore */ }
+    }
     public pitchBend(_channel: number, _value: number): void { /* no-op */ }
 
     public getCurrentTick(): number { return globalMidiScheduler.getCurrentTick(); }

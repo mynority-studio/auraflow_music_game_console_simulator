@@ -6,7 +6,6 @@ import { APPS } from './apps/AppRegistry';
 import { AudioEngine } from './core/audio/AudioEngine';
 import { startAudioContext } from './core/audio/SynthManager';
 import { PipelineMonitor } from './components/PipelineMonitor';
-import { NewEnginePanel } from './core/generation/newEngine/sandbox';
 import { MotifWeaverSandboxPanel } from './core/generation/motifSandbox';
 import { LeadTakeoverSandboxPanel } from './core/generation/leadTakeoverSandbox';
 import { DevDock } from './components/DevDock';
@@ -36,10 +35,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden">
-      {/* 左侧 DevDock:管道监视(Q+H)+ 新引擎(Q+N)+ Motif 沙盒(Q+R)的可见菜单入口 */}
+      {/* 左侧 DevDock:音乐生成(Q+H)+ Motif 沙盒(Q+R)+ 用户接管沙盒(Q+T)的可见菜单入口 */}
       <DevDock />
       <PipelineMonitor />
-      <NewEnginePanel />
       <MotifWeaverSandboxPanel />
       {/* Device Container */}
       <div 

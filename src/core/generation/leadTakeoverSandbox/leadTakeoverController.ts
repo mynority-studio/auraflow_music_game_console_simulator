@@ -18,7 +18,7 @@ export const DEFAULT_LEAD_TAKEOVER_CONFIG: LeadTakeoverConfig = {
   leadChannel: 1,
   takeoverThreshold: 3,
   silenceBarsToRelease: 1,
-  handoffBars: 2,
+  handoffBars: 1,
   defaultVelocity: 104,
 };
 
@@ -26,15 +26,15 @@ function initialState(): LeadTakeoverState {
   return {
     mode: 'idle',
     inputCount: 0,
+    firstInputBeat: null,
     lastInputBeat: null,
     muteAtBeat: null,
     leadMuted: false,
   };
 }
 
-function handoffBeat(currentBeat: number, beatsPerBar: number, handoffBars: number): number {
-  const currentBarStart = Math.floor(currentBeat / beatsPerBar) * beatsPerBar;
-  return currentBarStart + beatsPerBar * handoffBars;
+function handoffBeat(anchorBeat: number, beatsPerBar: number, handoffBars: number): number {
+  return anchorBeat + beatsPerBar * handoffBars;
 }
 
 export class LeadTakeoverController {
@@ -70,6 +70,7 @@ export class LeadTakeoverController {
     if (!cell) return [];
 
     this.heldPads.set(padIndex, cell.midi);
+    if (this.state.inputCount === 0) this.state.firstInputBeat = beat;
     this.state.inputCount += 1;
     this.state.lastInputBeat = beat;
 
@@ -83,7 +84,7 @@ export class LeadTakeoverController {
     if (this.state.mode === 'idle' && this.state.inputCount >= this.config.takeoverThreshold && this.snapshot) {
       const bpb = beatsPerBarOf(this.snapshot.timeSignature);
       this.state.mode = 'pending-handoff';
-      this.state.muteAtBeat = handoffBeat(beat, bpb, this.config.handoffBars);
+      this.state.muteAtBeat = handoffBeat(this.state.firstInputBeat ?? beat, bpb, this.config.handoffBars);
     }
 
     return actions;

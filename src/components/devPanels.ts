@@ -1,8 +1,8 @@
 // ============================================================
-// 开发面板通道 — 把隐藏的 Q+H / Q+N 面板暴露给左侧 DevDock
+// 开发面板通道 — 把隐藏开发面板暴露给左侧 DevDock
 // ============================================================
 //
-// 两个沙盒面板各自封装(自管 isVisible + 自己的键盘组合键监听)。
+// 沙盒面板各自封装(自管 isVisible + 自己的键盘组合键监听)。
 // 这里用三个 window CustomEvent 做松耦合通道,DevDock 与面板都不需要
 // 互相 import / prop drilling:
 //
@@ -10,14 +10,15 @@
 //   state   : 面板 visible 变化(键盘组合键也算)→ 广播 → DevDock 同步高亮
 //   request : DevDock 挂载时请求一次 → 面板各自回报当前 state(解决挂载竞态)
 //
-// 键盘组合键(Q+H/Q+N)原样保留,本通道只是多一个可见入口。
-// (2026-06-12:Q+I 即兴沙盒 / Q+E 调音台 功能模块已删除,只留管道监视 + 新引擎。)
+// Q+N 诊断面板已从产品 UI 收口到 Q+H 音乐生成链路;DevDock 不再暴露第二个可播放入口。
+// (2026-06-12:Q+I 即兴沙盒 / Q+E 调音台 功能模块已删除。)
 // ============================================================
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Boxes, Hand, Piano } from 'lucide-react';
+import { Activity, Hand, Piano } from 'lucide-react';
 
+// `newengine` 保留为历史/内部诊断通道类型,但不进入 DEV_PANELS,也不在 App 默认挂载。
 export type DevPanelId = 'pipeline' | 'newengine' | 'motif' | 'takeover';
 
 export interface DevPanelMeta {
@@ -33,11 +34,6 @@ export interface DevPanelMeta {
 }
 
 export const DEV_PANELS: DevPanelMeta[] = [
-    {
-        id: 'newengine', label: 'Q+N 诊断', hint: 'Q+N diagnostic (sandbox)', combo: 'Q+N',
-        icon: Boxes,
-        dot: 'bg-emerald-400', activeRing: 'border-emerald-400/50 bg-emerald-500/10', activeText: 'text-emerald-300',
-    },
     {
         id: 'pipeline', label: '音乐生成', hint: 'Music generation', combo: 'Q+H',
         icon: Activity,

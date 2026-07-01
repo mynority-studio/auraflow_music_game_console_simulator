@@ -45,4 +45,44 @@ describe('leadTakeoverSandbox/harmonicNoteMap', () => {
     expect(allowedPcs.has(11)).toBe(true);
     expect(new Set(map.cells.map((c) => c.classRole)).has('fallback')).toBe(false);
   });
+
+  it('uses KB tension filtering instead of fixed pentatonic deletion', () => {
+    const cmaj: TakeoverMusicSnapshot = {
+      ...snapshot,
+      styleHint: 'pop',
+      chords: [
+        { rootPc: 0, quality: 'maj7', roman: 'I', startBeat: 0, durationBeats: 4, sectionId: 'A' },
+      ],
+    };
+    const map = buildTakeoverPadMap(cmaj, 0);
+    const pcs = new Set(map.cells.map((c) => c.pc));
+
+    expect(pcs.has(11)).toBe(true); // B = maj7 color, not removed by "drop 7"
+    expect(pcs.has(5)).toBe(false); // F = natural 11 avoid over Cmaj7
+    expect(pcs.has(2)).toBe(true);  // D = 9, safe supplement
+    expect(pcs.has(9)).toBe(true);  // A = 13, safe supplement
+  });
+
+  it('starts pad spreading in the C3-C5 register and labels tensions as 9/13', () => {
+    const cmaj: TakeoverMusicSnapshot = {
+      ...snapshot,
+      styleHint: 'pop',
+      chords: [
+        { rootPc: 0, quality: 'maj7', roman: 'I', startBeat: 0, durationBeats: 4, sectionId: 'A' },
+      ],
+    };
+    const map = buildTakeoverPadMap(cmaj, 0);
+    const dCell = map.cells.find((c) => c.pc === 2);
+    const aCell = map.cells.find((c) => c.pc === 9);
+    const lowD = map.cells.find((c) => c.midi === 50);
+    const lowA = map.cells.find((c) => c.midi === 57);
+
+    expect(map.cells[0]?.midi).toBe(48); // C3
+    expect(lowD).toBeUndefined();
+    expect(lowA).toBeUndefined();
+    expect(dCell?.midi).toBe(62); // D4 = 9 above C3
+    expect(dCell?.degreeLabel).toBe('9');
+    expect(aCell?.midi).toBe(69); // A4 = 13 above C3
+    expect(aCell?.degreeLabel).toBe('13');
+  });
 });

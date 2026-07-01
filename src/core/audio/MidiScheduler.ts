@@ -30,6 +30,18 @@ export interface MidiEvent {
 const TICK_LOOP_MS = 5;
 const TRAILING_SILENCE_MS = 200;
 
+function midiEventOrder(ev: MidiEvent): number {
+    if (ev.type === 'noteOff') return 0;
+    if (ev.type === 'cc' || ev.type === 'programChange' || ev.type === 'pitchBend') return 1;
+    if (ev.type === 'noteOn') return 2;
+    return 3;
+}
+
+function compareMidiEvents(a: MidiEvent, b: MidiEvent): number {
+    if (a.ticks !== b.ticks) return a.ticks - b.ticks;
+    return midiEventOrder(a) - midiEventOrder(b);
+}
+
 export class MidiScheduler {
     public readonly ppq: number = 480;
     public isPlaying = false;
@@ -59,13 +71,7 @@ export class MidiScheduler {
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
         // 已按 ticks 升序排好（PlaybackEngine 输出时排序）— 这里再保险一次
-        this.events = events.slice().sort((a, b) => {
-            if (a.ticks !== b.ticks) return a.ticks - b.ticks;
-            // 同 tick 时 noteOff 先于 noteOn（避免新 note 被立刻关掉）
-            const orderA = a.type === 'noteOff' ? 0 : 1;
-            const orderB = b.type === 'noteOff' ? 0 : 1;
-            return orderA - orderB;
-        });
+        this.events = events.slice().sort(compareMidiEvents);
         this.currentBpm = bpm;
         this.currentTick = 0;
         this.nextEventIdx = 0;
@@ -196,9 +202,15 @@ export class MidiScheduler {
     }
 
     public injectEvent(ev: MidiEvent): void {
-        // 简单 append + 重排（注入点不在热路径，开销可接受）
-        this.events.push(ev);
-        this.events.sort((a, b) => a.ticks - b.ticks);
+        let lo = 0;
+        let hi = this.events.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1;
+            if (compareMidiEvents(this.events[mid], ev) <= 0) lo = mid + 1;
+            else hi = mid;
+        }
+        this.events.splice(lo, 0, ev);
+        if (lo < this.nextEventIdx) this.nextEventIdx++;
     }
 
     public getChannelEvents(channel: number): MidiEvent[] {
@@ -218,7 +230,7 @@ export class MidiScheduler {
             return false;
         });
         this.events.push(...newEvents);
-        this.events.sort((a, b) => a.ticks - b.ticks);
+        this.events.sort(compareMidiEvents);
     }
 
     // -----------------------------------------------------------

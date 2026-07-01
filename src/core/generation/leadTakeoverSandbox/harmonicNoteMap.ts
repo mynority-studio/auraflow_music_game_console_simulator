@@ -2,12 +2,15 @@
 // leadTakeoverSandbox · harmonic note map
 // ------------------------------------------------------------
 // Builds the 15 safe lead pads from current Q+N harmony. The core idea:
-// use MG/Q+N orthogonal pitch sets (chord contract ∩ resolved local scale)
-// and lay the resulting safe tones from low to high in reading order.
+// keep chord tones as stable anchors, supplement with KB acceptable local-scale
+// tensions, remove avoid tones, then lay safe tones low-to-high from C3-C5.
 // ============================================================
 
+import { mod12 } from '../newEngine/foundation';
 import { normalizeChordType } from '../newEngine/knowledge/chords';
+import type { ChordQuality } from '../newEngine/knowledge/chords';
 import type { StyleName } from '../newEngine/knowledge/mgMusicTheory';
+import { tensionTableForChordType } from '../newEngine/knowledge/tensionModel';
 import { buildPitchSets } from '../newEngine/render/mgPitchClassSets';
 import type { ChordBlock } from '../newEngine/render/mgChordPart';
 import {
@@ -27,7 +30,8 @@ import type {
   TakeoverPadMap,
 } from './types';
 
-const DEFAULT_LOW_MIDI = 55;
+const TAKEOVER_PRIMARY_LOW_MIDI = 48;  // C3
+const TAKEOVER_PRIMARY_HIGH_MIDI = 72; // C5
 const DEFAULT_STYLE: StyleName = 'POP';
 const PC_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -79,8 +83,21 @@ function chordTypeOf(chord: TakeoverChordSource): string {
   return normalizeChordType(chord.chordType ?? chord.quality) ?? chord.chordType ?? chord.quality;
 }
 
+function narrowQualityOf(chord: TakeoverChordSource): ChordQuality {
+  const q = chord.quality;
+  if (q === 'maj' || q === 'min' || q === 'maj7' || q === 'm7' || q === '7' || q === 'm7b5' || q === 'dim7') return q;
+  const t = chordTypeOf(chord);
+  if (t === 'm7b5' || t === 'm9b5') return 'm7b5';
+  if (t === 'dim' || t === 'dim7') return 'dim7';
+  if (t.startsWith('m') && !t.startsWith('maj')) return 'm7';
+  if (t.startsWith('maj')) return 'maj7';
+  if (t.includes('7') || t.includes('9') || t.includes('11') || t.includes('13') || t.includes('sus')) return '7';
+  if (t === 'min') return 'min';
+  return 'maj';
+}
+
 function toChordBlock(chord: TakeoverChordSource, index: number): ChordBlock {
-  const rootPc = ((Math.round(chord.rootPc) % 12) + 12) % 12;
+  const rootPc = mod12(Math.round(chord.rootPc));
   return {
     index,
     root: PC_NAMES[rootPc] ?? 'C',
@@ -124,22 +141,80 @@ function noteClassRole(
   return 'fallback';
 }
 
+function degreeLabel(pc: number, rootPc: number, role: TakeoverPadCell['classRole']): string {
+  const delta = ((pc - rootPc) % 12 + 12) % 12;
+  if (role === 'scale' || role === 'approach') {
+    const tensionLabels: Record<number, string> = {
+      1: 'b9',
+      2: '9',
+      3: '#9',
+      5: '11',
+      6: '#11',
+      8: 'b13',
+      9: '13',
+      11: '7',
+    };
+    return tensionLabels[delta] ?? `+${delta}`;
+  }
+  const chordLabels: Record<number, string> = {
+    0: '1',
+    3: 'b3',
+    4: '3',
+    5: 'sus4',
+    6: 'b5',
+    7: '5',
+    8: '#5',
+    9: '6',
+    10: 'b7',
+    11: '7',
+  };
+  return chordLabels[delta] ?? `+${delta}`;
+}
+
+function compoundIntervalFloor(delta: number, role: TakeoverPadCell['classRole']): number {
+  if (role !== 'scale' && role !== 'approach') return delta;
+  const compoundTensions: Record<number, number> = {
+    1: 13,  // b9
+    2: 14,  // 9
+    3: 15,  // #9
+    5: 17,  // 11
+    6: 18,  // #11
+    8: 20,  // b13
+    9: 21,  // 13
+    11: 11, // 7
+  };
+  return compoundTensions[delta] ?? delta;
+}
+
+function firstMidiAtOrAbove(pc: number, lowMidi: number): number {
+  for (let midi = lowMidi; midi < lowMidi + 12; midi++) {
+    if (((midi % 12) + 12) % 12 === pc) return midi;
+  }
+  return lowMidi;
+}
+
 function buildAscendingCells(
   pcs: readonly number[],
   roles: {
     chordPcs: ReadonlySet<number>;
     scalePcs: ReadonlySet<number>;
     approachPcs: ReadonlySet<number>;
+    rootPc: number;
   },
-  lowMidi = DEFAULT_LOW_MIDI,
+  lowMidi = TAKEOVER_PRIMARY_LOW_MIDI,
+  primaryHighMidi = TAKEOVER_PRIMARY_HIGH_MIDI,
 ): TakeoverPadCell[] {
   const allowed = new Set(pcs.map((pc) => ((pc % 12) + 12) % 12));
   const cells: TakeoverPadCell[] = [];
-  for (let midi = lowMidi; midi <= 108 && cells.length < TAKEOVER_PAD_COUNT; midi++) {
+  const rootAnchorMidi = firstMidiAtOrAbove(roles.rootPc, lowMidi);
+  const pushCell = (midi: number) => {
     const pc = ((midi % 12) + 12) % 12;
-    if (!allowed.has(pc)) continue;
+    if (!allowed.has(pc)) return;
     const index = cells.length;
     const { col, row } = takeoverPadCoord(index);
+    const classRole = noteClassRole(pc, roles.chordPcs, roles.scalePcs, roles.approachPcs);
+    const delta = ((pc - roles.rootPc) % 12 + 12) % 12;
+    if (midi < rootAnchorMidi + compoundIntervalFloor(delta, classRole)) return;
     cells.push({
       index,
       col,
@@ -147,10 +222,36 @@ function buildAscendingCells(
       midi,
       name: midiName(midi),
       pc,
-      classRole: noteClassRole(pc, roles.chordPcs, roles.scalePcs, roles.approachPcs),
+      degreeLabel: degreeLabel(pc, roles.rootPc, classRole),
+      classRole,
     });
+  };
+
+  for (let midi = lowMidi; midi <= primaryHighMidi && cells.length < TAKEOVER_PAD_COUNT; midi++) {
+    pushCell(midi);
+  }
+  for (let midi = primaryHighMidi + 1; midi <= 108 && cells.length < TAKEOVER_PAD_COUNT; midi++) {
+    pushCell(midi);
   }
   return cells;
+}
+
+function safeSupplementPcs(chord: TakeoverChordSource, scaleTones: readonly number[]): number[] {
+  const rootPc = mod12(Math.round(chord.rootPc));
+  const table = tensionTableForChordType(
+    rootPc,
+    chordTypeOf(chord),
+    narrowQualityOf(chord),
+  );
+  const acceptable = new Set<number>(table.acceptable);
+  const avoid = new Set<number>(table.avoid);
+  return scaleTones
+    .filter((pc) => acceptable.has(pc) && !avoid.has(pc))
+    .sort((a, b) => {
+      const aIdx = table.acceptable.findIndex((pc) => pc === a);
+      const bIdx = table.acceptable.findIndex((pc) => pc === b);
+      return (aIdx < 0 ? 99 : aIdx) - (bIdx < 0 ? 99 : bIdx);
+    });
 }
 
 function fallbackCells(chord: TakeoverChordSource | null): TakeoverPadCell[] {
@@ -161,6 +262,7 @@ function fallbackCells(chord: TakeoverChordSource | null): TakeoverPadCell[] {
     chordPcs: all,
     scalePcs: all,
     approachPcs: new Set(),
+    rootPc,
   }).map((c) => ({ ...c, classRole: 'fallback' as const }));
 }
 
@@ -192,11 +294,17 @@ export function buildTakeoverPadMap(
     const sets = buildPitchSets({ chord: chordBlock, nextChord: nextBlock, localScaleContext });
     const localScale = resolveLocalScale(localScaleContext, toLocalScaleChordLike(chordBlock));
     const chordPcs = new Set(sets.chordTones);
-    const scalePcs = new Set(sets.scaleTones);
+    const safeScaleTones = safeSupplementPcs(current, sets.scaleTones);
+    const scalePcs = new Set(safeScaleTones);
     const approachPcs = new Set(sets.approachTargets);
-    const safePcs = [...new Set([...sets.chordTones, ...sets.scaleTones])].sort((a, b) => a - b);
+    const safePcs = [...new Set([...sets.chordTones, ...safeScaleTones])].sort((a, b) => a - b);
     if (safePcs.length === 0) throw new Error('empty takeover pitch pool');
-    const cells = buildAscendingCells(safePcs, { chordPcs, scalePcs, approachPcs });
+    const cells = buildAscendingCells(safePcs, {
+      chordPcs,
+      scalePcs,
+      approachPcs,
+      rootPc: chordBlock.rootPc,
+    });
     return {
       cells,
       chord: current,

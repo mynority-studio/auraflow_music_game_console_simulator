@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, useDragControls } from 'motion/react';
-import { Activity, Play, Square, X, Dice5, Volume2, VolumeX } from 'lucide-react';
+import { Activity, Play, Square, X, Dice5, Volume2, VolumeX, Piano } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
 import { PartName } from '../core/audio/PlaybackEngine';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
@@ -25,6 +25,18 @@ import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGeneratio
 import type { MusicGenerationResult, QnRole, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
 import { QnBandSelectionStore, QN_PARTICIPANT_ORDER, QN_PARTICIPANT_LABEL } from '../state/QnBandSelectionStore';
 import { useDevPanelChannel } from './devPanels';
+import { traceGeneration, type TraceSection } from '../core/generation/newEngine/generation';
+import type { GenerationRequest } from '../core/generation/newEngine/band/bandEngine';
+import { pc } from '../core/generation/newEngine/foundation';
+import { buildPianoRoll, type PianoRoll } from '../core/generation/newEngine/sandbox/pianoRoll';
+import { PianoRollWindow } from '../core/generation/newEngine/sandbox/PianoRollWindow';
+import { deriveLineupConstraint } from '../core/generation/musicGeneration/participantConstraint';
+import { keyToPc } from '../core/generation/musicGeneration/qnUiProjection';
+import {
+    QnGenerationMonitorView,
+    deriveQnMonitorReadout,
+    type QnMonitorReadout,
+} from './QnGenerationMonitorView';
 
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -235,6 +247,13 @@ export const PipelineMonitor: React.FC = () => {
     }, []);
     // 错误提示
     const [playError, setPlayError] = useState<string | null>(null);
+    const [monitorStatus, setMonitorStatus] = useState('就绪');
+    const [monitorReadout, setMonitorReadout] = useState<QnMonitorReadout | null>(null);
+    const [monitorRoll, setMonitorRoll] = useState<PianoRoll | null>(null);
+    const [monitorLogLines, setMonitorLogLines] = useState<string[]>([]);
+    const [monitorSections, setMonitorSections] = useState<TraceSection[]>([]);
+    const [monitorIr, setMonitorIr] = useState<MusicGenerationResult['ir']>(null);
+    const [rollWinOpen, setRollWinOpen] = useState(false);
     const rafRef = useRef<number | null>(null);
     const dragControls = useDragControls();
     const playStateRef = useRef<PlayState>('IDLE');
@@ -299,11 +318,58 @@ export const PipelineMonitor: React.FC = () => {
         }
     }, [mutedParts]);
 
+    const refreshQnMonitor = useCallback((result: MusicGenerationResult, seed: number) => {
+        if (!result.ir) return;
+        const fallbackStatus = result.status === 'failed' ? 'failed' : 'pass';
+        const fallback = () => {
+            setMonitorIr(result.ir);
+            setMonitorReadout(deriveQnMonitorReadout({
+                ir: result.ir!,
+                status: fallbackStatus,
+                attempts: result.attempts,
+                bpm: result.bpm,
+            }));
+            setMonitorRoll(buildPianoRoll(result.ir!, { width: 512, height: 168 }));
+            setMonitorSections([]);
+        };
+
+        try {
+            const bandConstraint = deriveLineupConstraint(QnBandSelectionStore.getParticipants());
+            const traceRequest: GenerationRequest = {
+                seed,
+                styleHint: MusicGenerationStyleStore.getStyleHint(),
+                mood: 'build',
+                targetDuration: 120,
+                key: pc(keyToPc(MusicGenerationKeyStore.getKey())),
+            };
+            if (bandConstraint) traceRequest.bandConstraint = bandConstraint;
+            const trace = traceGeneration(traceRequest);
+            setMonitorIr(trace.ir);
+            setMonitorReadout(deriveQnMonitorReadout({
+                ir: trace.ir,
+                status: trace.status,
+                attempts: trace.attempts,
+                bpm: trace.bpm,
+            }));
+            setMonitorRoll(buildPianoRoll(trace.ir, { width: 512, height: 168 }));
+            setMonitorLogLines(trace.lines);
+            setMonitorSections(trace.sections);
+            // eslint-disable-next-line no-console
+            console.log('%c[newEngine] 生成流程日志（逐层节点）\n%s', 'color:#34d399;font-weight:bold', trace.lines.join('\n'));
+        } catch (err) {
+            fallback();
+            const msg = err instanceof Error ? err.message : String(err);
+            setMonitorLogLines([`■ MONITOR    traceGeneration failed: ${msg}`]);
+            console.warn('[PipelineMonitor] Q+N trace monitor failed:', err);
+        }
+    }, []);
+
     const playSeed = useCallback(async (seed: number) => {
         await startAudioContext();
         AudioEngine.stop();
         activeSeedRef.current = seed;
         setPlayState('GENERATING');
+        setMonitorStatus('播放中…');
         setCurrentSeed(seed);
         setPlayError(null);
 
@@ -321,9 +387,11 @@ export const PipelineMonitor: React.FC = () => {
             if (activeSeedRef.current !== seed) return;
             if (result.status === 'failed' || !result.ir) throw new Error('音乐生成失败(audit fatal)');
 
+            refreshQnMonitor(result, seed);
             await AudioEngine.playMusicGeneration(result);
             reapplyMutes();
             setPlayState('PLAYING');
+            setMonitorStatus('▶ 播放中');
 
             globalMidiScheduler.onTrackEnd(() => {
                 if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING') {
@@ -334,10 +402,11 @@ export const PipelineMonitor: React.FC = () => {
             const msg = e instanceof Error ? e.message : String(e);
             console.error('[playSeed] pipeline failed:', e);
             setPlayError(msg);
+            setMonitorStatus(`音频启动失败:${msg}`);
             setPlayState('IDLE');
             activeSeedRef.current = null;
         }
-    }, [reapplyMutes]);
+    }, [reapplyMutes, refreshQnMonitor]);
 
     const handlePlay = useCallback(async () => {
         // ★ Q+N:把字符串 seed 写 MusicGenerationSeedStore → runPipeline 内部 getSeedNumber() 哈希成 number 喂 Q+N。
@@ -350,6 +419,7 @@ export const PipelineMonitor: React.FC = () => {
         activeSeedRef.current = null;
         AudioEngine.stop();
         setPlayState('IDLE');
+        setMonitorStatus('已停止');
     }, []);
 
     const handleRandom = useCallback(() => {
@@ -405,6 +475,7 @@ export const PipelineMonitor: React.FC = () => {
     const currentChord: GeneratedChord | null = currentChordIdx >= 0 ? chords[currentChordIdx] : null;
 
     return (
+        <>
         <motion.div
             drag
             dragControls={dragControls}
@@ -516,6 +587,18 @@ export const PipelineMonitor: React.FC = () => {
                     >
                         <Square className="w-3.5 h-3.5" />
                     </button>
+                    <button
+                        onClick={() => setRollWinOpen(true)}
+                        disabled={!monitorIr}
+                        title="音轨视图"
+                        className={`px-2 py-1 rounded transition-all ${
+                            !monitorIr
+                                ? 'bg-zinc-800/40 text-zinc-600 cursor-not-allowed'
+                                : 'bg-zinc-800 hover:bg-zinc-700 text-sky-300 border border-sky-500/30'
+                        }`}
+                    >
+                        <Piano className="w-3.5 h-3.5" />
+                    </button>
                 </div>
                 {/* Status row */}
                 <div className="flex items-center gap-2 mt-1.5 text-[9px] font-mono">
@@ -544,40 +627,52 @@ export const PipelineMonitor: React.FC = () => {
                 立即写 QnBandSelectionStore,下次 Play 生效(auto=Q+N 默认 · selected=白名单参与 · disabled=不生成)。 */}
             <QnBandPanel states={qnParticipants} onSet={setQnParticipant} />
 
-            {/* 双栏内容区（按 header 之外的剩余空间分配） */}
-            <div className="flex flex-1 min-h-0 overflow-hidden">
-                {/* 左栏：Stage 01-02 */}
-                <div className="w-1/2 overflow-y-auto custom-pipeline-scroll border-r border-zinc-800/60">
-                    <Stage1MetaForm
-                        bpm={ui?.bpm}
-                        keyName={ui?.key}
-                        tonality={context?.tonality}
-                        tonalityLabel={ui?.tonality}
-                        seed={seed}
-                        styleName={ui?.styleHint?.toUpperCase()}
-                        currentChord={currentChord}
-                    />
-                    <Stage2Harmony
-                        chords={chords}
-                        currentSection={currentSection}
-                        currentChordIdx={currentChordIdx}
+            {/* Q+N 原监控视图 + Q+H stage 读数 */}
+            <div className="flex-1 min-h-0 overflow-y-auto custom-pipeline-scroll">
+                <div className="space-y-4 px-4 py-3 border-b border-zinc-800/60">
+                    <QnGenerationMonitorView
+                        status={monitorStatus}
+                        readout={monitorReadout}
+                        roll={monitorRoll}
+                        logLines={monitorLogLines}
                     />
                 </div>
 
-                {/* 右栏：Stage 03 + Ensemble */}
-                <div className="w-1/2 overflow-y-auto custom-pipeline-scroll">
-                    <Stage3Structure
-                        sections={sections}
-                        currentSectionIdx={currentSectionIdx}
-                        beatsPerBar={ui?.timeSignature?.[0]}
-                    />
-                    <Stage5Ensemble
-                        palette={undefined}
-                        roster={undefined}
-                        qnRoster={ui?.roster}
-                        mutedParts={mutedParts}
-                        onToggleMute={togglePartMute}
-                    />
+                {/* 双栏内容区 */}
+                <div className="grid grid-cols-2">
+                    {/* 左栏：Stage 01-02 */}
+                    <div className="min-w-0 border-r border-zinc-800/60">
+                        <Stage1MetaForm
+                            bpm={ui?.bpm}
+                            keyName={ui?.key}
+                            tonality={context?.tonality}
+                            tonalityLabel={ui?.tonality}
+                            seed={seed}
+                            styleName={ui?.styleHint?.toUpperCase()}
+                            currentChord={currentChord}
+                        />
+                        <Stage2Harmony
+                            chords={chords}
+                            currentSection={currentSection}
+                            currentChordIdx={currentChordIdx}
+                        />
+                    </div>
+
+                    {/* 右栏：Stage 03 + Ensemble */}
+                    <div className="min-w-0">
+                        <Stage3Structure
+                            sections={sections}
+                            currentSectionIdx={currentSectionIdx}
+                            beatsPerBar={ui?.timeSignature?.[0]}
+                        />
+                        <Stage5Ensemble
+                            palette={undefined}
+                            roster={undefined}
+                            qnRoster={ui?.roster}
+                            mutedParts={mutedParts}
+                            onToggleMute={togglePartMute}
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -595,6 +690,14 @@ export const PipelineMonitor: React.FC = () => {
                 .custom-pipeline-scroll::-webkit-scrollbar-thumb:hover { background: rgba(161,161,170,0.6); }
             `}} />
         </motion.div>
+        <PianoRollWindow
+            ir={monitorIr ?? undefined}
+            sections={monitorSections}
+            open={rollWinOpen}
+            onClose={() => setRollWinOpen(false)}
+            title={`${musicStyle.toLowerCase()} · seed ${currentSeed ?? musicGen?.seed ?? seedInput}`}
+        />
+        </>
     );
 };
 
