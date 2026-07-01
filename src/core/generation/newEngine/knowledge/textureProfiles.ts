@@ -504,6 +504,10 @@ export function pickAcgTextureForBar(args: {
   return picked ?? acgTextureProfileForCase(acgFallbackTextureForRole(role, args.func, isLoopBoundary), role);
 }
 
+// ⚠️ LOFI 逐-bar 织体(MG pickLofiTextureForBar)暂不移植:LOFI 织体稀疏(OneShot/sparse),逐-bar 切会破
+//   comp 连续性(comp-continuity-gap,即段级架构当初专门修的"伴奏突发洞")→ 需先港 MG bridge/carryTail
+//   连续性处理(rateTextureTransition allowWithBridge/downbeatAnchor)才能安全逐-bar。次级待办,当前 LOFI 保段级。
+
 // ============================================================
 // 笼统织体(原 newEngine 引擎自带的 5 种)—— 用户定:搬进 KB 一起保存,
 // 引擎本身不再带织体选择偏好。render 已能弹这 5 种;rich 17 种待 render 升级解析。

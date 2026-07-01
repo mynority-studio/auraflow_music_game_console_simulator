@@ -54,6 +54,9 @@ export function buildTextureSchedule(args: {
   timeline.forEach((s) => { idxInSec[s.id] = seenSec[s.sectionId] ?? 0; seenSec[s.sectionId] = (seenSec[s.sectionId] ?? 0) + 1; });
 
   // ★ ACG(§4):逐-bar 具名手势(忠实 MG pickAcgTextureForBar),不走段级 richTextureBySection。
+  //   MG ACG texturePerBar 每 bar 换手势(每首 6-7 种);SIM 此前段级只 2 → 听感差。POP/JAZZ/RNB MG 本就单织体 → 保段级。
+  //   ⚠️ LOFI 暂【不】逐-bar:LOFI 织体本就稀疏(OneShot/sparse),逐-bar 切会破 comp 连续性(>2.5 拍突发洞,
+  //     即段级架构当初专门修的 comp-continuity-gap)→ 需先港 MG 的 bridge/carryTail 连续性处理才能逐-bar(次级待办)。
   //   barIndex = span 在全 timeline 的位置;func/nextFunc 从 chordFunctionTimeline;prevId/rep 跨 span 追踪。
   const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
   if (txStyle === 'ACG') {
