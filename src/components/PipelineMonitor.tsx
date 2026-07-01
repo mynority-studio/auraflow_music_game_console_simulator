@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, useDragControls } from 'motion/react';
-import { Activity, Play, Square, X, Dice5, Piano } from 'lucide-react';
+import { Activity, Play, Square, X, Dice5, Piano, Volume2, VolumeX } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
 import { PartName } from '../core/audio/playbackTypes';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
@@ -761,7 +761,7 @@ export const PipelineMonitor: React.FC = () => {
                             currentSectionIdx={currentSectionIdx}
                             beatsPerBar={ui?.timeSignature?.[0]}
                         />
-                        <Stage5Ensemble qnRoster={ui?.roster} />
+                        <Stage5Ensemble qnRoster={ui?.roster} mutedParts={mutedParts} onToggleMute={togglePartMute} />
                     </div>
                 </div>
             </div>
@@ -988,28 +988,48 @@ const EnergyBar: React.FC<{ level: number; active: boolean }> = ({ level, active
 
 interface Stage5Props {
     qnRoster?: import('../core/generation/musicGeneration/types').UiPlayer[]; // ★ Q+N ensemble/roster
+    mutedParts: Set<PartName>;
+    onToggleMute: (partName: PartName) => void;
 }
 
 const QN_ROLE_LABEL: Record<string, string> = { lead: 'Lead', comp: 'Comping', bass: 'Bass', pad: 'Atmosphere', drum: 'Drum' };
 const QN_ROLE_COLOR: Record<string, string> = { lead: 'text-emerald-300', comp: 'text-amber-300', bass: 'text-blue-300', pad: 'text-violet-300', drum: 'text-fuchsia-300' };
+// ★ Q+N roster role → 可 mute 的 PartName(对齐 AudioEngine.qnPartChannel;pad 无对应通道 → 不提供 mute)。
+const QN_ROLE_TO_PART: Record<string, PartName> = { lead: 'melody', comp: 'chord', bass: 'bass', drum: 'drums' };
 
-const Stage5Ensemble: React.FC<Stage5Props> = ({ qnRoster }) => {
+const Stage5Ensemble: React.FC<Stage5Props> = ({ qnRoster, mutedParts, onToggleMute }) => {
     // ★ Q+N ensemble:有 qnRoster 时直接展示乐手/乐器/状态(取代旧 palette 路径)。
     if (qnRoster && qnRoster.length > 0) {
         return (
             <section className="px-4 pt-4 pb-4">
                 <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
                 <div className="mt-3 space-y-1.5">
-                    {qnRoster.map((p) => (
-                        <div key={p.role} className="flex items-center justify-between text-xs">
-                            <span className={QN_ROLE_COLOR[p.role] ?? 'text-zinc-300'}>{QN_ROLE_LABEL[p.role] ?? p.role}</span>
-                            {/* 音色只读(器配层随机选);标 参与/自动补位 */}
-                            <span className="font-mono text-zinc-400">{p.instrumentName}
-                                {p.autoFilled && <span className="ml-1 text-[9px] text-amber-500/80">(自动补位)</span>}
-                                {!p.autoFilled && p.state === 'selected' && <span className="ml-1 text-[9px] text-fuchsia-400/70">(参与)</span>}
-                            </span>
+                    {qnRoster.map((p) => {
+                        const part = QN_ROLE_TO_PART[p.role];
+                        const isMuted = part ? mutedParts.has(part) : false;
+                        return (
+                        <div key={p.role} className="flex items-center justify-between gap-2 text-xs">
+                            <span className={`${QN_ROLE_COLOR[p.role] ?? 'text-zinc-300'} ${isMuted ? 'line-through opacity-50' : ''}`}>{QN_ROLE_LABEL[p.role] ?? p.role}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                {/* 音色只读(器配层随机选);标 参与/自动补位 */}
+                                <span className={`font-mono truncate ${isMuted ? 'text-zinc-600 line-through' : 'text-zinc-400'}`}>{p.instrumentName}
+                                    {p.autoFilled && <span className="ml-1 text-[9px] text-amber-500/80">(自动补位)</span>}
+                                    {!p.autoFilled && p.state === 'selected' && <span className="ml-1 text-[9px] text-fuchsia-400/70">(参与)</span>}
+                                </span>
+                                {/* ★ Q+N 单轨 mute(播放中实时;pad 无通道无按钮)。 */}
+                                {part && (
+                                    <button
+                                        onClick={() => onToggleMute(part)}
+                                        title={isMuted ? `Unmute ${p.role}` : `Mute ${p.role}`}
+                                        className={`p-0.5 rounded transition-colors shrink-0 ${isMuted ? 'text-red-400 hover:text-red-300' : 'text-zinc-500 hover:text-zinc-200'}`}
+                                    >
+                                        {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </section>
         );

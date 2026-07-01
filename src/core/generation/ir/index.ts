@@ -36,9 +36,6 @@ import type {
     SectionType,
     ContourSpec,
     Tonality,
-    EnsembleDraft,
-    StyleConfig,
-    Musician,
 } from '../types';
 
 /**

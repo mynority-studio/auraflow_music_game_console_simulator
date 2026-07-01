@@ -4,7 +4,7 @@ import { StyleId } from './config/StyleFlags';
 
 // CONSTITUTION CHAPTER I — 核心 IR 类型已迁移至 ./ir/index.ts。
 // 此处保留 re-export 以兼容现有 callsite。新代码请直接从 './ir' 导入。
-// 同时 import 以保证 types.ts 内部其他 interface（GeneratedTrack/ArrangedTrack 等）可继续引用。
+// (旧 GeneratedTrack/ArrangedTrack/MusicContext 已随 legacy 播放壳删除,不再 re-export。)
 import type { NoteData, GeneratedChord, SectionMetadata, VoicedPitch } from './ir';
 import { VoiceRole } from './ir';
 export type { NoteData, GeneratedChord, SectionMetadata, VoicedPitch };
