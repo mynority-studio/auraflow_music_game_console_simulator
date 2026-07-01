@@ -38,6 +38,7 @@ import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
+import { tuckAcgLeadRegister } from './acgLeadShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 
@@ -298,9 +299,12 @@ export function renderSongFull(
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
   // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
-  tracks.push(overrideLeadTrack
-    ? { ...overrideLeadTrack, role: 'lead', program: instrumentation.roleProgram.lead }
-    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract)); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
+  // ★ ACG(P1b):MG 生成的 lead 音域上浮(tuckAcgLeadRegister,忠实 MG tuck 的 register-lift 部分)→ 电影钢琴高位歌唱。
+  //   只 MG 链 lead(override=走 A 权威 hand-played,不动);早于 fill/replay 链头(镜像 MG 早 tuck)。
+  const mgLead = overrideLeadTrack
+    ? { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead }
+    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
+  tracks.push(!overrideLeadTrack && band.style.toLowerCase() === 'acg' ? tuckAcgLeadRegister(mgLead) : mgLead);
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。

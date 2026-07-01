@@ -11,6 +11,7 @@ import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
+import { tuckAcgLeadRegister } from './acgLeadShape';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { createTimebase, createRandomContext, beats } from '../foundation';
 
@@ -38,7 +39,9 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
       // ★ Phase D:baseline 喂 arranger 选中的 GrooveContract(+lead program),与生产一致
       //   (生产 lead feel/pocket 真源 = contract;不喂则 baseline 走 feelForStyle → 与生产 contract feel 漂 1-9 tick)。
-      const raw = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
+      const rawGen = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
+      // ★ ACG(P1b):生产在链头对 MG lead 做音域上浮(tuckAcgLeadRegister)→ 预期也上浮。
+      const raw = band.style.toLowerCase() === 'acg' ? tuckAcgLeadRegister(rawGen) : rawGen;
       // ★ 契约:原始 MG lead 经【空拍补全 → repeatGroup 重放 → 末端安全闸(sanitize → (jazz/blues)legato → sanitize)】
       //   = production lead 的预期。lead 不 humanize;legato 只改 duration;sanitize 只裁同 pitch collision(无 overlap 时
       //   为 no-op)→ 多数 seed 仍逐字节相等,仅含同 pitch overlap 的 seed(raw MG 自身重叠)被安全闸裁短(directive

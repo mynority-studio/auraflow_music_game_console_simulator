@@ -22,6 +22,7 @@ import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
+import { tuckAcgLeadRegister } from './acgLeadShape';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { auditMusicality } from './musicalityAuditor';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
@@ -55,7 +56,9 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
   for (const [seed, style] of MATRIX) {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
-      const raw = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
+      const rawGen = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
+      // ★ ACG(P1b):生产链头对 MG lead 做音域上浮(tuckAcgLeadRegister)→ 预期也上浮。
+      const raw = band.style.toLowerCase() === 'acg' ? tuckAcgLeadRegister(rawGen) : rawGen;
       // ★ ACG(P0-2 mg fidelity):生产跳过 fillLeadBarGaps(保 MG 空旷呼吸感)→ 预期也跳过。
       const filledRaw = band.style.toLowerCase() === 'acg' ? [raw] : fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
       const replayed = applyRepeatGroupReplay(filledRaw, arr, plan.chordTimeline, tb)[0];

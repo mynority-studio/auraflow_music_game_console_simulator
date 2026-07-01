@@ -72,6 +72,30 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
+  it('★ P1a 响度秩序(melody-first):lead avg 显著 > comp;comp≈29-32(pp);bass≈37', () => {
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+    for (const seed of SEEDS) {
+      const r = acg(seed);
+      const leadV = mean(trk(r, 'lead')!.notes.map((n) => n.velocity as number));
+      const compV = mean(trk(r, 'comp')!.notes.map((n) => n.velocity as number));
+      const bassV = mean(trk(r, 'bass')!.notes.map((n) => n.velocity as number));
+      expect(leadV - compV, `seed ${seed} lead(${leadV.toFixed(0)})>>comp(${compV.toFixed(0)})`).toBeGreaterThan(30);
+      expect(compV, `seed ${seed} comp pp`).toBeGreaterThanOrEqual(25);
+      expect(compV, `seed ${seed} comp pp`).toBeLessThanOrEqual(36);
+      expect(bassV, `seed ${seed} bass`).toBeGreaterThanOrEqual(30);
+      expect(bassV, `seed ${seed} bass`).toBeLessThanOrEqual(44);
+    }
+  });
+
+  it('★ P1b lead 音域上浮到 MG soprano(均值≥72,几乎无 <69)', () => {
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+    for (const seed of SEEDS) {
+      const ps = trk(acg(seed), 'lead')!.notes.map((n) => n.pitch as number);
+      expect(mean(ps), `seed ${seed} lead mean`).toBeGreaterThanOrEqual(72);
+      expect(ps.filter((p) => p < 69).length / ps.length, `seed ${seed} <69 占比`).toBeLessThan(0.05);
+    }
+  });
+
   it('家族合法:ACG lead/comp=keyboard,bass=bass', () => {
     for (const seed of SEEDS) {
       const r = acg(seed);
