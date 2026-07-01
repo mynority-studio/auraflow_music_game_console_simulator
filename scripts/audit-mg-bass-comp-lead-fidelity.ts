@@ -38,6 +38,7 @@ interface Row {
   mgBars: number; simBars: number;
   mgBass: number; simBass: number; mgComp: number; simComp: number; mgLead: number; simLead: number;
   mgTexUniq: number; mgTexList: string[];
+  simTexUniq: number; simTexList: string[];
   compRatioPerBar: number; bassRatioPerBar: number; leadRatioPerBar: number;
   programs: { simLead?: number; simComp?: number; simBass?: number };
   warnings: string[];
@@ -60,9 +61,10 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
   const r = generateMusicSync({ seed, styleHint: sim, mood: 'build', targetDuration: 90, key: KEY });
   if (r.status !== 'ok' || !r.ir) {
     return { style: sim, seed, mgBars, simBars: 0, mgBass, simBass: 0, mgComp, simComp: 0, mgLead, simLead: 0,
-      mgTexUniq: uniq(mgTexList).length, mgTexList, compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0,
+      mgTexUniq: uniq(mgTexList).length, mgTexList, simTexUniq: 0, simTexList: [], compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0,
       programs: {}, warnings, error: `SIM 生成失败 status=${r.status}` };
   }
+  const simTexList = ((r.report as { textureCases?: string[] } | undefined)?.textureCases ?? []);
   const trk = (role: string) => r.ir!.tracks.find((t) => t.role === role);
   const simBars = r.uiSnapshot.sections.reduce((a, s) => a + s.bars, 0) || 1;
   const simBass = trk('bass')?.notes.length ?? 0;
@@ -73,16 +75,19 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
   const bassRatioPerBar = ratio(perBar(simBass, simBars), perBar(mgBass, mgBars));
   const leadRatioPerBar = ratio(perBar(simLead, simBars), perBar(mgLead, mgBars));
 
-  // —— 阈值(directive §6/§7,按 per-bar 比率)——
+  const mgTexUniq = uniq(mgTexList).length;
+  const simTexUniq = uniq(simTexList).length;
+  // —— 阈值(directive §6/§7,按 per-bar 比率;§4 织体多样性)——
   if (sim === 'acg') {
     if (simComp === 0) warnings.push('ACG comp 空(硬合同违背)');
     if (compRatioPerBar > 3) warnings.push(`ACG comp per-bar 密度 ${compRatioPerBar}x MG (>3x)`);
     if (bassRatioPerBar > 2.5) warnings.push(`ACG bass per-bar 密度 ${bassRatioPerBar}x MG (>2.5x)`);
+    if (mgTexUniq >= 5 && simTexUniq < mgTexUniq * 0.5) warnings.push(`ACG 织体多样性 SIM ${simTexUniq} < 50% MG ${mgTexUniq}(§4 逐-bar 未生效)`);
   }
 
   return {
     style: sim, seed, mgBars, simBars, mgBass, simBass, mgComp, simComp, mgLead, simLead,
-    mgTexUniq: uniq(mgTexList).length, mgTexList,
+    mgTexUniq, mgTexList, simTexUniq, simTexList,
     compRatioPerBar, bassRatioPerBar, leadRatioPerBar,
     programs: { simLead: trk('lead')?.program, simComp: trk('comp')?.program, simBass: trk('bass')?.program },
     warnings,
@@ -94,7 +99,7 @@ const rows: Row[] = [];
 for (const { sim, mg } of STYLES) {
   for (const seed of SEEDS) {
     try { rows.push(auditOne(sim, mg, seed)); }
-    catch (e) { rows.push({ style: sim, seed, mgBars: 0, simBars: 0, mgBass: 0, simBass: 0, mgComp: 0, simComp: 0, mgLead: 0, simLead: 0, mgTexUniq: 0, mgTexList: [], compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0, programs: {}, warnings: [], error: e instanceof Error ? e.message : String(e) }); }
+    catch (e) { rows.push({ style: sim, seed, mgBars: 0, simBars: 0, mgBass: 0, simBass: 0, mgComp: 0, simComp: 0, mgLead: 0, simLead: 0, mgTexUniq: 0, mgTexList: [], simTexUniq: 0, simTexList: [], compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0, programs: {}, warnings: [], error: e instanceof Error ? e.message : String(e) }); }
   }
 }
 
@@ -109,18 +114,18 @@ L.push(`- MG source: \`../melodygenerative\` @ ${mgHash} (string seed) · SIM �
 L.push(`- 方法:per-bar 密度比较(非 byte parity);忽略 pad/drum。styles=${STYLES.map((s) => s.sim).join('/')} seeds=${SEEDS.join('/')} key=${KEY}`);
 L.push('- 列:count(总)· /bar(per-bar 密度)· SIM/MG per-bar 比率。texUniq=MG texturePerBar 唯一织体数。');
 L.push('');
-L.push('| style | seed | bars MG/SIM | bass MG/SIM(/bar → x) | comp MG/SIM(/bar → x) | lead MG/SIM(/bar → x) | MG texUniq | SIM prog L/C/B | ⚠ |');
+L.push('| style | seed | bars MG/SIM | bass MG/SIM(/bar → x) | comp MG/SIM(/bar → x) | lead MG/SIM(/bar → x) | texUniq MG/SIM | SIM prog L/C/B | ⚠ |');
 L.push('|---|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
   if (r.error) { L.push(`| ${r.style} | ${r.seed} | — | — | — | — | — | — | ❌ ${r.error} |`); continue; }
   const cell = (mg: number, sim: number, mgB: number, simB: number, x: number) => `${mg}/${sim} (${perBar(mg, mgB)}→${perBar(sim, simB)} = ${x}x)`;
-  L.push(`| ${r.style} | ${r.seed} | ${r.mgBars}/${r.simBars} | ${cell(r.mgBass, r.simBass, r.mgBars, r.simBars, r.bassRatioPerBar)} | ${cell(r.mgComp, r.simComp, r.mgBars, r.simBars, r.compRatioPerBar)} | ${cell(r.mgLead, r.simLead, r.mgBars, r.simBars, r.leadRatioPerBar)} | ${r.mgTexUniq} | ${r.programs.simLead}/${r.programs.simComp}/${r.programs.simBass} | ${r.warnings.length ? '⚠ ' + r.warnings.join('; ') : 'ok'} |`);
+  L.push(`| ${r.style} | ${r.seed} | ${r.mgBars}/${r.simBars} | ${cell(r.mgBass, r.simBass, r.mgBars, r.simBars, r.bassRatioPerBar)} | ${cell(r.mgComp, r.simComp, r.mgBars, r.simBars, r.compRatioPerBar)} | ${cell(r.mgLead, r.simLead, r.mgBars, r.simBars, r.leadRatioPerBar)} | ${r.mgTexUniq}/${r.simTexUniq} | ${r.programs.simLead}/${r.programs.simComp}/${r.programs.simBass} | ${r.warnings.length ? '⚠ ' + r.warnings.join('; ') : 'ok'} |`);
 }
 L.push('');
 // —— ACG texturePerBar 详列(§5 要求)——
-L.push('## ACG texturePerBar(MG 逐 bar 织体;SIM 目前段级,待 §4 逐-bar 移植)');
+L.push('## ACG texturePerBar(MG 逐 bar 织体 vs SIM textureSchedule 用到的 case 集)');
 for (const r of rows.filter((x) => x.style === 'acg' && !x.error)) {
-  L.push(`- seed ${r.seed}: MG(${r.mgTexUniq} uniq) = [${r.mgTexList.join(', ')}]`);
+  L.push(`- seed ${r.seed}: MG(${r.mgTexUniq}) = [${uniq(r.mgTexList).join(', ')}] · SIM(${r.simTexUniq}) = [${r.simTexList.join(', ')}]`);
 }
 L.push('');
 const warnRows = rows.filter((r) => r.warnings.length || r.error);

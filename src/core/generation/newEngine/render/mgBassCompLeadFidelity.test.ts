@@ -1,0 +1,74 @@
+import { describe, it, expect } from 'vitest';
+import { generateMusicSync } from '../../musicGeneration/MusicGenerationService';
+import { instrumentInfo } from '../knowledge/instruments';
+
+// ============================================================
+// MG bass/comp/lead fidelity(directive §10.2)—— SIM 侧不变量(不依赖 live ../melodygenerative,任意 CI 可跑)。
+// 跨引擎【密度/织体 vs MG】的实测对比在 scripts/audit-mg-bass-comp-lead-fidelity.ts(§5)。
+// 本测锁:§4 ACG 逐-bar 织体多样性不塌回段级 + lead 近单音 + comp 密度不失控 + 家族合法。
+// ============================================================
+
+const acg = (seed: number) => generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90, key: 'C' });
+const trk = (r: ReturnType<typeof acg>, role: string) => r.ir!.tracks.find((t) => t.role === role);
+const bars = (r: ReturnType<typeof acg>) => r.uiSnapshot.sections.reduce((a, s) => a + s.bars, 0) || 1;
+const texCases = (r: ReturnType<typeof acg>) => ((r.report as { textureCases?: string[] } | undefined)?.textureCases ?? []);
+const maxStackAt = (notes: readonly { startTick: number }[]) => {
+  const by = new Map<number, number>();
+  for (const n of notes) by.set(n.startTick, (by.get(n.startTick) ?? 0) + 1);
+  return Math.max(0, ...by.values());
+};
+
+const SEEDS = [0, 7, 42, 99, 12345];
+
+describe('render/mgBassCompLeadFidelity · §4 ACG 逐-bar 织体多样性', () => {
+  it('ACG textureSchedule 不塌成段级(≥5 种,不再是 2)', () => {
+    for (const seed of SEEDS) {
+      const cases = texCases(acg(seed));
+      expect(cases.length, `seed ${seed} ACG 织体多样性 [${cases.join(',')}]`).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('ACG 织体全部是 ACG 具名手势(comp 消费 MG 织体池)', () => {
+    for (const seed of SEEDS) {
+      for (const tc of texCases(acg(seed))) {
+        expect(tc.startsWith('ACG_') || tc.startsWith('Piano_'), `seed ${seed} 非 ACG 织体 ${tc}`).toBe(true);
+      }
+    }
+  });
+});
+
+describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
+  it('ACG 恒 lead+comp+bass;comp 有音符(硬合同)', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed);
+      const roles = new Set(r.ir!.tracks.map((t) => t.role));
+      expect(roles.has('lead') && roles.has('comp') && roles.has('bass'), `seed ${seed}`).toBe(true);
+      expect(trk(r, 'comp')!.notes.length, `seed ${seed} comp notes`).toBeGreaterThan(0);
+    }
+  });
+
+  it('ACG lead 近单音(任一 onset 同时 ≤2),不塞 comp 织体进 lead', () => {
+    for (const seed of SEEDS) {
+      const lead = trk(acg(seed), 'lead')!;
+      expect(maxStackAt(lead.notes as unknown as { startTick: number }[]), `seed ${seed}`).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('ACG comp 密度不失控(per-bar 有上界,防退化成 generic dense comp)', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed);
+      const compPerBar = trk(r, 'comp')!.notes.length / bars(r);
+      expect(compPerBar, `seed ${seed} comp/bar=${compPerBar.toFixed(1)}`).toBeLessThanOrEqual(16);
+    }
+  });
+
+  it('家族合法:ACG lead/comp=keyboard,bass=bass', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed);
+      for (const role of ['lead', 'comp'] as const) {
+        const t = trk(r, role); if (t) expect(instrumentInfo(t.program).family, `seed ${seed} ${role}`).toBe('keyboard');
+      }
+      const b = trk(r, 'bass'); if (b) expect(instrumentInfo(b.program).family, `seed ${seed} bass`).toBe('bass');
+    }
+  });
+});

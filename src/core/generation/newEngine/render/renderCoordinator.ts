@@ -38,6 +38,7 @@ import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import type { RenderOverlay } from './RenderOverlay';
+import { applyRenderMixBalance } from './renderMixBalance';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -231,7 +232,7 @@ export function renderSongFull(
   // ★ 多声部节奏【中央下发】:纹理 schedule 一次性建好,bass/comp/drum 共享同一 textureCase →
   //   同一时钟对拍/复调(纹理全权,忠实 mg)。需 harmony(dominant-chain)→ 在此协调层算。
   const sectionRoleById = Object.fromEntries(arrangement.sections.map((s) => [s.id, s.role]));
-  const textureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection });
+  const textureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection, grooveContract: arrangement.songGrooveContract });
 
   // ★ 只渲染 lineup 内的角色(编制可变 2–5;lead 必有)
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
@@ -419,7 +420,7 @@ export function renderSongFull(
   }
   // ★ CC64 踏板:POP/LOFI/RNB 的 comp 每和弦踩(音尾 ring 融合);其它风格不踩(清晰)。
   const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase) : undefined;
-  const finalTracks = articulatedTracks.map((t) => {
+  const mixAttachedTracks = articulatedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
     const fallback = instrumentation.roleProgram[t.role] ?? band.roleProgram[t.role]; // ★ 单一真源:器配生效 program
@@ -459,6 +460,12 @@ export function renderSongFull(
       ccEvents,
     };
   });
+  const finalTracks = applyRenderMixBalance(mixAttachedTracks, {
+    style: band.style,
+    ppq: timebase.ppq,
+    durationTicks: resolved.data.durationTicks as number,
+    sectionTicks: sectionTicks.map((s) => s.tick),
+  });
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   // ★ ACG comp 硬合同(acg_comp_track_hard_contract §5.2,fail-closed):ACG 必须有独立 lead + comp(有音符)
   //   两条轨,即便同用 GM0 也不能塌成 lead-only。band 层 hardRequiredRolesForStyle 已保证 comp 入 lineup;
@@ -478,5 +485,5 @@ export function renderSongFull(
     ? denseMelodySpanRanges(applyRepeatGroupReplay(tracks, arrangement, plan.chordTimeline, timebase), plan, timebase)
     : [];
   const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
-  return { ir, audit: { findings: [...audit.findings, ...musicality.findings] } };
+  return { ir, audit: { findings: [...audit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))] } };
 }

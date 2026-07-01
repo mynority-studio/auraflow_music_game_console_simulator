@@ -7,7 +7,7 @@
 // 需 harmony(dominant-chain 检测)→ 放 render 协调层(arranger 权威在 harmony 后实现)。
 // ============================================================
 
-import { phraseCellRole, densityForCell, energyForCell, pickTextureForBar, type TextureStyleName, type SectionLabel } from '../knowledge/textureProfiles';
+import { phraseCellRole, densityForCell, energyForCell, pickTextureForBar, pickAcgTextureForBar, type TextureStyleName, type SectionLabel, type GrooveTextureContract } from '../knowledge/textureProfiles';
 import { hasTextureRenderer } from './textureRenderer';
 import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
@@ -32,11 +32,12 @@ export function buildTextureSchedule(args: {
   style: string;
   sectionRoleById: Record<string, SectionRole>;
   activeSectionIds: Set<string>;
-  textureRng: { pick<T>(xs: readonly T[]): T };
+  textureRng: { next(): number; pick<T>(xs: readonly T[]): T };
   richTextureBySection?: Record<string, string>; // 器配层段级下发(非 LOFI);空 = 逐 span 回退
   richTextureSwitchBySection?: Record<string, { atFraction: number; toTexture: string }>; // 段内受控变化(verse 中段)
+  grooveContract?: GrooveTextureContract; // ★ §4:ACG 逐-bar 织体选择消费 GrooveContract(preferred/allowed/forbidden)
 }): TextureSchedule {
-  const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection, richTextureSwitchBySection } = args;
+  const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection, richTextureSwitchBySection, grooveContract } = args;
   const txStyle = TEXTURE_STYLE[style.toLowerCase()];
   const schedule: TextureSchedule = {};
   if (!txStyle) return schedule;
@@ -51,6 +52,26 @@ export function buildTextureSchedule(args: {
   const idxInSec: Record<string, number> = {};
   const seenSec: Record<string, number> = {};
   timeline.forEach((s) => { idxInSec[s.id] = seenSec[s.sectionId] ?? 0; seenSec[s.sectionId] = (seenSec[s.sectionId] ?? 0) + 1; });
+
+  // ★ ACG(§4):逐-bar 具名手势(忠实 MG pickAcgTextureForBar),不走段级 richTextureBySection。
+  //   barIndex = span 在全 timeline 的位置;func/nextFunc 从 chordFunctionTimeline;prevId/rep 跨 span 追踪。
+  const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
+  if (txStyle === 'ACG') {
+    let acgPrevId: string | undefined; let acgRep = 0;
+    timeline.forEach((span, i) => {
+      if (!activeSectionIds.has(span.sectionId)) return;
+      const label = SECTION_LABEL[sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE';
+      const prof = pickAcgTextureForBar({
+        barIndex: i, totalBars: timeline.length, sectionLabel: label,
+        func: fBar(funcBySpan[span.id]),
+        nextFunc: i + 1 < timeline.length ? fBar(funcBySpan[timeline[i + 1].id]) : null,
+        prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, random: textureRng,
+      });
+      if (prof.id === acgPrevId) acgRep += 1; else { acgPrevId = prof.id; acgRep = 1; }
+      if (hasTextureRenderer(prof.textureCase)) schedule[span.id] = prof.textureCase;
+    });
+    return schedule;
+  }
 
   let prevTex: string | undefined;
   let rep = 0;

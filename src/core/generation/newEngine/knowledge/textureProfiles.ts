@@ -428,6 +428,83 @@ export function pickTextureForBarWithGroove(args: {
 }
 
 // ============================================================
+// ★ ACG 逐-bar 织体选择器(MG bass/comp/lead fidelity directive §4)—— 忠实 port MG pickAcgTextureForBar。
+// ------------------------------------------------------------
+// MG ACG comp 是【逐 bar 换钢琴手势】(每首 6-7 种循环:establish/develop/lift/cadence 相位 + T/S/D 功能 +
+//   loop 边界 + 首句 air + 曲末 → 各有偏好 preferred 列表)。simulator 此前把它折叠成【段级 2 槽】(§3.7 架构差异)
+//   → 听感与 MG 差最大。此函数把 per-bar 逻辑接回:每 span 按上下文选一个具名手势 → comp 逐-bar 呼吸。
+// ============================================================
+
+/** ACG 逐-bar fallback 手势(忠实 MG acgFallbackTextureForRole:loop 边界/功能/相位 → 具名 case)。 */
+function acgFallbackTextureForRole(role: PhraseCellRole, func: 'T' | 'S' | 'D', isLoopBoundary: boolean): string {
+  if (isLoopBoundary) return 'ACG_Suspended_Block_Arrival';
+  if (func === 'D') return 'ACG_Suspended_Block_Arrival';
+  if (func === 'S') return role === 'establish' ? 'ACG_Ostinato_Hook_Pulse' : 'ACG_Quartal_Arp_Wave';
+  if (role === 'establish') return 'ACG_Stride_Cantabile_Ballad';
+  if (role === 'develop') return 'ACG_Open_Broken_10th';
+  if (role === 'lift') return 'ACG_Quartal_Arp_Wave';
+  return 'ACG_Pedal_Wash_Color_Drops';
+}
+
+/** textureCase → TextureProfile(池内查;无则合成 fallback profile,保 render 能弹)。 */
+function acgTextureProfileForCase(textureCase: string, role: PhraseCellRole): TextureProfile {
+  return TEXTURE_POOL.find((t) => t.styles.includes('ACG') && t.textureCase === textureCase) ?? {
+    id: `fallback_${textureCase}`, textureCase, styles: ['ACG'], mood: 'lyrical', phraseRoles: [role],
+    densityRange: [0, 1], energyRange: [0, 1], timing: { chordLateMs: [4, 18], bassLateMs: [-2, 4], velocityHumanize: 0.1 },
+  };
+}
+
+/** MG pickAcgTextureForBar 忠实 port:按 bar 相位 + 和声功能 + loop 边界 + 首句/曲末 选 ACG 具名手势。 */
+export function pickAcgTextureForBar(args: {
+  barIndex: number;
+  totalBars: number;
+  sectionLabel: SectionLabel;
+  func: 'T' | 'S' | 'D';
+  nextFunc: 'T' | 'S' | 'D' | null;
+  prevTextureId?: string;
+  repeatCount: number;
+  contract?: GrooveTextureContract;
+  random: { next(): number; pick<T>(xs: readonly T[]): T };
+}): TextureProfile {
+  const role = phraseCellRole(args.barIndex, args.totalBars);
+  const density = densityForCell(role, args.sectionLabel);
+  const energy = energyForCell(role, args.sectionLabel);
+  const isSongEnd = args.barIndex === args.totalBars - 1;
+  const isLoopBoundary = !isSongEnd && (((args.barIndex + 1) % 4 === 0) || ((args.barIndex + 1) % 8 === 0));
+  const isDominantChain = args.func === 'D' || args.nextFunc === 'D';
+  const firstPhraseAir = args.barIndex === 0 && !isSongEnd;
+
+  const preferred =
+    firstPhraseAir ? ['ACG_Stride_Cantabile_Ballad', 'ACG_Ostinato_Hook_Pulse', 'ACG_Pedal_Wash_Color_Drops', 'ACG_Sakamoto_LH_Arp_RH_Penta', 'Piano_TopVoice_Planing'] :
+    isSongEnd ? ['ACG_Suspended_Block_Arrival', 'ACG_Pedal_Wash_Color_Drops', 'Piano_TopVoice_Planing'] :
+    isLoopBoundary ? ['ACG_Bass_Tremolo_Color', 'ACG_Anthem_Block_Push', 'ACG_Suspended_Block_Arrival', 'ACG_Pedal_Wash_Color_Drops'] :
+    args.func === 'D' ? ['ACG_Suspended_Block_Arrival', 'ACG_Anthem_Block_Push', 'ACG_Open_Broken_10th'] :
+    args.func === 'S' ? ['ACG_Quartal_Arp_Wave', 'ACG_Ostinato_Hook_Pulse', 'ACG_Open_Broken_10th', 'Piano_TopVoice_Planing'] :
+    role === 'establish' ? ['ACG_Stride_Cantabile_Ballad', 'ACG_Ostinato_Hook_Pulse', 'Piano_TopVoice_Planing', 'ACG_Pedal_Wash_Color_Drops', 'ACG_Sakamoto_LH_Arp_RH_Penta'] :
+    role === 'develop' ? ['ACG_Open_Broken_10th', 'ACG_Ostinato_Hook_Pulse', 'ACG_Quartal_Arp_Wave', 'ACG_Sakamoto_LH_Arp_RH_Penta', 'ACG_Stride_Cantabile_Ballad'] :
+    role === 'lift' ? ['ACG_Anthem_Block_Push', 'ACG_Quartal_Arp_Wave', 'ACG_Bass_Tremolo_Color', 'ACG_Open_Broken_10th', 'ACG_Ostinato_Hook_Pulse'] :
+    ['ACG_Suspended_Block_Arrival', 'ACG_Anthem_Block_Push', 'ACG_Bass_Tremolo_Color', 'ACG_Pedal_Wash_Color_Drops'];
+
+  const candidates = preferred
+    .map((tc) => TEXTURE_POOL.find((t) => t.styles.includes('ACG') && t.textureCase === tc))
+    .filter((t): t is TextureProfile => {
+      if (!t) return false;
+      if (!t.phraseRoles.includes(role)) return false;
+      if (density < t.densityRange[0] || density > t.densityRange[1]) return false;
+      if (energy < t.energyRange[0] || energy > t.energyRange[1]) return false;
+      if (t.avoidOnDominantChain && isDominantChain) return false;
+      if (t.id === args.prevTextureId && args.repeatCount >= (t.maxRepeatBars ?? 8)) return false;
+      return true;
+    });
+
+  const groovePicked = args.contract ? pickGrooveTexture(candidates, args.contract as never, args.random) : null;
+  const picked = candidates.length > 0
+    ? (groovePicked ?? args.random.pick(candidates))
+    : pickTextureForBarWithGroove({ style: 'ACG', phraseRole: role, density, energy, isDominantChain, contract: args.contract, prevTextureId: args.prevTextureId, repeatCount: args.repeatCount, random: args.random });
+  return picked ?? acgTextureProfileForCase(acgFallbackTextureForRole(role, args.func, isLoopBoundary), role);
+}
+
+// ============================================================
 // 笼统织体(原 newEngine 引擎自带的 5 种)—— 用户定:搬进 KB 一起保存,
 // 引擎本身不再带织体选择偏好。render 已能弹这 5 种;rich 17 种待 render 升级解析。
 // ============================================================
