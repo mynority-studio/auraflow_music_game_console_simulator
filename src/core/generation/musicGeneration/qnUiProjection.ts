@@ -74,8 +74,9 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
   let cursor = 0;
   const sections: UiSection[] = arrangement.sections.map((s) => {
     const startBeat = cursor;
-    cursor += s.bars * bpb;
-    return { id: String(s.id), role: String(s.role), functionTag: s.functionTag ? String(s.functionTag) : undefined, bars: s.bars, startBeat };
+    const endBeat = cursor + s.bars * bpb; // ★ 段末拍(消费者:AuraBar/AuraJam 段命中/jam 定时;取代旧 GeneratedTrack 内联算)
+    cursor = endBeat;
+    return { id: String(s.id), role: String(s.role), functionTag: s.functionTag ? String(s.functionTag) : undefined, bars: s.bars, startBeat, endBeat };
   });
 
   // chords(harmonic.chordTimeline)

@@ -106,6 +106,20 @@ describe('musicGeneration/MusicGenerationService', () => {
     expect(programs.size, '不同 seed → 音色世界/GM 有多样性').toBeGreaterThanOrEqual(3);
   });
 
+  it('★ uiSnapshot.sections.endBeat = startBeat + bars×拍/小节;首段起 0、段间连续(AuraBar/AuraJam 段命中契约)', async () => {
+    for (const styleHint of ['pop', 'acg', 'jazz']) {
+      const r = await generateMusic({ seed: 3, styleHint, mood: 'build', targetDuration: 90 });
+      const secs = r.uiSnapshot.sections;
+      const bpb = r.uiSnapshot.timeSignature[0];
+      expect(secs.length).toBeGreaterThan(0);
+      expect(secs[0].startBeat).toBe(0);
+      for (let i = 0; i < secs.length; i++) {
+        expect(secs[i].endBeat, `${styleHint} #${i} endBeat`).toBe(secs[i].startBeat + secs[i].bars * bpb);
+        if (i > 0) expect(secs[i].startBeat, `${styleHint} #${i} 连续`).toBe(secs[i - 1].endBeat);
+      }
+    }
+  });
+
   it('★ key/mode 字符串 → Q+N:请求 key="D" → uiSnapshot.key 反映', async () => {
     const r = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, key: 'D', mode: 'minor' });
     expect(r.uiSnapshot.key).toBe('D');

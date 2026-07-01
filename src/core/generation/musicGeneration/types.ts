@@ -50,7 +50,7 @@ export interface MusicGenerationRequest {
 }
 
 // —— UI 结构化投影 ——
-export interface UiSection { id: string; role: string; functionTag?: string; bars: number; startBeat: number; }
+export interface UiSection { id: string; role: string; functionTag?: string; bars: number; startBeat: number; endBeat: number; }
 export interface UiChord { roman: string; label: string; rootPc: number; quality: string; startBeat: number; durationBeats: number; sectionId: string; }
 // roster 行:职能 + Q+N 实际随机音色(只读,不可手选)+ participant 归属 + 是否自动补位。
 export interface UiPlayer {
