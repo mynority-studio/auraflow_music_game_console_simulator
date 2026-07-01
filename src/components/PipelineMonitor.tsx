@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, useDragControls } from 'motion/react';
-import { Activity, Play, Square, X, Dice5, Volume2, VolumeX, Piano } from 'lucide-react';
+import { Activity, Play, Square, X, Dice5, Piano } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
 import { PartName } from '../core/audio/playbackTypes';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
@@ -8,7 +8,6 @@ import { PRNGManager } from '../core/utils/PRNG';
 // MelodyEngine 已删(2026-05-24)
 import { runPipeline } from '../core/generation/pipeline';
 import {
-    ArrangedTrack,
     GeneratedChord,
     SectionMetadata,
     TonalityName,
@@ -762,13 +761,7 @@ export const PipelineMonitor: React.FC = () => {
                             currentSectionIdx={currentSectionIdx}
                             beatsPerBar={ui?.timeSignature?.[0]}
                         />
-                        <Stage5Ensemble
-                            palette={undefined}
-                            roster={undefined}
-                            qnRoster={ui?.roster}
-                            mutedParts={mutedParts}
-                            onToggleMute={togglePartMute}
-                        />
+                        <Stage5Ensemble qnRoster={ui?.roster} />
                     </div>
                 </div>
             </div>
@@ -994,29 +987,13 @@ const EnergyBar: React.FC<{ level: number; active: boolean }> = ({ level, active
 };
 
 interface Stage5Props {
-    palette: ArrangedTrack['palette'] | undefined;
-    roster: import('../core/generation/types').BandRoster | undefined;
     qnRoster?: import('../core/generation/musicGeneration/types').UiPlayer[]; // ★ Q+N ensemble/roster
-    mutedParts: Set<PartName>;
-    onToggleMute: (partName: PartName) => void;
 }
 
 const QN_ROLE_LABEL: Record<string, string> = { lead: 'Lead', comp: 'Comping', bass: 'Bass', pad: 'Atmosphere', drum: 'Drum' };
 const QN_ROLE_COLOR: Record<string, string> = { lead: 'text-emerald-300', comp: 'text-amber-300', bass: 'text-blue-300', pad: 'text-violet-300', drum: 'text-fuchsia-300' };
 
-const ROLE_TO_PALETTE_KEY: Record<InstrumentRole, keyof NonNullable<ArrangedTrack['palette']>> = {
-    melody: 'melodySound',
-    vocal: 'vocalSound',
-    chord: 'chordSound',
-    bass: 'bassSound',
-    drums: 'drumSound',
-    counter: 'counterMelodySound',
-    secondary: 'secondaryMelodySound',
-};
-
-const ALL_ROLES: InstrumentRole[] = ['melody', 'vocal', 'chord', 'bass', 'drums', 'counter', 'secondary'];
-
-const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, qnRoster, mutedParts, onToggleMute }) => {
+const Stage5Ensemble: React.FC<Stage5Props> = ({ qnRoster }) => {
     // ★ Q+N ensemble:有 qnRoster 时直接展示乐手/乐器/状态(取代旧 palette 路径)。
     if (qnRoster && qnRoster.length > 0) {
         return (
@@ -1037,71 +1014,11 @@ const Stage5Ensemble: React.FC<Stage5Props> = ({ palette, roster, qnRoster, mute
             </section>
         );
     }
-    if (!palette) {
-        return (
-            <section className="px-4 pt-4 pb-4">
-                <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
-                <div className="mt-3 text-zinc-600 text-xs">— 未编制 —</div>
-            </section>
-        );
-    }
-    const rosterRows: { label: string; name: string | undefined; color: string }[] = [
-        { label: 'Vocal',   name: roster?.vocal?.name,   color: 'text-pink-300' },
-        { label: 'Lead',    name: roster?.lead?.name,    color: 'text-emerald-300' },
-        { label: 'Comping', name: roster?.comping?.name, color: 'text-amber-300' },
-        { label: 'Bass',    name: roster?.bass?.name,    color: 'text-blue-300' },
-        { label: 'Drum',    name: roster?.drum?.name,    color: 'text-fuchsia-300' },
-    ];
-    const anyRosterFilled = rosterRows.some(r => r.name);
+    // 无 Q+N roster(未生成)→ 空态。旧 palette/roster(BandRoster/ArrangedTrack)编制路径已随旧数据结构删除。
     return (
         <section className="px-4 pt-4 pb-4">
             <StageBadge label="Stage 04: Ensemble" color="rgb(244, 63, 94)" />
-            {anyRosterFilled && (
-                <div className="mt-2 text-[10px] text-zinc-500 leading-relaxed">
-                    {rosterRows.map(r => (
-                        <div key={r.label}>
-                            {r.label}: {r.name
-                                ? <span className={r.color}>{r.name}</span>
-                                : <span className="text-zinc-700">—</span>}
-                        </div>
-                    ))}
-                </div>
-            )}
-            <div className="mt-3 space-y-1">
-                {ALL_ROLES.map((role) => {
-                    const key = ROLE_TO_PALETTE_KEY[role];
-                    const sound = palette[key];
-                    if (!sound) return null;
-                    const partName = ROLE_TO_PART_NAME[role];
-                    const isMuted = mutedParts.has(partName);
-                    return (
-                        <div
-                            key={role}
-                            className={
-                                'flex items-center gap-2 px-2 py-1 rounded text-[11px] ' +
-                                (isMuted ? 'bg-red-900/20 border border-red-500/30'
-                                    : 'border border-transparent')
-                            }
-                        >
-                            <span className="w-14 text-[9px] uppercase tracking-widest text-zinc-500">{role}</span>
-                            <span className={
-                                'flex-1 text-xs truncate ' +
-                                (isMuted ? 'text-zinc-600 line-through' : 'text-zinc-300')
-                            }>{String(sound)}</span>
-                            <button
-                                onClick={() => onToggleMute(partName)}
-                                title={isMuted ? `Unmute ${role}` : `Mute ${role}`}
-                                className={
-                                    'p-0.5 rounded transition-colors shrink-0 ' +
-                                    (isMuted ? 'text-red-400 hover:text-red-300' : 'text-zinc-500 hover:text-zinc-200')
-                                }
-                            >
-                                {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
+            <div className="mt-3 text-zinc-600 text-xs">— 未编制 —</div>
         </section>
     );
 };

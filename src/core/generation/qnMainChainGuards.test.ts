@@ -73,6 +73,12 @@ describe('generation/qnMainChainGuards — 静态边界(§4)', () => {
     const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8');
     expect(app).not.toContain('NewEnginePanel');
   });
+
+  it('产品路径不 import 已删除的旧数据结构(GeneratedTrack/ArrangedTrack/MusicContext)/旧播放壳(PlaybackEngine/MidiConverter/AbsoluteTransposer)', () => {
+    const forbidden = /import[^;]*\b(GeneratedTrack|ArrangedTrack|MusicContext)\b|from\s+['"][^'"]*(PlaybackEngine|MidiConverter|AbsoluteTransposer)['"]/;
+    const hits = sources.filter((s) => forbidden.test(s.live)).map((s) => s.path);
+    expect(hits, `旧数据结构/播放壳 import 命中:${hits.join(', ')}`).toEqual([]);
+  });
 });
 
 describe('generation/qnMainChainGuards — Band Selection 行为(§4)', () => {

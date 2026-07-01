@@ -5,9 +5,9 @@ import { StyleId } from './config/StyleFlags';
 // CONSTITUTION CHAPTER I — 核心 IR 类型已迁移至 ./ir/index.ts。
 // 此处保留 re-export 以兼容现有 callsite。新代码请直接从 './ir' 导入。
 // 同时 import 以保证 types.ts 内部其他 interface（GeneratedTrack/ArrangedTrack 等）可继续引用。
-import type { NoteData, GeneratedChord, SectionMetadata, MusicContext, VoicedPitch } from './ir';
+import type { NoteData, GeneratedChord, SectionMetadata, VoicedPitch } from './ir';
 import { VoiceRole } from './ir';
-export type { NoteData, GeneratedChord, SectionMetadata, MusicContext, VoicedPitch };
+export type { NoteData, GeneratedChord, SectionMetadata, VoicedPitch };
 export { VoiceRole };
 
 // --- Phase 1 & 2: Decoupled Foundation & Macro Brain ---
@@ -598,30 +598,8 @@ export interface BandPlan {
     activeMusicians: ActiveMusician[];
 }
 
-export interface GeneratedTrack {
-    chords: GeneratedChord[]; vocal?: NoteData[]; melody: NoteData[]; counterMelody?: NoteData[]; drums?: NoteData[]; bpm: number; key: string;
-    keyOffset: number; tonality: Tonality; timeSignature: [number, number]; sections: SectionMetadata[];
-    blockIndex: number; absoluteStartBeat: number; hasIntro: boolean;
-    preSelectedPalette?: EnsembleDraft;
-    globalRiff?: NoteData[]; // 全局核心 Riff (Option A)
-    processedUserMotif?: NoteData[];
-    motifRole?: 'Foreground' | 'Middleground' | 'Background';
-    /** Comping / 伴奏织体轨（Accomp BandRole 输出）— Pitch Space: RELATIVE。
-     *  AbsoluteTransposer 直接透传到 ArrangedTrack.accomp,加 keyOffset 后送 MIDI ch2。
-     *  2026-05-21 起不再按 pitch<48 切分 LH/RH(钢琴一个乐器,无所谓几只手弹)。 */
-    accompaniment?: NoteData[];
-    /** 低音轨（Bass BandRole 输出）— Pitch Space: RELATIVE。
-     *  AbsoluteTransposer 透传到 ArrangedTrack.bass,加 keyOffset 后送 MIDI ch3。 */
-    bass?: NoteData[];
-    /** 氛围轨（Atmosphere BandRole 输出）— Pitch Space: RELATIVE。
-     *  Pad / Strings / Choir 长音铺底,AbsoluteTransposer 映射到 ArrangedTrack.atmosphere。 */
-    atmosphere?: NoteData[];
-    /**
-     * @deprecated 2026-05-21 Channel 重构后弃用。
-     *   原本控制 AbsoluteTransposer 是否按 pitch<48 切 pianoLH/RH。
-     *   2026-05-24 删 MG audio + LH/RH 通道后字段已无消费者。
-     */
-}
+// ★ 旧 GeneratedTrack(RELATIVE 空间旧引擎成曲结构)已删除 —— Q+N 主链路用 MusicalIR + uiSnapshot,
+//   app 播放视图用 musicGeneration/playbackView.PlaybackSong。
 
 export type InstrumentRole =
     | 'melody'
@@ -674,42 +652,7 @@ export interface TempoCurve {
     curveType: 'linear' | 'exponential';
 }
 
-export interface ArrangedTrack {
-    bpm: number; key: string; absoluteStartBeat: number; timeSignature?: [number, number];
-    styleId?: StyleId;
-    /** 主奏轨(MainInst BandRole) — MidiConverter 路由到 CHANNEL_MAIN_INST (ch1) */
-    melody: NoteData[];
-    vocal?: NoteData[]; secondaryMelody?: NoteData[]; counterMelody?: NoteData[]; userMotif?: NoteData[];
-    /** 伴奏轨(Accomp BandRole) — MidiConverter 路由到 CHANNEL_ACCOMP (ch2)
-     *  2026-05-21 Channel 重构:原 pianoRH+pianoLH 合并为单通道。
-     *  钢琴一个乐器,无所谓几只手弹,音色在和声色彩里。 */
-    accomp?: NoteData[];
-    /** 低音轨(Bass BandRole) — MidiConverter 路由到 CHANNEL_BASS (ch3)
-     *  通用 bass 通道(原 electricBass 重命名),GM program 由 musician.instrumentFamily 决定。 */
-    bass?: NoteData[];
-    /** 氛围轨(Atmosphere BandRole) — MidiConverter 路由到 CHANNEL_ATMOSPHERE (ch4) */
-    atmosphere?: NoteData[];
-    /** 鼓组(Drums BandRole) — Channel 9 GM Drum Map 硬路由 */
-    drums?: NoteData[];
-    palette?: EnsembleDraft;
-    sections?: SectionMetadata[];
-    globalRiff?: NoteData[];
-    chords?: GeneratedChord[];
-    tempoCurves?: TempoCurve[];
-    introFilterSweep?: boolean;
-    /**
-     * 动态 GM 程式覆盖(0~127)。每个 key 对应 MidiConverter 一个 channel。
-     * AbsoluteTransposer 从 context.gmProgramOverrides 透传过来。
-     * 2026-05-21 字段:melody/accomp/bass/atmosphere/drums(原 pianoLH/RH/electricBass 已删)。
-     */
-    gmProgramOverrides?: {
-        melody?: number;
-        accomp?: number;
-        bass?: number;
-        atmosphere?: number;
-        drums?: number;
-    };
-}
+// ★ 旧 ArrangedTrack(ABSOLUTE 空间旧引擎播放结构,MidiConverter 消费)已删除 —— Q+N 用 MusicalIR + musicalIrToMidi。
 
 // ============================================================
 // 数值枚举 & 查找表（Phase 1 cherry-pick：类型安全基础设施）

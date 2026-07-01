@@ -192,25 +192,4 @@ export interface SectionMetadata {
     contour?: ContourSpec;
 }
 
-export interface MusicContext {
-    keyOffset: number;
-    tonality: Tonality;
-    bpm: number;
-    timeSignature: [number, number];
-    grooveDNA: number[];
-    ensemble?: EnsembleDraft;
-    style?: StyleConfig;
-    /** 5 槽位实际就位的乐手数组（缺槽 = 不在数组里）— AbsoluteTransposer 按 role 过滤生成轨 */
-    band?: Musician[];
-    /**
-     * B3：动态 GM 程式覆盖（0~127），由 runPipeline 根据 forcedGmPrograms + musician.gmProgramOverride + defaultSound 计算。
-     * AbsoluteTransposer 透传到 ArrangedTrack.gmProgramOverrides，再由 MidiConverter 消费。
-     */
-    gmProgramOverrides?: {
-        melody?: number;
-        accomp?: number;
-        bass?: number;
-        atmosphere?: number;
-        drums?: number;
-    };
-}
+// ★ 旧 MusicContext(旧引擎运行时上下文,MidiConverter/AbsoluteTransposer 消费)已删除 —— Q+N 用 MusicGenerationRequest/Result。
