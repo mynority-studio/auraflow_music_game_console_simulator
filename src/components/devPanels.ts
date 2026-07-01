@@ -10,16 +10,15 @@
 //   state   : 面板 visible 变化(键盘组合键也算)→ 广播 → DevDock 同步高亮
 //   request : DevDock 挂载时请求一次 → 面板各自回报当前 state(解决挂载竞态)
 //
-// Q+N 诊断面板已从产品 UI 收口到 Q+H 音乐生成链路;DevDock 不再暴露第二个可播放入口。
-// (2026-06-12:Q+I 即兴沙盒 / Q+E 调音台 功能模块已删除。)
+// 诊断能力已从旧 Q+N NewEnginePanel 收口到 Q+H 音乐生成链路(含 Debug 区);旧诊断面板已退役删除。
+// (2026-06-12:Q+I 即兴沙盒 / Q+E 调音台 功能模块已删除。2026-07-01:Q+N 'newengine' 通道随面板删除。)
 // ============================================================
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Activity, Hand, Piano } from 'lucide-react';
 
-// `newengine` 保留为历史/内部诊断通道类型,但不进入 DEV_PANELS,也不在 App 默认挂载。
-export type DevPanelId = 'pipeline' | 'newengine' | 'motif' | 'takeover';
+export type DevPanelId = 'pipeline' | 'motif' | 'takeover';
 
 export interface DevPanelMeta {
     id: DevPanelId;

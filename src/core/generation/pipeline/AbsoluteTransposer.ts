@@ -57,6 +57,10 @@ export class AbsoluteTransposerError extends Error {
     }
 }
 
+/**
+ * @deprecated Legacy 兼容壳:仅旧 mg 主链路播放(AudioEngine.playSong)使用。Q+N 主链路不经此转置
+ * (MusicalIR 直接携带 ABSOLUTE pitch,走 musicalIrToMidi)。正式 app 路径已不调用;后续 legacy 壳清理 phase 移除。
+ */
 export class AbsoluteTransposer {
     /**
      * Pitch Space: ABSOLUTE（输出）

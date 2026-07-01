@@ -129,6 +129,11 @@ class AudioEngineSystem {
 
     public getCurrentMusicGeneration(): MusicGenerationResult | null { return this.currentMusicGeneration; }
 
+    /**
+     * @deprecated Legacy 兼容壳(旧 mg 主链路播放,基于 GeneratedTrack + AbsoluteTransposer + PlaybackEngine)。
+     * Q+N 主链路正式播放走 {@link playMusicGeneration}(MusicalIR 音频合同)。正式 app 路径已不调用本方法
+     * (qnMainChainGuards.test 锁死);保留仅为过渡兼容,后续 legacy 壳清理 phase 移除。
+     */
     public async playSong(
         initialTrack: GeneratedTrack,
         styleId: StyleId,
