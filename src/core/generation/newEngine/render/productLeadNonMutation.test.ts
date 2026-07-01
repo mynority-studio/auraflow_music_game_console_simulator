@@ -55,7 +55,9 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
       const raw = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
-      const replayed = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0];
+      // ★ ACG(P0-2 mg fidelity):生产跳过 fillLeadBarGaps(保 MG 空旷呼吸感)→ 预期也跳过。
+      const filledRaw = band.style.toLowerCase() === 'acg' ? [raw] : fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
+      const replayed = applyRepeatGroupReplay(filledRaw, arr, plan.chordTimeline, tb)[0];
       // ★ Phase D(directive 3.2,推翻零洗牌):真 GrooveContract 的 ms melody-pocket 由 applyGroovePocket 在
       //   humanizeTiming(lead 本就跳)之后落地 → lead onset lay-back。legacy pocket=0 时 no-op(零洗牌兼容)。
       const pocketed = applyGroovePocket([replayed], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0];

@@ -42,7 +42,8 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       //   = production lead 的预期。lead 不 humanize;legato 只改 duration;sanitize 只裁同 pitch collision(无 overlap 时
       //   为 no-op)→ 多数 seed 仍逐字节相等,仅含同 pitch overlap 的 seed(raw MG 自身重叠)被安全闸裁短(directive
       //   q_n_final_lead_sanitizer 2026-06-23)。
-      const filled = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
+      // ★ ACG(P0-2 mg fidelity):生产跳过 fillLeadBarGaps(保 MG 空旷 lead 呼吸感)→ 预期也跳过。
+      const filled = band.style.toLowerCase() === 'acg' ? [raw] : fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
       const replayed = applyRepeatGroupReplay(filled, arr, plan.chordTimeline, tb)[0];
       // ★ Phase D(directive 3.2):真 GrooveContract 的 ms melody-pocket → applyGroovePocket lay-back(humanizeTiming 之后)。
       const pocketed = applyGroovePocket([replayed], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0];

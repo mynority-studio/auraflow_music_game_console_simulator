@@ -349,7 +349,12 @@ export function renderSongFull(
   // ★ lead 空拍补全(2026-06-11,用户):末音后若有【很大空拍】(≥2拍且本 bar 余下全空)→ 延长该末音到 bar 末
   //   (钳位当前和弦,不越界撞下一和弦)。避免"和弦未完成戛然而止"。只动 lead 时值,不碰 onset/其它轨。
   //   ★ 放在 repeatGroup 重放【之前】→ 重放复制【已补全】的首段 body → 重复段 lead 仍逐字节一致。
-  const gapFilledTracks = fillLeadBarGaps(ledTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
+  // ★ ACG 跳过 fillLeadBarGaps(P0-2,mg fidelity 审计):MG ACG lead 故意留长 silence(cantabile 呼吸感);
+  //   fillLeadBarGaps(为 POP 断句选的"末音后大空拍→延到 bar 末")会填满 → 抹掉 MG 呼吸感。ACG 保 MG raw 空拍。
+  //   (repeatGroupReplay/sanitizeLead 仍走;groovePocket 暂留,待再测。)
+  const gapFilledTracks = band.style.toLowerCase() === 'acg'
+    ? ledTracks
+    : fillLeadBarGaps(ledTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
 
   // ★ repeatGroup 重放(2026-06-11):同 group 后续段(verse2/chorus2…)复用首段【和声一致前缀(body)】,
   //   保留各自【发散尾巴(link bar)】。放在 humanize 之前 → body 同音符,humanize/swing 各段跑出自然微差
