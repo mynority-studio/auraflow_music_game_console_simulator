@@ -22,6 +22,8 @@ export interface PlaybackSong {
   bpm: number;
   key: string;
   styleHint: string;
+  tonality: string;            // uiSnapshot.tonality('major'/'minor'/调式名);melody-jam 备用
+  keyOffset: number;           // Q+N 音高为绝对空间 → 恒 0(取代旧投影硬编码 keyOffset)
   timeSignature: [number, number];
   sections: PlaybackSection[];
 }
@@ -33,6 +35,8 @@ export function toPlaybackSong(result: MusicGenerationResult): PlaybackSong {
     bpm: result.bpm,
     key: ui.key,
     styleHint: result.styleHint,
+    tonality: ui.tonality,
+    keyOffset: 0,
     timeSignature: ui.timeSignature,
     sections: ui.sections.map((s) => ({ name: s.role, startBeat: s.startBeat, endBeat: s.endBeat })),
   };

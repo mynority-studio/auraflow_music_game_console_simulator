@@ -1,12 +1,12 @@
 import { AudioEngine } from '../../core/audio/AudioEngine';
 import { StyleId } from '../../core/generation/config/StyleFlags';
 import { GlobalContext } from '../../core/generation/GlobalContext';
-import { GeneratedTrack, StyleConfig, MusicContext } from '../../core/generation/types';
 import { globalMidiScheduler } from '../../core/audio/MidiScheduler';
 // ★ Q+N 主链路(qn_main_engine_takeover §9):AuraBar 走 MusicGenerationService + AudioEngine.playMusicGeneration,
-//   不再直接调 sandbox audioOut / traceGeneration。
+//   不再直接调 sandbox audioOut / traceGeneration。播放视图走 Q+N PlaybackSong(不再假 GeneratedTrack)。
 import { generateMusic } from '../../core/generation/musicGeneration/MusicGenerationService';
 import type { MusicGenerationResult } from '../../core/generation/musicGeneration/types';
+import { toPlaybackSong, type PlaybackSong } from '../../core/generation/musicGeneration/playbackView';
 
 export type AppState = 'IDLE' | 'GENERATING' | 'PLAYING' | 'PREPARING_JAM' | 'JAMMING_DRUMS' | 'JAMMING_MELODY';
 
@@ -25,8 +25,7 @@ export class EndlessRadioManager {
   private generationId: number = 0;
 
   public currentStyleHint?: string;
-  public currentTrack?: GeneratedTrack;  // 旧引擎 jam 用(本期 jam 禁用 → 常 undefined)
-  public currentStyle?: StyleConfig;
+  public currentSong?: PlaybackSong;  // ★ Q+N 播放视图(段/bpm/key/拍号);取代旧 GeneratedTrack + StyleConfig 兼容投影
 
   private stateChangeCallback?: (state: AppState) => void;
   public onStyleChange?: (styleName: string) => void;
@@ -73,15 +72,8 @@ export class EndlessRadioManager {
   private jamCheckInterval: any = null;
 
   public getCurrentChord(): any {
-    if (!this.currentTrack || !this.currentTrack.chords) return null;
-    const currentTick = AudioEngine.getCurrentTick();
-    const ppq = AudioEngine.getPpq();
-    const currentBeat = currentTick / ppq;
-    for (const chord of this.currentTrack.chords) {
-        if (currentBeat >= chord.startBeat && currentBeat < chord.endBeat) {
-            return chord;
-        }
-    }
+    // 旧兼容投影从不填 chords → 本方法历来恒返回 null(和弦显示当前惰性)。
+    // 迁移保持此行为;如需启用,可从 currentMusicGeneration.uiSnapshot.chords 派生(单独决策)。
     return null;
   }
 
@@ -102,7 +94,7 @@ export class EndlessRadioManager {
   }
 
   public prepareJam(type: 'drums' | 'melody') {
-    if (this.state !== 'PLAYING' || !this.currentTrack || !this.currentStyle) return;
+    if (this.state !== 'PLAYING' || !this.currentSong) return;
     
     this.setState('PREPARING_JAM');
 
@@ -161,7 +153,7 @@ export class EndlessRadioManager {
 
         if (type === 'drums') {
             // 2. Generate Closed Hi-Hat (42) events from jamStartTick to the end of the song
-            const lastSection = this.currentTrack.sections[this.currentTrack.sections.length - 1];
+            const lastSection = this.currentSong.sections[this.currentSong.sections.length - 1];
             const totalTicks = lastSection ? lastSection.endBeat * ppq : 0;
             const hihatEvents: any[] = [];
             
@@ -257,7 +249,7 @@ export class EndlessRadioManager {
   }
 
   private applyUserDrumLoop() {
-      if (!this.currentTrack || !this.currentStyle) return;
+      if (!this.currentSong) return;
 
       const currentTick = AudioEngine.getCurrentTick();
 
@@ -278,7 +270,7 @@ export class EndlessRadioManager {
       }
 
       const ppq = AudioEngine.getPpq();
-      const lastSection = this.currentTrack.sections[this.currentTrack.sections.length - 1];
+      const lastSection = this.currentSong.sections[this.currentSong.sections.length - 1];
       const totalTicks = lastSection ? lastSection.endBeat * ppq : 0;
 
       console.log(`[Jam Mode] applyUserDrumLoop: currentTick=${currentTick}, jamStartTick=${this.jamStartTick}, jamLengthTicks=${this.jamLengthTicks}, totalTicks=${totalTicks}, validPatternLength=${validPattern.length}`);
@@ -297,12 +289,12 @@ export class EndlessRadioManager {
           const currentBeat = tick / ppq;
           
           // Find the current section to apply dynamic adaptation
-          const section = this.currentTrack.sections.find(s => currentBeat >= s.startBeat && currentBeat < s.endBeat) || this.currentTrack.sections[0];
+          const section = this.currentSong.sections.find(s => currentBeat >= s.startBeat && currentBeat < s.endBeat) || this.currentSong.sections[0];
           
           const isBuild = section.name.toLowerCase().includes('build');
 
           // 1. Add crash at the start of high energy sections
-          for (const s of this.currentTrack.sections) {
+          for (const s of this.currentSong.sections) {
               const isChorusSection = s.energyLevel >= 8 || s.name.toLowerCase().includes('chorus');
               if (isChorusSection) {
                   const sectionStartTick = s.startBeat * ppq;
@@ -327,7 +319,7 @@ export class EndlessRadioManager {
               if (hitTick >= totalTicks) continue;
 
               const hitBeat = hitTick / ppq;
-              const hitSection = this.currentTrack.sections.find(s => hitBeat >= s.startBeat && hitBeat < s.endBeat) || this.currentTrack.sections[0];
+              const hitSection = this.currentSong.sections.find(s => hitBeat >= s.startBeat && hitBeat < s.endBeat) || this.currentSong.sections[0];
               const hitIsBreakdown = hitSection.energyLevel < 5;
               const hitIsChorus = hitSection.energyLevel >= 8 || hitSection.name.toLowerCase().includes('chorus');
               const hitIsBuild = hitSection.name.toLowerCase().includes('build');
@@ -418,18 +410,10 @@ export class EndlessRadioManager {
       this.onStyleChange(styleName);
     }
 
-    // ★ Jam 兼容投影(P2 修复):从 uiSnapshot 构 currentTrack(带 sections,prepareJam 定时用)+ currentStyle(guard 用),
-    //   否则长按 Jam → prepareJam 直接 return(currentTrack/currentStyle 空)。
-    const tsBpb = result.uiSnapshot.timeSignature[0] || 4;
-    this.currentTrack = {
-      bpm: result.bpm, key: result.uiSnapshot.key, keyOffset: 0, absoluteStartBeat: 0,
-      melody: [], chords: [], blockIndex: 0, hasIntro: false,
-      timeSignature: result.uiSnapshot.timeSignature,
-      sections: result.uiSnapshot.sections.map((s) => ({ name: s.role, startBeat: s.startBeat, endBeat: s.startBeat + s.bars * tsBpb })),
-    } as unknown as GeneratedTrack;
-    this.currentStyle = { id: StyleId.ModernPop } as unknown as StyleConfig;
+    // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot;不再假 GeneratedTrack/StyleConfig。
+    this.currentSong = toPlaybackSong(result);
 
-    // ★ Q+N 正式播放:走 AudioEngine.playMusicGeneration(保 currentArrangedTrack/Context + uiSnapshot + 视觉)。
+    // ★ Q+N 正式播放:走 AudioEngine.playMusicGeneration(MusicalIR + uiSnapshot + 视觉)。
     await AudioEngine.playMusicGeneration(result);
 
     if (genId !== this.generationId) return;

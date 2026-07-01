@@ -266,7 +266,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
             }
             return; // Skip other interactions unconditionally
         } else if (appState === 'JAMMING_MELODY') {
-            const track = managerRef.current?.currentTrack;
+            const track = managerRef.current?.currentSong;
             if (track) {
                 let idx = -1;
                 if (r === 2) idx = c;
@@ -296,7 +296,7 @@ export function AuraBar({ activeKeys, onExit }: AuraBarProps) {
                             const state = arpStateRef.current;
                             if (state.heldIndices.size === 0) return;
 
-                            const track = managerRef.current?.currentTrack;
+                            const track = managerRef.current?.currentSong;
                             if (!track) return;
 
                             const chord = managerRef.current?.getCurrentChord();
