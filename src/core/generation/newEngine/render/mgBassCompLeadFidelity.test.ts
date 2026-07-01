@@ -94,12 +94,12 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('★ P1b lead 音域上浮到 MG soprano(均值≥72,几乎无 <69)', () => {
+  it('★ P1b/P3 lead 音域上浮到 MG soprano(均值≥72;<69 少数 = apex-less bar 未 tuck,MG-faithful)', () => {
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
     for (const seed of SEEDS) {
       const ps = trk(acg(seed), 'lead')!.notes.map((n) => n.pitch as number);
-      expect(mean(ps), `seed ${seed} lead mean`).toBeGreaterThanOrEqual(72);
-      expect(ps.filter((p) => p < 69).length / ps.length, `seed ${seed} <69 占比`).toBeLessThan(0.05);
+      expect(mean(ps), `seed ${seed} lead mean`).toBeGreaterThanOrEqual(72); // MG core 69-76
+      expect(ps.filter((p) => p < 69).length / ps.length, `seed ${seed} <69 占比`).toBeLessThan(0.05); // 无条件上浮
     }
   });
 

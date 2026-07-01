@@ -21,8 +21,6 @@ import { applyGroovePocket } from './groovePocket';
 import { fillLeadBarGaps } from './leadGapFill';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
-import { normalizeAcgDynamics } from './acgDynamics';
-import { tuckAcgLeadRegister } from './acgLeadShape';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { auditMusicality } from './musicalityAuditor';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
@@ -47,8 +45,9 @@ const leadOf = (ir: MusicalIR) => ir.tracks.find((t) => t.role === 'lead')!;
 const SAN = { gapTicks: 1, minDurTicks: 1 };
 const snap = (ir: MusicalIR) => JSON.stringify(ir.tracks.map((t) => ({ role: t.role, n: t.notes.map((x) => [x.pitch, x.startTick as number, x.durationTicks as number, x.velocity]) })));
 
-// ★ ACG fidelity directive §2.3/§4(2026-06-28):补 ACG seed(此前 MATRIX 无 ACG → ACG retry 不变性/final lead 未锁)。
-const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz'], [7, 'acg'], [42, 'acg']];
+// ★ ACG 已退出 byte-parity(2026-07-02 Phase3):ACG lead 走专属 shapeTopVoicePianoTouch 塑形,不 == raw MG →
+//   改由 mgBassCompLeadFidelity.test 音乐不变量锁。本 MATRIX 只留 MG-grammar-backed 无 ACG 专属塑形的风格。
+const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
 
 describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
   // ① production lead === raw MG lead 经 repeatGroup 重放(audit/swing/dynamics/humanize/ending 全不改 lead;
@@ -57,10 +56,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
       const rawGen = renderMgMelody(plan, band, tb, seed, instr.roleProgram?.lead, arr.songGrooveContract);
-      // ★ ACG(P1b):生产链头对 MG lead 做音域上浮(tuckAcgLeadRegister)→ 预期也上浮。
-      const raw = band.style.toLowerCase() === 'acg' ? tuckAcgLeadRegister(rawGen) : rawGen;
-      // ★ ACG(P0-2 mg fidelity):生产跳过 fillLeadBarGaps(保 MG 空旷呼吸感)→ 预期也跳过。
-      const filledRaw = band.style.toLowerCase() === 'acg' ? [raw] : fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
+      const raw = rawGen;
+      const filledRaw = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
       const replayed = applyRepeatGroupReplay(filledRaw, arr, plan.chordTimeline, tb)[0];
       // ★ Phase D(directive 3.2,推翻零洗牌):真 GrooveContract 的 ms melody-pocket 由 applyGroovePocket 在
       //   humanizeTiming(lead 本就跳)之后落地 → lead onset lay-back。legacy pocket=0 时 no-op(零洗牌兼容)。
@@ -71,10 +68,7 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
       const preSan = { ...pocketed, notes: sanitizeLeadNoteIR(pocketed.notes, SAN) };
       const legato = lo.enabled ? { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, lo) } : preSan;
       const sanitizedExp = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
-      // ★ ACG(P1 mg fidelity):生产末步 normalizeAcgDynamics 归一 lead velocity(86)→ 预期也归一。
-      const expected = band.style.toLowerCase() === 'acg'
-        ? normalizeAcgDynamics([sanitizedExp], beatsPerBarOf(arr.meter) * tb.ppq)[0]
-        : sanitizedExp;
+      const expected = sanitizedExp;
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
       expect(final.notes.length, `${seed}/${style} lead count`).toBe(expected.notes.length);
       expect(ev(final.notes as never), `${seed}/${style} lead events`).toBe(ev(expected.notes as never));

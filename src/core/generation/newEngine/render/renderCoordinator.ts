@@ -38,7 +38,7 @@ import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
-import { tuckAcgLeadRegister } from './acgLeadShape';
+import { tuckAcgLead } from './acgLeadShape';
 import { shapeAcgComp } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
@@ -300,12 +300,10 @@ export function renderSongFull(
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
   // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
-  // ★ ACG(P1b):MG 生成的 lead 音域上浮(tuckAcgLeadRegister,忠实 MG tuck 的 register-lift 部分)→ 电影钢琴高位歌唱。
-  //   只 MG 链 lead(override=走 A 权威 hand-played,不动);早于 fill/replay 链头(镜像 MG 早 tuck)。
-  const mgLead = overrideLeadTrack
+  //   ★ ACG lead 落点塑形(tuckAcgLead)在 late 阶段做(需 comp apex),不在此处。
+  tracks.push(overrideLeadTrack
     ? { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead }
-    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
-  tracks.push(!overrideLeadTrack && band.style.toLowerCase() === 'acg' ? tuckAcgLeadRegister(mgLead) : mgLead);
+    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract)); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
@@ -427,14 +425,20 @@ export function renderSongFull(
     ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
     : preSanitized;
   const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
-  // ★ ACG melody-first cantabile shaping(P2 + P1,忠实 MG 末段 shaping 顺序)。只 ACG,lead 已 tuck。
-  //   ① shapeAcgComp:inner voice(旋律下方软歌唱内声部)→ carve(comp 高位色音让旋律)→ floor(稀疏 bar 补低位托底)。
-  //   ② normalizeAcgDynamics:每-bar 三轨力度归一(lead86/comp29-32/bass37)= ACG 力度最终权威。
+  // ★ ACG piano touch(late,忠实 MG shapeTopVoicePianoTouch 顺序:tuck → shape comp → normalize)。只 ACG。
+  //   ① tuckAcgLead:旋律落点重定位到 comp 琶音 apex 之后 + 音域上浮 + 瘦身(结构落点歌唱句)。
+  //   ② shapeAcgComp:inner voice(旋律下方软歌唱内声部)→ carve(comp 高位色音让旋律)→ floor(稀疏 bar 补低位托底)。
+  //   ③ normalizeAcgDynamics:每-bar 三轨力度归一(lead86/comp29-32/bass37)= ACG 力度最终权威。
   const isAcg = band.style.toLowerCase() === 'acg';
   const acgBarTicks = beatsPerBarOf(arrangement.meter) * timebase.ppq;
-  const acgLead = isAcg ? articulatedTracks.find((t) => t.role === 'lead') : undefined;
-  const carvedTracks = isAcg && acgLead
-    ? articulatedTracks.map((t) => (t.role === 'comp' ? shapeAcgComp(t, acgLead, plan.chordTimeline, acgBarTicks, timebase.ppq, arrangement.tempoBpm, rng.seed) : t))
+  const acgLead0 = isAcg ? articulatedTracks.find((t) => t.role === 'lead') : undefined;
+  const acgComp0 = isAcg ? articulatedTracks.find((t) => t.role === 'comp') : undefined;
+  //   走 A override lead 自带权威 hand-played timing → 不 tuck。
+  const acgLead = acgLead0 && acgComp0 && !overrideLeadTrack
+    ? tuckAcgLead(acgLead0, acgComp0, acgBarTicks, timebase.ppq, arrangement.tempoBpm)
+    : acgLead0;
+  const carvedTracks = isAcg && acgLead && acgComp0
+    ? articulatedTracks.map((t) => (t.role === 'lead' ? acgLead : t.role === 'comp' ? shapeAcgComp(acgComp0, acgLead, plan.chordTimeline, acgBarTicks, timebase.ppq, arrangement.tempoBpm, rng.seed) : t))
     : articulatedTracks;
   const balancedTracks = isAcg ? normalizeAcgDynamics(carvedTracks, acgBarTicks) : carvedTracks;
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
