@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AudioEngine, getAudioContext } from '../../core/audio/AudioEngine';
 import { JamSessionManager, JamAppState } from './JamSessionManager';
 import { ScaleEngine, ScaleState } from './ScaleEngine';

@@ -24,7 +24,7 @@ const CC_CHORUS = 93;     // ★ ESP32 混音:合唱/宽度(电钢/pad 厚度)
 const CC_EXPRESSION = 11; // ★ ESP32 混音:表情(静态,可选)
 const CC_SUSTAIN = 64;
 
-// bass=3 / comp=2 / lead=1 / pad=4 / drum=9(对齐 audio/MidiConverter 通道约定)
+// bass=3 / comp=2 / lead=1 / pad=4 / drum=9(本文件即 Q+N 唯一通道约定真源)
 // ★ 混音【适中均衡】(2026-06-05):lead 不再突出,与伴奏平均坐在一起(单一方案,不分风格)。
 //   CC7 推子压平 spread;comp 偏高补它较低的 velocity → lead/bass/comp 有效响度接近;pad 抬起(原太埋)。
 //   有效响度 ≈ CC7 × velocity:lead vel 高(90)→ CC7 拉低;comp vel 低(~67)→ CC7 拉高 → 二者打平。

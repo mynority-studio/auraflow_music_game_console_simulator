@@ -381,7 +381,7 @@ export interface Musician {
     defaultSound: string;         // 默认挂载的 GM 音色名（如 'Acoustic_Grand'）
     /**
      * B3：可选 GM 程式号显式覆盖（0~127）。
-     * 设置时优先于 defaultSound → GM 的查表映射；UI 端 forcedGmPrograms 又会进一步覆盖此字段。
+     * 设置时优先于 defaultSound → GM 的查表映射。（旧 UI forcedGmPrograms 覆盖路径已随 participant 化删除。）
      * 主要用例：同一 musician card 在不同曲风下挂不同音色（暂未启用，预留）。
      */
     gmProgramOverride?: number;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, useDragControls } from 'motion/react';
 import { Activity, Play, Square, X, Dice5, Piano, Volume2, VolumeX } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
@@ -20,7 +20,7 @@ import {
 import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationKeyStore, MUSIC_GEN_KEY_OPTIONS, type MusicGenKey } from '../state/MusicGenerationKeyStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
-import type { MusicGenerationResult, QnRole, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
+import type { MusicGenerationResult, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
 import { QnBandSelectionStore, QN_PARTICIPANT_ORDER, QN_PARTICIPANT_LABEL } from '../state/QnBandSelectionStore';
 import { useDevPanelChannel } from './devPanels';
 import { traceGeneration, type TraceSection } from '../core/generation/newEngine/generation';
@@ -73,11 +73,6 @@ const ROLE_TO_PART_NAME: Record<InstrumentRole, PartName> = {
     secondary: 'secondaryMelody',
 };
 
-function chordToAbsoluteName(chord: GeneratedChord): string {
-    const offset = chord.keyOffset ?? 0;
-    const absRoot = ((chord.root + offset) % 12 + 12) % 12;
-    return KEY_NAMES[absRoot] + (QUALITY_SUFFIX[chord.quality] ?? '');
-}
 
 /** 完整和声色彩名 — root + quality + extensions + bass override(如 Dadd9/F#)*/
 function chordToFullName(chord: GeneratedChord): string {
@@ -378,7 +373,7 @@ export const PipelineMonitor: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 50));
 
         try {
-            // pipeline rule §1.4：setSeed → runPipeline → AbsoluteTransposer(in playSong) → MidiConverter
+            // Q+N 主链路：setSeed → runPipeline(generateMusicSync)→ AudioEngine.playMusicGeneration(MusicalIR)
             PRNGManager.setSeed(seed);
             PRNGManager.recordSnapshot('A');
 

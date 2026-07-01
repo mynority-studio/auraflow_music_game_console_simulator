@@ -275,9 +275,6 @@ export class EndlessRadioManager {
 
       console.log(`[Jam Mode] applyUserDrumLoop: currentTick=${currentTick}, jamStartTick=${this.jamStartTick}, jamLengthTicks=${this.jamLengthTicks}, totalTicks=${totalTicks}, validPatternLength=${validPattern.length}`);
 
-      // Align loop start to the nearest measure boundary to ensure it stays in sync
-      const timeSignature = GlobalContext.currentTimeSignature || [4, 4];
-      
       // We start generating the loop from jamStartTick to ensure the pattern aligns perfectly
       // with the musical grid.
       const loopStartTick = this.jamStartTick;

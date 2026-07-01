@@ -6,10 +6,9 @@
  * Replaces Math.random() in core generation logic.
  *
  * Snapshot mechanism (ACVE §5.1):
- *   - 'A' captured at setSeed() / 播放入口
- *   - 'B' captured at MelodyEngine.generateFullSong() 入口
- *   - 'C' captured at AbsoluteTransposer.arrange() 入口
- *   - 'D' captured at MidiConverter.convert() 入口
+ *   - 'A' captured at setSeed() / 播放入口(当前唯一在用)
+ *   - 旧 'B'/'C'/'D'(MelodyEngine/AbsoluteTransposer/MidiConverter 入口)随旧引擎删除已废弃。
+ * ★ Q+N 引擎自身走 RandomContext(createRandomContext),不用本 PRNGManager;PRNGManager 仅 app 侧 seed/jam 用。
  *
  * 这些 snapshot 用于隔离验证修改是否影响 PRNG 消耗序列。
  * 开发者可在测试中调用 PRNGManager.getSnapshot('B') 拿到当时的 state，

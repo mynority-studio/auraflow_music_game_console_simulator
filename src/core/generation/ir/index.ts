@@ -22,7 +22,7 @@
 //   - NoteData         : 所有音符渲染的通用容器（8+ 模块消费）
 //   - GeneratedChord   : 和弦元数据（6+ 模块消费）
 //   - SectionMetadata  : 段落结构（5+ 模块消费）
-//   - MusicContext     : 运行时上下文（贯穿全管线 + MidiConverter）
+//   (旧 MusicContext 已随旧引擎删除。)
 //
 // 不在本文件的"近 IR"类型（仍在 types.ts，未来视需要再升格）：
 //   GeneratedTrack / ArrangedTrack / TerminalSymbol / ContourSpec / Tonality 枚举等
@@ -35,7 +35,6 @@ import type {
     ChordQuality,
     SectionType,
     ContourSpec,
-    Tonality,
 } from '../types';
 
 /**
@@ -130,7 +129,7 @@ export interface VoicedPitch {
 }
 
 export interface GeneratedChord { numeral: string; root: number; quality: ChordQuality; startBeat: number; endBeat: number; keyOffset?: number; extensions?: string[]; isSignatureEnding?: boolean; bassOverride?: number;
-    /** HarmonyCore 输出的声部分布 — Pitch Space: RELATIVE，升序 MIDI（AbsoluteTransposer/AudioEngine 再加 keyOffset） */
+    /** HarmonyCore 输出的声部分布 — Pitch Space: RELATIVE，升序 MIDI（下游渲染再定位到绝对空间） */
     voicing?: number[];
     /**
      * Phase 1a — 角色标记 voicing(VoicedPitch[]),与 voicing 平行,顺序一致。

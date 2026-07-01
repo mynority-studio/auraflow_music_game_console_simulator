@@ -76,19 +76,6 @@ class AudioEngineSystem {
         this.currentMusicGeneration = result; // UI 读 getCurrentMusicGeneration().uiSnapshot(不再造 GeneratedTrack/MusicContext 投影)
     }
 
-    /** 低层:直接播 MusicalIR(无 MusicGenerationResult 包装;诊断/特殊路径用)。 */
-    public async playMusicalIR(ir: MusicalIR, ctx: { styleHint: string; bpm: number }): Promise<void> {
-        this.init();
-        const currentSession = ++this.playSessionId;
-        await startAudioContext();
-        if (currentSession !== this.playSessionId) return;
-        const events = musicalIRToMidiEvents(ir, roomWetFor(ctx.styleHint));
-        const visuals = this.buildVisualEvents(ir);
-        globalMidiScheduler.stop();
-        globalMidiScheduler.loadTrack([...events, ...visuals], ctx.bpm);
-        globalMidiScheduler.start();
-    }
-
     /** IR 每个音的 onset → 'visual' MidiEvent(角色 → LedMatrix 类型;source=playback)。 */
     private buildVisualEvents(ir: MusicalIR): MidiEvent[] {
         const out: MidiEvent[] = [];
@@ -123,16 +110,12 @@ class AudioEngineSystem {
 
     public setVisualsMode(mode: 'all' | 'gameplay-only'): void { this.visualsMode = mode; }
 
-    public setDrumDucking(_enabled: boolean): void { /* no-op */ }
-
     public emitVisualEvent(event: VisualEvent): void {
         this.init();
         this.rawVisualListeners.forEach(l => l(event));
         if (this.visualsMode === 'gameplay-only' && event.source === 'playback') return;
         this.visualListeners.forEach(l => l(event));
     }
-
-    public setFocusTrack(_trackType: 'RHYTHM' | 'MELODY' | 'ATMOSPHERE' | 'NONE'): void { /* no-op */ }
 
     public muteChannel(channel: number, mute: boolean): void {
         globalMidiScheduler.muteChannel(channel, mute);
@@ -200,7 +183,6 @@ class AudioEngineSystem {
             );
         } catch { /* ignore */ }
     }
-    public pitchBend(_channel: number, _value: number): void { /* no-op */ }
 
     public getCurrentTick(): number { return globalMidiScheduler.getCurrentTick(); }
     public getBpm(): number { return globalMidiScheduler.getBpm(); }

@@ -70,7 +70,7 @@ export class MidiScheduler {
     // -----------------------------------------------------------
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
-        // 已按 ticks 升序排好（PlaybackEngine 输出时排序）— 这里再保险一次
+        // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次
         this.events = events.slice().sort(compareMidiEvents);
         this.currentBpm = bpm;
         this.currentTick = 0;
