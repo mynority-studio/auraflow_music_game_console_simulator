@@ -16,6 +16,7 @@ import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorl
 import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
+import { mapProgramToAura25, mapRoleProgramsToAura25 } from '../../../sound/Aura25Palette';
 import {
   freezeInstrumentationPlan,
   type BoundaryGesturePlan,
@@ -269,10 +270,14 @@ export function buildInstrumentationPlan(
   const orch = orchestrateRolePrograms({ style: band.style, lineup: band.instrumentPool, rng, provisional: band.roleProgram });
   // ★ participant 家族守卫(P1/P2 修复):orchestration/repair 后,把 Band Selection 的乐手家族约束
   //   闭环到【最终发声 program】—— 选了合成氛围(pad)/键盘手(keyboard)等,最终音色一定在该家族内。
-  const roleProgram = enforceRoleFamilies(
+  const repairedRoleProgram = enforceRoleFamilies(
     coherentLeadComp(repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style), band.style),
     band.familyByRole, band.style,
   );
+  const roleProgram = mapRoleProgramsToAura25(repairedRoleProgram, band.style) as Record<InstrumentRoleName, number>;
+  const aura25Decisions = band.instrumentPool
+    .filter((role) => repairedRoleProgram[role] !== undefined && repairedRoleProgram[role] !== roleProgram[role])
+    .map((role) => `${role} Aura25 GM${repairedRoleProgram[role]}→GM${roleProgram[role]}`);
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
 
@@ -299,14 +304,15 @@ export function buildInstrumentationPlan(
   let switchAlt: number | undefined;
   if (rng && eligible.length > 0 && rng.next() < TIMBRE_SWITCH_PROB) {
     switchRole = rng.pick(eligible);
-    switchAlt = rng.pick(sameFamilyAlternates(band.style, switchRole, roleProgram[switchRole]));
+    switchAlt = mapProgramToAura25(rng.pick(sameFamilyAlternates(band.style, switchRole, roleProgram[switchRole])), switchRole, band.style);
   }
   const programByRoleSection: Record<InstrumentRoleName, Record<string, number>> = {} as Record<InstrumentRoleName, Record<string, number>>;
   for (const role of band.instrumentPool) {
     const primary = roleProgram[role];
     programByRoleSection[role] = {};
     for (const s of arrangement.sections) {
-      programByRoleSection[role][s.id] = role === switchRole && switchAlt !== undefined && s.role === 'chorus' ? switchAlt : primary;
+      const selected = role === switchRole && switchAlt !== undefined && s.role === 'chorus' ? switchAlt : primary;
+      programByRoleSection[role][s.id] = mapProgramToAura25(selected, role, band.style);
     }
   }
 
@@ -439,6 +445,20 @@ export function buildInstrumentationPlan(
     for (const role of band.instrumentPool) if (fixed[role] && mixByRoleSection[role]) mixByRoleSection[role][s.id] = fixed[role]!;
   }
 
+  // ★ ACG(2026-07-02 用户:comp 与 lead 是【同一台钢琴】,音色要齐平):两轨同 program(0)但 program-mix 给了
+  //   不同 reverb(comp 40 / lead 47)/pan/chorus → 听着像两台不同的琴。统一 reverb/chorus/pan(同乐器=同空间同位置,
+  //   solo piano 居中),只保留 volume 差异(melody-first:lead 响、comp 是空气)。
+  if (band.style.toLowerCase() === 'acg') {
+    for (const s of arrangement.sections) {
+      const compMix = mixByRoleSection.comp?.[s.id];
+      if (!compMix) continue;
+      for (const role of ['lead', 'comp'] as const) {
+        const m = mixByRoleSection[role]?.[s.id];
+        if (m) mixByRoleSection[role][s.id] = { ...m, reverb: compMix.reverb, chorus: compMix.chorus, pan: 64 };
+      }
+    }
+  }
+
   const data: InstrumentationPlanData = {
     activityBySection,
     activeRolesBySection,
@@ -452,7 +472,7 @@ export function buildInstrumentationPlan(
       world: orch.world, profileId: orch.profileId,
       compProgram: roleProgram.comp, leadProgram: roleProgram.lead, bassProgram: roleProgram.bass,
       padProgram: roleProgram.pad, drumProgram: roleProgram.drum,
-      decisions: orch.decisions,
+      decisions: aura25Decisions.length ? [...orch.decisions, ...aura25Decisions] : orch.decisions,
     },
     programByRoleSection,
     mixByRoleSection, // ★ ESP32 混音(CC7/10/91/93;随段程序变)
