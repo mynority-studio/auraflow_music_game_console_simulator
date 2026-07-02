@@ -91,6 +91,22 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
+  it('★★ P1 段内 lead 不空床(CODEX §P1:非 intro/outro 段 maxGap ≤6.5拍 —— 保呼吸但不 dead air)', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed); const ppq = (r.ir!.timebase as { ppq: number }).ppq;
+      const lead = trk(r, 'lead')!.notes;
+      for (const s of r.uiSnapshot.sections) {
+        if (s.role === 'intro' || s.role === 'outro') continue;
+        const iv = lead.filter((n) => (n.startTick as number) >= s.startBeat * ppq - 1 && (n.startTick as number) < s.endBeat * ppq - 1)
+          .map((n) => ({ s: (n.startTick as number) / ppq, e: ((n.startTick as number) + (n.durationTicks as number)) / ppq })).sort((a, b) => a.s - b.s);
+        if (iv.length < 2) continue;
+        let maxGap = 0; let prevEnd = iv[0].e;
+        for (let i = 1; i < iv.length; i++) { maxGap = Math.max(maxGap, iv[i].s - prevEnd); prevEnd = Math.max(prevEnd, iv[i].e); }
+        expect(maxGap, `seed ${seed} ${s.role} lead 段内 maxGap=${maxGap.toFixed(1)}`).toBeLessThanOrEqual(6.5);
+      }
+    }
+  });
+
   it('★ P0 offgrid 琶音力度接近 MG(≈28-30,不被块盖住;normalize 后)', () => {
     for (const seed of SEEDS) {
       const r = acg(seed); const ppq = (r.ir!.timebase as { ppq: number }).ppq;

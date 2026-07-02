@@ -38,7 +38,7 @@ import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
-import { tuckAcgLead, resolveAcgTailExpectations, acgLeadContext } from './acgLeadShape';
+import { tuckAcgLead, resolveAcgTailExpectations, acgLeadContext, repairAcgLeadGaps } from './acgLeadShape';
 import { shapeAcgComp, spaceAcgBass } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
@@ -439,9 +439,13 @@ export function renderSongFull(
   const acgLeadTucked = acgLead0 && acgComp0 && !overrideLeadTrack
     ? tuckAcgLead(acgLead0, acgComp0, acgBarTicks, timebase.ppq, arrangement.tempoBpm)
     : acgLead0;
-  const acgLead = acgLeadTucked && !overrideLeadTrack
+  const acgLeadTailed = acgLeadTucked && !overrideLeadTrack
     ? resolveAcgTailExpectations(acgLeadTucked, plan.chordTimeline, plan.chordFunctionTimeline, acgBarTicks, timebase.ppq, acgLeadContext(band))
     : acgLeadTucked;
+  // ★ P1(CODEX audit §P1):段内 lead 空太久(seed99 chorus gap13)→ 填 soprano 和弦音(保 MG 呼吸,只修远超阈值的空床)。
+  const acgLead = acgLeadTailed && !overrideLeadTrack
+    ? repairAcgLeadGaps(acgLeadTailed, plan.chordTimeline, timebase.ppq)
+    : acgLeadTailed;
   const carvedTracks = isAcg && acgLead && acgComp0
     ? articulatedTracks.map((t) => (
         t.role === 'lead' ? acgLead

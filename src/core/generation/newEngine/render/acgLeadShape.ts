@@ -16,6 +16,7 @@ import type { ChordSpan, HarmonicFunction } from '../harmony/HarmonicPlan';
 import type { BandSpec } from '../band/BandSpec';
 import { resolveLocalScale, buildRunScale, melodyContractPcsForStyle, type LocalScaleChordLike, type LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
 import { evaluateNoteInChordContext, modeToKeyFamily } from '../knowledge/mgMusicTheory';
+import { chordTypeIntervals, isKnownChordType } from '../knowledge/chords';
 
 const st = (n: NoteIR) => n.startTick as number;
 const du = (n: NoteIR) => n.durationTicks as number;
@@ -157,4 +158,47 @@ export function resolveAcgTailExpectations(lead: TrackIR, timeline: readonly Cho
 
   if (remove.size === 0 && snap.size === 0) return lead;
   return { ...lead, notes: lead.notes.filter((n) => !remove.has(n)).map((n) => (snap.has(n) ? { ...n, pitch: midi(snap.get(n)!) } : n)) };
+}
+
+// ============================================================
+// repairAcgLeadGaps(P1,CODEX acg_mg_fidelity_audit_conclusion §P1)—— 段内 lead 空太久修复。
+//   ACG=melody-first;个别 section(seed99 chorus cov0.15/gap13)旋律生成太稀 → 听着"空床"不像 MG。
+//   保 MG 正常呼吸(gap≤MG phrase max ~3.75 不动),只填【远超】阈值的内部大空隙:插 soprano 和弦音(≈2/bar),
+//   声部就近(stepwise),harmonically-correct。不填曲首/曲末空隙(intro/outro 呼吸)。
+// ============================================================
+export function repairAcgLeadGaps(lead: TrackIR, timeline: readonly ChordSpan[], ppq: number): TrackIR {
+  const B = (beat: number) => beat * ppq;
+  const GAP = B(5.5);  // 只修 >5.5 拍的内部空隙(MG phrase maxGap ~3.75 → 留足呼吸,只填"空床")
+  const STEP = B(1.6); // 填充音间隔 ~1.6 拍(≈MG 密度但留气口)
+  const notes = [...lead.notes].sort((a, b) => st(a) - st(b));
+  if (notes.length < 2) return lead;
+  const chordAt = (tick: number): { pcs: number[] } | null => {
+    const s = timeline.find((sp) => tick >= (sp.startBeat as number) * ppq - 1 && tick < ((sp.startBeat as number) + (sp.durationBeats as number)) * ppq - 1);
+    if (!s) return null;
+    const root = ((s.rootPc as number) % 12 + 12) % 12;
+    const ivs = s.chordType && isKnownChordType(s.chordType) ? chordTypeIntervals(s.chordType) : [0, 4, 7];
+    return { pcs: ivs.map((iv) => (root + iv) % 12) };
+  };
+  const sopranoNear = (pcs: number[], target: number): number => {
+    let best = target, bd = Infinity;
+    for (let m = 69; m <= 84; m++) { if (!pcs.includes(((m % 12) + 12) % 12)) continue; const d = Math.abs(m - target); if (d < bd) { bd = d; best = m; } }
+    return best;
+  };
+  const added: NoteIR[] = [];
+  for (let i = 0; i < notes.length - 1; i++) {
+    const gapStart = st(notes[i]) + du(notes[i]);
+    const gapEnd = st(notes[i + 1]);
+    if (gapEnd - gapStart <= GAP) continue;
+    let prev = pit(notes[i]);
+    for (let t = gapStart + B(1.0); t < gapEnd - B(0.6); t += STEP) {
+      const ch = chordAt(Math.round(t)); if (!ch || ch.pcs.length === 0) continue;
+      const p = sopranoNear(ch.pcs, prev);
+      const dur = Math.min(STEP - B(0.2), gapEnd - t - B(0.35));
+      if (dur < B(0.3)) break;
+      added.push({ pitch: midi(p), startTick: ticks(Math.round(t)) as Ticks, durationTicks: ticks(Math.round(dur)) as Ticks, velocity: 86 });
+      prev = p;
+    }
+  }
+  if (added.length === 0) return lead;
+  return { ...lead, notes: [...notes, ...added].sort((a, b) => st(a) - st(b) || pit(a) - pit(b)) };
 }
