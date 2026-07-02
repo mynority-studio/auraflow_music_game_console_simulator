@@ -7,7 +7,7 @@
 // 需 harmony(dominant-chain 检测)→ 放 render 协调层(arranger 权威在 harmony 后实现)。
 // ============================================================
 
-import { phraseCellRole, densityForCell, energyForCell, pickTextureForBar, pickAcgTextureForBar, type TextureStyleName, type SectionLabel, type GrooveTextureContract } from '../knowledge/textureProfiles';
+import { phraseCellRole, densityForCell, energyForCell, pickTextureForBar, pickAcgTextureForBar, deriveAcgTextureCharacter, type TextureStyleName, type SectionLabel, type GrooveTextureContract } from '../knowledge/textureProfiles';
 import { hasTextureRenderer } from './textureRenderer';
 import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
@@ -60,6 +60,9 @@ export function buildTextureSchedule(args: {
   //   barIndex = span 在全 timeline 的位置;func/nextFunc 从 chordFunctionTimeline;prevId/rep 跨 span 追踪。
   const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
   if (txStyle === 'ACG') {
+    // ★ per-song texture character(2026-07-02):MG 每首承一个宏观 family(推进/空旷/块状);SIM 此前每首均匀=samey。
+    //   本曲派生一个 character(确定性,一次 textureRng draw),逐 bar 偏它 → 整首有性格。
+    const acgCharacter = deriveAcgTextureCharacter(textureRng.next());
     let acgPrevId: string | undefined; let acgRep = 0;
     timeline.forEach((span, i) => {
       if (!activeSectionIds.has(span.sectionId)) return;
@@ -68,7 +71,7 @@ export function buildTextureSchedule(args: {
         barIndex: i, totalBars: timeline.length, sectionLabel: label,
         func: fBar(funcBySpan[span.id]),
         nextFunc: i + 1 < timeline.length ? fBar(funcBySpan[timeline[i + 1].id]) : null,
-        prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, random: textureRng,
+        prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, characterFamily: acgCharacter, random: textureRng,
       });
       if (prof.id === acgPrevId) acgRep += 1; else { acgPrevId = prof.id; acgRep = 1; }
       if (hasTextureRenderer(prof.textureCase)) schedule[span.id] = prof.textureCase;

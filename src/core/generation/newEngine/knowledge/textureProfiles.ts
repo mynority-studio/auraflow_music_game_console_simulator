@@ -454,6 +454,22 @@ function acgTextureProfileForCase(textureCase: string, role: PhraseCellRole): Te
   };
 }
 
+// ★ ACG texture 宏观 family(空旷/推进/块状/水洗)—— per-song character bias 用。
+export const ACG_TEXTURE_FAMILY: Record<string, 'sparse' | 'drive' | 'block' | 'wash'> = {
+  Piano_TopVoice_Planing: 'sparse', ACG_Pedal_Wash_Color_Drops: 'sparse', ACG_Sakamoto_LH_Arp_RH_Penta: 'sparse',
+  ACG_Quartal_Arp_Wave: 'drive', ACG_Open_Broken_10th: 'drive', ACG_Ostinato_Hook_Pulse: 'drive',
+  ACG_Anthem_Block_Push: 'block', ACG_Suspended_Block_Arrival: 'block',
+  ACG_Bass_Tremolo_Color: 'wash', ACG_Stride_Cantabile_Ballad: 'wash',
+};
+// 每首偏一个 character 的强度(0=不偏,1=只用该 family)。0.55 → 该 family ~50-55%(≈MG),其余仍出现(保 phrase 变化)。
+const ACG_CHARACTER_BIAS = 0.55;
+// MG-like character 分布(实测 MG 偏 drive:5 seed 中 3 首推进 44-56%):推进最常见 · 空旷次之 · 块状偶尔。水洗不作主。
+const ACG_CHARACTER_POOL: ('drive' | 'sparse' | 'block')[] = ['drive', 'drive', 'drive', 'drive', 'sparse', 'block'];
+/** 从 [0,1) 派生本曲 texture character(MG:每首承一个宏观 family;SIM 此前每首均匀=samey)。 */
+export function deriveAcgTextureCharacter(u01: number): 'drive' | 'sparse' | 'block' {
+  return ACG_CHARACTER_POOL[Math.floor(Math.max(0, Math.min(0.999, u01)) * ACG_CHARACTER_POOL.length)] ?? 'drive';
+}
+
 /** MG pickAcgTextureForBar 忠实 port:按 bar 相位 + 和声功能 + loop 边界 + 首句/曲末 选 ACG 具名手势。 */
 export function pickAcgTextureForBar(args: {
   barIndex: number;
@@ -464,6 +480,7 @@ export function pickAcgTextureForBar(args: {
   prevTextureId?: string;
   repeatCount: number;
   contract?: GrooveTextureContract;
+  characterFamily?: 'drive' | 'sparse' | 'block'; // ★ 本曲宏观 character:偏这个 family(不 override phrase 逻辑)
   random: { next(): number; pick<T>(xs: readonly T[]): T };
 }): TextureProfile {
   const role = phraseCellRole(args.barIndex, args.totalBars);
@@ -497,9 +514,14 @@ export function pickAcgTextureForBar(args: {
       return true;
     });
 
-  const groovePicked = args.contract ? pickGrooveTexture(candidates, args.contract as never, args.random) : null;
-  const picked = candidates.length > 0
-    ? (groovePicked ?? args.random.pick(candidates))
+  // ★ per-song character bias:本曲偏一个 macro family(≈MG 每首承一个 character)。以 ACG_CHARACTER_BIAS 概率把候选池
+  //   收窄到 character family(若该 family 本 bar 有候选),否则用全候选 → 该 family 集中 ~50%,其余仍出现(保 phrase 变化)。
+  const biasRoll = args.random.next();
+  const charCands = args.characterFamily ? candidates.filter((t) => ACG_TEXTURE_FAMILY[t.textureCase] === args.characterFamily) : [];
+  const pool = charCands.length > 0 && biasRoll < ACG_CHARACTER_BIAS ? charCands : candidates;
+  const groovePicked = args.contract ? pickGrooveTexture(pool, args.contract as never, args.random) : null;
+  const picked = pool.length > 0
+    ? (groovePicked ?? args.random.pick(pool))
     : pickTextureForBarWithGroove({ style: 'ACG', phraseRole: role, density, energy, isDominantChain, contract: args.contract, prevTextureId: args.prevTextureId, repeatCount: args.repeatCount, random: args.random });
   return picked ?? acgTextureProfileForCase(acgFallbackTextureForRole(role, args.func, isLoopBoundary), role);
 }
