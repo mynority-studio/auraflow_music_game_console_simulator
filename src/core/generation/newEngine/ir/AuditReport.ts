@@ -29,6 +29,7 @@ export interface AuditFinding {
 export interface AuditReport {
   findings: AuditFinding[]; // 空 = pass
   textureCases?: string[];  // ★ 调试/审计:本曲 textureSchedule 用到的 textureCase 集(§4 逐-bar 织体多样性度量)
+  texturePerBar?: string[]; // ★ 调试/审计:逐 span 有序 textureCase 序列(texture 叙事顺序/比例对齐 MG)
 }
 
 export function isPass(report: AuditReport): boolean {

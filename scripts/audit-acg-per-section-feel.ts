@@ -20,6 +20,19 @@ type Ev = { time: number; dur: number; vel: number; pitch: number }; // time/dur
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
+// ★ texture 宏观 family(空旷/推进/块状/水洗)—— MG 每首承一个 character(某首推进/某首空旷);SIM 太均匀(每首都 ~30/30/30/10)。
+const TEX_FAMILY: Record<string, string> = {
+  Piano_TopVoice_Planing: '空旷', ACG_Pedal_Wash_Color_Drops: '空旷', ACG_Sakamoto_LH_Arp_RH_Penta: '空旷',
+  ACG_Quartal_Arp_Wave: '推进', ACG_Open_Broken_10th: '推进', ACG_Ostinato_Hook_Pulse: '推进',
+  ACG_Anthem_Block_Push: '块状', ACG_Suspended_Block_Arrival: '块状',
+  ACG_Bass_Tremolo_Color: '水洗', ACG_Stride_Cantabile_Ballad: '水洗',
+};
+function famProportion(perBar: string[]): string {
+  const m = new Map<string, number>(); let tot = 0;
+  for (const t of perBar) { if (t === '—') continue; const f = TEX_FAMILY[t] ?? '其它'; m.set(f, (m.get(f) ?? 0) + 1); tot++; }
+  return ['空旷', '推进', '块状', '水洗'].map((f) => `${f} ${tot ? Math.round((m.get(f) ?? 0) / tot * 100) : 0}%`).join(' · ');
+}
+
 /** onset-form:同 onset 组(起点在 tolBeat 内)→ singleRatio/blockRatio + offgrid 平均力度。 */
 function onsetForm(evs: Ev[], tolBeat = 0.012): { single: number; block: number; offVel: number } {
   if (evs.length === 0) return { single: 0, block: 0, offVel: 0 };
@@ -106,6 +119,11 @@ for (const seed of SEEDS) {
     const fl = flags(sf, ref, phrases);
     L.push(`| ${s.role}${s.functionTag ? `(${s.functionTag})` : ''} | ${s.bars} | ${sf.compBar} | ${sf.bassBar} | ${sf.single}/${sf.block}/${sf.offVel} | ${sf.cov}/${sf.maxGap}/${sf.reg} | ${fl.length ? '⚠ ' + fl.join('; ') : 'ok'} |`);
   }
+  // ★ texture 宏观 family 比例(MG per-song character vs SIM 均匀)
+  const mgPerBar = (mg.timeline.texturePerBar ?? []) as string[];
+  const simPerBar = ((r.report as { texturePerBar?: string[] } | undefined)?.texturePerBar) ?? [];
+  L.push('');
+  L.push(`**texture 宏观 family:** MG: ${famProportion(mgPerBar)} · SIM: ${famProportion(simPerBar)}`);
   L.push('');
 }
 

@@ -16,6 +16,8 @@
 | chorus | 8 | 4.38 | 2.88 | 1/0/29.5 | 0.5/4.68/75 | ok |
 | outro | 4 | 2.75 | 3 | 1/0/28.3 | 0.592/2.08/76 | ok |
 
+**texture 宏观 family:** MG: 空旷 31% · 推进 25% · 块状 25% · 水洗 19% · SIM: 空旷 29% · 推进 21% · 块状 32% · 水洗 18%
+
 ## seed 7
 **MG 标尺(16bar):** comp 4.44/bar · bass 2.88/bar · comp onset single 0.971/block 0.029/offVel 30.1 · lead cov 0.475/maxGap 10.91/reg 74
   MG 4-bar phrase 范围: comp/bar 3.25–5.75 · lead cov 0.327–0.576 · lead maxGap 1.86–5.49 · lead reg 72–76
@@ -29,6 +31,8 @@
 | verse | 8 | 5.25 | 2.88 | 1/0/28.4 | 0.468/3.54/76 | ok |
 | chorus | 8 | 4.38 | 2.88 | 1/0/28.8 | 0.46/2.64/75 | ok |
 | outro | 2 | 3.5 | 3 | 1/0/26 | 0.612/1.43/77 | ok |
+
+**texture 宏观 family:** MG: 空旷 6% · 推进 44% · 块状 31% · 水洗 19% · SIM: 空旷 37% · 推进 20% · 块状 28% · 水洗 15%
 
 ## seed 42
 **MG 标尺(16bar):** comp 5.38/bar · bass 2.94/bar · comp onset single 0.988/block 0.012/offVel 30.4 · lead cov 0.525/maxGap 9.24/reg 76
@@ -45,6 +49,8 @@
 | chorus | 8 | 4.88 | 2.75 | 1/0/28.6 | 0.428/5.53/74 | ok |
 | outro | 4 | 3.25 | 2.75 | 1/0/27.8 | 0.585/2.4/73 | ok |
 
+**texture 宏观 family:** MG: 空旷 6% · 推进 50% · 块状 38% · 水洗 6% · SIM: 空旷 28% · 推进 31% · 块状 26% · 水洗 15%
+
 ## seed 99
 **MG 标尺(16bar):** comp 3.81/bar · bass 2.94/bar · comp onset single 1/block 0/offVel 29.4 · lead cov 0.538/maxGap 4.61/reg 75
   MG 4-bar phrase 范围: comp/bar 3–4.5 · lead cov 0.445–0.605 · lead maxGap 1.04–3.56 · lead reg 74–76
@@ -60,6 +66,8 @@
 | chorus | 8 | 7.63 | 3 | 1/0/31.8 | 0.148/13.05/72 | ⚠ comp 密度 7.63 vs MG 3.81; lead 覆盖 0.148 < MG phrase min 0.445; lead 太空 gap 13.05 > MG phrase max 3.56 |
 | outro | 4 | 4 | 3 | 1/0/27.7 | 0.562/2.25/76 | ok |
 
+**texture 宏观 family:** MG: 空旷 50% · 推进 31% · 块状 13% · 水洗 6% · SIM: 空旷 20% · 推进 39% · 块状 37% · 水洗 4%
+
 ## seed 12345
 **MG 标尺(16bar):** comp 5.13/bar · bass 2.88/bar · comp onset single 1/block 0/offVel 30.1 · lead cov 0.492/maxGap 7.42/reg 75
   MG 4-bar phrase 范围: comp/bar 3.5–6.75 · lead cov 0.447–0.565 · lead maxGap 1.49–3.75 · lead reg 73–77
@@ -72,3 +80,5 @@
 | verse | 8 | 7 | 2.38 | 1/0/29 | 0.4/8.74/74 | ⚠ lead 太空 gap 8.74 > MG phrase max 3.75 |
 | chorus | 8 | 5.75 | 2.75 | 1/0/29.5 | 0.439/4.96/78 | ok |
 | outro | 2 | 4 | 3 | 1/0/25.2 | 0.613/1.42/74 | ok |
+
+**texture 宏观 family:** MG: 空旷 6% · 推进 56% · 块状 31% · 水洗 6% · SIM: 空旷 26% · 推进 29% · 块状 29% · 水洗 16%

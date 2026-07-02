@@ -526,5 +526,5 @@ export function renderSongFull(
     ? denseMelodySpanRanges(applyRepeatGroupReplay(tracks, arrangement, plan.chordTimeline, timebase), plan, timebase)
     : [];
   const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
-  return { ir, audit: { findings: [...audit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))] } };
+  return { ir, audit: { findings: [...audit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))], texturePerBar: plan.chordTimeline.map((s) => textureSchedule[s.id] ?? '—') } };
 }
