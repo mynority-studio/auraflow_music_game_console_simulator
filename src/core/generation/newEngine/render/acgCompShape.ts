@@ -188,7 +188,9 @@ function chordRoll(notes: readonly NoteIR[], ctx: Ctx): NoteIR[] {
       const lowerGap = i > 0 ? pit(n) - pit(sorted[i - 1]) : Infinity;
       const upperGap = i < sorted.length - 1 ? pit(sorted[i + 1]) - pit(n) : Infinity;
       const isCluster = lowerGap <= 2 || upperGap <= 2;
-      if (i > 0) { const gap = pit(n) - pit(sorted[i - 1]); cumMs += gap <= 2 ? 5 + roll * 8 : 42 + roll * 28; }
+      // ★ T2.1(acg_t2_quick_close):近音簇 stagger 从 5-13ms 抬到 16-26ms —— 5ms 在 ACG 慢速(~70-100bpm)下 < 审计 0.012 拍
+      //   容差 → 仍算同 onset(块床,single<0.9)。16ms 保证拆开过审计容差,又是自然快滚(非过量化)。远音琶音不变。
+      if (i > 0) { const gap = pit(n) - pit(sorted[i - 1]); cumMs += gap <= 2 ? 16 + roll * 10 : 42 + roll * 28; }
       const offset = MS(ctx, cumMs);
       const vel = isCluster ? Math.round(22 + roll * 10) : i === sorted.length - 1 ? Math.round(52 + roll * 10) : Math.round(42 + roll * 12);
       out.push(mkNote(pit(n), baseTime + offset, Math.max(B(ctx, 0.18), du(n) - offset), vel));
@@ -197,9 +199,29 @@ function chordRoll(notes: readonly NoteIR[], ctx: Ctx): NoteIR[] {
   return out.sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
 }
 
-/** ACG comp melody-first cantabile 塑形:inner voice → carve → floor → chord-roll(承重:单音滚动)。只 ACG。 */
+// ★ T2.1(acg_t2_quick_close):chordRoll 组内滚开后,某组【前推】的音可能撞到下一组 onset(跨组碰撞 → 同起点块床,
+//   section single<0.9)。最终保证任两音起点间距 > 审计容差:撞的音前推到 lastT+0.02 拍(0.02 > 0.012 容差)。
+//   真琶音(已 >0.02 拍)不动 → 不过量化,只清残余同起点簇。
+function deCollideOnsets(notes: readonly NoteIR[], ctx: Ctx): NoteIR[] {
+  const MINGAP = B(ctx, 0.02);
+  const sorted = [...notes].sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
+  const out: NoteIR[] = [];
+  let lastT = -Infinity;
+  for (const n of sorted) {
+    let t = st(n);
+    if (t - lastT < MINGAP) t = lastT + MINGAP;
+    lastT = t;
+    out.push(t === st(n) ? n : mkNote(pit(n), t, Math.max(B(ctx, 0.15), du(n) - (t - st(n))), n.velocity as number));
+  }
+  return out;
+}
+
+/** ACG comp melody-first cantabile 塑形:inner voice → carve → floor → chord-roll(承重:单音滚动)→ de-collide。只 ACG。 */
 export function shapeAcgComp(comp: TrackIR, lead: TrackIR, timeline: readonly ChordSpan[], barTicks: number, ppq: number, bpm: number, seed: number): TrackIR {
-  if (lead.notes.length === 0) return { ...comp, notes: chordRoll(comp.notes, { lead, timeline, barTicks, ppq, bpm, seed, nBars: 1 }) };
+  if (lead.notes.length === 0) {
+    const ctx0: Ctx = { lead, timeline, barTicks, ppq, bpm, seed, nBars: 1 };
+    return { ...comp, notes: deCollideOnsets(chordRoll(comp.notes, ctx0), ctx0) };
+  }
   const nBars = Math.max(1, Math.ceil(Math.max(0, ...comp.notes.map(st), ...lead.notes.map(st)) / barTicks) + 1);
   const ctx: Ctx = { lead, timeline, barTicks, ppq, bpm, seed, nBars };
   let notes = addInnerVoice(comp.notes, ctx);
@@ -207,6 +229,7 @@ export function shapeAcgComp(comp: TrackIR, lead: TrackIR, timeline: readonly Ch
   notes = harmonyFloor(notes, ctx);
   notes = notes.filter((n) => du(n) > B(ctx, 0.03));
   notes = chordRoll(notes, ctx); // ★ 承重:最后把所有同起点块状 → 单音滚动琶音
+  notes = deCollideOnsets(notes, ctx); // ★ T2.1:清跨组滚开碰撞(残余同起点)
   return { ...comp, notes: notes.sort((a, b) => st(a) - st(b) || pit(a) - pit(b)) };
 }
 

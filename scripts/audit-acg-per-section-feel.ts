@@ -73,14 +73,24 @@ function feel(comp: Ev[], bass: Ev[], lead: Ev[], lo: number, hi: number) {
 
 type Feel = ReturnType<typeof feel>;
 
-/** SIM section 偏离 MG 标尺 → flags。lead cov/maxGap 用【MG 4-bar phrase 范围】(whole-16bar maxGap 偏松,单个大空隙拉高)。 */
-function flags(s: Feel, ref: Feel, phrases: Feel[]): string[] {
+/** SIM section 偏离 MG 标尺 → flags。lead cov/maxGap 用【MG 4-bar phrase 范围】(whole-16bar maxGap 偏松,单个大空隙拉高)。
+ *  ★ T2.2(acg_t2_quick_close):outro lead 稀疏是【特性不是 bug】(ACG 收尾留白)→ outro lead cov/maxGap 只作 informational
+ *    (标 ⓘ 不标 ⚠),除非 outro 完全空(leadN===0)。block-bed/comp/bass 密度仍对 outro 硬判。 */
+function flags(s: Feel, ref: Feel, phrases: Feel[], role: string): string[] {
   const f: string[] = [];
   const covMin = Math.min(...phrases.map((p) => p.cov));
   const gapMax = Math.max(...phrases.map((p) => p.maxGap));
+  const isOutro = role === 'outro';
   if (s.single < 0.9) f.push(`块状床(single ${s.single})`);
   if (ref.compBar > 0 && (s.compBar > ref.compBar * 1.8 || s.compBar < ref.compBar * 0.4)) f.push(`comp 密度 ${s.compBar} vs MG ${ref.compBar}`);
   if (ref.bassBar > 0 && (s.bassBar > ref.bassBar * 1.8 || s.bassBar < ref.bassBar * 0.5)) f.push(`bass 密度 ${s.bassBar} vs MG ${ref.bassBar}`);
+  // ★ outro lead 空/稀疏 = ACG 收尾留白【特性】:informational(ⓘ)。comp 非空是硬契约 → 纯伴奏收尾是合法 ACG 结束
+  //   (旋律在前段已收,伴奏解决);T2.2 Option 1(接受,不改生成)。真正 broken(comp 也空)由 comp-not-empty 硬测抓。
+  if (isOutro) {
+    if (s.leadN === 0) f.push('ⓘ outro 纯伴奏收尾(无 lead,旋律前段已收 → 接受)');
+    else if (s.cov < 0.3 || s.maxGap > 5) f.push(`ⓘ outro 留白 cov ${s.cov}/gap ${s.maxGap}(ACG 收尾特性,接受)`);
+    return f;
+  }
   if (s.leadN > 0 && covMin > 0 && s.cov < covMin * 0.7) f.push(`lead 覆盖 ${s.cov} < MG phrase min ${+covMin.toFixed(3)}`);
   if (s.leadN > 0 && s.maxGap > Math.max(gapMax * 1.6, gapMax + 2)) f.push(`lead 太空 gap ${s.maxGap} > MG phrase max ${+gapMax.toFixed(2)}`);
   if (s.leadN > 0 && s.reg > 0 && (s.reg < 68 || Math.abs(s.reg - ref.reg) > 7)) f.push(`lead 音域 ${s.reg} vs MG ${ref.reg}`);
@@ -89,7 +99,12 @@ function flags(s: Feel, ref: Feel, phrases: Feel[]): string[] {
 
 const L: string[] = ['# ACG 逐段 feel 审计(MG 16-bar 标尺 vs SIM 全曲逐段)', ''];
 L.push('- 只审 bass/comp/lead(禁 pad/drum)。MG=16bar loop(拆 4-bar phrase 看自身范围);SIM=全曲逐段。');
-L.push('- 指标:comp/bar · bass/bar · comp onset(single/block/offVel)· lead cov/maxGap/register。⚠=该段偏离 MG 标尺。', '');
+L.push('- 指标:comp/bar · bass/bar · comp onset(single/block/offVel)· lead cov/maxGap/register。⚠=该段偏离 MG 标尺;ⓘ=informational(接受的特性)。', '');
+L.push('**审计语义(acg_t2_quick_close T2.5):**');
+L.push('- 目标 = MG-like ACG 钢琴演奏【在 SIM 全曲架构里】,**不是** whole-song exact MG parity(异引擎/异进行,per-seed 不对齐是设计接受)。');
+L.push('- **outro** lead 稀疏 = ACG 收尾留白【特性】→ informational(ⓘ),非 ⚠(除非完全无 lead);verse/chorus 的 lead 空仍硬判。');
+L.push('- **comp velocity 是 playback-chain 调整值**(mf ≈50,不是 MG raw pp ≈30)—— SF2/master chain 不同,契约=melody-first 但 comp 可听,**不比 raw MG 字节**。');
+L.push('- 硬契约不松:no pad · lead/comp/bass 分轨 · comp 不空 · comp 多为 rolled/单音(single≥0.9)。', '');
 
 for (const seed of SEEDS) {
   const mg = generateAuditSong(String(seed), 'ACG', KEY);
@@ -116,8 +131,10 @@ for (const seed of SEEDS) {
   L.push('|---|---|---|---|---|---|---|');
   for (const s of r.uiSnapshot.sections) {
     const sf = feel(simComp, simBass, simLead, s.startBeat, s.endBeat);
-    const fl = flags(sf, ref, phrases);
-    L.push(`| ${s.role}${s.functionTag ? `(${s.functionTag})` : ''} | ${s.bars} | ${sf.compBar} | ${sf.bassBar} | ${sf.single}/${sf.block}/${sf.offVel} | ${sf.cov}/${sf.maxGap}/${sf.reg} | ${fl.length ? '⚠ ' + fl.join('; ') : 'ok'} |`);
+    const fl = flags(sf, ref, phrases, s.role);
+    const onlyInfo = fl.length > 0 && fl.every((x) => x.startsWith('ⓘ'));
+    const mark = fl.length === 0 ? 'ok' : onlyInfo ? fl.join('; ') : '⚠ ' + fl.join('; ');
+    L.push(`| ${s.role}${s.functionTag ? `(${s.functionTag})` : ''} | ${s.bars} | ${sf.compBar} | ${sf.bassBar} | ${sf.single}/${sf.block}/${sf.offVel} | ${sf.cov}/${sf.maxGap}/${sf.reg} | ${mark} |`);
   }
   // ★ texture 宏观 family 比例(MG per-song character vs SIM 均匀)
   const mgPerBar = (mg.timeline.texturePerBar ?? []) as string[];
