@@ -33,6 +33,19 @@ const uniq = (xs: string[]) => [...new Set(xs)];
 const ratio = (a: number, b: number) => (b > 0 ? +(a / b).toFixed(2) : a > 0 ? Infinity : 0);
 const perBar = (count: number, bars: number) => (bars > 0 ? +(count / bars).toFixed(2) : 0);
 
+/** onset-group(final comp form 契约):同 onset 组(起点在 tolBeat 内)→ singleRatio/blockRatio + offgrid 平均力度。
+ *  MG ACG chord ~100% 单音滚动琶音;块状同起点复音 = "软块状和声床"(不像 MG)。tolBeat≈MG round(ms) 精度。 */
+function onsetForm(events: { time: number; velocity: number }[], tolBeat = 0.012): { single: number; block: number; offVel: number } {
+  if (events.length === 0) return { single: 0, block: 0, offVel: 0 };
+  const sorted = [...events].sort((a, b) => a.time - b.time);
+  const groups: number[] = []; let cur = 0; let anchor = -1e9;
+  for (const e of sorted) { if (e.time - anchor > tolBeat) { if (cur) groups.push(cur); cur = 1; anchor = e.time; } else cur++; }
+  if (cur) groups.push(cur);
+  const single = groups.filter((g) => g === 1).length; const block = groups.filter((g) => g >= 2).length;
+  const off = events.filter((e) => Math.abs(e.time - Math.round(e.time)) > 0.08);
+  return { single: +(single / groups.length).toFixed(3), block: +(block / groups.length).toFixed(3), offVel: +(off.length ? off.reduce((a, e) => a + e.velocity, 0) / off.length : 0).toFixed(1) };
+}
+
 /** 一组 [start, end] 拍区间(单音 lead)→ 覆盖率(时长和/曲长)+ 最大空隙。 */
 function coverageAndGap(intervals: { start: number; end: number }[], songBeats: number): { cov: number; maxGap: number } {
   if (intervals.length === 0 || songBeats <= 0) return { cov: 0, maxGap: songBeats };
@@ -54,6 +67,7 @@ interface Row {
   mgPedal: number; simPedal: number;               // CC64 踏板事件数(P0-1)
   mgLeadCov: number; simLeadCov: number;            // lead 覆盖率(音符时长和 / 曲长,P0-2)
   mgLeadMaxGap: number; simLeadMaxGap: number;      // lead 最大静默空隙(拍,P0-2)
+  mgSingle: number; simSingle: number; mgBlock: number; simBlock: number; mgOffVel: number; simOffVel: number; // ★ P0 comp onset-form
   compRatioPerBar: number; bassRatioPerBar: number; leadRatioPerBar: number;
   programs: { simLead?: number; simComp?: number; simBass?: number };
   warnings: string[];
@@ -74,6 +88,7 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
   const mgPedal = mgSong.timeline.pedalEvents?.length ?? 0;
   const mgSongBeats = Math.max(1, ...ev.map((e) => e.time + e.duration));
   const mgLeadMetrics = coverageAndGap(ev.filter((e) => e.part === 'melody').map((e) => ({ start: e.time, end: e.time + e.duration })), mgSongBeats);
+  const mgForm = onsetForm(ev.filter((e) => e.part === 'chord').map((e) => ({ time: e.time, velocity: e.velocity })));
 
   // —— SIM ——
   const r = generateMusicSync({ seed, styleHint: sim, mood: 'build', targetDuration: 90, key: KEY });
@@ -81,6 +96,7 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
     return { style: sim, seed, mgBars, simBars: 0, mgBass, simBass: 0, mgComp, simComp: 0, mgLead, simLead: 0,
       mgTexUniq: uniq(mgTexList).length, mgTexList, simTexUniq: 0, simTexList: [], mgPedal, simPedal: 0,
       mgLeadCov: mgLeadMetrics.cov, simLeadCov: 0, mgLeadMaxGap: mgLeadMetrics.maxGap, simLeadMaxGap: 0,
+      mgSingle: mgForm.single, simSingle: 0, mgBlock: mgForm.block, simBlock: 0, mgOffVel: mgForm.offVel, simOffVel: 0,
       compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0, programs: {}, warnings, error: `SIM 生成失败 status=${r.status}` };
   }
   const simTexList = ((r.report as { textureCases?: string[] } | undefined)?.textureCases ?? []);
@@ -94,6 +110,8 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
   const leadNotes = (trk('lead')?.notes ?? []) as readonly { startTick: number; durationTicks: number }[];
   const simBpb = r.uiSnapshot.timeSignature[0] || 4;
   const simLeadMetrics = coverageAndGap(leadNotes.map((n) => ({ start: (n.startTick as number) / ppq, end: ((n.startTick as number) + (n.durationTicks as number)) / ppq })), simBars * simBpb);
+  const compNotes = (trk('comp')?.notes ?? []) as readonly { startTick: number; velocity: number }[];
+  const simForm = onsetForm(compNotes.map((n) => ({ time: (n.startTick as number) / ppq, velocity: n.velocity as number })));
 
   const compRatioPerBar = ratio(perBar(simComp, simBars), perBar(mgComp, mgBars));
   const bassRatioPerBar = ratio(perBar(simBass, simBars), perBar(mgBass, mgBars));
@@ -107,6 +125,9 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
     if (compRatioPerBar > 3) warnings.push(`ACG comp per-bar 密度 ${compRatioPerBar}x MG (>3x)`);
     if (bassRatioPerBar > 2.5) warnings.push(`ACG bass per-bar 密度 ${bassRatioPerBar}x MG (>2.5x)`);
     if (mgTexUniq >= 5 && simTexUniq < mgTexUniq * 0.5) warnings.push(`ACG 织体多样性 SIM ${simTexUniq} < 50% MG ${mgTexUniq}(§4 逐-bar 未生效)`);
+    // ★ P0 final comp form:MG chord ~100% 单音滚动琶音。SIM comp 单音比 <0.9 或块状 >0.05 = "软块状和声床"(不像 MG)。
+    if (simForm.single < 0.9) warnings.push(`ACG comp 单音比 ${simForm.single} < 0.9(块状和声床,chord-roll 未生效)`);
+    if (simForm.block > 0.05) warnings.push(`ACG comp 块状比 ${simForm.block} > 0.05(同起点复音)`);
   }
   // pedal:MG 该风格有踏板(mgPedal>0)但 SIM 无 → P0-1 未接(ACG 曾 0/32)。
   if (mgPedal > 0 && simPedal === 0) warnings.push(`踏板缺失:MG ${mgPedal} vs SIM 0(P0-1 pedal 未接)`);
@@ -115,6 +136,7 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
     style: sim, seed, mgBars, simBars, mgBass, simBass, mgComp, simComp, mgLead, simLead,
     mgTexUniq, mgTexList, simTexUniq, simTexList,
     mgPedal, simPedal, mgLeadCov: mgLeadMetrics.cov, simLeadCov: simLeadMetrics.cov, mgLeadMaxGap: mgLeadMetrics.maxGap, simLeadMaxGap: simLeadMetrics.maxGap,
+    mgSingle: mgForm.single, simSingle: simForm.single, mgBlock: mgForm.block, simBlock: simForm.block, mgOffVel: mgForm.offVel, simOffVel: simForm.offVel,
     compRatioPerBar, bassRatioPerBar, leadRatioPerBar,
     programs: { simLead: trk('lead')?.program, simComp: trk('comp')?.program, simBass: trk('bass')?.program },
     warnings,
@@ -126,7 +148,7 @@ const rows: Row[] = [];
 for (const { sim, mg } of STYLES) {
   for (const seed of SEEDS) {
     try { rows.push(auditOne(sim, mg, seed)); }
-    catch (e) { rows.push({ style: sim, seed, mgBars: 0, simBars: 0, mgBass: 0, simBass: 0, mgComp: 0, simComp: 0, mgLead: 0, simLead: 0, mgTexUniq: 0, mgTexList: [], simTexUniq: 0, simTexList: [], mgPedal: 0, simPedal: 0, mgLeadCov: 0, simLeadCov: 0, mgLeadMaxGap: 0, simLeadMaxGap: 0, compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0, programs: {}, warnings: [], error: e instanceof Error ? e.message : String(e) }); }
+    catch (e) { rows.push({ style: sim, seed, mgBars: 0, simBars: 0, mgBass: 0, simBass: 0, mgComp: 0, simComp: 0, mgLead: 0, simLead: 0, mgTexUniq: 0, mgTexList: [], simTexUniq: 0, simTexList: [], mgPedal: 0, simPedal: 0, mgLeadCov: 0, simLeadCov: 0, mgLeadMaxGap: 0, simLeadMaxGap: 0, mgSingle: 0, simSingle: 0, mgBlock: 0, simBlock: 0, mgOffVel: 0, simOffVel: 0, compRatioPerBar: 0, bassRatioPerBar: 0, leadRatioPerBar: 0, programs: {}, warnings: [], error: e instanceof Error ? e.message : String(e) }); }
   }
 }
 
@@ -141,11 +163,11 @@ L.push(`- MG source: \`../melodygenerative\` @ ${mgHash} (string seed) · SIM �
 L.push(`- 方法:per-bar 密度比较(非 byte parity);忽略 pad/drum。styles=${STYLES.map((s) => s.sim).join('/')} seeds=${SEEDS.join('/')} key=${KEY}`);
 L.push('- 列:count(总)· /bar(per-bar 密度)· SIM/MG per-bar 比率。texUniq=MG texturePerBar 唯一织体数。');
 L.push('');
-L.push('| style | seed | bars MG/SIM | comp/bar MG→SIM | bass/bar MG→SIM | pedal MG/SIM | lead cov MG/SIM | lead maxGap MG/SIM | texUniq MG/SIM | ⚠ |');
-L.push('|---|---|---|---|---|---|---|---|---|---|');
+L.push('| style | seed | bars MG/SIM | comp/bar MG→SIM | bass/bar MG→SIM | pedal MG/SIM | lead cov MG/SIM | lead maxGap MG/SIM | texUniq MG/SIM | comp single MG/SIM | comp block MG/SIM | comp offVel MG/SIM | ⚠ |');
+L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
-  if (r.error) { L.push(`| ${r.style} | ${r.seed} | — | — | — | — | — | — | — | ❌ ${r.error} |`); continue; }
-  L.push(`| ${r.style} | ${r.seed} | ${r.mgBars}/${r.simBars} | ${perBar(r.mgComp, r.mgBars)}→${perBar(r.simComp, r.simBars)} (${r.compRatioPerBar}x) | ${perBar(r.mgBass, r.mgBars)}→${perBar(r.simBass, r.simBars)} (${r.bassRatioPerBar}x) | ${r.mgPedal}/${r.simPedal} | ${r.mgLeadCov}/${r.simLeadCov} | ${r.mgLeadMaxGap}/${r.simLeadMaxGap} | ${r.mgTexUniq}/${r.simTexUniq} | ${r.warnings.length ? '⚠ ' + r.warnings.join('; ') : 'ok'} |`);
+  if (r.error) { L.push(`| ${r.style} | ${r.seed} | — | — | — | — | — | — | — | — | — | — | ❌ ${r.error} |`); continue; }
+  L.push(`| ${r.style} | ${r.seed} | ${r.mgBars}/${r.simBars} | ${perBar(r.mgComp, r.mgBars)}→${perBar(r.simComp, r.simBars)} (${r.compRatioPerBar}x) | ${perBar(r.mgBass, r.mgBars)}→${perBar(r.simBass, r.simBars)} (${r.bassRatioPerBar}x) | ${r.mgPedal}/${r.simPedal} | ${r.mgLeadCov}/${r.simLeadCov} | ${r.mgLeadMaxGap}/${r.simLeadMaxGap} | ${r.mgTexUniq}/${r.simTexUniq} | ${r.mgSingle}/${r.simSingle} | ${r.mgBlock}/${r.simBlock} | ${r.mgOffVel}/${r.simOffVel} | ${r.warnings.length ? '⚠ ' + r.warnings.join('; ') : 'ok'} |`);
 }
 L.push('');
 // —— ACG texturePerBar 详列(§5 要求)——

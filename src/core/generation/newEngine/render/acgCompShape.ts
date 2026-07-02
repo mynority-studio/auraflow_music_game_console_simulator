@@ -159,16 +159,55 @@ function harmonyFloor(compNotes: NoteIR[], ctx: Ctx): NoteIR[] {
   return out;
 }
 
-/** ACG comp melody-first cantabile 塑形:inner voice → carve → floor(忠实 MG 顺序)。只 ACG。 */
+// ============================================================
+// ★ chord-roll(忠实 port MG shapeTopVoicePianoTouch 7021-7057)—— ACG final comp 的【承重契约】:
+//   MG ACG comp chord onset ~100% 单音(琶音滚动/透明/呼吸),不是同起点块状和声床。此 pass 把任何【同起点 ≥2 音组】
+//   按音高升序【滚开】(cumulative ms 偏移:近音 5-13ms / 宽音 42-70ms)→ 单音错开起点 + 位置力度(cluster 22-32 /
+//   top 52-62 / mid 42-54,normalize 后定级)。放全 comp 塑形【最后】,保证 final comp 单音比 ≥0.9、块状 ≤0.05。
+// ============================================================
+function chordRoll(notes: readonly NoteIR[], ctx: Ctx): NoteIR[] {
+  // ★ 容差分组:同一 onset【组】= 起点在 tol 窗内的音(humanize 可能把原本同起点的块状音散开几 tick → 用容差抓回)。
+  //   tol 取 0.09 拍(> humanize 抖动,< 真琶音最小间隔 ~0.2 拍),防真琶音被误并。
+  const tol = B(ctx, 0.09);
+  const bySt = [...notes].sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
+  const groups: NoteIR[][] = [];
+  let cur: NoteIR[] = []; let anchor = -Infinity;
+  for (const n of bySt) {
+    if (st(n) - anchor > tol) { if (cur.length) groups.push(cur); cur = [n]; anchor = st(n); }
+    else cur.push(n);
+  }
+  if (cur.length) groups.push(cur);
+  const out: NoteIR[] = [];
+  for (const group of groups) {
+    if (group.length < 2) { out.push(...group); continue; }
+    const sorted = [...group].sort((a, b) => pit(a) - pit(b));
+    const baseTime = Math.min(...group.map(st)); // 组内重排:从最早起点【干净滚开】(替 humanize 散开)
+    const roll = stableUnit(`acg-roll|${ctx.seed}|${baseTime}|${sorted.map(pit).join(',')}`);
+    let cumMs = 0;
+    sorted.forEach((n, i) => {
+      const lowerGap = i > 0 ? pit(n) - pit(sorted[i - 1]) : Infinity;
+      const upperGap = i < sorted.length - 1 ? pit(sorted[i + 1]) - pit(n) : Infinity;
+      const isCluster = lowerGap <= 2 || upperGap <= 2;
+      if (i > 0) { const gap = pit(n) - pit(sorted[i - 1]); cumMs += gap <= 2 ? 5 + roll * 8 : 42 + roll * 28; }
+      const offset = MS(ctx, cumMs);
+      const vel = isCluster ? Math.round(22 + roll * 10) : i === sorted.length - 1 ? Math.round(52 + roll * 10) : Math.round(42 + roll * 12);
+      out.push(mkNote(pit(n), baseTime + offset, Math.max(B(ctx, 0.18), du(n) - offset), vel));
+    });
+  }
+  return out.sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
+}
+
+/** ACG comp melody-first cantabile 塑形:inner voice → carve → floor → chord-roll(承重:单音滚动)。只 ACG。 */
 export function shapeAcgComp(comp: TrackIR, lead: TrackIR, timeline: readonly ChordSpan[], barTicks: number, ppq: number, bpm: number, seed: number): TrackIR {
-  if (lead.notes.length === 0) return comp;
+  if (lead.notes.length === 0) return { ...comp, notes: chordRoll(comp.notes, { lead, timeline, barTicks, ppq, bpm, seed, nBars: 1 }) };
   const nBars = Math.max(1, Math.ceil(Math.max(0, ...comp.notes.map(st), ...lead.notes.map(st)) / barTicks) + 1);
   const ctx: Ctx = { lead, timeline, barTicks, ppq, bpm, seed, nBars };
   let notes = addInnerVoice(comp.notes, ctx);
   notes = carve(notes, ctx);
   notes = harmonyFloor(notes, ctx);
-  notes = notes.filter((n) => du(n) > B(ctx, 0.03)).sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
-  return { ...comp, notes };
+  notes = notes.filter((n) => du(n) > B(ctx, 0.03));
+  notes = chordRoll(notes, ctx); // ★ 承重:最后把所有同起点块状 → 单音滚动琶音
+  return { ...comp, notes: notes.sort((a, b) => st(a) - st(b) || pit(a) - pit(b)) };
 }
 
 // ============================================================

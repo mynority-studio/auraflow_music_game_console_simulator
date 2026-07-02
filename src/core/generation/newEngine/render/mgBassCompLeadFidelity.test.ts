@@ -20,6 +20,19 @@ const maxStackAt = (notes: readonly { startTick: number }[]) => {
 
 const SEEDS = [0, 7, 42, 99, 12345];
 
+// ★ onset-group(final comp form 契约):同 onset 组(起点在 tol 内)。MG ACG chord ~100% 单音滚动琶音;
+//   块状同起点复音 = "软块状和声床" = 不像 MG。tol 取 MG 分组精度(~6ms,round(time*1000) 级)。
+const onsetGroups = (r: ReturnType<typeof acg>, notes: readonly { startTick: number }[], tolMs: number) => {
+  const ppq = (r.ir!.timebase as { ppq: number }).ppq;
+  const tol = Math.max(1, Math.round((tolMs / 1000) * (r.bpm / 60) * ppq));
+  const sorted = [...notes].sort((a, b) => (a.startTick as number) - (b.startTick as number));
+  const groups: number[] = []; let cur = 0; let anchor = -1e9;
+  for (const n of sorted) { const t = n.startTick as number; if (t - anchor > tol) { if (cur) groups.push(cur); cur = 1; anchor = t; } else cur++; }
+  if (cur) groups.push(cur);
+  const single = groups.filter((g) => g === 1).length; const block = groups.filter((g) => g >= 2).length;
+  return { singleRatio: single / groups.length, blockRatio: block / groups.length };
+};
+
 describe('render/mgBassCompLeadFidelity · §4 ACG 逐-bar 织体多样性', () => {
   it('ACG textureSchedule 不塌成段级(≥5 种,不再是 2)', () => {
     for (const seed of SEEDS) {
@@ -66,6 +79,25 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     for (const seed of SEEDS) {
       const comp = trk(acg(seed), 'comp')!;
       expect(comp.notes.some((n) => (n.pitch as number) < 64), `seed ${seed} comp 低位支撑`).toBe(true);
+    }
+  });
+
+  it('★★ P0 final comp = 单音滚动琶音(chord-roll):singleRatio≥0.9 · blockRatio≤0.05 —— 不是块状和声床', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed);
+      const { singleRatio, blockRatio } = onsetGroups(r, trk(r, 'comp')!.notes as unknown as { startTick: number }[], 6);
+      expect(singleRatio, `seed ${seed} singleRatio=${singleRatio.toFixed(3)}`).toBeGreaterThanOrEqual(0.9);
+      expect(blockRatio, `seed ${seed} blockRatio=${blockRatio.toFixed(3)}`).toBeLessThanOrEqual(0.05);
+    }
+  });
+
+  it('★ P0 offgrid 琶音力度接近 MG(≈28-30,不被块盖住;normalize 后)', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed); const ppq = (r.ir!.timebase as { ppq: number }).ppq;
+      const off = trk(r, 'comp')!.notes.filter((n) => Math.abs(((n.startTick as number) / ppq) - Math.round((n.startTick as number) / ppq)) > 0.08);
+      const mean = off.reduce((a, n) => a + (n.velocity as number), 0) / Math.max(1, off.length);
+      expect(mean, `seed ${seed} offVel=${mean.toFixed(1)}`).toBeGreaterThanOrEqual(25);
+      expect(mean, `seed ${seed} offVel=${mean.toFixed(1)}`).toBeLessThanOrEqual(34);
     }
   });
 
