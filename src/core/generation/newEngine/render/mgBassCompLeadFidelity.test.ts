@@ -107,13 +107,13 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('★ P0 offgrid 琶音力度接近 MG(≈28-30,不被块盖住;normalize 后)', () => {
+  it('★ P0 offgrid 琶音力度—— comp 在 mf 亮层(≈46-62,和 lead 同层=音色齐平;2026-07-02 用户:一台钢琴)', () => {
     for (const seed of SEEDS) {
       const r = acg(seed); const ppq = (r.ir!.timebase as { ppq: number }).ppq;
       const off = trk(r, 'comp')!.notes.filter((n) => Math.abs(((n.startTick as number) / ppq) - Math.round((n.startTick as number) / ppq)) > 0.08);
       const mean = off.reduce((a, n) => a + (n.velocity as number), 0) / Math.max(1, off.length);
-      expect(mean, `seed ${seed} offVel=${mean.toFixed(1)}`).toBeGreaterThanOrEqual(25);
-      expect(mean, `seed ${seed} offVel=${mean.toFixed(1)}`).toBeLessThanOrEqual(34);
+      expect(mean, `seed ${seed} offVel=${mean.toFixed(1)}`).toBeGreaterThanOrEqual(44);
+      expect(mean, `seed ${seed} offVel=${mean.toFixed(1)}`).toBeLessThanOrEqual(62);
     }
   });
 
@@ -127,18 +127,19 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('★ P1a 响度秩序(melody-first):lead avg 显著 > comp;comp≈29-32(pp);bass≈37', () => {
+  it('★ P1a 响度秩序(melody-first,但音色齐平):lead>comp 仍前置;comp≈mf(50-58,和 lead 同亮层);bass≈45', () => {
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
     for (const seed of SEEDS) {
       const r = acg(seed);
       const leadV = mean(trk(r, 'lead')!.notes.map((n) => n.velocity as number));
       const compV = mean(trk(r, 'comp')!.notes.map((n) => n.velocity as number));
       const bassV = mean(trk(r, 'bass')!.notes.map((n) => n.velocity as number));
-      expect(leadV - compV, `seed ${seed} lead(${leadV.toFixed(0)})>>comp(${compV.toFixed(0)})`).toBeGreaterThan(30);
-      expect(compV, `seed ${seed} comp pp`).toBeGreaterThanOrEqual(25);
-      expect(compV, `seed ${seed} comp pp`).toBeLessThanOrEqual(36);
-      expect(bassV, `seed ${seed} bass`).toBeGreaterThanOrEqual(30);
-      expect(bassV, `seed ${seed} bass`).toBeLessThanOrEqual(44);
+      // ★ 2026-07-02:lead 仍在上(melody-first),但差距收窄(velocity 差 ~30 而非 ~55)→ comp 不再 pp 闷层,和 lead 同亮层=一台钢琴。
+      expect(leadV - compV, `seed ${seed} lead(${leadV.toFixed(0)})>comp(${compV.toFixed(0)})`).toBeGreaterThan(18);
+      expect(compV, `seed ${seed} comp mf`).toBeGreaterThanOrEqual(46);
+      expect(compV, `seed ${seed} comp mf`).toBeLessThanOrEqual(62);
+      expect(bassV, `seed ${seed} bass`).toBeGreaterThanOrEqual(38);
+      expect(bassV, `seed ${seed} bass`).toBeLessThanOrEqual(56);
     }
   });
 

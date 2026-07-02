@@ -10,11 +10,14 @@
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
 
 interface VelTarget { avg: number; max: number; min: number }
-// 忠实 MG 目标(0-127)。comp 依"本 bar 有无旋律"取不同 avg/max(有旋律更收敛 → 让路)。
-const LEAD_T: VelTarget = { avg: 86, max: 92, min: 54 };
-const BASS_T: VelTarget = { avg: 37, max: 58, min: 18 };
-const COMP_MEL_T: VelTarget = { avg: 29, max: 38, min: 10 };
-const COMP_NOMEL_T: VelTarget = { avg: 32, max: 42, min: 10 };
+// 目标(0-127)。★ 2026-07-02(用户:lead/comp 是一台钢琴,声音大小/音色要齐平):MG 原值 comp29/lead86 在采样钢琴
+//   (SpessaSynth)上,velocity 决定【力度层音色】—— comp pp(29)触发暗/闷的采样层,和 lead f(86)的亮层像两台琴,
+//   CC7 补不回音色差。改:comp 抬到 mf(≈52,和 lead 同亮层区 → 音色齐平),仍比 lead 软(melody-first 靠 velocity 差 +
+//   CC7,不靠 pp 闷层);bass 略抬托底。lead 保 f。
+const LEAD_T: VelTarget = { avg: 86, max: 96, min: 60 };
+const BASS_T: VelTarget = { avg: 48, max: 68, min: 30 };
+const COMP_MEL_T: VelTarget = { avg: 52, max: 66, min: 36 };
+const COMP_NOMEL_T: VelTarget = { avg: 55, max: 70, min: 38 };
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
