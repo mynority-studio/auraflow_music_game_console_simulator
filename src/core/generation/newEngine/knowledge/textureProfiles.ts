@@ -463,11 +463,12 @@ export const ACG_TEXTURE_FAMILY: Record<string, 'sparse' | 'drive' | 'block' | '
 };
 // 每首偏一个 character 的强度(0=不偏,1=只用该 family)。0.55 → 该 family ~50-55%(≈MG),其余仍出现(保 phrase 变化)。
 const ACG_CHARACTER_BIAS = 0.55;
-// MG-like character 分布(实测 MG 偏 drive:5 seed 中 3 首推进 44-56%):推进最常见 · 空旷次之 · 块状偶尔。水洗不作主。
-const ACG_CHARACTER_POOL: ('drive' | 'sparse' | 'block')[] = ['drive', 'drive', 'drive', 'drive', 'sparse', 'block'];
-/** 从 [0,1) 派生本曲 texture character(MG:每首承一个宏观 family;SIM 此前每首均匀=samey)。 */
-export function deriveAcgTextureCharacter(u01: number): 'drive' | 'sparse' | 'block' {
-  return ACG_CHARACTER_POOL[Math.floor(Math.max(0, Math.min(0.999, u01)) * ACG_CHARACTER_POOL.length)] ?? 'drive';
+/** ★ 从和声动量派生本曲 texture character(更 MG-aligned:MG 的 character 由进行本身给出,不是随机)。
+ *  高 D(cadential/arrival 密)→ 块状;高 S / 高动量(流动)→ 推进;T 主导/低动量(静)→ 空旷。 */
+export function deriveAcgTextureCharacter(dRatio: number, sRatio: number, motionRatio: number): 'drive' | 'sparse' | 'block' {
+  if (dRatio >= 0.32) return 'block';                        // 主-属密集 = 到达/块状驱动
+  if (sRatio >= 0.20 || motionRatio >= 0.49) return 'drive'; // 下属/动量高 = 流动推进
+  return 'sparse';                                           // 主功能静态 = 空旷电影钢琴
 }
 
 /** MG pickAcgTextureForBar 忠实 port:按 bar 相位 + 和声功能 + loop 边界 + 首句/曲末 选 ACG 具名手势。 */

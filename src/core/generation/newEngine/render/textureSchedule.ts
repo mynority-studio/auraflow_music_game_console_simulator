@@ -61,8 +61,12 @@ export function buildTextureSchedule(args: {
   const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
   if (txStyle === 'ACG') {
     // ★ per-song texture character(2026-07-02):MG 每首承一个宏观 family(推进/空旷/块状);SIM 此前每首均匀=samey。
-    //   本曲派生一个 character(确定性,一次 textureRng draw),逐 bar 偏它 → 整首有性格。
-    const acgCharacter = deriveAcgTextureCharacter(textureRng.next());
+    //   ★ 从【和声动量】派生(更 MG-aligned:character 由进行本身给出)—— 高 D→块状 / 高 S·动量→推进 / T 静→空旷。
+    const acgFuncs = timeline.filter((s) => activeSectionIds.has(s.sectionId)).map((s) => fBar(funcBySpan[s.id]));
+    const nAcgF = Math.max(1, acgFuncs.length);
+    const dRatio = acgFuncs.filter((f) => f === 'D').length / nAcgF;
+    const sRatio = acgFuncs.filter((f) => f === 'S').length / nAcgF;
+    const acgCharacter = deriveAcgTextureCharacter(dRatio, sRatio, dRatio + sRatio);
     let acgPrevId: string | undefined; let acgRep = 0;
     timeline.forEach((span, i) => {
       if (!activeSectionIds.has(span.sectionId)) return;
