@@ -28,6 +28,9 @@ export function pickSpaceProfile(style: string, world: TimbreWorld | undefined, 
   if (s === 'jazz' || s === 'blues') return 'jazzClub';
   if (s === 'lofi') return 'lofiTapeRoom';
   if (s === 'rnb') return 'rnbPlateRoom';
+  // ★ ACG(2026-07-02):久石让/坂本电影钢琴 = 空间感(hall/room),不能 dry-front。去 pad 后靠钢琴自身混响托空间,
+  //   否则落进 !hasPad→dryFront(rev×0.62,40/47→25/29 变干)—— 与 MG 空旷 cinematic piano 相反。→ ACG 恒 warmRoom。
+  if (s === 'acg') return 'popWarmRoom';
   if (world === 'syntheticSoft') return 'syntheticSoftRoom';
   if (!hasPad) return 'dryFront'; // pop/其它 无 pad → 更干靠前
   return 'popWarmRoom';
