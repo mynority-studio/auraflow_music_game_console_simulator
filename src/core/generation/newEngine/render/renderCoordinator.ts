@@ -17,6 +17,8 @@ import type { RoleMix } from '../knowledge/gmMixProfile';
 import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
+import { enforceBassDensityFloor } from './bassDensityFloor';
+import { finalEventProfile } from '../knowledge/finalEventProfile';
 import { buildTextureSchedule } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
@@ -34,7 +36,7 @@ import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyGroovePocket, pocketedRoles } from './groovePocket';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
-import { isWindFamily, windBreathCcEvents } from './windBreath';
+import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
@@ -63,10 +65,9 @@ function totalDurationTicks(plan: HarmonicPlan, timebase: Timebase): number {
   return maxEnd;
 }
 
-// CC64 踏板的风格(忠实 MG generatePedalEvents:只排除 JAZZ/BLUES,其余钢琴风格都踩)。
-//   ★ ACG 必须踩(P0,mg_bass_comp_lead 审计):MG ACG 每和弦踩踏板→钢琴"空旷/尾音托住和弦"的融合感;
-//     SIM 此前漏了 ACG → 延音/尾音/连接感全丢。ACG 用 MG 的 ~30ms 换踏板(非通用 0.06 beat),见 buildCompPedal。
-const PEDAL_STYLES = ['pop', 'lofi', 'rnb', 'acg'];
+// CC64 踏板由器配层 gestureExpressionByRole.comp.pedalPolicy 下发。
+//   ★ ACG 必须踩(P0,mg_bass_comp_lead 审计):MG ACG 每和弦踩踏板→钢琴"空旷/尾音托住和弦"的融合感。
+//   render 只按 plan 执行,不再自己用 style 猜哪些键盘要 pedal。
 // pad 铺法二选一:~40% 歌走 pedal anchor(整段长 pedal + 动声部),其余逐和弦选音。
 const PAD_PEDAL_ANCHOR_PROB = 0.4;
 
@@ -293,7 +294,12 @@ export function renderSongFull(
   }
 
   const tracks: TrackIR[] = [];
-  if (inLineup('bass')) tracks.push(renderBass(plan, timebase, band.style, textureSchedule));
+  if (inLineup('bass')) {
+    // ★ non-ACG final-event fidelity(directive §3.3.C/§4.3.A/§5.3.A):非 ACG 纹理 bass 过稀 → 主体段强拍补 root anchor
+    //   到 MG-like 支撑密度(低能量由下游 dynamics 降 velocity 不删)。ACG bassFloorBeats=空(有自己 spaceAcgBass)。
+    const rawBass = renderBass(plan, timebase, band.style, textureSchedule);
+    tracks.push(enforceBassDensityFloor(rawBass, plan, arrangement.sections, beatsPerBarOf(arrangement.meter), timebase.ppq, finalEventProfile(band.style)));
+  }
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: reservedReg.lowMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection }));
   if (padTrack) tracks.push(padTrack);
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, bigFillBars: leadInBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
@@ -453,7 +459,11 @@ export function renderSongFull(
         : t.role === 'bass' && acgBass0 ? spaceAcgBass(acgBass0, acgLead, acgBarTicks, timebase.ppq, rng.seed)
         : t))
     : articulatedTracks;
-  const balancedTracks = isAcg ? normalizeAcgDynamics(carvedTracks, acgBarTicks) : carvedTracks;
+  const balancedTracksPreSanitize = isAcg ? normalizeAcgDynamics(carvedTracks, acgBarTicks) : carvedTracks;
+  const balancedTracksLegato = balancedTracksPreSanitize.map((t) => (
+    t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t
+  ));
+  const balancedTracks = sanitizeLead(balancedTracksLegato); // ACG tuck/shape 之后再补连音 + 同音安全闸
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
@@ -464,7 +474,8 @@ export function renderSongFull(
     secBeatCursor += s.bars * bpbProg;
   }
   // ★ CC64 踏板:POP/LOFI/RNB/ACG 的 comp 每和弦踩(音尾 ring 融合);JAZZ/BLUES 不踩(清晰)。
-  const compPedal = PEDAL_STYLES.includes(band.style.toLowerCase()) ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
+  const compPedalPolicy = instrumentation.gestureExpressionByRole?.comp?.pedalPolicy ?? 'none';
+  const compPedal = compPedalPolicy !== 'none' ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
   const mixAttachedTracks = balancedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
@@ -491,12 +502,12 @@ export function renderSongFull(
       if (progChanged) { programChanges.push({ atTick: ticks(tick), program: prog }); prevProgram = prog; }
       if (m && (progChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
     }
-    // ★ 气声 lead 气口减弱(2026-06-11,用户):wind 家族(72-79)lead → CC11 包络(每音满气,长音尾减弱),
-    //   补"管乐长音戛然而止/一个音切另一个音不自然"。lead 单音 → 通道级 CC11 安全;SpessaSynth 实时应用。
-    const breath = t.role === 'lead' && isWindFamily(initialProgram) ? windBreathCcEvents(t.notes, timebase) : undefined;
-    const ccEvents = breath && breath.length ? breath.map((e) => ({ atTick: ticks(e.atTick), controller: e.controller, value: e.value })) : undefined;
+    // ★ 手势表情层:器配层据最终音色下发 sax/pipe-wind 等 gesture plan;render 只执行计划。
+    const gesture = applyGestureExpressionToTrack(t, instrumentation.gestureExpressionByRole?.[t.role], timebase);
+    const ccEvents = gesture.ccEvents?.length ? gesture.ccEvents : undefined;
     return {
       ...t,
+      notes: gesture.notes,
       program: initialProgram,
       programChanges: programChanges.length ? programChanges : undefined,
       pedalEvents,

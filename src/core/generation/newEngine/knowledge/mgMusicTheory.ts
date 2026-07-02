@@ -4410,7 +4410,14 @@ export function getVoiceLeadingPenalty(prevMidi: number[], nextMidi: number[]): 
 export function getResolutionTargets(intervalSemitones: number): number[] {
   const pc = ((intervalSemitones % 12) + 12) % 12;
   const rule = INTERVAL_AESTHETICS[pc];
-  return rule?.expectedResolutions ?? [];
+  // === auraflow fix (mg upstream determinism bug) ===
+  // mg upstream returns rule.expectedResolutions BY REFERENCE — callers in
+  // musicEngine.ts (saturation-resolve + tension-correction blocks around
+  // line 6271 / 6317) then `targets.push(fromKey)` mutate this "constant"
+  // data table. Cross-call accumulation breaks determinism: same seed
+  // produces different output depending on what was previously generated
+  // in the same process. Return a defensive copy to restore purity.
+  return rule?.expectedResolutions ? [...rule.expectedResolutions] : [];
 }
 
 // ------------------------------------------------------------------
