@@ -9,7 +9,7 @@
 //   (取代旧 36+音级 单八度死锁;根音可下探 E1–B1 拿低端,line 平滑不乱跳)。贴和弦音/导音。无 rng → 确定性。
 // ============================================================
 
-import { beats, mod12, type Timebase } from '../foundation';
+import { beats, midi, mod12, type Timebase } from '../foundation';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { placeBassMidi, pcDistance } from '../knowledge/pitchPlacement';
 import { resolveBassAnchorPc } from '../knowledge/basslineRules';
@@ -90,9 +90,17 @@ export function renderBass(plan: HarmonicPlan, timebase: Timebase, style: string
       const thirdPc = mod12(rootPc + (intervals[1] ?? 4));
       const fifthPc = mod12(rootPc + (intervals[2] ?? 7));
       const voicePc = (v: 'root' | 'fifth' | 'tenth') => (v === 'fifth' ? fifthPc : v === 'tenth' ? thirdPc : anchorPc);
-      for (const h of renderTextureBassHits(tc, span.durationBeats as number)) {
+      // ★ ACG(MG generateBarPattern port):texture bass 携带实际 midi(保八度)→ 直接落;其它风格仍 voice→pc→place。
+      const acgCtx = { rootPc, chordType: (span.chordType ?? span.quality) as string };
+      for (const h of renderTextureBassHits(tc, span.durationBeats as number, acgCtx)) {
         const vel = Math.max(1, Math.min(108, Math.round((h.vel * 0.85 + 0.2) * 127)));
-        push(voicePc(h.voice), span, start + h.tRel, h.dur, vel);
+        if (typeof h.midi === 'number') {
+          const m = Math.max(BASS_LOW, Math.min(BASS_HIGH, Math.round(h.midi)));
+          prevMidi = m;
+          notes.push({ pitch: midi(m), startTick: timebase.beatToTick(beats(start + h.tRel)), durationTicks: timebase.beatToTick(beats(h.dur)), velocity: vel });
+        } else {
+          push(voicePc(h.voice), span, start + h.tRel, h.dur, vel);
+        }
       }
       continue;
     }
