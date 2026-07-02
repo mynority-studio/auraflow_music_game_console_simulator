@@ -170,3 +170,45 @@ export function shapeAcgComp(comp: TrackIR, lead: TrackIR, timeline: readonly Ch
   notes = notes.filter((n) => du(n) > B(ctx, 0.03)).sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
   return { ...comp, notes };
 }
+
+// ============================================================
+// spaceAcgBassGesture 忠实 port(musicEngine.ts:7280-7337)—— bass 瘦身到 anchor(bar 头,长音)+ 1-2 支撑(对齐旋律落点)。
+//   删多余 bass → 干净稀疏低音(MG ~2.5/bar),给旋律留空间。力度 anchor≤54/support≤28(相对;normalize 后定级)。
+// ============================================================
+export function spaceAcgBass(bass: TrackIR, lead: TrackIR, barTicks: number, ppq: number, seed: number): TrackIR {
+  if (bass.notes.length === 0) return bass;
+  const B = (beat: number) => beat * ppq;
+  const nBars = Math.max(1, Math.ceil(Math.max(0, ...bass.notes.map(st)) / barTicks) + 1);
+  const remove = new Set<NoteIR>();
+  const reshaped = new Map<NoteIR, { t: number; d: number; velCap: number }>();
+  for (let bar = 0; bar < nBars; bar++) {
+    const barStart = bar * barTicks, barEnd = barStart + barTicks;
+    const bassEv = bass.notes.filter((n) => du(n) > 0 && st(n) >= barStart - 1 && st(n) < barEnd - 1).sort((a, b) => st(a) - st(b) || pit(a) - pit(b));
+    if (bassEv.length <= 1) continue;
+    const landing = primaryLandingInBar(lead, barStart, barEnd, ppq);
+    const breath = stableUnit(`acg-bass-gesture|${seed}|${bar}`);
+    const lt = landing ? st(landing) : null;
+    const supportTargets = lt !== null
+      ? [barStart + Math.max(B(0.84), Math.min(B(1.42), lt - barStart - B(0.46))), Math.min(barEnd - B(0.62), lt + B(1.04) + breath * B(0.18))]
+      : [barStart + B(1.20) + breath * B(0.22), barStart + B(2.64) + breath * B(0.18)];
+    const barKeep = new Map<NoteIR, number | null>();
+    barKeep.set(bassEv[0], null); // anchor(bar 头)
+    const maxSupports = barTicks >= B(3.6) ? 2 : 1;
+    for (const target of supportTargets.slice(0, maxSupports)) {
+      if (target <= barStart + B(0.34) || target >= barEnd - B(0.28)) continue;
+      const cand = bassEv.slice(1).filter((e) => !barKeep.has(e)).sort((a, b) => Math.abs(st(a) - target) - Math.abs(st(b) - target))[0];
+      if (cand) barKeep.set(cand, target);
+    }
+    for (const e of bassEv) {
+      if (!barKeep.has(e)) { remove.add(e); continue; }
+      const target = barKeep.get(e)!;
+      if (target === null) reshaped.set(e, { t: barStart, d: Math.max(B(0.68), barEnd - barStart - B(0.10)), velCap: 54 });
+      else reshaped.set(e, { t: target, d: Math.min(Math.max(B(0.32), barEnd - target - B(0.16)), B(0.58)), velCap: 28 });
+    }
+  }
+  const out = bass.notes.filter((n) => !remove.has(n)).map((n) => {
+    const r = reshaped.get(n); if (!r) return n;
+    return { pitch: n.pitch, startTick: ticks(Math.max(0, Math.round(r.t))) as Ticks, durationTicks: ticks(Math.max(1, Math.round(r.d))) as Ticks, velocity: Math.min(n.velocity, r.velCap) };
+  });
+  return { ...bass, notes: out };
+}

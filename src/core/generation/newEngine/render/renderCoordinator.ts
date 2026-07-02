@@ -38,8 +38,8 @@ import { isWindFamily, windBreathCcEvents } from './windBreath';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { normalizeAcgDynamics } from './acgDynamics';
-import { tuckAcgLead } from './acgLeadShape';
-import { shapeAcgComp } from './acgCompShape';
+import { tuckAcgLead, resolveAcgTailExpectations, acgLeadContext } from './acgLeadShape';
+import { shapeAcgComp, spaceAcgBass } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 
@@ -425,20 +425,29 @@ export function renderSongFull(
     ? preSanitized.map((t) => (t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t))
     : preSanitized;
   const articulatedTracks = sanitizeLead(legatoTracks); // 最终安全闸(legato/任何末端处理后都不留同 pitch collision)
-  // ★ ACG piano touch(late,忠实 MG shapeTopVoicePianoTouch 顺序:tuck → shape comp → normalize)。只 ACG。
-  //   ① tuckAcgLead:旋律落点重定位到 comp 琶音 apex 之后 + 音域上浮 + 瘦身(结构落点歌唱句)。
-  //   ② shapeAcgComp:inner voice(旋律下方软歌唱内声部)→ carve(comp 高位色音让旋律)→ floor(稀疏 bar 补低位托底)。
-  //   ③ normalizeAcgDynamics:每-bar 三轨力度归一(lead86/comp29-32/bass37)= ACG 力度最终权威。
+  // ★ ACG piano touch(late,忠实 MG shapeTopVoicePianoTouch 顺序:tuck → tailResolve → spaceBass → shape comp → normalize)。
+  //   ① tuckAcgLead:旋律落点重定位到 comp 琶音 apex 之后 + 音域上浮 + 瘦身。
+  //   ② resolveAcgTailExpectations:旋律尾音撞下一和弦 → 移除/把下个落点 snap 到解决音。
+  //   ③ spaceAcgBass:bass 瘦身到 anchor + 1-2 支撑(对齐旋律落点)→ 干净稀疏低音。
+  //   ④ shapeAcgComp:inner voice → carve → floor。⑤ normalizeAcgDynamics:三轨力度归一。
   const isAcg = band.style.toLowerCase() === 'acg';
   const acgBarTicks = beatsPerBarOf(arrangement.meter) * timebase.ppq;
   const acgLead0 = isAcg ? articulatedTracks.find((t) => t.role === 'lead') : undefined;
   const acgComp0 = isAcg ? articulatedTracks.find((t) => t.role === 'comp') : undefined;
-  //   走 A override lead 自带权威 hand-played timing → 不 tuck。
-  const acgLead = acgLead0 && acgComp0 && !overrideLeadTrack
+  const acgBass0 = isAcg ? articulatedTracks.find((t) => t.role === 'bass') : undefined;
+  //   走 A override lead 自带权威 hand-played timing → 不 tuck / 不 tailResolve。
+  const acgLeadTucked = acgLead0 && acgComp0 && !overrideLeadTrack
     ? tuckAcgLead(acgLead0, acgComp0, acgBarTicks, timebase.ppq, arrangement.tempoBpm)
     : acgLead0;
+  const acgLead = acgLeadTucked && !overrideLeadTrack
+    ? resolveAcgTailExpectations(acgLeadTucked, plan.chordTimeline, plan.chordFunctionTimeline, acgBarTicks, timebase.ppq, acgLeadContext(band))
+    : acgLeadTucked;
   const carvedTracks = isAcg && acgLead && acgComp0
-    ? articulatedTracks.map((t) => (t.role === 'lead' ? acgLead : t.role === 'comp' ? shapeAcgComp(acgComp0, acgLead, plan.chordTimeline, acgBarTicks, timebase.ppq, arrangement.tempoBpm, rng.seed) : t))
+    ? articulatedTracks.map((t) => (
+        t.role === 'lead' ? acgLead
+        : t.role === 'comp' ? shapeAcgComp(acgComp0, acgLead, plan.chordTimeline, acgBarTicks, timebase.ppq, arrangement.tempoBpm, rng.seed)
+        : t.role === 'bass' && acgBass0 ? spaceAcgBass(acgBass0, acgLead, acgBarTicks, timebase.ppq, rng.seed)
+        : t))
     : articulatedTracks;
   const balancedTracks = isAcg ? normalizeAcgDynamics(carvedTracks, acgBarTicks) : carvedTracks;
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。

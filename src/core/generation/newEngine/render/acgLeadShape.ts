@@ -12,6 +12,10 @@
 
 import { ticks, midi, type Ticks } from '../foundation';
 import type { TrackIR, NoteIR } from '../ir/MusicalIR';
+import type { ChordSpan, HarmonicFunction } from '../harmony/HarmonicPlan';
+import type { BandSpec } from '../band/BandSpec';
+import { resolveLocalScale, buildRunScale, melodyContractPcsForStyle, type LocalScaleChordLike, type LocalScaleContext } from '../knowledge/mgLocalScaleResolver';
+import { evaluateNoteInChordContext, modeToKeyFamily } from '../knowledge/mgMusicTheory';
 
 const st = (n: NoteIR) => n.startTick as number;
 const du = (n: NoteIR) => n.durationTicks as number;
@@ -77,4 +81,80 @@ export function tuckAcgLead(lead: TrackIR, comp: TrackIR, barTicks: number, ppq:
     velocity: n.velocity,
   }));
   return { ...lead, notes: out };
+}
+
+// ============================================================
+// resolveAcgTailExpectations 忠实 port(musicEngine.ts:7183-7266)—— 旋律尾音撞下一和弦(urgency≥0.5)时:
+//   短尾音 → 移除;长尾音 → 把【下一个落点】snap 到解决音(resolutionTargets ∩ 下和弦 contract ∩ scale)。
+//   保旋律不留悬而未决的张力音。用 SIM 已有和声层(evaluateNoteInChordContext / resolveLocalScale / contract)。
+// ============================================================
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const capFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export interface AcgLeadContext { keyRootPc: number; musicKey: string; musicMode: string; tonalCharacter: 'tonal' | 'modal' }
+
+/** 从 band 派生 ACG lead 和声上下文(镜像 mgLeadRenderer)。 */
+export function acgLeadContext(band: BandSpec): AcgLeadContext {
+  const keyPc = (((band.key as number) % 12) + 12) % 12;
+  return {
+    keyRootPc: keyPc,
+    musicKey: NOTE_NAMES[keyPc],
+    musicMode: band.modalModeName ? capFirst(band.modalModeName as string) : (band.mode === 'minor' ? 'Aeolian' : 'Ionian'),
+    tonalCharacter: band.tonalityKind === 'modal' ? 'modal' : 'tonal',
+  };
+}
+
+const fFunc = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
+const chordType = (s: ChordSpan) => s.chordType ?? String(s.quality);
+function chordLike(span: ChordSpan, func: 'T' | 'S' | 'D'): LocalScaleChordLike {
+  return { rootMidi: span.rootPc as number, type: chordType(span), roman: String(span.roman), effectiveFunc: func, forcedScale: span.forcedScale, localTonalCenterPc: span.localTonalCenterPc as number | undefined, borrowedSource: span.borrowedSource as string | undefined };
+}
+function snapToPcSet(target: number, pcs: Set<number>): number {
+  if (pcs.size === 0) return target;
+  let best = target, bd = Infinity;
+  for (let m = target - 12; m <= target + 12; m++) { if (!pcs.has(((m % 12) + 12) % 12)) continue; const d = Math.abs(m - target); if (d < bd) { bd = d; best = m; } }
+  return best;
+}
+
+export function resolveAcgTailExpectations(lead: TrackIR, timeline: readonly ChordSpan[], funcTimeline: readonly HarmonicFunction[], barTicks: number, ppq: number, ctx: AcgLeadContext): TrackIR {
+  if (lead.notes.length === 0 || timeline.length === 0) return lead;
+  const scaleCtx: LocalScaleContext = { style: 'ACG', key: ctx.musicKey, mode: ctx.musicMode };
+  const modeFamily = modeToKeyFamily(ctx.musicMode);
+  const B = (beat: number) => beat * ppq;
+  const spanStart = (s: ChordSpan) => (s.startBeat as number) * ppq;
+  const spanEnd = (s: ChordSpan) => ((s.startBeat as number) + (s.durationBeats as number)) * ppq;
+  const songEnd = spanEnd(timeline[timeline.length - 1]);
+  const inRange = (n: NoteIR, lo: number, hi: number) => du(n) > 0 && st(n) >= lo - 1 && st(n) < hi - 1;
+  const remove = new Set<NoteIR>();
+  const snap = new Map<NoteIR, number>();
+
+  for (let i = 0; i < timeline.length; i++) {
+    const chord = timeline[i]; const start = spanStart(chord), end = spanEnd(chord);
+    const nextI = (i + 1) % timeline.length; const nextChord = timeline[nextI];
+    const nextStart = spanStart(nextChord), nextEnd = spanEnd(nextChord);
+    const tail = lead.notes.filter((n) => inRange(n, start, end)).filter((n) => du(n) >= B(0.50) || st(n) >= end - B(0.78)).sort((a, b) => st(b) - st(a) || du(b) - du(a))[0];
+    if (!tail) continue;
+    const nextLanding = lead.notes.filter((n) => inRange(n, nextStart, nextEnd)).sort((a, b) => st(a) - st(b) || du(b) - du(a))[0];
+    if (!nextLanding) continue;
+    const gapToNext = nextI === 0 ? Math.max(0, songEnd + st(nextLanding) - (st(tail) + du(tail))) : Math.max(0, st(nextLanding) - (st(tail) + du(tail)));
+    const nearEnd = st(tail) >= end - B(0.78) || st(tail) + du(tail) >= end - B(0.08);
+    if (!nearEnd && (du(tail) < B(0.65) || gapToNext >= B(2.20))) continue;
+
+    const func = fFunc(funcTimeline[i]); const nextFunc = fFunc(funcTimeline[nextI]);
+    const rootPc = chord.rootPc as number; const nextRootPc = nextChord.rootPc as number;
+    const runScalePcs = new Set(buildRunScale(resolveLocalScale(scaleCtx, chordLike(chord, func))).map((m) => ((m % 12) + 12) % 12));
+    const assessment = evaluateNoteInChordContext(((pit(tail) % 12) + 12) % 12, chordType(chord), rootPc, func, chordType(nextChord), nextRootPc, ctx.keyRootPc, chord.forcedScale, ctx.tonalCharacter === 'modal', runScalePcs, ctx.tonalCharacter, chord.localTonalCenterPc as number | undefined, modeFamily);
+    if (assessment.urgency < 0.50) continue;
+    const nextScale = resolveLocalScale(scaleCtx, chordLike(nextChord, nextFunc));
+    const nextContract = melodyContractPcsForStyle('ACG', { type: chordType(nextChord), borrowedSource: nextChord.borrowedSource as string | undefined, roman: String(nextChord.roman) }, nextRootPc);
+    const targetPcs = new Set(assessment.resolutionTargets.filter((pc) => nextContract.has(pc) && nextScale.pcs.has(pc)));
+    if (targetPcs.size === 0) continue;
+    if (du(tail) < B(0.50)) { remove.add(tail); continue; }
+    const snapped = snapToPcSet(pit(nextLanding), targetPcs);
+    if (targetPcs.has(((snapped % 12) + 12) % 12)) snap.set(nextLanding, snapped);
+  }
+
+  if (remove.size === 0 && snap.size === 0) return lead;
+  return { ...lead, notes: lead.notes.filter((n) => !remove.has(n)).map((n) => (snap.has(n) ? { ...n, pitch: midi(snap.get(n)!) } : n)) };
 }
