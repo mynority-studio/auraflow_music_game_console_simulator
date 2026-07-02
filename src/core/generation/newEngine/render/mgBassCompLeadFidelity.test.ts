@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMusicSync } from '../../musicGeneration/MusicGenerationService';
 import { instrumentInfo } from '../knowledge/instruments';
+import { ACG_TEXTURE_FAMILY } from '../knowledge/textureProfiles';
 
 // ============================================================
 // MG bass/comp/lead fidelity(directive §10.2)—— SIM 侧不变量(不依赖 live ../melodygenerative,任意 CI 可跑)。
@@ -64,6 +65,26 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     for (const seed of SEEDS) {
       const lead = trk(acg(seed), 'lead')!;
       expect(maxStackAt(lead.notes as unknown as { startTick: number }[]), `seed ${seed}`).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('★ P2 texture family(acg_render_layer directive:不 block-heavy·保 MG air):全曲 block ≤32%;intro/outro air ≥40%', () => {
+    for (const seed of SEEDS) {
+      const r = acg(seed);
+      const tpb = (r.report as { texturePerBar?: string[] }).texturePerBar ?? [];
+      const active = tpb.filter((t) => t !== '—');
+      const ratio = (f: string) => active.filter((t) => ACG_TEXTURE_FAMILY[t] === f).length / Math.max(1, active.length);
+      // 不整曲 block-heavy(J-pop 块床);MG 全曲 block 13-38% → ≤32 留余但抓退化。
+      expect(ratio('block'), `seed ${seed} 全曲 block=${(ratio('block') * 100).toFixed(0)}%`).toBeLessThanOrEqual(0.32);
+      // intro/outro 保 air(space+wash);修此前末段落进 block preferred → 块床。
+      let bar = 0;
+      for (const s of r.uiSnapshot.sections) {
+        const seg = tpb.slice(bar, bar + s.bars).filter((t) => t !== '—'); bar += s.bars;
+        if ((s.role === 'intro' || s.role === 'outro') && seg.length >= 2) {
+          const air = seg.filter((t) => ACG_TEXTURE_FAMILY[t] === 'sparse' || ACG_TEXTURE_FAMILY[t] === 'wash').length / seg.length;
+          expect(air, `seed ${seed} ${s.role} air=${(air * 100).toFixed(0)}%`).toBeGreaterThanOrEqual(0.40);
+        }
+      }
     }
   });
 

@@ -461,14 +461,18 @@ export const ACG_TEXTURE_FAMILY: Record<string, 'sparse' | 'drive' | 'block' | '
   ACG_Anthem_Block_Push: 'block', ACG_Suspended_Block_Arrival: 'block',
   ACG_Bass_Tremolo_Color: 'wash', ACG_Stride_Cantabile_Ballad: 'wash',
 };
+// family → 代表织体(P2:让有效 family 的织体进候选池;drive/sparse 各 3)。block/wash 不作 bias family(只局部)。
+const FAMILY_TEXTURES: Record<'drive' | 'sparse', readonly string[]> = {
+  sparse: ['Piano_TopVoice_Planing', 'ACG_Pedal_Wash_Color_Drops', 'ACG_Sakamoto_LH_Arp_RH_Penta'],
+  drive: ['ACG_Quartal_Arp_Wave', 'ACG_Open_Broken_10th', 'ACG_Ostinato_Hook_Pulse'],
+};
 // 每首偏一个 character 的强度(0=不偏,1=只用该 family)。0.55 → 该 family ~50-55%(≈MG),其余仍出现(保 phrase 变化)。
 const ACG_CHARACTER_BIAS = 0.55;
-/** ★ 从和声动量派生本曲 texture character(更 MG-aligned:MG 的 character 由进行本身给出,不是随机)。
- *  高 D(cadential/arrival 密)→ 块状;高 S / 高动量(流动)→ 推进;T 主导/低动量(静)→ 空旷。 */
-export function deriveAcgTextureCharacter(dRatio: number, sRatio: number, motionRatio: number): 'drive' | 'sparse' | 'block' {
-  if (dRatio >= 0.32) return 'block';                        // 主-属密集 = 到达/块状驱动
-  if (sRatio >= 0.20 || motionRatio >= 0.49) return 'drive'; // 下属/动量高 = 流动推进
-  return 'sparse';                                           // 主功能静态 = 空旷电影钢琴
+/** ★ 从和声动量派生本曲 texture character(更 MG-aligned:character 由进行本身给出,不是随机)。
+ *  高动量/下属/到达(流动)→ 推进;主功能静态 → 空旷。★ block 不作 per-song character(acgRenderProfile
+ *  allowBlockAsCharacter=false)—— block 只作【局部】(D/到达 bar 的 preferred list),防整曲 block-heavy(J-pop 块床)。 */
+export function deriveAcgTextureCharacter(dRatio: number, sRatio: number, motionRatio: number): 'drive' | 'sparse' {
+  return (motionRatio >= 0.47 || sRatio >= 0.20 || dRatio >= 0.34) ? 'drive' : 'sparse'; // 流动/到达 = 推进;静态 = 空旷
 }
 
 /** MG pickAcgTextureForBar 忠实 port:按 bar 相位 + 和声功能 + loop 边界 + 首句/曲末 选 ACG 具名手势。 */
@@ -481,7 +485,7 @@ export function pickAcgTextureForBar(args: {
   prevTextureId?: string;
   repeatCount: number;
   contract?: GrooveTextureContract;
-  characterFamily?: 'drive' | 'sparse' | 'block'; // ★ 本曲宏观 character:偏这个 family(不 override phrase 逻辑)
+  characterFamily?: 'drive' | 'sparse'; // ★ 本 bar 有效 family(acgRenderProfile section-energy 解析后):偏它(不 override phrase 逻辑)
   random: { next(): number; pick<T>(xs: readonly T[]): T };
 }): TextureProfile {
   const role = phraseCellRole(args.barIndex, args.totalBars);
@@ -503,11 +507,21 @@ export function pickAcgTextureForBar(args: {
     role === 'lift' ? ['ACG_Anthem_Block_Push', 'ACG_Quartal_Arp_Wave', 'ACG_Bass_Tremolo_Color', 'ACG_Open_Broken_10th', 'ACG_Ostinato_Hook_Pulse'] :
     ['ACG_Suspended_Block_Arrival', 'ACG_Anthem_Block_Push', 'ACG_Bass_Tremolo_Color', 'ACG_Pedal_Wash_Color_Drops'];
 
-  const candidates = preferred
+  // ★ P2(acg_render_layer_mg_feel_directive):让【有效 family】的织体进入候选池 —— 否则 D-function/isSongEnd/loop-boundary
+  //   的 block-only preferred 让 sparse-biased 段(intro/outro)无空织体可选 → outro/末段 block-heavy(J-pop 块床)。
+  //   把该 family 织体【前置】到 preferred(仍过 density/energy/role 过滤,不硬塞不合适的),再由下面的 bias 选中。
+  const fam = args.characterFamily;
+  const preferredF = fam
+    ? [...FAMILY_TEXTURES[fam], ...preferred.filter((t) => !FAMILY_TEXTURES[fam].includes(t))]
+    : preferred;
+  const candidates = preferredF
     .map((tc) => TEXTURE_POOL.find((t) => t.styles.includes('ACG') && t.textureCase === tc))
     .filter((t): t is TextureProfile => {
       if (!t) return false;
-      if (!t.phraseRoles.includes(role)) return false;
+      // ★ P2:sparse(空/air)family 织体在【intro/outro 等静段】跳过 phraseRole 过滤(否则末段落进 block-only preferred →
+      //   块床,抹掉 MG air)。drive 不放宽(避免整曲 drive-heavy 抹掉 air)。density/energy 仍守。非放宽织体需 role 匹配。
+      const isSparseOverride = fam === 'sparse' && FAMILY_TEXTURES.sparse.includes(t.textureCase);
+      if (!isSparseOverride && !t.phraseRoles.includes(role)) return false;
       if (density < t.densityRange[0] || density > t.densityRange[1]) return false;
       if (energy < t.energyRange[0] || energy > t.energyRange[1]) return false;
       if (t.avoidOnDominantChain && isDominantChain) return false;

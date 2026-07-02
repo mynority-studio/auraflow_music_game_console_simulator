@@ -8,6 +8,7 @@
 // ============================================================
 
 import { phraseCellRole, densityForCell, energyForCell, pickTextureForBar, pickAcgTextureForBar, deriveAcgTextureCharacter, type TextureStyleName, type SectionLabel, type GrooveTextureContract } from '../knowledge/textureProfiles';
+import { acgRenderProfile, resolveAcgBarFamily } from '../knowledge/acgRenderProfile';
 import { hasTextureRenderer } from './textureRenderer';
 import type { HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { SectionRole } from '../arranger/ArrangementPlan';
@@ -60,8 +61,10 @@ export function buildTextureSchedule(args: {
   //   barIndex = span 在全 timeline 的位置;func/nextFunc 从 chordFunctionTimeline;prevId/rep 跨 span 追踪。
   const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
   if (txStyle === 'ACG') {
-    // ★ per-song texture character(2026-07-02):MG 每首承一个宏观 family(推进/空旷/块状);SIM 此前每首均匀=samey。
-    //   ★ 从【和声动量】派生(更 MG-aligned:character 由进行本身给出)—— 高 D→块状 / 高 S·动量→推进 / T 静→空旷。
+    // ★ per-song texture character(2026-07-02)+ P2 section-energy family(acg_render_layer_mg_feel_directive):
+    //   character 从【和声动量】派生(drive/sparse;block 不作 character,只局部);再由 acgRenderProfile 按 section 能量解析
+    //   逐 bar 有效 family —— intro/outro 空(MG air)· chorus 推进 · verse/bridge 用 character。修 outro/末段 block-heavy(J-pop 块床)。
+    const profile = acgRenderProfile();
     const acgFuncs = timeline.filter((s) => activeSectionIds.has(s.sectionId)).map((s) => fBar(funcBySpan[s.id]));
     const nAcgF = Math.max(1, acgFuncs.length);
     const dRatio = acgFuncs.filter((f) => f === 'D').length / nAcgF;
@@ -71,11 +74,12 @@ export function buildTextureSchedule(args: {
     timeline.forEach((span, i) => {
       if (!activeSectionIds.has(span.sectionId)) return;
       const label = SECTION_LABEL[sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE';
+      const barFamily = resolveAcgBarFamily(profile, label, acgCharacter);
       const prof = pickAcgTextureForBar({
         barIndex: i, totalBars: timeline.length, sectionLabel: label,
         func: fBar(funcBySpan[span.id]),
         nextFunc: i + 1 < timeline.length ? fBar(funcBySpan[timeline[i + 1].id]) : null,
-        prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, characterFamily: acgCharacter, random: textureRng,
+        prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, characterFamily: barFamily, random: textureRng,
       });
       if (prof.id === acgPrevId) acgRep += 1; else { acgPrevId = prof.id; acgRep = 1; }
       if (hasTextureRenderer(prof.textureCase)) schedule[span.id] = prof.textureCase;
