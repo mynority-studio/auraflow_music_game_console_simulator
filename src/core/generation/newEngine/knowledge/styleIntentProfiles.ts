@@ -18,19 +18,22 @@ export interface StyleIntentProfile {
   bassTargetNotesPerBar: [number, number];
   // texture family 默认(placeholder,Phase 1 observe;Phase 3 用 section-energy + 和声动量精化,见 [acgRenderProfile])。
   defaultTextureFamily: TextureFamily;
+  // ★ Phase 6:lead coverage 意图区间(MG 参考:RNB~0.5·POP~0.6·LOFI~0.4·JAZZ~0.55·ACG cantabile~0.4)。observe(不 post-cap)。
+  leadTargetCoverage: [number, number];
+  leadMaxGapBeats: number;
 }
 
 const PROFILES: Record<string, StyleIntentProfile> = {
-  acg: { bassFamily: 'minimal', bassTargetNotesPerBar: [2, 3], defaultTextureFamily: 'roll' },   // 电影钢琴:LH 稀疏支撑 + 琶音
-  pop: { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [1, 2], defaultTextureFamily: 'block' },
-  jazz: { bassFamily: 'walking', bassTargetNotesPerBar: [3, 4], defaultTextureFamily: 'block' },
-  rnb: { bassFamily: 'syncopated', bassTargetNotesPerBar: [2, 4], defaultTextureFamily: 'roll' },
-  lofi: { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [2, 3], defaultTextureFamily: 'wash' },
-  blues: { bassFamily: 'walking', bassTargetNotesPerBar: [2, 4], defaultTextureFamily: 'block' },
+  acg: { bassFamily: 'minimal', bassTargetNotesPerBar: [2, 3], defaultTextureFamily: 'roll', leadTargetCoverage: [0.3, 0.6], leadMaxGapBeats: 8 },
+  pop: { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [1, 2], defaultTextureFamily: 'block', leadTargetCoverage: [0.5, 0.7], leadMaxGapBeats: 4 },
+  jazz: { bassFamily: 'walking', bassTargetNotesPerBar: [3, 4], defaultTextureFamily: 'block', leadTargetCoverage: [0.45, 0.7], leadMaxGapBeats: 4 },
+  rnb: { bassFamily: 'syncopated', bassTargetNotesPerBar: [2, 4], defaultTextureFamily: 'roll', leadTargetCoverage: [0.4, 0.65], leadMaxGapBeats: 4 },
+  lofi: { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [2, 3], defaultTextureFamily: 'wash', leadTargetCoverage: [0.3, 0.6], leadMaxGapBeats: 5 },
+  blues: { bassFamily: 'walking', bassTargetNotesPerBar: [2, 4], defaultTextureFamily: 'block', leadTargetCoverage: [0.45, 0.7], leadMaxGapBeats: 4 },
 };
 
 export function styleIntentProfile(style: StyleName | string): StyleIntentProfile {
-  return PROFILES[String(style).toLowerCase()] ?? { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [1, 2], defaultTextureFamily: 'block' };
+  return PROFILES[String(style).toLowerCase()] ?? { bassFamily: 'rootAnchor', bassTargetNotesPerBar: [1, 2], defaultTextureFamily: 'block', leadTargetCoverage: [0.5, 0.7], leadMaxGapBeats: 4 };
 }
 
 /** bass 地板拍位数 → 家族(与 finalEventProfile.bassFloorBeats 一致的投影;Phase 2 迁移用)。 */

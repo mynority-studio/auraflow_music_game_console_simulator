@@ -13,7 +13,7 @@ import type { ArrangementPlan } from './ArrangementPlan';
 import type { StyleName } from '../knowledge/mgMusicTheory';
 import { styleIntentProfile, bassFamilyFromFloorBeats } from '../knowledge/styleIntentProfiles';
 import { dominantFamilyOfCases, dominantOnsetFormOfCases } from '../knowledge/textureFamilyMap';
-import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule, CompOnsetFormSchedule } from '../intent/MusicIntentPlan';
+import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule, CompOnsetFormSchedule, LeadGrammarIntent, TextureTransitionPlan } from '../intent/MusicIntentPlan';
 import type { IntentSummary } from '../intent/intentAuditTypes';
 
 const CREATED_BY = 'deriveMusicIntentPlan/phase2';
@@ -56,12 +56,20 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
       meta: onsetMeta(),
       slots: [{ meta: onsetMeta(), startBeat, endBeat, form: grooveOnsetForm, ...(grooveOnsetForm === 'rollHeavy' ? { targetSingleRatio: [0.85, 1.0] as [number, number] } : {}) }],
     };
+    // ★ Phase 6:lead grammar intent(observe —— 不 post-cap;enforce 需 legato/pocket 消费 boundary + replay-safe,directive 保留 observe 直到可保证)。
+    const leadGrammarIntent: LeadGrammarIntent = {
+      meta: observeMeta(),
+      targetCoverage: prof.leadTargetCoverage, maxGapBeats: prof.leadMaxGapBeats,
+      preserveRests: true, preserveSlope: true, boundaryResolution: 'mg',
+    };
+    // ★ Phase 5:texture transition plan(observe —— LOFI phrase-level 变化 enforce 需 repeat-safe bridge + accent-clock-safe + outro-clamp,撞过 5 契约,deferred)。
+    const textureTransitionPlan: TextureTransitionPlan = { meta: observeMeta(), slots: [] };
     return {
       meta: observeMeta(),
       sectionId: s.id, sectionRole: s.role, functionTag: s.functionTag,
       startBeat, endBeat, bars: s.bars, energy,
       grooveContractId: arrangement.songGrooveContractId,
-      bassPatternSchedule, textureFamilySchedule, compOnsetFormSchedule,
+      bassPatternSchedule, textureFamilySchedule, compOnsetFormSchedule, leadGrammarIntent, textureTransitionPlan,
     };
   });
   return { version: 1, style: styleName, mode: 'observe', source: 'sim-derived', sections };
@@ -79,6 +87,7 @@ export function summarizeMusicIntent(plan: MusicIntentPlan): IntentSummary {
       bassTargetNotesPerBar: s.bassPatternSchedule?.slots[0]?.targetNotesPerBar,
       textureFamily: s.textureFamilySchedule?.slots[0]?.family,
       compOnsetForm: s.compOnsetFormSchedule?.slots[0]?.form,
+      leadTargetCoverage: s.leadGrammarIntent?.targetCoverage,
     })),
   };
 }
