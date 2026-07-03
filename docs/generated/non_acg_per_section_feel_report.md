@@ -1,6 +1,6 @@
 # T1 POP/JAZZ/LOFI/RNB 逐段 MG feel 审计
 
-- MG: `../melodygenerative` @ 24dfd6f (dirty) · SIM: `456b307` (dirty)
+- MG: `../melodygenerative` @ 24dfd6f (dirty) · SIM: `154a019` (dirty)
 - 方法:和 ACG 一样,用 MG 16-bar reference 拆 4-bar phrase 作为标尺,再审 SIM 主链完整成曲的每个 section。
 - 范围:只判 bass / comp / lead。pad / drum 只记录为 SIM 产品层,不计入 MG 保真缺口。
 - 关键读法:section flags 不是 byte parity,而是听感形态偏离:密度、连接感、音域、块状/滚奏、织体覆盖。
@@ -15,12 +15,12 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 2 | 12 | 1 | 0.5/0.5/62.1 | 0.943/0.5/67 | ok |
-| verse(story) | 12 | 12 | 2 | 0.5/0.5/71 | 0.953/2/67 | ⚠ bass 过密 2 vs MG 1.06 |
-| verse(story) | 12 | 12 | 2 | 0.5/0.5/70.7 | 0.868/6/67 | ⚠ bass 过密 2 vs MG 1.06 |
-| chorus(hook) | 12 | 7.33 | 2 | 0.8/0.2/85.8 | 0.956/1.5/67 | ⚠ bass 过密 2 vs MG 1.06 |
-| chorus(hook) | 12 | 7.33 | 2 | 0.8/0.2/85.9 | 0.956/1.5/67 | ⚠ bass 过密 2 vs MG 1.06 |
-| outro(outro) | 4 | 12 | 2 | 0.5/0.5/66.5 | 0.571/4/66 | ⚠ bass 过密 2 vs MG 1.06 |
+| intro(setup) | 2 | 12 | 1 | 0.5/0.5/57.1 | 0.943/0.5/67 | ok |
+| verse(story) | 12 | 12 | 2 | 0.5/0.5/65.2 | 0.953/2/67 | ⚠ bass 过密 2 vs MG 1.06 |
+| verse(story) | 12 | 12 | 2 | 0.5/0.5/65 | 0.868/6/67 | ⚠ bass 过密 2 vs MG 1.06 |
+| chorus(hook) | 12 | 7.33 | 2 | 0.8/0.2/78.9 | 0.956/1.5/67 | ⚠ bass 过密 2 vs MG 1.06 |
+| chorus(hook) | 12 | 7.33 | 2 | 0.8/0.2/78.8 | 0.956/1.5/67 | ⚠ bass 过密 2 vs MG 1.06 |
+| outro(outro) | 4 | 12 | 2 | 0.5/0.5/61.2 | 0.571/4/66 | ⚠ bass 过密 2 vs MG 1.06 |
 
 ### seed 7
 - roles/programs: bass:34 · comp:5 · pad:89 · lead:1
@@ -30,9 +30,9 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| verse(story) | 16 | 11.13 | 2 | 0.533/0.467/80.7 | 0.378/26/72 | ⚠ lead 断裂 gap 26 > MG phrase max 10.5 |
-| chorus(hook) | 16 | 6.31 | 2 | 1/0/88.3 | 0.773/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| chorus(hook) | 16 | 6.31 | 2 | 1/0/88.4 | 0.773/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| verse(story) | 16 | 11.13 | 2 | 0.533/0.467/74.2 | 0.378/26/72 | ⚠ lead 断裂 gap 26 > MG phrase max 10.5 |
+| chorus(hook) | 16 | 6.31 | 2 | 1/0/81.2 | 0.773/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| chorus(hook) | 16 | 6.31 | 2 | 1/0/81.3 | 0.773/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
 | outro(outro) | 4 | 0 | 4 | 0/0/0 | 0.718/4/70 | ⚠ comp 过稀 0 vs MG 7.13; comp 过度滚开 block 0 vs MG 1–1 |
 
 ### seed 42
@@ -43,11 +43,11 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 2 | 4.5 | 2 | 1/0/69 | 0.88/1/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| verse(story) | 12 | 8 | 2 | 1/0/75.4 | 0.866/7.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| verse(story) | 12 | 8 | 2 | 1/0/75.5 | 0.78/7.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| chorus(hook) | 12 | 5.67 | 2 | 1/0/89.5 | 0.663/9.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| chorus(hook) | 12 | 5.67 | 2 | 1/0/89.2 | 0.663/9.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| intro(setup) | 2 | 4.5 | 2 | 1/0/63.3 | 0.88/1/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| verse(story) | 12 | 8 | 2 | 1/0/69.3 | 0.866/7.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| verse(story) | 12 | 8 | 2 | 1/0/69.5 | 0.78/7.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| chorus(hook) | 12 | 5.67 | 2 | 1/0/82.3 | 0.663/9.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| chorus(hook) | 12 | 5.67 | 2 | 1/0/82 | 0.663/9.5/66 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
 | outro(outro) | 4 | 0 | 4 | 0/0/0 | 0.537/4/69 | ⚠ comp 过稀 0 vs MG 7.13; bass 过密 4 vs MG 2; comp 过度滚开 block 0 vs MG 1–1 |
 
 ### seed 99
@@ -73,10 +73,10 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 2 | 8 | 1 | 1/0/70.6 | 0.5/4/71 | ⚠ bass 过稀 1 vs MG 2.06; comp 过度滚开 block 0 vs MG 1–1 |
-| verse(story) | 16 | 8 | 2 | 1/0/76.1 | 0.867/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| verse(story) | 16 | 8 | 2 | 1/0/75.6 | 0.82/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
-| chorus(hook) | 16 | 9.94 | 2 | 0.344/0.656/91.9 | 0.691/9.5/69 | ok |
+| intro(setup) | 2 | 8 | 1 | 1/0/65 | 0.5/4/71 | ⚠ bass 过稀 1 vs MG 2.06; comp 过度滚开 block 0 vs MG 1–1 |
+| verse(story) | 16 | 8 | 2 | 1/0/69.9 | 0.867/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| verse(story) | 16 | 8 | 2 | 1/0/69.5 | 0.82/8.5/68 | ⚠ comp 过度滚开 block 0 vs MG 1–1 |
+| chorus(hook) | 16 | 9.94 | 2 | 0.344/0.656/84.5 | 0.691/9.5/69 | ok |
 | outro(outro) | 4 | 0 | 4 | 0/0/0 | 0.937/0.5/68 | ⚠ comp 过稀 0 vs MG 7.06; bass 过密 4 vs MG 2.06; comp 过度滚开 block 0 vs MG 1–1 |
 
 ## JAZZ
@@ -89,12 +89,12 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 9.75 | 0.5 | 0/1/56.9 | 0.981/0.29/66 | ⚠ bass 过稀 0.5 vs MG 3.75; lead 太满 cov 0.981 > MG phrase max 0.789 |
-| verse(head) | 12 | 9 | 4 | 0/1/68.7 | 0.863/6.5/75 | ⚠ lead 断裂 gap 6.5 > MG phrase max 4 |
-| verse(head) | 12 | 9 | 4 | 0/1/69 | 0.864/6.5/75 | ⚠ lead 断裂 gap 6.5 > MG phrase max 4 |
-| bridge(solo) | 16 | 9 | 4 | 0/1/71.5 | 0.92/3.46/74 | ok |
-| chorus(headOut) | 12 | 9 | 4 | 0/1/68.3 | 0.863/6.5/75 | ⚠ lead 断裂 gap 6.5 > MG phrase max 4 |
-| outro(tag) | 4 | 9.75 | 1.5 | 0/1/62.1 | 0.746/4.01/74 | ⚠ bass 过稀 1.5 vs MG 3.75 |
+| intro(setup) | 4 | 9.75 | 0.5 | 0/1/53.7 | 0.981/0.29/66 | ⚠ bass 过稀 0.5 vs MG 3.75; lead 太满 cov 0.981 > MG phrase max 0.789 |
+| verse(head) | 12 | 9 | 4 | 0/1/64.6 | 0.863/6.5/75 | ⚠ lead 断裂 gap 6.5 > MG phrase max 4 |
+| verse(head) | 12 | 9 | 4 | 0/1/65 | 0.864/6.5/75 | ⚠ lead 断裂 gap 6.5 > MG phrase max 4 |
+| bridge(solo) | 16 | 9 | 4 | 0/1/67.4 | 0.92/3.46/74 | ok |
+| chorus(headOut) | 12 | 9 | 4 | 0/1/64.3 | 0.863/6.5/75 | ⚠ lead 断裂 gap 6.5 > MG phrase max 4 |
+| outro(tag) | 4 | 9.75 | 1.5 | 0/1/58.3 | 0.746/4.01/74 | ⚠ bass 过稀 1.5 vs MG 3.75 |
 
 ### seed 7
 - roles/programs: bass:32 · comp:4 · lead:66
@@ -105,10 +105,10 @@
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
 | intro(setup) | 4 | 11.75 | 2 | 0/1/0 | 1.058/0.01/66 | ⚠ lead 太满 cov 1.058 > MG phrase max 0.997 |
-| verse(head) | 12 | 12.5 | 4 | 0/1/68.6 | 0.949/3.5/66 | ok |
-| verse(head) | 12 | 12.5 | 4 | 0/1/68.1 | 0.95/3.5/66 | ok |
+| verse(head) | 12 | 12.5 | 4 | 0/1/64.6 | 0.949/3.5/66 | ok |
+| verse(head) | 12 | 12.5 | 4 | 0/1/64.2 | 0.95/3.5/66 | ok |
 | bridge(solo) | 16 | 15.38 | 4 | 0/1/0 | 0.969/1.98/67 | ok |
-| chorus(headOut) | 12 | 12.5 | 4 | 0/1/68.1 | 0.95/3.5/66 | ok |
+| chorus(headOut) | 12 | 12.5 | 4 | 0/1/64.1 | 0.95/3.5/66 | ok |
 | outro(tag) | 4 | 11.75 | 1.5 | 0/1/0 | 0.924/0.94/67 | ok |
 
 ### seed 42
@@ -119,12 +119,12 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 9.75 | 2 | 0/1/53 | 0.907/1/71 | ok |
-| verse(head) | 12 | 10.42 | 4 | 0/1/59.8 | 0.651/8/67 | ⚠ lead 断裂 gap 8 > MG phrase max 4 |
-| verse(head) | 12 | 10.42 | 4 | 0/1/60 | 0.651/7.99/67 | ⚠ lead 断裂 gap 7.99 > MG phrase max 4 |
+| intro(setup) | 4 | 9.75 | 2 | 0/1/50.1 | 0.907/1/71 | ok |
+| verse(head) | 12 | 10.42 | 4 | 0/1/56.5 | 0.651/8/67 | ⚠ lead 断裂 gap 8 > MG phrase max 4 |
+| verse(head) | 12 | 10.42 | 4 | 0/1/56.5 | 0.651/7.99/67 | ⚠ lead 断裂 gap 7.99 > MG phrase max 4 |
 | bridge(solo) | 16 | 15.44 | 4 | 0/1/0 | 0.767/4.67/67 | ok |
-| chorus(headOut) | 12 | 10.42 | 4 | 0/1/60.1 | 0.65/7.98/67 | ⚠ lead 断裂 gap 7.98 > MG phrase max 4 |
-| outro(tag) | 4 | 9.75 | 1.5 | 0/1/58.9 | 0.533/4/66 | ⚠ bass 过稀 1.5 vs MG 3.69 |
+| chorus(headOut) | 12 | 10.42 | 4 | 0/1/56.6 | 0.65/7.98/67 | ⚠ lead 断裂 gap 7.98 > MG phrase max 4 |
+| outro(tag) | 4 | 9.75 | 1.5 | 0/1/55.2 | 0.533/4/66 | ⚠ bass 过稀 1.5 vs MG 3.69 |
 
 ### seed 99
 - roles/programs: bass:32 · comp:4 · drum:40 · lead:66
@@ -134,12 +134,12 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 15 | 0.5 | 0/1/57.4 | 1.047/0.01/67 | ⚠ comp 过密 15 vs MG 8.31; bass 过稀 0.5 vs MG 3.69; lead 太满 cov 1.047 > MG phrase max 0.747 |
-| verse(head) | 12 | 18.67 | 4 | 0/1/60.9 | 0.904/4/67 | ⚠ comp 过密 18.67 vs MG 8.31 |
-| verse(head) | 12 | 18.67 | 4 | 0/1/60.8 | 0.905/4/67 | ⚠ comp 过密 18.67 vs MG 8.31 |
-| bridge(solo) | 16 | 18.69 | 4 | 0/1/62.3 | 0.946/4.51/66 | ⚠ comp 过密 18.69 vs MG 8.31 |
-| chorus(headOut) | 12 | 18.67 | 4 | 0/1/60.7 | 0.905/3.99/67 | ⚠ comp 过密 18.67 vs MG 8.31 |
-| outro(tag) | 4 | 15.75 | 1.5 | 0/1/62.7 | 0.887/2/68 | ⚠ comp 过密 15.75 vs MG 8.31; bass 过稀 1.5 vs MG 3.69 |
+| intro(setup) | 4 | 15 | 0.5 | 0/1/54 | 1.047/0.01/67 | ⚠ comp 过密 15 vs MG 8.31; bass 过稀 0.5 vs MG 3.69; lead 太满 cov 1.047 > MG phrase max 0.747 |
+| verse(head) | 12 | 18.67 | 4 | 0/1/57.3 | 0.904/4/67 | ⚠ comp 过密 18.67 vs MG 8.31 |
+| verse(head) | 12 | 18.67 | 4 | 0/1/57.2 | 0.905/4/67 | ⚠ comp 过密 18.67 vs MG 8.31 |
+| bridge(solo) | 16 | 18.69 | 4 | 0/1/58.7 | 0.946/4.51/66 | ⚠ comp 过密 18.69 vs MG 8.31 |
+| chorus(headOut) | 12 | 18.67 | 4 | 0/1/57.2 | 0.905/3.99/67 | ⚠ comp 过密 18.67 vs MG 8.31 |
+| outro(tag) | 4 | 15.75 | 1.5 | 0/1/59 | 0.887/2/68 | ⚠ comp 过密 15.75 vs MG 8.31; bass 过稀 1.5 vs MG 3.69 |
 
 ### seed 12345
 - roles/programs: bass:32 · comp:0 · drum:40 · lead:0
@@ -149,11 +149,11 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 9.75 | 0.5 | 0/1/52.5 | 0.537/4/77 | ⚠ bass 过稀 0.5 vs MG 3.59; lead 音域偏移 77 vs MG 68 |
-| verse(head) | 16 | 11.75 | 4 | 0/1/54.7 | 0.832/1.77/68 | ok |
-| verse(head) | 16 | 11.75 | 4 | 0/1/54.4 | 0.832/1.76/68 | ok |
-| chorus(headOut) | 16 | 11.75 | 4 | 0/1/54.6 | 0.832/1.77/68 | ok |
-| outro(tag) | 4 | 9.5 | 1.5 | 0/1/57.3 | 0.75/1.57/66 | ⚠ bass 过稀 1.5 vs MG 3.59 |
+| intro(setup) | 4 | 9.75 | 0.5 | 0/1/49.4 | 0.537/4/77 | ⚠ bass 过稀 0.5 vs MG 3.59; lead 音域偏移 77 vs MG 68 |
+| verse(head) | 16 | 11.75 | 4 | 0/1/51.6 | 0.832/1.77/68 | ok |
+| verse(head) | 16 | 11.75 | 4 | 0/1/51.3 | 0.832/1.76/68 | ok |
+| chorus(headOut) | 16 | 11.75 | 4 | 0/1/51.5 | 0.832/1.77/68 | ok |
+| outro(tag) | 4 | 9.5 | 1.5 | 0/1/53.9 | 0.75/1.57/66 | ⚠ bass 过稀 1.5 vs MG 3.59 |
 
 ## LOFI
 
@@ -192,10 +192,10 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 12 | 1 | 0/1/53.6 | 0.687/4/63 | ⚠ bass 过稀 1 vs MG 2.63 |
-| verse(loop) | 16 | 15.5 | 1.88 | 0/1/44.6 | 0.645/7.56/67 | ⚠ comp 过密 15.5 vs MG 7.63 |
-| verse(loop) | 16 | 15.5 | 1.88 | 0/1/44.7 | 0.646/7.54/67 | ⚠ comp 过密 15.5 vs MG 7.63 |
-| verse(loop) | 16 | 15.5 | 1.88 | 0/1/44.6 | 0.646/7.55/67 | ⚠ comp 过密 15.5 vs MG 7.63 |
+| intro(setup) | 4 | 12 | 1 | 0/1/49.4 | 0.687/4/63 | ⚠ bass 过稀 1 vs MG 2.63 |
+| verse(loop) | 16 | 15.5 | 1.88 | 0/1/41 | 0.645/7.56/67 | ⚠ comp 过密 15.5 vs MG 7.63 |
+| verse(loop) | 16 | 15.5 | 1.88 | 0/1/41.1 | 0.646/7.54/67 | ⚠ comp 过密 15.5 vs MG 7.63 |
+| verse(loop) | 16 | 15.5 | 1.88 | 0/1/41.1 | 0.646/7.55/67 | ⚠ comp 过密 15.5 vs MG 7.63 |
 | outro(outro) | 4 | 0 | 1.5 | 0/0/0 | 0.832/1.54/65 | ⚠ comp 过稀 0 vs MG 7.63 |
 
 ### seed 99
@@ -219,9 +219,9 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 16 | 0.25 | 0/1/43.7 | 0.75/4/65 | ⚠ comp 过密 16 vs MG 7.06; bass 过稀 0.25 vs MG 2.47; lead 音域偏移 65 vs MG 78 |
-| verse(loop) | 16 | 13.38 | 1.94 | 0.632/0.368/44.2 | 0.801/4/68 | ⚠ comp 过密 13.38 vs MG 7.06; lead 音域偏移 68 vs MG 78 |
-| verse(loop) | 16 | 13.38 | 1.94 | 0.587/0.413/43.4 | 0.801/4/68 | ⚠ comp 过密 13.38 vs MG 7.06; lead 音域偏移 68 vs MG 78 |
+| intro(setup) | 4 | 16 | 0.25 | 0/1/40.2 | 0.75/4/65 | ⚠ comp 过密 16 vs MG 7.06; bass 过稀 0.25 vs MG 2.47; lead 音域偏移 65 vs MG 78 |
+| verse(loop) | 16 | 13.38 | 1.94 | 0.632/0.368/41.2 | 0.801/4/68 | ⚠ comp 过密 13.38 vs MG 7.06; lead 音域偏移 68 vs MG 78 |
+| verse(loop) | 16 | 13.38 | 1.94 | 0.587/0.413/40.3 | 0.801/4/68 | ⚠ comp 过密 13.38 vs MG 7.06; lead 音域偏移 68 vs MG 78 |
 | outro(outro) | 4 | 0 | 1.5 | 0/0/0 | 0.777/3.54/71 | ⚠ comp 过稀 0 vs MG 7.06 |
 
 ## RNB
@@ -234,12 +234,12 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 8 | 0.5 | 0.667/0.333/57.1 | 1.046/0.04/66 | ⚠ bass 过稀 0.5 vs MG 1.88; lead 太满 cov 1.046 > MG phrase max 0.953 |
-| verse(story) | 12 | 10.58 | 3 | 0.62/0.38/66.8 | 0.911/1.98/67 | ok |
-| verse(story) | 12 | 10.5 | 3 | 0.615/0.385/66.6 | 0.764/7.97/67 | ⚠ lead 断裂 gap 7.97 > MG phrase max 4 |
-| chorus(hook) | 12 | 11.83 | 3 | 0.798/0.202/92.5 | 0.786/4/65 | ok |
-| chorus(hook) | 12 | 11.83 | 3 | 0.752/0.248/92.8 | 0.785/4/65 | ok |
-| outro(outro) | 4 | 8.5 | 1.5 | 0.64/0.36/33.9 | 1.072/0.03/65 | ⚠ lead 太满 cov 1.072 > MG phrase max 0.953 |
+| intro(setup) | 4 | 8 | 0.5 | 0.667/0.333/52.5 | 1.046/0.04/66 | ⚠ bass 过稀 0.5 vs MG 1.88; lead 太满 cov 1.046 > MG phrase max 0.953 |
+| verse(story) | 12 | 10.58 | 3 | 0.62/0.38/62.5 | 0.911/1.98/67 | ok |
+| verse(story) | 12 | 10.5 | 3 | 0.615/0.385/62.1 | 0.764/7.97/67 | ⚠ lead 断裂 gap 7.97 > MG phrase max 4 |
+| chorus(hook) | 12 | 11.83 | 3 | 0.798/0.202/85.2 | 0.786/4/65 | ok |
+| chorus(hook) | 12 | 11.83 | 3 | 0.752/0.248/85.5 | 0.785/4/65 | ok |
+| outro(outro) | 4 | 8.5 | 1.5 | 0.64/0.36/31.6 | 1.072/0.03/65 | ⚠ lead 太满 cov 1.072 > MG phrase max 0.953 |
 
 ### seed 7
 - roles/programs: bass:34 · comp:5 · pad:89 · lead:4
@@ -250,7 +250,7 @@
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
 | intro(setup) | 4 | 8 | 2 | 0.968/0.032/0 | 0.998/0.02/72 | ⚠ lead 太满 cov 0.998 > MG phrase max 0.541 |
-| verse(story) | 16 | 9.88 | 3 | 0.961/0.039/73.8 | 0.807/3.99/67 | ⚠ lead 太满 cov 0.807 > MG phrase max 0.541; lead 音域偏移 67 vs MG 77 |
+| verse(story) | 16 | 9.88 | 3 | 0.961/0.039/67.7 | 0.807/3.99/67 | ⚠ lead 太满 cov 0.807 > MG phrase max 0.541; lead 音域偏移 67 vs MG 77 |
 | chorus(hook) | 16 | 6.88 | 3 | 0.952/0.048/0 | 0.817/4/70 | ⚠ lead 太满 cov 0.817 > MG phrase max 0.541 |
 | chorus(hook) | 16 | 6.88 | 3 | 0.952/0.048/0 | 0.817/4/70 | ⚠ lead 太满 cov 0.817 > MG phrase max 0.541 |
 | outro(outro) | 4 | 0 | 0.75 | 0/0/0 | 0.791/1.68/64 | ⚠ comp 过稀 0 vs MG 8.13; bass 过稀 0.75 vs MG 3.5; lead 太满 cov 0.791 > MG phrase max 0.541; lead 音域偏移 64 vs MG 77 |
@@ -263,9 +263,9 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 3.5 | 1 | 0.6/0.4/64.2 | 1.032/0.04/67 | ⚠ comp 过稀 3.5 vs MG 20.31; bass 过稀 1 vs MG 4.13; lead 太满 cov 1.032 > MG phrase max 0.733 |
-| verse(story) | 12 | 9.58 | 3 | 0.056/0.944/71.5 | 0.861/5.52/68 | ok |
-| verse(story) | 12 | 9.33 | 3 | 0.028/0.972/73.3 | 0.754/5.53/68 | ok |
+| intro(setup) | 4 | 3.5 | 1 | 0.6/0.4/59 | 1.032/0.04/67 | ⚠ comp 过稀 3.5 vs MG 20.31; bass 过稀 1 vs MG 4.13; lead 太满 cov 1.032 > MG phrase max 0.733 |
+| verse(story) | 12 | 9.58 | 3 | 0.056/0.944/65.8 | 0.861/5.52/68 | ok |
+| verse(story) | 12 | 9.33 | 3 | 0.028/0.972/67.5 | 0.754/5.53/68 | ok |
 | chorus(hook) | 12 | 6.75 | 3 | 0.934/0.066/0 | 0.929/3.97/65 | ⚠ comp 过稀 6.75 vs MG 20.31; comp 过度滚开 block 0.066 vs MG 1–1 |
 | chorus(hook) | 12 | 6.75 | 3 | 0.934/0.066/0 | 0.929/3.99/65 | ⚠ comp 过稀 6.75 vs MG 20.31; comp 过度滚开 block 0.066 vs MG 1–1 |
 | outro(outro) | 4 | 0 | 0.75 | 0/0/0 | 1.029/0.03/66 | ⚠ comp 过稀 0 vs MG 20.31; bass 过稀 0.75 vs MG 4.13; lead 太满 cov 1.029 > MG phrase max 0.733; comp 过度滚开 block 0 vs MG 1–1 |
@@ -278,12 +278,12 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 7 | 0.25 | 0.833/0.167/55.3 | 0.996/0.04/72 | ⚠ bass 过稀 0.25 vs MG 2.19; lead 太满 cov 0.996 > MG phrase max 0.83; comp 过度滚开 block 0.167 vs MG 1–1 |
-| verse(story) | 12 | 6.75 | 3 | 0.875/0.125/64.1 | 0.822/3.99/71 | ⚠ comp 过度滚开 block 0.125 vs MG 1–1 |
-| verse(story) | 12 | 6.75 | 3 | 0.875/0.125/64.5 | 0.74/3.99/73 | ⚠ comp 过度滚开 block 0.125 vs MG 1–1 |
+| intro(setup) | 4 | 7 | 0.25 | 0.833/0.167/51 | 0.996/0.04/72 | ⚠ bass 过稀 0.25 vs MG 2.19; lead 太满 cov 0.996 > MG phrase max 0.83; comp 过度滚开 block 0.167 vs MG 1–1 |
+| verse(story) | 12 | 6.75 | 3 | 0.875/0.125/59 | 0.822/3.99/71 | ⚠ comp 过度滚开 block 0.125 vs MG 1–1 |
+| verse(story) | 12 | 6.75 | 3 | 0.875/0.125/59.4 | 0.74/3.99/73 | ⚠ comp 过度滚开 block 0.125 vs MG 1–1 |
 | chorus(hook) | 12 | 7.92 | 3 | 0.139/0.861/0 | 0.904/4/69 | ok |
 | chorus(hook) | 12 | 7.92 | 3 | 0.139/0.861/0 | 0.903/4.01/69 | ok |
-| outro(outro) | 4 | 7 | 0.75 | 0.833/0.167/32.4 | 0.846/1.98/78 | ⚠ bass 过稀 0.75 vs MG 2.19; comp 过度滚开 block 0.167 vs MG 1–1 |
+| outro(outro) | 4 | 7 | 0.75 | 0.833/0.167/29.8 | 0.846/1.98/78 | ⚠ bass 过稀 0.75 vs MG 2.19; comp 过度滚开 block 0.167 vs MG 1–1 |
 
 ### seed 12345
 - roles/programs: bass:39 · comp:4 · pad:98 · drum:25 · lead:4
@@ -293,10 +293,10 @@
 
 | SIM section | bars | comp/bar | bass/bar | comp single/block/offVel | lead cov/gap/reg | flags |
 |---|---:|---:|---:|---|---|---|
-| intro(setup) | 4 | 6.5 | 0.25 | 0.167/0.833/65 | 0.716/3.99/72 | ⚠ bass 过稀 0.25 vs MG 3.81 |
-| verse(story) | 16 | 9.81 | 3 | 0.021/0.979/72.1 | 0.849/4/73 | ok |
-| verse(story) | 16 | 9.5 | 3 | 0.021/0.979/72.6 | 0.849/3.99/74 | ok |
-| chorus(hook) | 16 | 9.75 | 3 | 0.818/0.182/77.3 | 0.843/4.99/72 | ⚠ lead 断裂 gap 4.99 > MG phrase max 2.49 |
+| intro(setup) | 4 | 6.5 | 0.25 | 0.167/0.833/59.8 | 0.716/3.99/72 | ⚠ bass 过稀 0.25 vs MG 3.81 |
+| verse(story) | 16 | 9.81 | 3 | 0.021/0.979/66.3 | 0.849/4/73 | ok |
+| verse(story) | 16 | 9.5 | 3 | 0.021/0.979/66.6 | 0.849/3.99/74 | ok |
+| chorus(hook) | 16 | 9.75 | 3 | 0.818/0.182/71.5 | 0.843/4.99/72 | ⚠ lead 断裂 gap 4.99 > MG phrase max 2.49 |
 | outro(outro) | 4 | 0 | 0.75 | 0/0/0 | 0.814/2.46/68 | ⚠ comp 过稀 0 vs MG 8; bass 过稀 0.75 vs MG 3.81 |
 
 ## 汇总结论

@@ -40,6 +40,47 @@ export type HarmonyLinkKind =
 export type SectionEntry = 'downbeat' | 'lead-in';
 export type EndingStyle = 'cold' | 'fade' | 'tag';
 
+// ★ 全曲开头【入场导演】(arranger 层,render 后续消费):
+//   只决定首段怎么铺、鼓怎么进、各 role 延迟几小节;不改和声 brick、不指定 GM 音色、不突破 band lineup。
+export type OpeningGestureMode =
+  | 'coldDownbeat'
+  | 'pickupFill'
+  | 'textureFadeIn'
+  | 'riffFirst'
+  | 'drumsFirst'
+  | 'rubatoKeys';
+export type OpeningDrumEntry =
+  | 'none'
+  | 'hatsOnly'
+  | 'kickOnly'
+  | 'backbeatDelayed'
+  | 'fourOnFloorRamp'
+  | 'rideOnly'
+  | 'brushLoop'
+  | 'halftimePocket'
+  | 'tomPickup';
+export type OpeningTextureEntry =
+  | 'none'
+  | 'pianoRiff'
+  | 'rhodesDust'
+  | 'padSwell'
+  | 'stringOstinato'
+  | 'synthPulse'
+  | 'guitarMute'
+  | 'bellMotif'
+  | 'vinylNoise';
+export type OpeningRole = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
+export type OpeningIntensity = 'soft' | 'medium' | 'bold';
+export interface OpeningGesturePlan {
+  sectionId: SectionId;
+  mode: OpeningGestureMode;
+  drumEntry: OpeningDrumEntry;
+  textureEntry: OpeningTextureEntry;
+  roleDelayBars: Partial<Record<OpeningRole, number>>;
+  pickupBars: 0 | 1;
+  intensity: OpeningIntensity;
+}
+
 export interface Section {
   id: SectionId;
   role: SectionRole;              // legacy 投影(render/texture/trace),五类不变
@@ -115,6 +156,8 @@ export interface ArrangementPlanData {
   grooveContractBySection: Record<SectionId, import('../knowledge/grooveContracts').GrooveContract>;
   /** ★ 每段乐器【进入方式】(Arranger 下发,修 intro→verse 衔接):能量跃升处=lead-in(上段末小节铺垫推进),其余=downbeat 直入。 */
   entryBySection: Record<SectionId, SectionEntry>;
+  /** ★ 全曲开头【入场导演】:首段角色延迟 + 鼓/织体开场策略。render 层消费,ESP32 端可按同一小表落 MIDI 事件。 */
+  openingGesture: OpeningGesturePlan;
   /** ★ 全曲【收尾方式】(Arranger 下发,风格定制,修戛然而止):器配据此排乐器退出、render 出渐弱/延留/冷收手势。 */
   endingStyle: EndingStyle;
 }

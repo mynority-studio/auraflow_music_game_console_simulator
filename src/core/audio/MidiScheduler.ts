@@ -17,6 +17,7 @@
 
 import type { TempoCurve } from '../generation/types';
 import { spessaSynth } from './SynthManager';
+import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
 
 export interface MidiEvent {
     ticks: number;
@@ -40,6 +41,12 @@ function midiEventOrder(ev: MidiEvent): number {
 function compareMidiEvents(a: MidiEvent, b: MidiEvent): number {
     if (a.ticks !== b.ticks) return a.ticks - b.ticks;
     return midiEventOrder(a) - midiEventOrder(b);
+}
+
+function normalizeMidiEvent(ev: MidiEvent): MidiEvent {
+    if (ev.type !== 'programChange') return ev;
+    const mapped = mapMidiProgramToAura25(ev.data1, ev.channel);
+    return mapped === ev.data1 ? ev : { ...ev, data1: mapped };
 }
 
 export class MidiScheduler {
@@ -71,7 +78,7 @@ export class MidiScheduler {
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
         // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次
-        this.events = events.slice().sort(compareMidiEvents);
+        this.events = events.map(normalizeMidiEvent).sort(compareMidiEvents);
         this.currentBpm = bpm;
         this.currentTick = 0;
         this.nextEventIdx = 0;
@@ -178,7 +185,7 @@ export class MidiScheduler {
         try {
             if (ev.type === 'noteOn') synth.noteOn(ev.channel, ev.data1, ev.data2);
             else if (ev.type === 'noteOff') synth.noteOff(ev.channel, ev.data1);
-            else if (ev.type === 'programChange') synth.programChange(ev.channel, ev.data1);
+            else if (ev.type === 'programChange') synth.programChange(ev.channel, mapMidiProgramToAura25(ev.data1, ev.channel));
             else if (ev.type === 'cc') {
                 // controllerChange API exists on BasicSynthesizer
                 (synth as any).controllerChange?.(ev.channel, ev.data1, ev.data2);
@@ -202,6 +209,7 @@ export class MidiScheduler {
     }
 
     public injectEvent(ev: MidiEvent): void {
+        ev = normalizeMidiEvent(ev);
         let lo = 0;
         let hi = this.events.length;
         while (lo < hi) {

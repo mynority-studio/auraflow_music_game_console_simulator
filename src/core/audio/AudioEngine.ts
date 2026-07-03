@@ -16,14 +16,32 @@ import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
 import { musicalIRToMidiEvents, roomWetFor } from './musicalIrToMidi';
 import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
 import type { MusicGenerationResult } from '../generation/musicGeneration/types';
+import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
 import {
     spessaSynth,
     isSpessaSynthReady,
     getAudioContext,
     startAudioContext,
+    SOUND_FONT_BANKS,
+    getSelectedSoundFontBank,
+    getLoadedSoundFontBank,
+    setSelectedSoundFontBank,
+    subscribeSoundFontBank,
+    type SoundFontBank,
+    type SoundFontBankId,
 } from './SynthManager';
 
-export { spessaSynth, isSpessaSynthReady, getAudioContext, startAudioContext };
+export {
+    spessaSynth,
+    isSpessaSynthReady,
+    getAudioContext,
+    startAudioContext,
+    SOUND_FONT_BANKS,
+    getSelectedSoundFontBank,
+    getLoadedSoundFontBank,
+    subscribeSoundFontBank,
+};
+export type { SoundFontBank, SoundFontBankId };
 
 // ★ Q+N 角色 → LedMatrix VisualEvent 类型(qn_main_engine_takeover §5.3)。pad 暂归 accomp(无专属 atmosphere 视觉)。
 const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
@@ -96,6 +114,16 @@ class AudioEngineSystem {
         this.currentMusicGeneration = null;
     }
 
+    public async setSoundFontBank(id: SoundFontBankId): Promise<void> {
+        this.playSessionId++;
+        this.stop();
+        await setSelectedSoundFontBank(id);
+    }
+
+    public getSoundFontBank(): SoundFontBank {
+        return getSelectedSoundFontBank();
+    }
+
     public getCurrentBeat(): number {
         const tick = globalMidiScheduler.getCurrentTick();
         const ppq = globalMidiScheduler.ppq;
@@ -153,24 +181,34 @@ class AudioEngineSystem {
         this.noteOn(channel, note, velocity);
         window.setTimeout(() => this.noteOff(channel, note), Math.max(1, durationMs));
     }
+    public getAudioTime(): number {
+        return getAudioContext().currentTime;
+    }
     public noteOn(channel: number, note: number, velocity: number = 100): void {
+        this.noteOnAt(channel, note, velocity, getAudioContext().currentTime);
+    }
+    public noteOnAt(channel: number, note: number, velocity: number = 100, audioTime: number = getAudioContext().currentTime): void {
         if (!spessaSynth) return;
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
         const midi = Math.max(0, Math.min(127, Math.round(note)));
         const vel = Math.max(0, Math.min(127, Math.round(velocity)));
-        try { spessaSynth.noteOn(ch, midi, vel, { time: getAudioContext().currentTime }); }
+        try { spessaSynth.noteOn(ch, midi, vel, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
         catch { try { spessaSynth.noteOn(ch, midi, vel); } catch { /* ignore */ } }
     }
     public noteOff(channel: number, note: number): void {
+        this.noteOffAt(channel, note, getAudioContext().currentTime);
+    }
+    public noteOffAt(channel: number, note: number, audioTime: number = getAudioContext().currentTime): void {
         if (!spessaSynth) return;
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
         const midi = Math.max(0, Math.min(127, Math.round(note)));
-        try { spessaSynth.noteOff(ch, midi, { time: getAudioContext().currentTime }); }
+        try { spessaSynth.noteOff(ch, midi, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
         catch { try { spessaSynth.noteOff(ch, midi); } catch { /* ignore */ } }
     }
     public programChange(channel: number, program: number): void {
         if (!spessaSynth) return;
-        try { spessaSynth.programChange(Math.round(channel), Math.max(0, Math.min(127, Math.round(program)))); }
+        const ch = Math.max(0, Math.min(15, Math.round(channel)));
+        try { spessaSynth.programChange(ch, mapMidiProgramToAura25(program, ch)); }
         catch { /* ignore */ }
     }
     public controllerChange(channel: number, controller: number, value: number): void {

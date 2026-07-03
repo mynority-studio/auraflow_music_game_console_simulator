@@ -15,7 +15,7 @@
 | PSRAM | 8MB（Octal SPI） |
 | SRAM | 512KB |
 | SF2 合成器 | TinySoundFont（单头文件 C 库） |
-| 音色库 | `GM128_3MB.sf2`（3MB，存放于 Flash/PSRAM） |
+| 音色库 | `Aura25_GM128.sf2`（1.65MiB，25 音色，存放于 Flash/PSRAM） |
 | 音频输出 | I2S → ES8388 DAC @16kHz |
 
 ---
@@ -117,7 +117,42 @@ typedef struct {
 2. **调度**: 事件推送到 MIDI 调度器（Web: `globalMidiScheduler` 5ms 轮询；ESP32: FreeRTOS 定时器任务）。
 3. **执行**: 调度器调用合成器 API（Web: `spessaSynth`；ESP32: `tsf_note_on`/`tsf_note_off`/`tsf_channel_set_xxx`）。
 4. **渲染**: ESP32 上 TinySoundFont `tsf_render_short()` 输出 PCM 帧到 I2S DMA buffer。
-5. **混音**: 所有混音通过 MIDI CC 消息（CC7 音量、CC10 声像、CC91 混响），不使用 DSP 效果器。
+5. **轨道混音**: 所有轨道级混音通过 MIDI CC 消息（CC7 音量、CC10 声像、CC91 混响、CC93 合唱/宽度、可选 CC11 表情）进入同一首歌的空间画像。
+6. **最终母带**: TinySoundFont 渲染出的所有声部先进入同一个 stereo master bus，再做 headroom、轻量 glue、limiter/softclip，最后转换为 I2S int16。不要让单轨直接绕过母带写 DAC。
+
+---
+
+## 混音 / 母带审计（ESP32-S3 落地约束）
+
+外部口径：
+
+- **ITU-R BS.1770-5**：响度与 true-peak 的测量算法基准。
+- **EBU R128**：节目响度、响度范围、最大 true peak；线性音频制作上限参考 `-1 dBTP`。
+- **Spotify for Artists**：音乐流媒体播放参考 `-14 LUFS`，mastering 建议 true peak 低于 `-1 dBTP`。
+- **Apple Digital Masters**：数字/AAC 编码前至少留 `1 dB` headroom，避免过采样或编码后削波。
+
+TS 侧现在提供 `npm run audit:mix`：
+
+- 输入：最终 `MusicalIR.tracks`（已经挂好 program/mix/mixChanges）。
+- 检测：每轨平均 CC7、平均/峰值 velocity、wet energy、bus share、lead/comp 比例、bass/drum/pad 空间护栏、总线峰值代理、估算 LUFS。
+- 输出：`docs/generated/render_mix_mastering_audit_report.md`。
+- 限制：这是 MIDI/IR 层代理审计，不替代真实 PCM 的 BS.1770/LUFS meter；ESP32 固件完成后还要对 I2S capture/WAV dump 跑真实 loudness/true-peak。
+
+硬件母带建议（C 侧可定点实现，无热路径 malloc）：
+
+| 阶段 | TS Web 当前值 | ESP32-S3 建议 |
+|------|---------------|---------------|
+| 预留余量 | `headroom.gain = 0.6` | TSF stereo float/int32 mix 后统一乘 0.6 |
+| glue | `threshold -16dB, ratio 2.5, attack 12ms, release 250ms` | 首版可跳过或做块级 RMS 轻压缩 |
+| makeup | `gain = 1.5` | limiter 前补偿，先保证不绕过 limiter |
+| ceiling | limiter threshold `-1.5dB` | int16 前 sample ceiling ≤ `-1.5 dBFS`，true-peak 目标 ≤ `-1 dBTP` |
+| 试听低延迟 | tanh softclip | Q+R/按键试听可用软削波，成品播放仍走保护母带 |
+
+C 侧当前风险点（需同步修复）：
+
+- `/Users/mynority/vibe_coding/auraflow_music_game_console/main/aura_radio/ar4_midi_converter.c` 仍只写 CC7/CC10/CC91，未覆盖 CC93。
+- 同文件段落 CC 是硬编码音量，不读取 Q+N `TrackMix`/`mixChanges` 的最终合同。
+- ESP32 工程的 `aura_radio` 层未在此仓库内显示最终 PCM master limiter；如果固件实际也没有，则 TS Web 的“响而受控”不能等价落地到 DAC。
 
 ---
 

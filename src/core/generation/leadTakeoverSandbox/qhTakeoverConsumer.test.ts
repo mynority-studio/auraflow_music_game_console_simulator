@@ -44,6 +44,26 @@ function fakeResult(): MusicGenerationResult {
       ],
       roster: [],
       tracks: [{ role: 'lead', channel: 1, program: 65, instrumentName: 'Alto Sax', noteCount: 0 }],
+      grooveContract: {
+        id: 'jazz_medium_swing',
+        name: 'JAZZ medium swing',
+        grid: 'swing',
+        melodySwingRatio: 0.67,
+        melodyStrongPocketMs: [0, 3],
+        melodyWeakPocketMs: [0, 8],
+        accentPattern: [1, 0.85, 1.05, 0.85],
+      },
+      grooveContractBySection: {
+        A: {
+          id: 'jazz_medium_swing',
+          name: 'JAZZ medium swing',
+          grid: 'swing',
+          melodySwingRatio: 0.67,
+          melodyStrongPocketMs: [0, 3],
+          melodyWeakPocketMs: [0, 8],
+          accentPattern: [1, 0.85, 1.05, 0.85],
+        },
+      },
       world: 'test',
       spaceProfile: 'small',
     },
@@ -76,6 +96,23 @@ function directTarget(result: MusicGenerationResult | null = fakeResult()): Retu
   return target;
 }
 
+function scheduledTarget(result: MusicGenerationResult | null = fakeResult()): ReturnType<typeof directTarget> & {
+  scheduled: Array<{ type: 'on' | 'off'; channel: number; note: number; velocity?: number; audioTime: number }>;
+} {
+  const target = directTarget(result) as ReturnType<typeof directTarget> & {
+    scheduled: Array<{ type: 'on' | 'off'; channel: number; note: number; velocity?: number; audioTime: number }>;
+  };
+  target.scheduled = [];
+  target.getAudioTime = () => 10 + performance.now() / 1000;
+  target.noteOnAt = (channel, note, velocity, audioTime) => {
+    target.scheduled.push({ type: 'on', channel, note, velocity, audioTime });
+  };
+  target.noteOffAt = (channel, note, audioTime) => {
+    target.scheduled.push({ type: 'off', channel, note, audioTime });
+  };
+  return target;
+}
+
 describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -95,6 +132,15 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
       roman: 'I',
       startBeat: 0,
       durationBeats: 4,
+    });
+    expect(snapshot.grooveContract).toMatchObject({
+      id: 'jazz_medium_swing',
+      grid: 'swing',
+      melodySwingRatio: 0.67,
+    });
+    expect(snapshot.grooveContractBySection?.A).toMatchObject({
+      id: 'jazz_medium_swing',
+      melodyWeakPocketMs: [0, 8],
     });
   });
 
@@ -150,5 +196,209 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
     expect(target.direct.filter((entry) => entry.startsWith(`pc:${TAKEOVER_USER_CHANNEL}:`))).toHaveLength(1);
 
     resetLeadTakeoverRuntimeState(target);
+  });
+
+  it('does not cut a same-MIDI held note until the last note id is released', () => {
+    const target = directTarget();
+
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, noteId: 'a', midi: 72, velocity: 104 }]);
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, noteId: 'b', midi: 72, velocity: 100 }]);
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-off', channel: 1, noteId: 'a', midi: 72 }]);
+
+    expect(target.direct.filter((entry) => entry === `on:${TAKEOVER_USER_CHANNEL}:72:104`)).toHaveLength(1);
+    expect(target.direct.filter((entry) => entry === `on:${TAKEOVER_USER_CHANNEL}:72:100`)).toHaveLength(1);
+    expect(target.direct.filter((entry) => entry === `off:${TAKEOVER_USER_CHANNEL}:72`)).toHaveLength(0);
+
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-off', channel: 1, noteId: 'b', midi: 72 }]);
+
+    expect(target.direct.filter((entry) => entry === `off:${TAKEOVER_USER_CHANNEL}:72`)).toHaveLength(1);
+    resetLeadTakeoverRuntimeState(target);
+  });
+
+  it('clears matching note-id records when a legacy same-MIDI note-off has no note id', () => {
+    const target = directTarget();
+
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, noteId: 'a', midi: 74, velocity: 104 }]);
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, noteId: 'b', midi: 74, velocity: 100 }]);
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-off', channel: 1, midi: 74 }]);
+    resetLeadTakeoverRuntimeState(target);
+
+    expect(target.direct.filter((entry) => entry === `off:${TAKEOVER_USER_CHANNEL}:74`)).toHaveLength(1);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:123:0`);
+  });
+
+  it('delays quantized realtime note-on until the target grid arrives', () => {
+    vi.useFakeTimers();
+    const target = directTarget();
+
+    executeLeadTakeoverActions(target, [{
+      type: 'lead-note-on',
+      channel: 1,
+      midi: 62,
+      velocity: 104,
+      timing: {
+        sourceBeat: 1.01,
+        targetBeat: 1.25,
+        delayMs: 120,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }]);
+
+    expect(target.direct.some((entry) => entry.startsWith(`on:${TAKEOVER_USER_CHANNEL}:62`))).toBe(false);
+    vi.advanceTimersByTime(119);
+    expect(target.direct.some((entry) => entry.startsWith(`on:${TAKEOVER_USER_CHANNEL}:62`))).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:62:104`);
+    expect(target.events).toEqual([]);
+  });
+
+  it('keeps a complete quantized note when key-up happens before delayed note-on', () => {
+    vi.useFakeTimers();
+    const target = directTarget();
+
+    executeLeadTakeoverActions(target, [{
+      type: 'lead-note-on',
+      channel: 1,
+      midi: 64,
+      velocity: 100,
+      timing: {
+        sourceBeat: 1.01,
+        targetBeat: 1.25,
+        delayMs: 120,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }]);
+    executeLeadTakeoverActions(target, [{
+      type: 'lead-note-off',
+      channel: 1,
+      midi: 64,
+      timing: {
+        sourceBeat: 1.02,
+        targetBeat: 1.5,
+        delayMs: 240,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }]);
+
+    vi.advanceTimersByTime(119);
+    expect(target.direct).not.toContain(`on:${TAKEOVER_USER_CHANNEL}:64:100`);
+    expect(target.direct).not.toContain(`off:${TAKEOVER_USER_CHANNEL}:64`);
+
+    vi.advanceTimersByTime(1);
+    expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:64:100`);
+    expect(target.direct).not.toContain(`off:${TAKEOVER_USER_CHANNEL}:64`);
+
+    vi.advanceTimersByTime(120);
+    expect(target.direct).toContain(`off:${TAKEOVER_USER_CHANNEL}:64`);
+  });
+
+  it('uses audio-clock lookahead for quantized note-on and note-off when available', () => {
+    vi.useFakeTimers();
+    const target = scheduledTarget();
+
+    executeLeadTakeoverActions(target, [{
+      type: 'lead-note-on',
+      channel: 1,
+      midi: 67,
+      velocity: 101,
+      timing: {
+        sourceBeat: 1.01,
+        targetBeat: 1.25,
+        delayMs: 120,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }, {
+      type: 'lead-note-off',
+      channel: 1,
+      midi: 67,
+      timing: {
+        sourceBeat: 1.02,
+        targetBeat: 1.5,
+        delayMs: 240,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }]);
+
+    vi.advanceTimersByTime(94);
+    expect(target.scheduled).toEqual([]);
+
+    vi.advanceTimersByTime(1);
+    expect(target.scheduled[0]).toMatchObject({ type: 'on', channel: TAKEOVER_USER_CHANNEL, note: 67, velocity: 101 });
+    expect(target.scheduled[0]?.audioTime).toBeCloseTo(10.12);
+
+    vi.advanceTimersByTime(119);
+    expect(target.scheduled).toHaveLength(1);
+
+    vi.advanceTimersByTime(1);
+    expect(target.scheduled[1]).toMatchObject({ type: 'off', channel: TAKEOVER_USER_CHANNEL, note: 67 });
+    expect(target.scheduled[1]?.audioTime).toBeCloseTo(10.24);
+  });
+
+  it('cancels pending quantized notes on runtime reset', () => {
+    vi.useFakeTimers();
+    const target = directTarget();
+
+    executeLeadTakeoverActions(target, [{
+      type: 'lead-note-on',
+      channel: 1,
+      midi: 65,
+      velocity: 100,
+      timing: {
+        sourceBeat: 1.01,
+        targetBeat: 1.25,
+        delayMs: 120,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }]);
+    resetLeadTakeoverRuntimeState(target);
+    vi.advanceTimersByTime(200);
+
+    expect(target.direct.some((entry) => entry.includes(':65'))).toBe(false);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:123:0`);
+  });
+
+  it('tracks immediate takeover notes and releases them on runtime reset', () => {
+    const target = directTarget();
+
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, midi: 69, velocity: 100 }]);
+    resetLeadTakeoverRuntimeState(target);
+
+    expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:69:100`);
+    expect(target.direct).toContain(`off:${TAKEOVER_USER_CHANNEL}:69`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:123:0`);
+  });
+
+  it('pairs a future audio-clock note-on with a future note-off when reset happens during lookahead', () => {
+    vi.useFakeTimers();
+    const target = scheduledTarget();
+
+    executeLeadTakeoverActions(target, [{
+      type: 'lead-note-on',
+      channel: 1,
+      midi: 71,
+      velocity: 96,
+      timing: {
+        sourceBeat: 1.01,
+        targetBeat: 1.25,
+        delayMs: 120,
+        grid: '16th',
+        gridStepBeats: 0.25,
+      },
+    }]);
+
+    vi.advanceTimersByTime(95);
+    expect(target.scheduled[0]).toMatchObject({ type: 'on', channel: TAKEOVER_USER_CHANNEL, note: 71, velocity: 96 });
+
+    resetLeadTakeoverRuntimeState(target);
+
+    expect(target.scheduled[1]).toMatchObject({ type: 'off', channel: TAKEOVER_USER_CHANNEL, note: 71 });
+    expect(target.scheduled[1]?.audioTime).toBeCloseTo((target.scheduled[0]?.audioTime ?? 0) + 0.01);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:123:0`);
   });
 });

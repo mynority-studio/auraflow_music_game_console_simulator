@@ -26,6 +26,9 @@ describe('musicGeneration/MusicGenerationService', () => {
       expect(ui.tracks.length, `${styleHint} ui.tracks`).toBe(r.ir!.tracks.length);
       expect(ui.bpm).toBe(r.bpm);
       expect(typeof ui.key).toBe('string');
+      expect(ui.grooveContract?.id, `${styleHint} ui.grooveContract`).toBeTruthy();
+      expect(ui.grooveContract?.melodyWeakPocketMs.length, `${styleHint} melody pocket`).toBe(2);
+      expect(Object.keys(ui.grooveContractBySection ?? {}).length, `${styleHint} section groove`).toBe(ui.sections.length);
       // roster 角色名/乐器名非空
       for (const p of ui.roster) { expect(p.instrumentName.length).toBeGreaterThan(0); expect(['auto', 'selected', 'disabled']).toContain(p.state); }
     }
@@ -91,6 +94,17 @@ describe('musicGeneration/MusicGenerationService', () => {
     expect(drumRow, 'drum roster 行存在').toBeTruthy();
     expect(drumRow!.instrumentName).not.toBe('Acoustic Grand');
     expect(drumRow!.instrumentName).toBe('Drum Kit');
+  });
+
+  it('★ 器配手势计划下发到 uiSnapshot roster:键盘/鼓/bass/sax 可审计', async () => {
+    const r = await generateMusic({ seed: 1, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
+    const byRole = new Map(r.uiSnapshot.roster.map((p) => [p.role, p]));
+    expect(byRole.get('lead')?.gesture?.kind).toBe('sax-breath-legato');
+    expect(byRole.get('lead')?.gesture?.ccControllers).toEqual([11, 2, 1]);
+    expect(byRole.get('comp')?.gesture?.kind).toBe('keyboard-touch');
+    expect(byRole.get('comp')?.gesture?.pedalPolicy).toBe('none');
+    expect(byRole.get('bass')?.gesture?.kind).toBe('bass-walk');
+    expect(byRole.get('drum')?.gesture?.kind).toBe('drum-rudiment');
   });
 
   it('★ 器配层音色随机性保留:同 participants 不同 seed → 可得不同 GM program(§5.2)', async () => {

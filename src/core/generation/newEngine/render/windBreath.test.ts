@@ -55,17 +55,16 @@ describe('render/windBreath — CC11 气口包络', () => {
   });
 });
 
-describe('render/windBreath — 端到端', () => {
-  it('75528/pop(GM75 排箫)lead 有气口包络;3/pop(电钢)无', () => {
-    const wind = traceGeneration({ seed: 75528, styleHint: 'pop', mood: 'build', targetDuration: 120 });
-    const windLead = wind.ir.tracks.find((t) => t.role === 'lead')!;
-    expect(windLead.program).toBe(75);
-    expect((windLead.ccEvents?.length ?? 0)).toBeGreaterThan(10);
-    expect(windLead.ccEvents!.every((e) => e.controller === 11)).toBe(true);
-
-    const kbd = traceGeneration({ seed: 3, styleHint: 'pop', mood: 'build', targetDuration: 120 });
-    const kbdLead = kbd.ir.tracks.find((t) => t.role === 'lead')!;
-    expect(isWindFamily(kbdLead.program!)).toBe(false);
-    expect(kbdLead.ccEvents).toBeUndefined();   // 非气声 lead 无气口包络
+describe('render/windBreath — 端到端兼容', () => {
+  it('生产路径的 sax 气息来自器配 gesture plan,不是旧 pipe-wind GM 判断', () => {
+    const sax = traceGeneration({ seed: 1, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
+    const lead = sax.ir.tracks.find((t) => t.role === 'lead')!;
+    expect(lead.program).toBe(66);
+    expect(isWindFamily(lead.program!)).toBe(false); // sax 不走旧 72-79 pipe wind 判定
+    const controllers = new Set((lead.ccEvents ?? []).map((e) => e.controller));
+    expect(controllers.has(11)).toBe(true);
+    expect(controllers.has(2)).toBe(true);
+    expect(controllers.has(1)).toBe(true);
+    expect(sax.lines.some((line) => line.includes('lead:sax GM66:sax-breath-legato'))).toBe(true);
   });
 });

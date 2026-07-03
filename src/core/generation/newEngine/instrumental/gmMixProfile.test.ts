@@ -11,10 +11,10 @@ import type { TimbreWorld } from '../knowledge/instruments';
 
 // 各风格【代表性】角色 → 生效 program(暖路线池内,与 instruments.ts 一致)。
 const PALETTE: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
-  pop:  { bass: [33, 38], comp: [0, 4, 5], lead: [0, 4, 73], pad: [89, 90, 49], drum: [0] },
+  pop:  { bass: [33, 38], comp: [0, 4, 5], lead: [0, 4, 66], pad: [89, 90, 49], drum: [0] },
   lofi: { bass: [32, 33], comp: [4, 5, 0], lead: [4, 11, 12], pad: [89, 88, 48], drum: [0] },
-  rnb:  { bass: [33, 35], comp: [4, 5, 0], lead: [4, 5, 73], pad: [89, 90, 98], drum: [0] },
-  jazz: { bass: [32, 33], comp: [0, 4], lead: [0, 11, 73], pad: [48, 49, 89], drum: [0] },
+  rnb:  { bass: [33, 35], comp: [4, 5, 0], lead: [4, 5, 66], pad: [89, 90, 98], drum: [0] },
+  jazz: { bass: [32, 33], comp: [0, 4], lead: [0, 11, 66], pad: [48, 49, 89], drum: [0] },
 };
 
 const isInt = (v: number) => Number.isInteger(v);
@@ -83,6 +83,11 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('lead', 5).chorus).toBeGreaterThanOrEqual(38);
   });
 
+  it('CityPop FM EP 5 比 Rhodes 4 有更宽 chorus', () => {
+    expect(mk('comp', 5).chorus).toBeGreaterThan(mk('comp', 4).chorus);
+    expect(mk('lead', 5).chorus).toBeGreaterThan(mk('lead', 4).chorus);
+  });
+
   it('Clav 7:reverb ≤ 30(各空间)', () => {
     for (const sp of ['popWarmRoom', 'rnbPlateRoom', 'syntheticSoftRoom'] as SpaceProfile[]) {
       const m = mixForProgram({ style: 'rnb', timbreWorld: undefined, role: 'comp', program: 7, hasPad: true, space: sp });
@@ -96,7 +101,7 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
   });
 
   it('lead pan 居中 58..70(各 program)', () => {
-    for (const p of [0, 4, 11, 12, 73, 75]) {
+    for (const p of [0, 4, 11, 12, 66, 75]) {
       const m = mk('lead', p);
       expect(m.pan).toBeGreaterThanOrEqual(58);
       expect(m.pan).toBeLessThanOrEqual(70);
@@ -110,7 +115,7 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
 
   // ★ melody-forward(2026-06-23,用户:走 A 整编旋律声音小):lead CC7 抬高 → 旋律明显坐在 comp 之上。
   it('★ lead.volume > comp.volume(同 program,旋律在 comp 之上)且 ≥ 92', () => {
-    for (const p of [0, 4, 11, 12, 6]) { // jazz/暖路线代表 lead program
+    for (const p of [0, 4, 11, 12, 6, 66]) { // jazz/暖路线代表 lead program
       const lead = mk('lead', p).volume;
       const comp = mk('comp', p).volume;
       expect(lead, `gm${p} lead 比 comp 响`).toBeGreaterThan(comp);

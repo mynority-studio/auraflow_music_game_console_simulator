@@ -312,8 +312,8 @@ export default function App() {
   useEffect(() => {
     const initSf2 = async () => {
         try {
-            console.log("Fetching GM128_3BM.sf2...");
-            const resp = await fetch("/GM128_3BM.sf2");
+            console.log("Fetching Aura25_GM128.sf2...");
+            const resp = await fetch("/Aura25_GM128.sf2");
             if (!resp.ok) throw new Error("SF2 fetch failed. Status: " + resp.status);
             const buffer = await resp.arrayBuffer();
             if (!engineRef.current) {
@@ -452,7 +452,7 @@ export default function App() {
                 <p className="text-xs font-bold uppercase tracking-widest text-[#5A5A40]">
                     Initializing SF2 Engine...
                 </p>
-                <p className="text-[10px] text-[#8C867A]">Fetching and decoding GM128_3BM.sf2...</p>
+                <p className="text-[10px] text-[#8C867A]">Fetching and decoding Aura25_GM128.sf2...</p>
             </div>
           )}
           {!loadingSf2 && !isSf2Loaded && (
@@ -460,7 +460,7 @@ export default function App() {
                 <p className="text-xs font-bold uppercase text-red-500">
                     Failed to load SF2
                 </p>
-                <p className="text-[10px] text-[#8C867A]">Please ensure /public/GM128_3BM.sf2 exists.</p>
+                <p className="text-[10px] text-[#8C867A]">Please ensure /public/Aura25_GM128.sf2 exists.</p>
             </div>
           )}
 
@@ -7328,4 +7328,3 @@ declare module '*?url' {
 }
 
 ```
-

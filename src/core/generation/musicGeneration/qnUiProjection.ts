@@ -9,9 +9,10 @@ import type { SongBundle } from '../newEngine/generation/GenerationController';
 import type { MusicalIR } from '../newEngine/ir/MusicalIR';
 import { beatsPerBarOf } from '../newEngine/arranger/phraseTiming';
 import type {
-  MusicGenerationUiSnapshot, UiSection, UiChord, UiPlayer, UiTrack, QnRole, BandParticipantSelection, BandParticipantState,
+  MusicGenerationUiSnapshot, UiSection, UiChord, UiPlayer, UiTrack, QnRole, BandParticipantSelection, BandParticipantState, UiGrooveContract, UiGestureExpression,
 } from './types';
 import { participantForRole } from './participantConstraint';
+import { mapProgramToAura25 } from '../../sound/Aura25Palette';
 
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const ROLE_CHANNEL: Record<QnRole, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
@@ -30,7 +31,7 @@ export function keyToPc(key: string): number {
 
 // GM 128 标准乐器名(UI roster/palette 用)。
 const GM_NAMES = [
-  'Acoustic Grand', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Rhodes EP', 'FM EP', 'Harpsichord', 'Clavinet',
+  'Acoustic Grand', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Rhodes EP', 'CityPop FM EP', 'Harpsichord', 'Clavinet',
   'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer',
   'Drawbar Organ', 'Perc Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion',
   'Nylon Guitar', 'Steel Guitar', 'Jazz Guitar', 'Clean Guitar', 'Muted Guitar', 'Overdrive Guitar', 'Distortion Guitar', 'Guitar Harmonics',
@@ -63,6 +64,54 @@ function romanLabel(r: { degree: number; accidental: string; quality: string; se
 }
 function chordLabel(rootPc: number, chordType: string | undefined, quality: string): string {
   return `${pcToKey(rootPc)}${chordType ?? quality}`;
+}
+
+interface ProjectionGrooveContract {
+  readonly id: string;
+  readonly name: string;
+  readonly grid: string;
+  readonly melodySwingRatio: number;
+  readonly melodyStrongPocketMs: readonly number[];
+  readonly melodyWeakPocketMs: readonly number[];
+  readonly accentPattern: readonly number[];
+}
+
+function uiMsPair(pair: readonly number[]): [number, number] {
+  const lo = Number.isFinite(pair[0]) ? pair[0] : 0;
+  const hi = Number.isFinite(pair[1]) ? pair[1] : lo;
+  return [lo, hi];
+}
+
+function uiGrooveContract(c: ProjectionGrooveContract): UiGrooveContract {
+  return {
+    id: c.id,
+    name: c.name,
+    grid: c.grid,
+    melodySwingRatio: c.melodySwingRatio,
+    melodyStrongPocketMs: uiMsPair(c.melodyStrongPocketMs),
+    melodyWeakPocketMs: uiMsPair(c.melodyWeakPocketMs),
+    accentPattern: [...c.accentPattern],
+  };
+}
+
+function uiGesture(g: SongBundle['instrumentation']['gestureExpressionByRole'][QnRole] | undefined): UiGestureExpression | undefined {
+  if (!g || g.kind === 'none') return undefined;
+  return {
+    kind: g.kind,
+    family: g.family,
+    articulation: g.articulation,
+    noteShape: g.noteShape,
+    velocityCurve: g.velocityCurve,
+    pedalPolicy: g.pedalPolicy,
+    rudimentPolicy: g.rudimentPolicy,
+    hiHatPolicy: g.hiHatPolicy,
+    breathModel: g.breathModel,
+    ccControllers: [...g.ccControllers],
+    bassTechniques: g.bassTechniques ? [...g.bassTechniques] : undefined,
+    gateRatio: g.gateRatio,
+    maxConnectBeats: g.maxConnectBeats,
+    overlapBeats: g.overlapBeats,
+  };
 }
 
 /** band/arrangement/harmonic/instrumentation + IR → 结构化 UI 投影(不碰 trace)。 */
@@ -100,7 +149,7 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
   const roster: UiPlayer[] = ROLE_ORDER
     .filter((role) => instrumentation.roleProgram[role] !== undefined)
     .map((role) => {
-      const program = irProgramByRole.get(role) ?? instrumentation.roleProgram[role];
+      const program = mapProgramToAura25(irProgramByRole.get(role) ?? instrumentation.roleProgram[role], role, band.style);
       const participant = participantForRole(role, participants);
       const isAutoFilled = autoFilled.has(role);
       const state: BandParticipantState = isAutoFilled ? 'auto' : (participant && selectedParticipant.has(participant)) ? 'selected' : 'auto';
@@ -108,19 +157,23 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
       const isDrum = role === 'drum';
       const instrumentName = isDrum ? 'Drum Kit' : gmName(program);
       const family = isDrum ? 'percussion' : gmFamily(program);
-      return { role, program, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined };
+      return { role, program, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined, gesture: uiGesture(instrumentation.gestureExpressionByRole[role]) };
     });
 
   // tracks(实际 IR 轨 → channel/noteCount;给 Jam/可视化)
   const tracks: UiTrack[] = (ir?.tracks ?? []).map((t) => ({
     role: t.role as QnRole,
     channel: ROLE_CHANNEL[t.role as QnRole] ?? 0,
-    program: t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0,
-    instrumentName: gmName(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0),
+    program: mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style),
+    instrumentName: gmName(mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style)),
     noteCount: t.notes.length,
   }));
 
   const tonality = band.tonalityKind === 'modal' && band.modalModeName ? String(band.modalModeName) : String(band.mode);
+  const grooveContract = uiGrooveContract(arrangement.songGrooveContract);
+  const grooveContractBySection = Object.fromEntries(
+    Object.entries(arrangement.grooveContractBySection ?? {}).map(([sectionId, contract]) => [String(sectionId), uiGrooveContract(contract)]),
+  );
 
   return {
     seed,
@@ -133,6 +186,8 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
     chords,
     roster,
     tracks,
+    grooveContract,
+    grooveContractBySection,
     world: String(instrumentation.orchestrationChain.world),
     spaceProfile: String(instrumentation.spaceProfile),
   };

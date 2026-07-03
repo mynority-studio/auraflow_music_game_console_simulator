@@ -30,6 +30,7 @@ import { fallbackTokensForBrick } from './mgAdvisor';
 import { realizeTokens } from './mgMelodyRealizer';
 import { buildGuideTonePlan } from './mgGuideTonePlanner';
 import { renderStyleFeel, feelForStyle, feelFromGrooveContract, type ImprovisorStyleFeel } from './mgStyleRenderer';
+import { fitMidiToProgramRange } from '../knowledge/instruments';
 import {
   shapeMelodyHarmony,
   // ★ Phase C-2(directive 3.4):post-shaper 生产链(shapeMelodyHarmony 之后的最终 lead 整形)。
@@ -135,20 +136,25 @@ export function renderMgMelody(
   // ── MgNoteEvent[](beat)→ NoteIR[](tick)──
   const notes: NoteIR[] = melody
     .filter((e) => e.part === 'melody' && e.duration > 0)
-    .map((e) => ({
-      pitch: midi(Math.max(0, Math.min(127, Math.round(e.noteNumber)))),
-      startTick: timebase.beatToTick(beats(e.time)),
-      durationTicks: timebase.beatToTick(beats(Math.max(0.01, e.duration))),
-      velocity: Math.max(1, Math.min(127, Math.round(e.velocity))),
-    }))
+    .map((e) => {
+      const pitch = program !== undefined
+        ? fitMidiToProgramRange(e.noteNumber, 'lead', program)
+        : Math.max(0, Math.min(127, Math.round(e.noteNumber)));
+      return {
+        pitch: midi(pitch),
+        startTick: timebase.beatToTick(beats(e.time)),
+        durationTicks: timebase.beatToTick(beats(Math.max(0.01, e.duration))),
+        velocity: Math.max(1, Math.min(127, Math.round(e.velocity))),
+      };
+    })
     .sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
 
   // ★ Loop 3(Option A strict parity,2026-06-09):撤掉旧"末音 snap 落主音"——lead = MG 真源,音高/时序/力度
   //   一律不被 newEngine 后处理改写。收尾的"回主音"是【和声】回 T(harmony.ensureAuthenticEnding 的 V7→I),
   //   不是旋律;旋律的解决/落音交回 MG shapeMelodyHarmony(applyMelodicResolutionParadigm 等,读 effectiveFunc)。
 
-  // ★ 快速 lead 连音 legato(jazz/blues;CODEX directive 2026-06-18):swing 后把快速线条的音连到下一起音,
-  //   消除 0.85 articulation 重开的"机关枪"断点。只改 durationTicks,不动 pitch/start/数量;非 jazz 风格 enabled=false 零改动。
+  // ★ lead 连音 legato:把同一乐句的连续音连到下一起音,消除 articulation 缩短后的"机关枪/断奏"断点。
+  //   只改 durationTicks,不动 pitch/start/数量;真正乐句空隙仍保留呼吸。
   const legatoNotes = connectFastLeadNoteIR(notes, fastLeadLegatoOptionsForStyle(style, timebase.ppq));
   return { role: 'lead', notes: legatoNotes, program };
 }

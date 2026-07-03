@@ -27,11 +27,16 @@ const JAZZ_SLOPE_RULES = jazzSlopeRulesToGrammarRules();
 const LOFI_SLOPE_RULES = lofiStableSlopeRulesToGrammarRules();
 const POP_SLOPE_RULES = popStableSlopeRulesToGrammarRules();
 const RNB_SLOPE_RULES = rnbSoulSlopeRulesToGrammarRules();
-// ★ MG full-parity G7(2026-06-28):对齐当前 MG FunctionalGrammar.ts —— softParallel boost=4096(原默认 256)、
-//   LOFI 不再注入 LOFI_VAMP_RULES(当前 MG LOFI_FUNCTIONAL_RULES = softParallel+BUILTIN+lofiStableSlope)。
-const SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRules(4096);
+// ★ 产品语义分叉(2026-07-02):softParallel favorite 只作为风味候选,不能作为任何 style 的
+// Cadence 超级权重。4096 boost 会让 Surprise-Major-Cadence 的同签名副本吞掉
+// Perfect/Amen/Diatonic 等不同 Cadence brick,压住 seed 随机性与 family 内部细分。
+// ★ 黄金种子 SLOPE 权重降 30%(2026-07-03,用户):16→11.2(jazz/lofi/rnb)· 8→5.6(pop),进一步弱化 favorite 主导。
+const SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRules(11.2);
+// POP 不能沿用 LOFI 级别的 4096 boost:该规则源自 Surprise-Major-Cadence,但转换后只按
+// Cadence family 匹配,会压过 Perfect/Amen/Diatonic 等所有 POP 开头终止式。
+const POP_SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRules(5.6);
 const ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...JAZZ_SLOPE_RULES];
-const POP_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...POP_SLOPE_RULES];
+const POP_ALL_RULES = [...POP_SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...POP_SLOPE_RULES];
 const LOFI_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...LOFI_SLOPE_RULES];
 const RNB_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...RNB_SLOPE_RULES];
 

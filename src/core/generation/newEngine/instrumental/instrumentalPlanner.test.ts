@@ -173,6 +173,19 @@ describe('instrumental/instrumentalPlanner — 链式协同 GM 选择', () => {
     }
   });
 
+  it('吹奏手势计划由器配层随最终 program 下发,render 不再自行猜 GM 号', () => {
+    const b0 = buildBandSpec({ seed: 8, styleHint: 'jazz', mood: 'build', targetDuration: 120 });
+    const b = { ...b0, roleProgram: { ...b0.roleProgram, lead: 66, comp: 4, bass: 32, drum: 40 } };
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(8) });
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(8).substream('timbre'));
+    expect(ip.roleProgram.lead).toBe(66);
+    expect(ip.gestureExpressionByRole.lead.kind).toBe('sax-breath-legato');
+    expect(ip.gestureExpressionByRole.lead.breathModel).toBe('reed-continuous');
+    expect(ip.gestureExpressionByRole.comp.kind).toBe('keyboard-touch');
+    expect(ip.gestureExpressionByRole.bass.kind).toBe('bass-walk');
+    expect(ip.gestureExpressionByRole.drum.kind).toBe('drum-rudiment');
+  });
+
   it('所有在场角色都有最终 program;comp 必 canPlayComp;bass 必 bass 族;pad 必 pad/持续', () => {
     for (let seed = 1; seed <= 40; seed++) for (const style of styles) {
       const b = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });

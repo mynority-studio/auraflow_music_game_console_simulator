@@ -9,6 +9,7 @@
 
 import type { MidiEvent } from './MidiScheduler';
 import type { InstrumentRole, MusicalIR, TrackMix } from '../generation/newEngine/ir/MusicalIR';
+import { mapProgramToAura25 } from '../sound/Aura25Palette';
 
 interface ChannelVoice {
   channel: number;
@@ -77,11 +78,11 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] 
 
   for (const track of ir.tracks) {
     const voice = ROLE_VOICE[track.role] ?? DEFAULT_VOICE;
-    const program = track.program ?? voice.program; // BandEngine 选的乐器优先,缺省走角色默认
+    const program = mapProgramToAura25(track.program ?? voice.program, track.role); // 器配优先,发声前收口到 Aura25
     events.push({ ticks: 0, type: 'programChange', channel: voice.channel, data1: program, data2: 0 });
     // ★ 段落音色切换:同 channel 中途换 program(同一乐手换声音 / 效果器开关)
     for (const pc of track.programChanges ?? []) {
-      events.push({ ticks: pc.atTick, type: 'programChange', channel: voice.channel, data1: pc.program, data2: 0 });
+      events.push({ ticks: pc.atTick, type: 'programChange', channel: voice.channel, data1: mapProgramToAura25(pc.program, track.role), data2: 0 });
     }
     // ★ CC64 延音踏板:踩下(127)→ synth 持音直到抬起(0)→ 音尾 ring(comp 融合)
     for (const ped of track.pedalEvents ?? []) {

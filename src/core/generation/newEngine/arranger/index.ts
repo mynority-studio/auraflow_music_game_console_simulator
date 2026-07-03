@@ -5,4 +5,5 @@ export * from './timePlanner';
 export * from './dynamicsPlanner';
 export * from './phrasePlanner';
 export * from './phraseTiming';
+export * from './openingGesturePlanner';
 export * from './arranger';

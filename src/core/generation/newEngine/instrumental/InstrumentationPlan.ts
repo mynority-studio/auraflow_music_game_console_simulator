@@ -40,6 +40,46 @@ export interface MelodyReservationPlan {
   hookAnchorSlots: HookAnchorSlot[];
 }
 
+export type GestureExpressionKind =
+  | 'none'
+  | 'keyboard-touch'
+  | 'mallet-strike'
+  | 'drum-rudiment'
+  | 'sax-breath-legato'
+  | 'pipe-wind-breath'
+  | 'bass-pluck-legato'
+  | 'bass-walk'
+  | 'bass-muted'
+  | 'sustained-pad';
+export type GestureExpressionFamily = 'none' | 'keyboard' | 'mallet' | 'drum' | 'sax' | 'pipe-wind' | 'bass' | 'pad';
+export type GestureBreathModel = 'none' | 'reed-continuous' | 'pipe-taper';
+export type GestureNoteShape = 'none' | 'finger-legato' | 'strike-decay' | 'rudiment-hits' | 'legato-overlap' | 'bass-legato' | 'bass-muted' | 'sustain-pad';
+export type GestureArticulation = 'none' | 'comping' | 'finger-legato' | 'staccato' | 'tenuto' | 'slur' | 'ghost' | 'roll' | 'walking';
+export type GestureVelocityCurve = 'none' | 'soft' | 'linear' | 'accented' | 'ghosted' | 'walking-pulse' | 'strike-decay';
+export type GesturePedalPolicy = 'none' | 'harmonic-change' | 'light-syncopated' | 'acg-legato-change';
+export type GestureRudimentPolicy = 'none' | 'backbeat-ghost' | 'brush-swing' | 'laidback-ghost' | 'lofi-dusty' | 'fill-roll';
+export type GestureHiHatPolicy = 'none' | 'closed-open-lift' | 'ride-swing' | 'laidback-closed' | 'dusty-closed';
+export type GestureBassTechnique = 'walking' | 'pluck' | 'muted' | 'ghost-note' | 'approach-tone' | 'slide' | 'legato';
+
+/** 器配层下发的演奏表情计划:音色决定"怎么吹/怎么发声",render 只执行计划。 */
+export interface GestureExpressionPlan {
+  kind: GestureExpressionKind;
+  family: GestureExpressionFamily;
+  program?: number;
+  ccControllers: readonly number[];
+  breathModel: GestureBreathModel;
+  noteShape: GestureNoteShape;
+  articulation: GestureArticulation;
+  velocityCurve: GestureVelocityCurve;
+  pedalPolicy: GesturePedalPolicy;
+  rudimentPolicy: GestureRudimentPolicy;
+  hiHatPolicy: GestureHiHatPolicy;
+  bassTechniques?: readonly GestureBassTechnique[];
+  gateRatio?: number;
+  maxConnectBeats?: number;
+  overlapBeats?: number;
+}
+
 // ★ 收尾【乐器进出计划】(2026-06-08,器配据 arrangement.endingStyle 编写):render 据此出收尾手势。
 //   exitBarByRole = 该 role 在 outro 内【撑过头几个相对小节后静音】(undefined = 响到末);
 //   holdFinalChord = 末和弦延留(tag);fadeOut = outro 力度渐弱(fade);coldStop = 末小节齐停 + button 重音(cold)。
@@ -95,6 +135,8 @@ export interface InstrumentationPlanData {
   //   决定 CC7/10/91/93(+可选 CC11)。随段程序变(programByRoleSection 切换 → mix 也切)。render 落 IR,irToMidi 读。
   mixByRoleSection: Record<InstrumentRoleName, Record<SectionId, RoleMix>>;
   spaceProfile: SpaceProfile;
+  // ★ 手势表情层(吹奏/气息模拟):器配层据最终 program 下发表情计划,render 只消费计划,不再自行按 GM 号猜。
+  gestureExpressionByRole: Record<InstrumentRoleName, GestureExpressionPlan>;
   // ★ 每段鼓型(2026-06-08,groove 下发):Arranger 给 GrooveKind → 器配按 (style×groove) 从 KB 词汇
   //   确定性挑变体(同 groove → 同变体,repeatGroup 一致)。render 据此逐段换鼓型(取代单一 drumPattern);
   //   texturePocket 退成次要兜底(仅无此项的段)。空 = render 回退 drumPattern(style)(向后兼容)。

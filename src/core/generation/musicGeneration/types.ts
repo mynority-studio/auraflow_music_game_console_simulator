@@ -52,6 +52,22 @@ export interface MusicGenerationRequest {
 // —— UI 结构化投影 ——
 export interface UiSection { id: string; role: string; functionTag?: string; bars: number; startBeat: number; endBeat: number; }
 export interface UiChord { roman: string; label: string; rootPc: number; quality: string; startBeat: number; durationBeats: number; sectionId: string; }
+export interface UiGestureExpression {
+  kind: string;
+  family: string;
+  articulation: string;
+  noteShape: string;
+  velocityCurve: string;
+  pedalPolicy: string;
+  rudimentPolicy: string;
+  hiHatPolicy: string;
+  breathModel: string;
+  ccControllers: number[];
+  bassTechniques?: string[];
+  gateRatio?: number;
+  maxConnectBeats?: number;
+  overlapBeats?: number;
+}
 // roster 行:职能 + Q+N 实际随机音色(只读,不可手选)+ participant 归属 + 是否自动补位。
 export interface UiPlayer {
   role: QnRole;
@@ -61,8 +77,19 @@ export interface UiPlayer {
   state: BandParticipantState; // auto / selected / disabled(来自 participant)
   participant?: BandParticipantRole; // 承担该 role 的乐手职能
   autoFilled?: boolean;       // ★ §4.4:用户选择未覆盖 → Q+N 自动补位(UI 标明)
+  gesture?: UiGestureExpression; // ★ 器配层下发的演奏手势/表情计划(只读审计)
 }
 export interface UiTrack { role: QnRole; channel: number; program: number; instrumentName: string; noteCount: number; }
+
+export interface UiGrooveContract {
+  id: string;
+  name: string;
+  grid: string;
+  melodySwingRatio: number;
+  melodyStrongPocketMs: [number, number];
+  melodyWeakPocketMs: [number, number];
+  accentPattern: number[];
+}
 
 export interface MusicGenerationUiSnapshot {
   seed: number;
@@ -75,6 +102,8 @@ export interface MusicGenerationUiSnapshot {
   chords: UiChord[];
   roster: UiPlayer[];                // ensemble/roster/palette
   tracks: UiTrack[];                 // 实际 IR 轨(channel/program/noteCount)— 给 Jam/可视化
+  grooveContract?: UiGrooveContract; // Q+T/监控只读消费:lead melody swing + pocket
+  grooveContractBySection?: Record<string, UiGrooveContract>;
   world: string;                     // timbre world
   spaceProfile: string;
 }

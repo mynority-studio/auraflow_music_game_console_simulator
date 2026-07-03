@@ -6,6 +6,8 @@
 // with the Q+N main-engine takeover.
 // ============================================================
 
+import type { TakeoverQuantizeGrid } from './rhythmQuantizer';
+
 export type TakeoverRole = 'lead';
 
 export interface TakeoverChordSource {
@@ -30,6 +32,29 @@ export interface TakeoverMusicSnapshot {
   bpm: number;
   timeSignature: [number, number];
   chords: TakeoverChordSource[];
+  grooveContract?: TakeoverGrooveContract;
+  grooveContractBySection?: Record<string, TakeoverGrooveContract>;
+}
+
+export interface TakeoverGrooveContract {
+  id: string;
+  name?: string;
+  grid?: string;
+  melodySwingRatio?: number;
+  melodyStrongPocketMs?: readonly [number, number];
+  melodyWeakPocketMs?: readonly [number, number];
+  accentPattern?: readonly number[];
+}
+
+export interface LeadTakeoverTiming {
+  sourceBeat: number;
+  targetBeat: number;
+  delayMs: number;
+  grid: TakeoverQuantizeGrid;
+  gridStepBeats: number;
+  baseTargetBeat?: number;
+  grooveOffsetMs?: number;
+  grooveContractId?: string;
 }
 
 export interface TakeoverPadCell {
@@ -63,8 +88,21 @@ export interface LeadTakeoverState {
 }
 
 export type LeadTakeoverAction =
-  | { type: 'lead-note-on'; channel: number; midi: number; velocity: number }
-  | { type: 'lead-note-off'; channel: number; midi: number }
+  | {
+      type: 'lead-note-on';
+      channel: number;
+      noteId?: string;
+      midi: number;
+      velocity: number;
+      timing?: LeadTakeoverTiming;
+    }
+  | {
+      type: 'lead-note-off';
+      channel: number;
+      noteId?: string;
+      midi: number;
+      timing?: LeadTakeoverTiming;
+    }
   | { type: 'lead-mute'; channel: number; muted: boolean }
   | { type: 'panic'; channel: number };
 
@@ -74,4 +112,11 @@ export interface LeadTakeoverConfig {
   silenceBarsToRelease: number;
   handoffBars: number;
   defaultVelocity: number;
+  quantizeEnabled: boolean;
+  quantizeGrid: TakeoverQuantizeGrid;
+  fastInputGrid: TakeoverQuantizeGrid;
+  fastInputBeatWindow: number;
+  lateGraceMs: number;
+  strongBeatLateGraceMs: number;
+  noteOffTailMs: number;
 }

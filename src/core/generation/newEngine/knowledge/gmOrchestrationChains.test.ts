@@ -53,6 +53,13 @@ describe('knowledge/gmOrchestrationChains — 世界选择', () => {
 });
 
 describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
+  it('electricKeys:默认 comp 使用 CityPop FM EP(GM5)', () => {
+    const r = orchestrateRolePrograms({ style: 'rnb', lineup: ['comp', 'lead'], requestedWorld: 'electricKeys' });
+    expect(CHAIN_PROFILES.electricKeys.compPriority[0]).toBe(5);
+    expect(r.roleProgram.comp).toBe(5);
+    expect(r.roleProgram.lead).toBe(66);
+  });
+
   it('electricKeys:comp/lead 配对兼容', () => {
     const r = orchestrateRolePrograms({ style: 'rnb', lineup: ['comp', 'lead', 'bass'], requestedWorld: 'electricKeys', provisional: { comp: 4, lead: 11, bass: 33 } });
     // lead=vibe(11) 与 EP comp 跨族跨源 → 链改成兼容 lead
@@ -74,6 +81,11 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     expect(CHAIN_PROFILES.jazzCombo.bassPriority.some((b) => b === 38 || b === 39)).toBe(false);
   });
 
+  it('jazzCombo:lead 链不含 GM26 jazz guitar', () => {
+    const jazzLeads = Object.values(CHAIN_PROFILES.jazzCombo.leadByComp).flat();
+    expect(jazzLeads).not.toContain(26);
+  });
+
   it('syntheticSoft:合成贝斯 + 合成 pad 可选,且 lead 不刺耳', () => {
     const r = orchestrateRolePrograms({ style: 'pop', lineup: ['comp', 'bass', 'pad', 'lead'], requestedWorld: 'syntheticSoft', provisional: { comp: 5, bass: 38, pad: 88, lead: 5 } });
     expect(r.roleProgram.bass).toBe(38);
@@ -88,11 +100,11 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     }
   });
 
-  it('drum kit 链权威:jazz=brush(40),pop/lofi/rnb=Standard(0)', () => {
+  it('drum kit 链权威:jazz=brush(40),CityPop/RNB/lofi=TR808(25)', () => {
     // jazz 即便 provisional drum=0(恒 0),也由链定为 brush 40
     expect(orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: { drum: 0 } }).roleProgram.drum).toBe(40);
-    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 0 } }).roleProgram.drum).toBe(0);
-    expect(orchestrateRolePrograms({ style: 'lofi', lineup: ['drum'], provisional: { drum: 0 } }).roleProgram.drum).toBe(0);
+    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 0 } }).roleProgram.drum).toBe(25);
+    expect(orchestrateRolePrograms({ style: 'lofi', lineup: ['drum'], provisional: { drum: 0 } }).roleProgram.drum).toBe(25);
   });
 
   it('确定性:同 style/lineup/provisional → 同 roleProgram', () => {
@@ -103,9 +115,9 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
 });
 
 describe('knowledge/gmOrchestrationChains — 辅助', () => {
-  it('isHarshLead:铜管/萨克斯/独奏小提琴/失真吉他/合唱/合成 lead = 刺耳;暖键盘/木琴/排箫 = 否', () => {
-    for (const p of [56, 60, 64, 40, 30, 52, 81]) expect(isHarshLead(p), `GM${p}`).toBe(true);
-    for (const p of [0, 4, 11, 12, 75, 77, 108]) expect(isHarshLead(p), `GM${p}`).toBe(false);
+  it('isHarshLead:铜管/独奏小提琴/失真吉他/合唱/激进合成 lead = 刺耳;暖键盘/木琴/sax/排箫 = 否', () => {
+    for (const p of [56, 60, 40, 30, 52, 81]) expect(isHarshLead(p), `GM${p}`).toBe(true);
+    for (const p of [0, 4, 11, 12, 64, 65, 66, 67, 75, 77, 108]) expect(isHarshLead(p), `GM${p}`).toBe(false);
   });
 
   it('scoreProgramPair:同程序 > 跨族;刺耳 lead 重罚 < 0', () => {

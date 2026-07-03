@@ -7,8 +7,8 @@
 // ============================================================
 
 import type { MidiEvent } from '../../audio/MidiScheduler';
-import type { MusicGenerationResult, MusicGenerationUiSnapshot, UiChord } from '../musicGeneration/types';
-import type { LeadTakeoverAction, TakeoverChordSource, TakeoverMusicSnapshot } from './types';
+import type { MusicGenerationResult, MusicGenerationUiSnapshot, UiChord, UiGrooveContract } from '../musicGeneration/types';
+import type { LeadTakeoverAction, TakeoverChordSource, TakeoverGrooveContract, TakeoverMusicSnapshot } from './types';
 
 export const TAKEOVER_USER_CHANNEL = 15;
 const NATIVE_LEAD_CHANNEL = 1;
@@ -18,8 +18,12 @@ const DEFAULT_LEAD_PAN = 64;
 const DEFAULT_LEAD_REVERB = 36;
 const DEFAULT_LEAD_CHORUS = 0;
 const DEFAULT_LEAD_EXPRESSION = 127;
+const TAKEOVER_AUDIO_SCHEDULE_LOOKAHEAD_MS = 25;
+const MAX_TAKEOVER_TRACKED_NOTES = 32;
 const pendingHardMuteTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const userVoiceSetupKeys = new WeakMap<object, Map<number, string>>();
+const pendingNoteTimers = new WeakMap<object, Map<string, PendingTakeoverNote>>();
+const activeNoteCounts = new WeakMap<object, Map<string, number>>();
 
 export interface LeadTakeoverAudioTarget {
   getCurrentTick(): number;
@@ -29,6 +33,9 @@ export interface LeadTakeoverAudioTarget {
   muteChannel?(channel: number, mute: boolean): void;
   noteOn?(channel: number, note: number, velocity: number): void;
   noteOff?(channel: number, note: number): void;
+  getAudioTime?(): number;
+  noteOnAt?(channel: number, note: number, velocity: number, audioTime: number): void;
+  noteOffAt?(channel: number, note: number, audioTime: number): void;
   programChange?(channel: number, program: number): void;
   controllerChange?(channel: number, controller: number, value: number): void;
 }
@@ -40,6 +47,18 @@ interface LeadVoice {
   reverb: number;
   chorus: number;
   expression: number;
+}
+
+interface PendingTakeoverNote {
+  noteOnTimer: ReturnType<typeof setTimeout> | null;
+  noteOffTimer: ReturnType<typeof setTimeout> | null;
+  started: boolean;
+  releaseWhenStarted: boolean;
+  channel: number;
+  noteId?: string;
+  midi: number;
+  velocity: number;
+  scheduledNoteOnAudioTime: number | null;
 }
 
 export interface LeadTakeoverExecuteOptions {
@@ -55,6 +74,28 @@ function clampMidi(v: number): number {
 function currentTick(target: LeadTakeoverAudioTarget): number {
   return Math.max(0, Math.ceil(target.getCurrentTick()));
 }
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function scheduledAudioTime(target: LeadTakeoverAudioTarget, remainingMs: number): number | null {
+  if (!target.getAudioTime) return null;
+  return target.getAudioTime() + Math.max(0, remainingMs) / 1000;
+}
+
+function canScheduleNoteOnAt(target: LeadTakeoverAudioTarget): boolean {
+  return !!target.getAudioTime && !!target.noteOnAt;
+}
+
+function canScheduleNoteOffAt(target: LeadTakeoverAudioTarget): boolean {
+  return !!target.getAudioTime && !!target.noteOffAt;
+}
+
+function delayedTimerMs(delayMs: number, useAudioClock: boolean): number {
+  return Math.max(0, delayMs - (useAudioClock ? TAKEOVER_AUDIO_SCHEDULE_LOOKAHEAD_MS : 0));
+}
+
 
 function leadVoiceFromResult(result: MusicGenerationResult | null): LeadVoice {
   const leadTrack = result?.ir?.tracks.find((t) => t.role === 'lead');
@@ -114,7 +155,12 @@ function sendNoteOn(
   channel: number,
   midi: number,
   velocity: number,
+  audioTime: number | null = null,
 ): void {
+  if (audioTime !== null && target.noteOnAt) {
+    target.noteOnAt(channel, midi, velocity, audioTime);
+    return;
+  }
   if (target.noteOn) {
     target.noteOn(channel, midi, velocity);
     return;
@@ -127,12 +173,301 @@ function sendNoteOff(
   tick: number,
   channel: number,
   midi: number,
+  audioTime: number | null = null,
 ): void {
+  if (audioTime !== null && target.noteOffAt) {
+    target.noteOffAt(channel, midi, audioTime);
+    return;
+  }
   if (target.noteOff) {
     target.noteOff(channel, midi);
     return;
   }
   target.injectMidiEvent({ ticks: tick, type: 'noteOff', channel, data1: midi, data2: 0 });
+}
+
+function midiKey(channel: number, midi: number): string {
+  return `${channel}:${midi}`;
+}
+
+function pendingKey(channel: number, midi: number, noteId?: string): string {
+  return noteId ? `${channel}:${midi}:${noteId}` : midiKey(channel, midi);
+}
+
+function pendingNotesFor(target: LeadTakeoverAudioTarget): Map<string, PendingTakeoverNote> {
+  let notes = pendingNoteTimers.get(target as object);
+  if (!notes) {
+    notes = new Map();
+    pendingNoteTimers.set(target as object, notes);
+  }
+  return notes;
+}
+
+function activeNotesFor(target: LeadTakeoverAudioTarget): Map<string, number> {
+  let notes = activeNoteCounts.get(target as object);
+  if (!notes) {
+    notes = new Map();
+    activeNoteCounts.set(target as object, notes);
+  }
+  return notes;
+}
+
+function incrementActiveNote(target: LeadTakeoverAudioTarget, channel: number, midi: number): void {
+  const notes = activeNotesFor(target);
+  const key = midiKey(channel, midi);
+  notes.set(key, (notes.get(key) ?? 0) + 1);
+}
+
+function shouldSendTrackedNoteOff(target: LeadTakeoverAudioTarget, channel: number, midi: number): boolean {
+  const notes = activeNoteCounts.get(target as object);
+  if (!notes) return true;
+  const key = midiKey(channel, midi);
+  const current = notes.get(key);
+  if (current === undefined) return true;
+  if (current > 1) {
+    notes.set(key, current - 1);
+    return false;
+  }
+  notes.delete(key);
+  if (notes.size === 0) activeNoteCounts.delete(target as object);
+  return true;
+}
+
+function sendTrackedNoteOn(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  channel: number,
+  midi: number,
+  velocity: number,
+  audioTime: number | null = null,
+): void {
+  sendNoteOn(target, tick, channel, midi, velocity, audioTime);
+  incrementActiveNote(target, channel, midi);
+}
+
+function sendTrackedNoteOff(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  channel: number,
+  midi: number,
+  audioTime: number | null = null,
+): void {
+  if (shouldSendTrackedNoteOff(target, channel, midi)) {
+    sendNoteOff(target, tick, channel, midi, audioTime);
+  }
+}
+
+function clearPendingNote(note: PendingTakeoverNote): void {
+  if (note.noteOnTimer) clearTimeout(note.noteOnTimer);
+  if (note.noteOffTimer) clearTimeout(note.noteOffTimer);
+  note.noteOnTimer = null;
+  note.noteOffTimer = null;
+}
+
+function releasePendingNote(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  note: PendingTakeoverNote,
+): void {
+  clearPendingNote(note);
+  if (!note.started) return;
+
+  const nowAudioTime = target.getAudioTime?.() ?? null;
+  const futureNoteOnTime = note.scheduledNoteOnAudioTime !== null
+    && nowAudioTime !== null
+    && note.scheduledNoteOnAudioTime > nowAudioTime;
+  const releaseAudioTime = futureNoteOnTime ? note.scheduledNoteOnAudioTime + 0.01 : null;
+  sendTrackedNoteOff(target, tick, note.channel, note.midi, releaseAudioTime);
+}
+
+function flushTrackedTakeoverNotes(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  userChannel: number,
+): void {
+  const notes = pendingNoteTimers.get(target as object);
+  if (notes) {
+    for (const note of notes.values()) releasePendingNote(target, tick, note);
+    notes.clear();
+    pendingNoteTimers.delete(target as object);
+  }
+  sendControlChange(target, tick, userChannel, 123, 0);
+  activeNoteCounts.delete(target as object);
+}
+
+function enforceTrackedNoteLimit(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  userChannel: number,
+): void {
+  const notes = pendingNoteTimers.get(target as object);
+  if (!notes || notes.size <= MAX_TAKEOVER_TRACKED_NOTES) return;
+  flushTrackedTakeoverNotes(target, tick, userChannel);
+}
+
+function scheduleDelayedNoteOn(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  channel: number,
+  midi: number,
+  velocity: number,
+  delayMs: number,
+  voice: LeadVoice,
+  noteId?: string,
+): void {
+  const notes = pendingNotesFor(target);
+  const key = pendingKey(channel, midi, noteId);
+  const requestedAtMs = nowMs();
+  const useAudioClock = canScheduleNoteOnAt(target);
+  const existing = notes.get(key);
+  if (existing) {
+    releasePendingNote(target, tick, existing);
+    notes.delete(key);
+  }
+
+  const pending: PendingTakeoverNote = {
+    noteOnTimer: null,
+    noteOffTimer: null,
+    started: false,
+    releaseWhenStarted: false,
+    channel,
+    noteId,
+    midi,
+    velocity,
+    scheduledNoteOnAudioTime: null,
+  };
+
+  pending.noteOnTimer = setTimeout(() => {
+    const remainingMs = Math.max(0, delayMs - (nowMs() - requestedAtMs));
+    const audioTime = scheduledAudioTime(target, remainingMs);
+    pending.noteOnTimer = null;
+    pending.started = true;
+    pending.scheduledNoteOnAudioTime = audioTime;
+    ensureUserVoiceSetup(target, tick, channel, voice);
+    sendTrackedNoteOn(target, tick + 1, channel, midi, velocity, audioTime);
+    if (pending.releaseWhenStarted) {
+      sendTrackedNoteOff(target, tick + 1, channel, midi, audioTime);
+      notes.delete(key);
+    }
+  }, delayedTimerMs(delayMs, useAudioClock));
+
+  notes.set(key, pending);
+  enforceTrackedNoteLimit(target, tick, channel);
+}
+
+function sendImmediateTrackedNoteOn(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  channel: number,
+  midi: number,
+  velocity: number,
+  voice: LeadVoice,
+  noteId?: string,
+): void {
+  const notes = pendingNotesFor(target);
+  const key = pendingKey(channel, midi, noteId);
+  const existing = notes.get(key);
+  if (existing) {
+    releasePendingNote(target, tick, existing);
+    notes.delete(key);
+  }
+  ensureUserVoiceSetup(target, tick, channel, voice);
+  sendTrackedNoteOn(target, tick + 1, channel, midi, velocity);
+  notes.set(key, {
+    noteOnTimer: null,
+    noteOffTimer: null,
+    started: true,
+    releaseWhenStarted: false,
+    channel,
+    noteId,
+    midi,
+    velocity,
+    scheduledNoteOnAudioTime: null,
+  });
+  enforceTrackedNoteLimit(target, tick, channel);
+}
+
+function scheduleDelayedNoteOff(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  channel: number,
+  midi: number,
+  delayMs: number,
+  noteId?: string,
+): void {
+  const notes = pendingNotesFor(target);
+  const key = pendingKey(channel, midi, noteId);
+  const requestedAtMs = nowMs();
+  const useAudioClock = canScheduleNoteOffAt(target);
+  let note = notes.get(key);
+  if (!note) {
+    note = {
+      noteOnTimer: null,
+      noteOffTimer: null,
+      started: true,
+      releaseWhenStarted: false,
+      channel,
+      noteId,
+      midi,
+      velocity: 0,
+      scheduledNoteOnAudioTime: null,
+    };
+    notes.set(key, note);
+  }
+  if (note.noteOffTimer) clearTimeout(note.noteOffTimer);
+  note.noteOffTimer = setTimeout(() => {
+    const remainingMs = Math.max(0, delayMs - (nowMs() - requestedAtMs));
+    const audioTime = scheduledAudioTime(target, remainingMs);
+    note.noteOffTimer = null;
+    if (note.started) {
+      sendTrackedNoteOff(target, tick, channel, midi, audioTime);
+      notes.delete(key);
+    } else {
+      note.releaseWhenStarted = true;
+    }
+  }, delayedTimerMs(delayMs, useAudioClock));
+}
+
+function releaseDelayedOrStartedNote(
+  target: LeadTakeoverAudioTarget,
+  tick: number,
+  channel: number,
+  midi: number,
+  noteId?: string,
+): boolean {
+  const notes = pendingNoteTimers.get(target as object);
+  if (!notes) return false;
+
+  if (!noteId) {
+    let released = false;
+    const midiPrefix = `${midiKey(channel, midi)}:`;
+    for (const [key, note] of [...notes.entries()]) {
+      if (key !== midiKey(channel, midi) && !key.startsWith(midiPrefix)) continue;
+      if (!note.started) {
+        clearPendingNote(note);
+      } else {
+        releasePendingNote(target, tick, note);
+      }
+      notes.delete(key);
+      released = true;
+    }
+    if (notes.size === 0) pendingNoteTimers.delete(target as object);
+    return released;
+  }
+
+  const key = pendingKey(channel, midi, noteId);
+  const note = notes.get(key);
+  if (!note) return false;
+  if (!note.started) {
+    clearPendingNote(note);
+    notes.delete(key);
+    if (notes.size === 0) pendingNoteTimers.delete(target as object);
+    return true;
+  }
+  releasePendingNote(target, tick, note);
+  notes.delete(key);
+  if (notes.size === 0) pendingNoteTimers.delete(target as object);
+  return true;
 }
 
 function injectVoiceSetup(
@@ -217,6 +552,7 @@ export function resetLeadTakeoverRuntimeState(
 ): void {
   userVoiceSetupKeys.delete(target as object);
   for (const channel of channels) cancelPendingHardMute(channel);
+  flushTrackedTakeoverNotes(target, currentTick(target) + 1, TAKEOVER_USER_CHANNEL);
 }
 
 function chordTypeFromLabel(chord: UiChord): string {
@@ -236,7 +572,24 @@ function chordFromUi(c: UiChord): TakeoverChordSource {
   };
 }
 
+function grooveContractFromUi(c: UiGrooveContract | undefined): TakeoverGrooveContract | undefined {
+  if (!c) return undefined;
+  return {
+    id: c.id,
+    name: c.name,
+    grid: c.grid,
+    melodySwingRatio: c.melodySwingRatio,
+    melodyStrongPocketMs: c.melodyStrongPocketMs,
+    melodyWeakPocketMs: c.melodyWeakPocketMs,
+    accentPattern: c.accentPattern,
+  };
+}
+
 export function takeoverSnapshotFromUiSnapshot(ui: MusicGenerationUiSnapshot): TakeoverMusicSnapshot {
+  const grooveContract = grooveContractFromUi(ui.grooveContract);
+  const grooveContractBySection = ui.grooveContractBySection
+    ? Object.fromEntries(Object.entries(ui.grooveContractBySection).map(([sectionId, contract]) => [sectionId, grooveContractFromUi(contract)!]))
+    : undefined;
   return {
     styleHint: ui.styleHint,
     key: ui.key,
@@ -244,6 +597,8 @@ export function takeoverSnapshotFromUiSnapshot(ui: MusicGenerationUiSnapshot): T
     bpm: ui.bpm,
     timeSignature: ui.timeSignature,
     chords: ui.chords.map(chordFromUi),
+    ...(grooveContract ? { grooveContract } : {}),
+    ...(grooveContractBySection ? { grooveContractBySection } : {}),
   };
 }
 
@@ -267,12 +622,26 @@ export function executeLeadTakeoverActions(
 
   for (const action of actions) {
     if (action.type === 'lead-note-on') {
-      ensureUserVoiceSetup(target, baseTick, userChannel, voice);
-      sendNoteOn(target, baseTick + 1, userChannel, action.midi, clampMidi(action.velocity));
-      logs.push(`takeover noteOn ch${userChannel} ${action.midi} v${clampMidi(action.velocity)}`);
+      const delayMs = Math.max(0, action.timing?.delayMs ?? 0);
+      const velocity = clampMidi(action.velocity);
+      if (delayMs > 0) {
+        scheduleDelayedNoteOn(target, baseTick, userChannel, action.midi, velocity, delayMs, voice, action.noteId);
+        logs.push(`takeover qNoteOn ch${userChannel} ${action.midi} +${Math.round(delayMs)}ms`);
+      } else {
+        sendImmediateTrackedNoteOn(target, baseTick, userChannel, action.midi, velocity, voice, action.noteId);
+        logs.push(`takeover noteOn ch${userChannel} ${action.midi} v${velocity}`);
+      }
     } else if (action.type === 'lead-note-off') {
-      sendNoteOff(target, baseTick, userChannel, action.midi);
-      logs.push(`takeover noteOff ch${userChannel} ${action.midi}`);
+      const delayMs = Math.max(0, action.timing?.delayMs ?? 0);
+      if (delayMs > 0) {
+        scheduleDelayedNoteOff(target, baseTick, userChannel, action.midi, delayMs, action.noteId);
+        logs.push(`takeover qNoteOff ch${userChannel} ${action.midi} +${Math.round(delayMs)}ms`);
+      } else if (!releaseDelayedOrStartedNote(target, baseTick, userChannel, action.midi, action.noteId)) {
+        sendNoteOff(target, baseTick, userChannel, action.midi);
+        logs.push(`takeover noteOff ch${userChannel} ${action.midi}`);
+      } else {
+        logs.push(`takeover noteOff ch${userChannel} ${action.midi}`);
+      }
     } else if (action.type === 'lead-mute') {
       if (!action.muted) {
         cancelPendingHardMute(nativeLeadChannel);
@@ -282,7 +651,7 @@ export function executeLeadTakeoverActions(
       if (action.muted) hardMuteNativeLeadAfterFlush(target, nativeLeadChannel, hardMuteDelayMs);
       logs.push(`${action.muted ? 'hardMute' : 'restore'} native lead ch${nativeLeadChannel}`);
     } else {
-      sendControlChange(target, baseTick, userChannel, 123, 0);
+      resetLeadTakeoverRuntimeState(target, [nativeLeadChannel]);
       logs.push(`panic takeover ch${userChannel}`);
     }
   }

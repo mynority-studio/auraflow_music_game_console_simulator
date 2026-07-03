@@ -66,14 +66,12 @@ const ACG_BASS_LIFT = 8;     // 66+8=74 · LH bass 托底
 //   key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
 type ProgOverride = Partial<Record<InstrumentRoleName, Partial<RoleMix>>>;
 const PROGRAM_MIX: Record<number, ProgOverride> = {
-  // Piano 0-3(亮钢琴 1 略干)
+  // Piano 0/1(亮钢琴 1 略干)
   0: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
   1: { comp: { volume: 81, reverb: 35, chorus: 6 }, lead: { volume: 79, reverb: 42, chorus: 5 } }, // 亮:vol−4 rev−5
-  2: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
-  3: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
-  // 电钢 4/5(POP/LOFI/RNB 最重要;chorus 带宽度)
-  4: { comp: { volume: 89, reverb: 43, chorus: 58 }, lead: { volume: 81, reverb: 45, chorus: 48 } },
-  5: { comp: { volume: 89, reverb: 43, chorus: 58 }, lead: { volume: 81, reverb: 45, chorus: 48 } },
+  // 电钢 4/5(POP/LOFI/RNB 最重要;5 作为 CityPop/DX FM 电钢,chorus 更宽)
+  4: { comp: { volume: 89, reverb: 43, chorus: 54 }, lead: { volume: 81, reverb: 45, chorus: 46 } },
+  5: { comp: { volume: 87, reverb: 39, chorus: 66 }, lead: { volume: 79, reverb: 41, chorus: 62 } },
   6: { comp: { volume: 80, reverb: 29, chorus: 4 }, lead: { volume: 80, reverb: 29, chorus: 4 } }, // 羽管键琴:干、保 attack
   7: { comp: { volume: 83, reverb: 23, chorus: 16 } }, // Clav:干、短、靠前
   8: { comp: { volume: 80, reverb: 40, chorus: 6 }, lead: { volume: 80, reverb: 45, chorus: 5 } }, // Celesta(归键盘,按钢琴系)
@@ -81,7 +79,9 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   12: { lead: { volume: 81, reverb: 41, chorus: 7 } },  // 马林巴:保木质 attack
   108: { lead: { volume: 81, reverb: 41, chorus: 7 } }, // 卡林巴
   107: { lead: { volume: 80, reverb: 44, chorus: 10 } }, // 古筝(拨弦,略带空间)
-  // 管乐(气声,中音区)
+  // 管乐/萨克斯(气声,中音区)
+  65: { lead: { volume: 78, reverb: 46, chorus: 8 } },
+  66: { lead: { volume: 80, reverb: 44, chorus: 6 } },
   75: { lead: { volume: 80, reverb: 50, chorus: 12 } }, 77: { lead: { volume: 80, reverb: 48, chorus: 10 } },
   16: { pad: { volume: 71, reverb: 51, chorus: 65 } }, // 管风琴:仅 pad,支撑不抢
   // 贝斯

@@ -10,7 +10,8 @@
 export type StageName =
   | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental' | 'timbre'
   | 'prepass' | 'accompaniment' | 'compTexture' | 'padStyle' | 'melody' | 'resolver' | 'humanize'
-  | 'grooveContract'; // ★ GrooveContract 选择(独立子流;Phase D 起全 MG-backed 风格都抽,BLUES/无 rng 不抽)
+  | 'grooveContract' // ★ GrooveContract 选择(独立子流;Phase D 起全 MG-backed 风格都抽,BLUES/无 rng 不抽)
+  | 'openingGesture'; // ★ 开头编配导演(独立子流;只决定入场计划,不扰曲式/和声/器配)
 
 export interface Rng {
   next(): number;                       // [0,1)

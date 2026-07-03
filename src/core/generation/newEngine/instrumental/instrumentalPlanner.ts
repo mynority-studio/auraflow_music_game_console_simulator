@@ -12,11 +12,12 @@ import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
-import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies } from '../knowledge/instruments';
+import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, playableRangeForRole } from '../knowledge/instruments';
 import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import { mapProgramToAura25, mapRoleProgramsToAura25 } from '../../../sound/Aura25Palette';
+import { buildGestureExpressionByRole } from './gestureExpression';
 import {
   freezeInstrumentationPlan,
   type BoundaryGesturePlan,
@@ -42,6 +43,16 @@ const REGISTER_BY_ROLE: Record<InstrumentRoleName, RegisterRange> = {
   lead: rr(67, 84),
   drum: rr(35, 50),
 };
+
+function registerForRole(role: InstrumentRoleName, program: number | undefined): RegisterRange {
+  if (program === undefined) return REGISTER_BY_ROLE[role];
+  const [lo, hi] = playableRangeForRole(role, program);
+  const base = REGISTER_BY_ROLE[role];
+  const low = Math.max(base.lowMidi as number, lo);
+  const high = Math.min(base.highMidi as number, hi);
+  if (low <= high) return rr(low, high);
+  return rr(lo, hi);
+}
 
 // ============================================================
 // ★ 编曲密度弧(A1):genre × functionTag → 该段【期望在场的乐手】(再 ∩ lineup)。
@@ -280,6 +291,10 @@ export function buildInstrumentationPlan(
     .map((role) => `${role} Aura25 GM${repairedRoleProgram[role]}→GM${roleProgram[role]}`);
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
+  const gestureExpressionByRole = buildGestureExpressionByRole(ALL_ROLES, roleProgram, band.style);
+  const registerByRole = Object.fromEntries(
+    ALL_ROLES.map((role) => [role, registerForRole(role, roleProgram[role])]),
+  ) as Record<InstrumentRoleName, RegisterRange>;
 
   const textureBySection: Record<string, TextureKind> = {};
   const activityBySection: Record<string, Partial<Record<InstrumentRoleName, number>>> = {};
@@ -348,7 +363,7 @@ export function buildInstrumentationPlan(
       return {
         phraseId: p.id,
         beatSlot: starts[p.id],
-        preferredRegister: REGISTER_BY_ROLE.lead,
+        preferredRegister: registerByRole.lead,
         anchorRequired: isMain,
         segment: 'head',
         maxAccompanimentDensity: isMain ? 0.4 : 0.6,
@@ -462,7 +477,7 @@ export function buildInstrumentationPlan(
   const data: InstrumentationPlanData = {
     activityBySection,
     activeRolesBySection,
-    registerByRole: REGISTER_BY_ROLE,
+    registerByRole,
     textureBySection,
     richTextureBySection,
     richTextureSwitchBySection,
@@ -477,11 +492,12 @@ export function buildInstrumentationPlan(
     programByRoleSection,
     mixByRoleSection, // ★ ESP32 混音(CC7/10/91/93;随段程序变)
     spaceProfile,
+    gestureExpressionByRole,
     drumPatternBySection,
     timbreWorld,
     sameInstrumentPairs: samePairs.length ? samePairs : undefined,
     melodyReservationPlan: {
-      reservedRegister: REGISTER_BY_ROLE.lead,
+      reservedRegister: registerByRole.lead,
       densityCeiling: clamp01(band.styleProfile.accompDensity),
       hookAnchorSlots,
     },

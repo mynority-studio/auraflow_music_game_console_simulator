@@ -10,8 +10,10 @@ import { motion } from 'motion/react';
 import { Hand, RotateCcw, StepForward, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../components/devPanels';
 import { AudioEngine } from '../../audio/AudioEngine';
-import { buildTakeoverPadMap } from './harmonicNoteMap';
-import { LeadTakeoverController } from './leadTakeoverController';
+import { buildTakeoverPadMap, findChordAtBeat } from './harmonicNoteMap';
+import { TAKEOVER_ASCENDING_PAD_INDICES } from './padLayout';
+import { DEFAULT_LEAD_TAKEOVER_CONFIG, LeadTakeoverController } from './leadTakeoverController';
+import { resetTakeoverPadInputState, subscribeTakeoverPadInput } from './takeoverInputBus';
 import {
   executeLeadTakeoverActions,
   resetLeadTakeoverRuntimeState,
@@ -44,11 +46,21 @@ const ROLE_STYLE: Record<TakeoverPadCell['classRole'], string> = {
 const LIVE_POLL_INTERVAL_MS = 125;
 
 function formatAction(a: LeadTakeoverAction): string {
-  if (a.type === 'lead-note-on') return `noteOn ch${a.channel} ${a.midi} v${a.velocity}`;
-  if (a.type === 'lead-note-off') return `noteOff ch${a.channel} ${a.midi}`;
+  if (a.type === 'lead-note-on') {
+    const groove = a.timing?.grooveOffsetMs ? ` g${Math.round(a.timing.grooveOffsetMs)}ms` : '';
+    const q = a.timing ? ` @${a.timing.targetBeat.toFixed(2)} +${Math.round(a.timing.delayMs)}ms${groove}` : '';
+    return `noteOn ch${a.channel} ${a.midi} v${a.velocity}${q}`;
+  }
+  if (a.type === 'lead-note-off') {
+    const groove = a.timing?.grooveOffsetMs ? ` g${Math.round(a.timing.grooveOffsetMs)}ms` : '';
+    const q = a.timing ? ` @${a.timing.targetBeat.toFixed(2)} +${Math.round(a.timing.delayMs)}ms${groove}` : '';
+    return `noteOff ch${a.channel} ${a.midi}${q}`;
+  }
   if (a.type === 'lead-mute') return `${a.muted ? 'mute' : 'unmute'} lead ch${a.channel}`;
   return `panic ch${a.channel}`;
 }
+
+type LeadNoteTiming = NonNullable<Extract<LeadTakeoverAction, { type: 'lead-note-on' | 'lead-note-off' }>['timing']>;
 
 interface LeadTakeoverSandboxPanelProps {
   activeKeys?: Set<string>;
@@ -71,15 +83,21 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
   const [state, setState] = useState<LeadTakeoverState>(() => new LeadTakeoverController().getState());
   const [held, setHeld] = useState<Set<number>>(() => new Set());
   const [log, setLog] = useState<string[]>([]);
+  const [lastTiming, setLastTiming] = useState<LeadNoteTiming | null>(null);
   const controllerRef = useRef(new LeadTakeoverController());
   const heldKeys = useRef<Set<string>>(new Set());
-  const previousNativeKeys = useRef<Set<string>>(new Set());
   const lastResultRef = useRef<MusicGenerationResult | null>(null);
   const wasOpenRef = useRef(false);
 
   useDevPanelChannel('takeover', open, setOpen);
 
-  const padMap = useMemo(() => buildTakeoverPadMap(snapshot, beat), [beat, snapshot]);
+  const padMapBeat = useMemo(() => findChordAtBeat(snapshot.chords, beat).current?.startBeat ?? beat, [beat, snapshot]);
+  const padMap = useMemo(() => buildTakeoverPadMap(snapshot, padMapBeat), [padMapBeat, snapshot]);
+  const firstCell = padMap.cells.find((cell) => cell.index === TAKEOVER_ASCENDING_PAD_INDICES[0]) ?? null;
+  const lastCell = padMap.cells.find((cell) => cell.index === TAKEOVER_ASCENDING_PAD_INDICES[TAKEOVER_ASCENDING_PAD_INDICES.length - 1]) ?? null;
+  const spanSemitones = padMap.cells.length > 0
+    ? Math.max(...padMap.cells.map((cell) => cell.midi)) - Math.min(...padMap.cells.map((cell) => cell.midi))
+    : 0;
 
   const syncState = useCallback(() => {
     setState(controllerRef.current.getState());
@@ -87,6 +105,8 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
 
   const pushActions = useCallback((actions: readonly LeadTakeoverAction[]) => {
     if (actions.length === 0) return;
+    const latestTiming = [...actions].reverse().find((a): a is Extract<LeadTakeoverAction, { type: 'lead-note-on' | 'lead-note-off' }> => (a.type === 'lead-note-on' || a.type === 'lead-note-off') && !!a.timing)?.timing;
+    if (latestTiming) setLastTiming(latestTiming);
     const current = AudioEngine.getCurrentMusicGeneration();
     const lines = current
       ? executeLeadTakeoverActions(AudioEngine, actions)
@@ -106,10 +126,12 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
       const result = AudioEngine.getCurrentMusicGeneration();
       if (result !== lastResultRef.current) {
         resetLeadTakeoverRuntimeState(AudioEngine);
+        resetTakeoverPadInputState();
         pushActions(controllerRef.current.reset());
         controllerRef.current = new LeadTakeoverController();
         syncState();
         setHeld(new Set());
+        setLastTiming(null);
         lastResultRef.current = result;
         setConnected(result !== null);
         setSnapshot(result ? takeoverSnapshotFromMusicGeneration(result) : DEMO_SNAPSHOT);
@@ -125,10 +147,12 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
   useEffect(() => {
     if (wasOpenRef.current && !open) {
       resetLeadTakeoverRuntimeState(AudioEngine);
+      resetTakeoverPadInputState();
       pushActions(controllerRef.current.reset());
       controllerRef.current = new LeadTakeoverController();
       syncState();
       setHeld(new Set());
+      setLastTiming(null);
     }
     wasOpenRef.current = open;
   }, [open, pushActions, syncState]);
@@ -165,37 +189,35 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
   }, [beat, connected, pushActions, syncState]);
 
   const nativeNoteUp = useCallback((idx: number) => {
-    pushActions(controllerRef.current.noteOff(idx));
+    const liveBeat = connected ? AudioEngine.getCurrentBeat() : beat;
+    if (connected) setBeat(liveBeat);
+    pushActions(controllerRef.current.noteOff(idx, liveBeat));
     syncState();
-  }, [pushActions, syncState]);
+  }, [beat, connected, pushActions, syncState]);
+
+  useEffect(() => {
+    return subscribeTakeoverPadInput((event) => {
+      if (!open) return;
+      if (event.type === 'down') nativeNoteDown(event.padIndex);
+      else nativeNoteUp(event.padIndex);
+    });
+  }, [nativeNoteDown, nativeNoteUp, open]);
 
   useEffect(() => {
     if (!open) {
-      previousNativeKeys.current = new Set(activeKeys ?? []);
       setHeld(new Set());
       return;
     }
     const current = activeKeys ?? new Set<string>();
-    const prev = previousNativeKeys.current;
-    const added = [...current].filter((key) => !prev.has(key));
-    const removed = [...prev].filter((key) => !current.has(key));
-
-    for (const key of added) {
-      const idx = padIndexFromKeyId(key);
-      if (idx !== null) nativeNoteDown(idx);
-    }
-    for (const key of removed) {
-      const idx = padIndexFromKeyId(key);
-      if (idx !== null) nativeNoteUp(idx);
-    }
-
     setHeld(new Set([...current].map(padIndexFromKeyId).filter((idx): idx is number => idx !== null)));
-    previousNativeKeys.current = new Set(current);
-  }, [activeKeys, nativeNoteDown, nativeNoteUp, open]);
+  }, [activeKeys, open]);
 
   const reset = useCallback(() => {
+    resetLeadTakeoverRuntimeState(AudioEngine);
+    resetTakeoverPadInputState();
     pushActions(controllerRef.current.reset());
     setHeld(new Set());
+    setLastTiming(null);
     setLog((prev) => ['reset', ...prev].slice(0, 8));
     syncState();
   }, [pushActions, syncState]);
@@ -261,13 +283,19 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
           <div>scale <span className="text-zinc-100">{padMap.localScaleName}</span></div>
           <div>mode <span className="text-zinc-100">{state.mode}</span></div>
           <div>input <span className="text-zinc-100">{state.inputCount}</span></div>
+          <div>grid <span className="text-zinc-100">{lastTiming?.grid ?? DEFAULT_LEAD_TAKEOVER_CONFIG.quantizeGrid}</span></div>
+          <div>q <span className="text-zinc-100">{lastTiming ? `${lastTiming.sourceBeat.toFixed(2)} -> ${lastTiming.targetBeat.toFixed(2)}` : '--'}</span></div>
+          <div>delay <span className="text-zinc-100">{lastTiming ? `${Math.round(lastTiming.delayMs)}ms` : '--'}</span></div>
+          <div>groove <span className="text-zinc-100">{lastTiming?.grooveContractId ?? snapshot.grooveContract?.id ?? '--'}</span></div>
+          <div>pocket <span className="text-zinc-100">{lastTiming?.grooveOffsetMs !== undefined ? `${Math.round(lastTiming.grooveOffsetMs)}ms` : '--'}</span></div>
+          <div>range <span className="text-zinc-100">{firstCell && lastCell ? `${firstCell.name}->${lastCell.name} · ${spanSemitones}st` : '--'}</span></div>
         </div>
       </div>
 
       <div className="border-b border-zinc-900 px-3 py-2">
         <div className="mb-1.5 flex items-center gap-2 text-[10px] uppercase tracking-widest text-zinc-500">
           Native 3x5 Monitor
-          <span className="ml-auto normal-case tracking-normal text-zinc-600">{connected ? 'Q+H' : padMap.source} · C3-C5</span>
+          <span className="ml-auto normal-case tracking-normal text-zinc-600">{connected ? 'Q+H' : padMap.source} · {firstCell?.name ?? '--'} to {lastCell?.name ?? '--'}</span>
         </div>
         <div className="grid select-none gap-1" style={{ gridTemplateColumns: 'repeat(5, 1fr)', touchAction: 'none' }}>
           {padMap.cells.map((cell) => {
@@ -286,7 +314,7 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
           })}
         </div>
         <div className="mt-1.5 text-[10px] leading-snug text-zinc-600">
-          真实输入来自设备主 3x5 按键；Q+H live 时会用接管通道发声并软静音原生 lead。
+          真实输入来自设备主 3x5 按键；Q+H live 时按 16th 优先、快速输入 32nd，并按左下到右上两八度铺键发声。
         </div>
       </div>
 

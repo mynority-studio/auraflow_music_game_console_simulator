@@ -8,7 +8,9 @@ import { startAudioContext } from './core/audio/SynthManager';
 import { PipelineMonitor } from './components/PipelineMonitor';
 import { MotifWeaverSandboxPanel } from './core/generation/motifSandbox';
 import { LeadTakeoverSandboxPanel } from './core/generation/leadTakeoverSandbox';
+import { emitTakeoverPadInput } from './core/generation/leadTakeoverSandbox/takeoverInputBus';
 import { DevDock } from './components/DevDock';
+import { SoundFontSelector } from './components/SoundFontSelector';
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
@@ -16,10 +18,12 @@ export default function App() {
 
   const handleKeyDown = useCallback((c: number, r: number) => {
     startAudioContext();
+    emitTakeoverPadInput('down', c, r);
     setActiveKeys(prev => new Set(prev).add(`key-${c}-${r}`));
   }, []);
 
   const handleKeyUp = useCallback((c: number, r: number) => {
+    emitTakeoverPadInput('up', c, r);
     setActiveKeys(prev => {
       const next = new Set(prev);
       next.delete(`key-${c}-${r}`);
@@ -37,6 +41,7 @@ export default function App() {
     <div className="min-h-screen bg-black flex items-center justify-center overflow-hidden">
       {/* 左侧 DevDock:音乐生成(Q+H)+ Motif 沙盒(Q+R)+ 用户接管沙盒(Q+T)的可见菜单入口 */}
       <DevDock />
+      <SoundFontSelector />
       <PipelineMonitor />
       <MotifWeaverSandboxPanel />
       {/* Device Container */}

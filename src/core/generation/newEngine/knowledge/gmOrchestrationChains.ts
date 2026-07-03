@@ -23,7 +23,7 @@ export interface ChainProfile {
   leadByComp: Record<number, number[]>;    // 给定 comp → lead 优先序(同族/同源最佳配对)
   bassPriority: number[];
   padPriority: number[];
-  drumPriority: number[];                  // 通道10 鼓 kit program(0=标准,40=brush)
+  drumPriority: number[];                  // 通道10 鼓 kit program(0=Standard,25=TR808,40=Brush)
 }
 
 // —— 6 条链表(directive Chain Profiles,忠实保留;0-based GM)——
@@ -31,44 +31,44 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
   // RNB / neo-soul / city-pop / 暖 pop
   electricKeys: {
     id: 'electricKeys', world: 'electricKeys',
-    compPriority: [4, 5, 7],
-    leadByComp: { 4: [4, 5, 11, 2], 5: [5, 4, 11, 2], 7: [4, 5, 11] },
-    bassPriority: [33, 35, 39], padPriority: [89, 94, 16, 99], drumPriority: [0, 40],
+    compPriority: [5, 4, 7],
+    leadByComp: { 5: [66, 5, 4, 11], 4: [66, 4, 5, 11], 7: [66, 5, 4, 11] },
+    bassPriority: [33, 39, 34], padPriority: [89, 16, 98], drumPriority: [25, 0, 40],
   },
   // LOFI / chill
   lofiTapeKeys: {
     id: 'lofiTapeKeys', world: 'lofiTapeKeys',
-    compPriority: [4, 5, 6],
-    leadByComp: { 4: [4, 11, 12, 108, 6], 5: [4, 5, 11, 12, 108], 6: [11, 12, 108, 4] },
-    bassPriority: [33, 35, 39], padPriority: [89, 94, 88, 92, 98, 102], drumPriority: [0, 40],
+    compPriority: [4, 5, 7],
+    leadByComp: { 4: [4, 11, 108, 66, 7], 5: [4, 5, 11, 108, 66], 7: [11, 108, 4, 66] },
+    bassPriority: [33, 39], padPriority: [89, 98, 49], drumPriority: [25, 40, 0],
   },
   // pop 抒情 / 简单原声乐队
   acousticPianoBand: {
     id: 'acousticPianoBand', world: 'acousticPianoBand',
-    compPriority: [0, 1, 2],
-    leadByComp: { 0: [11, 12, 4, 6, 2], 1: [11, 12, 2, 4], 2: [2, 4, 11, 12] },
-    bassPriority: [32, 33, 35], padPriority: [48, 49, 89], drumPriority: [0, 40],
+    compPriority: [0, 1, 4],
+    leadByComp: { 0: [66, 0, 11, 4, 108], 1: [66, 1, 11, 4], 4: [66, 4, 11, 1] },
+    bassPriority: [32, 33], padPriority: [48, 49, 89], drumPriority: [0, 40],
   },
   // jazz
   jazzCombo: {
     id: 'jazzCombo', world: 'jazzCombo',
     compPriority: [0, 4],
-    leadByComp: { 0: [0, 4, 26, 11, 6], 4: [4, 0, 26, 11, 6] }, // ★ 2026-06-23 钢琴三重奏优先:piano lead 居首(原 vibe 居首)
-    bassPriority: [32, 35], padPriority: [49, 16], drumPriority: [40, 0],
+    leadByComp: { 0: [66, 0, 11, 4], 4: [66, 4, 0, 11] },
+    bassPriority: [32], padPriority: [49, 16], drumPriority: [40, 0],
   },
   // 软 synth-pop / modal synthetic
   syntheticSoft: {
     id: 'syntheticSoft', world: 'syntheticSoft',
-    compPriority: [5, 4, 2],
-    leadByComp: { 5: [5, 4, 11], 4: [4, 5, 11], 2: [2, 4, 11] },
-    bassPriority: [38, 39, 33], padPriority: [88, 89, 94, 95, 99, 102], drumPriority: [0],
+    compPriority: [5, 4],
+    leadByComp: { 5: [66, 5, 4, 11], 4: [66, 4, 5, 11] },
+    bassPriority: [38, 39, 33], padPriority: [89, 98], drumPriority: [25, 0],
   },
   // modal / static / ambient
   modalAmbient: {
     id: 'modalAmbient', world: 'modalAmbient',
-    compPriority: [4, 0, 6],
-    leadByComp: { 4: [11, 12, 107, 108, 4], 0: [11, 12, 107, 108], 6: [11, 12, 108] },
-    bassPriority: [32, 33, 39], padPriority: [89, 48, 91, 94, 92, 97, 98, 102], drumPriority: [0],
+    compPriority: [4, 0, 7],
+    leadByComp: { 4: [11, 108, 66, 4], 0: [11, 108, 66], 7: [11, 108, 66, 4] },
+    bassPriority: [32, 33, 39], padPriority: [89, 48, 49, 98], drumPriority: [0],
   },
 };
 
@@ -84,7 +84,7 @@ const PROFILE_BY_WORLD: Record<TimbreWorld, string> = {
 //   失真/过载吉他 29-30 · 合唱 52 · 激进合成 lead 80-87。★ 排箫/尺八 72-79 是暖气声,不在此列。
 function inRange(p: number, a: number, b: number): boolean { return p >= a && p <= b; }
 export function isHarshLead(program: number): boolean {
-  return inRange(program, 56, 71) || program === 40 || program === 29 || program === 30
+  return (inRange(program, 56, 71) && ![64, 65, 66, 67].includes(program)) || program === 40 || program === 29 || program === 30
     || program === 52 || inRange(program, 80, 87);
 }
 function isBassFamily(p: number): boolean { return instrumentInfo(p).family === 'bass'; }
@@ -145,6 +145,7 @@ export function scoreProgramPair(a: number, b: number, relation: 'lead-comp' | '
   if (relation === 'lead-comp') {
     if (b === 0 || b === 1) s += 30;                                   // 原声钢琴 comp 百搭
     if ((b === 4 || b === 5) && (a === 4 || a === 5 || a === 11)) s += 25; // Rhodes/FM + Rhodes/FM/颤音
+    if ((a === 64 || a === 65 || a === 66 || a === 67) && (b === 4 || b === 5 || b === 7)) s += 30; // CityPop sax + electric keys
     if (b === 6 && (a === 11 || a === 12 || a === 108)) s += 25;        // 羽管键琴 + 颤音/马林巴/卡林巴
     if ((b === 0 || b === 1) && (a === 11 || a === 12)) s += 15;        // 原声钢琴 + 木琴
     if ((a === 11 || a === 12 || a === 107 || a === 108) && (b === 4 || b === 5 || b === 7)) s -= 20; // 木琴 lead + 电钢 comp(除非世界允许)
@@ -220,7 +221,7 @@ export function orchestrateRolePrograms(args: {
     else { rp.pad = profile.padPriority.find(ok) ?? pv ?? 89; decisions.push(`pad chain GM${rp.pad}`); }
   }
 
-  // drum kit:链表权威(世界定 kit)—— jazzCombo=brush(40),其余=Standard(0)。
+  // drum kit:链表权威(世界定 kit)—— jazzCombo=Brush(40),CityPop/RNB/lofi=TR808(25),原声/电影=Standard(0)。
   //   (provisional.drum 恒 0 → 若沿用 provisional 则 jazz 永远拿不到 brush;故 drum kit 由链直接定。)
   if (has('drum')) {
     rp.drum = profile.drumPriority[0] ?? provisional.drum ?? 0;

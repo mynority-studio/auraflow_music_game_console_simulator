@@ -1,9 +1,9 @@
 // ============================================================
-// newEngine · render · 快速 lead 连音 legato(bebop "吹奏感")
+// newEngine · render · lead 连音 legato(旋律线连贯性)
 // ------------------------------------------------------------
 // CODEX directive: docs/jazz_bebop_fast_note_legato_render_directive.md(2026-06-18)。
 // 纯 render-articulation 工具:在【timing 已定】之后,把快速 lead 线条的相邻音【连起来】
-// (durationTicks 延到下一起音),消除 swing 后 0.85 articulation 重开的"机关枪"断点。
+// (durationTicks 延到下一起音),消除 articulation 缩短后重开的"机关枪/断奏"断点。
 // ★ 只改 durationTicks(+ 同音高安全 gap);不动 pitch / startTick / 数量 / 顺序 / 和声 / motif 身份。
 // ★ 纯函数:无 DOM / scheduler / audio / RNG / motifSandbox import。Q+N(renderMgMelody)与 Q+R(leadOnlyIr)共用。
 // ============================================================
@@ -13,20 +13,20 @@ import type { NoteIR } from '../ir/MusicalIR';
 
 export interface FastLeadLegatoOptions {
   enabled: boolean;
-  maxConnectIoiTicks: number;   // IOI ≤ 此值才算"快速线条"并连音(超过=乐句断点,不连)
+  maxConnectIoiTicks: number;   // IOI ≤ 此值才算同一乐句并连音(超过=乐句断点,不连)
   samePitchGapTicks: number;    // 同音高重复音留的安全间隙(防 noteOff 撞掉下一个 noteOn)
   minDurationTicks: number;     // 连音后最小时长兜底
   maxExtensionTicks?: number;   // 可选:单音最多延长多少 tick(限制过度延长)
 }
 
-/** ★ 集中决策:按风格给 legato 选项(Q+N 与 Q+R 都调它,不在各文件散落 jazz 字符串判断)。
- *  jazz / blues 启用(directive §4 默认);其余风格关闭(enabled=false → 原样返回,零改动)。 */
+/** ★ 集中决策:按风格给 legato 选项(Q+N 与 Q+R 都调它)。
+ *  lead 默认应该是连贯旋律线,不是逐音断奏;超过 1 拍左右的空隙才视作乐句呼吸。 */
 export function fastLeadLegatoOptionsForStyle(style: string, ppq: number): FastLeadLegatoOptions {
   const s = String(style).toUpperCase();
-  const jazzy = s === 'JAZZ' || s === 'BLUES';
+  const balladLike = s === 'ACG' || s === 'MODAL';
   return {
-    enabled: jazzy,
-    maxConnectIoiTicks: Math.round(ppq * 0.75), // 含摆动八分长边(~0.67 拍)+ 16 分/三连;不连过真乐句休止
+    enabled: true,
+    maxConnectIoiTicks: Math.round(ppq * (balladLike ? 1.25 : 1.10)), // 连到四分音符级别;更大空隙保留呼吸
     samePitchGapTicks: 1,
     minDurationTicks: Math.max(1, Math.round(ppq * 0.03)),
   };
@@ -79,9 +79,9 @@ export function connectFastLeadNoteIR(notes: readonly NoteIR[], options: FastLea
 
 // ── 诊断 / 回归度量(directive §6 / §7.4 / §7.5)──────────────────────────────
 export interface LeadLegatoMetrics {
-  fastPairs: number;              // 相邻 lead 音 IOI ≤ maxConnectIoi 的对数
-  touchOrTinyGapRate: number;     // 快速对中"触碰或极小间隙"占比
-  medianFastArticulation: number; // 快速对 dur/IOI 中位数
+  fastPairs: number;              // 相邻不同音高 lead 音 IOI ≤ maxConnectIoi 的对数
+  touchOrTinyGapRate: number;     // 同一乐句不同音高对中"触碰或极小间隙"占比
+  medianFastArticulation: number; // 同一乐句不同音高对 dur/IOI 中位数
   samePitchCollisionCount: number;// 同音高且 noteOff 压过下一个 noteOn 的对数(应=0)
   microNoteCount: number;         // 时长 < ppq*0.12 的音数
   microIoiCount: number;          // IOI < ppq*0.12 的对数
@@ -96,7 +96,7 @@ function median(xs: number[]): number {
 
 /** lead 快速线条度量(纯函数;回归测试 / 诊断用)。notes 不要求已排序。 */
 export function leadLegatoMetrics(notes: readonly { pitch: number; startTick: number; durationTicks: number }[], ppq: number): LeadLegatoMetrics {
-  const maxIoi = ppq * 0.75, micro = ppq * 0.12, tinyGap = Math.max(1, ppq * 0.04);
+  const maxIoi = ppq * 1.10, micro = ppq * 0.12, tinyGap = Math.max(1, ppq * 0.04);
   const ns = [...notes].sort((a, b) => a.startTick - b.startTick);
   let fastPairs = 0, touch = 0, samePitchCollision = 0, microNote = 0, microIoi = 0;
   const arts: number[] = [];
@@ -106,8 +106,9 @@ export function leadLegatoMetrics(notes: readonly { pitch: number; startTick: nu
     const ioi = ns[i + 1].startTick - ns[i].startTick;
     if (ioi <= 0) continue;
     const end = ns[i].startTick + ns[i].durationTicks;
-    if (ns[i].pitch === ns[i + 1].pitch && end >= ns[i + 1].startTick) samePitchCollision++; // 任意相邻同音高重叠(全检)
+    if (ns[i].pitch === ns[i + 1].pitch && end > ns[i + 1].startTick) samePitchCollision++; // 任意相邻同音高重叠(全检)
     if (ioi < micro) microIoi++;
+    if (ns[i].pitch === ns[i + 1].pitch) continue; // 重复同音是 re-attack,不计入连音率
     if (ioi > maxIoi) continue;
     fastPairs++;
     if (ns[i + 1].startTick - end <= tinyGap) touch++;      // 触碰(gap≈0)或极小间隙(含重叠负值)

@@ -100,6 +100,20 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     const m = firstSec ? instrumentation.mixByRoleSection[r]?.[firstSec] : undefined;
     return m ? `${r}GM${instrumentation.roleProgram[r]}[V${m.volume} P${m.pan} R${m.reverb} C${m.chorus}]` : `${r}-`;
   }).join(' ')}`);
+  const gestures = band.instrumentPool
+    .map((r) => {
+      const g = instrumentation.gestureExpressionByRole[r];
+      if (!g?.kind || g.kind === 'none') return null;
+      const cc = g.ccControllers.length ? `/CC${g.ccControllers.join('/')}` : '';
+      const pedal = g.pedalPolicy !== 'none' ? `/pedal=${g.pedalPolicy}` : '';
+      const rud = g.rudimentPolicy !== 'none' ? `/rud=${g.rudimentPolicy}` : '';
+      const hat = g.hiHatPolicy !== 'none' ? `/hat=${g.hiHatPolicy}` : '';
+      const bass = g.bassTechniques?.length ? `/tech=${g.bassTechniques.join('+')}` : '';
+      const gate = g.gateRatio !== undefined ? `/gate=${g.gateRatio}` : '';
+      return `${r}:${g.family} GM${g.program}:${g.kind}/${g.articulation}${cc}${pedal}${rud}${hat}${bass}${gate}`;
+    })
+    .filter(Boolean);
+  if (gestures.length) log(`   手势表情(器配下发): ${gestures.join(' · ')}`);
   log(`   织体(让位类): ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
   // ★ rich textureCase 段级下发(非 LOFI):器配层定,整段沿用,不逐 span 乱切(texture-switch 修复)
   const richTex = Object.entries(instrumentation.richTextureBySection);
@@ -210,9 +224,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const rawLeadForGaps = renderMgMelody(harmonic, band, timebase, request.seed);
   const gapFills = planLeadGapFills(rawLeadForGaps.notes, harmonic.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
   if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末,补"和弦未完成戛然而止";${gapFills.filter((f) => f.crossesChord).length} 处跨和弦,由气口减弱缓解)`);
-  // ★ 气声 lead 气口减弱(2026-06-11):wind 家族(72-79)lead → CC11 包络(每音满气,长音尾减弱)
+  // ★ 手势表情层:器配下发 sax/pipe-wind gesture plan,render 只投影 CC/连吹。
   const leadTrack = ir.tracks.find((t) => t.role === 'lead');
-  if (leadTrack?.ccEvents?.length) log(`   气声 lead 气口减弱(GM${leadTrack.program}):CC11 包络 ×${leadTrack.ccEvents.length}(每音满气·长音尾渐弱,补管乐戛然而止)`);
+  const leadGesture = instrumentation.gestureExpressionByRole.lead;
+  if (leadTrack?.ccEvents?.length && leadGesture?.kind !== 'none') log(`   吹奏手势(${leadGesture.kind},GM${leadTrack.program}):CC ×${leadTrack.ccEvents.length}(气息/表情由器配计划驱动)`);
   log(`   pad↔comp 分工: comp 主奏(GM 织体)· pad=sustain/air 层(单轨优化,不碰伴奏/旋律/和声合同)`);
   log(`     pad mode: guide-tone(POP 3/7)· drone(LOFI/verse 留白)· inner-line(RNB 慢内声部级进)· cluster-mist(LOFI 暗段高区二度雾)· gated-pad(高密 pop chorus shimmer)· full-support(pad-only 段+上层结构张力)· 全在正交音阶内·避同绝对音高`);
   log(`   comp 织体: ${band.style}(${compPattern(band.style).length} hits/bar,有律动/切分)· 全声部 voice-leading(贴最近上一声部,声部连贯)`);
@@ -244,7 +259,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   }
   const bars = Math.round(ir.durationTicks / (480 * beatsPerBarOf(arrangement.meter)));
   log(`■ 总长       ${bars} 小节 @ ${arrangement.tempoBpm}bpm`);
-  log(`■ MIX        CC7 音量 drum102>pad96>comp93>lead82>bass63(pad×velocity 低=有效响度仍埋于 lead)· 声像 comp 偏左/pad 偏右/骨干居中(CC10)`);
+  log(`■ MIX        render后处理 → ${ir.tracks.map((t) => {
+    const m = t.mix;
+    return m ? `${t.role}GM${t.program ?? '-'}[V${m.volume} P${m.pan} R${m.reverb} C${m.chorus}]` : `${t.role}-`;
+  }).join(' ')} · CC7/10/91/93 写入 IR,浏览器与 ESP32 共用`);
 
   return { lines, ir, audit, bpm: arrangement.tempoBpm, attempts: result.attempts, status: result.status, sections };
 }

@@ -73,7 +73,7 @@ describe('★ Loop I · 777870/rnb verse 正向 golden(不被修坏)', () => {
     // ⚠️ Phase B(2026-06-28):生产 RoadMap 改 functional(554-brick)→ rnb lead 结构变(现 46 音)。
     //   原阈 >=50 是旧 stale-RoadMap 的密 lead;生产 lead 真值 rebaseline 留 Phase F(post-shaper 还会动)。
     expect(lead.length).toBeGreaterThanOrEqual(40);                                  // 旋律密度(Phase B 放宽;EAR-CHECK / Phase F rebaseline)
-    // ⚠️ EAR-CHECK(G7,2026-06-28):enriched grammar 对齐当前 MG(去 LOFI_VAMP·softParallel 4096)后此 rnb verse
+    // ⚠️ EAR-CHECK(G7,2026-06-28/2026-07-02):enriched grammar 去 LOFI_VAMP;softParallel 已产品分叉为轻 boost 后此 rnb verse
     //   旋律按 MG-faithful 语法变稀,出现 5 拍 rest(原阈 2.25 是旧密语法手感)。放宽到 5.25 让 G7 落地;
     //   leadGapFill 只补段尾不补段中 → 待耳朵复核是否接受此 rest,或需为段中大 gap 增强 leadGapFill。
     expect(restMax).toBeLessThanOrEqual(5.25);                                       // (G7 后 MG-faithful 稀疏;EAR-CHECK)

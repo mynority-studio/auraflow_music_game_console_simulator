@@ -8,11 +8,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   instrumentInfo, gmName, timbreSource, leadCompCompatible, coherentLeadComp,
-  getInstrumentCatalog, worldMismatches, classifyTimbreWorld,
+  getInstrumentCatalog, worldMismatches, classifyTimbreWorld, playableRangeForRole, fitMidiToProgramRange,
 } from './instruments';
 
-const WARM_META = [16, 24, 26, 27, 42, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
-const WARM_POOLED = [16, 88, 94, 107, 108, 75, 77]; // 实际进 style 池的(吉他全撤=只留元数据;+排箫/尺八 管乐 lead)
+const WARM_META = [16, 24, 26, 27, 42, 66, 67, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
+const WARM_POOLED = [16, 66, 89, 98, 108]; // 实际进 style 池的 25 音色暖色集合(+Tenor Sax;GM26 不主动选)
 const WARM_ADDED = WARM_META;
 
 describe('暖路线 GM 调色板扩充', () => {
@@ -35,17 +35,28 @@ describe('暖路线 GM 调色板扩充', () => {
     expect(instrumentInfo(94).family).toBe('pad');
   });
 
-  it('调色板确实变宽:用到的 GM program 数 ≥ 22(暖扩生效)', () => {
-    const used = new Set<number>();
-    for (const s of getInstrumentCatalog()) for (const r of s.roles) for (const p of r.programs) used.add(p);
-    expect(used.size).toBeGreaterThanOrEqual(22);
-    for (const p of WARM_POOLED) expect(used.has(p), `${p} 应进某 style 池`).toBe(true);
+  it('Tenor Sax 使用真实 sounding 音域,生成甜区限制在厚实 jazz 中声区', () => {
+    expect(instrumentInfo(66).range).toEqual([44, 76]);
+    expect(playableRangeForRole('lead', 66)).toEqual([48, 72]);
+    expect(instrumentInfo(67).range).toEqual([36, 69]);
+    expect(playableRangeForRole('lead', 67)).toEqual([43, 65]);
+    expect(fitMidiToProgramRange(82, 'lead', 66)).toBe(70);
+    expect(fitMidiToProgramRange(43, 'lead', 66)).toBe(55);
   });
 
-  it('不加铜管/萨克斯/合成 lead(守"不刺耳")', () => {
+  it('调色板确实变宽:用到的 GM program 数 ≥ 20(25 包内的风格活跃子集)', () => {
     const used = new Set<number>();
     for (const s of getInstrumentCatalog()) for (const r of s.roles) for (const p of r.programs) used.add(p);
-    for (const harsh of [56, 57, 60, 61, 64, 65, 66, 67, 80, 81, 82]) expect(used.has(harsh), `${harsh} 不应入池`).toBe(false);
+    expect(used.size).toBeGreaterThanOrEqual(20);
+    for (const p of WARM_POOLED) expect(used.has(p), `${p} 应进某 style 池`).toBe(true);
+    expect(used.has(26), 'GM26 jazz guitar 不应进主动器配池').toBe(false);
+  });
+
+  it('不加铜管/长笛/高频合成 lead,但允许 Tenor Sax', () => {
+    const used = new Set<number>();
+    for (const s of getInstrumentCatalog()) for (const r of s.roles) for (const p of r.programs) used.add(p);
+    for (const harsh of [56, 57, 60, 61, 64, 65, 67, 80, 82]) expect(used.has(harsh), `${harsh} 不应入池`).toBe(false);
+    expect(used.has(66), 'Tenor Sax 应入池').toBe(true);
   });
 });
 
