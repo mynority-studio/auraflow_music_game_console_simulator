@@ -28,6 +28,33 @@ export type TextureSchedule = Record<string, string>;
  *     —— 整段沿用同一 textureCase,不再逐 span 随机切(消"伴奏自己断掉")。
  *   无段级下发的段(LOFI / blues / default)→ 回退逐 span 选(老路,确定性不变)。
  */
+/** ★ Phase 3A(intent 迁移):ACG 逐-bar family(drive/sparse)= character(和声动量)× acgRenderProfile section-energy。
+ *  纯函数,从现 buildTextureSchedule ACG 分支【原样抽出】(byte-identical)。arranger 拥有此 family 逻辑;
+ *  renderCoordinator 调它产 intent(enforce),buildTextureSchedule 读 intent 不再内联算 → 逐字节等价。 */
+export function deriveAcgBarFamilies(
+  plan: HarmonicPlan,
+  activeSectionIds: Set<string>,
+  sectionRoleById: Record<string, SectionRole>,
+): Record<string, 'drive' | 'sparse'> {
+  const timeline = plan.chordTimeline;
+  const funcBySpan: Record<string, HarmonicFunction> = {};
+  timeline.forEach((s, i) => { funcBySpan[s.id] = plan.chordFunctionTimeline[i]; });
+  const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
+  const profile = acgRenderProfile();
+  const acgFuncs = timeline.filter((s) => activeSectionIds.has(s.sectionId)).map((s) => fBar(funcBySpan[s.id]));
+  const nAcgF = Math.max(1, acgFuncs.length);
+  const dRatio = acgFuncs.filter((f) => f === 'D').length / nAcgF;
+  const sRatio = acgFuncs.filter((f) => f === 'S').length / nAcgF;
+  const acgCharacter = deriveAcgTextureCharacter(dRatio, sRatio, dRatio + sRatio);
+  const out: Record<string, 'drive' | 'sparse'> = {};
+  for (const span of timeline) {
+    if (!activeSectionIds.has(span.sectionId)) continue;
+    const label = SECTION_LABEL[sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE';
+    out[span.id] = resolveAcgBarFamily(profile, label, acgCharacter);
+  }
+  return out;
+}
+
 export function buildTextureSchedule(args: {
   plan: HarmonicPlan;
   style: string;
@@ -37,6 +64,7 @@ export function buildTextureSchedule(args: {
   richTextureBySection?: Record<string, string>; // 器配层段级下发(非 LOFI);空 = 逐 span 回退
   richTextureSwitchBySection?: Record<string, { atFraction: number; toTexture: string }>; // 段内受控变化(verse 中段)
   grooveContract?: GrooveTextureContract; // ★ §4:ACG 逐-bar 织体选择消费 GrooveContract(preferred/allowed/forbidden)
+  acgBarFamilyBySpan?: Record<string, 'drive' | 'sparse'>; // ★ Phase 3A:ACG family intent(enforce);缺省→内联派生(fallback)
 }): TextureSchedule {
   const { plan, style, sectionRoleById, activeSectionIds, textureRng, richTextureBySection, richTextureSwitchBySection, grooveContract } = args;
   const txStyle = TEXTURE_STYLE[style.toLowerCase()];
@@ -64,17 +92,13 @@ export function buildTextureSchedule(args: {
     // ★ per-song texture character(2026-07-02)+ P2 section-energy family(acg_render_layer_mg_feel_directive):
     //   character 从【和声动量】派生(drive/sparse;block 不作 character,只局部);再由 acgRenderProfile 按 section 能量解析
     //   逐 bar 有效 family —— intro/outro 空(MG air)· chorus 推进 · verse/bridge 用 character。修 outro/末段 block-heavy(J-pop 块床)。
-    const profile = acgRenderProfile();
-    const acgFuncs = timeline.filter((s) => activeSectionIds.has(s.sectionId)).map((s) => fBar(funcBySpan[s.id]));
-    const nAcgF = Math.max(1, acgFuncs.length);
-    const dRatio = acgFuncs.filter((f) => f === 'D').length / nAcgF;
-    const sRatio = acgFuncs.filter((f) => f === 'S').length / nAcgF;
-    const acgCharacter = deriveAcgTextureCharacter(dRatio, sRatio, dRatio + sRatio);
+    // ★ Phase 3A:barFamily 从 intent(acgBarFamilyBySpan,enforce)读;缺省→ deriveAcgBarFamilies 内联(fallback,同函数=等价)。
+    const acgFamilies = args.acgBarFamilyBySpan ?? deriveAcgBarFamilies(plan, activeSectionIds, sectionRoleById);
     let acgPrevId: string | undefined; let acgRep = 0;
     timeline.forEach((span, i) => {
       if (!activeSectionIds.has(span.sectionId)) return;
       const label = SECTION_LABEL[sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE';
-      const barFamily = resolveAcgBarFamily(profile, label, acgCharacter);
+      const barFamily = acgFamilies[span.id];
       const prof = pickAcgTextureForBar({
         barIndex: i, totalBars: timeline.length, sectionLabel: label,
         func: fBar(funcBySpan[span.id]),

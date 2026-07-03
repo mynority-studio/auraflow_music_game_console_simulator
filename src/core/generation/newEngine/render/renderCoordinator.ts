@@ -20,7 +20,7 @@ import { renderBass } from './bassRenderer';
 import { applyBassPatternSchedule } from './bassPatternSchedule';
 import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
 import type { MusicIntentPlan } from '../intent/MusicIntentPlan';
-import { buildTextureSchedule } from './textureSchedule';
+import { buildTextureSchedule, deriveAcgBarFamilies } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
 import { applyMgLofiDenseMelodyComping, denseMelodySpanRanges } from './mgPostMixShaper';
@@ -245,7 +245,10 @@ export function renderSongFull(
   // ★ 多声部节奏【中央下发】:纹理 schedule 一次性建好,bass/comp/drum 共享同一 textureCase →
   //   同一时钟对拍/复调(纹理全权,忠实 mg)。需 harmony(dominant-chain)→ 在此协调层算。
   const sectionRoleById = Object.fromEntries(arrangement.sections.map((s) => [s.id, s.role]));
-  const textureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection, grooveContract: arrangement.songGrooveContract });
+  // ★ Phase 3A(intent enforce):ACG 逐-bar family intent(drive/sparse)在此派生(有 active sections),下发给 texture 选择消费。
+  //   byte-identical:deriveAcgBarFamilies = 原 ACG 分支内联逻辑的抽取;texture 分支读它不再内联算。非 ACG=undefined(不影响)。
+  const acgBarFamilyBySpan = band.style.toLowerCase() === 'acg' ? deriveAcgBarFamilies(plan, activeSectionIds, sectionRoleById) : undefined;
+  const textureSchedule = buildTextureSchedule({ plan, style: band.style, sectionRoleById, activeSectionIds, textureRng: rng.substream('compTexture'), richTextureBySection: instrumentation.richTextureBySection, richTextureSwitchBySection: instrumentation.richTextureSwitchBySection, grooveContract: arrangement.songGrooveContract, acgBarFamilyBySpan });
 
   // ★ 只渲染 lineup 内的角色(编制可变 2–5;lead 必有)
   const inLineup = (r: string) => band.instrumentPool.includes(r as never);
@@ -298,7 +301,7 @@ export function renderSongFull(
   // ★ Phase 2(intent 迁移,enforce):bass 地板拍位来源从 finalEventProfile 迁到 arranger 派生的 BassPatternSchedule。
   //   优先用上游(controller)传入的 intentPlan;缺省(测试直调)→ 内联纯派生(deriveMusicIntentPlan 无 RNG,确定性)。
   //   applyBassPatternSchedule 与旧 enforceBassDensityFloor 逐字节等价(bassPatternScheduleEquivalence.test 锁)→ 输出不变。
-  const intent = intentPlan ?? deriveMusicIntentPlan(band.style, arrangement);
+  const intent = { ...(intentPlan ?? deriveMusicIntentPlan(band.style, arrangement)), ...(acgBarFamilyBySpan ? { acgBarFamilyBySpan } : {}) };
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) {
     // 非 ACG 纹理 bass 过稀 → 主体段强拍补 root anchor(intent BassPatternSchedule 驱动;ACG=minimal,不补,有 spaceAcgBass)。

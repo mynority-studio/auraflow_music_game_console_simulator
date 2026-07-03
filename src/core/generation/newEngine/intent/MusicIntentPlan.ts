@@ -115,4 +115,7 @@ export interface MusicIntentPlan {
   mode: IntentMode;
   source: IntentSource;
   sections: SectionMusicIntent[];
+  // ★ Phase 3A(ACG texture family intent,enforce):spanId → 逐-bar family(drive/sparse)。ACG switchPolicy='bar' 的实体。
+  //   render(textureSchedule)消费它选逐-bar 手势;从 deriveAcgBarFamilies 派生,byte-identical 当前 ACG 输出。非 ACG 不设。
+  acgBarFamilyBySpan?: Record<string, 'drive' | 'sparse'>;
 }
