@@ -30,6 +30,7 @@ export interface AuditReport {
   findings: AuditFinding[]; // 空 = pass
   textureCases?: string[];  // ★ 调试/审计:本曲 textureSchedule 用到的 textureCase 集(§4 逐-bar 织体多样性度量)
   texturePerBar?: string[]; // ★ 调试/审计:逐 span 有序 textureCase 序列(texture 叙事顺序/比例对齐 MG)
+  intent?: import('../intent/intentAuditTypes').IntentSummary; // ★ Phase 1(intent 迁移):observe-only intent 摘要(不被 render 消费)
 }
 
 export function isPass(report: AuditReport): boolean {
