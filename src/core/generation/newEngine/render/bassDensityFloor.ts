@@ -16,20 +16,20 @@ import type { FinalEventStyleProfile } from '../knowledge/finalEventProfile';
 const BASS_LOW = 28;
 const BASS_HIGH = 55;
 
-interface SectionLike { role: string; bars: number }
+export interface SectionLike { role: string; bars: number }
 
-/** 主体段强拍补 root anchor 到 MG-like 支撑密度。bpb=每小节拍数。纹理 bass/comp/lead 全不动,只加 bass。 */
-export function enforceBassDensityFloor(
+/** ★ 共享核心(Phase 2):主体段强拍补 root anchor。逐段地板拍位由 `floorBeatsFor(section, index)` 给(空=该段不补)。
+ *  `enforceBassDensityFloor`(finalEventProfile 源)与 `applyBassPatternSchedule`(intent schedule 源)共用它 →
+ *  只要两者给的 floorBeats 相同,输出【逐字节相同】(等价性由构造保证)。纹理 bass/comp/lead 全不动,只加 bass。 */
+export function addRootAnchorFloor(
   bass: TrackIR,
   plan: HarmonicPlan,
   sections: readonly SectionLike[],
   bpb: number,
   ppq: number,
-  profile: FinalEventStyleProfile,
+  floorBeatsFor: (section: SectionLike, index: number) => readonly number[],
 ): TrackIR {
-  const beats = profile.bassFloorBeats;
-  if (beats.length === 0 || bass.notes.length === 0) return bass;
-  const sortedFb = [...beats].sort((a, b) => a - b);
+  if (bass.notes.length === 0) return bass;
   const spanAt = (beat: number): ChordSpan | undefined =>
     plan.chordTimeline.find((s) => beat >= (s.startBeat as number) - 1e-6 && beat < (s.startBeat as number) + (s.durationBeats as number) - 1e-6);
   const existing = [...bass.notes].sort((a, b) => (a.startTick as number) - (b.startTick as number));
@@ -39,9 +39,11 @@ export function enforceBassDensityFloor(
   const added: NoteIR[] = [];
   let prevMidi = (existing[0].pitch as number);
   let secStartBar = 0;
-  for (const s of sections) {
-    const isFrame = s.role === 'intro' || s.role === 'outro';
-    if (!isFrame) {
+  for (let si = 0; si < sections.length; si++) {
+    const s = sections[si];
+    const beats = floorBeatsFor(s, si);
+    if (beats.length > 0) {
+      const sortedFb = [...beats].sort((a, b) => a - b);
       for (let bar = 0; bar < s.bars; bar++) {
         const barStartBeat = (secStartBar + bar) * bpb;
         for (let i = 0; i < sortedFb.length; i++) {
@@ -65,4 +67,18 @@ export function enforceBassDensityFloor(
   }
   if (added.length === 0) return bass;
   return { ...bass, notes: [...bass.notes, ...added].sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number)) };
+}
+
+/** 现行入口(finalEventProfile 源):主体段用 style 地板拍位,intro/outro 不补。行为与 Phase 2 前逐字节一致。 */
+export function enforceBassDensityFloor(
+  bass: TrackIR,
+  plan: HarmonicPlan,
+  sections: readonly SectionLike[],
+  bpb: number,
+  ppq: number,
+  profile: FinalEventStyleProfile,
+): TrackIR {
+  const beats = profile.bassFloorBeats;
+  if (beats.length === 0) return bass; // POP/ACG 无地板:早退(与旧一致)
+  return addRootAnchorFloor(bass, plan, sections, bpb, ppq, (s) => (s.role === 'intro' || s.role === 'outro' ? [] : beats));
 }

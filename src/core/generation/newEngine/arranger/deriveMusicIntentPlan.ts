@@ -30,9 +30,11 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
     startBar += s.bars;
     const energy = arrangement.energyBySection[s.id] ?? 0.5;
     const densityHint = energy >= 0.66 ? 'dense' : energy <= 0.4 ? 'sparse' : 'medium';
+    // ★ Phase 2:intro/outro bass = minimal(与 enforceBassDensityFloor 跳过 intro/outro 一致 → schedule 精确编码现 floor)。
+    const secBassFamily = (s.role === 'intro' || s.role === 'outro') ? 'minimal' : bassFamily;
     const bassPatternSchedule: BassPatternSchedule = {
       meta: observeMeta(),
-      slots: [{ meta: observeMeta(), startBeat, endBeat, family: bassFamily, targetNotesPerBar: prof.bassTargetNotesPerBar, allowEnergyThinning: true }],
+      slots: [{ meta: observeMeta(), startBeat, endBeat, family: secBassFamily, targetNotesPerBar: prof.bassTargetNotesPerBar, allowEnergyThinning: true }],
     };
     const textureFamilySchedule: TextureFamilySchedule = {
       meta: observeMeta(),
