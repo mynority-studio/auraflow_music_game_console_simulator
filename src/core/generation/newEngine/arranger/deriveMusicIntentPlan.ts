@@ -15,8 +15,10 @@ import { styleIntentProfile, bassFamilyFromFloorBeats } from '../knowledge/style
 import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule } from '../intent/MusicIntentPlan';
 import type { IntentSummary } from '../intent/intentAuditTypes';
 
-const CREATED_BY = 'deriveMusicIntentPlan/phase1';
+const CREATED_BY = 'deriveMusicIntentPlan/phase2';
 const observeMeta = (): IntentMeta => ({ mode: 'observe', source: 'sim-derived', createdBy: CREATED_BY });
+// ★ Phase 2:只 bass schedule 翻 enforce(render 消费 applyBassPatternSchedule);其它字段仍 observe(用户约束)。
+const bassMeta = (): IntentMeta => ({ mode: 'enforce', source: 'sim-derived', createdBy: CREATED_BY });
 
 export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPlan): MusicIntentPlan {
   const styleName = style.toUpperCase() as StyleName; // band.style 是小写字符串;归一到 StyleName(消费者仍 lowercase 匹配)
@@ -33,8 +35,8 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
     // ★ Phase 2:intro/outro bass = minimal(与 enforceBassDensityFloor 跳过 intro/outro 一致 → schedule 精确编码现 floor)。
     const secBassFamily = (s.role === 'intro' || s.role === 'outro') ? 'minimal' : bassFamily;
     const bassPatternSchedule: BassPatternSchedule = {
-      meta: observeMeta(),
-      slots: [{ meta: observeMeta(), startBeat, endBeat, family: secBassFamily, targetNotesPerBar: prof.bassTargetNotesPerBar, allowEnergyThinning: true }],
+      meta: bassMeta(),
+      slots: [{ meta: bassMeta(), startBeat, endBeat, family: secBassFamily, targetNotesPerBar: prof.bassTargetNotesPerBar, allowEnergyThinning: true }],
     };
     const textureFamilySchedule: TextureFamilySchedule = {
       meta: observeMeta(),

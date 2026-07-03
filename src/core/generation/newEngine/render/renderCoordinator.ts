@@ -17,8 +17,9 @@ import type { RoleMix } from '../knowledge/gmMixProfile';
 import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
-import { enforceBassDensityFloor } from './bassDensityFloor';
-import { finalEventProfile } from '../knowledge/finalEventProfile';
+import { applyBassPatternSchedule } from './bassPatternSchedule';
+import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
+import type { MusicIntentPlan } from '../intent/MusicIntentPlan';
 import { buildTextureSchedule } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
@@ -206,6 +207,7 @@ export function renderSongFull(
   rng: RandomContext,
   overlay?: RenderOverlay,
   overrideLeadTrack?: TrackIR, // ★ 走 A:Q+R sandbox 权威 lead 注入 → 跳过 renderMgMelody(默认 undefined = 不变)
+  intentPlan?: MusicIntentPlan, // ★ Phase 2:上游(controller)派生的 intent(bass enforce);缺省(测试)→ 内联纯派生(不抽 RNG)
 ): RenderResult {
   // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律走 MG 链,不再跑 Prepass/MotifStore/
   //   candidateSwap。撞音消解只剩 voicingSafer(comp 瘦身)+ 兜底重掷(advance melody 子流)。
@@ -293,12 +295,15 @@ export function renderSongFull(
     }
   }
 
+  // ★ Phase 2(intent 迁移,enforce):bass 地板拍位来源从 finalEventProfile 迁到 arranger 派生的 BassPatternSchedule。
+  //   优先用上游(controller)传入的 intentPlan;缺省(测试直调)→ 内联纯派生(deriveMusicIntentPlan 无 RNG,确定性)。
+  //   applyBassPatternSchedule 与旧 enforceBassDensityFloor 逐字节等价(bassPatternScheduleEquivalence.test 锁)→ 输出不变。
+  const intent = intentPlan ?? deriveMusicIntentPlan(band.style, arrangement);
   const tracks: TrackIR[] = [];
   if (inLineup('bass')) {
-    // ★ non-ACG final-event fidelity(directive §3.3.C/§4.3.A/§5.3.A):非 ACG 纹理 bass 过稀 → 主体段强拍补 root anchor
-    //   到 MG-like 支撑密度(低能量由下游 dynamics 降 velocity 不删)。ACG bassFloorBeats=空(有自己 spaceAcgBass)。
+    // 非 ACG 纹理 bass 过稀 → 主体段强拍补 root anchor(intent BassPatternSchedule 驱动;ACG=minimal,不补,有 spaceAcgBass)。
     const rawBass = renderBass(plan, timebase, band.style, textureSchedule);
-    tracks.push(enforceBassDensityFloor(rawBass, plan, arrangement.sections, beatsPerBarOf(arrangement.meter), timebase.ppq, finalEventProfile(band.style)));
+    tracks.push(applyBassPatternSchedule(rawBass, plan, arrangement.sections, intent, beatsPerBarOf(arrangement.meter), timebase.ppq));
   }
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: reservedReg.lowMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection }));
   if (padTrack) tracks.push(padTrack);

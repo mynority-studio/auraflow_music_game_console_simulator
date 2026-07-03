@@ -17,6 +17,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement, assemble, type ResolvedChord } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
+import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
 import type { HarmonicPlan, ChordSpan, HarmonicFunction } from '../harmony/HarmonicPlan';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import type { DiatonicMode } from '../knowledge/scales';
@@ -170,9 +171,10 @@ export function buildMotifSongBundle(request: GenerationRequest, override: Motif
 export function generateSongFromMotifBundle(mb: MotifSongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
   const { bundle, overrideLeadTrack, lenient } = mb;
   const { band, arrangement, harmonic, instrumentation, timebase, seedRng } = bundle;
+  const intentPlan = deriveMusicIntentPlan(band.style, arrangement); // ★ Phase 2:上游派生 intent(bass enforce)传入
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack);
+      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack, intentPlan);
   const locator = buildRetryLocator(harmonic, timebase);
   // 有 override 时:和声/lead 是用户权威 → 非 lead 的 error 降为 warning,只 fatal 阻断。无 override → 与 generateSong 同(严格)。
   return runGenerationControl(render, seedRng, budget, locator, lenient);
