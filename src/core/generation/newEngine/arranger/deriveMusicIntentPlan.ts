@@ -12,8 +12,8 @@ import { beatsPerBarOf } from './phraseTiming';
 import type { ArrangementPlan } from './ArrangementPlan';
 import type { StyleName } from '../knowledge/mgMusicTheory';
 import { styleIntentProfile, bassFamilyFromFloorBeats } from '../knowledge/styleIntentProfiles';
-import { dominantFamilyOfCases } from '../knowledge/textureFamilyMap';
-import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule } from '../intent/MusicIntentPlan';
+import { dominantFamilyOfCases, dominantOnsetFormOfCases } from '../knowledge/textureFamilyMap';
+import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule, CompOnsetFormSchedule } from '../intent/MusicIntentPlan';
 import type { IntentSummary } from '../intent/intentAuditTypes';
 
 const CREATED_BY = 'deriveMusicIntentPlan/phase2';
@@ -30,6 +30,9 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
   //   缺 contract → styleProfile 默认。per-section 暂用同一 song-level family(intro/outro 微调留后续精化)。
   const preferred = (arrangement.songGrooveContract?.preferredTextureCases ?? []) as readonly string[];
   const grooveFamily = preferred.length > 0 ? dominantFamilyOfCases(preferred) : prof.defaultTextureFamily;
+  // ★ Phase 4:comp onset-form intent。ACG=rollHeavy(enforce,chordRoll 实现之,byte-identical);非 ACG=groove 主导 onset-form(observe)。
+  const isAcgStyle = String(style).toLowerCase() === 'acg';
+  const grooveOnsetForm = isAcgStyle ? 'rollHeavy' : (preferred.length > 0 ? dominantOnsetFormOfCases(preferred) : 'mixed');
   let startBar = 0;
   const sections: SectionMusicIntent[] = arrangement.sections.map((s) => {
     const startBeat = startBar * bpb;
@@ -47,12 +50,18 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
       meta: observeMeta(),
       slots: [{ meta: observeMeta(), startBeat, endBeat, family: grooveFamily, densityHint, switchPolicy: 'section' }],
     };
+    // ★ Phase 4:ACG comp onset-form=rollHeavy(enforce,chordRoll 实现,byte-identical);非 ACG observe(元数据,不改 render)。
+    const onsetMeta = isAcgStyle ? bassMeta : observeMeta; // 复用 enforce/observe meta 工厂(ACG rollHeavy=enforce)
+    const compOnsetFormSchedule: CompOnsetFormSchedule = {
+      meta: onsetMeta(),
+      slots: [{ meta: onsetMeta(), startBeat, endBeat, form: grooveOnsetForm, ...(grooveOnsetForm === 'rollHeavy' ? { targetSingleRatio: [0.85, 1.0] as [number, number] } : {}) }],
+    };
     return {
       meta: observeMeta(),
       sectionId: s.id, sectionRole: s.role, functionTag: s.functionTag,
       startBeat, endBeat, bars: s.bars, energy,
       grooveContractId: arrangement.songGrooveContractId,
-      bassPatternSchedule, textureFamilySchedule,
+      bassPatternSchedule, textureFamilySchedule, compOnsetFormSchedule,
     };
   });
   return { version: 1, style: styleName, mode: 'observe', source: 'sim-derived', sections };
@@ -69,6 +78,7 @@ export function summarizeMusicIntent(plan: MusicIntentPlan): IntentSummary {
       bassFamily: s.bassPatternSchedule?.slots[0]?.family,
       bassTargetNotesPerBar: s.bassPatternSchedule?.slots[0]?.targetNotesPerBar,
       textureFamily: s.textureFamilySchedule?.slots[0]?.family,
+      compOnsetForm: s.compOnsetFormSchedule?.slots[0]?.form,
     })),
   };
 }

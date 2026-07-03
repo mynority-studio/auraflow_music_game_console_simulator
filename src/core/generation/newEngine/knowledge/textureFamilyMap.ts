@@ -6,7 +6,7 @@
 // ★ 决策(#1 SIM-native):family 是【SIM 内部聚合观测】,不逐 seed 跑 MG;不追 concrete case,追 family。
 // ============================================================
 
-import type { TextureFamily } from '../intent/MusicIntentPlan';
+import type { TextureFamily, CompOnsetForm } from '../intent/MusicIntentPlan';
 
 /** texture case → family(顺序敏感:先具体后兜底)。未知 → 'block'(柱式/comp 兜底)。 */
 export function textureCaseFamily(tc: string): TextureFamily {
@@ -23,6 +23,25 @@ export function textureCaseFamily(tc: string): TextureFamily {
   if (/Pulse|HalfTime|Triplet|Charleston|Hemiola|Tremolo|Anthem/i.test(s)) return 'pulse';
   if (/Stab|Chops/i.test(s)) return 'block';
   return 'block'; // Comp / Drop2 / Quartal / Motion / Color / Sync / Pluck / Groove 兜底
+}
+
+/** ★ Phase 4:texture case → comp onset-form(block/roll/single/sparseAnswer)。名字模式,SIM-native。供 CompOnsetFormSchedule 派生 + 审计。 */
+export function textureCaseOnsetForm(tc: string): CompOnsetForm {
+  const s = tc;
+  if (/Roll/i.test(s)) return 'rollHeavy';
+  if (/Answer|Question|OneShot|Space|Sparse|Breath/i.test(s)) return 'sparseAnswer';
+  if (/Block|Stab|Chops|Red_Garland|Anthem_Block|Suspended/i.test(s)) return 'blockHeavy';
+  if (/Arp|Alberti|Broken|10th|Flow|arpeggio|Wobble|Bossa/i.test(s)) return 'singleLine';
+  return 'mixed';
+}
+
+/** 一组 case 的主导 onset-form(众数)。空 → 'mixed'。 */
+export function dominantOnsetFormOfCases(cases: readonly string[]): CompOnsetForm {
+  const m = new Map<CompOnsetForm, number>();
+  for (const c of cases) { const f = textureCaseOnsetForm(c); m.set(f, (m.get(f) ?? 0) + 1); }
+  let best: CompOnsetForm = 'mixed'; let bestN = -1;
+  for (const [f, n] of m) if (n > bestN) { bestN = n; best = f; }
+  return best;
 }
 
 /** 一组 case 的主导 family(众数;并列取先出现)。空 → 'block'。arranger 从 GrooveContract preferred 派生 family intent 用。 */
