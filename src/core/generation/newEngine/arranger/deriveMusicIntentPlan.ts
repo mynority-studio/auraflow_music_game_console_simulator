@@ -12,6 +12,7 @@ import { beatsPerBarOf } from './phraseTiming';
 import type { ArrangementPlan } from './ArrangementPlan';
 import type { StyleName } from '../knowledge/mgMusicTheory';
 import { styleIntentProfile, bassFamilyFromFloorBeats } from '../knowledge/styleIntentProfiles';
+import { dominantFamilyOfCases } from '../knowledge/textureFamilyMap';
 import type { MusicIntentPlan, SectionMusicIntent, IntentMeta, BassPatternSchedule, TextureFamilySchedule } from '../intent/MusicIntentPlan';
 import type { IntentSummary } from '../intent/intentAuditTypes';
 
@@ -25,6 +26,10 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
   const bpb = beatsPerBarOf(arrangement.meter);
   const prof = styleIntentProfile(style);
   const bassFamily = bassFamilyFromFloorBeats(style);
+  // ★ Phase 3(observe):texture family intent = GrooveContract preferred 的主导 family(arranger 的织体身份;SIM-native)。
+  //   缺 contract → styleProfile 默认。per-section 暂用同一 song-level family(intro/outro 微调留后续精化)。
+  const preferred = (arrangement.songGrooveContract?.preferredTextureCases ?? []) as readonly string[];
+  const grooveFamily = preferred.length > 0 ? dominantFamilyOfCases(preferred) : prof.defaultTextureFamily;
   let startBar = 0;
   const sections: SectionMusicIntent[] = arrangement.sections.map((s) => {
     const startBeat = startBar * bpb;
@@ -40,7 +45,7 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
     };
     const textureFamilySchedule: TextureFamilySchedule = {
       meta: observeMeta(),
-      slots: [{ meta: observeMeta(), startBeat, endBeat, family: prof.defaultTextureFamily, densityHint, switchPolicy: 'section' }],
+      slots: [{ meta: observeMeta(), startBeat, endBeat, family: grooveFamily, densityHint, switchPolicy: 'section' }],
     };
     return {
       meta: observeMeta(),
