@@ -13,6 +13,11 @@
 //   C 侧 test_ne_generation_control 覆盖）。
 // ★ 重扫触发条件：若未来 ① plans/和声纳入 retry 收敛环，或 ② bass avoid-long-exposure
 //   修复策略落地（bass renderer 感知 avoid），须重跑本探针 + scan-feature-seeds 重判。
+// ★ V4-P1 重跑（2026-07-05，引擎=c01ac02）：本探针 600 seed（7200 组合）retry=120 全 failed +
+//   scan-feature-seeds 2000×8（16000 组合）retry=61 全 attempts=12→failed，合计 23200 组合
+//   181 retry retry-then-pass=0 → v4 结构性不可达结论与 v3 一致（同机理）。硬门分支②生效：
+//   coverage 责任在 C 侧 test_ne_generation_control synthetic（fail-then-pass 控制流 + V4 新
+//   AuditReport finding 类型 blocking/non-blocking 判定，锁 P5d/P7）。
 // 用法: npx tsx scripts/scan-retry-pass-probe.ts [maxSeed=300]
 // ============================================================
 import { generateSong } from '../src/core/generation/newEngine/generation/GenerationController';
