@@ -12,10 +12,14 @@ import type { TrackIR } from '../ir/MusicalIR';
 
 /** V3-P0 stage trace 序列单一真源（raw 单列；以下为 raw 之后的后处理 stage）。
  *  导出器 emit + ne_json2c 解析 + 验收共用此序列；写进 ne_golden_post.json.meta。
- *  v3 相对 v1 新增：snapcomp / groovepocket / articulate。 */
+ *  v3 相对 v1 新增：snapcomp / groovepocket / articulate。
+ *  ★ V4-P1 新增（v4 渲染链新 pass，非 ACG/无手势 case 为 pass-through 快照）：
+ *    acgshape（ACG late shaping 链全程 + 二次 legato+sanitize 后）/ gesture（program·mix·pedal
+ *    投影 + gestureExpression 应用后）/ mixbalance（applyRenderMixBalance 重标 mix 后，notes 不变）。 */
 export const POST_STAGES = [
   'postmix', 'gated', 'resolved', 'ducked', 'dynamics', 'ending', 'leadins',
   'gapfill', 'replay', 'snapcomp', 'humanvel', 'swing', 'humantime', 'groovepocket', 'articulate',
+  'acgshape', 'gesture', 'mixbalance',
 ] as const;
 
 export type PostStage = typeof POST_STAGES[number];
