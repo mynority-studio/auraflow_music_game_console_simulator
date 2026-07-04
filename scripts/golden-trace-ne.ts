@@ -24,15 +24,17 @@ import { buildBandSpec, type GenerationRequest } from '../src/core/generation/ne
 import { buildArrangementPlan } from '../src/core/generation/newEngine/arranger/arranger';
 import { buildHarmonicPlanFromArrangement } from '../src/core/generation/newEngine/harmony/harmonyEngine';
 import { buildInstrumentationPlan } from '../src/core/generation/newEngine/instrumental/instrumentalPlanner';
-import { generateSong } from '../src/core/generation/newEngine/generation/GenerationController';
+import { generateSong, buildSongBundle } from '../src/core/generation/newEngine/generation/GenerationController';
+import { deriveMusicIntentPlan } from '../src/core/generation/newEngine/arranger/deriveMusicIntentPlan';
 import { POST_STAGES, type RenderTraceFn } from '../src/core/generation/newEngine/render/RenderOverlay';
-import { musicalIRToMidiEvents } from '../src/core/generation/newEngine/sandbox/irToMidi';
+import { musicalIRToMidiEvents, roomWetFor } from '../src/core/generation/newEngine/sandbox/irToMidi';
 import type { MusicalIR } from '../src/core/generation/newEngine/ir/MusicalIR';
 
 const ALL_STAGES: StageName[] = [
   'band', 'time', 'arranger', 'harmony', 'instrumental', 'timbre',
   'prepass', 'accompaniment', 'compTexture', 'padStyle', 'melody', 'resolver', 'humanize',
   'grooveContract', // ★ V3-P0：v3 新增命名子流（GrooveContract 选择）
+  'openingGesture', // ★ V4-P1：v4 新增命名子流（开头编配导演，独立播种恰 1 draw）
 ];
 
 // ---------- L0 ----------
@@ -276,7 +278,9 @@ function serializeIR(ir: MusicalIR) {
   };
 }
 
-const L3_ROOM_WET = 50;
+// ★ V4-P1 决策：L3 room wet 从 v3 固定 50 切换为【生产真值】roomWetFor(styleHint)
+//   —— 镜像 v4 AudioEngine.playMusicGeneration:88 的 musicalIRToMidiEvents(ir, roomWetFor(result.styleHint))；
+//   default/__unknown__ 不在 ROOM_WET 表 → 48。C 侧 P6 移植 ROOM_WET 表 + roomWetFor。
 const noteOffRank = (type: string): number => (type === 'noteOff' ? 0 : 1);
 
 function buildL2L3Case(seed: number, styleHint: string) {
@@ -307,6 +311,7 @@ function buildL2L3Case(seed: number, styleHint: string) {
       tracks: tracks.map((t) => ({ role: t.role, count: t.notes.length, hash: noteHash(t.notes) })),
     });
   };
+  const roomWet = roomWetFor(styleHint);
   const result = generateSong(request, undefined, trace);
   const l2 = {
     seed, styleHint,
@@ -327,11 +332,11 @@ function buildL2L3Case(seed: number, styleHint: string) {
   // L3：raw events 加递增 seq → 稳定排序 tick↑ → noteOff 优先 → seq（对齐 §1.4 调度序）
   let l3events: { seq: number; tick: number; type: string; channel: number; data1: number; data2: number }[] = [];
   if (result.ir) {
-    const raw = musicalIRToMidiEvents(result.ir, L3_ROOM_WET).map((e, i) => ({ ...e, seq: i }));
+    const raw = musicalIRToMidiEvents(result.ir, roomWet).map((e, i) => ({ ...e, seq: i }));
     raw.sort((a, b) => (a.ticks - b.ticks) || (noteOffRank(a.type) - noteOffRank(b.type)) || (a.seq - b.seq));
     l3events = raw.map((e) => ({ seq: e.seq, tick: e.ticks, type: e.type, channel: e.channel, data1: e.data1, data2: e.data2 }));
   }
-  const l3 = { seed, styleHint, roomWet: L3_ROOM_WET, hasIr: result.ir != null, events: l3events };
+  const l3 = { seed, styleHint, roomWet, hasIr: result.ir != null, events: l3events };
   const rawStage = { seed, styleHint, status: result.status, tracks: rawStageTracks };
   const postStage = { seed, styleHint, status: result.status, hasIr: result.ir != null, stages: postStages };
   // ★ V3-P0 fail-closed：emit 的 post stage 序列必须逐项 == POST_STAGES（防 renderCoordinator 漏插/拼错静默通过）
@@ -355,12 +360,12 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const gitTry = (cmd: string): string => { try { return execSync(cmd, { cwd: REPO_ROOT }).toString().trim(); } catch { return ''; } };
 const meta = {
   generator: 'scripts/golden-trace-ne.ts',
-  engineBaseCommit: '501ff79b28aacfb93733d7d249d8668710382ce4', // Newengine_Demo-v3.0（引擎逻辑基线）
-  exporterCommit: gitTry('git rev-parse HEAD') || 'unknown',     // tool/golden-trace-ne-v3 导出器补丁 commit
+  engineBaseCommit: 'c01ac02ef3ccf05ba37f619ca6638907e379b40f', // Newengine_Demo-v4（引擎逻辑基线）
+  exporterCommit: gitTry('git rev-parse HEAD') || 'unknown',     // tool/golden-trace-ne-v4 导出器补丁 commit
   exporterDirty: gitTry('git status --porcelain').length > 0,    // 导出时工作树脏 → 复现对照实际文件
   parityPatch: true,
-  postStages: POST_STAGES, // ★ stage 名序列单一真源（ne_json2c 解析 + 验收读此）
-  note: 'V3-P0 L0-L3 golden（对 Newengine_Demo-v3.0=501ff79；trace 导出器补丁；见 docs/transplant/esp32s3.md）',
+  postStages: POST_STAGES, // ★ stage 名序列单一真源（ne_json2c 解析 + 验收读此；V4-P1 +acgshape/gesture/mixbalance=18）
+  note: 'V4-P1 L0-L3+intent golden（对 Newengine_Demo-v4=c01ac02；trace 导出器补丁；见 docs/transplant/esp32s3.md V4 章）',
 };
 
 const l0 = { meta, streams: buildL0() };
@@ -373,14 +378,35 @@ const l1 = { meta, cases: l1Cases };
 writeFileSync(join(outDir, 'ne_golden_l1.json'), JSON.stringify(l1, null, 1));
 console.log(`L1: ${l1Cases.length} cases (${L1_SEEDS.length} seeds × ${L1_STYLES.length} styles)`);
 
+// ---------- intent（V4-P1 新增：MusicIntentPlan 快照，controller 传 render 的 enforce 输入）----------
+// 计划门 R1 [P2]：P5 diff 归因三分（render 表 / intent 默认值 / motif-hg 接线）需要 per-case intent 锁。
+// deriveMusicIntentPlan 纯函数（band.style + arrangement，零 rng）；acgBarFamilyBySpan 为 render 内派生
+// （textureSchedule 域，P5b raw comp golden 锁），不在此导出。C 侧 P3 ne_intent 对账靶。
+const intentCases = [] as { seed: number; styleHint: string; style: string; intent: unknown; hash: number }[];
+for (const seed of L1_SEEDS) for (const style of L1_STYLES) {
+  const bundle = buildSongBundle({ seed, styleHint: style, mood: 'calm-build', targetDuration: 120, allowModulation: true });
+  const intent = deriveMusicIntentPlan(bundle.band.style, bundle.arrangement);
+  intentCases.push({ seed, styleHint: style, style: bundle.band.style, intent, hash: fnv1a(stableStringify(intent)) });
+}
+writeFileSync(join(outDir, 'ne_golden_intent.json'), JSON.stringify({ meta, cases: intentCases }, null, 1));
+console.log(`Intent: ${intentCases.length} cases (deriveMusicIntentPlan 快照)`);
+
 // L2/L3：产品路径 generateSong。标准矩阵（与 L1 同 seed/style，8×8=64）+ 特征 case（扫描得，
 // 覆盖标准矩阵不出现的 timbre-switch / retry 路径，见 scan-feature-seeds.ts）。全量入仓 = P1b（P1a 只 codegen 小样本子集）。
 // 特征 seed 沿用 buildL2L3Case 同 request（mood/duration/allowModulation），仅变 seed/style，保持与标准例同生成路径。
+// ★ V4-P1 重扫（scan-feature-seeds.ts 2000×8=16000 组合，2026-07-05）：
+//   - timbre-switch 在 v4 已普遍（pop 1821/jazz 2000/rnb 1907…/2000）→ 标准矩阵天然覆盖，
+//     特征位改选扫描最强 stress case（pc=6/mc=14）保留 modal+default 两路。
+//   - retry 61 例全 attempts=12→failed（lofi 40/acg 21）；seed4/lofi、seed19/acg 与 v3 特征位同位保留。
+//   - retry-then-pass：本轮 16000 + scan-retry-pass-probe 7200（600×lofi/acg×2 mood×3 dur）
+//     合计 23200 组合 181 retry 零成功 → v4 仍结构性不可达（同 v3 机理：阻塞 finding=bass
+//     avoid-long-exposure 根因在 plans 层，收敛环不重跑 plans）。fallback B 按「不可达留档 +
+//     C 侧 test_ne_generation_control synthetic 白盒（fail-then-pass + 新 finding 类型 blocking 判定）」闭账。
 const L2L3_FEATURE_CASES: { seed: number; style: string; note: string }[] = [
-  { seed: 3, style: 'modal', note: 'timbre-switch pc=6/mc=6（v3 scan 最强）' },
-  { seed: 3, style: 'pop', note: 'timbre-switch pc=2/mc=2' },
-  { seed: 4, style: 'lofi', note: 'retry attempts=12 → failed（lofi）' },
-  { seed: 19, style: 'acg', note: 'V3-P0 新增：acg retry attempts=12 → failed（覆盖 acg retry 路径）' },
+  { seed: 288, style: 'modal', note: 'V4：timbre-switch pc=6/mc=14（modal 最强）' },
+  { seed: 123, style: 'default', note: 'V4：timbre-switch pc=6/mc=14（default 最强）' },
+  { seed: 4, style: 'lofi', note: 'retry attempts=12 → failed（lofi；v3 同位）' },
+  { seed: 19, style: 'acg', note: 'acg retry attempts=12 → failed（v3 同位）' },
 ];
 const l2Cases: ReturnType<typeof buildL2L3Case>['l2'][] = [];
 const l3Cases: ReturnType<typeof buildL2L3Case>['l3'][] = [];

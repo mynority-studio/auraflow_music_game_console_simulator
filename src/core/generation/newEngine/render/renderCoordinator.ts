@@ -661,6 +661,7 @@ export function renderSongFull(
     t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t
   ));
   const balancedTracks = sanitizeLead(balancedTracksLegato); // ACG tuck/shape 之后再补连音 + 同音安全闸
+  overlay?.trace?.('acgshape', balancedTracks); // V4-P1：ACG late shaping 链后（非 ACG = pass-through 快照）
   // ★ 末步挂乐器音色:按器配的 programByRoleSection 落 program(初始)+ programChanges(段落切换)。
   //   段落起始 tick(累加 bars),变化点才发 programChange(同 channel = 同一乐手换声音)。
   const bpbProg = beatsPerBarOf(arrangement.meter);
@@ -762,12 +763,14 @@ export function renderSongFull(
       pitchBendEvents,
     };
   });
+  overlay?.trace?.('gesture', mixAttachedTracks); // V4-P1：program/mix/pedal 投影 + gestureExpression 应用后
   const finalTracks = applyRenderMixBalance(mixAttachedTracks, {
     style: band.style,
     ppq: timebase.ppq,
     durationTicks: resolved.data.durationTicks as number,
     sectionTicks: sectionTicks.map((s) => s.tick),
   });
+  overlay?.trace?.('mixbalance', finalTracks); // V4-P1：mix 重标后（notes 不变，摘要 hash 恒等于 gesture 段）
   const ir = freezeMusicalIR({ tracks: finalTracks, timebase, durationTicks: resolved.data.durationTicks });
   // ★ ACG comp 硬合同(acg_comp_track_hard_contract §5.2,fail-closed):ACG 必须有独立 lead + comp(有音符)
   //   两条轨,即便同用 GM0 也不能塌成 lead-only。band 层 hardRequiredRolesForStyle 已保证 comp 入 lineup;
