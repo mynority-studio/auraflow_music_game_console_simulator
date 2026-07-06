@@ -9,7 +9,7 @@
 
 import type { MidiEvent } from './MidiScheduler';
 import type { InstrumentRole, MusicalIR, TrackMix } from '../generation/newEngine/ir/MusicalIR';
-import { AURA25_DRUM_BANK_LSB, AURA25_DRUM_BANK_MSB, mapProgramToAura25 } from '../sound/Aura25Palette';
+import { mapProgramToAura25 } from '../sound/Aura25Palette';
 
 interface ChannelVoice {
   channel: number;
@@ -77,10 +77,9 @@ function pushMixCC(events: MidiEvent[], channel: number, tick: number, role: Ins
 }
 
 function pushProgramChange(events: MidiEvent[], tick: number, channel: number, role: InstrumentRole, program: number): void {
-  if (role === 'drum') {
-    events.push({ ticks: tick, type: 'cc', channel, data1: CC_BANK_SELECT_MSB, data2: AURA25_DRUM_BANK_MSB });
-    events.push({ ticks: tick, type: 'cc', channel, data1: CC_BANK_SELECT_LSB, data2: AURA25_DRUM_BANK_LSB });
-  }
+  // ⚠️ 回退修复(2026-07-06):原 drum 走 Aura25 drum bank select(CC0/32 = AURA25_DRUM_BANK_MSB/LSB),
+  //   但那两个常量只存在于已删的 WIP(Aura25Palette 从未 commit 过导出)→ tsc 坏。此处恢复 pre-WIP 行为(不发 bank select)。
+  //   ★ 若 Aura25 鼓需专用 bank,须补回 Aura25Palette 的 AURA25_DRUM_BANK_MSB/LSB 值(在被删 WIP 里)+ 这两行。
   events.push({ ticks: tick, type: 'programChange', channel, data1: program, data2: 0 });
 }
 
