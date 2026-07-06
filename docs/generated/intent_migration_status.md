@@ -36,10 +36,12 @@
 - `scripts/audit-comp-onset-intent`(comp onset-form 意图 vs 实际)
 - 既有:`audit-non-acg-per-section-feel` · `audit-acg-per-section-feel` · `audit-mg-current-parity --full` · `audit-mg-bass-comp-lead-fidelity`
 
-## E. 验证状态
+## E. 验证状态(2026-07-06 校正)
 
-- **parity 30/30 · tsc 净 · vite build 绿**。全 ENFORCED 部分 byte-identical。
+- **parity 30/30 · vite build 绿 · src tsc/lint 净(0 错)**。全 ENFORCED 部分 byte-identical。
+- ⚠️ **`npm run lint` 全量【不绿】**:13 错,**全在旧诊断脚本**(`runpipeline-melody-chord-check`/`parent-key-check`/`mg-vs-auraflow-*`/`mg-2-polluter-deep`/`mg-engine-*` 等,引用已删模块,**非本迁移·待用户清理**)。本迁移新增的 3 个 audit 脚本(comp-onset/intent-family/phase1)已修净。**⚠️ 早前状态文档写"tsc 净"只覆盖 src,对全量 lint 不准确 —— 已校正。**
 - ⚠️ 已知 12 测失败(9 文件)= **非本迁移**:6 用户并行 WIP(leadArticulation/leadSanitizer/leadLegato/jazzInstrumentPriority/keyboardCompColor/widePianoVoicings)+ 3 SLOPE 降权旋律位移连带(musicalityAuditor/pianoCompAudit/productLeadNonMutation,基线待更新)。
+- **审计 mode 校正**:`audit-comp-onset-intent` 早前把所有 rollHeavy 当 enforce(RNB observe 段被误计"18/20");现 `IntentSummary` 暴露逐字段 mode(bassMode/textureMode/compOnsetMode/leadMode),审计按【字段 mode】判 → ACG-only 14/14。
 
 ## E2. ★ 经验探测(2026-07-06)—— 为何 4 个 enforce 必须要耳朵,不能自动 flip
 

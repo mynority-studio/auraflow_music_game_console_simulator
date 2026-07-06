@@ -15,13 +15,17 @@ export interface SectionIntentSummary {
   bars: number;
   energy: number;
   grooveContractId?: string;
-  mode: IntentMode;
+  mode: IntentMode;                // 段级 meta.mode(observe)
   source: IntentSource;
   bassFamily?: BassPatternFamily;
   bassTargetNotesPerBar?: [number, number];
+  bassMode?: IntentMode;           // ★ 逐字段 mode(审计按此判 enforce/observe,不用段级 mode)
   textureFamily?: TextureFamily;   // placeholder(Phase 1);Phase 3 精化
+  textureMode?: IntentMode;
   compOnsetForm?: CompOnsetForm;   // Phase 4
+  compOnsetMode?: IntentMode;      // ★ ACG rollHeavy=enforce · 非 ACG=observe(修 audit 把 RNB 误计 enforce)
   leadTargetCoverage?: [number, number]; // Phase 6
+  leadMode?: IntentMode;
 }
 
 /** 整曲 intent 摘要(挂到 AuditReport.intent;observe = 不被 render 消费)。 */

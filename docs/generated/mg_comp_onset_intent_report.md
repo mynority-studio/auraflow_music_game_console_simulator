@@ -27,37 +27,37 @@
 ## 7/pop
 | section | intended form | actual single/block | ok |
 |---|---|---|---|
-| verse | singleLine | 0.53/0.47 (n120) | — |
-| chorus | singleLine | 1.00/0.00 (n101) | — |
-| chorus | singleLine | 1.00/0.00 (n101) | — |
-| outro | singleLine | 0.00/0.00 (n0) | — |
+| verse | singleLine(o) | 0.53/0.47 (n120) | — |
+| chorus | singleLine(o) | 1.00/0.00 (n101) | — |
+| chorus | singleLine(o) | 1.00/0.00 (n101) | — |
+| outro | singleLine(o) | 0.00/0.00 (n0) | — |
 
 ## 42/rnb
 | section | intended form | actual single/block | ok |
 |---|---|---|---|
-| intro | rollHeavy(E) | 0.60/0.40 (n10) | ✓ |
-| verse | rollHeavy(E) | 0.03/0.97 (n36) | ✗ |
-| verse | rollHeavy(E) | 0.03/0.97 (n36) | ✗ |
-| chorus | rollHeavy(E) | 0.92/0.08 (n74) | ✓ |
-| chorus | rollHeavy(E) | 0.93/0.07 (n75) | ✓ |
-| outro | rollHeavy(E) | 0.00/0.00 (n0) | ✓ |
+| intro | rollHeavy(o) | 0.60/0.40 (n10) | — |
+| verse | rollHeavy(o) | 0.03/0.97 (n36) | — |
+| verse | rollHeavy(o) | 0.03/0.97 (n36) | — |
+| chorus | rollHeavy(o) | 0.92/0.08 (n74) | — |
+| chorus | rollHeavy(o) | 0.93/0.07 (n75) | — |
+| outro | rollHeavy(o) | 0.00/0.00 (n0) | — |
 
 ## 99/lofi
 | section | intended form | actual single/block | ok |
 |---|---|---|---|
-| intro | singleLine | 0.00/1.00 (n4) | — |
-| verse | singleLine | 0.00/1.00 (n16) | — |
-| verse | singleLine | 0.00/1.00 (n16) | — |
-| outro | singleLine | 0.00/0.00 (n0) | — |
+| intro | singleLine(o) | 0.00/1.00 (n4) | — |
+| verse | singleLine(o) | 0.00/1.00 (n16) | — |
+| verse | singleLine(o) | 0.00/1.00 (n16) | — |
+| outro | singleLine(o) | 0.00/0.00 (n0) | — |
 
 ## 3/jazz
 | section | intended form | actual single/block | ok |
 |---|---|---|---|
-| intro | mixed | 0.00/1.00 (n16) | — |
-| verse | mixed | 0.00/1.00 (n48) | — |
-| verse | mixed | 0.00/1.00 (n48) | — |
-| bridge | mixed | 0.00/1.00 (n48) | — |
-| chorus | mixed | 0.00/1.00 (n48) | — |
-| outro | mixed | 0.00/1.00 (n16) | — |
+| intro | mixed(o) | 0.00/1.00 (n16) | — |
+| verse | mixed(o) | 0.00/1.00 (n48) | — |
+| verse | mixed(o) | 0.00/1.00 (n48) | — |
+| bridge | mixed(o) | 0.00/1.00 (n48) | — |
+| chorus | mixed(o) | 0.00/1.00 (n48) | — |
+| outro | mixed(o) | 0.00/1.00 (n16) | — |
 
-## 汇总:enforced(ACG rollHeavy)slot 18/20 满足 single≥0.6。observe slot 只报告不判。
+## 汇总:enforced(ACG rollHeavy)slot 14/14 满足 single≥0.6。observe slot 只报告不判。

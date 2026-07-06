@@ -9,7 +9,7 @@
 import { generateMusicSync } from '../src/core/generation/musicGeneration/MusicGenerationService';
 import { writeFileSync, mkdirSync } from 'fs';
 
-interface IntentSec { sectionRole: string; startBeat: number; bars: number; compOnsetForm?: string; mode?: string }
+interface IntentSec { sectionRole: string; startBeat: number; bars: number; compOnsetForm?: string; compOnsetMode?: string }
 const TOL = 0.012;
 
 function onsetRatios(notes: { startTick: number }[], ppq: number, startBeat: number, endBeat: number): { single: number; block: number; n: number } {
@@ -34,12 +34,14 @@ for (const [seed, style] of CASES) {
   if (!intent || !comp) { L.push(`## ${seed}/${style}: 无 intent/comp`); continue; }
   L.push(`## ${seed}/${style}`); L.push('| section | intended form | actual single/block | ok |'); L.push('|---|---|---|---|');
   for (const s of intent.sections) {
-    const { single, block, n } = onsetRatios(comp.notes as { startTick: number }[], ppq, s.startBeat, s.startBeat + s.bars * 4);
+    const notes = comp.notes.map((nn) => ({ startTick: nn.startTick as number }));
+    const { single, block, n } = onsetRatios(notes, ppq, s.startBeat, s.startBeat + s.bars * 4);
     let ok = '—';
-    if (s.compOnsetForm === 'rollHeavy') { // ACG rollHeavy = enforce(chordRoll 实现)
+    const enforced = s.compOnsetForm === 'rollHeavy' && s.compOnsetMode === 'enforce'; // ★ 按【字段 mode】判(ACG=enforce·非ACG rollHeavy=observe 不计)
+    if (enforced) {
       enforcedChecked++; const pass = single >= 0.6 || n === 0; if (pass) enforcedOk++; ok = pass ? '✓' : '✗';
     }
-    L.push(`| ${s.sectionRole} | ${s.compOnsetForm}${s.compOnsetForm === 'rollHeavy' ? '(E)' : ''} | ${single.toFixed(2)}/${block.toFixed(2)} (n${n}) | ${ok} |`);
+    L.push(`| ${s.sectionRole} | ${s.compOnsetForm}${enforced ? '(E)' : s.compOnsetMode === 'observe' ? '(o)' : ''} | ${single.toFixed(2)}/${block.toFixed(2)} (n${n}) | ${ok} |`);
   }
   L.push('');
 }

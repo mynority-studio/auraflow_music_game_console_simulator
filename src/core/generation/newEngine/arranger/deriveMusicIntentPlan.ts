@@ -86,9 +86,13 @@ export function summarizeMusicIntent(plan: MusicIntentPlan): IntentSummary {
       grooveContractId: s.grooveContractId, mode: s.meta.mode, source: s.meta.source,
       bassFamily: s.bassPatternSchedule?.slots[0]?.family,
       bassTargetNotesPerBar: s.bassPatternSchedule?.slots[0]?.targetNotesPerBar,
+      bassMode: s.bassPatternSchedule?.slots[0]?.meta.mode,
       textureFamily: s.textureFamilySchedule?.slots[0]?.family,
+      textureMode: s.textureFamilySchedule?.slots[0]?.meta.mode,
       compOnsetForm: s.compOnsetFormSchedule?.slots[0]?.form,
+      compOnsetMode: s.compOnsetFormSchedule?.slots[0]?.meta.mode,
       leadTargetCoverage: s.leadGrammarIntent?.targetCoverage,
+      leadMode: s.leadGrammarIntent?.meta.mode,
     })),
   };
 }
