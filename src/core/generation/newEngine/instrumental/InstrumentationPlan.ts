@@ -47,17 +47,27 @@ export type GestureExpressionKind =
   | 'drum-rudiment'
   | 'sax-breath-legato'
   | 'pipe-wind-breath'
+  | 'bowed-string-legato'
   | 'bass-pluck-legato'
   | 'bass-walk'
   | 'bass-muted'
   | 'sustained-pad';
-export type GestureExpressionFamily = 'none' | 'keyboard' | 'mallet' | 'drum' | 'sax' | 'pipe-wind' | 'bass' | 'pad';
+export type GestureExpressionFamily = 'none' | 'keyboard' | 'mallet' | 'drum' | 'sax' | 'pipe-wind' | 'bowed-string' | 'bass' | 'pad';
 export type GestureBreathModel = 'none' | 'reed-continuous' | 'pipe-taper';
-export type GestureNoteShape = 'none' | 'finger-legato' | 'strike-decay' | 'rudiment-hits' | 'legato-overlap' | 'bass-legato' | 'bass-muted' | 'sustain-pad';
+export type GestureNoteShape = 'none' | 'finger-legato' | 'strike-decay' | 'rudiment-hits' | 'legato-overlap' | 'bow-legato' | 'bass-legato' | 'bass-muted' | 'sustain-pad';
 export type GestureArticulation = 'none' | 'comping' | 'finger-legato' | 'staccato' | 'tenuto' | 'slur' | 'ghost' | 'roll' | 'walking';
 export type GestureVelocityCurve = 'none' | 'soft' | 'linear' | 'accented' | 'ghosted' | 'walking-pulse' | 'strike-decay';
 export type GesturePedalPolicy = 'none' | 'harmonic-change' | 'light-syncopated' | 'acg-legato-change';
-export type GestureRudimentPolicy = 'none' | 'backbeat-ghost' | 'brush-swing' | 'laidback-ghost' | 'lofi-dusty' | 'fill-roll';
+// ★ Layer 1(three-layer mix plan):乐器【尾音契约】—— 和 reverb/chorus 分开,tail 是乐器演奏行为(gate/pedal/CC72 release),不是空间。
+export type TailPolicy =
+  | 'none'
+  | 'keyboard-natural'    // 原声钢琴:自然衰减 + comp 可 harmonic pedal
+  | 'electric-key-tail'   // DX7/GM5 电钢:靠 note gate(comp)/ CC72 release(lead,保 parity),不靠 blanket pedal / reverb
+  | 'piano-pedal-comp'    // 钢琴 comp:harmonic-change pedal
+  | 'pad-sustain'         // pad:长音
+  | 'pluck-short'         // 拨弦/贝斯:短
+  | 'wind-breath';        // 吹奏:气声包络(CC11)
+export type GestureRudimentPolicy = 'none' | 'backbeat-ghost' | 'ride-swing' | 'laidback-ghost' | 'lofi-dusty' | 'fill-roll';
 export type GestureHiHatPolicy = 'none' | 'closed-open-lift' | 'ride-swing' | 'laidback-closed' | 'dusty-closed';
 export type GestureBassTechnique = 'walking' | 'pluck' | 'muted' | 'ghost-note' | 'approach-tone' | 'slide' | 'legato';
 
@@ -78,6 +88,8 @@ export interface GestureExpressionPlan {
   gateRatio?: number;
   maxConnectBeats?: number;
   overlapBeats?: number;
+  tailPolicy?: TailPolicy;   // ★ Layer 1:乐器尾音契约(与 reverb/chorus send 分开;测试据此区分 tail vs 空间)
+  releaseCc?: number;        // ★ Layer 1:可选 release 增强(CC72,64-centered;两 synth 都响应)。lead 电钢 tail 主机制(保 parity)
 }
 
 // ★ 收尾【乐器进出计划】(2026-06-08,器配据 arrangement.endingStyle 编写):render 据此出收尾手势。

@@ -16,7 +16,7 @@ import {
   shapeSaxLegatoNotes,
   type SaxExpressionOptions,
 } from './saxExpression';
-import type { GestureExpressionPlan } from './InstrumentationPlan';
+import type { GestureExpressionPlan, TailPolicy } from './InstrumentationPlan';
 
 export interface GestureCcEvent {
   atTick: Ticks;
@@ -61,6 +61,14 @@ export function isPipeWindProgram(program: number): boolean {
   return program >= 72 && program <= 79;
 }
 
+/** GM 电钢:GM4 Electric Piano 1(Rhodes)· GM5 Electric Piano 2(FM/DX7 型)。需 electric-key-tail(尾音靠演奏,不靠 reverb)。 */
+export function isElectricKeyProgram(program: number): boolean {
+  return program === 4 || program === 5;
+}
+
+const CC_RELEASE_TIME = 72;      // ★ Layer 1:release time(64-centered;两 synth 都响应)
+const ELECTRIC_KEY_LEAD_RELEASE = 82; // EP lead release 增强值(>64 → 更长 release ring,只响进空拍不糊 legato)
+
 export function gestureExpressionForProgram(
   role: InstrumentRoleName,
   program: number | undefined,
@@ -84,7 +92,7 @@ export function gestureExpressionForProgram(
       articulation: jazz ? 'roll' : 'ghost',
       velocityCurve: jazz ? 'walking-pulse' : rnb || lofi ? 'ghosted' : 'accented',
       pedalPolicy: 'none',
-      rudimentPolicy: jazz ? 'brush-swing' : lofi ? 'lofi-dusty' : rnb ? 'laidback-ghost' : 'backbeat-ghost',
+      rudimentPolicy: jazz ? 'ride-swing' : lofi ? 'lofi-dusty' : rnb ? 'laidback-ghost' : 'backbeat-ghost',
       hiHatPolicy: jazz ? 'ride-swing' : lofi ? 'dusty-closed' : rnb ? 'laidback-closed' : 'closed-open-lift',
       gateRatio: 0.25,
     };
@@ -108,7 +116,7 @@ export function gestureExpressionForProgram(
         gateRatio: 0.96,
       };
     }
-    const muted = s === 'lofi' || program === 39;
+    const muted = s === 'lofi';
     return {
       kind: muted ? 'bass-muted' : 'bass-pluck-legato',
       family: 'bass',
@@ -162,6 +170,25 @@ export function gestureExpressionForProgram(
     };
   }
 
+  if (program === 40 && role === 'lead') {
+    return {
+      kind: 'bowed-string-legato',
+      family: 'bowed-string',
+      program,
+      ccControllers: [],
+      breathModel: 'none',
+      noteShape: 'bow-legato',
+      articulation: 'slur',
+      velocityCurve: 'soft',
+      pedalPolicy: 'none',
+      rudimentPolicy: 'none',
+      hiHatPolicy: 'none',
+      maxConnectBeats: 1.15,
+      overlapBeats: 0.02,
+      gateRatio: 1,
+    };
+  }
+
   if (info.family === 'keyboard' && isSustainedInstrument(program)) {
     return {
       kind: 'sustained-pad',
@@ -187,11 +214,17 @@ export function gestureExpressionForProgram(
       : s === 'lofi' ? 'light-syncopated'
       : s === 'pop' || s === 'rnb' ? 'harmonic-change'
       : 'none';
+    // ★ Layer 1(electric-key-tail):EP(GM4/5)尾音靠演奏,不靠 reverb。lead=CC72 release(保 MG parity,不改音符;release 只响进空拍不糊 legato);
+    //   comp=保留 harmonic-change pedal(CC64,已有)。lead 永不 blanket pedal(pedalPolicy 已是 none)。
+    const electricKey = isElectricKeyProgram(program);
+    const tailPolicy: TailPolicy = electricKey ? 'electric-key-tail' : (comp && pedalPolicy !== 'none' ? 'piano-pedal-comp' : 'keyboard-natural');
+    const releaseCc = electricKey && !comp ? CC_RELEASE_TIME : undefined;
+    const cc = pedalPolicy === 'none' ? [] : [64];
     return {
       kind: 'keyboard-touch',
       family: 'keyboard',
       program,
-      ccControllers: pedalPolicy === 'none' ? [] : [64],
+      ccControllers: releaseCc ? [...cc, releaseCc] : cc,
       breathModel: 'none',
       noteShape: 'finger-legato',
       articulation: comp ? 'comping' : 'finger-legato',
@@ -200,6 +233,8 @@ export function gestureExpressionForProgram(
       rudimentPolicy: 'none',
       hiHatPolicy: 'none',
       gateRatio: comp ? (s === 'jazz' ? 0.72 : 0.9) : 0.98,
+      tailPolicy,
+      releaseCc,
     };
   }
 
@@ -407,7 +442,7 @@ function isHat(n: NoteIR): boolean {
 function shapeDrumVelocity(n: NoteIR, plan: GestureExpressionPlan, timebase: Timebase): number {
   const phase = beatPhase(n.startTick as number, timebase);
   let scale = velocityScaleForCurve(plan, n, 0, timebase);
-  if (plan.rudimentPolicy === 'brush-swing') {
+  if (plan.rudimentPolicy === 'ride-swing') {
     if (isDrumPitch(n, DRUM_RIDE) || isDrumPitch(n, DRUM_RIDE_BELL)) scale *= nearBeat(phase, 0) || nearBeat(phase, 2) ? 1.05 : 0.92;
     if (isDrumPitch(n, DRUM_SNARE)) scale *= 0.72;
   } else if (plan.rudimentPolicy === 'lofi-dusty') {
@@ -447,6 +482,10 @@ export function applyGestureExpressionToTrack(
     const ccEvents = buildPipeWindBreathCcEvents(track.notes, timebase);
     return { notes: track.notes, ccEvents: ccEvents.length ? ccEvents : undefined };
   }
+  if (plan.kind === 'bowed-string-legato') {
+    if (track.role !== 'lead') return { notes: track.notes };
+    return { notes: track.notes };
+  }
   if (plan.kind === 'bass-pluck-legato' || plan.kind === 'bass-walk' || plan.kind === 'bass-muted') {
     return { notes: track.role === 'bass' ? shapeBassNotes(track, plan, timebase) : track.notes };
   }
@@ -454,7 +493,14 @@ export function applyGestureExpressionToTrack(
     return { notes: track.role === 'drum' ? shapeDrumNotes(track, plan, timebase) : track.notes };
   }
   if (plan.kind === 'keyboard-touch' || plan.kind === 'mallet-strike' || plan.kind === 'sustained-pad') {
-    return { notes: shapeKeyboardOrPadNotes(track, plan, timebase) };
+    const notes = shapeKeyboardOrPadNotes(track, plan, timebase);
+    // ★ electric-key-tail(lead):静态 CC72 release —— 电钢 lead 尾音,【不改音符】(保 MG lead parity),release 只响进空拍不糊 legato。
+    if (plan.releaseCc && track.role === 'lead' && notes.length > 0) {
+      const firstTick = Math.min(...notes.map((n) => n.startTick as number));
+      const ccEvents: GestureCcEvent[] = [{ atTick: ticks(Math.max(0, firstTick)) as Ticks, controller: plan.releaseCc, value: ELECTRIC_KEY_LEAD_RELEASE }];
+      return { notes, ccEvents };
+    }
+    return { notes };
   }
   return { notes: track.notes };
 }
