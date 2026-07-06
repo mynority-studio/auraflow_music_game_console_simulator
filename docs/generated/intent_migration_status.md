@@ -41,6 +41,23 @@
 - **parity 30/30 · tsc 净 · vite build 绿**。全 ENFORCED 部分 byte-identical。
 - ⚠️ 已知 12 测失败(9 文件)= **非本迁移**:6 用户并行 WIP(leadArticulation/leadSanitizer/leadLegato/jazzInstrumentPriority/keyboardCompColor/widePianoVoicings)+ 3 SLOPE 降权旋律位移连带(musicalityAuditor/pianoCompAudit/productLeadNonMutation,基线待更新)。
 
+## E2. ★ 经验探测(2026-07-06)—— 为何 4 个 enforce 必须要耳朵,不能自动 flip
+
+直接 enforce【现 SIM-native intent】= 大回归,证据(非 ACG 实际 texturePerBar 的 family/onset vs 现 intent):
+
+| seed/style | family match | onset match | 直接 enforce 后果 |
+|---|---|---|---|
+| 7/pop | 85% | 15% | onset 收敛改多数 comp 形态 |
+| 42/pop | 48% | 100% | family 收敛改半数 texture |
+| 42/rnb | 54% | 46% | 两者都大改 |
+| 99/rnb | 100% | 100% | 无变(巧合已对齐) |
+| **99/lofi** | **0%** | **0%** | **LOFI 全段被逼成 'wash' → 毁掉 dusty-chop/oneshot 变化** |
+| 3/jazz | 53% | 47% | 大改 |
+
+**结论**:现 intent 是 **song-level 主导 family**(Phase 3 首版),对【每段变化的非 ACG】太粗 → enforce = flatten 回归(尤 LOFI)。要非回归 enforce,需**先把非 ACG intent 派生做成 per-section MG-like**(不是 song-level 主导),这是【音乐知识 + 耳朵】的活,不是 enforce 机制的活。ACG 能 byte-identical enforce 是因为 `deriveAcgBarFamilies` 把 render 已有的【好】逐-bar 逻辑抽出;非 ACG 没有等价的"已有好逐-bar 逻辑"可抽(器配段级选择本身就是待改进对象)。
+
+**★ Phase 7 收尾已做(`d953e9d`,byte-identical)**:单源 intent(render 挂 report,消双派生)+ 修 ACG bar-family audit gap(report.intent.acgBarFamilySpanCount 现 ACG=54)。
+
 ## F. 整体审计建议
 
 1. **听感**:ENFORCED 部分应【听不出变化】(全 byte-identical)。若 ACG/bass 听感与 v4 tag 前一致 → 迁移是干净的所有权搬迁,成功。
