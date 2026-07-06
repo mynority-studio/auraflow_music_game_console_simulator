@@ -141,9 +141,9 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   48: { pad: { volume: 74, reverb: 78, chorus: 60 } }, 49: { pad: { volume: 74, reverb: 78, chorus: 60 } }, 50: { pad: { volume: 74, reverb: 80, chorus: 66 } },
 };
 
-const isFxPad = (p: number) => p === 99 || p === 100 || p === 102;
+const isFxPad = (p: number) => p === 98 || p === 99 || p === 100 || p === 102;
 const isWarmPad = (p: number) => p === 88 || p === 89 || p === 90 || p === 94 || p === 95;
-const isElectricPiano = (p: number) => p === 5;
+const isElectricPiano = (p: number) => p === 4 || p === 5; // GM4 Rhodes EP1 · GM5 DX7 EP2(都需 chorus)
 
 /**
  * 据 style+timbreWorld+role+【生效】program 算该角色混音(单角色;关系型护栏 enforceRelationalMix 后处理)。
@@ -175,6 +175,7 @@ export function mixForProgram(args: {
   if (role === 'drum') base.chorus = 0;
   if (role === 'comp' || role === 'lead') { if (isElectricPiano(program)) base.chorus = Math.max(base.chorus, 38); } // 电钢必有 chorus
   if (program === 12 || program === 108) base.chorus = Math.min(base.chorus, 16); // 马林巴/卡林巴 少 chorus
+  if (program === 7) base.reverb = Math.min(base.reverb, 30); // Clav:干、保 attack(同 harpsichord 6)
   if (role === 'pad' && isFxPad(program)) { base.volume = Math.min(base.volume, 72); base.reverb = Math.max(base.reverb, 84); }
 
   // ★ melody-forward:lead 抬 CC7 让旋律明显在场(放最后 → 覆盖所有 program 基底 + 覆盖值)。clampCC 兜 127。
