@@ -38,8 +38,8 @@
 
 ## E. 验证状态(2026-07-06 校正)
 
-- **parity 30/30 · vite build 绿 · src tsc/lint 净(0 错)**。全 ENFORCED 部分 byte-identical。
-- ⚠️ **`npm run lint` 全量【不绿】**:13 错,**全在旧诊断脚本**(`runpipeline-melody-chord-check`/`parent-key-check`/`mg-vs-auraflow-*`/`mg-2-polluter-deep`/`mg-engine-*` 等,引用已删模块,**非本迁移·待用户清理**)。本迁移新增的 3 个 audit 脚本(comp-onset/intent-family/phase1)已修净。**⚠️ 早前状态文档写"tsc 净"只覆盖 src,对全量 lint 不准确 —— 已校正。**
+- **parity 30/30 · vite build 绿 · `npm run lint` EXIT 0 全量真绿(0 错)**。全 ENFORCED 部分 byte-identical。
+- ✅ **旧诊断脚本 lint 债已收口(`12bc6fc`,用户签字)**:7 个引用已删模块的旧脚本 git mv → `scripts/legacy-diagnostics/`(+README,不删除,保留历史排查),`tsconfig.json` exclude 排除 → 全量 lint 13错→0。其余 `mg-*` 脚本保留(过 lint=引用 live 模块)。**⚠️ 早前状态文档写"tsc 净"只覆盖 src,对全量 lint 不准确 —— 已收口修正。**
 - ⚠️ 已知 12 测失败(9 文件)= **非本迁移**:6 用户并行 WIP(leadArticulation/leadSanitizer/leadLegato/jazzInstrumentPriority/keyboardCompColor/widePianoVoicings)+ 3 SLOPE 降权旋律位移连带(musicalityAuditor/pianoCompAudit/productLeadNonMutation,基线待更新)。
 - **审计 mode 校正**:`audit-comp-onset-intent` 早前把所有 rollHeavy 当 enforce(RNB observe 段被误计"18/20");现 `IntentSummary` 暴露逐字段 mode(bassMode/textureMode/compOnsetMode/leadMode),审计按【字段 mode】判 → ACG-only 14/14。
 
