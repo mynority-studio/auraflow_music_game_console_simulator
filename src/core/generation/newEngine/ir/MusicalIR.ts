@@ -24,6 +24,7 @@ export interface TrackMix {
   reverb: number;      // CC91
   chorus: number;      // CC93
   expression?: number; // CC11(静态,可选)
+  delay?: number;      // ★ Layer 2:CC95 send 进共享 song delay(可选,极克制;bass/drum/pad off)
 }
 
 export interface TrackIR {
