@@ -18,7 +18,7 @@ import type { AuditReport } from '../ir/AuditReport';
 import { renderAccompaniment } from './accompanimentRenderer';
 import { renderBass } from './bassRenderer';
 import { applyBassPatternSchedule } from './bassPatternSchedule';
-import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
+import { deriveMusicIntentPlan, summarizeMusicIntent } from '../arranger/deriveMusicIntentPlan';
 import type { MusicIntentPlan } from '../intent/MusicIntentPlan';
 import { buildTextureSchedule, deriveAcgBarFamilies } from './textureSchedule';
 import { auditHarmony } from './readOnlyHarmonyAuditor';
@@ -549,5 +549,6 @@ export function renderSongFull(
     ? denseMelodySpanRanges(applyRepeatGroupReplay(tracks, arrangement, plan.chordTimeline, timebase), plan, timebase)
     : [];
   const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
-  return { ir, audit: { findings: [...audit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))], texturePerBar: plan.chordTimeline.map((s) => textureSchedule[s.id] ?? '—') } };
+  // ★ Phase 7:render 把【自己消费的完整 intent】(含 ACG acgBarFamilyBySpan enforce)挂 report → 服务层不再重派生(消双源 + 修 audit gap)。
+  return { ir, audit: { findings: [...audit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))], texturePerBar: plan.chordTimeline.map((s) => textureSchedule[s.id] ?? '—'), intent: summarizeMusicIntent(intent) } };
 }

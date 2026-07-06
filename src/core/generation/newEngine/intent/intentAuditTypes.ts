@@ -30,5 +30,6 @@ export interface IntentSummary {
   style: string;
   mode: IntentMode;
   source: IntentSource;
+  acgBarFamilySpanCount?: number; // ★ Phase 3A/7:ACG 逐-bar family intent 覆盖的 span 数(enforce;非 ACG=0)
   sections: SectionIntentSummary[];
 }

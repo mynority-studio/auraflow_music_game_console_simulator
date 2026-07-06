@@ -79,6 +79,7 @@ export function deriveMusicIntentPlan(style: string, arrangement: ArrangementPla
 export function summarizeMusicIntent(plan: MusicIntentPlan): IntentSummary {
   return {
     version: 1, style: plan.style, mode: plan.mode, source: plan.source,
+    acgBarFamilySpanCount: plan.acgBarFamilyBySpan ? Object.keys(plan.acgBarFamilyBySpan).length : 0,
     sections: plan.sections.map((s) => ({
       sectionId: s.sectionId, sectionRole: s.sectionRole, functionTag: s.functionTag,
       startBeat: s.startBeat, bars: s.bars, energy: +s.energy.toFixed(2),
