@@ -3,6 +3,7 @@ import { buildInstrumentationPlan } from './instrumentalPlanner';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { createRandomContext } from '../foundation';
+import { playableRangeForRole } from '../knowledge/instruments';
 
 describe('instrumental/instrumentalPlanner', () => {
   const band = buildBandSpec({ seed: 1, styleHint: 'pop', mood: 'build', targetDuration: 120 });
@@ -22,8 +23,14 @@ describe('instrumental/instrumentalPlanner', () => {
   });
 
   it('每角色有 register 区间', () => {
-    expect(plan.registerByRole.bass.lowMidi).toBe(36);
-    expect(plan.registerByRole.lead.lowMidi).toBe(67);
+    const [leadLo, leadHi] = playableRangeForRole('lead', plan.roleProgram.lead);
+    const [bassLo, bassHi] = playableRangeForRole('bass', plan.roleProgram.bass);
+    expect(plan.registerByRole.bass.lowMidi).toBeGreaterThanOrEqual(bassLo);
+    expect(plan.registerByRole.bass.highMidi).toBeLessThanOrEqual(bassHi);
+    expect(plan.registerByRole.lead.lowMidi).toBeGreaterThanOrEqual(leadLo);
+    expect(plan.registerByRole.lead.highMidi).toBeLessThanOrEqual(leadHi);
+    expect(plan.registerByRole.lead.lowMidi).toBeLessThanOrEqual(plan.registerByRole.lead.highMidi);
+    expect(plan.registerByRole.comp.highMidi as number).toBeLessThan(plan.registerByRole.lead.highMidi as number);
   });
 
   it('hookAnchorSlots:覆盖所有 hook 句,主 hook(chorus)anchorRequired', () => {
@@ -43,7 +50,7 @@ describe('instrumental/instrumentalPlanner', () => {
   });
 
   it('reservedRegister = lead 区;densityCeiling 来自 styleProfile', () => {
-    expect(plan.melodyReservationPlan.reservedRegister.lowMidi).toBe(67);
+    expect(plan.melodyReservationPlan.reservedRegister).toEqual(plan.registerByRole.lead);
     expect(plan.melodyReservationPlan.densityCeiling).toBe(band.styleProfile.accompDensity);
   });
 
@@ -175,10 +182,10 @@ describe('instrumental/instrumentalPlanner — 链式协同 GM 选择', () => {
 
   it('吹奏手势计划由器配层随最终 program 下发,render 不再自行猜 GM 号', () => {
     const b0 = buildBandSpec({ seed: 8, styleHint: 'jazz', mood: 'build', targetDuration: 120 });
-    const b = { ...b0, roleProgram: { ...b0.roleProgram, lead: 66, comp: 4, bass: 32, drum: 40 } };
+    const b = { ...b0, roleProgram: { ...b0.roleProgram, lead: 67, comp: 4, bass: 32, drum: 40 } };
     const arr = buildArrangementPlan(b, { rng: createRandomContext(8) });
     const ip = buildInstrumentationPlan(b, arr, createRandomContext(8).substream('timbre'));
-    expect(ip.roleProgram.lead).toBe(66);
+    expect(ip.roleProgram.lead).toBe(67);
     expect(ip.gestureExpressionByRole.lead.kind).toBe('sax-breath-legato');
     expect(ip.gestureExpressionByRole.lead.breathModel).toBe('reed-continuous');
     expect(ip.gestureExpressionByRole.comp.kind).toBe('keyboard-touch');

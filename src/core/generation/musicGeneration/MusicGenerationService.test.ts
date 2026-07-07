@@ -97,10 +97,10 @@ describe('musicGeneration/MusicGenerationService', () => {
   });
 
   it('★ 器配手势计划下发到 uiSnapshot roster:键盘/鼓/bass/sax 可审计', async () => {
-    const r = await generateMusic({ seed: 1, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
+    const r = await generateMusic({ seed: 4, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
     const byRole = new Map(r.uiSnapshot.roster.map((p) => [p.role, p]));
     expect(byRole.get('lead')?.gesture?.kind).toBe('sax-breath-legato');
-    expect(byRole.get('lead')?.gesture?.ccControllers).toEqual([11, 2, 1]);
+    expect(byRole.get('lead')?.gesture?.ccControllers).toEqual([11, 2]);
     expect(byRole.get('comp')?.gesture?.kind).toBe('keyboard-touch');
     expect(byRole.get('comp')?.gesture?.pedalPolicy).toBe('none');
     expect(byRole.get('bass')?.gesture?.kind).toBe('bass-walk');

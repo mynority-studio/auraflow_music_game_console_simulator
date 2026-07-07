@@ -15,9 +15,10 @@ import type { InstrumentFamily, LineupConstraint } from '../newEngine/knowledge/
 import type { BandParticipantRole, BandParticipantSelection, QnRole } from './types';
 
 /** 每个参与乐手能承担的 Q+N role + 带来的家族 + 首选(必出)role 顺序。
- *  ★ 裁到可兑现:roles/families 只列引擎池真能出的(keyboard=lead/comp,bass,pad,drum,任意=lead)。 */
+ *  ★ 裁到可兑现:roles/families 只列引擎池真能出的(keyboard/guitar=lead/comp,bass,pad,drum,任意=lead)。 */
 const PARTICIPANT_CAP: Record<BandParticipantRole, { roles: QnRole[]; families?: InstrumentFamily[]; prefer: QnRole[] }> = {
   keyboardist: { roles: ['lead', 'comp'], families: ['keyboard'], prefer: ['comp', 'lead'] },
+  guitarist: { roles: ['lead', 'comp'], families: ['guitar'], prefer: ['comp', 'lead'] },
   bassist: { roles: ['bass'], families: ['bass'], prefer: ['bass'] },
   drummer: { roles: ['drum'], prefer: ['drum'] },               // 鼓走 ch9,不做家族过滤
   synthPlayer: { roles: ['pad'], families: ['pad'], prefer: ['pad'] },
@@ -25,7 +26,7 @@ const PARTICIPANT_CAP: Record<BandParticipantRole, { roles: QnRole[]; families?:
 };
 
 /** 乐手在 requiredRoles 贪心分配中的处理顺序(确定性)。 */
-const PARTICIPANT_ORDER: BandParticipantRole[] = ['keyboardist', 'bassist', 'drummer', 'synthPlayer', 'leadPlayer'];
+const PARTICIPANT_ORDER: BandParticipantRole[] = ['keyboardist', 'guitarist', 'bassist', 'drummer', 'synthPlayer', 'leadPlayer'];
 const ALL_ROLES: QnRole[] = ['lead', 'comp', 'bass', 'pad', 'drum'];
 
 /**

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   pickSpaceProfile,
+  songSpaceProfile,
   mixForProgram,
   enforceRelationalMix,
   type RoleMix,
@@ -11,10 +12,10 @@ import type { TimbreWorld } from '../knowledge/instruments';
 
 // 各风格【代表性】角色 → 生效 program(暖路线池内,与 instruments.ts 一致)。
 const PALETTE: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
-  pop:  { bass: [33, 38], comp: [0, 4, 5], lead: [0, 4, 66], pad: [89, 90, 49], drum: [0] },
-  lofi: { bass: [32, 33], comp: [4, 5, 0], lead: [4, 11, 12], pad: [89, 88, 48], drum: [0] },
-  rnb:  { bass: [33, 35], comp: [4, 5, 0], lead: [4, 5, 66], pad: [89, 90, 98], drum: [0] },
-  jazz: { bass: [32, 33], comp: [0, 4], lead: [0, 11, 66], pad: [48, 49, 89], drum: [0] },
+  pop:  { bass: [32, 38], comp: [0, 5, 24, 25], lead: [0, 5, 25, 11, 108], pad: [89], drum: [0] },
+  lofi: { bass: [32, 38], comp: [5, 24, 25, 0], lead: [5, 0, 11, 108, 25], pad: [89], drum: [0] },
+  rnb:  { bass: [32, 38], comp: [5, 25, 0, 24], lead: [5, 0, 25, 11], pad: [89], drum: [0] },
+  jazz: { bass: [32], comp: [0, 5, 25], lead: [0, 11, 67], pad: [89], drum: [0] },
 };
 
 const isInt = (v: number) => Number.isInteger(v);
@@ -88,6 +89,46 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(mk('lead', 5).chorus).toBeGreaterThan(mk('lead', 4).chorus);
   });
 
+  it('CityPop FM EP 5 有 80s/DX7 空间:release 之外还给 reverb/chorus/delay send', () => {
+    const comp = mk('comp', 5);
+    const lead = mk('lead', 5);
+    expect(comp.volume).toBeLessThan(84);
+    expect(lead.volume).toBeLessThan(90);
+    expect(comp.reverb).toBeGreaterThanOrEqual(54);
+    expect(lead.reverb).toBeGreaterThanOrEqual(56);
+    expect(comp.chorus).toBeGreaterThanOrEqual(86);
+    expect(lead.chorus).toBeGreaterThanOrEqual(84);
+    expect(comp.delay).toBe(26);
+    expect(lead.delay).toBe(28);
+  });
+
+  it('吉他 comp 保持干短:低 reverb/chorus,且不进 delay', () => {
+    for (const p of [24, 25]) {
+      const m = mk('comp', p);
+      expect(m.volume, `GM${p} comp volume`).toBeLessThanOrEqual(78);
+      expect(m.reverb, `GM${p} comp reverb`).toBeLessThanOrEqual(20);
+      expect(m.chorus, `GM${p} comp chorus`).toBeLessThanOrEqual(2);
+      expect(m.delay, `GM${p} comp delay`).toBeUndefined();
+    }
+  });
+
+  it('民谣木吉他 25 不走 clean-electric delay,bass/drum/pad 不进 delay', () => {
+    expect(mk('lead', 25).delay).toBeUndefined();
+    expect(mk('comp', 25).delay).toBeUndefined();
+    expect(mk('bass', 32).delay).toBeUndefined();
+    expect(mk('drum', 0).delay).toBeUndefined();
+    expect(mk('pad', 89).delay).toBeUndefined();
+  });
+
+  it('POP 无 pad 的 dryFront 也打开 eighth delay bus,供 EP/lofi delay 使用', () => {
+    const warm = songSpaceProfile('pop', undefined, true);
+    const dry = songSpaceProfile('pop', undefined, false);
+    expect(warm.delayMode).toBe('eighth');
+    expect(warm.delayFeedback).toBeGreaterThan(0);
+    expect(dry.delayMode).toBe('eighth');
+    expect(dry.delayFeedback).toBeGreaterThan(0);
+  });
+
   it('Clav 7:reverb ≤ 30(各空间)', () => {
     for (const sp of ['popWarmRoom', 'rnbPlateRoom', 'syntheticSoftRoom'] as SpaceProfile[]) {
       const m = mixForProgram({ style: 'rnb', timbreWorld: undefined, role: 'comp', program: 7, hasPad: true, space: sp });
@@ -95,13 +136,12 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     }
   });
 
-  it('马林巴/卡林巴 12/108:chorus ≤ 16', () => {
-    expect(mk('lead', 12).chorus).toBeLessThanOrEqual(16);
-    expect(mk('lead', 108).chorus).toBeLessThanOrEqual(16);
+  it('颤音琴/马林巴/卡林巴 mallet 音准优先:chorus == 0', () => {
+    for (const p of [11, 12, 107, 108]) expect(mk('lead', p).chorus).toBe(0);
   });
 
   it('lead pan 居中 58..70(各 program)', () => {
-    for (const p of [0, 4, 11, 12, 66, 75]) {
+    for (const p of [0, 4, 11, 12, 67, 75]) {
       const m = mk('lead', p);
       expect(m.pan).toBeGreaterThanOrEqual(58);
       expect(m.pan).toBeLessThanOrEqual(70);
@@ -115,7 +155,7 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
 
   // ★ melody-forward(2026-06-23,用户:走 A 整编旋律声音小):lead CC7 抬高 → 旋律明显坐在 comp 之上。
   it('★ lead.volume > comp.volume(同 program,旋律在 comp 之上)且 ≥ 92', () => {
-    for (const p of [0, 4, 11, 12, 6, 66]) { // jazz/暖路线代表 lead program
+    for (const p of [0, 4, 11, 12, 6, 67]) { // jazz/暖路线代表 lead program
       const lead = mk('lead', p).volume;
       const comp = mk('comp', p).volume;
       expect(lead, `gm${p} lead 比 comp 响`).toBeGreaterThan(comp);

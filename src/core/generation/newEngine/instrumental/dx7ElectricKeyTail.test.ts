@@ -1,21 +1,30 @@
 // ============================================================
 // Layer 1 · DX7 / Electric-Key Tail(three-layer mix plan, Checkpoint 1)
 // ------------------------------------------------------------
-// 验收:EP(GM4/5)lead 尾音靠 CC72 release(保 MG parity,不改音符)+ 无 blanket pedal;
-//   EP comp 保留 harmonic-change pedal(CC64);tail(CC72)与 reverb/chorus send(CC91/93)分开。
+// 验收:EP(GM4/5)lead/comp 尾音靠 CC72 release(保 MG parity,不改音符)+ lead 无 blanket pedal;
+//   EP comp 同时保留 harmonic-change pedal(CC64);tail(CC72)与 reverb/chorus send(CC91/93)分开。
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
 import { gestureExpressionForProgram, applyGestureExpressionToTrack, isElectricKeyProgram } from './gestureExpression';
-import { midi, ticks, type Timebase } from '../foundation';
+import { createTimebase, midi, ticks } from '../foundation';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
-const TB: Timebase = { ppq: ticks(480) } as unknown as Timebase;
+const TB = createTimebase({ meter: { numerator: 4, denominator: 4 } });
 const leadTrack = (program: number): TrackIR => ({
   role: 'lead', program,
   notes: [
     { pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 },
     { pitch: midi(74), startTick: ticks(960), durationTicks: ticks(240), velocity: 88 }, // 后有空拍(release 响进来)
+  ] as NoteIR[],
+} as unknown as TrackIR);
+
+const compTrack = (program: number): TrackIR => ({
+  role: 'comp', program,
+  notes: [
+    { pitch: midi(60), startTick: ticks(0), durationTicks: ticks(480), velocity: 72 },
+    { pitch: midi(64), startTick: ticks(0), durationTicks: ticks(480), velocity: 68 },
+    { pitch: midi(67), startTick: ticks(0), durationTicks: ticks(480), velocity: 70 },
   ] as NoteIR[],
 } as unknown as TrackIR);
 
@@ -32,15 +41,18 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect(g.releaseCc).toBe(72);
     expect(g.pedalPolicy).toBe('none');
     expect(g.ccControllers).toContain(72);
+    expect(g.ccControllers).toContain(74);
     expect(g.ccControllers).not.toContain(64); // ★ lead 永不 blanket pedal
   });
 
-  it('EP comp(program5,pop):保留 harmonic-change pedal(CC64)· tailPolicy=electric-key-tail', () => {
+  it('EP comp(program5,pop):保留 harmonic-change pedal(CC64)· 同时有 CC72 release tail', () => {
     const g = gestureExpressionForProgram('comp', 5, 'pop');
     expect(g.tailPolicy).toBe('electric-key-tail');
     expect(g.pedalPolicy).toBe('harmonic-change');
     expect(g.ccControllers).toContain(64);
-    expect(g.releaseCc).toBeUndefined(); // comp 靠 pedal,不靠 CC72
+    expect(g.ccControllers).toContain(72);
+    expect(g.ccControllers).toContain(74);
+    expect(g.releaseCc).toBe(72);
   });
 
   it('非 EP 键盘 lead(program0 钢琴):tailPolicy=keyboard-natural · 无 CC72', () => {
@@ -61,7 +73,18 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     const cc72 = (out.ccEvents ?? []).filter((e) => e.controller === 72);
     expect(cc72.length).toBe(1);
     expect(cc72[0].value).toBeGreaterThan(64);
+    const cc74 = (out.ccEvents ?? []).filter((e) => e.controller === 74);
+    expect(cc74).toEqual([{ atTick: ticks(0), controller: 74, value: 54 }]);
     // tail(CC72)不是 reverb/chorus send(CC91/93)—— 分层
+    expect((out.ccEvents ?? []).some((e) => e.controller === 91 || e.controller === 93)).toBe(false);
+  });
+
+  it('EP comp 落地:发 CC72 release 增强,且不混入 reverb/chorus send', () => {
+    const out = applyGestureExpressionToTrack(compTrack(5), gestureExpressionForProgram('comp', 5, 'pop'), TB);
+    const cc72 = (out.ccEvents ?? []).filter((e) => e.controller === 72);
+    expect(cc72.length).toBe(1);
+    expect(cc72[0].value).toBeGreaterThan(64);
+    expect((out.ccEvents ?? []).filter((e) => e.controller === 74)).toEqual([{ atTick: ticks(0), controller: 74, value: 54 }]);
     expect((out.ccEvents ?? []).some((e) => e.controller === 91 || e.controller === 93)).toBe(false);
   });
 

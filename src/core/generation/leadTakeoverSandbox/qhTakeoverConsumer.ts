@@ -7,17 +7,20 @@
 // ============================================================
 
 import type { MidiEvent } from '../../audio/MidiScheduler';
+import { mapProgramToAura25 } from '../../sound/Aura25Palette';
 import type { MusicGenerationResult, MusicGenerationUiSnapshot, UiChord, UiGrooveContract } from '../musicGeneration/types';
+import { fitMidiToProgramRange } from '../newEngine/knowledge/instruments';
 import type { LeadTakeoverAction, TakeoverChordSource, TakeoverGrooveContract, TakeoverMusicSnapshot } from './types';
 
 export const TAKEOVER_USER_CHANNEL = 15;
 const NATIVE_LEAD_CHANNEL = 1;
-const DEFAULT_LEAD_PROGRAM = 73;
+const DEFAULT_LEAD_PROGRAM = 0;
 const DEFAULT_LEAD_VOLUME = 74;
 const DEFAULT_LEAD_PAN = 64;
 const DEFAULT_LEAD_REVERB = 36;
 const DEFAULT_LEAD_CHORUS = 0;
 const DEFAULT_LEAD_EXPRESSION = 127;
+const DEFAULT_LEAD_DELAY = 0;
 const TAKEOVER_AUDIO_SCHEDULE_LOOKAHEAD_MS = 25;
 const MAX_TAKEOVER_TRACKED_NOTES = 32;
 const pendingHardMuteTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -47,6 +50,7 @@ interface LeadVoice {
   reverb: number;
   chorus: number;
   expression: number;
+  delay: number;
 }
 
 interface PendingTakeoverNote {
@@ -101,13 +105,16 @@ function leadVoiceFromResult(result: MusicGenerationResult | null): LeadVoice {
   const leadTrack = result?.ir?.tracks.find((t) => t.role === 'lead');
   const uiLead = result?.uiSnapshot.tracks.find((t) => t.role === 'lead');
   const mix = leadTrack?.mix;
+  const style = result?.styleHint ?? result?.uiSnapshot.styleHint;
+  const rawProgram = clampMidi(leadTrack?.program ?? uiLead?.program ?? DEFAULT_LEAD_PROGRAM);
   return {
-    program: clampMidi(leadTrack?.program ?? uiLead?.program ?? DEFAULT_LEAD_PROGRAM),
+    program: mapProgramToAura25(rawProgram, 'lead', style),
     volume: clampMidi(mix?.volume ?? DEFAULT_LEAD_VOLUME),
     pan: clampMidi(mix?.pan ?? DEFAULT_LEAD_PAN),
     reverb: clampMidi(mix?.reverb ?? DEFAULT_LEAD_REVERB),
     chorus: clampMidi(mix?.chorus ?? DEFAULT_LEAD_CHORUS),
     expression: clampMidi(mix?.expression ?? DEFAULT_LEAD_EXPRESSION),
+    delay: clampMidi(mix?.delay ?? DEFAULT_LEAD_DELAY),
   };
 }
 
@@ -119,6 +126,7 @@ function voiceKey(voice: LeadVoice): string {
     voice.reverb,
     voice.chorus,
     voice.expression,
+    voice.delay,
   ].join(':');
 }
 
@@ -184,6 +192,14 @@ function sendNoteOff(
     return;
   }
   target.injectMidiEvent({ ticks: tick, type: 'noteOff', channel, data1: midi, data2: 0 });
+}
+
+function fitTakeoverMidiForVoice(midi: number, voice: LeadVoice): number {
+  return fitMidiToProgramRange(clampMidi(midi), 'lead', voice.program);
+}
+
+function logMidi(original: number, fitted: number): string {
+  return original === fitted ? `${fitted}` : `${original}→${fitted}`;
 }
 
 function midiKey(channel: number, midi: number): string {
@@ -457,7 +473,22 @@ function releaseDelayedOrStartedNote(
 
   const key = pendingKey(channel, midi, noteId);
   const note = notes.get(key);
-  if (!note) return false;
+  if (!note) {
+    const suffix = `:${noteId}`;
+    for (const [fallbackKey, fallbackNote] of [...notes.entries()]) {
+      if (!fallbackKey.startsWith(`${channel}:`) || !fallbackKey.endsWith(suffix)) continue;
+      if (!fallbackNote.started) {
+        clearPendingNote(fallbackNote);
+        notes.delete(fallbackKey);
+      } else {
+        releasePendingNote(target, tick, fallbackNote);
+        notes.delete(fallbackKey);
+      }
+      if (notes.size === 0) pendingNoteTimers.delete(target as object);
+      return true;
+    }
+    return false;
+  }
   if (!note.started) {
     clearPendingNote(note);
     notes.delete(key);
@@ -482,6 +513,7 @@ function injectVoiceSetup(
   sendControlChange(target, tick, channel, 91, voice.reverb);
   sendControlChange(target, tick, channel, 93, voice.chorus);
   sendControlChange(target, tick, channel, 11, voice.expression);
+  if (voice.delay > 0) sendControlChange(target, tick, channel, 95, voice.delay);
 }
 
 function ensureUserVoiceSetup(
@@ -624,23 +656,27 @@ export function executeLeadTakeoverActions(
     if (action.type === 'lead-note-on') {
       const delayMs = Math.max(0, action.timing?.delayMs ?? 0);
       const velocity = clampMidi(action.velocity);
+      const midi = fitTakeoverMidiForVoice(action.midi, voice);
+      const midiLabel = logMidi(action.midi, midi);
       if (delayMs > 0) {
-        scheduleDelayedNoteOn(target, baseTick, userChannel, action.midi, velocity, delayMs, voice, action.noteId);
-        logs.push(`takeover qNoteOn ch${userChannel} ${action.midi} +${Math.round(delayMs)}ms`);
+        scheduleDelayedNoteOn(target, baseTick, userChannel, midi, velocity, delayMs, voice, action.noteId);
+        logs.push(`takeover qNoteOn ch${userChannel} ${midiLabel} +${Math.round(delayMs)}ms`);
       } else {
-        sendImmediateTrackedNoteOn(target, baseTick, userChannel, action.midi, velocity, voice, action.noteId);
-        logs.push(`takeover noteOn ch${userChannel} ${action.midi} v${velocity}`);
+        sendImmediateTrackedNoteOn(target, baseTick, userChannel, midi, velocity, voice, action.noteId);
+        logs.push(`takeover noteOn ch${userChannel} ${midiLabel} v${velocity}`);
       }
     } else if (action.type === 'lead-note-off') {
       const delayMs = Math.max(0, action.timing?.delayMs ?? 0);
+      const midi = fitTakeoverMidiForVoice(action.midi, voice);
+      const midiLabel = logMidi(action.midi, midi);
       if (delayMs > 0) {
-        scheduleDelayedNoteOff(target, baseTick, userChannel, action.midi, delayMs, action.noteId);
-        logs.push(`takeover qNoteOff ch${userChannel} ${action.midi} +${Math.round(delayMs)}ms`);
-      } else if (!releaseDelayedOrStartedNote(target, baseTick, userChannel, action.midi, action.noteId)) {
-        sendNoteOff(target, baseTick, userChannel, action.midi);
-        logs.push(`takeover noteOff ch${userChannel} ${action.midi}`);
+        scheduleDelayedNoteOff(target, baseTick, userChannel, midi, delayMs, action.noteId);
+        logs.push(`takeover qNoteOff ch${userChannel} ${midiLabel} +${Math.round(delayMs)}ms`);
+      } else if (!releaseDelayedOrStartedNote(target, baseTick, userChannel, midi, action.noteId)) {
+        sendNoteOff(target, baseTick, userChannel, midi);
+        logs.push(`takeover noteOff ch${userChannel} ${midiLabel}`);
       } else {
-        logs.push(`takeover noteOff ch${userChannel} ${action.midi}`);
+        logs.push(`takeover noteOff ch${userChannel} ${midiLabel}`);
       }
     } else if (action.type === 'lead-mute') {
       if (!action.muted) {

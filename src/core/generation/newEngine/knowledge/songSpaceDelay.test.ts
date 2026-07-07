@@ -26,17 +26,21 @@ describe('Layer 2 · SongSpaceProfile(器配-owned 真源)', () => {
 });
 
 describe('Layer 2 · delay(CC95)极克制策略(拍板 D)', () => {
-  it('lead:rnb / DX7(EP) / lofi 有 delay;其余 0', () => {
+  it('lead:rnb / DX7(EP) / lofi 有 delay;普通 pop/jazz/folk guitar lead 为 0', () => {
     expect(delaySendForRole('rnb', 'lead', 0)).toBe(26);   // rnb lead
-    expect(delaySendForRole('pop', 'lead', 5)).toBe(26);   // DX7 EP lead(任何 style)
+    expect(delaySendForRole('pop', 'lead', 5)).toBe(28);   // DX7/CityPop EP lead(任何 style)
     expect(delaySendForRole('lofi', 'lead', 0)).toBe(22);  // lofi lead
+    expect(delaySendForRole('pop', 'lead', 25)).toBe(0);   // folk guitar 不走 clean-electric delay
     expect(delaySendForRole('pop', 'lead', 0)).toBe(0);    // pop 非 EP lead → off
     expect(delaySendForRole('jazz', 'lead', 0)).toBe(0);
   });
-  it('comp:只 lofi;其余 0', () => {
+  it('comp:CityPop EP 与 lofi 有 delay;其余 0', () => {
     expect(delaySendForRole('lofi', 'comp', 0)).toBe(22);
+    expect(delaySendForRole('lofi', 'comp', 24)).toBe(0);
+    expect(delaySendForRole('lofi', 'comp', 25)).toBe(0);
+    expect(delaySendForRole('pop', 'comp', 25)).toBe(0);
     expect(delaySendForRole('rnb', 'comp', 0)).toBe(0);
-    expect(delaySendForRole('pop', 'comp', 5)).toBe(0);    // EP comp 也不给(comp 只 lofi)
+    expect(delaySendForRole('pop', 'comp', 5)).toBe(26);   // DX7/CityPop EP comp 需要 80s rack delay
   });
   it('bass/drum/pad 永远 0', () => {
     for (const s of ['pop', 'rnb', 'lofi', 'jazz']) {
@@ -59,6 +63,6 @@ describe('Layer 2 · delay 不改 reverb/chorus(保浏览器平衡)+ CC95 端到
     const lofi = musicalIRToMidiEvents(generateMusicSync({ seed: 1, styleHint: 'lofi', mood: 'build', targetDuration: 90, key: 'C' }).ir!);
     const cc95 = lofi.filter((e) => e.type === 'cc' && e.data1 === 95);
     expect(cc95.length).toBeGreaterThan(0);      // lofi 有 delay
-    expect(cc95.every((e) => (e.data2 as number) <= 30)).toBe(true); // 极克制(≤30)
+    expect(cc95.every((e) => (e.data2 as number) <= 28)).toBe(true); // 克制但能听到空间(≤28)
   });
 });

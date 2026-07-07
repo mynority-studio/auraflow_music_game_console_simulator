@@ -56,6 +56,17 @@ describe('Loop H · 规则触发', () => {
     expect(ids).toContain('comp-continuity-gap');
   });
 
+  it('吉他 COMP 短扫拨不套键盘铺底连续性误报', () => {
+    const f = fixtures({
+      drumNotes: [note(BAR + 240)],
+      compNotes: [note(BAR * 2, 80, 134), note(BAR * 3, 76, 134), note(BAR * 4, 72, 134)],
+    });
+    const comp = f.ir.tracks.find((t) => t.role === 'comp') as unknown as { program: number };
+    comp.program = 25;
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'pop').findings.map((finding) => finding.ruleId);
+    expect(ids).not.toContain('comp-continuity-gap');
+  });
+
   it('texture-clock-drift(Loop I):LOFI comp 柱式块【系统性】离 8 分格远 → 报', () => {
     // 4 个柱式块全落在 +0.58(dusty chop 整体漂)→ 100% drift > 15% 阈值
     const blocks: ReturnType<typeof note>[] = [];

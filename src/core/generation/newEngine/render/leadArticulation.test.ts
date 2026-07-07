@@ -32,23 +32,24 @@ describe('render/leadArticulation · 快速 lead 连音 legato(CODEX directive 2
     expect(out[0].pitch).toBe(60);
   });
 
-  it('§7.3 乐句断点保留:IOI > 0.75 拍不连音', () => {
-    const out = connectFastLeadNoteIR([n(60, 0, 144), n(62, 720, 144)], jazzOpts); // IOI 720 > 360
+  it('§7.3 乐句断点保留:IOI > 1.10 拍不连音', () => {
+    const out = connectFastLeadNoteIR([n(60, 0, 144), n(62, 720, 144)], jazzOpts); // IOI 720 > 528
     expect(out[0].durationTicks).toBe(144); // 不被延到 720
   });
 
-  it('非 jazz 风格 enabled=false → 原样返回(durationTicks 全不变)', () => {
+  it('非 jazz lead 也启用连贯旋律线,快速不同音高会连到下一起音', () => {
     const src = [n(60, 0, 144), n(62, 320, 96), n(64, 480, 144)];
     const popOpts = fastLeadLegatoOptionsForStyle('POP', PPQ);
-    expect(popOpts.enabled).toBe(false);
+    expect(popOpts.enabled).toBe(true);
     const out = connectFastLeadNoteIR(src, popOpts);
-    expect(out.map((x) => x.durationTicks)).toEqual(src.map((x) => x.durationTicks));
+    expect(out.map((x) => x.durationTicks)).toEqual([ticks(320), ticks(160), ticks(144)]);
   });
 
-  it('blues 也启用;jazz 默认参数符合 directive §4', () => {
+  it('blues 也启用;jazz 默认参数符合当前 lead 连贯策略', () => {
     expect(fastLeadLegatoOptionsForStyle('BLUES', PPQ).enabled).toBe(true);
-    expect(jazzOpts.maxConnectIoiTicks).toBe(Math.round(PPQ * 0.75));
+    expect(jazzOpts.maxConnectIoiTicks).toBe(Math.round(PPQ * 1.10));
     expect(jazzOpts.samePitchGapTicks).toBe(1);
+    expect(fastLeadLegatoOptionsForStyle('MODAL', PPQ).maxConnectIoiTicks).toBe(Math.round(PPQ * 1.25));
   });
 
   // §7.4 Q+N 回归:jazz 成曲 lead 快速线条触碰、无同音高撞、articulation 高;非 jazz 不变
@@ -65,10 +66,9 @@ describe('render/leadArticulation · 快速 lead 连音 legato(CODEX directive 2
     }
   });
 
-  it('§7.4 默认非 jazz generateSong lead 不被 legato 改(pop/lofi/rnb 风格 enabled=false)', () => {
+  it('§7.4 默认非 jazz generateSong lead 也启用 legato,且端到端不抛', () => {
     for (const style of ['pop', 'lofi', 'rnb'] as const) {
-      expect(fastLeadLegatoOptionsForStyle(style.toUpperCase(), 480).enabled).toBe(false);
-      // 端到端不抛 + lead 存在(legato no-op 不破坏非 jazz 链)
+      expect(fastLeadLegatoOptionsForStyle(style.toUpperCase(), 480).enabled).toBe(true);
       const song = generateSong({ seed: 5, styleHint: style, mood: 'build', targetDuration: 96 });
       expect(song.status).not.toBe('failed');
     }
@@ -83,13 +83,13 @@ describe('render/leadArticulation · 快速 lead 连音 legato(CODEX directive 2
     const tb = createTimebase({ meter: { numerator: arr.meter.numerator, denominator: arr.meter.denominator }, tempoMap: [{ atBeat: beats(0), bpm: arr.tempoBpm }] });
     return { band, arr, instr, plan, tb };
   }
-  // 故意 staccato 的快速 lead(dur 60 << IOI 240)→ jazz 应被连起来,pop 不连
+  // 故意 staccato 的快速 lead(dur 60 << IOI 240)→ 当前策略下 jazz/pop 都应连成旋律线。
   const staccatoOverride = (): TrackIR => ({
     role: 'lead',
     notes: Array.from({ length: 16 }, (_, i) => ({ pitch: midi(72 + (i % 2) * 2), startTick: ticks(i * 240), durationTicks: ticks(60), velocity: 90 })),
   });
 
-  it('★ 走 A:override(motif)lead 也接 legato — jazz 连起来(触碰率≥0.8)、pop 不连(staccato 留空)', () => {
+  it('★ 走 A:override(motif)lead 也接 legato — jazz/pop 都连起来(触碰率≥0.8)', () => {
     const ov = staccatoOverride();
     const j = setup(3, 'jazz');
     const jLead = renderSongFull(j.band, j.arr, j.plan, j.instr, j.tb, createRandomContext(3), undefined, ov).ir.tracks.find((t) => t.role === 'lead')!;
@@ -98,8 +98,8 @@ describe('render/leadArticulation · 快速 lead 连音 legato(CODEX directive 2
     const pLead = renderSongFull(p.band, p.arr, p.plan, p.instr, p.tb, createRandomContext(3), undefined, ov).ir.tracks.find((t) => t.role === 'lead')!;
     const pm = leadLegatoMetrics(pLead.notes, p.tb.ppq);
     expect(jm.touchOrTinyGapRate, 'jazz override 连起来').toBeGreaterThanOrEqual(0.8);
-    expect(pm.touchOrTinyGapRate, 'pop override 不连(staccato)').toBeLessThan(0.5);
-    expect(jm.touchOrTinyGapRate, 'jazz 比 pop 更连').toBeGreaterThan(pm.touchOrTinyGapRate);
+    expect(pm.touchOrTinyGapRate, 'pop override 连起来').toBeGreaterThanOrEqual(0.8);
     expect(jm.samePitchCollisionCount, 'jazz override 同音撞=0').toBe(0);
+    expect(pm.samePitchCollisionCount, 'pop override 同音撞=0').toBe(0);
   });
 });

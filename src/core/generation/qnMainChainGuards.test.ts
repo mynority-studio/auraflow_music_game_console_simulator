@@ -115,4 +115,12 @@ describe('generation/qnMainChainGuards — Band Selection 行为(§4)', () => {
       if (t) expect(instrumentInfo(t.program).family).toBe('keyboard');
     }
   });
+
+  it('guitarist selected → 最终有 guitar 家族轨,roster 归属 guitarist', async () => {
+    const { instrumentInfo } = await import('./newEngine/knowledge/instruments');
+    const r = gen([{ role: 'guitarist', state: 'selected' }]);
+    const guitarTracks = r.ir!.tracks.filter((t) => instrumentInfo(t.program).family === 'guitar');
+    expect(guitarTracks.length).toBeGreaterThan(0);
+    expect(r.uiSnapshot.roster.some((row) => row.participant === 'guitarist' && instrumentInfo(row.program).family === 'guitar')).toBe(true);
+  });
 });

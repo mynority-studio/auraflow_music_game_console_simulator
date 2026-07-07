@@ -35,13 +35,13 @@ export interface SongSpaceProfile {
   delayFeedback: number;
 }
 
-// 每空间的 FX 参数(确定性)。★ 值当前主要给 ESP32 契约 + 文档;浏览器 SpessaSynth 只吃 CC91/93 send,无 CC95 delay bus(拍板 E)。
+// 每空间的 FX 参数(确定性)。★ ESP32 消费完整 FX 契约;浏览器 scheduler 将 CC95 预渲染为轻量 echo。
 const SONG_SPACE_PROFILES: Record<SpaceProfile, SongSpaceProfile> = {
-  popWarmRoom:      { id: 'popWarmRoom',      reverbTime: 0.52, reverbLevel: 0.40, predelayMs: 12, damping: 0.50, chorusLfoHz: 0.6, chorusDepth: 0.18, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
+  popWarmRoom:      { id: 'popWarmRoom',      reverbTime: 0.52, reverbLevel: 0.40, predelayMs: 12, damping: 0.50, chorusLfoHz: 0.6, chorusDepth: 0.18, chorusBaseDelay: 8, delayMode: 'eighth',        delayFeedback: 0.12 },
   lofiTapeRoom:     { id: 'lofiTapeRoom',     reverbTime: 0.46, reverbLevel: 0.35, predelayMs: 8,  damping: 0.62, chorusLfoHz: 0.4, chorusDepth: 0.22, chorusBaseDelay: 10, delayMode: 'eighth',        delayFeedback: 0.18 }, // dusty
   rnbPlateRoom:     { id: 'rnbPlateRoom',     reverbTime: 0.60, reverbLevel: 0.45, predelayMs: 15, damping: 0.42, chorusLfoHz: 0.7, chorusDepth: 0.20, chorusBaseDelay: 8, delayMode: 'dotted-eighth',  delayFeedback: 0.16 },
   jazzClub:         { id: 'jazzClub',         reverbTime: 0.40, reverbLevel: 0.30, predelayMs: 18, damping: 0.55, chorusLfoHz: 0.5, chorusDepth: 0.14, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
-  dryFront:         { id: 'dryFront',         reverbTime: 0.25, reverbLevel: 0.20, predelayMs: 5,  damping: 0.60, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
+  dryFront:         { id: 'dryFront',         reverbTime: 0.25, reverbLevel: 0.20, predelayMs: 5,  damping: 0.60, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'eighth',        delayFeedback: 0.10 },
   syntheticSoftRoom:{ id: 'syntheticSoftRoom',reverbTime: 0.55, reverbLevel: 0.42, predelayMs: 10, damping: 0.50, chorusLfoHz: 0.8, chorusDepth: 0.24, chorusBaseDelay: 10, delayMode: 'quarter',       delayFeedback: 0.14 },
 };
 
@@ -50,13 +50,17 @@ export function songSpaceProfile(style: string, world: TimbreWorld | undefined, 
   return SONG_SPACE_PROFILES[pickSpaceProfile(style, world, hasPad)];
 }
 
-/** ★ Layer 2 delay 策略(拍板 D,极克制):CC95 send。rnb/DX7 lead·lofi lead+comp = very low;其余/bass/drum/pad = 0。 */
+/** ★ Layer 2 delay 策略(拍板 D):CC95 send。GM5 CityPop/DX7 EP = lead/comp 都进轻量空间;其余仍克制。 */
 export function delaySendForRole(style: string, role: InstrumentRoleName, program: number): number {
   const s = style.toLowerCase();
   if (role === 'bass' || role === 'drum' || role === 'pad') return 0; // 拍板:bass/drum off · pad mostly off
-  const isEP = program === 4 || program === 5; // DX7/GM5 电钢
+  const isCityPopFmEp = program === 5;
+  const isEP = program === 4 || isCityPopFmEp; // GM4 Rhodes EP1 · GM5 DX7/FM EP2
+  const isGuitar = program >= 24 && program <= 31;
+  if (role === 'comp' && isGuitar) return 0; // 吉他扫拨自身 already busy:不再进共享 delay,避免浏览器 echo + reverb 多重叠加。
+  if (isCityPopFmEp) return role === 'lead' ? 28 : 26; // 80s rack delay:柔和可闻,不过分顶出
   if (role === 'lead') {
-    if (s === 'rnb' || isEP) return 26;  // rnb / DX7 lead:dotted-eighth/eighth,very low
+    if (s === 'rnb' || isEP) return 26;  // rnb / 非 GM5 EP lead:dotted-eighth/eighth,very low
     if (s === 'lofi') return 22;         // lofi lead:dusty,very low
     return 0;
   }
@@ -112,19 +116,21 @@ type ProgOverride = Partial<Record<InstrumentRoleName, Partial<RoleMix>>>;
 const PROGRAM_MIX: Record<number, ProgOverride> = {
   // Piano 0
   0: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
-  // 电钢 5(POP/LOFI/RNB 最重要;CityPop/DX7 电钢,慢 chorus + 数字混响托出 80s 空间)
-  5: { comp: { volume: 86, reverb: 48, chorus: 70 }, lead: { volume: 78, reverb: 52, chorus: 66 } },
+  // 电钢 5(POP/LOFI/RNB 最重要;CityPop/DX7 电钢,柔触键 + 慢 chorus + 数字混响 + 轻量 delay 托出 80s/vaporwave 空间)
+  5: { comp: { volume: 78, reverb: 62, chorus: 86 }, lead: { volume: 70, reverb: 66, chorus: 84 } },
   6: { comp: { volume: 80, reverb: 29, chorus: 4 }, lead: { volume: 80, reverb: 29, chorus: 4 } }, // 羽管键琴:干、保 attack
   8: { comp: { volume: 80, reverb: 40, chorus: 6 }, lead: { volume: 80, reverb: 45, chorus: 5 } }, // Celesta(归键盘,按钢琴系)
   11: { lead: { volume: 79, reverb: 58, chorus: 32 } }, // 颤音琴:金属延音吃空间
   12: { lead: { volume: 81, reverb: 41, chorus: 7 } },  // 马林巴:保木质 attack
   108: { lead: { volume: 81, reverb: 41, chorus: 7 } }, // 卡林巴
   107: { lead: { volume: 80, reverb: 44, chorus: 10 } }, // 古筝(拨弦,略带空间)
-  27: { comp: { volume: 82, reverb: 28, chorus: 14 } }, // R&B clean guitar:靠前、少混响,保切分颗粒
+  24: { comp: { volume: 76, reverb: 18, chorus: 0 }, lead: { volume: 78, reverb: 34, chorus: 2 } }, // 尼龙吉他 comp:干、短、保拨弦 attack
+  25: { comp: { volume: 78, reverb: 20, chorus: 2 }, lead: { volume: 80, reverb: 38, chorus: 4 } }, // 民谣/钢弦木吉他 comp 不进厚空间,避免扫拨糊
   40: { lead: { volume: 72, reverb: 56, chorus: 8 } },  // 小提琴:留 room,音量低于 sax,避免高频顶出
   // 管乐/萨克斯(气声,中低音区)
   65: { lead: { volume: 78, reverb: 46, chorus: 8 } },
-  66: { lead: { volume: 78, reverb: 62, chorus: 10 } },
+  66: { lead: { volume: 78, reverb: 62, chorus: 0 } },
+  67: { lead: { volume: 80, reverb: 58, chorus: 0 } },
   75: { lead: { volume: 80, reverb: 50, chorus: 12 } }, 77: { lead: { volume: 80, reverb: 48, chorus: 10 } },
   // 贝斯
   32: { bass: { volume: 66, reverb: 5, chorus: 2 } }, 33: { bass: { volume: 66, reverb: 5, chorus: 2 } },
@@ -144,6 +150,7 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
 const isFxPad = (p: number) => p === 98 || p === 99 || p === 100 || p === 102;
 const isWarmPad = (p: number) => p === 88 || p === 89 || p === 90 || p === 94 || p === 95;
 const isElectricPiano = (p: number) => p === 4 || p === 5; // GM4 Rhodes EP1 · GM5 DX7 EP2(都需 chorus)
+const isMalletProgram = (p: number) => p === 11 || p === 12 || p === 107 || p === 108;
 
 /**
  * 据 style+timbreWorld+role+【生效】program 算该角色混音(单角色;关系型护栏 enforceRelationalMix 后处理)。
@@ -173,8 +180,14 @@ export function mixForProgram(args: {
   // 角色护栏(directive guardrails,单角色部分)。
   if (role === 'bass') base.reverb = Math.min(base.reverb, 8);
   if (role === 'drum') base.chorus = 0;
-  if (role === 'comp' || role === 'lead') { if (isElectricPiano(program)) base.chorus = Math.max(base.chorus, 38); } // 电钢必有 chorus
-  if (program === 12 || program === 108) base.chorus = Math.min(base.chorus, 16); // 马林巴/卡林巴 少 chorus
+  if (role === 'comp' || role === 'lead') {
+    if (isElectricPiano(program)) base.chorus = Math.max(base.chorus, 38); // 电钢必有 chorus
+    if (program === 5) {
+      base.reverb = Math.max(base.reverb, role === 'lead' ? 56 : 54);
+      base.chorus = Math.max(base.chorus, role === 'lead' ? 84 : 86);
+    }
+  }
+  if (isMalletProgram(program)) base.chorus = 0; // mallet 音准优先:不加 chorus 调制,避免听成微跑音。
   if (program === 7) base.reverb = Math.min(base.reverb, 30); // Clav:干、保 attack(同 harpsichord 6)
   if (role === 'pad' && isFxPad(program)) { base.volume = Math.min(base.volume, 72); base.reverb = Math.max(base.reverb, 84); }
 

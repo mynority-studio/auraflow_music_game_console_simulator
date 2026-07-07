@@ -19,11 +19,11 @@ export type QnRole = 'lead' | 'comp' | 'bass' | 'drum' | 'pad';
 // ============================================================
 
 /** 参与乐手/职能(产品 Band Selection 暴露这些;非 GM 音色)。
- *  ★ 2026-06-29 用户决策(裁到可兑现):只 offer 引擎能真出对应家族的乐手 ——
- *    guitar 已从 POP/LOFI/RNB 池撤掉、synth-lead/comp 不在池里 → 去掉 guitarist;
+ *  ★ 2026-07-07 GM25 民谣木吉他进入运行包与主动器配池 → guitarist 可兑现;
  *    keyboardist 只承担 lead/comp(pad 非键盘族),synthPlayer 只承担 pad(=合成氛围)。 */
 export type BandParticipantRole =
   | 'keyboardist'   // 键盘手 → lead/comp 中的键盘职责
+  | 'guitarist'     // 吉他手 → lead/comp 中的吉他职责
   | 'bassist'       // 贝斯手 → bass
   | 'drummer'       // 鼓手   → drum
   | 'synthPlayer'   // 合成/氛围乐手 → pad
@@ -55,6 +55,11 @@ export interface UiChord { roman: string; label: string; rootPc: number; quality
 export interface UiGestureExpression {
   kind: string;
   family: string;
+  continuity: string;
+  articulationScope: string;
+  triggerPolicy: string;
+  phrasePolicy: string;
+  evidenceRefs: string[];
   articulation: string;
   noteShape: string;
   velocityCurve: string;

@@ -33,16 +33,17 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
     }
   });
 
-  it('★ 钢琴主导多轨:lead/comp = 钢琴族(GM 0-5),bass 原声(32/43),lead+comp+bass 常驻', () => {
+  it('★ 键盘写作多轨:lead/comp = 当前小包键盘式音色,bass 原声,lead+comp+bass 常驻', () => {
     const r = generateSong({ seed: 7, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' });
     const byRole = (role: string) => r.ir!.tracks.find((t) => t.role === role);
     const lead = byRole('lead'), comp = byRole('comp'), bass = byRole('bass');
+    const keyboardish = [0, 5, 11, 108];
     expect(lead, 'lead 常驻').toBeTruthy();
     expect(comp, 'comp 常驻').toBeTruthy();
     expect(bass, 'bass 常驻').toBeTruthy();
-    expect(lead!.program, 'lead 钢琴族').toBeLessThanOrEqual(5);   // 大钢琴(0)/电钢(4)
-    expect(comp!.program, 'comp 钢琴族').toBeLessThanOrEqual(5);
-    expect([32, 43], 'bass 原声/低音提琴').toContain(bass!.program);
+    expect(keyboardish, 'lead 键盘式音色').toContain(lead!.program);
+    expect(keyboardish, 'comp 键盘式音色').toContain(comp!.program);
+    expect([32], 'bass 原声').toContain(bass!.program);
   });
 
   it('★ ACG 段级 richTextureBySection 用 ACG 钢琴织体(Phase 2b 端到端接线)', () => {

@@ -21,12 +21,12 @@ import workletProcessorURL from 'spessasynth_lib/dist/spessasynth_processor.min.
 
 export const SOUND_FONT_BANKS = [
     {
-        id: 'aura25-gm128',
-        label: 'Aura25 GM128',
+        id: AURA25_SF2_BANK_ID,
+        label: 'Aura25 24k Micro',
         sizeLabel: AURA25_SF2_SIZE_LABEL,
         url: AURA25_SF2_URL,
         bankManagerId: AURA25_SF2_BANK_ID,
-        hint: '25-slot runtime palette under 3MB',
+        hint: '11 presets · 24kHz VHQ runtime palette with GeneralUser folk guitar',
     },
 ] as const;
 

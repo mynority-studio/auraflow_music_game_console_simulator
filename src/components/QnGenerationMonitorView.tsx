@@ -25,6 +25,9 @@ const STATUS_COLOR: Record<string, string> = {
   failed: 'text-rose-300',
 };
 
+const trackInstrumentName = (role: string, program: number | undefined): string =>
+  role === 'drum' ? '标准鼓组' : program !== undefined ? gmName(program) : '默认音色';
+
 export function deriveQnMonitorReadout(input: {
   ir: MusicalIR;
   status: string;
@@ -36,9 +39,9 @@ export function deriveQnMonitorReadout(input: {
   const tracks = ir.tracks.map((tr) => ({
     role: tr.role,
     count: tr.notes.length,
-    instrument: tr.program !== undefined ? gmName(tr.program) : '默认音色',
+    instrument: trackInstrumentName(tr.role, tr.program),
     switchTo: tr.programChanges && tr.programChanges.length
-      ? gmName(tr.programChanges[tr.programChanges.length - 1].program)
+      ? trackInstrumentName(tr.role, tr.programChanges[tr.programChanges.length - 1].program)
       : undefined,
   }));
   return { status, attempts, bpm, bars, tracks };

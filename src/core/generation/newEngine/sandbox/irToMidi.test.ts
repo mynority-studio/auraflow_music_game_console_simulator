@@ -45,7 +45,7 @@ describe('newEngine/sandbox/irToMidi', () => {
   it('★ track.program(BandEngine 选的乐器)优先;缺省走角色默认', () => {
     const ir2 = freezeMusicalIR({
       tracks: [
-        { role: 'lead', program: 66, notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }] }, // TenSax
+        { role: 'lead', program: 67, notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }] }, // Baritone Sax
         { role: 'bass', notes: [{ pitch: midi(40), startTick: ticks(0), durationTicks: ticks(240), velocity: 80 }] }, // 无 program
       ],
       timebase, durationTicks: ticks(480),
@@ -53,8 +53,8 @@ describe('newEngine/sandbox/irToMidi', () => {
     const ev = musicalIRToMidiEvents(ir2);
     const leadPc = ev.find((e) => e.type === 'programChange' && e.channel === 1)!;
     const bassPc = ev.find((e) => e.type === 'programChange' && e.channel === 3)!;
-    expect(leadPc.data1).toBe(66);  // 用 track.program
-    expect(bassPc.data1).toBe(33);  // 缺省 = Finger Bass 默认
+    expect(leadPc.data1).toBe(67);  // 用 track.program
+    expect(bassPc.data1).toBe(38);  // 缺省收口到 24k nano 包内 Synth Bass 1
   });
 
   // —— 混音 (5.4) ——
@@ -104,5 +104,48 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(pan(CH.bass)).toBe(64);
     expect(pan(CH.lead)).toBe(64);
     expect(pan(CH.drum)).toBe(64);
+  });
+
+  it('带 delay 的轨会导出 CC95 给共享 delay bus', () => {
+    const delayIR = freezeMusicalIR({
+      tracks: [
+        {
+          role: 'lead',
+          program: 5,
+          mix: { volume: 92, pan: 64, reverb: 52, chorus: 66, delay: 26 },
+          notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }],
+        },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    });
+    const delayEvents = musicalIRToMidiEvents(delayIR);
+    const delayCC = delayEvents.find((e) => e.type === 'cc' && e.channel === CH.lead && e.data1 === 95);
+    const firstNoteOnIndex = delayEvents.findIndex((e) => e.type === 'noteOn' && e.channel === CH.lead);
+    const delayCCIndex = delayEvents.findIndex((e) => e === delayCC);
+
+    expect(delayCC).toMatchObject({ ticks: 0, data2: 26 });
+    expect(delayCCIndex).toBeGreaterThanOrEqual(0);
+    expect(delayCCIndex).toBeLessThan(firstNoteOnIndex);
+  });
+
+  it('pitchBendEvents 导出为 14-bit pitchBend MIDI 事件', () => {
+    const bendIR = freezeMusicalIR({
+      tracks: [
+        {
+          role: 'lead',
+          program: 67,
+          pitchBendEvents: [{ atTick: ticks(120), value: 7000 }, { atTick: ticks(180), value: 8192 }],
+          notes: [{ pitch: midi(55), startTick: ticks(120), durationTicks: ticks(240), velocity: 90 }],
+        },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    });
+    const bendEvents = musicalIRToMidiEvents(bendIR).filter((e) => e.type === 'pitchBend');
+    expect(bendEvents).toEqual([
+      { ticks: ticks(120), type: 'pitchBend', channel: CH.lead, data1: 7000, data2: 0 },
+      { ticks: ticks(180), type: 'pitchBend', channel: CH.lead, data1: 8192, data2: 0 },
+    ]);
   });
 });

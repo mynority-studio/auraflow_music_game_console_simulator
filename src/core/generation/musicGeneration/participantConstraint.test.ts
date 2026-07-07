@@ -33,6 +33,25 @@ describe('musicGeneration/participantConstraint · deriveLineupConstraint', () =
     expect([...c.requiredRoles!]).toEqual(['comp']);
   });
 
+  it('仅选 吉他手 → 白名单 lead/comp;required=comp;家族 guitar', () => {
+    const c = deriveLineupConstraint(sel({ role: 'guitarist', state: 'selected' }))!;
+    expect([...c.allowedRoles!].sort()).toEqual(['comp', 'lead']);
+    expect([...c.requiredRoles!]).toEqual(['comp']);
+    expect(c.familyByRole!.lead).toEqual(['guitar']);
+    expect(c.familyByRole!.comp).toEqual(['guitar']);
+  });
+
+  it('键盘手+吉他手 → 分到 comp/lead 两条职责,家族并集保留', () => {
+    const c = deriveLineupConstraint(sel(
+      { role: 'keyboardist', state: 'selected' },
+      { role: 'guitarist', state: 'selected' },
+    ))!;
+    expect([...c.allowedRoles!].sort()).toEqual(['comp', 'lead']);
+    expect([...c.requiredRoles!].sort()).toEqual(['comp', 'lead']);
+    expect([...c.familyByRole!.lead!].sort()).toEqual(['guitar', 'keyboard']);
+    expect([...c.familyByRole!.comp!].sort()).toEqual(['guitar', 'keyboard']);
+  });
+
   it('★ 仅选 鼓手 → allowed/required 都只 drum(旋律 role 由 bandEngine 自动补)', () => {
     const c = deriveLineupConstraint(sel({ role: 'drummer', state: 'selected' }))!;
     expect([...c.allowedRoles!]).toEqual(['drum']);
@@ -92,5 +111,10 @@ describe('musicGeneration/participantConstraint · participantForRole', () => {
   it('selected 乐手优先承担其 role', () => {
     const ps = sel({ role: 'keyboardist', state: 'selected' });
     expect(participantForRole('lead', ps)).toBe('keyboardist'); // 键盘手 selected → 承担 lead
+  });
+  it('吉他手 selected 可承担 comp/lead', () => {
+    const ps = sel({ role: 'guitarist', state: 'selected' });
+    expect(participantForRole('comp', ps)).toBe('guitarist');
+    expect(participantForRole('lead', ps)).toBe('guitarist');
   });
 });

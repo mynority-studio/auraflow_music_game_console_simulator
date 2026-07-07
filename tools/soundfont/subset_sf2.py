@@ -22,6 +22,7 @@ SHDR = struct.Struct("<20sIIIIIBbHH")
 
 GEN_INSTRUMENT = 41
 GEN_SAMPLE_ID = 53
+LINKED_SAMPLE_TYPES = {2, 4, 8}  # rightSample, leftSample, linkedSample (ROM flag stripped)
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,39 @@ def _rewrite_gen(raw: tuple, mapping: dict[int, int], oper: int) -> tuple:
     return raw
 
 
-def subset_sf2(source: Path, dest: Path, selectors: list[tuple[int, int]]) -> dict[str, int]:
+def _has_linked_partner(sample_type: int) -> bool:
+    return (sample_type & 0x7FFF) in LINKED_SAMPLE_TYPES
+
+
+def _resample_pcm16(sample_bytes: bytes, in_rate: int, out_rate: int, quality: str) -> tuple[bytes, int]:
+    if in_rate <= 0 or in_rate == out_rate or not sample_bytes:
+        return sample_bytes, len(sample_bytes) // 2
+    try:
+        import numpy as np
+        import soxr
+    except ImportError as exc:
+        raise RuntimeError("24kHz resampling requires Python packages numpy and soxr") from exc
+
+    x = np.frombuffer(sample_bytes, dtype="<i2").astype(np.float32) / 32768.0
+    y = soxr.resample(x, float(in_rate), float(out_rate), quality=quality)
+    pcm = np.clip(np.rint(y * 32767.0), -32768, 32767).astype("<i2")
+    return pcm.tobytes(), int(pcm.size)
+
+
+def _scale_frame(frame: int, old_len: int, new_len: int) -> int:
+    if old_len <= 0:
+        return 0
+    return max(0, min(new_len, round(frame * new_len / old_len)))
+
+
+def subset_sf2(
+    source: Path,
+    dest: Path,
+    selectors: list[tuple[int, int]],
+    *,
+    target_rate: int | None = None,
+    resample_quality: str = "VHQ",
+) -> dict[str, int]:
     sf = parse_sf2(source)
     info = sf[b"INFO"]
     sdta = sf[b"sdta"]
@@ -186,7 +219,8 @@ def subset_sf2(source: Path, dest: Path, selectors: list[tuple[int, int]]) -> di
     while cursor < len(sample_ids):
         sid = sample_ids[cursor]
         link = shdrs[sid][8]
-        if 0 <= link < len(shdrs) - 1 and link != sid and link not in sample_seen:
+        sample_type = shdrs[sid][9]
+        if _has_linked_partner(sample_type) and 0 <= link < len(shdrs) - 1 and link != sid and link not in sample_seen:
             sample_seen.add(link)
             sample_ids.append(link)
         cursor += 1
@@ -196,23 +230,38 @@ def subset_sf2(source: Path, dest: Path, selectors: list[tuple[int, int]]) -> di
     inst_map = {old: new for new, old in enumerate(instrument_ids)}
 
     new_smpl = bytearray()
-    new_sm24 = bytearray() if sm24 is not None else None
+    new_sm24 = bytearray() if sm24 is not None and target_rate is None else None
     new_shdrs: list[tuple] = []
+    source_rates: set[int] = set()
     for old_i in sample_ids:
         name, start, end, start_loop, end_loop, rate, pitch, corr, link, typ = shdrs[old_i]
         new_start = len(new_smpl) // 2
         sample_bytes = smpl[start * 2 : end * 2]
+        old_len = max(0, end - start)
+        source_rates.add(rate)
+        out_rate = target_rate or rate
+        if target_rate is not None:
+            sample_bytes, out_len = _resample_pcm16(sample_bytes, rate, target_rate, resample_quality)
+            loop_start_rel = _scale_frame(max(0, start_loop - start), old_len, out_len)
+            loop_end_rel = _scale_frame(max(0, end_loop - start), old_len, out_len)
+            if end_loop > start_loop and loop_end_rel <= loop_start_rel and out_len > 1:
+                loop_end_rel = min(out_len, loop_start_rel + 1)
+                loop_start_rel = max(0, min(loop_start_rel, loop_end_rel - 1))
+        else:
+            out_len = old_len
+            loop_start_rel = max(0, start_loop - start)
+            loop_end_rel = max(0, end_loop - start)
         new_smpl.extend(sample_bytes)
         new_end = len(new_smpl) // 2
-        new_start_loop = new_start + max(0, start_loop - start)
-        new_end_loop = new_start + max(0, end_loop - start)
+        new_start_loop = new_start + loop_start_rel
+        new_end_loop = new_start + loop_end_rel
         # SoundFont readers expect a small zero guard after each sample.
         new_smpl.extend(b"\0" * (46 * 2))
         if new_sm24 is not None and sm24 is not None:
             new_sm24.extend(sm24[start:end])
             new_sm24.extend(b"\0" * 46)
         new_link = sample_map.get(link, 0)
-        new_shdrs.append((name, new_start, new_end, new_start_loop, new_end_loop, rate, pitch, corr, new_link, typ))
+        new_shdrs.append((name, new_start, new_end, new_start_loop, new_end_loop, out_rate, pitch, corr, new_link, typ))
     eos_pos = len(new_smpl) // 2
     new_shdrs.append((_sf_name("EOS"), eos_pos, eos_pos, eos_pos, eos_pos, 0, 0, 0, 0, 0))
 
@@ -279,6 +328,8 @@ def subset_sf2(source: Path, dest: Path, selectors: list[tuple[int, int]]) -> di
         "instruments": len(new_insts) - 1,
         "samples": len(new_shdrs) - 1,
         "bytes": dest.stat().st_size,
+        "source_rates": len(source_rates),
+        "target_rate": target_rate or 0,
     }
 
 
@@ -288,6 +339,8 @@ def main() -> None:
     ap.add_argument("dest", type=Path, nargs="?")
     ap.add_argument("--preset", action="append", type=_parse_selector, default=[])
     ap.add_argument("--list-presets", action="store_true")
+    ap.add_argument("--target-rate", type=int, default=None, help="resample copied samples to this Hz rate")
+    ap.add_argument("--resample-quality", default="VHQ", choices=["QQ", "LQ", "MQ", "HQ", "VHQ"], help="python-soxr quality")
     args = ap.parse_args()
     if args.list_presets:
         list_presets(args.source)
@@ -296,11 +349,12 @@ def main() -> None:
         ap.error("dest is required unless --list-presets is used")
     if not args.preset:
         ap.error("at least one --preset bank:preset is required")
-    stats = subset_sf2(args.source, args.dest, args.preset)
+    stats = subset_sf2(args.source, args.dest, args.preset, target_rate=args.target_rate, resample_quality=args.resample_quality)
+    rate_note = f", {stats['target_rate']} Hz" if stats["target_rate"] else ""
     print(
         f"wrote {args.dest} "
         f"({stats['bytes'] / 1024 / 1024:.2f} MiB, "
-        f"{stats['presets']} presets, {stats['instruments']} instruments, {stats['samples']} samples)"
+        f"{stats['presets']} presets, {stats['instruments']} instruments, {stats['samples']} samples{rate_note})"
     )
 
 

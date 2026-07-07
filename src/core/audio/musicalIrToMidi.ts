@@ -23,7 +23,7 @@ const CC_PAN = 10;
 const CC_REVERB = 91;
 const CC_CHORUS = 93;     // ★ ESP32 混音:合唱/宽度(电钢/pad 厚度)
 const CC_EXPRESSION = 11; // ★ ESP32 混音:表情(静态,可选)
-const CC_DELAY = 95;      // ★ Layer 2:send 进共享 song delay(ESP32 有 delay bus;浏览器 SpessaSynth 无=inert)
+const CC_DELAY = 95;      // ★ Layer 2:send 进共享 song delay(ESP32 delay bus;浏览器 scheduler 预渲染轻量 echo)
 const CC_SUSTAIN = 64;
 const CC_BANK_SELECT_MSB = 0;
 const CC_BANK_SELECT_LSB = 32;
@@ -60,6 +60,7 @@ export const ROLE_CHANNEL: Record<InstrumentRole, number> = {
 };
 
 const clampCC = (v: number): number => Math.max(0, Math.min(127, Math.round(v)));
+const clampPitchBend = (v: number): number => Math.max(0, Math.min(16383, Math.round(v)));
 
 // ★ ESP32 混音:在某 tick 把一组 mix CC 写齐(CC7/10/91/93 + 可选 CC11)。器配层产的 TrackMix 优先,
 //   缺省回退角色默认(CC7/10 走 voice,CC91 走 reverbSend,CC93=0)。programChange 之后、noteOn 之前发好。
@@ -107,6 +108,9 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] 
     // ★ 通用 CC 自动化(气声 lead 气口减弱=CC11 包络);在 notes 之前 push → 同 tick CC 先于 noteOn
     for (const cc of track.ccEvents ?? []) {
       events.push({ ticks: cc.atTick, type: 'cc', channel: voice.channel, data1: cc.controller, data2: clampCC(cc.value) });
+    }
+    for (const bend of track.pitchBendEvents ?? []) {
+      events.push({ ticks: bend.atTick, type: 'pitchBend', channel: voice.channel, data1: clampPitchBend(bend.value), data2: 0 });
     }
 
     for (const n of track.notes) {

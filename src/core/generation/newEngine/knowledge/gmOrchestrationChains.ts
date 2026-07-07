@@ -31,44 +31,56 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
   // RNB / neo-soul / city-pop / 暖 pop
   electricKeys: {
     id: 'electricKeys', world: 'electricKeys',
-    compPriority: [5, 4, 7],
-    leadByComp: { 5: [66, 5, 4, 11], 4: [66, 4, 5, 11], 7: [66, 5, 4, 11] },
-    bassPriority: [33, 39, 34], padPriority: [89, 16, 98], drumPriority: [25, 0, 40],
+    compPriority: [5, 25],
+    leadByComp: { 5: [5, 0, 11, 25, 108], 25: [5, 0, 25, 11] },
+    bassPriority: [38, 32], padPriority: [89], drumPriority: [0],
   },
   // LOFI / chill
   lofiTapeKeys: {
     id: 'lofiTapeKeys', world: 'lofiTapeKeys',
-    compPriority: [4, 5, 7],
-    leadByComp: { 4: [4, 11, 108, 66, 7], 5: [4, 5, 11, 108, 66], 7: [11, 108, 4, 66] },
-    bassPriority: [33, 39], padPriority: [89, 98, 49], drumPriority: [25, 40, 0],
+    compPriority: [5, 24, 25, 0],
+    leadByComp: { 5: [5, 0, 11, 108, 25], 24: [108, 11, 5, 0, 25], 25: [5, 0, 108, 11, 25], 0: [0, 5, 11, 108, 25] },
+    bassPriority: [32, 38], padPriority: [89], drumPriority: [0],
   },
   // pop 抒情 / 简单原声乐队
   acousticPianoBand: {
     id: 'acousticPianoBand', world: 'acousticPianoBand',
-    compPriority: [0, 1, 4],
-    leadByComp: { 0: [66, 0, 11, 4, 108], 1: [66, 1, 11, 4], 4: [66, 4, 11, 1] },
-    bassPriority: [32, 33], padPriority: [48, 49, 89], drumPriority: [0, 40],
+    compPriority: [0, 5, 25],
+    leadByComp: { 0: [0, 5, 11, 25, 108], 5: [5, 0, 11, 25], 25: [0, 5, 25, 11] },
+    bassPriority: [32, 38], padPriority: [89], drumPriority: [0],
+  },
+  // ACG:保持 lead/comp/bass 三轨钢琴写作合同,但开放当前小包的键盘式 lead/comp 色彩。
+  acgKeyboardBand: {
+    id: 'acgKeyboardBand', world: 'acousticPianoBand',
+    compPriority: [0, 5, 11, 108],
+    leadByComp: {
+      0: [0, 5, 11, 108],
+      5: [5, 0, 11, 108],
+      11: [11, 0, 5, 108],
+      108: [108, 0, 5, 11],
+    },
+    bassPriority: [32], padPriority: [89], drumPriority: [0],
   },
   // jazz
   jazzCombo: {
     id: 'jazzCombo', world: 'jazzCombo',
-    compPriority: [0, 4],
-    leadByComp: { 0: [66, 0, 11, 4], 4: [66, 4, 0, 11] },
-    bassPriority: [32], padPriority: [49, 16], drumPriority: [40, 0],
+    compPriority: [0, 5, 25],
+    leadByComp: { 0: [67, 0, 11], 5: [67, 5, 0, 11], 25: [67, 0, 11, 25] },
+    bassPriority: [32], padPriority: [89], drumPriority: [0],
   },
   // 软 synth-pop / modal synthetic
   syntheticSoft: {
     id: 'syntheticSoft', world: 'syntheticSoft',
-    compPriority: [5, 4],
-    leadByComp: { 5: [66, 5, 4, 11], 4: [66, 4, 5, 11] },
-    bassPriority: [38, 39, 33], padPriority: [89, 98], drumPriority: [25, 0],
+    compPriority: [5, 25],
+    leadByComp: { 5: [5, 0, 11, 108, 25], 25: [5, 0, 25, 11] },
+    bassPriority: [38, 32], padPriority: [89], drumPriority: [0],
   },
   // modal / static / ambient
   modalAmbient: {
     id: 'modalAmbient', world: 'modalAmbient',
-    compPriority: [4, 0, 7],
-    leadByComp: { 4: [11, 108, 66, 4], 0: [11, 108, 66], 7: [11, 108, 66, 4] },
-    bassPriority: [32, 33, 39], padPriority: [89, 48, 49, 98], drumPriority: [0],
+    compPriority: [0, 5, 24, 25],
+    leadByComp: { 0: [11, 108, 0, 67, 25], 5: [5, 11, 108, 67, 25], 24: [108, 11, 67, 25], 25: [108, 11, 25, 67] },
+    bassPriority: [32, 38], padPriority: [89], drumPriority: [0],
   },
 };
 
@@ -94,9 +106,9 @@ function canPlayPad(p: number): boolean {
   const fam = instrumentInfo(p).family;
   return isSustainedInstrument(p) || fam === 'pad' || fam === 'strings';
 }
-/** 该世界是否排斥此 pad(jazz 拒暖/合唱 pad 89/91)。 */
+/** 该世界是否排斥此 pad(jazz 拒合唱 pad;GM89 是当前唯一小包持续垫,保留作 fallback)。 */
 function worldRejectsPad(world: TimbreWorld, p: number): boolean {
-  return world === 'jazzCombo' && (p === 89 || p === 91);
+  return world === 'jazzCombo' && p === 91;
 }
 
 /**
@@ -104,14 +116,13 @@ function worldRejectsPad(world: TimbreWorld, p: number): boolean {
  * directive World Selection;`requested` 给定时确定性、不抽 rng。
  */
 export function chooseOrchestrationChain(style: string, rng: Rng, requested?: TimbreWorld): ChainProfile {
-  if (requested) return CHAIN_PROFILES[PROFILE_BY_WORLD[requested]];
   const s = style.toLowerCase();
+  if (s === 'acg') return CHAIN_PROFILES.acgKeyboardBand;
+  if (requested) return CHAIN_PROFILES[PROFILE_BY_WORLD[requested]];
   if (s === 'jazz' || s === 'blues') return CHAIN_PROFILES.jazzCombo;
   if (s === 'lofi') return CHAIN_PROFILES.lofiTapeKeys;
   if (s === 'rnb') return CHAIN_PROFILES.electricKeys;
   if (s === 'modal') return CHAIN_PROFILES.modalAmbient;
-  // ★ 2026-06-28 ACG = MG 久石让/坂本【原声钢琴】世界:钢琴 comp/lead + 原声 bass(32/33/35,绝不合成贝斯)+ 弦 pad。
-  if (s === 'acg') return CHAIN_PROFILES.acousticPianoBand;
   if (s === 'pop') return rng.pick([CHAIN_PROFILES.acousticPianoBand, CHAIN_PROFILES.electricKeys, CHAIN_PROFILES.syntheticSoft]);
   return CHAIN_PROFILES.acousticPianoBand;
 }
@@ -182,7 +193,9 @@ export function orchestrateRolePrograms(args: {
 }): OrchestrationResult {
   const { style, lineup, provisional = {} } = args;
   const requested = args.requestedWorld ?? deriveChainWorld(style, provisional);
-  const profile = chooseOrchestrationChain(style, args.rng ?? FALLBACK_RNG, requested);
+  const profile = style.toLowerCase() === 'acg'
+    ? CHAIN_PROFILES.acgKeyboardBand
+    : chooseOrchestrationChain(style, args.rng ?? FALLBACK_RNG, requested);
   const has = (r: InstrumentRoleName): boolean => lineup.includes(r);
   const decisions: string[] = [`world=${profile.world} profile=${profile.id}`];
   const rp = {} as Record<InstrumentRoleName, number>;
@@ -201,7 +214,7 @@ export function orchestrateRolePrograms(args: {
       : (comp !== undefined ? [comp, 11, 12] : profile.compPriority);
     const ok = (p: number): boolean => !isHarshLead(p) && (comp === undefined || leadCompCompatible(p, comp));
     const pv = provisional.lead;
-    if (pv !== undefined && ok(pv)) { rp.lead = pv; decisions.push(`lead keep GM${pv}`); }
+    if (pv !== undefined && cands.includes(pv) && ok(pv)) { rp.lead = pv; decisions.push(`lead keep GM${pv}`); }
     else { rp.lead = cands.find(ok) ?? cands[0] ?? pv ?? 0; decisions.push(`lead chain GM${rp.lead}`); }
   }
 
@@ -209,7 +222,7 @@ export function orchestrateRolePrograms(args: {
   if (has('bass')) {
     const ok = (p: number): boolean => isBassFamily(p) && !(profile.world === 'jazzCombo' && isSynthBass(p));
     const pv = provisional.bass;
-    if (pv !== undefined && ok(pv)) { rp.bass = pv; decisions.push(`bass keep GM${pv}`); }
+    if (pv !== undefined && profile.bassPriority.includes(pv) && ok(pv)) { rp.bass = pv; decisions.push(`bass keep GM${pv}`); }
     else { rp.bass = profile.bassPriority.find(ok) ?? pv ?? 33; decisions.push(`bass chain GM${rp.bass}`); }
   }
 
@@ -217,12 +230,11 @@ export function orchestrateRolePrograms(args: {
   if (has('pad')) {
     const ok = (p: number): boolean => canPlayPad(p) && !worldRejectsPad(profile.world, p);
     const pv = provisional.pad;
-    if (pv !== undefined && ok(pv)) { rp.pad = pv; decisions.push(`pad keep GM${pv}`); }
+    if (pv !== undefined && profile.padPriority.includes(pv) && ok(pv)) { rp.pad = pv; decisions.push(`pad keep GM${pv}`); }
     else { rp.pad = profile.padPriority.find(ok) ?? pv ?? 89; decisions.push(`pad chain GM${rp.pad}`); }
   }
 
-  // drum kit:链表权威(世界定 kit)—— jazzCombo=Brush(40),CityPop/RNB/lofi=TR808(25),原声/电影=Standard(0)。
-  //   (provisional.drum 恒 0 → 若沿用 provisional 则 jazz 永远拿不到 brush;故 drum kit 由链直接定。)
+  // drum kit:24k nano runtime only keeps the Standard kit.
   if (has('drum')) {
     rp.drum = profile.drumPriority[0] ?? provisional.drum ?? 0;
     decisions.push(`drum kit GM${rp.drum}`);

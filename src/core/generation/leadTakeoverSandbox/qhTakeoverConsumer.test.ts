@@ -10,12 +10,14 @@ import {
 } from './qhTakeoverConsumer';
 import type { LeadTakeoverAction } from './types';
 
-function fakeResult(): MusicGenerationResult {
+function fakeResult(opts: { leadProgram?: number; styleHint?: string; leadDelay?: number } = {}): MusicGenerationResult {
+  const leadProgram = opts.leadProgram ?? 0;
+  const styleHint = opts.styleHint ?? 'pop';
   return {
     status: 'ok',
     bpm: 96,
     seed: 42,
-    styleHint: 'pop',
+    styleHint,
     attempts: 1,
     report: {},
     ir: {
@@ -24,15 +26,15 @@ function fakeResult(): MusicGenerationResult {
       tracks: [
         {
           role: 'lead',
-          program: 65,
-          mix: { volume: 82, pan: 63, reverb: 44, chorus: 7, expression: 118 },
+          program: leadProgram,
+          mix: { volume: 82, pan: 63, reverb: 44, chorus: 7, expression: 118, ...(opts.leadDelay !== undefined ? { delay: opts.leadDelay } : {}) },
           notes: [],
         },
       ],
     },
     uiSnapshot: {
       seed: 42,
-      styleHint: 'pop',
+      styleHint,
       key: 'C',
       tonality: 'major',
       bpm: 96,
@@ -43,7 +45,7 @@ function fakeResult(): MusicGenerationResult {
         { roman: 'V', label: 'G7', rootPc: 7, quality: '7', startBeat: 4, durationBeats: 4, sectionId: 'A' },
       ],
       roster: [],
-      tracks: [{ role: 'lead', channel: 1, program: 65, instrumentName: 'Alto Sax', noteCount: 0 }],
+      tracks: [{ role: 'lead', channel: 1, program: leadProgram, instrumentName: '大钢琴', noteCount: 0 }],
       grooveContract: {
         id: 'jazz_medium_swing',
         name: 'JAZZ medium swing',
@@ -160,7 +162,7 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
 
     expect(logs).toContain('takeover noteOn ch15 62 v104');
     expect(logs).toContain('hardMute native lead ch1');
-    expect(target.events).toContainEqual({ ticks: 961, type: 'programChange', channel: TAKEOVER_USER_CHANNEL, data1: 65, data2: 0 });
+    expect(target.events).toContainEqual({ ticks: 961, type: 'programChange', channel: TAKEOVER_USER_CHANNEL, data1: 0, data2: 0 });
     expect(target.events).toContainEqual({ ticks: 962, type: 'noteOn', channel: TAKEOVER_USER_CHANNEL, data1: 62, data2: 104 });
     expect(target.events).toContainEqual({ ticks: 961, type: 'noteOff', channel: TAKEOVER_USER_CHANNEL, data1: 62, data2: 0 });
     expect(target.events).toContainEqual({ ticks: 961, type: 'cc', channel: 1, data1: 123, data2: 0 });
@@ -189,7 +191,7 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
     executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, midi: 64, velocity: 100 }]);
 
     expect(target.events).toEqual([]);
-    expect(target.direct).toContain(`pc:${TAKEOVER_USER_CHANNEL}:65`);
+    expect(target.direct).toContain(`pc:${TAKEOVER_USER_CHANNEL}:0`);
     expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:62:104`);
     expect(target.direct).toContain(`off:${TAKEOVER_USER_CHANNEL}:62`);
     expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:64:100`);
@@ -400,5 +402,18 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
     expect(target.scheduled[1]).toMatchObject({ type: 'off', channel: TAKEOVER_USER_CHANNEL, note: 71 });
     expect(target.scheduled[1]?.audioTime).toBeCloseTo((target.scheduled[0]?.audioTime ?? 0) + 0.01);
     expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:123:0`);
+  });
+
+  it('maps Q+T takeover notes through the final Aura25 lead program range', () => {
+    const target = directTarget(fakeResult({ leadProgram: 25, styleHint: 'pop' }));
+
+    const logs = executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, noteId: 'high-gtr', midi: 95, velocity: 104 }]);
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-off', channel: 1, noteId: 'high-gtr', midi: 95 }]);
+
+    expect(logs).toContain('takeover noteOn ch15 95→83 v104');
+    expect(target.direct).toContain(`pc:${TAKEOVER_USER_CHANNEL}:25`);
+    expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:83:104`);
+    expect(target.direct).toContain(`off:${TAKEOVER_USER_CHANNEL}:83`);
+    resetLeadTakeoverRuntimeState(target);
   });
 });

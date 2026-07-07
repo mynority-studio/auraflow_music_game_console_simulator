@@ -48,21 +48,44 @@ export type GestureExpressionKind =
   | 'sax-breath-legato'
   | 'pipe-wind-breath'
   | 'bowed-string-legato'
+  | 'guitar-pick-voice'
   | 'bass-pluck-legato'
   | 'bass-walk'
   | 'bass-muted'
   | 'sustained-pad';
-export type GestureExpressionFamily = 'none' | 'keyboard' | 'mallet' | 'drum' | 'sax' | 'pipe-wind' | 'bowed-string' | 'bass' | 'pad';
+export type GestureExpressionFamily = 'none' | 'keyboard' | 'mallet' | 'drum' | 'sax' | 'pipe-wind' | 'bowed-string' | 'guitar' | 'bass' | 'pad';
 export type GestureBreathModel = 'none' | 'reed-continuous' | 'pipe-taper';
-export type GestureNoteShape = 'none' | 'finger-legato' | 'strike-decay' | 'rudiment-hits' | 'legato-overlap' | 'bow-legato' | 'bass-legato' | 'bass-muted' | 'sustain-pad';
-export type GestureArticulation = 'none' | 'comping' | 'finger-legato' | 'staccato' | 'tenuto' | 'slur' | 'ghost' | 'roll' | 'walking';
+export type GestureNoteShape = 'none' | 'finger-legato' | 'strike-decay' | 'rudiment-hits' | 'legato-overlap' | 'keyed-legato' | 'bow-legato' | 'guitar-pick' | 'bass-legato' | 'bass-muted' | 'sustain-pad';
+export type GestureArticulation = 'none' | 'comping' | 'finger-legato' | 'picked' | 'staccato' | 'tenuto' | 'slur' | 'ghost' | 'roll' | 'walking';
 export type GestureVelocityCurve = 'none' | 'soft' | 'linear' | 'accented' | 'ghosted' | 'walking-pulse' | 'strike-decay';
 export type GesturePedalPolicy = 'none' | 'harmonic-change' | 'light-syncopated' | 'acg-legato-change';
+export type GestureContinuity = 'none' | 'staccato' | 'connected' | 'legato-flow' | 'pedal-legato';
+export type GestureArticulationScope = 'none' | 'attribute' | 'direction';
+export type GestureTriggerPolicy = 'none' | 'velocity-gate' | 'note-overlap' | 'cc-lane' | 'pedal-cc' | 'rudiment-velocity';
+export type GesturePhrasePolicy =
+  | 'none'
+  | 'breath-group'
+  | 'bow-group'
+  | 'pick-voice'
+  | 'pluck-voice'
+  | 'pedal-harmony'
+  | 'rudiment-bar'
+  | 'strike-decay'
+  | 'sustain-bed';
+export type GestureEvidenceRef =
+  | 'logic-articulation-set'
+  | 'logic-studio-horns-keyswitch'
+  | 'logic-studio-strings-keyswitch'
+  | 'cubase-expression-map'
+  | 'midi-cc-table'
+  | 'vsl-legato-overlap'
+  | 'sax-jazz-legato-tonguing'
+  | 'sax-light-airflow-tonguing';
 // ★ Layer 1(three-layer mix plan):乐器【尾音契约】—— 和 reverb/chorus 分开,tail 是乐器演奏行为(gate/pedal/CC72 release),不是空间。
 export type TailPolicy =
   | 'none'
   | 'keyboard-natural'    // 原声钢琴:自然衰减 + comp 可 harmonic pedal
-  | 'electric-key-tail'   // DX7/GM5 电钢:靠 note gate(comp)/ CC72 release(lead,保 parity),不靠 blanket pedal / reverb
+  | 'electric-key-tail'   // DX7/GM5 电钢:靠 note gate + CC72 release,不靠 blanket pedal / reverb 假装尾音
   | 'piano-pedal-comp'    // 钢琴 comp:harmonic-change pedal
   | 'pad-sustain'         // pad:长音
   | 'pluck-short'         // 拨弦/贝斯:短
@@ -77,6 +100,11 @@ export interface GestureExpressionPlan {
   family: GestureExpressionFamily;
   program?: number;
   ccControllers: readonly number[];
+  continuity: GestureContinuity;              // Logic/Cubase 风格的统一演奏连接语义。
+  articulationScope: GestureArticulationScope; // direction=持续到下一指令;attribute=只作用当前 hit/note。
+  triggerPolicy: GestureTriggerPolicy;        // render/MIDI 侧如何落实该语义(CC、overlap、pedal、velocity/gate)。
+  phrasePolicy: GesturePhrasePolicy;          // 乐器家族解释:气口/换弓/拨弦/踏板/鼓 rudiment 等。
+  evidenceRefs: readonly GestureEvidenceRef[]; // 联网核验后的来源 id;新增手势必须挂依据,避免凭想象扩展。
   breathModel: GestureBreathModel;
   noteShape: GestureNoteShape;
   articulation: GestureArticulation;
@@ -89,7 +117,7 @@ export interface GestureExpressionPlan {
   maxConnectBeats?: number;
   overlapBeats?: number;
   tailPolicy?: TailPolicy;   // ★ Layer 1:乐器尾音契约(与 reverb/chorus send 分开;测试据此区分 tail vs 空间)
-  releaseCc?: number;        // ★ Layer 1:可选 release 增强(CC72,64-centered;两 synth 都响应)。lead 电钢 tail 主机制(保 parity)
+  releaseCc?: number;        // ★ Layer 1:可选 release 增强(CC72,64-centered;两 synth 都响应)。电钢 tail 主机制(保 parity)
 }
 
 // ★ 收尾【乐器进出计划】(2026-06-08,器配据 arrangement.endingStyle 编写):render 据此出收尾手势。

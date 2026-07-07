@@ -28,6 +28,7 @@ export interface RenderMixBalanceContext {
 const EPS = 1e-9;
 const MAX_SPLIT_SCALE = 1.38;
 const MIN_SPLIT_SCALE = 1 / MAX_SPLIT_SCALE;
+const GUITAR_COMP_VOLUME_CAP = 78;
 
 const POLICY: Record<string, LeadCompPolicy> = {
   pop:  { targetRatio: 1.15, minRatio: 0.75, maxRatio: 1.55, leadRange: [78, 100], compRange: [70, 90] },
@@ -48,7 +49,20 @@ const DEFAULT_POLICY: LeadCompPolicy = {
   compRange: [70, 92],
 };
 
-function policyFor(style: string): LeadCompPolicy {
+const JAZZ_SAX_POLICY: LeadCompPolicy = {
+  targetRatio: 1.85,
+  minRatio: 1.35,
+  maxRatio: 3.25,
+  leadRange: [94, 100],
+  compRange: [72, 84],
+};
+
+function isSaxProgram(program: number | undefined): boolean {
+  return program !== undefined && program >= 64 && program <= 67;
+}
+
+function policyFor(style: string, leadProgram?: number): LeadCompPolicy {
+  if ((style ?? '').toLowerCase() === 'jazz' && isSaxProgram(leadProgram)) return JAZZ_SAX_POLICY;
   return POLICY[(style ?? '').toLowerCase()] ?? DEFAULT_POLICY;
 }
 
@@ -62,7 +76,8 @@ function sameMix(a: TrackMix | undefined, b: TrackMix | undefined): boolean {
     && a.pan === b.pan
     && a.reverb === b.reverb
     && a.chorus === b.chorus
-    && (a.expression ?? -1) === (b.expression ?? -1);
+    && (a.expression ?? -1) === (b.expression ?? -1)
+    && (a.delay ?? -1) === (b.delay ?? -1);
 }
 
 function mixAt(track: TrackIR, tick: number): TrackMix | undefined {
@@ -72,6 +87,25 @@ function mixAt(track: TrackIR, tick: number): TrackMix | undefined {
     else break;
   }
   return out;
+}
+
+function programAt(track: TrackIR, tick: number): number | undefined {
+  let out = track.program;
+  for (const pc of track.programChanges ?? []) {
+    if ((pc.atTick as number) <= tick) out = pc.program;
+    else break;
+  }
+  return out;
+}
+
+function isGuitarProgram(program: number | undefined): boolean {
+  return program !== undefined && program >= 24 && program <= 31;
+}
+
+function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix): TrackMix {
+  if (track.role !== 'comp' || !isGuitarProgram(programAt(track, tick))) return mix;
+  const volume = Math.min(mix.volume, GUITAR_COMP_VOLUME_CAP);
+  return volume === mix.volume ? mix : { ...mix, volume };
 }
 
 function boundaryTicks(tracks: readonly TrackIR[], ctx: RenderMixBalanceContext): number[] {
@@ -158,7 +192,6 @@ export function leadCompWetEnergyRatio(tracks: readonly TrackIR[], ctx: RenderMi
 
 export function applyRenderMixBalance(tracks: readonly TrackIR[], ctx: RenderMixBalanceContext): TrackIR[] {
   const bounds = boundaryTicks(tracks, ctx);
-  const policy = policyFor(ctx.style);
   const lead = tracks.find((t) => t.role === 'lead');
   const comp = tracks.find((t) => t.role === 'comp');
   const byTick = new Map<number, Partial<Record<InstrumentRole, TrackMix>>>();
@@ -181,20 +214,22 @@ export function applyRenderMixBalance(tracks: readonly TrackIR[], ctx: RenderMix
 
     const leadDry = dryEnergyPerBeat(lead, lo, hi, ctx.ppq);
     const compDry = dryEnergyPerBeat(comp, lo, hi, ctx.ppq);
-    const adjusted = adjustLeadCompVolumes(leadMix, compMix, leadDry, compDry, policy);
+    const adjusted = adjustLeadCompVolumes(leadMix, compMix, leadDry, compDry, policyFor(ctx.style, programAt(lead, lo)));
     setMix(lo, 'lead', adjusted.lead);
     setMix(lo, 'comp', adjusted.comp);
   }
 
   return tracks.map((track) => {
     const required = mandatoryMixTicks(track);
-    const initialMix = byTick.get(0)?.[track.role] ?? track.mix;
+    const initialMixRaw = byTick.get(0)?.[track.role] ?? track.mix;
+    const initialMix = initialMixRaw ? capMixForTrack(track, 0, initialMixRaw) : undefined;
     if (!initialMix) return { ...track };
 
     const mixChanges: { atTick: ReturnType<typeof ticks>; mix: TrackMix }[] = [];
     let prev = initialMix;
     for (const tick of bounds.slice(1, -1)) {
-      const mix = byTick.get(tick)?.[track.role];
+      const rawMix = byTick.get(tick)?.[track.role];
+      const mix = rawMix ? capMixForTrack(track, tick, rawMix) : undefined;
       if (!mix) continue;
       if (required.has(tick) || !sameMix(mix, prev)) {
         mixChanges.push({ atTick: ticks(tick), mix });

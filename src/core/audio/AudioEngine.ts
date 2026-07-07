@@ -48,6 +48,7 @@ const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
     lead: 'melody', comp: 'accomp', bass: 'bass', drum: 'drums', pad: 'accomp',
 };
 const ROLE_CHANNEL_VIS: Record<string, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
+const CC_DELAY_SEND = 95;
 
 class AudioEngineSystem {
     private visualsMode: 'all' | 'gameplay-only' = 'all';
@@ -213,10 +214,12 @@ class AudioEngineSystem {
     }
     public controllerChange(channel: number, controller: number, value: number): void {
         if (!spessaSynth) return;
+        const cc = Math.round(controller);
+        if (cc === CC_DELAY_SEND) return;
         try {
             (spessaSynth as any).controllerChange?.(
                 Math.round(channel),
-                Math.round(controller),
+                cc,
                 Math.max(0, Math.min(127, Math.round(value))),
             );
         } catch { /* ignore */ }

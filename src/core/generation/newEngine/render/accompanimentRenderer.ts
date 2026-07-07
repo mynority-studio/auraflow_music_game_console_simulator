@@ -32,7 +32,7 @@ export interface AccompContext {
   sectionRoleById?: Record<string, SectionRole>; // 段落功能 → 钢琴 spread mode 选择(pickSpreadMode)
   voicingRng?: SpreadPicker;       // spread mode 选择用的确定性子流('accompaniment')
   textureSchedule?: TextureSchedule; // ★ 中央下发的 spanId→textureCase(bass/comp/drum 共享)
-  melodyFloorMidi?: number;        // ★ 旋律保留区地板(reservedRegister.lowMidi):comp 顶须 < 此 → 让位旋律
+  melodyFloorMidi?: number;        // ★ comp ceiling(通常 registerByRole.comp.high+1):comp 顶须 < 此 → 给 lead 留空间
   // —— pad-comp 分工(pad-aware thinning,仅在 pad-active span 生效,保 GM 手感)——
   padCompDecisionBySection?: Record<string, PadCompDecision>; // 每段 pad↔comp 决策
   padOccupiedPitchesBySpan?: Record<string, number[]>;        // pad 各 span 已占绝对 MIDI(comp 让 pad)

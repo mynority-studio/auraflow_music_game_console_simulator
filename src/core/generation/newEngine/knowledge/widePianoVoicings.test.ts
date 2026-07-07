@@ -20,10 +20,10 @@ const opts = (over: Partial<WidePianoOptions> = {}): WidePianoOptions => ({
 });
 
 describe('isPianoProgram', () => {
-  it('钢琴家族 GM 0/1/2 → true,其它 → false', () => {
+  it('运行钢琴家族 GM 0/1 → true,其它 → false', () => {
     expect(isPianoProgram(0)).toBe(true);
     expect(isPianoProgram(1)).toBe(true);
-    expect(isPianoProgram(2)).toBe(true);
+    expect(isPianoProgram(2)).toBe(false); // 24k nano 包未保留 Honky-tonk
     expect(isPianoProgram(4)).toBe(false); // Rhodes
     expect(isPianoProgram(5)).toBe(false); // FM-EP
     expect(isPianoProgram(undefined)).toBe(false);

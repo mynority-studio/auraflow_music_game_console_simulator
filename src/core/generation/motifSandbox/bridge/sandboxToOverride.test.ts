@@ -5,10 +5,15 @@ import { generateSampleCaptured } from '../model/motifAnalysis';
 import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
 import { generateSong } from '../../newEngine/generation/GenerationController';
 import { beats } from '../../newEngine/foundation';
+import { fitMidiToProgramRange } from '../../newEngine/knowledge/instruments';
+import { leadCompWetEnergyRatio } from '../../newEngine/render/renderMixBalance';
+import type { TrackIR } from '../../newEngine/ir/MusicalIR';
 
 const m12 = (n: number) => ((n % 12) + 12) % 12;
 const weave = (style: 'pop' | 'jazz' = 'pop', seed = 7) =>
   generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', 0), style, keyPc: 0, mode: 'major', bpm: 96, seed });
+const fittedLeadPitches = (lead: readonly { pitch: number }[], program: number): number[] =>
+  lead.map((n) => fitMidiToProgramRange(n.pitch, 'lead', program));
 
 describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', () => {
   it('★ motifNoteToLeadNote:midi→pitch、velocity 0..1 → 1..127、拍位/时值保留', () => {
@@ -27,16 +32,16 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     expect(ov.lead![0].pitch).toBe(Math.round(r.lead[0].midi));
   });
 
-  it('★ 端到端走 A:Q+R weave → override → generateSongFromMotif 成曲(lead==我们的 motif lead,bass 吃 sandbox 和声)', () => {
+  it('★ 端到端走 A:Q+R weave → override → generateSongFromMotif 成曲(lead 吃 motif+音区,bass 吃 sandbox 和声)', () => {
     const r = weave('pop', 7);
     const ov = buildMotifSongOverride(r, 0, 'major');
     const song = generateSongFromMotif({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 120 }, ov);
     expect(song.status).not.toBe('failed');
 
-    // lead 轨 = 我们的 motif lead(tile 满全曲;首份逐音原样,证明 renderMgMelody 让位)
+    // lead 轨 = Q+R motif lead(tile 满全曲);音高按最终器配音色折回,证明 renderMgMelody 让位且消费 Aura25 合同。
     const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
     expect(lead.notes.length).toBeGreaterThanOrEqual(ov.lead!.length);
-    expect(lead.notes.slice(0, ov.lead!.length).map((n) => n.pitch)).toEqual(ov.lead!.map((n) => n.pitch));
+    expect(lead.notes.slice(0, ov.lead!.length).map((n) => n.pitch)).toEqual(fittedLeadPitches(ov.lead!, lead.program!));
 
     // bass 轨吃 sandbox 和声(首音根/三/五)
     const bass = song.ir!.tracks.find((t) => t.role === 'bass');
@@ -52,10 +57,29 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     expect(() => generateSongFromMotif({ seed: 3, styleHint: 'jazz', mood: 'x', targetDuration: 120 }, ov)).not.toThrow();
   });
 
+  it('★ pop 走 A:轻力度用户 motif 整编后 lead 不被 comp 盖住', () => {
+    const captured = generateSampleCaptured(96, 0, 'major', 0)
+      .map((n) => ({ ...n, velocity: Math.max(1, Math.round(n.velocity * 0.4)) }));
+    const r = generateMotifWeave({ capturedNotes: captured, style: 'pop', keyPc: 0, mode: 'major', bpm: 96, seed: 7 });
+    const ov = buildMotifSongOverride(r, 0, 'major');
+    const leadAvg = ov.lead!.reduce((sum, n) => sum + n.velocity, 0) / ov.lead!.length;
+
+    expect(leadAvg).toBeGreaterThanOrEqual(88);
+
+    const song = generateSongFromMotif({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 96 }, ov);
+    const ratio = leadCompWetEnergyRatio(song.ir!.tracks as TrackIR[], {
+      style: 'pop',
+      ppq: song.ir!.timebase.ppq,
+      durationTicks: song.ir!.durationTicks as number,
+    });
+
+    expect(ratio).toBeGreaterThanOrEqual(1.2);
+  });
+
   // —— PR4 端到端验收:曲长对齐(tile)+ 各轨覆盖全曲 + 不 failed ——
   const STYLES = [['pop', 7], ['lofi', 3], ['rnb', 5], ['jazz', 9]] as const;
 
-  it('★ PR4:4 风格走 A 成曲不 failed,lead=tile 的 motif lead(首音对齐),bass/comp 非空', () => {
+  it('★ PR4:4 风格走 A 成曲不 failed,lead=tile 的 motif lead(首音按音色折回),bass/comp 非空', () => {
     for (const [style, seed] of STYLES) {
       const r = weave(style as 'pop' | 'jazz', seed);
       const ov = buildMotifSongOverride(r, 0, 'major');
@@ -64,20 +88,21 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
       expect(song.ir, `${style} ir`).toBeDefined();
       const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
       expect(lead.notes.length, `${style} lead≥motif`).toBeGreaterThanOrEqual(ov.lead!.length); // tile ≥ 1 份
-      expect(lead.notes[0].pitch, `${style} lead 首音`).toBe(ov.lead![0].pitch);                 // 首音 == motif 首音
+      expect(lead.notes[0].pitch, `${style} lead 首音`).toBe(fitMidiToProgramRange(ov.lead![0].pitch, 'lead', lead.program!)); // 首音吃最终音色音区
       expect(song.ir!.tracks.find((t) => t.role === 'bass')!.notes.length, `${style} bass`).toBeGreaterThan(0);
       expect(song.ir!.tracks.find((t) => t.role === 'comp')!.notes.length, `${style} comp`).toBeGreaterThan(0);
     }
   });
 
-  it('★ PR6 收口:motif lead 原样不被改(首份 lead 音 pitch + startTick 逐音 == sandbox lead;无 humanize/swing)', () => {
+  it('★ PR6 收口:motif lead 节奏原样,音高按最终音色折回(无 humanize;pop 无 swing)', () => {
     const r = weave('pop', 7);
     const ov = buildMotifSongOverride(r, 0, 'major');
     const song = generateSongFromMotif({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 96 }, ov);
     const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
     const tb = song.ir!.timebase;
+    const expectedPitch = fittedLeadPitches(ov.lead!, lead.program!);
     for (let i = 0; i < ov.lead!.length; i++) {
-      expect(lead.notes[i].pitch, `lead[${i}] pitch`).toBe(ov.lead![i].pitch);
+      expect(lead.notes[i].pitch, `lead[${i}] pitch`).toBe(expectedPitch[i]);
       expect(lead.notes[i].startTick, `lead[${i}] startTick`).toBe(tb.beatToTick(beats(ov.lead![i].onsetBeat))); // 时序原样
     }
   });

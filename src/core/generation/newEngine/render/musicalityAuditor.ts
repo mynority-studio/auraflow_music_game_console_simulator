@@ -21,6 +21,10 @@ const SPARSE_COMP_GAP_BEATS = 2.5; // 稀疏 rich 织体段:固有呼吸放宽�
 const ANCHOR_WINDOW_BEAT = 1.0; // 段起首拍内出现 anchor 即视为落地
 const SWUNG_POS = 0.66;
 
+function isGuitarProgram(program: number | undefined): boolean {
+  return program !== undefined && program >= 24 && program <= 31;
+}
+
 /** 区间集合减去 holes(返回剩余子区间)。Loop 5:comp 应在场区间 − dense-melody 区间。 */
 function subtractRanges(ranges: readonly { lo: number; hi: number }[], holes: readonly { lo: number; hi: number }[]): { lo: number; hi: number }[] {
   let out = ranges.map((r) => ({ ...r }));
@@ -105,8 +109,11 @@ export function auditMusicality(
   }
 
   // —— Rule 5: comp-continuity-gap —— comp 应在场区间内空隙超阈值(★ per-section 阈值:稀疏织体放宽)。
-  const compNotes = ir.tracks.find((t) => t.role === 'comp')?.notes ?? [];
-  if (compNotes.length) {
+  const compTrack = ir.tracks.find((t) => t.role === 'comp');
+  const compNotes = compTrack?.notes ?? [];
+  const compIsGuitar = isGuitarProgram(compTrack?.program)
+    && (compTrack?.programChanges ?? []).every((pc) => isGuitarProgram(pc.program));
+  if (compNotes.length && !compIsGuitar) {
     const baseThresh = COMP_GAP_BEATS[style.toLowerCase()] ?? COMP_GAP_BEATS.default;
     const compTicks = compNotes.map((n) => ({ startTick: n.startTick as number, durationTicks: n.durationTicks as number }));
     for (let i = 0; i < arrangement.sections.length; i++) {

@@ -32,10 +32,10 @@ const LINEUP_RULES: Record<string, LineupRule> = {
 };
 
 // 各 style 各角色的乐器候选(GM program);随 seed 选一。
-// ★ lead 走【钢琴 + 舒缓键盘 + 颤音琴 + Tenor Sax】路线(删长笛/小号/合成 lead 等高频刺耳)。
-//   2026-06-09 暖路线扩充:在【不刺耳】前提下加宽调色板 —— 尼龙/爵士/clean 吉他(24/26/27)、
+// ★ lead 走【钢琴 + 舒缓键盘 + 颤音琴 + 低音区萨克斯】路线(删长笛/小号/合成 lead 等高频刺耳)。
+//   2026-06-09 暖路线扩充:在【不刺耳】前提下加宽调色板 —— 尼龙/钢弦/爵士/电吉他元数据(24/25/26/27)、
 //   哈蒙德管风琴(16)、大提琴(42)、更多暖 pad(88 New Age / 94 Halo)、古筝(107)/卡林巴(108)。
-//   仍不加铜管/长笛/高频合成 lead(守"不刺耳");Tenor Sax 作为 CityPop/Jazz lead 允许。
+//   仍不加铜管/长笛/高频合成 lead(守"不刺耳");低音区萨克斯作为 CityPop/Jazz lead 允许。
 //   配对一致性由 coherentLeadComp() 在器配层补充规则保证。
 const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
   // ★ 2026-06-10:管风琴(16)从 comp 移到【仅 pad】—— Hammond 是【持续音 + 无力度】乐器,我们的 comp 是
@@ -43,31 +43,52 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   //   持续乐器归 pad(持续渲染天然合适);comp 只放【可衰减/拨奏的多音乐器】。capability 见 canPlayComp()。
   // ★ 2026-06-10:暖路线全族扩(用户:钢琴/bass/吉他/pad/synthFX 全加,暖子集 = 跳过失真/过载吉他 + 刺耳 FX)。
   //   按风格 + 能力分配:comp 只放可 comp(键盘/吉他);synthFX(持续)→ pad;吉他 lead+comp;slap/fretless → bass。
-  // ★ 2026-07-03:用户决策「不要 jazz guitar」→ GM26 不再进入主动器配池;爵士 lead 聚焦 Tenor Sax/钢琴/电钢/颤音琴。
-  jazz: { lead: [66, 0, 4, 11], comp: [0, 4], bass: [32], pad: [49, 16], drum: [40] },
-  pop: { lead: [66, 5, 4, 1, 11, 108], comp: [5, 4, 1], bass: [38, 33, 34], pad: [89, 49, 98], drum: [0] },
-  lofi: { lead: [4, 11, 108, 66, 7], comp: [4, 5, 7], bass: [33, 39], pad: [89, 98, 49], drum: [25] },
-  rnb: { lead: [66, 5, 4, 11], comp: [5, 4, 7], bass: [33, 39, 34], pad: [89, 16, 98], drum: [25] },
-  modal: { lead: [11, 108, 66, 4], comp: [4, 0], bass: [32, 33, 39], pad: [89, 48, 49, 98], drum: [0] },
-  // ★ ACG 钢琴主导(MG 久石让/坂本电影钢琴):★ 2026-06-28 用户复核「做成纯 solo piano」→ lead/comp 都【只大钢琴 0】
-  //   (旋律+伴奏同一台钢琴,不再 lead 电钢/comp 大钢琴的双钢琴错位);bass = 原声/低音提琴(32/43 upright 暖);
-  //   pad = 电影暖弦(49 慢弦/48 弦组/50 合成弦/89 暖垫)。
-  acg: { lead: [0], comp: [0], bass: [32], pad: [49, 48, 89], drum: [0] },
-  default: { lead: [0, 5, 4, 66, 11, 108], comp: [0, 5, 4], bass: [33], pad: [89], drum: [0] },
+  // ★ 2026-07-03:用户决策「不要 jazz guitar」→ GM26 不再进入主动器配池;爵士 lead 聚焦低音区萨克斯/钢琴/电钢/颤音琴。
+  // ★ 2026-07-07:旧 Tenor Sax(GM66)与慢弦(GM49)从运行包剔除;萨克斯主动池统一改 GM67 上低音,持续 pad 只保留 GM89。
+  // ★ 2026-07-07:GM27 Clean Guitar 太薄 → 运行包改 GM25 Folk/Steel Acoustic Guitar,作为 pop/R&B/modal lead+comp 色彩。
+  //   Jazz 默认池不主动放吉他;显式选择 guitarist 时由 family fallback 兜 GM25。
+  jazz: { lead: [67, 0, 11], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
+  // ★ 2026-07-07:GM67 sax 从非 Jazz 主动 lead 池移出。Pop/RNB/LOFI 的主角应是 piano/EP/soft pluck,
+  //   sax 只在 Jazz 高概率出现;Modal 保留极低色彩概率,避免全局“到处都是 sax”。
+  pop: { lead: [0, 5, 25, 11, 108], comp: [5, 25, 0, 24], bass: [38, 32], pad: [89], drum: [0] },
+  lofi: { lead: [5, 0, 11, 108, 25], comp: [5, 24, 25, 0], bass: [32, 38], pad: [89], drum: [0] },
+  rnb: { lead: [5, 0, 25, 11], comp: [5, 25, 0, 24], bass: [38, 32], pad: [89], drum: [0] },
+  modal: { lead: [11, 108, 0, 5, 67, 25], comp: [0, 5, 24, 25], bass: [32, 38], pad: [89], drum: [0] },
+  // ★ ACG 主体仍是钢琴写作,但 lead/comp 对当前 Aura25 小包开放键盘式色彩:
+  //   大钢琴/CityPop FM 电钢/颤音琴/卡林巴。bass 保持原声,不引入 drum/pad 核心。
+  acg: { lead: [0, 5, 11, 108], comp: [0, 5, 11, 108], bass: [32], pad: [89], drum: [0] },
+  default: { lead: [0, 5, 25, 11, 108], comp: [0, 5, 25, 24], bass: [32], pad: [89], drum: [0] },
 };
 
-const FALLBACK_PROGRAM: Record<InstrumentRoleName, number> = { bass: 33, comp: 0, lead: 0, pad: 89, drum: 0 };
+const FALLBACK_PROGRAM: Record<InstrumentRoleName, number> = { bass: 32, comp: 0, lead: 0, pad: 89, drum: 0 };
 const ROLE_ORDER: InstrumentRoleName[] = ['bass', 'comp', 'pad', 'lead', 'drum'];
+const FAMILY_FALLBACK_PROGRAMS: Partial<Record<InstrumentFamily, readonly number[]>> = {
+  guitar: [25],
+  keyboard: [0, 5],
+  bass: [32, 38],
+  pad: [89],
+  mallet: [11, 108],
+  wind: [67],
+};
 
 // ★ 2026-06-23(用户:JAZZ 整编"是乐器问题,不要缩,做更高优先级"):候选池全保留(不缩),给地道音色【更高
-//   选中权重】。缺省权重=1;现仅 jazz lead/bass 配权重 —— Tenor Sax/钢琴三重奏优先,Rhodes/颤音琴保色彩;
+//   选中权重】。缺省权重=1;现仅 jazz lead/bass 配权重 —— 上低音萨克斯/钢琴三重奏优先,Rhodes/颤音琴保色彩;
 //   bass upright 为主。**权重只改被选中概率,不改 rng 消耗步数(仍每角色一次抽样)** → 同 seed
 //   确定性、非加权风格/角色字节不变;jazz lead/bass 值改变(本意),其余角色因 stream 对齐而不变。
 const INSTRUMENT_WEIGHTS: Record<string, Partial<Record<InstrumentRoleName, Record<number, number>>>> = {
   jazz: {
-    lead: { 66: 8, 0: 8, 4: 4, 11: 2 },
+    lead: { 67: 12, 0: 6, 11: 2 },
     bass: { 32: 6 },
   },
+  pop: { lead: { 0: 7, 5: 5, 25: 2, 11: 1, 108: 1 } },
+  lofi: { lead: { 5: 7, 0: 4, 11: 2, 108: 2, 25: 1 } },
+  rnb: { lead: { 5: 8, 0: 4, 25: 2, 11: 1 } },
+  modal: { lead: { 11: 5, 108: 4, 0: 3, 5: 2, 67: 1, 25: 1 } },
+  acg: {
+    lead: { 0: 10, 5: 3, 11: 2, 108: 1 },
+    comp: { 0: 10, 5: 3, 11: 1, 108: 1 },
+  },
+  default: { lead: { 0: 7, 5: 5, 25: 2, 11: 1, 108: 1 } },
 };
 
 /** 加权挑 program:无权重表 → 退 `rng.pick`(字节不变路径);有 → 按权重(缺省 1)挑,消耗【一次 `rng.next()`】
@@ -109,12 +130,12 @@ const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
   7: { family: 'keyboard', range: [36, 96] },  // Clavinet(funk 电翼)
   8: { family: 'keyboard', range: [60, 108] }, // Celesta(高音区键盘)
   16: { family: 'keyboard', range: [36, 96] }, // 哈蒙德管风琴(可 voice 和弦色彩)
-  11: { family: 'mallet', range: [53, 89] },   // 颤音琴
+  11: { family: 'mallet', range: [53, 89] },   // 颤音琴(F3-F6)
   12: { family: 'mallet', range: [45, 96] },   // 马林巴
-  65: { family: 'wind', range: [49, 81] }, 66: { family: 'wind', range: [44, 76] }, 67: { family: 'wind', range: [36, 69] }, // Alto / Tenor / Bari Sax(sounding)
-  107: { family: 'mallet', range: [48, 84] }, 108: { family: 'mallet', range: [60, 96] }, // 古筝 / 卡林巴(gentle 拨/击)
-  24: { family: 'guitar', range: [40, 84] }, 25: { family: 'guitar', range: [40, 86] }, 26: { family: 'guitar', range: [40, 86] }, // 尼龙 / 钢弦 / 爵士
-  27: { family: 'guitar', range: [40, 88] }, 28: { family: 'guitar', range: [40, 86] }, 31: { family: 'guitar', range: [55, 96] }, // clean / 闷音 / 泛音
+  65: { family: 'wind', range: [49, 81] }, 66: { family: 'wind', range: [44, 76] }, 67: { family: 'wind', range: [36, 72] }, // Alto / Tenor / Bari Sax(sounding;lead 不再硬压低八度)
+  107: { family: 'mallet', range: [48, 84] }, 108: { family: 'mallet', range: [60, 88] }, // 古筝 / 卡林巴(gentle 拨/击;17-key C4-E6 常用区)
+  24: { family: 'guitar', range: [40, 88] }, 25: { family: 'guitar', range: [40, 88] }, 26: { family: 'guitar', range: [40, 88] }, // 尼龙 / 钢弦 / 爵士
+  27: { family: 'guitar', range: [40, 88] }, 28: { family: 'guitar', range: [40, 88] }, 31: { family: 'guitar', range: [52, 88] }, // clean / 闷音 / 泛音
   42: { family: 'strings', range: [36, 76] },  // 大提琴(暖音区独奏)
   75: { family: 'wind', range: [60, 96] }, 77: { family: 'wind', range: [55, 86] }, // 排箫 / 尺八(暖气声管乐,单音 → 仅 lead)
   32: { family: 'bass', range: [28, 67] }, 33: { family: 'bass', range: [28, 67] },
@@ -134,12 +155,45 @@ export function instrumentInfo(program: number): InstrumentInfo {
   return INSTRUMENT_INFO[program] ?? DEFAULT_INFO;
 }
 
-/** 真实乐器的演奏甜区。硬范围见 instrumentInfo.range;甜区用于生成,避免萨克斯等真实乐器跑到极限音域。 */
+/** 真实乐器硬音域。角色音区分工另见 preferredRegisterForRole;这里不再把 sax 人为降八度。 */
 export function playableRangeForRole(role: InstrumentRoleName, program: number): readonly [number, number] {
-  if (role === 'lead' && program === 66) return [48, 72]; // Tenor Sax 厚实 jazz 中低声区,仍在真实 sounding 44-76 内。
-  if (role === 'lead' && program === 65) return [52, 78]; // Alto Sax 中声区。
-  if (role === 'lead' && program === 67) return [43, 65]; // Bari Sax 低中声区。
+  void role;
   return instrumentInfo(program).range;
+}
+
+function clampRangeToInstrument(range: readonly [number, number], hard: readonly [number, number]): readonly [number, number] {
+  const lo = Math.max(range[0], hard[0]);
+  const hi = Math.min(range[1], hard[1]);
+  return lo <= hi ? [lo, hi] : hard;
+}
+
+/** 角色推荐音区:lead 更宽,comp 更窄且位于中低区,为 lead 留空间;最终仍由硬音域兜底。 */
+export function preferredRegisterForRole(role: InstrumentRoleName, program: number): readonly [number, number] {
+  const info = instrumentInfo(program);
+  const hard = info.range;
+  if (role === 'bass') return clampRangeToInstrument([hard[0], Math.min(hard[1], 55)], hard);
+  if (role === 'pad') return clampRangeToInstrument([48, 84], hard);
+  if (role === 'drum') return [35, 81];
+
+  if (role === 'comp') {
+    if (info.family === 'keyboard') return clampRangeToInstrument([48, 72], hard);
+    if (info.family === 'mallet') return clampRangeToInstrument([hard[0], Math.min(hard[1], 77)], hard);
+    if (info.family === 'guitar') return clampRangeToInstrument([40, 76], hard);
+    if (info.family === 'pad') return clampRangeToInstrument([48, 76], hard);
+    if (info.family === 'bass') return clampRangeToInstrument([hard[0], Math.min(hard[1], 55)], hard);
+    return clampRangeToInstrument([48, 72], hard);
+  }
+
+  if (role === 'lead') {
+    if (info.family === 'keyboard') return clampRangeToInstrument([48, 96], hard);
+    if (info.family === 'mallet') return hard;
+    if (info.family === 'guitar') return hard;
+    if (info.family === 'wind') return hard;
+    if (info.family === 'pad') return clampRangeToInstrument([48, 84], hard);
+    return hard;
+  }
+
+  return hard;
 }
 
 /** 把旋律音高按八度折回该角色/乐器的真实可演奏范围,尽量保留 pitch class。 */
@@ -195,7 +249,7 @@ export function sameFamilyAlternates(style: string, role: InstrumentRoleName, pr
 // —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
 const GM_NAME: Record<number, string> = {
   0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: 'CityPop FM 电钢', 6: '羽管键琴', 7: 'Clavinet', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
-  16: '哈蒙德管风琴', 24: '尼龙吉他', 25: '钢弦吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 28: '闷音电吉他', 31: '吉他泛音', 42: '大提琴',
+  16: '哈蒙德管风琴', 24: '尼龙吉他', 25: '民谣木吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 28: '闷音电吉他', 31: '吉他泛音', 42: '大提琴',
   65: '中音萨克斯', 66: '次中音萨克斯', 67: '上低音萨克斯',
   75: '排箫', 77: '尺八', 107: '古筝', 108: '卡林巴',
   32: '立式贝斯', 33: '指弹贝斯', 34: '拨片贝斯', 35: '无品贝斯', 36: '击弦贝斯1', 37: '击弦贝斯2', 38: '合成贝斯1', 39: '合成贝斯2',
@@ -260,6 +314,7 @@ export function classifyTimbreWorld(rp: RoleProgramView, style: string): TimbreW
   const bs = rp.bass !== undefined ? timbreSource(rp.bass) : 'electric';
   switch (style) {
     case 'jazz': return 'jazzCombo';
+    case 'acg': return 'acousticPianoBand';
     case 'modal': return bs === 'synth' ? 'syntheticSoft' : 'modalAmbient';
     case 'rnb': return bs === 'synth' ? 'syntheticSoft' : 'electricKeys';
     case 'lofi': return 'lofiTapeKeys';
@@ -276,7 +331,7 @@ export function worldMismatches(rp: RoleProgramView, style: string): string[] {
   const out: string[] = [];
   if (style === 'jazz' && rp.bass !== undefined && [38, 39].includes(rp.bass)) out.push('jazz≠synth-bass');
   if (style === 'lofi' && rp.comp === 1) out.push('lofi≠bright-piano-comp');
-  if (style === 'jazz' && rp.pad !== undefined && [89, 91].includes(rp.pad)) out.push('jazz≠choir/warm-pad');
+  if (style === 'jazz' && rp.pad !== undefined && rp.pad === 91) out.push('jazz≠choir-pad');
   return out;
 }
 
@@ -289,8 +344,8 @@ export function repairWorldMismatches(rp: Record<InstrumentRoleName, number>, st
     if (out[role] === undefined || !bad(out[role])) return;
     out[role] = (pool[role] ?? []).find((p) => !bad(p)) ?? fallback;
   };
-  if (style === 'jazz') { fix('bass', (p) => [38, 39].includes(p), 32); fix('pad', (p) => [89, 91].includes(p), 49); }
-  if (style === 'lofi') fix('comp', (p) => p === 1, 4);
+  if (style === 'jazz') { fix('bass', (p) => [38, 39].includes(p), 32); fix('pad', (p) => p === 91, 89); }
+  if (style === 'lofi') fix('comp', (p) => p === 1, 5);
   return out;
 }
 
@@ -357,7 +412,8 @@ export function enforceRoleFamilies(
     const prog = out[role];
     if (!fams || !fams.length || prog === undefined) continue;
     if (fams.includes(programFamily(prog))) continue;          // 已合规
-    const match = (inst[role] ?? []).find((p) => fams.includes(programFamily(p)));
+    const match = (inst[role] ?? []).find((p) => fams.includes(programFamily(p)))
+      ?? fams.flatMap((family) => FAMILY_FALLBACK_PROGRAMS[family] ?? []).find((p) => fams.includes(programFamily(p)));
     if (match !== undefined) out = out === rp ? { ...rp, [role]: match } : { ...out, [role]: match };
   }
   return out;
@@ -403,11 +459,15 @@ export function pickBandInstrumentation(style: string, rng: Rng, constraint?: Li
   const roleProgram = {} as Record<InstrumentRoleName, number>;
   for (const r of lineup) {
     let cands = inst[r] ?? [FALLBACK_PROGRAM[r]];
-    // ★ 家族约束:participant 的乐器家族过滤候选(空交集 → 回退全候选)。auto-fill 的 role 不约束家族。
+    // ★ 家族约束:participant 的乐器家族过滤候选(空交集 → 先用可兑现 family fallback)。auto-fill 的 role 不约束家族。
     const fams = constraint?.familyByRole?.[r];
     if (fams && fams.length && !autoFilled.includes(r)) {
       const filtered = cands.filter((p) => fams.includes(programFamily(p)));
       if (filtered.length) cands = filtered;
+      else {
+        const fallback = fams.flatMap((family) => FAMILY_FALLBACK_PROGRAMS[family] ?? []).filter((p) => fams.includes(programFamily(p)));
+        if (fallback.length) cands = fallback;
+      }
     }
     roleProgram[r] = pickWeightedProgram(rng, cands, INSTRUMENT_WEIGHTS[style]?.[r]);
   }

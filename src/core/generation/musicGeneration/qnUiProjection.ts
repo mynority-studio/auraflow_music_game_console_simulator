@@ -34,7 +34,7 @@ const GM_NAMES = [
   'Acoustic Grand', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Rhodes EP', 'CityPop FM EP', 'Harpsichord', 'Clavinet',
   'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer',
   'Drawbar Organ', 'Perc Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion',
-  'Nylon Guitar', 'Steel Guitar', 'Jazz Guitar', 'Clean Guitar', 'Muted Guitar', 'Overdrive Guitar', 'Distortion Guitar', 'Guitar Harmonics',
+  'Nylon Guitar', '民谣木吉他', 'Jazz Guitar', 'Clean Guitar', 'Muted Guitar', 'Overdrive Guitar', 'Distortion Guitar', 'Guitar Harmonics',
   'Acoustic Bass', 'Finger Bass', 'Pick Bass', 'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1', 'Synth Bass 2',
   'Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings', 'Pizzicato', 'Harp', 'Timpani',
   'String Ens 1', 'String Ens 2', 'Synth Strings 1', 'Synth Strings 2', 'Choir Aahs', 'Voice Oohs', 'Synth Voice', 'Orchestra Hit',
@@ -99,6 +99,11 @@ function uiGesture(g: SongBundle['instrumentation']['gestureExpressionByRole'][Q
   return {
     kind: g.kind,
     family: g.family,
+    continuity: g.continuity,
+    articulationScope: g.articulationScope,
+    triggerPolicy: g.triggerPolicy,
+    phrasePolicy: g.phrasePolicy,
+    evidenceRefs: [...g.evidenceRefs],
     articulation: g.articulation,
     noteShape: g.noteShape,
     velocityCurve: g.velocityCurve,
@@ -165,7 +170,7 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
     role: t.role as QnRole,
     channel: ROLE_CHANNEL[t.role as QnRole] ?? 0,
     program: mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style),
-    instrumentName: gmName(mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style)),
+    instrumentName: t.role === 'drum' ? 'Drum Kit' : gmName(mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style)),
     noteCount: t.notes.length,
   }));
 

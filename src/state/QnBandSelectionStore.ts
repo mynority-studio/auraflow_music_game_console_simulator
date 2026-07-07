@@ -12,11 +12,11 @@
 
 import type { BandParticipantRole, BandParticipantSelection, BandParticipantState } from '../core/generation/musicGeneration/types';
 
-export const QN_PARTICIPANT_ORDER: BandParticipantRole[] = ['keyboardist', 'bassist', 'drummer', 'synthPlayer', 'leadPlayer'];
+export const QN_PARTICIPANT_ORDER: BandParticipantRole[] = ['keyboardist', 'guitarist', 'bassist', 'drummer', 'synthPlayer', 'leadPlayer'];
 
 /** participant 中文显示名(UI roster/toggle 用)。 */
 export const QN_PARTICIPANT_LABEL: Record<BandParticipantRole, string> = {
-  keyboardist: '键盘手', bassist: '贝斯手', drummer: '鼓手', synthPlayer: '合成/氛围', leadPlayer: '主奏',
+  keyboardist: '键盘手', guitarist: '吉他手', bassist: '贝斯手', drummer: '鼓手', synthPlayer: '合成/氛围', leadPlayer: '主奏',
 };
 
 // 缺省 = 全 auto(空对象)。

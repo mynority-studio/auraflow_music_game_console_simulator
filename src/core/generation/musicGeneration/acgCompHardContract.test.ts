@@ -6,7 +6,7 @@ import type { BandParticipantSelection } from './types';
 // ============================================================
 // ACG comp track 硬合同(acg_comp_track_hard_contract_directive.md,P0)
 // ------------------------------------------------------------
-// ACG = 钢琴写作模型:lead(旋律)+ comp(独立钢琴伴奏)+ bass。即便同 GM0 也必须是两条轨/两通道。
+// ACG = 键盘写作模型:lead(旋律)+ comp(独立键盘伴奏)+ bass。即便同 GM program 也必须是两条轨/两通道。
 // Band Selection 不能删掉 comp;ACG 核心不含 drum(P0)。
 // ============================================================
 
@@ -14,9 +14,11 @@ const acg = (bandParticipants?: BandParticipantSelection[]) =>
   generateMusicSync({ seed: 0, styleHint: 'acg', mood: 'build', targetDuration: 90, ...(bandParticipants ? { bandParticipants } : {}) });
 
 const track = (r: ReturnType<typeof acg>, role: string) => r.ir!.tracks.find((t) => t.role === role);
+const ACG_KEYBOARDISH = [0, 5, 11, 108] as const;
 
 describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead + comp', () => {
-  it('8 seeds:lead/comp/bass 三轨齐;comp 有真实音符;同 program 0 但分轨', () => {
+  it('8 seeds:lead/comp/bass 三轨齐;comp 有真实音符;lead/comp 开放键盘式音色但分轨', () => {
+    const combos = new Set<string>();
     for (let seed = 0; seed < 8; seed++) {
       const r = generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
       const roles = new Set(r.ir!.tracks.map((t) => t.role));
@@ -28,8 +30,9 @@ describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead
       const comp = r.ir!.tracks.find((t) => t.role === 'comp')!;
       expect(lead.notes.length, `seed ${seed} lead notes`).toBeGreaterThan(0);
       expect(comp.notes.length, `seed ${seed} comp notes`).toBeGreaterThan(0);
-      expect(lead.program, `seed ${seed} lead program`).toBe(0);
-      expect(comp.program, `seed ${seed} comp program`).toBe(0);
+      expect(ACG_KEYBOARDISH).toContain(lead.program as typeof ACG_KEYBOARDISH[number]);
+      expect(ACG_KEYBOARDISH).toContain(comp.program as typeof ACG_KEYBOARDISH[number]);
+      combos.add(`${lead.program}:${comp.program}`);
       expect(lead.role).not.toBe(comp.role);
       expect(lead).not.toBe(comp); // 两个独立 TrackIR 对象
       // ACG 核心不含 drum(P0)
@@ -40,6 +43,7 @@ describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead
       expect(rosterRoles).toContain('lead');
       expect(rosterRoles).toContain('comp');
     }
+    expect(combos.size, 'ACG lead/comp 音色应随 seed 有有限多样性').toBeGreaterThan(1);
   });
 });
 
@@ -70,7 +74,7 @@ describe('musicGeneration/acgCompHardContract · §6.2 Band Selection 不能删 
 });
 
 describe('musicGeneration/acgCompHardContract · §6.3 同钢琴 program 不合并 lead/comp', () => {
-  it('lead noteOn→channel 1,comp noteOn→channel 2,均可 program 0,各自有 CC7', () => {
+  it('lead noteOn→channel 1,comp noteOn→channel 2,program 均落键盘式音色,各自有 CC7', () => {
     const r = acg();
     const events = musicalIRToMidiEvents(r.ir!, roomWetFor('acg'));
     const noteOnCh = (ch: number) => events.filter((e) => e.type === 'noteOn' && e.channel === ch);
@@ -79,9 +83,8 @@ describe('musicGeneration/acgCompHardContract · §6.3 同钢琴 program 不合�
 
     expect(noteOnCh(1).length, 'lead noteOn @ch1').toBeGreaterThan(0);
     expect(noteOnCh(2).length, 'comp noteOn @ch2').toBeGreaterThan(0);
-    // 两通道都可用 program 0(同钢琴音色,不同轨)
-    expect(progCh(1).every((e) => e.data1 === 0)).toBe(true);
-    expect(progCh(2).every((e) => e.data1 === 0)).toBe(true);
+    expect(progCh(1).every((e) => ACG_KEYBOARDISH.includes(e.data1 as typeof ACG_KEYBOARDISH[number]))).toBe(true);
+    expect(progCh(2).every((e) => ACG_KEYBOARDISH.includes(e.data1 as typeof ACG_KEYBOARDISH[number]))).toBe(true);
     // 各自有独立 CC7 mix
     expect(cc7Ch(1).length, 'ch1 CC7').toBeGreaterThan(0);
     expect(cc7Ch(2).length, 'ch2 CC7').toBeGreaterThan(0);

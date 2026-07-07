@@ -24,18 +24,18 @@ describe('knowledge/instruments · 音色世界统一性', () => {
   });
 
   it('★ worldMismatches(不风格错配 guard):jazz+合成贝斯 / lofi+亮钢琴 comp / jazz+合唱 pad → flagged;干净→空', () => {
-    expect(worldMismatches(rp({ comp: 0, bass: 38, pad: 49 }), 'jazz')).toContain('jazz≠synth-bass');
+    expect(worldMismatches(rp({ comp: 0, bass: 38, pad: 89 }), 'jazz')).toContain('jazz≠synth-bass');
     expect(worldMismatches(rp({ comp: 1, bass: 33 }), 'lofi')).toContain('lofi≠bright-piano-comp');
-    expect(worldMismatches(rp({ comp: 0, bass: 32, pad: 89 }), 'jazz')).toContain('jazz≠choir/warm-pad');
-    expect(worldMismatches(rp({ comp: 0, bass: 32, pad: 49 }), 'jazz')).toEqual([]); // 标准 jazz combo 无错配
+    expect(worldMismatches(rp({ comp: 0, bass: 32, pad: 91 }), 'jazz')).toContain('jazz≠choir-pad');
+    expect(worldMismatches(rp({ comp: 0, bass: 32, pad: 89 }), 'jazz')).toEqual([]); // 当前小包 warm pad fallback 无错配
   });
 
   it('★ repairWorldMismatches:错配 → 从同 style 池换不错配候选;无错配 → 原对象(identity)', () => {
-    const bad = rp({ lead: 11, comp: 0, bass: 38, pad: 49, drum: 0 }); // jazz 误用合成贝斯
+    const bad = rp({ lead: 11, comp: 0, bass: 38, pad: 89, drum: 0 }); // jazz 误用合成贝斯
     const fixed = repairWorldMismatches(bad, 'jazz');
     expect(fixed.bass).toBe(32);                       // 换立式(jazz 池 [32])
     expect(worldMismatches(fixed, 'jazz')).toEqual([]); // 修复后无错配
-    const clean = rp({ lead: 11, comp: 0, bass: 32, pad: 49, drum: 0 });
+    const clean = rp({ lead: 11, comp: 0, bass: 32, pad: 89, drum: 0 });
     expect(repairWorldMismatches(clean, 'jazz')).toBe(clean); // 无错配 = 原对象返回(确定性/零改动)
   });
 

@@ -12,7 +12,7 @@ import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
 import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
-import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, playableRangeForRole } from '../knowledge/instruments';
+import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, preferredRegisterForRole } from '../knowledge/instruments';
 import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
@@ -46,11 +46,7 @@ const REGISTER_BY_ROLE: Record<InstrumentRoleName, RegisterRange> = {
 
 function registerForRole(role: InstrumentRoleName, program: number | undefined): RegisterRange {
   if (program === undefined) return REGISTER_BY_ROLE[role];
-  const [lo, hi] = playableRangeForRole(role, program);
-  const base = REGISTER_BY_ROLE[role];
-  const low = Math.max(base.lowMidi as number, lo);
-  const high = Math.min(base.highMidi as number, hi);
-  if (low <= high) return rr(low, high);
+  const [lo, hi] = preferredRegisterForRole(role, program);
   return rr(lo, hi);
 }
 
@@ -460,9 +456,8 @@ export function buildInstrumentationPlan(
     for (const role of band.instrumentPool) if (fixed[role] && mixByRoleSection[role]) mixByRoleSection[role][s.id] = fixed[role]!;
   }
 
-  // ★ ACG(2026-07-02 用户:comp 与 lead 是【同一台钢琴】,音色要齐平):两轨同 program(0)但 program-mix 给了
-  //   不同 reverb(comp 40 / lead 47)/pan/chorus → 听着像两台不同的琴。统一 reverb/chorus/pan(同乐器=同空间同位置,
-  //   solo piano 居中),只保留 volume 差异(melody-first:lead 响、comp 是空气)。
+  // ★ ACG:lead/comp 是同一键盘式前景空间。即便音色在 piano/FM/vibes/kalimba 间变化,
+  //   也统一 reverb/chorus/pan,只保留 volume 差异(melody-first:lead 响、comp 是空气)。
   if (band.style.toLowerCase() === 'acg') {
     for (const s of arrangement.sections) {
       const compMix = mixByRoleSection.comp?.[s.id];

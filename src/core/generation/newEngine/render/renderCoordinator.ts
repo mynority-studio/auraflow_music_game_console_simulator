@@ -6,7 +6,7 @@
 // Melody、Resolver 后续 slice 接入。lead 轨先留空占位。
 // ============================================================
 
-import { beats, ticks, type RandomContext, type Timebase, type Ticks } from '../foundation';
+import { beats, midi, ticks, type RandomContext, type Timebase, type Ticks } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
@@ -45,6 +45,7 @@ import { tuckAcgLead, resolveAcgTailExpectations, acgLeadContext, repairAcgLeadG
 import { shapeAcgComp, spaceAcgBass } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
+import { fitMidiToProgramRange } from '../knowledge/instruments';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -108,6 +109,96 @@ function buildCompPedal(plan: HarmonicPlan, timebase: Timebase, style: string, b
     out.push({ atTick: ticks(off), down: false });
   });
   return out;
+}
+
+const isPlainDominant = (quality: string): boolean => {
+  const q = quality.toLowerCase();
+  return q.includes('7') && !q.includes('maj') && !q.includes('m7') && !q.includes('sus');
+};
+
+function saxLeadAvoidResolver(
+  notes: TrackIR['notes'],
+  plan: HarmonicPlan,
+  timebase: Timebase,
+  programForSection: (sectionId: string) => number | undefined,
+  compNotes: TrackIR['notes'] = [],
+): TrackIR['notes'] {
+  const twoBeatTicks = timebase.beatToTick(beats(2)) as number;
+  const minClashOverlap = timebase.ppq / 2;
+  const spans = plan.chordTimeline.map((span) => {
+    const start = timebase.beatToTick(span.startBeat) as number;
+    const end = start + (timebase.beatToTick(span.durationBeats) as number);
+    return { span, start, end };
+  });
+  const spanAt = (tick: number) => spans.find((s) => tick >= s.start && tick < s.end)?.span;
+  const nearestProgramPitch = (targetPc: number, ref: number): number => {
+    const refPc = ((ref % 12) + 12) % 12;
+    const up = ((targetPc - refPc) % 12 + 12) % 12;
+    const signed = up > 6 ? up - 12 : up;
+    return fitMidiToProgramRange(ref + signed, 'lead', 67);
+  };
+  const clashesComp = (candidatePitch: number, note: TrackIR['notes'][number]): boolean => {
+    const ns = note.startTick as number;
+    const ne = ns + (note.durationTicks as number);
+    return compNotes.some((cn) => {
+      const cs = cn.startTick as number;
+      const ce = cs + (cn.durationTicks as number);
+      const overlap = Math.min(ne, ce) - Math.max(ns, cs);
+      if (overlap < minClashOverlap) return false;
+      const distance = Math.abs((cn.pitch as number) - candidatePitch);
+      return distance === 1 || distance === 13;
+    });
+  };
+  let changed = false;
+  const fixed = notes.map((note) => {
+    if ((note.durationTicks as number) < twoBeatTicks) return note;
+    const span = spanAt(note.startTick as number);
+    if (!span || programForSection(span.sectionId) !== 67 || !isPlainDominant(span.quality)) return note;
+    const pitch = note.pitch as number;
+    const notePc = ((pitch % 12) + 12) % 12;
+    const dominantFourth = (((span.rootPc as number) + 5) % 12 + 12) % 12;
+    if (notePc !== dominantFourth) return note;
+    const root = span.rootPc as number;
+    const targetPcs = [root + 4, root + 7, root + 10, root, root + 8].map((n) => ((n % 12) + 12) % 12);
+    const candidates = [...new Set(targetPcs.map((targetPc) => nearestProgramPitch(targetPc, pitch)))];
+    const resolved = candidates.find((candidate) => !clashesComp(candidate, note)) ?? candidates[0] ?? pitch;
+    if (resolved === pitch) return note;
+    changed = true;
+    return { ...note, pitch: midi(resolved) };
+  });
+  return changed ? fixed : notes;
+}
+
+function fitLeadTrackToInstrumentSections(
+  track: TrackIR,
+  arrangement: ArrangementPlan,
+  instrumentation: InstrumentationPlan,
+  timebase: Timebase,
+): TrackIR {
+  const beatsPerBar = beatsPerBarOf(arrangement.meter);
+  const sections: { id: string; loBeat: number; hiBeat: number }[] = [];
+  let cursor = 0;
+  for (const section of arrangement.sections) {
+    const loBeat = cursor;
+    cursor += section.bars * beatsPerBar;
+    sections.push({ id: section.id, loBeat, hiBeat: cursor });
+  }
+  const fallback = instrumentation.roleProgram.lead;
+  const programAtTick = (tick: number): number => {
+    const beat = timebase.tickToBeat(ticks(tick)) as number;
+    const section = sections.find((s) => beat >= s.loBeat - 1e-6 && beat < s.hiBeat - 1e-6) ?? sections[sections.length - 1];
+    return (section ? instrumentation.programByRoleSection.lead?.[section.id] : undefined) ?? fallback;
+  };
+
+  let changed = false;
+  const notes = track.notes.map((note) => {
+    const pitch = note.pitch as number;
+    const fitted = fitMidiToProgramRange(pitch, 'lead', programAtTick(note.startTick as number));
+    if (fitted === pitch) return note;
+    changed = true;
+    return { ...note, pitch: midi(fitted) };
+  });
+  return changed ? { ...track, notes } : track;
 }
 
 /** ★ comp 去拖拍(2026-06-23,用户):把 comp 落在【拍内弱 16 分 .25/.75(拖在八分 groove 后)】的 onset 吸回
@@ -257,6 +348,13 @@ export function renderSongFull(
   //   pad 不再复制完整和弦 → comp active 段退成 guide-tone/drone(thin),pad-only 段才 full-support。
   //   render 顺序:bass → pad → comp(comp 拿 pad 占用音高避同绝对音)→ drum → lead。lead > bass > comp > pad。
   const reservedReg = instrumentation.melodyReservationPlan.reservedRegister;
+  const baseCompCeilingMidi = instrumentation.registerByRole.comp
+    ? ((instrumentation.registerByRole.comp.highMidi as number) + 1)
+    : (reservedReg.lowMidi as number);
+  // Sax lead 用真实宽音域后,comp 不能再顶到同一中音区;否则 lead 62 / comp 63 会形成贴音。
+  const compCeilingMidi = instrumentation.roleProgram.lead === 67
+    ? Math.min(baseCompCeilingMidi, 61)
+    : baseCompCeilingMidi;
   const activeRoles = instrumentation.activeRolesBySection;
   const roleInArr = (sid: string, role: string) => ((activeRoles[sid] as readonly string[] | undefined)?.includes(role) ?? true);
   const padDecisionBySection: Record<string, PadCompDecision> = {};
@@ -269,7 +367,7 @@ export function renderSongFull(
       padActive: inLineup('pad') && roleInArr(s.id, 'pad'),
       compActive: inLineup('comp') && activeSectionIds.has(s.id) && roleInArr(s.id, 'comp'),
       bassActive: inLineup('bass') && roleInArr(s.id, 'bass'),
-      leadReservedLow: reservedReg.lowMidi,
+      leadReservedLow: compCeilingMidi,
       leadReservedHigh: reservedReg.highMidi,
     });
   }
@@ -282,7 +380,7 @@ export function renderSongFull(
     // ★ pad 铺法二选一(一首一掷,确定性):~40% 走 pedal anchor(整段共同音/主音长 pedal + 动声部),
     //   ~60% 现有逐和弦选音。padStyle 子流独立 → 不扰其它决策。
     const pedalAnchor = rng.substream('padStyle').next() < PAD_PEDAL_ANCHOR_PROB;
-    padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: reservedReg.lowMidi, pedalAnchor, tonicPc: band.key as number });
+    padTrack = renderPad(plan, timebase, { padDensity: band.styleProfile.padDensity, decisionBySection: padDecisionBySection, leadReservedLow: compCeilingMidi, pedalAnchor, tonicPc: band.key as number });
     // ★ comp 避同绝对音高:只针对 pad 的【逐和弦音】(覆盖正好 1 span,会随和弦重新起音 → 可能与 comp hit 撞 unison)。
     //   一切【持续音】(tie 共同音 / pedal anchor,覆盖 ≥2 span)不让 comp 避——软持续 pad 上叠 comp 是加厚不是
     //   mud,且强行避会让 comp 整段/稀疏段丢掉该音高 = 过稀(实测 intro pedal 掏空 comp)。
@@ -308,16 +406,17 @@ export function renderSongFull(
     const rawBass = renderBass(plan, timebase, band.style, textureSchedule);
     tracks.push(applyBassPatternSchedule(rawBass, plan, arrangement.sections, intent, beatsPerBarOf(arrangement.meter), timebase.ppq));
   }
-  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: reservedReg.lowMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection }));
+  if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection }));
   if (padTrack) tracks.push(padTrack);
   if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, bigFillBars: leadInBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
   // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
   //   ★ ACG lead 落点塑形(tuckAcgLead)在 late 阶段做(需 comp apex),不在此处。
-  tracks.push(overrideLeadTrack
+  const leadTrack = overrideLeadTrack
     ? { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead }
-    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract)); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
+    : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
+  tracks.push(fitLeadTrackToInstrumentSections(leadTrack, arrangement, instrumentation, timebase));
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
@@ -393,10 +492,18 @@ export function renderSongFull(
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
+  const leadProgramForSection = (sectionId: string): number | undefined =>
+    instrumentation.programByRoleSection.lead?.[sectionId] ?? instrumentation.roleProgram.lead ?? band.roleProgram.lead;
+  const swungCompNotes = swungTracks.find((t) => t.role === 'comp')?.notes ?? [];
+  const harmonySafeTracks = swungTracks.map((t) => (
+    t.role === 'lead'
+      ? { ...t, notes: saxLeadAvoidResolver(t.notes, plan, timebase, leadProgramForSection, swungCompNotes) }
+      : t
+  ));
 
   // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
   //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
-  const auditedIR = freezeMusicalIR({ tracks: swungTracks, timebase, durationTicks: resolved.data.durationTicks });
+  const auditedIR = freezeMusicalIR({ tracks: harmonySafeTracks, timebase, durationTicks: resolved.data.durationTicks });
   const audit = auditHarmony(auditedIR, plan, timebase, {
     keyRootPc: band.key,
     globalMode: band.mode,
@@ -419,7 +526,7 @@ export function renderSongFull(
   // ★ §7.4:GrooveContract 有 ms pocket → pocket-handled 角色(bass;lead 本就跳 humanizeTiming)改由
   //   applyGroovePocket 拥有时序(不双重)。Phase D 起全 MG-backed 风格 contract 有真 pocket;legacy(BLUES/无 rng)pocket=0 → pocketSkip 空 → 不变。
   const pocketSkip = pocketedRoles(arrangement.songGrooveContract);
-  const humanizedRaw = humanizeTiming(swungTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
+  const humanizedRaw = humanizeTiming(harmonySafeTracks, timebase.ppq, bpbHuman, humanRng, undefined, anchorTicks, pocketSkip);
   // ★ MG full-parity Phase D:band 的 melody-pocket 只施给 MG 生成的 lead;走 A(motif sandbox override)lead 自带
   //   权威 hand-played timing(directive §2.1:无 micro-IOI),不被 band groove pocket 覆盖 → excludeRoles 含 'lead'。
   const pocketExclude = overrideLeadTrack ? new Set(['lead']) : undefined;
@@ -484,6 +591,7 @@ export function renderSongFull(
   // ★ CC64 踏板:POP/LOFI/RNB/ACG 的 comp 每和弦踩(音尾 ring 融合);JAZZ/BLUES 不踩(清晰)。
   const compPedalPolicy = instrumentation.gestureExpressionByRole?.comp?.pedalPolicy ?? 'none';
   const compPedal = compPedalPolicy !== 'none' ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
+  const balancedCompNotes = balancedTracks.find((t) => t.role === 'comp')?.notes ?? [];
   const mixAttachedTracks = balancedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
@@ -510,9 +618,29 @@ export function renderSongFull(
       if (progChanged) { programChanges.push({ atTick: ticks(tick), program: prog }); prevProgram = prog; }
       if (m && (progChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
     }
+    const programForSection = (sectionId: string) => bySection?.[sectionId] ?? fallback;
+    const sectionIdForTick = (tick: number): string => {
+      let current = sectionTicks[0]?.id ?? arrangement.sections[0]?.id ?? '';
+      for (const section of sectionTicks) {
+        if (tick < section.tick) break;
+        current = section.id;
+      }
+      return current;
+    };
+    const rangeFittedNotes = t.role === 'drum'
+      ? t.notes
+      : t.notes.map((note) => {
+          const program = programForSection(sectionIdForTick(note.startTick as number));
+          const fitted = fitMidiToProgramRange(note.pitch as number, t.role, program);
+          return fitted === note.pitch ? note : { ...note, pitch: midi(fitted) };
+        });
+    const notesForGesture = t.role === 'lead'
+      ? saxLeadAvoidResolver(rangeFittedNotes, plan, timebase, programForSection, balancedCompNotes)
+      : rangeFittedNotes;
     // ★ 手势表情层:器配层据最终音色下发 sax/pipe-wind 等 gesture plan;render 只执行计划。
-    const gesture = applyGestureExpressionToTrack(t, instrumentation.gestureExpressionByRole?.[t.role], timebase);
+    const gesture = applyGestureExpressionToTrack({ ...t, notes: notesForGesture }, instrumentation.gestureExpressionByRole?.[t.role], timebase);
     const ccEvents = gesture.ccEvents?.length ? gesture.ccEvents : undefined;
+    const pitchBendEvents = gesture.pitchBendEvents?.length ? gesture.pitchBendEvents : undefined;
     return {
       ...t,
       notes: gesture.notes,
@@ -522,6 +650,7 @@ export function renderSongFull(
       mix: initialMix,
       mixChanges: mixChanges.length ? mixChanges : undefined,
       ccEvents,
+      pitchBendEvents,
     };
   });
   const finalTracks = applyRenderMixBalance(mixAttachedTracks, {

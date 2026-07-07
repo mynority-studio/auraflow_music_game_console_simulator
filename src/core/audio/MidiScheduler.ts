@@ -28,8 +28,14 @@ export interface MidiEvent {
     visualData?: any;
 }
 
+type PendingDelayNote = MidiEvent & { delaySend: number };
+
 const TICK_LOOP_MS = 5;
 const TRAILING_SILENCE_MS = 200;
+const CC_DELAY_SEND = 95;
+const DELAY_ECHO_TICKS = 240; // 1/8 note at PPQ=480
+const MIN_DELAY_ECHO_DUR_TICKS = 72;
+const MAX_DELAY_ECHO_DUR_TICKS = 240;
 
 function midiEventOrder(ev: MidiEvent): number {
     if (ev.type === 'noteOff') return 0;
@@ -47,6 +53,83 @@ function normalizeMidiEvent(ev: MidiEvent): MidiEvent {
     if (ev.type !== 'programChange') return ev;
     const mapped = mapMidiProgramToAura25(ev.data1, ev.channel);
     return mapped === ev.data1 ? ev : { ...ev, data1: mapped };
+}
+
+function clampMidi(v: number): number {
+    return Math.max(0, Math.min(127, Math.round(v)));
+}
+
+function delayEchoVelocity(velocity: number, send: number): number {
+    const gain = 0.22 + (clampMidi(send) / 127) * 0.45;
+    return clampMidi(Math.max(1, Math.round(velocity * gain)));
+}
+
+function buildDelayEchoEvents(events: MidiEvent[]): MidiEvent[] {
+    const delaySend = new Array<number>(16).fill(0);
+    const pending = new Map<string, PendingDelayNote[]>();
+    const echoes: MidiEvent[] = [];
+
+    const keyOf = (event: MidiEvent): string => `${event.channel}:${event.data1}`;
+    const pushEcho = (noteOn: PendingDelayNote, noteOffTick: number): void => {
+        const duration = Math.max(1, noteOffTick - noteOn.ticks);
+        const echoTick = noteOn.ticks + DELAY_ECHO_TICKS;
+        const echoDur = Math.max(MIN_DELAY_ECHO_DUR_TICKS, Math.min(MAX_DELAY_ECHO_DUR_TICKS, Math.round(duration * 0.75)));
+        echoes.push({
+            ticks: echoTick,
+            type: 'noteOn',
+            channel: noteOn.channel,
+            data1: noteOn.data1,
+            data2: delayEchoVelocity(noteOn.data2, noteOn.delaySend),
+        });
+        echoes.push({
+            ticks: echoTick + echoDur,
+            type: 'noteOff',
+            channel: noteOn.channel,
+            data1: noteOn.data1,
+            data2: 0,
+        });
+    };
+
+    for (const event of events) {
+        if (event.type === 'cc' && event.data1 === CC_DELAY_SEND) {
+            delaySend[event.channel] = clampMidi(event.data2);
+            continue;
+        }
+
+        if (event.type === 'noteOn' && event.data2 > 0) {
+            const send = delaySend[event.channel] ?? 0;
+            if (send <= 0) continue;
+            const key = keyOf(event);
+            const stack = pending.get(key) ?? [];
+            stack.push({ ...event, data2: clampMidi(event.data2), delaySend: send });
+            pending.set(key, stack);
+            continue;
+        }
+
+        const isNoteOff = event.type === 'noteOff' || (event.type === 'noteOn' && event.data2 <= 0);
+        if (!isNoteOff) continue;
+        const key = keyOf(event);
+        const stack = pending.get(key);
+        const noteOn = stack?.shift();
+        if (!noteOn) continue;
+        if (!stack?.length) pending.delete(key);
+        pushEcho(noteOn, event.ticks);
+    }
+
+    for (const [key, stack] of pending.entries()) {
+        for (const noteOn of stack) {
+            pushEcho(noteOn, noteOn.ticks + MAX_DELAY_ECHO_DUR_TICKS);
+        }
+        pending.delete(key);
+    }
+
+    return echoes;
+}
+
+function normalizeAndExpandEvents(events: MidiEvent[]): MidiEvent[] {
+    const normalized = events.map(normalizeMidiEvent).sort(compareMidiEvents);
+    const echoes = buildDelayEchoEvents(normalized);
+    return normalized.concat(echoes).sort(compareMidiEvents);
 }
 
 export class MidiScheduler {
@@ -77,8 +160,9 @@ export class MidiScheduler {
     // -----------------------------------------------------------
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
-        // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次
-        this.events = events.map(normalizeMidiEvent).sort(compareMidiEvents);
+        // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次。
+        // 浏览器 synth 不一定消费 CC95;这里把 CC95 预渲染成轻量 echo note,ESP32 仍可直接吃原 CC95。
+        this.events = normalizeAndExpandEvents(events);
         this.currentBpm = bpm;
         this.currentTick = 0;
         this.nextEventIdx = 0;
@@ -187,10 +271,11 @@ export class MidiScheduler {
             else if (ev.type === 'noteOff') synth.noteOff(ev.channel, ev.data1);
             else if (ev.type === 'programChange') synth.programChange(ev.channel, mapMidiProgramToAura25(ev.data1, ev.channel));
             else if (ev.type === 'cc') {
+                if (ev.data1 === CC_DELAY_SEND) return;
                 // controllerChange API exists on BasicSynthesizer
                 (synth as any).controllerChange?.(ev.channel, ev.data1, ev.data2);
             } else if (ev.type === 'pitchBend') {
-                (synth as any).pitchWheel?.(ev.channel, ev.data1, ev.data2);
+                (synth as any).pitchWheel?.(ev.channel, ev.data1);
             }
         } catch { /* ignore — 静默单事件错误，保播放不中断 */ }
     }

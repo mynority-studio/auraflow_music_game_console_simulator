@@ -15,7 +15,7 @@
 | PSRAM | 8MB（Octal SPI） |
 | SRAM | 512KB |
 | SF2 合成器 | TinySoundFont（单头文件 C 库） |
-| 音色库 | `Aura25_GM128.sf2`（1.65MiB，25 音色，存放于 Flash/PSRAM） |
+| 音色库 | `Aura25_GM128.sf2`（1.24MiB / 1,302,686 bytes，11 preset，24kHz VHQ 重采样；存放于 Flash/PSRAM） |
 | 音频输出 | I2S → ES8388 DAC @16kHz |
 
 ---

@@ -15,8 +15,17 @@ import {
   SAX_CC,
   shapeSaxLegatoNotes,
   type SaxExpressionOptions,
+  type SaxPitchBendEvent,
 } from './saxExpression';
-import type { GestureExpressionPlan, TailPolicy } from './InstrumentationPlan';
+import type {
+  GestureArticulationScope,
+  GestureContinuity,
+  GestureEvidenceRef,
+  GestureExpressionPlan,
+  GesturePhrasePolicy,
+  GestureTriggerPolicy,
+  TailPolicy,
+} from './InstrumentationPlan';
 
 export interface GestureCcEvent {
   atTick: Ticks;
@@ -42,11 +51,49 @@ const DRUM_OHAT = 46;
 const DRUM_RIDE = 51;
 const DRUM_PHAT = 44;
 const DRUM_RIDE_BELL = 53;
+const GUITAR_COMP_MAX_BEATS = 0.28;
+const GUITAR_COMP_SINGLE_MAX_BEATS = 0.34;
+const GUITAR_COMP_RELEASE_GAP_BEATS = 0.045;
+const GUITAR_COMP_VELOCITY_CAP = 84;
+
+type GestureContractFields = Pick<
+  GestureExpressionPlan,
+  'continuity' | 'articulationScope' | 'triggerPolicy' | 'phrasePolicy' | 'evidenceRefs'
+>;
+
+const evidence = (...refs: GestureEvidenceRef[]): readonly GestureEvidenceRef[] => refs;
+const DAW_EVIDENCE = evidence('logic-articulation-set', 'cubase-expression-map');
+const MIDI_EVIDENCE = evidence('logic-articulation-set', 'cubase-expression-map', 'midi-cc-table');
+const SAX_EVIDENCE = evidence(
+  'logic-articulation-set',
+  'logic-studio-horns-keyswitch',
+  'cubase-expression-map',
+  'midi-cc-table',
+  'sax-jazz-legato-tonguing',
+  'sax-light-airflow-tonguing',
+);
+const STRING_EVIDENCE = evidence(
+  'logic-articulation-set',
+  'logic-studio-strings-keyswitch',
+  'cubase-expression-map',
+  'vsl-legato-overlap',
+);
+
+function contract(
+  continuity: GestureContinuity,
+  articulationScope: GestureArticulationScope,
+  triggerPolicy: GestureTriggerPolicy,
+  phrasePolicy: GesturePhrasePolicy,
+  evidenceRefs: readonly GestureEvidenceRef[],
+): GestureContractFields {
+  return { continuity, articulationScope, triggerPolicy, phrasePolicy, evidenceRefs };
+}
 
 const NONE_GESTURE: GestureExpressionPlan = {
   kind: 'none',
   family: 'none',
   ccControllers: [],
+  ...contract('none', 'none', 'none', 'none', []),
   breathModel: 'none',
   noteShape: 'none',
   articulation: 'none',
@@ -67,7 +114,9 @@ export function isElectricKeyProgram(program: number): boolean {
 }
 
 const CC_RELEASE_TIME = 72;      // ★ Layer 1:release time(64-centered;两 synth 都响应)
-const ELECTRIC_KEY_LEAD_RELEASE = 82; // EP lead release 增强值(>64 → 更长 release ring,只响进空拍不糊 legato)
+const CC_BRIGHTNESS = 74;        // ★ Layer 1:brightness/filter cutoff,用于把 DX7 EP 的高频锋利感收软。
+const ELECTRIC_KEY_RELEASE = 96; // EP/DX7 release 增强值(>64 → 更长 release ring,形成合成器键盘尾巴)
+const ELECTRIC_KEY_BRIGHTNESS = 54; // DX7/CityPop EP 柔化值(<64 → 更暗、更 vaporwave)。
 
 export function gestureExpressionForProgram(
   role: InstrumentRoleName,
@@ -87,6 +136,7 @@ export function gestureExpressionForProgram(
       family: 'drum',
       program,
       ccControllers: [],
+      ...contract('staccato', 'attribute', 'rudiment-velocity', 'rudiment-bar', DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: 'rudiment-hits',
       articulation: jazz ? 'roll' : 'ghost',
@@ -105,6 +155,7 @@ export function gestureExpressionForProgram(
         family: 'bass',
         program,
         ccControllers: [],
+        ...contract('connected', 'direction', 'velocity-gate', 'pluck-voice', DAW_EVIDENCE),
         breathModel: 'none',
         noteShape: 'bass-legato',
         articulation: 'walking',
@@ -122,6 +173,7 @@ export function gestureExpressionForProgram(
       family: 'bass',
       program,
       ccControllers: [],
+      ...contract(muted ? 'staccato' : 'connected', muted ? 'attribute' : 'direction', 'velocity-gate', 'pluck-voice', DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: muted ? 'bass-muted' : 'bass-legato',
       articulation: muted ? 'staccato' : 'tenuto',
@@ -139,17 +191,19 @@ export function gestureExpressionForProgram(
       kind: 'sax-breath-legato',
       family: 'sax',
       program,
-      ccControllers: [SAX_CC.expression, SAX_CC.breath, SAX_CC.modulation],
+      ccControllers: [SAX_CC.expression, SAX_CC.breath],
+      ...contract('legato-flow', 'direction', 'cc-lane', 'breath-group', SAX_EVIDENCE),
       breathModel: 'reed-continuous',
-      noteShape: 'legato-overlap',
+      noteShape: 'keyed-legato',
       articulation: 'slur',
       velocityCurve: 'soft',
       pedalPolicy: 'none',
       rudimentPolicy: 'none',
       hiHatPolicy: 'none',
       maxConnectBeats: 1.1,
-      overlapBeats: 0.045,
+      overlapBeats: 0.02,
       gateRatio: 1,
+      tailPolicy: 'wind-breath',
     };
   }
   if (isPipeWindProgram(program) && role === 'lead') {
@@ -158,6 +212,7 @@ export function gestureExpressionForProgram(
       family: 'pipe-wind',
       program,
       ccControllers: [CC_EXPRESSION],
+      ...contract('connected', 'direction', 'cc-lane', 'breath-group', MIDI_EVIDENCE),
       breathModel: 'pipe-taper',
       noteShape: 'none',
       articulation: 'slur',
@@ -176,6 +231,7 @@ export function gestureExpressionForProgram(
       family: 'bowed-string',
       program,
       ccControllers: [],
+      ...contract('legato-flow', 'direction', 'note-overlap', 'bow-group', STRING_EVIDENCE),
       breathModel: 'none',
       noteShape: 'bow-legato',
       articulation: 'slur',
@@ -195,6 +251,7 @@ export function gestureExpressionForProgram(
       family: 'pad',
       program,
       ccControllers: [],
+      ...contract('legato-flow', 'direction', 'velocity-gate', 'sustain-bed', DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: 'sustain-pad',
       articulation: 'tenuto',
@@ -214,21 +271,25 @@ export function gestureExpressionForProgram(
       : s === 'lofi' ? 'light-syncopated'
       : s === 'pop' || s === 'rnb' ? 'harmonic-change'
       : 'none';
-    // ★ Layer 1(electric-key-tail):EP(GM4/5)尾音靠演奏,不靠 reverb。lead=CC72 release(保 MG parity,不改音符;release 只响进空拍不糊 legato);
-    //   comp=保留 harmonic-change pedal(CC64,已有)。lead 永不 blanket pedal(pedalPolicy 已是 none)。
+    // ★ Layer 1(electric-key-tail):EP(GM4/5)尾音靠合成器 release 包络,不靠 reverb 假装尾音。
+    //   lead/comp 都发 CC72;comp 仍可保留 harmonic-change pedal(CC64),二者职责不同。
     const electricKey = isElectricKeyProgram(program);
     const tailPolicy: TailPolicy = electricKey ? 'electric-key-tail' : (comp && pedalPolicy !== 'none' ? 'piano-pedal-comp' : 'keyboard-natural');
-    const releaseCc = electricKey && !comp ? CC_RELEASE_TIME : undefined;
+    const releaseCc = electricKey ? CC_RELEASE_TIME : undefined;
     const cc = pedalPolicy === 'none' ? [] : [64];
+    const continuity: GestureContinuity = pedalPolicy !== 'none' ? 'pedal-legato' : 'connected';
+    const triggerPolicy: GestureTriggerPolicy = pedalPolicy !== 'none' ? 'pedal-cc' : 'velocity-gate';
+    const phrasePolicy: GesturePhrasePolicy = pedalPolicy !== 'none' ? 'pedal-harmony' : 'none';
     return {
       kind: 'keyboard-touch',
       family: 'keyboard',
       program,
-      ccControllers: releaseCc ? [...cc, releaseCc] : cc,
+      ccControllers: releaseCc ? [...cc, releaseCc, CC_BRIGHTNESS] : cc,
+      ...contract(continuity, 'direction', triggerPolicy, phrasePolicy, pedalPolicy !== 'none' || releaseCc ? MIDI_EVIDENCE : DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: 'finger-legato',
       articulation: comp ? 'comping' : 'finger-legato',
-      velocityCurve: s === 'acg' ? 'soft' : s === 'jazz' ? 'walking-pulse' : 'accented',
+      velocityCurve: electricKey || s === 'acg' ? 'soft' : s === 'jazz' ? 'walking-pulse' : 'accented',
       pedalPolicy,
       rudimentPolicy: 'none',
       hiHatPolicy: 'none',
@@ -238,12 +299,33 @@ export function gestureExpressionForProgram(
     };
   }
 
+  if (info.family === 'guitar') {
+    const comp = role === 'comp';
+    return {
+      kind: 'guitar-pick-voice',
+      family: 'guitar',
+      program,
+      ccControllers: [],
+      ...contract('connected', 'direction', 'velocity-gate', 'pick-voice', DAW_EVIDENCE),
+      breathModel: 'none',
+      noteShape: 'guitar-pick',
+      articulation: comp ? 'comping' : 'picked',
+      velocityCurve: s === 'rnb' || s === 'lofi' ? 'ghosted' : 'accented',
+      pedalPolicy: 'none',
+      rudimentPolicy: 'none',
+      hiHatPolicy: 'none',
+      gateRatio: comp ? (s === 'jazz' ? 0.62 : s === 'rnb' ? 0.72 : 0.78) : 0.94,
+      tailPolicy: 'pluck-short',
+    };
+  }
+
   if (info.family === 'mallet') {
     return {
       kind: 'mallet-strike',
       family: 'mallet',
       program,
       ccControllers: [],
+      ...contract('staccato', 'attribute', 'velocity-gate', 'strike-decay', DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: 'strike-decay',
       articulation: 'tenuto',
@@ -261,6 +343,7 @@ export function gestureExpressionForProgram(
       family: 'pad',
       program,
       ccControllers: [],
+      ...contract('legato-flow', 'direction', 'velocity-gate', 'sustain-bed', DAW_EVIDENCE),
       breathModel: 'none',
       noteShape: 'sustain-pad',
       articulation: 'tenuto',
@@ -430,6 +513,32 @@ function shapeBassNotes(track: TrackIR, plan: GestureExpressionPlan, timebase: T
   return withBassTechniqueCurve(curved, plan, timebase);
 }
 
+function shapeGuitarNotes(track: TrackIR, plan: GestureExpressionPlan, timebase: Timebase): NoteIR[] {
+  const gated = withGate(track.notes, plan.gateRatio);
+  const curved = withVelocityCurve(gated, plan, timebase);
+  const groups = new Map<number, number>();
+  for (const n of curved) {
+    const start = n.startTick as number;
+    groups.set(start, (groups.get(start) ?? 0) + 1);
+  }
+  const starts = [...groups.keys()].sort((a, b) => a - b);
+  const startIndex = new Map(starts.map((start, idx) => [start, idx]));
+  const releaseGap = Math.max(1, Math.round(timebase.ppq * GUITAR_COMP_RELEASE_GAP_BEATS));
+
+  return curved.map((n) => {
+    const start = n.startTick as number;
+    const groupSize = groups.get(start) ?? 1;
+    const nextStart = starts[(startIndex.get(start) ?? -1) + 1];
+    const baseMaxBeats = groupSize > 1 ? GUITAR_COMP_MAX_BEATS : GUITAR_COMP_SINGLE_MAX_BEATS;
+    const maxByGesture = Math.max(1, Math.round(timebase.ppq * baseMaxBeats));
+    const maxByNext = nextStart === undefined ? maxByGesture : Math.max(1, nextStart - start - releaseGap);
+    const durationTicks = ticks(Math.min(n.durationTicks as number, maxByGesture, maxByNext));
+    const groupScale = groupSize >= 4 ? 0.82 : groupSize === 3 ? 0.86 : groupSize === 2 ? 0.9 : 1;
+    const velocity = Math.min(GUITAR_COMP_VELOCITY_CAP, clampVelocity(n.velocity * groupScale));
+    return { ...n, durationTicks, velocity };
+  });
+}
+
 function isDrumPitch(n: NoteIR, pitch: number): boolean {
   return (n.pitch as number) === pitch;
 }
@@ -468,18 +577,25 @@ export function applyGestureExpressionToTrack(
   track: TrackIR,
   plan: GestureExpressionPlan | undefined,
   timebase: Timebase,
-): { notes: NoteIR[]; ccEvents?: GestureCcEvent[] } {
+): { notes: NoteIR[]; ccEvents?: GestureCcEvent[]; pitchBendEvents?: SaxPitchBendEvent[] } {
   if (!plan || plan.kind === 'none') return { notes: track.notes };
   if (plan.kind === 'sax-breath-legato') {
     if (track.role !== 'lead') return { notes: track.notes };
     const opts = saxOptions(plan, timebase.ppq);
-    const notes = shapeSaxLegatoNotes(track.notes, opts);
-    const ccEvents = buildSaxBreathCcEvents(notes, opts);
-    return { notes, ccEvents: ccEvents.length ? ccEvents : undefined };
+    const breathGrouped = plan.phrasePolicy === 'breath-group';
+    const shouldConnect = breathGrouped && (plan.continuity === 'legato-flow' || plan.continuity === 'connected');
+    const notes = shouldConnect ? shapeSaxLegatoNotes(track.notes, opts) : withGate(track.notes, plan.gateRatio);
+    const ccEvents = plan.triggerPolicy === 'cc-lane'
+      ? buildSaxBreathCcEvents(notes, opts).sort((a, b) => (a.atTick as number) - (b.atTick as number) || a.controller - b.controller)
+      : [];
+    return {
+      notes,
+      ccEvents: ccEvents.length ? ccEvents : undefined,
+    };
   }
   if (plan.kind === 'pipe-wind-breath') {
     if (track.role !== 'lead') return { notes: track.notes };
-    const ccEvents = buildPipeWindBreathCcEvents(track.notes, timebase);
+    const ccEvents = plan.triggerPolicy === 'cc-lane' ? buildPipeWindBreathCcEvents(track.notes, timebase) : [];
     return { notes: track.notes, ccEvents: ccEvents.length ? ccEvents : undefined };
   }
   if (plan.kind === 'bowed-string-legato') {
@@ -489,15 +605,22 @@ export function applyGestureExpressionToTrack(
   if (plan.kind === 'bass-pluck-legato' || plan.kind === 'bass-walk' || plan.kind === 'bass-muted') {
     return { notes: track.role === 'bass' ? shapeBassNotes(track, plan, timebase) : track.notes };
   }
+  if (plan.kind === 'guitar-pick-voice') {
+    return { notes: track.role === 'comp' ? shapeGuitarNotes(track, plan, timebase) : track.notes };
+  }
   if (plan.kind === 'drum-rudiment') {
     return { notes: track.role === 'drum' ? shapeDrumNotes(track, plan, timebase) : track.notes };
   }
   if (plan.kind === 'keyboard-touch' || plan.kind === 'mallet-strike' || plan.kind === 'sustained-pad') {
     const notes = shapeKeyboardOrPadNotes(track, plan, timebase);
-    // ★ electric-key-tail(lead):静态 CC72 release —— 电钢 lead 尾音,【不改音符】(保 MG lead parity),release 只响进空拍不糊 legato。
-    if (plan.releaseCc && track.role === 'lead' && notes.length > 0) {
+    // ★ electric-key-tail:静态 CC72 release + CC74 brightness —— DX7/EP 尾音与柔化;不改音符,只设置合成器控制。
+    if (plan.releaseCc && notes.length > 0) {
       const firstTick = Math.min(...notes.map((n) => n.startTick as number));
-      const ccEvents: GestureCcEvent[] = [{ atTick: ticks(Math.max(0, firstTick)) as Ticks, controller: plan.releaseCc, value: ELECTRIC_KEY_LEAD_RELEASE }];
+      const atTick = ticks(Math.max(0, firstTick)) as Ticks;
+      const ccEvents: GestureCcEvent[] = [
+        { atTick, controller: plan.releaseCc, value: ELECTRIC_KEY_RELEASE },
+        { atTick, controller: CC_BRIGHTNESS, value: ELECTRIC_KEY_BRIGHTNESS },
+      ];
       return { notes, ccEvents };
     }
     return { notes };

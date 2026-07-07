@@ -45,6 +45,9 @@ function spanLabel(span: { roman: RomanChord; quality: string; chordType?: strin
   return `${acc}${ROMAN[r.degree]}${type}${span.borrowedSource ? BORROW_MARK[span.borrowedSource] ?? '◆' : ''}`;
 }
 
+const roleGmName = (role: string, program: number | undefined): string =>
+  role === 'drum' ? '标准鼓组' : gmName(program ?? 0);
+
 export interface TraceSection {
   id: string;
   role: string;       // intro | verse | chorus | bridge | outro
@@ -92,7 +95,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
   // ★ 链式协同(gm128_chain_orchestration):器配层拥有 GM 选择 —— 链世界/profile + 生效 roleProgram + 决策轨迹
   const oc = instrumentation.orchestrationChain;
-  log(`   链 world=${oc.world} profile=${oc.profileId} · 生效:${band.instrumentPool.map((r) => `${r}=${gmName(instrumentation.roleProgram[r])}`).join(' ')}`);
+  log(`   链 world=${oc.world} profile=${oc.profileId} · 生效:${band.instrumentPool.map((r) => `${r}=${roleGmName(r, instrumentation.roleProgram[r])}`).join(' ')}`);
   log(`   链决策: ${oc.decisions.join(' | ')}`);
   // ★ ESP32 混音(器配层 mix:CC7 音量/CC10 声像/CC91 混响/CC93 合唱;印各角色首段代表值)
   const firstSec = arrangement.sections[0]?.id;
@@ -110,7 +113,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
       const hat = g.hiHatPolicy !== 'none' ? `/hat=${g.hiHatPolicy}` : '';
       const bass = g.bassTechniques?.length ? `/tech=${g.bassTechniques.join('+')}` : '';
       const gate = g.gateRatio !== undefined ? `/gate=${g.gateRatio}` : '';
-      return `${r}:${g.family} GM${g.program}:${g.kind}/${g.articulation}${cc}${pedal}${rud}${hat}${bass}${gate}`;
+      return `${r}:${g.family} GM${g.program}:${g.kind}/${g.continuity}/${g.articulation}${cc}${pedal}${rud}${hat}${bass}${gate}`;
     })
     .filter(Boolean);
   if (gestures.length) log(`   手势表情(器配下发): ${gestures.join(' · ')}`);

@@ -8,11 +8,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   instrumentInfo, gmName, timbreSource, leadCompCompatible, coherentLeadComp,
-  getInstrumentCatalog, worldMismatches, classifyTimbreWorld, playableRangeForRole, fitMidiToProgramRange,
+  getInstrumentCatalog, worldMismatches, classifyTimbreWorld, playableRangeForRole, fitMidiToProgramRange, preferredRegisterForRole,
 } from './instruments';
 
-const WARM_META = [16, 24, 26, 27, 42, 66, 67, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
-const WARM_POOLED = [16, 66, 89, 98, 108]; // 实际进 style 池的 25 音色暖色集合(+Tenor Sax;GM26 不主动选)
+const WARM_META = [16, 24, 25, 26, 27, 42, 66, 67, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
+const ACTIVE_24K_PROGRAMS = [0, 5, 11, 24, 25, 32, 38, 67, 89, 108];
 const WARM_ADDED = WARM_META;
 
 describe('暖路线 GM 调色板扩充', () => {
@@ -35,28 +35,46 @@ describe('暖路线 GM 调色板扩充', () => {
     expect(instrumentInfo(94).family).toBe('pad');
   });
 
-  it('Tenor Sax 使用真实 sounding 音域,生成甜区限制在厚实 jazz 中声区', () => {
+  it('Baritone Sax 使用真实 sounding lead 硬音域,不再人为压低八度', () => {
     expect(instrumentInfo(66).range).toEqual([44, 76]);
-    expect(playableRangeForRole('lead', 66)).toEqual([48, 72]);
-    expect(instrumentInfo(67).range).toEqual([36, 69]);
-    expect(playableRangeForRole('lead', 67)).toEqual([43, 65]);
-    expect(fitMidiToProgramRange(82, 'lead', 66)).toBe(70);
-    expect(fitMidiToProgramRange(43, 'lead', 66)).toBe(55);
+    expect(playableRangeForRole('lead', 66)).toEqual([44, 76]);
+    expect(instrumentInfo(67).range).toEqual([36, 72]);
+    expect(playableRangeForRole('lead', 67)).toEqual([36, 72]);
+    expect(fitMidiToProgramRange(82, 'lead', 67)).toBe(70);
+    expect(fitMidiToProgramRange(38, 'lead', 67)).toBe(38);
   });
 
-  it('调色板确实变宽:用到的 GM program 数 ≥ 20(25 包内的风格活跃子集)', () => {
+  it('角色推荐音区:lead 更宽并包含 comp,comp 更窄给 lead 留空间', () => {
+    for (const program of [0, 5, 11, 24, 25, 108]) {
+      const lead = preferredRegisterForRole('lead', program);
+      const comp = preferredRegisterForRole('comp', program);
+      const hard = playableRangeForRole('lead', program);
+      expect(lead[0], `GM${program} lead low`).toBeLessThanOrEqual(comp[0]);
+      expect(lead[1], `GM${program} lead high`).toBeGreaterThanOrEqual(comp[1]);
+      expect(comp[1] - comp[0], `GM${program} comp span`).toBeLessThanOrEqual(lead[1] - lead[0]);
+      expect(lead[0]).toBeGreaterThanOrEqual(hard[0]);
+      expect(lead[1]).toBeLessThanOrEqual(hard[1]);
+    }
+    expect(preferredRegisterForRole('lead', 67)).toEqual([36, 72]);
+  });
+
+  it('调色板对齐 24k 11-preset 包:活跃 GM program 只使用保留清单', () => {
     const used = new Set<number>();
     for (const s of getInstrumentCatalog()) for (const r of s.roles) for (const p of r.programs) used.add(p);
-    expect(used.size).toBeGreaterThanOrEqual(20);
-    for (const p of WARM_POOLED) expect(used.has(p), `${p} 应进某 style 池`).toBe(true);
+    expect([...used].sort((a, b) => a - b)).toEqual(ACTIVE_24K_PROGRAMS);
     expect(used.has(26), 'GM26 jazz guitar 不应进主动器配池').toBe(false);
+    expect(used.has(25), 'GM25 民谣木吉他应入池').toBe(true);
+    expect(used.has(27), 'GM27 clean guitar 已替换,不应入池').toBe(false);
+    for (const deleted of [1, 4, 7, 16, 27, 33, 34, 39, 48, 49, 66, 80, 81, 98]) {
+      expect(used.has(deleted), `GM${deleted} 已删,不应进主动器配池`).toBe(false);
+    }
   });
 
-  it('不加铜管/长笛/高频合成 lead,但允许 Tenor Sax', () => {
+  it('不加铜管/长笛/高频合成 lead,但允许低音区 Sax', () => {
     const used = new Set<number>();
     for (const s of getInstrumentCatalog()) for (const r of s.roles) for (const p of r.programs) used.add(p);
-    for (const harsh of [56, 57, 60, 61, 64, 65, 67, 80, 82]) expect(used.has(harsh), `${harsh} 不应入池`).toBe(false);
-    expect(used.has(66), 'Tenor Sax 应入池').toBe(true);
+    for (const harsh of [56, 57, 60, 61, 64, 65, 66, 80, 82]) expect(used.has(harsh), `${harsh} 不应入池`).toBe(false);
+    expect(used.has(67), 'Baritone Sax 应入池').toBe(true);
   });
 });
 
@@ -80,10 +98,10 @@ describe('leadCompCompatible — 配对判据', () => {
 });
 
 describe('coherentLeadComp — 器配层修不搭对', () => {
-  it('★ 电钢 comp 配电钢 lead:lofi 马林巴 lead + Rhodes comp → Rhodes lead + Rhodes comp', () => {
-    const out = coherentLeadComp({ lead: 12, comp: 4, bass: 33, pad: 89, drum: 0 }, 'lofi');
-    expect(out.lead).toBe(4);  // 改成 Rhodes(池里有 4)→ 电钢配电钢
-    expect(out.comp).toBe(4);  // comp 不动
+  it('★ 电钢 comp 配电钢 lead:lofi 马林巴 lead + DX7 comp → DX7 lead + DX7 comp', () => {
+    const out = coherentLeadComp({ lead: 12, comp: 5, bass: 33, pad: 89, drum: 0 }, 'lofi');
+    expect(out.lead).toBe(5);  // 改成 CityPop DX7 EP(池里有 5)→ 电钢配电钢
+    expect(out.comp).toBe(5);  // comp 不动
     expect(leadCompCompatible(out.lead, out.comp)).toBe(true);
   });
   it('★ 马林巴 + 尼龙吉他(同 acoustic)→ 保留(本就搭,不乱改)', () => {
@@ -91,11 +109,11 @@ describe('coherentLeadComp — 器配层修不搭对', () => {
     expect(coherentLeadComp(rp, 'lofi')).toBe(rp); // 同对象返回(已和谐)
   });
   it('已和谐对(电钢 lead + 电钢 comp)→ 原样', () => {
-    const rp = { lead: 4, comp: 5, bass: 33, pad: 89, drum: 0 };
+    const rp = { lead: 5, comp: 5, bass: 33, pad: 89, drum: 0 };
     expect(coherentLeadComp(rp, 'rnb')).toBe(rp);
   });
   it('modal 马林巴 lead + Rhodes comp → 修成相配(键盘 lead 或保马林巴换暖 comp)', () => {
-    const out = coherentLeadComp({ lead: 12, comp: 4, bass: 32, pad: 89, drum: 0 }, 'modal');
+    const out = coherentLeadComp({ lead: 12, comp: 5, bass: 32, pad: 89, drum: 0 }, 'modal');
     expect(leadCompCompatible(out.lead, out.comp), `${out.lead}+${out.comp}`).toBe(true);
   });
   it('缺 lead 或 comp → 原样(fail-open)', () => {
@@ -103,15 +121,15 @@ describe('coherentLeadComp — 器配层修不搭对', () => {
     expect(coherentLeadComp(rp, 'pop')).toBe(rp);
   });
   it('确定性:同输入两次同结果', () => {
-    const a = coherentLeadComp({ lead: 12, comp: 4, bass: 33, pad: 89, drum: 0 }, 'lofi');
-    const b = coherentLeadComp({ lead: 12, comp: 4, bass: 33, pad: 89, drum: 0 }, 'lofi');
+    const a = coherentLeadComp({ lead: 12, comp: 5, bass: 33, pad: 89, drum: 0 }, 'lofi');
+    const b = coherentLeadComp({ lead: 12, comp: 5, bass: 33, pad: 89, drum: 0 }, 'lofi');
     expect(a).toEqual(b);
   });
 });
 
 describe('风格世界守卫无回归(暖扩后)', () => {
   it('新增乐器不触发 worldMismatch(jazz/lofi 池仍守住)', () => {
-    expect(worldMismatches({ comp: 16, bass: 32, pad: 49 }, 'jazz')).toEqual([]); // 哈蒙德 comp OK
+    expect(worldMismatches({ comp: 16, bass: 32, pad: 89 }, 'jazz')).toEqual([]);
     expect(worldMismatches({ comp: 24, bass: 33, pad: 89 }, 'lofi')).toEqual([]); // 尼龙 comp OK
     expect(classifyTimbreWorld({ comp: 16, bass: 32 }, 'jazz')).toBe('jazzCombo');
   });
