@@ -585,6 +585,7 @@ export function renderSongFull(
       ? { ...t, notes: leadAvoidExposureResolver(t.notes, plan, timebase, leadProgramForSection, swungCompNotes, auditKeyCtx) }
       : t
   ));
+  overlay?.trace?.('saxavoid', harmonySafeTracks); // V4.1-P0：第 1 次 saxLeadAvoidResolver 后（非 sax-lead = pass-through）
 
   // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
   //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
