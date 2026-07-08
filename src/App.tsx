@@ -7,6 +7,7 @@ import { AudioEngine } from './core/audio/AudioEngine';
 import { startAudioContext } from './core/audio/SynthManager';
 import { PipelineMonitor } from './components/PipelineMonitor';
 import { MotifWeaverSandboxPanel } from './core/generation/motifSandbox';
+import { MidiOutSandboxPanel } from './core/generation/midiOutSandbox';
 import { LeadTakeoverSandboxPanel } from './core/generation/leadTakeoverSandbox';
 import { emitTakeoverPadInput } from './core/generation/leadTakeoverSandbox/takeoverInputBus';
 import { DevDock } from './components/DevDock';
@@ -44,6 +45,7 @@ export default function App() {
       <SoundFontSelector />
       <PipelineMonitor />
       <MotifWeaverSandboxPanel />
+      <MidiOutSandboxPanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"

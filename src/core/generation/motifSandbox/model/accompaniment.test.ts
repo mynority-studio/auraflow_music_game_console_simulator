@@ -22,7 +22,7 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
 
   it('每风格:comp + bass 非空、时值正、确定性', () => {
     const prog = buildProgression(motifOf(), 0, 'major', 16);
-    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+    for (const style of ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const) {
       const a = buildAccompaniment(prog, style, 7);
       expect(a.comp.length, style).toBeGreaterThan(0);
       expect(a.bass.length, style).toBeGreaterThan(0);
@@ -35,7 +35,7 @@ describe('motifSandbox/伴奏织体 + 16-bar 和声', () => {
 
   it('comp 在 comp 音区、bass 在 bass 音区;comp 全 diatonic,非 jazz bass 全 diatonic(jazz 走音允许半音趋近)', () => {
     const prog = buildProgression(motifOf(0, 'major'), 0, 'major', 16);
-    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+    for (const style of ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const) {
       const a = buildAccompaniment(prog, style, 3);
       for (const n of a.comp) {
         expect(n.midi, `${style} comp 区`).toBeGreaterThanOrEqual(40); expect(n.midi).toBeLessThanOrEqual(74);

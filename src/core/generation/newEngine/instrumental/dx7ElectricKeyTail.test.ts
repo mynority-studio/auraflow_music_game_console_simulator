@@ -92,4 +92,25 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     const out = applyGestureExpressionToTrack(leadTrack(0), gestureExpressionForProgram('lead', 0, 'pop'), TB);
     expect((out.ccEvents ?? []).some((e) => e.controller === 72)).toBe(false);
   });
+
+  it('同轨分段换进/换出 EP:CC72/CC74 在 programChanges 边界进入并重置', () => {
+    const track: TrackIR = {
+      ...leadTrack(0),
+      programChanges: [
+        { atTick: ticks(960), program: 5 },
+        { atTick: ticks(1920), program: 0 },
+      ],
+    };
+    const out = applyGestureExpressionToTrack(track, gestureExpressionForProgram('lead', 0, 'pop'), TB);
+    expect((out.ccEvents ?? []).filter((e) => e.controller === 72)).toEqual([
+      { atTick: ticks(0), controller: 72, value: 64 },
+      { atTick: ticks(960), controller: 72, value: 96 },
+      { atTick: ticks(1920), controller: 72, value: 64 },
+    ]);
+    expect((out.ccEvents ?? []).filter((e) => e.controller === 74)).toEqual([
+      { atTick: ticks(0), controller: 74, value: 64 },
+      { atTick: ticks(960), controller: 74, value: 54 },
+      { atTick: ticks(1920), controller: 74, value: 64 },
+    ]);
+  });
 });

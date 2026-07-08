@@ -10,7 +10,7 @@
 import { listProgressionPrototypes, fitProgressionToBars, type ProgressionPrototype, type ProgressionSlot, type HarmonyStyleName, type ProtoMode } from '../../newEngine/knowledge/progressions';
 import type { SandboxStyle, ScaleMode } from './types';
 
-const STYLE_MAP: Record<SandboxStyle, HarmonyStyleName> = { pop: 'POP', lofi: 'LOFI', rnb: 'RNB', jazz: 'JAZZ' };
+const STYLE_MAP: Record<SandboxStyle, HarmonyStyleName> = { pop: 'POP', jazz: 'JAZZ', lofi: 'LOFI', rnb: 'RNB', acg: 'ACG' };
 const MODE_MAP: Record<ScaleMode, ProtoMode> = { major: 'Major', minor: 'Minor' };
 
 export interface ProgressionCandidate {
@@ -33,7 +33,7 @@ export function getProgressionCandidatesForMotif(args: { style: SandboxStyle; mo
   const modeName = MODE_MAP[args.mode];
   const targetBars = args.targetBars ?? 16;
 
-  // 全部该风格模板(不按 functionRole / 单调式硬过滤 → 全可达;BLUES 是独立风格,天然不在 POP/LOFI/RNB/JAZZ 池里)。
+  // 全部该风格模板(不按 functionRole / 单调式硬过滤 → 全可达;BLUES 是独立风格,天然不在 Q+R 五风格池里)。
   let pool = listProgressionPrototypes({ style: styleName });
   // 兜底(风格池空,不该发生)→ 同调式、排除 BLUES、非 jazz 不退到 jazz。
   if (pool.length === 0) pool = listProgressionPrototypes({ mode: modeName }).filter((p) => notBlues(p) && (styleName === 'JAZZ' || p.style !== 'JAZZ'));

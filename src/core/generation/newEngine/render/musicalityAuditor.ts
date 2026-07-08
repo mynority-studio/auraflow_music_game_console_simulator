@@ -65,6 +65,22 @@ export function auditMusicality(
   }
   const onsetIn = (role: string, lo: number, hi: number) => (onsets[role] ?? []).some((t) => t >= lo && t < hi);
   const soundingIn = (role: string, lo: number, hi: number) => (spans[role] ?? []).some((n) => n.s < hi && n.e > lo);
+  const coverageRatio = (role: string, lo: number, hi: number): number => {
+    if (hi <= lo) return 0;
+    const clipped = (spans[role] ?? [])
+      .map((n) => ({ s: Math.max(lo, n.s), e: Math.min(hi, n.e) }))
+      .filter((n) => n.e > n.s)
+      .sort((a, b) => a.s - b.s);
+    let covered = 0;
+    let cur: { s: number; e: number } | undefined;
+    for (const n of clipped) {
+      if (!cur) { cur = { ...n }; continue; }
+      if (n.s <= cur.e) cur.e = Math.max(cur.e, n.e);
+      else { covered += cur.e - cur.s; cur = { ...n }; }
+    }
+    if (cur) covered += cur.e - cur.s;
+    return covered / (hi - lo);
+  };
 
   // 段落起始小节 / tick
   const startBar: number[] = [];
@@ -132,7 +148,19 @@ export function auditMusicality(
         || isBreathingTexture(instrumentation.richTextureSwitchBySection?.[s.id]?.toTexture);
       const thresh = breathing ? Math.max(baseThresh, SPARSE_COMP_GAP_BEATS) : baseThresh;
       const rep = measureCompGaps(compTicks, ranges, ppq);
-      const big = rep.gaps.find((g) => g.gapBeats > thresh);
+      const sectionEnd = sectionStartTick(i) + s.bars * barTicks;
+      const next = arrangement.sections[i + 1];
+      const gaps = rep.gaps.filter((g) => {
+        const startTick = Math.round(g.startBeat * ppq);
+        const endTick = Math.round(g.endBeat * ppq);
+        const padCarriesHarmony = roles.includes('pad') && coverageRatio('pad', startTick, endTick) >= 0.8;
+        if (padCarriesHarmony) return false;
+        const trailingBoundaryBreath = !!next
+          && Math.abs(endTick - sectionEnd) <= 1
+          && g.gapBeats <= bpb + 0.5;
+        return !trailingBoundaryBreath;
+      });
+      const big = gaps.find((g) => g.gapBeats > thresh);
       if (big) { warn('comp', Math.round(big.startBeat * ppq), 'comp-continuity-gap', `comp active 区间空洞 ${big.gapBeats.toFixed(2)} 拍 > ${thresh}`); break; }
     }
   }

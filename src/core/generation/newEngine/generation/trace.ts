@@ -79,7 +79,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   编制(${band.instrumentPool.length}件): ${band.instrumentPool.map((r) => `${r}=GM${band.roleProgram[r]}`).join(' · ')}`);
 
   // —— ARRANGER ——
-  const arrangement = buildArrangementPlan(band, { rng: seedRng });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood });
   const formShape = arrangement.sections.map((s) => s.role).join('-'); // seed 选型曲式骨架
   const totalBars = arrangement.sections.reduce((n, s) => n + s.bars, 0);
   log(`■ ARRANGER   ${arrangement.tempoBpm}bpm ${arrangement.meter.numerator}/${arrangement.meter.denominator} ${arrangement.feel.kind} · 曲式=${formShape}(${arrangement.sections.length}段/${totalBars}小节,seed 选) · 高潮=${arrangement.climaxMap.map((c) => c.sectionId).join(',') || '-'}`);
@@ -113,7 +113,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
       const hat = g.hiHatPolicy !== 'none' ? `/hat=${g.hiHatPolicy}` : '';
       const bass = g.bassTechniques?.length ? `/tech=${g.bassTechniques.join('+')}` : '';
       const gate = g.gateRatio !== undefined ? `/gate=${g.gateRatio}` : '';
-      return `${r}:${g.family} GM${g.program}:${g.kind}/${g.continuity}/${g.articulation}${cc}${pedal}${rud}${hat}${bass}${gate}`;
+      return `${r}:${g.family} GM${g.program}:${g.kind}/${g.continuity}/${g.articulation}/${g.articulationExclusionGroup}${cc}${pedal}${rud}${hat}${bass}${gate}`;
     })
     .filter(Boolean);
   if (gestures.length) log(`   手势表情(器配下发): ${gestures.join(' · ')}`);
@@ -139,6 +139,14 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   log(`   密度弧: ${arrangement.sections.map((s) => `${s.id}{${(instrumentation.activeRolesBySection[s.id] ?? []).join('+')}}`).join('  ')}`);
   // ★ 鼓 groove 下发(Arranger)+ 器配匹配变体(逐段鼓型 hit 数):取代单一 drumPattern
   log(`   鼓 groove: ${arrangement.sections.map((s) => `${s.id}=${arrangement.grooveBySection[s.id]}(${instrumentation.drumPatternBySection[s.id]?.length ?? 0}hit)`).join('  ')}`);
+  log(`   总谱Performance: ${arrangement.sections.map((s) => {
+    const p = arrangement.rolePerformanceBySection.drum[s.id];
+    return `${s.id}{fg=${p.foregroundRole} grid=${p.rhythmGrid}/${p.swingUnit} safe=${p.safeRangeTicks} max=${p.maxMoveTicks} preQ=${p.preQuantizeGrid}}`;
+  }).join('  ')}`);
+  log(`   鼓手合同: ${arrangement.sections.map((s) => {
+    const d = arrangement.drumPerformanceBySection[s.id];
+    return `${s.id}=${d.patternFamily}/${d.timingProfile}/fill:${d.fillPolicy}.${d.fillAmount}.${d.fillComplexity}/var${d.phraseVariation}`;
+  }).join('  ')}`);
   // ★ 段落边界(Arranger 下发):进入方式(lead-in=末小节铺垫推进)+ 收尾方式(cold/fade/tag)+ 器配退出排布
   const leadIns = arrangement.sections.filter((s) => arrangement.entryBySection[s.id] === 'lead-in').map((s) => s.id);
   const ep = instrumentation.endingPlan;

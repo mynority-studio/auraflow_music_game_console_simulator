@@ -49,8 +49,13 @@ describe('instrumental/instrumentalPlanner', () => {
     expect(chorusSlot.beatSlot).toBe(48);
   });
 
-  it('reservedRegister = lead 区;densityCeiling 来自 styleProfile', () => {
-    expect(plan.melodyReservationPlan.reservedRegister).toEqual(plan.registerByRole.lead);
+  it('reservedRegister 在 lead 区内且优先高区;densityCeiling 来自 styleProfile', () => {
+    const reserved = plan.melodyReservationPlan.reservedRegister;
+    const lead = plan.registerByRole.lead;
+    expect(reserved.lowMidi).toBeGreaterThanOrEqual(lead.lowMidi as number);
+    expect(reserved.highMidi).toBe(lead.highMidi);
+    expect(reserved.lowMidi).toBeLessThanOrEqual(reserved.highMidi);
+    expect(reserved.lowMidi).toBeGreaterThanOrEqual(Math.min(67, lead.highMidi as number));
     expect(plan.melodyReservationPlan.densityCeiling).toBe(band.styleProfile.accompDensity);
   });
 
@@ -134,6 +139,16 @@ describe('instrumental/instrumentalPlanner', () => {
     const ip2 = buildInstrumentationPlan(b, arr, createRandomContext(3).substream('timbre'));
     expect(ip2.timbreWorld).toBe(ip.timbreWorld);
     expect(ip2.programByRoleSection).toEqual(ip.programByRoleSection); // repair 不破确定性
+  });
+
+  it('★ ACG 前景空间保持键盘主导,不把 chorus 统一到 mallet/kalimba 上', () => {
+    const b = buildBandSpec({ seed: 7, styleHint: 'acg', mood: 'build', targetDuration: 90 });
+    const arr = buildArrangementPlan(b, { rng: createRandomContext(7) });
+    const ip = buildInstrumentationPlan(b, arr, createRandomContext(7).substream('timbre'));
+    expect(instrumentInfo(ip.roleProgram.lead).family).toBe('keyboard');
+    for (const s of arr.sections) {
+      expect(ip.mixByRoleSection.lead[s.id].pan).toBe(64);
+    }
   });
 
   it('★ A3 织体按 functionTag:story→arpeggio / hook→active-comp / setup→pad(或 intro 先行档覆盖)', () => {

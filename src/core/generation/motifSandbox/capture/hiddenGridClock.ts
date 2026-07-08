@@ -53,7 +53,7 @@ export interface GridCapturedNote {
 
 // 预选 BPM 区间(directive §8);非 jazz 默认 pop 偏好 96-108。
 const BPM_RANGE: Record<SandboxStyle, [number, number]> = {
-  pop: [96, 108], rnb: [76, 98], lofi: [70, 90], jazz: [120, 160],
+  pop: [96, 108], jazz: [120, 160], lofi: [70, 90], rnb: [76, 98], acg: [78, 104],
 };
 
 export const msPerBeat = (ctx: { bpm: number }): number => 60000 / ctx.bpm;

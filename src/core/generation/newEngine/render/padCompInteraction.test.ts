@@ -94,9 +94,9 @@ describe('render/padCompInteraction · Golden Fmaj7 → Fm7', () => {
     // 完整四音集合不被复制
     expect([PC.F, PC.A, PC.C, PC.E].every((pc) => s0.has(pc))).toBe(false);
     expect([PC.F, PC.Ab, PC.C, PC.Eb].every((pc) => s1.has(pc))).toBe(false);
-    // guide tone = 3rd + 7th(无 root、无 5th)
-    expect([...s0].sort()).toEqual([PC.E, PC.A].sort()); // E(7th) + A(3rd)
-    expect([...s1].sort()).toEqual([PC.Eb, PC.Ab].sort());
+    // guide tone 优先 3rd+7th;若 3rd 在 lead 预留地板下无可用八度,严格音域保护下只保留 7th。
+    expect([...s0].sort()).toEqual([PC.E].sort());
+    expect([...s1].sort()).toEqual([PC.Eb].sort());
   });
 
   it('★ pad 不输出低 root F(无 pc=F 的音,更无低区 root)', () => {

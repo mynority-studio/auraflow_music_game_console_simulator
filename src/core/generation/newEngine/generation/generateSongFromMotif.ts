@@ -1,14 +1,14 @@
 // ============================================================
 // newEngine · generation · generateSongFromMotif(走 A 并行入口)
 // ------------------------------------------------------------
-// Q+R sandbox 的【权威 lead + 权威和声】喂进 Q+N 成曲生产链:Q+N 负责 arranger / instrumentation /
-//   bass / comp / pad / drum / mix / render / audit/retry,但【和声】用 sandbox 的 HarmonicPlan、
-//   【lead】用 sandbox 的 TrackIR(跳过 renderMgMelody)。
+// Q+R / motif 输入喂进 Q+N 成曲生产链:Q+N 负责 arranger / instrumentation / bass / comp / pad /
+//   drum / mix / render / audit/retry。legacy 路径仍支持权威 harmony/lead override;产品 Q+R 播放走
+//   userBrick:先跑 MG/Q+N lead,再把用户 motif 当作 brick quote 注入。
 // ★ 边界:① 不改 generateSong(默认链字节不变,这是【并行】入口)② override 缺省 → 行为 == generateSong
 //   ③ HarmonicPlan/lead override 走两个【additive 注入点】(generateSong 端镜像 + renderSongFull 端可选参数);
 //   ④ retry 碰不到 override(harmonic 深冻、lead 不在 voicingSafer 范围)。
-// 合同(MotifSongOverride)= MotifHarmonyOverride(harmony)+ MotifLeadOverride(lead);两者均可选。
-//   PR1 scaffold:转换器(sandbox→HarmonicPlan / sandbox→lead TrackIR)留后续 PR,本入口先把【接缝】立住。
+// 合同(MotifSongOverride)= MotifHarmonyOverride(harmony)+ MotifLeadOverride(lead)+ UserMotifBrick(userBrick);
+//   三者均可选。缺省时行为与 generateSong 一致。
 // ============================================================
 
 import { beats, midi, createRandomContext, createTimebase, type Timebase } from '../foundation';
@@ -17,6 +17,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement, assemble, type ResolvedChord } from '../harmony/harmonyEngine';
 import { renderSongFull } from '../render/renderCoordinator';
+import type { UserMotifBrick } from '../render/userMotifBrick';
 import { deriveMusicIntentPlan } from '../arranger/deriveMusicIntentPlan';
 import type { HarmonicPlan, ChordSpan, HarmonicFunction } from '../harmony/HarmonicPlan';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
@@ -37,14 +38,18 @@ export interface MotifLeadNote {
   onsetBeat: number;
   durationBeat: number;
   velocity: number;
+  accent?: number;
+  structuralToneScore?: number;
 }
 
-/** 走 A 注入合同:sandbox 权威和声 + 权威 lead。两者均可选;缺省 → 退回 Q+N 默认生成(== generateSong)。 */
+/** Motif 注入合同。缺省 → 退回 Q+N 默认生成(== generateSong)。 */
 export interface MotifSongOverride {
   /** MotifHarmonyOverride:整曲权威和声(Q+R selectedProgression/RoadMap → HarmonicPlan)。下游 bass/comp/pad/drum/lead 自动跟随。 */
   harmony?: HarmonicPlan;
   /** MotifLeadOverride:整曲权威 lead(Q+R motif slot weaver,beats 制),内部转 TrackIR 跳过 renderMgMelody。 */
   lead?: readonly MotifLeadNote[];
+  /** User motif as a Q+N melodic brick: MG/Q+N still generates the lead, then this quote is inserted at brick anchors. */
+  userBrick?: UserMotifBrick;
   /** harmony 的调中心(把 16-bar sandbox 和声 tile 满 arrangement 长度后重装配用)。 */
   key?: { keyPc: number; mode: DiatonicMode };
 }
@@ -139,15 +144,15 @@ function motifLeadToTrackIR(notes: readonly MotifLeadNote[], timebase: Timebase)
   return { role: 'lead', notes: sanitizeLeadNoteIR(irNotes) };
 }
 
-/** 走 A 并行入口:Q+R 产物注入 Q+N 成曲生产链。override 缺省时行为与 generateSong 完全一致。 */
-/** ★ 共享 motif bundle(qn_main_engine_takeover §4.3):暴露 override 注入后的全部中间结构 + overrideLeadTrack,
+/** Motif 并行入口:Q+R 产物注入 Q+N 成曲生产链。override 缺省时行为与 generateSong 完全一致。 */
+/** ★ 共享 motif bundle(qn_main_engine_takeover §4.3):暴露 override 注入后的全部中间结构 + overrideLeadTrack/userBrick,
  *  供 generateSongFromMotif + 生产 service 的 motif uiSnapshot 复用(不复制平行生成逻辑)。 */
-export interface MotifSongBundle { bundle: SongBundle; overrideLeadTrack?: TrackIR; lenient: boolean; }
+export interface MotifSongBundle { bundle: SongBundle; overrideLeadTrack?: TrackIR; userBrick?: UserMotifBrick; lenient: boolean; }
 
 export function buildMotifSongBundle(request: GenerationRequest, override: MotifSongOverride = {}): MotifSongBundle {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
-  const arrangement = buildArrangementPlan(band, { rng: seedRng });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood });
   const beatsPerBar = arrangement.meter.numerator;
   const totalBeats = arrangement.sections.reduce((n, s) => n + s.bars * beatsPerBar, 0);
   // 注入点 A:和声权威 = sandbox 提供则【tile 满 arrangement + 逐 span 改段落】再用;否则 Q+N 默认。
@@ -159,22 +164,23 @@ export function buildMotifSongBundle(request: GenerationRequest, override: Motif
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],
   });
-  // 注入点 B:权威 lead(beats)→ tile 满曲长 →【预摆动】→ TrackIR(本 timebase),经 renderSongFull 末参数透传。
+  // legacy 注入点 B:权威 lead(beats)→ tile 满曲长 →【预摆动】→ TrackIR(本 timebase),经 renderSongFull 透传。
+  // 产品 Q+R 播放不走这里,而走 override.userBrick:MG/Q+N lead 先生成,再在 render 层注入用户 motif quote。
   const fittedLead = override.lead && override.lead.length ? fitLeadToBeats(override.lead, totalBeats) : undefined;
   const swungLead = fittedLead ? swingMotifLead(fittedLead, arrangement.feel.swingRatio, beatsPerBar) : undefined;
   const overrideLeadTrack = swungLead && swungLead.length ? motifLeadToTrackIR(swungLead, timebase) : undefined;
   const lenient = Boolean(override.harmony || (override.lead && override.lead.length));
-  return { bundle: { band, arrangement, harmonic, instrumentation, timebase, seedRng }, overrideLeadTrack, lenient };
+  return { bundle: { band, arrangement, harmonic, instrumentation, timebase, seedRng }, overrideLeadTrack, userBrick: override.userBrick, lenient };
 }
 
 /** motif bundle → FinalIR(render + 控制环)。供 generateSongFromMotif + service 复用(避免重复 build bundle)。 */
 export function generateSongFromMotifBundle(mb: MotifSongBundle, budget: RetryBudget = DEFAULT_BUDGET): GenerationResult {
-  const { bundle, overrideLeadTrack, lenient } = mb;
+  const { bundle, overrideLeadTrack, userBrick, lenient } = mb;
   const { band, arrangement, harmonic, instrumentation, timebase, seedRng } = bundle;
   const intentPlan = deriveMusicIntentPlan(band.style, arrangement); // ★ Phase 2:上游派生 intent(bass enforce)传入
   const render: RenderFn = (retry) =>
     renderSongFull(band, arrangement, harmonic, instrumentation, timebase, retry?.rng ?? seedRng,
-      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack, intentPlan);
+      retry && { voicingSafer: retry.voicingSafer }, overrideLeadTrack, intentPlan, userBrick);
   const locator = buildRetryLocator(harmonic, timebase);
   // 有 override 时:和声/lead 是用户权威 → 非 lead 的 error 降为 warning,只 fatal 阻断。无 override → 与 generateSong 同(严格)。
   return runGenerationControl(render, seedRng, budget, locator, lenient);

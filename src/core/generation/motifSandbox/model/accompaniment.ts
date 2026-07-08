@@ -20,11 +20,11 @@ export interface Accompaniment { comp: AccompNote[]; bass: AccompNote[]; compPro
 
 const mod = (n: number, m: number): number => ((n % m) + m) % m;
 
-const COMP_PROGRAM: Record<SandboxStyle, number> = { pop: 4, lofi: 4, rnb: 5, jazz: 0 };
-const BASS_PROGRAM: Record<SandboxStyle, number> = { pop: 33, lofi: 33, rnb: 33, jazz: 32 };
+const COMP_PROGRAM: Record<SandboxStyle, number> = { pop: 4, jazz: 0, lofi: 4, rnb: 5, acg: 0 };
+const BASS_PROGRAM: Record<SandboxStyle, number> = { pop: 33, jazz: 32, lofi: 33, rnb: 33, acg: 32 };
 
 // 某小节旋律稀疏(无结构点)时回退的默认织体击点(≈ 老固定 pattern)。
-const DEFAULT_STRUCT: Record<SandboxStyle, number[]> = { pop: [2], lofi: [], rnb: [1.5, 2.5], jazz: [] };
+const DEFAULT_STRUCT: Record<SandboxStyle, number[]> = { pop: [2], jazz: [], lofi: [], rnb: [1.5, 2.5], acg: [2] };
 
 // ★ 伴奏奏【真实和声】(realRootPc/realTonePcs;含 secondary/borrowed)。缺真字段(老 buildProgression)→ 回退调内。
 const chRootPc = (c: SandboxChord): number => c.realRootPc ?? c.rootPc;

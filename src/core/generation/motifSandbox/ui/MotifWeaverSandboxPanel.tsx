@@ -1,8 +1,8 @@
 // ============================================================
 // motifSandbox · ui · Q+R Motif 续写沙盒面板
 // ------------------------------------------------------------
-// 录(MIDI,后接)/ 注入示例 motif → 分析归一化 → VERSE1/VERSE2 quote + 续写 → lead-only 试听。
-// 完全独立于 newEngine 生产链。播放共享 globalMidiScheduler(与新引擎面板互斥,先 stop 再 play)。
+// 录(MIDI,后接)/ 注入示例 motif → 分析归一化 → motif/brick 续写 → Q+N 正式播放。
+// 播放共享 globalMidiScheduler(与新引擎面板互斥,先 stop 再 play)。
 // ============================================================
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -10,40 +10,49 @@ import { motion } from 'motion/react';
 import { Piano, X } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 import { analyzeAndNormalize, analyzeHiddenGridMotif, generateSampleCaptured, fitRecordingToBars, MotifAnalysisError, type AnalyzeResult, type MotifTimingAnalysis } from '../model/motifAnalysis';
-import { generateMotifWeave } from '../model/motifWeaver';
-import { buildSandboxIr, LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../model/leadOnlyIr';
-import { buildMotifSongOverride } from '../bridge/sandboxToOverride';
-// ★ Q+N 主链路(qn_main_engine_takeover §10):完整成曲走 service + AudioEngine.playMusicGeneration;
-//   lead-only 试听仍留 sandbox(auditionMusicalIR / leadOnlyIr,预听 trial-only)。
+import { LEAD_PROGRAM_BY_STYLE, MIDI_INPUT_PROGRAM } from '../model/leadOnlyIr';
+import { buildUserMotifBrickSongOverride } from '../bridge/sandboxToOverride';
+// ★ Q+N 主链路(qn_main_engine_takeover §10):播放走 service + AudioEngine.playMusicGeneration;
+//   pad/MIDI 单音录入反馈仍留 sandbox audition。
 import { generateMotifMusic } from '../../musicGeneration/MusicGenerationService';
+import type { MusicGenerationResult } from '../../musicGeneration/types';
 import { AudioEngine } from '../../../audio/AudioEngine';
-import { buildAccompaniment } from '../model/accompaniment';
+import { MUSIC_GEN_STYLE_OPTIONS, MusicGenerationStyleStore, type MusicGenStyle } from '../../../../state/MusicGenerationStyleStore';
+import { MusicGenerationSeedStore } from '../../../../state/MusicGenerationSeedStore';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
 import type { CapturedMidiNote, MotifWeaverResult, SandboxStyle, UserMotif, HealingMode } from '../model/types';
-import { auditionMusicalIR, stopNewEngine, auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
+import { auditionNoteOn, auditionNoteOff, auditionControlChange, playClick, playCue, ensureAudio, getAudioLatencyMs, setSandboxAuditionMaster } from '../../newEngine/sandbox/audioOut';
 import { requestMidiAccess, type MidiAccessHandle, type MidiDeviceInfo, type MidiSupport, type ParsedMidiMessage } from '../midi/webMidi';
 import { MidiMotifRecorder } from '../capture/MidiMotifRecorder';
 import { PadKeyboard } from './PadKeyboard';
 
 type RecordPhase = 'idle' | 'count-in' | 'recording' | 'analyzing' | 'ready';
 
-const STYLES: SandboxStyle[] = ['pop', 'lofi', 'rnb', 'jazz'];
+const STYLES: SandboxStyle[] = MUSIC_GEN_STYLE_OPTIONS.map((s) => s.toLowerCase() as SandboxStyle);
+const isSandboxStyle = (style: string): style is SandboxStyle => (STYLES as readonly string[]).includes(style);
+const qnStyleToSandbox = (style: string): SandboxStyle => {
+  const candidate = style.toLowerCase();
+  return isSandboxStyle(candidate) ? candidate : STYLES[0];
+};
+const sandboxToQnStyle = (style: SandboxStyle): MusicGenStyle => style.toUpperCase() as MusicGenStyle;
 const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const HIDDEN_GRID_MAX_MS = 60000; // 持续录音安全上限(节拍器不停;录到手动 ■ 停,超 60s 自动收尾)
+const FREE_FALLBACK_CAPTURE_BPM = 96; // 内部 raw-ms→beat 参考值;不暴露为用户生成参数。
+const currentQhSeed = (): number => MusicGenerationSeedStore.getSeedNumber();
 
 export const MotifWeaverSandboxPanel: React.FC = () => {
   const [open, setOpen] = useState(false);
-  const [style, setStyle] = useState<SandboxStyle>('pop');
+  const [style, setStyle] = useState<SandboxStyle>(() => qnStyleToSandbox(MusicGenerationStyleStore.getStyleHint()));
   const [keyPc, setKeyPc] = useState(0);
   const [tonality, setTonality] = useState<SandboxTonality>('major');
-  const [bpm, setBpm] = useState(96);
-  const [seed, setSeed] = useState(7);
-  const [withAccomp, setWithAccomp] = useState(true);
+  const [motifSeed, setMotifSeed] = useState<number | null>(null);
   const [healingMode, setHealingMode] = useState<HealingMode>('beginner'); // 新手修饰(默认开;高级用户可关)
   const [captured, setCaptured] = useState<CapturedMidiNote[]>([]);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
   const [result, setResult] = useState<MotifWeaverResult | null>(null);
+  const [generatedSong, setGeneratedSong] = useState<MusicGenerationResult | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [status, setStatus] = useState('注入或录入一段 motif');
   const [playing, setPlaying] = useState(false);
   const [activeNotes, setActiveNotes] = useState<Set<number>>(() => new Set()); // 当前按住的音(pad 点击 + MIDI)→ 点亮对应 pad
@@ -72,10 +81,19 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   const recorder = useRef(new MidiMotifRecorder());
   const access = useRef<MidiAccessHandle | null>(null);
   const timer = useRef<number | null>(null);
-  const liveCfg = useRef({ keyPc, tonality, bpm, seed, style, healingMode });
-  liveCfg.current = { keyPc, tonality, bpm, seed, style, healingMode };
+  const liveCfg = useRef({ keyPc, tonality, style, healingMode });
+  liveCfg.current = { keyPc, tonality, style, healingMode };
 
   useDevPanelChannel('motif', open, setOpen);
+
+  useEffect(() => {
+    if (!open) return;
+    const synced = qnStyleToSandbox(MusicGenerationStyleStore.getStyleHint());
+    if (style === synced) return;
+    setStyle(synced);
+    setResult(null);
+    setGeneratedSong(null);
+  }, [open, style]);
 
   // 全局 Q+R 调出 / Esc 关闭
   useEffect(() => {
@@ -98,20 +116,23 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
   }, [open]);
 
-  const stopPlayback = useCallback(() => { stopNewEngine(); setPlaying(false); }, []);
+  const stopPlayback = useCallback(() => { AudioEngine.stop(); setPlaying(false); }, []);
 
-  // 录到/注入 raw → 据长度识别整 bar + 调 bpm → 走完整 analyze(不绕过 analyzer)
+  // 录到/注入 raw → 用内部捕获参考值识别整 bar → 走完整 analyze(不绕过 analyzer)。
   const applyCaptured = useCallback((cap: CapturedMidiNote[], label: string) => {
     setCaptured(cap);
     setResult(null);
+    setGeneratedSong(null);
     if (cap.length === 0) { setAnalysis(null); setStatus('未录到音符'); return; }
-    const { keyPc: k, tonality: t, bpm: b, seed: s } = liveCfg.current;
+    const { keyPc: k, tonality: t } = liveCfg.current;
+    const s = currentQhSeed();
+    setMotifSeed(s);
+    const b = FREE_FALLBACK_CAPTURE_BPM;
     const fit = fitRecordingToBars(cap, b);
-    setBpm(fit.adjustedBpm); // 调 bpm 让这段正好整 bar
     try {
       const a = analyzeAndNormalize(cap, k, tonalityParentMode(t), fit.adjustedBpm, s, t, liveCfg.current.healingMode); // 吸到选定音阶(保 blues/五声特征)+ 新手治愈
       setAnalysis(a);
-      setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· BPM ${b}→${fit.adjustedBpm} · raw ${a.rawCount}→norm ${a.normalizedCount}`);
+      setStatus(`${label}:识别 ${fit.targetBars} bar(${fit.rawBars.toFixed(2)})· capture ${fit.adjustedBpm}BPM · raw ${a.rawCount}→norm ${a.normalizedCount}`);
     } catch (err) { setAnalysis(null); setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
   }, []);
 
@@ -151,13 +172,13 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     if (timer.current != null) { clearInterval(timer.current); timer.current = null; }
     const notes = recorder.current.stop();
     setRecording(false);
-    applyCaptured(notes, '录制'); // 据长度识别整 bar + 调 bpm
+    applyCaptured(notes, '录制'); // 据长度识别整 bar;BPM 仅为内部捕获换算元数据
   }, [applyCaptured]);
 
   const startRecord = useCallback(() => {
     stopPlayback();
     recorder.current.start(); // 手动起止,不固定秒数(30s 安全上限)。MIDI 或 3×5 键盘都可录
-    setRecording(true); setElapsed(0); setCaptured([]); setResult(null);
+    setRecording(true); setElapsed(0); setCaptured([]); setResult(null); setGeneratedSong(null); setMotifSeed(currentQhSeed());
     setStatus(access.current ? '● 录制中…(MIDI / 点 3×5 键盘,手动停止)' : '● 录制中…(点 3×5 键盘,手动停止)');
     timer.current = window.setInterval(() => {
       const e = recorder.current.elapsedMs();
@@ -190,11 +211,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
 
   const startHiddenGridRecord = useCallback(async () => {
     stopPlayback(); clearRecTimers();
-    const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
+    const { keyPc: k, tonality: t } = liveCfg.current;
+    const s = currentQhSeed();
+    setMotifSeed(s);
     const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
     ctxRef.current = ctx;
-    setBpm(ctx.bpm);
-    setHiddenMotif(null); setTiming(null); setResult(null); setCaptured([]); setAnalysis(null); setAlignFirst(true); // 新录默认切头对齐
+    setHiddenMotif(null); setTiming(null); setResult(null); setGeneratedSong(null); setCaptured([]); setAnalysis(null); setAlignFirst(true); // 新录默认切头对齐
     setRecording(true); setRecordPhase('count-in'); setElapsed(0);
     setStatus(`◔ 数拍预备(1 小节 · BPM ${ctx.bpm})…暖音频中`);
     // ★ 先把音频时钟暖起来:否则首拍 click 因 AudioContext 启动晚响 → 用户跟着晚弹 → 整段偏后。
@@ -249,10 +271,12 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
   // 注入示例 motif:隐形时钟模式 → 平移进捕获窗走 hidden 分析;free 模式 → 老路径
   const injectSample = useCallback(() => {
     stopPlayback();
-    const { keyPc: k, tonality: t, seed: s } = liveCfg.current;
+    const { keyPc: k, tonality: t } = liveCfg.current;
+    const s = currentQhSeed();
+    setMotifSeed(s);
     if (captureMode === 'hiddenGrid') {
       const ctx = createHiddenGridContext({ seed: s, keyPc: k, scaleMode: tonalityParentMode(t), tonality: t, style, startMs: 0, countInBars: 1, desiredBars: 4 });
-      ctxRef.current = ctx; setBpm(ctx.bpm); setResult(null); setAlignFirst(true);
+      ctxRef.current = ctx; setResult(null); setGeneratedSong(null); setAlignFirst(true);
       const raw = generateSampleCaptured(ctx.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4).map((n) => ({ ...n, onsetMs: n.onsetMs + ctx.captureStartMs }));
       try {
         const g = capturedToGridNotes(raw, ctx);
@@ -265,7 +289,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
       } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '分析失败'); }
     } else {
       setHiddenMotif(null);
-      applyCaptured(generateSampleCaptured(liveCfg.current.bpm, k, tonalityParentMode(t), (s % 4 + 4) % 4), '注入示例');
+      applyCaptured(generateSampleCaptured(FREE_FALLBACK_CAPTURE_BPM, k, tonalityParentMode(t), (s % 4 + 4) % 4), '注入示例');
     }
   }, [captureMode, style, applyCaptured, stopPlayback]);
 
@@ -301,52 +325,54 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     });
   }, [alignFirst]);
 
-  const generate = useCallback(() => {
-    const motif = captureMode === 'hiddenGrid' ? hiddenMotif : null; // 数据层已切头对齐(allowPickup 控制)
-    if (!motif && captured.length === 0) { setStatus('先录入/注入 motif'); return; }
+  const generate = useCallback(async () => {
+    const motif = captureMode === 'hiddenGrid' ? hiddenMotif : analysis?.motif ?? null; // 数据层已切头对齐(allowPickup 控制)
+    if (!motif) { setStatus('先录入/注入 motif'); return; }
     stopPlayback();
+    setResult(null);
+    setGeneratedSong(null);
+    setGenerating(true);
     try {
-      const r = generateMotifWeave(motif
-        ? { capturedNotes: [], motif, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads', healingMode }
-        : { capturedNotes: captured, style, keyPc, mode: tonalityParentMode(tonality), bpm, seed, inputTonality: tonality, quotePlan: 'phraseHeads', healingMode });
-      setResult(r);
-      setAnalysis({ motif: r.motif, rawCount: captured.length, normalizedCount: r.motif.notes.length });
-      setStatus(`生成 ${r.lead.length} 音 / ${r.totalBars} bar · 陈述 ${r.audit.themeStatements} · 发展 ${r.audit.developVariants} 种 · 留白 ${(r.audit.restRatio * 100).toFixed(0)}%`);
-    } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : '生成失败'); }
-  }, [captureMode, hiddenMotif, captured, style, keyPc, tonality, bpm, seed, healingMode, stopPlayback]);
+      const s = motifSeed ?? currentQhSeed();
+      if (motifSeed == null) setMotifSeed(s);
+      setAnalysis((prev) => prev ?? { motif, rawCount: captured.length, normalizedCount: motif.notes.length });
+      const mode = tonalityParentMode(tonality);
+      const override = buildUserMotifBrickSongOverride(motif, { style, seed: s, keyPc, mode, inputTonality: tonality });
+      const quoteBars = ((override.userBrick?.quoteBeats ?? motif.lengthBeats) / 4).toFixed(1).replace(/\.0$/, '');
+      setStatus(`Q+N 生成中 · motif→brick quote ${quoteBars} bar…`);
+      const song = await generateMotifMusic({
+        seed: s,
+        styleHint: style,
+        mood: 'build',
+        targetDuration: 96,
+        key: KEY_NAMES[keyPc],
+        mode,
+      }, override);
+      if (song.status === 'failed' || !song.ir) { setStatus('Q+N 生成失败(audit)'); return; }
+      setGeneratedSong(song);
+      const roles = song.ir.tracks.map((t) => t.role).join('+');
+      setStatus(`生成完成 · Q+N ${roles} · BPM ${song.bpm} · motif brick ${quoteBars} bar`);
+    } catch (err) { setStatus(err instanceof MotifAnalysisError ? err.message : err instanceof Error ? `生成失败:${err.message}` : '生成失败'); }
+    finally { setGenerating(false); }
+  }, [captureMode, hiddenMotif, analysis, captured.length, style, keyPc, tonality, motifSeed, stopPlayback]);
 
+  // ★ 播放:只播放 generate 阶段产出的唯一 Q+N song,不再临时跑第二条 sandbox/override 声音链路。
   const play = useCallback(async () => {
-    if (!result) { setStatus('先生成'); return; }
-    stopNewEngine();
-    const pbpm = result.playbackBpm; // ★ = 本次 generation 的 input.bpm 快照(不读 live slider;改 BPM 须重新 生成);capture BPM 只用于 ms→beat
-    const accomp = withAccomp ? buildAccompaniment(result.progression, style, seed, result.lead) : null; // 传 lead → 伴奏锁旋律重音/结构点
-    const ir = buildSandboxIr(result.lead, accomp, pbpm, style);
-    setPlaying(true);
-    setStatus(withAccomp ? `▶ 播放 lead + 伴奏(BPM ${pbpm})…` : `▶ 播放 lead(BPM ${pbpm})…`);
-    try { await auditionMusicalIR(ir, pbpm, style); } catch { /* 静默 */ }
-  }, [result, style, seed, withAccomp]);
-
-  // ★ 走 A:full arrangement preview —— motif/slot 结果 → Q+N 成曲(器配/鼓/bass/comp/pad/mix)。
-  //   不替换上面的 lead-only 试听;这里听【整编成曲】。
-  const playFull = useCallback(async () => {
-    if (!result) { setStatus('先生成'); return; }
+    if (!generatedSong?.ir) { setStatus('先生成'); return; }
     AudioEngine.stop();
     try {
-      const override = buildMotifSongOverride(result, keyPc, tonalityParentMode(tonality));
-      // ★ 完整成曲走 Q+N 正式管道(generateMotifMusic → MusicalIR),不走 sandbox auditionMusicalIR / leadOnlyIr 预听。
-      const song = await generateMotifMusic({ seed, styleHint: style, mood: 'build', targetDuration: 96 }, override);
-      if (song.status === 'failed' || !song.ir) { setStatus('整编失败(audit)'); return; }
-      const roles = song.ir.tracks.map((t) => t.role).join('+');
+      const roles = generatedSong.ir.tracks.map((t) => t.role).join('+');
       setPlaying(true);
-      setStatus(`▶ 整编成曲(${song.status} · ${roles} · BPM ${song.bpm})…`);
-      await AudioEngine.playMusicGeneration(song); // Q+N 正式播放
-    } catch (err) { setStatus(err instanceof Error ? `整编出错:${err.message}` : '整编出错'); }
-  }, [result, style, seed, keyPc, tonality]);
+      setStatus(`▶ 播放(${generatedSong.status} · ${roles} · BPM ${generatedSong.bpm})…`);
+      await AudioEngine.playMusicGeneration(generatedSong); // Q+N 正式播放
+    } catch (err) { setStatus(err instanceof Error ? `播放出错:${err.message}` : '播放出错'); }
+  }, [generatedSong]);
 
   if (!open) return null;
 
   const sel = 'bg-zinc-800 text-zinc-100 rounded px-1.5 py-0.5 text-[11px] border border-zinc-700';
   const a = analysis;
+  const canGenerate = captureMode === 'hiddenGrid' ? Boolean(hiddenMotif) : Boolean(analysis?.motif);
 
   return (
     <motion.div
@@ -423,31 +449,32 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           {recording && <span className="ml-auto text-[10px] text-rose-300">● {(elapsed / 1000).toFixed(1)}s</span>}
         </div>
         <PadKeyboard noteMap={scaleNoteMap(keyPc, tonality)} recording={recording} activeNotes={activeNotes} onPadDown={handlePadDown} onPadUp={handlePadUp} />
-        <div className="text-[10px] text-zinc-600">{captureMode === 'hiddenGrid' ? '点 pad/弹 MIDI 试听;数拍后演奏 → 对着隐形时钟落格(不猜 BPM)。' : 'free 回退:停止后据 bpm 自动识别整 bar(时序置信较低)。'}底行低音 → 顶行高音。</div>
+        <div className="text-[10px] text-zinc-600">{captureMode === 'hiddenGrid' ? '点 pad/弹 MIDI 试听;数拍后演奏 → 对着隐形时钟落格(不猜 BPM)。' : 'free 回退:停止后按内部捕获时钟识别整 bar(时序置信较低)。'}底行低音 → 顶行高音。</div>
       </div>
 
       {/* Generate */}
       <div className="px-3 py-2 border-b border-zinc-900 space-y-1.5">
         <div className="text-[10px] uppercase tracking-widest text-zinc-500">Generate</div>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <label>风格<select className={sel} value={style} onChange={(e) => setStyle(e.target.value as SandboxStyle)}>{STYLES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select></label>
+          <label>风格<select className={sel} value={style} onChange={(e) => {
+            const next = e.target.value as SandboxStyle;
+            setStyle(next);
+            MusicGenerationStyleStore.setStyle(sandboxToQnStyle(next));
+            setResult(null);
+            setGeneratedSong(null);
+          }}>{STYLES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select></label>
           <span className="text-zinc-500">{KEY_NAMES[keyPc]} {TONALITY_LABEL[tonality]} → 母调 {tonalityParentMode(tonality)}</span>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
-          <label>bpm<input type="number" className={`${sel} w-14`} value={bpm} min={50} max={200} onChange={(e) => setBpm(Math.max(50, Math.min(200, Number(e.target.value) || 96)))} /></label>
-          <label>seed<input type="number" className={`${sel} w-16`} value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} /></label>
+          <span className="text-zinc-500">seed 来自 Q+H{motifSeed == null ? '' : ` · ${motifSeed}`}</span>
         </div>
         <div className="flex items-center gap-2 pt-0.5">
-          <button type="button" onClick={generate} disabled={captureMode === 'hiddenGrid' ? !hiddenMotif : captured.length === 0} className="rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">生成 Lead</button>
+          <button type="button" onClick={generate} disabled={generating || !canGenerate} className="rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">{generating ? '生成中…' : '生成'}</button>
           {!playing
-            ? <>
-                <button type="button" onClick={play} disabled={!result} className="rounded-lg bg-sky-600/80 hover:bg-sky-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 试听</button>
-                <button type="button" onClick={playFull} disabled={!result} title="走 A:motif → Q+N 全编制成曲" className="rounded-lg bg-violet-600/80 hover:bg-violet-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 整编成曲</button>
-              </>
+            ? <button type="button" onClick={play} disabled={!generatedSong || generating} title="motif → user brick → Q+N 续写成曲" className="rounded-lg bg-violet-600/80 hover:bg-violet-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 播放</button>
             : <button type="button" onClick={stopPlayback} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
-          <button type="button" onClick={() => setWithAccomp((v) => !v)} className={`rounded-lg px-2 py-1 text-[11px] border ${withAccomp ? 'bg-amber-600/30 border-amber-500/50 text-amber-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>伴奏 {withAccomp ? 'on' : 'off'}</button>
           <button type="button" onClick={toggleHealing} title="新手修饰:补意外短断点 + 护同音断奏(Phase 2 软化重复刺耳摩擦);高级用户可关" className={`rounded-lg px-2 py-1 text-[11px] border ${healingMode === 'beginner' ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>修饰 {healingMode === 'beginner' ? 'on' : 'off'}</button>
-          <span className="ml-auto text-[10px] text-zinc-500">lead=GM{LEAD_PROGRAM_BY_STYLE[style]}</span>
+          <span className="ml-auto text-[10px] text-zinc-500">pad=GM{LEAD_PROGRAM_BY_STYLE[style]}</span>
         </div>
       </div>
 

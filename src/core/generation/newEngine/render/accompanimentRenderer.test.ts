@@ -65,4 +65,5 @@ describe('render/accompanimentRenderer (comp 织体,bass 见 bassRenderer)', () 
     expect(polyVelocity(100, 7)).toBeLessThan(polyVelocity(100, 4)); // 越密越轻
     expect(polyVelocity(100, 8)).toBe(50); // √(2/8)=0.5
   });
+
 });

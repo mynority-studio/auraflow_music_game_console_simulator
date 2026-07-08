@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderDrums } from './drumRenderer';
-import { drumGrooveVariants, DRUM, type GrooveKind, type DrumHit } from '../knowledge/grooves';
+import { drumGrooveVariants, drumPerformanceVariants, DRUM, type GrooveKind, type DrumHit } from '../knowledge/grooves';
 import { planGroove } from '../arranger/groovePlanner';
 import { buildHarmonicPlan, buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { buildBandSpec } from '../band/bandEngine';
@@ -74,6 +74,29 @@ describe('knowledge/grooves · 鼓型词汇库', () => {
   it('缺 groove → 回退该风格 straight(不抛)', () => {
     const vs = drumGrooveVariants('pop', 'nope' as GrooveKind);
     expect(vs).toEqual(drumGrooveVariants('pop', 'straight'));
+  });
+
+  it('DrumPerformance patternFamily 有真实鼓型族,且 lofi ≥3 类打法', () => {
+    const families = ['lofi-boombap', 'lofi-dusty-break', 'lofi-minimal'] as const;
+    const sigs = new Set<string>();
+    for (const family of families) {
+      const variants = drumPerformanceVariants({ patternFamily: family });
+      expect(variants.length).toBeGreaterThanOrEqual(2);
+      sigs.add(variants[0].map((h) => `${h.drum}@${h.beat}`).join('|'));
+    }
+    expect(sigs.size).toBe(families.length);
+  });
+
+  it('LOFI boombap/dusty-break 主体打法具备 hiphop backbeat + 切分 kick + 16 分帽', () => {
+    for (const family of ['lofi-boombap', 'lofi-dusty-break'] as const) {
+      for (const variant of drumPerformanceVariants({ patternFamily: family })) {
+        const backbeatDrums = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK, DRUM.CLAP]);
+        expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 1), family).toBe(true);
+        expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 3), family).toBe(true);
+        expect(variant.some((h) => h.drum === DRUM.KICK && h.beat % 1 !== 0), family).toBe(true);
+        expect(variant.some((h) => (h.drum === DRUM.CHAT || h.drum === DRUM.SHAKER) && h.beat % 0.5 !== 0), family).toBe(true);
+      }
+    }
   });
 });
 
@@ -193,6 +216,69 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     // groove(onlyKick=1 kick/bar)优先于 pocket(halftime kit=2 kick/bar)→ KICK 计=2 证明 groove 覆盖。
     expect(d.notes.filter((n) => n.pitch === DRUM.KICK).length).toBe(2);
     expect(d.notes.filter((n) => n.pitch === DRUM.KICK).every((n) => (n.startTick as number) % (timebase.ppq * 4) === 0)).toBe(true); // kick 都在小节下拍
+  });
+
+  it('DrumPerformanceContract entryMode 被 renderer 消费:hat-only 首小节不出 kick/snare', () => {
+    const sid0 = plan.chordTimeline[0].sectionId;
+    const pattern: DrumHit[] = [{ drum: DRUM.KICK, beat: 0, vel: 100 }, { drum: DRUM.SNARE, beat: 2, vel: 84 }, { drum: DRUM.CHAT, beat: 0, vel: 44 }, { drum: DRUM.CHAT, beat: 1, vel: 40 }];
+    const perf = {
+      id: 'test', sectionId: sid0, role: 'breakdown', patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      entryMode: 'hat-only', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1, swingUnit: '8th',
+      safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
+      timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
+      hatPolicy: 'eighths', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'strict',
+    } as const;
+    const d = renderDrums(plan, timebase, 4, { patternBySection: { [sid0]: pattern }, performanceBySection: { [sid0]: perf } });
+    const bar0 = d.notes.filter((n) => (n.startTick as number) < timebase.ppq * 4).map((n) => n.pitch as number);
+    expect(bar0).not.toContain(DRUM.KICK);
+    expect(bar0).not.toContain(DRUM.SNARE);
+    expect(bar0).toContain(DRUM.CHAT);
+  });
+
+  it('DrumPerformanceContract fillPolicy=none 会压住 legacy fillBars', () => {
+    const perf = {
+      id: 'test', sectionId: sid, role: 'timekeeper', patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1, swingUnit: '8th',
+      safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
+      timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
+      hatPolicy: 'eighths', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'strict',
+    } as const;
+    const d = renderDrums(plan, timebase, 4, { style: 'pop', fillBars: new Set([0]), performanceBySection: { [sid]: perf } });
+    const bar0 = d.notes.filter((n) => (n.startTick as number) < timebase.ppq * 4).map((n) => n.pitch as number);
+    expect(bar0).not.toContain(DRUM.TOM_LO);
+    expect(bar0).not.toContain(DRUM.TOM_MID);
+    expect(bar0).not.toContain(DRUM.TOM_HI);
+  });
+
+  it('DrumPerformanceContract timingProfile=dilla-late 会实际移动鼓点 tick,且受 maxMove 限制', () => {
+    const pattern: DrumHit[] = [{ drum: DRUM.KICK, beat: 0, vel: 100 }, { drum: DRUM.SNARE, beat: 1, vel: 84 }, { drum: DRUM.CHAT, beat: 1.5, vel: 44 }];
+    const perf = {
+      id: 'test', sectionId: sid, role: 'timekeeper', patternFamily: 'rnb-dilla', complexity: 2, intensity: 2, densityCeiling: 1,
+      entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 0, swingUnit: '16th',
+      safeRangeTicks: 4, maxMoveTicks: 24, preQuantizeGrid: '16th', humanizeAmount: 3, feelOffsetMs: 25,
+      timingProfile: 'dilla-late', velocityProfile: 'ghosted', kickPolicy: 'syncopated', snarePolicy: 'ghost-before-backbeat',
+      hatPolicy: 'shaker16', cymbalPolicy: 'none', tomPolicy: 'none', foregroundGuard: 'normal',
+    } as const;
+    const d = renderDrums(plan, timebase, 4, { patternBySection: { [sid]: pattern }, performanceBySection: { [sid]: perf }, tempoBpm: 120 });
+    const snare = d.notes.find((n) => n.pitch === DRUM.SNARE)!;
+    const hat = d.notes.find((n) => n.pitch === DRUM.CHAT)!;
+    expect(snare.startTick as number).toBeGreaterThan(timebase.ppq);
+    expect((snare.startTick as number) - timebase.ppq).toBeLessThanOrEqual(24);
+    expect(hat.startTick as number).toBeGreaterThan(Math.round(timebase.ppq * 1.5));
+  });
+
+  it('DrumPerformanceContract fillAmount/fillComplexity 改变 fill 密度', () => {
+    const base = {
+      id: 'test', sectionId: sid, role: 'timekeeper', patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      entryMode: 'full', fillPolicy: 'light', phraseVariation: 0, swingUnit: '8th',
+      safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
+      timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
+      hatPolicy: 'eighths', cymbalPolicy: 'section-crash', tomPolicy: 'turnaround', foregroundGuard: 'normal',
+    } as const;
+    const low = renderDrums(plan, timebase, 4, { style: 'pop', fillBars: new Set([0]), performanceBySection: { [sid]: { ...base, fillAmount: 1, fillComplexity: 1 } } });
+    const high = renderDrums(plan, timebase, 4, { style: 'pop', fillBars: new Set([0]), performanceBySection: { [sid]: { ...base, fillAmount: 2, fillComplexity: 2 } } });
+    const bar0 = (t: typeof low) => t.notes.filter((n) => (n.startTick as number) < timebase.ppq * 4).length;
+    expect(bar0(high)).toBeGreaterThan(bar0(low));
   });
 });
 

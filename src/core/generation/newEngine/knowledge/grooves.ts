@@ -66,7 +66,18 @@ export interface DrumHit {
   vel: number;
 }
 
+export interface DrumPerformanceLike {
+  patternFamily?: string;
+  role?: string;
+  complexity?: number;
+  intensity?: number;
+  hatPolicy?: string;
+  kickPolicy?: string;
+  snarePolicy?: string;
+}
+
 const HAT8 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+const HAT16 = Array.from({ length: 16 }, (_, i) => i * 0.25);
 
 const DRUM_PATTERNS: Record<string, readonly DrumHit[]> = {
   // pop:backbeat(snare 2/4)+ 八分 hat
@@ -119,6 +130,8 @@ export type GrooveKind = 'sparse' | 'laidback' | 'straight' | 'driving';
 
 const hats8 = (vel: number): DrumHit[] => HAT8.map((b) => ({ drum: DRUM.CHAT, beat: b, vel }));
 const hats4 = (vel: number): DrumHit[] => [0, 1, 2, 3].map((b) => ({ drum: DRUM.CHAT, beat: b, vel }));
+const hats16BoomBap = (downVel: number, offVel: number, ghostVel: number, drum = DRUM.CHAT): DrumHit[] =>
+  HAT16.map((b) => ({ drum, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
 const K = (beat: number, vel: number): DrumHit => ({ drum: DRUM.KICK, beat, vel });
 const S = (beat: number, vel: number): DrumHit => ({ drum: DRUM.SNARE, beat, vel });
 const R = (beat: number, vel: number): DrumHit => ({ drum: DRUM.RIDE, beat, vel });
@@ -128,7 +141,7 @@ const OH = (beat: number, vel: number): DrumHit => ({ drum: DRUM.OHAT, beat, vel
 const CL = (beat: number, vel: number): DrumHit => ({ drum: DRUM.CLAP, beat, vel });       // 拍手
 const SK = (beat: number, vel: number): DrumHit => ({ drum: DRUM.SIDESTICK, beat, vel });   // 边击
 const RB = (beat: number, vel: number): DrumHit => ({ drum: DRUM.RIDE_BELL, beat, vel });   // ride 铃
-const shaker16 = (vel: number): DrumHit[] => HAT8.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel })); // 沙锤 16 分
+const shaker16 = (vel: number): DrumHit[] => HAT16.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel })); // 沙锤 16 分
 
 // 每 (style × groove) = 2-3 个变体(DrumHit[][])。
 const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
@@ -171,10 +184,10 @@ const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
   lofi: {
     sparse: [[K(0, 96), S(2, 78), ...hats4(36)]],
     laidback: [
-      [K(0, 100), K(2.5, 84), S(2, 82), ...hats8(44)],
-      [K(0, 98), K(1.5, 72), S(2, 80), S(2.5, 36), ...hats8(42)],
-      // ★ dusty sidestick(rim 替军鼓,更慵懒)
-      [K(0, 98), K(2.5, 82), SK(2, 70), SK(3.5, 34), ...hats8(40)],
+      // classic lofi boom-bap:snare/rim on 2/4, syncopated kick, ghost hats.
+      [K(0, 100), K(0.75, 60), K(2, 86), K(2.75, 70), S(1, 84), S(3, 88), SK(0.75, 28), SK(2.75, 32), ...hats16BoomBap(48, 38, 26)],
+      [K(0, 98), K(1.75, 70), K(2, 84), K(2.5, 72), SK(1, 76), SK(3, 82), S(3, 52), SK(0.75, 26), SK(2.75, 30), ...hats16BoomBap(46, 36, 24)],
+      [K(0, 98), K(0.5, 56), K(2.25, 78), K(3.5, 64), S(1, 82), S(3, 86), CL(3, 44), SK(2.75, 28), ...hats16BoomBap(46, 35, 24), OH(3.5, 36)],
     ],
     straight: [
       [K(0, 98), K(2, 86), S(2, 80), ...hats8(44)],
@@ -211,4 +224,63 @@ export function drumGrooveVariants(style: string, groove: GrooveKind): DrumHit[]
   const byStyle = DRUM_GROOVES[style.toLowerCase()] ?? DRUM_GROOVES.pop;
   const variants = byStyle[groove] ?? byStyle.straight;
   return variants.map((v) => v.map((h) => ({ ...h })));
+}
+
+const DRUM_PERFORMANCE_FAMILIES: Record<string, DrumHit[][]> = {
+  'citypop-disco-boogie': [
+    [K(0, 108), K(1, 86), K(2, 102), K(3, 86), S(1, 96), S(3, 100), CL(1, 72), CL(3, 76), ...HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? 54 : 42 })), { drum: DRUM.TAMB, beat: 1.5, vel: 48 }, { drum: DRUM.TAMB, beat: 3.5, vel: 48 }],
+    [K(0, 110), K(0.75, 78), K(2, 102), K(2.75, 82), S(1, 96), S(3, 100), CL(1, 70), CL(3, 76), ...HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? 56 : 40 })), OH(3.5, 56)],
+    [K(0, 108), K(1.5, 80), K(2, 102), K(3.5, 82), S(1, 96), S(3, 102), ...HAT16.map((b) => ({ drum: b % 1 === 0 ? DRUM.CHAT : DRUM.TAMB, beat: b, vel: b % 1 === 0 ? 52 : 34 }))],
+  ],
+  'pop-backbeat': DRUM_GROOVES.pop.straight,
+  'jpop-driving-8ths': DRUM_GROOVES.pop.driving,
+  'ballad-halftime': [
+    [K(0, 98), S(2, 86), ...hats4(38)],
+    [K(0, 96), K(2.5, 70), S(2, 84), ...hats4(36)],
+    [K(0, 94), SK(2, 72), ...hats4(34)],
+  ],
+  'rnb-neo-soul': DRUM_GROOVES.rnb.laidback,
+  'rnb-dilla': [
+    [K(0, 96), K(2.5, 78), S(2, 82), CL(2, 58), ...shaker16(34)],
+    [K(0, 94), K(1.5, 68), K(2.5, 76), S(2, 80), S(3.5, 34), ...shaker16(32)],
+    [K(0, 92), K(2.75, 76), SK(2, 70), CL(2, 54), ...shaker16(32)],
+  ],
+  'rnb-gospel-shuffle': [
+    [K(0, 98), K(2.67, 78), S(2, 86), CL(2, 58), ...[0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67].map((b) => ({ drum: DRUM.SHAKER, beat: b, vel: 34 }))],
+    [K(0, 98), K(1.67, 72), K(2.67, 78), S(2, 86), S(3.67, 34), ...[0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67].map((b) => ({ drum: DRUM.SHAKER, beat: b, vel: 34 }))],
+  ],
+  'trap-soul-halftime': [
+    [K(0, 98), K(2.5, 74), S(2, 82), ...hats8(42)],
+    [K(0, 96), K(1.5, 68), S(2, 82), S(3.5, 34), ...hats8(40)],
+  ],
+  'smooth-jazz-backbeat': [
+    [K(0, 92), K(2.5, 74), SK(1, 64), SK(3, 68), ...shaker16(30), R(0, 52), R(2, 50)],
+    [K(0, 90), K(1.5, 66), K(2.5, 72), S(1, 70), S(3, 74), S(2.75, 32), ...hats8(38), R(0, 50), R(2, 48)],
+    [K(0, 90), K(2, 72), SK(1, 62), SK(3, 68), CL(3, 48), ...shaker16(28), OH(3.5, 46)],
+  ],
+  'lofi-boombap': DRUM_GROOVES.lofi.laidback,
+  'lofi-dusty-break': [
+    [K(0, 94), K(0.75, 56), K(2.5, 76), SK(1, 68), SK(3, 72), SK(2.75, 32), ...shaker16(32)],
+    [K(0, 92), K(1.5, 66), K(2.5, 70), SK(1, 66), SK(3, 70), CL(3, 42), SK(0.75, 28), ...shaker16(30)],
+    [K(0, 94), K(2.75, 72), SK(1, 68), SK(3, 72), SK(3.5, 30), ...hats16BoomBap(44, 34, 23)],
+  ],
+  'lofi-minimal': [
+    [K(0, 92), SK(2, 68), ...hats4(32)],
+    [K(0, 90), K(2.5, 68), SK(2, 66), ...hats4(30)],
+    [K(0, 88), S(2, 66), ...hats4(28)],
+  ],
+  'jazz-swing-ride': DRUM_GROOVES.jazz.straight,
+  'jazz-bebop-comping': DRUM_GROOVES.jazz.driving,
+  'jazz-ballad-light': DRUM_GROOVES.jazz.laidback,
+  'jazz-bossa': [
+    [R(0, 62), R(1, 54), R(2, 62), R(3, 54), PH(1, 44), PH(3, 44), K(0, 58), K(2.5, 52), SK(1.5, 44)],
+    [R(0, 62), R(1.5, 52), R(2, 60), R(3.5, 52), PH(1, 44), PH(3, 44), K(0, 56), K(2.5, 52), SK(1.5, 42), SK(3.5, 42)],
+  ],
+};
+
+/** DrumPerformanceContract → 具体鼓型族。patternFamily 是 Arranger 总谱主权威;缺失时仍可由 legacy groove fallback。 */
+export function drumPerformanceVariants(performance: DrumPerformanceLike): DrumHit[][] {
+  const variants = DRUM_PERFORMANCE_FAMILIES[performance.patternFamily ?? ''];
+  if (variants) return variants.map((v) => v.map((h) => ({ ...h })));
+  return drumGrooveVariants('pop', 'straight');
 }

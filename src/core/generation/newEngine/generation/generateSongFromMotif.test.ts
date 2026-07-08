@@ -19,6 +19,8 @@ const REQS: GenerationRequest[] = [
 const fitLeadOverridePitches = (lead: readonly MotifLeadNote[], program: number): number[] =>
   lead.map((n) => fitMidiToProgramRange(n.pitch, 'lead', program));
 
+const beatOf = (tick: unknown, ppq: number): number => (tick as number) / ppq;
+
 describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)', () => {
   it('★ 默认链字节不变:generateSongFromMotif(无 override) === generateSong(逐轨逐音一致)', () => {
     for (const req of REQS) {
@@ -58,6 +60,62 @@ describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)'
     const baseRoles = base.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
     const rRoles = r.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
     expect(rRoles).toEqual(baseRoles); // 同样的伴奏编制
+  });
+
+  it('★ userBrick 路径:用户 motif 只接管 quote span,其余 lead 仍由 Q+N/MG 续写', () => {
+    const req = REQS[0];
+    const r = generateSongFromMotif(req, {
+      userBrick: {
+        quoteBeats: 2,
+        anchorBeats: [0],
+        notes: [
+          { pitch: 67, onsetBeat: 0, durationBeat: 1, velocity: 100 },
+          { pitch: 69, onsetBeat: 1, durationBeat: 1, velocity: 96 },
+        ],
+      },
+    });
+    expect(r.status).not.toBe('failed');
+    const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
+    const ppq = r.ir!.timebase.ppq;
+    const firstTwo = lead.notes.slice(0, 2);
+    expect(firstTwo.map((n) => n.startTick as number)).toEqual([0, ppq]);
+    expect(firstTwo.map((n) => n.pitch)).toEqual(fitLeadOverridePitches([
+      { pitch: 67, onsetBeat: 0, durationBeat: 1, velocity: 100 },
+      { pitch: 69, onsetBeat: 1, durationBeat: 1, velocity: 96 },
+    ], lead.program!));
+    expect(lead.notes.some((n) => (n.startTick as number) / ppq >= 2)).toBe(true);
+    expect(lead.notes.length).toBeGreaterThan(2); // 不是整条 lead override;Q+N 继续生成后续旋律
+  });
+
+  it('★ userBrick 全链路审计:五风格最终 IR 首句忠实用户 motif,quote 后仍消费 Q+N 续写', () => {
+    const styles = ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const;
+    const motif = [
+      { pitch: 60, onsetBeat: 0, durationBeat: 0.5, velocity: 100, accent: 1, structuralToneScore: 1 },
+      { pitch: 64, onsetBeat: 0.5, durationBeat: 0.5, velocity: 96, accent: 0.4, structuralToneScore: 0.4 },
+      { pitch: 67, onsetBeat: 1.5, durationBeat: 0.5, velocity: 94, accent: 0.4, structuralToneScore: 0.4 },
+      { pitch: 72, onsetBeat: 2, durationBeat: 1, velocity: 100, accent: 1, structuralToneScore: 1 },
+    ];
+
+    for (const styleHint of styles) {
+      const r = generateSongFromMotif({ seed: 7, styleHint, mood: 'build', targetDuration: 96 }, {
+        userBrick: { quoteBeats: 4, anchorBeats: [0], notes: motif },
+      });
+      expect(r.status, styleHint).not.toBe('failed');
+      const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
+      const ppq = r.ir!.timebase.ppq;
+      const quote = lead.notes
+        .filter((n) => beatOf(n.startTick, ppq) >= -1e-9 && beatOf(n.startTick, ppq) < 4 - 1e-9)
+        .sort((a, b) => (a.startTick as number) - (b.startTick as number));
+
+      expect(quote.length, `${styleHint} quote note count`).toBe(motif.length);
+      quote.forEach((n, i) => {
+        expect(Math.abs(beatOf(n.startTick, ppq) - motif[i].onsetBeat), `${styleHint} quote onset[${i}] groove pocket`).toBeLessThanOrEqual(0.18);
+        expect(Math.abs(beatOf(n.durationTicks, ppq) - motif[i].durationBeat), `${styleHint} quote duration[${i}] groove warp`).toBeLessThanOrEqual(0.18);
+      });
+      expect(quote.map((n) => n.pitch), `${styleHint} quote pitches`).toEqual(fitLeadOverridePitches(motif, lead.program!));
+      expect(lead.notes.some((n) => beatOf(n.startTick, ppq) >= 4), `${styleHint} Q+N continuation`).toBe(true);
+      expect(lead.notes.length, `${styleHint} Q+N lead was not replaced wholesale`).toBeGreaterThan(motif.length);
+    }
   });
 
   it('★ Q+R lead override 消费 Aura25 lead 音区:民谣木吉他高音折回,不直打 SF2 高区', () => {

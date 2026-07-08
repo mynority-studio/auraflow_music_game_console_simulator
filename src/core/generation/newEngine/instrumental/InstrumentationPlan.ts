@@ -61,6 +61,7 @@ export type GestureVelocityCurve = 'none' | 'soft' | 'linear' | 'accented' | 'gh
 export type GesturePedalPolicy = 'none' | 'harmonic-change' | 'light-syncopated' | 'acg-legato-change';
 export type GestureContinuity = 'none' | 'staccato' | 'connected' | 'legato-flow' | 'pedal-legato';
 export type GestureArticulationScope = 'none' | 'attribute' | 'direction';
+export type GestureArticulationExclusionGroup = 'none' | 'length' | 'pedal' | 'breath' | 'rudiment';
 export type GestureTriggerPolicy = 'none' | 'velocity-gate' | 'note-overlap' | 'cc-lane' | 'pedal-cc' | 'rudiment-velocity';
 export type GesturePhrasePolicy =
   | 'none'
@@ -102,6 +103,7 @@ export interface GestureExpressionPlan {
   ccControllers: readonly number[];
   continuity: GestureContinuity;              // Logic/Cubase 风格的统一演奏连接语义。
   articulationScope: GestureArticulationScope; // direction=持续到下一指令;attribute=只作用当前 hit/note。
+  articulationExclusionGroup: GestureArticulationExclusionGroup; // 同组互斥,防止 staccato/legato/pedal 叠成糊状。
   triggerPolicy: GestureTriggerPolicy;        // render/MIDI 侧如何落实该语义(CC、overlap、pedal、velocity/gate)。
   phrasePolicy: GesturePhrasePolicy;          // 乐器家族解释:气口/换弓/拨弦/踏板/鼓 rudiment 等。
   evidenceRefs: readonly GestureEvidenceRef[]; // 联网核验后的来源 id;新增手势必须挂依据,避免凭想象扩展。

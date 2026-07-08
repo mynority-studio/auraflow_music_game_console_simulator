@@ -6,7 +6,7 @@
 // Melody、Resolver 后续 slice 接入。lead 轨先留空占位。
 // ============================================================
 
-import { beats, midi, ticks, type RandomContext, type Timebase, type Ticks } from '../foundation';
+import { beats, midi, pc as pitchClass, ticks, type RandomContext, type Timebase, type Ticks } from '../foundation';
 import type { BandSpec } from '../band/BandSpec';
 import type { ArrangementPlan } from '../arranger/ArrangementPlan';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
@@ -21,10 +21,11 @@ import { applyBassPatternSchedule } from './bassPatternSchedule';
 import { deriveMusicIntentPlan, summarizeMusicIntent } from '../arranger/deriveMusicIntentPlan';
 import type { MusicIntentPlan } from '../intent/MusicIntentPlan';
 import { buildTextureSchedule, deriveAcgBarFamilies } from './textureSchedule';
-import { auditHarmony } from './readOnlyHarmonyAuditor';
+import { auditHarmony, type AuditKeyContext } from './readOnlyHarmonyAuditor';
 import { auditMusicality } from './musicalityAuditor';
 import { applyMgLofiDenseMelodyComping, denseMelodySpanRanges } from './mgPostMixShaper';
 import { renderMgMelody } from './mgLeadRenderer';
+import { applyUserMotifBrickToLead, type UserMotifBrick } from './userMotifBrick';
 import { buildOccupationMap } from './OccupationMap';
 import { resolveInteractions } from './interactionResolver';
 import { renderDrums } from './drumRenderer';
@@ -46,6 +47,7 @@ import { shapeAcgComp, spaceAcgBass } from './acgCompShape';
 import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 import { fitMidiToProgramRange } from '../knowledge/instruments';
+import { evaluateNoteInChordContext } from '../knowledge/melodyChordSemantics';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -111,31 +113,31 @@ function buildCompPedal(plan: HarmonicPlan, timebase: Timebase, style: string, b
   return out;
 }
 
-const isPlainDominant = (quality: string): boolean => {
-  const q = quality.toLowerCase();
-  return q.includes('7') && !q.includes('maj') && !q.includes('m7') && !q.includes('sus');
-};
-
-function saxLeadAvoidResolver(
+export function leadAvoidExposureResolver(
   notes: TrackIR['notes'],
   plan: HarmonicPlan,
   timebase: Timebase,
   programForSection: (sectionId: string) => number | undefined,
   compNotes: TrackIR['notes'] = [],
+  keyCtx?: AuditKeyContext,
 ): TrackIR['notes'] {
-  const twoBeatTicks = timebase.beatToTick(beats(2)) as number;
+  const oneBeatTicks = timebase.beatToTick(beats(1)) as number;
+  const twoBeatTicks = oneBeatTicks * 2;
   const minClashOverlap = timebase.ppq / 2;
   const spans = plan.chordTimeline.map((span) => {
     const start = timebase.beatToTick(span.startBeat) as number;
     const end = start + (timebase.beatToTick(span.durationBeats) as number);
     return { span, start, end };
   });
+  const funcBySpan: Record<string, (typeof plan.chordFunctionTimeline)[number]> = {};
+  const idxBySpan: Record<string, number> = {};
+  plan.chordTimeline.forEach((span, i) => { funcBySpan[span.id] = plan.chordFunctionTimeline[i]; idxBySpan[span.id] = i; });
   const spanAt = (tick: number) => spans.find((s) => tick >= s.start && tick < s.end)?.span;
-  const nearestProgramPitch = (targetPc: number, ref: number): number => {
+  const nearestProgramPitch = (targetPc: number, ref: number, program: number): number => {
     const refPc = ((ref % 12) + 12) % 12;
     const up = ((targetPc - refPc) % 12 + 12) % 12;
     const signed = up > 6 ? up - 12 : up;
-    return fitMidiToProgramRange(ref + signed, 'lead', 67);
+    return fitMidiToProgramRange(ref + signed, 'lead', program);
   };
   const clashesComp = (candidatePitch: number, note: TrackIR['notes'][number]): boolean => {
     const ns = note.startTick as number;
@@ -151,16 +153,51 @@ function saxLeadAvoidResolver(
   };
   let changed = false;
   const fixed = notes.map((note) => {
-    if ((note.durationTicks as number) < twoBeatTicks) return note;
+    if ((note.durationTicks as number) < oneBeatTicks) return note;
     const span = spanAt(note.startTick as number);
-    if (!span || programForSection(span.sectionId) !== 67 || !isPlainDominant(span.quality)) return note;
+    if (!span) return note;
     const pitch = note.pitch as number;
     const notePc = ((pitch % 12) + 12) % 12;
-    const dominantFourth = (((span.rootPc as number) + 5) % 12 + 12) % 12;
-    if (notePc !== dominantFourth) return note;
-    const root = span.rootPc as number;
-    const targetPcs = [root + 4, root + 7, root + 10, root, root + 8].map((n) => ((n % 12) + 12) % 12);
-    const candidates = [...new Set(targetPcs.map((targetPc) => nearestProgramPitch(targetPc, pitch)))];
+    const avoid = new Set(plan.avoidNoteMap[span.id] ?? []);
+    let targetHintPcs: readonly number[] = [];
+    const hardAvoid = avoid.has(pitchClass(notePc));
+    if (!hardAvoid && keyCtx && (note.durationTicks as number) >= twoBeatTicks) {
+      const idx = idxBySpan[span.id];
+      const next = plan.chordTimeline[idx + 1];
+      const modKey = plan.modulationMap[span.sectionId]?.toKey;
+      const assessment = evaluateNoteInChordContext({
+        notePc: pitchClass(notePc),
+        chordType: span.quality,
+        chordRootPc: span.rootPc,
+        effectiveFunc: funcBySpan[span.id] ?? 'T',
+        nextChordType: next ? next.quality : null,
+        nextChordRootPc: next ? next.rootPc : null,
+        keyRootPc: keyCtx.keyRootPc,
+        globalMode: keyCtx.globalMode,
+        isModalContext: keyCtx.isModalContext,
+        scaleNameForBar: keyCtx.scaleName,
+        tonalCharacter: keyCtx.tonalCharacter,
+        localTonalCenterPc: modKey,
+      });
+      if (assessment.consonance === 'avoid' && assessment.urgency >= 0.9) targetHintPcs = assessment.resolutionTargets;
+    }
+    if (!hardAvoid && targetHintPcs.length === 0) return note;
+    const program = programForSection(span.sectionId) ?? 0;
+    const scale = new Set(plan.chordScaleMap[span.id] ?? []);
+    const targetHintSet = new Set(targetHintPcs.map((targetPc) => pitchClass(targetPc)));
+    const currentPc = pitchClass(notePc);
+    const targetPcs = [
+      ...targetHintPcs.map((targetPc) => pitchClass(targetPc)),
+      ...(plan.stableToneMap[span.id] ?? []),
+      ...(plan.colorToneMap[span.id] ?? []),
+      ...(plan.chordScaleMap[span.id] ?? []),
+    ].filter((pc, idx, arr) => !avoid.has(pc)
+      && (hardAvoid || pc !== currentPc)
+      && (scale.size === 0 || scale.has(pc) || targetHintSet.has(pc))
+      && arr.indexOf(pc) === idx);
+    const candidates = targetPcs
+      .map((targetPc) => nearestProgramPitch(targetPc, pitch, program))
+      .sort((a, b) => Math.abs(a - pitch) - Math.abs(b - pitch));
     const resolved = candidates.find((candidate) => !clashesComp(candidate, note)) ?? candidates[0] ?? pitch;
     if (resolved === pitch) return note;
     changed = true;
@@ -299,6 +336,7 @@ export function renderSongFull(
   overlay?: RenderOverlay,
   overrideLeadTrack?: TrackIR, // ★ 走 A:Q+R sandbox 权威 lead 注入 → 跳过 renderMgMelody(默认 undefined = 不变)
   intentPlan?: MusicIntentPlan, // ★ Phase 2:上游(controller)派生的 intent(bass enforce);缺省(测试)→ 内联纯派生(不抽 RNG)
+  userMotifBrick?: UserMotifBrick, // ★ Q+R 收口:用户 motif 作为 Q+N lead 内的 brick quote,其余续写仍由 MG/Q+N 生成
 ): RenderResult {
   // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律走 MG 链,不再跑 Prepass/MotifStore/
   //   candidateSwap。撞音消解只剩 voicingSafer(comp 瘦身)+ 兜底重掷(advance melody 子流)。
@@ -318,15 +356,23 @@ export function renderSongFull(
     if (slot.anchorRequired) anchorBeats.add(slot.beatSlot);
   }
 
-  // 段落转折 fill:每段(除末段)最后一小节。lead-in 边界(下一段=能量跃升 entry='lead-in')额外标记 → 更大 fill + crescendo。
-  const fillBars = new Set<number>();
+  // 段落转折:Arranger 的 DrumPerformanceContract 决定鼓是否 fill / fill 多大;
+  // lead-inBars 仍用于非鼓声部的边界 crescendo/pickup 保护,不再等同于鼓必 fill。
+  const drumFillBars = new Set<number>();
+  const drumBigFillBars = new Set<number>();
   const leadInBars = new Set<number>(); // 跃升段【前一段末小节】绝对序号(衔接推进)
   let barCursor = 0;
   for (let s = 0; s < arrangement.sections.length; s++) {
-    barCursor += arrangement.sections[s].bars;
+    const section = arrangement.sections[s];
+    barCursor += section.bars;
     const next = arrangement.sections[s + 1];
     if (next) {
-      fillBars.add(barCursor - 1);
+      const perf = arrangement.drumPerformanceBySection?.[section.id];
+      const fillPolicy = perf?.fillPolicy ?? 'turnaround';
+      if (fillPolicy !== 'none') {
+        drumFillBars.add(barCursor - 1);
+        if (fillPolicy === 'big') drumBigFillBars.add(barCursor - 1);
+      }
       if (arrangement.entryBySection[next.id] === 'lead-in') leadInBars.add(barCursor - 1);
     }
   }
@@ -408,14 +454,32 @@ export function renderSongFull(
   }
   if (inLineup('comp')) tracks.push(...renderAccompaniment(plan, timebase, { style: band.style, anchorBeats, activeSectionIds, voicingSaferSpans, compProgram: instrumentation.roleProgram.comp, sectionRoleById, voicingRng: rng.substream('accompaniment'), textureSchedule, melodyFloorMidi: compCeilingMidi, padCompDecisionBySection: padDecisionBySection, padOccupiedPitchesBySpan, needsDownbeatCompAnchorBySection: instrumentation.needsDownbeatCompAnchorBySection }));
   if (padTrack) tracks.push(padTrack);
-  if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), { style: band.style, fillBars, bigFillBars: leadInBars, textureSchedule, patternBySection: instrumentation.drumPatternBySection }));
+  if (inLineup('drum')) tracks.push(renderDrums(plan, timebase, beatsPerBarOf(arrangement.meter), {
+    style: band.style,
+    tempoBpm: arrangement.tempoBpm,
+    fillBars: drumFillBars,
+    bigFillBars: drumBigFillBars,
+    textureSchedule,
+    patternBySection: instrumentation.drumPatternBySection,
+    performanceBySection: arrangement.drumPerformanceBySection,
+  }));
   // ★ lead 主链 = MG 旋律链(decision C/B/1);读冻结 HarmonicPlan,走独立 'melody' 子流(确定性)。
   //   多轨层(gateByDensity/ducking/CC7)原样包住。
-  // lead 必有:默认走 MG 链;★ 走 A 提供 override 时用 Q+R sandbox 权威 lead(program 仍取器配生效值,保混音一致)。
+  // lead 必有:默认走 MG 链;legacy lead override 才跳过 MG。userMotifBrick 不跳过 MG,而是在 MG lead 上
+  //   注入用户 motif quote,其余旋律继续由 Q+N/MG 生成(program 仍取器配生效值,保混音一致)。
   //   ★ ACG lead 落点塑形(tuckAcgLead)在 late 阶段做(需 comp apex),不在此处。
-  const leadTrack = overrideLeadTrack
+  const generatedLeadTrack = overrideLeadTrack
     ? { ...overrideLeadTrack, role: 'lead' as const, program: instrumentation.roleProgram.lead }
     : renderMgMelody(plan, band, timebase, rng.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract); // MG seed=song seed · lead program=器配生效值 · ★ Phase D:lead feel 真源 = 选中 GrooveContract(全 MG-backed 风格)
+  const totalBeatsForLead = arrangement.sections.reduce((n, s) => n + s.bars * beatsPerBarOf(arrangement.meter), 0);
+  const leadTrack = !overrideLeadTrack && userMotifBrick
+    ? applyUserMotifBrickToLead(generatedLeadTrack, userMotifBrick, timebase, totalBeatsForLead, {
+      leadProgram: instrumentation.roleProgram.lead,
+      // 用户 quote 的结构重音/长音要进入本歌 melody grid;ms pocket 在后面的全局 GroovePocket 统一落地。
+      swingRatio: arrangement.songGrooveContract.melodySwingRatio,
+      beatsPerBar: beatsPerBarOf(arrangement.meter),
+    })
+    : generatedLeadTrack;
   tracks.push(fitLeadTrackToInstrumentSections(leadTrack, arrangement, instrumentation, timebase));
 
   // ★ Loop 5:LOFI dense melody comping(MG post-mix shaper)—— 旋律密集的和弦区间删 comp、bass 减到 1 个让路。
@@ -494,23 +558,24 @@ export function renderSongFull(
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
   const leadProgramForSection = (sectionId: string): number | undefined =>
     instrumentation.programByRoleSection.lead?.[sectionId] ?? instrumentation.roleProgram.lead ?? band.roleProgram.lead;
+  const auditKeyCtx: AuditKeyContext = {
+    keyRootPc: band.key,
+    globalMode: band.mode,
+    isModalContext: band.tonalityKind === 'modal',
+    scaleName: band.modalModeName,
+    tonalCharacter: band.tonalityKind === 'modal' ? 'modal' : 'tonal',
+  };
   const swungCompNotes = swungTracks.find((t) => t.role === 'comp')?.notes ?? [];
   const harmonySafeTracks = swungTracks.map((t) => (
     t.role === 'lead'
-      ? { ...t, notes: saxLeadAvoidResolver(t.notes, plan, timebase, leadProgramForSection, swungCompNotes) }
+      ? { ...t, notes: leadAvoidExposureResolver(t.notes, plan, timebase, leadProgramForSection, swungCompNotes, auditKeyCtx) }
       : t
   ));
 
   // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
   //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
   const auditedIR = freezeMusicalIR({ tracks: harmonySafeTracks, timebase, durationTicks: resolved.data.durationTicks });
-  const audit = auditHarmony(auditedIR, plan, timebase, {
-    keyRootPc: band.key,
-    globalMode: band.mode,
-    isModalContext: band.tonalityKind === 'modal',
-    scaleName: band.modalModeName,
-    tonalCharacter: band.tonalityKind === 'modal' ? 'modal' : 'tonal',
-  });
+  const audit = auditHarmony(auditedIR, plan, timebase, auditKeyCtx);
 
   // ★ Loop F 结构锚点:段落起始 tick + 曲首 0 + 末主音下拍(末和弦起) → humanizeTiming 对这些 tick 不做负向 jitter。
   const anchorTicks = new Set<number>([0]);
@@ -635,15 +700,32 @@ export function renderSongFull(
           return fitted === note.pitch ? note : { ...note, pitch: midi(fitted) };
         });
     const notesForGesture = t.role === 'lead'
-      ? saxLeadAvoidResolver(rangeFittedNotes, plan, timebase, programForSection, balancedCompNotes)
+      ? leadAvoidExposureResolver(rangeFittedNotes, plan, timebase, programForSection, balancedCompNotes, auditKeyCtx)
       : rangeFittedNotes;
     // ★ 手势表情层:器配层据最终音色下发 sax/pipe-wind 等 gesture plan;render 只执行计划。
-    const gesture = applyGestureExpressionToTrack({ ...t, notes: notesForGesture }, instrumentation.gestureExpressionByRole?.[t.role], timebase);
+    const gesture = applyGestureExpressionToTrack({
+      ...t,
+      notes: notesForGesture,
+      program: initialProgram,
+      programChanges: programChanges.length ? programChanges : undefined,
+    }, instrumentation.gestureExpressionByRole?.[t.role], timebase);
+    // userBrick 是用户输入动机的权威 quote。前面早插入一次让 ducking/occupation 看到旋律占位;
+    // 这里在 pocket / ACG lead shaping / gesture 之后恢复 quote span,保证最终 IR 第一句仍忠实用户 motif。
+    const quoteRestored = t.role === 'lead' && userMotifBrick
+      ? applyUserMotifBrickToLead({ ...t, notes: gesture.notes, program: initialProgram }, userMotifBrick, timebase, totalBeatsForLead, {
+        leadProgram: initialProgram,
+        leadProgramForBeat: (beat) => programForSection(sectionIdForTick(timebase.beatToTick(beats(beat)) as number)),
+        swingRatio: arrangement.songGrooveContract.melodySwingRatio,
+        beatsPerBar: beatsPerBarOf(arrangement.meter),
+        grooveContract: arrangement.songGrooveContract,
+        tempoBpm: arrangement.tempoBpm,
+      })
+      : { ...t, notes: gesture.notes, program: initialProgram };
     const ccEvents = gesture.ccEvents?.length ? gesture.ccEvents : undefined;
     const pitchBendEvents = gesture.pitchBendEvents?.length ? gesture.pitchBendEvents : undefined;
     return {
       ...t,
-      notes: gesture.notes,
+      notes: quoteRestored.notes,
       program: initialProgram,
       programChanges: programChanges.length ? programChanges : undefined,
       pedalEvents,

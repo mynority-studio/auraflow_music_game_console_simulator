@@ -10,9 +10,53 @@
 
 import type { ScaleMode, SandboxStyle } from './types';
 import type { ProtoSectionRole } from '../../newEngine/knowledge/progressions';
+import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
 import type { UserMelodicBrick, MotifHarmonyIntent, SelectedMotifProgression } from './melodicBrickTypes';
 import { getProgressionCandidatesForMotif } from './progressionCandidateProvider';
 import { scoreProgressionAgainstMelodicBrick } from './melodyProgressionScorer';
+
+const SUPPORT_EPS = 1e-6;
+const m12 = (n: number): number => ((n % 12) + 12) % 12;
+
+function slotAtBeat(slots: readonly import('../../newEngine/knowledge/progressions').ProgressionSlot[], beat: number): import('../../newEngine/knowledge/progressions').ProgressionSlot {
+  let acc = 0;
+  for (const s of slots) {
+    const b = s.beats ?? 4;
+    if (beat >= acc - SUPPORT_EPS && beat < acc + b - SUPPORT_EPS) return s;
+    acc += b;
+  }
+  return slots[slots.length - 1];
+}
+
+function slotRealPcs(slot: import('../../newEngine/knowledge/progressions').ProgressionSlot, keyPc: number): number[] {
+  const rootPc = m12(keyPc + slot.rootOffset);
+  return [...new Set(chordTypeIntervals(normalizeChordType(slot.type) ?? 'maj').map((iv) => m12(rootPc + iv)))];
+}
+
+export interface UnsupportedFirstPhraseTone {
+  midi: number;
+  onsetBeat: number;
+  durationBeat: number;
+  weight: number;
+  slotRoman: string;
+}
+
+/** 首句硬合同:用户 motif 的结构音(强拍/长音/高结构分)必须被其落点和弦真实 chord tones 支持。 */
+export function findUnsupportedFirstPhraseTones(args: {
+  brick: UserMelodicBrick;
+  slots: readonly import('../../newEngine/knowledge/progressions').ProgressionSlot[];
+  keyPc: number;
+}): UnsupportedFirstPhraseTone[] {
+  const out: UnsupportedFirstPhraseTone[] = [];
+  for (const t of args.brick.structuralTones) {
+    if (t.onsetBeat >= args.brick.quoteBeats - SUPPORT_EPS) continue;
+    const slot = slotAtBeat(args.slots, t.onsetBeat);
+    if (!slotRealPcs(slot, args.keyPc).includes(m12(t.midi))) {
+      out.push({ midi: t.midi, onsetBeat: t.onsetBeat, durationBeat: t.durationBeat, weight: t.weight, slotRoman: slot.roman });
+    }
+  }
+  return out;
+}
 
 export function selectProgressionForMotif(args: {
   brick: UserMelodicBrick;
@@ -24,6 +68,7 @@ export function selectProgressionForMotif(args: {
   targetBars?: number;
   sectionRole?: ProtoSectionRole; // form 主段落角色(软权重;默认 verse)
   inputTonality?: import('./sandboxScales').SandboxTonality; // ★ followup 2.4:布鲁斯 → 评分 blues-aware
+  requireFirstPhraseSupport?: boolean; // 产品播放:第一句用户 motif 结构音必须被和声接住;无可用模板时外层可局部修和弦兜底
 }): SelectedMotifProgression {
   const targetBars = args.targetBars ?? 16;
   const { candidates, modeName } = getProgressionCandidatesForMotif({ style: args.style, mode: args.mode, targetBars });
@@ -36,7 +81,11 @@ export function selectProgressionForMotif(args: {
   const nonDegen = scored.filter((s) => s.breakdown.degeneratePenalty === 0);
   const sameModeND = nonDegen.filter((s) => s.c.modeMatch);
   const pool = sameModeND.length ? sameModeND : nonDegen.length ? nonDegen : scored;
-  const pick = pool[((args.seed % pool.length) + pool.length) % pool.length]; // seed 轮换(全 pool 跨 seed 都被选到)
+  const hardPool = args.requireFirstPhraseSupport
+    ? pool.filter((s) => findUnsupportedFirstPhraseTones({ brick: args.brick, slots: s.c.fittedSlots, keyPc: args.keyPc }).length === 0)
+    : pool;
+  const pickPool = hardPool.length ? hardPool : pool;
+  const pick = pickPool[((args.seed % pickPool.length) + pickPool.length) % pickPool.length]; // seed 轮换(全 pool 跨 seed 都被选到)
 
   return {
     prototypeId: pick.c.prototype.id,

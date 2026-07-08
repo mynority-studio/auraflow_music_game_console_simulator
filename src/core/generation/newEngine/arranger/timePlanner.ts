@@ -27,6 +27,20 @@ const STYLE_TIME: Record<string, TimeFeel> = {
   default: { tempoBpm: 100, tempoRange: 10, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
 };
 
+const POP_LYRICAL_TIME: TimeFeel = {
+  tempoBpm: 82,
+  tempoRange: 18,
+  meter: { numerator: 4, denominator: 4 },
+  feel: { kind: 'straight', swingRatio: 0.5 },
+};
+
+function isLyricalMood(mood?: string): boolean {
+  if (!mood) return false;
+  const s = mood.toLowerCase();
+  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s)) return false;
+  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s);
+}
+
 export interface TimePlan {
   tempoBpm: number;
   meter: Meter;
@@ -35,8 +49,9 @@ export interface TimePlan {
 }
 
 /** tempo/meter/feel。给 rng → tempo 在风格区间 [中心±range] 内随 seed 浮动(否则取中心)。 */
-export function planTime(style: string, rng?: Rng): TimePlan {
-  const t = STYLE_TIME[style] ?? STYLE_TIME.default;
+export function planTime(style: string, rng?: Rng, mood?: string): TimePlan {
+  const styleKey = style.toLowerCase();
+  const t = styleKey === 'pop' && isLyricalMood(mood) ? POP_LYRICAL_TIME : (STYLE_TIME[styleKey] ?? STYLE_TIME.default);
   const jitter = rng ? Math.round((rng.next() * 2 - 1) * t.tempoRange) : 0;
   const tempoBpm = Math.max(40, Math.min(220, t.tempoBpm + jitter));
   return {

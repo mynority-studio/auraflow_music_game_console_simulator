@@ -167,7 +167,7 @@ describe('motifSandbox/motifWeaver(Impro-Visor 陈述 + 发展)', () => {
   });
 
   it('★ 动机不丢:motif 永远在曲首(beat0)原样陈述(回归:slot-plan 纯功能落位会让动机不在开头)', () => {
-    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+    for (const style of ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const) {
       for (let seed = 1; seed <= 8; seed++) {
         for (const variant of [0, 1, 2, 3]) {
           const r = generateMotifWeave(baseInput({ style, seed, capturedNotes: generateSampleCaptured(96, 0, 'major', variant) }));

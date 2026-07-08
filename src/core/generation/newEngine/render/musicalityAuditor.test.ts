@@ -15,12 +15,14 @@ const tb = createTimebase({ meter: { numerator: 4, denominator: 4 } });
 const note = (startTick: number, vel = 80, dur = 240) => ({ pitch: 60 as never, startTick: ticks(startTick), durationTicks: ticks(dur), velocity: vel });
 
 // 最小 fixture:intro(2bar) + verse1(4bar);lead-in 边界 prepBar=1。
-function fixtures(opts: { drumNotes?: ReturnType<typeof note>[]; compNotes?: ReturnType<typeof note>[] }) {
-  const ir = { tracks: [
+function fixtures(opts: { drumNotes?: ReturnType<typeof note>[]; compNotes?: ReturnType<typeof note>[]; padNotes?: ReturnType<typeof note>[] }) {
+  const tracks = [
     { role: 'drum', notes: opts.drumNotes ?? [] },
     { role: 'comp', notes: opts.compNotes ?? [] },
     { role: 'bass', notes: [note(0), note(BAR * 2)] }, // bass 在两段下拍都有
-  ] } as unknown as MusicalIR;
+    ...(opts.padNotes ? [{ role: 'pad', notes: opts.padNotes }] : []),
+  ];
+  const ir = { tracks } as unknown as MusicalIR;
   const arrangement = { sections: [{ id: 'intro', bars: 2 }, { id: 'verse1', bars: 4 }], meter: { numerator: 4, denominator: 4 } } as unknown as ArrangementPlan;
   const instrumentation = {
     transitionPlan: {
@@ -28,7 +30,7 @@ function fixtures(opts: { drumNotes?: ReturnType<typeof note>[]; compNotes?: Ret
       songEntry: { firstSectionId: 'intro', hasIntro: true, mode: 'normal-intro', downbeatAnchorRoles: [], delayedRoles: [] },
     },
     endingPlan: { coldStop: false },
-    activeRolesBySection: { intro: ['comp', 'lead'], verse1: ['bass', 'comp', 'drum', 'lead'] },
+    activeRolesBySection: { intro: ['comp', 'lead'], verse1: opts.padNotes ? ['bass', 'comp', 'pad', 'drum', 'lead'] : ['bass', 'comp', 'drum', 'lead'] },
     textureBySection: { intro: 'pad', verse1: 'active-comp' },
     textureYieldPolicy: { 'active-comp': 'active', pad: 'floating', 'sustained-block': 'floating', arpeggio: 'active', 'walking-bass': 'active' },
     needsDownbeatCompAnchorBySection: { intro: false, verse1: false },
@@ -54,6 +56,16 @@ describe('Loop H · 规则触发', () => {
     const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: [note(BAR * 2, 80, 240)] });
     const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'pop').findings.map((f) => f.ruleId);
     expect(ids).toContain('comp-continuity-gap');
+  });
+
+  it('pad active 持续承接和声时,comp 让位不误报断层', () => {
+    const { ir, arrangement, instrumentation } = fixtures({
+      drumNotes: [note(BAR + 240)],
+      compNotes: [note(BAR * 2, 80, 240)],
+      padNotes: [note(BAR * 2, 56, BAR * 4)],
+    });
+    const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'pop').findings.map((f) => f.ruleId);
+    expect(ids).not.toContain('comp-continuity-gap');
   });
 
   it('吉他 COMP 短扫拨不套键盘铺底连续性误报', () => {

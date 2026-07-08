@@ -54,6 +54,15 @@ describe('band/bandEngine', () => {
     }
   });
 
+  it('POP/RNB/LOFI/JAZZ 默认都有 drum(鼓手打法交给 DrumPerformanceContract)', () => {
+    for (const style of ['pop', 'rnb', 'lofi', 'jazz']) {
+      for (let seed = 0; seed < 32; seed++) {
+        const spec = buildBandSpec({ seed, styleHint: style, mood: 'x', targetDuration: 60 });
+        expect(spec.instrumentPool, `${style} seed ${seed}`).toContain('drum');
+      }
+    }
+  });
+
   it('不同 style/seed → 编制大小或乐器不同(乐器要素随 seed)', () => {
     const sig = (s: number, style: string) => { const b = buildBandSpec({ seed: s, styleHint: style, mood: 'x', targetDuration: 60 }); return `${b.instrumentPool.join(',')}|${b.instrumentPool.map((r) => b.roleProgram[r]).join(',')}`; };
     const sigs = new Set<string>();
@@ -83,7 +92,7 @@ describe('band/bandEngine · participant lineup 约束', () => {
   });
 
   it('★ requiredRoles → 该 role 必须出现(默认 lineup 没随机到也补上;P1 修复)', () => {
-    // drum 在 POP 是 optional(0.9)→ 总有 seed 漏掉;requiredRoles 保证它一定在 lineup。
+    // participant 约束下 requiredRoles 仍是硬要求:即便 allowedRoles 缩窄,被选中的职责也必须出声。
     for (let seed = 0; seed < 32; seed++) {
       const spec = buildBandSpec({
         seed, styleHint: 'pop', mood: 'x', targetDuration: 60,

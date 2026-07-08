@@ -15,7 +15,6 @@
 // ============================================================
 
 import { beats, midi, mod12, ticks, type Timebase } from '../foundation';
-import { pcToMidiInRange } from '../knowledge/pitchPlacement';
 import type { HarmonicPlan, ChordSpan } from '../harmony/HarmonicPlan';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 import type { PadCompDecision } from './padCompPolicy';
@@ -112,11 +111,17 @@ function selectStaticPcs(
 }
 
 /** 把选中的 pc 落到 [low, high](不同 pc 各自最低八度;去重、升序)。 */
+function pcToMidiInRangeStrict(pc: number, low: number, high: number): number | undefined {
+  const base = mod12(pc);
+  for (let m = low; m <= high; m++) if (mod12(m) === base) return m;
+  return undefined;
+}
+
 function placePadMidis(pcs: number[], low: number, high: number): number[] {
   const out: number[] = [];
   for (const pc of pcs) {
-    const m = pcToMidiInRange(pc, low, high) as number;
-    if (!out.includes(m)) out.push(m);
+    const m = pcToMidiInRangeStrict(pc, low, high);
+    if (m !== undefined && !out.includes(m)) out.push(m);
   }
   return out.sort((a, b) => a - b);
 }
@@ -128,7 +133,7 @@ function innerLineMidis(
 ): number[] {
   const legalPcs = [roles.third, roles.seventh, ...legalTensions(span, plan, roles)]
     .filter((pc): pc is number => pc !== undefined && (!dec.padOmitRoot || pc !== roles.root));
-  const placed = [...new Set(legalPcs.map((pc) => pcToMidiInRange(pc, low, high) as number))];
+  const placed = [...new Set(legalPcs.map((pc) => pcToMidiInRangeStrict(pc, low, high)).filter((m): m is number => m !== undefined))];
   if (placed.length === 0) return [];
   // 线条顶音:最贴上一段顶(半音/全音级进);无 prev → 取最高(线条起点稳定、确定性)。
   const ref = prevTop ?? Math.max(...placed);
@@ -137,7 +142,7 @@ function innerLineMidis(
   if (dec.padMaxVoices >= 2) {
     // body:贴在 top 之下最近的 guide tone(3/7),不与 top 同音。
     const guides = [roles.third, roles.seventh].filter((pc): pc is number => pc !== undefined);
-    const below = guides.map((pc) => pcToMidiInRange(pc, low, Math.max(low, top)) as number)
+    const below = guides.map((pc) => pcToMidiInRangeStrict(pc, low, Math.max(low, top))).filter((m): m is number => m !== undefined)
       .filter((m) => m !== top).sort((a, b) => (top - a) - (top - b));
     if (below.length) out.push(below[0]);
   }
@@ -156,7 +161,8 @@ function clusterMidis(span: ChordSpan, plan: HarmonicPlan, roles: RolePcs, low: 
     const iv = mod12(pc - anchorPc);
     if (iv >= 1 && iv <= 2 && iv < bestIv && !avoid.has(pc)) { bestIv = iv; neighborPc = pc; }
   }
-  let anchorMidi = pcToMidiInRange(anchorPc, low, high) as number;
+  let anchorMidi = pcToMidiInRangeStrict(anchorPc, low, high);
+  if (anchorMidi === undefined) return [];
   if (neighborPc === undefined) return [anchorMidi];
   if (anchorMidi + bestIv > high && anchorMidi - 12 >= low) anchorMidi -= 12; // 腾出二度空间(留高区)
   const neighborMidi = anchorMidi + bestIv;
@@ -188,7 +194,7 @@ interface SpanPad { startTick: number; endTick: number; startBeat: number; durBe
 
 export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptions): TrackIR {
   const { padDensity, decisionBySection } = opts;
-  const leadLow = opts.leadReservedLow ?? DEFAULT_LEAD_LOW;
+  const leadLow = Math.max(opts.leadReservedLow ?? DEFAULT_LEAD_LOW, DEFAULT_LEAD_LOW);
   const timeline = plan.chordTimeline;
   // ★ pedal anchor 铺法(coordinator 按概率开):每段一条 anchor 长 pedal + 一条动 guide tone。
   const anchorBySection = (opts.pedalAnchor && opts.tonicPc !== undefined)
@@ -222,11 +228,15 @@ export function renderPad(plan: HarmonicPlan, timebase: Timebase, opts: PadOptio
     } else if (anchorBySection?.[span.sectionId] !== undefined) {
       // ★ pedal anchor 铺法:anchor 长 pedal(整段同 pc 同窗口 → tie 连成长音)+ 动 guide tone(随和弦走)。
       const anchorPc = anchorBySection[span.sectionId];
-      const anchorMidi = pcToMidiInRange(anchorPc, low, hi) as number;
+      const anchorMidi = pcToMidiInRangeStrict(anchorPc, low, hi);
+      if (anchorMidi === undefined) { perSpan.push(slot); continue; }
       midis = [anchorMidi];
       if (dec.padMaxVoices >= 2) {
         const moveCands = [roles.third, roles.seventh, ...legalTensions(span, plan, roles)].filter((p): p is number => p !== undefined && p !== anchorPc);
-        for (const pc of moveCands) { const m = pcToMidiInRange(pc, low, hi) as number; if (m !== anchorMidi) { midis.push(m); break; } }
+        for (const pc of moveCands) {
+          const m = pcToMidiInRangeStrict(pc, low, hi);
+          if (m !== undefined && m !== anchorMidi) { midis.push(m); break; }
+        }
       }
       midis = [...new Set(midis)].sort((a, b) => a - b);
     } else {

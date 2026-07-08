@@ -5,11 +5,11 @@ import type { SandboxStyle } from './types';
 
 const poolIds = (style: SandboxStyle, mode: 'major' | 'minor' = 'major'): string[] =>
   getProgressionCandidatesForMotif({ style, mode }).candidates.map((c) => c.prototype.id);
-const styleIds = (s: 'POP' | 'LOFI' | 'RNB' | 'JAZZ'): string[] => listProgressionPrototypes({ style: s }).map((p) => p.id);
+const styleIds = (s: 'POP' | 'JAZZ' | 'LOFI' | 'RNB' | 'ACG'): string[] => listProgressionPrototypes({ style: s }).map((p) => p.id);
 
 describe('motifSandbox/progressionCandidateProvider(全风格候选池,directive Phase 2)', () => {
   it('★ 每风格全部模板可达(去掉 verse 硬过滤;chorus/bridge/intro/ending 不再被挡)', () => {
-    for (const [style, S] of [['pop', 'POP'], ['lofi', 'LOFI'], ['rnb', 'RNB'], ['jazz', 'JAZZ']] as const) {
+    for (const [style, S] of [['pop', 'POP'], ['jazz', 'JAZZ'], ['lofi', 'LOFI'], ['rnb', 'RNB'], ['acg', 'ACG']] as const) {
       const ids = new Set(poolIds(style));
       for (const id of styleIds(S)) expect(ids.has(id), `${style} 应可达 ${id}`).toBe(true);
     }
@@ -25,7 +25,7 @@ describe('motifSandbox/progressionCandidateProvider(全风格候选池,directive
   });
 
   it('★ BLUES 永不进 Q+R 池;非 jazz 不退化到 JAZZ', () => {
-    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+    for (const style of ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const) {
       const pool = getProgressionCandidatesForMotif({ style, mode: 'major' }).candidates;
       expect(pool.every((c) => c.prototype.style !== 'BLUES'), `${style} 无 BLUES`).toBe(true);
       if (style !== 'jazz') expect(pool.every((c) => c.prototype.style !== 'JAZZ'), `${style} 不退 JAZZ`).toBe(true);

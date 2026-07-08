@@ -19,6 +19,7 @@ import {
 } from './saxExpression';
 import type {
   GestureArticulationScope,
+  GestureArticulationExclusionGroup,
   GestureContinuity,
   GestureEvidenceRef,
   GestureExpressionPlan,
@@ -58,7 +59,7 @@ const GUITAR_COMP_VELOCITY_CAP = 84;
 
 type GestureContractFields = Pick<
   GestureExpressionPlan,
-  'continuity' | 'articulationScope' | 'triggerPolicy' | 'phrasePolicy' | 'evidenceRefs'
+  'continuity' | 'articulationScope' | 'articulationExclusionGroup' | 'triggerPolicy' | 'phrasePolicy' | 'evidenceRefs'
 >;
 
 const evidence = (...refs: GestureEvidenceRef[]): readonly GestureEvidenceRef[] => refs;
@@ -86,7 +87,13 @@ function contract(
   phrasePolicy: GesturePhrasePolicy,
   evidenceRefs: readonly GestureEvidenceRef[],
 ): GestureContractFields {
-  return { continuity, articulationScope, triggerPolicy, phrasePolicy, evidenceRefs };
+  const articulationExclusionGroup: GestureArticulationExclusionGroup =
+    phrasePolicy === 'breath-group' ? 'breath'
+    : phrasePolicy === 'rudiment-bar' ? 'rudiment'
+    : triggerPolicy === 'pedal-cc' ? 'pedal'
+    : continuity === 'staccato' || continuity === 'connected' || continuity === 'legato-flow' ? 'length'
+    : 'none';
+  return { continuity, articulationScope, articulationExclusionGroup, triggerPolicy, phrasePolicy, evidenceRefs };
 }
 
 const NONE_GESTURE: GestureExpressionPlan = {
@@ -573,6 +580,32 @@ function shapeDrumNotes(track: TrackIR, plan: GestureExpressionPlan, timebase: T
   return gated.map((n) => ({ ...n, velocity: shapeDrumVelocity(n, plan, timebase) }));
 }
 
+function buildElectricKeyTailCcEvents(track: TrackIR, notes: NoteIR[], plan: GestureExpressionPlan): GestureCcEvent[] {
+  if (plan.kind !== 'keyboard-touch') return [];
+  const initialProgram = typeof track.program === 'number' ? track.program : plan.program;
+  const changes = [...(track.programChanges ?? [])].sort((a, b) => (a.atTick as number) - (b.atTick as number));
+  const usesElectricKey = isElectricKeyProgram(initialProgram ?? -1) || changes.some((pc) => isElectricKeyProgram(pc.program));
+  if (!usesElectricKey || notes.length === 0) return [];
+
+  const eventAt = (tick: number, program: number | undefined): GestureCcEvent[] => {
+    const electric = isElectricKeyProgram(program ?? -1);
+    return [
+      { atTick: ticks(Math.max(0, tick)), controller: CC_RELEASE_TIME, value: electric ? ELECTRIC_KEY_RELEASE : 64 },
+      { atTick: ticks(Math.max(0, tick)), controller: CC_BRIGHTNESS, value: electric ? ELECTRIC_KEY_BRIGHTNESS : 64 },
+    ];
+  };
+
+  const events = eventAt(0, initialProgram);
+  let prevProgram = initialProgram;
+  for (const pc of changes) {
+    const wasElectric = isElectricKeyProgram(prevProgram ?? -1);
+    const isElectric = isElectricKeyProgram(pc.program);
+    if (wasElectric !== isElectric) events.push(...eventAt(pc.atTick as number, pc.program));
+    prevProgram = pc.program;
+  }
+  return events;
+}
+
 export function applyGestureExpressionToTrack(
   track: TrackIR,
   plan: GestureExpressionPlan | undefined,
@@ -613,14 +646,9 @@ export function applyGestureExpressionToTrack(
   }
   if (plan.kind === 'keyboard-touch' || plan.kind === 'mallet-strike' || plan.kind === 'sustained-pad') {
     const notes = shapeKeyboardOrPadNotes(track, plan, timebase);
-    // ★ electric-key-tail:静态 CC72 release + CC74 brightness —— DX7/EP 尾音与柔化;不改音符,只设置合成器控制。
-    if (plan.releaseCc && notes.length > 0) {
-      const firstTick = Math.min(...notes.map((n) => n.startTick as number));
-      const atTick = ticks(Math.max(0, firstTick)) as Ticks;
-      const ccEvents: GestureCcEvent[] = [
-        { atTick, controller: plan.releaseCc, value: ELECTRIC_KEY_RELEASE },
-        { atTick, controller: CC_BRIGHTNESS, value: ELECTRIC_KEY_BRIGHTNESS },
-      ];
+    // ★ electric-key-tail:随 programChanges 进入/退出 EP 时同步 CC72/CC74,避免 EP release/brightness 残留到钢琴/颤音琴。
+    const ccEvents = buildElectricKeyTailCcEvents(track, notes, plan);
+    if (ccEvents.length > 0) {
       return { notes, ccEvents };
     }
     return { notes };

@@ -48,4 +48,32 @@ describe('core/audio/MidiScheduler', () => {
     expect(scheduler.getChannelEvents(1).filter((event) => event.type === 'noteOn')).toHaveLength(1);
     expect(scheduler.getChannelEvents(1).filter((event) => event.type === 'noteOff')).toHaveLength(1);
   });
+
+  it('notifies external MIDI listeners for audible non-visual events', () => {
+    const scheduler = new MidiScheduler();
+    const seen: MidiEvent[] = [];
+    const dispatch = (scheduler as unknown as { dispatchEvent(event: MidiEvent): void }).dispatchEvent.bind(scheduler);
+    const unsubscribe = scheduler.addMidiEventListener((event) => seen.push(event));
+
+    dispatch(ev(0, 'noteOn', 64));
+    dispatch({ ticks: 0, type: 'visual', channel: 1, data1: 0, data2: 0 });
+    scheduler.muteChannel(1, true);
+    dispatch(ev(10, 'noteOn', 67));
+    unsubscribe();
+    scheduler.muteChannel(1, false);
+    dispatch(ev(20, 'noteOn', 69));
+
+    expect(seen.map((event) => [event.ticks, event.type, event.data1])).toEqual([[0, 'noteOn', 64]]);
+  });
+
+  it('notifies external MIDI listeners on panic/all-notes-off', () => {
+    const scheduler = new MidiScheduler();
+    const seen: MidiEvent[] = [];
+    scheduler.addMidiEventListener((event) => seen.push(event));
+
+    scheduler.panic();
+
+    expect(seen).toHaveLength(16);
+    expect(seen.every((event) => event.type === 'cc' && event.data1 === 123 && event.data2 === 0)).toBe(true);
+  });
 });

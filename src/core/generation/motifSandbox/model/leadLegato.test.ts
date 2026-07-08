@@ -58,13 +58,15 @@ describe('motifSandbox/leadOnlyIr · 快速 lead 连音 legato(CODEX directive �
     expect(leadLegatoMetrics(notes, ppq).samePitchCollisionCount).toBe(0);
   });
 
-  it('非 jazz(pop)preview lead 不被 legato 改:再跑 jazz legato 会改(证明 pop 没连过)', () => {
+  it('pop preview lead 也走同一连音策略:快速线条不再被逐音断奏,且不改 start', () => {
     const r = weave('pop', 5);
     const ir = buildLeadOnlyIr(r.lead, 100, 'pop');
     const lead = ir.tracks.find((t) => t.role === 'lead')!;
-    const jazzOpts = fastLeadLegatoOptionsForStyle('jazz', ir.timebase.ppq);
-    const relegato = connectFastLeadNoteIR(lead.notes, jazzOpts);
-    const changed = relegato.some((n, i) => (n.durationTicks as number) !== (lead.notes[i].durationTicks as number));
-    expect(changed, 'pop lead 未连音(故再连会变)').toBe(true);
+    const popOpts = fastLeadLegatoOptionsForStyle('pop', ir.timebase.ppq);
+    expect(popOpts.enabled).toBe(true);
+    const relegato = connectFastLeadNoteIR(lead.notes, popOpts);
+    expect(relegato.map((n) => n.startTick)).toEqual(lead.notes.map((n) => n.startTick));
+    expect(leadLegatoMetrics(lead.notes, ir.timebase.ppq).samePitchCollisionCount).toBe(0);
+    expect(relegato.map((n) => n.durationTicks)).toEqual(lead.notes.map((n) => n.durationTicks));
   });
 });

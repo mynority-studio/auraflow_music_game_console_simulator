@@ -13,9 +13,9 @@ import { sanitizeLeadNoteIR } from '../../newEngine/render/leadSanitizer';
 import type { MotifNote, SandboxStyle } from './types';
 import type { Accompaniment } from './accompaniment';
 
-// 用户决策:暖音色,方便判断旋律关系。pop=GM4(电钢 Rhodes),lofi=GM4,rnb=GM4,jazz=GM0(钢琴)。
+// 用户决策:暖音色,方便判断旋律关系。pop/lofi/rnb=电钢, jazz/acg=钢琴。
 export const LEAD_PROGRAM_BY_STYLE: Record<SandboxStyle, number> = {
-  pop: 4, lofi: 4, rnb: 4, jazz: 0,
+  pop: 4, jazz: 0, lofi: 4, rnb: 4, acg: 0,
 };
 /** pop 可选钢琴。 */
 export const POP_PIANO_PROGRAM = 0;
@@ -30,7 +30,7 @@ const clampVel = (v: number): number => Math.max(1, Math.min(127, Math.round(v *
 //   在【播放/吸附层】施加 —— 生成层保持直拍网格(干净排比/对齐),播放时给 jazz 摇摆律动。
 //   下拍(整数拍)不动 → 走音 bass 仍踩稳;八分/十六分反拍按拍内连续映射推后 → lead/comp 摇摆。
 const JAZZ_SWING_FIRST = 0.62;
-const SWING_BY_STYLE: Record<SandboxStyle, number> = { pop: 0.5, lofi: 0.5, rnb: 0.5, jazz: JAZZ_SWING_FIRST };
+const SWING_BY_STYLE: Record<SandboxStyle, number> = { pop: 0.5, jazz: JAZZ_SWING_FIRST, lofi: 0.5, rnb: 0.5, acg: 0.5 };
 function swungBeat(beat: number, swingFirst: number): number {
   if (swingFirst <= 0.5 + 1e-6) return beat;
   const whole = Math.floor(beat);

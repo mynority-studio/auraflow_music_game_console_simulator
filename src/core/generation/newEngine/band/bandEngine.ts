@@ -29,7 +29,7 @@ export interface GenerationRequest {
   bandConstraint?: LineupConstraint; // ★ Band Selection「参与乐手/职能」推导的 lineup/家族约束(音色仍 rng 选)
 }
 
-// ★ 4 大 macro 风格:POP / JAZZ / LOFI / RNB(UI 暴露这 4 个;modal 是正交 regime,非 genre)。
+// ★ Q+N macro 风格:POP / JAZZ / LOFI / RNB / ACG(modal 是正交 regime,非 genre)。
 const STYLE_PROFILES: Record<string, StyleProfile> = {
   lofi: { accompDensity: 0.4, padDensity: 0.6, melodyFreedom: 0.5, tensionCarrier: 'voicing', colorBudget: 0.4, beatStrictness: 0.4 },
   jazz: { accompDensity: 0.7, padDensity: 0.1, melodyFreedom: 0.8, tensionCarrier: 'both', colorBudget: 0.8, beatStrictness: 0.5 }, // ★ jazz 基本无 pad(0.1 < PAD_OFF 0.12 → pad 全静默)

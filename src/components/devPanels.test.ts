@@ -6,8 +6,8 @@ import { DEV_PANELS } from './devPanels';
 describe('components/devPanels — Q+H/Q+N ingress consolidation', () => {
   it('exposes Q+H as the only full-song generation entry in DevDock', () => {
     expect(DEV_PANELS.some((p) => p.id === 'pipeline' && p.combo === 'Q+H')).toBe(true);
-    // 精确锁定面板集合:只有 Q+H 音乐生成 + Motif + 用户接管;无退役的 Q+N 诊断面板 / Q+N combo。
-    expect(DEV_PANELS.map((p) => p.id).sort()).toEqual(['motif', 'pipeline', 'takeover']);
+    // 精确锁定面板集合:只有 Q+H 音乐生成 + Motif + MIDI 输出 + 用户接管;无退役的 Q+N 诊断面板 / Q+N combo。
+    expect(DEV_PANELS.map((p) => p.id).sort()).toEqual(['midiOut', 'motif', 'pipeline', 'takeover']);
     expect(DEV_PANELS.some((p) => p.combo === 'Q+N')).toBe(false);
   });
 

@@ -99,7 +99,7 @@ export interface SongBundle {
 export function buildSongBundle(request: GenerationRequest): SongBundle {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
-  const arrangement = buildArrangementPlan(band, { rng: seedRng });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood });
   // ★ #6(2026-06-10):harmony 先于 instrumental(各用独立命名子流 'harmony'/'timbre' → 重排不改确定性);
   //   器配层吃 HarmonicPlan → 段级 rich texture 选择用真 dominant-chain。
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);

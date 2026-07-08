@@ -19,6 +19,13 @@ const ENTRY_LIFT_THRESHOLD = 0.10;
 // 收尾风格定制(确定性 per-style;default/modal/blues → cold 果断安全)。
 const ENDING_BY_STYLE: Record<string, EndingStyle> = { pop: 'cold', rnb: 'fade', lofi: 'fade', jazz: 'tag', default: 'cold' };
 
+function isLyricalMood(mood?: string): boolean {
+  if (!mood) return false;
+  const s = mood.toLowerCase();
+  if (/\b(drive|hype|hard|dance|edm|fast|upbeat|energetic)\b/.test(s)) return false;
+  return /\b(ballad|lyric|calm|soft|sad|melanchol|emotional|emo|gentle|warm|tender|slow|smooth|chill|dream|romantic)\b/.test(s);
+}
+
 export interface EdgePlan {
   entryBySection: Record<SectionId, SectionEntry>;
   endingStyle: EndingStyle;
@@ -28,8 +35,10 @@ export function planEdges(
   sections: readonly Section[],
   energyBySection: Record<SectionId, number>,
   style: string,
+  mood?: string,
 ): EdgePlan {
-  const endingStyle = ENDING_BY_STYLE[style.toLowerCase()] ?? ENDING_BY_STYLE.default;
+  const styleKey = style.toLowerCase();
+  const endingStyle = styleKey === 'pop' && isLyricalMood(mood) ? 'fade' : (ENDING_BY_STYLE[styleKey] ?? ENDING_BY_STYLE.default);
   const entryBySection: Record<SectionId, SectionEntry> = {};
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i];

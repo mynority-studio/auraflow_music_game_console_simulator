@@ -58,7 +58,7 @@ describe('motifSandbox/leadSanitizer · beat 域单声部清洗(directive Phase 
   });
 
   it('★ quote 回归(缩减 fuzz):多风格/种子 quote slot 首音存在 + lead 无同 pitch overlap', () => {
-    for (const style of ['pop', 'lofi', 'rnb', 'jazz'] as const) {
+    for (const style of ['pop', 'jazz', 'lofi', 'rnb', 'acg'] as const) {
       for (let seed = 1; seed <= 8; seed++) {
         for (const variant of [0, 1, 2, 3]) {
           const r = generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', variant), style, keyPc: 0, mode: 'major', bpm: 96, seed });

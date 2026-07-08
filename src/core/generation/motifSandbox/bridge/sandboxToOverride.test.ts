@@ -1,19 +1,42 @@
 import { describe, it, expect } from 'vitest';
-import { buildMotifSongOverride, motifNoteToLeadNote } from './sandboxToOverride';
+import { buildMotifBrickSongOverride, buildMotifSongOverride, buildUserMotifBrickSongOverride, motifNoteToLeadNote } from './sandboxToOverride';
 import { generateMotifWeave } from '../model/motifWeaver';
 import { generateSampleCaptured } from '../model/motifAnalysis';
 import { generateSongFromMotif } from '../../newEngine/generation/generateSongFromMotif';
 import { generateSong } from '../../newEngine/generation/GenerationController';
-import { beats } from '../../newEngine/foundation';
+import { beats, pc } from '../../newEngine/foundation';
+import { chordTypeIntervals, normalizeChordType } from '../../newEngine/knowledge/chords';
 import { fitMidiToProgramRange } from '../../newEngine/knowledge/instruments';
 import { leadCompWetEnergyRatio } from '../../newEngine/render/renderMixBalance';
 import type { TrackIR } from '../../newEngine/ir/MusicalIR';
+import type { SandboxStyle, UserMotif } from '../model/types';
 
 const m12 = (n: number) => ((n % 12) + 12) % 12;
-const weave = (style: 'pop' | 'jazz' = 'pop', seed = 7) =>
+const weave = (style: SandboxStyle = 'pop', seed = 7) =>
   generateMotifWeave({ capturedNotes: generateSampleCaptured(96, 0, 'major', 0), style, keyPc: 0, mode: 'major', bpm: 96, seed });
 const fittedLeadPitches = (lead: readonly { pitch: number }[], program: number): number[] =>
   lead.map((n) => fitMidiToProgramRange(n.pitch, 'lead', program));
+const spanPcs = (span: { rootPc: number; chordType?: string; quality: string }): number[] =>
+  [...new Set(chordTypeIntervals(normalizeChordType(span.chordType ?? span.quality) ?? 'maj').map((iv) => m12(span.rootPc + iv)))];
+const beatOf = (tick: unknown, ppq: number): number => (tick as number) / ppq;
+
+function strongFirstPhraseMotif(): UserMotif {
+  return {
+    id: 'strong-first-phrase',
+    keyPc: 0,
+    mode: 'major',
+    bpm: 96,
+    lengthBeats: 4,
+    createdAt: 0,
+    contour: [1, -1],
+    rhythmCell: [2, 1, 1],
+    notes: [
+      { midi: 65, onsetBeat: 0, durationBeat: 2, velocity: 0.95, scaleDegree: 4, octave: 5, accent: 1, structuralToneScore: 1 },
+      { midi: 69, onsetBeat: 2, durationBeat: 1, velocity: 0.9, scaleDegree: 6, octave: 5, accent: 0.9, structuralToneScore: 0.9 },
+      { midi: 67, onsetBeat: 3, durationBeat: 1, velocity: 0.8, scaleDegree: 5, octave: 5, accent: 0.7, structuralToneScore: 0.65 },
+    ],
+  };
+}
 
 describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', () => {
   it('★ motifNoteToLeadNote:midi→pitch、velocity 0..1 → 1..127、拍位/时值保留', () => {
@@ -30,6 +53,47 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     expect(ov.harmony!.chordTimeline.length).toBe(r.progression.length);
     expect(ov.lead!.length).toBe(r.lead.length);
     expect(ov.lead![0].pitch).toBe(Math.round(r.lead[0].midi));
+  });
+
+  it('★ buildMotifBrickSongOverride:产品播放只传 userBrick,不传 sandbox 整条 lead/harmony', () => {
+    const r = weave('pop', 7);
+    const ov = buildMotifBrickSongOverride(r);
+    expect(ov.harmony).toBeUndefined();
+    expect(ov.lead).toBeUndefined();
+    expect(ov.userBrick?.notes.length).toBe(r.motif.notes.length);
+    expect(ov.userBrick?.quoteBeats).toBe(Math.min(r.motif.lengthBeats, r.quoteBars * 4));
+  });
+
+  it('★ buildUserMotifBrickSongOverride:无产品参数时仅接入 Q+N userBrick(兼容旧调试调用)', () => {
+    const r = weave('pop', 7);
+    const ov = buildUserMotifBrickSongOverride(r.motif);
+    expect(ov.harmony).toBeUndefined();
+    expect(ov.lead).toBeUndefined();
+    expect(ov.userBrick?.notes[0].pitch).toBe(Math.round(r.motif.notes[0].midi));
+    expect(ov.userBrick?.quoteBeats).toBeLessThanOrEqual(r.motif.lengthBeats);
+  });
+
+  it('★ 产品参数:首句和声完全服从用户 motif 结构音,但不注入旧 sandbox 整条 lead', () => {
+    const motif = strongFirstPhraseMotif();
+    const ov = buildUserMotifBrickSongOverride(motif, { style: 'pop', seed: 7, keyPc: 0, mode: 'major' });
+    expect(ov.harmony).toBeDefined();
+    expect(ov.lead).toBeUndefined();
+    const first = ov.harmony!.chordTimeline[0];
+    const pcs = spanPcs(first);
+    for (const n of motif.notes) expect(pcs, `first chord supports ${n.midi}`).toContain(m12(n.midi));
+  });
+
+  it('★ 端到端:首句 lead 仍忠实用户 motif,和声只负责接住它', () => {
+    const motif = strongFirstPhraseMotif();
+    const ov = buildUserMotifBrickSongOverride(motif, { style: 'pop', seed: 7, keyPc: 0, mode: 'major' });
+    const song = generateSongFromMotif({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' }, ov);
+    expect(song.status).not.toBe('failed');
+    const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
+    const ppq = song.ir!.timebase.ppq;
+    const quote = lead.notes.filter((n) => beatOf(n.startTick, ppq) < 4 - 1e-6).sort((a, b) => (a.startTick as number) - (b.startTick as number));
+    expect(quote.map((n) => beatOf(n.startTick, ppq))).toEqual(motif.notes.map((n) => n.onsetBeat));
+    expect(quote.map((n) => beatOf(n.durationTicks, ppq))).toEqual(motif.notes.map((n) => n.durationBeat));
+    expect(quote.map((n) => n.pitch)).toEqual(fittedLeadPitches(ov.userBrick!.notes, lead.program!));
   });
 
   it('★ 端到端走 A:Q+R weave → override → generateSongFromMotif 成曲(lead 吃 motif+音区,bass 吃 sandbox 和声)', () => {
@@ -77,11 +141,11 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
   });
 
   // —— PR4 端到端验收:曲长对齐(tile)+ 各轨覆盖全曲 + 不 failed ——
-  const STYLES = [['pop', 7], ['lofi', 3], ['rnb', 5], ['jazz', 9]] as const;
+  const STYLES: ReadonlyArray<readonly [SandboxStyle, number]> = [['pop', 7], ['jazz', 9], ['lofi', 3], ['rnb', 5], ['acg', 11]];
 
-  it('★ PR4:4 风格走 A 成曲不 failed,lead=tile 的 motif lead(首音按音色折回),bass/comp 非空', () => {
+  it('★ PR4:5 风格走 A 成曲不 failed,lead=tile 的 motif lead(首音按音色折回),bass/comp 非空', () => {
     for (const [style, seed] of STYLES) {
-      const r = weave(style as 'pop' | 'jazz', seed);
+      const r = weave(style, seed);
       const ov = buildMotifSongOverride(r, 0, 'major');
       const song = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 120 }, ov);
       expect(song.status, `${style} status`).not.toBe('failed');
@@ -110,7 +174,7 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
   it('★ PR4:走 A 编制与默认 generateSong 一致(不丢轨);bass/comp 末音覆盖全曲后段', () => {
     for (const [style, seed] of STYLES) {
       const def = generateSong({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
-      const r = weave(style as 'pop' | 'jazz', seed);
+      const r = weave(style, seed);
       const ov = buildMotifSongOverride(r, 0, 'major');
       const mot = generateSongFromMotif({ seed, styleHint: style, mood: 'build', targetDuration: 120 }, ov);
       const roles = (x: typeof def) => x.ir!.tracks.map((t) => t.role).sort();

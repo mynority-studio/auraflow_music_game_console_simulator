@@ -54,6 +54,7 @@ export function songSpaceProfile(style: string, world: TimbreWorld | undefined, 
 export function delaySendForRole(style: string, role: InstrumentRoleName, program: number): number {
   const s = style.toLowerCase();
   if (role === 'bass' || role === 'drum' || role === 'pad') return 0; // 拍板:bass/drum off · pad mostly off
+  if (s === 'jazz' || s === 'blues' || s === 'acg') return 0; // club/cinematic piano 空间不走共享 echo,避免 comp/lead 尾巴糊成一团。
   const isCityPopFmEp = program === 5;
   const isEP = program === 4 || isCityPopFmEp; // GM4 Rhodes EP1 · GM5 DX7/FM EP2
   const isGuitar = program >= 24 && program <= 31;
@@ -117,7 +118,7 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   // Piano 0
   0: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
   // 电钢 5(POP/LOFI/RNB 最重要;CityPop/DX7 电钢,柔触键 + 慢 chorus + 数字混响 + 轻量 delay 托出 80s/vaporwave 空间)
-  5: { comp: { volume: 78, reverb: 62, chorus: 86 }, lead: { volume: 70, reverb: 66, chorus: 84 } },
+  5: { comp: { volume: 78, reverb: 62, chorus: 86 }, lead: { volume: 70, reverb: 65, chorus: 84 } },
   6: { comp: { volume: 80, reverb: 29, chorus: 4 }, lead: { volume: 80, reverb: 29, chorus: 4 } }, // 羽管键琴:干、保 attack
   8: { comp: { volume: 80, reverb: 40, chorus: 6 }, lead: { volume: 80, reverb: 45, chorus: 5 } }, // Celesta(归键盘,按钢琴系)
   11: { lead: { volume: 79, reverb: 58, chorus: 32 } }, // 颤音琴:金属延音吃空间

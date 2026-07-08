@@ -102,6 +102,14 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(lead.delay).toBe(28);
   });
 
+  it('Jazz/ACG 的 FM EP 不进共享 delay,避免和 club/cinematic 空间叠糊', () => {
+    for (const style of ['jazz', 'acg']) {
+      const space = pickSpaceProfile(style, undefined, true);
+      expect(mixForProgram({ style, timbreWorld: undefined, role: 'lead', program: 5, hasPad: true, space }).delay).toBeUndefined();
+      expect(mixForProgram({ style, timbreWorld: undefined, role: 'comp', program: 5, hasPad: true, space }).delay).toBeUndefined();
+    }
+  });
+
   it('吉他 comp 保持干短:低 reverb/chorus,且不进 delay', () => {
     for (const p of [24, 25]) {
       const m = mk('comp', p);

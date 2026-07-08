@@ -15,7 +15,7 @@ import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove,
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, preferredRegisterForRole } from '../knowledge/instruments';
 import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
-import { drumGrooveVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
+import { drumGrooveVariants, drumPerformanceVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
 import { mapProgramToAura25, mapRoleProgramsToAura25 } from '../../../sound/Aura25Palette';
 import { buildGestureExpressionByRole } from './gestureExpression';
 import {
@@ -291,6 +291,12 @@ export function buildInstrumentationPlan(
   const registerByRole = Object.fromEntries(
     ALL_ROLES.map((role) => [role, registerForRole(role, roleProgram[role])]),
   ) as Record<InstrumentRoleName, RegisterRange>;
+  const leadRegisterLow = registerByRole.lead.lowMidi as number;
+  const leadRegisterHigh = registerByRole.lead.highMidi as number;
+  const melodyReservedRegister: RegisterRange = {
+    lowMidi: midi(Math.min(Math.max(leadRegisterLow, 67), leadRegisterHigh)),
+    highMidi: registerByRole.lead.highMidi,
+  };
 
   const textureBySection: Record<string, TextureKind> = {};
   const activityBySection: Record<string, Partial<Record<InstrumentRoleName, number>>> = {};
@@ -359,7 +365,7 @@ export function buildInstrumentationPlan(
       return {
         phraseId: p.id,
         beatSlot: starts[p.id],
-        preferredRegister: registerByRole.lead,
+        preferredRegister: melodyReservedRegister,
         anchorRequired: isMain,
         segment: 'head',
         maxAccompanimentDensity: isMain ? 0.4 : 0.6,
@@ -407,19 +413,28 @@ export function buildInstrumentationPlan(
     }
   }
 
-  // ★ 鼓型变体匹配(器配层,2026-06-08):Arranger 已按段下发 GrooveKind(arrangement.grooveBySection)。
-  //   这里按 (style × groove) 从 KB 词汇确定性挑【一个变体】→ drumPatternBySection。
-  //   repeatGroup 一致:同 grooveKind → 同变体(per-song 掷一次,所有同 groove 段共用)→ verse1≡verse2。
-  //   rng 在所有前置决策【之后】取(append 在序列尾)→ 不扰 timbre/lead/intro/richTexture 既有序列(bit 不变)。
-  //   无 rng → 变体 0(确定性,向后兼容)。
+  // ★ 鼓型变体匹配(器配层):Arranger 下发 DrumPerformanceContract = 鼓手总谱主权威。
+  //   优先按 patternFamily 选 KB 鼓型族;缺失时回退 legacy style×groove。repeatGroup/functionTag 一致的段
+  //   共用变体,避免 verse1/verse2 演奏法漂移;不同功能段可同族不同打法,让每首歌有鼓手"手法"而不是单 loop。
   const GROOVE_KINDS: readonly GrooveKind[] = ['sparse', 'laidback', 'straight', 'driving'];
   const variantByGroove: Partial<Record<GrooveKind, number>> = {};
   for (const gk of GROOVE_KINDS) {
     const n = drumGrooveVariants(band.style, gk).length;
     variantByGroove[gk] = rng && n > 1 ? rng.int(n) : 0;
   }
+  const variantByPerformanceKey: Record<string, number> = {};
   const drumPatternBySection: Record<string, DrumHit[]> = {};
   for (const s of arrangement.sections) {
+    const perf = arrangement.drumPerformanceBySection?.[s.id];
+    if (perf) {
+      const variants = drumPerformanceVariants(perf);
+      const key = `${perf.patternFamily}:${s.repeatGroup ?? s.functionTag ?? s.role}:${perf.role}:${perf.complexity}`;
+      if (variantByPerformanceKey[key] === undefined) {
+        variantByPerformanceKey[key] = rng && variants.length > 1 ? rng.int(variants.length) : 0;
+      }
+      drumPatternBySection[s.id] = variants[variantByPerformanceKey[key]] ?? variants[0];
+      continue;
+    }
     const gk = (arrangement.grooveBySection[s.id] ?? 'straight') as GrooveKind;
     const variants = drumGrooveVariants(band.style, gk);
     drumPatternBySection[s.id] = variants[variantByGroove[gk] ?? 0] ?? variants[0];
@@ -457,14 +472,15 @@ export function buildInstrumentationPlan(
   }
 
   // ★ ACG:lead/comp 是同一键盘式前景空间。即便音色在 piano/FM/vibes/kalimba 间变化,
-  //   也统一 reverb/chorus/pan,只保留 volume 差异(melody-first:lead 响、comp 是空气)。
+  //   也统一 reverb/pan,只保留 volume 与 program 自身 chorus 差异。
+  //   chorus 不能统一:mallet/kalimba 需要 0 chorus,否则会听成轻微跑音。
   if (band.style.toLowerCase() === 'acg') {
     for (const s of arrangement.sections) {
       const compMix = mixByRoleSection.comp?.[s.id];
       if (!compMix) continue;
       for (const role of ['lead', 'comp'] as const) {
         const m = mixByRoleSection[role]?.[s.id];
-        if (m) mixByRoleSection[role][s.id] = { ...m, reverb: compMix.reverb, chorus: compMix.chorus, pan: 64 };
+        if (m) mixByRoleSection[role][s.id] = { ...m, reverb: compMix.reverb, pan: 64 };
       }
     }
   }
@@ -492,7 +508,7 @@ export function buildInstrumentationPlan(
     timbreWorld,
     sameInstrumentPairs: samePairs.length ? samePairs : undefined,
     melodyReservationPlan: {
-      reservedRegister: registerByRole.lead,
+      reservedRegister: melodyReservedRegister,
       densityCeiling: clamp01(band.styleProfile.accompDensity),
       hookAnchorSlots,
     },

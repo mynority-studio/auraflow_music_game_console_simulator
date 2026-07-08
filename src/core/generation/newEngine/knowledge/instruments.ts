@@ -15,7 +15,8 @@ interface LineupRule {
   optional: { role: InstrumentRoleName; prob: number }[]; // 按概率随 seed 加入
 }
 
-// 各 style 编制规则:always 保证 ≥2 件且含 lead + 和声;optional 让编制大小可变。
+// 各 style 编制规则:always 保证 ≥2 件且含 lead + 和声;optional 仍按旧序列抽样。
+// POP/RNB/LOFI/JAZZ 若抽样漏掉 drum,会在 lineup 阶段无 rng 补回,保住既有 lead/comp/bass program 序列。
 const LINEUP_RULES: Record<string, LineupRule> = {
   jazz: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.85 }] },
   pop: { always: ['lead', 'bass', 'comp'], optional: [{ role: 'drum', prob: 0.9 }, { role: 'pad', prob: 0.6 }] },
@@ -50,13 +51,13 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   jazz: { lead: [67, 0, 11], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
   // ★ 2026-07-07:GM67 sax 从非 Jazz 主动 lead 池移出。Pop/RNB/LOFI 的主角应是 piano/EP/soft pluck,
   //   sax 只在 Jazz 高概率出现;Modal 保留极低色彩概率,避免全局“到处都是 sax”。
-  pop: { lead: [0, 5, 25, 11, 108], comp: [5, 25, 0, 24], bass: [38, 32], pad: [89], drum: [0] },
-  lofi: { lead: [5, 0, 11, 108, 25], comp: [5, 24, 25, 0], bass: [32, 38], pad: [89], drum: [0] },
-  rnb: { lead: [5, 0, 25, 11], comp: [5, 25, 0, 24], bass: [38, 32], pad: [89], drum: [0] },
+  pop: { lead: [0, 5, 25, 11, 108], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
+  lofi: { lead: [5, 0, 11, 108, 25], comp: [5, 0], bass: [32, 38], pad: [89], drum: [0] },
+  rnb: { lead: [5, 0, 25, 11], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
   modal: { lead: [11, 108, 0, 5, 67, 25], comp: [0, 5, 24, 25], bass: [32, 38], pad: [89], drum: [0] },
   // ★ ACG 主体仍是钢琴写作,但 lead/comp 对当前 Aura25 小包开放键盘式色彩:
   //   大钢琴/CityPop FM 电钢/颤音琴/卡林巴。bass 保持原声,不引入 drum/pad 核心。
-  acg: { lead: [0, 5, 11, 108], comp: [0, 5, 11, 108], bass: [32], pad: [89], drum: [0] },
+  acg: { lead: [0, 5], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
   default: { lead: [0, 5, 25, 11, 108], comp: [0, 5, 25, 24], bass: [32], pad: [89], drum: [0] },
 };
 
@@ -427,6 +428,16 @@ export function hardRequiredRolesForStyle(style: string): InstrumentRoleName[] {
   return style.toLowerCase() === 'acg' ? ['lead', 'comp', 'bass'] : [];
 }
 
+function defaultDrumRequiredForStyle(style: string): boolean {
+  return ['pop', 'rnb', 'lofi', 'jazz'].includes(style.toLowerCase());
+}
+
+function shouldRestoreDefaultDrum(style: string, constraint?: LineupConstraint): boolean {
+  if (!defaultDrumRequiredForStyle(style)) return false;
+  if (constraint?.allowedRoles && !constraint.allowedRoles.has('drum')) return false;
+  return true;
+}
+
 export function pickBandInstrumentation(style: string, rng: Rng, constraint?: LineupConstraint): BandInstrumentation {
   const rule = LINEUP_RULES[style] ?? LINEUP_RULES.default;
   const chosen = new Set<InstrumentRoleName>(rule.always);
@@ -452,6 +463,12 @@ export function pickBandInstrumentation(style: string, rng: Rng, constraint?: Li
     const set = new Set<InstrumentRoleName>(lineup);
     for (const r of hardRoles) if (!set.has(r)) { set.add(r); if (!autoFilled.includes(r)) autoFilled.push(r); }
     if (style.toLowerCase() === 'acg') set.delete('drum'); // ACG 核心不含 drum(P0)
+    lineup = ROLE_ORDER.filter((r) => set.has(r));
+  }
+
+  if (shouldRestoreDefaultDrum(style, constraint) && !lineup.includes('drum')) {
+    const set = new Set<InstrumentRoleName>(lineup);
+    set.add('drum');
     lineup = ROLE_ORDER.filter((r) => set.has(r));
   }
 

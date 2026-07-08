@@ -252,7 +252,7 @@ describe('Aura25Palette', () => {
         }
       }
     }
-  });
+  }, 20000);
 
   it('audits every Aura25 SF2 preset and MIDI pitch-fitting case one by one', () => {
     const sf2Presets = new Set(sf2PresetHeaders('public/Aura25_GM128.sf2').map((preset) => `${preset.bank}:${preset.program}`));

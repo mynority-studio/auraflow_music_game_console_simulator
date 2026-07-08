@@ -5,7 +5,7 @@
 // 参考 Impro-Visor Theme/ThemeUse/ThemeWeaver,clean-room TypeScript。
 // ============================================================
 
-export type SandboxStyle = 'pop' | 'lofi' | 'rnb' | 'jazz';
+export type SandboxStyle = 'pop' | 'jazz' | 'lofi' | 'rnb' | 'acg';
 export type SandboxSectionId = 'verse1' | 'verse2';
 export type ScaleMode = 'major' | 'minor';
 

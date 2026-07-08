@@ -7,6 +7,7 @@
 // ============================================================
 
 import { deepFreeze, type DeepReadonly, type Meter } from '../foundation';
+import type { InstrumentRoleName } from '../band/BandSpec';
 import type { GrooveKind } from '../knowledge/grooves';
 
 export type SectionId = string;
@@ -121,6 +122,100 @@ export interface Feel {
   swingRatio: number;
 }
 
+export type DrumPerformanceRole = 'silent' | 'timekeeper' | 'lift' | 'breakdown' | 'pickup';
+export type DrumPatternFamily =
+  | 'citypop-disco-boogie'
+  | 'pop-backbeat'
+  | 'jpop-driving-8ths'
+  | 'ballad-halftime'
+  | 'rnb-neo-soul'
+  | 'rnb-dilla'
+  | 'rnb-gospel-shuffle'
+  | 'trap-soul-halftime'
+  | 'lofi-boombap'
+  | 'lofi-dusty-break'
+  | 'lofi-minimal'
+  | 'smooth-jazz-backbeat'
+  | 'jazz-swing-ride'
+  | 'jazz-bebop-comping'
+  | 'jazz-ballad-light'
+  | 'jazz-bossa';
+export type DrumEntryMode = 'none' | 'hat-only' | 'kick-only' | 'kick-hat' | 'ride-only' | 'full' | 'dropout';
+export type DrumFillPolicy = 'none' | 'light' | 'turnaround' | 'big';
+export type DrumSwingUnit = '8th' | '16th';
+export type DrumTimingProfile = 'tight' | 'behind-snare' | 'dilla-late' | 'swing-ride';
+export type DrumVelocityProfile = 'flat' | 'backbeat' | 'ghosted' | 'crescendo';
+export type DrumKickPolicy = 'anchor-only' | 'four-on-floor' | 'syncopated' | 'halftime';
+export type DrumSnarePolicy = 'backbeat' | 'rim' | 'ghost-before-backbeat' | 'jazz-comping';
+export type DrumHatPolicy = 'quarters' | 'eighths' | 'sixteenths' | 'shaker16' | 'ride' | 'pedal-hat';
+export type DrumCymbalPolicy = 'none' | 'section-crash' | 'hook-crash';
+export type DrumTomPolicy = 'none' | 'turnaround' | 'big-fill';
+export type DrumForegroundGuard = 'strict' | 'normal';
+export type PerformanceContinuity = 'none' | 'staccato' | 'connected' | 'legato-flow' | 'pedal-legato';
+export type PerformanceArticulationScope = 'none' | 'attribute' | 'direction';
+export type PerformanceArticulationExclusionGroup = 'none' | 'length' | 'pedal' | 'breath' | 'rudiment';
+export type PerformanceFollowSource = 'none' | 'chords' | 'bass' | 'comp' | 'lead' | 'drum';
+export type PerformancePreQuantizeGrid = 'none' | '8th' | '16th';
+
+export interface ScorePerformanceContract {
+  sectionId: SectionId;
+  grooveContractId: string;
+  foregroundRole: InstrumentRoleName;
+  rhythmGrid: import('../knowledge/grooveContracts').GrooveGrid;
+  swingUnit: DrumSwingUnit;
+  safeRangeTicks: number;
+  maxMoveTicks: number;
+  preQuantizeGrid: PerformancePreQuantizeGrid;
+  humanizeAmount: 0 | 1 | 2 | 3;
+  dynamicsRange: 0 | 1 | 2 | 3;
+}
+
+export interface RolePerformanceContract extends ScorePerformanceContract {
+  id: string;
+  role: InstrumentRoleName;
+  entryMode: 'none' | 'downbeat' | 'delayed' | 'pickup' | 'sustain' | 'dropout';
+  active: boolean;
+  foreground: boolean;
+  densityBudget: number;
+  continuity: PerformanceContinuity;
+  articulationScope: PerformanceArticulationScope;
+  articulationExclusionGroup: PerformanceArticulationExclusionGroup;
+  phrasePolicy: 'none' | 'breath-group' | 'bow-group' | 'pick-voice' | 'pluck-voice' | 'pedal-harmony' | 'rudiment-bar' | 'sustain-bed';
+  fillPolicy: DrumFillPolicy;
+  phraseVariation: 0 | 1 | 2 | 3;
+  feelOffsetMs: number;
+  followSource: PerformanceFollowSource;
+}
+
+export interface DrumPerformanceContract {
+  id: string;
+  sectionId: SectionId;
+  role: DrumPerformanceRole;
+  patternFamily: DrumPatternFamily;
+  complexity: 0 | 1 | 2 | 3;
+  intensity: 0 | 1 | 2 | 3;
+  densityCeiling: number;
+  entryMode: DrumEntryMode;
+  fillPolicy: DrumFillPolicy;
+  fillAmount: 0 | 1 | 2 | 3;
+  fillComplexity: 0 | 1 | 2 | 3;
+  phraseVariation: 0 | 1 | 2 | 3;
+  swingUnit: DrumSwingUnit;
+  timingProfile: DrumTimingProfile;
+  safeRangeTicks: number;
+  maxMoveTicks: number;
+  preQuantizeGrid: PerformancePreQuantizeGrid;
+  humanizeAmount: 0 | 1 | 2 | 3;
+  feelOffsetMs: number;
+  velocityProfile: DrumVelocityProfile;
+  kickPolicy: DrumKickPolicy;
+  snarePolicy: DrumSnarePolicy;
+  hatPolicy: DrumHatPolicy;
+  cymbalPolicy: DrumCymbalPolicy;
+  tomPolicy: DrumTomPolicy;
+  foregroundGuard: DrumForegroundGuard;
+}
+
 export interface PhraseBreathing {
   phraseBars: number;
   cadenceBreathBeats: number;
@@ -149,6 +244,10 @@ export interface ArrangementPlanData {
   harmonicRhythmTarget: HarmonicRhythmTarget;
   /** ★ 每段鼓 groove 性格(Arranger 下发,器配层据此匹配具体 drum pattern 变体)。swing 不在此,走 feel.swingRatio。 */
   grooveBySection: Record<SectionId, GrooveKind>;
+  /** ★ 每段鼓手演奏合同:Arranger 总谱下发,drum 只消费合同,不偷看 lead/comp。 */
+  drumPerformanceBySection: Record<SectionId, DrumPerformanceContract>;
+  /** ★ DAW 风格总谱合同:每段每个乐手都有演奏/时序/让位/手势意图;render 只解释合同。 */
+  rolePerformanceBySection: Record<InstrumentRoleName, Record<SectionId, RolePerformanceContract>>;
   // ★ GrooveContract(comp/melody 分开 swing + ms pocket + texture 偏好);arranger 拥有,render 消费。
   //   Phase D:全 MG-backed 风格走真 pool;BLUES/无 rng = legacy 派生兜底。grooveBySection(GrooveKind)保留作 drum 兼容字段。
   songGrooveContract: import('../knowledge/grooveContracts').GrooveContract;

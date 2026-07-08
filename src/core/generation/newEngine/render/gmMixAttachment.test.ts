@@ -52,6 +52,34 @@ describe('render/gmMixAttachment — programChanges ⟹ mixChanges(同 tick 耦�
       }
     }
   });
+
+  it('EP programChanges 同步 CC72/CC74,换出时重置避免 tail 残留', () => {
+    const isEp = (p: number | undefined) => p === 4 || p === 5;
+    const programAt = (t: any, tick: number) => {
+      let p = t.program;
+      for (const pc of t.programChanges ?? []) {
+        if ((pc.atTick as number) <= tick) p = pc.program;
+        else break;
+      }
+      return p;
+    };
+    const hasCc = (t: any, tick: number, controller: number, value: number) =>
+      (t.ccEvents ?? []).some((e) => (e.atTick as number) === tick && e.controller === controller && e.value === value);
+
+    const switched = res.ir!.tracks.filter((t) => (t.programChanges ?? []).some((pc) => isEp(t.program) !== isEp(pc.program)));
+    expect(switched.length).toBeGreaterThan(0);
+    for (const t of switched) {
+      for (const pc of t.programChanges ?? []) {
+        const tick = pc.atTick as number;
+        const before = programAt(t, tick - 1);
+        if (isEp(before) === isEp(pc.program)) continue;
+        const release = isEp(pc.program) ? 96 : 64;
+        const brightness = isEp(pc.program) ? 54 : 64;
+        expect(hasCc(t, tick, 72, release), `${t.role} pc@${tick} 缺 CC72=${release}`).toBe(true);
+        expect(hasCc(t, tick, 74, brightness), `${t.role} pc@${tick} 缺 CC74=${brightness}`).toBe(true);
+      }
+    }
+  });
 });
 
 describe('render/gmMixAttachment — lead 事件不受混音影响', () => {

@@ -29,6 +29,7 @@ export interface MidiEvent {
 }
 
 type PendingDelayNote = MidiEvent & { delaySend: number };
+type MidiEventListener = (event: MidiEvent) => void;
 
 const TICK_LOOP_MS = 5;
 const TRAILING_SILENCE_MS = 200;
@@ -151,6 +152,7 @@ export class MidiScheduler {
 
     private mutedChannels: Set<number> = new Set();
     private visualListeners: ((data: any) => void)[] = [];
+    private midiEventListeners: MidiEventListener[] = [];
     private endListeners: (() => void)[] = [];
 
     public init(_synth: unknown): void { /* synth 由 SynthManager 单例管理，本方法保持签名兼容 */ }
@@ -207,8 +209,10 @@ export class MidiScheduler {
     public panic(): void {
         // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音
         const synth = spessaSynth;
-        if (!synth) return;
         for (let ch = 0; ch < 16; ch++) {
+            const ev: MidiEvent = { ticks: this.currentTick, type: 'cc', channel: ch, data1: 123, data2: 0 };
+            this.notifyMidiEventListeners(ev);
+            if (!synth) continue;
             try { synth.controllerChange(ch, 123, 0); } catch { /* ignore */ }
         }
     }
@@ -217,6 +221,7 @@ export class MidiScheduler {
         this.stop();
         this.events = [];
         this.visualListeners = [];
+        this.midiEventListeners = [];
         this.endListeners = [];
         this.mutedChannels.clear();
     }
@@ -263,6 +268,7 @@ export class MidiScheduler {
             return;
         }
         if (this.mutedChannels.has(ev.channel)) return;
+        this.notifyMidiEventListeners(ev);
         const synth = spessaSynth;
         if (!synth) return;
 
@@ -278,6 +284,12 @@ export class MidiScheduler {
                 (synth as any).pitchWheel?.(ev.channel, ev.data1);
             }
         } catch { /* ignore — 静默单事件错误，保播放不中断 */ }
+    }
+
+    private notifyMidiEventListeners(ev: MidiEvent): void {
+        this.midiEventListeners.forEach(l => {
+            try { l(ev); } catch { /* ignore */ }
+        });
     }
 
     // -----------------------------------------------------------
@@ -336,6 +348,15 @@ export class MidiScheduler {
 
     public removeVisualListener(listener: (data: any) => void): void {
         this.visualListeners = this.visualListeners.filter(l => l !== listener);
+    }
+
+    public addMidiEventListener(listener: MidiEventListener): () => void {
+        this.midiEventListeners.push(listener);
+        return () => this.removeMidiEventListener(listener);
+    }
+
+    public removeMidiEventListener(listener: MidiEventListener): void {
+        this.midiEventListeners = this.midiEventListeners.filter(l => l !== listener);
     }
 
     public onTrackEnd(listener: () => void): void {
