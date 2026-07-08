@@ -15,10 +15,13 @@ import type { TrackIR } from '../ir/MusicalIR';
  *  v3 相对 v1 新增：snapcomp / groovepocket / articulate。
  *  ★ V4-P1 新增（v4 渲染链新 pass，非 ACG/无手势 case 为 pass-through 快照）：
  *    acgshape（ACG late shaping 链全程 + 二次 legato+sanitize 后）/ gesture（program·mix·pedal
- *    投影 + gestureExpression 应用后）/ mixbalance（applyRenderMixBalance 重标 mix 后，notes 不变）。 */
+ *    投影 + gestureExpression 应用后）/ mixbalance（applyRenderMixBalance 重标 mix 后，notes 不变）。
+ *  ★ V4.1-P0 新增：saxavoid（swing 后第 1 次 saxLeadAvoidResolver；非 sax-lead case 为
+ *    pass-through 快照）。mix 附着区第 2 次 saxAvoid + 全轨 rangeFit 沿用 'gesture' 聚合快照
+ *    （与 v4 gesture 语义一致=投影区块整体快照），不另设 stage。 */
 export const POST_STAGES = [
   'postmix', 'gated', 'resolved', 'ducked', 'dynamics', 'ending', 'leadins',
-  'gapfill', 'replay', 'snapcomp', 'humanvel', 'swing', 'humantime', 'groovepocket', 'articulate',
+  'gapfill', 'replay', 'snapcomp', 'humanvel', 'swing', 'saxavoid', 'humantime', 'groovepocket', 'articulate',
   'acgshape', 'gesture', 'mixbalance',
 ] as const;
 

@@ -267,13 +267,14 @@ function serializeIR(ir: MusicalIR) {
       programChanges: (t.programChanges ?? []).map((p) => ({ atTick: p.atTick, program: p.program })),
       pedalEvents: (t.pedalEvents ?? []).map((p) => ({ atTick: p.atTick, down: p.down })),
       mix: t.mix
-        ? { volume: t.mix.volume, pan: t.mix.pan, reverb: t.mix.reverb, chorus: t.mix.chorus, expression: t.mix.expression ?? null }
+        ? { volume: t.mix.volume, pan: t.mix.pan, reverb: t.mix.reverb, chorus: t.mix.chorus, expression: t.mix.expression ?? null, delay: t.mix.delay ?? null }
         : null,
       mixChanges: (t.mixChanges ?? []).map((mc) => ({
         atTick: mc.atTick,
-        mix: { volume: mc.mix.volume, pan: mc.mix.pan, reverb: mc.mix.reverb, chorus: mc.mix.chorus, expression: mc.mix.expression ?? null },
+        mix: { volume: mc.mix.volume, pan: mc.mix.pan, reverb: mc.mix.reverb, chorus: mc.mix.chorus, expression: mc.mix.expression ?? null, delay: mc.mix.delay ?? null },
       })),
       ccEvents: (t.ccEvents ?? []).map((c) => ({ atTick: c.atTick, controller: c.controller, value: c.value })),
+      pitchBendEvents: (t.pitchBendEvents ?? []).map((p) => ({ atTick: p.atTick, value: p.value })),
     })),
   };
 }
@@ -360,12 +361,12 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const gitTry = (cmd: string): string => { try { return execSync(cmd, { cwd: REPO_ROOT }).toString().trim(); } catch { return ''; } };
 const meta = {
   generator: 'scripts/golden-trace-ne.ts',
-  engineBaseCommit: 'c01ac02ef3ccf05ba37f619ca6638907e379b40f', // Newengine_Demo-v4（引擎逻辑基线）
-  exporterCommit: gitTry('git rev-parse HEAD') || 'unknown',     // tool/golden-trace-ne-v4 导出器补丁 commit
+  engineBaseCommit: '051a8d90e8ddd7f4775b0147fd2df5f2b31fbe6a', // Newengine_Demo-v4.1（引擎逻辑基线）
+  exporterCommit: gitTry('git rev-parse HEAD') || 'unknown',     // tool/golden-trace-ne-v4.1 导出器补丁 commit
   exporterDirty: gitTry('git status --porcelain').length > 0,    // 导出时工作树脏 → 复现对照实际文件
   parityPatch: true,
-  postStages: POST_STAGES, // ★ stage 名序列单一真源（ne_json2c 解析 + 验收读此；V4-P1 +acgshape/gesture/mixbalance=18）
-  note: 'V4-P1 L0-L3+intent golden（对 Newengine_Demo-v4=c01ac02；trace 导出器补丁；见 docs/transplant/esp32s3.md V4 章）',
+  postStages: POST_STAGES, // ★ stage 名序列单一真源（ne_json2c 解析 + 验收读此；V4-P1 +acgshape/gesture/mixbalance=18；V4.1-P0 +saxavoid=19）
+  note: 'V4.1-P0 L0-L3+intent golden（对 Newengine_Demo-v4.1=051a8d9；trace 导出器补丁；见 docs/transplant/esp32s3.md V4.1 章）',
 };
 
 const l0 = { meta, streams: buildL0() };
