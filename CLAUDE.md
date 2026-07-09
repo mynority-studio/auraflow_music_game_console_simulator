@@ -45,10 +45,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    hard_silence）。**不要退回 CC123 路径**——copych 的 allNotesOff 遇 sustain 踩下会
    跳杀 voice → stop 后挂音（设备端修过的同款回归）。
 7. **定位约束（2026-07-09 用户拍板）**：copych WASM = **嵌入式的镜像参考**，用于在浏览器
-   评估设备端真实表现（同引擎/同 SF2/同 mono 口径/**同 24 kHz 渲染率**——采样率偏好 'auto' 下 copych 的
-   AudioContext 建成 24000Hz，24k SF2 样本 1:1 零重采样；顶部栏采样率下拉可显式覆盖
-   [22.05/24/44.1/48k，audioOutputPrefs.ts，两后端通用]，声道下拉=输出末端下混开关
-   [copych 原生 L=R 双单声道，两档同听感]；切后端/切采样率都关旧 ctx 重建，worklet
+   评估设备端真实表现（同引擎/同 SF2/同 mono 口径/**同 24 kHz 渲染率**——**默认=单声道+24 kHz 两后端统一**
+   [2026-07-10 用户拍板，audioOutputPrefs.ts]；顶部栏下拉可覆盖：采样率 auto[copych 24k/
+   spessa 硬件]/22.05/24/44.1/48k，声道=输出末端下混开关[copych 原生 L=R 双单声道，两档
+   同听感；spessa 下混后与 copych A/B 公平]；切后端/切采样率都关旧 ctx 重建，worklet
    addModule 缓存 per-ctx）——**不做 web 音质优化分叉**。与
    spessa 的听感差距（mono 无声场、精简 FX、标定差）是记录在案的预期，不是要修的 bug；
    任何"让 copych 更好听"的改动必须先回设备侧对齐口径，不得 web 侧单方面调。
