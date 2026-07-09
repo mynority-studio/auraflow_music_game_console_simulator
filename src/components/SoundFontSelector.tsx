@@ -24,6 +24,8 @@ const DRUM_CHANNEL = 9;
 const KEYBOARD_CHANNEL = 0;
 /** 主键盘可切乐器（当前 SF2 包内旋律乐器；鼓组走 ch9 不在列）。 */
 const KEYBOARD_INSTRUMENTS = AURA25_AUDITION_INSTRUMENTS.filter(item => item.role !== 'drum');
+/** 初始键盘乐器 = 列表首项（GM 0:0 大钢琴，与合成器 GMReset 默认一致——无需占位"默认"项）。 */
+const DEFAULT_INSTRUMENT_KEY = `${KEYBOARD_INSTRUMENTS[0].bank}:${KEYBOARD_INSTRUMENTS[0].program}`;
 const NOTE_OFF_CC = 123;
 const CITYPOP_FM_EP_PROGRAM = 5;
 const FOLK_GUITAR_PROGRAM = 25;
@@ -40,13 +42,13 @@ export const SoundFontSelector: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [auditionOpen, setAuditionOpen] = useState(false);
     const [auditioning, setAuditioning] = useState<string | null>(null);
-    const [instrumentKey, setInstrumentKey] = useState<string>('');
+    const [instrumentKey, setInstrumentKey] = useState<string>(DEFAULT_INSTRUMENT_KEY);
     const [sampleRate, setSampleRate] = useState<number | null>(null);
     const [ratePref, setRatePref] = useState<SampleRatePref>(() => getSampleRatePref());
     const [ratePending, setRatePending] = useState(false);
     const [channelMode, setChannelModeState] = useState<ChannelModePref>(() => getChannelModePref());
     const auditionTimers = useRef<number[]>([]);
-    const instrumentKeyRef = useRef<string>('');   // subscribe 闭包用（避免 stale state）
+    const instrumentKeyRef = useRef<string>(DEFAULT_INSTRUMENT_KEY);   // subscribe 闭包用（避免 stale state）
 
     /** 只窥探已存在的全局 AudioContext（不提前创建——保持"首次用户操作才建 ctx"的生命周期）；
      *  ctx 未建时徽标显 "— kHz"，首次 startAudioContext 后经 subscribe 回调刷新。 */
@@ -184,14 +186,13 @@ export const SoundFontSelector: React.FC = () => {
         const key = event.target.value;
         setInstrumentKey(key);
         instrumentKeyRef.current = key;
-        const item = key ? KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === key) : null;
-        if (key && !item) return;
+        const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === key);
+        if (!item) return;
         setError(null);
         try {
             await startAudioContext();
-            const program = item ? item.program : 0;   // 空选项=切回默认 GM0 大钢琴（真发，可回退）
-            AudioEngine.programChange(KEYBOARD_CHANNEL, program);
-            AudioEngine.playNote(KEYBOARD_CHANNEL, item?.note ?? 60, 100, 220);   // 确认音
+            AudioEngine.programChange(KEYBOARD_CHANNEL, item.program);
+            AudioEngine.playNote(KEYBOARD_CHANNEL, item.note, 100, 220);   // 确认音
         } catch (err) {
             console.error('Keyboard instrument switch failed', err);
             setError('乐器切换失败');
@@ -312,7 +313,6 @@ export const SoundFontSelector: React.FC = () => {
                     className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400"
                 >
-                    <option value="">默认（GM0 大钢琴）</option>
                     {KEYBOARD_INSTRUMENTS.map(item => (
                         <option key={`${item.bank}:${item.program}`} value={`${item.bank}:${item.program}`}>
                             {item.name} · GM {item.bank}:{item.program}
@@ -325,10 +325,10 @@ export const SoundFontSelector: React.FC = () => {
                         void (async () => {
                             try {
                                 await startAudioContext();
-                                const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === instrumentKey);
-                                /* 默认态（未选择）= GM0 大钢琴，同样可试听 */
-                                AudioEngine.programChange(KEYBOARD_CHANNEL, item ? item.program : 0);
-                                AudioEngine.playNote(KEYBOARD_CHANNEL, item?.note ?? 60, 100, 220);
+                                const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === instrumentKey)
+                                    ?? KEYBOARD_INSTRUMENTS[0];
+                                AudioEngine.programChange(KEYBOARD_CHANNEL, item.program);
+                                AudioEngine.playNote(KEYBOARD_CHANNEL, item.note, 100, 220);
                             } catch { /* 静默：音频未就绪时下一次点击再试 */ }
                         })();
                     }}
