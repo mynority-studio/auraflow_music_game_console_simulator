@@ -28,7 +28,7 @@ describe('Layer 2 · SongSpaceProfile(器配-owned 真源)', () => {
 describe('Layer 2 · delay(CC95)极克制策略(拍板 D)', () => {
   it('lead:rnb / POP DX7(EP) / lofi 有 delay;普通 pop/jazz/acg/folk guitar lead 为 0', () => {
     expect(delaySendForRole('rnb', 'lead', 0)).toBe(26);   // rnb lead
-    expect(delaySendForRole('pop', 'lead', 5)).toBe(28);   // DX7/CityPop EP lead(pop/rnb/lofi 场景)
+    expect(delaySendForRole('pop', 'lead', 5)).toBe(16);   // DX7/CityPop EP lead:只留空气 echo,不重复颗粒
     expect(delaySendForRole('lofi', 'lead', 0)).toBe(22);  // lofi lead
     expect(delaySendForRole('pop', 'lead', 25)).toBe(0);   // folk guitar 不走 clean-electric delay
     expect(delaySendForRole('pop', 'lead', 0)).toBe(0);    // pop 非 EP lead → off
@@ -42,7 +42,7 @@ describe('Layer 2 · delay(CC95)极克制策略(拍板 D)', () => {
     expect(delaySendForRole('lofi', 'comp', 25)).toBe(0);
     expect(delaySendForRole('pop', 'comp', 25)).toBe(0);
     expect(delaySendForRole('rnb', 'comp', 0)).toBe(0);
-    expect(delaySendForRole('pop', 'comp', 5)).toBe(26);   // DX7/CityPop EP comp 需要 80s rack delay
+    expect(delaySendForRole('pop', 'comp', 5)).toBe(12);   // DX7/CityPop EP comp 比 lead 更克制
     expect(delaySendForRole('jazz', 'comp', 5)).toBe(0);
     expect(delaySendForRole('acg', 'comp', 5)).toBe(0);
   });
@@ -67,6 +67,6 @@ describe('Layer 2 · delay 不改 reverb/chorus(保浏览器平衡)+ CC95 端到
     const lofi = musicalIRToMidiEvents(generateMusicSync({ seed: 1, styleHint: 'lofi', mood: 'build', targetDuration: 90, key: 'C' }).ir!);
     const cc95 = lofi.filter((e) => e.type === 'cc' && e.data1 === 95);
     expect(cc95.length).toBeGreaterThan(0);      // lofi 有 delay
-    expect(cc95.every((e) => (e.data2 as number) <= 28)).toBe(true); // 克制但能听到空间(≤28)
+    expect(cc95.every((e) => (e.data2 as number) <= 22)).toBe(true); // 克制但能听到空间(≤22;GM5 更低)
   });
 });

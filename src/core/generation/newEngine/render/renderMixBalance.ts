@@ -38,7 +38,7 @@ const POLICY: Record<string, LeadCompPolicy> = {
   // ★ P2 mg fidelity:ACG = melody-first(旋律浮上,comp 是空气 pp)。旧策略 comp-forward(0.90/comp CC7 80-98)
   //   与 normalizeAcgDynamics(lead86/comp29)直接矛盾 → 会 boost comp CC7 抢回,抵消 pp 意图。改成 lead-forward:
   //   lead CC7 高、comp CC7 中(air 但仍可闻),ratio 允许强 lead-forward(velocity 秩序天然使 lead≫comp)。
-  acg:  { targetRatio: 1.80, minRatio: 1.20, maxRatio: 4.50, leadRange: [80, 96], compRange: [80, 98] },
+  acg:  { targetRatio: 1.60, minRatio: 1.05, maxRatio: 4.50, leadRange: [84, 100], compRange: [86, 100] },
 };
 
 const DEFAULT_POLICY: LeadCompPolicy = {
@@ -50,11 +50,12 @@ const DEFAULT_POLICY: LeadCompPolicy = {
 };
 
 const JAZZ_SAX_POLICY: LeadCompPolicy = {
-  targetRatio: 1.85,
-  minRatio: 1.35,
-  maxRatio: 3.25,
-  leadRange: [94, 100],
-  compRange: [72, 84],
+  targetRatio: 1.80,
+  minRatio: 1.20,
+  maxRatio: 4.80,
+  // 用户复核:上一版把 sax 压到 CC7=72,浏览器里几乎听不到。+40% ≈ 101,按 ESP32/浏览器安全线上限卡到 100。
+  leadRange: [100, 100],
+  compRange: [84, 96],
 };
 
 function isSaxProgram(program: number | undefined): boolean {

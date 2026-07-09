@@ -79,10 +79,33 @@ const notifySoundFontState = (): void => {
 
 // ★ 双母带:成品播放走【压缩母带】(响而受控),Q+R MIDI 录入/试听走【零延迟软削波母带】
 //   (省掉两级压缩器的 ~12ms lookahead → 现场弹更跟手)。synth 同一时刻只接一条,模式切换时换接。
-let _compMasterIn: AudioNode | null = null;   // 压缩母带入口(成品)
-let _scMasterIn: AudioNode | null = null;     // 软削波母带入口(试听,零延迟)
+let _compMasterIn: GainNode | null = null;    // 压缩母带入口(成品)
+let _scMasterIn: GainNode | null = null;      // 软削波母带入口(试听,零延迟)
 let _masterNodes: AudioNode[] = [];
 let _masterMode: 'comp' | 'softclip' = 'comp';
+let _playbackMasterLift = 1.0;
+
+const COMP_HEADROOM_GAIN = 0.6;
+const SOFTCLIP_INPUT_GAIN = 0.85;
+const PLAYBACK_STYLE_MASTER_LIFT: Record<string, number> = {
+    pop: 1.0,
+    rnb: 1.12,
+    jazz: 1.24,
+    lofi: 1.38,
+    acg: 2.2,
+};
+
+const applyPlaybackMasterLift = (): void => {
+    if (_compMasterIn) _compMasterIn.gain.value = COMP_HEADROOM_GAIN * _playbackMasterLift;
+    if (_scMasterIn) _scMasterIn.gain.value = SOFTCLIP_INPUT_GAIN * _playbackMasterLift;
+};
+
+/** 风格级 master trim:只改总线输入,不改各轨 CC7/velocity。ACG/lofi 这类稀疏编制由最后输出层补整体响度。 */
+export const setPlaybackMasterStyle = (style: string | undefined): void => {
+    const key = (style ?? '').toLowerCase();
+    _playbackMasterLift = PLAYBACK_STYLE_MASTER_LIFT[key] ?? 1.0;
+    applyPlaybackMasterLift();
+};
 
 /** 软饱和曲线(tanh,归一化到 ±1)—— 当场磨圆过冲,零 lookahead。 */
 const softClipCurve = (): Float32Array => {
@@ -152,7 +175,7 @@ const connectMasterBuses = (ctx: AudioContext, synth: WorkletSynthesizer): void 
     //       → makeup(补回响度)→ brickwall limiter(-1.5dB 接住爆顶,绝不削波)。
     //   参考制作人 master-bus:contained-then-loud(峰值在总线收住,再统一响度)。
     const headroom = ctx.createGain();
-    headroom.gain.value = 0.6; // 全局留余量,给母带链工作空间(不碰各轨相对平衡)
+    headroom.gain.value = COMP_HEADROOM_GAIN * _playbackMasterLift; // 全局留余量,给母带链工作空间(不碰各轨相对平衡)
     const glue = ctx.createDynamicsCompressor();
     glue.threshold.value = -16; glue.knee.value = 12; glue.ratio.value = 2.5; glue.attack.value = 0.012; glue.release.value = 0.25;
     const makeup = ctx.createGain();
@@ -167,7 +190,7 @@ const connectMasterBuses = (ctx: AudioContext, synth: WorkletSynthesizer): void 
     // ★ 平行【零延迟软削波母带】(Q+R 试听用):入口 gain → WaveShaper(oversample none = 零 lookahead)
     //   → makeup → destination。不含压缩器 → 省 ~12ms。成品播放仍走上面的压缩母带。
     const scIn = ctx.createGain();
-    scIn.gain.value = 0.85;
+    scIn.gain.value = SOFTCLIP_INPUT_GAIN * _playbackMasterLift;
     const shaper = ctx.createWaveShaper();
     shaper.curve = softClipCurve();
     shaper.oversample = 'none'; // ★ 零延迟(2x/4x 会引入重采样延迟)

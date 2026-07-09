@@ -96,10 +96,12 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(lead.volume).toBeLessThan(90);
     expect(comp.reverb).toBeGreaterThanOrEqual(54);
     expect(lead.reverb).toBeGreaterThanOrEqual(56);
-    expect(comp.chorus).toBeGreaterThanOrEqual(86);
-    expect(lead.chorus).toBeGreaterThanOrEqual(84);
-    expect(comp.delay).toBe(26);
-    expect(lead.delay).toBe(28);
+    expect(comp.chorus).toBeGreaterThanOrEqual(50);
+    expect(comp.chorus).toBeLessThanOrEqual(56);
+    expect(lead.chorus).toBeGreaterThanOrEqual(48);
+    expect(lead.chorus).toBeLessThanOrEqual(54);
+    expect(comp.delay).toBe(12);
+    expect(lead.delay).toBe(16);
   });
 
   it('Jazz/ACG 的 FM EP 不进共享 delay,避免和 club/cinematic 空间叠糊', () => {
@@ -225,8 +227,9 @@ describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lea
     expect(mAcg('comp', 0).volume).toBeGreaterThan(mAcg('lead', 0).volume);
   });
 
-  it('★ ACG bass 略抬(LH 托底,> 非 ACG bass)', () => {
-    expect(mAcg('bass', 32).volume, 'ACG bass > POP bass').toBeGreaterThan(mPop('bass', 32).volume);
+  it('★ ACG bass 不再用 CC7 硬抬(当前 SF2 低频样本已足)', () => {
+    expect(mAcg('bass', 32).volume, 'ACG bass <= POP bass').toBeLessThanOrEqual(mPop('bass', 32).volume);
+    expect(mAcg('bass', 32).volume, 'ACG bass 仍保托底').toBeGreaterThanOrEqual(52);
   });
 
   it('★ 非 ACG 不受影响(POP lead 仍走 melody-forward,≥ 92)', () => {

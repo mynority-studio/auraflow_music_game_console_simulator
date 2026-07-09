@@ -6,15 +6,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Cable, Play, Power, RefreshCw, Square, X, Zap } from 'lucide-react';
+import { Cable, Power, RefreshCw, X, Zap } from 'lucide-react';
 import { useDevPanelChannel } from '../../../../components/devPanels';
 import { globalMidiScheduler, type MidiEvent } from '../../../audio/MidiScheduler';
 import {
   DEFAULT_CHANNELS,
   MIDI_OUT_TRACKS,
-  buildSandboxStep,
   midiEventToRoutedMessage,
   requestMidiOutputAccess,
+  resolveOutputChannel,
   sendMidiMessage,
   sendNotes,
   sendPanic,
@@ -49,7 +49,7 @@ function defaultRouteMap(outputs: MidiOutDeviceInfo[]): RoleMap<string | null> {
       const name = `${d.name} ${d.manufacturer}`.toLowerCase();
       return name.includes(roleName) || name.includes(label);
     });
-    acc[track.role] = matched?.id ?? outputs[0]?.id ?? null;
+    acc[track.role] = matched?.id ?? null;
     return acc;
   }, {} as RoleMap<string | null>);
 }
@@ -62,7 +62,7 @@ export const MidiOutSandboxPanel: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<MidiStatus>('idle');
   const [outputs, setOutputs] = useState<MidiOutDeviceInfo[]>([]);
-  const [mode, setMode] = useState<MidiOutputMode>('single-port');
+  const [mode, setMode] = useState<MidiOutputMode>('five-port');
   const [singleOutputId, setSingleOutputId] = useState<string | null>(null);
   const [roleOutputs, setRoleOutputs] = useState<RoleMap<string | null>>(() => emptyRoleMap<string | null>(null));
   const [channels, setChannels] = useState<RoleMap<number>>(DEFAULT_CHANNELS);
@@ -229,10 +229,13 @@ export const MidiOutSandboxPanel: React.FC = () => {
   }, [canArm, enableMidi, mode, status]);
 
   const routeSchedulerEvent = useCallback((event: MidiEvent) => {
-    const routed = midiEventToRoutedMessage(event, channelsRef.current);
+    const routed = midiEventToRoutedMessage(event, channelsRef.current, modeRef.current);
     if (!routed) return;
     const output = handleRef.current?.getOutput(routeOutputId(routed.role) ?? null) ?? null;
-    if (!output) return;
+    if (!output) {
+      setLastEvent(`${routed.role} missing route`);
+      return;
+    }
 
     try {
       sendMidiMessage(output, routed.message);
@@ -267,7 +270,7 @@ export const MidiOutSandboxPanel: React.FC = () => {
     const id = routeOutputId(role);
     const output = handle?.getOutput(id ?? null) ?? null;
     if (!output) return false;
-    const channel = channelsRef.current[role];
+    const channel = resolveOutputChannel(role, modeRef.current, channelsRef.current);
     try {
       sendNotes(output, channel, pitches, eventVelocity, durationMs);
       flashRole(role);
@@ -306,7 +309,7 @@ export const MidiOutSandboxPanel: React.FC = () => {
         </span>
         <button type="button" onClick={() => setMode((m) => m === 'single-port' ? 'five-port' : 'single-port')}
           className={`ml-2 rounded px-2 py-0.5 text-[10px] border ${mode === 'single-port' ? 'border-sky-500/50 bg-sky-500/15 text-sky-200' : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-200'}`}>
-          {mode === 'single-port' ? '1 port / 5 ch' : '5 ports'}
+          {mode === 'single-port' ? '1 port / 5 ch' : '5 ports / ch1'}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="ml-auto text-zinc-500 hover:text-zinc-200">
           <X size={15} />
@@ -343,6 +346,12 @@ export const MidiOutSandboxPanel: React.FC = () => {
           </div>
         )}
 
+        {mode === 'five-port' && status === 'ready' && (
+          <div className="mt-2 text-[11px] text-zinc-500">
+            5 ports 模式下每个端口都只发 Ch 1；Cubase 按端口分 5 轨即可。
+          </div>
+        )}
+
         {status === 'ready' && outputs.length === 0 && (
           <div className="mt-2 text-[11px] text-amber-300">
             先在系统里创建 IAC / loopMIDI 虚拟端口，Cubase 和浏览器才会同时看到它。
@@ -376,15 +385,19 @@ export const MidiOutSandboxPanel: React.FC = () => {
                     </select>
                   )
                   : <span className="truncate text-[11px] text-zinc-500">{selectedOutputName(singleOutputId)}</span>}
-                <input
-                  aria-label={`${track.label} MIDI channel`}
-                  type="number"
-                  min={1}
-                  max={16}
-                  className={numberClass}
-                  value={channels[track.role]}
-                  onChange={(e) => setChannels((prev) => ({ ...prev, [track.role]: Math.max(1, Math.min(16, Number(e.target.value) || track.defaultChannel)) }))}
-                />
+                {mode === 'five-port'
+                  ? <span className="text-[11px] text-zinc-500">1</span>
+                  : (
+                    <input
+                      aria-label={`${track.label} MIDI channel`}
+                      type="number"
+                      min={1}
+                      max={16}
+                      className={numberClass}
+                      value={channels[track.role]}
+                      onChange={(e) => setChannels((prev) => ({ ...prev, [track.role]: Math.max(1, Math.min(16, Number(e.target.value) || track.defaultChannel)) }))}
+                    />
+                  )}
                 <button type="button" onClick={() => pingTrack(track.role)} className="rounded-md bg-zinc-800 px-2 py-1 text-[11px] text-zinc-200 hover:bg-zinc-700">
                   {track.shortLabel}
                 </button>

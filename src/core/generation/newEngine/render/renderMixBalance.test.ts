@@ -55,7 +55,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
       { style: 'jazz', seed: 8, lo: 0.95, hi: 1.65 },
       { style: 'lofi', seed: 7, lo: 0.75, hi: 1.45 },
       { style: 'rnb', seed: 7, lo: 0.75, hi: 1.35 },
-      { style: 'acg', seed: 7, lo: 1.20, hi: 6.50 }, // ★ P2:ACG = melody-first(MG pp-comp vel~29,comp CC7 高保可闻)→ lead 明显前置(比率天然高),只保 lead≥comp,不再 balance
+      { style: 'acg', seed: 7, lo: 1.05, hi: 6.50 }, // ★ P2:ACG = melody-first;SF2-aware 后低频压住,lead/comp 留足预览响度。
     ];
 
     for (const c of cases) {
@@ -93,7 +93,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     expect(lead.mix!.volume).toBeGreaterThan(comp.mix!.volume);
   });
 
-  it('JAZZ sax lead 保持前景,不被钢琴/电钢 comp 淹没', () => {
+  it('JAZZ sax lead 增加约 40% 回到前景,但仍卡在安全上限', () => {
     const r = generateSong({ seed: 7, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
     const ratio = leadCompWetEnergyRatio(r.ir!.tracks as TrackIR[], ctx('jazz', r.ir!.durationTicks as number));
     const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
@@ -102,9 +102,10 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     const avgExpression = expressionValues.reduce((sum, value) => sum + value, 0) / Math.max(1, expressionValues.length);
 
     expect(lead.program).toBe(67);
-    expect(lead.mix!.volume).toBeGreaterThanOrEqual(94);
-    expect(comp.mix!.volume).toBeLessThanOrEqual(84);
-    expect(ratio).toBeGreaterThanOrEqual(1.75);
+    expect(lead.mix!.volume).toBe(100);
+    expect(comp.mix!.volume).toBeGreaterThanOrEqual(84);
+    expect(ratio).toBeGreaterThanOrEqual(1.20);
+    expect(ratio).toBeLessThanOrEqual(4.80);
     expect(avgExpression).toBeGreaterThanOrEqual(90);
   });
 

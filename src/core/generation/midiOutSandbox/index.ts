@@ -2,9 +2,9 @@ export { MidiOutSandboxPanel } from './ui/MidiOutSandboxPanel';
 export {
   MIDI_OUT_TRACKS,
   DEFAULT_CHANNELS,
-  buildSandboxStep,
   midiMessageToBytes,
   midiEventToRoutedMessage,
+  resolveOutputChannel,
   requestMidiOutputAccess,
 } from './midiOut';
 export type {

@@ -63,13 +63,6 @@ export interface RoutedMidiOutMessage {
   message: MidiOutMessage;
 }
 
-export interface SandboxNoteEvent {
-  role: MidiOutRole;
-  pitches: readonly number[];
-  velocity: number;
-  durationMs: number;
-}
-
 export interface MidiOutputAccessHandle {
   listOutputs(): MidiOutDeviceInfo[];
   getOutput(id: string | null): MIDIOutput | null;
@@ -99,45 +92,37 @@ export function schedulerChannelToRole(channel: number): MidiOutRole | null {
   return SCHEDULER_CHANNEL_TO_ROLE[Math.round(channel)] ?? null;
 }
 
+export function resolveOutputChannel(
+  role: MidiOutRole,
+  mode: MidiOutputMode,
+  channels: Record<MidiOutRole, number> = DEFAULT_CHANNELS,
+): number {
+  return mode === 'five-port' ? 1 : channels[role];
+}
+
 export function midiEventToRoutedMessage(
   event: MidiEvent,
   channels: Record<MidiOutRole, number> = DEFAULT_CHANNELS,
+  mode: MidiOutputMode = 'single-port',
 ): RoutedMidiOutMessage | null {
   if (event.type === 'visual') return null;
   const role = schedulerChannelToRole(event.channel);
   if (!role) return null;
+  const channel = resolveOutputChannel(role, mode, channels);
 
   if (event.type === 'noteOn') {
-    return { role, message: { type: 'noteOn', channel: channels[role], data1: event.data1, data2: event.data2 } };
+    return { role, message: { type: 'noteOn', channel, data1: event.data1, data2: event.data2 } };
   }
   if (event.type === 'noteOff') {
-    return { role, message: { type: 'noteOff', channel: channels[role], data1: event.data1, data2: event.data2 } };
+    return { role, message: { type: 'noteOff', channel, data1: event.data1, data2: event.data2 } };
   }
   if (event.type === 'cc') {
-    return { role, message: { type: 'cc', channel: channels[role], data1: event.data1, data2: event.data2 } };
+    return { role, message: { type: 'cc', channel, data1: event.data1, data2: event.data2 } };
   }
   if (event.type === 'programChange') {
-    return { role, message: { type: 'programChange', channel: channels[role], data1: event.data1 } };
+    return { role, message: { type: 'programChange', channel, data1: event.data1 } };
   }
-  return { role, message: { type: 'pitchBend', channel: channels[role], data1: event.data1, data2: event.data2 } };
-}
-
-export function buildSandboxStep(step: number, stepMs: number): SandboxNoteEvent[] {
-  const s = Math.max(0, Math.floor(step));
-  const phase = s % 16;
-  const dur = Math.max(35, stepMs * 0.86);
-  const out: SandboxNoteEvent[] = [];
-
-  if (phase === 0) out.push({ role: 'pad', pitches: [48, 55, 60, 64], velocity: 54, durationMs: stepMs * 16 });
-  if (phase % 4 === 0) out.push({ role: 'comp', pitches: phase < 8 ? [60, 64, 67] : [57, 60, 65], velocity: 74, durationMs: dur * 2.2 });
-  if (phase === 0 || phase === 8) out.push({ role: 'bass', pitches: [phase === 0 ? 36 : 33], velocity: 86, durationMs: dur * 1.4 });
-  if (phase % 2 === 0) out.push({ role: 'drum', pitches: [phase === 4 || phase === 12 ? 38 : 42], velocity: phase % 4 === 0 ? 92 : 62, durationMs: dur });
-  if (phase === 0 || phase === 3 || phase === 7 || phase === 10 || phase === 14) {
-    const melody = [72, 76, 79, 81, 76];
-    out.push({ role: 'lead', pitches: [melody[[0, 3, 7, 10, 14].indexOf(phase)]], velocity: 88, durationMs: dur * 1.5 });
-  }
-
-  return out;
+  return { role, message: { type: 'pitchBend', channel, data1: event.data1, data2: event.data2 } };
 }
 
 export function isWebMidiOutputSupported(): boolean {

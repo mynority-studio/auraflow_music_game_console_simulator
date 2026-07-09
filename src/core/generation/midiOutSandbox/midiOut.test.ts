@@ -4,6 +4,7 @@ import {
   midiEventToRoutedMessage,
   midiMessageToBytes,
   MIDI_OUT_TRACKS,
+  resolveOutputChannel,
   schedulerChannelToRole,
 } from './midiOut';
 
@@ -39,5 +40,17 @@ describe('midiOutSandbox/midiOut', () => {
       message: { type: 'noteOff', channel: 10, data1: 36, data2: 0 },
     });
     expect(midiEventToRoutedMessage({ ticks: 0, type: 'visual', channel: 1, data1: 0, data2: 0 })).toBeNull();
+  });
+
+  it('uses channel 1 for every role in five-port mode', () => {
+    expect(MIDI_OUT_TRACKS.map((track) => resolveOutputChannel(track.role, 'five-port'))).toEqual([1, 1, 1, 1, 1]);
+    expect(midiEventToRoutedMessage(
+      { ticks: 0, type: 'noteOn', channel: 9, data1: 36, data2: 100 },
+      DEFAULT_CHANNELS,
+      'five-port',
+    )).toEqual({
+      role: 'drum',
+      message: { type: 'noteOn', channel: 1, data1: 36, data2: 100 },
+    });
   });
 });

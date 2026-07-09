@@ -26,6 +26,7 @@ import {
     getSelectedSoundFontBank,
     getLoadedSoundFontBank,
     setSelectedSoundFontBank,
+    setPlaybackMasterStyle,
     subscribeSoundFontBank,
     type SoundFontBank,
     type SoundFontBankId,
@@ -40,6 +41,7 @@ export {
     getSelectedSoundFontBank,
     getLoadedSoundFontBank,
     subscribeSoundFontBank,
+    setPlaybackMasterStyle,
 };
 export type { SoundFontBank, SoundFontBankId };
 
@@ -85,6 +87,7 @@ class AudioEngineSystem {
         const currentSession = ++this.playSessionId;
         await startAudioContext();
         if (currentSession !== this.playSessionId) return;
+        setPlaybackMasterStyle(result.styleHint);
 
         const events = musicalIRToMidiEvents(result.ir, roomWetFor(result.styleHint));
         const visuals = this.buildVisualEvents(result.ir);
@@ -112,6 +115,7 @@ class AudioEngineSystem {
 
     public stop(): void {
         globalMidiScheduler.stop();
+        setPlaybackMasterStyle(undefined);
         this.currentMusicGeneration = null;
     }
 

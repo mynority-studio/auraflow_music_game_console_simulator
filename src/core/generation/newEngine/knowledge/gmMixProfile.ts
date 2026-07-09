@@ -59,7 +59,7 @@ export function delaySendForRole(style: string, role: InstrumentRoleName, progra
   const isEP = program === 4 || isCityPopFmEp; // GM4 Rhodes EP1 · GM5 DX7/FM EP2
   const isGuitar = program >= 24 && program <= 31;
   if (role === 'comp' && isGuitar) return 0; // 吉他扫拨自身 already busy:不再进共享 delay,避免浏览器 echo + reverb 多重叠加。
-  if (isCityPopFmEp) return role === 'lead' ? 28 : 26; // 80s rack delay:柔和可闻,不过分顶出
+  if (isCityPopFmEp) return role === 'lead' ? 16 : 12; // SF2 已有内部宽化;外部 echo 只留空气,避免浏览器/ESP32 颗粒重复。
   if (role === 'lead') {
     if (s === 'rnb' || isEP) return 26;  // rnb / 非 GM5 EP lead:dotted-eighth/eighth,very low
     if (s === 'lofi') return 22;         // lofi lead:dusty,very low
@@ -105,11 +105,12 @@ const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
 //   作用于所有 Q+N 歌(非仅走 A);确定性,clampCC 兜 127 不溢出。
 const LEAD_PRESENCE_BOOST = 14;
 // ★ ACG 平衡(2026-06-28 用户:ACG lead eff≈9500 碾全队 eff≈3700 → 一轨很小声)。ACG=solo piano,
-//   RH 旋律不该碾 LH 伴奏。lead 减压(present 但不碾)+ comp 抬(高空气 comp 可听)+ bass 略抬(LH 托底)。
-//   按有效响度 CC7×velocity 设:lead vel 高(~98)→ CC7 拉低;comp/bass vel 低 → CC7 拉高。
+//   RH 旋律不该碾 LH 伴奏。lead 减压(present 但不碾)+ comp 抬(高空气 comp 可听)。
+//   2026-07-09 SF2-aware 审计:当前 GM32 低频样本本身偏响,旧 bass +8 会让 ACG bass 占 54-63%。
+//   所以 LH 托底靠音区/velocity,CC7 反而轻压,避免播放时低频把整首吃掉。
 const ACG_LEAD_BOOST = -6;   // 83−6=77 · lead eff≈77×98=7546(仍最响=旋律在上,但不再 3×)
 const ACG_COMP_LIFT = 13;    // 85+13=98 · comp 高空气抬可听
-const ACG_BASS_LIFT = 8;     // 66+8=74 · LH bass 托底
+const ACG_BASS_LIFT = -12;   // 66−12=54 · 当前 SF2 低频样本已足,压住低频占比
 
 // 程序专属覆盖(directive 各 GM 族代表值;只填该 program 在该 role 的 reverb/chorus/volume,pan 走规则)。
 //   key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
@@ -117,8 +118,8 @@ type ProgOverride = Partial<Record<InstrumentRoleName, Partial<RoleMix>>>;
 const PROGRAM_MIX: Record<number, ProgOverride> = {
   // Piano 0
   0: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
-  // 电钢 5(POP/LOFI/RNB 最重要;CityPop/DX7 电钢,柔触键 + 慢 chorus + 数字混响 + 轻量 delay 托出 80s/vaporwave 空间)
-  5: { comp: { volume: 78, reverb: 62, chorus: 86 }, lead: { volume: 70, reverb: 65, chorus: 84 } },
+  // 电钢 5(POP/LOFI/RNB 最重要;CityPop/DX7 电钢):SF2 只保干净 24k HL4 FM EP 样本;空间/宽度交给共享 FX。
+  5: { comp: { volume: 78, reverb: 56, chorus: 52 }, lead: { volume: 70, reverb: 58, chorus: 50 } },
   6: { comp: { volume: 80, reverb: 29, chorus: 4 }, lead: { volume: 80, reverb: 29, chorus: 4 } }, // 羽管键琴:干、保 attack
   8: { comp: { volume: 80, reverb: 40, chorus: 6 }, lead: { volume: 80, reverb: 45, chorus: 5 } }, // Celesta(归键盘,按钢琴系)
   11: { lead: { volume: 79, reverb: 58, chorus: 32 } }, // 颤音琴:金属延音吃空间
@@ -185,7 +186,7 @@ export function mixForProgram(args: {
     if (isElectricPiano(program)) base.chorus = Math.max(base.chorus, 38); // 电钢必有 chorus
     if (program === 5) {
       base.reverb = Math.max(base.reverb, role === 'lead' ? 56 : 54);
-      base.chorus = Math.max(base.chorus, role === 'lead' ? 84 : 86);
+      base.chorus = role === 'lead' ? 50 : 52;
     }
   }
   if (isMalletProgram(program)) base.chorus = 0; // mallet 音准优先:不加 chorus 调制,避免听成微跑音。

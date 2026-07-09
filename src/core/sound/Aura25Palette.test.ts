@@ -15,6 +15,10 @@ import {
 
 interface Sf2SampleHeader {
   name: string;
+  start: number;
+  end: number;
+  startLoop: number;
+  endLoop: number;
   originalPitch: number;
   pitchCorrection: number;
   sampleRate: number;
@@ -42,6 +46,13 @@ interface Sf2Instrument {
 }
 
 function sf2PdtaRecords<T>(path: string, chunkName: string, readRecord: (data: Buffer, offset: number) => T, recordSize: number): T[] {
+  const chunk = sf2ListChildChunk(path, 'pdta', chunkName);
+  const out: T[] = [];
+  for (let p = 0; p + recordSize <= chunk.length; p += recordSize) out.push(readRecord(chunk, p));
+  return out;
+}
+
+function sf2ListChildChunk(path: string, listKind: 'pdta' | 'sdta', chunkName: string): Buffer {
   const data = readFileSync(path);
   let pos = 12;
   while (pos + 8 <= data.length) {
@@ -49,28 +60,30 @@ function sf2PdtaRecords<T>(path: string, chunkName: string, readRecord: (data: B
     const size = data.readUInt32LE(pos + 4);
     const payloadStart = pos + 8;
     const payloadEnd = payloadStart + size;
-    if (tag === 'LIST' && data.subarray(payloadStart, payloadStart + 4).toString('latin1') === 'pdta') {
+    if (tag === 'LIST' && data.subarray(payloadStart, payloadStart + 4).toString('latin1') === listKind) {
       let child = payloadStart + 4;
       while (child + 8 <= payloadEnd) {
         const childTag = data.subarray(child, child + 4).toString('latin1');
         const childSize = data.readUInt32LE(child + 4);
         const childStart = child + 8;
         if (childTag === chunkName) {
-          const out: T[] = [];
-          for (let p = childStart; p + recordSize <= childStart + childSize; p += recordSize) out.push(readRecord(data, p));
-          return out;
+          return data.subarray(childStart, childStart + childSize);
         }
         child += 8 + childSize + (childSize & 1);
       }
     }
     pos = payloadEnd + (size & 1);
   }
-  throw new Error(`missing pdta/${chunkName} chunk`);
+  throw new Error(`missing ${listKind}/${chunkName} chunk`);
 }
 
 function sf2SampleHeaders(path: string): Sf2SampleHeader[] {
   return sf2PdtaRecords(path, 'shdr', (data, p) => ({
     name: data.subarray(p, p + 20).toString('latin1').replace(/\0.*$/, ''),
+    start: data.readUInt32LE(p + 20),
+    end: data.readUInt32LE(p + 24),
+    startLoop: data.readUInt32LE(p + 28),
+    endLoop: data.readUInt32LE(p + 32),
     originalPitch: data.readUInt8(p + 40),
     pitchCorrection: data.readInt8(p + 41),
     sampleRate: data.readUInt32LE(p + 36),
@@ -106,7 +119,7 @@ function sf2Instruments(path: string): Sf2Instrument[] {
   }), 22);
 }
 
-function sf2PresetSendAmounts(path: string, program: number): { reverb: number[]; chorus: number[] } {
+function sf2PresetSendAmounts(path: string, program: number, bank = 0): { reverb: number[]; chorus: number[] } {
   const GEN_CHORUS_SEND = 15;
   const GEN_REVERB_SEND = 16;
   const GEN_INSTRUMENT = 41;
@@ -119,7 +132,7 @@ function sf2PresetSendAmounts(path: string, program: number): { reverb: number[]
   const reverb: number[] = [];
   const chorus: number[] = [];
   const instruments = new Set<number>();
-  const presetIndex = phdrs.findIndex((preset) => preset.bank === 0 && preset.program === program);
+  const presetIndex = phdrs.findIndex((preset) => preset.bank === bank && preset.program === program);
   expect(presetIndex, `GM${program} preset`).toBeGreaterThanOrEqual(0);
   const nextBag = presetIndex + 1 < phdrs.length ? phdrs[presetIndex + 1].bagIndex : pbags.length - 1;
   for (let bag = phdrs[presetIndex].bagIndex; bag < nextBag; bag++) {
@@ -176,6 +189,129 @@ function sf2PresetSampleKeyRanges(path: string, program: number): [number, numbe
     }
   }
   return ranges;
+}
+
+interface Sf2EffectiveZone {
+  sampleId: number;
+  keyRange: [number, number];
+  velRange: [number, number];
+  attenuationCb: number;
+  releaseTc: number;
+}
+
+const GEN_RELEASE_VOL_ENV = 38;
+const GEN_INITIAL_ATTENUATION = 48;
+
+function signed16(v: number): number {
+  return v >= 32768 ? v - 65536 : v;
+}
+
+function rangeFromGenerator(gens: Sf2Generator[], oper: number): [number, number] {
+  const gen = gens.find((g) => g.oper === oper);
+  return gen ? [gen.amount & 0xFF, (gen.amount >> 8) & 0xFF] : [0, 127];
+}
+
+function intersectRange(a: [number, number], b: [number, number]): [number, number] | undefined {
+  const lo = Math.max(a[0], b[0]);
+  const hi = Math.min(a[1], b[1]);
+  return lo <= hi ? [lo, hi] : undefined;
+}
+
+function signedGeneratorTotal(oper: number, ...groups: Sf2Generator[][]): number {
+  return groups
+    .flat()
+    .filter((gen) => gen.oper === oper)
+    .reduce((sum, gen) => sum + signed16(gen.amount), 0);
+}
+
+function sf2EffectiveZones(path: string, bank: number, program: number): Sf2EffectiveZone[] {
+  const GEN_KEY_RANGE = 43;
+  const GEN_VEL_RANGE = 44;
+  const GEN_INSTRUMENT = 41;
+  const GEN_SAMPLE_ID = 53;
+  const phdrs = sf2PresetHeaders(path);
+  const pbags = sf2Bags(path, 'pbag');
+  const pgens = sf2Generators(path, 'pgen');
+  const insts = sf2Instruments(path);
+  const ibags = sf2Bags(path, 'ibag');
+  const igens = sf2Generators(path, 'igen');
+  const presetIndex = phdrs.findIndex((preset) => preset.bank === bank && preset.program === program);
+  expect(presetIndex, `bank${bank} GM${program} preset`).toBeGreaterThanOrEqual(0);
+
+  const zones: Sf2EffectiveZone[] = [];
+  let pglobal: Sf2Generator[] = [];
+  const nextBag = presetIndex + 1 < phdrs.length ? phdrs[presetIndex + 1].bagIndex : pbags.length - 1;
+  for (let bag = phdrs[presetIndex].bagIndex; bag < nextBag; bag++) {
+    const pzone = pgens.slice(pbags[bag].genIndex, pbags[bag + 1].genIndex);
+    const instGen = pzone.find((gen) => gen.oper === GEN_INSTRUMENT);
+    if (!instGen) {
+      pglobal = pzone;
+      continue;
+    }
+    const pKey = intersectRange(rangeFromGenerator(pglobal, GEN_KEY_RANGE), rangeFromGenerator(pzone, GEN_KEY_RANGE));
+    const pVel = intersectRange(rangeFromGenerator(pglobal, GEN_VEL_RANGE), rangeFromGenerator(pzone, GEN_VEL_RANGE));
+    if (!pKey || !pVel) continue;
+
+    let iglobal: Sf2Generator[] = [];
+    for (let ibag = insts[instGen.amount].bagIndex; ibag < insts[instGen.amount + 1].bagIndex; ibag++) {
+      const izone = igens.slice(ibags[ibag].genIndex, ibags[ibag + 1].genIndex);
+      const sampleGen = izone.find((gen) => gen.oper === GEN_SAMPLE_ID);
+      if (!sampleGen) {
+        iglobal = izone;
+        continue;
+      }
+      const iKey = intersectRange(rangeFromGenerator(iglobal, GEN_KEY_RANGE), rangeFromGenerator(izone, GEN_KEY_RANGE));
+      const iVel = intersectRange(rangeFromGenerator(iglobal, GEN_VEL_RANGE), rangeFromGenerator(izone, GEN_VEL_RANGE));
+      if (!iKey || !iVel) continue;
+      const keyRange = intersectRange(pKey, iKey);
+      const velRange = intersectRange(pVel, iVel);
+      if (!keyRange || !velRange) continue;
+      zones.push({
+        sampleId: sampleGen.amount,
+        keyRange,
+        velRange,
+        attenuationCb: signedGeneratorTotal(GEN_INITIAL_ATTENUATION, pglobal, pzone, iglobal, izone),
+        releaseTc: signedGeneratorTotal(GEN_RELEASE_VOL_ENV, pglobal, pzone, iglobal, izone),
+      });
+    }
+  }
+  return zones;
+}
+
+function sf2SampleRms(path: string, sample: Sf2SampleHeader): number {
+  const smpl = sf2ListChildChunk(path, 'sdta', 'smpl');
+  let sumSq = 0;
+  const frames = Math.max(0, sample.end - sample.start);
+  for (let i = sample.start; i < sample.end; i++) {
+    const value = smpl.readInt16LE(i * 2) / 32768;
+    sumSq += value * value;
+  }
+  return frames > 0 ? Math.sqrt(sumSq / frames) : 0;
+}
+
+function sf2LoopScore(path: string, sampleName: string): number {
+  const sample = sf2SampleHeaders(path).find((s) => s.name === sampleName);
+  expect(sample, `${sampleName} sample`).toBeTruthy();
+  const smpl = sf2ListChildChunk(path, 'sdta', 'smpl');
+  const at = (frame: number): number => smpl.readInt16LE(frame * 2) / 32768;
+  const jump = Math.abs(at(sample!.startLoop) - at(sample!.endLoop - 1));
+  const slope = Math.abs((at(sample!.startLoop + 1) - at(sample!.startLoop)) - (at(sample!.endLoop - 1) - at(sample!.endLoop - 2)));
+  return jump * 4 + slope;
+}
+
+function sf2AuditionEstimatedDb(path: string, bank: number, program: number, note: number, velocity = 96): number {
+  const samples = sf2SampleHeaders(path);
+  const rms = new Map<number, number>();
+  const zones = sf2EffectiveZones(path, bank, program)
+    .filter((zone) => zone.keyRange[0] <= note && note <= zone.keyRange[1] && zone.velRange[0] <= velocity && velocity <= zone.velRange[1]);
+  expect(zones.length, `bank${bank} GM${program} active zones`).toBeGreaterThan(0);
+  let energy = 0;
+  for (const zone of zones) {
+    if (!rms.has(zone.sampleId)) rms.set(zone.sampleId, sf2SampleRms(path, samples[zone.sampleId]));
+    const gain = Math.pow(10, -zone.attenuationCb / 200);
+    energy += Math.pow(rms.get(zone.sampleId)! * gain, 2);
+  }
+  return 20 * Math.log10(Math.sqrt(energy) + 1e-9);
 }
 
 const AURA25_PITCH_AUDIT_CASES = [
@@ -296,10 +432,11 @@ describe('Aura25Palette', () => {
 
   it('labels audition presets with their referenced sample footprint', () => {
     const byPreset = new Map(AURA25_AUDITION_INSTRUMENTS.map((inst) => [`${inst.bank}:${inst.program}`, inst]));
-    expect(statSync('public/Aura25_GM128.sf2').size).toBeLessThanOrEqual(1.3 * 1024 * 1024);
+    expect(statSync('public/Aura25_GM128.sf2').size).toBeLessThanOrEqual(1.1 * 1024 * 1024);
     expect(byPreset.get('0:25')).toMatchObject({ name: '民谣木吉他', sampleSizeBytes: 341680, sampleSizeLabel: '0.326MB' });
     expect(byPreset.get('128:0')).toMatchObject({ name: '标准鼓组', sampleSizeBytes: 276608, sampleSizeLabel: '0.264MB' });
-    expect(byPreset.get('0:5')).toMatchObject({ name: 'CityPop FM 电钢', sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' });
+    expect(byPreset.get('0:5')).toMatchObject({ name: 'CityPop FM 电钢', sampleSizeBytes: 4550, sampleSizeLabel: '0.004MB' });
+    expect(byPreset.get('0:11')).toMatchObject({ name: '颤音琴', sampleSizeBytes: 45558, sampleSizeLabel: '0.043MB' });
     expect(byPreset.get('0:0')).toMatchObject({ name: '大钢琴', sampleSizeBytes: 197928, sampleSizeLabel: '0.189MB' });
   });
 
@@ -343,9 +480,11 @@ describe('Aura25Palette', () => {
     const samples = sf2SampleHeaders('public/Aura25_GM128.sf2');
     for (const sample of samples.filter((s) => s.name !== 'EOS')) expect(sample.sampleRate, `${sample.name} sample rate`).toBe(24000);
     const byName = new Map(samples.map((sample) => [sample.name, sample]));
-    expect(byName.get('Vibes E3')).toMatchObject({ originalPitch: 75, pitchCorrection: -43 });
-    expect(byName.get('Vibes D4')).toMatchObject({ originalPitch: 85, pitchCorrection: 13 });
-    expect(byName.get('Vibes D6')).toMatchObject({ originalPitch: 109, pitchCorrection: 13 });
+    expect(byName.get('VIBE_52A')).toMatchObject({ originalPitch: 52, pitchCorrection: 0, sampleRate: 24000 });
+    expect(byName.get('VIBE_64A')).toMatchObject({ originalPitch: 64, pitchCorrection: 3, sampleRate: 24000 });
+    expect(byName.get('VIBE_76A')).toMatchObject({ originalPitch: 76, pitchCorrection: 6, sampleRate: 24000 });
+    expect(byName.get('VIBE_88A')).toMatchObject({ originalPitch: 88, pitchCorrection: 14, sampleRate: 24000 });
+    expect(byName.get('VIBE_A0A')).toMatchObject({ originalPitch: 100, pitchCorrection: 14, sampleRate: 24000 });
     expect(byName.get('Steel Guitar-E3')).toMatchObject({ originalPitch: 40, pitchCorrection: -5, sampleRate: 24000 });
     expect(byName.get('Steel Guitar-A3')).toMatchObject({ originalPitch: 45, pitchCorrection: 1, sampleRate: 24000 });
     expect(byName.get('Steel Guitar-D4')).toMatchObject({ originalPitch: 50, pitchCorrection: 0, sampleRate: 24000 });
@@ -356,6 +495,133 @@ describe('Aura25Palette', () => {
     expect(byName.get('Steel Guitar-A#5')).toMatchObject({ originalPitch: 70, pitchCorrection: 1, sampleRate: 24000 });
     expect(byName.get('Steel Guitar-C#6')).toMatchObject({ originalPitch: 73, pitchCorrection: 7, sampleRate: 24000 });
     expect(byName.get('Steel Guitar-E6')).toMatchObject({ originalPitch: 76, pitchCorrection: 2, sampleRate: 24000 });
+  });
+
+  it('replaces GM5 with a clean 24k HL4 FM electric piano instead of the old noisy DX7 layers', () => {
+    const samples = sf2SampleHeaders('public/Aura25_GM128.sf2');
+    const gm5SampleNames = new Set(sf2EffectiveZones('public/Aura25_GM128.sf2', 0, 5).map((zone) => samples[zone.sampleId].name));
+    expect(gm5SampleNames).toEqual(new Set(['EPiano2 C6', 'EPiano2 D7']));
+    expect(samples.find((sample) => sample.name === 'EPiano2 C6')).toMatchObject({ sampleRate: 24000, originalPitch: 84, pitchCorrection: 0 });
+    expect(samples.find((sample) => sample.name === 'EPiano2 D7')).toMatchObject({ sampleRate: 24000, originalPitch: 98, pitchCorrection: 0 });
+    expect([...gm5SampleNames].some((name) => name.includes('DX7 Strike') || name === 'DX7 Wave')).toBe(false);
+    expect(sf2LoopScore('public/Aura25_GM128.sf2', 'EPiano2 C6')).toBeLessThanOrEqual(0.01);
+    expect(sf2LoopScore('public/Aura25_GM128.sf2', 'EPiano2 D7')).toBeLessThanOrEqual(0.01);
+    expect(sf2PresetSendAmounts('public/Aura25_GM128.sf2', 5)).toEqual({ reverb: [], chorus: [] });
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 5, 64)).toBeGreaterThanOrEqual(-30.5);
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 5, 100)).toBeGreaterThanOrEqual(-32.5);
+  });
+
+  it('replaces GM11 with a clean 24k Roland vibraphone instead of the old short-loop Vibes layer', () => {
+    const samples = sf2SampleHeaders('public/Aura25_GM128.sf2');
+    const gm11Zones = sf2EffectiveZones('public/Aura25_GM128.sf2', 0, 11);
+    const gm11SampleNames = new Set(gm11Zones.map((zone) => samples[zone.sampleId].name));
+    expect(gm11SampleNames).toEqual(new Set(['VIBE_52A', 'VIBE_64A', 'VIBE_76A', 'VIBE_88A', 'VIBE_A0A']));
+    expect([...gm11SampleNames].some((name) => name === 'Vibes D6' || name === 'Vibes D4' || name === 'Vibes E3')).toBe(false);
+    expect(sf2PresetSendAmounts('public/Aura25_GM128.sf2', 11)).toEqual({ reverb: [], chorus: [] });
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 72)).toBeLessThanOrEqual(-25.5);
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 89)).toBeLessThanOrEqual(-25.5);
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 53)).toBeGreaterThanOrEqual(-31);
+  });
+
+  it('keeps Aura25 SF2 hidden FX sends bounded for ESP32 zone-send multiplication', () => {
+    const limits = [
+      { program: 5, reverb: 0, chorus: 0 },
+      { program: 11, reverb: 0, chorus: 0 },
+      { program: 24, reverb: 16, chorus: 8 },
+      { program: 25, reverb: 16, chorus: 8 },
+      { program: 32, reverb: 24, chorus: 8 },
+      { program: 38, reverb: 24, chorus: 8 },
+      { program: 67, reverb: 70, chorus: 8 },
+      { program: 89, reverb: 70, chorus: 80 },
+    ];
+    for (const limit of limits) {
+      const sends = sf2PresetSendAmounts('public/Aura25_GM128.sf2', limit.program);
+      expect(Math.max(...sends.reverb), `GM${limit.program} reverb send`).toBeLessThanOrEqual(limit.reverb);
+      if (sends.chorus.length) expect(Math.max(...sends.chorus), `GM${limit.program} chorus send`).toBeLessThanOrEqual(limit.chorus);
+    }
+  });
+
+  it('keeps Aura25 melodic audition loudness normalized before ESP32 mixing', () => {
+    const values = AURA25_AUDITION_INSTRUMENTS
+      .filter((inst) => inst.bank === 0)
+      .map((inst) => ({
+        name: inst.name,
+        db: sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', inst.bank, inst.program, inst.note),
+      }));
+    const loudest = Math.max(...values.map((v) => v.db));
+    const quietest = Math.min(...values.map((v) => v.db));
+    expect(loudest, values.map((v) => `${v.name}:${v.db.toFixed(1)}dB`).join(', ')).toBeLessThanOrEqual(-25.5);
+    expect(quietest, values.map((v) => `${v.name}:${v.db.toFixed(1)}dB`).join(', ')).toBeGreaterThanOrEqual(-31);
+    expect(loudest - quietest, values.map((v) => `${v.name}:${v.db.toFixed(1)}dB`).join(', ')).toBeLessThanOrEqual(5.2);
+  });
+
+  it('keeps the Standard drum kit dry, PCM-balanced, and close to the GM128 musical curve', () => {
+    const drumZones = sf2EffectiveZones('public/Aura25_GM128.sf2', 128, 0);
+    expect(drumZones.length, 'bank128 Standard drum zones').toBeGreaterThanOrEqual(47);
+    expect(new Set(drumZones.map((zone) => zone.attenuationCb))).toEqual(new Set([0]));
+
+    const sends = sf2PresetSendAmounts('public/Aura25_GM128.sf2', 0, 128);
+    expect(Math.max(...sends.reverb), 'bank128 Standard reverb send').toBeLessThanOrEqual(1);
+    if (sends.chorus.length) expect(Math.max(...sends.chorus), 'bank128 Standard chorus send').toBeLessThanOrEqual(1);
+
+    const values = Array.from({ length: 47 }, (_, i) => i + 35)
+      .map((key) => ({ key, db: sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 128, 0, key) }));
+    const loudest = Math.max(...values.map((v) => v.db));
+    const quietest = Math.min(...values.map((v) => v.db));
+    expect(loudest - quietest, values.map((v) => `${v.key}:${v.db.toFixed(1)}dB`).join(', ')).toBeLessThanOrEqual(19);
+
+    const byKey = new Map(values.map((v) => [v.key, v.db]));
+    expect(byKey.get(36)!, 'kick').toBeGreaterThanOrEqual(-12);
+    expect(byKey.get(38)!, 'snare').toBeGreaterThanOrEqual(-18);
+    expect(byKey.get(42)!, 'closed hat').toBeGreaterThanOrEqual(-21);
+    expect(byKey.get(46)!, 'open hat').toBeGreaterThanOrEqual(-20);
+    expect(byKey.get(49)!, 'crash').toBeGreaterThanOrEqual(-17);
+    expect(byKey.get(51)!, 'ride').toBeGreaterThanOrEqual(-30);
+    expect(byKey.get(70)!, 'maracas').toBeGreaterThanOrEqual(-24);
+  });
+
+  it('bakes CityPop FM EP release longer than the middle piano tail at the SF2 layer', () => {
+    const activeAt = (program: number, note: number): Sf2EffectiveZone[] => sf2EffectiveZones('public/Aura25_GM128.sf2', 0, program)
+      .filter((zone) => zone.keyRange[0] <= note && note <= zone.keyRange[1] && zone.velRange[0] <= 96 && 96 <= zone.velRange[1]);
+    const pianoRelease = activeAt(0, 60).map((zone) => zone.releaseTc);
+    const dx7Release = activeAt(5, 64).map((zone) => zone.releaseTc);
+    expect(pianoRelease.length, 'GM0 active release zones').toBeGreaterThan(0);
+    expect(dx7Release.length, 'GM5 active release zones').toBeGreaterThan(0);
+    expect(Math.max(...pianoRelease), `piano release ${pianoRelease.join(',')}`).toBeLessThanOrEqual(150);
+    expect(Math.min(...dx7Release), `DX7 release ${dx7Release.join(',')}`).toBeGreaterThanOrEqual(1500);
+  });
+
+  it('keeps high-risk Aura25 loop boundaries smooth enough for ESP32 sustained playback', () => {
+    const limits = [
+      ['Acoustic Bass A31', 0.02],
+      ['BariAb4', 0.02],
+      ['BariC4', 0.01],
+      ['BariE4', 0.01],
+      ['EPiano2 C6', 0.01],
+      ['EPiano2 D7', 0.01],
+      ['Kalimba C3', 0.01],
+      ['Kalimba C5', 0.01],
+      ['N Guitar E3', 0.02],
+      ['N Guitar E4', 0.03],
+      ['SawBassWave C2', 0.01],
+      ['SawBassWave C3', 0.01],
+      ['SawBassWave F5', 0.01],
+      ['Steel Guitar-A#5', 0.01],
+      ['Steel Guitar-C#6', 0.01],
+      ['Steel Guitar-E5', 0.01],
+      ['Steel Guitar-E6', 0.02],
+      ['Steel Guitar-G5', 0.01],
+      ['SynthStrings G2', 0.01],
+      ['SynthStrings D6', 0.08],
+      ['VIBE_52A', 0.01],
+      ['VIBE_64A', 0.01],
+      ['VIBE_76A', 0.01],
+      ['VIBE_88A', 0.01],
+      ['VIBE_A0A', 0.01],
+    ] as const;
+    for (const [sample, limit] of limits) {
+      expect(sf2LoopScore('public/Aura25_GM128.sf2', sample), sample).toBeLessThanOrEqual(limit);
+    }
   });
 
   it('keeps Aura25 guitar preset/zone FX sends dry enough for COMP strums', () => {

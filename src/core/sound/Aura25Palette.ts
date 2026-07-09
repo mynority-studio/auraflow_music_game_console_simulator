@@ -1,8 +1,8 @@
 export type Aura25Role = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
 
-export const AURA25_SF2_URL = '/Aura25_GM128_generaluser_folkguitar_24k_locked.sf2?v=20260707-guitar-comp-dry-rake';
-export const AURA25_SF2_BANK_ID = 'aura25-guitar-comp-dry-rake';
-export const AURA25_SF2_SIZE_LABEL = '1.24MB';
+export const AURA25_SF2_URL = '/Aura25_GM128_generaluser_folkguitar_24k_locked.sf2?v=20260709-hl4-fm-ep-roland-vibes';
+export const AURA25_SF2_BANK_ID = 'aura25-hl4-fm-ep-roland-vibes';
+export const AURA25_SF2_SIZE_LABEL = '1.05MB';
 export const AURA25_DRUM_BANK_MSB = 1;
 export const AURA25_DRUM_BANK_LSB = 0;
 
@@ -24,8 +24,8 @@ export const AURA25_PROGRAMS_BY_ROLE: Record<Aura25Role, readonly number[]> = {
 
 export const AURA25_AUDITION_INSTRUMENTS = [
   { bank: 0, program: 0, role: 'lead', name: '大钢琴', note: 60, sampleSizeBytes: 197928, sampleSizeLabel: '0.189MB' },
-  { bank: 0, program: 5, role: 'comp', name: 'CityPop FM 电钢', note: 64, sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' },
-  { bank: 0, program: 11, role: 'lead', name: '颤音琴', note: 72, sampleSizeBytes: 13470, sampleSizeLabel: '0.013MB' },
+  { bank: 0, program: 5, role: 'comp', name: 'CityPop FM 电钢', note: 64, sampleSizeBytes: 4550, sampleSizeLabel: '0.004MB' },
+  { bank: 0, program: 11, role: 'lead', name: '颤音琴', note: 72, sampleSizeBytes: 45558, sampleSizeLabel: '0.043MB' },
   { bank: 0, program: 24, role: 'comp', name: '尼龙吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
   { bank: 0, program: 25, role: 'comp', name: '民谣木吉他', note: 52, sampleSizeBytes: 341680, sampleSizeLabel: '0.326MB' },
   { bank: 0, program: 32, role: 'bass', name: '原声贝斯', note: 40, sampleSizeBytes: 7106, sampleSizeLabel: '0.007MB' },
