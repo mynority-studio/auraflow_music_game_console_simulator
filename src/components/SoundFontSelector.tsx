@@ -15,6 +15,10 @@ import { AURA25_AUDITION_INSTRUMENTS } from '../core/sound/Aura25Palette';
 
 const AUDITION_CHANNEL = 8;
 const DRUM_CHANNEL = 9;
+/** 主键盘（AuraJam/AuraBar 按键）所在的自由演奏通道——镜像设备 ch0。 */
+const KEYBOARD_CHANNEL = 0;
+/** 主键盘可切乐器（当前 SF2 包内旋律乐器；鼓组走 ch9 不在列）。 */
+const KEYBOARD_INSTRUMENTS = AURA25_AUDITION_INSTRUMENTS.filter(item => item.role !== 'drum');
 const NOTE_OFF_CC = 123;
 const CITYPOP_FM_EP_PROGRAM = 5;
 const FOLK_GUITAR_PROGRAM = 25;
@@ -31,13 +35,35 @@ export const SoundFontSelector: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [auditionOpen, setAuditionOpen] = useState(false);
     const [auditioning, setAuditioning] = useState<string | null>(null);
+    const [instrumentKey, setInstrumentKey] = useState<string>('');
+    const [sampleRate, setSampleRate] = useState<number | null>(null);
     const auditionTimers = useRef<number[]>([]);
+    const instrumentKeyRef = useRef<string>('');   // subscribe 闭包用（避免 stale state）
 
-    useEffect(() => subscribeSoundFontBank(() => {
-        setSelectedId(getSelectedSoundFontBank().id);
-        setLoadedId(getLoadedSoundFontBank()?.id ?? null);
-        setBackend(getSynthBackend());
-    }), []);
+    /** 只窥探已存在的全局 AudioContext（不提前创建——保持"首次用户操作才建 ctx"的生命周期）；
+     *  ctx 未建时徽标显 "— kHz"，首次 startAudioContext 后经 subscribe 回调刷新。 */
+    const readSampleRate = (): void => {
+        try {
+            const ctx = (window as unknown as { globalAudioContext?: AudioContext }).globalAudioContext;
+            if (ctx) setSampleRate(ctx.sampleRate);
+        } catch { /* 非浏览器/受限环境 */ }
+    };
+
+    useEffect(() => {
+        readSampleRate();
+        return subscribeSoundFontBank(() => {
+            setSelectedId(getSelectedSoundFontBank().id);
+            setLoadedId(getLoadedSoundFontBank()?.id ?? null);
+            setBackend(getSynthBackend());
+            readSampleRate();
+            // 合成器实例重建（bank/backend 切换）会回 GM 默认——重发主键盘乐器选择（不发确认音）
+            const key = instrumentKeyRef.current;
+            if (key) {
+                const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === key);
+                if (item) AudioEngine.programChange(KEYBOARD_CHANNEL, item.program);
+            }
+        });
+    }, []);
 
     useEffect(() => () => {
         clearAuditionTimers();
@@ -141,6 +167,27 @@ export const SoundFontSelector: React.FC = () => {
         }
     };
 
+    /** 主键盘乐器切换：对自由演奏通道（ch0——AuraJam/AuraBar 键盘按键所在通道，镜像设备
+     *  "左旋钮切自由演奏乐器"）programChange，选中即生效，随后点键盘即新音色；
+     *  附一记确认单音让切换立即可听。鼓组不在列（ch0 为旋律通道）。 */
+    const handleInstrumentChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
+        const key = event.target.value;
+        setInstrumentKey(key);
+        instrumentKeyRef.current = key;
+        const item = key ? KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === key) : null;
+        if (key && !item) return;
+        setError(null);
+        try {
+            await startAudioContext();
+            const program = item ? item.program : 0;   // 空选项=切回默认 GM0 大钢琴（真发，可回退）
+            AudioEngine.programChange(KEYBOARD_CHANNEL, program);
+            AudioEngine.playNote(KEYBOARD_CHANNEL, item?.note ?? 60, 100, 220);   // 确认音
+        } catch (err) {
+            console.error('Keyboard instrument switch failed', err);
+            setError('乐器切换失败');
+        }
+    };
+
     /** 合成器后端切换（copych=设备镜像 默认 / spessa=浏览器参考）。切换会停当前播放并重建合成器。 */
     const handleBackendChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
         const next = event.target.value as SynthBackendKind;
@@ -227,9 +274,58 @@ export const SoundFontSelector: React.FC = () => {
                 </button>
             </div>
 
+            <div
+                className="mt-1.5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/90 px-3 py-2
+                           shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
+            >
+                <label htmlFor="instrument-select" className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
+                    键盘乐器
+                </label>
+                <select
+                    id="instrument-select"
+                    value={instrumentKey}
+                    onChange={handleInstrumentChange}
+                    title="切换主键盘（AuraJam/AuraBar 按键，自由演奏 ch0）的乐器——选中即 programChange 生效，点键盘就是新音色（镜像设备左旋钮切乐器）"
+                    className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
+                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400"
+                >
+                    <option value="">默认（GM0 大钢琴）</option>
+                    {KEYBOARD_INSTRUMENTS.map(item => (
+                        <option key={`${item.bank}:${item.program}`} value={`${item.bank}:${item.program}`}>
+                            {item.name} · GM {item.bank}:{item.program}
+                        </option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    onClick={() => {
+                        void (async () => {
+                            try {
+                                await startAudioContext();
+                                const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === instrumentKey);
+                                /* 默认态（未选择）= GM0 大钢琴，同样可试听 */
+                                AudioEngine.programChange(KEYBOARD_CHANNEL, item ? item.program : 0);
+                                AudioEngine.playNote(KEYBOARD_CHANNEL, item?.note ?? 60, 100, 220);
+                            } catch { /* 静默：音频未就绪时下一次点击再试 */ }
+                        })();
+                    }}
+                    title="试一下当前键盘音色（单音）"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900
+                               text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+                >
+                    <Play size={12} fill="currentColor" />
+                </button>
+                <span
+                    className="shrink-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                    title="音频输出采样率（AudioContext.sampleRate）——copych 运行期采样率即此值；设备端为 24 kHz"
+                >
+                    {sampleRate ? `${(sampleRate / 1000) % 1 === 0 ? (sampleRate / 1000).toFixed(0) : (sampleRate / 1000).toFixed(1)} kHz` : '— kHz'}
+                </span>
+            </div>
+
             {auditionOpen && (
                 <div
-                    className="mt-2 max-h-[min(25rem,calc(100vh_-_5.5rem))] overflow-hidden rounded-xl border border-zinc-800
+                    className="mt-2 max-h-[min(25rem,calc(100vh_-_8.5rem))] overflow-hidden rounded-xl border border-zinc-800
                                bg-zinc-950/94 shadow-[0_14px_36px_rgba(0,0,0,0.6)] backdrop-blur-md"
                 >
                     <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
@@ -245,7 +341,7 @@ export const SoundFontSelector: React.FC = () => {
                             <Square size={12} />
                         </button>
                     </div>
-                    <div className="max-h-[min(22rem,calc(100vh_-_8rem))] overflow-y-auto p-2">
+                    <div className="max-h-[min(22rem,calc(100vh_-_11rem))] overflow-y-auto p-2">
                         {AURA25_AUDITION_INSTRUMENTS.map(item => {
                             const key = `${item.bank}:${item.program}`;
                             const active = auditioning === key;
