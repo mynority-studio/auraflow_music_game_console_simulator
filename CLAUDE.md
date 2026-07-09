@@ -33,9 +33,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    exports）→ 三处联动：processor 调用点 + facade + 重建并重 vendor 产物（规则 1 流程）。
 5. **后端判据单一入口** = `src/core/audio/synthBackend.ts` 的 `isCopychBackend()`：
    CC95 三入口分流（`MidiScheduler.loadTrack` echo 展开 / `MidiScheduler.dispatchEvent` /
-   `AudioEngine.controllerChange`）与 panic 分支都必须经它，**禁止散落 if**。默认后端恒
-   spessa（copych 仅 `?synth=copych` / localStorage `auraflow.synthBackend` 显式开启），
-   不得改默认。
+   `AudioEngine.controllerChange`）与 panic 分支都必须经它，**禁止散落 if**。
+   **默认后端 = copych**（2026-07-09 用户拍板：模拟器定位=设备镜像参考，默认即设备之声）；
+   切换走顶部导航合成器菜单（`SoundFontSelector.tsx` → `AudioEngine.setSynthBackend`）或
+   URL `?synth=copych|spessa`（最高优先，命中即持久化 localStorage）。切换会停播放并重建
+   合成器实例（echo 展开随后端变，在播曲目不可热迁移）。⚠️ 非浏览器环境（vitest node）
+   判据也落默认 copych——测试里依赖 spessa 路径行为（echo 展开等）必须显式
+   `vi.mock('./synthBackend')` 钉后端，勿依赖环境默认。
 6. **panic 合同**：copych 后端的 stop/panic 必须走 `facade.panic()`（processor 先清
    pending 事件队列 → C 层逐通道 CC64=0 → soundOff 硬杀 → delay resetLine，镜像设备
    hard_silence）。**不要退回 CC123 路径**——copych 的 allNotesOff 遇 sustain 踩下会

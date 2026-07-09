@@ -1,9 +1,9 @@
 // ============================================================
 // M1 批2 · copych 后端分流（计划修订1 机器门）
 // ------------------------------------------------------------
-// copych：loadTrack 跳过 echo 展开（真 FxDelay 代偿）但保留 normalize+sort；
-//         CC95 保留在事件流（dispatch 直通）。
-// spessa（默认）：现状（echo 展开）由 MidiScheduler.test.ts 既有用例守。
+// copych（2026-07-09 起默认后端）：loadTrack 跳过 echo 展开（真 FxDelay 代偿）
+//         但保留 normalize+sort；CC95 保留在事件流（dispatch 直通）。
+// spessa 路径行为（echo 展开）由 MidiScheduler.test.ts 顶部显式 vi.mock 钉 spessa 守住。
 // ============================================================
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
@@ -38,8 +38,8 @@ describe('M1 copych 后端分流', () => {
         ]);
     });
 
-    it('synthBackend：无 flag 环境默认 spessa', async () => {
+    it('synthBackend：无 flag 环境默认 copych（2026-07-09 拍板：默认=设备镜像）', async () => {
         const { getSynthBackend } = await import('./synthBackend');
-        expect(getSynthBackend()).toBe('spessa');
+        expect(getSynthBackend()).toBe('copych');
     });
 });

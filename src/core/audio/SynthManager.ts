@@ -18,9 +18,9 @@ import { AURA25_SF2_BANK_ID, AURA25_SF2_SIZE_LABEL, AURA25_SF2_URL } from '../so
 // Vite `?url` 后缀 — node_modules 内的 worklet processor 作为静态资源 emit，返回 URL 字符串
 // 这是 WorkletSynthesizer 构造前必须 addModule 注册的处理器代码
 import workletProcessorURL from 'spessasynth_lib/dist/spessasynth_processor.min.js?url';
-// M1 批2：copych WASM 后端（feature flag，默认 spessa 现状不变）
+// M1 批2：copych WASM 后端（2026-07-09 起默认 copych=设备镜像；spessa 经菜单/URL 切换）
 import { CopychSynthFacade, ensureCopychWorkletModule, type SynthLike } from './copych/CopychSynthFacade';
-import { isCopychBackend } from './synthBackend';
+import { getSynthBackend, isCopychBackend, setSynthBackendPref, type SynthBackendKind } from './synthBackend';
 
 export const SOUND_FONT_BANKS = [
     {
@@ -234,7 +234,7 @@ const loadSelectedSynth = async (ctx: AudioContext): Promise<void> => {
     const bank = getSelectedSoundFontBank();
     disconnectCurrentSynth();
 
-    // M1 批2：copych WASM 后端分支（?synth=copych / localStorage；默认 spessa 路径原样）
+    // copych WASM 后端分支（2026-07-09 起默认 copych=设备镜像；spessa 经菜单/URL/localStorage 显式选择）
     if (isCopychBackend()) {
         await ensureCopychWorkletModule(ctx);
         const facade = new CopychSynthFacade(ctx);
@@ -300,6 +300,22 @@ export const startAudioContext = async (): Promise<void> => {
     })();
     _startPromise = startPromise;
     return startPromise;
+};
+
+/** 切换合成后端（顶部导航合成器菜单）：持久化偏好 → 若已有实例/在飞加载则重建。
+ *  调用方（AudioEngine.setSynthBackend）负责先停播放（loadTrack 的 echo 展开随后端变，
+ *  在播曲目不可热迁移）。 */
+export const setSynthBackendKind = async (kind: SynthBackendKind): Promise<void> => {
+    if (getSynthBackend() === kind) return;
+    /* ★await 前快照：在飞加载（_startPromise）失败会让 spessaSynth 保持 null——
+     * 若 await 后再判实例在场，会静默跳过新后端重建（UI 显示已切实际无 synth）。 */
+    const shouldReloadNow = !!_startPromise || !!spessaSynth || isSpessaSynthReady;
+    setSynthBackendPref(kind);
+    notifySoundFontState();   // UI（合成器菜单/状态）即时刷新
+    if (!shouldReloadNow) return;   // 从未启动过音频 → 只持久化，首次 startAudioContext 用新后端
+    if (_startPromise) { try { await _startPromise; } catch { /* 旧加载失败也继续重建新后端 */ } }
+    disconnectCurrentSynth();       // 置空实例/状态 → startAudioContext 走完整重载
+    await startAudioContext();      // 失败会 throw → 调用方（UI）负责回滚 previous
 };
 
 export const setSelectedSoundFontBank = async (id: SoundFontBankId): Promise<void> => {

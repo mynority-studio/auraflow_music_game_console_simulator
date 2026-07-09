@@ -18,7 +18,7 @@ import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
 import type { MusicGenerationResult } from '../generation/musicGeneration/types';
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
 // M1 批2：copych 后端——CC95 直通判据 + per-song 空间参数（SONG_SPACE_PROFILES 同源镜像设备 AR_CMD_SONG_*）
-import { isCopychBackend } from './synthBackend';
+import { getSynthBackend, isCopychBackend, type SynthBackendKind } from './synthBackend';
 import { CopychSynthFacade } from './copych/CopychSynthFacade';
 import { songSpaceProfile } from '../generation/newEngine/knowledge/gmMixProfile';
 import {
@@ -30,6 +30,7 @@ import {
     getSelectedSoundFontBank,
     getLoadedSoundFontBank,
     setSelectedSoundFontBank,
+    setSynthBackendKind,
     setPlaybackMasterStyle,
     subscribeSoundFontBank,
     type SoundFontBank,
@@ -46,8 +47,9 @@ export {
     getLoadedSoundFontBank,
     subscribeSoundFontBank,
     setPlaybackMasterStyle,
+    getSynthBackend,
 };
-export type { SoundFontBank, SoundFontBankId };
+export type { SoundFontBank, SoundFontBankId, SynthBackendKind };
 
 // ★ Q+N 角色 → LedMatrix VisualEvent 类型(qn_main_engine_takeover §5.3)。pad 暂归 accomp(无专属 atmosphere 视觉)。
 const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
@@ -149,6 +151,14 @@ class AudioEngineSystem {
         this.playSessionId++;
         this.stop();
         await setSelectedSoundFontBank(id);
+    }
+
+    /** 切换合成后端（顶部导航合成器菜单）。先停播放——loadTrack 的 echo 展开随后端变，
+     *  在播曲目不可热迁移；切完重新点播即用新后端。 */
+    public async setSynthBackend(kind: SynthBackendKind): Promise<void> {
+        this.playSessionId++;
+        this.stop();
+        await setSynthBackendKind(kind);
     }
 
     public getSoundFontBank(): SoundFontBank {

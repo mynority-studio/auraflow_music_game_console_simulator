@@ -5,9 +5,11 @@ import {
     SOUND_FONT_BANKS,
     getLoadedSoundFontBank,
     getSelectedSoundFontBank,
+    getSynthBackend,
     startAudioContext,
     subscribeSoundFontBank,
     type SoundFontBankId,
+    type SynthBackendKind,
 } from '../core/audio/AudioEngine';
 import { AURA25_AUDITION_INSTRUMENTS } from '../core/sound/Aura25Palette';
 
@@ -24,6 +26,8 @@ export const SoundFontSelector: React.FC = () => {
     const [selectedId, setSelectedId] = useState<SoundFontBankId>(() => getSelectedSoundFontBank().id);
     const [loadedId, setLoadedId] = useState<SoundFontBankId | null>(() => getLoadedSoundFontBank()?.id ?? null);
     const [pendingId, setPendingId] = useState<SoundFontBankId | null>(null);
+    const [backend, setBackend] = useState<SynthBackendKind>(() => getSynthBackend());
+    const [backendPending, setBackendPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [auditionOpen, setAuditionOpen] = useState(false);
     const [auditioning, setAuditioning] = useState<string | null>(null);
@@ -32,6 +36,7 @@ export const SoundFontSelector: React.FC = () => {
     useEffect(() => subscribeSoundFontBank(() => {
         setSelectedId(getSelectedSoundFontBank().id);
         setLoadedId(getLoadedSoundFontBank()?.id ?? null);
+        setBackend(getSynthBackend());
     }), []);
 
     useEffect(() => () => {
@@ -136,6 +141,28 @@ export const SoundFontSelector: React.FC = () => {
         }
     };
 
+    /** 合成器后端切换（copych=设备镜像 默认 / spessa=浏览器参考）。切换会停当前播放并重建合成器。 */
+    const handleBackendChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
+        const next = event.target.value as SynthBackendKind;
+        const previous = getSynthBackend();
+        if (next === previous) return;
+        stopAudition();
+        setBackend(next);
+        setBackendPending(true);
+        setError(null);
+        try {
+            await AudioEngine.setSynthBackend(next);
+        } catch (err) {
+            console.error('Synth backend switch failed', err);
+            setError('合成器切换失败');
+            // 回滚到上一个可用后端（偏好已被持久化为失败目标，须显式切回并重建）
+            try { await AudioEngine.setSynthBackend(previous); } catch { /* keep failed state visible */ }
+            setBackend(getSynthBackend());
+        } finally {
+            setBackendPending(false);
+        }
+    };
+
     const selectedBank = SOUND_FONT_BANKS.find(bank => bank.id === selectedId) ?? SOUND_FONT_BANKS[0];
     const status =
         pendingId ? '切换中'
@@ -144,7 +171,7 @@ export const SoundFontSelector: React.FC = () => {
 
     return (
         <div
-            className="fixed left-3 top-3 z-[60] w-[min(23rem,calc(100vw_-_1.5rem))] text-zinc-300"
+            className="fixed left-3 top-3 z-[60] w-[min(32rem,calc(100vw_-_1.5rem))] text-zinc-300"
             style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
         >
             <div
@@ -170,8 +197,24 @@ export const SoundFontSelector: React.FC = () => {
                         </option>
                     ))}
                 </select>
-                <span className={`shrink-0 text-[10px] ${error ? 'text-rose-300' : pendingId ? 'text-cyan-300' : 'text-zinc-500'}`}>
-                    {error ?? status}
+                <label htmlFor="synth-backend-select" className="ml-1 shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
+                    合成器
+                </label>
+                <select
+                    id="synth-backend-select"
+                    value={backend}
+                    onChange={handleBackendChange}
+                    disabled={backendPending}
+                    title="copych = 设备同款引擎（嵌入式镜像参考，默认）；SpessaSynth = 浏览器参考合成器"
+                    className="h-7 w-[8.5rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
+                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
+                               disabled:cursor-wait disabled:opacity-70"
+                >
+                    <option value="copych">Copych · 设备镜像</option>
+                    <option value="spessa">SpessaSynth</option>
+                </select>
+                <span className={`shrink-0 text-[10px] ${error ? 'text-rose-300' : (pendingId || backendPending) ? 'text-cyan-300' : 'text-zinc-500'}`}>
+                    {error ?? (backendPending ? '合成器切换中' : status)}
                 </span>
                 <button
                     type="button"
