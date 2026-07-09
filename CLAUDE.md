@@ -8,12 +8,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 替代 SpessaSynth 出声。加载链：`src/core/audio/synthBackend.ts`（判据）→
 > `SynthManager.loadSelectedSynth` copych 分支 → `src/core/audio/copych/CopychSynthFacade.ts`
 > → `public/copych/copych_processor.js`（AudioWorklet）→ `public/copych/copych_synth.mjs`（WASM）。
+>
+> **合成器源码可改**：引擎 C++ 源在固件主仓 checkout 的
+> `../components/synth/auraflow_synth/`（本仓是其 submodule，路径相对本仓根）——
+> 在 simulator 语境下修改合成器代码是**允许且正确的路径**（那里是唯一真源）；
+> 约束只落在下面的 vendored 产物纪律上。改核标准流程：改
+> `../components/synth/auraflow_synth/src/synth/` 或 `ports/wasm/` → 跑
+> `ports/wasm/build.sh` 重建 → 拷贝 `copych_synth.mjs` 到 `public/copych/` →
+> 更新 PROVENANCE.md → 在 auraflow_synth 仓 commit 源码改动（勿只 commit 产物）。
+> ⚠️ 别忘了同一份核也编进设备固件——核改动默认双端生效，设备侧影响要一并评估
+> （host/node 冒烟与 FNV 基线在 auraflow_synth 仓，见其 README）。
 
 1. **`public/copych/copych_synth.mjs` 是 vendored 构建产物**（emscripten SINGLE_FILE，
-   wasm 二进制 base64 内嵌）——**禁止手改**。唯一重生成途径：auraflow_synth 仓
-   `ports/wasm/build.sh`（emcc 版本口径见 PROVENANCE）构建 → 拷贝至此 → **同步更新
-   `public/copych/PROVENANCE.md`**（源 commit + sha256）。实测 sha256 与 PROVENANCE
-   记录不一致 = 违规状态，先修账再动别的。
+   wasm 二进制 base64 内嵌）——**禁止手改**（改引擎请改上述源码后重建）。唯一重生成
+   途径：auraflow_synth 仓 `ports/wasm/build.sh`（emcc 版本口径见 PROVENANCE）构建 →
+   拷贝至此 → **同步更新 `public/copych/PROVENANCE.md`**（源 commit + sha256）。实测
+   sha256 与 PROVENANCE 记录不一致 = 违规状态，先修账再动别的。
 2. **emcc 版本升级** → auraflow_synth 仓 `ports/wasm/node_smoke.mjs` 的 FNV 渲染基线
    必须重锁（不同编译器浮点代码生成不同），PROVENANCE 同步记录新口径。
 3. **`public/copych/copych_processor.js` 是纯 JS AudioWorklet processor**（public 原样
