@@ -17,6 +17,7 @@ import {
     type SynthBackendKind,
 } from '../core/audio/AudioEngine';
 import { AURA25_AUDITION_INSTRUMENTS } from '../core/sound/Aura25Palette';
+import { getCopychFxState, subscribeCopychFxState, type CopychFxState } from '../core/audio/copych/CopychSynthFacade';
 
 const AUDITION_CHANNEL = 8;
 const DRUM_CHANNEL = 9;
@@ -47,6 +48,7 @@ export const SoundFontSelector: React.FC = () => {
     const [ratePref, setRatePref] = useState<SampleRatePref>(() => getSampleRatePref());
     const [ratePending, setRatePending] = useState(false);
     const [channelMode, setChannelModeState] = useState<ChannelModePref>(() => getChannelModePref());
+    const [copychFx, setCopychFx] = useState<CopychFxState>(() => getCopychFxState());
     const auditionTimers = useRef<number[]>([]);
     const instrumentKeyRef = useRef<string>(DEFAULT_INSTRUMENT_KEY);   // subscribe 闭包用（避免 stale state）
 
@@ -58,6 +60,8 @@ export const SoundFontSelector: React.FC = () => {
             setSampleRate(ctx ? ctx.sampleRate : null);   // 无 ctx（切后端关旧未建新）→ 清空防陈旧率残显
         } catch { /* 非浏览器/受限环境 */ }
     };
+
+    useEffect(() => subscribeCopychFxState(() => setCopychFx(getCopychFxState())), []);
 
     useEffect(() => {
         readSampleRate();
@@ -406,9 +410,56 @@ export const SoundFontSelector: React.FC = () => {
                 </span>
             </div>
 
+            <div
+                className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950/90 px-3 py-2
+                           shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
+            >
+                <span
+                    className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400"
+                    title={backend === 'copych'
+                        ? '当前引擎效果器与参数（镜像设备 FxReverb/FxChorus/FxDelay）：boot=固件手调默认，播放整曲时按风格下发 per-song 空间参数（等价设备 AR_CMD_SONG_*）'
+                        : 'SpessaSynth 引擎内建效果器：参数由引擎内部管理不可查，混响/合唱由各轨 CC91/93 send 驱动；延迟由调度层 echo 预渲染模拟（无真延迟总线）'}
+                >
+                    效果器
+                </span>
+                {backend === 'copych' ? (
+                    <>
+                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                              title="freeverb：time 空间大小(0..1)/level 湿电平/predelay 预延迟/damp 高频阻尼">
+                            混响 t{copychFx.reverb.time.toFixed(2)} · L{copychFx.reverb.level.toFixed(2)} · pd{Math.round(copychFx.reverb.predelayMs)}ms · 衰{copychFx.reverb.damping.toFixed(2)}
+                        </span>
+                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                              title="chorus：LFO 频率/调制深度/基础延迟">
+                            合唱 {copychFx.chorus.lfoHz.toFixed(1)}Hz · 深{(copychFx.chorus.depthS * 1000).toFixed(1)}ms · 基{Math.round(copychFx.chorus.baseDelayS * 1000)}ms
+                        </span>
+                        <span className={`rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] ${copychFx.delay.enabled ? 'text-zinc-400' : 'text-zinc-600'}`}
+                              title="delay（CC95 send 总线）：per-song 按风格开启（拍数×BPM 换算），未开启时静默">
+                            {copychFx.delay.enabled
+                                ? `延迟 ${Math.round(copychFx.delay.seconds * 1000)}ms · fb${copychFx.delay.feedback.toFixed(2)}`
+                                : '延迟 关'}
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                              title="SpessaSynth 内建混响处理器，参数引擎内部管理；湿度由各轨 CC91 send 驱动">
+                            混响 引擎内建（CC91 驱动）
+                        </span>
+                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                              title="SpessaSynth 内建合唱处理器；深度由各轨 CC93 send 驱动">
+                            合唱 引擎内建（CC93 驱动）
+                        </span>
+                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                              title="spessa 无真延迟总线：调度层把 CC95 send 预渲染成 1/8 音符 echo 音符（copych 后端才走真 FxDelay）">
+                            延迟 echo 预渲染（1/8 音符）
+                        </span>
+                    </>
+                )}
+            </div>
+
             {auditionOpen && (
                 <div
-                    className="mt-2 max-h-[min(25rem,calc(100vh_-_11.5rem))] overflow-hidden rounded-xl border border-zinc-800
+                    className="mt-2 max-h-[min(25rem,calc(100vh_-_14.5rem))] overflow-hidden rounded-xl border border-zinc-800
                                bg-zinc-950/94 shadow-[0_14px_36px_rgba(0,0,0,0.6)] backdrop-blur-md"
                 >
                     <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
@@ -424,7 +475,7 @@ export const SoundFontSelector: React.FC = () => {
                             <Square size={12} />
                         </button>
                     </div>
-                    <div className="max-h-[min(22rem,calc(100vh_-_14rem))] overflow-y-auto p-2">
+                    <div className="max-h-[min(22rem,calc(100vh_-_17rem))] overflow-y-auto p-2">
                         {AURA25_AUDITION_INSTRUMENTS.map(item => {
                             const key = `${item.bank}:${item.program}`;
                             const active = auditioning === key;

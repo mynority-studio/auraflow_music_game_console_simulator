@@ -29,6 +29,30 @@ export interface CopychSongSpace {
 const PROCESSOR_URL = '/copych/copych_processor.js';
 const PROCESSOR_NAME = 'copych-processor';
 
+/* ---- copych FX 状态镜像（顶部栏效果器行显示用）----
+ * 参数都是 JS 侧下发（wasm 无 getter），此处记录单一真源：boot 默认=固件 fx 头文件
+ * 手调值（fx_reverb/fx_chorus init、fx_delay reset），per-song 值=setSongSpace 下发。
+ * facade init（synth 重建）复位到 boot 默认。 */
+export type CopychFxState = CopychSongSpace;
+
+const COPYCH_FX_BOOT: CopychFxState = {
+    reverb: { time: 0.45, level: 0.7, predelayMs: 10, damping: 0.7 },   // fx_reverb.h init() 手调默认
+    chorus: { lfoHz: 0.5, depthS: 0.002, baseDelayS: 0.03 },            // fx_chorus.h init() 默认
+    delay: { seconds: 0.25, feedback: 0.1, enabled: false },            // fx_delay.h reset()（cap/4=0.25s；song_enabled=false 待 per-song 开启）
+};
+
+let _fxState: CopychFxState = COPYCH_FX_BOOT;
+const _fxListeners = new Set<() => void>();
+
+export const getCopychFxState = (): CopychFxState => _fxState;
+export const subscribeCopychFxState = (listener: () => void): (() => void) => {
+    _fxListeners.add(listener);
+    return () => { _fxListeners.delete(listener); };
+};
+const notifyFxState = (): void => {
+    _fxListeners.forEach(l => { try { l(); } catch { /* ignore */ } });
+};
+
 /** addModule 缓存 per-ctx（同一 ctx 只 addModule 一次；切后端会重建 ctx——采样率随后端变）。 */
 const _modulePromiseByCtx = new WeakMap<AudioContext, Promise<void>>();
 export const ensureCopychWorkletModule = (ctx: AudioContext): Promise<void> => {
@@ -60,6 +84,8 @@ export class CopychSynthFacade implements SynthLike {
                 if (d?.type === 'ready') {
                     this.node.port.removeEventListener('message', onMsg);
                     this._ready = true;
+                    _fxState = COPYCH_FX_BOOT;   // synth 重建 → FX 回 boot 默认
+                    notifyFxState();
                     resolve();
                 } else if (d?.type === 'error') {
                     this.node.port.removeEventListener('message', onMsg);
@@ -103,6 +129,8 @@ export class CopychSynthFacade implements SynthLike {
     /** per-song 空间参数（SONG_SPACE_PROFILES → FxReverb/FxChorus/FxDelay，镜像设备 AR_CMD_SONG_*）。 */
     public setSongSpace(space: CopychSongSpace): void {
         this.node.port.postMessage({ type: 'space', ...space });
+        _fxState = space;   // 镜像记录（顶部栏效果器行显示）
+        notifyFxState();
     }
 
     public connect(node: AudioNode): void { this.node.connect(node); }
