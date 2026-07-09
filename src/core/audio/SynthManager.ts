@@ -142,7 +142,6 @@ export const setSandboxAuditionMaster = (low: boolean): void => {
 };
 
 let _startPromise: Promise<void> | null = null;
-let _workletModulePromise: Promise<void> | null = null;
 
 export const getAudioContext = (): AudioContext => {
     const w = window as unknown as { globalAudioContext?: AudioContext };
@@ -150,18 +149,37 @@ export const getAudioContext = (): AudioContext => {
         const Ctor =
             (window as unknown as { AudioContext: typeof AudioContext }).AudioContext ??
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        w.globalAudioContext = new Ctor({ latencyHint: 'interactive' }); // 实时试听/弹奏:最低输出延迟
+        // copych 后端：ctx 建成 24000Hz=设备口径——24k SF2 样本 1:1 零重采样，浏览器输出
+        // 与设备完全同渲染率（硬件适配由浏览器内部完成）。spessa：跟硬件默认（44.1/48k）。
+        // 切后端时 ctx 会关旧建新（setSynthBackendKind），采样率是 ctx 固有属性不可改。
+        w.globalAudioContext = new Ctor({
+            latencyHint: 'interactive', // 实时试听/弹奏:最低输出延迟
+            ...(isCopychBackend() ? { sampleRate: 24000 } : {}),
+        });
     }
     return w.globalAudioContext;
 };
 
+/** 关闭并清空全局 AudioContext（切后端换采样率用；下一次 getAudioContext 按新后端口径重建）。 */
+const closeGlobalAudioContext = async (): Promise<void> => {
+    const w = window as unknown as { globalAudioContext?: AudioContext };
+    const ctx = w.globalAudioContext;
+    if (!ctx) return;
+    w.globalAudioContext = undefined;
+    try { await ctx.close(); } catch { /* ignore */ }
+};
+
+// worklet 注册缓存 per-ctx（ctx 重建后必须对新 ctx 重新 addModule）
+const _workletModuleByCtx = new WeakMap<AudioContext, Promise<void>>();
 const ensureWorkletModule = async (ctx: AudioContext): Promise<void> => {
-    if (!_workletModulePromise) {
+    let p = _workletModuleByCtx.get(ctx);
+    if (!p) {
         // 注册 AudioWorklet 处理器（spessasynth-worklet-processor）— WorkletSynthesizer
         // 构造时会 new AudioWorkletNode，要求此 processor 已 addModule。
-        _workletModulePromise = ctx.audioWorklet.addModule(workletProcessorURL);
+        p = ctx.audioWorklet.addModule(workletProcessorURL);
+        _workletModuleByCtx.set(ctx, p);
     }
-    await _workletModulePromise;
+    await p;
 };
 
 const disconnectCurrentSynth = (): void => {
@@ -305,17 +323,24 @@ export const startAudioContext = async (): Promise<void> => {
 /** 切换合成后端（顶部导航合成器菜单）：持久化偏好 → 若已有实例/在飞加载则重建。
  *  调用方（AudioEngine.setSynthBackend）负责先停播放（loadTrack 的 echo 展开随后端变，
  *  在播曲目不可热迁移）。 */
-export const setSynthBackendKind = async (kind: SynthBackendKind): Promise<void> => {
-    if (getSynthBackend() === kind) return;
+export const setSynthBackendKind = async (kind: SynthBackendKind, forceReload = false): Promise<void> => {
+    if (getSynthBackend() === kind && !forceReload) return;
     /* ★await 前快照：在飞加载（_startPromise）失败会让 spessaSynth 保持 null——
-     * 若 await 后再判实例在场，会静默跳过新后端重建（UI 显示已切实际无 synth）。 */
-    const shouldReloadNow = !!_startPromise || !!spessaSynth || isSpessaSynthReady;
+     * 若 await 后再判实例在场，会静默跳过新后端重建（UI 显示已切实际无 synth）。
+     * forceReload：切换失败回滚用——失败时旧实例已 disconnect+ctx 已 close，三判据全空，
+     * 不强制则回滚只改偏好不重建（菜单已回滚、实际无 synth）。 */
+    const shouldReloadNow = forceReload || !!_startPromise || !!spessaSynth || isSpessaSynthReady;
     setSynthBackendPref(kind);
     notifySoundFontState();   // UI（合成器菜单/状态）即时刷新
-    if (!shouldReloadNow) return;   // 从未启动过音频 → 只持久化，首次 startAudioContext 用新后端
+    if (!shouldReloadNow) {
+        // 从未启动过 synth：仍要清可能已存在的 ctx（采样率随后端变，24k↔硬件默认）
+        await closeGlobalAudioContext();
+        return;
+    }
     if (_startPromise) { try { await _startPromise; } catch { /* 旧加载失败也继续重建新后端 */ } }
-    disconnectCurrentSynth();       // 置空实例/状态 → startAudioContext 走完整重载
-    await startAudioContext();      // 失败会 throw → 调用方（UI）负责回滚 previous
+    disconnectCurrentSynth();          // 置空实例/状态
+    await closeGlobalAudioContext();   // ★关旧 ctx——copych=24k / spessa=硬件默认，采样率不可原地改
+    await startAudioContext();         // 新 ctx（新率）+ 完整重载；失败 throw → 调用方（UI）回滚 previous
 };
 
 export const setSelectedSoundFontBank = async (id: SoundFontBankId): Promise<void> => {

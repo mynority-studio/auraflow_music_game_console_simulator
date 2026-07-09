@@ -29,12 +29,15 @@ export interface CopychSongSpace {
 const PROCESSOR_URL = '/copych/copych_processor.js';
 const PROCESSOR_NAME = 'copych-processor';
 
-let _modulePromise: Promise<void> | null = null;
-
-/** addModule 单例（同一 ctx 只 addModule 一次）。 */
+/** addModule 缓存 per-ctx（同一 ctx 只 addModule 一次；切后端会重建 ctx——采样率随后端变）。 */
+const _modulePromiseByCtx = new WeakMap<AudioContext, Promise<void>>();
 export const ensureCopychWorkletModule = (ctx: AudioContext): Promise<void> => {
-    if (!_modulePromise) _modulePromise = ctx.audioWorklet.addModule(PROCESSOR_URL);
-    return _modulePromise;
+    let p = _modulePromiseByCtx.get(ctx);
+    if (!p) {
+        p = ctx.audioWorklet.addModule(PROCESSOR_URL);
+        _modulePromiseByCtx.set(ctx, p);
+    }
+    return p;
 };
 
 export class CopychSynthFacade implements SynthLike {

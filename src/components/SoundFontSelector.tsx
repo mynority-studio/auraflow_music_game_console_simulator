@@ -45,7 +45,7 @@ export const SoundFontSelector: React.FC = () => {
     const readSampleRate = (): void => {
         try {
             const ctx = (window as unknown as { globalAudioContext?: AudioContext }).globalAudioContext;
-            if (ctx) setSampleRate(ctx.sampleRate);
+            setSampleRate(ctx ? ctx.sampleRate : null);   // 无 ctx（切后端关旧未建新）→ 清空防陈旧率残显
         } catch { /* 非浏览器/受限环境 */ }
     };
 
@@ -202,8 +202,9 @@ export const SoundFontSelector: React.FC = () => {
         } catch (err) {
             console.error('Synth backend switch failed', err);
             setError('合成器切换失败');
-            // 回滚到上一个可用后端（偏好已被持久化为失败目标，须显式切回并重建）
-            try { await AudioEngine.setSynthBackend(previous); } catch { /* keep failed state visible */ }
+            // 回滚到上一个可用后端（偏好已被持久化为失败目标，须显式切回并强制重建——
+            // 失败时旧实例已拆、三个"在场"判据全空，不 force 只会改偏好不重建）
+            try { await AudioEngine.setSynthBackend(previous, true); } catch { /* keep failed state visible */ }
             setBackend(getSynthBackend());
         } finally {
             setBackendPending(false);
@@ -244,24 +245,8 @@ export const SoundFontSelector: React.FC = () => {
                         </option>
                     ))}
                 </select>
-                <label htmlFor="synth-backend-select" className="ml-1 shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
-                    合成器
-                </label>
-                <select
-                    id="synth-backend-select"
-                    value={backend}
-                    onChange={handleBackendChange}
-                    disabled={backendPending}
-                    title="copych = 设备同款引擎（嵌入式镜像参考，默认）；SpessaSynth = 浏览器参考合成器"
-                    className="h-7 w-[8.5rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
-                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
-                               disabled:cursor-wait disabled:opacity-70"
-                >
-                    <option value="copych">Copych · 设备镜像</option>
-                    <option value="spessa">SpessaSynth</option>
-                </select>
-                <span className={`shrink-0 text-[10px] ${error ? 'text-rose-300' : (pendingId || backendPending) ? 'text-cyan-300' : 'text-zinc-500'}`}>
-                    {error ?? (backendPending ? '合成器切换中' : status)}
+                <span className={`shrink-0 text-[10px] ${error ? 'text-rose-300' : pendingId ? 'text-cyan-300' : 'text-zinc-500'}`}>
+                    {error ?? status}
                 </span>
                 <button
                     type="button"
@@ -315,9 +300,42 @@ export const SoundFontSelector: React.FC = () => {
                 >
                     <Play size={12} fill="currentColor" />
                 </button>
+            </div>
+
+            <div
+                className="mt-1.5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/90 px-3 py-2
+                           shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
+            >
+                <label htmlFor="synth-backend-select" className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
+                    合成器
+                </label>
+                <select
+                    id="synth-backend-select"
+                    value={backend}
+                    onChange={handleBackendChange}
+                    disabled={backendPending}
+                    title="copych = 设备同款引擎（嵌入式镜像参考，默认，24 kHz 设备口径）；SpessaSynth = 浏览器参考合成器（硬件采样率）"
+                    className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
+                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
+                               disabled:cursor-wait disabled:opacity-70"
+                >
+                    <option value="copych">Copych · 设备镜像</option>
+                    <option value="spessa">SpessaSynth</option>
+                </select>
+                {backendPending && (
+                    <span className="shrink-0 text-[10px] text-cyan-300">切换中</span>
+                )}
                 <span
                     className="shrink-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                    title="音频输出采样率（AudioContext.sampleRate）——copych 运行期采样率即此值；设备端为 24 kHz"
+                    title={backend === 'copych'
+                        ? '输出声道：copych 引擎单声道渲染（L=R，镜像设备 mono 硬件口径）'
+                        : '输出声道：SpessaSynth 立体声（每通道声像 + 立体声空间）'}
+                >
+                    {backend === 'copych' ? '单声道 · 设备口径' : '立体声'}
+                </span>
+                <span
+                    className="shrink-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                    title="音频输出采样率（AudioContext.sampleRate）——copych 后端 ctx 建成 24 kHz=设备口径（24k SF2 样本 1:1 零重采样）；spessa 跟硬件默认。首次出声后显示。"
                 >
                     {sampleRate ? `${(sampleRate / 1000) % 1 === 0 ? (sampleRate / 1000).toFixed(0) : (sampleRate / 1000).toFixed(1)} kHz` : '— kHz'}
                 </span>
@@ -325,7 +343,7 @@ export const SoundFontSelector: React.FC = () => {
 
             {auditionOpen && (
                 <div
-                    className="mt-2 max-h-[min(25rem,calc(100vh_-_8.5rem))] overflow-hidden rounded-xl border border-zinc-800
+                    className="mt-2 max-h-[min(25rem,calc(100vh_-_11.5rem))] overflow-hidden rounded-xl border border-zinc-800
                                bg-zinc-950/94 shadow-[0_14px_36px_rgba(0,0,0,0.6)] backdrop-blur-md"
                 >
                     <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
@@ -341,7 +359,7 @@ export const SoundFontSelector: React.FC = () => {
                             <Square size={12} />
                         </button>
                     </div>
-                    <div className="max-h-[min(22rem,calc(100vh_-_11rem))] overflow-y-auto p-2">
+                    <div className="max-h-[min(22rem,calc(100vh_-_14rem))] overflow-y-auto p-2">
                         {AURA25_AUDITION_INSTRUMENTS.map(item => {
                             const key = `${item.bank}:${item.program}`;
                             const active = auditioning === key;

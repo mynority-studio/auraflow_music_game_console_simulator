@@ -154,11 +154,11 @@ class AudioEngineSystem {
     }
 
     /** 切换合成后端（顶部导航合成器菜单）。先停播放——loadTrack 的 echo 展开随后端变，
-     *  在播曲目不可热迁移；切完重新点播即用新后端。 */
-    public async setSynthBackend(kind: SynthBackendKind): Promise<void> {
+     *  在播曲目不可热迁移；切完重新点播即用新后端。forceReload=失败回滚用（强制重建）。 */
+    public async setSynthBackend(kind: SynthBackendKind, forceReload = false): Promise<void> {
         this.playSessionId++;
         this.stop();
-        await setSynthBackendKind(kind);
+        await setSynthBackendKind(kind, forceReload);
     }
 
     public getSoundFontBank(): SoundFontBank {
