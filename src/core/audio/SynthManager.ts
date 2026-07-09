@@ -154,14 +154,11 @@ export const getAudioContext = (): AudioContext => {
         const Ctor =
             (window as unknown as { AudioContext: typeof AudioContext }).AudioContext ??
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        // 采样率：偏好 'auto' = copych→24000（设备口径，24k SF2 样本 1:1 零重采样）/
-        // spessa→硬件默认（44.1/48k）；显式偏好（22.05/24/44.1/48k）两后端都生效。
+        // 采样率：显式偏好（默认 24000=设备口径，24k SF2 样本 1:1 零重采样）两后端通用。
         // 采样率是 ctx 固有属性——切后端/切采样率都关旧建新（setSynthBackendKind/setAudioSampleRate）。
-        const ratePref = getSampleRatePref();
-        const sampleRate = ratePref === 'auto' ? (isCopychBackend() ? 24000 : undefined) : ratePref;
         w.globalAudioContext = new Ctor({
             latencyHint: 'interactive', // 实时试听/弹奏:最低输出延迟
-            ...(sampleRate ? { sampleRate } : {}),
+            sampleRate: getSampleRatePref(),
         });
     }
     return w.globalAudioContext;
@@ -397,14 +394,14 @@ export const setSynthBackendKind = (kind: SynthBackendKind, forceReload = false)
     setSynthBackendPref(kind);
     notifySoundFontState();   // UI（合成器菜单/状态）即时刷新
     if (!shouldReloadNow) {
-        // 从未启动过 synth：仍要清可能已存在的 ctx（采样率随后端变，24k↔硬件默认）
+        // 从未启动过 synth：仍要清可能已存在的 ctx（防陈旧采样率残留）
         await closeGlobalAudioContext();
         notifySoundFontState();   // close 后再通知：防徽标残显已关闭 ctx 的旧采样率
         return;
     }
     if (_startPromise) { try { await _startPromise; } catch { /* 旧加载失败也继续重建新后端 */ } }
     disconnectCurrentSynth();          // 置空实例/状态
-    await closeGlobalAudioContext();   // ★关旧 ctx——copych=24k / spessa=硬件默认，采样率不可原地改
+    await closeGlobalAudioContext();   // ★关旧 ctx 重建管线（采样率按当前显式偏好；ctx 固有属性不可原地改）
     await startAudioContext();         // 新 ctx（新率）+ 完整重载；失败 throw → 调用方（UI）回滚 previous
 });
 

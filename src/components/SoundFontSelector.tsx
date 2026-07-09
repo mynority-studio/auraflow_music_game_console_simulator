@@ -200,8 +200,7 @@ export const SoundFontSelector: React.FC = () => {
 
     /** 采样率偏好切换：关旧 ctx 建新 + 重建合成器（先停播放）；失败回滚 previous 并强制重建。 */
     const handleRateChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
-        const raw = event.target.value;
-        const next: SampleRatePref = raw === 'auto' ? 'auto' : Number(raw) as SampleRatePref;
+        const next = Number(event.target.value) as SampleRatePref;
         const previous = getSampleRatePref();
         if (next === previous) return;
         stopAudition();
@@ -353,7 +352,7 @@ export const SoundFontSelector: React.FC = () => {
                     value={backend}
                     onChange={handleBackendChange}
                     disabled={backendPending || ratePending}
-                    title="copych = 设备同款引擎（嵌入式镜像参考，默认，24 kHz 设备口径）；SpessaSynth = 浏览器参考合成器（硬件采样率）"
+                    title="copych = 设备同款引擎（嵌入式镜像参考，默认，24 kHz 设备口径）；SpessaSynth = 浏览器参考合成器（采样率按下拉设置）"
                     className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
                                disabled:cursor-wait disabled:opacity-70"
@@ -388,12 +387,11 @@ export const SoundFontSelector: React.FC = () => {
                     value={String(ratePref)}
                     onChange={handleRateChange}
                     disabled={ratePending || backendPending}
-                    title="输出采样率（AudioContext 固有属性，切换会重建音频管线）。自动=copych 24 kHz 设备口径（24k SF2 零重采样）/ spessa 硬件默认"
+                    title="输出采样率（AudioContext 固有属性，切换会重建音频管线）。默认 24 kHz=设备口径（24k SF2 零重采样），两后端通用"
                     className="h-7 w-[7rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
                                disabled:cursor-wait disabled:opacity-70"
                 >
-                    <option value="auto">{backend === 'copych' ? '自动 · 24k 设备' : '自动 · 硬件'}</option>
                     {SAMPLE_RATE_OPTIONS.map(rate => (
                         <option key={rate} value={String(rate)}>
                             {(rate / 1000) % 1 === 0 ? (rate / 1000).toFixed(0) : (rate / 1000).toFixed(2)} kHz
