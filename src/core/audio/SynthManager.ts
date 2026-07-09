@@ -18,6 +18,9 @@ import { AURA25_SF2_BANK_ID, AURA25_SF2_SIZE_LABEL, AURA25_SF2_URL } from '../so
 // Vite `?url` 后缀 — node_modules 内的 worklet processor 作为静态资源 emit，返回 URL 字符串
 // 这是 WorkletSynthesizer 构造前必须 addModule 注册的处理器代码
 import workletProcessorURL from 'spessasynth_lib/dist/spessasynth_processor.min.js?url';
+// M1 批2：copych WASM 后端（feature flag，默认 spessa 现状不变）
+import { CopychSynthFacade, ensureCopychWorkletModule, type SynthLike } from './copych/CopychSynthFacade';
+import { isCopychBackend } from './synthBackend';
 
 export const SOUND_FONT_BANKS = [
     {
@@ -53,8 +56,22 @@ const readInitialSoundFontBankId = (): SoundFontBankId => {
 };
 
 // ES module live binding — 初始化后这两个变量被赋值，所有 import 端自动可见
-export let spessaSynth: WorkletSynthesizer | null = null;
+// M1 批2：类型放宽为 SynthLike（消费面结构类型）——spessa 路径仍是 WorkletSynthesizer 实例，
+// copych 后端为 CopychSynthFacade；4 处消费点（MidiScheduler/AudioEngine/SystemAudio/audioOut）零改动。
+export let spessaSynth: SynthLike | null = null;
 export let isSpessaSynthReady = false;
+
+// M1 批2（计划修订6）：synth 实例重建/断开时通知订阅方清缓存（SystemAudio.isInitialized /
+// sandbox auditionProgram）——防 backend/bank 切换后残留旧初始化状态。注册方在各自模块
+// 顶层 subscribe（它们本就 import 本模块，反向 import 会成环，故用注册表）。
+const _synthResetListeners = new Set<() => void>();
+export const subscribeSynthReset = (listener: () => void): (() => void) => {
+    _synthResetListeners.add(listener);
+    return () => { _synthResetListeners.delete(listener); };
+};
+const notifySynthReset = (): void => {
+    _synthResetListeners.forEach(l => { try { l(); } catch { /* ignore */ } });
+};
 
 let _selectedSoundFontBankId: SoundFontBankId = readInitialSoundFontBankId();
 let _loadedSoundFontBankId: SoundFontBankId | null = null;
@@ -150,8 +167,12 @@ const ensureWorkletModule = async (ctx: AudioContext): Promise<void> => {
 const disconnectCurrentSynth = (): void => {
     const synth = spessaSynth;
     if (synth) {
-        for (let ch = 0; ch < 16; ch++) {
-            try { (synth as any).controllerChange?.(ch, 123, 0); } catch { /* ignore */ }
+        if (synth instanceof CopychSynthFacade) {
+            try { synth.panic(); } catch { /* ignore */ }   // 清 pending 队列 + C 层硬静音
+        } else {
+            for (let ch = 0; ch < 16; ch++) {
+                try { (synth as any).controllerChange?.(ch, 123, 0); } catch { /* ignore */ }
+            }
         }
         try { synth.disconnect(); } catch { /* ignore */ }
     }
@@ -165,10 +186,11 @@ const disconnectCurrentSynth = (): void => {
     _compMasterIn = null;
     _scMasterIn = null;
     _masterMode = 'comp';
+    notifySynthReset();   // M1 批2：清订阅方缓存（SystemAudio/audioOut）
     notifySoundFontState();
 };
 
-const connectMasterBuses = (ctx: AudioContext, synth: WorkletSynthesizer): void => {
+const connectMasterBuses = (ctx: AudioContext, synth: SynthLike): void => {
     // ★ 母带总线(全局,POP 母带思路:响而受控,全局维持平衡——不靠拉单轨)。
     //   原来 synth 裸连 destination → 全 band 进来时浮点总和 >1.0 撞 DAC = 削波/刺耳。
     //   链:留余量(gain staging,-6dB 思路)→ SSL-式 glue 压缩(evens 动态、糊住跳变)
@@ -211,6 +233,31 @@ const connectMasterBuses = (ctx: AudioContext, synth: WorkletSynthesizer): void 
 const loadSelectedSynth = async (ctx: AudioContext): Promise<void> => {
     const bank = getSelectedSoundFontBank();
     disconnectCurrentSynth();
+
+    // M1 批2：copych WASM 后端分支（?synth=copych / localStorage；默认 spessa 路径原样）
+    if (isCopychBackend()) {
+        await ensureCopychWorkletModule(ctx);
+        const facade = new CopychSynthFacade(ctx);
+        const response = await fetch(bank.url);
+        if (!response.ok) {
+            facade.disconnect();
+            throw new Error(`SynthManager: SF2 fetch failed (${bank.url}, status ${response.status})`);
+        }
+        const buffer = await response.arrayBuffer();
+        await facade.init(buffer);   // transfer 进 worklet，采样率=ctx.sampleRate（运行期注入）
+
+        if (_selectedSoundFontBankId !== bank.id) {
+            facade.disconnect();
+            return loadSelectedSynth(ctx);
+        }
+
+        connectMasterBuses(ctx, facade);
+        spessaSynth = facade;
+        isSpessaSynthReady = true;
+        _loadedSoundFontBankId = bank.id;
+        notifySoundFontState();
+        return;
+    }
 
     await ensureWorkletModule(ctx);
 

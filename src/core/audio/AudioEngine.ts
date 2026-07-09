@@ -17,6 +17,10 @@ import { musicalIRToMidiEvents, roomWetFor } from './musicalIrToMidi';
 import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
 import type { MusicGenerationResult } from '../generation/musicGeneration/types';
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
+// M1 批2：copych 后端——CC95 直通判据 + per-song 空间参数（SONG_SPACE_PROFILES 同源镜像设备 AR_CMD_SONG_*）
+import { isCopychBackend } from './synthBackend';
+import { CopychSynthFacade } from './copych/CopychSynthFacade';
+import { songSpaceProfile } from '../generation/newEngine/knowledge/gmMixProfile';
 import {
     spessaSynth,
     isSpessaSynthReady,
@@ -51,6 +55,11 @@ const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
 };
 const ROLE_CHANNEL_VIS: Record<string, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
 const CC_DELAY_SEND = 95;
+
+// delayMode → 拍数（镜像设备 ne_song_space_delay 换算：seconds = beats × 60 / bpm）
+const DELAY_MODE_BEATS: Record<string, number> = {
+    'eighth': 0.5, 'dotted-eighth': 0.75, 'quarter': 1.0, 'off': 0,
+};
 
 class AudioEngineSystem {
     private visualsMode: 'all' | 'gameplay-only' = 'all';
@@ -92,6 +101,23 @@ class AudioEngineSystem {
         const events = musicalIRToMidiEvents(result.ir, roomWetFor(result.styleHint));
         const visuals = this.buildVisualEvents(result.ir);
         globalMidiScheduler.stop();
+
+        // M1 批2：copych 后端 per-song 空间参数（reverb/chorus/delay，镜像设备 AR_CMD_SONG_*；
+        // spessa 路径无此概念——房间感靠 CC91 send + echo 预渲染，零改动）。
+        // 口径：world=undefined（TimbreWorld 未随 result 携带，syntheticSoft 判定缺失=POC 已知偏差）；
+        // hasPad 由 IR pad 轨在场推导（与器配 songSpaceProfile 输入一致）。
+        if (isCopychBackend() && spessaSynth instanceof CopychSynthFacade) {
+            const hasPad = result.ir.tracks.some(t => t.role === 'pad' && t.notes.length > 0);
+            const p = songSpaceProfile(result.styleHint, undefined, hasPad);
+            const beats = DELAY_MODE_BEATS[p.delayMode] ?? 0;
+            spessaSynth.setSongSpace({
+                reverb: { time: p.reverbTime, level: p.reverbLevel, predelayMs: p.predelayMs, damping: p.damping },
+                // 单位镜像固件 adapter：depth/100→秒、baseDelay ms→秒
+                chorus: { lfoHz: p.chorusLfoHz, depthS: p.chorusDepth / 100, baseDelayS: p.chorusBaseDelay / 1000 },
+                delay: { seconds: beats > 0 ? (beats * 60) / result.bpm : 0, feedback: p.delayFeedback, enabled: beats > 0 },
+            });
+        }
+
         globalMidiScheduler.loadTrack([...events, ...visuals], result.bpm);
         globalMidiScheduler.start();
 
@@ -219,7 +245,8 @@ class AudioEngineSystem {
     public controllerChange(channel: number, controller: number, value: number): void {
         if (!spessaSynth) return;
         const cc = Math.round(controller);
-        if (cc === CC_DELAY_SEND) return;
+        // CC95：spessa 吞（echo 预渲染已代偿）；copych 直通真 FxDelay（计划修订1）
+        if (cc === CC_DELAY_SEND && !isCopychBackend()) return;
         try {
             (spessaSynth as any).controllerChange?.(
                 Math.round(channel),
