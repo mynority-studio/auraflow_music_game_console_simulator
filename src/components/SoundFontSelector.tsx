@@ -3,11 +3,16 @@ import { ChevronDown, Headphones, Play, Square } from 'lucide-react';
 import {
     AudioEngine,
     SOUND_FONT_BANKS,
+    getChannelModePref,
     getLoadedSoundFontBank,
+    getSampleRatePref,
     getSelectedSoundFontBank,
     getSynthBackend,
+    SAMPLE_RATE_OPTIONS,
     startAudioContext,
     subscribeSoundFontBank,
+    type ChannelModePref,
+    type SampleRatePref,
     type SoundFontBankId,
     type SynthBackendKind,
 } from '../core/audio/AudioEngine';
@@ -37,6 +42,9 @@ export const SoundFontSelector: React.FC = () => {
     const [auditioning, setAuditioning] = useState<string | null>(null);
     const [instrumentKey, setInstrumentKey] = useState<string>('');
     const [sampleRate, setSampleRate] = useState<number | null>(null);
+    const [ratePref, setRatePref] = useState<SampleRatePref>(() => getSampleRatePref());
+    const [ratePending, setRatePending] = useState(false);
+    const [channelMode, setChannelModeState] = useState<ChannelModePref>(() => getChannelModePref());
     const auditionTimers = useRef<number[]>([]);
     const instrumentKeyRef = useRef<string>('');   // subscribe 闭包用（避免 stale state）
 
@@ -55,6 +63,8 @@ export const SoundFontSelector: React.FC = () => {
             setSelectedId(getSelectedSoundFontBank().id);
             setLoadedId(getLoadedSoundFontBank()?.id ?? null);
             setBackend(getSynthBackend());
+            setRatePref(getSampleRatePref());
+            setChannelModeState(getChannelModePref());
             readSampleRate();
             // 合成器实例重建（bank/backend 切换）会回 GM 默认——重发主键盘乐器选择（不发确认音）
             const key = instrumentKeyRef.current;
@@ -188,6 +198,35 @@ export const SoundFontSelector: React.FC = () => {
         }
     };
 
+    /** 采样率偏好切换：关旧 ctx 建新 + 重建合成器（先停播放）；失败回滚 previous 并强制重建。 */
+    const handleRateChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
+        const raw = event.target.value;
+        const next: SampleRatePref = raw === 'auto' ? 'auto' : Number(raw) as SampleRatePref;
+        const previous = getSampleRatePref();
+        if (next === previous) return;
+        stopAudition();
+        setRatePref(next);
+        setRatePending(true);
+        setError(null);
+        try {
+            await AudioEngine.setAudioSampleRate(next);
+        } catch (err) {
+            console.error('Sample rate switch failed', err);
+            setError('采样率切换失败');
+            try { await AudioEngine.setAudioSampleRate(previous, true); } catch { /* keep failed state visible */ }
+            setRatePref(getSampleRatePref());
+        } finally {
+            setRatePending(false);
+        }
+    };
+
+    /** 声道模式切换：末端下混开关，即时生效不打断播放。 */
+    const handleChannelModeChange = (event: React.ChangeEvent<HTMLSelectElement>): void => {
+        const mode = event.target.value as ChannelModePref;
+        AudioEngine.setChannelMode(mode);
+        setChannelModeState(mode);
+    };
+
     /** 合成器后端切换（copych=设备镜像 默认 / spessa=浏览器参考）。切换会停当前播放并重建合成器。 */
     const handleBackendChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
         const next = event.target.value as SynthBackendKind;
@@ -219,7 +258,7 @@ export const SoundFontSelector: React.FC = () => {
 
     return (
         <div
-            className="fixed left-3 top-3 z-[60] w-[min(32rem,calc(100vw_-_1.5rem))] text-zinc-300"
+            className="fixed left-3 top-3 z-[60] w-[min(38rem,calc(100vw_-_1.5rem))] text-zinc-300"
             style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
         >
             <div
@@ -313,7 +352,7 @@ export const SoundFontSelector: React.FC = () => {
                     id="synth-backend-select"
                     value={backend}
                     onChange={handleBackendChange}
-                    disabled={backendPending}
+                    disabled={backendPending || ratePending}
                     title="copych = 设备同款引擎（嵌入式镜像参考，默认，24 kHz 设备口径）；SpessaSynth = 浏览器参考合成器（硬件采样率）"
                     className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
@@ -322,22 +361,50 @@ export const SoundFontSelector: React.FC = () => {
                     <option value="copych">Copych · 设备镜像</option>
                     <option value="spessa">SpessaSynth</option>
                 </select>
-                {backendPending && (
+                {(backendPending || ratePending) && (
                     <span className="shrink-0 text-[10px] text-cyan-300">切换中</span>
                 )}
-                <span
-                    className="shrink-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                <label htmlFor="channel-mode-select" className="ml-1 shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
+                    声道
+                </label>
+                <select
+                    id="channel-mode-select"
+                    value={channelMode}
+                    onChange={handleChannelModeChange}
                     title={backend === 'copych'
-                        ? '输出声道：copych 引擎单声道渲染（L=R，镜像设备 mono 硬件口径）'
-                        : '输出声道：SpessaSynth 立体声（每通道声像 + 立体声空间）'}
+                        ? '输出声道模式（即时生效）。copych 引擎原生单声道（双声道载体 L=R=双单声道），直通/下混听感相同'
+                        : '输出声道模式（即时生效）。spessa 原生立体声；选单声道=末端下混——与 copych A/B 时消除声场差，引擎对比更公平'}
+                    className="h-7 w-[6.5rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
+                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400"
                 >
-                    {backend === 'copych' ? '单声道 · 设备口径' : '立体声'}
-                </span>
+                    <option value="stereo">立体声·直通</option>
+                    <option value="mono">单声道·下混</option>
+                </select>
+                <label htmlFor="sample-rate-select" className="ml-1 shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
+                    采样率
+                </label>
+                <select
+                    id="sample-rate-select"
+                    value={String(ratePref)}
+                    onChange={handleRateChange}
+                    disabled={ratePending || backendPending}
+                    title="输出采样率（AudioContext 固有属性，切换会重建音频管线）。自动=copych 24 kHz 设备口径（24k SF2 零重采样）/ spessa 硬件默认"
+                    className="h-7 w-[7rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
+                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
+                               disabled:cursor-wait disabled:opacity-70"
+                >
+                    <option value="auto">{backend === 'copych' ? '自动 · 24k 设备' : '自动 · 硬件'}</option>
+                    {SAMPLE_RATE_OPTIONS.map(rate => (
+                        <option key={rate} value={String(rate)}>
+                            {(rate / 1000) % 1 === 0 ? (rate / 1000).toFixed(0) : (rate / 1000).toFixed(2)} kHz
+                        </option>
+                    ))}
+                </select>
                 <span
                     className="shrink-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                    title="音频输出采样率（AudioContext.sampleRate）——copych 后端 ctx 建成 24 kHz=设备口径（24k SF2 样本 1:1 零重采样）；spessa 跟硬件默认。首次出声后显示。"
+                    title="当前实际生效的 AudioContext.sampleRate（首次出声后显示）"
                 >
-                    {sampleRate ? `${(sampleRate / 1000) % 1 === 0 ? (sampleRate / 1000).toFixed(0) : (sampleRate / 1000).toFixed(1)} kHz` : '— kHz'}
+                    {sampleRate ? `${(sampleRate / 1000) % 1 === 0 ? (sampleRate / 1000).toFixed(0) : (sampleRate / 1000).toFixed(2)} kHz` : '—'}
                 </span>
             </div>
 

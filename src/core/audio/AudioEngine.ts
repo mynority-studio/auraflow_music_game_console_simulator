@@ -31,11 +31,17 @@ import {
     getLoadedSoundFontBank,
     setSelectedSoundFontBank,
     setSynthBackendKind,
+    setAudioSampleRate as setAudioSampleRateInternal,
+    setChannelMode as setChannelModeInternal,
     setPlaybackMasterStyle,
     subscribeSoundFontBank,
     type SoundFontBank,
     type SoundFontBankId,
 } from './SynthManager';
+import {
+    getChannelModePref, getSampleRatePref, SAMPLE_RATE_OPTIONS,
+    type ChannelModePref, type SampleRatePref,
+} from './audioOutputPrefs';
 
 export {
     spessaSynth,
@@ -48,8 +54,11 @@ export {
     subscribeSoundFontBank,
     setPlaybackMasterStyle,
     getSynthBackend,
+    getSampleRatePref,
+    getChannelModePref,
+    SAMPLE_RATE_OPTIONS,
 };
-export type { SoundFontBank, SoundFontBankId, SynthBackendKind };
+export type { SoundFontBank, SoundFontBankId, SynthBackendKind, SampleRatePref, ChannelModePref };
 
 // ★ Q+N 角色 → LedMatrix VisualEvent 类型(qn_main_engine_takeover §5.3)。pad 暂归 accomp(无专属 atmosphere 视觉)。
 const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
@@ -159,6 +168,18 @@ class AudioEngineSystem {
         this.playSessionId++;
         this.stop();
         await setSynthBackendKind(kind, forceReload);
+    }
+
+    /** 切输出采样率偏好（关旧 ctx 建新 + 重建合成器）。先停播放（跨 ctx 时间线不可迁移）。 */
+    public async setAudioSampleRate(pref: SampleRatePref, forceReload = false): Promise<void> {
+        this.playSessionId++;
+        this.stop();
+        await setAudioSampleRateInternal(pref, forceReload);
+    }
+
+    /** 切输出声道模式（末端下混开关，运行期即时生效，不打断播放）。 */
+    public setChannelMode(mode: ChannelModePref): void {
+        setChannelModeInternal(mode);
     }
 
     public getSoundFontBank(): SoundFontBank {
