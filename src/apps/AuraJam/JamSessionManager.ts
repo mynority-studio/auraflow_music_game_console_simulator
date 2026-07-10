@@ -164,13 +164,14 @@ export class JamSessionManager {
             // ★ Q+N 播放视图:段(prepareJam 定时/段命中用)取自 uiSnapshot;不再假 GeneratedTrack/StyleConfig。
             this.currentSong = toPlaybackSong(result);
 
-            await AudioEngine.playMusicGeneration(result);
+            const playId = await AudioEngine.playMusicGeneration(result); // 返回本次实际启动的会话 id
 
-            if (currentGenId !== this.generationId) return;
+            if (currentGenId !== this.generationId) return; // 更 newer jam 会话已接管 → 由它管状态
+            if (playId === null) { this.setState('SCALE_VIEW'); return; } // 被非-jam 源超越 → 回 SCALE_VIEW，不注册续播
             this.setState('PLAYING');
 
             globalMidiScheduler.onTrackEnd(() => {
-                if (currentGenId === this.generationId) {
+                if (currentGenId === this.generationId && AudioEngine.currentPlaybackId() === playId) {
                     this.stopPlayback();
                 }
             });

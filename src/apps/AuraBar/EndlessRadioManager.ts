@@ -411,15 +411,17 @@ export class EndlessRadioManager {
     this.currentSong = toPlaybackSong(result);
 
     // ★ Q+N 正式播放:走 AudioEngine.playMusicGeneration(MusicalIR + uiSnapshot + 视觉)。
-    await AudioEngine.playMusicGeneration(result);
+    const playId = await AudioEngine.playMusicGeneration(result); // 返回本次实际启动的会话 id
 
-    if (genId !== this.generationId) return;
+    if (genId !== this.generationId) return; // 更 newer radio 会话已接管 → 由它管状态
+    if (playId === null) { this.setState('IDLE'); return; } // 被非-radio 源(上传/切后端)超越 → 回 IDLE，不注册续播
 
     this.setState('PLAYING');
 
     // 一首播完 → 自动续下一首(无限电台);复用 globalMidiScheduler.onTrackEnd。
+    // playId 校验：上传试听/切后端等超越本会话后，本 listener 不再续播（防跨源劫持）。
     globalMidiScheduler.onTrackEnd(() => {
-      if (genId === this.generationId) {
+      if (genId === this.generationId && AudioEngine.currentPlaybackId() === playId) {
         this.playNext();
       }
     });

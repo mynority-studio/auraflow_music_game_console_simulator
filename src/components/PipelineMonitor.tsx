@@ -385,13 +385,14 @@ export const PipelineMonitor: React.FC = () => {
             if (result.status === 'failed' || !result.ir) throw new Error('音乐生成失败(audit fatal)');
 
             refreshQnMonitor(result, seed);
-            await AudioEngine.playMusicGeneration(result);
+            const playId = await AudioEngine.playMusicGeneration(result); // 返回本次实际启动的会话 id
+            if (playId === null) { if (activeSeedRef.current === seed) { setPlayState('IDLE'); setMonitorStatus('就绪'); } return; } // 被超越/failed → 回 IDLE+就绪，不接管播放态、不注册续播
             reapplyMutes();
             setPlayState('PLAYING');
             setMonitorStatus('▶ 播放中');
 
             globalMidiScheduler.onTrackEnd(() => {
-                if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING') {
+                if (activeSeedRef.current === seed && playStateRef.current === 'PLAYING' && AudioEngine.currentPlaybackId() === playId) {
                     playSeed(seed);
                 }
             });
