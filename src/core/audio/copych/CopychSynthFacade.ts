@@ -44,6 +44,51 @@ const COPYCH_FX_BOOT: CopychFxState = {
 let _fxState: CopychFxState = COPYCH_FX_BOOT;
 const _fxListeners = new Set<() => void>();
 
+/* ---- 设备后链（听感排查批2）状态镜像 ----
+ * 固件输出后链（gain×4.28→backend soft/hard clip→mono 折叠→EQ 6 段→终级饱和→16bit）
+ * 的 web 复刻（DSP 在 public/copych/device_postchain.mjs，参数同源锚见彼处头注释）。
+ * cfg=主线程意愿；state=processor 回报的实际生效态（仅 24k ctx 有效——非 24k 请求
+ * enable 会被 processor 拒绝并带 reason，UI 以 state 为准防分叉）。
+ * trimDb=试听等响（链外，非镜像）；meters=链输出电平（pre=trim 前/post=trim 后）。 */
+export interface CopychPostChainCfg {
+    enabled: boolean;
+    gain: boolean;      /* off ≡ 板上 ne gain 100 */
+    eq: boolean;        /* off ≡ 板上 ne eq off */
+    softclip: boolean;  /* off ≡ 板上 ne clip hard */
+    quantize: boolean;  /* off=纯 float 链（非设备路径，仅诊断） */
+    trimDb: number;
+}
+export interface CopychPostChainState {
+    active: boolean;
+    srOk: boolean;
+    cfg: CopychPostChainCfg;
+    reason: string | null;
+}
+export interface CopychPostChainMeters {
+    prePeak: number; preRms: number; postPeak: number; postRms: number;
+}
+
+const POSTCHAIN_BOOT: CopychPostChainState = {
+    active: false,
+    srOk: true,
+    cfg: { enabled: false, gain: true, eq: true, softclip: true, quantize: true, trimDb: 0 },
+    reason: null,
+};
+
+let _pcState: CopychPostChainState = POSTCHAIN_BOOT;
+let _pcMeters: CopychPostChainMeters | null = null;
+const _pcListeners = new Set<() => void>();
+
+export const getCopychPostChainState = (): CopychPostChainState => _pcState;
+export const getCopychPostChainMeters = (): CopychPostChainMeters | null => _pcMeters;
+export const subscribeCopychPostChain = (listener: () => void): (() => void) => {
+    _pcListeners.add(listener);
+    return () => { _pcListeners.delete(listener); };
+};
+const notifyPostChain = (): void => {
+    _pcListeners.forEach(l => { try { l(); } catch { /* ignore */ } });
+};
+
 export const getCopychFxState = (): CopychFxState => _fxState;
 export const subscribeCopychFxState = (listener: () => void): (() => void) => {
     _fxListeners.add(listener);
@@ -66,9 +111,11 @@ export const ensureCopychWorkletModule = (ctx: AudioContext): Promise<void> => {
 
 export class CopychSynthFacade implements SynthLike {
     private readonly node: AudioWorkletNode;
+    private readonly ctxSampleRate: number;
     private _ready = false;
 
     constructor(ctx: AudioContext) {
+        this.ctxSampleRate = ctx.sampleRate;
         this.node = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
             numberOfInputs: 0,
             numberOfOutputs: 1,
@@ -78,6 +125,17 @@ export class CopychSynthFacade implements SynthLike {
 
     /** fetch 好的 SF2 ArrayBuffer → transfer 进 worklet 初始化（采样率=ctx.sampleRate，worklet 侧 sampleRate 全局）。 */
     public init(sf2: ArrayBuffer): Promise<void> {
+        /* 设备后链常驻监听（state 回报 + 电平表）——synth 重建后 state 回 boot（后链默认关） */
+        this.node.port.addEventListener('message', (e: MessageEvent) => {
+            const d = e.data;
+            if (d?.type === 'postchain-state') {
+                _pcState = { active: !!d.active, srOk: !!d.srOk, cfg: d.cfg, reason: d.reason ?? null };
+                notifyPostChain();
+            } else if (d?.type === 'postchain-meters') {
+                _pcMeters = d.m;
+                notifyPostChain();
+            }
+        });
         return new Promise<void>((resolve, reject) => {
             const onMsg = (e: MessageEvent) => {
                 const d = e.data;
@@ -85,7 +143,9 @@ export class CopychSynthFacade implements SynthLike {
                     this.node.port.removeEventListener('message', onMsg);
                     this._ready = true;
                     _fxState = COPYCH_FX_BOOT;   // synth 重建 → FX 回 boot 默认
-                    notifyFxState();
+                    _pcState = { ...POSTCHAIN_BOOT, srOk: this.ctxSampleRate === 24000 };
+                    _pcMeters = null;
+                    notifyPostChain();
                     resolve();
                 } else if (d?.type === 'error') {
                     this.node.port.removeEventListener('message', onMsg);
@@ -96,6 +156,11 @@ export class CopychSynthFacade implements SynthLike {
             this.node.port.start();
             this.node.port.postMessage({ type: 'init', sf2 }, [sf2]);
         });
+    }
+
+    /** 设备后链配置（局部合并；实际生效态以 processor 回报的 postchain-state 为准）。 */
+    public setDevicePostChain(cfg: Partial<CopychPostChainCfg>): void {
+        this.node.port.postMessage({ type: 'postchain', cfg });
     }
 
     public get isReady(): boolean { return this._ready; }
