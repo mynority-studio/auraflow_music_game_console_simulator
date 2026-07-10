@@ -54,3 +54,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    任何"让 copych 更好听"的改动必须先回设备侧对齐口径，不得 web 侧单方面调。
 8. **许可**：copych 产物按 GPL-3.0-only 分发（含上游 copych MIT 部分），权威文本见
    auraflow_synth 仓 LICENSE/NOTICE；PROVENANCE.md 中的许可行不得删除。
+9. **设备后链镜像（听感排查批2，2026-07-10）**：`public/copych/device_postchain.mjs` =
+   固件输出后链（增益×4.28 → backend soft/hard clip → mono 折叠 → 6 段 EQ → 终级饱和 →
+   16bit）的逐语义复刻，**参数与固件同源**——EQ 24k 系数锚主仓
+   `main/audio_rander/audio_rander.c s_eq_coef`、softclip/hardclip 锚
+   `main/audio_rander/audio_rander_sf2.h`、链序锚 `audio_rander_copych.cpp ar_sf2_render`
+   末段 + `audio_rander.c` render loop；**固件改这些点必须同步本文件**（vitest
+   `devicePostChain.test.ts` 手算锚点会红）。仅 24 kHz ctx 有效（processor 拒绝并回报
+   state，UI 以回报为准）；默认关（不改听感基线）；除 16bit-off（纯 float 诊断链）外
+   每个开关组合对应板上真实态（`ne gain 100`/`ne eq off`/`ne clip hard`）；audition
+   trim 与电平表=试听工具，不属于镜像、不进 parity。

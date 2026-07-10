@@ -18,6 +18,14 @@ import {
 } from '../core/audio/AudioEngine';
 import { AURA25_AUDITION_INSTRUMENTS } from '../core/sound/Aura25Palette';
 import { getCopychFxState, subscribeCopychFxState, type CopychFxState } from '../core/audio/copych/CopychSynthFacade';
+import {
+    getCopychPostChainMeters,
+    getCopychPostChainState,
+    subscribeCopychPostChain,
+    type CopychPostChainMeters,
+    type CopychPostChainState,
+} from '../core/audio/copych/CopychSynthFacade';
+import { setCopychDevicePostChain } from '../core/audio/AudioEngine';
 
 const AUDITION_CHANNEL = 8;
 const DRUM_CHANNEL = 9;
@@ -62,6 +70,12 @@ export const SoundFontSelector: React.FC = () => {
     };
 
     useEffect(() => subscribeCopychFxState(() => setCopychFx(getCopychFxState())), []);
+    const [pcState, setPcState] = useState<CopychPostChainState>(() => getCopychPostChainState());
+    const [pcMeters, setPcMeters] = useState<CopychPostChainMeters | null>(() => getCopychPostChainMeters());
+    useEffect(() => subscribeCopychPostChain(() => {
+        setPcState(getCopychPostChainState());
+        setPcMeters(getCopychPostChainMeters());
+    }), []);
 
     useEffect(() => {
         readSampleRate();
@@ -456,6 +470,89 @@ export const SoundFontSelector: React.FC = () => {
                     </>
                 )}
             </div>
+
+            {backend === 'copych' && (
+                <div
+                    className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950/90 px-3 py-2
+                               shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
+                >
+                    <span
+                        className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400"
+                        title={'固件输出后链镜像（增益×4.28 → backend 软/硬削波 → 单声道折叠 → 6 段小喇叭校正 EQ → 终级饱和 → 16bit）。'
+                            + '开=Mac 听到的即固件送进 DAC 的字节，唯一剩余差异=DAC/模拟/喇叭。仅 24kHz ctx 有效（EQ 系数绑 24k）。'
+                            + '各级开关对应设备真实态：增益 off≡ne gain 100 / EQ off≡ne eq off / 软削 off≡ne clip hard；16bit off=纯 float 链（仅诊断，非设备路径）'}
+                    >
+                        设备后链
+                    </span>
+                    <button
+                        type="button"
+                        disabled={!pcState.srOk}
+                        onClick={() => setCopychDevicePostChain({ enabled: !pcState.cfg.enabled })}
+                        className={`rounded px-2 py-0.5 text-[10px] transition ${!pcState.srOk
+                            ? 'cursor-not-allowed bg-zinc-900 text-zinc-600'
+                            : pcState.active
+                                ? 'bg-cyan-900/70 text-cyan-200'
+                                : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
+                        title={pcState.srOk ? '总开关（默认关=不改现有听感基线）' : '设备后链仅 24 kHz ctx 有效——请切采样率到 24 kHz'}
+                    >
+                        {pcState.srOk ? (pcState.active ? '开' : '关') : '需 24k'}
+                    </button>
+                    {(['gain', 'eq', 'softclip', 'quantize'] as const).map(k => (
+                        <button
+                            key={k}
+                            type="button"
+                            disabled={!pcState.active}
+                            onClick={() => setCopychDevicePostChain({ [k]: !pcState.cfg[k] })}
+                            className={`rounded px-1.5 py-0.5 text-[10px] transition ${!pcState.active
+                                ? 'cursor-not-allowed bg-zinc-900 text-zinc-700'
+                                : pcState.cfg[k]
+                                    ? 'bg-zinc-800 text-zinc-200'
+                                    : 'bg-zinc-900 text-zinc-500 line-through'}`}
+                            title={{
+                                gain: '×4.28（off≡板上 ne gain 100）',
+                                eq: '6 段小喇叭校正 EQ（off≡板上 ne eq off）',
+                                softclip: 'backend 软削波（off=硬削≡板上 ne clip hard）',
+                                quantize: '16bit 整数格（off=纯 float 链，仅诊断非设备路径）',
+                            }[k]}
+                        >
+                            {{ gain: '增益4.28', eq: 'EQ', softclip: '软削', quantize: '16bit' }[k]}
+                        </button>
+                    ))}
+                    <button
+                        type="button"
+                        disabled={!pcState.srOk}
+                        onClick={() => setCopychDevicePostChain({ enabled: true, gain: true, eq: true, softclip: true, quantize: true })}
+                        className={`rounded px-1.5 py-0.5 text-[10px] ${pcState.srOk ? 'bg-zinc-900 text-zinc-400 hover:text-zinc-200' : 'cursor-not-allowed bg-zinc-900 text-zinc-700'}`}
+                        title="一键=固件默认态全开（gain+EQ+软削+16bit）"
+                    >
+                        镜像预设
+                    </button>
+                    <span className="mx-0.5 h-3 w-px bg-zinc-800" />
+                    <span className="text-[10px] text-zinc-500" title="试听等响微调（不属于设备镜像，不进 parity）">trim</span>
+                    <button
+                        type="button"
+                        disabled={!pcState.active}
+                        onClick={() => setCopychDevicePostChain({ trimDb: Math.max(-12, (pcState.cfg.trimDb || 0) - 1) })}
+                        className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+                    >−</button>
+                    <span className="min-w-[3ch] text-center text-[10px] text-zinc-400">{(pcState.cfg.trimDb || 0) > 0 ? '+' : ''}{pcState.cfg.trimDb || 0}dB</span>
+                    <button
+                        type="button"
+                        disabled={!pcState.active}
+                        onClick={() => setCopychDevicePostChain({ trimDb: Math.min(12, (pcState.cfg.trimDb || 0) + 1) })}
+                        className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+                    >+</button>
+                    {pcState.active && pcMeters && (
+                        <span
+                            className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500"
+                            title="链=trim 前（判断设备后链本身是否推爆）；出=trim 后（耳朵等响用）。dBFS"
+                        >
+                            链 {pcMeters.preRms > 0 ? (20 * Math.log10(pcMeters.preRms)).toFixed(0) : '−∞'}/{pcMeters.prePeak > 0 ? (20 * Math.log10(pcMeters.prePeak)).toFixed(0) : '−∞'}
+                            {' · 出 '}{pcMeters.postRms > 0 ? (20 * Math.log10(pcMeters.postRms)).toFixed(0) : '−∞'}/{pcMeters.postPeak > 0 ? (20 * Math.log10(pcMeters.postPeak)).toFixed(0) : '−∞'}
+                        </span>
+                    )}
+                </div>
+            )}
 
             {auditionOpen && (
                 <div

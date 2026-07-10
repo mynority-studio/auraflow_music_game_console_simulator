@@ -186,6 +186,13 @@ const ensureWorkletModule = async (ctx: AudioContext): Promise<void> => {
     await p;
 };
 
+/** 设备后链配置通路（听感排查批2）：达到当前 copych facade；spessa/未就绪时 no-op
+ *  （实际生效态经 facade 的 postchain-state 订阅回报，UI 以其为准）。 */
+export const setCopychDevicePostChain = (cfg: Partial<import('./copych/CopychSynthFacade').CopychPostChainCfg>): void => {
+    const synth = spessaSynth;
+    if (synth instanceof CopychSynthFacade) synth.setDevicePostChain(cfg);
+};
+
 const disconnectCurrentSynth = (): void => {
     const synth = spessaSynth;
     if (synth) {

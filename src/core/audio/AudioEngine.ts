@@ -35,6 +35,7 @@ import {
     setChannelMode as setChannelModeInternal,
     setPlaybackMasterStyle,
     subscribeSoundFontBank,
+    setCopychDevicePostChain,
     type SoundFontBank,
     type SoundFontBankId,
 } from './SynthManager';
@@ -57,6 +58,7 @@ export {
     getSampleRatePref,
     getChannelModePref,
     SAMPLE_RATE_OPTIONS,
+    setCopychDevicePostChain,
 };
 export type { SoundFontBank, SoundFontBankId, SynthBackendKind, SampleRatePref, ChannelModePref };
 

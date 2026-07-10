@@ -15,6 +15,7 @@
 // 再调 C 层 copych_wasm_panic（CC64=0→soundOff→delay resetLine）。
 // ============================================================
 import createCopychModule from './copych_synth.mjs';
+import { createDevicePostChain } from './device_postchain.mjs';
 
 class CopychProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -25,6 +26,9 @@ class CopychProcessor extends AudioWorkletProcessor {
         this.pR = 0;
         this.queue = [];   // {when, seq, kind, ch, a, b}，按 (when, seq) 升序
         this.seq = 0;
+        /* 设备后链（听感排查批2）：仅 24k ctx 有效；状态每次 set 后回报主线程防分叉 */
+        this.postchain = createDevicePostChain(sampleRate);
+        this.meterCountdown = 0;   // 采样计数：每 ~250ms 上报一次电平表
         this.port.onmessage = (e) => { void this.onMessage(e.data); };
     }
 
@@ -63,6 +67,19 @@ class CopychProcessor extends AudioWorkletProcessor {
                 if (this.ready) this.M._copych_wasm_panic(); // 再硬静音
                 break;
             }
+            case 'postchain': {
+                /* {enabled?, gain?, eq?, softclip?, quantize?, trimDb?} 局部合并；
+                 * 非 24k ctx 请求 enable → 实际保持 bypass，回报 reason 供 UI 对齐。 */
+                this.postchain.set(msg.cfg || {});
+                this.port.postMessage({
+                    type: 'postchain-state',
+                    active: this.postchain.isActive(),
+                    srOk: this.postchain.srOk(),
+                    cfg: this.postchain.config(),
+                    reason: (!this.postchain.srOk() && msg.cfg && msg.cfg.enabled) ? 'sampleRate!=24000' : null,
+                });
+                break;
+            }
             case 'space': {
                 if (!this.ready) return;
                 if (msg.reverb) this.M._copych_wasm_set_song_reverb(msg.reverb.time, msg.reverb.level, msg.reverb.predelayMs, msg.reverb.damping);
@@ -96,6 +113,15 @@ class CopychProcessor extends AudioWorkletProcessor {
         this.M._copych_wasm_render(this.pL, this.pR, len);
         out[0].set(this.M.HEAPF32.subarray(this.pL >> 2, (this.pL >> 2) + len));
         if (out[1]) out[1].set(this.M.HEAPF32.subarray(this.pR >> 2, (this.pR >> 2) + len));
+        /* 设备后链（active 时就地处理 L/R；零分配）+ 电平表 ~250ms 上报 */
+        if (this.postchain.isActive()) {
+            this.postchain.process(out[0], out[1] || out[0], len);
+            this.meterCountdown -= len;
+            if (this.meterCountdown <= 0) {
+                this.meterCountdown = sampleRate / 4;
+                this.port.postMessage({ type: 'postchain-meters', m: this.postchain.flushMeters() });
+            }
+        }
         return true;
     }
 }
