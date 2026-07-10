@@ -26,6 +26,14 @@ import {
     type CopychPostChainState,
 } from '../core/audio/copych/CopychSynthFacade';
 import { setCopychDevicePostChain } from '../core/audio/AudioEngine';
+import { parseSMF } from '../core/audio/smfParser';
+import { globalMidiScheduler } from '../core/audio/MidiScheduler';
+
+/* 曲终复位上传播放态（codex P3）：globalMidiScheduler.onTrackEnd 无 unsubscribe →
+ * 模块级只注册一次 + 可变回调间接层（防 dev StrictMode 双挂载重复注册；组件卸载
+ * 置空即哑）。对生成曲的曲终也会触发——彼时 midiUploadPlaying 本为 false，置 false 幂等。 */
+let _midiUploadEndCb: (() => void) | null = null;
+let _midiUploadEndRegistered = false;
 
 const AUDITION_CHANNEL = 8;
 const DRUM_CHANNEL = 9;
@@ -70,6 +78,40 @@ export const SoundFontSelector: React.FC = () => {
     };
 
     useEffect(() => subscribeCopychFxState(() => setCopychFx(getCopychFxState())), []);
+    /* 上传 MIDI 播放（上传播放批）：file input ref + 状态行；播放走 AudioEngine.playUploadedMidi
+     * =与生成曲同一调度/后端路径（当前合成器即用户所选，copych 设备后链可叠加）。 */
+    const midiFileRef = useRef<HTMLInputElement>(null);
+    const [midiUploadStatus, setMidiUploadStatus] = useState<string | null>(null);
+    const [midiUploadPlaying, setMidiUploadPlaying] = useState(false);
+    const handleMidiFile = async (file: File) => {
+        /* 上传语义=「替换当前播放」（codex P2）：选文件即先停旧播放并复位 UI——
+         * 失败路径由此不会出现「旧曲还响但停止钮消失」的状态分叉。 */
+        AudioEngine.stop();
+        setMidiUploadPlaying(false);
+        try {
+            const parsed = parseSMF(await file.arrayBuffer());
+            if (parsed.noteCount === 0) { setMidiUploadStatus(`${file.name}：无音符事件`); return; }
+            await AudioEngine.playUploadedMidi(parsed.events, parsed.bpm);
+            setMidiUploadPlaying(true);
+            const warn = parsed.warnings.length ? ` ⚠${parsed.warnings.join('；')}` : '';
+            setMidiUploadStatus(`▶ ${file.name} · ${Math.round(parsed.bpm)}BPM · ${parsed.noteCount}音 · fmt${parsed.format}/${parsed.trackCount}轨${warn}`);
+        } catch (err) {
+            setMidiUploadStatus(`✗ ${file.name}：${err instanceof Error ? err.message : String(err)}`);
+        }
+    };
+    const stopUploadedMidi = () => {
+        AudioEngine.stop();
+        setMidiUploadPlaying(false);
+        setMidiUploadStatus(null);
+    };
+    useEffect(() => {
+        _midiUploadEndCb = () => setMidiUploadPlaying(false);
+        if (!_midiUploadEndRegistered) {
+            _midiUploadEndRegistered = true;
+            globalMidiScheduler.onTrackEnd(() => { _midiUploadEndCb?.(); });
+        }
+        return () => { _midiUploadEndCb = null; };
+    }, []);
     const [pcState, setPcState] = useState<CopychPostChainState>(() => getCopychPostChainState());
     const [pcMeters, setPcMeters] = useState<CopychPostChainMeters | null>(() => getCopychPostChainMeters());
     useEffect(() => subscribeCopychPostChain(() => {
@@ -422,6 +464,41 @@ export const SoundFontSelector: React.FC = () => {
                 >
                     {sampleRate ? `${(sampleRate / 1000) % 1 === 0 ? (sampleRate / 1000).toFixed(0) : (sampleRate / 1000).toFixed(2)} kHz` : '—'}
                 </span>
+                <span className="mx-0.5 h-3 w-px bg-zinc-800" />
+                <input
+                    ref={midiFileRef}
+                    type="file"
+                    accept=".mid,.midi,audio/midi"
+                    className="hidden"
+                    onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleMidiFile(f);
+                        e.target.value = '';   /* 允许重复选同一文件 */
+                    }}
+                />
+                <button
+                    type="button"
+                    onClick={() => midiFileRef.current?.click()}
+                    className="rounded bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400 transition hover:text-zinc-200"
+                    title="上传 .mid 用当前合成器播放（SMF format 0/1；多段变速取首段；与生成曲同一播放路径，copych 设备后链可叠加）"
+                >
+                    上传MIDI
+                </button>
+                {midiUploadPlaying && (
+                    <button
+                        type="button"
+                        onClick={stopUploadedMidi}
+                        className="rounded bg-rose-900/60 px-1.5 py-0.5 text-[10px] text-rose-200 transition hover:bg-rose-800/60"
+                        title="停止上传曲播放"
+                    >
+                        ■
+                    </button>
+                )}
+                {midiUploadStatus && (
+                    <span className="max-w-[24rem] truncate rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500" title={midiUploadStatus}>
+                        {midiUploadStatus}
+                    </span>
+                )}
             </div>
 
             <div

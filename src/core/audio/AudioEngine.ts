@@ -19,7 +19,7 @@ import type { MusicGenerationResult } from '../generation/musicGeneration/types'
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
 // M1 批2：copych 后端——CC95 直通判据 + per-song 空间参数（SONG_SPACE_PROFILES 同源镜像设备 AR_CMD_SONG_*）
 import { getSynthBackend, isCopychBackend, type SynthBackendKind } from './synthBackend';
-import { CopychSynthFacade } from './copych/CopychSynthFacade';
+import { COPYCH_FX_BOOT, CopychSynthFacade } from './copych/CopychSynthFacade';
 import { songSpaceProfile } from '../generation/newEngine/knowledge/gmMixProfile';
 import {
     spessaSynth,
@@ -135,6 +135,25 @@ class AudioEngineSystem {
         globalMidiScheduler.start();
 
         this.currentMusicGeneration = result; // UI 读 getCurrentMusicGeneration().uiSnapshot(不再造 GeneratedTrack/MusicContext 投影)
+    }
+
+    /** 上传 MIDI 播放（上传播放批）：smfParser 产出的 MidiEvent[]（PPQ480 已重标定）直喂
+     *  调度器，走与生成曲完全相同的播放/后端路径（copych 含设备后链可开）。
+     *  外部文件无 per-song 空间参数 → copych 显式回 boot 基线（防上一首的 per-song
+     *  reverb/delay 残留串进上传曲；delay 关）。无 LED visual（无 role 语义）。 */
+    public async playUploadedMidi(events: MidiEvent[], bpm: number): Promise<void> {
+        this.init();
+        const currentSession = ++this.playSessionId;
+        await startAudioContext();
+        if (currentSession !== this.playSessionId) return;
+        setPlaybackMasterStyle(undefined);
+        globalMidiScheduler.stop();
+        if (isCopychBackend() && spessaSynth instanceof CopychSynthFacade) {
+            spessaSynth.setSongSpace(COPYCH_FX_BOOT);
+        }
+        globalMidiScheduler.loadTrack(events, bpm);
+        globalMidiScheduler.start();
+        this.currentMusicGeneration = null;   /* 非生成曲：清 UI 快照 */
     }
 
     /** IR 每个音的 onset → 'visual' MidiEvent(角色 → LedMatrix 类型;source=playback)。 */
