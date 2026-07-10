@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, useDragControls } from 'motion/react';
-import { Activity, Play, Square, X, Dice5, Piano, Volume2, VolumeX } from 'lucide-react';
+import { Activity, Download, Play, Square, X, Dice5, Piano, Volume2, VolumeX } from 'lucide-react';
 import { AudioEngine, startAudioContext } from '../core/audio/AudioEngine';
 import { PartName } from '../core/audio/playbackTypes';
 import { globalMidiScheduler } from '../core/audio/MidiScheduler';
@@ -632,6 +632,13 @@ export const PipelineMonitor: React.FC = () => {
                         }`}
                     >
                         <Square className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={exportMidi}
+                        title="下载当前 seed/style 这首歌的 .mid（与播放同源=同一首）"
+                        className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-white/10 transition-all"
+                    >
+                        <Download className="w-3.5 h-3.5" />
                     </button>
                     <button
                         onClick={() => setRollWinOpen(true)}

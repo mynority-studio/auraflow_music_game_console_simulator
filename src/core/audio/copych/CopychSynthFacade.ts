@@ -35,7 +35,7 @@ const PROCESSOR_NAME = 'copych-processor';
  * facade init（synth 重建）复位到 boot 默认。 */
 export type CopychFxState = CopychSongSpace;
 
-const COPYCH_FX_BOOT: CopychFxState = {
+export const COPYCH_FX_BOOT: CopychFxState = {
     reverb: { time: 0.45, level: 0.7, predelayMs: 10, damping: 0.7 },   // fx_reverb.h init() 手调默认
     chorus: { lfoHz: 0.5, depthS: 0.002, baseDelayS: 0.03 },            // fx_chorus.h init() 默认
     delay: { seconds: 0.25, feedback: 0.1, enabled: false },            // fx_delay.h reset()（cap/4=0.25s；song_enabled=false 待 per-song 开启）

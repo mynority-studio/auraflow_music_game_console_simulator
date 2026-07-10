@@ -15,6 +15,7 @@ import { buildUserMotifBrickSongOverride } from '../bridge/sandboxToOverride';
 // ★ Q+N 主链路(qn_main_engine_takeover §10):播放走 service + AudioEngine.playMusicGeneration;
 //   pad/MIDI 单音录入反馈仍留 sandbox audition。
 import { generateMotifMusic } from '../../musicGeneration/MusicGenerationService';
+import { musicalIRToSMF } from '../../newEngine/sandbox/midiFile';
 import type { MusicGenerationResult } from '../../musicGeneration/types';
 import { AudioEngine } from '../../../audio/AudioEngine';
 import { MUSIC_GEN_STYLE_OPTIONS, MusicGenerationStyleStore, type MusicGenStyle } from '../../../../state/MusicGenerationStyleStore';
@@ -356,6 +357,22 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
     finally { setGenerating(false); }
   }, [captureMode, hiddenMotif, analysis, captured.length, style, keyPc, tonality, motifSeed, stopPlayback]);
 
+  // ⬇ MIDI:下载 generate 阶段产出的这首（与播放同源 IR=同一首,不重生成）。
+  const downloadMidi = useCallback(() => {
+    if (!generatedSong?.ir) { setStatus('先生成'); return; }
+    try {
+      const smf = musicalIRToSMF(generatedSong.ir, generatedSong.bpm, generatedSong.styleHint ?? style);
+      const blob = new Blob([smf as BlobPart], { type: 'audio/midi' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `motif-${generatedSong.styleHint ?? style}-seed${motifSeed ?? MusicGenerationSeedStore.getSeedNumber()}.mid`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus('⬇ 已导出 .mid');
+    } catch (err) { setStatus(err instanceof Error ? `导出失败:${err.message}` : '导出失败'); }
+  }, [generatedSong, style, motifSeed]);
+
   // ★ 播放:只播放 generate 阶段产出的唯一 Q+N song,不再临时跑第二条 sandbox/override 声音链路。
   const play = useCallback(async () => {
     if (!generatedSong?.ir) { setStatus('先生成'); return; }
@@ -473,6 +490,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
           {!playing
             ? <button type="button" onClick={play} disabled={!generatedSong || generating} title="motif → user brick → Q+N 续写成曲" className="rounded-lg bg-violet-600/80 hover:bg-violet-500 disabled:opacity-40 px-2.5 py-1 text-[12px] text-white">▶ 播放</button>
             : <button type="button" onClick={stopPlayback} className="rounded-lg bg-rose-600/80 hover:bg-rose-500 px-2.5 py-1 text-[12px] text-white">■ 停止</button>}
+          <button type="button" onClick={downloadMidi} disabled={!generatedSong?.ir} title="下载当前生成这首为 .mid（与播放同源 IR=同一首）" className="rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 border border-zinc-700 px-2.5 py-1 text-[12px] text-zinc-300">⬇ MIDI</button>
           <button type="button" onClick={toggleHealing} title="新手修饰:补意外短断点 + 护同音断奏(Phase 2 软化重复刺耳摩擦);高级用户可关" className={`rounded-lg px-2 py-1 text-[11px] border ${healingMode === 'beginner' ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-200' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>修饰 {healingMode === 'beginner' ? 'on' : 'off'}</button>
           <span className="ml-auto text-[10px] text-zinc-500">pad=GM{LEAD_PROGRAM_BY_STYLE[style]}</span>
         </div>
