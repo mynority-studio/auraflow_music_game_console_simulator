@@ -53,7 +53,7 @@ describe('knowledge/gmOrchestrationChains — 世界选择', () => {
 });
 
 describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
-  it('electricKeys:默认 comp 使用 CityPop FM EP(GM5)', () => {
+  it('electricKeys:默认 comp 使用 GU Electric Grand 槽位(GM5)', () => {
     const r = orchestrateRolePrograms({ style: 'rnb', lineup: ['comp', 'lead'], requestedWorld: 'electricKeys' });
     expect(CHAIN_PROFILES.electricKeys.compPriority[0]).toBe(5);
     expect(r.roleProgram.comp).toBe(5);
@@ -111,10 +111,10 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     }
   });
 
-  it('drum kit 链权威:24k nano 只下发 Standard', () => {
-    expect(orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: { drum: 40 } }).roleProgram.drum).toBe(0);
-    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 25 } }).roleProgram.drum).toBe(0);
-    expect(orchestrateRolePrograms({ style: 'lofi', lineup: ['drum'], provisional: { drum: 25 } }).roleProgram.drum).toBe(0);
+  it('drum kit 链权威:当前 Aura25 只下发 Room/TR-808/Brush 三套 bank128 kit', () => {
+    expect(orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: { drum: 40 } }).roleProgram.drum).toBe(40);
+    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 25 } }).roleProgram.drum).toBe(25);
+    expect(orchestrateRolePrograms({ style: 'lofi', lineup: ['drum'], provisional: { drum: 25 } }).roleProgram.drum).toBe(25);
   });
 
   it('确定性:同 style/lineup/provisional → 同 roleProgram', () => {

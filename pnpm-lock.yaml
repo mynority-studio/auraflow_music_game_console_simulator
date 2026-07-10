@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  spessasynth_core: ~4.2.8
-
 importers:
 
   .:
@@ -44,12 +41,6 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.4(react@19.2.4)
-      spessasynth_core:
-        specifier: ~4.2.8
-        version: 4.2.8
-      spessasynth_lib:
-        specifier: ~4.2.10
-        version: 4.2.10
       tone:
         specifier: ^15.1.22
         version: 15.1.22
@@ -1603,12 +1594,6 @@ packages:
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
-
-  spessasynth_core@4.2.8:
-    resolution: {integrity: sha512-OP0xUHkn9P28mStaJn9LfFHvcHAWmcedjpyB/uzh03XvS05tly8dR0oCHFkNAozbOU5SizYXKm+YFzkDc02OmQ==}
-
-  spessasynth_lib@4.2.10:
-    resolution: {integrity: sha512-mAWVRY0foxr9oXORJ3OA1xSYv/9/t5pI3yKDPicXra+atE9qthg6bo8z69o1MWMvwHcTbrS6uzVIU+fi7mYYKw==}
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
@@ -3216,12 +3201,6 @@ snapshots:
       simple-concat: 1.0.1
 
   source-map-js@1.2.1: {}
-
-  spessasynth_core@4.2.8: {}
-
-  spessasynth_lib@4.2.10:
-    dependencies:
-      spessasynth_core: 4.2.8
 
   stackback@0.0.2: {}
 

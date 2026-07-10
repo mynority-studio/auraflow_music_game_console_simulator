@@ -10,9 +10,23 @@ import {
 } from './qhTakeoverConsumer';
 import type { LeadTakeoverAction } from './types';
 
-function fakeResult(opts: { leadProgram?: number; styleHint?: string; leadDelay?: number } = {}): MusicGenerationResult {
+function fakeResult(opts: {
+  leadProgram?: number;
+  styleHint?: string;
+  leadDelay?: number;
+  leadMix?: Partial<{ volume: number; pan: number; reverb: number; chorus: number; expression: number; delay: number }>;
+} = {}): MusicGenerationResult {
   const leadProgram = opts.leadProgram ?? 0;
   const styleHint = opts.styleHint ?? 'pop';
+  const leadMix = {
+    volume: 82,
+    pan: 63,
+    reverb: 44,
+    chorus: 7,
+    expression: 118,
+    ...(opts.leadDelay !== undefined ? { delay: opts.leadDelay } : {}),
+    ...(opts.leadMix ?? {}),
+  };
   return {
     status: 'ok',
     bpm: 96,
@@ -27,7 +41,7 @@ function fakeResult(opts: { leadProgram?: number; styleHint?: string; leadDelay?
         {
           role: 'lead',
           program: leadProgram,
-          mix: { volume: 82, pan: 63, reverb: 44, chorus: 7, expression: 118, ...(opts.leadDelay !== undefined ? { delay: opts.leadDelay } : {}) },
+          mix: leadMix,
           notes: [],
         },
       ],
@@ -198,6 +212,45 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
     expect(target.direct.filter((entry) => entry.startsWith(`pc:${TAKEOVER_USER_CHANNEL}:`))).toHaveLength(1);
 
     resetLeadTakeoverRuntimeState(target);
+  });
+
+  it('sets takeover EP release/brightness and resets them for non-EP voices', () => {
+    const epTarget = directTarget(fakeResult({ leadProgram: 5, leadDelay: 16 }));
+    executeLeadTakeoverActions(epTarget, [{ type: 'lead-note-on', channel: 1, midi: 64, velocity: 100 }]);
+    expect(epTarget.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:72:68`);
+    expect(epTarget.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:74:54`);
+    expect(epTarget.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:95:0`);
+    resetLeadTakeoverRuntimeState(epTarget);
+
+    const pianoTarget = directTarget(fakeResult({ leadProgram: 0 }));
+    executeLeadTakeoverActions(pianoTarget, [{ type: 'lead-note-on', channel: 1, midi: 64, velocity: 100 }]);
+    expect(pianoTarget.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:72:64`);
+    expect(pianoTarget.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:74:64`);
+    resetLeadTakeoverRuntimeState(pianoTarget);
+  });
+
+  it('uses a bounded takeover mix and force-clears stale sustain/delay state on ch15', () => {
+    const target = directTarget(fakeResult({
+      leadDelay: 26,
+      leadMix: { volume: 110, reverb: 80, chorus: 60, expression: 127, delay: 26 },
+    }));
+
+    executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, midi: 64, velocity: 100 }]);
+
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:64:0`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:7:72`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:91:18`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:93:6`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:11:112`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:95:0`);
+    expect(target.direct).not.toContain(`cc:${TAKEOVER_USER_CHANNEL}:95:26`);
+
+    resetLeadTakeoverRuntimeState(target);
+
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:64:0`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:95:0`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:123:0`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:120:0`);
   });
 
   it('does not cut a same-MIDI held note until the last note id is released', () => {

@@ -57,9 +57,9 @@ describe('instrumental/gestureExpression', () => {
   it('键盘/鼓/bass 按风格下发不同手势', () => {
     const pop = buildGestureExpressionByRole(['comp', 'drum', 'bass'], { comp: 5, drum: 0, bass: 33 }, 'pop');
     expect(pop.comp.kind).toBe('keyboard-touch');
-    expect(pop.comp.pedalPolicy).toBe('harmonic-change');
-    expect(pop.comp.continuity).toBe('pedal-legato');
-    expect(pop.comp.triggerPolicy).toBe('pedal-cc');
+    expect(pop.comp.pedalPolicy).toBe('none');
+    expect(pop.comp.continuity).toBe('connected');
+    expect(pop.comp.triggerPolicy).toBe('velocity-gate');
     expect(pop.drum.kind).toBe('drum-rudiment');
     expect(pop.drum.continuity).toBe('staccato');
     expect(pop.drum.rudimentPolicy).toBe('backbeat-ghost');

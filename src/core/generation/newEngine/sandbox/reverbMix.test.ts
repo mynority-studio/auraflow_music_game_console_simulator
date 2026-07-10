@@ -3,7 +3,7 @@
 // ------------------------------------------------------------
 // ★ 2026-06-10(esp32s2_gm128_instrument_mix_directive):CC91 混响【已上移到器配层 mix】并随 IR 携带,
 //   不再由 irToMidi.reverbSend(roomWet) 硬算。roomWetFor 退成【缺 mix 时】的回退湿度(per-genre,仍 LOFI>POP>JAZZ)。
-// 新承重不变量:bass 干(高通等效)· pad 比 comp 更湿(关系型护栏 ≥+20)· lead 不过湿 · 确定性。
+// 新承重不变量:bass 受控小 room(低频靠后但不糊)· pad 比 comp 更湿(关系型护栏 ≥+20)· lead 不过湿 · 确定性。
 // ============================================================
 
 import { describe, expect, it } from 'vitest';
@@ -30,7 +30,7 @@ describe('共享房间混响(混音层)', () => {
 
   it('★ 混响由器配层 mix 决定(IR 携带):bass 干 + pad 比 comp 更湿(≥+20)+ lead 不过湿', () => {
     const r = reverbByRole('pop'); // pop seed7 含 bass/comp/pad/lead
-    expect(r.bass).toBeLessThanOrEqual(8);            // 干(高通等效,guardrail bass.reverb≤8)
+    expect(r.bass).toBeLessThanOrEqual(12);           // 低频小 room(guardrail bass.reverb≤12)
     if (r.pad !== undefined && r.comp !== undefined)
       expect(r.pad).toBeGreaterThanOrEqual(r.comp + 20); // pad 更湿(关系型护栏)
     if (r.lead !== undefined) expect(r.lead).toBeLessThanOrEqual(65); // lead 不过湿(directive lead reverb ≤65)

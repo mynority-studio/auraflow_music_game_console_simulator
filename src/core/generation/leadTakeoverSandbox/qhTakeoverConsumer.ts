@@ -21,6 +21,19 @@ const DEFAULT_LEAD_REVERB = 36;
 const DEFAULT_LEAD_CHORUS = 0;
 const DEFAULT_LEAD_EXPRESSION = 127;
 const DEFAULT_LEAD_DELAY = 0;
+const TAKEOVER_VOLUME_CEILING = 72;
+const TAKEOVER_REVERB_CEILING = 18;
+const TAKEOVER_CHORUS_CEILING = 6;
+const TAKEOVER_EXPRESSION_CEILING = 112;
+const TAKEOVER_DELAY_SEND = 0;
+const CC_RELEASE_TIME = 72;
+const CC_BRIGHTNESS = 74;
+const CC_SUSTAIN_PEDAL = 64;
+const CC_DELAY_SEND = 95;
+const DEFAULT_RELEASE_TIME = 64;
+const DEFAULT_BRIGHTNESS = 64;
+const ELECTRIC_KEY_RELEASE = 68;
+const ELECTRIC_KEY_BRIGHTNESS = 54;
 const TAKEOVER_AUDIO_SCHEDULE_LOOKAHEAD_MS = 25;
 const MAX_TAKEOVER_TRACKED_NOTES = 32;
 const pendingHardMuteTimers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -51,6 +64,8 @@ interface LeadVoice {
   chorus: number;
   expression: number;
   delay: number;
+  release: number;
+  brightness: number;
 }
 
 interface PendingTakeoverNote {
@@ -73,6 +88,10 @@ export interface LeadTakeoverExecuteOptions {
 
 function clampMidi(v: number): number {
   return Math.max(0, Math.min(127, Math.round(v)));
+}
+
+function clampTakeoverCc(v: number, ceiling: number): number {
+  return Math.min(clampMidi(v), ceiling);
 }
 
 function currentTick(target: LeadTakeoverAudioTarget): number {
@@ -107,14 +126,29 @@ function leadVoiceFromResult(result: MusicGenerationResult | null): LeadVoice {
   const mix = leadTrack?.mix;
   const style = result?.styleHint ?? result?.uiSnapshot.styleHint;
   const rawProgram = clampMidi(leadTrack?.program ?? uiLead?.program ?? DEFAULT_LEAD_PROGRAM);
+  const program = mapProgramToAura25(rawProgram, 'lead', style);
+  const electricKey = program === 4 || program === 5;
   return {
-    program: mapProgramToAura25(rawProgram, 'lead', style),
+    program,
     volume: clampMidi(mix?.volume ?? DEFAULT_LEAD_VOLUME),
     pan: clampMidi(mix?.pan ?? DEFAULT_LEAD_PAN),
     reverb: clampMidi(mix?.reverb ?? DEFAULT_LEAD_REVERB),
     chorus: clampMidi(mix?.chorus ?? DEFAULT_LEAD_CHORUS),
     expression: clampMidi(mix?.expression ?? DEFAULT_LEAD_EXPRESSION),
     delay: clampMidi(mix?.delay ?? DEFAULT_LEAD_DELAY),
+    release: electricKey ? ELECTRIC_KEY_RELEASE : DEFAULT_RELEASE_TIME,
+    brightness: electricKey ? ELECTRIC_KEY_BRIGHTNESS : DEFAULT_BRIGHTNESS,
+  };
+}
+
+function takeoverVoiceFromLeadVoice(voice: LeadVoice): LeadVoice {
+  return {
+    ...voice,
+    volume: clampTakeoverCc(voice.volume, TAKEOVER_VOLUME_CEILING),
+    reverb: clampTakeoverCc(voice.reverb, TAKEOVER_REVERB_CEILING),
+    chorus: clampTakeoverCc(voice.chorus, TAKEOVER_CHORUS_CEILING),
+    expression: clampTakeoverCc(voice.expression, TAKEOVER_EXPRESSION_CEILING),
+    delay: TAKEOVER_DELAY_SEND,
   };
 }
 
@@ -127,6 +161,8 @@ function voiceKey(voice: LeadVoice): string {
     voice.chorus,
     voice.expression,
     voice.delay,
+    voice.release,
+    voice.brightness,
   ].join(':');
 }
 
@@ -307,7 +343,11 @@ function flushTrackedTakeoverNotes(
     notes.clear();
     pendingNoteTimers.delete(target as object);
   }
+  sendControlChange(target, tick, userChannel, CC_SUSTAIN_PEDAL, 0);
+  sendControlChange(target, tick, userChannel, CC_DELAY_SEND, 0);
   sendControlChange(target, tick, userChannel, 123, 0);
+  sendControlChange(target, tick, userChannel, 120, 0);
+  userVoiceSetupKeys.get(target as object)?.delete(userChannel);
   activeNoteCounts.delete(target as object);
 }
 
@@ -508,12 +548,15 @@ function injectVoiceSetup(
   voice: LeadVoice,
 ): void {
   sendProgramChange(target, tick, channel, voice.program);
+  sendControlChange(target, tick, channel, CC_SUSTAIN_PEDAL, 0);
   sendControlChange(target, tick, channel, 7, voice.volume);
   sendControlChange(target, tick, channel, 10, voice.pan);
   sendControlChange(target, tick, channel, 91, voice.reverb);
   sendControlChange(target, tick, channel, 93, voice.chorus);
   sendControlChange(target, tick, channel, 11, voice.expression);
-  if (voice.delay > 0) sendControlChange(target, tick, channel, 95, voice.delay);
+  sendControlChange(target, tick, channel, CC_RELEASE_TIME, voice.release);
+  sendControlChange(target, tick, channel, CC_BRIGHTNESS, voice.brightness);
+  sendControlChange(target, tick, channel, CC_DELAY_SEND, voice.delay);
 }
 
 function ensureUserVoiceSetup(
@@ -541,13 +584,16 @@ function injectNativeLeadSoftMute(
   voice: LeadVoice,
 ): void {
   if (muted) {
+    sendControlChange(target, tick, channel, CC_SUSTAIN_PEDAL, 0);
     sendControlChange(target, tick, channel, 123, 0); // all notes off
+    sendControlChange(target, tick, channel, CC_DELAY_SEND, 0);
     sendControlChange(target, tick, channel, 7, 0);
     sendControlChange(target, tick, channel, 11, 0);
     return;
   }
   sendControlChange(target, tick, channel, 7, voice.volume);
   sendControlChange(target, tick, channel, 11, voice.expression);
+  sendControlChange(target, tick, channel, CC_DELAY_SEND, voice.delay);
 }
 
 function hardMuteNativeLeadAfterFlush(
@@ -648,7 +694,8 @@ export function executeLeadTakeoverActions(
   const userChannel = options.userChannel ?? TAKEOVER_USER_CHANNEL;
   const nativeLeadChannel = options.nativeLeadChannel ?? NATIVE_LEAD_CHANNEL;
   const hardMuteDelayMs = options.hardMuteDelayMs ?? 30;
-  const voice = leadVoiceFromResult(target.getCurrentMusicGeneration());
+  const nativeVoice = leadVoiceFromResult(target.getCurrentMusicGeneration());
+  const voice = takeoverVoiceFromLeadVoice(nativeVoice);
   const baseTick = currentTick(target) + 1;
   const logs: string[] = [];
 
@@ -683,7 +730,7 @@ export function executeLeadTakeoverActions(
         cancelPendingHardMute(nativeLeadChannel);
         target.muteChannel?.(nativeLeadChannel, false);
       }
-      injectNativeLeadSoftMute(target, baseTick, nativeLeadChannel, action.muted, voice);
+      injectNativeLeadSoftMute(target, baseTick, nativeLeadChannel, action.muted, nativeVoice);
       if (action.muted) hardMuteNativeLeadAfterFlush(target, nativeLeadChannel, hardMuteDelayMs);
       logs.push(`${action.muted ? 'hardMute' : 'restore'} native lead ch${nativeLeadChannel}`);
     } else {

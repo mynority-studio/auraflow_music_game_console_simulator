@@ -6,6 +6,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { createTimebase, createRandomContext } from '../foundation';
+import { musicalIRToMidiEvents } from '../../../audio/musicalIrToMidi';
 
 describe('render/gmMixAttachment — 混音落 IR(端到端)', () => {
   const band = buildBandSpec({ seed: 11, styleHint: 'pop', mood: 'build', targetDuration: 120 });
@@ -73,12 +74,40 @@ describe('render/gmMixAttachment — programChanges ⟹ mixChanges(同 tick 耦�
         const tick = pc.atTick as number;
         const before = programAt(t, tick - 1);
         if (isEp(before) === isEp(pc.program)) continue;
-        const release = isEp(pc.program) ? 96 : 64;
+        const release = isEp(pc.program) ? (t.role === 'comp' ? 64 : 68) : 64;
         const brightness = isEp(pc.program) ? 54 : 64;
         expect(hasCc(t, tick, 72, release), `${t.role} pc@${tick} 缺 CC72=${release}`).toBe(true);
         expect(hasCc(t, tick, 74, brightness), `${t.role} pc@${tick} 缺 CC74=${brightness}`).toBe(true);
       }
     }
+  });
+});
+
+describe('render/gmMixAttachment — banked Aura25 presets', () => {
+  it('RNB 的 GM5 lead 消费 bank8 Chorused FM EP,comp GM5 仍留在干净 bank0 CP-80', () => {
+    const res = generateSong({ seed: 0, styleHint: 'rnb', mood: 'build', targetDuration: 90 });
+    const lead = res.ir!.tracks.find((t) => t.role === 'lead')!;
+    const comp = res.ir!.tracks.find((t) => t.role === 'comp')!;
+    const drum = res.ir!.tracks.find((t) => t.role === 'drum')!;
+    expect(lead).toMatchObject({ program: 5, bank: 8 });
+    expect(comp).toMatchObject({ program: 5, bank: 0 });
+    expect(drum.bank).toBe(128);
+
+    const events = musicalIRToMidiEvents(res.ir!);
+    const leadBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 32 && e.data2 === 8);
+    const leadPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0 && e.data1 === 5);
+    const compBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 2 && e.ticks === 0 && e.data1 === 32 && e.data2 === 0);
+    const compPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 2 && e.ticks === 0 && e.data1 === 5);
+    const drumBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 9 && e.ticks === 0 && e.data1 === 0 && e.data2 === 1);
+    const drumBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 9 && e.ticks === 0 && e.data1 === 32 && e.data2 === 0);
+    const drumPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 9 && e.ticks === 0 && e.data1 === drum.program);
+    expect(leadBankLsb).toBeGreaterThanOrEqual(0);
+    expect(leadPc).toBeGreaterThan(leadBankLsb);
+    expect(compBankLsb).toBeGreaterThanOrEqual(0);
+    expect(compPc).toBeGreaterThan(compBankLsb);
+    expect(drumBankMsb).toBeGreaterThanOrEqual(0);
+    expect(drumBankLsb).toBeGreaterThan(drumBankMsb);
+    expect(drumPc).toBeGreaterThan(drumBankLsb);
   });
 });
 

@@ -1,8 +1,8 @@
 // ============================================================
-// CopychSynthFacade — copych WASM 后端主线程 facade（M1 批2）
+// CopychSynthFacade — copych WASM 主线程 facade（M1 批2）
 // ------------------------------------------------------------
-// 暴露与 SpessaSynth WorkletSynthesizer 结构兼容的消费面（SynthLike），
-// 让 MidiScheduler/AudioEngine/SystemAudio/sandbox audioOut 的调用点零改动。
+// 暴露 Copych WASM 合成器消费面（SynthLike），
+// 让 MidiScheduler/AudioEngine/SystemAudio/sandbox audioOut 共用同一设备口径。
 // 事件经 AudioWorkletNode.port 投递到 copych_processor（public/copych/），
 // {time} 选项原生透传为 when（不靠 try/catch 降级）。
 //
@@ -10,7 +10,7 @@
 // （CC64=0→soundOff→delay resetLine，镜像设备 hard_silence）。
 // ============================================================
 
-/** 全仓 spessaSynth 消费面（结构化类型；WorkletSynthesizer 天然满足）。 */
+/** 全仓合成器消费面。 */
 export interface SynthLike {
     noteOn(channel: number, note: number, velocity: number, options?: { time?: number }): void;
     noteOff(channel: number, note: number, options?: { time?: number }): void;
@@ -45,18 +45,19 @@ let _fxState: CopychFxState = COPYCH_FX_BOOT;
 const _fxListeners = new Set<() => void>();
 
 /* ---- 设备后链（听感排查批2）状态镜像 ----
- * 固件输出后链（gain×4.28→backend soft/hard clip→mono 折叠→EQ 6 段→终级饱和→16bit）
+ * 固件输出后链（style master lift→gain×4.28→Copych soft/hard clip→mono 折叠→EQ 6 段→终级饱和→16bit）
  * 的 web 复刻（DSP 在 public/copych/device_postchain.mjs，参数同源锚见彼处头注释）。
- * cfg=主线程意愿；state=processor 回报的实际生效态（仅 24k ctx 有效——非 24k 请求
- * enable 会被 processor 拒绝并带 reason，UI 以 state 为准防分叉）。
- * trimDb=试听等响（链外，非镜像）；meters=链输出电平（pre=trim 前/post=trim 后）。 */
+     * 默认随 Copych 常驻开启，copych=设备镜像；state=processor 回报的实际生效态。
+ * gain/clip/mono/final clamp 在任何 ctx 采样率都生效；6 段小喇叭 EQ 仅 24k 有效，
+ * 非 24k 时 reason 会提示 EQ bypass，UI 以 state 为准防分叉。
+ * meters=链输出电平；用户主音量改走 masterLift，仍在保护链之前。 */
 export interface CopychPostChainCfg {
-    enabled: boolean;
+    enabled: boolean;    /* 兼容字段；Copych-only 正式输出强制 true，禁止 raw synth 直出 */
     gain: boolean;      /* off ≡ 板上 ne gain 100 */
     eq: boolean;        /* off ≡ 板上 ne eq off */
     softclip: boolean;  /* off ≡ 板上 ne clip hard */
     quantize: boolean;  /* off=纯 float 链（非设备路径，仅诊断） */
-    trimDb: number;
+    masterLift: number; /* 风格/用户级总线增益：进保护链之前，不在后链之后补响 */
 }
 export interface CopychPostChainState {
     active: boolean;
@@ -66,12 +67,28 @@ export interface CopychPostChainState {
 }
 export interface CopychPostChainMeters {
     prePeak: number; preRms: number; postPeak: number; postRms: number;
+    prePeakDb: number; preRmsDb: number; postPeakDb: number; postRmsDb: number;
+    headroomDb: number; crestDb: number;
+    softKnee: number; hardClip: number; samples: number;
+    softKneeRate: number; hardClipRate: number;
+    driveState: 'very-quiet' | 'quiet' | 'healthy' | 'soft-knee' | 'overdriven' | 'hard-clipping';
 }
+
+export const COPYCH_DEVICE_POSTCHAIN_PRESET: CopychPostChainCfg = {
+    enabled: true,
+    gain: true,
+    eq: true,
+    softclip: true,
+    quantize: true,
+    masterLift: 1,
+};
+export const COPYCH_MASTER_LIFT_MIN = 0.05;
+export const COPYCH_MASTER_LIFT_MAX = 4;
 
 const POSTCHAIN_BOOT: CopychPostChainState = {
     active: false,
     srOk: true,
-    cfg: { enabled: false, gain: true, eq: true, softclip: true, quantize: true, trimDb: 0 },
+    cfg: COPYCH_DEVICE_POSTCHAIN_PRESET,
     reason: null,
 };
 
@@ -98,7 +115,7 @@ const notifyFxState = (): void => {
     _fxListeners.forEach(l => { try { l(); } catch { /* ignore */ } });
 };
 
-/** addModule 缓存 per-ctx（同一 ctx 只 addModule 一次；切后端会重建 ctx——采样率随后端变）。 */
+/** addModule 缓存 per-ctx（同一 ctx 只 addModule 一次；切采样率会重建 ctx）。 */
 const _modulePromiseByCtx = new WeakMap<AudioContext, Promise<void>>();
 export const ensureCopychWorkletModule = (ctx: AudioContext): Promise<void> => {
     let p = _modulePromiseByCtx.get(ctx);
@@ -125,7 +142,7 @@ export class CopychSynthFacade implements SynthLike {
 
     /** fetch 好的 SF2 ArrayBuffer → transfer 进 worklet 初始化（采样率=ctx.sampleRate，worklet 侧 sampleRate 全局）。 */
     public init(sf2: ArrayBuffer): Promise<void> {
-        /* 设备后链常驻监听（state 回报 + 电平表）——synth 重建后 state 回 boot（后链默认关） */
+        /* 设备后链常驻监听（state 回报 + 电平表）——synth 重建后回固件镜像预设。 */
         this.node.port.addEventListener('message', (e: MessageEvent) => {
             const d = e.data;
             if (d?.type === 'postchain-state') {
@@ -143,8 +160,13 @@ export class CopychSynthFacade implements SynthLike {
                     this.node.port.removeEventListener('message', onMsg);
                     this._ready = true;
                     _fxState = COPYCH_FX_BOOT;   // synth 重建 → FX 回 boot 默认
-                    _pcState = { ...POSTCHAIN_BOOT, srOk: this.ctxSampleRate === 24000 };
+                    _pcState = {
+                        ...POSTCHAIN_BOOT,
+                        srOk: true,
+                        reason: this.ctxSampleRate === 24000 ? null : 'eq bypassed: sampleRate!=24000',
+                    };
                     _pcMeters = null;
+                    this.setDevicePostChain(COPYCH_DEVICE_POSTCHAIN_PRESET);
                     notifyPostChain();
                     resolve();
                 } else if (d?.type === 'error') {
@@ -181,7 +203,7 @@ export class CopychSynthFacade implements SynthLike {
     public controllerChange(channel: number, controller: number, value: number): void {
         this.post('cc', channel, controller, value);
     }
-    /** 与 spessa pitchWheel 调用形状对齐（MidiScheduler: pitchWheel(ch, data1)）；入参 14-bit。 */
+    /** pitch wheel 入参 14-bit(center=8192)。 */
     public pitchWheel(channel: number, value14: number): void {
         this.post('bend', channel, value14);
     }

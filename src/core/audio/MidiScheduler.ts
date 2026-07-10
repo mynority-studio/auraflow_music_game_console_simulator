@@ -8,18 +8,16 @@
  *   - 索引 nextEventIdx 单调推进（events 已按 ticks 排序）
  *
  * 派发：
- *   - noteOn / noteOff / programChange → spessaSynth.*
- *   - cc / pitchBend → spessaSynth.controllerChange / pitchWheel（如果有；否则跳过）
+ *   - noteOn / noteOff / programChange → Copych synth facade
+ *   - cc / pitchBend → Copych controllerChange / pitchWheel（如果有；否则跳过）
  *   - visual → visualListeners
  *
  * 曲终：last event 之后等 200ms（让 noteOff 发音完整）→ fire onTrackEnd listeners → 自动停止。
  */
 
 import type { TempoCurve } from '../generation/types';
-import { spessaSynth } from './SynthManager';
+import { activeSynth } from './SynthManager';
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
-// M1 批2（计划修订1/2）：CC95 三入口分流 + panic 分支的单一后端判据
-import { isCopychBackend } from './synthBackend';
 
 export interface MidiEvent {
     ticks: number;
@@ -30,15 +28,10 @@ export interface MidiEvent {
     visualData?: any;
 }
 
-type PendingDelayNote = MidiEvent & { delaySend: number };
 type MidiEventListener = (event: MidiEvent) => void;
 
 const TICK_LOOP_MS = 5;
 const TRAILING_SILENCE_MS = 200;
-const CC_DELAY_SEND = 95;
-const DELAY_ECHO_TICKS = 240; // 1/8 note at PPQ=480
-const MIN_DELAY_ECHO_DUR_TICKS = 72;
-const MAX_DELAY_ECHO_DUR_TICKS = 240;
 
 function midiEventOrder(ev: MidiEvent): number {
     if (ev.type === 'noteOff') return 0;
@@ -58,85 +51,8 @@ function normalizeMidiEvent(ev: MidiEvent): MidiEvent {
     return mapped === ev.data1 ? ev : { ...ev, data1: mapped };
 }
 
-function clampMidi(v: number): number {
-    return Math.max(0, Math.min(127, Math.round(v)));
-}
-
-function delayEchoVelocity(velocity: number, send: number): number {
-    const gain = 0.22 + (clampMidi(send) / 127) * 0.45;
-    return clampMidi(Math.max(1, Math.round(velocity * gain)));
-}
-
-function buildDelayEchoEvents(events: MidiEvent[]): MidiEvent[] {
-    const delaySend = new Array<number>(16).fill(0);
-    const pending = new Map<string, PendingDelayNote[]>();
-    const echoes: MidiEvent[] = [];
-
-    const keyOf = (event: MidiEvent): string => `${event.channel}:${event.data1}`;
-    const pushEcho = (noteOn: PendingDelayNote, noteOffTick: number): void => {
-        const duration = Math.max(1, noteOffTick - noteOn.ticks);
-        const echoTick = noteOn.ticks + DELAY_ECHO_TICKS;
-        const echoDur = Math.max(MIN_DELAY_ECHO_DUR_TICKS, Math.min(MAX_DELAY_ECHO_DUR_TICKS, Math.round(duration * 0.75)));
-        echoes.push({
-            ticks: echoTick,
-            type: 'noteOn',
-            channel: noteOn.channel,
-            data1: noteOn.data1,
-            data2: delayEchoVelocity(noteOn.data2, noteOn.delaySend),
-        });
-        echoes.push({
-            ticks: echoTick + echoDur,
-            type: 'noteOff',
-            channel: noteOn.channel,
-            data1: noteOn.data1,
-            data2: 0,
-        });
-    };
-
-    for (const event of events) {
-        if (event.type === 'cc' && event.data1 === CC_DELAY_SEND) {
-            delaySend[event.channel] = clampMidi(event.data2);
-            continue;
-        }
-
-        if (event.type === 'noteOn' && event.data2 > 0) {
-            const send = delaySend[event.channel] ?? 0;
-            if (send <= 0) continue;
-            const key = keyOf(event);
-            const stack = pending.get(key) ?? [];
-            stack.push({ ...event, data2: clampMidi(event.data2), delaySend: send });
-            pending.set(key, stack);
-            continue;
-        }
-
-        const isNoteOff = event.type === 'noteOff' || (event.type === 'noteOn' && event.data2 <= 0);
-        if (!isNoteOff) continue;
-        const key = keyOf(event);
-        const stack = pending.get(key);
-        const noteOn = stack?.shift();
-        if (!noteOn) continue;
-        if (!stack?.length) pending.delete(key);
-        pushEcho(noteOn, event.ticks);
-    }
-
-    for (const [key, stack] of pending.entries()) {
-        for (const noteOn of stack) {
-            pushEcho(noteOn, noteOn.ticks + MAX_DELAY_ECHO_DUR_TICKS);
-        }
-        pending.delete(key);
-    }
-
-    return echoes;
-}
-
-/* M1 批2（计划修订1，codex 精化）：copych 后端只跳过 echo 展开——normalize+sort 必须
- * 保留（loadTrack 收到的 [...events, ...visuals] 不保证全局有序）。
- * spessa：normalize + echo 展开 + sort（现状）；copych：normalize + sort（CC95 直通真 FxDelay）。 */
-function normalizeAndExpandEvents(events: MidiEvent[], expandEcho: boolean): MidiEvent[] {
-    const normalized = events.map(normalizeMidiEvent).sort(compareMidiEvents);
-    if (!expandEcho) return normalized;
-    const echoes = buildDelayEchoEvents(normalized);
-    return normalized.concat(echoes).sort(compareMidiEvents);
+function normalizeAndSortEvents(events: MidiEvent[]): MidiEvent[] {
+    return events.map(normalizeMidiEvent).sort(compareMidiEvents);
 }
 
 export class MidiScheduler {
@@ -169,9 +85,8 @@ export class MidiScheduler {
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
         // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次。
-        // spessa 不消费 CC95 → 预渲染轻量 echo note；copych 有真 FxDelay → 跳过展开（CC95 直通），
-        // 防双重延迟（M1 批2，计划修订1）。
-        this.events = normalizeAndExpandEvents(events, !isCopychBackend());
+        // Copych-only：CC95 直通真 FxDelay，不再生成浏览器 echo 代偿音符。
+        this.events = normalizeAndSortEvents(events);
         this.currentBpm = bpm;
         this.currentTick = 0;
         this.nextEventIdx = 0;
@@ -215,22 +130,16 @@ export class MidiScheduler {
 
     public panic(): void {
         // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音。
-        // listeners 通知两后端一致（视觉/记录层不感知后端）。
-        const synth = spessaSynth;
+        // listeners 通知视觉/记录层；真实发声由 Copych facade 统一处理。
+        const synth = activeSynth;
         for (let ch = 0; ch < 16; ch++) {
             const ev: MidiEvent = { ticks: this.currentTick, type: 'cc', channel: ch, data1: 123, data2: 0 };
             this.notifyMidiEventListeners(ev);
         }
         if (!synth) return;
-        if (isCopychBackend()) {
-            // copych：CC123 遇 sustain 跳杀（allNotesOff 语义）→ 走 facade 硬合同
-            // （processor 清 pending 队列 + C 层 CC64=0→soundOff→delay resetLine，计划修订2）
-            try { (synth as any).panic?.(); } catch { /* ignore */ }
-            return;
-        }
-        for (let ch = 0; ch < 16; ch++) {
-            try { synth.controllerChange(ch, 123, 0); } catch { /* ignore */ }
-        }
+        // Copych：CC123 遇 sustain 跳杀（allNotesOff 语义）→ 走 facade 硬合同
+        // （processor 清 pending 队列 + C 层 CC64=0→soundOff→delay resetLine）。
+        try { (synth as any).panic?.(); } catch { /* ignore */ }
     }
 
     public clear(): void {
@@ -285,7 +194,7 @@ export class MidiScheduler {
         }
         if (this.mutedChannels.has(ev.channel)) return;
         this.notifyMidiEventListeners(ev);
-        const synth = spessaSynth;
+        const synth = activeSynth;
         if (!synth) return;
 
         try {
@@ -293,9 +202,6 @@ export class MidiScheduler {
             else if (ev.type === 'noteOff') synth.noteOff(ev.channel, ev.data1);
             else if (ev.type === 'programChange') synth.programChange(ev.channel, mapMidiProgramToAura25(ev.data1, ev.channel));
             else if (ev.type === 'cc') {
-                // CC95 delay send：spessa 吞（echo 已预渲染）；copych 直通真 FxDelay（计划修订1）
-                if (ev.data1 === CC_DELAY_SEND && !isCopychBackend()) return;
-                // controllerChange API exists on BasicSynthesizer
                 (synth as any).controllerChange?.(ev.channel, ev.data1, ev.data2);
             } else if (ev.type === 'pitchBend') {
                 (synth as any).pitchWheel?.(ev.channel, ev.data1);

@@ -1,6 +1,15 @@
 import type { InstrumentRole, TrackIR, TrackMix } from '../ir/MusicalIR';
+import { songSpaceProfile, songSpaceProfileById } from '../knowledge/gmMixProfile';
+import type { TimbreWorld } from '../knowledge/instruments';
+import {
+  PLAYBACK_MASTER_LIFT_CALIBRATION,
+  PLAYBACK_STYLE_MASTER_LIFT,
+  playbackMasterLiftForStyle,
+  playbackMasterLiftCalibrationForStyle,
+  recommendedPlaybackMasterLiftForEstimatedLufs,
+} from '../../../audio/masteringProfile';
 
-export type MixAuditSeverity = 'warning' | 'error';
+export type MixAuditSeverity = 'info' | 'warning' | 'error';
 
 export interface MixAuditFinding {
   severity: MixAuditSeverity;
@@ -21,6 +30,8 @@ export interface TrackMixMetrics {
   dryEnergyPerBeat: number;
   wetEnergyPerBeat: number;
   busShare: number;
+  copychReverbInputEnergyPerBeat: number;
+  copychReverbBusShare: number;
   pan: number;
   reverb: number;
   chorus: number;
@@ -31,6 +42,8 @@ export interface MixAuditContext {
   ppq: number;
   durationTicks: number;
   sectionTicks?: readonly number[];
+  spaceProfile?: string;
+  world?: string;
 }
 
 export interface MixAuditReport {
@@ -40,11 +53,55 @@ export interface MixAuditReport {
   durationBeats: number;
   estimatedIntegratedLufs: number;
   totalWetEnergyPerBeat: number;
+  totalCopychReverbInputEnergyPerBeat: number;
   peakPreMasterLinear: number;
-  estimatedPostMakeupPeakDbfs: number;
+  playbackMasterLift: number;
+  targetPlaybackIntegratedLufs: number;
+  estimatedPlaybackIntegratedLufs: number;
+  playbackLoudnessDeltaDb: number;
+  recommendedPlaybackMasterLift: number;
+  estimatedDeviceOutputPeakDbfs: number;
   trackMetrics: TrackMixMetrics[];
   findings: MixAuditFinding[];
 }
+
+export const HARDWARE_SPEAKER_PROFILE = {
+  model: 'YD3411-H-YC16-8B',
+  source: 'user hardware speaker datasheet PDF',
+  enclosureCc: 4,
+  sizeMm: [34, 11, 4.0] as const,
+  impedanceOhm: 4,
+  ratedPowerWRms: 2.0,
+  maxShortTermPowerWRms: 2.5,
+  resonanceHz: 630,
+  sensitivityDbSpl: {
+    at400Hz: 84,
+    at2kHz: 93,
+    distanceM: 0.1,
+    inputW: 2,
+  },
+  loadTestBandHz: [100, 20000] as const,
+  mixBandsHz: {
+    lowCutProtection: 75,
+    kickBody: [100, 400] as const,
+    midBody: [630, 2000] as const,
+    presenceAttack: [2000, 4000] as const,
+    harshnessControl: [5000, 10000] as const,
+  },
+  guardrails: {
+    bassReverbCcMax: 12,
+    drumReverbCcMax: 18,
+    drumTransientCcMax: 90,
+    padSustainedBusShareMax: 0.16,
+    padCopychReverbBusShareMax: 0.28,
+    compCopychReverbBusShareMax: 0.72,
+    foregroundBusShareMin: 0.55,
+    bassSustainedBusShareMinDefault: 0.12,
+    bassSustainedBusShareMinAcg: 0.16,
+    bassSustainedBusShareMaxDefault: 0.34,
+    bassSustainedBusShareMaxAcg: 0.42,
+  },
+} as const;
 
 export const MASTERING_AUDIT_STANDARD = {
   measurementBasis: 'ITU-R BS.1770 / EBU R128 proxy, calibrated from final MIDI IR before SF2 rendering',
@@ -53,17 +110,21 @@ export const MASTERING_AUDIT_STANDARD = {
   truePeakCeilingDbtp: -1,
   esp32SamplePeakCeilingDbfs: -1.5,
   referenceWetEnergyForMinus14Lufs: 0.75,
-  webMaster: {
-    headroomGain: 0.6,
-    makeupGain: 1.5,
-    limiterThresholdDb: -1.5,
+  copychMaster: {
+    route: 'copych synth+shared FX -> style master lift -> device_postchain -> output',
+    devicePostChainDefault: 'enabled by default at every browser sample rate: style master lift -> gain 4.28 -> Copych softclip -> mono fold -> 24 kHz EQ when rate matches -> final hard clip -> int16 grid',
+    playbackStyleMasterLift: PLAYBACK_STYLE_MASTER_LIFT,
+    playbackStyleMasterLiftCalibration: PLAYBACK_MASTER_LIFT_CALIBRATION,
+    webCompressorAfterDevicePostChain: false,
   },
   esp32Port: {
-    sampleRateHz: 16000,
+    sampleRateHz: 24000,
     channels: 2,
     renderFormat: 'int16',
-    requiredPostTsfStage: 'headroom -> optional glue -> limiter/softclip -> int16 clamp',
+    sampleRateContract: 'Aura25 SF2 samples are locked to 24 kHz; official Copych/ESP32 playback requests 24 kHz. Non-24k postchain handling is defensive fallback only.',
+    requiredPostTsfStage: 'copych shared FX -> style master lift -> device_postchain gain/softclip/mono/(24k EQ when valid)/int16 clamp',
   },
+  hardwareSpeaker: HARDWARE_SPEAKER_PROFILE,
 } as const;
 
 interface StyleAuditWindow {
@@ -73,19 +134,43 @@ interface StyleAuditWindow {
 }
 
 const STYLE_WINDOWS: Record<string, StyleAuditWindow> = {
-  pop: { wetEnergy: [0.42, 1.08], leadCompRatio: [0.70, 1.75], lufs: [-17.5, -11.0] },
-  rnb: { wetEnergy: [0.50, 1.12], leadCompRatio: [0.65, 1.45], lufs: [-17.0, -10.8] },
-  lofi: { wetEnergy: [0.32, 0.92], leadCompRatio: [0.60, 2.20], lufs: [-18.5, -11.8] },
-  jazz: { wetEnergy: [0.34, 0.86], leadCompRatio: [0.85, 1.90], lufs: [-18.5, -12.0] },
-  blues: { wetEnergy: [0.30, 0.84], leadCompRatio: [0.85, 1.95], lufs: [-19.0, -12.0] },
-  acg: { wetEnergy: [0.18, 0.46], leadCompRatio: [1.10, 5.20], lufs: [-21.0, -14.0] },
+  pop: { wetEnergy: [0.38, 1.08], leadCompRatio: [0.65, 2.10], lufs: [-17.5, -11.0] },
+  rnb: { wetEnergy: [0.44, 1.12], leadCompRatio: [0.60, 2.10], lufs: [-17.0, -10.8] },
+  lofi: { wetEnergy: [0.28, 0.92], leadCompRatio: [0.55, 2.80], lufs: [-18.5, -11.8] },
+  jazz: { wetEnergy: [0.34, 0.86], leadCompRatio: [0.80, 3.80], lufs: [-18.5, -12.0] },
+  blues: { wetEnergy: [0.30, 0.84], leadCompRatio: [0.80, 2.20], lufs: [-19.0, -12.0] },
+  acg: { wetEnergy: [0.18, 0.46], leadCompRatio: [0.95, 5.20], lufs: [-21.0, -14.0] },
 };
 
 const DEFAULT_WINDOW: StyleAuditWindow = {
   wetEnergy: [0.32, 1.05],
-  leadCompRatio: [0.70, 1.90],
+  leadCompRatio: [0.65, 2.10],
   lufs: MASTERING_AUDIT_STANDARD.acceptableEstimatedLufs,
 };
+
+export const COPYCH_SAFE_FX_SEND = {
+  reverbScaleByRole: {
+    lead: 0.88,
+    comp: 0.48,
+    pad: 0.24,
+    bass: 0.58,
+    drum: 0.52,
+  },
+  chorusScaleByRole: {
+    lead: 0.85,
+    comp: 0.55,
+    pad: 0.45,
+  },
+  takeoverLead: {
+    reverbScale: 0.55,
+    chorusScale: 0.55,
+    delayScale: 0.0,
+  },
+  delayLeadScale: 0.70,
+  delayLeadCapCc: 18,
+  takeoverLeadChannel: 15,
+  dryDelayOffChannels: [2, 3, 4, 9] as const,
+} as const;
 
 const ROLE_PEAK_WEIGHT: Record<InstrumentRole, number> = {
   lead: 1.0,
@@ -112,6 +197,34 @@ function db(linear: number): number {
 function estimateLufs(totalWetEnergyPerBeat: number): number {
   return MASTERING_AUDIT_STANDARD.streamingReferenceIntegratedLufs
     + 10 * Math.log10(Math.max(EPS, totalWetEnergyPerBeat) / MASTERING_AUDIT_STANDARD.referenceWetEnergyForMinus14Lufs);
+}
+
+function copychSafeReverbSend(role: InstrumentRole, send: number): number {
+  switch (role) {
+    case 'pad': return send * COPYCH_SAFE_FX_SEND.reverbScaleByRole.pad;
+    case 'comp': return send * COPYCH_SAFE_FX_SEND.reverbScaleByRole.comp;
+    case 'lead': return send * COPYCH_SAFE_FX_SEND.reverbScaleByRole.lead;
+    case 'bass': return send * COPYCH_SAFE_FX_SEND.reverbScaleByRole.bass;
+    case 'drum': return send * COPYCH_SAFE_FX_SEND.reverbScaleByRole.drum;
+    default: return send;
+  }
+}
+
+function copychSafeChorusSend(role: InstrumentRole, send: number): number {
+  switch (role) {
+    case 'pad': return send * COPYCH_SAFE_FX_SEND.chorusScaleByRole.pad;
+    case 'comp': return send * COPYCH_SAFE_FX_SEND.chorusScaleByRole.comp;
+    case 'lead': return send * COPYCH_SAFE_FX_SEND.chorusScaleByRole.lead;
+    default: return send;
+  }
+}
+
+function copychReverbInputEnergy(dryEnergy: number, mix: TrackMix, role: InstrumentRole, songReverbLevel: number): number {
+  const volume = mix.volume / 127;
+  const reverb = copychSafeReverbSend(role, mix.reverb / 127);
+  const chorus = copychSafeChorusSend(role, mix.chorus / 127);
+  const fxInputGain = reverb * songReverbLevel * (1 + chorus);
+  return dryEnergy * volume * volume * fxInputGain * fxInputGain;
 }
 
 function mixAt(track: TrackIR, tick: number): TrackMix | undefined {
@@ -145,10 +258,11 @@ function dryEnergyPerBeat(track: TrackIR, loTick: number, hiTick: number, ppq: n
   return sum / segBeats;
 }
 
-function trackMetrics(track: TrackIR, ctx: MixAuditContext): TrackMixMetrics {
+function trackMetrics(track: TrackIR, ctx: MixAuditContext, songReverbLevel: number): TrackMixMetrics {
   const bounds = mixBoundaries(track, ctx);
   let wetSum = 0;
   let drySum = 0;
+  let copychReverbInputSum = 0;
   let volumeSum = 0;
   let beats = 0;
   let maxVolume = 0;
@@ -163,6 +277,7 @@ function trackMetrics(track: TrackIR, ctx: MixAuditContext): TrackMixMetrics {
     const vol = mix.volume / 127;
     drySum += dry * segBeats;
     wetSum += dry * vol * vol * segBeats;
+    copychReverbInputSum += copychReverbInputEnergy(dry, mix, track.role, songReverbLevel) * segBeats;
     volumeSum += mix.volume * segBeats;
     maxVolume = Math.max(maxVolume, mix.volume);
     beats += segBeats;
@@ -193,6 +308,8 @@ function trackMetrics(track: TrackIR, ctx: MixAuditContext): TrackMixMetrics {
     dryEnergyPerBeat: beats > 0 ? drySum / beats : 0,
     wetEnergyPerBeat: beats > 0 ? wetSum / beats : 0,
     busShare: 0,
+    copychReverbInputEnergyPerBeat: beats > 0 ? copychReverbInputSum / beats : 0,
+    copychReverbBusShare: 0,
     pan: initialMix.pan,
     reverb: initialMix.reverb,
     chorus: initialMix.chorus,
@@ -241,18 +358,26 @@ function validCc(v: number): boolean {
 
 export function auditRenderedMix(tracks: readonly TrackIR[], ctx: MixAuditContext): MixAuditReport {
   const findings: MixAuditFinding[] = [];
-  const metrics = tracks.map((track) => trackMetrics(track, ctx));
+  const hasPad = tracks.some((track) => track.role === 'pad' && track.notes.length > 0);
+  const copychSongSpace = songSpaceProfileById(ctx.spaceProfile)
+    ?? songSpaceProfile(ctx.style, ctx.world as TimbreWorld | undefined, hasPad);
+  const metrics = tracks.map((track) => trackMetrics(track, ctx, copychSongSpace.reverbLevel));
   const totalWetEnergyPerBeat = metrics.reduce((sum, m) => sum + m.wetEnergyPerBeat, 0);
+  const totalCopychReverbInputEnergyPerBeat = metrics.reduce((sum, m) => sum + m.copychReverbInputEnergyPerBeat, 0);
   const trackMetricsWithShare = metrics.map((m) => ({
     ...m,
     busShare: totalWetEnergyPerBeat > EPS ? m.wetEnergyPerBeat / totalWetEnergyPerBeat : 0,
+    copychReverbBusShare: totalCopychReverbInputEnergyPerBeat > EPS ? m.copychReverbInputEnergyPerBeat / totalCopychReverbInputEnergyPerBeat : 0,
   }));
   const estimatedIntegratedLufs = estimateLufs(totalWetEnergyPerBeat);
+  const masterCalibration = playbackMasterLiftCalibrationForStyle(ctx.style);
+  const playbackMasterLift = playbackMasterLiftForStyle(ctx.style);
+  const estimatedPlaybackIntegratedLufs = estimatedIntegratedLufs + db(playbackMasterLift);
+  const playbackLoudnessDeltaDb = estimatedPlaybackIntegratedLufs - masterCalibration.targetPlaybackIntegratedLufs;
+  const recommendedPlaybackMasterLift = recommendedPlaybackMasterLiftForEstimatedLufs(ctx.style, estimatedIntegratedLufs);
   const peakPreMaster = peakPreMasterLinear(tracks, ctx);
-  const postMakeupPeak = peakPreMaster
-    * MASTERING_AUDIT_STANDARD.webMaster.headroomGain
-    * MASTERING_AUDIT_STANDARD.webMaster.makeupGain;
-  const estimatedPostMakeupPeakDbfs = db(postMakeupPeak);
+  const deviceOutputPeak = peakPreMaster * playbackMasterLift;
+  const estimatedDeviceOutputPeakDbfs = db(deviceOutputPeak);
   const window = styleWindow(ctx.style);
 
   pushRangeFinding(
@@ -269,18 +394,25 @@ export function auditRenderedMix(tracks: readonly TrackIR[], ctx: MixAuditContex
     window.lufs,
     (v) => `estimated integrated loudness ${v.toFixed(1)} LUFS is outside ${window.lufs[0]}..${window.lufs[1]} for ${ctx.style}`,
   );
+  pushRangeFinding(
+    findings,
+    'master.playbackEstimatedLufs',
+    estimatedPlaybackIntegratedLufs,
+    masterCalibration.acceptablePlaybackLufs,
+    (v) => `playback loudness after ${ctx.style} master lift ${v.toFixed(1)} LUFS is outside calibrated ${masterCalibration.acceptablePlaybackLufs[0]}..${masterCalibration.acceptablePlaybackLufs[1]}`,
+  );
 
-  if (estimatedPostMakeupPeakDbfs > MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs + 6) {
+  if (estimatedDeviceOutputPeakDbfs > MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs + 6) {
     findings.push({
       severity: 'error',
       code: 'master.outputClipRisk',
-      detail: `post-makeup peak proxy ${estimatedPostMakeupPeakDbfs.toFixed(1)} dBFS would overdrive a lightweight ESP32 limiter`,
+      detail: `Copych postchain drive peak proxy ${estimatedDeviceOutputPeakDbfs.toFixed(1)} dBFS would overdrive the ESP32 postchain`,
     });
-  } else if (estimatedPostMakeupPeakDbfs > MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs) {
+  } else if (estimatedDeviceOutputPeakDbfs > MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs) {
     findings.push({
-      severity: 'warning',
+      severity: 'info',
       code: 'master.limiterWillWork',
-      detail: `post-makeup peak proxy ${estimatedPostMakeupPeakDbfs.toFixed(1)} dBFS should be caught by the final limiter`,
+      detail: `Copych postchain drive peak proxy ${estimatedDeviceOutputPeakDbfs.toFixed(1)} dBFS should be caught by device softclip/final clamp`,
     });
   }
 
@@ -317,27 +449,49 @@ export function auditRenderedMix(tracks: readonly TrackIR[], ctx: MixAuditContex
   const bass = byRole.get('bass');
   const drum = byRole.get('drum');
   const pad = byRole.get('pad');
-  if (bass && bass.reverb > 8) findings.push({ severity: 'warning', code: 'space.bassTooWet', role: 'bass', detail: `bass reverb ${bass.reverb} should stay <= 8 for low-end headroom` });
+  const speakerGuard = HARDWARE_SPEAKER_PROFILE.guardrails;
+  if (lead && comp && (lead.busShare + comp.busShare) < speakerGuard.foregroundBusShareMin) findings.push({ severity: 'warning', code: 'mix.foregroundTooSmall', detail: `lead+comp bus share ${((lead.busShare + comp.busShare) * 100).toFixed(1)}% should stay >= ${(speakerGuard.foregroundBusShareMin * 100).toFixed(0)}% on the mid-forward YD3411 target` });
+  if (bass && bass.reverb > speakerGuard.bassReverbCcMax) findings.push({ severity: 'warning', code: 'space.bassTooWet', role: 'bass', detail: `bass reverb ${bass.reverb} should stay <= ${speakerGuard.bassReverbCcMax} for low-end headroom` });
   if (drum && drum.chorus !== 0) findings.push({ severity: 'warning', code: 'space.drumChorus', role: 'drum', detail: `drum chorus ${drum.chorus} should stay 0 on ESP32` });
+  if (drum && drum.noteCount > 0 && drum.reverb > speakerGuard.drumReverbCcMax) findings.push({ severity: 'warning', code: 'speaker.drumReverbTooWet', role: 'drum', detail: `drum reverb ${drum.reverb} should stay <= ${speakerGuard.drumReverbCcMax} for ${HARDWARE_SPEAKER_PROFILE.model} transient clarity` });
+  if (drum && drum.noteCount > 0 && drum.maxVolume > speakerGuard.drumTransientCcMax) findings.push({ severity: 'warning', code: 'speaker.drumTransientTooForward', role: 'drum', detail: `drum max CC7 ${drum.maxVolume} should stay <= ${speakerGuard.drumTransientCcMax}; short hits read louder than their sustained bus share on ${HARDWARE_SPEAKER_PROFILE.model}` });
   if (pad && comp && pad.reverb < comp.reverb + 20) findings.push({ severity: 'warning', code: 'space.padBehindComp', role: 'pad', detail: `pad reverb ${pad.reverb} should be at least comp+20 (${comp.reverb + 20})` });
   if (pad && comp && Math.abs(pad.pan - comp.pan) < 22) findings.push({ severity: 'warning', code: 'space.compPadWidth', role: 'pad', detail: `comp/pad pan separation ${Math.abs(pad.pan - comp.pan)} is too narrow` });
 
-  if (pad && pad.busShare > 0.18) findings.push({ severity: 'warning', code: 'mix.padTooDominant', role: 'pad', detail: `pad bus share ${(pad.busShare * 100).toFixed(1)}% can mask lead/comp` });
+  if (pad && pad.busShare > speakerGuard.padSustainedBusShareMax) findings.push({ severity: 'warning', code: 'mix.padTooDominant', role: 'pad', detail: `pad bus share ${(pad.busShare * 100).toFixed(1)}% can mask lead/comp on ${HARDWARE_SPEAKER_PROFILE.model}` });
+  if (pad && pad.copychReverbBusShare > speakerGuard.padCopychReverbBusShareMax) findings.push({ severity: 'warning', code: 'mix.copychPadReverbDominant', role: 'pad', detail: `pad Copych reverb-input share ${(pad.copychReverbBusShare * 100).toFixed(1)}% can flood the shared room` });
+  if (comp && comp.copychReverbBusShare > speakerGuard.compCopychReverbBusShareMax) findings.push({ severity: 'warning', code: 'mix.copychCompReverbDominant', role: 'comp', detail: `comp Copych reverb-input share ${(comp.copychReverbBusShare * 100).toFixed(1)}% can smear drum/piano transients` });
+  if (pad && drum && drum.copychReverbInputEnergyPerBeat > EPS) {
+    const ratio = pad.copychReverbInputEnergyPerBeat / drum.copychReverbInputEnergyPerBeat;
+    if (pad.copychReverbBusShare > speakerGuard.padCopychReverbBusShareMax && ratio > 6) findings.push({ severity: 'warning', code: 'mix.copychPadDrumReverbRatio', role: 'pad', detail: `pad/drum Copych reverb-input ratio ${ratio.toFixed(2)}x is too high for a shared room` });
+  }
   if (drum && drum.busShare > 0.34) findings.push({ severity: 'warning', code: 'mix.drumTooDominant', role: 'drum', detail: `drum bus share ${(drum.busShare * 100).toFixed(1)}% is high for the shared master` });
-  const bassShareCeiling = ctx.style.toLowerCase() === 'acg' ? 0.42 : 0.34;
+  const bassShareFloor = ctx.style.toLowerCase() === 'acg' ? speakerGuard.bassSustainedBusShareMinAcg : speakerGuard.bassSustainedBusShareMinDefault;
+  if (bass && bass.noteCount > 0 && bass.busShare < bassShareFloor) findings.push({ severity: 'warning', code: 'mix.bassTooHidden', role: 'bass', detail: `bass bus share ${(bass.busShare * 100).toFixed(1)}% should stay >= ${(bassShareFloor * 100).toFixed(0)}% so it remains audible on ${HARDWARE_SPEAKER_PROFILE.model}` });
+  const bassShareCeiling = ctx.style.toLowerCase() === 'acg' ? speakerGuard.bassSustainedBusShareMaxAcg : speakerGuard.bassSustainedBusShareMaxDefault;
   if (bass && bass.busShare > bassShareCeiling) findings.push({ severity: 'warning', code: 'mix.bassTooDominant', role: 'bass', detail: `bass bus share ${(bass.busShare * 100).toFixed(1)}% is high for small speakers` });
 
-  const status = findings.some((f) => f.severity === 'error') ? 'error' : findings.length ? 'warning' : 'pass';
+  const status = findings.some((f) => f.severity === 'error')
+    ? 'error'
+    : findings.some((f) => f.severity === 'warning')
+      ? 'warning'
+      : 'pass';
   return {
     status,
     standard: MASTERING_AUDIT_STANDARD,
     style: ctx.style,
     durationBeats: ctx.durationTicks / ctx.ppq,
     estimatedIntegratedLufs,
+    playbackMasterLift,
+    estimatedPlaybackIntegratedLufs,
     totalWetEnergyPerBeat,
+    totalCopychReverbInputEnergyPerBeat,
     peakPreMasterLinear: peakPreMaster,
-    estimatedPostMakeupPeakDbfs,
+    estimatedDeviceOutputPeakDbfs,
     trackMetrics: trackMetricsWithShare,
+    targetPlaybackIntegratedLufs: masterCalibration.targetPlaybackIntegratedLufs,
+    playbackLoudnessDeltaDb,
+    recommendedPlaybackMasterLift,
     findings,
   };
 }

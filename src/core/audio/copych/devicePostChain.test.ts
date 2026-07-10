@@ -1,14 +1,62 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // 设备后链 DSP 单测（听感排查批2）——对 public/copych/device_postchain.mjs
 // 逐语义证伪：mono 折叠抵消 / EQ 差分方程 / softclip 手算锚点 / 量化截断 /
-// 24k 硬约束 / 终级饱和恒在 / EQ 重开清状态 / trim 链外。
+// 非 24k 只跳过 EQ 不跳过增益 / 终级饱和恒在 / EQ 重开清状态 / masterLift 链内。
 import { describe, expect, it } from 'vitest';
-import { createDevicePostChain, softClipS16, hardClipS16, EQ_COEF_24K, DEVICE_GAIN_DEFAULT } from '../../../../public/copych/device_postchain.mjs';
+import { createDevicePostChain, softClipS16, hardClipS16, EQ_COEF_24K, DEVICE_GAIN_DEFAULT, DEVICE_POSTCHAIN_DEFAULT_PRESET, MASTER_LIFT_MAX, MASTER_LIFT_MIN } from '../../../../public/copych/device_postchain.mjs';
+import { COPYCH_DEVICE_POSTCHAIN_PRESET, COPYCH_MASTER_LIFT_MAX, COPYCH_MASTER_LIFT_MIN } from './CopychSynthFacade';
 
 const mk = (sr = 24000) => createDevicePostChain(sr);
 const buf = (vals: number[]) => new Float32Array(vals);
 
+function eqMagnitudeDb(freqHz: number): number {
+    const w = -2 * Math.PI * freqHz / 24000;
+    const z1 = { re: Math.cos(w), im: Math.sin(w) };
+    const z2 = { re: Math.cos(2 * w), im: Math.sin(2 * w) };
+    let h = { re: 1, im: 0 };
+    for (const c of EQ_COEF_24K as Array<{ b0: number; b1: number; b2: number; a1: number; a2: number }>) {
+        const n = {
+            re: c.b0 + c.b1 * z1.re + c.b2 * z2.re,
+            im: c.b1 * z1.im + c.b2 * z2.im,
+        };
+        const d = {
+            re: 1 - c.a1 * z1.re - c.a2 * z2.re,
+            im: -c.a1 * z1.im - c.a2 * z2.im,
+        };
+        const inv = d.re * d.re + d.im * d.im;
+        const stage = {
+            re: (n.re * d.re + n.im * d.im) / inv,
+            im: (n.im * d.re - n.re * d.im) / inv,
+        };
+        h = {
+            re: h.re * stage.re - h.im * stage.im,
+            im: h.re * stage.im + h.im * stage.re,
+        };
+    }
+    return 20 * Math.log10(Math.hypot(h.re, h.im) + 1e-12);
+}
+
 describe('devicePostChain', () => {
+    it('默认就是设备镜像常驻，避免启动阶段 raw synth 直出', () => {
+        expect(DEVICE_POSTCHAIN_DEFAULT_PRESET).toEqual(COPYCH_DEVICE_POSTCHAIN_PRESET);
+        expect(MASTER_LIFT_MIN).toBe(COPYCH_MASTER_LIFT_MIN);
+        expect(MASTER_LIFT_MAX).toBe(COPYCH_MASTER_LIFT_MAX);
+        const c = mk();
+        expect(c.config()).toMatchObject(COPYCH_DEVICE_POSTCHAIN_PRESET);
+        expect(c.isActive()).toBe(true);
+    });
+
+    it('enabled=false 也不能全链 bypass：raw synth 不允许作为正式输出路径', () => {
+        const c = mk();
+        c.set({ enabled: false, gain: false, eq: false, softclip: false, quantize: false });
+        expect(c.config().enabled).toBe(true);
+        expect(c.isActive()).toBe(true);
+        const L = buf([2]), R = buf([2]);
+        c.process(L, R, 1);
+        expect(L[0]).toBe(1);
+        expect(R[0]).toBe(1);
+    });
+
     it('mono 折叠：L=1/R=-1 → 全链输出 0（计划门 R2-P1 合同）', () => {
         const c = mk();
         c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false });
@@ -56,7 +104,31 @@ describe('devicePostChain', () => {
         for (let i = 0; i < N; i++) expect(L[i]).toBeCloseTo(expected[i], 10);
     });
 
-    it('量化：非整 s16 值向零截断（backend C cast 语义）', () => {
+    it('YD3411 EQ 小喇叭 Harman-like：保护 sub，轻补 body，大幅压 5-10k 刺耳峰', () => {
+        expect(eqMagnitudeDb(50)).toBeLessThanOrEqual(-6.0);
+        expect(eqMagnitudeDb(70)).toBeLessThanOrEqual(-1.6);
+        expect(eqMagnitudeDb(75)).toBeGreaterThanOrEqual(-1.5);
+        expect(eqMagnitudeDb(80)).toBeGreaterThanOrEqual(-1);
+        expect(eqMagnitudeDb(100)).toBeGreaterThanOrEqual(0.8);
+        expect(eqMagnitudeDb(100)).toBeLessThanOrEqual(1.6);
+        expect(eqMagnitudeDb(120)).toBeGreaterThanOrEqual(1.8);
+        expect(eqMagnitudeDb(150)).toBeGreaterThanOrEqual(2.4);
+        expect(eqMagnitudeDb(150)).toBeLessThanOrEqual(3.2);
+        expect(eqMagnitudeDb(200)).toBeGreaterThanOrEqual(2.3);
+        expect(eqMagnitudeDb(200)).toBeLessThanOrEqual(3.1);
+        expect(eqMagnitudeDb(250)).toBeGreaterThanOrEqual(1.7);
+        expect(eqMagnitudeDb(250)).toBeLessThanOrEqual(2.4);
+        expect(eqMagnitudeDb(450)).toBeLessThanOrEqual(-0.5);
+        expect(eqMagnitudeDb(580)).toBeLessThanOrEqual(-1.1);
+        expect(eqMagnitudeDb(3000)).toBeGreaterThanOrEqual(-0.8);
+        expect(eqMagnitudeDb(4000)).toBeGreaterThanOrEqual(-1.3);
+        expect(eqMagnitudeDb(5800)).toBeLessThanOrEqual(-5.0);
+        expect(eqMagnitudeDb(6500)).toBeLessThanOrEqual(-5.5);
+        expect(eqMagnitudeDb(8000)).toBeLessThanOrEqual(-4.5);
+        expect(eqMagnitudeDb(10000)).toBeLessThanOrEqual(-5.0);
+    });
+
+    it('量化：非整 s16 值向零截断（Copych C cast 语义）', () => {
         const c = mk();
         c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: true });
         const x = 1000.7 / 32767;
@@ -65,17 +137,40 @@ describe('devicePostChain', () => {
         expect(L[0]).toBeCloseTo(1000 / 32767, 6);
     });
 
-    it('24k 硬约束：非 24k ctx 全链 bypass（缓冲逐位不动）', () => {
+    it('非 24k ctx 不再丢掉后链响度：gain/clip/mono 仍生效，只跳过 24k EQ', () => {
         const c = mk(48000);
         c.set({ enabled: true });
-        expect(c.isActive()).toBe(false);
-        expect(c.srOk()).toBe(false);
-        const L = buf([0.5]), R = buf([0.5]);
+        expect(c.isActive()).toBe(true);
+        expect(c.srOk()).toBe(true);
+        expect(c.eqRateOk()).toBe(false);
+        const L = buf([0.01]), R = buf([0.01]);
         c.process(L, R, 1);
-        expect(L[0]).toBeCloseTo(0.5, 7);
+        const expected = Math.trunc(Math.fround(0.01) * 32767 * DEVICE_GAIN_DEFAULT) / 32767;
+        expect(L[0]).toBeCloseTo(expected, 6);
     });
 
-    it('终级饱和恒在：超幅输入被 clamp（softclip off 时=backend hard→物理边界）', () => {
+    it('copych 默认预设就是固件镜像态；48k 下保留响度但跳过 24k EQ', () => {
+        const c24 = mk(24000);
+        c24.set(COPYCH_DEVICE_POSTCHAIN_PRESET);
+        expect(c24.isActive()).toBe(true);
+        expect(c24.eqRateOk()).toBe(true);
+        expect(c24.config()).toMatchObject({
+            enabled: true,
+            gain: true,
+            eq: true,
+            softclip: true,
+            quantize: true,
+            masterLift: 1,
+        });
+
+        const c48 = mk(48000);
+        c48.set(COPYCH_DEVICE_POSTCHAIN_PRESET);
+        expect(c48.isActive()).toBe(true);
+        expect(c48.srOk()).toBe(true);
+        expect(c48.eqRateOk()).toBe(false);
+    });
+
+    it('终级饱和恒在：超幅输入被 clamp（softclip off 时=Copych hard→物理边界）', () => {
         const c = mk();
         c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false });
         const L = buf([2]), R = buf([2]);
@@ -91,6 +186,54 @@ describe('devicePostChain', () => {
         expect(L[0]).toBeCloseTo(Math.fround(0.01) * DEVICE_GAIN_DEFAULT, 6);
     });
 
+    it('masterLift 在设备保护链之前生效：超幅 lift 仍被终级 clamp 接住', () => {
+        const c = mk();
+        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false, masterLift: 2.2 });
+        const L = buf([0.6]), R = buf([0.6]);
+        c.process(L, R, 1);
+        expect(L[0]).toBe(1);
+        const m = c.flushMeters();
+        expect(m.prePeak).toBe(1);
+    });
+
+    it('meters report soft-knee and hard-clamp hit rates for output-chain audit', () => {
+        const soft = mk();
+        soft.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: true });
+        soft.process(buf([1]), buf([1]), 1);
+        const sm = soft.flushMeters();
+        expect(sm.samples).toBe(1);
+        expect(sm.softKnee).toBe(2);
+        expect(sm.softKneeRate).toBe(1);
+        expect(sm.hardClip).toBe(0);
+        expect(sm.prePeakDb).toBeLessThanOrEqual(0);
+        expect(sm.preRmsDb).toBeLessThanOrEqual(0);
+        expect(sm.headroomDb).toBeGreaterThanOrEqual(0);
+        expect(sm.crestDb).toBeGreaterThanOrEqual(0);
+        expect(sm.driveState).toBe('overdriven');
+
+        const hard = mk();
+        hard.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false });
+        hard.process(buf([2]), buf([2]), 1);
+        const hm = hard.flushMeters();
+        expect(hm.hardClip).toBe(1);
+        expect(hm.hardClipRate).toBe(1);
+        expect(hm.driveState).toBe('hard-clipping');
+    });
+
+    it('meters classify quiet and healthy output windows for listening audit', () => {
+        const quiet = mk();
+        quiet.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: false });
+        quiet.process(buf([0.04]), buf([0.04]), 1);
+        expect(quiet.flushMeters().driveState).toBe('quiet');
+
+        const healthy = mk();
+        healthy.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: false });
+        healthy.process(buf([0.2]), buf([0.2]), 1);
+        const m = healthy.flushMeters();
+        expect(m.driveState).toBe('healthy');
+        expect(m.preRmsDb).toBeCloseTo(-13.98, 1);
+    });
+
     it('EQ 重开清滤波状态（镜像固件 s_eq_reset_req 语义）', () => {
         const c = mk();
         c.set({ enabled: true, gain: false, eq: true, softclip: false, quantize: false });
@@ -103,15 +246,24 @@ describe('devicePostChain', () => {
         for (let i = 0; i < 4; i++) expect(Z[i]).toBe(0);   // 无残留瞬态
     });
 
-    it('audition trim：链外 ×dB，pre/post meters 分离', () => {
+    it('pre/post meters 都报告后链输出，不再存在链外音量放大', () => {
         const c = mk();
-        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false, trimDb: -6 });
+        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false, masterLift: 0.5 });
         const x = 1000 / 32767;
         const L = buf([x]), R = buf([x]);
         c.process(L, R, 1);
-        const lin = Math.pow(10, -6 / 20);
-        expect(L[0]).toBeCloseTo(x * lin, 4);
+        expect(L[0]).toBeCloseTo(x * 0.5, 4);
         const m = c.flushMeters();
-        expect(m.postPeak).toBeCloseTo(m.prePeak * lin, 6);
+        expect(m.postPeak).toBeCloseTo(m.prePeak, 6);
+    });
+
+    it('masterLift clamps to the user fader range', () => {
+        const c = mk();
+        c.set({ masterLift: -1 });
+        expect(c.config().masterLift).toBe(MASTER_LIFT_MIN);
+        c.set({ masterLift: 24 });
+        expect(c.config().masterLift).toBe(MASTER_LIFT_MAX);
+        c.set({ masterLift: Number.NaN });
+        expect(c.config().masterLift).toBe(1);
     });
 });

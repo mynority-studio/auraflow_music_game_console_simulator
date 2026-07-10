@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clamp Aura25 guitar SoundFont FX sends for compact browser/ESP32 playback."""
+"""Clamp selected Aura25 SoundFont FX sends for compact browser/ESP32 playback."""
 
 from __future__ import annotations
 
@@ -61,10 +61,18 @@ def _patch_send(
         patches.append(SendPatch(chunk, index, amount, max_chorus))
 
 
+def _parse_selector(spec: str) -> tuple[int, int]:
+    try:
+        bank, preset = spec.split(":", 1)
+        return int(bank), int(preset)
+    except Exception as exc:  # noqa: BLE001
+        raise argparse.ArgumentTypeError(f"expected bank:preset, got {spec!r}") from exc
+
+
 def collect_patches(
     path: Path,
     *,
-    presets: set[int],
+    selectors: set[tuple[int, int]],
     max_reverb: int,
     max_chorus: int,
 ) -> list[SendPatch]:
@@ -81,7 +89,7 @@ def collect_patches(
     referenced_instruments: set[int] = set()
     for preset_i, ph in enumerate(phdrs[:-1]):
         _name, preset, bank, bag_start, *_ = ph
-        if bank != 0 or preset not in presets:
+        if (bank, preset) not in selectors:
             continue
         for bag_i in range(bag_start, phdrs[preset_i + 1][3]):
             gen_start, _ = pbags[bag_i]
@@ -106,7 +114,7 @@ def dampen_guitar_sends(
     source: Path,
     dest: Path,
     *,
-    presets: set[int],
+    selectors: set[tuple[int, int]],
     max_reverb: int,
     max_chorus: int,
 ) -> dict[str, int]:
@@ -115,7 +123,7 @@ def dampen_guitar_sends(
         b"pgen": _find_pdta_child_payload_offset(data, b"pgen"),
         b"igen": _find_pdta_child_payload_offset(data, b"igen"),
     }
-    patches = collect_patches(source, presets=presets, max_reverb=max_reverb, max_chorus=max_chorus)
+    patches = collect_patches(source, selectors=selectors, max_reverb=max_reverb, max_chorus=max_chorus)
     for patch in patches:
         amount_offset = offsets[patch.chunk] + patch.index * PGEN_RECORD_SIZE + 2
         struct.pack_into("<H", data, amount_offset, patch.new)
@@ -132,14 +140,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
     parser.add_argument("dest", type=Path)
-    parser.add_argument("--preset", type=int, action="append", default=[24, 25])
+    parser.add_argument("--preset", type=int, action="append", default=None, help="legacy bank0 preset selector")
+    parser.add_argument("--selector", type=_parse_selector, action="append", default=None, help="bank:preset selector")
     parser.add_argument("--max-reverb", type=int, default=16)
     parser.add_argument("--max-chorus", type=int, default=8)
     args = parser.parse_args()
+    selectors = set(args.selector or [(0, preset) for preset in (args.preset or [24, 25])])
     stats = dampen_guitar_sends(
         args.source,
         args.dest,
-        presets=set(args.preset),
+        selectors=selectors,
         max_reverb=args.max_reverb,
         max_chorus=args.max_chorus,
     )

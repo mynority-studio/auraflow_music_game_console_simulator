@@ -23,7 +23,7 @@ export interface ChainProfile {
   leadByComp: Record<number, number[]>;    // 给定 comp → lead 优先序(同族/同源最佳配对)
   bassPriority: number[];
   padPriority: number[];
-  drumPriority: number[];                  // 通道10 鼓 kit program(0=Standard,25=TR808,40=Brush)
+  drumPriority: number[];                  // 通道10 bank128 鼓 kit program(8=Room,25=TR808,40=Brush)
 }
 
 // —— 6 条链表(directive Chain Profiles,忠实保留;0-based GM)——
@@ -33,21 +33,21 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
     id: 'electricKeys', world: 'electricKeys',
     compPriority: [5, 25],
     leadByComp: { 5: [5, 0, 11, 25, 108], 25: [5, 0, 25, 11] },
-    bassPriority: [38, 32], padPriority: [89], drumPriority: [0],
+    bassPriority: [38, 32], padPriority: [89], drumPriority: [25, 8],
   },
   // LOFI / chill
   lofiTapeKeys: {
     id: 'lofiTapeKeys', world: 'lofiTapeKeys',
     compPriority: [5, 24, 25, 0],
     leadByComp: { 5: [5, 0, 11, 108, 25], 24: [108, 11, 5, 0, 25], 25: [5, 0, 108, 11, 25], 0: [0, 5, 11, 108, 25] },
-    bassPriority: [32, 38], padPriority: [89], drumPriority: [0],
+    bassPriority: [32, 38], padPriority: [89], drumPriority: [25, 8],
   },
   // pop 抒情 / 简单原声乐队
   acousticPianoBand: {
     id: 'acousticPianoBand', world: 'acousticPianoBand',
     compPriority: [0, 5, 25],
     leadByComp: { 0: [0, 5, 11, 25, 108], 5: [5, 0, 11, 25], 25: [0, 5, 25, 11] },
-    bassPriority: [32, 38], padPriority: [89], drumPriority: [0],
+    bassPriority: [32, 38], padPriority: [89], drumPriority: [8, 25],
   },
   // ACG:保持 lead/comp/bass 三轨钢琴写作合同,但开放当前小包的键盘式 lead/comp 色彩。
   acgKeyboardBand: {
@@ -59,28 +59,28 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
       11: [11, 0, 5, 108],
       108: [108, 0, 5, 11],
     },
-    bassPriority: [32], padPriority: [89], drumPriority: [0],
+    bassPriority: [32], padPriority: [89], drumPriority: [8],
   },
   // jazz
   jazzCombo: {
     id: 'jazzCombo', world: 'jazzCombo',
     compPriority: [0, 5, 25],
     leadByComp: { 0: [67, 0, 11], 5: [67, 5, 0, 11], 25: [67, 0, 11, 25] },
-    bassPriority: [32], padPriority: [89], drumPriority: [0],
+    bassPriority: [32], padPriority: [89], drumPriority: [40, 8],
   },
   // 软 synth-pop / modal synthetic
   syntheticSoft: {
     id: 'syntheticSoft', world: 'syntheticSoft',
     compPriority: [5, 25],
     leadByComp: { 5: [5, 0, 11, 108, 25], 25: [5, 0, 25, 11] },
-    bassPriority: [38, 32], padPriority: [89], drumPriority: [0],
+    bassPriority: [38, 32], padPriority: [89], drumPriority: [25, 8],
   },
   // modal / static / ambient
   modalAmbient: {
     id: 'modalAmbient', world: 'modalAmbient',
     compPriority: [0, 5, 24, 25],
     leadByComp: { 0: [11, 108, 0, 67, 25], 5: [5, 11, 108, 67, 25], 24: [108, 11, 67, 25], 25: [108, 11, 25, 67] },
-    bassPriority: [32, 38], padPriority: [89], drumPriority: [0],
+    bassPriority: [32, 38], padPriority: [89], drumPriority: [25, 40, 8],
   },
 };
 
@@ -234,7 +234,7 @@ export function orchestrateRolePrograms(args: {
     else { rp.pad = profile.padPriority.find(ok) ?? pv ?? 89; decisions.push(`pad chain GM${rp.pad}`); }
   }
 
-  // drum kit:24k nano runtime only keeps the Standard kit.
+  // drum kit:当前 Aura25 包只保留 Room / TR-808 / Brush 三套 bank128 kit,按 profile 首选下发。
   if (has('drum')) {
     rp.drum = profile.drumPriority[0] ?? provisional.drum ?? 0;
     decisions.push(`drum kit GM${rp.drum}`);

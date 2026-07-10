@@ -11,11 +11,9 @@ This is intentionally conservative for the ESP32-S3/copych style renderer:
   PCM so ESP32 sustained playback does not expose loud loop clicks.
 * A tiny loop-end PCM smoothing pass is used only when loop headers cannot move
   and a non-piano melodic sample still has a risky loop seam.
-* GM5/DX7 release is baked longer at the SF2 layer; MIDI CC72 can still extend
-  it further, but the asset no longer behaves like a pluck by default.
-* Bank 128 Standard drums are balanced against a GM128/Roland-style relative
-  drum curve, with drum gains baked into PCM so the result does not depend on
-  firmware support for SF2 initialAttenuation.
+* Bank 128 drums keep the imported GM128_6MB body-first balance.
+  Only hidden FX sends are clamped dry; do not bake the later bright drum curve
+  back in, because it makes the kit feel thin on the YD3411 speaker.
 """
 
 from __future__ import annotations
@@ -32,31 +30,24 @@ from subset_sf2 import INST, PBAG, PGEN, PHDR, SHDR, _clean_name, parse_sf2, rec
 
 GEN_CHORUS_SEND = 15
 GEN_REVERB_SEND = 16
+GEN_INITIAL_FILTER_FC = 8
 GEN_INSTRUMENT = 41
 GEN_KEY_RANGE = 43
 GEN_VEL_RANGE = 44
-GEN_RELEASE_VOL_ENV = 38
 GEN_INITIAL_ATTENUATION = 48
 GEN_SAMPLE_ID = 53
 GEN_SAMPLE_MODES = 54
 
-DX7_RELEASE_TC = 1500
-DX7_MIN_TARGET_DB = -30.0
-DX7_HIGH_ZONE_MAX_ATTENUATION_CB = 300
 VIBES_ZONE_TARGET_DB = -26.0
-COPYCH_TINY_SEND = 1
-DRUM_TARGET_SHIFT_DB = -4.3
-
-GM128_STANDARD_DRUM_DB: dict[int, float] = {
-    35: -6.8, 36: -6.4, 37: -17.6, 38: -12.0, 39: -13.6, 40: -10.5,
-    41: -13.3, 42: -14.8, 43: -13.3, 44: -14.5, 45: -13.3, 46: -13.9,
-    47: -13.3, 48: -13.3, 49: -11.6, 50: -13.3, 51: -18.7, 52: -11.8,
-    53: -19.4, 54: -15.8, 55: -11.0, 56: -14.0, 57: -11.6, 58: -15.6,
-    59: -18.7, 60: -13.8, 61: -13.2, 62: -13.8, 63: -12.0, 64: -12.1,
-    65: -11.4, 66: -11.4, 67: -13.6, 68: -13.5, 69: -14.7, 70: -18.7,
-    71: -7.3, 72: -6.6, 73: -15.6, 74: -23.3, 75: -7.8, 76: -15.5,
-    77: -15.5, 78: -7.2, 79: -10.0, 80: -10.3, 81: -10.4,
+VIBES_FILTER_FC_BY_ZONE = {
+    (0, 57): 11739,    # ~7.2 kHz
+    (58, 70): 11562,   # ~6.5 kHz
+    (71, 82): 11175,   # ~5.2 kHz
+    (83, 93): 10806,   # ~4.2 kHz
+    (94, 127): 10539,  # ~3.6 kHz
 }
+COPYCH_TINY_SEND = 1
+DRUM_KIT_PRESETS = frozenset({8, 25, 40})
 
 PGEN_RECORD_SIZE = PGEN.size
 SHDR_RECORD_SIZE = SHDR.size
@@ -98,6 +89,7 @@ class Patch:
     old: int
     new: int
     reason: str
+    new_oper: int | None = None
 
 
 @dataclass(frozen=True)
@@ -121,16 +113,6 @@ class PcmPatch:
     frames: tuple[tuple[int, int], ...]
 
 
-@dataclass(frozen=True)
-class PcmGainPatch:
-    sample_id: int
-    sample_name: str
-    gain_db: float
-    keys: tuple[int, ...]
-    old_peak: float
-    new_peak: float
-
-
 # Hidden SF2 sends are ceilings for copych-style zoneSend * channelSend.
 # Reverb 70 means "moderate capability"; guitars/bass stay drier; GM5 EP stays
 # fully dry at the asset layer so shared space is owned by MIDI/master routing.
@@ -145,7 +127,7 @@ SEND_LIMITS: dict[tuple[int, int], SendLimit] = {
     (0, 67): SendLimit(max_reverb=70, max_chorus=8),
     (0, 89): SendLimit(max_reverb=70, max_chorus=80),
     (0, 108): SendLimit(max_reverb=70, max_chorus=8),
-    (128, 0): SendLimit(max_reverb=COPYCH_TINY_SEND, max_chorus=COPYCH_TINY_SEND),
+    **{(128, program): SendLimit(max_reverb=COPYCH_TINY_SEND, max_chorus=COPYCH_TINY_SEND) for program in DRUM_KIT_PRESETS},
 }
 
 AUDITION_NOTES: dict[tuple[int, int], int] = {
@@ -343,20 +325,32 @@ def _local_attenuation_patch_refs(zone: Zone) -> tuple[GenRef, ...]:
     )
 
 
-def _sample_rms_from_pcm(pcm: np.ndarray, shdrs: list[tuple], sample_id: int) -> float:
-    sh = shdrs[sample_id]
-    x = pcm[sh[1]:sh[2]].astype(np.float64)
-    if x.size == 0:
-        return 0.0
-    return float(np.sqrt(np.mean(x * x))) / 32768.0
+def _vibes_zone_target_db(zone: Zone) -> float:
+    # The Roland vibe high samples have narrow metallic peaks around 5-10 kHz
+    # that become harsh on the YD3411 speaker. Keep low/mid vibes present, but
+    # progressively tuck the high zones before the shared room and device EQ.
+    if zone.key_range[0] >= 94:
+        return -31.5
+    if zone.key_range[0] >= 83:
+        return -30.0
+    if zone.key_range[0] >= 71:
+        return -29.0
+    return VIBES_ZONE_TARGET_DB
 
 
-def _sample_peak_from_pcm(pcm: np.ndarray, shdrs: list[tuple], sample_id: int) -> float:
-    sh = shdrs[sample_id]
-    x = pcm[sh[1]:sh[2]].astype(np.float64)
-    if x.size == 0:
-        return 0.0
-    return float(np.max(np.abs(x))) / 32768.0
+def _vibes_filter_fc(zone: Zone) -> int:
+    for key_range, fc in VIBES_FILTER_FC_BY_ZONE.items():
+        if zone.key_range == key_range:
+            return fc
+    if zone.key_range[0] >= 94:
+        return VIBES_FILTER_FC_BY_ZONE[(94, 127)]
+    if zone.key_range[0] >= 83:
+        return VIBES_FILTER_FC_BY_ZONE[(83, 93)]
+    if zone.key_range[0] >= 71:
+        return VIBES_FILTER_FC_BY_ZONE[(71, 82)]
+    if zone.key_range[0] >= 58:
+        return VIBES_FILTER_FC_BY_ZONE[(58, 70)]
+    return VIBES_FILTER_FC_BY_ZONE[(0, 57)]
 
 
 def _active_audition_zones(zones: list[Zone], bank: int, program: int, note: int, velocity: int) -> list[Zone]:
@@ -553,48 +547,6 @@ def collect_pcm_smoothing_patches(
     return patches
 
 
-def collect_drum_pcm_gain_patches(source: Path) -> list[PcmGainPatch]:
-    zones, shdrs = collect_zones(source)
-    sf = parse_sf2(source)
-    pcm = np.frombuffer(sf[b"sdta"].chunks[b"smpl"], dtype="<i2")
-    desired_by_sample: dict[int, list[tuple[int, float]]] = {}
-
-    for key, reference_db in GM128_STANDARD_DRUM_DB.items():
-        active = _active_audition_zones(zones, 128, 0, key, 96)
-        if not active:
-            continue
-        target_db = reference_db + DRUM_TARGET_SHIFT_DB
-        for zone in active:
-            current_db = 20 * math.log10(_sample_rms_from_pcm(pcm, shdrs, zone.sample_id) + 1e-9)
-            desired_by_sample.setdefault(zone.sample_id, []).append((key, target_db - current_db))
-
-    patches: list[PcmGainPatch] = []
-    for sample_id, desired in sorted(desired_by_sample.items()):
-        if sample_id >= len(shdrs) - 1:
-            continue
-        sh = shdrs[sample_id]
-        sample_name = _clean_name(sh[0])
-        gain_db = float(np.median([d for _key, d in desired]))
-        peak = _sample_peak_from_pcm(pcm, shdrs, sample_id)
-        max_peak_gain_db = 20 * math.log10(0.98 / max(peak, 1e-9)) if peak > 0 else 0.0
-        if gain_db > 0:
-            gain_db = min(gain_db, max_peak_gain_db, 18.0)
-        if abs(gain_db) < 0.25:
-            continue
-        scale = 10 ** (gain_db / 20.0)
-        patches.append(
-            PcmGainPatch(
-                sample_id=sample_id,
-                sample_name=sample_name,
-                gain_db=gain_db,
-                keys=tuple(key for key, _d in desired),
-                old_peak=peak,
-                new_peak=min(peak * scale, 0.98),
-            )
-        )
-    return patches
-
-
 def collect_patches(source: Path, *, target_db: float, audition_velocity: int) -> tuple[list[Patch], list[str]]:
     zones, shdrs = collect_zones(source)
     patches: dict[tuple[bytes, int], Patch] = {}
@@ -607,16 +559,13 @@ def collect_patches(source: Path, *, target_db: float, audition_velocity: int) -
                 for ref in refs:
                     new: int | None = None
                     reason = ""
-                    if (zone.bank, zone.program) == (128, 0):
+                    if zone.bank == 128 and zone.program in DRUM_KIT_PRESETS:
                         if ref.oper == GEN_REVERB_SEND and ref.amount != COPYCH_TINY_SEND:
                             new = COPYCH_TINY_SEND
                             reason = f"bank{zone.bank}:program{zone.program}:copych-tiny-reverb-send"
                         elif ref.oper == GEN_CHORUS_SEND and ref.amount != COPYCH_TINY_SEND:
                             new = COPYCH_TINY_SEND
                             reason = f"bank{zone.bank}:program{zone.program}:copych-tiny-chorus-send"
-                        elif ref.oper == GEN_INITIAL_ATTENUATION and _signed16(ref.amount) != 0:
-                            new = 0
-                            reason = f"bank{zone.bank}:program{zone.program}:drum-pcm-balanced-attenuation"
                     elif ref.oper == GEN_REVERB_SEND and ref.amount > limit.max_reverb:
                         new = limit.max_reverb
                         reason = f"bank{zone.bank}:program{zone.program}:reverb-send"
@@ -629,38 +578,6 @@ def collect_patches(source: Path, *, target_db: float, audition_velocity: int) -
                     old_patch = patches.get(key)
                     if old_patch is None or new < old_patch.new:
                         patches[key] = Patch(ref.chunk, ref.index, ref.amount, new, reason)
-
-        if (zone.bank, zone.program) == (0, 5):
-            for ref in zone.pglobal_refs:
-                if ref.oper != GEN_RELEASE_VOL_ENV:
-                    continue
-                current = _signed16(ref.amount)
-                if current >= DX7_RELEASE_TC:
-                    continue
-                key = (ref.chunk, ref.index)
-                patches[key] = Patch(
-                    ref.chunk,
-                    ref.index,
-                    ref.amount,
-                    _pack_u16(DX7_RELEASE_TC),
-                    f"bank{zone.bank}:program{zone.program}:dx7-release",
-                )
-            if zone.key_range[0] >= 97:
-                current_attenuation = _attenuation_cb(zone)
-                excess = current_attenuation - DX7_HIGH_ZONE_MAX_ATTENUATION_CB
-                if excess > 0:
-                    refs = _local_attenuation_patch_refs(zone) or _attenuation_patch_refs(zone)
-                    per_ref_cb = max(1, round(excess / max(1, len(refs))))
-                    for ref in refs:
-                        current = _signed16(ref.amount)
-                        new = max(-120, min(1440, current - per_ref_cb))
-                        patches[(ref.chunk, ref.index)] = Patch(
-                            ref.chunk,
-                            ref.index,
-                            ref.amount,
-                            _pack_u16(new),
-                            f"bank{zone.bank}:program{zone.program}:dx7-high-zone-gain",
-                        )
 
     rms_cache: dict[int, float] = {}
     for selector, note in AUDITION_NOTES.items():
@@ -687,29 +604,34 @@ def collect_patches(source: Path, *, target_db: float, audition_velocity: int) -
             f"gain bank{selector[0]}:program{selector[1]} {db:.1f}dB -> +{delta_cb}cb on {len(touched)} attenuation generators"
         )
 
-    dx7_active = _active_audition_zones(zones, 0, 5, AUDITION_NOTES[(0, 5)], audition_velocity)
-    if dx7_active:
-        dx7_db = _estimated_db(source, shdrs, dx7_active, rms_cache)
-        boost_cb = max(0, round((DX7_MIN_TARGET_DB - dx7_db) * 10))
-        if boost_cb > 0:
-            refs_by_key: dict[tuple[bytes, int], GenRef] = {}
-            for zone in dx7_active:
-                for ref in _attenuation_patch_refs(zone):
-                    key = (ref.chunk, ref.index)
-                    refs_by_key[key] = ref
-            per_ref_cb = max(1, round(boost_cb / max(1, len(refs_by_key))))
-            for key, ref in refs_by_key.items():
-                current = _signed16(ref.amount)
-                new = max(-120, min(1440, current - per_ref_cb))
-                patches[key] = Patch(ref.chunk, ref.index, ref.amount, _pack_u16(new), f"bank0:program5:-{per_ref_cb}cb-dx7-min-gain")
-            report.append(f"gain bank0:program5 {dx7_db:.1f}dB -> -{per_ref_cb}cb on {len(refs_by_key)} attenuation generators")
-
     for zone in [z for z in zones if (z.bank, z.program) == (0, 11)]:
         # Roland-style vibes have clean spectra but hotter high zones. Keep this
         # as attenuation-only zone balancing so the preset stays musical without
         # adding gain/headroom risk for ESP32.
+        filter_fc = _vibes_filter_fc(zone)
+        filter_ref = next((ref for ref in zone.izone_refs if ref.oper == GEN_INITIAL_FILTER_FC), None)
+        if filter_ref is not None and filter_ref.amount != filter_fc:
+            patches[(filter_ref.chunk, filter_ref.index)] = Patch(
+                filter_ref.chunk,
+                filter_ref.index,
+                filter_ref.amount,
+                filter_fc,
+                f"bank0:program11:vibes-filter-fc-{filter_fc}",
+            )
+        elif filter_ref is None:
+            noop_ref = next((ref for ref in zone.izone_refs if ref.oper == 0 and ref.amount == 0), None)
+            if noop_ref is not None:
+                patches[(noop_ref.chunk, noop_ref.index)] = Patch(
+                    noop_ref.chunk,
+                    noop_ref.index,
+                    noop_ref.amount,
+                    filter_fc,
+                    f"bank0:program11:vibes-filter-fc-{filter_fc}",
+                    new_oper=GEN_INITIAL_FILTER_FC,
+                )
         db = _estimated_zone_db_with_patches(source, shdrs, zone, rms_cache, patches)
-        delta_cb = max(0, round((db - VIBES_ZONE_TARGET_DB) * 10))
+        target_db = _vibes_zone_target_db(zone)
+        delta_cb = max(0, round((db - target_db) * 10))
         if delta_cb <= 1:
             continue
         refs = _local_attenuation_patch_refs(zone) or _attenuation_patch_refs(zone)
@@ -727,7 +649,7 @@ def collect_patches(source: Path, *, target_db: float, audition_velocity: int) -
             )
         report.append(
             f"gain bank0:program11 zone{zone.key_range[0]}-{zone.key_range[1]} "
-            f"{db:.1f}dB -> +{per_ref_cb}cb on {len(refs)} attenuation generators"
+            f"{db:.1f}dB target {target_db:.1f}dB -> +{per_ref_cb}cb on {len(refs)} attenuation generators"
         )
 
     return sorted(patches.values(), key=lambda p: (p.chunk, p.index)), report
@@ -743,8 +665,10 @@ def clean_aura25_sf2(source: Path, dest: Path, *, target_db: float, audition_vel
     }
     patches, report = collect_patches(source, target_db=target_db, audition_velocity=audition_velocity)
     for patch in patches:
-        amount_offset = offsets[patch.chunk] + patch.index * PGEN_RECORD_SIZE + 2
-        struct.pack_into("<H", data, amount_offset, patch.new)
+        record_offset = offsets[patch.chunk] + patch.index * PGEN_RECORD_SIZE
+        if patch.new_oper is not None:
+            struct.pack_into("<H", data, record_offset, patch.new_oper)
+        struct.pack_into("<H", data, record_offset + 2, patch.new)
     loop_patches = collect_loop_patches(source)
     for patch in loop_patches:
         record_offset = offsets[b"shdr"] + patch.sample_id * SHDR_RECORD_SIZE
@@ -755,16 +679,6 @@ def clean_aura25_sf2(source: Path, dest: Path, *, target_db: float, audition_vel
     for patch in pcm_patches:
         for frame, value in patch.frames:
             struct.pack_into("<h", data, offsets[b"smpl"] + frame * 2, value)
-    drum_gain_patches = collect_drum_pcm_gain_patches(source)
-    for patch in drum_gain_patches:
-        sh = records(parse_sf2(source)[b"pdta"].chunks[b"shdr"], SHDR)[patch.sample_id]
-        start, end = sh[1], sh[2]
-        scale = 10 ** (patch.gain_db / 20.0)
-        for frame in range(start, end):
-            offset = offsets[b"smpl"] + frame * 2
-            old = struct.unpack_from("<h", data, offset)[0]
-            new = int(np.clip(round(old * scale), -32768, 32767))
-            struct.pack_into("<h", data, offset, new)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
     for line in report:
@@ -781,22 +695,13 @@ def clean_aura25_sf2(source: Path, dest: Path, *, target_db: float, audition_vel
             f"{patch.old_score:.3f}->{patch.new_score:.3f} "
             f"frames={len(patch.frames)}"
         )
-    for patch in drum_gain_patches:
-        key_list = ",".join(str(k) for k in patch.keys)
-        print(
-            f"drum-gain {patch.sample_id} {patch.sample_name}: "
-            f"{patch.gain_db:+.2f}dB keys={key_list} "
-            f"peak={patch.old_peak:.3f}->{patch.new_peak:.3f}"
-        )
     return {
         "patches": len(patches),
         "send_patches": sum(1 for p in patches if "send" in p.reason),
         "gain_patches": sum(1 for p in patches if "gain-clean" in p.reason),
-        "release_patches": sum(1 for p in patches if "dx7-release" in p.reason),
         "drum_generator_patches": sum(1 for p in patches if "drum-pcm-balanced" in p.reason or "copych-tiny" in p.reason),
         "loop_patches": len(loop_patches),
         "pcm_patches": len(pcm_patches),
-        "drum_gain_patches": len(drum_gain_patches),
     }
 
 
@@ -817,10 +722,8 @@ def main() -> None:
         f"wrote {args.dest} "
         f"({stats['patches']} generators patched, "
         f"{stats['send_patches']} sends, {stats['gain_patches']} gain, "
-        f"{stats['release_patches']} release, "
         f"{stats['drum_generator_patches']} drum generators, "
-        f"{stats['loop_patches']} loops, {stats['pcm_patches']} pcm smooth, "
-        f"{stats['drum_gain_patches']} drum gain)"
+        f"{stats['loop_patches']} loops, {stats['pcm_patches']} pcm smooth)"
     )
 
 

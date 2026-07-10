@@ -173,7 +173,6 @@ coverage/
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "spessasynth_lib": "^4.2.15",
     "vite": "^6.2.3"
   },
   "devDependencies": {
@@ -443,7 +442,7 @@ export default function App() {
       <div className="max-w-2xl mx-auto w-full space-y-6">
         <header className="flex flex-col gap-1 pb-4">
           <h1 className="font-serif text-4xl font-medium tracking-tight text-[#5A5A40]">AuraRadio Engine <span className="text-sm italic opacity-60 ml-2 font-serif">ACG Light Music</span></h1>
-          <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-[#8C867A]">Pure Algorithmic Generation • SpessaSynth Audio</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-[#8C867A]">Pure Algorithmic Generation • Copych Audio</p>
         </header>
 
         <section className="bg-white rounded-[24px] p-6 shadow-sm border border-[#E5E1DA] flex flex-col gap-4">
@@ -712,8 +711,7 @@ export const TIME_SIGNATURES = [
 ```typescript
 import { ArrangedTrack, MusicContext, NoteData } from './types';
 import { getInstrumentConfig } from './manifests/InstrumentRegistry';
-import { WorkletSynthesizer } from 'spessasynth_lib';
-import processorUrl from 'spessasynth_lib/dist/spessasynth_processor.min.js?url';
+import { CopychSynthFacade } from '../../audio/copych/CopychSynthFacade';
 
 export interface MidiEvent {
     time: number;
@@ -723,10 +721,10 @@ export interface MidiEvent {
     instrument: number; // channel
 }
 
-// Web Audio API lightweight synthesizer mapping
+// Copych AudioWorklet synthesizer mapping
 export class PlaybackEngine {
     private ac: AudioContext | null = null;
-    private synth: WorkletSynthesizer | null = null;
+    private synth: CopychSynthFacade | null = null;
     private initPromise: Promise<void> | null = null;
     
     private nextEventIdx = 0;
@@ -744,10 +742,7 @@ export class PlaybackEngine {
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
             this.ac = new AudioContextClass();
             
-            await this.ac.audioWorklet.addModule(processorUrl);
-            
-            this.synth = new WorkletSynthesizer(this.ac);
-            await this.synth.isReady;
+            this.synth = new CopychSynthFacade(this.ac);
             
             // Connect synthesizer to output destination via a Master Bus
             // 1. Warmth (Low Shelf)
@@ -803,7 +798,7 @@ export class PlaybackEngine {
 
     public async loadSoundfont(buffer: ArrayBuffer): Promise<void> {
         if (!this.synth) await this.init();
-        await this.synth!.soundBankManager.addSoundBank(buffer, "custom-sf2");
+        await this.synth!.init(buffer);
         this.applyMixConfig();
     }
 

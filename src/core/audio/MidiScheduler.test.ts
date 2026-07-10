@@ -1,11 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-
-// 本文件断言 spessa 路径行为（CC95→echo 展开等）。2026-07-09 起默认后端=copych，
-// 显式钉 spessa 防环境默认漂移；copych 路径行为见 copychBackend.test.ts。
-vi.mock('./synthBackend', () => ({
-    getSynthBackend: () => 'spessa' as const,
-    isCopychBackend: () => false,
-}));
+import { describe, expect, it } from 'vitest';
 
 import { MidiScheduler, type MidiEvent } from './MidiScheduler';
 
@@ -30,7 +23,7 @@ describe('core/audio/MidiScheduler', () => {
     ]);
   });
 
-  it('expands CC95 delay send into a short non-recursive echo for browser playback', () => {
+  it('keeps CC95 delay send as a Copych FX-bus event without synthetic echo notes', () => {
     const scheduler = new MidiScheduler();
 
     scheduler.loadTrack([
@@ -40,14 +33,12 @@ describe('core/audio/MidiScheduler', () => {
     ], 120);
 
     const noteOns = scheduler.getChannelEvents(1).filter((event) => event.type === 'noteOn');
-    expect(noteOns.map((event) => [event.ticks, event.data1, event.data2])).toEqual([
-      [0, 64, 100],
-      [240, 64, 33],
-    ]);
-    expect(scheduler.getChannelEvents(1).filter((event) => event.type === 'noteOff').map((event) => event.ticks)).toEqual([240, 420]);
+    expect(noteOns.map((event) => [event.ticks, event.data1, event.data2])).toEqual([[0, 64, 100]]);
+    expect(scheduler.getChannelEvents(1).filter((event) => event.type === 'noteOff').map((event) => event.ticks)).toEqual([240]);
+    expect(scheduler.getChannelEvents(1).filter((event) => event.type === 'cc' && event.data1 === 95)).toHaveLength(1);
   });
 
-  it('does not add browser echo when CC95 is absent', () => {
+  it('does not add synthetic echo notes', () => {
     const scheduler = new MidiScheduler();
 
     scheduler.loadTrack([ev(0, 'noteOn', 64), ev(240, 'noteOff', 64)], 120);

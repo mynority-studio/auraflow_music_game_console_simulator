@@ -29,24 +29,26 @@ const EPS = 1e-9;
 const MAX_SPLIT_SCALE = 1.38;
 const MIN_SPLIT_SCALE = 1 / MAX_SPLIT_SCALE;
 const GUITAR_COMP_VOLUME_CAP = 78;
+const FM_EP_COMP_VOLUME_CAP = 80;
 
 const POLICY: Record<string, LeadCompPolicy> = {
-  pop:  { targetRatio: 1.15, minRatio: 0.75, maxRatio: 1.55, leadRange: [78, 100], compRange: [70, 90] },
-  jazz: { targetRatio: 1.18, minRatio: 0.90, maxRatio: 1.60, leadRange: [80, 100], compRange: [72, 90] },
-  lofi: { targetRatio: 1.00, minRatio: 0.70, maxRatio: 1.45, leadRange: [70, 96], compRange: [68, 94] },
-  rnb:  { targetRatio: 1.00, minRatio: 0.75, maxRatio: 1.35, leadRange: [82, 100], compRange: [54, 78] },
+  // YD3411 小喇叭中频效率高:让 comp+lead 做前景,利用钢琴/和声主体频段,而不是把能量交给鼓/pad。
+  pop:  { targetRatio: 1.08, minRatio: 0.70, maxRatio: 1.80, leadRange: [84, 100], compRange: [78, 94] },
+  jazz: { targetRatio: 1.18, minRatio: 0.85, maxRatio: 2.30, leadRange: [84, 100], compRange: [78, 94] },
+  lofi: { targetRatio: 1.05, minRatio: 0.70, maxRatio: 1.80, leadRange: [76, 98], compRange: [72, 94] },
+  rnb:  { targetRatio: 1.05, minRatio: 0.70, maxRatio: 1.65, leadRange: [86, 100], compRange: [64, 84] },
   // ★ P2 mg fidelity:ACG = melody-first(旋律浮上,comp 是空气 pp)。旧策略 comp-forward(0.90/comp CC7 80-98)
   //   与 normalizeAcgDynamics(lead86/comp29)直接矛盾 → 会 boost comp CC7 抢回,抵消 pp 意图。改成 lead-forward:
   //   lead CC7 高、comp CC7 中(air 但仍可闻),ratio 允许强 lead-forward(velocity 秩序天然使 lead≫comp)。
-  acg:  { targetRatio: 1.60, minRatio: 1.05, maxRatio: 4.50, leadRange: [84, 100], compRange: [86, 100] },
+  acg:  { targetRatio: 1.35, minRatio: 1.00, maxRatio: 4.20, leadRange: [84, 100], compRange: [90, 100] },
 };
 
 const DEFAULT_POLICY: LeadCompPolicy = {
-  targetRatio: 1.15,
-  minRatio: 0.80,
-  maxRatio: 1.55,
-  leadRange: [78, 100],
-  compRange: [70, 92],
+  targetRatio: 1.08,
+  minRatio: 0.75,
+  maxRatio: 1.80,
+  leadRange: [82, 100],
+  compRange: [74, 94],
 };
 
 const JAZZ_SAX_POLICY: LeadCompPolicy = {
@@ -103,9 +105,24 @@ function isGuitarProgram(program: number | undefined): boolean {
   return program !== undefined && program >= 24 && program <= 31;
 }
 
-function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix): TrackMix {
-  if (track.role !== 'comp' || !isGuitarProgram(programAt(track, tick))) return mix;
-  const volume = Math.min(mix.volume, GUITAR_COMP_VOLUME_CAP);
+function isFmEpProgram(program: number | undefined): boolean {
+  return program === 5;
+}
+
+function shouldCapFmEpComp(style: string): boolean {
+  const s = (style ?? '').toLowerCase();
+  return s === 'pop' || s === 'lofi' || s === 'rnb';
+}
+
+function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix, style: string): TrackMix {
+  if (track.role !== 'comp') return mix;
+  const program = programAt(track, tick);
+  const cap =
+    isGuitarProgram(program) ? GUITAR_COMP_VOLUME_CAP
+    : isFmEpProgram(program) && shouldCapFmEpComp(style) ? FM_EP_COMP_VOLUME_CAP
+    : undefined;
+  if (cap === undefined) return mix;
+  const volume = Math.min(mix.volume, cap);
   return volume === mix.volume ? mix : { ...mix, volume };
 }
 
@@ -223,14 +240,14 @@ export function applyRenderMixBalance(tracks: readonly TrackIR[], ctx: RenderMix
   return tracks.map((track) => {
     const required = mandatoryMixTicks(track);
     const initialMixRaw = byTick.get(0)?.[track.role] ?? track.mix;
-    const initialMix = initialMixRaw ? capMixForTrack(track, 0, initialMixRaw) : undefined;
+    const initialMix = initialMixRaw ? capMixForTrack(track, 0, initialMixRaw, ctx.style) : undefined;
     if (!initialMix) return { ...track };
 
     const mixChanges: { atTick: ReturnType<typeof ticks>; mix: TrackMix }[] = [];
     let prev = initialMix;
     for (const tick of bounds.slice(1, -1)) {
       const rawMix = byTick.get(tick)?.[track.role];
-      const mix = rawMix ? capMixForTrack(track, tick, rawMix) : undefined;
+      const mix = rawMix ? capMixForTrack(track, tick, rawMix, ctx.style) : undefined;
       if (!mix) continue;
       if (required.has(tick) || !sameMix(mix, prev)) {
         mixChanges.push({ atTick: ticks(tick), mix });

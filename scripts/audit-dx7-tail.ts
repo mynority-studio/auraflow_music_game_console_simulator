@@ -1,7 +1,7 @@
-// Layer 1 report: 哪些 seed 的 DX7/EP(program 4/5)lead/comp 被命中 + tail 怎么处理(CC72 lead·CC64 comp·无 blanket pedal)。
+// Layer 1 report: 哪些 seed 的 DX7/EP(program 4/5)lead/comp 被命中 + tail 怎么处理(lead 连接到下一音+CC72 release·comp 无 blanket pedal)。
 import { generateMusicSync } from '../src/core/generation/musicGeneration/MusicGenerationService';
 const CASES: [number,string][] = [[4,'pop'],[1,'pop'],[3,'rnb'],[7,'rnb'],[1,'lofi'],[7,'lofi'],[42,'lofi'],[0,'jazz'],[7,'jazz'],[11,'pop']];
-const L: string[] = ['# DX7 / Electric-Key Tail Report (Layer 1)','','program 4/5=电钢(EP1 Rhodes / EP2 DX7)。lead tail=CC72 release(保 parity)· comp tail=CC64 pedal · lead 无 blanket pedal。',''];
+const L: string[] = ['# DX7 / Electric-Key Tail Report (Layer 1)','','program 4/5=电钢(EP1 Rhodes / EP2 DX7)。lead tail=音符门限延到下一音前 + CC72 release 增强；comp 不再使用 blanket pedal，避免和声层糊成一片。',''];
 L.push('| seed/style | lead prog | lead CC72 | lead CC64(应0) | comp prog | comp CC64/pedal |');
 L.push('|---|---|---|---|---|---|');
 let hitLead=0, hitComp=0;

@@ -14,7 +14,7 @@
 | Flash | 8MB 或 16MB（Quad SPI） |
 | PSRAM | 8MB（Octal SPI） |
 | SRAM | 512KB |
-| SF2 合成器 | TinySoundFont（单头文件 C 库） |
+| SF2 合成器 | Copych `auraflow_synth`（本仓 submodule 同源） |
 | 音色库 | `Aura25_GM128.sf2`（1.24MiB / 1,302,686 bytes，11 preset，24kHz VHQ 重采样；存放于 Flash/PSRAM） |
 | 音频输出 | I2S → ES8388 DAC @16kHz |
 
@@ -65,14 +65,14 @@ typedef struct {
 | :--- | :--- | :--- |
 | `ILedMatrix` | React State + CSS Grid | **SPI / RMT** (WS2812B / APA102 驱动) |
 | `ITouchPad` | DOM `onPointerDown` | **I2C** (CST816S) 或原生 Touch Pad |
-| `IAudioOut` | SpessaSynth (SF2) + MidiScheduler | **I2S DMA** + TinySoundFont |
+| `IAudioOut` | Copych WASM + MidiScheduler | **I2S DMA** + Copych `auraflow_synth` |
 | `ISystemTimer` | `setTimeout` / `performance.now()` | `vTaskDelay()` / `esp_timer_get_time()` |
 
 ### HAL 接口详细说明
 
 - **`IAudioOut`**:
-  - *Web*: 由 `AudioEngine` 处理（SpessaSynth + Web Audio API）。
-  - *ESP32*: I2S DMA 输出。TinySoundFont 加载 SF2 到 PSRAM，`tsf_note_on`/`tsf_note_off` 处理 MIDI 事件，`tsf_render_short` 渲染音频帧到 I2S DMA buffer。
+  - *Web*: 由 `AudioEngine` 处理（Copych WASM AudioWorklet + device_postchain 镜像）。
+  - *ESP32*: I2S DMA 输出。Copych `auraflow_synth` 加载 SF2 到 PSRAM，处理 note/program/CC/pitch 事件，渲染 PCM 帧到 I2S DMA buffer。
 - **`ILedMatrix`**:
   - *Web*: 通过 React 状态模拟（`LedMatrix.tsx`）。
   - *ESP32*: 使用 SPI 或 RMT 实现。`setPixel` 写入帧缓冲区，`update` 通过 DMA 刷新到 LED。
@@ -115,10 +115,10 @@ typedef struct {
 
 1. **事件生成**: `MidiConverter.convert(arranged, channelMap)` → `MidiEvent[]`。
 2. **调度**: 事件推送到 MIDI 调度器（Web: `globalMidiScheduler` 5ms 轮询；ESP32: FreeRTOS 定时器任务）。
-3. **执行**: 调度器调用合成器 API（Web: `spessaSynth`；ESP32: `tsf_note_on`/`tsf_note_off`/`tsf_channel_set_xxx`）。
-4. **渲染**: ESP32 上 TinySoundFont `tsf_render_short()` 输出 PCM 帧到 I2S DMA buffer。
+3. **执行**: 调度器调用合成器 API（Web: `activeSynth`/`CopychSynthFacade`；ESP32: Copych note/program/CC/pitch 接口）。
+4. **渲染**: ESP32 上 Copych `auraflow_synth` 输出 PCM 帧到 I2S DMA buffer。
 5. **轨道混音**: 所有轨道级混音通过 MIDI CC 消息（CC7 音量、CC10 声像、CC91 混响、CC93 合唱/宽度、可选 CC11 表情）进入同一首歌的空间画像。
-6. **最终母带**: TinySoundFont 渲染出的所有声部先进入同一个 stereo master bus，再做 headroom、轻量 glue、limiter/softclip，最后转换为 I2S int16。不要让单轨直接绕过母带写 DAC。
+6. **最终输出后链**: Copych 渲染出的所有声部先进同一个 synth+shared FX 总线，风格级 master lift 在保护链前进入 device_postchain（gain/soft-hard clip/mono/EQ/final clamp），最后转换为 I2S int16。不要让单轨或风格增益直接绕过后链写 DAC。
 
 ---
 
@@ -131,6 +131,13 @@ typedef struct {
 - **Spotify for Artists**：音乐流媒体播放参考 `-14 LUFS`，mastering 建议 true peak 低于 `-1 dBTP`。
 - **Apple Digital Masters**：数字/AAC 编码前至少留 `1 dB` headroom，避免过采样或编码后削波。
 
+硬件喇叭口径（`YD3411-H-YC16-8B` 规格书）：
+
+- 34x11x4.0mm / 4ohm / 2W RMS，4cc 箱体下 F0 约 `630Hz`。
+- 灵敏度：`84dB @400Hz`，`93dB @2kHz`（同为 2W/0.1m），中高频天然比低中频敏感约 `9dB`。
+- 因此混音目标不是补出不可用的 sub bass，而是：`180-400Hz` 保鼓/贝斯轮廓，`630Hz-2kHz` 做中频主体，`2-4kHz` 给鼓和琴 attack，`5-10kHz` 控制齿音/金属噪声/镲片打架。
+- 鼓轨在 Copych 口径下保持干：器配层默认 drum CC91 <= `14`，审计 guardrail 要求 drum CC91 <= `18`，C 层 ch9 进入共享混响前再缩放到 `0.55`。
+
 TS 侧现在提供 `npm run audit:mix`：
 
 - 输入：最终 `MusicalIR.tracks`（已经挂好 program/mix/mixChanges）。
@@ -138,15 +145,18 @@ TS 侧现在提供 `npm run audit:mix`：
 - 输出：`docs/generated/render_mix_mastering_audit_report.md`。
 - 限制：这是 MIDI/IR 层代理审计，不替代真实 PCM 的 BS.1770/LUFS meter；ESP32 固件完成后还要对 I2S capture/WAV dump 跑真实 loudness/true-peak。
 
-硬件母带建议（C 侧可定点实现，无热路径 malloc）：
+硬件输出后链建议（C 侧可定点实现，无热路径 malloc）：
 
-| 阶段 | TS Web 当前值 | ESP32-S3 建议 |
-|------|---------------|---------------|
-| 预留余量 | `headroom.gain = 0.6` | TSF stereo float/int32 mix 后统一乘 0.6 |
-| glue | `threshold -16dB, ratio 2.5, attack 12ms, release 250ms` | 首版可跳过或做块级 RMS 轻压缩 |
-| makeup | `gain = 1.5` | limiter 前补偿，先保证不绕过 limiter |
-| ceiling | limiter threshold `-1.5dB` | int16 前 sample ceiling ≤ `-1.5 dBFS`，true-peak 目标 ≤ `-1 dBTP` |
-| 试听低延迟 | tanh softclip | Q+R/按键试听可用软削波，成品播放仍走保护母带 |
+| 阶段 | TS/浏览器当前值 | ESP32-S3 建议 |
+|------|-----------------|---------------|
+| 合成总线 | Copych synth+shared FX | 同源 `auraflow_synth` 总线 |
+| 设备增益 | `device_postchain.gain = 4.28` | 固件同值，后续以 I2S capture 校准 |
+| 保护削波 | Copych soft/hard clip | int16 前统一处理，不允许单轨绕过 |
+| 小喇叭 EQ | 6 段 device EQ | 与浏览器 device_postchain 参数同源 |
+| 声道 | 默认 mono fold / 双单声道输出 | ESP32 喇叭口径优先 mono，耳机再评估 stereo |
+| ceiling | final hard clamp | sample peak 不超过 int16 边界，真实 WAV 再跑 LUFS/TP |
+
+采样率合同：当前运行时 SF2 已统一为 `24 kHz` 样本，Copych/ESP32 正式播放也必须请求 `24 kHz`，保持样本原生采样率进入合成器。浏览器如果实际返回非 24k，`device_postchain` 只作为防崩兜底继续跑 gain/clip/mono/clamp；这不是正式可选口径。
 
 C 侧当前风险点（需同步修复）：
 

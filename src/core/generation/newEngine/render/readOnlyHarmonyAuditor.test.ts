@@ -4,6 +4,7 @@ import { renderAccompaniment } from './accompanimentRenderer';
 import { buildHarmonicPlan } from '../harmony/harmonyEngine';
 import { freezeMusicalIR } from '../ir/MusicalIR';
 import { createTimebase, midi, pc, ticks } from '../foundation';
+import type { HarmonicPlan } from '../harmony/HarmonicPlan';
 
 describe('render/readOnlyHarmonyAuditor', () => {
   const timebase = createTimebase({ meter: { numerator: 4, denominator: 4 } });
@@ -48,5 +49,30 @@ describe('render/readOnlyHarmonyAuditor', () => {
       durationTicks: ticks(1920),
     });
     expect(auditHarmony(ir, plan, timebase).findings).toEqual([]);
+  });
+
+  it('声明过的 bass pedal 本音即使在 avoid map 内也不触发 R1 error', () => {
+    const span = plan.chordTimeline[0];
+    const pedalPlan = {
+      ...plan,
+      chordTimeline: [
+        {
+          ...span,
+          bassRole: 'pedal',
+          bassPedalPc: pc(5),
+        },
+      ],
+      avoidNoteMap: {
+        ...plan.avoidNoteMap,
+        [span.id]: [pc(5)],
+      },
+    } as HarmonicPlan;
+    const ir = freezeMusicalIR({
+      tracks: [{ role: 'bass', notes: [{ pitch: midi(53), startTick: ticks(0), durationTicks: ticks(1920), velocity: 80 }] }],
+      timebase,
+      durationTicks: ticks(1920),
+    });
+
+    expect(auditHarmony(ir, pedalPlan, timebase).findings).toEqual([]);
   });
 });

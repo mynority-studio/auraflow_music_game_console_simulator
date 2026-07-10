@@ -56,7 +56,7 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   rnb: { lead: [5, 0, 25, 11], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
   modal: { lead: [11, 108, 0, 5, 67, 25], comp: [0, 5, 24, 25], bass: [32, 38], pad: [89], drum: [0] },
   // ★ ACG 主体仍是钢琴写作,但 lead/comp 对当前 Aura25 小包开放键盘式色彩:
-  //   大钢琴/CityPop FM 电钢/颤音琴/卡林巴。bass 保持原声,不引入 drum/pad 核心。
+  //   大钢琴/GU Electric Grand/颤音琴/卡林巴。bass 保持原声,不引入 drum/pad 核心。
   acg: { lead: [0, 5], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
   default: { lead: [0, 5, 25, 11, 108], comp: [0, 5, 25, 24], bass: [32], pad: [89], drum: [0] },
 };
@@ -126,7 +126,7 @@ export interface InstrumentInfo { family: InstrumentFamily; range: readonly [num
 
 const INSTRUMENT_INFO: Record<number, InstrumentInfo> = {
   0: { family: 'keyboard', range: [21, 108] }, 1: { family: 'keyboard', range: [21, 108] },
-  4: { family: 'keyboard', range: [28, 103] }, 5: { family: 'keyboard', range: [28, 103] }, // Rhodes / FM-EP
+  4: { family: 'keyboard', range: [28, 103] }, 5: { family: 'keyboard', range: [28, 103] }, // Rhodes / GU Electric Grand
   6: { family: 'keyboard', range: [29, 89] },  // 羽管键琴(Harpsichord,拨弦键盘)
   7: { family: 'keyboard', range: [36, 96] },  // Clavinet(funk 电翼)
   8: { family: 'keyboard', range: [60, 108] }, // Celesta(高音区键盘)
@@ -249,7 +249,7 @@ export function sameFamilyAlternates(style: string, role: InstrumentRoleName, pr
 
 // —— view-only:GM program → 名(仅覆盖本编制用到的;展示用,不参与生成)——
 const GM_NAME: Record<number, string> = {
-  0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: 'CityPop FM 电钢', 6: '羽管键琴', 7: 'Clavinet', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
+  0: '大钢琴', 1: '亮钢琴', 4: '电钢 Rhodes', 5: 'GU Electric Grand', 6: '羽管键琴', 7: 'Clavinet', 8: 'Celesta', 11: '颤音琴', 12: '马林巴',
   16: '哈蒙德管风琴', 24: '尼龙吉他', 25: '民谣木吉他', 26: '爵士吉他', 27: 'Clean 电吉他', 28: '闷音电吉他', 31: '吉他泛音', 42: '大提琴',
   65: '中音萨克斯', 66: '次中音萨克斯', 67: '上低音萨克斯',
   75: '排箫', 77: '尺八', 107: '古筝', 108: '卡林巴',

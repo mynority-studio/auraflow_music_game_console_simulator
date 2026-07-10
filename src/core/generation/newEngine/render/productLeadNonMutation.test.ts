@@ -30,6 +30,7 @@ import { DEFAULT_BUDGET } from '../generation/RetryPolicy';
 import { createTimebase, createRandomContext, beats } from '../foundation';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditFinding } from '../ir/AuditReport';
+import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
 
 function setup(seed: number, style: string) {
   const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
@@ -73,6 +74,19 @@ function auditKeyContext(band: ReturnType<typeof buildBandSpec>) {
   };
 }
 
+function withExpectedLeadGesture<T extends { notes: any[] }>(
+  track: T,
+  instr: ReturnType<typeof buildInstrumentationPlan>,
+  tb: ReturnType<typeof createTimebase>,
+): T {
+  const gesture = applyGestureExpressionToTrack(
+    { ...track, role: 'lead', program: instr.roleProgram.lead } as never,
+    instr.gestureExpressionByRole?.lead,
+    tb,
+  );
+  return { ...track, notes: gesture.notes };
+}
+
 // ★ ACG 已退出 byte-parity(2026-07-02 Phase3):ACG lead 走专属 shapeTopVoicePianoTouch 塑形,不 == raw MG →
 //   改由 mgBassCompLeadFidelity.test 音乐不变量锁。本 MATRIX 只留 MG-grammar-backed 无 ACG 专属塑形的风格。
 const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
@@ -99,7 +113,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
       const sanitizedExp = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
       const balancedLegato = { ...sanitizedExp, notes: connectFastLeadNoteIR(sanitizedExp.notes, lo) };
       const balancedSanitized = { ...balancedLegato, notes: sanitizeLeadNoteIR(balancedLegato.notes, SAN) };
-      const expected = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+      const expectedBeforeGesture = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+      const expected = withExpectedLeadGesture(expectedBeforeGesture, instr, tb);
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
       expectLeadNear(final.notes as never, expected.notes as never, `${seed}/${style}`);
     });
@@ -144,7 +159,8 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     const lo = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
     const balancedLegato = { ...sanitizedExp, notes: connectFastLeadNoteIR(sanitizedExp.notes, lo) };
     const balancedSanitized = { ...balancedLegato, notes: sanitizeLeadNoteIR(balancedLegato.notes, SAN) };
-    const expected = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+    const expectedBeforeGesture = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+    const expected = withExpectedLeadGesture(expectedBeforeGesture, instr, tb);
     expectLeadNear(leadOf(result.ir!).notes as never, expected.notes as never, 'retry 后 lead');
   });
 

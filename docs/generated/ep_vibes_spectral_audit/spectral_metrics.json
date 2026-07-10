@@ -1,0 +1,266 @@
+[
+  {
+    "name": "fm_ep_c4_connected_to_next",
+    "rmsDbfs": -44.21,
+    "spectralCentroidHz": 329.2,
+    "body120_3000DbOfTotal": -0.0,
+    "presence3000_5000DbOfTotal": -52.18,
+    "high5000_10000DbOfTotal": -60.38,
+    "air8000_11000DbOfTotal": -62.91,
+    "highPeakProminenceDb": 16.0,
+    "topHighPeaks": [
+      {
+        "freqHz": 5238.3,
+        "db": -123.96
+      },
+      {
+        "freqHz": 5502.0,
+        "db": -124.8
+      },
+      {
+        "freqHz": 5217.8,
+        "db": -124.8
+      },
+      {
+        "freqHz": 5478.5,
+        "db": -124.93
+      },
+      {
+        "freqHz": 10160.2,
+        "db": -129.04
+      },
+      {
+        "freqHz": 10098.6,
+        "db": -129.43
+      },
+      {
+        "freqHz": 7854.5,
+        "db": -129.66
+      },
+      {
+        "freqHz": 8950.2,
+        "db": -130.44
+      }
+    ]
+  },
+  {
+    "name": "fm_ep_c4_release68",
+    "rmsDbfs": -44.37,
+    "spectralCentroidHz": 329.2,
+    "body120_3000DbOfTotal": -0.0,
+    "presence3000_5000DbOfTotal": -52.18,
+    "high5000_10000DbOfTotal": -60.38,
+    "air8000_11000DbOfTotal": -62.91,
+    "highPeakProminenceDb": 15.94,
+    "topHighPeaks": [
+      {
+        "freqHz": 5238.3,
+        "db": -123.99
+      },
+      {
+        "freqHz": 5502.0,
+        "db": -124.76
+      },
+      {
+        "freqHz": 5217.8,
+        "db": -124.82
+      },
+      {
+        "freqHz": 5478.5,
+        "db": -124.92
+      },
+      {
+        "freqHz": 10160.2,
+        "db": -129.03
+      },
+      {
+        "freqHz": 10098.6,
+        "db": -129.28
+      },
+      {
+        "freqHz": 7854.5,
+        "db": -129.62
+      },
+      {
+        "freqHz": 8950.2,
+        "db": -130.44
+      }
+    ]
+  },
+  {
+    "name": "vibes_72",
+    "rmsDbfs": -42.82,
+    "spectralCentroidHz": 944.6,
+    "body120_3000DbOfTotal": -0.0,
+    "presence3000_5000DbOfTotal": -40.51,
+    "high5000_10000DbOfTotal": -47.54,
+    "air8000_11000DbOfTotal": -61.55,
+    "highPeakProminenceDb": 37.53,
+    "topHighPeaks": [
+      {
+        "freqHz": 6975.6,
+        "db": -98.22
+      },
+      {
+        "freqHz": 5077.1,
+        "db": -107.92
+      },
+      {
+        "freqHz": 5150.4,
+        "db": -108.76
+      },
+      {
+        "freqHz": 5226.6,
+        "db": -109.82
+      },
+      {
+        "freqHz": 5299.8,
+        "db": -110.87
+      },
+      {
+        "freqHz": 5376.0,
+        "db": -111.3
+      },
+      {
+        "freqHz": 5449.2,
+        "db": -114.33
+      },
+      {
+        "freqHz": 5525.4,
+        "db": -115.1
+      }
+    ]
+  },
+  {
+    "name": "vibes_84",
+    "rmsDbfs": -39.66,
+    "spectralCentroidHz": 871.8,
+    "body120_3000DbOfTotal": -0.0,
+    "presence3000_5000DbOfTotal": -35.31,
+    "high5000_10000DbOfTotal": -50.09,
+    "air8000_11000DbOfTotal": -65.58,
+    "highPeakProminenceDb": 40.22,
+    "topHighPeaks": [
+      {
+        "freqHz": 5062.5,
+        "db": -97.68
+      },
+      {
+        "freqHz": 5838.9,
+        "db": -102.36
+      },
+      {
+        "freqHz": 5211.9,
+        "db": -104.64
+      },
+      {
+        "freqHz": 6102.5,
+        "db": -106.28
+      },
+      {
+        "freqHz": 6252.0,
+        "db": -107.24
+      },
+      {
+        "freqHz": 5956.1,
+        "db": -107.29
+      },
+      {
+        "freqHz": 5806.6,
+        "db": -108.04
+      },
+      {
+        "freqHz": 6401.4,
+        "db": -108.99
+      }
+    ]
+  },
+  {
+    "name": "vibes_89",
+    "rmsDbfs": -39.68,
+    "spectralCentroidHz": 1161.3,
+    "body120_3000DbOfTotal": -0.0,
+    "presence3000_5000DbOfTotal": -34.51,
+    "high5000_10000DbOfTotal": -40.39,
+    "air8000_11000DbOfTotal": -64.59,
+    "highPeakProminenceDb": 53.18,
+    "topHighPeaks": [
+      {
+        "freqHz": 5563.5,
+        "db": -84.92
+      },
+      {
+        "freqHz": 5762.7,
+        "db": -93.68
+      },
+      {
+        "freqHz": 5364.3,
+        "db": -95.48
+      },
+      {
+        "freqHz": 5165.0,
+        "db": -97.0
+      },
+      {
+        "freqHz": 5961.9,
+        "db": -99.21
+      },
+      {
+        "freqHz": 6161.1,
+        "db": -101.43
+      },
+      {
+        "freqHz": 6357.4,
+        "db": -103.38
+      },
+      {
+        "freqHz": 6755.9,
+        "db": -103.89
+      }
+    ]
+  },
+  {
+    "name": "vibes_96",
+    "rmsDbfs": -42.74,
+    "spectralCentroidHz": 1575.7,
+    "body120_3000DbOfTotal": -0.01,
+    "presence3000_5000DbOfTotal": -25.77,
+    "high5000_10000DbOfTotal": -39.93,
+    "air8000_11000DbOfTotal": -60.23,
+    "highPeakProminenceDb": 49.15,
+    "topHighPeaks": [
+      {
+        "freqHz": 5100.6,
+        "db": -89.51
+      },
+      {
+        "freqHz": 5399.4,
+        "db": -95.8
+      },
+      {
+        "freqHz": 6298.8,
+        "db": -97.02
+      },
+      {
+        "freqHz": 6000.0,
+        "db": -97.91
+      },
+      {
+        "freqHz": 6600.6,
+        "db": -99.35
+      },
+      {
+        "freqHz": 6899.4,
+        "db": -102.02
+      },
+      {
+        "freqHz": 7500.0,
+        "db": -107.5
+      },
+      {
+        "freqHz": 7801.8,
+        "db": -110.05
+      }
+    ]
+  }
+]

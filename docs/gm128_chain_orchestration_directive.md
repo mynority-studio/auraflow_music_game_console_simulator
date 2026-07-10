@@ -200,7 +200,7 @@ Best for RNB, neo-soul, city-pop, warm pop.
   },
   bassPriority: [33, 35, 39],
   padPriority: [89, 94, 16, 99],
-  drumPriority: [0, 40],
+  drumPriority: [25, 8],
 }
 ```
 
@@ -225,7 +225,7 @@ Best for LOFI/chill.
   },
   bassPriority: [33, 35, 39],
   padPriority: [89, 94, 88, 92, 98, 102],
-  drumPriority: [0, 40],
+  drumPriority: [25, 8],
 }
 ```
 
@@ -250,7 +250,7 @@ Best for pop ballad / simple acoustic band.
   },
   bassPriority: [32, 33, 35],
   padPriority: [48, 49, 89],
-  drumPriority: [0, 40],
+  drumPriority: [8, 25],
 }
 ```
 
@@ -274,7 +274,7 @@ Best for jazz.
   },
   bassPriority: [32, 35],
   padPriority: [49, 16],
-  drumPriority: [40, 0],
+  drumPriority: [40, 8],
 }
 ```
 
@@ -299,7 +299,7 @@ Best for soft synth-pop / modal synthetic.
   },
   bassPriority: [38, 39, 33],
   padPriority: [88, 89, 94, 95, 99, 102],
-  drumPriority: [0],
+  drumPriority: [25, 8],
 }
 ```
 
@@ -323,7 +323,7 @@ Best for modal/static/ambient.
   },
   bassPriority: [32, 33, 39],
   padPriority: [89, 48, 91, 94, 92, 97, 98, 102],
-  drumPriority: [0],
+  drumPriority: [25, 40, 8],
 }
 ```
 

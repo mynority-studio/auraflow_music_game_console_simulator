@@ -1,7 +1,8 @@
 // ============================================================
 // newEngine · render · CC64 踏板 + 伴奏 ducking(融合,2026-06-05)
 // ------------------------------------------------------------
-// 锁:POP/LOFI/RNB comp 每和弦踩踏板(音尾 ring),JAZZ/BLUES 不踩;
+// 锁:非 FM 键盘 comp 可每和弦踩踏板(音尾 ring);GM5/FM comp 不踩,避免多音糊;
+//   JAZZ/BLUES 不踩;
 //   comp 撞旋律轻压(×0.82)但仍可听;确定性。
 // ============================================================
 
@@ -13,20 +14,24 @@ import { midi, ticks } from '../foundation';
 import type { TrackIR } from '../ir/MusicalIR';
 
 const gen = (style: string, seed = 7) => traceGeneration({ seed, styleHint: style, mood: 'x', targetDuration: 120 });
-const pedalEvents = (style: string) => musicalIRToMidiEvents(gen(style).ir).filter((e) => e.type === 'cc' && e.data1 === 64);
+const compTrack = (style: string, seed = 7) => gen(style, seed).ir.tracks.find((t) => t.role === 'comp');
+const pedalEvents = (style: string, seed = 7) => musicalIRToMidiEvents(gen(style, seed).ir).filter((e) => e.type === 'cc' && e.data1 === 64);
 
 describe('CC64 踏板 + 伴奏 ducking', () => {
-  it('POP/LOFI/RNB comp 踩踏板(成对 down/up);JAZZ/BLUES 不踩', () => {
+  it('GM5/FM comp 不踩踏板;非 FM 键盘 comp 保留成对 pedal;JAZZ/BLUES 不踩', () => {
     for (const s of ['pop', 'lofi', 'rnb']) {
-      const ped = pedalEvents(s);
-      expect(ped.length, s).toBeGreaterThan(0);
-      expect(ped.filter((p) => p.data2 === 127).length, `${s} down`).toBe(ped.filter((p) => p.data2 === 0).length); // 成对
+      expect(compTrack(s)?.program, `${s} comp program`).toBe(5);
+      expect(pedalEvents(s).length, `${s} GM5 comp no pedal`).toBe(0);
     }
+    const acgPianoPed = pedalEvents('acg', 7);
+    expect(compTrack('acg', 7)?.program, 'acg seed7 comp program').toBe(0);
+    expect(acgPianoPed.length, 'acg piano comp pedal').toBeGreaterThan(0);
+    expect(acgPianoPed.filter((p) => p.data2 === 127).length, 'acg down').toBe(acgPianoPed.filter((p) => p.data2 === 0).length); // 成对
     for (const s of ['jazz', 'blues']) expect(pedalEvents(s).length, s).toBe(0);
   });
 
   it('踏板:每和弦踩下 + 抬起在和弦末之前(不糊下一和弦)', () => {
-    const ped = pedalEvents('pop').sort((a, b) => a.ticks - b.ticks);
+    const ped = pedalEvents('acg', 7).sort((a, b) => a.ticks - b.ticks);
     // 第一个事件是踩下(down=127),且 down/up 交替
     expect(ped[0].data2).toBe(127);
     for (let i = 0; i < ped.length - 1; i++) expect(ped[i].data2).not.toBe(ped[i + 1].data2);

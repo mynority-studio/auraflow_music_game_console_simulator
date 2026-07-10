@@ -135,6 +135,13 @@ def _rewrite_gen(raw: tuple, mapping: dict[int, int], oper: int) -> tuple:
     return raw
 
 
+def _instrument_name_matches(raw_name: bytes, needles: list[str] | None) -> bool:
+    if not needles:
+        return True
+    name = _clean_name(raw_name).lower()
+    return any(needle.lower() in name for needle in needles)
+
+
 def _has_linked_partner(sample_type: int) -> bool:
     return (sample_type & 0x7FFF) in LINKED_SAMPLE_TYPES
 
@@ -167,6 +174,7 @@ def subset_sf2(
     *,
     target_rate: int | None = None,
     resample_quality: str = "VHQ",
+    instrument_name_contains: list[str] | None = None,
 ) -> dict[str, int]:
     sf = parse_sf2(source)
     info = sf[b"INFO"]
@@ -192,16 +200,38 @@ def subset_sf2(
     if missing:
         raise ValueError("missing presets: " + ", ".join(f"{b}:{p}" for b, p in missing))
 
+    selected_bags_by_preset: dict[int, list[int]] = {}
     instrument_ids: list[int] = []
     instrument_seen: set[int] = set()
     for ph_i in selected_phdr:
+        kept_bags: list[int] = []
+        kept_local_bags = 0
         for bag_i in range(phdrs[ph_i][3], phdrs[ph_i + 1][3]):
             gen_start, _ = pbags[bag_i]
             gen_end, _ = pbags[bag_i + 1]
+            inst_id: int | None = None
             for gen in pgens[gen_start:gen_end]:
-                if gen[0] == GEN_INSTRUMENT and gen[1] not in instrument_seen:
-                    instrument_seen.add(gen[1])
-                    instrument_ids.append(gen[1])
+                if gen[0] == GEN_INSTRUMENT:
+                    inst_id = gen[1]
+                    break
+            if inst_id is None:
+                kept_bags.append(bag_i)
+                continue
+            if not _instrument_name_matches(insts[inst_id][0], instrument_name_contains):
+                continue
+            kept_bags.append(bag_i)
+            kept_local_bags += 1
+            if inst_id not in instrument_seen:
+                instrument_seen.add(inst_id)
+                instrument_ids.append(inst_id)
+        if kept_local_bags == 0:
+            preset = phdrs[ph_i]
+            selector = f"{preset[2]}:{preset[1]}"
+            detail = ""
+            if instrument_name_contains:
+                detail = " matching instrument name(s): " + ", ".join(instrument_name_contains)
+            raise ValueError(f"preset {selector} has no sample zones{detail}")
+        selected_bags_by_preset[ph_i] = kept_bags
 
     sample_seen: set[int] = set()
     sample_ids: list[int] = []
@@ -291,7 +321,7 @@ def subset_sf2(
     for old_i in selected_phdr:
         name, preset, bank, _bag_start, library, genre, morphology = phdrs[old_i]
         new_phdrs.append((name, preset, bank, len(new_pbags), library, genre, morphology))
-        for bag_i in range(phdrs[old_i][3], phdrs[old_i + 1][3]):
+        for bag_i in selected_bags_by_preset[old_i]:
             gen_start, mod_start = pbags[bag_i]
             gen_end, mod_end = pbags[bag_i + 1]
             new_pbags.append((len(new_pgens), len(new_pmods)))
@@ -341,6 +371,7 @@ def main() -> None:
     ap.add_argument("--list-presets", action="store_true")
     ap.add_argument("--target-rate", type=int, default=None, help="resample copied samples to this Hz rate")
     ap.add_argument("--resample-quality", default="VHQ", choices=["QQ", "LQ", "MQ", "HQ", "VHQ"], help="python-soxr quality")
+    ap.add_argument("--instrument-name-contains", action="append", default=None, help="keep only preset zones whose instrument name contains this text")
     args = ap.parse_args()
     if args.list_presets:
         list_presets(args.source)
@@ -349,7 +380,14 @@ def main() -> None:
         ap.error("dest is required unless --list-presets is used")
     if not args.preset:
         ap.error("at least one --preset bank:preset is required")
-    stats = subset_sf2(args.source, args.dest, args.preset, target_rate=args.target_rate, resample_quality=args.resample_quality)
+    stats = subset_sf2(
+        args.source,
+        args.dest,
+        args.preset,
+        target_rate=args.target_rate,
+        resample_quality=args.resample_quality,
+        instrument_name_contains=args.instrument_name_contains,
+    )
     rate_note = f", {stats['target_rate']} Hz" if stats["target_rate"] else ""
     print(
         f"wrote {args.dest} "

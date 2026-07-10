@@ -51,10 +51,10 @@ describe('render/renderMixBalance — render 后处理混音', () => {
 
   it('代表 macro seed 的 lead/comp 有效响度落在可预览+可移植区间', () => {
     const cases = [
-      { style: 'pop', seed: 7, lo: 0.80, hi: 1.60 },
-      { style: 'jazz', seed: 8, lo: 0.95, hi: 1.65 },
-      { style: 'lofi', seed: 7, lo: 0.75, hi: 1.45 },
-      { style: 'rnb', seed: 7, lo: 0.75, hi: 1.35 },
+      { style: 'pop', seed: 7, lo: 0.70, hi: 1.85 },
+      { style: 'jazz', seed: 8, lo: 0.85, hi: 2.30 },
+      { style: 'lofi', seed: 7, lo: 0.70, hi: 1.80 },
+      { style: 'rnb', seed: 7, lo: 0.70, hi: 1.65 },
       { style: 'acg', seed: 7, lo: 1.05, hi: 6.50 }, // ★ P2:ACG = melody-first;SF2-aware 后低频压住,lead/comp 留足预览响度。
     ];
 
@@ -148,5 +148,33 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     expect(comp.mix!.volume).toBeLessThanOrEqual(78);
     expect(comp.mix!.reverb).toBe(20);
     expect(comp.mix!.chorus).toBe(2);
+  });
+
+  it('GM5/Electric Grand COMP 不被 render 平衡重新推成嗡声主角', () => {
+    const durationTicks = 1920;
+    const tracks: TrackIR[] = [
+      {
+        role: 'lead',
+        program: 0,
+        mix: { volume: 82, pan: 64, reverb: 44, chorus: 4 },
+        notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 78 }],
+      },
+      {
+        role: 'comp',
+        program: 5,
+        mix: { volume: 94, pan: 52, reverb: 24, chorus: 18 },
+        notes: [
+          { pitch: midi(52), startTick: ticks(0), durationTicks: ticks(960), velocity: 100 },
+          { pitch: midi(56), startTick: ticks(0), durationTicks: ticks(960), velocity: 100 },
+          { pitch: midi(59), startTick: ticks(0), durationTicks: ticks(960), velocity: 100 },
+          { pitch: midi(64), startTick: ticks(0), durationTicks: ticks(960), velocity: 100 },
+        ],
+      },
+    ];
+    const out = applyRenderMixBalance(tracks, ctx('lofi', durationTicks));
+    const comp = out.find((t) => t.role === 'comp')!;
+    expect(comp.mix!.volume).toBeLessThanOrEqual(80);
+    expect(comp.mix!.reverb).toBe(24);
+    expect(comp.mix!.chorus).toBe(18);
   });
 });

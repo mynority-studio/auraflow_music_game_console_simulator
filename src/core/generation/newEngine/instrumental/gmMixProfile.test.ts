@@ -59,49 +59,62 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
   const mk = (role: InstrumentRoleName, program: number, hasPad = true) =>
     mixForProgram({ style: 'pop', timbreWorld: undefined, role, program, hasPad, space });
 
-  it('bass.reverb ≤ 8(全 bass program)', () => {
-    for (const p of [32, 33, 34, 35, 36, 37, 38, 39]) expect(mk('bass', p).reverb).toBeLessThanOrEqual(8);
+  it('bass.reverb ≤ 12 且有小 room send:低频靠后一点但不糊', () => {
+    for (const p of [32, 33, 34, 35, 36, 37, 38, 39]) expect(mk('bass', p).reverb).toBeLessThanOrEqual(12);
+    expect(mk('bass', 32).reverb).toBe(10);
+    expect(mk('bass', 38).reverb).toBe(8);
+    expect(mk('bass', 32).volume).toBe(74);
+    expect(mk('bass', 38).volume).toBe(72);
+    expect(mk('bass', 38).chorus).toBeLessThanOrEqual(3);
   });
 
   it('drum.chorus == 0', () => {
     expect(mk('drum', 0).chorus).toBe(0);
   });
 
-  it('FX pad 98/99/100/102:volume ≤ 72 且 reverb ≥ 84(各空间)', () => {
+  it('drum 进受控 room:靠后一点但仍不超过小喇叭瞬态上限', () => {
+    const drum = mk('drum', 0);
+    expect(drum.volume).toBe(86);
+    expect(drum.reverb).toBe(14);
+    expect(drum.chorus).toBe(0);
+  });
+
+  it('FX pad 98/99/100/102:volume ≤ 60 且 reverb 保留空气层但不再淹没总线', () => {
     for (const sp of ['popWarmRoom', 'lofiTapeRoom', 'rnbPlateRoom', 'jazzClub', 'dryFront', 'syntheticSoftRoom'] as SpaceProfile[]) {
       for (const p of [98, 99, 100, 102]) {
         const m = mixForProgram({ style: 'pop', timbreWorld: undefined, role: 'pad', program: p, hasPad: true, space: sp });
-        expect(m.volume, `FX pad ${p}@${sp} vol`).toBeLessThanOrEqual(72);
-        expect(m.reverb, `FX pad ${p}@${sp} rev`).toBeGreaterThanOrEqual(84);
+        expect(m.volume, `FX pad ${p}@${sp} vol`).toBeLessThanOrEqual(60);
+        expect(m.reverb, `FX pad ${p}@${sp} rev`).toBeGreaterThanOrEqual(72);
+        expect(m.chorus, `FX pad ${p}@${sp} chorus`).toBeLessThanOrEqual(56);
       }
     }
   });
 
-  it('电钢 4/5 作 lead/comp:chorus ≥ 38', () => {
-    expect(mk('comp', 4).chorus).toBeGreaterThanOrEqual(38);
-    expect(mk('comp', 5).chorus).toBeGreaterThanOrEqual(38);
-    expect(mk('lead', 4).chorus).toBeGreaterThanOrEqual(38);
-    expect(mk('lead', 5).chorus).toBeGreaterThanOrEqual(38);
+  it('电钢 4/5 都收干:不靠大 chorus/reverb 压住大钢琴', () => {
+    expect(mk('comp', 4)).toMatchObject({ volume: 72, reverb: 18, chorus: 12 });
+    expect(mk('lead', 4)).toMatchObject({ volume: 80, reverb: 22, chorus: 14 });
+    expect(mk('comp', 5)).toMatchObject({ volume: 70, reverb: 12, chorus: 6 });
+    expect(mk('lead', 5)).toMatchObject({ volume: 76, reverb: 16, chorus: 8 });
   });
 
-  it('CityPop FM EP 5 比 Rhodes 4 有更宽 chorus', () => {
-    expect(mk('comp', 5).chorus).toBeGreaterThan(mk('comp', 4).chorus);
-    expect(mk('lead', 5).chorus).toBeGreaterThan(mk('lead', 4).chorus);
+  it('GU Electric Grand 槽位 5 比 Rhodes 4 更少空间,避免电钢尾巴堆叠', () => {
+    expect(mk('comp', 5).chorus).toBeLessThan(mk('comp', 4).chorus);
+    expect(mk('lead', 5).chorus).toBeLessThan(mk('lead', 4).chorus);
+    expect(mk('comp', 5).reverb).toBeLessThan(mk('comp', 4).reverb);
+    expect(mk('lead', 5).reverb).toBeLessThan(mk('lead', 4).reverb);
   });
 
-  it('CityPop FM EP 5 有 80s/DX7 空间:release 之外还给 reverb/chorus/delay send', () => {
+  it('GU Electric Grand 槽位 5 只有少量空气:release 之外不再给大 reverb/chorus/delay', () => {
     const comp = mk('comp', 5);
     const lead = mk('lead', 5);
-    expect(comp.volume).toBeLessThan(84);
-    expect(lead.volume).toBeLessThan(90);
-    expect(comp.reverb).toBeGreaterThanOrEqual(54);
-    expect(lead.reverb).toBeGreaterThanOrEqual(56);
-    expect(comp.chorus).toBeGreaterThanOrEqual(50);
-    expect(comp.chorus).toBeLessThanOrEqual(56);
-    expect(lead.chorus).toBeGreaterThanOrEqual(48);
-    expect(lead.chorus).toBeLessThanOrEqual(54);
-    expect(comp.delay).toBe(12);
-    expect(lead.delay).toBe(16);
+    expect(comp.volume).toBeLessThanOrEqual(70);
+    expect(lead.volume).toBeLessThanOrEqual(76);
+    expect(comp.reverb).toBeLessThanOrEqual(12);
+    expect(lead.reverb).toBeLessThanOrEqual(16);
+    expect(comp.chorus).toBeLessThanOrEqual(6);
+    expect(lead.chorus).toBeLessThanOrEqual(8);
+    expect(comp.delay).toBeUndefined();
+    expect(lead.delay).toBeUndefined();
   });
 
   it('Jazz/ACG 的 FM EP 不进共享 delay,避免和 club/cinematic 空间叠糊', () => {
@@ -150,6 +163,13 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     for (const p of [11, 12, 107, 108]) expect(mk('lead', p).chorus).toBe(0);
   });
 
+  it('颤音琴高区防刺耳:lead 不大湿、不高音量', () => {
+    const m = mk('lead', 11);
+    expect(m.volume).toBeLessThanOrEqual(88);
+    expect(m.reverb).toBeLessThanOrEqual(40);
+    expect(m.delay ?? 0).toBe(0);
+  });
+
   it('lead pan 居中 58..70(各 program)', () => {
     for (const p of [0, 4, 11, 12, 67, 75]) {
       const m = mk('lead', p);
@@ -165,7 +185,7 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
 
   // ★ melody-forward(2026-06-23,用户:走 A 整编旋律声音小):lead CC7 抬高 → 旋律明显坐在 comp 之上。
   it('★ lead.volume > comp.volume(同 program,旋律在 comp 之上)且 ≥ 92', () => {
-    for (const p of [0, 4, 11, 12, 6, 67]) { // jazz/暖路线代表 lead program
+    for (const p of [0, 12, 6, 67]) { // jazz/暖路线代表 lead program;GM4/5 电钢有防糊专属规则;GM11 有高区防刺耳专属规则
       const lead = mk('lead', p).volume;
       const comp = mk('comp', p).volume;
       expect(lead, `gm${p} lead 比 comp 响`).toBeGreaterThan(comp);
@@ -186,9 +206,9 @@ describe('knowledge/gmMixProfile — enforceRelationalMix(comp↔pad)', () => {
     expect(fixed.pad!.reverb).toBeGreaterThanOrEqual(fixed.comp!.reverb + 20);
   });
 
-  it('pad.volume ≤ comp.volume(非唯一和声)', () => {
+  it('pad.volume ≤ comp.volume - 10(非唯一和声,背景让位)', () => {
     const fixed = enforceRelationalMix(buildSet(4, 89), { padIsOnlyHarmony: false });
-    expect(fixed.pad!.volume).toBeLessThanOrEqual(fixed.comp!.volume);
+    expect(fixed.pad!.volume).toBeLessThanOrEqual(fixed.comp!.volume - 10);
   });
 
   it('pad 唯一和声 → 不被压响度', () => {
@@ -213,6 +233,7 @@ describe('knowledge/gmMixProfile — enforceRelationalMix(comp↔pad)', () => {
 describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lead 碾全队/一轨很小声)', () => {
   const space: SpaceProfile = 'dryFront';
   const mAcg = (role: InstrumentRoleName, program: number) => mixForProgram({ style: 'acg', timbreWorld: undefined, role, program, hasPad: true, space });
+  const mLofi = (role: InstrumentRoleName, program: number) => mixForProgram({ style: 'lofi', timbreWorld: undefined, role, program, hasPad: true, space });
   const mPop = (role: InstrumentRoleName, program: number) => mixForProgram({ style: 'pop', timbreWorld: undefined, role, program, hasPad: true, space });
 
   it('★ ACG lead 减压(< 非 ACG lead;solo piano 的 RH 不碾 LH)', () => {
@@ -229,7 +250,12 @@ describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lea
 
   it('★ ACG bass 不再用 CC7 硬抬(当前 SF2 低频样本已足)', () => {
     expect(mAcg('bass', 32).volume, 'ACG bass <= POP bass').toBeLessThanOrEqual(mPop('bass', 32).volume);
-    expect(mAcg('bass', 32).volume, 'ACG bass 仍保托底').toBeGreaterThanOrEqual(52);
+    expect(mAcg('bass', 32).volume, 'ACG bass 仍保托底').toBeGreaterThanOrEqual(60);
+  });
+
+  it('★ LOFI bass 单独前移,避免 EP/质感层把低频主体盖住', () => {
+    expect(mLofi('bass', 32).volume).toBeGreaterThan(mPop('bass', 32).volume);
+    expect(mLofi('bass', 32).volume).toBeLessThanOrEqual(82);
   });
 
   it('★ 非 ACG 不受影响(POP lead 仍走 melody-forward,≥ 92)', () => {

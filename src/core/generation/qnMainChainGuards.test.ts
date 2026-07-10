@@ -98,10 +98,10 @@ describe('generation/qnMainChainGuards — Band Selection 行为(§4)', () => {
     expect(roles(r).has('lead')).toBe(true);
   });
 
-  it('drum roster 显示 Drum Kit(不把 ch9 program 0 显示成 Acoustic Grand)', () => {
+  it('drum roster 显示 Aura25 真实鼓组名(不把 ch9 program 显示成 Acoustic Grand)', () => {
     const r = gen([{ role: 'drummer', state: 'selected' }]);
     const drumRow = r.uiSnapshot.roster.find((p) => p.role === 'drum');
-    expect(drumRow?.instrumentName).toBe('Drum Kit');
+    expect(drumRow?.instrumentName).toBe('TR-808 鼓组');
   });
 
   it('synthPlayer 最终 pad 音色在 pad 家族;keyboardist 最终 lead/comp 在 keyboard 家族', async () => {

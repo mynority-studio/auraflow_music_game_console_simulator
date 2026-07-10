@@ -2,7 +2,7 @@
  * Hardware Abstraction Layer (HAL) Interfaces
  * 
  * These interfaces define the boundary between the core logic and the physical hardware.
- * In the web simulator, these are implemented using React/DOM/WebAudio.
+ * In the web simulator, these are implemented using React/DOM/Copych AudioWorklet.
  * On the ESP32-S3, these will be implemented using C++/FreeRTOS drivers (SPI, I2C, I2S).
  */
 
@@ -21,7 +21,7 @@ export interface ITouchPad {
 }
 
 export interface IAudioOut {
-    /** ESP32: Maps to I2S driver (e.g., MAX98357A, PCM5102) + Software Synth (FluidSynth/TinySoundFont) */
+    /** ESP32: Maps to I2S driver (e.g., MAX98357A, PCM5102) + Copych auraflow_synth */
     playNote(pitch: number, velocity: number, durationMs: number, instrumentId: number): void;
     stopNote(pitch: number, instrumentId: number): void;
     setVolume(level: number): void;

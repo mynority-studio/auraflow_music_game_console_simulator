@@ -1,30 +1,24 @@
 /**
- * SynthManager — SpessaSynth WorkletSynthesizer 生命周期（Phase 2.D 实装版）
+ * SynthManager — Copych WASM 合成器生命周期（ESP32 设备口径）
  *
  * 启动流程：
  *   1. getAudioContext() 单例
- *   2. startAudioContext() → ctx.resume() → registerPlaybackWorklet → new WorkletSynthesizer
- *      → fetch selected SF2 → soundBankManager.addSoundBank → await isReady
- *      → synth.connect(ctx.destination)
+ *   2. startAudioContext() → ctx.resume() → register Copych worklet
+ *      → fetch selected SF2 → CopychSynthFacade.init → connect device mirror chain
  *
  * 单 promise 串行：多次 startAudioContext() 只触发一次真正初始化。
- * 失败时 spessaSynth 保持 null — 上层 `if (!spessaSynth) return;` 守卫降级静音。
+ * 失败时 activeSynth 保持 null — 上层 `if (!activeSynth) return;` 守卫降级静音。
  *
- * `export let` 提供 live binding — 消费方 `import { spessaSynth }` 会自动看到更新后的实例。
+ * `export let` 提供 live binding — 消费方 `import { activeSynth }` 会自动看到更新后的实例。
  */
 
-import { WorkletSynthesizer } from 'spessasynth_lib';
 import { AURA25_SF2_BANK_ID, AURA25_SF2_SIZE_LABEL, AURA25_SF2_URL } from '../sound/Aura25Palette';
-// Vite `?url` 后缀 — node_modules 内的 worklet processor 作为静态资源 emit，返回 URL 字符串
-// 这是 WorkletSynthesizer 构造前必须 addModule 注册的处理器代码
-import workletProcessorURL from 'spessasynth_lib/dist/spessasynth_processor.min.js?url';
-// M1 批2：copych WASM 后端（2026-07-09 起默认 copych=设备镜像；spessa 经菜单/URL 切换）
 import { CopychSynthFacade, ensureCopychWorkletModule, type SynthLike } from './copych/CopychSynthFacade';
-import { getSynthBackend, isCopychBackend, setSynthBackendPref, type SynthBackendKind } from './synthBackend';
 import {
     getChannelModePref, getSampleRatePref, setChannelModePref, setSampleRatePref,
     type ChannelModePref, type SampleRatePref,
 } from './audioOutputPrefs';
+import { playbackMasterLiftForStyle } from './masteringProfile';
 
 export const SOUND_FONT_BANKS = [
     {
@@ -33,7 +27,7 @@ export const SOUND_FONT_BANKS = [
         sizeLabel: AURA25_SF2_SIZE_LABEL,
         url: AURA25_SF2_URL,
         bankManagerId: AURA25_SF2_BANK_ID,
-        hint: '11 presets · 24kHz VHQ runtime palette with GeneralUser folk guitar',
+        hint: '14 presets · 24kHz runtime palette with Room/TR-808/Brush drums',
     },
 ] as const;
 
@@ -59,14 +53,12 @@ const readInitialSoundFontBankId = (): SoundFontBankId => {
     }
 };
 
-// ES module live binding — 初始化后这两个变量被赋值，所有 import 端自动可见
-// M1 批2：类型放宽为 SynthLike（消费面结构类型）——spessa 路径仍是 WorkletSynthesizer 实例，
-// copych 后端为 CopychSynthFacade；4 处消费点（MidiScheduler/AudioEngine/SystemAudio/audioOut）零改动。
-export let spessaSynth: SynthLike | null = null;
-export let isSpessaSynthReady = false;
+// ES module live binding — 初始化后这两个变量被赋值，所有 import 端自动可见。
+export let activeSynth: SynthLike | null = null;
+export let isSynthReady = false;
 
 // M1 批2（计划修订6）：synth 实例重建/断开时通知订阅方清缓存（SystemAudio.isInitialized /
-// sandbox auditionProgram）——防 backend/bank 切换后残留旧初始化状态。注册方在各自模块
+// sandbox auditionProgram）——防 bank/采样率切换后残留旧初始化状态。注册方在各自模块
 // 顶层 subscribe（它们本就 import 本模块，反向 import 会成环，故用注册表）。
 const _synthResetListeners = new Set<() => void>();
 export const subscribeSynthReset = (listener: () => void): (() => void) => {
@@ -98,52 +90,25 @@ const notifySoundFontState = (): void => {
     });
 };
 
-// ★ 双母带:成品播放走【压缩母带】(响而受控),Q+R MIDI 录入/试听走【零延迟软削波母带】
-//   (省掉两级压缩器的 ~12ms lookahead → 现场弹更跟手)。synth 同一时刻只接一条,模式切换时换接。
-let _compMasterIn: GainNode | null = null;    // 压缩母带入口(成品)
-let _scMasterIn: GainNode | null = null;      // 软削波母带入口(试听,零延迟)
+// Copych-only 输出链：Copych synth+FX -> style master lift -> device_postchain -> output。
 let _channelModeNode: GainNode | null = null; // 输出末端声道模式（stereo 直通 / mono 强制下混）
 let _masterNodes: AudioNode[] = [];
-let _masterMode: 'comp' | 'softclip' = 'comp';
 let _playbackMasterLift = 1.0;
 
-const COMP_HEADROOM_GAIN = 0.6;
-const SOFTCLIP_INPUT_GAIN = 0.85;
-const PLAYBACK_STYLE_MASTER_LIFT: Record<string, number> = {
-    pop: 1.0,
-    rnb: 1.12,
-    jazz: 1.24,
-    lofi: 1.38,
-    acg: 2.2,
-};
-
 const applyPlaybackMasterLift = (): void => {
-    if (_compMasterIn) _compMasterIn.gain.value = COMP_HEADROOM_GAIN * _playbackMasterLift;
-    if (_scMasterIn) _scMasterIn.gain.value = SOFTCLIP_INPUT_GAIN * _playbackMasterLift;
+    const synth = activeSynth;
+    if (synth instanceof CopychSynthFacade) synth.setDevicePostChain({ masterLift: _playbackMasterLift });
 };
 
-/** 风格级 master trim:只改总线输入,不改各轨 CC7/velocity。ACG/lofi 这类稀疏编制由最后输出层补整体响度。 */
+/** 风格级 master lift:只改总线输入,不改各轨 CC7/velocity。它进 Copych 设备保护链之前,确保最终 clamp 仍是最后一道。 */
 export const setPlaybackMasterStyle = (style: string | undefined): void => {
-    const key = (style ?? '').toLowerCase();
-    _playbackMasterLift = PLAYBACK_STYLE_MASTER_LIFT[key] ?? 1.0;
+    _playbackMasterLift = playbackMasterLiftForStyle(style);
     applyPlaybackMasterLift();
 };
 
-/** 软饱和曲线(tanh,归一化到 ±1)—— 当场磨圆过冲,零 lookahead。 */
-const softClipCurve = (): Float32Array => {
-    const n = 1024, c = new Float32Array(n), k = 1.6, norm = Math.tanh(k);
-    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = Math.tanh(x * k) / norm; }
-    return c;
-};
-
-/** 切换 synth 母带:low=true → 零延迟软削波(Q+R 试听/录入);low=false → 压缩母带(成品播放)。
- *  仅在模式真正变化时换接(不在每个音上 disconnect → 无 glitch)。 */
-export const setSandboxAuditionMaster = (low: boolean): void => {
-    const target: 'comp' | 'softclip' = low ? 'softclip' : 'comp';
-    if (target === _masterMode || !spessaSynth || !_compMasterIn || !_scMasterIn) return;
-    try { spessaSynth.disconnect(); } catch { /* ignore */ }
-    spessaSynth.connect(low ? _scMasterIn : _compMasterIn);
-    _masterMode = target;
+/** Copych-only 后不再切第二套母带；保留 API 兼容 Q+R 调用点。 */
+export const setSandboxAuditionMaster = (_low: boolean): void => {
+    // Copych-only: device mirror chain is the only output path.
 };
 
 let _startPromise: Promise<void> | null = null;
@@ -154,8 +119,8 @@ export const getAudioContext = (): AudioContext => {
         const Ctor =
             (window as unknown as { AudioContext: typeof AudioContext }).AudioContext ??
             (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        // 采样率：显式偏好（默认 24000=设备口径，24k SF2 样本 1:1 零重采样）两后端通用。
-        // 采样率是 ctx 固有属性——切后端/切采样率都关旧建新（setSynthBackendKind/setAudioSampleRate）。
+        // 采样率：锁定 24000=设备口径，24k SF2 样本 1:1 零重采样。
+        // 采样率是 ctx 固有属性——切换须关旧 ctx 建新。
         w.globalAudioContext = new Ctor({
             latencyHint: 'interactive', // 实时试听/弹奏:最低输出延迟
             sampleRate: getSampleRatePref(),
@@ -164,7 +129,7 @@ export const getAudioContext = (): AudioContext => {
     return w.globalAudioContext;
 };
 
-/** 关闭并清空全局 AudioContext（切后端换采样率用；下一次 getAudioContext 按新后端口径重建）。 */
+/** 关闭并清空全局 AudioContext（换采样率用；下一次 getAudioContext 按设备口径重建）。 */
 const closeGlobalAudioContext = async (): Promise<void> => {
     const w = window as unknown as { globalAudioContext?: AudioContext };
     const ctx = w.globalAudioContext;
@@ -173,99 +138,49 @@ const closeGlobalAudioContext = async (): Promise<void> => {
     try { await ctx.close(); } catch { /* ignore */ }
 };
 
-// worklet 注册缓存 per-ctx（ctx 重建后必须对新 ctx 重新 addModule）
-const _workletModuleByCtx = new WeakMap<AudioContext, Promise<void>>();
-const ensureWorkletModule = async (ctx: AudioContext): Promise<void> => {
-    let p = _workletModuleByCtx.get(ctx);
-    if (!p) {
-        // 注册 AudioWorklet 处理器（spessasynth-worklet-processor）— WorkletSynthesizer
-        // 构造时会 new AudioWorkletNode，要求此 processor 已 addModule。
-        p = ctx.audioWorklet.addModule(workletProcessorURL);
-        _workletModuleByCtx.set(ctx, p);
-    }
-    await p;
-};
-
-/** 设备后链配置通路（听感排查批2）：达到当前 copych facade；spessa/未就绪时 no-op
+/** 设备后链配置通路（听感排查批2）：达到当前 Copych facade；未就绪时 no-op
  *  （实际生效态经 facade 的 postchain-state 订阅回报，UI 以其为准）。 */
 export const setCopychDevicePostChain = (cfg: Partial<import('./copych/CopychSynthFacade').CopychPostChainCfg>): void => {
-    const synth = spessaSynth;
+    const synth = activeSynth;
     if (synth instanceof CopychSynthFacade) synth.setDevicePostChain(cfg);
 };
 
 const disconnectCurrentSynth = (): void => {
-    const synth = spessaSynth;
+    const synth = activeSynth;
     if (synth) {
-        if (synth instanceof CopychSynthFacade) {
-            try { synth.panic(); } catch { /* ignore */ }   // 清 pending 队列 + C 层硬静音
-        } else {
-            for (let ch = 0; ch < 16; ch++) {
-                try { (synth as any).controllerChange?.(ch, 123, 0); } catch { /* ignore */ }
-            }
-        }
+        try { (synth as CopychSynthFacade).panic?.(); } catch { /* ignore */ }   // 清 pending 队列 + C 层硬静音
         try { synth.disconnect(); } catch { /* ignore */ }
     }
     _masterNodes.forEach(node => {
         try { node.disconnect(); } catch { /* ignore */ }
     });
     _masterNodes = [];
-    spessaSynth = null;
-    isSpessaSynthReady = false;
+    activeSynth = null;
+    isSynthReady = false;
     _loadedSoundFontBankId = null;
-    _compMasterIn = null;
-    _scMasterIn = null;
-    _masterMode = 'comp';
     notifySynthReset();   // M1 批2：清订阅方缓存（SystemAudio/audioOut）
     notifySoundFontState();
 };
 
-const connectMasterBuses = (ctx: AudioContext, synth: SynthLike): void => {
-    // ★ 母带总线(全局,POP 母带思路:响而受控,全局维持平衡——不靠拉单轨)。
-    //   原来 synth 裸连 destination → 全 band 进来时浮点总和 >1.0 撞 DAC = 削波/刺耳。
-    //   链:留余量(gain staging,-6dB 思路)→ SSL-式 glue 压缩(evens 动态、糊住跳变)
-    //       → makeup(补回响度)→ brickwall limiter(-1.5dB 接住爆顶,绝不削波)。
-    //   参考制作人 master-bus:contained-then-loud(峰值在总线收住,再统一响度)。
-    const headroom = ctx.createGain();
-    headroom.gain.value = COMP_HEADROOM_GAIN * _playbackMasterLift; // 全局留余量,给母带链工作空间(不碰各轨相对平衡)
-    const glue = ctx.createDynamicsCompressor();
-    glue.threshold.value = -16; glue.knee.value = 12; glue.ratio.value = 2.5; glue.attack.value = 0.012; glue.release.value = 0.25;
-    const makeup = ctx.createGain();
-    makeup.gain.value = 1.5; // 补回响度(POP:响)
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -1.5; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.06;
-    // ★输出末端声道模式节点（两条母带共汇于此再进 destination）：
-    //   stereo=直通原生输出；mono=channelCount 1 explicit 强制下混（spessa A/B 消声场差用；
-    //   copych 引擎原生 L=R，两档听感相同）。可运行期切换（setChannelMode），无需重建。
+const createMasterChannelModeNode = (ctx: AudioContext): GainNode => {
     const channelMode = ctx.createGain();
     channelMode.gain.value = 1.0;
     _channelModeNode = channelMode;
     applyChannelModeToNode();
     channelMode.connect(ctx.destination);
+    return channelMode;
+};
 
-    headroom.connect(glue);
-    glue.connect(makeup);
-    makeup.connect(limiter);
-    limiter.connect(channelMode);
-
-    // ★ 平行【零延迟软削波母带】(Q+R 试听用):入口 gain → WaveShaper(oversample none = 零 lookahead)
-    //   → makeup → destination。不含压缩器 → 省 ~12ms。成品播放仍走上面的压缩母带。
-    const scIn = ctx.createGain();
-    scIn.gain.value = SOFTCLIP_INPUT_GAIN * _playbackMasterLift;
-    const shaper = ctx.createWaveShaper();
-    shaper.curve = softClipCurve();
-    shaper.oversample = 'none'; // ★ 零延迟(2x/4x 会引入重采样延迟)
-    const scMakeup = ctx.createGain();
-    scMakeup.gain.value = 1.05;
-    scIn.connect(shaper);
-    shaper.connect(scMakeup);
-    scMakeup.connect(channelMode);
-
-    // 默认接压缩母带(成品/全局安全);Q+R 试听时再切到软削波。
-    synth.connect(headroom);
-    _compMasterIn = headroom;
-    _scMasterIn = scIn;
-    _masterNodes = [headroom, glue, makeup, limiter, scIn, shaper, scMakeup, channelMode];
-    _masterMode = 'comp';
+const connectMasterBuses = (ctx: AudioContext, synth: SynthLike): void => {
+    // Copych 已在 AudioWorklet 内镜像固件输出后链：
+    // synth+FX → 风格 master lift → device_postchain(gain/clip/mono/EQ/16bit) → 输出。
+    // 这里保持透明，不再叠浏览器 compressor/limiter，否则就不是设备口径。
+    const channelMode = createMasterChannelModeNode(ctx);
+    const unityOut = ctx.createGain();
+    unityOut.gain.value = 1.0;
+    unityOut.connect(channelMode);
+    synth.connect(unityOut);
+    _masterNodes = [unityOut, channelMode];
 };
 
 /** 声道模式套用到末端节点（mono=explicit 1ch 强制下混 / stereo=直通）。 */
@@ -288,11 +203,10 @@ export const setChannelMode = (mode: ChannelModePref): void => {
     notifySoundFontState();
 };
 
-/** 切输出采样率偏好：采样率是 ctx 固有属性 → 关旧 ctx 建新 + 重建合成器
- *  （机制同 setSynthBackendKind；forceReload=失败回滚强制重建）。经 enqueueRebuild 串行。 */
+/** 重建 24k 输出采样率上下文：采样率是 ctx 固有属性 → 关旧 ctx 建新 + 重建合成器。 */
 export const setAudioSampleRate = (pref: SampleRatePref, forceReload = false): Promise<void> => enqueueRebuild(async () => {
     if (getSampleRatePref() === pref && !forceReload) return;
-    const shouldReloadNow = forceReload || !!_startPromise || !!spessaSynth || isSpessaSynthReady;
+    const shouldReloadNow = forceReload || !!_startPromise || !!activeSynth || isSynthReady;
     setSampleRatePref(pref);
     notifySoundFontState();
     if (!shouldReloadNow) {
@@ -310,52 +224,25 @@ const loadSelectedSynth = async (ctx: AudioContext): Promise<void> => {
     const bank = getSelectedSoundFontBank();
     disconnectCurrentSynth();
 
-    // copych WASM 后端分支（2026-07-09 起默认 copych=设备镜像；spessa 经菜单/URL/localStorage 显式选择）
-    if (isCopychBackend()) {
-        await ensureCopychWorkletModule(ctx);
-        const facade = new CopychSynthFacade(ctx);
-        const response = await fetch(bank.url);
-        if (!response.ok) {
-            facade.disconnect();
-            throw new Error(`SynthManager: SF2 fetch failed (${bank.url}, status ${response.status})`);
-        }
-        const buffer = await response.arrayBuffer();
-        await facade.init(buffer);   // transfer 进 worklet，采样率=ctx.sampleRate（运行期注入）
-
-        if (_selectedSoundFontBankId !== bank.id) {
-            facade.disconnect();
-            return loadSelectedSynth(ctx);
-        }
-
-        connectMasterBuses(ctx, facade);
-        spessaSynth = facade;
-        isSpessaSynthReady = true;
-        _loadedSoundFontBankId = bank.id;
-        notifySoundFontState();
-        return;
-    }
-
-    await ensureWorkletModule(ctx);
-
-    const synth = new WorkletSynthesizer(ctx);
-    await synth.isReady;
-
+    await ensureCopychWorkletModule(ctx);
+    const facade = new CopychSynthFacade(ctx);
     const response = await fetch(bank.url);
     if (!response.ok) {
-        try { synth.disconnect(); } catch { /* ignore */ }
+        facade.disconnect();
         throw new Error(`SynthManager: SF2 fetch failed (${bank.url}, status ${response.status})`);
     }
     const buffer = await response.arrayBuffer();
-    await synth.soundBankManager.addSoundBank(buffer, bank.bankManagerId, 0);
+    await facade.init(buffer);   // transfer 进 worklet，采样率=ctx.sampleRate（运行期注入）
 
     if (_selectedSoundFontBankId !== bank.id) {
-        try { synth.disconnect(); } catch { /* ignore */ }
+        facade.disconnect();
         return loadSelectedSynth(ctx);
     }
 
-    connectMasterBuses(ctx, synth);
-    spessaSynth = synth;
-    isSpessaSynthReady = true;
+    connectMasterBuses(ctx, facade);
+    activeSynth = facade;
+    isSynthReady = true;
+    applyPlaybackMasterLift();
     _loadedSoundFontBankId = bank.id;
     notifySoundFontState();
 };
@@ -365,7 +252,7 @@ export const startAudioContext = async (): Promise<void> => {
     if (ctx.state !== 'running') {
         try { await ctx.resume(); } catch { /* ignore */ }
     }
-    if (spessaSynth && isSpessaSynthReady && _loadedSoundFontBankId === _selectedSoundFontBankId) return;
+    if (activeSynth && isSynthReady && _loadedSoundFontBankId === _selectedSoundFontBankId) return;
     if (_startPromise) return _startPromise;
     const startPromise = (async () => {
         try {
@@ -378,9 +265,9 @@ export const startAudioContext = async (): Promise<void> => {
     return startPromise;
 };
 
-/* ★重建串行链：后端切换与采样率切换都走「persist→disconnect→close ctx→start」重建流程，
- * 共享此 promise 链防交错重建（UI 双 pending 禁用之外的引擎层硬保证——程序入口/极快连点
- * 也不会绕过）。前序任务失败不阻断后序（catch 吞掉只为续链，任务自身错误仍向调用方抛出）。 */
+/* ★重建串行链：采样率切换走「persist→disconnect→close ctx→start」重建流程，
+ * 共享此 promise 链防交错重建。前序任务失败不阻断后序（catch 吞掉只为续链，
+ * 任务自身错误仍向调用方抛出）。 */
 let _rebuildChain: Promise<void> = Promise.resolve();
 const enqueueRebuild = <T,>(task: () => Promise<T>): Promise<T> => {
     const run = _rebuildChain.then(task, task);
@@ -388,35 +275,11 @@ const enqueueRebuild = <T,>(task: () => Promise<T>): Promise<T> => {
     return run;
 };
 
-/** 切换合成后端（顶部导航合成器菜单）：持久化偏好 → 若已有实例/在飞加载则重建。
- *  调用方（AudioEngine.setSynthBackend）负责先停播放（loadTrack 的 echo 展开随后端变，
- *  在播曲目不可热迁移）。经 enqueueRebuild 与采样率切换串行。 */
-export const setSynthBackendKind = (kind: SynthBackendKind, forceReload = false): Promise<void> => enqueueRebuild(async () => {
-    if (getSynthBackend() === kind && !forceReload) return;
-    /* ★await 前快照：在飞加载（_startPromise）失败会让 spessaSynth 保持 null——
-     * 若 await 后再判实例在场，会静默跳过新后端重建（UI 显示已切实际无 synth）。
-     * forceReload：切换失败回滚用——失败时旧实例已 disconnect+ctx 已 close，三判据全空，
-     * 不强制则回滚只改偏好不重建（菜单已回滚、实际无 synth）。 */
-    const shouldReloadNow = forceReload || !!_startPromise || !!spessaSynth || isSpessaSynthReady;
-    setSynthBackendPref(kind);
-    notifySoundFontState();   // UI（合成器菜单/状态）即时刷新
-    if (!shouldReloadNow) {
-        // 从未启动过 synth：仍要清可能已存在的 ctx（防陈旧采样率残留）
-        await closeGlobalAudioContext();
-        notifySoundFontState();   // close 后再通知：防徽标残显已关闭 ctx 的旧采样率
-        return;
-    }
-    if (_startPromise) { try { await _startPromise; } catch { /* 旧加载失败也继续重建新后端 */ } }
-    disconnectCurrentSynth();          // 置空实例/状态
-    await closeGlobalAudioContext();   // ★关旧 ctx 重建管线（采样率按当前显式偏好；ctx 固有属性不可原地改）
-    await startAudioContext();         // 新 ctx（新率）+ 完整重载；失败 throw → 调用方（UI）回滚 previous
-});
-
 export const setSelectedSoundFontBank = async (id: SoundFontBankId): Promise<void> => {
     const next = resolveSoundFontBank(id);
     if (next.id === _selectedSoundFontBankId && _loadedSoundFontBankId === next.id) return;
 
-    const shouldReloadNow = !!_startPromise || !!spessaSynth || isSpessaSynthReady;
+    const shouldReloadNow = !!_startPromise || !!activeSynth || isSynthReady;
     _selectedSoundFontBankId = next.id;
     try { window.localStorage.setItem(SOUND_FONT_STORAGE_KEY, next.id); } catch { /* ignore */ }
     notifySoundFontState();

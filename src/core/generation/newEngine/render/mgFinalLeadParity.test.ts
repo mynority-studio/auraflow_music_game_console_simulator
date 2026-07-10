@@ -12,6 +12,7 @@ import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArti
 import { sanitizeLeadNoteIR } from './leadSanitizer';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { createTimebase, createRandomContext, beats } from '../foundation';
+import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
 
 const SAN = { gapTicks: 1, minDurTicks: 1 };
 
@@ -51,6 +52,19 @@ function auditKeyContext(band: ReturnType<typeof buildBandSpec>) {
   };
 }
 
+function withExpectedLeadGesture<T extends { notes: any[] }>(
+  track: T,
+  instr: ReturnType<typeof buildInstrumentationPlan>,
+  tb: ReturnType<typeof createTimebase>,
+): T {
+  const gesture = applyGestureExpressionToTrack(
+    { ...track, role: 'lead', program: instr.roleProgram.lead } as never,
+    instr.gestureExpressionByRole?.lead,
+    tb,
+  );
+  return { ...track, notes: gesture.notes };
+}
+
 describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () => {
   // ★ ACG 已【退出】本 byte-parity(2026-07-02 Phase3):ACG lead 走专属 shapeTopVoicePianoTouch 塑形(tuck 落点
   //   重定位/瘦身 + 音域上浮 + normalize),已【不】== raw MG lead → 改由 mgBassCompLeadFidelity.test 的音乐不变量锁。
@@ -80,7 +94,8 @@ describe('render/mgFinalLeadParity · final lead === replay(MG raw lead)', () =>
       const sanitized = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
       const balancedLegato = { ...sanitized, notes: connectFastLeadNoteIR(sanitized.notes, legatoOpts) };
       const balancedSanitized = { ...balancedLegato, notes: sanitizeLeadNoteIR(balancedLegato.notes, SAN) };
-      const expected = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+      const expectedBeforeGesture = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+      const expected = withExpectedLeadGesture(expectedBeforeGesture, instr, tb);
       const final = renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir.tracks.find((t) => t.role === 'lead')!;
       expectLeadNear(final.notes as never, expected.notes as never); // safety resolver may choose comp-aware neighboring tones.
     });

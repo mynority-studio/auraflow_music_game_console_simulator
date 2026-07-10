@@ -1,7 +1,8 @@
 // ============================================================
 // newEngine · render · ReadOnlyHarmonyAuditor(只读终检)
 // ------------------------------------------------------------
-// 架构定稿 Part 2.10 / 铁律19:只读、严格、只判和声/音程,不审密度、无豁免。
+// 架构定稿 Part 2.10 / 铁律19:只读、严格、只判和声/音程,不审密度。
+// 显式 bass pedal 是和声计划层意图,审计不把 pedal 本音回卷成生成失败。
 // 规则(判据来自共享 KB,铁律21):
 //   R1 avoid-long-exposure   [error]  : avoidNoteMap 命中 + ≥1 拍长暴露 → 触发纠错环
 //   R2 chromatic-exposure    [warning]: 非鼓轨长音落在 chord-scale 之外(离调暴露)
@@ -40,6 +41,17 @@ function findSpanAtTick(
   return undefined;
 }
 
+function isDeclaredBassPedalExposure(
+  trackRole: string,
+  notePc: number,
+  span: DeepReadonly<ChordSpan>,
+): boolean {
+  return trackRole === 'bass'
+    && span.bassRole === 'pedal'
+    && span.bassPedalPc !== undefined
+    && notePc === (span.bassPedalPc as number);
+}
+
 export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timebase, keyCtx?: AuditKeyContext): AuditReport {
   const findings: AuditFinding[] = [];
   const oneBeatTicks = timebase.beatToTick(beats(1));
@@ -62,7 +74,8 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
 
       // R1 avoid 长暴露(error,触发纠错环)
       const avoid = plan.avoidNoteMap[span.id] ?? [];
-      if (avoid.includes(notePc) && isLong) {
+      const declaredBassPedal = isDeclaredBassPedalExposure(track.role, notePc, span);
+      if (avoid.includes(notePc) && isLong && !declaredBassPedal) {
         findings.push({
           severity: 'error',
           location: { trackRole: track.role, startTick: note.startTick },

@@ -4,8 +4,7 @@
 // ------------------------------------------------------------
 // 放 public/（vite 原样拷贝，不进打包管线）：AudioWorklet.addModule 直接吃
 // 本文件 URL，内部静态 import 同目录 SINGLE_FILE glue（copych_synth.mjs，
-// vendored 见 PROVENANCE.md）。纯 JS（worklet 不走 TS 管线，同 spessasynth
-// 的 min.js 资产方式）。
+// vendored 见 PROVENANCE.md）。纯 JS（worklet 不走 TS 管线）。
 //
 // 事件时序（E3 口径）：主线程 postMessage {type:'ev', when=ctx 秒}；本端
 // 时间戳队列（when+seq 稳定序），到期事件（when ≤ 本 quantum 起点）在
@@ -26,7 +25,8 @@ class CopychProcessor extends AudioWorkletProcessor {
         this.pR = 0;
         this.queue = [];   // {when, seq, kind, ch, a, b}，按 (when, seq) 升序
         this.seq = 0;
-        /* 设备后链（听感排查批2）：仅 24k ctx 有效；状态每次 set 后回报主线程防分叉 */
+        /* 设备后链（听感排查批2）：gain/clip/mono/clamp 全采样率有效；24k EQ 按采样率保护。
+         * 状态每次 set 后回报主线程防分叉。 */
         this.postchain = createDevicePostChain(sampleRate);
         this.meterCountdown = 0;   // 采样计数：每 ~250ms 上报一次电平表
         this.port.onmessage = (e) => { void this.onMessage(e.data); };
@@ -68,15 +68,17 @@ class CopychProcessor extends AudioWorkletProcessor {
                 break;
             }
             case 'postchain': {
-                /* {enabled?, gain?, eq?, softclip?, quantize?, trimDb?} 局部合并；
-                 * 非 24k ctx 请求 enable → 实际保持 bypass，回报 reason 供 UI 对齐。 */
+                /* {enabled?, gain?, eq?, softclip?, quantize?, masterLift?} 局部合并；
+                 * enabled 为兼容字段，会被设备后链强制回 true；非 24k ctx 仅 24k EQ 系数会自动 bypass。 */
                 this.postchain.set(msg.cfg || {});
                 this.port.postMessage({
                     type: 'postchain-state',
                     active: this.postchain.isActive(),
                     srOk: this.postchain.srOk(),
                     cfg: this.postchain.config(),
-                    reason: (!this.postchain.srOk() && msg.cfg && msg.cfg.enabled) ? 'sampleRate!=24000' : null,
+                    reason: (this.postchain.isActive() && this.postchain.config().eq && !this.postchain.eqRateOk())
+                        ? 'eq bypassed: sampleRate!=24000'
+                        : null,
                 });
                 break;
             }
@@ -113,9 +115,9 @@ class CopychProcessor extends AudioWorkletProcessor {
         this.M._copych_wasm_render(this.pL, this.pR, len);
         out[0].set(this.M.HEAPF32.subarray(this.pL >> 2, (this.pL >> 2) + len));
         if (out[1]) out[1].set(this.M.HEAPF32.subarray(this.pR >> 2, (this.pR >> 2) + len));
-        /* 设备后链（active 时就地处理 L/R；零分配）+ 电平表 ~250ms 上报 */
+        /* 设备后链：每帧都调用；Copych-only 正式输出不允许 raw synth 直出，避免 processor 引入 bypass 点。 */
+        this.postchain.process(out[0], out[1] || out[0], len);
         if (this.postchain.isActive()) {
-            this.postchain.process(out[0], out[1] || out[0], len);
             this.meterCountdown -= len;
             if (this.meterCountdown <= 0) {
                 this.meterCountdown = sampleRate / 4;

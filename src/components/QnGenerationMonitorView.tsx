@@ -2,6 +2,7 @@ import React from 'react';
 import type { MusicalIR } from '../core/generation/newEngine/ir/MusicalIR';
 import { gmName } from '../core/generation/newEngine/knowledge/instruments';
 import { ROLE_COLOR, type PianoRoll } from '../core/generation/newEngine/sandbox/pianoRoll';
+import { aura25DrumKitName, aura25InstrumentName, type Aura25Role } from '../core/sound/Aura25Palette';
 
 export interface QnMonitorTrack {
   role: string;
@@ -25,8 +26,8 @@ const STATUS_COLOR: Record<string, string> = {
   failed: 'text-rose-300',
 };
 
-const trackInstrumentName = (role: string, program: number | undefined): string =>
-  role === 'drum' ? '标准鼓组' : program !== undefined ? gmName(program) : '默认音色';
+const trackInstrumentName = (role: string, program: number | undefined, bank?: number): string =>
+  aura25InstrumentName(bank, program, role as Aura25Role) ?? (role === 'drum' ? aura25DrumKitName(program) : program !== undefined ? gmName(program) : '默认音色');
 
 export function deriveQnMonitorReadout(input: {
   ir: MusicalIR;
@@ -39,9 +40,9 @@ export function deriveQnMonitorReadout(input: {
   const tracks = ir.tracks.map((tr) => ({
     role: tr.role,
     count: tr.notes.length,
-    instrument: trackInstrumentName(tr.role, tr.program),
+    instrument: trackInstrumentName(tr.role, tr.program, tr.bank),
     switchTo: tr.programChanges && tr.programChanges.length
-      ? trackInstrumentName(tr.role, tr.programChanges[tr.programChanges.length - 1].program)
+      ? trackInstrumentName(tr.role, tr.programChanges[tr.programChanges.length - 1].program, tr.programChanges[tr.programChanges.length - 1].bank)
       : undefined,
   }));
   return { status, attempts, bpm, bars, tracks };
@@ -82,7 +83,7 @@ export const QnGenerationMonitorView: React.FC<{
           {readout.tracks.map((t) => (
             <div key={t.role} className="flex items-center gap-2 text-[11px]">
               <span className="w-10 shrink-0 text-zinc-400">{t.role}</span>
-              <span className="text-zinc-100">{t.role === 'drum' ? '标准鼓组' : t.instrument}</span>
+              <span className="text-zinc-100">{t.instrument}</span>
               {t.switchTo && <span className="text-violet-300">→ chorus {t.switchTo}</span>}
               <span className="ml-auto text-[10px] text-zinc-500">{t.count} 音</span>
             </div>

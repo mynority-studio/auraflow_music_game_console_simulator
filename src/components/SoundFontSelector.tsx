@@ -3,21 +3,26 @@ import { ChevronDown, Headphones, Play, Square } from 'lucide-react';
 import {
     AudioEngine,
     SOUND_FONT_BANKS,
+    activeSynth,
     getChannelModePref,
     getLoadedSoundFontBank,
     getSampleRatePref,
     getSelectedSoundFontBank,
-    getSynthBackend,
     SAMPLE_RATE_OPTIONS,
     startAudioContext,
     subscribeSoundFontBank,
     type ChannelModePref,
     type SampleRatePref,
     type SoundFontBankId,
-    type SynthBackendKind,
 } from '../core/audio/AudioEngine';
 import { AURA25_AUDITION_INSTRUMENTS } from '../core/sound/Aura25Palette';
-import { getCopychFxState, subscribeCopychFxState, type CopychFxState } from '../core/audio/copych/CopychSynthFacade';
+import {
+    COPYCH_MASTER_LIFT_MAX,
+    COPYCH_MASTER_LIFT_MIN,
+    getCopychFxState,
+    subscribeCopychFxState,
+    type CopychFxState,
+} from '../core/audio/copych/CopychSynthFacade';
 import {
     getCopychPostChainMeters,
     getCopychPostChainState,
@@ -39,30 +44,64 @@ const AUDITION_CHANNEL = 8;
 const DRUM_CHANNEL = 9;
 /** 主键盘（AuraJam/AuraBar 按键）所在的自由演奏通道——镜像设备 ch0。 */
 const KEYBOARD_CHANNEL = 0;
+type AuditionItem = {
+    bank: number;
+    program: number;
+    role: 'lead' | 'comp' | 'pad' | 'bass' | 'drum';
+    name: string;
+    note: number;
+    sampleSizeBytes: number;
+    sampleSizeLabel: string;
+};
+const auditionItemsForBank = (_bankId: string): readonly AuditionItem[] => AURA25_AUDITION_INSTRUMENTS;
 /** 主键盘可切乐器（当前 SF2 包内旋律乐器；鼓组走 ch9 不在列）。 */
 const KEYBOARD_INSTRUMENTS = AURA25_AUDITION_INSTRUMENTS.filter(item => item.role !== 'drum');
 /** 初始键盘乐器 = 列表首项（GM 0:0 大钢琴，与合成器 GMReset 默认一致——无需占位"默认"项）。 */
 const DEFAULT_INSTRUMENT_KEY = `${KEYBOARD_INSTRUMENTS[0].bank}:${KEYBOARD_INSTRUMENTS[0].program}`;
 const NOTE_OFF_CC = 123;
-const CITYPOP_FM_EP_PROGRAM = 5;
+const ELECTRIC_KEY_PROGRAM = 5;
 const FOLK_GUITAR_PROGRAM = 25;
 const MALLET_PROGRAMS = new Set([11, 12, 107, 108]);
+const DRIVE_STATE_LABEL: Record<CopychPostChainMeters['driveState'], string> = {
+    'very-quiet': '很小',
+    quiet: '偏小',
+    healthy: '健康',
+    'soft-knee': '软削',
+    overdriven: '削多',
+    'hard-clipping': '硬夹',
+};
+const DRIVE_STATE_CLASS: Record<CopychPostChainMeters['driveState'], string> = {
+    'very-quiet': 'text-sky-300',
+    quiet: 'text-cyan-300',
+    healthy: 'text-emerald-300',
+    'soft-knee': 'text-amber-300',
+    overdriven: 'text-orange-300',
+    'hard-clipping': 'text-red-300',
+};
 
-type AuditionItem = typeof AURA25_AUDITION_INSTRUMENTS[number];
+const meterDb = (db: number): string => db <= -119 ? '−∞' : db.toFixed(0);
+const auditionKey = (item: Pick<AuditionItem, 'bank' | 'program'>): string => `${item.bank}:${item.program}`;
+const selectPresetRaw = (channel: number, item: AuditionItem): void => {
+    if (!activeSynth) return;
+    const bank = Math.max(0, Math.min(16383, Math.round(item.bank)));
+    activeSynth.controllerChange(channel, 0, (bank >> 7) & 0x7f);
+    activeSynth.controllerChange(channel, 32, bank & 0x7f);
+    activeSynth.programChange(channel, Math.max(0, Math.min(127, Math.round(item.program))));
+};
+const liftDb = (lift: number): number => 20 * Math.log10(Math.max(0.0001, lift));
+const clampMasterLift = (lift: number): number =>
+    Math.max(COPYCH_MASTER_LIFT_MIN, Math.min(COPYCH_MASTER_LIFT_MAX, Number.isFinite(lift) ? lift : 1));
 
 export const SoundFontSelector: React.FC = () => {
     const [selectedId, setSelectedId] = useState<SoundFontBankId>(() => getSelectedSoundFontBank().id);
     const [loadedId, setLoadedId] = useState<SoundFontBankId | null>(() => getLoadedSoundFontBank()?.id ?? null);
     const [pendingId, setPendingId] = useState<SoundFontBankId | null>(null);
-    const [backend, setBackend] = useState<SynthBackendKind>(() => getSynthBackend());
-    const [backendPending, setBackendPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [auditionOpen, setAuditionOpen] = useState(false);
     const [auditioning, setAuditioning] = useState<string | null>(null);
     const [instrumentKey, setInstrumentKey] = useState<string>(DEFAULT_INSTRUMENT_KEY);
     const [sampleRate, setSampleRate] = useState<number | null>(null);
     const [ratePref, setRatePref] = useState<SampleRatePref>(() => getSampleRatePref());
-    const [ratePending, setRatePending] = useState(false);
     const [channelMode, setChannelModeState] = useState<ChannelModePref>(() => getChannelModePref());
     const [copychFx, setCopychFx] = useState<CopychFxState>(() => getCopychFxState());
     const auditionTimers = useRef<number[]>([]);
@@ -73,13 +112,13 @@ export const SoundFontSelector: React.FC = () => {
     const readSampleRate = (): void => {
         try {
             const ctx = (window as unknown as { globalAudioContext?: AudioContext }).globalAudioContext;
-            setSampleRate(ctx ? ctx.sampleRate : null);   // 无 ctx（切后端关旧未建新）→ 清空防陈旧率残显
+            setSampleRate(ctx ? ctx.sampleRate : null);   // 无 ctx（采样率重建中）→ 清空防陈旧率残显
         } catch { /* 非浏览器/受限环境 */ }
     };
 
     useEffect(() => subscribeCopychFxState(() => setCopychFx(getCopychFxState())), []);
     /* 上传 MIDI 播放（上传播放批）：file input ref + 状态行；播放走 AudioEngine.playUploadedMidi
-     * =与生成曲同一调度/后端路径（当前合成器即用户所选，copych 设备后链可叠加）。 */
+     * =与生成曲同一 Copych 调度路径（设备后链可叠加）。 */
     const midiFileRef = useRef<HTMLInputElement>(null);
     const [midiUploadStatus, setMidiUploadStatus] = useState<string | null>(null);
     const [midiUploadPlaying, setMidiUploadPlaying] = useState(false);
@@ -124,15 +163,15 @@ export const SoundFontSelector: React.FC = () => {
         return subscribeSoundFontBank(() => {
             setSelectedId(getSelectedSoundFontBank().id);
             setLoadedId(getLoadedSoundFontBank()?.id ?? null);
-            setBackend(getSynthBackend());
             setRatePref(getSampleRatePref());
             setChannelModeState(getChannelModePref());
             readSampleRate();
-            // 合成器实例重建（bank/backend 切换）会回 GM 默认——重发主键盘乐器选择（不发确认音）
+            // 合成器实例重建（bank/采样率切换）会回 GM 默认——重发主键盘乐器选择（不发确认音）
             const key = instrumentKeyRef.current;
             if (key) {
-                const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === key);
-                if (item) AudioEngine.programChange(KEYBOARD_CHANNEL, item.program);
+                const items = auditionItemsForBank(getSelectedSoundFontBank().id);
+                const item = items.find(i => auditionKey(i) === key) ?? items.find(i => i.role !== 'drum');
+                if (item) selectPresetRaw(KEYBOARD_CHANNEL, item);
             }
         });
     }, []);
@@ -163,7 +202,7 @@ export const SoundFontSelector: React.FC = () => {
 
     const melodicPhrase = (item: AuditionItem): void => {
         const root = item.note;
-        const cityPopEp = item.program === CITYPOP_FM_EP_PROGRAM;
+        const electricKey = item.program === ELECTRIC_KEY_PROGRAM;
         const notes = item.program === 67
             ? [root, root + 2, root + 5, root + 7]
             : item.program === 32 || item.program === 38
@@ -171,15 +210,11 @@ export const SoundFontSelector: React.FC = () => {
                 : item.role === 'pad'
                     ? [root, root + 7, root + 12]
                     : [root, root + 4, root + 7, root + 12];
-        const dur = item.role === 'pad' ? 760 : item.program === 67 ? 420 : cityPopEp ? 360 : 260;
-        const velocity = item.role === 'pad' ? 76 : cityPopEp ? 84 : 104;
+        const dur = item.role === 'pad' ? 760 : item.program === 67 ? 420 : electricKey ? 360 : 260;
+        const velocity = item.role === 'pad' ? 76 : electricKey ? 84 : 104;
         notes.forEach((note, index) => {
             const at = index * (dur + 45);
             schedule(() => AudioEngine.playNote(AUDITION_CHANNEL, note, velocity, dur), at);
-            if (cityPopEp) {
-                schedule(() => AudioEngine.playNote(AUDITION_CHANNEL, note, 28, Math.round(dur * 0.86)), at + 340);
-                schedule(() => AudioEngine.playNote(AUDITION_CHANNEL, note, 15, Math.round(dur * 0.68)), at + 640);
-            }
         });
     };
 
@@ -194,22 +229,22 @@ export const SoundFontSelector: React.FC = () => {
     };
 
     const audition = async (item: AuditionItem): Promise<void> => {
-        const key = `${item.bank}:${item.program}`;
+        const key = auditionKey(item);
         stopAudition();
         setAuditioning(key);
         setError(null);
         try {
             await startAudioContext();
             const channel = item.role === 'drum' ? DRUM_CHANNEL : AUDITION_CHANNEL;
-            AudioEngine.controllerChange(channel, 7, item.role === 'drum' ? 108 : 104);
-            AudioEngine.controllerChange(channel, 10, 64);
-            AudioEngine.controllerChange(channel, 11, 127);
-            AudioEngine.controllerChange(channel, 72, item.program === CITYPOP_FM_EP_PROGRAM ? 96 : 64);
-            AudioEngine.controllerChange(channel, 74, item.program === CITYPOP_FM_EP_PROGRAM ? 54 : 64);
-            AudioEngine.controllerChange(channel, 91, item.role === 'pad' ? 58 : item.program === CITYPOP_FM_EP_PROGRAM ? 66 : item.program === FOLK_GUITAR_PROGRAM ? 38 : 30);
-            AudioEngine.controllerChange(channel, 93, item.program === CITYPOP_FM_EP_PROGRAM ? 86 : MALLET_PROGRAMS.has(item.program) ? 0 : 12);
-            AudioEngine.controllerChange(channel, 95, 0);
-            AudioEngine.programChange(channel, item.program);
+            activeSynth?.controllerChange(channel, 7, item.role === 'drum' ? 108 : 104);
+            activeSynth?.controllerChange(channel, 10, 64);
+            activeSynth?.controllerChange(channel, 11, 127);
+            activeSynth?.controllerChange(channel, 72, item.program === ELECTRIC_KEY_PROGRAM ? 68 : 64);
+            activeSynth?.controllerChange(channel, 74, item.program === ELECTRIC_KEY_PROGRAM ? 54 : 64);
+            activeSynth?.controllerChange(channel, 91, item.role === 'pad' ? 58 : item.program === ELECTRIC_KEY_PROGRAM ? 28 : item.program === FOLK_GUITAR_PROGRAM ? 38 : 30);
+            activeSynth?.controllerChange(channel, 93, item.program === ELECTRIC_KEY_PROGRAM ? 20 : MALLET_PROGRAMS.has(item.program) ? 0 : 12);
+            activeSynth?.controllerChange(channel, 95, 0);
+            selectPresetRaw(channel, item);
             if (item.role === 'drum') drumPhrase();
             else melodicPhrase(item);
             schedule(() => setAuditioning(null), item.role === 'drum' ? 1060 : item.role === 'pad' ? 2500 : 1500);
@@ -223,6 +258,7 @@ export const SoundFontSelector: React.FC = () => {
     const handleChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
         const nextId = event.target.value as SoundFontBankId;
         const previousId = getSelectedSoundFontBank().id;
+        stopAudition();
         setSelectedId(nextId);
         setPendingId(nextId);
         setError(null);
@@ -246,12 +282,12 @@ export const SoundFontSelector: React.FC = () => {
         const key = event.target.value;
         setInstrumentKey(key);
         instrumentKeyRef.current = key;
-        const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === key);
+        const item = selectedKeyboardInstruments.find(i => auditionKey(i) === key);
         if (!item) return;
         setError(null);
         try {
             await startAudioContext();
-            AudioEngine.programChange(KEYBOARD_CHANNEL, item.program);
+            selectPresetRaw(KEYBOARD_CHANNEL, item);
             AudioEngine.playNote(KEYBOARD_CHANNEL, item.note, 100, 220);   // 确认音
         } catch (err) {
             console.error('Keyboard instrument switch failed', err);
@@ -266,7 +302,6 @@ export const SoundFontSelector: React.FC = () => {
         if (next === previous) return;
         stopAudition();
         setRatePref(next);
-        setRatePending(true);
         setError(null);
         try {
             await AudioEngine.setAudioSampleRate(next);
@@ -275,8 +310,6 @@ export const SoundFontSelector: React.FC = () => {
             setError('采样率切换失败');
             try { await AudioEngine.setAudioSampleRate(previous, true); } catch { /* keep failed state visible */ }
             setRatePref(getSampleRatePref());
-        } finally {
-            setRatePending(false);
         }
     };
 
@@ -287,34 +320,26 @@ export const SoundFontSelector: React.FC = () => {
         setChannelModeState(mode);
     };
 
-    /** 合成器后端切换（copych=设备镜像 默认 / spessa=浏览器参考）。切换会停当前播放并重建合成器。 */
-    const handleBackendChange = async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
-        const next = event.target.value as SynthBackendKind;
-        const previous = getSynthBackend();
-        if (next === previous) return;
-        stopAudition();
-        setBackend(next);
-        setBackendPending(true);
-        setError(null);
-        try {
-            await AudioEngine.setSynthBackend(next);
-        } catch (err) {
-            console.error('Synth backend switch failed', err);
-            setError('合成器切换失败');
-            // 回滚到上一个可用后端（偏好已被持久化为失败目标，须显式切回并强制重建——
-            // 失败时旧实例已拆、三个"在场"判据全空，不 force 只会改偏好不重建）
-            try { await AudioEngine.setSynthBackend(previous, true); } catch { /* keep failed state visible */ }
-            setBackend(getSynthBackend());
-        } finally {
-            setBackendPending(false);
-        }
-    };
-
     const selectedBank = SOUND_FONT_BANKS.find(bank => bank.id === selectedId) ?? SOUND_FONT_BANKS[0];
+    const selectedAuditionItems = auditionItemsForBank(selectedId);
+    const selectedKeyboardInstruments = selectedAuditionItems.filter(item => item.role !== 'drum');
     const status =
         pendingId ? '切换中'
             : loadedId === selectedId ? '已加载'
                 : '待启动';
+    const effectiveInstrumentKey = selectedKeyboardInstruments.some(item => auditionKey(item) === instrumentKey)
+        ? instrumentKey
+        : auditionKey(selectedKeyboardInstruments[0] ?? KEYBOARD_INSTRUMENTS[0]);
+    const masterLift = clampMasterLift(pcState.cfg.masterLift || 1);
+    const masterLiftDb = liftDb(masterLift);
+    const masterLiftLabel = `×${masterLift.toFixed(2)}`;
+    const masterLiftTitle = `${masterLiftLabel} (${masterLiftDb >= 0 ? '+' : ''}${masterLiftDb.toFixed(1)}dB)`;
+
+    useEffect(() => {
+        if (instrumentKey === effectiveInstrumentKey) return;
+        setInstrumentKey(effectiveInstrumentKey);
+        instrumentKeyRef.current = effectiveInstrumentKey;
+    }, [effectiveInstrumentKey, instrumentKey]);
 
     return (
         <div
@@ -367,14 +392,14 @@ export const SoundFontSelector: React.FC = () => {
                 </label>
                 <select
                     id="instrument-select"
-                    value={instrumentKey}
+                    value={effectiveInstrumentKey}
                     onChange={handleInstrumentChange}
                     title="切换主键盘（AuraJam/AuraBar 按键，自由演奏 ch0）的乐器——选中即 programChange 生效，点键盘就是新音色（镜像设备左旋钮切乐器）"
                     className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400"
                 >
-                    {KEYBOARD_INSTRUMENTS.map(item => (
-                        <option key={`${item.bank}:${item.program}`} value={`${item.bank}:${item.program}`}>
+                    {selectedKeyboardInstruments.map(item => (
+                        <option key={auditionKey(item)} value={auditionKey(item)}>
                             {item.name} · GM {item.bank}:{item.program}
                         </option>
                     ))}
@@ -385,9 +410,10 @@ export const SoundFontSelector: React.FC = () => {
                         void (async () => {
                             try {
                                 await startAudioContext();
-                                const item = KEYBOARD_INSTRUMENTS.find(i => `${i.bank}:${i.program}` === instrumentKey)
+                                const item = selectedKeyboardInstruments.find(i => auditionKey(i) === effectiveInstrumentKey)
+                                    ?? selectedKeyboardInstruments[0]
                                     ?? KEYBOARD_INSTRUMENTS[0];
-                                AudioEngine.programChange(KEYBOARD_CHANNEL, item.program);
+                                selectPresetRaw(KEYBOARD_CHANNEL, item);
                                 AudioEngine.playNote(KEYBOARD_CHANNEL, item.note, 100, 220);
                             } catch { /* 静默：音频未就绪时下一次点击再试 */ }
                         })();
@@ -404,25 +430,15 @@ export const SoundFontSelector: React.FC = () => {
                 className="mt-1.5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/90 px-3 py-2
                            shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
             >
-                <label htmlFor="synth-backend-select" className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
+                <span className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
                     合成器
-                </label>
-                <select
-                    id="synth-backend-select"
-                    value={backend}
-                    onChange={handleBackendChange}
-                    disabled={backendPending || ratePending}
-                    title="copych = 设备同款引擎（嵌入式镜像参考，默认，24 kHz 设备口径）；SpessaSynth = 浏览器参考合成器（采样率按下拉设置）"
-                    className="h-7 min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
-                               outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
-                               disabled:cursor-wait disabled:opacity-70"
+                </span>
+                <span
+                    title="Copych 是唯一合成/混音方案：浏览器预览与 ESP32 设备口径统一"
+                    className="h-7 min-w-0 flex-1 rounded-md border border-cyan-900/70 bg-cyan-950/35 px-2 py-1.5 text-[11px] text-cyan-100"
                 >
-                    <option value="copych">Copych · 设备镜像</option>
-                    <option value="spessa">SpessaSynth</option>
-                </select>
-                {(backendPending || ratePending) && (
-                    <span className="shrink-0 text-[10px] text-cyan-300">切换中</span>
-                )}
+                    Copych · 设备镜像
+                </span>
                 <label htmlFor="channel-mode-select" className="ml-1 shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400">
                     声道
                 </label>
@@ -430,9 +446,7 @@ export const SoundFontSelector: React.FC = () => {
                     id="channel-mode-select"
                     value={channelMode}
                     onChange={handleChannelModeChange}
-                    title={backend === 'copych'
-                        ? '输出声道模式（即时生效）。copych 引擎原生单声道（双声道载体 L=R=双单声道），直通/下混听感相同'
-                        : '输出声道模式（即时生效）。spessa 原生立体声；选单声道=末端下混——与 copych A/B 时消除声场差，引擎对比更公平'}
+                    title="输出声道模式（即时生效）。Copych 引擎原生单声道（双声道载体 L=R=双单声道），直通/下混听感相同"
                     className="h-7 w-[6.5rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400"
                 >
@@ -446,11 +460,11 @@ export const SoundFontSelector: React.FC = () => {
                     id="sample-rate-select"
                     value={String(ratePref)}
                     onChange={handleRateChange}
-                    disabled={ratePending || backendPending}
-                    title="输出采样率（AudioContext 固有属性，切换会重建音频管线）。默认 24 kHz=设备口径（24k SF2 零重采样），两后端通用"
+                    disabled
+                    title="采样率锁定为 24 kHz：当前 SF2 样本已统一锁到 24k，Copych/ESP32 正式口径必须按样本原生采样率播放"
                     className="h-7 w-[7rem] shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-[11px] text-zinc-100
                                outline-none transition-colors hover:border-zinc-500 focus:border-cyan-400
-                               disabled:cursor-wait disabled:opacity-70"
+                               disabled:cursor-not-allowed disabled:opacity-80"
                 >
                     {SAMPLE_RATE_OPTIONS.map(rate => (
                         <option key={rate} value={String(rate)}>
@@ -507,73 +521,46 @@ export const SoundFontSelector: React.FC = () => {
             >
                 <span
                     className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400"
-                    title={backend === 'copych'
-                        ? '当前引擎效果器与参数（镜像设备 FxReverb/FxChorus/FxDelay）：boot=固件手调默认，播放整曲时按风格下发 per-song 空间参数（等价设备 AR_CMD_SONG_*）'
-                        : 'SpessaSynth 引擎内建效果器：参数由引擎内部管理不可查，混响/合唱由各轨 CC91/93 send 驱动；延迟由调度层 echo 预渲染模拟（无真延迟总线）'}
+                    title="当前 Copych 效果器与参数（镜像设备 FxReverb/FxChorus/FxDelay）：boot=固件手调默认，播放整曲时按风格下发 per-song 空间参数（等价设备 AR_CMD_SONG_*）"
                 >
                     效果器
                 </span>
-                {backend === 'copych' ? (
-                    <>
-                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                              title="freeverb：time 空间大小(0..1)/level 湿电平/predelay 预延迟/damp 高频阻尼">
-                            混响 t{copychFx.reverb.time.toFixed(2)} · L{copychFx.reverb.level.toFixed(2)} · pd{Math.round(copychFx.reverb.predelayMs)}ms · 衰{copychFx.reverb.damping.toFixed(2)}
-                        </span>
-                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                              title="chorus：LFO 频率/调制深度/基础延迟">
-                            合唱 {copychFx.chorus.lfoHz.toFixed(1)}Hz · 深{(copychFx.chorus.depthS * 1000).toFixed(1)}ms · 基{Math.round(copychFx.chorus.baseDelayS * 1000)}ms
-                        </span>
-                        <span className={`rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] ${copychFx.delay.enabled ? 'text-zinc-400' : 'text-zinc-600'}`}
-                              title="delay（CC95 send 总线）：per-song 按风格开启（拍数×BPM 换算），未开启时静默">
-                            {copychFx.delay.enabled
-                                ? `延迟 ${Math.round(copychFx.delay.seconds * 1000)}ms · fb${copychFx.delay.feedback.toFixed(2)}`
-                                : '延迟 关'}
-                        </span>
-                    </>
-                ) : (
-                    <>
-                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                              title="SpessaSynth 内建混响处理器，参数引擎内部管理；湿度由各轨 CC91 send 驱动">
-                            混响 引擎内建（CC91 驱动）
-                        </span>
-                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                              title="SpessaSynth 内建合唱处理器；深度由各轨 CC93 send 驱动">
-                            合唱 引擎内建（CC93 驱动）
-                        </span>
-                        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
-                              title="spessa 无真延迟总线：调度层把 CC95 send 预渲染成 1/8 音符 echo 音符（copych 后端才走真 FxDelay）">
-                            延迟 echo 预渲染（1/8 音符）
-                        </span>
-                    </>
-                )}
+                <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                      title="freeverb：time 空间大小(0..1)/level 湿电平/predelay 预延迟/damp 高频阻尼">
+                    混响 t{copychFx.reverb.time.toFixed(2)} · L{copychFx.reverb.level.toFixed(2)} · pd{Math.round(copychFx.reverb.predelayMs)}ms · 衰{copychFx.reverb.damping.toFixed(2)}
+                </span>
+                <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
+                      title="chorus：LFO 频率/调制深度/基础延迟">
+                    合唱 {copychFx.chorus.lfoHz.toFixed(1)}Hz · 深{(copychFx.chorus.depthS * 1000).toFixed(1)}ms · 基{Math.round(copychFx.chorus.baseDelayS * 1000)}ms
+                </span>
+                <span className={`rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] ${copychFx.delay.enabled ? 'text-zinc-400' : 'text-zinc-600'}`}
+                      title="delay（CC95 send 总线）：per-song 按风格开启（拍数×BPM 换算），未开启时静默">
+                    {copychFx.delay.enabled
+                        ? `延迟 ${Math.round(copychFx.delay.seconds * 1000)}ms · fb${copychFx.delay.feedback.toFixed(2)}`
+                        : '延迟 关'}
+                </span>
             </div>
 
-            {backend === 'copych' && (
-                <div
+            <div
                     className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950/90 px-3 py-2
                                shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md"
                 >
                     <span
                         className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400"
-                        title={'固件输出后链镜像（增益×4.28 → backend 软/硬削波 → 单声道折叠 → 6 段小喇叭校正 EQ → 终级饱和 → 16bit）。'
-                            + '开=Mac 听到的即固件送进 DAC 的字节，唯一剩余差异=DAC/模拟/喇叭。仅 24kHz ctx 有效（EQ 系数绑 24k）。'
+                        title={'固件输出后链镜像（增益×4.28 → Copych 软/硬削波 → 单声道折叠 → 6 段小喇叭校正 EQ → 终级饱和 → 16bit）。'
+                            + '这是 Copych-only 正式输出的常驻阶段；增益/削波/下混全采样率有效，6 段 EQ 仅 24kHz ctx 有效（系数绑 24k）。'
                             + '各级开关对应设备真实态：增益 off≡ne gain 100 / EQ off≡ne eq off / 软削 off≡ne clip hard；16bit off=纯 float 链（仅诊断，非设备路径）'}
                     >
                         设备后链
                     </span>
-                    <button
-                        type="button"
-                        disabled={!pcState.srOk}
-                        onClick={() => setCopychDevicePostChain({ enabled: !pcState.cfg.enabled })}
-                        className={`rounded px-2 py-0.5 text-[10px] transition ${!pcState.srOk
-                            ? 'cursor-not-allowed bg-zinc-900 text-zinc-600'
-                            : pcState.active
-                                ? 'bg-cyan-900/70 text-cyan-200'
-                                : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
-                        title={pcState.srOk ? '总开关（默认关=不改现有听感基线）' : '设备后链仅 24 kHz ctx 有效——请切采样率到 24 kHz'}
+                    <span
+                        className={`rounded px-2 py-0.5 text-[10px] transition ${pcState.active
+                            ? 'bg-cyan-900/70 text-cyan-200'
+                            : 'bg-zinc-900 text-zinc-500'}`}
+                        title={pcState.reason ?? '常驻：Copych raw synth 不作为正式试听路径，必须进入设备后链'}
                     >
-                        {pcState.srOk ? (pcState.active ? '开' : '关') : '需 24k'}
-                    </button>
+                        {pcState.active ? '常驻' : '待启动'}
+                    </span>
                     {(['gain', 'eq', 'softclip', 'quantize'] as const).map(k => (
                         <button
                             key={k}
@@ -588,7 +575,7 @@ export const SoundFontSelector: React.FC = () => {
                             title={{
                                 gain: '×4.28（off≡板上 ne gain 100）',
                                 eq: '6 段小喇叭校正 EQ（off≡板上 ne eq off）',
-                                softclip: 'backend 软削波（off=硬削≡板上 ne clip hard）',
+                                softclip: 'Copych 软削波（off=硬削≡板上 ne clip hard）',
                                 quantize: '16bit 整数格（off=纯 float 链，仅诊断非设备路径）',
                             }[k]}
                         >
@@ -597,39 +584,50 @@ export const SoundFontSelector: React.FC = () => {
                     ))}
                     <button
                         type="button"
-                        disabled={!pcState.srOk}
-                        onClick={() => setCopychDevicePostChain({ enabled: true, gain: true, eq: true, softclip: true, quantize: true })}
-                        className={`rounded px-1.5 py-0.5 text-[10px] ${pcState.srOk ? 'bg-zinc-900 text-zinc-400 hover:text-zinc-200' : 'cursor-not-allowed bg-zinc-900 text-zinc-700'}`}
+                        onClick={() => setCopychDevicePostChain({ gain: true, eq: true, softclip: true, quantize: true })}
+                        className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
                         title="一键=固件默认态全开（gain+EQ+软削+16bit）"
                     >
                         镜像预设
                     </button>
                     <span className="mx-0.5 h-3 w-px bg-zinc-800" />
-                    <span className="text-[10px] text-zinc-500" title="试听等响微调（不属于设备镜像，不进 parity）">trim</span>
+                    <label htmlFor="copych-master-volume" className="text-[10px] text-zinc-500" title="用户主音量：调 masterLift，位于 softclip/EQ/clamp 保护链之前">主音量</label>
+                    <input
+                        id="copych-master-volume"
+                        type="range"
+                        min={COPYCH_MASTER_LIFT_MIN}
+                        max={COPYCH_MASTER_LIFT_MAX}
+                        step={0.05}
+                        value={masterLift}
+                        disabled={!pcState.active}
+                        onChange={(event) => setCopychDevicePostChain({ masterLift: Number(event.target.value) })}
+                        className="h-2 w-28 accent-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
+                        title={`主音量 ${masterLiftTitle}`}
+                    />
+                    <span className="min-w-[4.5rem] text-center text-[10px] text-zinc-400" title={`${masterLiftDb >= 0 ? '+' : ''}${masterLiftDb.toFixed(1)}dB`}>
+                        {masterLiftLabel}
+                    </span>
                     <button
                         type="button"
-                        disabled={!pcState.active}
-                        onClick={() => setCopychDevicePostChain({ trimDb: Math.max(-12, (pcState.cfg.trimDb || 0) - 1) })}
+                        disabled={!pcState.active || Math.abs(masterLift - 1) < 0.001}
+                        onClick={() => setCopychDevicePostChain({ masterLift: 1 })}
                         className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
-                    >−</button>
-                    <span className="min-w-[3ch] text-center text-[10px] text-zinc-400">{(pcState.cfg.trimDb || 0) > 0 ? '+' : ''}{pcState.cfg.trimDb || 0}dB</span>
-                    <button
-                        type="button"
-                        disabled={!pcState.active}
-                        onClick={() => setCopychDevicePostChain({ trimDb: Math.min(12, (pcState.cfg.trimDb || 0) + 1) })}
-                        className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
-                    >+</button>
+                        title="主音量回到 ×1.00"
+                    >
+                        ×1
+                    </button>
                     {pcState.active && pcMeters && (
                         <span
                             className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-500"
-                            title="链=trim 前（判断设备后链本身是否推爆）；出=trim 后（耳朵等响用）。dBFS"
+                            title={`后链输出电平。余量 ${pcMeters.headroomDb.toFixed(1)}dB · crest ${pcMeters.crestDb.toFixed(1)}dB · 削=Copych 软削 knee 命中率；夹=终级 hard clamp 命中率。dBFS`}
                         >
-                            链 {pcMeters.preRms > 0 ? (20 * Math.log10(pcMeters.preRms)).toFixed(0) : '−∞'}/{pcMeters.prePeak > 0 ? (20 * Math.log10(pcMeters.prePeak)).toFixed(0) : '−∞'}
-                            {' · 出 '}{pcMeters.postRms > 0 ? (20 * Math.log10(pcMeters.postRms)).toFixed(0) : '−∞'}/{pcMeters.postPeak > 0 ? (20 * Math.log10(pcMeters.postPeak)).toFixed(0) : '−∞'}
+                            <span className={DRIVE_STATE_CLASS[pcMeters.driveState]}>{DRIVE_STATE_LABEL[pcMeters.driveState]}</span>
+                            {' · 电平 '}{meterDb(pcMeters.preRmsDb)}/{meterDb(pcMeters.prePeakDb)}
+                            {' · 削 '}{(pcMeters.softKneeRate * 100).toFixed(2)}%
+                            {' · 夹 '}{(pcMeters.hardClipRate * 100).toFixed(3)}%
                         </span>
                     )}
-                </div>
-            )}
+            </div>
 
             {auditionOpen && (
                 <div
@@ -639,7 +637,7 @@ export const SoundFontSelector: React.FC = () => {
                     <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
                         <ChevronDown size={14} className="text-cyan-300" />
                         <span className="text-[11px] font-semibold tracking-widest text-zinc-300">试听列表</span>
-                        <span className="ml-auto text-[10px] text-zinc-500">{AURA25_AUDITION_INSTRUMENTS.length} presets</span>
+                        <span className="ml-auto text-[10px] text-zinc-500">{selectedAuditionItems.length} presets</span>
                         <button
                             type="button"
                             onClick={stopAudition}
@@ -650,8 +648,8 @@ export const SoundFontSelector: React.FC = () => {
                         </button>
                     </div>
                     <div className="max-h-[min(22rem,calc(100vh_-_17rem))] overflow-y-auto p-2">
-                        {AURA25_AUDITION_INSTRUMENTS.map(item => {
-                            const key = `${item.bank}:${item.program}`;
+                        {selectedAuditionItems.map(item => {
+                            const key = auditionKey(item);
                             const active = auditioning === key;
                             return (
                                 <button

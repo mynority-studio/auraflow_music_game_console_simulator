@@ -5,17 +5,13 @@
 ## 当前关键结论
 
 - Lead sax 听不见的真实原因：当前 SF2 的 GM67 `Low_Bari_Sax` sample zone 原来只覆盖到 MIDI 60，而生成器会把 GM67 lead 写到 MIDI 60-72；60 以上没有 sample zone 时浏览器 synth 会静音。
-- 已修复：两个当前 SF2 文件的 GM67 最高 sample zone 从 `(57, 60)` 扩到 `(57, 72)`。
-- 已加测试：`Aura25Palette.test.ts` 会检查 GM67 在两个 SF2 文件里都覆盖到 MIDI 72。
+- 已修复：当前 Aura25 SF2 的 GM67 最高 sample zone 从 `(57, 60)` 扩到 `(57, 72)`。
+- 已加测试：`Aura25Palette.test.ts` 会检查 GM67 覆盖到 MIDI 72。
 
 ## 当前 SF2 文件
 
-- `/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/public/Aura25_GM128_generaluser_folkguitar_24k_locked.sf2`
-  - 运行时实际加载的 Aura25 24k SF2。
-  - 当前 GM67 sax 已修到 keyRange `(57,72)`。
-
 - `/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/public/Aura25_GM128.sf2`
-  - 测试与基准审计用 SF2。
+  - 运行时实际加载、测试与基准审计共用的 Aura25 24k SF2。
   - 当前 GM67 sax 已修到 keyRange `(57,72)`。
 
 ## 音色包 / Program 映射
@@ -95,7 +91,7 @@
 - `/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/src/core/audio/MidiScheduler.ts`
   - MIDI 事件排序与调度。
   - 同 tick 顺序：noteOff → CC/programChange/pitchBend → noteOn → visual。
-  - 负责把事件发给 SpessaSynth。
+  - 负责把事件发给 CopychSynthFacade。
 
 - `/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/src/core/audio/AudioEngine.ts`
   - App 播放入口。
@@ -170,4 +166,3 @@ pnpm vitest run src/core/sound/Aura25Palette.test.ts src/core/generation/newEngi
 pnpm vitest run src/core/generation/newEngine/instrumental/gestureExpression.test.ts src/core/generation/newEngine/instrumental/gmMixProfile.test.ts src/core/generation/musicGeneration/MusicGenerationService.test.ts --reporter=dot
 pnpm lint
 ```
-

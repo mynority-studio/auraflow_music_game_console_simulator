@@ -57,6 +57,43 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(bassPc.data1).toBe(38);  // 缺省收口到 24k nano 包内 Synth Bass 1
   });
 
+  it('带 bank 的轨会在 programChange 前发 CC0/CC32 bank select', () => {
+    const ir2 = freezeMusicalIR({
+      tracks: [
+        {
+          role: 'lead',
+          bank: 8,
+          program: 5,
+          programChanges: [{ atTick: ticks(480), bank: 0, program: 0 }],
+          notes: [
+            { pitch: midi(64), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 },
+            { pitch: midi(67), startTick: ticks(480), durationTicks: ticks(240), velocity: 90 },
+          ],
+        },
+      ],
+      timebase,
+      durationTicks: ticks(960),
+    });
+    const ev = musicalIRToMidiEvents(ir2);
+    const idx = (pred: (e: typeof ev[number]) => boolean) => ev.findIndex(pred);
+    const bank8Msb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 0);
+    const bank8Lsb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 32);
+    const pc8 = idx((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0);
+    expect(ev[bank8Msb]).toMatchObject({ data2: 0 });
+    expect(ev[bank8Lsb]).toMatchObject({ data2: 8 });
+    expect(ev[pc8]).toMatchObject({ data1: 5 });
+    expect(bank8Msb).toBeLessThan(bank8Lsb);
+    expect(bank8Lsb).toBeLessThan(pc8);
+
+    const bank0Msb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 480 && e.data1 === 0);
+    const bank0Lsb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 480 && e.data1 === 32);
+    const pc0 = idx((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 480);
+    expect(ev[bank0Msb]).toMatchObject({ data2: 0 });
+    expect(ev[bank0Lsb]).toMatchObject({ data2: 0 });
+    expect(ev[pc0]).toMatchObject({ data1: 0 });
+    expect(bank0Lsb).toBeLessThan(pc0);
+  });
+
   // —— 混音 (5.4) ——
   const mixIR = freezeMusicalIR({
     tracks: (['bass', 'comp', 'pad', 'lead', 'drum'] as const).map((role) => ({

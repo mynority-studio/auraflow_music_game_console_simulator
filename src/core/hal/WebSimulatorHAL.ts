@@ -4,7 +4,7 @@ import { ILedMatrix, ITouchPad, IAudioOut, ISystemTimer } from './IHardware';
  * Web Simulator implementation of the Hardware Abstraction Layer (HAL).
  * 
  * In the web browser, this class wraps DOM APIs, React state dispatchers, 
- * and Web Audio API to simulate the physical hardware.
+ * and Copych/AudioContext to simulate the physical hardware.
  * 
  * On the ESP32-S3, this file will be completely ignored and replaced by 
  * C++ drivers (e.g., EspI2sAudioOut, EspSpiLedMatrix).
@@ -53,10 +53,10 @@ export class WebSimulatorHAL implements ILedMatrix, ITouchPad, IAudioOut, ISyste
         this.padUpCallbacks.forEach(cb => cb(padIndex));
     }
 
-    // --- IAudioOut Implementation (Simulated via Web Audio API / SpessaSynth) ---
+    // --- IAudioOut Implementation (Simulated via Copych AudioWorklet) ---
     public playNote(pitch: number, velocity: number, durationMs: number, instrumentId: number): void {
-        // In the simulator, AudioEngine currently handles SpessaSynth directly.
-        // Future refactor: Move SpessaSynth logic here to fully decouple AudioEngine.
+        // In the simulator, AudioEngine currently handles Copych directly.
+        // Future refactor: Move Copych logic here to fully decouple AudioEngine.
         // console.log(`[WebHAL] playNote: pitch=${pitch}, vel=${velocity}, dur=${durationMs}ms`);
     }
 

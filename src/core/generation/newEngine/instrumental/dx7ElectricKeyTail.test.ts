@@ -1,8 +1,8 @@
 // ============================================================
 // Layer 1 · DX7 / Electric-Key Tail(three-layer mix plan, Checkpoint 1)
 // ------------------------------------------------------------
-// 验收:EP(GM4/5)lead/comp 尾音靠 CC72 release(保 MG parity,不改音符)+ lead 无 blanket pedal;
-//   EP comp 同时保留 harmonic-change pedal(CC64);tail(CC72)与 reverb/chorus send(CC91/93)分开。
+// 验收:EP(GM4/5)lead 尾音靠 note gate 接到下一音前 + CC72 release 增强;lead 无 blanket pedal;
+//   EP comp 禁用 CC64;tail(CC72)与 reverb/chorus send(CC91/93)分开。
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
@@ -45,11 +45,11 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect(g.ccControllers).not.toContain(64); // ★ lead 永不 blanket pedal
   });
 
-  it('EP comp(program5,pop):保留 harmonic-change pedal(CC64)· 同时有 CC72 release tail', () => {
+  it('EP comp(program5,pop):禁用 harmonic-change pedal(CC64)· CC72 回默认释放,避免多音 comp 嗡成一团', () => {
     const g = gestureExpressionForProgram('comp', 5, 'pop');
     expect(g.tailPolicy).toBe('electric-key-tail');
-    expect(g.pedalPolicy).toBe('harmonic-change');
-    expect(g.ccControllers).toContain(64);
+    expect(g.pedalPolicy).toBe('none');
+    expect(g.ccControllers).not.toContain(64);
     expect(g.ccControllers).toContain(72);
     expect(g.ccControllers).toContain(74);
     expect(g.releaseCc).toBe(72);
@@ -62,13 +62,15 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect(g.ccControllers).not.toContain(72);
   });
 
-  it('EP lead 落地:发 CC72 release 增强(>64)· 且【不改音符】(保 MG lead parity)', () => {
+  it('EP lead 落地:短 gate 延到下一音前 + 发 CC72 release 增强(>64),但不发 CC64', () => {
     const track = leadTrack(5);
     const g = gestureExpressionForProgram('lead', 5, 'lofi');
     const out = applyGestureExpressionToTrack(track, g, TB);
-    // notes 逐字节不变(parity)
     expect(out.notes.map((n) => [n.pitch, n.startTick, n.durationTicks, n.velocity]))
-      .toEqual(track.notes.map((n) => [n.pitch, n.startTick, n.durationTicks, n.velocity]));
+      .toEqual([
+        [midi(72), ticks(0), ticks(960), 90],
+        [midi(74), ticks(960), ticks(240), 88],
+      ]);
     // 发了 CC72,值 >64(release 增强)
     const cc72 = (out.ccEvents ?? []).filter((e) => e.controller === 72);
     expect(cc72.length).toBe(1);
@@ -79,11 +81,12 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     expect((out.ccEvents ?? []).some((e) => e.controller === 91 || e.controller === 93)).toBe(false);
   });
 
-  it('EP comp 落地:发 CC72 release 增强,且不混入 reverb/chorus send', () => {
+  it('EP comp 落地:CC72 使用默认释放,且不混入 reverb/chorus send', () => {
     const out = applyGestureExpressionToTrack(compTrack(5), gestureExpressionForProgram('comp', 5, 'pop'), TB);
     const cc72 = (out.ccEvents ?? []).filter((e) => e.controller === 72);
     expect(cc72.length).toBe(1);
-    expect(cc72[0].value).toBeGreaterThan(64);
+    expect(cc72[0].value).toBe(64);
+    expect((out.ccEvents ?? []).some((e) => e.controller === 64)).toBe(false);
     expect((out.ccEvents ?? []).filter((e) => e.controller === 74)).toEqual([{ atTick: ticks(0), controller: 74, value: 54 }]);
     expect((out.ccEvents ?? []).some((e) => e.controller === 91 || e.controller === 93)).toBe(false);
   });
@@ -104,7 +107,7 @@ describe('Layer 1 · DX7/electric-key tail(Checkpoint 1)', () => {
     const out = applyGestureExpressionToTrack(track, gestureExpressionForProgram('lead', 0, 'pop'), TB);
     expect((out.ccEvents ?? []).filter((e) => e.controller === 72)).toEqual([
       { atTick: ticks(0), controller: 72, value: 64 },
-      { atTick: ticks(960), controller: 72, value: 96 },
+      { atTick: ticks(960), controller: 72, value: 68 },
       { atTick: ticks(1920), controller: 72, value: 64 },
     ]);
     expect((out.ccEvents ?? []).filter((e) => e.controller === 74)).toEqual([

@@ -88,12 +88,12 @@ describe('musicGeneration/MusicGenerationService', () => {
     }
   });
 
-  it('★ P2:drum roster 不显示成 Acoustic Grand(role=drum → Drum Kit)', async () => {
+  it('★ P2:drum roster 不显示成 Acoustic Grand(role=drum → Aura25 真实鼓组名)', async () => {
     const r = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, bandParticipants: [{ role: 'drummer', state: 'selected' }] });
     const drumRow = r.uiSnapshot.roster.find((p) => p.role === 'drum');
     expect(drumRow, 'drum roster 行存在').toBeTruthy();
     expect(drumRow!.instrumentName).not.toBe('Acoustic Grand');
-    expect(drumRow!.instrumentName).toBe('Drum Kit');
+    expect(drumRow!.instrumentName).toBe('TR-808 鼓组');
   });
 
   it('★ 器配手势计划下发到 uiSnapshot roster:键盘/鼓/bass/sax 可审计', async () => {

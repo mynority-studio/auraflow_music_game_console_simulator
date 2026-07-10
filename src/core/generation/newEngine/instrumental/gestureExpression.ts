@@ -115,15 +115,17 @@ export function isPipeWindProgram(program: number): boolean {
   return program >= 72 && program <= 79;
 }
 
-/** GM 电钢:GM4 Electric Piano 1(Rhodes)· GM5 Electric Piano 2(FM/DX7 型)。需 electric-key-tail(尾音靠演奏,不靠 reverb)。 */
+/** GM 电钢:GM4 Electric Piano 1(Rhodes)· GM5 当前 Aura25 Electric Grand 槽位。需 electric-key-tail(尾音靠演奏,不靠 reverb)。 */
 export function isElectricKeyProgram(program: number): boolean {
   return program === 4 || program === 5;
 }
 
 const CC_RELEASE_TIME = 72;      // ★ Layer 1:release time(64-centered;两 synth 都响应)
-const CC_BRIGHTNESS = 74;        // ★ Layer 1:brightness/filter cutoff,用于把 DX7 EP 的高频锋利感收软。
-const ELECTRIC_KEY_RELEASE = 96; // EP/DX7 release 增强值(>64 → 更长 release ring,形成合成器键盘尾巴)
-const ELECTRIC_KEY_BRIGHTNESS = 54; // DX7/CityPop EP 柔化值(<64 → 更暗、更 vaporwave)。
+const CC_BRIGHTNESS = 74;        // ★ Layer 1:brightness/filter cutoff,用于把 electric-key 高频锋利感收软。
+const ELECTRIC_KEY_LEAD_RELEASE = 68; // electric-key lead:短尾音,避免和 shared FX 叠糊
+const ELECTRIC_KEY_COMP_RELEASE = 64; // electric-key comp:不加 release,多音和声靠短 gate
+const ELECTRIC_KEY_BRIGHTNESS = 54; // electric-key 柔化值(<64 → 更暗、更 vaporwave)。
+const ELECTRIC_KEY_LEAD_CONNECT_BEATS = 2.25; // electric-key lead:短 gate 延到下一音前,release 只做尾巴不是主体。
 
 export function gestureExpressionForProgram(
   role: InstrumentRoleName,
@@ -272,15 +274,16 @@ export function gestureExpressionForProgram(
 
   if (info.family === 'keyboard') {
     const comp = role === 'comp';
-    const pedalPolicy = !comp ? 'none'
+    const electricKey = isElectricKeyProgram(program);
+    const fmElectricComp = comp && program === 5;
+    const pedalPolicy = !comp || fmElectricComp ? 'none'
       : s === 'acg' ? 'acg-legato-change'
       : s === 'jazz' || s === 'blues' ? 'none'
       : s === 'lofi' ? 'light-syncopated'
       : s === 'pop' || s === 'rnb' ? 'harmonic-change'
       : 'none';
     // ★ Layer 1(electric-key-tail):EP(GM4/5)尾音靠合成器 release 包络,不靠 reverb 假装尾音。
-    //   lead/comp 都发 CC72;comp 仍可保留 harmonic-change pedal(CC64),二者职责不同。
-    const electricKey = isElectricKeyProgram(program);
+    //   GM5/FM comp 多音时禁用 CC64 pedal,否则 pedal + release + shared FX 会糊成一团。
     const tailPolicy: TailPolicy = electricKey ? 'electric-key-tail' : (comp && pedalPolicy !== 'none' ? 'piano-pedal-comp' : 'keyboard-natural');
     const releaseCc = electricKey ? CC_RELEASE_TIME : undefined;
     const cc = pedalPolicy === 'none' ? [] : [64];
@@ -440,6 +443,26 @@ function withGate(notes: readonly NoteIR[], ratio: number | undefined): NoteIR[]
   });
 }
 
+function shapeElectricKeyLeadTailNotes(notes: readonly NoteIR[], timebase: Timebase): NoteIR[] {
+  if (notes.length < 2) return notes.map((n) => ({ ...n }));
+  const out = notes.map((n) => ({ ...n }));
+  const order = out.map((_, i) => i).sort((a, b) => (out[a].startTick as number) - (out[b].startTick as number));
+  const maxIoi = Math.round(timebase.ppq * ELECTRIC_KEY_LEAD_CONNECT_BEATS);
+  for (let k = 0; k < order.length - 1; k++) {
+    const i = order[k];
+    const j = order[k + 1];
+    const start = out[i].startTick as number;
+    const nextStart = out[j].startTick as number;
+    const ioi = nextStart - start;
+    if (ioi <= 0 || ioi > maxIoi) continue;
+    const samePitch = out[i].pitch === out[j].pitch;
+    const target = samePitch ? Math.max(1, ioi - 1) : ioi;
+    const current = out[i].durationTicks as number;
+    out[i].durationTicks = ticks(samePitch ? Math.min(current, target) : Math.max(current, target));
+  }
+  return out;
+}
+
 function beatsPerBar(timebase: Timebase): number {
   return timebase.meter.numerator * (4 / timebase.meter.denominator);
 }
@@ -482,7 +505,10 @@ function withVelocityCurve(notes: readonly NoteIR[], plan: GestureExpressionPlan
 }
 
 function shapeKeyboardOrPadNotes(track: TrackIR, plan: GestureExpressionPlan, timebase: Timebase): NoteIR[] {
-  if (track.role === 'lead') return track.notes.map((n) => ({ ...n })); // MG lead grammar/velocity parity 由 lead renderer 拥有;吹奏 lead 走上面的专用分支。
+  if (track.role === 'lead') {
+    if (plan.tailPolicy === 'electric-key-tail') return shapeElectricKeyLeadTailNotes(track.notes, timebase);
+    return track.notes.map((n) => ({ ...n })); // MG lead grammar/velocity parity 由 lead renderer 拥有;吹奏 lead 走上面的专用分支。
+  }
   const ratio = clampGateRatio(plan.gateRatio);
   const gated = track.role === 'comp' && plan.kind === 'keyboard-touch'
     ? track.notes.map((n) => {
@@ -586,11 +612,12 @@ function buildElectricKeyTailCcEvents(track: TrackIR, notes: NoteIR[], plan: Ges
   const changes = [...(track.programChanges ?? [])].sort((a, b) => (a.atTick as number) - (b.atTick as number));
   const usesElectricKey = isElectricKeyProgram(initialProgram ?? -1) || changes.some((pc) => isElectricKeyProgram(pc.program));
   if (!usesElectricKey || notes.length === 0) return [];
+  const electricRelease = track.role === 'comp' ? ELECTRIC_KEY_COMP_RELEASE : ELECTRIC_KEY_LEAD_RELEASE;
 
   const eventAt = (tick: number, program: number | undefined): GestureCcEvent[] => {
     const electric = isElectricKeyProgram(program ?? -1);
     return [
-      { atTick: ticks(Math.max(0, tick)), controller: CC_RELEASE_TIME, value: electric ? ELECTRIC_KEY_RELEASE : 64 },
+      { atTick: ticks(Math.max(0, tick)), controller: CC_RELEASE_TIME, value: electric ? electricRelease : 64 },
       { atTick: ticks(Math.max(0, tick)), controller: CC_BRIGHTNESS, value: electric ? ELECTRIC_KEY_BRIGHTNESS : 64 },
     ];
   };

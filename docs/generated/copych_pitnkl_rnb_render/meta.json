@@ -1,0 +1,78 @@
+{
+  "seedStr": "pitnkl",
+  "seed": 3306999508,
+  "style": "rnb",
+  "bpm": 102,
+  "durationTicks": 99840,
+  "seconds": 128.35295833333333,
+  "sampleRate": 24000,
+  "space": {
+    "id": "rnbPlateRoom",
+    "reverbTime": 0.52,
+    "reverbLevel": 0.36,
+    "predelayMs": 20,
+    "damping": 0.58,
+    "chorusLfoHz": 0.7,
+    "chorusDepth": 0.16,
+    "chorusBaseDelay": 8,
+    "delayMode": "dotted-eighth",
+    "delayFeedback": 0.1
+  },
+  "delaySeconds": 0.4411764705882353,
+  "renderMetrics": [
+    {
+      "name": "full",
+      "channel": null,
+      "peak": 0.09394411742687225,
+      "rms": 0.016099294101661495,
+      "peakDb": -20.542608185464772,
+      "rmsDb": -35.863863317218986,
+      "crestDb": 15.32125513175422
+    },
+    {
+      "name": "bass",
+      "channel": 3,
+      "peak": 0.014822517521679401,
+      "rms": 0.004139934336654943,
+      "peakDb": -36.58156055207464,
+      "rmsDb": -47.66013094306306,
+      "crestDb": 11.078570390988423
+    },
+    {
+      "name": "comp",
+      "channel": 2,
+      "peak": 0.0812530592083931,
+      "rms": 0.013904926240713152,
+      "peakDb": -21.803205573797094,
+      "rmsDb": -37.13662621055411,
+      "crestDb": 15.33342063675702
+    },
+    {
+      "name": "pad",
+      "channel": 4,
+      "peak": 0.006563290953636169,
+      "rms": 0.0009845791073586538,
+      "peakDb": -43.657566856937265,
+      "rmsDb": -60.13498768276472,
+      "crestDb": 16.477420825827448
+    },
+    {
+      "name": "drum",
+      "channel": 9,
+      "peak": 0.08110382407903671,
+      "rms": 0.005702169360875839,
+      "peakDb": -21.819173362812577,
+      "rmsDb": -44.87919775595903,
+      "crestDb": 23.06002439314645
+    },
+    {
+      "name": "lead",
+      "channel": 1,
+      "peak": 0.02704627439379692,
+      "rms": 0.004022769818054132,
+      "peakDb": -31.35785100423551,
+      "rmsDb": -47.9094963389248,
+      "crestDb": 16.551645334689283
+    }
+  ]
+}

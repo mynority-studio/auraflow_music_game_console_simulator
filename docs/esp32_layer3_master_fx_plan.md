@@ -4,31 +4,33 @@
 > **ESP32 / I2S / WAV capture 为最终事实**,不在浏览器"脑补验收"。本文件画清硬件验收地图,等 ESP32 真实输出再开工。
 > **不改 SF2 二进制 · 不改 firmware · 不声称硬件已完成。** ESP32 target = `copych/ESP32_SF2_Sampler_Synthesizer`(`SF2Sampler/`)。
 
-## 0. 两个模式(必须显式区分)
+## 0. 单一声音真源
 
-| 模式 | 角色 | 真源 |
-|---|---|---|
-| **Browser preview**(SpessaSynth) | 相对平衡参考(哪个轨太响/太干的相对判断) | ❌ **不是** FX 绝对湿度真源 |
-| **ESP32 render**(copych + I2S/WAV) | **最终湿度 + master 真源** | ✅ FX 行为、湿度、master peak 以此为准 |
+用户新拍板(2026-07-10):**只保留 Copych/ESP32 设备口径**。浏览器预览也走 Copych WASM + device_postchain，
+不再保留第二套参考混音模式。
 
-理由(B/C 验证已证,`docs/generated/mix_reverb_bc_verification_facts.md`):两 synth 的 send 组合数学**不同** ——
-copych = `zoneSend * channelSend`(乘法);SpessaSynth = SF2 default modulator(CC91 加性调制 reverbEffectsSend)。
-→ 同一 (SF2, CC91) 两边**绝对 wet 不同**,只相对平衡近似。**delay(CC95)浏览器 SpessaSynth 无 delay bus = inert**,只有 ESP32 可听。
+历史 B/C 验证(`docs/generated/mix_reverb_bc_verification_facts.md`)证明旧参考链路和 Copych 的 send 组合数学不同，
+所以后续验收统一看:
+
+```text
+AuraFlow MIDI/CC -> Copych synth+shared FX -> style master lift -> device_postchain -> output / ESP32 I2S
+```
 
 ## 1. copych synth 当前 FX routing(grounded,`SF2Sampler/`)
 
 ```text
 voice dry output (voice.cpp: volL/volR = volume_scaler * modVolume * modExpression * velocityVolume * panL/R)
   -> channel.dryL / dryR 累加(synth.cpp:renderLRBlock ~L426-493)
-  -> chorus send bus  (voice.chorusAmount = zone.chorusSend * channel.chorusSend, CC93)
-  -> delay  send bus  (channel.delaySend, CC95)
-  -> reverb send bus  (voice.reverbAmount = zone.reverbSend * channel.reverbSend, CC91)
+  -> chorus send bus  (voice.chorusAmount = zone.chorusSend * copych_safe_fx_send(ch,CC93), CC93)
+  -> delay  send bus  (channel.delaySend = copych_safe_fx_send(ch,CC95), CC95)
+  -> reverb send bus  (voice.reverbAmount = copych_safe_fx_send(ch,CC91), CC91; AuraFlow 口径不再乘 zone reverb)
   -> 各 global FX 处理(FxChorus / FxDelay / FxReverb,Freeverb-like)
   -> sum dry + FX returns -> outL/outR (synth.cpp ~L525-549)
-  -> I2S DAC(44100Hz stereo 16-bit PCM)
+  -> I2S DAC(24000Hz mono/dual-mono 16-bit PCM, matching the locked SF2 sample rate)
 ```
 
-**每-voice send = zone.send × channel.send(乘法)**。CC72(release)= `state.releaseModifier`(64-centered,knob_tbl[val]×4.8072,1.0@64)
+**当前 AuraFlow fork 的 CC91 已经在 `synth.cpp` 写透为通道 send 直值，并先经过 `copych_safe_fx_send`。** CC93 仍保留 zone chorusSend 乘法。
+CC72(release)= `state.releaseModifier`(64-centered,knob_tbl[val]×4.8072,1.0@64)
 → `ampEnv.setReleaseTime(zone.releaseTime * releaseModifier)`(乘 zone release)。
 
 ## 2. AuraFlow MIDI contract → copych CC 映射(全 case grounded)
@@ -40,9 +42,9 @@ voice dry output (voice.cpp: volL/volR = volume_scaler * modVolume * modExpressi
 | **CC11** | 表情 expression(静态/气声包络) | `case 11: Expression` → modExpression | wind/sax breath |
 | **CC64** | 延音踏板(comp harmonic-change) | `case 64: Sustain Pedal` → release sustained voices | **只 comp;lead 永不 blanket** |
 | **CC72** | release time(EP lead tail 主机制) | `case 72: Release time modifier(64-centered)` | 82>64 → 更长 release ring |
-| **CC91** | reverb send | `case 91: reverbSend = fval` | × zone.reverbSend |
-| **CC93** | chorus send | `case 93: chorusSend = fval` | × zone.chorusSend |
-| **CC95** | delay send(极克制:rnb/DX7 lead·lofi lead+comp) | `case 95: delaySend = fval` | 浏览器 inert,ESP32 可听 |
+| **CC91** | reverb send | `case 91: reverbSend = copych_safe_fx_send(...)` | AuraFlow 口径为通道 send 直写；pad/comp/lead/drum 有 safe scale |
+| **CC93** | chorus send | `case 93: chorusSend = copych_safe_fx_send(...)` | 仍 × zone.chorusSend |
+| **CC95** | delay send(极克制:rnb/DX7 lead·lofi lead+comp) | `case 95: delaySend = copych_safe_fx_send(...)` | Copych 真 FxDelay，comp/bass/pad/drum 关 delay |
 
 **AuraFlow 发的 8 个 CC copych 全支持。** 发射点 = `src/core/audio/musicalIrToMidi.ts::pushMixCC`(CC7/10/91/93/11/95)+ gestureExpression(CC72/64)。
 
@@ -67,8 +69,9 @@ ESP32 firmware 侧照此把每首歌的 song space 一次性 set 进 global FX(�
 
 ## 4. SF2 zoneSend × channelSend 补偿策略(方案,先不实现)
 
-**问题**(已证):Aura25_GM128.sf2 的 zone reverbSend 不一致(181 zones:30/31/39/50/70/300 + 28 absent;chorusSend 多数 absent + 125×8)。
-因 copych 乘法 `zone×channel`,同一 CC91 在不同 program 上产生**差 10× 的 reverb** = 隐藏 mix 行为。
+**历史问题**(已证):Aura25_GM128.sf2 的 zone reverbSend 不一致(181 zones:30/31/39/50/70/300 + 28 absent;chorusSend 多数 absent + 125×8)。
+旧 copych 乘法 `zone×channel` 会让同一 CC91 在不同 program 上产生**差 10× 的 reverb**。
+当前 AuraFlow fork 已在 CC91 路径绕开 zone reverbSend，剩余需要关注的是 CC93 chorus 的 zone 乘法和不同样本自身响度。
 
 **补偿方案(等 firmware ready 再实现 + 用真实 capture 校准)**:
 
@@ -83,7 +86,7 @@ effectiveSend = clamp(targetSend / normalizedZoneSend, 0.0, 1.0)
 - **不改 SF2 二进制**(拍板 C):补偿在 **code/firmware 侧**,SF2 保持原样。
 - REFERENCE_SEND + 每 program normalizedZoneSend 需从 SF2 实际 dump(§附录 A 已有分布)+ 真实 capture 双向校准。
 - 若某 program zone send = absent(0),copych 乘法 → 该 program **CC91 无效**(乘 0)。这些 program(28 zones)需 firmware 侧给一个 default zone send(如 70)或在补偿表里特判。**先记录,capture 时确认哪些 program 受影响。**
-- 浏览器侧**不做**此补偿(SpessaSynth 加性模型不同;浏览器只作相对参考)。
+- 浏览器 Copych 预览与 ESP32 共用同一补偿口径;不再维护第二套浏览器混音模型。
 
 ## 5. Master headroom / limiter / softclip 设计
 
@@ -105,7 +108,7 @@ MASTER_HEADROOM + softclip 曲线**必须经 §6 真实 capture 的 peak 测量�
 ```text
 1. firmware:接受 AuraFlow MIDI(CC7/10/11/64/72/91/93/95 + programChange + note)+ 每首 applySongSpace()。
 2. 固定 seed/style 生成 → 导出 AuraFlow MIDI(现有 musicalIrToMidi 产的事件序列)。
-3. ESP32 播放 → I2S 抓 WAV(或 SD/串口 dump PCM),44100/16-bit stereo。
+3. ESP32 播放 → I2S 抓 WAV(或 SD/串口 dump PCM),24000/16-bit stereo。
 4. 分析 WAV:
    - master peak(dBFS)—— 不得 clip(< 0 dBFS,留 headroom)。
    - 逐轨相对 wet(用单轨 solo capture 对照)。

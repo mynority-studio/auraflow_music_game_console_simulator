@@ -21,7 +21,7 @@ export interface RoleMix {
 
 export type SpaceProfile = 'popWarmRoom' | 'lofiTapeRoom' | 'rnbPlateRoom' | 'jazzClub' | 'dryFront' | 'syntheticSoftRoom';
 
-// ★ Layer 2(three-layer mix plan §2.1):完整 song space 契约 —— 器配层【唯一真源】,render 只消费,ESP32 消费全参数,浏览器只吃 reverb/chorus send。
+// ★ Layer 2(three-layer mix plan §2.1):完整 song space 契约 —— 器配层【唯一真源】,render 只消费,Copych 消费全参数。
 export interface SongSpaceProfile {
   id: SpaceProfile;
   reverbTime: number;   // 0..1 → ESP32 FxReverb::setTime
@@ -35,31 +35,39 @@ export interface SongSpaceProfile {
   delayFeedback: number;
 }
 
-// 每空间的 FX 参数(确定性)。★ ESP32 消费完整 FX 契约;浏览器 scheduler 将 CC95 预渲染为轻量 echo。
+// 每空间的 FX 参数(确定性)。★ Copych 消费完整 FX 契约;CC95 进入真 delay bus。
 const SONG_SPACE_PROFILES: Record<SpaceProfile, SongSpaceProfile> = {
-  popWarmRoom:      { id: 'popWarmRoom',      reverbTime: 0.52, reverbLevel: 0.40, predelayMs: 12, damping: 0.50, chorusLfoHz: 0.6, chorusDepth: 0.18, chorusBaseDelay: 8, delayMode: 'eighth',        delayFeedback: 0.12 },
-  lofiTapeRoom:     { id: 'lofiTapeRoom',     reverbTime: 0.46, reverbLevel: 0.35, predelayMs: 8,  damping: 0.62, chorusLfoHz: 0.4, chorusDepth: 0.22, chorusBaseDelay: 10, delayMode: 'eighth',        delayFeedback: 0.18 }, // dusty
-  rnbPlateRoom:     { id: 'rnbPlateRoom',     reverbTime: 0.60, reverbLevel: 0.45, predelayMs: 15, damping: 0.42, chorusLfoHz: 0.7, chorusDepth: 0.20, chorusBaseDelay: 8, delayMode: 'dotted-eighth',  delayFeedback: 0.16 },
-  jazzClub:         { id: 'jazzClub',         reverbTime: 0.40, reverbLevel: 0.30, predelayMs: 18, damping: 0.55, chorusLfoHz: 0.5, chorusDepth: 0.14, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
+  popWarmRoom:      { id: 'popWarmRoom',      reverbTime: 0.46, reverbLevel: 0.32, predelayMs: 16, damping: 0.58, chorusLfoHz: 0.6, chorusDepth: 0.15, chorusBaseDelay: 8, delayMode: 'eighth',        delayFeedback: 0.08 },
+  lofiTapeRoom:     { id: 'lofiTapeRoom',     reverbTime: 0.42, reverbLevel: 0.30, predelayMs: 10, damping: 0.66, chorusLfoHz: 0.4, chorusDepth: 0.18, chorusBaseDelay: 10, delayMode: 'eighth',        delayFeedback: 0.12 }, // dusty but controlled on Copych shared FX
+  rnbPlateRoom:     { id: 'rnbPlateRoom',     reverbTime: 0.52, reverbLevel: 0.36, predelayMs: 20, damping: 0.58, chorusLfoHz: 0.7, chorusDepth: 0.16, chorusBaseDelay: 8, delayMode: 'dotted-eighth',  delayFeedback: 0.10 },
+  jazzClub:         { id: 'jazzClub',         reverbTime: 0.38, reverbLevel: 0.26, predelayMs: 18, damping: 0.58, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'off',           delayFeedback: 0.0 },
   dryFront:         { id: 'dryFront',         reverbTime: 0.25, reverbLevel: 0.20, predelayMs: 5,  damping: 0.60, chorusLfoHz: 0.5, chorusDepth: 0.12, chorusBaseDelay: 8, delayMode: 'eighth',        delayFeedback: 0.10 },
   syntheticSoftRoom:{ id: 'syntheticSoftRoom',reverbTime: 0.55, reverbLevel: 0.42, predelayMs: 10, damping: 0.50, chorusLfoHz: 0.8, chorusDepth: 0.24, chorusBaseDelay: 10, delayMode: 'quarter',       delayFeedback: 0.14 },
 };
+
+export function isSpaceProfile(value: string | undefined): value is SpaceProfile {
+  return !!value && Object.prototype.hasOwnProperty.call(SONG_SPACE_PROFILES, value);
+}
+
+export function songSpaceProfileById(id: string | undefined): SongSpaceProfile | undefined {
+  return isSpaceProfile(id) ? SONG_SPACE_PROFILES[id] : undefined;
+}
 
 /** ★ 一首一个完整 song space(器配-owned 真源)。render 消费 reverb/chorus send;ESP32 消费全 FX 参数。 */
 export function songSpaceProfile(style: string, world: TimbreWorld | undefined, hasPad: boolean): SongSpaceProfile {
   return SONG_SPACE_PROFILES[pickSpaceProfile(style, world, hasPad)];
 }
 
-/** ★ Layer 2 delay 策略(拍板 D):CC95 send。GM5 CityPop/DX7 EP = lead/comp 都进轻量空间;其余仍克制。 */
+/** ★ Layer 2 delay 策略(拍板 D):CC95 send。GM5 键盘电钢槽位的尾音交给乐器 release + shared room,不再叠 delay。 */
 export function delaySendForRole(style: string, role: InstrumentRoleName, program: number): number {
   const s = style.toLowerCase();
   if (role === 'bass' || role === 'drum' || role === 'pad') return 0; // 拍板:bass/drum off · pad mostly off
   if (s === 'jazz' || s === 'blues' || s === 'acg') return 0; // club/cinematic piano 空间不走共享 echo,避免 comp/lead 尾巴糊成一团。
-  const isCityPopFmEp = program === 5;
-  const isEP = program === 4 || isCityPopFmEp; // GM4 Rhodes EP1 · GM5 DX7/FM EP2
+  const isElectricGrandSlot = program === 5;
+  const isEP = program === 4 || isElectricGrandSlot; // GM4 Rhodes EP1 · GM5 GU Electric Grand slot
   const isGuitar = program >= 24 && program <= 31;
-  if (role === 'comp' && isGuitar) return 0; // 吉他扫拨自身 already busy:不再进共享 delay,避免浏览器 echo + reverb 多重叠加。
-  if (isCityPopFmEp) return role === 'lead' ? 16 : 12; // SF2 已有内部宽化;外部 echo 只留空气,避免浏览器/ESP32 颗粒重复。
+  if (role === 'comp' && isGuitar) return 0; // 吉他扫拨自身 already busy:不再进共享 delay,避免 delay + reverb 多重叠加。
+  if (isElectricGrandSlot) return 0; // 键盘电钢槽位保干,避免尾巴在 delay/reverb 中堆噪。
   if (role === 'lead') {
     if (s === 'rnb' || isEP) return 26;  // rnb / 非 GM5 EP lead:dotted-eighth/eighth,very low
     if (s === 'lofi') return 22;         // lofi lead:dusty,very low
@@ -85,18 +93,18 @@ export function pickSpaceProfile(style: string, world: TimbreWorld | undefined, 
   return 'popWarmRoom';
 }
 
-// 空间对【comp/lead/pad】混响的整体缩放(bass/drum 不受房间影响,守干)。
+// 空间对【comp/lead/pad】混响的整体缩放。bass/drum 用低频专属小 room send,不随大房间放大。
 const SPACE_REVERB_SCALE: Record<SpaceProfile, number> = {
   popWarmRoom: 1.0, lofiTapeRoom: 0.9, rnbPlateRoom: 1.0, jazzClub: 0.72, dryFront: 0.62, syntheticSoftRoom: 1.05,
 };
 
 // 角色基底(directive 全局默认的代表值)。pan 由 pan 规则覆盖。
 const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
-  bass: { volume: 65, pan: 64, reverb: 4, chorus: 4 },
-  comp: { volume: 90, pan: 52, reverb: 40, chorus: 30 }, // comp 偏高=保"有效响度=CC7×velocity"(comp velocity 低)
-  lead: { volume: 82, pan: 64, reverb: 50, chorus: 20 },
-  pad: { volume: 76, pan: 88, reverb: 80, chorus: 70 },
-  drum: { volume: 100, pan: 64, reverb: 20, chorus: 0 },
+  bass: { volume: 72, pan: 64, reverb: 10, chorus: 3 },
+  comp: { volume: 92, pan: 52, reverb: 42, chorus: 30 }, // YD3411 中频优势:comp/lead 是房间前景,comp velocity 低用 CC7 补偿
+  lead: { volume: 84, pan: 64, reverb: 50, chorus: 20 },
+  pad: { volume: 66, pan: 88, reverb: 68, chorus: 46 },
+  drum: { volume: 86, pan: 64, reverb: 14, chorus: 0 },
 };
 
 // ★ melody-forward(2026-06-23,用户:走 A 整编里 motif/旋律声音小)。lead = 主奏,应明显坐在 comp/鼓之上,
@@ -106,23 +114,26 @@ const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
 const LEAD_PRESENCE_BOOST = 14;
 // ★ ACG 平衡(2026-06-28 用户:ACG lead eff≈9500 碾全队 eff≈3700 → 一轨很小声)。ACG=solo piano,
 //   RH 旋律不该碾 LH 伴奏。lead 减压(present 但不碾)+ comp 抬(高空气 comp 可听)。
-//   2026-07-09 SF2-aware 审计:当前 GM32 低频样本本身偏响,旧 bass +8 会让 ACG bass 占 54-63%。
-//   所以 LH 托底靠音区/velocity,CC7 反而轻压,避免播放时低频把整首吃掉。
-const ACG_LEAD_BOOST = -6;   // 83−6=77 · lead eff≈77×98=7546(仍最响=旋律在上,但不再 3×)
-const ACG_COMP_LIFT = 13;    // 85+13=98 · comp 高空气抬可听
-const ACG_BASS_LIFT = -12;   // 66−12=54 · 当前 SF2 低频样本已足,压住低频占比
+//   2026-07-10 小喇叭实听:drum 瞬态必须靠后,bass 需要可听主体但仍低于 comp/lead。
+//   ACG 不再额外硬抬 bass,只保留轻压,避免 LH 在小腔体里把钢琴主体吃掉。
+const ACG_LEAD_BOOST = -6;   // piano lead 88−6=82 · 旋律仍在,但不碾 LH/comp
+const ACG_COMP_LIFT = 13;    // piano comp 90+13=103→100 · comp 高空气抬可听
+const ACG_BASS_LIFT = -8;    // 72−8=64 · bass 可听,但仍不是主角
+const LOFI_BASS_LIFT = 8;    // lofi 的 EP/质感层会遮低频主体,只给 lofi bass 小幅前移
 
 // 程序专属覆盖(directive 各 GM 族代表值;只填该 program 在该 role 的 reverb/chorus/volume,pan 走规则)。
 //   key=program;值=Partial(只覆盖给定字段)。按 role 区分的取 role 维。
 type ProgOverride = Partial<Record<InstrumentRoleName, Partial<RoleMix>>>;
 const PROGRAM_MIX: Record<number, ProgOverride> = {
-  // Piano 0
-  0: { comp: { volume: 85, reverb: 40, chorus: 6 }, lead: { volume: 83, reverb: 47, chorus: 5 } },
-  // 电钢 5(POP/LOFI/RNB 最重要;CityPop/DX7 电钢):SF2 只保干净 24k HL4 FM EP 样本;空间/宽度交给共享 FX。
-  5: { comp: { volume: 78, reverb: 56, chorus: 52 }, lead: { volume: 70, reverb: 58, chorus: 50 } },
+  // Piano 0:YD3411 中频优势在钢琴主体区,大钢琴应是 comp/lead 前景核心。
+  0: { comp: { volume: 90, reverb: 44, chorus: 8 }, lead: { volume: 88, reverb: 50, chorus: 5 } },
+  // 电钢 4/5:不能靠混响假装尾音。空间收干,避免 FM/Rhodes 谐波尾巴压住大钢琴。
+  4: { comp: { volume: 72, reverb: 18, chorus: 12 }, lead: { volume: 66, reverb: 22, chorus: 14 } },
+  // 电钢 5(POP/LOFI/RNB 最重要;GU Electric Grand):SF2 保干净 24k CP-80 样本;大钢琴层用 Aura25 自有 GM0,不重复打包。
+  5: { comp: { volume: 70, reverb: 12, chorus: 6 }, lead: { volume: 62, reverb: 16, chorus: 8 } },
   6: { comp: { volume: 80, reverb: 29, chorus: 4 }, lead: { volume: 80, reverb: 29, chorus: 4 } }, // 羽管键琴:干、保 attack
   8: { comp: { volume: 80, reverb: 40, chorus: 6 }, lead: { volume: 80, reverb: 45, chorus: 5 } }, // Celesta(归键盘,按钢琴系)
-  11: { lead: { volume: 79, reverb: 58, chorus: 32 } }, // 颤音琴:金属延音吃空间
+  11: { lead: { volume: 73, reverb: 34, chorus: 0 } }, // 颤音琴:高区金属峰明显,少进空间,靠干净 attack 而不是拖尾
   12: { lead: { volume: 81, reverb: 41, chorus: 7 } },  // 马林巴:保木质 attack
   108: { lead: { volume: 81, reverb: 41, chorus: 7 } }, // 卡林巴
   107: { lead: { volume: 80, reverb: 44, chorus: 10 } }, // 古筝(拨弦,略带空间)
@@ -135,23 +146,22 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   67: { lead: { volume: 80, reverb: 58, chorus: 0 } },
   75: { lead: { volume: 80, reverb: 50, chorus: 12 } }, 77: { lead: { volume: 80, reverb: 48, chorus: 10 } },
   // 贝斯
-  32: { bass: { volume: 66, reverb: 5, chorus: 2 } }, 33: { bass: { volume: 66, reverb: 5, chorus: 2 } },
-  35: { bass: { volume: 66, reverb: 5, chorus: 7 } }, // 无品:chorus 可到 8
-  36: { bass: { volume: 64, reverb: 4, chorus: 2 } }, 37: { bass: { volume: 64, reverb: 4, chorus: 2 } },
-  38: { bass: { volume: 62, reverb: 2, chorus: 7 } }, // synth bass:很干
+  32: { bass: { volume: 74, reverb: 10, chorus: 2 } }, 33: { bass: { volume: 74, reverb: 10, chorus: 2 } },
+  35: { bass: { volume: 73, reverb: 10, chorus: 4 } }, // 无品:保留一点宽度,避免 chorus 让低频发虚
+  36: { bass: { volume: 72, reverb: 9, chorus: 2 } }, 37: { bass: { volume: 72, reverb: 9, chorus: 2 } },
+  38: { bass: { volume: 72, reverb: 8, chorus: 3 } }, // synth bass:提高主体,少 chorus 保持小喇叭低频清晰
   // 暖 pad
-  88: { pad: { volume: 77, reverb: 84, chorus: 79 } }, 89: { pad: { volume: 77, reverb: 84, chorus: 79 } },
-  90: { pad: { volume: 77, reverb: 84, chorus: 79 } }, 94: { pad: { volume: 77, reverb: 84, chorus: 79 } }, 95: { pad: { volume: 77, reverb: 84, chorus: 79 } },
+  88: { pad: { volume: 64, reverb: 68, chorus: 52 } }, 89: { pad: { volume: 64, reverb: 68, chorus: 52 } },
+  90: { pad: { volume: 64, reverb: 68, chorus: 52 } }, 94: { pad: { volume: 64, reverb: 68, chorus: 52 } }, 95: { pad: { volume: 64, reverb: 68, chorus: 52 } },
   // FX pad(空气层,音量低)
-  99: { pad: { volume: 64, reverb: 92, chorus: 82 } },
-  100: { pad: { volume: 64, reverb: 92, chorus: 82 } }, 102: { pad: { volume: 64, reverb: 92, chorus: 82 } },
+  99: { pad: { volume: 58, reverb: 76, chorus: 56 } },
+  100: { pad: { volume: 58, reverb: 76, chorus: 56 } }, 102: { pad: { volume: 58, reverb: 76, chorus: 56 } },
   // 合奏弦 pad
-  48: { pad: { volume: 74, reverb: 78, chorus: 60 } }, 49: { pad: { volume: 74, reverb: 78, chorus: 60 } }, 50: { pad: { volume: 74, reverb: 80, chorus: 66 } },
+  48: { pad: { volume: 64, reverb: 66, chorus: 42 } }, 49: { pad: { volume: 64, reverb: 66, chorus: 42 } }, 50: { pad: { volume: 64, reverb: 68, chorus: 46 } },
 };
 
 const isFxPad = (p: number) => p === 98 || p === 99 || p === 100 || p === 102;
 const isWarmPad = (p: number) => p === 88 || p === 89 || p === 90 || p === 94 || p === 95;
-const isElectricPiano = (p: number) => p === 4 || p === 5; // GM4 Rhodes EP1 · GM5 DX7 EP2(都需 chorus)
 const isMalletProgram = (p: number) => p === 11 || p === 12 || p === 107 || p === 108;
 
 /**
@@ -176,29 +186,34 @@ export function mixForProgram(args: {
   else if (role === 'comp') base.pan = hasPad ? 52 : 60;
   else if (role === 'pad') base.pan = 88;
 
-  // 空间:只缩 comp/lead/pad 的混响(bass/drum 守干)。
+  // 空间:只缩 comp/lead/pad 的混响。bass/drum 走低频专属 back-row send,不随大房间无限放大。
   if (role === 'comp' || role === 'lead' || role === 'pad') base.reverb = base.reverb * SPACE_REVERB_SCALE[space];
 
   // 角色护栏(directive guardrails,单角色部分)。
-  if (role === 'bass') base.reverb = Math.min(base.reverb, 8);
+  if (role === 'bass') base.reverb = Math.min(base.reverb, 12);
   if (role === 'drum') base.chorus = 0;
   if (role === 'comp' || role === 'lead') {
-    if (isElectricPiano(program)) base.chorus = Math.max(base.chorus, 38); // 电钢必有 chorus
+    if (program === 4) {
+      base.reverb = Math.min(base.reverb, role === 'lead' ? 22 : 18);
+      base.chorus = role === 'lead' ? 14 : 12;
+    }
     if (program === 5) {
-      base.reverb = Math.max(base.reverb, role === 'lead' ? 56 : 54);
-      base.chorus = role === 'lead' ? 50 : 52;
+      base.reverb = Math.min(base.reverb, role === 'lead' ? 16 : 12);
+      base.chorus = role === 'lead' ? 8 : 6;
     }
   }
   if (isMalletProgram(program)) base.chorus = 0; // mallet 音准优先:不加 chorus 调制,避免听成微跑音。
   if (program === 7) base.reverb = Math.min(base.reverb, 30); // Clav:干、保 attack(同 harpsichord 6)
-  if (role === 'pad' && isFxPad(program)) { base.volume = Math.min(base.volume, 72); base.reverb = Math.max(base.reverb, 84); }
+  if (role === 'pad' && isFxPad(program)) { base.volume = Math.min(base.volume, 60); base.reverb = Math.max(base.reverb, 72); }
 
   // ★ melody-forward:lead 抬 CC7 让旋律明显在场(放最后 → 覆盖所有 program 基底 + 覆盖值)。clampCC 兜 127。
   //   ★ ACG 例外:solo piano 的 lead 减压 + comp/bass 抬(见 ACG_* 常量),让 RH 不碾 LH(有效响度均衡)。
   const isAcg = args.style.toLowerCase() === 'acg';
+  const isLofi = args.style.toLowerCase() === 'lofi';
   if (role === 'lead') base.volume = base.volume + (isAcg ? ACG_LEAD_BOOST : LEAD_PRESENCE_BOOST);
   if (isAcg && role === 'comp') base.volume = base.volume + ACG_COMP_LIFT;
   if (isAcg && role === 'bass') base.volume = base.volume + ACG_BASS_LIFT;
+  if (isLofi && role === 'bass') base.volume = base.volume + LOFI_BASS_LIFT;
 
   // ★ Layer 2:delay(CC95)send —— 极克制策略(拍板 D)。0 时省略(不发 CC95)。reverb/chorus 值不变(保浏览器平衡)。
   const delay = delaySendForRole(args.style, role, program);
@@ -206,7 +221,7 @@ export function mixForProgram(args: {
 }
 
 /**
- * 关系型护栏(需全角色集):pad.reverb ≥ comp.reverb+20 · pad.volume ≤ comp.volume(除非 pad 是唯一和声)·
+ * 关系型护栏(需全角色集):pad.reverb ≥ comp.reverb+20 · pad.volume ≤ comp.volume−10(除非 pad 是唯一和声)·
  *   |comp.pan − pad.pan| ≥ 22。原地不可变:返回调整后的新 mix 集合。
  */
 export function enforceRelationalMix(
@@ -219,8 +234,8 @@ export function enforceRelationalMix(
   const padOut = { ...pad };
   // pad 比 comp 至少湿 20
   padOut.reverb = clampCC(Math.max(padOut.reverb, comp.reverb + 20));
-  // pad 不比 comp 响(除非 pad 是唯一和声支撑)
-  if (!opts.padIsOnlyHarmony) padOut.volume = clampCC(Math.min(padOut.volume, comp.volume));
+  // pad 是背景空气层:非唯一和声时至少比 comp 低一档,避免持续音遮住鼓/钢琴瞬态。
+  if (!opts.padIsOnlyHarmony) padOut.volume = clampCC(Math.min(padOut.volume, comp.volume - 10));
   // comp/pad 声像距离 ≥ 22(comp 已偏左~52,pad 推到右)
   if (Math.abs(comp.pan - padOut.pan) < 22) padOut.pan = clampCC(comp.pan + 36);
   out.pad = padOut;

@@ -1,4 +1,4 @@
-import { spessaSynth, subscribeSynthReset } from '../core/audio/SynthManager';
+import { activeSynth, subscribeSynthReset } from '../core/audio/SynthManager';
 
 // ==========================================
 // SYSTEM MENU EXCLUSIVE AUDIO ENGINE
@@ -36,29 +36,29 @@ function durationToSeconds(dur: string | number): number {
 
 let isInitialized = false;
 
-// M1 批2（计划修订6）：synth 实例重建（backend/bank 切换）→ 通道初始化状态失效，
+// M1 批2（计划修订6）：synth 实例重建（bank/采样率切换）→ 通道初始化状态失效，
 // 复位让下次 initSystemAudio 对新实例重发 program/CC。
 subscribeSynthReset(() => { isInitialized = false; });
 
 function initSystemAudio() {
-    if (!spessaSynth || isInitialized) return;
+    if (!activeSynth || isInitialized) return;
     
     // Setup Lead Synth on Channel 15
-    spessaSynth.programChange(LEAD_CHANNEL, 11); // Vibraphone (ethereal)
-    spessaSynth.controllerChange(LEAD_CHANNEL, 7, 100); // Volume
-    spessaSynth.controllerChange(LEAD_CHANNEL, 91, 127); // Reverb max
-    spessaSynth.controllerChange(LEAD_CHANNEL, 93, 64); // Chorus
+    activeSynth.programChange(LEAD_CHANNEL, 11); // Vibraphone (ethereal)
+    activeSynth.controllerChange(LEAD_CHANNEL, 7, 100); // Volume
+    activeSynth.controllerChange(LEAD_CHANNEL, 91, 127); // Reverb max
+    activeSynth.controllerChange(LEAD_CHANNEL, 93, 64); // Chorus
     
     // Setup Drums on Channel 9
-    spessaSynth.controllerChange(DRUM_CHANNEL, 7, 100); // Volume
-    spessaSynth.controllerChange(DRUM_CHANNEL, 91, 64); // Reverb
+    activeSynth.controllerChange(DRUM_CHANNEL, 7, 100); // Volume
+    activeSynth.controllerChange(DRUM_CHANNEL, 91, 64); // Reverb
     
     isInitialized = true;
 }
 
 export const systemLeadSynth = {
     triggerAttackRelease: (notes: string | number | (string | number)[], duration: string | number, timeDelaySeconds: number = 0, velocity: number = 0.5) => {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         initSystemAudio();
         
         const noteArray = Array.isArray(notes) ? notes : [notes];
@@ -68,10 +68,10 @@ export const systemLeadSynth = {
         setTimeout(() => {
             noteArray.forEach(note => {
                 const midiNote = noteToMidi(note);
-                if (spessaSynth) {
-                    spessaSynth.noteOn(LEAD_CHANNEL, midiNote, velMidi);
+                if (activeSynth) {
+                    activeSynth.noteOn(LEAD_CHANNEL, midiNote, velMidi);
                     setTimeout(() => {
-                        if (spessaSynth) spessaSynth.noteOff(LEAD_CHANNEL, midiNote);
+                        if (activeSynth) activeSynth.noteOff(LEAD_CHANNEL, midiNote);
                     }, durSecs * 1000);
                 }
             });
@@ -81,57 +81,57 @@ export const systemLeadSynth = {
 
 export const systemAudio = {
     triggerKick: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (spessaSynth) {
-                spessaSynth.noteOn(DRUM_CHANNEL, 36, velMidi); // Bass Drum 1
-                setTimeout(() => { if (spessaSynth) spessaSynth.noteOff(DRUM_CHANNEL, 36); }, 100);
+            if (activeSynth) {
+                activeSynth.noteOn(DRUM_CHANNEL, 36, velMidi); // Bass Drum 1
+                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 36); }, 100);
             }
         }, timeDelaySeconds * 1000);
     },
     triggerSnare: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (spessaSynth) {
-                spessaSynth.noteOn(DRUM_CHANNEL, 38, velMidi); // Acoustic Snare
-                setTimeout(() => { if (spessaSynth) spessaSynth.noteOff(DRUM_CHANNEL, 38); }, 100);
+            if (activeSynth) {
+                activeSynth.noteOn(DRUM_CHANNEL, 38, velMidi); // Acoustic Snare
+                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 38); }, 100);
             }
         }, timeDelaySeconds * 1000);
     },
     triggerHiHat: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (spessaSynth) {
-                spessaSynth.noteOn(DRUM_CHANNEL, 42, velMidi); // Closed Hi-Hat
-                setTimeout(() => { if (spessaSynth) spessaSynth.noteOff(DRUM_CHANNEL, 42); }, 100);
+            if (activeSynth) {
+                activeSynth.noteOn(DRUM_CHANNEL, 42, velMidi); // Closed Hi-Hat
+                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 42); }, 100);
             }
         }, timeDelaySeconds * 1000);
     },
     triggerTom: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (spessaSynth) {
-                spessaSynth.noteOn(DRUM_CHANNEL, 45, velMidi); // Low Tom
-                setTimeout(() => { if (spessaSynth) spessaSynth.noteOff(DRUM_CHANNEL, 45); }, 100);
+            if (activeSynth) {
+                activeSynth.noteOn(DRUM_CHANNEL, 45, velMidi); // Low Tom
+                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 45); }, 100);
             }
         }, timeDelaySeconds * 1000);
     },
     triggerCrash: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (spessaSynth) {
-                spessaSynth.noteOn(DRUM_CHANNEL, 49, velMidi); // Crash Cymbal 1
-                setTimeout(() => { if (spessaSynth) spessaSynth.noteOff(DRUM_CHANNEL, 49); }, 100);
+            if (activeSynth) {
+                activeSynth.noteOn(DRUM_CHANNEL, 49, velMidi); // Crash Cymbal 1
+                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 49); }, 100);
             }
         }, timeDelaySeconds * 1000);
     }

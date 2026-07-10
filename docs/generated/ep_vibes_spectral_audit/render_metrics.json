@@ -1,0 +1,56 @@
+[
+  {
+    "name": "fm_ep_c4_release68",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/fm_ep_c4_release68.wav",
+    "seconds": 2.25,
+    "peak": 0.012167813256382942,
+    "onRms": 0.004748034815123517,
+    "tailRms": 0,
+    "tailToOnDb": -193.53027789728918
+  },
+  {
+    "name": "fm_ep_c4_connected_to_next",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/fm_ep_c4_connected_to_next.wav",
+    "seconds": 2.25,
+    "peak": 0.025501444935798645,
+    "onRms": 0.007909718517534668,
+    "tailRms": 0.003612589201369772,
+    "tailToOnDb": -6.806848981862441
+  },
+  {
+    "name": "vibes_72",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/vibes_72.wav",
+    "seconds": 2.25,
+    "peak": 0.021036682650446892,
+    "onRms": 0.005948510440472565,
+    "tailRms": 0.0004171680502673786,
+    "tailToOnDb": -23.081943751441784
+  },
+  {
+    "name": "vibes_84",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/vibes_84.wav",
+    "seconds": 2.25,
+    "peak": 0.016830768436193466,
+    "onRms": 0.008731655463267244,
+    "tailRms": 0.0006127020407674286,
+    "tailToOnDb": -23.076945266075874
+  },
+  {
+    "name": "vibes_89",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/vibes_89.wav",
+    "seconds": 2.25,
+    "peak": 0.016835616901516914,
+    "onRms": 0.008709311108676749,
+    "tailRms": 0.0006113794700737276,
+    "tailToOnDb": -23.073459052074497
+  },
+  {
+    "name": "vibes_96",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/vibes_96.wav",
+    "seconds": 2.25,
+    "peak": 0.016009368002414703,
+    "onRms": 0.0060525965535548456,
+    "tailRms": 0.00042415599926135515,
+    "tailToOnDb": -23.088322224463464
+  }
+]

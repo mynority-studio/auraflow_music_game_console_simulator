@@ -14,6 +14,7 @@ import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { compPattern } from '../knowledge/grooves';
 import { gmName } from '../knowledge/instruments';
+import { aura25DrumKitName } from '../../../sound/Aura25Palette';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { renderSongFull } from '../render/renderCoordinator';
@@ -46,7 +47,7 @@ function spanLabel(span: { roman: RomanChord; quality: string; chordType?: strin
 }
 
 const roleGmName = (role: string, program: number | undefined): string =>
-  role === 'drum' ? '标准鼓组' : gmName(program ?? 0);
+  role === 'drum' ? aura25DrumKitName(program) : gmName(program ?? 0);
 
 export interface TraceSection {
   id: string;

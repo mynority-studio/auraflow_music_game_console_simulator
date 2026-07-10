@@ -26,6 +26,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    "components/synth/auraflow_synth/build-host",
     "scripts/legacy-diagnostics"
   ]
 }

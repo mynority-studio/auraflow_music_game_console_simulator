@@ -1,7 +1,7 @@
 /**
  * AudioEngine — 音频引擎单例(Q+N 主链路)
  *
- * App 层与音频后端的总入口:
+ * App 层与 Copych 音频系统的总入口:
  *   ① 正式播放:playMusicGeneration(result) —— MusicalIR → musicalIrToMidi → globalMidiScheduler(+ 视觉事件驱动 LedMatrix)
  *   ② 当前状态:getCurrentMusicGeneration()(唯一真源,UI 读 uiSnapshot)+ getCurrentBeat/Tick/Bpm/Ppq
  *   ③ MIDI 通道工具:muteChannel / setPartMute(Q+N PartName→channel)/ injectMidiEvent / get|replaceChannelEvents
@@ -13,24 +13,22 @@
 
 import { VisualEvent, PartName } from './playbackTypes';
 import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
-import { musicalIRToMidiEvents, roomWetFor } from './musicalIrToMidi';
+import { musicalIRToMidiEvents } from './musicalIrToMidi';
 import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
 import type { MusicGenerationResult } from '../generation/musicGeneration/types';
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
-// M1 批2：copych 后端——CC95 直通判据 + per-song 空间参数（SONG_SPACE_PROFILES 同源镜像设备 AR_CMD_SONG_*）
-import { getSynthBackend, isCopychBackend, type SynthBackendKind } from './synthBackend';
 import { COPYCH_FX_BOOT, CopychSynthFacade } from './copych/CopychSynthFacade';
-import { songSpaceProfile } from '../generation/newEngine/knowledge/gmMixProfile';
+import { songSpaceProfile, songSpaceProfileById } from '../generation/newEngine/knowledge/gmMixProfile';
+import type { TimbreWorld } from '../generation/newEngine/knowledge/instruments';
 import {
-    spessaSynth,
-    isSpessaSynthReady,
+    activeSynth,
+    isSynthReady,
     getAudioContext,
     startAudioContext,
     SOUND_FONT_BANKS,
     getSelectedSoundFontBank,
     getLoadedSoundFontBank,
     setSelectedSoundFontBank,
-    setSynthBackendKind,
     setAudioSampleRate as setAudioSampleRateInternal,
     setChannelMode as setChannelModeInternal,
     setPlaybackMasterStyle,
@@ -45,8 +43,8 @@ import {
 } from './audioOutputPrefs';
 
 export {
-    spessaSynth,
-    isSpessaSynthReady,
+    activeSynth,
+    isSynthReady,
     getAudioContext,
     startAudioContext,
     SOUND_FONT_BANKS,
@@ -54,20 +52,18 @@ export {
     getLoadedSoundFontBank,
     subscribeSoundFontBank,
     setPlaybackMasterStyle,
-    getSynthBackend,
     getSampleRatePref,
     getChannelModePref,
     SAMPLE_RATE_OPTIONS,
     setCopychDevicePostChain,
 };
-export type { SoundFontBank, SoundFontBankId, SynthBackendKind, SampleRatePref, ChannelModePref };
+export type { SoundFontBank, SoundFontBankId, SampleRatePref, ChannelModePref };
 
 // ★ Q+N 角色 → LedMatrix VisualEvent 类型(qn_main_engine_takeover §5.3)。pad 暂归 accomp(无专属 atmosphere 视觉)。
 const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
     lead: 'melody', comp: 'accomp', bass: 'bass', drum: 'drums', pad: 'accomp',
 };
 const ROLE_CHANNEL_VIS: Record<string, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
-const CC_DELAY_SEND = 95;
 
 // delayMode → 拍数（镜像设备 ne_song_space_delay 换算：seconds = beats × 60 / bpm）
 const DELAY_MODE_BEATS: Record<string, number> = {
@@ -111,19 +107,19 @@ class AudioEngineSystem {
         if (currentSession !== this.playSessionId) return;
         setPlaybackMasterStyle(result.styleHint);
 
-        const events = musicalIRToMidiEvents(result.ir, roomWetFor(result.styleHint));
+        const events = musicalIRToMidiEvents(result.ir);
         const visuals = this.buildVisualEvents(result.ir);
         globalMidiScheduler.stop();
 
-        // M1 批2：copych 后端 per-song 空间参数（reverb/chorus/delay，镜像设备 AR_CMD_SONG_*；
-        // spessa 路径无此概念——房间感靠 CC91 send + echo 预渲染，零改动）。
-        // 口径：world=undefined（TimbreWorld 未随 result 携带，syntheticSoft 判定缺失=POC 已知偏差）；
-        // hasPad 由 IR pad 轨在场推导（与器配 songSpaceProfile 输入一致）。
-        if (isCopychBackend() && spessaSynth instanceof CopychSynthFacade) {
+        // Copych per-song 空间参数（reverb/chorus/delay，镜像设备 AR_CMD_SONG_*）。
+        // 优先消费器配层已选的 uiSnapshot.spaceProfile，避免 playback 重新推导导致
+        // syntheticSoft 等世界在 Copych 真 FX 参数上分叉。fallback 只服务旧/外部 result。
+        if (activeSynth instanceof CopychSynthFacade) {
             const hasPad = result.ir.tracks.some(t => t.role === 'pad' && t.notes.length > 0);
-            const p = songSpaceProfile(result.styleHint, undefined, hasPad);
+            const p = songSpaceProfileById(result.uiSnapshot.spaceProfile)
+                ?? songSpaceProfile(result.styleHint, result.uiSnapshot.world as TimbreWorld | undefined, hasPad);
             const beats = DELAY_MODE_BEATS[p.delayMode] ?? 0;
-            spessaSynth.setSongSpace({
+            activeSynth.setSongSpace({
                 reverb: { time: p.reverbTime, level: p.reverbLevel, predelayMs: p.predelayMs, damping: p.damping },
                 // 单位镜像固件 adapter：depth/100→秒、baseDelay ms→秒
                 chorus: { lfoHz: p.chorusLfoHz, depthS: p.chorusDepth / 100, baseDelayS: p.chorusBaseDelay / 1000 },
@@ -138,7 +134,7 @@ class AudioEngineSystem {
     }
 
     /** 上传 MIDI 播放（上传播放批）：smfParser 产出的 MidiEvent[]（PPQ480 已重标定）直喂
-     *  调度器，走与生成曲完全相同的播放/后端路径（copych 含设备后链可开）。
+     *  调度器，走与生成曲完全相同的 Copych 播放路径（含设备后链）。
      *  外部文件无 per-song 空间参数 → copych 显式回 boot 基线（防上一首的 per-song
      *  reverb/delay 残留串进上传曲；delay 关）。无 LED visual（无 role 语义）。 */
     public async playUploadedMidi(events: MidiEvent[], bpm: number): Promise<void> {
@@ -148,8 +144,8 @@ class AudioEngineSystem {
         if (currentSession !== this.playSessionId) return;
         setPlaybackMasterStyle(undefined);
         globalMidiScheduler.stop();
-        if (isCopychBackend() && spessaSynth instanceof CopychSynthFacade) {
-            spessaSynth.setSongSpace(COPYCH_FX_BOOT);
+        if (activeSynth instanceof CopychSynthFacade) {
+            activeSynth.setSongSpace(COPYCH_FX_BOOT);
         }
         globalMidiScheduler.loadTrack(events, bpm);
         globalMidiScheduler.start();
@@ -181,14 +177,6 @@ class AudioEngineSystem {
         this.playSessionId++;
         this.stop();
         await setSelectedSoundFontBank(id);
-    }
-
-    /** 切换合成后端（顶部导航合成器菜单）。先停播放——loadTrack 的 echo 展开随后端变，
-     *  在播曲目不可热迁移；切完重新点播即用新后端。forceReload=失败回滚用（强制重建）。 */
-    public async setSynthBackend(kind: SynthBackendKind, forceReload = false): Promise<void> {
-        this.playSessionId++;
-        this.stop();
-        await setSynthBackendKind(kind, forceReload);
     }
 
     /** 切输出采样率偏好（关旧 ctx 建新 + 重建合成器）。先停播放（跨 ctx 时间线不可迁移）。 */
@@ -271,36 +259,34 @@ class AudioEngineSystem {
         this.noteOnAt(channel, note, velocity, getAudioContext().currentTime);
     }
     public noteOnAt(channel: number, note: number, velocity: number = 100, audioTime: number = getAudioContext().currentTime): void {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
         const midi = Math.max(0, Math.min(127, Math.round(note)));
         const vel = Math.max(0, Math.min(127, Math.round(velocity)));
-        try { spessaSynth.noteOn(ch, midi, vel, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
-        catch { try { spessaSynth.noteOn(ch, midi, vel); } catch { /* ignore */ } }
+        try { activeSynth.noteOn(ch, midi, vel, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
+        catch { try { activeSynth.noteOn(ch, midi, vel); } catch { /* ignore */ } }
     }
     public noteOff(channel: number, note: number): void {
         this.noteOffAt(channel, note, getAudioContext().currentTime);
     }
     public noteOffAt(channel: number, note: number, audioTime: number = getAudioContext().currentTime): void {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
         const midi = Math.max(0, Math.min(127, Math.round(note)));
-        try { spessaSynth.noteOff(ch, midi, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
-        catch { try { spessaSynth.noteOff(ch, midi); } catch { /* ignore */ } }
+        try { activeSynth.noteOff(ch, midi, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
+        catch { try { activeSynth.noteOff(ch, midi); } catch { /* ignore */ } }
     }
     public programChange(channel: number, program: number): void {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
-        try { spessaSynth.programChange(ch, mapMidiProgramToAura25(program, ch)); }
+        try { activeSynth.programChange(ch, mapMidiProgramToAura25(program, ch)); }
         catch { /* ignore */ }
     }
     public controllerChange(channel: number, controller: number, value: number): void {
-        if (!spessaSynth) return;
+        if (!activeSynth) return;
         const cc = Math.round(controller);
-        // CC95：spessa 吞（echo 预渲染已代偿）；copych 直通真 FxDelay（计划修订1）
-        if (cc === CC_DELAY_SEND && !isCopychBackend()) return;
         try {
-            (spessaSynth as any).controllerChange?.(
+            (activeSynth as any).controllerChange?.(
                 Math.round(channel),
                 cc,
                 Math.max(0, Math.min(127, Math.round(value))),

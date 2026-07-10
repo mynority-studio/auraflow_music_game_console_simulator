@@ -77,6 +77,7 @@ export interface UiGestureExpression {
 export interface UiPlayer {
   role: QnRole;
   program: number;            // Q+N 器配层实际选中的 GM program(只读显示)
+  bank?: number;              // 可选 SF2 bank(发声层;例如 bank8 的 Chorused FM EP)
   instrumentName: string;     // 该 program 的乐器名(只读)
   family: string;
   state: BandParticipantState; // auto / selected / disabled(来自 participant)
@@ -84,7 +85,7 @@ export interface UiPlayer {
   autoFilled?: boolean;       // ★ §4.4:用户选择未覆盖 → Q+N 自动补位(UI 标明)
   gesture?: UiGestureExpression; // ★ 器配层下发的演奏手势/表情计划(只读审计)
 }
-export interface UiTrack { role: QnRole; channel: number; program: number; instrumentName: string; noteCount: number; }
+export interface UiTrack { role: QnRole; channel: number; program: number; bank?: number; instrumentName: string; noteCount: number; }
 
 export interface UiGrooveContract {
   id: string;

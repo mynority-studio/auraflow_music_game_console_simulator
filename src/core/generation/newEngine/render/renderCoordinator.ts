@@ -48,6 +48,7 @@ import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 import { fitMidiToProgramRange } from '../knowledge/instruments';
 import { evaluateNoteInChordContext } from '../knowledge/melodyChordSemantics';
+import { generatedAura25BankForProgram } from '../../../sound/Aura25Palette';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -665,22 +666,31 @@ export function renderSongFull(
     // ★ program + 混音【单遍】投影(段边界):程序变 → 必带 CC 刷新(directive:每个 programChange 边界发匹配 CC);
     //   或混音本身变(关系型护栏 per-section 差异)→ 也刷新。二者同 tick 耦合 → irToMidi 只读 IR。
     let initialProgram = fallback;
+    let initialBank = 0;
     let initialMix: TrackMix | undefined;
     let prevProgram: number | undefined;
+    let prevBank: number | undefined;
     let prevMix: RoleMix | undefined;
-    const programChanges: { atTick: Ticks; program: number }[] = [];
+    const programChanges: { atTick: Ticks; program: number; bank?: number }[] = [];
     const mixChanges: { atTick: Ticks; mix: TrackMix }[] = [];
     for (const { id, tick } of sectionTicks) {
       const prog = bySection?.[id] ?? fallback;
+      const bank = generatedAura25BankForProgram(band.style, t.role, prog);
       const m = mixBySection?.[id];
       if (prevProgram === undefined) {
         initialProgram = prog; prevProgram = prog;
+        initialBank = bank; prevBank = bank;
         initialMix = m; prevMix = m;
         continue;
       }
       const progChanged = prog !== prevProgram;
+      const bankChanged = bank !== prevBank;
       const mixChanged = !!m && (!prevMix || !sameMix(m, prevMix));
-      if (progChanged) { programChanges.push({ atTick: ticks(tick), program: prog }); prevProgram = prog; }
+      if (progChanged || bankChanged) {
+        programChanges.push({ atTick: ticks(tick), program: prog, bank: bankChanged || bank !== 0 ? bank : undefined });
+        prevProgram = prog;
+        prevBank = bank;
+      }
       if (m && (progChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
     }
     const programForSection = (sectionId: string) => bySection?.[sectionId] ?? fallback;
@@ -727,6 +737,7 @@ export function renderSongFull(
       ...t,
       notes: quoteRestored.notes,
       program: initialProgram,
+      bank: initialBank,
       programChanges: programChanges.length ? programChanges : undefined,
       pedalEvents,
       mix: initialMix,

@@ -12,7 +12,7 @@ import type {
   MusicGenerationUiSnapshot, UiSection, UiChord, UiPlayer, UiTrack, QnRole, BandParticipantSelection, BandParticipantState, UiGrooveContract, UiGestureExpression,
 } from './types';
 import { participantForRole } from './participantConstraint';
-import { mapProgramToAura25 } from '../../sound/Aura25Palette';
+import { aura25DrumKitName, aura25InstrumentName, mapProgramToAura25 } from '../../sound/Aura25Palette';
 
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const ROLE_CHANNEL: Record<QnRole, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
@@ -31,7 +31,7 @@ export function keyToPc(key: string): number {
 
 // GM 128 标准乐器名(UI roster/palette 用)。
 const GM_NAMES = [
-  'Acoustic Grand', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Rhodes EP', 'CityPop FM EP', 'Harpsichord', 'Clavinet',
+  'Acoustic Grand', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Rhodes EP', 'GU Electric Grand', 'Harpsichord', 'Clavinet',
   'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer',
   'Drawbar Organ', 'Perc Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion',
   'Nylon Guitar', '民谣木吉他', 'Jazz Guitar', 'Clean Guitar', 'Muted Guitar', 'Overdrive Guitar', 'Distortion Guitar', 'Guitar Harmonics',
@@ -146,33 +146,42 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
 
   // roster(乐手 = instrumentation.roleProgram 的角色;音色只读取自【最终 IR program】)。
   // ★ program 取【最终 IR 实际 program】(器配层选中,只读),回退 roleProgram。Band Selection 不再写 program。
-  const irProgramByRole = new Map<string, number>();
-  for (const t of ir?.tracks ?? []) if (t.program !== undefined) irProgramByRole.set(t.role, t.program);
+  const irVoiceByRole = new Map<string, { program: number; bank?: number }>();
+  for (const t of ir?.tracks ?? []) {
+    if (t.program !== undefined) irVoiceByRole.set(t.role, { program: t.program, bank: t.bank });
+  }
   const autoFilled = new Set<string>((band.autoFilledRoles ?? []).map(String));
   // participant 是否明确 selected(白名单态)→ roster state 标 selected;否则 auto。
   const selectedParticipant = new Set((participants ?? []).filter((p) => p.state === 'selected').map((p) => p.role));
   const roster: UiPlayer[] = ROLE_ORDER
     .filter((role) => instrumentation.roleProgram[role] !== undefined)
     .map((role) => {
-      const program = mapProgramToAura25(irProgramByRole.get(role) ?? instrumentation.roleProgram[role], role, band.style);
+      const voice = irVoiceByRole.get(role);
+      const program = mapProgramToAura25(voice?.program ?? instrumentation.roleProgram[role], role, band.style);
+      const bank = voice?.bank;
       const participant = participantForRole(role, participants);
       const isAutoFilled = autoFilled.has(role);
       const state: BandParticipantState = isAutoFilled ? 'auto' : (participant && selectedParticipant.has(participant)) ? 'selected' : 'auto';
-      // ★ P2:drum 走 ch9 打击,program=0 不是 Acoustic Grand → 显示成 Drum Kit(别用 melodic GM 表翻译)。
+      // ★ P2:drum 走 ch9 打击,program=0/8/16... 不是旋律 GM 表,显示 Aura25 真实鼓组名。
       const isDrum = role === 'drum';
-      const instrumentName = isDrum ? 'Drum Kit' : gmName(program);
+      const instrumentName = aura25InstrumentName(bank, program, role) ?? (isDrum ? aura25DrumKitName(program) : gmName(program));
       const family = isDrum ? 'percussion' : gmFamily(program);
-      return { role, program, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined, gesture: uiGesture(instrumentation.gestureExpressionByRole[role]) };
+      return { role, program, bank: bank || undefined, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined, gesture: uiGesture(instrumentation.gestureExpressionByRole[role]) };
     });
 
   // tracks(实际 IR 轨 → channel/noteCount;给 Jam/可视化)
-  const tracks: UiTrack[] = (ir?.tracks ?? []).map((t) => ({
-    role: t.role as QnRole,
-    channel: ROLE_CHANNEL[t.role as QnRole] ?? 0,
-    program: mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style),
-    instrumentName: t.role === 'drum' ? 'Drum Kit' : gmName(mapProgramToAura25(t.program ?? instrumentation.roleProgram[t.role as QnRole] ?? 0, t.role as QnRole, band.style)),
-    noteCount: t.notes.length,
-  }));
+  const tracks: UiTrack[] = (ir?.tracks ?? []).map((t) => {
+    const role = t.role as QnRole;
+    const program = mapProgramToAura25(t.program ?? instrumentation.roleProgram[role] ?? 0, role, band.style);
+    return {
+      role,
+      channel: ROLE_CHANNEL[role] ?? 0,
+      program,
+      bank: t.bank || undefined,
+      instrumentName: aura25InstrumentName(t.bank, program, role) ?? (role === 'drum' ? aura25DrumKitName(program) : gmName(program)),
+      noteCount: t.notes.length,
+    };
+  });
 
   const tonality = band.tonalityKind === 'modal' && band.modalModeName ? String(band.modalModeName) : String(band.mode);
   const grooveContract = uiGrooveContract(arrangement.songGrooveContract);
