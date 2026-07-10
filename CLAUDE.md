@@ -20,6 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > 跑 `components/synth/auraflow_synth/ports/wasm/build.sh`
 > 重建 → 拷贝 `copych_synth.mjs` 到 `public/copych/` →
 > 更新 PROVENANCE.md → 在 submodule 内 commit 源码改动并更新父仓 submodule 指针（勿只 commit 产物）。
+> 若要改合成器源码，必须先在 `components/synth/auraflow_synth` 内从最新 `origin/main`
+> 开 `codex/...` 新分支；禁止在 detached HEAD 上直接写。
 > ⚠️ 别忘了同一份核也编进设备固件——核改动默认双端生效，设备侧影响要一并评估
 > （host/node 冒烟与 FNV 基线在 submodule README）。
 
