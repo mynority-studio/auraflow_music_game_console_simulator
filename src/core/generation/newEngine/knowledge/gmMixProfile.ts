@@ -50,6 +50,13 @@ export function songSpaceProfile(style: string, world: TimbreWorld | undefined, 
   return SONG_SPACE_PROFILES[pickSpaceProfile(style, world, hasPad)];
 }
 
+/** ★ 按器配层已定的 SpaceProfile id 直取完整 song space。器配层(instrumentalPlanner)已用
+ *  lineup-based hasPad 算定 spaceProfile 并 golden 锁=设备 out->space;下游(copych FX 下发)直取，
+ *  避免用 IR-based hasPad 重推导(IR≠器配/设备 lineup 判据，会偏离设备空间)。 */
+export function songSpaceProfileById(id: SpaceProfile): SongSpaceProfile {
+  return SONG_SPACE_PROFILES[id];
+}
+
 /** ★ Layer 2 delay 策略(拍板 D):CC95 send。GM5 CityPop/DX7 EP = lead/comp 都进轻量空间;其余仍克制。 */
 export function delaySendForRole(style: string, role: InstrumentRoleName, program: number): number {
   const s = style.toLowerCase();

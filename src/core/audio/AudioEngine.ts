@@ -20,7 +20,7 @@ import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
 // M1 批2：copych 后端——CC95 直通判据 + per-song 空间参数（SONG_SPACE_PROFILES 同源镜像设备 AR_CMD_SONG_*）
 import { getSynthBackend, isCopychBackend, type SynthBackendKind } from './synthBackend';
 import { COPYCH_FX_BOOT, CopychSynthFacade } from './copych/CopychSynthFacade';
-import { songSpaceProfile } from '../generation/newEngine/knowledge/gmMixProfile';
+import { songSpaceProfileById } from '../generation/newEngine/knowledge/gmMixProfile';
 import {
     spessaSynth,
     isSpessaSynthReady,
@@ -117,11 +117,11 @@ class AudioEngineSystem {
 
         // M1 批2：copych 后端 per-song 空间参数（reverb/chorus/delay，镜像设备 AR_CMD_SONG_*；
         // spessa 路径无此概念——房间感靠 CC91 send + echo 预渲染，零改动）。
-        // 口径：world=undefined（TimbreWorld 未随 result 携带，syntheticSoft 判定缺失=POC 已知偏差）；
-        // hasPad 由 IR pad 轨在场推导（与器配 songSpaceProfile 输入一致）。
+        // 口径：直取器配层已定的 spaceProfile（instrumentalPlanner 用 lineup-based hasPad + style +
+        // timbreWorld 一次算定，与设备 out->space golden 锁同源）→ 免在此用 IR-based hasPad 重推导
+        // （IR pad 轨在场≠器配/设备 lineup 判据，lineup 含 pad 但轨空时会偏离设备空间）。
         if (isCopychBackend() && spessaSynth instanceof CopychSynthFacade) {
-            const hasPad = result.ir.tracks.some(t => t.role === 'pad' && t.notes.length > 0);
-            const p = songSpaceProfile(result.styleHint, undefined, hasPad);
+            const p = songSpaceProfileById(result.spaceProfile ?? 'popWarmRoom'); // 成功例必有；failed 例已被上方 ir==null 早退挡掉
             const beats = DELAY_MODE_BEATS[p.delayMode] ?? 0;
             spessaSynth.setSongSpace({
                 reverb: { time: p.reverbTime, level: p.reverbLevel, predelayMs: p.predelayMs, damping: p.damping },

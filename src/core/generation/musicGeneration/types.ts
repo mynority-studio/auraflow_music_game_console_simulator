@@ -9,6 +9,7 @@
 // ============================================================
 
 import type { MusicalIR } from '../newEngine/ir/MusicalIR';
+import type { SpaceProfile } from '../newEngine/knowledge/gmMixProfile';
 
 /** Q+N 5 角色(内部 lineup/IR 轨标识;旧 Vocal 暂禁)。 */
 export type QnRole = 'lead' | 'comp' | 'bass' | 'drum' | 'pad';
@@ -122,4 +123,7 @@ export interface MusicGenerationResult {
   report?: unknown;
   attempts?: number;
   uiSnapshot: MusicGenerationUiSnapshot;
+  /** 器配层已定的 song space(instrumentalPlanner 用 lineup-based hasPad + style + timbreWorld 一次算定，
+   *  golden 锁=设备 out->space)。copych FX 空间下发直取它，免 AudioEngine 用 IR-based hasPad 重推导偏离设备。 */
+  spaceProfile?: SpaceProfile;
 }
