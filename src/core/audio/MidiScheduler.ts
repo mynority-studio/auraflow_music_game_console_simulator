@@ -18,6 +18,8 @@
 import type { TempoCurve } from '../generation/types';
 import { spessaSynth } from './SynthManager';
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
+// M1 批2（计划修订1/2）：CC95 三入口分流 + panic 分支的单一后端判据
+import { isCopychBackend } from './synthBackend';
 
 export interface MidiEvent {
     ticks: number;
@@ -127,8 +129,12 @@ function buildDelayEchoEvents(events: MidiEvent[]): MidiEvent[] {
     return echoes;
 }
 
-function normalizeAndExpandEvents(events: MidiEvent[]): MidiEvent[] {
+/* M1 批2（计划修订1，codex 精化）：copych 后端只跳过 echo 展开——normalize+sort 必须
+ * 保留（loadTrack 收到的 [...events, ...visuals] 不保证全局有序）。
+ * spessa：normalize + echo 展开 + sort（现状）；copych：normalize + sort（CC95 直通真 FxDelay）。 */
+function normalizeAndExpandEvents(events: MidiEvent[], expandEcho: boolean): MidiEvent[] {
     const normalized = events.map(normalizeMidiEvent).sort(compareMidiEvents);
+    if (!expandEcho) return normalized;
     const echoes = buildDelayEchoEvents(normalized);
     return normalized.concat(echoes).sort(compareMidiEvents);
 }
@@ -163,8 +169,9 @@ export class MidiScheduler {
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
         // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次。
-        // 浏览器 synth 不一定消费 CC95;这里把 CC95 预渲染成轻量 echo note,ESP32 仍可直接吃原 CC95。
-        this.events = normalizeAndExpandEvents(events);
+        // spessa 不消费 CC95 → 预渲染轻量 echo note；copych 有真 FxDelay → 跳过展开（CC95 直通），
+        // 防双重延迟（M1 批2，计划修订1）。
+        this.events = normalizeAndExpandEvents(events, !isCopychBackend());
         this.currentBpm = bpm;
         this.currentTick = 0;
         this.nextEventIdx = 0;
@@ -207,12 +214,21 @@ export class MidiScheduler {
     }
 
     public panic(): void {
-        // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音
+        // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音。
+        // listeners 通知两后端一致（视觉/记录层不感知后端）。
         const synth = spessaSynth;
         for (let ch = 0; ch < 16; ch++) {
             const ev: MidiEvent = { ticks: this.currentTick, type: 'cc', channel: ch, data1: 123, data2: 0 };
             this.notifyMidiEventListeners(ev);
-            if (!synth) continue;
+        }
+        if (!synth) return;
+        if (isCopychBackend()) {
+            // copych：CC123 遇 sustain 跳杀（allNotesOff 语义）→ 走 facade 硬合同
+            // （processor 清 pending 队列 + C 层 CC64=0→soundOff→delay resetLine，计划修订2）
+            try { (synth as any).panic?.(); } catch { /* ignore */ }
+            return;
+        }
+        for (let ch = 0; ch < 16; ch++) {
             try { synth.controllerChange(ch, 123, 0); } catch { /* ignore */ }
         }
     }
@@ -277,7 +293,8 @@ export class MidiScheduler {
             else if (ev.type === 'noteOff') synth.noteOff(ev.channel, ev.data1);
             else if (ev.type === 'programChange') synth.programChange(ev.channel, mapMidiProgramToAura25(ev.data1, ev.channel));
             else if (ev.type === 'cc') {
-                if (ev.data1 === CC_DELAY_SEND) return;
+                // CC95 delay send：spessa 吞（echo 已预渲染）；copych 直通真 FxDelay（计划修订1）
+                if (ev.data1 === CC_DELAY_SEND && !isCopychBackend()) return;
                 // controllerChange API exists on BasicSynthesizer
                 (synth as any).controllerChange?.(ev.channel, ev.data1, ev.data2);
             } else if (ev.type === 'pitchBend') {

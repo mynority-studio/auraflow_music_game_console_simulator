@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// 本文件断言 spessa 路径行为（CC95→echo 展开等）。2026-07-09 起默认后端=copych，
+// 显式钉 spessa 防环境默认漂移；copych 路径行为见 copychBackend.test.ts。
+vi.mock('./synthBackend', () => ({
+    getSynthBackend: () => 'spessa' as const,
+    isCopychBackend: () => false,
+}));
 
 import { MidiScheduler, type MidiEvent } from './MidiScheduler';
 

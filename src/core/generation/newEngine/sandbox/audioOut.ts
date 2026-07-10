@@ -7,7 +7,7 @@
 // ============================================================
 
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
-import { startAudioContext, getAudioContext, spessaSynth, setSandboxAuditionMaster } from '../../../audio/SynthManager';
+import { startAudioContext, getAudioContext, spessaSynth, setSandboxAuditionMaster, subscribeSynthReset } from '../../../audio/SynthManager';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -50,6 +50,9 @@ export function getIsPlaying(): boolean {
 // 用一条专用通道(不与曲子 5 轨抢),按下 noteOn、松开 noteOff;失败(synth 未就绪)静默降级。
 const AUDITION_CHANNEL = 15;
 let auditionProgram = -1;
+
+// M1 批2（计划修订6）：synth 实例重建 → 试听音色缓存失效（新实例需重发 program/CC）。
+subscribeSynthReset(() => { auditionProgram = -1; });
 
 /** 试听单音 on:【同步】发声(无 await → noteOn 直接在 MIDI 事件里送进 worklet,延迟最低)。
  *  未就绪则后台启动音频(这一下可能没声,下一下就有);音只在按住时响,松手即停。 */

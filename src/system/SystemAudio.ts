@@ -1,4 +1,4 @@
-import { spessaSynth } from '../core/audio/SynthManager';
+import { spessaSynth, subscribeSynthReset } from '../core/audio/SynthManager';
 
 // ==========================================
 // SYSTEM MENU EXCLUSIVE AUDIO ENGINE
@@ -35,6 +35,10 @@ function durationToSeconds(dur: string | number): number {
 }
 
 let isInitialized = false;
+
+// M1 批2（计划修订6）：synth 实例重建（backend/bank 切换）→ 通道初始化状态失效，
+// 复位让下次 initSystemAudio 对新实例重发 program/CC。
+subscribeSynthReset(() => { isInitialized = false; });
 
 function initSystemAudio() {
     if (!spessaSynth || isInitialized) return;
