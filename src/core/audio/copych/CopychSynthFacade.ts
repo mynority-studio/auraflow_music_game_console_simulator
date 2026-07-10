@@ -143,6 +143,7 @@ export class CopychSynthFacade implements SynthLike {
                     this.node.port.removeEventListener('message', onMsg);
                     this._ready = true;
                     _fxState = COPYCH_FX_BOOT;   // synth 重建 → FX 回 boot 默认
+                    notifyFxState();             // 顶栏 FX 显示同步复位（否则停在上一首参数至下次 setSongSpace）
                     _pcState = { ...POSTCHAIN_BOOT, srOk: this.ctxSampleRate === 24000 };
                     _pcMeters = null;
                     notifyPostChain();
