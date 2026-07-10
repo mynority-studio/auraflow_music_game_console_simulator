@@ -9,27 +9,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `SynthManager.loadSelectedSynth` copych 分支 → `src/core/audio/copych/CopychSynthFacade.ts`
 > → `public/copych/copych_processor.js`（AudioWorklet）→ `public/copych/copych_synth.mjs`（WASM）。
 >
-> **合成器源码可改**：引擎 C++ 源在固件主仓 checkout 的
-> `../components/synth/auraflow_synth/`（本仓是其 submodule，路径相对本仓根）——
-> 在 simulator 语境下修改合成器代码是**允许且正确的路径**（那里是唯一真源）；
+> **合成器源码可改**：引擎 C++ 源在本仓 git submodule
+> `components/synth/auraflow_synth/`（路径相对本仓根）——
+> 在 simulator 语境下修改合成器代码是**允许且正确的路径**；禁止再引用
+> `../` 外部 checkout。首次 clone 后先跑
+> `git submodule update --init --recursive components/synth/auraflow_synth`。
 > 约束只落在下面的 vendored 产物纪律上。改核标准流程：改
-> `../components/synth/auraflow_synth/src/synth/` 或 `ports/wasm/` → 跑
-> `ports/wasm/build.sh` 重建 → 拷贝 `copych_synth.mjs` 到 `public/copych/` →
-> 更新 PROVENANCE.md → 在 auraflow_synth 仓 commit 源码改动（勿只 commit 产物）。
+> `components/synth/auraflow_synth/src/synth/`
+> 或 `components/synth/auraflow_synth/ports/wasm/` →
+> 跑 `components/synth/auraflow_synth/ports/wasm/build.sh`
+> 重建 → 拷贝 `copych_synth.mjs` 到 `public/copych/` →
+> 更新 PROVENANCE.md → 在 submodule 内 commit 源码改动并更新父仓 submodule 指针（勿只 commit 产物）。
 > ⚠️ 别忘了同一份核也编进设备固件——核改动默认双端生效，设备侧影响要一并评估
-> （host/node 冒烟与 FNV 基线在 auraflow_synth 仓，见其 README）。
+> （host/node 冒烟与 FNV 基线在 submodule README）。
 
 1. **`public/copych/copych_synth.mjs` 是 vendored 构建产物**（emscripten SINGLE_FILE，
    wasm 二进制 base64 内嵌）——**禁止手改**（改引擎请改上述源码后重建）。唯一重生成
-   途径：auraflow_synth 仓 `ports/wasm/build.sh`（emcc 版本口径见 PROVENANCE）构建 →
+   途径：本仓 submodule `components/synth/auraflow_synth/ports/wasm/build.sh`（emcc 版本口径见 PROVENANCE）构建 →
    拷贝至此 → **同步更新 `public/copych/PROVENANCE.md`**（源 commit + sha256）。实测
    sha256 与 PROVENANCE 记录不一致 = 违规状态，先修账再动别的。
-2. **emcc 版本升级** → auraflow_synth 仓 `ports/wasm/node_smoke.mjs` 的 FNV 渲染基线
+2. **emcc 版本升级** → submodule `components/synth/auraflow_synth/ports/wasm/node_smoke.mjs` 的 FNV 渲染基线
    必须重锁（不同编译器浮点代码生成不同），PROVENANCE 同步记录新口径。
 3. **`public/copych/copych_processor.js` 是纯 JS AudioWorklet processor**（public 原样
    服务，不走 TS/vite 打包管线——与 spessasynth min.js 同款资产方式）。其 port 消息协议
    （init/ev/panic/space）与 `CopychSynthFacade.ts` 是一对合同——改任一侧必须同步另一侧。
-4. **C ABI 变更**（auraflow_synth 仓 `ports/wasm/copych_wasm.cpp` 的 `copych_wasm_*`
+4. **C ABI 变更**（submodule `components/synth/auraflow_synth/ports/wasm/copych_wasm.cpp` 的 `copych_wasm_*`
    exports）→ 三处联动：processor 调用点 + facade + 重建并重 vendor 产物（规则 1 流程）。
 5. **后端判据单一入口** = `src/core/audio/synthBackend.ts` 的 `isCopychBackend()`：
    CC95 三入口分流（`MidiScheduler.loadTrack` echo 展开 / `MidiScheduler.dispatchEvent` /
@@ -53,7 +57,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    spessa 的听感差距（mono 无声场、精简 FX、标定差）是记录在案的预期，不是要修的 bug；
    任何"让 copych 更好听"的改动必须先回设备侧对齐口径，不得 web 侧单方面调。
 8. **许可**：copych 产物按 GPL-3.0-only 分发（含上游 copych MIT 部分），权威文本见
-   auraflow_synth 仓 LICENSE/NOTICE；PROVENANCE.md 中的许可行不得删除。
+   submodule `components/synth/auraflow_synth/LICENSE` / `NOTICE`；PROVENANCE.md 中的许可行不得删除。
 9. **设备后链镜像（听感排查批2，2026-07-10）**：`public/copych/device_postchain.mjs` =
    固件输出后链（增益×4.28 → backend soft/hard clip → mono 折叠 → 6 段 EQ → 终级饱和 →
    16bit）的逐语义复刻，**参数与固件同源**——EQ 24k 系数锚主仓
