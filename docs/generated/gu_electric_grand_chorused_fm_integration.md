@@ -21,8 +21,9 @@ Date: 2026-07-10
 | --- | --- | ---: | ---: | --- |
 | `0:5` | `GU Electric Grand` | 8 | `0.317MB` | reverb `0`, chorus `0` |
 | `8:5` | `GU Chorused FM EP` | 7 | `0.221MB` | reverb `0`, chorus capped at `80` |
+| `0:25` | `Folk_Guitar` | 8 shared with `0:24` | `0.016MB` | reverb `16`, chorus `8` |
 
-The full runtime SF2 is `1.64MB` and all sample headers report `24000 Hz`.
+The full runtime SF2 is `1,380,342` bytes (`1.316 MiB`) and all sample headers report `24000 Hz`.
 
 ## v4.4 Slimming Pass
 
@@ -31,6 +32,7 @@ The full runtime SF2 is `1.64MB` and all sample headers report `24000 Hz`.
 - Kept only `public/Aura25_GM128.sf2` as the Aura25 delivery file; `AURA25_SF2_URL` now points to it directly.
 - Audited the `0:5 GU Electric Grand` CP-80 sample payload: 8 samples, `332,568` referenced bytes, all `24000 Hz`.
 - Exact and near-zero leading/trailing silence in those 8 CP-80 samples is `0` frames. Further PCM trimming would cut looped musical material, so no destructive trim was applied.
+- v4.4 1.4 MB pass: rebuilt `0:25 Folk_Guitar` to keep its GM slot/name while reusing the clean lightweight `0:24 Nylon Guitar` sample set. This removes the old 10-sample Steel Guitar payload and keeps the final runtime SF2 below the strict `1,400,000` byte target.
 
 ## Notes
 

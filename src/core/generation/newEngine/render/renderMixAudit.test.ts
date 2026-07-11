@@ -37,6 +37,7 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     expect(HARDWARE_SPEAKER_PROFILE.mixBandsHz.lowCutProtection).toBe(75);
     expect(HARDWARE_SPEAKER_PROFILE.guardrails.bassReverbCcMax).toBe(12);
     expect(HARDWARE_SPEAKER_PROFILE.guardrails.drumReverbCcMax).toBe(18);
+    expect(HARDWARE_SPEAKER_PROFILE.guardrails.roomDrumReverbCcMax).toBe(30);
     expect(HARDWARE_SPEAKER_PROFILE.guardrails.drumTransientCcMax).toBe(90);
     expect(HARDWARE_SPEAKER_PROFILE.guardrails.bassSustainedBusShareMinDefault).toBe(0.12);
   });
@@ -180,6 +181,18 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     ];
     const report = auditRenderedMix(tracks, ctx('pop', 1920));
     expect(report.findings.some((f) => f.code === 'speaker.drumReverbTooWet' && f.role === 'drum')).toBe(true);
+  });
+
+  it('Room 鼓组允许试听一致的 CC91=30,但更湿仍会报警', () => {
+    const base: TrackIR = {
+      role: 'drum',
+      program: 8,
+      mix: { volume: 86, pan: 64, reverb: 30, chorus: 0 },
+      notes: [{ pitch: midi(36), startTick: ticks(0), durationTicks: ticks(120), velocity: 118 }],
+    };
+    expect(auditRenderedMix([base], ctx('pop', 1920)).findings.some((f) => f.code === 'speaker.drumReverbTooWet')).toBe(false);
+    const tooWet = auditRenderedMix([{ ...base, mix: { ...base.mix!, reverb: 36 } }], ctx('pop', 1920));
+    expect(tooWet.findings.some((f) => f.code === 'speaker.drumReverbTooWet' && f.role === 'drum')).toBe(true);
   });
 
   it('小喇叭 guardrail 会抓出鼓瞬态过前和 bass 被埋', () => {

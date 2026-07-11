@@ -21,7 +21,7 @@ External basis:
 - Apple Digital Masters: leave at least 1 dB headroom to avoid oversampling/AAC clipping.
 
 Hardware speaker target: YD3411-H-YC16-8B, 34x11x4mm, 4ohm, 2W RMS, F0 630Hz in 4cc box.
-Speaker mix guardrails: kick/body 100-400Hz, mid body 630-2000Hz, presence attack 2000-4000Hz, harshness control 5000-10000Hz; drum reverb CC <= 18, drum transient CC <= 90.
+Speaker mix guardrails: kick/body 100-400Hz, mid body 630-2000Hz, presence attack 2000-4000Hz, harshness control 5000-10000Hz; drum reverb CC <= 18, Room kit reverb CC <= 30, drum transient CC <= 90.
 
 | Style | Seed | Status | Est. LUFS | Playback LUFS | Target | Delta | Master Lift | Recommended | Wet Energy | Copych Drive Proxy dBFS | Tracks | Diagnosis | Findings |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|

@@ -132,7 +132,11 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   // 电钢 5(POP/LOFI/RNB 最重要;GU Electric Grand):SF2 保干净 24k CP-80 样本;大钢琴层用 Aura25 自有 GM0,不重复打包。
   5: { comp: { volume: 70, reverb: 12, chorus: 6 }, lead: { volume: 62, reverb: 16, chorus: 8 } },
   6: { comp: { volume: 80, reverb: 29, chorus: 4 }, lead: { volume: 80, reverb: 29, chorus: 4 } }, // 羽管键琴:干、保 attack
-  8: { comp: { volume: 80, reverb: 40, chorus: 6 }, lead: { volume: 80, reverb: 45, chorus: 5 } }, // Celesta(归键盘,按钢琴系)
+  8: {
+    comp: { volume: 80, reverb: 40, chorus: 6 },
+    lead: { volume: 80, reverb: 45, chorus: 5 },
+    drum: { reverb: 30 },
+  }, // Celesta(旋律按钢琴系) / bank128 Room 鼓组:对齐试听的 kick room send
   11: { lead: { volume: 73, reverb: 34, chorus: 0 } }, // 颤音琴:高区金属峰明显,少进空间,靠干净 attack 而不是拖尾
   12: { lead: { volume: 81, reverb: 41, chorus: 7 } },  // 马林巴:保木质 attack
   108: { lead: { volume: 81, reverb: 41, chorus: 7 } }, // 卡林巴

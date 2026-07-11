@@ -79,6 +79,12 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(drum.chorus).toBe(0);
   });
 
+  it('Room 鼓组对齐试听 room send:保留 kick 空间,但不影响 808/Brush', () => {
+    expect(mk('drum', 8)).toMatchObject({ volume: 86, reverb: 30, chorus: 0 });
+    expect(mk('drum', 25)).toMatchObject({ volume: 86, reverb: 14, chorus: 0 });
+    expect(mk('drum', 40)).toMatchObject({ volume: 86, reverb: 14, chorus: 0 });
+  });
+
   it('FX pad 98/99/100/102:volume ≤ 60 且 reverb 保留空气层但不再淹没总线', () => {
     for (const sp of ['popWarmRoom', 'lofiTapeRoom', 'rnbPlateRoom', 'jazzClub', 'dryFront', 'syntheticSoftRoom'] as SpaceProfile[]) {
       for (const p of [98, 99, 100, 102]) {

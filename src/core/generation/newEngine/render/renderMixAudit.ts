@@ -91,6 +91,7 @@ export const HARDWARE_SPEAKER_PROFILE = {
   guardrails: {
     bassReverbCcMax: 12,
     drumReverbCcMax: 18,
+    roomDrumReverbCcMax: 30,
     drumTransientCcMax: 90,
     padSustainedBusShareMax: 0.16,
     padCopychReverbBusShareMax: 0.28,
@@ -453,7 +454,10 @@ export function auditRenderedMix(tracks: readonly TrackIR[], ctx: MixAuditContex
   if (lead && comp && (lead.busShare + comp.busShare) < speakerGuard.foregroundBusShareMin) findings.push({ severity: 'warning', code: 'mix.foregroundTooSmall', detail: `lead+comp bus share ${((lead.busShare + comp.busShare) * 100).toFixed(1)}% should stay >= ${(speakerGuard.foregroundBusShareMin * 100).toFixed(0)}% on the mid-forward YD3411 target` });
   if (bass && bass.reverb > speakerGuard.bassReverbCcMax) findings.push({ severity: 'warning', code: 'space.bassTooWet', role: 'bass', detail: `bass reverb ${bass.reverb} should stay <= ${speakerGuard.bassReverbCcMax} for low-end headroom` });
   if (drum && drum.chorus !== 0) findings.push({ severity: 'warning', code: 'space.drumChorus', role: 'drum', detail: `drum chorus ${drum.chorus} should stay 0 on ESP32` });
-  if (drum && drum.noteCount > 0 && drum.reverb > speakerGuard.drumReverbCcMax) findings.push({ severity: 'warning', code: 'speaker.drumReverbTooWet', role: 'drum', detail: `drum reverb ${drum.reverb} should stay <= ${speakerGuard.drumReverbCcMax} for ${HARDWARE_SPEAKER_PROFILE.model} transient clarity` });
+  if (drum && drum.noteCount > 0) {
+    const drumReverbMax = drum.program === 8 ? speakerGuard.roomDrumReverbCcMax : speakerGuard.drumReverbCcMax;
+    if (drum.reverb > drumReverbMax) findings.push({ severity: 'warning', code: 'speaker.drumReverbTooWet', role: 'drum', detail: `drum reverb ${drum.reverb} should stay <= ${drumReverbMax} for ${HARDWARE_SPEAKER_PROFILE.model} transient clarity` });
+  }
   if (drum && drum.noteCount > 0 && drum.maxVolume > speakerGuard.drumTransientCcMax) findings.push({ severity: 'warning', code: 'speaker.drumTransientTooForward', role: 'drum', detail: `drum max CC7 ${drum.maxVolume} should stay <= ${speakerGuard.drumTransientCcMax}; short hits read louder than their sustained bus share on ${HARDWARE_SPEAKER_PROFILE.model}` });
   if (pad && comp && pad.reverb < comp.reverb + 20) findings.push({ severity: 'warning', code: 'space.padBehindComp', role: 'pad', detail: `pad reverb ${pad.reverb} should be at least comp+20 (${comp.reverb + 20})` });
   if (pad && comp && Math.abs(pad.pan - comp.pan) < 22) findings.push({ severity: 'warning', code: 'space.compPadWidth', role: 'pad', detail: `comp/pad pan separation ${Math.abs(pad.pan - comp.pan)} is too narrow` });

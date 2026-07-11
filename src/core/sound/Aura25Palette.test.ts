@@ -447,8 +447,8 @@ describe('Aura25Palette', () => {
 
   it('labels audition presets with their referenced sample footprint', () => {
     const byPreset = new Map(AURA25_AUDITION_INSTRUMENTS.map((inst) => [`${inst.bank}:${inst.program}`, inst]));
-    expect(statSync('public/Aura25_GM128.sf2').size).toBeLessThanOrEqual(1.7 * 1024 * 1024);
-    expect(byPreset.get('0:25')).toMatchObject({ name: '民谣木吉他', sampleSizeBytes: 341680, sampleSizeLabel: '0.326MB' });
+    expect(statSync('public/Aura25_GM128.sf2').size).toBeLessThanOrEqual(1_400_000);
+    expect(byPreset.get('0:25')).toMatchObject({ name: '民谣木吉他', sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' });
     expect(byPreset.get('128:8')).toMatchObject({ name: 'Room 鼓组', sampleSizeBytes: 284048, sampleSizeLabel: '0.271MB' });
     expect(byPreset.get('0:5')).toMatchObject({ name: 'GU Electric Grand', sampleSizeBytes: 332568, sampleSizeLabel: '0.317MB' });
     expect(byPreset.get('8:5')).toMatchObject({ name: 'GU Chorused FM EP', sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' });
@@ -491,7 +491,7 @@ describe('Aura25Palette', () => {
     expect(ranges.some(([low, high]) => low <= 57 && high >= 72), `${path} GM67 top zone`).toBe(true);
   });
 
-  it('bakes Aura25 sample header pitch roots/corrections for Vibraphone and Folk Guitar compatibility', () => {
+  it('bakes Aura25 sample header pitch roots/corrections for Vibraphone and guitar compatibility', () => {
     const samples = sf2SampleHeaders('public/Aura25_GM128.sf2');
     for (const sample of samples.filter((s) => s.name !== 'EOS')) expect(sample.sampleRate, `${sample.name} sample rate`).toBe(24000);
     const byName = new Map(samples.map((sample) => [sample.name, sample]));
@@ -500,16 +500,14 @@ describe('Aura25Palette', () => {
     expect(byName.get('VIBE_76A')).toMatchObject({ originalPitch: 76, pitchCorrection: 6, sampleRate: 24000 });
     expect(byName.get('VIBE_88A')).toMatchObject({ originalPitch: 88, pitchCorrection: 14, sampleRate: 24000 });
     expect(byName.get('VIBE_A0A')).toMatchObject({ originalPitch: 100, pitchCorrection: 14, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-E3')).toMatchObject({ originalPitch: 40, pitchCorrection: -5, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-A3')).toMatchObject({ originalPitch: 45, pitchCorrection: 1, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-D4')).toMatchObject({ originalPitch: 50, pitchCorrection: 0, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-G4')).toMatchObject({ originalPitch: 55, pitchCorrection: -2, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-B4')).toMatchObject({ originalPitch: 59, pitchCorrection: 0, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-E5')).toMatchObject({ originalPitch: 64, pitchCorrection: -1, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-G5')).toMatchObject({ originalPitch: 67, pitchCorrection: 1, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-A#5')).toMatchObject({ originalPitch: 70, pitchCorrection: 1, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-C#6')).toMatchObject({ originalPitch: 73, pitchCorrection: 7, sampleRate: 24000 });
-    expect(byName.get('Steel Guitar-E6')).toMatchObject({ originalPitch: 76, pitchCorrection: 2, sampleRate: 24000 });
+    expect(byName.get('N Guitar D2')).toMatchObject({ originalPitch: 61, pitchCorrection: 12, sampleRate: 24000 });
+    expect(byName.get('N Guitar Gb2')).toMatchObject({ originalPitch: 65, pitchCorrection: -16, sampleRate: 24000 });
+    expect(byName.get('N Guitar B2')).toMatchObject({ originalPitch: 70, pitchCorrection: -8, sampleRate: 24000 });
+    expect(byName.get('N Guitar E3')).toMatchObject({ originalPitch: 74, pitchCorrection: -1, sampleRate: 24000 });
+    expect(byName.get('N Guitar Ab3')).toMatchObject({ originalPitch: 78, pitchCorrection: -15, sampleRate: 24000 });
+    expect(byName.get('N Guitar C4')).toMatchObject({ originalPitch: 82, pitchCorrection: -8, sampleRate: 24000 });
+    expect(byName.get('N Guitar E4')).toMatchObject({ originalPitch: 86, pitchCorrection: 23, sampleRate: 24000 });
+    expect(byName.get('Steel AcGtr C6')).toMatchObject({ originalPitch: 107, pitchCorrection: -22, sampleRate: 24000 });
   });
 
   it('replaces GM5 with GU Electric Grand and adds bounded GU Chorused FM EP', () => {
@@ -657,11 +655,6 @@ describe('Aura25Palette', () => {
       ['SawBassWave C2', 0.01],
       ['SawBassWave C3', 0.01],
       ['SawBassWave F5', 0.01],
-      ['Steel Guitar-A#5', 0.01],
-      ['Steel Guitar-C#6', 0.01],
-      ['Steel Guitar-E5', 0.01],
-      ['Steel Guitar-E6', 0.02],
-      ['Steel Guitar-G5', 0.01],
       ['SynthStrings G2', 0.01],
       ['SynthStrings D6', 0.08],
       ['VIBE_52A', 0.01],

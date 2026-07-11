@@ -2,7 +2,7 @@ export type Aura25Role = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
 
 export const AURA25_SF2_URL = '/Aura25_GM128.sf2?v=20260710-v44-aura25-only';
 export const AURA25_SF2_BANK_ID = 'aura25-gu-cp80-chorusedfm';
-export const AURA25_SF2_SIZE_LABEL = '1.64MB';
+export const AURA25_SF2_SIZE_LABEL = '1.32MB';
 export const AURA25_DRUM_BANK_MSB = 1;
 export const AURA25_DRUM_BANK_LSB = 0;
 export const AURA25_CHORUSED_FM_EP_BANK = 8;
@@ -30,7 +30,7 @@ export const AURA25_AUDITION_INSTRUMENTS = [
   { bank: 8, program: 5, role: 'comp', name: 'GU Chorused FM EP', note: 64, sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' },
   { bank: 0, program: 11, role: 'lead', name: '颤音琴', note: 72, sampleSizeBytes: 45558, sampleSizeLabel: '0.043MB' },
   { bank: 0, program: 24, role: 'comp', name: '尼龙吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
-  { bank: 0, program: 25, role: 'comp', name: '民谣木吉他', note: 52, sampleSizeBytes: 341680, sampleSizeLabel: '0.326MB' },
+  { bank: 0, program: 25, role: 'comp', name: '民谣木吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
   { bank: 0, program: 32, role: 'bass', name: '原声贝斯', note: 40, sampleSizeBytes: 7106, sampleSizeLabel: '0.007MB' },
   { bank: 0, program: 38, role: 'bass', name: '合成贝斯 1', note: 36, sampleSizeBytes: 10584, sampleSizeLabel: '0.010MB' },
   { bank: 0, program: 67, role: 'lead', name: '上低音萨克斯', note: 50, sampleSizeBytes: 130842, sampleSizeLabel: '0.125MB' },
