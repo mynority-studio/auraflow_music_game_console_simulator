@@ -51,6 +51,7 @@ function buildResult(req: MusicGenerationRequest, bundle: SongBundle, ir: Musica
     report: reportWithIntent,
     attempts,
     uiSnapshot: buildUiSnapshot(bundle, ir, req.seed, req.bandParticipants),
+    spaceProfile: bundle.instrumentation.spaceProfile, // copych FX 空间下发直取(见 AudioEngine.playMusicGeneration)
   };
 }
 

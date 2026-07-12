@@ -124,3 +124,40 @@ describe('generation/qnMainChainGuards — Band Selection 行为(§4)', () => {
     expect(r.uiSnapshot.roster.some((row) => row.participant === 'guitarist' && instrumentInfo(row.program).family === 'guitar')).toBe(true);
   });
 });
+
+// ============================================================
+// 跨源 onTrackEnd 劫持防回归(#1 superseded-start race)
+// ------------------------------------------------------------
+// 根因:globalMidiScheduler.onTrackEnd 全局 listener 无 unsubscribe,radio/jam/pipeline 各靠自己的
+//   generationId/seed 守卫,不感知其它播放源超越 → 上传 MIDI 曲终会触发它们续播/停止(劫持)。
+// 修复:playMusicGeneration 返回本次【实际启动】的会话 id(failed/被超越返回 null);manager 用返回值
+//   捕获 playId(而非事后读全局 currentPlaybackId,那会错绑超越者会话),onTrackEnd 守卫附加 playId 校验。
+// AudioEngine 是 node 环境不可 import 的单例(SynthManager 触 Web Audio),故以源码形状静态锁死修复。
+// ============================================================
+describe('generation/qnMainChainGuards — 跨源 onTrackEnd 劫持防回归(#1 race)', () => {
+  const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+  const AE = read('src/core/audio/AudioEngine.ts');
+  const MANAGERS: [string, string][] = [
+    ['radio', read('src/apps/AuraBar/EndlessRadioManager.ts')],
+    ['jam', read('src/apps/AuraJam/JamSessionManager.ts')],
+    ['pipeline', read('src/components/PipelineMonitor.tsx')],
+  ];
+
+  it('playMusicGeneration 返回本次会话 id(Promise<number | null>)+ 成功路径 return currentSession', () => {
+    expect(AE).toMatch(/playMusicGeneration\([^)]*\)\s*:\s*Promise<\s*number\s*\|\s*null\s*>/);
+    expect(AE).toMatch(/return\s+currentSession\s*;/);
+  });
+
+  for (const [name, code] of MANAGERS) {
+    it(`${name}:从 playMusicGeneration 返回值捕获 playId + 守卫含 playId 校验 + null 早退`, () => {
+      // 必须从返回值捕获（await 赋值）
+      expect(code, `${name} 未用返回值捕获 playId`).toMatch(/const\s+playId\s*=\s*await\s+AudioEngine\.playMusicGeneration\(/);
+      // 禁止 racy 事后快照形（const playId = AudioEngine.currentPlaybackId()）——会错绑超越者会话
+      expect(code, `${name} 残留事后快照 playId(race)`).not.toMatch(/const\s+playId\s*=\s*AudioEngine\.currentPlaybackId\(\)/);
+      // 曲终守卫附加 playId 校验（跨源劫持防线）
+      expect(code, `${name} onTrackEnd 守卫缺 playId 校验`).toMatch(/AudioEngine\.currentPlaybackId\(\)\s*===\s*playId/);
+      // playId===null（被超越/failed）早退，不注册续播
+      expect(code, `${name} 缺 playId===null 早退`).toMatch(/playId\s*===\s*null/);
+    });
+  }
+});

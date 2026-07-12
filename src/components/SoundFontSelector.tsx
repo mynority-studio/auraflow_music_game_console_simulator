@@ -144,7 +144,7 @@ export const SoundFontSelector: React.FC = () => {
         setMidiUploadStatus(null);
     };
     useEffect(() => {
-        _midiUploadEndCb = () => setMidiUploadPlaying(false);
+        _midiUploadEndCb = () => { setMidiUploadPlaying(false); setMidiUploadStatus(null); }; // 曲终清状态行（与手动 ■ 停止一致，不残留 ▶）
         if (!_midiUploadEndRegistered) {
             _midiUploadEndRegistered = true;
             globalMidiScheduler.onTrackEnd(() => { _midiUploadEndCb?.(); });

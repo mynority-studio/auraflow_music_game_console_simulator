@@ -13,7 +13,7 @@
 
 import { VisualEvent, PartName } from './playbackTypes';
 import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
-import { musicalIRToMidiEvents } from './musicalIrToMidi';
+import { musicalIRToMidiEvents, roomWetFor } from './musicalIrToMidi';
 import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
 import type { MusicGenerationResult } from '../generation/musicGeneration/types';
 import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
@@ -99,24 +99,27 @@ class AudioEngineSystem {
      * ★ Q+N 主链路正式播放入口(qn_main_engine_takeover §5):直接播 MusicalIR。
      *   保 programChanges/pedal/mix/mixChanges/ccEvents(musicalIRToMidiEvents)+ 注入角色 visual 事件(LedMatrix)。
      */
-    public async playMusicGeneration(result: MusicGenerationResult): Promise<void> {
-        if (!result.ir) return; // failed → 不播
+    /** 返回本次【实际启动】的播放会话 id；failed(无 ir) 或起播前被其它源超越(startAudioContext
+     *  await 期间 session 被 bump)则返回 null——调用方据此决定是否注册曲终 listener（防 superseded-start
+     *  race：早退时全局 currentPlaybackId() 已是别人的会话，事后快照会错绑）。 */
+    public async playMusicGeneration(result: MusicGenerationResult): Promise<number | null> {
+        if (!result.ir) return null; // failed → 不播
         this.init();
         const currentSession = ++this.playSessionId;
         await startAudioContext();
-        if (currentSession !== this.playSessionId) return;
+        if (currentSession !== this.playSessionId) return null;
         setPlaybackMasterStyle(result.styleHint);
 
-        const events = musicalIRToMidiEvents(result.ir);
+        const events = musicalIRToMidiEvents(result.ir, roomWetFor(result.styleHint));
         const visuals = this.buildVisualEvents(result.ir);
         globalMidiScheduler.stop();
 
         // Copych per-song 空间参数（reverb/chorus/delay，镜像设备 AR_CMD_SONG_*）。
-        // 优先消费器配层已选的 uiSnapshot.spaceProfile，避免 playback 重新推导导致
+        // 优先消费器配层已选的 spaceProfile/uiSnapshot.spaceProfile，避免 playback 重新推导导致
         // syntheticSoft 等世界在 Copych 真 FX 参数上分叉。fallback 只服务旧/外部 result。
         if (activeSynth instanceof CopychSynthFacade) {
             const hasPad = result.ir.tracks.some(t => t.role === 'pad' && t.notes.length > 0);
-            const p = songSpaceProfileById(result.uiSnapshot.spaceProfile)
+            const p = songSpaceProfileById(result.spaceProfile ?? result.uiSnapshot.spaceProfile)
                 ?? songSpaceProfile(result.styleHint, result.uiSnapshot.world as TimbreWorld | undefined, hasPad);
             const beats = DELAY_MODE_BEATS[p.delayMode] ?? 0;
             activeSynth.setSongSpace({
@@ -131,6 +134,7 @@ class AudioEngineSystem {
         globalMidiScheduler.start();
 
         this.currentMusicGeneration = result; // UI 读 getCurrentMusicGeneration().uiSnapshot(不再造 GeneratedTrack/MusicContext 投影)
+        return currentSession; // 本次实际启动的会话 id（onTrackEnd 守卫绑它，防跨源劫持）
     }
 
     /** 上传 MIDI 播放（上传播放批）：smfParser 产出的 MidiEvent[]（PPQ480 已重标定）直喂
@@ -166,6 +170,10 @@ class AudioEngineSystem {
     }
 
     public getCurrentMusicGeneration(): MusicGenerationResult | null { return this.currentMusicGeneration; }
+
+    /** 当前播放会话 id（每次 play* / 切 bank/后端/采样率自增）。跨会话 onTrackEnd 守卫用：
+     *  只有仍是自己起播的会话才响应曲终——防上传试听/切源后旧 manager 的 onTrackEnd 劫持续播。 */
+    public currentPlaybackId(): number { return this.playSessionId; }
 
     public stop(): void {
         globalMidiScheduler.stop();
