@@ -101,7 +101,7 @@ function buildL1Case(seed: number, styleHint: string) {
   const request: GenerationRequest = { seed, styleHint, mood: 'calm-build', targetDuration: 120, allowModulation: true };
   const seedRng = createRandomContext(seed);
   const band = buildBandSpec(request);
-  const arrangement = buildArrangementPlan(band, { rng: seedRng });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood }); // V44-P1：与 L2/GenerationController 一致传 mood（v4.4 arranger 读 mood，否则 L1/L2 arrangement 分叉）
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
   const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic);
 
@@ -261,10 +261,11 @@ function serializeIR(ir: MusicalIR) {
     tracks: ir.tracks.map((t) => ({
       role: t.role,
       program: t.program ?? null,
+      bank: t.bank ?? 0, // V44-P1：Aura25 bank（0/8/128；C 引擎 P5 消费，sentinel track 层 0=bank0）
       notes: t.notes.map((n) => ({
         pitch: n.pitch, startTick: n.startTick, durationTicks: n.durationTicks, velocity: n.velocity,
       })),
-      programChanges: (t.programChanges ?? []).map((p) => ({ atTick: p.atTick, program: p.program })),
+      programChanges: (t.programChanges ?? []).map((p) => ({ atTick: p.atTick, program: p.program, bank: p.bank ?? -1 })), // V44-P1：bank sentinel -1=absent/0=显式 bank0
       pedalEvents: (t.pedalEvents ?? []).map((p) => ({ atTick: p.atTick, down: p.down })),
       mix: t.mix
         ? { volume: t.mix.volume, pan: t.mix.pan, reverb: t.mix.reverb, chorus: t.mix.chorus, expression: t.mix.expression ?? null, delay: t.mix.delay ?? null }
@@ -345,6 +346,15 @@ function buildL2L3Case(seed: number, styleHint: string) {
   if (emitted.length !== POST_STAGES.length || emitted.some((s, i) => s !== POST_STAGES[i])) {
     throw new Error(`POST_STAGES mismatch seed=${seed} ${styleHint}: emit=[${emitted.join(',')}] expected=[${POST_STAGES.join(',')}]`);
   }
+  // ★ V44-P1 invariant（codex 计划门）：applyRenderMixBalance 只重标 mix、不改 note → mixbalance 段 note-hash 恒 == gesture 段。
+  //   逐轨 {role,hash} 比对；不等 = gesture/mixbalance trace 插错变量（POST_STAGES 名序列校验抓不到"插错变量"）。
+  const gStage = postStages.find((s) => s.stage === 'gesture');
+  const mStage = postStages.find((s) => s.stage === 'mixbalance');
+  if (gStage && mStage) {
+    const gh = gStage.tracks.map((t) => `${t.role}:${t.hash}`).join(',');
+    const mh = mStage.tracks.map((t) => `${t.role}:${t.hash}`).join(',');
+    if (gh !== mh) throw new Error(`mixbalance!=gesture note-hash seed=${seed} ${styleHint}: gesture=[${gh}] mixbalance=[${mh}]`);
+  }
   return { l2, l3, rawStage, postStage };
 }
 
@@ -361,12 +371,12 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const gitTry = (cmd: string): string => { try { return execSync(cmd, { cwd: REPO_ROOT }).toString().trim(); } catch { return ''; } };
 const meta = {
   generator: 'scripts/golden-trace-ne.ts',
-  engineBaseCommit: '051a8d90e8ddd7f4775b0147fd2df5f2b31fbe6a', // Newengine_Demo-v4.1（引擎逻辑基线）
-  exporterCommit: gitTry('git rev-parse HEAD') || 'unknown',     // tool/golden-trace-ne-v4.1 导出器补丁 commit
+  engineBaseCommit: '703ed525eaf59e5f51f8280dcaa28aabd6f8147f', // newengine-demo-v4.4（V44-P1 换靶，引擎逻辑基线）
+  exporterCommit: gitTry('git rev-parse HEAD') || 'unknown',     // tool/golden-trace-ne-v4.4 导出器补丁 commit
   exporterDirty: gitTry('git status --porcelain').length > 0,    // 导出时工作树脏 → 复现对照实际文件
   parityPatch: true,
   postStages: POST_STAGES, // ★ stage 名序列单一真源（ne_json2c 解析 + 验收读此；V4-P1 +acgshape/gesture/mixbalance=18；V4.1-P0 +saxavoid=19）
-  note: 'V4.1-P0 L0-L3+intent golden（对 Newengine_Demo-v4.1=051a8d9；trace 导出器补丁；见 docs/transplant/esp32s3.md V4.1 章）',
+  note: 'V44-P1 L0-L3+intent golden（对 newengine-demo-v4.4=703ed52；trace 导出器补丁 rebase 自 v4.1；见 docs/transplant/v44_alignment.md）',
 };
 
 const l0 = { meta, streams: buildL0() };
@@ -395,19 +405,22 @@ console.log(`Intent: ${intentCases.length} cases (deriveMusicIntentPlan 快照)`
 // L2/L3：产品路径 generateSong。标准矩阵（与 L1 同 seed/style，8×8=64）+ 特征 case（扫描得，
 // 覆盖标准矩阵不出现的 timbre-switch / retry 路径，见 scan-feature-seeds.ts）。全量入仓 = P1b（P1a 只 codegen 小样本子集）。
 // 特征 seed 沿用 buildL2L3Case 同 request（mood/duration/allowModulation），仅变 seed/style，保持与标准例同生成路径。
-// ★ V4-P1 重扫（scan-feature-seeds.ts 2000×8=16000 组合，2026-07-05）：
-//   - timbre-switch 在 v4 已普遍（pop 1821/jazz 2000/rnb 1907…/2000）→ 标准矩阵天然覆盖，
-//     特征位改选扫描最强 stress case（pc=6/mc=14）保留 modal+default 两路。
-//   - retry 61 例全 attempts=12→failed（lofi 40/acg 21）；seed4/lofi、seed19/acg 与 v3 特征位同位保留。
-//   - retry-then-pass：本轮 16000 + scan-retry-pass-probe 7200（600×lofi/acg×2 mood×3 dur）
-//     合计 23200 组合 181 retry 零成功 → v4 仍结构性不可达（同 v3 机理：阻塞 finding=bass
-//     avoid-long-exposure 根因在 plans 层，收敛环不重跑 plans）。fallback B 按「不可达留档 +
-//     C 侧 test_ne_generation_control synthetic 白盒（fail-then-pass + 新 finding 类型 blocking 判定）」闭账。
+// ★ V44-P1 重扫（scan-feature-seeds 400×8=3200 + scan-retry-pass-probe 3600 = 6800 组合，2026-07-12）：
+//   - timbre-switch 在 v4.4 仍普遍（每风格数百）→ 标准矩阵天然覆盖，特征位选各风格实测最强 stress。
+//   - retry：v4.4 结构性消失（6800 组合 retry=0；v3/v4 曾 61-181 全 attempts=12→failed）。根因=
+//     v4.4 readOnlyHarmonyAuditor 新增 bass-pedal 本音豁免，消除阻塞 finding bass avoid-long-exposure
+//     （scan-retry-pass-probe.ts 注释列此为重扫触发条件）。原 seed4/lofi、seed19/acg 在 v4.4 收敛
+//     attempts=1，保留作「v4.1 retry→v4.4 收敛」见证。fallback B 不变：retry 控制流由 C 侧
+//     test_ne_generation_control synthetic 白盒（fail-then-pass + finding blocking 判定）闭账。
 const L2L3_FEATURE_CASES: { seed: number; style: string; note: string }[] = [
-  { seed: 288, style: 'modal', note: 'V4：timbre-switch pc=6/mc=14（modal 最强）' },
-  { seed: 123, style: 'default', note: 'V4：timbre-switch pc=6/mc=14（default 最强）' },
-  { seed: 4, style: 'lofi', note: 'retry attempts=12 → failed（lofi；v3 同位）' },
-  { seed: 19, style: 'acg', note: 'acg retry attempts=12 → failed（v3 同位）' },
+  // V44-P1 重扫（scan-feature-seeds 400×8 + scan-retry-pass-probe 3600 = 6800 组合 retry=0）：
+  //   timbre-switch 更新为 v4.4 实测各风格最强；原 retry→failed（seed4/19）在 v4.4 已收敛
+  //   attempts=1（readOnlyHarmonyAuditor bass-pedal 豁免消除阻塞 finding bass avoid-long-exposure
+  //   → retry 结构性消失），保留为「v4.1 retry 在 v4.4 收敛」的回归见证 case。
+  { seed: 123, style: 'modal', note: 'V44：timbre-switch pc=6/mc=17（modal v4.4 最强）' },
+  { seed: 125, style: 'default', note: 'V44：timbre-switch pc=6/mc=17（default v4.4 最强）' },
+  { seed: 4, style: 'lofi', note: 'V44：v4.1 retry→failed 在 v4.4 收敛 attempts=1（bass-pedal 豁免；retry 消失见证）' },
+  { seed: 19, style: 'acg', note: 'V44：v4.1 acg retry→failed 在 v4.4 收敛 attempts=1（同上）' },
 ];
 const l2Cases: ReturnType<typeof buildL2L3Case>['l2'][] = [];
 const l3Cases: ReturnType<typeof buildL2L3Case>['l3'][] = [];
