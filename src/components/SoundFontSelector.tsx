@@ -17,6 +17,7 @@ import {
 } from '../core/audio/AudioEngine';
 import { AURA25_AUDITION_INSTRUMENTS } from '../core/sound/Aura25Palette';
 import {
+    COPYCH_DEFAULT_MASTER_LIFT,
     COPYCH_MASTER_LIFT_MAX,
     COPYCH_MASTER_LIFT_MIN,
     getCopychFxState,
@@ -27,6 +28,7 @@ import {
     getCopychPostChainMeters,
     getCopychPostChainState,
     subscribeCopychPostChain,
+    type CopychPostChainCfg,
     type CopychPostChainMeters,
     type CopychPostChainState,
 } from '../core/audio/copych/CopychSynthFacade';
@@ -53,6 +55,22 @@ type AuditionItem = {
     sampleSizeBytes: number;
     sampleSizeLabel: string;
 };
+type DiagnosticAuditionCase = {
+    id: string;
+    label: string;
+    bank: number;
+    program: number;
+    notes: readonly number[];
+    velocity: number;
+    channelVolume: number;
+    durationMs: number;
+};
+type DiagnosticAuditionVariant = {
+    id: string;
+    label: string;
+    title: string;
+    cfg: CopychPostChainCfg;
+};
 const auditionItemsForBank = (_bankId: string): readonly AuditionItem[] => AURA25_AUDITION_INSTRUMENTS;
 /** 主键盘可切乐器（当前 SF2 包内旋律乐器；鼓组走 ch9 不在列）。 */
 const KEYBOARD_INSTRUMENTS = AURA25_AUDITION_INSTRUMENTS.filter(item => item.role !== 'drum');
@@ -61,7 +79,7 @@ const DEFAULT_INSTRUMENT_KEY = `${KEYBOARD_INSTRUMENTS[0].bank}:${KEYBOARD_INSTR
 const NOTE_OFF_CC = 123;
 const ELECTRIC_KEY_PROGRAM = 5;
 const FOLK_GUITAR_PROGRAM = 25;
-const MALLET_PROGRAMS = new Set([11, 12, 107, 108]);
+const MALLET_PROGRAMS = new Set([12, 107, 108]);
 const DRIVE_STATE_LABEL: Record<CopychPostChainMeters['driveState'], string> = {
     'very-quiet': '很小',
     quiet: '偏小',
@@ -81,7 +99,7 @@ const DRIVE_STATE_CLASS: Record<CopychPostChainMeters['driveState'], string> = {
 
 const meterDb = (db: number): string => db <= -119 ? '−∞' : db.toFixed(0);
 const auditionKey = (item: Pick<AuditionItem, 'bank' | 'program'>): string => `${item.bank}:${item.program}`;
-const selectPresetRaw = (channel: number, item: AuditionItem): void => {
+const selectPresetRaw = (channel: number, item: Pick<AuditionItem, 'bank' | 'program'>): void => {
     if (!activeSynth) return;
     const bank = Math.max(0, Math.min(16383, Math.round(item.bank)));
     activeSynth.controllerChange(channel, 0, (bank >> 7) & 0x7f);
@@ -91,6 +109,70 @@ const selectPresetRaw = (channel: number, item: AuditionItem): void => {
 const liftDb = (lift: number): number => 20 * Math.log10(Math.max(0.0001, lift));
 const clampMasterLift = (lift: number): number =>
     Math.max(COPYCH_MASTER_LIFT_MIN, Math.min(COPYCH_MASTER_LIFT_MAX, Number.isFinite(lift) ? lift : 1));
+const DIAGNOSTIC_AUDITION_CHANNEL = AUDITION_CHANNEL;
+const clampMidiNote = (note: number): number => Math.max(0, Math.min(127, Math.round(note)));
+const diagnosticNotesFor = (item: AuditionItem): readonly number[] => {
+    if (item.role === 'drum') return [36, 38, 42, 46, 49];
+    if (item.role === 'bass') return [item.note, item.note + 7, item.note + 12, item.note + 15, item.note + 19].map(clampMidiNote);
+    if (item.role === 'pad') return [item.note, item.note + 7, item.note + 12, item.note + 16, item.note + 19].map(clampMidiNote);
+    if (item.program === 0 || item.program === ELECTRIC_KEY_PROGRAM || item.program === 108) return [64, 67, 71, 74, 78];
+    if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return [item.note, item.note + 5, item.note + 9, item.note + 12, item.note + 16].map(clampMidiNote);
+    if (item.program === 67) return [43, 50, 54, 57, 62];
+    return [item.note, item.note + 4, item.note + 7, item.note + 11, item.note + 14].map(clampMidiNote);
+};
+const diagnosticVelocityFor = (item: AuditionItem): number => {
+    if (item.role === 'drum') return 94;
+    if (item.role === 'pad') return 62;
+    if (item.role === 'bass') return 72;
+    if (item.program === ELECTRIC_KEY_PROGRAM) return 74;
+    if (item.program === 0) return 78;
+    return 76;
+};
+const diagnosticVolumeFor = (item: AuditionItem): number => {
+    if (item.role === 'drum') return item.program === 8 ? 48 : 90;
+    if (item.role === 'pad') return 78;
+    if (item.role === 'bass') return 84;
+    if (item.program === 67) return 64;
+    if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return 56;
+    if (item.program === ELECTRIC_KEY_PROGRAM) return 80;
+    return 84;
+};
+const diagnosticDurationFor = (item: AuditionItem): number => {
+    if (item.role === 'drum') return 260;
+    if (item.role === 'pad') return 1100;
+    if (item.role === 'bass') return 760;
+    return 900;
+};
+const DIAGNOSTIC_AUDITION_CASES: readonly DiagnosticAuditionCase[] = AURA25_AUDITION_INSTRUMENTS.map(item => ({
+    id: `${item.bank}-${item.program}-${item.role}`,
+    label: `${item.name}${item.role === 'drum' ? ' 五件' : ' 五音'}`,
+    bank: item.bank,
+    program: item.program,
+    notes: diagnosticNotesFor(item),
+    velocity: diagnosticVelocityFor(item),
+    channelVolume: diagnosticVolumeFor(item),
+    durationMs: diagnosticDurationFor(item),
+}));
+const DIAGNOSTIC_AUDITION_VARIANTS: readonly DiagnosticAuditionVariant[] = [
+    {
+        id: 'raw',
+        label: 'RAW',
+        title: '近似 Copych raw：关闭设备增益/EQ/16bit，不额外放大。用于判断源头是否自带滋滋。',
+        cfg: { enabled: true, gain: false, eq: false, softclip: true, quantize: false, masterLift: 1 },
+    },
+    {
+        id: 'device',
+        label: '设备',
+        title: '设备镜像：校准 gain×1.8 + EQ + 软削 + 16bit。',
+        cfg: { enabled: true, gain: true, eq: true, softclip: true, quantize: true, masterLift: COPYCH_DEFAULT_MASTER_LIFT },
+    },
+    {
+        id: 'no-gain',
+        label: '无增益',
+        title: '保留 EQ/软削/16bit，但关闭校准 gain。用于判断是否是设备增益放大了瑕疵。',
+        cfg: { enabled: true, gain: false, eq: true, softclip: true, quantize: true, masterLift: COPYCH_DEFAULT_MASTER_LIFT },
+    },
+];
 
 export const SoundFontSelector: React.FC = () => {
     const [selectedId, setSelectedId] = useState<SoundFontBankId>(() => getSelectedSoundFontBank().id);
@@ -105,6 +187,7 @@ export const SoundFontSelector: React.FC = () => {
     const [channelMode, setChannelModeState] = useState<ChannelModePref>(() => getChannelModePref());
     const [copychFx, setCopychFx] = useState<CopychFxState>(() => getCopychFxState());
     const auditionTimers = useRef<number[]>([]);
+    const diagnosticPostChainRestore = useRef<CopychPostChainCfg | null>(null);
     const instrumentKeyRef = useRef<string>(DEFAULT_INSTRUMENT_KEY);   // subscribe 闭包用（避免 stale state）
 
     /** 只窥探已存在的全局 AudioContext（不提前创建——保持"首次用户操作才建 ctx"的生命周期）；
@@ -190,6 +273,13 @@ export const SoundFontSelector: React.FC = () => {
         auditionTimers.current.push(window.setTimeout(fn, delayMs));
     };
 
+    const restoreDiagnosticPostChain = (): void => {
+        const cfg = diagnosticPostChainRestore.current;
+        if (!cfg) return;
+        diagnosticPostChainRestore.current = null;
+        setCopychDevicePostChain(cfg);
+    };
+
     const stopAudition = (): void => {
         clearAuditionTimers();
         AudioEngine.controllerChange(AUDITION_CHANNEL, NOTE_OFF_CC, 0);
@@ -197,6 +287,7 @@ export const SoundFontSelector: React.FC = () => {
         AudioEngine.controllerChange(AUDITION_CHANNEL, 74, 64);
         AudioEngine.controllerChange(AUDITION_CHANNEL, 95, 0);
         AudioEngine.controllerChange(DRUM_CHANNEL, NOTE_OFF_CC, 0);
+        restoreDiagnosticPostChain();
         setAuditioning(null);
     };
 
@@ -211,7 +302,8 @@ export const SoundFontSelector: React.FC = () => {
                     ? [root, root + 7, root + 12]
                     : [root, root + 4, root + 7, root + 12];
         const dur = item.role === 'pad' ? 760 : item.program === 67 ? 420 : electricKey ? 360 : 260;
-        const velocity = item.role === 'pad' ? 76 : electricKey ? 84 : 104;
+        const isGuitar = item.program === 24 || item.program === FOLK_GUITAR_PROGRAM;
+        const velocity = item.role === 'pad' ? 76 : electricKey || item.program === 67 || isGuitar ? 84 : 96;
         notes.forEach((note, index) => {
             const at = index * (dur + 45);
             schedule(() => AudioEngine.playNote(AUDITION_CHANNEL, note, velocity, dur), at);
@@ -236,7 +328,7 @@ export const SoundFontSelector: React.FC = () => {
         try {
             await startAudioContext();
             const channel = item.role === 'drum' ? DRUM_CHANNEL : AUDITION_CHANNEL;
-            activeSynth?.controllerChange(channel, 7, item.role === 'drum' ? 108 : 104);
+            activeSynth?.controllerChange(channel, 7, diagnosticVolumeFor(item));
             activeSynth?.controllerChange(channel, 10, 64);
             activeSynth?.controllerChange(channel, 11, 127);
             activeSynth?.controllerChange(channel, 72, item.program === ELECTRIC_KEY_PROGRAM ? 68 : 64);
@@ -251,6 +343,45 @@ export const SoundFontSelector: React.FC = () => {
         } catch (err) {
             console.error('SoundFont audition failed', err);
             setError('试听失败');
+            setAuditioning(null);
+        }
+    };
+
+    const diagnosticAudition = async (testCase: DiagnosticAuditionCase, variant: DiagnosticAuditionVariant): Promise<void> => {
+        const key = `diag:${testCase.id}:${variant.id}`;
+        stopAudition();
+        setAuditioning(key);
+        setError(null);
+        try {
+            await startAudioContext();
+            diagnosticPostChainRestore.current = { ...getCopychPostChainState().cfg };
+            setCopychDevicePostChain(variant.cfg);
+            const channel = testCase.bank === 128 ? DRUM_CHANNEL : DIAGNOSTIC_AUDITION_CHANNEL;
+            activeSynth?.controllerChange(channel, NOTE_OFF_CC, 0);
+            activeSynth?.controllerChange(channel, 7, testCase.channelVolume);
+            activeSynth?.controllerChange(channel, 10, 64);
+            activeSynth?.controllerChange(channel, 11, 127);
+            activeSynth?.controllerChange(channel, 64, 0);
+            activeSynth?.controllerChange(channel, 72, 64);
+            activeSynth?.controllerChange(channel, 74, 64);
+            activeSynth?.controllerChange(channel, 91, 0);
+            activeSynth?.controllerChange(channel, 93, 0);
+            activeSynth?.controllerChange(channel, 95, 0);
+            selectPresetRaw(channel, testCase);
+            for (const note of testCase.notes) {
+                AudioEngine.noteOn(channel, note, testCase.velocity);
+            }
+            schedule(() => {
+                for (const note of testCase.notes) AudioEngine.noteOff(channel, note);
+            }, testCase.durationMs);
+            schedule(() => {
+                restoreDiagnosticPostChain();
+                setAuditioning(null);
+            }, testCase.durationMs + 450);
+        } catch (err) {
+            console.error('Copych diagnostic audition failed', err);
+            restoreDiagnosticPostChain();
+            setError('诊断试听失败');
             setAuditioning(null);
         }
     };
@@ -547,7 +678,7 @@ export const SoundFontSelector: React.FC = () => {
                 >
                     <span
                         className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400"
-                        title={'固件输出后链镜像（增益×4.28 → Copych 软/硬削波 → 单声道折叠 → 6 段小喇叭校正 EQ → 终级饱和 → 16bit）。'
+                        title={'固件输出后链镜像（校准增益×1.8 → Copych 软/硬削波 → 单声道折叠 → 6 段小喇叭校正 EQ → 终级饱和 → 16bit）。'
                             + '这是 Copych-only 正式输出的常驻阶段；增益/削波/下混全采样率有效，6 段 EQ 仅 24kHz ctx 有效（系数绑 24k）。'
                             + '各级开关对应设备真实态：增益 off≡ne gain 100 / EQ off≡ne eq off / 软削 off≡ne clip hard；16bit off=纯 float 链（仅诊断，非设备路径）'}
                     >
@@ -573,13 +704,13 @@ export const SoundFontSelector: React.FC = () => {
                                     ? 'bg-zinc-800 text-zinc-200'
                                     : 'bg-zinc-900 text-zinc-500 line-through'}`}
                             title={{
-                                gain: '×4.28（off≡板上 ne gain 100）',
+                                gain: '×1.8（off≡板上 ne gain 100）',
                                 eq: '6 段小喇叭校正 EQ（off≡板上 ne eq off）',
                                 softclip: 'Copych 软削波（off=硬削≡板上 ne clip hard）',
                                 quantize: '16bit 整数格（off=纯 float 链，仅诊断非设备路径）',
                             }[k]}
                         >
-                            {{ gain: '增益4.28', eq: 'EQ', softclip: '软削', quantize: '16bit' }[k]}
+                            {{ gain: '校准增益', eq: 'EQ', softclip: '软削', quantize: '16bit' }[k]}
                         </button>
                     ))}
                     <button
@@ -609,12 +740,12 @@ export const SoundFontSelector: React.FC = () => {
                     </span>
                     <button
                         type="button"
-                        disabled={!pcState.active || Math.abs(masterLift - 1) < 0.001}
-                        onClick={() => setCopychDevicePostChain({ masterLift: 1 })}
+                        disabled={!pcState.active || Math.abs(masterLift - COPYCH_DEFAULT_MASTER_LIFT) < 0.001}
+                        onClick={() => setCopychDevicePostChain({ masterLift: COPYCH_DEFAULT_MASTER_LIFT })}
                         className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
-                        title="主音量回到 ×1.00"
+                        title={`主音量回到默认 ×${COPYCH_DEFAULT_MASTER_LIFT.toFixed(2)}`}
                     >
-                        ×1
+                        默认
                     </button>
                     {pcState.active && pcMeters && (
                         <span
@@ -648,6 +779,38 @@ export const SoundFontSelector: React.FC = () => {
                         </button>
                     </div>
                     <div className="max-h-[min(22rem,calc(100vh_-_17rem))] overflow-y-auto p-2">
+                        <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-950/80 p-2">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-semibold tracking-widest text-zinc-400">复音诊断</span>
+                                <span className="text-[9px] text-zinc-600">{DIAGNOSTIC_AUDITION_CASES.length} presets</span>
+                            </div>
+                            <div className="space-y-1.5">
+                                {DIAGNOSTIC_AUDITION_CASES.map(testCase => (
+                                    <div key={testCase.id} className="grid grid-cols-[7.25rem_repeat(3,minmax(0,1fr))] items-center gap-1.5">
+                                        <span className="truncate text-[10px] text-zinc-500" title={`${testCase.notes.join('+')} · GM ${testCase.bank}:${testCase.program} · CC7 ${testCase.channelVolume} · vel ${testCase.velocity}`}>
+                                            {testCase.label}
+                                        </span>
+                                        {DIAGNOSTIC_AUDITION_VARIANTS.map(variant => {
+                                            const key = `diag:${testCase.id}:${variant.id}`;
+                                            const active = auditioning === key;
+                                            return (
+                                                <button
+                                                    key={variant.id}
+                                                    type="button"
+                                                    onClick={() => diagnosticAudition(testCase, variant)}
+                                                    title={variant.title}
+                                                    className={`min-w-0 rounded-md border px-1.5 py-1 text-[10px] transition-colors ${active
+                                                        ? 'border-amber-400/70 bg-amber-500/15 text-amber-100'
+                                                        : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-100'}`}
+                                                >
+                                                    {variant.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                         {selectedAuditionItems.map(item => {
                             const key = auditionKey(item);
                             const active = auditioning === key;

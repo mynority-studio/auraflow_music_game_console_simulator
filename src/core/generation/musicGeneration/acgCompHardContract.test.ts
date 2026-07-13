@@ -14,7 +14,7 @@ const acg = (bandParticipants?: BandParticipantSelection[]) =>
   generateMusicSync({ seed: 0, styleHint: 'acg', mood: 'build', targetDuration: 90, ...(bandParticipants ? { bandParticipants } : {}) });
 
 const track = (r: ReturnType<typeof acg>, role: string) => r.ir!.tracks.find((t) => t.role === role);
-const ACG_KEYBOARDISH = [0, 5, 11, 108] as const;
+const ACG_KEYBOARDISH = [0, 5] as const;
 
 describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead + comp', () => {
   it('8 seeds:lead/comp/bass 三轨齐;comp 有真实音符;lead/comp 开放键盘式音色但分轨', () => {

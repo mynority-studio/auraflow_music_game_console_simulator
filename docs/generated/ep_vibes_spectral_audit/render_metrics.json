@@ -3,19 +3,19 @@
     "name": "fm_ep_c4_release68",
     "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/fm_ep_c4_release68.wav",
     "seconds": 2.25,
-    "peak": 0.012167813256382942,
-    "onRms": 0.004748034815123517,
+    "peak": 0.026799682527780533,
+    "onRms": 0.006623490511443462,
     "tailRms": 0,
-    "tailToOnDb": -193.53027789728918
+    "tailToOnDb": -196.4217383712361
   },
   {
     "name": "fm_ep_c4_connected_to_next",
     "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/ep_vibes_spectral_audit/fm_ep_c4_connected_to_next.wav",
     "seconds": 2.25,
-    "peak": 0.025501444935798645,
-    "onRms": 0.007909718517534668,
-    "tailRms": 0.003612589201369772,
-    "tailToOnDb": -6.806848981862441
+    "peak": 0.03135319799184799,
+    "onRms": 0.008873055461858239,
+    "tailRms": 0.004264595927081074,
+    "tailToOnDb": -6.363906165436688
   },
   {
     "name": "vibes_72",

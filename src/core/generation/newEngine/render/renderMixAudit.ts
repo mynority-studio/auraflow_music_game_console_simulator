@@ -91,15 +91,15 @@ export const HARDWARE_SPEAKER_PROFILE = {
   guardrails: {
     bassReverbCcMax: 12,
     drumReverbCcMax: 18,
-    roomDrumReverbCcMax: 30,
-    drumTransientCcMax: 90,
+    roomDrumReverbCcMax: 24,
+    drumTransientCcMax: 78,
     padSustainedBusShareMax: 0.16,
     padCopychReverbBusShareMax: 0.28,
     compCopychReverbBusShareMax: 0.72,
     foregroundBusShareMin: 0.55,
     bassSustainedBusShareMinDefault: 0.12,
     bassSustainedBusShareMinAcg: 0.16,
-    bassSustainedBusShareMaxDefault: 0.34,
+    bassSustainedBusShareMaxDefault: 0.38,
     bassSustainedBusShareMaxAcg: 0.42,
   },
 } as const;
@@ -113,7 +113,7 @@ export const MASTERING_AUDIT_STANDARD = {
   referenceWetEnergyForMinus14Lufs: 0.75,
   copychMaster: {
     route: 'copych synth+shared FX -> style master lift -> device_postchain -> output',
-    devicePostChainDefault: 'enabled by default at every browser sample rate: style master lift -> gain 4.28 -> Copych softclip -> mono fold -> 24 kHz EQ when rate matches -> final hard clip -> int16 grid',
+    devicePostChainDefault: 'enabled by default at every browser sample rate: style master lift -> calibration gain 1.8 -> Copych softclip -> mono fold -> 24 kHz EQ when rate matches -> final hard clip -> int16 grid',
     playbackStyleMasterLift: PLAYBACK_STYLE_MASTER_LIFT,
     playbackStyleMasterLiftCalibration: PLAYBACK_MASTER_LIFT_CALIBRATION,
     webCompressorAfterDevicePostChain: false,

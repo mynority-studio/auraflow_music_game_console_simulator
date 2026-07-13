@@ -1,0 +1,772 @@
+[
+  {
+    "case": "piano_B4_single",
+    "program": 0,
+    "notes": [
+      71
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_single__raw.wav",
+    "peak": 0.013602,
+    "peakDbfs": -37.33,
+    "rms": 0.002735,
+    "rmsDbfs": -51.26,
+    "zeroCrossRate": 0.03352
+  },
+  {
+    "case": "piano_B4_single",
+    "program": 0,
+    "notes": [
+      71
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_single__device.wav",
+    "peak": 0.02234,
+    "peakDbfs": -33.02,
+    "rms": 0.004403,
+    "rmsDbfs": -47.12,
+    "zeroCrossRate": 0.02953
+  },
+  {
+    "case": "piano_B4_single",
+    "program": 0,
+    "notes": [
+      71
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_single__no_gain.wav",
+    "peak": 0.012391,
+    "peakDbfs": -38.14,
+    "rms": 0.002443,
+    "rmsDbfs": -52.24,
+    "zeroCrossRate": 0.02797
+  },
+  {
+    "case": "piano_B4_single",
+    "program": 0,
+    "notes": [
+      71
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_single__no_quantize.wav",
+    "peak": 0.022344,
+    "peakDbfs": -33.02,
+    "rms": 0.004411,
+    "rmsDbfs": -47.11,
+    "zeroCrossRate": 0.03424
+  },
+  {
+    "case": "piano_B4_single",
+    "program": 0,
+    "notes": [
+      71
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_single__float_no_gain_no_eq.wav",
+    "peak": 0.013602,
+    "peakDbfs": -37.33,
+    "rms": 0.002735,
+    "rmsDbfs": -51.26,
+    "zeroCrossRate": 0.03352
+  },
+  {
+    "case": "piano_C4_single",
+    "program": 0,
+    "notes": [
+      60
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_C4_single__raw.wav",
+    "peak": 0.012942,
+    "peakDbfs": -37.76,
+    "rms": 0.003282,
+    "rmsDbfs": -49.68,
+    "zeroCrossRate": 0.02469
+  },
+  {
+    "case": "piano_C4_single",
+    "program": 0,
+    "notes": [
+      60
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_C4_single__device.wav",
+    "peak": 0.026124,
+    "peakDbfs": -31.66,
+    "rms": 0.00665,
+    "rmsDbfs": -43.54,
+    "zeroCrossRate": 0.01781
+  },
+  {
+    "case": "piano_C4_single",
+    "program": 0,
+    "notes": [
+      60
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_C4_single__no_gain.wav",
+    "peak": 0.014496,
+    "peakDbfs": -36.77,
+    "rms": 0.00369,
+    "rmsDbfs": -48.66,
+    "zeroCrossRate": 0.01755
+  },
+  {
+    "case": "piano_C4_single",
+    "program": 0,
+    "notes": [
+      60
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_C4_single__no_quantize.wav",
+    "peak": 0.026142,
+    "peakDbfs": -31.65,
+    "rms": 0.006661,
+    "rmsDbfs": -43.53,
+    "zeroCrossRate": 0.01885
+  },
+  {
+    "case": "piano_C4_single",
+    "program": 0,
+    "notes": [
+      60
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_C4_single__float_no_gain_no_eq.wav",
+    "peak": 0.012942,
+    "peakDbfs": -37.76,
+    "rms": 0.003282,
+    "rmsDbfs": -49.68,
+    "zeroCrossRate": 0.02469
+  },
+  {
+    "case": "piano_B4_triad",
+    "program": 0,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_triad__raw.wav",
+    "peak": 0.022144,
+    "peakDbfs": -33.09,
+    "rms": 0.00365,
+    "rmsDbfs": -48.75,
+    "zeroCrossRate": 0.03122
+  },
+  {
+    "case": "piano_B4_triad",
+    "program": 0,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_triad__device.wav",
+    "peak": 0.036378,
+    "peakDbfs": -28.78,
+    "rms": 0.006144,
+    "rmsDbfs": -44.23,
+    "zeroCrossRate": 0.02823
+  },
+  {
+    "case": "piano_B4_triad",
+    "program": 0,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_triad__no_gain.wav",
+    "peak": 0.020203,
+    "peakDbfs": -33.89,
+    "rms": 0.00341,
+    "rmsDbfs": -49.35,
+    "zeroCrossRate": 0.02745
+  },
+  {
+    "case": "piano_B4_triad",
+    "program": 0,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_triad__no_quantize.wav",
+    "peak": 0.036392,
+    "peakDbfs": -28.78,
+    "rms": 0.006151,
+    "rmsDbfs": -44.22,
+    "zeroCrossRate": 0.03081
+  },
+  {
+    "case": "piano_B4_triad",
+    "program": 0,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/piano_B4_triad__float_no_gain_no_eq.wav",
+    "peak": 0.022144,
+    "peakDbfs": -33.09,
+    "rms": 0.00365,
+    "rmsDbfs": -48.75,
+    "zeroCrossRate": 0.03122
+  },
+  {
+    "case": "vibes_B4_single",
+    "program": 11,
+    "notes": [
+      71
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_single__raw.wav",
+    "peak": 0.020402,
+    "peakDbfs": -33.81,
+    "rms": 0.006979,
+    "rmsDbfs": -43.12,
+    "zeroCrossRate": 0.03333
+  },
+  {
+    "case": "vibes_B4_single",
+    "program": 11,
+    "notes": [
+      71
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_single__device.wav",
+    "peak": 0.033479,
+    "peakDbfs": -29.5,
+    "rms": 0.011263,
+    "rmsDbfs": -38.97,
+    "zeroCrossRate": 0.03323
+  },
+  {
+    "case": "vibes_B4_single",
+    "program": 11,
+    "notes": [
+      71
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_single__no_gain.wav",
+    "peak": 0.018586,
+    "peakDbfs": -34.62,
+    "rms": 0.006253,
+    "rmsDbfs": -44.08,
+    "zeroCrossRate": 0.03318
+  },
+  {
+    "case": "vibes_B4_single",
+    "program": 11,
+    "notes": [
+      71
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_single__no_quantize.wav",
+    "peak": 0.033497,
+    "peakDbfs": -29.5,
+    "rms": 0.011273,
+    "rmsDbfs": -38.96,
+    "zeroCrossRate": 0.03406
+  },
+  {
+    "case": "vibes_B4_single",
+    "program": 11,
+    "notes": [
+      71
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_single__float_no_gain_no_eq.wav",
+    "peak": 0.020402,
+    "peakDbfs": -33.81,
+    "rms": 0.006979,
+    "rmsDbfs": -43.12,
+    "zeroCrossRate": 0.03333
+  },
+  {
+    "case": "vibes_C6_single",
+    "program": 11,
+    "notes": [
+      84
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_C6_single__raw.wav",
+    "peak": 0.013168,
+    "peakDbfs": -37.61,
+    "rms": 0.004497,
+    "rmsDbfs": -46.94,
+    "zeroCrossRate": 0.06391
+  },
+  {
+    "case": "vibes_C6_single",
+    "program": 11,
+    "notes": [
+      84
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_C6_single__device.wav",
+    "peak": 0.021973,
+    "peakDbfs": -33.16,
+    "rms": 0.007505,
+    "rmsDbfs": -42.49,
+    "zeroCrossRate": 0.06375
+  },
+  {
+    "case": "vibes_C6_single",
+    "program": 11,
+    "notes": [
+      84
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_C6_single__no_gain.wav",
+    "peak": 0.012207,
+    "peakDbfs": -38.27,
+    "rms": 0.004165,
+    "rmsDbfs": -47.61,
+    "zeroCrossRate": 0.06359
+  },
+  {
+    "case": "vibes_C6_single",
+    "program": 11,
+    "notes": [
+      84
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_C6_single__no_quantize.wav",
+    "peak": 0.021999,
+    "peakDbfs": -33.15,
+    "rms": 0.007514,
+    "rmsDbfs": -42.48,
+    "zeroCrossRate": 0.06469
+  },
+  {
+    "case": "vibes_C6_single",
+    "program": 11,
+    "notes": [
+      84
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_C6_single__float_no_gain_no_eq.wav",
+    "peak": 0.013168,
+    "peakDbfs": -37.61,
+    "rms": 0.004497,
+    "rmsDbfs": -46.94,
+    "zeroCrossRate": 0.06391
+  },
+  {
+    "case": "vibes_B4_triad",
+    "program": 11,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_triad__raw.wav",
+    "peak": 0.042806,
+    "peakDbfs": -27.37,
+    "rms": 0.009961,
+    "rmsDbfs": -40.03,
+    "zeroCrossRate": 0.03464
+  },
+  {
+    "case": "vibes_B4_triad",
+    "program": 11,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_triad__device.wav",
+    "peak": 0.0712,
+    "peakDbfs": -22.95,
+    "rms": 0.016534,
+    "rmsDbfs": -35.63,
+    "zeroCrossRate": 0.03417
+  },
+  {
+    "case": "vibes_B4_triad",
+    "program": 11,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_triad__no_gain.wav",
+    "peak": 0.039552,
+    "peakDbfs": -28.06,
+    "rms": 0.009182,
+    "rmsDbfs": -40.74,
+    "zeroCrossRate": 0.03411
+  },
+  {
+    "case": "vibes_B4_triad",
+    "program": 11,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_triad__no_quantize.wav",
+    "peak": 0.0712,
+    "peakDbfs": -22.95,
+    "rms": 0.016543,
+    "rmsDbfs": -35.63,
+    "zeroCrossRate": 0.03487
+  },
+  {
+    "case": "vibes_B4_triad",
+    "program": 11,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/vibes_B4_triad__float_no_gain_no_eq.wav",
+    "peak": 0.042806,
+    "peakDbfs": -27.37,
+    "rms": 0.009961,
+    "rmsDbfs": -40.03,
+    "zeroCrossRate": 0.03464
+  },
+  {
+    "case": "ep_B4_single",
+    "program": 5,
+    "notes": [
+      71
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_single__raw.wav",
+    "peak": 0.018874,
+    "peakDbfs": -34.48,
+    "rms": 0.003114,
+    "rmsDbfs": -50.13,
+    "zeroCrossRate": 0.0294
+  },
+  {
+    "case": "ep_B4_single",
+    "program": 5,
+    "notes": [
+      71
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_single__device.wav",
+    "peak": 0.034913,
+    "peakDbfs": -29.14,
+    "rms": 0.005028,
+    "rmsDbfs": -45.97,
+    "zeroCrossRate": 0.02984
+  },
+  {
+    "case": "ep_B4_single",
+    "program": 5,
+    "notes": [
+      71
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_single__no_gain.wav",
+    "peak": 0.019379,
+    "peakDbfs": -34.25,
+    "rms": 0.00279,
+    "rmsDbfs": -51.09,
+    "zeroCrossRate": 0.02958
+  },
+  {
+    "case": "ep_B4_single",
+    "program": 5,
+    "notes": [
+      71
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_single__no_quantize.wav",
+    "peak": 0.034919,
+    "peakDbfs": -29.14,
+    "rms": 0.005036,
+    "rmsDbfs": -45.96,
+    "zeroCrossRate": 0.03086
+  },
+  {
+    "case": "ep_B4_single",
+    "program": 5,
+    "notes": [
+      71
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_single__float_no_gain_no_eq.wav",
+    "peak": 0.018874,
+    "peakDbfs": -34.48,
+    "rms": 0.003114,
+    "rmsDbfs": -50.13,
+    "zeroCrossRate": 0.0294
+  },
+  {
+    "case": "ep_B4_triad",
+    "program": 5,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_triad__raw.wav",
+    "peak": 0.031758,
+    "peakDbfs": -29.96,
+    "rms": 0.004527,
+    "rmsDbfs": -46.88,
+    "zeroCrossRate": 0.03401
+  },
+  {
+    "case": "ep_B4_triad",
+    "program": 5,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_triad__device.wav",
+    "peak": 0.049898,
+    "peakDbfs": -26.04,
+    "rms": 0.007489,
+    "rmsDbfs": -42.51,
+    "zeroCrossRate": 0.03297
+  },
+  {
+    "case": "ep_B4_triad",
+    "program": 5,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_triad__no_gain.wav",
+    "peak": 0.027711,
+    "peakDbfs": -31.15,
+    "rms": 0.004157,
+    "rmsDbfs": -47.62,
+    "zeroCrossRate": 0.03266
+  },
+  {
+    "case": "ep_B4_triad",
+    "program": 5,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_triad__no_quantize.wav",
+    "peak": 0.0499,
+    "peakDbfs": -26.04,
+    "rms": 0.007496,
+    "rmsDbfs": -42.5,
+    "zeroCrossRate": 0.03406
+  },
+  {
+    "case": "ep_B4_triad",
+    "program": 5,
+    "notes": [
+      67,
+      71,
+      74
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/ep_B4_triad__float_no_gain_no_eq.wav",
+    "peak": 0.031758,
+    "peakDbfs": -29.96,
+    "rms": 0.004527,
+    "rmsDbfs": -46.88,
+    "zeroCrossRate": 0.03401
+  },
+  {
+    "case": "nylon_guitar_five_note",
+    "program": 24,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/nylon_guitar_five_note__raw.wav",
+    "peak": 0.042171,
+    "peakDbfs": -27.5,
+    "rms": 0.009031,
+    "rmsDbfs": -40.89,
+    "zeroCrossRate": 0.01839
+  },
+  {
+    "case": "nylon_guitar_five_note",
+    "program": 24,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/nylon_guitar_five_note__device.wav",
+    "peak": 0.090518,
+    "peakDbfs": -20.87,
+    "rms": 0.018992,
+    "rmsDbfs": -34.43,
+    "zeroCrossRate": 0.01703
+  },
+  {
+    "case": "nylon_guitar_five_note",
+    "program": 24,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/nylon_guitar_five_note__no_gain.wav",
+    "peak": 0.050295,
+    "peakDbfs": -25.97,
+    "rms": 0.010546,
+    "rmsDbfs": -39.54,
+    "zeroCrossRate": 0.01698
+  },
+  {
+    "case": "nylon_guitar_five_note",
+    "program": 24,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/nylon_guitar_five_note__no_quantize.wav",
+    "peak": 0.090542,
+    "peakDbfs": -20.86,
+    "rms": 0.019003,
+    "rmsDbfs": -34.42,
+    "zeroCrossRate": 0.01776
+  },
+  {
+    "case": "nylon_guitar_five_note",
+    "program": 24,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/nylon_guitar_five_note__float_no_gain_no_eq.wav",
+    "peak": 0.042171,
+    "peakDbfs": -27.5,
+    "rms": 0.009031,
+    "rmsDbfs": -40.89,
+    "zeroCrossRate": 0.01839
+  },
+  {
+    "case": "folk_guitar_five_note",
+    "program": 25,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "raw",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/folk_guitar_five_note__raw.wav",
+    "peak": 0.042171,
+    "peakDbfs": -27.5,
+    "rms": 0.009031,
+    "rmsDbfs": -40.89,
+    "zeroCrossRate": 0.01839
+  },
+  {
+    "case": "folk_guitar_five_note",
+    "program": 25,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "device",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/folk_guitar_five_note__device.wav",
+    "peak": 0.090518,
+    "peakDbfs": -20.87,
+    "rms": 0.018992,
+    "rmsDbfs": -34.43,
+    "zeroCrossRate": 0.01703
+  },
+  {
+    "case": "folk_guitar_five_note",
+    "program": 25,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "no_gain",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/folk_guitar_five_note__no_gain.wav",
+    "peak": 0.050295,
+    "peakDbfs": -25.97,
+    "rms": 0.010546,
+    "rmsDbfs": -39.54,
+    "zeroCrossRate": 0.01698
+  },
+  {
+    "case": "folk_guitar_five_note",
+    "program": 25,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "no_quantize",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/folk_guitar_five_note__no_quantize.wav",
+    "peak": 0.090542,
+    "peakDbfs": -20.86,
+    "rms": 0.019003,
+    "rmsDbfs": -34.42,
+    "zeroCrossRate": 0.01776
+  },
+  {
+    "case": "folk_guitar_five_note",
+    "program": 25,
+    "notes": [
+      52,
+      57,
+      61,
+      64,
+      68
+    ],
+    "variant": "float_no_gain_no_eq",
+    "file": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/docs/generated/copych_source_artifact_audit_gain18/folk_guitar_five_note__float_no_gain_no_eq.wav",
+    "peak": 0.042171,
+    "peakDbfs": -27.5,
+    "rms": 0.009031,
+    "rmsDbfs": -40.89,
+    "zeroCrossRate": 0.01839
+  }
+]

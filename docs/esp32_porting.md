@@ -150,7 +150,7 @@ TS 侧现在提供 `npm run audit:mix`：
 | 阶段 | TS/浏览器当前值 | ESP32-S3 建议 |
 |------|-----------------|---------------|
 | 合成总线 | Copych synth+shared FX | 同源 `auraflow_synth` 总线 |
-| 设备增益 | `device_postchain.gain = 4.28` | 固件同值，后续以 I2S capture 校准 |
+| 设备增益 | `device_postchain.gain = 1.8` | 仅作硬件校准小增益；整体响度用受保护的 `masterLift` 推 |
 | 保护削波 | Copych soft/hard clip | int16 前统一处理，不允许单轨绕过 |
 | 小喇叭 EQ | 6 段 device EQ | 与浏览器 device_postchain 参数同源 |
 | 声道 | 默认 mono fold / 双单声道输出 | ESP32 喇叭口径优先 mono，耳机再评估 stereo |

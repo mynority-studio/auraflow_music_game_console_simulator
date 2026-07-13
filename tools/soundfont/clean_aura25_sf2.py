@@ -38,13 +38,40 @@ GEN_INITIAL_ATTENUATION = 48
 GEN_SAMPLE_ID = 53
 GEN_SAMPLE_MODES = 54
 
-VIBES_ZONE_TARGET_DB = -26.0
+# 2026-07-13 listening audit:
+# Copych RAW/设备/无增益下 GM11 all had obvious metallic "zizz", so this is
+# source/zone material, not the device postchain. Keep the lower octave useful
+# while darkening the upper zones before they enter shared space.
+VIBES_ZONE_TARGET_DB = -27.0
 VIBES_FILTER_FC_BY_ZONE = {
-    (0, 57): 11739,    # ~7.2 kHz
-    (58, 70): 11562,   # ~6.5 kHz
-    (71, 82): 11175,   # ~5.2 kHz
-    (83, 93): 10806,   # ~4.2 kHz
-    (94, 127): 10539,  # ~3.6 kHz
+    (0, 57): 10400,    # ~3.3 kHz
+    (58, 70): 9900,    # ~2.5 kHz
+    (71, 82): 8900,    # ~1.4 kHz, B4 zone: suppress 5-8 kHz ring
+    (83, 93): 8600,    # ~1.2 kHz
+    (94, 127): 8400,   # ~1.0 kHz
+}
+
+# GM5 GU Electric Grand passed single-note source checks better than vibes, but
+# 3-note blocks still had a light raw fizz around B4. Only damp the CP-80 upper
+# split zones; leave low/mid body and the piano preset untouched.
+ELECTRIC_GRAND_GLOBAL_FILTER_FC = 9600
+ELECTRIC_GRAND_FILTER_FC_BY_ZONE = {
+    (0, 38): 13500,
+    (39, 41): 9800,
+    (42, 46): 13500,
+    (47, 49): 9700,
+    (50, 54): 13500,
+    (55, 57): 9600,
+    (58, 62): 11200,
+    (63, 65): 9500,
+    (66, 70): 9400,
+    (71, 73): 9200,
+    (74, 78): 9300,
+    (79, 81): 9100,
+    (82, 86): 9200,
+    (87, 89): 9000,
+    (90, 98): 9000,
+    (99, 127): 8900,
 }
 COPYCH_TINY_SEND = 1
 DRUM_KIT_PRESETS = frozenset({8, 25, 40})
@@ -119,7 +146,7 @@ class PcmPatch:
 SEND_LIMITS: dict[tuple[int, int], SendLimit] = {
     (0, 0): SendLimit(max_reverb=70, max_chorus=8),
     (0, 5): SendLimit(max_reverb=0, max_chorus=0),
-    (0, 11): SendLimit(max_reverb=70, max_chorus=8),
+    (0, 11): SendLimit(max_reverb=0, max_chorus=0),
     (0, 24): SendLimit(max_reverb=16, max_chorus=8),
     (0, 25): SendLimit(max_reverb=16, max_chorus=8),
     (0, 32): SendLimit(max_reverb=24, max_chorus=8),
@@ -351,6 +378,28 @@ def _vibes_filter_fc(zone: Zone) -> int:
     if zone.key_range[0] >= 58:
         return VIBES_FILTER_FC_BY_ZONE[(58, 70)]
     return VIBES_FILTER_FC_BY_ZONE[(0, 57)]
+
+
+def _electric_grand_filter_fc(zone: Zone) -> int:
+    if zone.key_range in ELECTRIC_GRAND_FILTER_FC_BY_ZONE:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[zone.key_range]
+    lo = zone.key_range[0]
+    for key_range, fc in sorted(ELECTRIC_GRAND_FILTER_FC_BY_ZONE.items()):
+        if key_range[0] <= lo <= key_range[1]:
+            return fc
+    if lo >= 99:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[(99, 127)]
+    if lo >= 90:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[(90, 98)]
+    if lo >= 82:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[(82, 86)]
+    if lo >= 74:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[(74, 78)]
+    if lo >= 66:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[(66, 70)]
+    if lo >= 58:
+        return ELECTRIC_GRAND_FILTER_FC_BY_ZONE[(58, 62)]
+    return 13500
 
 
 def _active_audition_zones(zones: list[Zone], bank: int, program: int, note: int, velocity: int) -> list[Zone]:
@@ -651,6 +700,46 @@ def collect_patches(source: Path, *, target_db: float, audition_velocity: int) -
             f"gain bank0:program11 zone{zone.key_range[0]}-{zone.key_range[1]} "
             f"{db:.1f}dB target {target_db:.1f}dB -> +{per_ref_cb}cb on {len(refs)} attenuation generators"
         )
+
+    electric_grand_global_refs = {
+        (ref.chunk, ref.index): ref
+        for zone in zones
+        if (zone.bank, zone.program) == (0, 5)
+        for ref in zone.iglobal_refs
+        if ref.oper == GEN_INITIAL_FILTER_FC
+    }
+    for ref in electric_grand_global_refs.values():
+        if ref.amount != ELECTRIC_GRAND_GLOBAL_FILTER_FC:
+            patches[(ref.chunk, ref.index)] = Patch(
+                ref.chunk,
+                ref.index,
+                ref.amount,
+                ELECTRIC_GRAND_GLOBAL_FILTER_FC,
+                f"bank0:program5:electric-grand-global-filter-fc-{ELECTRIC_GRAND_GLOBAL_FILTER_FC}",
+            )
+
+    for zone in [z for z in zones if (z.bank, z.program) == (0, 5)]:
+        filter_fc = _electric_grand_filter_fc(zone)
+        filter_ref = next((ref for ref in zone.izone_refs if ref.oper == GEN_INITIAL_FILTER_FC), None)
+        if filter_ref is not None and filter_ref.amount != filter_fc:
+            patches[(filter_ref.chunk, filter_ref.index)] = Patch(
+                filter_ref.chunk,
+                filter_ref.index,
+                filter_ref.amount,
+                filter_fc,
+                f"bank0:program5:electric-grand-filter-fc-{filter_fc}",
+            )
+        elif filter_ref is None:
+            noop_ref = next((ref for ref in zone.izone_refs if ref.oper == 0 and ref.amount == 0), None)
+            if noop_ref is not None:
+                patches[(noop_ref.chunk, noop_ref.index)] = Patch(
+                    noop_ref.chunk,
+                    noop_ref.index,
+                    noop_ref.amount,
+                    filter_fc,
+                    f"bank0:program5:electric-grand-filter-fc-{filter_fc}",
+                    new_oper=GEN_INITIAL_FILTER_FC,
+                )
 
     return sorted(patches.values(), key=lambda p: (p.chunk, p.index)), report
 

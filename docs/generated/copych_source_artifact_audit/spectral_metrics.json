@@ -1,0 +1,506 @@
+[
+  {
+    "name": "ep_B4_single__device",
+    "rmsDb": -33.09,
+    "high5_10DbOfTotal": -51.31,
+    "presence3_5DbOfTotal": -23.78,
+    "highPeakPromDb": 46.24,
+    "topPeaks": [
+      [
+        5068.4,
+        -91.73
+      ],
+      [
+        6164.1,
+        -96.84
+      ],
+      [
+        5616.2,
+        -97.8
+      ]
+    ]
+  },
+  {
+    "name": "ep_B4_single__float_no_gain_no_eq",
+    "rmsDb": -44.81,
+    "high5_10DbOfTotal": -47.91,
+    "presence3_5DbOfTotal": -23.9,
+    "highPeakPromDb": 37.47,
+    "topPeaks": [
+      [
+        5068.4,
+        -101.73
+      ],
+      [
+        6164.1,
+        -103.1
+      ],
+      [
+        5616.2,
+        -105.41
+      ]
+    ]
+  },
+  {
+    "name": "ep_B4_single__raw",
+    "rmsDb": -44.81,
+    "high5_10DbOfTotal": -47.91,
+    "presence3_5DbOfTotal": -23.9,
+    "highPeakPromDb": 37.47,
+    "topPeaks": [
+      [
+        5068.4,
+        -101.73
+      ],
+      [
+        6164.1,
+        -103.1
+      ],
+      [
+        5616.2,
+        -105.41
+      ]
+    ]
+  },
+  {
+    "name": "ep_B4_triad__device",
+    "rmsDb": -29.83,
+    "high5_10DbOfTotal": -55.01,
+    "presence3_5DbOfTotal": -25.03,
+    "highPeakPromDb": 44.09,
+    "topPeaks": [
+      [
+        5068.4,
+        -93.51
+      ],
+      [
+        5153.3,
+        -97.9
+      ],
+      [
+        6164.1,
+        -98.61
+      ]
+    ]
+  },
+  {
+    "name": "ep_B4_triad__float_no_gain_no_eq",
+    "rmsDb": -41.75,
+    "high5_10DbOfTotal": -51.45,
+    "presence3_5DbOfTotal": -24.92,
+    "highPeakPromDb": 35.97,
+    "topPeaks": [
+      [
+        5068.4,
+        -103.39
+      ],
+      [
+        6164.1,
+        -104.75
+      ],
+      [
+        5153.3,
+        -107.38
+      ]
+    ]
+  },
+  {
+    "name": "ep_B4_triad__raw",
+    "rmsDb": -41.75,
+    "high5_10DbOfTotal": -51.45,
+    "presence3_5DbOfTotal": -24.92,
+    "highPeakPromDb": 35.97,
+    "topPeaks": [
+      [
+        5068.4,
+        -103.39
+      ],
+      [
+        6164.1,
+        -104.75
+      ],
+      [
+        5153.3,
+        -107.38
+      ]
+    ]
+  },
+  {
+    "name": "piano_B4_single__device",
+    "rmsDb": -33.87,
+    "high5_10DbOfTotal": -69.15,
+    "presence3_5DbOfTotal": -54.38,
+    "highPeakPromDb": 12.23,
+    "topPeaks": [
+      [
+        7916.0,
+        -126.66
+      ],
+      [
+        6199.2,
+        -127.83
+      ],
+      [
+        5440.4,
+        -127.92
+      ]
+    ]
+  },
+  {
+    "name": "piano_B4_single__float_no_gain_no_eq",
+    "rmsDb": -45.54,
+    "high5_10DbOfTotal": -58.74,
+    "presence3_5DbOfTotal": -54.24,
+    "highPeakPromDb": 11.04,
+    "topPeaks": [
+      [
+        9700.2,
+        -128.9
+      ],
+      [
+        10760.7,
+        -129.8
+      ],
+      [
+        6199.2,
+        -129.89
+      ]
+    ]
+  },
+  {
+    "name": "piano_B4_single__raw",
+    "rmsDb": -45.54,
+    "high5_10DbOfTotal": -58.74,
+    "presence3_5DbOfTotal": -54.24,
+    "highPeakPromDb": 11.04,
+    "topPeaks": [
+      [
+        9700.2,
+        -128.9
+      ],
+      [
+        10760.7,
+        -129.8
+      ],
+      [
+        6199.2,
+        -129.89
+      ]
+    ]
+  },
+  {
+    "name": "piano_B4_triad__device",
+    "rmsDb": -30.93,
+    "high5_10DbOfTotal": -72.29,
+    "presence3_5DbOfTotal": -56.96,
+    "highPeakPromDb": 11.11,
+    "topPeaks": [
+      [
+        8452.1,
+        -127.36
+      ],
+      [
+        10620.1,
+        -127.64
+      ],
+      [
+        6966.8,
+        -127.91
+      ]
+    ]
+  },
+  {
+    "name": "piano_B4_triad__float_no_gain_no_eq",
+    "rmsDb": -42.98,
+    "high5_10DbOfTotal": -61.85,
+    "presence3_5DbOfTotal": -56.45,
+    "highPeakPromDb": 11.09,
+    "topPeaks": [
+      [
+        5355.5,
+        -129.12
+      ],
+      [
+        5651.4,
+        -130.13
+      ],
+      [
+        5762.7,
+        -130.56
+      ]
+    ]
+  },
+  {
+    "name": "piano_B4_triad__raw",
+    "rmsDb": -42.98,
+    "high5_10DbOfTotal": -61.85,
+    "presence3_5DbOfTotal": -56.45,
+    "highPeakPromDb": 11.09,
+    "topPeaks": [
+      [
+        5355.5,
+        -129.12
+      ],
+      [
+        5651.4,
+        -130.13
+      ],
+      [
+        5762.7,
+        -130.56
+      ]
+    ]
+  },
+  {
+    "name": "piano_C4_single__device",
+    "rmsDb": -31.25,
+    "high5_10DbOfTotal": -72.32,
+    "presence3_5DbOfTotal": -66.74,
+    "highPeakPromDb": 16.38,
+    "topPeaks": [
+      [
+        5091.8,
+        -122.38
+      ],
+      [
+        5364.3,
+        -126.22
+      ],
+      [
+        9673.8,
+        -126.61
+      ]
+    ]
+  },
+  {
+    "name": "piano_C4_single__float_no_gain_no_eq",
+    "rmsDb": -44.93,
+    "high5_10DbOfTotal": -60.02,
+    "presence3_5DbOfTotal": -61.81,
+    "highPeakPromDb": 12.02,
+    "topPeaks": [
+      [
+        9761.7,
+        -127.96
+      ],
+      [
+        9574.2,
+        -129.68
+      ],
+      [
+        10171.9,
+        -130.17
+      ]
+    ]
+  },
+  {
+    "name": "piano_C4_single__raw",
+    "rmsDb": -44.93,
+    "high5_10DbOfTotal": -60.02,
+    "presence3_5DbOfTotal": -61.81,
+    "highPeakPromDb": 12.02,
+    "topPeaks": [
+      [
+        9761.7,
+        -127.96
+      ],
+      [
+        9574.2,
+        -129.68
+      ],
+      [
+        10171.9,
+        -130.17
+      ]
+    ]
+  },
+  {
+    "name": "vibes_B4_single__device",
+    "rmsDb": -30.59,
+    "high5_10DbOfTotal": -53.91,
+    "presence3_5DbOfTotal": -41.67,
+    "highPeakPromDb": 36.59,
+    "topPeaks": [
+      [
+        7933.6,
+        -93.87
+      ],
+      [
+        5003.9,
+        -100.33
+      ],
+      [
+        5074.2,
+        -102.05
+      ]
+    ]
+  },
+  {
+    "name": "vibes_B4_single__float_no_gain_no_eq",
+    "rmsDb": -42.48,
+    "high5_10DbOfTotal": -49.77,
+    "presence3_5DbOfTotal": -41.42,
+    "highPeakPromDb": 33.83,
+    "topPeaks": [
+      [
+        7933.6,
+        -101.63
+      ],
+      [
+        5003.9,
+        -110.4
+      ],
+      [
+        5466.8,
+        -111.38
+      ]
+    ]
+  },
+  {
+    "name": "vibes_B4_single__raw",
+    "rmsDb": -42.48,
+    "high5_10DbOfTotal": -49.77,
+    "presence3_5DbOfTotal": -41.42,
+    "highPeakPromDb": 33.83,
+    "topPeaks": [
+      [
+        7933.6,
+        -101.63
+      ],
+      [
+        5003.9,
+        -110.4
+      ],
+      [
+        5466.8,
+        -111.38
+      ]
+    ]
+  },
+  {
+    "name": "vibes_B4_triad__device",
+    "rmsDb": -28.0,
+    "high5_10DbOfTotal": -54.94,
+    "presence3_5DbOfTotal": -35.41,
+    "highPeakPromDb": 33.08,
+    "topPeaks": [
+      [
+        7933.6,
+        -95.75
+      ],
+      [
+        5449.2,
+        -97.57
+      ],
+      [
+        5364.3,
+        -98.75
+      ]
+    ]
+  },
+  {
+    "name": "vibes_B4_triad__float_no_gain_no_eq",
+    "rmsDb": -39.99,
+    "high5_10DbOfTotal": -50.78,
+    "presence3_5DbOfTotal": -35.34,
+    "highPeakPromDb": 30.71,
+    "topPeaks": [
+      [
+        7933.6,
+        -103.54
+      ],
+      [
+        5449.2,
+        -106.21
+      ],
+      [
+        5364.3,
+        -107.48
+      ]
+    ]
+  },
+  {
+    "name": "vibes_B4_triad__raw",
+    "rmsDb": -39.99,
+    "high5_10DbOfTotal": -50.78,
+    "presence3_5DbOfTotal": -35.34,
+    "highPeakPromDb": 30.71,
+    "topPeaks": [
+      [
+        7933.6,
+        -103.54
+      ],
+      [
+        5449.2,
+        -106.21
+      ],
+      [
+        5364.3,
+        -107.48
+      ]
+    ]
+  },
+  {
+    "name": "vibes_C6_single__device",
+    "rmsDb": -27.28,
+    "high5_10DbOfTotal": -53.96,
+    "presence3_5DbOfTotal": -36.27,
+    "highPeakPromDb": 47.4,
+    "topPeaks": [
+      [
+        5062.5,
+        -87.68
+      ],
+      [
+        5209.0,
+        -95.1
+      ],
+      [
+        5838.9,
+        -95.19
+      ]
+    ]
+  },
+  {
+    "name": "vibes_C6_single__float_no_gain_no_eq",
+    "rmsDb": -39.54,
+    "high5_10DbOfTotal": -50.07,
+    "presence3_5DbOfTotal": -35.3,
+    "highPeakPromDb": 40.26,
+    "topPeaks": [
+      [
+        5062.5,
+        -97.5
+      ],
+      [
+        5838.9,
+        -102.24
+      ],
+      [
+        5211.9,
+        -104.44
+      ]
+    ]
+  },
+  {
+    "name": "vibes_C6_single__raw",
+    "rmsDb": -39.54,
+    "high5_10DbOfTotal": -50.07,
+    "presence3_5DbOfTotal": -35.3,
+    "highPeakPromDb": 40.26,
+    "topPeaks": [
+      [
+        5062.5,
+        -97.5
+      ],
+      [
+        5838.9,
+        -102.24
+      ],
+      [
+        5211.9,
+        -104.44
+      ]
+    ]
+  }
+]

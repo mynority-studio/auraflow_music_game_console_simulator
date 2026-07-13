@@ -7,7 +7,7 @@
 //
 // 固件链（纯合成路径，无 MikuTap PCM；参数同源锚）：
 //   ① Copych 合成核心转换（audio_rander_copych.cpp ar_sf2_render 末段）：
-//      v = (int32)(x × masterLift × global_vol × 32767 × g_ar_synth_gain[4.28])   ← C cast=向零截断
+//      v = (int32)(x × masterLift × global_vol × 32767 × device_cal_gain[1.8])   ← C cast=向零截断
 //      v = soft_clip_s16(v)（默认）或 hard_clip_s16(v)（ne clip hard）
 //   ② 输出级（audio_rander.c render loop）：
 //      m = (L+R)/2                       ← C 整数除法=向零截断
@@ -39,7 +39,7 @@
  * 2026-07-10: YD3411-H-YC16-8B(34×11×4mm, 4Ω, 2W, F0≈630Hz@4CC) 小喇叭口径。
  * 旧 v3 已恢复 120/200Hz 鼓身，但实测 REW 红线 5-10kHz 高峰仍会放大刺耳/滋滋，
  * 主观上反而显得低频薄。2026-07-10 v4 采用“小喇叭 Harman-like”安全曲线：
- * 50Hz 仍保护，145/225Hz 只轻补身体感，580Hz 轻削纸盒感，5.8k/7k+ 大幅压高频峰。
+ * 50Hz 仍保护，145/225Hz 只轻补身体感，580Hz 轻削纸盒感，5.2-7k 大幅压高频峰。
  * 不硬推 100Hz 以下，遵守 YD3411 34×11×4mm / 4cc / F0≈630Hz 的物理极限。 */
 export const EQ_COEF_24K = [
     { b0: 0.9871232795306327, b1: -1.9742465590612654, b2: 0.9871232795306327,
@@ -50,13 +50,14 @@ export const EQ_COEF_24K = [
       a1: 1.9373960477614829, a2: -0.9407620857569091 },  /* PK +1.2dB ~225Hz Q0.9: drum/bass warmth */
     { b0: 0.9855140376537236, b1: -1.8239790145999057, b2: 0.8596961745091007,
       a1: 1.8239790145999057, a2: -0.8452102121628244 },  /* PK -1.8dB ~580Hz Q1.0: box/cardboard control */
-    { b0: 0.9011737822179814, b1: 0.07908853201967374, b2: 0.6099963137776717,
-      a1: -0.07908853201967374, a2: -0.5111700959956531 }, /* PK -4.5dB ~6.2kHz Q2.0: harsh peak / FM fizz */
+    { b0: 0.8404693536569932, b1: -0.07119566853515708, b2: 0.5198892534288534,
+      a1: 0.07119566853515708, a2: -0.36035860708584655 }, /* PK -6.0dB ~5.8kHz Q1.5: 5.2/6.3k zizz control */
     { b0: 0.7630971118034126, b1: 0.3528365355030781, b2: 0.11992893085810055,
       a1: -0.11858579787427957, a2: -0.11727678029031158 }, /* HS -5.5dB ~7kHz S0.8: Harman-like treble roll-off */
 ];
 
-export const DEVICE_GAIN_DEFAULT = 4.28;   /* AR_SYNTH_GAIN_DEFAULT（板测定值，global_vol=1.0 口径） */
+export const DEVICE_GAIN_DEFAULT = 1.8;    /* 硬件校准小增益；整体响度走受保护的 masterLift，不再用大 gain 硬推 */
+export const DEFAULT_MASTER_LIFT = 1.5;    /* 默认主音量基准：+50% 响度请求，仍在 softclip/EQ/clamp 保护链之前 */
 export const MASTER_LIFT_MIN = 0.05;
 export const MASTER_LIFT_MAX = 4;
 export const DEVICE_POSTCHAIN_DEFAULT_PRESET = Object.freeze({
@@ -65,7 +66,7 @@ export const DEVICE_POSTCHAIN_DEFAULT_PRESET = Object.freeze({
     eq: true,
     softclip: true,
     quantize: true,
-    masterLift: 1,
+    masterLift: DEFAULT_MASTER_LIFT,
 });
 
 const K_SOFT = 24576;   /* soft_clip knee = 75% 满幅 */
@@ -144,7 +145,7 @@ export function createDevicePostChain(contextSampleRate) {
             const wasEqOn = eqRateOk && cfg.eq;
             Object.assign(cfg, partial);
             cfg.enabled = true;
-            if (!Number.isFinite(cfg.masterLift)) cfg.masterLift = 1;
+            if (!Number.isFinite(cfg.masterLift)) cfg.masterLift = DEFAULT_MASTER_LIFT;
             cfg.masterLift = Math.max(MASTER_LIFT_MIN, Math.min(MASTER_LIFT_MAX, cfg.masterLift));
             const nowEqOn = eqRateOk && cfg.eq;
             if (nowEqOn && !wasEqOn) eqReset();   /* 重开清滤波状态（镜像固件 s_eq_reset_req 语义） */

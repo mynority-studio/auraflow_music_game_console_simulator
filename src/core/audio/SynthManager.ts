@@ -93,7 +93,7 @@ const notifySoundFontState = (): void => {
 // Copych-only 输出链：Copych synth+FX -> style master lift -> device_postchain -> output。
 let _channelModeNode: GainNode | null = null; // 输出末端声道模式（stereo 直通 / mono 强制下混）
 let _masterNodes: AudioNode[] = [];
-let _playbackMasterLift = 1.0;
+let _playbackMasterLift = playbackMasterLiftForStyle(undefined);
 
 const applyPlaybackMasterLift = (): void => {
     const synth = activeSynth;

@@ -33,7 +33,7 @@ const LINEUP_RULES: Record<string, LineupRule> = {
 };
 
 // 各 style 各角色的乐器候选(GM program);随 seed 选一。
-// ★ lead 走【钢琴 + 舒缓键盘 + 颤音琴 + 低音区萨克斯】路线(删长笛/小号/合成 lead 等高频刺耳)。
+// ★ lead 走【钢琴 + 舒缓键盘 + 低音区萨克斯 + 轻拨奏】路线(删长笛/小号/合成 lead 等高频刺耳)。
 //   2026-06-09 暖路线扩充:在【不刺耳】前提下加宽调色板 —— 尼龙/钢弦/爵士/电吉他元数据(24/25/26/27)、
 //   哈蒙德管风琴(16)、大提琴(42)、更多暖 pad(88 New Age / 94 Halo)、古筝(107)/卡林巴(108)。
 //   仍不加铜管/长笛/高频合成 lead(守"不刺耳");低音区萨克斯作为 CityPop/Jazz lead 允许。
@@ -44,21 +44,21 @@ const INSTRUMENTS: Record<string, Partial<Record<InstrumentRoleName, number[]>>>
   //   持续乐器归 pad(持续渲染天然合适);comp 只放【可衰减/拨奏的多音乐器】。capability 见 canPlayComp()。
   // ★ 2026-06-10:暖路线全族扩(用户:钢琴/bass/吉他/pad/synthFX 全加,暖子集 = 跳过失真/过载吉他 + 刺耳 FX)。
   //   按风格 + 能力分配:comp 只放可 comp(键盘/吉他);synthFX(持续)→ pad;吉他 lead+comp;slap/fretless → bass。
-  // ★ 2026-07-03:用户决策「不要 jazz guitar」→ GM26 不再进入主动器配池;爵士 lead 聚焦低音区萨克斯/钢琴/电钢/颤音琴。
+  // ★ 2026-07-03:用户决策「不要 jazz guitar」→ GM26 不再进入主动器配池;爵士 lead 聚焦低音区萨克斯/钢琴/电钢。
   // ★ 2026-07-07:旧 Tenor Sax(GM66)与慢弦(GM49)从运行包剔除;萨克斯主动池统一改 GM67 上低音,持续 pad 只保留 GM89。
   // ★ 2026-07-07:GM27 Clean Guitar 太薄 → 运行包改 GM25 Folk/Steel Acoustic Guitar,作为 pop/R&B/modal lead+comp 色彩。
   //   Jazz 默认池不主动放吉他;显式选择 guitarist 时由 family fallback 兜 GM25。
-  jazz: { lead: [67, 0, 11], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
+  jazz: { lead: [67, 0], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
   // ★ 2026-07-07:GM67 sax 从非 Jazz 主动 lead 池移出。Pop/RNB/LOFI 的主角应是 piano/EP/soft pluck,
   //   sax 只在 Jazz 高概率出现;Modal 保留极低色彩概率,避免全局“到处都是 sax”。
-  pop: { lead: [0, 5, 25, 11, 108], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
-  lofi: { lead: [5, 0, 11, 108, 25], comp: [5, 0], bass: [32, 38], pad: [89], drum: [0] },
-  rnb: { lead: [5, 0, 25, 11], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
-  modal: { lead: [11, 108, 0, 5, 67, 25], comp: [0, 5, 24, 25], bass: [32, 38], pad: [89], drum: [0] },
+  pop: { lead: [0, 5, 25, 108], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
+  lofi: { lead: [5, 0, 108, 25], comp: [5, 0], bass: [32, 38], pad: [89], drum: [0] },
+  rnb: { lead: [5, 0, 25], comp: [5, 0], bass: [38, 32], pad: [89], drum: [0] },
+  modal: { lead: [108, 0, 5, 67, 25], comp: [0, 5, 24, 25], bass: [32, 38], pad: [89], drum: [0] },
   // ★ ACG 主体仍是钢琴写作,但 lead/comp 对当前 Aura25 小包开放键盘式色彩:
-  //   大钢琴/GU Electric Grand/颤音琴/卡林巴。bass 保持原声,不引入 drum/pad 核心。
+  //   大钢琴/GU Electric Grand。bass 保持原声,不引入 drum/pad 核心。
   acg: { lead: [0, 5], comp: [0, 5], bass: [32], pad: [89], drum: [0] },
-  default: { lead: [0, 5, 25, 11, 108], comp: [0, 5, 25, 24], bass: [32], pad: [89], drum: [0] },
+  default: { lead: [0, 5, 25, 108], comp: [0, 5, 25, 24], bass: [32], pad: [89], drum: [0] },
 };
 
 const FALLBACK_PROGRAM: Record<InstrumentRoleName, number> = { bass: 32, comp: 0, lead: 0, pad: 89, drum: 0 };
@@ -68,28 +68,28 @@ const FAMILY_FALLBACK_PROGRAMS: Partial<Record<InstrumentFamily, readonly number
   keyboard: [0, 5],
   bass: [32, 38],
   pad: [89],
-  mallet: [11, 108],
+  mallet: [108],
   wind: [67],
 };
 
 // ★ 2026-06-23(用户:JAZZ 整编"是乐器问题,不要缩,做更高优先级"):候选池全保留(不缩),给地道音色【更高
-//   选中权重】。缺省权重=1;现仅 jazz lead/bass 配权重 —— 上低音萨克斯/钢琴三重奏优先,Rhodes/颤音琴保色彩;
+//   选中权重】。缺省权重=1;现仅 jazz lead/bass 配权重 —— 上低音萨克斯/钢琴三重奏优先;
 //   bass upright 为主。**权重只改被选中概率,不改 rng 消耗步数(仍每角色一次抽样)** → 同 seed
 //   确定性、非加权风格/角色字节不变;jazz lead/bass 值改变(本意),其余角色因 stream 对齐而不变。
 const INSTRUMENT_WEIGHTS: Record<string, Partial<Record<InstrumentRoleName, Record<number, number>>>> = {
   jazz: {
-    lead: { 67: 12, 0: 6, 11: 2 },
+    lead: { 67: 12, 0: 6 },
     bass: { 32: 6 },
   },
-  pop: { lead: { 0: 7, 5: 5, 25: 2, 11: 1, 108: 1 } },
-  lofi: { lead: { 5: 7, 0: 4, 11: 2, 108: 2, 25: 1 } },
-  rnb: { lead: { 5: 8, 0: 4, 25: 2, 11: 1 } },
-  modal: { lead: { 11: 5, 108: 4, 0: 3, 5: 2, 67: 1, 25: 1 } },
+  pop: { lead: { 0: 7, 5: 5, 25: 2, 108: 1 } },
+  lofi: { lead: { 5: 7, 0: 4, 108: 2, 25: 1 } },
+  rnb: { lead: { 5: 8, 0: 4, 25: 2 } },
+  modal: { lead: { 108: 4, 0: 3, 5: 2, 67: 1, 25: 1 } },
   acg: {
-    lead: { 0: 10, 5: 3, 11: 2, 108: 1 },
-    comp: { 0: 10, 5: 3, 11: 1, 108: 1 },
+    lead: { 0: 10, 5: 3 },
+    comp: { 0: 10, 5: 3 },
   },
-  default: { lead: { 0: 7, 5: 5, 25: 2, 11: 1, 108: 1 } },
+  default: { lead: { 0: 7, 5: 5, 25: 2, 108: 1 } },
 };
 
 /** 加权挑 program:无权重表 → 退 `rng.pick`(字节不变路径);有 → 按权重(缺省 1)挑,消耗【一次 `rng.next()`】

@@ -1,15 +1,15 @@
 export type Aura25Role = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
 
-export const AURA25_SF2_URL = '/Aura25_GM128.sf2?v=20260710-v44-aura25-only';
+export const AURA25_SF2_URL = '/Aura25_GM128.sf2?v=20260713-v44-gm128-vibes';
 export const AURA25_SF2_BANK_ID = 'aura25-gu-cp80-chorusedfm';
-export const AURA25_SF2_SIZE_LABEL = '1.32MB';
+export const AURA25_SF2_SIZE_LABEL = '1.29MB';
 export const AURA25_DRUM_BANK_MSB = 1;
 export const AURA25_DRUM_BANK_LSB = 0;
 export const AURA25_CHORUSED_FM_EP_BANK = 8;
 export const AURA25_CHORUSED_FM_EP_PROGRAM = 5;
 
 export const AURA25_MELODIC_PROGRAMS = [
-  0, 5, 11, 24, 25,
+  0, 5, 24, 25,
   32, 38,
   67, 89, 108,
 ] as const;
@@ -17,8 +17,8 @@ export const AURA25_MELODIC_PROGRAMS = [
 export const AURA25_DRUM_PROGRAMS = [8, 25, 40] as const;
 
 export const AURA25_PROGRAMS_BY_ROLE: Record<Aura25Role, readonly number[]> = {
-  lead: [0, 5, 11, 24, 25, 67, 108],
-  comp: [0, 5, 11, 24, 25],
+  lead: [0, 5, 24, 25, 67, 108],
+  comp: [0, 5, 24, 25],
   bass: [32, 38],
   pad: [89],
   drum: AURA25_DRUM_PROGRAMS,
@@ -28,7 +28,6 @@ export const AURA25_AUDITION_INSTRUMENTS = [
   { bank: 0, program: 0, role: 'lead', name: '大钢琴', note: 60, sampleSizeBytes: 197928, sampleSizeLabel: '0.189MB' },
   { bank: 0, program: 5, role: 'comp', name: 'GU Electric Grand', note: 64, sampleSizeBytes: 332568, sampleSizeLabel: '0.317MB' },
   { bank: 8, program: 5, role: 'comp', name: 'GU Chorused FM EP', note: 64, sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' },
-  { bank: 0, program: 11, role: 'lead', name: '颤音琴', note: 72, sampleSizeBytes: 45558, sampleSizeLabel: '0.043MB' },
   { bank: 0, program: 24, role: 'comp', name: '尼龙吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
   { bank: 0, program: 25, role: 'comp', name: '民谣木吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
   { bank: 0, program: 32, role: 'bass', name: '原声贝斯', note: 40, sampleSizeBytes: 7106, sampleSizeLabel: '0.007MB' },
@@ -83,7 +82,7 @@ function styleFallback(role: Aura25Role, style?: string): number {
   if (role === 'pad') return 89;
   if (role === 'comp') return s === 'rnb' || s === 'lofi' || s === 'pop' ? 5 : 0;
   if (s === 'lofi') return 108;
-  if (s === 'modal') return 11;
+  if (s === 'modal') return 108;
   if (s === 'rnb') return 5;
   if (s === 'jazz' || s === 'blues') return 67;
   if (s === 'pop') return 0;
@@ -116,8 +115,8 @@ function mapDrum(p: number, style?: string): number {
 function mapKeyboardLike(p: number, style?: string): number {
   if (p <= 3) return 0;
   if (p >= 4 && p <= 7) return 5;
-  if (p === 11) return 11;
-  if (p >= 8 && p <= 15) return p === 12 || p === 13 || normStyle(style) === 'lofi' ? 108 : 11;
+  if (p === 11) return 108;
+  if (p >= 8 && p <= 15) return 108;
   return -1;
 }
 
@@ -157,12 +156,12 @@ function mapLeadLike(p: number, style?: string): number {
 function mapCompLike(p: number, style?: string): number {
   if (AURA25_PROGRAMS_BY_ROLE.comp.includes(p)) return p;
   const key = mapKeyboardLike(p, style);
-  if (key >= 0) return key;
+  if (key >= 0) return AURA25_PROGRAMS_BY_ROLE.comp.includes(key) ? key : styleFallback('comp', style);
   const guitar = mapGuitarLike(p);
   if (guitar >= 0) return guitar;
   if (p >= 40 && p <= 55) return styleFallback('comp', style);
   if (p >= 80 && p <= 103) return 5;
-  if (p >= 104 && p <= 119) return 11;
+  if (p >= 104 && p <= 119) return styleFallback('comp', style);
   return styleFallback('comp', style);
 }
 

@@ -1,89 +1,89 @@
 [
   {
     "name": "fm_ep_c4_connected_to_next",
-    "rmsDbfs": -44.21,
-    "spectralCentroidHz": 329.2,
+    "rmsDbfs": -39.9,
+    "spectralCentroidHz": 344.4,
     "body120_3000DbOfTotal": -0.0,
-    "presence3000_5000DbOfTotal": -52.18,
-    "high5000_10000DbOfTotal": -60.38,
-    "air8000_11000DbOfTotal": -62.91,
-    "highPeakProminenceDb": 16.0,
+    "presence3000_5000DbOfTotal": -33.52,
+    "high5000_10000DbOfTotal": -62.65,
+    "air8000_11000DbOfTotal": -67.22,
+    "highPeakProminenceDb": 29.03,
     "topHighPeaks": [
       {
-        "freqHz": 5238.3,
-        "db": -123.96
+        "freqHz": 5264.6,
+        "db": -110.77
       },
       {
-        "freqHz": 5502.0,
-        "db": -124.8
+        "freqHz": 5030.3,
+        "db": -121.12
       },
       {
-        "freqHz": 5217.8,
-        "db": -124.8
+        "freqHz": 5044.9,
+        "db": -124.19
       },
       {
-        "freqHz": 5478.5,
-        "db": -124.93
+        "freqHz": 5006.8,
+        "db": -127.44
       },
       {
-        "freqHz": 10160.2,
-        "db": -129.04
+        "freqHz": 5170.9,
+        "db": -128.79
       },
       {
-        "freqHz": 10098.6,
-        "db": -129.43
+        "freqHz": 8718.8,
+        "db": -128.85
       },
       {
-        "freqHz": 7854.5,
-        "db": -129.66
+        "freqHz": 10763.7,
+        "db": -129.44
       },
       {
-        "freqHz": 8950.2,
-        "db": -130.44
+        "freqHz": 9864.3,
+        "db": -129.57
       }
     ]
   },
   {
     "name": "fm_ep_c4_release68",
-    "rmsDbfs": -44.37,
-    "spectralCentroidHz": 329.2,
+    "rmsDbfs": -40.0,
+    "spectralCentroidHz": 344.4,
     "body120_3000DbOfTotal": -0.0,
-    "presence3000_5000DbOfTotal": -52.18,
-    "high5000_10000DbOfTotal": -60.38,
-    "air8000_11000DbOfTotal": -62.91,
-    "highPeakProminenceDb": 15.94,
+    "presence3000_5000DbOfTotal": -33.52,
+    "high5000_10000DbOfTotal": -62.65,
+    "air8000_11000DbOfTotal": -67.22,
+    "highPeakProminenceDb": 29.02,
     "topHighPeaks": [
       {
-        "freqHz": 5238.3,
-        "db": -123.99
+        "freqHz": 5264.6,
+        "db": -110.78
       },
       {
-        "freqHz": 5502.0,
-        "db": -124.76
+        "freqHz": 5030.3,
+        "db": -121.11
       },
       {
-        "freqHz": 5217.8,
-        "db": -124.82
+        "freqHz": 5044.9,
+        "db": -124.17
       },
       {
-        "freqHz": 5478.5,
-        "db": -124.92
+        "freqHz": 5006.8,
+        "db": -127.44
       },
       {
-        "freqHz": 10160.2,
-        "db": -129.03
+        "freqHz": 8718.8,
+        "db": -128.74
       },
       {
-        "freqHz": 10098.6,
-        "db": -129.28
+        "freqHz": 5170.9,
+        "db": -128.87
       },
       {
-        "freqHz": 7854.5,
-        "db": -129.62
+        "freqHz": 10763.7,
+        "db": -129.53
       },
       {
-        "freqHz": 8950.2,
-        "db": -130.44
+        "freqHz": 9864.3,
+        "db": -129.6
       }
     ]
   },

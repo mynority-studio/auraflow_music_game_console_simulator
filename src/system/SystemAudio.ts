@@ -44,7 +44,7 @@ function initSystemAudio() {
     if (!activeSynth || isInitialized) return;
     
     // Setup Lead Synth on Channel 15
-    activeSynth.programChange(LEAD_CHANNEL, 11); // Vibraphone (ethereal)
+    activeSynth.programChange(LEAD_CHANNEL, 108); // Kalimba (soft mallet, YD3411-safe)
     activeSynth.controllerChange(LEAD_CHANNEL, 7, 100); // Volume
     activeSynth.controllerChange(LEAD_CHANNEL, 91, 127); // Reverb max
     activeSynth.controllerChange(LEAD_CHANNEL, 93, 64); // Chorus

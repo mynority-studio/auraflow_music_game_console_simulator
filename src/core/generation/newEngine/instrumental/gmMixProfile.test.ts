@@ -12,10 +12,10 @@ import type { TimbreWorld } from '../knowledge/instruments';
 
 // 各风格【代表性】角色 → 生效 program(暖路线池内,与 instruments.ts 一致)。
 const PALETTE: Record<string, Partial<Record<InstrumentRoleName, number[]>>> = {
-  pop:  { bass: [32, 38], comp: [0, 5, 24, 25], lead: [0, 5, 25, 11, 108], pad: [89], drum: [0] },
-  lofi: { bass: [32, 38], comp: [5, 24, 25, 0], lead: [5, 0, 11, 108, 25], pad: [89], drum: [0] },
-  rnb:  { bass: [32, 38], comp: [5, 25, 0, 24], lead: [5, 0, 25, 11], pad: [89], drum: [0] },
-  jazz: { bass: [32], comp: [0, 5, 25], lead: [0, 11, 67], pad: [89], drum: [0] },
+  pop:  { bass: [32, 38], comp: [0, 5, 24, 25], lead: [0, 5, 25, 108], pad: [89], drum: [0] },
+  lofi: { bass: [32, 38], comp: [5, 24, 25, 0], lead: [5, 0, 108, 25], pad: [89], drum: [0] },
+  rnb:  { bass: [32, 38], comp: [5, 25, 0, 24], lead: [5, 0, 25], pad: [89], drum: [0] },
+  jazz: { bass: [32], comp: [0, 5, 25], lead: [0, 67], pad: [89], drum: [0] },
 };
 
 const isInt = (v: number) => Number.isInteger(v);
@@ -74,15 +74,15 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
 
   it('drum 进受控 room:靠后一点但仍不超过小喇叭瞬态上限', () => {
     const drum = mk('drum', 0);
-    expect(drum.volume).toBe(86);
+    expect(drum.volume).toBe(78);
     expect(drum.reverb).toBe(14);
     expect(drum.chorus).toBe(0);
   });
 
-  it('Room 鼓组对齐试听 room send:保留 kick 空间,但不影响 808/Brush', () => {
-    expect(mk('drum', 8)).toMatchObject({ volume: 86, reverb: 30, chorus: 0 });
-    expect(mk('drum', 25)).toMatchObject({ volume: 86, reverb: 14, chorus: 0 });
-    expect(mk('drum', 40)).toMatchObject({ volume: 86, reverb: 14, chorus: 0 });
+  it('Room 鼓组收回后排:保留 kick 空间,但不再比键盘/贝斯大一截', () => {
+    expect(mk('drum', 8)).toMatchObject({ volume: 60, reverb: 24, chorus: 0 });
+    expect(mk('drum', 25)).toMatchObject({ volume: 78, reverb: 14, chorus: 0 });
+    expect(mk('drum', 40)).toMatchObject({ volume: 78, reverb: 14, chorus: 0 });
   });
 
   it('FX pad 98/99/100/102:volume ≤ 60 且 reverb 保留空气层但不再淹没总线', () => {
@@ -134,9 +134,9 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
   it('吉他 comp 保持干短:低 reverb/chorus,且不进 delay', () => {
     for (const p of [24, 25]) {
       const m = mk('comp', p);
-      expect(m.volume, `GM${p} comp volume`).toBeLessThanOrEqual(78);
-      expect(m.reverb, `GM${p} comp reverb`).toBeLessThanOrEqual(20);
-      expect(m.chorus, `GM${p} comp chorus`).toBeLessThanOrEqual(2);
+      expect(m.volume, `GM${p} comp volume`).toBeLessThanOrEqual(56);
+      expect(m.reverb, `GM${p} comp reverb`).toBeLessThanOrEqual(14);
+      expect(m.chorus, `GM${p} comp chorus`).toBe(0);
       expect(m.delay, `GM${p} comp delay`).toBeUndefined();
     }
   });
@@ -191,12 +191,19 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
 
   // ★ melody-forward(2026-06-23,用户:走 A 整编旋律声音小):lead CC7 抬高 → 旋律明显坐在 comp 之上。
   it('★ lead.volume > comp.volume(同 program,旋律在 comp 之上)且 ≥ 92', () => {
-    for (const p of [0, 12, 6, 67]) { // jazz/暖路线代表 lead program;GM4/5 电钢有防糊专属规则;GM11 有高区防刺耳专属规则
+    for (const p of [0, 12, 6]) { // jazz/暖路线代表 lead program;GM67 sax 是设备热源,有专属校平规则
       const lead = mk('lead', p).volume;
       const comp = mk('comp', p).volume;
       expect(lead, `gm${p} lead 比 comp 响`).toBeGreaterThan(comp);
       expect(lead, `gm${p} lead CC7 ≥ 92`).toBeGreaterThanOrEqual(92);
     }
+  });
+
+  it('GM67 sax 是设备热源:保持前景但不走键盘类 CC92+ 规则', () => {
+    const sax = mk('lead', 67);
+    expect(sax.volume).toBe(84);
+    expect(sax.reverb).toBeLessThanOrEqual(52);
+    expect(sax.chorus).toBe(0);
   });
 });
 

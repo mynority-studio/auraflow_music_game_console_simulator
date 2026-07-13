@@ -28,36 +28,40 @@ export interface RenderMixBalanceContext {
 const EPS = 1e-9;
 const MAX_SPLIT_SCALE = 1.38;
 const MIN_SPLIT_SCALE = 1 / MAX_SPLIT_SCALE;
-const GUITAR_COMP_VOLUME_CAP = 78;
+const GUITAR_COMP_VOLUME_CAP = 58;
+const GUITAR_LEAD_VOLUME_CAP = 72;
 const FM_EP_COMP_VOLUME_CAP = 80;
 
 const POLICY: Record<string, LeadCompPolicy> = {
   // YD3411 小喇叭中频效率高:让 comp+lead 做前景,利用钢琴/和声主体频段,而不是把能量交给鼓/pad。
-  pop:  { targetRatio: 1.08, minRatio: 0.70, maxRatio: 1.80, leadRange: [84, 100], compRange: [78, 94] },
-  jazz: { targetRatio: 1.18, minRatio: 0.85, maxRatio: 2.30, leadRange: [84, 100], compRange: [78, 94] },
-  lofi: { targetRatio: 1.05, minRatio: 0.70, maxRatio: 1.80, leadRange: [76, 98], compRange: [72, 94] },
-  rnb:  { targetRatio: 1.05, minRatio: 0.70, maxRatio: 1.65, leadRange: [86, 100], compRange: [64, 84] },
+  // 2026-07-13:Q+R 与 Q+H 同链路试听后,lead 需要再稍微站前一点。只抬前景比例和 lead 下限,
+  // 不提高 CC7 上限,避免浏览器/ESP32 端进入削波;comp caps 仍在后面保护吉他和 GM5 电钢。
+  pop:  { targetRatio: 1.14, minRatio: 0.88, maxRatio: 1.90, leadRange: [86, 100], compRange: [78, 94] },
+  jazz: { targetRatio: 1.24, minRatio: 0.95, maxRatio: 2.45, leadRange: [86, 100], compRange: [78, 94] },
+  lofi: { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.90, leadRange: [78, 98], compRange: [72, 94] },
+  rnb:  { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.75, leadRange: [86, 100], compRange: [64, 84] },
   // ★ P2 mg fidelity:ACG = melody-first(旋律浮上,comp 是空气 pp)。旧策略 comp-forward(0.90/comp CC7 80-98)
   //   与 normalizeAcgDynamics(lead86/comp29)直接矛盾 → 会 boost comp CC7 抢回,抵消 pp 意图。改成 lead-forward:
   //   lead CC7 高、comp CC7 中(air 但仍可闻),ratio 允许强 lead-forward(velocity 秩序天然使 lead≫comp)。
-  acg:  { targetRatio: 1.35, minRatio: 1.00, maxRatio: 4.20, leadRange: [84, 100], compRange: [90, 100] },
+  acg:  { targetRatio: 1.40, minRatio: 1.05, maxRatio: 4.50, leadRange: [86, 100], compRange: [90, 100] },
 };
 
 const DEFAULT_POLICY: LeadCompPolicy = {
-  targetRatio: 1.08,
-  minRatio: 0.75,
+  targetRatio: 1.14,
+  minRatio: 0.90,
   maxRatio: 1.80,
-  leadRange: [82, 100],
+  leadRange: [84, 100],
   compRange: [74, 94],
 };
 
 const JAZZ_SAX_POLICY: LeadCompPolicy = {
-  targetRatio: 1.80,
-  minRatio: 1.20,
-  maxRatio: 4.80,
-  // 用户复核:上一版把 sax 压到 CC7=72,浏览器里几乎听不到。+40% ≈ 101,按 ESP32/浏览器安全线上限卡到 100。
-  leadRange: [100, 100],
-  compRange: [84, 96],
+  targetRatio: 1.45,
+  minRatio: 0.95,
+  maxRatio: 3.80,
+  // Copych/YD3411 设备实测:GM67 五音 CC84≈-32dBFS RMS,CC64≈-34.4dBFS RMS。
+  // sax 仍是 jazz lead,但不再强制 CC100,避免设备喇叭上比键盘/贝斯大一截。
+  leadRange: [84, 88],
+  compRange: [78, 94],
 };
 
 function isSaxProgram(program: number | undefined): boolean {
@@ -115,8 +119,13 @@ function shouldCapFmEpComp(style: string): boolean {
 }
 
 function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix, style: string): TrackMix {
-  if (track.role !== 'comp') return mix;
+  if (track.role !== 'comp' && track.role !== 'lead') return mix;
   const program = programAt(track, tick);
+  if (track.role === 'lead' && isGuitarProgram(program)) {
+    const volume = Math.min(mix.volume, GUITAR_LEAD_VOLUME_CAP);
+    return volume === mix.volume ? mix : { ...mix, volume };
+  }
+  if (track.role !== 'comp') return mix;
   const cap =
     isGuitarProgram(program) ? GUITAR_COMP_VOLUME_CAP
     : isFmEpProgram(program) && shouldCapFmEpComp(style) ? FM_EP_COMP_VOLUME_CAP

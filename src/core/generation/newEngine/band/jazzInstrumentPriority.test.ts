@@ -6,7 +6,7 @@ import { createRandomContext } from '../foundation';
 import { getInstrumentCatalog } from '../knowledge/instruments';
 
 // ★ jazz 乐器优先级:用户 2026-07-03 明确不要 GM26 jazz guitar。
-//   lead 聚焦上低音萨克斯/钢琴/颤音琴;GM25 民谣木吉他只在显式选择 guitarist 时由 family fallback 兑现。
+//   lead 聚焦上低音萨克斯/钢琴;GM25 民谣木吉他只在显式选择 guitarist 时由 family fallback 兑现。
 
 const leadPool = (): number[] => {
   const jazz = getInstrumentCatalog().find((c) => c.style === 'jazz')!;
@@ -31,9 +31,10 @@ const finalLeadProgram = (styleHint: string, seed: number): number | undefined =
 };
 
 describe('band/jazz 乐器优先级(无主动 guitar · 地道音色更高优先级)', () => {
-  it('jazz lead 候选池只保留 sax/钢琴/颤音琴,不含 GM25/GM26/GM27 guitar', () => {
+  it('jazz lead 候选池只保留 sax/钢琴,不含 GM25/GM26/GM27 guitar/GM11 vibe', () => {
     const pool = leadPool();
-    expect(pool).toEqual([67, 0, 11]);
+    expect(pool).toEqual([67, 0]);
+    expect(pool).not.toContain(11);
     expect(pool).not.toContain(25);
     expect(pool).not.toContain(26);
     expect(pool).not.toContain(27);
@@ -44,13 +45,14 @@ describe('band/jazz 乐器优先级(无主动 guitar · 地道音色更高优先
     expect(h[25] ?? 0, 'GM25 folk guitar 不应主动出现').toBe(0);
     expect(h[26] ?? 0, 'GM26 jazz guitar 不应出现').toBe(0);
     expect(h[27] ?? 0, 'GM27 clean guitar 不应出现').toBe(0);
-    expect((h[67] ?? 0) + (h[0] ?? 0), 'sax+钢琴 应多于 vibe').toBeGreaterThan(h[11] ?? 0);
+    expect(h[11] ?? 0, 'GM11 vibe 不应主动出现').toBe(0);
+    expect((h[67] ?? 0) + (h[0] ?? 0), 'sax+钢琴 应覆盖 jazz lead').toBeGreaterThan(0);
   });
 
   it('★ sax 概率只在 jazz 主动提高;pop/rnb/lofi lead 不主动出 GM67', () => {
     const jazz = dist('lead', 64);
     expect(jazz[67] ?? 0, 'jazz sax 应高于 piano').toBeGreaterThanOrEqual(jazz[0] ?? 0);
-    expect(jazz[67] ?? 0, 'jazz sax 应高于 vibe').toBeGreaterThan(jazz[11] ?? 0);
+    expect(jazz[11] ?? 0, 'jazz 不应主动选 GM11 vibe').toBe(0);
 
     for (const styleHint of ['pop', 'rnb', 'lofi'] as const) {
       const h: Record<number, number> = {};

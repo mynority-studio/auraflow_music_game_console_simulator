@@ -32,32 +32,30 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
   electricKeys: {
     id: 'electricKeys', world: 'electricKeys',
     compPriority: [5, 25],
-    leadByComp: { 5: [5, 0, 11, 25, 108], 25: [5, 0, 25, 11] },
+    leadByComp: { 5: [5, 0, 25, 108], 25: [5, 0, 25, 108] },
     bassPriority: [38, 32], padPriority: [89], drumPriority: [25, 8],
   },
   // LOFI / chill
   lofiTapeKeys: {
     id: 'lofiTapeKeys', world: 'lofiTapeKeys',
     compPriority: [5, 24, 25, 0],
-    leadByComp: { 5: [5, 0, 11, 108, 25], 24: [108, 11, 5, 0, 25], 25: [5, 0, 108, 11, 25], 0: [0, 5, 11, 108, 25] },
+    leadByComp: { 5: [5, 0, 108, 25], 24: [108, 5, 0, 25], 25: [5, 0, 108, 25], 0: [0, 5, 108, 25] },
     bassPriority: [32, 38], padPriority: [89], drumPriority: [25, 8],
   },
   // pop 抒情 / 简单原声乐队
   acousticPianoBand: {
     id: 'acousticPianoBand', world: 'acousticPianoBand',
     compPriority: [0, 5, 25],
-    leadByComp: { 0: [0, 5, 11, 25, 108], 5: [5, 0, 11, 25], 25: [0, 5, 25, 11] },
+    leadByComp: { 0: [0, 5, 25, 108], 5: [5, 0, 25, 108], 25: [0, 5, 25, 108] },
     bassPriority: [32, 38], padPriority: [89], drumPriority: [8, 25],
   },
   // ACG:保持 lead/comp/bass 三轨钢琴写作合同,但开放当前小包的键盘式 lead/comp 色彩。
   acgKeyboardBand: {
     id: 'acgKeyboardBand', world: 'acousticPianoBand',
-    compPriority: [0, 5, 11, 108],
+    compPriority: [0, 5],
     leadByComp: {
-      0: [0, 5, 11, 108],
-      5: [5, 0, 11, 108],
-      11: [11, 0, 5, 108],
-      108: [108, 0, 5, 11],
+      0: [0, 5],
+      5: [5, 0],
     },
     bassPriority: [32], padPriority: [89], drumPriority: [8],
   },
@@ -65,21 +63,21 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
   jazzCombo: {
     id: 'jazzCombo', world: 'jazzCombo',
     compPriority: [0, 5, 25],
-    leadByComp: { 0: [67, 0, 11], 5: [67, 5, 0, 11], 25: [67, 0, 11, 25] },
+    leadByComp: { 0: [67, 0], 5: [67, 5, 0], 25: [67, 0, 25] },
     bassPriority: [32], padPriority: [89], drumPriority: [40, 8],
   },
   // 软 synth-pop / modal synthetic
   syntheticSoft: {
     id: 'syntheticSoft', world: 'syntheticSoft',
     compPriority: [5, 25],
-    leadByComp: { 5: [5, 0, 11, 108, 25], 25: [5, 0, 25, 11] },
+    leadByComp: { 5: [5, 0, 108, 25], 25: [5, 0, 25, 108] },
     bassPriority: [38, 32], padPriority: [89], drumPriority: [25, 8],
   },
   // modal / static / ambient
   modalAmbient: {
     id: 'modalAmbient', world: 'modalAmbient',
     compPriority: [0, 5, 24, 25],
-    leadByComp: { 0: [11, 108, 0, 67, 25], 5: [5, 11, 108, 67, 25], 24: [108, 11, 67, 25], 25: [108, 11, 25, 67] },
+    leadByComp: { 0: [108, 0, 67, 25], 5: [5, 108, 67, 25], 24: [108, 67, 25], 25: [108, 25, 67] },
     bassPriority: [32, 38], padPriority: [89], drumPriority: [25, 40, 8],
   },
 };
@@ -211,7 +209,7 @@ export function orchestrateRolePrograms(args: {
   if (has('lead')) {
     const comp = rp.comp;
     const cands = (comp !== undefined && profile.leadByComp[comp]) ? profile.leadByComp[comp]
-      : (comp !== undefined ? [comp, 11, 12] : profile.compPriority);
+      : (comp !== undefined ? [comp, 108, 0] : profile.compPriority);
     const ok = (p: number): boolean => !isHarshLead(p) && (comp === undefined || leadCompCompatible(p, comp));
     const pv = provisional.lead;
     if (pv !== undefined && cands.includes(pv) && ok(pv)) { rp.lead = pv; decisions.push(`lead keep GM${pv}`); }

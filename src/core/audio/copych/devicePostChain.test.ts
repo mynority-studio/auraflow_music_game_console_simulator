@@ -3,8 +3,8 @@
 // 逐语义证伪：mono 折叠抵消 / EQ 差分方程 / softclip 手算锚点 / 量化截断 /
 // 非 24k 只跳过 EQ 不跳过增益 / 终级饱和恒在 / EQ 重开清状态 / masterLift 链内。
 import { describe, expect, it } from 'vitest';
-import { createDevicePostChain, softClipS16, hardClipS16, EQ_COEF_24K, DEVICE_GAIN_DEFAULT, DEVICE_POSTCHAIN_DEFAULT_PRESET, MASTER_LIFT_MAX, MASTER_LIFT_MIN } from '../../../../public/copych/device_postchain.mjs';
-import { COPYCH_DEVICE_POSTCHAIN_PRESET, COPYCH_MASTER_LIFT_MAX, COPYCH_MASTER_LIFT_MIN } from './CopychSynthFacade';
+import { createDevicePostChain, softClipS16, hardClipS16, EQ_COEF_24K, DEVICE_GAIN_DEFAULT, DEFAULT_MASTER_LIFT, DEVICE_POSTCHAIN_DEFAULT_PRESET, MASTER_LIFT_MAX, MASTER_LIFT_MIN } from '../../../../public/copych/device_postchain.mjs';
+import { COPYCH_DEFAULT_MASTER_LIFT, COPYCH_DEVICE_POSTCHAIN_PRESET, COPYCH_MASTER_LIFT_MAX, COPYCH_MASTER_LIFT_MIN } from './CopychSynthFacade';
 
 const mk = (sr = 24000) => createDevicePostChain(sr);
 const buf = (vals: number[]) => new Float32Array(vals);
@@ -41,6 +41,7 @@ describe('devicePostChain', () => {
         expect(DEVICE_POSTCHAIN_DEFAULT_PRESET).toEqual(COPYCH_DEVICE_POSTCHAIN_PRESET);
         expect(MASTER_LIFT_MIN).toBe(COPYCH_MASTER_LIFT_MIN);
         expect(MASTER_LIFT_MAX).toBe(COPYCH_MASTER_LIFT_MAX);
+        expect(DEFAULT_MASTER_LIFT).toBe(COPYCH_DEFAULT_MASTER_LIFT);
         const c = mk();
         expect(c.config()).toMatchObject(COPYCH_DEVICE_POSTCHAIN_PRESET);
         expect(c.isActive()).toBe(true);
@@ -59,7 +60,7 @@ describe('devicePostChain', () => {
 
     it('mono 折叠：L=1/R=-1 → 全链输出 0（计划门 R2-P1 合同）', () => {
         const c = mk();
-        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false });
+        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: false, masterLift: 1 });
         const L = buf([1]), R = buf([-1]);
         c.process(L, R, 1);
         expect(L[0]).toBe(0);
@@ -81,7 +82,7 @@ describe('devicePostChain', () => {
 
     it('EQ 差分方程：impulse 前 8 样本 == 独立复算（float64 逐值）', () => {
         const c = mk();
-        c.set({ enabled: true, gain: false, eq: true, softclip: false, quantize: false });
+        c.set({ enabled: true, gain: false, eq: true, softclip: false, quantize: false, masterLift: 1 });
         const N = 8;
         const L = new Float32Array(N), R = new Float32Array(N);
         L[0] = 1000 / 32767; R[0] = 1000 / 32767;
@@ -120,17 +121,18 @@ describe('devicePostChain', () => {
         expect(eqMagnitudeDb(250)).toBeLessThanOrEqual(2.4);
         expect(eqMagnitudeDb(450)).toBeLessThanOrEqual(-0.5);
         expect(eqMagnitudeDb(580)).toBeLessThanOrEqual(-1.1);
-        expect(eqMagnitudeDb(3000)).toBeGreaterThanOrEqual(-0.8);
-        expect(eqMagnitudeDb(4000)).toBeGreaterThanOrEqual(-1.3);
-        expect(eqMagnitudeDb(5800)).toBeLessThanOrEqual(-5.0);
-        expect(eqMagnitudeDb(6500)).toBeLessThanOrEqual(-5.5);
-        expect(eqMagnitudeDb(8000)).toBeLessThanOrEqual(-4.5);
+        expect(eqMagnitudeDb(3000)).toBeGreaterThanOrEqual(-1.1);
+        expect(eqMagnitudeDb(4000)).toBeGreaterThanOrEqual(-2.5);
+        expect(eqMagnitudeDb(5200)).toBeLessThanOrEqual(-5.7);
+        expect(eqMagnitudeDb(5800)).toBeLessThanOrEqual(-7.0);
+        expect(eqMagnitudeDb(6500)).toBeLessThanOrEqual(-6.4);
+        expect(eqMagnitudeDb(8000)).toBeLessThanOrEqual(-5.0);
         expect(eqMagnitudeDb(10000)).toBeLessThanOrEqual(-5.0);
     });
 
     it('量化：非整 s16 值向零截断（Copych C cast 语义）', () => {
         const c = mk();
-        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: true });
+        c.set({ enabled: true, gain: false, eq: false, softclip: false, quantize: true, masterLift: 1 });
         const x = 1000.7 / 32767;
         const L = buf([x]), R = buf([x]);
         c.process(L, R, 1);
@@ -139,7 +141,7 @@ describe('devicePostChain', () => {
 
     it('非 24k ctx 不再丢掉后链响度：gain/clip/mono 仍生效，只跳过 24k EQ', () => {
         const c = mk(48000);
-        c.set({ enabled: true });
+        c.set({ enabled: true, masterLift: 1 });
         expect(c.isActive()).toBe(true);
         expect(c.srOk()).toBe(true);
         expect(c.eqRateOk()).toBe(false);
@@ -160,7 +162,7 @@ describe('devicePostChain', () => {
             eq: true,
             softclip: true,
             quantize: true,
-            masterLift: 1,
+            masterLift: DEFAULT_MASTER_LIFT,
         });
 
         const c48 = mk(48000);
@@ -178,12 +180,17 @@ describe('devicePostChain', () => {
         expect(L[0]).toBe(1);   // 32767/32767
     });
 
-    it('gain 级：×4.28（off 时 ×1≡ne gain 100）', () => {
+    it('gain 级：保守硬件校准增益（off 时 ×1≡ne gain 100）', () => {
         const c = mk();
-        c.set({ enabled: true, gain: true, eq: false, softclip: false, quantize: false });
+        c.set({ enabled: true, gain: true, eq: false, softclip: false, quantize: false, masterLift: 1 });
         const L = buf([0.01]), R = buf([0.01]);
         c.process(L, R, 1);
         expect(L[0]).toBeCloseTo(Math.fround(0.01) * DEVICE_GAIN_DEFAULT, 6);
+    });
+
+    it('默认 gain 只是硬件校准螺丝，不再用大增益替代 masterLift', () => {
+        expect(DEVICE_GAIN_DEFAULT).toBeCloseTo(1.8, 6);
+        expect(DEVICE_GAIN_DEFAULT).toBeLessThan(2.0);
     });
 
     it('masterLift 在设备保护链之前生效：超幅 lift 仍被终级 clamp 接住', () => {
@@ -222,12 +229,12 @@ describe('devicePostChain', () => {
 
     it('meters classify quiet and healthy output windows for listening audit', () => {
         const quiet = mk();
-        quiet.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: false });
+        quiet.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: false, masterLift: 1 });
         quiet.process(buf([0.04]), buf([0.04]), 1);
         expect(quiet.flushMeters().driveState).toBe('quiet');
 
         const healthy = mk();
-        healthy.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: false });
+        healthy.set({ enabled: true, gain: false, eq: false, softclip: true, quantize: false, masterLift: 1 });
         healthy.process(buf([0.2]), buf([0.2]), 1);
         const m = healthy.flushMeters();
         expect(m.driveState).toBe('healthy');
@@ -264,6 +271,6 @@ describe('devicePostChain', () => {
         c.set({ masterLift: 24 });
         expect(c.config().masterLift).toBe(MASTER_LIFT_MAX);
         c.set({ masterLift: Number.NaN });
-        expect(c.config().masterLift).toBe(1);
+        expect(c.config().masterLift).toBe(DEFAULT_MASTER_LIFT);
     });
 });

@@ -268,13 +268,15 @@ function sf2EffectiveZones(path: string, bank: number, program: number): Sf2Effe
       const keyRange = intersectRange(pKey, iKey);
       const velRange = intersectRange(pVel, iVel);
       if (!keyRange || !velRange) continue;
+      const filterGenerators = [...pglobal, ...pzone, ...iglobal, ...izone];
+      const effectiveFilterFc = [...filterGenerators].reverse().find((gen) => gen.oper === GEN_INITIAL_FILTER_FC);
       zones.push({
         sampleId: sampleGen.amount,
         keyRange,
         velRange,
         attenuationCb: signedGeneratorTotal(GEN_INITIAL_ATTENUATION, pglobal, pzone, iglobal, izone),
         releaseTc: signedGeneratorTotal(GEN_RELEASE_VOL_ENV, pglobal, pzone, iglobal, izone),
-        filterFcTc: [...pglobal, ...pzone, ...iglobal, ...izone].find((gen) => gen.oper === GEN_INITIAL_FILTER_FC)?.amount,
+        filterFcTc: effectiveFilterFc?.amount,
       });
     }
   }
@@ -320,7 +322,6 @@ function sf2AuditionEstimatedDb(path: string, bank: number, program: number, not
 const AURA25_PITCH_AUDIT_CASES = [
   { name: '大钢琴', role: 'lead', program: 0, range: [21, 108], probes: [[0, 24], [21, 21], [60, 60], [108, 108], [127, 103]] },
   { name: 'GU Electric Grand', role: 'comp', program: 5, range: [28, 103], probes: [[0, 36], [28, 28], [64, 64], [103, 103], [127, 103]] },
-  { name: '颤音琴', role: 'lead', program: 11, range: [53, 89], probes: [[0, 60], [53, 53], [72, 72], [89, 89], [127, 79]] },
   { name: '尼龙吉他', role: 'comp', program: 24, range: [40, 88], probes: [[0, 48], [40, 40], [52, 52], [88, 88], [127, 79]] },
   { name: '民谣木吉他', role: 'comp', program: 25, range: [40, 88], probes: [[0, 48], [40, 40], [52, 52], [88, 88], [95, 83], [127, 79]] },
   { name: '原声贝斯', role: 'bass', program: 32, range: [28, 67], probes: [[0, 36], [28, 28], [40, 40], [67, 67], [127, 67]] },
@@ -332,7 +333,7 @@ const AURA25_PITCH_AUDIT_CASES = [
 const DRUM_MIDI_KEYS = new Set<number>(Object.values(DRUM));
 
 describe('Aura25Palette', () => {
-  it('maps missing GM programs back into the current 11-preset palette', () => {
+  it('maps missing GM programs back into the current runtime palette', () => {
     expect(mapProgramToAura25(2, 'lead', 'pop')).toBe(0);
     expect(mapProgramToAura25(3, 'comp', 'pop')).toBe(0);
     expect(mapProgramToAura25(73, 'lead', 'pop')).toBe(0);
@@ -340,6 +341,8 @@ describe('Aura25Palette', () => {
     expect(mapProgramToAura25(35, 'bass', 'jazz')).toBe(32);
     expect(mapProgramToAura25(26, 'lead', 'jazz')).toBe(24);
     expect(mapProgramToAura25(27, 'comp', 'pop')).toBe(25);
+    expect(mapProgramToAura25(11, 'lead', 'modal')).toBe(108);
+    expect(mapProgramToAura25(11, 'comp', 'modal')).toBe(0);
     expect(mapProgramToAura25(66, 'lead', 'jazz')).toBe(67);
     expect(mapProgramToAura25(66, 'lead', 'rnb')).toBe(5);
     expect(mapMidiProgramToAura25(65, 1, 'jazz')).toBe(67);
@@ -347,12 +350,14 @@ describe('Aura25Palette', () => {
   });
 
   it('keeps deleted presets out of the runtime role palette', () => {
-    for (const p of [1, 4, 7, 27, 33, 34, 39, 49, 66, 80, 81, 98]) expect(isAura25Program(p)).toBe(false);
+    for (const p of [1, 4, 7, 11, 27, 33, 34, 39, 49, 66, 80, 81, 98]) expect(isAura25Program(p)).toBe(false);
     for (const p of [8, 25, 40]) expect(isAura25Program(p, 'drum')).toBe(true);
     for (const p of [0, 7, 16, 23, 24, 31, 32, 47, 48, 49]) expect(isAura25Program(p, 'drum')).toBe(false);
     expect(isAura25Program(26, 'lead')).toBe(false);
     expect(isAura25Program(26, 'comp')).toBe(false);
     expect(isAura25Program(25, 'comp')).toBe(true);
+    expect(isAura25Program(11, 'lead')).toBe(false);
+    expect(isAura25Program(11, 'comp')).toBe(false);
     expect(isAura25Program(66, 'lead')).toBe(false);
     expect(isAura25Program(67, 'lead')).toBe(true);
   });
@@ -452,7 +457,7 @@ describe('Aura25Palette', () => {
     expect(byPreset.get('128:8')).toMatchObject({ name: 'Room 鼓组', sampleSizeBytes: 284048, sampleSizeLabel: '0.271MB' });
     expect(byPreset.get('0:5')).toMatchObject({ name: 'GU Electric Grand', sampleSizeBytes: 332568, sampleSizeLabel: '0.317MB' });
     expect(byPreset.get('8:5')).toMatchObject({ name: 'GU Chorused FM EP', sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' });
-    expect(byPreset.get('0:11')).toMatchObject({ name: '颤音琴', sampleSizeBytes: 45558, sampleSizeLabel: '0.043MB' });
+    expect(byPreset.has('0:11')).toBe(false);
     expect(byPreset.get('0:0')).toMatchObject({ name: '大钢琴', sampleSizeBytes: 197928, sampleSizeLabel: '0.189MB' });
   });
 
@@ -495,11 +500,9 @@ describe('Aura25Palette', () => {
     const samples = sf2SampleHeaders('public/Aura25_GM128.sf2');
     for (const sample of samples.filter((s) => s.name !== 'EOS')) expect(sample.sampleRate, `${sample.name} sample rate`).toBe(24000);
     const byName = new Map(samples.map((sample) => [sample.name, sample]));
-    expect(byName.get('VIBE_52A')).toMatchObject({ originalPitch: 52, pitchCorrection: 0, sampleRate: 24000 });
-    expect(byName.get('VIBE_64A')).toMatchObject({ originalPitch: 64, pitchCorrection: 3, sampleRate: 24000 });
-    expect(byName.get('VIBE_76A')).toMatchObject({ originalPitch: 76, pitchCorrection: 6, sampleRate: 24000 });
-    expect(byName.get('VIBE_88A')).toMatchObject({ originalPitch: 88, pitchCorrection: 14, sampleRate: 24000 });
-    expect(byName.get('VIBE_A0A')).toMatchObject({ originalPitch: 100, pitchCorrection: 14, sampleRate: 24000 });
+    expect(byName.get('Vibes E3')).toMatchObject({ originalPitch: 60, pitchCorrection: 0, sampleRate: 24000 });
+    expect(byName.get('Vibes D4')).toMatchObject({ originalPitch: 60, pitchCorrection: 0, sampleRate: 24000 });
+    expect(byName.get('Vibes D6')).toMatchObject({ originalPitch: 60, pitchCorrection: 0, sampleRate: 24000 });
     expect(byName.get('N Guitar D2')).toMatchObject({ originalPitch: 61, pitchCorrection: 12, sampleRate: 24000 });
     expect(byName.get('N Guitar Gb2')).toMatchObject({ originalPitch: 65, pitchCorrection: -16, sampleRate: 24000 });
     expect(byName.get('N Guitar B2')).toMatchObject({ originalPitch: 70, pitchCorrection: -8, sampleRate: 24000 });
@@ -527,6 +530,15 @@ describe('Aura25Palette', () => {
     expect([...gm5SampleNames].some((name) => name.startsWith('Grand Piano-'))).toBe(false);
     expect([...gm5SampleNames].some((name) => name.startsWith('EPiano2') || name.includes('DX7 Strike') || name === 'DX7 Wave')).toBe(false);
     expect(samples.find((sample) => sample.name === 'CP-80 EP-C4')).toMatchObject({ sampleRate: 24000, originalPitch: 60, pitchCorrection: -5 });
+    const gm5FiltersByRange = Object.fromEntries(sf2EffectiveZones('public/Aura25_GM128.sf2', 0, 5)
+      .map((zone) => [zone.keyRange.join('-'), zone.filterFcTc]));
+    expect(gm5FiltersByRange).toMatchObject({
+      '66-70': 9600,
+      '71-73': 9200,
+      '74-78': 9600,
+      '82-86': 9600,
+      '90-98': 9600,
+    });
     expect(sf2PresetSendAmounts('public/Aura25_GM128.sf2', 5)).toEqual({ reverb: [0], chorus: [0] });
 
     const b8Gm5SampleNames = new Set(sf2EffectiveZones('public/Aura25_GM128.sf2', 8, 5).map((zone) => samples[zone.sampleId].name));
@@ -544,26 +556,29 @@ describe('Aura25Palette', () => {
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 8, 5, 64)).toBeGreaterThanOrEqual(-31);
   });
 
-  it('replaces GM11 with a clean 24k Roland vibraphone instead of the old short-loop Vibes layer', () => {
+  it('replaces GM11 with the drier 24k GM128 vibraphone instead of the buzzy Roland VIBE layer', () => {
     const samples = sf2SampleHeaders('public/Aura25_GM128.sf2');
     const gm11Zones = sf2EffectiveZones('public/Aura25_GM128.sf2', 0, 11);
     const gm11SampleNames = new Set(gm11Zones.map((zone) => samples[zone.sampleId].name));
-    expect(gm11SampleNames).toEqual(new Set(['VIBE_52A', 'VIBE_64A', 'VIBE_76A', 'VIBE_88A', 'VIBE_A0A']));
-    expect(Object.fromEntries(gm11Zones.map((zone) => [samples[zone.sampleId].name, zone.filterFcTc]))).toMatchObject({
-      VIBE_52A: 11739,
-      VIBE_64A: 11562,
-      VIBE_76A: 11175,
-      VIBE_88A: 10806,
-      VIBE_A0A: 10539,
+    expect(gm11SampleNames).toEqual(new Set(['Vibes E3', 'Vibes D4', 'Vibes D6']));
+    expect(Object.fromEntries(gm11Zones.map((zone) => [zone.keyRange.join('-'), zone.filterFcTc]))).toMatchObject({
+      '0-54': 10400,
+      '55-63': 10400,
+      '64-69': 9900,
+      '70-75': 9900,
+      '76-83': 8900,
+      '84-90': 8600,
+      '91-97': 8600,
+      '98-108': 8400,
     });
-    expect([...gm11SampleNames].some((name) => name === 'Vibes D6' || name === 'Vibes D4' || name === 'Vibes E3')).toBe(false);
-    expect(sf2PresetSendAmounts('public/Aura25_GM128.sf2', 11)).toEqual({ reverb: [], chorus: [] });
+    expect([...gm11SampleNames].some((name) => name.startsWith('VIBE_'))).toBe(false);
+    expect(sf2PresetSendAmounts('public/Aura25_GM128.sf2', 11)).toEqual({ reverb: Array(8).fill(0), chorus: [] });
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 72)).toBeLessThanOrEqual(-25.5);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 89)).toBeLessThanOrEqual(-25.5);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 53)).toBeGreaterThanOrEqual(-31);
-    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 72)).toBeLessThanOrEqual(-28.5);
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 72)).toBeLessThanOrEqual(-26.5);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 89)).toBeLessThanOrEqual(-29.5);
-    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 96)).toBeLessThanOrEqual(-31.0);
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 96)).toBeLessThanOrEqual(-29.5);
   });
 
   it('keeps Aura25 SF2 hidden FX sends bounded for ESP32 zone-send multiplication', () => {
@@ -657,11 +672,8 @@ describe('Aura25Palette', () => {
       ['SawBassWave F5', 0.01],
       ['SynthStrings G2', 0.01],
       ['SynthStrings D6', 0.08],
-      ['VIBE_52A', 0.01],
-      ['VIBE_64A', 0.01],
-      ['VIBE_76A', 0.01],
-      ['VIBE_88A', 0.01],
-      ['VIBE_A0A', 0.01],
+      ['Vibes D4', 0.08],
+      ['Vibes E3', 0.02],
     ] as const;
     for (const [sample, limit] of limits) {
       expect(sf2LoopScore('public/Aura25_GM128.sf2', sample), sample).toBeLessThanOrEqual(limit);

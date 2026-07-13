@@ -64,7 +64,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
       const ratio = leadCompWetEnergyRatio(r.ir!.tracks as TrackIR[], ctx(c.style, r.ir!.durationTicks as number));
       const comp = r.ir!.tracks.find((t) => t.role === 'comp') as TrackIR | undefined;
       if (isGuitarProgram(comp?.program)) {
-        expect(comp!.mix!.volume, `${c.style}/${c.seed} guitar comp volume`).toBeLessThanOrEqual(78);
+        expect(comp!.mix!.volume, `${c.style}/${c.seed} guitar comp volume`).toBeLessThanOrEqual(58);
         expect(comp!.mix!.reverb, `${c.style}/${c.seed} guitar comp reverb`).toBeLessThanOrEqual(20);
         expect(comp!.mix!.delay, `${c.style}/${c.seed} guitar comp delay`).toBeUndefined();
         expect(Math.max(...comp!.notes.map((n) => n.durationTicks as number)), `${c.style}/${c.seed} guitar comp gate`).toBeLessThanOrEqual(163);
@@ -83,7 +83,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
 
     expect(ratio).toBeGreaterThanOrEqual(0.75);
     if (isGuitarProgram(comp.program)) {
-      expect(comp.mix!.volume).toBeLessThanOrEqual(78);
+      expect(comp.mix!.volume).toBeLessThanOrEqual(58);
       expect(comp.mix!.reverb).toBeLessThanOrEqual(20);
       expect(comp.mix!.delay).toBeUndefined();
       expect(Math.max(...comp.notes.map((n) => n.durationTicks as number))).toBeLessThanOrEqual(163);
@@ -93,7 +93,7 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     expect(lead.mix!.volume).toBeGreaterThan(comp.mix!.volume);
   });
 
-  it('JAZZ sax lead 增加约 40% 回到前景,但仍卡在安全上限', () => {
+  it('JAZZ sax lead 保持前景,但不再被设备链路推到 CC100', () => {
     const r = generateSong({ seed: 7, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
     const ratio = leadCompWetEnergyRatio(r.ir!.tracks as TrackIR[], ctx('jazz', r.ir!.durationTicks as number));
     const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
@@ -102,10 +102,11 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     const avgExpression = expressionValues.reduce((sum, value) => sum + value, 0) / Math.max(1, expressionValues.length);
 
     expect(lead.program).toBe(67);
-    expect(lead.mix!.volume).toBe(100);
-    expect(comp.mix!.volume).toBeGreaterThanOrEqual(84);
-    expect(ratio).toBeGreaterThanOrEqual(1.20);
-    expect(ratio).toBeLessThanOrEqual(4.80);
+    expect(lead.mix!.volume).toBeGreaterThanOrEqual(84);
+    expect(lead.mix!.volume).toBeLessThanOrEqual(88);
+    expect(comp.mix!.volume).toBeGreaterThanOrEqual(78);
+    expect(ratio).toBeGreaterThanOrEqual(0.95);
+    expect(ratio).toBeLessThanOrEqual(3.80);
     expect(avgExpression).toBeGreaterThanOrEqual(90);
   });
 
@@ -145,9 +146,35 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     ];
     const out = applyRenderMixBalance(tracks, ctx('lofi', durationTicks));
     const comp = out.find((t) => t.role === 'comp')!;
-    expect(comp.mix!.volume).toBeLessThanOrEqual(78);
+    expect(comp.mix!.volume).toBeLessThanOrEqual(58);
     expect(comp.mix!.reverb).toBe(20);
     expect(comp.mix!.chorus).toBe(2);
+  });
+
+  it('吉他 LEAD 也被热源校平,不会被 melody-forward 推成爆音主角', () => {
+    const durationTicks = 1920;
+    const tracks: TrackIR[] = [
+      {
+        role: 'lead',
+        program: 25,
+        mix: { volume: 98, pan: 64, reverb: 30, chorus: 0 },
+        notes: [{ pitch: midi(64), startTick: ticks(0), durationTicks: ticks(240), velocity: 80 }],
+      },
+      {
+        role: 'comp',
+        program: 0,
+        mix: { volume: 84, pan: 52, reverb: 44, chorus: 8 },
+        notes: [
+          { pitch: midi(52), startTick: ticks(0), durationTicks: ticks(960), velocity: 72 },
+          { pitch: midi(57), startTick: ticks(0), durationTicks: ticks(960), velocity: 72 },
+        ],
+      },
+    ];
+    const out = applyRenderMixBalance(tracks, ctx('pop', durationTicks));
+    const lead = out.find((t) => t.role === 'lead')!;
+    expect(lead.mix!.volume).toBeLessThanOrEqual(72);
+    expect(lead.mix!.reverb).toBe(30);
+    expect(lead.mix!.chorus).toBe(0);
   });
 
   it('GM5/Electric Grand COMP 不被 render 平衡重新推成嗡声主角', () => {

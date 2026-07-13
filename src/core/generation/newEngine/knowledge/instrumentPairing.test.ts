@@ -12,7 +12,7 @@ import {
 } from './instruments';
 
 const WARM_META = [16, 24, 25, 26, 27, 42, 66, 67, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
-const ACTIVE_24K_PROGRAMS = [0, 5, 11, 24, 25, 32, 38, 67, 89, 108];
+const ACTIVE_24K_PROGRAMS = [0, 5, 24, 25, 32, 38, 67, 89, 108];
 const WARM_ADDED = WARM_META;
 
 describe('暖路线 GM 调色板扩充', () => {
@@ -45,7 +45,7 @@ describe('暖路线 GM 调色板扩充', () => {
   });
 
   it('角色推荐音区:lead 更宽并包含 comp,comp 更窄给 lead 留空间', () => {
-    for (const program of [0, 5, 11, 24, 25, 108]) {
+    for (const program of [0, 5, 24, 25, 108]) {
       const lead = preferredRegisterForRole('lead', program);
       const comp = preferredRegisterForRole('comp', program);
       const hard = playableRangeForRole('lead', program);

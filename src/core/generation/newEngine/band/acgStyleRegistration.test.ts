@@ -37,7 +37,7 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
     const r = generateSong({ seed: 7, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' });
     const byRole = (role: string) => r.ir!.tracks.find((t) => t.role === role);
     const lead = byRole('lead'), comp = byRole('comp'), bass = byRole('bass');
-    const keyboardish = [0, 5, 11, 108];
+    const keyboardish = [0, 5];
     expect(lead, 'lead 常驻').toBeTruthy();
     expect(comp, 'comp 常驻').toBeTruthy();
     expect(bass, 'bass 常驻').toBeTruthy();

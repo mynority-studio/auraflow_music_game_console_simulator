@@ -66,21 +66,23 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     expect(leadCompCompatible(r.roleProgram.lead, r.roleProgram.comp)).toBe(true);
   });
 
-  it('acousticPianoBand:原声钢琴 comp + 木琴 lead(百搭)保留', () => {
+  it('acousticPianoBand:注入 GM11 lead 会改回当前安全 lead', () => {
     const r = orchestrateRolePrograms({ style: 'pop', lineup: ['comp', 'lead'], provisional: { comp: 0, lead: 11 } });
     expect(r.world).toBe('acousticPianoBand');
     expect(r.roleProgram.comp).toBe(0);
-    expect(r.roleProgram.lead).toBe(11); // 木琴 over 原声钢琴 = 兼容,保留
+    expect(r.roleProgram.lead).not.toBe(11);
+    expect(leadCompCompatible(r.roleProgram.lead, r.roleProgram.comp)).toBe(true);
   });
 
-  it('acgKeyboardBand:ACG lead/comp 开放当前小包键盘式音色,但 bass 保持原声', () => {
+  it('acgKeyboardBand:ACG lead/comp 只开放钢琴/电钢,但 bass 保持原声', () => {
     const profile = chooseOrchestrationChain('acg', { next: () => 0, int: (_max: number) => 0, pick: <T>(xs: readonly T[]): T => xs[0] }, 'acousticPianoBand');
     expect(profile.id).toBe('acgKeyboardBand');
-    expect(profile.compPriority).toEqual([0, 5, 11, 108]);
+    expect(profile.compPriority).toEqual([0, 5]);
     const r = orchestrateRolePrograms({ style: 'acg', lineup: ['comp', 'lead', 'bass'], provisional: { comp: 5, lead: 11, bass: 38 } });
     expect(r.profileId).toBe('acgKeyboardBand');
-    expect([0, 5, 11, 108]).toContain(r.roleProgram.comp);
-    expect([0, 5, 11, 108]).toContain(r.roleProgram.lead);
+    expect([0, 5]).toContain(r.roleProgram.comp);
+    expect([0, 5]).toContain(r.roleProgram.lead);
+    expect(r.roleProgram.lead).not.toBe(11);
     expect(r.roleProgram.bass).toBe(32);
   });
 
@@ -92,9 +94,10 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     expect(CHAIN_PROFILES.jazzCombo.bassPriority.some((b) => b === 38 || b === 39)).toBe(false);
   });
 
-  it('jazzCombo:lead 链不含 GM26 jazz guitar', () => {
+  it('jazzCombo:lead 链不含 GM26 jazz guitar 或 GM11 vibe', () => {
     const jazzLeads = Object.values(CHAIN_PROFILES.jazzCombo.leadByComp).flat();
     expect(jazzLeads).not.toContain(26);
+    expect(jazzLeads).not.toContain(11);
   });
 
   it('syntheticSoft:合成贝斯 + 合成 pad 可选,且 lead 不刺耳', () => {

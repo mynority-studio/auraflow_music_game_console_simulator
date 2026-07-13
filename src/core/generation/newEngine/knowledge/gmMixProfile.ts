@@ -104,7 +104,7 @@ const ROLE_BASE: Record<InstrumentRoleName, RoleMix> = {
   comp: { volume: 92, pan: 52, reverb: 42, chorus: 30 }, // YD3411 中频优势:comp/lead 是房间前景,comp velocity 低用 CC7 补偿
   lead: { volume: 84, pan: 64, reverb: 50, chorus: 20 },
   pad: { volume: 66, pan: 88, reverb: 68, chorus: 46 },
-  drum: { volume: 86, pan: 64, reverb: 14, chorus: 0 },
+  drum: { volume: 78, pan: 64, reverb: 14, chorus: 0 },
 };
 
 // ★ melody-forward(2026-06-23,用户:走 A 整编里 motif/旋律声音小)。lead = 主奏,应明显坐在 comp/鼓之上,
@@ -135,19 +135,21 @@ const PROGRAM_MIX: Record<number, ProgOverride> = {
   8: {
     comp: { volume: 80, reverb: 40, chorus: 6 },
     lead: { volume: 80, reverb: 45, chorus: 5 },
-    drum: { reverb: 30 },
+    drum: { volume: 60, reverb: 24 },
   }, // Celesta(旋律按钢琴系) / bank128 Room 鼓组:对齐试听的 kick room send
   11: { lead: { volume: 73, reverb: 34, chorus: 0 } }, // 颤音琴:高区金属峰明显,少进空间,靠干净 attack 而不是拖尾
   12: { lead: { volume: 81, reverb: 41, chorus: 7 } },  // 马林巴:保木质 attack
   108: { lead: { volume: 81, reverb: 41, chorus: 7 } }, // 卡林巴
   107: { lead: { volume: 80, reverb: 44, chorus: 10 } }, // 古筝(拨弦,略带空间)
-  24: { comp: { volume: 76, reverb: 18, chorus: 0 }, lead: { volume: 78, reverb: 34, chorus: 2 } }, // 尼龙吉他 comp:干、短、保拨弦 attack
-  25: { comp: { volume: 78, reverb: 20, chorus: 2 }, lead: { volume: 80, reverb: 38, chorus: 4 } }, // 民谣/钢弦木吉他 comp 不进厚空间,避免扫拨糊
+  // 吉他 24/25:当前 Aura25 源样本在 Copych 设备链路比钢琴/电钢热约 4-8dB;先做音源级 CC7 校平,
+  // render 后平衡器还有二次 cap,避免扫拨/复音在设备按钮和整编里突然跳前、滋滋。
+  24: { comp: { volume: 56, reverb: 14, chorus: 0 }, lead: { volume: 58, reverb: 28, chorus: 0 } }, // 尼龙吉他 comp:干、短、保拨弦 attack
+  25: { comp: { volume: 56, reverb: 14, chorus: 0 }, lead: { volume: 58, reverb: 30, chorus: 0 } }, // 民谣/钢弦木吉他 comp 不进厚空间,避免扫拨糊
   40: { lead: { volume: 72, reverb: 56, chorus: 8 } },  // 小提琴:留 room,音量低于 sax,避免高频顶出
   // 管乐/萨克斯(气声,中低音区)
   65: { lead: { volume: 78, reverb: 46, chorus: 8 } },
   66: { lead: { volume: 78, reverb: 62, chorus: 0 } },
-  67: { lead: { volume: 80, reverb: 58, chorus: 0 } },
+  67: { lead: { volume: 70, reverb: 52, chorus: 0 } },
   75: { lead: { volume: 80, reverb: 50, chorus: 12 } }, 77: { lead: { volume: 80, reverb: 48, chorus: 10 } },
   // 贝斯
   32: { bass: { volume: 74, reverb: 10, chorus: 2 } }, 33: { bass: { volume: 74, reverb: 10, chorus: 2 } },

@@ -45,7 +45,7 @@ let _fxState: CopychFxState = COPYCH_FX_BOOT;
 const _fxListeners = new Set<() => void>();
 
 /* ---- 设备后链（听感排查批2）状态镜像 ----
- * 固件输出后链（style master lift→gain×4.28→Copych soft/hard clip→mono 折叠→EQ 6 段→终级饱和→16bit）
+ * 固件输出后链（style master lift→校准 gain×1.8→Copych soft/hard clip→mono 折叠→EQ 6 段→终级饱和→16bit）
  * 的 web 复刻（DSP 在 public/copych/device_postchain.mjs，参数同源锚见彼处头注释）。
      * 默认随 Copych 常驻开启，copych=设备镜像；state=processor 回报的实际生效态。
  * gain/clip/mono/final clamp 在任何 ctx 采样率都生效；6 段小喇叭 EQ 仅 24k 有效，
@@ -80,10 +80,11 @@ export const COPYCH_DEVICE_POSTCHAIN_PRESET: CopychPostChainCfg = {
     eq: true,
     softclip: true,
     quantize: true,
-    masterLift: 1,
+    masterLift: 1.5,
 };
 export const COPYCH_MASTER_LIFT_MIN = 0.05;
 export const COPYCH_MASTER_LIFT_MAX = 4;
+export const COPYCH_DEFAULT_MASTER_LIFT = 1.5;
 
 const POSTCHAIN_BOOT: CopychPostChainState = {
     active: false,
