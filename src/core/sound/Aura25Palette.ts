@@ -1,6 +1,6 @@
 export type Aura25Role = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
 
-export const AURA25_SF2_URL = '/Aura25_GM128.sf2?v=20260713-v44-gm128-vibes';
+export const AURA25_SF2_URL = '/Aura25_GM128.sf2?v=20260714-v47-direct-balance-allpass';
 export const AURA25_SF2_BANK_ID = 'aura25-gu-cp80-chorusedfm';
 export const AURA25_SF2_SIZE_LABEL = '1.29MB';
 export const AURA25_DRUM_BANK_MSB = 1;

@@ -69,7 +69,7 @@ class CopychProcessor extends AudioWorkletProcessor {
             }
             case 'postchain': {
                 /* {enabled?, gain?, eq?, softclip?, quantize?, masterLift?} 局部合并；
-                 * enabled 为兼容字段，会被设备后链强制回 true；非 24k ctx 仅 24k EQ 系数会自动 bypass。 */
+                 * SF2 直出调平期允许 enabled=false 全链 bypass；非 24k ctx 仅 24k EQ 系数会自动 bypass。 */
                 this.postchain.set(msg.cfg || {});
                 this.port.postMessage({
                     type: 'postchain-state',
@@ -115,7 +115,7 @@ class CopychProcessor extends AudioWorkletProcessor {
         this.M._copych_wasm_render(this.pL, this.pR, len);
         out[0].set(this.M.HEAPF32.subarray(this.pL >> 2, (this.pL >> 2) + len));
         if (out[1]) out[1].set(this.M.HEAPF32.subarray(this.pR >> 2, (this.pR >> 2) + len));
-        /* 设备后链：每帧都调用；Copych-only 正式输出不允许 raw synth 直出，避免 processor 引入 bypass 点。 */
+        /* 设备后链：每帧都调用；enabled=false 时对象内部 passthrough，便于 SF2 直出审计。 */
         this.postchain.process(out[0], out[1] || out[0], len);
         if (this.postchain.isActive()) {
             this.meterCountdown -= len;

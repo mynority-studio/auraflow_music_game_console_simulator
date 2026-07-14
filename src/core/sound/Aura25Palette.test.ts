@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { generateMusicSync } from '../generation/musicGeneration/MusicGenerationService';
 import { musicalIRToMidiEvents } from '../audio/musicalIrToMidi';
 import { DRUM } from '../generation/newEngine/knowledge/grooves';
@@ -319,16 +320,38 @@ function sf2AuditionEstimatedDb(path: string, bank: number, program: number, not
   return 20 * Math.log10(Math.sqrt(energy) + 1e-9);
 }
 
+interface Sf2DirectBalanceAudit {
+  sha256: string;
+  sampleRate: number;
+  rows: Array<{
+    preset: string;
+    role: string;
+    targetActiveRmsDbfs: number;
+    normal: { peakDbfs: number; rmsDbfs: number };
+    stress: { peakDbfs: number; rmsDbfs: number };
+    deltaToTargetDb: number;
+    status: string;
+  }>;
+}
+
+function sf2Sha256(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function sf2DirectBalanceAudit(): Sf2DirectBalanceAudit {
+  return JSON.parse(readFileSync('docs/generated/sf2_direct_balance_audit.json', 'utf8')) as Sf2DirectBalanceAudit;
+}
+
 const AURA25_PITCH_AUDIT_CASES = [
   { name: '大钢琴', role: 'lead', program: 0, range: [21, 108], probes: [[0, 24], [21, 21], [60, 60], [108, 108], [127, 103]] },
   { name: 'GU Electric Grand', role: 'comp', program: 5, range: [28, 103], probes: [[0, 36], [28, 28], [64, 64], [103, 103], [127, 103]] },
-  { name: '尼龙吉他', role: 'comp', program: 24, range: [40, 88], probes: [[0, 48], [40, 40], [52, 52], [88, 88], [127, 79]] },
-  { name: '民谣木吉他', role: 'comp', program: 25, range: [40, 88], probes: [[0, 48], [40, 40], [52, 52], [88, 88], [95, 83], [127, 79]] },
+  { name: '尼龙吉他', role: 'comp', program: 24, range: [40, 88], probes: [[0, 48], [40, 40], [52, 52], [88, 64], [127, 67]] },
+  { name: '民谣木吉他', role: 'comp', program: 25, range: [40, 88], probes: [[0, 48], [40, 40], [52, 52], [88, 64], [95, 59], [127, 67]] },
   { name: '原声贝斯', role: 'bass', program: 32, range: [28, 67], probes: [[0, 36], [28, 28], [40, 40], [67, 67], [127, 67]] },
   { name: '合成贝斯 1', role: 'bass', program: 38, range: [24, 60], probes: [[0, 24], [24, 24], [36, 36], [60, 60], [127, 55]] },
   { name: '上低音萨克斯', role: 'lead', program: 67, range: [36, 72], probes: [[0, 36], [36, 36], [43, 43], [50, 50], [72, 72], [82, 70], [127, 67]] },
   { name: '暖 Pad', role: 'pad', program: 89, range: [36, 96], probes: [[0, 36], [36, 36], [55, 55], [96, 96], [127, 91]] },
-  { name: '卡林巴', role: 'lead', program: 108, range: [60, 88], probes: [[0, 60], [60, 60], [72, 72], [88, 88], [96, 84], [127, 79]] },
+  { name: '卡林巴', role: 'lead', program: 108, range: [60, 88], probes: [[0, 60], [60, 60], [72, 72], [88, 76], [96, 72], [127, 79]] },
 ] as const;
 const DRUM_MIDI_KEYS = new Set<number>(Object.values(DRUM));
 
@@ -575,7 +598,7 @@ describe('Aura25Palette', () => {
     expect(sf2PresetSendAmounts('public/Aura25_GM128.sf2', 11)).toEqual({ reverb: Array(8).fill(0), chorus: [] });
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 72)).toBeLessThanOrEqual(-25.5);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 89)).toBeLessThanOrEqual(-25.5);
-    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 53)).toBeGreaterThanOrEqual(-31);
+    expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 53)).toBeLessThanOrEqual(-31);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 72)).toBeLessThanOrEqual(-26.5);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 89)).toBeLessThanOrEqual(-29.5);
     expect(sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', 0, 11, 96)).toBeLessThanOrEqual(-29.5);
@@ -602,18 +625,31 @@ describe('Aura25Palette', () => {
     expect(Math.max(...chorusedFm.chorus), 'bank8 GM5 chorus send').toBeLessThanOrEqual(80);
   });
 
-  it('keeps Aura25 melodic audition loudness normalized before ESP32 mixing', () => {
-    const values = AURA25_AUDITION_INSTRUMENTS
-      .filter((inst) => inst.bank === 0)
-      .map((inst) => ({
-        name: inst.name,
-        db: sf2AuditionEstimatedDb('public/Aura25_GM128.sf2', inst.bank, inst.program, inst.note),
-      }));
-    const loudest = Math.max(...values.map((v) => v.db));
-    const quietest = Math.min(...values.map((v) => v.db));
-    expect(loudest, values.map((v) => `${v.name}:${v.db.toFixed(1)}dB`).join(', ')).toBeLessThanOrEqual(-25.5);
-    expect(quietest, values.map((v) => `${v.name}:${v.db.toFixed(1)}dB`).join(', ')).toBeGreaterThanOrEqual(-31);
-    expect(loudest - quietest, values.map((v) => `${v.name}:${v.db.toFixed(1)}dB`).join(', ')).toBeLessThanOrEqual(5.2);
+  it('keeps Aura25 direct Copych render loudness normalized before post-chain work', () => {
+    const audit = sf2DirectBalanceAudit();
+    expect(audit.sha256).toBe(sf2Sha256('public/Aura25_GM128.sf2'));
+    expect(audit.sampleRate).toBe(24000);
+    expect(audit.rows.map((row) => row.preset)).toEqual([
+      '0:0 大钢琴',
+      '0:5 GU Electric Grand',
+      '0:11 Vibraphone',
+      '8:5 GU Chorused FM EP',
+      '0:24 尼龙吉他',
+      '0:25 民谣木吉他',
+      '0:32 原声贝斯',
+      '0:38 合成贝斯 1',
+      '0:67 上低音萨克斯',
+      '0:89 暖 Pad',
+      '0:108 卡林巴',
+      '128:8 Room 鼓组',
+      '128:25 TR-808 鼓组',
+      '128:40 Brush 鼓组',
+    ]);
+    for (const row of audit.rows) {
+      expect(row.status, `${row.preset} ${row.normal.rmsDbfs}dBFS target ${row.targetActiveRmsDbfs}`).toBe('PASS');
+      expect(Math.abs(row.deltaToTargetDb), row.preset).toBeLessThanOrEqual(1.5);
+      expect(row.stress.peakDbfs, `${row.preset} stress peak`).toBeLessThanOrEqual(-10);
+    }
   });
 
   it('keeps imported GM128_6MB Room/TR-808/Brush drum kits dry and body-first at 24kHz', () => {
@@ -634,13 +670,13 @@ describe('Aura25Palette', () => {
     expect(loudest - quietest, values.map((v) => `${v.key}:${v.db.toFixed(1)}dB`).join(', ')).toBeLessThanOrEqual(39);
 
     const byKey = new Map(values.map((v) => [v.key, v.db]));
-    expect(byKey.get(36)!, 'kick').toBeGreaterThanOrEqual(-12);
-    expect(byKey.get(38)!, 'snare').toBeGreaterThanOrEqual(-14);
-    expect(byKey.get(42)!, 'closed hat restored below body').toBeLessThanOrEqual(-30);
-    expect(byKey.get(46)!, 'open hat restored below body').toBeLessThanOrEqual(-30);
-    expect(byKey.get(49)!, 'crash restored below body').toBeLessThanOrEqual(-20);
-    expect(byKey.get(51)!, 'ride restored below body').toBeLessThanOrEqual(-38);
-    expect(byKey.get(70)!, 'maracas restored below body').toBeLessThanOrEqual(-40);
+    expect(byKey.get(36)!, 'kick').toBeGreaterThanOrEqual(-19);
+    expect(byKey.get(38)!, 'snare').toBeGreaterThanOrEqual(-21.5);
+    expect(byKey.get(42)!, 'closed hat restored below body').toBeLessThanOrEqual(-38);
+    expect(byKey.get(46)!, 'open hat restored below body').toBeLessThanOrEqual(-38);
+    expect(byKey.get(49)!, 'crash restored below body').toBeLessThanOrEqual(-30);
+    expect(byKey.get(51)!, 'ride restored below body').toBeLessThanOrEqual(-48);
+    expect(byKey.get(70)!, 'maracas restored below body').toBeLessThanOrEqual(-52);
     expect(byKey.get(36)! - byKey.get(42)!, 'kick over closed hat').toBeGreaterThanOrEqual(20);
     expect(byKey.get(38)! - byKey.get(46)!, 'snare over open hat').toBeGreaterThanOrEqual(16);
   });

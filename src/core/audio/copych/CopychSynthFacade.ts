@@ -47,12 +47,12 @@ const _fxListeners = new Set<() => void>();
 /* ---- 设备后链（听感排查批2）状态镜像 ----
  * 固件输出后链（style master lift→校准 gain×1.8→Copych soft/hard clip→mono 折叠→EQ 6 段→终级饱和→16bit）
  * 的 web 复刻（DSP 在 public/copych/device_postchain.mjs，参数同源锚见彼处头注释）。
-     * 默认随 Copych 常驻开启，copych=设备镜像；state=processor 回报的实际生效态。
+ * SF2 直出调平期默认临时 bypass，copych raw synth 直接出声；state=processor 回报的实际生效态。
  * gain/clip/mono/final clamp 在任何 ctx 采样率都生效；6 段小喇叭 EQ 仅 24k 有效，
  * 非 24k 时 reason 会提示 EQ bypass，UI 以 state 为准防分叉。
  * meters=链输出电平；用户主音量改走 masterLift，仍在保护链之前。 */
 export interface CopychPostChainCfg {
-    enabled: boolean;    /* 兼容字段；Copych-only 正式输出强制 true，禁止 raw synth 直出 */
+    enabled: boolean;    /* SF2 直出调平期允许 false，全链 bypass */
     gain: boolean;      /* off ≡ 板上 ne gain 100 */
     eq: boolean;        /* off ≡ 板上 ne eq off */
     softclip: boolean;  /* off ≡ 板上 ne clip hard */
@@ -75,16 +75,16 @@ export interface CopychPostChainMeters {
 }
 
 export const COPYCH_DEVICE_POSTCHAIN_PRESET: CopychPostChainCfg = {
-    enabled: true,
-    gain: true,
-    eq: true,
-    softclip: true,
-    quantize: true,
-    masterLift: 1.5,
+    enabled: false,
+    gain: false,
+    eq: false,
+    softclip: false,
+    quantize: false,
+    masterLift: 1,
 };
 export const COPYCH_MASTER_LIFT_MIN = 0.05;
 export const COPYCH_MASTER_LIFT_MAX = 4;
-export const COPYCH_DEFAULT_MASTER_LIFT = 1.5;
+export const COPYCH_DEFAULT_MASTER_LIFT = 1;
 
 const POSTCHAIN_BOOT: CopychPostChainState = {
     active: false,

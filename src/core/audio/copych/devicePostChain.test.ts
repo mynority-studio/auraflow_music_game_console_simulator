@@ -2,6 +2,7 @@
 // 设备后链 DSP 单测（听感排查批2）——对 public/copych/device_postchain.mjs
 // 逐语义证伪：mono 折叠抵消 / EQ 差分方程 / softclip 手算锚点 / 量化截断 /
 // 非 24k 只跳过 EQ 不跳过增益 / 终级饱和恒在 / EQ 重开清状态 / masterLift 链内。
+// 当前 SF2 调平阶段默认 enabled=false，测试里显式 enabled=true 覆盖 DSP 行为。
 import { describe, expect, it } from 'vitest';
 import { createDevicePostChain, softClipS16, hardClipS16, EQ_COEF_24K, DEVICE_GAIN_DEFAULT, DEFAULT_MASTER_LIFT, DEVICE_POSTCHAIN_DEFAULT_PRESET, MASTER_LIFT_MAX, MASTER_LIFT_MIN } from '../../../../public/copych/device_postchain.mjs';
 import { COPYCH_DEFAULT_MASTER_LIFT, COPYCH_DEVICE_POSTCHAIN_PRESET, COPYCH_MASTER_LIFT_MAX, COPYCH_MASTER_LIFT_MIN } from './CopychSynthFacade';
@@ -37,25 +38,25 @@ function eqMagnitudeDb(freqHz: number): number {
 }
 
 describe('devicePostChain', () => {
-    it('默认就是设备镜像常驻，避免启动阶段 raw synth 直出', () => {
+    it('默认是 SF2 直出审计 bypass，facade 与 worklet 预设保持同源', () => {
         expect(DEVICE_POSTCHAIN_DEFAULT_PRESET).toEqual(COPYCH_DEVICE_POSTCHAIN_PRESET);
         expect(MASTER_LIFT_MIN).toBe(COPYCH_MASTER_LIFT_MIN);
         expect(MASTER_LIFT_MAX).toBe(COPYCH_MASTER_LIFT_MAX);
         expect(DEFAULT_MASTER_LIFT).toBe(COPYCH_DEFAULT_MASTER_LIFT);
         const c = mk();
         expect(c.config()).toMatchObject(COPYCH_DEVICE_POSTCHAIN_PRESET);
-        expect(c.isActive()).toBe(true);
+        expect(c.isActive()).toBe(false);
     });
 
-    it('enabled=false 也不能全链 bypass：raw synth 不允许作为正式输出路径', () => {
+    it('enabled=false 时全链 passthrough：用于 SF2 raw 直出调平', () => {
         const c = mk();
         c.set({ enabled: false, gain: false, eq: false, softclip: false, quantize: false });
-        expect(c.config().enabled).toBe(true);
-        expect(c.isActive()).toBe(true);
-        const L = buf([2]), R = buf([2]);
+        expect(c.config().enabled).toBe(false);
+        expect(c.isActive()).toBe(false);
+        const L = buf([0.25]), R = buf([-0.5]);
         c.process(L, R, 1);
-        expect(L[0]).toBe(1);
-        expect(R[0]).toBe(1);
+        expect(L[0]).toBe(0.25);
+        expect(R[0]).toBe(-0.5);
     });
 
     it('mono 折叠：L=1/R=-1 → 全链输出 0（计划门 R2-P1 合同）', () => {
@@ -141,7 +142,7 @@ describe('devicePostChain', () => {
 
     it('非 24k ctx 不再丢掉后链响度：gain/clip/mono 仍生效，只跳过 24k EQ', () => {
         const c = mk(48000);
-        c.set({ enabled: true, masterLift: 1 });
+        c.set({ enabled: true, gain: true, quantize: true, masterLift: 1 });
         expect(c.isActive()).toBe(true);
         expect(c.srOk()).toBe(true);
         expect(c.eqRateOk()).toBe(false);
@@ -151,23 +152,23 @@ describe('devicePostChain', () => {
         expect(L[0]).toBeCloseTo(expected, 6);
     });
 
-    it('copych 默认预设就是固件镜像态；48k 下保留响度但跳过 24k EQ', () => {
+    it('copych 默认预设保持 raw bypass；48k 只影响 EQ 可用性状态', () => {
         const c24 = mk(24000);
         c24.set(COPYCH_DEVICE_POSTCHAIN_PRESET);
-        expect(c24.isActive()).toBe(true);
+        expect(c24.isActive()).toBe(false);
         expect(c24.eqRateOk()).toBe(true);
         expect(c24.config()).toMatchObject({
-            enabled: true,
-            gain: true,
-            eq: true,
-            softclip: true,
-            quantize: true,
+            enabled: false,
+            gain: false,
+            eq: false,
+            softclip: false,
+            quantize: false,
             masterLift: DEFAULT_MASTER_LIFT,
         });
 
         const c48 = mk(48000);
         c48.set(COPYCH_DEVICE_POSTCHAIN_PRESET);
-        expect(c48.isActive()).toBe(true);
+        expect(c48.isActive()).toBe(false);
         expect(c48.srOk()).toBe(true);
         expect(c48.eqRateOk()).toBe(false);
     });

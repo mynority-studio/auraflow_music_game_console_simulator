@@ -80,6 +80,7 @@ const NOTE_OFF_CC = 123;
 const ELECTRIC_KEY_PROGRAM = 5;
 const FOLK_GUITAR_PROGRAM = 25;
 const MALLET_PROGRAMS = new Set([12, 107, 108]);
+const DIAGNOSTIC_POLYPHONY = 10;
 const DRIVE_STATE_LABEL: Record<CopychPostChainMeters['driveState'], string> = {
     'very-quiet': '很小',
     quiet: '偏小',
@@ -112,13 +113,14 @@ const clampMasterLift = (lift: number): number =>
 const DIAGNOSTIC_AUDITION_CHANNEL = AUDITION_CHANNEL;
 const clampMidiNote = (note: number): number => Math.max(0, Math.min(127, Math.round(note)));
 const diagnosticNotesFor = (item: AuditionItem): readonly number[] => {
-    if (item.role === 'drum') return [36, 38, 42, 46, 49];
-    if (item.role === 'bass') return [item.note, item.note + 7, item.note + 12, item.note + 15, item.note + 19].map(clampMidiNote);
-    if (item.role === 'pad') return [item.note, item.note + 7, item.note + 12, item.note + 16, item.note + 19].map(clampMidiNote);
-    if (item.program === 0 || item.program === ELECTRIC_KEY_PROGRAM || item.program === 108) return [64, 67, 71, 74, 78];
-    if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return [item.note, item.note + 5, item.note + 9, item.note + 12, item.note + 16].map(clampMidiNote);
-    if (item.program === 67) return [43, 50, 54, 57, 62];
-    return [item.note, item.note + 4, item.note + 7, item.note + 11, item.note + 14].map(clampMidiNote);
+    if (item.role === 'drum') return [36, 38, 42, 46, 49, 36, 38, 42, 46, 49];
+    if (item.role === 'bass') return [item.note, item.note + 7, item.note + 12, item.note + 15, item.note + 19, item.note + 24, item.note + 28, item.note + 31, item.note + 36, item.note + 40].map(clampMidiNote);
+    if (item.role === 'pad') return [item.note, item.note + 7, item.note + 12, item.note + 16, item.note + 19, item.note + 24, item.note + 28, item.note + 31, item.note + 35, item.note + 40].map(clampMidiNote);
+    if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return [52, 57, 61, 64, 68, 70, 72, 76, 80, 88];
+    if (item.program === 67) return [43, 47, 50, 54, 57, 62, 66, 69, 72, 72];
+    if (item.program === 108) return [60, 64, 67, 71, 74, 76, 79, 81, 84, 88];
+    if (item.program === 0 || item.program === ELECTRIC_KEY_PROGRAM) return [52, 55, 60, 64, 67, 71, 74, 78, 83, 88];
+    return [item.note, item.note + 4, item.note + 7, item.note + 11, item.note + 14, item.note + 16, item.note + 19, item.note + 23, item.note + 26, item.note + 28].map(clampMidiNote);
 };
 const diagnosticVelocityFor = (item: AuditionItem): number => {
     if (item.role === 'drum') return 94;
@@ -135,6 +137,7 @@ const diagnosticVolumeFor = (item: AuditionItem): number => {
     if (item.program === 67) return 64;
     if (item.program === 24 || item.program === FOLK_GUITAR_PROGRAM) return 56;
     if (item.program === ELECTRIC_KEY_PROGRAM) return 80;
+    if (item.program === 108) return 72;
     return 84;
 };
 const diagnosticDurationFor = (item: AuditionItem): number => {
@@ -145,7 +148,7 @@ const diagnosticDurationFor = (item: AuditionItem): number => {
 };
 const DIAGNOSTIC_AUDITION_CASES: readonly DiagnosticAuditionCase[] = AURA25_AUDITION_INSTRUMENTS.map(item => ({
     id: `${item.bank}-${item.program}-${item.role}`,
-    label: `${item.name}${item.role === 'drum' ? ' 五件' : ' 五音'}`,
+    label: `${item.name} ${DIAGNOSTIC_POLYPHONY}${item.role === 'drum' ? '击' : '复音'}`,
     bank: item.bank,
     program: item.program,
     notes: diagnosticNotesFor(item),
@@ -157,8 +160,8 @@ const DIAGNOSTIC_AUDITION_VARIANTS: readonly DiagnosticAuditionVariant[] = [
     {
         id: 'raw',
         label: 'RAW',
-        title: '近似 Copych raw：关闭设备增益/EQ/16bit，不额外放大。用于判断源头是否自带滋滋。',
-        cfg: { enabled: true, gain: false, eq: false, softclip: true, quantize: false, masterLift: 1 },
+        title: 'Copych raw 直出：完全 bypass 设备后链，用于判断 SF2 源头是否自带滋滋。',
+        cfg: { enabled: false, gain: false, eq: false, softclip: false, quantize: false, masterLift: 1 },
     },
     {
         id: 'device',
@@ -679,7 +682,7 @@ export const SoundFontSelector: React.FC = () => {
                     <span
                         className="shrink-0 text-[11px] font-semibold tracking-widest text-zinc-400"
                         title={'固件输出后链镜像（校准增益×1.8 → Copych 软/硬削波 → 单声道折叠 → 6 段小喇叭校正 EQ → 终级饱和 → 16bit）。'
-                            + '这是 Copych-only 正式输出的常驻阶段；增益/削波/下混全采样率有效，6 段 EQ 仅 24kHz ctx 有效（系数绑 24k）。'
+                            + '当前 SF2 调平阶段默认关闭，点“镜像预设”可临时启用；增益/削波/下混全采样率有效，6 段 EQ 仅 24kHz ctx 有效（系数绑 24k）。'
                             + '各级开关对应设备真实态：增益 off≡ne gain 100 / EQ off≡ne eq off / 软削 off≡ne clip hard；16bit off=纯 float 链（仅诊断，非设备路径）'}
                     >
                         设备后链
@@ -688,9 +691,9 @@ export const SoundFontSelector: React.FC = () => {
                         className={`rounded px-2 py-0.5 text-[10px] transition ${pcState.active
                             ? 'bg-cyan-900/70 text-cyan-200'
                             : 'bg-zinc-900 text-zinc-500'}`}
-                        title={pcState.reason ?? '常驻：Copych raw synth 不作为正式试听路径，必须进入设备后链'}
+                        title={pcState.reason ?? (pcState.active ? '设备后链已开启' : '直出：Copych raw synth 暂时 bypass 设备后链，用于 SF2 调平')}
                     >
-                        {pcState.active ? '常驻' : '待启动'}
+                        {pcState.active ? '已开启' : '直出'}
                     </span>
                     {(['gain', 'eq', 'softclip', 'quantize'] as const).map(k => (
                         <button
@@ -715,7 +718,7 @@ export const SoundFontSelector: React.FC = () => {
                     ))}
                     <button
                         type="button"
-                        onClick={() => setCopychDevicePostChain({ gain: true, eq: true, softclip: true, quantize: true })}
+                        onClick={() => setCopychDevicePostChain({ enabled: true, gain: true, eq: true, softclip: true, quantize: true })}
                         className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200"
                         title="一键=固件默认态全开（gain+EQ+软削+16bit）"
                     >

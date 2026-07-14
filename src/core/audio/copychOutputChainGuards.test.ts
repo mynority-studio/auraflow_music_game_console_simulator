@@ -12,22 +12,21 @@ describe('Copych output chain bypass guards', () => {
         expect(source).not.toMatch(/if\s*\(\s*this\.postchain\.isActive\(\)\s*\)\s*\{\s*this\.postchain\.process/s);
     });
 
-    it('device_postchain has no full-chain or sample-rate-wide bypass, only 24k EQ gating', () => {
+    it('device_postchain defaults to temporary SF2-direct bypass, while preserving 24k EQ gating for enabled audits', () => {
         const source = read('public/copych/device_postchain.mjs');
         expect(source).toContain('DEVICE_POSTCHAIN_DEFAULT_PRESET');
-        expect(source).toContain('enabled: true');
-        expect(source).toContain('cfg.enabled = true;');
-        expect(source).toContain('isActive() { return true; }');
+        expect(source).toContain('enabled: false');
+        expect(source).toContain('isActive() { return cfg.enabled; }');
+        expect(source).toContain('if (!cfg.enabled) return;');
         expect(source).toContain('const eqActive = cfg.eq && eqRateOk;');
-        expect(source).not.toContain('if (!cfg.enabled) return;');
+        expect(source).not.toContain('cfg.enabled = true;');
         expect(source).not.toContain('if (!cfg.enabled || !srOk) return');
-        expect(source).not.toContain('isActive() { return cfg.enabled &&');
     });
 
-    it('facade applies the device mirror preset during init, before the synth is exposed', () => {
+    it('facade applies the SF2-direct postchain preset during init, before the synth is exposed', () => {
         const source = read('src/core/audio/copych/CopychSynthFacade.ts');
         expect(source).toContain('export const COPYCH_DEVICE_POSTCHAIN_PRESET');
-        expect(source).toContain('enabled: true');
+        expect(source).toContain('enabled: false');
         expect(source).toContain('this.setDevicePostChain(COPYCH_DEVICE_POSTCHAIN_PRESET)');
         expect(source).toContain('COPYCH_MASTER_LIFT_MIN = 0.05');
         expect(source).toContain('COPYCH_MASTER_LIFT_MAX = 4');
@@ -41,7 +40,8 @@ describe('Copych output chain bypass guards', () => {
         expect(source).toContain('COPYCH_MASTER_LIFT_MAX');
         expect(source).toContain('setCopychDevicePostChain({ masterLift: Number(event.target.value) })');
         expect(source).not.toContain('trimDb');
-        expect(source).toContain('常驻');
+        expect(source).toContain('直出');
+        expect(source).toContain('enabled: true, gain: true, eq: true, softclip: true, quantize: true');
         expect(source).not.toContain('setCopychDevicePostChain({ enabled: !pcState.cfg.enabled })');
     });
 

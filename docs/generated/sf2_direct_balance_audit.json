@@ -1,0 +1,442 @@
+{
+  "sf2": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/public/Aura25_GM128.sf2",
+  "sha256": "c2c0cb4e0dcdb5586e3116fdb45351529871aa6cf79ff179d784dba2c019e56a",
+  "sampleRate": 24000,
+  "scope": "SF2 direct/raw render only: CC7=100, CC11=127, FX sends=0, no Copych postchain/EQ/softclip/masterLift. Active RMS excludes release/silence; drums use short onset window.",
+  "rows": [
+    {
+      "preset": "0:0 大钢琴",
+      "role": "lead",
+      "bank": 0,
+      "program": 0,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -32.13,
+        "rmsDbfs": -39.2,
+        "crestDb": 7.07
+      },
+      "normal": {
+        "peakDbfs": -21.82,
+        "rmsDbfs": -32.98,
+        "crestDb": 11.17
+      },
+      "stress": {
+        "peakDbfs": -18.86,
+        "rmsDbfs": -30.96,
+        "crestDb": 12.11
+      },
+      "targetActiveRmsDbfs": -33,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -21.82,
+        "rmsDbfs": -36.97,
+        "crestDb": 15.15
+      },
+      "deltaToTargetDb": -0.02,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:5 GU Electric Grand",
+      "role": "comp",
+      "bank": 0,
+      "program": 5,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -32.6,
+        "rmsDbfs": -38.54,
+        "crestDb": 5.94
+      },
+      "normal": {
+        "peakDbfs": -22.73,
+        "rmsDbfs": -33.41,
+        "crestDb": 10.68
+      },
+      "stress": {
+        "peakDbfs": -16.72,
+        "rmsDbfs": -29.36,
+        "crestDb": 12.64
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -21.52,
+        "rmsDbfs": -37.36,
+        "crestDb": 15.84
+      },
+      "deltaToTargetDb": -0.59,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:11 Vibraphone",
+      "role": "lead",
+      "bank": 0,
+      "program": 11,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -35.14,
+        "rmsDbfs": -40.11,
+        "crestDb": 4.97
+      },
+      "normal": {
+        "peakDbfs": -23.54,
+        "rmsDbfs": -33.03,
+        "crestDb": 9.49
+      },
+      "stress": {
+        "peakDbfs": -17.43,
+        "rmsDbfs": -28.96,
+        "crestDb": 11.53
+      },
+      "targetActiveRmsDbfs": -33,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -23.22,
+        "rmsDbfs": -36.87,
+        "crestDb": 13.65
+      },
+      "deltaToTargetDb": 0.03,
+      "status": "PASS"
+    },
+    {
+      "preset": "8:5 GU Chorused FM EP",
+      "role": "comp",
+      "bank": 8,
+      "program": 5,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -34.35,
+        "rmsDbfs": -45.43,
+        "crestDb": 11.08
+      },
+      "normal": {
+        "peakDbfs": -19.22,
+        "rmsDbfs": -34.44,
+        "crestDb": 15.22
+      },
+      "stress": {
+        "peakDbfs": -12.01,
+        "rmsDbfs": -27.51,
+        "crestDb": 15.5
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -18.6,
+        "rmsDbfs": -37.81,
+        "crestDb": 19.22
+      },
+      "deltaToTargetDb": 0.44,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:24 尼龙吉他",
+      "role": "comp",
+      "bank": 0,
+      "program": 24,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -32.2,
+        "rmsDbfs": -38.73,
+        "crestDb": 6.53
+      },
+      "normal": {
+        "peakDbfs": -23.3,
+        "rmsDbfs": -33.02,
+        "crestDb": 9.72
+      },
+      "stress": {
+        "peakDbfs": -18.44,
+        "rmsDbfs": -29.47,
+        "crestDb": 11.02
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -22.86,
+        "rmsDbfs": -36.93,
+        "crestDb": 14.06
+      },
+      "deltaToTargetDb": -0.98,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:25 民谣木吉他",
+      "role": "comp",
+      "bank": 0,
+      "program": 25,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -32.2,
+        "rmsDbfs": -38.73,
+        "crestDb": 6.53
+      },
+      "normal": {
+        "peakDbfs": -23.3,
+        "rmsDbfs": -33.02,
+        "crestDb": 9.72
+      },
+      "stress": {
+        "peakDbfs": -18.44,
+        "rmsDbfs": -29.47,
+        "crestDb": 11.02
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -22.86,
+        "rmsDbfs": -36.93,
+        "crestDb": 14.06
+      },
+      "deltaToTargetDb": -0.98,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:32 原声贝斯",
+      "role": "bass",
+      "bank": 0,
+      "program": 32,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -29.05,
+        "rmsDbfs": -40.7,
+        "crestDb": 11.64
+      },
+      "normal": {
+        "peakDbfs": -22.28,
+        "rmsDbfs": -34.14,
+        "crestDb": 11.85
+      },
+      "stress": {
+        "peakDbfs": -16.91,
+        "rmsDbfs": -28.63,
+        "crestDb": 11.72
+      },
+      "targetActiveRmsDbfs": -33,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -21.48,
+        "rmsDbfs": -37.76,
+        "crestDb": 16.28
+      },
+      "deltaToTargetDb": 1.14,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:38 合成贝斯 1",
+      "role": "bass",
+      "bank": 0,
+      "program": 38,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -32.37,
+        "rmsDbfs": -39.09,
+        "crestDb": 6.72
+      },
+      "normal": {
+        "peakDbfs": -24.74,
+        "rmsDbfs": -34.42,
+        "crestDb": 9.68
+      },
+      "stress": {
+        "peakDbfs": -22.43,
+        "rmsDbfs": -31.86,
+        "crestDb": 9.43
+      },
+      "targetActiveRmsDbfs": -33,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -24.74,
+        "rmsDbfs": -38.66,
+        "crestDb": 13.92
+      },
+      "deltaToTargetDb": 1.42,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:67 上低音萨克斯",
+      "role": "lead",
+      "bank": 0,
+      "program": 67,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -35.42,
+        "rmsDbfs": -43.95,
+        "crestDb": 8.52
+      },
+      "normal": {
+        "peakDbfs": -22.54,
+        "rmsDbfs": -33.73,
+        "crestDb": 11.19
+      },
+      "stress": {
+        "peakDbfs": -17.04,
+        "rmsDbfs": -27.91,
+        "crestDb": 10.86
+      },
+      "targetActiveRmsDbfs": -33,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -22.54,
+        "rmsDbfs": -38.2,
+        "crestDb": 15.66
+      },
+      "deltaToTargetDb": 0.73,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:89 暖 Pad",
+      "role": "pad",
+      "bank": 0,
+      "program": 89,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -31.58,
+        "rmsDbfs": -39.12,
+        "crestDb": 7.53
+      },
+      "normal": {
+        "peakDbfs": -29.41,
+        "rmsDbfs": -38.21,
+        "crestDb": 8.8
+      },
+      "stress": {
+        "peakDbfs": -22.53,
+        "rmsDbfs": -31.86,
+        "crestDb": 9.33
+      },
+      "targetActiveRmsDbfs": -38,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -29.41,
+        "rmsDbfs": -41.46,
+        "crestDb": 12.05
+      },
+      "deltaToTargetDb": 0.21,
+      "status": "PASS"
+    },
+    {
+      "preset": "0:108 卡林巴",
+      "role": "lead",
+      "bank": 0,
+      "program": 108,
+      "ch": 0,
+      "single": {
+        "peakDbfs": -35.52,
+        "rmsDbfs": -41.46,
+        "crestDb": 5.93
+      },
+      "normal": {
+        "peakDbfs": -24.29,
+        "rmsDbfs": -34.41,
+        "crestDb": 10.12
+      },
+      "stress": {
+        "peakDbfs": -15.83,
+        "rmsDbfs": -27.16,
+        "crestDb": 11.33
+      },
+      "targetActiveRmsDbfs": -33,
+      "activeWindow": "0.06-0.5s",
+      "fullNormal": {
+        "peakDbfs": -20.33,
+        "rmsDbfs": -37.69,
+        "crestDb": 17.36
+      },
+      "deltaToTargetDb": 1.41,
+      "status": "PASS"
+    },
+    {
+      "preset": "128:8 Room 鼓组",
+      "role": "drum",
+      "bank": 128,
+      "program": 8,
+      "ch": 9,
+      "single": {
+        "peakDbfs": -22.37,
+        "rmsDbfs": -35.46,
+        "crestDb": 13.08
+      },
+      "normal": {
+        "peakDbfs": -17.18,
+        "rmsDbfs": -32.98,
+        "crestDb": 15.8
+      },
+      "stress": {
+        "peakDbfs": -11.84,
+        "rmsDbfs": -27.09,
+        "crestDb": 15.25
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0-0.35s",
+      "fullNormal": {
+        "peakDbfs": -17.18,
+        "rmsDbfs": -38.98,
+        "crestDb": 21.81
+      },
+      "deltaToTargetDb": -1.02,
+      "status": "PASS"
+    },
+    {
+      "preset": "128:25 TR-808 鼓组",
+      "role": "drum",
+      "bank": 128,
+      "program": 25,
+      "ch": 9,
+      "single": {
+        "peakDbfs": -23.18,
+        "rmsDbfs": -33.29,
+        "crestDb": 10.11
+      },
+      "normal": {
+        "peakDbfs": -19.54,
+        "rmsDbfs": -32.94,
+        "crestDb": 13.39
+      },
+      "stress": {
+        "peakDbfs": -14.93,
+        "rmsDbfs": -30.43,
+        "crestDb": 15.49
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0-0.35s",
+      "fullNormal": {
+        "peakDbfs": -19.54,
+        "rmsDbfs": -38.68,
+        "crestDb": 19.14
+      },
+      "deltaToTargetDb": -1.06,
+      "status": "PASS"
+    },
+    {
+      "preset": "128:40 Brush 鼓组",
+      "role": "drum",
+      "bank": 128,
+      "program": 40,
+      "ch": 9,
+      "single": {
+        "peakDbfs": -28.28,
+        "rmsDbfs": -48.26,
+        "crestDb": 19.99
+      },
+      "normal": {
+        "peakDbfs": -18.07,
+        "rmsDbfs": -35.26,
+        "crestDb": 17.18
+      },
+      "stress": {
+        "peakDbfs": -11.32,
+        "rmsDbfs": -28.39,
+        "crestDb": 17.07
+      },
+      "targetActiveRmsDbfs": -34,
+      "activeWindow": "0-0.35s",
+      "fullNormal": {
+        "peakDbfs": -18.07,
+        "rmsDbfs": -40.86,
+        "crestDb": 22.79
+      },
+      "deltaToTargetDb": 1.26,
+      "status": "PASS"
+    }
+  ]
+}

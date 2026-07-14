@@ -19,7 +19,7 @@
 //   EQ 24k 系数：audio_rander.c s_eq_coef（YD3411 小喇叭校正：70Hz HP 保护 + 145/225Hz body + 5-10k 抑制）
 //
 // 开关语义（每个组合尽量对应真实设备态）：
-//   enabled  固定 true：Copych-only 正式输出不允许 raw synth 直出；兼容字段会被强制回 true
+//   enabled  off = 临时 SF2 直出审计 bypass：不增益、不 EQ、不 softclip、不 mono fold、不 clamp
 //   gain     off = ×1.0            ≡ 板上 `ne gain 100`
 //   softclip off = Copych 走 hard ≡ 板上 `ne clip hard`
 //   eq       off = 跳过 EQ         ≡ 板上 `ne eq off`
@@ -56,16 +56,16 @@ export const EQ_COEF_24K = [
       a1: -0.11858579787427957, a2: -0.11727678029031158 }, /* HS -5.5dB ~7kHz S0.8: Harman-like treble roll-off */
 ];
 
-export const DEVICE_GAIN_DEFAULT = 1.8;    /* 硬件校准小增益；整体响度走受保护的 masterLift，不再用大 gain 硬推 */
-export const DEFAULT_MASTER_LIFT = 1.5;    /* 默认主音量基准：+50% 响度请求，仍在 softclip/EQ/clamp 保护链之前 */
+export const DEVICE_GAIN_DEFAULT = 1.8;    /* 硬件校准小增益；后链重调前临时 bypass，不参与默认播放 */
+export const DEFAULT_MASTER_LIFT = 1.0;    /* SF2 直出审计期：不做链内主音量抬升 */
 export const MASTER_LIFT_MIN = 0.05;
 export const MASTER_LIFT_MAX = 4;
 export const DEVICE_POSTCHAIN_DEFAULT_PRESET = Object.freeze({
-    enabled: true,
-    gain: true,
-    eq: true,
-    softclip: true,
-    quantize: true,
+    enabled: false,
+    gain: false,
+    eq: false,
+    softclip: false,
+    quantize: false,
     masterLift: DEFAULT_MASTER_LIFT,
 });
 
@@ -135,8 +135,8 @@ export function createDevicePostChain(contextSampleRate) {
     }
 
     return {
-        /** 实际生效态：Copych-only 正式输出恒经设备后链；非 24k 只跳过 EQ。 */
-        isActive() { return true; },
+        /** 实际生效态：SF2 直出审计期允许临时 bypass 整条设备后链。 */
+        isActive() { return cfg.enabled; },
         srOk() { return true; },
         eqRateOk() { return eqRateOk; },
         config() { return { ...cfg }; },
@@ -144,7 +144,6 @@ export function createDevicePostChain(contextSampleRate) {
         set(partial) {
             const wasEqOn = eqRateOk && cfg.eq;
             Object.assign(cfg, partial);
-            cfg.enabled = true;
             if (!Number.isFinite(cfg.masterLift)) cfg.masterLift = DEFAULT_MASTER_LIFT;
             cfg.masterLift = Math.max(MASTER_LIFT_MIN, Math.min(MASTER_LIFT_MAX, cfg.masterLift));
             const nowEqOn = eqRateOk && cfg.eq;
@@ -184,6 +183,7 @@ export function createDevicePostChain(contextSampleRate) {
 
         /** 就地处理（L/R Float32Array，len 样本）。零分配。 */
         process(L, R, len) {
+            if (!cfg.enabled) return;
             const g = 32767 * cfg.masterLift * (cfg.gain ? DEVICE_GAIN_DEFAULT : 1.0);
             const q = cfg.quantize;
             const eqActive = cfg.eq && eqRateOk;
