@@ -68,10 +68,9 @@ describe('Layer 2 · delay 不改 reverb/chorus(保浏览器平衡)+ CC95 端到
     expect(withDelay.delay).toBe(26);           // rnb lead 有 delay
     expect(withDelay.reverb).toBeGreaterThan(0); // reverb 仍在(未被 delay 影响)
   });
-  it('生成曲:lofi 非 GM5 comp 发 CC95;GM5/bass 永不发', () => {
-    const lofi = musicalIRToMidiEvents(generateMusicSync({ seed: 0, styleHint: 'lofi', mood: 'build', targetDuration: 90, key: 'C' }).ir!);
+  it('生成曲:Dream GM128 硬件 MIDI 不发非标准 CC95 delay send', () => {
+    const lofi = musicalIRToMidiEvents(generateMusicSync({ seed: 0, styleHint: 'lofi', mood: 'build', targetDuration: 90 }).ir!);
     const cc95 = lofi.filter((e) => e.type === 'cc' && e.data1 === 95);
-    expect(cc95.length).toBeGreaterThan(0);      // lofi 非 GM5 和声有 delay
-    expect(cc95.every((e) => (e.data2 as number) <= 22)).toBe(true); // 克制但能听到空间
+    expect(cc95).toEqual([]);
   });
 });

@@ -15,11 +15,11 @@ import type { AuditReport } from '../newEngine/ir/AuditReport';
 import { buildMotifSongBundle, generateSongFromMotifBundle, type MotifSongOverride } from '../newEngine/generation/generateSongFromMotif';
 import type { GenerationRequest } from '../newEngine/band/bandEngine';
 import type { MusicalIR } from '../newEngine/ir/MusicalIR';
-import { buildUiSnapshot, keyToPc } from './qnUiProjection';
+import { buildUiSnapshot } from './qnUiProjection';
 import { deriveLineupConstraint } from './participantConstraint';
 import type { MusicGenerationRequest, MusicGenerationResult } from './types';
 
-/** MusicGenerationRequest → Q+N GenerationRequest(UI 字符串 key/mode 转 Q+N 类型;participant → 约束)。 */
+/** MusicGenerationRequest → Q+N GenerationRequest(key/mode 由 Q+N band 层开局抽取;participant → 约束)。 */
 function toQnRequest(req: MusicGenerationRequest): GenerationRequest {
   const out: GenerationRequest = {
     seed: req.seed,
@@ -27,8 +27,6 @@ function toQnRequest(req: MusicGenerationRequest): GenerationRequest {
     mood: req.mood,
     targetDuration: req.targetDuration,
   };
-  if (req.key) (out as { key?: number }).key = keyToPc(req.key);
-  if (req.mode) (out as { mode?: string }).mode = req.mode.toLowerCase() === 'minor' ? 'minor' : 'major';
   const constraint = deriveLineupConstraint(req.bandParticipants);
   if (constraint) (out as { bandConstraint?: unknown }).bandConstraint = constraint;
   return out;
@@ -51,7 +49,7 @@ function buildResult(req: MusicGenerationRequest, bundle: SongBundle, ir: Musica
     report: reportWithIntent,
     attempts,
     uiSnapshot: buildUiSnapshot(bundle, ir, req.seed, req.bandParticipants),
-    spaceProfile: bundle.instrumentation.spaceProfile, // copych FX 空间下发直取(见 AudioEngine.playMusicGeneration)
+    spaceProfile: bundle.instrumentation.spaceProfile, // 硬件共享 FX 空间下发直取(见 AudioEngine.playMusicGeneration)
   };
 }
 

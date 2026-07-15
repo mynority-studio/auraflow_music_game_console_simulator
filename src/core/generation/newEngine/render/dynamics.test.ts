@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyDynamics, type EnergyRange } from './dynamics';
-import { generateSong } from '../generation/GenerationController';
+import { buildSongBundle, generateSong, generateSongFromBundle } from '../generation/GenerationController';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import type { TrackIR } from '../ir/MusicalIR';
@@ -30,6 +30,74 @@ describe('render/dynamics (3.1)', () => {
     const tracks: TrackIR[] = [{ role: 'lead', notes: [{ pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 127 }] }];
     const out = applyDynamics(tracks, [{ lo: 0, hi: 8, energy: 1 }], 480);
     expect(out[0].notes[0].velocity).toBeLessThanOrEqual(127);
+  });
+
+  it('lead 消费 section energy，但缩放幅度小于伴奏且不改 pitch/onset/duration', () => {
+    const notes = [
+      { pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 100 },
+      { pitch: midi(74), startTick: ticks(1920), durationTicks: ticks(360), velocity: 100 },
+    ];
+    const ranges: EnergyRange[] = [
+      { lo: 0, hi: 4, energy: 0.3 },
+      { lo: 4, hi: 8, energy: 0.9 },
+    ];
+    const [lead, comp] = applyDynamics([
+      { role: 'lead', notes },
+      { role: 'comp', notes },
+    ], ranges, 480);
+
+    expect(lead.notes.map(n => n.velocity)).toEqual([91, 106]);
+    expect(comp.notes.map(n => n.velocity)).toEqual([75, 105]);
+    expect(lead.notes[1].velocity - lead.notes[0].velocity)
+      .toBeLessThan(comp.notes[1].velocity - comp.notes[0].velocity);
+    expect(lead.notes.map(n => [n.pitch, n.startTick, n.durationTicks]))
+      .toEqual(notes.map(n => [n.pitch, n.startTick, n.durationTicks]));
+  });
+
+  it('同底稿的 hook 回归会按后次 section lift 提升 lead 能量', () => {
+    const lead: TrackIR = {
+      role: 'lead',
+      notes: [
+        { pitch: midi(72), startTick: ticks(0), durationTicks: ticks(240), velocity: 96 },
+        { pitch: midi(72), startTick: ticks(1920), durationTicks: ticks(240), velocity: 96 },
+      ],
+    };
+    const [out] = applyDynamics([lead], [
+      { lo: 0, hi: 4, energy: 0.78 },
+      { lo: 4, hi: 8, energy: 0.86 },
+    ], 480);
+
+    expect(out.notes[1].velocity).toBeGreaterThan(out.notes[0].velocity);
+  });
+
+  it('★ 端到端:RNB 重复 hook 在 replay 后仍保留后次 lead 能量抬升', () => {
+    const req = { seed: 7, styleHint: 'rnb', mood: 'build', targetDuration: 120 };
+    const bundle = buildSongBundle(req);
+    const arr = bundle.arrangement;
+    const hooks = arr.sections.filter(section => section.functionTag === 'hook');
+    expect(hooks.length).toBeGreaterThanOrEqual(2);
+
+    let cursor = 0;
+    const bpb = arr.meter.numerator * (4 / arr.meter.denominator);
+    const ranges = new Map(arr.sections.map(section => {
+      const range = { lo: cursor, hi: cursor + section.bars * bpb };
+      cursor = range.hi;
+      return [section.id, range] as const;
+    }));
+    const lead = generateSongFromBundle(bundle).ir!.tracks.find(track => track.role === 'lead')!.notes;
+    const avgIn = (sectionId: string): number => {
+      const range = ranges.get(sectionId)!;
+      const velocities = lead
+        .filter(note => {
+          const beat = (note.startTick as number) / 480;
+          return beat >= range.lo && beat < range.hi;
+        })
+        .map(note => note.velocity);
+      expect(velocities.length).toBeGreaterThan(0);
+      return velocities.reduce((sum, velocity) => sum + velocity, 0) / velocities.length;
+    };
+
+    expect(avgIn(hooks[1].id)).toBeGreaterThan(avgIn(hooks[0].id));
   });
 
   it('★ 端到端:同一轨 comp 在【真实 chorus 段】力度 > 【真实 verse 段】(从曲式取段,抗曲式多样)', () => {

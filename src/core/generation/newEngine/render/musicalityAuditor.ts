@@ -18,6 +18,8 @@ import type { Timebase } from '../foundation';
 
 const COMP_GAP_BEATS: Record<string, number> = { pop: 1.5, rnb: 1.5, lofi: 2.5, jazz: 2.0, default: 2.0 };
 const SPARSE_COMP_GAP_BEATS = 2.5; // 稀疏 rich 织体段:固有呼吸放宽到此(Loop 6)
+const OPENING_RIFF_TEXTURES: ReadonlySet<string> = new Set(['pianoRiff', 'rhodesDust', 'bellMotif']);
+const OPENING_RIFF_BREATH_TOLERANCE_BEATS = 0.1;
 const ANCHOR_WINDOW_BEAT = 1.0; // 段起首拍内出现 anchor 即视为落地
 const SWUNG_POS = 0.66;
 
@@ -138,7 +140,15 @@ export function auditMusicality(
       const tex = instrumentation.textureBySection[s.id];
       const busy = roles.includes('comp') && instrumentation.textureYieldPolicy[tex] === 'active';
       if (!busy) continue;
-      let ranges: { lo: number; hi: number }[] = [{ lo: sectionStartTick(i), hi: sectionStartTick(i) + s.bars * barTicks }];
+      const sectionStart = sectionStartTick(i);
+      const sectionEnd = sectionStart + s.bars * barTicks;
+      const opening = arrangement.openingGesture;
+      const isOpeningSection = i === 0 && opening?.sectionId === s.id;
+      const plannedCompDelayBars = isOpeningSection ? opening.roleDelayBars.comp : undefined;
+      const plannedCompEntry = plannedCompDelayBars === undefined
+        ? sectionStart
+        : Math.min(sectionEnd, sectionStart + Math.max(0, plannedCompDelayBars) * barTicks);
+      let ranges: { lo: number; hi: number }[] = [{ lo: plannedCompEntry, hi: sectionEnd }];
       // ★ Loop 5:从 comp 应在场区间里【减去 dense-melody 区间】(那里 comp 被有意删,不算断层)。
       if (compGapExclude.length) ranges = subtractRanges(ranges, compGapExclude);
       if (!ranges.length) continue;
@@ -146,9 +156,13 @@ export function auditMusicality(
       //   设计内间隙是作者意图 → 放宽阈值(段内任一织体呼吸即放宽整段:密集那半本就不会断)。
       const breathing = isBreathingTexture(instrumentation.richTextureBySection?.[s.id])
         || isBreathingTexture(instrumentation.richTextureSwitchBySection?.[s.id]?.toTexture);
-      const thresh = breathing ? Math.max(baseThresh, SPARSE_COMP_GAP_BEATS) : baseThresh;
+      const openingRiff = isOpeningSection && OPENING_RIFF_TEXTURES.has(opening.textureEntry);
+      const thresh = Math.max(
+        baseThresh,
+        breathing ? SPARSE_COMP_GAP_BEATS : 0,
+        openingRiff ? bpb + OPENING_RIFF_BREATH_TOLERANCE_BEATS : 0,
+      );
       const rep = measureCompGaps(compTicks, ranges, ppq);
-      const sectionEnd = sectionStartTick(i) + s.bars * barTicks;
       const next = arrangement.sections[i + 1];
       const gaps = rep.gaps.filter((g) => {
         const startTick = Math.round(g.startBeat * ppq);

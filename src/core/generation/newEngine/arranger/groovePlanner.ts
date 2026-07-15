@@ -9,7 +9,7 @@
 import type { GrooveKind } from '../knowledge/grooves';
 import type { Section, SectionId, Feel } from './ArrangementPlan';
 import type { RandomContext, Rng } from '../foundation/randomContext';
-import { grooveContractsForStyle, pickGrooveContract, type GrooveContract, type GrooveStyleName } from '../knowledge/grooveContracts';
+import { grooveContractsForStyle, pickGrooveContract, type GrooveContract, type GrooveDrumIntent, type GrooveStyleName } from '../knowledge/grooveContracts';
 
 // 风格基底 groove(content 段 story/loop/head 用):pop 稳 backbeat / rnb·lofi 慵懒 / jazz swing 直拍。
 const STYLE_BASE: Record<string, GrooveKind> = { pop: 'straight', rnb: 'laidback', lofi: 'laidback', jazz: 'straight', default: 'straight' };
@@ -36,6 +36,15 @@ function weightedPickContract(pool: readonly GrooveContract[], rng: Rng): Groove
   return pool[pool.length - 1];
 }
 
+function fallbackDrumIntentForStyle(style: string): GrooveDrumIntent {
+  const s = style.toLowerCase();
+  if (s === 'jazz' || s === 'blues') return { kitProgram: 40, timekeeperFamily: 'jazz-swing-ride', liftFamily: 'jazz-bebop-comping', pickupFamily: 'jazz-swing-ride', breakdownFamily: 'jazz-swing-ride' };
+  if (s === 'lofi') return { kitProgram: 25, timekeeperFamily: 'tr808-lofi-boombap', liftFamily: 'tr808-lofi-boombap', pickupFamily: 'tr808-lofi-boombap', breakdownFamily: 'tr808-lofi-minimal' };
+  if (s === 'rnb') return { kitProgram: 25, timekeeperFamily: 'tr808-rnb-pocket', liftFamily: 'tr808-rnb-pocket', pickupFamily: 'tr808-rnb-pocket', breakdownFamily: 'tr808-rnb-pocket' };
+  if (s === 'acg') return { kitProgram: 8, timekeeperFamily: 'ballad-halftime', liftFamily: 'jpop-driving-8ths', pickupFamily: 'pop-backbeat', breakdownFamily: 'ballad-halftime' };
+  return { kitProgram: 8, timekeeperFamily: 'pop-backbeat', liftFamily: 'pop-backbeat', pickupFamily: 'pop-backbeat', breakdownFamily: 'ballad-halftime' };
+}
+
 function pickGrooveContractForMood(gs: GrooveStyleName, rng: Rng, mood?: string): GrooveContract {
   if (gs === 'POP' && isLyricalMood(mood)) {
     const ballad = grooveContractsForStyle(gs).filter((c) =>
@@ -56,6 +65,7 @@ function legacyContractForStyle(style: string, feel: Feel): GrooveContract {
     compSwingRatio: feel.swingRatio, melodySwingRatio: feel.swingRatio,
     bassPocketMs: [0, 0], chordPocketMs: [0, 0], melodyStrongPocketMs: [0, 0], melodyWeakPocketMs: [0, 0],
     velocityHumanize: 0, accentPattern: [1.0, 0.85, 0.95, 0.85], articulation: 'legato',
+    drum: fallbackDrumIntentForStyle(style),
   };
 }
 

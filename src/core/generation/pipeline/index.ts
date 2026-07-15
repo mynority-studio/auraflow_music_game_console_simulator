@@ -11,7 +11,6 @@ import { StyleId } from '../config/StyleFlags';
 import { generateMusicSync } from '../musicGeneration/MusicGenerationService';
 import type { MusicGenerationResult } from '../musicGeneration/types';
 import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
-import { MusicGenerationKeyStore } from '../../../state/MusicGenerationKeyStore';
 import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
 import { QnBandSelectionStore } from '../../../state/QnBandSelectionStore';
 
@@ -30,7 +29,7 @@ export function runPipeline(_options: PipelineRunOptions = {}): PipelineResult {
         styleHint: MusicGenerationStyleStore.getStyleHint(),
         mood: 'build',
         targetDuration: 120,
-        key: MusicGenerationKeyStore.getKey(),
+        // key/mode 由 Q+N band 层在链路开头按 seed/style 抽取;产品 facade 不开放选择。
         // ★ Band Selection 新语义:参与乐手/职能(QnBandSelectionStore;不含 GM 音色,音色由器配层定)。
         bandParticipants: QnBandSelectionStore.getParticipants(),
     });

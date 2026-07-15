@@ -3,6 +3,9 @@ import { expandGrammarForRoadMap } from '../render/mgGrammarRuntime';
 import { makeSeededRng } from '../render/mgRng';
 import {
   ENRICHED_GRAMMAR,
+  ENRICHED_GRAMMAR_RULE_COUNT,
+  JAZZ_SAX_DEXTER_GORDON_GRAMMAR,
+  JAZZ_SAX_DEXTER_GORDON_GRAMMAR_RULE_COUNT,
   LOFI_ENRICHED_GRAMMAR,
   POP_ENRICHED_GRAMMAR,
   RNB_ENRICHED_GRAMMAR,
@@ -74,5 +77,19 @@ describe('knowledge/melodyStyleGrammarProfiles · opening diversity', () => {
 
     const maxSignatureShare = Math.max(...weightBySignature.values()) / totalWeight;
     expect(maxSignatureShare).toBeLessThanOrEqual(0.16);
+  });
+
+  it('Jazz sax audition grammar is scoped to Dexter Gordon Impro-Visor source rules', () => {
+    const phraseRules = JAZZ_SAX_DEXTER_GORDON_GRAMMAR.rulesByLhs.get('Phrase') ?? [];
+    const sourceRules = phraseRules.filter((rule) => rule.metadata?.sourceRuleId);
+    const dexterRules = sourceRules.filter((rule) =>
+      String(rule.metadata?.sourceRuleId).startsWith('DexterGordon_')
+      && rule.metadata?.styleTags?.includes('dexter_gordon')
+    );
+
+    expect(JAZZ_SAX_DEXTER_GORDON_GRAMMAR_RULE_COUNT).toBeGreaterThan(40);
+    expect(JAZZ_SAX_DEXTER_GORDON_GRAMMAR_RULE_COUNT).toBeLessThan(ENRICHED_GRAMMAR_RULE_COUNT);
+    expect(sourceRules.length).toBe(dexterRules.length);
+    expect(dexterRules.length).toBeGreaterThan(20);
   });
 });

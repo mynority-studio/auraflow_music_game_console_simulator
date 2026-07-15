@@ -37,7 +37,11 @@ import {
   enforceMonophonicMelody, applyMelodyBoundaryVoiceLeadingContract, extendMelodyTailHolds, finalizeMelodyBoundaryVoiceLeading,
 } from './mgMelodyShaper';
 import {
-  ENRICHED_GRAMMAR, POP_ENRICHED_GRAMMAR, LOFI_ENRICHED_GRAMMAR, RNB_ENRICHED_GRAMMAR,
+  ENRICHED_GRAMMAR,
+  JAZZ_SAX_DEXTER_GORDON_GRAMMAR,
+  POP_ENRICHED_GRAMMAR,
+  LOFI_ENRICHED_GRAMMAR,
+  RNB_ENRICHED_GRAMMAR,
 } from '../knowledge/melodyStyleGrammarProfiles';
 import { makeSeededRng } from './mgRng';
 
@@ -50,7 +54,25 @@ function toMgStyle(style: string): MgStyle {
   return (s === 'POP' || s === 'LOFI' || s === 'RNB' || s === 'JAZZ' || s === 'BLUES' || s === 'ACG') ? s : 'JAZZ';
 }
 
-function grammarForStyle(s: MgStyle) {
+function isSaxLeadProgram(program?: number): boolean {
+  return program !== undefined && program >= 64 && program <= 67;
+}
+
+export function leadGrammarLabelForStyle(style: string, leadProgram?: number): string {
+  const s = toMgStyle(style);
+  if ((s === 'JAZZ' || s === 'BLUES') && isSaxLeadProgram(leadProgram)) {
+    return 'JAZZ_SAX_DEXTER_GORDON_GRAMMAR';
+  }
+  return s === 'LOFI' || s === 'ACG' ? 'LOFI_ENRICHED_GRAMMAR'
+    : s === 'POP' ? 'POP_ENRICHED_GRAMMAR'
+    : s === 'RNB' ? 'RNB_ENRICHED_GRAMMAR'
+    : 'ENRICHED_GRAMMAR';
+}
+
+function grammarForStyle(s: MgStyle, leadProgram?: number) {
+  if ((s === 'JAZZ' || s === 'BLUES') && isSaxLeadProgram(leadProgram)) {
+    return JAZZ_SAX_DEXTER_GORDON_GRAMMAR;
+  }
   // ★ MG 升级 Phase 2c:ACG 复用 LOFI 旋律 grammar(忠实源 improvisorFunctionalGrammarForStyle('ACG')→LOFI)
   //   —— 软、尊重约束、偏简单乐句形(无 bebop 跑动),贴电影钢琴 cantabile。
   return s === 'LOFI' || s === 'ACG' ? LOFI_ENRICHED_GRAMMAR
@@ -90,7 +112,7 @@ export function renderMgMelody(
   const part = buildChordPart(chords, meter);
   // ★ Phase B:style-aware functional RoadMap(当前 MG 真源,554-brick catalog DP cover)。
   const roadMap = parseFunctionalRoadMap({ part, songKeyPc, style });
-  const perBrick = expandGrammarForRoadMap(grammarForStyle(style), roadMap.bricks, mgRng);
+  const perBrick = expandGrammarForRoadMap(grammarForStyle(style, program), roadMap.bricks, mgRng);
   for (let i = 0; i < perBrick.length; i++) {
     if (perBrick[i].tokens.length === 0) perBrick[i].tokens = fallbackTokensForBrick(perBrick[i].brick);
   }

@@ -83,31 +83,35 @@ describe('render/gmMixAttachment — programChanges ⟹ mixChanges(同 tick 耦�
   });
 });
 
-describe('render/gmMixAttachment — banked Aura25 presets', () => {
-  it('RNB 的 GM5 lead 消费 bank8 Chorused FM EP,comp GM5 仍留在干净 bank0 CP-80', () => {
+describe('render/gmMixAttachment — Dream GM128 banked variations', () => {
+  it('RNB 的 GM5 lead/comp 消费 Dream CC0=16 St.FM Electric Piano,鼓组不发 bank', () => {
     const res = generateSong({ seed: 0, styleHint: 'rnb', mood: 'build', targetDuration: 90 });
     const lead = res.ir!.tracks.find((t) => t.role === 'lead')!;
     const comp = res.ir!.tracks.find((t) => t.role === 'comp')!;
     const drum = res.ir!.tracks.find((t) => t.role === 'drum')!;
-    expect(lead).toMatchObject({ program: 5, bank: 8 });
-    expect(comp).toMatchObject({ program: 5, bank: 0 });
-    expect(drum.bank).toBe(128);
+    expect(lead).toMatchObject({ program: 5, bank: 16 });
+    expect(comp).toMatchObject({ program: 5, bank: 16 });
+    expect(drum.bank).toBeUndefined();
 
     const events = musicalIRToMidiEvents(res.ir!);
-    const leadBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 32 && e.data2 === 8);
+    const leadBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 0 && e.data2 === 16);
+    const leadBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 32);
     const leadPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0 && e.data1 === 5);
-    const compBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 2 && e.ticks === 0 && e.data1 === 32 && e.data2 === 0);
+    const compBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 2 && e.ticks === 0 && e.data1 === 0 && e.data2 === 16);
+    const compBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 2 && e.ticks === 0 && e.data1 === 32);
     const compPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 2 && e.ticks === 0 && e.data1 === 5);
-    const drumBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 9 && e.ticks === 0 && e.data1 === 0 && e.data2 === 1);
-    const drumBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 9 && e.ticks === 0 && e.data1 === 32 && e.data2 === 0);
+    const drumBankMsb = events.findIndex((e) => e.type === 'cc' && e.channel === 9 && e.ticks === 0 && e.data1 === 0);
+    const drumBankLsb = events.findIndex((e) => e.type === 'cc' && e.channel === 9 && e.ticks === 0 && e.data1 === 32);
     const drumPc = events.findIndex((e) => e.type === 'programChange' && e.channel === 9 && e.ticks === 0 && e.data1 === drum.program);
-    expect(leadBankLsb).toBeGreaterThanOrEqual(0);
-    expect(leadPc).toBeGreaterThan(leadBankLsb);
-    expect(compBankLsb).toBeGreaterThanOrEqual(0);
-    expect(compPc).toBeGreaterThan(compBankLsb);
-    expect(drumBankMsb).toBeGreaterThanOrEqual(0);
-    expect(drumBankLsb).toBeGreaterThan(drumBankMsb);
-    expect(drumPc).toBeGreaterThan(drumBankLsb);
+    expect(leadBankMsb).toBeGreaterThanOrEqual(0);
+    expect(leadBankLsb).toBe(-1);
+    expect(leadPc).toBeGreaterThan(leadBankMsb);
+    expect(compBankMsb).toBeGreaterThanOrEqual(0);
+    expect(compBankLsb).toBe(-1);
+    expect(compPc).toBeGreaterThan(compBankMsb);
+    expect(drumBankMsb).toBe(-1);
+    expect(drumBankLsb).toBe(-1);
+    expect(drumPc).toBeGreaterThanOrEqual(0);
   });
 });
 

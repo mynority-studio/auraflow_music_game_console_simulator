@@ -77,7 +77,7 @@ describe('knowledge/grooves · 鼓型词汇库', () => {
   });
 
   it('DrumPerformance patternFamily 有真实鼓型族,且 lofi ≥3 类打法', () => {
-    const families = ['lofi-boombap', 'lofi-dusty-break', 'lofi-minimal'] as const;
+    const families = ['tr808-lofi-boombap', 'tr808-lofi-dusty-break', 'tr808-lofi-minimal'] as const;
     const sigs = new Set<string>();
     for (const family of families) {
       const variants = drumPerformanceVariants({ patternFamily: family });
@@ -87,8 +87,90 @@ describe('knowledge/grooves · 鼓型词汇库', () => {
     expect(sigs.size).toBe(families.length);
   });
 
+  it('POP/JAZZ/RNB DrumPerformance family 具备各自鼓手打法语汇', () => {
+    const families = [
+      'citypop-disco-boogie',
+      'citypop-syncopated-boogie',
+      'tr808-rnb-pocket',
+      'tr808-dilla-pocket',
+      'tr808-trap-soul-halftime',
+      'tr808-lofi-boombap',
+      'tr808-lofi-dusty-break',
+      'tr808-lofi-minimal',
+      'rnb-neo-soul-pocket',
+      'rnb-dilla-pocket',
+      'rnb-gospel-triplet',
+      'jazz-brush-ballad',
+      'smooth-jazz-backbeat',
+    ];
+    const sigs = new Set<string>();
+    for (const family of families) {
+      const variants = drumPerformanceVariants({ patternFamily: family });
+      expect(variants.length, family).toBeGreaterThanOrEqual(2);
+      sigs.add(variants[0].map((h) => `${h.drum}@${h.beat}`).join('|'));
+    }
+    expect(sigs.size).toBe(families.length);
+  });
+
+  it('TR-808 鼓机族使用独立 machine 语汇,不混 Room/Brush 颜色', () => {
+    const machineOnly = new Set<number>([DRUM.KICK, DRUM.SNARE, DRUM.SIDESTICK, DRUM.CLAP, DRUM.CHAT, DRUM.OHAT]);
+    for (const family of ['tr808-rnb-pocket', 'tr808-dilla-pocket', 'tr808-trap-soul-halftime', 'tr808-lofi-boombap', 'tr808-lofi-dusty-break', 'tr808-lofi-minimal'] as const) {
+      for (const variant of drumPerformanceVariants({ patternFamily: family })) {
+        expect(variant.every((h) => machineOnly.has(h.drum)), family).toBe(true);
+        expect(variant.some((h) => h.drum === DRUM.CHAT && h.beat % 0.5 !== 0), `${family} 16th machine hats`).toBe(true);
+        expect(variant.some((h) => h.drum === DRUM.TAMB || h.drum === DRUM.SHAKER || h.drum === DRUM.RIDE), `${family} no room/brush color`).toBe(false);
+      }
+    }
+  });
+
+  it('CityPop / RNB / Jazz brush 的打法特征不退回通用 backbeat', () => {
+    const backbeatDrums = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK, DRUM.CLAP]);
+    for (const variant of drumPerformanceVariants({ patternFamily: 'citypop-syncopated-boogie' })) {
+      expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 1), 'citypop 2').toBe(true);
+      expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 3), 'citypop 4').toBe(true);
+      expect(variant.some((h) => h.drum === DRUM.CHAT && h.beat % 0.5 !== 0), 'citypop 16th hats').toBe(true);
+      expect(variant.some((h) => h.drum === DRUM.TAMB), 'citypop tambourine').toBe(true);
+      expect(variant.some((h) => h.drum === DRUM.KICK && h.beat % 1 !== 0), 'citypop sync kick').toBe(true);
+    }
+    for (const family of ['rnb-neo-soul-pocket', 'rnb-dilla-pocket']) {
+      for (const variant of drumPerformanceVariants({ patternFamily: family })) {
+        expect(variant.some((h) => h.drum === DRUM.SHAKER || h.drum === DRUM.CHAT), `${family} shaker/hat`).toBe(true);
+        expect(variant.some((h) => backbeatDrums.has(h.drum) && h.vel <= 34), `${family} ghost`).toBe(true);
+      }
+    }
+    for (const variant of drumPerformanceVariants({ patternFamily: 'jazz-brush-ballad' })) {
+      expect(variant.some((h) => h.drum === DRUM.RIDE), 'brush ride').toBe(true);
+      expect(variant.some((h) => h.drum === DRUM.PHAT && h.beat === 1), 'brush hat 2').toBe(true);
+      expect(variant.some((h) => h.drum === DRUM.PHAT && h.beat === 3), 'brush hat 4').toBe(true);
+      expect(variant.filter((h) => backbeatDrums.has(h.drum)).every((h) => h.vel <= 30), 'brush soft snare').toBe(true);
+    }
+  });
+
+  it('POP 参考打法具备 CityPop/现代 POP 鼓手语汇,不是旧八分帽模板', () => {
+    const backbeatDrums = new Set<number>([DRUM.SNARE, DRUM.CLAP]);
+    for (const family of ['citypop-syncopated-boogie', 'citypop-disco-boogie', 'jpop-driving-8ths', 'pop-backbeat'] as const) {
+      for (const variant of drumPerformanceVariants({ patternFamily: family })) {
+        expect(variant.some((h) => h.drum === DRUM.CHAT && h.beat % 0.5 !== 0), `${family} 16th hats`).toBe(true);
+        expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 1), `${family} backbeat 2`).toBe(true);
+        expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 3), `${family} backbeat 4`).toBe(true);
+      }
+    }
+    for (const family of ['citypop-syncopated-boogie', 'citypop-disco-boogie'] as const) {
+      for (const variant of drumPerformanceVariants({ patternFamily: family })) {
+        expect(variant.some((h) => h.drum === DRUM.TAMB), `${family} tambourine engine`).toBe(true);
+        expect(variant.some((h) => h.drum === DRUM.OHAT), `${family} open-hat lift`).toBe(true);
+      }
+    }
+    for (const variant of drumPerformanceVariants({ patternFamily: 'citypop-disco-boogie' })) {
+      expect(variant.filter((h) => h.drum === DRUM.KICK && Number.isInteger(h.beat)).length, 'citypop disco four-on-floor').toBeGreaterThanOrEqual(4);
+    }
+    for (const variant of drumPerformanceVariants({ patternFamily: 'citypop-syncopated-boogie' })) {
+      expect(variant.some((h) => h.drum === DRUM.KICK && h.beat % 1 !== 0), 'citypop syncopated kick').toBe(true);
+    }
+  });
+
   it('LOFI boombap/dusty-break 主体打法具备 hiphop backbeat + 切分 kick + 16 分帽', () => {
-    for (const family of ['lofi-boombap', 'lofi-dusty-break'] as const) {
+    for (const family of ['tr808-lofi-boombap', 'tr808-lofi-dusty-break'] as const) {
       for (const variant of drumPerformanceVariants({ patternFamily: family })) {
         const backbeatDrums = new Set<number>([DRUM.SNARE, DRUM.SIDESTICK, DRUM.CLAP]);
         expect(variant.some((h) => backbeatDrums.has(h.drum) && h.beat === 1), family).toBe(true);
@@ -222,7 +304,7 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
     const sid0 = plan.chordTimeline[0].sectionId;
     const pattern: DrumHit[] = [{ drum: DRUM.KICK, beat: 0, vel: 100 }, { drum: DRUM.SNARE, beat: 2, vel: 84 }, { drum: DRUM.CHAT, beat: 0, vel: 44 }, { drum: DRUM.CHAT, beat: 1, vel: 40 }];
     const perf = {
-      id: 'test', sectionId: sid0, role: 'breakdown', patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      id: 'test', sectionId: sid0, role: 'breakdown', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
       entryMode: 'hat-only', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1, swingUnit: '8th',
       safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
       timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
@@ -237,7 +319,7 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
 
   it('DrumPerformanceContract fillPolicy=none 会压住 legacy fillBars', () => {
     const perf = {
-      id: 'test', sectionId: sid, role: 'timekeeper', patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      id: 'test', sectionId: sid, role: 'timekeeper', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
       entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 1, swingUnit: '8th',
       safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
       timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',
@@ -253,7 +335,7 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
   it('DrumPerformanceContract timingProfile=dilla-late 会实际移动鼓点 tick,且受 maxMove 限制', () => {
     const pattern: DrumHit[] = [{ drum: DRUM.KICK, beat: 0, vel: 100 }, { drum: DRUM.SNARE, beat: 1, vel: 84 }, { drum: DRUM.CHAT, beat: 1.5, vel: 44 }];
     const perf = {
-      id: 'test', sectionId: sid, role: 'timekeeper', patternFamily: 'rnb-dilla', complexity: 2, intensity: 2, densityCeiling: 1,
+      id: 'test', sectionId: sid, role: 'timekeeper', kitProgram: 25, patternFamily: 'tr808-dilla-pocket', complexity: 2, intensity: 2, densityCeiling: 1,
       entryMode: 'full', fillPolicy: 'none', fillAmount: 0, fillComplexity: 0, phraseVariation: 0, swingUnit: '16th',
       safeRangeTicks: 4, maxMoveTicks: 24, preQuantizeGrid: '16th', humanizeAmount: 3, feelOffsetMs: 25,
       timingProfile: 'dilla-late', velocityProfile: 'ghosted', kickPolicy: 'syncopated', snarePolicy: 'ghost-before-backbeat',
@@ -269,7 +351,7 @@ describe('render/drumRenderer · 逐段换鼓型(groove 主权威)', () => {
 
   it('DrumPerformanceContract fillAmount/fillComplexity 改变 fill 密度', () => {
     const base = {
-      id: 'test', sectionId: sid, role: 'timekeeper', patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
+      id: 'test', sectionId: sid, role: 'timekeeper', kitProgram: 8, patternFamily: 'pop-backbeat', complexity: 1, intensity: 1, densityCeiling: 1,
       entryMode: 'full', fillPolicy: 'light', phraseVariation: 0, swingUnit: '8th',
       safeRangeTicks: 8, maxMoveTicks: 12, preQuantizeGrid: '16th', humanizeAmount: 1, feelOffsetMs: 0,
       timingProfile: 'tight', velocityProfile: 'flat', kickPolicy: 'syncopated', snarePolicy: 'backbeat',

@@ -1,8 +1,7 @@
 import React from 'react';
 import type { MusicalIR } from '../core/generation/newEngine/ir/MusicalIR';
-import { gmName } from '../core/generation/newEngine/knowledge/instruments';
 import { ROLE_COLOR, type PianoRoll } from '../core/generation/newEngine/sandbox/pianoRoll';
-import { aura25DrumKitName, aura25InstrumentName, type Aura25Role } from '../core/sound/Aura25Palette';
+import { dream5504VoiceName, type GM128Role } from '../core/sound/GMBK5X128Voices';
 
 export interface QnMonitorTrack {
   role: string;
@@ -27,7 +26,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const trackInstrumentName = (role: string, program: number | undefined, bank?: number): string =>
-  aura25InstrumentName(bank, program, role as Aura25Role) ?? (role === 'drum' ? aura25DrumKitName(program) : program !== undefined ? gmName(program) : '默认音色');
+  dream5504VoiceName(bank, program, role as GM128Role) ?? (program !== undefined ? `Dream5504 PC${program}` : '未指定音色');
 
 export function deriveQnMonitorReadout(input: {
   ir: MusicalIR;

@@ -5,7 +5,9 @@ import {
   midiMessageToBytes,
   MIDI_OUT_TRACKS,
   resolveOutputChannel,
+  registerMidiPolyphonyAuditionSender,
   schedulerChannelToRole,
+  sendMidiPolyphonyAudition,
 } from './midiOut';
 
 describe('midiOutSandbox/midiOut', () => {
@@ -19,6 +21,13 @@ describe('midiOutSandbox/midiOut', () => {
     expect(midiMessageToBytes({ type: 'noteOff', channel: 10, data1: 36, data2: 0 })).toEqual([0x89, 36, 0]);
     expect(midiMessageToBytes({ type: 'cc', channel: 4, data1: 64, data2: 127 })).toEqual([0xb3, 64, 127]);
     expect(midiMessageToBytes({ type: 'programChange', channel: 2, data1: 73 })).toEqual([0xc1, 73]);
+    expect(midiMessageToBytes({ type: 'pitchBend', channel: 1, data1: 0x2000 })).toEqual([0xe0, 0, 64]);
+    expect(midiMessageToBytes({ type: 'pitchBend', channel: 16, data1: 0x3fff })).toEqual([0xef, 127, 127]);
+  });
+
+  it('encodes the official PC11 Vibraphone selection on the default lead output channel', () => {
+    expect(midiMessageToBytes({ type: 'cc', channel: 1, data1: 0, data2: 0 })).toEqual([0xb0, 0, 0]);
+    expect(midiMessageToBytes({ type: 'programChange', channel: 1, data1: 11 })).toEqual([0xc0, 0x0b]);
   });
 
   it('maps current scheduler channels to the five Cubase roles', () => {
@@ -52,5 +61,27 @@ describe('midiOutSandbox/midiOut', () => {
       role: 'drum',
       message: { type: 'noteOn', channel: 1, data1: 36, data2: 100 },
     });
+  });
+
+  it('forwards engine polyphony auditions only while a MIDI output sender is registered', () => {
+    const request = {
+      role: 'comp' as const,
+      bank: 0,
+      program: 4,
+      notes: [60, 64, 67],
+      velocity: 90,
+      volume: 100,
+      durationMs: 2200,
+    };
+    expect(sendMidiPolyphonyAudition(request)).toBe(false);
+    const received: typeof request[] = [];
+    const unregister = registerMidiPolyphonyAuditionSender((value) => {
+      received.push(value as typeof request);
+      return true;
+    });
+    expect(sendMidiPolyphonyAudition(request)).toBe(true);
+    expect(received).toEqual([request]);
+    unregister();
+    expect(sendMidiPolyphonyAudition(request)).toBe(false);
   });
 });

@@ -47,7 +47,7 @@ export function runGenerationControl(
   seedRng: RandomContext,
   budget: RetryBudget = DEFAULT_BUDGET,
   locator?: RetryLocator,
-  acceptNonLeadErrors = false, // ★ 走 A:和声=用户权威 → 伴奏的 avoid 暴露等 error 降为 warning(只 fatal 阻断)。默认 false=不变。
+  acceptNonLeadErrors = false, // 用户覆盖和声时可接受不可重写的非 lead error；lead 仍须满足最终旋律合同。
 ): GenerationResult {
   let retry: RetryContext | undefined;
   let current = render(undefined);
@@ -55,11 +55,14 @@ export function runGenerationControl(
 
   for (;;) {
     const findings = current.audit.findings;
-    // ★ Loop 3(strict parity):lead = MG 真源,不可被 newEngine 改 → lead 的 error/fatal 不驱动重跑
-    //   (retry 只能调 comp voicing/texture,改不了 lead;否则只会耗 budget 到 failed)。lead finding 仍在
-    //   report 里(降级为 warning 语义,§1.5/§9:audit 只报告 lead、不改);非-lead 的 error/fatal 才 blocking。
-    // ★ 走 A:override 和声是用户权威、retry 改不动 pad/bass → acceptNonLeadErrors 时只 fatal 阻断。
-    const blocking = findings.filter((f) => (f.severity === 'fatal' || (f.severity === 'error' && !acceptNonLeadErrors)) && f.location.trackRole !== 'lead');
+    // 最终旋律合同 fail-closed：lead error/fatal 永远阻断。当前 retry 只会改变伴奏子流，
+    // 无法改变 lead，因此 lead 违规直接失败，不浪费 whole-song budget 重跑同一旋律。
+    // 用户覆盖和声时，只有不可重写的非-lead error 可按显式 lenient 策略接受；fatal 永不降级。
+    const blocking = findings.filter((f) => {
+      if (f.severity === 'fatal') return true;
+      if (f.severity !== 'error') return false;
+      return f.location.trackRole === 'lead' || !acceptNonLeadErrors;
+    });
 
     if (blocking.length === 0) {
       return {
@@ -68,6 +71,10 @@ export function runGenerationControl(
         report: current.audit,
         attempts,
       };
+    }
+
+    if (blocking.some((f) => f.location.trackRole === 'lead')) {
+      return { status: 'failed', report: current.audit, attempts };
     }
 
     if (attempts >= budget.wholeSong) {
@@ -99,11 +106,11 @@ export interface SongBundle {
 export function buildSongBundle(request: GenerationRequest): SongBundle {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
-  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood, targetDuration: request.targetDuration });
   // ★ #6(2026-06-10):harmony 先于 instrumental(各用独立命名子流 'harmony'/'timbre' → 重排不改确定性);
   //   器配层吃 HarmonicPlan → 段级 rich texture 选择用真 dominant-chain。
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
-  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic);
+  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
   const timebase = createTimebase({
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],

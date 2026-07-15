@@ -17,19 +17,29 @@ import { planEdges } from './edgePlanner';
 import { planOpeningGesture } from './openingGesturePlanner';
 import { planDrumPerformance } from './drumPerformancePlanner';
 import { planRolePerformance } from './performanceContractPlanner';
+import { beatsPerBarOf } from './phraseTiming';
 
 export interface ArrangementOptions {
   rng?: RandomContext; // 有 → seed 选曲式 + 段落长度变化(不同 seed 不同曲式)
   template?: FormTemplate; // 显式固定曲式(测试/特化)
   mood?: string; // 请求情绪提示:复用现有 POP ballad / lyrical 编配素材,不新增 macro
+  targetDuration?: number; // 秒；由实际 tempo/meter 换算为 form 的目标小节预算
 }
 
 export function buildArrangementPlan(
   band: BandSpec,
   opts: ArrangementOptions = {},
 ): ArrangementPlan {
-  const sections = planForm({ rng: opts.rng?.substream('arranger'), template: opts.template, style: band.style });
   const time = planTime(band.style, opts.rng?.substream('time'), opts.mood); // tempo 随 seed 在风格区间浮动
+  const targetBars = opts.targetDuration !== undefined && Number.isFinite(opts.targetDuration) && opts.targetDuration > 0
+    ? opts.targetDuration * time.tempoBpm / 60 / beatsPerBarOf(time.meter)
+    : undefined;
+  const sections = planForm({
+    rng: opts.rng?.substream('arranger'),
+    template: opts.template,
+    style: band.style,
+    targetBars,
+  });
   const { phrases, motifBindings } = planPhrases(sections, time.phraseBreathing.phraseBars);
   const dynamics = planDynamics(sections);
   const grooveBySection = planGroove(sections, band.style, opts.mood); // 鼓 groove 下发(纯 functionTag/role 派生,不抽 rng)
@@ -38,7 +48,14 @@ export function buildArrangementPlan(
   // ★ GrooveContract(arranger 拥有)。Phase D 起全 MG-backed 风格(POP/JAZZ/RNB/LOFI/ACG)走真 pool
   //   (独立 grooveContract 子流);BLUES/无 rng → legacy 派生兜底。feel.swingRatio 从 contract.compSwingRatio 派生。
   const groove = planGrooveContract(sections, band.style, time.feel, opts.rng, opts.mood);
-  const drumPerformanceBySection = planDrumPerformance(sections, band.style, groove.bySection, dynamics.energyBySection, edges.entryBySection);
+  const drumPerformanceBySection = planDrumPerformance(
+    sections,
+    band.style,
+    groove.bySection,
+    dynamics.energyBySection,
+    edges.entryBySection,
+    openingGesture.drumEntry,
+  );
   const rolePerformanceBySection = planRolePerformance(
     sections,
     band.style,

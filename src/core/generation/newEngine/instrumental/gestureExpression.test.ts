@@ -74,6 +74,30 @@ describe('instrumental/gestureExpression', () => {
     expect(lofi.bass.continuity).toBe('staccato');
   });
 
+  it('ACG 的 Soft Electric Piano comp 不踩 CC64，避免与 release/room 叠成浑响', () => {
+    const plan = gestureExpressionForProgram('comp', 4, 'acg');
+    expect(plan.kind).toBe('keyboard-touch');
+    expect(plan.pedalPolicy).toBe('none');
+    expect(plan.tailPolicy).toBe('electric-key-tail');
+  });
+
+  it('ACG 白名单钢琴在 bass 轨使用左手触键，不误套拨弦贝斯手势', () => {
+    for (const program of [0, 1, 2, 4]) {
+      const plan = gestureExpressionForProgram('bass', program, 'acg');
+      expect(plan.kind, `GM${program}`).toBe('keyboard-touch');
+      expect(plan.family, `GM${program}`).toBe('keyboard');
+      expect(plan.articulation, `GM${program}`).toBe('finger-legato');
+      expect(plan.pedalPolicy, `GM${program}`).toBe('none');
+      expect(plan.tailPolicy, `GM${program}`).toBe('keyboard-natural');
+    }
+    const plan = gestureExpressionForProgram('bass', 0, 'acg');
+    const track: TrackIR = { role: 'bass', notes: [note(0, 480, 40, 90)], program: 0 };
+    const out = applyGestureExpressionToTrack(track, plan, tb);
+    expect(out.notes[0].pitch).toBe(midi(40));
+    expect(out.notes[0].startTick).toBe(ticks(0));
+    expect(out.notes[0].durationTicks).toBe(ticks(461));
+  });
+
   it('所有非 none 手势都必须带联网核验 source id', () => {
     const cases = [
       gestureExpressionForProgram('lead', 67, 'jazz'),
@@ -230,9 +254,9 @@ describe('instrumental/gestureExpression', () => {
 
   it('端到端:render 消费器配下发的 sax 手势计划,生成 CC 和连吹 overlap', () => {
     const trace = traceGeneration({ seed: 4, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
-    expect(trace.lines.some((line) => line.includes('lead:sax GM67:sax-breath-legato'))).toBe(true);
+    expect(trace.lines.some((line) => line.includes('lead:sax PC66:sax-breath-legato'))).toBe(true);
     const lead = trace.ir.tracks.find((track) => track.role === 'lead')!;
-    expect(lead.program).toBe(67);
+    expect(lead.program).toBe(66);
     expect((lead.ccEvents?.length ?? 0)).toBeGreaterThan(0);
     expect(lead.pitchBendEvents).toBeUndefined();
     const ordered = [...lead.notes].sort((a, b) => (a.startTick as number) - (b.startTick as number));

@@ -82,31 +82,45 @@ export function buildTextureSchedule(args: {
   const seenSec: Record<string, number> = {};
   timeline.forEach((s) => { idxInSec[s.id] = seenSec[s.sectionId] ?? 0; seenSec[s.sectionId] = (seenSec[s.sectionId] ?? 0) + 1; });
 
-  // ★ ACG(§4):逐-bar 具名手势(忠实 MG pickAcgTextureForBar),不走段级 richTextureBySection。
-  //   MG ACG texturePerBar 每 bar 换手势(每首 6-7 种);SIM 此前段级只 2 → 听感差。POP/JAZZ/RNB MG 本就单织体 → 保段级。
-  //   ⚠️ LOFI 暂【不】逐-bar:LOFI 织体本就稀疏(OneShot/sparse),逐-bar 切会破 comp 连续性(>2.5 拍突发洞,
-  //     即段级架构当初专门修的 comp-continuity-gap)→ 需先港 MG 的 bridge/carryTail 连续性处理才能逐-bar(次级待办)。
-  //   barIndex = span 在全 timeline 的位置;func/nextFunc 从 chordFunctionTimeline;prevId/rep 跨 span 追踪。
+  // ACG PIANOSONG 以 4/8 小节手型建立记忆，而非每个和弦随机换手势。
+  // 器配层已下发 section 主织体；只有未下发的直调/兼容路径才按 4 小节短语回退选择。
   const fBar = (f: HarmonicFunction | undefined): 'T' | 'S' | 'D' => (f === 'D' ? 'D' : f === 'S' ? 'S' : 'T');
   if (txStyle === 'ACG') {
-    // ★ per-song texture character(2026-07-02)+ P2 section-energy family(acg_render_layer_mg_feel_directive):
-    //   character 从【和声动量】派生(drive/sparse;block 不作 character,只局部);再由 acgRenderProfile 按 section 能量解析
-    //   逐 bar 有效 family —— intro/outro 空(MG air)· chorus 推进 · verse/bridge 用 character。修 outro/末段 block-heavy(J-pop 块床)。
-    // ★ Phase 3A:barFamily 从 intent(acgBarFamilyBySpan,enforce)读;缺省→ deriveAcgBarFamilies 内联(fallback,同函数=等价)。
+    // family intent 仅服务 fallback；正常产品路径优先使用器配层为该段选定的主手型。
     const acgFamilies = args.acgBarFamilyBySpan ?? deriveAcgBarFamilies(plan, activeSectionIds, sectionRoleById);
-    let acgPrevId: string | undefined; let acgRep = 0;
+    let acgPrevId: string | undefined; let acgPrevCase: string | undefined; let acgRep = 0;
+    let fallbackPhrase: number | undefined;
+    const finalCadenceCase = 'ACG_Pedal_Wash_Color_Drops';
+    const lastActiveSpanId = [...timeline].reverse().find((span) => activeSectionIds.has(span.sectionId))?.id;
+    const allows = (textureCase: string): boolean =>
+      (!grooveContract?.allowedTextureCases || grooveContract.allowedTextureCases.includes(textureCase))
+      && !grooveContract?.forbiddenTextureCases?.includes(textureCase);
     timeline.forEach((span, i) => {
       if (!activeSectionIds.has(span.sectionId)) return;
-      const label = SECTION_LABEL[sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE';
-      const barFamily = acgFamilies[span.id];
-      const prof = pickAcgTextureForBar({
-        barIndex: i, totalBars: timeline.length, sectionLabel: label,
-        func: fBar(funcBySpan[span.id]),
-        nextFunc: i + 1 < timeline.length ? fBar(funcBySpan[timeline[i + 1].id]) : null,
-        prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, characterFamily: barFamily, random: textureRng,
-      });
-      if (prof.id === acgPrevId) acgRep += 1; else { acgPrevId = prof.id; acgRep = 1; }
-      if (hasTextureRenderer(prof.textureCase)) schedule[span.id] = prof.textureCase;
+      const planned = rich[span.sectionId];
+      if (planned && hasTextureRenderer(planned)) {
+        schedule[span.id] = span.id === lastActiveSpanId && allows(finalCadenceCase) && hasTextureRenderer(finalCadenceCase)
+          ? finalCadenceCase
+          : planned;
+        return;
+      }
+
+      // 没有器配主织体时，仍以 4 小节为一个手型单位，避免直调 API 退回逐 span 拼贴。
+      const phrase = Math.floor((span.startBeat as number) / 16);
+      if (fallbackPhrase !== phrase) {
+        fallbackPhrase = phrase;
+        const label = SECTION_LABEL[sectionRoleById[span.sectionId] ?? 'verse'] ?? 'VERSE';
+        const barFamily = acgFamilies[span.id];
+        const prof = pickAcgTextureForBar({
+          barIndex: i, totalBars: timeline.length, sectionLabel: label,
+          func: fBar(funcBySpan[span.id]),
+          nextFunc: i + 1 < timeline.length ? fBar(funcBySpan[timeline[i + 1].id]) : null,
+          prevTextureId: acgPrevId, repeatCount: acgRep, contract: grooveContract, characterFamily: barFamily, random: textureRng,
+        });
+        if (prof.id === acgPrevId) acgRep += 1; else { acgPrevId = prof.id; acgRep = 1; }
+        acgPrevCase = prof.textureCase;
+      }
+      if (acgPrevCase && hasTextureRenderer(acgPrevCase)) schedule[span.id] = acgPrevCase;
     });
     return schedule;
   }

@@ -33,6 +33,16 @@ export interface SaxExpressionOptions {
   ppq?: number;
   maxConnectIoiTicks?: number;
   overlapTicks?: number;
+  phraseBoundaryTicks?: number;
+}
+
+type SaxPhraseRole = 'phrase-target' | 'passing-tone' | 'approach-tone' | 'repeated-tongue';
+
+interface SaxPhraseMark {
+  role: SaxPhraseRole;
+  phraseStart: boolean;
+  phraseEnd: boolean;
+  denseRun: boolean;
 }
 
 const clampCc = (v: number): number => Math.max(0, Math.min(127, Math.round(v)));
@@ -67,14 +77,101 @@ function noteStart(note: NoteIR): number { return note.startTick as number; }
 function noteDur(note: NoteIR): number { return note.durationTicks as number; }
 function noteEnd(note: NoteIR): number { return noteStart(note) + noteDur(note); }
 
-function connectedPair(prev: NoteIR, next: NoteIR, opts: SaxExpressionOptions): boolean {
-  if (prev.pitch === next.pitch) return false;
+function phraseIoiConnected(prev: NoteIR, next: NoteIR, opts: SaxExpressionOptions): boolean {
   const ppq = opts.ppq ?? 480;
   const maxIoi = opts.maxConnectIoiTicks ?? Math.round(ppq * 1.10);
-  const joinGap = Math.max(1, Math.round(ppq * 0.12));
   const ioi = noteStart(next) - noteStart(prev);
-  if (ioi <= 0 || ioi > maxIoi) return false;
-  return noteStart(next) - noteEnd(prev) <= joinGap;
+  const boundary = opts.phraseBoundaryTicks;
+  if (boundary && boundary > 0) {
+    const start = noteStart(next);
+    const phase = ((start % boundary) + boundary) % boundary;
+    const nearBoundary = Math.min(phase, boundary - phase) <= Math.max(2, Math.round(ppq * 0.08));
+    if (nearBoundary && noteStart(prev) < start) return false;
+  }
+  return ioi > 0 && ioi <= maxIoi;
+}
+
+function nearBeatGrid(startTick: number, ppq: number): boolean {
+  const phase = ((startTick % ppq) + ppq) % ppq;
+  return Math.min(phase, ppq - phase) <= Math.round(ppq * 0.08);
+}
+
+function isContourTurn(prev: NoteIR | undefined, note: NoteIR, next: NoteIR | undefined): boolean {
+  if (!prev || !next) return false;
+  const into = (note.pitch as number) - (prev.pitch as number);
+  const out = (next.pitch as number) - (note.pitch as number);
+  return into !== 0 && out !== 0 && Math.sign(into) !== Math.sign(out);
+}
+
+function median(values: readonly number[]): number {
+  if (!values.length) return Infinity;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function buildSaxPhraseMarks(notes: readonly NoteIR[], opts: SaxExpressionOptions): Map<number, SaxPhraseMark> {
+  const ppq = opts.ppq ?? 480;
+  const order = notes
+    .map((note, index) => ({ note, index }))
+    .sort((a, b) => noteStart(a.note) - noteStart(b.note) || (a.note.pitch as number) - (b.note.pitch as number));
+  const marks = new Map<number, SaxPhraseMark>();
+  if (!order.length) return marks;
+
+  const groups: { note: NoteIR; index: number }[][] = [];
+  let group: { note: NoteIR; index: number }[] = [order[0]];
+  for (let i = 1; i < order.length; i++) {
+    const prev = order[i - 1].note;
+    const next = order[i].note;
+    if (phraseIoiConnected(prev, next, opts)) group.push(order[i]);
+    else {
+      groups.push(group);
+      group = [order[i]];
+    }
+  }
+  groups.push(group);
+
+  for (const g of groups) {
+    const iois = g.slice(0, -1).map((item, i) => noteStart(g[i + 1].note) - noteStart(item.note));
+    const denseRun = g.length >= 3 && median(iois) <= Math.round(ppq * 0.38);
+    for (let pos = 0; pos < g.length; pos++) {
+      const item = g[pos];
+      const prev = pos > 0 ? g[pos - 1].note : undefined;
+      const next = pos + 1 < g.length ? g[pos + 1].note : undefined;
+      const phraseStart = pos === 0;
+      const phraseEnd = pos === g.length - 1;
+      const internal = !phraseStart && !phraseEnd;
+      const sameAsPrev = !!prev && prev.pitch === item.note.pitch;
+      const shortInternal = internal && noteDur(item.note) <= Math.round(ppq * 0.36);
+      const beatTarget = nearBeatGrid(noteStart(item.note), ppq) && noteDur(item.note) >= Math.round(ppq * 0.24);
+      const sustainedTarget = noteDur(item.note) >= Math.round(ppq * 0.48);
+      const contourTarget = isContourTurn(prev, item.note, next) && noteDur(item.note) >= Math.round(ppq * 0.22);
+      const chromaticToNext = !!next && Math.abs((next.pitch as number) - (item.note.pitch as number)) <= 2;
+      let role: SaxPhraseRole = 'phrase-target';
+
+      if (sameAsPrev) role = 'repeated-tongue';
+      else if (denseRun && shortInternal && !beatTarget && !sustainedTarget && !contourTarget) {
+        role = chromaticToNext ? 'approach-tone' : 'passing-tone';
+      }
+
+      marks.set(item.index, {
+        role,
+        phraseStart,
+        phraseEnd,
+        denseRun,
+      });
+    }
+  }
+
+  return marks;
+}
+
+function velocityScaleForPhrase(mark: SaxPhraseMark, note: NoteIR, ppq: number): number {
+  if (mark.phraseStart) return 1;
+  if (mark.role === 'repeated-tongue') return mark.denseRun ? 0.62 : 0.74;
+  if (mark.role === 'passing-tone') return mark.denseRun || noteDur(note) <= Math.round(ppq * 0.35) ? 0.58 : 0.72;
+  if (mark.role === 'approach-tone') return mark.denseRun || noteDur(note) <= Math.round(ppq * 0.35) ? 0.66 : 0.78;
+  if (mark.phraseEnd) return 0.94;
+  return 0.86;
 }
 
 /** GM sax family:64 soprano,65 alto,66 tenor,67 baritone. */
@@ -89,12 +186,13 @@ export function shapeSaxLegatoNotes(notes: readonly NoteIR[], opts: SaxExpressio
   const overlap = opts.overlapTicks ?? Math.max(1, Math.round(ppq * 0.02));
   const out = notes.map((n) => ({ ...n }));
   const order = out.map((_, i) => i).sort((a, b) => noteStart(out[a]) - noteStart(out[b]));
-  const connectedTargets = new Set<number>();
+  const phraseMarks = buildSaxPhraseMarks(out, opts);
+  const shapedTargets = new Set<number>();
 
   for (let k = 0; k < order.length - 1; k++) {
     const i = order[k], j = order[k + 1];
     const ioi = noteStart(out[j]) - noteStart(out[i]);
-    if (ioi <= 0 || ioi > maxIoi) continue;
+    if (ioi <= 0 || ioi > maxIoi || !phraseIoiConnected(out[i], out[j], opts)) continue;
     if (out[i].pitch === out[j].pitch) {
       const cap = Math.max(1, ioi - 1);
       if (noteDur(out[i]) > cap) out[i].durationTicks = ticks(cap);
@@ -102,11 +200,11 @@ export function shapeSaxLegatoNotes(notes: readonly NoteIR[], opts: SaxExpressio
     }
     const target = ioi + overlap;
     if (noteDur(out[i]) < target) out[i].durationTicks = ticks(target);
-    connectedTargets.add(j);
+    shapedTargets.add(j);
   }
-  for (const idx of connectedTargets) {
-    const dur = noteDur(out[idx]);
-    const scale = dur <= Math.round(ppq * 0.35) ? 0.84 : 0.9;
+  for (const idx of shapedTargets) {
+    const mark = phraseMarks.get(idx);
+    const scale = mark ? velocityScaleForPhrase(mark, out[idx], ppq) : (noteDur(out[idx]) <= Math.round(ppq * 0.35) ? 0.84 : 0.9);
     out[idx].velocity = clampVelocity(out[idx].velocity * scale);
   }
   return out;
@@ -139,6 +237,7 @@ export function buildSaxBreathCcEvents(notes: readonly NoteIR[], opts: SaxExpres
   const ppq = opts.ppq ?? 480;
   const maxIoi = opts.maxConnectIoiTicks ?? Math.round(ppq * 1.10);
   const joinGap = Math.max(1, Math.round(ppq * 0.08));
+  const phraseMarks = buildSaxPhraseMarks(notes, opts);
   const raw: SaxCcEvent[] = [];
   const push = (atTick: number, controller: number, value: number): void => {
     raw.push({ atTick: ticks(Math.max(0, Math.round(atTick))), controller, value: clampCc(value) });
@@ -153,13 +252,20 @@ export function buildSaxBreathCcEvents(notes: readonly NoteIR[], opts: SaxExpres
     const next = index + 1 < sorted.length ? sorted[index + 1] : undefined;
     const prevIoi = prev ? start - (prev.startTick as number) : Infinity;
     const nextIoi = next ? (next.startTick as number) - start : Infinity;
+    const originalIndex = notes.indexOf(note);
+    const phraseMark = phraseMarks.get(originalIndex);
     const fromPrev = !!prev && prev.pitch !== note.pitch && prevIoi > 0 && prevIoi <= maxIoi && start - noteEnd(prev) <= joinGap;
     const toNext = !!next && next.pitch !== note.pitch && nextIoi > 0 && nextIoi <= maxIoi && (next.startTick as number) - end <= joinGap;
     const sustain = sustainExpression(note, index);
     const shortNote = dur < ppq * 0.22;
     const attackTicks = shortNote ? 0 : Math.min(Math.round(ppq * 0.16), Math.max(1, Math.round(dur * 0.34)));
     const releaseTicks = Math.min(Math.round(ppq * 0.18), Math.max(1, Math.round(dur * 0.28)));
-    const startExpr = fromPrev ? sustain - 3 : shortNote ? sustain - 8 : sustain - 24;
+    const isPassing = phraseMark?.role === 'passing-tone' || phraseMark?.role === 'approach-tone';
+    const startExpr = fromPrev
+      ? sustain - (isPassing ? 1 : 3)
+      : shortNote
+        ? sustain - (isPassing ? 4 : 8)
+        : sustain - 24;
     const releaseExpr = sustain - (dur >= ppq * 0.65 ? 20 : 12);
 
     push(start, SAX_CC.expression, startExpr);

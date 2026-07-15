@@ -9,14 +9,18 @@
 
 import { midi, type Rng } from '../foundation';
 import type { BandSpec, InstrumentRoleName } from '../band/BandSpec';
-import type { ArrangementPlan, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
+import type { ArrangementPlan, OpeningTextureEntry, Section, SectionFunctionTag } from '../arranger/ArrangementPlan';
 import { phraseStartBeats } from '../arranger/phraseTiming';
 import { pickGenericTexture, GENERIC_TEXTURE_YIELD, pickTextureForBarWithGroove, densityForCell, energyForCell, rateTextureTransition, DELAYED_ENTRY_TEXTURES, type TextureSectionRole, type TextureStyleName } from '../knowledge/textureProfiles';
 import { sameFamilyAlternates, isKeyboardFamily, classifyTimbreWorld, repairWorldMismatches, sameInstrumentPairs, coherentLeadComp, repairCompCapability, enforceRoleFamilies, preferredRegisterForRole } from '../knowledge/instruments';
-import { orchestrateRolePrograms } from '../knowledge/gmOrchestrationChains';
+import {
+  chooseEnsembleWorld,
+  ensembleAllowsRoleProgram,
+  orchestrateRolePrograms,
+} from '../knowledge/gmOrchestrationChains';
 import { pickSpaceProfile, mixForProgram, enforceRelationalMix, type RoleMix } from '../knowledge/gmMixProfile';
 import { drumGrooveVariants, drumPerformanceVariants, type DrumHit, type GrooveKind } from '../knowledge/grooves';
-import { mapProgramToAura25, mapRoleProgramsToAura25 } from '../../../sound/Aura25Palette';
+import { ACG_PIANOSONG_PIANO_VOICES, DREAM5504_TARGET_ID, DREAM5504_VOICE_WORLD_COUNTS, gmbkVoiceLabel, mapProgramToDream5504, mapRoleProgramsToDream5504, selectGMBK5X128Voice, type AcgPianoSongVoice, type GM128VoiceSelection } from '../../../sound/GMBK5X128Voices';
 import { buildGestureExpressionByRole } from './gestureExpression';
 import {
   freezeInstrumentationPlan,
@@ -89,6 +93,14 @@ const DENSITY_ARC: Record<string, Partial<Record<SectionFunctionTag, InstrumentR
     headOut: ['bass', 'comp', 'drum', 'lead'],
     tag: ['comp', 'bass', 'lead'],
   },
+  // ACG PIANOSONG:先由右手与透明伴奏陈述，低音在 lift/return 才加入，尾声重新留白。
+  acg: {
+    setup: ['comp'],
+    head: ['comp', 'lead'],
+    build: ['bass', 'comp', 'lead'],
+    headOut: ['bass', 'comp', 'lead'],
+    tag: ['comp', 'lead'],
+  },
 };
 
 // ★ 织体按 functionTag(A3):取代纯 5-role 选择,让 build/breakdown/loop/head/solo/tag 各有专属织体。
@@ -117,20 +129,17 @@ const LEAD_DROP_PROB = 0.45;
 //   仍对它们掷骰(保 rng 抽取对齐 → intro 先行档/rich texture 决策 bit 不变),只是结果不采用。
 const LEAD_NEVER_DROP_TAGS: ReadonlySet<SectionFunctionTag> = new Set(['outro', 'tag']);
 
-// ★ intro 先行档(多样性修):intro(setup 段)从这组 per-song 掷一个 → pad/keys/bass/solo/full 轮换,
-//   不再恒定 bass 先行(jazz/lofi)或 pad 先行(pop/rnb)。keys 档把 texture 设 active(arpeggio)→ comp 真渲染
-//   (否则 intro 是 floating pad 段、comp 静默 = "伴奏织体先行"出不来)。∩lineup 空 → 回退密度弧默认。
-interface IntroArchetype { roles: InstrumentRoleName[]; texture: TextureKind }
-const INTRO_ARCHETYPES: readonly IntroArchetype[] = [
-  { roles: ['pad', 'lead'], texture: 'pad' },                         // 暖 pad 铺底 + 旋律
-  { roles: ['pad'], texture: 'pad' },                                 // 纯 ambient pad(器乐 intro)
-  { roles: ['comp', 'lead'], texture: 'arpeggio' },                   // keys/arp 先行 + 旋律(伴奏织体先行)
-  { roles: ['comp'], texture: 'arpeggio' },                          // keys riff(器乐 intro)
-  { roles: ['comp', 'pad', 'lead'], texture: 'arpeggio' },           // keys + pad + 旋律
-  { roles: ['bass', 'lead'], texture: 'pad' },                       // bass 先行
-  { roles: ['lead'], texture: 'pad' },                              // solo 旋律先行
-  { roles: ['comp', 'pad', 'bass', 'lead'], texture: 'active-comp' }, // full(全员起)
-];
+/** OpeningGesture 的音色化描述投影到既有 GenericTextureKind 真源，不另建 texture scheduler。 */
+const OPENING_TEXTURE_TO_GENERIC: Record<Exclude<OpeningTextureEntry, 'none'>, TextureKind> = {
+  pianoRiff: 'arpeggio',
+  rhodesDust: 'arpeggio',
+  padSwell: 'pad',
+  stringOstinato: 'arpeggio',
+  synthPulse: 'active-comp',
+  guitarMute: 'active-comp',
+  bellMotif: 'arpeggio',
+  vinylNoise: 'pad',
+};
 
 /** 该段在场乐手 = (密度弧 mask ± lead)∩ lineup;无 tag/genre → 全 lineup。
  *  lead 默认在场;仅 lead-optional 段且本曲掷中 leadDropTags → 缺席(纯器乐,多样性,gate 落地)。 */
@@ -155,6 +164,19 @@ const TIMBRE_SWITCH_ROLES: InstrumentRoleName[] = ['comp', 'lead'];
 const TIMBRE_SWITCH_PROB = 0.12; // 偶尔(每首掷一次):~12% 歌切,88% 全曲单音色
 // verse 段内织体变化概率(每首掷一次):LOFI 段内变化是风格的一部分(高)、现代风格保守(低)。
 const VERSE_VARIATION_PROB: Record<string, number> = { POP: 0.35, RNB: 0.35, JAZZ: 0.2, LOFI: 0.6 };
+const ACG_PIANO_ROLES: readonly InstrumentRoleName[] = ['lead', 'comp', 'bass'];
+
+/** ACG 用独立随机子流按权重挑一架琴；无子流时回退默认大钢琴，保住直接调用的兼容性。 */
+function pickAcgPianoSongVoice(rng?: Rng): AcgPianoSongVoice {
+  if (!rng) return ACG_PIANOSONG_PIANO_VOICES[0];
+  const total = ACG_PIANOSONG_PIANO_VOICES.reduce((sum, voice) => sum + voice.weight, 0);
+  let remaining = rng.next() * total;
+  for (const voice of ACG_PIANOSONG_PIANO_VOICES) {
+    remaining -= voice.weight;
+    if (remaining < 0) return voice;
+  }
+  return ACG_PIANOSONG_PIANO_VOICES[ACG_PIANOSONG_PIANO_VOICES.length - 1];
+}
 
 /** ★ 收尾乐器进出计划(器配据 arrangement.endingStyle 排;render 投影成手势)。
  *  退出次序原则:鼓/comp/bass = 节奏-能量件先退;pad/lead = 和声-气氛件后留承接收束。纯派生、确定性。 */
@@ -264,6 +286,7 @@ export function buildInstrumentationPlan(
   arrangement: ArrangementPlan,
   rng?: Rng, // ★ 音色切换决策(确定性子流);缺省 = 不切(全曲 primary,向后兼容)
   harmonic?: HarmonicPlan, // ★ #6:吃 HarmonicPlan → 段级 texture 选择用真 dominant-chain(缺省 false,向后兼容)
+  acgPianoRng?: Rng, // ACG 整首钢琴 CC0+PC；独立子流，扩充调色板不扰既有 timbre/texture 结果
 ): InstrumentationPlan {
   // ★ 音色世界统一性:先把 BandEngine 的 provisional roleProgram 过【风格错配修复】(当前池已守住=多为原样,
   //   family-invariant → comp voicing 决策不受影响),再【lead↔comp 配对一致性】修不搭对(电钢配电钢、
@@ -271,22 +294,56 @@ export function buildInstrumentationPlan(
   //   ★ 2026-06-10:链中加【comp 能力修复】—— comp 必须是多音 + 非持续乐器(单音/持续如管风琴不能做衰减节奏 comp);
   //     先修 comp 能力,再 lead↔comp 配对(lead 贴到已合法的 comp)。
   // ★ 链式协同(gm128_chain_orchestration,2026-06-10):器配层【拥有】最终 GM 选择 —— 用 BandEngine 的
-  //   provisional(band.roleProgram,已 seed-变化)当候选,链按 comp→lead→bass→pad 顺序协同(兼容则保留=守
-  //   多样性;不兼容链表赢=同族/可兼容)。世界由 provisional 推导→不抽 rng,不洗 timbre 序列。然后过既有安全网
-  //   (repairWorld/repairCompCapability/coherentLeadComp,链后多为 no-op)。
-  const orch = orchestrateRolePrograms({ style: band.style, lineup: band.instrumentPool, rng, provisional: band.roleProgram });
+  //   provisional(band.roleProgram,已 seed-变化)当候选,先定真实乐队模板、再按 comp→lead→bass→pad 收敛。
+  //   模板只读既有候选和 Arranger groove 合同,不抽 rng、不洗 timbre/grammar/texture 子流；鼓 kit 继续由
+  //   songGrooveContract 独占主权。然后过既有安全网(repairWorld/repairCompCapability/coherentLeadComp)。
+  const ensembleWorld = chooseEnsembleWorld(band.style, band.roleProgram, arrangement.songGrooveContractId);
+  const orch = orchestrateRolePrograms({
+    style: band.style,
+    lineup: band.instrumentPool,
+    rng,
+    provisional: band.roleProgram,
+    ensembleWorld,
+    drumKitProgram: arrangement.songGrooveContract.drum?.kitProgram,
+  });
   // ★ participant 家族守卫(P1/P2 修复):orchestration/repair 后,把 Band Selection 的乐手家族约束
   //   闭环到【最终发声 program】—— 选了合成氛围(pad)/键盘手(keyboard)等,最终音色一定在该家族内。
   const repairedRoleProgram = enforceRoleFamilies(
     coherentLeadComp(repairCompCapability(repairWorldMismatches(orch.roleProgram, band.style), band.style), band.style),
     band.familyByRole, band.style,
   );
-  const roleProgram = mapRoleProgramsToAura25(repairedRoleProgram, band.style) as Record<InstrumentRoleName, number>;
-  const aura25Decisions = band.instrumentPool
+  let roleProgram = { ...mapRoleProgramsToDream5504(repairedRoleProgram, band.style) } as Record<InstrumentRoleName, number>;
+  const dream5504Decisions = band.instrumentPool
     .filter((role) => repairedRoleProgram[role] !== undefined && repairedRoleProgram[role] !== roleProgram[role])
-    .map((role) => `${role} Aura25 GM${repairedRoleProgram[role]}→GM${roleProgram[role]}`);
+    .map((role) => `${role} Dream5504 PC${repairedRoleProgram[role]}→PC${roleProgram[role]}`);
+  const isAcgPianoSong = band.style.toLowerCase() === 'acg';
+  const acgPianoVoice = isAcgPianoSong ? pickAcgPianoSongVoice(acgPianoRng) : undefined;
+  if (acgPianoVoice) {
+    for (const role of ACG_PIANO_ROLES) if (band.instrumentPool.includes(role)) roleProgram[role] = acgPianoVoice.program;
+  }
   const timbreWorld = classifyTimbreWorld(roleProgram, band.style);
   const samePairs = sameInstrumentPairs(roleProgram);
+  const primaryVoiceByRole: Partial<Record<InstrumentRoleName, GM128VoiceSelection>> = {};
+  const roleBank: Partial<Record<InstrumentRoleName, number>> = {};
+  const voiceNameByRole: Partial<Record<InstrumentRoleName, string>> = {};
+  for (const role of band.instrumentPool) {
+    const voice = selectGMBK5X128Voice({
+      style: band.style,
+      role,
+      program: roleProgram[role],
+      bank: acgPianoVoice && ACG_PIANO_ROLES.includes(role) ? acgPianoVoice.bank : undefined,
+      timbreWorld,
+    });
+    primaryVoiceByRole[role] = voice;
+    if (voice.bank !== undefined) roleBank[role] = voice.bank;
+    voiceNameByRole[role] = voice.name;
+  }
+  const gmbkVoiceDecisions = band.instrumentPool
+    .map((role) => {
+      const voice = primaryVoiceByRole[role];
+      return voice ? `${role} ${gmbkVoiceLabel(voice)}` : undefined;
+    })
+    .filter((line): line is string => !!line);
   const gestureExpressionByRole = buildGestureExpressionByRole(ALL_ROLES, roleProgram, band.style);
   const registerByRole = Object.fromEntries(
     ALL_ROLES.map((role) => [role, registerForRole(role, roleProgram[role])]),
@@ -299,37 +356,55 @@ export function buildInstrumentationPlan(
   };
 
   const textureBySection: Record<string, TextureKind> = {};
-  const activityBySection: Record<string, Partial<Record<InstrumentRoleName, number>>> = {};
   const activeRolesBySection: Record<string, InstrumentRoleName[]> = {};
   const sectionById: Record<string, Section> = {};
 
   for (const s of arrangement.sections) {
     sectionById[s.id] = s as Section;
-    const e = arrangement.energyBySection[s.id] ?? 0.5;
     // 织体:functionTag 优先(A3),无则回退 legacy role(template/无 rng 段)。
     textureBySection[s.id] = s.functionTag ? TEXTURE_BY_FUNCTION[s.functionTag] : pickGenericTexture(s.role as TextureSectionRole);
-    activityBySection[s.id] = { bass: e, comp: e, drum: e, lead: e, pad: clamp01(1 - e) };
   }
 
   // ★ 器配音色:每角色 × 每段落。默认全 primary;comp/lead 掷骰命中 → chorus 段换【同族】备选(段落对比)。
+  //   ACG PIANOSONG 例外：三轨是同一架钢琴的分工，不在段间切 program/bank。
   //   repeatGroup 一致:按 section.role 决策 → 所有 chorus 段同备选、verse 段同 primary。确定性。
   // ★ 每首【掷一次骰】:命中 → 选一个【键盘族 comp/lead】乐手,chorus 换同族备选。最多一个乐手切。
-  const eligible = band.instrumentPool.filter(
+  //   即使模板拒绝该备选，也照旧消费这次抽签、仅维持 primary，避免器配规则改变后续 texture/鼓型的 seed 流。
+  const eligible = (isAcgPianoSong ? [] : band.instrumentPool).filter(
     (r) => TIMBRE_SWITCH_ROLES.includes(r) && isKeyboardFamily(roleProgram[r]) && sameFamilyAlternates(band.style, r, roleProgram[r]).length > 0,
   );
   let switchRole: InstrumentRoleName | undefined;
   let switchAlt: number | undefined;
   if (rng && eligible.length > 0 && rng.next() < TIMBRE_SWITCH_PROB) {
     switchRole = rng.pick(eligible);
-    switchAlt = mapProgramToAura25(rng.pick(sameFamilyAlternates(band.style, switchRole, roleProgram[switchRole])), switchRole, band.style);
+    const alternate = rng.pick(sameFamilyAlternates(band.style, switchRole, roleProgram[switchRole]));
+    if (ensembleAllowsRoleProgram(ensembleWorld, switchRole, alternate)) {
+      switchAlt = mapProgramToDream5504(alternate, switchRole, band.style);
+    } else {
+      switchRole = undefined;
+    }
   }
   const programByRoleSection: Record<InstrumentRoleName, Record<string, number>> = {} as Record<InstrumentRoleName, Record<string, number>>;
+  const bankByRoleSection: Record<InstrumentRoleName, Record<string, number | undefined>> = {} as Record<InstrumentRoleName, Record<string, number | undefined>>;
+  const voiceNameByRoleSection: Record<InstrumentRoleName, Record<string, string>> = {} as Record<InstrumentRoleName, Record<string, string>>;
   for (const role of band.instrumentPool) {
     const primary = roleProgram[role];
     programByRoleSection[role] = {};
+    bankByRoleSection[role] = {};
+    voiceNameByRoleSection[role] = {};
     for (const s of arrangement.sections) {
       const selected = role === switchRole && switchAlt !== undefined && s.role === 'chorus' ? switchAlt : primary;
-      programByRoleSection[role][s.id] = mapProgramToAura25(selected, role, band.style);
+      const mapped = mapProgramToDream5504(selected, role, band.style);
+      const voice = selectGMBK5X128Voice({
+        style: band.style,
+        role,
+        program: mapped,
+        bank: acgPianoVoice && ACG_PIANO_ROLES.includes(role) ? acgPianoVoice.bank : undefined,
+        timbreWorld,
+      });
+      programByRoleSection[role][s.id] = voice.program;
+      bankByRoleSection[role][s.id] = voice.bank;
+      voiceNameByRoleSection[role][s.id] = voice.name;
     }
   }
 
@@ -341,16 +416,21 @@ export function buildInstrumentationPlan(
     activeRolesBySection[s.id] = activeRolesFor(band.style, s as Section, band.instrumentPool, leadDropTags); // ★ 密度弧 + lead-gating
   }
 
-  // ★ intro 多样性:setup 段从【先行档】掷一个覆盖(roles + texture)→ 不再恒定 bass/pad 先行。
-  //   rng 在 lead-gating 之后取 → 不扰 timbre/lead-drop;setup 的 lead-drop 决定被本覆盖取代(rng 序不变)。
-  if (rng) {
-    const arch = rng.pick(INTRO_ARCHETYPES);
-    for (const s of arrangement.sections) {
-      if (s.functionTag !== 'setup') continue;
-      const roles = arch.roles.filter((r) => band.instrumentPool.includes(r));
-      if (roles.length === 0) continue; // ∩lineup 空 → 保留密度弧默认(不强塞)
-      activeRolesBySection[s.id] = roles;
-      textureBySection[s.id] = arch.texture; // keys 档 = active(arpeggio)→ comp 真渲染
+  // 旧 intro-archetype 曾在此消费一次 timbre RNG。决策已由 Arranger openingGesture 独占；
+  // 保留空抽取只为避免无关的后续 rich-texture/鼓型 seed 序列漂移。
+  if (rng) rng.next();
+
+  // OpeningGesture 是首段唯一的角色/织体意图：roleDelayBars 决定本段内实际会进入的 lineup 角色，
+  // textureEntry 覆盖同一 textureBySection 真源；none 不写入，保留 functionTag 原计划。
+  const firstSection = arrangement.sections[0];
+  const openingTexture = arrangement.openingGesture.textureEntry;
+  if (firstSection && arrangement.openingGesture.sectionId === firstSection.id) {
+    activeRolesBySection[firstSection.id] = band.instrumentPool.filter((role) => {
+      const delayBars = arrangement.openingGesture.roleDelayBars[role];
+      return delayBars !== undefined && delayBars < firstSection.bars;
+    });
+    if (openingTexture !== 'none') {
+      textureBySection[firstSection.id] = OPENING_TEXTURE_TO_GENERIC[openingTexture];
     }
   }
 
@@ -471,9 +551,8 @@ export function buildInstrumentationPlan(
     for (const role of band.instrumentPool) if (fixed[role] && mixByRoleSection[role]) mixByRoleSection[role][s.id] = fixed[role]!;
   }
 
-  // ★ ACG:lead/comp 是同一键盘式前景空间。即便音色在 piano/FM/vibes/kalimba 间变化,
-  //   也统一 reverb/pan,只保留 volume 与 program 自身 chorus 差异。
-  //   chorus 不能统一:mallet/kalimba 需要 0 chorus,否则会听成轻微跑音。
+  // ★ ACG:lead/comp 是同一架钢琴的前景空间（大钢琴/亮钢琴/极少量柔电钢），
+  //   统一 reverb/pan，只保留各程序自身的 chorus 差异。
   if (band.style.toLowerCase() === 'acg') {
     for (const s of arrangement.sections) {
       const compMix = mixByRoleSection.comp?.[s.id];
@@ -486,7 +565,6 @@ export function buildInstrumentationPlan(
   }
 
   const data: InstrumentationPlanData = {
-    activityBySection,
     activeRolesBySection,
     registerByRole,
     textureBySection,
@@ -494,13 +572,31 @@ export function buildInstrumentationPlan(
     richTextureSwitchBySection,
     textureYieldPolicy: GENERIC_TEXTURE_YIELD,
     roleProgram, // ★ 生效基底 program(链式协同 + repair 后)→ render 单一真源
+    roleBank,
+    voiceNameByRole,
     orchestrationChain: {
-      world: orch.world, profileId: orch.profileId,
-      compProgram: roleProgram.comp, leadProgram: roleProgram.lead, bassProgram: roleProgram.bass,
-      padProgram: roleProgram.pad, drumProgram: roleProgram.drum,
-      decisions: aura25Decisions.length ? [...orch.decisions, ...aura25Decisions] : orch.decisions,
+      world: orch.world, profileId: orch.profileId, ensembleWorld: orch.ensembleWorld,
+      compProgram: roleProgram.comp, compBank: roleBank.comp,
+      leadProgram: roleProgram.lead, leadBank: roleBank.lead,
+      bassProgram: roleProgram.bass, bassBank: roleBank.bass,
+      padProgram: roleProgram.pad, padBank: roleBank.pad,
+      drumProgram: roleProgram.drum,
+      voiceNames: voiceNameByRole,
+      decisions: [
+        ...orch.decisions,
+        `Dream5504 world keyboard=${DREAM5504_VOICE_WORLD_COUNTS.keyboard} bass=${DREAM5504_VOICE_WORLD_COUNTS.bass} pad=${DREAM5504_VOICE_WORLD_COUNTS.pad} drum=${DREAM5504_VOICE_WORLD_COUNTS.drum}`,
+        ...dream5504Decisions,
+        ...(acgPianoVoice ? [`ACG PIANOSONG song-piano ${acgPianoVoice.name}(GM${acgPianoVoice.program},CC0=${acgPianoVoice.bank})`] : []),
+        ...gmbkVoiceDecisions,
+      ],
+    },
+    hardwareVoiceWorld: {
+      targetId: DREAM5504_TARGET_ID,
+      voiceCounts: { ...DREAM5504_VOICE_WORLD_COUNTS },
     },
     programByRoleSection,
+    bankByRoleSection,
+    voiceNameByRoleSection,
     mixByRoleSection, // ★ ESP32 混音(CC7/10/91/93;随段程序变)
     spaceProfile,
     gestureExpressionByRole,
@@ -517,7 +613,10 @@ export function buildInstrumentationPlan(
     transitionPlan: buildTransitionPlan(arrangement, activeRolesBySection, band.instrumentPool),
     needsDownbeatCompAnchorBySection: Object.fromEntries(arrangement.sections.map((s) => {
       const roles = activeRolesBySection[s.id] ?? [];
-      return [s.id, roles.includes('comp') && !roles.includes('pad')]; // comp 唯一和声支撑(无 pad)
+      const plannedOpeningCompDelay = s.id === arrangement.sections[0]?.id
+        && arrangement.openingGesture.sectionId === s.id
+        && (arrangement.openingGesture.roleDelayBars.comp ?? 0) > 0;
+      return [s.id, !isAcgPianoSong && !plannedOpeningCompDelay && roles.includes('comp') && !roles.includes('pad')];
     })),
   };
 

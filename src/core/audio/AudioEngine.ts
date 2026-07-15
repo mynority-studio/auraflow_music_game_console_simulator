@@ -1,7 +1,7 @@
 /**
  * AudioEngine — 音频引擎单例(Q+N 主链路)
  *
- * App 层与 Copych 音频系统的总入口:
+ * App 层与 Dream 5504 EK MIDI 输出系统的总入口:
  *   ① 正式播放:playMusicGeneration(result) —— MusicalIR → musicalIrToMidi → globalMidiScheduler(+ 视觉事件驱动 LedMatrix)
  *   ② 当前状态:getCurrentMusicGeneration()(唯一真源,UI 读 uiSnapshot)+ getCurrentBeat/Tick/Bpm/Ppq
  *   ③ MIDI 通道工具:muteChannel / setPartMute(Q+N PartName→channel)/ injectMidiEvent / get|replaceChannelEvents
@@ -16,59 +16,58 @@ import { globalMidiScheduler, type MidiEvent } from './MidiScheduler';
 import { musicalIRToMidiEvents, roomWetFor } from './musicalIrToMidi';
 import type { MusicalIR } from '../generation/newEngine/ir/MusicalIR';
 import type { MusicGenerationResult } from '../generation/musicGeneration/types';
-import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
-import { COPYCH_FX_BOOT, CopychSynthFacade } from './copych/CopychSynthFacade';
-import { songSpaceProfile, songSpaceProfileById } from '../generation/newEngine/knowledge/gmMixProfile';
-import type { TimbreWorld } from '../generation/newEngine/knowledge/instruments';
+import { Dream5504MidiOutput } from './Dream5504MidiOutput';
 import {
-    activeSynth,
-    isSynthReady,
-    getAudioContext,
-    startAudioContext,
-    SOUND_FONT_BANKS,
-    getSelectedSoundFontBank,
-    getLoadedSoundFontBank,
-    setSelectedSoundFontBank,
-    setAudioSampleRate as setAudioSampleRateInternal,
-    setChannelMode as setChannelModeInternal,
-    setPlaybackMasterStyle,
-    subscribeSoundFontBank,
-    setCopychDevicePostChain,
-    type SoundFontBank,
-    type SoundFontBankId,
-} from './SynthManager';
-import {
-    getChannelModePref, getSampleRatePref, SAMPLE_RATE_OPTIONS,
-    type ChannelModePref, type SampleRatePref,
-} from './audioOutputPrefs';
+    DREAM5504_HINT,
+    DREAM5504_LABEL,
+    DREAM5504_TARGET_ID,
+} from '../sound/GMBK5X128Voices';
 
-export {
-    activeSynth,
-    isSynthReady,
-    getAudioContext,
-    startAudioContext,
-    SOUND_FONT_BANKS,
-    getSelectedSoundFontBank,
-    getLoadedSoundFontBank,
-    subscribeSoundFontBank,
-    setPlaybackMasterStyle,
-    getSampleRatePref,
-    getChannelModePref,
-    SAMPLE_RATE_OPTIONS,
-    setCopychDevicePostChain,
+export const SOUND_FONT_BANKS = [
+    {
+        id: DREAM5504_TARGET_ID,
+        label: DREAM5504_LABEL,
+        sizeLabel: '5504硬件',
+        bankManagerId: DREAM5504_TARGET_ID,
+        hint: DREAM5504_HINT,
+    },
+] as const;
+
+export type SoundFontBank = typeof SOUND_FONT_BANKS[number];
+export type SoundFontBankId = SoundFontBank['id'];
+
+const soundFontListeners = new Set<() => void>();
+const notifySoundFontBank = (): void => {
+    soundFontListeners.forEach(listener => {
+        try { listener(); } catch { /* ignore */ }
+    });
 };
-export type { SoundFontBank, SoundFontBankId, SampleRatePref, ChannelModePref };
+export const getSelectedSoundFontBank = (): SoundFontBank => SOUND_FONT_BANKS[0];
+export const getLoadedSoundFontBank = (): SoundFontBank => SOUND_FONT_BANKS[0];
+export const subscribeSoundFontBank = (listener: () => void): (() => void) => {
+    soundFontListeners.add(listener);
+    return () => { soundFontListeners.delete(listener); };
+};
+
+const midiOnlyAudioContext = {
+    get currentTime() { return performance.now() / 1000; },
+    state: 'running',
+    resume: async () => undefined,
+} as unknown as AudioContext;
+
+export async function startAudioContext(): Promise<void> {
+    Dream5504MidiOutput.requireReady('Dream 5504 MIDI 输出');
+}
+
+export function getAudioContext(): AudioContext {
+    return midiOnlyAudioContext;
+}
 
 // ★ Q+N 角色 → LedMatrix VisualEvent 类型(qn_main_engine_takeover §5.3)。pad 暂归 accomp(无专属 atmosphere 视觉)。
 const ROLE_VISUAL_TYPE: Record<string, VisualEvent['type']> = {
     lead: 'melody', comp: 'accomp', bass: 'bass', drum: 'drums', pad: 'accomp',
 };
 const ROLE_CHANNEL_VIS: Record<string, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
-
-// delayMode → 拍数（镜像设备 ne_song_space_delay 换算：seconds = beats × 60 / bpm）
-const DELAY_MODE_BEATS: Record<string, number> = {
-    'eighth': 0.5, 'dotted-eighth': 0.75, 'quarter': 1.0, 'off': 0,
-};
 
 class AudioEngineSystem {
     private visualsMode: 'all' | 'gameplay-only' = 'all';
@@ -106,29 +105,14 @@ class AudioEngineSystem {
         if (!result.ir) return null; // failed → 不播
         this.init();
         const currentSession = ++this.playSessionId;
-        await startAudioContext();
+        if (!Dream5504MidiOutput.requireReady('播放生成音乐')) {
+            this.stop();
+            throw new Error('未连接 Dream 5504 EK MIDI 输出，已静音');
+        }
         if (currentSession !== this.playSessionId) return null;
-        setPlaybackMasterStyle(result.styleHint);
-
         const events = musicalIRToMidiEvents(result.ir, roomWetFor(result.styleHint));
         const visuals = this.buildVisualEvents(result.ir);
         globalMidiScheduler.stop();
-
-        // Copych per-song 空间参数（reverb/chorus/delay，镜像设备 AR_CMD_SONG_*）。
-        // 优先消费器配层已选的 spaceProfile/uiSnapshot.spaceProfile，避免 playback 重新推导导致
-        // syntheticSoft 等世界在 Copych 真 FX 参数上分叉。fallback 只服务旧/外部 result。
-        if (activeSynth instanceof CopychSynthFacade) {
-            const hasPad = result.ir.tracks.some(t => t.role === 'pad' && t.notes.length > 0);
-            const p = songSpaceProfileById(result.spaceProfile ?? result.uiSnapshot.spaceProfile)
-                ?? songSpaceProfile(result.styleHint, result.uiSnapshot.world as TimbreWorld | undefined, hasPad);
-            const beats = DELAY_MODE_BEATS[p.delayMode] ?? 0;
-            activeSynth.setSongSpace({
-                reverb: { time: p.reverbTime, level: p.reverbLevel, predelayMs: p.predelayMs, damping: p.damping },
-                // 单位镜像固件 adapter：depth/100→秒、baseDelay ms→秒
-                chorus: { lfoHz: p.chorusLfoHz, depthS: p.chorusDepth / 100, baseDelayS: p.chorusBaseDelay / 1000 },
-                delay: { seconds: beats > 0 ? (beats * 60) / result.bpm : 0, feedback: p.delayFeedback, enabled: beats > 0 },
-            });
-        }
 
         globalMidiScheduler.loadTrack([...events, ...visuals], result.bpm);
         globalMidiScheduler.start();
@@ -138,19 +122,16 @@ class AudioEngineSystem {
     }
 
     /** 上传 MIDI 播放（上传播放批）：smfParser 产出的 MidiEvent[]（PPQ480 已重标定）直喂
-     *  调度器，走与生成曲完全相同的 Copych 播放路径（含设备后链）。
-     *  外部文件无 per-song 空间参数 → copych 显式回 boot 基线（防上一首的 per-song
-     *  reverb/delay 残留串进上传曲；delay 关）。无 LED visual（无 role 语义）。 */
+     *  调度器，走与生成曲完全相同的 Dream 5504 MIDI 输出路径。无 LED visual（无 role 语义）。 */
     public async playUploadedMidi(events: MidiEvent[], bpm: number): Promise<void> {
         this.init();
         const currentSession = ++this.playSessionId;
-        await startAudioContext();
-        if (currentSession !== this.playSessionId) return;
-        setPlaybackMasterStyle(undefined);
-        globalMidiScheduler.stop();
-        if (activeSynth instanceof CopychSynthFacade) {
-            activeSynth.setSongSpace(COPYCH_FX_BOOT);
+        if (!Dream5504MidiOutput.requireReady('播放上传 MIDI')) {
+            this.stop();
+            throw new Error('未连接 Dream 5504 EK MIDI 输出，已静音');
         }
+        if (currentSession !== this.playSessionId) return;
+        globalMidiScheduler.stop();
         globalMidiScheduler.loadTrack(events, bpm);
         globalMidiScheduler.start();
         this.currentMusicGeneration = null;   /* 非生成曲：清 UI 快照 */
@@ -177,26 +158,16 @@ class AudioEngineSystem {
 
     public stop(): void {
         globalMidiScheduler.stop();
-        setPlaybackMasterStyle(undefined);
         this.currentMusicGeneration = null;
     }
 
     public async setSoundFontBank(id: SoundFontBankId): Promise<void> {
         this.playSessionId++;
         this.stop();
-        await setSelectedSoundFontBank(id);
-    }
-
-    /** 切输出采样率偏好（关旧 ctx 建新 + 重建合成器）。先停播放（跨 ctx 时间线不可迁移）。 */
-    public async setAudioSampleRate(pref: SampleRatePref, forceReload = false): Promise<void> {
-        this.playSessionId++;
-        this.stop();
-        await setAudioSampleRateInternal(pref, forceReload);
-    }
-
-    /** 切输出声道模式（末端下混开关，运行期即时生效，不打断播放）。 */
-    public setChannelMode(mode: ChannelModePref): void {
-        setChannelModeInternal(mode);
+        if (!SOUND_FONT_BANKS.some(bank => bank.id === id)) {
+            throw new Error(`未知 Dream 5504 MIDI 目标：${id}`);
+        }
+        notifySoundFontBank();
     }
 
     public getSoundFontBank(): SoundFontBank {
@@ -261,45 +232,41 @@ class AudioEngineSystem {
         window.setTimeout(() => this.noteOff(channel, note), Math.max(1, durationMs));
     }
     public getAudioTime(): number {
-        return getAudioContext().currentTime;
+        return performance.now() / 1000;
     }
     public noteOn(channel: number, note: number, velocity: number = 100): void {
-        this.noteOnAt(channel, note, velocity, getAudioContext().currentTime);
+        this.noteOnAt(channel, note, velocity, this.getAudioTime());
     }
-    public noteOnAt(channel: number, note: number, velocity: number = 100, audioTime: number = getAudioContext().currentTime): void {
-        if (!activeSynth) return;
+    public noteOnAt(channel: number, note: number, velocity: number = 100, audioTime: number = this.getAudioTime()): void {
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
         const midi = Math.max(0, Math.min(127, Math.round(note)));
         const vel = Math.max(0, Math.min(127, Math.round(velocity)));
-        try { activeSynth.noteOn(ch, midi, vel, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
-        catch { try { activeSynth.noteOn(ch, midi, vel); } catch { /* ignore */ } }
+        const send = () => Dream5504MidiOutput.sendSchedulerChannelMessage(ch, { type: 'noteOn', data1: midi, data2: vel });
+        const delayMs = Math.max(0, (audioTime - this.getAudioTime()) * 1000);
+        if (delayMs > 1) window.setTimeout(send, delayMs);
+        else send();
     }
     public noteOff(channel: number, note: number): void {
-        this.noteOffAt(channel, note, getAudioContext().currentTime);
+        this.noteOffAt(channel, note, this.getAudioTime());
     }
-    public noteOffAt(channel: number, note: number, audioTime: number = getAudioContext().currentTime): void {
-        if (!activeSynth) return;
+    public noteOffAt(channel: number, note: number, audioTime: number = this.getAudioTime()): void {
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
         const midi = Math.max(0, Math.min(127, Math.round(note)));
-        try { activeSynth.noteOff(ch, midi, { time: Math.max(getAudioContext().currentTime, audioTime) }); }
-        catch { try { activeSynth.noteOff(ch, midi); } catch { /* ignore */ } }
+        const send = () => Dream5504MidiOutput.sendSchedulerChannelMessage(ch, { type: 'noteOff', data1: midi, data2: 0 });
+        const delayMs = Math.max(0, (audioTime - this.getAudioTime()) * 1000);
+        if (delayMs > 1) window.setTimeout(send, delayMs);
+        else send();
     }
     public programChange(channel: number, program: number): void {
-        if (!activeSynth) return;
         const ch = Math.max(0, Math.min(15, Math.round(channel)));
-        try { activeSynth.programChange(ch, mapMidiProgramToAura25(program, ch)); }
-        catch { /* ignore */ }
+        const pc = Math.max(0, Math.min(127, Math.round(program)));
+        Dream5504MidiOutput.sendSchedulerChannelMessage(ch, { type: 'programChange', data1: pc });
     }
     public controllerChange(channel: number, controller: number, value: number): void {
-        if (!activeSynth) return;
-        const cc = Math.round(controller);
-        try {
-            (activeSynth as any).controllerChange?.(
-                Math.round(channel),
-                cc,
-                Math.max(0, Math.min(127, Math.round(value))),
-            );
-        } catch { /* ignore */ }
+        const ch = Math.max(0, Math.min(15, Math.round(channel)));
+        const cc = Math.max(0, Math.min(127, Math.round(controller)));
+        const val = Math.max(0, Math.min(127, Math.round(value)));
+        Dream5504MidiOutput.sendSchedulerChannelMessage(ch, { type: 'cc', data1: cc, data2: val });
     }
 
     public getCurrentTick(): number { return globalMidiScheduler.getCurrentTick(); }

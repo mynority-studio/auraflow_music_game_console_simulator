@@ -9,6 +9,7 @@
 
 export type StageName =
   | 'band' | 'time' | 'arranger' | 'harmony' | 'instrumental' | 'timbre'
+  | 'acgPianoVoice' // ACG PIANOSONG 整首钢琴音色；与 timbre/texture 分离，扩色不扰既有编配随机流
   | 'prepass' | 'accompaniment' | 'compTexture' | 'padStyle' | 'melody' | 'resolver' | 'humanize'
   | 'grooveContract' // ★ GrooveContract 选择(独立子流;Phase D 起全 MG-backed 风格都抽,BLUES/无 rng 不抽)
   | 'openingGesture'; // ★ 开头编配导演(独立子流;只决定入场计划,不扰曲式/和声/器配)

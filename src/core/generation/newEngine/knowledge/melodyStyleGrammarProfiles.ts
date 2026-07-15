@@ -21,9 +21,20 @@
 
 import { makeGrammar } from './melodyGrammarTypes';
 import { BUILTIN_RULES } from './melodyBuiltinGrammar';
-import { jazzSlopeRulesToGrammarRules, lofiStableSlopeRulesToGrammarRules, popStableSlopeRulesToGrammarRules, rnbSoulSlopeRulesToGrammarRules, softParallelFavoriteSlopeRulesToGrammarRules } from './melodySlopeAdapter';
+import {
+  jazzSlopeRulesToGrammarRules,
+  lofiStableSlopeRulesToGrammarRules,
+  popStableSlopeRulesToGrammarRules,
+  rnbSoulSlopeRulesToGrammarRules,
+  softParallelFavoriteSlopeRulesToGrammarRules,
+  sourceSlopeRulesToGrammarRules,
+} from './melodySlopeAdapter';
 
 const JAZZ_SLOPE_RULES = jazzSlopeRulesToGrammarRules();
+const JAZZ_SAX_DEXTER_GORDON_SLOPE_RULES = sourceSlopeRulesToGrammarRules(['DexterGordon'], {
+  styleTags: ['jazz_sax_source', 'dexter_gordon'],
+  weightMultiplier: 1.35,
+});
 const LOFI_SLOPE_RULES = lofiStableSlopeRulesToGrammarRules();
 const POP_SLOPE_RULES = popStableSlopeRulesToGrammarRules();
 const RNB_SLOPE_RULES = rnbSoulSlopeRulesToGrammarRules();
@@ -36,17 +47,20 @@ const SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRule
 // Cadence family 匹配,会压过 Perfect/Amen/Diatonic 等所有 POP 开头终止式。
 const POP_SOFT_PARALLEL_FAVORITE_RULES = softParallelFavoriteSlopeRulesToGrammarRules(5.6);
 const ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...JAZZ_SLOPE_RULES];
+const JAZZ_SAX_DEXTER_GORDON_RULES = [...BUILTIN_RULES, ...JAZZ_SAX_DEXTER_GORDON_SLOPE_RULES];
 const POP_ALL_RULES = [...POP_SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...POP_SLOPE_RULES];
 const LOFI_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...LOFI_SLOPE_RULES];
 const RNB_ALL_RULES = [...SOFT_PARALLEL_FAVORITE_RULES, ...BUILTIN_RULES, ...RNB_SLOPE_RULES];
 
 export const ENRICHED_GRAMMAR = makeGrammar(ALL_RULES, 'Phrase');
+export const JAZZ_SAX_DEXTER_GORDON_GRAMMAR = makeGrammar(JAZZ_SAX_DEXTER_GORDON_RULES, 'Phrase');
 export const POP_ENRICHED_GRAMMAR = makeGrammar(POP_ALL_RULES, 'Phrase');
 export const LOFI_ENRICHED_GRAMMAR = makeGrammar(LOFI_ALL_RULES, 'Phrase');
 export const RNB_ENRICHED_GRAMMAR = makeGrammar(RNB_ALL_RULES, 'Phrase');
 
 /** Total rule count for diagnostics. */
 export const ENRICHED_GRAMMAR_RULE_COUNT = ALL_RULES.length;
+export const JAZZ_SAX_DEXTER_GORDON_GRAMMAR_RULE_COUNT = JAZZ_SAX_DEXTER_GORDON_RULES.length;
 export const POP_ENRICHED_GRAMMAR_RULE_COUNT = POP_ALL_RULES.length;
 export const LOFI_ENRICHED_GRAMMAR_RULE_COUNT = LOFI_ALL_RULES.length;
 export const RNB_ENRICHED_GRAMMAR_RULE_COUNT = RNB_ALL_RULES.length;

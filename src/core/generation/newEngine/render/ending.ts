@@ -16,7 +16,7 @@ import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 
 const clampVel = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
-// ★ Loop G:末和弦延留角色默认 = 和声件 comp/pad(不含 lead;lead 落主音由 mgLeadRenderer snap 管,时值不被强拉)。
+// ★ Loop G:末和弦延留角色默认 = 和声件 comp/pad(不含 lead;lead 时值不被 tag 强拉)。
 //   实际用 endingPlan.sustainRoles 覆盖(器配定:pad 优先/无 pad 用 comp)。
 const DEFAULT_SUSTAIN = new Set<string>(['comp', 'pad']);
 
@@ -49,14 +49,13 @@ export function applyEnding(
   const span = Math.max(1, outroEnd - outroStart);
 
   return tracks.map((t) => {
-    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,收尾 fade/退出/重音一律不碰 lead
     const exitN = endingPlan.exitBarByRole[t.role as InstrumentRoleName];
     const exitTick = exitN !== undefined ? outroStart + exitN * barTicks : Infinity;
     // ★ 末和弦延留(tag):延留【真正最后一个和弦】到曲末,即便它起在末小节之前
     //   (否则末小节可能空 = tag 收不住)。先扫该 hold 声部在 outro 内的最晚起音作为延留起点。
-    // ★ Loop G:延留角色 = endingPlan.sustainRoles(默认 comp/pad;lead 已在上方 early-return,永不延留)。
+    // ★ Loop G:延留角色 = endingPlan.sustainRoles(默认 comp/pad)。lead 即使被误配进集合也不强拉时值。
     const sustainSet = endingPlan.sustainRoles ? new Set<string>(endingPlan.sustainRoles) : DEFAULT_SUSTAIN;
-    const isHold = endingPlan.holdFinalChord && sustainSet.has(t.role);
+    const isHold = t.role !== 'lead' && endingPlan.holdFinalChord && sustainSet.has(t.role);
     let holdFrom = lastBarStart;
     if (isHold) {
       let maxStart = -1;
@@ -84,24 +83,26 @@ export function applyEnding(
       }
       notes.push({ ...n, velocity: clampVel(vel), durationTicks: ticks(Math.max(1, Math.round(dur))) });
     }
-    return { role: t.role, notes };
+    return { ...t, notes };
   });
 }
 
-/** lead-in 衔接:leadInBars(绝对小节序号,= 跃升段前一段末小节)内做 crescendo(0.82→1.18)推向下拍。 */
+/** lead-in 衔接:伴奏 crescendo 0.82→1.18；lead 轻量 0.92→1.08，保留 MG 原始表情。 */
 export function applyLeadIns(tracks: TrackIR[], leadInBars: ReadonlySet<number>, ppq: number, bpb: number): TrackIR[] {
   if (leadInBars.size === 0) return tracks;
   const barTicks = bpb * ppq;
   return tracks.map((t) => {
-    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,lead-in crescendo 不碰 lead
     return {
-      role: t.role,
+      ...t,
       notes: t.notes.map((n) => {
         const st = n.startTick as number;
         const bar = Math.floor(st / barTicks);
         if (!leadInBars.has(bar)) return n;
         const pos = clamp01((st - bar * barTicks) / barTicks);
-        return { ...n, velocity: clampVel(n.velocity * (0.82 + 0.36 * pos)) };
+        const scale = t.role === 'lead'
+          ? 0.92 + 0.16 * pos
+          : 0.82 + 0.36 * pos;
+        return { ...n, velocity: clampVel(n.velocity * scale) };
       }),
     };
   });

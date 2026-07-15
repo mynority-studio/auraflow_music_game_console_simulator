@@ -1,188 +1,121 @@
-export type Aura25Role = 'bass' | 'comp' | 'pad' | 'lead' | 'drum';
+// ============================================================
+// Dream GMBK5X128 / GM128 target palette
+// ------------------------------------------------------------
+// 5504 方案不再把音乐收口到浏览器小 SF2 的少量 preset。Program
+// 保持 GM128 语义；GMBK5X128 的 variation 使用 CC0(Bank Select MSB)
+// 选择，鼓组在 ch10 只用 Program Change，不发 bank。
+//
+// 文件名和 Aura25* 导出名暂保留为兼容层，避免大面积迁移破坏旧调用点。
+// ============================================================
 
-export const AURA25_SF2_URL = '/Aura25_GM128.sf2?v=20260714-v47-direct-balance-allpass';
-export const AURA25_SF2_BANK_ID = 'aura25-gu-cp80-chorusedfm';
-export const AURA25_SF2_SIZE_LABEL = '1.29MB';
-export const AURA25_DRUM_BANK_MSB = 1;
-export const AURA25_DRUM_BANK_LSB = 0;
-export const AURA25_CHORUSED_FM_EP_BANK = 8;
-export const AURA25_CHORUSED_FM_EP_PROGRAM = 5;
+import {
+  GM128_FULL_AUDITION_INSTRUMENTS,
+  type GM128Role,
+} from './GMBK5X128Catalog';
+import { ACG_PIANOSONG_PIANO_PROGRAMS, dream5504VoiceName } from './GMBK5X128Voices';
 
-export const AURA25_MELODIC_PROGRAMS = [
-  0, 5, 24, 25,
-  32, 38,
-  67, 89, 108,
-] as const;
+export type { GM128Role } from './GMBK5X128Catalog';
+export type Aura25Role = GM128Role;
 
-export const AURA25_DRUM_PROGRAMS = [8, 25, 40] as const;
+export const GM128_TARGET_ID = 'dream-gmbk5x128';
+export const GM128_LABEL = 'Dream GMBK5X128 GM128';
+export const GM128_HINT = 'Dream5504/SAM5000 CleanWave GM128：Program 0-127，variation 用 CC0，鼓组 ch10 只发 Program Change';
 
-export const AURA25_PROGRAMS_BY_ROLE: Record<Aura25Role, readonly number[]> = {
-  lead: [0, 5, 24, 25, 67, 108],
-  comp: [0, 5, 24, 25],
-  bass: [32, 38],
-  pad: [89],
-  drum: AURA25_DRUM_PROGRAMS,
+export const GM128_CITYPOP_FM_EP_BANK = 16;
+export const GM128_HARD_FM_EP_BANK = 24;
+export const GM128_SOFT_EP_BANK = 8;
+export const GM128_CHORUS_GUITAR_BANK = 8;
+export const GM128_BREATHY_TENOR_BANK = 8;
+export const GM128_FM_EP_PROGRAM = 5;
+export const GM128_TENOR_SAX_PROGRAM = 66;
+
+export const GM128_MELODIC_PROGRAMS = Array.from({ length: 128 }, (_, i) => i) as readonly number[];
+export const GM128_DRUM_PROGRAMS = [0, 8, 16, 24, 25, 32, 40, 48, 56, 127] as const;
+
+export const GM128_PROGRAMS_BY_ROLE: Record<GM128Role, readonly number[]> = {
+  lead: [0, 1, 2, 4, 5, 11, 12, 24, 25, 27, 64, 65, 66, 67, 75, 77, 107, 108],
+  comp: [0, 1, 2, 4, 5, 11, 12, 24, 25, 27],
+  // ACG PIANOSONG 白名单钢琴可作为左手 bass；其余仍是正式 bass 世界。
+  bass: [...ACG_PIANOSONG_PIANO_PROGRAMS, 32, 33, 34, 35, 36, 37, 38, 39],
+  pad: [48, 49, 50, 88, 89, 90, 91, 92, 93, 94, 95],
+  drum: GM128_DRUM_PROGRAMS,
 };
 
-export const AURA25_AUDITION_INSTRUMENTS = [
-  { bank: 0, program: 0, role: 'lead', name: '大钢琴', note: 60, sampleSizeBytes: 197928, sampleSizeLabel: '0.189MB' },
-  { bank: 0, program: 5, role: 'comp', name: 'GU Electric Grand', note: 64, sampleSizeBytes: 332568, sampleSizeLabel: '0.317MB' },
-  { bank: 8, program: 5, role: 'comp', name: 'GU Chorused FM EP', note: 64, sampleSizeBytes: 231564, sampleSizeLabel: '0.221MB' },
-  { bank: 0, program: 24, role: 'comp', name: '尼龙吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
-  { bank: 0, program: 25, role: 'comp', name: '民谣木吉他', note: 52, sampleSizeBytes: 17276, sampleSizeLabel: '0.016MB' },
-  { bank: 0, program: 32, role: 'bass', name: '原声贝斯', note: 40, sampleSizeBytes: 7106, sampleSizeLabel: '0.007MB' },
-  { bank: 0, program: 38, role: 'bass', name: '合成贝斯 1', note: 36, sampleSizeBytes: 10584, sampleSizeLabel: '0.010MB' },
-  { bank: 0, program: 67, role: 'lead', name: '上低音萨克斯', note: 50, sampleSizeBytes: 130842, sampleSizeLabel: '0.125MB' },
-  { bank: 0, program: 89, role: 'pad', name: '暖 Pad', note: 55, sampleSizeBytes: 38530, sampleSizeLabel: '0.037MB' },
-  { bank: 0, program: 108, role: 'lead', name: '卡林巴', note: 72, sampleSizeBytes: 6122, sampleSizeLabel: '0.006MB' },
-  { bank: 128, program: 8, role: 'drum', name: 'Room 鼓组', note: 36, sampleSizeBytes: 284048, sampleSizeLabel: '0.271MB' },
-  { bank: 128, program: 25, role: 'drum', name: 'TR-808 鼓组', note: 36, sampleSizeBytes: 231830, sampleSizeLabel: '0.221MB' },
-  { bank: 128, program: 40, role: 'drum', name: 'Brush 鼓组', note: 38, sampleSizeBytes: 277868, sampleSizeLabel: '0.265MB' },
-] as const;
+/**
+ * Compatibility export for old Aura25 callers. This is intentionally the
+ * complete official GMBK5X128 table, parsed from Dream's TSV, rather than a
+ * separately maintained localized subset.
+ */
+export const GM128_AUDITION_INSTRUMENTS = GM128_FULL_AUDITION_INSTRUMENTS;
 
-export function aura25PresetName(bank: number, program: number): string | undefined {
-  return AURA25_AUDITION_INSTRUMENTS.find((item) => item.bank === bank && item.program === program)?.name;
+export function gm128PresetName(bank: number, program: number, role?: GM128Role): string | undefined {
+  return dream5504VoiceName(bank, program, role ?? 'lead');
 }
 
-export function aura25InstrumentName(bank: number | undefined, program: number | undefined, role?: Aura25Role): string | undefined {
+export function gm128DrumKitName(program: number | undefined): string {
+  const p = programNumber(program ?? 0);
+  return dream5504VoiceName(undefined, p, 'drum') ?? `Dream5504 Drum PC${p}`;
+}
+
+export function gm128InstrumentName(bank: number | undefined, program: number | undefined, role?: GM128Role): string | undefined {
   if (program === undefined) return undefined;
-  if (role === 'drum') return aura25DrumKitName(program);
-  return aura25PresetName(bank ?? 0, program);
+  if (role === 'drum') return gm128DrumKitName(program);
+  return dream5504VoiceName(bank, program, role ?? 'lead');
 }
 
-export function aura25DrumKitName(program: number | undefined): string {
-  return aura25PresetName(128, program ?? 0) ?? '鼓组';
-}
-
-const melodicSet = new Set<number>(AURA25_MELODIC_PROGRAMS);
-const drumSet = new Set<number>(AURA25_DRUM_PROGRAMS);
-
+const drumSet = new Set<number>(GM128_DRUM_PROGRAMS);
 const normStyle = (style?: string): string => (style ?? '').toLowerCase();
-const program = (p: number): number => Math.max(0, Math.min(127, Math.round(p)));
+const programNumber = (p: number): number => Math.max(0, Math.min(127, Math.round(p)));
 
-export function isAura25Program(p: number, role?: Aura25Role): boolean {
-  const n = program(p);
+export function isGM128Program(p: number, role?: GM128Role): boolean {
+  const n = programNumber(p);
   if (role === 'drum') return drumSet.has(n);
-  if (role) return AURA25_PROGRAMS_BY_ROLE[role].includes(n);
-  return melodicSet.has(n) || drumSet.has(n);
+  if (role) return GM128_PROGRAMS_BY_ROLE[role].includes(n);
+  return n >= 0 && n <= 127;
 }
 
-function styleFallback(role: Aura25Role, style?: string): number {
+function styleFallback(role: GM128Role, style?: string): number {
   const s = normStyle(style);
   if (role === 'drum') {
     if (s === 'jazz' || s === 'blues') return 40;
-    if (s === 'lofi') return 25;
-    if (s === 'rnb') return 25;
-    if (s === 'modal') return 25;
-    if (s === 'acg') return 8;
-    if (s === 'pop') return 8;
+    if (s === 'lofi' || s === 'rnb' || s === 'modal') return 25;
     return 8;
   }
   if (role === 'bass') return s === 'jazz' || s === 'acg' ? 32 : 38;
   if (role === 'pad') return 89;
   if (role === 'comp') return s === 'rnb' || s === 'lofi' || s === 'pop' ? 5 : 0;
-  if (s === 'lofi') return 108;
-  if (s === 'modal') return 108;
+  if (s === 'jazz' || s === 'blues') return 66;
+  if (s === 'lofi' || s === 'modal') return 108;
   if (s === 'rnb') return 5;
-  if (s === 'jazz' || s === 'blues') return 67;
-  if (s === 'pop') return 0;
-  if (s === 'acg') return 0;
   return 0;
-}
-
-function mapBass(p: number, style?: string): number {
-  if (p === 32 || p === 38) return p;
-  if (p >= 32 && p <= 37) return normStyle(style) === 'jazz' || normStyle(style) === 'acg' ? 32 : 38;
-  if (p === 39) return 38;
-  return styleFallback('bass', style);
 }
 
 function mapDrum(p: number, style?: string): number {
   if (drumSet.has(p)) return p;
-  if (p === 0) return 8;
-  if (p === 16) return 25;
-  if (p === 24) return 25;
-  if (p === 32) return 40;
-  if (p === 48) return 8;
   if (p >= 24 && p <= 31) return 25;
-  if (p >= 16 && p <= 23) return 25;
-  if (p >= 8 && p <= 15) return 8;
+  if (p >= 16 && p <= 23) return 16;
   if (p >= 32 && p <= 47) return 40;
-  if (p >= 48) return 8;
+  if (p >= 48) return 48;
   return styleFallback('drum', style);
 }
 
-function mapKeyboardLike(p: number, style?: string): number {
-  if (p <= 3) return 0;
-  if (p >= 4 && p <= 7) return 5;
-  if (p === 11) return 108;
-  if (p >= 8 && p <= 15) return 108;
-  return -1;
+function roleAllowsProgram(role: GM128Role | undefined, p: number, style?: string): boolean {
+  if (!role) return true;
+  if (role === 'drum') return drumSet.has(p);
+  if (role === 'bass') return p === 0 || (normStyle(style) === 'acg' && ACG_PIANOSONG_PIANO_PROGRAMS.includes(p)) || (p >= 32 && p <= 39);
+  if (role === 'pad') return (p >= 48 && p <= 55) || (p >= 88 && p <= 103) || (p >= 16 && p <= 23);
+  if (role === 'comp') return (p >= 0 && p <= 15) || (p >= 24 && p <= 31) || p === 107 || p === 108;
+  return p >= 0 && p <= 127;
 }
 
-function mapGuitarLike(p: number): number {
-  if (p === 25) return 25;
-  if (p === 24 || p === 26) return 24;
-  if (p >= 27 && p <= 31) return 25;
-  return -1;
+export function mapProgramToGM128(p: number, role?: GM128Role, style?: string): number {
+  const n = programNumber(p);
+  if (role === 'drum') return mapDrum(n, style);
+  if (roleAllowsProgram(role, n, style)) return n;
+  return styleFallback(role ?? 'lead', style);
 }
 
-function mapPadLike(p: number, style?: string): number {
-  void style;
-  if (p === 89) return p;
-  if (p >= 16 && p <= 23) return 89;
-  if (p >= 40 && p <= 55) return 89;
-  if (p >= 88 && p <= 95) return 89;
-  if (p >= 96 && p <= 103) return 89;
-  if (p === 107 || p === 108) return 89;
-  return styleFallback('pad', style);
-}
-
-function mapLeadLike(p: number, style?: string): number {
-  if (AURA25_PROGRAMS_BY_ROLE.lead.includes(p)) return p;
-  const key = mapKeyboardLike(p, style);
-  if (key >= 0) return key;
-  const guitar = mapGuitarLike(p);
-  if (guitar >= 0) return guitar;
-  if (p >= 32 && p <= 39) return normStyle(style) === 'rnb' ? 5 : 0;
-  if (p >= 64 && p <= 79) return normStyle(style) === 'jazz' || normStyle(style) === 'blues' ? 67 : styleFallback('lead', style);
-  if (p >= 40 && p <= 63) return styleFallback('lead', style);
-  if (p >= 80 && p <= 87) return 5;
-  if (p >= 88 && p <= 103) return 108;
-  if (p >= 104 && p <= 119) return 108;
-  return styleFallback('lead', style);
-}
-
-function mapCompLike(p: number, style?: string): number {
-  if (AURA25_PROGRAMS_BY_ROLE.comp.includes(p)) return p;
-  const key = mapKeyboardLike(p, style);
-  if (key >= 0) return AURA25_PROGRAMS_BY_ROLE.comp.includes(key) ? key : styleFallback('comp', style);
-  const guitar = mapGuitarLike(p);
-  if (guitar >= 0) return guitar;
-  if (p >= 40 && p <= 55) return styleFallback('comp', style);
-  if (p >= 80 && p <= 103) return 5;
-  if (p >= 104 && p <= 119) return styleFallback('comp', style);
-  return styleFallback('comp', style);
-}
-
-export function mapProgramToAura25(p: number, role?: Aura25Role, style?: string): number {
-  const n = program(p);
-  if (role && isAura25Program(n, role)) return n;
-  if (!role && isAura25Program(n)) return n;
-  switch (role) {
-    case 'drum': return mapDrum(n, style);
-    case 'bass': return mapBass(n, style);
-    case 'pad': return mapPadLike(n, style);
-    case 'comp': return mapCompLike(n, style);
-    case 'lead': return mapLeadLike(n, style);
-    default:
-      if (n >= 32 && n <= 39) return mapBass(n, style);
-      if (n >= 88 && n <= 103) return mapPadLike(n, style);
-      return mapLeadLike(n, style);
-  }
-}
-
-export function mapMidiProgramToAura25(p: number, channel: number, style?: string): number {
+export function mapMidiProgramToGM128(p: number, channel: number, style?: string): number {
   const role =
     channel === 9 ? 'drum'
       : channel === 3 ? 'bass'
@@ -190,27 +123,60 @@ export function mapMidiProgramToAura25(p: number, channel: number, style?: strin
           : channel === 4 ? 'pad'
             : channel === 1 ? 'lead'
               : undefined;
-  return mapProgramToAura25(p, role, style);
+  return mapProgramToGM128(p, role, style);
 }
 
-export function generatedAura25BankForProgram(style: string | undefined, role: Aura25Role, p: number): number {
-  if (role === 'drum') return 128;
+export function generatedGM128BankForProgram(style: string | undefined, role: GM128Role, p: number): number | undefined {
+  if (role === 'drum') return undefined;
   const s = normStyle(style);
-  if (role === 'lead' && p === AURA25_CHORUSED_FM_EP_PROGRAM && (s === 'rnb' || s === 'lofi')) {
-    return AURA25_CHORUSED_FM_EP_BANK;
-  }
+  if (p === 5 && (s === 'pop' || s === 'rnb' || s === 'lofi' || s === 'modal')) return GM128_CITYPOP_FM_EP_BANK;
+  if (p === 4 && (s === 'pop' || s === 'rnb' || s === 'lofi')) return GM128_SOFT_EP_BANK;
+  if (p === 27 && (s === 'pop' || s === 'rnb' || s === 'lofi' || s === 'modal')) return GM128_CHORUS_GUITAR_BANK;
+  if (p === 25 && (s === 'pop' || s === 'rnb' || s === 'modal')) return 1;
+  if (p === 25 && s === 'lofi') return 9;
+  if (p === 24 && (s === 'lofi' || s === 'modal')) return 16;
+  if (p === 33 && (s === 'pop' || s === 'rnb' || s === 'lofi')) return 2;
+  if (p === 34 && (s === 'pop' || s === 'rnb' || s === 'lofi')) return 1;
+  if (p === 38 && s === 'lofi') return 9;
+  if (p === 38 && (s === 'pop' || s === 'rnb' || s === 'modal')) return 16;
+  if (p === 39 && s === 'lofi') return 17;
+  if (p === 39 && (s === 'pop' || s === 'rnb' || s === 'modal')) return 19;
+  if (p === 66 && (s === 'jazz' || s === 'blues')) return GM128_BREATHY_TENOR_BANK;
+  if (p === 67 && (s === 'jazz' || s === 'blues' || s === 'modal')) return 1;
+  if (p === 89 && (s === 'pop' || s === 'rnb' || s === 'lofi' || s === 'modal')) return 3;
+  if (p === 107 && (s === 'lofi' || s === 'modal')) return 8;
+  if (p === 12 && (s === 'lofi' || s === 'modal')) return 16;
   return 0;
 }
 
-export function mapRoleProgramsToAura25<T extends Partial<Record<Aura25Role, number>>>(programs: T, style?: string): T {
+export function mapRoleProgramsToGM128<T extends Partial<Record<GM128Role, number>>>(programs: T, style?: string): T {
   let changed = false;
-  const out: Partial<Record<Aura25Role, number>> = { ...programs };
-  for (const role of Object.keys(out) as Aura25Role[]) {
+  const out: Partial<Record<GM128Role, number>> = { ...programs };
+  for (const role of Object.keys(out) as GM128Role[]) {
     const current = out[role];
     if (current === undefined) continue;
-    const mapped = mapProgramToAura25(current, role, style);
+    const mapped = mapProgramToGM128(current, role, style);
     if (mapped !== current) changed = true;
     out[role] = mapped;
   }
   return (changed ? out : programs) as T;
 }
+
+// Backward-compatible aliases for old Aura25 imports. They now mean GM128/Dream5504,
+// not a local browser-rendered SF2 package.
+export const AURA25_DRUM_BANK_MSB = 0;
+export const AURA25_DRUM_BANK_LSB = 0;
+export const AURA25_CHORUSED_FM_EP_BANK = GM128_CITYPOP_FM_EP_BANK;
+export const AURA25_CHORUSED_FM_EP_PROGRAM = GM128_FM_EP_PROGRAM;
+export const AURA25_MELODIC_PROGRAMS = GM128_MELODIC_PROGRAMS;
+export const AURA25_DRUM_PROGRAMS = GM128_DRUM_PROGRAMS;
+export const AURA25_PROGRAMS_BY_ROLE = GM128_PROGRAMS_BY_ROLE;
+export const AURA25_AUDITION_INSTRUMENTS = GM128_AUDITION_INSTRUMENTS;
+export const aura25PresetName = gm128PresetName;
+export const aura25InstrumentName = gm128InstrumentName;
+export const aura25DrumKitName = gm128DrumKitName;
+export const isAura25Program = isGM128Program;
+export const mapProgramToAura25 = mapProgramToGM128;
+export const mapMidiProgramToAura25 = mapMidiProgramToGM128;
+export const generatedAura25BankForProgram = generatedGM128BankForProgram;
+export const mapRoleProgramsToAura25 = mapRoleProgramsToGM128;

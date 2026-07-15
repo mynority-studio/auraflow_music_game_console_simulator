@@ -20,6 +20,7 @@ import type {
   DrumTimingProfile,
   DrumTomPolicy,
   DrumVelocityProfile,
+  OpeningDrumEntry,
   Section,
   SectionEntry,
   SectionId,
@@ -29,22 +30,45 @@ import { timingSafetyForContract } from './performanceContractPlanner';
 type Level = 0 | 1 | 2 | 3;
 
 const clampLevel = (v: number): Level => Math.max(0, Math.min(3, Math.round(v))) as Level;
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+const DRUM_PATTERN_FAMILIES: ReadonlySet<string> = new Set([
+  'citypop-disco-boogie', 'citypop-syncopated-boogie', 'pop-backbeat', 'jpop-driving-8ths', 'ballad-halftime',
+  'tr808-rnb-pocket', 'tr808-dilla-pocket', 'tr808-trap-soul-halftime', 'tr808-lofi-boombap', 'tr808-lofi-dusty-break', 'tr808-lofi-minimal',
+  'rnb-neo-soul-pocket', 'rnb-dilla-pocket', 'rnb-gospel-triplet', 'rnb-neo-soul', 'rnb-dilla', 'rnb-gospel-shuffle',
+  'trap-soul-halftime', 'lofi-boombap', 'lofi-dusty-break', 'lofi-minimal', 'smooth-jazz-backbeat',
+  'jazz-swing-ride', 'jazz-bebop-comping', 'jazz-brush-ballad', 'jazz-ballad-light', 'jazz-bossa',
+]);
 
-function baseFamily(style: string, contract: GrooveContract, section: Section): DrumPatternFamily {
+function validDrumFamily(family: string | undefined): DrumPatternFamily | undefined {
+  return family && DRUM_PATTERN_FAMILIES.has(family) ? family as DrumPatternFamily : undefined;
+}
+
+function contractFamilyForRole(contract: GrooveContract, role: DrumPerformanceRole): DrumPatternFamily | undefined {
+  const drum = contract.drum;
+  if (!drum) return undefined;
+  if (role === 'lift') return validDrumFamily(drum.liftFamily) ?? validDrumFamily(drum.timekeeperFamily);
+  if (role === 'pickup') return validDrumFamily(drum.pickupFamily) ?? validDrumFamily(drum.liftFamily) ?? validDrumFamily(drum.timekeeperFamily);
+  if (role === 'breakdown') return validDrumFamily(drum.breakdownFamily) ?? validDrumFamily(drum.timekeeperFamily);
+  return validDrumFamily(drum.timekeeperFamily);
+}
+
+function baseFamily(style: string, contract: GrooveContract, section: Section, role: DrumPerformanceRole): DrumPatternFamily {
+  const explicit = contractFamilyForRole(contract, role);
+  if (explicit) return explicit;
   const s = style.toLowerCase();
   const id = contract.id;
   if (s === 'jazz') {
     if (id.includes('smooth')) return 'smooth-jazz-backbeat';
     if (id.includes('bossa')) return 'jazz-bossa';
-    if (id.includes('ballad')) return 'jazz-ballad-light';
+    if (id.includes('ballad')) return 'jazz-brush-ballad';
     return section.functionTag === 'solo' ? 'jazz-bebop-comping' : 'jazz-swing-ride';
   }
   if (s === 'rnb') {
-    if (id.includes('gospel')) return 'rnb-gospel-shuffle';
-    if (id.includes('dilla')) return 'rnb-dilla';
+    if (id.includes('gospel')) return 'rnb-gospel-triplet';
+    if (id.includes('dilla')) return 'rnb-dilla-pocket';
     if (id.includes('trap')) return 'trap-soul-halftime';
     if (id.includes('motown')) return 'pop-backbeat';
-    return 'rnb-neo-soul';
+    return 'rnb-neo-soul-pocket';
   }
   if (s === 'lofi') {
     if (id.includes('late')) return section.functionTag === 'loop' ? 'lofi-dusty-break' : 'lofi-minimal';
@@ -52,7 +76,11 @@ function baseFamily(style: string, contract: GrooveContract, section: Section): 
     if (id.includes('lazy') || id.includes('dusty')) return section.functionTag === 'loop' ? 'lofi-boombap' : 'lofi-dusty-break';
     return 'lofi-boombap';
   }
-  if (id.includes('citypop')) return 'citypop-disco-boogie';
+  if (id.includes('citypop')) {
+    return section.functionTag === 'hook' || section.functionTag === 'build'
+      ? 'citypop-disco-boogie'
+      : 'citypop-syncopated-boogie';
+  }
   if (id.includes('ballad') || contract.density === 'sparse') return 'ballad-halftime';
   if (id.includes('jpop') || contract.density === 'active') return 'jpop-driving-8ths';
   return 'pop-backbeat';
@@ -70,11 +98,20 @@ function entryForRole(role: DrumPerformanceRole, family: DrumPatternFamily, entr
   if (role === 'silent') return 'none';
   if (role === 'breakdown') {
     if (family.startsWith('jazz')) return 'ride-only';
-    return family === 'ballad-halftime' || family === 'lofi-minimal' ? 'kick-hat' : 'hat-only';
+    return family === 'ballad-halftime' || family === 'lofi-minimal' || family === 'tr808-lofi-minimal' || family === 'tr808-trap-soul-halftime' ? 'kick-hat' : 'hat-only';
   }
   if (entry === 'lead-in') return 'full';
   if (role === 'pickup') return 'kick-hat';
   return 'full';
+}
+
+function openingEntryMode(entry: OpeningDrumEntry): DrumEntryMode {
+  if (entry === 'none') return 'none';
+  if (entry === 'kickOnly') return 'kick-only';
+  if (entry === 'rideOnly') return 'ride-only';
+  if (entry === 'fourOnFloorRamp') return 'kick-hat';
+  if (entry === 'tomPickup') return 'full';
+  return 'hat-only';
 }
 
 function fillForBoundary(section: Section, next: Section | undefined, energy: number, nextEnergy: number): DrumFillPolicy {
@@ -91,16 +128,18 @@ function fillForBoundary(section: Section, next: Section | undefined, energy: nu
 function hatPolicyForFamily(family: DrumPatternFamily): DrumHatPolicy {
   if (family.startsWith('jazz')) return family === 'jazz-bossa' ? 'eighths' : 'ride';
   if (family === 'smooth-jazz-backbeat') return 'shaker16';
-  if (family === 'citypop-disco-boogie') return 'sixteenths';
-  if (family === 'rnb-dilla' || family === 'rnb-neo-soul' || family === 'rnb-gospel-shuffle') return 'shaker16';
+  if (family === 'citypop-disco-boogie' || family === 'citypop-syncopated-boogie') return 'sixteenths';
+  if (family.startsWith('tr808-')) return 'sixteenths';
+  if (family === 'rnb-dilla' || family === 'rnb-dilla-pocket' || family === 'rnb-neo-soul' || family === 'rnb-neo-soul-pocket' || family === 'rnb-gospel-shuffle' || family === 'rnb-gospel-triplet') return 'shaker16';
   if (family === 'lofi-dusty-break') return 'shaker16';
   if (family === 'lofi-boombap' || family === 'lofi-minimal') return 'eighths';
   return family === 'jpop-driving-8ths' ? 'sixteenths' : 'eighths';
 }
 
 function kickPolicyForFamily(family: DrumPatternFamily): DrumKickPolicy {
-  if (family === 'ballad-halftime' || family === 'trap-soul-halftime' || family === 'lofi-minimal') return 'halftime';
+  if (family === 'ballad-halftime' || family === 'trap-soul-halftime' || family === 'tr808-trap-soul-halftime' || family === 'lofi-minimal' || family === 'tr808-lofi-minimal') return 'halftime';
   if (family === 'citypop-disco-boogie') return 'four-on-floor';
+  if (family === 'citypop-syncopated-boogie') return 'syncopated';
   if (family === 'jpop-driving-8ths') return 'syncopated';
   if (family === 'smooth-jazz-backbeat') return 'syncopated';
   if (family.startsWith('jazz')) return 'anchor-only';
@@ -111,7 +150,9 @@ function snarePolicyForFamily(family: DrumPatternFamily): DrumSnarePolicy {
   if (family.startsWith('jazz')) return 'jazz-comping';
   if (family === 'smooth-jazz-backbeat') return 'ghost-before-backbeat';
   if (family === 'lofi-minimal' || family === 'lofi-boombap' || family === 'lofi-dusty-break') return 'rim';
-  if (family === 'rnb-dilla' || family === 'rnb-neo-soul') return 'ghost-before-backbeat';
+  if (family === 'tr808-lofi-boombap' || family === 'tr808-lofi-dusty-break' || family === 'tr808-lofi-minimal') return 'rim';
+  if (family.startsWith('tr808-')) return 'ghost-before-backbeat';
+  if (family === 'rnb-dilla' || family === 'rnb-dilla-pocket' || family === 'rnb-neo-soul' || family === 'rnb-neo-soul-pocket') return 'ghost-before-backbeat';
   return 'backbeat';
 }
 
@@ -119,24 +160,38 @@ function timingProfileForContract(contract: GrooveContract, family: DrumPatternF
   if (family.startsWith('jazz')) return 'swing-ride';
   if (family === 'smooth-jazz-backbeat') return 'behind-snare';
   if (contract.grid === 'dilla') return 'dilla-late';
+  if (family === 'tr808-dilla-pocket' || family === 'tr808-lofi-boombap' || family === 'tr808-lofi-dusty-break') return 'dilla-late';
   if (family === 'lofi-boombap' || family === 'lofi-dusty-break') return 'dilla-late';
-  if (family === 'rnb-neo-soul') return 'behind-snare';
+  if (family === 'rnb-neo-soul' || family === 'rnb-neo-soul-pocket' || family === 'tr808-rnb-pocket') return 'behind-snare';
   return 'tight';
 }
 
 function velocityProfileForFamily(family: DrumPatternFamily): DrumVelocityProfile {
   if (family.startsWith('jazz')) return 'ghosted';
   if (family === 'smooth-jazz-backbeat') return 'ghosted';
-  if (family === 'rnb-dilla' || family === 'rnb-neo-soul' || family === 'lofi-boombap' || family === 'lofi-dusty-break') return 'ghosted';
+  if (family.startsWith('tr808-')) return 'ghosted';
+  if (family === 'rnb-dilla' || family === 'rnb-dilla-pocket' || family === 'rnb-neo-soul' || family === 'rnb-neo-soul-pocket' || family === 'lofi-boombap' || family === 'lofi-dusty-break') return 'ghosted';
   return family === 'jpop-driving-8ths' ? 'crescendo' : 'backbeat';
 }
 
 function feelOffsetMsForContract(contract: GrooveContract, family: DrumPatternFamily): number {
   if (contract.grid === 'dilla') return 12;
+  if (family === 'tr808-dilla-pocket' || family === 'tr808-lofi-boombap' || family === 'tr808-lofi-dusty-break') return 12;
   if (family === 'lofi-boombap' || family === 'lofi-dusty-break') return 12;
-  if (family === 'rnb-neo-soul' || family === 'smooth-jazz-backbeat') return 8;
+  if (family === 'rnb-neo-soul' || family === 'rnb-neo-soul-pocket' || family === 'tr808-rnb-pocket' || family === 'smooth-jazz-backbeat') return 8;
   if (family.startsWith('jazz')) return 2;
   return 0;
+}
+
+function densityCeilingForFamily(role: DrumPerformanceRole, family: DrumPatternFamily): number {
+  const base = role === 'lift' ? 0.68 : role === 'breakdown' ? 0.26 : 0.48;
+  if (family === 'citypop-disco-boogie') return clamp01(role === 'lift' ? 0.94 : role === 'breakdown' ? 0.42 : 0.82);
+  if (family === 'citypop-syncopated-boogie') return clamp01(role === 'lift' ? 0.88 : role === 'breakdown' ? 0.38 : 0.76);
+  if (family === 'jpop-driving-8ths') return clamp01(role === 'lift' ? 0.88 : role === 'breakdown' ? 0.34 : 0.74);
+  if (family.startsWith('tr808-')) return clamp01(role === 'lift' ? 0.78 : role === 'breakdown' ? 0.34 : 0.66);
+  if (family === 'rnb-neo-soul-pocket' || family === 'rnb-dilla-pocket' || family === 'rnb-gospel-triplet') return clamp01(base + 0.10);
+  if (family === 'jazz-brush-ballad') return clamp01(base - 0.08);
+  return base;
 }
 
 export function planDrumPerformance(
@@ -145,20 +200,21 @@ export function planDrumPerformance(
   contractBySection: Record<SectionId, GrooveContract>,
   energyBySection: Record<SectionId, number>,
   entryBySection: Record<SectionId, SectionEntry>,
+  openingDrumEntry?: OpeningDrumEntry,
 ): Record<SectionId, DrumPerformanceContract> {
   const out: Record<SectionId, DrumPerformanceContract> = {};
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const next = sections[i + 1];
     const contract = contractBySection[section.id];
-    const family = baseFamily(style, contract, section);
     const role = roleForSection(section);
+    const family = baseFamily(style, contract, section, role);
     const energy = energyBySection[section.id] ?? 0.5;
     const nextEnergy = next ? (energyBySection[next.id] ?? energy) : energy;
     const fillPolicy = fillForBoundary(section, next, energy, nextEnergy);
     const complexity = clampLevel(contract.density === 'active' ? 3 : contract.density === 'medium' ? 2 : 1);
     const intensity = clampLevel(role === 'lift' ? complexity + 1 : role === 'breakdown' ? complexity - 1 : complexity);
-    const densityCeiling = role === 'lift' ? 0.68 : role === 'breakdown' ? 0.26 : 0.48;
+    const densityCeiling = densityCeilingForFamily(role, family);
     const foregroundGuard: DrumForegroundGuard = role === 'lift' ? 'normal' : 'strict';
     const tomPolicy: DrumTomPolicy = fillPolicy === 'big' ? 'big-fill' : fillPolicy === 'turnaround' ? 'turnaround' : 'none';
     const cymbalPolicy: DrumCymbalPolicy = fillPolicy === 'big' ? 'hook-crash' : fillPolicy === 'turnaround' ? 'section-crash' : 'none';
@@ -167,11 +223,14 @@ export function planDrumPerformance(
       id: `${section.id}:${contract.id}:${family}:${role}`,
       sectionId: section.id,
       role,
+      kitProgram: contract.drum?.kitProgram ?? 8,
       patternFamily: family,
       complexity,
       intensity,
       densityCeiling,
-      entryMode: entryForRole(role, family, entryBySection[section.id]),
+      entryMode: i === 0 && openingDrumEntry !== undefined
+        ? openingEntryMode(openingDrumEntry)
+        : entryForRole(role, family, entryBySection[section.id]),
       fillPolicy,
       fillAmount: clampLevel(fillPolicy === 'none' ? 0 : fillPolicy === 'light' ? 1 : fillPolicy === 'turnaround' ? 2 : 3),
       fillComplexity: clampLevel(fillPolicy === 'big' ? 3 : fillPolicy === 'turnaround' ? 2 : fillPolicy === 'light' ? 1 : 0),

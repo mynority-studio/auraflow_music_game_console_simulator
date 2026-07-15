@@ -90,7 +90,7 @@ function groovePocketMs(targetBeat: number, contract: TakeoverQuantizeGrooveCont
   return midpointMs(isOnBeat(targetBeat) ? contract.melodyStrongPocketMs : contract.melodyWeakPocketMs);
 }
 
-function grooveTargetForBase(
+export function grooveTargetForBase(
   baseTargetBeat: number,
   bpm: number,
   contract: TakeoverQuantizeGrooveContract | null | undefined,

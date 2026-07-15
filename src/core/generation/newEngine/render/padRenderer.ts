@@ -29,8 +29,8 @@ export interface PadOptions {
   padDensity: number;                                  // styleProfile.padDensity → 整体存在感(0..1)
   decisionBySection: Record<string, PadCompDecision>;  // 每段 pad↔comp 决策(coordinator 算)
   leadReservedLow?: number;                            // 旋律保留区地板:pad 顶须 < 此(避让 lead)
-  // ★ pedal anchor 铺法(二选一,coordinator 按概率一首一掷):整段一条 anchor 长 pedal(严格共同音,
-  //   无则主音)+ 一条随和弦走的 guide tone。off = 现有逐和弦选音。tonicPc = 主音 pc(pedal 兜底,总在音阶内)。
+  // ★ pedal anchor 铺法(二选一,coordinator 按概率一首一掷):仅在整段存在严格共同结构音时
+  //   铺一条 anchor 长 pedal + 一条随和弦走的 guide tone；无共同音则回退逐和弦选音。
   pedalAnchor?: boolean;
   tonicPc?: number;
 }
@@ -169,15 +169,15 @@ function clusterMidis(span: ChordSpan, plan: HarmonicPlan, roles: RolePcs, low: 
   return neighborMidi <= high ? [anchorMidi, neighborMidi].sort((a, b) => a - b) : [anchorMidi];
 }
 
-/** 每段 pedal anchor pc:整段所有和弦稳定音的【严格共同音】(优先主音);无共同音 → 主音 pedal(总在音阶内)。 */
+/** 每段 pedal anchor pc:整段所有和弦稳定音的【严格共同音】(优先主音);无共同音则不铺 pedal。 */
 function pedalAnchorBySection(
   timeline: HarmonicPlan['chordTimeline'],
   stableToneMap: HarmonicPlan['stableToneMap'],
   tonicPc: number,
-): Record<string, number> {
+): Record<string, number | undefined> {
   const spansBySec: Record<string, string[]> = {};
   for (const s of timeline) (spansBySec[s.sectionId] ??= []).push(s.id);
-  const out: Record<string, number> = {};
+  const out: Record<string, number | undefined> = {};
   for (const sid of Object.keys(spansBySec)) {
     let inter: Set<number> | null = null;
     for (const id of spansBySec[sid]) {
@@ -185,7 +185,7 @@ function pedalAnchorBySection(
       inter = inter === null ? st : new Set<number>([...inter].filter((x) => st.has(x)));
     }
     const common = inter ? [...inter] : [];
-    out[sid] = common.length ? (common.includes(tonicPc) ? tonicPc : common.sort((a, b) => a - b)[0]) : tonicPc;
+    out[sid] = common.length ? (common.includes(tonicPc) ? tonicPc : common.sort((a, b) => a - b)[0]) : undefined;
   }
   return out;
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMusicSync } from './MusicGenerationService';
 import { musicalIRToMidiEvents, roomWetFor } from '../../audio/musicalIrToMidi';
+import { ACG_PIANOSONG_PIANO_VOICES } from '../../sound/GMBK5X128Voices';
 import type { BandParticipantSelection } from './types';
 
 // ============================================================
@@ -14,13 +15,16 @@ const acg = (bandParticipants?: BandParticipantSelection[]) =>
   generateMusicSync({ seed: 0, styleHint: 'acg', mood: 'build', targetDuration: 90, ...(bandParticipants ? { bandParticipants } : {}) });
 
 const track = (r: ReturnType<typeof acg>, role: string) => r.ir!.tracks.find((t) => t.role === role);
-const ACG_KEYBOARDISH = [0, 5] as const;
+const acgPianoAddresses = new Set(ACG_PIANOSONG_PIANO_VOICES.map((voice) => `${voice.bank}/${voice.program}`));
+const addressOf = (t: { bank?: number; program?: number }) => `${t.bank ?? 0}/${t.program ?? -1}`;
 
 describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead + comp', () => {
-  it('8 seeds:lead/comp/bass 三轨齐;comp 有真实音符;lead/comp 开放键盘式音色但分轨', () => {
-    const combos = new Set<string>();
-    for (let seed = 0; seed < 8; seed++) {
+  it('8 seeds:lead/comp/bass 三轨齐;comp 有真实音符;三轨同属同一架白名单钢琴但分轨', () => {
+    const selectedAddresses = new Set<string>();
+    // 覆盖五个权重槽：0/0、127/0、0/1、0/2、8/4。
+    for (const seed of [0, 1, 2, 7, 11, 14, 21, 27]) {
       const r = generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
+      expect(r.status, `seed ${seed} generation`).not.toBe('failed');
       const roles = new Set(r.ir!.tracks.map((t) => t.role));
       expect(roles.has('lead'), `seed ${seed} lead`).toBe(true);
       expect(roles.has('comp'), `seed ${seed} comp`).toBe(true);
@@ -28,11 +32,17 @@ describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead
 
       const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
       const comp = r.ir!.tracks.find((t) => t.role === 'comp')!;
+      const bass = r.ir!.tracks.find((t) => t.role === 'bass')!;
       expect(lead.notes.length, `seed ${seed} lead notes`).toBeGreaterThan(0);
       expect(comp.notes.length, `seed ${seed} comp notes`).toBeGreaterThan(0);
-      expect(ACG_KEYBOARDISH).toContain(lead.program as typeof ACG_KEYBOARDISH[number]);
-      expect(ACG_KEYBOARDISH).toContain(comp.program as typeof ACG_KEYBOARDISH[number]);
-      combos.add(`${lead.program}:${comp.program}`);
+      const address = addressOf(lead);
+      expect(acgPianoAddresses.has(address), `seed ${seed} ACG voice ${address}`).toBe(true);
+      expect(addressOf(comp), `seed ${seed} comp`).toBe(address);
+      expect(addressOf(bass), `seed ${seed} bass`).toBe(address);
+      expect(lead.programChanges ?? [], `seed ${seed} lead 不段间切琴`).toHaveLength(0);
+      expect(comp.programChanges ?? [], `seed ${seed} comp 不段间切琴`).toHaveLength(0);
+      expect(bass.programChanges ?? [], `seed ${seed} bass 不段间切琴`).toHaveLength(0);
+      selectedAddresses.add(address);
       expect(lead.role).not.toBe(comp.role);
       expect(lead).not.toBe(comp); // 两个独立 TrackIR 对象
       // ACG 核心不含 drum(P0)
@@ -43,7 +53,7 @@ describe('musicGeneration/acgCompHardContract · §6.1 默认 ACG 有独立 lead
       expect(rosterRoles).toContain('lead');
       expect(rosterRoles).toContain('comp');
     }
-    expect(combos.size, 'ACG lead/comp 音色应随 seed 有有限多样性').toBeGreaterThan(1);
+    expect(selectedAddresses, '五个官方钢琴颜色都应能被种子选到').toEqual(acgPianoAddresses);
   });
 });
 
@@ -74,17 +84,25 @@ describe('musicGeneration/acgCompHardContract · §6.2 Band Selection 不能删 
 });
 
 describe('musicGeneration/acgCompHardContract · §6.3 同钢琴 program 不合并 lead/comp', () => {
-  it('lead noteOn→channel 1,comp noteOn→channel 2,program 均落键盘式音色,各自有 CC7', () => {
-    const r = acg();
+  it('lead noteOn→channel 1,comp noteOn→channel 2,同一 CC0+program 的钢琴且各自有 CC7', () => {
+    // seed 27 命中 CC0=8 / PC4 Soft Electric Piano，直接验证非零 bank 被发到 MIDI。
+    const r = generateMusicSync({ seed: 27, styleHint: 'acg', mood: 'build', targetDuration: 90 });
     const events = musicalIRToMidiEvents(r.ir!, roomWetFor('acg'));
     const noteOnCh = (ch: number) => events.filter((e) => e.type === 'noteOn' && e.channel === ch);
     const cc7Ch = (ch: number) => events.filter((e) => e.type === 'cc' && e.channel === ch && e.data1 === 7);
+    const cc0Ch = (ch: number) => events.filter((e) => e.type === 'cc' && e.channel === ch && e.data1 === 0);
     const progCh = (ch: number) => events.filter((e) => e.type === 'programChange' && e.channel === ch);
+    const lead = track(r, 'lead')!;
+    const comp = track(r, 'comp')!;
 
     expect(noteOnCh(1).length, 'lead noteOn @ch1').toBeGreaterThan(0);
     expect(noteOnCh(2).length, 'comp noteOn @ch2').toBeGreaterThan(0);
-    expect(progCh(1).every((e) => ACG_KEYBOARDISH.includes(e.data1 as typeof ACG_KEYBOARDISH[number]))).toBe(true);
-    expect(progCh(2).every((e) => ACG_KEYBOARDISH.includes(e.data1 as typeof ACG_KEYBOARDISH[number]))).toBe(true);
+    expect(addressOf(lead)).toBe(addressOf(comp));
+    expect(addressOf(lead)).toBe('8/4');
+    expect(progCh(1).every((e) => e.data1 === lead.program)).toBe(true);
+    expect(progCh(2).every((e) => e.data1 === comp.program)).toBe(true);
+    expect(cc0Ch(1).some((e) => e.data2 === (lead.bank ?? 0))).toBe(true);
+    expect(cc0Ch(2).some((e) => e.data2 === (comp.bank ?? 0))).toBe(true);
     // 各自有独立 CC7 mix
     expect(cc7Ch(1).length, 'ch1 CC7').toBeGreaterThan(0);
     expect(cc7Ch(2).length, 'ch2 CC7').toBeGreaterThan(0);

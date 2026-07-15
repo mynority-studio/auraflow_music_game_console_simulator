@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AudioEngine } from '../../core/audio/AudioEngine';
-import { getAudioContext } from '../../core/audio/SynthManager';
+import { getAudioContext } from '../../core/audio/AudioEngine';
 import { systemAudio } from '../../system/SystemAudio'; 
 import { EndlessRadioManager, AppState } from './EndlessRadioManager';
 import { ALL_BARS, BarConfig } from './BarData';

@@ -1,4 +1,4 @@
-import { activeSynth, subscribeSynthReset } from '../core/audio/SynthManager';
+import { AudioEngine } from '../core/audio/AudioEngine';
 
 // ==========================================
 // SYSTEM MENU EXCLUSIVE AUDIO ENGINE
@@ -36,29 +36,24 @@ function durationToSeconds(dur: string | number): number {
 
 let isInitialized = false;
 
-// M1 批2（计划修订6）：synth 实例重建（bank/采样率切换）→ 通道初始化状态失效，
-// 复位让下次 initSystemAudio 对新实例重发 program/CC。
-subscribeSynthReset(() => { isInitialized = false; });
-
 function initSystemAudio() {
-    if (!activeSynth || isInitialized) return;
+    if (isInitialized) return;
     
     // Setup Lead Synth on Channel 15
-    activeSynth.programChange(LEAD_CHANNEL, 108); // Kalimba (soft mallet, YD3411-safe)
-    activeSynth.controllerChange(LEAD_CHANNEL, 7, 100); // Volume
-    activeSynth.controllerChange(LEAD_CHANNEL, 91, 127); // Reverb max
-    activeSynth.controllerChange(LEAD_CHANNEL, 93, 64); // Chorus
+    AudioEngine.programChange(LEAD_CHANNEL, 108); // Kalimba
+    AudioEngine.controllerChange(LEAD_CHANNEL, 7, 100); // Volume
+    AudioEngine.controllerChange(LEAD_CHANNEL, 91, 127); // Reverb max
+    AudioEngine.controllerChange(LEAD_CHANNEL, 93, 64); // Chorus
     
     // Setup Drums on Channel 9
-    activeSynth.controllerChange(DRUM_CHANNEL, 7, 100); // Volume
-    activeSynth.controllerChange(DRUM_CHANNEL, 91, 64); // Reverb
+    AudioEngine.controllerChange(DRUM_CHANNEL, 7, 100); // Volume
+    AudioEngine.controllerChange(DRUM_CHANNEL, 91, 64); // Reverb
     
     isInitialized = true;
 }
 
 export const systemLeadSynth = {
     triggerAttackRelease: (notes: string | number | (string | number)[], duration: string | number, timeDelaySeconds: number = 0, velocity: number = 0.5) => {
-        if (!activeSynth) return;
         initSystemAudio();
         
         const noteArray = Array.isArray(notes) ? notes : [notes];
@@ -68,12 +63,8 @@ export const systemLeadSynth = {
         setTimeout(() => {
             noteArray.forEach(note => {
                 const midiNote = noteToMidi(note);
-                if (activeSynth) {
-                    activeSynth.noteOn(LEAD_CHANNEL, midiNote, velMidi);
-                    setTimeout(() => {
-                        if (activeSynth) activeSynth.noteOff(LEAD_CHANNEL, midiNote);
-                    }, durSecs * 1000);
-                }
+                AudioEngine.noteOn(LEAD_CHANNEL, midiNote, velMidi);
+                setTimeout(() => AudioEngine.noteOff(LEAD_CHANNEL, midiNote), durSecs * 1000);
             });
         }, timeDelaySeconds * 1000);
     }
@@ -81,58 +72,43 @@ export const systemLeadSynth = {
 
 export const systemAudio = {
     triggerKick: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (activeSynth) {
-                activeSynth.noteOn(DRUM_CHANNEL, 36, velMidi); // Bass Drum 1
-                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 36); }, 100);
-            }
+            AudioEngine.noteOn(DRUM_CHANNEL, 36, velMidi); // Bass Drum 1
+            setTimeout(() => AudioEngine.noteOff(DRUM_CHANNEL, 36), 100);
         }, timeDelaySeconds * 1000);
     },
     triggerSnare: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (activeSynth) {
-                activeSynth.noteOn(DRUM_CHANNEL, 38, velMidi); // Acoustic Snare
-                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 38); }, 100);
-            }
+            AudioEngine.noteOn(DRUM_CHANNEL, 38, velMidi); // Acoustic Snare
+            setTimeout(() => AudioEngine.noteOff(DRUM_CHANNEL, 38), 100);
         }, timeDelaySeconds * 1000);
     },
     triggerHiHat: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (activeSynth) {
-                activeSynth.noteOn(DRUM_CHANNEL, 42, velMidi); // Closed Hi-Hat
-                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 42); }, 100);
-            }
+            AudioEngine.noteOn(DRUM_CHANNEL, 42, velMidi); // Closed Hi-Hat
+            setTimeout(() => AudioEngine.noteOff(DRUM_CHANNEL, 42), 100);
         }, timeDelaySeconds * 1000);
     },
     triggerTom: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (activeSynth) {
-                activeSynth.noteOn(DRUM_CHANNEL, 45, velMidi); // Low Tom
-                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 45); }, 100);
-            }
+            AudioEngine.noteOn(DRUM_CHANNEL, 45, velMidi); // Low Tom
+            setTimeout(() => AudioEngine.noteOff(DRUM_CHANNEL, 45), 100);
         }, timeDelaySeconds * 1000);
     },
     triggerCrash: (timeDelaySeconds: number = 0, velocity: number = 1) => {
-        if (!activeSynth) return;
         initSystemAudio();
         const velMidi = Math.floor(velocity * 127);
         setTimeout(() => {
-            if (activeSynth) {
-                activeSynth.noteOn(DRUM_CHANNEL, 49, velMidi); // Crash Cymbal 1
-                setTimeout(() => { if (activeSynth) activeSynth.noteOff(DRUM_CHANNEL, 49); }, 100);
-            }
+            AudioEngine.noteOn(DRUM_CHANNEL, 49, velMidi); // Crash Cymbal 1
+            setTimeout(() => AudioEngine.noteOff(DRUM_CHANNEL, 49), 100);
         }, timeDelaySeconds * 1000);
     }
 };

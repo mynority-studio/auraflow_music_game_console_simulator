@@ -18,7 +18,7 @@ import { generateMotifMusic } from '../../musicGeneration/MusicGenerationService
 import { musicalIRToSMF } from '../../newEngine/sandbox/midiFile';
 import type { MusicGenerationResult } from '../../musicGeneration/types';
 import { AudioEngine } from '../../../audio/AudioEngine';
-import { MUSIC_GEN_STYLE_OPTIONS, MusicGenerationStyleStore, type MusicGenStyle } from '../../../../state/MusicGenerationStyleStore';
+import { MUSIC_GEN_STYLE_OPTIONS, MusicGenerationStyleStore, musicGenStyleLabel, type MusicGenStyle } from '../../../../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore } from '../../../../state/MusicGenerationSeedStore';
 import { SANDBOX_TONALITIES, TONALITY_LABEL, tonalityParentMode, scaleNoteMap, snapMidiToTonality, isBluesTonality, type SandboxTonality } from '../model/sandboxScales';
 import { createHiddenGridContext, capturedToGridNotes, msPerBeat, type HiddenGridCaptureContext, type GridCapturedNote } from '../capture/hiddenGridClock';
@@ -346,8 +346,6 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
         styleHint: style,
         mood: 'build',
         targetDuration: 96,
-        key: KEY_NAMES[keyPc],
-        mode,
       }, override);
       if (song.status === 'failed' || !song.ir) { setStatus('Q+N 生成失败(audit)'); return; }
       setGeneratedSong(song);
@@ -479,7 +477,7 @@ export const MotifWeaverSandboxPanel: React.FC = () => {
             MusicGenerationStyleStore.setStyle(sandboxToQnStyle(next));
             setResult(null);
             setGeneratedSong(null);
-          }}>{STYLES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select></label>
+          }}>{STYLES.map((s) => <option key={s} value={s}>{musicGenStyleLabel(s.toUpperCase() as MusicGenStyle)}</option>)}</select></label>
           <span className="text-zinc-500">{KEY_NAMES[keyPc]} {TONALITY_LABEL[tonality]} → 母调 {tonalityParentMode(tonality)}</span>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">

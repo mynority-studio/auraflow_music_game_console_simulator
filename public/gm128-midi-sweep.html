@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GM128 MIDI Sweep</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #08090b; color: #d7ffe9; }
+    main { width: min(720px, calc(100vw - 32px)); border: 1px solid #265c45; border-radius: 16px; padding: 22px; background: #0e1311; box-shadow: 0 20px 70px #000; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    p { color: #91a99c; line-height: 1.55; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; align-items: center; }
+    select, input, button { border: 1px solid #385748; border-radius: 8px; background: #111a16; color: #e7fff2; padding: 8px 10px; font: inherit; }
+    select { flex: 1; min-width: 260px; }
+    input { width: 76px; }
+    button { cursor: pointer; }
+    button.primary { background: #087443; border-color: #0da761; }
+    button.danger { background: #6f2028; border-color: #a43a45; }
+    button:disabled { opacity: .4; cursor: default; }
+    progress { width: 100%; height: 18px; accent-color: #14b86a; }
+    #status { min-height: 3em; white-space: pre-wrap; color: #b8f7d4; }
+    .meta { color: #71867a; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>GM128 · B2 → C6 MIDI 全音色扫描</h1>
+    <p>固定使用 MIDI Channel 1。依次发送 GM Program 0–127；每个音色播放 MIDI Note 47–84 的半音阶，完成后再切换下一个音色。</p>
+
+    <div class="row">
+      <button id="connect" class="primary">连接 MIDI</button>
+      <select id="output" disabled><option value="">尚未授权</option></select>
+    </div>
+    <div class="row">
+      <label>音长 ms <input id="noteMs" type="number" min="30" max="5000" value="300" /></label>
+      <label>间隔 ms <input id="gapMs" type="number" min="0" max="2000" value="40" /></label>
+      <label>力度 <input id="velocity" type="number" min="1" max="127" value="100" /></label>
+    </div>
+    <div class="row">
+      <button id="start" class="primary" disabled>开始旋律音色扫描</button>
+      <button id="startDrums" class="primary" disabled>开始鼓组扫描</button>
+      <button id="stop" class="danger" disabled>停止并 Panic</button>
+    </div>
+    <progress id="progress" max="4864" value="0"></progress>
+    <div id="status">等待连接 MIDI 输出设备。</div>
+    <div class="meta">旋律：128 programs × 38 notes = 4864。鼓组：128 kits × 47 drum notes = 6016。</div>
+  </main>
+
+  <script type="module">
+    const PROGRAM_COUNT = 128;
+    const FIRST_NOTE = 47; // B2, scientific pitch notation where C4 = 60
+    const LAST_NOTE = 84;  // C6
+    const CHANNEL = 0;     // raw MIDI channel 1
+    const DRUM_CHANNEL = 9; // raw MIDI channel 10
+    const FIRST_DRUM_NOTE = 35;
+    const LAST_DRUM_NOTE = 81;
+    const NOTE_COUNT = LAST_NOTE - FIRST_NOTE + 1;
+    const TOTAL = PROGRAM_COUNT * NOTE_COUNT;
+
+    const $ = (id) => document.getElementById(id);
+    const connectButton = $('connect');
+    const outputSelect = $('output');
+    const startButton = $('start');
+    const startDrumsButton = $('startDrums');
+    const stopButton = $('stop');
+    const progress = $('progress');
+    const status = $('status');
+    progress.max = TOTAL;
+
+    let access = null;
+    let running = false;
+    let runToken = 0;
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, Math.round(Number(value) || min)));
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const selectedOutput = () => access?.outputs.get(outputSelect.value) ?? null;
+
+    function panic(output) {
+      if (!output) return;
+      const now = performance.now();
+      for (let channel = 0; channel < 16; channel++) {
+        output.send([0xb0 | channel, 64, 0], now);
+        output.send([0xb0 | channel, 120, 0], now);
+        output.send([0xb0 | channel, 123, 0], now);
+      }
+      output.clear?.();
+    }
+
+    function refreshOutputs() {
+      const previous = outputSelect.value;
+      const outputs = access ? [...access.outputs.values()] : [];
+      outputSelect.replaceChildren();
+      if (!outputs.length) {
+        outputSelect.add(new Option('未发现 MIDI 输出设备', ''));
+      } else {
+        outputs.forEach((output) => outputSelect.add(new Option(
+          `${output.name || '(unnamed)'}${output.manufacturer ? ` · ${output.manufacturer}` : ''}`,
+          output.id,
+        )));
+        outputSelect.value = outputs.some((output) => output.id === previous) ? previous : outputs[0].id;
+      }
+      outputSelect.disabled = !outputs.length || running;
+      startButton.disabled = !outputs.length || running;
+      startDrumsButton.disabled = !outputs.length || running;
+    }
+
+    connectButton.addEventListener('click', async () => {
+      if (!navigator.requestMIDIAccess) {
+        status.textContent = '当前浏览器不支持 Web MIDI。请使用支持 Web MIDI 的 Chromium 浏览器。';
+        return;
+      }
+      try {
+        access = await navigator.requestMIDIAccess({ sysex: false });
+        access.onstatechange = refreshOutputs;
+        refreshOutputs();
+        status.textContent = `已授权，发现 ${access.outputs.size} 个 MIDI 输出设备。`;
+      } catch (error) {
+        status.textContent = `MIDI 授权失败：${error instanceof Error ? error.message : String(error)}`;
+      }
+    });
+
+    stopButton.addEventListener('click', () => {
+      running = false;
+      runToken++;
+      panic(selectedOutput());
+      stopButton.disabled = true;
+      outputSelect.disabled = false;
+      startButton.disabled = !selectedOutput();
+      startDrumsButton.disabled = !selectedOutput();
+      status.textContent = '测试已停止，已发送 All Sound Off / All Notes Off。';
+    });
+
+    async function runSweep({ drum = false } = {}) {
+      const output = selectedOutput();
+      if (!output || running) return;
+      const token = ++runToken;
+      running = true;
+      startButton.disabled = true;
+      startDrumsButton.disabled = true;
+      stopButton.disabled = false;
+      outputSelect.disabled = true;
+      progress.value = 0;
+      const firstNote = drum ? FIRST_DRUM_NOTE : FIRST_NOTE;
+      const lastNote = drum ? LAST_DRUM_NOTE : LAST_NOTE;
+      const channel = drum ? DRUM_CHANNEL : CHANNEL;
+      const total = PROGRAM_COUNT * (lastNote - firstNote + 1);
+      progress.max = total;
+
+      try {
+        await output.open();
+        if (output.connection !== 'open') throw new Error('MIDI 端口未能打开');
+        const noteMs = clamp($('noteMs').value, 30, 5000);
+        const gapMs = clamp($('gapMs').value, 0, 2000);
+        const velocity = clamp($('velocity').value, 1, 127);
+
+        panic(output);
+        // This project's GM128 drum bank uses bank number 128 (MSB 1, LSB 0).
+        output.send([0xb0 | channel, 0, drum ? 1 : 0]);
+        output.send([0xb0 | channel, 32, 0]);
+        output.send([0xb0 | channel, 7, 100]);
+        output.send([0xb0 | channel, 11, 127]);
+
+        for (let program = 0; program < PROGRAM_COUNT && running && token === runToken; program++) {
+          output.send([0xc0 | channel, program]);
+          await sleep(80);
+          for (let note = firstNote; note <= lastNote && running && token === runToken; note++) {
+            status.textContent = `${drum ? 'Drum Kit' : 'Program'} ${program}/127 · Note ${note} · ${progress.value}/${total}`;
+            output.send([0x90 | channel, note, velocity]);
+            await sleep(drum ? Math.min(noteMs, 220) : noteMs);
+            output.send([0x80 | channel, note, 0]);
+            progress.value++;
+            if (gapMs) await sleep(gapMs);
+          }
+          output.send([0xb0 | channel, 123, 0]);
+          await sleep(100);
+        }
+
+        if (running && token === runToken) {
+          status.textContent = drum
+            ? `完成：Drum Kit 0–127，Note 35–81，共 ${total} 个鼓测试音。`
+            : `完成：GM Program 0–127，B2–C6，共 ${total} 个测试音。`;
+        }
+      } catch (error) {
+        status.textContent = `测试失败：${error instanceof Error ? error.message : String(error)}`;
+      } finally {
+        if (token === runToken) {
+          running = false;
+          panic(output);
+          startButton.disabled = false;
+          startDrumsButton.disabled = false;
+          stopButton.disabled = true;
+          outputSelect.disabled = false;
+        }
+      }
+    }
+
+    startButton.addEventListener('click', () => runSweep({ drum: false }));
+    startDrumsButton.addEventListener('click', () => runSweep({ drum: true }));
+
+    window.addEventListener('beforeunload', () => panic(selectedOutput()));
+  </script>
+</body>
+</html>

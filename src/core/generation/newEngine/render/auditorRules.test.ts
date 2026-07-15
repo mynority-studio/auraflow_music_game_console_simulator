@@ -30,7 +30,7 @@ describe('render · Auditor 扩规则 (P1-2)', () => {
 
   it('★ 持续离调音(≥2 拍)→ chromatic-exposure(warning)', () => {
     // C#(61→73)在 Cmaj7 的 chord-scale 外,持续 2 拍
-    const lead: TrackIR = { role: 'lead', notes: [
+    const lead: TrackIR = { role: 'comp', notes: [
       { pitch: midi(73), startTick: ticks(0), durationTicks: ticks(960), velocity: 90 }, // C# 2拍
     ] };
     const r = auditHarmony(mkIR([lead]), plan, timebase);
@@ -39,10 +39,21 @@ describe('render · Auditor 扩规则 (P1-2)', () => {
   });
 
   it('1 拍走音不报(经过/walking 豁免门槛)', () => {
-    const lead: TrackIR = { role: 'lead', notes: [
+    const lead: TrackIR = { role: 'comp', notes: [
       { pitch: midi(73), startTick: ticks(0), durationTicks: ticks(480), velocity: 90 }, // C# 仅 1 拍
     ] };
     expect(ids(auditHarmony(mkIR([lead]), plan, timebase))).not.toContain('chromatic-exposure');
+  });
+
+  it('短强拍非合约音报结构交集错误，短弱拍经过音保留', () => {
+    const strong: TrackIR = { role: 'lead', notes: [
+      { pitch: midi(65), startTick: ticks(0), durationTicks: ticks(120), velocity: 90 }, // F:Cmaj7 avoid
+    ] };
+    const weak: TrackIR = { role: 'lead', notes: [
+      { pitch: midi(65), startTick: ticks(240), durationTicks: ticks(120), velocity: 82 },
+    ] };
+    expect(ids(auditHarmony(mkIR([strong]), plan, timebase))).toContain('structural-tone-outside-intersection');
+    expect(ids(auditHarmony(mkIR([weak]), plan, timebase))).not.toContain('structural-tone-outside-intersection');
   });
 
   it('★ lead 与 comp 实际小二度同响 → dissonant-vertical-clash(warning)', () => {

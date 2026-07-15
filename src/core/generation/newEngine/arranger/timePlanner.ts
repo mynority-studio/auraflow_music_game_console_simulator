@@ -23,6 +23,8 @@ const STYLE_TIME: Record<string, TimeFeel> = {
   // ★ Loop B(2026-06-08):RNB 独立 TimeFeel(原落 default=100bpm)。laidback 不靠 global swing,
   //   而由 groove pattern(groovePlanner=laidback)+ texture pocket + velocity/timing micro-feel 表达。
   rnb: { tempoBpm: 96, tempoRange: 10, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
+  // ACG PIANOSONG 的短篇呼吸：保持慢速抒情；targetDuration 由 arranger 用实际 tempo 反推曲式小节数。
+  acg: { tempoBpm: 80, tempoRange: 6, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
   modal: { tempoBpm: 96, tempoRange: 12, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
   default: { tempoBpm: 100, tempoRange: 10, meter: { numerator: 4, denominator: 4 }, feel: { kind: 'straight', swingRatio: 0.5 } },
 };

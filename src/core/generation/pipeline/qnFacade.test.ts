@@ -4,13 +4,11 @@ import { musicalIRToMidiEvents } from '../../audio/musicalIrToMidi';
 import { generateMusicSync } from '../musicGeneration/MusicGenerationService';
 import { MusicGenerationStyleStore } from '../../../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore } from '../../../state/MusicGenerationSeedStore';
-import { MusicGenerationKeyStore } from '../../../state/MusicGenerationKeyStore';
 import { QnBandSelectionStore } from '../../../state/QnBandSelectionStore';
 
 afterEach(() => {
   QnBandSelectionStore.reset();
   MusicGenerationStyleStore.setStyle('POP');
-  MusicGenerationKeyStore.setKey('C');
   MusicGenerationSeedStore.setSuffix('42');
 }); // singleton:勿污染其它测试
 
@@ -34,9 +32,8 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
     expect((runPipeline({}) as unknown as Record<string, unknown>).track).toBeUndefined();
   });
 
-  it('★ Q+H facade 与直接 Q+N service 同链路:同 seed/style/key 得到同一结构化结果', () => {
+  it('★ Q+H facade 与直接 Q+N service 同链路:同 seed/style 得到同一结构化结果,key/mode 由链路开头抽取', () => {
     MusicGenerationStyleStore.setStyle('RNB');
-    MusicGenerationKeyStore.setKey('D');
     MusicGenerationSeedStore.setSuffix('qh-qn-closure');
     const seed = MusicGenerationSeedStore.getSeedNumber();
 
@@ -45,7 +42,6 @@ describe('pipeline/qnFacade — Q+N 主链路端到端', () => {
       styleHint: 'rnb',
       mood: 'build',
       targetDuration: 120,
-      key: 'D',
       bandParticipants: QnBandSelectionStore.getParticipants(),
     });
     const { result } = runPipeline({});

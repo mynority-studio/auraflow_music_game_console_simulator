@@ -23,7 +23,7 @@ describe('core/audio/MidiScheduler', () => {
     ]);
   });
 
-  it('keeps CC95 delay send as a Copych FX-bus event without synthetic echo notes', () => {
+  it('keeps CC95 delay send as a hardware FX-bus event without synthetic echo notes', () => {
     const scheduler = new MidiScheduler();
 
     scheduler.loadTrack([

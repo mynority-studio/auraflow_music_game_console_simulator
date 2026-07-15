@@ -54,10 +54,10 @@ describe('newEngine/sandbox/irToMidi', () => {
     const leadPc = ev.find((e) => e.type === 'programChange' && e.channel === 1)!;
     const bassPc = ev.find((e) => e.type === 'programChange' && e.channel === 3)!;
     expect(leadPc.data1).toBe(67);  // 用 track.program
-    expect(bassPc.data1).toBe(38);  // 缺省收口到 24k nano 包内 Synth Bass 1
+    expect(bassPc.data1).toBe(33);  // Dream GM128 默认 bass=Finger/J-Bass
   });
 
-  it('带 bank 的轨会在 programChange 前发 CC0/CC32 bank select', () => {
+  it('带 bank 的旋律轨会在 programChange 前发 Dream CC0 bank select,不发 CC32', () => {
     const ir2 = freezeMusicalIR({
       tracks: [
         {
@@ -79,19 +79,39 @@ describe('newEngine/sandbox/irToMidi', () => {
     const bank8Msb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 0);
     const bank8Lsb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 32);
     const pc8 = idx((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0);
-    expect(ev[bank8Msb]).toMatchObject({ data2: 0 });
-    expect(ev[bank8Lsb]).toMatchObject({ data2: 8 });
+    expect(ev[bank8Msb]).toMatchObject({ data2: 8 });
+    expect(bank8Lsb).toBe(-1);
     expect(ev[pc8]).toMatchObject({ data1: 5 });
-    expect(bank8Msb).toBeLessThan(bank8Lsb);
-    expect(bank8Lsb).toBeLessThan(pc8);
+    expect(bank8Msb).toBeLessThan(pc8);
 
     const bank0Msb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 480 && e.data1 === 0);
     const bank0Lsb = idx((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 480 && e.data1 === 32);
     const pc0 = idx((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 480);
     expect(ev[bank0Msb]).toMatchObject({ data2: 0 });
-    expect(ev[bank0Lsb]).toMatchObject({ data2: 0 });
+    expect(bank0Lsb).toBe(-1);
     expect(ev[pc0]).toMatchObject({ data1: 0 });
-    expect(bank0Lsb).toBeLessThan(pc0);
+    expect(bank0Msb).toBeLessThan(pc0);
+  });
+
+  it('Program Change 11 的标准地址明确发送 CC0=0 后选择 Vibraphone', () => {
+    const ir2 = freezeMusicalIR({
+      tracks: [
+        {
+          role: 'lead',
+          bank: 0,
+          program: 11,
+          notes: [{ pitch: midi(65), startTick: ticks(0), durationTicks: ticks(240), velocity: 90 }],
+        },
+      ],
+      timebase,
+      durationTicks: ticks(480),
+    });
+    const ev = musicalIRToMidiEvents(ir2);
+    const cc0 = ev.find((e) => e.type === 'cc' && e.channel === 1 && e.ticks === 0 && e.data1 === 0);
+    const pc11 = ev.find((e) => e.type === 'programChange' && e.channel === 1 && e.ticks === 0);
+    expect(cc0).toMatchObject({ data2: 0 });
+    expect(pc11).toMatchObject({ data1: 11 });
+    expect(ev.indexOf(cc0!)).toBeLessThan(ev.indexOf(pc11!));
   });
 
   // —— 混音 (5.4) ——
@@ -143,7 +163,7 @@ describe('newEngine/sandbox/irToMidi', () => {
     expect(pan(CH.drum)).toBe(64);
   });
 
-  it('带 delay 的轨会导出 CC95 给共享 delay bus', () => {
+  it('Dream GM128 硬件 MIDI 输出不再导出非标准 CC95 delay send', () => {
     const delayIR = freezeMusicalIR({
       tracks: [
         {
@@ -158,12 +178,7 @@ describe('newEngine/sandbox/irToMidi', () => {
     });
     const delayEvents = musicalIRToMidiEvents(delayIR);
     const delayCC = delayEvents.find((e) => e.type === 'cc' && e.channel === CH.lead && e.data1 === 95);
-    const firstNoteOnIndex = delayEvents.findIndex((e) => e.type === 'noteOn' && e.channel === CH.lead);
-    const delayCCIndex = delayEvents.findIndex((e) => e === delayCC);
-
-    expect(delayCC).toMatchObject({ ticks: 0, data2: 26 });
-    expect(delayCCIndex).toBeGreaterThanOrEqual(0);
-    expect(delayCCIndex).toBeLessThan(firstNoteOnIndex);
+    expect(delayCC).toBeUndefined();
   });
 
   it('pitchBendEvents 导出为 14-bit pitchBend MIDI 事件', () => {

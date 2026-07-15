@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CHAIN_PROFILES, chooseOrchestrationChain, deriveChainWorld, orchestrateRolePrograms,
+  CHAIN_PROFILES, chooseEnsembleWorld, chooseOrchestrationChain,
+  deriveChainWorld, orchestrateRolePrograms,
   scoreProgramPair, isHarshLead, type ChainProfile,
 } from './gmOrchestrationChains';
 import { instrumentInfo, gmName, canPlayComp, leadCompCompatible, instrumentInfo as info } from './instruments';
@@ -50,6 +51,17 @@ describe('knowledge/gmOrchestrationChains — 世界选择', () => {
     expect(r.roleProgram.comp).not.toBe(1);
     expect(canPlayComp(r.roleProgram.comp)).toBe(true);
   });
+
+  it('五种 macro 会收敛到有现实依据的乐队编制模板，且选择不消耗额外 rng', () => {
+    expect(chooseEnsembleWorld('pop', { comp: 5, bass: 38 })).toBe('cityPopElectricBand');
+    expect(chooseEnsembleWorld('pop', { comp: 0, bass: 32 })).toBe('cityPopPianoBand');
+    expect(chooseEnsembleWorld('jazz', { lead: 0 })).toBe('jazzPianoTrio');
+    expect(chooseEnsembleWorld('jazz', { lead: 66 })).toBe('jazzSaxQuartet');
+    expect(chooseEnsembleWorld('jazz', { lead: 0 }, 'jazz_smooth_backbeat')).toBe('smoothJazzQuartet');
+    expect(chooseEnsembleWorld('lofi', { lead: 108, bass: 38 })).toBe('lofiBoomBap');
+    expect(chooseEnsembleWorld('rnb', { lead: 0, bass: 32 })).toBe('rnbPocket');
+    expect(chooseEnsembleWorld('acg', { lead: 5, comp: 5 })).toBe('acgPianoTrio');
+  });
 });
 
 describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
@@ -74,16 +86,33 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
     expect(leadCompCompatible(r.roleProgram.lead, r.roleProgram.comp)).toBe(true);
   });
 
-  it('acgKeyboardBand:ACG lead/comp 只开放钢琴/电钢,但 bass 保持原声', () => {
+  it('acgKeyboardBand:ACG PIANOSONG 三轨统一为同一架原声钢琴', () => {
     const profile = chooseOrchestrationChain('acg', { next: () => 0, int: (_max: number) => 0, pick: <T>(xs: readonly T[]): T => xs[0] }, 'acousticPianoBand');
     expect(profile.id).toBe('acgKeyboardBand');
-    expect(profile.compPriority).toEqual([0, 5]);
+    expect(profile.compPriority).toEqual([0]);
     const r = orchestrateRolePrograms({ style: 'acg', lineup: ['comp', 'lead', 'bass'], provisional: { comp: 5, lead: 11, bass: 38 } });
     expect(r.profileId).toBe('acgKeyboardBand');
-    expect([0, 5]).toContain(r.roleProgram.comp);
-    expect([0, 5]).toContain(r.roleProgram.lead);
-    expect(r.roleProgram.lead).not.toBe(11);
-    expect(r.roleProgram.bass).toBe(32);
+    expect(r.roleProgram).toMatchObject({ comp: 0, lead: 0, bass: 0 });
+  });
+
+  it('piano-led 编制允许 GM0 在 bass 轨承担左手 bassline，不扩散到爵士三重奏', () => {
+    const acg = orchestrateRolePrograms({
+      style: 'acg', ensembleWorld: 'acgPianoTrio', lineup: ['comp', 'lead', 'bass'],
+      provisional: { comp: 0, lead: 0, bass: 0 },
+    });
+    expect(acg.roleProgram).toMatchObject({ comp: 0, lead: 0, bass: 0 });
+
+    const cityPop = orchestrateRolePrograms({
+      style: 'pop', ensembleWorld: 'cityPopPianoBand', lineup: ['comp', 'lead', 'bass'],
+      provisional: { comp: 0, lead: 0, bass: 0 },
+    });
+    expect(cityPop.roleProgram.bass).toBe(0);
+
+    const jazz = orchestrateRolePrograms({
+      style: 'jazz', ensembleWorld: 'jazzPianoTrio', lineup: ['comp', 'lead', 'bass'],
+      provisional: { comp: 0, lead: 0, bass: 0 },
+    });
+    expect(jazz.roleProgram.bass).toBe(32);
   });
 
   it('jazzCombo:绝不选合成贝斯(注入 synth bass → 改原声)', () => {
@@ -116,8 +145,31 @@ describe('knowledge/gmOrchestrationChains — orchestrate 协同', () => {
 
   it('drum kit 链权威:当前 Aura25 只下发 Room/TR-808/Brush 三套 bank128 kit', () => {
     expect(orchestrateRolePrograms({ style: 'jazz', lineup: ['drum'], provisional: { drum: 40 } }).roleProgram.drum).toBe(40);
-    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 25 } }).roleProgram.drum).toBe(25);
+    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 25 } }).roleProgram.drum).toBe(8);
     expect(orchestrateRolePrograms({ style: 'lofi', lineup: ['drum'], provisional: { drum: 25 } }).roleProgram.drum).toBe(25);
+    expect(orchestrateRolePrograms({ style: 'rnb', lineup: ['drum'], requestedWorld: 'electricKeys', provisional: { drum: 8 } }).roleProgram.drum).toBe(25);
+    expect(orchestrateRolePrograms({ style: 'rnb', lineup: ['drum'], requestedWorld: 'electricKeys', drumKitProgram: 8, provisional: { drum: 25 } }).roleProgram.drum).toBe(8);
+    expect(orchestrateRolePrograms({ style: 'pop', lineup: ['drum'], requestedWorld: 'electricKeys', drumKitProgram: 25, provisional: { drum: 8 } }).roleProgram.drum).toBe(25);
+  });
+
+  it('实战模板会拒绝不属于该乐队的主角音色，但保留 arranger 下发的鼓 kit', () => {
+    const lofi = orchestrateRolePrograms({
+      style: 'lofi', ensembleWorld: 'lofiBoomBap', lineup: ['comp', 'lead', 'bass', 'drum'],
+      provisional: { comp: 5, lead: 108, bass: 38, drum: 25 }, drumKitProgram: 25,
+    });
+    expect(lofi.roleProgram).toMatchObject({ comp: 5, lead: 5, bass: 32, drum: 25 });
+
+    const rnb = orchestrateRolePrograms({
+      style: 'rnb', ensembleWorld: 'rnbPocket', lineup: ['comp', 'lead', 'bass', 'drum'],
+      provisional: { comp: 0, lead: 25, bass: 32, drum: 8 }, drumKitProgram: 8,
+    });
+    expect(rnb.roleProgram).toMatchObject({ comp: 5, lead: 5, bass: 38, drum: 8 });
+
+    const pianoTrio = orchestrateRolePrograms({
+      style: 'jazz', ensembleWorld: 'jazzPianoTrio', lineup: ['comp', 'lead', 'bass'],
+      provisional: { comp: 5, lead: 66, bass: 38 },
+    });
+    expect(pianoTrio.roleProgram).toMatchObject({ comp: 0, lead: 0, bass: 32 });
   });
 
   it('确定性:同 style/lineup/provisional → 同 roleProgram', () => {

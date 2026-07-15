@@ -4,7 +4,7 @@ import { TapArea } from './core/hardware/TapArea';
 import { AuraSystem } from './system/AuraSystem';
 import { APPS } from './apps/AppRegistry';
 import { AudioEngine } from './core/audio/AudioEngine';
-import { startAudioContext } from './core/audio/SynthManager';
+import { startAudioContext } from './core/audio/AudioEngine';
 import { PipelineMonitor } from './components/PipelineMonitor';
 import { MotifWeaverSandboxPanel } from './core/generation/motifSandbox';
 import { MidiOutSandboxPanel } from './core/generation/midiOutSandbox';
@@ -12,6 +12,7 @@ import { LeadTakeoverSandboxPanel } from './core/generation/leadTakeoverSandbox'
 import { emitTakeoverPadInput } from './core/generation/leadTakeoverSandbox/takeoverInputBus';
 import { DevDock } from './components/DevDock';
 import { SoundFontSelector } from './components/SoundFontSelector';
+import { PopDrumMachineAuditionPanel } from './components/PopDrumMachineAuditionPanel';
 
 export default function App() {
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
@@ -46,6 +47,7 @@ export default function App() {
       <PipelineMonitor />
       <MotifWeaverSandboxPanel />
       <MidiOutSandboxPanel />
+      <PopDrumMachineAuditionPanel />
       {/* Device Container */}
       <div 
         className="relative w-full max-w-[70vh] translate-y-[5vh]"

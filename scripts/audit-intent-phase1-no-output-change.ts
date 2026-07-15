@@ -11,7 +11,7 @@
 import { generateMusicSync } from '../src/core/generation/musicGeneration/MusicGenerationService';
 
 function fingerprint(seed: number, style: string): string {
-  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90, key: 'C' });
+  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90 });
   const ir = r.ir!;
   const parts: string[] = [];
   for (const t of [...ir.tracks].sort((a, b) => a.role.localeCompare(b.role))) {
@@ -33,7 +33,7 @@ for (const [seed, style] of CASES) {
   const b = fingerprint(seed, style);
   const ok = a === b;
   allDeterministic = allDeterministic && ok;
-  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90, key: 'C' });
+  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90 });
   const it = (r.report as { intent?: { mode: string } }).intent;
   console.log(`${seed}/${style}: 确定性 ${ok ? '✓' : '✗ 不一致!'} · intent.mode=${it?.mode}`);
   console.log(`  ${a}`);

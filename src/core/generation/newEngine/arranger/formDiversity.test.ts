@@ -76,8 +76,8 @@ describe('arranger · 曲式多样 (3.5)', () => {
     }
   });
 
-  it('★ 连续×2 记忆点:同功能相邻段共享 repeatGroup(verse/loop/head ×2 时)', () => {
-    for (const [style, tag] of [['pop', 'story'], ['rnb', 'story'], ['lofi', 'loop'], ['jazz', 'head']] as const) {
+  it('★ 连续×2 记忆点:同功能相邻段共享 repeatGroup(loop/head ×2 时)', () => {
+    for (const [style, tag] of [['lofi', 'loop'], ['jazz', 'head']] as const) {
       let sawPair = false;
       for (let seed = 0; seed < 12; seed++) {
         const secs = styleForm(style, seed).sections;
@@ -89,6 +89,53 @@ describe('arranger · 曲式多样 (3.5)', () => {
         }
       }
       expect(sawPair).toBe(true); // 该风格跨 seed 至少出现一次连续×2
+    }
+  });
+
+  it('★ POP/RNB 双副歌采用 V1-C1-V2-C2；重排不改 bars/repeatGroup，且每个入副歌 verse 都 dominantLift', () => {
+    for (const style of ['pop', 'rnb'] as const) {
+      let matched = false;
+      for (let seed = 0; seed < 32; seed++) {
+        const sections = styleForm(style, seed).sections;
+        const stories = sections.filter((s) => s.functionTag === 'story');
+        const hooks = sections.filter((s) => s.functionTag === 'hook');
+        if (stories.length !== 2 || hooks.length !== 2) continue;
+        matched = true;
+        const body = sections.filter((s) => s.functionTag === 'story' || s.functionTag === 'hook');
+        expect(body.map((s) => s.id)).toEqual(style === 'pop'
+          ? ['verse1', 'chorus1', 'verse2', 'chorus2']
+          : ['verse1', 'hook1', 'verse2', 'hook2']);
+        expect(stories.map((s) => s.linkOut)).toEqual(['dominantLift', 'dominantLift']);
+        expect(new Set(stories.map((s) => s.repeatGroup))).toEqual(new Set(['V']));
+        expect(new Set(hooks.map((s) => s.repeatGroup))).toEqual(new Set([style === 'pop' ? 'C' : 'H']));
+        expect(stories[0].bars).toBe(stories[1].bars);
+        expect(hooks[0].bars).toBe(hooks[1].bars);
+        const expectedBars = sections.filter((s) => s.functionTag !== 'story' && s.functionTag !== 'hook').reduce((n, s) => n + s.bars, 0)
+          + stories[0].bars * 2 + hooks[0].bars * 2;
+        expect(sections.reduce((n, s) => n + s.bars, 0)).toBe(expectedBars);
+        break;
+      }
+      expect(matched, `${style} seeds 覆盖 2 verse + 2 chorus`).toBe(true);
+    }
+  });
+
+  it('★ 单副歌保持所有 verse 在前，仅直接进入副歌的 verse dominantLift', () => {
+    for (const style of ['pop', 'rnb'] as const) {
+      let matched = false;
+      for (let seed = 0; seed < 64; seed++) {
+        const body = styleForm(style, seed).sections.filter((s) => s.functionTag === 'story' || s.functionTag === 'hook');
+        if (body.filter((s) => s.functionTag === 'hook').length !== 1) continue;
+        matched = true;
+        const firstHook = body.findIndex((s) => s.functionTag === 'hook');
+        expect(body.slice(0, firstHook).every((s) => s.functionTag === 'story')).toBe(true);
+        expect(body.slice(firstHook).every((s) => s.functionTag === 'hook')).toBe(true);
+        expect(body.slice(0, firstHook).map((s) => s.linkOut)).toEqual([
+          ...Array(Math.max(0, firstHook - 1)).fill(undefined),
+          'dominantLift',
+        ]);
+        break;
+      }
+      expect(matched, `${style} seeds 覆盖单 chorus`).toBe(true);
     }
   });
 
@@ -112,6 +159,22 @@ describe('arranger · 曲式多样 (3.5)', () => {
         if (barsByGroup.has(s.repeatGroup)) expect(s.bars).toBe(barsByGroup.get(s.repeatGroup));
         else barsByGroup.set(s.repeatGroup, s.bars);
       }
+    }
+  });
+
+  it('★ ACG PIANOSONG 使用短篇主题曲式：A → A′ → lift → return → coda', () => {
+    for (const seed of [0, 7, 42, 99]) {
+      const acg = styleForm('acg', seed);
+      const ids = acg.sections.map((section) => section.id);
+      expect(ids).toEqual(['pianoIntro', 'themeA', 'themeA2', 'pianoLift', 'themeReturn', 'pianoCoda']);
+      expect(acg.sections.reduce((sum, section) => sum + section.bars, 0)).toBe(36);
+      expect(acg.tempoBpm).toBeGreaterThanOrEqual(74);
+      expect(acg.tempoBpm).toBeLessThanOrEqual(86);
+      const theme = acg.sections.filter((section) => section.repeatGroup === 'A');
+      expect(theme.map((section) => section.bars)).toEqual([8, 8, 8]);
+      expect(acg.sections.find((section) => section.id === 'themeA2')?.linkOut).toBe('dominantLift');
+      expect(acg.sections.find((section) => section.id === 'themeReturn')?.functionTag).toBe('headOut');
+      expect(acg.sections.at(-1)?.harmonyRole).toBe('ending');
     }
   });
 

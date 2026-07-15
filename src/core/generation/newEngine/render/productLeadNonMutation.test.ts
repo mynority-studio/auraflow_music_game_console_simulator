@@ -15,7 +15,7 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import { renderMgMelody } from './mgLeadRenderer';
-import { leadAvoidExposureResolver, renderSongFull } from './renderCoordinator';
+import { gateByDensity, leadAvoidExposureResolver, renderSongFull } from './renderCoordinator';
 import { applyRepeatGroupReplay } from './repeatGroupReplay';
 import { applyGroovePocket } from './groovePocket';
 import { fillLeadBarGaps } from './leadGapFill';
@@ -31,6 +31,8 @@ import { createTimebase, createRandomContext, beats } from '../foundation';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditFinding } from '../ir/AuditReport';
 import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
+import { applyEnding, applyLeadIns } from './ending';
+import { applyDynamics, type EnergyRange } from './dynamics';
 
 function setup(seed: number, style: string) {
   const band = buildBandSpec({ seed, styleHint: style, mood: 'build', targetDuration: 120 });
@@ -87,13 +89,70 @@ function withExpectedLeadGesture<T extends { notes: any[] }>(
   return { ...track, notes: gesture.notes };
 }
 
+function withExpectedSectionExpression(
+  track: ReturnType<typeof renderMgMelody>,
+  arrangement: ReturnType<typeof buildArrangementPlan>,
+  instrumentation: ReturnType<typeof buildInstrumentationPlan>,
+  tb: ReturnType<typeof createTimebase>,
+) {
+  const beatsPerBar = beatsPerBarOf(arrangement.meter);
+  const energyRanges: EnergyRange[] = [];
+  const climaxIntensityBySection = new Map<string, number>();
+  for (const climax of arrangement.climaxMap) {
+    climaxIntensityBySection.set(
+      climax.sectionId,
+      Math.max(climaxIntensityBySection.get(climax.sectionId) ?? 0, Math.max(0, Math.min(1, climax.intensity))),
+    );
+  }
+  let beatCursor = 0;
+  for (const section of arrangement.sections) {
+    const end = beatCursor + section.bars * beatsPerBar;
+    const baseEnergy = arrangement.energyBySection[section.id] ?? 0.5;
+    const energy = Math.min(1, baseEnergy + (climaxIntensityBySection.get(section.id) ?? 0) * 0.12);
+    energyRanges.push({ lo: beatCursor, hi: end, energy });
+    beatCursor = end;
+  }
+  const dynamic = applyDynamics([track], energyRanges, tb.ppq)[0];
+  const ended = applyEnding([dynamic], arrangement, instrumentation.endingPlan, tb.ppq, beatsPerBar)[0];
+  const leadInBars = new Set<number>();
+  let barCursor = 0;
+  for (let index = 0; index < arrangement.sections.length; index++) {
+    barCursor += arrangement.sections[index].bars;
+    const next = arrangement.sections[index + 1];
+    if (next && arrangement.entryBySection[next.id] === 'lead-in') leadInBars.add(barCursor - 1);
+  }
+  return applyLeadIns([ended], leadInBars, tb.ppq, beatsPerBar)[0];
+}
+
+function withExpectedArrangerGate(
+  track: ReturnType<typeof renderMgMelody>,
+  arrangement: ReturnType<typeof buildArrangementPlan>,
+  instrumentation: ReturnType<typeof buildInstrumentationPlan>,
+  plan: ReturnType<typeof buildHarmonicPlanFromArrangement>,
+  tb: ReturnType<typeof createTimebase>,
+) {
+  const barTicks = beatsPerBarOf(arrangement.meter) * tb.ppq;
+  const pickupWindows = instrumentation.transitionPlan.boundaries
+    .filter((boundary) => boundary.protectPickupFromGate && boundary.pickupRoles.length > 0)
+    .map((boundary) => ({
+      lo: boundary.prepBar * barTicks,
+      hi: (boundary.prepBar + 1) * barTicks,
+      roles: new Set<string>(boundary.pickupRoles as readonly string[]),
+    }));
+  return gateByDensity([track], plan, tb, instrumentation.activeRolesBySection, {
+    pickupWindows,
+    rolePerformanceBySection: arrangement.rolePerformanceBySection,
+    openingGesture: arrangement.openingGesture,
+  })[0];
+}
+
 // ★ ACG 已退出 byte-parity(2026-07-02 Phase3):ACG lead 走专属 shapeTopVoicePianoTouch 塑形,不 == raw MG →
 //   改由 mgBassCompLeadFidelity.test 音乐不变量锁。本 MATRIX 只留 MG-grammar-backed 无 ACG 专属塑形的风格。
 const MATRIX: [number, string][] = [[7, 'lofi'], [396040, 'pop'], [777870, 'rnb'], [633823, 'pop'], [3, 'jazz'], [64062, 'lofi'], [100, 'rnb'], [999, 'jazz']];
 
 describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
-  // ① production lead === raw MG lead 经 repeatGroup 重放(audit/swing/dynamics/humanize/ending 全不改 lead;
-  //   ★ 2026-06-11:lead 仅多一道 repeatGroup 重放 —— 首次出现==MG,重复出现==首次重放,lead 不 humanize → 逐字节相等)。
+  // ① production lead === raw MG lead 经 repeatGroup 重放，再按目标段重投影 lead-in velocity；
+  //   audit/swing/dynamics/humanize/ending 仍不改 lead 的 pitch/onset/duration。
   for (const [seed, style] of MATRIX) {
     it(`${seed}/${style}: production lead 事件级 === replay(raw MG lead)`, () => {
       const { band, arr, instr, plan, tb } = setup(seed, style);
@@ -101,10 +160,11 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
       const raw = rawGen;
       const filledRaw = fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter));
       const replayed = applyRepeatGroupReplay(filledRaw, arr, plan.chordTimeline, tb)[0];
-      const harmonySafe = { ...replayed, notes: leadAvoidExposureResolver(replayed.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
+      const gated = withExpectedArrangerGate(replayed, arr, instr, plan, tb);
+      const withSectionExpression = withExpectedSectionExpression(gated, arr, instr, tb);
       // ★ Phase D(directive 3.2,推翻零洗牌):真 GrooveContract 的 ms melody-pocket 由 applyGroovePocket 在
       //   humanizeTiming(lead 本就跳)之后落地 → lead onset lay-back。legacy pocket=0 时 no-op(零洗牌兼容)。
-      const pocketed = applyGroovePocket([harmonySafe], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0];
+      const pocketed = applyGroovePocket([withSectionExpression], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0];
       // 末端安全闸(sanitize → (jazz/blues)legato → sanitize;directive q_n_final_lead_sanitizer 2026-06-23):
       //   sanitize 只裁同 pitch collision(无重叠=no-op),legato 只改 duration → 多数 seed 仍逐字节相等。
       const lo = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
@@ -113,8 +173,9 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
       const sanitizedExp = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
       const balancedLegato = { ...sanitizedExp, notes: connectFastLeadNoteIR(sanitizedExp.notes, lo) };
       const balancedSanitized = { ...balancedLegato, notes: sanitizeLeadNoteIR(balancedLegato.notes, SAN) };
-      const expectedBeforeGesture = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
-      const expected = withExpectedLeadGesture(expectedBeforeGesture, instr, tb);
+      const gestured = withExpectedLeadGesture(balancedSanitized, instr, tb);
+      const resolvedNotes = leadAvoidExposureResolver(gestured.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band));
+      const expected = { ...gestured, notes: sanitizeLeadNoteIR(resolvedNotes, SAN) };
       const final = leadOf(renderSongFull(band, arr, plan, instr, tb, createRandomContext(seed)).ir);
       expectLeadNear(final.notes as never, expected.notes as never, `${seed}/${style}`);
     });
@@ -151,16 +212,18 @@ describe('Loop 9 — audit 只读 · retry 后 lead exact', () => {
     expect(result.attempts, '确实发生重跑').toBeGreaterThanOrEqual(3);
     expect(result.ir, 'retry 后有 IR').toBeDefined();
     const replayedExp = applyRepeatGroupReplay(fillLeadBarGaps([raw], plan.chordTimeline, tb, beatsPerBarOf(arr.meter)), arr, plan.chordTimeline, tb)[0]; // ★ 重放 + 空拍补全(retry 不改 lead)
-    const harmonySafeExp = { ...replayedExp, notes: leadAvoidExposureResolver(replayedExp.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
-    const pocketedExp = applyGroovePocket([harmonySafeExp], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0]; // ★ Phase D:真 contract 的 melody-pocket lay-back
+    const gatedExp = withExpectedArrangerGate(replayedExp, arr, instr, plan, tb);
+    const withSectionExpressionExp = withExpectedSectionExpression(gatedExp, arr, instr, tb);
+    const pocketedExp = applyGroovePocket([withSectionExpressionExp], arr.songGrooveContract, arr.tempoBpm, tb.ppq, beatsPerBarOf(arr.meter))[0]; // ★ Phase D:真 contract 的 melody-pocket lay-back
     const preSan = { ...pocketedExp, notes: sanitizeLeadNoteIR(pocketedExp.notes, SAN) };
     const legato = { ...preSan, notes: connectFastLeadNoteIR(preSan.notes, fastLeadLegatoOptionsForStyle(band.style, tb.ppq)) };
     const sanitizedExp = { ...legato, notes: sanitizeLeadNoteIR(legato.notes, SAN) };
     const lo = fastLeadLegatoOptionsForStyle(band.style, tb.ppq);
     const balancedLegato = { ...sanitizedExp, notes: connectFastLeadNoteIR(sanitizedExp.notes, lo) };
     const balancedSanitized = { ...balancedLegato, notes: sanitizeLeadNoteIR(balancedLegato.notes, SAN) };
-    const expectedBeforeGesture = { ...balancedSanitized, notes: leadAvoidExposureResolver(balancedSanitized.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band)) };
-    const expected = withExpectedLeadGesture(expectedBeforeGesture, instr, tb);
+    const gestured = withExpectedLeadGesture(balancedSanitized, instr, tb);
+    const resolvedNotes = leadAvoidExposureResolver(gestured.notes, plan, tb, leadProgramForSection(instr, band), [], auditKeyContext(band));
+    const expected = { ...gestured, notes: sanitizeLeadNoteIR(resolvedNotes, SAN) };
     expectLeadNear(leadOf(result.ir!).notes as never, expected.notes as never, 'retry 后 lead');
   });
 

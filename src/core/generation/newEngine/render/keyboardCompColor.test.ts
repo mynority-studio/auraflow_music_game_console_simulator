@@ -14,9 +14,8 @@ import { instrumentInfo, isKeyboardFamily } from '../knowledge/instruments';
 import { createRandomContext, createTimebase, beats, pc } from '../foundation';
 
 describe('乐器类型 + 音域元数据', () => {
-  it('键盘族(0/1/4/5/8)→ keyboard;未保留钢琴变体/木琴/bass 非键盘', () => {
-    for (const p of [0, 1, 4, 5, 8]) expect(isKeyboardFamily(p)).toBe(true);
-    expect(isKeyboardFamily(2)).toBe(false);
+  it('键盘族(0/1/2/4/5/8)→ keyboard;木琴/bass 非键盘', () => {
+    for (const p of [0, 1, 2, 4, 5, 8]) expect(isKeyboardFamily(p)).toBe(true);
     for (const p of [11, 12, 32, 89]) expect(isKeyboardFamily(p)).toBe(false);
     expect(isKeyboardFamily(undefined)).toBe(false);
   });

@@ -225,9 +225,9 @@ export function buildWidePianoVoicing(args: {
   };
 }
 
-/** 钢琴 GM program 判定(Acoustic Grand / Bright)。 */
+/** 钢琴 GM program 判定(Acoustic Grand / Bright / Electric Grand)。 */
 export function isPianoProgram(program: number | undefined): boolean {
-  return program === 0 || program === 1;
+  return program === 0 || program === 1 || program === 2;
 }
 
 export type SpreadCellRole = 'establish' | 'develop' | 'lift' | 'cadence';

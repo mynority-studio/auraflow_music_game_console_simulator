@@ -56,6 +56,26 @@ function maxCompGap(ir: MusicalIR, ppq: number): number {
 }
 
 describe('texture-switch 修复 · 第一期(非 LOFI 段级下发)', () => {
+  it('★ ACG PIANOSONG:每段固定主手型；变化只在段落边界或最终收束', () => {
+    const { plan, sched, instrumentation, activeSectionIds } = pieces(7, 'acg');
+    const activeIndexes = plan.chordTimeline
+      .map((span, index) => activeSectionIds.has(span.sectionId) ? index : -1)
+      .filter((index) => index >= 0);
+    const lastActiveIndex = activeIndexes.at(-1)!;
+    for (let index = 0; index < plan.chordTimeline.length; index++) {
+      const span = plan.chordTimeline[index];
+      if (!activeSectionIds.has(span.sectionId) || index === lastActiveIndex) continue;
+      expect(sched[span.id], `${span.sectionId} 主织体`).toBe(instrumentation.richTextureBySection[span.sectionId]);
+    }
+    for (let index = 1; index < plan.chordTimeline.length; index++) {
+      const previous = plan.chordTimeline[index - 1];
+      const current = plan.chordTimeline[index];
+      const changed = sched[previous.id] && sched[current.id] && sched[previous.id] !== sched[current.id];
+      if (changed) expect(current.sectionId !== previous.sectionId || index === lastActiveIndex, `非法段内切换 @${current.id}`).toBe(true);
+    }
+    expect(new Set(Object.values(sched)).size).toBeLessThanOrEqual(3);
+  });
+
   it('★ 633823/POP:段内织体 ≤2(无逐 span 乱切)+ 硬切骤降到结构点', () => {
     const { plan, sched, arrangement } = pieces(633823, 'pop');
     // 段内 ≤2:段级织体 + 最多一个中段受控变体(第二期)

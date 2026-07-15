@@ -1,0 +1,3 @@
+id,instrument id,key range,velocity range,attenuation,pan,coarse tuning,fine tuning,scale tuning,filter cutoff,filter resonance,vol env delay,vol env attack,vol env hold,vol env decay,vol env sustain,vol env release,key → vol env hold,key → vol env decay,mod env delay,mod env attack,mod env hold,mod env decay,mod env sustain,mod env release,mod env → pitch,mod env → filter,key → mod env hold,key → mod env decay,mod LFO delay,mod LFO freq,mod LFO → pitch,mod LFO → filter,mod LFO → volume,vib LFO delay,vib LFO freq,vib LFO → pitch,chorus,reverb
+0,12,0-127,0-127,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+1,13,0-127,0-127,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0

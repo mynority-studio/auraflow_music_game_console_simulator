@@ -9,7 +9,7 @@
 
 import type { MidiEvent } from './MidiScheduler';
 import type { InstrumentRole, MusicalIR, TrackMix } from '../generation/newEngine/ir/MusicalIR';
-import { mapProgramToAura25 } from '../sound/Aura25Palette';
+import { mapProgramToDream5504 } from '../sound/GMBK5X128Voices';
 
 interface ChannelVoice {
   channel: number;
@@ -21,11 +21,9 @@ interface ChannelVoice {
 const CC_VOLUME = 7;
 const CC_PAN = 10;
 const CC_BANK_MSB = 0;
-const CC_BANK_LSB = 32;
 const CC_REVERB = 91;
 const CC_CHORUS = 93;     // ★ ESP32 混音:合唱/宽度(电钢/pad 厚度)
 const CC_EXPRESSION = 11; // ★ ESP32 混音:表情(静态,可选)
-const CC_DELAY = 95;      // ★ Layer 2:send 进 Copych 共享 song delay bus
 const CC_SUSTAIN = 64;
 
 // bass=3 / comp=2 / lead=1 / pad=4 / drum=9(本文件即 Q+N 唯一通道约定真源)
@@ -35,7 +33,7 @@ const CC_SUSTAIN = 64;
 const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
   bass: { channel: 3, program: 33, volume: 61, pan: 64 },  // 中 · 与 comp【有效响度齐平】
   comp: { channel: 2, program: 0, volume: 93, pan: 50 },   // 偏左 · 有效响度基准
-  lead: { channel: 1, program: 73, volume: 74, pan: 64 },  // 中 · 旋律主线
+  lead: { channel: 1, program: 0, volume: 74, pan: 64 },   // 中 · 旋律主线
   pad: { channel: 4, program: 89, volume: 96, pan: 78 },   // 偏右 · 铺底
   drum: { channel: 9, program: 0, volume: 102, pan: 64 },  // 中(GM 鼓通道)
 };
@@ -43,7 +41,7 @@ const ROLE_VOICE: Record<InstrumentRole, ChannelVoice> = {
 const DEFAULT_VOICE: ChannelVoice = { channel: 0, program: 0, volume: 100, pan: 64 };
 
 // ★ 混响 = 一个【共享房间】(全局混响,ESP32 Freeverb-lite 等价)。roomWet=该房间湿度(按风格)。
-//   bass/drum 给受控 room:听感靠后一点,但 Copych 端还有低频 safe scale,不让 kick/bass 灌满房间。
+//   bass/drum 给受控 room:听感靠后一点,但硬件端还有低频 safe scale,不让 kick/bass 灌满房间。
 //   lead 略干靠前(旋律清晰),comp/pad 进满房间(软+长=天然靠后)。
 function reverbSend(role: InstrumentRole, roomWet: number): number {
   switch (role) {
@@ -74,14 +72,12 @@ function pushMixCC(events: MidiEvent[], channel: number, tick: number, role: Ins
   events.push({ ticks: tick, type: 'cc', channel, data1: CC_REVERB, data2: reverb });
   events.push({ ticks: tick, type: 'cc', channel, data1: CC_CHORUS, data2: chorus });
   if (mix && mix.expression !== undefined) events.push({ ticks: tick, type: 'cc', channel, data1: CC_EXPRESSION, data2: clampCC(mix.expression) });
-  if (mix && mix.delay !== undefined) events.push({ ticks: tick, type: 'cc', channel, data1: CC_DELAY, data2: clampCC(mix.delay) }); // ★ Layer 2:CC95 delay send(仅在设了 delay 的轨)
 }
 
 function pushProgramChange(events: MidiEvent[], tick: number, channel: number, role: InstrumentRole, program: number, bank?: number): void {
-  if (bank !== undefined) {
-    const clampedBank = Math.max(0, Math.min(16383, Math.round(bank)));
-    events.push({ ticks: tick, type: 'cc', channel, data1: CC_BANK_MSB, data2: (clampedBank >> 7) & 0x7f });
-    events.push({ ticks: tick, type: 'cc', channel, data1: CC_BANK_LSB, data2: clampedBank & 0x7f });
+  if (role !== 'drum' && bank !== undefined) {
+    const clampedBank = clampCC(bank);
+    events.push({ ticks: tick, type: 'cc', channel, data1: CC_BANK_MSB, data2: clampedBank });
   }
   events.push({ ticks: tick, type: 'programChange', channel, data1: program, data2: 0 });
 }
@@ -92,11 +88,11 @@ export function musicalIRToMidiEvents(ir: MusicalIR, roomWet = 50): MidiEvent[] 
 
   for (const track of ir.tracks) {
     const voice = ROLE_VOICE[track.role] ?? DEFAULT_VOICE;
-    const program = mapProgramToAura25(track.program ?? voice.program, track.role); // 器配优先,发声前收口到 Aura25
+    const program = mapProgramToDream5504(track.program ?? voice.program, track.role); // 器配优先,发声前收口到 Dream 5504
     pushProgramChange(events, 0, voice.channel, track.role, program, track.bank);
     // ★ 段落音色切换:同 channel 中途换 program(同一乐手换声音 / 效果器开关)
     for (const pc of track.programChanges ?? []) {
-      pushProgramChange(events, pc.atTick, voice.channel, track.role, mapProgramToAura25(pc.program, track.role), pc.bank);
+      pushProgramChange(events, pc.atTick, voice.channel, track.role, mapProgramToDream5504(pc.program, track.role), pc.bank);
     }
     // ★ CC64 延音踏板:踩下(127)→ synth 持音直到抬起(0)→ 音尾 ring(comp 融合)
     for (const ped of track.pedalEvents ?? []) {

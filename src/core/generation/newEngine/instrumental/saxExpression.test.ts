@@ -87,6 +87,53 @@ describe('instrumental/saxExpression', () => {
     expect((shaped[1].startTick as number) + (shaped[1].durationTicks as number)).toBeGreaterThan(240);
   });
 
+  it('密集 bebop 经过音被解释成轻换指,目标音仍保留 lead 存在感', () => {
+    const shaped = shapeSaxLegatoNotes([
+      note(0, 120, 60, 100),
+      note(120, 120, 61, 100),
+      note(240, 120, 62, 100),
+      note(360, 120, 64, 100),
+      note(480, 360, 67, 100),
+    ], { ppq: 480 });
+    expect(shaped[1].velocity).toBeLessThanOrEqual(68);
+    expect(shaped[2].velocity).toBeLessThanOrEqual(68);
+    expect(shaped[3].velocity).toBeLessThanOrEqual(76);
+    expect(shaped[4].velocity).toBeGreaterThanOrEqual(90);
+    expect(shaped[4].velocity).toBeGreaterThan(shaped[2].velocity + 18);
+  });
+
+  it('密集 run 的内部经过音不写低气压 attack,只在 phrase start 做明显起气', () => {
+    const shaped = shapeSaxLegatoNotes([
+      note(0, 120, 60, 96),
+      note(120, 120, 61, 96),
+      note(240, 120, 62, 96),
+      note(360, 120, 64, 96),
+      note(480, 360, 67, 96),
+    ], { ppq: 480 });
+    const expr = buildSaxBreathCcEvents(shaped, { ppq: 480 }).filter((e) => e.controller === SAX_CC.expression);
+    const starts = [0, 120, 240, 360, 480].map((tick) => expr.find((e) => e.atTick === ticks(tick))!.value);
+    expect(starts[1]).toBeGreaterThan(starts[0] + 6);
+    expect(starts[2]).toBeGreaterThan(starts[0] + 6);
+    expect(starts[3]).toBeGreaterThan(starts[0] + 6);
+    expect(starts[4]).toBeGreaterThan(starts[0] + 10);
+    expect(expr.some((e) => (e.atTick as number) > 0 && (e.atTick as number) < 480 && e.value < starts[0])).toBe(false);
+  });
+
+  it('小节/段落强边界会切断上一口气,避免 repeat body 被前一段上下文改写', () => {
+    const shaped = shapeSaxLegatoNotes([
+      note(360, 120, 59, 100),
+      note(480, 120, 60, 100),
+      note(600, 120, 61, 100),
+      note(720, 120, 62, 100),
+      note(840, 120, 64, 100),
+      note(960, 360, 67, 100),
+    ], { ppq: 480, phraseBoundaryTicks: 480 });
+    expect((shaped[0].startTick as number) + (shaped[0].durationTicks as number)).toBe(480);
+    expect(shaped[1].velocity).toBe(100);
+    expect(shaped[2].velocity).toBeLessThanOrEqual(68);
+    expect(shaped[5].velocity).toBeGreaterThanOrEqual(90);
+  });
+
   it('事件确定性、排序稳定、值域合法且都落在音符内部', () => {
     const notes = [note(0, 960, 60, 90), note(960, 180, 62, 78), note(1200, 720, 64, 100)];
     const cc = buildSaxBreathCcEvents(notes, { ppq: 480 });

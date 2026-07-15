@@ -7,8 +7,8 @@ import {
   recommendedPlaybackMasterLiftForEstimatedLufs,
 } from './masteringProfile';
 
-describe('masteringProfile · Copych style master lift calibration', () => {
-  it('keeps one calibrated lift table for Copych playback', () => {
+describe('masteringProfile · hardware playback master lift calibration', () => {
+  it('keeps one calibrated lift table for hardware playback', () => {
     expect(playbackMasterLiftForStyle('pop')).toBe(PLAYBACK_STYLE_MASTER_LIFT.pop);
     expect(playbackMasterLiftForStyle('ACG')).toBe(PLAYBACK_STYLE_MASTER_LIFT.acg);
     expect(playbackMasterLiftForStyle(undefined)).toBe(1.5);

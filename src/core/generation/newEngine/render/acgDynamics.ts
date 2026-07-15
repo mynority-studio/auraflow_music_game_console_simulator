@@ -18,6 +18,9 @@ const LEAD_T: VelTarget = { avg: 86, max: 96, min: 60 };
 const BASS_T: VelTarget = { avg: 48, max: 68, min: 30 };
 const COMP_MEL_T: VelTarget = { avg: 52, max: 66, min: 36 };
 const COMP_NOMEL_T: VelTarget = { avg: 55, max: 70, min: 38 };
+// 每句先呼吸、再推进、在第三小节抵达、末小节回收；所有手在同一曲线内，避免各轨各自抖动。
+// 平均值保持 1.0：乐句弧只重分配四小节力度，不能暗中把既有 mf/f 目标整体压低。
+const PHRASE_ENERGY = [0.96, 1.00, 1.07, 0.97] as const;
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
@@ -41,15 +44,24 @@ function rescaleByBar(notes: readonly NoteIR[], barTicks: number, targetFor: (ba
   });
 }
 
-/** ACG 每-bar 三轨力度归一(lead 86 / comp 29-32 / bass 37)。只 ACG 调用;非 ACG 不动。 */
-export function normalizeAcgDynamics(tracks: readonly TrackIR[], barTicks: number): TrackIR[] {
+function phraseTarget(base: VelTarget, bar: number, phraseBars: number): VelTarget {
+  const shape = PHRASE_ENERGY[bar % Math.max(1, phraseBars) % PHRASE_ENERGY.length] ?? 1;
+  return {
+    avg: base.avg * shape,
+    min: base.min * Math.min(1, shape + 0.04),
+    max: base.max * Math.max(1, shape),
+  };
+}
+
+/** ACG 每句共享的微型力度弧：lead/comp/bass 同步呼吸，保留 melody-first 的相对层次。 */
+export function normalizeAcgDynamics(tracks: readonly TrackIR[], barTicks: number, phraseBars = 4): TrackIR[] {
   const lead = tracks.find((t) => t.role === 'lead');
   const barHasLead = new Set<number>();
   for (const n of lead?.notes ?? []) barHasLead.add(Math.floor((n.startTick as number) / barTicks));
   return tracks.map((t) => {
-    if (t.role === 'lead') return { ...t, notes: rescaleByBar(t.notes, barTicks, () => LEAD_T) };
-    if (t.role === 'bass') return { ...t, notes: rescaleByBar(t.notes, barTicks, () => BASS_T) };
-    if (t.role === 'comp') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => (barHasLead.has(bar) ? COMP_MEL_T : COMP_NOMEL_T)) };
+    if (t.role === 'lead') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(LEAD_T, bar, phraseBars)) };
+    if (t.role === 'bass') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(BASS_T, bar, phraseBars)) };
+    if (t.role === 'comp') return { ...t, notes: rescaleByBar(t.notes, barTicks, (bar) => phraseTarget(barHasLead.has(bar) ? COMP_MEL_T : COMP_NOMEL_T, bar, phraseBars)) };
     return t;
   });
 }

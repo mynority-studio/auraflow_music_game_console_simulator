@@ -7,7 +7,8 @@
 // ============================================================
 
 import { globalMidiScheduler } from '../../../audio/MidiScheduler';
-import { startAudioContext, getAudioContext, activeSynth, setSandboxAuditionMaster, subscribeSynthReset } from '../../../audio/SynthManager';
+import { AudioEngine, startAudioContext } from '../../../audio/AudioEngine';
+import { Dream5504MidiOutput } from '../../../audio/Dream5504MidiOutput';
 import type { InstrumentRole, MusicalIR } from '../ir/MusicalIR';
 import { musicalIRToMidiEvents, ROLE_CHANNEL } from './irToMidi';
 import { roomWetFor } from './mixProfile';
@@ -15,10 +16,9 @@ import { resolveAudibleRoles } from './pianoRoll';
 
 /** ★ sandbox 试听/预听出口(audition/preview,非成品主链路)。成品完整成曲统一走
  *  AudioEngine.playMusicGeneration;此函数仅供 Motif 沙盒 lead-only 预听等诊断预听。
- *  会先确保 AudioContext / synth 已启动。style → 共享房间混响湿度。 */
+ *  会先确保 Dream 5504 MIDI 输出已开启。style → 共享房间混响湿度。 */
 export async function auditionMusicalIR(ir: MusicalIR, bpm: number, style?: string): Promise<void> {
   await startAudioContext();
-  setSandboxAuditionMaster(false); // 预听也走压缩母带(响而受控)
   const events = musicalIRToMidiEvents(ir, roomWetFor(style ?? 'default'));
   globalMidiScheduler.stop();
   globalMidiScheduler.loadTrack(events, bpm);
@@ -51,61 +51,43 @@ export function getIsPlaying(): boolean {
 const AUDITION_CHANNEL = 15;
 let auditionProgram = -1;
 
-// M1 批2（计划修订6）：synth 实例重建 → 试听音色缓存失效（新实例需重发 program/CC）。
-subscribeSynthReset(() => { auditionProgram = -1; });
-
 /** 试听单音 on:【同步】发声(无 await → noteOn 直接在 MIDI 事件里送进 worklet,延迟最低)。
  *  未就绪则后台启动音频(这一下可能没声,下一下就有);音只在按住时响,松手即停。 */
 export function auditionNoteOn(midiNote: number, program: number, velocity = 100): void {
-  if (!activeSynth) { void startAudioContext(); return; }
-  setSandboxAuditionMaster(true); // 试听/录入 → 零延迟软削波母带(仅模式变化时换接,无 glitch)
   if (program !== auditionProgram) {
-    activeSynth.programChange(AUDITION_CHANNEL, program);
-    activeSynth.controllerChange(AUDITION_CHANNEL, 7, 127);   // CC7 音量拉满
-    activeSynth.controllerChange(AUDITION_CHANNEL, 11, 127);  // CC11 表情拉满
-    activeSynth.controllerChange(AUDITION_CHANNEL, 91, 14);   // CC91 混响压低 → 干声更近
-    activeSynth.controllerChange(AUDITION_CHANNEL, 10, 64);   // CC10 居中
+    AudioEngine.programChange(AUDITION_CHANNEL, program);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 7, 127);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 11, 127);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 91, 14);
+    AudioEngine.controllerChange(AUDITION_CHANNEL, 10, 64);
     auditionProgram = program;
-    // ★ 不再强制 CC64=0 —— 延音踏板由 MIDI 输入的 CC64 实时控制(大钢琴随踏板延音),不踩=不糊。
   }
   const v = Math.max(78, Math.min(127, velocity)); // 试听响度兜底(只影响发声,录入真力度不变)
-  // ★ 显式 time=currentTime → 立即执行(消除任何默认调度延迟,worklet 下一 quantum 即发声)。
-  try { activeSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v, { time: getAudioContext().currentTime }); }
-  catch { activeSynth.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v); }
+  AudioEngine.noteOn(AUDITION_CHANNEL, Math.round(midiNote), v);
 }
 
 /** 试听单音 off(踏板抬起时即停;踩下时由合成器延音)。 */
 export function auditionNoteOff(midiNote: number): void {
-  if (!activeSynth) return;
-  activeSynth.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
+  AudioEngine.noteOff(AUDITION_CHANNEL, Math.round(midiNote));
 }
 
 /** 试听通道收 CC(MIDI 输入的踏板 CC64 等)→ 大钢琴随【延音踏板】延音。同步、最低延迟。 */
 export function auditionControlChange(controller: number, value: number): void {
-  if (!activeSynth) return;
-  type CC = Parameters<typeof activeSynth.controllerChange>[1];
-  try { activeSynth.controllerChange(AUDITION_CHANNEL, Math.round(controller) as CC, Math.round(value)); } catch { /* ignore */ }
+  AudioEngine.controllerChange(AUDITION_CHANNEL, Math.round(controller), Math.round(value));
 }
 
-/** 在用户手势(按钮点击 / 按键)里先解锁 AudioContext。
- *  ★ MIDI 输入【不算手势】,浏览器会保持 AudioContext 挂起 → 试听无声;
- *  必须在真手势里先调一次,之后 MIDI 输入才能即时发声。多次调用安全(SynthManager 串行)。 */
+/** 在用户手势(按钮点击 / 按键)里确认 Dream 5504 MIDI 输出已连接。
+ *  ★ 浏览器不再本地发声;未连接硬件时保持静音并由输出层提示。 */
 export async function ensureAudio(): Promise<void> {
   await startAudioContext();
-  try { const ctx = getAudioContext(); if (ctx && ctx.state === 'suspended') await ctx.resume(); } catch { /* ignore */ }
 }
 
-export { setSandboxAuditionMaster } from '../../../audio/SynthManager'; // 离开 Q+R / 成品播放时还原压缩母带
+export const setSandboxAuditionMaster = (_low: boolean): void => { /* MIDI-only: no browser master bus. */ };
 
 /** 音频系统延迟诊断:base=worklet 处理、output=OS/输出缓冲(含蓝牙)。判断"延迟来自系统还是代码"。 */
 export function getAudioLatencyMs(): { base: number; output: number; total: number; sampleRate: number; state: string } | null {
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return null;
-    const base = (ctx.baseLatency || 0) * 1000;
-    const output = ((ctx as unknown as { outputLatency?: number }).outputLatency || 0) * 1000;
-    return { base, output, total: base + output, sampleRate: ctx.sampleRate, state: ctx.state };
-  } catch { return null; }
+  const state = Dream5504MidiOutput.getState();
+  return { base: 0, output: 0, total: 0, sampleRate: 0, state: state.armed ? 'dream5504-midi-on' : 'dream5504-midi-silent' };
 }
 
 // —— 隐形时钟数拍 click(节拍器,GM 打击通道 9)——
@@ -113,20 +95,16 @@ const DRUM_CHANNEL = 9;
 /** 数拍节拍器:强拍(beat1)= 高木鱼重、弱拍 = 低木鱼轻(经典节拍器音)。一击即衰减。 */
 export async function playClick(strong: boolean): Promise<void> {
   await startAudioContext();
-  if (!activeSynth) return;
-  setSandboxAuditionMaster(true); // 数拍 click 也走低延迟母带(录入语境)
   const note = strong ? 76 : 77;            // 76=Hi Wood Block / 77=Low Wood Block = 节拍器
   const vel = strong ? 118 : 80;
-  activeSynth.noteOn(DRUM_CHANNEL, note, vel);
-  activeSynth.noteOff(DRUM_CHANNEL, note);  // 打击乐 noteOff 不切尾,只防挂音
+  AudioEngine.noteOn(DRUM_CHANNEL, note, vel);
+  AudioEngine.noteOff(DRUM_CHANNEL, note);
 }
 
 /** ★ 录入捕获窗满(4 小节)提示音:三角铁 ding(亮、金属、ring → 区别于 wood block click),
  *  让用户听到"motif 取这前 4 小节"的边界。打击乐 noteOff 不切尾 → 自然 ring。 */
 export async function playCue(): Promise<void> {
   await startAudioContext();
-  if (!activeSynth) return;
-  setSandboxAuditionMaster(true);
-  activeSynth.noteOn(DRUM_CHANNEL, 81, 122);  // 81 = Open Triangle(三角铁,bell ding)
-  activeSynth.noteOff(DRUM_CHANNEL, 81);
+  AudioEngine.noteOn(DRUM_CHANNEL, 81, 122);
+  AudioEngine.noteOff(DRUM_CHANNEL, 81);
 }

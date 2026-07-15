@@ -36,7 +36,7 @@ import { applyDynamics, type EnergyRange } from './dynamics';
 import { applyEnding, applyLeadIns } from './ending';
 import { humanizeVelocity, humanizeTiming } from './humanize';
 import { applyGroovePocket, pocketedRoles } from './groovePocket';
-import { applyRepeatGroupReplay } from './repeatGroupReplay';
+import { applyMotifBindingReplay, applyRepeatGroupReplay } from './repeatGroupReplay';
 import { fillLeadBarGaps } from './leadGapFill';
 import { applyGestureExpressionToTrack } from '../instrumental/gestureExpression';
 import { connectFastLeadNoteIR, fastLeadLegatoOptionsForStyle } from './leadArticulation';
@@ -48,7 +48,6 @@ import type { RenderOverlay } from './RenderOverlay';
 import { applyRenderMixBalance } from './renderMixBalance';
 import { fitMidiToProgramRange } from '../knowledge/instruments';
 import { evaluateNoteInChordContext } from '../knowledge/melodyChordSemantics';
-import { generatedAura25BankForProgram } from '../../../sound/Aura25Palette';
 
 export interface RenderResult {
   ir: MusicalIR;
@@ -124,6 +123,9 @@ export function leadAvoidExposureResolver(
 ): TrackIR['notes'] {
   const oneBeatTicks = timebase.beatToTick(beats(1)) as number;
   const twoBeatTicks = oneBeatTicks * 2;
+  const structuralTicks = Math.round(timebase.ppq * 0.75);
+  const beatsPerBar = timebase.meter.numerator * (4 / timebase.meter.denominator);
+  const metricTolerance = timebase.ppq * 0.08;
   const minClashOverlap = timebase.ppq / 2;
   const spans = plan.chordTimeline.map((span) => {
     const start = timebase.beatToTick(span.startBeat) as number;
@@ -133,12 +135,21 @@ export function leadAvoidExposureResolver(
   const funcBySpan: Record<string, (typeof plan.chordFunctionTimeline)[number]> = {};
   const idxBySpan: Record<string, number> = {};
   plan.chordTimeline.forEach((span, i) => { funcBySpan[span.id] = plan.chordFunctionTimeline[i]; idxBySpan[span.id] = i; });
-  const spanAt = (tick: number) => spans.find((s) => tick >= s.start && tick < s.end)?.span;
+  const spanAt = (tick: number) => spans.find((s) => tick >= s.start && tick < s.end);
   const nearestProgramPitch = (targetPc: number, ref: number, program: number): number => {
     const refPc = ((ref % 12) + 12) % 12;
     const up = ((targetPc - refPc) % 12 + 12) % 12;
     const signed = up > 6 ? up - 12 : up;
     return fitMidiToProgramRange(ref + signed, 'lead', program);
+  };
+  const intervalPenalty = (from: number | undefined, to: number): number => {
+    if (from === undefined) return 0;
+    const distance = Math.abs(to - from);
+    const intervalClass = distance % 12;
+    return distance > 12 ? 120 + distance
+      : distance > 7 ? 30 + distance
+      : intervalClass === 1 || intervalClass === 6 ? 18
+      : distance;
   };
   const clashesComp = (candidatePitch: number, note: TrackIR['notes'][number]): boolean => {
     const ns = note.startTick as number;
@@ -152,59 +163,145 @@ export function leadAvoidExposureResolver(
       return distance === 1 || distance === 13;
     });
   };
+  const harmonicSets = (span: HarmonicPlan['chordTimeline'][number]) => {
+    const avoid = new Set<number>(plan.avoidNoteMap[span.id] ?? []);
+    const scale = new Set<number>(plan.chordScaleMap[span.id] ?? []);
+    const contract = new Set<number>([...(plan.stableToneMap[span.id] ?? []), ...(plan.colorToneMap[span.id] ?? [])]);
+    const legal = [...contract].filter((pc) => !avoid.has(pc) && scale.has(pc));
+    return { avoid, scale, contract, legal };
+  };
+  const chooseLegalPitch = (args: {
+    legalPcs: readonly number[];
+    referencePitch: number;
+    program: number;
+    note: TrackIR['notes'][number];
+    prevPitch?: number;
+    nextPitch?: number;
+    targetHintPcs?: readonly number[];
+  }): number | null => {
+    const hints = new Set((args.targetHintPcs ?? []).map((pc) => ((pc % 12) + 12) % 12));
+    const candidates = args.legalPcs
+      .map((targetPc) => nearestProgramPitch(targetPc, args.referencePitch, args.program))
+      .sort((a, b) => {
+        const score = (candidate: number) => Math.abs(candidate - args.referencePitch) * 2
+          + intervalPenalty(args.prevPitch, candidate)
+          + intervalPenalty(args.nextPitch, candidate)
+          + (hints.has(((candidate % 12) + 12) % 12) ? -6 : 0);
+        return score(a) - score(b) || Math.abs(a - args.referencePitch) - Math.abs(b - args.referencePitch);
+      });
+    return candidates.find((candidate) => !clashesComp(candidate, args.note)) ?? candidates[0] ?? null;
+  };
   let changed = false;
-  const fixed = notes.map((note) => {
-    if ((note.durationTicks as number) < oneBeatTicks) return note;
-    const span = spanAt(note.startTick as number);
-    if (!span) return note;
+  const fixed = notes.map((note, noteIndex) => {
+    const noteStart = note.startTick as number;
+    const exposure = spanAt(noteStart);
+    if (!exposure) return note;
+    const span = exposure.span;
     const pitch = note.pitch as number;
     const notePc = ((pitch % 12) + 12) % 12;
-    const avoid = new Set(plan.avoidNoteMap[span.id] ?? []);
+    const currentPc = pitchClass(notePc);
+    const { avoid, scale, contract, legal: structuralLegal } = harmonicSets(span);
+    const beat = timebase.tickToBeat(ticks(noteStart)) as number;
+    const phase = ((beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+    const strongBeat = Math.min(Math.abs(phase), Math.abs(phase - beatsPerBar), Math.abs(phase - beatsPerBar / 2)) * timebase.ppq <= metricTolerance;
+    const chordEntrance = Math.abs(noteStart - exposure.start) <= metricTolerance;
+    const structural = strongBeat || chordEntrance || (note.durationTicks as number) >= structuralTicks;
     let targetHintPcs: readonly number[] = [];
-    const hardAvoid = avoid.has(pitchClass(notePc));
+    const hardAvoid = structural && avoid.has(currentPc);
+    const structuralIllegal = structural && !structuralLegal.includes(currentPc);
     if (!hardAvoid && keyCtx && (note.durationTicks as number) >= twoBeatTicks) {
       const idx = idxBySpan[span.id];
       const next = plan.chordTimeline[idx + 1];
       const modKey = plan.modulationMap[span.sectionId]?.toKey;
+      const localScalePcs = new Set((plan.chordScaleMap[span.id] ?? []).map((pc) => Number(pc)));
       const assessment = evaluateNoteInChordContext({
         notePc: pitchClass(notePc),
-        chordType: span.quality,
+        chordType: span.chordType ?? String(span.quality),
         chordRootPc: span.rootPc,
         effectiveFunc: funcBySpan[span.id] ?? 'T',
-        nextChordType: next ? next.quality : null,
+        nextChordType: next ? (next.chordType ?? String(next.quality)) : null,
         nextChordRootPc: next ? next.rootPc : null,
         keyRootPc: keyCtx.keyRootPc,
         globalMode: keyCtx.globalMode,
         isModalContext: keyCtx.isModalContext,
         scaleNameForBar: keyCtx.scaleName,
+        localScalePcs,
         tonalCharacter: keyCtx.tonalCharacter,
-        localTonalCenterPc: modKey,
+        localTonalCenterPc: span.localTonalCenterPc ?? modKey,
       });
       if (assessment.consonance === 'avoid' && assessment.urgency >= 0.9) targetHintPcs = assessment.resolutionTargets;
     }
-    if (!hardAvoid && targetHintPcs.length === 0) return note;
+    if (!hardAvoid && !structuralIllegal && targetHintPcs.length === 0) return note;
     const program = programForSection(span.sectionId) ?? 0;
-    const scale = new Set(plan.chordScaleMap[span.id] ?? []);
-    const targetHintSet = new Set(targetHintPcs.map((targetPc) => pitchClass(targetPc)));
-    const currentPc = pitchClass(notePc);
+    // A structural note that already satisfies the authoritative intersection must not be
+    // reinterpreted by a narrower semantic fallback (for example 7sus4 treated as plain 7).
+    if (!hardAvoid && structuralLegal.includes(currentPc)) return note;
     const targetPcs = [
       ...targetHintPcs.map((targetPc) => pitchClass(targetPc)),
-      ...(plan.stableToneMap[span.id] ?? []),
-      ...(plan.colorToneMap[span.id] ?? []),
-      ...(plan.chordScaleMap[span.id] ?? []),
+      ...structuralLegal,
     ].filter((pc, idx, arr) => !avoid.has(pc)
       && (hardAvoid || pc !== currentPc)
-      && (scale.size === 0 || scale.has(pc) || targetHintSet.has(pc))
+      && contract.has(pc)
+      && scale.has(pc)
       && arr.indexOf(pc) === idx);
-    const candidates = targetPcs
-      .map((targetPc) => nearestProgramPitch(targetPc, pitch, program))
-      .sort((a, b) => Math.abs(a - pitch) - Math.abs(b - pitch));
-    const resolved = candidates.find((candidate) => !clashesComp(candidate, note)) ?? candidates[0] ?? pitch;
+    if (targetPcs.length === 0) return note; // fail closed; final audit reports the unresolved note
+    const prevPitch = noteIndex > 0 ? notes[noteIndex - 1].pitch as number : undefined;
+    const nextPitch = noteIndex + 1 < notes.length ? notes[noteIndex + 1].pitch as number : undefined;
+    const resolved = chooseLegalPitch({
+      legalPcs: targetPcs,
+      referencePitch: pitch,
+      program,
+      note,
+      prevPitch,
+      nextPitch,
+      targetHintPcs,
+    }) ?? pitch;
     if (resolved === pitch) return note;
     changed = true;
     return { ...note, pitch: midi(resolved) };
   });
-  return changed ? fixed : notes;
+  // A note may have been legal at its onset but sustain as a long structural tension into a
+  // later chord. Split only those illegal long exposures at the boundary and resolve by the
+  // same neighbour-aware intersection chooser; common tones remain tied unchanged.
+  let splitChanged = false;
+  const splitNotes: TrackIR['notes'][number][] = [];
+  for (let noteIndex = 0; noteIndex < fixed.length; noteIndex++) {
+    const note = fixed[noteIndex];
+    const originalStart = note.startTick as number;
+    const originalEnd = originalStart + (note.durationTicks as number);
+    let segmentStart = originalStart;
+    let segmentPitch = note.pitch as number;
+    const boundaries = spans.filter((entry) => entry.start > originalStart && entry.start < originalEnd);
+    for (const entry of boundaries) {
+      const overlapEnd = Math.min(originalEnd, entry.end);
+      const exposureTicks = overlapEnd - entry.start;
+      const { avoid, legal } = harmonicSets(entry.span);
+      const segmentPc = ((segmentPitch % 12) + 12) % 12;
+      const illegalLongExposure = !legal.includes(segmentPc)
+        && (exposureTicks >= structuralTicks || (avoid.has(segmentPc) && exposureTicks >= oneBeatTicks));
+      if (!illegalLongExposure || legal.length === 0) continue;
+      if (entry.start > segmentStart) {
+        splitNotes.push({ ...note, pitch: midi(segmentPitch), startTick: ticks(segmentStart), durationTicks: ticks(entry.start - segmentStart) });
+      }
+      const targetNote = { ...note, startTick: ticks(entry.start), durationTicks: ticks(Math.max(1, overlapEnd - entry.start)) };
+      const nextPitch = noteIndex + 1 < fixed.length ? fixed[noteIndex + 1].pitch as number : undefined;
+      const resolved = chooseLegalPitch({
+        legalPcs: legal,
+        referencePitch: segmentPitch,
+        program: programForSection(entry.span.sectionId) ?? 0,
+        note: targetNote,
+        prevPitch: segmentPitch,
+        nextPitch,
+      });
+      if (resolved === null) continue;
+      segmentStart = entry.start;
+      segmentPitch = resolved;
+      splitChanged = true;
+    }
+    splitNotes.push({ ...note, pitch: midi(segmentPitch), startTick: ticks(segmentStart), durationTicks: ticks(originalEnd - segmentStart) });
+  }
+  if (!splitChanged) return changed ? fixed : notes;
+  return splitNotes.sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
 }
 
 function fitLeadTrackToInstrumentSections(
@@ -260,20 +357,31 @@ function snapCompLaidback(track: TrackIR, ppq: number): TrackIR {
   };
 }
 
+export interface DensityGateOptions {
+  pickupWindows?: { lo: number; hi: number; roles: ReadonlySet<string> }[];
+  rolePerformanceBySection?: ArrangementPlan['rolePerformanceBySection'];
+  openingGesture?: ArrangementPlan['openingGesture'];
+  /** User-authored override lead keeps its own timing, while still obeying presence/silence gates. */
+  preserveLeadTiming?: boolean;
+}
+
 /**
- * 编曲密度弧 gate(A2):按 activeRolesBySection 丢掉【该 role 在该段不在场】的音(谁进/出)。
- *   段落 tick 区间从和声 timeline 聚合;落不到段(边界)→ 保留。lead 在密度表里恒含 → 不被丢(fork1)。
- *   纯过滤、确定性;在 occupation/auditor 之前施加 → 下游看到的是真实稀疏编曲。
- * ★ Loop E(2026-06-08):transition-aware —— lead-in 边界 prepBar 内、role∈pickupRoles 且 protectPickupFromGate
- *   的音=下一段【授权预进入】(drum pickup / fill),不被上一段 activeRoles 删除(directive §1.1)。
+ * 编曲在场/入场/密度的单一 gate。activeRolesBySection 是所有角色(含 lead)的实际在场真源；
+ * RolePerformance 叠加 none/dropout/delayed 与 bass/comp 温和密度上限；OpeningGesture 只管首段延迟。
+ * pickup 授权窗口优先于上述 gate。整个过程只运行一次，发生在 occupation/auditor 之前。
  */
-function gateByDensity(
+export function gateByDensity(
   tracks: TrackIR[],
   plan: HarmonicPlan,
   timebase: Timebase,
   activeRolesBySection: Record<string, readonly string[]>,
-  pickupWindows: { lo: number; hi: number; roles: ReadonlySet<string> }[] = [],
+  options: DensityGateOptions = {},
 ): TrackIR[] {
+  const pickupWindows = options.pickupWindows ?? [];
+  const rolePerformanceBySection = options.rolePerformanceBySection;
+  const openingGesture = options.openingGesture;
+  const beatsPerBar = timebase.meter.numerator * (4 / timebase.meter.denominator);
+  const barTicks = beatsPerBar * timebase.ppq;
   const byId = new Map<string, { start: number; end: number }>();
   for (const span of plan.chordTimeline) {
     const s = timebase.beatToTick(span.startBeat) as number;
@@ -282,19 +390,115 @@ function gateByDensity(
     if (!r) byId.set(span.sectionId, { start: s, end: e });
     else { r.start = Math.min(r.start, s); r.end = Math.max(r.end, e); }
   }
-  const ranges = [...byId.entries()].map(([id, r]) => ({ id, ...r }));
+  const ranges = [...byId.entries()].map(([id, r]) => ({ id, ...r })).sort((a, b) => a.start - b.start);
+  const firstSectionId = ranges[0]?.id;
   const sectionAt = (tick: number) => ranges.find((r) => tick >= r.start && tick < r.end);
   const isPickup = (tick: number, role: string) => pickupWindows.some((w) => tick >= w.lo && tick < w.hi && w.roles.has(role));
+
+  const entryThreshold = (section: { id: string; start: number }, role: TrackIR['role']): number => {
+    const performance = rolePerformanceBySection?.[role]?.[section.id];
+    const hasOpeningDelay = section.id === firstSectionId
+      && openingGesture?.sectionId === section.id
+      && Object.prototype.hasOwnProperty.call(openingGesture.roleDelayBars, role);
+    const openingDelay = hasOpeningDelay ? openingGesture!.roleDelayBars[role] : undefined;
+    const delayBars = openingDelay !== undefined
+      ? Math.max(0, openingDelay)
+      : performance?.entryMode === 'delayed' ? 1 : 0;
+    return section.start + delayBars * barTicks;
+  };
+
+  const metricPriority = (tick: number, sectionStart: number): number => {
+    const beat = (((tick - sectionStart) / timebase.ppq) % beatsPerBar + beatsPerBar) % beatsPerBar;
+    const nearestInteger = Math.abs(beat - Math.round(beat));
+    if (beat < 0.08 || beatsPerBar - beat < 0.08) return 0;
+    if (Math.abs(beat - beatsPerBar / 2) < 0.08) return 1;
+    if (nearestInteger < 0.08) return 2;
+    if (Math.abs((beat % 1) - 0.5) < 0.08) return 3;
+    return 4;
+  };
+
+  const capOnsetGroups = (notes: TrackIR['notes'], role: TrackIR['role']): TrackIR['notes'] => {
+    if (role !== 'bass' && role !== 'comp') return notes;
+    const groupsByBar = new Map<string, { sectionId: string; sectionStart: number; ticks: Map<number, TrackIR['notes']> }>();
+    const outsideSection: TrackIR['notes'] = [];
+    for (const note of notes) {
+      const tick = note.startTick as number;
+      const section = sectionAt(tick);
+      if (!section) { outsideSection.push(note); continue; }
+      const bar = Math.max(0, Math.floor((tick - section.start) / barTicks));
+      const key = `${section.id}:${bar}`;
+      const row = groupsByBar.get(key) ?? { sectionId: section.id, sectionStart: section.start, ticks: new Map() };
+      const onset = row.ticks.get(tick) ?? [];
+      onset.push(note);
+      row.ticks.set(tick, onset);
+      groupsByBar.set(key, row);
+    }
+
+    const kept: TrackIR['notes'] = [...outsideSection];
+    const minimumGroups = Math.max(2, Math.round(beatsPerBar * 2));
+    const referenceSlots = Math.max(minimumGroups, Math.round(beatsPerBar * 4));
+    for (const row of groupsByBar.values()) {
+      const performance = rolePerformanceBySection?.[role]?.[row.sectionId];
+      if (!performance || !Number.isFinite(performance.densityBudget)) {
+        for (const group of row.ticks.values()) kept.push(...group);
+        continue;
+      }
+      const budget = Math.max(0, Math.min(1, performance.densityBudget));
+      // A "gentle" ceiling keeps a normal eighth-note groove intact even at budget 0 and only
+      // thins unusually dense (near-sixteenth) onset streams. This avoids manufacturing holes in
+      // an already-authored comp/bass pattern while still enforcing a real per-bar upper bound.
+      const maxGroups = Math.max(minimumGroups, Math.min(referenceSlots,
+        Math.ceil(minimumGroups + budget * (referenceSlots - minimumGroups))));
+      const rankedTicks = [...row.ticks.keys()]
+        .sort((a, b) => metricPriority(a, row.sectionStart) - metricPriority(b, row.sectionStart) || a - b);
+      // Authorized pickups outrank the density ceiling as well as presence/entry gates. They do
+      // count toward the budget when possible; if there are more pickups than slots, keep them all.
+      const selectedTicks = new Set(rankedTicks.filter((tick) => isPickup(tick, role)));
+      for (const tick of rankedTicks) {
+        if (selectedTicks.size >= maxGroups) break;
+        selectedTicks.add(tick);
+      }
+      for (const [tick, group] of row.ticks) if (selectedTicks.has(tick)) kept.push(...group);
+    }
+    return kept.sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
+  };
+
   return tracks.map((t) => {
-    if (t.role === 'lead') return t; // ★ Loop 3(strict parity):lead = MG 真源,永不被密度弧 gate 删除
+    const onsetGroups = new Map<number, TrackIR['notes']>();
+    for (const note of t.notes) {
+      const tick = note.startTick as number;
+      const group = onsetGroups.get(tick) ?? [];
+      group.push(note);
+      onsetGroups.set(tick, group);
+    }
+    const admitted: TrackIR['notes'] = [];
+    for (const [tick, group] of onsetGroups) {
+      if (isPickup(tick, t.role)) { admitted.push(...group); continue; }
+      const section = sectionAt(tick);
+      if (!section) { admitted.push(...group); continue; }
+      if (!(activeRolesBySection[section.id] ?? []).includes(t.role)) continue;
+      const performance = rolePerformanceBySection?.[t.role]?.[section.id];
+      if (performance?.entryMode === 'none' || performance?.entryMode === 'dropout') continue;
+
+      const threshold = t.role === 'lead' && options.preserveLeadTiming
+        ? section.start
+        : entryThreshold(section, t.role);
+      if (tick >= threshold) { admitted.push(...group); continue; }
+      if (t.role !== 'bass' && t.role !== 'comp' && t.role !== 'pad') continue;
+
+      // 延迟阈值前已经起音、但整个 onset group 都跨过阈值的长织体，统一把起点裁到阈值；
+      // lead brick 不做此类侵入式裁切，阈值前的自然音直接丢弃。
+      if (!group.every((note) => tick + (note.durationTicks as number) > threshold)) continue;
+      admitted.push(...group.map((note) => ({
+        ...note,
+        startTick: ticks(threshold),
+        durationTicks: ticks(tick + (note.durationTicks as number) - threshold),
+      })));
+    }
+    const notes = capOnsetGroups(admitted, t.role);
     return {
-      role: t.role,
-      notes: t.notes.filter((n) => {
-        const tick = n.startTick as number;
-        if (isPickup(tick, t.role)) return true; // ★ Loop E:下一段授权 pickup → 保留
-        const sec = sectionAt(tick);
-        return sec ? (activeRolesBySection[sec.id] ?? []).includes(t.role) : true;
-      }),
+      ...t,
+      notes,
     };
   });
 }
@@ -339,6 +543,7 @@ export function renderSongFull(
   intentPlan?: MusicIntentPlan, // ★ Phase 2:上游(controller)派生的 intent(bass enforce);缺省(测试)→ 内联纯派生(不抽 RNG)
   userMotifBrick?: UserMotifBrick, // ★ Q+R 收口:用户 motif 作为 Q+N lead 内的 brick quote,其余续写仍由 MG/Q+N 生成
 ): RenderResult {
+  const isAcg = band.style.toLowerCase() === 'acg';
   // ★ 2026-06-07 退役 Motif 旋律子系统(backlog D-1/c):旋律走 MG 链,不再跑 Prepass/MotifStore/
   //   candidateSwap。撞音消解只剩 voicingSafer(comp 瘦身)+ 兜底重掷(advance melody 子流)。
   const voicingSaferSpans = overlay?.voicingSafer ? new Set(Object.keys(overlay.voicingSafer)) : undefined;
@@ -487,14 +692,28 @@ export function renderSongFull(
   //   只改 comp/bass(strict parity:lead 绝不碰)。在分轨生成后、gate/audit 前。
   const postMixTracks = band.style.toLowerCase() === 'lofi' ? applyMgLofiDenseMelodyComping(tracks, plan, timebase) : tracks;
 
-  // ★ A2 编曲密度弧:按 activeRolesBySection 丢掉非在场段的音(intro 稀疏 / chorus 全员 / breakdown 抽离)。
-  //   在 occupation/auditor 之前 → 下游看到真实稀疏编曲。lead 恒在场不被丢。
+  // 先修复源段 lead 空拍、再复用 repeat body；此时尚未施加首段 opening gate，避免
+  // “开场延迟/缺席”被当作 motif body 复制到后续 verse/chorus。replay 仍在 dynamics 之前。
+  const gapFilledTracks = isAcg
+    ? postMixTracks
+    : fillLeadBarGaps(postMixTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
+  const replayedTracks = isAcg
+    ? applyMotifBindingReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase)
+    : applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
+
+  // ★ A2 编曲密度弧:activeRolesBySection 是所有角色(含 lead)的真实在场真源，
+  //   replay 后只 gate 一次，让每个目标段按自己的 active/opening/performance 合同重投影。
   // ★ Loop E:transitionPlan 的 lead-in pickup → prepBar 内授权角色保护窗口(不被上一段 gate 删除)。
   const barTicksGate = beatsPerBarOf(arrangement.meter) * timebase.ppq;
   const pickupWindows = instrumentation.transitionPlan.boundaries
     .filter((b) => b.protectPickupFromGate && b.pickupRoles.length > 0)
     .map((b) => ({ lo: b.prepBar * barTicksGate, hi: (b.prepBar + 1) * barTicksGate, roles: new Set<string>(b.pickupRoles as readonly string[]) }));
-  const gatedTracks = gateByDensity(postMixTracks, plan, timebase, instrumentation.activeRolesBySection, pickupWindows);
+  const gatedTracks = gateByDensity(replayedTracks, plan, timebase, instrumentation.activeRolesBySection, {
+    pickupWindows,
+    rolePerformanceBySection: arrangement.rolePerformanceBySection,
+    openingGesture: arrangement.openingGesture,
+    preserveLeadTiming: !!overrideLeadTrack,
+  });
 
   // Accompaniment → OccupationMap → Resolver(best-effort)→ 单点 freeze → Auditor
   const reserved = {
@@ -513,8 +732,16 @@ export function renderSongFull(
   const energyRanges: EnergyRange[] = [];
   let dynCursor = 0;
   const bpbDyn = beatsPerBarOf(arrangement.meter);
+  const climaxIntensityBySection = new Map<string, number>();
+  for (const climax of arrangement.climaxMap) {
+    const current = climaxIntensityBySection.get(climax.sectionId) ?? 0;
+    climaxIntensityBySection.set(climax.sectionId, Math.max(current, Math.max(0, Math.min(1, climax.intensity))));
+  }
   for (const s of arrangement.sections) {
-    energyRanges.push({ lo: dynCursor, hi: dynCursor + s.bars * bpbDyn, energy: arrangement.energyBySection[s.id] ?? 0.5 });
+    const baseEnergy = arrangement.energyBySection[s.id] ?? 0.5;
+    const climaxIntensity = climaxIntensityBySection.get(s.id) ?? 0;
+    const energy = Math.min(1, baseEnergy + climaxIntensity * 0.12);
+    energyRanges.push({ lo: dynCursor, hi: dynCursor + s.bars * bpbDyn, energy });
     dynCursor += s.bars * bpbDyn;
   }
   // ★ 伴奏 ducking:comp 撞旋律时【极轻压 ×0.9】(只给旋律一点空间,不把 comp 压下去)。
@@ -528,27 +755,11 @@ export function renderSongFull(
   const endedTracks = applyEnding(dynamicTracks, arrangement, instrumentation.endingPlan, timebase.ppq, bpbEdge);
   const ledTracks = applyLeadIns(endedTracks, leadInBars, timebase.ppq, bpbEdge);
 
-  // ★ lead 空拍补全(2026-06-11,用户):末音后若有【很大空拍】(≥2拍且本 bar 余下全空)→ 延长该末音到 bar 末
-  //   (钳位当前和弦,不越界撞下一和弦)。避免"和弦未完成戛然而止"。只动 lead 时值,不碰 onset/其它轨。
-  //   ★ 放在 repeatGroup 重放【之前】→ 重放复制【已补全】的首段 body → 重复段 lead 仍逐字节一致。
-  // ★ ACG 跳过 fillLeadBarGaps(P0-2,mg fidelity 审计):MG ACG lead 故意留长 silence(cantabile 呼吸感);
-  //   fillLeadBarGaps(为 POP 断句选的"末音后大空拍→延到 bar 末")会填满 → 抹掉 MG 呼吸感。ACG 保 MG raw 空拍。
-  //   (repeatGroupReplay/sanitizeLead 仍走;groovePocket 暂留,待再测。)
-  const gapFilledTracks = band.style.toLowerCase() === 'acg'
-    ? ledTracks
-    : fillLeadBarGaps(ledTracks, plan.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
-
-  // ★ repeatGroup 重放(2026-06-11):同 group 后续段(verse2/chorus2…)复用首段【和声一致前缀(body)】,
-  //   保留各自【发散尾巴(link bar)】。放在 humanize 之前 → body 同音符,humanize/swing 各段跑出自然微差
-  //   (lead 不 humanize → 逐字节一致)。在 resolveInteractions 之后 → 复制已消解撞音的首段,内部自洽。
-  //   打破 strict MG lead parity:首次出现==raw MG(经空拍补全),重复出现==首次重放(用户决策)。
-  const replayedTracks = applyRepeatGroupReplay(gapFilledTracks, arrangement, plan.chordTimeline, timebase);
-
   // ★ comp 去拖拍(2026-06-23,用户:632219 verse comp 比 bass/drum 八分 groove 滞后):直拍风格下,把 comp 落在
   //   【拍内弱 16 分 .25/.75(拖在八分后)】的 onset 吸回前一个八分(去拖拍,锁鼓/bass 强弱);.0(beat)/.5(and)
   //   等【有意切分】不动。只 comp;swung 风格(jazz/blues)整轨跳过(loose 是 feel)。
   const straightFeel = arrangement.feel.swingRatio <= 0.5 + 1e-6;
-  const grooveTracks = straightFeel ? replayedTracks.map((t) => (t.role === 'comp' ? snapCompLaidback(t, timebase.ppq) : t)) : replayedTracks;
+  const grooveTracks = straightFeel ? ledTracks.map((t) => (t.role === 'comp' ? snapCompLaidback(t, timebase.ppq) : t)) : ledTracks;
 
   // 人性化(5.3):力度 metric accent + 微随机(鼓除外,保 groove)→ swing → 微时序抖动
   const bpbHuman = beatsPerBarOf(arrangement.meter);
@@ -557,8 +768,6 @@ export function renderSongFull(
 
   // feel:swing 落地(全轨统一 onset warp;直则原样)
   const swungTracks = applySwing(accentedTracks, timebase.ppq, arrangement.feel.swingRatio);
-  const leadProgramForSection = (sectionId: string): number | undefined =>
-    instrumentation.programByRoleSection.lead?.[sectionId] ?? instrumentation.roleProgram.lead ?? band.roleProgram.lead;
   const auditKeyCtx: AuditKeyContext = {
     keyRootPc: band.key,
     globalMode: band.mode,
@@ -566,17 +775,9 @@ export function renderSongFull(
     scaleName: band.modalModeName,
     tonalCharacter: band.tonalityKind === 'modal' ? 'modal' : 'tonal',
   };
-  const swungCompNotes = swungTracks.find((t) => t.role === 'comp')?.notes ?? [];
-  const harmonySafeTracks = swungTracks.map((t) => (
-    t.role === 'lead'
-      ? { ...t, notes: leadAvoidExposureResolver(t.notes, plan, timebase, leadProgramForSection, swungCompNotes, auditKeyCtx) }
-      : t
-  ));
-
-  // ★ 和声审计在【微时序之前】:Auditor 判和声落点用乐句网格起音,微抖动属网格下层、
-  //   不应被和声判定(±少量 tick 跨和弦边界会误暴露 avoid)。审计过后再施加抖动产出可听 IR。
-  const auditedIR = freezeMusicalIR({ tracks: harmonySafeTracks, timebase, durationTicks: resolved.data.durationTicks });
-  const audit = auditHarmony(auditedIR, plan, timebase, auditKeyCtx);
+  // Pitch/duration owners continue below; the single authoritative lead contract resolver runs
+  // after gesture shaping and user-motif restoration, immediately before final mix/audit.
+  const harmonySafeTracks = swungTracks;
 
   // ★ Loop F 结构锚点:段落起始 tick + 曲首 0 + 末主音下拍(末和弦起) → humanizeTiming 对这些 tick 不做负向 jitter。
   const anchorTicks = new Set<number>([0]);
@@ -617,7 +818,6 @@ export function renderSongFull(
   //   ② resolveAcgTailExpectations:旋律尾音撞下一和弦 → 移除/把下个落点 snap 到解决音。
   //   ③ spaceAcgBass:bass 瘦身到 anchor + 1-2 支撑(对齐旋律落点)→ 干净稀疏低音。
   //   ④ shapeAcgComp:inner voice → carve → floor。⑤ normalizeAcgDynamics:三轨力度归一。
-  const isAcg = band.style.toLowerCase() === 'acg';
   const acgBarTicks = beatsPerBarOf(arrangement.meter) * timebase.ppq;
   const acgLead0 = isAcg ? articulatedTracks.find((t) => t.role === 'lead') : undefined;
   const acgComp0 = isAcg ? articulatedTracks.find((t) => t.role === 'comp') : undefined;
@@ -640,7 +840,9 @@ export function renderSongFull(
         : t.role === 'bass' && acgBass0 ? spaceAcgBass(acgBass0, acgLead, acgBarTicks, timebase.ppq, rng.seed)
         : t))
     : articulatedTracks;
-  const balancedTracksPreSanitize = isAcg ? normalizeAcgDynamics(carvedTracks, acgBarTicks) : carvedTracks;
+  const balancedTracksPreSanitize = isAcg
+    ? normalizeAcgDynamics(carvedTracks, acgBarTicks, arrangement.phraseBreathing.phraseBars)
+    : carvedTracks;
   const balancedTracksLegato = balancedTracksPreSanitize.map((t) => (
     t.role === 'lead' ? { ...t, notes: connectFastLeadNoteIR(t.notes, legatoOpts) } : t
   ));
@@ -657,16 +859,17 @@ export function renderSongFull(
   // ★ CC64 踏板:POP/LOFI/RNB/ACG 的 comp 每和弦踩(音尾 ring 融合);JAZZ/BLUES 不踩(清晰)。
   const compPedalPolicy = instrumentation.gestureExpressionByRole?.comp?.pedalPolicy ?? 'none';
   const compPedal = compPedalPolicy !== 'none' ? buildCompPedal(plan, timebase, band.style, arrangement.tempoBpm) : undefined;
-  const balancedCompNotes = balancedTracks.find((t) => t.role === 'comp')?.notes ?? [];
   const mixAttachedTracks = balancedTracks.map((t) => {
     const bySection = instrumentation.programByRoleSection[t.role];
+    const bankBySection = instrumentation.bankByRoleSection?.[t.role];
     const mixBySection = instrumentation.mixByRoleSection?.[t.role];
     const fallback = instrumentation.roleProgram[t.role] ?? band.roleProgram[t.role]; // ★ 单一真源:器配生效 program
+    const fallbackBank = instrumentation.roleBank?.[t.role];
     const pedalEvents = t.role === 'comp' ? compPedal : undefined;
     // ★ program + 混音【单遍】投影(段边界):程序变 → 必带 CC 刷新(directive:每个 programChange 边界发匹配 CC);
     //   或混音本身变(关系型护栏 per-section 差异)→ 也刷新。二者同 tick 耦合 → irToMidi 只读 IR。
     let initialProgram = fallback;
-    let initialBank = 0;
+    let initialBank: number | undefined = undefined;
     let initialMix: TrackMix | undefined;
     let prevProgram: number | undefined;
     let prevBank: number | undefined;
@@ -675,7 +878,7 @@ export function renderSongFull(
     const mixChanges: { atTick: Ticks; mix: TrackMix }[] = [];
     for (const { id, tick } of sectionTicks) {
       const prog = bySection?.[id] ?? fallback;
-      const bank = generatedAura25BankForProgram(band.style, t.role, prog);
+      const bank = t.role === 'drum' ? undefined : (bankBySection?.[id] ?? fallbackBank);
       const m = mixBySection?.[id];
       if (prevProgram === undefined) {
         initialProgram = prog; prevProgram = prog;
@@ -687,11 +890,11 @@ export function renderSongFull(
       const bankChanged = bank !== prevBank;
       const mixChanged = !!m && (!prevMix || !sameMix(m, prevMix));
       if (progChanged || bankChanged) {
-        programChanges.push({ atTick: ticks(tick), program: prog, bank: bankChanged || bank !== 0 ? bank : undefined });
+        programChanges.push({ atTick: ticks(tick), program: prog, bank: bankChanged || (bank !== undefined && bank !== 0) ? bank : undefined });
         prevProgram = prog;
         prevBank = bank;
       }
-      if (m && (progChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
+      if (m && (progChanged || bankChanged || mixChanged)) { mixChanges.push({ atTick: ticks(tick), mix: m }); prevMix = m; }
     }
     const programForSection = (sectionId: string) => bySection?.[sectionId] ?? fallback;
     const sectionIdForTick = (tick: number): string => {
@@ -709,9 +912,7 @@ export function renderSongFull(
           const fitted = fitMidiToProgramRange(note.pitch as number, t.role, program);
           return fitted === note.pitch ? note : { ...note, pitch: midi(fitted) };
         });
-    const notesForGesture = t.role === 'lead'
-      ? leadAvoidExposureResolver(rangeFittedNotes, plan, timebase, programForSection, balancedCompNotes, auditKeyCtx)
-      : rangeFittedNotes;
+    const notesForGesture = rangeFittedNotes;
     // ★ 手势表情层:器配层据最终音色下发 sax/pipe-wind 等 gesture plan;render 只执行计划。
     const gesture = applyGestureExpressionToTrack({
       ...t,
@@ -746,7 +947,26 @@ export function renderSongFull(
       pitchBendEvents,
     };
   });
-  const finalTracks = applyRenderMixBalance(mixAttachedTracks, {
+  const finalCompNotes = mixAttachedTracks.find((t) => t.role === 'comp')?.notes ?? [];
+  const finalLeadProgramForSection = (sectionId: string): number | undefined =>
+    instrumentation.programByRoleSection.lead?.[sectionId]
+    ?? instrumentation.roleProgram.lead
+    ?? band.roleProgram.lead;
+  const contractResolvedTracks = mixAttachedTracks.map((track) => {
+    if (track.role !== 'lead') return track;
+    const resolvedNotes = leadAvoidExposureResolver(
+      track.notes,
+      plan,
+      timebase,
+      finalLeadProgramForSection,
+      finalCompNotes,
+      auditKeyCtx,
+    );
+    // The harmony resolver may split notes or converge neighbours onto one pitch after the
+    // earlier safety pass. Reuse the authoritative sanitizer once more before final audit/MIDI.
+    return { ...track, notes: sanitizeLeadNoteIR(resolvedNotes, SANITIZE_OPTS) };
+  });
+  const finalTracks = applyRenderMixBalance(contractResolvedTracks, {
     style: band.style,
     ppq: timebase.ppq,
     durationTicks: resolved.data.durationTicks as number,
@@ -763,14 +983,17 @@ export function renderSongFull(
       throw new Error(`ACG comp hard-contract violated: lead=${!!leadT} comp=${!!compT} compNotes=${compT?.notes.length ?? 0}`);
     }
   }
+  // 最终和声审计必须覆盖所有 pitch/onset/duration 变换，以及最后恢复的 user motif quote。
+  // Auditor 自己使用结构网格容差处理微时序；这里不再审一个随后会被改写的中间 IR。
+  const harmonyAudit = auditHarmony(ir, plan, timebase, auditKeyCtx);
   // ★ Loop H:音乐性审计(只读 warning)追加进 audit。GenerationController 仅 error/fatal 重跑 → warning 接受不重跑。
   // dense 区间用【pre-shaper tracks】算(post-shaper comp 已删→comp-path 检不到);comp-continuity 审计据此排除。
   // ★ repeatGroup 重放后:dense-melody 排除区也要按【重放后】的 lead 位置算(重复段 lead=首段 → dense 区随之搬到首段位置;
   //   否则用原始 through-composed lead 的旧 dense 区会与重放后的 comp 删除区错位 → 误报 comp 突发洞)。
   const denseExclude = band.style.toLowerCase() === 'lofi'
-    ? denseMelodySpanRanges(applyRepeatGroupReplay(tracks, arrangement, plan.chordTimeline, timebase), plan, timebase)
+    ? denseMelodySpanRanges(gatedTracks, plan, timebase)
     : [];
   const musicality = auditMusicality(ir, arrangement, instrumentation, timebase, band.style, denseExclude);
   // ★ Phase 7:render 把【自己消费的完整 intent】(含 ACG acgBarFamilyBySpan enforce)挂 report → 服务层不再重派生(消双源 + 修 audit gap)。
-  return { ir, audit: { findings: [...audit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))], texturePerBar: plan.chordTimeline.map((s) => textureSchedule[s.id] ?? '—'), intent: summarizeMusicIntent(intent) } };
+  return { ir, audit: { findings: [...harmonyAudit.findings, ...musicality.findings], textureCases: [...new Set(Object.values(textureSchedule))], texturePerBar: plan.chordTimeline.map((s) => textureSchedule[s.id] ?? '—'), intent: summarizeMusicIntent(intent) } };
 }

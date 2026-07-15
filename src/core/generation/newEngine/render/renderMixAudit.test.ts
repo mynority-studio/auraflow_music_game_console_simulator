@@ -1,11 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ticks, midi } from '../foundation';
 import { generateSong } from '../generation/GenerationController';
 import { generateMusicSync } from '../../musicGeneration/MusicGenerationService';
 import type { TrackIR } from '../ir/MusicalIR';
-import { auditRenderedMix, COPYCH_SAFE_FX_SEND, HARDWARE_SPEAKER_PROFILE, MASTERING_AUDIT_STANDARD } from './renderMixAudit';
+import { auditRenderedMix, HARDWARE_SPEAKER_PROFILE, MASTERING_AUDIT_STANDARD } from './renderMixAudit';
 
 const ctx = (style: string, durationTicks: number, sectionTicks: number[] = [0]) => ({
   style,
@@ -20,10 +18,10 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     expect(MASTERING_AUDIT_STANDARD.truePeakCeilingDbtp).toBe(-1);
     expect(MASTERING_AUDIT_STANDARD.esp32SamplePeakCeilingDbfs).toBe(-1.5);
     expect(MASTERING_AUDIT_STANDARD.esp32Port.sampleRateHz).toBe(24000);
-    expect(MASTERING_AUDIT_STANDARD.copychMaster.route).toContain('style master lift -> device_postchain');
-    expect(MASTERING_AUDIT_STANDARD.esp32Port.requiredPostTsfStage).toContain('device_postchain');
-    expect(MASTERING_AUDIT_STANDARD.copychMaster.webCompressorAfterDevicePostChain).toBe(false);
-    expect(MASTERING_AUDIT_STANDARD.copychMaster.playbackStyleMasterLiftCalibration.acg.targetPlaybackIntegratedLufs).toBe(-12.4);
+    expect(MASTERING_AUDIT_STANDARD.hardwareMaster.route).toContain('Dream 5504/SAM');
+    expect(MASTERING_AUDIT_STANDARD.esp32Port.requiredPostTsfStage).toContain('Dream/SAM shared FX');
+    expect(MASTERING_AUDIT_STANDARD.hardwareMaster.webCompressorAfterDevicePostChain).toBe(false);
+    expect(MASTERING_AUDIT_STANDARD.hardwareMaster.playbackStyleMasterLiftCalibration.acg.targetPlaybackIntegratedLufs).toBe(-12.4);
     expect(MASTERING_AUDIT_STANDARD.hardwareSpeaker.model).toBe(HARDWARE_SPEAKER_PROFILE.model);
   });
 
@@ -123,8 +121,8 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     const acg = auditRenderedMix(tracks, ctx('acg', 1920));
     const popLiftDb = 20 * Math.log10(pop.playbackMasterLift);
     const acgLiftDb = 20 * Math.log10(acg.playbackMasterLift);
-    expect(pop.playbackMasterLift).toBe(MASTERING_AUDIT_STANDARD.copychMaster.playbackStyleMasterLift.pop);
-    expect(acg.playbackMasterLift).toBe(MASTERING_AUDIT_STANDARD.copychMaster.playbackStyleMasterLift.acg);
+    expect(pop.playbackMasterLift).toBe(MASTERING_AUDIT_STANDARD.hardwareMaster.playbackStyleMasterLift.pop);
+    expect(acg.playbackMasterLift).toBe(MASTERING_AUDIT_STANDARD.hardwareMaster.playbackStyleMasterLift.acg);
     expect(acg.targetPlaybackIntegratedLufs).toBe(-12.4);
     expect(acg.estimatedPlaybackIntegratedLufs).toBeCloseTo(acg.estimatedIntegratedLufs + acgLiftDb, 3);
     expect(acg.playbackLoudnessDeltaDb).toBeCloseTo(acg.estimatedPlaybackIntegratedLufs - acg.targetPlaybackIntegratedLufs, 3);
@@ -132,7 +130,7 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     expect(acg.estimatedDeviceOutputPeakDbfs).toBeCloseTo(pop.estimatedDeviceOutputPeakDbfs + acgLiftDb - popLiftDb, 3);
   });
 
-  it('Copych reverb audit 优先使用器配层已选 spaceProfile,不重新按 style/hasPad 推导', () => {
+  it('hardware reverb audit 优先使用器配层已选 spaceProfile,不重新按 style/hasPad 推导', () => {
     const tracks: TrackIR[] = [
       {
         role: 'lead',
@@ -147,21 +145,21 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
       spaceProfile: 'syntheticSoftRoom',
       world: 'syntheticSoft',
     });
-    expect(selectedSynthetic.totalCopychReverbInputEnergyPerBeat).toBeGreaterThan(dryFallback.totalCopychReverbInputEnergyPerBeat);
+    expect(selectedSynthetic.totalHardwareReverbInputEnergyPerBeat).toBeGreaterThan(dryFallback.totalHardwareReverbInputEnergyPerBeat);
   });
 
-  it('Copych reverb bus audit covers pitnkl so pad/comp cannot flood the shared room silently', () => {
+  it('hardware reverb bus audit covers pitnkl so pad/comp cannot flood the shared room silently', () => {
     const seedPitnkl = 3306999508;
-    const result = generateMusicSync({ seed: seedPitnkl, styleHint: 'rnb', mood: 'build', targetDuration: 120, key: 'C' });
+    const result = generateMusicSync({ seed: seedPitnkl, styleHint: 'rnb', mood: 'build', targetDuration: 120 });
     expect(result.ir).toBeTruthy();
     const report = auditRenderedMix(result.ir!.tracks as TrackIR[], ctx('rnb', result.ir!.durationTicks as number));
     const pad = report.trackMetrics.find((m) => m.role === 'pad');
     const comp = report.trackMetrics.find((m) => m.role === 'comp');
-    expect(report.totalCopychReverbInputEnergyPerBeat).toBeGreaterThan(0);
-    expect(pad?.copychReverbBusShare ?? 0).toBeLessThanOrEqual(0.28);
-    expect(comp?.copychReverbBusShare ?? 0).toBeLessThanOrEqual(HARDWARE_SPEAKER_PROFILE.guardrails.compCopychReverbBusShareMax);
-    expect(report.findings.some((f) => f.code === 'mix.copychPadReverbDominant')).toBe(false);
-    expect(report.findings.some((f) => f.code === 'mix.copychCompReverbDominant')).toBe(false);
+    expect(report.totalHardwareReverbInputEnergyPerBeat).toBeGreaterThan(0);
+    expect(pad?.hardwareReverbBusShare ?? 0).toBeLessThanOrEqual(0.28);
+    expect(comp?.hardwareReverbBusShare ?? 0).toBeLessThanOrEqual(HARDWARE_SPEAKER_PROFILE.guardrails.compHardwareReverbBusShareMax);
+    expect(report.findings.some((f) => f.code === 'mix.hardwarePadReverbDominant')).toBe(false);
+    expect(report.findings.some((f) => f.code === 'mix.hardwareCompReverbDominant')).toBe(false);
   });
 
   it('小喇叭 guardrail 会抓出鼓轨混响过湿', () => {
@@ -257,20 +255,4 @@ describe('render/renderMixAudit — 全轨混音与母带检测', () => {
     expect(findings.some((f) => f.severity === 'error' && f.ruleId === 'avoid-long-exposure')).toBe(false);
   });
 
-  it('Copych safe-FX TS audit constants match the embedded synth source contract', () => {
-    const source = readFileSync(resolve('components/synth/auraflow_synth/src/synth/synth.cpp'), 'utf8');
-    expect(source).toContain(`ch == ${COPYCH_SAFE_FX_SEND.takeoverLeadChannel}) return copych_clamp01(send * ${COPYCH_SAFE_FX_SEND.takeoverLead.reverbScale.toFixed(2)}f)`);
-    expect(source).toContain(`ch == ${COPYCH_SAFE_FX_SEND.takeoverLeadChannel}) return copych_clamp01(send * ${COPYCH_SAFE_FX_SEND.takeoverLead.chorusScale.toFixed(2)}f)`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.reverbScaleByRole.pad.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.reverbScaleByRole.comp.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.reverbScaleByRole.lead.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.reverbScaleByRole.bass.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.reverbScaleByRole.drum.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.chorusScaleByRole.pad.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.chorusScaleByRole.comp.toFixed(2)}f`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.chorusScaleByRole.lead.toFixed(2)}f`);
-    expect(source).toContain(`const float cap = ${COPYCH_SAFE_FX_SEND.delayLeadCapCc.toFixed(1)}f * DIV_127`);
-    expect(source).toContain(`send * ${COPYCH_SAFE_FX_SEND.delayLeadScale.toFixed(2)}f`);
-    expect(source).toContain(`ch == 2 || ch == 3 || ch == 4 || ch == 9 || ch == ${COPYCH_SAFE_FX_SEND.takeoverLeadChannel}`);
-  });
 });

@@ -3,7 +3,8 @@ import { buildBandSpec } from '../band/bandEngine';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import { createRandomContext } from '../foundation';
 import { buildArrangementPlan } from './arranger';
-import type { OpeningTextureEntry } from './ArrangementPlan';
+import type { OpeningTextureEntry, Section } from './ArrangementPlan';
+import { planOpeningGesture } from './openingGesturePlanner';
 
 const roleSet = (...roles: InstrumentRoleName[]) => new Set<InstrumentRoleName>(roles);
 
@@ -71,5 +72,39 @@ describe('arranger/openingGesturePlanner', () => {
         expect(supported, `${style}/${seed}/${texture}/${[...active].join(',')}`).toBe(true);
       }
     }
+  });
+
+  it('无 intro 的 repeat core 不承载整段 opening texture，角色延迟只保留首小节分层', () => {
+    const b = buildBandSpec({ seed: 1, styleHint: 'pop', mood: 'build', targetDuration: 120 });
+    const core: Section = {
+      id: 'verse1',
+      role: 'verse',
+      harmonyRole: 'loop',
+      functionTag: 'story',
+      bars: 4,
+      repeatGroup: 'verse-loop',
+      hookPolicy: 'light',
+    };
+    const intro: Section = {
+      ...core,
+      id: 'intro',
+      role: 'intro',
+      harmonyRole: 'intro',
+      functionTag: 'setup',
+      repeatGroup: undefined,
+    };
+
+    // 无 rng 固定取 POP 第一候选：dedicated intro 的 lead 原计划在第 3 小节才进。
+    const dedicated = planOpeningGesture([intro], b);
+    const noIntro = planOpeningGesture([core], b);
+
+    expect(dedicated.textureEntry).toBe('pianoRiff');
+    expect(dedicated.roleDelayBars.lead).toBe(3);
+    expect(noIntro.textureEntry).toBe('none');
+    expect(noIntro.drumEntry).toBe(dedicated.drumEntry);
+    expect(noIntro.mode).toBe(dedicated.mode);
+    expect(noIntro.roleDelayBars.comp).toBe(0);
+    expect(noIntro.roleDelayBars.lead).toBe(1);
+    expect(Object.values(noIntro.roleDelayBars).every((bars) => Number.isInteger(bars) && bars <= 1)).toBe(true);
   });
 });

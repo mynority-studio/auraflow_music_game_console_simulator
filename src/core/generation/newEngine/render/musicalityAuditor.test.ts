@@ -23,7 +23,11 @@ function fixtures(opts: { drumNotes?: ReturnType<typeof note>[]; compNotes?: Ret
     ...(opts.padNotes ? [{ role: 'pad', notes: opts.padNotes }] : []),
   ];
   const ir = { tracks } as unknown as MusicalIR;
-  const arrangement = { sections: [{ id: 'intro', bars: 2 }, { id: 'verse1', bars: 4 }], meter: { numerator: 4, denominator: 4 } } as unknown as ArrangementPlan;
+  const arrangement = {
+    sections: [{ id: 'intro', bars: 2 }, { id: 'verse1', bars: 4 }],
+    meter: { numerator: 4, denominator: 4 },
+    openingGesture: { sectionId: 'intro', textureEntry: 'none', roleDelayBars: { comp: 0 } },
+  } as unknown as ArrangementPlan;
   const instrumentation = {
     transitionPlan: {
       boundaries: [{ fromSectionId: 'intro', toSectionId: 'verse1', boundaryBar: 2, prepBar: 1, entry: 'lead-in', pickupRoles: ['drum'], releaseRoles: [], downbeatAnchorRoles: ['bass'], protectPickupFromGate: true }],
@@ -36,6 +40,24 @@ function fixtures(opts: { drumNotes?: ReturnType<typeof note>[]; compNotes?: Ret
     needsDownbeatCompAnchorBySection: { intro: false, verse1: false },
   } as unknown as InstrumentationPlan;
   return { ir, arrangement, instrumentation };
+}
+
+function openingCompFixture(args: {
+  compNotes: ReturnType<typeof note>[];
+  compDelayBars: number;
+  textureEntry: 'pianoRiff' | 'rhodesDust' | 'bellMotif' | 'synthPulse';
+}) {
+  const f = fixtures({ drumNotes: [note(BAR + 240)], compNotes: args.compNotes });
+  (f.arrangement as unknown as { openingGesture: { sectionId: string; textureEntry: string; roleDelayBars: { comp: number } } }).openingGesture = {
+    sectionId: 'intro', textureEntry: args.textureEntry, roleDelayBars: { comp: args.compDelayBars },
+  };
+  const instrumentation = f.instrumentation as unknown as {
+    activeRolesBySection: Record<string, string[]>;
+    textureBySection: Record<string, string>;
+  };
+  instrumentation.activeRolesBySection = { intro: ['comp'], verse1: [] };
+  instrumentation.textureBySection = { intro: 'arpeggio', verse1: 'pad' };
+  return f;
 }
 
 describe('Loop H · 规则触发', () => {
@@ -55,6 +77,37 @@ describe('Loop H · 规则触发', () => {
     // verse1(active-comp,bar2-6 = tick 3840..11520)只有起始一个 comp → 后面 4 拍空洞
     const { ir, arrangement, instrumentation } = fixtures({ drumNotes: [note(BAR + 240)], compNotes: [note(BAR * 2, 80, 240)] });
     const ids = auditMusicality(ir, arrangement, instrumentation, tb, 'pop').findings.map((f) => f.ruleId);
+    expect(ids).toContain('comp-continuity-gap');
+  });
+
+  it('opening comp 计划入场前的留白不计入 continuity gap', () => {
+    const f = openingCompFixture({
+      compDelayBars: 1,
+      textureEntry: 'synthPulse',
+      compNotes: [note(BAR, 80, BAR)],
+    });
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'pop').findings.map((finding) => finding.ruleId);
+    expect(ids).not.toContain('comp-continuity-gap');
+  });
+
+  it('opening riff 一小节以内的句法呼吸不误报', () => {
+    const f = openingCompFixture({
+      compDelayBars: 0,
+      textureEntry: 'pianoRiff',
+      compNotes: [note(0, 80, PPQ), note(PPQ * 5, 80, PPQ * 3)],
+    });
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'pop').findings.map((finding) => finding.ruleId);
+    expect(ids).not.toContain('comp-continuity-gap');
+  });
+
+  it('opening riff 超过一小节的空洞仍报警', () => {
+    const lateStart = Math.round(PPQ * 5.25);
+    const f = openingCompFixture({
+      compDelayBars: 0,
+      textureEntry: 'rhodesDust',
+      compNotes: [note(0, 80, PPQ), note(lateStart, 80, BAR * 2 - lateStart)],
+    });
+    const ids = auditMusicality(f.ir, f.arrangement, f.instrumentation, tb, 'pop').findings.map((finding) => finding.ruleId);
     expect(ids).toContain('comp-continuity-gap');
   });
 

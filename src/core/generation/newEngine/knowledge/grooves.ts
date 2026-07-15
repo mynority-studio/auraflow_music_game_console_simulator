@@ -142,6 +142,16 @@ const CL = (beat: number, vel: number): DrumHit => ({ drum: DRUM.CLAP, beat, vel
 const SK = (beat: number, vel: number): DrumHit => ({ drum: DRUM.SIDESTICK, beat, vel });   // 边击
 const RB = (beat: number, vel: number): DrumHit => ({ drum: DRUM.RIDE_BELL, beat, vel });   // ride 铃
 const shaker16 = (vel: number): DrumHit[] => HAT16.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel })); // 沙锤 16 分
+const hats16Accent = (downVel: number, offVel: number, ghostVel: number): DrumHit[] =>
+  HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
+const tamb16 = (downVel: number, ghostVel: number): DrumHit[] =>
+  HAT16.map((b) => ({ drum: DRUM.TAMB, beat: b, vel: b % 1 === 0 ? downVel : ghostVel }));
+const cityPopHat16 = (downVel = 58, offVel = 48, ghostVel = 32): DrumHit[] =>
+  HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
+const cityPopTambOffbeats = (vel = 38): DrumHit[] => [0.5, 1.5, 2.5, 3.5].map((beat) => ({ drum: DRUM.TAMB, beat, vel }));
+const cityPopBackbeat = (snareVel = 96, clapVel = 70): DrumHit[] => [S(1, snareVel), CL(1, clapVel), S(3, snareVel + 4), CL(3, clapVel + 4)];
+const TRIPLET8 = [0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67];
+const tripletShaker = (vel: number): DrumHit[] => TRIPLET8.map((b) => ({ drum: DRUM.SHAKER, beat: b, vel }));
 
 // 每 (style × groove) = 2-3 个变体(DrumHit[][])。
 const DRUM_GROOVES: Record<string, Record<GrooveKind, DrumHit[][]>> = {
@@ -226,32 +236,121 @@ export function drumGrooveVariants(style: string, groove: GrooveKind): DrumHit[]
   return variants.map((v) => v.map((h) => ({ ...h })));
 }
 
+const CITYPOP_DISCO_BOOGIE: DrumHit[][] = [
+  // CityPop hook:four-on-floor disco-boogie + 16 分帽 + open-hat lift + snare/clap 叠层。
+  [K(0, 110), K(1, 92), K(2, 106), K(3, 92), ...cityPopBackbeat(98, 74), ...cityPopHat16(58, 48, 32), ...cityPopTambOffbeats(36), OH(1.5, 52), OH(3.5, 58)],
+  [K(0, 110), K(1, 90), K(2, 104), K(2.75, 76), K(3, 90), ...cityPopBackbeat(96, 72), ...cityPopHat16(56, 47, 31), { drum: DRUM.TAMB, beat: 1.5, vel: 42 }, { drum: DRUM.TAMB, beat: 3.5, vel: 46 }, OH(0.5, 44), OH(2.5, 50)],
+  [K(0, 108), K(1, 88), K(1.75, 74), K(2, 104), K(3, 88), ...cityPopBackbeat(98, 70), ...cityPopHat16(57, 46, 30), ...tamb16(36, 22), OH(3.5, 56)],
+];
+
+const CITYPOP_SYNCOPATED_BOOGIE: DrumHit[][] = [
+  // CityPop verse:syncopated kick answers the bass;backbeat stays fat, hat/tamb carry the engine.
+  [K(0, 108), K(0.75, 70), K(2, 100), K(2.75, 76), ...cityPopBackbeat(94, 68), ...cityPopHat16(54, 44, 30), ...cityPopTambOffbeats(34), OH(3.5, 50)],
+  [K(0, 106), K(1.5, 76), K(2, 98), K(3.5, 74), ...cityPopBackbeat(94, 68), S(0.75, 34), S(2.75, 38), ...cityPopHat16(53, 43, 29), { drum: DRUM.TAMB, beat: 1.5, vel: 40 }, { drum: DRUM.TAMB, beat: 3.5, vel: 44 }, OH(3.5, 48)],
+  [K(0, 106), K(0.5, 62), K(2.25, 78), K(2.75, 76), ...cityPopBackbeat(92, 66), S(0.75, 32), S(2.75, 36), ...cityPopHat16(52, 42, 28), ...cityPopTambOffbeats(32), OH(1.5, 42), OH(3.5, 50)],
+];
+
+const POP_MODERN_BACKBEAT: DrumHit[][] = [
+  [K(0, 108), K(2, 100), K(2.75, 76), S(1, 96), S(3, 100), CL(1, 64), CL(3, 68), ...cityPopHat16(54, 44, 30), OH(3.5, 48)],
+  [K(0, 108), K(1.5, 72), K(2, 100), S(1, 96), S(3, 100), CL(3, 68), ...hats16Accent(52, 42, 28), OH(1.5, 44), OH(3.5, 50)],
+  [K(0, 106), K(2, 98), K(3, 76), S(1, 94), S(3, 100), CL(1, 62), CL(3, 70), ...hats16Accent(52, 42, 28)],
+];
+
+const JPOP_DRIVING_8THS: DrumHit[][] = [
+  [K(0, 110), K(0.75, 72), K(2, 104), K(3, 86), S(1, 98), S(3, 104), CL(3, 76), ...cityPopHat16(56, 46, 30), OH(3.5, 54)],
+  [K(0, 110), K(1, 84), K(2, 104), K(2.5, 78), S(1, 98), S(3, 104), S(3.5, 42), ...cityPopHat16(56, 46, 30), OH(1.5, 48), OH(3.5, 54)],
+  [K(0, 108), K(1.5, 76), K(2, 104), K(3.5, 78), S(1, 98), S(3, 104), CL(1, 68), CL(3, 76), ...cityPopHat16(56, 46, 30), ...cityPopTambOffbeats(40), OH(3.5, 56)],
+];
+
+const tr808Hat16 = (downVel = 48, offVel = 38, ghostVel = 24): DrumHit[] =>
+  HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? downVel : b % 0.5 === 0 ? offVel : ghostVel }));
+const tr808HatRoll = (start: number, vel = 26): DrumHit[] => [0, 0.125, 0.25, 0.375].map((d, i) => ({ drum: DRUM.CHAT, beat: start + d, vel: vel + i * 3 }));
+
+const TR808_RNB_POCKET: DrumHit[][] = [
+  [K(0, 108), K(1.75, 72), K(2.5, 88), S(1, 74), CL(1, 52), S(3, 82), CL(3, 60), ...tr808Hat16(44, 34, 22), ...tr808HatRoll(3.5, 24), OH(3.5, 34)],
+  [K(0, 106), K(0.75, 62), K(2.25, 84), K(2.75, 78), SK(1, 72), CL(1, 46), S(3, 82), CL(3, 58), ...tr808Hat16(43, 34, 22), ...tr808HatRoll(2.5, 23)],
+  [K(0, 104), K(1.5, 70), K(2.5, 84), S(1, 72), CL(1, 48), S(3, 82), CL(3, 58), SK(2.75, 26), ...tr808Hat16(42, 33, 21), OH(3.75, 32)],
+];
+
+const TR808_DILLA_POCKET: DrumHit[][] = [
+  [K(0, 106), K(0.75, 62), K(2.5, 86), SK(1, 72), CL(1, 46), S(3, 80), CL(3, 54), SK(2.75, 26), ...tr808Hat16(42, 32, 20), ...tr808HatRoll(3.5, 23)],
+  [K(0, 104), K(1.5, 70), K(2.25, 78), S(1, 72), CL(1, 44), S(3, 80), CL(3, 52), SK(3.5, 26), ...tr808Hat16(41, 32, 20)],
+  [K(0, 104), K(0.5, 58), K(2.75, 82), SK(1, 70), S(3, 78), CL(3, 50), SK(3.5, 26), ...tr808Hat16(40, 31, 20), ...tr808HatRoll(2.5, 22)],
+];
+
+const TR808_TRAP_SOUL_HALFTIME: DrumHit[][] = [
+  [K(0, 110), K(2.5, 86), K(3.25, 72), S(2, 86), CL(2, 56), SK(1.75, 24), ...tr808Hat16(44, 34, 22), ...tr808HatRoll(3.5, 24), OH(3.75, 32)],
+  [K(0, 108), K(1.5, 72), K(2.75, 82), S(2, 86), CL(2, 54), S(3.5, 34), ...tr808Hat16(43, 34, 22), ...tr808HatRoll(1.5, 22)],
+  [K(0, 108), K(0.75, 64), K(2.5, 82), S(2, 84), CL(2, 54), SK(3.5, 26), ...tr808Hat16(42, 32, 20), OH(3.5, 30)],
+];
+
+const TR808_LOFI_BOOMBAP: DrumHit[][] = [
+  [K(0, 104), K(0.75, 62), K(2, 88), K(2.75, 72), SK(1, 80), CL(1, 42), SK(3, 84), CL(3, 48), SK(2.75, 26), ...tr808Hat16(42, 32, 20), ...tr808HatRoll(3.5, 22)],
+  [K(0, 102), K(1.75, 70), K(2.5, 76), SK(1, 78), SK(3, 84), CL(3, 46), SK(0.75, 24), ...tr808Hat16(40, 31, 20), OH(3.5, 30)],
+  [K(0, 102), K(0.5, 56), K(2.25, 80), K(3.5, 64), S(1, 78), SK(3, 82), CL(3, 44), SK(2.75, 24), ...tr808Hat16(40, 31, 20), ...tr808HatRoll(2.5, 22)],
+];
+
+const TR808_LOFI_DUSTY_BREAK: DrumHit[][] = [
+  [K(0, 102), K(1.75, 68), K(2.5, 74), SK(1, 76), SK(3, 82), CL(3, 44), SK(0.75, 24), SK(2.75, 26), ...tr808Hat16(38, 29, 18), OH(3.5, 28)],
+  [K(0, 100), K(0.75, 58), K(2.25, 78), SK(1, 74), SK(3, 80), CL(3, 42), S(3.5, 28), ...tr808Hat16(38, 28, 18), ...tr808HatRoll(2.5, 20)],
+  [K(0, 100), K(0.5, 54), K(2.75, 76), S(1, 74), SK(3, 80), CL(3, 42), SK(2.75, 24), ...tr808Hat16(37, 28, 18), ...tr808HatRoll(3.5, 20)],
+];
+
+const TR808_LOFI_MINIMAL: DrumHit[][] = [
+  [K(0, 98), SK(2, 72), ...tr808Hat16(34, 26, 18)],
+  [K(0, 98), K(2.5, 66), SK(2, 70), ...tr808Hat16(34, 26, 18)],
+  [K(0, 96), S(2, 70), ...tr808Hat16(32, 25, 17)],
+];
+
+const RNB_NEO_SOUL_POCKET: DrumHit[][] = [
+  [K(0, 96), K(1.75, 66), K(2.5, 78), S(1, 76), CL(1, 46), S(3, 82), CL(3, 54), SK(0.75, 26), SK(2.75, 30), ...shaker16(31), OH(3.5, 38)],
+  [K(0, 94), K(0.75, 60), K(2.25, 74), K(2.75, 70), SK(1, 72), S(3, 82), CL(3, 52), SK(2.5, 28), ...shaker16(30)],
+  [K(0, 94), K(1.5, 64), K(2.5, 76), S(1, 74), S(3, 80), CL(3, 52), SK(0.75, 26), SK(2.75, 30), ...hats16Accent(38, 32, 22), ...shaker16(26)],
+];
+
+const RNB_DILLA_POCKET: DrumHit[][] = [
+  [K(0, 96), K(0.75, 60), K(2.5, 76), SK(1, 72), S(3, 80), CL(3, 52), SK(2.75, 28), ...shaker16(32)],
+  [K(0, 94), K(1.5, 66), K(2.25, 72), S(1, 72), SK(2.75, 28), S(3, 80), CL(3, 50), ...hats16Accent(40, 32, 22)],
+  [K(0, 92), K(0.5, 56), K(2.75, 74), SK(1, 70), SK(3, 76), CL(3, 48), SK(3.5, 28), ...shaker16(30)],
+];
+
+const RNB_GOSPEL_TRIPLET: DrumHit[][] = [
+  [K(0, 98), K(2.67, 78), S(1, 84), CL(1, 56), S(3, 88), CL(3, 58), ...tripletShaker(34)],
+  [K(0, 98), K(1.67, 72), K(2.67, 78), S(1, 84), S(3, 88), S(3.67, 34), ...tripletShaker(34)],
+  [K(0, 96), K(0.67, 60), K(2.67, 76), SK(1, 76), S(3, 86), CL(3, 56), ...tripletShaker(32), OH(3.67, 38)],
+];
+
+const JAZZ_BRUSH_BALLAD: DrumHit[][] = [
+  [S(0, 30), S(1, 24), S(2, 28), S(3, 24), R(0, 50), R(1.5, 38), R(2, 48), R(3.5, 36), PH(1, 40), PH(3, 40), K(0, 48)],
+  [SK(0, 26), S(1.5, 30), SK(2, 26), S(3.5, 30), R(0, 48), R(1, 36), R(2, 48), R(3, 36), PH(1, 38), PH(3, 38)],
+  [S(0, 28), S(0.75, 22), S(2, 28), S(2.75, 22), R(0, 46), R(1.5, 36), R(2, 46), R(3.5, 36), PH(1, 38), PH(3, 38), K(0, 44)],
+];
+
 const DRUM_PERFORMANCE_FAMILIES: Record<string, DrumHit[][]> = {
-  'citypop-disco-boogie': [
-    [K(0, 108), K(1, 86), K(2, 102), K(3, 86), S(1, 96), S(3, 100), CL(1, 72), CL(3, 76), ...HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? 54 : 42 })), { drum: DRUM.TAMB, beat: 1.5, vel: 48 }, { drum: DRUM.TAMB, beat: 3.5, vel: 48 }],
-    [K(0, 110), K(0.75, 78), K(2, 102), K(2.75, 82), S(1, 96), S(3, 100), CL(1, 70), CL(3, 76), ...HAT16.map((b) => ({ drum: DRUM.CHAT, beat: b, vel: b % 1 === 0 ? 56 : 40 })), OH(3.5, 56)],
-    [K(0, 108), K(1.5, 80), K(2, 102), K(3.5, 82), S(1, 96), S(3, 102), ...HAT16.map((b) => ({ drum: b % 1 === 0 ? DRUM.CHAT : DRUM.TAMB, beat: b, vel: b % 1 === 0 ? 52 : 34 }))],
-  ],
-  'pop-backbeat': DRUM_GROOVES.pop.straight,
-  'jpop-driving-8ths': DRUM_GROOVES.pop.driving,
+  'citypop-disco-boogie': CITYPOP_DISCO_BOOGIE,
+  'citypop-syncopated-boogie': CITYPOP_SYNCOPATED_BOOGIE,
+  'pop-backbeat': POP_MODERN_BACKBEAT,
+  'jpop-driving-8ths': JPOP_DRIVING_8THS,
   'ballad-halftime': [
     [K(0, 98), S(2, 86), ...hats4(38)],
     [K(0, 96), K(2.5, 70), S(2, 84), ...hats4(36)],
     [K(0, 94), SK(2, 72), ...hats4(34)],
   ],
-  'rnb-neo-soul': DRUM_GROOVES.rnb.laidback,
-  'rnb-dilla': [
-    [K(0, 96), K(2.5, 78), S(2, 82), CL(2, 58), ...shaker16(34)],
-    [K(0, 94), K(1.5, 68), K(2.5, 76), S(2, 80), S(3.5, 34), ...shaker16(32)],
-    [K(0, 92), K(2.75, 76), SK(2, 70), CL(2, 54), ...shaker16(32)],
-  ],
-  'rnb-gospel-shuffle': [
-    [K(0, 98), K(2.67, 78), S(2, 86), CL(2, 58), ...[0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67].map((b) => ({ drum: DRUM.SHAKER, beat: b, vel: 34 }))],
-    [K(0, 98), K(1.67, 72), K(2.67, 78), S(2, 86), S(3.67, 34), ...[0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67].map((b) => ({ drum: DRUM.SHAKER, beat: b, vel: 34 }))],
-  ],
+  'tr808-rnb-pocket': TR808_RNB_POCKET,
+  'tr808-dilla-pocket': TR808_DILLA_POCKET,
+  'tr808-trap-soul-halftime': TR808_TRAP_SOUL_HALFTIME,
+  'tr808-lofi-boombap': TR808_LOFI_BOOMBAP,
+  'tr808-lofi-dusty-break': TR808_LOFI_DUSTY_BREAK,
+  'tr808-lofi-minimal': TR808_LOFI_MINIMAL,
+  'rnb-neo-soul-pocket': RNB_NEO_SOUL_POCKET,
+  'rnb-dilla-pocket': RNB_DILLA_POCKET,
+  'rnb-gospel-triplet': RNB_GOSPEL_TRIPLET,
+  'rnb-neo-soul': RNB_NEO_SOUL_POCKET,
+  'rnb-dilla': RNB_DILLA_POCKET,
+  'rnb-gospel-shuffle': RNB_GOSPEL_TRIPLET,
   'trap-soul-halftime': [
-    [K(0, 98), K(2.5, 74), S(2, 82), ...hats8(42)],
-    [K(0, 96), K(1.5, 68), S(2, 82), S(3.5, 34), ...hats8(40)],
+    [K(0, 98), K(2.5, 74), S(2, 82), SK(1.75, 26), ...hats16Accent(38, 30, 20)],
+    [K(0, 96), K(1.5, 68), S(2, 82), S(3.5, 34), ...hats16Accent(38, 30, 20), OH(3.5, 34)],
   ],
   'smooth-jazz-backbeat': [
     [K(0, 92), K(2.5, 74), SK(1, 64), SK(3, 68), ...shaker16(30), R(0, 52), R(2, 50)],
@@ -271,6 +370,7 @@ const DRUM_PERFORMANCE_FAMILIES: Record<string, DrumHit[][]> = {
   ],
   'jazz-swing-ride': DRUM_GROOVES.jazz.straight,
   'jazz-bebop-comping': DRUM_GROOVES.jazz.driving,
+  'jazz-brush-ballad': JAZZ_BRUSH_BALLAD,
   'jazz-ballad-light': DRUM_GROOVES.jazz.laidback,
   'jazz-bossa': [
     [R(0, 62), R(1, 54), R(2, 62), R(3, 54), PH(1, 44), PH(3, 44), K(0, 58), K(2.5, 52), SK(1.5, 44)],

@@ -63,13 +63,39 @@ export interface RoutedMidiOutMessage {
   message: MidiOutMessage;
 }
 
+export interface MidiPolyphonyAudition {
+  role: MidiOutRole;
+  bank: number; // Dream/GMBK5X128 melodic variation = CC0. Drum kits ignore bank and use Program Change only.
+  program: number;
+  notes: readonly number[];
+  velocity: number;
+  volume: number;
+  durationMs: number;
+}
+
+type MidiPolyphonyAuditionSender = (request: MidiPolyphonyAudition) => boolean;
+let polyphonyAuditionSender: MidiPolyphonyAuditionSender | null = null;
+
+export function registerMidiPolyphonyAuditionSender(sender: MidiPolyphonyAuditionSender | null): () => void {
+  polyphonyAuditionSender = sender;
+  return () => {
+    if (polyphonyAuditionSender === sender) polyphonyAuditionSender = null;
+  };
+}
+
+export function sendMidiPolyphonyAudition(request: MidiPolyphonyAudition): boolean {
+  return polyphonyAuditionSender?.(request) ?? false;
+}
+
 export interface MidiOutputAccessHandle {
   listOutputs(): MidiOutDeviceInfo[];
   getOutput(id: string | null): MIDIOutput | null;
+  openOutput(id: string | null): Promise<MIDIOutput | null>;
   dispose(): void;
 }
 
 const clamp7 = (v: number): number => Math.max(0, Math.min(127, Math.round(v)));
+const clamp14 = (v: number): number => Math.max(0, Math.min(0x3fff, Math.round(v)));
 const clampChannel = (v: number): number => Math.max(1, Math.min(16, Math.round(v || 1)));
 
 function statusByte(kind: number, channel: number): number {
@@ -85,7 +111,10 @@ export function midiMessageToBytes(message: MidiOutMessage): number[] {
   if (message.type === 'noteOff') return [statusByte(0x80, channel), d1, d2];
   if (message.type === 'cc') return [statusByte(0xb0, channel), d1, d2];
   if (message.type === 'programChange') return [statusByte(0xc0, channel), d1];
-  return [statusByte(0xe0, channel), d1, d2];
+  // MidiScheduler carries pitch bend as a single 14-bit value in data1.
+  // Raw MIDI transmits it least-significant 7 bits first, then the MSB.
+  const bend = clamp14(message.data1);
+  return [statusByte(0xe0, channel), bend & 0x7f, (bend >> 7) & 0x7f];
 }
 
 export function schedulerChannelToRole(channel: number): MidiOutRole | null {
@@ -167,6 +196,16 @@ export async function requestMidiOutputAccess(
           if (output.id === id) found = output;
         });
         return found;
+      },
+      openOutput: async (id) => {
+        if (!id) return null;
+        let found: MIDIOutput | null = null;
+        access.outputs.forEach((output) => {
+          if (output.id === id) found = output;
+        });
+        if (!found) return null;
+        await found.open();
+        return found.connection === 'open' ? found : null;
       },
       dispose: () => {
         access.onstatechange = null;

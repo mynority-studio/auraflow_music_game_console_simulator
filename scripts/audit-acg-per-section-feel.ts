@@ -118,7 +118,7 @@ for (const seed of SEEDS) {
   const phrases = Array.from({ length: nPhrase }, (_, i) => feel(mgComp, mgBass, mgLead, i * 4 * BPB, (i + 1) * 4 * BPB));
   const rng = (get: (f: Feel) => number) => `${Math.min(...phrases.map(get))}–${Math.max(...phrases.map(get))}`;
 
-  const r = generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90, key: KEY });
+  const r = generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
   const ppq = (r.ir!.timebase as { ppq: number }).ppq;
   const trk = (role: string): Ev[] => (r.ir!.tracks.find((t) => t.role === role)?.notes ?? []).map((n) => ({ time: (n.startTick as number) / ppq, dur: (n.durationTicks as number) / ppq, vel: n.velocity as number, pitch: n.pitch as number }));
   const simComp = trk('comp'), simBass = trk('bass'), simLead = trk('lead');

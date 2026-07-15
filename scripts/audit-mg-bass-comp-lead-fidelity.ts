@@ -91,7 +91,7 @@ function auditOne(sim: string, mg: StyleName, seed: number): Row {
   const mgForm = onsetForm(ev.filter((e) => e.part === 'chord').map((e) => ({ time: e.time, velocity: e.velocity })));
 
   // —— SIM ——
-  const r = generateMusicSync({ seed, styleHint: sim, mood: 'build', targetDuration: 90, key: KEY });
+  const r = generateMusicSync({ seed, styleHint: sim, mood: 'build', targetDuration: 90 });
   if (r.status !== 'ok' || !r.ir) {
     return { style: sim, seed, mgBars, simBars: 0, mgBass, simBass: 0, mgComp, simComp: 0, mgLead, simLead: 0,
       mgTexUniq: uniq(mgTexList).length, mgTexList, simTexUniq: 0, simTexList: [], mgPedal, simPedal: 0,

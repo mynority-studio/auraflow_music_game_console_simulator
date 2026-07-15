@@ -4,6 +4,7 @@ import { applyEnding, applyLeadIns } from './ending';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
+import { buildSongBundle, generateSongFromBundle } from '../generation/GenerationController';
 import { createRandomContext, ticks } from '../foundation';
 import type { Section, SectionFunctionTag, ArrangementPlan } from '../arranger/ArrangementPlan';
 import type { EndingPlan } from '../instrumental/InstrumentationPlan';
@@ -93,30 +94,46 @@ describe('render/ending · applyEnding', () => {
     const plan: EndingPlan = { style: 'fade', outroSectionId: 'o', outroBars: 2, exitBarByRole: { drum: 1 }, holdFinalChord: false, fadeOut: true, coldStop: false };
     const pad: TrackIR = { role: 'pad', notes: [N(OUTRO_START, 100), N(OUTRO_START + BAR, 100), N(OUTRO_END - 192, 100)] };
     const drum: TrackIR = { role: 'drum', notes: [N(OUTRO_START, 100), N(OUTRO_START + BAR, 100)] };
-    const [outPad, outDrum] = applyEnding([pad, drum], arr2, plan, PPQ, BPB);
+    const lead: TrackIR = { role: 'lead', notes: [N(OUTRO_START, 100), N(OUTRO_START + BAR, 100), N(OUTRO_END - 192, 100)] };
+    const [outPad, outDrum, outLead] = applyEnding([pad, drum, lead], arr2, plan, PPQ, BPB);
     const v = outPad.notes.map((n) => n.velocity);
     expect(v[0]).toBeGreaterThan(v[1]); // 渐弱
     expect(v[1]).toBeGreaterThan(v[2]);
+    expect(outLead.notes.map(n => n.velocity)).toEqual(v); // lead 同样消费 fade 合同
+    expect(outLead.notes.map(n => [n.pitch, n.startTick])).toEqual(lead.notes.map(n => [n.pitch, n.startTick]));
     // drum exit=1 → 第 2 小节(>=5760)的鼓丢弃
     expect(outDrum.notes.length).toBe(1);
     expect(outDrum.notes[0].startTick).toBe(OUTRO_START);
   });
 
   it('tag:末和弦(comp/pad)延留到曲末 + 节奏件末小节退出', () => {
-    const plan: EndingPlan = { style: 'tag', outroSectionId: 'o', outroBars: 2, exitBarByRole: { drum: 1, bass: 1 }, holdFinalChord: true, fadeOut: false, coldStop: false };
+    const plan: EndingPlan = { style: 'tag', outroSectionId: 'o', outroBars: 2, exitBarByRole: { drum: 1, bass: 1 }, holdFinalChord: true, fadeOut: false, coldStop: false, sustainRoles: ['comp', 'lead'] };
     const comp: TrackIR = { role: 'comp', notes: [N(OUTRO_START + BAR, 80, 240)] }; // 末小节一个和弦 hit
     const bass: TrackIR = { role: 'bass', notes: [N(OUTRO_START + BAR, 80)] };
-    const [outComp, outBass] = applyEnding([comp, bass], arr2, plan, PPQ, BPB);
+    const lead: TrackIR = { role: 'lead', notes: [N(OUTRO_START + BAR, 80, 240)] };
+    const [outComp, outBass, outLead] = applyEnding([comp, bass, lead], arr2, plan, PPQ, BPB);
     expect((outComp.notes[0].durationTicks as number)).toBe(OUTRO_END - (OUTRO_START + BAR)); // 延留到末
     expect(outBass.notes.length).toBe(0); // bass 末小节退出
+    expect(outLead.notes[0].durationTicks).toBe(240); // 即使误入 sustainRoles，tag 也不强拉 grammar 尾音
   });
 
   it('cold:末小节 button 重音 + 干净停(不越界)', () => {
     const plan: EndingPlan = { style: 'cold', outroSectionId: 'o', outroBars: 2, exitBarByRole: {}, holdFinalChord: false, fadeOut: false, coldStop: true };
     const comp: TrackIR = { role: 'comp', notes: [N(OUTRO_START, 80), N(OUTRO_START + BAR, 80, 9999)] };
-    const [out] = applyEnding([comp], arr2, plan, PPQ, BPB);
+    const lead: TrackIR = { role: 'lead', notes: [N(OUTRO_START, 80), N(OUTRO_START + BAR, 80, 9999)] };
+    const [out, outLead] = applyEnding([comp, lead], arr2, plan, PPQ, BPB);
     expect(out.notes[1].velocity).toBeGreaterThan(out.notes[0].velocity); // 末小节重音
     expect((out.notes[1].startTick as number) + (out.notes[1].durationTicks as number)).toBeLessThanOrEqual(OUTRO_END); // 不越界
+    expect(outLead.notes[1].velocity).toBeGreaterThan(outLead.notes[0].velocity);
+    expect((outLead.notes[1].startTick as number) + (outLead.notes[1].durationTicks as number)).toBeLessThanOrEqual(OUTRO_END);
+    expect(outLead.notes.map(n => [n.pitch, n.startTick])).toEqual(lead.notes.map(n => [n.pitch, n.startTick]));
+  });
+
+  it('lead 按 exitBarByRole 退出', () => {
+    const plan: EndingPlan = { style: 'fade', outroSectionId: 'o', outroBars: 2, exitBarByRole: { lead: 1 }, holdFinalChord: false, fadeOut: true, coldStop: false };
+    const lead: TrackIR = { role: 'lead', notes: [N(OUTRO_START, 90), N(OUTRO_START + BAR, 90)] };
+    const [outLead] = applyEnding([lead], arr2, plan, PPQ, BPB);
+    expect(outLead.notes.map(n => n.startTick)).toEqual([OUTRO_START]);
   });
 
   it('无 outroSectionId → 原样返回', () => {
@@ -124,14 +141,45 @@ describe('render/ending · applyEnding', () => {
     const t: TrackIR = { role: 'comp', notes: [N(0, 80)] };
     expect(applyEnding([t], arr2, plan, PPQ, BPB)[0].notes[0].velocity).toBe(80);
   });
+
+  it.each(['rnb', 'lofi'])('%s 最终 IR 的 outro lead 真正回落', (style) => {
+    const seed = 20260608;
+    const request = { seed, styleHint: style, mood: 'build', targetDuration: 120 };
+    const bundle = buildSongBundle(request);
+    const { arrangement, instrumentation: instr } = bundle;
+    const bpb = arrangement.meter.numerator * (4 / arrangement.meter.denominator);
+    const outroIndex = arrangement.sections.findIndex(section => section.id === instr.endingPlan.outroSectionId);
+    const outroStartBar = arrangement.sections.slice(0, outroIndex).reduce((sum, section) => sum + section.bars, 0);
+    const outroBars = arrangement.sections[outroIndex].bars;
+    const startTick = outroStartBar * bpb * PPQ;
+    const endTick = (outroStartBar + outroBars) * bpb * PPQ;
+    const midpoint = (startTick + endTick) / 2;
+    const outroLead = generateSongFromBundle(bundle).ir!.tracks
+      .find(track => track.role === 'lead')!.notes
+      .filter(note => (note.startTick as number) >= startTick && (note.startTick as number) < endTick);
+    const early = outroLead.filter(note => (note.startTick as number) < midpoint);
+    const late = outroLead.filter(note => (note.startTick as number) >= midpoint);
+    const avg = (notes: NoteIR[]) => notes.reduce((sum, note) => sum + note.velocity, 0) / notes.length;
+
+    expect(instr.endingPlan.fadeOut).toBe(true);
+    expect(early.length).toBeGreaterThan(0);
+    expect(late.length).toBeGreaterThan(0);
+    expect(avg(late)).toBeLessThan(avg(early));
+  });
 });
 
 describe('render/ending · applyLeadIns', () => {
   it('leadInBars 内 crescendo(末小节越靠下拍越响);bar 外不变', () => {
     const t: TrackIR = { role: 'comp', notes: [N(0, 100), N(1440, 100), N(BAR, 100)] }; // bar0: 0/1440;bar1: 1920
-    const [out] = applyLeadIns([t], new Set([0]), PPQ, BPB);
+    const lead: TrackIR = { role: 'lead', notes: [N(0, 100), N(1440, 100), N(BAR, 100)] };
+    const [out, outLead] = applyLeadIns([t, lead], new Set([0]), PPQ, BPB);
     expect(out.notes[0].velocity).toBeLessThan(out.notes[1].velocity); // bar0 内 crescendo
     expect(out.notes[2].velocity).toBe(100); // bar1 不在 leadInBars
+    expect(outLead.notes[0].velocity).toBeLessThan(outLead.notes[1].velocity);
+    expect(outLead.notes[2].velocity).toBe(100);
+    expect(outLead.notes[1].velocity - outLead.notes[0].velocity)
+      .toBeLessThan(out.notes[1].velocity - out.notes[0].velocity); // lead 只做轻量推升
+    expect(outLead.notes.map(n => [n.pitch, n.startTick])).toEqual(lead.notes.map(n => [n.pitch, n.startTick]));
   });
 
   it('空 leadInBars → 原样', () => {

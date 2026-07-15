@@ -12,7 +12,8 @@ import type {
   MusicGenerationUiSnapshot, UiSection, UiChord, UiPlayer, UiTrack, QnRole, BandParticipantSelection, BandParticipantState, UiGrooveContract, UiGestureExpression,
 } from './types';
 import { participantForRole } from './participantConstraint';
-import { aura25DrumKitName, aura25InstrumentName, mapProgramToAura25 } from '../../sound/Aura25Palette';
+import { dream5504VoiceName, mapProgramToDream5504 } from '../../sound/GMBK5X128Voices';
+import { instrumentInfo } from '../newEngine/knowledge/instruments';
 
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const ROLE_CHANNEL: Record<QnRole, number> = { lead: 1, comp: 2, bass: 3, pad: 4, drum: 9 };
@@ -28,30 +29,6 @@ export function keyToPc(key: string): number {
   };
   return map[key] ?? 0;
 }
-
-// GM 128 标准乐器名(UI roster/palette 用)。
-const GM_NAMES = [
-  'Acoustic Grand', 'Bright Piano', 'Electric Grand', 'Honky-Tonk', 'Rhodes EP', 'GU Electric Grand', 'Harpsichord', 'Clavinet',
-  'Celesta', 'Glockenspiel', 'Music Box', 'Vibraphone', 'Marimba', 'Xylophone', 'Tubular Bells', 'Dulcimer',
-  'Drawbar Organ', 'Perc Organ', 'Rock Organ', 'Church Organ', 'Reed Organ', 'Accordion', 'Harmonica', 'Tango Accordion',
-  'Nylon Guitar', '民谣木吉他', 'Jazz Guitar', 'Clean Guitar', 'Muted Guitar', 'Overdrive Guitar', 'Distortion Guitar', 'Guitar Harmonics',
-  'Acoustic Bass', 'Finger Bass', 'Pick Bass', 'Fretless Bass', 'Slap Bass 1', 'Slap Bass 2', 'Synth Bass 1', 'Synth Bass 2',
-  'Violin', 'Viola', 'Cello', 'Contrabass', 'Tremolo Strings', 'Pizzicato', 'Harp', 'Timpani',
-  'String Ens 1', 'String Ens 2', 'Synth Strings 1', 'Synth Strings 2', 'Choir Aahs', 'Voice Oohs', 'Synth Voice', 'Orchestra Hit',
-  'Trumpet', 'Trombone', 'Tuba', 'Muted Trumpet', 'French Horn', 'Brass Section', 'Synth Brass 1', 'Synth Brass 2',
-  'Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Oboe', 'English Horn', 'Bassoon', 'Clarinet',
-  'Piccolo', 'Flute', 'Recorder', 'Pan Flute', 'Blown Bottle', 'Shakuhachi', 'Whistle', 'Ocarina',
-  'Square Lead', 'Saw Lead', 'Calliope', 'Chiff Lead', 'Charang', 'Voice Lead', 'Fifths Lead', 'Bass+Lead',
-  'Pad New Age', 'Pad Warm', 'Pad Polysynth', 'Pad Choir', 'Pad Bowed', 'Pad Metallic', 'Pad Halo', 'Pad Sweep',
-  'FX Rain', 'FX Soundtrack', 'FX Crystal', 'FX Atmosphere', 'FX Brightness', 'FX Goblins', 'FX Echoes', 'FX Sci-Fi',
-  'Sitar', 'Banjo', 'Shamisen', 'Koto', 'Kalimba', 'Bagpipe', 'Fiddle', 'Shanai',
-  'Tinkle Bell', 'Agogo', 'Steel Drums', 'Woodblock', 'Taiko', 'Melodic Tom', 'Synth Drum', 'Reverse Cymbal',
-  'Guitar Fret', 'Breath Noise', 'Seashore', 'Bird Tweet', 'Telephone', 'Helicopter', 'Applause', 'Gunshot',
-];
-const GM_FAMILIES = ['piano', 'chromatic', 'organ', 'guitar', 'bass', 'strings', 'ensemble', 'brass', 'reed', 'pipe', 'synth-lead', 'synth-pad', 'synth-fx', 'ethnic', 'percussive', 'sfx'];
-
-export function gmName(program: number): string { return GM_NAMES[program] ?? `GM ${program}`; }
-export function gmFamily(program: number): string { return GM_FAMILIES[Math.floor(((program % 128) + 128) % 128 / 8)] ?? 'other'; }
 
 const ROMAN_NUM = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 function romanLabel(r: { degree: number; accidental: string; quality: string; secondaryTarget?: { degree: number } }): string {
@@ -157,28 +134,28 @@ export function buildUiSnapshot(bundle: SongBundle, ir: MusicalIR | null, seed: 
     .filter((role) => instrumentation.roleProgram[role] !== undefined)
     .map((role) => {
       const voice = irVoiceByRole.get(role);
-      const program = mapProgramToAura25(voice?.program ?? instrumentation.roleProgram[role], role, band.style);
+      const program = mapProgramToDream5504(voice?.program ?? instrumentation.roleProgram[role], role, band.style);
       const bank = voice?.bank;
       const participant = participantForRole(role, participants);
       const isAutoFilled = autoFilled.has(role);
       const state: BandParticipantState = isAutoFilled ? 'auto' : (participant && selectedParticipant.has(participant)) ? 'selected' : 'auto';
-      // ★ P2:drum 走 ch9 打击,program=0/8/16... 不是旋律 GM 表,显示 Aura25 真实鼓组名。
+      // ★ drum 走 ch9 打击,program=0/8/16... 不是旋律 GM 表,显示 GMBK5X128 真实鼓组名。
       const isDrum = role === 'drum';
-      const instrumentName = aura25InstrumentName(bank, program, role) ?? (isDrum ? aura25DrumKitName(program) : gmName(program));
-      const family = isDrum ? 'percussion' : gmFamily(program);
+      const instrumentName = dream5504VoiceName(bank, program, role) ?? `Dream5504 PC${program}`;
+      const family = isDrum ? 'percussion' : instrumentInfo(program).family;
       return { role, program, bank: bank || undefined, instrumentName, family, state, participant, autoFilled: isAutoFilled || undefined, gesture: uiGesture(instrumentation.gestureExpressionByRole[role]) };
     });
 
   // tracks(实际 IR 轨 → channel/noteCount;给 Jam/可视化)
   const tracks: UiTrack[] = (ir?.tracks ?? []).map((t) => {
     const role = t.role as QnRole;
-    const program = mapProgramToAura25(t.program ?? instrumentation.roleProgram[role] ?? 0, role, band.style);
+    const program = mapProgramToDream5504(t.program ?? instrumentation.roleProgram[role] ?? 0, role, band.style);
     return {
       role,
       channel: ROLE_CHANNEL[role] ?? 0,
       program,
       bank: t.bank || undefined,
-      instrumentName: aura25InstrumentName(t.bank, program, role) ?? (role === 'drum' ? aura25DrumKitName(program) : gmName(program)),
+      instrumentName: dream5504VoiceName(t.bank, program, role) ?? `Dream5504 PC${program}`,
       noteCount: t.notes.length,
     };
   });

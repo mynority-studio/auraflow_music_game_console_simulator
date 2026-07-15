@@ -12,7 +12,7 @@ import {
 } from './instruments';
 
 const WARM_META = [16, 24, 25, 26, 27, 42, 66, 67, 88, 94, 107, 108]; // 全部新增暖乐器(有元数据)
-const ACTIVE_24K_PROGRAMS = [0, 5, 24, 25, 32, 38, 67, 89, 108];
+const ACTIVE_24K_PROGRAMS = [0, 5, 24, 25, 32, 38, 66, 67, 89, 108];
 const WARM_ADDED = WARM_META;
 
 describe('暖路线 GM 调色板扩充', () => {
@@ -56,6 +56,13 @@ describe('暖路线 GM 调色板扩充', () => {
       expect(lead[1]).toBeLessThanOrEqual(hard[1]);
     }
     expect(preferredRegisterForRole('lead', 67)).toEqual([36, 72]);
+    expect(preferredRegisterForRole('lead', 25)).toEqual([40, 69]);
+    expect(fitMidiToProgramRange(88, 'lead', 25)).toBe(64);
+    expect(preferredRegisterForRole('lead', 108)).toEqual([60, 81]);
+    expect(fitMidiToProgramRange(86, 'lead', 108)).toBe(74);
+    expect(preferredRegisterForRole('bass', 0)).toEqual([28, 55]);
+    expect(fitMidiToProgramRange(60, 'bass', 0)).toBe(48);
+    expect(fitMidiToProgramRange(24, 'bass', 0)).toBe(36);
   });
 
   it('调色板对齐 24k 11-preset 包:活跃 GM program 只使用保留清单', () => {
@@ -65,7 +72,7 @@ describe('暖路线 GM 调色板扩充', () => {
     expect(used.has(26), 'GM26 jazz guitar 不应进主动器配池').toBe(false);
     expect(used.has(25), 'GM25 民谣木吉他应入池').toBe(true);
     expect(used.has(27), 'GM27 clean guitar 已替换,不应入池').toBe(false);
-    for (const deleted of [1, 4, 7, 16, 27, 33, 34, 39, 48, 49, 66, 80, 81, 98]) {
+    for (const deleted of [1, 4, 7, 16, 27, 33, 34, 39, 48, 49, 80, 81, 98]) {
       expect(used.has(deleted), `GM${deleted} 已删,不应进主动器配池`).toBe(false);
     }
   });
@@ -73,8 +80,9 @@ describe('暖路线 GM 调色板扩充', () => {
   it('不加铜管/长笛/高频合成 lead,但允许低音区 Sax', () => {
     const used = new Set<number>();
     for (const s of getInstrumentCatalog()) for (const r of s.roles) for (const p of r.programs) used.add(p);
-    for (const harsh of [56, 57, 60, 61, 64, 65, 66, 80, 82]) expect(used.has(harsh), `${harsh} 不应入池`).toBe(false);
-    expect(used.has(67), 'Baritone Sax 应入池').toBe(true);
+    for (const harsh of [56, 57, 60, 61, 64, 65, 80, 82]) expect(used.has(harsh), `${harsh} 不应入池`).toBe(false);
+    expect(used.has(66), 'Tenor Sax 应入池').toBe(true);
+    expect(used.has(67), 'Baritone Sax 应保留为备选').toBe(true);
   });
 });
 

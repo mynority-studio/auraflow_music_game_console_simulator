@@ -20,6 +20,23 @@ const spanPcs = (span: { rootPc: number; chordType?: string; quality: string }):
   [...new Set(chordTypeIntervals(normalizeChordType(span.chordType ?? span.quality) ?? 'maj').map((iv) => m12(span.rootPc + iv)))];
 const beatOf = (tick: unknown, ppq: number): number => (tick as number) / ppq;
 
+function expectHarmonySafeProjection(
+  actual: readonly number[],
+  fittedSource: readonly number[],
+  findings: readonly { severity: string; location: { trackRole: string } }[],
+): void {
+  expect(actual.length).toBe(fittedSource.length);
+  const changed = actual
+    .map((pitch, index) => ({ pitch, source: fittedSource[index] }))
+    .filter(({ pitch, source }) => pitch !== source);
+  // Harmony-first may micro-project an illegal structural landing, but it must remain a
+  // local correction rather than rewriting the user-authored line.
+  expect(changed.length).toBeLessThanOrEqual(Math.max(1, Math.ceil(actual.length * 0.05)));
+  for (const { pitch, source } of changed) expect(Math.abs(pitch - source)).toBeLessThanOrEqual(2);
+  expect(findings.filter((finding) => finding.location.trackRole === 'lead'
+    && (finding.severity === 'error' || finding.severity === 'fatal'))).toEqual([]);
+}
+
 function strongFirstPhraseMotif(): UserMotif {
   return {
     id: 'strong-first-phrase',
@@ -105,13 +122,21 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     // lead 轨 = Q+R motif lead(tile 满全曲);音高按最终器配音色折回,证明 renderMgMelody 让位且消费 Aura25 合同。
     const lead = song.ir!.tracks.find((t) => t.role === 'lead')!;
     expect(lead.notes.length).toBeGreaterThanOrEqual(ov.lead!.length);
-    expect(lead.notes.slice(0, ov.lead!.length).map((n) => n.pitch)).toEqual(fittedLeadPitches(ov.lead!, lead.program!));
+    expectHarmonySafeProjection(
+      lead.notes.slice(0, ov.lead!.length).map((n) => n.pitch as number),
+      fittedLeadPitches(ov.lead!, lead.program!),
+      song.report.findings,
+    );
 
-    // bass 轨吃 sandbox 和声(首音根/三/五)
+    // bass 可能按 openingGesture 延迟进入；首音应服从它实际落到的 sandbox 和弦，
+    // 不能再机械拿曲首和弦校验。
     const bass = song.ir!.tracks.find((t) => t.role === 'bass');
     if (bass && bass.notes.length) {
-      const rootPc = m12(r.progression[0].realRootPc ?? r.progression[0].rootPc);
-      expect([rootPc, m12(rootPc + 3), m12(rootPc + 4), m12(rootPc + 7)]).toContain(m12(bass.notes[0].pitch));
+      const beat = beatOf(bass.notes[0].startTick, song.ir!.timebase.ppq);
+      const span = ov.harmony!.chordTimeline.find((chord) => beat >= (chord.startBeat as number)
+        && beat < (chord.startBeat as number) + (chord.durationBeats as number));
+      expect(span).toBeDefined();
+      expect(ov.harmony!.stableToneMap[span!.id]).toContain(m12(bass.notes[0].pitch));
     }
   });
 
@@ -166,9 +191,13 @@ describe('motifSandbox/bridge sandboxToOverride(走 A PR3 · 整曲 override)', 
     const tb = song.ir!.timebase;
     const expectedPitch = fittedLeadPitches(ov.lead!, lead.program!);
     for (let i = 0; i < ov.lead!.length; i++) {
-      expect(lead.notes[i].pitch, `lead[${i}] pitch`).toBe(expectedPitch[i]);
       expect(lead.notes[i].startTick, `lead[${i}] startTick`).toBe(tb.beatToTick(beats(ov.lead![i].onsetBeat))); // 时序原样
     }
+    expectHarmonySafeProjection(
+      lead.notes.slice(0, ov.lead!.length).map((n) => n.pitch as number),
+      expectedPitch,
+      song.report.findings,
+    );
   });
 
   it('★ PR4:走 A 编制与默认 generateSong 一致(不丢轨);bass/comp 末音覆盖全曲后段', () => {

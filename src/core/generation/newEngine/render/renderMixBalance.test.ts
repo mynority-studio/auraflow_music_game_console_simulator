@@ -98,12 +98,13 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     const ratio = leadCompWetEnergyRatio(r.ir!.tracks as TrackIR[], ctx('jazz', r.ir!.durationTicks as number));
     const lead = r.ir!.tracks.find((t) => t.role === 'lead')!;
     const comp = r.ir!.tracks.find((t) => t.role === 'comp')!;
+    const leadVolumes = [lead.mix!.volume, ...(lead.mixChanges ?? []).map((change) => change.mix.volume)];
     const expressionValues = (lead.ccEvents ?? []).filter((e) => e.controller === 11).map((e) => e.value);
     const avgExpression = expressionValues.reduce((sum, value) => sum + value, 0) / Math.max(1, expressionValues.length);
 
-    expect(lead.program).toBe(67);
+    expect(lead.program).toBe(66);
     expect(lead.mix!.volume).toBeGreaterThanOrEqual(84);
-    expect(lead.mix!.volume).toBeLessThanOrEqual(88);
+    expect(Math.max(...leadVolumes)).toBeLessThanOrEqual(88);
     expect(comp.mix!.volume).toBeGreaterThanOrEqual(78);
     expect(ratio).toBeGreaterThanOrEqual(0.95);
     expect(ratio).toBeLessThanOrEqual(3.80);
@@ -174,6 +175,32 @@ describe('render/renderMixBalance — render 后处理混音', () => {
     const lead = out.find((t) => t.role === 'lead')!;
     expect(lead.mix!.volume).toBeLessThanOrEqual(72);
     expect(lead.mix!.reverb).toBe(30);
+    expect(lead.mix!.chorus).toBe(0);
+  });
+
+  it('卡林巴 LEAD 被热源校平,不会被 melody-forward 推成高频谐振主角', () => {
+    const durationTicks = 1920;
+    const tracks: TrackIR[] = [
+      {
+        role: 'lead',
+        program: 108,
+        mix: { volume: 96, pan: 64, reverb: 18, chorus: 0 },
+        notes: [{ pitch: midi(79), startTick: ticks(0), durationTicks: ticks(240), velocity: 100 }],
+      },
+      {
+        role: 'comp',
+        program: 0,
+        mix: { volume: 84, pan: 52, reverb: 44, chorus: 8 },
+        notes: [
+          { pitch: midi(52), startTick: ticks(0), durationTicks: ticks(960), velocity: 72 },
+          { pitch: midi(57), startTick: ticks(0), durationTicks: ticks(960), velocity: 72 },
+        ],
+      },
+    ];
+    const out = applyRenderMixBalance(tracks, ctx('pop', durationTicks));
+    const lead = out.find((t) => t.role === 'lead')!;
+    expect(lead.mix!.volume).toBeLessThanOrEqual(74);
+    expect(lead.mix!.reverb).toBe(18);
     expect(lead.mix!.chorus).toBe(0);
   });
 

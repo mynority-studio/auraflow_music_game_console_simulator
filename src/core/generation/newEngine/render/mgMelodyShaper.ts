@@ -170,6 +170,97 @@ export function applyLofiPhrygianBiiShadowMelody(
         return bestScore === Infinity ? targetMidi : best;
     }
 
+    type SlopeContourNeighbors = { prev: NoteEvent | null; next: NoteEvent | null };
+
+    function sharesSlopeBrick(event: NoteEvent, neighbor: NoteEvent): boolean {
+        if (event.brickIndex !== undefined && neighbor.brickIndex !== undefined) {
+            return event.brickIndex === neighbor.brickIndex;
+        }
+        return neighbor.grammarSlopeRole === 'inside' || neighbor.grammarSlopeRole === 'last';
+    }
+
+    function slopeContourNeighbors(event: NoteEvent, melodyOnly: NoteEvent[]): SlopeContourNeighbors {
+        const index = melodyOnly.indexOf(event);
+        if (index < 0) return { prev: null, next: null };
+        const prev = index > 0 && sharesSlopeBrick(event, melodyOnly[index - 1])
+            ? melodyOnly[index - 1]
+            : null;
+        const next = index < melodyOnly.length - 1 && sharesSlopeBrick(event, melodyOnly[index + 1])
+            ? melodyOnly[index + 1]
+            : null;
+        return { prev, next };
+    }
+
+    function isClearWeakSlopeDecoration(event: NoteEvent, neighbors: SlopeContourNeighbors): boolean {
+        if (event.duration > 0.5 || !neighbors.prev || !neighbors.next) return false;
+        const intoGap = event.time - (neighbors.prev.time + neighbors.prev.duration);
+        const outGap = neighbors.next.time - (event.time + event.duration);
+        if (intoGap > 0.26 || outGap > 0.26) return false;
+        const into = event.noteNumber - neighbors.prev.noteNumber;
+        const out = neighbors.next.noteNumber - event.noteNumber;
+        if (Math.abs(into) > 2 || Math.abs(out) > 2) return false;
+        const passing = Math.sign(into) !== 0 && Math.sign(into) === Math.sign(out);
+        const neighbor = neighbors.prev.noteNumber === neighbors.next.noteNumber
+            && Math.abs(into) >= 1
+            && Math.abs(out) >= 1;
+        return passing || neighbor;
+    }
+
+    function slopeDirectionPenalty(originalDelta: number, candidateDelta: number): number {
+        const originalDirection = Math.sign(originalDelta);
+        const candidateDirection = Math.sign(candidateDelta);
+        if (originalDirection === 0) return candidateDirection === 0 ? 0 : 6;
+        if (candidateDirection === originalDirection) return 0;
+        return candidateDirection === 0 ? 80 : 200;
+    }
+
+    /**
+     * Repair a harmony violation without treating an Impro-Visor slope body as unrelated notes.
+     * Weak, short passing/neighbor notes keep their grammar pitch. Structural or unsupported
+     * slope notes still move into the legal set, but candidate scoring preserves both adjacent
+     * directions whenever the chord contract offers such a pitch.
+     */
+    function repairHarmonyPitch(
+        event: NoteEvent,
+        legalPcs: Set<number>,
+        melodyOnly: NoteEvent[],
+        maxDistance: number,
+        structural: boolean,
+    ): number {
+        if (event.grammarSlopeRole !== 'inside') {
+            return snapMidiToNearestPcSet(event.noteNumber, legalPcs, maxDistance);
+        }
+
+        const neighbors = slopeContourNeighbors(event, melodyOnly);
+        if (!structural && isClearWeakSlopeDecoration(event, neighbors)) return event.noteNumber;
+
+        let best: { midi: number; score: number } | null = null;
+        for (let midi = MELODY_RANGE.LOW; midi <= MELODY_RANGE.HIGH; midi++) {
+            const pc = ((midi % 12) + 12) % 12;
+            if (!legalPcs.has(pc)) continue;
+            const distance = Math.abs(midi - event.noteNumber);
+            if (distance > maxDistance) continue;
+
+            let score = distance;
+            if (neighbors.prev) {
+                const originalInto = event.noteNumber - neighbors.prev.noteNumber;
+                const candidateInto = midi - neighbors.prev.noteNumber;
+                score += slopeDirectionPenalty(originalInto, candidateInto);
+                score += Math.abs(Math.abs(candidateInto) - Math.abs(originalInto)) * 1.5;
+            }
+            if (neighbors.next) {
+                const originalOut = neighbors.next.noteNumber - event.noteNumber;
+                const candidateOut = neighbors.next.noteNumber - midi;
+                score += slopeDirectionPenalty(originalOut, candidateOut);
+                score += Math.abs(Math.abs(candidateOut) - Math.abs(originalOut)) * 1.5;
+            }
+            if (midi < 55) score += 0.8;
+            else if (midi > 81) score += 0.4;
+            if (!best || score < best.score) best = { midi, score };
+        }
+        return best?.midi ?? snapMidiToNearestPcSet(event.noteNumber, legalPcs, maxDistance);
+    }
+
     export function stableUnitInterval(label: string): number {
         let h = 2166136261;
         for (let i = 0; i < label.length; i++) {
@@ -1310,6 +1401,9 @@ export function applyLofiPhrygianBiiShadowMelody(
             return { chord: chords[index], index, start: starts[index] ?? 0 };
         };
 
+        const melodyBeforeHarmony = melody
+            .filter(event => event.part === 'melody')
+            .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
         const shaped = melody.map(event => {
             if (event.part !== 'melody') return event;
             const { chord, index, start } = chordAt(event.time);
@@ -1353,7 +1447,8 @@ export function applyLofiPhrygianBiiShadowMelody(
             const snapPcs = localScaleStrict
                 ? scaleContractPcs
                 : (inRelativeScale ? contractPcs : scaleContractPcs);
-            const snapped = snapMidiToNearestPcSet(event.noteNumber, snapPcs.size > 0 ? snapPcs : contractPcs, 8);
+            const legalPcs = snapPcs.size > 0 ? snapPcs : contractPcs;
+            const snapped = repairHarmonyPitch(event, legalPcs, melodyBeforeHarmony, 8, structural);
             if (snapped === event.noteNumber) return event;
             return { ...event, noteNumber: snapped };
         });
@@ -1393,13 +1488,17 @@ export function applyLofiPhrygianBiiShadowMelody(
             const snapPcs = localScaleStrict
                 ? scaleContractPcs
                 : (runScalePcs.has(notePc) ? contractPcs : scaleContractPcs);
-            const snapped = snapMidiToNearestPcSet(event.noteNumber, snapPcs.size > 0 ? snapPcs : contractPcs, style === 'POP' ? 12 : 5);
+            const legalPcs = snapPcs.size > 0 ? snapPcs : contractPcs;
+            const snapped = repairHarmonyPitch(event, legalPcs, melodyOnly, style === 'POP' ? 12 : 5, structural);
             if (snapped === event.noteNumber) return event;
             return { ...event, noteNumber: snapped };
             });
         };
 
         const thinSlashBassMelodyDoubles = (input: NoteEvent[]): NoteEvent[] => {
+            const melodyOnly = input
+                .filter(event => event.part === 'melody')
+                .sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
             const isProtectedResolutionLanding = (event: NoteEvent, chord: ChordDef, index: number, start: number, notePc: number): boolean => {
                 if (index <= 0) return false;
                 if (Math.abs(event.time - start) > 0.08) return false;
@@ -1490,7 +1589,7 @@ export function applyLofiPhrygianBiiShadowMelody(
                     ? voicedTargets
                     : [...contractPcs].filter(pc => pc !== bassPc);
                 const targetPcs = new Set(strictTargets.length > 0 ? strictTargets : fallbackTargets);
-                const snapped = snapMidiToNearestPcSet(event.noteNumber, targetPcs, style === 'POP' ? 12 : 7);
+                const snapped = repairHarmonyPitch(event, targetPcs, melodyOnly, style === 'POP' ? 12 : 7, structural);
                 const snappedPc = ((snapped % 12) + 12) % 12;
                 if (snapped === event.noteNumber || snappedPc === bassPc) return event;
                 return { ...event, noteNumber: snapped };
@@ -2841,4 +2940,3 @@ interface MelodyBrickBoundaryInfo {
         const others = out.filter(event => event.part !== 'melody');
         return [...others, ...melody].sort((a, b) => a.time - b.time || a.noteNumber - b.noteNumber);
     }
-

@@ -45,8 +45,7 @@ export interface MusicGenerationRequest {
   styleHint: string;
   mood: string;
   targetDuration: number;   // 秒
-  key?: string;             // UI 字符串('C'|'Db'|…);服务转 PitchClass
-  mode?: string;            // 'major'|'minor'|教会调式
+  // key/mode 不属于产品入参:Q+N 在链路最开始按 seed/style 抽取,UI 只读展示 uiSnapshot.key/tonality。
   bandParticipants?: BandParticipantSelection[]; // ★ 参与乐手/职能(不含 GM 音色;音色仍器配层定)
 }
 
@@ -78,7 +77,7 @@ export interface UiGestureExpression {
 export interface UiPlayer {
   role: QnRole;
   program: number;            // Q+N 器配层实际选中的 GM program(只读显示)
-  bank?: number;              // 可选 SF2 bank(发声层;例如 bank8 的 Chorused FM EP)
+  bank?: number;              // 可选 GM128 variation bank(Dream GMBK5X128 用 CC0)
   instrumentName: string;     // 该 program 的乐器名(只读)
   family: string;
   state: BandParticipantState; // auto / selected / disabled(来自 participant)
@@ -125,6 +124,6 @@ export interface MusicGenerationResult {
   attempts?: number;
   uiSnapshot: MusicGenerationUiSnapshot;
   /** 器配层已定的 song space(instrumentalPlanner 用 lineup-based hasPad + style + timbreWorld 一次算定，
-   *  golden 锁=设备 out->space)。copych FX 空间下发直取它，免 AudioEngine 用 IR-based hasPad 重推导偏离设备。 */
+   *  golden 锁=设备 out->space)。硬件共享 FX 空间下发直取它，免 AudioEngine 用 IR-based hasPad 重推导偏离设备。 */
   spaceProfile?: SpaceProfile;
 }

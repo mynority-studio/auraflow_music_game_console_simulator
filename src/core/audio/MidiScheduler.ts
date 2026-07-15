@@ -8,16 +8,13 @@
  *   - 索引 nextEventIdx 单调推进（events 已按 ticks 排序）
  *
  * 派发：
- *   - noteOn / noteOff / programChange → Copych synth facade
- *   - cc / pitchBend → Copych controllerChange / pitchWheel（如果有；否则跳过）
+ *   - noteOn / noteOff / programChange / cc / pitchBend → MIDI listeners
  *   - visual → visualListeners
  *
  * 曲终：last event 之后等 200ms（让 noteOff 发音完整）→ fire onTrackEnd listeners → 自动停止。
  */
 
 import type { TempoCurve } from '../generation/types';
-import { activeSynth } from './SynthManager';
-import { mapMidiProgramToAura25 } from '../sound/Aura25Palette';
 
 export interface MidiEvent {
     ticks: number;
@@ -46,9 +43,7 @@ function compareMidiEvents(a: MidiEvent, b: MidiEvent): number {
 }
 
 function normalizeMidiEvent(ev: MidiEvent): MidiEvent {
-    if (ev.type !== 'programChange') return ev;
-    const mapped = mapMidiProgramToAura25(ev.data1, ev.channel);
-    return mapped === ev.data1 ? ev : { ...ev, data1: mapped };
+    return ev;
 }
 
 function normalizeAndSortEvents(events: MidiEvent[]): MidiEvent[] {
@@ -77,7 +72,7 @@ export class MidiScheduler {
     private midiEventListeners: MidiEventListener[] = [];
     private endListeners: (() => void)[] = [];
 
-    public init(_synth: unknown): void { /* synth 由 SynthManager 单例管理，本方法保持签名兼容 */ }
+    public init(_synth: unknown): void { /* MIDI-only:保留旧签名兼容,事件由监听器消费。 */ }
 
     // -----------------------------------------------------------
     // 事件流装载
@@ -85,7 +80,7 @@ export class MidiScheduler {
 
     public loadTrack(events: MidiEvent[], bpm: number, _tempoCurves?: TempoCurve[]): void {
         // 已按 ticks 升序排好（musicalIRToMidiEvents 输出时排序）— 这里再保险一次。
-        // Copych-only：CC95 直通真 FxDelay，不再生成浏览器 echo 代偿音符。
+        // MIDI-only：CC95 作为硬件 delay send 直通，不再生成浏览器 echo 代偿音符。
         this.events = normalizeAndSortEvents(events);
         this.currentBpm = bpm;
         this.currentTick = 0;
@@ -130,16 +125,11 @@ export class MidiScheduler {
 
     public panic(): void {
         // 所有通道发 allNotesOff（CC 123 = All Notes Off）— 防止残音。
-        // listeners 通知视觉/记录层；真实发声由 Copych facade 统一处理。
-        const synth = activeSynth;
+        // listeners 通知硬件 MIDI 输出层；不再回退到浏览器合成器。
         for (let ch = 0; ch < 16; ch++) {
             const ev: MidiEvent = { ticks: this.currentTick, type: 'cc', channel: ch, data1: 123, data2: 0 };
             this.notifyMidiEventListeners(ev);
         }
-        if (!synth) return;
-        // Copych：CC123 遇 sustain 跳杀（allNotesOff 语义）→ 走 facade 硬合同
-        // （processor 清 pending 队列 + C 层 CC64=0→soundOff→delay resetLine）。
-        try { (synth as any).panic?.(); } catch { /* ignore */ }
     }
 
     public clear(): void {
@@ -194,19 +184,6 @@ export class MidiScheduler {
         }
         if (this.mutedChannels.has(ev.channel)) return;
         this.notifyMidiEventListeners(ev);
-        const synth = activeSynth;
-        if (!synth) return;
-
-        try {
-            if (ev.type === 'noteOn') synth.noteOn(ev.channel, ev.data1, ev.data2);
-            else if (ev.type === 'noteOff') synth.noteOff(ev.channel, ev.data1);
-            else if (ev.type === 'programChange') synth.programChange(ev.channel, mapMidiProgramToAura25(ev.data1, ev.channel));
-            else if (ev.type === 'cc') {
-                (synth as any).controllerChange?.(ev.channel, ev.data1, ev.data2);
-            } else if (ev.type === 'pitchBend') {
-                (synth as any).pitchWheel?.(ev.channel, ev.data1);
-            }
-        } catch { /* ignore — 静默单事件错误，保播放不中断 */ }
     }
 
     private notifyMidiEventListeners(ev: MidiEvent): void {

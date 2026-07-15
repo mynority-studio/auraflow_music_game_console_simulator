@@ -17,21 +17,18 @@ import {
     CHORD_SCALE_NAME,
 } from '../core/generation/types';
 // ★ Q+N 接管:旧 MusicianRegistry / GMSoundMap / BandSelectionStore / StyleFlags 已不再被本组件使用(Band Selection 走 Q+N)。
-import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
-import { MusicGenerationKeyStore, MUSIC_GEN_KEY_OPTIONS, type MusicGenKey } from '../state/MusicGenerationKeyStore';
+import { MusicGenerationStyleStore, MUSIC_GEN_STYLE_OPTIONS, musicGenStyleLabel, type MusicGenStyle } from '../state/MusicGenerationStyleStore';
 import { MusicGenerationSeedStore, hashSeedToInt } from '../state/MusicGenerationSeedStore';
 import type { MusicGenerationResult, BandParticipantRole, BandParticipantState } from '../core/generation/musicGeneration/types';
 import { QnBandSelectionStore, QN_PARTICIPANT_ORDER, QN_PARTICIPANT_LABEL } from '../state/QnBandSelectionStore';
 import { useDevPanelChannel } from './devPanels';
 import { traceGeneration, type TraceSection } from '../core/generation/newEngine/generation';
 import type { GenerationRequest } from '../core/generation/newEngine/band/bandEngine';
-import { pc } from '../core/generation/newEngine/foundation';
 import { buildPianoRoll, type PianoRoll } from '../core/generation/newEngine/sandbox/pianoRoll';
 import { PianoRollWindow } from '../core/generation/newEngine/sandbox/PianoRollWindow';
 import { musicalIRToSMF } from '../core/generation/newEngine/sandbox/midiFile';
 import { compareTraces, type TraceComparison } from '../core/generation/newEngine/sandbox/traceDiff';
 import { deriveLineupConstraint } from '../core/generation/musicGeneration/participantConstraint';
-import { keyToPc } from '../core/generation/musicGeneration/qnUiProjection';
 import {
     QnGenerationMonitorView,
     deriveQnMonitorReadout,
@@ -225,11 +222,6 @@ export const PipelineMonitor: React.FC = () => {
         MusicGenerationStyleStore.setStyle(next);
         setMusicStyleState(next);
     }, []);
-    const [musicKey, setMusicKeyState] = useState<MusicGenKey>(() => MusicGenerationKeyStore.getKey());
-    const switchMusicKey = useCallback((next: MusicGenKey) => {
-        MusicGenerationKeyStore.setKey(next);
-        setMusicKeyState(next);
-    }, []);
     const [playState, setPlayState] = useState<PlayState>('IDLE');
     const [mutedParts, setMutedParts] = useState<Set<PartName>>(new Set());
     // ★ Band Selection 参与乐手三态(QnBandSelectionStore;立即生效,下次 Play 用)。
@@ -310,7 +302,8 @@ export const PipelineMonitor: React.FC = () => {
         }
     }, [mutedParts]);
 
-    // ★ 与 playSeed 同源的 Q+N 生成请求(seed + 当前 style/key + participant 约束);诊断/监控/A-B 共用。
+    // ★ 与 playSeed 同源的 Q+N 生成请求(seed + 当前 style + participant 约束);诊断/监控/A-B 共用。
+    //   key/mode 不从 UI 传入,由 Q+N band 层在链路开头按 seed/style 抽取。
     const buildTraceRequest = useCallback((seed: number): GenerationRequest => {
         const bandConstraint = deriveLineupConstraint(QnBandSelectionStore.getParticipants());
         const req: GenerationRequest = {
@@ -318,7 +311,6 @@ export const PipelineMonitor: React.FC = () => {
             styleHint: MusicGenerationStyleStore.getStyleHint(),
             mood: 'build',
             targetDuration: 120,
-            key: pc(keyToPc(MusicGenerationKeyStore.getKey())),
         };
         if (bandConstraint) req.bandConstraint = bandConstraint;
         return req;
@@ -573,20 +565,16 @@ export const PipelineMonitor: React.FC = () => {
                     title="风格选择 — 下次 Play 生效"
                 >
                     {MUSIC_GEN_STYLE_OPTIONS.map((s) => (
-                        <option key={s} value={s}>{s}</option>
+                        <option key={s} value={s}>{musicGenStyleLabel(s)}</option>
                     ))}
                 </select>
                 <span className="text-[9px] uppercase tracking-wider text-zinc-500 ml-1">key</span>
-                <select
-                    value={musicKey}
-                    onChange={(e) => switchMusicKey(e.target.value as MusicGenKey)}
-                    className="bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[10px] font-mono text-purple-300 focus:outline-none focus:border-purple-400/60"
-                    title="key 选择 — 下次 Play 生效"
+                <span
+                    className="bg-black/40 border border-purple-500/20 rounded px-2 py-1 text-[10px] font-mono text-purple-300"
+                    title="KEY/调式由 Q+N 在生成链路开头按 seed/style 抽取"
                 >
-                    {MUSIC_GEN_KEY_OPTIONS.map((k) => (
-                        <option key={k} value={k}>{k}</option>
-                    ))}
-                </select>
+                    {frame.musicGen?.uiSnapshot.key ?? 'auto'} {frame.musicGen ? frame.musicGen.uiSnapshot.tonality : ''}
+                </span>
             </div>
 
             {/* Seed Lab：种子输入 + Play/Stop/Random（原 Q+S 整合） */}
@@ -747,7 +735,9 @@ export const PipelineMonitor: React.FC = () => {
                             keyName={ui?.key}
                             tonalityLabel={ui?.tonality}
                             seed={seed}
-                            styleName={ui?.styleHint?.toUpperCase()}
+                            styleName={ui?.styleHint
+                                ? (ui.styleHint.toLowerCase() === 'acg' ? musicGenStyleLabel('ACG') : ui.styleHint.toUpperCase())
+                                : undefined}
                             currentChord={currentChord}
                         />
                         <Stage2Harmony
@@ -788,7 +778,7 @@ export const PipelineMonitor: React.FC = () => {
             sections={monitorSections}
             open={rollWinOpen}
             onClose={() => setRollWinOpen(false)}
-            title={`${musicStyle.toLowerCase()} · seed ${currentSeed ?? musicGen?.seed ?? seedInput}`}
+            title={`${musicGenStyleLabel(musicStyle)} · seed ${currentSeed ?? musicGen?.seed ?? seedInput}`}
         />
         </>
     );

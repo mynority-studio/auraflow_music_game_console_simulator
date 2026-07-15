@@ -16,7 +16,7 @@ const CASES: [number, string][] = [[0, 'acg'], [42, 'acg'], [7, 'pop'], [42, 'rn
 let totalMatch = 0, totalN = 0;
 
 for (const [seed, style] of CASES) {
-  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90, key: 'C' });
+  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90 });
   const intent = (r.report as { intent?: { sections: IntentSec[] } })?.intent;
   const tpb = ((r.report as { texturePerBar?: string[] })?.texturePerBar) ?? [];
   if (!intent) { L.push(`## ${seed}/${style}: 无 intent`); continue; }

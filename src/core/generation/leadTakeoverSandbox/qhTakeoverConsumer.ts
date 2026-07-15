@@ -7,7 +7,7 @@
 // ============================================================
 
 import type { MidiEvent } from '../../audio/MidiScheduler';
-import { mapProgramToAura25 } from '../../sound/Aura25Palette';
+import { mapProgramToDream5504 } from '../../sound/GMBK5X128Voices';
 import type { MusicGenerationResult, MusicGenerationUiSnapshot, UiChord, UiGrooveContract } from '../musicGeneration/types';
 import { fitMidiToProgramRange } from '../newEngine/knowledge/instruments';
 import type { LeadTakeoverAction, TakeoverChordSource, TakeoverGrooveContract, TakeoverMusicSnapshot } from './types';
@@ -21,10 +21,16 @@ const DEFAULT_LEAD_REVERB = 36;
 const DEFAULT_LEAD_CHORUS = 0;
 const DEFAULT_LEAD_EXPRESSION = 127;
 const DEFAULT_LEAD_DELAY = 0;
-const TAKEOVER_VOLUME_CEILING = 72;
+// These CC values raise only Q+T's user-lead channel before it enters the
+// shared hardware output path. Raising masterLift here would also lift
+// drums, accompaniment, and the practice click.
+const TAKEOVER_VOLUME_BOOST = 18;
+const TAKEOVER_VOLUME_FLOOR = 108;
+const TAKEOVER_VOLUME_CEILING = 112;
 const TAKEOVER_REVERB_CEILING = 18;
 const TAKEOVER_CHORUS_CEILING = 6;
-const TAKEOVER_EXPRESSION_CEILING = 112;
+const TAKEOVER_EXPRESSION_FLOOR = 127;
+const TAKEOVER_EXPRESSION_CEILING = 127;
 const TAKEOVER_DELAY_SEND = 0;
 const CC_RELEASE_TIME = 72;
 const CC_BRIGHTNESS = 74;
@@ -126,7 +132,7 @@ function leadVoiceFromResult(result: MusicGenerationResult | null): LeadVoice {
   const mix = leadTrack?.mix;
   const style = result?.styleHint ?? result?.uiSnapshot.styleHint;
   const rawProgram = clampMidi(leadTrack?.program ?? uiLead?.program ?? DEFAULT_LEAD_PROGRAM);
-  const program = mapProgramToAura25(rawProgram, 'lead', style);
+  const program = mapProgramToDream5504(rawProgram, 'lead', style);
   const electricKey = program === 4 || program === 5;
   return {
     program,
@@ -144,10 +150,10 @@ function leadVoiceFromResult(result: MusicGenerationResult | null): LeadVoice {
 function takeoverVoiceFromLeadVoice(voice: LeadVoice): LeadVoice {
   return {
     ...voice,
-    volume: clampTakeoverCc(voice.volume, TAKEOVER_VOLUME_CEILING),
+    volume: clampTakeoverCc(Math.max(voice.volume + TAKEOVER_VOLUME_BOOST, TAKEOVER_VOLUME_FLOOR), TAKEOVER_VOLUME_CEILING),
     reverb: clampTakeoverCc(voice.reverb, TAKEOVER_REVERB_CEILING),
     chorus: clampTakeoverCc(voice.chorus, TAKEOVER_CHORUS_CEILING),
-    expression: clampTakeoverCc(voice.expression, TAKEOVER_EXPRESSION_CEILING),
+    expression: clampTakeoverCc(Math.max(voice.expression, TAKEOVER_EXPRESSION_FLOOR), TAKEOVER_EXPRESSION_CEILING),
     delay: TAKEOVER_DELAY_SEND,
   };
 }

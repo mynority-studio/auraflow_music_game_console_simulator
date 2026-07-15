@@ -15,7 +15,7 @@ const ERROR: AuditReport = {
 const WARN: AuditReport = {
   findings: [{ severity: 'warning', location: { trackRole: 'comp', startTick: 0 }, ruleId: 'w', reason: 'r', suggestedReturnPoint: 'rewind-resolver' }],
 };
-// lead 的 error → 不 blocking(MG 真源不可改);带 warning 通过,不重跑。
+// lead 的 error → 最终旋律合同阻断；retry 无法改变 lead，所以立即失败。
 const LEAD_ERROR: AuditReport = {
   findings: [{ severity: 'error', location: { trackRole: 'lead', startTick: 0 }, ruleId: 'avoid-long-exposure', reason: 'MG truth', suggestedReturnPoint: 'rewind-melody' }],
 };
@@ -61,11 +61,11 @@ describe('generation/GenerationController · runGenerationControl', () => {
     expect(r.ir).toBeDefined();
   });
 
-  it('★ Loop 3:lead 的 error 不驱动 retry → 带 warning 通过(MG 真源不可改)', () => {
+  it('lead error 立即 fail-closed，不浪费 retry budget', () => {
     const r = runGenerationControl(() => ({ ir: fakeIR, audit: LEAD_ERROR }), rng);
-    expect(r.status).toBe('warning'); // 不 failed、不重跑
+    expect(r.status).toBe('failed');
     expect(r.attempts).toBe(1);
-    expect(r.ir).toBeDefined();
+    expect(r.ir).toBeUndefined();
   });
 });
 

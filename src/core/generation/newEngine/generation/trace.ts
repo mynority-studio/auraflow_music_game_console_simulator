@@ -13,12 +13,11 @@ import { buildArrangementPlan } from '../arranger/arranger';
 import { beatsPerBarOf } from '../arranger/phraseTiming';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
 import { compPattern } from '../knowledge/grooves';
-import { gmName } from '../knowledge/instruments';
-import { aura25DrumKitName } from '../../../sound/Aura25Palette';
+import { dream5504VoiceName, type GM128Role } from '../../../sound/GMBK5X128Voices';
 import { buildHarmonicPlanFromArrangement } from '../harmony/harmonyEngine';
 import type { RomanChord } from '../harmony/HarmonicPlan';
 import { renderSongFull } from '../render/renderCoordinator';
-import { renderMgMelody } from '../render/mgLeadRenderer';
+import { leadGrammarLabelForStyle, renderMgMelody } from '../render/mgLeadRenderer';
 import { planRepeatGroupReplays } from '../render/repeatGroupReplay';
 import { planLeadGapFills } from '../render/leadGapFill';
 import type { MusicalIR } from '../ir/MusicalIR';
@@ -46,8 +45,8 @@ function spanLabel(span: { roman: RomanChord; quality: string; chordType?: strin
   return `${acc}${ROMAN[r.degree]}${type}${span.borrowedSource ? BORROW_MARK[span.borrowedSource] ?? '◆' : ''}`;
 }
 
-const roleGmName = (role: string, program: number | undefined): string =>
-  role === 'drum' ? aura25DrumKitName(program) : gmName(program ?? 0);
+const roleVoiceName = (role: string, program: number | undefined, bank?: number): string =>
+  dream5504VoiceName(bank, program, role as GM128Role) ?? `Dream5504 PC${program ?? 0}`;
 
 export interface TraceSection {
   id: string;
@@ -77,10 +76,10 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   // —— BAND ——
   const band = buildBandSpec(request);
   log(`■ BAND       ${band.tonalityKind}${band.modalModeName ? `(${band.modalModeName})` : ''} · key=${band.key} ${band.mode} · style=${band.style}  (accompDensity=${band.styleProfile.accompDensity} melodyFreedom=${band.styleProfile.melodyFreedom})`);
-  log(`   编制(${band.instrumentPool.length}件): ${band.instrumentPool.map((r) => `${r}=GM${band.roleProgram[r]}`).join(' · ')}`);
+  log(`   编制(${band.instrumentPool.length}件): ${band.instrumentPool.map((r) => `${r}=PC${band.roleProgram[r]}(候选)`).join(' · ')}`);
 
   // —— ARRANGER ——
-  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood, targetDuration: request.targetDuration });
   const formShape = arrangement.sections.map((s) => s.role).join('-'); // seed 选型曲式骨架
   const totalBars = arrangement.sections.reduce((n, s) => n + s.bars, 0);
   log(`■ ARRANGER   ${arrangement.tempoBpm}bpm ${arrangement.meter.numerator}/${arrangement.meter.denominator} ${arrangement.feel.kind} · 曲式=${formShape}(${arrangement.sections.length}段/${totalBars}小节,seed 选) · 高潮=${arrangement.climaxMap.map((c) => c.sectionId).join(',') || '-'}`);
@@ -91,18 +90,23 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   const harmonic = buildHarmonicPlanFromArrangement(band, arrangement, seedRng);
 
   // —— INSTRUMENTAL ——
-  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic);
-  const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(GM${p.program})`).join(' ');
+  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
+  const samePairs = instrumentation.sameInstrumentPairs?.map((p) => `${p.a}=${p.b}(PC${p.program})`).join(' ');
   log(`■ INSTRUMENT 音色世界=${instrumentation.timbreWorld ?? '-'}${samePairs ? ` · 同乐器对:${samePairs}` : ''}`);
   // ★ 链式协同(gm128_chain_orchestration):器配层拥有 GM 选择 —— 链世界/profile + 生效 roleProgram + 决策轨迹
   const oc = instrumentation.orchestrationChain;
-  log(`   链 world=${oc.world} profile=${oc.profileId} · 生效:${band.instrumentPool.map((r) => `${r}=${roleGmName(r, instrumentation.roleProgram[r])}`).join(' ')}`);
+  log(`   链 world=${oc.world} profile=${oc.profileId} · 生效:${band.instrumentPool.map((r) => {
+    const bank = instrumentation.roleBank?.[r];
+    const bankLabel = r === 'drum' ? 'PC' : `CC0=${bank ?? 0}`;
+    const name = instrumentation.voiceNameByRole?.[r] ?? roleVoiceName(r, instrumentation.roleProgram[r], bank);
+    return `${r}=${name}(PC${instrumentation.roleProgram[r]},${bankLabel})`;
+  }).join(' ')}`);
   log(`   链决策: ${oc.decisions.join(' | ')}`);
   // ★ ESP32 混音(器配层 mix:CC7 音量/CC10 声像/CC91 混响/CC93 合唱;印各角色首段代表值)
   const firstSec = arrangement.sections[0]?.id;
   log(`   混音空间=${instrumentation.spaceProfile} · ${band.instrumentPool.map((r) => {
     const m = firstSec ? instrumentation.mixByRoleSection[r]?.[firstSec] : undefined;
-    return m ? `${r}GM${instrumentation.roleProgram[r]}[V${m.volume} P${m.pan} R${m.reverb} C${m.chorus}]` : `${r}-`;
+    return m ? `${r}PC${instrumentation.roleProgram[r]}[V${m.volume} P${m.pan} R${m.reverb} C${m.chorus}]` : `${r}-`;
   }).join(' ')}`);
   const gestures = band.instrumentPool
     .map((r) => {
@@ -114,10 +118,11 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
       const hat = g.hiHatPolicy !== 'none' ? `/hat=${g.hiHatPolicy}` : '';
       const bass = g.bassTechniques?.length ? `/tech=${g.bassTechniques.join('+')}` : '';
       const gate = g.gateRatio !== undefined ? `/gate=${g.gateRatio}` : '';
-      return `${r}:${g.family} GM${g.program}:${g.kind}/${g.continuity}/${g.articulation}/${g.articulationExclusionGroup}${cc}${pedal}${rud}${hat}${bass}${gate}`;
+      return `${r}:${g.family} PC${g.program}:${g.kind}/${g.continuity}/${g.articulation}/${g.articulationExclusionGroup}${cc}${pedal}${rud}${hat}${bass}${gate}`;
     })
     .filter(Boolean);
   if (gestures.length) log(`   手势表情(器配下发): ${gestures.join(' · ')}`);
+  log(`   lead grammar: ${leadGrammarLabelForStyle(band.style, instrumentation.roleProgram.lead)}`);
   log(`   织体(让位类): ${Object.entries(instrumentation.textureBySection).map(([s, t]) => `${s}=${t}`).join(' ')}`);
   // ★ rich textureCase 段级下发(非 LOFI):器配层定,整段沿用,不逐 span 乱切(texture-switch 修复)
   const richTex = Object.entries(instrumentation.richTextureBySection);
@@ -131,7 +136,12 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
     if (new Set(arrangement.sections.map((s) => bySec[s.id])).size <= 1) return null;
     const cho = arrangement.sections.find((s) => s.role === 'chorus');
     const oth = arrangement.sections.find((s) => s.role !== 'chorus');
-    return cho && oth ? `${r} ${gmName(bySec[oth.id])}↔chorus ${gmName(bySec[cho.id])}` : null;
+    if (!cho || !oth) return null;
+    const from = instrumentation.voiceNameByRoleSection[r]?.[oth.id]
+      ?? roleVoiceName(r, bySec[oth.id], instrumentation.bankByRoleSection[r]?.[oth.id]);
+    const to = instrumentation.voiceNameByRoleSection[r]?.[cho.id]
+      ?? roleVoiceName(r, bySec[cho.id], instrumentation.bankByRoleSection[r]?.[cho.id]);
+    return `${r} ${from}↔chorus ${to}`;
   }).filter(Boolean);
   if (timbreSwitch.length) log(`   ★ 音色切换(同乐手换声): ${timbreSwitch.join(' · ')}`);
   const mainHooks = instrumentation.melodyReservationPlan.hookAnchorSlots.filter((h) => h.anchorRequired);
@@ -146,7 +156,7 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   }).join('  ')}`);
   log(`   鼓手合同: ${arrangement.sections.map((s) => {
     const d = arrangement.drumPerformanceBySection[s.id];
-    return `${s.id}=${d.patternFamily}/${d.timingProfile}/fill:${d.fillPolicy}.${d.fillAmount}.${d.fillComplexity}/var${d.phraseVariation}`;
+    return `${s.id}=kit${d.kitProgram}:${d.patternFamily}/${d.timingProfile}/fill:${d.fillPolicy}.${d.fillAmount}.${d.fillComplexity}/var${d.phraseVariation}`;
   }).join('  ')}`);
   // ★ 段落边界(Arranger 下发):进入方式(lead-in=末小节铺垫推进)+ 收尾方式(cold/fade/tag)+ 器配退出排布
   const leadIns = arrangement.sections.filter((s) => arrangement.entryBySection[s.id] === 'lead-in').map((s) => s.id);
@@ -233,9 +243,9 @@ export function traceGeneration(request: GenerationRequest): GenerationTrace {
   }
   // ★ lead 空拍补全(2026-06-11):末音后大空拍 → 延长末音到 bar 末(钳位和弦),不和弦未完成戛然而止
   //   (在【原始 MG lead】上算补全计划展示,production lead 已补全)
-  const rawLeadForGaps = renderMgMelody(harmonic, band, timebase, request.seed);
+  const rawLeadForGaps = renderMgMelody(harmonic, band, timebase, request.seed, instrumentation.roleProgram.lead, arrangement.songGrooveContract);
   const gapFills = planLeadGapFills(rawLeadForGaps.notes, harmonic.chordTimeline, timebase, beatsPerBarOf(arrangement.meter));
-  if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末,补"和弦未完成戛然而止";${gapFills.filter((f) => f.crossesChord).length} 处跨和弦,由气口减弱缓解)`);
+  if (gapFills.length) log(`   lead 空拍补全 ×${gapFills.length}(延末音到 bar 末;${gapFills.filter((f) => f.chordClamped).length} 处钳到起音和弦末,不跨和弦)`);
   // ★ 手势表情层:器配下发 sax/pipe-wind gesture plan,render 只投影 CC/连吹。
   const leadTrack = ir.tracks.find((t) => t.role === 'lead');
   const leadGesture = instrumentation.gestureExpressionByRole.lead;

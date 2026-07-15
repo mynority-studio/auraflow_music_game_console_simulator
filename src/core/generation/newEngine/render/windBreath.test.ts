@@ -59,7 +59,7 @@ describe('render/windBreath — 端到端兼容', () => {
   it('生产路径的 sax 气息来自器配 gesture plan,不是旧 pipe-wind GM 判断', () => {
     const sax = traceGeneration({ seed: 1, styleHint: 'jazz', mood: 'build', targetDuration: 90 });
     const lead = sax.ir.tracks.find((t) => t.role === 'lead')!;
-    expect(lead.program).toBe(67);
+    expect(lead.program).toBe(66);
     expect(isWindFamily(lead.program!)).toBe(false); // sax 不走旧 72-79 pipe wind 判定
     const controllers = new Set((lead.ccEvents ?? []).map((e) => e.controller));
     expect(controllers.has(11)).toBe(true);
@@ -69,6 +69,6 @@ describe('render/windBreath — 端到端兼容', () => {
     expect(controllers.has(84)).toBe(false);
     expect(controllers.has(1)).toBe(false);
     expect(lead.pitchBendEvents).toBeUndefined();
-    expect(sax.lines.some((line) => line.includes('lead:sax GM67:sax-breath-legato'))).toBe(true);
+    expect(sax.lines.some((line) => line.includes('lead:sax PC66:sax-breath-legato'))).toBe(true);
   });
 });

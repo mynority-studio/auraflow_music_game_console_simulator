@@ -125,9 +125,19 @@ export interface Feel {
 export type DrumPerformanceRole = 'silent' | 'timekeeper' | 'lift' | 'breakdown' | 'pickup';
 export type DrumPatternFamily =
   | 'citypop-disco-boogie'
+  | 'citypop-syncopated-boogie'
   | 'pop-backbeat'
   | 'jpop-driving-8ths'
   | 'ballad-halftime'
+  | 'tr808-rnb-pocket'
+  | 'tr808-dilla-pocket'
+  | 'tr808-trap-soul-halftime'
+  | 'tr808-lofi-boombap'
+  | 'tr808-lofi-dusty-break'
+  | 'tr808-lofi-minimal'
+  | 'rnb-neo-soul-pocket'
+  | 'rnb-dilla-pocket'
+  | 'rnb-gospel-triplet'
   | 'rnb-neo-soul'
   | 'rnb-dilla'
   | 'rnb-gospel-shuffle'
@@ -138,6 +148,7 @@ export type DrumPatternFamily =
   | 'smooth-jazz-backbeat'
   | 'jazz-swing-ride'
   | 'jazz-bebop-comping'
+  | 'jazz-brush-ballad'
   | 'jazz-ballad-light'
   | 'jazz-bossa';
 export type DrumEntryMode = 'none' | 'hat-only' | 'kick-only' | 'kick-hat' | 'ride-only' | 'full' | 'dropout';
@@ -191,6 +202,7 @@ export interface DrumPerformanceContract {
   id: string;
   sectionId: SectionId;
   role: DrumPerformanceRole;
+  kitProgram: 8 | 25 | 40;
   patternFamily: DrumPatternFamily;
   complexity: 0 | 1 | 2 | 3;
   intensity: 0 | 1 | 2 | 3;

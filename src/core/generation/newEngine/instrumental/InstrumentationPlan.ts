@@ -13,6 +13,7 @@ import type { InstrumentRoleName } from '../band/BandSpec';
 import type { EndingStyle, PhraseId, SectionEntry, SectionId } from '../arranger/ArrangementPlan';
 import type { GenericTextureKind, GenericTextureYield } from '../knowledge/textureProfiles';
 import type { TimbreWorld } from '../knowledge/instruments';
+import type { EnsembleWorldId } from '../knowledge/gmOrchestrationChains';
 import type { RoleMix, SpaceProfile } from '../knowledge/gmMixProfile';
 import type { DrumHit } from '../knowledge/grooves';
 
@@ -140,7 +141,6 @@ export interface EndingPlan {
 }
 
 export interface InstrumentationPlanData {
-  activityBySection: Record<SectionId, Partial<Record<InstrumentRoleName, number>>>;
   // ★ 编曲密度弧(A1):每段【在场的乐手子集】(genre×functionTag×lineup 确定性推出)。
   //   render 按此 gate(谁在哪段进/出)→ intro 稀疏 / chorus 全员同进 / breakdown 抽离。
   //   无 functionTag/genre 的段 = 全 lineup(向后兼容)。lead 当前全程在场(gating 留后续)。
@@ -158,20 +158,40 @@ export interface InstrumentationPlanData {
   // ★ 器配:每乐手(角色)× 每段落的音色(GM program)。大多全曲=primary;comp/lead 偶尔 chorus 换同族备选。
   //   同一乐手换声音(效果器/电钢切音色)→ render 落 programChange 事件,不换轨/通道。
   programByRoleSection: Record<InstrumentRoleName, Record<SectionId, number>>;
+  // ★ Dream GMBK5X128/5504:每乐手×段落的 variation bank(CC0 MSB)。program 仍是 GM 号;
+  //   bank 是 5504 实际音色身份的一部分,由器配层下发,render/MIDI 只执行。
+  bankByRoleSection: Record<InstrumentRoleName, Record<SectionId, number | undefined>>;
   // ★ 2026-06-10:器配层【最终生效】基底 program(band.roleProgram 过链式协同 + repairWorld/repairCompCapability/
   //   coherentLeadComp 后)。render 一律读这个 + programByRoleSection,不再回头读 band.roleProgram(消双真源)。
   roleProgram: Record<InstrumentRoleName, number>;
+  // ★ 基底 bank + 实际 GMBK5X128 名称:调试/UI/移植直接看这里,不再让下游按 style 猜 CC0。
+  roleBank: Partial<Record<InstrumentRoleName, number>>;
+  voiceNameByRole: Partial<Record<InstrumentRoleName, string>>;
+  voiceNameByRoleSection: Record<InstrumentRoleName, Record<SectionId, string>>;
   // ★ 链式协同诊断(gm128_chain_orchestration):本曲选定的音色世界/链 profile + 各角色生效 program + 决策轨迹。
   //   器配层【拥有】GM 选择:band.roleProgram 仅作 provisional 候选,链按 comp→lead→bass→pad 协同。trace/调试用。
   orchestrationChain: {
     world: TimbreWorld;
     profileId: string;
+    // 本曲真实乐队模板；鼓 kit/打法仍由 Arranger 的 GrooveContract 决定。
+    ensembleWorld?: EnsembleWorldId;
     compProgram?: number;
+    compBank?: number;
     leadProgram?: number;
+    leadBank?: number;
     bassProgram?: number;
+    bassBank?: number;
     padProgram?: number;
+    padBank?: number;
     drumProgram?: number;
+    voiceNames?: Partial<Record<InstrumentRoleName, string>>;
     decisions: string[];
+  };
+  // Dream 5504 hardware inventory consumed by this plan's orchestration
+  // world. Counts include main programs plus compatible CC0 variations.
+  hardwareVoiceWorld: {
+    targetId: string;
+    voiceCounts: Record<'keyboard' | 'bass' | 'pad' | 'drum', number>;
   };
   // ★ ESP32 混音(esp32s2_gm128_instrument_mix_directive):器配层据 style+timbreWorld+role+生效 program
   //   决定 CC7/10/91/93(+可选 CC11)。随段程序变(programByRoleSection 切换 → mix 也切)。render 落 IR,irToMidi 读。

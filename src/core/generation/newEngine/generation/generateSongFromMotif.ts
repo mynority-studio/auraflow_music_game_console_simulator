@@ -152,14 +152,14 @@ export interface MotifSongBundle { bundle: SongBundle; overrideLeadTrack?: Track
 export function buildMotifSongBundle(request: GenerationRequest, override: MotifSongOverride = {}): MotifSongBundle {
   const seedRng = createRandomContext(request.seed);
   const band = buildBandSpec(request);
-  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood });
+  const arrangement = buildArrangementPlan(band, { rng: seedRng, mood: request.mood, targetDuration: request.targetDuration });
   const beatsPerBar = arrangement.meter.numerator;
   const totalBeats = arrangement.sections.reduce((n, s) => n + s.bars * beatsPerBar, 0);
   // 注入点 A:和声权威 = sandbox 提供则【tile 满 arrangement + 逐 span 改段落】再用;否则 Q+N 默认。
   const harmonic = override.harmony && override.key
     ? fitHarmonyToArrangement(override.harmony, override.key, arrangement, beatsPerBar)
     : (override.harmony ?? buildHarmonicPlanFromArrangement(band, arrangement, seedRng));
-  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic);
+  const instrumentation = buildInstrumentationPlan(band, arrangement, seedRng.substream('timbre'), harmonic, seedRng.substream('acgPianoVoice'));
   const timebase = createTimebase({
     meter: { numerator: arrangement.meter.numerator, denominator: arrangement.meter.denominator },
     tempoMap: [{ atBeat: beats(0), bpm: arrangement.tempoBpm }],

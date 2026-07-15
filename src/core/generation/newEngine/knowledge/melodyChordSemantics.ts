@@ -159,10 +159,10 @@ export function evaluateNoteInChordContext(args: {
     consonance = 'avoid';
   }
 
-  // scale 感知(给定 runScale 时)
+  // scale 感知(给定 runScale 时)。局部音阶只能提供横向语境，不能把纵向 chord avoid
+  // 升格成可停留的 color tone；弱拍短经过是否可用由带节奏/邻接信息的调用层决定。
   if (localScalePcs !== undefined && localScalePcs.size > 0) {
     if (localScalePcs.has(npc)) {
-      if (consonance === 'avoid') consonance = 'colortone';
       if (tonalCharacter === 'modal' && consonance === 'tension') consonance = 'colortone';
     } else if (consonance === 'consonant' || consonance === 'colortone') {
       consonance = 'tension';

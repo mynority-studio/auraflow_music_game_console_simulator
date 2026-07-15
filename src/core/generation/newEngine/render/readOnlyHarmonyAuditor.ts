@@ -12,7 +12,7 @@
 // warning 不阻断(controller 带 warning 通过),作产品级安全网;error 才回卷重跑。
 // ============================================================
 
-import { beats, mod12, type DeepReadonly, type Timebase } from '../foundation';
+import { beats, mod12, ticks, type DeepReadonly, type Timebase } from '../foundation';
 import type { ChordSpan, HarmonicFunction, HarmonicPlan } from '../harmony/HarmonicPlan';
 import type { MusicalIR } from '../ir/MusicalIR';
 import type { AuditFinding, AuditReport } from '../ir/AuditReport';
@@ -28,17 +28,30 @@ export interface AuditKeyContext {
   tonalCharacter: 'tonal' | 'modal';
 }
 
-function findSpanAtTick(
+interface ChordExposure {
+  span: DeepReadonly<ChordSpan>;
+  spanStartTick: number;
+  startTick: number;
+  durationTicks: number;
+}
+
+/** 一个持续音在每个和弦内的实际暴露区间；阈值按区间而不是整音时值计算。 */
+function findChordExposures(
   plan: HarmonicPlan,
   timebase: Timebase,
-  tick: number,
-): DeepReadonly<ChordSpan> | undefined {
+  noteStart: number,
+  noteEnd: number,
+): ChordExposure[] {
+  const exposures: ChordExposure[] = [];
   for (const span of plan.chordTimeline) {
-    const start = timebase.beatToTick(span.startBeat);
-    const end = start + timebase.beatToTick(span.durationBeats);
-    if (tick >= start && tick < end) return span;
+    const spanStart = timebase.beatToTick(span.startBeat) as number;
+    const spanEnd = spanStart + (timebase.beatToTick(span.durationBeats) as number);
+    const overlapStart = Math.max(noteStart, spanStart);
+    const overlapEnd = Math.min(noteEnd, spanEnd);
+    if (overlapEnd <= overlapStart) continue;
+    exposures.push({ span, spanStartTick: spanStart, startTick: overlapStart, durationTicks: overlapEnd - overlapStart });
   }
-  return undefined;
+  return exposures;
 }
 
 function isDeclaredBassPedalExposure(
@@ -56,6 +69,9 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
   const findings: AuditFinding[] = [];
   const oneBeatTicks = timebase.beatToTick(beats(1));
   const twoBeatTicks = oneBeatTicks * 2; // 离调/倾向"持续暴露"门槛:1 拍走音/经过音不算,≥2 拍才是真暴露
+  const structuralTicks = Math.round(oneBeatTicks * 0.75);
+  const beatsPerBar = timebase.meter.numerator * (4 / timebase.meter.denominator);
+  const metricTolerance = oneBeatTicks * 0.08;
 
   // span → 功能 + 序号(chordTimeline 与 chordFunctionTimeline 平行对齐;序号取下一和弦)
   const funcBySpan: Record<string, HarmonicFunction> = {};
@@ -66,34 +82,69 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
   for (const track of ir.tracks) {
     if (track.role === 'drum') continue; // 打击通道非和声音
     for (const note of track.notes) {
-      const span = findSpanAtTick(plan, timebase, note.startTick);
-      if (!span) continue;
+      const noteStart = note.startTick as number;
+      const noteEnd = noteStart + (note.durationTicks as number);
+      const exposures = findChordExposures(plan, timebase, noteStart, noteEnd);
+      if (exposures.length === 0) continue;
       const notePc = mod12(note.pitch);
-      const isLong = note.durationTicks >= oneBeatTicks;
-      const isSustained = note.durationTicks >= twoBeatTicks; // ≥2 拍 = 真持续暴露(排除走音/经过音)
 
-      // R1 avoid 长暴露(error,触发纠错环)
-      const avoid = plan.avoidNoteMap[span.id] ?? [];
-      const declaredBassPedal = isDeclaredBassPedalExposure(track.role, notePc, span);
-      if (avoid.includes(notePc) && isLong && !declaredBassPedal) {
+      // R1 avoid 长暴露(error,触发纠错环)。整音跨和弦时逐 span 计算实际暴露,
+      // 但同一音只报告首个最高优先级 finding,避免一个待修音重复刷屏。
+      const avoidExposure = exposures.find(({ span, durationTicks }) => {
+        const avoid = plan.avoidNoteMap[span.id] ?? [];
+        return durationTicks >= oneBeatTicks
+          && avoid.includes(notePc)
+          && !isDeclaredBassPedalExposure(track.role, notePc, span);
+      });
+      if (avoidExposure) {
         findings.push({
           severity: 'error',
-          location: { trackRole: track.role, startTick: note.startTick },
+          location: { trackRole: track.role, startTick: avoidExposure.startTick },
           ruleId: 'avoid-long-exposure',
-          reason: `pc ${notePc} 是 ${span.id} 的 avoid note,长时值暴露(>=1 拍)`,
+          reason: `pc ${notePc} 是 ${avoidExposure.span.id} 的 avoid note,在该和弦内长时值暴露(>=1 拍)`,
           suggestedReturnPoint: 'rewind-melody',
         });
         continue; // 已是 error,不再叠加同音 warning
       }
 
-      // R2 离调暴露:【持续】音落在 chord-scale 之外(warning);1 拍 walking/经过音不算
-      const scale = plan.chordScaleMap[span.id] ?? [];
-      if (isSustained && scale.length > 0 && !scale.includes(notePc as never)) {
+      // R1b 最终结构落点必须属于 chord contract ∩ local scale。结构 = 和弦入口/强拍/在某和弦内
+      // 暴露至少 0.75 拍；跨边界后仍长时间保持也视为新和弦的结构悬挂。
+      if (track.role === 'lead') {
+        const structuralExposure = exposures.find(({ span, spanStartTick, startTick, durationTicks }) => {
+          const contract = new Set<number>([...(plan.stableToneMap[span.id] ?? []), ...(plan.colorToneMap[span.id] ?? [])]);
+          const scale = new Set<number>(plan.chordScaleMap[span.id] ?? []);
+          const legal = [...contract].filter((pc) => scale.has(pc) && !(plan.avoidNoteMap[span.id] ?? []).includes(pc as never));
+          if (legal.length === 0 || legal.includes(notePc)) return false;
+          const isOnsetExposure = Math.abs(startTick - noteStart) <= 1;
+          const beat = timebase.tickToBeat(ticks(startTick)) as number;
+          const phase = ((beat % beatsPerBar) + beatsPerBar) % beatsPerBar;
+          const strong = Math.min(Math.abs(phase), Math.abs(phase - beatsPerBar), Math.abs(phase - beatsPerBar / 2)) * oneBeatTicks <= metricTolerance;
+          const chordEntrance = Math.abs(startTick - spanStartTick) <= metricTolerance;
+          return durationTicks >= structuralTicks || (isOnsetExposure && (strong || chordEntrance));
+        });
+        if (structuralExposure) {
+          findings.push({
+            severity: 'error',
+            location: { trackRole: track.role, startTick: structuralExposure.startTick },
+            ruleId: 'structural-tone-outside-intersection',
+            reason: `pc ${notePc} 在 ${structuralExposure.span.id} 是结构落点,但不属于 chord contract ∩ local scale`,
+            suggestedReturnPoint: 'rewind-melody',
+          });
+          continue;
+        }
+      }
+
+      // R2 离调暴露:【持续】音落在 chord-scale 之外(warning);每个和弦内不足 2 拍仍视为经过。
+      const chromaticExposure = exposures.find(({ span, durationTicks }) => {
+        const scale = plan.chordScaleMap[span.id] ?? [];
+        return durationTicks >= twoBeatTicks && scale.length > 0 && !scale.includes(notePc as never);
+      });
+      if (chromaticExposure) {
         findings.push({
           severity: 'warning',
-          location: { trackRole: track.role, startTick: note.startTick },
+          location: { trackRole: track.role, startTick: chromaticExposure.startTick },
           ruleId: 'chromatic-exposure',
-          reason: `pc ${notePc} 不在 ${span.id} 的 chord-scale 内(离调长暴露 >=1 拍)`,
+          reason: `pc ${notePc} 不在 ${chromaticExposure.span.id} 的 chord-scale 内(在该和弦内离调长暴露 >=2 拍)`,
           suggestedReturnPoint: 'rewind-melody',
         });
         continue;
@@ -101,30 +152,35 @@ export function auditHarmony(ir: MusicalIR, plan: HarmonicPlan, timebase: Timeba
 
       // R3 统一评判器:lead【持续】音走 evaluateNoteInChordContext(Layer A 和弦 + Layer B 调性融合)
       //   判 avoid 且急迫(urgency≥0.9)→ warning。需 keyCtx;无则跳过(向后兼容)。
-      if (track.role === 'lead' && isSustained && keyCtx) {
-        const idx = idxBySpan[span.id];
-        const next = plan.chordTimeline[idx + 1];
-        const modKey = plan.modulationMap[span.sectionId]?.toKey;
-        const a = evaluateNoteInChordContext({
-          notePc, chordType: span.quality, chordRootPc: span.rootPc,
-          effectiveFunc: funcBySpan[span.id] ?? 'T',
-          nextChordType: next ? next.quality : null,
-          nextChordRootPc: next ? next.rootPc : null,
-          keyRootPc: keyCtx.keyRootPc,
-          globalMode: keyCtx.globalMode,
-          isModalContext: keyCtx.isModalContext,
-          scaleNameForBar: keyCtx.scaleName,
-          tonalCharacter: keyCtx.tonalCharacter,
-          localTonalCenterPc: modKey,
-        });
-        if (a.consonance === 'avoid' && a.urgency >= 0.9) {
+      if (track.role === 'lead' && keyCtx) {
+        for (const { span, startTick, durationTicks } of exposures) {
+          if (durationTicks < twoBeatTicks) continue;
+          const idx = idxBySpan[span.id];
+          const next = plan.chordTimeline[idx + 1];
+          const modKey = plan.modulationMap[span.sectionId]?.toKey;
+          const localScalePcs = new Set<number>(plan.chordScaleMap[span.id] ?? []);
+          const a = evaluateNoteInChordContext({
+            notePc, chordType: span.chordType ?? String(span.quality), chordRootPc: span.rootPc,
+            effectiveFunc: funcBySpan[span.id] ?? 'T',
+            nextChordType: next ? (next.chordType ?? String(next.quality)) : null,
+            nextChordRootPc: next ? next.rootPc : null,
+            keyRootPc: keyCtx.keyRootPc,
+            globalMode: keyCtx.globalMode,
+            isModalContext: keyCtx.isModalContext,
+            scaleNameForBar: keyCtx.scaleName,
+            localScalePcs,
+            tonalCharacter: keyCtx.tonalCharacter,
+            localTonalCenterPc: span.localTonalCenterPc ?? modKey,
+          });
+          if (a.consonance !== 'avoid' || a.urgency < 0.9) continue;
           findings.push({
             severity: 'warning',
-            location: { trackRole: track.role, startTick: note.startTick },
+            location: { trackRole: track.role, startTick },
             ruleId: 'note-context-avoid',
             reason: `pc ${notePc} 在 ${span.id} 经统一评判器判 avoid(urgency ${a.urgency.toFixed(2)},应解决到 ${a.resolutionTargets.join('/')})`,
             suggestedReturnPoint: 'rewind-melody',
           });
+          break;
         }
       }
     }

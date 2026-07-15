@@ -203,6 +203,20 @@ export function slopeRulesToGrammarRules(options: SlopeRuleConversionOptions = {
     .map(rule => slopeRuleToGrammarRule(rule, options));
 }
 
+/** Build a source-scoped IV grammar subset.
+ *  Used when an instrument family needs phrase ownership from a real
+ *  Impro-Visor soloist grammar instead of the full cross-instrument pool. */
+export function sourceSlopeRulesToGrammarRules(
+  sources: readonly string[],
+  options: SlopeRuleConversionOptions = {},
+): GrammarRule[] {
+  const sourceSet = new Set(sources.map(source => source.toLowerCase()));
+  return IMPROVISOR_SLOPES
+    .filter(rule => sourceSet.has(rule.source.toLowerCase()))
+    .filter(hasAudibleBody)
+    .map(rule => slopeRuleToGrammarRule(rule, options));
+}
+
 function lofiStableSlopeRule(rule: ImprovisorSlopeRule): boolean {
   if (!hasAudibleBody(rule)) return false;
   if (isJazzSpecialSourceRule(rule)) return false;

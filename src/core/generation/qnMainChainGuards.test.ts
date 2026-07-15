@@ -52,9 +52,20 @@ describe('generation/qnMainChainGuards — 静态边界(§4)', () => {
   const sources = collectSources().map((s) => ({ ...s, live: stripComments(s.code) }));
 
   it('产品路径不 import 旧 mg 引擎 / 旧 store / registry', () => {
-    const forbidden = /from\s+['"][^'"]*(mgEngine|MgStyleStore|MgKeyStore|MgSeedStore|MusicianRegistry|GMSoundMap)['"]/;
+    const forbidden = /from\s+['"][^'"]*(mgEngine|MgStyleStore|MgKeyStore|MgSeedStore|MusicGenerationKeyStore|MusicianRegistry|GMSoundMap)['"]/;
     const hits = sources.filter((s) => forbidden.test(s.live)).map((s) => s.path);
     expect(hits, `旧引擎 import 命中:${hits.join(', ')}`).toEqual([]);
+  });
+
+  it('产品音乐生成请求不暴露 key/mode 入参(KEY/调式由 Q+N 开局抽取)', () => {
+    const productHits = sources
+      .filter((s) => /MusicGenerationKeyStore|MUSIC_GEN_KEY_OPTIONS|MusicGenKey/.test(s.live))
+      .map((s) => s.path);
+    expect(productHits, `产品 KEY 选择入口命中:${productHits.join(', ')}`).toEqual([]);
+    const types = readFileSync(join(ROOT, 'src/core/generation/musicGeneration/types.ts'), 'utf8');
+    const requestBody = types.match(/export interface MusicGenerationRequest \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(requestBody).not.toMatch(/\bkey\?\s*:/);
+    expect(requestBody).not.toMatch(/\bmode\?\s*:/);
   });
 
   it('产品路径无 GM override 语义(forcedGmPrograms/gmOverrides/QnGmOverrides)+ 无 runMgEngine 调用', () => {
@@ -98,10 +109,10 @@ describe('generation/qnMainChainGuards — Band Selection 行为(§4)', () => {
     expect(roles(r).has('lead')).toBe(true);
   });
 
-  it('drum roster 显示 Aura25 真实鼓组名(不把 ch9 program 显示成 Acoustic Grand)', () => {
+  it('drum roster 显示 Dream 5504 官方鼓组名(不把 ch9 program 显示成 Acoustic Grand)', () => {
     const r = gen([{ role: 'drummer', state: 'selected' }]);
     const drumRow = r.uiSnapshot.roster.find((p) => p.role === 'drum');
-    expect(drumRow?.instrumentName).toBe('TR-808 鼓组');
+    expect(drumRow?.instrumentName).toBe('Room Drum-X');
   });
 
   it('synthPlayer 最终 pad 音色在 pad 家族;keyboardist 最终 lead/comp 在 keyboard 家族', async () => {
@@ -132,7 +143,7 @@ describe('generation/qnMainChainGuards — Band Selection 行为(§4)', () => {
 //   generationId/seed 守卫,不感知其它播放源超越 → 上传 MIDI 曲终会触发它们续播/停止(劫持)。
 // 修复:playMusicGeneration 返回本次【实际启动】的会话 id(failed/被超越返回 null);manager 用返回值
 //   捕获 playId(而非事后读全局 currentPlaybackId,那会错绑超越者会话),onTrackEnd 守卫附加 playId 校验。
-// AudioEngine 是 node 环境不可 import 的单例(SynthManager 触 Web Audio),故以源码形状静态锁死修复。
+// AudioEngine 是浏览器播放单例，跨源竞态以源码形状静态锁死修复。
 // ============================================================
 describe('generation/qnMainChainGuards — 跨源 onTrackEnd 劫持防回归(#1 race)', () => {
   const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');

@@ -6,7 +6,7 @@ L.push('| seed/style | lead prog | lead CC72 | lead CC64(应0) | comp prog | com
 L.push('|---|---|---|---|---|---|');
 let hitLead=0, hitComp=0;
 for(const [seed,style] of CASES){
-  const r=generateMusicSync({seed,styleHint:style,mood:'build',targetDuration:90,key:'C'});
+  const r=generateMusicSync({seed,styleHint:style,mood:'build',targetDuration:90});
   const lead=r.ir!.tracks.find(t=>t.role==='lead'); const comp=r.ir!.tracks.find(t=>t.role==='comp');
   const ccOf=(t:any,c:number)=>(t?.ccEvents??[]).filter((e:any)=>(e.controller??e.data1)===c).length;
   const pedOf=(t:any)=>(t?.pedalEvents??[]).length;

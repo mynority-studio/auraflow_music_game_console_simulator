@@ -54,8 +54,8 @@ describe('render/leadGapFill — 单元', () => {
     expect(fills.length).toBe(0);
   });
 
-  it('★ 2 和弦/bar:仍补到 bar 末(用户:接受撞和弦),crossesChord=true', () => {
-    // bar0: chord1@0-960, chord2@960-1920;音@0..480,空到 bar2 → 补到 bar 末 1920(越过 chord1)
+  it('★ 2 和弦/bar:补到起音和弦末,不得把持续音拖进下一和弦', () => {
+    // bar0: chord1@0-960, chord2@960-1920;音@0..480,空到 bar2 → 只补到 chord1 末 960
     const chords: ChordSpan[] = [
       { id: 'a' as never, roman: { degree: 1 } as never, rootPc: 0 as never, quality: 'maj' as never, startBeat: beats(0), durationBeats: beats(2), sectionId: 's' as never },
       { id: 'b' as never, roman: { degree: 5 } as never, rootPc: 7 as never, quality: 'dom7' as never, startBeat: beats(2), durationBeats: beats(2), sectionId: 's' as never },
@@ -63,8 +63,11 @@ describe('render/leadGapFill — 单元', () => {
     const notes = [note(0, 480), note(3840, 480)];
     const fills = planLeadGapFills(notes, chords, tb, 4);
     expect(fills.length).toBe(1);
-    expect(fills[0].newEnd).toBe(1920);        // 补到 bar 末(不钳和弦)
-    expect(fills[0].crossesChord).toBe(true);  // 越过 chord1(960)→ 撞和弦(由 wind 气口减弱缓解)
+    expect(fills[0].newEnd).toBe(960);
+    expect(fills[0].barEnd).toBe(1920);
+    expect(fills[0].chordClamped).toBe(true);
+    const out = fillLeadBarGaps([{ role: 'lead', notes }], chords, tb, 4)[0];
+    expect((out.notes[0].durationTicks as number)).toBe(960);
   });
 
   it('深不可变 / 只动 lead / onset 不变', () => {
@@ -88,11 +91,11 @@ describe('render/leadGapFill — 75528/pop(用户报告)', () => {
     //   现仅 1 处大空拍)。gap-fill 机制仍生效(≥1 触发);原阈 >5 是旧 stale-RoadMap 的密 lead 特征。
     //   生产 lead 真值 rebaseline 留 Phase F(post-shaper 还会再动);此处仅验机制存活。
     expect(fills.length).toBeGreaterThanOrEqual(1);     // gap-fill 机制仍生效(EAR-CHECK / Phase F rebaseline)
-    // 每个补全:newEnd 落在 bar 末 或 和弦末,且 > oldEnd
-    const barTicks = beatsPerBarOf(arr.meter) * t.ppq;
+    // 每个补全:newEnd 落在 bar 末或起音和弦末,且 > oldEnd
     for (const f of fills) {
       expect(f.newEnd).toBeGreaterThan(f.oldEnd);
-      expect(f.newEnd % barTicks).toBe(0);   // 一律补到 bar 末(2026-06-11:不再和弦钳位)
+      expect(f.newEnd).toBeLessThanOrEqual(f.barEnd);
+      expect(f.chordClamped).toBe(f.newEnd < f.barEnd);
     }
     expect(planLeadGapFills(raw.notes, harm.chordTimeline, t, beatsPerBarOf(arr.meter))).toEqual(fills); // 确定性
   });

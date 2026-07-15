@@ -145,8 +145,8 @@ describe('render/padModes · 共同音 tie(链接连续:相邻和弦共同音合
   });
 });
 
-describe('render/padModes · pedal anchor(二选一:整段共同音/主音长 pedal + 动声部)', () => {
-  // C-F-G(无严格共同音)→ anchor = 主音 C(pc0)pedal,整段持续。
+describe('render/padModes · pedal anchor(严格共同结构音 + 动声部)', () => {
+  // C-F-G 无严格共同结构音：不得把主音 C 硬拖过 G 和弦成为长 11，回退逐和弦选音。
   const plan = makePlan([
     { root: 0, type: 'maj', stable: [0, 4, 7], scale: [0, 2, 4, 5, 7, 9, 11], section: 'intro' },
     { root: 5, type: 'maj', stable: [5, 9, 0], scale: [5, 7, 9, 10, 0, 2, 4], section: 'intro' },
@@ -157,10 +157,9 @@ describe('render/padModes · pedal anchor(二选一:整段共同音/主音长 pe
   const padOn = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection: dec, leadReservedLow: 67, pedalAnchor: true, tonicPc: 0 });
   const padOff = renderPad(plan, timebase, { padDensity: 0.5, decisionBySection: dec, leadReservedLow: 67 });
 
-  it('pedalAnchor on:主音 C 长 pedal 横跨整段(3 span)', () => {
-    const cNotes = padOn.notes.filter((n) => (((n.pitch as number) % 12) + 12) % 12 === 0); // pc C
-    expect(cNotes.length).toBe(1);                          // 一条 C pedal
-    expect(cNotes[0].durationTicks).toBe(spanTick * 3);     // 横跨整段 3 个和弦
+  it('pedalAnchor on:无严格共同音时不制造跨整段长 pedal', () => {
+    const maxOn = Math.max(...padOn.notes.map((n) => n.durationTicks as number));
+    expect(maxOn).toBeLessThan(spanTick * 3);
   });
 
   it('off:无主音长 pedal(回逐和弦选音,最长音 < 整段)', () => {

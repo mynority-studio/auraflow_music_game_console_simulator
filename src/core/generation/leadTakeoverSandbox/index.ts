@@ -5,4 +5,5 @@ export type { TakeoverQuantizeGrid, TakeoverQuantizeOptions, TakeoverQuantizeRes
 export * from './harmonicNoteMap';
 export * from './leadTakeoverController';
 export * from './qhTakeoverConsumer';
+export * from './takeoverMetronome';
 export * from './LeadTakeoverSandboxPanel';

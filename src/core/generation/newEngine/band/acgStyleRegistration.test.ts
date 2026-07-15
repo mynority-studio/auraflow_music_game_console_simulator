@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateSong } from '../generation/GenerationController';
+import { buildSongBundle, generateSong } from '../generation/GenerationController';
 import { buildBandSpec } from './bandEngine';
 import { buildArrangementPlan } from '../arranger/arranger';
 import { buildInstrumentationPlan } from '../instrumental/instrumentalPlanner';
@@ -7,10 +7,11 @@ import { toHarmonyStyle } from '../harmony/progressionSelector';
 import { PROGRESSION_POOL } from '../knowledge/progressions';
 import { ACG_RENDERED_TEXTURE_CASES } from '../render/textureRenderer';
 import { pocketedRoles } from '../render/groovePocket';
+import { planMotifBindingReplays } from '../render/repeatGroupReplay';
 import { pc, createRandomContext } from '../foundation';
 
 // ============================================================
-// MG 升级 Phase 2a — ACG 风格注册端到端验收(久石让/坂本电影钢琴,钢琴主导多轨)
+// ACG PIANOSONG 风格注册端到端验收（原创日式电影感钢琴短篇）
 // ============================================================
 
 describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
@@ -33,17 +34,16 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
     }
   });
 
-  it('★ 键盘写作多轨:lead/comp = 当前小包键盘式音色,bass 原声,lead+comp+bass 常驻', () => {
+  it('★ 键盘写作多轨:lead/comp/bass 统一为同一原声钢琴,lead+comp+bass 常驻', () => {
     const r = generateSong({ seed: 7, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' });
     const byRole = (role: string) => r.ir!.tracks.find((t) => t.role === role);
     const lead = byRole('lead'), comp = byRole('comp'), bass = byRole('bass');
-    const keyboardish = [0, 5];
     expect(lead, 'lead 常驻').toBeTruthy();
     expect(comp, 'comp 常驻').toBeTruthy();
     expect(bass, 'bass 常驻').toBeTruthy();
-    expect(keyboardish, 'lead 键盘式音色').toContain(lead!.program);
-    expect(keyboardish, 'comp 键盘式音色').toContain(comp!.program);
-    expect([32], 'bass 原声').toContain(bass!.program);
+    expect(lead!.program, 'lead 原声钢琴').toBe(0);
+    expect(comp!.program, 'comp 原声钢琴').toBe(0);
+    expect(bass!.program, 'bass 左手钢琴').toBe(0);
   });
 
   it('★ ACG 段级 richTextureBySection 用 ACG 钢琴织体(Phase 2b 端到端接线)', () => {
@@ -54,6 +54,15 @@ describe('band/acgStyleRegistration(MG 升级 Phase 2a)', () => {
       const tcs = Object.values(ip.richTextureBySection);
       expect(tcs.length, `seed ${seed}`).toBeGreaterThan(0); // ACG 进 RICH_STYLE → 段级下发
       for (const tc of tcs) expect(ACG_RENDERED_TEXTURE_CASES, `seed ${seed}: ${tc}`).toContain(tc);
+    }
+  });
+
+  it('★ ACG PIANOSONG 的 motifBindings 真正产生主题 body 重放计划', () => {
+    for (const seed of [0, 7, 42, 99]) {
+      const bundle = buildSongBundle({ seed, styleHint: 'acg', mood: 'build', targetDuration: 96, key: pc(0), mode: 'major' });
+      const plans = planMotifBindingReplays(bundle.arrangement, bundle.harmonic.chordTimeline, bundle.timebase);
+      expect(plans.length, `seed ${seed}`).toBeGreaterThan(0);
+      expect(plans.some((plan) => plan.sourcePhraseId === 'themeA-p0' && plan.targetPhraseId === 'themeA2-p0'), `seed ${seed}`).toBe(true);
     }
   });
 

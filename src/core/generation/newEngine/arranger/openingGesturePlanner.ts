@@ -132,12 +132,13 @@ function adaptDrum(entry: OpeningDrumEntry, active: ReadonlySet<OpeningRole>): O
 function filterRoleDelays(
   delays: Partial<Record<OpeningRole, number>>,
   active: ReadonlySet<OpeningRole>,
+  maxDelayBars = 4,
 ): Partial<Record<OpeningRole, number>> {
   const out: Partial<Record<OpeningRole, number>> = {};
   for (const role of ROLE_ORDER) {
     if (!active.has(role)) continue;
     const raw = delays[role] ?? 0;
-    out[role] = Math.max(0, Math.min(4, Math.round(raw)));
+    out[role] = Math.max(0, Math.min(maxDelayBars, Math.round(raw)));
   }
   return out;
 }
@@ -151,13 +152,19 @@ export function planOpeningGesture(
   const style = styleKey(band.style);
   const candidate = weightedPick(STYLE_CANDIDATES[style] ?? STYLE_CANDIDATES.default, rng);
   const active = new Set<OpeningRole>(band.instrumentPool);
+  const hasDedicatedOpeningSection = first?.role === 'intro' || first?.functionTag === 'setup';
 
   return {
     sectionId: first?.id ?? 'intro',
     mode: candidate.mode,
     drumEntry: adaptDrum(candidate.drumEntry, active),
-    textureEntry: adaptTexture(candidate.textureEntry, style, active),
-    roleDelayBars: filterRoleDelays(candidate.roleDelayBars, active),
+    // 当前 texture owner 是 section 级；core 首段不能把一小节开场色彩冒充成整段织体，
+    // 尤其不能污染 repeatGroup 源段并被后续 replay 整段复制。
+    textureEntry: hasDedicatedOpeningSection
+      ? adaptTexture(candidate.textureEntry, style, active)
+      : 'none',
+    // core 通常按 4-bar brick 组织：仍保留首小节 staged entry，但不从 brick 中腹硬切入。
+    roleDelayBars: filterRoleDelays(candidate.roleDelayBars, active, hasDedicatedOpeningSection ? 4 : 1),
     pickupBars: candidate.pickupBars,
     intensity: candidate.intensity,
   };

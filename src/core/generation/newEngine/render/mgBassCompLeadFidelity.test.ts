@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { generateMusicSync } from '../../musicGeneration/MusicGenerationService';
-import { instrumentInfo } from '../knowledge/instruments';
+import { instrumentInfo, isBassRoleProgram } from '../knowledge/instruments';
 import { ACG_TEXTURE_FAMILY } from '../knowledge/textureProfiles';
 
 // ============================================================
 // MG bass/comp/lead fidelity(directive §10.2)—— SIM 侧不变量(不依赖 live ../melodygenerative,任意 CI 可跑)。
 // 跨引擎【密度/织体 vs MG】的实测对比在 scripts/audit-mg-bass-comp-lead-fidelity.ts(§5)。
-// 本测锁:§4 ACG 逐-bar 织体多样性不塌回段级 + lead 近单音 + comp 密度不失控 + 家族合法。
+// 本测锁:ACG PIANOSONG 的主织体按段稳定 + lead 近单音 + comp 密度不失控 + 家族合法。
 // ============================================================
 
-const acg = (seed: number) => generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90, key: 'C' });
+const acg = (seed: number) => generateMusicSync({ seed, styleHint: 'acg', mood: 'build', targetDuration: 90 });
 const trk = (r: ReturnType<typeof acg>, role: string) => r.ir!.tracks.find((t) => t.role === role);
 const bars = (r: ReturnType<typeof acg>) => r.uiSnapshot.sections.reduce((a, s) => a + s.bars, 0) || 1;
 const texCases = (r: ReturnType<typeof acg>) => ((r.report as { textureCases?: string[] } | undefined)?.textureCases ?? []);
@@ -34,11 +34,12 @@ const onsetGroups = (r: ReturnType<typeof acg>, notes: readonly { startTick: num
   return { singleRatio: single / groups.length, blockRatio: block / groups.length };
 };
 
-describe('render/mgBassCompLeadFidelity · §4 ACG 逐-bar 织体多样性', () => {
-  it('ACG textureSchedule 不塌成段级(≥5 种,不再是 2)', () => {
+describe('render/mgBassCompLeadFidelity · ACG PIANOSONG 段级主织体', () => {
+  it('ACG textureSchedule 收束为 2–3 个主手型，而非逐 bar 拼贴', () => {
     for (const seed of SEEDS) {
       const cases = texCases(acg(seed));
-      expect(cases.length, `seed ${seed} ACG 织体多样性 [${cases.join(',')}]`).toBeGreaterThanOrEqual(5);
+      expect(cases.length, `seed ${seed} ACG 织体 [${cases.join(',')}]`).toBeGreaterThanOrEqual(2);
+      expect(cases.length, `seed ${seed} ACG 织体 [${cases.join(',')}]`).toBeLessThanOrEqual(3);
     }
   });
 
@@ -138,12 +139,12 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('★ P0-1:ACG comp pedal 按音色:大钢琴保留,FM 电钢禁用以避免多音糊', () => {
+  it('★ P0-1:ACG comp pedal 按音色:大钢琴保留,软/FGM 电钢禁用以避免多音糊', () => {
     for (const seed of SEEDS) {
       const comp = trk(acg(seed), 'comp');
       const ped = comp?.pedalEvents ?? [];
-      if (comp?.program === 5) {
-        expect(ped.length, `seed ${seed} ACG FM comp 不踩踏板`).toBe(0);
+      if (comp?.program === 4 || comp?.program === 5) {
+        expect(ped.length, `seed ${seed} ACG electric piano comp 不踩踏板`).toBe(0);
         continue;
       }
       expect(ped.length, `seed ${seed} ACG comp 踏板`).toBeGreaterThan(0);
@@ -179,13 +180,13 @@ describe('render/mgBassCompLeadFidelity · lead/comp/bass 结构', () => {
     }
   });
 
-  it('家族合法:ACG lead/comp=keyboard,bass=bass', () => {
+  it('家族合法:ACG lead/comp=keyboard,bass=真实贝斯或钢琴左手', () => {
     for (const seed of SEEDS) {
       const r = acg(seed);
       for (const role of ['lead', 'comp'] as const) {
         const t = trk(r, role); if (t) expect(instrumentInfo(t.program).family, `seed ${seed} ${role}`).toBe('keyboard');
       }
-      const b = trk(r, 'bass'); if (b) expect(instrumentInfo(b.program).family, `seed ${seed} bass`).toBe('bass');
+      const b = trk(r, 'bass'); if (b) expect(isBassRoleProgram(b.program), `seed ${seed} bass`).toBe(true);
     }
   });
 });

@@ -88,12 +88,12 @@ describe('musicGeneration/MusicGenerationService', () => {
     }
   });
 
-  it('★ P2:drum roster 不显示成 Acoustic Grand(role=drum → Aura25 真实鼓组名)', async () => {
+  it('★ P2:drum roster 不显示成 Acoustic Grand(role=drum → Dream 5504 官方鼓组名)', async () => {
     const r = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, bandParticipants: [{ role: 'drummer', state: 'selected' }] });
     const drumRow = r.uiSnapshot.roster.find((p) => p.role === 'drum');
     expect(drumRow, 'drum roster 行存在').toBeTruthy();
     expect(drumRow!.instrumentName).not.toBe('Acoustic Grand');
-    expect(drumRow!.instrumentName).toBe('TR-808 鼓组');
+    expect(drumRow!.instrumentName).toBe('Room Drum-X');
   });
 
   it('★ 器配手势计划下发到 uiSnapshot roster:键盘/鼓/bass/sax 可审计', async () => {
@@ -134,10 +134,18 @@ describe('musicGeneration/MusicGenerationService', () => {
     }
   });
 
-  it('★ key/mode 字符串 → Q+N:请求 key="D" → uiSnapshot.key 反映', async () => {
-    const r = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90, key: 'D', mode: 'minor' });
-    expect(r.uiSnapshot.key).toBe('D');
-    expect(r.status).toBe('ok');
+  it('★ key/tonality 不开放给产品请求:由 Q+N 开局按 seed/style 抽取且同输入确定', async () => {
+    const a = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 });
+    const b = await generateMusic({ seed: 7, styleHint: 'pop', mood: 'build', targetDuration: 90 });
+    expect(a.status).toBe('ok');
+    expect(a.uiSnapshot.key).toBe(b.uiSnapshot.key);
+    expect(a.uiSnapshot.tonality).toBe(b.uiSnapshot.tonality);
+    expect(typeof a.uiSnapshot.key).toBe('string');
+    const keys = new Set<string>();
+    for (let seed = 0; seed < 16; seed++) {
+      keys.add((await generateMusic({ seed, styleHint: 'pop', mood: 'build', targetDuration: 90 })).uiSnapshot.key);
+    }
+    expect(keys.size).toBeGreaterThanOrEqual(4);
   });
 
   it('★ generateMotifMusic:无 override 也产完整成曲(ok + 非空 IR + uiSnapshot)', async () => {

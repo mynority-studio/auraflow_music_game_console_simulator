@@ -9,6 +9,7 @@ import { ticks, type Timebase, type Ticks } from '../foundation';
 import type { InstrumentRoleName } from '../band/BandSpec';
 import type { NoteIR, TrackIR } from '../ir/MusicalIR';
 import { instrumentInfo, isSustainedInstrument } from '../knowledge/instruments';
+import { isAcgPianoSongPianoProgram } from '../../../sound/GMBK5X128Voices';
 import {
   buildSaxBreathCcEvents,
   isSaxProgram,
@@ -157,6 +158,26 @@ export function gestureExpressionForProgram(
     };
   }
 
+  // ACG 白名单钢琴 bass 是左手键盘触键，不套贝斯拨弦/ghost 手势；低音区由器配 register + render 末端范围保护。
+  if (role === 'bass' && isAcgPianoSongPianoProgram(program)) {
+    return {
+      kind: 'keyboard-touch',
+      family: 'keyboard',
+      program,
+      ccControllers: [],
+      ...contract('connected', 'direction', 'velocity-gate', 'none', DAW_EVIDENCE),
+      breathModel: 'none',
+      noteShape: 'finger-legato',
+      articulation: 'finger-legato',
+      velocityCurve: 'soft',
+      pedalPolicy: 'none',
+      rudimentPolicy: 'none',
+      hiHatPolicy: 'none',
+      gateRatio: 0.96,
+      tailPolicy: 'keyboard-natural',
+    };
+  }
+
   if (role === 'bass' || info.family === 'bass') {
     if (s === 'jazz' && program === 32) {
       return {
@@ -275,15 +296,15 @@ export function gestureExpressionForProgram(
   if (info.family === 'keyboard') {
     const comp = role === 'comp';
     const electricKey = isElectricKeyProgram(program);
-    const fmElectricComp = comp && program === 5;
-    const pedalPolicy = !comp || fmElectricComp ? 'none'
+    const electricKeyComp = comp && isElectricKeyProgram(program);
+    const pedalPolicy = !comp || electricKeyComp ? 'none'
       : s === 'acg' ? 'acg-legato-change'
       : s === 'jazz' || s === 'blues' ? 'none'
       : s === 'lofi' ? 'light-syncopated'
       : s === 'pop' || s === 'rnb' ? 'harmonic-change'
       : 'none';
     // ★ Layer 1(electric-key-tail):EP(GM4/5)尾音靠合成器 release 包络,不靠 reverb 假装尾音。
-    //   GM5/FM comp 多音时禁用 CC64 pedal,否则 pedal + release + shared FX 会糊成一团。
+    //   GM4/5 comp 多音时禁用 CC64 pedal,否则 pedal + release + shared FX 会糊成一团。
     const tailPolicy: TailPolicy = electricKey ? 'electric-key-tail' : (comp && pedalPolicy !== 'none' ? 'piano-pedal-comp' : 'keyboard-natural');
     const releaseCc = electricKey ? CC_RELEASE_TIME : undefined;
     const cc = pedalPolicy === 'none' ? [] : [64];
@@ -417,11 +438,14 @@ export function buildPipeWindBreathCcEvents(
   return out;
 }
 
-function saxOptions(plan: GestureExpressionPlan, ppq: number): SaxExpressionOptions {
+function saxOptions(plan: GestureExpressionPlan, timebase: Timebase): SaxExpressionOptions {
+  const ppq = timebase.ppq;
+  const beatsPerBar = timebase.meter.numerator * (4 / timebase.meter.denominator);
   return {
     ppq,
     maxConnectIoiTicks: plan.maxConnectBeats === undefined ? undefined : Math.round(plan.maxConnectBeats * ppq),
     overlapTicks: plan.overlapBeats === undefined ? undefined : Math.max(1, Math.round(plan.overlapBeats * ppq)),
+    phraseBoundaryTicks: Math.max(1, Math.round(beatsPerBar * ppq)),
   };
 }
 
@@ -641,7 +665,7 @@ export function applyGestureExpressionToTrack(
   if (!plan || plan.kind === 'none') return { notes: track.notes };
   if (plan.kind === 'sax-breath-legato') {
     if (track.role !== 'lead') return { notes: track.notes };
-    const opts = saxOptions(plan, timebase.ppq);
+    const opts = saxOptions(plan, timebase);
     const breathGrouped = plan.phrasePolicy === 'breath-group';
     const shouldConnect = breathGrouped && (plan.continuity === 'legato-flow' || plan.continuity === 'connected');
     const notes = shouldConnect ? shapeSaxLegatoNotes(track.notes, opts) : withGate(track.notes, plan.gateRatio);

@@ -2,12 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { buildBandSpec } from '../band/bandEngine';
 import { buildArrangementPlan } from './arranger';
 import { createRandomContext } from '../foundation';
+import { grooveContractById } from '../knowledge/grooveContracts';
+import { planDrumPerformance } from './drumPerformancePlanner';
+import type { Section, SectionEntry } from './ArrangementPlan';
 
 const plan = (seed: number, style: string, mood = 'build') =>
   buildArrangementPlan(
     buildBandSpec({ seed, styleHint: style, mood, targetDuration: 96 }),
     { rng: createRandomContext(seed), mood },
   );
+
+const drumIntentSections: Section[] = [
+  { id: 'setup', role: 'intro', functionTag: 'setup', bars: 4, hookPolicy: 'none' },
+  { id: 'story', role: 'verse', functionTag: 'story', bars: 4, hookPolicy: 'none' },
+  { id: 'build', role: 'verse', functionTag: 'build', bars: 4, hookPolicy: 'none' },
+  { id: 'hook', role: 'chorus', functionTag: 'hook', bars: 4, hookPolicy: 'main' },
+];
+const drumIntentEnergy: Record<string, number> = { setup: 0.3, story: 0.5, build: 0.7, hook: 0.9 };
+const drumIntentEntry: Record<string, SectionEntry> = { setup: 'downbeat', story: 'downbeat', build: 'lead-in', hook: 'lead-in' };
+
+function drumIntentPlan(style: string, contractId: string) {
+  const contract = grooveContractById(contractId);
+  expect(contract, contractId).toBeTruthy();
+  const bySection = Object.fromEntries(drumIntentSections.map((s) => [s.id, contract!]));
+  return planDrumPerformance(drumIntentSections, style, bySection, drumIntentEnergy, drumIntentEntry);
+}
 
 describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全 MG-backed 走真 pool)', () => {
   it('★ arranger 为每首歌下发 songGrooveContract + bySection + legacy grooveBySection', () => {
@@ -63,6 +82,7 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
     for (const s of p.sections) {
       const perf = p.drumPerformanceBySection[s.id];
       expect(perf.sectionId).toBe(s.id);
+      expect([8, 25, 40]).toContain(perf.kitProgram);
       expect(perf.patternFamily).toMatch(/jazz-/);
       expect(['none', 'light', 'turnaround', 'big']).toContain(perf.fillPolicy);
       expect(['strict', 'normal']).toContain(perf.foregroundGuard);
@@ -73,6 +93,42 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
     }
   });
 
+  it('★ GrooveContract drum intent 下发 kitProgram + 分段 patternFamily,不由 macro style 粗暴兜底', () => {
+    const cases = [
+      {
+        style: 'pop', id: 'pop_citypop_boogie', kit: 8,
+        family: { setup: 'citypop-syncopated-boogie', story: 'citypop-syncopated-boogie', build: 'citypop-disco-boogie', hook: 'citypop-disco-boogie' },
+      },
+      {
+        style: 'lofi', id: 'lofi_tape_late_chords', kit: 25,
+        family: { setup: 'tr808-lofi-minimal', story: 'tr808-lofi-dusty-break', build: 'tr808-lofi-dusty-break', hook: 'tr808-lofi-boombap' },
+      },
+      {
+        style: 'rnb', id: 'rnb_dilla_pocket', kit: 25,
+        family: { setup: 'tr808-rnb-pocket', story: 'tr808-dilla-pocket', build: 'tr808-dilla-pocket', hook: 'tr808-dilla-pocket' },
+      },
+      {
+        style: 'rnb', id: 'rnb_gospel_triplet', kit: 8,
+        family: { setup: 'rnb-gospel-triplet', story: 'rnb-gospel-triplet', build: 'rnb-gospel-triplet', hook: 'rnb-gospel-triplet' },
+      },
+      {
+        style: 'jazz', id: 'jazz_ballad_loose', kit: 40,
+        family: { setup: 'jazz-brush-ballad', story: 'jazz-brush-ballad', build: 'jazz-brush-ballad', hook: 'jazz-brush-ballad' },
+      },
+      {
+        style: 'jazz', id: 'jazz_smooth_backbeat', kit: 8,
+        family: { setup: 'smooth-jazz-backbeat', story: 'smooth-jazz-backbeat', build: 'smooth-jazz-backbeat', hook: 'smooth-jazz-backbeat' },
+      },
+    ] as const;
+    for (const c of cases) {
+      const perf = drumIntentPlan(c.style, c.id);
+      for (const section of drumIntentSections) {
+        expect(perf[section.id].kitProgram, c.id).toBe(c.kit);
+        expect(perf[section.id].patternFamily, `${c.id}/${section.id}`).toBe(c.family[section.id as keyof typeof c.family]);
+      }
+    }
+  });
+
   it('★ LOFI 主体 loop 必须是 hiphop 鼓机语感,不能落到 minimal/tight', () => {
     for (let seed = 1; seed <= 100; seed++) {
       const p = plan(seed, 'lofi');
@@ -80,7 +136,7 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
       expect(loopSections.length, `seed ${seed} 应有 loop 主体段`).toBeGreaterThan(0);
       for (const s of loopSections) {
         const perf = p.drumPerformanceBySection[s.id];
-        expect(['lofi-boombap', 'lofi-dusty-break'], `seed ${seed}/${s.id}`).toContain(perf.patternFamily);
+        expect(['tr808-lofi-boombap', 'tr808-lofi-dusty-break'], `seed ${seed}/${s.id}`).toContain(perf.patternFamily);
         expect(perf.timingProfile, `seed ${seed}/${s.id}`).toBe('dilla-late');
       }
     }
@@ -108,6 +164,22 @@ describe('arranger/grooveContract(MG full-parity Phase D — 推翻零洗牌,全
         for (const perf of Object.values(p.drumPerformanceBySection)) families.add(perf.patternFamily);
       }
       expect(families.size, `${style}: ${[...families].join(',')}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('★ POP/JAZZ/RNB 下发风格化鼓手打法,不只是一套通用 backbeat', () => {
+    const expected: Record<string, readonly string[]> = {
+      pop: ['citypop-syncopated-boogie', 'citypop-disco-boogie', 'jpop-driving-8ths', 'pop-backbeat'],
+      jazz: ['jazz-swing-ride', 'jazz-brush-ballad', 'smooth-jazz-backbeat'],
+      rnb: ['tr808-rnb-pocket', 'tr808-dilla-pocket', 'rnb-gospel-triplet', 'tr808-trap-soul-halftime', 'pop-backbeat'],
+    };
+    for (const [style, wanted] of Object.entries(expected)) {
+      const families = new Set<string>();
+      for (let seed = 1; seed <= 128; seed++) {
+        const p = plan(seed, style, 'build');
+        for (const perf of Object.values(p.drumPerformanceBySection)) families.add(perf.patternFamily);
+      }
+      for (const family of wanted) expect(families.has(family), `${style}: ${[...families].join(',')}`).toBe(true);
     }
   });
 });

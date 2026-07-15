@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { AudioEngine } from '../core/audio/AudioEngine';
-import { startAudioContext } from '../core/audio/SynthManager';
+import { startAudioContext } from '../core/audio/AudioEngine';
 import { systemLeadSynth, systemAudio } from './SystemAudio';
 import { APPS } from '../apps/AppRegistry';
 import { menuGesturesEnabled } from '../core/hardware/menuGestureGuards';

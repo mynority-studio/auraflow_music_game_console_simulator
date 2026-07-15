@@ -14,6 +14,7 @@ import { buildTakeoverPadMap, findChordAtBeat } from './harmonicNoteMap';
 import { TAKEOVER_ASCENDING_PAD_INDICES } from './padLayout';
 import { DEFAULT_LEAD_TAKEOVER_CONFIG, LeadTakeoverController } from './leadTakeoverController';
 import { resetTakeoverPadInputState, subscribeTakeoverPadInput } from './takeoverInputBus';
+import { TakeoverMetronomeRuntime } from './takeoverMetronome';
 import {
   executeLeadTakeoverActions,
   resetLeadTakeoverRuntimeState,
@@ -87,6 +88,8 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
   const controllerRef = useRef(new LeadTakeoverController());
   const heldKeys = useRef<Set<string>>(new Set());
   const lastResultRef = useRef<MusicGenerationResult | null>(null);
+  const metronomeSnapshotRef = useRef<TakeoverMusicSnapshot>(DEMO_SNAPSHOT);
+  const metronomeRef = useRef(new TakeoverMetronomeRuntime());
   const wasOpenRef = useRef(false);
 
   useDevPanelChannel('takeover', open, setOpen);
@@ -127,6 +130,7 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
       if (result !== lastResultRef.current) {
         resetLeadTakeoverRuntimeState(AudioEngine);
         resetTakeoverPadInputState();
+        metronomeRef.current.stop(AudioEngine);
         pushActions(controllerRef.current.reset());
         controllerRef.current = new LeadTakeoverController();
         syncState();
@@ -134,10 +138,17 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
         setLastTiming(null);
         lastResultRef.current = result;
         setConnected(result !== null);
-        setSnapshot(result ? takeoverSnapshotFromMusicGeneration(result) : DEMO_SNAPSHOT);
+        metronomeSnapshotRef.current = result ? takeoverSnapshotFromMusicGeneration(result) : DEMO_SNAPSHOT;
+        setSnapshot(metronomeSnapshotRef.current);
         setLog((prev) => [result ? 'connected Q+H musicGeneration' : 'disconnected: demo monitor', ...prev].slice(0, 8));
       }
-      if (result) setBeat(AudioEngine.getCurrentBeat());
+      if (result) {
+        const liveBeat = AudioEngine.getCurrentBeat();
+        setBeat(liveBeat);
+        metronomeRef.current.schedule(AudioEngine, metronomeSnapshotRef.current, liveBeat);
+      } else {
+        metronomeRef.current.stop(AudioEngine);
+      }
     };
     pollQhState();
     const interval = window.setInterval(pollQhState, LIVE_POLL_INTERVAL_MS);
@@ -148,6 +159,7 @@ export const LeadTakeoverSandboxPanel: React.FC<LeadTakeoverSandboxPanelProps> =
     if (wasOpenRef.current && !open) {
       resetLeadTakeoverRuntimeState(AudioEngine);
       resetTakeoverPadInputState();
+      metronomeRef.current.stop(AudioEngine);
       pushActions(controllerRef.current.reset());
       controllerRef.current = new LeadTakeoverController();
       syncState();

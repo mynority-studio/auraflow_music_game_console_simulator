@@ -1,6 +1,6 @@
 {
   "sf2": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/public/Aura25_GM128.sf2",
-  "sha256": "c2c0cb4e0dcdb5586e3116fdb45351529871aa6cf79ff179d784dba2c019e56a",
+  "sha256": "253f3523ad31fc22c40348ad597c5b483c21b7420dfd5df8a659f41b9c69c81c",
   "sampleRate": 24000,
   "scope": "SF2 direct/raw render only: CC7=100, CC11=127, FX sends=0, no Copych postchain/EQ/softclip/masterLift. Active RMS excludes release/silence; drums use short onset window.",
   "rows": [

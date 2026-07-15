@@ -53,9 +53,12 @@ describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)'
     const r = generateSongFromMotif(req, { lead });
     expect(r.status).not.toBe('failed');
     const leadTrack = r.ir!.tracks.find((t) => t.role === 'lead')!;
-    // lead 被 tile 满全曲;首份逐音采用 Q+R motif,音高按最终 lead 音色折回到可演奏区。
+    // lead 被 tile 满全曲；节奏/轮廓来自 Q+R motif，结构音在最终阶段投影到和声交集。
     expect(leadTrack.notes.length).toBeGreaterThanOrEqual(lead.length);
-    expect(leadTrack.notes.slice(0, lead.length).map((n) => n.pitch)).toEqual(fitLeadOverridePitches(lead, leadTrack.program!));
+    const fitted = fitLeadOverridePitches(lead, leadTrack.program!);
+    const projected = leadTrack.notes.slice(0, lead.length).map((n) => n.pitch as number);
+    expect(projected.slice(0, 3)).toEqual(fitted.slice(0, 3));
+    expect(Math.abs(projected[3] - fitted[3])).toBeLessThanOrEqual(2); // 非法结构落点只做邻近投影
     // 非 lead 轨仍齐备(编曲会【响应】override lead:ducking/避撞/comp 让位旋律区 = 走 A 期望,不强求字节不变)
     const baseRoles = base.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
     const rRoles = r.ir!.tracks.filter((t) => t.role !== 'lead').map((t) => t.role);
@@ -136,7 +139,9 @@ describe('generation/generateSongFromMotif(走 A 并行入口 — PR1 scaffold)'
     const leadTrack = r.ir!.tracks.find((t) => t.role === 'lead')!;
 
     expect(leadTrack.program).toBe(25);
-    expect(leadTrack.notes.slice(0, lead.length).map((n) => n.pitch)).toEqual([83, 80]);
+    const projected = leadTrack.notes.slice(0, lead.length).map((n) => n.pitch as number);
+    expect(projected.every((pitch) => fitMidiToProgramRange(pitch, 'lead', leadTrack.program!) === pitch)).toBe(true);
+    expect(Math.max(...projected)).toBeLessThan(80); // 不直打 SF2 高区
   });
 
   // ★ 走 A jazz 律动一致(2026-06-23,用户:整编缺 jazz 感、试听有)。根因=override lead 是直拍 motif,而全局

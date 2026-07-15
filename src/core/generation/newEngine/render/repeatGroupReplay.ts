@@ -97,25 +97,178 @@ export function applyRepeatGroupReplay(
   const plans = planRepeatGroupReplays(arrangement, chordTimeline, timebase);
   if (plans.length === 0) return tracks.map((t) => t);
 
-  const inTargetPrefix = (tick: number): boolean =>
-    plans.some((p) => tick >= p.targetStartTick && tick < p.targetStartTick + p.prefixTicks);
-
   return tracks.map((t) => {
-    // 1) 删除落在任一目标前缀的音符(将被源拷贝替代)
-    const kept = t.notes.filter((n) => !inTargetPrefix(n.startTick as number));
-    // 2) 把【源前缀】音符 time-shift 复制到对应目标(读原始 t.notes;源段永不是目标 → 不双源)
+    // 1) 删除落在任一目标前缀的音符(将被源拷贝替代)。若旧音从前缀前持续进入前缀，
+    //    裁到前缀起点，避免它与重放 body 重叠。
+    const kept: NoteIR[] = [];
+    for (const n of t.notes) {
+      const start = n.startTick as number;
+      const originalEnd = start + (n.durationTicks as number);
+      if (plans.some((p) => start >= p.targetStartTick && start < p.targetStartTick + p.prefixTicks)) continue;
+
+      const firstEnteredPrefixStart = plans
+        .map((p) => p.targetStartTick)
+        .filter((targetStart) => start < targetStart && originalEnd > targetStart)
+        .sort((a, b) => a - b)[0];
+      if (firstEnteredPrefixStart === undefined) {
+        kept.push(n);
+      } else {
+        kept.push({ ...n, durationTicks: ticks(firstEnteredPrefixStart - start) });
+      }
+    }
+
+    // 2) 把【源前缀】音符 time-shift 复制到对应目标(读原始 t.notes;源段永不是目标 → 不双源)。
+    //    起音虽在 body、但尾部跨进 link 的音，必须裁在 prefix end，不能把源和声拖进目标发散尾巴。
     const added: NoteIR[] = [];
     for (const p of plans) {
       const shift = p.targetStartTick - p.sourceStartTick;
+      const sourceEnd = p.sourceStartTick + p.prefixTicks;
       for (const n of t.notes) {
         const st = n.startTick as number;
-        if (st >= p.sourceStartTick && st < p.sourceStartTick + p.prefixTicks) {
-          added.push({ ...n, startTick: ticks(st + shift) });
-        }
+        if (st < p.sourceStartTick || st >= sourceEnd) continue;
+        const duration = Math.min(n.durationTicks as number, sourceEnd - st);
+        if (duration <= 0) continue;
+        added.push({ ...n, startTick: ticks(st + shift), durationTicks: ticks(duration) });
       }
     }
     if (added.length === 0) return { ...t, notes: kept };
     const merged = [...kept, ...added].sort((a, b) => (a.startTick as number) - (b.startTick as number));
     return { ...t, notes: merged };
+  });
+}
+
+// ACG PIANOSONG 不复制整段三轨：只让 lead 的同一主题句复现，并留下目标句最后一小节作为 A′ 的回答。
+// 这样 motifBindings 从“编排记录”变成真实的渲染约束，bass/comp 仍可随段落成长。
+export interface MotifBindingReplay {
+  motifId: string;
+  sourcePhraseId: string;
+  targetPhraseId: string;
+  sourceStartTick: number;
+  targetStartTick: number;
+  prefixTicks: number;
+}
+
+interface PhraseOccurrence {
+  motifId: string;
+  phraseId: string;
+  repeatGroup: string;
+  startBeat: number;
+  bars: number;
+  startTick: number;
+}
+
+function chordPrefixFingerprint(timeline: readonly ChordSpan[], startBeat: number, lengthBeats: number): string {
+  const endBeat = startBeat + lengthBeats;
+  return timeline
+    .map((span) => {
+      const start = span.startBeat as number;
+      const end = start + (span.durationBeats as number);
+      const lo = Math.max(start, startBeat);
+      const hi = Math.min(end, endBeat);
+      if (hi - lo <= 1e-6) return undefined;
+      return [
+        Math.round((lo - startBeat) * 1000),
+        Math.round((hi - lo) * 1000),
+        span.rootPc,
+        span.chordType ?? span.quality,
+        span.bassRole ?? '',
+        span.bassPedalPc ?? '',
+      ].join('|');
+    })
+    .filter((x): x is string => !!x)
+    .join(';');
+}
+
+/** 找出可安全重放的主题句：同 motif、同 repeatGroup、且保留尾小节前的和声完全一致。 */
+export function planMotifBindingReplays(
+  arrangement: ArrangementPlan,
+  chordTimeline: readonly ChordSpan[],
+  timebase: Timebase,
+  retainTailBars = 1,
+): MotifBindingReplay[] {
+  const beatsPerBar = beatsPerBarOf(arrangement.meter);
+  const startBeatBySection: Record<string, number> = {};
+  let cursor = 0;
+  for (const section of arrangement.sections) {
+    startBeatBySection[section.id] = cursor;
+    cursor += section.bars * beatsPerBar;
+  }
+  const phraseById = new Map(arrangement.phrases.map((phrase) => [phrase.id, phrase]));
+  const seenByMotif = new Map<string, PhraseOccurrence>();
+  const out: MotifBindingReplay[] = [];
+
+  for (const binding of arrangement.motifBindings) {
+    const phrase = phraseById.get(binding.phraseId);
+    if (!phrase || phrase.skeletonRole !== 'hook' || !binding.repeatGroup || binding.requestedRestatementStrength < 0.5) continue;
+    const startBeat = (startBeatBySection[phrase.sectionId] ?? 0) + phrase.phraseSlot * phrase.bars * beatsPerBar;
+    const occurrence: PhraseOccurrence = {
+      motifId: binding.motifId,
+      phraseId: phrase.id,
+      repeatGroup: binding.repeatGroup,
+      startBeat,
+      bars: phrase.bars,
+      startTick: timebase.beatToTick(beats(startBeat)) as number,
+    };
+    const source = seenByMotif.get(binding.motifId);
+    if (!source) {
+      seenByMotif.set(binding.motifId, occurrence);
+      continue;
+    }
+    if (source.repeatGroup !== occurrence.repeatGroup || source.bars !== occurrence.bars) continue;
+    const replayBars = Math.max(0, occurrence.bars - retainTailBars);
+    const replayBeats = replayBars * beatsPerBar;
+    const prefixTicks = timebase.beatToTick(beats(replayBeats)) as number;
+    if (prefixTicks <= 0) continue;
+    if (chordPrefixFingerprint(chordTimeline, source.startBeat, replayBeats) !== chordPrefixFingerprint(chordTimeline, occurrence.startBeat, replayBeats)) continue;
+    out.push({
+      motifId: binding.motifId,
+      sourcePhraseId: source.phraseId,
+      targetPhraseId: occurrence.phraseId,
+      sourceStartTick: source.startTick,
+      targetStartTick: occurrence.startTick,
+      prefixTicks,
+    });
+  }
+  return out;
+}
+
+/** ACG 专用主题复现：lead 的主题 body 重放，目标句尾小节保持生成结果，形成克制的 A/A′。 */
+export function applyMotifBindingReplay(
+  tracks: readonly TrackIR[],
+  arrangement: ArrangementPlan,
+  chordTimeline: readonly ChordSpan[],
+  timebase: Timebase,
+): TrackIR[] {
+  const plans = planMotifBindingReplays(arrangement, chordTimeline, timebase);
+  if (plans.length === 0) return tracks.map((track) => track);
+
+  return tracks.map((track) => {
+    if (track.role !== 'lead') return track;
+    let notes = [...track.notes];
+    for (const plan of plans) {
+      const sourceEnd = plan.sourceStartTick + plan.prefixTicks;
+      const targetEnd = plan.targetStartTick + plan.prefixTicks;
+      const shift = plan.targetStartTick - plan.sourceStartTick;
+      const retained: NoteIR[] = [];
+      for (const note of notes) {
+        const start = note.startTick as number;
+        const end = start + (note.durationTicks as number);
+        if (start >= plan.targetStartTick && start < targetEnd) continue;
+        if (start < plan.targetStartTick && end > plan.targetStartTick) {
+          retained.push({ ...note, durationTicks: ticks(plan.targetStartTick - start) });
+        } else {
+          retained.push(note);
+        }
+      }
+      const copied = notes.flatMap((note): NoteIR[] => {
+        const start = note.startTick as number;
+        if (start < plan.sourceStartTick || start >= sourceEnd) return [];
+        const duration = Math.min(note.durationTicks as number, sourceEnd - start);
+        if (duration <= 0) return [];
+        return [{ ...note, startTick: ticks(start + shift), durationTicks: ticks(duration) }];
+      });
+      notes = [...retained, ...copied].sort((a, b) => (a.startTick as number) - (b.startTick as number) || (a.pitch as number) - (b.pitch as number));
+    }
+    return { ...track, notes };
   });
 }

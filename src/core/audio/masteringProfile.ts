@@ -1,9 +1,15 @@
 export const PLAYBACK_STYLE_MASTER_LIFT = {
-  pop: 1.5,
+  // Rebased against the final rendered-IR envelope: POP is already near its
+  // playback target before the hardware amp, so the old 1.5x lift over-drove
+  // dense choruses instead of merely compensating the device output stage.
+  pop: 1.25,
   rnb: 1.5,
   jazz: 1.5,
   lofi: 1.65,
-  acg: 2.4,
+  // ACG remains intentionally quieter pre-master, but 2.4x crossed the
+  // small-speaker peak margin on dense arrivals. 2.3x retains the macro lift
+  // while keeping the calibrated seed envelope inside that protection margin.
+  acg: 2.3,
 } as const;
 
 export type PlaybackMasterStyle = keyof typeof PLAYBACK_STYLE_MASTER_LIFT;

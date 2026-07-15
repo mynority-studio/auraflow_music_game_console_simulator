@@ -1,0 +1,205 @@
+{
+  "sf2": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/public/Aura25_GM128.sf2",
+  "sampleRate": 24000,
+  "sha256": "81a0ef82258c429caa4b9cbdf0805ab89e63d65d5f2bd8669d2a20bdde84a850",
+  "scope": "CC7=100, CC11=127, CC91/93/95=0, stress polyphony; device chain uses current web Copych postchain; ESP estimate uses raw peak * 4.28",
+  "rows": [
+    {
+      "preset": "0:0 大钢琴",
+      "role": "lead",
+      "rawPeakDbfs": -22.86,
+      "devicePeakDbfs": -12.14,
+      "deviceRmsDbfs": -29.48,
+      "high5kDbBelowRms": -43.23,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -10.23,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 48/53/59/64/69/75/80/85/91/96"
+    },
+    {
+      "preset": "0:5 GU Electric Grand",
+      "role": "comp",
+      "rawPeakDbfs": -14.73,
+      "devicePeakDbfs": -5.94,
+      "deviceRmsDbfs": -23.92,
+      "high5kDbBelowRms": -28.45,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -2.1,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 48/53/59/64/69/75/80/85/91/96"
+    },
+    {
+      "preset": "8:5 GU Chorused FM EP",
+      "role": "comp",
+      "rawPeakDbfs": -26.69,
+      "devicePeakDbfs": -16.66,
+      "deviceRmsDbfs": -34.94,
+      "high5kDbBelowRms": -38.05,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -14.06,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 48/53/59/64/69/75/80/85/91/96"
+    },
+    {
+      "preset": "0:24 尼龙吉他",
+      "role": "comp",
+      "rawPeakDbfs": -18.44,
+      "devicePeakDbfs": -7.53,
+      "deviceRmsDbfs": -23.06,
+      "high5kDbBelowRms": -46.74,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -5.82,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 40/45/51/56/61/67/72/77/83/88"
+    },
+    {
+      "preset": "0:25 民谣木吉他",
+      "role": "comp",
+      "rawPeakDbfs": -18.44,
+      "devicePeakDbfs": -7.53,
+      "deviceRmsDbfs": -23.06,
+      "high5kDbBelowRms": -46.74,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -5.82,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 40/45/51/56/61/67/72/77/83/88"
+    },
+    {
+      "preset": "0:32 原声贝斯",
+      "role": "bass",
+      "rawPeakDbfs": -17.66,
+      "devicePeakDbfs": -7.95,
+      "deviceRmsDbfs": -25.18,
+      "high5kDbBelowRms": -43.93,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -5.03,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 28/32/37/41/45/50/54/58/63/67"
+    },
+    {
+      "preset": "0:38 合成贝斯 1",
+      "role": "bass",
+      "rawPeakDbfs": -22.37,
+      "devicePeakDbfs": -15.21,
+      "deviceRmsDbfs": -29.47,
+      "high5kDbBelowRms": -63.42,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -9.74,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 24/33/42/51/60"
+    },
+    {
+      "preset": "0:67 上低音萨克斯",
+      "role": "lead",
+      "rawPeakDbfs": -15.16,
+      "devicePeakDbfs": -5.96,
+      "deviceRmsDbfs": -22.79,
+      "high5kDbBelowRms": -27.71,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -2.53,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 36/40/44/48/52/56/60/64/68/72"
+    },
+    {
+      "preset": "0:89 暖 Pad",
+      "role": "pad",
+      "rawPeakDbfs": -27.3,
+      "devicePeakDbfs": -16.28,
+      "deviceRmsDbfs": -28.35,
+      "high5kDbBelowRms": -55.23,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -14.68,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 48/53/59/64/69/75/80/85/91/96"
+    },
+    {
+      "preset": "0:108 卡林巴",
+      "role": "lead",
+      "rawPeakDbfs": -14.18,
+      "devicePeakDbfs": -7.1,
+      "deviceRmsDbfs": -24.76,
+      "high5kDbBelowRms": -32.4,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -1.55,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 60/63/66/69/72/76/79/82/85/88"
+    },
+    {
+      "preset": "128:8 Room 鼓组",
+      "role": "drum",
+      "rawPeakDbfs": -9.44,
+      "devicePeakDbfs": 0,
+      "deviceRmsDbfs": -22.74,
+      "high5kDbBelowRms": -27.67,
+      "softKneeRate": 0.001563,
+      "hardClipRate": 0.000911,
+      "esp428PeakDbfs": 3.19,
+      "flags": [
+        "WEB_SOFT",
+        "WEB_HARD",
+        "ESP_GAIN_RISK"
+      ],
+      "worst": "v120 36/38/42/46/49/51/57/36/38/42"
+    },
+    {
+      "preset": "128:25 TR-808 鼓组",
+      "role": "drum",
+      "rawPeakDbfs": -13.05,
+      "devicePeakDbfs": -5.67,
+      "deviceRmsDbfs": -30.54,
+      "high5kDbBelowRms": -20.97,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -0.42,
+      "flags": [
+        "OK"
+      ],
+      "worst": "v120 36/38/42/46/49/51/57/36/38/42"
+    },
+    {
+      "preset": "128:40 Brush 鼓组",
+      "role": "drum",
+      "rawPeakDbfs": -12.78,
+      "devicePeakDbfs": -5.04,
+      "deviceRmsDbfs": -28.61,
+      "high5kDbBelowRms": -19.64,
+      "softKneeRate": 0,
+      "hardClipRate": 0,
+      "esp428PeakDbfs": -0.15,
+      "flags": [
+        "HIGH_5K"
+      ],
+      "worst": "v120 36/38/42/46/49/51/57/36/38/42"
+    }
+  ]
+}

@@ -27,7 +27,7 @@ const lines: string[] = [
   `Hardware speaker target: ${HARDWARE_SPEAKER_PROFILE.model}, ${HARDWARE_SPEAKER_PROFILE.sizeMm.join('x')}mm, ${HARDWARE_SPEAKER_PROFILE.impedanceOhm}ohm, ${HARDWARE_SPEAKER_PROFILE.ratedPowerWRms}W RMS, F0 ${HARDWARE_SPEAKER_PROFILE.resonanceHz}Hz in ${HARDWARE_SPEAKER_PROFILE.enclosureCc}cc box.`,
   `Speaker mix guardrails: kick/body ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.kickBody.join('-')}Hz, mid body ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.midBody.join('-')}Hz, presence attack ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.presenceAttack.join('-')}Hz, harshness control ${HARDWARE_SPEAKER_PROFILE.mixBandsHz.harshnessControl.join('-')}Hz; drum reverb CC <= ${HARDWARE_SPEAKER_PROFILE.guardrails.drumReverbCcMax}, drum transient CC <= ${HARDWARE_SPEAKER_PROFILE.guardrails.drumTransientCcMax}.`,
   '',
-  '| Style | Seed | Status | Est. LUFS | Playback LUFS | Target | Delta | Master Lift | Recommended | Wet Energy | Copych Drive Proxy dBFS | Tracks | Diagnosis | Findings |',
+  '| Style | Seed | Status | Est. LUFS | Playback LUFS | Target | Delta | Master Lift | Recommended | Wet Energy | Hardware Drive Proxy dBFS | Tracks | Diagnosis | Findings |',
   '|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|',
 ];
 
@@ -48,8 +48,8 @@ function range(vals: readonly number[], digits = 1): string {
 
 function diagnoseTags(report: MixAuditReport): string[] {
   const tags: string[] = [];
-  const allowed = report.standard.copychMaster.playbackStyleMasterLiftCalibration[
-    report.style as keyof typeof report.standard.copychMaster.playbackStyleMasterLiftCalibration
+  const allowed = report.standard.hardwareMaster.playbackStyleMasterLiftCalibration[
+    report.style as keyof typeof report.standard.hardwareMaster.playbackStyleMasterLiftCalibration
   ]?.acceptablePlaybackLufs;
   if (allowed && report.estimatedPlaybackIntegratedLufs < allowed[0]) tags.push('音量小');
   if (allowed && report.estimatedPlaybackIntegratedLufs > allowed[1]) tags.push('音量偏大');
@@ -62,7 +62,7 @@ function diagnoseTags(report: MixAuditReport): string[] {
     ? report.standard.hardwareSpeaker.guardrails.bassSustainedBusShareMinAcg
     : report.standard.hardwareSpeaker.guardrails.bassSustainedBusShareMinDefault;
   if (pad && pad.busShare > report.standard.hardwareSpeaker.guardrails.padSustainedBusShareMax) tags.push('pad偏大');
-  if (pad && pad.copychReverbBusShare > report.standard.hardwareSpeaker.guardrails.padCopychReverbBusShareMax) tags.push('pad空间偏多');
+  if (pad && pad.hardwareReverbBusShare > report.standard.hardwareSpeaker.guardrails.padHardwareReverbBusShareMax) tags.push('pad空间偏多');
   if (bass && bass.noteCount > 0 && bass.busShare < bassShareFloor) tags.push('bass听感偏低');
   if (drum && drum.noteCount > 0 && drum.maxVolume > report.standard.hardwareSpeaker.guardrails.drumTransientCcMax) tags.push('鼓瞬态偏前');
   return tags;
@@ -99,7 +99,7 @@ for (const style of STYLES) {
     styleReports.set(style, reports);
 
     const tracks = report.trackMetrics
-      .map((m) => `${m.role}:${fmt(m.busShare * 100, 0)}%/cc${fmt(m.averageVolume, 0)}/rv${fmt(m.copychReverbBusShare * 100, 0)}%`)
+      .map((m) => `${m.role}:${fmt(m.busShare * 100, 0)}%/cc${fmt(m.averageVolume, 0)}/rv${fmt(m.hardwareReverbBusShare * 100, 0)}%`)
       .join(' ');
     const findings = report.findings.length
       ? report.findings.map((f) => `${f.severity}:${f.code}${f.role ? `(${f.role})` : ''}`).join('<br>')
@@ -134,7 +134,7 @@ for (const style of STYLES) {
   const reports = styleReports.get(style) ?? [];
   const first = reports[0];
   if (!first) continue;
-  const cal = first.standard.copychMaster.playbackStyleMasterLiftCalibration[style];
+  const cal = first.standard.hardwareMaster.playbackStyleMasterLiftCalibration[style];
   const play = reports.map((r) => r.estimatedPlaybackIntegratedLufs);
   const delta = reports.map((r) => r.playbackLoudnessDeltaDb);
   const drive = reports.map((r) => r.estimatedDeviceOutputPeakDbfs);

@@ -1,0 +1,809 @@
+{
+  "sf2": "/Users/mynority/vibe_coding/auraflow_music_game_console_simulator/public/Aura25_GM128.sf2",
+  "sha256": "253f3523ad31fc22c40348ad597c5b483c21b7420dfd5df8a659f41b9c69c81c",
+  "sizeBytes": 1348872,
+  "sampleRates": [
+    24000
+  ],
+  "samples": 110,
+  "effectiveZones": 648,
+  "missingInitialAttenuationZones": [],
+  "applyStats": {
+    "patches": [
+      {
+        "chunk": "pgen",
+        "index": 164,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 170,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 176,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 182,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 188,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 194,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 200,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 207,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 214,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 221,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 228,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 235,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 242,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 249,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 256,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 263,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 270,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 277,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 284,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 291,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 299,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 307,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 315,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 323,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 331,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 339,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+120cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 348,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 357,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 366,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 375,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 384,
+        "old": -120,
+        "new": 25,
+        "reason": "bank8:program5:dx7-wave-master-floor+145cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 393,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 402,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 411,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 420,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 429,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 438,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      },
+      {
+        "chunk": "pgen",
+        "index": 447,
+        "old": -120,
+        "new": -95,
+        "reason": "bank8:program5:dx7-wave-master-floor+25cb"
+      }
+    ],
+    "insertions": [
+      {
+        "ibagIndex": 71,
+        "insertIndex": 1521,
+        "amountCb": 90,
+        "selector": "0:67",
+        "sampleId": 32,
+        "keyRange": [
+          0,
+          40
+        ],
+        "reason": "baritone-sax-low-zone-master-attenuation"
+      },
+      {
+        "ibagIndex": 81,
+        "insertIndex": 1697,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 81,
+        "keyRange": [
+          31,
+          31
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 82,
+        "insertIndex": 1710,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 80,
+        "keyRange": [
+          32,
+          32
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 91,
+        "insertIndex": 1864,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          41,
+          41
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 93,
+        "insertIndex": 1902,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          43,
+          43
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 95,
+        "insertIndex": 1941,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          45,
+          45
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 98,
+        "insertIndex": 2000,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          48,
+          48
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 100,
+        "insertIndex": 2040,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          50,
+          50
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 111,
+        "insertIndex": 2249,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 65,
+        "keyRange": [
+          61,
+          61
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 115,
+        "insertIndex": 2319,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 61,
+        "keyRange": [
+          65,
+          65
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 116,
+        "insertIndex": 2337,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 60,
+        "keyRange": [
+          66,
+          66
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 125,
+        "insertIndex": 2495,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 54,
+        "keyRange": [
+          75,
+          75
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 126,
+        "insertIndex": 2509,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 89,
+        "keyRange": [
+          76,
+          76
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 127,
+        "insertIndex": 2523,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 89,
+        "keyRange": [
+          77,
+          77
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 133,
+        "insertIndex": 2622,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 49,
+        "keyRange": [
+          83,
+          83
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 135,
+        "insertIndex": 2657,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 47,
+        "keyRange": [
+          85,
+          85
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 136,
+        "insertIndex": 2675,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 88,
+        "keyRange": [
+          86,
+          86
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 137,
+        "insertIndex": 2698,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 88,
+        "keyRange": [
+          87,
+          87
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 141,
+        "insertIndex": 2769,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          43,
+          43
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 143,
+        "insertIndex": 2808,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          45,
+          45
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 146,
+        "insertIndex": 2867,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          48,
+          48
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 148,
+        "insertIndex": 2907,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 87,
+        "keyRange": [
+          50,
+          50
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 159,
+        "insertIndex": 3116,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 65,
+        "keyRange": [
+          61,
+          61
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 163,
+        "insertIndex": 3186,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 61,
+        "keyRange": [
+          65,
+          65
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 164,
+        "insertIndex": 3204,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 60,
+        "keyRange": [
+          66,
+          66
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 173,
+        "insertIndex": 3362,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 54,
+        "keyRange": [
+          75,
+          75
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 174,
+        "insertIndex": 3376,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 89,
+        "keyRange": [
+          76,
+          76
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 175,
+        "insertIndex": 3390,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 89,
+        "keyRange": [
+          77,
+          77
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 181,
+        "insertIndex": 3489,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 49,
+        "keyRange": [
+          83,
+          83
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 183,
+        "insertIndex": 3524,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 47,
+        "keyRange": [
+          85,
+          85
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 184,
+        "insertIndex": 3542,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 88,
+        "keyRange": [
+          86,
+          86
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      },
+      {
+        "ibagIndex": 185,
+        "insertIndex": 3565,
+        "amountCb": 82,
+        "selector": "128:40",
+        "sampleId": 88,
+        "keyRange": [
+          87,
+          87
+        ],
+        "reason": "brush-kit-missing-zone-explicit-master-attenuation"
+      }
+    ]
+  },
+  "presets": [
+    {
+      "selector": "0:0",
+      "zones": 33,
+      "attenuationCbMin": 27,
+      "attenuationCbMedian": 35,
+      "attenuationCbMax": 35,
+      "estimatedDbMin": -23.7,
+      "estimatedDbMedian": -19.15,
+      "estimatedDbMax": -16.87
+    },
+    {
+      "selector": "0:5",
+      "zones": 80,
+      "attenuationCbMin": 175,
+      "attenuationCbMedian": 175,
+      "attenuationCbMax": 300,
+      "estimatedDbMin": -41.21,
+      "estimatedDbMedian": -29.69,
+      "estimatedDbMax": -27.25
+    },
+    {
+      "selector": "0:11",
+      "zones": 8,
+      "attenuationCbMin": 280,
+      "attenuationCbMedian": 300,
+      "attenuationCbMax": 333,
+      "estimatedDbMin": -38.53,
+      "estimatedDbMedian": -34.09,
+      "estimatedDbMax": -33.99
+    },
+    {
+      "selector": "0:24",
+      "zones": 11,
+      "attenuationCbMin": 170,
+      "attenuationCbMedian": 178,
+      "attenuationCbMax": 193,
+      "estimatedDbMin": -28.92,
+      "estimatedDbMedian": -26.85,
+      "estimatedDbMax": -25.6
+    },
+    {
+      "selector": "0:25",
+      "zones": 11,
+      "attenuationCbMin": 170,
+      "attenuationCbMedian": 178,
+      "attenuationCbMax": 193,
+      "estimatedDbMin": -28.92,
+      "estimatedDbMedian": -26.85,
+      "estimatedDbMax": -25.6
+    },
+    {
+      "selector": "0:32",
+      "zones": 5,
+      "attenuationCbMin": 136,
+      "attenuationCbMedian": 136,
+      "attenuationCbMax": 136,
+      "estimatedDbMin": -24.26,
+      "estimatedDbMedian": -23.98,
+      "estimatedDbMax": -23.61
+    },
+    {
+      "selector": "0:38",
+      "zones": 9,
+      "attenuationCbMin": 167,
+      "attenuationCbMedian": 167,
+      "attenuationCbMax": 167,
+      "estimatedDbMin": -26.37,
+      "estimatedDbMedian": -24.7,
+      "estimatedDbMax": -23.41
+    },
+    {
+      "selector": "0:67",
+      "zones": 6,
+      "attenuationCbMin": 90,
+      "attenuationCbMedian": 120,
+      "attenuationCbMax": 130,
+      "estimatedDbMin": -25.96,
+      "estimatedDbMedian": -23.72,
+      "estimatedDbMax": -22.84
+    },
+    {
+      "selector": "0:89",
+      "zones": 8,
+      "attenuationCbMin": 6,
+      "attenuationCbMedian": 6,
+      "attenuationCbMax": 6,
+      "estimatedDbMin": -13.39,
+      "estimatedDbMedian": -12.01,
+      "estimatedDbMax": -11.3
+    },
+    {
+      "selector": "0:108",
+      "zones": 5,
+      "attenuationCbMin": 163,
+      "attenuationCbMedian": 163,
+      "attenuationCbMax": 170,
+      "estimatedDbMin": -25.73,
+      "estimatedDbMedian": -25.03,
+      "estimatedDbMax": -23.99
+    },
+    {
+      "selector": "8:5",
+      "zones": 174,
+      "attenuationCbMin": 35,
+      "attenuationCbMedian": 40,
+      "attenuationCbMax": 295,
+      "estimatedDbMin": -48.46,
+      "estimatedDbMedian": -13.53,
+      "estimatedDbMax": -13.16
+    },
+    {
+      "selector": "128:8",
+      "zones": 68,
+      "attenuationCbMin": 112,
+      "attenuationCbMedian": 152,
+      "attenuationCbMax": 349,
+      "estimatedDbMin": -56.25,
+      "estimatedDbMedian": -32.92,
+      "estimatedDbMax": -17.22
+    },
+    {
+      "selector": "128:25",
+      "zones": 121,
+      "attenuationCbMin": 82,
+      "attenuationCbMedian": 112,
+      "attenuationCbMax": 329,
+      "estimatedDbMin": -54.25,
+      "estimatedDbMedian": -29.64,
+      "estimatedDbMax": -10.22
+    },
+    {
+      "selector": "128:40",
+      "zones": 109,
+      "attenuationCbMin": 8,
+      "attenuationCbMedian": 82,
+      "attenuationCbMax": 245,
+      "estimatedDbMin": -45.85,
+      "estimatedDbMedian": -23.73,
+      "estimatedDbMax": -10.22
+    }
+  ]
+}

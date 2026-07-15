@@ -19,13 +19,15 @@ function pipeline(band: BandSpec, seed: number) {
 }
 
 describe('render/gmProgramSource — TrackIR program 来自器配层链选,不漏 provisional', () => {
-  it('renderSongFull 给每条轨挂 program = instrumentation.programByRoleSection(段级生效)', () => {
+  it('renderSongFull 给每条轨挂 program/bank = instrumentation 段级生效值', () => {
     const band = buildBandSpec({ seed: 9, styleHint: 'pop', mood: 'build', targetDuration: 120 });
     const { instrumentation, arrangement, ir } = pipeline(band, 9);
     const baseSec = arrangement.sections.find((s) => s.role !== 'chorus') ?? arrangement.sections[0];
+    const firstSec = arrangement.sections[0].id;
     for (const t of ir.tracks) {
-      // initial program 对应首段;此处用 base 段做 sanity(无音色切换段)
-      expect(t.program).toBe(instrumentation.programByRoleSection[t.role][arrangement.sections[0].id]);
+      // initial program/bank 对应首段;此处用 base 段做 sanity(无音色切换段)
+      expect(t.program).toBe(instrumentation.programByRoleSection[t.role][firstSec]);
+      expect(t.bank).toBe(instrumentation.bankByRoleSection[t.role][firstSec]);
       expect(instrumentation.programByRoleSection[t.role][baseSec.id]).toBe(instrumentation.roleProgram[t.role]);
     }
   });

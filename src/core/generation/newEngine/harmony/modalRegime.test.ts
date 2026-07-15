@@ -41,7 +41,7 @@ describe('harmony/render · modal regime (4.1)', () => {
     }
   });
 
-  it('★ 旋律跑音阶:lead 全部音 pc ∈ primaryScale(scale 色彩,非逐和弦贴音)', () => {
+  it('★ 旋律跑音阶:结构音在 primaryScale；短弱拍半音只可作立即解决的 approach', () => {
     const { band, arrangement, harmonic, seedRng } = mk();
     const instrumentation = buildInstrumentationPlan(band, arrangement);
     const timebase = createTimebase({
@@ -52,7 +52,21 @@ describe('harmony/render · modal regime (4.1)', () => {
     const scale = new Set<number>(band.primaryScale);
     const lead = ir.tracks.find((t) => t.role === 'lead')!;
     expect(lead.notes.length).toBeGreaterThan(0);
-    for (const n of lead.notes) expect(scale.has((n.pitch as number) % 12)).toBe(true);
+    const chromatic = lead.notes
+      .map((note, index) => ({ note, index }))
+      .filter(({ note }) => !scale.has((note.pitch as number) % 12));
+    for (const { note, index } of chromatic) {
+      const prev = lead.notes[index - 1];
+      const next = lead.notes[index + 1];
+      expect((note.durationTicks as number) / timebase.ppq).toBeLessThanOrEqual(0.5);
+      expect(prev).toBeDefined();
+      expect(next).toBeDefined();
+      expect(Math.abs((note.pitch as number) - (prev.pitch as number))).toBeLessThanOrEqual(2);
+      expect(Math.abs((next.pitch as number) - (note.pitch as number))).toBeLessThanOrEqual(2);
+      expect((next.startTick as number) - ((note.startTick as number) + (note.durationTicks as number))).toBeLessThanOrEqual(1);
+      expect(scale.has((next.pitch as number) % 12)).toBe(true);
+    }
+    expect(chromatic.length / lead.notes.length).toBeLessThanOrEqual(0.05);
   });
 
   it('端到端:modal generateSong 收敛(avoid 放松 → Auditor 必 pass);多 seed 不崩', () => {

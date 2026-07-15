@@ -238,10 +238,10 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
     executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, midi: 64, velocity: 100 }]);
 
     expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:64:0`);
-    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:7:72`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:7:112`);
     expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:91:18`);
     expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:93:6`);
-    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:11:112`);
+    expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:11:127`);
     expect(target.direct).toContain(`cc:${TAKEOVER_USER_CHANNEL}:95:0`);
     expect(target.direct).not.toContain(`cc:${TAKEOVER_USER_CHANNEL}:95:26`);
 
@@ -463,10 +463,10 @@ describe('leadTakeoverSandbox/qhTakeoverConsumer', () => {
     const logs = executeLeadTakeoverActions(target, [{ type: 'lead-note-on', channel: 1, noteId: 'high-gtr', midi: 95, velocity: 104 }]);
     executeLeadTakeoverActions(target, [{ type: 'lead-note-off', channel: 1, noteId: 'high-gtr', midi: 95 }]);
 
-    expect(logs).toContain('takeover noteOn ch15 95→83 v104');
+    expect(logs).toContain('takeover noteOn ch15 95→59 v104');
     expect(target.direct).toContain(`pc:${TAKEOVER_USER_CHANNEL}:25`);
-    expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:83:104`);
-    expect(target.direct).toContain(`off:${TAKEOVER_USER_CHANNEL}:83`);
+    expect(target.direct).toContain(`on:${TAKEOVER_USER_CHANNEL}:59:104`);
+    expect(target.direct).toContain(`off:${TAKEOVER_USER_CHANNEL}:59`);
     resetLeadTakeoverRuntimeState(target);
   });
 });

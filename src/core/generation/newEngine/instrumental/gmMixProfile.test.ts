@@ -59,13 +59,13 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
   const mk = (role: InstrumentRoleName, program: number, hasPad = true) =>
     mixForProgram({ style: 'pop', timbreWorld: undefined, role, program, hasPad, space });
 
-  it('bass.reverb ≤ 12 且有小 room send:低频靠后一点但不糊', () => {
+  it('bass.reverb ≤ 12 且有小 room send:bassline 可闻但不糊', () => {
     for (const p of [32, 33, 34, 35, 36, 37, 38, 39]) expect(mk('bass', p).reverb).toBeLessThanOrEqual(12);
     expect(mk('bass', 32).reverb).toBe(10);
     expect(mk('bass', 38).reverb).toBe(8);
-    expect(mk('bass', 32).volume).toBe(74);
-    expect(mk('bass', 38).volume).toBe(72);
-    expect(mk('bass', 38).chorus).toBeLessThanOrEqual(3);
+    expect(mk('bass', 32).volume).toBe(82);
+    expect(mk('bass', 38).volume).toBe(80);
+    expect(mk('bass', 38).chorus).toBeLessThanOrEqual(1);
   });
 
   it('drum.chorus == 0', () => {
@@ -176,6 +176,14 @@ describe('knowledge/gmMixProfile — 单角色护栏', () => {
     expect(m.delay ?? 0).toBe(0);
   });
 
+  it('卡林巴是轻拨弦热源:lead 不吃大音量/大空间', () => {
+    const m = mk('lead', 108);
+    expect(m.volume).toBeLessThanOrEqual(72);
+    expect(m.reverb).toBeLessThanOrEqual(18);
+    expect(m.chorus).toBe(0);
+    expect(m.delay).toBeUndefined();
+  });
+
   it('lead pan 居中 58..70(各 program)', () => {
     for (const p of [0, 4, 11, 12, 67, 75]) {
       const m = mk('lead', p);
@@ -268,7 +276,7 @@ describe('knowledge/gmMixProfile — ACG solo-piano 平衡(2026-06-28 用户:lea
 
   it('★ LOFI bass 单独前移,避免 EP/质感层把低频主体盖住', () => {
     expect(mLofi('bass', 32).volume).toBeGreaterThan(mPop('bass', 32).volume);
-    expect(mLofi('bass', 32).volume).toBeLessThanOrEqual(82);
+    expect(mLofi('bass', 32).volume).toBeLessThanOrEqual(88);
   });
 
   it('★ 非 ACG 不受影响(POP lead 仍走 melody-forward,≥ 92)', () => {

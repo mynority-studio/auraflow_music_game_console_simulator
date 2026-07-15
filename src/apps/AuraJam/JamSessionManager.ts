@@ -144,7 +144,7 @@ export class JamSessionManager {
             const styleHint = JAM_STYLE_HINT[randomStyleId] ?? 'pop';
 
             // ★ Q+N 续写(§10):用户录制 motif(绝对 MIDI)→ MotifLeadNote[](beats)→ override.lead。Q+N tile 满曲长
-            //   + 预摆动 → 成为整编 lead;harmony/comp/bass/drum/pad/mix 由 Q+N 按 key/style 生成。空 motif → 普通 Q+N 曲。
+            //   + 预摆动 → 成为整编 lead;key/mode 由 Q+N 开局抽取,harmony/comp/bass/drum/pad/mix 按 style 生成。空 motif → 普通 Q+N 曲。
             const motifLead = motifNotes
                 .filter((n) => n.duration > 0)
                 .map((n) => ({
@@ -154,7 +154,7 @@ export class JamSessionManager {
                     velocity: Math.max(1, Math.min(127, Math.round(n.velocity <= 1 ? n.velocity * 127 : n.velocity))),
                 }));
             const result = await generateMotifMusic(
-                { seed, styleHint, mood: 'build', targetDuration: 96, key: pcToKey(keyOffset) },
+                { seed, styleHint, mood: 'build', targetDuration: 96 },
                 motifLead.length ? { lead: motifLead } : {},
             );
 

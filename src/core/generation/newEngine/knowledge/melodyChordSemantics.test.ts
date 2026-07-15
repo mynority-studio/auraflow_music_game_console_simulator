@@ -19,6 +19,12 @@ describe('knowledge · evaluateNoteInChordContext 统一评判器 (KB 移植 §6
     expect(r.urgency).toBeGreaterThanOrEqual(0.9);
   });
 
+  it('局部音阶不能把和弦 avoid 升格为可停留 color tone', () => {
+    const r = ev(5, 'maj7', 0, 'T', { localScalePcs: new Set([0, 2, 4, 5, 7, 9, 11]) });
+    expect(r.consonance).toBe('avoid');
+    expect(r.urgency).toBeGreaterThanOrEqual(0.9);
+  });
+
   it('★ 导音 B on G7@D(C 调)→ Layer B 升级为 tension,解决目标含 C(0)', () => {
     // Layer A 7D[4]=CT 0.0;Layer B B=调内 7 音 leading kkTension 0.842 → 升 tension
     const r = ev(11, '7', 7, 'D');

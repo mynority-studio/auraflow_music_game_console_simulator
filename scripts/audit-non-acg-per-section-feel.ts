@@ -201,7 +201,7 @@ for (const { sim, mg } of STYLES) {
     const phrases = phraseFeels(mgComp, mgBass, mgLead, mgTotalBeats);
     const mgTex = (mgSong.timeline.texturePerBar ?? []) as string[];
 
-    const r = generateMusicSync({ seed, styleHint: sim, mood: 'build', targetDuration: 90, key: KEY });
+    const r = generateMusicSync({ seed, styleHint: sim, mood: 'build', targetDuration: 90 });
     if (r.status !== 'ok' || !r.ir) {
       L.push(`### seed ${seed}`);
       L.push(`- SIM 生成失败: status=${r.status}`);

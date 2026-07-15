@@ -1,3 +1,3 @@
-[submodule "components/synth/auraflow_synth"]
-	path = components/synth/auraflow_synth
-	url = git@github.com:mynority-studio/auraflow_synth.git
+[submodule "components/samvs"]
+	path = components/samvs
+	url = git@github.com:mynority-studio/samvs.git

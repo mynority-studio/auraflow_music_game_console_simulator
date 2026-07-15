@@ -27,7 +27,7 @@ const CASES: [number, string][] = [[0, 'acg'], [42, 'acg'], [7, 'pop'], [42, 'rn
 let enforcedChecked = 0, enforcedOk = 0;
 
 for (const [seed, style] of CASES) {
-  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90, key: 'C' });
+  const r = generateMusicSync({ seed, styleHint: style, mood: 'build', targetDuration: 90 });
   const intent = (r.report as { intent?: { sections: IntentSec[] } })?.intent;
   const comp = r.ir!.tracks.find((t) => t.role === 'comp');
   const ppq = r.ir!.timebase.ppq as number;

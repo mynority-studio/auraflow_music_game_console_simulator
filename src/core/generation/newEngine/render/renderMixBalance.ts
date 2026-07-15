@@ -16,6 +16,7 @@ interface LeadCompPolicy {
   maxRatio: number;
   leadRange: [number, number];
   compRange: [number, number];
+  compWithoutLeadFloor?: number;
 }
 
 export interface RenderMixBalanceContext {
@@ -31,12 +32,13 @@ const MIN_SPLIT_SCALE = 1 / MAX_SPLIT_SCALE;
 const GUITAR_COMP_VOLUME_CAP = 58;
 const GUITAR_LEAD_VOLUME_CAP = 72;
 const FM_EP_COMP_VOLUME_CAP = 80;
+const MALLET_LEAD_VOLUME_CAP = 74;
 
 const POLICY: Record<string, LeadCompPolicy> = {
   // YD3411 小喇叭中频效率高:让 comp+lead 做前景,利用钢琴/和声主体频段,而不是把能量交给鼓/pad。
   // 2026-07-13:Q+R 与 Q+H 同链路试听后,lead 需要再稍微站前一点。只抬前景比例和 lead 下限,
   // 不提高 CC7 上限,避免浏览器/ESP32 端进入削波;comp caps 仍在后面保护吉他和 GM5 电钢。
-  pop:  { targetRatio: 1.14, minRatio: 0.88, maxRatio: 1.90, leadRange: [86, 100], compRange: [78, 94] },
+  pop:  { targetRatio: 1.14, minRatio: 0.88, maxRatio: 1.85, leadRange: [84, 100], compRange: [80, 94] },
   jazz: { targetRatio: 1.24, minRatio: 0.95, maxRatio: 2.45, leadRange: [86, 100], compRange: [78, 94] },
   lofi: { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.90, leadRange: [78, 98], compRange: [72, 94] },
   rnb:  { targetRatio: 1.14, minRatio: 0.92, maxRatio: 1.75, leadRange: [86, 100], compRange: [64, 84] },
@@ -58,10 +60,12 @@ const JAZZ_SAX_POLICY: LeadCompPolicy = {
   targetRatio: 1.45,
   minRatio: 0.95,
   maxRatio: 3.80,
-  // Copych/YD3411 设备实测:GM67 五音 CC84≈-32dBFS RMS,CC64≈-34.4dBFS RMS。
-  // sax 仍是 jazz lead,但不再强制 CC100,避免设备喇叭上比键盘/贝斯大一截。
+  // YD3411 小喇叭目标实测:GM67 五音 CC84≈-32dBFS RMS,CC64≈-34.4dBFS RMS。
+  // sax 仍是 jazz lead,但不再强制 CC100；旋律进来后允许 comp 自动退到实测 CC64，
+  // opening/尾奏没有 sax 时仍保留原始 comp CC7，不把钢琴床一起压没。
   leadRange: [84, 88],
-  compRange: [78, 94],
+  compRange: [64, 94],
+  compWithoutLeadFloor: 78,
 };
 
 function isSaxProgram(program: number | undefined): boolean {
@@ -113,6 +117,10 @@ function isFmEpProgram(program: number | undefined): boolean {
   return program === 5;
 }
 
+function isMalletLeadProgram(program: number | undefined): boolean {
+  return program === 11 || program === 12 || program === 107 || program === 108;
+}
+
 function shouldCapFmEpComp(style: string): boolean {
   const s = (style ?? '').toLowerCase();
   return s === 'pop' || s === 'lofi' || s === 'rnb';
@@ -123,6 +131,10 @@ function capMixForTrack(track: TrackIR, tick: number, mix: TrackMix, style: stri
   const program = programAt(track, tick);
   if (track.role === 'lead' && isGuitarProgram(program)) {
     const volume = Math.min(mix.volume, GUITAR_LEAD_VOLUME_CAP);
+    return volume === mix.volume ? mix : { ...mix, volume };
+  }
+  if (track.role === 'lead' && isMalletLeadProgram(program)) {
+    const volume = Math.min(mix.volume, MALLET_LEAD_VOLUME_CAP);
     return volume === mix.volume ? mix : { ...mix, volume };
   }
   if (track.role !== 'comp') return mix;
@@ -141,6 +153,14 @@ function boundaryTicks(tracks: readonly TrackIR[], ctx: RenderMixBalanceContext)
   for (const tr of tracks) {
     for (const mc of tr.mixChanges ?? []) set.add(Math.max(0, Math.min(ctx.durationTicks, mc.atTick as number)));
     for (const pc of tr.programChanges ?? []) set.add(Math.max(0, Math.min(ctx.durationTicks, pc.atTick as number)));
+    // Lead/comp 的真实出入场也属于稀疏 CC7 边界。否则 opening 里只有 comp 的数拍会和
+    // 后续 lead+comp 共用一个音量，既无法保住前奏，也无法在主奏进入时让伴奏后退。
+    if ((ctx.style ?? '').toLowerCase() === 'jazz' && (tr.role === 'lead' || tr.role === 'comp') && tr.notes.length > 0) {
+      const first = Math.min(...tr.notes.map((note) => note.startTick as number));
+      const last = Math.max(...tr.notes.map((note) => (note.startTick as number) + (note.durationTicks as number)));
+      set.add(Math.max(0, Math.min(ctx.durationTicks, first)));
+      set.add(Math.max(0, Math.min(ctx.durationTicks, last)));
+    }
   }
   return [...set].filter((t) => t >= 0 && t <= ctx.durationTicks).sort((a, b) => a - b);
 }
@@ -176,7 +196,10 @@ function adjustLeadCompVolumes(
   policy: LeadCompPolicy,
 ): { lead: TrackMix; comp: TrackMix } {
   let leadVolume = clampInt(leadMix.volume, policy.leadRange[0], policy.leadRange[1]);
-  let compVolume = clampInt(compMix.volume, policy.compRange[0], policy.compRange[1]);
+  const compFloor = leadDry <= EPS && policy.compWithoutLeadFloor !== undefined
+    ? Math.max(policy.compRange[0], policy.compWithoutLeadFloor)
+    : policy.compRange[0];
+  let compVolume = clampInt(compMix.volume, compFloor, policy.compRange[1]);
 
   const leadEnergy = wetEnergyFromDry(leadDry, leadVolume);
   const compEnergy = wetEnergyFromDry(compDry, compVolume);
